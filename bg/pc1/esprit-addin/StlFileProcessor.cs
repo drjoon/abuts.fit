@@ -1109,10 +1109,13 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 double xMax = Math.Max(frontX, backX);
 
                 // 요청 기준:
-                //   finishLine 최상 Z점(= 좌측 끝 기준)에서 1.0mm 더 좌측으로 분할
-                // STL Z(top) → ESPRIT X 변환(이동 이후 좌표계): X ~= BackX - topZ + shift
-                // 따라서 splitX ~= BackX - (topZ + 1.0) + shift
-                double rawSplitX = backX - (finishLineTopZ.Value + 1.0) + AppConfig.DefaultStlShift;
+                //   finishLine 최상 Z점보다 1.0mm 더 높은(Z+) 지점을 split line으로 사용
+                // 좌표 변환은 ApplyLimitPoints(FinishLineX)와 동일식을 사용한다.
+                //   ESPRIT X = BackX + Z - stlTopZ (+ 기본 STL shift)
+                //   targetZ = finishLineTopZ + 1.0
+                //   splitX = BackX + (finishLineTopZ + 1.0) - stlTopZ + shift
+                double targetZ = finishLineTopZ.Value + 1.0;
+                double rawSplitX = backX + targetZ - stlTopZ.Value + AppConfig.DefaultStlShift;
                 double splitX = Math.Max(xMin + 0.01, Math.Min(xMax - 0.01, rawSplitX));
 
                 Environment.SetEnvironmentVariable(AppConfig.TwoPhaseEnableEnv, "1");
@@ -1122,7 +1125,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 Environment.SetEnvironmentVariable(AppConfig.RoughfreeformSplitEnableEnv, "1");
                 Environment.SetEnvironmentVariable("ABUTS_ROUGHFREEFORM_SPLIT_X", splitX.ToString(CultureInfo.InvariantCulture));
 
-                AppLogger.Log($"DentalAddin: TwoPhase split 적용 - finishLineTopZ:{finishLineTopZ.Value.ToString("F4", CultureInfo.InvariantCulture)}, 기준:+1.0mm 좌측, stlTopZ:{stlTopZ.Value.ToString("F4", CultureInfo.InvariantCulture)}, rawSplitX:{rawSplitX.ToString("F4", CultureInfo.InvariantCulture)}, splitX(clamped):{splitX.ToString("F4", CultureInfo.InvariantCulture)} (Front:{frontX.ToString("F4", CultureInfo.InvariantCulture)}, Back:{backX.ToString("F4", CultureInfo.InvariantCulture)})");
+                AppLogger.Log($"DentalAddin: TwoPhase split 적용 - finishLineTopZ:{finishLineTopZ.Value.ToString("F4", CultureInfo.InvariantCulture)}, targetZ(+1.0):{targetZ.ToString("F4", CultureInfo.InvariantCulture)}, stlTopZ:{stlTopZ.Value.ToString("F4", CultureInfo.InvariantCulture)}, rawSplitX:{rawSplitX.ToString("F4", CultureInfo.InvariantCulture)}, splitX(clamped):{splitX.ToString("F4", CultureInfo.InvariantCulture)} (Front:{frontX.ToString("F4", CultureInfo.InvariantCulture)}, Back:{backX.ToString("F4", CultureInfo.InvariantCulture)})");
             }
             catch (Exception ex)
             {
