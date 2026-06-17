@@ -500,10 +500,10 @@ namespace DentalAddin
                 TrySetCompositeStockAllowance(opA, "A");
                 DentalLogger.Log("Composite2SplitAB - Single-A StepIncrement/StockAllowance 적용 완료");
 
-                // 신규 A 추가: 기존 A(현재 B) 좌측 끝에서 0.5mm만 가공
+                // 신규 A 추가: Face 시작점~끝점 범위를 그대로 가공
                 if (!newAPreAdded)
                 {
-                    if (TryResolveCompositeNewALeftRange(opA.FirstPassPercent, opA.LastPassPercent, out double newAFirstSingle, out double newALastSingle))
+                    if (TryResolveCompositeNewALeftRange(opA.LastPassPercent, out double newAFirstSingle, out double newALastSingle))
                     {
                         ITechnology[] techANewSingle = TryOpenProcess(technologyUtility, prcA, "Composite2SplitAB:A:Single:NewA");
                         TechLatheMill5xComposite opANewSingle = null;
@@ -630,10 +630,10 @@ namespace DentalAddin
             int beforeAddCount = Document?.Operations?.Count ?? -1;
             DentalLogger.Log($"Composite2SplitAB - Operation 추가 시작 (beforeCount={beforeAddCount})");
 
-            // 신규 A 추가: 기존 A(현재 B) 좌측 끝에서 0.5mm만 가공
+            // 신규 A 추가: Face 시작점~끝점 범위를 그대로 가공
             if (!newAPreAdded && !newAAddedThisCall)
             {
-                if (TryResolveCompositeNewALeftRange(opA.FirstPassPercent, opA.LastPassPercent, out double newAFirst, out double newALast))
+                if (TryResolveCompositeNewALeftRange(opA.LastPassPercent, out double newAFirst, out double newALast))
                 {
                     ITechnology[] techANew = TryOpenProcess(technologyUtility, prcA, "Composite2SplitAB:NewA");
                     TechLatheMill5xComposite opANew = null;
@@ -1000,8 +1000,7 @@ namespace DentalAddin
         // (Front Face가 기본 1.0mm 또는 Rough 안전가드로 더 얕아진 경우를 모두 반영)
         private const double CompositeAStartLeftFromFrontFaceMm = 0.4;
 
-        // 사용자 요청: 신규 5Axis_Composite_A 는 기존 A(현재 B)의 좌측 끝에서 0.5mm만 가공
-        private const double CompositeNewALeftWidthMm = 0.5;
+        // 사용자 요청: 신규 5Axis_Composite_A 범위는 Face 시작점~Face 끝점과 동일
 
         /// <summary>
         /// TwoPhase Rough_A의 우측 끝(X) 좌표를 기존 Rough 분할 규칙과 동일하게 계산한다.
@@ -1204,10 +1203,10 @@ namespace DentalAddin
             string normalized = label.Trim();
 
             // 신규 구분 정책:
-            // - New A (좌측 0.5mm): A
-            // - 기존 A                : B
-            // - 기존 B                : C
-            // - 기존 B-Extension      : D
+            // - New A (Face 시작~끝 범위): A
+            // - 기존 A                    : B
+            // - 기존 B                    : C
+            // - 기존 B-Extension          : D
             if (normalized.StartsWith("A-New", StringComparison.OrdinalIgnoreCase))
             {
                 return "A";
@@ -1297,7 +1296,7 @@ namespace DentalAddin
             }
         }
 
-        private static bool TryResolveCompositeNewALeftRange(double sourceFirstPercent, double sourceLastPercent, out double newAFirstPercent, out double newALastPercent)
+        private static bool TryResolveCompositeNewALeftRange(double sourceLastPercent, out double newAFirstPercent, out double newALastPercent)
         {
             newAFirstPercent = 0.0;
             newALastPercent = 0.0;
@@ -1311,14 +1310,24 @@ namespace DentalAddin
                     return false;
                 }
 
-                newAFirstPercent = Clamp(sourceFirstPercent, 0.0, 100.0);
-                double widthPercent = CompositeNewALeftWidthMm / absSpan * 100.0;
-                if (double.IsNaN(widthPercent) || double.IsInfinity(widthPercent) || widthPercent <= 0.001)
+                double direction = span >= 0 ? 1.0 : -1.0;
+                double faceStartX = MoveSTL_Module.FrontPointX;
+                double faceEndX = ResolveFrontFaceRightXForCompositeStart();
+
+                double startRatio = (faceStartX - MoveSTL_Module.FrontPointX) / (direction * absSpan);
+                double endRatio = (faceEndX - MoveSTL_Module.FrontPointX) / (direction * absSpan);
+                if (double.IsNaN(startRatio) || double.IsInfinity(startRatio) || double.IsNaN(endRatio) || double.IsInfinity(endRatio))
                 {
                     return false;
                 }
 
-                newALastPercent = Clamp(newAFirstPercent + widthPercent, newAFirstPercent, sourceLastPercent);
+                double startPercent = startRatio * 100.0;
+                double endPercent = endRatio * 100.0;
+                double minPercent = Math.Min(startPercent, endPercent);
+                double maxPercent = Math.Max(startPercent, endPercent);
+
+                newAFirstPercent = Clamp(minPercent, 0.0, sourceLastPercent);
+                newALastPercent = Clamp(maxPercent, newAFirstPercent, sourceLastPercent);
                 return newALastPercent - newAFirstPercent > 0.01;
             }
             catch

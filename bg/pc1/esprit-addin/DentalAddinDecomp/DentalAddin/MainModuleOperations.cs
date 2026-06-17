@@ -90,7 +90,7 @@ namespace DentalAddin
                 CustomCycle();
 
                 // 2-phase 순서 (기본값):
-                // CustomCycle → Turn_A → Rough_A → FrontFace → Composite_A(신규, 0.5mm) → Turn_B → Rough_B → FreeForm
+                // CustomCycle → Turn_A → Rough_A → FrontFace → Composite_A(신규, Face 범위) → Turn_B → Rough_B → FreeForm
                 ExecuteTwoPhaseTurning("A");
                 ExecuteTwoPhaseRough("A");
 
