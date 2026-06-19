@@ -151,6 +151,12 @@ namespace DentalAddin
 
         private static void TryRunComposite2NewABeforeTurnB()
         {
+            if (DisableCompositeNewA)
+            {
+                DentalLogger.Log("OperationSeq - DisableCompositeNewA=true, Turn_B 직전 Composite NewA 선행 실행 스킵");
+                return;
+            }
+
             // 이미 같은 실행에서 선행 생성 완료된 경우 중복 실행 방지
             string preAdded = null;
             try { preAdded = Environment.GetEnvironmentVariable("ABUTS_COMPOSITE_NEWA_PRE_ADDED"); } catch { }
@@ -367,7 +373,7 @@ namespace DentalAddin
                 }
 
                 // Front Face 깊이 정책:
-                // - 기존 DownZ 기반 가변 깊이 대신, 요청사항에 따라 고정 1.0mm를 사용한다.
+                // - PRC BottomZLimit(절대값)을 우선 사용한다.
                 // - 이후 Rough 대비 안전가드(0.3mm)를 추가 적용해 공구 파손 위험을 방지한다.
                 ApplyFrontFaceFixedDepth(techLatheMoldParallelPlanes, "FrontFaceMill");
 

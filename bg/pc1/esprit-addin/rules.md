@@ -32,6 +32,10 @@
 - `5axis_Composite_A(NewA)` 비활성 정책 변경 시,
   `TryRunComposite2NewABeforeTurnB` + `TryRunComposite2SplitAB` 내부 NewA 경로를 같이 정리해
   도달 불가 코드 경고(CS0162)가 남지 않게 한다.
+- NewA/Composite_B 경계 정책 변경 시 SSOT:
+  - NewA 범위는 항상 Front Face 시작~끝
+  - NewA `StockAllowance`는 `0.05` 고정(`A-New` 라벨)
+  - Composite_B(내부 `opA`) 시작점은 NewA 시작점과 동일하게 동기화
 
 ## 4. 정리 원칙
 

@@ -65,9 +65,13 @@ namespace DentalAddin
                 return;
             }
 
+            string normalizedLabel = (label ?? string.Empty).Trim();
+            bool isANew = normalizedLabel.StartsWith("A-New", StringComparison.OrdinalIgnoreCase);
+
             // A 대상일 경우 env(ABUTS_COMPOSITE_STOCK_ALLOWANCE_A)를 우선 확인한다.
+            // 단, A-New는 정책 고정값(0.05)을 사용하므로 env 오버라이드를 적용하지 않는다.
             double? stockAllowanceOverride = null;
-            if (label != null && label.Trim().Length > 0 && label.Trim().StartsWith("A", StringComparison.OrdinalIgnoreCase))
+            if (!isANew && normalizedLabel.StartsWith("A", StringComparison.OrdinalIgnoreCase))
             {
                 string rawEnv = Environment.GetEnvironmentVariable(AppConfig.CompositeStockAllowanceAEnv);
                 if (!string.IsNullOrWhiteSpace(rawEnv))
@@ -91,18 +95,23 @@ namespace DentalAddin
             else
             {
                 // 기본값 정책
-                // - A: 0.0
-                // - B: 0.0
-                // - C(B-Extension): 0.05
-                if (label != null && label.Trim().Length > 0 && label.Trim().StartsWith("B-Extension", StringComparison.OrdinalIgnoreCase))
+                // - A-New: 0.05
+                // - A(B): 0.0
+                // - B(C): 0.0
+                // - B-Extension(D): 0.05
+                if (isANew)
                 {
                     stockAllowance = 0.05;
                 }
-                else if (label != null && label.Trim().Length > 0 && label.Trim().StartsWith("B", StringComparison.OrdinalIgnoreCase))
+                else if (normalizedLabel.StartsWith("B-Extension", StringComparison.OrdinalIgnoreCase))
+                {
+                    stockAllowance = 0.05;
+                }
+                else if (normalizedLabel.StartsWith("B", StringComparison.OrdinalIgnoreCase))
                 {
                     stockAllowance = 0.0;
                 }
-                else if (label != null && label.Trim().Length > 0 && label.Trim().StartsWith("A", StringComparison.OrdinalIgnoreCase))
+                else if (normalizedLabel.StartsWith("A", StringComparison.OrdinalIgnoreCase))
                 {
                     stockAllowance = 0.0;
                 }
@@ -189,6 +198,11 @@ namespace DentalAddin
             bool newAPreAdded = string.Equals(newAPreAddedRaw, "1", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(newAPreAddedRaw, "true", StringComparison.OrdinalIgnoreCase);
             bool newAAddedThisCall = false;
+            if (DisableCompositeNewA && newAOnlyMode)
+            {
+                DentalLogger.Log("Composite2SplitAB - NewAOnly 요청이나 DisableCompositeNewA=true 이므로 NewA 생성 없이 종료");
+                return true;
+            }
 
             const double leftRatio = AppConfig.DefaultLeftRatio;
             double rightOffset = AppConfig.DefaultRightRatioOffset;
@@ -353,7 +367,6 @@ namespace DentalAddin
                 : firstPercent;
 
             const double seamEpsilonPercent = 0.05;
-            const double compositeBStartOverlapMm = 0.4; // 요청사항: B 시작 -0.4mm (Face/A와 겹침)
             const double compositeBcdBoundaryShiftMm = 0.3; // 요청사항: B/C 종료 +0.3mm
 
             // B 시작 퍼센트 상한(안전값) 적용
@@ -375,16 +388,7 @@ namespace DentalAddin
             opB.FirstPassPercent = bFirst;
             opB.LastPassPercent = effectiveLastPercent;
 
-            // 요청사항: 5Axis_Composite_B 시작점을 -0.4mm 이동하여 Face/Composite_A와 겹치게 한다.
-            double bFirstBeforeOverlapShift = opB.FirstPassPercent;
-            opB.FirstPassPercent = ShiftPassPercentByXOffsetMm(
-                opB.FirstPassPercent,
-                -compositeBStartOverlapMm,
-                firstPercent,
-                effectiveLastPercent,
-                MoveSTL_Module.FrontPointX,
-                direction,
-                absSpan);
+
 
             // C(B-Extension) 기본 활성.
             // 필요 시 env(ABUTS_COMPOSITE_B_EXTENSION_ENABLE=0|false)로만 비활성화한다.
@@ -424,19 +428,11 @@ namespace DentalAddin
                 DentalLogger.Log($"Composite2SplitAB - B-Extension 비활성(env). B.Last를 안전구간으로 제한: rawLast={effectiveLastPercent:F2} -> safeLast={opB.LastPassPercent:F2} (extRange={extensionStartPercent:F2}->{effectiveLastPercent:F2}, env=ABUTS_COMPOSITE_B_EXTENSION_ENABLE, raw='{bExtEnableRaw ?? ""}')");
             }
 
-            // A 시작점 정책:
-            // - 기존(치아번호/기본값) first-pass를 기본으로 삼고,
-            // - 사용자 요청에 따라 Front Face 우측 끝보다 0.1mm 좌측 지점을 우선 적용한다.
-            opA.FirstPassPercent = Clamp(baseAFirstPercent, 0.0, opA.LastPassPercent);
-            if (TryResolveCompositeAFirstPassPercentByFrontFace(opA.LastPassPercent, out double aFirstByFacePercent, out double aStartX))
-            {
-                opA.FirstPassPercent = aFirstByFacePercent;
-                DentalLogger.Log($"Composite2SplitAB - A 시작점(FrontFace-0.4) 적용: StartX={aStartX:F3}, FirstPass={opA.FirstPassPercent:F2}, LastPass={opA.LastPassPercent:F2}");
-            }
-            else
-            {
-                DentalLogger.Log($"Composite2SplitAB - A 시작점 계산 실패, 기본 FirstPass 사용: {opA.FirstPassPercent:F2}");
-            }
+            // 사용자 요청: Composite_B(=opA) 시작점은 0%로 고정
+            opA.FirstPassPercent = 0.0;
+            DentalLogger.Log($"Composite2SplitAB - B 시작점 0% 고정 적용: FirstPass={opA.FirstPassPercent:F2}, LastPass={opA.LastPassPercent:F2}");
+
+
 
             // 요청사항: Composite B(=opA) 종료, C(=opB) 종료를 현재 위치 +0.3mm로 이동
             double bLastBeforeShift = opA.LastPassPercent;
@@ -460,7 +456,6 @@ namespace DentalAddin
                 absSpan);
 
             DentalLogger.Log($"Composite2SplitAB - B/C 종료 +0.3mm 적용: B.Last {bLastBeforeShift:F2}->{opA.LastPassPercent:F2}, C.Last {cLastBeforeShift:F2}->{opB.LastPassPercent:F2}");
-            DentalLogger.Log($"Composite2SplitAB - B 시작 -0.4mm 적용: B.First {bFirstBeforeOverlapShift:F2}->{opB.FirstPassPercent:F2}");
             DentalLogger.Log($"Composite2SplitAB - seam 보정: A({opA.FirstPassPercent:F2}->{opA.LastPassPercent:F2}), B({opB.FirstPassPercent:F2}->{opB.LastPassPercent:F2}), seamEps={seamEpsilonPercent:F2}, BFirstGuard={startEndBFirstGuardApplied}");
 
             bool surfaceReady = TryEnsureCompositeSurfaceNumber("Composite2SplitAB");
@@ -537,27 +532,9 @@ namespace DentalAddin
                     MoveSTL_Module.FrontPointX,
                     direction,
                     absSpan);
-                if (TryResolveCompositeAFirstPassPercentByFrontFace(opA.LastPassPercent, out double singleAFirstByFacePercent, out double singleAStartX))
-                {
-                    opA.FirstPassPercent = singleAFirstByFacePercent;
-                    DentalLogger.Log($"Composite2SplitAB - Single-A 시작점(FrontFace-0.4) 적용: StartX={singleAStartX:F3}, FirstPass={opA.FirstPassPercent:F2}, LastPass={opA.LastPassPercent:F2}");
-                }
-                else
-                {
-                    opA.FirstPassPercent = Clamp(opA.FirstPassPercent, 0.0, opA.LastPassPercent);
-                }
-
-                // 요청사항: Single-A 경로의 최종 B(=opA) 시작점도 -0.4mm 이동해 Face/A와 겹침 유지
-                double singleBFirstBeforeOverlapShift = opA.FirstPassPercent;
-                opA.FirstPassPercent = ShiftPassPercentByXOffsetMm(
-                    opA.FirstPassPercent,
-                    -compositeBStartOverlapMm,
-                    0.0,
-                    opA.LastPassPercent,
-                    MoveSTL_Module.FrontPointX,
-                    direction,
-                    absSpan);
-                DentalLogger.Log($"Composite2SplitAB - Single-A B 시작 -0.4mm 적용: B.First {singleBFirstBeforeOverlapShift:F2}->{opA.FirstPassPercent:F2}");
+                // 사용자 요청: Single-A 최종 Composite_B(=opA) 시작점도 0% 고정
+                opA.FirstPassPercent = 0.0;
+                DentalLogger.Log($"Composite2SplitAB - Single-A B 시작점 0% 고정 적용: FirstPass={opA.FirstPassPercent:F2}, LastPass={opA.LastPassPercent:F2}");
 
                 DentalLogger.Log($"Composite2SplitAB - Single-A 모드 적용: A({opA.FirstPassPercent:F2}->{opA.LastPassPercent:F2}), B기준종료+0.3mm({singleBLastBeforeShift:F2}->{opA.LastPassPercent:F2}), B 기본 Add 생략, C사용={hasRightExtensionSegment}, env=ABUTS_COMPOSITE_SINGLE_A_ENABLE(raw='{singleARaw ?? ""}')");
 
@@ -566,8 +543,8 @@ namespace DentalAddin
                 TrySetCompositeStockAllowance(opA, "A");
                 DentalLogger.Log("Composite2SplitAB - Single-A StepIncrement/StockAllowance 적용 완료");
 
-                // 신규 A 추가: Front Face 구간과 Composite B(opB) 구간의 겹치는 영역만 가공
-                if (!newAPreAdded)
+                // 신규 A(NewA) 비활성화 정책: 생성하지 않는다.
+                if (!DisableCompositeNewA && !newAPreAdded)
                 {
                     if (TryResolveCompositeNewALeftRange(opB.FirstPassPercent, opB.LastPassPercent, out double newAFirstSingle, out double newALastSingle))
                     {
@@ -586,7 +563,7 @@ namespace DentalAddin
                             opANewSingle.DriveSurface = opA.DriveSurface;
                             opANewSingle.ToolID = !string.IsNullOrWhiteSpace(opA.ToolID) ? opA.ToolID : ToolNs;
                             TrySetCompositeStepIncrement(opANewSingle, "A");
-                            TrySetCompositeStockAllowance(opANewSingle, "A");
+                            TrySetCompositeStockAllowance(opANewSingle, "A-New");
 
                             int beforeAddNewASingle = Document?.Operations?.Count ?? -1;
                             TryDisableCompositeDynamicIfRequested(opANewSingle, "A-New:Single");
@@ -608,7 +585,7 @@ namespace DentalAddin
                 }
                 else
                 {
-                    DentalLogger.Log("Composite2SplitAB - Single-A 경로 신규 A는 선행 실행 완료되어 중복 생략");
+                    DentalLogger.Log("Composite2SplitAB - Single-A 경로 신규 A 비활성화(DisableCompositeNewA=true)로 생성 생략");
                 }
 
                 if (newAOnlyMode)
@@ -699,8 +676,8 @@ namespace DentalAddin
             int beforeAddCount = Document?.Operations?.Count ?? -1;
             DentalLogger.Log($"Composite2SplitAB - Operation 추가 시작 (beforeCount={beforeAddCount})");
 
-            // 신규 A 추가: Front Face 구간과 Composite B(opB) 구간의 겹치는 영역만 가공
-            if (!newAPreAdded && !newAAddedThisCall)
+            // 신규 A(NewA) 비활성화 정책: 생성하지 않는다.
+            if (!DisableCompositeNewA && !newAPreAdded && !newAAddedThisCall)
             {
                 if (TryResolveCompositeNewALeftRange(opB.FirstPassPercent, opB.LastPassPercent, out double newAFirst, out double newALast))
                 {
@@ -719,7 +696,7 @@ namespace DentalAddin
                         opANew.DriveSurface = opA.DriveSurface;
                         opANew.ToolID = !string.IsNullOrWhiteSpace(opA.ToolID) ? opA.ToolID : ToolNs;
                         TrySetCompositeStepIncrement(opANew, "A");
-                        TrySetCompositeStockAllowance(opANew, "A");
+                        TrySetCompositeStockAllowance(opANew, "A-New");
 
                         int beforeAddNewA = Document?.Operations?.Count ?? -1;
                         TryDisableCompositeDynamicIfRequested(opANew, "A-New");
@@ -741,7 +718,7 @@ namespace DentalAddin
             }
             else
             {
-                DentalLogger.Log("Composite2SplitAB - 신규 A는 선행 실행 완료되어 중복 생략");
+                DentalLogger.Log("Composite2SplitAB - 신규 A 비활성화(DisableCompositeNewA=true)로 생성 생략");
             }
 
             if (newAOnlyMode)
@@ -1055,9 +1032,10 @@ namespace DentalAddin
             }
         }
 
-        // Front Face 고정 절삭 깊이(mm)
-        // 사용자 요청: Front Face는 % 개념이 아니라 절대 깊이 1.0mm로 가공한다.
+        // Front Face 기본 절삭 깊이(mm)
+        // 우선순위: PRC BottomZLimit(절대값) > 기본값
         private const double FrontFaceFixedDepthMm = 1.0;
+        private static double LastAppliedFrontFaceDepthMm = FrontFaceFixedDepthMm;
 
         // Face(EM2_0BALL) 안전가드 상수:
         // Rough_A 우측 끝보다 Face 우측 끝이 우측으로 더 나가면 공구 파손 위험이 있어,
@@ -1072,9 +1050,9 @@ namespace DentalAddin
         // (Front Face가 기본 1.0mm 또는 Rough 안전가드로 더 얕아진 경우를 모두 반영)
         private const double CompositeAStartLeftFromFrontFaceMm = 0.4;
 
-        // NewA 계산 시 Face∩B가 점으로 수렴하면 NewA가 사라질 수 있어,
-        // seam 근처에서 Front 내부 방향으로 최소 폭 fallback을 부여한다.
-        private const double CompositeNewASeamFallbackWidthMm = 0.15;
+        // 사용자 요청: 5axis_Composite_A(NewA) 툴패스 비활성화
+        // true면 NewA 생성 경로를 전부 건너뛴다.
+        private static readonly bool DisableCompositeNewA = true;
 
         // 사용자 요청: 신규 5Axis_Composite_A 범위는 Face 시작점~Face 끝점과 동일
 
@@ -1117,7 +1095,7 @@ namespace DentalAddin
         }
 
         /// <summary>
-        /// Front Face(ParallelPlanes) 가공 깊이를 고정 1.0mm로 적용한다.
+        /// Front Face(ParallelPlanes) 가공 깊이를 PRC BottomZLimit(절대값) 기준으로 적용한다.
         /// - RL=1: BottomZLimit = -(FrontPointX + depth)
         /// - RL=2: BottomZLimit = +(FrontPointX - depth)
         /// 주의: 이 설정 이후에 Rough 안전가드(TryApplyFaceRightEndGuard)가 추가 보정할 수 있다.
@@ -1134,26 +1112,36 @@ namespace DentalAddin
                 double oldTop = faceOp.TopZLimit;
                 double oldBottom = faceOp.BottomZLimit;
 
+                // PRC의 BottomZLimit 절대값을 우선 사용한다. (예: 0.5)
+                double configuredDepthMm = Math.Abs(oldBottom);
+                if (double.IsNaN(configuredDepthMm) || double.IsInfinity(configuredDepthMm) || configuredDepthMm < 1e-6)
+                {
+                    configuredDepthMm = FrontFaceFixedDepthMm;
+                    DentalLogger.Log($"FrontFaceDepth[{context}] - PRC BottomZLimit이 유효하지 않아 기본깊이 fallback 사용: {configuredDepthMm:F3}mm");
+                }
+
+                LastAppliedFrontFaceDepthMm = configuredDepthMm;
+
                 if (RL == 1.0)
                 {
                     faceOp.TopZLimit = 1.0;
-                    faceOp.BottomZLimit = -1.0 * (MoveSTL_Module.FrontPointX + FrontFaceFixedDepthMm);
+                    faceOp.BottomZLimit = -1.0 * (MoveSTL_Module.FrontPointX + configuredDepthMm);
                 }
                 else if (RL == 2.0)
                 {
-                    faceOp.BottomZLimit = 1.0 * (MoveSTL_Module.FrontPointX - FrontFaceFixedDepthMm);
+                    faceOp.BottomZLimit = 1.0 * (MoveSTL_Module.FrontPointX - configuredDepthMm);
                     faceOp.TopZLimit = 1.0;
                 }
                 else
                 {
                     // RL 비정상 값은 기존 default 흐름을 해치지 않기 위해 RL=1 기준으로 처리
                     faceOp.TopZLimit = 1.0;
-                    faceOp.BottomZLimit = -1.0 * (MoveSTL_Module.FrontPointX + FrontFaceFixedDepthMm);
+                    faceOp.BottomZLimit = -1.0 * (MoveSTL_Module.FrontPointX + configuredDepthMm);
                     DentalLogger.Log($"FrontFaceDepth[{context}] - RL 비정상({RL}), RL=1 기준으로 적용");
                 }
 
                 double faceRightX = (RL == 1.0) ? -faceOp.BottomZLimit : faceOp.BottomZLimit;
-                DentalLogger.Log($"FrontFaceDepth[{context}] - 고정깊이 적용: depth={FrontFaceFixedDepthMm:F3}mm, TopZ:{oldTop:F3}->{faceOp.TopZLimit:F3}, BottomZ:{oldBottom:F3}->{faceOp.BottomZLimit:F3}, Face.RightX={faceRightX:F3}");
+                DentalLogger.Log($"FrontFaceDepth[{context}] - PRC깊이 적용: depth={configuredDepthMm:F3}mm, TopZ:{oldTop:F3}->{faceOp.TopZLimit:F3}, BottomZ:{oldBottom:F3}->{faceOp.BottomZLimit:F3}, Face.RightX={faceRightX:F3}");
             }
             catch (Exception ex)
             {
@@ -1216,7 +1204,7 @@ namespace DentalAddin
         /// </summary>
         private static double ResolveFrontFaceRightXForCompositeStart()
         {
-            double faceRightX = MoveSTL_Module.FrontPointX + FrontFaceFixedDepthMm;
+            double faceRightX = MoveSTL_Module.FrontPointX + LastAppliedFrontFaceDepthMm;
 
             if (TryGetRoughARightEndX(out double roughARightX, out double _))
             {
@@ -1232,7 +1220,7 @@ namespace DentalAddin
 
         /// <summary>
         /// 사용자 요청 반영:
-        /// Composite A 시작점(X) = Front Face 우측 끝(X) - 0.4mm
+        /// Composite B(내부 opA) 시작점(X) = Front Face 우측 끝(X) 기준 내부방향 0.4mm
         /// 반환값은 Start/End pass-percent(0~100) 기준이다.
         /// </summary>
         private static bool TryResolveCompositeAFirstPassPercentByFrontFace(double maxPercent, out double firstPassPercent, out double targetStartX)
@@ -1242,7 +1230,9 @@ namespace DentalAddin
 
             try
             {
-                double span = MoveSTL_Module.BackPointX - MoveSTL_Module.FrontPointX;
+                double frontX = MoveSTL_Module.FrontPointX;
+                double backX = MoveSTL_Module.BackPointX;
+                double span = backX - frontX;
                 double absSpan = Math.Abs(span);
                 if (absSpan < 1e-6)
                 {
@@ -1251,20 +1241,32 @@ namespace DentalAddin
 
                 double direction = span >= 0 ? 1.0 : -1.0;
                 double faceRightX = ResolveFrontFaceRightXForCompositeStart();
-                // 안전조건: Composite A 시작점은 X<0으로 내려가지 않도록 하한을 0.0으로 고정
-                targetStartX = Math.Max(0.0, faceRightX - CompositeAStartLeftFromFrontFaceMm);
 
-                double ratio = (targetStartX - MoveSTL_Module.FrontPointX) / (direction * absSpan);
+                // 진행 방향을 고려해 Face 우측 끝에서 내부 방향(-0.4mm)으로 시작점을 이동한다.
+                // (direction>0: X 감소, direction<0: X 증가)
+                double rawTargetStartX = faceRightX - direction * CompositeAStartLeftFromFrontFaceMm;
+                if (direction > 0)
+                {
+                    targetStartX = Clamp(rawTargetStartX, frontX, backX);
+                }
+                else
+                {
+                    targetStartX = Clamp(rawTargetStartX, backX, frontX);
+                }
+
+                double ratio = (targetStartX - frontX) / (direction * absSpan);
                 if (double.IsNaN(ratio) || double.IsInfinity(ratio))
                 {
                     return false;
                 }
 
                 firstPassPercent = Clamp(ratio * 100.0, 0.0, Math.Max(0.0, maxPercent));
+                DentalLogger.Log($"Composite2SplitAB - B 시작점 계산(Face-0.4): faceRightX={faceRightX:F3}, targetStartX={targetStartX:F3}, direction={direction:F0}, FirstPass={firstPassPercent:F2}, max={maxPercent:F2}");
                 return true;
             }
-            catch
+            catch (Exception ex)
             {
+                DentalLogger.Log($"Composite2SplitAB - B 시작점 계산 실패(Face-0.4): {ex.GetType().Name}:{ex.Message}");
                 return false;
             }
         }
@@ -1390,17 +1392,17 @@ namespace DentalAddin
                 double faceStartX = MoveSTL_Module.FrontPointX;
                 double faceRightX = ResolveFrontFaceRightXForCompositeStart();
 
-                // 중요: 화면에서 보이는 FrontFace 툴패스 유효 끝을 기준으로 교집합을 계산한다.
-                // (형상 경계(faceRightX) 그대로 쓰면 A가 Front 우측으로 과확장되어 보일 수 있음)
-                // FrontFace와 동일 기준으로 0.4mm를 빼서 pass-end를 맞춘다.
-                double facePassEndX = faceRightX - direction * CompositeAStartLeftFromFrontFaceMm;
+                // 정책 고정:
+                // - NewA(5Axis_Composite_A)는 항상 Front Face 시작~끝과 동일 범위
+                // - B 시작점 -0.4mm 정책은 별도(TryResolveCompositeAFirstPassPercentByFrontFace)에서 적용
+                double facePassEndX = faceRightX;
                 if (direction > 0)
                 {
-                    facePassEndX = Clamp(facePassEndX, faceStartX, faceRightX);
+                    facePassEndX = Clamp(facePassEndX, faceStartX, Math.Max(faceStartX, MoveSTL_Module.BackPointX));
                 }
                 else
                 {
-                    facePassEndX = Clamp(facePassEndX, faceRightX, faceStartX);
+                    facePassEndX = Clamp(facePassEndX, Math.Min(faceStartX, MoveSTL_Module.BackPointX), faceStartX);
                 }
 
                 double startRatio = (faceStartX - MoveSTL_Module.FrontPointX) / (direction * absSpan);
@@ -1410,60 +1412,20 @@ namespace DentalAddin
                     return false;
                 }
 
-                // Front Face 구간(%): [faceMin, faceMax]
                 double faceStartPercent = startRatio * 100.0;
                 double faceEndPercent = endRatio * 100.0;
-                double faceMin = Math.Min(faceStartPercent, faceEndPercent);
-                double faceMax = Math.Max(faceStartPercent, faceEndPercent);
+                newAFirstPercent = Clamp(Math.Min(faceStartPercent, faceEndPercent), 0.0, 100.0);
+                newALastPercent = Clamp(Math.Max(faceStartPercent, faceEndPercent), newAFirstPercent, 100.0);
 
-                // Composite B(opB) 구간(%): [srcMin, srcMax]
                 double srcMin = Math.Min(compositeBFirstPercent, compositeBLastPercent);
                 double srcMax = Math.Max(compositeBFirstPercent, compositeBLastPercent);
+                DentalLogger.Log($"Composite2SplitAB - NewA Face 고정범위 적용: face=[{newAFirstPercent:F2},{newALastPercent:F2}], B(ref)=[{srcMin:F2},{srcMax:F2}]");
 
-                // 요청사항: Composite A(NewA)는 Front Face와 Composite B의 교집합만 가공
-                double overlapMin = Math.Max(faceMin, srcMin);
-                double overlapMax = Math.Min(faceMax, srcMax);
-
-                // 완전 비겹침(서로 떨어져 있음)인 경우:
-                // 사용자 요청(신규 A=Face 시작~끝) 기준으로 Face 전체 구간 fallback 적용
-                if (overlapMax < overlapMin - 0.01)
-                {
-                    newAFirstPercent = Clamp(faceMin, 0.0, 100.0);
-                    newALastPercent = Clamp(faceMax, newAFirstPercent, 100.0);
-                    DentalLogger.Log($"Composite2SplitAB - NewA overlap 없음(완전 비겹침) -> Face fallback 적용: face=[{faceMin:F2},{faceMax:F2}], B=[{srcMin:F2},{srcMax:F2}], newA=[{newAFirstPercent:F2},{newALastPercent:F2}]");
-                    return newALastPercent - newAFirstPercent > 0.01;
-                }
-
-                if (overlapMax - overlapMin <= 0.01)
-                {
-                    // 교집합이 점으로 수렴하는 경우(예: faceMax == srcMin),
-                    // NewA가 완전히 사라지지 않도록 seam 직전 Front 내부에 최소 폭 fallback 적용
-                    double fallbackWidthPercent = CompositeNewASeamFallbackWidthMm / absSpan * 100.0;
-                    if (!double.IsNaN(fallbackWidthPercent) && !double.IsInfinity(fallbackWidthPercent) && fallbackWidthPercent > 0.01)
-                    {
-                        double seamPercent = Clamp(srcMin, faceMin, faceMax);
-                        double fallbackFirst = Clamp(seamPercent - fallbackWidthPercent, faceMin, seamPercent);
-                        double fallbackLast = seamPercent;
-                        if (fallbackLast - fallbackFirst > 0.01)
-                        {
-                            newAFirstPercent = Clamp(fallbackFirst, 0.0, 100.0);
-                            newALastPercent = Clamp(fallbackLast, newAFirstPercent, 100.0);
-                            DentalLogger.Log($"Composite2SplitAB - NewA overlap 점수렴 fallback 적용: face=[{faceMin:F2},{faceMax:F2}], B=[{srcMin:F2},{srcMax:F2}], seam={seamPercent:F2}, fallback=[{newAFirstPercent:F2},{newALastPercent:F2}], widthMm={CompositeNewASeamFallbackWidthMm:F2}");
-                            return true;
-                        }
-                    }
-
-                    DentalLogger.Log($"Composite2SplitAB - NewA overlap 미소: face=[{faceMin:F2},{faceMax:F2}], B=[{srcMin:F2},{srcMax:F2}], overlap=[{overlapMin:F2},{overlapMax:F2}]");
-                    return false;
-                }
-
-                newAFirstPercent = Clamp(overlapMin, 0.0, 100.0);
-                newALastPercent = Clamp(overlapMax, newAFirstPercent, 100.0);
-                DentalLogger.Log($"Composite2SplitAB - NewA overlap 적용: face=[{faceMin:F2},{faceMax:F2}], B=[{srcMin:F2},{srcMax:F2}], overlap=[{newAFirstPercent:F2},{newALastPercent:F2}]");
                 return newALastPercent - newAFirstPercent > 0.01;
             }
-            catch
+            catch (Exception ex)
             {
+                DentalLogger.Log($"Composite2SplitAB - NewA Face 고정범위 계산 실패: {ex.GetType().Name}:{ex.Message}");
                 return false;
             }
         }
