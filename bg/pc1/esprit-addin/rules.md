@@ -21,10 +21,23 @@
   - 규칙: `(roughAEndX - faceRightX) < 0.3mm` 이면 `faceRightX = roughAEndX - 0.3mm`로 보정
   - 적용 위치: `MainModuleComposite.TryApplyFaceRightEndGuard` (실행 지점: `FrontFaceMill`, `TryRunFreeFormMillSafe`)
 
-## 3. 정리 원칙
+## 3. 이번 세션 리팩터링 기록 (2026-06-20)
+
+- `Composite B/C 종료`, `D 시작` 같은 경계 변경은 `TryRunComposite2SplitAB` 내부 숫자 수정으로 끝내지 않고,
+  **mm→pass-percent 변환 헬퍼**(`ShiftPassPercentByXOffsetMm`)로 통일 적용한다.
+- `D`가 Operation 목록에는 있으나 툴패스가 사라지는 경우(시작=끝)는
+  **최소 폭 보장 헬퍼**(`EnsureStartHasMinWidthPercent`)를 통해 해결한다.
+- Turn_B와 Connection 경계 기준 수정 시,
+  `ResolveTurnConnectionBoundaryX`에 우선순위를 집중 관리한다 (`EndXValue` → `FinishLineX` → `BackPointX`).
+- `5axis_Composite_A(NewA)` 비활성 정책 변경 시,
+  `TryRunComposite2NewABeforeTurnB` + `TryRunComposite2SplitAB` 내부 NewA 경로를 같이 정리해
+  도달 불가 코드 경고(CS0162)가 남지 않게 한다.
+
+## 4. 정리 원칙
 
 - 전체 정책은 루트 `rules.md`에서 관리합니다.
 - 이 파일에는 Esprit 로컬 초기화와 디버깅 메모만 남깁니다.
 - 코드 리팩터링/수정 시 주석을 꼼꼼히 작성합니다.
+- 기본 원칙(명시): **"다시 찾을 때 헷갈리지않게 코드에 항상 꼼꼼하게 주석을 기록한다"**.
 - `rules.md`에 없는 구현/운영 규칙이 나오면 본 파일에 즉시 추가합니다.
 - 기존 rules와 충돌 가능성이 있는 요청이 들어오면, 먼저 사용자 확인(컨펌)을 받은 뒤 진행합니다.

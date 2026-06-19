@@ -201,7 +201,11 @@ namespace DentalAddin
             double backXForComposite = turnConnectionBoundaryX + rightOffset;
             double baseBackRatio = turnConnectionBoundaryX / 20.0;
             double rightRatio = backXForComposite / 20.0;
+            // D(B-Extension) 끝점은 Turn 경계 클램프와 분리해 물리 우측 꼬리(BackPointX+rightOffset) 기준으로 사용한다.
+            double physicalBackXForExtension = MoveSTL_Module.BackPointX + rightOffset;
+            double physicalRightRatioForExtension = physicalBackXForExtension / 20.0;
             rightRatio = Clamp(rightRatio, leftRatio, 1.0);
+            physicalRightRatioForExtension = Clamp(physicalRightRatioForExtension, leftRatio, 1.0);
             baseBackRatio = Clamp(baseBackRatio, leftRatio, rightRatio);
             double span = MoveSTL_Module.BackPointX - MoveSTL_Module.FrontPointX;
             double absSpan = Math.Abs(span);
@@ -215,12 +219,14 @@ namespace DentalAddin
             double firstPercent = Clamp(leftRatio * 100.0, 0.0, 100.0);
             double baseBackPercent = Clamp(baseBackRatio * 100.0, firstPercent, 100.0);
             double lastPercent = Clamp(rightRatio * 100.0, firstPercent, 100.0);
+            double extensionRawLastPercent = Clamp(physicalRightRatioForExtension * 100.0, firstPercent, 100.0);
 
             // Last(우측 끝) 기본값은 원계산(raw)을 사용한다.
             // 필요 시에만 env로 상한 클램프를 건다: ABUTS_COMPOSITE_STARTEND_SAFE_LAST_PERCENT
             // (예: 60.98). env 미지정이면 클램프하지 않는다.
             double effectiveLastPercent = lastPercent;
             double effectiveBaseBackPercent = baseBackPercent;
+            double extensionEffectiveLastPercent = extensionRawLastPercent;
             bool startEndOverflowGuardApplied = false;
             double? safeLastPercentOpt = GetEnvDoubleNullable("ABUTS_COMPOSITE_STARTEND_SAFE_LAST_PERCENT");
             if (safeLastPercentOpt.HasValue)
@@ -232,7 +238,7 @@ namespace DentalAddin
                     // B-Extension 폭(약 0.5%)을 유지하도록 커넥션 시작점을 안전 상한 바로 좌측으로 재배치한다.
                     effectiveBaseBackPercent = Clamp(effectiveLastPercent - 0.5, firstPercent, effectiveLastPercent);
                     startEndOverflowGuardApplied = true;
-                    DentalLogger.Log($"Composite2SplitAB - StartEnd 안전클램프 적용: rawLast={lastPercent:F2}, safeLast={effectiveLastPercent:F2}, rawBaseBack={baseBackPercent:F2}, safeBaseBack={effectiveBaseBackPercent:F2}, env=ABUTS_COMPOSITE_STARTEND_SAFE_LAST_PERCENT");
+                    DentalLogger.Log($"Composite2SplitAB - StartEnd 안전클램프 적용: rawLast={lastPercent:F2}, safeLast={effectiveLastPercent:F2}, rawBaseBack={baseBackPercent:F2}, safeBaseBack={effectiveBaseBackPercent:F2}, extLast(raw/eff)={extensionRawLastPercent:F2}/{extensionEffectiveLastPercent:F2}, env=ABUTS_COMPOSITE_STARTEND_SAFE_LAST_PERCENT");
                 }
             }
 
@@ -352,6 +358,7 @@ namespace DentalAddin
                 : firstPercent;
 
             const double seamEpsilonPercent = 0.05;
+            const double compositeBcdBoundaryShiftMm = 0.3; // 요청사항: B/C 종료 +0.3mm
 
             // B 시작 퍼센트 상한(안전값) 적용
             double splitPercentForA = splitPercent;
@@ -379,14 +386,14 @@ namespace DentalAddin
                 || string.Equals(bExtEnableRaw, "1", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(bExtEnableRaw, "true", StringComparison.OrdinalIgnoreCase);
 
-            bool hasRightExtensionSegmentCandidate = rightOffset > 0.0 && effectiveLastPercent - effectiveBaseBackPercent > 0.01;
+            bool hasRightExtensionSegmentCandidate = rightOffset > 0.0 && extensionEffectiveLastPercent - effectiveBaseBackPercent > 0.01;
             bool hasRightExtensionSegment = bExtensionEnabled && hasRightExtensionSegmentCandidate;
-            double extensionStartPercent = Clamp(effectiveBaseBackPercent, splitPercent, effectiveLastPercent);
+            double extensionStartPercent = Clamp(effectiveBaseBackPercent, splitPercent, extensionEffectiveLastPercent);
 
             // 요청사항: B와 C(B-Extension)가 닿는 경계를 1피치(=rightOffset 비율) 왼쪽으로 이동.
             // rightOffset(mm) -> pass-percent 변환: (rightOffset / 20.0) * 100.0
             double onePitchPercent = Math.Abs(rightOffset) / 20.0 * 100.0;
-            double extensionContactPercent = Clamp(extensionStartPercent - onePitchPercent, splitPercent, effectiveLastPercent);
+            double extensionContactPercent = Clamp(extensionStartPercent - onePitchPercent, splitPercent, extensionEffectiveLastPercent);
 
             if (hasRightExtensionSegment)
             {
@@ -424,6 +431,28 @@ namespace DentalAddin
                 DentalLogger.Log($"Composite2SplitAB - A 시작점 계산 실패, 기본 FirstPass 사용: {opA.FirstPassPercent:F2}");
             }
 
+            // 요청사항: Composite B(=opA) 종료, C(=opB) 종료를 현재 위치 +0.3mm로 이동
+            double bLastBeforeShift = opA.LastPassPercent;
+            opA.LastPassPercent = ShiftPassPercentByXOffsetMm(
+                opA.LastPassPercent,
+                compositeBcdBoundaryShiftMm,
+                opA.FirstPassPercent,
+                effectiveLastPercent,
+                MoveSTL_Module.FrontPointX,
+                direction,
+                absSpan);
+
+            double cLastBeforeShift = opB.LastPassPercent;
+            opB.LastPassPercent = ShiftPassPercentByXOffsetMm(
+                opB.LastPassPercent,
+                compositeBcdBoundaryShiftMm,
+                opB.FirstPassPercent,
+                effectiveLastPercent,
+                MoveSTL_Module.FrontPointX,
+                direction,
+                absSpan);
+
+            DentalLogger.Log($"Composite2SplitAB - B/C 종료 +0.3mm 적용: B.Last {bLastBeforeShift:F2}->{opA.LastPassPercent:F2}, C.Last {cLastBeforeShift:F2}->{opB.LastPassPercent:F2}");
             DentalLogger.Log($"Composite2SplitAB - seam 보정: A({opA.FirstPassPercent:F2}->{opA.LastPassPercent:F2}), B({opB.FirstPassPercent:F2}->{opB.LastPassPercent:F2}), seamEps={seamEpsilonPercent:F2}, BFirstGuard={startEndBFirstGuardApplied}");
 
             bool surfaceReady = TryEnsureCompositeSurfaceNumber("Composite2SplitAB");
@@ -490,6 +519,16 @@ namespace DentalAddin
                     singleALastPassPercent = opB.LastPassPercent;
                 }
                 opA.LastPassPercent = singleALastPassPercent;
+                // 요청사항: Single-A에서도 Composite B(=opA) 종료를 +0.3mm 이동
+                double singleBLastBeforeShift = opA.LastPassPercent;
+                opA.LastPassPercent = ShiftPassPercentByXOffsetMm(
+                    opA.LastPassPercent,
+                    compositeBcdBoundaryShiftMm,
+                    opA.FirstPassPercent,
+                    effectiveLastPercent,
+                    MoveSTL_Module.FrontPointX,
+                    direction,
+                    absSpan);
                 if (TryResolveCompositeAFirstPassPercentByFrontFace(opA.LastPassPercent, out double singleAFirstByFacePercent, out double singleAStartX))
                 {
                     opA.FirstPassPercent = singleAFirstByFacePercent;
@@ -499,7 +538,7 @@ namespace DentalAddin
                 {
                     opA.FirstPassPercent = Clamp(opA.FirstPassPercent, 0.0, opA.LastPassPercent);
                 }
-                DentalLogger.Log($"Composite2SplitAB - Single-A 모드 적용: A({opA.FirstPassPercent:F2}->{opA.LastPassPercent:F2}), B 기본 Add 생략, C사용={hasRightExtensionSegment}, env=ABUTS_COMPOSITE_SINGLE_A_ENABLE(raw='{singleARaw ?? ""}')");
+                DentalLogger.Log($"Composite2SplitAB - Single-A 모드 적용: A({opA.FirstPassPercent:F2}->{opA.LastPassPercent:F2}), B기준종료+0.3mm({singleBLastBeforeShift:F2}->{opA.LastPassPercent:F2}), B 기본 Add 생략, C사용={hasRightExtensionSegment}, env=ABUTS_COMPOSITE_SINGLE_A_ENABLE(raw='{singleARaw ?? ""}')");
 
                 DentalLogger.Log("Composite2SplitAB - Single-A StepIncrement/StockAllowance 적용 시작");
                 TrySetCompositeStepIncrement(opA, "A");
@@ -592,8 +631,11 @@ namespace DentalAddin
                         {
                             bExtFirstSingle = Clamp(extensionContactPercent + seamEpsilonPercent, firstPercent, effectiveLastPercent);
                         }
-                        opBExtensionSingle.FirstPassPercent = bExtFirstSingle;
-                        opBExtensionSingle.LastPassPercent = effectiveLastPercent;
+                        // 요청사항: D는 B/C 끝점에서 시작(겹침 방지)
+                        // Single-A 경로에서는 선행 공정 B가 opA이므로 D 시작을 opA.Last에 맞춘다.
+                        double dFirstBeforeShiftSingle = bExtFirstSingle;
+                        opBExtensionSingle.FirstPassPercent = Clamp(opA.LastPassPercent, firstPercent, extensionEffectiveLastPercent);
+                        opBExtensionSingle.LastPassPercent = extensionEffectiveLastPercent;
                         opBExtensionSingle.DriveSurface = opA.DriveSurface;
                         opBExtensionSingle.ToolID = !string.IsNullOrWhiteSpace(opA.ToolID) ? opA.ToolID : ToolNs;
                         TrySetCompositeStockAllowance(opBExtensionSingle, "B-Extension");
@@ -604,7 +646,7 @@ namespace DentalAddin
                             TryAddOperation(opBExtensionSingle, freeFormFeature, "Composite2SplitAB:A:Single:B:Extension", false);
                             TryAppendCompositeSuffixToNewOperations(beforeBExtSingle, "B-Extension");
                             int afterBExtSingle = Document?.Operations?.Count ?? -1;
-                            DentalLogger.Log($"Composite2SplitAB - Single-A 경로 B-Extension 추가 완료 (afterCount={afterBExtSingle})");
+                            DentalLogger.Log($"Composite2SplitAB - Single-A 경로 B-Extension 추가 완료 (D.Start=B.End: {dFirstBeforeShiftSingle:F2}->{opBExtensionSingle.FirstPassPercent:F2}, afterCount={afterBExtSingle})");
                         }
                         catch (Exception exBExtSingle)
                         {
@@ -732,8 +774,11 @@ namespace DentalAddin
                     {
                         bExtFirst = Clamp(extensionContactPercent + seamEpsilonPercent, firstPercent, effectiveLastPercent);
                     }
-                    opBExtension.FirstPassPercent = bExtFirst;
-                    opBExtension.LastPassPercent = effectiveLastPercent;
+                    // 요청사항: D는 B/C 끝점에서 시작(겹침 방지)
+                    // AB 경로에서는 선행 공정 C가 opB이므로 D 시작을 opB.Last에 맞춘다.
+                    double dFirstBeforeShift = bExtFirst;
+                    opBExtension.FirstPassPercent = Clamp(opB.LastPassPercent, firstPercent, extensionEffectiveLastPercent);
+                    opBExtension.LastPassPercent = extensionEffectiveLastPercent;
                     opBExtension.DriveSurface = opA.DriveSurface;
                     opBExtension.ToolID = !string.IsNullOrWhiteSpace(opB.ToolID) ? opB.ToolID : opA.ToolID;
                     TrySetCompositeStockAllowance(opBExtension, "B-Extension");
@@ -744,7 +789,7 @@ namespace DentalAddin
                         TryAddOperation(opBExtension, freeFormFeature, "Composite2SplitAB:B:Extension", false);
                         TryAppendCompositeSuffixToNewOperations(beforeBExt, "B-Extension");
                         int afterBExt = Document?.Operations?.Count ?? -1;
-                        DentalLogger.Log($"Composite2SplitAB - Operation 추가 완료: B-Extension (afterCount={afterBExt})");
+                        DentalLogger.Log($"Composite2SplitAB - Operation 추가 완료: B-Extension (D.Start=C.End: {dFirstBeforeShift:F2}->{opBExtension.FirstPassPercent:F2}, afterCount={afterBExt})");
                     }
                     catch (Exception extAddEx)
                     {
@@ -1672,6 +1717,35 @@ namespace DentalAddin
                 DentalLogger.Log($"TwoPhaseSplitGuideLine 생성 실패: {ex.GetType().Name}:{ex.Message}");
             }
         }
+
+        private static double ShiftPassPercentByXOffsetMm(
+            double passPercent,
+            double offsetMm,
+            double minPercent,
+            double maxPercent,
+            double frontX,
+            double direction,
+            double absSpan)
+        {
+            if (double.IsNaN(passPercent) || double.IsInfinity(passPercent))
+            {
+                return Clamp(minPercent, minPercent, maxPercent);
+            }
+
+            if (Math.Abs(absSpan) < 1e-6 || Math.Abs(direction) < 1e-9)
+            {
+                return Clamp(passPercent, minPercent, maxPercent);
+            }
+
+            double ratio = passPercent / 100.0;
+            double x = frontX + direction * absSpan * ratio;
+            double shiftedX = x + offsetMm;
+            double shiftedRatio = (shiftedX - frontX) / (direction * absSpan);
+            double shiftedPercent = shiftedRatio * 100.0;
+            return Clamp(shiftedPercent, minPercent, maxPercent);
+        }
+
+
 
         // Turn_B와 Connection 경계 X를 공정 결과 기준으로 해석한다.
         // 우선순위:
