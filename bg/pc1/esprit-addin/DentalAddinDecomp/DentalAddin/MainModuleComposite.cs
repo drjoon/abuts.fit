@@ -189,11 +189,17 @@ namespace DentalAddin
             bool newAPreAdded = string.Equals(newAPreAddedRaw, "1", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(newAPreAddedRaw, "true", StringComparison.OrdinalIgnoreCase);
             bool newAAddedThisCall = false;
+            if (DisableCompositeNewA && newAOnlyMode)
+            {
+                DentalLogger.Log("Composite2SplitAB - NewAOnly 요청이나 DisableCompositeNewA=true 이므로 NewA 생성 없이 종료");
+                return true;
+            }
 
             const double leftRatio = AppConfig.DefaultLeftRatio;
             double rightOffset = AppConfig.DefaultRightRatioOffset;
-            double backXForComposite = MoveSTL_Module.BackPointX + rightOffset;
-            double baseBackRatio = MoveSTL_Module.BackPointX / 20.0;
+            double turnConnectionBoundaryX = ResolveTurnConnectionBoundaryX("Composite2SplitAB");
+            double backXForComposite = turnConnectionBoundaryX + rightOffset;
+            double baseBackRatio = turnConnectionBoundaryX / 20.0;
             double rightRatio = backXForComposite / 20.0;
             rightRatio = Clamp(rightRatio, leftRatio, 1.0);
             baseBackRatio = Clamp(baseBackRatio, leftRatio, rightRatio);
@@ -334,7 +340,7 @@ namespace DentalAddin
                 return false;
             }
 
-            DentalLogger.Log($"Composite2SplitAB - 시작: FrontPointX={MoveSTL_Module.FrontPointX:F3}, BackPointX={MoveSTL_Module.BackPointX:F3}, FinishLineTopZ={MoveSTL_Module.FinishLineTopZ:F3}, SurfaceNumber={SurfaceNumber}, ToolNs='{ToolNs ?? ""}'");
+            DentalLogger.Log($"Composite2SplitAB - 시작: FrontPointX={MoveSTL_Module.FrontPointX:F3}, BackPointX={MoveSTL_Module.BackPointX:F3}, TurnConnBoundaryX={turnConnectionBoundaryX:F3}, FinishLineX={MoveSTL_Module.FinishLineX:F3}, FinishLineTopZ={MoveSTL_Module.FinishLineTopZ:F3}, SurfaceNumber={SurfaceNumber}, ToolNs='{ToolNs ?? ""}'");
 
             opA.PassPosition = espMill5xCompositePassPosition.espMill5xCompositePassPositionStartEndPosition;
             // B는 A 오른쪽 구간부터 커넥션까지를 정확히 공간 기준으로 가공해야 하므로
@@ -501,7 +507,7 @@ namespace DentalAddin
                 DentalLogger.Log("Composite2SplitAB - Single-A StepIncrement/StockAllowance 적용 완료");
 
                 // 신규 A 추가: Front Face 구간과 Composite B(opB) 구간의 겹치는 영역만 가공
-                if (!newAPreAdded)
+                if (!DisableCompositeNewA && !newAPreAdded)
                 {
                     if (TryResolveCompositeNewALeftRange(opB.FirstPassPercent, opB.LastPassPercent, out double newAFirstSingle, out double newALastSingle))
                     {
@@ -542,7 +548,14 @@ namespace DentalAddin
                 }
                 else
                 {
-                    DentalLogger.Log("Composite2SplitAB - Single-A 경로 신규 A는 선행 실행 완료되어 중복 생략");
+                    if (DisableCompositeNewA)
+                    {
+                        DentalLogger.Log("Composite2SplitAB - Single-A 경로 신규 A 비활성화(DisableCompositeNewA=true)로 생성 생략");
+                    }
+                    else
+                    {
+                        DentalLogger.Log("Composite2SplitAB - Single-A 경로 신규 A는 선행 실행 완료되어 중복 생략");
+                    }
                 }
 
                 if (newAOnlyMode)
@@ -631,7 +644,7 @@ namespace DentalAddin
             DentalLogger.Log($"Composite2SplitAB - Operation 추가 시작 (beforeCount={beforeAddCount})");
 
             // 신규 A 추가: Front Face 구간과 Composite B(opB) 구간의 겹치는 영역만 가공
-            if (!newAPreAdded && !newAAddedThisCall)
+            if (!DisableCompositeNewA && !newAPreAdded && !newAAddedThisCall)
             {
                 if (TryResolveCompositeNewALeftRange(opB.FirstPassPercent, opB.LastPassPercent, out double newAFirst, out double newALast))
                 {
@@ -672,7 +685,14 @@ namespace DentalAddin
             }
             else
             {
-                DentalLogger.Log("Composite2SplitAB - 신규 A는 선행 실행 완료되어 중복 생략");
+                if (DisableCompositeNewA)
+                {
+                    DentalLogger.Log("Composite2SplitAB - 신규 A 비활성화(DisableCompositeNewA=true)로 생성 생략");
+                }
+                else
+                {
+                    DentalLogger.Log("Composite2SplitAB - 신규 A는 선행 실행 완료되어 중복 생략");
+                }
             }
 
             if (newAOnlyMode)
@@ -1003,6 +1023,10 @@ namespace DentalAddin
         // NewA 계산 시 Face∩B가 점으로 수렴하면 NewA가 사라질 수 있어,
         // seam 근처에서 Front 내부 방향으로 최소 폭 fallback을 부여한다.
         private const double CompositeNewASeamFallbackWidthMm = 0.15;
+
+        // 사용자 요청: 5axis_Composite_A(NewA) 툴패스 비활성화
+        // true면 NewA 생성 경로를 전부 건너뛴다.
+        private const bool DisableCompositeNewA = true;
 
         // 사용자 요청: 신규 5Axis_Composite_A 범위는 Face 시작점~Face 끝점과 동일
 
@@ -1438,12 +1462,16 @@ namespace DentalAddin
             // 좌측 시작점을 U축(x=0)로 강제
             double frontBackMin = Math.Min(MoveSTL_Module.FrontPointX, MoveSTL_Module.BackPointX);
             double xMin = Math.Min(0.0, frontBackMin);
-            double xMax = Math.Max(MoveSTL_Module.FrontPointX, MoveSTL_Module.BackPointX);
-            if (!(splitX > xMin && splitX < xMax))
+            double xMaxPhysical = Math.Max(MoveSTL_Module.FrontPointX, MoveSTL_Module.BackPointX);
+            if (!(splitX > xMin && splitX < xMaxPhysical))
             {
-                DentalLogger.Log($"RoughFreeFromMillSplitAB - splitX 범위 오류 (splitX:{splitX:0.###}, xMin:{xMin:0.###}, xMax:{xMax:0.###})");
+                DentalLogger.Log($"RoughFreeFromMillSplitAB - splitX 범위 오류 (splitX:{splitX:0.###}, xMin:{xMin:0.###}, xMaxPhysical:{xMaxPhysical:0.###})");
                 return true;
             }
+
+            // Turn_B와 동일 기준의 Connection 경계까지만 Rough_B 우측 끝을 제한한다.
+            double turnConnectionBoundaryX = ResolveTurnConnectionBoundaryX("RoughFreeFromMillSplitAB");
+            double xMax = Clamp(turnConnectionBoundaryX, xMin + 1e-6, xMaxPhysical);
 
             double radius = (Document.LatheMachineSetup.BarDiameter + 10.0) / 2.0;
             // Turn_A/Turn_B와 동일 기준으로 finishline 기준 오프셋을 맞춘다.
@@ -1467,7 +1495,7 @@ namespace DentalAddin
 
             int keyA = SafeParseKey(a1.Key);
             int keyB = SafeParseKey(b1.Key);
-            DentalLogger.Log($"RoughFreeFromMillSplitAB - splitX:{splitX:0.###}, roughAEnd:{roughAEnd:0.###}, roughBStart:{roughBStart:0.###}, AKey:{keyA}, BKey:{keyB}, PRC_A:{prcA}, PRC_B:{prcB}");
+            DentalLogger.Log($"RoughFreeFromMillSplitAB - splitX:{splitX:0.###}, roughAEnd:{roughAEnd:0.###}, roughBStart:{roughBStart:0.###}, xMaxBoundary:{xMax:0.###}, xMaxPhysical:{xMaxPhysical:0.###}, AKey:{keyA}, BKey:{keyB}, PRC_A:{prcA}, PRC_B:{prcB}");
 
             TechnologyUtility technologyUtility = (TechnologyUtility)Activator.CreateInstance(Marshal.GetTypeFromCLSID(new Guid("C30D1110-1549-48C5-84D0-F66DCAD0F16F")));
             Layer activeLayer = GetOrCreateLayer("RoughFreeFormMill");
@@ -1656,6 +1684,59 @@ namespace DentalAddin
             catch (Exception ex)
             {
                 DentalLogger.Log($"TwoPhaseSplitGuideLine 생성 실패: {ex.GetType().Name}:{ex.Message}");
+            }
+        }
+
+        // Turn_B와 Connection 경계 X를 공정 결과 기준으로 해석한다.
+        // 우선순위:
+        //   1) TurningProfile 결과 EndXValue (실제 Turn 끝 경계)
+        //   2) FinishLineX(유효 시)
+        //   3) BackPointX
+        // 목적: Rough_B/Composite_B 끝점이 Turn_B-Connection 실제 경계와 일치하도록 기준점을 통일.
+        private static double ResolveTurnConnectionBoundaryX(string context)
+        {
+            try
+            {
+                double front = MoveSTL_Module.FrontPointX;
+                double back = MoveSTL_Module.BackPointX;
+                double xMin = Math.Min(0.0, Math.Min(front, back));
+                double xMax = Math.Max(front, back);
+
+                // 1) TurningProfile 결과를 최우선 사용
+                double endX = EndXValue;
+                if (!double.IsNaN(endX) && !double.IsInfinity(endX) && Math.Abs(endX) > 1e-6)
+                {
+                    if (endX >= xMin - 0.5 && endX <= xMax + 0.5)
+                    {
+                        DentalLogger.Log($"{context} - 경계 X 선택: EndXValue={endX:F3} (Front={front:F3}, Back={back:F3})");
+                        return endX;
+                    }
+
+                    DentalLogger.Log($"{context} - EndXValue 범위 이탈({endX:F3}), 다음 후보(FinishLineX)로 진행");
+                }
+
+                // 2) FinishLineX 보조 사용
+                double finishX = MoveSTL_Module.FinishLineX;
+                if (!double.IsNaN(finishX) && !double.IsInfinity(finishX) && Math.Abs(finishX) > 1e-6)
+                {
+                    // 이동/회전 오차를 고려해 소폭 여유 범위 내면 유효로 본다.
+                    if (finishX >= xMin - 0.5 && finishX <= xMax + 0.5)
+                    {
+                        DentalLogger.Log($"{context} - 경계 X 선택: FinishLineX={finishX:F3} (Front={front:F3}, Back={back:F3})");
+                        return finishX;
+                    }
+
+                    DentalLogger.Log($"{context} - FinishLineX 범위 이탈({finishX:F3}), BackPointX 사용");
+                }
+
+                // 3) 최종 fallback
+                DentalLogger.Log($"{context} - 경계 X 선택: BackPointX={back:F3} (EndXValue={endX:F3}, FinishLineX={finishX:F3})");
+                return back;
+            }
+            catch (Exception ex)
+            {
+                DentalLogger.Log($"{context} - 경계 X 해석 실패, BackPointX fallback: {ex.GetType().Name}:{ex.Message}");
+                return MoveSTL_Module.BackPointX;
             }
         }
 

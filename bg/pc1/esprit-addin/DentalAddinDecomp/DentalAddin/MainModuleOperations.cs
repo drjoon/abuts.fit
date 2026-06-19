@@ -151,6 +151,12 @@ namespace DentalAddin
 
         private static void TryRunComposite2NewABeforeTurnB()
         {
+            if (DisableCompositeNewA)
+            {
+                DentalLogger.Log("OperationSeq - DisableCompositeNewA=true, Turn_B 직전 Composite NewA 선행 실행 스킵");
+                return;
+            }
+
             // 이미 같은 실행에서 선행 생성 완료된 경우 중복 실행 방지
             string preAdded = null;
             try { preAdded = Environment.GetEnvironmentVariable("ABUTS_COMPOSITE_NEWA_PRE_ADDED"); } catch { }

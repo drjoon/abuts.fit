@@ -2092,7 +2092,8 @@ namespace DentalAddin
             const double leftRatio = AppConfig.DefaultLeftRatio;
             // double rightOffset = (AppConfig.DefaultRightRatioOffset > 0.0) ? 0.0 : AppConfig.DefaultRightRatioOffset;
             double rightOffset = AppConfig.DefaultRightRatioOffset;
-            double backXForComposite = MoveSTL_Module.BackPointX + rightOffset;
+            double turnConnectionBoundaryX = ResolveTurnConnectionBoundaryX("Composite2");
+            double backXForComposite = turnConnectionBoundaryX + rightOffset;
             double rightRatio = backXForComposite / 20.0;
             rightRatio = Clamp(rightRatio, leftRatio, 1.0);
             double span = MoveSTL_Module.BackPointX - MoveSTL_Module.FrontPointX;
@@ -2115,7 +2116,7 @@ namespace DentalAddin
                 ? Clamp(firstPassPercentOverride.Value, 0.0, lastPercent)
                 : firstPercent;
             techLatheMill5xComposite.LastPassPercent = lastPercent;
-            DentalLogger.Log($"Composite2 - PassPercent 계산: First={techLatheMill5xComposite.FirstPassPercent:F2}%(X:{firstX:F3}), Last={lastPercent:F2}%(X:{lastX:F3}), Span:{absSpan:F3}, BackPointX:{MoveSTL_Module.BackPointX:F3}, RightOffsetUsed:{rightOffset:F3}");
+            DentalLogger.Log($"Composite2 - PassPercent 계산: First={techLatheMill5xComposite.FirstPassPercent:F2}%(X:{firstX:F3}), Last={lastPercent:F2}%(X:{lastX:F3}), Span:{absSpan:F3}, BackPointX:{MoveSTL_Module.BackPointX:F3}, TurnConnBoundaryX:{turnConnectionBoundaryX:F3}, FinishLineX:{MoveSTL_Module.FinishLineX:F3}, RightOffsetUsed:{rightOffset:F3}");
 
             techLatheMill5xComposite.DriveSurface = "19," + Conversions.ToString(SurfaceNumber);
             if (string.IsNullOrWhiteSpace(techLatheMill5xComposite.ToolID))
