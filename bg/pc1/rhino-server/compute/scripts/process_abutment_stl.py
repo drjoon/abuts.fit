@@ -1,19 +1,20 @@
 import os
 import sys
 
+import finishline_detection as finishline_detection_module
+
 # Rhino Python 환경에서 실행된다고 가정
 import Rhino
 import Rhino.FileIO
-
 from diameter_analysis import analyze_diameters
-import finishline_detection as finishline_detection_module
-
 
 _log_initialized = False
+
 
 def log(msg):
     global _log_initialized
     import datetime
+
     timestamp = datetime.datetime.now().strftime("%H:%M:%S.%f")[:-3]
     line = "[{}][abuts-rhino] {}".format(timestamp, str(msg))
     try:
@@ -26,12 +27,12 @@ def log(msg):
         bg_root = os.environ.get("BG_ROOT", r"C:\Users\user\abuts.fit\bg")
         rhino_root = os.environ.get("RHINO_ROOT", r"rhino-server\compute")
         fixed_log_path = os.path.join(bg_root, rhino_root, "logs.txt")
-        
+
         # 첫 로그 시 파일 초기화
         mode = "w" if not _log_initialized else "a"
         if not _log_initialized:
             _log_initialized = True
-        
+
         with open(fixed_log_path, mode, encoding="utf-8") as f:
             f.write(line + "\n")
     except Exception:
@@ -66,21 +67,31 @@ def _extract_request_id_from_path(p: str):
 def _detect_finish_line_latest(doc, visualize=False):
     try:
         import importlib
+
         module = importlib.reload(finishline_detection_module)
-        log("[finishline] module reloaded path={}".format(getattr(module, "__file__", "unknown")))
+        log(
+            "[finishline] module reloaded path={}".format(
+                getattr(module, "__file__", "unknown")
+            )
+        )
         return module.detect_finish_line(doc=doc, visualize=visualize)
     except Exception as e:
         log("[finishline] module reload failed, fallback cached module: " + str(e))
-        return finishline_detection_module.detect_finish_line(doc=doc, visualize=visualize)
+        return finishline_detection_module.detect_finish_line(
+            doc=doc, visualize=visualize
+        )
 
 
 def _post_finish_line(request_id: str, input_file_name: str, finish_line: dict):
     try:
         import json
+
         import System.Net.Http
         import System.Text
 
-        backend = os.environ.get("BACKEND_BASE", "https://abuts.fit/api").strip().rstrip("/")
+        backend = (
+            os.environ.get("BACKEND_BASE", "https://abuts.fit/api").strip().rstrip("/")
+        )
         url = backend + "/bg/register-finish-line"
 
         payload = {
@@ -131,6 +142,7 @@ def _post_finish_line(request_id: str, input_file_name: str, finish_line: dict):
     except Exception as e:
         log("finishline post failed: " + str(e))
 
+
 def _count_naked_edges(mesh):
     try:
         edges = mesh.GetNakedEdges()
@@ -164,7 +176,9 @@ def _safe_int(value, default):
         return default
 
 
-_FILL_TARGET_LIMIT = max(1, _safe_int(os.environ.get("ABUTS_FILL_TARGET_LIMIT", "3"), 3))
+_FILL_TARGET_LIMIT = max(
+    1, _safe_int(os.environ.get("ABUTS_FILL_TARGET_LIMIT", "3"), 3)
+)
 
 
 def _get_mesh_objects(doc):
@@ -238,6 +252,70 @@ def _collect_mesh_infos(doc):
     return infos
 
 
+def _log_doc_mesh_stats(doc, label, detail_limit=8):
+    infos = _collect_mesh_infos(doc)
+    mesh_count = len(infos)
+
+    total_v = 0
+    total_f = 0
+    total_open = 0
+    unknown_v = 0
+    unknown_f = 0
+
+    for info in infos:
+        v = info.get("vertexCount")
+        f = info.get("faceCount")
+        n = info.get("nakedEdges")
+
+        if isinstance(v, int):
+            total_v += v
+        else:
+            unknown_v += 1
+
+        if isinstance(f, int):
+            total_f += f
+        else:
+            unknown_f += 1
+
+        if isinstance(n, int) and n > 0:
+            total_open += 1
+
+    log(
+        "[mesh-stats:{}] meshes={} totalVertices={} totalFaces={} openMeshes={} unknownV={} unknownF={}".format(
+            label,
+            mesh_count,
+            total_v,
+            total_f,
+            total_open,
+            unknown_v,
+            unknown_f,
+        )
+    )
+
+    if mesh_count <= 0:
+        return
+
+    # face 수 기준 상위 detail_limit개만 상세 로그
+    ordered = sorted(
+        infos,
+        key=lambda x: int(x.get("faceCount") or 0),
+        reverse=True,
+    )
+    for i, info in enumerate(ordered[: max(0, int(detail_limit))]):
+        log(
+            "[mesh-stats:{}:{}] id={} v={} f={} naked={} r={:.4f} maxZ={:.4f}".format(
+                label,
+                i,
+                info.get("id"),
+                info.get("vertexCount"),
+                info.get("faceCount"),
+                info.get("nakedEdges"),
+                float(info.get("r") or 0.0),
+                float(info.get("maxZ") or 0.0),
+            )
+        )
+
+
 def _pick_primary_piece(candidates, tol):
     open_candidates = [c for c in candidates if (c.get("naked") or 0) > 0]
     pool = open_candidates if open_candidates else candidates
@@ -283,8 +361,9 @@ def _align_mesh_to_origin(mesh, target_diameter=3.33):
        - plane intersection 기반 반지름으로 테이퍼 기울기 계산 후 1-shot Z 계산
        - 이후 이진탐색으로 ±0.005mm 이내로 수렴
     """
-    import Rhino.Geometry as rg
     import math
+
+    import Rhino.Geometry as rg
 
     bbox = mesh.GetBoundingBox(True)
     z_min = bbox.Min.Z
@@ -340,7 +419,11 @@ def _align_mesh_to_origin(mesh, target_diameter=3.33):
     center_x, center_y, _ = ref
     total_center_x = center_x
     total_center_y = center_y
-    log("[align] Circle center at Z={:.4f}: ({:.4f}, {:.4f})".format(z_reference, center_x, center_y))
+    log(
+        "[align] Circle center at Z={:.4f}: ({:.4f}, {:.4f})".format(
+            z_reference, center_x, center_y
+        )
+    )
     mesh.Translate(rg.Vector3d(-center_x, -center_y, 0))
 
     bbox = mesh.GetBoundingBox(True)
@@ -364,8 +447,11 @@ def _align_mesh_to_origin(mesh, target_diameter=3.33):
     measured_slope = dr / dz
     log("[align] Measured at z1={:.6f}mm: r={:.6f}mm".format(z1, r1))
     log("[align] Measured at z2={:.6f}mm: r={:.6f}mm".format(z2, r2))
-    log("[align] Measured slope={:.8f} angle={:.4f}°".format(
-        measured_slope, math.degrees(math.atan(measured_slope))))
+    log(
+        "[align] Measured slope={:.8f} angle={:.4f}°".format(
+            measured_slope, math.degrees(math.atan(measured_slope))
+        )
+    )
 
     # 11도 편측 테이퍼 강제 (모델에 실제 target_radius 구간이 없을 수 있음)
     # 측정 slope이 11±도 범위면 채택, 너무 벗어나면 11도 강제
@@ -376,15 +462,21 @@ def _align_mesh_to_origin(mesh, target_diameter=3.33):
         taper_slope = measured_slope
     else:
         taper_slope = nominal_slope
-        log("[align] slope deviates from 11° by {:.2f}° → using nominal 11°".format(
-            measured_angle - 11.0))
+        log(
+            "[align] slope deviates from 11° by {:.2f}° → using nominal 11°".format(
+                measured_angle - 11.0
+            )
+        )
 
     # 1-shot 계산: z1 + (target_r - r1)/slope. 모델에 실제 구간이 없으면 가상 위치가 됨
     delta_r = target_radius - r1
     delta_z = delta_r / taper_slope
     best_z = z1 + delta_z
-    log("[align] 1-shot Z calc: delta_r={:.8f}mm delta_z={:.8f}mm best_z={:.8f}mm".format(
-        delta_r, delta_z, best_z))
+    log(
+        "[align] 1-shot Z calc: delta_r={:.8f}mm delta_z={:.8f}mm best_z={:.8f}mm".format(
+            delta_r, delta_z, best_z
+        )
+    )
     mesh.Translate(rg.Vector3d(0, 0, -best_z))
     log("[align] Mesh translated by Z={:.8f}mm (virtual 3.35 origin)".format(-best_z))
 
@@ -400,11 +492,17 @@ def _align_mesh_to_origin(mesh, target_diameter=3.33):
 
     conn_r = get_radius_at_z(0)
     final_diameter = (conn_r * 2.0) if conn_r is not None else 0.0
-    log("[align] Final translation: XY=({:.4f}, {:.4f}), Z={:.6f}".format(
-        -total_center_x, -total_center_y, -best_z))
+    log(
+        "[align] Final translation: XY=({:.4f}, {:.4f}), Z={:.6f}".format(
+            -total_center_x, -total_center_y, -best_z
+        )
+    )
     # 참고: 모델에 실제 target_diameter 구간이 없으면 Z=0은 가상 위치→측정값이 target과 다를 수 있음
-    log("[align] Measured diameter at Z=0: {:.6f}mm (target virtual: {:.4f}mm)".format(
-        final_diameter, target_diameter))
+    log(
+        "[align] Measured diameter at Z=0: {:.6f}mm (target virtual: {:.4f}mm)".format(
+            final_diameter, target_diameter
+        )
+    )
 
     return (total_center_x, total_center_y, best_z)
 
@@ -418,7 +516,9 @@ def _run_alignment_on_first_mesh(doc, target_diameter=3.33):
             if obj and obj.ObjectType == Rhino.DocObjects.ObjectType.Mesh:
                 mesh = obj.Geometry
                 if mesh:
-                    result = _align_mesh_to_origin(mesh, target_diameter=target_diameter)
+                    result = _align_mesh_to_origin(
+                        mesh, target_diameter=target_diameter
+                    )
                     if result:
                         alignment_transform = result  # (center_x, center_y, best_z)
                         doc.Objects.Replace(obj.Id, mesh)
@@ -515,7 +615,7 @@ def _import_stl_meshes(doc, input_path, skip_align=False, target_diameter=3.33):
         fail("STL Import 실패")
 
     log("import ok")
-    
+
     # STL 로드 후 자동 정렬 (skip_align=True면 건너뜀)
     alignment_transform = None
     if not skip_align:
@@ -569,11 +669,30 @@ def _run_fill_mesh_holes(doc, target_id):
         return False
 
     before_naked = None
+    before_v = None
+    before_f = None
     try:
         if target.Geometry is not None:
             before_naked = _count_naked_edges(target.Geometry)
+            try:
+                before_v = int(target.Geometry.Vertices.Count)
+            except Exception:
+                before_v = None
+            try:
+                before_f = int(target.Geometry.Faces.Count)
+            except Exception:
+                before_f = None
     except Exception:
         pass
+
+    log(
+        "FillMeshHoles pre id={} v={} f={} nakedEdges={}".format(
+            target_id,
+            before_v,
+            before_f,
+            before_naked,
+        )
+    )
 
     try:
         doc.Objects.UnselectAll()
@@ -592,13 +711,13 @@ def _run_fill_mesh_holes(doc, target_id):
             mesh_copy = geom.DuplicateMesh()
             if mesh_copy is not None:
                 log("Starting fast hole filling...")
-                
+
                 # 간단한 FillHoles 호출 (1회)
                 try:
                     mesh_copy.FillHoles()
                 except Exception as e:
                     log("FillHoles failed: {}".format(str(e)))
-                
+
                 # 기본 메시 정리
                 try:
                     mesh_copy.Vertices.CombineIdentical(True, True)
@@ -606,15 +725,34 @@ def _run_fill_mesh_holes(doc, target_id):
                     mesh_copy.Normals.ComputeNormals()
                 except Exception as e:
                     log("Mesh cleanup failed: {}".format(str(e)))
-                
+
                 # 메시 교체
                 replaced = doc.Objects.Replace(target_id, mesh_copy)
                 log("FillMeshHoles (Fast) replaced={}".format(replaced))
-                
+
                 if replaced:
                     after_naked = _count_naked_edges(mesh_copy)
-                    log("Result: nakedEdges {} -> {}".format(before_naked, after_naked))
-                    
+                    try:
+                        after_v = int(mesh_copy.Vertices.Count)
+                    except Exception:
+                        after_v = None
+                    try:
+                        after_f = int(mesh_copy.Faces.Count)
+                    except Exception:
+                        after_f = None
+
+                    log(
+                        "FillMeshHoles fast post id={} v:{}->{} f:{}->{} naked:{}->{}".format(
+                            target_id,
+                            before_v,
+                            after_v,
+                            before_f,
+                            after_f,
+                            before_naked,
+                            after_naked,
+                        )
+                    )
+
                     if (
                         before_naked is None
                         or after_naked is None
@@ -649,24 +787,36 @@ def _run_fill_mesh_holes(doc, target_id):
             log("FillMeshHoles 커맨드 실행 예외: " + str(e))
 
         after_naked = None
+        after_v = None
+        after_f = None
         try:
             refreshed = doc.Objects.FindId(target_id)
             if refreshed and refreshed.Geometry is not None:
                 after_naked = _count_naked_edges(refreshed.Geometry)
+                try:
+                    after_v = int(refreshed.Geometry.Vertices.Count)
+                except Exception:
+                    after_v = None
+                try:
+                    after_f = int(refreshed.Geometry.Faces.Count)
+                except Exception:
+                    after_f = None
         except Exception:
             pass
 
         log(
-            "after FillMeshHoles nakedEdges(before->{})={}".format(
-                before_naked, after_naked
+            "FillMeshHoles cmd post id={} v:{}->{} f:{}->{} naked:{}->{}".format(
+                target_id,
+                before_v,
+                after_v,
+                before_f,
+                after_f,
+                before_naked,
+                after_naked,
             )
         )
 
-        if (
-            before_naked is None
-            or after_naked is None
-            or after_naked < before_naked
-        ):
+        if before_naked is None or after_naked is None or after_naked < before_naked:
             return True
 
     return False
@@ -733,6 +883,7 @@ def main(input_path_arg=None, output_path_arg=None, log_path_arg=None):
             skip_align=False,
             target_diameter=target_diameter,
         )
+        _log_doc_mesh_stats(doc, "after-import-align")
         _apply_alignment_transform_to_doc_curves(doc, alignment_transform)
 
         # Finish line 계산 (정렬 완료 후 단계 — 좌표계가 원점 기준으로 보정된 상태)
@@ -775,7 +926,9 @@ def main(input_path_arg=None, output_path_arg=None, log_path_arg=None):
 
                 try:
                     encoded_finish_line = base64.b64encode(
-                        json.dumps(finish_line_payload, ensure_ascii=False).encode("utf-8")
+                        json.dumps(finish_line_payload, ensure_ascii=False).encode(
+                            "utf-8"
+                        )
                     ).decode("ascii")
                     log("FINISHLINE_RESULT:" + encoded_finish_line)
                 except Exception as encode_err:
@@ -806,18 +959,24 @@ def main(input_path_arg=None, output_path_arg=None, log_path_arg=None):
                     else:
                         new_meshes.append(g)
                     doc.Objects.Delete(obj.Id, True)
-            
+
             piece_ids = []
             for m in new_meshes:
                 # 불필요한 속성 계산을 피하기 위해 AddMesh 직접 사용
                 piece_ids.append(doc.Objects.AddMesh(m))
-            
+
             log("Explode (RhinoCommon) ok, pieces=" + str(len(piece_ids)))
         except Exception as e:
             log("RhinoCommon Explode failed: " + str(e))
             # Fallback (RunScript) - 최후의 수단
             Rhino.RhinoApp.RunScript("!_-Explode", True)
-            piece_ids = [o.Id for o in list(doc.Objects) if o.ObjectType == Rhino.DocObjects.ObjectType.Mesh]
+            piece_ids = [
+                o.Id
+                for o in list(doc.Objects)
+                if o.ObjectType == Rhino.DocObjects.ObjectType.Mesh
+            ]
+
+        _log_doc_mesh_stats(doc, "after-explode")
 
         # 2) 홀메우기 대상 조각 선택
         # - 우선순위: (nakedEdges>0인 조각만 후보) -> XY 외측(r) 최대 -> r 동률 tolerance 내에서 +Z 최대
@@ -883,11 +1042,13 @@ def main(input_path_arg=None, output_path_arg=None, log_path_arg=None):
 
         log("selected piece id=" + str(best_id))
         log("selected key(r,maxZ)=" + str(best_key))
-        log("total candidates={} open_candidates={} tol={}".format(
-            len(candidates),
-            len(open_candidates),
-            tol,
-        ))
+        log(
+            "total candidates={} open_candidates={} tol={}".format(
+                len(candidates),
+                len(open_candidates),
+                tol,
+            )
+        )
 
         fill_targets = _pick_fill_targets(pool)
         fill_targets = [c for c in fill_targets if c.get("id")]
@@ -898,7 +1059,13 @@ def main(input_path_arg=None, output_path_arg=None, log_path_arg=None):
         if not fill_targets:
             fail("FillMeshHoles 대상 Mesh 목록을 만들지 못했습니다")
 
-        log("FillMeshHoles target count={} (limit={})".format(len(fill_targets), _FILL_TARGET_LIMIT))
+        log(
+            "FillMeshHoles target count={} (limit={})".format(
+                len(fill_targets), _FILL_TARGET_LIMIT
+            )
+        )
+
+        _log_doc_mesh_stats(doc, "before-fill")
 
         for idx, c in enumerate(fill_targets):
             oid = c.get("id")
@@ -911,11 +1078,15 @@ def main(input_path_arg=None, output_path_arg=None, log_path_arg=None):
                     c.get("naked"),
                 )
             )
+            _log_doc_mesh_stats(
+                doc, "before-fill-target-{}".format(idx), detail_limit=4
+            )
             filled = _run_fill_mesh_holes(doc, oid)
             if not filled:
                 log("FillMeshHoles 결과 변화 없음 (id={})".format(oid))
             else:
                 log("FillMeshHoles 성공 감지 (id={})".format(oid))
+            _log_doc_mesh_stats(doc, "after-fill-target-{}".format(idx), detail_limit=4)
 
         # 최신 Mesh 목록으로 갱신 (Fill 과정에서 Replace가 발생했으므로)
         try:
@@ -926,6 +1097,8 @@ def main(input_path_arg=None, output_path_arg=None, log_path_arg=None):
             ]
         except Exception:
             piece_ids = []
+
+        _log_doc_mesh_stats(doc, "before-join")
 
         # 4) Join (RhinoCommon API 사용)
         try:
@@ -944,7 +1117,9 @@ def main(input_path_arg=None, output_path_arg=None, log_path_arg=None):
             elif len(meshes) > 1:
                 tol = doc.ModelAbsoluteTolerance if doc else 0.01
                 if hasattr(Rhino.Geometry.Mesh, "CreateFromMerge"):
-                    merged = Rhino.Geometry.Mesh.CreateFromMerge(meshes, tol or 0.01, True)
+                    merged = Rhino.Geometry.Mesh.CreateFromMerge(
+                        meshes, tol or 0.01, True
+                    )
                 else:
                     log("Join (RhinoCommon) skipped: CreateFromMerge unavailable")
 
@@ -985,6 +1160,8 @@ def main(input_path_arg=None, output_path_arg=None, log_path_arg=None):
         except Exception:
             pass
 
+        _log_doc_mesh_stats(doc, "after-join")
+
         try:
             try:
                 out_dir = os.path.dirname(str(output_path))
@@ -1007,6 +1184,8 @@ def main(input_path_arg=None, output_path_arg=None, log_path_arg=None):
                 except Exception:
                     pass
 
+            _log_doc_mesh_stats(doc, "before-export")
+
             # STL Export 최적화: RhinoCommon Write 직접 시도
             write_opts = Rhino.FileIO.FileStlWriteOptions()
             try:
@@ -1023,14 +1202,16 @@ def main(input_path_arg=None, output_path_arg=None, log_path_arg=None):
             # TypeError: 'list' value cannot be converted to Rhino.RhinoDoc 에러가 발생하는 경우가 있음.
             # 가장 확실한 호환 오버로드인 FileStl.Write(String, RhinoDoc, opts) 사용을 위해 doc을 직접 전달.
             ok = Rhino.FileIO.FileStl.Write(str(output_path), doc, write_opts)
-            
+
             if not ok:
                 # Fallback: RunScript (오버헤드가 크지만 최후의 수단)
                 for retry in range(2):
                     try:
                         if os.path.exists(output_path):
-                            try: os.unlink(output_path)
-                            except: pass
+                            try:
+                                os.unlink(output_path)
+                            except:
+                                pass
 
                         # Rhino.FileIO.FileStl.Write가 실패할 경우에만 RunScript 사용
                         # RunScript 이전에 ActiveDoc을 확실히 가져오고 선택 해제
@@ -1039,21 +1220,26 @@ def main(input_path_arg=None, output_path_arg=None, log_path_arg=None):
                             doc.Objects.UnselectAll()
                             # 전체 선택 후 Export 시도
                             Rhino.RhinoApp.RunScript("!_SelAll", True)
-                        
+
                         cmd = '-_Export "{}" _Enter _Enter'.format(str(output_path))
                         log("RunScript=" + cmd)
                         ok_cmd = Rhino.RhinoApp.RunScript(cmd, True)
                         log("Export command ok=" + str(ok_cmd))
-                        
+
                         # 파일 생성 즉시 감지 (폴링 간격 단축)
                         for _ in range(100):
-                            if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
+                            if (
+                                os.path.exists(output_path)
+                                and os.path.getsize(output_path) > 0
+                            ):
                                 ok = True
                                 break
                             import time
+
                             time.sleep(0.02)
-                        
-                        if ok: break
+
+                        if ok:
+                            break
                     except Exception as e:
                         log("Export retry error: " + str(e))
                         pass
