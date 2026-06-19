@@ -548,14 +548,7 @@ namespace DentalAddin
                 }
                 else
                 {
-                    if (DisableCompositeNewA)
-                    {
-                        DentalLogger.Log("Composite2SplitAB - Single-A 경로 신규 A 비활성화(DisableCompositeNewA=true)로 생성 생략");
-                    }
-                    else
-                    {
-                        DentalLogger.Log("Composite2SplitAB - Single-A 경로 신규 A는 선행 실행 완료되어 중복 생략");
-                    }
+                    DentalLogger.Log("Composite2SplitAB - Single-A 경로 신규 A 비활성화(DisableCompositeNewA=true)로 생성 생략");
                 }
 
                 if (newAOnlyMode)
@@ -685,14 +678,7 @@ namespace DentalAddin
             }
             else
             {
-                if (DisableCompositeNewA)
-                {
-                    DentalLogger.Log("Composite2SplitAB - 신규 A 비활성화(DisableCompositeNewA=true)로 생성 생략");
-                }
-                else
-                {
-                    DentalLogger.Log("Composite2SplitAB - 신규 A는 선행 실행 완료되어 중복 생략");
-                }
+                DentalLogger.Log("Composite2SplitAB - 신규 A 비활성화(DisableCompositeNewA=true)로 생성 생략");
             }
 
             if (newAOnlyMode)
