@@ -289,7 +289,14 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 InvokeDentalAddin(document, effectiveFrontLimit, effectiveBackLimit, stlBoundingTopZ, finishLineTopZ, finishLineMinZ, finishLineEspritR, twoPhase);
                 CaptureNcMetadata(document);
                 AppLogger.Log("StlFileProcessor: NC 생성 시작");
-                string ncFilePath = _ncGenerator.GenerateNcFile(document, stlPath, ResolveFrontPointForNc(), ResolveStockDiameterForNc(document), _backendSerialCode, stlBoundingTopZ);
+                string ncFilePath = _ncGenerator.GenerateNcFile(
+                    document,
+                    stlPath,
+                    ResolveFrontPointForNc(),
+                    ResolveStockDiameterForNc(document),
+                    _backendSerialCode,
+                    stlBoundingTopZ,
+                    _prcManager?.ConnectionMachiningProcessFilePath);
                 AppLogger.Log($"StlFileProcessor: NC 생성 종료 - path={ncFilePath ?? "<null>"}");
                 if (!string.IsNullOrWhiteSpace(ncFilePath))
                 {
@@ -1210,7 +1217,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 switch (groove.Trim().ToLowerInvariant())
                 {
                     case "none":
-                        stepIncrement = 0.10;
+                        stepIncrement = 0.07;
                         // 요청사항: none → Single-A 모드
                         singleAEnable = true;
                         // 요청사항 추가: none도 C(B-extension) 활성 플래그 유지

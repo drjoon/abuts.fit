@@ -151,6 +151,23 @@
   - 어떤 이벤트가 SSOT를 갱신하는지
   - read 경로에서 계산하지 않는 이유가 무엇인지
     를 읽는 사람이 바로 이해할 수 있게 적습니다.
+- 기본 원칙(명시): **"다시 찾을 때 헷갈리지않게 코드에 항상 꼼꼼하게 주석을 기록한다"**.
+
+### 1.3.2 Esprit Composite/Turning 경계 리팩터링 기록 (2026-06-20)
+
+이번 세션에서 확정한 변경-리팩터링 매핑 규칙:
+
+- `Composite B/C` 종료 또는 `D(B-Extension)` 시작 같은 **경계 위치를 변경할 때**
+  - `MainModuleComposite.TryRunComposite2SplitAB`의 퍼센트 값만 직접 바꾸지 말고,
+  - mm 기준 이동이 일관되게 적용되도록 **공통 변환 헬퍼**(`ShiftPassPercentByXOffsetMm`)를 사용/보강합니다.
+- `D`가 목록에는 보이는데 툴패스가 사라지는 증상(시작=끝) 대응이 필요할 때
+  - 시작점을 단순 클램프하지 말고 **최소 폭 보장 로직**(`EnsureStartHasMinWidthPercent`)으로 리팩터링합니다.
+- Turn/Connection 경계 기준을 수정할 때
+  - `BackPointX` 단일 기준으로 두지 않고, **실제 가공 경계 우선순위**를 헬퍼에서 중앙집중 관리합니다.
+  - 현재 우선순위: `EndXValue` → `FinishLineX` → `BackPointX`.
+- `5axis_Composite_A(NewA)` 정책을 바꿀 때
+  - 호출부만 막지 말고, `TryRunComposite2NewABeforeTurnB`와 `TryRunComposite2SplitAB` 내부 NewA 생성 경로를 함께 정리해
+    **불필요 분기/도달 불가 코드(CS0162)**가 남지 않도록 리팩터링합니다.
 
 ### 1.4 파일 크기 관리 (800줄 정책)
 

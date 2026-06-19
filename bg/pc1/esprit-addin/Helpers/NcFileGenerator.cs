@@ -26,7 +26,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
             System.IO.Directory.CreateDirectory(_outputFolder);
             _postProcessorFile = postProcessorFile ?? "Acro_dent_XE.asc";
         }
-        public string GenerateNcFile(Document document, string stlPath, double frontPointX, double stockDiameter, string serialCode, double? stlBoundingTopZ = null)
+        public string GenerateNcFile(Document document, string stlPath, double frontPointX, double stockDiameter, string serialCode, double? stlBoundingTopZ = null, string connectionPrcPath = null)
         {
             if (document == null)
             {
@@ -81,7 +81,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
 
             string serialForNc = NormalizeSerialCode(serialCode);
             AppLogger.Log($"NcFileGenerator: Serial 각인 코드 적용 - Raw:'{serialCode ?? string.Empty}' => Use:'{serialForNc}'");
-            UpdateSerialBlocks(executedNcPath, serialForNc);
+            UpdateSerialBlocks(executedNcPath, serialForNc, connectionPrcPath);
             return executedNcPath;
         }
         private string BuildNcFilePath(string stlPath)
@@ -289,7 +289,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
             }
             return value.Value.ToString(format, CultureInfo.InvariantCulture);
         }
-        private void UpdateSerialBlocks(string ncFilePath, string serialCode)
+        private void UpdateSerialBlocks(string ncFilePath, string serialCode, string connectionPrcPath = null)
         {
             // NC 파일에서 (Serial) 마커를 찾아 prc 템플릿 기반 각인 블록으로 교체
             // prc 파일에 (Serial) 블록이 2개 있으며, 각각 NC 파일의 마커에 대응
@@ -305,12 +305,12 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
                 AppLogger.Log($"NcFileGenerator: Serial 블록 교체 시작 - serialCode:'{normalizedSerial}', NC 라인 수:{lines.Count}");
 
                 // prc 0번째 (Serial) → NC 첫 번째 (Serial) 마커 교체
-                var firstBlock = BuildSerialBlock(normalizedSerial, 0);
+                var firstBlock = BuildSerialBlock(normalizedSerial, 0, connectionPrcPath);
                 bool serialUpdated = ReplaceSerialBlock(lines, "(Serial)", firstBlock);
                 AppLogger.Log($"NcFileGenerator: 1번째 (Serial) 블록 교체 - {(serialUpdated ? "성공" : "⚠️ 마커 없음")}");
 
                 // prc 1번째 (Serial) → NC의 (Serial Deburr) 또는 두 번째 (Serial) 마커 교체
-                var secondBlock = BuildSerialBlock(normalizedSerial, 1);
+                var secondBlock = BuildSerialBlock(normalizedSerial, 1, connectionPrcPath);
                 bool serialDeburrUpdated = ReplaceSerialBlock(lines, "(Serial Deburr)", secondBlock);
                 if (!serialDeburrUpdated)
                 {
@@ -376,11 +376,11 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
             lines.InsertRange(start, newBlock);
             return true;
         }
-        private static List<string> BuildSerialBlock(string serialCode, int occurrenceInPrc)
+        private static List<string> BuildSerialBlock(string serialCode, int occurrenceInPrc, string connectionPrcPath = null)
         {
             // prc 파일의 occurrenceInPrc번째 (Serial) 블록을 템플릿으로 읽어
             // M98P0001~M98P0003 구간만 실제 각인 코드로 교체하고 나머지는 prc 그대로 사용
-            var templateLines = ReadSerialTemplateFromPrc(occurrenceInPrc);
+            var templateLines = ReadSerialTemplateFromPrc(occurrenceInPrc, connectionPrcPath);
             if (templateLines == null || templateLines.Count == 0)
             {
                 AppLogger.Log($"NcFileGenerator: ❌ prc 템플릿 로드 실패 (occurrence:{occurrenceInPrc}) - Serial 블록 생성 불가");
@@ -426,6 +426,28 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
                 result.Add(line);
             }
 
+            string prcTargetLine = templateLines.FirstOrDefault(line =>
+                Regex.IsMatch(line ?? string.Empty, @"^\s*G1\s+X3\.45\b.*\bF500\b", RegexOptions.IgnoreCase));
+            if (!string.IsNullOrWhiteSpace(prcTargetLine))
+            {
+                AppLogger.Log($"NcFileGenerator: PRC 원본 라인 확인 - '{prcTargetLine.Trim()}' (occurrence:{occurrenceInPrc})");
+            }
+            else
+            {
+                AppLogger.Log($"NcFileGenerator: PRC 원본에서 'G1 X3.45 F500' 패턴 미검출 (occurrence:{occurrenceInPrc})");
+            }
+
+            string ncTargetLine = result.FirstOrDefault(line =>
+                Regex.IsMatch(line ?? string.Empty, @"^\s*G1\s+X3\.45\b.*\bF500\b", RegexOptions.IgnoreCase));
+            if (!string.IsNullOrWhiteSpace(ncTargetLine))
+            {
+                AppLogger.Log($"NcFileGenerator: NC 적용 라인 확인 - '{ncTargetLine.Trim()}' (occurrence:{occurrenceInPrc})");
+            }
+            else
+            {
+                AppLogger.Log($"NcFileGenerator: NC 결과에서 'G1 X3.45 F500' 패턴 미검출 (occurrence:{occurrenceInPrc})");
+            }
+
             AppLogger.Log($"NcFileGenerator: Serial 블록 빌드 완료 (occurrence:{occurrenceInPrc}) - {result.Count} lines");
             return result;
         }
@@ -454,7 +476,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
             return "G1V-0.35F1000";
         }
 
-        private static List<string> ReadSerialTemplateFromPrc(int occurrenceIndex = 0)
+        private static List<string> ReadSerialTemplateFromPrc(int occurrenceIndex = 0, string preferredPrcPath = null)
         {
             try
             {
@@ -467,15 +489,32 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
                     return null;
                 }
 
-                // 첫 번째 prc 파일 사용 (모든 prc 파일의 Serial 블록 구조는 동일)
-                var prcFiles = Directory.GetFiles(prcDir, "*.prc");
-                if (prcFiles.Length == 0)
-                {
-                    AppLogger.Log($"NcFileGenerator: prc 파일 없음 - {prcDir}");
-                    return null;
-                }
+                string prcPath = null;
 
-                string prcPath = prcFiles[0];
+                if (!string.IsNullOrWhiteSpace(preferredPrcPath) && File.Exists(preferredPrcPath))
+                {
+                    prcPath = preferredPrcPath;
+                    AppLogger.Log($"NcFileGenerator: Serial 템플릿 PRC 우선 경로 사용 - {prcPath}");
+                }
+                else
+                {
+                    var prcFiles = Directory.GetFiles(prcDir, "*.prc").OrderBy(Path.GetFileName, StringComparer.OrdinalIgnoreCase).ToArray();
+                    if (prcFiles.Length == 0)
+                    {
+                        AppLogger.Log($"NcFileGenerator: prc 파일 없음 - {prcDir}");
+                        return null;
+                    }
+
+                    prcPath = prcFiles[0];
+                    if (!string.IsNullOrWhiteSpace(preferredPrcPath))
+                    {
+                        AppLogger.Log($"NcFileGenerator: Serial 템플릿 PRC 우선 경로 무시(파일 없음) - preferred={preferredPrcPath}, fallback={prcPath}");
+                    }
+                    else
+                    {
+                        AppLogger.Log($"NcFileGenerator: Serial 템플릿 PRC 기본 선택 - {prcPath}");
+                    }
+                }
                 var allLines = File.ReadAllLines(prcPath);
 
                 // (Serial) 블록 찾기 (occurrenceIndex번째)

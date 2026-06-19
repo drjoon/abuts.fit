@@ -94,7 +94,7 @@ BEGIN_OPERATION; 316; [10.0MM_기준]DIO_Connection; 0;
    4421; 4421; 4;  SOURCE; 0; TECHCODETYPE; 2;
    OperationName; 613; ;  CAPTION; 작업 이름; SOURCE; 2; TECHCODETYPE; 3;
 	BEGIN_STRING; 613;;
-		:DIO_Connection
+		:DIO_UF_RH_Connection
 	END_STRING
    CustomSettingStr4; 1803; ;  CAPTION; 사용자 정의 문자열 4; SOURCE; 1; TECHCODETYPE; 3;
 	BEGIN_STRING; 1803;;
