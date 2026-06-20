@@ -16,7 +16,7 @@ import { Button } from "@/components/ui/button";
 import { FlaskConical, Trash2 } from "lucide-react";
 import type { DeliveryInfoSummary } from "@/types/request";
 import { toKstYmd, formatKstDateTimeToKo } from "@/shared/date/kst";
-import { PeriodFilter, type PeriodFilterValue } from "@/shared/ui/PeriodFilter";
+import { usePeriodStore } from "@/store/usePeriodStore";
 import {
   deriveStageForFilter,
   type ManufacturerRequest,
@@ -24,12 +24,6 @@ import {
 import { useWorksheetRealtimeStatus } from "../hooks/useWorksheetRealtimeStatus";
 
 type InquiryTab = "process" | "shipping" | "udi";
-type DateRange =
-  | "recent7"
-  | "recent30"
-  | "lastMonth"
-  | "thisMonth"
-  | "recent90";
 
 type ProcessStage = "전체" | "의뢰" | "CAM" | "생산" | "발송" | "추적관리";
 
@@ -101,6 +95,7 @@ const getShippingStatus = (req: ManufacturerRequest) => {
 
 export const TrackingInquiryPage = () => {
   const { token } = useAuthStore();
+  const { period } = usePeriodStore();
   const { toast } = useToast();
   const { worksheetSearch, showCompleted } = useOutletContext<{
     worksheetSearch: string;
@@ -123,15 +118,6 @@ export const TrackingInquiryPage = () => {
   const isFetchingPageRef = useRef(false);
   const lastFetchTimeRef = useRef(0);
   const userScrolledRef = useRef(false);
-  const defaultDateRangeByTab: Record<InquiryTab, DateRange> = {
-    process: "recent30",
-    shipping: "recent30",
-    udi: "recent30",
-  };
-  const [dateRangeByTab, setDateRangeByTab] = useState<
-    Record<InquiryTab, DateRange>
-  >(defaultDateRangeByTab);
-  const dateRange = dateRangeByTab[tab];
 
   const matchesCurrentPage = useCallback((req: ManufacturerRequest) => {
     const stage = deriveStageForFilter(req);
@@ -290,7 +276,7 @@ export const TrackingInquiryPage = () => {
     pageRef.current = 1;
     hasMoreRef.current = true;
     void run(false, false);
-  }, [tab, dateRange, worksheetSearch, showCompleted, token, toast]);
+  }, [tab, period, worksheetSearch, showCompleted, token, toast]);
 
   const searchLower = String(worksheetSearch || "")
     .trim()
@@ -311,38 +297,35 @@ export const TrackingInquiryPage = () => {
       return c;
     };
 
-    switch (dateRange) {
-      case "recent7": {
-        const from = new Date(today);
-        from.setDate(from.getDate() - 6);
-        return { fromDate: startOfDay(from), toDate: endOfDay(today) };
-      }
-      case "recent30": {
-        const from = new Date(today);
-        from.setDate(from.getDate() - 29);
-        return { fromDate: startOfDay(from), toDate: endOfDay(today) };
-      }
-      case "recent90": {
-        const from = new Date(today);
-        from.setDate(from.getDate() - 89);
-        return { fromDate: startOfDay(from), toDate: endOfDay(today) };
-      }
-      case "lastMonth": {
-        const year = today.getFullYear();
-        const month = today.getMonth(); // 0-based, this month
-        const from = new Date(year, month - 1, 1);
-        const to = new Date(year, month, 0); // last day of previous month
-        return { fromDate: startOfDay(from), toDate: endOfDay(to) };
-      }
-      case "thisMonth": {
-        const year = today.getFullYear();
-        const month = today.getMonth();
-        const from = new Date(year, month, 1);
-        const to = new Date(year, month + 1, 0); // last day of this month
-        return { fromDate: startOfDay(from), toDate: endOfDay(to) };
-      }
+    if (period === "7d") {
+      const from = new Date(today);
+      from.setDate(from.getDate() - 6);
+      return { fromDate: startOfDay(from), toDate: endOfDay(today) };
     }
-  }, [dateRange]);
+    if (period === "30d") {
+      const from = new Date(today);
+      from.setDate(from.getDate() - 29);
+      return { fromDate: startOfDay(from), toDate: endOfDay(today) };
+    }
+    if (period === "90d") {
+      const from = new Date(today);
+      from.setDate(from.getDate() - 89);
+      return { fromDate: startOfDay(from), toDate: endOfDay(today) };
+    }
+    if (period === "lastMonth") {
+      const year = today.getFullYear();
+      const month = today.getMonth();
+      const from = new Date(year, month - 1, 1);
+      const to = new Date(year, month, 0);
+      return { fromDate: startOfDay(from), toDate: endOfDay(to) };
+    }
+
+    const year = today.getFullYear();
+    const month = today.getMonth();
+    const from = new Date(year, month, 1);
+    const to = new Date(year, month + 1, 0);
+    return { fromDate: startOfDay(from), toDate: endOfDay(to) };
+  }, [period]);
 
   const baseFiltered = useMemo(() => {
     return requests
@@ -391,22 +374,6 @@ export const TrackingInquiryPage = () => {
         return hay.includes(searchLower);
       });
   }, [requests, searchLower, showCompleted, fromDate, toDate]);
-
-  const dateRangeToPeriod = (dr: DateRange): PeriodFilterValue => {
-    if (dr === "recent7") return "7d";
-    if (dr === "recent30") return "30d";
-    if (dr === "recent90") return "90d";
-    if (dr === "lastMonth") return "lastMonth";
-    return "thisMonth";
-  };
-
-  const periodToDateRange = (p: PeriodFilterValue): DateRange => {
-    if (p === "7d") return "recent7";
-    if (p === "30d") return "recent30";
-    if (p === "90d") return "recent90";
-    if (p === "lastMonth") return "lastMonth";
-    return "thisMonth";
-  };
 
   const handlePrint = (type: InquiryTab) => {
     const win = window.open("", "_blank", "width=1024,height=768");
@@ -858,7 +825,7 @@ export const TrackingInquiryPage = () => {
   useEffect(() => {
     visibleCountRef.current = 30;
     setVisibleCount(30);
-  }, [tab, dateRange, worksheetSearch, showCompleted]);
+  }, [tab, period, worksheetSearch, showCompleted]);
 
   const setScrollContainer = useCallback((node: HTMLDivElement | null) => {
     if (scrollRef.current && onScrollRef.current) {
@@ -915,22 +882,7 @@ export const TrackingInquiryPage = () => {
               <TabsTrigger value="process">생산공정일지</TabsTrigger>
               <TabsTrigger value="udi">UDI신고</TabsTrigger>
             </TabsList>
-          </div>
-
-          <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
-            <div className="flex flex-wrap items-center gap-2">
-              <PeriodFilter
-                value={dateRangeToPeriod(dateRange)}
-                onChange={(next) => {
-                  const nextRange = periodToDateRange(next);
-                  setDateRangeByTab((prev) => ({
-                    ...prev,
-                    [tab]: nextRange,
-                  }));
-                }}
-              />
-            </div>
-            <div className="flex items-center gap-2">
+            <div className="ml-auto flex items-center gap-2">
               {tab === "udi" && (
                 <Button
                   variant="outline"
@@ -1044,6 +996,7 @@ export const TrackingInquiryPage = () => {
                               <Button
                                 variant="outline"
                                 size="sm"
+                                className="border-purple-300 bg-purple-50 text-purple-700 hover:bg-purple-100"
                                 onClick={async () => {
                                   try {
                                     const res = await fetch(
@@ -1081,7 +1034,7 @@ export const TrackingInquiryPage = () => {
                                 }}
                               >
                                 <FlaskConical className="h-4 w-4 mr-1" />
-                                R&D 샘플 복사
+                                R&D
                               </Button>
                             )}
                             {isSampleRequest && (
@@ -1347,9 +1300,9 @@ export const TrackingInquiryPage = () => {
                                       <div className="flex items-center gap-1">
                                         {canCloneAsSample && (
                                           <Button
-                                            variant="ghost"
+                                            variant="outline"
                                             size="sm"
-                                            className="h-6 px-2 text-xs"
+                                            className="h-6 px-2 text-xs border-purple-300 bg-purple-50 text-purple-700 hover:bg-purple-100"
                                             onClick={async (e) => {
                                               e.stopPropagation();
                                               try {
@@ -1391,7 +1344,7 @@ export const TrackingInquiryPage = () => {
                                             }}
                                           >
                                             <FlaskConical className="h-3 w-3 mr-1" />
-                                            복사
+                                            R&D
                                           </Button>
                                         )}
                                         {isSampleRequest && (
