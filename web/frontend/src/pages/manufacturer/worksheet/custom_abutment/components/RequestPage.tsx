@@ -1058,6 +1058,7 @@ export const RequestPage = ({
         }
         token={token}
         onRollback={handleCardRollback}
+        onApprove={handleCardApprove}
         onRollbackAll={
           mailboxState.mailboxModalRequests.length
             ? mailboxState.handleRollbackAllInMailbox

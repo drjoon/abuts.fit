@@ -14,8 +14,14 @@ import { Label } from "@/components/ui/label";
 import { request } from "@/shared/api/apiClient";
 import { useToast } from "@/shared/hooks/use-toast";
 import { generateModelNumber } from "@/utils/modelNumber";
-import { getDeadlineInfo } from "../../utils/request";
-import { ArrowLeft, Loader2, MapPinned, Search } from "lucide-react";
+import { deriveStageForFilter, getDeadlineInfo } from "../../utils/request";
+import {
+  ArrowLeft,
+  ArrowRight,
+  Loader2,
+  MapPinned,
+  Search,
+} from "lucide-react";
 import type { ManufacturerRequest } from "../../utils/request";
 
 declare global {
@@ -64,6 +70,7 @@ type MailboxContentsModalProps = {
   errorMessage?: string;
   token?: string | null;
   onRollback?: (req: ManufacturerRequest) => void;
+  onApprove?: (req: ManufacturerRequest) => void;
   onRollbackAll?: (requests: ManufacturerRequest[]) => void;
   isRollingBackAll?: boolean;
   onAddressSaved?: (payload: {
@@ -84,6 +91,7 @@ export const MailboxContentsModal = ({
   errorMessage,
   token,
   onRollback,
+  onApprove,
   onRollbackAll,
   isRollingBackAll = false,
   onAddressSaved,
@@ -157,6 +165,16 @@ export const MailboxContentsModal = ({
   useEffect(() => {
     void loadPostcodeScript().catch(() => {});
   }, []);
+
+  const canApproveShippingWithoutRework = (req: ManufacturerRequest) => {
+    const stage = deriveStageForFilter(req);
+    if (stage !== "포장.발송") return false;
+
+    // 공통 규칙: 해당 단계 rollbackCount > 0 이면
+    // "다음 공정으로 갔다가 되돌아온 건"으로 보고 재작업 없이 바로 승인 가능
+    const rollbackCount = Number(req.caseInfos?.rollbackCounts?.shipping || 0);
+    return rollbackCount > 0;
+  };
 
   const getImplantInfo = (req: ManufacturerRequest) => {
     const parts = [
@@ -456,20 +474,46 @@ export const MailboxContentsModal = ({
                 className="relative p-4 border border-slate-200 rounded-xl bg-slate-50 hover:bg-slate-100 transition-colors flex flex-col gap-3"
               >
                 <div className="absolute top-3 right-3 flex flex-col items-end gap-2">
-                  {onRollback && (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="h-7 text-xs gap-1"
-                      disabled={isRollingBackAll}
-                      onClick={() => {
-                        void onRollback(req);
-                      }}
-                    >
-                      <ArrowLeft className="h-3 w-3" />
-                    </Button>
-                  )}
+                  <div className="flex items-center gap-1">
+                    {onRollback && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-7 text-xs gap-1"
+                        disabled={isRollingBackAll}
+                        onClick={() => {
+                          void onRollback(req);
+                        }}
+                        title="이전 공정으로 롤백"
+                      >
+                        <ArrowLeft className="h-3 w-3" />
+                      </Button>
+                    )}
+                    {onApprove && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-7 text-xs gap-1"
+                        disabled={
+                          isRollingBackAll ||
+                          !canApproveShippingWithoutRework(req)
+                        }
+                        onClick={() => {
+                          if (!canApproveShippingWithoutRework(req)) return;
+                          void onApprove(req);
+                        }}
+                        title={
+                          canApproveShippingWithoutRework(req)
+                            ? "재작업 없이 다음 공정(추적관리)으로 이동"
+                            : "롤백 이력이 있을 때만 승인 가능"
+                        }
+                      >
+                        <ArrowRight className="h-3 w-3" />
+                      </Button>
+                    )}
+                  </div>
                   {getLotShortCode(req) && (
                     <Badge className="text-[11px] bg-slate-900 text-white border border-slate-900">
                       {getLotShortCode(req)}
