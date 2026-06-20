@@ -405,7 +405,8 @@ namespace DentalAddin
 
             const double seamEpsilonPercent = 0.05;
             const double compositeBcdBoundaryShiftMm = 0.3; // 요청사항: B/C 종료 +0.3mm
-            const double compositeDFixedWidthMm = 0.2; // 요청사항: D 고정폭 0.2mm (End = Start + 0.2mm)
+            const double compositeDStartShiftMm = -0.3; // 요청사항: D 시작점 -0.0mm
+            const double compositeDFixedWidthMm = 0.5; // 요청사항: D 고정폭 0.5mm (End = Start + 0.5mm)
 
             // B 시작 퍼센트 상한(안전값) 적용
             double splitPercentForA = splitPercent;
@@ -658,7 +659,11 @@ namespace DentalAddin
                         opBExtensionSingle.PassPosition = espMill5xCompositePassPosition.espMill5xCompositePassPositionStartEndPosition;
                         // 요청사항: D는 B/C 끝점에서 시작(겹침 방지)
                         // Single-A 경로에서는 선행 공정 B가 opA이므로 D 시작을 opA.Last에 맞춘다.
-                        opBExtensionSingle.FirstPassPercent = Clamp(opA.LastPassPercent, firstPercent, 100.0);
+                        opBExtensionSingle.FirstPassPercent = ShiftPassPercentByStartEndScaleMm(
+                            Clamp(opA.LastPassPercent, firstPercent, 100.0),
+                            compositeDStartShiftMm,
+                            firstPercent,
+                            100.0);
                         opBExtensionSingle.LastPassPercent = ShiftPassPercentByStartEndScaleMm(
                             opBExtensionSingle.FirstPassPercent,
                             compositeDFixedWidthMm,
@@ -678,7 +683,7 @@ namespace DentalAddin
                             TryAddOperation(opBExtensionSingle, freeFormFeature, "Composite2SplitAB:A:Single:B:Extension", false);
                             TryAppendCompositeSuffixToNewOperations(beforeBExtSingle, "B-Extension");
                             int afterBExtSingle = Document?.Operations?.Count ?? -1;
-                            DentalLogger.Log($"Composite2SplitAB - Single-A 경로 B-Extension 추가 완료 (D={opBExtensionSingle.FirstPassPercent:F2}->{opBExtensionSingle.LastPassPercent:F2}, TargetWidthMm={compositeDFixedWidthMm:F3}, afterCount={afterBExtSingle})");
+                            DentalLogger.Log($"Composite2SplitAB - Single-A 경로 B-Extension 추가 완료 (D={opBExtensionSingle.FirstPassPercent:F2}->{opBExtensionSingle.LastPassPercent:F2}, StartShiftMm={compositeDStartShiftMm:F3}, TargetWidthMm={compositeDFixedWidthMm:F3}, afterCount={afterBExtSingle})");
                         }
                         catch (Exception exBExtSingle)
                         {
@@ -803,7 +808,11 @@ namespace DentalAddin
                     opBExtension.PassPosition = espMill5xCompositePassPosition.espMill5xCompositePassPositionStartEndPosition;
                     // 요청사항: D는 B/C 끝점에서 시작(겹침 방지)
                     // AB 경로에서는 선행 공정 C가 opB이므로 D 시작을 opB.Last에 맞춘다.
-                    opBExtension.FirstPassPercent = Clamp(opB.LastPassPercent, firstPercent, 100.0);
+                    opBExtension.FirstPassPercent = ShiftPassPercentByStartEndScaleMm(
+                        Clamp(opB.LastPassPercent, firstPercent, 100.0),
+                        compositeDStartShiftMm,
+                        firstPercent,
+                        100.0);
                     opBExtension.LastPassPercent = ShiftPassPercentByStartEndScaleMm(
                         opBExtension.FirstPassPercent,
                         compositeDFixedWidthMm,
@@ -823,7 +832,7 @@ namespace DentalAddin
                         TryAddOperation(opBExtension, freeFormFeature, "Composite2SplitAB:B:Extension", false);
                         TryAppendCompositeSuffixToNewOperations(beforeBExt, "B-Extension");
                         int afterBExt = Document?.Operations?.Count ?? -1;
-                        DentalLogger.Log($"Composite2SplitAB - Operation 추가 완료: B-Extension (D={opBExtension.FirstPassPercent:F2}->{opBExtension.LastPassPercent:F2}, TargetWidthMm={compositeDFixedWidthMm:F3}, afterCount={afterBExt})");
+                        DentalLogger.Log($"Composite2SplitAB - Operation 추가 완료: B-Extension (D={opBExtension.FirstPassPercent:F2}->{opBExtension.LastPassPercent:F2}, StartShiftMm={compositeDStartShiftMm:F3}, TargetWidthMm={compositeDFixedWidthMm:F3}, afterCount={afterBExt})");
                     }
                     catch (Exception extAddEx)
                     {
