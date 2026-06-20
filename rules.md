@@ -168,6 +168,14 @@
 - `5axis_Composite_A(NewA)` 정책을 바꿀 때
   - 호출부만 막지 말고, `TryRunComposite2NewABeforeTurnB`와 `TryRunComposite2SplitAB` 내부 NewA 생성 경로를 함께 정리해
     **불필요 분기/도달 불가 코드(CS0162)**가 남지 않도록 리팩터링합니다.
+- Composite Start/End pass-percent와 X(mm) 변환은 좌표계가 2종류이므로 반드시 공통 유틸로 계산합니다.
+  - **정책 SSOT(가공 경계 결정용)**: `StartEndScale(20mm)`
+    - `XToPassPercentByStartEndScale(x, min, max)`
+    - `ShiftPassPercentByStartEndScaleMm(pass, mm, min, max)`
+    - `PassPercentDeltaToMmByStartEndScale(deltaPercent)`
+  - **비교/진단 전용**: `Front~Back span` 변환 (`XToPassPercentBySpan(...)`)
+  - `TwoPhaseSplitLine` 기반 B/C 경계처럼 실제 화면 가이드라인을 pass-percent로 옮길 때는 **반드시 StartEndScale 유틸을 사용**하고,
+    span 기반 값은 로그(diag)로만 남깁니다.
 
 ### 1.4 파일 크기 관리 (800줄 정책)
 

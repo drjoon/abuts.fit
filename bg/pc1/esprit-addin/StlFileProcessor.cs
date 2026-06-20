@@ -1217,16 +1217,18 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 switch (groove.Trim().ToLowerInvariant())
                 {
                     case "none":
-                        stepIncrement = 0.07;
+                        stepIncrement = 0.10;
                         // 요청사항: none → Single-A 모드
-                        singleAEnable = true;
+                        // singleAEnable = true;
+                        singleAEnable = false;
+
                         // 요청사항 추가: none도 C(B-extension) 활성 플래그 유지
                         bExtensionEnable = true;
                         // gp.exe 모달 안정화: none 케이스는 Composite 비동적 추가 시도
                         Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_DYNAMIC_DISABLE", "1");
                         break;
                     case "shallow":
-                        stepIncrement = 0.15;
+                        stepIncrement = 0.20;
                         // shallow: 단일 A + C(B-extension) 사용
                         singleAEnable = true;
                         bExtensionEnable = true;

@@ -24,7 +24,13 @@
 ## 3. 이번 세션 리팩터링 기록 (2026-06-20)
 
 - `Composite B/C 종료`, `D 시작` 같은 경계 변경은 `TryRunComposite2SplitAB` 내부 숫자 수정으로 끝내지 않고,
-  **mm→pass-percent 변환 헬퍼**(`ShiftPassPercentByXOffsetMm`)로 통일 적용한다.
+  변환 좌표계를 먼저 결정한 뒤 공통 유틸로 적용한다.
+  - 경계 결정 SSOT: `StartEndScale(20mm)` 계열 유틸
+    - `XToPassPercentByStartEndScale(...)`
+    - `ShiftPassPercentByStartEndScaleMm(...)`
+    - `PassPercentDeltaToMmByStartEndScale(...)`
+  - `ShiftPassPercentByXOffsetMm(...)`(span 기반)은 물리 span 기준 보정에만 사용한다.
+  - `XToPassPercentBySpan(...)` 결과는 정책값이 아니라 diag 로그로만 사용한다.
 - `D`가 Operation 목록에는 있으나 툴패스가 사라지는 경우(시작=끝)는
   **최소 폭 보장 헬퍼**(`EnsureStartHasMinWidthPercent`)를 통해 해결한다.
 - Turn_B와 Connection 경계 기준 수정 시,
