@@ -304,7 +304,44 @@ namespace DentalAddin
             }
 
 
+            string singleARaw = GetEnvString("ABUTS_COMPOSITE_SINGLE_A_ENABLE");
+            bool singleAEnabled = string.IsNullOrWhiteSpace(singleARaw)
+                || string.Equals(singleARaw, "1", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(singleARaw, "true", StringComparison.OrdinalIgnoreCase);
+
             double splitPercent = Clamp(splitRatio * 100.0, firstPercent, effectiveLastPercent);
+
+            // 사용자 요청: singleAEnable=false(현재 none/deep)에서는
+            // B/C 분할 기준을 실제 가이드 라인(TwoPhaseSplitLine) X좌표로 강제한다.
+            if (!singleAEnabled)
+            {
+                if (TryResolveTwoPhaseSplitLineX(out double splitXByGuideLine))
+                {
+                    // 사용자 요청: B/C 경계(=C 시작)는 TwoPhaseSplitLine 기준 0.6mm 왼쪽(X-)으로 적용
+                    // (기존 -0.5mm에서 C 시작점 추가 -0.1mm)
+                    const double bcBoundaryLeftOffsetMm = 0.6;
+                    double splitXByGuideLineLeft = splitXByGuideLine - bcBoundaryLeftOffsetMm;
+
+                    // 중요: StartEndPosition pass-percent는 본 흐름에서 x/20.0 스케일을 사용한다.
+                    // (span 기반((x-front)/span) 변환을 쓰면 B/C 경계가 우측으로 크게 밀릴 수 있음)
+                    double splitPercentByGuideLine = XToPassPercentByStartEndScale(splitXByGuideLineLeft, firstPercent, effectiveLastPercent);
+                    if (!double.IsNaN(splitPercentByGuideLine) && !double.IsInfinity(splitPercentByGuideLine))
+                    {
+                        double splitPercentBySpanDiag = XToPassPercentBySpan(splitXByGuideLineLeft, MoveSTL_Module.FrontPointX, direction, absSpan, firstPercent, effectiveLastPercent);
+                        DentalLogger.Log($"Composite2SplitAB - B/C 경계 TwoPhaseSplitLine-0.6mm 적용(singleA=0): guideX={splitXByGuideLine:F3}, appliedX={splitXByGuideLineLeft:F3}, splitPercent(scale20) {splitPercent:F2}->{splitPercentByGuideLine:F2}, splitPercent(spanDiag)={splitPercentBySpanDiag:F2}");
+                        splitX = splitXByGuideLineLeft;
+                        splitPercent = splitPercentByGuideLine;
+                    }
+                    else
+                    {
+                        DentalLogger.Log($"Composite2SplitAB - B/C 경계 TwoPhaseSplitLine-0.6mm 무시(singleA=0): splitRatio 계산 불가(appliedX={splitXByGuideLineLeft:F3}, guideX={splitXByGuideLine:F3})");
+                    }
+                }
+                else
+                {
+                    DentalLogger.Log("Composite2SplitAB - B/C 경계 TwoPhaseSplitLine 미적용(singleA=0): 가이드 라인 미발견/해석 실패");
+                }
+            }
 
             // StartEndPosition에서 B 시작 퍼센트가 높아지면(실측: ~38%) NC 계산 중 크래시 가능성이 높다.
             // 성공 케이스(약 25%)를 기준으로 기본 상한을 둔다. 필요 시 env로 조정 가능.
@@ -368,7 +405,7 @@ namespace DentalAddin
 
             const double seamEpsilonPercent = 0.05;
             const double compositeBcdBoundaryShiftMm = 0.3; // 요청사항: B/C 종료 +0.3mm
-            const double compositeDFixedWidthMm = 0.3; // 요청사항: D 고정폭 0.3mm (End = Start + 0.3mm)
+            const double compositeDFixedWidthMm = 0.2; // 요청사항: D 고정폭 0.2mm (End = Start + 0.2mm)
 
             // B 시작 퍼센트 상한(안전값) 적용
             double splitPercentForA = splitPercent;
@@ -435,17 +472,12 @@ namespace DentalAddin
 
 
 
-            // 요청사항: Composite B(=opA) 종료, C(=opB) 종료를 현재 위치 +0.3mm로 이동
-            double bLastBeforeShift = opA.LastPassPercent;
-            opA.LastPassPercent = ShiftPassPercentByXOffsetMm(
-                opA.LastPassPercent,
-                compositeBcdBoundaryShiftMm,
-                opA.FirstPassPercent,
-                effectiveLastPercent,
-                MoveSTL_Module.FrontPointX,
-                direction,
-                absSpan);
+            // 정책: B 끝점은 C 시작점과 반드시 일치해야 한다.
+            // (사용자 요구: B.End == C.Start, C.Start == TwoPhaseSplitLine)
+            double bLastBeforeAlign = opA.LastPassPercent;
+            opA.LastPassPercent = Clamp(opB.FirstPassPercent, opA.FirstPassPercent, effectiveLastPercent);
 
+            // C 종료점만 +0.3mm 이동한다. (B/C 경계는 유지)
             double cLastBeforeShift = opB.LastPassPercent;
             opB.LastPassPercent = ShiftPassPercentByXOffsetMm(
                 opB.LastPassPercent,
@@ -456,7 +488,11 @@ namespace DentalAddin
                 direction,
                 absSpan);
 
-            DentalLogger.Log($"Composite2SplitAB - B/C 종료 +0.3mm 적용: B.Last {bLastBeforeShift:F2}->{opA.LastPassPercent:F2}, C.Last {cLastBeforeShift:F2}->{opB.LastPassPercent:F2}");
+            double bLastXBeforeAlign = PassPercentToX(bLastBeforeAlign, MoveSTL_Module.FrontPointX, direction, absSpan);
+            double bLastXAfterAlign = PassPercentToX(opA.LastPassPercent, MoveSTL_Module.FrontPointX, direction, absSpan);
+            double cLastXBeforeShift = PassPercentToX(cLastBeforeShift, MoveSTL_Module.FrontPointX, direction, absSpan);
+            double cLastXAfterShift = PassPercentToX(opB.LastPassPercent, MoveSTL_Module.FrontPointX, direction, absSpan);
+            DentalLogger.Log($"Composite2SplitAB - B/C 경계 정렬 + C 종료 +0.3mm: B.Last% {bLastBeforeAlign:F2}->{opA.LastPassPercent:F2}, B.LastX {bLastXBeforeAlign:F3}->{bLastXAfterAlign:F3}, C.First%={opB.FirstPassPercent:F2}, C.Last% {cLastBeforeShift:F2}->{opB.LastPassPercent:F2}, C.LastX {cLastXBeforeShift:F3}->{cLastXAfterShift:F3} (Δ={Math.Abs(cLastXAfterShift - cLastXBeforeShift):F3}mm)");
             DentalLogger.Log($"Composite2SplitAB - seam 보정: A({opA.FirstPassPercent:F2}->{opA.LastPassPercent:F2}), B({opB.FirstPassPercent:F2}->{opB.LastPassPercent:F2}), seamEps={seamEpsilonPercent:F2}, BFirstGuard={startEndBFirstGuardApplied}");
 
             bool surfaceReady = TryEnsureCompositeSurfaceNumber("Composite2SplitAB");
@@ -508,11 +544,6 @@ namespace DentalAddin
             // 포스트/NC 단계 안정화 목적: 기본은 Single-A(전체 구간) 모드.
             // AB 분할이 필요한 경우에만 env로 비활성화할 수 있다.
             // env: ABUTS_COMPOSITE_SINGLE_A_ENABLE (default=true)
-            string singleARaw = GetEnvString("ABUTS_COMPOSITE_SINGLE_A_ENABLE");
-            bool singleAEnabled = string.IsNullOrWhiteSpace(singleARaw)
-                || string.Equals(singleARaw, "1", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(singleARaw, "true", StringComparison.OrdinalIgnoreCase);
-
             if (singleAEnabled)
             {
                 // 요청사항: Single-A에서도 C(B-Extension)가 사용될 때는
@@ -628,14 +659,15 @@ namespace DentalAddin
                         // 요청사항: D는 B/C 끝점에서 시작(겹침 방지)
                         // Single-A 경로에서는 선행 공정 B가 opA이므로 D 시작을 opA.Last에 맞춘다.
                         opBExtensionSingle.FirstPassPercent = Clamp(opA.LastPassPercent, firstPercent, 100.0);
-                        opBExtensionSingle.LastPassPercent = ShiftPassPercentByXOffsetMm(
+                        opBExtensionSingle.LastPassPercent = ShiftPassPercentByStartEndScaleMm(
                             opBExtensionSingle.FirstPassPercent,
                             compositeDFixedWidthMm,
                             opBExtensionSingle.FirstPassPercent,
-                            100.0,
-                            MoveSTL_Module.FrontPointX,
-                            direction,
-                            absSpan);
+                            100.0);
+                        double dStartXSingle = PassPercentToX(opBExtensionSingle.FirstPassPercent, MoveSTL_Module.FrontPointX, direction, absSpan);
+                        double dEndXSingle = PassPercentToX(opBExtensionSingle.LastPassPercent, MoveSTL_Module.FrontPointX, direction, absSpan);
+                        double dWidthByPassScaleSingle = PassPercentDeltaToMmByStartEndScale(opBExtensionSingle.LastPassPercent - opBExtensionSingle.FirstPassPercent);
+                        DentalLogger.Log($"Composite2SplitAB - D 고정폭 설정(single-A): Start%={opBExtensionSingle.FirstPassPercent:F2}, End%={opBExtensionSingle.LastPassPercent:F2}, Δ%={opBExtensionSingle.LastPassPercent - opBExtensionSingle.FirstPassPercent:F2}, WidthByPassScaleMm={dWidthByPassScaleSingle:F3}, TargetMm={compositeDFixedWidthMm:F3}, SpanMapX {dStartXSingle:F3}->{dEndXSingle:F3}");
                         opBExtensionSingle.DriveSurface = opA.DriveSurface;
                         opBExtensionSingle.ToolID = !string.IsNullOrWhiteSpace(opA.ToolID) ? opA.ToolID : ToolNs;
                         TrySetCompositeStockAllowance(opBExtensionSingle, "B-Extension");
@@ -646,7 +678,7 @@ namespace DentalAddin
                             TryAddOperation(opBExtensionSingle, freeFormFeature, "Composite2SplitAB:A:Single:B:Extension", false);
                             TryAppendCompositeSuffixToNewOperations(beforeBExtSingle, "B-Extension");
                             int afterBExtSingle = Document?.Operations?.Count ?? -1;
-                            DentalLogger.Log($"Composite2SplitAB - Single-A 경로 B-Extension 추가 완료 (D={opBExtensionSingle.FirstPassPercent:F2}->{opBExtensionSingle.LastPassPercent:F2}, WidthMm={compositeDFixedWidthMm:F1}, afterCount={afterBExtSingle})");
+                            DentalLogger.Log($"Composite2SplitAB - Single-A 경로 B-Extension 추가 완료 (D={opBExtensionSingle.FirstPassPercent:F2}->{opBExtensionSingle.LastPassPercent:F2}, TargetWidthMm={compositeDFixedWidthMm:F3}, afterCount={afterBExtSingle})");
                         }
                         catch (Exception exBExtSingle)
                         {
@@ -772,14 +804,15 @@ namespace DentalAddin
                     // 요청사항: D는 B/C 끝점에서 시작(겹침 방지)
                     // AB 경로에서는 선행 공정 C가 opB이므로 D 시작을 opB.Last에 맞춘다.
                     opBExtension.FirstPassPercent = Clamp(opB.LastPassPercent, firstPercent, 100.0);
-                    opBExtension.LastPassPercent = ShiftPassPercentByXOffsetMm(
+                    opBExtension.LastPassPercent = ShiftPassPercentByStartEndScaleMm(
                         opBExtension.FirstPassPercent,
                         compositeDFixedWidthMm,
                         opBExtension.FirstPassPercent,
-                        100.0,
-                        MoveSTL_Module.FrontPointX,
-                        direction,
-                        absSpan);
+                        100.0);
+                    double dStartX = PassPercentToX(opBExtension.FirstPassPercent, MoveSTL_Module.FrontPointX, direction, absSpan);
+                    double dEndX = PassPercentToX(opBExtension.LastPassPercent, MoveSTL_Module.FrontPointX, direction, absSpan);
+                    double dWidthByPassScale = PassPercentDeltaToMmByStartEndScale(opBExtension.LastPassPercent - opBExtension.FirstPassPercent);
+                    DentalLogger.Log($"Composite2SplitAB - D 고정폭 설정(AB): Start%={opBExtension.FirstPassPercent:F2}, End%={opBExtension.LastPassPercent:F2}, Δ%={opBExtension.LastPassPercent - opBExtension.FirstPassPercent:F2}, WidthByPassScaleMm={dWidthByPassScale:F3}, TargetMm={compositeDFixedWidthMm:F3}, SpanMapX {dStartX:F3}->{dEndX:F3}");
                     opBExtension.DriveSurface = opA.DriveSurface;
                     opBExtension.ToolID = !string.IsNullOrWhiteSpace(opB.ToolID) ? opB.ToolID : opA.ToolID;
                     TrySetCompositeStockAllowance(opBExtension, "B-Extension");
@@ -790,7 +823,7 @@ namespace DentalAddin
                         TryAddOperation(opBExtension, freeFormFeature, "Composite2SplitAB:B:Extension", false);
                         TryAppendCompositeSuffixToNewOperations(beforeBExt, "B-Extension");
                         int afterBExt = Document?.Operations?.Count ?? -1;
-                        DentalLogger.Log($"Composite2SplitAB - Operation 추가 완료: B-Extension (D={opBExtension.FirstPassPercent:F2}->{opBExtension.LastPassPercent:F2}, WidthMm={compositeDFixedWidthMm:F1}, afterCount={afterBExt})");
+                        DentalLogger.Log($"Composite2SplitAB - Operation 추가 완료: B-Extension (D={opBExtension.FirstPassPercent:F2}->{opBExtension.LastPassPercent:F2}, TargetWidthMm={compositeDFixedWidthMm:F3}, afterCount={afterBExt})");
                     }
                     catch (Exception extAddEx)
                     {
@@ -1730,6 +1763,76 @@ namespace DentalAddin
             return Clamp(shiftedPercent, minPercent, maxPercent);
         }
 
+        private static double PassPercentToX(double passPercent, double frontX, double direction, double absSpan)
+        {
+            if (double.IsNaN(passPercent) || double.IsInfinity(passPercent) || Math.Abs(absSpan) < 1e-6 || Math.Abs(direction) < 1e-9)
+            {
+                return frontX;
+            }
+
+            double ratio = passPercent / 100.0;
+            return frontX + direction * absSpan * ratio;
+        }
+
+        // StartEndPosition pass-percent 기준 길이(mm).
+        // Composite Start/End 계산(특히 D 고정폭, TwoPhaseSplitLine 경계 환산)은 이 스케일을 SSOT로 사용한다.
+        private const double StartEndScaleMm = 20.0;
+
+        // X(mm) -> pass-percent (StartEndScale 기준)
+        // 규칙: passPercent = (x / StartEndScaleMm) * 100
+        // 주의: Front~Back span 기반 변환과 혼용하지 않는다.
+        private static double XToPassPercentByStartEndScale(double x, double minPercent, double maxPercent)
+        {
+            if (double.IsNaN(x) || double.IsInfinity(x))
+            {
+                return Clamp(minPercent, minPercent, maxPercent);
+            }
+
+            double passPercent = x / StartEndScaleMm * 100.0;
+            return Clamp(passPercent, minPercent, maxPercent);
+        }
+
+        // X(mm) -> pass-percent (Front~Back span 기반)
+        // 디버그/비교용. StartEndScale 기준과 결과가 다를 수 있으므로 정책 결정에 임의 사용 금지.
+        private static double XToPassPercentBySpan(double x, double frontX, double direction, double absSpan, double minPercent, double maxPercent)
+        {
+            if (double.IsNaN(x) || double.IsInfinity(x) || Math.Abs(absSpan) < 1e-6 || Math.Abs(direction) < 1e-9)
+            {
+                return Clamp(minPercent, minPercent, maxPercent);
+            }
+
+            double passPercent = (x - frontX) / (direction * absSpan) * 100.0;
+            return Clamp(passPercent, minPercent, maxPercent);
+        }
+
+        // StartEndPosition pass-percent는 공정 기준 길이(20mm) 스케일로 해석한다.
+        // mm -> percent 변환: deltaPercent = (mm / StartEndScaleMm) * 100.0
+        private static double ShiftPassPercentByStartEndScaleMm(
+            double passPercent,
+            double offsetMm,
+            double minPercent,
+            double maxPercent)
+        {
+            if (double.IsNaN(passPercent) || double.IsInfinity(passPercent))
+            {
+                return Clamp(minPercent, minPercent, maxPercent);
+            }
+
+            double deltaPercent = (offsetMm / StartEndScaleMm) * 100.0;
+            double shiftedPercent = passPercent + deltaPercent;
+            return Clamp(shiftedPercent, minPercent, maxPercent);
+        }
+
+        private static double PassPercentDeltaToMmByStartEndScale(double deltaPercent)
+        {
+            if (double.IsNaN(deltaPercent) || double.IsInfinity(deltaPercent))
+            {
+                return 0.0;
+            }
+
+            return deltaPercent / 100.0 * StartEndScaleMm;
+        }
+
 
 
         // Turn_B와 Connection 경계 X를 공정 결과 기준으로 해석한다.
@@ -1861,6 +1964,56 @@ namespace DentalAddin
                 DentalLogger.Log($"FindFeatureChainByName({name}) 실패: {ex.GetType().Name}:{ex.Message}");
             }
             return null;
+        }
+
+        private static bool TryResolveTwoPhaseSplitLineX(out double splitX)
+        {
+            splitX = 0.0;
+
+            try
+            {
+                FeatureChain splitLine = FindFeatureChainByName("TwoPhaseSplitLine");
+                if (splitLine == null)
+                {
+                    return false;
+                }
+
+                Point p0 = splitLine.PointAlong(0.0);
+                Point p1 = splitLine.PointAlong(1.0);
+                if (p0 == null && p1 == null)
+                {
+                    return false;
+                }
+
+                if (p0 != null && !double.IsNaN(p0.X) && !double.IsInfinity(p0.X))
+                {
+                    splitX = p0.X;
+                }
+                else if (p1 != null && !double.IsNaN(p1.X) && !double.IsInfinity(p1.X))
+                {
+                    splitX = p1.X;
+                }
+                else
+                {
+                    return false;
+                }
+
+                // 가이드 라인은 수직선이므로 두 점 X가 조금 다르면 평균으로 안정화한다.
+                if (p0 != null && p1 != null
+                    && !double.IsNaN(p0.X) && !double.IsInfinity(p0.X)
+                    && !double.IsNaN(p1.X) && !double.IsInfinity(p1.X))
+                {
+                    splitX = (p0.X + p1.X) / 2.0;
+                }
+
+                DentalLogger.Log($"Composite2SplitAB - TwoPhaseSplitLine X 해석: X={splitX:F3}");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                DentalLogger.Log($"Composite2SplitAB - TwoPhaseSplitLine X 해석 실패: {ex.GetType().Name}:{ex.Message}");
+                return false;
+            }
         }
 
         private static int SafeParseKey(string key)
