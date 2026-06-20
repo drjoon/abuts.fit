@@ -406,7 +406,7 @@ namespace DentalAddin
             const double seamEpsilonPercent = 0.05;
             const double compositeBcdBoundaryShiftMm = 0.3; // 요청사항: B/C 종료 +0.3mm
             const double compositeDStartShiftMm = 0.0; // 요청사항: D 시작점 0.0mm (C 끝점과 동일 시작)
-            const double compositeDFixedWidthMm = 0.5; // 요청사항: D 고정폭 0.5mm (End = Start + 0.5mm)
+            const double compositeDFixedWidthMm = 0.7; // 요청사항: D 고정폭 0.5mm (End = Start + 0.5mm)
 
             // B 시작 퍼센트 상한(안전값) 적용
             double splitPercentForA = splitPercent;
