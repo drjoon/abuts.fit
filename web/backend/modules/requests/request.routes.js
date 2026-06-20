@@ -584,4 +584,11 @@ router.post(
   requestController.cloneAsSample,
 );
 
+router.post(
+  "/:id/clone-from-sample-to-request",
+  authenticate,
+  authorize(["manufacturer", "admin"]),
+  requestController.cloneFromSampleToRequest,
+);
+
 export default router;

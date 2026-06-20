@@ -597,28 +597,26 @@ export const RequestPage = ({
       }
       if (!req?._id) return;
       try {
-        const res = await fetch(`/api/requests/${req._id}/rnd-done`, {
-          method: "PATCH",
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json",
+        const res = await fetch(
+          `/api/requests/${req._id}/clone-from-sample-to-request`,
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${token}`,
+              "Content-Type": "application/json",
+            },
           },
-          body: JSON.stringify({ done: false }),
-        });
+        );
         const data = await res.json().catch(() => ({}));
         if (!res.ok || data?.success === false) {
-          throw new Error(data?.message || "R&D 롤백에 실패했습니다.");
+          throw new Error(data?.message || "의뢰 복사에 실패했습니다.");
         }
-        const restoredStage = String(data?.data?.restoredStage || "").trim();
-        const restoredStageLabel = (() => {
-          if (restoredStage === "세척.패킹") return "세척·패킹";
-          if (restoredStage === "포장.발송") return "포장·발송";
-          return restoredStage || "원래 위치";
-        })();
+
         toast({
-          title: "롤백 완료",
-          description: `의뢰 ${req.requestId}가 ${restoredStageLabel} 탭으로 복귀되었습니다.`,
+          title: "복사 완료",
+          description: `의뢰 ${req.requestId}가 의뢰 탭으로 복사되었습니다. (새 의뢰ID: ${data?.data?.requestId || "-"})`,
         });
+
         void queryClient.invalidateQueries({
           queryKey: ["worksheet-assigned-summary"],
         });
@@ -629,7 +627,7 @@ export const RequestPage = ({
         void reloadRequests();
       } catch (e: any) {
         toast({
-          title: "롤백 실패",
+          title: "복사 실패",
           description: e?.message || "네트워크 오류",
           variant: "destructive",
         });

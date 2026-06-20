@@ -2,7 +2,14 @@ import { useEffect, useRef, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
-import { ArrowLeft, ArrowRight, Check, FlaskConical, X } from "lucide-react";
+import {
+  ArrowLeft,
+  ArrowRight,
+  Check,
+  Copy,
+  FlaskConical,
+  X,
+} from "lucide-react";
 import { formatImplantDisplay } from "@/utils/implant";
 import { generateModelNumber } from "@/utils/modelNumber";
 import { resolveImplantConnectionSpec } from "@/utils/implantConnectionSpec";
@@ -604,15 +611,25 @@ export const WorksheetCardGrid = ({
               {onRollback && canRollback && (
                 <button
                   type="button"
-                  className="h-7 w-7 inline-flex items-center justify-center rounded-md border bg-white/90 text-slate-600 shadow-sm transition hover:bg-slate-50"
+                  className={`inline-flex items-center justify-center rounded-md border bg-white/90 text-slate-600 shadow-sm transition hover:bg-slate-50 ${
+                    tabStage === "rnd" ? "h-7 px-2 gap-1" : "h-7 w-7"
+                  }`}
                   onClick={(e) => {
                     e.preventDefault();
                     e.stopPropagation();
                     onRollback(request);
                   }}
-                  aria-label="롤백"
+                  aria-label={tabStage === "rnd" ? "복사" : "롤백"}
+                  title={tabStage === "rnd" ? "의뢰 탭으로 복사" : "롤백"}
                 >
-                  <ArrowLeft className="h-4 w-4" />
+                  {tabStage === "rnd" ? (
+                    <>
+                      <Copy className="h-3.5 w-3.5" />
+                      <span className="text-[11px] font-semibold">복사</span>
+                    </>
+                  ) : (
+                    <ArrowLeft className="h-4 w-4" />
+                  )}
                 </button>
               )}
               {onDelete && isSampleRequest && (

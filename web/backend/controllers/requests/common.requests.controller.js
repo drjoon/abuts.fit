@@ -1794,3 +1794,190 @@ export async function cloneAsSample(req, res) {
     await session.endSession();
   }
 }
+
+/**
+ * R&D 샘플 의뢰를 '의뢰' 탭 작업용으로 복사
+ * - 원본 R&D 샘플은 유지
+ * - 복사본은 source=manufacturer_sample, rnd.doneAt=null, manufacturerStage='의뢰'
+ * @route POST /api/requests/:id/clone-from-sample-to-request
+ */
+export async function cloneFromSampleToRequest(req, res) {
+  const session = await mongoose.startSession();
+  try {
+    await session.withTransaction(async () => {
+      const { id } = req.params;
+
+      if (!mongoose.Types.ObjectId.isValid(id)) {
+        throw new ApiError(400, "유효하지 않은 의뢰 ID입니다.");
+      }
+
+      const request = await Request.findById(id).session(session).lean();
+      if (!request) {
+        throw new ApiError(404, "의뢰를 찾을 수 없습니다.");
+      }
+
+      if (String(request.source || "").trim() !== "manufacturer_sample") {
+        throw new ApiError(400, "R&D 샘플 의뢰만 복사할 수 있습니다.");
+      }
+
+      if (!["manufacturer", "admin"].includes(req.user.role)) {
+        throw new ApiError(403, "제조사 또는 관리자만 복사할 수 있습니다.");
+      }
+
+      if (req.user.role === "manufacturer") {
+        const orgScope = await buildManufacturerOrgScopeFilter(req);
+        const allowed = await Request.exists({
+          _id: request._id,
+          ...orgScope,
+        }).session(session);
+        if (!allowed) {
+          throw new ApiError(403, "이 의뢰를 복사할 권한이 없습니다.");
+        }
+      }
+
+      const sourceCaseInfos = request.caseInfos || {};
+      const now = new Date();
+
+      const clonedRequest = new Request({
+        caseInfos: {
+          ...sourceCaseInfos,
+          reviewByStage: {
+            request: { status: "PENDING", updatedAt: now },
+            cam: { status: "PENDING", updatedAt: null },
+            machining: { status: "PENDING", updatedAt: null },
+            packing: { status: "PENDING", updatedAt: null },
+            shipping: { status: "PENDING", updatedAt: null },
+            tracking: { status: "PENDING", updatedAt: null },
+          },
+          rollbackCounts: {
+            request: 0,
+            cam: 0,
+            machining: 0,
+            packing: 0,
+            shipping: 0,
+            tracking: 0,
+          },
+          // 의뢰 탭 재작업 복사본은 초기 단계부터 시작
+          camFile: null,
+          ncFile: null,
+          stageFiles: {
+            machining: null,
+            packing: null,
+            shipping: null,
+            tracking: null,
+          },
+        },
+        requestor: request.requestor,
+        businessAnchorId: request.businessAnchorId,
+        caManufacturer: req.user._id,
+        manufacturerStage: "의뢰",
+        source: "manufacturer_sample",
+        rnd: {
+          doneAt: null,
+          doneBy: null,
+          doneFromStage: null,
+          memo: "",
+          memoUpdatedAt: null,
+          memoUpdatedBy: null,
+        },
+        price: {
+          amount: 0,
+          baseAmount: 0,
+          discountAmount: 0,
+          currency: "KRW",
+          rule: "manufacturer_sample",
+          paidAmount: 0,
+          bonusAmount: 0,
+        },
+        originalShipping: {
+          mode: "normal",
+          requestedAt: now,
+        },
+        finalShipping: {
+          mode: "normal",
+          updatedAt: now,
+        },
+        mailboxAddress: null,
+        shippingLabelPrinted: {
+          printed: false,
+          printedAt: null,
+          mailboxAddress: null,
+          snapshotFingerprint: null,
+        },
+        shippingWorkflow: {
+          code: "none",
+          label: "미처리",
+        },
+        productionSchedule: {
+          assignedMachine: null,
+          queuePosition: null,
+          machiningQty: 1,
+          diameter: request.productionSchedule?.diameter || null,
+          diameterGroup: request.productionSchedule?.diameterGroup || null,
+        },
+        timeline: {
+          originalEstimatedShipYmd: null,
+          nextEstimatedShipYmd: null,
+          estimatedShipYmd: null,
+          forceTodayShipment: false,
+          actualCompletion: null,
+        },
+        shippingPackageId: null,
+        deliveryInfoRef: null,
+        paymentStatus: "결제전",
+        paymentDetails: null,
+        selfInspection: {
+          confirmed: false,
+          confirmedAt: null,
+          confirmedBy: null,
+          overallJudgment: null,
+          rows: [],
+        },
+        statusHistory: [
+          {
+            status: "R&D 샘플 의뢰 복사 생성",
+            note: `원본 샘플 의뢰: ${request.requestId}`,
+            updatedBy: req.user._id,
+            updatedAt: now,
+          },
+        ],
+      });
+
+      await clonedRequest.save({ session });
+
+      emitAppEventToRoles(["manufacturer", "admin"], "worksheet:count-update", {
+        stage: "request",
+        delta: 1,
+        requestId: clonedRequest.requestId,
+        source: "manufacturer_sample",
+        originalRequestId: request.requestId,
+      });
+
+      res.status(201).json({
+        success: true,
+        message: "R&D 샘플이 의뢰 탭으로 복사되었습니다.",
+        data: {
+          requestId: clonedRequest.requestId,
+          originalRequestId: request.requestId,
+          source: clonedRequest.source,
+          manufacturerStage: clonedRequest.manufacturerStage,
+        },
+      });
+    });
+  } catch (error) {
+    console.error("[cloneFromSampleToRequest] Error:", error);
+    if (error instanceof ApiError) {
+      return res.status(error.statusCode).json({
+        success: false,
+        message: error.message,
+      });
+    }
+    return res.status(500).json({
+      success: false,
+      message: "R&D 복사 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  } finally {
+    await session.endSession();
+  }
+}

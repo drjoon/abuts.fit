@@ -37,6 +37,7 @@ export const {
   saveNcFileAndMoveToMachining,
   deleteNcFileAndRollbackCam,
   cloneAsSample,
+  cloneFromSampleToRequest,
 } = commonController;
 
 export const {
