@@ -404,9 +404,9 @@ namespace DentalAddin
                 : firstPercent;
 
             const double seamEpsilonPercent = 0.05;
-            const double compositeBcdBoundaryShiftMm = 0.3; // 요청사항: B/C 종료 +0.3mm
+            const double compositeBcdBoundaryShiftMm = 0.3; // 요청사항: B/C 종료 +0.5mm
             const double compositeDStartShiftMm = 0.0; // 요청사항: D 시작점 0.0mm (C 끝점과 동일 시작)
-            const double compositeDFixedWidthMm = 0.7; // 요청사항: D 고정폭 0.5mm (End = Start + 0.5mm)
+            const double compositeDFixedWidthMm = 0.5; // 요청사항: D 고정폭 0.6mm (End = Start + 0.6mm)
 
             // B 시작 퍼센트 상한(안전값) 적용
             double splitPercentForA = splitPercent;
@@ -480,11 +480,9 @@ namespace DentalAddin
 
             // C 종료점만 +0.3mm 이동한다. (B/C 경계는 유지)
             double cLastBeforeShift = opB.LastPassPercent;
-            opB.LastPassPercent = ShiftPassPercentByStartEndScaleMm(
+            opB.LastPassPercent = ShiftPassPercentByStartEndScaleMmNoClamp(
                 opB.LastPassPercent,
-                compositeBcdBoundaryShiftMm,
-                opB.FirstPassPercent,
-                effectiveLastPercent);
+                compositeBcdBoundaryShiftMm);
 
             double bLastXBeforeAlign = PassPercentToX(bLastBeforeAlign, MoveSTL_Module.FrontPointX, direction, absSpan);
             double bLastXAfterAlign = PassPercentToX(opA.LastPassPercent, MoveSTL_Module.FrontPointX, direction, absSpan);
@@ -554,11 +552,9 @@ namespace DentalAddin
                 opA.LastPassPercent = singleALastPassPercent;
                 // 요청사항: Single-A에서도 Composite B(=opA) 종료를 +0.3mm 이동
                 double singleBLastBeforeShift = opA.LastPassPercent;
-                opA.LastPassPercent = ShiftPassPercentByStartEndScaleMm(
+                opA.LastPassPercent = ShiftPassPercentByStartEndScaleMmNoClamp(
                     opA.LastPassPercent,
-                    compositeBcdBoundaryShiftMm,
-                    opA.FirstPassPercent,
-                    effectiveLastPercent);
+                    compositeBcdBoundaryShiftMm);
                 // 사용자 요청: Single-A 최종 Composite_B(=opA) 시작점도 0% 고정
                 opA.FirstPassPercent = 0.0;
                 DentalLogger.Log($"Composite2SplitAB - Single-A B 시작점 0% 고정 적용: FirstPass={opA.FirstPassPercent:F2}, LastPass={opA.LastPassPercent:F2}");
@@ -1824,6 +1820,21 @@ namespace DentalAddin
             double deltaPercent = (offsetMm / StartEndScaleMm) * 100.0;
             double shiftedPercent = passPercent + deltaPercent;
             return Clamp(shiftedPercent, minPercent, maxPercent);
+        }
+
+        // C 종료/B 종료 보정처럼 의도적으로 안전 상한(effectiveLastPercent)을 넘겨 이동시켜야 하는 구간용.
+        // StartEndScale로 mm->percent만 변환하고, 여기서는 클램프하지 않는다.
+        private static double ShiftPassPercentByStartEndScaleMmNoClamp(
+            double passPercent,
+            double offsetMm)
+        {
+            if (double.IsNaN(passPercent) || double.IsInfinity(passPercent))
+            {
+                return passPercent;
+            }
+
+            double deltaPercent = (offsetMm / StartEndScaleMm) * 100.0;
+            return passPercent + deltaPercent;
         }
 
         private static double PassPercentDeltaToMmByStartEndScale(double deltaPercent)
