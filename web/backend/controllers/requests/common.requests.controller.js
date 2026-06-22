@@ -1633,11 +1633,23 @@ function buildClonedCaseInfos(sourceCaseInfos, startStage, now = new Date()) {
     },
   };
 
+  // 시작 공정 이전 산출물은 유지하고, 이후 공정 산출물은 초기화한다.
+  // - 의뢰 시작: CAM/NC 모두 제거
+  // - CAM 시작: CAM은 유지, NC는 제거 (재생성 가능)
+  // - 가공 시작: CAM/NC 모두 유지
   if (startStage === "가공") {
     return {
       ...base,
       camFile: sourceCaseInfos?.camFile || null,
       ncFile: sourceCaseInfos?.ncFile || null,
+    };
+  }
+
+  if (startStage === "CAM") {
+    return {
+      ...base,
+      camFile: sourceCaseInfos?.camFile || null,
+      ncFile: null,
     };
   }
 
