@@ -22,6 +22,7 @@ import {
   type ManufacturerRequest,
 } from "../utils/request";
 import { useWorksheetRealtimeStatus } from "../hooks/useWorksheetRealtimeStatus";
+import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
 
 type InquiryTab = "process" | "shipping" | "udi";
 
@@ -122,6 +123,12 @@ export const TrackingInquiryPage = () => {
     Set<string>
   >(new Set());
   const [recallSubmitting, setRecallSubmitting] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [confirmTitle, setConfirmTitle] = useState("");
+  const [confirmDescription, setConfirmDescription] = useState("");
+  const [confirmAction, setConfirmAction] = useState<
+    null | (() => Promise<void> | void)
+  >(null);
   const emptyAutoFetchCountRef = useRef(0);
   // Network pagination per stage (tracking)
   const PAGE_LIMIT = 30;
@@ -643,10 +650,9 @@ export const TrackingInquiryPage = () => {
     });
   };
 
-  const handleDeleteSampleRequest = useCallback(
+  const executeDeleteSampleRequest = useCallback(
     async (r: ManufacturerRequest) => {
       if (!r?._id) return;
-      if (!window.confirm(`의뢰 ${r.requestId}를 삭제하시겠습니까?`)) return;
 
       try {
         const res = await fetch(`/api/requests/${r._id}`, {
@@ -677,6 +683,19 @@ export const TrackingInquiryPage = () => {
       }
     },
     [token, toast],
+  );
+
+  const handleDeleteSampleRequest = useCallback(
+    (r: ManufacturerRequest) => {
+      if (!r?._id) return;
+      setConfirmTitle("R&D 샘플 삭제");
+      setConfirmDescription(`의뢰 ${r.requestId}를 삭제하시겠습니까?`);
+      setConfirmAction(() => async () => {
+        await executeDeleteSampleRequest(r);
+      });
+      setConfirmOpen(true);
+    },
+    [executeDeleteSampleRequest],
   );
 
   const processRows = useMemo(() => {
@@ -845,8 +864,53 @@ export const TrackingInquiryPage = () => {
     });
   }, [recallFromDate, recallToDate, recallSelectableRequests, toast]);
 
-  const handleRecallClone = useCallback(async () => {
-    if (recallSubmitting) return;
+  const executeRecallClone = useCallback(
+    async (ids: string[], startStage: RecallStartStage) => {
+      if (recallSubmitting) return;
+      try {
+        setRecallSubmitting(true);
+        const res = await fetch(`/api/requests/recall-clone`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            requestIds: ids,
+            startStage,
+          }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || data?.success === false) {
+          throw new Error(data?.message || "리콜 복사에 실패했습니다.");
+        }
+
+        const successCount = Number(data?.data?.successCount || 0);
+        const failedCount = Number(data?.data?.failedCount || 0);
+        toast({
+          title: "리콜 복사 완료",
+          description: `${successCount}건 성공${failedCount ? `, ${failedCount}건 실패` : ""}`,
+        });
+
+        setRecallMode(false);
+        setSelectedRecallRequestIds(new Set());
+        setRecallFromDate("");
+        setRecallToDate("");
+        setRecallStartStage("의뢰");
+      } catch (e: any) {
+        toast({
+          title: "리콜 복사 실패",
+          description: e?.message || "네트워크 오류",
+          variant: "destructive",
+        });
+      } finally {
+        setRecallSubmitting(false);
+      }
+    },
+    [recallSubmitting, toast, token],
+  );
+
+  const handleRecallClone = useCallback(() => {
     const ids = Array.from(selectedRecallRequestIds);
     if (!ids.length) {
       toast({
@@ -857,60 +921,16 @@ export const TrackingInquiryPage = () => {
       return;
     }
 
-    if (
-      !window.confirm(
-        `선택한 ${ids.length}건을 ${recallStartStage} 공정으로 복사할까요?`,
-      )
-    ) {
-      return;
-    }
-
-    try {
-      setRecallSubmitting(true);
-      const res = await fetch(`/api/requests/recall-clone`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          requestIds: ids,
-          startStage: recallStartStage,
-        }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok || data?.success === false) {
-        throw new Error(data?.message || "리콜 복사에 실패했습니다.");
-      }
-
-      const successCount = Number(data?.data?.successCount || 0);
-      const failedCount = Number(data?.data?.failedCount || 0);
-      toast({
-        title: "리콜 복사 완료",
-        description: `${successCount}건 성공${failedCount ? `, ${failedCount}건 실패` : ""}`,
-      });
-
-      setRecallMode(false);
-      setSelectedRecallRequestIds(new Set());
-      setRecallFromDate("");
-      setRecallToDate("");
-      setRecallStartStage("의뢰");
-    } catch (e: any) {
-      toast({
-        title: "리콜 복사 실패",
-        description: e?.message || "네트워크 오류",
-        variant: "destructive",
-      });
-    } finally {
-      setRecallSubmitting(false);
-    }
-  }, [
-    recallStartStage,
-    recallSubmitting,
-    selectedRecallRequestIds,
-    toast,
-    token,
-  ]);
+    const stageSnapshot = recallStartStage;
+    setConfirmTitle("리콜 복사 실행");
+    setConfirmDescription(
+      `선택한 ${ids.length}건을 ${stageSnapshot} 공정으로 복사할까요?\n(원본 의뢰는 그대로 유지됩니다.)`,
+    );
+    setConfirmAction(() => async () => {
+      await executeRecallClone(ids, stageSnapshot);
+    });
+    setConfirmOpen(true);
+  }, [executeRecallClone, recallStartStage, selectedRecallRequestIds, toast]);
 
   useEffect(() => {
     setExpandedBoxes((prev) => {
@@ -1797,6 +1817,29 @@ export const TrackingInquiryPage = () => {
           </TabsContent>
         </Tabs>
       </div>
+
+      <ConfirmDialog
+        open={confirmOpen}
+        title={confirmTitle}
+        description={confirmDescription}
+        confirmLabel="확인"
+        cancelLabel="취소"
+        onConfirm={async () => {
+          if (!confirmAction) return;
+          const action = confirmAction;
+          setConfirmOpen(false);
+          setConfirmAction(null);
+          try {
+            await action();
+          } catch (error) {
+            console.error("Confirm action failed:", error);
+          }
+        }}
+        onCancel={() => {
+          setConfirmOpen(false);
+          setConfirmAction(null);
+        }}
+      />
     </div>
   );
 };
