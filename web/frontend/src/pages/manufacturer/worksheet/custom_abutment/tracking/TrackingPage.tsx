@@ -166,24 +166,53 @@ export const TrackingInquiryPage = () => {
     const run = async (silent = false, append = false) => {
       try {
         if (!silent) setLoading(true);
-        const url = new URL("/api/requests/all", window.location.origin);
-        url.searchParams.set("page", String(pageRef.current));
-        url.searchParams.set("limit", String(PAGE_LIMIT));
-        url.searchParams.set("view", "worksheet");
-        url.searchParams.set("worksheetProfile", "tracking");
-        url.searchParams.set("includeTotal", "0");
-        url.searchParams.set("includeDelivery", "1");
-        const res = await fetch(url.pathname + url.search, {
-          headers: { Authorization: `Bearer ${token}` },
-          cache: "no-store",
-        });
-        const body: any = await res.json().catch(() => ({}));
-        if (!res.ok || body?.success === false) {
-          throw new Error(body?.message || "의뢰 목록 조회에 실패했습니다.");
+
+        const fetchPage = async (page: number) => {
+          const url = new URL("/api/requests/all", window.location.origin);
+          url.searchParams.set("page", String(page));
+          url.searchParams.set("limit", String(PAGE_LIMIT));
+          url.searchParams.set("view", "worksheet");
+          url.searchParams.set("worksheetProfile", "tracking");
+          url.searchParams.set("includeTotal", "0");
+          url.searchParams.set("includeDelivery", "1");
+          const res = await fetch(url.pathname + url.search, {
+            headers: { Authorization: `Bearer ${token}` },
+            cache: "no-store",
+          });
+          const body: any = await res.json().catch(() => ({}));
+          if (!res.ok || body?.success === false) {
+            throw new Error(body?.message || "의뢰 목록 조회에 실패했습니다.");
+          }
+          const list = Array.isArray(body?.data?.requests)
+            ? body.data.requests
+            : [];
+          return list as ManufacturerRequest[];
+        };
+
+        // 택배/배송 탭은 기간 필터 누락 방지를 위해 초기 로드에서 페이지를 끝까지 수집한다.
+        // (서버 페이지 정렬 기준과 클라이언트 기간 필터 기준이 다를 때 중간 기간 누락 방지)
+        if (tab === "shipping" && !append) {
+          const merged = new Map<string, ManufacturerRequest>();
+          let page = 1;
+          const MAX_PAGES = 100;
+          while (page <= MAX_PAGES) {
+            const list = await fetchPage(page);
+            for (const r of list) {
+              const key = String(
+                (r as any)?._id || (r as any)?.requestId || Math.random(),
+              );
+              merged.set(key, r);
+            }
+            if (list.length < PAGE_LIMIT) break;
+            page += 1;
+          }
+          setRequests(Array.from(merged.values()));
+          pageRef.current = page;
+          hasMoreRef.current = false;
+          return;
         }
-        const list = Array.isArray(body?.data?.requests)
-          ? body.data.requests
-          : [];
+
+        const list = await fetchPage(pageRef.current);
         if (append) {
           setRequests((prev) => {
             const map = new Map<string, any>();
@@ -241,32 +270,64 @@ export const TrackingInquiryPage = () => {
     return () => {
       delete (window as any).__trackingFetchNext;
     };
-  }, [token, toast]);
+  }, [token, toast, tab]);
 
   // Reset pagination on UI filter changes
   useEffect(() => {
     if (!token) return;
+    // shipping 탭은 초기 로드에서 전체 페이지를 이미 수집하므로,
+    // 기간/검색/완료토글 변경 시에는 클라이언트 필터만 적용한다.
+    if (tab === "shipping") return;
+
     const run = async (silent = false, append = false) => {
       try {
         if (!silent) setLoading(true);
-        const url = new URL("/api/requests/all", window.location.origin);
-        url.searchParams.set("page", String(pageRef.current));
-        url.searchParams.set("limit", String(PAGE_LIMIT));
-        url.searchParams.set("view", "worksheet");
-        url.searchParams.set("worksheetProfile", "tracking");
-        url.searchParams.set("includeTotal", "0");
-        url.searchParams.set("includeDelivery", "1");
-        const res = await fetch(url.pathname + url.search, {
-          headers: { Authorization: `Bearer ${token}` },
-          cache: "no-store",
-        });
-        const body: any = await res.json().catch(() => ({}));
-        if (!res.ok || body?.success === false) {
-          throw new Error(body?.message || "의뢰 목록 조회에 실패했습니다.");
+
+        const fetchPage = async (page: number) => {
+          const url = new URL("/api/requests/all", window.location.origin);
+          url.searchParams.set("page", String(page));
+          url.searchParams.set("limit", String(PAGE_LIMIT));
+          url.searchParams.set("view", "worksheet");
+          url.searchParams.set("worksheetProfile", "tracking");
+          url.searchParams.set("includeTotal", "0");
+          url.searchParams.set("includeDelivery", "1");
+          const res = await fetch(url.pathname + url.search, {
+            headers: { Authorization: `Bearer ${token}` },
+            cache: "no-store",
+          });
+          const body: any = await res.json().catch(() => ({}));
+          if (!res.ok || body?.success === false) {
+            throw new Error(body?.message || "의뢰 목록 조회에 실패했습니다.");
+          }
+          const list = Array.isArray(body?.data?.requests)
+            ? body.data.requests
+            : [];
+          return list as ManufacturerRequest[];
+        };
+
+        // 택배/배송 탭은 기간 필터 누락 방지를 위해 초기 로드에서 페이지를 끝까지 수집한다.
+        if (tab === "shipping" && !append) {
+          const merged = new Map<string, ManufacturerRequest>();
+          let page = 1;
+          const MAX_PAGES = 100;
+          while (page <= MAX_PAGES) {
+            const list = await fetchPage(page);
+            for (const r of list) {
+              const key = String(
+                (r as any)?._id || (r as any)?.requestId || Math.random(),
+              );
+              merged.set(key, r);
+            }
+            if (list.length < PAGE_LIMIT) break;
+            page += 1;
+          }
+          setRequests(Array.from(merged.values()));
+          pageRef.current = page;
+          hasMoreRef.current = false;
+          return;
         }
-        const list = Array.isArray(body?.data?.requests)
-          ? body.data.requests
-          : [];
+
+        const list = await fetchPage(pageRef.current);
         if (append) {
           setRequests((prev) => {
             const map = new Map<string, any>();
