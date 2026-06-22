@@ -77,6 +77,7 @@ const requestSchema = new mongoose.Schema(
         y: Number,
         z: Number,
       },
+      taperGuide: mongoose.Schema.Types.Mixed,
       newSystemRequest: {
         requested: { type: Boolean, default: false },
         manufacturer: String,

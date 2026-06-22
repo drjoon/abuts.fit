@@ -336,6 +336,7 @@ export function StlPreviewViewer({
     const taperAngleArcGuide: THREE.Line | null = null;
     const multiDirectionLines: (Line2 | THREE.Line)[] = [];
     const multiDirectionSprites: THREE.Sprite[] = [];
+    const lineMaterials: LineMaterial[] = [];
 
     let cancelled = false;
     (async () => {
@@ -493,11 +494,143 @@ export function StlPreviewViewer({
             intercept: number;
             taperAngle: number; // 부호가 있는 각도 (+ 또는 -)
             rSquared: number; // 선형성 검증 (R²)
-            surfacePoints: Array<{ x: number; y: number; z: number }>; // 실제 표면 포인트들
+            surfacePoints?: Array<{ x: number; y: number; z: number }>; // 실제 표면 포인트들(없을 수 있음: 백엔드 가이드)
             dirFinishLineZ?: number;
             dirAvailableHeight?: number;
           }>;
         } | null = null;
+
+        // 백엔드에서 내려온 taperGuide를 우선 사용
+        const metadataTaperGuideRaw =
+          latestMetadata?.taperGuide &&
+          typeof latestMetadata.taperGuide === "object"
+            ? (latestMetadata.taperGuide as {
+                zStart?: unknown;
+                zEnd?: unknown;
+                slope?: unknown;
+                intercept?: unknown;
+                multiDirectionGuides?: unknown;
+              })
+            : null;
+
+        if (metadataTaperGuideRaw) {
+          const zStart = Number(metadataTaperGuideRaw.zStart);
+          const zEnd = Number(metadataTaperGuideRaw.zEnd);
+
+          const parsedGuides = Array.isArray(
+            metadataTaperGuideRaw.multiDirectionGuides,
+          )
+            ? metadataTaperGuideRaw.multiDirectionGuides
+                .map((g) => {
+                  if (!g || typeof g !== "object") return null;
+                  const guide = g as {
+                    angle?: unknown;
+                    slope?: unknown;
+                    intercept?: unknown;
+                    taperAngle?: unknown;
+                    rSquared?: unknown;
+                    dirFinishLineZ?: unknown;
+                    dirAvailableHeight?: unknown;
+                    surfacePoints?: unknown;
+                  };
+
+                  const angle = Number(guide.angle);
+                  const slope = Number(guide.slope);
+                  const intercept = Number(guide.intercept);
+                  const taperAngle = Number(guide.taperAngle);
+                  const rSquared = Number(guide.rSquared);
+
+                  if (
+                    !Number.isFinite(angle) ||
+                    !Number.isFinite(slope) ||
+                    !Number.isFinite(intercept) ||
+                    !Number.isFinite(taperAngle)
+                  ) {
+                    return null;
+                  }
+
+                  const surfacePoints = Array.isArray(guide.surfacePoints)
+                    ? guide.surfacePoints
+                        .map((p) => {
+                          if (!p || typeof p !== "object") return null;
+                          const q = p as {
+                            x?: unknown;
+                            y?: unknown;
+                            z?: unknown;
+                          };
+                          const x = Number(q.x);
+                          const y = Number(q.y);
+                          const z = Number(q.z);
+                          if (
+                            !Number.isFinite(x) ||
+                            !Number.isFinite(y) ||
+                            !Number.isFinite(z)
+                          ) {
+                            return null;
+                          }
+                          return { x, y, z };
+                        })
+                        .filter(
+                          (p): p is { x: number; y: number; z: number } => !!p,
+                        )
+                    : undefined;
+
+                  return {
+                    angle,
+                    slope,
+                    intercept,
+                    taperAngle,
+                    rSquared: Number.isFinite(rSquared) ? rSquared : 0,
+                    dirFinishLineZ: Number.isFinite(
+                      Number(guide.dirFinishLineZ),
+                    )
+                      ? Number(guide.dirFinishLineZ)
+                      : undefined,
+                    dirAvailableHeight: Number.isFinite(
+                      Number(guide.dirAvailableHeight),
+                    )
+                      ? Number(guide.dirAvailableHeight)
+                      : undefined,
+                    surfacePoints,
+                  };
+                })
+                .filter(
+                  (
+                    g,
+                  ): g is {
+                    angle: number;
+                    slope: number;
+                    intercept: number;
+                    taperAngle: number;
+                    rSquared: number;
+                    dirFinishLineZ?: number;
+                    dirAvailableHeight?: number;
+                    surfacePoints?: Array<{ x: number; y: number; z: number }>;
+                  } => !!g,
+                )
+            : [];
+
+          if (
+            Number.isFinite(zStart) &&
+            Number.isFinite(zEnd) &&
+            zEnd > zStart &&
+            parsedGuides.length > 0
+          ) {
+            taperGuide = {
+              zStart,
+              zEnd,
+              slope: Number.isFinite(Number(metadataTaperGuideRaw.slope))
+                ? Number(metadataTaperGuideRaw.slope)
+                : 0,
+              intercept: Number.isFinite(
+                Number(metadataTaperGuideRaw.intercept),
+              )
+                ? Number(metadataTaperGuideRaw.intercept)
+                : 0,
+              multiDirectionGuides: parsedGuides,
+            };
+          }
+        }
         const finishLineZs = Array.isArray(finishLinePoints)
           ? finishLinePoints
               .filter((p) => Array.isArray(p) && p.length >= 3)
@@ -520,7 +653,11 @@ export function StlPreviewViewer({
 
         const postHeight = postEndZ - postStartZ;
 
-        if (postHeight > 0.3) {
+        // 정책: 테이퍼 가이드는 백엔드 결과만 사용한다.
+        // 로컬 가이드 계산은 비활성화하여 오버레이/프리뷰 불일치를 방지한다.
+        const shouldSkipLocalTaperCalc = true;
+
+        if (!shouldSkipLocalTaperCalc && postHeight > 0.3) {
           const sliceCount = 40;
           const samples: Array<{ z: number; radius: number }> = [];
 
@@ -1093,7 +1230,8 @@ export function StlPreviewViewer({
             transparent: true,
             opacity: 0.9,
           });
-          axisMat.resolution.set(window.innerWidth, window.innerHeight);
+          axisMat.resolution.set(width, height);
+          lineMaterials.push(axisMat);
           taperAxisGuide = new Line2(axisGeom, axisMat);
           taperAxisGuide.computeLineDistances();
           taperAxisGuide.renderOrder = 13;
@@ -1134,6 +1272,18 @@ export function StlPreviewViewer({
             taperGuide.multiDirectionGuides &&
             taperGuide.multiDirectionGuides.length > 0
           ) {
+            const guidesWithSurfacePoints =
+              taperGuide.multiDirectionGuides.filter(
+                (g) =>
+                  Array.isArray(g.surfacePoints) && g.surfacePoints.length >= 2,
+              ).length;
+            console.log("[taperGuide][render]", {
+              requestId,
+              file: file.name,
+              isFilled,
+              guides: taperGuide.multiDirectionGuides.length,
+              guidesWithSurfacePoints,
+            });
             // 6개 기본 색상 정의 (0~150도 용)
             const baseColors = [
               0xff0000, // 0도/180도: 빨강
@@ -1144,34 +1294,26 @@ export function StlPreviewViewer({
               0x9933ff, // 150도/330도: 보라
             ];
 
-            // 가장 큰 진짜 기울기(AAA)를 가진 쌍의 각도 찾기
-            let maxTiltAngle = -1;
+            // 가장 큰 기울기(절댓값) 가이드를 찾는다.
+            // (백엔드/로컬 가이드 포맷 차이에 상관없이 안정적으로 동작)
             let maxTiltValue = -1;
-            for (let baseAngle = 0; baseAngle < 180; baseAngle += 30) {
-              const oppositeAngle = baseAngle + 180;
-              const baseGuide = taperGuide.multiDirectionGuides.find(
-                (g) => g.angle === baseAngle,
-              );
-              const oppositeGuide = taperGuide.multiDirectionGuides.find(
-                (g) => g.angle === oppositeAngle,
-              );
-
-              if (baseGuide && oppositeGuide) {
-                // 부호 상관없이 원래 계산된 진짜 기울기의 절댓값으로 비교
-                const tilt = Math.abs(baseGuide.taperAngle);
-                if (tilt > maxTiltValue) {
-                  maxTiltValue = tilt;
-                  maxTiltAngle = baseAngle;
-                }
+            for (const g of taperGuide.multiDirectionGuides) {
+              const tilt = Math.abs(Number(g.taperAngle) || 0);
+              if (tilt > maxTiltValue) {
+                maxTiltValue = tilt;
               }
             }
 
-            taperGuide.multiDirectionGuides.forEach((guide) => {
-              if (!guide.surfacePoints || guide.surfacePoints.length < 2)
-                return;
+            const backendTaperAngleValue = Number(latestMetadata?.taperAngle);
+            const hasBackendTaperAngleValue =
+              Number.isFinite(backendTaperAngleValue) &&
+              backendTaperAngleValue > 0;
 
-              const isMaxPair = guide.angle % 180 === maxTiltAngle % 180;
-              const colorIdx = (guide.angle / 30) % 6;
+            taperGuide.multiDirectionGuides.forEach((guide) => {
+              const guideTilt = Math.abs(Number(guide.taperAngle) || 0);
+              const isMaxPair =
+                maxTiltValue > 0 && Math.abs(guideTilt - maxTiltValue) <= 0.05;
+              const colorIdx = ((Math.round(guide.angle / 30) % 6) + 6) % 6;
 
               // // 의뢰자 페이지(showOverlay=false)일 경우 최대 기울기(AAA) 쌍이 아니면 렌더링하지 않음
               // if (!showOverlay && !isMaxPair) return;
@@ -1182,13 +1324,16 @@ export function StlPreviewViewer({
                 : // 농도를 다르게 하기 위해 인덱스별로 회색 값 조정 (0x666666 부터 0xcccccc 까지)
                   0x666666 + colorIdx * 0x111111;
 
-              // 실제 표면 포인트들을 중심 좌표계로 변환
-              // filled STL은 effectiveCenter 사용
-              const centeredPoints = guide.surfacePoints.map((p) => ({
-                x: p.x - effectiveCenter.x,
-                y: p.y - effectiveCenter.y,
-                z: p.z - effectiveCenter.z,
-              }));
+              // 백엔드에서 전달된 실제 표면 포인트만 렌더링
+              if (!guide.surfacePoints || guide.surfacePoints.length < 2)
+                return;
+
+              const centeredPoints: Array<{ x: number; y: number; z: number }> =
+                guide.surfacePoints.map((p) => ({
+                  x: p.x - effectiveCenter.x,
+                  y: p.y - effectiveCenter.y,
+                  z: p.z - effectiveCenter.z,
+                }));
 
               // 측정선 - Line2로 굵게 (실제 표면 포인트들 연결)
               const positions: number[] = [];
@@ -1203,11 +1348,14 @@ export function StlPreviewViewer({
                 color: color,
                 linewidth: isMaxPair ? 5 : 2,
                 transparent: true,
-                opacity: 0.9,
+                opacity: 0.95,
+                depthTest: false,
+                depthWrite: false,
               });
-              lineMat.resolution.set(window.innerWidth, window.innerHeight);
+              lineMat.resolution.set(width, height);
+              lineMaterials.push(lineMat);
               const line = new Line2(lineGeom, lineMat);
-              line.renderOrder = 11;
+              line.renderOrder = 20;
               line.computeLineDistances();
               scene.add(line);
               multiDirectionLines.push(line);
@@ -1217,7 +1365,15 @@ export function StlPreviewViewer({
               const endPos = centeredPoints[centeredPoints.length - 1];
 
               // 제조사 페이지에서만 각도 텍스트 표시 (의뢰자 페이지에서는 표시하지 않음)
-              if (showOverlay) {
+              // 백엔드 taperAngle이 있으면 최대 기울기 라벨만 백엔드 AAA 값으로 표시해
+              // 오버레이(AAA)와 프리뷰 수치가 반드시 일치하도록 한다.
+              const labelAngle = hasBackendTaperAngleValue
+                ? isMaxPair
+                  ? backendTaperAngleValue
+                  : null
+                : Math.abs(guide.taperAngle);
+
+              if (showOverlay && labelAngle !== null) {
                 const canvas = document.createElement("canvas");
                 canvas.width = 256;
                 canvas.height = 64;
@@ -1226,11 +1382,7 @@ export function StlPreviewViewer({
                   ctx.fillStyle = "#" + color.toString(16).padStart(6, "0");
                   // 폰트 크기: 40px
                   ctx.font = "bold 40px Arial";
-                  ctx.fillText(
-                    `${Math.abs(guide.taperAngle).toFixed(1)}°`,
-                    10,
-                    40,
-                  );
+                  ctx.fillText(`${labelAngle.toFixed(1)}°`, 10, 40);
                 }
                 const texture = new THREE.CanvasTexture(canvas);
                 const spriteMat = new THREE.SpriteMaterial({ map: texture });
@@ -1244,12 +1396,20 @@ export function StlPreviewViewer({
                 // 개별 텍스트 크기 조절: 2배 (AAA 3.0, 나머지 2.0)
                 const textScale = isMaxPair ? 3.0 : 2.0;
                 sprite.scale.set(textScale, textScale * 0.25, 1);
-                sprite.renderOrder = 12;
+                sprite.renderOrder = 21;
                 scene.add(sprite);
                 multiDirectionSprites.push(sprite);
               }
             });
           }
+        } else {
+          console.log("[taperGuide][render:skip]", {
+            requestId,
+            file: file.name,
+            isFilled,
+            hasTaperGuide: !!taperGuide,
+            guideCount: taperGuide?.multiDirectionGuides?.length ?? 0,
+          });
         }
 
         const hasFinishLine = Array.isArray(finishLinePoints);
@@ -1333,6 +1493,7 @@ export function StlPreviewViewer({
       camera.aspect = newWidth / newHeight;
       camera.updateProjectionMatrix();
       renderer.setSize(newWidth, newHeight);
+      lineMaterials.forEach((mat) => mat.resolution.set(newWidth, newHeight));
     };
 
     // 컨테이너의 폭 변화에 반응

@@ -575,6 +575,53 @@ async def process_single_stl(
                     if stl_metadata:
                         # 메타데이터를 metadata dict에 병합
                         metadata["stlMetadata"] = stl_metadata
+
+                        # taperGuide surfacePoints 요약 로그 (케이스별 가이드 생성 여부 추적)
+                        taper_guide = (
+                            stl_metadata.get("taperGuide")
+                            if isinstance(stl_metadata, dict)
+                            else None
+                        )
+                        guides = (
+                            taper_guide.get("multiDirectionGuides")
+                            if isinstance(taper_guide, dict)
+                            else None
+                        )
+                        guides = guides if isinstance(guides, list) else []
+
+                        guide_count = len(guides)
+                        with_surface_points = 0
+                        total_surface_points = 0
+                        counts: list[int] = []
+
+                        for g in guides:
+                            if not isinstance(g, dict):
+                                counts.append(0)
+                                continue
+                            surface_points = g.get("surfacePoints")
+                            if isinstance(surface_points, list):
+                                sp_count = len(surface_points)
+                                counts.append(sp_count)
+                                if sp_count > 0:
+                                    with_surface_points += 1
+                                    total_surface_points += sp_count
+                            else:
+                                counts.append(0)
+
+                        summary = (
+                            f"taperGuide surfacePoints requestId={req_id} "
+                            f"guides={guide_count} withSurfacePoints={with_surface_points} "
+                            f"totalSurfacePoints={total_surface_points} counts={counts}"
+                        )
+
+                        log(f"[process_single_stl] {summary}")
+
+                        # 운영 로그 뷰에서 [abuts-rhino] 스트림만 보는 경우를 위해 동일 요약을 미러링
+                        try:
+                            print(f"[abuts-rhino] {summary}", flush=True)
+                        except Exception:
+                            pass
+
                         log(
                             f"[process_single_stl] STL metadata calculated and registered for {req_id}"
                         )
