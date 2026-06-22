@@ -415,15 +415,24 @@ export const useRequestFileHandlers = ({
     }) => {
       if (!token) return;
       setReviewSaving(true);
-      try {
-        const stageKey =
-          params.stageOverride ||
-          getReviewStageKeyByTab({
-            stage,
-            isCamStage,
-            isMachiningStage,
-          });
 
+      const stageKey =
+        params.stageOverride ||
+        getReviewStageKeyByTab({
+          stage,
+          isCamStage,
+          isMachiningStage,
+        });
+
+      const optimisticRequest = patchReviewStatusLocally(
+        params.req,
+        stageKey,
+        params.status,
+        params.reason,
+      );
+      const optimisticallyPatched = applySingleRequestPatch(optimisticRequest);
+
+      try {
         const res = await fetch(
           `/api/requests/${params.req._id}/review-status`,
           {
@@ -466,14 +475,7 @@ export const useRequestFileHandlers = ({
           throw err;
         }
 
-        const updatedRequest = patchReviewStatusLocally(
-          params.req,
-          stageKey,
-          params.status,
-          params.reason,
-        );
-        const patched = applySingleRequestPatch(updatedRequest);
-        if (!patched && !setRequests) {
+        if (!optimisticallyPatched && !setRequests) {
           await fetchRequests();
         }
 
@@ -516,6 +518,11 @@ export const useRequestFileHandlers = ({
         const errorMessage =
           (error as Error)?.message || "잠시 후 다시 시도해주세요.";
         const errorAny = error as any;
+
+        if (optimisticallyPatched) {
+          applySingleRequestPatch(params.req);
+        }
+
         if (
           errorAny?.statusCode === 402 &&
           errorAny?.payload?.reason === "insufficient_credit_for_shipping"
@@ -575,9 +582,33 @@ export const useRequestFileHandlers = ({
     ) => {
       if (!token) return;
       setDeletingCam((prev) => ({ ...prev, [req._id]: true }));
+      const rollbackOnly = !!opts?.rollbackOnly;
+      const navigate = opts?.navigate !== false;
+      const updatedRequest = {
+        ...req,
+        caseInfos: {
+          ...req.caseInfos,
+          camFile: undefined,
+          reviewByStage: rollbackOnly
+            ? {
+                ...req.caseInfos?.reviewByStage,
+                cam: {
+                  ...req.caseInfos?.reviewByStage?.cam,
+                  status: "PENDING",
+                  updatedAt: new Date().toISOString(),
+                  reason: "",
+                },
+              }
+            : req.caseInfos?.reviewByStage,
+        },
+        manufacturerStage: "의뢰",
+      } as ManufacturerRequest;
+      const optimisticallyPatched = applySingleRequestPatch(updatedRequest);
+      if (!optimisticallyPatched) {
+        removeSingleRequest(req);
+      }
+
       try {
-        const rollbackOnly = !!opts?.rollbackOnly;
-        const navigate = opts?.navigate !== false;
         const res = await fetch(
           `/api/requests/${req._id}/cam-file${
             rollbackOnly ? "?rollbackOnly=1" : ""
@@ -592,33 +623,11 @@ export const useRequestFileHandlers = ({
         if (!res.ok) {
           throw new Error("delete cam file failed");
         }
-        const updatedRequest = {
-          ...req,
-          caseInfos: {
-            ...req.caseInfos,
-            camFile: undefined,
-            reviewByStage: rollbackOnly
-              ? {
-                  ...req.caseInfos?.reviewByStage,
-                  cam: {
-                    ...req.caseInfos?.reviewByStage?.cam,
-                    status: "PENDING",
-                    updatedAt: new Date().toISOString(),
-                    reason: "",
-                  },
-                }
-              : req.caseInfos?.reviewByStage,
-          },
-          manufacturerStage: "의뢰",
-        } as ManufacturerRequest;
+
         toast({
           title: "롤백 완료",
           description: "의뢰 단계로 되돌렸습니다.",
         });
-        const patched = applySingleRequestPatch(updatedRequest);
-        if (!patched) {
-          removeSingleRequest(req);
-        }
 
         if (navigate) {
           setPreviewOpen(false);
@@ -627,6 +636,7 @@ export const useRequestFileHandlers = ({
           setPreviewNcName("");
         }
       } catch (error) {
+        applySingleRequestPatch(req);
         toast({
           title: "삭제 실패",
           description: "CAM 수정본 삭제에 실패했습니다.",
@@ -658,10 +668,33 @@ export const useRequestFileHandlers = ({
     ) => {
       if (!token) return;
       setDeletingNc((prev) => ({ ...prev, [req._id]: true }));
+      const targetStage = opts?.nextStage || "cam";
+      const rollbackOnly = !!opts?.rollbackOnly;
+      const navigate = opts?.navigate !== false;
+      const updatedRequest = {
+        ...req,
+        caseInfos: {
+          ...req.caseInfos,
+          ncFile: undefined,
+          reviewByStage: rollbackOnly
+            ? {
+                ...req.caseInfos?.reviewByStage,
+                machining: {
+                  status: "PENDING",
+                  updatedAt: new Date().toISOString(),
+                  reason: "",
+                },
+              }
+            : req.caseInfos?.reviewByStage,
+        },
+        manufacturerStage: targetStage === "request" ? "의뢰" : "CAM",
+      } as ManufacturerRequest;
+      const optimisticallyPatched = applySingleRequestPatch(updatedRequest);
+      if (!optimisticallyPatched) {
+        removeSingleRequest(req);
+      }
+
       try {
-        const targetStage = opts?.nextStage || "cam";
-        const rollbackOnly = !!opts?.rollbackOnly;
-        const navigate = opts?.navigate !== false;
         const res = await fetch(
           `/api/requests/${req._id}/nc-file?nextStage=${targetStage}${
             rollbackOnly ? "&rollbackOnly=1" : ""
@@ -681,28 +714,6 @@ export const useRequestFileHandlers = ({
           title: "롤백 완료",
           description: `${stageLabel} 단계로 되돌렸습니다.`,
         });
-        const updatedRequest = {
-          ...req,
-          caseInfos: {
-            ...req.caseInfos,
-            ncFile: undefined,
-            reviewByStage: rollbackOnly
-              ? {
-                  ...req.caseInfos?.reviewByStage,
-                  machining: {
-                    status: "PENDING",
-                    updatedAt: new Date().toISOString(),
-                    reason: "",
-                  },
-                }
-              : req.caseInfos?.reviewByStage,
-          },
-          manufacturerStage: targetStage === "request" ? "의뢰" : "CAM",
-        } as ManufacturerRequest;
-        const patched = applySingleRequestPatch(updatedRequest);
-        if (!patched) {
-          removeSingleRequest(req);
-        }
 
         if (navigate) {
           setPreviewOpen(false);
@@ -711,6 +722,7 @@ export const useRequestFileHandlers = ({
           setPreviewFiles({});
         }
       } catch (error) {
+        applySingleRequestPatch(req);
         toast({
           title: "삭제 실패",
           description: "NC 파일 삭제에 실패했습니다.",
@@ -1135,6 +1147,16 @@ export const useRequestFileHandlers = ({
       const navigate = params.navigate !== false;
 
       setUploading((prev) => ({ ...prev, [params.req._id as string]: true }));
+      const updatedRequest = patchDeleteStageFileLocally(
+        params.req,
+        params.stage,
+        rollbackOnly,
+      );
+      const optimisticallyPatched = applySingleRequestPatch(updatedRequest);
+      if (!optimisticallyPatched) {
+        removeSingleRequest(params.req);
+      }
+
       try {
         const res = await fetch(
           `/api/requests/${
@@ -1153,11 +1175,6 @@ export const useRequestFileHandlers = ({
         if (!res.ok) {
           throw new Error("delete stage file failed");
         }
-        const updatedRequest = patchDeleteStageFileLocally(
-          params.req,
-          params.stage,
-          rollbackOnly,
-        );
 
         toast(
           rollbackOnly
@@ -1170,10 +1187,6 @@ export const useRequestFileHandlers = ({
                 description: "파일을 삭제했습니다.",
               },
         );
-        const patched = applySingleRequestPatch(updatedRequest);
-        if (!patched) {
-          removeSingleRequest(params.req);
-        }
 
         if (navigate) {
           if (params.stage === "machining" && !rollbackOnly) {
@@ -1185,6 +1198,7 @@ export const useRequestFileHandlers = ({
         }
       } catch (error) {
         console.error(error);
+        applySingleRequestPatch(params.req);
         toast({
           title: rollbackOnly ? "롤백 실패" : "삭제 실패",
           description: rollbackOnly

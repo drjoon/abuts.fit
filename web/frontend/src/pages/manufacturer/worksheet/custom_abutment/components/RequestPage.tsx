@@ -501,6 +501,19 @@ export const RequestPage = ({
         });
         return;
       }
+
+      const mongoId = String(req._id || "").trim();
+      const requestId = String(req.requestId || "").trim();
+      pageState.setRequests((prev) =>
+        prev.filter((item) => {
+          const itemMongoId = String(item?._id || "").trim();
+          const itemRequestId = String(item?.requestId || "").trim();
+          if (mongoId && itemMongoId === mongoId) return false;
+          if (requestId && itemRequestId === requestId) return false;
+          return true;
+        }),
+      );
+
       try {
         const res = await fetch(`/api/requests/${req._id}`, {
           method: "DELETE",
@@ -521,9 +534,20 @@ export const RequestPage = ({
           queryKey: ["worksheet-assigned-summary"],
           type: "active",
         });
-        // 목록 갱신
-        void reloadRequests();
       } catch (e: any) {
+        pageState.setRequests((prev) => {
+          const exists = prev.some((item) => {
+            const itemMongoId = String(item?._id || "").trim();
+            const itemRequestId = String(item?.requestId || "").trim();
+            return (
+              (mongoId && itemMongoId === mongoId) ||
+              (requestId && itemRequestId === requestId)
+            );
+          });
+          if (exists) return prev;
+          return [req, ...prev];
+        });
+
         toast({
           title: "삭제 실패",
           description: e?.message || "네트워크 오류",
@@ -531,7 +555,7 @@ export const RequestPage = ({
         });
       }
     },
-    [queryClient, token, toast, reloadRequests],
+    [pageState, queryClient, token, toast],
   );
 
   const handleCardDone = useCallback(
@@ -547,6 +571,24 @@ export const RequestPage = ({
         });
         return;
       }
+
+      const requestMongoId = String(req._id || "").trim();
+      const optimisticDoneAt = new Date().toISOString();
+      pageState.setRequests((prev) =>
+        prev.map((item) => {
+          if (String(item?._id || "").trim() !== requestMongoId) return item;
+          return {
+            ...item,
+            rnd: {
+              ...(item.rnd || {}),
+              doneAt: optimisticDoneAt,
+              doneFromStage:
+                String(item.manufacturerStage || "").trim() || null,
+            },
+          };
+        }),
+      );
+
       try {
         const res = await fetch(`/api/requests/${req._id}/rnd-done`, {
           method: "PATCH",
@@ -565,22 +607,6 @@ export const RequestPage = ({
           description: `의뢰 ${req.requestId}가 R&D 탭으로 이동되었습니다.`,
         });
 
-        // 즉시 UI 반영: 현재 탭에서는 숨겨지고 R&D 탭에서 보이도록 로컬 상태 갱신
-        pageState.setRequests((prev) =>
-          prev.map((item) => {
-            if (String(item?._id || "") !== String(req._id || "")) return item;
-            return {
-              ...item,
-              rnd: {
-                ...(item.rnd || {}),
-                doneAt: new Date().toISOString(),
-                doneFromStage:
-                  String(item.manufacturerStage || "").trim() || null,
-              },
-            };
-          }),
-        );
-
         void queryClient.invalidateQueries({
           queryKey: ["worksheet-assigned-summary"],
         });
@@ -588,8 +614,20 @@ export const RequestPage = ({
           queryKey: ["worksheet-assigned-summary"],
           type: "active",
         });
-        void reloadRequests();
       } catch (e: any) {
+        pageState.setRequests((prev) =>
+          prev.map((item) => {
+            if (String(item?._id || "").trim() !== requestMongoId) return item;
+            return {
+              ...item,
+              rnd: {
+                ...(item.rnd || {}),
+                doneAt: req?.rnd?.doneAt || null,
+              },
+            };
+          }),
+        );
+
         toast({
           title: "Done 실패",
           description: e?.message || "네트워크 오류",
@@ -597,7 +635,7 @@ export const RequestPage = ({
         });
       }
     },
-    [pageState, queryClient, reloadRequests, toast, token],
+    [pageState, queryClient, toast, token],
   );
 
   const [remakeDialogOpen, setRemakeDialogOpen] = useState(false);
