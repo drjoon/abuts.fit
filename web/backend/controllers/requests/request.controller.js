@@ -38,6 +38,7 @@ export const {
   deleteNcFileAndRollbackCam,
   cloneAsSample,
   cloneFromSampleToRequest,
+  cloneRequestsForRecall,
 } = commonController;
 
 export const {

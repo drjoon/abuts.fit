@@ -619,13 +619,15 @@ export const WorksheetCardGrid = ({
                     e.stopPropagation();
                     onRollback(request);
                   }}
-                  aria-label={tabStage === "rnd" ? "복사" : "롤백"}
-                  title={tabStage === "rnd" ? "의뢰 탭으로 복사" : "롤백"}
+                  aria-label={tabStage === "rnd" ? "재제작" : "롤백"}
+                  title={
+                    tabStage === "rnd" ? "선택 공정으로 재제작 복사" : "롤백"
+                  }
                 >
                   {tabStage === "rnd" ? (
                     <>
                       <Copy className="h-3.5 w-3.5" />
-                      <span className="text-[11px] font-semibold">복사</span>
+                      <span className="text-[11px] font-semibold">재제작</span>
                     </>
                   ) : (
                     <ArrowLeft className="h-4 w-4" />

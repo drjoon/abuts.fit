@@ -54,6 +54,16 @@ import { usePackingSelection } from "@/pages/manufacturer/worksheet/custom_abutm
 import { useMailboxSync } from "@/pages/manufacturer/worksheet/custom_abutment/hooks/useMailboxSync";
 import { useDiameterQueue } from "@/pages/manufacturer/worksheet/custom_abutment/hooks/useDiameterQueue";
 import { WorksheetLoading } from "@/shared/ui/WorksheetLoading";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+
+type RemakeStartStage = "의뢰" | "CAM" | "가공";
 
 export const RequestPage = ({
   showQueueBar = true,
@@ -590,51 +600,80 @@ export const RequestPage = ({
     [pageState, queryClient, reloadRequests, toast, token],
   );
 
+  const [remakeDialogOpen, setRemakeDialogOpen] = useState(false);
+  const [remakeSubmitting, setRemakeSubmitting] = useState(false);
+  const [remakeStartStage, setRemakeStartStage] =
+    useState<RemakeStartStage>("의뢰");
+  const [remakeSourceRequest, setRemakeSourceRequest] =
+    useState<ManufacturerRequest | null>(null);
+
   const handleCardRollbackForTab = useCallback(
     async (req: ManufacturerRequest) => {
       if (tabStage !== "rnd") {
         return handleCardRollback(req);
       }
       if (!req?._id) return;
-      try {
-        const res = await fetch(
-          `/api/requests/${req._id}/clone-from-sample-to-request`,
-          {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${token}`,
-              "Content-Type": "application/json",
-            },
-          },
-        );
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok || data?.success === false) {
-          throw new Error(data?.message || "의뢰 복사에 실패했습니다.");
-        }
-
-        toast({
-          title: "복사 완료",
-          description: `의뢰 ${req.requestId}가 의뢰 탭으로 복사되었습니다. (새 의뢰ID: ${data?.data?.requestId || "-"})`,
-        });
-
-        void queryClient.invalidateQueries({
-          queryKey: ["worksheet-assigned-summary"],
-        });
-        void queryClient.refetchQueries({
-          queryKey: ["worksheet-assigned-summary"],
-          type: "active",
-        });
-        void reloadRequests();
-      } catch (e: any) {
-        toast({
-          title: "복사 실패",
-          description: e?.message || "네트워크 오류",
-          variant: "destructive",
-        });
-      }
+      setRemakeSourceRequest(req);
+      setRemakeStartStage("의뢰");
+      setRemakeDialogOpen(true);
     },
-    [handleCardRollback, queryClient, reloadRequests, tabStage, toast, token],
+    [handleCardRollback, tabStage],
   );
+
+  const handleSubmitRemake = useCallback(async () => {
+    if (!remakeSourceRequest?._id || remakeSubmitting) return;
+    try {
+      setRemakeSubmitting(true);
+      const res = await fetch(
+        `/api/requests/${remakeSourceRequest._id}/clone-from-sample-to-request`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ startStage: remakeStartStage }),
+        },
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data?.success === false) {
+        throw new Error(data?.message || "재제작 복사에 실패했습니다.");
+      }
+
+      toast({
+        title: "재제작 복사 완료",
+        description: `의뢰 ${remakeSourceRequest.requestId}가 ${remakeStartStage} 공정으로 복사되었습니다. (새 의뢰ID: ${data?.data?.requestId || "-"})`,
+      });
+
+      setRemakeDialogOpen(false);
+      setRemakeSourceRequest(null);
+
+      void queryClient.invalidateQueries({
+        queryKey: ["worksheet-assigned-summary"],
+      });
+      void queryClient.refetchQueries({
+        queryKey: ["worksheet-assigned-summary"],
+        type: "active",
+      });
+      void reloadRequests();
+    } catch (e: any) {
+      toast({
+        title: "재제작 복사 실패",
+        description: e?.message || "네트워크 오류",
+        variant: "destructive",
+      });
+    } finally {
+      setRemakeSubmitting(false);
+    }
+  }, [
+    queryClient,
+    reloadRequests,
+    remakeSourceRequest,
+    remakeStartStage,
+    remakeSubmitting,
+    toast,
+    token,
+  ]);
 
   const [rndMemoSaving, setRndMemoSaving] = useState<Record<string, boolean>>(
     {},
@@ -1117,6 +1156,65 @@ export const RequestPage = ({
         // onOpenNextRequest는 제거됨: 승인 후 다음 의뢰 자동 열기 방지
         // 승인 시 모달이 닫히고 작업자가 직접 다음 의뢰를 선택한다.
       />
+
+      <Dialog
+        open={remakeDialogOpen}
+        onOpenChange={(open) => {
+          if (remakeSubmitting) return;
+          setRemakeDialogOpen(open);
+          if (!open) {
+            setRemakeSourceRequest(null);
+            setRemakeStartStage("의뢰");
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>재제작 시작 공정 선택</DialogTitle>
+            <DialogDescription>
+              {remakeSourceRequest
+                ? `의뢰 ${remakeSourceRequest.requestId} 복사본을 어느 공정부터 시작할지 선택해주세요.`
+                : "복사 시작 공정을 선택해주세요."}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="grid grid-cols-3 gap-2 py-2">
+            {(["의뢰", "CAM", "가공"] as RemakeStartStage[]).map((stage) => (
+              <Button
+                key={stage}
+                type="button"
+                variant={remakeStartStage === stage ? "default" : "outline"}
+                onClick={() => setRemakeStartStage(stage)}
+                disabled={remakeSubmitting}
+              >
+                {stage}
+              </Button>
+            ))}
+          </div>
+
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={remakeSubmitting}
+              onClick={() => {
+                setRemakeDialogOpen(false);
+                setRemakeSourceRequest(null);
+                setRemakeStartStage("의뢰");
+              }}
+            >
+              취소
+            </Button>
+            <Button
+              type="button"
+              disabled={!remakeSourceRequest || remakeSubmitting}
+              onClick={() => void handleSubmitRemake()}
+            >
+              {remakeSubmitting ? "복사 중..." : "재제작 복사"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <ConfirmDialog
         open={pageState.confirmOpen}

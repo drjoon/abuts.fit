@@ -26,6 +26,7 @@ import { useWorksheetRealtimeStatus } from "../hooks/useWorksheetRealtimeStatus"
 type InquiryTab = "process" | "shipping" | "udi";
 
 type ProcessStage = "전체" | "의뢰" | "CAM" | "생산" | "발송" | "추적관리";
+type RecallStartStage = "의뢰" | "CAM";
 
 const getStage = (req: ManufacturerRequest): ProcessStage | "" => {
   const s = String(req.manufacturerStage || "").trim();
@@ -108,9 +109,20 @@ export const TrackingInquiryPage = () => {
   const totalCountRef = useRef(0);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const onScrollRef = useRef<(() => void) | null>(null);
+  const onWheelRef = useRef<(() => void) | null>(null);
   const [loading, setLoading] = useState(false);
   const [requests, setRequests] = useState<ManufacturerRequest[]>([]);
   const [expandedBoxes, setExpandedBoxes] = useState<Set<string>>(new Set());
+  const [recallMode, setRecallMode] = useState(false);
+  const [recallStartStage, setRecallStartStage] =
+    useState<RecallStartStage>("의뢰");
+  const [recallFromDate, setRecallFromDate] = useState("");
+  const [recallToDate, setRecallToDate] = useState("");
+  const [selectedRecallRequestIds, setSelectedRecallRequestIds] = useState<
+    Set<string>
+  >(new Set());
+  const [recallSubmitting, setRecallSubmitting] = useState(false);
+  const emptyAutoFetchCountRef = useRef(0);
   // Network pagination per stage (tracking)
   const PAGE_LIMIT = 30;
   const pageRef = useRef(1);
@@ -212,6 +224,10 @@ export const TrackingInquiryPage = () => {
       } finally {
         isFetchingPageRef.current = false;
       }
+    };
+
+    return () => {
+      delete (window as any).__trackingFetchNext;
     };
   }, [token, toast]);
 
@@ -700,6 +716,8 @@ export const TrackingInquiryPage = () => {
       return (
         stage === "추적관리" ||
         Boolean(
+          di.trackingNumber ||
+          di.shippedAt ||
           di.pickedUpAt ||
           di.deliveredAt ||
           di.tracking?.lastStatusCode === "11",
@@ -772,6 +790,128 @@ export const TrackingInquiryPage = () => {
     });
   }, [baseFiltered]);
 
+  const recallSelectableRequests = useMemo(() => {
+    const map = new Map<string, ManufacturerRequest>();
+    for (const box of shippingRows as any[]) {
+      const reqs = Array.isArray(box?.requests) ? box.requests : [];
+      for (const req of reqs) {
+        const key = String(req?._id || "").trim();
+        if (!key) continue;
+        map.set(key, req);
+      }
+    }
+    return Array.from(map.values());
+  }, [shippingRows]);
+
+  const applyRecallPeriodSelection = useCallback(() => {
+    if (!recallFromDate || !recallToDate) {
+      toast({
+        title: "기간 선택 필요",
+        description: "from/to 날짜를 모두 입력해주세요.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const from = new Date(`${recallFromDate}T00:00:00`);
+    const to = new Date(`${recallToDate}T23:59:59.999`);
+    if (
+      Number.isNaN(from.getTime()) ||
+      Number.isNaN(to.getTime()) ||
+      from > to
+    ) {
+      toast({
+        title: "기간 오류",
+        description: "올바른 기간을 입력해주세요.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setSelectedRecallRequestIds((prev) => {
+      const next = new Set(prev);
+      for (const req of recallSelectableRequests) {
+        const di = normalizeDeliveryInfo(req.deliveryInfoRef);
+        const base = di.deliveredAt || di.shippedAt || req.createdAt;
+        const key = String(req?._id || "").trim();
+        if (!base || !key) continue;
+        const t = new Date(base);
+        if (Number.isNaN(t.getTime())) continue;
+        if (t >= from && t <= to) {
+          next.add(key);
+        }
+      }
+      return next;
+    });
+  }, [recallFromDate, recallToDate, recallSelectableRequests, toast]);
+
+  const handleRecallClone = useCallback(async () => {
+    if (recallSubmitting) return;
+    const ids = Array.from(selectedRecallRequestIds);
+    if (!ids.length) {
+      toast({
+        title: "선택 필요",
+        description: "리콜할 의뢰를 선택하거나 기간 선택을 적용해주세요.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (
+      !window.confirm(
+        `선택한 ${ids.length}건을 ${recallStartStage} 공정으로 복사할까요?`,
+      )
+    ) {
+      return;
+    }
+
+    try {
+      setRecallSubmitting(true);
+      const res = await fetch(`/api/requests/recall-clone`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          requestIds: ids,
+          startStage: recallStartStage,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data?.success === false) {
+        throw new Error(data?.message || "리콜 복사에 실패했습니다.");
+      }
+
+      const successCount = Number(data?.data?.successCount || 0);
+      const failedCount = Number(data?.data?.failedCount || 0);
+      toast({
+        title: "리콜 복사 완료",
+        description: `${successCount}건 성공${failedCount ? `, ${failedCount}건 실패` : ""}`,
+      });
+
+      setRecallMode(false);
+      setSelectedRecallRequestIds(new Set());
+      setRecallFromDate("");
+      setRecallToDate("");
+      setRecallStartStage("의뢰");
+    } catch (e: any) {
+      toast({
+        title: "리콜 복사 실패",
+        description: e?.message || "네트워크 오류",
+        variant: "destructive",
+      });
+    } finally {
+      setRecallSubmitting(false);
+    }
+  }, [
+    recallStartStage,
+    recallSubmitting,
+    selectedRecallRequestIds,
+    toast,
+    token,
+  ]);
+
   useEffect(() => {
     setExpandedBoxes((prev) => {
       if (!prev.size) return prev;
@@ -784,6 +924,31 @@ export const TrackingInquiryPage = () => {
       return next.size === prev.size ? prev : next;
     });
   }, [shippingRows]);
+
+  useEffect(() => {
+    setSelectedRecallRequestIds((prev) => {
+      if (!prev.size) return prev;
+      const valid = new Set(
+        recallSelectableRequests
+          .map((r) => String(r?._id || "").trim())
+          .filter(Boolean),
+      );
+      const next = new Set(
+        Array.from(prev).filter((id) => valid.has(String(id || ""))),
+      );
+      return next.size === prev.size ? prev : next;
+    });
+  }, [recallSelectableRequests]);
+
+  useEffect(() => {
+    if (tab === "shipping") return;
+    if (!recallMode) return;
+    setRecallMode(false);
+    setSelectedRecallRequestIds(new Set());
+    setRecallFromDate("");
+    setRecallToDate("");
+    setRecallStartStage("의뢰");
+  }, [tab, recallMode]);
 
   useEffect(() => {
     // 한 번만 실행 - 디버깅 로그 출력
@@ -822,15 +987,53 @@ export const TrackingInquiryPage = () => {
         : udiRows;
   totalCountRef.current = currentRows.length;
 
+  // 기간 필터 결과가 첫 페이지에 없을 수 있으므로,
+  // 표시할 행이 0개인데 서버에 다음 페이지가 남아있으면 자동으로 추가 로드.
+  useEffect(() => {
+    if (!token) return;
+    if (loading) return;
+    if (currentRows.length > 0) {
+      emptyAutoFetchCountRef.current = 0;
+      return;
+    }
+    if (!hasMoreRef.current || isFetchingPageRef.current) return;
+    if (emptyAutoFetchCountRef.current >= 20) return;
+
+    emptyAutoFetchCountRef.current += 1;
+    void (window as any).__trackingFetchNext?.();
+  }, [
+    token,
+    loading,
+    currentRows.length,
+    tab,
+    period,
+    worksheetSearch,
+    showCompleted,
+  ]);
+
   useEffect(() => {
     visibleCountRef.current = 30;
     setVisibleCount(30);
+    userScrolledRef.current = false;
+    emptyAutoFetchCountRef.current = 0;
+
+    setSelectedRecallRequestIds(new Set());
+    setRecallFromDate("");
+    setRecallToDate("");
+    setRecallStartStage("의뢰");
+    if (tab !== "shipping") {
+      setRecallMode(false);
+    }
   }, [tab, period, worksheetSearch, showCompleted]);
 
   const setScrollContainer = useCallback((node: HTMLDivElement | null) => {
     if (scrollRef.current && onScrollRef.current) {
       scrollRef.current.removeEventListener("scroll", onScrollRef.current);
       onScrollRef.current = null;
+    }
+    if (scrollRef.current && onWheelRef.current) {
+      scrollRef.current.removeEventListener("wheel", onWheelRef.current);
+      onWheelRef.current = null;
     }
     scrollRef.current = node;
     if (!node) return;
@@ -863,8 +1066,14 @@ export const TrackingInquiryPage = () => {
       userScrolledRef.current = true;
       maybeLoadMore();
     };
+    const onWheel = () => {
+      userScrolledRef.current = true;
+      maybeLoadMore();
+    };
     onScrollRef.current = onScroll;
+    onWheelRef.current = onWheel;
     node.addEventListener("scroll", onScroll, { passive: true });
+    node.addEventListener("wheel", onWheel, { passive: true });
   }, []);
 
   useEffect(() => {
@@ -891,6 +1100,28 @@ export const TrackingInquiryPage = () => {
                   onClick={handleDownloadUdi}
                 >
                   다운로드
+                </Button>
+              )}
+              {tab === "shipping" && (
+                <Button
+                  variant={recallMode ? "default" : "outline"}
+                  size="sm"
+                  className="px-4"
+                  onClick={() => {
+                    if (recallSubmitting) return;
+                    setRecallMode((prev) => {
+                      const next = !prev;
+                      if (!next) {
+                        setSelectedRecallRequestIds(new Set());
+                        setRecallFromDate("");
+                        setRecallToDate("");
+                        setRecallStartStage("의뢰");
+                      }
+                      return next;
+                    });
+                  }}
+                >
+                  리콜
                 </Button>
               )}
               <Button
@@ -1144,6 +1375,114 @@ export const TrackingInquiryPage = () => {
               ref={setScrollContainer}
               className="space-y-3 overflow-auto flex-1 min-h-0 pr-3"
             >
+              {recallMode && (
+                <div className="rounded-lg border bg-amber-50 p-3 space-y-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-sm font-semibold">
+                      리콜 시작 공정:
+                    </span>
+                    {(["의뢰", "CAM"] as RecallStartStage[]).map((stage) => (
+                      <Button
+                        key={stage}
+                        type="button"
+                        size="sm"
+                        variant={
+                          recallStartStage === stage ? "default" : "outline"
+                        }
+                        onClick={() => setRecallStartStage(stage)}
+                        disabled={recallSubmitting}
+                      >
+                        {stage}
+                      </Button>
+                    ))}
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-sm font-semibold">기간 선택:</span>
+                    <input
+                      type="date"
+                      value={recallFromDate}
+                      onChange={(e) => setRecallFromDate(e.target.value)}
+                      className="h-8 rounded-md border px-2 text-sm"
+                      disabled={recallSubmitting}
+                    />
+                    <span className="text-sm text-gray-500">~</span>
+                    <input
+                      type="date"
+                      value={recallToDate}
+                      onChange={(e) => setRecallToDate(e.target.value)}
+                      className="h-8 rounded-md border px-2 text-sm"
+                      disabled={recallSubmitting}
+                    />
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={applyRecallPeriodSelection}
+                      disabled={recallSubmitting}
+                    >
+                      기간 의뢰 선택
+                    </Button>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        const ids = recallSelectableRequests
+                          .map((r) => String(r?._id || "").trim())
+                          .filter(Boolean);
+                        setSelectedRecallRequestIds(new Set(ids));
+                      }}
+                      disabled={recallSubmitting}
+                    >
+                      전체선택
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setSelectedRecallRequestIds(new Set())}
+                      disabled={recallSubmitting}
+                    >
+                      선택취소
+                    </Button>
+                    <span className="text-sm text-gray-600">
+                      선택 {selectedRecallRequestIds.size}건 / 전체{" "}
+                      {recallSelectableRequests.length}건
+                    </span>
+                    <div className="ml-auto flex items-center gap-2">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          if (recallSubmitting) return;
+                          setRecallMode(false);
+                          setSelectedRecallRequestIds(new Set());
+                          setRecallFromDate("");
+                          setRecallToDate("");
+                          setRecallStartStage("의뢰");
+                        }}
+                        disabled={recallSubmitting}
+                      >
+                        종료
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        onClick={() => void handleRecallClone()}
+                        disabled={recallSubmitting}
+                      >
+                        {recallSubmitting ? "리콜 복사 중..." : "리콜 실행"}
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {shippingRows.slice(0, visibleCount).map((box) => {
                 const di = normalizeDeliveryInfo(box.deliveryInfoRef);
                 const shippedAt = di.shippedAt ? String(di.shippedAt) : "";
@@ -1154,6 +1493,14 @@ export const TrackingInquiryPage = () => {
                 const status = getShippingStatus(box);
                 const requestCount = (box as any)?.requestCount || 1;
                 const requests = (box as any)?.requests || [];
+                const cardRequestIds = requests
+                  .map((req: any) => String(req?._id || "").trim())
+                  .filter(Boolean);
+                const allCardSelected =
+                  cardRequestIds.length > 0 &&
+                  cardRequestIds.every((id: string) =>
+                    selectedRecallRequestIds.has(id),
+                  );
                 const firstRequest = requests[0] || {};
                 const mailboxCode = String(
                   box.mailboxAddress || box.boxKey || "",
@@ -1197,6 +1544,34 @@ export const TrackingInquiryPage = () => {
                     >
                       <div className="flex items-center justify-between gap-4">
                         <div className="flex items-center gap-3 flex-1">
+                          {recallMode && (
+                            <label
+                              className="inline-flex items-center gap-1 text-xs text-gray-700"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={allCardSelected}
+                                onChange={(e) => {
+                                  e.stopPropagation();
+                                  setSelectedRecallRequestIds((prev) => {
+                                    const next = new Set(prev);
+                                    if (allCardSelected) {
+                                      cardRequestIds.forEach((id: string) =>
+                                        next.delete(id),
+                                      );
+                                    } else {
+                                      cardRequestIds.forEach((id: string) =>
+                                        next.add(id),
+                                      );
+                                    }
+                                    return next;
+                                  });
+                                }}
+                              />
+                              카드전체
+                            </label>
+                          )}
                           <span className="inline-block bg-blue-100 text-blue-800 text-xs font-semibold px-2.5 py-0.5 rounded whitespace-nowrap">
                             {requestCount}건
                           </span>
@@ -1274,6 +1649,12 @@ export const TrackingInquiryPage = () => {
                             <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
                               {requests.map((req: any) => {
                                 const ci: any = req.caseInfos || {};
+                                const recallReqId = String(
+                                  req?._id || "",
+                                ).trim();
+                                const recallChecked =
+                                  recallReqId &&
+                                  selectedRecallRequestIds.has(recallReqId);
                                 const stage = String(
                                   req.manufacturerStage || "",
                                 ).trim();
@@ -1294,8 +1675,31 @@ export const TrackingInquiryPage = () => {
                                     className="text-sm bg-white p-2 rounded border border-gray-200"
                                   >
                                     <div className="flex items-center justify-between">
-                                      <div className="font-medium">
-                                        {req.requestId || "-"}
+                                      <div className="flex items-center gap-2">
+                                        {recallMode && (
+                                          <input
+                                            type="checkbox"
+                                            checked={Boolean(recallChecked)}
+                                            onChange={(e) => {
+                                              e.stopPropagation();
+                                              if (!recallReqId) return;
+                                              setSelectedRecallRequestIds(
+                                                (prev) => {
+                                                  const next = new Set(prev);
+                                                  if (next.has(recallReqId)) {
+                                                    next.delete(recallReqId);
+                                                  } else {
+                                                    next.add(recallReqId);
+                                                  }
+                                                  return next;
+                                                },
+                                              );
+                                            }}
+                                          />
+                                        )}
+                                        <div className="font-medium">
+                                          {req.requestId || "-"}
+                                        </div>
                                       </div>
                                       <div className="flex items-center gap-1">
                                         {canCloneAsSample && (

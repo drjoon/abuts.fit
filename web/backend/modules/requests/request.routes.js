@@ -571,6 +571,14 @@ router.post(
   },
 );
 
+// 리콜 선택 의뢰 복사 (선택 공정으로 다건 복사)
+router.post(
+  "/recall-clone",
+  authenticate,
+  authorize(["manufacturer", "admin"]),
+  requestController.cloneRequestsForRecall,
+);
+
 // 의뢰 삭제 (권한 검증은 컨트롤러에서 처리)
 router.delete("/:id", authenticate, requestController.deleteRequest);
 
