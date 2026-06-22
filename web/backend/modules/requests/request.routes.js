@@ -571,13 +571,15 @@ router.post(
   },
 );
 
-// 리콜 선택 의뢰 복사 (선택 공정으로 다건 복사)
-router.post(
-  "/recall-clone",
+// 추적관리 재제작 복사 (선택 공정으로 다건 복사)
+// - legacy 경로(/recall-clone)와 신규 경로(/remake-clone)를 모두 지원
+const remakeCloneMiddleware = [
   authenticate,
   authorize(["manufacturer", "admin"]),
   requestController.cloneRequestsForRecall,
-);
+];
+router.post("/recall-clone", ...remakeCloneMiddleware);
+router.post("/remake-clone", ...remakeCloneMiddleware);
 
 // 의뢰 삭제 (권한 검증은 컨트롤러에서 처리)
 router.delete("/:id", authenticate, requestController.deleteRequest);

@@ -27,7 +27,7 @@ import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
 type InquiryTab = "process" | "shipping" | "udi";
 
 type ProcessStage = "전체" | "의뢰" | "CAM" | "생산" | "발송" | "추적관리";
-type RecallStartStage = "의뢰" | "CAM";
+type RecallStartStage = "의뢰" | "CAM" | "가공";
 
 const getStage = (req: ManufacturerRequest): ProcessStage | "" => {
   const s = String(req.manufacturerStage || "").trim();
@@ -139,6 +139,11 @@ export const TrackingInquiryPage = () => {
   const userScrolledRef = useRef(false);
 
   const matchesCurrentPage = useCallback((req: ManufacturerRequest) => {
+    // 추적관리 화면은 원본(normal) 의뢰만 노출
+    if (String((req as any)?.source || "").trim() === "manufacturer_sample") {
+      return false;
+    }
+
     const stage = deriveStageForFilter(req);
     const di = normalizeDeliveryInfo(req.deliveryInfoRef);
     return (
@@ -352,6 +357,10 @@ export const TrackingInquiryPage = () => {
 
   const baseFiltered = useMemo(() => {
     return requests
+      .filter(
+        (r) =>
+          String((r as any)?.source || "").trim() !== "manufacturer_sample",
+      )
       .filter((r) => {
         // 추적관리 단계는 '완료' 성격이므로, 완료포함 토글과 무관하게 항상 표시
         const stage = String(r.manufacturerStage || "").trim();
@@ -746,24 +755,32 @@ export const TrackingInquiryPage = () => {
 
     // 우편함 단위로 그룹핑
     // 집하 단위 SSOT: trackingNumber가 있으면 같은 송장 = 같은 집하 박스
-    // trackingNumber 없는 경우: mailboxAddress + pickedUpAt 날짜(KST) 조합으로 묶어
-    //   같은 날 같이 집하된 건들을 하나의 그룹으로 표시
+    // trackingNumber 없는 경우: mailboxAddress + (집하일/발송일) 날짜(KST) 조합으로 묶어
+    // 날짜 정보가 없으면 절대 mailboxAddress 단독으로 묶지 않고 개별 의뢰로 분리한다.
+    // (기간이 넓을 때 서로 다른 날짜 의뢰가 한 카드로 합쳐져 누락처럼 보이는 현상 방지)
     const boxMap = new Map<string, ManufacturerRequest[]>();
     for (const r of only) {
       const di = normalizeDeliveryInfo(r.deliveryInfoRef);
       const trackingNumber = String(di?.trackingNumber || "").trim();
       const mailboxAddress = String(r?.mailboxAddress || "").trim();
       const pickedUpAt = String(di?.pickedUpAt || "").trim();
+      const shippedAt = String(di?.shippedAt || "").trim();
       const pickedUpYmd = pickedUpAt
         ? toKstYmd(new Date(pickedUpAt)) || pickedUpAt.slice(0, 10)
         : "";
+      const shippedYmd = shippedAt
+        ? toKstYmd(new Date(shippedAt)) || shippedAt.slice(0, 10)
+        : "";
+      const dayKey = pickedUpYmd || shippedYmd;
       const fallbackRequestId = String(r?.requestId || r?._id || "").trim();
-      // trackingNumber가 있으면 송장 기준, 없으면 우편함+집하날짜, 그것도 없으면 개별
+      // trackingNumber가 있으면 송장 기준,
+      // 없으면 우편함+날짜 기준,
+      // 날짜마저 없으면 개별 의뢰 기준으로만 묶는다.
       const boxKey = trackingNumber
         ? `tn:${trackingNumber}`
-        : mailboxAddress && pickedUpYmd
-          ? `mb:${mailboxAddress}:${pickedUpYmd}`
-          : mailboxAddress || `request:${fallbackRequestId}`;
+        : mailboxAddress && dayKey
+          ? `mb:${mailboxAddress}:${dayKey}`
+          : `request:${fallbackRequestId}`;
       if (!boxMap.has(boxKey)) {
         boxMap.set(boxKey, []);
       }
@@ -869,7 +886,7 @@ export const TrackingInquiryPage = () => {
       if (recallSubmitting) return;
       try {
         setRecallSubmitting(true);
-        const res = await fetch(`/api/requests/recall-clone`, {
+        const res = await fetch(`/api/requests/remake-clone`, {
           method: "POST",
           headers: {
             Authorization: `Bearer ${token}`,
@@ -882,13 +899,13 @@ export const TrackingInquiryPage = () => {
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok || data?.success === false) {
-          throw new Error(data?.message || "리콜 복사에 실패했습니다.");
+          throw new Error(data?.message || "재제작 복사에 실패했습니다.");
         }
 
         const successCount = Number(data?.data?.successCount || 0);
         const failedCount = Number(data?.data?.failedCount || 0);
         toast({
-          title: "리콜 복사 완료",
+          title: "재제작 복사 완료",
           description: `${successCount}건 성공${failedCount ? `, ${failedCount}건 실패` : ""}`,
         });
 
@@ -899,7 +916,7 @@ export const TrackingInquiryPage = () => {
         setRecallStartStage("의뢰");
       } catch (e: any) {
         toast({
-          title: "리콜 복사 실패",
+          title: "재제작 복사 실패",
           description: e?.message || "네트워크 오류",
           variant: "destructive",
         });
@@ -915,14 +932,14 @@ export const TrackingInquiryPage = () => {
     if (!ids.length) {
       toast({
         title: "선택 필요",
-        description: "리콜할 의뢰를 선택하거나 기간 선택을 적용해주세요.",
+        description: "재제작할 의뢰를 선택하거나 기간 선택을 적용해주세요.",
         variant: "destructive",
       });
       return;
     }
 
     const stageSnapshot = recallStartStage;
-    setConfirmTitle("리콜 복사 실행");
+    setConfirmTitle("재제작 복사 실행");
     setConfirmDescription(
       `선택한 ${ids.length}건을 ${stageSnapshot} 공정으로 복사할까요?\n(원본 의뢰는 그대로 유지됩니다.)`,
     );
@@ -1141,7 +1158,7 @@ export const TrackingInquiryPage = () => {
                     });
                   }}
                 >
-                  리콜
+                  재제작
                 </Button>
               )}
               <Button
@@ -1399,22 +1416,24 @@ export const TrackingInquiryPage = () => {
                 <div className="rounded-lg border bg-amber-50 p-3 space-y-3">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="text-sm font-semibold">
-                      리콜 시작 공정:
+                      재제작 시작 공정:
                     </span>
-                    {(["의뢰", "CAM"] as RecallStartStage[]).map((stage) => (
-                      <Button
-                        key={stage}
-                        type="button"
-                        size="sm"
-                        variant={
-                          recallStartStage === stage ? "default" : "outline"
-                        }
-                        onClick={() => setRecallStartStage(stage)}
-                        disabled={recallSubmitting}
-                      >
-                        {stage}
-                      </Button>
-                    ))}
+                    {(["의뢰", "CAM", "가공"] as RecallStartStage[]).map(
+                      (stage) => (
+                        <Button
+                          key={stage}
+                          type="button"
+                          size="sm"
+                          variant={
+                            recallStartStage === stage ? "default" : "outline"
+                          }
+                          onClick={() => setRecallStartStage(stage)}
+                          disabled={recallSubmitting}
+                        >
+                          {stage}
+                        </Button>
+                      ),
+                    )}
                   </div>
 
                   <div className="flex flex-wrap items-center gap-2">
@@ -1496,7 +1515,7 @@ export const TrackingInquiryPage = () => {
                         onClick={() => void handleRecallClone()}
                         disabled={recallSubmitting}
                       >
-                        {recallSubmitting ? "리콜 복사 중..." : "리콜 실행"}
+                        {recallSubmitting ? "재제작 복사 중..." : "재제작 실행"}
                       </Button>
                     </div>
                   </div>

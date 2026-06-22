@@ -539,15 +539,11 @@ export async function getAllRequests(req, res) {
       };
     }
 
-    // 추적관리 워크시트에서는 진행중 R&D 복사본(source=manufacturer_sample, rnd.doneAt=null)을 제외한다.
-    // - 원본(완료/보관 샘플, rnd.doneAt!=null)은 유지
-    // - 재제작/리콜로 생성된 작업용 복사본이 tracking 카드(request:...)로 섞여 보이는 현상 방지
+    // 추적관리 워크시트에서는 R&D 샘플(source=manufacturer_sample)을 완전히 제외한다.
+    // 원본(normal) 의뢰의 배송/추적 이력만 보이도록 고정한다.
     if (view === "worksheet" && worksheetProfile === "tracking") {
       const trackingSampleGuard = {
-        $or: [
-          { source: { $ne: "manufacturer_sample" } },
-          { "rnd.doneAt": { $ne: null } },
-        ],
+        source: { $ne: "manufacturer_sample" },
       };
 
       if (filter && Array.isArray(filter.$and)) {
@@ -2073,20 +2069,21 @@ export async function cloneFromSampleToRequest(req, res) {
 }
 
 /**
- * 리콜 대상 의뢰건을 선택 공정(의뢰/CAM)으로 복사
+ * 추적관리 대상 의뢰건을 선택 공정(의뢰/CAM/가공)으로 재제작 복사
  * - 원본 의뢰는 유지
  * - 복사본은 source=manufacturer_sample, rnd.doneAt=null 로 생성
  * - 프론트에서 카드 선택 또는 기간 선택으로 requestIds를 만들어 전달한다.
- * @route POST /api/requests/recall-clone
+ * @route POST /api/requests/recall-clone (legacy)
+ * @route POST /api/requests/remake-clone
  */
 export async function cloneRequestsForRecall(req, res) {
   try {
     if (!["manufacturer", "admin"].includes(String(req.user?.role || ""))) {
-      throw new ApiError(403, "제조사 또는 관리자만 리콜 복사가 가능합니다.");
+      throw new ApiError(403, "제조사 또는 관리자만 재제작 복사가 가능합니다.");
     }
 
     const startStage = parseCloneStartStage(req.body?.startStage, {
-      allowMachining: false,
+      allowMachining: true,
       defaultStage: "의뢰",
     });
 
@@ -2102,7 +2099,7 @@ export async function cloneRequestsForRecall(req, res) {
     );
 
     if (!uniqueIds.length) {
-      throw new ApiError(400, "리콜할 의뢰를 하나 이상 선택해주세요.");
+      throw new ApiError(400, "재제작할 의뢰를 하나 이상 선택해주세요.");
     }
 
     const baseFilter = { _id: { $in: uniqueIds } };
@@ -2206,7 +2203,7 @@ export async function cloneRequestsForRecall(req, res) {
           },
           statusHistory: [
             {
-              status: "리콜 복사 생성",
+              status: "재제작 복사 생성",
               note: `원본 의뢰: ${sourceRequest.requestId}, 시작 공정: ${startStage}`,
               updatedBy: req.user._id,
               updatedAt: now,
@@ -2220,7 +2217,12 @@ export async function cloneRequestsForRecall(req, res) {
           ["manufacturer", "admin"],
           "worksheet:count-update",
           {
-            stage: startStage === "의뢰" ? "request" : "cam",
+            stage:
+              startStage === "의뢰"
+                ? "request"
+                : startStage === "CAM"
+                  ? "cam"
+                  : "machining",
             delta: 1,
             requestId: clonedRequest.requestId,
             source: "manufacturer_sample",
@@ -2243,7 +2245,7 @@ export async function cloneRequestsForRecall(req, res) {
 
     return res.status(201).json({
       success: true,
-      message: `리콜 복사 완료 (${created.length}건 성공${failed.length ? `, ${failed.length}건 실패` : ""})`,
+      message: `재제작 복사 완료 (${created.length}건 성공${failed.length ? `, ${failed.length}건 실패` : ""})`,
       data: {
         startStage,
         total: uniqueIds.length,
@@ -2263,7 +2265,7 @@ export async function cloneRequestsForRecall(req, res) {
     }
     return res.status(500).json({
       success: false,
-      message: "리콜 복사 중 오류가 발생했습니다.",
+      message: "재제작 복사 중 오류가 발생했습니다.",
       error: error?.message,
     });
   }
