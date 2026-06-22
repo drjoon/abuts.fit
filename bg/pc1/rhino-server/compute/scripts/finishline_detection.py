@@ -33,7 +33,7 @@ _TARGET_TRACE_POINT_COUNT = 120
 _SHOW_POINT_TEXTDOTS = False
 _DIST_TOL = 1e-8
 _DEBUG_TRACE = os.environ.get("FINISHLINE_TRACE_DEBUG", "0") in ("1", "true", "TRUE")
-_DEBUG_ADD_POLYLINE_CURVE = os.environ.get("FINISHLINE_DEBUG_CURVE_DOC", "1") in (
+_DEBUG_ADD_POLYLINE_CURVE = os.environ.get("FINISHLINE_DEBUG_CURVE_DOC", "0") in (
     "1",
     "true",
     "TRUE",
@@ -46,6 +46,8 @@ _EDGE_MIN_RADIUS_TO_PT0_RATIO = 0.45
 _EDGE_MAX_Z_ABOVE_PT0_MM = 2.5
 # edge 루프가 pt0 대비 과도하게 하단에 있으면 내부 루프/홀 경계 오검출로 간주
 _EDGE_MAX_Z_BELOW_PT0_MM = 2.5
+# edge 루프의 Z 변화폭이 지나치게 작으면(거의 수평 링) 내부 경계 오검출로 간주
+_EDGE_MIN_Z_SPAN_MM = 0.08
 
 
 def _merge_candidates(
@@ -125,6 +127,12 @@ def _detect_finishline_points_edge(
     rejected_low_vs_pt0 = 0
     rejected_small_radius = 0
     rejected_below_band = 0
+    rejected_flat_z = 0
+
+    best_score = None
+    best_points: Optional[List[rg.Point3d]] = None
+    best_strategy: Optional[str] = None
+
     for idx, target_mesh in enumerate(candidates):
         _trace_log(
             "[detect-edge] candidate[{}] vertices={} faces={} key={}".format(
@@ -154,11 +162,19 @@ def _detect_finishline_points_edge(
         )
         if traced_points and len(traced_points) >= 3:
             edge_min_z = _points_min_z(traced_points)
+            edge_max_z = _points_max_z(traced_points)
+            edge_z_span = (
+                float(edge_max_z - edge_min_z)
+                if edge_min_z is not None and edge_max_z is not None
+                else None
+            )
             _trace_log(
-                "[detect-edge] candidate[{}] traced_pts={} min_z={}".format(
+                "[detect-edge] candidate[{}] traced_pts={} min_z={} max_z={} z_span={}".format(
                     idx,
                     len(traced_points),
                     edge_min_z if edge_min_z is not None else float("nan"),
+                    edge_max_z if edge_max_z is not None else float("nan"),
+                    edge_z_span if edge_z_span is not None else float("nan"),
                 )
             )
             # 요구 사항: edge 결과 min-Z가 0.5mm 이하면 비정상으로 간주
@@ -170,6 +186,18 @@ def _detect_finishline_points_edge(
                         idx,
                         edge_min_z,
                         _EDGE_MIN_Z_VALID_THRESHOLD_MM,
+                    )
+                )
+                continue
+
+            # 거의 수평인 edge 링은 finishline이 아닌 내부 경계일 가능성이 높아 제외
+            if edge_z_span is not None and edge_z_span <= _EDGE_MIN_Z_SPAN_MM:
+                rejected_flat_z += 1
+                _trace_log(
+                    "[detect-edge] candidate[{}] rejected flat_z z_span={:.6f} <= {:.3f}".format(
+                        idx,
+                        edge_z_span,
+                        _EDGE_MIN_Z_SPAN_MM,
                     )
                 )
                 continue
@@ -242,7 +270,31 @@ def _detect_finishline_points_edge(
                     )
                     continue
 
-            return traced_points, "{}#candidate{}".format(strategy_used, idx)
+            # 첫 valid 즉시 반환하지 않고, 전체 후보 중 최적 루프를 선택한다.
+            z_score = (
+                -abs(float(edge_min_z) - float(ref_pt0.Z))
+                if (ref_pt0 is not None and edge_min_z is not None)
+                else float(edge_min_z)
+                if edge_min_z is not None
+                else -float("inf")
+            )
+            score = (
+                float(edge_median_radius) if edge_median_radius is not None else -1.0,
+                float(z_score),
+                float(len(traced_points)),
+            )
+            _trace_log(
+                "[detect-edge] candidate[{}] accepted score=(r={:.6f},z={:.6f},n={:.0f})".format(
+                    idx,
+                    score[0],
+                    score[1],
+                    score[2],
+                )
+            )
+            if best_score is None or score > best_score:
+                best_score = score
+                best_points = traced_points
+                best_strategy = "{}#candidate{}".format(strategy_used, idx)
         else:
             _trace_log(
                 "[detect-edge] candidate[{}] no valid closed traced points (found={})".format(
@@ -250,8 +302,19 @@ def _detect_finishline_points_edge(
                 )
             )
 
+    if best_points and len(best_points) >= 3:
+        _trace_log(
+            "[detect-edge] selected best strategy={} score={}".format(
+                best_strategy,
+                best_score,
+            )
+        )
+        return best_points, str(best_strategy or "C_EXTRACT_MESH_EDGES_UNWELDED")
+
     if rejected_low_z > 0:
         return None, "C_EDGE_REJECTED_LOW_Z"
+    if rejected_flat_z > 0:
+        return None, "C_EDGE_REJECTED_FLAT_Z"
     if rejected_high_z > 0:
         return None, "C_EDGE_REJECTED_HIGH_Z"
     if rejected_low_vs_pt0 > 0:
@@ -671,8 +734,10 @@ def _pick_best_edge_loop_points(
         joined = None
     source = list(joined) if joined else list(curves)
 
-    loop_infos: List[Tuple[float, float, float, List[rg.Point3d]]] = []
-    # tuple: (median_radius, -min_z, length, points)
+    # tuple: (median_radius, z_score, length, min_z, points)
+    # - median_radius: 외곽 루프 우선
+    # - z_score: pt0가 있으면 |min_z-pt0_z|가 작은 루프 우선, 없으면 min_z가 높은 루프 우선
+    loop_infos: List[Tuple[float, float, float, float, List[rg.Point3d]]] = []
     for cv in source:
         pts = _curve_to_closed_points(cv)
         if not pts or len(pts) < 3:
@@ -688,6 +753,9 @@ def _pick_best_edge_loop_points(
         if ref_pt0 is not None:
             max_allowed_z = ref_pt0.Z + _EDGE_MAX_Z_ABOVE_PT0_MM
             if min_z >= max_allowed_z:
+                continue
+            min_allowed_z = ref_pt0.Z - _EDGE_MAX_Z_BELOW_PT0_MM
+            if min_z <= min_allowed_z:
                 continue
 
         median_r = _points_median_radius(pts)
@@ -705,11 +773,17 @@ def _pick_best_edge_loop_points(
         except Exception:
             length = float(len(pts))
 
+        if ref_pt0 is not None:
+            z_score = -abs(float(min_z) - float(ref_pt0.Z))
+        else:
+            z_score = float(min_z)
+
         loop_infos.append(
             (
                 float(median_r) if median_r is not None else -1.0,
-                -float(min_z),
+                float(z_score),
                 length,
+                float(min_z),
                 pts,
             )
         )
@@ -717,19 +791,20 @@ def _pick_best_edge_loop_points(
     if not loop_infos:
         return None
 
-    # 잘못된 내부/저부 루프를 피하기 위해 외곽 반경(=median_radius) 우선 선택
+    # 외곽 반경 우선 + (pt0 기준 높이 일치도) + 길이 우선
     loop_infos.sort(key=lambda item: (item[0], item[1], item[2]), reverse=True)
     selected = loop_infos[0]
     _trace_log(
-        "[finishline] edge loops={} selected median_r={:.6f} min_z={:.6f} len={:.3f} pts={}".format(
+        "[finishline] edge loops={} selected median_r={:.6f} z_score={:.6f} min_z={:.6f} len={:.3f} pts={}".format(
             len(loop_infos),
             selected[0],
-            -selected[1],
+            selected[1],
+            selected[3],
             selected[2],
-            len(selected[3]),
+            len(selected[4]),
         )
     )
-    return selected[3]
+    return selected[4]
 
 
 def _points_min_z(points: Sequence[rg.Point3d]) -> Optional[float]:
@@ -737,6 +812,15 @@ def _points_min_z(points: Sequence[rg.Point3d]) -> Optional[float]:
         return None
     try:
         return float(min(p.Z for p in points))
+    except Exception:
+        return None
+
+
+def _points_max_z(points: Sequence[rg.Point3d]) -> Optional[float]:
+    if not points:
+        return None
+    try:
+        return float(max(p.Z for p in points))
     except Exception:
         return None
 
