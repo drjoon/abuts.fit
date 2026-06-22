@@ -639,7 +639,40 @@ export async function updateReviewStatusByStage(req, res) {
 
       await assertAndClaimManufacturerRequestAccess({ req, request });
 
+      previousManufacturerStage =
+        String(request.manufacturerStage || "").trim() || null;
+
+      // 재제작/R&D 플로우 안전장치:
+      // 배송/추적 이력이 있는 normal 원본은 request 단계 재승인으로 CAM에 되돌아가면 안 된다.
+      // 재제작 작업은 반드시 source=manufacturer_sample 복사본에서만 진행한다.
       if (status === "APPROVED" && effectiveStage === "request") {
+        const isNormalSource =
+          String(request.source || "normal").trim() !== "manufacturer_sample";
+        const hasShippingArtifacts = Boolean(
+          request.shippingPackageId || request.deliveryInfoRef,
+        );
+        const isActuallyRequestStage = previousManufacturerStage === "의뢰";
+        if (
+          isNormalSource &&
+          (!isActuallyRequestStage || hasShippingArtifacts)
+        ) {
+          console.error("[REVIEW_GUARD_BLOCK_NORMAL_SOURCE_REAPPROVAL]", {
+            requestId: request.requestId,
+            requestMongoId: String(request._id || ""),
+            source: request.source || "normal",
+            previousManufacturerStage,
+            effectiveStage,
+            status,
+            hasShippingPackageId: Boolean(request.shippingPackageId),
+            hasDeliveryInfoRef: Boolean(request.deliveryInfoRef),
+          });
+          const err = new Error(
+            "완료/배송 이력이 있는 원본 의뢰는 재제작 공정으로 직접 이동할 수 없습니다. R&D/재제작 복사본에서 작업해주세요.",
+          );
+          err.statusCode = 400;
+          throw err;
+        }
+
         requestStageMachineSelection = await ensureMachineCompatibilityOrThrow({
           request,
           stageKey: "request",
@@ -647,8 +680,6 @@ export async function updateReviewStatusByStage(req, res) {
       }
 
       ensureReviewByStageDefaults(request);
-      previousManufacturerStage =
-        String(request.manufacturerStage || "").trim() || null;
 
       request.caseInfos.reviewByStage[effectiveStage] = {
         status,
