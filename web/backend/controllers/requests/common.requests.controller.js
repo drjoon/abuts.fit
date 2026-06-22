@@ -543,7 +543,10 @@ export async function getAllRequests(req, res) {
     // 원본(normal) 의뢰의 배송/추적 이력만 보이도록 고정한다.
     if (view === "worksheet" && worksheetProfile === "tracking") {
       const trackingSampleGuard = {
-        source: { $ne: "manufacturer_sample" },
+        $and: [
+          { source: { $ne: "manufacturer_sample" } },
+          { "price.rule": { $ne: "manufacturer_sample" } },
+        ],
       };
 
       if (filter && Array.isArray(filter.$and)) {

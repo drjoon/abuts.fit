@@ -1048,35 +1048,6 @@ export const TrackingInquiryPage = () => {
     setRecallStartStage("의뢰");
   }, [tab, recallMode]);
 
-  useEffect(() => {
-    // 한 번만 실행 - 디버깅 로그 출력
-    const only = baseFiltered.filter((r) => {
-      const di = normalizeDeliveryInfo(r.deliveryInfoRef);
-      return Boolean(di.trackingNumber || di.shippedAt || di.deliveredAt);
-    });
-
-    console.log(
-      "[DEBUG_ONCE] shippingRows - baseFiltered count:",
-      baseFiltered.length,
-    );
-    console.log(
-      "[DEBUG_ONCE] shippingRows - only (with tracking) count:",
-      only.length,
-    );
-
-    // 각 의뢰건의 deliveryInfoRef 상세 정보 출력
-    only.forEach((r) => {
-      const di = normalizeDeliveryInfo(r.deliveryInfoRef);
-      console.log(`[DEBUG_ONCE] Request ${r.requestId}:`, {
-        trackingNumber: di.trackingNumber,
-        carrier: di.carrier,
-        shippedAt: di.shippedAt,
-        pickedUpAt: di.pickedUpAt,
-        deliveredAt: di.deliveredAt,
-      });
-    });
-  }, []);
-
   const currentRows =
     tab === "process"
       ? processRows
@@ -1608,24 +1579,40 @@ export const TrackingInquiryPage = () => {
                 const requestorBusiness = String(
                   firstRequest?.requestor?.business || "",
                 ).trim();
+                const requestIdList: string[] = requests
+                  .map((req: any) => String(req?.requestId || "").trim())
+                  .filter((v: string) => Boolean(v));
+                const requestIdsPreviewCount = Math.min(
+                  requestIdList.length,
+                  3,
+                );
+                const requestIdsPreview =
+                  requestIdsPreviewCount > 0
+                    ? `${requestIdsPreviewCount}건`
+                    : "";
+                const createdAtYmdList: string[] = requests
+                  .map((req: any) => formatYmd(String(req?.createdAt || "")))
+                  .filter((v: string) => v && v !== "-");
+                const uniqueCreatedAtYmd: string[] = Array.from(
+                  new Set<string>(createdAtYmdList),
+                ).sort();
+                const requestDateLabel =
+                  uniqueCreatedAtYmd.length === 0
+                    ? "-"
+                    : uniqueCreatedAtYmd.length === 1
+                      ? uniqueCreatedAtYmd[0]
+                      : `${uniqueCreatedAtYmd[0]} ~ ${
+                          uniqueCreatedAtYmd[uniqueCreatedAtYmd.length - 1]
+                        }`;
                 const boxId = String(box._id || box.trackingNumber);
                 const isExpanded = expandedBoxes.has(boxId);
 
                 const toggleExpanded = () => {
-                  console.log(
-                    `[DEBUG_CLICK] toggleExpanded called for boxId: ${boxId}, isExpanded: ${isExpanded}`,
-                  );
                   const newSet = new Set(expandedBoxes);
                   if (newSet.has(boxId)) {
                     newSet.delete(boxId);
-                    console.log(
-                      `[DEBUG_CLICK] Removed ${boxId}, new size: ${newSet.size}`,
-                    );
                   } else {
                     newSet.add(boxId);
-                    console.log(
-                      `[DEBUG_CLICK] Added ${boxId}, new size: ${newSet.size}`,
-                    );
                   }
                   setExpandedBoxes(newSet);
                 };
@@ -1691,12 +1678,14 @@ export const TrackingInquiryPage = () => {
                           <span className="text-sm text-gray-600">
                             {mailboxCode || "-"}
                             {requestorBusiness ? ` / ${requestorBusiness}` : ""}
+                            {requestIdsPreview ? ` · ${requestIdsPreview}` : ""}
                           </span>
                         </div>
                         <div className="flex items-center gap-3">
                           <div className="flex items-center gap-2 text-xs text-gray-500">
+                            <span>의뢰 {requestDateLabel}</span>
                             {shippedAt && (
-                              <span>접수 {formatYmd(shippedAt)}</span>
+                              <span>발송접수 {formatYmd(shippedAt)}</span>
                             )}
                             {pickedUpAt && (
                               <span>집하 {formatYmd(pickedUpAt)}</span>
