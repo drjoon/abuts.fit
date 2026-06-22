@@ -539,6 +539,31 @@ export async function getAllRequests(req, res) {
       };
     }
 
+    // 추적관리 워크시트에서는 진행중 R&D 복사본(source=manufacturer_sample, rnd.doneAt=null)을 제외한다.
+    // - 원본(완료/보관 샘플, rnd.doneAt!=null)은 유지
+    // - 재제작/리콜로 생성된 작업용 복사본이 tracking 카드(request:...)로 섞여 보이는 현상 방지
+    if (view === "worksheet" && worksheetProfile === "tracking") {
+      const trackingSampleGuard = {
+        $or: [
+          { source: { $ne: "manufacturer_sample" } },
+          { "rnd.doneAt": { $ne: null } },
+        ],
+      };
+
+      if (filter && Array.isArray(filter.$and)) {
+        filter = {
+          ...filter,
+          $and: [...filter.$and, trackingSampleGuard],
+        };
+      } else if (!filter || Object.keys(filter).length === 0) {
+        filter = trackingSampleGuard;
+      } else {
+        filter = {
+          $and: [filter, trackingSampleGuard],
+        };
+      }
+    }
+
     // 레거시 MOCK_DEV_TOKEN 분기 제거됨
 
     // 정렬 파라미터
