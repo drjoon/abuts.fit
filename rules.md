@@ -116,8 +116,15 @@
   - 재제작(R&D 탭): `의뢰`, `CAM`, `가공` 허용
 - 복사본은 원본을 변경하지 않고 별도 의뢰로 생성한다. (원본 불변)
 - 복사본의 단계/검토상태(`manufacturerStage`, `caseInfos.reviewByStage`)는 선택한 시작 공정을 기준으로 초기화한다.
+- 복사 시작 공정이 `CAM` 또는 `가공`이면, 복사본 생성 시점에 `ensureLotNumberForMachining`으로 **새 lotNumber를 즉시 발급**한다. (`의뢰` 시작은 기존 승인 시점 발급)
 - 리콜 대상 선정은 트래킹 화면에서 **기간(from/to) 선택** 또는 **카드/의뢰 직접 선택** 방식 모두 지원한다.
 - 프론트/백엔드는 시작 공정 값을 fallback으로 추정하지 않는다. 유효하지 않은 값은 오류로 처리한다.
+- **R&D 보관 원본 불변 규칙 (추가):**
+  - `source=manufacturer_sample` 이고 `rnd.doneAt!=null` 인 문서는 **보관 원본**이며, BG 콜백/자동 매칭으로 절대 수정하면 안 된다.
+  - CAM/NC 재생성 작업은 반드시 `rnd.doneAt=null` 인 **작업 복사본**에서만 진행한다.
+  - BG 콜백 의뢰 식별 우선순위는 `requestMongoId` → `requestId` → (최후 수단) 파일명 매칭으로 고정한다.
+  - 파일명 매칭 fallback에서도 보관 원본(`rnd.doneAt!=null`)은 후보에서 제외한다.
+  - Esprit add-in은 `requestId`를 STL 파일명에서 역추론하지 않고, 트리거 payload의 `RequestId`를 canonical SSOT로 사용한다.
 
 ---
 

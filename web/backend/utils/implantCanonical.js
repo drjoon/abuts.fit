@@ -37,6 +37,16 @@ const IMPLANT_BRAND_CANONICAL_ALIASES = {
   NEOBIOTECH: {
     IS: "IS2",
   },
+  MEGAGEN: {
+    // R&D/워크시트 원본 데이터에는 "AnyOne"으로 저장된 케이스가 많지만,
+    // PRC 매핑(PrcMapping/connection seed)의 SSOT는 "AnyOne Internal"을 사용한다.
+    // 이 alias가 없으면 CAM/NC 재생성 시 PRC 파일명이 비어 Esprit가 실패한다.
+    AnyOne: "AnyOne Internal",
+    ANYONE: "AnyOne Internal",
+    // Mini 계열도 동일하게 canonical 토큰으로 맞춘다.
+    MiNi: "MiNi Internal",
+    MINI: "MiNi Internal",
+  },
 };
 
 export const IMPLANT_MANUFACTURER_DEFS = IMPLANT_MANUFACTURER_CATALOG;

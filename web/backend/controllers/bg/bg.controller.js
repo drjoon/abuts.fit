@@ -348,6 +348,7 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
     fileName, // 처리된 파일명 (bg/storage/ 하위 상대 경로 포함 가능)
     originalFileName, // 원본 파일명 (연결용)
     requestId, // 의뢰 ID (있는 경우)
+    requestMongoId, // 의뢰 Mongo ObjectId (있는 경우, requestId보다 우선)
     status, // 'success', 'failed'
     metadata, // 추가 정보 (직경 등)
     s3Key: incomingS3Key, // presigned 업로드 후 전달되는 키
@@ -376,8 +377,20 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
   }
 
   // 1. 의뢰 찾기
+  // 중요: 원본/복사본이 동일 파일명을 공유할 수 있으므로 ObjectId 기반 식별을 최우선으로 사용한다.
   let request = null;
-  if (requestId) {
+  const payloadRequestMongoId = String(
+    requestMongoId || metadata?.requestMongoId || metadata?._id || "",
+  ).trim();
+
+  if (payloadRequestMongoId) {
+    request = await Request.findById(payloadRequestMongoId);
+    console.log(
+      `[BG-Callback] Searched by requestMongoId=${payloadRequestMongoId}, found=${!!request}`,
+    );
+  }
+
+  if (!request && requestId) {
     request = await Request.findOne({ requestId });
     console.log(
       `[BG-Callback] Searched by requestId=${requestId}, found=${!!request}`,
@@ -429,6 +442,8 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
         .select({
           requestId: 1,
           source: 1,
+          manufacturerStage: 1,
+          "rnd.doneAt": 1,
           updatedAt: 1,
           productionSchedule: 1,
           caseInfos: 1,
@@ -441,6 +456,14 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
       const matchedCandidates = [];
       for (const r of allRequests) {
         const ci = r?.caseInfos || {};
+
+        // 재발 방지: R&D 보관 원본(doneAt 존재)은 BG 파일 콜백의 자동 매칭 대상으로 절대 사용하지 않는다.
+        // CAM 재생성/NC 생성은 반드시 작업 복사본(doneAt=null)에서만 진행되어야 한다.
+        const isImmutableRndSample =
+          String(r?.source || "") === "manufacturer_sample" &&
+          Boolean(r?.rnd?.doneAt);
+        if (isImmutableRndSample) continue;
+
         const storedNames = [
           ci?.file?.originalName,
           ci?.file?.filePath,
@@ -459,30 +482,32 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
 
         if (!hit) continue;
 
-        // 동일 camFile 경로를 여러 의뢰(원본/샘플)가 공유할 수 있으므로
-        // 현재 CAM 처리 중인 의뢰를 우선 매칭한다.
-        // 우선순위:
-        //  1) request 승인(APPROVED) + actualCamStart 존재 + actualCamComplete 없음
-        //  2) NC 미생성(ncFile 없음)
-        //  3) R&D 샘플(source=manufacturer_sample)
-        //  4) 최근 updatedAt
         const requestReviewStatus = String(
           ci?.reviewByStage?.request?.status || "",
         ).trim();
         const actualCamStart = r?.productionSchedule?.actualCamStart;
         const actualCamComplete = r?.productionSchedule?.actualCamComplete;
         const hasNcFile = Boolean(ci?.ncFile?.s3Key || ci?.ncFile?.filePath);
-
-        let score = 0;
-        if (
+        const stageLabel = String(r?.manufacturerStage || "").trim();
+        const isSampleWorkingCopy =
+          String(r?.source || "") === "manufacturer_sample" &&
+          !Boolean(r?.rnd?.doneAt);
+        const isActiveCamWindow =
           requestReviewStatus === "APPROVED" &&
           actualCamStart &&
-          !actualCamComplete
-        ) {
-          score += 10;
-        }
-        if (!hasNcFile) score += 5;
-        if (String(r?.source || "") === "manufacturer_sample") score += 2;
+          !actualCamComplete;
+
+        // 동일 파일명을 공유하는 경우를 대비해 점수를 크게 벌려 오매칭 가능성을 낮춘다.
+        //  1) CAM 처리 진행중(active window)
+        //  2) 현재 단계가 의뢰/CAM
+        //  3) NC 미생성
+        //  4) 작업용 샘플 복사본(doneAt=null)
+        //  5) 최근 업데이트
+        let score = 0;
+        if (isActiveCamWindow) score += 50;
+        if (stageLabel === "의뢰" || stageLabel === "CAM") score += 15;
+        if (!hasNcFile) score += 10;
+        if (isSampleWorkingCopy) score += 8;
 
         matchedCandidates.push({
           _id: r?._id,
@@ -490,6 +515,9 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
           score,
           updatedAt: r?.updatedAt ? new Date(r.updatedAt).getTime() : 0,
           normalizedNames,
+          stageLabel,
+          isActiveCamWindow,
+          isSampleWorkingCopy,
         });
       }
 
@@ -501,7 +529,7 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
         const chosen = matchedCandidates[0];
         console.log(`[BG-Callback] Matched request: ${chosen.requestId}`);
         console.log(
-          `[BG-Callback] Match details - target: ${normalizedTarget}, chosenScore=${chosen.score}, stored: ${chosen.normalizedNames
+          `[BG-Callback] Match details - target: ${normalizedTarget}, chosenScore=${chosen.score}, stage=${chosen.stageLabel}, activeCamWindow=${chosen.isActiveCamWindow}, sampleWorkingCopy=${chosen.isSampleWorkingCopy}, stored: ${chosen.normalizedNames
             .map((n) => n.normalized)
             .join(", ")}`,
         );
@@ -542,6 +570,34 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
           "File received but no matching request found",
         ),
       );
+  }
+
+  // 재발 방지: R&D 보관 원본(doneAt!=null)은 완료 샘플 보관본이며 작업 대상이 아니다.
+  // BG 콜백이 잘못 매칭되더라도 원본을 변경하지 않도록 즉시 무시한다.
+  if (
+    String(request?.source || "") === "manufacturer_sample" &&
+    Boolean(request?.rnd?.doneAt)
+  ) {
+    console.warn("[BG-Callback] Ignored immutable R&D sample", {
+      requestId: request?.requestId,
+      requestMongoId: String(request?._id || ""),
+      sourceStep,
+      fileName,
+      requestIdFromPayload: requestId || null,
+      requestMongoIdFromPayload: payloadRequestMongoId || null,
+    });
+    return res.status(200).json(
+      new ApiResponse(
+        200,
+        {
+          found: true,
+          ignored: true,
+          reason: "immutable_rnd_sample",
+          requestId: request?.requestId || null,
+        },
+        "R&D 보관 원본은 BG 콜백 업데이트 대상이 아니므로 무시했습니다.",
+      ),
+    );
   }
 
   // 2. S3 업로드 (성공 시에만, 로컬 스토리지에서 읽어서)

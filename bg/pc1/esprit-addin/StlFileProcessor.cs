@@ -120,7 +120,10 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             _ncGenerator = new NcFileGenerator(_espApp, _outputFolder, _postProcessorFile);
         }
         public Esprit.PMTab exTab;
-        public void Process(string stlPath, double? frontLimitX = null, double? backLimitX = null, double? materialDiameter = null, bool twoPhase = false)
+        // requestIdHint:
+        // - 백엔드가 트리거 시 전달한 canonical requestId
+        // - R&D 샘플 복사본이 원본과 동일 STL 파일명을 공유해도, 공정/콜백 귀속이 원본으로 섞이지 않도록 우선 사용한다.
+        public void Process(string stlPath, double? frontLimitX = null, double? backLimitX = null, double? materialDiameter = null, bool twoPhase = false, string requestIdHint = null)
         {
             AppLogger.BeginRun();
             AppLogger.Log("StlFileProcessor: Process 시작");
@@ -160,7 +163,10 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             _backendImplantLabel = null;
             try
             {
-                requestId = BackendApiClient.ExtractRequestIdFromStlPath(stlPath);
+                requestId = string.IsNullOrWhiteSpace(requestIdHint)
+                    ? BackendApiClient.ExtractRequestIdFromStlPath(stlPath)
+                    : requestIdHint.Trim();
+                AppLogger.Log($"StlFileProcessor: requestId resolved={requestId} (source={(string.IsNullOrWhiteSpace(requestIdHint) ? "stlPath" : "payload")})");
                 if (!string.IsNullOrWhiteSpace(requestId))
                 {
                     BackendApiClient.RequestMetaResponse requestMetaResponse = FetchRequestMeta(requestId);

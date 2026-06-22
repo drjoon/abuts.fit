@@ -18,6 +18,8 @@
 - 브리지 큐 조회 실패 시 DB 스냅샷 fallback을 허용합니다.
 - 가공 이력의 영속 SSOT는 `MachiningRecord` 입니다.
 - 팝빌/세금계산서 작업은 web이 직접 처리하지 않고 큐에 넣습니다.
+- BG 콜백 의뢰 매칭 우선순위는 `requestMongoId` → `requestId` → 파일명 fallback 입니다.
+- `source=manufacturer_sample` + `rnd.doneAt!=null`(R&D 보관 원본)은 BG 자동 업데이트 대상에서 제외합니다.
 
 ## 3. 정리 원칙
 

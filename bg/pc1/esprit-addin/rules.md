@@ -11,6 +11,8 @@
 - 재기동 시 pending 전체를 자동 복구하지 않고, 승인된 단일 작업만 처리합니다.
 - `UserData`와 PRC 경로 초기화는 자동 실행 경로에서도 UI와 동일하게 맞춰야 합니다.
 - NC 출력 파일명은 최종적으로 `*.nc`로 정규화합니다.
+- request-meta 조회/등록 귀속의 SSOT는 HTTP payload의 `RequestId` 입니다.
+  - `StlPath` 파일명에서 requestId를 역추론하면 원본/샘플이 섞일 수 있으므로 금지합니다.
 
 ## 2. 구현 체크포인트
 

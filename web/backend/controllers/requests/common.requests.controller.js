@@ -2023,6 +2023,13 @@ export async function cloneFromSampleToRequest(req, res) {
         ],
       });
 
+      // 정책: 복사 시작 공정이 CAM/가공이면 "CAM 진입"으로 간주하여 새 lotNumber를 즉시 발급한다.
+      // - 원본/기존 샘플 lot 재사용 금지 (중복 및 귀속 혼선 방지)
+      // - 의뢰 시작(의뢰 탭) 복사본은 승인 시점에 기존 흐름대로 lot 부여
+      if (startStage === "CAM" || startStage === "가공") {
+        await ensureLotNumberForMachining(clonedRequest);
+      }
+
       await clonedRequest.save({ session });
 
       emitAppEventToRoles(["manufacturer", "admin"], "worksheet:count-update", {
@@ -2210,6 +2217,12 @@ export async function cloneRequestsForRecall(req, res) {
             },
           ],
         });
+
+        // 정책: 추적관리/리콜 재제작 복사에서도 시작 공정이 CAM/가공이면 즉시 새 lotNumber를 발급한다.
+        // 복사본이 곧바로 CAM/가공 큐에 진입하므로, lot 누락 상태로 내려가면 안 된다.
+        if (startStage === "CAM" || startStage === "가공") {
+          await ensureLotNumberForMachining(clonedRequest);
+        }
 
         await clonedRequest.save();
 
