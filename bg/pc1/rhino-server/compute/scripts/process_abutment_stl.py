@@ -1,5 +1,6 @@
 import os
 import sys
+import time
 
 import finishline_detection as finishline_detection_module
 
@@ -860,6 +861,20 @@ def _run_fill_mesh_holes(doc, target_id):
 
 
 def main(input_path_arg=None, output_path_arg=None, log_path_arg=None):
+    perf_sections = {}
+
+    def _perf_mark(name, started_at, extra=None):
+        try:
+            elapsed = float(time.perf_counter() - float(started_at))
+        except Exception:
+            elapsed = -1.0
+        perf_sections[name] = elapsed
+        if extra:
+            log("[perf] phase={} sec={:.3f} {}".format(name, elapsed, str(extra)))
+        else:
+            log("[perf] phase={} sec={:.3f}".format(name, elapsed))
+        return elapsed
+
     if log_path_arg:
         os.environ["ABUTS_LOG_PATH"] = str(log_path_arg)
 
@@ -904,12 +919,14 @@ def main(input_path_arg=None, output_path_arg=None, log_path_arg=None):
         fail("Doc를 생성할 수 없습니다")
 
     try:
+        total_started_at = time.perf_counter()
         log("start")
         log("input=" + input_path)
         log("output=" + output_path)
         log("[align] target connection diameter={:.4f}mm".format(target_diameter))
 
         # 기존 문서 정리 (ActiveDoc를 사용할 수 있으므로 안전하게 비우기)
+        stage_started_at = time.perf_counter()
         _clear_doc_objects(doc, stage_label="before-import")
         # 정렬을 포함하여 import (skip_align=False): finishline 감지 전에 원점 정렬 필수
         # 원본 STL이 원점에서 크게 벗어난 경우(예: zmin=-22mm) 정렬 없이 finishline을 감지하면
@@ -922,12 +939,14 @@ def main(input_path_arg=None, output_path_arg=None, log_path_arg=None):
         )
         _log_doc_mesh_stats(doc, "after-import-align")
         _apply_alignment_transform_to_doc_curves(doc, alignment_transform)
+        _perf_mark("import_align", stage_started_at)
 
         # Finish line 계산 (정렬 완료 후 단계 — 좌표계가 원점 기준으로 보정된 상태)
         fl = None
         pts = []
         pt0 = None
         strategy_used = None
+        stage_started_at = time.perf_counter()
         try:
             fl = _detect_finish_line_latest(doc=doc, visualize=False)
             pts = fl.get("points") or []
@@ -935,8 +954,14 @@ def main(input_path_arg=None, output_path_arg=None, log_path_arg=None):
             strategy_used = fl.get("strategy_used")
         except Exception as e:
             log("Finishline failed: " + str(e))
+        _perf_mark(
+            "finishline_detect",
+            stage_started_at,
+            extra="strategy={} points={}".format(strategy_used, len(pts)),
+        )
 
         # 백엔드 등록: 이미 정렬된 좌표계 기준이므로 별도 transform 불필요
+        stage_started_at = time.perf_counter()
         if fl is not None:
             try:
                 import base64
@@ -981,8 +1006,10 @@ def main(input_path_arg=None, output_path_arg=None, log_path_arg=None):
                     )
             except Exception as e:
                 log("Finishline post failed after alignment: " + str(e))
+        _perf_mark("finishline_payload_post", stage_started_at)
 
         # 1) Explode: RhinoCommon API를 사용하여 고속 처리 (문서 리셋 없이 바로 진행)
+        stage_started_at = time.perf_counter()
         try:
             objs = list(doc.Objects)
             new_meshes = []
@@ -1014,8 +1041,12 @@ def main(input_path_arg=None, output_path_arg=None, log_path_arg=None):
             ]
 
         _log_doc_mesh_stats(doc, "after-explode")
+        _perf_mark(
+            "explode", stage_started_at, extra="pieces={}".format(len(piece_ids))
+        )
 
         # 2) 홀메우기 대상 조각 선택
+        stage_started_at = time.perf_counter()
         # - 우선순위: (nakedEdges>0인 조각만 후보) -> XY 외측(r) 최대 -> r 동률 tolerance 내에서 +Z 최대
         candidates = []
         for oid in piece_ids:
@@ -1136,8 +1167,14 @@ def main(input_path_arg=None, output_path_arg=None, log_path_arg=None):
             piece_ids = []
 
         _log_doc_mesh_stats(doc, "before-join")
+        _perf_mark(
+            "fill_selection_and_holes",
+            stage_started_at,
+            extra="targets={}".format(len(fill_targets)),
+        )
 
         # 4) Join (RhinoCommon API 사용 + 미지원/실패 시 커맨드 fallback)
+        stage_started_at = time.perf_counter()
         try:
             meshes = []
             for oid in piece_ids:
@@ -1228,7 +1265,9 @@ def main(input_path_arg=None, output_path_arg=None, log_path_arg=None):
             pass
 
         _log_doc_mesh_stats(doc, "after-join")
+        _perf_mark("join", stage_started_at)
 
+        stage_started_at = time.perf_counter()
         try:
             try:
                 out_dir = os.path.dirname(str(output_path))
@@ -1301,8 +1340,6 @@ def main(input_path_arg=None, output_path_arg=None, log_path_arg=None):
                             ):
                                 ok = True
                                 break
-                            import time
-
                             time.sleep(0.02)
 
                         if ok:
@@ -1320,12 +1357,42 @@ def main(input_path_arg=None, output_path_arg=None, log_path_arg=None):
 
         if not ok:
             fail("STL Export 실패")
+        _perf_mark("export", stage_started_at)
 
+        stage_started_at = time.perf_counter()
         try:
             max_d, conn_d = analyze_diameters(doc)
             log("DIAMETER_RESULT:max={} conn={}".format(max_d, conn_d))
         except Exception as e:
             log("Analysis failed: " + str(e))
+        _perf_mark("diameter_analysis", stage_started_at)
+
+        total_elapsed = _perf_mark("total", total_started_at)
+        try:
+            ordered_keys = [
+                "import_align",
+                "finishline_detect",
+                "finishline_payload_post",
+                "explode",
+                "fill_selection_and_holes",
+                "join",
+                "export",
+                "diameter_analysis",
+                "total",
+            ]
+            summary_parts = []
+            for key in ordered_keys:
+                if key in perf_sections:
+                    summary_parts.append("{}={:.3f}".format(key, perf_sections[key]))
+            log("[perf-summary] " + " ".join(summary_parts))
+            log("PERF_RESULT:" + "|".join(summary_parts))
+            log(
+                "[perf-compare-format] sample=<same_input> before_total=<sec> after_total={:.3f} delta=<before-after>".format(
+                    total_elapsed
+                )
+            )
+        except Exception:
+            pass
 
         log("export ok")
     finally:
