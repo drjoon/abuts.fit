@@ -55,6 +55,12 @@ _EDGE_MAX_Z_BELOW_PT0_MM = 2.5
 # edge 루프의 Z 변화폭이 지나치게 작으면(거의 수평 링) 내부 경계 오검출로 간주
 _EDGE_MIN_Z_SPAN_MM = 0.08
 
+# traced finishline 품질 검증(아웃라이어 세그먼트) 임계값
+_OUTLIER_SEGMENT_RATIO = 2.8  # max(segment) / median(segment)
+_OUTLIER_SEGMENT_ABS_MM = 2.0  # mm
+_OUTLIER_DZ_RATIO = 4.0  # max(|dz|) / median(|dz|)
+_OUTLIER_DZ_ABS_MM = 1.5  # mm
+
 
 def _merge_candidates(
     primary: Sequence[rg.Point3d], secondary: Sequence[rg.Point3d]
@@ -872,6 +878,78 @@ def _points_median_radius(points: Sequence[rg.Point3d]) -> Optional[float]:
     return float((radii[mid - 1] + radii[mid]) * 0.5)
 
 
+def _median(values: Sequence[float]) -> Optional[float]:
+    if not values:
+        return None
+    ordered = sorted(float(v) for v in values)
+    n = len(ordered)
+    mid = n // 2
+    if n % 2 == 1:
+        return float(ordered[mid])
+    return float((ordered[mid - 1] + ordered[mid]) * 0.5)
+
+
+def _validate_finishline_points(
+    points: Sequence[rg.Point3d],
+) -> Tuple[bool, str]:
+    """연결 세그먼트 기반 아웃라이어 검증.
+
+    - 한 세그먼트가 전체 대비 지나치게 길거나
+    - 한 세그먼트의 |dz|가 비정상적으로 크면
+      해당 전략 결과를 실패로 간주한다.
+    """
+    if not points or len(points) < 4:
+        return False, "too_few_points"
+
+    seg_lens: List[float] = []
+    seg_dz: List[float] = []
+    for i in range(1, len(points)):
+        a = points[i - 1]
+        b = points[i]
+        if a is None or b is None:
+            continue
+        try:
+            seg_lens.append(float(a.DistanceTo(b)))
+            seg_dz.append(float(abs(b.Z - a.Z)))
+        except Exception:
+            continue
+
+    if len(seg_lens) < 3:
+        return False, "too_few_segments"
+
+    med_len = _median(seg_lens)
+    max_len = max(seg_lens) if seg_lens else 0.0
+    if med_len is None or med_len <= _DIST_TOL:
+        return False, "invalid_segment_stats"
+
+    if max_len >= _OUTLIER_SEGMENT_ABS_MM and max_len >= (
+        med_len * _OUTLIER_SEGMENT_RATIO
+    ):
+        return (
+            False,
+            "outlier_segment max_len={:.4f} med_len={:.4f} ratio={:.3f}".format(
+                max_len,
+                med_len,
+                max_len / max(1e-9, med_len),
+            ),
+        )
+
+    med_dz = _median(seg_dz)
+    max_dz = max(seg_dz) if seg_dz else 0.0
+    if med_dz is not None and med_dz > _DIST_TOL:
+        if max_dz >= _OUTLIER_DZ_ABS_MM and max_dz >= (med_dz * _OUTLIER_DZ_RATIO):
+            return (
+                False,
+                "outlier_dz max_dz={:.4f} med_dz={:.4f} ratio={:.3f}".format(
+                    max_dz,
+                    med_dz,
+                    max_dz / max(1e-9, med_dz),
+                ),
+            )
+
+    return True, "ok"
+
+
 def _extract_lowest_boundary_loop_points(mesh: rg.Mesh) -> Optional[List[rg.Point3d]]:
     # 기존 방식: naked edge 폐곡선 중 min-Z 루프 사용
     loops = _extract_naked_edges_fallback(mesh)
@@ -1590,6 +1668,15 @@ def detect_finish_line(
                 )
             )
             traced_points = None
+        else:
+            ok_shape, reason = _validate_finishline_points(traced_points)
+            if not ok_shape:
+                _trace_log(
+                    "[detect] edge result rejected by outlier check: {}; fallback=max_radius_from_z_axis".format(
+                        reason
+                    )
+                )
+                traced_points = None
 
     # 2) Z축 최대 반경 기반(요청 로직)
     if not traced_points or len(traced_points) < 3:
@@ -1616,9 +1703,19 @@ def detect_finish_line(
             )
         )
         if traced_points and len(traced_points) >= 3:
-            strategy_used = "MAX_RADIUS_FROM_Z_AXIS_{}x{}".format(
-                _SECTION_COUNT, int(_SECTION_STEP_DEG)
-            )
+            ok_shape, reason = _validate_finishline_points(traced_points)
+            if not ok_shape:
+                _trace_log(
+                    "[detect] max-radius result rejected by outlier check: {}; fallback=section_tracking".format(
+                        reason
+                    )
+                )
+                traced_points = None
+                sections = []
+            else:
+                strategy_used = "MAX_RADIUS_FROM_Z_AXIS_{}x{}".format(
+                    _SECTION_COUNT, int(_SECTION_STEP_DEG)
+                )
 
     # 3) 단면 추적(fallback)
     if not traced_points or len(traced_points) < 3:
@@ -1671,9 +1768,25 @@ def detect_finish_line(
                 _trace_log("[detect] " + msg)
                 raise RuntimeError(msg)
         else:
-            strategy_used = "SECTION_TRACKING_{}x{}_FALLBACK".format(
-                _SECTION_COUNT, int(_SECTION_STEP_DEG)
-            )
+            ok_shape, reason = _validate_finishline_points(traced_points)
+            if not ok_shape:
+                _trace_log(
+                    "[detect] section result rejected by outlier check: {}; fallback=legacy".format(
+                        reason
+                    )
+                )
+                legacy_pts = _extract_lowest_boundary_loop_points(mesh_copy)
+                if legacy_pts and len(legacy_pts) >= 3:
+                    traced_points = legacy_pts
+                    strategy_used = "LEGACY_LOWEST_BOUNDARY"
+                else:
+                    raise RuntimeError(
+                        "section result rejected by outlier check and legacy fallback failed"
+                    )
+            else:
+                strategy_used = "SECTION_TRACKING_{}x{}_FALLBACK".format(
+                    _SECTION_COUNT, int(_SECTION_STEP_DEG)
+                )
 
         # Visualization hooks
     viz_ids: Dict[str, List[str]] = {"points": [], "mesh": []}
