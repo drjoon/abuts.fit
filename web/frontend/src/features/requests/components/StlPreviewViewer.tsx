@@ -1255,14 +1255,15 @@ export function StlPreviewViewer({
         // 원본 STL은 오버레이 표시 안함, filled STL만 표시
         if (taperGuide && isFilled) {
           const guideHeight = Math.max(taperGuide.zEnd - taperGuide.zStart, 1);
-          // 측정선 위치: 피니시라인~포스트최상단의 10~20% 구간 (피니시라인에 가깝게)
-          const extendedStartZ = taperGuide.zStart - guideHeight * 0.9;
-          const extendedEndZ = taperGuide.zEnd + guideHeight * 1;
+          // 가이드 렌더 구간은 "측면"의 짧은 영역만 사용한다.
+          // (기존처럼 과도하게 연장하면 모델을 관통하는 긴 선으로 보임)
+          const renderStartZ = taperGuide.zStart + guideHeight * 0.08;
+          const renderEndZ = taperGuide.zStart + guideHeight * 0.28;
           // filled STL은 이미 원점 정렬되어 있으므로 center.z를 빼지 않음
           const effectiveCenter =
             centerRef.current || new THREE.Vector3(0, 0, 0);
-          const zStartCentered = extendedStartZ - effectiveCenter.z;
-          const zEndCentered = extendedEndZ - effectiveCenter.z;
+          const zStartCentered = renderStartZ - effectiveCenter.z;
+          const zEndCentered = renderEndZ - effectiveCenter.z;
 
           // 의뢰자 페이지(showOverlay=false)에서는 중심축을 숨김
           // 제조사 페이지에서도 녹색 중심축 표시 제거
@@ -1277,12 +1278,15 @@ export function StlPreviewViewer({
                 (g) =>
                   Array.isArray(g.surfacePoints) && g.surfacePoints.length >= 2,
               ).length;
+            const guidesWithoutSurfacePoints =
+              taperGuide.multiDirectionGuides.length - guidesWithSurfacePoints;
             console.log("[taperGuide][render]", {
               requestId,
               file: file.name,
               isFilled,
               guides: taperGuide.multiDirectionGuides.length,
               guidesWithSurfacePoints,
+              guidesWithoutSurfacePoints,
             });
             // 6개 기본 색상 정의 (0~150도 용)
             const baseColors = [
@@ -1324,16 +1328,63 @@ export function StlPreviewViewer({
                 : // 농도를 다르게 하기 위해 인덱스별로 회색 값 조정 (0x666666 부터 0xcccccc 까지)
                   0x666666 + colorIdx * 0x111111;
 
-              // 백엔드에서 전달된 실제 표면 포인트만 렌더링
-              if (!guide.surfacePoints || guide.surfacePoints.length < 2)
-                return;
+              // 우선순위:
+              // 1) 백엔드 surfacePoints가 있으면 그대로 사용
+              // 2) 없으면 slope/intercept + angle로 가이드 선을 복원 렌더링
+              let centeredPoints: Array<{ x: number; y: number; z: number }> =
+                [];
 
-              const centeredPoints: Array<{ x: number; y: number; z: number }> =
-                guide.surfacePoints.map((p) => ({
-                  x: p.x - effectiveCenter.x,
-                  y: p.y - effectiveCenter.y,
-                  z: p.z - effectiveCenter.z,
-                }));
+              if (
+                Array.isArray(guide.surfacePoints) &&
+                guide.surfacePoints.length >= 2
+              ) {
+                centeredPoints = guide.surfacePoints
+                  .filter((p) => Number.isFinite(Number(p.z)))
+                  .filter((p) => {
+                    const z = Number(p.z);
+                    return z >= renderStartZ && z <= renderEndZ;
+                  })
+                  .map((p) => ({
+                    x: p.x - effectiveCenter.x,
+                    y: p.y - effectiveCenter.y,
+                    z: p.z - effectiveCenter.z,
+                  }));
+              } else {
+                const slope = Number(guide.slope);
+                const intercept = Number(guide.intercept);
+                const guideAngleDeg = Number(guide.angle);
+                if (
+                  !Number.isFinite(slope) ||
+                  !Number.isFinite(intercept) ||
+                  !Number.isFinite(guideAngleDeg)
+                ) {
+                  return;
+                }
+
+                const guideAngleRad = (guideAngleDeg * Math.PI) / 180;
+                const dirX = Math.cos(guideAngleRad);
+                const dirY = Math.sin(guideAngleRad);
+                const worldCenterX = center.x;
+                const worldCenterY = center.y;
+                const sampleCount = 10;
+
+                for (let i = 0; i < sampleCount; i++) {
+                  const t = sampleCount <= 1 ? 0 : i / (sampleCount - 1);
+                  const worldZ = renderStartZ + (renderEndZ - renderStartZ) * t;
+                  const radius = slope * worldZ + intercept;
+                  if (!Number.isFinite(radius)) continue;
+
+                  const worldX = worldCenterX + dirX * radius;
+                  const worldY = worldCenterY + dirY * radius;
+                  centeredPoints.push({
+                    x: worldX - effectiveCenter.x,
+                    y: worldY - effectiveCenter.y,
+                    z: worldZ - effectiveCenter.z,
+                  });
+                }
+              }
+
+              if (centeredPoints.length < 2) return;
 
               // 측정선 - Line2로 굵게 (실제 표면 포인트들 연결)
               const positions: number[] = [];
@@ -1654,7 +1705,7 @@ export function StlPreviewViewer({
           {error}
         </div>
       )}
-      {showOverlay && file.name.toLowerCase().includes("filled") && (
+      {showOverlay && (
         <>
           <div className="pointer-events-none absolute bottom-2 left-2 flex flex-col items-start gap-1 rounded-md bg-white/85 px-2 py-1 text-[11px] md:text-[12px] font-medium text-slate-800 shadow-sm border border-slate-200 z-10">
             <div className="flex items-center gap-1.5">
@@ -1687,7 +1738,8 @@ export function StlPreviewViewer({
                 mm
               </span>
             </div>
-            {tiltAxisVectorState &&
+            {isFilledFile &&
+              tiltAxisVectorState &&
               tiltAxisVectorState.x !== undefined &&
               tiltAxisVectorState.y !== undefined &&
               tiltAxisVectorState.z !== undefined && (
@@ -1700,7 +1752,7 @@ export function StlPreviewViewer({
                   </span>
                 </div>
               )}
-            {frontPointState && (
+            {isFilledFile && frontPointState && (
               <div className="flex items-center gap-1.5">
                 <span className="text-slate-500">프론트 포인트:</span>
                 <span>
