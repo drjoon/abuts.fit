@@ -151,22 +151,59 @@ def _count_naked_edges(mesh):
         return None
 
 
-def _clear_doc_objects(doc):
+def _clear_doc_objects(doc, stage_label="startup"):
     if doc is None:
         return
-    try:
-        doc.Objects.UnselectAll()
-    except Exception:
-        pass
-    try:
-        ids = [o.Id for o in list(doc.Objects)]
-    except Exception:
-        ids = []
-    for oid in ids:
+
+    def _count_objects():
         try:
-            doc.Objects.Delete(oid, True)
+            return len(list(doc.Objects))
+        except Exception:
+            return -1
+
+    before = _count_objects()
+    log("[doc-clear:{}] before={}".format(stage_label, before))
+
+    # SelAll/Delete는 hidden/locked 객체를 놓칠 수 있어
+    # ID 직접 삭제를 여러 번 반복해 잔존 객체를 강제로 비운다.
+    for attempt in range(3):
+        try:
+            doc.Objects.UnselectAll()
         except Exception:
             pass
+
+        try:
+            Rhino.RhinoApp.RunScript("!_-SelAll _Delete _Enter", False)
+        except Exception:
+            pass
+
+        try:
+            ids = [o.Id for o in list(doc.Objects)]
+        except Exception:
+            ids = []
+
+        deleted = 0
+        for oid in ids:
+            try:
+                if doc.Objects.Delete(oid, True):
+                    deleted += 1
+            except Exception:
+                pass
+
+        remain = _count_objects()
+        log(
+            "[doc-clear:{}] attempt={} deleted={} remain={}".format(
+                stage_label,
+                attempt + 1,
+                deleted,
+                remain,
+            )
+        )
+        if remain == 0:
+            break
+
+    after = _count_objects()
+    log("[doc-clear:{}] after={}".format(stage_label, after))
 
 
 def _safe_int(value, default):
@@ -873,7 +910,7 @@ def main(input_path_arg=None, output_path_arg=None, log_path_arg=None):
         log("[align] target connection diameter={:.4f}mm".format(target_diameter))
 
         # 기존 문서 정리 (ActiveDoc를 사용할 수 있으므로 안전하게 비우기)
-        _clear_doc_objects(doc)
+        _clear_doc_objects(doc, stage_label="before-import")
         # 정렬을 포함하여 import (skip_align=False): finishline 감지 전에 원점 정렬 필수
         # 원본 STL이 원점에서 크게 벗어난 경우(예: zmin=-22mm) 정렬 없이 finishline을 감지하면
         # _EDGE_MIN_Z_VALID_THRESHOLD_MM(0.5) 체크 및 단면 평면이 모두 원점 기준이라 실패함
@@ -1100,7 +1137,7 @@ def main(input_path_arg=None, output_path_arg=None, log_path_arg=None):
 
         _log_doc_mesh_stats(doc, "before-join")
 
-        # 4) Join (RhinoCommon API 사용)
+        # 4) Join (RhinoCommon API 사용 + 미지원/실패 시 커맨드 fallback)
         try:
             meshes = []
             for oid in piece_ids:
@@ -1123,6 +1160,7 @@ def main(input_path_arg=None, output_path_arg=None, log_path_arg=None):
                 else:
                     log("Join (RhinoCommon) skipped: CreateFromMerge unavailable")
 
+            joined_with_rhinocommon = False
             if merged and merged.Faces.Count > 0:
                 try:
                     merged.Vertices.CombineIdentical(True, True)
@@ -1141,12 +1179,41 @@ def main(input_path_arg=None, output_path_arg=None, log_path_arg=None):
                     except Exception:
                         pass
                 doc.Objects.AddMesh(merged)
+                joined_with_rhinocommon = True
                 log("Join (RhinoCommon) ok")
             else:
                 log("Join (RhinoCommon) skipped: merged mesh unavailable")
+
+            # RhinoCommon Join이 성립하지 않으면 커맨드 Join fallback을 반드시 시도
+            if not joined_with_rhinocommon:
+                try:
+                    doc.Objects.UnselectAll()
+                except Exception:
+                    pass
+
+                selected_count = 0
+                for oid in piece_ids:
+                    try:
+                        obj = doc.Objects.FindId(oid)
+                        if obj and obj.ObjectType == Rhino.DocObjects.ObjectType.Mesh:
+                            if obj.Select(True):
+                                selected_count += 1
+                    except Exception:
+                        pass
+
+                log("Join fallback select mesh count=" + str(selected_count))
+                ok_join_cmd = False
+                try:
+                    ok_join_cmd = Rhino.RhinoApp.RunScript("!_-Join _Enter", True)
+                except Exception:
+                    ok_join_cmd = False
+                log("Join fallback command ok=" + str(ok_join_cmd))
         except Exception as e:
             log("Join (RhinoCommon) failed: " + str(e))
-            Rhino.RhinoApp.RunScript("!_-Join _Enter", True)
+            try:
+                Rhino.RhinoApp.RunScript("!_-Join _Enter", True)
+            except Exception:
+                pass
 
         try:
             mesh_count_after = 0

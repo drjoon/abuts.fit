@@ -38,6 +38,12 @@ _DEBUG_ADD_POLYLINE_CURVE = os.environ.get("FINISHLINE_DEBUG_CURVE_DOC", "0") in
     "true",
     "TRUE",
 )
+# 섹션 곡선(40개 평면)을 문서에 모두 그리면 느려질 수 있어 기본 비활성
+_SHOW_ALL_SECTION_CURVES = os.environ.get("FINISHLINE_SHOW_ALL_SECTIONS", "0") in (
+    "1",
+    "true",
+    "TRUE",
+)
 # ExtractMeshEdges 결과가 너무 낮은 Z로 잡히는 경우(포스트/치은 미분리 샘플) 차단 임계값
 _EDGE_MIN_Z_VALID_THRESHOLD_MM = 0.5
 # edge 루프가 pt0 대비 지나치게 안쪽(내부 홀)일 때 차단하는 반경 비율 임계값
@@ -53,12 +59,32 @@ _EDGE_MIN_Z_SPAN_MM = 0.08
 def _merge_candidates(
     primary: Sequence[rg.Point3d], secondary: Sequence[rg.Point3d]
 ) -> List[rg.Point3d]:
-    merged: List[rg.Point3d] = [rg.Point3d(pt) for pt in primary if pt is not None]
-    for pt in secondary:
+    # 기존 O(n^2) Distance 비교를 피하기 위해 좌표 quantization 기반으로 dedup
+    # (동일/근접 중복 제거 목적에는 충분하고, 단면 추적 성능을 크게 개선)
+    merged: List[rg.Point3d] = []
+    seen = set()
+
+    def _add(pt: rg.Point3d) -> None:
         if pt is None:
-            continue
-        if not any(existing.DistanceTo(pt) <= _DIST_TOL for existing in merged):
-            merged.append(rg.Point3d(pt))
+            return
+        try:
+            key = (
+                int(round(float(pt.X) * 1e6)),
+                int(round(float(pt.Y) * 1e6)),
+                int(round(float(pt.Z) * 1e6)),
+            )
+        except Exception:
+            return
+        if key in seen:
+            return
+        seen.add(key)
+        merged.append(rg.Point3d(pt))
+
+    for pt in primary:
+        _add(pt)
+    for pt in secondary:
+        _add(pt)
+
     return merged
 
 
@@ -980,7 +1006,6 @@ def _sample_plane_section(
             poly_curve = None
         if poly_curve is not None:
             curves.append(poly_curve)
-            control_points.extend(_curve_control_points(poly_curve))
 
     filtered_points = _filter_points_by_z(points, low_z, high_z)
     filtered_controls = _filter_points_by_z(control_points, low_z, high_z)
@@ -1020,6 +1045,127 @@ def _collect_section_data(mesh: rg.Mesh, planes: Sequence[rg.Plane]):
             )
         )
     return sections
+
+
+def _sample_plane_section_all_points(
+    mesh: rg.Mesh,
+    plane: rg.Plane,
+) -> Tuple[List[rg.Point3d], List[rg.Curve]]:
+    """단면 교차에서 Z 필터 없이 전체 후보를 수집한다(고속)."""
+    try:
+        polylines = intersect.Intersection.MeshPlane(mesh, plane)
+    except Exception:
+        polylines = None
+
+    points: List[rg.Point3d] = []
+    curves: List[rg.Curve] = []
+    if not polylines:
+        return points, curves
+
+    for pl in polylines:
+        if not pl:
+            continue
+        pts = [rg.Point3d(pt) for pt in pl]
+        points.extend(pts)
+        try:
+            curves.append(rg.PolylineCurve(pl))
+        except Exception:
+            pass
+
+    return points, curves
+
+
+def _detect_finishline_points_max_radius_from_z_axis(
+    mesh: rg.Mesh,
+    planes: Sequence[rg.Plane],
+) -> Tuple[List[rg.Point3d], List[Dict[str, object]]]:
+    """Z축에서 가장 먼 점(=XY 반경 최대)을 각 단면에서 뽑아 연결한다.
+
+    중요: 단면 평면은 원점(Z축)을 지나므로 반대편 점(θ+180°)도 동시에 존재할 수 있다.
+    반쪽 루프를 방지하기 위해, 각 단면의 X축(+방위각) 방향(dot>=0) 후보를 우선해서 선택한다.
+    """
+    traced: List[rg.Point3d] = []
+    sections: List[Dict[str, object]] = []
+
+    for idx, plane in enumerate(planes):
+        pts, curves = _sample_plane_section_all_points(mesh, plane)
+
+        # max-radius 전략에서 controls/merge는 품질 이득이 작고 비용이 커서 생략
+        sections.append(
+            {
+                "index": idx,
+                "points": pts,
+                "curves": curves,
+                "controls": [],
+                "plane": plane,
+            }
+        )
+
+        if not pts:
+            _trace_log("[max-r] plane_idx={} no candidates".format(idx))
+            continue
+
+        try:
+            xdir = plane.XAxis
+            ux = float(xdir.X)
+            uy = float(xdir.Y)
+        except Exception:
+            ux, uy = 1.0, 0.0
+
+        selected = None
+        selected_key = None
+        front_count = 0
+        back_count = 0
+
+        for p in pts:
+            try:
+                dot = float(p.X * ux + p.Y * uy)
+                r2 = float(p.X * p.X + p.Y * p.Y)
+                key = (r2, -float(p.Z))
+            except Exception:
+                continue
+
+            if dot >= 0.0:
+                front_count += 1
+                if selected is None or selected_key is None or key > selected_key:
+                    selected = p
+                    selected_key = key
+            else:
+                back_count += 1
+
+        if selected is None:
+            # front 후보가 전혀 없을 때만 전체 후보에서 선택
+            for p in pts:
+                try:
+                    r2 = float(p.X * p.X + p.Y * p.Y)
+                    key = (r2, -float(p.Z))
+                except Exception:
+                    continue
+                if selected is None or selected_key is None or key > selected_key:
+                    selected = p
+                    selected_key = key
+
+        if selected is None:
+            continue
+
+        traced.append(rg.Point3d(selected))
+        _trace_log(
+            "[max-r] plane_idx={} candidates={} front={} back={} selected r={:.6f} z={:.6f}".format(
+                idx,
+                len(pts),
+                front_count,
+                back_count,
+                math.sqrt(selected.X * selected.X + selected.Y * selected.Y),
+                selected.Z,
+            )
+        )
+
+    # 방위각 순으로 정렬 후 폐곡선화 (누락 단면이 있어도 연결 안정화)
+    traced = _order_by_azimuth(traced)
+    if len(traced) > 2:
+        traced.append(rg.Point3d(traced[0]))
+
+    return traced, sections
 
 
 def _select_outermost_nearby(
@@ -1376,7 +1522,10 @@ def detect_finish_line(
     visualize: bool = True,
     strategy: str = "A",  # 호환성 유지용 (A만 지원)
 ) -> Dict[str, object]:
-    """Edge 우선 + 조건부 단면 추적 fallback 방식으로 피니시라인을 계산한다.
+    """피니시라인 계산 우선순위:
+    1) Edge 추출 기반
+    2) XY 반경 최대(Z축에서 가장 먼 점 연결)
+    3) 단면 추적
 
     추가 로깅: 실패 원인을 추적하기 위해 메시(bbox, vertex/face counts), pt0,
     per-strategy 요약 정보를 _trace_log로 남깁니다.
@@ -1435,14 +1584,43 @@ def detect_finish_line(
         )
         if edge_min_z is not None and edge_min_z <= _EDGE_MIN_Z_VALID_THRESHOLD_MM:
             _trace_log(
-                "[detect] edge result rejected min_z={:.6f} <= {:.3f}; fallback=section_tracking".format(
+                "[detect] edge result rejected min_z={:.6f} <= {:.3f}; fallback=max_radius_from_z_axis".format(
                     edge_min_z,
                     _EDGE_MIN_Z_VALID_THRESHOLD_MM,
                 )
             )
             traced_points = None
 
-    # 2) 단면 추적(fallback)
+    # 2) Z축 최대 반경 기반(요청 로직)
+    if not traced_points or len(traced_points) < 3:
+        planes = _build_section_planes(count=_SECTION_COUNT, step_deg=_SECTION_STEP_DEG)
+        _trace_log(
+            "[detect] starting max-radius-from-z-axis planes={} step_deg={}".format(
+                len(planes), _SECTION_STEP_DEG
+            )
+        )
+        try:
+            traced_points, sections = _detect_finishline_points_max_radius_from_z_axis(
+                mesh_copy, planes
+            )
+        except Exception as e:
+            _trace_log(
+                "[detect] max-radius strategy raised exception: {}".format(str(e))
+            )
+            traced_points = None
+            sections = []
+
+        _trace_log(
+            "[detect] max-radius strategy returned pts={}".format(
+                len(traced_points) if traced_points else 0
+            )
+        )
+        if traced_points and len(traced_points) >= 3:
+            strategy_used = "MAX_RADIUS_FROM_Z_AXIS_{}x{}".format(
+                _SECTION_COUNT, int(_SECTION_STEP_DEG)
+            )
+
+    # 3) 단면 추적(fallback)
     if not traced_points or len(traced_points) < 3:
         planes = _build_section_planes(count=_SECTION_COUNT, step_deg=_SECTION_STEP_DEG)
         _trace_log(
@@ -1481,7 +1659,7 @@ def detect_finish_line(
                 except Exception:
                     comp_count = -1
                 msg = (
-                    "edge/단면추적 모두 피니시라인 점을 찾지 못했습니다 | "
+                    "edge/Z축최대반경/단면추적 모두 피니시라인 점을 찾지 못했습니다 | "
                     "mesh_v={} mesh_f={} zmin={:.6f} zmax={:.6f} components={}"
                 ).format(
                     mesh_copy.Vertices.Count if hasattr(mesh_copy, "Vertices") else -1,
@@ -1508,9 +1686,10 @@ def detect_finish_line(
         base_viz = _visualize(doc, pt0, traced_points)
         for key, values in base_viz.items():
             viz_ids[key] = values
-        section_ids = _visualize_all_sections(doc, sections)
-        if section_ids:
-            viz_ids["sections"] = section_ids
+        if _SHOW_ALL_SECTION_CURVES:
+            section_ids = _visualize_all_sections(doc, sections)
+            if section_ids:
+                viz_ids["sections"] = section_ids
 
     # 결과 반환
     return {
