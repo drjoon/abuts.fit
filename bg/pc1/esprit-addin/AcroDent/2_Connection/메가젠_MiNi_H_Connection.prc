@@ -1,5 +1,5 @@
 BEGIN_PROCESS; 공정 이름; 4;
-BEGIN_OPERATION; 316; [10.0MM_기준]DIO_Connection; 0;
+BEGIN_OPERATION; 316; CONNECTION; 0;
    4437; 4437; 0;  SOURCE; 0; TECHCODETYPE; 2;
    4420; 4420; 2017;  SOURCE; 0; TECHCODETYPE; 2;
    CustomSettingStr3; 1802; ;  CAPTION; 사용자 정의 문자열 3; SOURCE; 1; TECHCODETYPE; 3;
@@ -8,28 +8,23 @@ BEGIN_OPERATION; 316; [10.0MM_기준]DIO_Connection; 0;
 	END_STRING
    CustomSetting33; 663; 0;  CAPTION; 사용자 정의 설정 33; SOURCE; 1; TECHCODETYPE; 2;
    CustomSetting16; 646; 0;  CAPTION; 사용자 정의 설정 16; SOURCE; 1; TECHCODETYPE; 2;
-   4910; 4910; ;  SOURCE; 0; TECHCODETYPE; 3;
-	BEGIN_STRING; 4910;;
-		:2.2.8
-	END_STRING
    CustomSetting30; 660; 0;  CAPTION; 사용자 정의 설정 30; SOURCE; 1; TECHCODETYPE; 2;
    CustomSetting13; 643; 0;  CAPTION; 사용자 정의 설정 13; SOURCE; 1; TECHCODETYPE; 2;
    4907; 4907; ;  SOURCE; 0; TECHCODETYPE; 3;
 	BEGIN_STRING; 4907;;
 		:
 	END_STRING
-   SpindleID; 793; 1;  CAPTION; 스핀들 이름; SOURCE; 2; TECHCODETYPE; 1;
+   SpindleID; 793; 1;  CAPTION; 스핀들 이름; SOURCE; 1; TECHCODETYPE; 1;
    CustomSetting27; 657; 0;  CAPTION; 사용자 정의 설정 27; SOURCE; 1; TECHCODETYPE; 2;
    CustomSetting10; 640; 0;  CAPTION; 사용자 정의 설정 10; SOURCE; 1; TECHCODETYPE; 2;
    4904; 4904; ;  SOURCE; 0; TECHCODETYPE; 3;
 	BEGIN_STRING; 4904;;
 		:
 	END_STRING
-   4411; 4411; 29815;  SOURCE; 0; TECHCODETYPE; 2;
    4003; 4003; 61;  SOURCE; 0; TECHCODETYPE; 1;
    CustomSetting24; 654; 0;  CAPTION; 사용자 정의 설정 24; SOURCE; 1; TECHCODETYPE; 2;
    CustomSetting7; 637; 0;  CAPTION; 사용자 정의 설정 7; SOURCE; 1; TECHCODETYPE; 2;
-   4425; 4425; 15;  SOURCE; 0; TECHCODETYPE; 2;
+   4425; 4425; 42;  SOURCE; 0; TECHCODETYPE; 2;
    CustomSettingStr8; 1807; ;  CAPTION; 사용자 정의 문자열 8; SOURCE; 1; TECHCODETYPE; 3;
 	BEGIN_STRING; 1807;;
 		:
@@ -37,7 +32,7 @@ BEGIN_OPERATION; 316; [10.0MM_기준]DIO_Connection; 0;
    CustomSetting38; 668; 0;  CAPTION; 사용자 정의 설정 38; SOURCE; 1; TECHCODETYPE; 2;
    CustomSetting21; 651; 0;  CAPTION; 사용자 정의 설정 21; SOURCE; 1; TECHCODETYPE; 2;
    CustomSetting4; 634; 0;  CAPTION; 사용자 정의 설정 4; SOURCE; 1; TECHCODETYPE; 2;
-   4422; 4422; 18;  SOURCE; 0; TECHCODETYPE; 2;
+   4422; 4422; 14;  SOURCE; 0; TECHCODETYPE; 2;
    CustomSettingStr5; 1804; ;  CAPTION; 사용자 정의 문자열 5; SOURCE; 1; TECHCODETYPE; 3;
 	BEGIN_STRING; 1804;;
 		:
@@ -62,15 +57,13 @@ BEGIN_OPERATION; 316; [10.0MM_기준]DIO_Connection; 0;
 	BEGIN_STRING; 4906;;
 		:Evan
 	END_STRING
-   4413; 4413; 4;  SOURCE; 0; TECHCODETYPE; 2;
-   TurretID; 792; 1;  CAPTION; 터렛 이름; SOURCE; 2; TECHCODETYPE; 1;
+   TurretID; 792; 1;  CAPTION; 터렛 이름; SOURCE; 1; TECHCODETYPE; 1;
    CustomSetting26; 656; 0;  CAPTION; 사용자 정의 설정 26; SOURCE; 1; TECHCODETYPE; 2;
    CustomSetting9; 639; 0;  CAPTION; 사용자 정의 설정 9; SOURCE; 1; TECHCODETYPE; 2;
    4903; 4903; ;  SOURCE; 0; TECHCODETYPE; 3;
 	BEGIN_STRING; 4903;;
 		:
 	END_STRING
-   4410; 4410; 3366;  SOURCE; 0; TECHCODETYPE; 2;
    CustomSettingStr10; 1809; ;  CAPTION; 사용자 정의 문자열 10; SOURCE; 1; TECHCODETYPE; 3;
 	BEGIN_STRING; 1809;;
 		:
@@ -82,7 +75,7 @@ BEGIN_OPERATION; 316; [10.0MM_기준]DIO_Connection; 0;
 	BEGIN_STRING; 7;;
 		:
 	END_STRING
-   4424; 4424; 27;  SOURCE; 0; TECHCODETYPE; 2;
+   4424; 4424; 57;  SOURCE; 0; TECHCODETYPE; 2;
    CustomSettingStr7; 1806; ;  CAPTION; 사용자 정의 문자열 7; SOURCE; 1; TECHCODETYPE; 3;
 	BEGIN_STRING; 1806;;
 		:
@@ -91,10 +84,10 @@ BEGIN_OPERATION; 316; [10.0MM_기준]DIO_Connection; 0;
    CustomSetting20; 650; 0;  CAPTION; 사용자 정의 설정 20; SOURCE; 1; TECHCODETYPE; 2;
    CustomSetting3; 633; 0;  CAPTION; 사용자 정의 설정 3; SOURCE; 1; TECHCODETYPE; 2;
    4438; 4438; 0;  SOURCE; 0; TECHCODETYPE; 2;
-   4421; 4421; 4;  SOURCE; 0; TECHCODETYPE; 2;
+   4421; 4421; 3;  SOURCE; 0; TECHCODETYPE; 2;
    OperationName; 613; ;  CAPTION; 작업 이름; SOURCE; 2; TECHCODETYPE; 3;
 	BEGIN_STRING; 613;;
-		:DIO_Connection
+		:MEGAGEN_MiNi_H_CONNECTION
 	END_STRING
    CustomSettingStr4; 1803; ;  CAPTION; 사용자 정의 문자열 4; SOURCE; 1; TECHCODETYPE; 3;
 	BEGIN_STRING; 1803;;
@@ -102,7 +95,7 @@ BEGIN_OPERATION; 316; [10.0MM_기준]DIO_Connection; 0;
 	END_STRING
    CustomSetting34; 664; 0;  CAPTION; 사용자 정의 설정 34; SOURCE; 1; TECHCODETYPE; 2;
    CustomSetting17; 647; 0;  CAPTION; 사용자 정의 설정 17; SOURCE; 1; TECHCODETYPE; 2;
-   HeadID; 797; 1;  CAPTION; 헤드 ID; SOURCE; 2; TECHCODETYPE; 1;
+   HeadID; 797; 1;  CAPTION; 헤드 ID; SOURCE; 1; TECHCODETYPE; 1;
    CustomSettingStr1; 1800; ;  CAPTION; 사용자 정의 문자열 1; SOURCE; 1; TECHCODETYPE; 3;
 	BEGIN_STRING; 1800;;
 		:
@@ -119,7 +112,6 @@ BEGIN_OPERATION; 316; [10.0MM_기준]DIO_Connection; 0;
 	BEGIN_STRING; 4905;;
 		:
 	END_STRING
-   4412; 4412; 2;  SOURCE; 0; TECHCODETYPE; 2;
    CustomSetting25; 655; 0;  CAPTION; 사용자 정의 설정 25; SOURCE; 1; TECHCODETYPE; 2;
    CustomSetting8; 638; 0;  CAPTION; 사용자 정의 설정 8; SOURCE; 1; TECHCODETYPE; 2;
    4902; 4902; ;  SOURCE; 0; TECHCODETYPE; 3;
@@ -133,32 +125,32 @@ BEGIN_OPERATION; 316; [10.0MM_기준]DIO_Connection; 0;
    CustomSetting39; 669; 0;  CAPTION; 사용자 정의 설정 39; SOURCE; 1; TECHCODETYPE; 2;
    CustomSetting22; 652; 0;  CAPTION; 사용자 정의 설정 22; SOURCE; 1; TECHCODETYPE; 2;
    CustomSetting5; 635; 0;  CAPTION; 사용자 정의 설정 5; SOURCE; 1; TECHCODETYPE; 2;
-   4423; 4423; 19;  SOURCE; 0; TECHCODETYPE; 2;
+   4423; 4423; 16;  SOURCE; 0; TECHCODETYPE; 2;
    Text; 513; ;  CAPTION; 문자; SOURCE; 2; TECHCODETYPE; 3;
 	BEGIN_STRING; 513;;
     :
     :G00G99G40G18G80T0
     :(Deburr Step drill)
 		:M88
-		:M3 S3000 T4545 (D2.015*D2.35)
+		:M3 S3000 T4343 (D1.415*D2.25)
 		:G99 G0 X0.0 Z-1.5
 		:G4 U0.2
 		:G1 Z0.0 F0.1
-		:G1 Z4.5 F0.04
-		:G83 Z[#520+#523+3.7] Q1000 P5 F0.025
+		:G1 Z2.3 F0.04
+		:G83 Z[#520+#523+2.75] Q1000 P5 F0.025
     :G80
 		:G0 Z-1.5
     :G0 T0
     :M89
 		:M1
-		:
+    :
 		:
     :(Connection Rough Turn/NR0.4)
 		:M3 S3000 T0202
 		:G0 X[#521+1.8] Z[#520+#523-0.4]
 		:G1 X5.8 F0.1
 		:G1 X4.9 F0.03
-		:G1 Z[#520+#523+3.55] F0.015
+		:G1 Z[#520+#523+3.8] F0.015
 		:G1 X[#521+0.8] W2.2
 		:G1 U0.1 W1.0 F0.05
 		:G0 X40.0 Z[#520-0.4]
@@ -166,16 +158,17 @@ BEGIN_OPERATION; 316; [10.0MM_기준]DIO_Connection; 0;
 		:M1
 		:
 		:(Rough U0.1)
-    :M3 S3500 T0303 (B-Turn/NR0.05)
-    :G99G0 X[#521+1.8] Z[#520+#523-0.1]
-    :G1 X4.5 F0.1
-    :G1 X3.593 F0.01
-    :G1 X3.03 W1.447
-		:G1 W0.882
-		:G1 X2.788 W0.121
-		:G1 X2.64
+    :M3 S3500 T0404 (B-Turn/NR0.08)
+		:G0 X[#521+1.8] Z[#520+#523-0.07]
+		:G1 X4.0 F0.1
+		:G1 X3.26 F0.05
+		:G1 X2.592 F0.01
+		:G1 X2.115 W1.227
 		:G4 U0.2
-		:G1 W0.4
+		:G1 X2.2 W0.042
+		:G1 W0.804
+		:G1 X1.748 W0.226
+		:G1 W0.55
 		:G1 U0.4 F0.03
 		:G0 X30.0
 		:G0 Z-1.5
@@ -184,15 +177,15 @@ BEGIN_OPERATION; 316; [10.0MM_기준]DIO_Connection; 0;
 		:M1
 		: 
 		:
-		:(HEX2.49/1st)
+		:(HEX 1.70 /1st)
 		:T0606 (EndMill/D1.5)
 		:M88
 		:M50
 		:G28H0
 		:M23 S5500
-		:G0 X[#521+1.0] Y2.0 Z[#520+#523+2.05] C0.0
-		:G98 G1X2.49 F3000
-		:G1 Y-2.0 F200
+		:G0 X[#521+1.0] Y2.0 Z[#520+#523+1.95] C0.0
+		:G98 G1 X1.70 F3000
+		:G1 Y-2.0F200
 		:G0 H60.0
 		:G1 Y2.0F200 
 		:G0 H60.0
@@ -218,10 +211,10 @@ BEGIN_OPERATION; 316; [10.0MM_기준]DIO_Connection; 0;
 		:M50
 		:G28H0
 		:M23 S1000
-		:G98 G0 X[#521+1.8] Z[#520+#523+1.6]Y0.6C0.0
+		:G98 G0 X[#521+1.8]Z[#520+#523+1.45]Y0.525C0.0
 		:G4 U0.05
     :G1 X4.0 F2000
-		:G1 X3.45 F500
+		:G1X2.65 F500
 		:
 		:M98P0001
 		:G1 V-0.35 F1000
@@ -239,16 +232,17 @@ BEGIN_OPERATION; 316; [10.0MM_기준]DIO_Connection; 0;
 		:
 		:
     :(Finish Connection)
-    :M3 S3500 T0303(B-Turn/NR0.05)
-    :G99 G0 X[#521+1.8] Z[#520+#523-0.15]
-    :G1 X4.3 F0.1
-    :G1 X3.51 F0.01
-		:G1 X2.93 W1.492
-		:G1 W0.866
-		:G1 X2.747 W0.092
-		:G1 X2.558
+    :M3 S3500 T0404(B-Turn/NR0.08)
+		:G99 G0 X[#521+1.8]Z[#520+#523-0.12]
+		:G1 X4.0 F0.1
+		:G1 X3.16 F0.05
+		:G1 X2.51 F0.01
+		:G1 X2.007 W1.294
 		:G4 U0.2
-		:G1 W0.4
+		:G1 X2.1 W0.047
+		:G1 W0.763
+		:G1 X1.706 W0.197
+		:G1 W0.5
 		:G1 U0.4 F0.03
 		:G0 X30.0
 		:G0 Z-1.5
@@ -256,13 +250,13 @@ BEGIN_OPERATION; 316; [10.0MM_기준]DIO_Connection; 0;
 		:M5
 		:M1
 		:
-		:(Deburr HEX2.49)
+		:(Deburr HEX 1.70)
 		:T0606(EndMill/D1.5)
 		:M50
 		:G28H0.0
 		:M23 S5500
-		:G0 X[#521+1.0] Y2.0 Z[#520+#523+2.05] C0.0
-		:G98 G1X2.49 F3000
+		:G0 X[#521+1.0] Y2.0 Z[#520+#523+1.95] C0.0
+		:G98 G1 X1.70 F3000
 		:G1 Y-2.0F300
 		:G0 H60.0
 		:G1 Y2.0F300 
@@ -288,9 +282,9 @@ BEGIN_OPERATION; 316; [10.0MM_기준]DIO_Connection; 0;
 		:M50
 		:G28H0
 		:M23S2000
-		:G98G0X[#521+1.8]Z[#520+#523+1.6]Y0.6C0.0
+		:G98 G0 X[#521+1.8]Z[#520+#523+1.45]Y0.525C0.0
 		:G1X4.0F2000
-		:G1X3.45F500
+		:G1X2.65 F500
 		:
 		:M98P0001
 		:G1V-0.35F1000
@@ -306,13 +300,13 @@ BEGIN_OPERATION; 316; [10.0MM_기준]DIO_Connection; 0;
 		:M1
 		:
 		:
-		:(HEX2.49 Deburr2)
+		:(HEX 1.70 Deburr2)
 		:T0606 (EndMill/D1.5)
 		:M50
 		:G28H0
 		:M23 S5500 
-		:G0 X[#521+1.0] Y2.0 Z[#520+#523+2.05] C0.0
-		:G98 G1 X2.49 F3000
+		:G0 X[#521+1.0] Y2.0 Z[#520+#523+1.95] C0.0
+		:G98 G1 X1.70 F3000
 		:G1Y-2.0 F500
 		:G0H60.0
 		:G1Y2.0F500
@@ -335,17 +329,16 @@ BEGIN_OPERATION; 316; [10.0MM_기준]DIO_Connection; 0;
 		:
 		:
     :(Final Deburr)
-    :M3 S3500 T0303(B-Turn/NR0.05)
-    :G99 G0 X[#521+1.8] Z[#520+#523-0.15]
-    :G1 X4.3 F0.1
-    :G1 X3.51 F0.01
-		:G1 X2.93 W1.492
-		:G1 W0.866
-		:G1 X2.747 W0.092
-		:G1 X2.558
+    :M3 S3500 T0404(B-Turn/NR0.08)
+		:G99 G0 X[#521+1.8]Z[#520+#523-0.12]
+		:G1 X4.0 F0.1
+		:G1 X3.16 F0.05
+		:G1 X2.51 F0.01
+		:G1 X2.007 W1.294
 		:G4 U0.2
-		:G1 X2.393 W0.425
-		:G1 X2.242 W0.075
+		:G1 X2.1 W0.047
+		:G1 W0.763
+		:G1 X1.706 W0.197
 		:G4 U0.4
 		:G1 U0.4 F0.05
 		:G0 X30.0
@@ -358,15 +351,15 @@ BEGIN_OPERATION; 316; [10.0MM_기준]DIO_Connection; 0;
 		:T0101 (UT-L T1.5)
 		:M3 S3000
 		:M12
-		:G0X[#521+1.8]Z[#520+#523+2.75]
+		:G0X[#521+1.8]Z[#520+#523+2.1]
 		:G1X[#521+1.2]F0.1
 		:M511 
 		:M512 
-		:G1X2.25F0.015
+		:G1X1.86F0.015
 		:M9 
 		:G4U0.1
 		:S5000
-		:G1X1.5F0.01
+		:G1X0.8F0.01
 		:S3000
 		:M513 
 		:M97
