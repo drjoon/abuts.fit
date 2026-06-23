@@ -877,6 +877,192 @@ def _run_fill_mesh_holes(doc, target_id):
     return False
 
 
+def _join_all_meshes(doc, label="final"):
+    if doc is None:
+        return 0
+
+    try:
+        mesh_objs = [
+            o
+            for o in list(doc.Objects)
+            if o and o.ObjectType == Rhino.DocObjects.ObjectType.Mesh
+        ]
+    except Exception:
+        mesh_objs = []
+
+    if len(mesh_objs) <= 1:
+        log("[join:{}] skipped mesh_count={}".format(label, len(mesh_objs)))
+        return len(mesh_objs)
+
+    mesh_ids = [o.Id for o in mesh_objs]
+    meshes = []
+    for o in mesh_objs:
+        try:
+            if o.Geometry is not None:
+                meshes.append(o.Geometry.DuplicateMesh())
+        except Exception:
+            pass
+
+    merged = None
+    try:
+        if len(meshes) == 1:
+            merged = meshes[0]
+        elif len(meshes) > 1 and hasattr(Rhino.Geometry.Mesh, "CreateFromMerge"):
+            tol = doc.ModelAbsoluteTolerance if doc else 0.01
+            merged = Rhino.Geometry.Mesh.CreateFromMerge(meshes, tol or 0.01, True)
+    except Exception as e:
+        log("[join:{}] RhinoCommon merge error: {}".format(label, str(e)))
+
+    if merged is not None and merged.Faces.Count > 0:
+        try:
+            merged.Vertices.CombineIdentical(True, True)
+        except Exception:
+            pass
+        try:
+            if hasattr(merged.Faces, "RedundantFaces"):
+                merged.Faces.RedundantFaces()
+        except Exception:
+            pass
+
+        deleted = 0
+        for oid in mesh_ids:
+            try:
+                if doc.Objects.Delete(oid, True):
+                    deleted += 1
+            except Exception:
+                pass
+        doc.Objects.AddMesh(merged)
+        try:
+            final_count = sum(
+                1
+                for o in list(doc.Objects)
+                if o and o.ObjectType == Rhino.DocObjects.ObjectType.Mesh
+            )
+        except Exception:
+            final_count = -1
+        log(
+            "[join:{}] RhinoCommon ok before={} deleted={} after={}".format(
+                label, len(mesh_ids), deleted, final_count
+            )
+        )
+        return final_count if final_count >= 0 else 1
+
+    # fallback command join
+    try:
+        doc.Objects.UnselectAll()
+    except Exception:
+        pass
+    selected_count = 0
+    for oid in mesh_ids:
+        try:
+            obj = doc.Objects.FindId(oid)
+            if (
+                obj
+                and obj.ObjectType == Rhino.DocObjects.ObjectType.Mesh
+                and obj.Select(True)
+            ):
+                selected_count += 1
+        except Exception:
+            pass
+
+    ok_cmd = False
+    try:
+        ok_cmd = Rhino.RhinoApp.RunScript("!_-Join _Enter", True)
+    except Exception:
+        ok_cmd = False
+
+    try:
+        final_count = sum(
+            1
+            for o in list(doc.Objects)
+            if o and o.ObjectType == Rhino.DocObjects.ObjectType.Mesh
+        )
+    except Exception:
+        final_count = -1
+
+    log(
+        "[join:{}] fallback ok={} selected={} after={}".format(
+            label, ok_cmd, selected_count, final_count
+        )
+    )
+    return final_count if final_count >= 0 else 0
+
+
+def _export_doc_to_stl(doc, output_path):
+    try:
+        out_dir = os.path.dirname(str(output_path))
+        if out_dir and not os.path.exists(out_dir):
+            os.makedirs(out_dir)
+    except Exception:
+        pass
+
+    try:
+        doc.Objects.UnselectAll()
+        for obj in list(doc.Objects):
+            if obj and obj.ObjectType == Rhino.DocObjects.ObjectType.Mesh:
+                try:
+                    obj.Select(True)
+                except Exception:
+                    pass
+    except Exception:
+        try:
+            Rhino.RhinoApp.RunScript("!_-SelAll _Enter", True)
+        except Exception:
+            pass
+
+    _log_doc_mesh_stats(doc, "before-export")
+
+    write_opts = Rhino.FileIO.FileStlWriteOptions()
+    try:
+        if hasattr(write_opts, "Ascii"):
+            write_opts.Ascii = False
+        if hasattr(write_opts, "ExportFileAsBinary"):
+            write_opts.ExportFileAsBinary = True
+        if hasattr(write_opts, "ExportSelectedObjectsOnly"):
+            write_opts.ExportSelectedObjectsOnly = False
+    except Exception:
+        pass
+
+    ok = Rhino.FileIO.FileStl.Write(str(output_path), doc, write_opts)
+
+    if not ok:
+        for _retry in range(2):
+            try:
+                if os.path.exists(output_path):
+                    try:
+                        os.unlink(output_path)
+                    except Exception:
+                        pass
+
+                active_doc = Rhino.RhinoDoc.ActiveDoc
+                if active_doc:
+                    active_doc.Objects.UnselectAll()
+                    Rhino.RhinoApp.RunScript("!_SelAll", True)
+
+                cmd = '-_Export "{}" _Enter _Enter'.format(str(output_path))
+                log("RunScript=" + cmd)
+                ok_cmd = Rhino.RhinoApp.RunScript(cmd, True)
+                log("Export command ok=" + str(ok_cmd))
+
+                for _ in range(100):
+                    if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
+                        ok = True
+                        break
+                    time.sleep(0.02)
+
+                if ok:
+                    break
+            except Exception as e:
+                log("Export retry error: " + str(e))
+
+    try:
+        ok = os.path.exists(output_path) and os.path.getsize(output_path) > 0
+    except Exception:
+        ok = False
+
+    return bool(ok)
+
+
 def main(input_path_arg=None, output_path_arg=None, log_path_arg=None):
     perf_sections = {}
 
@@ -1284,97 +1470,7 @@ def main(input_path_arg=None, output_path_arg=None, log_path_arg=None):
         _log_doc_mesh_stats(doc, "after-join")
         _perf_mark("join", stage_started_at)
 
-        stage_started_at = time.perf_counter()
-        try:
-            try:
-                out_dir = os.path.dirname(str(output_path))
-                if out_dir and not os.path.exists(out_dir):
-                    os.makedirs(out_dir)
-            except Exception:
-                pass
-
-            try:
-                doc.Objects.UnselectAll()
-                for obj in list(doc.Objects):
-                    if obj and obj.ObjectType == Rhino.DocObjects.ObjectType.Mesh:
-                        try:
-                            obj.Select(True)
-                        except Exception:
-                            pass
-            except Exception:
-                try:
-                    Rhino.RhinoApp.RunScript("!_-SelAll _Enter", True)
-                except Exception:
-                    pass
-
-            _log_doc_mesh_stats(doc, "before-export")
-
-            # STL Export 최적화: RhinoCommon Write 직접 시도
-            write_opts = Rhino.FileIO.FileStlWriteOptions()
-            try:
-                if hasattr(write_opts, "Ascii"):
-                    write_opts.Ascii = False
-                if hasattr(write_opts, "ExportFileAsBinary"):
-                    write_opts.ExportFileAsBinary = True
-                if hasattr(write_opts, "ExportSelectedObjectsOnly"):
-                    write_opts.ExportSelectedObjectsOnly = False
-            except Exception:
-                pass
-
-            # Rhino 8/Net 7 환경에서 FileStl.Write(String, list, opts) 호출 시
-            # TypeError: 'list' value cannot be converted to Rhino.RhinoDoc 에러가 발생하는 경우가 있음.
-            # 가장 확실한 호환 오버로드인 FileStl.Write(String, RhinoDoc, opts) 사용을 위해 doc을 직접 전달.
-            ok = Rhino.FileIO.FileStl.Write(str(output_path), doc, write_opts)
-
-            if not ok:
-                # Fallback: RunScript (오버헤드가 크지만 최후의 수단)
-                for retry in range(2):
-                    try:
-                        if os.path.exists(output_path):
-                            try:
-                                os.unlink(output_path)
-                            except:
-                                pass
-
-                        # Rhino.FileIO.FileStl.Write가 실패할 경우에만 RunScript 사용
-                        # RunScript 이전에 ActiveDoc을 확실히 가져오고 선택 해제
-                        doc = Rhino.RhinoDoc.ActiveDoc
-                        if doc:
-                            doc.Objects.UnselectAll()
-                            # 전체 선택 후 Export 시도
-                            Rhino.RhinoApp.RunScript("!_SelAll", True)
-
-                        cmd = '-_Export "{}" _Enter _Enter'.format(str(output_path))
-                        log("RunScript=" + cmd)
-                        ok_cmd = Rhino.RhinoApp.RunScript(cmd, True)
-                        log("Export command ok=" + str(ok_cmd))
-
-                        # 파일 생성 즉시 감지 (폴링 간격 단축)
-                        for _ in range(100):
-                            if (
-                                os.path.exists(output_path)
-                                and os.path.getsize(output_path) > 0
-                            ):
-                                ok = True
-                                break
-                            time.sleep(0.02)
-
-                        if ok:
-                            break
-                    except Exception as e:
-                        log("Export retry error: " + str(e))
-                        pass
-
-            try:
-                ok = os.path.exists(output_path) and os.path.getsize(output_path) > 0
-            except Exception:
-                ok = False
-        except Exception as e:
-            fail("STL Export 예외: " + str(e))
-
-        if not ok:
-            fail("STL Export 실패")
-        _perf_mark("export", stage_started_at)
+        # export는 fill_steps + 최종 join 이후에 수행
 
         stage_started_at = time.perf_counter()
         try:
@@ -1393,6 +1489,26 @@ def main(input_path_arg=None, output_path_arg=None, log_path_arg=None):
             log("[fill-steps] failed: " + str(e))
         _perf_mark("fill_steps", stage_started_at)
 
+        # 마지막에 문서 내 모든 메시를 한 번 더 Join
+        stage_started_at = time.perf_counter()
+        try:
+            final_mesh_count = _join_all_meshes(doc, label="post-fill-steps")
+            log("[join:post-fill-steps] final mesh count={}".format(final_mesh_count))
+        except Exception as e:
+            log("[join:post-fill-steps] failed: " + str(e))
+        _perf_mark("join_post_fill_steps", stage_started_at)
+
+        # 최종 모델(단차 메움 반영본) export
+        stage_started_at = time.perf_counter()
+        try:
+            ok = _export_doc_to_stl(doc, output_path)
+        except Exception as e:
+            fail("STL Export 예외: " + str(e))
+
+        if not ok:
+            fail("STL Export 실패")
+        _perf_mark("export", stage_started_at)
+
         total_elapsed = _perf_mark("total", total_started_at)
         try:
             ordered_keys = [
@@ -1402,9 +1518,10 @@ def main(input_path_arg=None, output_path_arg=None, log_path_arg=None):
                 "explode",
                 "fill_selection_and_holes",
                 "join",
-                "export",
                 "diameter_analysis",
                 "fill_steps",
+                "join_post_fill_steps",
+                "export",
                 "total",
             ]
             summary_parts = []
