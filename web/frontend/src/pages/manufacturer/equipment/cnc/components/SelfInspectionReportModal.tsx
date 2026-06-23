@@ -80,7 +80,7 @@ const DEFAULT_ROWS: InspectionRow[] = [
     criterion: "식별",
     instrument: "현미경(AD-T-07)",
     measuredValue: "",
-    judgment: "적합",
+    judgment: "",
   },
   {
     label: "커넥션직경",
@@ -88,7 +88,7 @@ const DEFAULT_ROWS: InspectionRow[] = [
     criterion: "-",
     instrument: "비전(AD-T-19)",
     measuredValue: "",
-    judgment: "적합",
+    judgment: "",
   },
   {
     label: "L1",
@@ -96,7 +96,7 @@ const DEFAULT_ROWS: InspectionRow[] = [
     criterion: "기준값1%이내",
     instrument: "비전(AD-T-19)",
     measuredValue: "",
-    judgment: "적합",
+    judgment: "",
   },
   {
     label: "L2",
@@ -104,7 +104,7 @@ const DEFAULT_ROWS: InspectionRow[] = [
     criterion: "기준값1%이내",
     instrument: "비전(AD-T-19)",
     measuredValue: "",
-    judgment: "적합",
+    judgment: "",
   },
   {
     label: "최대직경",
@@ -112,7 +112,7 @@ const DEFAULT_ROWS: InspectionRow[] = [
     criterion: "기준값1%이내",
     instrument: "비전(AD-T-19)",
     measuredValue: "",
-    judgment: "적합",
+    judgment: "",
   },
   {
     label: "내경깊이",
@@ -120,7 +120,7 @@ const DEFAULT_ROWS: InspectionRow[] = [
     criterion: "±0.1",
     instrument: "비전(AD-T-19)",
     measuredValue: "",
-    judgment: "적합",
+    judgment: "",
   },
   {
     label: "헥스치수",
@@ -128,7 +128,7 @@ const DEFAULT_ROWS: InspectionRow[] = [
     criterion: "-",
     instrument: "MICRO(AD-T-02)",
     measuredValue: "",
-    judgment: "적합",
+    judgment: "",
   },
 ];
 
@@ -145,10 +145,11 @@ const formatRange = (
 };
 
 const SPEC_PRESETS: InspectionSpecPreset[] = [
+  // Osstem / TS3
   {
     manufacturer: "Osstem",
     brand: "TS3",
-    family: "",
+    family: "Regular",
     diameterRef: 3.35,
     diameterCriterion: "3.34~3.37",
     hexRef: 2.485,
@@ -159,47 +160,90 @@ const SPEC_PRESETS: InspectionSpecPreset[] = [
   {
     manufacturer: "Osstem",
     brand: "TS3",
-    family: "",
+    family: "Mini",
     diameterRef: 2.6,
     diameterCriterion: "2.59~2.61",
     hexRef: 1.95,
     hexCriterion: "1.955~1.942",
+    innerDepthRef: 0.65,
+    innerGauge: "G20",
   },
+
+  // Dentium / SuperLine
   {
     manufacturer: "Dentium",
-    brand: "SuperLine2",
-    family: "",
+    brand: "SuperLine",
+    family: "Regular",
     diameterRef: 3.33,
-    diameterCriterion: "3.35~3.32",
+    diameterCriterion: "3.32~3.35",
     hexRef: 2.495,
     hexCriterion: "2.500~2.492",
-    innerDepthRef: 0.9,
+    innerDepthRef: 1.3,
     innerGauge: "G19",
   },
   {
+    manufacturer: "Dentium",
+    brand: "Implantium",
+    family: "Regular",
+    diameterRef: 3.33,
+    diameterCriterion: "3.32~3.35",
+    hexRef: 2.495,
+    hexCriterion: "2.500~2.492",
+    innerDepthRef: 1.3,
+    innerGauge: "G19",
+  },
+
+  // NeoBiotech / IS, ALX
+  {
     manufacturer: "NeoBiotech",
     brand: "IS",
-    family: "",
+    family: "Regular",
     diameterRef: 3.35,
     diameterCriterion: "3.34~3.37",
-    hexRef: 2.515,
-    hexCriterion: "2.517~2.510",
+    hexRef: 2.51,
+    hexCriterion: "2.515~2.507",
     innerDepthRef: 1.08,
     innerGauge: "G19",
   },
   {
     manufacturer: "NeoBiotech",
     brand: "IS",
-    family: "",
+    family: "Small Narrow",
     diameterRef: 2.6,
     diameterCriterion: "2.59~2.61",
-    hexRef: 1.95,
-    hexCriterion: "1.955~1.947",
+    hexRef: 2.1,
+    hexCriterion: "2.105~2.097",
+    innerDepthRef: 0.85,
+    innerGauge: "G20",
   },
   {
+    manufacturer: "NeoBiotech",
+    brand: "ALX",
+    family: "Regular",
+    diameterRef: 3.35,
+    diameterCriterion: "3.34~3.37",
+    hexRef: 2.51,
+    hexCriterion: "2.515~2.507",
+    innerDepthRef: 1.08,
+    innerGauge: "G19",
+  },
+  {
+    manufacturer: "NeoBiotech",
+    brand: "ALX",
+    family: "Small Narrow",
+    diameterRef: 2.6,
+    diameterCriterion: "2.59~2.61",
+    hexRef: 2.1,
+    hexCriterion: "2.105~2.097",
+    innerDepthRef: 0.85,
+    innerGauge: "G20",
+  },
+
+  // Dio / UF
+  {
     manufacturer: "Dio",
-    brand: "UF2",
-    family: "",
+    brand: "UF",
+    family: "Regular",
     diameterRef: 3.35,
     diameterCriterion: "3.34~3.37",
     hexRef: 2.49,
@@ -209,17 +253,21 @@ const SPEC_PRESETS: InspectionSpecPreset[] = [
   },
   {
     manufacturer: "Dio",
-    brand: "UF2",
-    family: "",
+    brand: "UF",
+    family: "Narrow",
     diameterRef: 2.3,
     diameterCriterion: "2.29~2.31",
     hexRef: 1.69,
     hexCriterion: "1.695~1.687",
+    innerDepthRef: 0.5,
+    innerGauge: "G21",
   },
+
+  // Megagen / AnyOne
   {
     manufacturer: "Megagen",
     brand: "AnyOne",
-    family: "",
+    family: "Regular",
     diameterRef: 3.3,
     diameterCriterion: "3.29~3.32",
     hexRef: 2.5,
@@ -230,31 +278,92 @@ const SPEC_PRESETS: InspectionSpecPreset[] = [
   {
     manufacturer: "Megagen",
     brand: "AnyOne",
-    family: "",
-    diameterRef: 2.31,
-    diameterCriterion: "2.30~2.32",
-    hexRef: 1.705,
-    hexCriterion: "1.710~1.702",
+    family: "Mini",
+    diameterRef: 3.1,
+    diameterCriterion: "3.09~3.12",
+    hexRef: 2.295,
+    hexCriterion: "2.300~2.297",
+    innerDepthRef: 0.3,
+    innerGauge: "G20",
   },
+  {
+    manufacturer: "Megagen",
+    brand: "Mini Internal",
+    family: "",
+    diameterRef: 2.3,
+    diameterCriterion: "2.29~2.31",
+    hexRef: 1.7,
+    hexCriterion: "1.705~1.697",
+    innerDepthRef: 0.5,
+    innerGauge: "G21",
+  },
+
+  // Dentis / SQ, One-Q
   {
     manufacturer: "Dentis",
     brand: "SQ",
-    family: "One-Q",
+    family: "Regular",
     diameterRef: 3.35,
     diameterCriterion: "3.34~3.37",
     hexRef: 2.49,
     hexCriterion: "2.495~2.487",
-    innerDepthRef: 1.955,
+    innerDepthRef: 1.7,
     innerGauge: "G19",
   },
   {
     manufacturer: "Dentis",
     brand: "SQ",
-    family: "One-Q",
+    family: "Mini",
     diameterRef: 2.8,
     diameterCriterion: "2.79~2.82",
     hexRef: 1.95,
     hexCriterion: "1.955~1.947",
+    innerDepthRef: 0.55,
+    innerGauge: "G20",
+  },
+  {
+    manufacturer: "Dentis",
+    brand: "SQ",
+    family: "Narrow",
+    diameterRef: 2.3,
+    diameterCriterion: "2.29~2.31",
+    hexRef: 1.685,
+    hexCriterion: "1.690~1.682",
+    innerDepthRef: 0.5,
+    innerGauge: "G21",
+  },
+  {
+    manufacturer: "Dentis",
+    brand: "One-Q",
+    family: "Regular",
+    diameterRef: 3.35,
+    diameterCriterion: "3.34~3.37",
+    hexRef: 2.49,
+    hexCriterion: "2.495~2.487",
+    innerDepthRef: 1.7,
+    innerGauge: "G19",
+  },
+  {
+    manufacturer: "Dentis",
+    brand: "One-Q",
+    family: "Mini",
+    diameterRef: 2.8,
+    diameterCriterion: "2.79~2.82",
+    hexRef: 1.95,
+    hexCriterion: "1.955~1.947",
+    innerDepthRef: 0.55,
+    innerGauge: "G20",
+  },
+  {
+    manufacturer: "Dentis",
+    brand: "One-Q",
+    family: "Narrow",
+    diameterRef: 2.3,
+    diameterCriterion: "2.29~2.31",
+    hexRef: 1.685,
+    hexCriterion: "1.690~1.682",
+    innerDepthRef: 0.5,
+    innerGauge: "G21",
   },
 ];
 
@@ -280,7 +389,7 @@ const resolveSpecPreset = (
 
     if (!manufacturer.includes(m)) return false;
     if (!brand.includes(b)) return false;
-    if (f && !family.includes(f)) return false;
+    if (f && family && !family.includes(f)) return false;
     return true;
   });
 
@@ -529,8 +638,8 @@ export function SelfInspectionReportModal({
         referenceValue: lotShortCode || "-",
         criterion: "식별",
         instrument: "현미경(AD-T-07)",
-        measuredValue: lotShortCode || "",
-        judgment: "적합",
+        measuredValue: "",
+        judgment: "",
       },
       {
         label: "커넥션직경",
@@ -539,54 +648,40 @@ export function SelfInspectionReportModal({
           preset?.diameterCriterion ||
           formatRange(diameterReference, 0.02, 0.01, 2),
         instrument: "비전(AD-T-19)",
-        measuredValue:
-          metadata?.connectionDiameter != null
-            ? fmt(metadata.connectionDiameter, 3)
-            : diameterReference != null
-              ? fmt(diameterReference, 3)
-              : "",
-        judgment: "적합",
+        measuredValue: "",
+        judgment: "",
       },
       {
         label: "L1",
         referenceValue: fmt(l1Reference, 3),
         criterion: "기준값1%이내",
         instrument: "비전(AD-T-19)",
-        measuredValue: l1Reference != null ? fmt(l1Reference, 3) : "",
-        judgment: "적합",
+        measuredValue: "",
+        judgment: "",
       },
       {
         label: "L2",
         referenceValue: fmt(l2Reference, 3),
         criterion: "기준값1%이내",
         instrument: "비전(AD-T-19)",
-        measuredValue: l2Reference != null ? fmt(l2Reference, 3) : "",
-        judgment: "적합",
+        measuredValue: "",
+        judgment: "",
       },
       {
         label: "최대직경",
         referenceValue: fmt(metadata?.maxDiameter, 3),
         criterion: "기준값1%이내",
         instrument: "비전(AD-T-19)",
-        measuredValue:
-          metadata?.maxDiameter != null ? fmt(metadata.maxDiameter, 3) : "",
-        judgment: "적합",
+        measuredValue: "",
+        judgment: "",
       },
       {
         label: "내경깊이",
         referenceValue: innerGaugeReference,
         criterion: "±0.1",
         instrument: "비전(AD-T-19)",
-        measuredValue:
-          protrusionLength != null
-            ? Number(protrusionLength)
-                .toFixed(3)
-                .replace(/\.0+$/, "")
-                .replace(/(\.\d*?)0+$/, "$1")
-            : innerGaugeReference !== "적합"
-              ? innerGaugeReference
-              : "",
-        judgment: "적합",
+        measuredValue: "",
+        judgment: "",
       },
       {
         label: "헥스치수",
@@ -595,8 +690,8 @@ export function SelfInspectionReportModal({
           preset?.hexCriterion ||
           formatRange(hexSizeReference, 0.005, 0.003, 3),
         instrument: "MICRO(AD-T-02)",
-        measuredValue: hexSizeReference != null ? fmt(hexSizeReference, 3) : "",
-        judgment: "적합",
+        measuredValue: "",
+        judgment: "",
       },
     ]);
   }, [
@@ -880,8 +975,8 @@ export function SelfInspectionReportModal({
       .join(" / ") || "-";
 
   const infoRows = [
-    { label: "접수일시", value: requestedAtStr },
-    { label: "생산일시", value: productionDateStr },
+    { label: "접수일자", value: requestedAtStr },
+    { label: "생산일자", value: productionDateStr },
     {
       label: "치과/환자/치아",
       value:
@@ -936,150 +1031,174 @@ export function SelfInspectionReportModal({
 
           {/* ── Right: Inspection Form ── */}
           <div className="flex-1 overflow-y-auto px-5 py-4 max-h-[calc(90vh-57px)]">
-            <div ref={reportRef}>
-              <h2 className="text-lg font-extrabold text-center border-b-2 border-slate-800 pb-2 mb-3">
+            <div ref={reportRef} className="bg-white">
+              <p className="text-right text-[11px] font-bold text-red-600 mb-1">
+                수정작성일자 : 2026.06.23 12:33
+              </p>
+
+              <div className="grid grid-cols-[1fr_220px] text-[12px] font-bold border border-slate-800 border-b-0 mb-0">
+                <div className="px-2 py-1 bg-[#eea13a]">
+                  모델에 따라 자동변경 항목
+                </div>
+                <div className="px-2 py-1 bg-[#eef05a] text-right">
+                  수기입력 노란색
+                </div>
+              </div>
+
+              <h2 className="text-[42px] font-extrabold text-center border border-slate-800 py-2 mb-0 leading-tight">
                 자주검사 성적서
               </h2>
 
-              {/* Header info grid */}
-              <div className="border border-slate-300 rounded-lg overflow-hidden mb-4 text-[13px]">
-                {infoRowPairs.map((pair, i) => (
-                  <div
-                    key={`info-pair-${i}`}
-                    className={`grid grid-cols-[96px_1fr_96px_1fr] items-center px-2 py-1 gap-2 ${i < infoRowPairs.length - 1 ? "border-b border-slate-200" : ""}`}
-                  >
-                    <span className="font-semibold text-slate-500 text-right pr-2">
-                      {pair[0]?.label}
-                    </span>
-                    <span className="text-slate-800">{pair[0]?.value}</span>
-                    <span className="font-semibold text-slate-500 text-right pr-2">
-                      {pair[1]?.label}
-                    </span>
-                    <span className="text-slate-800">{pair[1]?.value}</span>
-                  </div>
-                ))}
-              </div>
+              {/* Header info table */}
+              <table className="w-full text-[13px] border-collapse border border-slate-800 mb-0">
+                <tbody>
+                  {infoRowPairs.map((pair, i) => (
+                    <tr key={`info-pair-${i}`} className="align-middle">
+                      <th className="w-[110px] border border-slate-800 px-2 py-1 text-right font-bold bg-slate-100">
+                        {pair[0]?.label}
+                      </th>
+                      <td className="border border-slate-800 px-2 py-1 bg-[#eea13a] font-semibold">
+                        {pair[0]?.value}
+                      </td>
+                      <th className="w-[110px] border border-slate-800 px-2 py-1 text-right font-bold bg-slate-100">
+                        {pair[1]?.label}
+                      </th>
+                      <td className="border border-slate-800 px-2 py-1 bg-[#eea13a] font-semibold">
+                        {pair[1]?.value}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
 
               {/* Inspection table */}
-              <table className="w-full text-xs border-collapse border border-slate-300 mb-3">
+              <table className="w-full text-xs border-collapse border border-slate-800 mb-3">
                 <thead>
                   <tr className="bg-slate-100 text-center align-middle">
-                    <th className="border border-slate-300 px-2 py-1.5 align-middle">
+                    <th className="border border-slate-800 px-2 py-1.5 align-middle">
                       항목
                     </th>
-                    <th className="border border-slate-300 px-2 py-1.5 align-middle">
+                    <th className="border border-slate-800 px-2 py-1.5 align-middle">
                       기준값
                     </th>
-                    <th className="border border-slate-300 px-2 py-1.5 align-middle">
+                    <th className="border border-slate-800 px-2 py-1.5 align-middle">
                       합격기준
                     </th>
-                    <th className="border border-slate-300 px-2 py-1.5 align-middle">
+                    <th className="border border-slate-800 px-2 py-1.5 align-middle">
                       측정장비(번호)
                     </th>
-                    <th className="border border-slate-300 px-2 py-1.5 bg-amber-50 align-middle">
+                    <th className="border border-slate-800 px-2 py-1.5 bg-[#eef05a] align-middle">
                       측정값
                     </th>
-                    <th className="border border-slate-300 px-2 py-1.5 bg-amber-50 align-middle">
+                    <th className="border border-slate-800 px-2 py-1.5 bg-[#eef05a] align-middle">
                       판단
                     </th>
                   </tr>
                 </thead>
                 <tbody>
-                  {rows.map((row, idx) => (
-                    <tr key={row.label} className="align-middle">
-                      <td className="border border-slate-300 px-2 py-1 text-center font-semibold align-middle">
-                        {row.label}
-                      </td>
-                      <td className="border border-slate-300 px-2 py-1 text-center bg-amber-100 align-middle">
-                        {row.referenceValue}
-                      </td>
-                      <td className="border border-slate-300 px-2 py-1 text-center align-middle">
-                        {row.criterion}
-                      </td>
-                      <td className="border border-slate-300 px-1 py-0.5 text-center align-middle">
-                        {isExportingPng ? (
-                          <span className="text-slate-900 font-semibold">
-                            {row.instrument}
-                          </span>
-                        ) : (
-                          <select
-                            className="w-full text-center bg-transparent outline-none text-slate-900 font-semibold cursor-pointer disabled:cursor-not-allowed"
-                            value={row.instrument}
-                            onChange={(e) =>
-                              updateRow(idx, "instrument", e.target.value)
-                            }
-                            disabled={confirmed}
-                          >
-                            {instrumentOptions.map((opt) => (
-                              <option key={`${row.label}-${opt}`} value={opt}>
-                                {opt}
-                              </option>
-                            ))}
-                          </select>
-                        )}
-                      </td>
-                      <td className="border border-slate-300 px-1 py-0.5 bg-amber-50 align-middle">
-                        {isExportingPng ? (
-                          <span className="text-slate-900 font-semibold">
-                            {row.measuredValue || "-"}
-                          </span>
-                        ) : (
-                          <input
-                            type="text"
-                            className="w-full text-center bg-transparent outline-none text-slate-900 font-semibold placeholder:text-slate-300 disabled:text-slate-500 disabled:cursor-not-allowed"
-                            value={row.measuredValue}
-                            onChange={(e) =>
-                              updateRow(idx, "measuredValue", e.target.value)
-                            }
-                            placeholder="-"
-                            disabled={confirmed}
-                          />
-                        )}
-                      </td>
-                      <td className="border border-slate-300 px-1 py-0.5 bg-amber-50 align-middle">
-                        {isExportingPng ? (
-                          <span className="text-slate-900 font-semibold">
-                            {row.judgment || "-"}
-                          </span>
-                        ) : (
-                          <select
-                            className="w-full text-center bg-transparent outline-none text-slate-900 font-semibold cursor-pointer disabled:cursor-not-allowed"
-                            value={row.judgment}
-                            onChange={(e) =>
-                              updateRow(
-                                idx,
-                                "judgment",
-                                e.target.value as InspectionRow["judgment"],
-                              )
-                            }
-                            disabled={confirmed}
-                          >
-                            <option value="">-</option>
-                            <option value="적합">적합</option>
-                            <option value="부적합">부적합</option>
-                          </select>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                  <tr className="bg-slate-50 font-extrabold text-[13px]">
+                  {rows.map((row, idx) => {
+                    const criterionAuto =
+                      row.label === "커넥션직경" || row.label === "헥스치수";
+                    return (
+                      <tr key={row.label} className="align-middle">
+                        <td className="border border-slate-800 px-2 py-1 text-center font-semibold align-middle">
+                          {row.label}
+                        </td>
+                        <td className="border border-slate-800 px-2 py-1 text-center bg-[#eea13a] align-middle font-semibold">
+                          {row.referenceValue}
+                        </td>
+                        <td
+                          className={`border border-slate-800 px-2 py-1 text-center align-middle font-semibold ${
+                            criterionAuto ? "bg-[#eea13a]" : "bg-white"
+                          }`}
+                        >
+                          {row.criterion}
+                        </td>
+                        <td className="border border-slate-800 px-1 py-0.5 text-center align-middle">
+                          {isExportingPng ? (
+                            <span className="text-slate-900 font-semibold">
+                              {row.instrument}
+                            </span>
+                          ) : (
+                            <select
+                              className="w-full text-center bg-transparent outline-none text-slate-900 font-semibold cursor-pointer disabled:cursor-not-allowed"
+                              value={row.instrument}
+                              onChange={(e) =>
+                                updateRow(idx, "instrument", e.target.value)
+                              }
+                              disabled={confirmed}
+                            >
+                              {instrumentOptions.map((opt) => (
+                                <option key={`${row.label}-${opt}`} value={opt}>
+                                  {opt}
+                                </option>
+                              ))}
+                            </select>
+                          )}
+                        </td>
+                        <td className="border border-slate-800 px-1 py-0.5 bg-[#eef05a] align-middle">
+                          {isExportingPng ? (
+                            <span className="text-slate-900 font-semibold">
+                              {row.measuredValue || ""}
+                            </span>
+                          ) : (
+                            <input
+                              type="text"
+                              className="w-full text-center bg-transparent outline-none text-slate-900 font-semibold placeholder:text-slate-300 disabled:text-slate-500 disabled:cursor-not-allowed"
+                              value={row.measuredValue}
+                              onChange={(e) =>
+                                updateRow(idx, "measuredValue", e.target.value)
+                              }
+                              placeholder=""
+                              disabled={confirmed}
+                            />
+                          )}
+                        </td>
+                        <td className="border border-slate-800 px-1 py-0.5 bg-[#eef05a] align-middle">
+                          {isExportingPng ? (
+                            <span className="text-slate-900 font-semibold">
+                              {row.judgment || "적합 또는 부적합"}
+                            </span>
+                          ) : (
+                            <select
+                              className="w-full text-center bg-transparent outline-none text-slate-900 font-semibold cursor-pointer disabled:cursor-not-allowed"
+                              value={row.judgment}
+                              onChange={(e) =>
+                                updateRow(
+                                  idx,
+                                  "judgment",
+                                  e.target.value as InspectionRow["judgment"],
+                                )
+                              }
+                              disabled={confirmed}
+                            >
+                              <option value="">-</option>
+                              <option value="적합">적합</option>
+                              <option value="부적합">부적합</option>
+                            </select>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  <tr className="font-extrabold text-[13px]">
                     <td
                       colSpan={4}
-                      className="border border-slate-300 px-2 py-1.5 text-center align-middle"
+                      className="border border-slate-800 px-2 py-1.5 text-center align-middle bg-slate-100"
                     >
                       판정
                     </td>
                     <td
                       colSpan={2}
-                      className={`border border-slate-300 px-2 py-1.5 text-center font-extrabold align-middle ${
+                      className={`border border-slate-800 px-2 py-1.5 text-center font-extrabold align-middle ${
                         overallJudgment === "합격"
-                          ? "text-emerald-600 bg-emerald-50"
+                          ? "text-emerald-700 bg-emerald-100"
                           : overallJudgment === "불합격"
-                            ? "text-red-600 bg-red-50"
-                            : "text-slate-400 bg-amber-50"
+                            ? "text-red-700 bg-red-100"
+                            : "text-slate-700 bg-[#eef05a]"
                       }`}
                     >
-                      {overallJudgment || "-"}
+                      {overallJudgment || "합격 또는 불합격"}
                     </td>
                   </tr>
                 </tbody>
@@ -1152,7 +1271,7 @@ export function SelfInspectionReportModal({
               <div className="w-120 shrink-0 border border-slate-300 rounded-lg overflow-hidden text-[13px]">
                 <div className="flex items-center gap-3 px-3 py-1.5 border-b border-slate-200">
                   <span className="w-20 shrink-0 font-semibold text-slate-500">
-                    검사일시
+                    검사일/시간
                   </span>
                   <span className="text-slate-800 text-xs">
                     {inspectionDateStr}
