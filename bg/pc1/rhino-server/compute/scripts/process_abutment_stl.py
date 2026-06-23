@@ -2,6 +2,7 @@ import os
 import sys
 import time
 
+import fill_steps as fill_steps_module
 import finishline_detection as finishline_detection_module
 
 # Rhino Python 환경에서 실행된다고 가정
@@ -81,6 +82,22 @@ def _detect_finish_line_latest(doc, visualize=False):
         return finishline_detection_module.detect_finish_line(
             doc=doc, visualize=visualize
         )
+
+
+def _run_fill_steps_latest(doc):
+    try:
+        import importlib
+
+        module = importlib.reload(fill_steps_module)
+        log(
+            "[fill-steps] module reloaded path={}".format(
+                getattr(module, "__file__", "unknown")
+            )
+        )
+        return module.detect_and_draw_vertical_band_planes(doc=doc)
+    except Exception as e:
+        log("[fill-steps] module reload failed, fallback cached module: " + str(e))
+        return fill_steps_module.detect_and_draw_vertical_band_planes(doc=doc)
 
 
 def _post_finish_line(request_id: str, input_file_name: str, finish_line: dict):
@@ -1367,6 +1384,15 @@ def main(input_path_arg=None, output_path_arg=None, log_path_arg=None):
             log("Analysis failed: " + str(e))
         _perf_mark("diameter_analysis", stage_started_at)
 
+        # 처리 완료 후 fill_steps 실행
+        stage_started_at = time.perf_counter()
+        try:
+            fill_steps_result = _run_fill_steps_latest(doc)
+            log("[fill-steps] result={}".format(fill_steps_result))
+        except Exception as e:
+            log("[fill-steps] failed: " + str(e))
+        _perf_mark("fill_steps", stage_started_at)
+
         total_elapsed = _perf_mark("total", total_started_at)
         try:
             ordered_keys = [
@@ -1378,6 +1404,7 @@ def main(input_path_arg=None, output_path_arg=None, log_path_arg=None):
                 "join",
                 "export",
                 "diameter_analysis",
+                "fill_steps",
                 "total",
             ]
             summary_parts = []
