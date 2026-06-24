@@ -347,19 +347,31 @@ export async function getAssignedDashboardSummary(req, res) {
         ...baseFilter,
         ...dateFilter,
       })
-        .select({ shippingPackageId: 1, manufacturerStage: 1 })
+        .select({
+          shippingPackageId: 1,
+          mailboxAddress: 1,
+          manufacturerStage: 1,
+        })
         .lean();
 
-      const shippingPackageIds = new Set();
+      const shippingMailboxAddresses = new Set();
       const trackingPackageIds = new Set();
       for (const d of docs || []) {
         const pkg = String(d?.shippingPackageId || "").trim();
+        const mailbox = String(d?.mailboxAddress || "").trim();
         const stage = String(d?.manufacturerStage || "").trim();
-        if (!pkg) continue;
+
         if (stage === "포장.발송" || stage === "shipping") {
-          shippingPackageIds.add(pkg);
+          // 포장.발송의 박스 수는 실제 화면 단위(우편함) 기준으로 집계
+          if (mailbox) {
+            shippingMailboxAddresses.add(mailbox);
+          } else if (pkg) {
+            // mailbox 누락 레거시 데이터는 packageId로 보정 집계
+            shippingMailboxAddresses.add(`pkg:${pkg}`);
+          }
         }
-        if (stage === "추적관리" || stage === "tracking") {
+
+        if ((stage === "추적관리" || stage === "tracking") && pkg) {
           trackingPackageIds.add(pkg);
         }
       }
@@ -376,7 +388,7 @@ export async function getAssignedDashboardSummary(req, res) {
           machiningCount: Number(statsResult?.machiningCount ?? 0) || 0,
           packingCount: Number(statsResult?.packingCount ?? 0) || 0,
           shippingCount: Number(statsResult?.shippingCount ?? 0) || 0,
-          shippingBoxes: shippingPackageIds.size,
+          shippingBoxes: shippingMailboxAddresses.size,
           rndCount,
         },
       });

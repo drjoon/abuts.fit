@@ -1668,15 +1668,23 @@ export async function recordMachiningCompleteForBridge(req, res) {
         // CNC 가공 완료 시 제조 단계는 세척/패킹 단계로 전환한다.
         // status/manufacturerStage enum 은 '세척.패킹' 을 사용한다.
         applyStatusMapping(request, "세척.패킹");
+        const requestAnchorIdStr = String(
+          request.businessAnchorId || "",
+        ).trim();
+        const requestorAnchorIdStr = String(
+          request.requestor?.businessAnchorId || "",
+        ).trim();
+        const effectiveAnchorIdStr = requestAnchorIdStr || requestorAnchorIdStr;
+
+        // request 문서의 businessAnchorId가 비어 있는 경우에만 requestor anchor로 보정
+        if (!requestAnchorIdStr && requestorAnchorIdStr) {
+          request.businessAnchorId = request.requestor.businessAnchorId;
+        }
+
         if (!request.mailboxAddress) {
           try {
-            const requestorOrgId = String(
-              request.businessAnchorId ||
-                request.requestor?.businessAnchorId ||
-                "",
-            ).trim();
             request.mailboxAddress =
-              await allocateVirtualMailboxAddress(requestorOrgId);
+              await allocateVirtualMailboxAddress(effectiveAnchorIdStr);
           } catch (err) {
             console.error("[MAILBOX_ALLOCATION_ERROR]", {
               requestId,

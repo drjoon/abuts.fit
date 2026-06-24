@@ -56,6 +56,7 @@ async function findPackingRequestBySuffix(recognizedSuffix) {
     manufacturerStage: "세척.패킹",
   })
     .populate("businessAnchorId", "name metadata")
+    .populate("requestor", "businessAnchorId")
     .sort({ createdAt: 1 });
 
   return (
@@ -352,12 +353,21 @@ export const handlePackingCapture = asyncHandler(async (req, res) => {
   });
 
   await ensureFinishedLotNumberForPacking(request);
+
+  const requestAnchorIdStr = String(request.businessAnchorId || "").trim();
+  const requestorAnchorIdStr = String(
+    request.requestor?.businessAnchorId || "",
+  ).trim();
+  const effectiveAnchorIdStr = requestAnchorIdStr || requestorAnchorIdStr;
+
+  if (!requestAnchorIdStr && requestorAnchorIdStr) {
+    request.businessAnchorId = request.requestor.businessAnchorId;
+  }
+
   if (!request.mailboxAddress) {
     try {
-      const requestorOrgId =
-        request.businessAnchorId || request.requestor?.businessAnchorId;
       request.mailboxAddress =
-        await allocateVirtualMailboxAddress(requestorOrgId);
+        await allocateVirtualMailboxAddress(effectiveAnchorIdStr);
     } catch (err) {
       console.error("[lot-capture] mailbox allocation failed", {
         requestId: request.requestId,

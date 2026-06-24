@@ -10,7 +10,7 @@ import {
   ensureReviewByStageDefaults,
   normalizeRequestForResponse,
 } from "./utils.js";
-import { allocateVirtualMailboxAddress } from "./mailbox.utils.js";
+import { ensureMailboxAddressForBusiness } from "./mailbox.utils.js";
 import { triggerNextAutoMachiningAfterComplete } from "../cnc/machiningBridge.js";
 import s3Utils, { deleteFileFromS3 } from "../../utils/s3.utils.js";
 import { resolvePrcFileNames } from "./prcMapping.utils.js";
@@ -692,30 +692,37 @@ export async function updateReviewStatusByStage(req, res) {
       if (status === "APPROVED") {
         const resolvedBusinessAnchorId = (() => {
           const directBusinessAnchorId = request.businessAnchorId;
-          if (directBusinessAnchorId) return directBusinessAnchorId;
+          const directBusinessAnchorIdStr = String(
+            directBusinessAnchorId || "",
+          ).trim();
+          if (directBusinessAnchorIdStr) {
+            if (Types.ObjectId.isValid(directBusinessAnchorIdStr)) {
+              return new Types.ObjectId(directBusinessAnchorIdStr);
+            }
+            return null;
+          }
+
           const requestorBusinessAnchorId = request.requestor?.businessAnchorId;
-          if (!requestorBusinessAnchorId) return null;
           const requestorBusinessAnchorIdStr = String(
-            requestorBusinessAnchorId,
-          );
+            requestorBusinessAnchorId || "",
+          ).trim();
+          if (!requestorBusinessAnchorIdStr) return null;
           if (!Types.ObjectId.isValid(requestorBusinessAnchorIdStr))
             return null;
-          return typeof requestorBusinessAnchorId === "string"
-            ? new Types.ObjectId(requestorBusinessAnchorIdStr)
-            : requestorBusinessAnchorId;
+          return new Types.ObjectId(requestorBusinessAnchorIdStr);
         })();
 
         const isNewSystemFree =
           request?.caseInfos?.newSystemRequest?.requested &&
           request?.caseInfos?.newSystemRequest?.free;
 
-        // businessAnchorId 설정 (트랜잭션 내에서 설정하여 save 시 반영)
+        // businessAnchorId 보정: 값이 비어 있을 때만 requestor anchor로 채운다.
         if (!request.businessAnchorId && resolvedBusinessAnchorId) {
           request.businessAnchorId = resolvedBusinessAnchorId;
-          console.log(
-            "[REVIEW] Setting businessAnchorId:",
-            resolvedBusinessAnchorId,
-          );
+          console.log("[REVIEW] Set missing businessAnchorId:", {
+            requestId: request.requestId,
+            to: String(resolvedBusinessAnchorId || "").trim() || null,
+          });
         }
 
         {
@@ -861,15 +868,18 @@ export async function updateReviewStatusByStage(req, res) {
               );
             }
             applyStatusMapping(request, "세척.패킹");
-            if (!request.mailboxAddress) {
-              try {
-                const requestorBusinessAnchorId = resolvedBusinessAnchorId;
-                request.mailboxAddress = await allocateVirtualMailboxAddress(
-                  requestorBusinessAnchorId,
-                );
-              } catch (err) {
-                console.error("[MAILBOX_ALLOCATION_ERROR]", err);
+            try {
+              const requestorBusinessAnchorId = resolvedBusinessAnchorId;
+              const nextMailboxAddress = await ensureMailboxAddressForBusiness({
+                requestMongoId: request._id,
+                requestorOrgId: requestorBusinessAnchorId,
+                currentMailboxAddress: request.mailboxAddress,
+              });
+              if (nextMailboxAddress) {
+                request.mailboxAddress = nextMailboxAddress;
               }
+            } catch (err) {
+              console.error("[MAILBOX_ALLOCATION_ERROR]", err);
             }
           } else if (effectiveStage === "packing") {
             // 내부 샘플 의뢰건은 세척.패킹까지만 처리 (포장.발송으로 넘어가지 않음)
@@ -895,21 +905,24 @@ export async function updateReviewStatusByStage(req, res) {
         if (effectiveStage === "packing") {
           await ensureFinishedLotNumberForPacking(request);
           updateCurrentEstimatedShipYmdOnPackingEnter(request);
-          if (!request.mailboxAddress) {
-            try {
-              const requestorBusinessAnchorId = resolvedBusinessAnchorId;
-              console.log(
-                `[PACKING_APPROVAL] 의뢰 ${request.requestId} 우편함 할당 시작 - 사업자 anchor ID: ${requestorBusinessAnchorId}`,
-              );
-              request.mailboxAddress = await allocateVirtualMailboxAddress(
-                requestorBusinessAnchorId,
-              );
-              console.log(
-                `[PACKING_APPROVAL] 의뢰 ${request.requestId} 우편함 할당 완료: ${request.mailboxAddress}`,
-              );
-            } catch (err) {
-              console.error("[MAILBOX_ALLOCATION_ERROR]", err);
+          try {
+            const requestorBusinessAnchorId = resolvedBusinessAnchorId;
+            console.log(
+              `[PACKING_APPROVAL] 의뢰 ${request.requestId} 우편함 점검/할당 시작 - 사업자 anchor ID: ${requestorBusinessAnchorId}`,
+            );
+            const nextMailboxAddress = await ensureMailboxAddressForBusiness({
+              requestMongoId: request._id,
+              requestorOrgId: requestorBusinessAnchorId,
+              currentMailboxAddress: request.mailboxAddress,
+            });
+            if (nextMailboxAddress) {
+              request.mailboxAddress = nextMailboxAddress;
             }
+            console.log(
+              `[PACKING_APPROVAL] 의뢰 ${request.requestId} 우편함 점검/할당 완료: ${request.mailboxAddress}`,
+            );
+          } catch (err) {
+            console.error("[MAILBOX_ALLOCATION_ERROR]", err);
           }
           if (resolvedBusinessAnchorId) {
             await ensureShippingFeeSpendOnPackingApprove({

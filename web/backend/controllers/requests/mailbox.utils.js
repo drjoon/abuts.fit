@@ -1,4 +1,7 @@
-export async function allocateVirtualMailboxAddress(requestorOrgId) {
+export async function allocateVirtualMailboxAddress(
+  requestorOrgId,
+  options = {},
+) {
   const { default: Request } = await import("../../models/request.model.js");
 
   // 선반(Shelf)은 실제 운용 중인 A부터 I까지 9개를 사용한다.
@@ -21,24 +24,56 @@ export async function allocateVirtualMailboxAddress(requestorOrgId) {
     }
   }
 
+  const excludeRequestMongoId = String(
+    options?.excludeRequestMongoId || "",
+  ).trim();
+
   // 현재 '세척.패킹' 및 '포장.발송' 단계에 있는 의뢰들의 할당된 우편함 조회
-  const activeRequests = await Request.find({
+  const activeRequestsRaw = await Request.find({
     manufacturerStage: { $in: ["세척.패킹", "포장.발송"] },
     mailboxAddress: { $ne: null },
   })
-    .select("mailboxAddress businessAnchorId")
+    .select("_id mailboxAddress businessAnchorId requestor")
+    .populate("requestor", "businessAnchorId")
     .lean();
 
+  const activeRequests = excludeRequestMongoId
+    ? activeRequestsRaw.filter(
+        (row) => String(row?._id || "").trim() !== excludeRequestMongoId,
+      )
+    : activeRequestsRaw;
+
   // 같은 의뢰자가 이미 할당받은 우편함이 있는지 확인
+  // 단, "다른 의뢰자와 섞인 우편함"은 재사용하지 않는다.
   if (requestorOrgId) {
     const requestorOrgIdStr = requestorOrgId.toString();
 
+    const orgSetByAddress = new Map();
     for (const r of activeRequests) {
-      const orgId = r.businessAnchorId?.toString() || "";
-
-      if (orgId && orgId === requestorOrgIdStr) {
-        return r.mailboxAddress;
+      const address = String(r?.mailboxAddress || "").trim();
+      if (!address) continue;
+      const orgId =
+        r?.requestor && typeof r.requestor === "object"
+          ? String(r.businessAnchorId || "").trim() ||
+            String(r.requestor?.businessAnchorId || "").trim()
+          : String(r.businessAnchorId || "").trim();
+      if (!orgSetByAddress.has(address)) {
+        orgSetByAddress.set(address, new Set());
       }
+      if (orgId) {
+        orgSetByAddress.get(address).add(orgId);
+      }
+    }
+
+    const reusableAddress = Array.from(orgSetByAddress.entries())
+      .filter(
+        ([_, orgSet]) => orgSet.size === 1 && orgSet.has(requestorOrgIdStr),
+      )
+      .map(([address]) => address)
+      .sort()[0];
+
+    if (reusableAddress) {
+      return reusableAddress;
     }
   }
 
@@ -55,4 +90,52 @@ export async function allocateVirtualMailboxAddress(requestorOrgId) {
   }
 
   return availableAddress;
+}
+
+export async function ensureMailboxAddressForBusiness({
+  requestMongoId,
+  requestorOrgId,
+  currentMailboxAddress,
+}) {
+  const { default: Request } = await import("../../models/request.model.js");
+
+  const requestorOrgIdStr = String(requestorOrgId || "").trim();
+  const currentMailboxAddressStr = String(currentMailboxAddress || "").trim();
+
+  if (!requestorOrgIdStr) {
+    return currentMailboxAddressStr || null;
+  }
+
+  if (!currentMailboxAddressStr) {
+    return allocateVirtualMailboxAddress(requestorOrgIdStr, {
+      excludeRequestMongoId: requestMongoId,
+    });
+  }
+
+  const mailboxOccupants = await Request.find({
+    manufacturerStage: { $in: ["세척.패킹", "포장.발송"] },
+    mailboxAddress: currentMailboxAddressStr,
+    ...(requestMongoId ? { _id: { $ne: requestMongoId } } : {}),
+  })
+    .select("requestId businessAnchorId requestor manufacturerStage")
+    .populate("requestor", "businessAnchorId")
+    .lean();
+
+  const hasDifferentBusinessOccupant = mailboxOccupants.some((row) => {
+    const occupantBusinessAnchorId =
+      row?.requestor && typeof row.requestor === "object"
+        ? String(row?.businessAnchorId || "").trim() ||
+          String(row.requestor?.businessAnchorId || "").trim()
+        : String(row?.businessAnchorId || "").trim();
+    if (!occupantBusinessAnchorId) return true;
+    return occupantBusinessAnchorId !== requestorOrgIdStr;
+  });
+
+  if (!hasDifferentBusinessOccupant) {
+    return currentMailboxAddressStr;
+  }
+
+  return allocateVirtualMailboxAddress(requestorOrgIdStr, {
+    excludeRequestMongoId: requestMongoId,
+  });
 }
