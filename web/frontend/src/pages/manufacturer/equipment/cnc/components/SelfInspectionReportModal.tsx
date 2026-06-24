@@ -79,56 +79,56 @@ const DEFAULT_ROWS: InspectionRow[] = [
     referenceValue: "-",
     criterion: "식별",
     instrument: "현미경(AD-T-07)",
-    measuredValue: "",
-    judgment: "",
+    measuredValue: "-",
+    judgment: "적합",
   },
   {
     label: "커넥션직경",
     referenceValue: "-",
     criterion: "-",
     instrument: "비전(AD-T-19)",
-    measuredValue: "",
-    judgment: "",
+    measuredValue: "-",
+    judgment: "적합",
   },
   {
     label: "L1",
     referenceValue: "-",
     criterion: "기준값1%이내",
     instrument: "비전(AD-T-19)",
-    measuredValue: "",
-    judgment: "",
+    measuredValue: "-",
+    judgment: "적합",
   },
   {
     label: "L2",
     referenceValue: "-",
     criterion: "기준값1%이내",
     instrument: "비전(AD-T-19)",
-    measuredValue: "",
-    judgment: "",
+    measuredValue: "-",
+    judgment: "적합",
   },
   {
     label: "최대직경",
     referenceValue: "-",
     criterion: "기준값1%이내",
     instrument: "비전(AD-T-19)",
-    measuredValue: "",
-    judgment: "",
+    measuredValue: "-",
+    judgment: "적합",
   },
   {
     label: "내경깊이",
     referenceValue: "적합",
     criterion: "±0.1",
     instrument: "비전(AD-T-19)",
-    measuredValue: "",
-    judgment: "",
+    measuredValue: "적합",
+    judgment: "적합",
   },
   {
     label: "헥스치수",
     referenceValue: "2.485",
     criterion: "-",
     instrument: "MICRO(AD-T-02)",
-    measuredValue: "",
-    judgment: "",
+    measuredValue: "2.485",
+    judgment: "적합",
   },
 ];
 
@@ -632,66 +632,73 @@ export function SelfInspectionReportModal({
             .replace(/(\.\d*?)0+$/, "$1")}`
         : internalGauge || "적합";
 
+    const engravingRef = lotShortCode || "-";
+    const diameterRef = fmt(diameterReference, 3);
+    const l1Ref = fmt(l1Reference, 3);
+    const l2Ref = fmt(l2Reference, 3);
+    const maxDiameterRef = fmt(metadata?.maxDiameter, 3);
+    const hexRef = fmt(hexSizeReference, 3);
+
     setRows([
       {
         label: "각인",
-        referenceValue: lotShortCode || "-",
+        referenceValue: engravingRef,
         criterion: "식별",
         instrument: "현미경(AD-T-07)",
-        measuredValue: "",
-        judgment: "",
+        measuredValue: engravingRef,
+        judgment: "적합",
       },
       {
         label: "커넥션직경",
-        referenceValue: fmt(diameterReference, 3),
+        referenceValue: diameterRef,
         criterion:
           preset?.diameterCriterion ||
           formatRange(diameterReference, 0.02, 0.01, 2),
         instrument: "비전(AD-T-19)",
-        measuredValue: "",
-        judgment: "",
+        measuredValue: diameterRef,
+        judgment: "적합",
       },
       {
         label: "L1",
-        referenceValue: fmt(l1Reference, 3),
+        referenceValue: l1Ref,
         criterion: "기준값1%이내",
         instrument: "비전(AD-T-19)",
-        measuredValue: "",
-        judgment: "",
+        measuredValue: l1Ref,
+        judgment: "적합",
       },
       {
         label: "L2",
-        referenceValue: fmt(l2Reference, 3),
+        referenceValue: l2Ref,
         criterion: "기준값1%이내",
         instrument: "비전(AD-T-19)",
-        measuredValue: "",
-        judgment: "",
+        measuredValue: l2Ref,
+        judgment: "적합",
       },
       {
         label: "최대직경",
-        referenceValue: fmt(metadata?.maxDiameter, 3),
+        referenceValue: maxDiameterRef,
         criterion: "기준값1%이내",
         instrument: "비전(AD-T-19)",
-        measuredValue: "",
-        judgment: "",
+        measuredValue: maxDiameterRef,
+        judgment: "적합",
       },
       {
         label: "내경깊이",
         referenceValue: innerGaugeReference,
         criterion: "±0.1",
         instrument: "비전(AD-T-19)",
-        measuredValue: "",
-        judgment: "",
+        measuredValue: innerGaugeReference,
+        judgment: "적합",
       },
       {
         label: "헥스치수",
-        referenceValue: fmt(hexSizeReference, 3),
+        referenceValue: hexRef,
         criterion:
           preset?.hexCriterion ||
           formatRange(hexSizeReference, 0.005, 0.003, 3),
         instrument: "MICRO(AD-T-02)",
-        measuredValue: "",
-        judgment: "",
+        measuredValue: hexRef,
+        judgment: "적합",
       },
     ]);
   }, [
@@ -1288,18 +1295,18 @@ export function SelfInspectionReportModal({
               <div className="flex-1 flex flex-col items-end gap-2">
                 {!confirmed && (
                   <p className="text-[11px] text-red-600 text-right">
-                    확정 후 수정할 수 없습니다
+                    확인 후 수정할 수 없습니다
                   </p>
                 )}
                 {confirmed && (
                   <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1 text-center w-full">
-                    성적서가 확정되었습니다. 더 이상 수정할 수 없습니다.
+                    성적서가 확인되었습니다. 더 이상 수정할 수 없습니다.
                   </p>
                 )}
 
                 {overallJudgment === "불합격" && !confirmed && (
                   <p className="text-[11px] text-red-600">
-                    판정이 불합격이면 확정할 수 없습니다.
+                    판정이 불합격이면 확인할 수 없습니다.
                   </p>
                 )}
 
@@ -1374,7 +1381,7 @@ export function SelfInspectionReportModal({
                             : "bg-slate-800 text-white hover:bg-slate-700 active:bg-slate-900"
                       }`}
                     >
-                      {confirmed ? "✓ 확정됨" : saving ? "저장 중…" : "확정"}
+                      {confirmed ? "✓ 확인됨" : saving ? "저장 중…" : "확인"}
                     </button>
                   )}
                 </div>
