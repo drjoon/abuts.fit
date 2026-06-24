@@ -395,7 +395,8 @@ namespace DentalAddin
                 : firstPercent;
 
             const double seamEpsilonPercent = 0.05;
-            const double compositeDExtendFromCEndMm = 0.6; // 요청사항: D 구간 = BackPointX부터 +0.6mm
+            const double compositeEndOffsetFromBackPointMm = 0.3; // 요청사항: Single-A는 B 끝, 일반모드는 C 끝 = BackPointX+0.3mm
+            const double compositeDExtendFromCEndMm = 0.3;        // 요청사항: D 구간 폭 = B/C 종료점부터 +0.3mm
 
             // B 시작 퍼센트 상한(안전값) 적용
             double splitPercentForA = splitPercent;
@@ -418,9 +419,10 @@ namespace DentalAddin
 
 
 
-            // 정책: C 종료 기준점은 BackPointX
-            double backPointPassPercent = XToPassPercentByStartEndScale(MoveSTL_Module.BackPointX, 0.0, 100.0);
-            opB.LastPassPercent = Clamp(backPointPassPercent, opB.FirstPassPercent, 100.0);
+            // 정책: 종료 기준점은 BackPointX + 0.3mm
+            double compositeEndTargetX = MoveSTL_Module.BackPointX + compositeEndOffsetFromBackPointMm;
+            double compositeEndPassPercent = XToPassPercentByStartEndScale(compositeEndTargetX, 0.0, 100.0);
+            opB.LastPassPercent = Clamp(compositeEndPassPercent, opB.FirstPassPercent, 100.0);
 
             // 사용자 요청: Composite_B(=opA) 시작점은 0%로 고정
             opA.FirstPassPercent = 0.0;
@@ -433,16 +435,16 @@ namespace DentalAddin
             double bLastBeforeAlign = opA.LastPassPercent;
             opA.LastPassPercent = Clamp(opB.FirstPassPercent, opA.FirstPassPercent, effectiveLastPercent);
 
-            // 일반 모드(2-phase split): C 종료는 BackPointX로 고정한다. (B/C 경계는 유지)
+            // 일반 모드(2-phase split): C 종료는 BackPointX+0.3mm로 고정한다. (B/C 경계는 유지)
             double cLastBeforeAdjust = opB.LastPassPercent;
-            double cTargetX = MoveSTL_Module.BackPointX;
-            opB.LastPassPercent = Clamp(backPointPassPercent, opB.FirstPassPercent, 100.0);
+            double cTargetX = compositeEndTargetX;
+            opB.LastPassPercent = Clamp(compositeEndPassPercent, opB.FirstPassPercent, 100.0);
 
             double bLastXBeforeAlign = PassPercentToX(bLastBeforeAlign, MoveSTL_Module.FrontPointX, direction, absSpan);
             double bLastXAfterAlign = PassPercentToX(opA.LastPassPercent, MoveSTL_Module.FrontPointX, direction, absSpan);
             double cLastXBeforeAdjust = PassPercentToX(cLastBeforeAdjust, MoveSTL_Module.FrontPointX, direction, absSpan);
             double cLastXAfterAdjust = PassPercentToX(opB.LastPassPercent, MoveSTL_Module.FrontPointX, direction, absSpan);
-            DentalLogger.Log($"Composite2SplitAB - B/C 경계 정렬 + C 종료 BackPointX: B.Last% {bLastBeforeAlign:F2}->{opA.LastPassPercent:F2}, B.LastX {bLastXBeforeAlign:F3}->{bLastXAfterAlign:F3}, C.First%={opB.FirstPassPercent:F2}, C.Last% {cLastBeforeAdjust:F2}->{opB.LastPassPercent:F2}, C.LastX {cLastXBeforeAdjust:F3}->{cLastXAfterAdjust:F3}, C.TargetX={cTargetX:F3}");
+            DentalLogger.Log($"Composite2SplitAB - B/C 경계 정렬 + C 종료 BackPointX+0.3mm: B.Last% {bLastBeforeAlign:F2}->{opA.LastPassPercent:F2}, B.LastX {bLastXBeforeAlign:F3}->{bLastXAfterAlign:F3}, C.First%={opB.FirstPassPercent:F2}, C.Last% {cLastBeforeAdjust:F2}->{opB.LastPassPercent:F2}, C.LastX {cLastXBeforeAdjust:F3}->{cLastXAfterAdjust:F3}, C.TargetX={cTargetX:F3}");
             DentalLogger.Log($"Composite2SplitAB - seam 보정: A({opA.FirstPassPercent:F2}->{opA.LastPassPercent:F2}), B({opB.FirstPassPercent:F2}->{opB.LastPassPercent:F2}), seamEps={seamEpsilonPercent:F2}, BFirstGuard={startEndBFirstGuardApplied}");
 
             bool surfaceReady = TryEnsureCompositeSurfaceNumber("Composite2SplitAB");
@@ -496,11 +498,11 @@ namespace DentalAddin
             // env: ABUTS_COMPOSITE_SINGLE_A_ENABLE (default=true)
             if (singleAEnabled)
             {
-                // Single-A 모드: B 종료는 C 종료와 동일 기준(BackPointX)으로 맞춘다.
-                opA.LastPassPercent = Clamp(backPointPassPercent, 0.0, 100.0);
+                // Single-A 모드: B 종료는 BackPointX+0.3mm로 맞춘다.
+                opA.LastPassPercent = Clamp(compositeEndPassPercent, 0.0, 100.0);
                 // 사용자 요청: Single-A 최종 Composite_B(=opA) 시작점도 0% 고정
                 opA.FirstPassPercent = 0.0;
-                DentalLogger.Log($"Composite2SplitAB - Single-A B 시작점 0% 고정 + B종료=BackPointX 적용: FirstPass={opA.FirstPassPercent:F2}, LastPass={opA.LastPassPercent:F2}");
+                DentalLogger.Log($"Composite2SplitAB - Single-A B 시작점 0% 고정 + B종료=BackPointX+0.3mm 적용: FirstPass={opA.FirstPassPercent:F2}, LastPass={opA.LastPassPercent:F2}");
 
                 DentalLogger.Log($"Composite2SplitAB - Single-A 모드 적용: A({opA.FirstPassPercent:F2}->{opA.LastPassPercent:F2}), B 기본 Add 생략, env=ABUTS_COMPOSITE_SINGLE_A_ENABLE(raw='{singleARaw ?? ""}')");
 
@@ -573,9 +575,9 @@ namespace DentalAddin
                 DentalLogger.Log($"Composite2SplitAB - Single-A Operation 추가 완료: B(기존 A) (afterCount={afterASingle})");
 
                 // 요청사항: Single-A 모드에서도 D(B-Extension) 강제 생성
-                // - 시작: BackPointX
-                // - 종료: BackPointX +0.6mm(StartEndScale 기준)
-                double dFirstPercentSingle = backPointPassPercent;
+                // - 시작: B 종료점(=BackPointX+0.3mm)
+                // - 종료: 시작점 +0.3mm(StartEndScale 기준)
+                double dFirstPercentSingle = opA.LastPassPercent;
                 double dLastPercentSingle = ShiftPassPercentByStartEndScaleMmNoClamp(dFirstPercentSingle, compositeDExtendFromCEndMm);
                 if (dLastPercentSingle > dFirstPercentSingle + 1e-6)
                 {
@@ -711,10 +713,10 @@ namespace DentalAddin
             int afterB = Document?.Operations?.Count ?? -1;
             DentalLogger.Log($"Composite2SplitAB - Operation 추가 완료: C(기존 B) (afterCount={afterB})");
 
-            // 요청사항: 5axis Composite D(B-Extension) 복구
-            // - 시작: BackPointX
-            // - 종료: BackPointX +0.6mm(StartEndScale 기준)
-            double dFirstPercent = backPointPassPercent;
+            // 요청사항: 5axis Composite D(B-Extension)
+            // - 시작: C 종료점(=BackPointX+0.3mm)
+            // - 종료: 시작점 +0.3mm(StartEndScale 기준)
+            double dFirstPercent = opB.LastPassPercent;
             double dLastPercent = ShiftPassPercentByStartEndScaleMmNoClamp(dFirstPercent, compositeDExtendFromCEndMm);
             if (dLastPercent > dFirstPercent + 1e-6)
             {
