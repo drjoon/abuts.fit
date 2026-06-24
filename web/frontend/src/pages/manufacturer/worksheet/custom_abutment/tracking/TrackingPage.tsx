@@ -1068,6 +1068,27 @@ export const TrackingInquiryPage = () => {
     }
   }, [tab, period, worksheetSearch, showCompleted]);
 
+  // 목표 표시 건수(visibleCount)를 채울 때까지 페이지를 추가 로드한다.
+  // - 초기 로드: 12건 채울 때까지
+  // - 스크롤 하단 도달: +12 목표를 채울 때까지
+  useEffect(() => {
+    if (!token) return;
+    if (loading) return;
+    if (currentRows.length >= visibleCount) return;
+    if (!hasMoreRef.current || isFetchingPageRef.current) return;
+
+    void (window as any).__trackingFetchNext?.();
+  }, [
+    token,
+    loading,
+    currentRows.length,
+    visibleCount,
+    tab,
+    period,
+    worksheetSearch,
+    showCompleted,
+  ]);
+
   const setScrollContainer = useCallback((node: HTMLDivElement | null) => {
     if (scrollRef.current && onScrollRef.current) {
       scrollRef.current.removeEventListener("scroll", onScrollRef.current);
@@ -1084,23 +1105,18 @@ export const TrackingInquiryPage = () => {
       const nearBottom =
         node.scrollTop + node.clientHeight >= node.scrollHeight - 200;
       // Only after explicit user scroll
+      if (!nearBottom || !userScrolledRef.current) return;
+
+      // 스크롤 하단 도달 시 목표 표시 건수를 12건 증가
+      visibleCountRef.current += 12;
+      setVisibleCount(visibleCountRef.current);
+
+      // 현재 보유 데이터가 부족하면 즉시 다음 페이지 로드를 시도
       if (
-        nearBottom &&
-        userScrolledRef.current &&
         visibleCountRef.current >= totalCountRef.current - 3 &&
         hasMoreRef.current
       ) {
         void (window as any).__trackingFetchNext?.();
-      }
-
-      if (!nearBottom || !userScrolledRef.current) return;
-
-      if (visibleCountRef.current < totalCountRef.current) {
-        visibleCountRef.current = Math.min(
-          visibleCountRef.current + 12,
-          totalCountRef.current,
-        );
-        setVisibleCount(visibleCountRef.current);
       }
     };
 
