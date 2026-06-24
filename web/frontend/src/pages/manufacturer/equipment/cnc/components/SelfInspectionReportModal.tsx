@@ -1039,15 +1039,6 @@ export function SelfInspectionReportModal({
           {/* ── Right: Inspection Form ── */}
           <div className="flex-1 overflow-y-auto px-5 py-4 max-h-[calc(90vh-57px)]">
             <div ref={reportRef} className="bg-white">
-              <div className="grid grid-cols-[1fr_220px] text-[12px] font-bold border border-slate-800 border-b-0 mb-0">
-                <div className="px-2 py-1 bg-[#eea13a]">
-                  모델에 따라 자동변경 항목
-                </div>
-                <div className="px-2 py-1 bg-[#eef05a] text-right">
-                  수기입력 노란색
-                </div>
-              </div>
-
               <h2 className="text-[42px] font-extrabold text-center border border-slate-800 py-2 mb-0 leading-tight">
                 자주검사 성적서
               </h2>
