@@ -105,8 +105,8 @@ export const TrackingInquiryPage = () => {
   }>();
 
   const [tab, setTab] = useState<InquiryTab>("shipping");
-  const [visibleCount, setVisibleCount] = useState(30);
-  const visibleCountRef = useRef(30);
+  const [visibleCount, setVisibleCount] = useState(12);
+  const visibleCountRef = useRef(12);
   const totalCountRef = useRef(0);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const onScrollRef = useRef<(() => void) | null>(null);
@@ -129,9 +129,8 @@ export const TrackingInquiryPage = () => {
   const [confirmAction, setConfirmAction] = useState<
     null | (() => Promise<void> | void)
   >(null);
-  const emptyAutoFetchCountRef = useRef(0);
   // Network pagination per stage (tracking)
-  const PAGE_LIMIT = 30;
+  const PAGE_LIMIT = 12;
   const pageRef = useRef(1);
   const hasMoreRef = useRef(true);
   const isFetchingPageRef = useRef(false);
@@ -188,29 +187,6 @@ export const TrackingInquiryPage = () => {
             : [];
           return list as ManufacturerRequest[];
         };
-
-        // 택배/배송 탭은 기간 필터 누락 방지를 위해 초기 로드에서 페이지를 끝까지 수집한다.
-        // (서버 페이지 정렬 기준과 클라이언트 기간 필터 기준이 다를 때 중간 기간 누락 방지)
-        if (tab === "shipping" && !append) {
-          const merged = new Map<string, ManufacturerRequest>();
-          let page = 1;
-          const MAX_PAGES = 100;
-          while (page <= MAX_PAGES) {
-            const list = await fetchPage(page);
-            for (const r of list) {
-              const key = String(
-                (r as any)?._id || (r as any)?.requestId || Math.random(),
-              );
-              merged.set(key, r);
-            }
-            if (list.length < PAGE_LIMIT) break;
-            page += 1;
-          }
-          setRequests(Array.from(merged.values()));
-          pageRef.current = page;
-          hasMoreRef.current = false;
-          return;
-        }
 
         const list = await fetchPage(pageRef.current);
         if (append) {
@@ -304,28 +280,6 @@ export const TrackingInquiryPage = () => {
             : [];
           return list as ManufacturerRequest[];
         };
-
-        // 택배/배송 탭은 기간 필터 누락 방지를 위해 초기 로드에서 페이지를 끝까지 수집한다.
-        if (tab === "shipping" && !append) {
-          const merged = new Map<string, ManufacturerRequest>();
-          let page = 1;
-          const MAX_PAGES = 100;
-          while (page <= MAX_PAGES) {
-            const list = await fetchPage(page);
-            for (const r of list) {
-              const key = String(
-                (r as any)?._id || (r as any)?.requestId || Math.random(),
-              );
-              merged.set(key, r);
-            }
-            if (list.length < PAGE_LIMIT) break;
-            page += 1;
-          }
-          setRequests(Array.from(merged.values()));
-          pageRef.current = page;
-          hasMoreRef.current = false;
-          return;
-        }
 
         const list = await fetchPage(pageRef.current);
         if (append) {
@@ -1100,35 +1054,10 @@ export const TrackingInquiryPage = () => {
         : udiRows;
   totalCountRef.current = currentRows.length;
 
-  // 기간 필터 결과가 첫 페이지에 없을 수 있으므로,
-  // 표시할 행이 0개인데 서버에 다음 페이지가 남아있으면 자동으로 추가 로드.
   useEffect(() => {
-    if (!token) return;
-    if (loading) return;
-    if (currentRows.length > 0) {
-      emptyAutoFetchCountRef.current = 0;
-      return;
-    }
-    if (!hasMoreRef.current || isFetchingPageRef.current) return;
-    if (emptyAutoFetchCountRef.current >= 20) return;
-
-    emptyAutoFetchCountRef.current += 1;
-    void (window as any).__trackingFetchNext?.();
-  }, [
-    token,
-    loading,
-    currentRows.length,
-    tab,
-    period,
-    worksheetSearch,
-    showCompleted,
-  ]);
-
-  useEffect(() => {
-    visibleCountRef.current = 30;
-    setVisibleCount(30);
+    visibleCountRef.current = 12;
+    setVisibleCount(12);
     userScrolledRef.current = false;
-    emptyAutoFetchCountRef.current = 0;
 
     setSelectedRecallRequestIds(new Set());
     setRecallFromDate("");
@@ -1168,7 +1097,7 @@ export const TrackingInquiryPage = () => {
 
       if (visibleCountRef.current < totalCountRef.current) {
         visibleCountRef.current = Math.min(
-          visibleCountRef.current + 30,
+          visibleCountRef.current + 12,
           totalCountRef.current,
         );
         setVisibleCount(visibleCountRef.current);
