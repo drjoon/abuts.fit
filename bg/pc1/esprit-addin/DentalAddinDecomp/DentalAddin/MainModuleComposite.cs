@@ -395,7 +395,7 @@ namespace DentalAddin
                 : firstPercent;
 
             const double seamEpsilonPercent = 0.05;
-            const double compositeCExtendFromBackPointMm = 0.65; // 요청사항: C 종료 = BackPointX + 0.65mm
+            const double compositeCExtendFromBackPointMm = 0.1; // 요청사항: C 종료 = BackPointX + 0.1mm
 
             // B 시작 퍼센트 상한(안전값) 적용
             double splitPercentForA = splitPercent;
@@ -418,7 +418,7 @@ namespace DentalAddin
 
 
 
-            // 요청사항: C 종료점은 #520(BackPointX)에서 +0.65mm 연장한 지점으로 고정한다.
+            // 요청사항: C 종료점은 #520(BackPointX)에서 +0.1mm 연장한 지점으로 고정한다.
             double cTargetXByBackPoint = MoveSTL_Module.BackPointX + compositeCExtendFromBackPointMm;
             opB.LastPassPercent = XToPassPercentByStartEndScale(cTargetXByBackPoint, opB.FirstPassPercent, 100.0);
 
@@ -433,7 +433,7 @@ namespace DentalAddin
             double bLastBeforeAlign = opA.LastPassPercent;
             opA.LastPassPercent = Clamp(opB.FirstPassPercent, opA.FirstPassPercent, effectiveLastPercent);
 
-            // 요청사항: C 종료점은 #520(BackPointX)+0.65mm 지점으로 확정한다. (B/C 경계는 유지)
+            // 요청사항: C 종료점은 #520(BackPointX)+0.1mm 지점으로 확정한다. (B/C 경계는 유지)
             double cLastBeforeAdjust = opB.LastPassPercent;
             double cTargetX = MoveSTL_Module.BackPointX + compositeCExtendFromBackPointMm;
             opB.LastPassPercent = XToPassPercentByStartEndScale(cTargetX, opB.FirstPassPercent, 100.0);
@@ -442,7 +442,7 @@ namespace DentalAddin
             double bLastXAfterAlign = PassPercentToX(opA.LastPassPercent, MoveSTL_Module.FrontPointX, direction, absSpan);
             double cLastXBeforeAdjust = PassPercentToX(cLastBeforeAdjust, MoveSTL_Module.FrontPointX, direction, absSpan);
             double cLastXAfterAdjust = PassPercentToX(opB.LastPassPercent, MoveSTL_Module.FrontPointX, direction, absSpan);
-            DentalLogger.Log($"Composite2SplitAB - B/C 경계 정렬 + C 종료 BackPointX+0.65mm: B.Last% {bLastBeforeAlign:F2}->{opA.LastPassPercent:F2}, B.LastX {bLastXBeforeAlign:F3}->{bLastXAfterAlign:F3}, C.First%={opB.FirstPassPercent:F2}, C.Last% {cLastBeforeAdjust:F2}->{opB.LastPassPercent:F2}, C.LastX {cLastXBeforeAdjust:F3}->{cLastXAfterAdjust:F3}, C.TargetX={cTargetX:F3}");
+            DentalLogger.Log($"Composite2SplitAB - B/C 경계 정렬 + C 종료 BackPointX+0.1mm: B.Last% {bLastBeforeAlign:F2}->{opA.LastPassPercent:F2}, B.LastX {bLastXBeforeAlign:F3}->{bLastXAfterAlign:F3}, C.First%={opB.FirstPassPercent:F2}, C.Last% {cLastBeforeAdjust:F2}->{opB.LastPassPercent:F2}, C.LastX {cLastXBeforeAdjust:F3}->{cLastXAfterAdjust:F3}, C.TargetX={cTargetX:F3}");
             DentalLogger.Log($"Composite2SplitAB - seam 보정: A({opA.FirstPassPercent:F2}->{opA.LastPassPercent:F2}), B({opB.FirstPassPercent:F2}->{opB.LastPassPercent:F2}), seamEps={seamEpsilonPercent:F2}, BFirstGuard={startEndBFirstGuardApplied}");
 
             bool surfaceReady = TryEnsureCompositeSurfaceNumber("Composite2SplitAB");
