@@ -395,7 +395,8 @@ namespace DentalAddin
                 : firstPercent;
 
             const double seamEpsilonPercent = 0.05;
-            const double compositeCExtendFromBackPointMm = 0.1; // 요청사항: C 종료 = BackPointX + 0.1mm
+            const double compositeCExtendFromBackPointMm = 0.65; // 요청사항: C 종료 = BackPointX + 0.65mm
+            const double compositeDExtendFromCEndMm = 0.6;       // 요청사항: D 구간 = C 종료점부터 +0.6mm
 
             // B 시작 퍼센트 상한(안전값) 적용
             double splitPercentForA = splitPercent;
@@ -433,7 +434,7 @@ namespace DentalAddin
             double bLastBeforeAlign = opA.LastPassPercent;
             opA.LastPassPercent = Clamp(opB.FirstPassPercent, opA.FirstPassPercent, effectiveLastPercent);
 
-            // 요청사항: C 종료점은 #520(BackPointX)+0.1mm 지점으로 확정한다. (B/C 경계는 유지)
+            // 요청사항: C 종료점은 #520(BackPointX)+0.65mm 지점으로 확정한다. (B/C 경계는 유지)
             double cLastBeforeAdjust = opB.LastPassPercent;
             double cTargetX = MoveSTL_Module.BackPointX + compositeCExtendFromBackPointMm;
             opB.LastPassPercent = XToPassPercentByStartEndScale(cTargetX, opB.FirstPassPercent, 100.0);
@@ -442,7 +443,7 @@ namespace DentalAddin
             double bLastXAfterAlign = PassPercentToX(opA.LastPassPercent, MoveSTL_Module.FrontPointX, direction, absSpan);
             double cLastXBeforeAdjust = PassPercentToX(cLastBeforeAdjust, MoveSTL_Module.FrontPointX, direction, absSpan);
             double cLastXAfterAdjust = PassPercentToX(opB.LastPassPercent, MoveSTL_Module.FrontPointX, direction, absSpan);
-            DentalLogger.Log($"Composite2SplitAB - B/C 경계 정렬 + C 종료 BackPointX+0.1mm: B.Last% {bLastBeforeAlign:F2}->{opA.LastPassPercent:F2}, B.LastX {bLastXBeforeAlign:F3}->{bLastXAfterAlign:F3}, C.First%={opB.FirstPassPercent:F2}, C.Last% {cLastBeforeAdjust:F2}->{opB.LastPassPercent:F2}, C.LastX {cLastXBeforeAdjust:F3}->{cLastXAfterAdjust:F3}, C.TargetX={cTargetX:F3}");
+            DentalLogger.Log($"Composite2SplitAB - B/C 경계 정렬 + C 종료 BackPointX+0.65mm: B.Last% {bLastBeforeAlign:F2}->{opA.LastPassPercent:F2}, B.LastX {bLastXBeforeAlign:F3}->{bLastXAfterAlign:F3}, C.First%={opB.FirstPassPercent:F2}, C.Last% {cLastBeforeAdjust:F2}->{opB.LastPassPercent:F2}, C.LastX {cLastXBeforeAdjust:F3}->{cLastXAfterAdjust:F3}, C.TargetX={cTargetX:F3}");
             DentalLogger.Log($"Composite2SplitAB - seam 보정: A({opA.FirstPassPercent:F2}->{opA.LastPassPercent:F2}), B({opB.FirstPassPercent:F2}->{opB.LastPassPercent:F2}), seamEps={seamEpsilonPercent:F2}, BFirstGuard={startEndBFirstGuardApplied}");
 
             bool surfaceReady = TryEnsureCompositeSurfaceNumber("Composite2SplitAB");
@@ -572,7 +573,52 @@ namespace DentalAddin
                 int afterASingle = Document?.Operations?.Count ?? -1;
                 DentalLogger.Log($"Composite2SplitAB - Single-A Operation 추가 완료: B(기존 A) (afterCount={afterASingle})");
 
-                // 요청사항: 5axis Composite D(B-Extension)는 생성하지 않는다.
+                // 요청사항: Single-A 모드에서도 D(B-Extension) 강제 생성
+                // - 시작: B(=opA) 종료점
+                // - 종료: 시작점 +0.6mm(StartEndScale 기준)
+                double dFirstPercentSingle = opA.LastPassPercent;
+                double dLastPercentSingle = ShiftPassPercentByStartEndScaleMmNoClamp(dFirstPercentSingle, compositeDExtendFromCEndMm);
+                if (dLastPercentSingle > dFirstPercentSingle + 1e-6)
+                {
+                    ITechnology[] techDExtSingle = TryOpenProcess(technologyUtility, prcB, "Composite2SplitAB:D:Single");
+                    TechLatheMill5xComposite opBExtensionSingle = null;
+                    if (techDExtSingle.Length > 0)
+                    {
+                        opBExtensionSingle = techDExtSingle[0] as TechLatheMill5xComposite;
+                    }
+
+                    if (opBExtensionSingle != null)
+                    {
+                        opBExtensionSingle.PassPosition = espMill5xCompositePassPosition.espMill5xCompositePassPositionStartEndPosition;
+                        opBExtensionSingle.FirstPassPercent = dFirstPercentSingle;
+                        opBExtensionSingle.LastPassPercent = dLastPercentSingle;
+                        opBExtensionSingle.DriveSurface = opA.DriveSurface;
+                        opBExtensionSingle.ToolID = !string.IsNullOrWhiteSpace(opA.ToolID)
+                            ? opA.ToolID
+                            : (!string.IsNullOrWhiteSpace(opB.ToolID) ? opB.ToolID : ToolNs);
+
+                        TrySetCompositeStepIncrement(opBExtensionSingle, "B");
+                        TrySetCompositeStockAllowance(opBExtensionSingle, "B-Extension");
+
+                        int beforeAddCountDSingle = Document?.Operations?.Count ?? -1;
+                        TryDisableCompositeDynamicIfRequested(opBExtensionSingle, "B-Extension:Single");
+                        TryAddOperation(opBExtensionSingle, freeFormFeature, "Composite2SplitAB:D:Single", false);
+                        TryAppendCompositeSuffixToNewOperations(beforeAddCountDSingle, "B-Extension");
+                        int afterDSingle = Document?.Operations?.Count ?? -1;
+
+                        double dFirstXSingle = PassPercentToX(dFirstPercentSingle, MoveSTL_Module.FrontPointX, direction, absSpan);
+                        double dLastXSingle = PassPercentToX(dLastPercentSingle, MoveSTL_Module.FrontPointX, direction, absSpan);
+                        DentalLogger.Log($"Composite2SplitAB - Single-A D(B-Extension) 추가 완료 ({dFirstPercentSingle:F2}->{dLastPercentSingle:F2}, X:{dFirstXSingle:F3}->{dLastXSingle:F3}, +{compositeDExtendFromCEndMm:F3}mm, afterCount={afterDSingle})");
+                    }
+                    else
+                    {
+                        DentalLogger.Log("Composite2SplitAB - Single-A D(B-Extension) PRC 로드/캐스팅 실패");
+                    }
+                }
+                else
+                {
+                    DentalLogger.Log($"Composite2SplitAB - Single-A D(B-Extension) 범위 비정상으로 생성 생략: First={dFirstPercentSingle:F2}, Last={dLastPercentSingle:F2}");
+                }
 
                 int finalCountSingle = Document?.Operations?.Count ?? -1;
                 if (newAAddedThisCall)
@@ -666,7 +712,52 @@ namespace DentalAddin
             int afterB = Document?.Operations?.Count ?? -1;
             DentalLogger.Log($"Composite2SplitAB - Operation 추가 완료: C(기존 B) (afterCount={afterB})");
 
-            // 요청사항: 5axis Composite D(B-Extension)는 생성하지 않는다.
+            // 요청사항: 5axis Composite D(B-Extension) 복구
+            // - 시작: C 종료점
+            // - 종료: C 종료점 +0.6mm(StartEndScale 기준)
+            double dFirstPercent = opB.LastPassPercent;
+            double dLastPercent = ShiftPassPercentByStartEndScaleMmNoClamp(dFirstPercent, compositeDExtendFromCEndMm);
+            if (dLastPercent > dFirstPercent + 1e-6)
+            {
+                ITechnology[] techDExt = TryOpenProcess(technologyUtility, prcB, "Composite2SplitAB:D");
+                TechLatheMill5xComposite opBExtension = null;
+                if (techDExt.Length > 0)
+                {
+                    opBExtension = techDExt[0] as TechLatheMill5xComposite;
+                }
+
+                if (opBExtension != null)
+                {
+                    opBExtension.PassPosition = espMill5xCompositePassPosition.espMill5xCompositePassPositionStartEndPosition;
+                    opBExtension.FirstPassPercent = dFirstPercent;
+                    opBExtension.LastPassPercent = dLastPercent;
+                    opBExtension.DriveSurface = opA.DriveSurface;
+                    opBExtension.ToolID = !string.IsNullOrWhiteSpace(opB.ToolID)
+                        ? opB.ToolID
+                        : (!string.IsNullOrWhiteSpace(opA.ToolID) ? opA.ToolID : ToolNs);
+
+                    TrySetCompositeStepIncrement(opBExtension, "B");
+                    TrySetCompositeStockAllowance(opBExtension, "B-Extension");
+
+                    int beforeAddCountD = Document?.Operations?.Count ?? -1;
+                    TryDisableCompositeDynamicIfRequested(opBExtension, "B-Extension");
+                    TryAddOperation(opBExtension, freeFormFeature, "Composite2SplitAB:D", false);
+                    TryAppendCompositeSuffixToNewOperations(beforeAddCountD, "B-Extension");
+                    int afterD = Document?.Operations?.Count ?? -1;
+
+                    double dFirstX = PassPercentToX(dFirstPercent, MoveSTL_Module.FrontPointX, direction, absSpan);
+                    double dLastX = PassPercentToX(dLastPercent, MoveSTL_Module.FrontPointX, direction, absSpan);
+                    DentalLogger.Log($"Composite2SplitAB - Operation 추가 완료: D(B-Extension) ({dFirstPercent:F2}->{dLastPercent:F2}, X:{dFirstX:F3}->{dLastX:F3}, +{compositeDExtendFromCEndMm:F3}mm, afterCount={afterD})");
+                }
+                else
+                {
+                    DentalLogger.Log("Composite2SplitAB - D(B-Extension) PRC 로드/캐스팅 실패");
+                }
+            }
+            else
+            {
+                DentalLogger.Log($"Composite2SplitAB - D(B-Extension) 범위 비정상으로 생성 생략: First={dFirstPercent:F2}, Last={dLastPercent:F2}");
+            }
 
             int finalCount = Document?.Operations?.Count ?? -1;
             if (newAAddedThisCall)
