@@ -876,14 +876,35 @@ export const TrackingInquiryPage = () => {
       };
     });
 
+    const getLatestBoxTime = (box: any) => {
+      const deliveredAt = String(box?.deliveredAt || "").trim();
+      const pickedUpAt = String(box?.pickedUpAt || "").trim();
+      const shippedAt = String(box?.shippedAt || "").trim();
+
+      // 카드 헤더 표시 우선순위와 동일하게 최신 시각을 산정한다.
+      const primary = deliveredAt || pickedUpAt || shippedAt;
+      if (primary) {
+        const t = new Date(primary).getTime();
+        if (Number.isFinite(t) && t > 0) return t;
+      }
+
+      // 배송 이벤트가 없으면 포함 의뢰의 생성시각 중 가장 최신값을 사용한다.
+      const requests = Array.isArray(box?.requests) ? box.requests : [];
+      let latestCreatedAt = 0;
+      for (const req of requests) {
+        const t = new Date(String(req?.createdAt || 0)).getTime();
+        if (Number.isFinite(t) && t > latestCreatedAt) {
+          latestCreatedAt = t;
+        }
+      }
+      if (latestCreatedAt > 0) return latestCreatedAt;
+
+      const fallback = new Date(String(box?.createdAt || 0)).getTime();
+      return Number.isFinite(fallback) ? fallback : 0;
+    };
+
     return boxes.slice().sort((a, b) => {
-      const aTime = new Date(
-        a.deliveredAt || a.shippedAt || a.createdAt || 0,
-      ).getTime();
-      const bTime = new Date(
-        b.deliveredAt || b.shippedAt || b.createdAt || 0,
-      ).getTime();
-      return bTime - aTime;
+      return getLatestBoxTime(b) - getLatestBoxTime(a);
     });
   }, [baseFiltered]);
 
@@ -1604,6 +1625,13 @@ export const TrackingInquiryPage = () => {
                       : `${uniqueCreatedAtYmd[0]} ~ ${
                           uniqueCreatedAtYmd[uniqueCreatedAtYmd.length - 1]
                         }`;
+                const latestTimelineLabel = deliveredAt
+                  ? `배송완료 ${formatYmd(deliveredAt)}`
+                  : pickedUpAt
+                    ? `집하 ${formatYmd(pickedUpAt)}`
+                    : shippedAt
+                      ? `발송접수 ${formatYmd(shippedAt)}`
+                      : `의뢰 ${requestDateLabel}`;
                 const boxId = String(box._id || box.trackingNumber);
                 const isExpanded = expandedBoxes.has(boxId);
 
@@ -1683,13 +1711,7 @@ export const TrackingInquiryPage = () => {
                         </div>
                         <div className="flex items-center gap-3">
                           <div className="flex items-center gap-2 text-xs text-gray-500">
-                            <span>의뢰 {requestDateLabel}</span>
-                            {shippedAt && (
-                              <span>발송접수 {formatYmd(shippedAt)}</span>
-                            )}
-                            {pickedUpAt && (
-                              <span>집하 {formatYmd(pickedUpAt)}</span>
-                            )}
+                            <span>{latestTimelineLabel}</span>
                           </div>
                           <span className="text-sm text-gray-500">
                             {di.carrier || "-"}
