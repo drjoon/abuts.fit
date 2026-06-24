@@ -823,6 +823,11 @@ export const TrackingInquiryPage = () => {
     for (const r of only) {
       const di = normalizeDeliveryInfo(r.deliveryInfoRef);
       const trackingNumber = String(di?.trackingNumber || "").trim();
+      const shippingPackageId = String(
+        (r as any)?.shippingPackageId?._id ||
+          (r as any)?.shippingPackageId ||
+          "",
+      ).trim();
       const mailboxAddress = String(r?.mailboxAddress || "").trim();
       const pickedUpAt = String(di?.pickedUpAt || "").trim();
       const shippedAt = String(di?.shippedAt || "").trim();
@@ -834,14 +839,31 @@ export const TrackingInquiryPage = () => {
         : "";
       const dayKey = pickedUpYmd || shippedYmd;
       const fallbackRequestId = String(r?.requestId || r?._id || "").trim();
-      // trackingNumber가 있으면 송장 기준,
-      // 없으면 우편함+날짜 기준,
+
+      // 서로 다른 기공소 건이 같은 카드로 섞이지 않도록 사업자 앵커 기준 키를 추가한다.
+      const requestAnchorId = String(
+        (r as any)?.businessAnchorId?._id || (r as any)?.businessAnchorId || "",
+      ).trim();
+      const requestorAnchorId = String(
+        (r as any)?.requestor?.businessAnchorId || "",
+      ).trim();
+      const requestorBusiness = String((r as any)?.requestor?.business || "")
+        .trim()
+        .toLowerCase();
+      const ownerKey =
+        requestAnchorId || requestorAnchorId || requestorBusiness || "unknown";
+
+      // shippingPackageId가 있으면 패키지+사업자 기준,
+      // 없으면 송장+사업자 기준,
+      // 그 외에는 우편함+날짜+사업자 기준,
       // 날짜마저 없으면 개별 의뢰 기준으로만 묶는다.
-      const boxKey = trackingNumber
-        ? `tn:${trackingNumber}`
-        : mailboxAddress && dayKey
-          ? `mb:${mailboxAddress}:${dayKey}`
-          : `request:${fallbackRequestId}`;
+      const boxKey = shippingPackageId
+        ? `sp:${ownerKey}:${shippingPackageId}`
+        : trackingNumber
+          ? `tn:${ownerKey}:${trackingNumber}`
+          : mailboxAddress && dayKey
+            ? `mb:${ownerKey}:${mailboxAddress}:${dayKey}`
+            : `request:${fallbackRequestId}`;
       if (!boxMap.has(boxKey)) {
         boxMap.set(boxKey, []);
       }
@@ -877,12 +899,13 @@ export const TrackingInquiryPage = () => {
     });
 
     const getLatestBoxTime = (box: any) => {
-      const deliveredAt = String(box?.deliveredAt || "").trim();
-      const pickedUpAt = String(box?.pickedUpAt || "").trim();
       const shippedAt = String(box?.shippedAt || "").trim();
+      const pickedUpAt = String(box?.pickedUpAt || "").trim();
+      const deliveredAt = String(box?.deliveredAt || "").trim();
 
-      // 카드 헤더 표시 우선순위와 동일하게 최신 시각을 산정한다.
-      const primary = deliveredAt || pickedUpAt || shippedAt;
+      // 정렬 기준은 '접수(발송)' 시각을 최우선으로 사용한다.
+      // (사용자 눈에 보이는 카드 순서가 접수 시간 최신순과 일치하도록)
+      const primary = shippedAt || pickedUpAt || deliveredAt;
       if (primary) {
         const t = new Date(primary).getTime();
         if (Number.isFinite(t) && t > 0) return t;
@@ -1575,329 +1598,323 @@ export const TrackingInquiryPage = () => {
                 </div>
               )}
 
-              {shippingRows.slice(0, visibleCount).map((box) => {
-                const di = normalizeDeliveryInfo(box.deliveryInfoRef);
-                const shippedAt = di.shippedAt ? String(di.shippedAt) : "";
-                const deliveredAt = di.deliveredAt
-                  ? String(di.deliveredAt)
-                  : "";
-                const pickedUpAt = di.pickedUpAt ? String(di.pickedUpAt) : "";
-                const status = getShippingStatus(box);
-                const requestCount = (box as any)?.requestCount || 1;
-                const requests = (box as any)?.requests || [];
-                const cardRequestIds = requests
-                  .map((req: any) => String(req?._id || "").trim())
-                  .filter(Boolean);
-                const allCardSelected =
-                  cardRequestIds.length > 0 &&
-                  cardRequestIds.every((id: string) =>
-                    selectedRecallRequestIds.has(id),
-                  );
-                const firstRequest = requests[0] || {};
-                const mailboxCode = String(
-                  box.mailboxAddress || box.boxKey || "",
-                ).trim();
-                const requestorBusiness = String(
-                  firstRequest?.requestor?.business || "",
-                ).trim();
-                const requestIdList: string[] = requests
-                  .map((req: any) => String(req?.requestId || "").trim())
-                  .filter((v: string) => Boolean(v));
-                const requestIdsPreviewCount = Math.min(
-                  requestIdList.length,
-                  3,
-                );
-                const requestIdsPreview =
-                  requestIdsPreviewCount > 0
-                    ? `${requestIdsPreviewCount}건`
+              <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
+                {shippingRows.slice(0, visibleCount).map((box) => {
+                  const di = normalizeDeliveryInfo(box.deliveryInfoRef);
+                  const shippedAt = di.shippedAt ? String(di.shippedAt) : "";
+                  const deliveredAt = di.deliveredAt
+                    ? String(di.deliveredAt)
                     : "";
-                const createdAtYmdList: string[] = requests
-                  .map((req: any) => formatYmd(String(req?.createdAt || "")))
-                  .filter((v: string) => v && v !== "-");
-                const uniqueCreatedAtYmd: string[] = Array.from(
-                  new Set<string>(createdAtYmdList),
-                ).sort();
-                const requestDateLabel =
-                  uniqueCreatedAtYmd.length === 0
-                    ? "-"
-                    : uniqueCreatedAtYmd.length === 1
-                      ? uniqueCreatedAtYmd[0]
-                      : `${uniqueCreatedAtYmd[0]} ~ ${
-                          uniqueCreatedAtYmd[uniqueCreatedAtYmd.length - 1]
-                        }`;
-                const latestTimelineLabel = deliveredAt
-                  ? `배송완료 ${formatYmd(deliveredAt)}`
-                  : pickedUpAt
-                    ? `집하 ${formatYmd(pickedUpAt)}`
-                    : shippedAt
-                      ? `발송접수 ${formatYmd(shippedAt)}`
-                      : `의뢰 ${requestDateLabel}`;
-                const boxId = String(box._id || box.trackingNumber);
-                const isExpanded = expandedBoxes.has(boxId);
+                  const pickedUpAt = di.pickedUpAt ? String(di.pickedUpAt) : "";
+                  const status = getShippingStatus(box);
+                  const requestCount = (box as any)?.requestCount || 1;
+                  const requests = (box as any)?.requests || [];
+                  const cardRequestIds = requests
+                    .map((req: any) => String(req?._id || "").trim())
+                    .filter(Boolean);
+                  const allCardSelected =
+                    cardRequestIds.length > 0 &&
+                    cardRequestIds.every((id: string) =>
+                      selectedRecallRequestIds.has(id),
+                    );
+                  const firstRequest = requests[0] || {};
+                  const mailboxCode = String(
+                    box.mailboxAddress || box.boxKey || "",
+                  ).trim();
+                  const requestorBusiness = String(
+                    firstRequest?.requestor?.business || "",
+                  ).trim();
+                  const createdAtYmdList: string[] = requests
+                    .map((req: any) => formatYmd(String(req?.createdAt || "")))
+                    .filter((v: string) => v && v !== "-");
+                  const uniqueCreatedAtYmd: string[] = Array.from(
+                    new Set<string>(createdAtYmdList),
+                  ).sort();
+                  const requestDateLabel =
+                    uniqueCreatedAtYmd.length === 0
+                      ? "-"
+                      : uniqueCreatedAtYmd.length === 1
+                        ? uniqueCreatedAtYmd[0]
+                        : `${uniqueCreatedAtYmd[0]} ~ ${
+                            uniqueCreatedAtYmd[uniqueCreatedAtYmd.length - 1]
+                          }`;
+                  const latestTimelineLabel = deliveredAt
+                    ? `배송완료 ${formatYmd(deliveredAt)}`
+                    : pickedUpAt
+                      ? `집하 ${formatYmd(pickedUpAt)}`
+                      : shippedAt
+                        ? `발송접수 ${formatYmd(shippedAt)}`
+                        : `의뢰 ${requestDateLabel}`;
+                  const boxId = String(box._id || box.trackingNumber);
+                  const isExpanded = expandedBoxes.has(boxId);
 
-                const toggleExpanded = () => {
-                  const newSet = new Set(expandedBoxes);
-                  if (newSet.has(boxId)) {
-                    newSet.delete(boxId);
-                  } else {
-                    newSet.add(boxId);
-                  }
-                  setExpandedBoxes(newSet);
-                };
+                  const toggleExpanded = () => {
+                    const newSet = new Set(expandedBoxes);
+                    if (newSet.has(boxId)) {
+                      newSet.delete(boxId);
+                    } else {
+                      newSet.add(boxId);
+                    }
+                    setExpandedBoxes(newSet);
+                  };
 
-                return (
-                  <div
-                    key={boxId}
-                    className="rounded-lg border bg-white shadow-sm hover:shadow-md transition-shadow"
-                  >
+                  return (
                     <div
-                      className="p-4 cursor-pointer hover:bg-gray-50 transition-colors"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        toggleExpanded();
-                      }}
+                      key={boxId}
+                      className="rounded-lg border bg-white shadow-sm hover:shadow-md transition-shadow"
                     >
-                      <div className="flex items-center justify-between gap-4">
-                        <div className="flex items-center gap-3 flex-1">
-                          {recallMode && (
-                            <label
-                              className="inline-flex items-center gap-1 text-xs text-gray-700"
-                              onClick={(e) => e.stopPropagation()}
+                      <div
+                        className="p-4 cursor-pointer hover:bg-gray-50 transition-colors"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleExpanded();
+                        }}
+                      >
+                        <div className="flex items-center justify-between gap-4">
+                          <div className="flex items-center gap-3 flex-1">
+                            {recallMode && (
+                              <label
+                                className="inline-flex items-center gap-1 text-xs text-gray-700"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={allCardSelected}
+                                  onChange={(e) => {
+                                    e.stopPropagation();
+                                    setSelectedRecallRequestIds((prev) => {
+                                      const next = new Set(prev);
+                                      if (allCardSelected) {
+                                        cardRequestIds.forEach((id: string) =>
+                                          next.delete(id),
+                                        );
+                                      } else {
+                                        cardRequestIds.forEach((id: string) =>
+                                          next.add(id),
+                                        );
+                                      }
+                                      return next;
+                                    });
+                                  }}
+                                />
+                                카드전체
+                              </label>
+                            )}
+                            <span className="inline-block bg-blue-100 text-blue-800 text-xs font-semibold px-2.5 py-0.5 rounded whitespace-nowrap">
+                              {requestCount}건
+                            </span>
+                            <span
+                              className={`inline-block text-xs font-semibold px-2.5 py-0.5 rounded whitespace-nowrap ${
+                                status === "배송완료"
+                                  ? "bg-green-100 text-green-800"
+                                  : status === "집하완료"
+                                    ? "bg-blue-100 text-blue-800"
+                                    : status === "배송중"
+                                      ? "bg-amber-100 text-amber-800"
+                                      : "bg-gray-100 text-gray-800"
+                              }`}
                             >
-                              <input
-                                type="checkbox"
-                                checked={allCardSelected}
-                                onChange={(e) => {
-                                  e.stopPropagation();
-                                  setSelectedRecallRequestIds((prev) => {
-                                    const next = new Set(prev);
-                                    if (allCardSelected) {
-                                      cardRequestIds.forEach((id: string) =>
-                                        next.delete(id),
-                                      );
-                                    } else {
-                                      cardRequestIds.forEach((id: string) =>
-                                        next.add(id),
-                                      );
-                                    }
-                                    return next;
-                                  });
-                                }}
-                              />
-                              카드전체
-                            </label>
-                          )}
-                          <span className="inline-block bg-blue-100 text-blue-800 text-xs font-semibold px-2.5 py-0.5 rounded whitespace-nowrap">
-                            {requestCount}건
-                          </span>
-                          <span
-                            className={`inline-block text-xs font-semibold px-2.5 py-0.5 rounded whitespace-nowrap ${
-                              status === "배송완료"
-                                ? "bg-green-100 text-green-800"
-                                : status === "집하완료"
-                                  ? "bg-blue-100 text-blue-800"
-                                  : status === "배송중"
-                                    ? "bg-amber-100 text-amber-800"
-                                    : "bg-gray-100 text-gray-800"
-                            }`}
-                          >
-                            {status}
-                          </span>
-                          <span className="text-sm text-gray-600">
-                            {mailboxCode || "-"}
-                            {requestorBusiness ? ` / ${requestorBusiness}` : ""}
-                            {requestIdsPreview ? ` · ${requestIdsPreview}` : ""}
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-3">
-                          <div className="flex items-center gap-2 text-xs text-gray-500">
-                            <span>{latestTimelineLabel}</span>
+                              {status}
+                            </span>
+                            <span className="text-sm text-gray-600">
+                              {mailboxCode || "-"}
+                              {requestorBusiness
+                                ? ` / ${requestorBusiness}`
+                                : ""}
+                            </span>
                           </div>
-                          <span className="text-sm text-gray-500">
-                            {di.carrier || "-"}
-                          </span>
-                          <button className="text-gray-400 hover:text-gray-600 flex-shrink-0">
-                            {isExpanded ? "▼" : "▶"}
-                          </button>
+                          <div className="flex items-center gap-3">
+                            <div className="flex items-center gap-2 text-xs text-gray-500">
+                              <span>{latestTimelineLabel}</span>
+                            </div>
+                            <span className="text-sm text-gray-500">
+                              {di.carrier || "-"}
+                            </span>
+                            <button className="text-gray-400 hover:text-gray-600 flex-shrink-0">
+                              {isExpanded ? "▼" : "▶"}
+                            </button>
+                          </div>
                         </div>
                       </div>
-                    </div>
 
-                    {isExpanded && (
-                      <div className="border-t bg-gray-50 p-4 space-y-3">
-                        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-                          <div>
-                            <div className="text-xs text-gray-500 mb-1">
-                              접수(발송)
+                      {isExpanded && (
+                        <div className="border-t bg-gray-50 p-4 space-y-3">
+                          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                            <div>
+                              <div className="text-xs text-gray-500 mb-1">
+                                접수(발송)
+                              </div>
+                              <div className="text-sm font-medium">
+                                {formatDateTime(shippedAt) || "-"}
+                              </div>
                             </div>
-                            <div className="text-sm font-medium">
-                              {formatDateTime(shippedAt) || "-"}
+                            <div>
+                              <div className="text-xs text-gray-500 mb-1">
+                                집하완료
+                              </div>
+                              <div className="text-sm font-medium">
+                                {formatDateTime(pickedUpAt) || "-"}
+                              </div>
+                            </div>
+                            <div>
+                              <div className="text-xs text-gray-500 mb-1">
+                                배송완료
+                              </div>
+                              <div className="text-sm font-medium">
+                                {formatDateTime(deliveredAt) || "-"}
+                              </div>
                             </div>
                           </div>
-                          <div>
-                            <div className="text-xs text-gray-500 mb-1">
-                              집하완료
-                            </div>
-                            <div className="text-sm font-medium">
-                              {formatDateTime(pickedUpAt) || "-"}
-                            </div>
-                          </div>
-                          <div>
-                            <div className="text-xs text-gray-500 mb-1">
-                              배송완료
-                            </div>
-                            <div className="text-sm font-medium">
-                              {formatDateTime(deliveredAt) || "-"}
-                            </div>
-                          </div>
-                        </div>
 
-                        {requests.length > 0 && (
-                          <div>
-                            <div className="text-xs text-gray-500 mb-2 font-medium">
-                              포함된 의뢰
-                            </div>
-                            <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
-                              {requests.map((req: any) => {
-                                const ci: any = req.caseInfos || {};
-                                const recallReqId = String(
-                                  req?._id || "",
-                                ).trim();
-                                const recallChecked =
-                                  recallReqId &&
-                                  selectedRecallRequestIds.has(recallReqId);
-                                const stage = String(
-                                  req.manufacturerStage || "",
-                                ).trim();
-                                const di = normalizeDeliveryInfo(
-                                  req.deliveryInfoRef,
-                                );
-                                const isDelivered = !!di.deliveredAt;
-                                const isTrackingStage = stage === "추적관리";
-                                const isSampleRequest =
-                                  String((req as any)?.source || "").trim() ===
-                                  "manufacturer_sample";
-                                const canCloneAsSample =
-                                  !isSampleRequest &&
-                                  (isTrackingStage || isDelivered);
-                                return (
-                                  <div
-                                    key={String(req._id || req.requestId)}
-                                    className="text-sm bg-white p-2 rounded border border-gray-200"
-                                  >
-                                    <div className="flex items-center justify-between">
-                                      <div className="flex items-center gap-2">
-                                        {recallMode && (
-                                          <input
-                                            type="checkbox"
-                                            checked={Boolean(recallChecked)}
-                                            onChange={(e) => {
-                                              e.stopPropagation();
-                                              if (!recallReqId) return;
-                                              setSelectedRecallRequestIds(
-                                                (prev) => {
-                                                  const next = new Set(prev);
-                                                  if (next.has(recallReqId)) {
-                                                    next.delete(recallReqId);
-                                                  } else {
-                                                    next.add(recallReqId);
-                                                  }
-                                                  return next;
-                                                },
-                                              );
-                                            }}
-                                          />
-                                        )}
-                                        <div className="font-medium">
-                                          {req.requestId || "-"}
-                                        </div>
-                                      </div>
-                                      <div className="flex items-center gap-1">
-                                        {canCloneAsSample && (
-                                          <Button
-                                            variant="outline"
-                                            size="sm"
-                                            className="h-6 px-2 text-xs border-purple-300 bg-purple-50 text-purple-700 hover:bg-purple-100"
-                                            onClick={async (e) => {
-                                              e.stopPropagation();
-                                              try {
-                                                const res = await fetch(
-                                                  `/api/requests/${req._id}/clone-as-sample`,
-                                                  {
-                                                    method: "POST",
-                                                    headers: {
-                                                      Authorization: `Bearer ${token}`,
-                                                      "Content-Type":
-                                                        "application/json",
-                                                    },
+                          {requests.length > 0 && (
+                            <div>
+                              <div className="text-xs text-gray-500 mb-2 font-medium">
+                                포함된 의뢰
+                              </div>
+                              <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
+                                {requests.map((req: any) => {
+                                  const ci: any = req.caseInfos || {};
+                                  const recallReqId = String(
+                                    req?._id || "",
+                                  ).trim();
+                                  const recallChecked =
+                                    recallReqId &&
+                                    selectedRecallRequestIds.has(recallReqId);
+                                  const stage = String(
+                                    req.manufacturerStage || "",
+                                  ).trim();
+                                  const di = normalizeDeliveryInfo(
+                                    req.deliveryInfoRef,
+                                  );
+                                  const isDelivered = !!di.deliveredAt;
+                                  const isTrackingStage = stage === "추적관리";
+                                  const isSampleRequest =
+                                    String(
+                                      (req as any)?.source || "",
+                                    ).trim() === "manufacturer_sample";
+                                  const canCloneAsSample =
+                                    !isSampleRequest &&
+                                    (isTrackingStage || isDelivered);
+                                  return (
+                                    <div
+                                      key={String(req._id || req.requestId)}
+                                      className="text-sm bg-white p-2 rounded border border-gray-200"
+                                    >
+                                      <div className="flex items-center justify-between">
+                                        <div className="flex items-center gap-2">
+                                          {recallMode && (
+                                            <input
+                                              type="checkbox"
+                                              checked={Boolean(recallChecked)}
+                                              onChange={(e) => {
+                                                e.stopPropagation();
+                                                if (!recallReqId) return;
+                                                setSelectedRecallRequestIds(
+                                                  (prev) => {
+                                                    const next = new Set(prev);
+                                                    if (next.has(recallReqId)) {
+                                                      next.delete(recallReqId);
+                                                    } else {
+                                                      next.add(recallReqId);
+                                                    }
+                                                    return next;
                                                   },
                                                 );
-                                                const data = await res.json();
-                                                if (data.success) {
-                                                  toast({
-                                                    title: "R&D 샘플 복사 완료",
-                                                    description: `새 의뢰ID: ${data.data.requestId}`,
-                                                  });
-                                                } else {
+                                              }}
+                                            />
+                                          )}
+                                          <div className="font-medium">
+                                            {req.requestId || "-"}
+                                          </div>
+                                        </div>
+                                        <div className="flex items-center gap-1">
+                                          {canCloneAsSample && (
+                                            <Button
+                                              variant="outline"
+                                              size="sm"
+                                              className="h-6 px-2 text-xs border-purple-300 bg-purple-50 text-purple-700 hover:bg-purple-100"
+                                              onClick={async (e) => {
+                                                e.stopPropagation();
+                                                try {
+                                                  const res = await fetch(
+                                                    `/api/requests/${req._id}/clone-as-sample`,
+                                                    {
+                                                      method: "POST",
+                                                      headers: {
+                                                        Authorization: `Bearer ${token}`,
+                                                        "Content-Type":
+                                                          "application/json",
+                                                      },
+                                                    },
+                                                  );
+                                                  const data = await res.json();
+                                                  if (data.success) {
+                                                    toast({
+                                                      title:
+                                                        "R&D 샘플 복사 완료",
+                                                      description: `새 의뢰ID: ${data.data.requestId}`,
+                                                    });
+                                                  } else {
+                                                    toast({
+                                                      title: "복사 실패",
+                                                      description:
+                                                        data.message ||
+                                                        "알 수 없는 오류",
+                                                      variant: "destructive",
+                                                    });
+                                                  }
+                                                } catch (e: any) {
                                                   toast({
                                                     title: "복사 실패",
                                                     description:
-                                                      data.message ||
-                                                      "알 수 없는 오류",
+                                                      e?.message ||
+                                                      "네트워크 오류",
                                                     variant: "destructive",
                                                   });
                                                 }
-                                              } catch (e: any) {
-                                                toast({
-                                                  title: "복사 실패",
-                                                  description:
-                                                    e?.message ||
-                                                    "네트워크 오류",
-                                                  variant: "destructive",
-                                                });
-                                              }
-                                            }}
-                                          >
-                                            <FlaskConical className="h-3 w-3 mr-1" />
-                                            R&D
-                                          </Button>
-                                        )}
-                                        {isSampleRequest && (
-                                          <Button
-                                            variant="destructive"
-                                            size="sm"
-                                            className="h-6 px-2 text-xs"
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              void handleDeleteSampleRequest(
-                                                req,
-                                              );
-                                            }}
-                                          >
-                                            <Trash2 className="h-3 w-3 mr-1" />
-                                            삭제
-                                          </Button>
-                                        )}
+                                              }}
+                                            >
+                                              <FlaskConical className="h-3 w-3 mr-1" />
+                                              R&D
+                                            </Button>
+                                          )}
+                                          {isSampleRequest && (
+                                            <Button
+                                              variant="destructive"
+                                              size="sm"
+                                              className="h-6 px-2 text-xs"
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                void handleDeleteSampleRequest(
+                                                  req,
+                                                );
+                                              }}
+                                            >
+                                              <Trash2 className="h-3 w-3 mr-1" />
+                                              삭제
+                                            </Button>
+                                          )}
+                                        </div>
+                                      </div>
+                                      <div className="text-xs text-gray-600">
+                                        {ci.clinicName || "-"}
+                                      </div>
+                                      <div className="text-xs text-gray-600">
+                                        {ci.patientName || "-"} /{" "}
+                                        {ci.tooth || "-"}
                                       </div>
                                     </div>
-                                    <div className="text-xs text-gray-600">
-                                      {ci.clinicName || "-"}
-                                    </div>
-                                    <div className="text-xs text-gray-600">
-                                      {ci.patientName || "-"} /{" "}
-                                      {ci.tooth || "-"}
-                                    </div>
-                                  </div>
-                                );
-                              })}
+                                  );
+                                })}
+                              </div>
                             </div>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
 
               {!loading && shippingRows.length === 0 && (
                 <div className="text-center py-8 text-muted-foreground">
