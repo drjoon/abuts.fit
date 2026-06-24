@@ -1039,10 +1039,6 @@ export function SelfInspectionReportModal({
           {/* ── Right: Inspection Form ── */}
           <div className="flex-1 overflow-y-auto px-5 py-4 max-h-[calc(90vh-57px)]">
             <div ref={reportRef} className="bg-white">
-              <p className="text-right text-[11px] font-bold text-red-600 mb-1">
-                수정작성일자 : 2026.06.23 12:33
-              </p>
-
               <div className="grid grid-cols-[1fr_220px] text-[12px] font-bold border border-slate-800 border-b-0 mb-0">
                 <div className="px-2 py-1 bg-[#eea13a]">
                   모델에 따라 자동변경 항목
@@ -1295,18 +1291,18 @@ export function SelfInspectionReportModal({
               <div className="flex-1 flex flex-col items-end gap-2">
                 {!confirmed && (
                   <p className="text-[11px] text-red-600 text-right">
-                    확인 후 수정할 수 없습니다
+                    확정 후 수정할 수 없습니다
                   </p>
                 )}
                 {confirmed && (
                   <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1 text-center w-full">
-                    성적서가 확인되었습니다. 더 이상 수정할 수 없습니다.
+                    성적서가 확정되었습니다. 더 이상 수정할 수 없습니다.
                   </p>
                 )}
 
                 {overallJudgment === "불합격" && !confirmed && (
                   <p className="text-[11px] text-red-600">
-                    판정이 불합격이면 확인할 수 없습니다.
+                    판정이 불합격이면 확정할 수 없습니다.
                   </p>
                 )}
 
@@ -1381,7 +1377,7 @@ export function SelfInspectionReportModal({
                             : "bg-slate-800 text-white hover:bg-slate-700 active:bg-slate-900"
                       }`}
                     >
-                      {confirmed ? "✓ 확인됨" : saving ? "저장 중…" : "확인"}
+                      {confirmed ? "✓ 확정됨" : saving ? "저장 중…" : "확정"}
                     </button>
                   )}
                 </div>
