@@ -1,5 +1,5 @@
 import { useEffect, useRef, type Dispatch, type SetStateAction } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+
 import { useToast } from "@/shared/hooks/use-toast";
 import {
   onAppEvent,
@@ -41,7 +41,6 @@ export function useWorksheetRealtimeStatus({
   removeOnMachiningComplete = false,
   matchesCurrentPage,
 }: UseWorksheetRealtimeStatusParams) {
-  const queryClient = useQueryClient();
   const realtimeBaseRef = useRef<Record<string, number>>({});
   const latestRef = useRef({
     previewOpen,
@@ -347,10 +346,6 @@ export function useWorksheetRealtimeStatus({
           }
           // 전체 목록 재조회로 탭 필터링도 갱신
           if (fetchRequests) void fetchRequests(true);
-          // 최상단 메뉴 숫자(worksheet-assigned-summary)도 갱신
-          void queryClient.invalidateQueries({
-            queryKey: ["worksheet-assigned-summary"],
-          });
           return;
         }
         case "request:stl-metadata-updated": {
@@ -419,9 +414,6 @@ export function useWorksheetRealtimeStatus({
             | undefined;
           if (!eventRequest) return;
           setRequests((prev) => applyRequestPatch(prev, eventRequest));
-          void queryClient.invalidateQueries({
-            queryKey: ["worksheet-assigned-summary"],
-          });
           return;
         }
         case "request:delivery-updated-batch": {
@@ -440,9 +432,6 @@ export function useWorksheetRealtimeStatus({
             }
             return next;
           });
-          void queryClient.invalidateQueries({
-            queryKey: ["worksheet-assigned-summary"],
-          });
           return;
         }
         case "worksheet:count-update": {
@@ -451,13 +440,6 @@ export function useWorksheetRealtimeStatus({
           const source = String(payload?.source || "").trim();
           const delta = Number(payload?.delta || 0);
           const action = String(payload?.action || "").trim();
-          void queryClient.invalidateQueries({
-            queryKey: ["worksheet-assigned-summary"],
-          });
-          void queryClient.refetchQueries({
-            queryKey: ["worksheet-assigned-summary"],
-            type: "active",
-          });
           // 현재 열린 워크시트 탭의 목록도 즉시 재조회 (R&D 탭 신규 샘플 즉시 반영)
           if (fetchRequests) {
             void fetchRequests(true);
@@ -592,9 +574,6 @@ export function useWorksheetRealtimeStatus({
       }
 
       if (fetchRequests) void fetchRequests(true);
-      void queryClient.invalidateQueries({
-        queryKey: ["worksheet-assigned-summary"],
-      });
     });
 
     return () => {
@@ -603,7 +582,7 @@ export function useWorksheetRealtimeStatus({
       if (typeof unsubTick === "function") unsubTick();
       if (typeof unsubCompleted === "function") unsubCompleted();
     };
-  }, [enabled, token, setRequests, fetchRequests, toast, queryClient]);
+  }, [enabled, token, setRequests, fetchRequests, toast]);
 
   return {
     realtimeBaseRef,

@@ -236,6 +236,21 @@ export const RequestPage = ({
           if (append && list.length > 0) {
             pageState.setVisibleCount((prev) => prev + list.length);
           }
+
+          // 상단 워크시트 요약(assigned/dashboard-summary) 호출 정책:
+          // - 최초 페이지 로드(append=false && silent=false) 1회
+          // - 무한스크롤 추가 로드(append=true) 시 1회
+          // - 실시간 동기화용 조용한 리로드(append=false && silent=true)는 호출하지 않음
+          const shouldRefreshWorksheetSummary = append || !silent;
+          if (shouldRefreshWorksheetSummary) {
+            void queryClient.invalidateQueries({
+              queryKey: ["worksheet-assigned-summary"],
+            });
+            void queryClient.refetchQueries({
+              queryKey: ["worksheet-assigned-summary"],
+              type: "active",
+            });
+          }
         } else {
           pageState.hasMoreRefForCore.current = false;
           hasMoreRef.current = false;
