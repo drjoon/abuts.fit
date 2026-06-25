@@ -32,7 +32,7 @@
   </PrcFilePath>
   <NumData>
     <double>0</double>
-    <double>45</double> # Exit angle
+    <double>80</double> # Exit angle
     <double>1</double> # Front Mill Depth
     <double>1</double> # Turning Depth
     <double>3</double>
