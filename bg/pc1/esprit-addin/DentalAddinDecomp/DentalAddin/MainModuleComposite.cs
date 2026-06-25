@@ -315,7 +315,10 @@ namespace DentalAddin
             safeBFirstMax = Clamp(safeBFirstMax, firstPercent + 0.1, effectiveLastPercent - 0.1);
             bool startEndBFirstGuardApplied = false;
 
-            DentalLogger.Log($"Composite2SplitAB - enabled=1, splitX={splitX:F3}, prcA={prcA}, prcB={prcB}");
+            string phaseMode = (GetEnvString("ABUTS_COMPOSITE_PHASE_MODE") ?? string.Empty).Trim().ToUpperInvariant();
+            bool runA = !string.Equals(phaseMode, "BC_ONLY", StringComparison.OrdinalIgnoreCase);
+            bool runBC = !string.Equals(phaseMode, "A_ONLY", StringComparison.OrdinalIgnoreCase);
+            DentalLogger.Log($"Composite2SplitAB - enabled=1, splitX={splitX:F3}, prcA={prcA}, prcB={prcB}, phaseMode='{phaseMode}', runA={runA}, runBC={runBC}");
 
             bool splitDegenerate = Math.Abs(splitPercent - firstPercent) < 0.01 || Math.Abs(effectiveLastPercent - splitPercent) < 0.01;
             if (splitDegenerate)
@@ -481,67 +484,84 @@ namespace DentalAddin
             int beforeAddCount = Document?.Operations?.Count ?? -1;
             DentalLogger.Log($"Composite2SplitAB - Operation 추가 시작 (beforeCount={beforeAddCount})");
 
-            // 공정 순서 정책: A(기존, 현재 B) → B(기존, 현재 C)
-            int beforeAddCountBaseA = Document?.Operations?.Count ?? -1;
-            TryDisableCompositeDynamicIfRequested(opA, "A");
-            TryAddOperation(opA, freeFormFeature, "Composite2SplitAB:A", false);
-            TryAppendCompositeSuffixToNewOperations(beforeAddCountBaseA, "A");
-            int afterA = Document?.Operations?.Count ?? -1;
-            DentalLogger.Log($"Composite2SplitAB - Operation 추가 완료: B(기존 A) (afterCount={afterA})");
-            TryMoveCompositeFinishBeforeTurnB("FINISH_A", "FINISH_B");
-
-            int beforeAddCountB = Document?.Operations?.Count ?? -1;
-            TryDisableCompositeDynamicIfRequested(opB, "B");
-            TryAddOperation(opB, freeFormFeature, "Composite2SplitAB:B", false);
-            TryAppendCompositeSuffixToNewOperations(beforeAddCountB, "B");
-            int afterB = Document?.Operations?.Count ?? -1;
-            DentalLogger.Log($"Composite2SplitAB - Operation 추가 완료: C(기존 B) (afterCount={afterB})");
-
-            // 요청사항: 5axis Composite D(B-Extension)
-            // - 시작: C 종료점(=BackPointX+0.3mm)
-            // - 종료: 시작점 +0.3mm(StartEndScale 기준)
-            double dFirstPercent = opB.LastPassPercent;
-            double dLastPercent = ShiftPassPercentByStartEndScaleMmNoClamp(dFirstPercent, compositeDExtendFromCEndMm);
-            if (dLastPercent > dFirstPercent + 1e-6)
+            // 공정 순서 정책:
+            // - A_ONLY 모드: FINISH_A만 생성 (TURN_B 이전 배치용)
+            // - BC_ONLY 모드: FINISH_B1/B2만 생성 (원래 순서 유지용)
+            // - 기본 모드: A → B1 → B2 모두 생성
+            if (runA)
             {
-                ITechnology[] techDExt = TryOpenProcess(technologyUtility, prcB, "Composite2SplitAB:D");
-                TechLatheMill5xComposite opBExtension = null;
-                if (techDExt.Length > 0)
+                int beforeAddCountBaseA = Document?.Operations?.Count ?? -1;
+                TryDisableCompositeDynamicIfRequested(opA, "A");
+                TryAddOperation(opA, freeFormFeature, "Composite2SplitAB:A", false);
+                TryAppendCompositeSuffixToNewOperations(beforeAddCountBaseA, "A");
+                int afterA = Document?.Operations?.Count ?? -1;
+                DentalLogger.Log($"Composite2SplitAB - Operation 추가 완료: B(기존 A) (afterCount={afterA})");
+                TryMoveCompositeFinishBeforeTurnB("FINISH_A", "FINISH_B");
+            }
+            else
+            {
+                DentalLogger.Log("Composite2SplitAB - phaseMode=BC_ONLY, FINISH_A 생성 생략");
+            }
+
+            if (runBC)
+            {
+                int beforeAddCountB = Document?.Operations?.Count ?? -1;
+                TryDisableCompositeDynamicIfRequested(opB, "B");
+                TryAddOperation(opB, freeFormFeature, "Composite2SplitAB:B", false);
+                TryAppendCompositeSuffixToNewOperations(beforeAddCountB, "B");
+                int afterB = Document?.Operations?.Count ?? -1;
+                DentalLogger.Log($"Composite2SplitAB - Operation 추가 완료: C(기존 B) (afterCount={afterB})");
+
+                // 요청사항: 5axis Composite D(B-Extension)
+                // - 시작: C 종료점(=BackPointX+0.3mm)
+                // - 종료: 시작점 +0.3mm(StartEndScale 기준)
+                double dFirstPercent = opB.LastPassPercent;
+                double dLastPercent = ShiftPassPercentByStartEndScaleMmNoClamp(dFirstPercent, compositeDExtendFromCEndMm);
+                if (dLastPercent > dFirstPercent + 1e-6)
                 {
-                    opBExtension = techDExt[0] as TechLatheMill5xComposite;
-                }
+                    ITechnology[] techDExt = TryOpenProcess(technologyUtility, prcB, "Composite2SplitAB:D");
+                    TechLatheMill5xComposite opBExtension = null;
+                    if (techDExt.Length > 0)
+                    {
+                        opBExtension = techDExt[0] as TechLatheMill5xComposite;
+                    }
 
-                if (opBExtension != null)
-                {
-                    opBExtension.PassPosition = espMill5xCompositePassPosition.espMill5xCompositePassPositionStartEndPosition;
-                    opBExtension.FirstPassPercent = dFirstPercent;
-                    opBExtension.LastPassPercent = dLastPercent;
-                    opBExtension.DriveSurface = opA.DriveSurface;
-                    opBExtension.ToolID = !string.IsNullOrWhiteSpace(opB.ToolID)
-                        ? opB.ToolID
-                        : (!string.IsNullOrWhiteSpace(opA.ToolID) ? opA.ToolID : ToolNs);
+                    if (opBExtension != null)
+                    {
+                        opBExtension.PassPosition = espMill5xCompositePassPosition.espMill5xCompositePassPositionStartEndPosition;
+                        opBExtension.FirstPassPercent = dFirstPercent;
+                        opBExtension.LastPassPercent = dLastPercent;
+                        opBExtension.DriveSurface = opA.DriveSurface;
+                        opBExtension.ToolID = !string.IsNullOrWhiteSpace(opB.ToolID)
+                            ? opB.ToolID
+                            : (!string.IsNullOrWhiteSpace(opA.ToolID) ? opA.ToolID : ToolNs);
 
-                    TrySetCompositeStepIncrement(opBExtension, "B");
-                    TrySetCompositeStockAllowance(opBExtension, "B-Extension");
+                        TrySetCompositeStepIncrement(opBExtension, "B");
+                        TrySetCompositeStockAllowance(opBExtension, "B-Extension");
 
-                    int beforeAddCountD = Document?.Operations?.Count ?? -1;
-                    TryDisableCompositeDynamicIfRequested(opBExtension, "B-Extension");
-                    TryAddOperation(opBExtension, freeFormFeature, "Composite2SplitAB:D", false);
-                    TryAppendCompositeSuffixToNewOperations(beforeAddCountD, "B-Extension");
-                    int afterD = Document?.Operations?.Count ?? -1;
+                        int beforeAddCountD = Document?.Operations?.Count ?? -1;
+                        TryDisableCompositeDynamicIfRequested(opBExtension, "B-Extension");
+                        TryAddOperation(opBExtension, freeFormFeature, "Composite2SplitAB:D", false);
+                        TryAppendCompositeSuffixToNewOperations(beforeAddCountD, "B-Extension");
+                        int afterD = Document?.Operations?.Count ?? -1;
 
-                    double dFirstX = PassPercentToX(dFirstPercent, MoveSTL_Module.FrontPointX, direction, absSpan);
-                    double dLastX = PassPercentToX(dLastPercent, MoveSTL_Module.FrontPointX, direction, absSpan);
-                    DentalLogger.Log($"Composite2SplitAB - Operation 추가 완료: D(B-Extension) ({dFirstPercent:F2}->{dLastPercent:F2}, X:{dFirstX:F3}->{dLastX:F3}, +{compositeDExtendFromCEndMm:F3}mm, afterCount={afterD})");
+                        double dFirstX = PassPercentToX(dFirstPercent, MoveSTL_Module.FrontPointX, direction, absSpan);
+                        double dLastX = PassPercentToX(dLastPercent, MoveSTL_Module.FrontPointX, direction, absSpan);
+                        DentalLogger.Log($"Composite2SplitAB - Operation 추가 완료: D(B-Extension) ({dFirstPercent:F2}->{dLastPercent:F2}, X:{dFirstX:F3}->{dLastX:F3}, +{compositeDExtendFromCEndMm:F3}mm, afterCount={afterD})");
+                    }
+                    else
+                    {
+                        DentalLogger.Log("Composite2SplitAB - D(B-Extension) PRC 로드/캐스팅 실패");
+                    }
                 }
                 else
                 {
-                    DentalLogger.Log("Composite2SplitAB - D(B-Extension) PRC 로드/캐스팅 실패");
+                    DentalLogger.Log($"Composite2SplitAB - D(B-Extension) 범위 비정상으로 생성 생략: First={dFirstPercent:F2}, Last={dLastPercent:F2}");
                 }
             }
             else
             {
-                DentalLogger.Log($"Composite2SplitAB - D(B-Extension) 범위 비정상으로 생성 생략: First={dFirstPercent:F2}, Last={dLastPercent:F2}");
+                DentalLogger.Log("Composite2SplitAB - phaseMode=A_ONLY, FINISH_B1/B2 생성 생략");
             }
 
             int finalCount = Document?.Operations?.Count ?? -1;
@@ -934,6 +954,30 @@ namespace DentalAddin
 
 
 
+        private static bool IsCompositeNameLike(string name)
+        {
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                return false;
+            }
+
+            string normalized = name.Trim();
+            if (normalized.IndexOf("composite", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return true;
+            }
+
+            // 현장 오타 호환: "5Axisomposite"(c 누락) 같은 케이스도 composite 계열로 인식
+            bool hasOmp = normalized.IndexOf("omposite", StringComparison.OrdinalIgnoreCase) >= 0;
+            bool hasAxis = normalized.IndexOf("axis", StringComparison.OrdinalIgnoreCase) >= 0;
+            return hasOmp && hasAxis;
+        }
+
+        private static string BuildCompositeOperationName(string suffix)
+        {
+            return $"5 Axis Composite [{suffix}]";
+        }
+
         private static string ResolveCompositeSuffixFromLabel(string label)
         {
             if (string.IsNullOrWhiteSpace(label))
@@ -1016,19 +1060,8 @@ namespace DentalAddin
                         baseName = "5 Axis Composite";
                     }
 
-                    string newName;
-                    if (baseName.IndexOf("composite", StringComparison.OrdinalIgnoreCase) >= 0)
-                    {
-                        newName = $"5 Axis Composite [{suffix}]";
-                    }
-                    else if (baseName.IndexOf($"[{suffix}]", StringComparison.OrdinalIgnoreCase) >= 0)
-                    {
-                        newName = baseName;
-                    }
-                    else
-                    {
-                        newName = $"{baseName} [{suffix}]";
-                    }
+                    // 이름은 항상 표준 표기로 강제한다.
+                    string newName = BuildCompositeOperationName(suffix);
 
                     bool renamed = false;
                     try
@@ -1087,7 +1120,7 @@ namespace DentalAddin
                         return false;
                     }
 
-                    if (name.IndexOf("composite", StringComparison.OrdinalIgnoreCase) < 0)
+                    if (!IsCompositeNameLike(name))
                     {
                         return false;
                     }
@@ -1250,7 +1283,7 @@ namespace DentalAddin
                     }
 
                     if (string.IsNullOrWhiteSpace(oldName)) continue;
-                    if (oldName.IndexOf("composite", StringComparison.OrdinalIgnoreCase) < 0) continue;
+                    if (!IsCompositeNameLike(oldName)) continue;
 
                     string mapped = null;
                     if (oldName.IndexOf("FINISH_A", StringComparison.OrdinalIgnoreCase) >= 0 || oldName.IndexOf("Finish_A", StringComparison.OrdinalIgnoreCase) >= 0)
@@ -1272,7 +1305,7 @@ namespace DentalAddin
 
                     if (string.IsNullOrWhiteSpace(mapped)) continue;
 
-                    string newName = $"5 Axis Composite [{mapped}]";
+                    string newName = BuildCompositeOperationName(mapped);
                     bool renamed = false;
                     try
                     {

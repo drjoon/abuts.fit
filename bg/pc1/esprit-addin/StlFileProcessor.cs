@@ -420,6 +420,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_SINGLE_A_ENABLE", null);
             Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_B_EXTENSION_ENABLE", null);
             Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_DYNAMIC_DISABLE", null);
+            Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_PHASE_MODE", null);
             FaceHoleProcessFilePath = null;
             ConnectionMachiningProcessFilePath = null;
             lotNumber = "ACR";

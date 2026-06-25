@@ -89,21 +89,18 @@ namespace DentalAddin
                 ValidateBeforeOperation("CustomCycle", Array.Empty<string>(), Array.Empty<string>());
                 CustomCycle();
 
-                // 2-phase 순서 (기본값):
-                // CustomCycle → Turn_A → Rough_A → FrontFace → Turn_B → Rough_B → FreeForm
+                // 2-phase 순서(최종):
+                // CustomCycle → Turn_A → Rough_A → FrontFace → FreeForm(A_ONLY) → Turn_B → Rough_B → FreeForm(BC_ONLY)
+                // - FINISH_A  : TURN_B 바로 위로 배치
+                // - FINISH_B1/B2: 기존(원래) 뒤쪽 순서 유지
                 ExecuteTwoPhaseTurning("A");
                 ExecuteTwoPhaseRough("A");
 
                 ValidateBeforeOperation("FrontFaceMill", Array.Empty<string>(), new[] { "3DMilling_FrontFace" });
                 FrontFaceMill();
 
-
-
-                ExecuteTwoPhaseTurning("B");
-                ExecuteTwoPhaseRough("B");
-
-                // Front Face는 이미 실행했으므로 FreeFormMill 내부 Front Face 단계는 건너뜀
                 Environment.SetEnvironmentVariable("ABUTS_SKIP_FRONTFACE_IN_FREEFORM", "1");
+                Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_PHASE_MODE", "A_ONLY");
                 try
                 {
                     ValidateBeforeOperation("FreeFormMill", Array.Empty<string>(), new[] { "3DMilling_0Degree", "3DMilling_90Degree", "3DMilling_180Degree", "3DMilling_270Degree" });
@@ -112,6 +109,24 @@ namespace DentalAddin
                 }
                 finally
                 {
+                    Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_PHASE_MODE", null);
+                    Environment.SetEnvironmentVariable("ABUTS_SKIP_FRONTFACE_IN_FREEFORM", null);
+                }
+
+                ExecuteTwoPhaseTurning("B");
+                ExecuteTwoPhaseRough("B");
+
+                Environment.SetEnvironmentVariable("ABUTS_SKIP_FRONTFACE_IN_FREEFORM", "1");
+                Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_PHASE_MODE", "BC_ONLY");
+                try
+                {
+                    ValidateBeforeOperation("FreeFormMill", Array.Empty<string>(), new[] { "3DMilling_0Degree", "3DMilling_90Degree", "3DMilling_180Degree", "3DMilling_270Degree" });
+                    FreeFormMill();
+                    TryNormalizeCompositeFinishOrderAfterFreeForm();
+                }
+                finally
+                {
+                    Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_PHASE_MODE", null);
                     Environment.SetEnvironmentVariable("ABUTS_SKIP_FRONTFACE_IN_FREEFORM", null);
                 }
                 if (Mark.MarkSign)
