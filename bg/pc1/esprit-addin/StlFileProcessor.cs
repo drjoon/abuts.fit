@@ -1860,18 +1860,22 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 return;
             }
             // 우선 순위: UserData.NumData -> AppConfig 기본값
+            // NumData 인덱스(Tech_Default_Path.xml)
+            //   [1] Exit angle, [2] Front Mill Depth, [3] Turning Depth, [4] Angle Number, [5] Turning Extend
             double[] numData = DentalAddinReflectionHelper.GetMainModuleField<double[]>(mainModuleType, "NumData");
+            double exitAngle = (numData != null && numData.Length > 1 && numData[1] > 0) ? numData[1] : AppConfig.ExitAngle;
             double frontMillDepth = (numData != null && numData.Length > 2 && numData[2] > 0) ? numData[2] : AppConfig.TurningDepth;
             double turningDepth = (numData != null && numData.Length > 3 && numData[3] > 0) ? numData[3] : AppConfig.TurningDepth;
-            double turningExtend = AppConfig.TurningExtend;
+            double angleNumber = (numData != null && numData.Length > 4 && numData[4] > 0) ? numData[4] : exitAngle;
+            double turningExtend = (numData != null && numData.Length > 5 && numData[5] > 0) ? numData[5] : AppConfig.TurningExtend;
 
             DentalAddinReflectionHelper.SetStaticField(mainModuleType, "MillingDepth", frontMillDepth);
             DentalAddinReflectionHelper.SetStaticField(mainModuleType, "DownZ", frontMillDepth);
             DentalAddinReflectionHelper.SetStaticField(mainModuleType, "TurningDepth", turningDepth);
             DentalAddinReflectionHelper.SetStaticField(mainModuleType, "TurningExtend", turningExtend);
-            DentalAddinReflectionHelper.SetStaticField(mainModuleType, "Chamfer", AppConfig.ExitAngle);
-            DentalAddinReflectionHelper.SetStaticField(mainModuleType, "AngleNumber", AppConfig.ExitAngle);
-            AppLogger.Log($"DentalAddin: Turning/Milling 파라미터 설정 - FrontDepth:{frontMillDepth}, TurningDepth:{turningDepth}, Extend:{turningExtend}, Angle:{AppConfig.ExitAngle}");
+            DentalAddinReflectionHelper.SetStaticField(mainModuleType, "Chamfer", exitAngle);
+            DentalAddinReflectionHelper.SetStaticField(mainModuleType, "AngleNumber", angleNumber);
+            AppLogger.Log($"DentalAddin: Turning/Milling 파라미터 설정 - FrontDepth:{frontMillDepth}, TurningDepth:{turningDepth}, Extend:{turningExtend}, ExitAngle:{exitAngle}, AngleNumber:{angleNumber}");
         }
     }
 }

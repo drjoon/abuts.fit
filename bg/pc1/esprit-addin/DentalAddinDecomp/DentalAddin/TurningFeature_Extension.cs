@@ -19,16 +19,16 @@ internal sealed class TurningFeature_Extension
 		checked
 		{
 			double topY = MainModule.Document.LatheMachineSetup.BarDiameter / 2.0;
-			double minHorizontal = 1.0;
-			double diagonal45Height = 2.0;
-			
+			double turningExtend = MainModule.TurningExtend;
+			double chamfer = MainModule.Chamfer;
+
 			// 모든 패스의 끝점 X 좌표 중 최대값 찾기
 			double maxEndX = MainModule.EndXValue;
 			for (int i = 1; i <= count; i++)
 			{
 				FeatureChain fc = MainModule.Document.FeatureChains[i];
 				if (fc == null) continue;
-				
+
 				bool isTurning = (Operators.CompareString(fc.Name, "Turning", false) == 0);
 				bool isProfile = false;
 				if (!isTurning && MainModule.SL == 1.0)
@@ -42,7 +42,7 @@ internal sealed class TurningFeature_Extension
 						}
 					}
 				}
-				
+
 				if (isTurning || isProfile)
 				{
 					Point pt = fc.Extremity(espExtremityType.espExtremityEnd);
@@ -52,17 +52,17 @@ internal sealed class TurningFeature_Extension
 						maxEndX = Math.Min(maxEndX, pt.X);
 				}
 			}
-			
-			// 공통 수직선 X 좌표 계산 (모든 패스가 이 X에서 90도 상승)
+
+			// 공통 기준 X: TurningExtend 반영
 			double commonVerticalX;
 			if (!MainModule.SpindleSide)
-				commonVerticalX = maxEndX + minHorizontal + diagonal45Height;
+				commonVerticalX = maxEndX + turningExtend;
 			else
-				commonVerticalX = maxEndX - minHorizontal - diagonal45Height;
-			
+				commonVerticalX = maxEndX - turningExtend;
+
 			MainModule.ExtendX = commonVerticalX;
-			DentalLogger.Log($"ExtendTurning: maxEndX:{maxEndX:F3}, topY:{topY:F3}, commonVerticalX:{commonVerticalX:F3}");
-			
+			DentalLogger.Log($"ExtendTurning: maxEndX:{maxEndX:F3}, topY:{topY:F3}, turningExtend:{turningExtend:F3}, chamfer:{chamfer:F3}, commonBaseX:{commonVerticalX:F3}");
+
 			for (int i = 1; i <= count; i++)
 			{
 				MainModule.FC1 = MainModule.Document.FeatureChains[i];
@@ -71,7 +71,7 @@ internal sealed class TurningFeature_Extension
 					DentalLogger.Log($"ExtendTurning: FeatureChain[{i}]가 null입니다.");
 					continue;
 				}
-				
+
 				bool isTurning = (Operators.CompareString(MainModule.FC1.Name, "Turning", false) == 0);
 				bool isProfile = false;
 				if (!isTurning && MainModule.SL == 1.0)
@@ -85,32 +85,42 @@ internal sealed class TurningFeature_Extension
 						}
 					}
 				}
-				
+
 				if (!isTurning && !isProfile)
 					continue;
-				
+
 				Point point = MainModule.FC1.Extremity(espExtremityType.espExtremityEnd);
 				double currentY = point.Y;
 				double currentX = point.X;
 				string label = MainModule.FC1.Name;
-				
-				// 1단계: 수평 + 45도 구간 (commonVerticalX까지)
-				Point pDiagEnd = MainModule.Document.Points.Add(commonVerticalX, currentY, 0.0);
-				Segment segDiag = MainModule.Document.Segments.Add(point, pDiagEnd);
-				TurningFeature_Utility.TryAddSegment(MainModule.FC1, segDiag, label + "_Diag");
-				MainModule.Document.Points.Remove(pDiagEnd.Key);
-				MainModule.Document.Segments.Remove(segDiag.Key);
-				
-				// 2단계: 90도 수직 상승 (commonVerticalX에서 topY까지)
-				Point p90Start = MainModule.Document.Points.Add(commonVerticalX, currentY, 0.0);
-				Point p90End = MainModule.Document.Points.Add(commonVerticalX, topY, 0.0);
-				Segment seg90 = MainModule.Document.Segments.Add(p90Start, p90End);
-				TurningFeature_Utility.TryAddSegment(MainModule.FC1, seg90, label + "_90");
-				MainModule.Document.Points.Remove(p90Start.Key);
-				MainModule.Document.Points.Remove(p90End.Key);
-				MainModule.Document.Segments.Remove(seg90.Key);
-				
-				DentalLogger.Log($"ExtendTurning: {label} - currentX:{currentX:F3}, currentY:{currentY:F3}, verticalX:{commonVerticalX:F3}");
+
+				// 1단계: 기준 X까지 수평 이동
+				Point pBase = MainModule.Document.Points.Add(commonVerticalX, currentY, 0.0);
+				Segment segBase = MainModule.Document.Segments.Add(point, pBase);
+				TurningFeature_Utility.TryAddSegment(MainModule.FC1, segBase, label + "_Base");
+				MainModule.Document.Points.Remove(pBase.Key);
+				MainModule.Document.Segments.Remove(segBase.Key);
+
+				// 2단계: Exit angle(Chamfer) 반영하여 topY까지 상승
+				double rise = topY - currentY;
+				double endX = commonVerticalX;
+				if (rise > 0.0001)
+				{
+					if (Math.Abs(chamfer - 90.0) > 0.001 && Math.Abs(Math.Tan(Math.PI * chamfer / 180.0)) > 1e-6)
+					{
+						double dx = rise / Math.Tan(Math.PI * chamfer / 180.0);
+						endX = (!MainModule.SpindleSide) ? commonVerticalX + dx : commonVerticalX - dx;
+					}
+					Point pRiseStart = MainModule.Document.Points.Add(commonVerticalX, currentY, 0.0);
+					Point pRiseEnd = MainModule.Document.Points.Add(endX, topY, 0.0);
+					Segment segRise = MainModule.Document.Segments.Add(pRiseStart, pRiseEnd);
+					TurningFeature_Utility.TryAddSegment(MainModule.FC1, segRise, label + "_Rise");
+					MainModule.Document.Points.Remove(pRiseStart.Key);
+					MainModule.Document.Points.Remove(pRiseEnd.Key);
+					MainModule.Document.Segments.Remove(segRise.Key);
+				}
+
+				DentalLogger.Log($"ExtendTurning: {label} - currentX:{currentX:F3}, currentY:{currentY:F3}, baseX:{commonVerticalX:F3}, endX:{endX:F3}, rise:{rise:F3}, chamfer:{chamfer:F3}");
 			}
 		}
 	}

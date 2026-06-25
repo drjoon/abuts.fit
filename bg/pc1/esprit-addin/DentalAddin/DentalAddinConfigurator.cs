@@ -26,21 +26,21 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.DentalAddin
         {
             string defaultUserDataXml = DentalAddinPrcManager.GetDefaultUserDataPath();
             DentalAddinReflectionHelper.SetStaticField(mainModuleType, "DefaultXmlFileName", defaultUserDataXml);
-            
+
             string prcDirectory = DentalAddinPrcManager.ResolvePrcDirectory();
             TryApplyDentalUserData(mainModuleType, ref prcDirectory);
             DentalAddinReflectionHelper.SetStaticField(mainModuleType, "PrcDirectory", prcDirectory);
-            
+
             string[] prcPaths = DentalAddinPrcManager.EnsurePrcArray(DentalAddinReflectionHelper.GetMainModuleField<string[]>(mainModuleType, "PrcFilePath"));
             string[] prcNames = DentalAddinPrcManager.EnsurePrcArray(DentalAddinReflectionHelper.GetMainModuleField<string[]>(mainModuleType, "PrcFileName"));
             int[] numCombobox = DentalAddinPrcManager.EnsureComboArray(DentalAddinReflectionHelper.GetMainModuleField<int[]>(mainModuleType, "NumCombobox"));
-            
+
             DentalAddinReflectionHelper.SetStaticField(mainModuleType, "PrcFilePath", prcPaths);
             DentalAddinReflectionHelper.SetStaticField(mainModuleType, "PrcFileName", prcNames);
             DentalAddinReflectionHelper.SetStaticField(mainModuleType, "NumCombobox", numCombobox);
-            
+
             EnsurePrcBaseDefaults(prcDirectory, prcPaths, prcNames);
-            
+
             if (prcPaths != null && prcPaths.Length > 4)
             {
                 prcPaths[4] = null;
@@ -57,22 +57,22 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.DentalAddin
             {
                 prcNames[8] = null;
             }
-            
+
             EnsureFaceConnectionFromBackend(prcPaths, prcNames);
             EnsureCompositeDefaults(prcDirectory, prcPaths, prcNames);
             ApplyEnvOverrides(prcPaths);
             ForceFourAxisFinishing(mainModuleType, numCombobox);
-            
+
             bool reverseEnabled = numCombobox != null && numCombobox.Length > 4 && numCombobox[4] == 1;
             DentalAddinReflectionHelper.SetStaticField(mainModuleType, "ReverseOn", reverseEnabled);
             AppLogger.Log(reverseEnabled
                 ? "DentalAddinConfigurator: Reverse Turning 활성 (NumCombobox[4]=1)"
                 : "DentalAddinConfigurator: Reverse Turning 비활성 (NumCombobox[4]!=1)");
-            
+
             double roughType = DetermineRoughType(numCombobox, prcPaths, out string roughReason);
             DentalAddinReflectionHelper.SetStaticField(mainModuleType, "RoughType", roughType);
             AppLogger.Log($"DentalAddinConfigurator: RoughType 자동 결정 - {roughType} ({roughReason})");
-            
+
             EnsureCompositeEnabled(mainModuleType, prcPaths);
             EnsurePrcMappingsForFinishing(mainModuleType, prcPaths, prcNames);
             LogMainModuleArrays(mainModuleType);
@@ -200,7 +200,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.DentalAddin
                 EnsurePrcSlot(prcDirectory, prcPaths, prcNames, 1, @"3_Turning prc\Turning.prc");
                 EnsurePrcSlot(prcDirectory, prcPaths, prcNames, 2, @"4_ReverseTurning prc\Reverse Turning Process.prc");
                 EnsurePrcSlot(prcDirectory, prcPaths, prcNames, 3, @"5_Rough prc\MillRough_3D.prc");
-                
+
                 bool faceBeforeComposite = DetermineFaceBeforeComposite();
                 if (faceBeforeComposite)
                 {
@@ -245,7 +245,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.DentalAddin
                     AppLogger.Log($"DentalAddinConfigurator: 백엔드 PRC 누락으로 중단 - FaceHoleProcessFilePath={_prcManager.FaceHoleProcessFilePath}, ConnectionMachiningProcessFilePath={_prcManager.ConnectionMachiningProcessFilePath}");
                     throw new InvalidOperationException("Backend PRC file path is missing");
                 }
-                
+
                 if (prcPaths.Length > 4)
                 {
                     string oldValue = prcPaths[4];
@@ -258,7 +258,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.DentalAddin
                     prcNames[4] = Path.GetFileName(_prcManager.FaceHoleProcessFilePath);
                     AppLogger.Log($"DentalAddinConfigurator: PRC[4] Name 백엔드값으로 갱신 - {oldValue} -> {prcNames[4]}");
                 }
-                
+
                 if (prcPaths.Length > 8)
                 {
                     string oldValue = prcPaths[8];
@@ -491,17 +491,19 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.DentalAddin
                 return;
             }
             double[] numData = DentalAddinReflectionHelper.GetMainModuleField<double[]>(mainModuleType, "NumData");
+            double exitAngle = (numData != null && numData.Length > 1 && numData[1] > 0) ? numData[1] : AppConfig.ExitAngle;
             double frontMillDepth = (numData != null && numData.Length > 2 && numData[2] > 0) ? numData[2] : AppConfig.TurningDepth;
             double turningDepth = (numData != null && numData.Length > 3 && numData[3] > 0) ? numData[3] : AppConfig.TurningDepth;
-            double turningExtend = AppConfig.TurningExtend;
+            double angleNumber = (numData != null && numData.Length > 4 && numData[4] > 0) ? numData[4] : exitAngle;
+            double turningExtend = (numData != null && numData.Length > 5 && numData[5] > 0) ? numData[5] : AppConfig.TurningExtend;
 
             DentalAddinReflectionHelper.SetStaticField(mainModuleType, "MillingDepth", frontMillDepth);
             DentalAddinReflectionHelper.SetStaticField(mainModuleType, "DownZ", frontMillDepth);
             DentalAddinReflectionHelper.SetStaticField(mainModuleType, "TurningDepth", turningDepth);
             DentalAddinReflectionHelper.SetStaticField(mainModuleType, "TurningExtend", turningExtend);
-            DentalAddinReflectionHelper.SetStaticField(mainModuleType, "Chamfer", AppConfig.ExitAngle);
-            DentalAddinReflectionHelper.SetStaticField(mainModuleType, "AngleNumber", AppConfig.ExitAngle);
-            AppLogger.Log($"DentalAddinConfigurator: Turning/Milling 파라미터 설정 - FrontDepth:{frontMillDepth}, TurningDepth:{turningDepth}, Extend:{turningExtend}, Angle:{AppConfig.ExitAngle}");
+            DentalAddinReflectionHelper.SetStaticField(mainModuleType, "Chamfer", exitAngle);
+            DentalAddinReflectionHelper.SetStaticField(mainModuleType, "AngleNumber", angleNumber);
+            AppLogger.Log($"DentalAddinConfigurator: Turning/Milling 파라미터 설정 - FrontDepth:{frontMillDepth}, TurningDepth:{turningDepth}, Extend:{turningExtend}, ExitAngle:{exitAngle}, AngleNumber:{angleNumber}");
         }
     }
 }

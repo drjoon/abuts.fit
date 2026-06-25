@@ -35,8 +35,8 @@
     <double>45</double> # Exit angle
     <double>1</double> # Front Mill Depth
     <double>1</double> # Turning Depth
-    <double>3</double> 
-    <double>2</double> # Turning Extend
+    <double>3</double>
+    <double>3</double> # Turning Extend
     <double>1.5</double> # Rough Mill Step
     <double>5</double>
   </NumData>
