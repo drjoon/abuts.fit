@@ -615,23 +615,35 @@ namespace DentalAddin
             }
             DentalLogger.Log($"TurningOp - PRC[1] contour tech count={turningTechs.Count}");
 
-            List<TechLatheContour1> reverseTechs = new List<TechLatheContour1>();
-            if (ReverseOn)
-            {
-                string file2 = PrcFilePath[2];
-                DentalLogger.Log($"TurningOp - OpenProcess Reverse: PRC[2]={file2}");
-                TechnologyUtility reverseTechUtil = (TechnologyUtility)Activator.CreateInstance(Marshal.GetTypeFromCLSID(new Guid("C30D1110-1549-48C5-84D0-F66DCAD0F16F")));
-                ITechnology[] reverseProcess = (ITechnology[])reverseTechUtil.OpenProcess(file2);
-                reverseTechs = reverseProcess?.OfType<TechLatheContour1>()?.ToList() ?? new List<TechLatheContour1>();
-                DentalLogger.Log($"TurningOp - PRC[2] reverse contour tech count={reverseTechs.Count}");
-            }
-
             // 2-phase 모드: region env를 읽어 finishline(splitX) 기준 좌/우 경계를 적용
             //   - region A → 좌측(xMin~splitX), region B → 우측(splitX~xMax)
             //   - rough mill(RoughFreeFromMillSplitAB)과 동일한 splitX/경계 방식을 사용해
             //     turning 좌/우 분할 위치를 rough와 정렬
             //   - 실제 경계 적용은 chain 생성용 helper op 정리 직후, 최종 op 추가 직전에 수행
             string twoPhaseRegion = Environment.GetEnvironmentVariable(AppConfig.TwoPhaseTurningRegionEnv);
+
+            List<TechLatheContour1> reverseTechs = new List<TechLatheContour1>();
+            if (ReverseOn)
+            {
+                string file2 = PrcFilePath[2];
+                DentalLogger.Log($"TurningOp - OpenProcess Reverse: PRC[2]={file2} (ReverseOn={ReverseOn}, region={twoPhaseRegion})");
+                TechnologyUtility reverseTechUtil = (TechnologyUtility)Activator.CreateInstance(Marshal.GetTypeFromCLSID(new Guid("C30D1110-1549-48C5-84D0-F66DCAD0F16F")));
+                ITechnology[] reverseProcess = (ITechnology[])reverseTechUtil.OpenProcess(file2);
+                reverseTechs = reverseProcess?.OfType<TechLatheContour1>()?.ToList() ?? new List<TechLatheContour1>();
+                DentalLogger.Log($"TurningOp - PRC[2] reverse contour tech count={reverseTechs.Count}");
+            }
+
+            // 요청사항: Turn_A/Turn_B 모두 정방향 로직 동일 유지, Turn_B만 공구 T05로 변경
+            List<TechLatheContour1> phaseTurningTechs = turningTechs;
+            List<TechLatheContour1> phaseReverseTechs = reverseTechs;
+            if (string.Equals(twoPhaseRegion, "A", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(twoPhaseRegion, "B", StringComparison.OrdinalIgnoreCase))
+            {
+                phaseReverseTechs = new List<TechLatheContour1>();
+                DentalLogger.Log($"TurningOp - region={twoPhaseRegion}, 정방향 turning 전용으로 실행");
+            }
+
+            ApplyTwoPhaseTurningToolOverride(twoPhaseRegion, phaseTurningTechs, phaseReverseTechs);
 
             // TwoPhase 모드에서는 Phase별로 다른 레이어명을 사용하여
             // Phase B가 Phase A의 Turning 작업을 삭제하지 않도록 보장
@@ -686,11 +698,11 @@ namespace DentalAddin
                 {
                     if (array2[9 - i] != null)
                     {
-                        foreach (TechLatheContour1 t in turningTechs)
+                        foreach (TechLatheContour1 t in phaseTurningTechs)
                         {
                             Document.Operations.Add(t, array2[9 - i], RuntimeHelpers.GetObjectValue(Missing.Value));
                         }
-                        foreach (TechLatheContour1 t in reverseTechs)
+                        foreach (TechLatheContour1 t in phaseReverseTechs)
                         {
                             Document.Operations.Add(t, array2[9 - i], RuntimeHelpers.GetObjectValue(Missing.Value));
                         }
@@ -796,13 +808,13 @@ namespace DentalAddin
                         }
 
                         int techIndex = 0;
-                        foreach (TechLatheContour1 t in turningTechs)
+                        foreach (TechLatheContour1 t in phaseTurningTechs)
                         {
                             TryAddOperation(t, opChain, $"TurningOp array[i] Main#{techIndex}");
                             techIndex++;
                         }
                         techIndex = 0;
-                        foreach (TechLatheContour1 t in reverseTechs)
+                        foreach (TechLatheContour1 t in phaseReverseTechs)
                         {
                             TryAddOperation(t, opChain, $"TurningOp array[i] Reverse#{techIndex}");
                             techIndex++;
@@ -811,6 +823,84 @@ namespace DentalAddin
                     i++;
                 }
                 while (i <= 15);
+            }
+        }
+
+        private static void ApplyTwoPhaseTurningToolOverride(string region, IList<TechLatheContour1> turningTechs, IList<TechLatheContour1> reverseTechs)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(region))
+                {
+                    return;
+                }
+
+                // 요청사항: Turn_A는 기존 PRC 공구(현재 T02) 유지, Turn_B는 T05(5번 공구) 강제
+                if (!string.Equals(region, "B", StringComparison.OrdinalIgnoreCase))
+                {
+                    DentalLogger.Log($"TurningOp ToolOverride - region={region}, 기존 공구 유지");
+                    return;
+                }
+
+                string selectedToolId = null;
+                foreach (Tool tool in (IEnumerable)Document.Tools)
+                {
+                    if (tool == null || string.IsNullOrWhiteSpace(tool.ToolID))
+                    {
+                        continue;
+                    }
+
+                    if (string.Equals(tool.ToolID, "T05", StringComparison.OrdinalIgnoreCase))
+                    {
+                        selectedToolId = tool.ToolID;
+                        break;
+                    }
+                }
+
+                // 환경에 따라 ToolID가 T5 형태일 수 있어 5번 공구를 보조 탐색
+                if (string.IsNullOrWhiteSpace(selectedToolId))
+                {
+                    foreach (Tool tool in (IEnumerable)Document.Tools)
+                    {
+                        if (tool == null || string.IsNullOrWhiteSpace(tool.ToolID))
+                        {
+                            continue;
+                        }
+
+                        string digits = new string(tool.ToolID.Where(char.IsDigit).ToArray());
+                        if (int.TryParse(digits, out int n) && n == 5)
+                        {
+                            selectedToolId = tool.ToolID;
+                            break;
+                        }
+                    }
+                }
+
+                if (string.IsNullOrWhiteSpace(selectedToolId))
+                {
+                    DentalLogger.Log("TurningOp ToolOverride - Turn_B용 T05(5번 공구)를 찾지 못해 기존 공구를 유지합니다.");
+                    return;
+                }
+
+                int applied = 0;
+                foreach (TechLatheContour1 t in turningTechs)
+                {
+                    if (t == null) continue;
+                    t.ToolID = selectedToolId;
+                    applied++;
+                }
+                foreach (TechLatheContour1 t in reverseTechs)
+                {
+                    if (t == null) continue;
+                    t.ToolID = selectedToolId;
+                    applied++;
+                }
+
+                DentalLogger.Log($"TurningOp ToolOverride - region=B, ToolID={selectedToolId} 적용(techCount={applied})");
+            }
+            catch (Exception ex)
+            {
+                DentalLogger.Log($"TurningOp ToolOverride 실패(region={region}): {ex.GetType().Name}:{ex.Message}");
             }
         }
 
@@ -909,6 +999,7 @@ namespace DentalAddin
                 {
                     double x = pts[idx][0];
                     bool inside = leftSide ? (x <= splitX + eps) : (x >= splitX - eps);
+
                     if (inside)
                     {
                         // 영역 진입 직전(이전 점이 영역 밖)이면 경계 교차점을 먼저 추가해 splitX에 정확히 맞춘다
