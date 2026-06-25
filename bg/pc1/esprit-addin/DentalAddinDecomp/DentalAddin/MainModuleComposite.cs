@@ -488,6 +488,7 @@ namespace DentalAddin
             TryAppendCompositeSuffixToNewOperations(beforeAddCountBaseA, "A");
             int afterA = Document?.Operations?.Count ?? -1;
             DentalLogger.Log($"Composite2SplitAB - Operation 추가 완료: B(기존 A) (afterCount={afterA})");
+            TryMoveCompositeFinishBeforeTurnB("Finish_A", "Finish_B");
 
             int beforeAddCountB = Document?.Operations?.Count ?? -1;
             TryDisableCompositeDynamicIfRequested(opB, "B");
@@ -943,20 +944,20 @@ namespace DentalAddin
             string normalized = label.Trim();
 
             // 구분 정책:
-            // - 기존 A           : B
-            // - 기존 B           : C
-            // - 기존 B-Extension : D
+            // - 기존 A           : Finish_A
+            // - 기존 B           : Finish_B1
+            // - 기존 B-Extension : Finish_B2
             if (normalized.StartsWith("B-Extension", StringComparison.OrdinalIgnoreCase))
             {
-                return "D";
+                return "Finish_B2";
             }
             if (normalized.StartsWith("A", StringComparison.OrdinalIgnoreCase))
             {
-                return "B";
+                return "Finish_A";
             }
             if (normalized.StartsWith("B", StringComparison.OrdinalIgnoreCase))
             {
-                return "C";
+                return "Finish_B1";
             }
 
             return null;
@@ -994,18 +995,35 @@ namespace DentalAddin
                     }
 
                     string baseName = string.IsNullOrWhiteSpace(oldName) ? "5Axis_Composite" : oldName.Trim();
+                    baseName = RemoveTokenIgnoreCase(baseName, "[Finish_A]").Trim();
+                    baseName = RemoveTokenIgnoreCase(baseName, "[Finish_B]").Trim();
+                    baseName = RemoveTokenIgnoreCase(baseName, "[Finish_B1]").Trim();
+                    baseName = RemoveTokenIgnoreCase(baseName, "[Finish_B2]").Trim();
+                    baseName = RemoveTokenIgnoreCase(baseName, "_A").Trim();
+                    baseName = RemoveTokenIgnoreCase(baseName, "_B").Trim();
+                    baseName = RemoveTokenIgnoreCase(baseName, "_C").Trim();
+                    baseName = RemoveTokenIgnoreCase(baseName, "_D").Trim();
+                    while (baseName.IndexOf("  ", StringComparison.Ordinal) >= 0)
+                    {
+                        baseName = baseName.Replace("  ", " ");
+                    }
+                    if (string.IsNullOrWhiteSpace(baseName))
+                    {
+                        baseName = "5Axis_Composite";
+                    }
+
                     string newName;
                     if (baseName.StartsWith("5Axis_Composite", StringComparison.OrdinalIgnoreCase))
                     {
-                        newName = $"5Axis_Composite_{suffix}";
+                        newName = $"5Axis_Composite [{suffix}]";
                     }
-                    else if (baseName.EndsWith($"_{suffix}", StringComparison.OrdinalIgnoreCase))
+                    else if (baseName.IndexOf($"[{suffix}]", StringComparison.OrdinalIgnoreCase) >= 0)
                     {
                         newName = baseName;
                     }
                     else
                     {
-                        newName = $"{baseName}_{suffix}";
+                        newName = $"{baseName} [{suffix}]";
                     }
 
                     bool renamed = false;
@@ -1031,6 +1049,161 @@ namespace DentalAddin
             }
         }
 
+        private static void TryMoveCompositeFinishBeforeTurnB(string preferredFinishToken, string legacyFinishToken)
+        {
+            try
+            {
+                if (Document?.Operations == null)
+                {
+                    return;
+                }
+
+                bool IsMatch(int index, string[] requiredAny)
+                {
+                    object op = null;
+                    try { op = Document.Operations[index]; } catch { }
+                    if (op == null)
+                    {
+                        return false;
+                    }
+
+                    string name = null;
+                    try
+                    {
+                        dynamic dynOp = op;
+                        name = dynOp.Name as string;
+                    }
+                    catch
+                    {
+                        try { name = (string)op.GetType().InvokeMember("Name", BindingFlags.GetProperty, null, op, null); } catch { }
+                    }
+
+                    if (string.IsNullOrWhiteSpace(name))
+                    {
+                        return false;
+                    }
+
+                    if (name.IndexOf("5Axis_Composite", StringComparison.OrdinalIgnoreCase) < 0)
+                    {
+                        return false;
+                    }
+
+                    foreach (string token in requiredAny)
+                    {
+                        if (!string.IsNullOrWhiteSpace(token) && name.IndexOf(token, StringComparison.OrdinalIgnoreCase) >= 0)
+                        {
+                            return true;
+                        }
+                    }
+
+                    return false;
+                }
+
+                int FindFirstIndex(Func<int, bool> predicate)
+                {
+                    int count = Document.Operations.Count;
+                    for (int i = 1; i <= count; i++)
+                    {
+                        if (predicate(i))
+                        {
+                            return i;
+                        }
+                    }
+                    return -1;
+                }
+
+                int finishIndex = FindFirstIndex(i => IsMatch(i, new[] { preferredFinishToken, legacyFinishToken }));
+                int turnBIndex = FindFirstIndex(i =>
+                {
+                    object op = null;
+                    try { op = Document.Operations[i]; } catch { }
+                    if (op == null) return false;
+
+                    string name = null;
+                    try
+                    {
+                        dynamic dynOp = op;
+                        name = dynOp.Name as string;
+                    }
+                    catch
+                    {
+                        try { name = (string)op.GetType().InvokeMember("Name", BindingFlags.GetProperty, null, op, null); } catch { }
+                    }
+
+                    if (string.IsNullOrWhiteSpace(name)) return false;
+                    return name.IndexOf("[TURN_B]", StringComparison.OrdinalIgnoreCase) >= 0
+                        || name.IndexOf("TURN_B", StringComparison.OrdinalIgnoreCase) >= 0;
+                });
+
+                if (finishIndex < 1 || turnBIndex < 1)
+                {
+                    DentalLogger.Log($"Composite2SplitAB - Finish/Turn_B 재정렬 스킵: finishIndex={finishIndex}, turnBIndex={turnBIndex}");
+                    return;
+                }
+
+                if (finishIndex == turnBIndex - 1)
+                {
+                    DentalLogger.Log($"Composite2SplitAB - Finish/Turn_B 재정렬 불필요(이미 바로 위): finishIndex={finishIndex}, turnBIndex={turnBIndex}");
+                    return;
+                }
+
+                object finishOp = null;
+                object turnBOp = null;
+                try { finishOp = Document.Operations[finishIndex]; } catch { }
+                try { turnBOp = Document.Operations[turnBIndex]; } catch { }
+
+                bool moved = false;
+                object ops = Document.Operations;
+
+                // 시도 1: 컬렉션 MoveBefore(op, target)
+                try
+                {
+                    ops.GetType().InvokeMember("MoveBefore", BindingFlags.InvokeMethod, null, ops, new object[] { finishOp, turnBOp });
+                    moved = true;
+                }
+                catch { }
+
+                // 시도 2: 컬렉션 MoveBefore(fromIndex, toIndex)
+                if (!moved)
+                {
+                    try
+                    {
+                        ops.GetType().InvokeMember("MoveBefore", BindingFlags.InvokeMethod, null, ops, new object[] { finishIndex, turnBIndex });
+                        moved = true;
+                    }
+                    catch { }
+                }
+
+                // 시도 3: 컬렉션 Move(fromIndex, toIndex)
+                if (!moved)
+                {
+                    try
+                    {
+                        int targetIndex = Math.Max(1, turnBIndex - 1);
+                        ops.GetType().InvokeMember("Move", BindingFlags.InvokeMethod, null, ops, new object[] { finishIndex, targetIndex });
+                        moved = true;
+                    }
+                    catch { }
+                }
+
+                // 시도 4: Op 단위 MoveBefore(targetOp)
+                if (!moved && finishOp != null && turnBOp != null)
+                {
+                    try
+                    {
+                        finishOp.GetType().InvokeMember("MoveBefore", BindingFlags.InvokeMethod, null, finishOp, new object[] { turnBOp });
+                        moved = true;
+                    }
+                    catch { }
+                }
+
+                DentalLogger.Log($"Composite2SplitAB - Finish/Turn_B 재정렬 시도 결과: moved={moved}, finishIndex={finishIndex}, turnBIndex={turnBIndex}");
+            }
+            catch (Exception ex)
+            {
+                DentalLogger.Log($"Composite2SplitAB - Finish/Turn_B 재정렬 예외: {ex.GetType().Name}:{ex.Message}");
+            }
+        }
 
 
         private static bool TryRunRoughFreeFromMillSplitAB()

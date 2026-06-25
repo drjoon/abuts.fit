@@ -27,8 +27,7 @@ namespace DentalAddin
     {
         public static void OperationSeq()
         {
-            // 실행 단위마다 초기화: Turn_B 직전 선행 생성한 Composite NewA 중복 방지 플래그
-            try { Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_NEWA_PRE_ADDED", null); } catch { }
+
 
             // 2026-06-08: Two-Phase를 기본값으로 변경, One-Phase는 명시적 요청 시에만 사용
             bool onePhaseEnabled = IsOnePhaseEnabled();
@@ -90,15 +89,14 @@ namespace DentalAddin
                 CustomCycle();
 
                 // 2-phase 순서 (기본값):
-                // CustomCycle → Turn_A → Rough_A → FrontFace → Composite_A(신규, Face 범위) → Turn_B → Rough_B → FreeForm
+                // CustomCycle → Turn_A → Rough_A → FrontFace → Turn_B → Rough_B → FreeForm
                 ExecuteTwoPhaseTurning("A");
                 ExecuteTwoPhaseRough("A");
 
                 ValidateBeforeOperation("FrontFaceMill", Array.Empty<string>(), new[] { "3DMilling_FrontFace" });
                 FrontFaceMill();
 
-                // 요청사항: 신규 5Axis_Composite_A를 Turn_B 직전에 선행 실행
-                TryRunComposite2NewABeforeTurnB();
+
 
                 ExecuteTwoPhaseTurning("B");
                 ExecuteTwoPhaseRough("B");
@@ -149,45 +147,7 @@ namespace DentalAddin
             CustomCycle2();
         }
 
-        private static void TryRunComposite2NewABeforeTurnB()
-        {
-            if (DisableCompositeNewA)
-            {
-                DentalLogger.Log("OperationSeq - DisableCompositeNewA=true, Turn_B 직전 Composite NewA 선행 실행 스킵");
-                return;
-            }
 
-            // 이미 같은 실행에서 선행 생성 완료된 경우 중복 실행 방지
-            string preAdded = null;
-            try { preAdded = Environment.GetEnvironmentVariable("ABUTS_COMPOSITE_NEWA_PRE_ADDED"); } catch { }
-            if (string.Equals(preAdded, "1", StringComparison.OrdinalIgnoreCase) || string.Equals(preAdded, "true", StringComparison.OrdinalIgnoreCase))
-            {
-                DentalLogger.Log("OperationSeq - Turn_B 직전 Composite NewA 선행 실행은 이미 완료되어 재실행 생략");
-                return;
-            }
-
-            try
-            {
-                FreeFormFeature freeFormFeature = FindFreeFormFeatureByName("3DMilling_0Degree");
-                if (freeFormFeature == null)
-                {
-                    DentalLogger.Log("OperationSeq - Turn_B 직전 Composite NewA 선행 실행 실패: 3DMilling_0Degree 미발견");
-                    return;
-                }
-
-                Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_NEWA_ONLY", "1");
-                bool executed = TryRunComposite2SplitAB(freeFormFeature);
-                DentalLogger.Log($"OperationSeq - Turn_B 직전 Composite NewA 선행 실행 결과: executed={executed}");
-            }
-            catch (Exception ex)
-            {
-                DentalLogger.Log($"OperationSeq - Turn_B 직전 Composite NewA 선행 실행 예외: {ex.GetType().Name}:{ex.Message}");
-            }
-            finally
-            {
-                try { Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_NEWA_ONLY", null); } catch { }
-            }
-        }
 
         private static void ClearOperationsForTwoPhase()
         {
