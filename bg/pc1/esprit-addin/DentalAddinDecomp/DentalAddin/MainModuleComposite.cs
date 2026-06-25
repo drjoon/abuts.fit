@@ -488,7 +488,7 @@ namespace DentalAddin
             TryAppendCompositeSuffixToNewOperations(beforeAddCountBaseA, "A");
             int afterA = Document?.Operations?.Count ?? -1;
             DentalLogger.Log($"Composite2SplitAB - Operation 추가 완료: B(기존 A) (afterCount={afterA})");
-            TryMoveCompositeFinishBeforeTurnB("Finish_A", "Finish_B");
+            TryMoveCompositeFinishBeforeTurnB("FINISH_A", "FINISH_B");
 
             int beforeAddCountB = Document?.Operations?.Count ?? -1;
             TryDisableCompositeDynamicIfRequested(opB, "B");
@@ -944,20 +944,20 @@ namespace DentalAddin
             string normalized = label.Trim();
 
             // 구분 정책:
-            // - 기존 A           : Finish_A
-            // - 기존 B           : Finish_B1
-            // - 기존 B-Extension : Finish_B2
+            // - 기존 A           : FINISH_A
+            // - 기존 B           : FINISH_B1
+            // - 기존 B-Extension : FINISH_B2
             if (normalized.StartsWith("B-Extension", StringComparison.OrdinalIgnoreCase))
             {
-                return "Finish_B2";
+                return "FINISH_B2";
             }
             if (normalized.StartsWith("A", StringComparison.OrdinalIgnoreCase))
             {
-                return "Finish_A";
+                return "FINISH_A";
             }
             if (normalized.StartsWith("B", StringComparison.OrdinalIgnoreCase))
             {
-                return "Finish_B1";
+                return "FINISH_B1";
             }
 
             return null;
@@ -994,7 +994,11 @@ namespace DentalAddin
                         try { oldName = (string)op.GetType().InvokeMember("Name", BindingFlags.GetProperty, null, op, null); } catch { }
                     }
 
-                    string baseName = string.IsNullOrWhiteSpace(oldName) ? "5Axis_Composite" : oldName.Trim();
+                    string baseName = string.IsNullOrWhiteSpace(oldName) ? "5 Axis Composite" : oldName.Trim();
+                    baseName = RemoveTokenIgnoreCase(baseName, "[FINISH_A]").Trim();
+                    baseName = RemoveTokenIgnoreCase(baseName, "[FINISH_B]").Trim();
+                    baseName = RemoveTokenIgnoreCase(baseName, "[FINISH_B1]").Trim();
+                    baseName = RemoveTokenIgnoreCase(baseName, "[FINISH_B2]").Trim();
                     baseName = RemoveTokenIgnoreCase(baseName, "[Finish_A]").Trim();
                     baseName = RemoveTokenIgnoreCase(baseName, "[Finish_B]").Trim();
                     baseName = RemoveTokenIgnoreCase(baseName, "[Finish_B1]").Trim();
@@ -1009,13 +1013,13 @@ namespace DentalAddin
                     }
                     if (string.IsNullOrWhiteSpace(baseName))
                     {
-                        baseName = "5Axis_Composite";
+                        baseName = "5 Axis Composite";
                     }
 
                     string newName;
-                    if (baseName.StartsWith("5Axis_Composite", StringComparison.OrdinalIgnoreCase))
+                    if (baseName.IndexOf("composite", StringComparison.OrdinalIgnoreCase) >= 0)
                     {
-                        newName = $"5Axis_Composite [{suffix}]";
+                        newName = $"5 Axis Composite [{suffix}]";
                     }
                     else if (baseName.IndexOf($"[{suffix}]", StringComparison.OrdinalIgnoreCase) >= 0)
                     {
@@ -1083,7 +1087,7 @@ namespace DentalAddin
                         return false;
                     }
 
-                    if (name.IndexOf("5Axis_Composite", StringComparison.OrdinalIgnoreCase) < 0)
+                    if (name.IndexOf("composite", StringComparison.OrdinalIgnoreCase) < 0)
                     {
                         return false;
                     }
@@ -1113,6 +1117,11 @@ namespace DentalAddin
                 }
 
                 int finishIndex = FindFirstIndex(i => IsMatch(i, new[] { preferredFinishToken, legacyFinishToken }));
+                if (finishIndex < 1 && string.Equals(preferredFinishToken, "FINISH_A", StringComparison.OrdinalIgnoreCase))
+                {
+                    // 과거 표기와의 호환: FINISH_A를 찾지 못하면 FINISH_B도 같은 역할로 간주
+                    finishIndex = FindFirstIndex(i => IsMatch(i, new[] { "FINISH_B", "Finish_B", "Finish_A" }));
+                }
                 int turnBIndex = FindFirstIndex(i =>
                 {
                     object op = null;
@@ -1202,6 +1211,88 @@ namespace DentalAddin
             catch (Exception ex)
             {
                 DentalLogger.Log($"Composite2SplitAB - Finish/Turn_B 재정렬 예외: {ex.GetType().Name}:{ex.Message}");
+            }
+        }
+
+        internal static void TryNormalizeCompositeFinishOrderAfterFreeForm()
+        {
+            try
+            {
+                // FreeFormMill 종료 후 후처리 보정:
+                // 1) 이름 포맷 표준화(5 Axis Composite [FINISH_*])
+                // 2) FINISH_A를 TURN_B 바로 위로 재정렬
+                if (Document?.Operations == null)
+                {
+                    return;
+                }
+
+                int count = Document.Operations.Count;
+                if (count <= 0)
+                {
+                    return;
+                }
+
+                for (int i = 1; i <= count; i++)
+                {
+                    object op = null;
+                    try { op = Document.Operations[i]; } catch { }
+                    if (op == null) continue;
+
+                    string oldName = null;
+                    try
+                    {
+                        dynamic d = op;
+                        oldName = d.Name as string;
+                    }
+                    catch
+                    {
+                        try { oldName = (string)op.GetType().InvokeMember("Name", BindingFlags.GetProperty, null, op, null); } catch { }
+                    }
+
+                    if (string.IsNullOrWhiteSpace(oldName)) continue;
+                    if (oldName.IndexOf("composite", StringComparison.OrdinalIgnoreCase) < 0) continue;
+
+                    string mapped = null;
+                    if (oldName.IndexOf("FINISH_A", StringComparison.OrdinalIgnoreCase) >= 0 || oldName.IndexOf("Finish_A", StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        mapped = "FINISH_A";
+                    }
+                    else if (oldName.IndexOf("FINISH_B1", StringComparison.OrdinalIgnoreCase) >= 0 || oldName.IndexOf("Finish_B1", StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        mapped = "FINISH_B1";
+                    }
+                    else if (oldName.IndexOf("FINISH_B2", StringComparison.OrdinalIgnoreCase) >= 0 || oldName.IndexOf("Finish_B2", StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        mapped = "FINISH_B2";
+                    }
+                    else if (oldName.IndexOf("FINISH_B", StringComparison.OrdinalIgnoreCase) >= 0 || oldName.IndexOf("Finish_B", StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        mapped = "FINISH_A";
+                    }
+
+                    if (string.IsNullOrWhiteSpace(mapped)) continue;
+
+                    string newName = $"5 Axis Composite [{mapped}]";
+                    bool renamed = false;
+                    try
+                    {
+                        dynamic d = op;
+                        d.Name = newName;
+                        renamed = true;
+                    }
+                    catch { }
+
+                    if (!renamed)
+                    {
+                        try { op.GetType().InvokeMember("Name", BindingFlags.SetProperty, null, op, new object[] { newName }); } catch { }
+                    }
+                }
+
+                TryMoveCompositeFinishBeforeTurnB("FINISH_A", "FINISH_B");
+            }
+            catch (Exception ex)
+            {
+                DentalLogger.Log($"Composite2SplitAB - FreeForm 후처리 정렬/정규화 실패: {ex.GetType().Name}:{ex.Message}");
             }
         }
 

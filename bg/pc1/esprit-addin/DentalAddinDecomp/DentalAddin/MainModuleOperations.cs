@@ -68,6 +68,7 @@ namespace DentalAddin
 
                 ValidateBeforeOperation("FreeFormMill", Array.Empty<string>(), new[] { "3DMilling_0Degree", "3DMilling_90Degree", "3DMilling_180Degree", "3DMilling_270Degree" });
                 FreeFormMill();
+                TryNormalizeCompositeFinishOrderAfterFreeForm();
                 if (Mark.MarkSign)
                 {
                     ValidateBeforeOperation("MarkText", Array.Empty<string>(), new[] { "3DProject_Mark" });
@@ -107,6 +108,7 @@ namespace DentalAddin
                 {
                     ValidateBeforeOperation("FreeFormMill", Array.Empty<string>(), new[] { "3DMilling_0Degree", "3DMilling_90Degree", "3DMilling_180Degree", "3DMilling_270Degree" });
                     FreeFormMill();
+                    TryNormalizeCompositeFinishOrderAfterFreeForm();
                 }
                 finally
                 {
@@ -138,6 +140,7 @@ namespace DentalAddin
             }
             ValidateBeforeOperation("FreeFormMill", Array.Empty<string>(), new[] { "3DMilling_0Degree", "3DMilling_90Degree", "3DMilling_180Degree", "3DMilling_270Degree" });
             FreeFormMill();
+            TryNormalizeCompositeFinishOrderAfterFreeForm();
             if (Mark.MarkSign)
             {
                 ValidateBeforeOperation("MarkText", Array.Empty<string>(), new[] { "3DProject_Mark" });
