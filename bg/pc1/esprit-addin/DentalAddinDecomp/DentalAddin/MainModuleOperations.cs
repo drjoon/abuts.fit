@@ -475,6 +475,19 @@ namespace DentalAddin
                     }
 
                     string baseName = string.IsNullOrWhiteSpace(oldName) ? "OP" : oldName;
+
+                    // TURN 태그는 누적되지 않게 정리: [TURN_A]/[TURN_B]가 섞여 있으면 먼저 제거 후 현재 tag만 부착
+                    if (tag.StartsWith("TURN_", StringComparison.OrdinalIgnoreCase))
+                    {
+                        baseName = RemoveTokenIgnoreCase(baseName, "[TURN_A]");
+                        baseName = RemoveTokenIgnoreCase(baseName, "[TURN_B]");
+                        while (baseName.IndexOf("  ", StringComparison.Ordinal) >= 0)
+                        {
+                            baseName = baseName.Replace("  ", " ");
+                        }
+                        baseName = baseName.Trim();
+                    }
+
                     if (baseName.IndexOf(tag, StringComparison.OrdinalIgnoreCase) >= 0)
                     {
                         continue;
@@ -503,6 +516,22 @@ namespace DentalAddin
             {
                 DentalLogger.Log($"TagNewOperations 실패(tag={tag}): {ex.GetType().Name}:{ex.Message}");
             }
+        }
+
+        private static string RemoveTokenIgnoreCase(string source, string token)
+        {
+            if (string.IsNullOrEmpty(source) || string.IsNullOrEmpty(token))
+            {
+                return source;
+            }
+
+            int idx = source.IndexOf(token, StringComparison.OrdinalIgnoreCase);
+            while (idx >= 0)
+            {
+                source = source.Remove(idx, token.Length);
+                idx = source.IndexOf(token, StringComparison.OrdinalIgnoreCase);
+            }
+            return source;
         }
 
         public static void CustomCycle()
@@ -835,50 +864,28 @@ namespace DentalAddin
                     return;
                 }
 
-                // 요청사항: Turn_A는 기존 PRC 공구(현재 T02) 유지, Turn_B는 T05(5번 공구) 강제
-                if (!string.Equals(region, "B", StringComparison.OrdinalIgnoreCase))
+                // 요청사항: Turn_A는 정방향 공구(T02), Turn_B는 백터닝 공구(T05) 강제
+                int targetToolNumber;
+                if (string.Equals(region, "A", StringComparison.OrdinalIgnoreCase))
                 {
-                    DentalLogger.Log($"TurningOp ToolOverride - region={region}, 기존 공구 유지");
+                    targetToolNumber = 2;
+                }
+                else if (string.Equals(region, "B", StringComparison.OrdinalIgnoreCase))
+                {
+                    targetToolNumber = 5;
+                }
+                else
+                {
+                    DentalLogger.Log($"TurningOp ToolOverride - region={region}, 공구 오버라이드 대상 아님");
                     return;
                 }
 
-                string selectedToolId = null;
-                foreach (Tool tool in (IEnumerable)Document.Tools)
-                {
-                    if (tool == null || string.IsNullOrWhiteSpace(tool.ToolID))
-                    {
-                        continue;
-                    }
-
-                    if (string.Equals(tool.ToolID, "T05", StringComparison.OrdinalIgnoreCase))
-                    {
-                        selectedToolId = tool.ToolID;
-                        break;
-                    }
-                }
-
-                // 환경에 따라 ToolID가 T5 형태일 수 있어 5번 공구를 보조 탐색
-                if (string.IsNullOrWhiteSpace(selectedToolId))
-                {
-                    foreach (Tool tool in (IEnumerable)Document.Tools)
-                    {
-                        if (tool == null || string.IsNullOrWhiteSpace(tool.ToolID))
-                        {
-                            continue;
-                        }
-
-                        string digits = new string(tool.ToolID.Where(char.IsDigit).ToArray());
-                        if (int.TryParse(digits, out int n) && n == 5)
-                        {
-                            selectedToolId = tool.ToolID;
-                            break;
-                        }
-                    }
-                }
+                string selectedToolId = SelectTurningToolIdByNumber(targetToolNumber);
+                string preferredToolId = $"T{targetToolNumber:00}";
 
                 if (string.IsNullOrWhiteSpace(selectedToolId))
                 {
-                    DentalLogger.Log("TurningOp ToolOverride - Turn_B용 T05(5번 공구)를 찾지 못해 기존 공구를 유지합니다.");
+                    DentalLogger.Log($"TurningOp ToolOverride - region={region}용 {preferredToolId}({targetToolNumber}번 공구)를 찾지 못해 기존 PRC 공구를 유지합니다.");
                     return;
                 }
 
@@ -896,12 +903,193 @@ namespace DentalAddin
                     applied++;
                 }
 
-                DentalLogger.Log($"TurningOp ToolOverride - region=B, ToolID={selectedToolId} 적용(techCount={applied})");
+                DentalLogger.Log($"TurningOp ToolOverride - region={region}, ToolID={selectedToolId} 적용(techCount={applied})");
             }
             catch (Exception ex)
             {
                 DentalLogger.Log($"TurningOp ToolOverride 실패(region={region}): {ex.GetType().Name}:{ex.Message}");
             }
+        }
+
+        private static string SelectTurningToolIdByNumber(int targetToolNumber)
+        {
+            try
+            {
+                if (Document?.Tools == null)
+                {
+                    return null;
+                }
+
+                // 1) 공구번호(스테이션) 우선 매칭: ToolID 명칭(OD_V35..., BackTurn...)과 무관하게 선택
+                foreach (Tool tool in (IEnumerable)Document.Tools)
+                {
+                    if (tool == null || string.IsNullOrWhiteSpace(tool.ToolID)) continue;
+                    if (TryGetToolNumber(tool, out int n) && n == targetToolNumber)
+                    {
+                        return tool.ToolID;
+                    }
+                }
+
+                // 2) 호환용: T02/T05 정확 일치
+                string preferredToolId = $"T{targetToolNumber:00}";
+                foreach (Tool tool in (IEnumerable)Document.Tools)
+                {
+                    if (tool == null || string.IsNullOrWhiteSpace(tool.ToolID)) continue;
+                    if (string.Equals(tool.ToolID, preferredToolId, StringComparison.OrdinalIgnoreCase))
+                    {
+                        return tool.ToolID;
+                    }
+                }
+
+                // 3) 마지막 fallback: T2/T5 형태 ID만 허용
+                foreach (Tool tool in (IEnumerable)Document.Tools)
+                {
+                    if (tool == null || string.IsNullOrWhiteSpace(tool.ToolID)) continue;
+                    string id = tool.ToolID.Trim();
+                    if (!id.StartsWith("T", StringComparison.OrdinalIgnoreCase)) continue;
+
+                    string digits = new string(id.Where(char.IsDigit).ToArray());
+                    if (int.TryParse(digits, out int n) && n == targetToolNumber)
+                    {
+                        return tool.ToolID;
+                    }
+                }
+
+                // 디버그 로그: 왜 못 찾았는지 바로 확인 가능하게 후보 덤프
+                int printed = 0;
+                foreach (Tool tool in (IEnumerable)Document.Tools)
+                {
+                    if (tool == null) continue;
+                    if (printed >= 20)
+                    {
+                        DentalLogger.Log("SelectTurningToolIdByNumber - tools 출력 생략(상한 20)");
+                        break;
+                    }
+
+                    bool hasNo = TryGetToolNumber(tool, out int n);
+                    DentalLogger.Log($"SelectTurningToolIdByNumber - Tool[{printed + 1}] ID='{tool.ToolID}', No={(hasNo ? n.ToString(CultureInfo.InvariantCulture) : "?")}, Style='{tool.ToolStyle}'");
+                    printed++;
+                }
+            }
+            catch (Exception ex)
+            {
+                DentalLogger.Log($"SelectTurningToolIdByNumber 실패(target={targetToolNumber}): {ex.GetType().Name}:{ex.Message}");
+            }
+
+            return null;
+        }
+
+        private static bool IsLatheOrTurningTool(Tool tool)
+        {
+            try
+            {
+                if (tool == null)
+                {
+                    return false;
+                }
+
+                string style = tool.ToolStyle.ToString();
+                if (string.IsNullOrWhiteSpace(style))
+                {
+                    return false;
+                }
+
+                return style.IndexOf("Lathe", StringComparison.OrdinalIgnoreCase) >= 0
+                    || style.IndexOf("Turn", StringComparison.OrdinalIgnoreCase) >= 0;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static bool TryGetToolNumber(Tool tool, out int number)
+        {
+            number = 0;
+            if (tool == null)
+            {
+                return false;
+            }
+
+            string[] propNames = new[]
+            {
+                "ToolNumber", "ToolNo", "Number", "Station", "StationNumber", "Pocket", "ToolPosition"
+            };
+
+            static bool TryParseRaw(object raw, out int parsed)
+            {
+                parsed = 0;
+                if (raw == null) return false;
+                if (raw is int i)
+                {
+                    parsed = i;
+                    return true;
+                }
+                return int.TryParse(Convert.ToString(raw, CultureInfo.InvariantCulture), NumberStyles.Integer, CultureInfo.InvariantCulture, out parsed);
+            }
+
+            try
+            {
+                Type t = tool.GetType();
+                foreach (string pn in propNames)
+                {
+                    try
+                    {
+                        PropertyInfo p = t.GetProperty(pn, BindingFlags.Public | BindingFlags.Instance);
+                        if (p != null && p.CanRead)
+                        {
+                            object raw = p.GetValue(tool);
+                            if (TryParseRaw(raw, out int parsed))
+                            {
+                                number = parsed;
+                                return true;
+                            }
+                        }
+                    }
+                    catch { }
+
+                    // COM IDispatch 속성 접근 (reflection이 못 잡는 경우)
+                    try
+                    {
+                        object raw = t.InvokeMember(pn, BindingFlags.GetProperty, null, tool, null, CultureInfo.InvariantCulture);
+                        if (TryParseRaw(raw, out int parsed))
+                        {
+                            number = parsed;
+                            return true;
+                        }
+                    }
+                    catch { }
+
+                    // dynamic late-binding 접근
+                    try
+                    {
+                        dynamic d = tool;
+                        object raw = null;
+                        switch (pn)
+                        {
+                            case "ToolNumber": raw = d.ToolNumber; break;
+                            case "ToolNo": raw = d.ToolNo; break;
+                            case "Number": raw = d.Number; break;
+                            case "Station": raw = d.Station; break;
+                            case "StationNumber": raw = d.StationNumber; break;
+                            case "Pocket": raw = d.Pocket; break;
+                            case "ToolPosition": raw = d.ToolPosition; break;
+                        }
+                        if (TryParseRaw(raw, out int parsed))
+                        {
+                            number = parsed;
+                            return true;
+                        }
+                    }
+                    catch { }
+                }
+            }
+            catch
+            {
+                // ignore
+            }
+
+            return false;
         }
 
         // 2-phase turning 분할 준비: rough mill과 동일한 splitX를 계산/검증하고 가이드 라인을 생성한다.
