@@ -95,12 +95,7 @@ namespace DentalAddin
                 // 기본값 정책
                 // - A(B): 0.0
                 // - B(C): 0.0
-                // - B-Extension(D): 0.05
-                if (normalizedLabel.StartsWith("B-Extension", StringComparison.OrdinalIgnoreCase))
-                {
-                    stockAllowance = 0.05;
-                }
-                else if (normalizedLabel.StartsWith("B", StringComparison.OrdinalIgnoreCase))
+                if (normalizedLabel.StartsWith("B", StringComparison.OrdinalIgnoreCase))
                 {
                     stockAllowance = 0.0;
                 }
@@ -324,7 +319,7 @@ namespace DentalAddin
             if (splitDegenerate)
             {
                 // 중요: 여기서 false를 반환하면 caller가 Composite2 단일 경로(A만)로 fallback 되어
-                // C(B-Extension)가 누락될 수 있다. 따라서 SplitAB 경로를 유지한 채 최소 경계로 degrade한다.
+                // C(FINISH_B1)가 누락될 수 있다. 따라서 SplitAB 경로를 유지한 채 최소 경계로 degrade한다.
                 DentalLogger.Log($"Composite2SplitAB - SplitPercent 범위가 작음(First={firstPercent:F2}, Split={splitPercent:F2}, Last={effectiveLastPercent:F2}). SplitAB 중단 대신 최소 경계로 degrade하여 계속 진행");
                 splitPercent = firstPercent;
             }
@@ -372,7 +367,6 @@ namespace DentalAddin
 
             const double seamEpsilonPercent = 0.05;
             const double compositeEndOffsetFromBackPointMm = 0.3; // 요청사항: C 끝 = BackPointX+0.3mm
-            const double compositeDExtendFromCEndMm = 0.3;        // 요청사항: D 구간 폭 = B/C 종료점부터 +0.3mm
 
             // B 시작 퍼센트 상한(안전값) 적용
             double splitPercentForA = splitPercent;
@@ -486,8 +480,8 @@ namespace DentalAddin
 
             // 공정 순서 정책:
             // - A_ONLY 모드: FINISH_A만 생성 (TURN_B 이전 배치용)
-            // - BC_ONLY 모드: FINISH_B1/B2만 생성 (원래 순서 유지용)
-            // - 기본 모드: A → B1 → B2 모두 생성
+            // - BC_ONLY 모드: FINISH_B1만 생성 (원래 순서 유지용)
+            // - 기본 모드: A → B1 생성
             if (runA)
             {
                 int beforeAddCountBaseA = Document?.Operations?.Count ?? -1;
@@ -496,7 +490,7 @@ namespace DentalAddin
                 TryAppendCompositeSuffixToNewOperations(beforeAddCountBaseA, "A");
                 int afterA = Document?.Operations?.Count ?? -1;
                 DentalLogger.Log($"Composite2SplitAB - Operation 추가 완료: B(기존 A) (afterCount={afterA})");
-                TryMoveCompositeFinishBeforeTurnB("FINISH_A", "FINISH_B");
+                TryMoveCompositeFinishBeforeTurnB("FINISH_A");
             }
             else
             {
@@ -512,56 +506,11 @@ namespace DentalAddin
                 int afterB = Document?.Operations?.Count ?? -1;
                 DentalLogger.Log($"Composite2SplitAB - Operation 추가 완료: C(기존 B) (afterCount={afterB})");
 
-                // 요청사항: 5axis Composite D(B-Extension)
-                // - 시작: C 종료점(=BackPointX+0.3mm)
-                // - 종료: 시작점 +0.3mm(StartEndScale 기준)
-                double dFirstPercent = opB.LastPassPercent;
-                double dLastPercent = ShiftPassPercentByStartEndScaleMmNoClamp(dFirstPercent, compositeDExtendFromCEndMm);
-                if (dLastPercent > dFirstPercent + 1e-6)
-                {
-                    ITechnology[] techDExt = TryOpenProcess(technologyUtility, prcB, "Composite2SplitAB:D");
-                    TechLatheMill5xComposite opBExtension = null;
-                    if (techDExt.Length > 0)
-                    {
-                        opBExtension = techDExt[0] as TechLatheMill5xComposite;
-                    }
-
-                    if (opBExtension != null)
-                    {
-                        opBExtension.PassPosition = espMill5xCompositePassPosition.espMill5xCompositePassPositionStartEndPosition;
-                        opBExtension.FirstPassPercent = dFirstPercent;
-                        opBExtension.LastPassPercent = dLastPercent;
-                        opBExtension.DriveSurface = opA.DriveSurface;
-                        opBExtension.ToolID = !string.IsNullOrWhiteSpace(opB.ToolID)
-                            ? opB.ToolID
-                            : (!string.IsNullOrWhiteSpace(opA.ToolID) ? opA.ToolID : ToolNs);
-
-                        TrySetCompositeStepIncrement(opBExtension, "B");
-                        TrySetCompositeStockAllowance(opBExtension, "B-Extension");
-
-                        int beforeAddCountD = Document?.Operations?.Count ?? -1;
-                        TryDisableCompositeDynamicIfRequested(opBExtension, "B-Extension");
-                        TryAddOperation(opBExtension, freeFormFeature, "Composite2SplitAB:D", false);
-                        TryAppendCompositeSuffixToNewOperations(beforeAddCountD, "B-Extension");
-                        int afterD = Document?.Operations?.Count ?? -1;
-
-                        double dFirstX = PassPercentToX(dFirstPercent, MoveSTL_Module.FrontPointX, direction, absSpan);
-                        double dLastX = PassPercentToX(dLastPercent, MoveSTL_Module.FrontPointX, direction, absSpan);
-                        DentalLogger.Log($"Composite2SplitAB - Operation 추가 완료: D(B-Extension) ({dFirstPercent:F2}->{dLastPercent:F2}, X:{dFirstX:F3}->{dLastX:F3}, +{compositeDExtendFromCEndMm:F3}mm, afterCount={afterD})");
-                    }
-                    else
-                    {
-                        DentalLogger.Log("Composite2SplitAB - D(B-Extension) PRC 로드/캐스팅 실패");
-                    }
-                }
-                else
-                {
-                    DentalLogger.Log($"Composite2SplitAB - D(B-Extension) 범위 비정상으로 생성 생략: First={dFirstPercent:F2}, Last={dLastPercent:F2}");
-                }
+                // B-Extension 공정 생성은 제거됨: BC 구간은 FINISH_B1까지만 생성한다.
             }
             else
             {
-                DentalLogger.Log("Composite2SplitAB - phaseMode=A_ONLY, FINISH_B1/B2 생성 생략");
+                DentalLogger.Log("Composite2SplitAB - phaseMode=A_ONLY, FINISH_B1 생성 생략");
             }
 
             int finalCount = Document?.Operations?.Count ?? -1;
@@ -988,13 +937,8 @@ namespace DentalAddin
             string normalized = label.Trim();
 
             // 구분 정책:
-            // - 기존 A           : FINISH_A
-            // - 기존 B           : FINISH_B1
-            // - 기존 B-Extension : FINISH_B2
-            if (normalized.StartsWith("B-Extension", StringComparison.OrdinalIgnoreCase))
-            {
-                return "FINISH_B2";
-            }
+            // - 기존 A : FINISH_A
+            // - 기존 B : FINISH_B1
             if (normalized.StartsWith("A", StringComparison.OrdinalIgnoreCase))
             {
                 return "FINISH_A";
@@ -1040,13 +984,11 @@ namespace DentalAddin
 
                     string baseName = string.IsNullOrWhiteSpace(oldName) ? "5 Axis Composite" : oldName.Trim();
                     baseName = RemoveTokenIgnoreCase(baseName, "[FINISH_A]").Trim();
-                    baseName = RemoveTokenIgnoreCase(baseName, "[FINISH_B]").Trim();
                     baseName = RemoveTokenIgnoreCase(baseName, "[FINISH_B1]").Trim();
-                    baseName = RemoveTokenIgnoreCase(baseName, "[FINISH_B2]").Trim();
+
                     baseName = RemoveTokenIgnoreCase(baseName, "[Finish_A]").Trim();
-                    baseName = RemoveTokenIgnoreCase(baseName, "[Finish_B]").Trim();
                     baseName = RemoveTokenIgnoreCase(baseName, "[Finish_B1]").Trim();
-                    baseName = RemoveTokenIgnoreCase(baseName, "[Finish_B2]").Trim();
+
                     baseName = RemoveTokenIgnoreCase(baseName, "_A").Trim();
                     baseName = RemoveTokenIgnoreCase(baseName, "_B").Trim();
                     baseName = RemoveTokenIgnoreCase(baseName, "_C").Trim();
@@ -1086,7 +1028,7 @@ namespace DentalAddin
             }
         }
 
-        private static void TryMoveCompositeFinishBeforeTurnB(string preferredFinishToken, string legacyFinishToken)
+        private static void TryMoveCompositeFinishBeforeTurnB(string preferredFinishToken)
         {
             try
             {
@@ -1095,7 +1037,7 @@ namespace DentalAddin
                     return;
                 }
 
-                bool IsMatch(int index, string[] requiredAny)
+                bool IsMatch(int index, string token)
                 {
                     object op = null;
                     try { op = Document.Operations[index]; } catch { }
@@ -1115,7 +1057,7 @@ namespace DentalAddin
                         try { name = (string)op.GetType().InvokeMember("Name", BindingFlags.GetProperty, null, op, null); } catch { }
                     }
 
-                    if (string.IsNullOrWhiteSpace(name))
+                    if (string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(token))
                     {
                         return false;
                     }
@@ -1125,15 +1067,7 @@ namespace DentalAddin
                         return false;
                     }
 
-                    foreach (string token in requiredAny)
-                    {
-                        if (!string.IsNullOrWhiteSpace(token) && name.IndexOf(token, StringComparison.OrdinalIgnoreCase) >= 0)
-                        {
-                            return true;
-                        }
-                    }
-
-                    return false;
+                    return name.IndexOf(token, StringComparison.OrdinalIgnoreCase) >= 0;
                 }
 
                 int FindFirstIndex(Func<int, bool> predicate)
@@ -1149,12 +1083,7 @@ namespace DentalAddin
                     return -1;
                 }
 
-                int finishIndex = FindFirstIndex(i => IsMatch(i, new[] { preferredFinishToken, legacyFinishToken }));
-                if (finishIndex < 1 && string.Equals(preferredFinishToken, "FINISH_A", StringComparison.OrdinalIgnoreCase))
-                {
-                    // 과거 표기와의 호환: FINISH_A를 찾지 못하면 FINISH_B도 같은 역할로 간주
-                    finishIndex = FindFirstIndex(i => IsMatch(i, new[] { "FINISH_B", "Finish_B", "Finish_A" }));
-                }
+                int finishIndex = FindFirstIndex(i => IsMatch(i, preferredFinishToken));
                 int turnBIndex = FindFirstIndex(i =>
                 {
                     object op = null;
@@ -1294,14 +1223,8 @@ namespace DentalAddin
                     {
                         mapped = "FINISH_B1";
                     }
-                    else if (oldName.IndexOf("FINISH_B2", StringComparison.OrdinalIgnoreCase) >= 0 || oldName.IndexOf("Finish_B2", StringComparison.OrdinalIgnoreCase) >= 0)
-                    {
-                        mapped = "FINISH_B2";
-                    }
-                    else if (oldName.IndexOf("FINISH_B", StringComparison.OrdinalIgnoreCase) >= 0 || oldName.IndexOf("Finish_B", StringComparison.OrdinalIgnoreCase) >= 0)
-                    {
-                        mapped = "FINISH_A";
-                    }
+
+
 
                     if (string.IsNullOrWhiteSpace(mapped)) continue;
 
@@ -1321,7 +1244,7 @@ namespace DentalAddin
                     }
                 }
 
-                TryMoveCompositeFinishBeforeTurnB("FINISH_A", "FINISH_B");
+                TryMoveCompositeFinishBeforeTurnB("FINISH_A");
             }
             catch (Exception ex)
             {
@@ -1687,20 +1610,7 @@ namespace DentalAddin
             return Clamp(shiftedPercent, minPercent, maxPercent);
         }
 
-        // C 종료/B 종료 보정처럼 의도적으로 안전 상한(effectiveLastPercent)을 넘겨 이동시켜야 하는 구간용.
-        // StartEndScale로 mm->percent만 변환하고, 여기서는 클램프하지 않는다.
-        private static double ShiftPassPercentByStartEndScaleMmNoClamp(
-            double passPercent,
-            double offsetMm)
-        {
-            if (double.IsNaN(passPercent) || double.IsInfinity(passPercent))
-            {
-                return passPercent;
-            }
 
-            double deltaPercent = (offsetMm / StartEndScaleMm) * 100.0;
-            return passPercent + deltaPercent;
-        }
 
         private static double PassPercentDeltaToMmByStartEndScale(double deltaPercent)
         {
