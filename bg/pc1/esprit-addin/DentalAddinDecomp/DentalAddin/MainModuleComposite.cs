@@ -826,9 +826,8 @@ namespace DentalAddin
             }
         }
 
-        // Front Face 기본 절삭 깊이(mm)
-        // 우선순위: PRC BottomZLimit(절대값) > 기본값
-        private const double FrontFaceFixedDepthMm = 1.0;
+        // Front Face BottomZLimit 고정값(mm, 절대값)
+        private const double FrontFaceFixedDepthMm = 0.5;
         private static double LastAppliedFrontFaceDepthMm = FrontFaceFixedDepthMm;
 
         // Face(EM2_0BALL) 안전가드 상수:
@@ -881,9 +880,9 @@ namespace DentalAddin
         }
 
         /// <summary>
-        /// Front Face(ParallelPlanes) 가공 깊이를 PRC BottomZLimit(절대값) 기준으로 적용한다.
-        /// - RL=1: BottomZLimit = -(FrontPointX + depth)
-        /// - RL=2: BottomZLimit = +(FrontPointX - depth)
+        /// Front Face(ParallelPlanes) BottomZLimit을 절대값 1.0mm로 고정 적용한다.
+        /// - RL=1: BottomZLimit = -1.0
+        /// - RL=2: BottomZLimit = +1.0
         /// 주의: 이 설정 이후에 Rough 안전가드(TryApplyFaceRightEndGuard)가 추가 보정할 수 있다.
         /// </summary>
         private static void ApplyFrontFaceFixedDepth(TechLatheMoldParallelPlanes faceOp, string context)
@@ -898,36 +897,29 @@ namespace DentalAddin
                 double oldTop = faceOp.TopZLimit;
                 double oldBottom = faceOp.BottomZLimit;
 
-                // PRC의 BottomZLimit 절대값을 우선 사용한다. (예: 0.5)
-                double configuredDepthMm = Math.Abs(oldBottom);
-                if (double.IsNaN(configuredDepthMm) || double.IsInfinity(configuredDepthMm) || configuredDepthMm < 1e-6)
-                {
-                    configuredDepthMm = FrontFaceFixedDepthMm;
-                    DentalLogger.Log($"FrontFaceDepth[{context}] - PRC BottomZLimit이 유효하지 않아 기본깊이 fallback 사용: {configuredDepthMm:F3}mm");
-                }
-
+                double configuredDepthMm = FrontFaceFixedDepthMm;
                 LastAppliedFrontFaceDepthMm = configuredDepthMm;
 
                 if (RL == 1.0)
                 {
                     faceOp.TopZLimit = 1.0;
-                    faceOp.BottomZLimit = -1.0 * (MoveSTL_Module.FrontPointX + configuredDepthMm);
+                    faceOp.BottomZLimit = -configuredDepthMm;
                 }
                 else if (RL == 2.0)
                 {
-                    faceOp.BottomZLimit = 1.0 * (MoveSTL_Module.FrontPointX - configuredDepthMm);
+                    faceOp.BottomZLimit = configuredDepthMm;
                     faceOp.TopZLimit = 1.0;
                 }
                 else
                 {
                     // RL 비정상 값은 기존 default 흐름을 해치지 않기 위해 RL=1 기준으로 처리
                     faceOp.TopZLimit = 1.0;
-                    faceOp.BottomZLimit = -1.0 * (MoveSTL_Module.FrontPointX + configuredDepthMm);
+                    faceOp.BottomZLimit = -configuredDepthMm;
                     DentalLogger.Log($"FrontFaceDepth[{context}] - RL 비정상({RL}), RL=1 기준으로 적용");
                 }
 
                 double faceRightX = (RL == 1.0) ? -faceOp.BottomZLimit : faceOp.BottomZLimit;
-                DentalLogger.Log($"FrontFaceDepth[{context}] - PRC깊이 적용: depth={configuredDepthMm:F3}mm, TopZ:{oldTop:F3}->{faceOp.TopZLimit:F3}, BottomZ:{oldBottom:F3}->{faceOp.BottomZLimit:F3}, Face.RightX={faceRightX:F3}");
+                DentalLogger.Log($"FrontFaceDepth[{context}] - 고정깊이 적용: depth={configuredDepthMm:F3}mm, TopZ:{oldTop:F3}->{faceOp.TopZLimit:F3}, BottomZ:{oldBottom:F3}->{faceOp.BottomZLimit:F3}, Face.RightX={faceRightX:F3}");
             }
             catch (Exception ex)
             {
