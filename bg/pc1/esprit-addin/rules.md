@@ -25,7 +25,7 @@
 
 ## 3. 이번 세션 리팩터링 기록 (2026-06-20)
 
-- `Composite B/C 종료`, `D 시작` 같은 경계 변경은 `TryRunComposite2SplitAB` 내부 숫자 수정으로 끝내지 않고,
+- FINISH 경계 변경은 `TryRunComposite2SplitAB` 내부 숫자 수정으로 끝내지 않고,
   변환 좌표계를 먼저 결정한 뒤 공통 유틸로 적용한다.
   - 경계 결정 SSOT: `StartEndScale(20mm)` 계열 유틸
     - `XToPassPercentByStartEndScale(...)`
@@ -33,17 +33,12 @@
     - `PassPercentDeltaToMmByStartEndScale(...)`
   - `ShiftPassPercentByXOffsetMm(...)`(span 기반)은 물리 span 기준 보정에만 사용한다.
   - `XToPassPercentBySpan(...)` 결과는 정책값이 아니라 diag 로그로만 사용한다.
-- `D`가 Operation 목록에는 있으나 툴패스가 사라지는 경우(시작=끝)는
+- FINISH_A/FINISH_B에서 Operation 목록은 생성되나 툴패스가 사라지는 경우(시작=끝)는
   **최소 폭 보장 헬퍼**(`EnsureStartHasMinWidthPercent`)를 통해 해결한다.
 - Turn_B와 Connection 경계 기준 수정 시,
   `ResolveTurnConnectionBoundaryX`에 우선순위를 집중 관리한다 (`EndXValue` → `FinishLineX` → `BackPointX`).
-- `5axis_Composite_A(NewA)` 비활성 정책 변경 시,
-  `TryRunComposite2NewABeforeTurnB` + `TryRunComposite2SplitAB` 내부 NewA 경로를 같이 정리해
-  도달 불가 코드 경고(CS0162)가 남지 않게 한다.
-- NewA/Composite_B 경계 정책 변경 시 SSOT:
-  - NewA 범위는 항상 Front Face 시작~끝
-  - NewA `StockAllowance`는 `0.05` 고정(`A-New` 라벨)
-  - Composite_B(내부 `opA`) 시작점은 NewA 시작점과 동일하게 동기화
+- 레거시 Single-A/BC/B-Extension 분기는 사용하지 않는다.
+  - 2-phase 기본 흐름은 `A_PHASE`/`B_PHASE`로 명시한다.
 
 ## 4. 정리 원칙
 

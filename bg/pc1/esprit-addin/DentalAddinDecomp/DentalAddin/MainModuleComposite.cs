@@ -274,32 +274,32 @@ namespace DentalAddin
 
             double splitPercent = Clamp(splitRatio * 100.0, firstPercent, effectiveLastPercent);
 
-            // B/C 분할 기준은 실제 가이드 라인(TwoPhaseSplitLine) X좌표로 강제한다.
+            // FINISH_A/FINISH_B 분할 기준은 실제 가이드 라인(TwoPhaseSplitLine) X좌표로 강제한다.
             if (TryResolveTwoPhaseSplitLineX(out double splitXByGuideLine))
             {
-                // 사용자 요청: B/C 경계(=C 시작)는 TwoPhaseSplitLine 기준 0.6mm 왼쪽(X-)으로 적용
-                // (기존 -0.5mm에서 C 시작점 추가 -0.1mm)
+                // 사용자 요청: A/B 경계(=B 시작)는 TwoPhaseSplitLine 기준 0.6mm 왼쪽(X-)으로 적용
+                // (기존 -0.5mm에서 시작점 추가 -0.1mm)
                 const double bcBoundaryLeftOffsetMm = 0.6;
                 double splitXByGuideLineLeft = splitXByGuideLine - bcBoundaryLeftOffsetMm;
 
                 // 중요: StartEndPosition pass-percent는 본 흐름에서 x/20.0 스케일을 사용한다.
-                // (span 기반((x-front)/span) 변환을 쓰면 B/C 경계가 우측으로 크게 밀릴 수 있음)
+                // (span 기반((x-front)/span) 변환을 쓰면 A/B 경계가 우측으로 크게 밀릴 수 있음)
                 double splitPercentByGuideLine = XToPassPercentByStartEndScale(splitXByGuideLineLeft, firstPercent, effectiveLastPercent);
                 if (!double.IsNaN(splitPercentByGuideLine) && !double.IsInfinity(splitPercentByGuideLine))
                 {
                     double splitPercentBySpanDiag = XToPassPercentBySpan(splitXByGuideLineLeft, MoveSTL_Module.FrontPointX, direction, absSpan, firstPercent, effectiveLastPercent);
-                    DentalLogger.Log($"Composite2SplitAB - B/C 경계 TwoPhaseSplitLine-0.6mm 적용: guideX={splitXByGuideLine:F3}, appliedX={splitXByGuideLineLeft:F3}, splitPercent(scale20) {splitPercent:F2}->{splitPercentByGuideLine:F2}, splitPercent(spanDiag)={splitPercentBySpanDiag:F2}");
+                    DentalLogger.Log($"Composite2SplitAB - A/B 경계 TwoPhaseSplitLine-0.6mm 적용: guideX={splitXByGuideLine:F3}, appliedX={splitXByGuideLineLeft:F3}, splitPercent(scale20) {splitPercent:F2}->{splitPercentByGuideLine:F2}, splitPercent(spanDiag)={splitPercentBySpanDiag:F2}");
                     splitX = splitXByGuideLineLeft;
                     splitPercent = splitPercentByGuideLine;
                 }
                 else
                 {
-                    DentalLogger.Log($"Composite2SplitAB - B/C 경계 TwoPhaseSplitLine-0.6mm 무시: splitRatio 계산 불가(appliedX={splitXByGuideLineLeft:F3}, guideX={splitXByGuideLine:F3})");
+                    DentalLogger.Log($"Composite2SplitAB - A/B 경계 TwoPhaseSplitLine-0.6mm 무시: splitRatio 계산 불가(appliedX={splitXByGuideLineLeft:F3}, guideX={splitXByGuideLine:F3})");
                 }
             }
             else
             {
-                DentalLogger.Log("Composite2SplitAB - B/C 경계 TwoPhaseSplitLine 미적용: 가이드 라인 미발견/해석 실패");
+                DentalLogger.Log("Composite2SplitAB - A/B 경계 TwoPhaseSplitLine 미적용: 가이드 라인 미발견/해석 실패");
             }
 
             // StartEndPosition에서 B 시작 퍼센트가 높아지면(실측: ~38%) NC 계산 중 크래시 가능성이 높다.
@@ -311,9 +311,13 @@ namespace DentalAddin
             bool startEndBFirstGuardApplied = false;
 
             string phaseMode = (GetEnvString("ABUTS_COMPOSITE_PHASE_MODE") ?? string.Empty).Trim().ToUpperInvariant();
-            bool runA = !string.Equals(phaseMode, "BC_ONLY", StringComparison.OrdinalIgnoreCase);
-            bool runBC = !string.Equals(phaseMode, "A_ONLY", StringComparison.OrdinalIgnoreCase);
-            DentalLogger.Log($"Composite2SplitAB - enabled=1, splitX={splitX:F3}, prcA={prcA}, prcB={prcB}, phaseMode='{phaseMode}', runA={runA}, runBC={runBC}");
+            // 레거시 BC 개념 제거:
+            // - A_PHASE: FINISH_A만 생성
+            // - B_PHASE: FINISH_B만 생성
+            // - 기본값 : FINISH_A + FINISH_B 생성
+            bool runA = !string.Equals(phaseMode, "B_PHASE", StringComparison.OrdinalIgnoreCase);
+            bool runB = !string.Equals(phaseMode, "A_PHASE", StringComparison.OrdinalIgnoreCase);
+            DentalLogger.Log($"Composite2SplitAB - enabled=1, splitX={splitX:F3}, prcA={prcA}, prcB={prcB}, phaseMode='{phaseMode}', runA={runA}, runB={runB}");
 
             bool splitDegenerate = Math.Abs(splitPercent - firstPercent) < 0.01 || Math.Abs(effectiveLastPercent - splitPercent) < 0.01;
             if (splitDegenerate)
@@ -426,7 +430,7 @@ namespace DentalAddin
             double bLastBeforeAlign = opA.LastPassPercent;
             opA.LastPassPercent = Clamp(opB.FirstPassPercent, opA.FirstPassPercent, effectiveLastPercent);
 
-            // 일반 모드(2-phase split): C 종료는 BackPointX+0.3mm로 고정한다. (B/C 경계는 유지)
+            // 일반 모드(2-phase split): FINISH_B 종료는 BackPointX+0.3mm로 고정한다. (A/B 경계는 유지)
             double cLastBeforeAdjust = opB.LastPassPercent;
             double cTargetX = compositeEndTargetX;
             opB.LastPassPercent = Clamp(compositeEndPassPercent, opB.FirstPassPercent, 100.0);
@@ -435,24 +439,35 @@ namespace DentalAddin
             double bLastXAfterAlign = PassPercentToX(opA.LastPassPercent, MoveSTL_Module.FrontPointX, direction, absSpan);
             double cLastXBeforeAdjust = PassPercentToX(cLastBeforeAdjust, MoveSTL_Module.FrontPointX, direction, absSpan);
             double cLastXAfterAdjust = PassPercentToX(opB.LastPassPercent, MoveSTL_Module.FrontPointX, direction, absSpan);
-            DentalLogger.Log($"Composite2SplitAB - B/C 경계 정렬 + C 종료 BackPointX+0.3mm: B.Last% {bLastBeforeAlign:F2}->{opA.LastPassPercent:F2}, B.LastX {bLastXBeforeAlign:F3}->{bLastXAfterAlign:F3}, C.First%={opB.FirstPassPercent:F2}, C.Last% {cLastBeforeAdjust:F2}->{opB.LastPassPercent:F2}, C.LastX {cLastXBeforeAdjust:F3}->{cLastXAfterAdjust:F3}, C.TargetX={cTargetX:F3}");
+            DentalLogger.Log($"Composite2SplitAB - A/B 경계 정렬 + FINISH_B 종료 BackPointX+0.3mm: B.Last% {bLastBeforeAlign:F2}->{opA.LastPassPercent:F2}, B.LastX {bLastXBeforeAlign:F3}->{bLastXAfterAlign:F3}, B.First%={opB.FirstPassPercent:F2}, B.Last% {cLastBeforeAdjust:F2}->{opB.LastPassPercent:F2}, B.LastX {cLastXBeforeAdjust:F3}->{cLastXAfterAdjust:F3}, B.TargetX={cTargetX:F3}");
             DentalLogger.Log($"Composite2SplitAB - seam 보정: A({opA.FirstPassPercent:F2}->{opA.LastPassPercent:F2}), B({opB.FirstPassPercent:F2}->{opB.LastPassPercent:F2}), seamEps={seamEpsilonPercent:F2}, BFirstGuard={startEndBFirstGuardApplied}, AFirstFallback={aFirstPassFallbackApplied}");
 
             bool surfaceReady = TryEnsureCompositeSurfaceNumber("Composite2SplitAB");
 
-            // 회귀 복원:
-            // FINISH_A/FINISH_B 모두 기존 기본 드라이브(SurfaceNumber)를 사용한다.
-            // (AuxDrive SurfaceNumber2 분리 사용 시 FINISH_A Z 위치가 틀어지는 현장 재현 케이스 대응)
-            opA.DriveSurface = "19," + Conversions.ToString(SurfaceNumber);
-            opB.DriveSurface = opA.DriveSurface;
-            if (!surfaceReady)
+            // 요청 반영:
+            // FINISH_A / FINISH_B 각각에 독립 DriveSurface를 새로 추가하여 사용한다.
+            // (기본 SurfaceNumber는 생성 실패 시에만 fallback)
+            int dedicatedAKey = 0;
+            int dedicatedBKey = 0;
+            bool dedicatedAReady = runA && TryCreateDedicatedCompositeDriveSurface("Composite2SplitAB", "FINISH_A", out dedicatedAKey);
+            bool dedicatedBReady = runB && TryCreateDedicatedCompositeDriveSurface("Composite2SplitAB", "FINISH_B", out dedicatedBKey);
+
+            bool canUseFallbackBase = surfaceReady && SurfaceNumber > 0;
+            bool hasDriveForA = !runA || dedicatedAReady || canUseFallbackBase;
+            bool hasDriveForB = !runB || dedicatedBReady || canUseFallbackBase;
+            if (!hasDriveForA || !hasDriveForB)
             {
-                DentalLogger.Log($"Composite2SplitAB - SurfaceNumber 보정 실패 상태에서 진행 (DriveSurface='{opA.DriveSurface}')");
+                DentalLogger.Log($"Composite2SplitAB - DriveSurface 확보 실패: runA={runA}, runB={runB}, dedicatedAReady={dedicatedAReady}, dedicatedBReady={dedicatedBReady}, surfaceReady={surfaceReady}, SurfaceNumber={SurfaceNumber}");
+                return false;
             }
-            else
-            {
-                DentalLogger.Log($"Composite2SplitAB - DriveSurface 단일 적용(legacy): SurfaceNumber={SurfaceNumber}, SurfaceNumber2={SurfaceNumber2:0.###}");
-            }
+
+            string fallbackDriveSurface = "19," + Conversions.ToString(SurfaceNumber);
+            string driveA = dedicatedAReady ? "19," + Conversions.ToString(dedicatedAKey) : fallbackDriveSurface;
+            string driveB = dedicatedBReady ? "19," + Conversions.ToString(dedicatedBKey) : fallbackDriveSurface;
+            opA.DriveSurface = driveA;
+            opB.DriveSurface = driveB;
+
+            DentalLogger.Log($"Composite2SplitAB - DriveSurface 적용: A='{driveA}'(dedicated={dedicatedAReady}), B='{driveB}'(dedicated={dedicatedBReady}), baseSurface={SurfaceNumber}, SurfaceNumber2={SurfaceNumber2:0.###}");
 
             if (string.IsNullOrWhiteSpace(opA.ToolID))
             {
@@ -508,8 +523,8 @@ namespace DentalAddin
             DentalLogger.Log($"Composite2SplitAB - Operation 추가 시작 (beforeCount={beforeAddCount})");
 
             // 공정 순서 정책:
-            // - A_ONLY 모드: FINISH_A만 생성 (TURN_B 이전 배치용)
-            // - BC_ONLY 모드: FINISH_B만 생성 (원래 순서 유지용)
+            // - A_PHASE 모드: FINISH_A만 생성 (TURN_B 이전 배치용)
+            // - B_PHASE 모드: FINISH_B만 생성 (원래 순서 유지용)
             // - 기본 모드: A → B 생성
             if (runA)
             {
@@ -523,10 +538,10 @@ namespace DentalAddin
             }
             else
             {
-                DentalLogger.Log("Composite2SplitAB - phaseMode=BC_ONLY, FINISH_A 생성 생략");
+                DentalLogger.Log("Composite2SplitAB - phaseMode=B_PHASE, FINISH_A 생성 생략");
             }
 
-            if (runBC)
+            if (runB)
             {
                 int beforeAddCountB = Document?.Operations?.Count ?? -1;
                 TryDisableCompositeDynamicIfRequested(opB, "B");
@@ -535,11 +550,11 @@ namespace DentalAddin
                 int afterB = Document?.Operations?.Count ?? -1;
                 DentalLogger.Log($"Composite2SplitAB - Operation 추가 완료: FINISH_B(opB) (afterCount={afterB})");
 
-                // B-Extension 공정 생성은 제거됨: BC 구간은 FINISH_B까지만 생성한다.
+                // FINISH_B 이후 추가 확장 공정은 생성하지 않는다.
             }
             else
             {
-                DentalLogger.Log("Composite2SplitAB - phaseMode=A_ONLY, FINISH_B 생성 생략");
+                DentalLogger.Log("Composite2SplitAB - phaseMode=A_PHASE, FINISH_B 생성 생략");
             }
 
             int finalCount = Document?.Operations?.Count ?? -1;
@@ -594,6 +609,44 @@ namespace DentalAddin
             catch (Exception ex)
             {
                 DentalLogger.Log($"{context} - SurfaceNumber 자동 보정 예외: {ex.GetType().Name}:{ex.Message}");
+                return false;
+            }
+        }
+
+        private static bool TryCreateDedicatedCompositeDriveSurface(string context, string label, out int surfaceKey)
+        {
+            surfaceKey = 0;
+            try
+            {
+                string surfaceRoot = ResolveSurfaceRoot();
+                string projectFile = RL == 2.0 ? "Project2.igs" : "Project1.igs";
+                string surfacePath = Path.Combine(surfaceRoot, projectFile);
+                if (!File.Exists(surfacePath))
+                {
+                    DentalLogger.Log($"{context} - {label} DriveSurface 생성 실패: 파일 없음 ({surfacePath})");
+                    return false;
+                }
+
+                GraphicObject dedicatedSurface = MergeSurfaceWithLogging(surfacePath, $"{context}:{label}:DriveSurface");
+                if (dedicatedSurface == null)
+                {
+                    DentalLogger.Log($"{context} - {label} DriveSurface 생성 실패: MergeSurface null");
+                    return false;
+                }
+
+                surfaceKey = SafeParseKey(Convert.ToString(dedicatedSurface.Key, CultureInfo.InvariantCulture));
+                if (surfaceKey <= 0)
+                {
+                    DentalLogger.Log($"{context} - {label} DriveSurface 생성 실패: key 파싱 실패 (raw='{Convert.ToString(dedicatedSurface.Key, CultureInfo.InvariantCulture)}')");
+                    return false;
+                }
+
+                DentalLogger.Log($"{context} - {label} DriveSurface 생성 완료: key={surfaceKey}, file={projectFile}");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                DentalLogger.Log($"{context} - {label} DriveSurface 생성 예외: {ex.GetType().Name}:{ex.Message}");
                 return false;
             }
         }

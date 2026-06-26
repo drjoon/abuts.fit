@@ -90,9 +90,9 @@ namespace DentalAddin
                 CustomCycle();
 
                 // 2-phase 순서(최종):
-                // CustomCycle → Turn_A → Rough_A → FrontFace → FreeForm(A_ONLY) → Turn_B → Rough_B → FreeForm(BC_ONLY)
-                // - FINISH_A  : TURN_B 바로 위로 배치
-                // - FINISH_B1/B2: 기존(원래) 뒤쪽 순서 유지
+                // CustomCycle → Turn_A → Rough_A → FrontFace → FreeForm(A_PHASE) → Turn_B → Rough_B → FreeForm(B_PHASE)
+                // - FINISH_A : TURN_B 바로 위로 배치
+                // - FINISH_B : 기존(원래) 뒤쪽 순서 유지
                 ExecuteTwoPhaseTurning("A");
                 ExecuteTwoPhaseRough("A");
 
@@ -100,7 +100,7 @@ namespace DentalAddin
                 FrontFaceMill();
 
                 Environment.SetEnvironmentVariable("ABUTS_SKIP_FRONTFACE_IN_FREEFORM", "1");
-                Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_PHASE_MODE", "A_ONLY");
+                Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_PHASE_MODE", "A_PHASE");
                 try
                 {
                     ValidateBeforeOperation("FreeFormMill", Array.Empty<string>(), new[] { "3DMilling_0Degree", "3DMilling_90Degree", "3DMilling_180Degree", "3DMilling_270Degree" });
@@ -117,7 +117,7 @@ namespace DentalAddin
                 ExecuteTwoPhaseRough("B");
 
                 Environment.SetEnvironmentVariable("ABUTS_SKIP_FRONTFACE_IN_FREEFORM", "1");
-                Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_PHASE_MODE", "BC_ONLY");
+                Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_PHASE_MODE", "B_PHASE");
                 try
                 {
                     ValidateBeforeOperation("FreeFormMill", Array.Empty<string>(), new[] { "3DMilling_0Degree", "3DMilling_90Degree", "3DMilling_180Degree", "3DMilling_270Degree" });

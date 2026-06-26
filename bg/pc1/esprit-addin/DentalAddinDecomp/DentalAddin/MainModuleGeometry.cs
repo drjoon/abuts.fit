@@ -3,6 +3,8 @@ using Esprit;
 using EspritConstants;
 using Microsoft.VisualBasic.CompilerServices;
 using System;
+using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Reflection;
 using System.Runtime.CompilerServices;
@@ -13,9 +15,23 @@ namespace DentalAddin
     {
         private static GraphicObject MergeSurfaceWithLogging(string filePath, string context)
         {
+            HashSet<string> beforeKeys = SnapshotSurfaceKeys();
+
             DentalLogger.Log($"{context} - MergeFile: {filePath}");
             Document.MergeFile(filePath, RuntimeHelpers.GetObjectValue(Missing.Value));
-            GraphicObject surface = GetLatestSurface(context);
+
+            GraphicObject surface = FindNewMergedSurface(beforeKeys, context);
+            if (surface == null)
+            {
+                // 보수 fallback: 새 surface 탐지 실패 시 최신 surface를 사용하되 경고 로그를 남긴다.
+                surface = GetLatestSurface(context);
+                if (surface != null)
+                {
+                    string fallbackKey = Convert.ToString(surface.Key, CultureInfo.InvariantCulture) ?? string.Empty;
+                    DentalLogger.Log($"{context} - 신규 Surface 탐지 실패, 최신 Surface fallback 사용(key:{fallbackKey})");
+                }
+            }
+
             if (surface == null)
             {
                 DentalLogger.Log($"{context} - MergeFile 후 Surface 미생성");
@@ -28,6 +44,69 @@ namespace DentalAddin
             }
 
             return surface;
+        }
+
+        private static HashSet<string> SnapshotSurfaceKeys()
+        {
+            HashSet<string> keys = new HashSet<string>(StringComparer.Ordinal);
+            if (Document?.GraphicsCollection == null)
+            {
+                return keys;
+            }
+
+            int count = Document.GraphicsCollection.Count;
+            for (int i = 1; i <= count; i++)
+            {
+                GraphicObject item = null;
+                try { item = (GraphicObject)Document.GraphicsCollection[i]; } catch { }
+                if (item?.GraphicObjectType != espGraphicObjectType.espSurface)
+                {
+                    continue;
+                }
+
+                string key = null;
+                try { key = Convert.ToString(item.Key, CultureInfo.InvariantCulture); } catch { }
+                if (!string.IsNullOrWhiteSpace(key))
+                {
+                    keys.Add(key);
+                }
+            }
+
+            return keys;
+        }
+
+        private static GraphicObject FindNewMergedSurface(HashSet<string> beforeKeys, string context)
+        {
+            if (Document?.GraphicsCollection == null)
+            {
+                return null;
+            }
+
+            int count = Document.GraphicsCollection.Count;
+            for (int i = 1; i <= count; i++)
+            {
+                GraphicObject item = null;
+                try { item = (GraphicObject)Document.GraphicsCollection[i]; } catch { }
+                if (item?.GraphicObjectType != espGraphicObjectType.espSurface)
+                {
+                    continue;
+                }
+
+                string key = null;
+                try { key = Convert.ToString(item.Key, CultureInfo.InvariantCulture); } catch { }
+                if (string.IsNullOrWhiteSpace(key))
+                {
+                    continue;
+                }
+
+                if (beforeKeys == null || !beforeKeys.Contains(key))
+                {
+                    return item;
+                }
+            }
+
+            DentalLogger.Log($"{context} - Merge 후 신규 Surface key 탐지 실패");
+            return null;
         }
 
         private static int _auxDriveSurfaceKey;
@@ -87,6 +166,22 @@ namespace DentalAddin
 
             int currentAuxKey = 0;
             try { currentAuxKey = Conversions.ToInteger(aux.Key); } catch { }
+
+            // 안전장치:
+            // 일부 케이스에서 Merge 후 "최신 Surface" 탐지 결과가 기본 DriveSurface와 동일 키로
+            // 반환될 수 있다. 이 상태에서 Aux 변환을 적용하면 기본 DriveSurface까지 함께 변형되어
+            // FINISH_A/FINISH_B 경로 Z가 틀어질 수 있으므로 즉시 중단한다.
+            int baseDriveKey = 0;
+            try { baseDriveKey = Conversions.ToInteger(SurfaceNumber); } catch { baseDriveKey = 0; }
+            if (currentAuxKey > 0 && baseDriveKey > 0 && currentAuxKey == baseDriveKey)
+            {
+                SurfaceNumber2 = 0.0;
+                _auxDriveSurfaceKey = 0;
+                _auxDriveTransformSignature = null;
+                DentalLogger.Log($"{context} - AuxDrive와 기본 DriveSurface 키 충돌 감지(key:{currentAuxKey}), Aux 변환 건너뜀");
+                return false;
+            }
+
             string signature = $"{scale:0.######},{shiftX:0.######}";
             if (currentAuxKey > 0 && _auxDriveSurfaceKey == currentAuxKey && string.Equals(_auxDriveTransformSignature, signature, StringComparison.Ordinal))
             {
