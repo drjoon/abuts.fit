@@ -435,34 +435,19 @@ namespace DentalAddin
             DentalLogger.Log($"Composite2SplitAB - seam 보정: A({opA.FirstPassPercent:F2}->{opA.LastPassPercent:F2}), B({opB.FirstPassPercent:F2}->{opB.LastPassPercent:F2}), seamEps={seamEpsilonPercent:F2}, BFirstGuard={startEndBFirstGuardApplied}, AFirstFallback={aFirstPassFallbackToZero}");
 
             bool surfaceReady = TryEnsureCompositeSurfaceNumber("Composite2SplitAB");
-            int driveSurfaceA = SurfaceNumber;
-            int driveSurfaceB = SurfaceNumber;
 
-            // 요청 정책:
-            // - FINISH_A(opA): 보조 드라이브 서피스(SurfaceNumber2) 우선 사용
-            // - FINISH_B(opB): 기본 드라이브 서피스(SurfaceNumber) 사용
-            // SurfaceNumber2가 비어있거나 비정상이면 A도 기본 서피스로 자동 폴백한다.
-            if (SurfaceNumber2 > 0.5)
-            {
-                try
-                {
-                    driveSurfaceA = Convert.ToInt32(Math.Round(SurfaceNumber2));
-                }
-                catch
-                {
-                    driveSurfaceA = SurfaceNumber;
-                }
-            }
-
-            opA.DriveSurface = "19," + Conversions.ToString(driveSurfaceA);
-            opB.DriveSurface = "19," + Conversions.ToString(driveSurfaceB);
+            // 회귀 복원:
+            // FINISH_A/FINISH_B 모두 기존 기본 드라이브(SurfaceNumber)를 사용한다.
+            // (AuxDrive SurfaceNumber2 분리 사용 시 FINISH_A Z 위치가 틀어지는 현장 재현 케이스 대응)
+            opA.DriveSurface = "19," + Conversions.ToString(SurfaceNumber);
+            opB.DriveSurface = opA.DriveSurface;
             if (!surfaceReady)
             {
-                DentalLogger.Log($"Composite2SplitAB - SurfaceNumber 보정 실패 상태에서 진행 (DriveSurfaceA='{opA.DriveSurface}', DriveSurfaceB='{opB.DriveSurface}')");
+                DentalLogger.Log($"Composite2SplitAB - SurfaceNumber 보정 실패 상태에서 진행 (DriveSurface='{opA.DriveSurface}')");
             }
             else
             {
-                DentalLogger.Log($"Composite2SplitAB - DriveSurface 분리 적용: A={driveSurfaceA}, B={driveSurfaceB} (SurfaceNumber2={SurfaceNumber2:0.###})");
+                DentalLogger.Log($"Composite2SplitAB - DriveSurface 단일 적용(legacy): SurfaceNumber={SurfaceNumber}, SurfaceNumber2={SurfaceNumber2:0.###}");
             }
 
             if (string.IsNullOrWhiteSpace(opA.ToolID))
