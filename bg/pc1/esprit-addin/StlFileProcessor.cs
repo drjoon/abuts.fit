@@ -1318,7 +1318,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 double? firstPassPercent = null;
                 if (lastDigit >= 1 && lastDigit <= 3)
                 {
-                    firstPassPercent = 5.0;
+                    firstPassPercent = 0.5;
                 }
                 else if (lastDigit >= 4 && lastDigit <= 7)
                 {
