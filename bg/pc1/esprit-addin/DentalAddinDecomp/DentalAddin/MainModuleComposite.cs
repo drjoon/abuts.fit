@@ -319,7 +319,7 @@ namespace DentalAddin
             if (splitDegenerate)
             {
                 // 중요: 여기서 false를 반환하면 caller가 Composite2 단일 경로(A만)로 fallback 되어
-                // C(FINISH_B1)가 누락될 수 있다. 따라서 SplitAB 경로를 유지한 채 최소 경계로 degrade한다.
+                // FINISH_B가 누락될 수 있다. 따라서 SplitAB 경로를 유지한 채 최소 경계로 degrade한다.
                 DentalLogger.Log($"Composite2SplitAB - SplitPercent 범위가 작음(First={firstPercent:F2}, Split={splitPercent:F2}, Last={effectiveLastPercent:F2}). SplitAB 중단 대신 최소 경계로 degrade하여 계속 진행");
                 splitPercent = firstPercent;
             }
@@ -394,9 +394,11 @@ namespace DentalAddin
             double compositeEndPassPercent = XToPassPercentByStartEndScale(compositeEndTargetX, 0.0, 100.0);
             opB.LastPassPercent = Clamp(compositeEndPassPercent, opB.FirstPassPercent, 100.0);
 
-            // 사용자 요청: Composite_B(=opA) 시작점은 0%로 고정
-            opA.FirstPassPercent = 0.0;
-            DentalLogger.Log($"Composite2SplitAB - B 시작점 0% 고정 적용: FirstPass={opA.FirstPassPercent:F2}, LastPass={opA.LastPassPercent:F2}");
+            // FINISH_A 시작점은 계산/환경값(ABUTS_COMPOSITE_FIRST_PASS_PERCENT_A) 우선 적용한다.
+            // 기존 0% 강제는 모델 상/하방 선택을 왜곡할 수 있어 제거한다.
+            double requestedAFirstPass = baseAFirstPercent;
+            opA.FirstPassPercent = Clamp(requestedAFirstPass, 0.0, opA.LastPassPercent);
+            DentalLogger.Log($"Composite2SplitAB - A 시작점 적용: Requested={requestedAFirstPass:F2}, Applied={opA.FirstPassPercent:F2}, LastPass={opA.LastPassPercent:F2}");
 
 
 
@@ -418,11 +420,34 @@ namespace DentalAddin
             DentalLogger.Log($"Composite2SplitAB - seam 보정: A({opA.FirstPassPercent:F2}->{opA.LastPassPercent:F2}), B({opB.FirstPassPercent:F2}->{opB.LastPassPercent:F2}), seamEps={seamEpsilonPercent:F2}, BFirstGuard={startEndBFirstGuardApplied}");
 
             bool surfaceReady = TryEnsureCompositeSurfaceNumber("Composite2SplitAB");
-            opA.DriveSurface = "19," + Conversions.ToString(SurfaceNumber);
-            opB.DriveSurface = opA.DriveSurface;
+            int driveSurfaceA = SurfaceNumber;
+            int driveSurfaceB = SurfaceNumber;
+
+            // 요청 정책:
+            // - FINISH_A(opA): 보조 드라이브 서피스(SurfaceNumber2) 우선 사용
+            // - FINISH_B(opB): 기본 드라이브 서피스(SurfaceNumber) 사용
+            // SurfaceNumber2가 비어있거나 비정상이면 A도 기본 서피스로 자동 폴백한다.
+            if (SurfaceNumber2 > 0.5)
+            {
+                try
+                {
+                    driveSurfaceA = Convert.ToInt32(Math.Round(SurfaceNumber2));
+                }
+                catch
+                {
+                    driveSurfaceA = SurfaceNumber;
+                }
+            }
+
+            opA.DriveSurface = "19," + Conversions.ToString(driveSurfaceA);
+            opB.DriveSurface = "19," + Conversions.ToString(driveSurfaceB);
             if (!surfaceReady)
             {
-                DentalLogger.Log($"Composite2SplitAB - SurfaceNumber 보정 실패 상태에서 진행 (DriveSurface='{opA.DriveSurface}')");
+                DentalLogger.Log($"Composite2SplitAB - SurfaceNumber 보정 실패 상태에서 진행 (DriveSurfaceA='{opA.DriveSurface}', DriveSurfaceB='{opB.DriveSurface}')");
+            }
+            else
+            {
+                DentalLogger.Log($"Composite2SplitAB - DriveSurface 분리 적용: A={driveSurfaceA}, B={driveSurfaceB} (SurfaceNumber2={SurfaceNumber2:0.###})");
             }
 
             if (string.IsNullOrWhiteSpace(opA.ToolID))
@@ -480,8 +505,8 @@ namespace DentalAddin
 
             // 공정 순서 정책:
             // - A_ONLY 모드: FINISH_A만 생성 (TURN_B 이전 배치용)
-            // - BC_ONLY 모드: FINISH_B1만 생성 (원래 순서 유지용)
-            // - 기본 모드: A → B1 생성
+            // - BC_ONLY 모드: FINISH_B만 생성 (원래 순서 유지용)
+            // - 기본 모드: A → B 생성
             if (runA)
             {
                 int beforeAddCountBaseA = Document?.Operations?.Count ?? -1;
@@ -489,7 +514,7 @@ namespace DentalAddin
                 TryAddOperation(opA, freeFormFeature, "Composite2SplitAB:A", false);
                 TryAppendCompositeSuffixToNewOperations(beforeAddCountBaseA, "A");
                 int afterA = Document?.Operations?.Count ?? -1;
-                DentalLogger.Log($"Composite2SplitAB - Operation 추가 완료: B(기존 A) (afterCount={afterA})");
+                DentalLogger.Log($"Composite2SplitAB - Operation 추가 완료: FINISH_A(opA) (afterCount={afterA})");
                 TryMoveCompositeFinishBeforeTurnB("FINISH_A");
             }
             else
@@ -504,13 +529,13 @@ namespace DentalAddin
                 TryAddOperation(opB, freeFormFeature, "Composite2SplitAB:B", false);
                 TryAppendCompositeSuffixToNewOperations(beforeAddCountB, "B");
                 int afterB = Document?.Operations?.Count ?? -1;
-                DentalLogger.Log($"Composite2SplitAB - Operation 추가 완료: C(기존 B) (afterCount={afterB})");
+                DentalLogger.Log($"Composite2SplitAB - Operation 추가 완료: FINISH_B(opB) (afterCount={afterB})");
 
-                // B-Extension 공정 생성은 제거됨: BC 구간은 FINISH_B1까지만 생성한다.
+                // B-Extension 공정 생성은 제거됨: BC 구간은 FINISH_B까지만 생성한다.
             }
             else
             {
-                DentalLogger.Log("Composite2SplitAB - phaseMode=A_ONLY, FINISH_B1 생성 생략");
+                DentalLogger.Log("Composite2SplitAB - phaseMode=A_ONLY, FINISH_B 생성 생략");
             }
 
             int finalCount = Document?.Operations?.Count ?? -1;
@@ -937,15 +962,15 @@ namespace DentalAddin
             string normalized = label.Trim();
 
             // 구분 정책:
-            // - 기존 A : FINISH_A
-            // - 기존 B : FINISH_B1
+            // - A 라벨 : FINISH_A
+            // - B 라벨 : FINISH_B
             if (normalized.StartsWith("A", StringComparison.OrdinalIgnoreCase))
             {
                 return "FINISH_A";
             }
             if (normalized.StartsWith("B", StringComparison.OrdinalIgnoreCase))
             {
-                return "FINISH_B1";
+                return "FINISH_B";
             }
 
             return null;
@@ -984,9 +1009,13 @@ namespace DentalAddin
 
                     string baseName = string.IsNullOrWhiteSpace(oldName) ? "5 Axis Composite" : oldName.Trim();
                     baseName = RemoveTokenIgnoreCase(baseName, "[FINISH_A]").Trim();
-                    baseName = RemoveTokenIgnoreCase(baseName, "[FINISH_B1]").Trim();
+                    baseName = RemoveTokenIgnoreCase(baseName, "[FINISH_B]").Trim();
 
                     baseName = RemoveTokenIgnoreCase(baseName, "[Finish_A]").Trim();
+                    baseName = RemoveTokenIgnoreCase(baseName, "[Finish_B]").Trim();
+
+                    // 구버전 토큰 정리(마이그레이션 호환)
+                    baseName = RemoveTokenIgnoreCase(baseName, "[FINISH_B1]").Trim();
                     baseName = RemoveTokenIgnoreCase(baseName, "[Finish_B1]").Trim();
 
                     baseName = RemoveTokenIgnoreCase(baseName, "_A").Trim();
@@ -1219,9 +1248,14 @@ namespace DentalAddin
                     {
                         mapped = "FINISH_A";
                     }
+                    else if (oldName.IndexOf("FINISH_B", StringComparison.OrdinalIgnoreCase) >= 0 || oldName.IndexOf("Finish_B", StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        mapped = "FINISH_B";
+                    }
                     else if (oldName.IndexOf("FINISH_B1", StringComparison.OrdinalIgnoreCase) >= 0 || oldName.IndexOf("Finish_B1", StringComparison.OrdinalIgnoreCase) >= 0)
                     {
-                        mapped = "FINISH_B1";
+                        // 구버전 이름 호환: FINISH_B1 -> FINISH_B
+                        mapped = "FINISH_B";
                     }
 
 
