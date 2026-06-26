@@ -1287,24 +1287,25 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                     }
                 }
 
-                double? firstPassPercent = null;
-                if (lastDigit >= 1 && lastDigit <= 3)
-                {
-                    firstPassPercent = 0.5;
-                }
-                else if (lastDigit >= 4 && lastDigit <= 7)
-                {
-                    firstPassPercent = 1.0;
-                }
 
-                if (!firstPassPercent.HasValue)
-                {
-                    Environment.SetEnvironmentVariable(AppConfig.CompositeFirstPassPercentAEnv, null);
-                    AppLogger.Log($"DentalAddin: tooth='{tooth}' 에서 전치/구치 판별 불가 - FirstPassPercent 기본값(PRC 원본) 유지");
-                    return;
-                }
+                // double? firstPassPercent = null;
+                // if (lastDigit >= 1 && lastDigit <= 3)
+                // {
+                //     firstPassPercent = 0.5;
+                // }
+                // else if (lastDigit >= 4 && lastDigit <= 7)
+                // {
+                //     firstPassPercent = 1.0;
+                // }
+                // if (!firstPassPercent.HasValue)
+                // {
+                //     Environment.SetEnvironmentVariable(AppConfig.CompositeFirstPassPercentAEnv, null);
+                //     AppLogger.Log($"DentalAddin: tooth='{tooth}' 에서 전치/구치 판별 불가 - FirstPassPercent 기본값(PRC 원본) 유지");
+                //     return;
+                // }
 
-                string envValue = firstPassPercent.Value.ToString("0.###", CultureInfo.InvariantCulture);
+                double firstPassPercent = 0.1;
+                string envValue = firstPassPercent.ToString("0.###", CultureInfo.InvariantCulture);
                 Environment.SetEnvironmentVariable(AppConfig.CompositeFirstPassPercentAEnv, envValue);
                 AppLogger.Log($"DentalAddin: tooth='{tooth}' -> FirstPassPercent={envValue} 적용 (env={AppConfig.CompositeFirstPassPercentAEnv})");
             }
