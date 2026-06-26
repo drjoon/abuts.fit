@@ -1389,8 +1389,13 @@ namespace DentalAddin
             }
 
             // Turn_B와 동일 기준의 Connection 경계까지만 Rough_B 우측 끝을 제한한다.
-            double turnConnectionBoundaryX = ResolveTurnConnectionBoundaryX("RoughFreeFromMillSplitAB");
-            double xMax = Clamp(turnConnectionBoundaryX, xMin + 1e-6, xMaxPhysical);
+            // double turnConnectionBoundaryX = ResolveTurnConnectionBoundaryX("RoughFreeFromMillSplitAB");
+            // double xMax = Clamp(turnConnectionBoundaryX, xMin + 1e-6, xMaxPhysical);
+            // FINISH_B 종료점과 Rough_B 우측 끝을 동일 기준으로 맞춘다.
+            // FINISH_B 정책: BackPointX + 0.3mm
+            const double compositeEndOffsetFromBackPointMm = 0.3;
+            double roughBEndTargetX = MoveSTL_Module.BackPointX + compositeEndOffsetFromBackPointMm;
+            double xMax = Math.Max(xMin + 1e-6, roughBEndTargetX);
 
             double radius = (Document.LatheMachineSetup.BarDiameter + 10.0) / 2.0;
             // Turn_A/Turn_B와 동일 기준으로 finishline 기준 오프셋을 맞춘다.
