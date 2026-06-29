@@ -100,6 +100,41 @@ const generateRequestIdBatch = async (count, session) => {
   return requestIds;
 };
 
+const MONTHLY_REMAKE_FREE_LIMIT = 10;
+const REMAKE_PRICE_RULES = [
+  "remake_monthly_free_10",
+  "remake_general_pricing",
+  "remake_fixed_10000",
+];
+
+const getMonthlyRemakeQuota = async ({ scopeFilter }) => {
+  const todayYmd = getTodayYmdInKst();
+  const [year, month] = String(todayYmd)
+    .split("-")
+    .map((v) => Number(v || 0));
+  const monthStartYmd = `${year}-${String(month).padStart(2, "0")}-01`;
+  const monthStartKst = new Date(`${monthStartYmd}T00:00:00+09:00`);
+  const nextMonthYear = month === 12 ? year + 1 : year;
+  const nextMonth = month === 12 ? 1 : month + 1;
+  const nextMonthYmd = `${nextMonthYear}-${String(nextMonth).padStart(2, "0")}-01`;
+  const nextMonthStartKst = new Date(`${nextMonthYmd}T00:00:00+09:00`);
+
+  const used = await Request.countDocuments({
+    ...scopeFilter,
+    manufacturerStage: { $ne: "취소" },
+    createdAt: { $gte: monthStartKst, $lt: nextMonthStartKst },
+    "price.rule": { $in: REMAKE_PRICE_RULES },
+  });
+
+  return {
+    limit: MONTHLY_REMAKE_FREE_LIMIT,
+    used,
+    remaining: Math.max(0, MONTHLY_REMAKE_FREE_LIMIT - used),
+    currentMonthStartYmd: monthStartYmd,
+    currentMonthEndExclusiveYmd: nextMonthYmd,
+  };
+};
+
 /**
  * ===== 신규 의뢰 생성 표준 엔드포인트 (SSOT) =====
  * Draft 기반 워크플로우: 파일 업로드 → Draft 생성 → Draft 수정 → Request로 전환
@@ -438,6 +473,7 @@ export async function createRequestsFromDraft(req, res) {
     });
     const requestFilter = await buildRequestorOrgScopeFilter(req);
     const duplicates = [];
+    let remakeQuota = null;
 
     if (enableDuplicateRequestCheck) {
       const keyTuplesRaw = preparedCases
@@ -548,6 +584,7 @@ export async function createRequestsFromDraft(req, res) {
               },
             },
             stageOrder,
+            isCancelableStage: stageOrder <= 1,
           });
         }
         console.log("[createRequestsFromDraft] duplicate lookup done", {
@@ -556,6 +593,9 @@ export async function createRequestsFromDraft(req, res) {
         });
       }
       if (duplicates.length > 0 && !duplicateResolutions) {
+        remakeQuota = await getMonthlyRemakeQuota({
+          scopeFilter: requestFilter,
+        });
         const first = duplicates[0];
         const st = String(first?.existingRequest?.manufacturerStage || "");
         const mode = st === "추적관리" ? "tracking" : "active";
@@ -565,10 +605,11 @@ export async function createRequestsFromDraft(req, res) {
           message:
             st === "추적관리"
               ? "동일한 정보의 의뢰가 이미 완료되어 있습니다. 재의뢰(리메이크)로 접수할까요?"
-              : "동일한 정보의 의뢰가 이미 진행 중입니다. 기존 의뢰를 취소하고 다시 의뢰할까요?",
+              : "동일한 정보의 의뢰가 이미 진행 중입니다. 중복 의뢰 처리 방법을 선택해주세요.",
           data: {
             mode,
             duplicates,
+            remakeQuota,
           },
         });
       }
@@ -578,6 +619,13 @@ export async function createRequestsFromDraft(req, res) {
     const skipCaseIds = new Set();
 
     if (duplicates.length > 0 && duplicateResolutions) {
+      const duplicatesByCaseId = new Map(
+        duplicates.map((d) => [String(d.caseId || ""), d]),
+      );
+      const duplicatesByExistingRequestId = new Map(
+        duplicates.map((d) => [String(d?.existingRequest?._id || ""), d]),
+      );
+
       for (const r of duplicateResolutions) {
         const strategy = String(r.strategy || "").trim();
         if (!strategy) continue;
@@ -587,13 +635,26 @@ export async function createRequestsFromDraft(req, res) {
             message: "유효하지 않은 duplicateResolutions.strategy 입니다.",
           });
         }
+
+        const rawCaseId = String(r.caseId || "").trim();
+        const rawExistingRequestId = String(r.existingRequestId || "").trim();
+        const matchedDuplicate =
+          duplicatesByCaseId.get(rawCaseId) ||
+          duplicatesByExistingRequestId.get(rawExistingRequestId);
+        const resolvedCaseId = String(
+          matchedDuplicate?.caseId || rawCaseId || "",
+        ).trim();
+
+        if (!resolvedCaseId) continue;
+
         if (strategy === "skip") {
-          skipCaseIds.add(String(r.caseId));
+          skipCaseIds.add(resolvedCaseId);
           continue;
         }
-        resolutionsByCaseId.set(String(r.caseId), {
+
+        resolutionsByCaseId.set(resolvedCaseId, {
           strategy,
-          existingRequestId: String(r.existingRequestId || "").trim(),
+          existingRequestId: rawExistingRequestId,
         });
       }
 
@@ -612,6 +673,12 @@ export async function createRequestsFromDraft(req, res) {
           );
         });
 
+        remakeQuota =
+          remakeQuota ||
+          (await getMonthlyRemakeQuota({
+            scopeFilter: requestFilter,
+          }));
+
         const firstUnresolved = unresolved[0];
         const st = String(
           firstUnresolved?.existingRequest?.manufacturerStage || "",
@@ -627,13 +694,11 @@ export async function createRequestsFromDraft(req, res) {
           data: {
             mode,
             duplicates: unresolved,
+            remakeQuota,
           },
         });
       }
 
-      const duplicatesByCaseId = new Map(
-        duplicates.map((d) => [String(d.caseId || ""), d]),
-      );
       for (const [caseId, r] of resolutionsByCaseId.entries()) {
         const dup = duplicatesByCaseId.get(String(caseId));
         if (!dup) continue;
@@ -660,6 +725,17 @@ export async function createRequestsFromDraft(req, res) {
             message: "중복 의뢰(existingRequestId) 정보가 일치하지 않습니다.",
           });
         }
+
+        if (strategy === "replace") {
+          const stageOrder = Number(dup?.stageOrder ?? 0);
+          if (stageOrder > 1) {
+            return res.status(400).json({
+              success: false,
+              message:
+                "CAM 이후 단계의 기존 의뢰는 취소할 수 없습니다. 기존 의뢰를 유지하고 재의뢰로 진행해주세요.",
+            });
+          }
+        }
       }
     }
 
@@ -674,6 +750,32 @@ export async function createRequestsFromDraft(req, res) {
           "모든 중복 건이 기존 유지로 선택되어 신규 의뢰를 생성하지 않았습니다.",
         data: [],
       });
+    }
+
+    // 정책: 기존 의뢰 취소 후 재의뢰(replace)는 리메이크 무료 카운트에 포함하지 않는다.
+    // 따라서 replace 건은 일반 신규 의뢰 가격 규칙(forceNewOrderPricing)으로 재산정한다.
+    if (resolutionsByCaseId.size > 0) {
+      const replaceCaseIds = new Set(
+        Array.from(resolutionsByCaseId.entries())
+          .filter(([, r]) => String(r?.strategy || "") === "replace")
+          .map(([caseId]) => String(caseId)),
+      );
+
+      if (replaceCaseIds.size > 0) {
+        await Promise.all(
+          preparedCasesForCreate.map(async (item) => {
+            if (!replaceCaseIds.has(String(item.caseId))) return;
+            item.computedPrice = await computePriceForRequest({
+              requestorId: req.user._id,
+              requestorOrgId: req.user?.businessAnchorId,
+              clinicName: item.clinicName,
+              patientName: item.patientName,
+              tooth: item.tooth,
+              forceNewOrderPricing: true,
+            });
+          }),
+        );
+      }
     }
 
     const totalSpendSupply = preparedCasesForCreate.reduce((acc, item) => {
@@ -765,27 +867,11 @@ export async function createRequestsFromDraft(req, res) {
               throw err;
             }
 
-            const existingStage = String(
-              existingDoc.manufacturerStage || "",
-            ).trim();
-            const stageOrder = {
-              의뢰: 0,
-              CAM: 1,
-              생산: 2,
-              발송: 3,
-              추적관리: 4,
-            };
-            const currentStageOrder = stageOrder[existingStage] ?? 0;
-            if (existingStage === "추적관리") {
-              const err = new Error(
-                "완료된 의뢰는 취소 후 재의뢰할 수 없습니다. 재의뢰(리메이크)로 진행해주세요.",
-              );
-              err.statusCode = 400;
-              throw err;
-            }
+            const normalizedStage = normalizeRequestStage(existingDoc);
+            const currentStageOrder = REQUEST_STAGE_ORDER[normalizedStage] ?? 0;
             if (currentStageOrder > 1) {
               const err = new Error(
-                "생산 이후 단계에서는 기존 의뢰를 교체할 수 없습니다.",
+                "CAM 이후 단계의 기존 의뢰는 취소할 수 없습니다. 기존 의뢰를 유지하고 재의뢰로 진행해주세요.",
               );
               err.statusCode = 400;
               throw err;

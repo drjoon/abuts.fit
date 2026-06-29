@@ -233,7 +233,7 @@ export const NewRequestPage = () => {
     existingRequestId: string;
   }) => {
     const safeExistingRequestId = String(choice.existingRequestId || "").trim();
-    if (!safeExistingRequestId) {
+    if (choice.strategy !== "skip" && !safeExistingRequestId) {
       toast({
         title: "중복 처리 실패",
         description:
@@ -317,32 +317,18 @@ export const NewRequestPage = () => {
   };
 
   const renderDuplicateActions = (dup: any) => {
-    const isTracking =
-      duplicatePrompt?.mode === "tracking" ||
-      String(dup?.existingRequest?.manufacturerStage || "").trim() ===
-        "추적관리";
-
-    // stageOrder: 0=의뢰, 1=CAM, 2=가공, 3=세척.패킹/포장.발송, 4=추적관리
     const stageOrder = Number(dup?.stageOrder ?? 0);
+    const isCancelableStage =
+      typeof dup?.isCancelableStage === "boolean"
+        ? dup.isCancelableStage
+        : stageOrder <= 1;
 
-    // 의뢰/CAM 단계(0-1): "새 의뢰로 교체" (replace)
-    // 가공 이후(2+): "하나 더 의뢰하기" (remake)
-    // 추적관리(4): "재의뢰로 접수" (remake)
-    let primaryStrategy: "replace" | "remake";
-    let primaryLabel: string;
-
-    if (isTracking) {
-      primaryStrategy = "remake";
-      primaryLabel = "재의뢰로 접수";
-    } else if (stageOrder >= 2) {
-      // 가공 이후 단계
-      primaryStrategy = "remake";
-      primaryLabel = "하나 더 의뢰하기";
-    } else {
-      // 의뢰/CAM 단계
-      primaryStrategy = "replace";
-      primaryLabel = "새 의뢰로 교체";
-    }
+    const primaryStrategy: "replace" | "remake" = isCancelableStage
+      ? "replace"
+      : "remake";
+    const primaryLabel = isCancelableStage
+      ? "기존 의뢰 취소 후 재의뢰"
+      : "재의뢰로 접수";
 
     return (
       <div className="flex gap-2 pointer-events-auto">
@@ -351,7 +337,23 @@ export const NewRequestPage = () => {
           onClick={(e) => {
             e.preventDefault();
             e.stopPropagation();
-            applyDuplicateChoice({
+
+            if (isCancelableStage) {
+              const confirmed = window.confirm(
+                "기존 의뢰(의뢰/CAM 단계)는 취소되고 새 의뢰가 접수됩니다.\n\n확인: 기존 의뢰 취소 후 재의뢰\n취소: 기존 의뢰 유지\n\n(이 경우 무료 재의뢰 카운트는 증가하지 않습니다)",
+              );
+
+              if (!confirmed) {
+                void applyDuplicateChoice({
+                  strategy: "skip",
+                  caseId: dup.caseId,
+                  existingRequestId: resolveExistingRequestId(dup),
+                });
+                return;
+              }
+            }
+
+            void applyDuplicateChoice({
               strategy: primaryStrategy,
               caseId: dup.caseId,
               existingRequestId: resolveExistingRequestId(dup),
@@ -366,7 +368,7 @@ export const NewRequestPage = () => {
           onClick={(e) => {
             e.preventDefault();
             e.stopPropagation();
-            applyDuplicateChoice({
+            void applyDuplicateChoice({
               strategy: "skip",
               caseId: dup.caseId,
               existingRequestId: resolveExistingRequestId(dup),
@@ -478,6 +480,13 @@ export const NewRequestPage = () => {
                 동일한 치과/환자/치아 정보로 이미 의뢰가 존재합니다. 항목별로
                 선택해주세요.
               </div>
+              {duplicatePrompt?.remakeQuota && (
+                <div className="rounded border border-blue-200 bg-blue-50 px-2.5 py-2 text-[11px] text-blue-800">
+                  이번 달 무료 재의뢰: {duplicatePrompt.remakeQuota.limit}건 중{" "}
+                  {duplicatePrompt.remakeQuota.used}건 사용, 잔여{" "}
+                  {duplicatePrompt.remakeQuota.remaining}건
+                </div>
+              )}
               {duplicateList.map((dup, idx) => {
                 const info = getNewCaseInfoByCaseId(String(dup.caseId || ""));
                 const existing = dup?.existingRequest || {};

@@ -49,6 +49,13 @@ export const useNewRequestPage = (existingRequestId?: string) => {
   const [duplicatePrompt, setDuplicatePrompt] = useState<{
     mode: "active" | "tracking";
     duplicates: any[];
+    remakeQuota?: {
+      limit: number;
+      used: number;
+      remaining: number;
+      currentMonthStartYmd?: string;
+      currentMonthEndExclusiveYmd?: string;
+    } | null;
   } | null>(null);
   const [files, setFiles] = useState<File[]>([]);
   const [draftFiles, setDraftFiles] = useState<DraftCaseInfo[]>([]);
@@ -750,7 +757,17 @@ export const useNewRequestPage = (existingRequestId?: string) => {
 
   // 제출/취소 처리
   const handleServerDuplicateDetected = useCallback(
-    async (payload: { mode: "active" | "tracking"; duplicates: any[] }) => {
+    async (payload: {
+      mode: "active" | "tracking";
+      duplicates: any[];
+      remakeQuota?: {
+        limit: number;
+        used: number;
+        remaining: number;
+        currentMonthStartYmd?: string;
+        currentMonthEndExclusiveYmd?: string;
+      } | null;
+    }) => {
       if (!payload || !Array.isArray(payload.duplicates)) return;
 
       const normalizedDuplicates = payload.duplicates
@@ -791,6 +808,7 @@ export const useNewRequestPage = (existingRequestId?: string) => {
       setDuplicatePrompt({
         mode: payload.mode,
         duplicates: normalizedDuplicates,
+        remakeQuota: payload.remakeQuota || null,
       });
 
       toast({

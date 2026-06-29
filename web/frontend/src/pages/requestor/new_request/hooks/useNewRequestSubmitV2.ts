@@ -35,6 +35,13 @@ type UseNewRequestSubmitV2Params = {
   onDuplicateDetected?: (payload: {
     mode: "active" | "tracking";
     duplicates: any[];
+    remakeQuota?: {
+      limit: number;
+      used: number;
+      remaining: number;
+      currentMonthStartYmd?: string;
+      currentMonthEndExclusiveYmd?: string;
+    } | null;
   }) => void;
 };
 
@@ -533,6 +540,7 @@ export const useNewRequestSubmitV2 = ({
         if (res.status === 409 && errData?.code === "DUPLICATE_REQUEST") {
           const mode = errData?.data?.mode;
           const duplicates = errData?.data?.duplicates;
+          const remakeQuota = errData?.data?.remakeQuota || null;
           if (
             (mode === "active" || mode === "tracking") &&
             Array.isArray(duplicates) &&
@@ -545,7 +553,7 @@ export const useNewRequestSubmitV2 = ({
                 count: duplicates.length,
               },
             );
-            onDuplicateDetected?.({ mode, duplicates });
+            onDuplicateDetected?.({ mode, duplicates, remakeQuota });
             return;
           }
         }
