@@ -5,7 +5,7 @@
  * - 백엔드: creation.from-draft.controller.js의 createRequestsFromDraft
  * - 참고: rules.md 섹션 4.3.2 "신규 의뢰 생성 엔드포인트 (SSOT)"
  */
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useToast } from "@/shared/hooks/use-toast";
 import { type ClinicPreset, type CaseInfos } from "./newRequestTypes";
 import { clearFileCache } from "@/shared/files/fileCache";
@@ -67,6 +67,10 @@ export const useNewRequestSubmitV2 = ({
 }: UseNewRequestSubmitV2Params) => {
   const { toast, dismiss } = useToast();
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const preparedDraftRef = useRef<{
+    draftId: string;
+    filesFingerprint: string;
+  } | null>(null);
   const { uploadFilesWithToast } = useUploadWithProgressToast({ token });
   const { data: systemSettings } = useSystemSettings();
 
@@ -82,7 +86,18 @@ export const useNewRequestSubmitV2 = ({
     return `${normalizeKeyPart(file.name)}:${file.size}`;
   };
 
+  const buildFilesFingerprint = (inputFiles: File[]) => {
+    return inputFiles
+      .map((f) => `${normalizeKeyPart(f.name)}:${f.size}`)
+      .sort()
+      .join("|");
+  };
+
   const redirectToProfileIfNeeded = async () => false;
+
+  useEffect(() => {
+    preparedDraftRef.current = null;
+  }, [draftId]);
 
   /**
    * 파일별 파싱 로그 저장
@@ -135,6 +150,8 @@ export const useNewRequestSubmitV2 = ({
   };
 
   const handleCancel = async () => {
+    preparedDraftRef.current = null;
+
     // V3: 로컬 스토리지와 IndexedDB 정리
     try {
       const { clearLocalDraft } = await import("../utils/localDraftStorage");
@@ -277,7 +294,7 @@ export const useNewRequestSubmitV2 = ({
         }
       }
 
-      // 2. S3 업로드 + 크레딧 체크 병렬 실행 (크리티컬 패스 최적화)
+      // 2. S3 업로드 + Draft 파일 패치 (중복 해소 재제출 시에는 재업로드 생략)
       const validFileKeys = new Set(files.map((f) => toNormalizedFileKey(f)));
       const filteredMap: Record<string, CaseInfos> = {};
       if (caseInfosMap) {
@@ -288,168 +305,199 @@ export const useNewRequestSubmitV2 = ({
         }
       }
 
-      let creditShortfallMsg: string | null = null;
-      let tempFiles: TempUploadedFile[] = [];
-      try {
-        const [uploadResult] = await Promise.all([
-          files.length > 0
-            ? uploadFilesWithToast(files)
-            : Promise.resolve([] as TempUploadedFile[]),
-          (async () => {
-            try {
-              const creditRes = await fetch(`${API_BASE_URL}/credits/balance`, {
-                headers: getHeaders(),
-              });
-              if (creditRes.ok) {
-                const creditResponse = await creditRes.json();
-                const creditData = creditResponse?.data || {};
-                const paidCredit = Number(creditData?.paidCredit || 0);
-                const bonusRequestCredit = Number(
-                  creditData?.bonusRequestCredit || 0,
-                );
-                const bonusShippingCredit = Number(
-                  creditData?.bonusShippingCredit || 0,
-                );
+      const filesFingerprint = buildFilesFingerprint(files);
+      const canReusePreparedDraft =
+        Array.isArray(duplicateResolutions) &&
+        duplicateResolutions.length > 0 &&
+        preparedDraftRef.current?.draftId === String(draftId) &&
+        preparedDraftRef.current?.filesFingerprint === filesFingerprint;
 
-                const estimatedMachiningFee = files.length * 10000;
-                const estimatedShippingFee = boxCount * 3500;
-
-                const availableForMachining = paidCredit + bonusRequestCredit;
-                const availableForShipping = paidCredit + bonusShippingCredit;
-
-                const machiningShortfall = Math.max(
-                  0,
-                  estimatedMachiningFee - availableForMachining,
-                );
-                const shippingShortfall = Math.max(
-                  0,
-                  estimatedShippingFee - availableForShipping,
-                );
-
-                if (machiningShortfall > 0 || shippingShortfall > 0) {
-                  let message = "";
-                  const details = [];
-
-                  if (machiningShortfall > 0 && shippingShortfall > 0) {
-                    message = "의뢰비와 배송비 크레딧이 모두 부족합니다.";
-                    details.push(
-                      `의뢰비 예상: ${estimatedMachiningFee.toLocaleString()}원 (보유: ${availableForMachining.toLocaleString()}원)`,
-                    );
-                    details.push(
-                      `배송비 예상: ${estimatedShippingFee.toLocaleString()}원 (${boxCount}박스, 보유: ${availableForShipping.toLocaleString()}원)`,
-                    );
-                  } else if (machiningShortfall > 0) {
-                    message = "의뢰비 크레딧이 부족합니다.";
-                    details.push(
-                      `예상: ${estimatedMachiningFee.toLocaleString()}원, 보유: ${availableForMachining.toLocaleString()}원`,
-                    );
-                  } else {
-                    message = "배송비 크레딧이 부족합니다.";
-                    details.push(
-                      `예상: ${estimatedShippingFee.toLocaleString()}원 (${boxCount}박스), 보유: ${availableForShipping.toLocaleString()}원`,
-                    );
-                  }
-
-                  message += "\n\n" + details.join("\n");
-                  message += "\n\n크레딧을 충전한 뒤 다시 시도해주세요.";
-                  creditShortfallMsg = message;
-                }
-              }
-            } catch (err) {
-              console.warn("[NewRequestSubmit] credit check failed:", err);
-            }
-          })(),
-        ]);
-
-        tempFiles = uploadResult ?? [];
-      } catch {
-        // S3 업로드 실패 - toast는 uploadFilesWithToast에서 이미 처리됨
-        return;
-      }
-
-      if (creditShortfallMsg) {
-        dismiss();
-        toast({
-          title: "크레딧 부족",
-          description: creditShortfallMsg,
-          variant: "destructive",
-          duration: 10000, // 10초
-        });
-        return;
-      }
-
-      // 3. Draft 파일+정보 업데이트 (S3 업로드 완료 후)
-      if (files.length > 0 && tempFiles.length > 0) {
-        const toNfcName = (name: string) => {
-          try {
-            return String(name || "").normalize("NFC");
-          } catch {
-            return String(name || "");
-          }
-        };
-
-        const caseInfosPayload = files
-          .map((file, i) => {
-            const tf = tempFiles[i];
-            const fileKey = `${toNfcName(file.name)}:${file.size}`;
-            const ci = (caseInfosMap?.[fileKey] ||
-              filteredMap[fileKey] ||
-              {}) as Partial<CaseInfos>;
-            return {
-              clinicName: ci.clinicName,
-              patientName: ci.patientName,
-              tooth: ci.tooth,
-              implantManufacturer: ci.implantManufacturer,
-              implantBrand: ci.implantBrand,
-              implantFamily: ci.implantFamily,
-              implantType: ci.implantType,
-              maxDiameter: ci.maxDiameter,
-              connectionDiameter: ci.connectionDiameter,
-              totalLength: ci.totalLength,
-              taperAngle: ci.taperAngle,
-              workType: ci.workType || "abutment",
-              retentionGroove: ci.retentionGroove,
-              shippingMode: ci.shippingMode,
-              requestedShipDate: ci.requestedShipDate,
-              file: tf?.key
-                ? {
-                    originalName: tf.originalName,
-                    size: tf.size,
-                    mimetype: tf.mimetype,
-                    s3Key: tf.key,
-                  }
-                : undefined,
-            };
-          })
-          .filter((ci) => Boolean(ci.file?.s3Key));
-
-        if (caseInfosPayload.length > 0) {
-          const patchRes = await fetch(
-            `${API_BASE_URL}/requests/drafts/${draftId}`,
-            {
-              method: "PATCH",
-              headers: getHeaders(),
-              body: JSON.stringify({ caseInfos: caseInfosPayload }),
-            },
-          ).catch((err) => {
-            console.error(
-              "[submitFromDraft] Draft file PATCH network error:",
-              err,
-            );
-            return null;
-          });
-
-          if (!patchRes || !patchRes.ok) {
-            const status = patchRes?.status ?? "network error";
-            throw new Error(
-              `파일 정보 저장에 실패했습니다 (${status}). 다시 시도해주세요.`,
-            );
-          }
-        }
-      } else if (patchDraftImmediately && Object.keys(filteredMap).length > 0) {
-        await patchDraftImmediately(filteredMap).catch((err) =>
-          console.warn("[useNewRequestSubmitV2] Pre-submit patch failed:", err),
+      if (canReusePreparedDraft) {
+        console.log(
+          "[useNewRequestSubmitV2] Reusing prepared draft files, skip re-upload",
+          {
+            draftId,
+            filesCount: files.length,
+          },
         );
+      } else {
+        let creditShortfallMsg: string | null = null;
+        let tempFiles: TempUploadedFile[] = [];
+        try {
+          const [uploadResult] = await Promise.all([
+            files.length > 0
+              ? uploadFilesWithToast(files)
+              : Promise.resolve([] as TempUploadedFile[]),
+            (async () => {
+              try {
+                const creditRes = await fetch(
+                  `${API_BASE_URL}/credits/balance`,
+                  {
+                    headers: getHeaders(),
+                  },
+                );
+                if (creditRes.ok) {
+                  const creditResponse = await creditRes.json();
+                  const creditData = creditResponse?.data || {};
+                  const paidCredit = Number(creditData?.paidCredit || 0);
+                  const bonusRequestCredit = Number(
+                    creditData?.bonusRequestCredit || 0,
+                  );
+                  const bonusShippingCredit = Number(
+                    creditData?.bonusShippingCredit || 0,
+                  );
+
+                  const estimatedMachiningFee = files.length * 10000;
+                  const estimatedShippingFee = boxCount * 3500;
+
+                  const availableForMachining = paidCredit + bonusRequestCredit;
+                  const availableForShipping = paidCredit + bonusShippingCredit;
+
+                  const machiningShortfall = Math.max(
+                    0,
+                    estimatedMachiningFee - availableForMachining,
+                  );
+                  const shippingShortfall = Math.max(
+                    0,
+                    estimatedShippingFee - availableForShipping,
+                  );
+
+                  if (machiningShortfall > 0 || shippingShortfall > 0) {
+                    let message = "";
+                    const details = [];
+
+                    if (machiningShortfall > 0 && shippingShortfall > 0) {
+                      message = "의뢰비와 배송비 크레딧이 모두 부족합니다.";
+                      details.push(
+                        `의뢰비 예상: ${estimatedMachiningFee.toLocaleString()}원 (보유: ${availableForMachining.toLocaleString()}원)`,
+                      );
+                      details.push(
+                        `배송비 예상: ${estimatedShippingFee.toLocaleString()}원 (${boxCount}박스, 보유: ${availableForShipping.toLocaleString()}원)`,
+                      );
+                    } else if (machiningShortfall > 0) {
+                      message = "의뢰비 크레딧이 부족합니다.";
+                      details.push(
+                        `예상: ${estimatedMachiningFee.toLocaleString()}원, 보유: ${availableForMachining.toLocaleString()}원`,
+                      );
+                    } else {
+                      message = "배송비 크레딧이 부족합니다.";
+                      details.push(
+                        `예상: ${estimatedShippingFee.toLocaleString()}원 (${boxCount}박스), 보유: ${availableForShipping.toLocaleString()}원`,
+                      );
+                    }
+
+                    message += "\n\n" + details.join("\n");
+                    message += "\n\n크레딧을 충전한 뒤 다시 시도해주세요.";
+                    creditShortfallMsg = message;
+                  }
+                }
+              } catch (err) {
+                console.warn("[NewRequestSubmit] credit check failed:", err);
+              }
+            })(),
+          ]);
+
+          tempFiles = uploadResult ?? [];
+        } catch {
+          // S3 업로드 실패 - toast는 uploadFilesWithToast에서 이미 처리됨
+          return;
+        }
+
+        if (creditShortfallMsg) {
+          dismiss();
+          toast({
+            title: "크레딧 부족",
+            description: creditShortfallMsg,
+            variant: "destructive",
+            duration: 10000, // 10초
+          });
+          return;
+        }
+
+        // 3. Draft 파일+정보 업데이트 (S3 업로드 완료 후)
+        if (files.length > 0 && tempFiles.length > 0) {
+          const toNfcName = (name: string) => {
+            try {
+              return String(name || "").normalize("NFC");
+            } catch {
+              return String(name || "");
+            }
+          };
+
+          const caseInfosPayload = files
+            .map((file, i) => {
+              const tf = tempFiles[i];
+              const fileKey = `${toNfcName(file.name)}:${file.size}`;
+              const ci = (caseInfosMap?.[fileKey] ||
+                filteredMap[fileKey] ||
+                {}) as Partial<CaseInfos>;
+              return {
+                clinicName: ci.clinicName,
+                patientName: ci.patientName,
+                tooth: ci.tooth,
+                implantManufacturer: ci.implantManufacturer,
+                implantBrand: ci.implantBrand,
+                implantFamily: ci.implantFamily,
+                implantType: ci.implantType,
+                maxDiameter: ci.maxDiameter,
+                connectionDiameter: ci.connectionDiameter,
+                totalLength: ci.totalLength,
+                taperAngle: ci.taperAngle,
+                workType: ci.workType || "abutment",
+                retentionGroove: ci.retentionGroove,
+                shippingMode: ci.shippingMode,
+                requestedShipDate: ci.requestedShipDate,
+                file: tf?.key
+                  ? {
+                      originalName: tf.originalName,
+                      size: tf.size,
+                      mimetype: tf.mimetype,
+                      s3Key: tf.key,
+                    }
+                  : undefined,
+              };
+            })
+            .filter((ci) => Boolean(ci.file?.s3Key));
+
+          if (caseInfosPayload.length > 0) {
+            const patchRes = await fetch(
+              `${API_BASE_URL}/requests/drafts/${draftId}`,
+              {
+                method: "PATCH",
+                headers: getHeaders(),
+                body: JSON.stringify({ caseInfos: caseInfosPayload }),
+              },
+            ).catch((err) => {
+              console.error(
+                "[submitFromDraft] Draft file PATCH network error:",
+                err,
+              );
+              return null;
+            });
+
+            if (!patchRes || !patchRes.ok) {
+              const status = patchRes?.status ?? "network error";
+              throw new Error(
+                `파일 정보 저장에 실패했습니다 (${status}). 다시 시도해주세요.`,
+              );
+            }
+          }
+        } else if (
+          patchDraftImmediately &&
+          Object.keys(filteredMap).length > 0
+        ) {
+          await patchDraftImmediately(filteredMap).catch((err) =>
+            console.warn(
+              "[useNewRequestSubmitV2] Pre-submit patch failed:",
+              err,
+            ),
+          );
+        }
+
+        preparedDraftRef.current = {
+          draftId: String(draftId),
+          filesFingerprint,
+        };
       }
 
       // 4. Draft를 Request로 전환
@@ -581,6 +629,7 @@ export const useNewRequestSubmitV2 = ({
       } catch {}
 
       // 상태 초기화
+      preparedDraftRef.current = null;
       setFiles([]);
       setSelectedPreviewIndex(null);
 
