@@ -753,34 +753,50 @@ export const useNewRequestPage = (existingRequestId?: string) => {
     async (payload: { mode: "active" | "tracking"; duplicates: any[] }) => {
       if (!payload || !Array.isArray(payload.duplicates)) return;
 
-      // 자동으로 적절한 전략 선택
-      const autoResolutions = payload.duplicates.map((dup: any) => {
-        const stageOrder = Number(dup?.stageOrder ?? 0);
-        // 0: 의뢰, 1: CAM -> replace
-        // 2: 가공, 3: 세척.패킹/포장.발송, 4: 추적관리 -> remake
-        const strategy = stageOrder >= 2 ? "remake" : "replace";
+      const normalizedDuplicates = payload.duplicates
+        .map((dup: any) => {
+          const rawCaseId = String(dup?.caseId || "").trim();
 
-        return {
-          caseId: String(dup.caseId || ""),
-          strategy,
-          existingRequestId: String(dup?.existingRequest?._id || ""),
-        };
+          const matchedFile = files.find(
+            (f) =>
+              String((f as any)?._draftCaseInfoId || "").trim() === rawCaseId,
+          );
+
+          const fallbackCaseId = matchedFile
+            ? `${matchedFile.name}:${matchedFile.size}`
+            : "";
+
+          const caseId = rawCaseId || fallbackCaseId;
+
+          return {
+            ...dup,
+            caseId,
+            fileName: String(dup?.fileName || matchedFile?.name || ""),
+            stageOrder: Number(dup?.stageOrder ?? 0),
+            existingRequest: dup?.existingRequest,
+          };
+        })
+        .filter((d: any) => Boolean(String(d?.caseId || "").trim()));
+
+      if (normalizedDuplicates.length === 0) return;
+
+      // 자동 적용 대신, 사용자 선택 모달을 노출한다.
+      setDuplicateResolutions([]);
+      setDuplicatePrompt({
+        mode: payload.mode,
+        duplicates: normalizedDuplicates,
       });
-
-      // 자동 선택된 resolutions로 설정
-      setDuplicateResolutions(autoResolutions as any);
 
       toast({
         title:
           payload.mode === "tracking"
             ? "동일 정보 의뢰가 확인되었습니다"
             : "중복 의뢰가 확인되었습니다",
-        description:
-          "중복 처리 방안을 자동 적용했습니다. ‘의뢰하기’를 한 번 더 누르면 접수됩니다.",
-        duration: 4500,
+        description: "중복 항목별 처리 방법을 선택해주세요.",
+        duration: 3500,
       });
     },
-    [setDuplicateResolutions, toast],
+    [files, setDuplicatePrompt, setDuplicateResolutions, toast],
   );
 
   // V2 제출: Draft 기반 워크플로우 (SSOT)

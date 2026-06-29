@@ -539,7 +539,7 @@ export const useNewRequestSubmitV2 = ({
             duplicates.length > 0
           ) {
             console.log(
-              "[useNewRequestSubmitV2] Duplicate detected, auto-resolving",
+              "[useNewRequestSubmitV2] Duplicate detected, opening prompt",
               {
                 mode,
                 count: duplicates.length,
