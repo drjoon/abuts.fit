@@ -607,9 +607,10 @@ function calculateTaperWithFinishLine(position, index, finishLinePoints, bbox) {
   }
   const maxDiameter = maxR * 2;
 
-  // Top/Side 교점 중 최저 Z 찾기
-  let bestFrontPoint = null;
-  let minZFront = Infinity;
+  // FrontPoint 계산:
+  // 1) Top/Side 교점 후보를 모은다(= 축면과 교합면 경계 후보)
+  // 2) 경사축선(보라색선) 기준 20도 간격 18개 방향으로 교점을 뽑는다
+  // 3) 뽑힌 교점 중 z가 가장 작은 점을 최종 frontPoint로 선택
   const minRadius = Math.max(1.0, maxDiameter * 0.15);
   const strictProjMin = maxProj - Math.min(1.2, totalLength * 0.12);
 
@@ -621,103 +622,169 @@ function calculateTaperWithFinishLine(position, index, finishLinePoints, bbox) {
       const dx = v.x - center.x;
       const dy = v.y - center.y;
       const distToAxis = Math.sqrt(dx * dx + dy * dy);
+      if (distToAxis <= minRadius) continue;
 
-      if (distToAxis > minRadius) {
-        const proj = v.x * tiltDir.x + v.y * tiltDir.y + v.z * tiltDir.z;
-        relaxedCandidates.push(v);
-        if (proj >= strictProjMin) {
-          strictCandidates.push(v);
-        }
+      const proj = v.x * tiltDir.x + v.y * tiltDir.y + v.z * tiltDir.z;
+      const candidate = { v, dx, dy, proj, distToAxis };
+      relaxedCandidates.push(candidate);
+      if (proj >= strictProjMin) {
+        strictCandidates.push(candidate);
       }
     }
   }
 
-  const selectedCandidates =
-    strictCandidates.length > 0 ? strictCandidates : relaxedCandidates;
-  for (const v of selectedCandidates) {
-    if (v.z < minZFront) {
-      minZFront = v.z;
-      bestFrontPoint = v;
+  // strict 필터는 고점 쪽으로 치우칠 수 있어 최저점 탐색에서는 relaxed 전체를 사용
+  const baseCandidates = relaxedCandidates;
+
+  // 보라색 측정선(최대 기울기 쌍) 방향
+  const maxTilt = directions.reduce(
+    (acc, g) => Math.max(acc, Math.abs(Number(g.taperAngle) || 0)),
+    0,
+  );
+  const purpleGuideAngles = directions
+    .filter(
+      (g) => Math.abs(Math.abs(Number(g.taperAngle) || 0) - maxTilt) <= 0.05,
+    )
+    .map((g) => Number(g.angle))
+    .filter((a) => Number.isFinite(a));
+
+  const guideAnglesDeg = purpleGuideAngles;
+
+  const lineBand = Math.max(0.2, maxDiameter * 0.03);
+  const maxDistInPool = baseCandidates.reduce(
+    (acc, cur) => Math.max(acc, cur.distToAxis),
+    0,
+  );
+  const outerMinTight = Math.max(minRadius, maxDistInPool * 0.82);
+  const outerMinRelaxed = Math.max(minRadius * 0.7, maxDistInPool * 0.62);
+
+  const makeRadialAngles = (count) => {
+    const baseAngle = Math.atan2(frontDir.y, frontDir.x);
+    return Array.from({ length: count }, (_, i) => {
+      let deg = ((baseAngle + (Math.PI * 2 * i) / count) * 180) / Math.PI;
+      deg %= 360;
+      if (deg < 0) deg += 360;
+      return deg;
+    });
+  };
+
+  const selectMinZPoint = (pool, dir, lateral) => {
+    if (!pool.length) return null;
+
+    let best = null;
+    let bestZ = Infinity;
+    let bestLateralAbs = Infinity;
+    let bestAlongAbs = -Infinity;
+
+    for (const c of pool) {
+      const alongAbs = Math.abs(c.dx * dir.x + c.dy * dir.y);
+      const lateralAbs = Math.abs(c.dx * lateral.x + c.dy * lateral.y);
+
+      const isLowerZ = c.v.z < bestZ - 1e-6;
+      const isSameZ = Math.abs(c.v.z - bestZ) <= 1e-6;
+      const isBetterLineFit = lateralAbs < bestLateralAbs - 1e-6;
+      const isSameLineFit = Math.abs(lateralAbs - bestLateralAbs) <= 1e-6;
+      const isFurtherAlong = alongAbs > bestAlongAbs + 1e-6;
+
+      if (
+        isLowerZ ||
+        (isSameZ && isBetterLineFit) ||
+        (isSameZ && isSameLineFit && isFurtherAlong)
+      ) {
+        best = c;
+        bestZ = c.v.z;
+        bestLateralAbs = lateralAbs;
+        bestAlongAbs = alongAbs;
+      }
     }
+
+    return best;
+  };
+
+  const pickIntersections = ({ angles, band, outerMin }) => {
+    const hits = [];
+    const outerPool = baseCandidates.filter((c) => c.distToAxis >= outerMin);
+
+    for (const guideAngleDeg of angles) {
+      const angleRad = (guideAngleDeg * Math.PI) / 180;
+      const dir = { x: Math.cos(angleRad), y: Math.sin(angleRad) };
+      const lateral = { x: -dir.y, y: dir.x };
+
+      const inBandPool = outerPool.filter(
+        (c) => Math.abs(c.dx * lateral.x + c.dy * lateral.y) <= band,
+      );
+
+      // 밴드 내 교점이 없으면 동일 outerPool에서 무밴드 최저점 선택(누락 방지)
+      const best =
+        selectMinZPoint(inBandPool, dir, lateral) ||
+        selectMinZPoint(outerPool, dir, lateral);
+
+      if (best) hits.push(best.v);
+    }
+
+    return hits;
+  };
+
+  // 1차: 20개 직선(18° 간격) + 완화 조건
+  const fallback20Angles = makeRadialAngles(20);
+  const fallback20Hits = pickIntersections({
+    angles: fallback20Angles,
+    band: lineBand * 2.5,
+    outerMin: outerMinRelaxed,
+  });
+  let directionIntersections = [...fallback20Hits];
+
+  // 1차-보강: 20개 직선이 부족하면 36개 직선(10° 간격) 추가 시도
+  let fallback36Hits = [];
+  if (directionIntersections.length < 20) {
+    const fallback36Angles = makeRadialAngles(36);
+    fallback36Hits = pickIntersections({
+      angles: fallback36Angles,
+      band: lineBand * 2.5,
+      outerMin: outerMinRelaxed,
+    });
+
+    if (fallback36Hits.length > 0) {
+      directionIntersections = [...directionIntersections, ...fallback36Hits];
+    }
+  }
+
+  // 2차: 보라색 가이드 각도 + 타이트 조건
+  if (directionIntersections.length === 0 && guideAnglesDeg.length > 0) {
+    directionIntersections = pickIntersections({
+      angles: guideAnglesDeg,
+      band: lineBand,
+      outerMin: outerMinTight,
+    });
+  }
+
+  // 3차: 보라색 가이드 각도 + 완화 조건
+  if (directionIntersections.length === 0 && guideAnglesDeg.length > 0) {
+    directionIntersections = pickIntersections({
+      angles: guideAnglesDeg,
+      band: lineBand * 2.2,
+      outerMin: outerMinRelaxed,
+    });
+  }
+
+  let frontPoint = null;
+  if (directionIntersections.length > 0) {
+    let minPoint = directionIntersections[0];
+    for (const p of directionIntersections) {
+      if (p.z < minPoint.z) {
+        minPoint = p;
+      }
+    }
+    frontPoint = {
+      x: Math.round(minPoint.x * 100) / 100,
+      y: Math.round(minPoint.y * 100) / 100,
+      z: Math.round(minPoint.z * 100) / 100,
+    };
   }
 
   console.error(
-    `[frontPoint] candidates strict=${strictCandidates.length} relaxed=${relaxedCandidates.length} strictProjMin=${strictProjMin.toFixed(3)}`,
+    `[frontPoint] candidates strict=${strictCandidates.length} relaxed=${relaxedCandidates.length} guides=${guideAnglesDeg.length} purpleGuides=${purpleGuideAngles.length} hits=${directionIntersections.length} hits20=${fallback20Hits.length} hits36=${fallback36Hits.length} lineBand=${lineBand.toFixed(3)} outerMinTight=${outerMinTight.toFixed(3)} outerMinRelaxed=${outerMinRelaxed.toFixed(3)} strictProjMin=${strictProjMin.toFixed(3)}`,
   );
-
-  let frontPoint = null;
-  if (bestFrontPoint) {
-    // 2단계: 교점에서 XY 평면상 frontDir(경사 방향, 바깥쪽)으로 0.2mm 이동한
-    //        위치를 ray 출발점으로 삼아 같은 Z에서 mesh 재교차 → 포스트 측면 확정
-    //
-    // 이유: Top/Side 교점은 상방 홈 테두리에 걸릴 수 있다.
-    //       포스트 외부(frontDir 방향)에서 안쪽으로 쏘면 홈이 아닌
-    //       포스트 측면과의 교점을 얻을 수 있다.
-    const xyShift = 0.2; // XY 바깥쪽으로 이동할 거리 (mm)
-    const rayOriginX = bestFrontPoint.x + frontDir.x * xyShift;
-    const rayOriginY = bestFrontPoint.y + frontDir.y * xyShift;
-    const targetZ = bestFrontPoint.z;
-
-    // targetZ 슬라이스에서 frontDir 방향 최대 반경 교점 탐색
-    // (ray 출발점이 mesh 외부이므로, 교점이 bestFrontPoint보다 안쪽이어도 허용)
-    const tolerance = 0.15;
-    let bestProj = -Infinity;
-    let bestX = bestFrontPoint.x;
-    let bestY = bestFrontPoint.y;
-    let found = false;
-
-    for (let tri = 0; tri < triangleCount; tri++) {
-      const i0 = index ? index.getX(tri * 3) : tri * 3;
-      const i1 = index ? index.getX(tri * 3 + 1) : tri * 3 + 1;
-      const i2 = index ? index.getX(tri * 3 + 2) : tri * 3 + 2;
-      const v0 = readVertex(i0);
-      const v1 = readVertex(i1);
-      const v2 = readVertex(i2);
-
-      for (const v of [v0, v1, v2]) {
-        if (Math.abs(v.z - targetZ) <= tolerance) {
-          const proj =
-            (v.x - center.x) * frontDir.x + (v.y - center.y) * frontDir.y;
-          if (proj > bestProj) {
-            bestProj = proj;
-            bestX = v.x;
-            bestY = v.y;
-            found = true;
-          }
-        }
-      }
-
-      const checkEdge = (a, b) => {
-        if (
-          (a.z < targetZ && b.z < targetZ) ||
-          (a.z > targetZ && b.z > targetZ)
-        )
-          return;
-        if (Math.abs(a.z - b.z) < 1e-9) return;
-        const t = (targetZ - a.z) / (b.z - a.z);
-        if (t < 0 || t > 1) return;
-        const ix = a.x + t * (b.x - a.x);
-        const iy = a.y + t * (b.y - a.y);
-        const proj =
-          (ix - center.x) * frontDir.x + (iy - center.y) * frontDir.y;
-        if (proj > bestProj) {
-          bestProj = proj;
-          bestX = ix;
-          bestY = iy;
-          found = true;
-        }
-      };
-      checkEdge(v0, v1);
-      checkEdge(v1, v2);
-      checkEdge(v2, v0);
-    }
-
-    frontPoint = {
-      x: Math.round(bestX * 100) / 100,
-      y: Math.round(bestY * 100) / 100,
-      z: Math.round(targetZ * 100) / 100,
-    };
-  }
 
   return {
     taperAngle,
@@ -737,7 +804,7 @@ function calculateTaperWithFinishLine(position, index, finishLinePoints, bbox) {
     const metadata = await calculateStlMetadata(stlFilePath, finishLinePoints);
 
     // 버전 확인용 주석 (Python 로그에서 확인 가능)
-    // VERSION: 2026-04-17-v3-frontpoint-post-side-ray
+    // VERSION: 2026-06-30-v10-frontpoint-min-z-refactor
 
     // JSON 출력 (표준 출력)
     console.log(JSON.stringify(metadata, null, 2));
