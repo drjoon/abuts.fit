@@ -217,11 +217,31 @@ export const NewRequestPage = () => {
     [caseInfosMap, files],
   );
 
+  const resolveExistingRequestId = (dupLike: any) => {
+    const id = String(
+      dupLike?.existingRequestId ||
+        dupLike?.existingRequest?._id ||
+        dupLike?.existingRequest?.id ||
+        "",
+    ).trim();
+    return id;
+  };
+
   const applyDuplicateChoice = async (choice: {
     strategy: "skip" | "replace" | "remake";
     caseId: string;
     existingRequestId: string;
   }) => {
+    const safeExistingRequestId = String(choice.existingRequestId || "").trim();
+    if (!safeExistingRequestId) {
+      toast({
+        title: "중복 처리 실패",
+        description:
+          "기존 의뢰 식별자를 찾을 수 없어 처리할 수 없습니다. 다시 시도해주세요.",
+        variant: "destructive",
+      });
+      return;
+    }
     // skip 선택 시 파일 제거
     if (choice.strategy === "skip") {
       let fileIndex = -1;
@@ -259,7 +279,10 @@ export const NewRequestPage = () => {
       const next = (duplicateResolutions || []).filter(
         (r) => r.caseId !== choice.caseId,
       );
-      next.push(choice);
+      next.push({
+        ...choice,
+        existingRequestId: safeExistingRequestId,
+      });
       return next;
     })();
 
@@ -279,16 +302,18 @@ export const NewRequestPage = () => {
       return;
     }
 
-    // 모든 중복 건 처리 완료 - 모달 닫기
+    // 모든 중복 건 처리 완료 - 모달 닫고 즉시 재제출
     const finalResolutions = nextResolutions.map((r) => ({
       caseId: r.caseId,
       strategy: r.strategy,
       existingRequestId: r.existingRequestId,
     }));
 
-    // 중요: 선택 정보를 보존한 채 프롬프트만 닫고 사용자가 다시 제출하도록 유도
     setDuplicateResolutions(finalResolutions as any);
     setDuplicatePrompt(null);
+
+    // 사용자가 다시 버튼을 누르지 않아도 바로 처리되도록 즉시 재제출
+    await handleSubmitWithDuplicateResolutions(finalResolutions as any);
   };
 
   const renderDuplicateActions = (dup: any) => {
@@ -329,7 +354,7 @@ export const NewRequestPage = () => {
             applyDuplicateChoice({
               strategy: primaryStrategy,
               caseId: dup.caseId,
-              existingRequestId: dup.existingRequest?._id,
+              existingRequestId: resolveExistingRequestId(dup),
             });
           }}
           className="flex-1 rounded bg-blue-600 px-3 py-1.5 text-[11px] font-semibold text-white hover:bg-blue-700"
@@ -344,7 +369,7 @@ export const NewRequestPage = () => {
             applyDuplicateChoice({
               strategy: "skip",
               caseId: dup.caseId,
-              existingRequestId: dup.existingRequest?._id,
+              existingRequestId: resolveExistingRequestId(dup),
             });
           }}
           className="flex-1 rounded border border-gray-300 bg-white px-3 py-1.5 text-[11px] font-semibold text-gray-700 hover:bg-gray-50"
@@ -593,6 +618,7 @@ export const NewRequestPage = () => {
                   caseId: effectiveCaseId,
                   fileName: file.name,
                   existingRequest: duplicate?.existingRequest,
+                  existingRequestId: resolveExistingRequestId(duplicate),
                   stageOrder, // stageOrder를 전달하여 UI에서 올바른 옵션 표시
                 };
 

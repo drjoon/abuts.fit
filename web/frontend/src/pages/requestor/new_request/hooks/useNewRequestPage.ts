@@ -774,6 +774,12 @@ export const useNewRequestPage = (existingRequestId?: string) => {
             fileName: String(dup?.fileName || matchedFile?.name || ""),
             stageOrder: Number(dup?.stageOrder ?? 0),
             existingRequest: dup?.existingRequest,
+            existingRequestId: String(
+              dup?.existingRequestId ||
+                dup?.existingRequest?._id ||
+                dup?.existingRequest?.id ||
+                "",
+            ).trim(),
           };
         })
         .filter((d: any) => Boolean(String(d?.caseId || "").trim()));
