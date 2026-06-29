@@ -850,6 +850,79 @@ export async function ensureFinishedLotNumberForPacking(requestDoc) {
   await ensureLotNumberForMachining(requestDoc);
 }
 
+export async function resolveRequestorPricingBaseDate({
+  requestorId,
+  requestorOrgId,
+}) {
+  const normalizedOrgId = String(requestorOrgId || "").trim();
+  if (normalizedOrgId && Types.ObjectId.isValid(normalizedOrgId)) {
+    const org = await BusinessAnchor.findById(
+      new Types.ObjectId(normalizedOrgId),
+    )
+      .select({
+        primaryContactUserId: 1,
+        owners: 1,
+        createdAt: 1,
+      })
+      .lean();
+
+    // 우선순위 1) 사업자 생성일
+    if (org?.createdAt) {
+      return org.createdAt;
+    }
+
+    const ownerIds = Array.isArray(org?.owners)
+      ? org.owners.map((id) => String(id || "").trim()).filter(Boolean)
+      : [];
+
+    // 우선순위 2) owners 중 가장 이른 사용자 날짜
+    const validOwnerIds = ownerIds.filter((id) => Types.ObjectId.isValid(id));
+    if (validOwnerIds.length > 0) {
+      const owners = await User.find({
+        _id: {
+          $in: validOwnerIds.map((id) => new Types.ObjectId(id)),
+        },
+      })
+        .select({ _id: 1, approvedAt: 1, createdAt: 1 })
+        .lean();
+
+      const oldestOwnerDate = owners
+        .map((u) => u?.approvedAt || u?.createdAt || null)
+        .filter(Boolean)
+        .sort((a, b) => new Date(a).getTime() - new Date(b).getTime())[0];
+
+      if (oldestOwnerDate) {
+        return oldestOwnerDate;
+      }
+    }
+
+    // 우선순위 3) primaryContactUserId 날짜
+    const primaryContactId = String(org?.primaryContactUserId || "").trim();
+    if (primaryContactId && Types.ObjectId.isValid(primaryContactId)) {
+      const primaryUser = await User.findById(
+        new Types.ObjectId(primaryContactId),
+      )
+        .select({ approvedAt: 1, createdAt: 1 })
+        .lean();
+      if (primaryUser?.approvedAt || primaryUser?.createdAt) {
+        return primaryUser.approvedAt || primaryUser.createdAt || null;
+      }
+    }
+  }
+
+  const normalizedUserId = String(requestorId || "").trim();
+  if (normalizedUserId && Types.ObjectId.isValid(normalizedUserId)) {
+    const user = await User.findById(new Types.ObjectId(normalizedUserId))
+      .select({ approvedAt: 1, createdAt: 1 })
+      .lean();
+    if (user?.approvedAt || user?.createdAt) {
+      return user.approvedAt || user.createdAt || null;
+    }
+  }
+
+  return null;
+}
+
 export async function computePriceForRequest({
   requestorId,
   requestorOrgId,
@@ -943,32 +1016,11 @@ export async function computePriceForRequest({
     }
   }
 
-  // 1) 신규 90일 고정가: 가입일 기준 90일 내 -> 10,000원 고정
-  const orgForBaseDate =
-    requestorOrgId && Types.ObjectId.isValid(String(requestorOrgId))
-      ? await BusinessAnchor.findById(
-          new Types.ObjectId(String(requestorOrgId)),
-        )
-          .select({ primaryContactUserId: 1 })
-          .lean()
-      : null;
-
-  const baseDate = await (async () => {
-    const ownerId = orgForBaseDate?.primaryContactUserId
-      ? String(orgForBaseDate.primaryContactUserId)
-      : "";
-    if (ownerId && Types.ObjectId.isValid(ownerId)) {
-      const owner = await User.findById(ownerId)
-        .select({ createdAt: 1, approvedAt: 1 })
-        .lean();
-      return owner?.approvedAt || owner?.createdAt || null;
-    }
-
-    const user = await User.findById(requestorId)
-      .select({ createdAt: 1, approvedAt: 1 })
-      .lean();
-    return user?.approvedAt || user?.createdAt || null;
-  })();
+  // 1) 신규 90일 고정가: 가입일(대표 계정 기준) 90일 내 -> 10,000원 고정
+  const baseDate = await resolveRequestorPricingBaseDate({
+    requestorId,
+    requestorOrgId,
+  });
 
   if (baseDate) {
     const baseYmd = toKstYmd(baseDate);

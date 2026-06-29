@@ -63,7 +63,7 @@ export const RequestorPricingReferralPolicyCard = () => {
   });
 
   const { data, isLoading, isFetching, isError, error } = useQuery({
-    queryKey: ["requestor-pricing-referral-stats", "v7"],
+    queryKey: ["requestor-pricing-referral-stats", "v8"],
     queryFn: async () => {
       const res = await apiFetch<any>({
         path: "/api/requests/my/pricing-referral-stats",

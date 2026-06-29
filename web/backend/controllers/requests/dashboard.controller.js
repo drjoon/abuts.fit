@@ -13,6 +13,7 @@ import {
   toKstYmd,
   getLast30DaysRangeUtc,
   normalizeKoreanBusinessDay,
+  resolveRequestorPricingBaseDate,
 } from "./utils.js";
 import {
   getRequestPerfCacheValue,
@@ -1178,7 +1179,7 @@ export async function getMyPricingReferralStats(req, res) {
     const requestorId = req.user._id;
     const debug =
       process.env.NODE_ENV !== "production" && String(req.query.debug) === "1";
-    const statsCacheKey = `pricing-referral-stats:v9:${String(
+    const statsCacheKey = `pricing-referral-stats:v10:${String(
       req.user?._id || "",
     )}:${String(req.user?.businessAnchorId || "")}`;
 
@@ -1394,12 +1395,10 @@ export async function getMyPricingReferralStats(req, res) {
           baseUnitPrice - volumeDiscountAmount,
         );
 
-        const dateSource = user || req.user;
-
-        const baseDate =
-          dateSource?.approvedAt ||
-          (dateSource?.active ? dateSource?.updatedAt : null) ||
-          dateSource?.createdAt;
+        const baseDate = await resolveRequestorPricingBaseDate({
+          requestorId,
+          requestorOrgId: String(me?.businessAnchorId || "").trim(),
+        });
 
         let fixedUntil = null;
 
@@ -1459,6 +1458,8 @@ export async function getMyPricingReferralStats(req, res) {
                         active: user.active,
                       }
                     : null,
+                  pricingBaseDateResolvedBy:
+                    "org-createdAt->owners-oldest->primaryContact->requestorUser",
                   groupMemberIds: groupMemberIds.map(String),
                   ymd,
                   snapshot: cachedRollingAggregate
