@@ -539,10 +539,7 @@ export const useNewRequestPage = (existingRequestId?: string) => {
           const orgBody: any = orgRes.data || {};
           const orgData = orgBody?.data || orgBody;
           membership = (orgData?.membership || "none") as
-            | "owner"
-            | "member"
-            | "pending"
-            | "none";
+            "owner" | "member" | "pending" | "none";
           const businessNumberRaw = String(
             orgData?.metadata?.businessNumber || "",
           ).trim();
@@ -772,8 +769,18 @@ export const useNewRequestPage = (existingRequestId?: string) => {
 
       // 자동 선택된 resolutions로 설정
       setDuplicateResolutions(autoResolutions as any);
+
+      toast({
+        title:
+          payload.mode === "tracking"
+            ? "동일 정보 의뢰가 확인되었습니다"
+            : "중복 의뢰가 확인되었습니다",
+        description:
+          "중복 처리 방안을 자동 적용했습니다. ‘의뢰하기’를 한 번 더 누르면 접수됩니다.",
+        duration: 4500,
+      });
     },
-    [setDuplicateResolutions],
+    [setDuplicateResolutions, toast],
   );
 
   // V2 제출: Draft 기반 워크플로우 (SSOT)

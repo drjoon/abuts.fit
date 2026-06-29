@@ -677,6 +677,14 @@ export const NewRequestPage = () => {
                     description: "제출을 처리하고 있어요. 잠시만 기다려주세요.",
                     duration: 15000,
                   });
+
+                  if ((duplicateResolutions || []).length > 0) {
+                    handleSubmitWithDuplicateResolutions(
+                      duplicateResolutions as any,
+                    );
+                    return;
+                  }
+
                   handleSubmit();
                 })();
               }}
