@@ -1304,7 +1304,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 //     return;
                 // }
 
-                double firstPassPercent = 0.1;
+                double firstPassPercent = 1.0;
                 string envValue = firstPassPercent.ToString("0.###", CultureInfo.InvariantCulture);
                 Environment.SetEnvironmentVariable(AppConfig.CompositeFirstPassPercentAEnv, envValue);
                 AppLogger.Log($"DentalAddin: tooth='{tooth}' -> FirstPassPercent={envValue} 적용 (env={AppConfig.CompositeFirstPassPercentAEnv})");
