@@ -182,46 +182,82 @@ export const AdminRequestMonitoring = () => {
   };
 
   useEffect(() => {
+    let canceled = false;
+
     const fetchRequests = async () => {
       if (!token) return;
       try {
-        const LIMIT = 200;
-        let page = 1;
-        const merged: any[] = [];
+        const LIMIT = 120;
+        const { startDate, endDate } = periodToRange(period);
 
-        while (true) {
+        const fetchPage = async (page: number) => {
           const query = new URLSearchParams({
             page: String(page),
             limit: String(LIMIT),
             sortBy: "createdAt",
             sortOrder: "desc",
+            includeTotal: "true",
+            view: "monitoring",
+            startDate,
+            endDate,
           });
 
-          const res = await apiFetch<any>({
+          return apiFetch<any>({
             path: `/api/requests?${query.toString()}`,
             method: "GET",
             token,
           });
+        };
 
-          if (!res.ok || !res.data?.data?.requests) break;
-
-          const pageRequests = Array.isArray(res.data.data.requests)
-            ? res.data.data.requests
-            : [];
-          merged.push(...pageRequests);
-
-          if (pageRequests.length < LIMIT) break;
-          page += 1;
+        const firstRes = await fetchPage(1);
+        if (!firstRes.ok || !firstRes.data?.data?.requests) {
+          if (!canceled) {
+            setRequests([]);
+            setVisibleCount(PAGE_SIZE);
+          }
+          return;
         }
 
-        setRequests(merged);
-        setVisibleCount(PAGE_SIZE);
+        const firstPageRequests = Array.isArray(firstRes.data.data.requests)
+          ? firstRes.data.data.requests
+          : [];
+
+        if (!canceled) {
+          // 첫 페이지를 먼저 그려 초기 체감 로딩 개선
+          setRequests(firstPageRequests);
+          setVisibleCount(PAGE_SIZE);
+        }
+
+        const totalPages = Number(firstRes.data?.data?.pagination?.pages || 1);
+        if (!Number.isFinite(totalPages) || totalPages <= 1) return;
+
+        const restPagePromises: Promise<any>[] = [];
+        for (let page = 2; page <= totalPages; page += 1) {
+          restPagePromises.push(fetchPage(page));
+        }
+
+        const restResponses = await Promise.all(restPagePromises);
+        const restRequests = restResponses.flatMap((res) => {
+          if (!res.ok || !res.data?.data?.requests) return [];
+          return Array.isArray(res.data.data.requests)
+            ? res.data.data.requests
+            : [];
+        });
+
+        if (!canceled) {
+          setRequests([...firstPageRequests, ...restRequests]);
+        }
       } catch (error) {
         console.error("Failed to fetch requests:", error);
       }
     };
+
     void fetchRequests();
-  }, [token]);
+
+    return () => {
+      canceled = true;
+    };
+  }, [token, period]);
 
   const periodFilteredRequests = useMemo(() => {
     const { startDate, endDate } = periodToRange(period);

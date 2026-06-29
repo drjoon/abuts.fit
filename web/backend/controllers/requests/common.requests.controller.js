@@ -526,6 +526,29 @@ export async function getAllRequests(req, res) {
     }
     if (req.query.implantType) filter.implantType = req.query.implantType;
 
+    // 생성일 범위 필터 (관리자 모니터링 등 기간 조회 최적화)
+    const startDateRaw = String(req.query.startDate || "").trim();
+    const endDateRaw = String(req.query.endDate || "").trim();
+    const createdAtFilter = {};
+
+    if (startDateRaw) {
+      const startDate = new Date(startDateRaw);
+      if (!Number.isNaN(startDate.getTime())) {
+        createdAtFilter.$gte = startDate;
+      }
+    }
+
+    if (endDateRaw) {
+      const endDate = new Date(endDateRaw);
+      if (!Number.isNaN(endDate.getTime())) {
+        createdAtFilter.$lte = endDate;
+      }
+    }
+
+    if (Object.keys(createdAtFilter).length > 0) {
+      filter.createdAt = createdAtFilter;
+    }
+
     // 제조사: 같은 BusinessAnchor 조직 내 대표/직원이 의뢰 공유 + 취소 제외
     // buildManufacturerOrgScopeFilter가 조직 멤버 기반 필터를 생성
     if (role === "manufacturer") {
@@ -675,12 +698,30 @@ export async function getAllRequests(req, res) {
       "deliveryInfoRef",
     ].join(" ");
 
+    // 관리자 의뢰 모니터링 전용 초경량 projection
+    const monitoringSelect = [
+      "requestId",
+      "manufacturerStage",
+      "priority",
+      "createdAt",
+      "progress",
+      "caManufacturer",
+      "price.amount",
+      "price.paidAmount",
+      "caseInfos.clinicName",
+      "caseInfos.patientName",
+      "caseInfos.tooth",
+      "requestor",
+    ].join(" ");
+
     let query = Request.find(filter).sort(sort).skip(skip).limit(limit);
 
     // default to lightweight projection unless explicitly requesting full view
     if (view !== "full") {
-      const selectedProjection =
-        view === "worksheet" && worksheetProfile === "tracking"
+      const isMonitoringView = view === "monitoring";
+      const selectedProjection = isMonitoringView
+        ? monitoringSelect
+        : view === "worksheet" && worksheetProfile === "tracking"
           ? worksheetTrackingSelect
           : view === "worksheet" && worksheetProfile === "shipping"
             ? worksheetShippingSelect
@@ -689,10 +730,15 @@ export async function getAllRequests(req, res) {
         view === "worksheet" && worksheetProfile === "shipping"
           ? "name business address addressText zipCode"
           : "name business";
+
       query = query
         .select(selectedProjection)
-        .populate("requestor", requestorPopulateSelect)
-        .populate("rnd.memoUpdatedBy", "name");
+        .populate("requestor", requestorPopulateSelect);
+
+      if (!isMonitoringView) {
+        query = query.populate("rnd.memoUpdatedBy", "name");
+      }
+
       if (view === "worksheet" && worksheetProfile === "shipping") {
         query = query.populate(
           "businessAnchorId",
@@ -742,22 +788,25 @@ export async function getAllRequests(req, res) {
 
     const now = new Date();
     const isWorksheetView = view === "worksheet";
+    const isMonitoringView = view === "monitoring";
 
-    // 성능 최적화: normalize와 shippingPriority 계산을 병렬 처리
-    const requests = await Promise.all(
-      rawRequests.map(async (r) => {
-        const [shippingPriority, normalized] = await Promise.all([
-          computeShippingPriority({ request: r, now }),
-          isWorksheetView
-            ? normalizeWorksheetRequestForResponse(r)
-            : normalizeRequestForResponse(r),
-        ]);
-        return {
-          ...normalized,
-          shippingPriority,
-        };
-      }),
-    );
+    // 모니터링 뷰는 초경량 응답: normalize/우선순위 계산 생략
+    const requests = isMonitoringView
+      ? rawRequests
+      : await Promise.all(
+          rawRequests.map(async (r) => {
+            const [shippingPriority, normalized] = await Promise.all([
+              computeShippingPriority({ request: r, now }),
+              isWorksheetView
+                ? normalizeWorksheetRequestForResponse(r)
+                : normalizeRequestForResponse(r),
+            ]);
+            return {
+              ...normalized,
+              shippingPriority,
+            };
+          }),
+        );
 
     if (isWorksheetView) {
       const requestorAnchorIds = Array.from(
