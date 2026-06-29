@@ -403,9 +403,9 @@ namespace DentalAddin
             double requestedAFirstPass = baseAFirstPercent;
             opA.FirstPassPercent = Clamp(requestedAFirstPass, 0.0, opA.LastPassPercent);
 
-            // 극단적으로 A 구간이 거의 사라질 때만 최소 폭(0.5%) 보정한다.
+            // 극단적으로 A 구간이 거의 사라질 때만 최소 폭(1.0%) 보정한다.
             // 보정 시에도 0%가 아닌 leftRatio 기준 시작점(최소 1%)을 사용해 축 특이점을 피한다.
-            const double minAWindowPercent = 0.5;
+            const double minAWindowPercent = 1.0;
             double leftPercent = Clamp(leftRatio * 100.0, 0.0, 100.0);
             double aWindowPercent = opA.LastPassPercent - opA.FirstPassPercent;
             bool aFirstPassFallbackApplied = false;
