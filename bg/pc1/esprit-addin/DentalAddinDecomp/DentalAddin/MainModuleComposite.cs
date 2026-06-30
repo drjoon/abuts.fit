@@ -372,14 +372,16 @@ namespace DentalAddin
                 : baseAFirstPercentByFrontX;
 
             const double aEndOffsetFromSplitMm = 0.0; // 요청: FINISH_A 끝점 = 기준점(splitPercent)
-            const double bStartOffsetFromSplitMm = 0.0; // 요청: FINISH_B 시작점 = 기준점(splitPercent)
+            // [중요] FINISH_A 끝점과 FINISH_B 시작점의 X가 같아도, 원통 위 시작 각도(phase) 차이로 seam이 보일 수 있다.
+            // 이를 줄이기 위해 FINISH_B 시작점을 기준점보다 0.1mm 왼쪽(X-)으로 이동해 미세 겹침(overlap)을 준다.
+            const double bStartOffsetFromSplitMm = -0.1; // 요청: FINISH_B 시작점 = 기준점(splitPercent) -0.1mm
             // [중요] FINISH_B 끝점은 반드시 BackPointX +0.3mm를 유지할 것.
             // +0.3mm 하지 않으면 홈 발생하므로, 충분한 검증 없이 값 변경 금지.
             const double compositeEndOffsetFromBackPointMm = 0.3;
 
             // 기준점(splitPercent)을 기준으로 A/B 경계를 독립 적용한다.
             // - A.End: split + 0.0mm(=split)
-            // - B.Start: split + 0.0mm(=split)
+            // - B.Start: split - 0.1mm (원통 시작각도 차이 seam 완화용 overlap)
             double requestedALastPass = ShiftPassPercentByStartEndScaleMm(splitPercent, aEndOffsetFromSplitMm, firstPercent, effectiveLastPercent);
             double requestedBFirstPass = ShiftPassPercentByStartEndScaleMm(splitPercent, bStartOffsetFromSplitMm, firstPercent, effectiveLastPercent);
 
@@ -430,7 +432,7 @@ namespace DentalAddin
 
             // A/B 끝점 정책 재확인:
             // - FINISH_A 끝점: 기준점(splitPercent)
-            // - FINISH_B 시작점: 기준점(splitPercent)
+            // - FINISH_B 시작점: 기준점(splitPercent) -0.1mm (원통 시작각도 차이 seam 완화)
             // - FINISH_B 끝점: BackPointX +0.3mm (중요: +0.3mm 미적용 시 홈 발생)
             double aLastBeforeClamp = opA.LastPassPercent;
             opA.LastPassPercent = Clamp(opA.LastPassPercent, opA.FirstPassPercent, effectiveLastPercent);
