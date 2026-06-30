@@ -171,11 +171,7 @@ export const WorksheetCardGrid = ({
         const isNewSystemRequest = !!newSystemData?.requested;
         const workType = (() => {
           const ciWorkType = caseInfos.workType as
-            | "abutment"
-            | "crown"
-            | "mixed"
-            | "unknown"
-            | undefined;
+            "abutment" | "crown" | "mixed" | "unknown" | undefined;
           if (ciWorkType === "abutment" || ciWorkType === "crown") {
             return ciWorkType;
           }
@@ -227,8 +223,7 @@ export const WorksheetCardGrid = ({
             const changed = last !== camMaterialDiameter;
             if (changed) {
               camDiaLogRef.current[request.requestId] = camMaterialDiameter as
-                | number
-                | null;
+                number | null;
               const dbg = {
                 requestId: request.requestId,
                 stage: request.manufacturerStage,
@@ -462,7 +457,11 @@ export const WorksheetCardGrid = ({
           caseInfos.maxDiameter > 0
             ? caseInfos.maxDiameter
             : null;
-        const camDiameter = camMaterialDiameter;
+        const maxLengthRaw = Number((caseInfos as any)?.totalLength);
+        const maxLength =
+          Number.isFinite(maxLengthRaw) && maxLengthRaw > 0
+            ? maxLengthRaw
+            : null;
 
         const sp = request.shippingPriority;
         const urgency = String(sp?.level || "").trim();
@@ -834,17 +833,14 @@ export const WorksheetCardGrid = ({
                     </>
                   )}
                 </div>
-                {(maxDiameter != null ||
-                  (showCamDiameter && camDiameter != null)) && (
+                {(maxDiameter != null || maxLength != null) && (
                   <div className="flex flex-wrap items-center gap-2 text-[13px] text-slate-600">
                     {maxDiameter != null && (
                       <span>최대 직경 {maxDiameter.toFixed(3)}</span>
                     )}
-                    {maxDiameter != null &&
-                      showCamDiameter &&
-                      camDiameter != null && <span>•</span>}
-                    {showCamDiameter && camDiameter != null && (
-                      <span>CAM 직경 {camDiameter.toFixed(3)}</span>
+                    {maxDiameter != null && maxLength != null && <span>•</span>}
+                    {maxLength != null && (
+                      <span>최대 길이 {maxLength.toFixed(2)}</span>
                     )}
                   </div>
                 )}
@@ -857,10 +853,7 @@ export const WorksheetCardGrid = ({
                     // 유지홈(retentionGroove) 표시
                     // none=없음 / shallow=없음 / deep=있음
                     const rg = (caseInfos as any)?.retentionGroove as
-                      | "none"
-                      | "shallow"
-                      | "deep"
-                      | undefined;
+                      "none" | "shallow" | "deep" | undefined;
                     if (!rg) return null;
                     const label = rg === "deep" ? "있음" : "없음";
                     return (
