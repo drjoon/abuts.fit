@@ -16,9 +16,9 @@ namespace DentalAddin
 {
     internal sealed partial class MainModule
     {
-        private const string CompositePrcBackPath = "/Users/joonholee/Joon/1-Project/dev/abuts.fit/bg/pc1/AcroDent/11_Composite prc/5axisComposite_Back.prc";
-        private const string CompositePrcAllPath = "/Users/joonholee/Joon/1-Project/dev/abuts.fit/bg/pc1/AcroDent/11_Composite prc/5axisComposite_All.prc";
-        private const string CompositePrcFrontPath = "/Users/joonholee/Joon/1-Project/dev/abuts.fit/bg/pc1/AcroDent/11_Composite prc/5axisComposite_Front.prc";
+        private static string CompositePrcBackPath => Path.Combine(AppConfig.AddInRootDirectory, "AcroDent", "11_Composite prc", "5axisComposite_Back.prc");
+        private static string CompositePrcAllPath => Path.Combine(AppConfig.AddInRootDirectory, "AcroDent", "11_Composite prc", "5axisComposite_All.prc");
+        private static string CompositePrcFrontPath => Path.Combine(AppConfig.AddInRootDirectory, "AcroDent", "11_Composite prc", "5axisComposite_Front.prc");
 
         private static bool TryGetComposite2SplitABConfig(out bool enabled, out double splitX, out string prcA, out string prcB)
         {
@@ -533,8 +533,8 @@ namespace DentalAddin
             // (기본 SurfaceNumber는 생성 실패 시에만 fallback)
             int dedicatedAKey = 0;
             int dedicatedBKey = 0;
-            bool dedicatedAReady = runA && TryCreateDedicatedCompositeDriveSurface("Composite2SplitAB", "FINISH_A", out dedicatedAKey);
-            bool dedicatedBReady = runB && TryCreateDedicatedCompositeDriveSurface("Composite2SplitAB", "FINISH_B", out dedicatedBKey);
+            bool dedicatedAReady = runA && TryCreateDedicatedCompositeDriveSurface("Composite2SplitAB", "FINISH_FRONT", out dedicatedAKey);
+            bool dedicatedBReady = runB && TryCreateDedicatedCompositeDriveSurface("Composite2SplitAB", "FINISH_BACK", out dedicatedBKey);
 
             bool canUseFallbackBase = surfaceReady && SurfaceNumber > 0;
             bool hasDriveForA = !runA || dedicatedAReady || canUseFallbackBase;
@@ -621,17 +621,17 @@ namespace DentalAddin
                 int beforeAddCountBaseA = Document?.Operations?.Count ?? -1;
                 TryDisableCompositeDynamicIfRequested(opA, "A");
                 TryAddOperation(opA, freeFormFeature, "Composite2SplitAB:A", false);
-                TryAppendCompositeSuffixToNewOperations(beforeAddCountBaseA, finishAllMode ? "ALL" : "A");
+                TryAppendCompositeSuffixToNewOperations(beforeAddCountBaseA, finishAllMode ? "ALL" : "FRONT");
                 int afterA = Document?.Operations?.Count ?? -1;
-                DentalLogger.Log($"Composite2SplitAB - Operation 추가 완료: {(finishAllMode ? "Finish_All" : "FINISH_A")}(opA) (afterCount={afterA})");
+                DentalLogger.Log($"Composite2SplitAB - Operation 추가 완료: {(finishAllMode ? "Finish_All" : "FINISH_FRONT")}(opA) (afterCount={afterA})");
                 if (!finishAllMode)
                 {
-                    TryMoveCompositeFinishBeforeTurnB("FINISH_A");
+                    TryMoveCompositeFinishBeforeTurnB("FINISH_FRONT");
                 }
             }
             else
             {
-                DentalLogger.Log("Composite2SplitAB - phaseMode=B_PHASE, FINISH_A 생성 생략");
+                DentalLogger.Log("Composite2SplitAB - phaseMode=B_PHASE, FINISH_FRONT 생성 생략");
             }
 
             if (runB)
@@ -639,15 +639,15 @@ namespace DentalAddin
                 int beforeAddCountB = Document?.Operations?.Count ?? -1;
                 TryDisableCompositeDynamicIfRequested(opB, "B");
                 TryAddOperation(opB, freeFormFeature, "Composite2SplitAB:B", false);
-                TryAppendCompositeSuffixToNewOperations(beforeAddCountB, "B");
+                TryAppendCompositeSuffixToNewOperations(beforeAddCountB, "BACK");
                 int afterB = Document?.Operations?.Count ?? -1;
-                DentalLogger.Log($"Composite2SplitAB - Operation 추가 완료: FINISH_B(opB) (afterCount={afterB})");
+                DentalLogger.Log($"Composite2SplitAB - Operation 추가 완료: FINISH_BACK(opB) (afterCount={afterB})");
 
                 // FINISH_B 이후 추가 확장 공정은 생성하지 않는다.
             }
             else
             {
-                DentalLogger.Log("Composite2SplitAB - phaseMode=A_PHASE, FINISH_B 생성 생략");
+                DentalLogger.Log("Composite2SplitAB - phaseMode=A_PHASE, FINISH_BACK 생성 생략");
             }
 
             int finalCount = Document?.Operations?.Count ?? -1;
@@ -1193,11 +1193,16 @@ namespace DentalAddin
 
         private static string BuildCompositeOperationName(string suffix)
         {
-            if (string.Equals(suffix, "FINISH_A", StringComparison.OrdinalIgnoreCase))
+            // 표준 토큰: FINISH_FRONT / FINISH_BACK / FINISH_ALL
+            // (FINISH_A/B는 레거시 입력 호환만 유지)
+            if (string.Equals(suffix, "FINISH_FRONT", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(suffix, "FINISH_A", StringComparison.OrdinalIgnoreCase))
             {
                 return "Finish_Front";
             }
-            if (string.Equals(suffix, "FINISH_B", StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(suffix, "FINISH_BACK", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(suffix, "FINISH_B", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(suffix, "FINISH_B1", StringComparison.OrdinalIgnoreCase))
             {
                 return "Finish_Back";
             }
@@ -1217,20 +1222,31 @@ namespace DentalAddin
 
             string normalized = label.Trim();
 
-            // 구분 정책:
-            // - A 라벨 : FINISH_A
-            // - B 라벨 : FINISH_B
-            if (normalized.StartsWith("A", StringComparison.OrdinalIgnoreCase))
-            {
-                return "FINISH_A";
-            }
-            if (normalized.StartsWith("B", StringComparison.OrdinalIgnoreCase))
-            {
-                return "FINISH_B";
-            }
+            // 구분 정책(표준):
+            // - ALL   -> FINISH_ALL
+            // - FRONT -> FINISH_FRONT
+            // - BACK  -> FINISH_BACK
             if (normalized.StartsWith("ALL", StringComparison.OrdinalIgnoreCase))
             {
                 return "FINISH_ALL";
+            }
+            if (normalized.StartsWith("FRONT", StringComparison.OrdinalIgnoreCase))
+            {
+                return "FINISH_FRONT";
+            }
+            if (normalized.StartsWith("BACK", StringComparison.OrdinalIgnoreCase))
+            {
+                return "FINISH_BACK";
+            }
+
+            // 레거시 라벨(A/B)은 입력 호환만 허용하고 표준 토큰으로 승격한다.
+            if (normalized.StartsWith("A", StringComparison.OrdinalIgnoreCase))
+            {
+                return "FINISH_FRONT";
+            }
+            if (normalized.StartsWith("B", StringComparison.OrdinalIgnoreCase))
+            {
+                return "FINISH_BACK";
             }
 
             return null;
@@ -1268,13 +1284,19 @@ namespace DentalAddin
                     }
 
                     string baseName = string.IsNullOrWhiteSpace(oldName) ? "5 Axis Composite" : oldName.Trim();
-                    baseName = RemoveTokenIgnoreCase(baseName, "[FINISH_A]").Trim();
-                    baseName = RemoveTokenIgnoreCase(baseName, "[FINISH_B]").Trim();
+                    baseName = RemoveTokenIgnoreCase(baseName, "[FINISH_FRONT]").Trim();
+                    baseName = RemoveTokenIgnoreCase(baseName, "[FINISH_BACK]").Trim();
                     baseName = RemoveTokenIgnoreCase(baseName, "[FINISH_ALL]").Trim();
 
+                    baseName = RemoveTokenIgnoreCase(baseName, "[Finish_Front]").Trim();
+                    baseName = RemoveTokenIgnoreCase(baseName, "[Finish_Back]").Trim();
+                    baseName = RemoveTokenIgnoreCase(baseName, "[Finish_All]").Trim();
+
+                    // 레거시 토큰 정리
+                    baseName = RemoveTokenIgnoreCase(baseName, "[FINISH_A]").Trim();
+                    baseName = RemoveTokenIgnoreCase(baseName, "[FINISH_B]").Trim();
                     baseName = RemoveTokenIgnoreCase(baseName, "[Finish_A]").Trim();
                     baseName = RemoveTokenIgnoreCase(baseName, "[Finish_B]").Trim();
-                    baseName = RemoveTokenIgnoreCase(baseName, "[Finish_All]").Trim();
 
                     // 구버전 토큰 정리(마이그레이션 호환)
                     baseName = RemoveTokenIgnoreCase(baseName, "[FINISH_B1]").Trim();
@@ -1506,22 +1528,25 @@ namespace DentalAddin
                     if (!IsCompositeNameLike(oldName)) continue;
 
                     string mapped = null;
-                    if (oldName.IndexOf("FINISH_A", StringComparison.OrdinalIgnoreCase) >= 0 || oldName.IndexOf("Finish_A", StringComparison.OrdinalIgnoreCase) >= 0 || oldName.IndexOf("Finish_Front", StringComparison.OrdinalIgnoreCase) >= 0)
+                    if (oldName.IndexOf("FINISH_FRONT", StringComparison.OrdinalIgnoreCase) >= 0
+                        || oldName.IndexOf("Finish_Front", StringComparison.OrdinalIgnoreCase) >= 0
+                        || oldName.IndexOf("FINISH_A", StringComparison.OrdinalIgnoreCase) >= 0
+                        || oldName.IndexOf("Finish_A", StringComparison.OrdinalIgnoreCase) >= 0)
                     {
-                        mapped = "FINISH_A";
+                        mapped = "FINISH_FRONT";
                     }
-                    else if (oldName.IndexOf("FINISH_B", StringComparison.OrdinalIgnoreCase) >= 0 || oldName.IndexOf("Finish_B", StringComparison.OrdinalIgnoreCase) >= 0 || oldName.IndexOf("Finish_Back", StringComparison.OrdinalIgnoreCase) >= 0)
+                    else if (oldName.IndexOf("FINISH_BACK", StringComparison.OrdinalIgnoreCase) >= 0
+                        || oldName.IndexOf("Finish_Back", StringComparison.OrdinalIgnoreCase) >= 0
+                        || oldName.IndexOf("FINISH_B", StringComparison.OrdinalIgnoreCase) >= 0
+                        || oldName.IndexOf("Finish_B", StringComparison.OrdinalIgnoreCase) >= 0
+                        || oldName.IndexOf("FINISH_B1", StringComparison.OrdinalIgnoreCase) >= 0
+                        || oldName.IndexOf("Finish_B1", StringComparison.OrdinalIgnoreCase) >= 0)
                     {
-                        mapped = "FINISH_B";
+                        mapped = "FINISH_BACK";
                     }
                     else if (oldName.IndexOf("FINISH_ALL", StringComparison.OrdinalIgnoreCase) >= 0 || oldName.IndexOf("Finish_All", StringComparison.OrdinalIgnoreCase) >= 0)
                     {
                         mapped = "FINISH_ALL";
-                    }
-                    else if (oldName.IndexOf("FINISH_B1", StringComparison.OrdinalIgnoreCase) >= 0 || oldName.IndexOf("Finish_B1", StringComparison.OrdinalIgnoreCase) >= 0)
-                    {
-                        // 구버전 이름 호환: FINISH_B1 -> FINISH_B
-                        mapped = "FINISH_B";
                     }
 
 
@@ -1544,7 +1569,7 @@ namespace DentalAddin
                     }
                 }
 
-                TryMoveCompositeFinishBeforeTurnB("FINISH_A");
+                TryMoveCompositeFinishBeforeTurnB("FINISH_FRONT");
             }
             catch (Exception ex)
             {

@@ -2072,7 +2072,13 @@ namespace DentalAddin
             }
             string file = PrcFilePath[11];
             DentalLogger.Log($"Composite2 - OpenProcess: PRC[11]={file}");
-            ITechnology[] array = (ITechnology[])((TechnologyUtility)Activator.CreateInstance(Marshal.GetTypeFromCLSID(new Guid("C30D1110-1549-48C5-84D0-F66DCAD0F16F")))).OpenProcess(file);
+            TechnologyUtility technologyUtility = (TechnologyUtility)Activator.CreateInstance(Marshal.GetTypeFromCLSID(new Guid("C30D1110-1549-48C5-84D0-F66DCAD0F16F")));
+            ITechnology[] array = TryOpenProcess(technologyUtility, file, "Composite2:PRC[11]");
+            if (array.Length == 0)
+            {
+                DentalLogger.Log("Composite2 - PRC[11] 로드 실패로 Composite2를 건너뜁니다.");
+                return;
+            }
             Layer activeLayer;
             try
             {
@@ -2174,7 +2180,7 @@ namespace DentalAddin
             }
             int beforeCompositeAdd = Document?.Operations?.Count ?? -1;
             Document.Operations.Add(techLatheMill5xComposite, freeFormFeature, RuntimeHelpers.GetObjectValue(Missing.Value));
-            TryAppendCompositeSuffixToNewOperations(beforeCompositeAdd, "A");
+            TryAppendCompositeSuffixToNewOperations(beforeCompositeAdd, "FRONT");
         }
 
         public static void TurningBoth()
