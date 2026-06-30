@@ -801,7 +801,17 @@ namespace DentalAddin
                 double regionMaxX = 0.0;
                 if (!string.IsNullOrWhiteSpace(twoPhaseRegion))
                 {
-                    twoPhaseSplitReady = TryPrepareTurningRegionRange(twoPhaseRegion, out regionMinX, out regionMaxX);
+                    if (string.Equals(twoPhaseRegion, "BACK", StringComparison.OrdinalIgnoreCase))
+                    {
+                        // 요청사항: Back_Turn은 과거 Turn_B 로직 그대로 사용
+                        // - splitX 기준 우측 가공
+                        // - 시작점: splitX - 0.5mm
+                        twoPhaseSplitReady = TryPrepareBackTurnRangeFromLegacyTurnB(out regionMinX, out regionMaxX);
+                    }
+                    else
+                    {
+                        twoPhaseSplitReady = TryPrepareTurningRegionRange(twoPhaseRegion, out regionMinX, out regionMaxX);
+                    }
                 }
 
                 IEnumerable<int> targetTurningIndices = GetTurningTargetIndices(array, twoPhaseRegion);
@@ -846,12 +856,10 @@ namespace DentalAddin
 
         private static IEnumerable<int> GetTurningTargetIndices(FeatureChain[] chains, string region)
         {
-            // 3-stage(FRONT/MIDDLE/BACK)에서는 turning 체인(예: 1,2,15) 전부를 넣지 않고
-            // 대표 프로파일 1개만 사용해 불필요한 Turn 중복 생성을 방지한다.
+            // FRONT/MIDDLE: 대표 체인 1개만 사용
             if (!string.IsNullOrWhiteSpace(region)
                 && (string.Equals(region, "FRONT", StringComparison.OrdinalIgnoreCase)
-                    || string.Equals(region, "MIDDLE", StringComparison.OrdinalIgnoreCase)
-                    || string.Equals(region, "BACK", StringComparison.OrdinalIgnoreCase)))
+                    || string.Equals(region, "MIDDLE", StringComparison.OrdinalIgnoreCase)))
             {
                 foreach (int preferred in new[] { 15, 2, 1 })
                 {
@@ -866,7 +874,38 @@ namespace DentalAddin
                 return Array.Empty<int>();
             }
 
-            // 기존 동작 유지: 가능한 turning 체인을 모두 사용
+            // BACK: 소재 직경 기준으로 체인 개수 자동 조절
+            // 정책:
+            // - D8 기준 1가닥
+            // - 이후 소재 직경 +2mm마다 1가닥 추가
+            //   예) D8 -> 1, D10 -> 2, D12 -> 3
+            if (!string.IsNullOrWhiteSpace(region)
+                && string.Equals(region, "BACK", StringComparison.OrdinalIgnoreCase))
+            {
+                List<int> availablePreferred = new List<int>();
+                foreach (int preferred in new[] { 15, 2, 1 })
+                {
+                    if (preferred >= 1 && preferred < chains.Length && chains[preferred] != null)
+                    {
+                        availablePreferred.Add(preferred);
+                    }
+                }
+
+                if (availablePreferred.Count == 0)
+                {
+                    DentalLogger.Log("TurningOp BACK - 사용 가능한 대표 turning 체인 없음");
+                    return Array.Empty<int>();
+                }
+
+                int desiredCount = ComputeBackTurnChainCountByDiameterGap(chains, out double targetMaxDia, out double barDia);
+                int selectedCount = Math.Min(Math.Max(1, desiredCount), availablePreferred.Count);
+                List<int> selected = availablePreferred.Take(selectedCount).ToList();
+
+                DentalLogger.Log($"TurningOp BACK - adaptive chain mode: barDia={barDia:0.###}, targetMaxDia={targetMaxDia:0.###}, desired={desiredCount}, selected={selectedCount}, indices=[{string.Join(",", selected)}]");
+                return selected;
+            }
+
+            // 그 외 기존 동작 유지: 가능한 turning 체인을 모두 사용
             List<int> all = new List<int>();
             for (int i = 1; i <= 15; i++)
             {
@@ -876,6 +915,145 @@ namespace DentalAddin
                 }
             }
             return all;
+        }
+
+        private static int ComputeBackTurnChainCountByDiameterGap(FeatureChain[] chains, out double targetMaxDiameter, out double barDiameter)
+        {
+            targetMaxDiameter = 0.0;
+            barDiameter = 0.0;
+            try
+            {
+                barDiameter = Document?.LatheMachineSetup?.BarDiameter ?? 0.0;
+                if (barDiameter <= 0.0)
+                {
+                    return 1;
+                }
+
+                // 1) 기존 계산값(프로파일 최대 반경 HighY) 우선 사용
+                if (HighY > 0.0)
+                {
+                    targetMaxDiameter = HighY * 2.0;
+                }
+
+                // 2) fallback: turning 체인에서 최대 Y를 샘플링해 대상체 최대직경 추정
+                if (!(targetMaxDiameter > 0.0) && chains != null)
+                {
+                    double maxY = 0.0;
+                    for (int i = 1; i <= 15 && i < chains.Length; i++)
+                    {
+                        FeatureChain fc = chains[i];
+                        if (fc == null) continue;
+
+                        double len = 0.0;
+                        try { len = fc.Length; } catch { }
+                        if (!(len > 1e-6)) continue;
+
+                        double step = Math.Max(0.02, len / 600.0);
+                        for (double s = 0.0; s <= len + 1e-9; s += step)
+                        {
+                            Point p = null;
+                            try { p = fc.PointAlong(Math.Min(s, len)); } catch { }
+                            if (p == null) continue;
+                            double ay = Math.Abs(p.Y);
+                            if (ay > maxY) maxY = ay;
+                        }
+                    }
+
+                    if (maxY > 0.0)
+                    {
+                        targetMaxDiameter = maxY * 2.0;
+                    }
+                }
+
+                // 대상체 직경이 비정상/미확정이면 보수적으로 1가닥 유지
+                if (!(targetMaxDiameter > 0.0))
+                {
+                    targetMaxDiameter = barDiameter;
+                }
+
+                // 물리적으로 소재 직경을 넘는 대상체는 클램프
+                if (targetMaxDiameter > barDiameter)
+                {
+                    targetMaxDiameter = barDiameter;
+                }
+
+                // 요청사항: "소재 직경 2mm당 한 가닥"
+                // => (소재직경 - 대상체최대직경) 여유 구간을 2mm 단위로 나눈 개수
+                // 예) 대상 5.5, 소재 10.0 => floor((10-5.5)/2)=2  (D8, D6)
+                double diameterGap = Math.Max(0.0, barDiameter - targetMaxDiameter);
+                int count = (int)Math.Floor(diameterGap / 2.0 + 1e-9);
+
+                // Back_Turn 자체는 최소 1가닥은 유지
+                if (count < 1) count = 1;
+                return count;
+            }
+            catch
+            {
+                return 1;
+            }
+        }
+
+        private static List<FeatureChain> BuildLegacyBackTurningChainsByCallingLegacy()
+        {
+            List<FeatureChain> result = new List<FeatureChain>();
+            try
+            {
+                if (Document == null)
+                {
+                    return result;
+                }
+
+                // 기존 레거시 체인 정리(중복 방지)
+                for (int i = Document.FeatureChains.Count; i >= 1; i--)
+                {
+                    FeatureChain fc = null;
+                    try { fc = Document.FeatureChains[i]; } catch { }
+                    if (fc == null) continue;
+                    string name = fc.Name ?? string.Empty;
+                    if (name.StartsWith("Back_Turning_", StringComparison.OrdinalIgnoreCase))
+                    {
+                        try { Document.FeatureChains.Remove(fc.Key); } catch { }
+                    }
+                }
+
+                // 레거시 생성 함수 직접 호출
+                TurningFeature_Extension.BackT();
+
+                List<(int order, FeatureChain chain)> ordered = new List<(int order, FeatureChain chain)>();
+                for (int i = 1; i <= Document.FeatureChains.Count; i++)
+                {
+                    FeatureChain fc = null;
+                    try { fc = Document.FeatureChains[i]; } catch { }
+                    if (fc == null) continue;
+
+                    string name = fc.Name ?? string.Empty;
+                    if (!name.StartsWith("Back_Turning_", StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+
+                    int order = int.MaxValue;
+                    int us = name.LastIndexOf('_');
+                    if (us >= 0 && us + 1 < name.Length)
+                    {
+                        int.TryParse(name.Substring(us + 1), NumberStyles.Integer, CultureInfo.InvariantCulture, out order);
+                    }
+                    ordered.Add((order, fc));
+                }
+
+                foreach (var pair in ordered.OrderBy(x => x.order))
+                {
+                    result.Add(pair.chain);
+                }
+
+                DentalLogger.Log($"TurningOp BACK - 레거시 BackT 직접 호출 완료, chains={result.Count}");
+                return result;
+            }
+            catch (Exception ex)
+            {
+                DentalLogger.Log($"TurningOp BACK - 레거시 BackT 호출 실패: {ex.GetType().Name}:{ex.Message}");
+                return result;
+            }
         }
 
         private static void ApplyTwoPhaseTurningToolOverride(string region, IList<TechLatheContour1> turningTechs, IList<TechLatheContour1> reverseTechs)
@@ -1414,20 +1592,32 @@ namespace DentalAddin
                     return false;
                 }
 
-                const double overCut = 2.2;
+                const double faceToRoughMm = 2.2;
+                const double roughToTurnMm = 2.2;
+                const double frontFaceOffsetMm = 0.5;
+                const double middleRoughOverCutMm = 2.2;
+
+                // Rough 경계(현재 정책)
+                double frontRoughEnd = Math.Min(xMax, splitline1 + frontFaceOffsetMm + faceToRoughMm);
+                double middleRoughStart = Math.Max(xMin, splitline1 - middleRoughOverCutMm);
+                double middleRoughEnd = Math.Min(xMax, splitline2 + middleRoughOverCutMm);
+
                 string normalized = (region ?? string.Empty).Trim().ToUpperInvariant();
                 switch (normalized)
                 {
                     case "FRONT":
+                        // 요청사항: Front Turn 폭 = Front Rough 폭 + 2.2mm
                         rangeMinX = xMin;
-                        rangeMaxX = Math.Min(xMax, splitline1 + overCut);
+                        rangeMaxX = Math.Min(xMax, frontRoughEnd + roughToTurnMm);
                         break;
                     case "MIDDLE":
-                        rangeMinX = Math.Max(xMin, splitline1 - overCut);
-                        rangeMaxX = Math.Min(xMax, splitline2 + overCut);
+                        // 요청사항: Middle Turn 폭 = Middle Rough 폭 + 2.2mm
+                        rangeMinX = middleRoughStart;
+                        rangeMaxX = Math.Min(xMax, middleRoughEnd + roughToTurnMm);
                         break;
                     case "BACK":
-                        rangeMinX = Math.Max(xMin, splitline2 - overCut);
+                        // 요청사항: Back_Turn 시작 기준은 split2가 아니라 BackPointX
+                        rangeMinX = Clamp(MoveSTL_Module.BackPointX, xMin + 1e-6, xMax - 1e-6);
                         rangeMaxX = xMax;
                         break;
                     default:
@@ -1450,6 +1640,53 @@ namespace DentalAddin
                 return false;
             }
         }
+
+        // 레거시 Turn_B(2-phase B) 구간 계산을 3-stage Back_Turn에 그대로 적용
+        // - splitX는 기존 TryGetSplitABConfig 기준
+        // - 시작점은 splitX - 0.5mm, 끝점은 xMax
+        private static bool TryPrepareBackTurnRangeFromLegacyTurnB(out double rangeMinX, out double rangeMaxX)
+        {
+            rangeMinX = 0.0;
+            rangeMaxX = 0.0;
+            try
+            {
+                if (!TryGetSplitABConfig(out double splitX, out _, out _))
+                {
+                    DentalLogger.Log("TurningOp BACK - 레거시 Turn_B split 설정 미존재");
+                    return false;
+                }
+
+                double frontBackMin = Math.Min(MoveSTL_Module.FrontPointX, MoveSTL_Module.BackPointX);
+                double xMin = Math.Min(0.0, frontBackMin);
+                double xMax = Math.Max(MoveSTL_Module.FrontPointX, MoveSTL_Module.BackPointX);
+
+                if (!(splitX > xMin && splitX < xMax))
+                {
+                    DentalLogger.Log($"TurningOp BACK - 레거시 Turn_B splitX 범위 오류 splitX:{splitX:0.###}, xMin:{xMin:0.###}, xMax:{xMax:0.###}");
+                    return false;
+                }
+
+                // Turn_B: finishline보다 0.5mm 왼쪽에서 시작
+                double effectiveSplitX = Math.Max(splitX - 0.5, xMin + 1e-6);
+                rangeMinX = effectiveSplitX;
+                rangeMaxX = xMax;
+
+                if (rangeMaxX - rangeMinX < 1e-4)
+                {
+                    DentalLogger.Log($"TurningOp BACK - 레거시 Turn_B 유효 구간 부족 range=[{rangeMinX:0.###},{rangeMaxX:0.###}]");
+                    return false;
+                }
+
+                DentalLogger.Log($"TurningOp BACK - 레거시 Turn_B range 적용: splitX={splitX:0.###}, effectiveSplitX={effectiveSplitX:0.###}, range=[{rangeMinX:0.###},{rangeMaxX:0.###}]");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                DentalLogger.Log($"TurningOp BACK - 레거시 Turn_B range 준비 실패: {ex.GetType().Name}:{ex.Message}");
+                return false;
+            }
+        }
+
 
         // turning 프로파일 체인(source)을 [minX, maxX] 구간으로 잘라 새 체인으로 생성한다.
         // arc/segment 혼합 프로파일을 PointAlong로 조밀 샘플링하여 polyline으로 재구성한다.
