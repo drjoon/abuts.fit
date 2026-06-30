@@ -1237,26 +1237,36 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                     Environment.SetEnvironmentVariable(AppConfig.CompositeStepIncrementAEnv, null);
                     Environment.SetEnvironmentVariable(AppConfig.CompositeStockAllowanceAEnv, null);
                     Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_DYNAMIC_DISABLE", null);
+                    Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_PHASE_MODE", null);
                     Environment.SetEnvironmentVariable("ABUTS_RETENTION_GROOVE", null);
                     AppLogger.Log("DentalAddin: retentionGroove 미지정 - StepIncrement env 기본값(PRC) 유지");
                     return;
                 }
 
+                string normalizedGroove = groove.Trim().ToLowerInvariant();
+                if (normalizedGroove == "없음") normalizedGroove = "none";
+                if (normalizedGroove == "있음") normalizedGroove = "deep";
+
                 double? stepIncrement = null;
-                switch (groove.Trim().ToLowerInvariant())
+                switch (normalizedGroove)
                 {
-                    case "none":
+                    case "none":  // 유지홈 없음
                         stepIncrement = 0.08;
                         // gp.exe 모달 안정화: none/shallow는 Composite 비동적 추가 시도
                         Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_DYNAMIC_DISABLE", "1");
+                        // 유지홈 없음 케이스는 단일 Finish_All 강제
+                        Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_PHASE_MODE", "ALL_PHASE");
                         break;
                     case "shallow":
                         stepIncrement = 0.20;
                         Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_DYNAMIC_DISABLE", "1");
+                        Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_PHASE_MODE", "ALL_PHASE");
                         break;
-                    case "deep":
+                    case "deep":  // 유지홈 있음
                         stepIncrement = 0.25;
                         Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_DYNAMIC_DISABLE", "0");
+                        // deep는 Front/Back 분할 모드가 기본
+                        Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_PHASE_MODE", null);
                         break;
                 }
 
@@ -1264,6 +1274,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 {
                     Environment.SetEnvironmentVariable(AppConfig.CompositeStepIncrementAEnv, null);
                     Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_DYNAMIC_DISABLE", null);
+                    Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_PHASE_MODE", null);
                     Environment.SetEnvironmentVariable("ABUTS_RETENTION_GROOVE", null);
                     AppLogger.Log($"DentalAddin: retentionGroove 값 비정상 '{groove}' - StepIncrement env 기본값(PRC) 유지");
                     return;
@@ -1271,11 +1282,11 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
 
                 string envValue = stepIncrement.Value.ToString("0.###", CultureInfo.InvariantCulture);
                 Environment.SetEnvironmentVariable(AppConfig.CompositeStepIncrementAEnv, envValue);
-                Environment.SetEnvironmentVariable("ABUTS_RETENTION_GROOVE", groove.Trim().ToLowerInvariant());
+                Environment.SetEnvironmentVariable("ABUTS_RETENTION_GROOVE", normalizedGroove);
 
                 // deep 선택 시: B의 StepIncrement는 PRC에 정의된 값(예: 0.08)을 유지해야 하므로
                 // B StepIncrement env는 설정하지 않는다. 대신 A의 StockAllowance만 override 한다.
-                if (groove.Trim().ToLowerInvariant() == "deep")
+                if (normalizedGroove == "deep")
                 {
                     const double stockAllowance = 0.0;
                     Environment.SetEnvironmentVariable(AppConfig.CompositeStockAllowanceAEnv, stockAllowance.ToString(CultureInfo.InvariantCulture));
@@ -1287,7 +1298,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                     Environment.SetEnvironmentVariable(AppConfig.CompositeStockAllowanceAEnv, null);
                 }
 
-                AppLogger.Log($"DentalAddin: retentionGroove 적용 - groove={groove}, StepIncrement={envValue} (env={AppConfig.CompositeStepIncrementAEnv}, PRC 파일 무변경)");
+                AppLogger.Log($"DentalAddin: retentionGroove 적용 - groove={normalizedGroove}, StepIncrement={envValue} (env={AppConfig.CompositeStepIncrementAEnv}, PRC 파일 무변경)");
             }
             catch (Exception ex)
             {

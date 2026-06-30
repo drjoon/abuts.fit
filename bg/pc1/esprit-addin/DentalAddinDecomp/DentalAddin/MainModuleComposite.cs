@@ -16,6 +16,10 @@ namespace DentalAddin
 {
     internal sealed partial class MainModule
     {
+        private const string CompositePrcBackPath = "/Users/joonholee/Joon/1-Project/dev/abuts.fit/bg/pc1/AcroDent/11_Composite prc/5axisComposite_Back.prc";
+        private const string CompositePrcAllPath = "/Users/joonholee/Joon/1-Project/dev/abuts.fit/bg/pc1/AcroDent/11_Composite prc/5axisComposite_All.prc";
+        private const string CompositePrcFrontPath = "/Users/joonholee/Joon/1-Project/dev/abuts.fit/bg/pc1/AcroDent/11_Composite prc/5axisComposite_Front.prc";
+
         private static bool TryGetComposite2SplitABConfig(out bool enabled, out double splitX, out string prcA, out string prcB)
         {
             enabled = false;
@@ -41,11 +45,7 @@ namespace DentalAddin
                 prcA = Environment.GetEnvironmentVariable("ABUTS_COMPOSITE_PRC_A");
                 prcB = Environment.GetEnvironmentVariable("ABUTS_COMPOSITE_PRC_B");
 
-                if (string.IsNullOrWhiteSpace(prcA) || string.IsNullOrWhiteSpace(prcB))
-                {
-                    DentalLogger.Log("Composite2SplitAB - PRC_A/PRC_B 환경변수가 비어 있어 Split 비활성 처리");
-                    enabled = false;
-                }
+                // PRC는 모드별 고정 파일을 사용하므로 env 비어도 Split 비활성화하지 않는다.
                 return true;
             }
             catch (Exception ex)
@@ -53,6 +53,24 @@ namespace DentalAddin
                 DentalLogger.Log($"Composite2SplitAB - 환경변수 로드 실패: {ex.GetType().Name}:{ex.Message}");
                 enabled = false;
                 return false;
+            }
+        }
+
+        private static void ResolveCompositeFinishPrcPaths(bool finishAllMode, out string prcForA, out string prcForB)
+        {
+            // 정책(요청 반영):
+            // - Finish_All  -> 5axisComposite_All.prc
+            // - Finish_Front -> 5axisComposite_Front.prc
+            // - Finish_Back  -> 5axisComposite_Back.prc
+            if (finishAllMode)
+            {
+                prcForA = CompositePrcAllPath;
+                prcForB = CompositePrcBackPath; // runB=false이면 사용되지 않음
+            }
+            else
+            {
+                prcForA = CompositePrcFrontPath;
+                prcForB = CompositePrcBackPath;
             }
         }
 
@@ -312,20 +330,47 @@ namespace DentalAddin
 
             string phaseMode = (GetEnvString("ABUTS_COMPOSITE_PHASE_MODE") ?? string.Empty).Trim().ToUpperInvariant();
             string retentionGroove = (GetEnvString("ABUTS_RETENTION_GROOVE") ?? string.Empty).Trim().ToLowerInvariant();
-            bool finishAllMode = string.Equals(phaseMode, "ALL_PHASE", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(retentionGroove, "none", StringComparison.OrdinalIgnoreCase);
 
-            // Finish 정책:
-            // - deep: FINISH_Front + FINISH_Back
-            // - none(또는 ALL_PHASE): Finish_All 단일 패스
-            bool runA = !string.Equals(phaseMode, "B_PHASE", StringComparison.OrdinalIgnoreCase);
-            bool runB = !string.Equals(phaseMode, "A_PHASE", StringComparison.OrdinalIgnoreCase);
+            // Finish 정책(요청 반영):
+            // - 유지홈 있음(deep)        -> Front/Back 분할
+            // - 유지홈 없음/기타(=not deep) -> Finish_All 단일
+            // - 단, phaseMode(A/B/ALL)가 명시되면 그 모드를 우선 적용
+            bool explicitAllPhase = string.Equals(phaseMode, "ALL_PHASE", StringComparison.OrdinalIgnoreCase);
+            bool explicitAPhase = string.Equals(phaseMode, "A_PHASE", StringComparison.OrdinalIgnoreCase);
+            bool explicitBPhase = string.Equals(phaseMode, "B_PHASE", StringComparison.OrdinalIgnoreCase);
+            bool explicitSplitPhase = explicitAPhase || explicitBPhase;
+            bool grooveIsDeep = string.Equals(retentionGroove, "deep", StringComparison.OrdinalIgnoreCase);
+
+            bool finishAllMode = explicitAllPhase || (!explicitSplitPhase && !grooveIsDeep);
+
+            bool runA;
+            bool runB;
             if (finishAllMode)
             {
                 runA = true;
                 runB = false;
             }
-            DentalLogger.Log($"Composite2SplitAB - enabled=1, splitX={splitX:F3}, prcA={prcA}, prcB={prcB}, phaseMode='{phaseMode}', retentionGroove='{retentionGroove}', finishAllMode={finishAllMode}, runA={runA}, runB={runB}");
+            else if (explicitAPhase)
+            {
+                runA = true;
+                runB = false;
+            }
+            else if (explicitBPhase)
+            {
+                runA = false;
+                runB = true;
+            }
+            else
+            {
+                runA = true;
+                runB = true;
+            }
+
+            ResolveCompositeFinishPrcPaths(finishAllMode, out string resolvedPrcA, out string resolvedPrcB);
+            string effectivePrcA = resolvedPrcA;
+            string effectivePrcB = resolvedPrcB;
+
+            DentalLogger.Log($"Composite2SplitAB - enabled=1, splitX={splitX:F3}, envPrcA={prcA}, envPrcB={prcB}, resolvedPrcA={effectivePrcA}, resolvedPrcB={effectivePrcB}, phaseMode='{phaseMode}', retentionGroove='{retentionGroove}', grooveIsDeep={grooveIsDeep}, finishAllMode={finishAllMode}, runA={runA}, runB={runB}");
 
             bool splitDegenerate = Math.Abs(splitPercent - firstPercent) < 0.01 || Math.Abs(effectiveLastPercent - splitPercent) < 0.01;
             if (splitDegenerate)
@@ -349,8 +394,8 @@ namespace DentalAddin
 
             var technologyUtility = (TechnologyUtility)Activator.CreateInstance(Marshal.GetTypeFromCLSID(new Guid("C30D1110-1549-48C5-84D0-F66DCAD0F16F")));
 
-            ITechnology[] techA = TryOpenProcess(technologyUtility, prcA, "Composite2SplitAB:A");
-            ITechnology[] techB = runB ? TryOpenProcess(technologyUtility, prcB, "Composite2SplitAB:B") : Array.Empty<ITechnology>();
+            ITechnology[] techA = TryOpenProcess(technologyUtility, effectivePrcA, "Composite2SplitAB:A");
+            ITechnology[] techB = runB ? TryOpenProcess(technologyUtility, effectivePrcB, "Composite2SplitAB:B") : Array.Empty<ITechnology>();
 
             if (techA.Length <= 0 || (runB && techB.Length <= 0))
             {
@@ -385,8 +430,8 @@ namespace DentalAddin
             const double aEndOffsetFromSplitMm = 0.0; // 요청: FINISH_A 끝점 = 기준점(splitPercent)
             // 요청 반영: FINISH_B 시작점 오프셋 제거(정치수)
             const double bStartOffsetFromSplitMm = 0.0; // FINISH_B 시작점 = 기준점(splitPercent)
-            // 요청 반영: FINISH_B 끝점 +0.3mm 제거
-            const double compositeEndOffsetFromBackPointMm = 0.0;
+            // 요청 반영: FINISH_All / FINISH_B 끝점 = BackPointX +0.1mm
+            const double compositeEndOffsetFromBackPointMm = 0.1;
 
             // 기준점(splitPercent)을 기준으로 A/B 경계를 독립 적용한다.
             // - A.End: split + 0.0mm(=split)
@@ -974,9 +1019,10 @@ namespace DentalAddin
                     return false;
                 }
 
-                const double overCut = 2.2;
+                const double faceToRoughMm = 2.2;
+                const double frontFaceOffsetMm = 0.5;
                 splitXUsed = splitline1;
-                roughARightEndX = Clamp(splitline1 + overCut, xMin + 1e-6, xMax - 1e-6);
+                roughARightEndX = Clamp(splitline1 + frontFaceOffsetMm + faceToRoughMm, xMin + 1e-6, xMax - 1e-6);
                 return true;
             }
             catch (Exception ex)
@@ -1555,12 +1601,19 @@ namespace DentalAddin
                 return true;
             }
 
-            const double overCut = 2.2;
+            const double faceToRoughMm = 2.2;
+            const double frontFaceOffsetMm = 0.5;
+            const double middleRoughOverCutMm = 2.2;
+            const double backRoughOverCutMm = 2.2;
+
             double frontStart = xMin;
-            double frontEnd = Clamp(splitline1 + overCut, xMin + 1e-6, xMax - 1e-6);
-            double middleStart = Clamp(splitline1 - overCut, xMin + 1e-6, xMax - 1e-6);
-            double middleEnd = Clamp(splitline2 + overCut, xMin + 1e-6, xMax - 1e-6);
-            double backStart = Clamp(splitline2 - overCut, xMin + 1e-6, xMax - 1e-6);
+            // 요청사항: Front Rough는 Face(FrontPointX+0.5)보다 +2.2mm 길게
+            double frontEnd = Clamp(splitline1 + frontFaceOffsetMm + faceToRoughMm, xMin + 1e-6, xMax - 1e-6);
+
+            double middleStart = Clamp(splitline1 - middleRoughOverCutMm, xMin + 1e-6, xMax - 1e-6);
+            double middleEnd = Clamp(splitline2 + middleRoughOverCutMm, xMin + 1e-6, xMax - 1e-6);
+
+            double backStart = Clamp(splitline2 - backRoughOverCutMm, xMin + 1e-6, xMax - 1e-6);
             double backEnd = xMax;
 
             double radius = (Document.LatheMachineSetup.BarDiameter + 10.0) / 2.0;
