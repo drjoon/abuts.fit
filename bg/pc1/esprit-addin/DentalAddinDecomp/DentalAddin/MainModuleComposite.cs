@@ -1979,21 +1979,13 @@ namespace DentalAddin
                 }
 
                 string retentionGroove = (GetEnvString("ABUTS_RETENTION_GROOVE") ?? string.Empty).Trim().ToLowerInvariant();
-                bool grooveIsDeep = string.Equals(retentionGroove, "deep", StringComparison.OrdinalIgnoreCase);
 
-                // 사용자 정책:
-                // - none/shallow -> Splitline_2 사용(midpoint)
-                // - deep         -> TwoPhaseSplitLine 사용(동일 좌표)
-                if (grooveIsDeep)
-                {
-                    splitline2 = twoPhaseSplitLineX;
-                    DentalLogger.Log($"ThreeStageSplit - retentionGroove=deep: Splitline_2=TwoPhaseSplitLine({splitline2:F3}), source={twoPhaseSource}, xRange=[{xMin:F3}~{xMax:F3}]");
-                }
-                else
-                {
-                    splitline2 = Clamp((splitline1 + back) / 2.0, xMin + 1e-6, xMax - 1e-6);
-                    DentalLogger.Log($"ThreeStageSplit - retentionGroove='{retentionGroove}': Splitline_2(midpoint)={splitline2:F3}, TwoPhaseSplitLine={twoPhaseSplitLineX:F3}, source={twoPhaseSource}, xRange=[{xMin:F3}~{xMax:F3}], front={front:F3}, back={back:F3}");
-                }
+                // 정책 보정:
+                // Splitline_2는 retentionGroove 값과 무관하게
+                // finish line 기준(TwoPhaseSplitLine)과 동일 좌표를 사용한다.
+                // (midpoint 분기는 finish line 기준이 중간값으로 내려가는 문제를 유발)
+                splitline2 = twoPhaseSplitLineX;
+                DentalLogger.Log($"ThreeStageSplit - Splitline_2=TwoPhaseSplitLine({splitline2:F3}) 고정 적용, retentionGroove='{retentionGroove}', source={twoPhaseSource}, xRange=[{xMin:F3}~{xMax:F3}], front={front:F3}, back={back:F3}");
 
                 // 두 라인을 모두 유지한다.
                 EnsureThreeStageSplitGuideLines(splitline1, splitline2);
@@ -2029,14 +2021,36 @@ namespace DentalAddin
                     return true;
                 }
 
+                // [SSOT] TwoPhaseSplitLine 오프셋 정책(2026-07-01)
+                // - 기준점: finish line 최상단(top Z)이 변환된 X 좌표
+                // - 가공 요청 보정: 기준점에서 X축 -1.0mm(좌측) 이동
+                //   * 본 코드베이스 좌표계에서 "좌측"은 X 감소 방향이다.
+                // - 동일 오프셋을 StlFileProcessor.TryApplyTwoPhaseSplitByFinishLine에도 동일 적용해야 한다.
+                //   (env 주입 경로 / 재계산 경로 불일치 방지)
+                const double twoPhaseSplitOffsetMm = -1.0;
+
                 double finishLineTopZ = MoveSTL_Module.FinishLineTopZ;
-                if (!double.IsNaN(finishLineTopZ) && !double.IsInfinity(finishLineTopZ))
+                if (!double.IsNaN(finishLineTopZ) && !double.IsInfinity(finishLineTopZ) && finishLineTopZ > 0.001)
                 {
-                    // finishLine topZ 상방 +1.0mm
+                    // FinishLineTopZ -> X 변환식
+                    //   finishLineTopX = back - finishLineTopZ + DefaultStlShift
+                    // 최종 split X
+                    //   splitX = finishLineTopX + (-1.0mm)
                     double finishLineTopX = back - finishLineTopZ + AppConfig.DefaultStlShift;
-                    double requested = finishLineTopX + 1.0;
+                    double requested = finishLineTopX + twoPhaseSplitOffsetMm;
                     splitX = Clamp(requested, xMin + 1e-6, xMax - 1e-6);
-                    source = "finishline+1mm";
+                    source = "finishlineTopZ-1mm";
+                    return true;
+                }
+
+                // topZ가 없을 때만 FinishLineX를 보조 사용한다.
+                // 동일 정책 유지를 위해 fallback에도 -1.0mm 오프셋을 동일 적용한다.
+                double finishLineX = MoveSTL_Module.FinishLineX;
+                if (!double.IsNaN(finishLineX) && !double.IsInfinity(finishLineX) && Math.Abs(finishLineX) > 1e-6)
+                {
+                    double requested = finishLineX + twoPhaseSplitOffsetMm;
+                    splitX = Clamp(requested, xMin + 1e-6, xMax - 1e-6);
+                    source = "finishlinex-fallback-1mm";
                     return true;
                 }
 

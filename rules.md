@@ -197,6 +197,19 @@
   - `TwoPhaseSplitLine` 기반 B/C 경계처럼 실제 화면 가이드라인을 pass-percent로 옮길 때는 **반드시 StartEndScale 유틸을 사용**하고,
     span 기반 값은 로그(diag)로만 남깁니다.
 
+### 1.3.3 Esprit TwoPhaseSplitLine 기준 (2026-07-01)
+
+- 증상 방지 목표: Splitline_2 / TwoPhaseSplitLine이 finish line 기준에서 벗어나 원점/중간값으로 이동하는 문제를 막는다.
+- SSOT 규칙:
+  - `Splitline_2 = TwoPhaseSplitLine` (midpoint 사용 금지)
+  - `TwoPhaseSplitLineX = finishLineTopX - 1.0mm`
+  - `finishLineTopX = BackPointX - FinishLineTopZ + DefaultStlShift`
+- TopZ를 못 읽는 fallback에서도 동일 오프셋(`-1.0mm`)을 유지한다.
+- 구현 위치:
+  - `bg/pc1/esprit-addin/DentalAddinDecomp/DentalAddin/MainModuleComposite.cs`
+  - `bg/pc1/esprit-addin/StlFileProcessor.cs`
+- 상세 메모는 로컬 문서 `bg/pc1/esprit-addin/rules.md`의 `4.3.1`을 참조한다.
+
 ### 1.4 파일 크기 관리 (800줄 정책)
 
 - **모든 소스 파일은 800줄을 초과하지 않도록 관리합니다.**

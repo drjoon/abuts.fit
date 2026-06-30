@@ -64,8 +64,24 @@
 ### 4.3 Split 기준 SSOT
 
 - `Splitline_1 = FrontPointX`
-- `Splitline_2 = (Splitline_1 + BackPointX) / 2`
+- `Splitline_2 = TwoPhaseSplitLine` (midpoint 사용 금지)
 - Turn/Rough 경계는 각 split 기준 `±2.2mm` 오버컷을 적용한다.
+
+### 4.3.1 TwoPhaseSplitLine 계산식 SSOT (검색 키워드: `finishlineTopZ-1mm`, `splitOffsetMm=-1.0`)
+
+- 목적: Finish line 최상단 기준점에서 **좌측(X-방향)으로 1.0mm 이동한 지점**을 TwoPhase 분할선으로 사용한다.
+- 기준식(권장 경로):
+  - `finishLineTopX = BackPointX - FinishLineTopZ + DefaultStlShift`
+  - `TwoPhaseSplitLineX = finishLineTopX - 1.0`
+- fallback 식(TopZ 없을 때):
+  - `TwoPhaseSplitLineX = FinishLineX - 1.0`
+- 구현 SSOT 위치:
+  - `DentalAddinDecomp/DentalAddin/MainModuleComposite.cs`
+    - `TryResolveTwoPhaseSplitLineTargetX` (가이드라인/공정 분기에서 재해석)
+  - `StlFileProcessor.cs`
+    - `TryApplyTwoPhaseSplitByFinishLine` (env 주입 경로)
+- 주의:
+  - 위 두 경로의 오프셋 값은 항상 동일해야 한다. 불일치 시 화면 가이드라인과 실제 공정 경계가 어긋난다.
 
 ### 4.4 Finish none 처리
 

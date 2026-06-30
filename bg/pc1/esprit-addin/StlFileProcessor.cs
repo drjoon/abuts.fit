@@ -1148,7 +1148,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                     }
                 }
 
-                // TwoPhase(초기 Turning/Rough) 분할선을 finishLine 최상 Z점 기준 +1.0mm(좌측)으로 계산하여 env로 전달
+                // TwoPhase(초기 Turning/Rough) 분할선을 finishLine 최상 Z점 자체 기준으로 계산하여 env로 전달
                 private void TryApplyTwoPhaseSplitByFinishLine(Type mainModuleType, double? stlTopZ, double? finishLineTopZ, bool twoPhase)
                 {
                     try
@@ -1183,15 +1183,20 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                         double xMin = Math.Min(frontX, backX);
                         double xMax = Math.Max(frontX, backX);
 
-                        // 요청 기준:
-                        //   finishLine 최상 Z점보다 1.0mm 더 높은(Z+) 지점을 split line으로 사용
-                        // 좌표 변환은 ApplyLimitPoints(FinishLineX)와 동일식을 사용한다.
+                        // 요청 기준(2026-07-01):
+                        //   split line 기준은 finishLine 최상 Z점(top)에서 X축 -1.0mm 지점이다.
+                        //   (즉, 기존 정확 기준점에서 좌측으로 1.0mm 이동)
+                        // 좌표 변환식:
                         //   ESPRIT X = BackX + Z - stlTopZ
-                        //   targetZ = finishLineTopZ + 1.0
-                        //   splitX = BackX + (finishLineTopZ + 1.0) - stlTopZ
-                        // 주의: 여기서 DefaultStlShift를 추가로 더하면 split line이 과도하게 좌측으로 이동(약 +shift mm)한다.
-                        double targetZ = finishLineTopZ.Value + 1.0;
-                        double rawSplitX = backX + targetZ - stlTopZ.Value;
+                        //   topX     = BackX + finishLineTopZ - stlTopZ
+                        //   splitX   = topX + splitOffsetMm
+                        // 중요:
+                        //   이 오프셋은 MainModuleComposite.TryResolveTwoPhaseSplitLineTargetX와
+                        //   반드시 동일해야 한다. (env 주입/재해석 경로의 SSOT 일치)
+                        const double splitOffsetMm = -1.0;
+                        double targetZ = finishLineTopZ.Value;
+                        double topX = backX + targetZ - stlTopZ.Value;
+                        double rawSplitX = topX + splitOffsetMm;
                         double splitX = Math.Max(xMin + 0.01, Math.Min(xMax - 0.01, rawSplitX));
 
                         Environment.SetEnvironmentVariable(AppConfig.TwoPhaseEnableEnv, "1");
@@ -1209,7 +1214,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                         double roughAEndX = splitX - roughAEndOffsetMm;
                         double faceRightMaxX = roughAEndX - faceMinGapMm;
 
-                        AppLogger.Log($"DentalAddin: TwoPhase split 적용 - finishLineTopZ:{finishLineTopZ.Value.ToString("F4", CultureInfo.InvariantCulture)}, targetZ(+1.0):{targetZ.ToString("F4", CultureInfo.InvariantCulture)}, stlTopZ:{stlTopZ.Value.ToString("F4", CultureInfo.InvariantCulture)}, rawSplitX:{rawSplitX.ToString("F4", CultureInfo.InvariantCulture)}, splitX(clamped):{splitX.ToString("F4", CultureInfo.InvariantCulture)}, roughAEndX(split-0.5):{roughAEndX.ToString("F4", CultureInfo.InvariantCulture)}, faceRightMaxX(roughAEnd-0.3):{faceRightMaxX.ToString("F4", CultureInfo.InvariantCulture)} (Front:{frontX.ToString("F4", CultureInfo.InvariantCulture)}, Back:{backX.ToString("F4", CultureInfo.InvariantCulture)})");
+                        AppLogger.Log($"DentalAddin: TwoPhase split 적용 - finishLineTopZ:{finishLineTopZ.Value.ToString("F4", CultureInfo.InvariantCulture)}, targetZ(top):{targetZ.ToString("F4", CultureInfo.InvariantCulture)}, stlTopZ:{stlTopZ.Value.ToString("F4", CultureInfo.InvariantCulture)}, topX:{topX.ToString("F4", CultureInfo.InvariantCulture)}, splitOffsetMm:{splitOffsetMm.ToString("F3", CultureInfo.InvariantCulture)}, rawSplitX(top-1.0):{rawSplitX.ToString("F4", CultureInfo.InvariantCulture)}, splitX(clamped):{splitX.ToString("F4", CultureInfo.InvariantCulture)}, roughAEndX(split-0.5):{roughAEndX.ToString("F4", CultureInfo.InvariantCulture)}, faceRightMaxX(roughAEnd-0.3):{faceRightMaxX.ToString("F4", CultureInfo.InvariantCulture)} (Front:{frontX.ToString("F4", CultureInfo.InvariantCulture)}, Back:{backX.ToString("F4", CultureInfo.InvariantCulture)})");
                     }
                     catch (Exception ex)
                     {
