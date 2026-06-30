@@ -626,7 +626,7 @@ namespace DentalAddin
                 DentalLogger.Log($"Composite2SplitAB - Operation 추가 완료: {(finishAllMode ? "Finish_All" : "FINISH_FRONT")}(opA) (afterCount={afterA})");
 
                 // Finish_All/Finish_Back 끝점에서 홈 파임 방지:
-                // BackPointX에서 다음 피치로 넘기지 않고 같은 위치에서 1회(360°) 추가 가공 후 퇴출한다.
+                // BackPointX 끝점에서 약 360°(1회전) 추가 가공 후 퇴출한다.
                 if (finishAllMode)
                 {
                     TryAddCompositeExitLap(technologyUtility, effectivePrcA, freeFormFeature, opA, opA.LastPassPercent, "END", "A");
@@ -651,7 +651,7 @@ namespace DentalAddin
                 int afterB = Document?.Operations?.Count ?? -1;
                 DentalLogger.Log($"Composite2SplitAB - Operation 추가 완료: FINISH_BACK(opB) (afterCount={afterB})");
 
-                // Finish_Back 끝점에서 같은 위치 1회(360°) 추가 가공 후 퇴출
+                // Finish_Back 끝점에서 약 360°(1회전) 추가 가공 후 퇴출
                 TryAddCompositeExitLap(technologyUtility, effectivePrcB, freeFormFeature, opB, opB.LastPassPercent, "END", "B");
 
                 // FINISH_B 이후 추가 확장 공정은 생성하지 않는다.
@@ -996,9 +996,8 @@ namespace DentalAddin
             }
         }
 
-        // Finish_Back / Finish_All 종료부 홈(툴 퇴출 자국) 방지용 1회 추가 회전.
-        // BackPointX에서 다음 피치로 넘어가지 않도록 First/Last를 동일 pass-percent로 고정해
-        // 같은 위치에서 360° 한 바퀴 더 가공한 뒤 퇴출한다.
+        // Finish_Back / Finish_All 종료부 홈(툴 퇴출 자국) 방지용 End lap.
+        // BackPointX 끝점에서 약 360°(1회전) 추가 가공 후 퇴출한다.
         private static void TryAddCompositeExitLap(
             TechnologyUtility technologyUtility,
             string prcPath,
@@ -1027,9 +1026,16 @@ namespace DentalAddin
 
                 lapOp.PassPosition = espMill5xCompositePassPosition.espMill5xCompositePassPositionStartEndPosition;
 
-                // 완전 0폭(First==Last)은 ESPRIT에서 툴패스가 생성/표시되지 않는 경우가 있어,
-                // 극소폭(0.02%)만 허용해 한 줄 End 랩이 보이도록 한다.
-                const double endLapWindowPercent = 0.02;
+                // 완전 0폭(First==Last)은 ESPRIT에서 툴패스가 사라질 수 있으므로,
+                // StepIncrement 1피치(mm)를 StartEndScale(20mm) 기준 pass-percent로 변환해
+                // 약 1회전(360°)에 해당하는 최소 유효 폭을 만든다.
+                string stepEnvKey = string.Equals(abLabel, "B", StringComparison.OrdinalIgnoreCase)
+                    ? AppConfig.CompositeStepIncrementBEnv
+                    : AppConfig.CompositeStepIncrementAEnv;
+                double stepMm = GetEnvDoubleNullable(stepEnvKey) ?? 0.25;
+                const double startEndScaleMm = 20.0;
+                double endLapWindowPercent = Clamp((stepMm / startEndScaleMm) * 100.0, 0.2, 5.0);
+
                 double startPercent = Clamp(fixedPercent - endLapWindowPercent, 0.0, fixedPercent);
                 double endPercent = fixedPercent;
                 if (Math.Abs(endPercent - startPercent) < 1e-6)
@@ -1065,7 +1071,7 @@ namespace DentalAddin
                 TryAddOperation(lapOp, freeFormFeature, $"Composite2ExitLap:{finishLabel}", false);
                 TryAppendCompositeSuffixToNewOperations(before, finishLabel);
 
-                DentalLogger.Log($"Composite2ExitLap - 추가 완료 (label={finishLabel}, pass%={startPercent:F3}->{endPercent:F3}, ToolID='{lapOp.ToolID ?? ""}', DriveSurface='{lapOp.DriveSurface ?? ""}')");
+                DentalLogger.Log($"Composite2ExitLap - 추가 완료 (label={finishLabel}, pass%={startPercent:F3}->{endPercent:F3}, stepMm={stepMm:F3}, window%={endLapWindowPercent:F3}, ToolID='{lapOp.ToolID ?? ""}', DriveSurface='{lapOp.DriveSurface ?? ""}')");
             }
             catch (Exception ex)
             {
