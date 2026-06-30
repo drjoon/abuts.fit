@@ -7,7 +7,7 @@ BEGIN_OPERATION; 507; 5Axis_Composite; 0;
    ReferenceDepthOfCut; 1768; 0.20000000000000001;  HIDDEN; CAPTION; 참조 가공 깊이; SOURCE; 1; TECHCODETYPE; 2;
    RoughPass; 238; 0;  CAPTION; 황삭 경로; SOURCE; 0; TECHCODETYPE; 67;
    ThroughPointX; 3247; 0;  LOCKED; HIDDEN; CAPTION; 쓰루 포인트 X|쓰루 포인트 X, Y, Z; SOURCE; 1; TECHCODETYPE; 2;
-   StockAllowance; 272; 0.0;  CAPTION; 가공 여유; SOURCE; 2; TECHCODETYPE; 2;
+   StockAllowance; 272; 0.05;  CAPTION; 가공 여유; SOURCE; 2; TECHCODETYPE; 2;
    ReverseStepOverDirection; 3230; 0;  LOCKED; HIDDEN; CAPTION; 리버스 스텝 오버 방향; SOURCE; 2; TECHCODETYPE; 67;
    ContourPassMovement; 3264; 0;  LOCKED; HIDDEN; CAPTION; 패스 이동; SOURCE; 1; TECHCODETYPE; 436;
    4434; 4434; 0;  SOURCE; 0; TECHCODETYPE; 2;
@@ -183,7 +183,7 @@ BEGIN_OPERATION; 507; 5Axis_Composite; 0;
 	END_ATTRIBUTES
    END_SUB_TECHNOLOGY;
    EnableSmoothing; 3365; 0;  HIDDEN; CAPTION; 스무딩 사용; SOURCE; 0; TECHCODETYPE; 522;
-   ReverseCuttingDirection; 3229; 1;  LOCKED; HIDDEN; CAPTION; 리버스 절삭 방향; SOURCE; 2; TECHCODETYPE; 67;
+   ReverseCuttingDirection; 3229; 0;  LOCKED; HIDDEN; CAPTION; 리버스 절삭 방향; SOURCE; 2; TECHCODETYPE; 67;
    OrientationStrategy; 3246; 1;  CAPTION; 위치 확정 방법; SOURCE; 0; TECHCODETYPE; 414;
    EntryMovesPointZ; 3263; 0;  LOCKED; HIDDEN; CAPTION; 접근 포인트 Z |접근 포인트 X,Y,Z; SOURCE; 1; TECHCODETYPE; 2;
    4909; 4909; ;  SOURCE; 0; TECHCODETYPE; 3;
@@ -261,7 +261,7 @@ BEGIN_OPERATION; 507; 5Axis_Composite; 0;
    InRampLength; 3397; 0;  CAPTION; In 램프 거리|램프 거리 In, Out; SOURCE; 0; TECHCODETYPE; 2;
    OutArcAngle; 3402; 45;  CAPTION; Out 원호 각도|원호 각도 In, Out; SOURCE; 0; TECHCODETYPE; 2;
    InRampAngle; 3399; 0;  CAPTION; In램프 각도|램프 각도 In, Out; SOURCE; 0; TECHCODETYPE; 2;
-   EndArcRadius; 3314; 5;  CAPTION; 원호 반경 끝; SOURCE; 0; TECHCODETYPE; 2;
+   EndArcRadius; 3314; 0.5;  CAPTION; 원호 반경 끝; SOURCE; 0; TECHCODETYPE; 2;
    OutRampLength; 3396; 0;  CAPTION; Out 램프 길이|램프 길이 In, Out; SOURCE; 0; TECHCODETYPE; 2;
    MaximumLinkDistance; 3311; 10;  CAPTION; 최대 링크 거리; SOURCE; 0; TECHCODETYPE; 2;
    MaxZDifference; 3407; 10;  CAPTION; 최대 Z 차이; SOURCE; 0; TECHCODETYPE; 2;
@@ -270,12 +270,12 @@ BEGIN_OPERATION; 507; 5Axis_Composite; 0;
    EndArcAngle; 3316; 30;  CAPTION; 원호 각도 끝; SOURCE; 0; TECHCODETYPE; 2;
    OutRampAngle; 3398; 0;  CAPTION; Out 램프 각도|램프 각도 In, Out; SOURCE; 0; TECHCODETYPE; 2;
    RampAngle; 3381; 5;  CAPTION; 램프각도; SOURCE; 0; TECHCODETYPE; 2;
-   StartArcRadius; 3313; 5;  CAPTION; 시작 원호 반경; SOURCE; 0; TECHCODETYPE; 2;
+   StartArcRadius; 3313; 0.5;  CAPTION; 시작 원호 반경; SOURCE; 0; TECHCODETYPE; 2;
    FeedLinkType; 3310; 1;  CAPTION; 피드 링크 타입; SOURCE; 0; TECHCODETYPE; 433;
    MaxZDifferenceAcross; 3406; 10;  CAPTION; 최대 Z 교차 차이 ; SOURCE; 0; TECHCODETYPE; 2;
    LateralDistance; 3304; 2;  CAPTION; 가로 방향 거리; SOURCE; 0; TECHCODETYPE; 2;
    InArcAngle; 3403; 45;  CAPTION; In 원호 각도|원호 각도 In, Out; SOURCE; 0; TECHCODETYPE; 2;
-   VerticalDistance; 3318; 2;  CAPTION; 수직 거리; SOURCE; 0; TECHCODETYPE; 2;
+   VerticalDistance; 3318; 0.5;  CAPTION; 수직 거리; SOURCE; 0; TECHCODETYPE; 2;
    BEGIN_EXPRESSION
    END_EXPRESSION
 	BEGIN_ATTRIBUTES
@@ -289,7 +289,7 @@ BEGIN_OPERATION; 507; 5Axis_Composite; 0;
    InRampLength; 3397; 0;  CAPTION; In 램프 거리|램프 거리 In, Out; SOURCE; 0; TECHCODETYPE; 2;
    OutArcAngle; 3402; 45;  CAPTION; Out 원호 각도|원호 각도 In, Out; SOURCE; 0; TECHCODETYPE; 2;
    InRampAngle; 3399; 0;  CAPTION; In램프 각도|램프 각도 In, Out; SOURCE; 0; TECHCODETYPE; 2;
-   EndArcRadius; 3314; 5;  CAPTION; 원호 반경 끝; SOURCE; 0; TECHCODETYPE; 2;
+   EndArcRadius; 3314; 0.5;  CAPTION; ; SOURCE; 0; TECHCODETYPE; 2;
    OutRampLength; 3396; 0;  CAPTION; Out 램프 길이|램프 길이 In, Out; SOURCE; 0; TECHCODETYPE; 2;
    MaximumLinkDistance; 3311; 10;  CAPTION; 최대 링크 거리; SOURCE; 0; TECHCODETYPE; 2;
    MaxZDifference; 3407; 10;  CAPTION; 최대 Z 차이; SOURCE; 0; TECHCODETYPE; 2;
@@ -298,12 +298,12 @@ BEGIN_OPERATION; 507; 5Axis_Composite; 0;
    EndArcAngle; 3316; 30;  CAPTION; 원호 각도 끝; SOURCE; 0; TECHCODETYPE; 2;
    OutRampAngle; 3398; 0;  CAPTION; Out 램프 각도|램프 각도 In, Out; SOURCE; 0; TECHCODETYPE; 2;
    RampAngle; 3381; 5;  CAPTION; 램프각도; SOURCE; 0; TECHCODETYPE; 2;
-   StartArcRadius; 3313; 5;  CAPTION; 시작 원호 반경; SOURCE; 0; TECHCODETYPE; 2;
+   StartArcRadius; 3313; 0.5;  CAPTION; 시작 원호 반경; SOURCE; 0; TECHCODETYPE; 2;
    FeedLinkType; 3310; 2;  CAPTION; 피드 링크 타입; SOURCE; 0; TECHCODETYPE; 433;
    MaxZDifferenceAcross; 3406; 10;  CAPTION; 최대 Z 교차 차이 ; SOURCE; 0; TECHCODETYPE; 2;
    LateralDistance; 3304; 2;  CAPTION; 가로 방향 거리; SOURCE; 0; TECHCODETYPE; 2;
    InArcAngle; 3403; 45;  CAPTION; In 원호 각도|원호 각도 In, Out; SOURCE; 0; TECHCODETYPE; 2;
-   VerticalDistance; 3318; 3;  CAPTION; 수직 거리; SOURCE; 0; TECHCODETYPE; 2;
+   VerticalDistance; 3318; 0.5;  CAPTION; 수직 거리; SOURCE; 0; TECHCODETYPE; 2;
    BEGIN_EXPRESSION
    END_EXPRESSION
 	BEGIN_ATTRIBUTES
