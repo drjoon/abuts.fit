@@ -2066,7 +2066,7 @@ namespace DentalAddin
                 }
             }
 
-            if (TryRunComposite2SplitAB(freeFormFeature))
+            if (TryRunComposite2SplitLine2(freeFormFeature))
             {
                 return;
             }
