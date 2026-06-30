@@ -430,8 +430,8 @@ namespace DentalAddin
             const double aEndOffsetFromSplitMm = 0.0; // 요청: FINISH_A 끝점 = 기준점(splitPercent)
             // 요청 반영: FINISH_B 시작점 오프셋 제거(정치수)
             const double bStartOffsetFromSplitMm = 0.0; // FINISH_B 시작점 = 기준점(splitPercent)
-            // 요청 반영: FINISH_All / FINISH_B 끝점 = BackPointX +0.1mm
-            const double compositeEndOffsetFromBackPointMm = 0.1;
+            // 요청 반영: FINISH_All / FINISH_Back 끝점 = BackPointX (오프셋 0.0)
+            const double compositeEndOffsetFromBackPointMm = 0.0;
 
             // 기준점(splitPercent)을 기준으로 A/B 경계를 독립 적용한다.
             // - A.End: split + 0.0mm(=split)
@@ -624,6 +624,14 @@ namespace DentalAddin
                 TryAppendCompositeSuffixToNewOperations(beforeAddCountBaseA, finishAllMode ? "ALL" : "FRONT");
                 int afterA = Document?.Operations?.Count ?? -1;
                 DentalLogger.Log($"Composite2SplitAB - Operation 추가 완료: {(finishAllMode ? "Finish_All" : "FINISH_FRONT")}(opA) (afterCount={afterA})");
+
+                // Finish_All/Finish_Back 끝점에서 홈 파임 방지:
+                // BackPointX에서 다음 피치로 넘기지 않고 같은 위치에서 1회(360°) 추가 가공 후 퇴출한다.
+                if (finishAllMode)
+                {
+                    TryAddCompositeExitLap(technologyUtility, effectivePrcA, freeFormFeature, opA, opA.LastPassPercent, "END", "A");
+                }
+
                 if (!finishAllMode)
                 {
                     TryMoveCompositeFinishBeforeTurnB("FINISH_FRONT");
@@ -642,6 +650,9 @@ namespace DentalAddin
                 TryAppendCompositeSuffixToNewOperations(beforeAddCountB, "BACK");
                 int afterB = Document?.Operations?.Count ?? -1;
                 DentalLogger.Log($"Composite2SplitAB - Operation 추가 완료: FINISH_BACK(opB) (afterCount={afterB})");
+
+                // Finish_Back 끝점에서 같은 위치 1회(360°) 추가 가공 후 퇴출
+                TryAddCompositeExitLap(technologyUtility, effectivePrcB, freeFormFeature, opB, opB.LastPassPercent, "END", "B");
 
                 // FINISH_B 이후 추가 확장 공정은 생성하지 않는다.
             }
@@ -985,6 +996,83 @@ namespace DentalAddin
             }
         }
 
+        // Finish_Back / Finish_All 종료부 홈(툴 퇴출 자국) 방지용 1회 추가 회전.
+        // BackPointX에서 다음 피치로 넘어가지 않도록 First/Last를 동일 pass-percent로 고정해
+        // 같은 위치에서 360° 한 바퀴 더 가공한 뒤 퇴출한다.
+        private static void TryAddCompositeExitLap(
+            TechnologyUtility technologyUtility,
+            string prcPath,
+            FreeFormFeature freeFormFeature,
+            TechLatheMill5xComposite sourceOp,
+            double endPassPercent,
+            string finishLabel,
+            string stepStockLabel)
+        {
+            try
+            {
+                if (Document == null || freeFormFeature == null)
+                {
+                    return;
+                }
+
+                double fixedPercent = Clamp(endPassPercent, 0.0, 100.0);
+                string abLabel = string.Equals(stepStockLabel, "B", StringComparison.OrdinalIgnoreCase) ? "B" : "A";
+
+                ITechnology[] lapTech = TryOpenProcess(technologyUtility, prcPath, $"Composite2ExitLap:{finishLabel}");
+                if (lapTech.Length == 0 || !(lapTech[0] is TechLatheMill5xComposite lapOp))
+                {
+                    DentalLogger.Log($"Composite2ExitLap - PRC 로드/캐스팅 실패 (label={finishLabel})");
+                    return;
+                }
+
+                lapOp.PassPosition = espMill5xCompositePassPosition.espMill5xCompositePassPositionStartEndPosition;
+
+                // 완전 0폭(First==Last)은 ESPRIT에서 툴패스가 생성/표시되지 않는 경우가 있어,
+                // 극소폭(0.02%)만 허용해 한 줄 End 랩이 보이도록 한다.
+                const double endLapWindowPercent = 0.02;
+                double startPercent = Clamp(fixedPercent - endLapWindowPercent, 0.0, fixedPercent);
+                double endPercent = fixedPercent;
+                if (Math.Abs(endPercent - startPercent) < 1e-6)
+                {
+                    endPercent = Clamp(fixedPercent + endLapWindowPercent, fixedPercent, 100.0);
+                }
+
+                lapOp.FirstPassPercent = startPercent;
+                lapOp.LastPassPercent = endPercent;
+
+                if (sourceOp != null && !string.IsNullOrWhiteSpace(sourceOp.DriveSurface))
+                {
+                    lapOp.DriveSurface = sourceOp.DriveSurface;
+                }
+
+                if (string.IsNullOrWhiteSpace(lapOp.ToolID))
+                {
+                    if (sourceOp != null && !string.IsNullOrWhiteSpace(sourceOp.ToolID))
+                    {
+                        lapOp.ToolID = sourceOp.ToolID;
+                    }
+                    else if (!string.IsNullOrWhiteSpace(ToolNs))
+                    {
+                        lapOp.ToolID = ToolNs;
+                    }
+                }
+
+                TrySetCompositeStepIncrement(lapOp, abLabel);
+                TrySetCompositeStockAllowance(lapOp, abLabel);
+                TryDisableCompositeDynamicIfRequested(lapOp, abLabel);
+
+                int before = Document?.Operations?.Count ?? -1;
+                TryAddOperation(lapOp, freeFormFeature, $"Composite2ExitLap:{finishLabel}", false);
+                TryAppendCompositeSuffixToNewOperations(before, finishLabel);
+
+                DentalLogger.Log($"Composite2ExitLap - 추가 완료 (label={finishLabel}, pass%={startPercent:F3}->{endPercent:F3}, ToolID='{lapOp.ToolID ?? ""}', DriveSurface='{lapOp.DriveSurface ?? ""}')");
+            }
+            catch (Exception ex)
+            {
+                DentalLogger.Log($"Composite2ExitLap - 예외 (label={finishLabel}): {ex.GetType().Name}:{ex.Message}");
+            }
+        }
+
         // Front Face 기본 절삭 깊이(mm)
         // 우선순위: PRC BottomZLimit(절대값) > 기본값
         private const double FrontFaceFixedDepthMm = 1.0;
@@ -1210,6 +1298,10 @@ namespace DentalAddin
             {
                 return "Finish_All";
             }
+            if (string.Equals(suffix, "FINISH_END", StringComparison.OrdinalIgnoreCase))
+            {
+                return "Finish_End";
+            }
             return $"5 Axis Composite [{suffix}]";
         }
 
@@ -1237,6 +1329,10 @@ namespace DentalAddin
             if (normalized.StartsWith("BACK", StringComparison.OrdinalIgnoreCase))
             {
                 return "FINISH_BACK";
+            }
+            if (normalized.StartsWith("END", StringComparison.OrdinalIgnoreCase))
+            {
+                return "FINISH_END";
             }
 
             // 레거시 라벨(A/B)은 입력 호환만 허용하고 표준 토큰으로 승격한다.
@@ -1287,10 +1383,12 @@ namespace DentalAddin
                     baseName = RemoveTokenIgnoreCase(baseName, "[FINISH_FRONT]").Trim();
                     baseName = RemoveTokenIgnoreCase(baseName, "[FINISH_BACK]").Trim();
                     baseName = RemoveTokenIgnoreCase(baseName, "[FINISH_ALL]").Trim();
+                    baseName = RemoveTokenIgnoreCase(baseName, "[FINISH_END]").Trim();
 
                     baseName = RemoveTokenIgnoreCase(baseName, "[Finish_Front]").Trim();
                     baseName = RemoveTokenIgnoreCase(baseName, "[Finish_Back]").Trim();
                     baseName = RemoveTokenIgnoreCase(baseName, "[Finish_All]").Trim();
+                    baseName = RemoveTokenIgnoreCase(baseName, "[Finish_End]").Trim();
 
                     // 레거시 토큰 정리
                     baseName = RemoveTokenIgnoreCase(baseName, "[FINISH_A]").Trim();
@@ -1547,6 +1645,10 @@ namespace DentalAddin
                     else if (oldName.IndexOf("FINISH_ALL", StringComparison.OrdinalIgnoreCase) >= 0 || oldName.IndexOf("Finish_All", StringComparison.OrdinalIgnoreCase) >= 0)
                     {
                         mapped = "FINISH_ALL";
+                    }
+                    else if (oldName.IndexOf("FINISH_END", StringComparison.OrdinalIgnoreCase) >= 0 || oldName.IndexOf("Finish_End", StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        mapped = "FINISH_END";
                     }
 
 
