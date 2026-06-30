@@ -80,32 +80,58 @@ namespace DentalAddin
                 return;
             }
 
-            // 기본값: Two-Phase 실행 (RoughType 2.0/3.0 또는 roughSplit/PRC 마커 있을 때)
+            // 기본값: 3-Stage Two-Phase 실행 (RoughType 2.0/3.0 또는 roughSplit/PRC 마커 있을 때)
             if (twoPhaseMode)
             {
-                DentalLogger.Log($"OperationSeq - TwoPhase 기본 실행: Turn/Rough를 A,B 2단계 순서로 실행 (RoughType={RoughType}, RoughSplitEnv={roughSplitEnabled})");
+                DentalLogger.Log($"OperationSeq - 3-Stage 실행: Front/Middle/Back Turn+Rough 후 Finish 실행 (RoughType={RoughType}, RoughSplitEnv={roughSplitEnabled})");
                 ClearOperationsForTwoPhase();
 
                 ValidateBeforeOperation("CustomCycle", Array.Empty<string>(), Array.Empty<string>());
                 CustomCycle();
 
-                // 2-phase 순서(최종):
-                // CustomCycle → Turn_A → Rough_A → FrontFace → FreeForm(A_PHASE) → Turn_B → Rough_B → FreeForm(B_PHASE)
-                // - FINISH_A : TURN_B 바로 위로 배치
-                // - FINISH_B : 기존(원래) 뒤쪽 순서 유지
-                ExecuteTwoPhaseTurning("A");
-                ExecuteTwoPhaseRough("A");
+                // 3-stage 순서(요청 반영):
+                // Front:  Turn -> Rough -> Front Face
+                // Middle: Turn -> Rough
+                // Back:   Turn -> Rough
+                // Finish: deep=Front/Back 분할, none=All 단일
+                ExecuteTwoPhaseTurning("FRONT");
+                ExecuteTwoPhaseRough("FRONT");
 
                 ValidateBeforeOperation("FrontFaceMill", Array.Empty<string>(), new[] { "3DMilling_FrontFace" });
                 FrontFaceMill();
 
+                ExecuteTwoPhaseTurning("MIDDLE");
+                ExecuteTwoPhaseRough("MIDDLE");
+
+                ExecuteTwoPhaseTurning("BACK");
+                ExecuteTwoPhaseRough("BACK");
+
+                string retentionGroove = Environment.GetEnvironmentVariable("ABUTS_RETENTION_GROOVE");
+                bool splitFinish = string.Equals(retentionGroove, "deep", StringComparison.OrdinalIgnoreCase);
+
                 Environment.SetEnvironmentVariable("ABUTS_SKIP_FRONTFACE_IN_FREEFORM", "1");
-                Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_PHASE_MODE", "A_PHASE");
                 try
                 {
-                    ValidateBeforeOperation("FreeFormMill", Array.Empty<string>(), new[] { "3DMilling_0Degree", "3DMilling_90Degree", "3DMilling_180Degree", "3DMilling_270Degree" });
-                    FreeFormMill();
-                    TryNormalizeCompositeFinishOrderAfterFreeForm();
+                    if (splitFinish)
+                    {
+                        Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_PHASE_MODE", "A_PHASE");
+                        ValidateBeforeOperation("FreeFormMill", Array.Empty<string>(), new[] { "3DMilling_0Degree", "3DMilling_90Degree", "3DMilling_180Degree", "3DMilling_270Degree" });
+                        FreeFormMill();
+                        TryNormalizeCompositeFinishOrderAfterFreeForm();
+
+                        Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_PHASE_MODE", "B_PHASE");
+                        ValidateBeforeOperation("FreeFormMill", Array.Empty<string>(), new[] { "3DMilling_0Degree", "3DMilling_90Degree", "3DMilling_180Degree", "3DMilling_270Degree" });
+                        FreeFormMill();
+                        TryNormalizeCompositeFinishOrderAfterFreeForm();
+                    }
+                    else
+                    {
+                        // none(유지홈 없음): 단일 Finish_All
+                        Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_PHASE_MODE", "ALL_PHASE");
+                        ValidateBeforeOperation("FreeFormMill", Array.Empty<string>(), new[] { "3DMilling_0Degree", "3DMilling_90Degree", "3DMilling_180Degree", "3DMilling_270Degree" });
+                        FreeFormMill();
+                        TryNormalizeCompositeFinishOrderAfterFreeForm();
+                    }
                 }
                 finally
                 {
@@ -113,22 +139,6 @@ namespace DentalAddin
                     Environment.SetEnvironmentVariable("ABUTS_SKIP_FRONTFACE_IN_FREEFORM", null);
                 }
 
-                ExecuteTwoPhaseTurning("B");
-                ExecuteTwoPhaseRough("B");
-
-                Environment.SetEnvironmentVariable("ABUTS_SKIP_FRONTFACE_IN_FREEFORM", "1");
-                Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_PHASE_MODE", "B_PHASE");
-                try
-                {
-                    ValidateBeforeOperation("FreeFormMill", Array.Empty<string>(), new[] { "3DMilling_0Degree", "3DMilling_90Degree", "3DMilling_180Degree", "3DMilling_270Degree" });
-                    FreeFormMill();
-                    TryNormalizeCompositeFinishOrderAfterFreeForm();
-                }
-                finally
-                {
-                    Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_PHASE_MODE", null);
-                    Environment.SetEnvironmentVariable("ABUTS_SKIP_FRONTFACE_IN_FREEFORM", null);
-                }
                 if (Mark.MarkSign)
                 {
                     ValidateBeforeOperation("MarkText", Array.Empty<string>(), new[] { "3DProject_Mark" });
@@ -368,7 +378,9 @@ namespace DentalAddin
                     return;
                 }
 
+                int startCount = Document?.Operations?.Count ?? 0;
                 TryAddOperation(techLatheMoldParallelPlanes, frontFace, "FrontFaceMill");
+                TagNewOperations(startCount, "FRONT_FACE");
                 DentalLogger.Log($"FrontFaceMill 완료 - RL:{RL}, FrontPointX:{MoveSTL_Module.FrontPointX}, DownZ:{DownZ}");
             }
             catch (Exception ex)
@@ -466,11 +478,24 @@ namespace DentalAddin
                         baseName = baseName.Trim();
                     }
 
-                    if (baseName.IndexOf(tag, StringComparison.OrdinalIgnoreCase) >= 0)
+                    string newName;
+                    switch ((tag ?? string.Empty).Trim().ToUpperInvariant())
                     {
-                        continue;
+                        case "TURN_FRONT": newName = "Front_Turn"; break;
+                        case "ROUGH_FRONT": newName = "Front_Rough"; break;
+                        case "FRONT_FACE": newName = "Front_Face"; break;
+                        case "TURN_MIDDLE": newName = "Middle_Turn"; break;
+                        case "ROUGH_MIDDLE": newName = "Middle_Rough"; break;
+                        case "TURN_BACK": newName = "Back_Turn"; break;
+                        case "ROUGH_BACK": newName = "Back_Rough"; break;
+                        default:
+                            if (baseName.IndexOf(tag, StringComparison.OrdinalIgnoreCase) >= 0)
+                            {
+                                continue;
+                            }
+                            newName = $"{baseName} [{tag}]";
+                            break;
                     }
-                    string newName = $"{baseName} [{tag}]";
 
                     // dynamic 방식으로 Name 쓰기 — lathe 작업은 InvokeMember SetProperty가 동작 안 함
                     bool renamed = false;
@@ -622,11 +647,10 @@ namespace DentalAddin
             }
             DentalLogger.Log($"TurningOp - PRC[1] contour tech count={turningTechs.Count}");
 
-            // 2-phase 모드: region env를 읽어 finishline(splitX) 기준 좌/우 경계를 적용
-            //   - region A → 좌측(xMin~splitX), region B → 우측(splitX~xMax)
-            //   - rough mill(RoughFreeFromMillSplitAB)과 동일한 splitX/경계 방식을 사용해
-            //     turning 좌/우 분할 위치를 rough와 정렬
-            //   - 실제 경계 적용은 chain 생성용 helper op 정리 직후, 최종 op 추가 직전에 수행
+            // 3-stage 모드: region env를 읽어 Front/Middle/Back 구간으로 분할 적용
+            //   - Splitline_1 = FrontPointX
+            //   - Splitline_2 = midpoint(Splitline_1, BackPointX)
+            //   - Turn/Rough는 경계선 기준 ±2.2mm 확장
             string twoPhaseRegion = Environment.GetEnvironmentVariable(AppConfig.TwoPhaseTurningRegionEnv);
 
             List<TechLatheContour1> reverseTechs = new List<TechLatheContour1>();
@@ -640,11 +664,12 @@ namespace DentalAddin
                 DentalLogger.Log($"TurningOp - PRC[2] reverse contour tech count={reverseTechs.Count}");
             }
 
-            // 요청사항: Turn_A/Turn_B 모두 정방향 로직 동일 유지, Turn_B만 공구 T05로 변경
+            // 요청사항: Front/Middle/Back 모두 정방향 로직 동일 유지, Back만 T05 우선 사용
             List<TechLatheContour1> phaseTurningTechs = turningTechs;
             List<TechLatheContour1> phaseReverseTechs = reverseTechs;
-            if (string.Equals(twoPhaseRegion, "A", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(twoPhaseRegion, "B", StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(twoPhaseRegion, "FRONT", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(twoPhaseRegion, "MIDDLE", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(twoPhaseRegion, "BACK", StringComparison.OrdinalIgnoreCase))
             {
                 phaseReverseTechs = new List<TechLatheContour1>();
                 DentalLogger.Log($"TurningOp - region={twoPhaseRegion}, 정방향 turning 전용으로 실행");
@@ -767,11 +792,11 @@ namespace DentalAddin
                 // 경계로 영역을 자를 수 없다. 대신 turning 프로파일 체인을 splitX에서 잘라
                 // region A는 좌측(x≤splitX), region B는 우측(x≥splitX) 서브체인만 가공한다.
                 bool twoPhaseSplitReady = false;
-                double twoPhaseSplitX = 0.0;
-                bool twoPhaseLeftSide = string.Equals(twoPhaseRegion, "A", StringComparison.OrdinalIgnoreCase);
+                double regionMinX = 0.0;
+                double regionMaxX = 0.0;
                 if (!string.IsNullOrWhiteSpace(twoPhaseRegion))
                 {
-                    twoPhaseSplitReady = TryPrepareTurningSplitX(twoPhaseRegion, out twoPhaseSplitX);
+                    twoPhaseSplitReady = TryPrepareTurningRegionRange(twoPhaseRegion, out regionMinX, out regionMaxX);
                 }
 
                 i = 1;
@@ -783,25 +808,7 @@ namespace DentalAddin
                         if (twoPhaseSplitReady)
                         {
                             // 주의: 이름이 "Turning"으로 시작하면 다음 phase의 array[i] 탐지 루프에 오인식되므로 다른 접두사 사용
-                            double effectiveSplitX = twoPhaseSplitX;
-                            try
-                            {
-                                if (twoPhaseLeftSide)
-                                {
-                                    double xMax = Math.Max(MoveSTL_Module.FrontPointX, MoveSTL_Module.BackPointX);
-                                    // Turn_A: finishline보다 1.5mm 오른쪽에서 종료
-                                    effectiveSplitX = Math.Min(twoPhaseSplitX + 1.5, xMax - 1e-6);
-                                }
-                                else
-                                {
-                                    double xMin = Math.Min(0.0, Math.Min(MoveSTL_Module.FrontPointX, MoveSTL_Module.BackPointX));
-                                    // Turn_B: finishline보다 0.5mm 왼쪽에서 시작
-                                    effectiveSplitX = Math.Max(twoPhaseSplitX - 0.5, xMin + 1e-6);
-                                }
-                            }
-                            catch { }
-
-                            FeatureChain regionChain = BuildTurningRegionChain(array[i], effectiveSplitX, twoPhaseLeftSide, $"TurnRgn{twoPhaseRegion}_{i}");
+                            FeatureChain regionChain = BuildTurningRangeChain(array[i], regionMinX, regionMaxX, $"TurnRgn{twoPhaseRegion}_{i}");
                             if (regionChain != null)
                             {
                                 opChain = regionChain;
@@ -842,13 +849,14 @@ namespace DentalAddin
                     return;
                 }
 
-                // 요청사항: Turn_A는 정방향 공구(T02), Turn_B는 백터닝 공구(T05) 강제
+                // 요청사항: Front/Middle는 정방향 공구(T02), Back는 백터닝 공구(T05) 우선
                 int targetToolNumber;
-                if (string.Equals(region, "A", StringComparison.OrdinalIgnoreCase))
+                if (string.Equals(region, "FRONT", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(region, "MIDDLE", StringComparison.OrdinalIgnoreCase))
                 {
                     targetToolNumber = 2;
                 }
-                else if (string.Equals(region, "B", StringComparison.OrdinalIgnoreCase))
+                else if (string.Equals(region, "BACK", StringComparison.OrdinalIgnoreCase))
                 {
                     targetToolNumber = 5;
                 }
@@ -1070,48 +1078,63 @@ namespace DentalAddin
             return false;
         }
 
-        // 2-phase turning 분할 준비: rough mill과 동일한 splitX를 계산/검증하고 가이드 라인을 생성한다.
-        private static bool TryPrepareTurningSplitX(string region, out double splitX)
+        // 3-stage turning 분할 준비: region(FRONT/MIDDLE/BACK)에 맞는 X 구간을 계산한다.
+        // 기준:
+        // - Splitline_1 = FrontPointX
+        // - Splitline_2 = midpoint(Splitline_1, BackPointX)
+        // - 경계 확장: ±2.2mm
+        private static bool TryPrepareTurningRegionRange(string region, out double rangeMinX, out double rangeMaxX)
         {
-            splitX = 0.0;
+            rangeMinX = 0.0;
+            rangeMaxX = 0.0;
             try
             {
-                if (Document?.LatheMachineSetup == null)
+                if (!TryGetThreeStageSplitConfig(out double splitline1, out double splitline2, out double xMin, out double xMax))
                 {
-                    DentalLogger.Log("TurningOp TwoPhase - LatheMachineSetup null, 분할 미적용");
+                    DentalLogger.Log("TurningOp 3-Stage - split config 계산 실패");
                     return false;
                 }
 
-                // rough mill(RoughFreeFromMillSplitAB)과 동일한 splitX 사용 → 좌/우 분할 위치를 rough와 정렬
-                TryGetSplitABConfig(out splitX, out _, out _);
-
-                double frontBackMin = Math.Min(MoveSTL_Module.FrontPointX, MoveSTL_Module.BackPointX);
-                double xMin = Math.Min(0.0, frontBackMin);
-                double xMax = Math.Max(MoveSTL_Module.FrontPointX, MoveSTL_Module.BackPointX);
-                if (!(splitX > xMin && splitX < xMax))
+                const double overCut = 2.2;
+                string normalized = (region ?? string.Empty).Trim().ToUpperInvariant();
+                switch (normalized)
                 {
-                    DentalLogger.Log($"TurningOp TwoPhase - splitX 범위 오류 splitX:{splitX:0.###}, xMin:{xMin:0.###}, xMax:{xMax:0.###}, 분할 미적용");
+                    case "FRONT":
+                        rangeMinX = xMin;
+                        rangeMaxX = Math.Min(xMax, splitline1 + overCut);
+                        break;
+                    case "MIDDLE":
+                        rangeMinX = Math.Max(xMin, splitline1 - overCut);
+                        rangeMaxX = Math.Min(xMax, splitline2 + overCut);
+                        break;
+                    case "BACK":
+                        rangeMinX = Math.Max(xMin, splitline2 - overCut);
+                        rangeMaxX = xMax;
+                        break;
+                    default:
+                        DentalLogger.Log($"TurningOp 3-Stage - 미지원 region='{region}'");
+                        return false;
+                }
+
+                if (rangeMaxX - rangeMinX < 1e-4)
+                {
+                    DentalLogger.Log($"TurningOp 3-Stage - 유효 구간 부족 region={region}, range=[{rangeMinX:0.###},{rangeMaxX:0.###}]");
                     return false;
                 }
 
-                // 작업창에서 분할 위치 확인용 가이드 라인 (rough mill과 공유)
-                EnsureTwoPhaseSplitGuideLine(splitX);
-
-                DentalLogger.Log($"TurningOp TwoPhase - region={region}, splitX:{splitX:0.###} 준비 완료 (chain 분할 방식)");
+                DentalLogger.Log($"TurningOp 3-Stage - region={region}, range=[{rangeMinX:0.###},{rangeMaxX:0.###}], split1={splitline1:0.###}, split2={splitline2:0.###}");
                 return true;
             }
             catch (Exception ex)
             {
-                DentalLogger.Log($"TurningOp TwoPhase - splitX 준비 실패: {ex.GetType().Name}:{ex.Message}");
+                DentalLogger.Log($"TurningOp 3-Stage - 구간 준비 실패(region={region}): {ex.GetType().Name}:{ex.Message}");
                 return false;
             }
         }
 
-        // turning 프로파일 체인(source)을 splitX 기준으로 잘라, 한쪽 영역만 포함하는 새 체인을 생성한다.
-        // - leftSide=true  : x ≤ splitX (region A, 좌측)
-        // - leftSide=false : x ≥ splitX (region B, 우측)
-        // arc/segment 혼합 프로파일을 PointAlong로 조밀하게 샘플링해 polyline로 안전하게 재구성한다.
-        private static FeatureChain BuildTurningRegionChain(FeatureChain source, double splitX, bool leftSide, string newName)
+        // turning 프로파일 체인(source)을 [minX, maxX] 구간으로 잘라 새 체인으로 생성한다.
+        // arc/segment 혼합 프로파일을 PointAlong로 조밀 샘플링하여 polyline으로 재구성한다.
+        private static FeatureChain BuildTurningRangeChain(FeatureChain source, double minX, double maxX, string newName)
         {
             try
             {
@@ -1120,74 +1143,102 @@ namespace DentalAddin
                     return null;
                 }
 
+                if (maxX < minX)
+                {
+                    double t = minX;
+                    minX = maxX;
+                    maxX = t;
+                }
+
                 double len = 0.0;
                 try { len = source.Length; } catch { }
                 if (!(len > 1e-6))
                 {
-                    DentalLogger.Log("BuildTurningRegionChain - source length<=0");
+                    DentalLogger.Log("BuildTurningRangeChain - source length<=0");
                     return null;
                 }
 
-                // 체인을 호 길이 기준으로 조밀하게 샘플링
                 const int targetSamples = 600;
                 double step = len / targetSamples;
                 if (step < 1e-4) step = 1e-4;
 
                 List<double[]> pts = new List<double[]>();
-                double srcMinX = double.MaxValue, srcMaxX = double.MinValue;
                 for (double s = 0.0; s <= len + 1e-9; s += step)
                 {
                     double ss = Math.Min(s, len);
                     Point p = null;
                     try { p = source.PointAlong(ss); } catch { }
                     if (p == null) continue;
-                    double px = p.X, py = p.Y, pz = p.Z;
+
+                    double[] np = new[] { p.X, p.Y, p.Z };
                     if (pts.Count == 0
-                        || Math.Abs(px - pts[pts.Count - 1][0]) > 1e-9
-                        || Math.Abs(py - pts[pts.Count - 1][1]) > 1e-9
-                        || Math.Abs(pz - pts[pts.Count - 1][2]) > 1e-9)
+                        || Math.Abs(np[0] - pts[pts.Count - 1][0]) > 1e-9
+                        || Math.Abs(np[1] - pts[pts.Count - 1][1]) > 1e-9
+                        || Math.Abs(np[2] - pts[pts.Count - 1][2]) > 1e-9)
                     {
-                        pts.Add(new[] { px, py, pz });
-                        if (px < srcMinX) srcMinX = px;
-                        if (px > srcMaxX) srcMaxX = px;
+                        pts.Add(np);
                     }
                 }
 
                 if (pts.Count < 2)
                 {
-                    DentalLogger.Log($"BuildTurningRegionChain - 샘플 부족 (count={pts.Count})");
                     return null;
                 }
 
                 const double eps = 1e-6;
                 List<double[]> region = new List<double[]>();
+
                 for (int idx = 0; idx < pts.Count; idx++)
                 {
-                    double x = pts[idx][0];
-                    bool inside = leftSide ? (x <= splitX + eps) : (x >= splitX - eps);
+                    double[] curr = pts[idx];
+                    bool currInside = curr[0] >= minX - eps && curr[0] <= maxX + eps;
 
-                    if (inside)
+                    if (currInside)
                     {
-                        // 영역 진입 직전(이전 점이 영역 밖)이면 경계 교차점을 먼저 추가해 splitX에 정확히 맞춘다
                         if (region.Count == 0 && idx > 0)
                         {
-                            double[] cross = InterpolatePointAtX(pts[idx - 1], pts[idx], splitX);
-                            if (cross != null) region.Add(cross);
+                            double[] prev = pts[idx - 1];
+                            double[] cross = null;
+                            if ((prev[0] < minX && curr[0] > minX) || (prev[0] > minX && curr[0] < minX))
+                            {
+                                cross = InterpolatePointAtX(prev, curr, minX);
+                            }
+                            else if ((prev[0] < maxX && curr[0] > maxX) || (prev[0] > maxX && curr[0] < maxX))
+                            {
+                                cross = InterpolatePointAtX(prev, curr, maxX);
+                            }
+                            if (cross != null)
+                            {
+                                region.Add(cross);
+                            }
                         }
-                        region.Add(pts[idx]);
+
+                        region.Add(curr);
                     }
                     else if (region.Count > 0)
                     {
-                        // 영역 이탈: 경계 교차점을 마지막에 추가하고 종료 (단조 프로파일 가정)
-                        double[] cross = InterpolatePointAtX(pts[idx - 1], pts[idx], splitX);
-                        if (cross != null) region.Add(cross);
+                        double[] prev = pts[idx - 1];
+                        double[] cross = null;
+                        if ((prev[0] < minX && curr[0] > minX) || (prev[0] > minX && curr[0] < minX))
+                        {
+                            cross = InterpolatePointAtX(prev, curr, minX);
+                        }
+                        else if ((prev[0] < maxX && curr[0] > maxX) || (prev[0] > maxX && curr[0] < maxX))
+                        {
+                            cross = InterpolatePointAtX(prev, curr, maxX);
+                        }
+
+                        if (cross != null)
+                        {
+                            region.Add(cross);
+                        }
                         break;
                     }
                 }
 
                 if (region.Count < 2)
                 {
-                    DentalLogger.Log($"BuildTurningRegionChain - region 포인트 부족 (leftSide={leftSide}, splitX={splitX:0.###}, srcX=[{srcMinX:0.###},{srcMaxX:0.###}], count={region.Count})");
+                    DentalLogger.Log($"BuildTurningRangeChain - region 포인트 부족(range=[{minX:0.###},{maxX:0.###}], count={region.Count})");
                     return null;
                 }
 
@@ -1198,16 +1249,15 @@ namespace DentalAddin
                     Point p = Document.GetPoint(region[k][0], region[k][1], region[k][2]);
                     fc.Add(p);
                 }
-                try { fc.Name = newName; } catch { }
-                // 원본 터닝 프로파일과 동일 작업평면을 사용하도록 맞춤 (평면 불일치로 인한 가공 오류 방지)
-                try { if (source.Plane != null) fc.Plane = source.Plane; } catch { }
 
-                DentalLogger.Log($"BuildTurningRegionChain - '{newName}' 생성 (leftSide={leftSide}, splitX={splitX:0.###}, srcX=[{srcMinX:0.###},{srcMaxX:0.###}], pts={region.Count}, regionX=[{region[0][0]:0.###},{region[region.Count - 1][0]:0.###}])");
+                try { fc.Name = newName; } catch { }
+                try { if (source.Plane != null) fc.Plane = source.Plane; } catch { }
+                DentalLogger.Log($"BuildTurningRangeChain - '{newName}' 생성 (range=[{minX:0.###},{maxX:0.###}], pts={region.Count})");
                 return fc;
             }
             catch (Exception ex)
             {
-                DentalLogger.Log($"BuildTurningRegionChain 실패: {ex.GetType().Name}:{ex.Message}");
+                DentalLogger.Log($"BuildTurningRangeChain 실패: {ex.GetType().Name}:{ex.Message}");
                 return null;
             }
         }

@@ -311,13 +311,21 @@ namespace DentalAddin
             bool startEndBFirstGuardApplied = false;
 
             string phaseMode = (GetEnvString("ABUTS_COMPOSITE_PHASE_MODE") ?? string.Empty).Trim().ToUpperInvariant();
-            // 레거시 BC 개념 제거:
-            // - A_PHASE: FINISH_A만 생성
-            // - B_PHASE: FINISH_B만 생성
-            // - 기본값 : FINISH_A + FINISH_B 생성
+            string retentionGroove = (GetEnvString("ABUTS_RETENTION_GROOVE") ?? string.Empty).Trim().ToLowerInvariant();
+            bool finishAllMode = string.Equals(phaseMode, "ALL_PHASE", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(retentionGroove, "none", StringComparison.OrdinalIgnoreCase);
+
+            // Finish 정책:
+            // - deep: FINISH_Front + FINISH_Back
+            // - none(또는 ALL_PHASE): Finish_All 단일 패스
             bool runA = !string.Equals(phaseMode, "B_PHASE", StringComparison.OrdinalIgnoreCase);
             bool runB = !string.Equals(phaseMode, "A_PHASE", StringComparison.OrdinalIgnoreCase);
-            DentalLogger.Log($"Composite2SplitAB - enabled=1, splitX={splitX:F3}, prcA={prcA}, prcB={prcB}, phaseMode='{phaseMode}', runA={runA}, runB={runB}");
+            if (finishAllMode)
+            {
+                runA = true;
+                runB = false;
+            }
+            DentalLogger.Log($"Composite2SplitAB - enabled=1, splitX={splitX:F3}, prcA={prcA}, prcB={prcB}, phaseMode='{phaseMode}', retentionGroove='{retentionGroove}', finishAllMode={finishAllMode}, runA={runA}, runB={runB}");
 
             bool splitDegenerate = Math.Abs(splitPercent - firstPercent) < 0.01 || Math.Abs(effectiveLastPercent - splitPercent) < 0.01;
             if (splitDegenerate)
@@ -342,19 +350,19 @@ namespace DentalAddin
             var technologyUtility = (TechnologyUtility)Activator.CreateInstance(Marshal.GetTypeFromCLSID(new Guid("C30D1110-1549-48C5-84D0-F66DCAD0F16F")));
 
             ITechnology[] techA = TryOpenProcess(technologyUtility, prcA, "Composite2SplitAB:A");
-            ITechnology[] techB = TryOpenProcess(technologyUtility, prcB, "Composite2SplitAB:B");
+            ITechnology[] techB = runB ? TryOpenProcess(technologyUtility, prcB, "Composite2SplitAB:B") : Array.Empty<ITechnology>();
 
-            if (techA.Length <= 0 || techB.Length <= 0)
+            if (techA.Length <= 0 || (runB && techB.Length <= 0))
             {
-                DentalLogger.Log($"Composite2SplitAB - PRC 로드 실패 (A:{techA.Length}, B:{techB.Length})");
+                DentalLogger.Log($"Composite2SplitAB - PRC 로드 실패 (A:{techA.Length}, B:{techB.Length}, runB={runB})");
                 return false;
             }
 
             TechLatheMill5xComposite opA = techA[0] as TechLatheMill5xComposite;
-            TechLatheMill5xComposite opB = techB[0] as TechLatheMill5xComposite;
-            if (opA == null || opB == null)
+            TechLatheMill5xComposite opB = runB ? (techB[0] as TechLatheMill5xComposite) : null;
+            if (opA == null || (runB && opB == null))
             {
-                DentalLogger.Log($"Composite2SplitAB - TechLatheMill5xComposite 캐스팅 실패 (A:{techA[0]?.GetType().Name}, B:{techB[0]?.GetType().Name})");
+                DentalLogger.Log($"Composite2SplitAB - TechLatheMill5xComposite 캐스팅 실패 (A:{techA[0]?.GetType().Name}, B:{(runB && techB.Length > 0 ? techB[0]?.GetType().Name : "<skip>")})");
                 return false;
             }
 
@@ -363,7 +371,10 @@ namespace DentalAddin
             opA.PassPosition = espMill5xCompositePassPosition.espMill5xCompositePassPositionStartEndPosition;
             // B는 A 오른쪽 구간부터 커넥션까지를 정확히 공간 기준으로 가공해야 하므로
             // Start/End 위치 기반 비율을 사용한다.
-            opB.PassPosition = espMill5xCompositePassPosition.espMill5xCompositePassPositionStartEndPosition;
+            if (runB && opB != null)
+            {
+                opB.PassPosition = espMill5xCompositePassPosition.espMill5xCompositePassPositionStartEndPosition;
+            }
             double? firstPassPercentOverride = TryGetCompositeFirstPassPercentOverride();
             const double aStartOffsetFromFrontMm = 0.1;
             double baseAFirstPercentByFrontX = XToPassPercentByStartEndScale(MoveSTL_Module.FrontPointX - aStartOffsetFromFrontMm, 0.0, splitPercent);
@@ -393,13 +404,19 @@ namespace DentalAddin
             }
 
             opA.LastPassPercent = Clamp(requestedALastPass, firstPercent, effectiveLastPercent);
-            opB.FirstPassPercent = bFirst;
-            opB.LastPassPercent = effectiveLastPercent;
+            if (runB && opB != null)
+            {
+                opB.FirstPassPercent = bFirst;
+                opB.LastPassPercent = effectiveLastPercent;
+            }
 
             // 정책: FINISH_B 종료 기준점은 BackPointX (+0.3mm 제거 적용)
             double compositeEndTargetX = MoveSTL_Module.BackPointX + compositeEndOffsetFromBackPointMm;
             double compositeEndPassPercent = XToPassPercentByStartEndScale(compositeEndTargetX, 0.0, 100.0);
-            opB.LastPassPercent = Clamp(compositeEndPassPercent, opB.FirstPassPercent, 100.0);
+            if (runB && opB != null)
+            {
+                opB.LastPassPercent = Clamp(compositeEndPassPercent, opB.FirstPassPercent, 100.0);
+            }
 
             // FINISH_A 시작점 정책:
             // - 기본: FrontPointX - 0.1mm를 StartEndScale pass-percent로 변환한 값
@@ -428,6 +445,18 @@ namespace DentalAddin
                 DentalLogger.Log($"Composite2SplitAB - A 시작점 적용: Requested={requestedAFirstPass:F2}, frontBased={baseAFirstPercentByFrontX:F2}, envOverride={(firstPassPercentOverride.HasValue ? firstPassPercentOverride.Value.ToString("F2", CultureInfo.InvariantCulture) : "none")}, Applied={opA.FirstPassPercent:F2}, LastPass={opA.LastPassPercent:F2}, window={aWindowPercent:F2}");
             }
 
+            // Finish_All 모드(none): 1% ~ BackPointX 단일 패스
+            if (finishAllMode)
+            {
+                const double finishAllFirstPercent = 1.0;
+                double finishAllLastPercent = Clamp(compositeEndPassPercent, finishAllFirstPercent, 100.0);
+                double oldFirst = opA.FirstPassPercent;
+                double oldLast = opA.LastPassPercent;
+                opA.FirstPassPercent = finishAllFirstPercent;
+                opA.LastPassPercent = finishAllLastPercent;
+                DentalLogger.Log($"Composite2SplitAB - Finish_All 적용(none): A.First% {oldFirst:F2}->{opA.FirstPassPercent:F2}, A.Last% {oldLast:F2}->{opA.LastPassPercent:F2}, BackTargetX={compositeEndTargetX:F3}");
+            }
+
             // A/B 끝점 정책 재확인:
             // - FINISH_A 끝점: 기준점(splitPercent)
             // - FINISH_B 시작점: 기준점(splitPercent) (오프셋 제거)
@@ -435,16 +464,22 @@ namespace DentalAddin
             double aLastBeforeClamp = opA.LastPassPercent;
             opA.LastPassPercent = Clamp(opA.LastPassPercent, opA.FirstPassPercent, effectiveLastPercent);
 
-            double bLastBeforeAdjust = opB.LastPassPercent;
+            double bLastBeforeAdjust = (runB && opB != null) ? opB.LastPassPercent : 0.0;
             double bTargetX = compositeEndTargetX;
-            opB.LastPassPercent = Clamp(compositeEndPassPercent, opB.FirstPassPercent, 100.0);
+            if (runB && opB != null)
+            {
+                opB.LastPassPercent = Clamp(compositeEndPassPercent, opB.FirstPassPercent, 100.0);
+            }
 
             double aLastXBeforeClamp = PassPercentToX(aLastBeforeClamp, MoveSTL_Module.FrontPointX, direction, absSpan);
             double aLastXAfterClamp = PassPercentToX(opA.LastPassPercent, MoveSTL_Module.FrontPointX, direction, absSpan);
-            double bLastXBeforeAdjust = PassPercentToX(bLastBeforeAdjust, MoveSTL_Module.FrontPointX, direction, absSpan);
-            double bLastXAfterAdjust = PassPercentToX(opB.LastPassPercent, MoveSTL_Module.FrontPointX, direction, absSpan);
-            DentalLogger.Log($"Composite2SplitAB - A/B 끝점 정책 적용: A.Last% {aLastBeforeClamp:F2}->{opA.LastPassPercent:F2}, A.LastX {aLastXBeforeClamp:F3}->{aLastXAfterClamp:F3}, B.First%={opB.FirstPassPercent:F2}, B.Last% {bLastBeforeAdjust:F2}->{opB.LastPassPercent:F2}, B.LastX {bLastXBeforeAdjust:F3}->{bLastXAfterAdjust:F3}, B.TargetX={bTargetX:F3}");
-            DentalLogger.Log($"Composite2SplitAB - seam 보정: A({opA.FirstPassPercent:F2}->{opA.LastPassPercent:F2}), B({opB.FirstPassPercent:F2}->{opB.LastPassPercent:F2}), Split%={splitPercent:F2}, AEndOffsetFromSplitMm={aEndOffsetFromSplitMm:F2}, BStartOffsetFromSplitMm={bStartOffsetFromSplitMm:F2}, BEndOffsetFromBackMm={compositeEndOffsetFromBackPointMm:F2}, BFirstGuard={startEndBFirstGuardApplied}, AFirstFallback={aFirstPassFallbackApplied}");
+            double bLastXBeforeAdjust = runB && opB != null ? PassPercentToX(bLastBeforeAdjust, MoveSTL_Module.FrontPointX, direction, absSpan) : 0.0;
+            double bLastXAfterAdjust = runB && opB != null ? PassPercentToX(opB.LastPassPercent, MoveSTL_Module.FrontPointX, direction, absSpan) : 0.0;
+            string bRangeText = (runB && opB != null)
+                ? "(" + opB.FirstPassPercent.ToString("F2", CultureInfo.InvariantCulture) + "->" + opB.LastPassPercent.ToString("F2", CultureInfo.InvariantCulture) + ")"
+                : "<skip>";
+            DentalLogger.Log($"Composite2SplitAB - A/B 끝점 정책 적용: A.Last% {aLastBeforeClamp:F2}->{opA.LastPassPercent:F2}, A.LastX {aLastXBeforeClamp:F3}->{aLastXAfterClamp:F3}, B.Enabled={runB}, B.First%={(runB && opB != null ? opB.FirstPassPercent.ToString("F2", CultureInfo.InvariantCulture) : "<skip>")}, B.Last% {(runB && opB != null ? bLastBeforeAdjust.ToString("F2", CultureInfo.InvariantCulture) : "<skip>")}->{(runB && opB != null ? opB.LastPassPercent.ToString("F2", CultureInfo.InvariantCulture) : "<skip>")}, B.LastX {(runB ? bLastXBeforeAdjust.ToString("F3", CultureInfo.InvariantCulture) : "<skip>")}->{(runB ? bLastXAfterAdjust.ToString("F3", CultureInfo.InvariantCulture) : "<skip>")}, B.TargetX={bTargetX:F3}");
+            DentalLogger.Log($"Composite2SplitAB - seam 보정: A({opA.FirstPassPercent:F2}->{opA.LastPassPercent:F2}), B={bRangeText}, Split%={splitPercent:F2}, AEndOffsetFromSplitMm={aEndOffsetFromSplitMm:F2}, BStartOffsetFromSplitMm={bStartOffsetFromSplitMm:F2}, BEndOffsetFromBackMm={compositeEndOffsetFromBackPointMm:F2}, BFirstGuard={startEndBFirstGuardApplied}, AFirstFallback={aFirstPassFallbackApplied}");
 
             bool surfaceReady = TryEnsureCompositeSurfaceNumber("Composite2SplitAB");
 
@@ -469,9 +504,12 @@ namespace DentalAddin
             string driveA = dedicatedAReady ? "19," + Conversions.ToString(dedicatedAKey) : fallbackDriveSurface;
             string driveB = dedicatedBReady ? "19," + Conversions.ToString(dedicatedBKey) : fallbackDriveSurface;
             opA.DriveSurface = driveA;
-            opB.DriveSurface = driveB;
+            if (runB && opB != null)
+            {
+                opB.DriveSurface = driveB;
+            }
 
-            DentalLogger.Log($"Composite2SplitAB - DriveSurface 적용: A='{driveA}'(dedicated={dedicatedAReady}), B='{driveB}'(dedicated={dedicatedBReady}), baseSurface={SurfaceNumber}, SurfaceNumber2={SurfaceNumber2:0.###}");
+            DentalLogger.Log($"Composite2SplitAB - DriveSurface 적용: A='{driveA}'(dedicated={dedicatedAReady}), B='{(runB ? driveB : "<skip>")}'(dedicated={dedicatedBReady}), baseSurface={SurfaceNumber}, SurfaceNumber2={SurfaceNumber2:0.###}");
 
             if (string.IsNullOrWhiteSpace(opA.ToolID))
             {
@@ -490,7 +528,7 @@ namespace DentalAddin
             // - 증상: opB Add는 성공해도, NC 계산/저장 단계에서 크래시가 재현될 수 있음.
             // - 원인 후보: PRC_B의 ToolID 공백.
             // - 조치: B ToolID가 비면 A ToolID(우선) 또는 ToolNs로 보정하고 로그를 남긴다.
-            if (string.IsNullOrWhiteSpace(opB.ToolID))
+            if (runB && opB != null && string.IsNullOrWhiteSpace(opB.ToolID))
             {
                 if (!string.IsNullOrWhiteSpace(opA.ToolID))
                 {
@@ -509,7 +547,10 @@ namespace DentalAddin
                 }
             }
 
-            DentalLogger.Log($"Composite2SplitAB - PassPercent: A({opA.FirstPassPercent:F2}->{opA.LastPassPercent:F2}), C({opB.FirstPassPercent:F2}->{opB.LastPassPercent:F2}), Last(raw={lastPercent:F2}/eff={effectiveLastPercent:F2}), LastGuard={startEndOverflowGuardApplied}, BFirstGuard={startEndBFirstGuardApplied}");
+            string passRangeB = (runB && opB != null)
+                ? "(" + opB.FirstPassPercent.ToString("F2", CultureInfo.InvariantCulture) + "->" + opB.LastPassPercent.ToString("F2", CultureInfo.InvariantCulture) + ")"
+                : "<skip>";
+            DentalLogger.Log($"Composite2SplitAB - PassPercent: A({opA.FirstPassPercent:F2}->{opA.LastPassPercent:F2}), B={passRangeB}, Last(raw={lastPercent:F2}/eff={effectiveLastPercent:F2}), LastGuard={startEndOverflowGuardApplied}, BFirstGuard={startEndBFirstGuardApplied}");
 
 
 
@@ -518,9 +559,9 @@ namespace DentalAddin
             // - 원칙: A/B 모두 명시적으로 적용(또는 미적용 사유 로그)한다.
             DentalLogger.Log("Composite2SplitAB - opA/opB StepIncrement/StockAllowance 적용 시작");
             TrySetCompositeStepIncrement(opA, "A");
-            TrySetCompositeStepIncrement(opB, "B");
+            if (runB && opB != null) TrySetCompositeStepIncrement(opB, "B");
             TrySetCompositeStockAllowance(opA, "A");
-            TrySetCompositeStockAllowance(opB, "B");
+            if (runB && opB != null) TrySetCompositeStockAllowance(opB, "B");
             DentalLogger.Log("Composite2SplitAB - opA/opB StepIncrement/StockAllowance 적용 완료");
 
             int beforeAddCount = Document?.Operations?.Count ?? -1;
@@ -535,10 +576,13 @@ namespace DentalAddin
                 int beforeAddCountBaseA = Document?.Operations?.Count ?? -1;
                 TryDisableCompositeDynamicIfRequested(opA, "A");
                 TryAddOperation(opA, freeFormFeature, "Composite2SplitAB:A", false);
-                TryAppendCompositeSuffixToNewOperations(beforeAddCountBaseA, "A");
+                TryAppendCompositeSuffixToNewOperations(beforeAddCountBaseA, finishAllMode ? "ALL" : "A");
                 int afterA = Document?.Operations?.Count ?? -1;
-                DentalLogger.Log($"Composite2SplitAB - Operation 추가 완료: FINISH_A(opA) (afterCount={afterA})");
-                TryMoveCompositeFinishBeforeTurnB("FINISH_A");
+                DentalLogger.Log($"Composite2SplitAB - Operation 추가 완료: {(finishAllMode ? "Finish_All" : "FINISH_A")}(opA) (afterCount={afterA})");
+                if (!finishAllMode)
+                {
+                    TryMoveCompositeFinishBeforeTurnB("FINISH_A");
+                }
             }
             else
             {
@@ -858,29 +902,20 @@ namespace DentalAddin
 
             try
             {
-                string prcA;
-                string prcB;
-                if (!TryGetSplitABConfig(out double splitX, out prcA, out prcB))
+                if (!TryGetThreeStageSplitConfig(out double splitline1, out _, out double xMin, out double xMax))
                 {
-                    DentalLogger.Log("FaceRoughGuard - SplitAB 설정 미활성/부족으로 Rough_A 우측 끝 계산 생략");
+                    DentalLogger.Log("FaceRoughGuard - 3-stage split 계산 실패로 Front Rough 끝점 계산 생략");
                     return false;
                 }
 
-                double frontBackMin = Math.Min(MoveSTL_Module.FrontPointX, MoveSTL_Module.BackPointX);
-                double xMin = Math.Min(0.0, frontBackMin);
-                double xMax = Math.Max(MoveSTL_Module.FrontPointX, MoveSTL_Module.BackPointX);
-
-                splitXUsed = Clamp(splitX, xMin + 1e-6, xMax - 1e-6);
-
-                double roughAEnd = splitXUsed - RoughAEndOffsetFromSplitMm;
-                roughAEnd = Clamp(roughAEnd, xMin + 1e-6, xMax - 1e-6);
-
-                roughARightEndX = roughAEnd;
+                const double overCut = 2.2;
+                splitXUsed = splitline1;
+                roughARightEndX = Clamp(splitline1 + overCut, xMin + 1e-6, xMax - 1e-6);
                 return true;
             }
             catch (Exception ex)
             {
-                DentalLogger.Log($"FaceRoughGuard - Rough_A 우측 끝 계산 실패: {ex.GetType().Name}:{ex.Message}");
+                DentalLogger.Log($"FaceRoughGuard - Front Rough 우측 끝 계산 실패: {ex.GetType().Name}:{ex.Message}");
                 return false;
             }
         }
@@ -1046,6 +1081,18 @@ namespace DentalAddin
 
         private static string BuildCompositeOperationName(string suffix)
         {
+            if (string.Equals(suffix, "FINISH_A", StringComparison.OrdinalIgnoreCase))
+            {
+                return "Finish_Front";
+            }
+            if (string.Equals(suffix, "FINISH_B", StringComparison.OrdinalIgnoreCase))
+            {
+                return "Finish_Back";
+            }
+            if (string.Equals(suffix, "FINISH_ALL", StringComparison.OrdinalIgnoreCase))
+            {
+                return "Finish_All";
+            }
             return $"5 Axis Composite [{suffix}]";
         }
 
@@ -1068,6 +1115,10 @@ namespace DentalAddin
             if (normalized.StartsWith("B", StringComparison.OrdinalIgnoreCase))
             {
                 return "FINISH_B";
+            }
+            if (normalized.StartsWith("ALL", StringComparison.OrdinalIgnoreCase))
+            {
+                return "FINISH_ALL";
             }
 
             return null;
@@ -1107,9 +1158,11 @@ namespace DentalAddin
                     string baseName = string.IsNullOrWhiteSpace(oldName) ? "5 Axis Composite" : oldName.Trim();
                     baseName = RemoveTokenIgnoreCase(baseName, "[FINISH_A]").Trim();
                     baseName = RemoveTokenIgnoreCase(baseName, "[FINISH_B]").Trim();
+                    baseName = RemoveTokenIgnoreCase(baseName, "[FINISH_ALL]").Trim();
 
                     baseName = RemoveTokenIgnoreCase(baseName, "[Finish_A]").Trim();
                     baseName = RemoveTokenIgnoreCase(baseName, "[Finish_B]").Trim();
+                    baseName = RemoveTokenIgnoreCase(baseName, "[Finish_All]").Trim();
 
                     // 구버전 토큰 정리(마이그레이션 호환)
                     baseName = RemoveTokenIgnoreCase(baseName, "[FINISH_B1]").Trim();
@@ -1341,13 +1394,17 @@ namespace DentalAddin
                     if (!IsCompositeNameLike(oldName)) continue;
 
                     string mapped = null;
-                    if (oldName.IndexOf("FINISH_A", StringComparison.OrdinalIgnoreCase) >= 0 || oldName.IndexOf("Finish_A", StringComparison.OrdinalIgnoreCase) >= 0)
+                    if (oldName.IndexOf("FINISH_A", StringComparison.OrdinalIgnoreCase) >= 0 || oldName.IndexOf("Finish_A", StringComparison.OrdinalIgnoreCase) >= 0 || oldName.IndexOf("Finish_Front", StringComparison.OrdinalIgnoreCase) >= 0)
                     {
                         mapped = "FINISH_A";
                     }
-                    else if (oldName.IndexOf("FINISH_B", StringComparison.OrdinalIgnoreCase) >= 0 || oldName.IndexOf("Finish_B", StringComparison.OrdinalIgnoreCase) >= 0)
+                    else if (oldName.IndexOf("FINISH_B", StringComparison.OrdinalIgnoreCase) >= 0 || oldName.IndexOf("Finish_B", StringComparison.OrdinalIgnoreCase) >= 0 || oldName.IndexOf("Finish_Back", StringComparison.OrdinalIgnoreCase) >= 0)
                     {
                         mapped = "FINISH_B";
+                    }
+                    else if (oldName.IndexOf("FINISH_ALL", StringComparison.OrdinalIgnoreCase) >= 0 || oldName.IndexOf("Finish_All", StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        mapped = "FINISH_ALL";
                     }
                     else if (oldName.IndexOf("FINISH_B1", StringComparison.OrdinalIgnoreCase) >= 0 || oldName.IndexOf("Finish_B1", StringComparison.OrdinalIgnoreCase) >= 0)
                     {
@@ -1401,14 +1458,14 @@ namespace DentalAddin
                 string enabled3 = GetEnvString("ABUTS_ROUGHFREEFORM_SPLIT_ENABLE");
                 if (string.Equals(enabled3, "1", StringComparison.OrdinalIgnoreCase) || string.Equals(enabled3, "true", StringComparison.OrdinalIgnoreCase))
                 {
-                    DentalLogger.Log("RoughFreeFromMillSplitAB - RoughType==3은 현재 SplitAB 미지원. 기존 로직으로 진행");
+                    DentalLogger.Log("RoughFreeFromMillSplitAB - RoughType==3은 현재 분할 미지원. 기존 로직으로 진행");
                 }
                 return false;
             }
 
-            if (!TryGetSplitABConfig(out double splitX, out string prcA, out string prcB))
+            if (!TryGetSplitABConfig(out _, out string prcA, out string prcB))
             {
-                DentalLogger.Log("RoughFreeFromMillSplitAB - TryGetSplitABConfig=false, SplitAB 비활성으로 기존 RoughFreeFromMill 경로 사용");
+                DentalLogger.Log("RoughFreeFromMillSplitAB - Split 설정 비활성으로 기존 RoughFreeFromMill 경로 사용");
                 return false;
             }
 
@@ -1422,63 +1479,38 @@ namespace DentalAddin
             FreeFormFeature ff180 = FindFreeFormFeatureByName("3DRoughMilling_180Degree");
             if (ff0 == null || ff180 == null)
             {
-                DentalLogger.Log("RoughFreeFromMillSplitAB - FreeFormFeature(0/180) 누락. SplitAB 중단");
+                DentalLogger.Log("RoughFreeFromMillSplitAB - FreeFormFeature(0/180) 누락. 분할 중단");
                 return true;
             }
 
-            // 좌측 시작점을 U축(x=0)로 강제
-            double frontBackMin = Math.Min(MoveSTL_Module.FrontPointX, MoveSTL_Module.BackPointX);
-            double xMin = Math.Min(0.0, frontBackMin);
-            double xMaxPhysical = Math.Max(MoveSTL_Module.FrontPointX, MoveSTL_Module.BackPointX);
-            if (!(splitX > xMin && splitX < xMaxPhysical))
+            if (!TryGetThreeStageSplitConfig(out double splitline1, out double splitline2, out double xMin, out double xMax))
             {
-                DentalLogger.Log($"RoughFreeFromMillSplitAB - splitX 범위 오류 (splitX:{splitX:0.###}, xMin:{xMin:0.###}, xMaxPhysical:{xMaxPhysical:0.###})");
+                DentalLogger.Log("RoughFreeFromMillSplitAB - 3-stage split 계산 실패");
                 return true;
             }
 
-            // Turn_B와 동일 기준의 Connection 경계까지만 Rough_B 우측 끝을 제한한다.
-            // double turnConnectionBoundaryX = ResolveTurnConnectionBoundaryX("RoughFreeFromMillSplitAB");
-            // double xMax = Clamp(turnConnectionBoundaryX, xMin + 1e-6, xMaxPhysical);
-            // FINISH_B 종료점 기준으로 Rough_B 우측 끝을 +1.0mm 확장한다.
-            // FINISH_B 정책: BackPointX(+0.0mm)
-            const double finishBEndOffsetFromBackPointMm = 0.0;
-            const double roughBExtraFromFinishBEndMm = 1.0;
-            double roughBEndTargetX = MoveSTL_Module.BackPointX + finishBEndOffsetFromBackPointMm + roughBExtraFromFinishBEndMm;
-            double xMax = Math.Max(xMin + 1e-6, roughBEndTargetX);
+            const double overCut = 2.2;
+            double frontStart = xMin;
+            double frontEnd = Clamp(splitline1 + overCut, xMin + 1e-6, xMax - 1e-6);
+            double middleStart = Clamp(splitline1 - overCut, xMin + 1e-6, xMax - 1e-6);
+            double middleEnd = Clamp(splitline2 + overCut, xMin + 1e-6, xMax - 1e-6);
+            double backStart = Clamp(splitline2 - overCut, xMin + 1e-6, xMax - 1e-6);
+            double backEnd = xMax;
 
             double radius = (Document.LatheMachineSetup.BarDiameter + 10.0) / 2.0;
-            // Turn_A/Turn_B와 동일 기준으로 finishline 기준 오프셋을 맞춘다.
-            // 요청 반영: Rough A 끝점은 기존 위치 대비 +2.0mm 이동(= splitX +1.5mm)
-            double roughAEnd = splitX + 1.5;
-
-            // 요청 반영: Rough_B 시작점 = FINISH_B 시작점 - 2.5mm
-            // FINISH_B 시작점은 Composite 정책과 동일하게 A/B 경계(guideLine - 0.5mm) 기준을 우선 사용한다.
-            // (요청 반영: 안전 클램프 미적용)
-            double finishBStartX = splitX;
-            if (TryResolveTwoPhaseSplitLineX(out double splitXByGuideLineForRough))
+            FeatureChain frontBoundary = EnsureRectBoundary("RoughBoundryFront1", frontStart, frontEnd, radius, -radius);
+            FeatureChain middleBoundary = EnsureRectBoundary("RoughBoundryMiddle1", middleStart, middleEnd, radius, -radius);
+            FeatureChain backBoundary = EnsureRectBoundary("RoughBoundryBack1", backStart, backEnd, radius, -radius);
+            if (frontBoundary == null || middleBoundary == null || backBoundary == null)
             {
-                const double bcBoundaryLeftOffsetMm = 0.5;
-                finishBStartX = splitXByGuideLineForRough - bcBoundaryLeftOffsetMm;
-            }
-
-            double roughBStart = finishBStartX - 2.5;
-            // 범위 내 클램프
-            if (roughAEnd <= xMin + 1e-6) roughAEnd = xMin + 1e-6;
-            if (roughAEnd >= xMax - 1e-6) roughAEnd = Math.Max(xMin + 1e-6, xMax - 1e-6);
-            if (roughBStart <= xMin + 1e-6) roughBStart = xMin + 1e-6;
-            if (roughBStart >= xMax - 1e-6) roughBStart = Math.Max(xMin + 1e-6, xMax - 1e-6);
-
-            FeatureChain a1 = EnsureRectBoundary("RoughBoundryA1", xMin, roughAEnd, radius, -radius);
-            FeatureChain b1 = EnsureRectBoundary("RoughBoundryB1", roughBStart, xMax, radius, -radius);
-            if (a1 == null || b1 == null)
-            {
-                DentalLogger.Log("RoughFreeFromMillSplitAB - 경계 체인 생성 실패");
+                DentalLogger.Log("RoughFreeFromMillSplitAB - Front/Middle/Back 경계 체인 생성 실패");
                 return true;
             }
 
-            int keyA = SafeParseKey(a1.Key);
-            int keyB = SafeParseKey(b1.Key);
-            DentalLogger.Log($"RoughFreeFromMillSplitAB - splitX:{splitX:0.###}, finishBStartX:{finishBStartX:0.###}, roughAEnd:{roughAEnd:0.###}, roughBStart:{roughBStart:0.###}, xMaxBoundary:{xMax:0.###}, xMaxPhysical:{xMaxPhysical:0.###}, AKey:{keyA}, BKey:{keyB}, PRC_A:{prcA}, PRC_B:{prcB}");
+            int keyFront = SafeParseKey(frontBoundary.Key);
+            int keyMiddle = SafeParseKey(middleBoundary.Key);
+            int keyBack = SafeParseKey(backBoundary.Key);
+            DentalLogger.Log($"RoughFreeFromMillSplitAB - split1:{splitline1:0.###}, split2:{splitline2:0.###}, Front:[{frontStart:0.###}~{frontEnd:0.###}] key={keyFront}, Middle:[{middleStart:0.###}~{middleEnd:0.###}] key={keyMiddle}, Back:[{backStart:0.###}~{backEnd:0.###}] key={keyBack}, PRC_A:{prcA}, PRC_B:{prcB}");
 
             TechnologyUtility technologyUtility = (TechnologyUtility)Activator.CreateInstance(Marshal.GetTypeFromCLSID(new Guid("C30D1110-1549-48C5-84D0-F66DCAD0F16F")));
             Layer activeLayer = GetOrCreateLayer("RoughFreeFormMill");
@@ -1489,22 +1521,27 @@ namespace DentalAddin
             }
             Document.ActiveLayer = activeLayer;
 
-            // 가이드 분할선 생성(작업창에서 분할 위치 확인용)
-            EnsureTwoPhaseSplitGuideLine(splitX);
+            EnsureThreeStageSplitGuideLines(splitline1, splitline2);
 
-            string region = GetEnvString("ABUTS_ROUGHFREEFORM_SPLIT_REGION");
-            if (string.Equals(region, "A", StringComparison.OrdinalIgnoreCase))
+            string region = (GetEnvString("ABUTS_ROUGHFREEFORM_SPLIT_REGION") ?? string.Empty).Trim().ToUpperInvariant();
+            string sharedPrc = !string.IsNullOrWhiteSpace(prcA) ? prcA : prcB;
+            if (string.Equals(region, "FRONT", StringComparison.OrdinalIgnoreCase))
             {
-                AddSplitOpsForRegion("A", prcA, keyA, technologyUtility, ff0, ff180);
+                AddSplitOpsForRegion("FRONT", sharedPrc, keyFront, technologyUtility, ff0, ff180);
             }
-            else if (string.Equals(region, "B", StringComparison.OrdinalIgnoreCase))
+            else if (string.Equals(region, "MIDDLE", StringComparison.OrdinalIgnoreCase))
             {
-                AddSplitOpsForRegion("B", prcB, keyB, technologyUtility, ff0, ff180);
+                AddSplitOpsForRegion("MIDDLE", sharedPrc, keyMiddle, technologyUtility, ff0, ff180);
+            }
+            else if (string.Equals(region, "BACK", StringComparison.OrdinalIgnoreCase))
+            {
+                AddSplitOpsForRegion("BACK", sharedPrc, keyBack, technologyUtility, ff0, ff180);
             }
             else
             {
-                AddSplitOpsForRegion("A", prcA, keyA, technologyUtility, ff0, ff180);
-                AddSplitOpsForRegion("B", prcB, keyB, technologyUtility, ff0, ff180);
+                AddSplitOpsForRegion("FRONT", sharedPrc, keyFront, technologyUtility, ff0, ff180);
+                AddSplitOpsForRegion("MIDDLE", sharedPrc, keyMiddle, technologyUtility, ff0, ff180);
+                AddSplitOpsForRegion("BACK", sharedPrc, keyBack, technologyUtility, ff0, ff180);
             }
 
             return true;
@@ -1635,6 +1672,42 @@ namespace DentalAddin
             return true;
         }
 
+        // 3-stage 분할 기준
+        // - Splitline_1: FrontPointX
+        // - Splitline_2: midpoint(Splitline_1, BackPointX)
+        private static bool TryGetThreeStageSplitConfig(out double splitline1, out double splitline2, out double xMin, out double xMax)
+        {
+            splitline1 = 0.0;
+            splitline2 = 0.0;
+            xMin = 0.0;
+            xMax = 0.0;
+
+            try
+            {
+                double front = MoveSTL_Module.FrontPointX;
+                double back = MoveSTL_Module.BackPointX;
+                double frontBackMin = Math.Min(front, back);
+                xMin = Math.Min(0.0, frontBackMin);
+                xMax = Math.Max(front, back);
+                if (xMax - xMin < 1e-6)
+                {
+                    DentalLogger.Log($"ThreeStageSplit - 범위 부족: xMin={xMin:F3}, xMax={xMax:F3}");
+                    return false;
+                }
+
+                splitline1 = Clamp(front, xMin + 1e-6, xMax - 1e-6);
+                splitline2 = Clamp((splitline1 + back) / 2.0, xMin + 1e-6, xMax - 1e-6);
+
+                DentalLogger.Log($"ThreeStageSplit - split1(FrontPointX)={splitline1:F3}, split2(midpoint)={splitline2:F3}, xRange=[{xMin:F3}~{xMax:F3}], front={front:F3}, back={back:F3}");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                DentalLogger.Log($"ThreeStageSplit - 계산 실패: {ex.GetType().Name}:{ex.Message}");
+                return false;
+            }
+        }
+
         private static void EnsureTwoPhaseSplitGuideLine(double splitX)
         {
             try
@@ -1667,6 +1740,50 @@ namespace DentalAddin
             catch (Exception ex)
             {
                 DentalLogger.Log($"TwoPhaseSplitGuideLine 생성 실패: {ex.GetType().Name}:{ex.Message}");
+            }
+        }
+
+        private static void EnsureThreeStageSplitGuideLines(double splitline1, double splitline2)
+        {
+            try
+            {
+                if (Document == null || Document.LatheMachineSetup == null)
+                {
+                    return;
+                }
+
+                Layer layer = GetOrCreateLayer("ThreeStageGuides");
+                if (layer != null)
+                {
+                    Document.ActiveLayer = layer;
+                }
+
+                double radius = (Document.LatheMachineSetup.BarDiameter + 10.0) / 2.0;
+
+                FeatureChain line1 = FindFeatureChainByName("Splitline_1");
+                if (line1 == null)
+                {
+                    Point pTop1 = Document.GetPoint(splitline1, radius, 0);
+                    Point pBottom1 = Document.GetPoint(splitline1, -radius, 0);
+                    line1 = Document.FeatureChains.Add(pTop1);
+                    line1.Add(Document.GetSegment(pTop1, pBottom1));
+                    line1.Name = "Splitline_1";
+                }
+
+                FeatureChain line2 = FindFeatureChainByName("Splitline_2");
+                if (line2 == null)
+                {
+                    Point pTop2 = Document.GetPoint(splitline2, radius, 0);
+                    Point pBottom2 = Document.GetPoint(splitline2, -radius, 0);
+                    line2 = Document.FeatureChains.Add(pTop2);
+                    line2.Add(Document.GetSegment(pTop2, pBottom2));
+                    line2.Name = "Splitline_2";
+                }
+                DentalLogger.Log($"ThreeStageSplitGuideLine - splitline1:{splitline1:0.###}, splitline2:{splitline2:0.###} 생성/확인 완료");
+            }
+            catch (Exception ex)
+            {
+                DentalLogger.Log($"ThreeStageSplitGuideLine 생성 실패: {ex.GetType().Name}:{ex.Message}");
             }
         }
 

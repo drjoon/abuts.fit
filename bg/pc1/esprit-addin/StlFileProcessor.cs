@@ -419,6 +419,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             Environment.SetEnvironmentVariable("ABUTS_ROUGHFREEFORM_SPLIT_X", null);
             Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_DYNAMIC_DISABLE", null);
             Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_PHASE_MODE", null);
+            Environment.SetEnvironmentVariable("ABUTS_RETENTION_GROOVE", null);
             FaceHoleProcessFilePath = null;
             ConnectionMachiningProcessFilePath = null;
             lotNumber = "ACR";
@@ -1210,6 +1211,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                     Environment.SetEnvironmentVariable(AppConfig.CompositeStepIncrementAEnv, null);
                     Environment.SetEnvironmentVariable(AppConfig.CompositeStockAllowanceAEnv, null);
                     Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_DYNAMIC_DISABLE", null);
+                    Environment.SetEnvironmentVariable("ABUTS_RETENTION_GROOVE", null);
                     AppLogger.Log("DentalAddin: retentionGroove 미지정 - StepIncrement env 기본값(PRC) 유지");
                     return;
                 }
@@ -1236,12 +1238,14 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 {
                     Environment.SetEnvironmentVariable(AppConfig.CompositeStepIncrementAEnv, null);
                     Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_DYNAMIC_DISABLE", null);
+                    Environment.SetEnvironmentVariable("ABUTS_RETENTION_GROOVE", null);
                     AppLogger.Log($"DentalAddin: retentionGroove 값 비정상 '{groove}' - StepIncrement env 기본값(PRC) 유지");
                     return;
                 }
 
                 string envValue = stepIncrement.Value.ToString("0.###", CultureInfo.InvariantCulture);
                 Environment.SetEnvironmentVariable(AppConfig.CompositeStepIncrementAEnv, envValue);
+                Environment.SetEnvironmentVariable("ABUTS_RETENTION_GROOVE", groove.Trim().ToLowerInvariant());
 
                 // deep 선택 시: B의 StepIncrement는 PRC에 정의된 값(예: 0.08)을 유지해야 하므로
                 // B StepIncrement env는 설정하지 않는다. 대신 A의 StockAllowance만 override 한다.
