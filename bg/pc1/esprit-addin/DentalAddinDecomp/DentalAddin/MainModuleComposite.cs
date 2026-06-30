@@ -365,7 +365,7 @@ namespace DentalAddin
             // Start/End 위치 기반 비율을 사용한다.
             opB.PassPosition = espMill5xCompositePassPosition.espMill5xCompositePassPositionStartEndPosition;
             double? firstPassPercentOverride = TryGetCompositeFirstPassPercentOverride();
-            const double aStartOffsetFromFrontMm = 0.3;
+            const double aStartOffsetFromFrontMm = 0.1;
             double baseAFirstPercentByFrontX = XToPassPercentByStartEndScale(MoveSTL_Module.FrontPointX - aStartOffsetFromFrontMm, 0.0, splitPercent);
             double baseAFirstPercent = firstPassPercentOverride.HasValue
                 ? Clamp(firstPassPercentOverride.Value, 0.0, splitPercent)
@@ -401,7 +401,7 @@ namespace DentalAddin
             opB.LastPassPercent = Clamp(compositeEndPassPercent, opB.FirstPassPercent, 100.0);
 
             // FINISH_A 시작점 정책:
-            // - 기본: FrontPointX - 0.3mm를 StartEndScale pass-percent로 변환한 값
+            // - 기본: FrontPointX - 0.1mm를 StartEndScale pass-percent로 변환한 값
             // - env(ABUTS_COMPOSITE_FIRST_PASS_PERCENT_A) 지정 시 env 우선
             // 중요: 0% 근처는 축 특이구간으로 경로가 불안정해질 수 있어, 정상 케이스에서는 0% 강제 폴백을 하지 않는다.
             double requestedAFirstPass = baseAFirstPercent;
@@ -888,7 +888,7 @@ namespace DentalAddin
         /// Front Face(ParallelPlanes) 가공 깊이를 PRC BottomZLimit(절대값) 기준으로 적용한다.
         /// - RL=1: BottomZLimit = -(FrontPointX + depth)
         /// - RL=2: BottomZLimit = +(FrontPointX - depth)
-        /// 추가 정책: Face.RightX를 현재값 기준 +0.3mm 확장하되, FinishLine 경계를 넘지 않게 클램프한다.
+        /// 추가 정책: Face.RightX를 현재값 기준 +1.0mm 확장하되, FinishLine 경계를 넘지 않게 클램프한다.
         /// 주의: 이 설정 이후에 Rough 안전가드(TryApplyFaceRightEndGuard)가 추가 보정할 수 있다.
         /// </summary>
         private static void ApplyFrontFaceFixedDepth(TechLatheMoldParallelPlanes faceOp, string context)
@@ -933,8 +933,8 @@ namespace DentalAddin
 
                 double faceRightX = (RL == 1.0) ? -faceOp.BottomZLimit : faceOp.BottomZLimit;
 
-                // 사용자 요청: Front Face를 현재값 대비 +0.3mm 확장
-                const double frontFaceExtraCutMm = 0.3;
+                // 사용자 요청: Front Face를 현재값 대비 +1.0mm 확장
+                const double frontFaceExtraCutMm = 1.0;
                 double expandedFaceRightX = faceRightX + frontFaceExtraCutMm;
 
                 // FinishLine 경계 침범 방지: 경계 X를 상한으로 클램프
@@ -962,7 +962,7 @@ namespace DentalAddin
                 double oldBottom2 = faceOp.BottomZLimit;
                 faceOp.BottomZLimit = (RL == 1.0) ? -expandedFaceRightX : expandedFaceRightX;
 
-                DentalLogger.Log($"FrontFaceDepth[{context}] - PRC깊이+0.3 적용: depth={configuredDepthMm:F3}mm, TopZ:{oldTop:F3}->{faceOp.TopZLimit:F3}, BottomZ:{oldBottom:F3}->{oldBottom2:F3}->{faceOp.BottomZLimit:F3}, Face.RightX:{faceRightX:F3}->{expandedFaceRightX:F3}, FinishBoundaryX={boundaryX:F3}, ClampApplied={finishLineClampApplied}");
+                DentalLogger.Log($"FrontFaceDepth[{context}] - PRC깊이+1.0 적용: depth={configuredDepthMm:F3}mm, TopZ:{oldTop:F3}->{faceOp.TopZLimit:F3}, BottomZ:{oldBottom:F3}->{oldBottom2:F3}->{faceOp.BottomZLimit:F3}, Face.RightX:{faceRightX:F3}->{expandedFaceRightX:F3}, FinishBoundaryX={boundaryX:F3}, ClampApplied={finishLineClampApplied}");
             }
             catch (Exception ex)
             {
