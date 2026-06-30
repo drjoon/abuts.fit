@@ -1189,7 +1189,6 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 //   ESPRIT X = BackX + Z - stlTopZ
                 //   targetZ = finishLineTopZ + 1.0
                 //   splitX = BackX + (finishLineTopZ + 1.0) - stlTopZ
-                // 주의: 여기서 DefaultStlShift를 추가로 더하면 split line이 과도하게 좌측으로 이동(약 +shift mm)한다.
                 double targetZ = finishLineTopZ.Value + 1.0;
                 double rawSplitX = backX + targetZ - stlTopZ.Value;
                 double splitX = Math.Max(xMin + 0.01, Math.Min(xMax - 0.01, rawSplitX));

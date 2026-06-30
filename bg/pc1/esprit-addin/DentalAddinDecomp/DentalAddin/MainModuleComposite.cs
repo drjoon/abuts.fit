@@ -306,13 +306,13 @@ namespace DentalAddin
                 if (!double.IsNaN(splitPercentByGuideLine) && !double.IsInfinity(splitPercentByGuideLine))
                 {
                     double splitPercentBySpanDiag = XToPassPercentBySpan(splitXByGuideLineLeft, MoveSTL_Module.FrontPointX, direction, absSpan, firstPercent, effectiveLastPercent);
-                    DentalLogger.Log($"Composite2SplitAB - A/B 경계 TwoPhaseSplitLine-0.6mm 적용: guideX={splitXByGuideLine:F3}, appliedX={splitXByGuideLineLeft:F3}, splitPercent(scale20) {splitPercent:F2}->{splitPercentByGuideLine:F2}, splitPercent(spanDiag)={splitPercentBySpanDiag:F2}");
+                    DentalLogger.Log($"Composite2SplitAB - A/B 경계 TwoPhaseSplitLine-0.5mm 적용: guideX={splitXByGuideLine:F3}, appliedX={splitXByGuideLineLeft:F3}, splitPercent(scale20) {splitPercent:F2}->{splitPercentByGuideLine:F2}, splitPercent(spanDiag)={splitPercentBySpanDiag:F2}");
                     splitX = splitXByGuideLineLeft;
                     splitPercent = splitPercentByGuideLine;
                 }
                 else
                 {
-                    DentalLogger.Log($"Composite2SplitAB - A/B 경계 TwoPhaseSplitLine-0.6mm 무시: splitRatio 계산 불가(appliedX={splitXByGuideLineLeft:F3}, guideX={splitXByGuideLine:F3})");
+                    DentalLogger.Log($"Composite2SplitAB - A/B 경계 TwoPhaseSplitLine-0.5mm 무시: splitRatio 계산 불가(appliedX={splitXByGuideLineLeft:F3}, guideX={splitXByGuideLine:F3})");
                 }
             }
             else
@@ -1942,7 +1942,9 @@ namespace DentalAddin
 
         // 3-stage 분할 기준
         // - Splitline_1: FrontPointX
-        // - Splitline_2: midpoint(Splitline_1, BackPointX)
+        // - Splitline_2:
+        //   * 기본: midpoint(Splitline_1, BackPointX)
+        //   * 유지홈 있음(deep): FinishLineTopZ 상방 +1.0mm 기준(TwoPhaseSplitX) 사용
         private static bool TryGetThreeStageSplitConfig(out double splitline1, out double splitline2, out double xMin, out double xMax)
         {
             splitline1 = 0.0;
@@ -1964,9 +1966,42 @@ namespace DentalAddin
                 }
 
                 splitline1 = Clamp(front, xMin + 1e-6, xMax - 1e-6);
-                splitline2 = Clamp((splitline1 + back) / 2.0, xMin + 1e-6, xMax - 1e-6);
 
-                DentalLogger.Log($"ThreeStageSplit - split1(FrontPointX)={splitline1:F3}, split2(midpoint)={splitline2:F3}, xRange=[{xMin:F3}~{xMax:F3}], front={front:F3}, back={back:F3}");
+                string retentionGroove = (GetEnvString("ABUTS_RETENTION_GROOVE") ?? string.Empty).Trim().ToLowerInvariant();
+                bool grooveIsDeep = string.Equals(retentionGroove, "deep", StringComparison.OrdinalIgnoreCase);
+                if (grooveIsDeep)
+                {
+                    // deep에서는 StlFileProcessor의 TwoPhase split 결과(FinishLineTopZ 상방 +1.0mm 기준)를 우선 사용한다.
+                    double? twoPhaseSplitX = GetEnvDoubleNullable(AppConfig.TwoPhaseSplitXEnv) ?? GetEnvDoubleNullable("ABUTS_ROUGHFREEFORM_SPLIT_X");
+                    if (twoPhaseSplitX.HasValue && !double.IsNaN(twoPhaseSplitX.Value) && !double.IsInfinity(twoPhaseSplitX.Value))
+                    {
+                        splitline2 = Clamp(twoPhaseSplitX.Value, xMin + 1e-6, xMax - 1e-6);
+                        DentalLogger.Log($"ThreeStageSplit - 유지홈 deep 적용: split2=TwoPhaseSplitX(+1.0 기준, env={AppConfig.TwoPhaseSplitXEnv}) raw={twoPhaseSplitX.Value:F3}, applied={splitline2:F3}, xRange=[{xMin:F3}~{xMax:F3}]");
+                    }
+                    else
+                    {
+                        // env 미존재 시 동일 의도(+1.0mm)로 계산
+                        // splitX = BackX + (FinishLineTopZ + 1.0) - stlTopZ
+                        // 과거 등가식(back - FinishLineTopZ + shift)에 +1.0을 반영
+                        double finishLineTopZ = MoveSTL_Module.FinishLineTopZ;
+                        if (double.IsNaN(finishLineTopZ) || double.IsInfinity(finishLineTopZ))
+                        {
+                            DentalLogger.Log($"ThreeStageSplit - 유지홈 deep: FinishLineTopZ 비정상({finishLineTopZ}), 0.0으로 보정 후 공식 적용");
+                            finishLineTopZ = 0.0;
+                        }
+
+                        double finishLineTopX = back - finishLineTopZ + AppConfig.DefaultStlShift;
+                        double requestedSplit2 = finishLineTopX + 1.0;
+                        splitline2 = Clamp(requestedSplit2, xMin + 1e-6, xMax - 1e-6);
+                        DentalLogger.Log($"ThreeStageSplit - 유지홈 deep 적용(공식 fallback,+1.0): finishTopX={finishLineTopX:F3}, split2=finishTopX+1.0 => requested={requestedSplit2:F3}, applied={splitline2:F3}, xRange=[{xMin:F3}~{xMax:F3}], FinishLineTopZ(raw)={MoveSTL_Module.FinishLineTopZ:F3}, FinishLineTopZ(used)={finishLineTopZ:F3}");
+                    }
+                }
+                else
+                {
+                    splitline2 = Clamp((splitline1 + back) / 2.0, xMin + 1e-6, xMax - 1e-6);
+                    DentalLogger.Log($"ThreeStageSplit - split1(FrontPointX)={splitline1:F3}, split2(midpoint)={splitline2:F3}, xRange=[{xMin:F3}~{xMax:F3}], front={front:F3}, back={back:F3}");
+                }
+
                 return true;
             }
             catch (Exception ex)
