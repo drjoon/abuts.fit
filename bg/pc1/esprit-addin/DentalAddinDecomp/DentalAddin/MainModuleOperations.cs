@@ -804,45 +804,78 @@ namespace DentalAddin
                     twoPhaseSplitReady = TryPrepareTurningRegionRange(twoPhaseRegion, out regionMinX, out regionMaxX);
                 }
 
-                i = 1;
-                do
+                IEnumerable<int> targetTurningIndices = GetTurningTargetIndices(array, twoPhaseRegion);
+                foreach (int targetIndex in targetTurningIndices)
                 {
-                    if (array[i] != null)
+                    if (targetIndex < 1 || targetIndex > 15 || array[targetIndex] == null)
                     {
-                        FeatureChain opChain = array[i];
-                        if (twoPhaseSplitReady)
-                        {
-                            // 주의: 이름이 "Turning"으로 시작하면 다음 phase의 array[i] 탐지 루프에 오인식되므로 다른 접두사 사용
-                            FeatureChain regionChain = BuildTurningRangeChain(array[i], regionMinX, regionMaxX, $"TurnRgn{twoPhaseRegion}_{i}");
-                            if (regionChain != null)
-                            {
-                                opChain = regionChain;
-                            }
-                            else
-                            {
-                                DentalLogger.Log($"TurningOp TwoPhase - region={twoPhaseRegion} array[{i}] 분할 체인 생성 실패(또는 해당 영역 프로파일 없음), 이 체인은 건너뜀");
-                                i++;
-                                continue;
-                            }
-                        }
+                        continue;
+                    }
 
-                        int techIndex = 0;
-                        foreach (TechLatheContour1 t in effectiveTurningTechs)
+                    FeatureChain opChain = array[targetIndex];
+                    if (twoPhaseSplitReady)
+                    {
+                        // 주의: 이름이 "Turning"으로 시작하면 다음 phase의 array[i] 탐지 루프에 오인식되므로 다른 접두사 사용
+                        FeatureChain regionChain = BuildTurningRangeChain(array[targetIndex], regionMinX, regionMaxX, $"TurnRgn{twoPhaseRegion}_{targetIndex}");
+                        if (regionChain != null)
                         {
-                            TryAddOperation(t, opChain, $"TurningOp array[i] Main#{techIndex}");
-                            techIndex++;
+                            opChain = regionChain;
                         }
-                        techIndex = 0;
-                        foreach (TechLatheContour1 t in effectiveReverseTechs)
+                        else
                         {
-                            TryAddOperation(t, opChain, $"TurningOp array[i] Reverse#{techIndex}");
-                            techIndex++;
+                            DentalLogger.Log($"TurningOp TwoPhase - region={twoPhaseRegion} array[{targetIndex}] 분할 체인 생성 실패(또는 해당 영역 프로파일 없음), 이 체인은 건너뜀");
+                            continue;
                         }
                     }
-                    i++;
+
+                    int techIndex = 0;
+                    foreach (TechLatheContour1 t in effectiveTurningTechs)
+                    {
+                        TryAddOperation(t, opChain, $"TurningOp array[i] Main#{techIndex}");
+                        techIndex++;
+                    }
+                    techIndex = 0;
+                    foreach (TechLatheContour1 t in effectiveReverseTechs)
+                    {
+                        TryAddOperation(t, opChain, $"TurningOp array[i] Reverse#{techIndex}");
+                        techIndex++;
+                    }
                 }
-                while (i <= 15);
             }
+        }
+
+        private static IEnumerable<int> GetTurningTargetIndices(FeatureChain[] chains, string region)
+        {
+            // 3-stage(FRONT/MIDDLE/BACK)에서는 turning 체인(예: 1,2,15) 전부를 넣지 않고
+            // 대표 프로파일 1개만 사용해 불필요한 Turn 중복 생성을 방지한다.
+            if (!string.IsNullOrWhiteSpace(region)
+                && (string.Equals(region, "FRONT", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(region, "MIDDLE", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(region, "BACK", StringComparison.OrdinalIgnoreCase)))
+            {
+                foreach (int preferred in new[] { 15, 2, 1 })
+                {
+                    if (preferred >= 1 && preferred < chains.Length && chains[preferred] != null)
+                    {
+                        DentalLogger.Log($"TurningOp 3-Stage - single-chain mode region={region}, selectedIndex={preferred}");
+                        return new[] { preferred };
+                    }
+                }
+
+                DentalLogger.Log($"TurningOp 3-Stage - single-chain mode region={region}, 사용 가능한 체인 없음");
+                return Array.Empty<int>();
+            }
+
+            // 기존 동작 유지: 가능한 turning 체인을 모두 사용
+            List<int> all = new List<int>();
+            for (int i = 1; i <= 15; i++)
+            {
+                if (i < chains.Length && chains[i] != null)
+                {
+                    all.Add(i);
+                }
+            }
+            return all;
         }
 
         private static void ApplyTwoPhaseTurningToolOverride(string region, IList<TechLatheContour1> turningTechs, IList<TechLatheContour1> reverseTechs)
