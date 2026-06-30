@@ -1445,9 +1445,17 @@ namespace DentalAddin
             double radius = (Document.LatheMachineSetup.BarDiameter + 10.0) / 2.0;
             // Turn_A/Turn_B와 동일 기준으로 finishline 기준 오프셋을 맞춘다.
             // 요청 반영: Rough A 끝점은 기존 위치 대비 +2.0mm 이동(= splitX +1.5mm)
-            // Rough B는 finishline보다 2.5mm 왼쪽에서 시작 (겹침 허용)
             double roughAEnd = splitX + 1.5;
-            double roughBStart = splitX - 2.5;
+
+            // 요청 반영: Rough_B 시작점 = FINISH_B 시작점 - 2.5mm
+            // FINISH_B 시작점은 Composite 정책과 동일하게 A/B 경계(guideLine - 0.5mm) 기준을 사용한다.
+            double finishBStartX = splitX;
+            if (TryResolveTwoPhaseSplitLineX(out double splitXByGuideLineForRough))
+            {
+                const double bcBoundaryLeftOffsetMm = 0.5;
+                finishBStartX = splitXByGuideLineForRough - bcBoundaryLeftOffsetMm;
+            }
+            double roughBStart = finishBStartX - 2.5;
             // 범위 내 클램프
             if (roughAEnd <= xMin + 1e-6) roughAEnd = xMin + 1e-6;
             if (roughAEnd >= xMax - 1e-6) roughAEnd = Math.Max(xMin + 1e-6, xMax - 1e-6);
@@ -1464,7 +1472,7 @@ namespace DentalAddin
 
             int keyA = SafeParseKey(a1.Key);
             int keyB = SafeParseKey(b1.Key);
-            DentalLogger.Log($"RoughFreeFromMillSplitAB - splitX:{splitX:0.###}, roughAEnd:{roughAEnd:0.###}, roughBStart:{roughBStart:0.###}, xMaxBoundary:{xMax:0.###}, xMaxPhysical:{xMaxPhysical:0.###}, AKey:{keyA}, BKey:{keyB}, PRC_A:{prcA}, PRC_B:{prcB}");
+            DentalLogger.Log($"RoughFreeFromMillSplitAB - splitX:{splitX:0.###}, finishBStartX:{finishBStartX:0.###}, roughAEnd:{roughAEnd:0.###}, roughBStart:{roughBStart:0.###}, xMaxBoundary:{xMax:0.###}, xMaxPhysical:{xMaxPhysical:0.###}, AKey:{keyA}, BKey:{keyB}, PRC_A:{prcA}, PRC_B:{prcB}");
 
             TechnologyUtility technologyUtility = (TechnologyUtility)Activator.CreateInstance(Marshal.GetTypeFromCLSID(new Guid("C30D1110-1549-48C5-84D0-F66DCAD0F16F")));
             Layer activeLayer = GetOrCreateLayer("RoughFreeFormMill");
