@@ -371,13 +371,15 @@ namespace DentalAddin
                 ? Clamp(firstPassPercentOverride.Value, 0.0, splitPercent)
                 : baseAFirstPercentByFrontX;
 
-            const double aEndOffsetFromSplitMm = 0.1; // 요청: FINISH_A 끝점 = 기준점 +0.1mm
-            const double bStartOffsetFromSplitMm = -0.1; // 요청: FINISH_B 시작점 = 기준점 -0.1mm
-            const double compositeEndOffsetFromBackPointMm = 0.1; // 요청: FINISH_B 끝점 = BackPointX +0.1mm
+            const double aEndOffsetFromSplitMm = 0.0; // 요청: FINISH_A 끝점 = 기준점(splitPercent)
+            const double bStartOffsetFromSplitMm = 0.0; // 요청: FINISH_B 시작점 = 기준점(splitPercent)
+            // [중요] FINISH_B 끝점은 반드시 BackPointX +0.3mm를 유지할 것.
+            // +0.3mm 하지 않으면 홈 발생하므로, 충분한 검증 없이 값 변경 금지.
+            const double compositeEndOffsetFromBackPointMm = 0.3;
 
             // 기준점(splitPercent)을 기준으로 A/B 경계를 독립 적용한다.
-            // - A.End: split + 0.1mm
-            // - B.Start: split - 0.1mm
+            // - A.End: split + 0.0mm(=split)
+            // - B.Start: split + 0.0mm(=split)
             double requestedALastPass = ShiftPassPercentByStartEndScaleMm(splitPercent, aEndOffsetFromSplitMm, firstPercent, effectiveLastPercent);
             double requestedBFirstPass = ShiftPassPercentByStartEndScaleMm(splitPercent, bStartOffsetFromSplitMm, firstPercent, effectiveLastPercent);
 
@@ -394,7 +396,7 @@ namespace DentalAddin
             opB.FirstPassPercent = bFirst;
             opB.LastPassPercent = effectiveLastPercent;
 
-            // 정책: FINISH_B 종료 기준점은 BackPointX + 0.1mm
+            // 정책: FINISH_B 종료 기준점은 BackPointX + 0.3mm (중요: +0.3mm 미적용 시 홈 발생)
             double compositeEndTargetX = MoveSTL_Module.BackPointX + compositeEndOffsetFromBackPointMm;
             double compositeEndPassPercent = XToPassPercentByStartEndScale(compositeEndTargetX, 0.0, 100.0);
             opB.LastPassPercent = Clamp(compositeEndPassPercent, opB.FirstPassPercent, 100.0);
@@ -427,9 +429,9 @@ namespace DentalAddin
             }
 
             // A/B 끝점 정책 재확인:
-            // - FINISH_A 끝점: 기준점(splitPercent) +0.1mm
-            // - FINISH_B 시작점: 기준점(splitPercent) -0.1mm
-            // - FINISH_B 끝점: BackPointX +0.1mm
+            // - FINISH_A 끝점: 기준점(splitPercent)
+            // - FINISH_B 시작점: 기준점(splitPercent)
+            // - FINISH_B 끝점: BackPointX +0.3mm (중요: +0.3mm 미적용 시 홈 발생)
             double aLastBeforeClamp = opA.LastPassPercent;
             opA.LastPassPercent = Clamp(opA.LastPassPercent, opA.FirstPassPercent, effectiveLastPercent);
 
