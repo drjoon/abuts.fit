@@ -1269,50 +1269,15 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         {
             try
             {
-                if (string.IsNullOrWhiteSpace(tooth))
-                {
-                    Environment.SetEnvironmentVariable(AppConfig.CompositeFirstPassPercentAEnv, null);
-                    AppLogger.Log("DentalAddin: tooth 미지정 - FirstPassPercent 기본값(PRC 원본) 유지");
-                    return;
-                }
-
-                int lastDigit = -1;
-                for (int i = tooth.Length - 1; i >= 0; i--)
-                {
-                    char ch = tooth[i];
-                    if (char.IsDigit(ch))
-                    {
-                        lastDigit = ch - '0';
-                        break;
-                    }
-                }
-
-
-                // double? firstPassPercent = null;
-                // if (lastDigit >= 1 && lastDigit <= 3)
-                // {
-                //     firstPassPercent = 0.5;
-                // }
-                // else if (lastDigit >= 4 && lastDigit <= 7)
-                // {
-                //     firstPassPercent = 1.0;
-                // }
-                // if (!firstPassPercent.HasValue)
-                // {
-                //     Environment.SetEnvironmentVariable(AppConfig.CompositeFirstPassPercentAEnv, null);
-                //     AppLogger.Log($"DentalAddin: tooth='{tooth}' 에서 전치/구치 판별 불가 - FirstPassPercent 기본값(PRC 원본) 유지");
-                //     return;
-                // }
-
-                double firstPassPercent = 1.0;
-                string envValue = firstPassPercent.ToString("0.###", CultureInfo.InvariantCulture);
-                Environment.SetEnvironmentVariable(AppConfig.CompositeFirstPassPercentAEnv, envValue);
-                AppLogger.Log($"DentalAddin: tooth='{tooth}' -> FirstPassPercent={envValue} 적용 (env={AppConfig.CompositeFirstPassPercentAEnv})");
+                // FINISH_A 시작점은 MainModuleComposite에서 FrontPointX-0.3mm 기준으로 계산한다.
+                // 여기서는 과거 고정 퍼센트(예: 1.0%) 주입을 사용하지 않는다.
+                Environment.SetEnvironmentVariable(AppConfig.CompositeFirstPassPercentAEnv, null);
+                AppLogger.Log($"DentalAddin: Composite FirstPassPercent env 강제 비활성화(tooth='{tooth ?? ""}') - FrontPointX-0.3mm 정책 사용");
             }
             catch (Exception ex)
             {
                 Environment.SetEnvironmentVariable(AppConfig.CompositeFirstPassPercentAEnv, null);
-                AppLogger.Log($"DentalAddin: FirstPassPercent 적용 실패 - {ex.GetType().Name}:{ex.Message}");
+                AppLogger.Log($"DentalAddin: FirstPassPercent env 초기화 실패 - {ex.GetType().Name}:{ex.Message}");
             }
         }
 

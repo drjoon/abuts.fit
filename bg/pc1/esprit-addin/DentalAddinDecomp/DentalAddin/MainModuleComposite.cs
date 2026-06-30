@@ -365,12 +365,14 @@ namespace DentalAddin
             // Start/End 위치 기반 비율을 사용한다.
             opB.PassPosition = espMill5xCompositePassPosition.espMill5xCompositePassPositionStartEndPosition;
             double? firstPassPercentOverride = TryGetCompositeFirstPassPercentOverride();
+            const double aStartOffsetFromFrontMm = 0.3;
+            double baseAFirstPercentByFrontX = XToPassPercentByStartEndScale(MoveSTL_Module.FrontPointX - aStartOffsetFromFrontMm, 0.0, splitPercent);
             double baseAFirstPercent = firstPassPercentOverride.HasValue
                 ? Clamp(firstPassPercentOverride.Value, 0.0, splitPercent)
-                : firstPercent;
+                : baseAFirstPercentByFrontX;
 
             const double seamEpsilonPercent = 0.05;
-            const double compositeEndOffsetFromBackPointMm = 0.3; // 요청사항: C 끝 = BackPointX+0.3mm
+            const double compositeEndOffsetFromBackPointMm = 0.0; // FINISH_B 끝점 기준 복원: BackPointX
 
             // B 시작 퍼센트 상한(안전값) 적용
             double splitPercentForA = splitPercent;
@@ -393,12 +395,14 @@ namespace DentalAddin
 
 
 
-            // 정책: 종료 기준점은 BackPointX + 0.3mm
+            // 정책: 종료 기준점은 BackPointX
             double compositeEndTargetX = MoveSTL_Module.BackPointX + compositeEndOffsetFromBackPointMm;
             double compositeEndPassPercent = XToPassPercentByStartEndScale(compositeEndTargetX, 0.0, 100.0);
             opB.LastPassPercent = Clamp(compositeEndPassPercent, opB.FirstPassPercent, 100.0);
 
-            // FINISH_A 시작점은 계산/환경값(ABUTS_COMPOSITE_FIRST_PASS_PERCENT_A) 우선 적용한다.
+            // FINISH_A 시작점 정책:
+            // - 기본: FrontPointX - 0.3mm를 StartEndScale pass-percent로 변환한 값
+            // - env(ABUTS_COMPOSITE_FIRST_PASS_PERCENT_A) 지정 시 env 우선
             // 중요: 0% 근처는 축 특이구간으로 경로가 불안정해질 수 있어, 정상 케이스에서는 0% 강제 폴백을 하지 않는다.
             double requestedAFirstPass = baseAFirstPercent;
             opA.FirstPassPercent = Clamp(requestedAFirstPass, 0.0, opA.LastPassPercent);
@@ -416,11 +420,11 @@ namespace DentalAddin
                 opA.FirstPassPercent = fallbackFirst;
                 aWindowPercent = opA.LastPassPercent - opA.FirstPassPercent;
                 aFirstPassFallbackApplied = true;
-                DentalLogger.Log($"Composite2SplitAB - A 시작점 최소폭 보정 적용: requested={requestedAFirstPass:F2}, applied={before:F2}->{opA.FirstPassPercent:F2}, LastPass={opA.LastPassPercent:F2}, window={aWindowPercent:F2} (<{minAWindowPercent:F2})");
+                DentalLogger.Log($"Composite2SplitAB - A 시작점 최소폭 보정 적용: requested={requestedAFirstPass:F2}, frontBased={baseAFirstPercentByFrontX:F2}, envOverride={(firstPassPercentOverride.HasValue ? firstPassPercentOverride.Value.ToString("F2", CultureInfo.InvariantCulture) : "none")}, applied={before:F2}->{opA.FirstPassPercent:F2}, LastPass={opA.LastPassPercent:F2}, window={aWindowPercent:F2} (<{minAWindowPercent:F2})");
             }
             else
             {
-                DentalLogger.Log($"Composite2SplitAB - A 시작점 적용: Requested={requestedAFirstPass:F2}, Applied={opA.FirstPassPercent:F2}, LastPass={opA.LastPassPercent:F2}, window={aWindowPercent:F2}");
+                DentalLogger.Log($"Composite2SplitAB - A 시작점 적용: Requested={requestedAFirstPass:F2}, frontBased={baseAFirstPercentByFrontX:F2}, envOverride={(firstPassPercentOverride.HasValue ? firstPassPercentOverride.Value.ToString("F2", CultureInfo.InvariantCulture) : "none")}, Applied={opA.FirstPassPercent:F2}, LastPass={opA.LastPassPercent:F2}, window={aWindowPercent:F2}");
             }
 
 
@@ -430,7 +434,7 @@ namespace DentalAddin
             double bLastBeforeAlign = opA.LastPassPercent;
             opA.LastPassPercent = Clamp(opB.FirstPassPercent, opA.FirstPassPercent, effectiveLastPercent);
 
-            // 일반 모드(2-phase split): FINISH_B 종료는 BackPointX+0.3mm로 고정한다. (A/B 경계는 유지)
+            // 일반 모드(2-phase split): FINISH_B 종료는 BackPointX로 고정한다. (A/B 경계는 유지)
             double cLastBeforeAdjust = opB.LastPassPercent;
             double cTargetX = compositeEndTargetX;
             opB.LastPassPercent = Clamp(compositeEndPassPercent, opB.FirstPassPercent, 100.0);
@@ -439,7 +443,7 @@ namespace DentalAddin
             double bLastXAfterAlign = PassPercentToX(opA.LastPassPercent, MoveSTL_Module.FrontPointX, direction, absSpan);
             double cLastXBeforeAdjust = PassPercentToX(cLastBeforeAdjust, MoveSTL_Module.FrontPointX, direction, absSpan);
             double cLastXAfterAdjust = PassPercentToX(opB.LastPassPercent, MoveSTL_Module.FrontPointX, direction, absSpan);
-            DentalLogger.Log($"Composite2SplitAB - A/B 경계 정렬 + FINISH_B 종료 BackPointX+0.3mm: B.Last% {bLastBeforeAlign:F2}->{opA.LastPassPercent:F2}, B.LastX {bLastXBeforeAlign:F3}->{bLastXAfterAlign:F3}, B.First%={opB.FirstPassPercent:F2}, B.Last% {cLastBeforeAdjust:F2}->{opB.LastPassPercent:F2}, B.LastX {cLastXBeforeAdjust:F3}->{cLastXAfterAdjust:F3}, B.TargetX={cTargetX:F3}");
+            DentalLogger.Log($"Composite2SplitAB - A/B 경계 정렬 + FINISH_B 종료 BackPointX: B.Last% {bLastBeforeAlign:F2}->{opA.LastPassPercent:F2}, B.LastX {bLastXBeforeAlign:F3}->{bLastXAfterAlign:F3}, B.First%={opB.FirstPassPercent:F2}, B.Last% {cLastBeforeAdjust:F2}->{opB.LastPassPercent:F2}, B.LastX {cLastXBeforeAdjust:F3}->{cLastXAfterAdjust:F3}, B.TargetX={cTargetX:F3}");
             DentalLogger.Log($"Composite2SplitAB - seam 보정: A({opA.FirstPassPercent:F2}->{opA.LastPassPercent:F2}), B({opB.FirstPassPercent:F2}->{opB.LastPassPercent:F2}), seamEps={seamEpsilonPercent:F2}, BFirstGuard={startEndBFirstGuardApplied}, AFirstFallback={aFirstPassFallbackApplied}");
 
             bool surfaceReady = TryEnsureCompositeSurfaceNumber("Composite2SplitAB");
@@ -1400,8 +1404,8 @@ namespace DentalAddin
             // double turnConnectionBoundaryX = ResolveTurnConnectionBoundaryX("RoughFreeFromMillSplitAB");
             // double xMax = Clamp(turnConnectionBoundaryX, xMin + 1e-6, xMaxPhysical);
             // FINISH_B 종료점과 Rough_B 우측 끝을 동일 기준으로 맞춘다.
-            // FINISH_B 정책: BackPointX + 0.3mm
-            const double compositeEndOffsetFromBackPointMm = 0.3;
+            // FINISH_B 정책: BackPointX
+            const double compositeEndOffsetFromBackPointMm = 0.0;
             double roughBEndTargetX = MoveSTL_Module.BackPointX + compositeEndOffsetFromBackPointMm;
             double xMax = Math.Max(xMin + 1e-6, roughBEndTargetX);
 
