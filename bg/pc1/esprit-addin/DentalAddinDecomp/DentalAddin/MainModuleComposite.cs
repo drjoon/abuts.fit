@@ -625,11 +625,12 @@ namespace DentalAddin
                 int afterA = Document?.Operations?.Count ?? -1;
                 DentalLogger.Log($"Composite2SplitLine2 - Operation 추가 완료: {(finishAllMode ? "Finish_All" : "FINISH_FRONT")}(opA) (afterCount={afterA})");
 
-                // Finish_All/Finish_Back 끝점에서 홈 파임 방지:
-                // BackPointX 끝점에서 약 360°(1회전) 추가 가공 후 퇴출한다.
+                // Finish_All/Finish_Back 끝점에서 홈 파임 방지용 End lap(Finish_End) 공정은
+                // 요청에 따라 임시 비활성화한다. (툴패스 생성 금지)
                 if (finishAllMode)
                 {
-                    TryAddCompositeExitLap(technologyUtility, effectivePrcA, freeFormFeature, opA, opA.LastPassPercent, "END", "A");
+                    // TryAddCompositeExitLap(technologyUtility, effectivePrcA, freeFormFeature, opA, opA.LastPassPercent, "END", "A");
+                    DentalLogger.Log("Composite2SplitLine2 - Finish_End(A) 생성 비활성화(주석 처리)");
                 }
 
                 if (!finishAllMode)
@@ -651,8 +652,9 @@ namespace DentalAddin
                 int afterB = Document?.Operations?.Count ?? -1;
                 DentalLogger.Log($"Composite2SplitLine2 - Operation 추가 완료: FINISH_BACK(opB) (afterCount={afterB})");
 
-                // Finish_Back 끝점에서 약 360°(1회전) 추가 가공 후 퇴출
-                TryAddCompositeExitLap(technologyUtility, effectivePrcB, freeFormFeature, opB, opB.LastPassPercent, "END", "B");
+                // Finish_Back 끝점 End lap(Finish_End) 공정은 요청에 따라 임시 비활성화한다.
+                // TryAddCompositeExitLap(technologyUtility, effectivePrcB, freeFormFeature, opB, opB.LastPassPercent, "END", "B");
+                DentalLogger.Log("Composite2SplitLine2 - Finish_End(B) 생성 비활성화(주석 처리)");
 
                 // FINISH_B 이후 추가 확장 공정은 생성하지 않는다.
             }
