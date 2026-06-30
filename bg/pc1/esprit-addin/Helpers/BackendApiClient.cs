@@ -352,6 +352,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
             [DataMember] public string implantType { get; set; }
             [DataMember] public double maxDiameter { get; set; }
             [DataMember] public double connectionDiameter { get; set; }
+            [DataMember] public double camDiameter { get; set; }
             [DataMember] public string workType { get; set; }
             [DataMember] public string lotNumber { get; set; }
             [DataMember] public string faceHolePrcFileName { get; set; }

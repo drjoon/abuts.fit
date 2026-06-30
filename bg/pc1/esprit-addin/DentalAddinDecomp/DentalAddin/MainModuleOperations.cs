@@ -677,6 +677,11 @@ namespace DentalAddin
 
             ApplyTwoPhaseTurningToolOverride(twoPhaseRegion, phaseTurningTechs, phaseReverseTechs);
 
+            // CAM 직경(=BarDiameter)보다 큰 선반 공구는 불필요 가공으로 간주하여 제외
+            // 예) CAM 8.0인 케이스에서 D10/D12 turning pass 제거
+            List<TechLatheContour1> effectiveTurningTechs = FilterTurningTechsByBarDiameter(phaseTurningTechs, $"TurningOp:{twoPhaseRegion}:Main");
+            List<TechLatheContour1> effectiveReverseTechs = FilterTurningTechsByBarDiameter(phaseReverseTechs, $"TurningOp:{twoPhaseRegion}:Reverse");
+
             // TwoPhase 모드에서는 Phase별로 다른 레이어명을 사용하여
             // Phase B가 Phase A의 Turning 작업을 삭제하지 않도록 보장
             string turnLayerName = string.IsNullOrWhiteSpace(twoPhaseRegion)
@@ -730,11 +735,11 @@ namespace DentalAddin
                 {
                     if (array2[9 - i] != null)
                     {
-                        foreach (TechLatheContour1 t in phaseTurningTechs)
+                        foreach (TechLatheContour1 t in effectiveTurningTechs)
                         {
                             Document.Operations.Add(t, array2[9 - i], RuntimeHelpers.GetObjectValue(Missing.Value));
                         }
-                        foreach (TechLatheContour1 t in phaseReverseTechs)
+                        foreach (TechLatheContour1 t in effectiveReverseTechs)
                         {
                             Document.Operations.Add(t, array2[9 - i], RuntimeHelpers.GetObjectValue(Missing.Value));
                         }
@@ -822,13 +827,13 @@ namespace DentalAddin
                         }
 
                         int techIndex = 0;
-                        foreach (TechLatheContour1 t in phaseTurningTechs)
+                        foreach (TechLatheContour1 t in effectiveTurningTechs)
                         {
                             TryAddOperation(t, opChain, $"TurningOp array[i] Main#{techIndex}");
                             techIndex++;
                         }
                         techIndex = 0;
-                        foreach (TechLatheContour1 t in phaseReverseTechs)
+                        foreach (TechLatheContour1 t in effectiveReverseTechs)
                         {
                             TryAddOperation(t, opChain, $"TurningOp array[i] Reverse#{techIndex}");
                             techIndex++;
@@ -1073,6 +1078,287 @@ namespace DentalAddin
             catch
             {
                 // ignore
+            }
+
+            return false;
+        }
+
+        private static List<TechLatheContour1> FilterTurningTechsByBarDiameter(IList<TechLatheContour1> source, string context)
+        {
+            List<TechLatheContour1> result = new List<TechLatheContour1>();
+            if (source == null)
+            {
+                return result;
+            }
+
+            double barDiameter = Document?.LatheMachineSetup?.BarDiameter ?? 0.0;
+            if (barDiameter <= 0.0)
+            {
+                // 기준 직경 정보가 없으면 기존 동작 유지
+                foreach (TechLatheContour1 tech in source)
+                {
+                    if (tech != null) result.Add(tech);
+                }
+                return result;
+            }
+
+            int skipped = 0;
+            int unresolved = 0;
+            int considered = 0;
+            foreach (TechLatheContour1 tech in source)
+            {
+                if (tech == null)
+                {
+                    continue;
+                }
+                considered++;
+
+                if (TryResolveTechnologyToolDiameter(tech, out double toolDiameter, out string toolDesc))
+                {
+                    if (toolDiameter > barDiameter + 1e-6)
+                    {
+                        skipped++;
+                        DentalLogger.Log($"{context} - {toolDesc} Dia={toolDiameter:0.###} > CAMDia(Bar)={barDiameter:0.###}, 불필요 가공으로 제외");
+                        continue;
+                    }
+                }
+                else
+                {
+                    unresolved++;
+                    DentalLogger.Log($"{context} - ToolDiameter 해석 실패(techType={tech.GetType().Name}), CAMDia 필터 미적용");
+                }
+
+                result.Add(tech);
+            }
+
+            DentalLogger.Log($"{context} - CAMDia 필터 결과: considered={considered}, kept={result.Count}, skipped={skipped}, unresolved={unresolved}, CAMDia(Bar)={barDiameter:0.###}");
+            return result;
+        }
+
+        internal static bool TryResolveTechnologyToolDiameter(object technology, out double diameter, out string toolDesc)
+        {
+            diameter = 0.0;
+            toolDesc = "ToolID='<unknown>'";
+            if (technology == null)
+            {
+                return false;
+            }
+
+            string toolId = null;
+            try
+            {
+                object raw = technology.GetType().InvokeMember("ToolID", BindingFlags.GetProperty, null, technology, null, CultureInfo.InvariantCulture);
+                toolId = raw as string;
+            }
+            catch
+            {
+                try
+                {
+                    dynamic d = technology;
+                    toolId = d.ToolID as string;
+                }
+                catch { }
+            }
+
+            if (!string.IsNullOrWhiteSpace(toolId))
+            {
+                toolDesc = $"ToolID='{toolId}'";
+            }
+
+            // 1) Tech 객체 자체의 직경 속성 우선
+            if (TryGetNumericProperty(technology, new[] { "ToolDiameter", "Diameter", "Dia" }, out double techDia))
+            {
+                diameter = techDia;
+                toolDesc += "(from Tech)";
+                return diameter > 0.0;
+            }
+
+            // 2) Document.Tools 매칭
+            if (TryResolveToolDiameterByToolId(toolId, out double mappedDia))
+            {
+                diameter = mappedDia;
+                toolDesc += "(from ToolTable)";
+                return diameter > 0.0;
+            }
+
+            // 3) ToolID 문자열 파싱 fallback (예: D12, D10, DIA8)
+            if (TryParseDiameterFromToolId(toolId, out double parsedDia))
+            {
+                diameter = parsedDia;
+                toolDesc += "(from ToolID-parse)";
+                return diameter > 0.0;
+            }
+
+            return false;
+        }
+
+        private static bool TryResolveToolDiameterByToolId(string toolId, out double diameter)
+        {
+            diameter = 0.0;
+            if (string.IsNullOrWhiteSpace(toolId) || Document?.Tools == null)
+            {
+                return false;
+            }
+
+            try
+            {
+                foreach (Tool tool in (IEnumerable)Document.Tools)
+                {
+                    if (tool == null || string.IsNullOrWhiteSpace(tool.ToolID))
+                    {
+                        continue;
+                    }
+
+                    if (!string.Equals(tool.ToolID, toolId, StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+
+                    if (TryGetToolDiameter(tool, out double resolved))
+                    {
+                        diameter = resolved;
+                        return true;
+                    }
+                    return false;
+                }
+            }
+            catch
+            {
+                // ignore
+            }
+
+            return false;
+        }
+
+        private static bool TryParseDiameterFromToolId(string toolId, out double diameter)
+        {
+            diameter = 0.0;
+            if (string.IsNullOrWhiteSpace(toolId))
+            {
+                return false;
+            }
+
+            string id = toolId.Trim().ToUpperInvariant();
+            int idx = id.IndexOf('D');
+            if (idx >= 0)
+            {
+                int start = idx + 1;
+                int end = start;
+                while (end < id.Length && (char.IsDigit(id[end]) || id[end] == '.')) end++;
+                if (end > start && double.TryParse(id.Substring(start, end - start), NumberStyles.Float, CultureInfo.InvariantCulture, out double dVal) && dVal > 0.0)
+                {
+                    diameter = dVal;
+                    return true;
+                }
+            }
+
+            idx = id.IndexOf("DIA", StringComparison.OrdinalIgnoreCase);
+            if (idx >= 0)
+            {
+                int start = idx + 3;
+                while (start < id.Length && (id[start] == '_' || id[start] == '-' || id[start] == ' ')) start++;
+                int end = start;
+                while (end < id.Length && (char.IsDigit(id[end]) || id[end] == '.')) end++;
+                if (end > start && double.TryParse(id.Substring(start, end - start), NumberStyles.Float, CultureInfo.InvariantCulture, out double diaVal) && diaVal > 0.0)
+                {
+                    diameter = diaVal;
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static bool TryGetNumericProperty(object target, string[] propNames, out double value)
+        {
+            value = 0.0;
+            if (target == null || propNames == null || propNames.Length == 0)
+            {
+                return false;
+            }
+
+            Type t = target.GetType();
+            foreach (string pn in propNames)
+            {
+                if (string.IsNullOrWhiteSpace(pn)) continue;
+
+                try
+                {
+                    PropertyInfo p = t.GetProperty(pn, BindingFlags.Public | BindingFlags.Instance);
+                    if (p != null && p.CanRead)
+                    {
+                        object raw = p.GetValue(target);
+                        if (raw != null && double.TryParse(Convert.ToString(raw, CultureInfo.InvariantCulture), NumberStyles.Float, CultureInfo.InvariantCulture, out double parsed) && parsed > 0.0)
+                        {
+                            value = parsed;
+                            return true;
+                        }
+                    }
+                }
+                catch { }
+
+                try
+                {
+                    object raw = t.InvokeMember(pn, BindingFlags.GetProperty, null, target, null, CultureInfo.InvariantCulture);
+                    if (raw != null && double.TryParse(Convert.ToString(raw, CultureInfo.InvariantCulture), NumberStyles.Float, CultureInfo.InvariantCulture, out double parsed) && parsed > 0.0)
+                    {
+                        value = parsed;
+                        return true;
+                    }
+                }
+                catch { }
+            }
+
+            return false;
+        }
+
+        private static bool TryGetToolDiameter(Tool tool, out double diameter)
+        {
+            diameter = 0.0;
+            if (tool == null)
+            {
+                return false;
+            }
+
+            try
+            {
+                if (tool is ToolMillBallMill ball)
+                {
+                    diameter = ball.ToolDiameter;
+                    return diameter > 0.0;
+                }
+            }
+            catch { }
+
+            string[] propNames = new[] { "ToolDiameter", "Diameter", "Dia" };
+            Type t = tool.GetType();
+            foreach (string pn in propNames)
+            {
+                try
+                {
+                    PropertyInfo p = t.GetProperty(pn, BindingFlags.Public | BindingFlags.Instance);
+                    if (p != null && p.CanRead)
+                    {
+                        object raw = p.GetValue(tool);
+                        if (raw != null && double.TryParse(Convert.ToString(raw, CultureInfo.InvariantCulture), NumberStyles.Float, CultureInfo.InvariantCulture, out double parsed) && parsed > 0.0)
+                        {
+                            diameter = parsed;
+                            return true;
+                        }
+                    }
+                }
+                catch { }
+
+                try
+                {
+                    object raw = t.InvokeMember(pn, BindingFlags.GetProperty, null, tool, null, CultureInfo.InvariantCulture);
+                    if (raw != null && double.TryParse(Convert.ToString(raw, CultureInfo.InvariantCulture), NumberStyles.Float, CultureInfo.InvariantCulture, out double parsed) && parsed > 0.0)
+                    {
+                        diameter = parsed;
+                        return true;
+                    }
+                }
+                catch { }
             }
 
             return false;

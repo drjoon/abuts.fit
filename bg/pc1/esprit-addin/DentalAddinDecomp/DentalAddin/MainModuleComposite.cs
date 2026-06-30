@@ -800,6 +800,7 @@ namespace DentalAddin
                 Document.Operations.Add(castTechnology, graphicObject, RuntimeHelpers.GetObjectValue(option));
                 int afterCount = Document?.Operations?.Count ?? -1;
                 DentalLogger.Log($"TryAddOperation:{context} - Add 호출 성공 (afterCount={afterCount})");
+                TryPruneJustAddedOperationByCamDiameter(context, beforeCount, afterCount);
             }
             catch (Exception ex)
             {
@@ -809,9 +810,11 @@ namespace DentalAddin
                     try
                     {
                         DentalLogger.Log($"TryAddOperation:{context} - Add 재시도(option=Missing), firstErr={ex.GetType().Name}:{ex.Message}");
+                        int beforeRetry = Document?.Operations?.Count ?? -1;
                         Document.Operations.Add(castTechnology, graphicObject, RuntimeHelpers.GetObjectValue(Missing.Value));
                         int afterRetry = Document?.Operations?.Count ?? -1;
                         DentalLogger.Log($"TryAddOperation:{context} - Add 재시도 성공 (afterCount={afterRetry})");
+                        TryPruneJustAddedOperationByCamDiameter(context, beforeRetry, afterRetry);
                         return;
                     }
                     catch (Exception retryEx)
@@ -826,6 +829,69 @@ namespace DentalAddin
                 DentalLogger.LogException("MainModule.TryAddOperation", ex);
                 throw;
             }
+        }
+
+        private static void TryPruneJustAddedOperationByCamDiameter(string context, int beforeCount, int afterCount)
+        {
+            try
+            {
+                if (!IsCamDiameterPruneContext(context))
+                {
+                    return;
+                }
+
+                double camDiameter = Document?.LatheMachineSetup?.BarDiameter ?? 0.0;
+                if (camDiameter <= 0.0)
+                {
+                    return;
+                }
+
+                if (afterCount <= beforeCount || afterCount <= 0 || Document?.Operations == null)
+                {
+                    return;
+                }
+
+                object op = null;
+                try { op = Document.Operations[afterCount]; } catch { }
+                if (op == null)
+                {
+                    return;
+                }
+
+                if (TryResolveTechnologyToolDiameter(op, out double opToolDia, out string toolDesc) && opToolDia > camDiameter + 1e-6)
+                {
+                    try
+                    {
+                        Document.Operations.Remove(afterCount);
+                        DentalLogger.Log($"TryAddOperation:{context} - CAMDia 후검증 제거: {toolDesc} Dia={opToolDia:0.###} > CAMDia={camDiameter:0.###}");
+                    }
+                    catch (Exception rmEx)
+                    {
+                        DentalLogger.Log($"TryAddOperation:{context} - CAMDia 후검증 제거 실패: {rmEx.GetType().Name}:{rmEx.Message}");
+                    }
+                }
+                else
+                {
+                    DentalLogger.Log($"TryAddOperation:{context} - CAMDia 후검증 통과/해석불가 (CAMDia={camDiameter:0.###})");
+                }
+            }
+            catch (Exception ex)
+            {
+                DentalLogger.Log($"TryAddOperation:{context} - CAMDia 후검증 예외: {ex.GetType().Name}:{ex.Message}");
+            }
+        }
+
+        private static bool IsCamDiameterPruneContext(string context)
+        {
+            if (string.IsNullOrWhiteSpace(context))
+            {
+                return false;
+            }
+
+            string c = context.Trim();
+            return c.IndexOf("TurningOp", StringComparison.OrdinalIgnoreCase) >= 0
+                || c.IndexOf("Rough", StringComparison.OrdinalIgnoreCase) >= 0
+                || c.IndexOf("SplitAB", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         private static ITechnology[] TryOpenProcess(TechnologyUtility technologyUtility, string filePath, string context)
@@ -1573,18 +1639,34 @@ namespace DentalAddin
                 return;
             }
 
+            double camDiameter = Document?.LatheMachineSetup?.BarDiameter ?? 0.0;
+
             if (tech[0] is TechLatheMoldRoughing roughing)
             {
-                roughing.BoundaryProfiles = "";
-                roughing.BoundaryProfiles = "6," + boundaryKey.ToString(CultureInfo.InvariantCulture);
-                TryAddOperation(roughing, freeFormFeature, $"SplitAB:{region}:{angleLabel}:Roughing");
+                if (camDiameter > 0.0 && TryResolveTechnologyToolDiameter(roughing, out double roughToolDia, out string roughDesc) && roughToolDia > camDiameter + 1e-6)
+                {
+                    DentalLogger.Log($"RoughFreeFromMillSplitAB - Region:{region} Angle:{angleLabel} Roughing skip {roughDesc} Dia={roughToolDia:0.###} > CAMDia={camDiameter:0.###}");
+                }
+                else
+                {
+                    roughing.BoundaryProfiles = "";
+                    roughing.BoundaryProfiles = "6," + boundaryKey.ToString(CultureInfo.InvariantCulture);
+                    TryAddOperation(roughing, freeFormFeature, $"SplitAB:{region}:{angleLabel}:Roughing");
+                }
             }
 
             if (tech.Length > 1 && tech[1] is TechLatheMoldZLevel zlevel)
             {
-                zlevel.BoundaryProfiles = "";
-                zlevel.BoundaryProfiles = "6," + boundaryKey.ToString(CultureInfo.InvariantCulture);
-                TryAddOperation(zlevel, freeFormFeature, $"SplitAB:{region}:{angleLabel}:ZLevel");
+                if (camDiameter > 0.0 && TryResolveTechnologyToolDiameter(zlevel, out double zLevelToolDia, out string zLevelDesc) && zLevelToolDia > camDiameter + 1e-6)
+                {
+                    DentalLogger.Log($"RoughFreeFromMillSplitAB - Region:{region} Angle:{angleLabel} ZLevel skip {zLevelDesc} Dia={zLevelToolDia:0.###} > CAMDia={camDiameter:0.###}");
+                }
+                else
+                {
+                    zlevel.BoundaryProfiles = "";
+                    zlevel.BoundaryProfiles = "6," + boundaryKey.ToString(CultureInfo.InvariantCulture);
+                    TryAddOperation(zlevel, freeFormFeature, $"SplitAB:{region}:{angleLabel}:ZLevel");
+                }
             }
 
             DentalLogger.Log($"RoughFreeFromMillSplitAB - AddOp 완료 Region:{region} Angle:{angleLabel} BoundaryKey:{boundaryKey}");

@@ -153,6 +153,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             AppLogger.Log($"StlFileProcessor: LimitX 적용 - Front:{effectiveFrontLimit:F4}, Back:{effectiveBackLimit:F4} (초기값, STL 이동 후 업데이트됨)");
             string requestId = null;
             BackendApiClient.RequestMetaCaseInfos requestMeta = null;
+            double? backendCamDiameter = null;
             double? finishLineTopZ = null;
             double? finishLineMinZ = null;
             double? stlBoundingTopZ = null;
@@ -229,7 +230,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                             ? null
                             : requestMeta.retentionGroove.Trim();
                         TryApplyCompositeFirstPassPercentEnv(requestMeta.tooth);
-                        AppLogger.Log($"StlFileProcessor: request-meta loaded requestId={requestId}, Clinic={requestMeta.clinicName}, Patient={requestMeta.patientName}, Tooth={requestMeta.tooth}, Implant={requestMeta.implantManufacturer}/{requestMeta.implantBrand}/{requestMeta.implantType}, MaxDia={requestMeta.maxDiameter}, ConnDia={requestMeta.connectionDiameter}, WorkType={requestMeta.workType}, Lot={requestMeta.lotNumber}, SerialCode={(_backendSerialCode ?? "")}, RetentionGroove={(_backendRetentionGroove ?? "<null>")}");
+                        AppLogger.Log($"StlFileProcessor: request-meta loaded requestId={requestId}, Clinic={requestMeta.clinicName}, Patient={requestMeta.patientName}, Tooth={requestMeta.tooth}, Implant={requestMeta.implantManufacturer}/{requestMeta.implantBrand}/{requestMeta.implantType}, MaxDia={requestMeta.maxDiameter}, ConnDia={requestMeta.connectionDiameter}, CamDia={requestMeta.camDiameter}, WorkType={requestMeta.workType}, Lot={requestMeta.lotNumber}, SerialCode={(_backendSerialCode ?? "")}, RetentionGroove={(_backendRetentionGroove ?? "<null>")}");
                         AppLogger.Log($"StlFileProcessor: finishLine topZ={(finishLineTopZ.HasValue ? finishLineTopZ.Value.ToString("F4", CultureInfo.InvariantCulture) : "<null>")}, minZ={(finishLineMinZ.HasValue ? finishLineMinZ.Value.ToString("F4", CultureInfo.InvariantCulture) : "<null>")}, espritR={(finishLineEspritR.HasValue ? finishLineEspritR.Value.ToString("F4", CultureInfo.InvariantCulture) : "<null>")}, TwoPhase={twoPhase}");
                         if (!_prcManager.ApplyBackendPrcNames((BackendApiClient.RequestMetaCaseInfos)requestMeta, requestId, _backendImplantLabel))
                         {
@@ -258,6 +259,16 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 if (materialDiameter.HasValue && materialDiameter.Value > 0)
                 {
                     AppLogger.Log($"StlFileProcessor: 백엔드 MaterialDiameter 요청={materialDiameter.Value:F3}");
+                    backendCamDiameter = materialDiameter.Value;
+                }
+                else if (requestMeta != null && requestMeta.camDiameter > 0)
+                {
+                    backendCamDiameter = requestMeta.camDiameter;
+                    AppLogger.Log($"StlFileProcessor: request-meta CamDiameter 사용={backendCamDiameter.Value:F3}");
+                }
+                else
+                {
+                    AppLogger.Log("StlFileProcessor: 백엔드 CAM 직경을 찾지 못해 기존/추정 BarDiameter를 사용합니다.");
                 }
                 document.Refresh();
                 Layer prevLayer = null;
@@ -288,10 +299,23 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 stlBoundingTopZ = TryComputeStlBoundingTopZ(document);
                 AppLogger.Log($"StlFileProcessor: STL bounding topZ={(stlBoundingTopZ.HasValue ? stlBoundingTopZ.Value.ToString("F4", CultureInfo.InvariantCulture) : "<null>")}");
                 Connect.SetCurrentDocument(document);
-                UpdateLatheBarDiameter(document, stlPath, machineBarDiameter, materialDiameter);
+                UpdateLatheBarDiameter(document, stlPath, machineBarDiameter, backendCamDiameter);
+                if (backendCamDiameter.HasValue && backendCamDiameter.Value > 0 && document?.LatheMachineSetup != null)
+                {
+                    // CAM 직경을 SSOT로 고정: 이후 공정 필터(턴/러프)가 동일 값을 참조한다.
+                    document.LatheMachineSetup.BarDiameter = backendCamDiameter.Value;
+                    Environment.SetEnvironmentVariable("ABUTS_CAM_DIAMETER", backendCamDiameter.Value.ToString(CultureInfo.InvariantCulture));
+                    AppLogger.Log($"StlFileProcessor: CAM 직경 SSOT 고정 - BarDiameter={backendCamDiameter.Value:F3}");
+                }
                 Rotate90Degrees(document);
                 RotateByWAxisDegrees(document, DefaultWAxisRotationDegrees);
                 EspritDocumentHelper.LogBoundingBox(document, "AfterRotate");
+                // add-in 실행 직전에도 CAM 직경 재확인/재적용(중간 단계에서 값이 변경되는 케이스 방지)
+                if (backendCamDiameter.HasValue && backendCamDiameter.Value > 0 && document?.LatheMachineSetup != null)
+                {
+                    document.LatheMachineSetup.BarDiameter = backendCamDiameter.Value;
+                    AppLogger.Log($"StlFileProcessor: Invoke 직전 CAM 직경 재적용 - BarDiameter={backendCamDiameter.Value:F3}");
+                }
                 InvokeDentalAddin(document, effectiveFrontLimit, effectiveBackLimit, stlBoundingTopZ, finishLineTopZ, finishLineMinZ, finishLineEspritR, twoPhase);
                 CaptureNcMetadata(document);
                 AppLogger.Log("StlFileProcessor: NC 생성 시작");
@@ -420,6 +444,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_DYNAMIC_DISABLE", null);
             Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_PHASE_MODE", null);
             Environment.SetEnvironmentVariable("ABUTS_RETENTION_GROOVE", null);
+            Environment.SetEnvironmentVariable("ABUTS_CAM_DIAMETER", null);
             FaceHoleProcessFilePath = null;
             ConnectionMachiningProcessFilePath = null;
             lotNumber = "ACR";
@@ -465,6 +490,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             [DataMember] public string implantType { get; set; }
             [DataMember] public double maxDiameter { get; set; }
             [DataMember] public double connectionDiameter { get; set; }
+            [DataMember] public double camDiameter { get; set; }
             [DataMember] public string workType { get; set; }
             [DataMember] public string lotNumber { get; set; }
             [DataMember] public string faceHolePrcFileName { get; set; }

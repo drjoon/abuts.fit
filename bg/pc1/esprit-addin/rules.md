@@ -40,7 +40,51 @@
 - 레거시 Single-A/BC/B-Extension 분기는 사용하지 않는다.
   - 2-phase 기본 흐름은 `A_PHASE`/`B_PHASE`로 명시한다.
 
-## 4. 정리 원칙
+## 4. 이번 세션 반영 사항 (2026-06-29)
+
+### 4.1 공정 구조 SSOT (3-Stage)
+
+- 기존 A/B 2분할 공정을 3단계로 고정한다.
+  - Front: `Turn -> Rough -> Front Face`
+  - Middle: `Turn -> Rough`
+  - Back: `Turn -> Rough`
+- Finish 정책:
+  - `retentionGroove=deep` → `Finish_Front`, `Finish_Back`
+  - `retentionGroove=none` 및 `ALL_PHASE` → `Finish_All` 단일 패스
+
+### 4.2 라벨명 SSOT
+
+- Turning/Rough/Face 라벨은 아래 이름으로 고정한다.
+  - `Front_Turn`, `Front_Rough`, `Front_Face`
+  - `Middle_Turn`, `Middle_Rough`
+  - `Back_Turn`, `Back_Rough`
+- Finish 라벨은 모드별로 아래 이름만 사용한다.
+  - `Finish_All` 또는 `Finish_Front`, `Finish_Back`
+
+### 4.3 Split 기준 SSOT
+
+- `Splitline_1 = FrontPointX`
+- `Splitline_2 = (Splitline_1 + BackPointX) / 2`
+- Turn/Rough 경계는 각 split 기준 `±2.2mm` 오버컷을 적용한다.
+
+### 4.4 Finish none 처리
+
+- `Finish_All` 모드에서는:
+  - 시작 퍼센트: `FirstPassPercent = 1.0`
+  - 종료 퍼센트: `BackPointX` 기반 pass percent
+- `ABUTS_RETENTION_GROOVE` 환경변수는 `StlFileProcessor`에서 실행 전 설정하고 실행 종료/초기화 시 해제한다.
+
+### 4.5 CAM 직경 기반 불필요 가공 제거
+
+- 백엔드가 전달한 CAM 직경(현재 SSOT: `LatheMachineSetup.BarDiameter`)을 기준으로,
+  `Turn`/`Rough`에서 **공구 직경이 CAM 직경보다 큰 오퍼레이션(D12, D10 등)** 은 생성하지 않는다.
+- 적용 범위:
+  - 3-stage `TurningOp` (Front/Middle/Back)
+  - 3-stage `RoughFreeFromMillSplitAB` (Roughing, ZLevel)
+- 목적:
+  - CAM 직경 8.0 케이스에서 대구경 선행 가공을 제거해 불필요 공정/시간을 줄인다.
+
+## 5. 정리 원칙
 
 - 전체 정책은 루트 `rules.md`에서 관리합니다.
 - 이 파일에는 Esprit 로컬 초기화와 디버깅 메모만 남깁니다.
