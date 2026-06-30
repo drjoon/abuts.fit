@@ -1218,7 +1218,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 switch (groove.Trim().ToLowerInvariant())
                 {
                     case "none":
-                        stepIncrement = 0.10;
+                        stepIncrement = 0.08;
                         // gp.exe 모달 안정화: none/shallow는 Composite 비동적 추가 시도
                         Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_DYNAMIC_DISABLE", "1");
                         break;
