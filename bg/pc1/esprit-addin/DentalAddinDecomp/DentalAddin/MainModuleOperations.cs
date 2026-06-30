@@ -103,35 +103,23 @@ namespace DentalAddin
                 ExecuteTwoPhaseTurning("MIDDLE");
                 ExecuteTwoPhaseRough("MIDDLE");
 
-                ExecuteTwoPhaseTurning("BACK");
-                ExecuteTwoPhaseRough("BACK");
-
-                string retentionGroove = Environment.GetEnvironmentVariable("ABUTS_RETENTION_GROOVE");
-                bool splitFinish = string.Equals(retentionGroove, "deep", StringComparison.OrdinalIgnoreCase);
-
+                // 요청 반영:
+                // Finish_Front는 마지막 Middle_Rough와 Back_Turn 사이에 생성한다.
                 Environment.SetEnvironmentVariable("ABUTS_SKIP_FRONTFACE_IN_FREEFORM", "1");
                 try
                 {
-                    if (splitFinish)
-                    {
-                        Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_PHASE_MODE", "A_PHASE");
-                        ValidateBeforeOperation("FreeFormMill", Array.Empty<string>(), new[] { "3DMilling_0Degree", "3DMilling_90Degree", "3DMilling_180Degree", "3DMilling_270Degree" });
-                        FreeFormMill();
-                        TryNormalizeCompositeFinishOrderAfterFreeForm();
+                    Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_PHASE_MODE", "A_PHASE");
+                    ValidateBeforeOperation("FreeFormMill", Array.Empty<string>(), new[] { "3DMilling_0Degree", "3DMilling_90Degree", "3DMilling_180Degree", "3DMilling_270Degree" });
+                    FreeFormMill();
+                    TryNormalizeCompositeFinishOrderAfterFreeForm();
 
-                        Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_PHASE_MODE", "B_PHASE");
-                        ValidateBeforeOperation("FreeFormMill", Array.Empty<string>(), new[] { "3DMilling_0Degree", "3DMilling_90Degree", "3DMilling_180Degree", "3DMilling_270Degree" });
-                        FreeFormMill();
-                        TryNormalizeCompositeFinishOrderAfterFreeForm();
-                    }
-                    else
-                    {
-                        // none(유지홈 없음): 단일 Finish_All
-                        Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_PHASE_MODE", "ALL_PHASE");
-                        ValidateBeforeOperation("FreeFormMill", Array.Empty<string>(), new[] { "3DMilling_0Degree", "3DMilling_90Degree", "3DMilling_180Degree", "3DMilling_270Degree" });
-                        FreeFormMill();
-                        TryNormalizeCompositeFinishOrderAfterFreeForm();
-                    }
+                    ExecuteTwoPhaseTurning("BACK");
+                    ExecuteTwoPhaseRough("BACK");
+
+                    Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_PHASE_MODE", "B_PHASE");
+                    ValidateBeforeOperation("FreeFormMill", Array.Empty<string>(), new[] { "3DMilling_0Degree", "3DMilling_90Degree", "3DMilling_180Degree", "3DMilling_270Degree" });
+                    FreeFormMill();
+                    TryNormalizeCompositeFinishOrderAfterFreeForm();
                 }
                 finally
                 {

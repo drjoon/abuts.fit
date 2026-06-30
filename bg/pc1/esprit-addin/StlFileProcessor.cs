@@ -1259,18 +1259,18 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                         stepIncrement = 0.08;
                         // gp.exe 모달 안정화: none/shallow는 Composite 비동적 추가 시도
                         Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_DYNAMIC_DISABLE", "1");
-                        // 유지홈 없음 케이스는 단일 Finish_All 강제
-                        Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_PHASE_MODE", "ALL_PHASE");
+                        // 정책 변경: Finish는 항상 2단(Front/Back). ALL_PHASE 강제 금지.
+                        Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_PHASE_MODE", null);
                         break;
                     case "shallow":
                         stepIncrement = 0.20;
                         Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_DYNAMIC_DISABLE", "1");
-                        Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_PHASE_MODE", "ALL_PHASE");
+                        Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_PHASE_MODE", null);
                         break;
                     case "deep":  // 유지홈 있음
                         stepIncrement = 0.25;
                         Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_DYNAMIC_DISABLE", "0");
-                        // deep는 Front/Back 분할 모드가 기본
+                        // deep도 동일하게 Front/Back 2단 기준
                         Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_PHASE_MODE", null);
                         break;
                 }

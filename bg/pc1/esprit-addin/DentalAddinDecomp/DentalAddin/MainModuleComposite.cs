@@ -332,25 +332,19 @@ namespace DentalAddin
             string retentionGroove = (GetEnvString("ABUTS_RETENTION_GROOVE") ?? string.Empty).Trim().ToLowerInvariant();
 
             // Finish 정책(요청 반영):
-            // - 유지홈 있음(deep)        -> Front/Back 분할
-            // - 유지홈 없음/기타(=not deep) -> Finish_All 단일
-            // - 단, phaseMode(A/B/ALL)가 명시되면 그 모드를 우선 적용
+            // - normalizedGroove/retentionGroove와 무관하게 항상 2단(Finish_Front + Finish_Back)
+            // - phaseMode는 A/B 단독 실행 제어에만 사용한다.
+            // - 레거시 ALL_PHASE가 들어와도 단일 Finish_All로 내리지 않고 A+B 실행으로 처리한다.
             bool explicitAllPhase = string.Equals(phaseMode, "ALL_PHASE", StringComparison.OrdinalIgnoreCase);
             bool explicitAPhase = string.Equals(phaseMode, "A_PHASE", StringComparison.OrdinalIgnoreCase);
             bool explicitBPhase = string.Equals(phaseMode, "B_PHASE", StringComparison.OrdinalIgnoreCase);
-            bool explicitSplitPhase = explicitAPhase || explicitBPhase;
             bool grooveIsDeep = string.Equals(retentionGroove, "deep", StringComparison.OrdinalIgnoreCase);
 
-            bool finishAllMode = explicitAllPhase || (!explicitSplitPhase && !grooveIsDeep);
+            const bool finishAllMode = false;
 
             bool runA;
             bool runB;
-            if (finishAllMode)
-            {
-                runA = true;
-                runB = false;
-            }
-            else if (explicitAPhase)
+            if (explicitAPhase)
             {
                 runA = true;
                 runB = false;
@@ -362,6 +356,7 @@ namespace DentalAddin
             }
             else
             {
+                // explicitAllPhase 포함 기본값: 항상 Front+Back
                 runA = true;
                 runB = true;
             }
@@ -490,17 +485,7 @@ namespace DentalAddin
                 DentalLogger.Log($"Composite2SplitLine2 - A 시작점 적용: Requested={requestedAFirstPass:F2}, frontBased={baseAFirstPercentByFrontX:F2}, envOverride={(firstPassPercentOverride.HasValue ? firstPassPercentOverride.Value.ToString("F2", CultureInfo.InvariantCulture) : "none")}, Applied={opA.FirstPassPercent:F2}, LastPass={opA.LastPassPercent:F2}, window={aWindowPercent:F2}");
             }
 
-            // Finish_All 모드(none): 1% ~ BackPointX 단일 패스
-            if (finishAllMode)
-            {
-                const double finishAllFirstPercent = 1.0;
-                double finishAllLastPercent = Clamp(compositeEndPassPercent, finishAllFirstPercent, 100.0);
-                double oldFirst = opA.FirstPassPercent;
-                double oldLast = opA.LastPassPercent;
-                opA.FirstPassPercent = finishAllFirstPercent;
-                opA.LastPassPercent = finishAllLastPercent;
-                DentalLogger.Log($"Composite2SplitLine2 - Finish_All 적용(none): A.First% {oldFirst:F2}->{opA.FirstPassPercent:F2}, A.Last% {oldLast:F2}->{opA.LastPassPercent:F2}, BackTargetX={compositeEndTargetX:F3}");
-            }
+            // 정책 변경: Finish_All 단일 패스는 사용하지 않는다(항상 Front/Back 2단).
 
             // A/B 끝점 정책 재확인:
             // - FINISH_A 끝점: 기준점(splitPercent)
@@ -623,20 +608,13 @@ namespace DentalAddin
                 TryAddOperation(opA, freeFormFeature, "Composite2SplitLine2:A", false);
                 TryAppendCompositeSuffixToNewOperations(beforeAddCountBaseA, finishAllMode ? "ALL" : "FRONT");
                 int afterA = Document?.Operations?.Count ?? -1;
-                DentalLogger.Log($"Composite2SplitLine2 - Operation 추가 완료: {(finishAllMode ? "Finish_All" : "FINISH_FRONT")}(opA) (afterCount={afterA})");
+                DentalLogger.Log($"Composite2SplitLine2 - Operation 추가 완료: FINISH_FRONT(opA) (afterCount={afterA})");
 
-                // Finish_All/Finish_Back 끝점에서 홈 파임 방지용 End lap(Finish_End) 공정은
-                // 요청에 따라 임시 비활성화한다. (툴패스 생성 금지)
-                if (finishAllMode)
-                {
-                    // TryAddCompositeExitLap(technologyUtility, effectivePrcA, freeFormFeature, opA, opA.LastPassPercent, "END", "A");
-                    DentalLogger.Log("Composite2SplitLine2 - Finish_End(A) 생성 비활성화(주석 처리)");
-                }
+                // Finish_End 공정은 요청에 따라 임시 비활성화한다. (툴패스 생성 금지)
+                // TryAddCompositeExitLap(technologyUtility, effectivePrcA, freeFormFeature, opA, opA.LastPassPercent, "END", "A");
+                DentalLogger.Log("Composite2SplitLine2 - Finish_End(A) 생성 비활성화(주석 처리)");
 
-                if (!finishAllMode)
-                {
-                    TryMoveCompositeFinishBeforeTurnB("FINISH_FRONT");
-                }
+                TryMoveCompositeFinishBeforeTurnB("FINISH_FRONT");
             }
             else
             {
