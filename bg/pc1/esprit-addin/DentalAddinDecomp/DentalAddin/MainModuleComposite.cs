@@ -1448,13 +1448,15 @@ namespace DentalAddin
             double roughAEnd = splitX + 1.5;
 
             // 요청 반영: Rough_B 시작점 = FINISH_B 시작점 - 2.5mm
-            // FINISH_B 시작점은 Composite 정책과 동일하게 A/B 경계(guideLine - 0.5mm) 기준을 사용한다.
+            // FINISH_B 시작점은 Composite 정책과 동일하게 A/B 경계(guideLine - 0.5mm) 기준을 우선 사용한다.
+            // (요청 반영: 안전 클램프 미적용)
             double finishBStartX = splitX;
             if (TryResolveTwoPhaseSplitLineX(out double splitXByGuideLineForRough))
             {
                 const double bcBoundaryLeftOffsetMm = 0.5;
                 finishBStartX = splitXByGuideLineForRough - bcBoundaryLeftOffsetMm;
             }
+
             double roughBStart = finishBStartX - 2.5;
             // 범위 내 클램프
             if (roughAEnd <= xMin + 1e-6) roughAEnd = xMin + 1e-6;
