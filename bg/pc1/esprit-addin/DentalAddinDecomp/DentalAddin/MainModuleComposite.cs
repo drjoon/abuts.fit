@@ -277,9 +277,9 @@ namespace DentalAddin
             // FINISH_A/FINISH_B 분할 기준은 실제 가이드 라인(TwoPhaseSplitLine) X좌표로 강제한다.
             if (TryResolveTwoPhaseSplitLineX(out double splitXByGuideLine))
             {
-                // 사용자 요청: A/B 경계(=B 시작)는 TwoPhaseSplitLine 기준 0.6mm 왼쪽(X-)으로 적용
-                // (기존 -0.5mm에서 시작점 추가 -0.1mm)
-                const double bcBoundaryLeftOffsetMm = 0.6;
+                // 사용자 요청: FINISH_A 끝점 -0.1mm 오프셋 제거
+                // A/B 경계(=B 시작)는 TwoPhaseSplitLine 기준 0.5mm 왼쪽(X-)으로 적용
+                const double bcBoundaryLeftOffsetMm = 0.5;
                 double splitXByGuideLineLeft = splitXByGuideLine - bcBoundaryLeftOffsetMm;
 
                 // 중요: StartEndPosition pass-percent는 본 흐름에서 x/20.0 스케일을 사용한다.
@@ -372,12 +372,10 @@ namespace DentalAddin
                 : baseAFirstPercentByFrontX;
 
             const double aEndOffsetFromSplitMm = 0.0; // 요청: FINISH_A 끝점 = 기준점(splitPercent)
-            // [중요] FINISH_A 끝점과 FINISH_B 시작점의 X가 같아도, 원통 위 시작 각도(phase) 차이로 seam이 보일 수 있다.
-            // 이를 줄이기 위해 FINISH_B 시작점을 기준점보다 0.1mm 왼쪽(X-)으로 이동해 미세 겹침(overlap)을 준다.
-            const double bStartOffsetFromSplitMm = -0.1; // 요청: FINISH_B 시작점 = 기준점(splitPercent) -0.1mm
-            // [중요] FINISH_B 끝점은 반드시 BackPointX +0.3mm를 유지할 것.
-            // +0.3mm 하지 않으면 홈 발생하므로, 충분한 검증 없이 값 변경 금지.
-            const double compositeEndOffsetFromBackPointMm = 0.3;
+            // 요청 반영: FINISH_B 시작점 오프셋 제거(정치수)
+            const double bStartOffsetFromSplitMm = 0.0; // FINISH_B 시작점 = 기준점(splitPercent)
+            // 요청 반영: FINISH_B 끝점 +0.3mm 제거
+            const double compositeEndOffsetFromBackPointMm = 0.0;
 
             // 기준점(splitPercent)을 기준으로 A/B 경계를 독립 적용한다.
             // - A.End: split + 0.0mm(=split)
@@ -398,7 +396,7 @@ namespace DentalAddin
             opB.FirstPassPercent = bFirst;
             opB.LastPassPercent = effectiveLastPercent;
 
-            // 정책: FINISH_B 종료 기준점은 BackPointX + 0.3mm (중요: +0.3mm 미적용 시 홈 발생)
+            // 정책: FINISH_B 종료 기준점은 BackPointX (+0.3mm 제거 적용)
             double compositeEndTargetX = MoveSTL_Module.BackPointX + compositeEndOffsetFromBackPointMm;
             double compositeEndPassPercent = XToPassPercentByStartEndScale(compositeEndTargetX, 0.0, 100.0);
             opB.LastPassPercent = Clamp(compositeEndPassPercent, opB.FirstPassPercent, 100.0);
@@ -432,8 +430,8 @@ namespace DentalAddin
 
             // A/B 끝점 정책 재확인:
             // - FINISH_A 끝점: 기준점(splitPercent)
-            // - FINISH_B 시작점: 기준점(splitPercent) -0.1mm (원통 시작각도 차이 seam 완화)
-            // - FINISH_B 끝점: BackPointX +0.3mm (중요: +0.3mm 미적용 시 홈 발생)
+            // - FINISH_B 시작점: 기준점(splitPercent) (오프셋 제거)
+            // - FINISH_B 끝점: BackPointX (+0.3mm 제거)
             double aLastBeforeClamp = opA.LastPassPercent;
             opA.LastPassPercent = Clamp(opA.LastPassPercent, opA.FirstPassPercent, effectiveLastPercent);
 
@@ -842,9 +840,10 @@ namespace DentalAddin
         // 최소 0.3mm의 선행 절삭 여유를 강제한다.
         private const double FaceRightGuardMinGapMm = 0.3;
 
-        // Rough_A 우측 종료 오프셋(기존 TwoPhase Rough 로직과 동일)
-        // roughAEnd = splitX - 0.5mm
-        private const double RoughAEndOffsetFromSplitMm = 0.5;
+        // Rough_A 우측 종료 오프셋
+        // 요청 반영: 기존 끝점에서 +2.0mm 이동
+        // 기존 roughAEnd = splitX - 0.5mm  ->  변경 roughAEnd = splitX + 1.5mm
+        private const double RoughAEndOffsetFromSplitMm = -1.5;
 
 
 
@@ -1444,9 +1443,9 @@ namespace DentalAddin
 
             double radius = (Document.LatheMachineSetup.BarDiameter + 10.0) / 2.0;
             // Turn_A/Turn_B와 동일 기준으로 finishline 기준 오프셋을 맞춘다.
-            // Rough A는 finishline보다 0.5mm 왼쪽에서 종료,
+            // 요청 반영: Rough A 끝점은 기존 위치 대비 +2.0mm 이동(= splitX +1.5mm)
             // Rough B는 finishline보다 2.5mm 왼쪽에서 시작 (겹침 허용)
-            double roughAEnd = splitX - 0.5;
+            double roughAEnd = splitX + 1.5;
             double roughBStart = splitX - 2.5;
             // 범위 내 클램프
             if (roughAEnd <= xMin + 1e-6) roughAEnd = xMin + 1e-6;
