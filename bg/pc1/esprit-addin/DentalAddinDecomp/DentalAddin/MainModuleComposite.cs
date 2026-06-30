@@ -371,33 +371,30 @@ namespace DentalAddin
                 ? Clamp(firstPassPercentOverride.Value, 0.0, splitPercent)
                 : baseAFirstPercentByFrontX;
 
-            const double seamEpsilonPercent = 0.05;
-            const double aEndOffsetFromBStartMm = 0.1; // 요청: FINISH_A 끝점 +0.1mm
-            const double compositeEndOffsetFromBackPointMm = 0.0; // FINISH_B 끝점 기준 복원: BackPointX
+            const double aEndOffsetFromSplitMm = 0.1; // 요청: FINISH_A 끝점 = 기준점 +0.1mm
+            const double bStartOffsetFromSplitMm = -0.1; // 요청: FINISH_B 시작점 = 기준점 -0.1mm
+            const double compositeEndOffsetFromBackPointMm = 0.1; // 요청: FINISH_B 끝점 = BackPointX +0.1mm
+
+            // 기준점(splitPercent)을 기준으로 A/B 경계를 독립 적용한다.
+            // - A.End: split + 0.1mm
+            // - B.Start: split - 0.1mm
+            double requestedALastPass = ShiftPassPercentByStartEndScaleMm(splitPercent, aEndOffsetFromSplitMm, firstPercent, effectiveLastPercent);
+            double requestedBFirstPass = ShiftPassPercentByStartEndScaleMm(splitPercent, bStartOffsetFromSplitMm, firstPercent, effectiveLastPercent);
 
             // B 시작 퍼센트 상한(안전값) 적용
-            // 주의: splitPercent는 앞단에서 이미 TwoPhaseSplitLine 기준 -0.1mm 정책(guide-0.6) 반영값이다.
-            double bFirst = splitPercent;
-            if (effectiveLastPercent - splitPercent > seamEpsilonPercent * 2.0)
-            {
-                bFirst = Clamp(splitPercent + seamEpsilonPercent, firstPercent, effectiveLastPercent);
-            }
+            double bFirst = requestedBFirstPass;
             if (bFirst > safeBFirstMax + 1e-6)
             {
                 bFirst = safeBFirstMax;
                 startEndBFirstGuardApplied = true;
-                DentalLogger.Log($"Composite2SplitAB - B 시작 안전클램프 적용: rawSplit={splitPercent:F2}, rawBFirst={splitPercent + seamEpsilonPercent:F2}, safeBFirst={bFirst:F2}, env=ABUTS_COMPOSITE_STARTEND_SAFE_B_FIRST_MAX");
+                DentalLogger.Log($"Composite2SplitAB - B 시작 안전클램프 적용: requestedBFirst={requestedBFirstPass:F2}, safeBFirst={bFirst:F2}, env=ABUTS_COMPOSITE_STARTEND_SAFE_B_FIRST_MAX");
             }
 
-            // 요청 반영:
-            // - FINISH_B 시작점: 기존 정책(-0.1mm) 유지
-            // - FINISH_A 끝점: FINISH_B 시작점 기준 +0.1mm
-            double requestedALastPass = ShiftPassPercentByStartEndScaleMm(bFirst, aEndOffsetFromBStartMm, firstPercent, effectiveLastPercent);
             opA.LastPassPercent = Clamp(requestedALastPass, firstPercent, effectiveLastPercent);
             opB.FirstPassPercent = bFirst;
             opB.LastPassPercent = effectiveLastPercent;
 
-            // 정책: 종료 기준점은 BackPointX
+            // 정책: FINISH_B 종료 기준점은 BackPointX + 0.1mm
             double compositeEndTargetX = MoveSTL_Module.BackPointX + compositeEndOffsetFromBackPointMm;
             double compositeEndPassPercent = XToPassPercentByStartEndScale(compositeEndTargetX, 0.0, 100.0);
             opB.LastPassPercent = Clamp(compositeEndPassPercent, opB.FirstPassPercent, 100.0);
@@ -430,8 +427,9 @@ namespace DentalAddin
             }
 
             // A/B 끝점 정책 재확인:
-            // - FINISH_A 끝점: B 시작점 +0.1mm (요청 반영)
-            // - FINISH_B 끝점: BackPointX 고정 (이동 금지)
+            // - FINISH_A 끝점: 기준점(splitPercent) +0.1mm
+            // - FINISH_B 시작점: 기준점(splitPercent) -0.1mm
+            // - FINISH_B 끝점: BackPointX +0.1mm
             double aLastBeforeClamp = opA.LastPassPercent;
             opA.LastPassPercent = Clamp(opA.LastPassPercent, opA.FirstPassPercent, effectiveLastPercent);
 
@@ -444,7 +442,7 @@ namespace DentalAddin
             double bLastXBeforeAdjust = PassPercentToX(bLastBeforeAdjust, MoveSTL_Module.FrontPointX, direction, absSpan);
             double bLastXAfterAdjust = PassPercentToX(opB.LastPassPercent, MoveSTL_Module.FrontPointX, direction, absSpan);
             DentalLogger.Log($"Composite2SplitAB - A/B 끝점 정책 적용: A.Last% {aLastBeforeClamp:F2}->{opA.LastPassPercent:F2}, A.LastX {aLastXBeforeClamp:F3}->{aLastXAfterClamp:F3}, B.First%={opB.FirstPassPercent:F2}, B.Last% {bLastBeforeAdjust:F2}->{opB.LastPassPercent:F2}, B.LastX {bLastXBeforeAdjust:F3}->{bLastXAfterAdjust:F3}, B.TargetX={bTargetX:F3}");
-            DentalLogger.Log($"Composite2SplitAB - seam 보정: A({opA.FirstPassPercent:F2}->{opA.LastPassPercent:F2}), B({opB.FirstPassPercent:F2}->{opB.LastPassPercent:F2}), seamEps={seamEpsilonPercent:F2}, AEndOffsetMm={aEndOffsetFromBStartMm:F2}, BFirstGuard={startEndBFirstGuardApplied}, AFirstFallback={aFirstPassFallbackApplied}");
+            DentalLogger.Log($"Composite2SplitAB - seam 보정: A({opA.FirstPassPercent:F2}->{opA.LastPassPercent:F2}), B({opB.FirstPassPercent:F2}->{opB.LastPassPercent:F2}), Split%={splitPercent:F2}, AEndOffsetFromSplitMm={aEndOffsetFromSplitMm:F2}, BStartOffsetFromSplitMm={bStartOffsetFromSplitMm:F2}, BEndOffsetFromBackMm={compositeEndOffsetFromBackPointMm:F2}, BFirstGuard={startEndBFirstGuardApplied}, AFirstFallback={aFirstPassFallbackApplied}");
 
             bool surfaceReady = TryEnsureCompositeSurfaceNumber("Composite2SplitAB");
 
