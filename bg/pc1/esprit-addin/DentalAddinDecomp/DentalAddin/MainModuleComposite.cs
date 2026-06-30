@@ -886,10 +886,10 @@ namespace DentalAddin
         }
 
         /// <summary>
-        /// Front Face(ParallelPlanes) 가공 깊이를 PRC BottomZLimit(절대값) 기준으로 적용한다.
-        /// - RL=1: BottomZLimit = -(FrontPointX + depth)
-        /// - RL=2: BottomZLimit = +(FrontPointX - depth)
-        /// 추가 정책: Face.RightX를 현재값 기준 +1.0mm 확장하되, FinishLine 경계를 넘지 않게 클램프한다.
+        /// Front Face(ParallelPlanes) 가공 끝점을 FrontPointX 기준으로 고정 적용한다.
+        /// - 목표: Face.RightX = FrontPointX + 0.5mm
+        /// - RL=1: BottomZLimit = -Face.RightX
+        /// - RL=2: BottomZLimit = +Face.RightX
         /// 주의: 이 설정 이후에 Rough 안전가드(TryApplyFaceRightEndGuard)가 추가 보정할 수 있다.
         /// </summary>
         private static void ApplyFrontFaceFixedDepth(TechLatheMoldParallelPlanes faceOp, string context)
@@ -914,31 +914,13 @@ namespace DentalAddin
 
                 LastAppliedFrontFaceDepthMm = configuredDepthMm;
 
-                if (RL == 1.0)
-                {
-                    faceOp.TopZLimit = 1.0;
-                    faceOp.BottomZLimit = -1.0 * (MoveSTL_Module.FrontPointX + configuredDepthMm);
-                }
-                else if (RL == 2.0)
-                {
-                    faceOp.BottomZLimit = 1.0 * (MoveSTL_Module.FrontPointX - configuredDepthMm);
-                    faceOp.TopZLimit = 1.0;
-                }
-                else
-                {
-                    // RL 비정상 값은 기존 default 흐름을 해치지 않기 위해 RL=1 기준으로 처리
-                    faceOp.TopZLimit = 1.0;
-                    faceOp.BottomZLimit = -1.0 * (MoveSTL_Module.FrontPointX + configuredDepthMm);
-                    DentalLogger.Log($"FrontFaceDepth[{context}] - RL 비정상({RL}), RL=1 기준으로 적용");
-                }
+                // 사용자 요청: Front Face 끝점은 FrontPointX 기준 +0.5mm
+                const double frontFaceEndOffsetFromFrontMm = 0.5;
+                double requestedFaceRightX = MoveSTL_Module.FrontPointX + frontFaceEndOffsetFromFrontMm;
+                double appliedFaceRightX = requestedFaceRightX;
 
-                double faceRightX = (RL == 1.0) ? -faceOp.BottomZLimit : faceOp.BottomZLimit;
-
-                // 사용자 요청: Front Face를 현재값 대비 +1.0mm 확장
-                const double frontFaceExtraCutMm = 1.0;
-                double expandedFaceRightX = faceRightX + frontFaceExtraCutMm;
-
-                // FinishLine 경계 침범 방지: 경계 X를 상한으로 클램프
+                // FinishLine 경계가 정상적이고, 요청 끝점보다 충분히 우측일 때만 상한 클램프를 적용한다.
+                // (경계값이 FrontPointX 근처로 비정상 해석되는 케이스에서 요청값이 0으로 꺾이는 것을 방지)
                 double boundaryX = MoveSTL_Module.FinishLineX;
                 double front = MoveSTL_Module.FrontPointX;
                 double back = MoveSTL_Module.BackPointX;
@@ -951,19 +933,41 @@ namespace DentalAddin
                 }
 
                 bool finishLineClampApplied = false;
+                bool finishLineClampIgnored = false;
                 if (!double.IsNaN(boundaryX) && !double.IsInfinity(boundaryX))
                 {
-                    if (expandedFaceRightX > boundaryX)
+                    if (boundaryX > requestedFaceRightX + 1e-6)
                     {
-                        expandedFaceRightX = boundaryX;
-                        finishLineClampApplied = true;
+                        if (appliedFaceRightX > boundaryX)
+                        {
+                            appliedFaceRightX = boundaryX;
+                            finishLineClampApplied = true;
+                        }
+                    }
+                    else
+                    {
+                        finishLineClampIgnored = true;
                     }
                 }
 
+                faceOp.TopZLimit = 1.0;
                 double oldBottom2 = faceOp.BottomZLimit;
-                faceOp.BottomZLimit = (RL == 1.0) ? -expandedFaceRightX : expandedFaceRightX;
+                if (RL == 1.0)
+                {
+                    faceOp.BottomZLimit = -appliedFaceRightX;
+                }
+                else if (RL == 2.0)
+                {
+                    faceOp.BottomZLimit = appliedFaceRightX;
+                }
+                else
+                {
+                    // RL 비정상 값은 기존 default 흐름을 해치지 않기 위해 RL=1 기준으로 처리
+                    faceOp.BottomZLimit = -appliedFaceRightX;
+                    DentalLogger.Log($"FrontFaceDepth[{context}] - RL 비정상({RL}), RL=1 기준으로 적용");
+                }
 
-                DentalLogger.Log($"FrontFaceDepth[{context}] - PRC깊이+1.0 적용: depth={configuredDepthMm:F3}mm, TopZ:{oldTop:F3}->{faceOp.TopZLimit:F3}, BottomZ:{oldBottom:F3}->{oldBottom2:F3}->{faceOp.BottomZLimit:F3}, Face.RightX:{faceRightX:F3}->{expandedFaceRightX:F3}, FinishBoundaryX={boundaryX:F3}, ClampApplied={finishLineClampApplied}");
+                DentalLogger.Log($"FrontFaceDepth[{context}] - FrontPoint 고정 오프셋 적용: requestRightX={requestedFaceRightX:F3}, appliedRightX={appliedFaceRightX:F3}, TopZ:{oldTop:F3}->{faceOp.TopZLimit:F3}, BottomZ:{oldBottom:F3}->{oldBottom2:F3}->{faceOp.BottomZLimit:F3}, PRCDepthRef={configuredDepthMm:F3}, FinishBoundaryX={boundaryX:F3}, ClampApplied={finishLineClampApplied}, ClampIgnored={finishLineClampIgnored}");
             }
             catch (Exception ex)
             {

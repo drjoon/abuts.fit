@@ -117,8 +117,8 @@ namespace DentalAddin
                         return false;
                     }
 
-                    // Front Face 깊이 정책:
-                    // - PRC BottomZLimit(절대값)을 우선 사용한다.
+                    // Front Face 끝점 정책:
+                    // - Face.RightX = FrontPointX + 0.5mm 로 고정 적용한다.
                     // - 이후 Rough 대비 안전가드(0.3mm)를 추가 적용해 공구 파손 위험을 방지한다.
                     ApplyFrontFaceFixedDepth(faceOp, "TryRunFreeFormMillSafe:FrontFace");
 
@@ -552,38 +552,27 @@ namespace DentalAddin
                             goto IL_027d;
                         IL_027d:
                             num2 = 37;
-                            if (RL == 1.0)
-                            {
-                                goto IL_0290;
-                            }
-                            goto IL_02c9;
+                            // legacy free() 경로도 FrontFaceMill/Safe 경로와 동일한 끝점 정책을 사용한다.
+                            ApplyFrontFaceFixedDepth(techLatheMoldParallelPlanes, "free:FrontFace");
+                            TryApplyFaceRightEndGuard(techLatheMoldParallelPlanes, "free:FrontFace");
+                            goto IL_0309;
+                        // 디컴파일된 상태머신(case 38/39/41/42/43) 호환용 라벨 유지
+                        // (기존 RL 분기 코드를 정책 통합으로 축약했지만, 재진입 goto 타깃은 남겨둔다)
                         IL_0290:
                             num2 = 38;
-                            techLatheMoldParallelPlanes.TopZLimit = 1.0;
-                            goto IL_02a3;
+                            goto IL_027d;
                         IL_02a3:
                             num2 = 39;
-                            techLatheMoldParallelPlanes.BottomZLimit = -1.0 * (MoveSTL_Module.FrontPointX + Math.Abs(DownZ));
-                            // techLatheMoldParallelPlanes.BottomZLimit = MoveSTL_Module.FrontPointX;
-                            DentalLogger.Log($"free - FrontFace Right FrontPointX:{MoveSTL_Module.FrontPointX} ZLimit Bottom:{techLatheMoldParallelPlanes.BottomZLimit}");
-                            goto IL_0309;
+                            goto IL_027d;
                         IL_02c9:
                             num2 = 41;
-                            if (RL == 2.0)
-                            {
-                                goto IL_02dc;
-                            }
-                            goto IL_0309;
+                            goto IL_027d;
                         IL_02dc:
                             num2 = 42;
-                            techLatheMoldParallelPlanes.BottomZLimit = 1.0 * (MoveSTL_Module.FrontPointX - Math.Abs(DownZ));
-                            // techLatheMoldParallelPlanes.BottomZLimit = MoveSTL_Module.FrontPointX;
-                            DentalLogger.Log($"free - FrontFace Left ZLimit FrontPointX:{MoveSTL_Module.FrontPointX} Bottom:{techLatheMoldParallelPlanes.BottomZLimit}");
-                            goto IL_02f6;
+                            goto IL_027d;
                         IL_02f6:
                             num2 = 43;
-                            techLatheMoldParallelPlanes.TopZLimit = 1.0;
-                            goto IL_0309;
+                            goto IL_027d;
                         IL_0309:
                             num2 = 44;
                             ZH = Math.Abs(MoveSTL_Module.FrontPointX);

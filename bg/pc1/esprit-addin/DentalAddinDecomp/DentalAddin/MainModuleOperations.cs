@@ -350,8 +350,8 @@ namespace DentalAddin
                     return;
                 }
 
-                // Front Face 깊이 정책:
-                // - PRC BottomZLimit(절대값)을 우선 사용한다.
+                // Front Face 끝점 정책:
+                // - Face.RightX = FrontPointX + 0.5mm 로 고정 적용한다.
                 // - 이후 Rough 대비 안전가드(0.3mm)를 추가 적용해 공구 파손 위험을 방지한다.
                 ApplyFrontFaceFixedDepth(techLatheMoldParallelPlanes, "FrontFaceMill");
 
