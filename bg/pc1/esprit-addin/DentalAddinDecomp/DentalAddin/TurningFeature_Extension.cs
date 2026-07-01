@@ -708,7 +708,7 @@ internal sealed class TurningFeature_Extension
 			for (int i = 1; i <= turningTimes; i++)
 			{
 				double legacyStartX = MainModule.EndXValue + MainModule.TurningExtend - 1.0;
-				double stockNearStartX = MoveSTL_Module.BackPointX;
+				double stockNearStartX = MoveSTL_Module.FrontPointX;
 				array2[2] = (!MainModule.SpindleSide)
 					? Math.Max(legacyStartX, stockNearStartX)
 					: Math.Min(legacyStartX, stockNearStartX);

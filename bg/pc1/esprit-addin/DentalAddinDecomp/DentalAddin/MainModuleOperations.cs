@@ -1608,9 +1608,21 @@ namespace DentalAddin
                         rangeMaxX = Math.Min(xMax, middleRoughEnd + roughToTurnMm);
                         break;
                     case "BACK":
-                        // 요청사항: Back_Turn 시작 기준은 split2가 아니라 BackPointX
-                        rangeMinX = Clamp(MoveSTL_Module.BackPointX, xMin + 1e-6, xMax - 1e-6);
-                        rangeMaxX = xMax;
+                        // 요청사항 반영:
+                        // 1) 시작점은 Front/Middle과 동일하게 소재 근처(FrontPointX)로 맞춘다.
+                        // 2) 끝점은 기존처럼 수평 extension + 45도 퇴출이 보이도록 xMax를 확장한다.
+                        rangeMinX = Clamp(MoveSTL_Module.FrontPointX, xMin + 1e-6, xMax - 1e-6);
+
+                        double exitAllowance = Math.Max(0.5, Math.Abs(TurningExtend) + Math.Abs(BackTurn));
+                        double chamferTan = Math.Abs(Math.Tan(Math.PI * Chamfer / 180.0));
+                        if (Math.Abs(Chamfer - 90.0) > 0.001 && chamferTan > 1e-6)
+                        {
+                            double topY = Document?.LatheMachineSetup?.BarDiameter / 2.0 ?? 0.0;
+                            double rise = Math.Max(0.0, topY - LowerY);
+                            exitAllowance += rise / chamferTan;
+                        }
+
+                        rangeMaxX = xMax + exitAllowance;
                         break;
                     default:
                         DentalLogger.Log($"TurningOp 3-Stage - 미지원 region='{region}'");
@@ -1658,10 +1670,23 @@ namespace DentalAddin
                     return false;
                 }
 
-                // Turn_B: finishline보다 0.5mm 왼쪽에서 시작
-                double effectiveSplitX = Math.Max(splitX - 0.5, xMin + 1e-6);
+                // 레거시 폴백에서도 시작점이 과도하게 -X로 멀어지지 않도록
+                // FrontPointX(소재 근처 시작) 하한을 강제한다.
+                double frontAnchorX = Clamp(MoveSTL_Module.FrontPointX, xMin + 1e-6, xMax - 1e-6);
+                double effectiveSplitX = Math.Max(splitX - 0.5, frontAnchorX);
                 rangeMinX = effectiveSplitX;
-                rangeMaxX = xMax;
+
+                // 끝점은 기존 Back_Turn 형상(수평 extension + 45도 퇴출)을 유지하도록 확장한다.
+                double exitAllowance = Math.Max(0.5, Math.Abs(TurningExtend) + Math.Abs(BackTurn));
+                double chamferTan = Math.Abs(Math.Tan(Math.PI * Chamfer / 180.0));
+                if (Math.Abs(Chamfer - 90.0) > 0.001 && chamferTan > 1e-6)
+                {
+                    double topY = Document?.LatheMachineSetup?.BarDiameter / 2.0 ?? 0.0;
+                    double rise = Math.Max(0.0, topY - LowerY);
+                    exitAllowance += rise / chamferTan;
+                }
+
+                rangeMaxX = xMax + exitAllowance;
 
                 if (rangeMaxX - rangeMinX < 1e-4)
                 {
