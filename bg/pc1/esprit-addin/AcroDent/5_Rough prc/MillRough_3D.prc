@@ -274,7 +274,7 @@ BEGIN_OPERATION; 553; Rough Mill 3D; 0;
 	END_STRING
    MinimumTrochoidRadiusMM; 6843; 1.6000000000000001;  CAPTION; 최소. 트로코이달반경 | 최소. 트로코이달반경, %; SOURCE; 3; TECHCODETYPE; 2;
    CustomSetting8; 638; 0;  CAPTION; 사용자 정의 설정 8; SOURCE; 1; TECHCODETYPE; 2;
-   Tolerance; 1046; 0.02;  CAPTION; 공차; SOURCE; 2; TECHCODETYPE; 2;
+   Tolerance; 1046; 0.04;  CAPTION; 공차; SOURCE; 2; TECHCODETYPE; 2;
    4902; 4902; ;  SOURCE; 0; TECHCODETYPE; 3;
 	BEGIN_STRING; 4902;;
 		:

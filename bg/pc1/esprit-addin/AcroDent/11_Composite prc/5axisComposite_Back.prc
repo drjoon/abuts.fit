@@ -349,7 +349,7 @@ BEGIN_OPERATION; 507; 5Axis_Composite; 0;
    TangentPassExtension; 3324; 0;  CAPTION; 탄젠트 패스 확장 안; SOURCE; 2; TECHCODETYPE; 2;
    CustomSetting8; 638; 0;  CAPTION; 사용자 정의 설정 8; SOURCE; 1; TECHCODETYPE; 2;
    PassPositionPercent; 3409; 50;  HIDDEN; CAPTION; 경로 위치 퍼센트; SOURCE; 1; TECHCODETYPE; 2;
-   Tolerance; 1046; 0.02;  CAPTION; 공차; SOURCE; 2; TECHCODETYPE; 2;
+   Tolerance; 1046; 0.04;  CAPTION; 공차; SOURCE; 2; TECHCODETYPE; 2;
    PointSelectionOnProfile; 3290; 0;  LOCKED; HIDDEN; CAPTION; 프로파일에서 점 선택; SOURCE; 3; TECHCODETYPE; 442;
    MinimumAngle; 3256; 0;  LOCKED; HIDDEN; CAPTION; 최소 각도; SOURCE; 1; TECHCODETYPE; 2;
    MachiningPattern; 3222; 6;  CAPTION; 가공 패턴; SOURCE; 2; TECHCODETYPE; 411;

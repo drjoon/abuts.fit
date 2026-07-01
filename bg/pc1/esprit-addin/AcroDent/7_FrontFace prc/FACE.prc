@@ -350,7 +350,7 @@ BEGIN_OPERATION; 552; EM2.0BALL; 0;
    ToolCompensation; 1284; 0;  CAPTION; 공구 보정; SOURCE; 0; TECHCODETYPE; 67;
    TangentPassExtension; 3324; 0;  CAPTION; 탄젠트 패스 확장 안; SOURCE; 1; TECHCODETYPE; 2;
    CustomSetting8; 638; 0;  CAPTION; 사용자 정의 설정 8; SOURCE; 1; TECHCODETYPE; 2;
-   Tolerance; 1046; 0.03;  CAPTION; 공차; SOURCE; 2; TECHCODETYPE; 2;
+   Tolerance; 1046; 0.04;  CAPTION; 공차; SOURCE; 2; TECHCODETYPE; 2;
    CheckSurfaceOffset; 3273; 0.5;  HIDDEN; CAPTION; 체크 서페이스 오프셋; SOURCE; 1; TECHCODETYPE; 2;
    ReconnectionDistance; 3341; 0.5;  CAPTION; 재연결 거리; SOURCE; 1; TECHCODETYPE; 2;
    4902; 4902; ;  SOURCE; 0; TECHCODETYPE; 3;
