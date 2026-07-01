@@ -1176,6 +1176,27 @@ namespace DentalAddin
                     }
                 }
 
+                // 추가 정책(요청 반영): Front_Face 끝점은 Splitline_2보다 반드시 왼쪽에 있어야 한다.
+                // strict-left 보장을 위해 아주 작은 마진(0.001mm)을 둔다.
+                bool splitline2ClampApplied = false;
+                double splitline2Used = double.NaN;
+                if (TryGetThreeStageSplitConfig(out _, out double splitline2, out _, out _))
+                {
+                    splitline2Used = splitline2;
+                    double maxFaceRightBySplitline2 = splitline2 - 0.001;
+                    if (appliedFaceRightX >= maxFaceRightBySplitline2)
+                    {
+                        double before = appliedFaceRightX;
+                        appliedFaceRightX = maxFaceRightBySplitline2;
+                        splitline2ClampApplied = true;
+                        DentalLogger.Log($"FrontFaceDepth[{context}] - Splitline_2 좌측 클램프 적용: Face.RightX {before:F3}->{appliedFaceRightX:F3}, Splitline_2={splitline2:F3}");
+                    }
+                }
+                else
+                {
+                    DentalLogger.Log($"FrontFaceDepth[{context}] - Splitline_2 해석 실패로 좌측 클램프 생략");
+                }
+
                 faceOp.TopZLimit = 1.0;
                 double oldBottom2 = faceOp.BottomZLimit;
                 if (RL == 1.0)
@@ -1193,7 +1214,7 @@ namespace DentalAddin
                     DentalLogger.Log($"FrontFaceDepth[{context}] - RL 비정상({RL}), RL=1 기준으로 적용");
                 }
 
-                DentalLogger.Log($"FrontFaceDepth[{context}] - FrontPoint 고정 오프셋 적용: requestRightX={requestedFaceRightX:F3}, appliedRightX={appliedFaceRightX:F3}, TopZ:{oldTop:F3}->{faceOp.TopZLimit:F3}, BottomZ:{oldBottom:F3}->{oldBottom2:F3}->{faceOp.BottomZLimit:F3}, PRCDepthRef={configuredDepthMm:F3}, FinishBoundaryX={boundaryX:F3}, ClampApplied={finishLineClampApplied}, ClampIgnored={finishLineClampIgnored}");
+                DentalLogger.Log($"FrontFaceDepth[{context}] - FrontPoint 고정 오프셋 적용: requestRightX={requestedFaceRightX:F3}, appliedRightX={appliedFaceRightX:F3}, TopZ:{oldTop:F3}->{faceOp.TopZLimit:F3}, BottomZ:{oldBottom:F3}->{oldBottom2:F3}->{faceOp.BottomZLimit:F3}, PRCDepthRef={configuredDepthMm:F3}, FinishBoundaryX={boundaryX:F3}, ClampApplied={finishLineClampApplied}, ClampIgnored={finishLineClampIgnored}, Splitline2={splitline2Used:F3}, Splitline2Clamp={splitline2ClampApplied}");
             }
             catch (Exception ex)
             {
