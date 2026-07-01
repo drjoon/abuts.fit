@@ -20,6 +20,10 @@
 - 팝빌/세금계산서 작업은 web이 직접 처리하지 않고 큐에 넣습니다.
 - BG 콜백 의뢰 매칭 우선순위는 `requestMongoId` → `requestId` → 파일명 fallback 입니다.
 - `source=manufacturer_sample` + `rnd.doneAt!=null`(R&D 보관 원본)은 BG 자동 업데이트 대상에서 제외합니다.
+- 우편함/배송 무결성 정책(포장.발송):
+  - 우편함 재사용/배정은 **BusinessAnchor 단일 점유**를 반드시 보장합니다.
+  - `businessAnchorId`가 비어 있는 점유 의뢰는 `UNKNOWN`으로 취급하여 재사용 대상에서 제외합니다.
+  - 택배/배송 그룹핑 및 병합 기준에서 `trackingNumber`를 `shippingPackageId`보다 우선 SSOT로 사용합니다.
 
 ## 3. 정리 원칙
 

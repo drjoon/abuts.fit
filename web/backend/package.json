@@ -21,6 +21,7 @@
     "db:seed-prc": "cross-env ENV_FILE=local.env node scripts/db/seed-prc-mappings.js",
     "db:migrate-payout-rates": "cross-env ENV_FILE=local.env node scripts/db/migrate-payout-rates.js",
     "db:fix-mailbox-anchor-mismatch": "cross-env ENV_FILE=local.env node scripts/db/fix-request-mailbox-anchor-mismatch.js",
+    "db:fix-mailbox-shipping-integrity": "cross-env ENV_FILE=local.env node scripts/db/fix-mailbox-shipping-integrity.js",
     "worker:monthly-referral-snapshot": "cross-env ENV_FILE=local.env node jobs/dailyReferralSnapshotWorker.js",
     "worker:daily-admin-salesman-credits-overview-snapshot": "cross-env ENV_FILE=local.env node jobs/dailyAdminSalesmanCreditsOverviewSnapshotWorker.js"
   },

@@ -86,12 +86,63 @@ const formatDateTime = (d?: string) => {
   return formatKstDateTimeToKo(d);
 };
 
+const TRACKING_ELIGIBLE_WORKFLOW_CODES = new Set([
+  "accepted",
+  "picked_up",
+  "completed",
+]);
+
+/**
+ * 추적관리 카드 노출 기준(SSOT)
+ *
+ * - 추적관리 단계로 넘어간 건은 항상 노출
+ * - 포장.발송 단계라도 한진 접수(accepted) 이후 건만 노출
+ * - printed(운송장만 출력) 상태는 아직 우편함 내부 작업이므로 노출하지 않음
+ *
+ * 주의: trackingNumber 존재만으로는 노출하지 않는다.
+ * 운송장 출력 시점에도 trackingNumber가 선발급될 수 있기 때문.
+ */
+const isTrackingEligible = (req: ManufacturerRequest) => {
+  const stage = String(req.manufacturerStage || "").trim();
+  if (stage === "추적관리") return true;
+
+  const di = normalizeDeliveryInfo(req.deliveryInfoRef);
+  const workflowCode = String(
+    (req as any)?.shippingWorkflow?.code || "",
+  ).trim();
+
+  if (TRACKING_ELIGIBLE_WORKFLOW_CODES.has(workflowCode)) return true;
+  if (di.pickedUpAt || di.deliveredAt) return true;
+
+  // 예기치 않은 데이터(배송 이벤트는 있는데 workflow가 비정상) 진단용 로그
+  if (di.shippedAt && !workflowCode) {
+    console.error("[tracking][ineligible-shipped-without-workflow]", {
+      requestId: String(req?.requestId || "").trim() || null,
+      stage,
+      shippedAt: di.shippedAt,
+      mailboxAddress: String((req as any)?.mailboxAddress || "").trim() || null,
+    });
+  }
+
+  return false;
+};
+
 const getShippingStatus = (req: ManufacturerRequest) => {
   const di = normalizeDeliveryInfo(req.deliveryInfoRef);
   const lastStatusText = String(di?.tracking?.lastStatusText || "").trim();
   if (di.deliveredAt) return "배송완료";
   if (lastStatusText) return lastStatusText;
-  if (di.trackingNumber || di.shippedAt) return "접수";
+
+  const workflowCode = String(
+    (req as any)?.shippingWorkflow?.code || "",
+  ).trim();
+  if (
+    TRACKING_ELIGIBLE_WORKFLOW_CODES.has(workflowCode) ||
+    di.pickedUpAt ||
+    di.shippedAt
+  ) {
+    return "접수";
+  }
   return "-";
 };
 
@@ -129,6 +180,7 @@ export const TrackingInquiryPage = () => {
   const [confirmAction, setConfirmAction] = useState<
     null | (() => Promise<void> | void)
   >(null);
+  const fetchSequenceRef = useRef(0);
   // Network pagination per stage (tracking)
   const PAGE_LIMIT = 12;
   const pageRef = useRef(1);
@@ -144,12 +196,9 @@ export const TrackingInquiryPage = () => {
     }
 
     const stage = deriveStageForFilter(req);
-    const di = normalizeDeliveryInfo(req.deliveryInfoRef);
-    return (
-      stage === "추적관리" ||
-      (stage === "포장.발송" &&
-        Boolean(di.trackingNumber || di.shippedAt || di.deliveredAt))
-    );
+    if (stage === "추적관리") return true;
+    if (stage !== "포장.발송") return false;
+    return isTrackingEligible(req);
   }, []);
 
   useWorksheetRealtimeStatus({
@@ -162,7 +211,20 @@ export const TrackingInquiryPage = () => {
   useEffect(() => {
     if (!token) return;
 
+    const getStableRequestKey = (item: ManufacturerRequest) => {
+      const key = String((item as any)?._id || item?.requestId || "").trim();
+      if (!key) {
+        console.error("[tracking][missing-request-key]", {
+          requestId: String(item?.requestId || "").trim() || null,
+          stage: String(item?.manufacturerStage || "").trim() || null,
+        });
+      }
+      return key;
+    };
+
     const run = async (silent = false, append = false) => {
+      const fetchSeq = ++fetchSequenceRef.current;
+      isFetchingPageRef.current = true;
       try {
         if (!silent) setLoading(true);
 
@@ -189,24 +251,26 @@ export const TrackingInquiryPage = () => {
         };
 
         const list = await fetchPage(pageRef.current);
+
+        // 새로고침/탭 전환 시 늦게 도착한 이전 응답은 폐기한다.
+        if (fetchSeq !== fetchSequenceRef.current) {
+          return;
+        }
+
         if (append) {
           setRequests((prev) => {
-            const map = new Map<string, any>();
-            for (const r of prev)
-              map.set(
-                String(
-                  (r as any)?._id || (r as any)?.requestId || Math.random(),
-                ),
-                r,
-              );
-            for (const r of list)
-              map.set(
-                String(
-                  (r as any)?._id || (r as any)?.requestId || Math.random(),
-                ),
-                r,
-              );
-            return Array.from(map.values()) as any[];
+            const map = new Map<string, ManufacturerRequest>();
+            for (const r of prev) {
+              const key = getStableRequestKey(r);
+              if (!key) continue;
+              map.set(key, r);
+            }
+            for (const r of list) {
+              const key = getStableRequestKey(r);
+              if (!key) continue;
+              map.set(key, r);
+            }
+            return Array.from(map.values());
           });
         } else {
           setRequests(list);
@@ -219,6 +283,9 @@ export const TrackingInquiryPage = () => {
           variant: "destructive",
         });
       } finally {
+        if (fetchSeq === fetchSequenceRef.current) {
+          isFetchingPageRef.current = false;
+        }
         if (!silent) setLoading(false);
       }
     };
@@ -227,6 +294,7 @@ export const TrackingInquiryPage = () => {
     pageRef.current = 1;
     hasMoreRef.current = true;
     void run(false, false);
+
     // expose helpers on ref for pagination
     (window as any).__trackingFetchNext = async () => {
       if (isFetchingPageRef.current || !hasMoreRef.current) return;
@@ -234,13 +302,8 @@ export const TrackingInquiryPage = () => {
       const now = Date.now();
       if (now - lastFetchTimeRef.current < 500) return;
       lastFetchTimeRef.current = now;
-      isFetchingPageRef.current = true;
-      try {
-        pageRef.current += 1;
-        await run(true, true);
-      } finally {
-        isFetchingPageRef.current = false;
-      }
+      pageRef.current += 1;
+      await run(true, true);
     };
 
     return () => {
@@ -255,7 +318,20 @@ export const TrackingInquiryPage = () => {
     // 기간/검색/완료토글 변경 시에는 클라이언트 필터만 적용한다.
     if (tab === "shipping") return;
 
+    const getStableRequestKey = (item: ManufacturerRequest) => {
+      const key = String((item as any)?._id || item?.requestId || "").trim();
+      if (!key) {
+        console.error("[tracking][missing-request-key]", {
+          requestId: String(item?.requestId || "").trim() || null,
+          stage: String(item?.manufacturerStage || "").trim() || null,
+        });
+      }
+      return key;
+    };
+
     const run = async (silent = false, append = false) => {
+      const fetchSeq = ++fetchSequenceRef.current;
+      isFetchingPageRef.current = true;
       try {
         if (!silent) setLoading(true);
 
@@ -282,24 +358,25 @@ export const TrackingInquiryPage = () => {
         };
 
         const list = await fetchPage(pageRef.current);
+
+        if (fetchSeq !== fetchSequenceRef.current) {
+          return;
+        }
+
         if (append) {
           setRequests((prev) => {
-            const map = new Map<string, any>();
-            for (const r of prev)
-              map.set(
-                String(
-                  (r as any)?._id || (r as any)?.requestId || Math.random(),
-                ),
-                r,
-              );
-            for (const r of list)
-              map.set(
-                String(
-                  (r as any)?._id || (r as any)?.requestId || Math.random(),
-                ),
-                r,
-              );
-            return Array.from(map.values()) as any[];
+            const map = new Map<string, ManufacturerRequest>();
+            for (const r of prev) {
+              const key = getStableRequestKey(r);
+              if (!key) continue;
+              map.set(key, r);
+            }
+            for (const r of list) {
+              const key = getStableRequestKey(r);
+              if (!key) continue;
+              map.set(key, r);
+            }
+            return Array.from(map.values());
           });
         } else {
           setRequests(list);
@@ -312,6 +389,9 @@ export const TrackingInquiryPage = () => {
           variant: "destructive",
         });
       } finally {
+        if (fetchSeq === fetchSequenceRef.current) {
+          isFetchingPageRef.current = false;
+        }
         if (!silent) setLoading(false);
       }
     };
@@ -383,12 +463,11 @@ export const TrackingInquiryPage = () => {
         return showCompleted ? true : !isDone(r);
       })
       .filter((r) => {
-        // 추적관리 화면에서는 기본적으로 발송된 건만 표시.
-        // 단, DB상 제조사 단계가 '추적관리'로 이미 넘어간 건은 배송정보가 없어도 표시해야 한다.
+        // 추적관리 노출 기준은 isTrackingEligible SSOT를 사용한다.
+        // printed(라벨만 출력) 상태는 우편함 내부 단계이므로 제외한다.
         const stage = String(r.manufacturerStage || "").trim();
         if (stage === "추적관리") return true;
-        const di = normalizeDeliveryInfo(r.deliveryInfoRef);
-        return Boolean(di.trackingNumber || di.shippedAt || di.deliveredAt);
+        return isTrackingEligible(r);
       })
       .filter((r) => {
         if (!fromDate && !toDate) return true;
@@ -755,17 +834,8 @@ export const TrackingInquiryPage = () => {
   const shippingRows = useMemo(() => {
     const only = baseFiltered.filter((r) => {
       const stage = String(r.manufacturerStage || "").trim();
-      const di = normalizeDeliveryInfo(r.deliveryInfoRef);
-      return (
-        stage === "추적관리" ||
-        Boolean(
-          di.trackingNumber ||
-          di.shippedAt ||
-          di.pickedUpAt ||
-          di.deliveredAt ||
-          di.tracking?.lastStatusCode === "11",
-        )
-      );
+      if (stage === "추적관리") return true;
+      return isTrackingEligible(r);
     });
 
     // 우편함 단위로 그룹핑
@@ -794,27 +864,39 @@ export const TrackingInquiryPage = () => {
       const dayKey = pickedUpYmd || shippedYmd;
       const fallbackRequestId = String(r?.requestId || r?._id || "").trim();
 
-      // 서로 다른 기공소 건이 같은 카드로 섞이지 않도록 사업자 앵커 기준 키를 추가한다.
+      // 서로 다른 기공소 건이 같은 카드로 섞이지 않도록 사업자 앵커 기준 키를 항상 먼저 만든다.
+      // request.businessAnchorId가 SSOT이고, 과거 데이터 보정 전에는 requestor.businessAnchorId를 보조로 사용한다.
       const requestAnchorId = String(
         (r as any)?.businessAnchorId?._id || (r as any)?.businessAnchorId || "",
       ).trim();
       const requestorAnchorId = String(
         (r as any)?.requestor?.businessAnchorId || "",
       ).trim();
-      const requestorBusiness = String((r as any)?.requestor?.business || "")
-        .trim()
-        .toLowerCase();
-      const ownerKey =
-        requestAnchorId || requestorAnchorId || requestorBusiness || "unknown";
+      const ownerAnchorId = requestAnchorId || requestorAnchorId;
+      if (!ownerAnchorId) {
+        // business 문자열 fallback으로 묶지 않는다.
+        // 앵커가 없으면 병합 대신 개별 카드로 분리해 오염 전파를 막는다.
+        console.error("[tracking][missing-owner-anchor]", {
+          requestId: fallbackRequestId || null,
+          requestAnchorId: requestAnchorId || null,
+          requestorAnchorId: requestorAnchorId || null,
+          mailboxAddress: mailboxAddress || null,
+          trackingNumber: trackingNumber || null,
+          shippingPackageId: shippingPackageId || null,
+        });
+      }
 
-      // shippingPackageId가 있으면 패키지+사업자 기준,
-      // 없으면 송장+사업자 기준,
-      // 그 외에는 우편함+날짜+사업자 기준,
-      // 날짜마저 없으면 개별 의뢰 기준으로만 묶는다.
-      const boxKey = shippingPackageId
-        ? `sp:${ownerKey}:${shippingPackageId}`
-        : trackingNumber
-          ? `tn:${ownerKey}:${trackingNumber}`
+      const ownerKey = ownerAnchorId || `request:${fallbackRequestId}`;
+
+      // 카드 그룹핑 SSOT 우선순위
+      // 1) trackingNumber: 실제 배송 단위를 가장 잘 대표 (중복 shippingPackageId가 있어도 하나로 묶어야 함)
+      // 2) shippingPackageId: trackingNumber가 없을 때만 사용
+      // 3) mailboxAddress + dayKey
+      // 4) fallback request 단위
+      const boxKey = trackingNumber
+        ? `tn:${ownerKey}:${trackingNumber}`
+        : shippingPackageId
+          ? `sp:${ownerKey}:${shippingPackageId}`
           : mailboxAddress && dayKey
             ? `mb:${ownerKey}:${mailboxAddress}:${dayKey}`
             : `request:${fallbackRequestId}`;

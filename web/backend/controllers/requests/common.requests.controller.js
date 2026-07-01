@@ -726,10 +726,16 @@ export async function getAllRequests(req, res) {
           : view === "worksheet" && worksheetProfile === "shipping"
             ? worksheetShippingSelect
             : worksheetSelect;
+      // tracking/shipping 화면에서 그룹핑 키(ownerKey)를 businessAnchorId 기준으로 안정화하려면
+      // requestor.businessAnchorId도 항상 내려가야 한다.
+      // (이 값이 누락되면 프론트가 business 문자열 fallback을 쓰게 되어 동명이인/표기 흔들림으로
+      //  서로 다른 기공소가 한 그룹으로 합쳐질 수 있다.)
       const requestorPopulateSelect =
         view === "worksheet" && worksheetProfile === "shipping"
-          ? "name business address addressText zipCode"
-          : "name business";
+          ? "name business businessAnchorId address addressText zipCode"
+          : view === "worksheet" && worksheetProfile === "tracking"
+            ? "name business businessAnchorId"
+            : "name business";
 
       query = query
         .select(selectedProjection)

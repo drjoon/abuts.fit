@@ -1,3 +1,28 @@
+const UNKNOWN_ANCHOR_KEY = "__UNKNOWN_BUSINESS_ANCHOR__";
+
+/**
+ * 우편함 점유 의뢰에서 사업자 anchor를 추출한다.
+ *
+ * SSOT 우선순위:
+ * 1) request.businessAnchorId
+ * 2) request.requestor.businessAnchorId (populate 되었을 때)
+ *
+ * 둘 다 없으면 UNKNOWN 키를 반환한다.
+ * - UNKNOWN을 명시적으로 세트에 넣어야,
+ *   "실제 점유자는 있는데 anchor만 비어있는" 우편함을 재사용하는 사고를 막을 수 있다.
+ */
+const resolveOccupantAnchorKey = (requestDocLike) => {
+  const direct = String(requestDocLike?.businessAnchorId || "").trim();
+  if (direct) return direct;
+
+  const fromRequestor = String(
+    requestDocLike?.requestor?.businessAnchorId || "",
+  ).trim();
+  if (fromRequestor) return fromRequestor;
+
+  return UNKNOWN_ANCHOR_KEY;
+};
+
 export async function allocateVirtualMailboxAddress(
   requestorOrgId,
   options = {},
@@ -52,17 +77,11 @@ export async function allocateVirtualMailboxAddress(
     for (const r of activeRequests) {
       const address = String(r?.mailboxAddress || "").trim();
       if (!address) continue;
-      const orgId =
-        r?.requestor && typeof r.requestor === "object"
-          ? String(r.businessAnchorId || "").trim() ||
-            String(r.requestor?.businessAnchorId || "").trim()
-          : String(r.businessAnchorId || "").trim();
+      const orgKey = resolveOccupantAnchorKey(r);
       if (!orgSetByAddress.has(address)) {
         orgSetByAddress.set(address, new Set());
       }
-      if (orgId) {
-        orgSetByAddress.get(address).add(orgId);
-      }
+      orgSetByAddress.get(address).add(orgKey);
     }
 
     const reusableAddress = Array.from(orgSetByAddress.entries())
@@ -122,13 +141,8 @@ export async function ensureMailboxAddressForBusiness({
     .lean();
 
   const hasDifferentBusinessOccupant = mailboxOccupants.some((row) => {
-    const occupantBusinessAnchorId =
-      row?.requestor && typeof row.requestor === "object"
-        ? String(row?.businessAnchorId || "").trim() ||
-          String(row.requestor?.businessAnchorId || "").trim()
-        : String(row?.businessAnchorId || "").trim();
-    if (!occupantBusinessAnchorId) return true;
-    return occupantBusinessAnchorId !== requestorOrgIdStr;
+    const occupantBusinessAnchorKey = resolveOccupantAnchorKey(row);
+    return occupantBusinessAnchorKey !== requestorOrgIdStr;
   });
 
   if (!hasDifferentBusinessOccupant) {
