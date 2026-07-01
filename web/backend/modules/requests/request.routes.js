@@ -226,6 +226,14 @@ router.post(
 );
 
 router.post(
+  "/shipping/hanjin/manual-pickup-complete",
+  authenticate,
+  authorize(["manufacturer", "admin"]),
+  requestController.manualHanjinPickupCompleted,
+);
+
+// backward compatibility
+router.post(
   "/shipping/hanjin/mock-pickup-complete",
   authenticate,
   authorize(["manufacturer", "admin"]),

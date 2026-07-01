@@ -61,7 +61,7 @@ export const MailboxGrid = ({
   const [selectedGroupIdx, setSelectedGroupIdx] = useState(0);
   const [isRequestingPickup, setIsRequestingPickup] = useState(false);
   const [activeHeaderAction, setActiveHeaderAction] = useState<
-    "print" | "pickup" | "mock" | "reset" | null
+    "print" | "pickup" | "manual" | "reset" | null
   >(null);
   const [failedMailboxes, setFailedMailboxes] = useState<Set<string>>(
     new Set(),
@@ -92,6 +92,9 @@ export const MailboxGrid = ({
   const [reprintSelectedAddresses, setReprintSelectedAddresses] = useState<
     Set<string>
   >(new Set());
+  const [manualPickupDialogOpen, setManualPickupDialogOpen] = useState(false);
+  const [manualPickupTrackingByAddress, setManualPickupTrackingByAddress] =
+    useState<Record<string, string>>({});
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const touchStartXRef = useRef<number>(0);
   const shelfRefs = useRef<Record<string, HTMLDivElement | null>>({});
@@ -540,30 +543,53 @@ export const MailboxGrid = ({
     }
   };
 
-  const handleMockPickupComplete = async () => {
-    const mailboxAddresses = Array.from(
-      new Set(
-        todayShippableAddresses
-          .map((address) => String(address || "").trim())
-          .filter(Boolean),
-      ),
-    );
-
-    if (!mailboxAddresses.length) {
+  const openManualPickupDialog = () => {
+    const mailboxCandidates = occupiedAddresses
+      .map((address) => String(address || "").trim())
+      .filter(Boolean);
+    if (!mailboxCandidates.length) {
       toast({
-        title: "MOCK 집하 대상 없음",
-        description:
-          notTodayAddressSet.size > 0
-            ? "오늘 발송 대상 우편함이 없습니다. (의뢰자 발송 요일 설정상 제외됨)"
-            : "집하 완료로 반영할 우편함이 없습니다.",
+        title: "수동 집하 대상 없음",
+        description: "수동 집하 완료로 반영할 우편함이 없습니다.",
       });
       return;
     }
 
+    const initialTrackingByAddress = Object.fromEntries(
+      mailboxCandidates.map((address) => [address, ""]),
+    ) as Record<string, string>;
+    setManualPickupTrackingByAddress(initialTrackingByAddress);
+    setManualPickupDialogOpen(true);
+  };
+
+  const handleManualPickupComplete = async () => {
+    const selectedEntries = occupiedAddresses
+      .map((address) => {
+        const normalizedAddress = String(address || "").trim();
+        const trackingNumber = String(
+          manualPickupTrackingByAddress?.[normalizedAddress] || "",
+        ).trim();
+        return [normalizedAddress, trackingNumber] as const;
+      })
+      .filter(([mailboxAddress, trackingNumber]) =>
+        Boolean(mailboxAddress && trackingNumber),
+      );
+
+    if (!selectedEntries.length) {
+      toast({
+        title: "수동 집하 입력 필요",
+        description: "우편함별 운송장번호를 최소 1개 이상 입력해주세요.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const mailboxAddresses = selectedEntries.map(([mailboxAddress]) =>
+      String(mailboxAddress || "").trim(),
+    );
+    const trackingNumberByMailbox = Object.fromEntries(selectedEntries);
+
     // 현재 화면 의뢰 중에서 유효한 shippingPackageId만 정규화해서 전송한다.
-    // - object/문자열 혼합 입력을 허용하되 _id/id 우선으로 추출
-    // - "[object Object]" 같은 비정상 문자열은 제외
-    // - 대상 우편함(addressList)에 속한 의뢰만 수집
     const targetMailboxSet = new Set(mailboxAddresses);
     const shippingPackageIds = Array.from(
       new Set(
@@ -583,16 +609,22 @@ export const MailboxGrid = ({
     );
 
     setIsRequestingPickup(true);
-    setActiveHeaderAction("mock");
+    setActiveHeaderAction("manual");
     try {
       const response = await request<any>({
-        path: "/api/requests/shipping/hanjin/mock-pickup-complete",
+        path: "/api/requests/shipping/hanjin/manual-pickup-complete",
         method: "POST",
-        jsonBody: { mailboxAddresses, shippingPackageIds },
+        jsonBody: {
+          mailboxAddresses,
+          shippingPackageIds,
+          trackingNumberByMailbox,
+          trackingStatusCode: "11",
+          trackingStatusText: "집하완료",
+        },
       });
       const body = response.data as any;
       if (!response.ok || !body?.success) {
-        throw new Error(body?.message || "MOCK 집하 처리에 실패했습니다.");
+        throw new Error(body?.message || "수동 집하 처리에 실패했습니다.");
       }
 
       applyWorkflowOverrideForMailboxes(mailboxAddresses, {
@@ -600,15 +632,20 @@ export const MailboxGrid = ({
         label: "집하완료",
       });
 
+      if (onRefresh) {
+        await onRefresh();
+      }
+
+      setManualPickupDialogOpen(false);
       toast({
-        title: "MOCK 집하 완료",
-        description: `${Number(body?.data?.pickedUpCount || 0)}개 우편함을 집하 완료로 반영했습니다.`,
+        title: "수동 집하 완료",
+        description: `${mailboxAddresses.length}개 우편함을 수동 집하 완료로 반영했습니다.`,
       });
     } catch (error) {
       toast({
-        title: "MOCK 집하 실패",
+        title: "수동 집하 실패",
         description:
-          error instanceof Error ? error.message : "MOCK 집하에 실패했습니다.",
+          error instanceof Error ? error.message : "수동 집하에 실패했습니다.",
         variant: "destructive",
       });
     } finally {
@@ -1194,13 +1231,13 @@ export const MailboxGrid = ({
       },
     },
     {
-      label: "📦 집하",
-      loading: activeHeaderAction === "mock" && isRequestingPickup,
-      loadingLabel: "집하 중...",
+      label: "📦 수동 집하",
+      loading: activeHeaderAction === "manual" && isRequestingPickup,
+      loadingLabel: "반영 중...",
       disabled: !hasAnyOccupiedMailbox,
       variant: "white" as const,
       onClick: () => {
-        void handleMockPickupComplete();
+        openManualPickupDialog();
       },
     },
     {
@@ -1511,6 +1548,83 @@ export const MailboxGrid = ({
           </div>
         </div>
       )}
+
+      {manualPickupDialogOpen && (
+        <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 pt-16">
+          <div className="bg-white rounded-2xl shadow-2xl w-[480px] max-w-[92vw] overflow-hidden">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+              <div>
+                <div className="font-semibold text-base text-slate-800">
+                  수동 집하 반영
+                </div>
+                <div className="text-xs text-slate-400 mt-0.5">
+                  실제 택배사 접수 후 운송장 정보를 입력하면 추적관리로
+                  반영됩니다.
+                </div>
+              </div>
+              <button
+                className="text-slate-400 hover:text-slate-600 text-lg leading-none"
+                onClick={() => setManualPickupDialogOpen(false)}
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="px-6 py-4 space-y-3">
+              <div className="text-xs text-slate-500">
+                우편함별 운송장번호를 입력하세요. 집하 시각은 자동으로 당일
+                16:00(KST)로 기록됩니다.
+              </div>
+              <div className="max-h-[360px] overflow-auto space-y-2 pr-1">
+                {occupiedAddresses.map((addr) => {
+                  const count = (addressMap.get(addr) || []).length;
+                  return (
+                    <div
+                      key={addr}
+                      className="grid grid-cols-[88px_1fr] items-center gap-2"
+                    >
+                      <div className="text-xs font-semibold text-slate-700">
+                        {addr} ({count}건)
+                      </div>
+                      <input
+                        value={manualPickupTrackingByAddress?.[addr] || ""}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          setManualPickupTrackingByAddress((prev) => ({
+                            ...prev,
+                            [addr]: value,
+                          }));
+                        }}
+                        placeholder="운송장번호 입력"
+                        className="w-full h-10 rounded-lg border border-slate-300 px-3 text-sm"
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="flex gap-2 justify-end items-center px-6 py-4 border-t border-slate-100">
+              <button
+                className="px-4 py-2 rounded-lg text-sm text-slate-600 hover:bg-slate-100 border border-slate-200"
+                onClick={() => setManualPickupDialogOpen(false)}
+              >
+                취소
+              </button>
+              <button
+                className="px-5 py-2 rounded-lg text-sm text-white bg-blue-500 hover:bg-blue-600 disabled:opacity-50 font-medium"
+                disabled={isRequestingPickup}
+                onClick={() => {
+                  void handleManualPickupComplete();
+                }}
+              >
+                {isRequestingPickup ? "반영 중..." : "수동 집하 반영"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <MailboxStickyHeader>
         <MailboxActionHeader
           isRequestingPickup={isRequestingPickup}

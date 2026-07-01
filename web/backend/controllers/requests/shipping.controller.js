@@ -65,12 +65,49 @@ function resolveMailboxTrackingNumber(group = [], prefix, now) {
 }
 
 /**
- * MOCK 집하 완료 시뮬레이션 (Hanjin status code 11)
- * @route POST /api/requests/shipping/hanjin/mock-pickup-complete
+ * 수동 집하 완료 반영 (실제 택배사 수동 접수 이후)
+ * @route POST /api/requests/shipping/hanjin/manual-pickup-complete
+ *
+ * 참고:
+ * - 과거 mock-pickup-complete 경로와 호환되도록 동일 로직을 재사용한다.
+ * - trackingNumber를 명시하면 해당 번호를 우편함 집하 SSOT로 강제 반영한다.
  */
-export async function mockHanjinPickupCompleted(req, res) {
+export async function manualHanjinPickupCompleted(req, res) {
   try {
-    const { mailboxAddresses = [], shippingPackageIds = [] } = req.body || {};
+    const {
+      mailboxAddresses = [],
+      shippingPackageIds = [],
+      trackingNumber: manualTrackingNumberRaw = "",
+      trackingNumberByMailbox: trackingNumberByMailboxRaw = {},
+      trackingStatusCode: manualStatusCodeRaw = "11",
+      trackingStatusText: manualStatusTextRaw = "집하완료",
+    } = req.body || {};
+
+    const manualTrackingNumber = String(manualTrackingNumberRaw || "").trim();
+    const manualCarrier = "hanjin";
+    const manualStatusCode = String(manualStatusCodeRaw || "11").trim() || "11";
+    const manualStatusText =
+      String(manualStatusTextRaw || "집하완료").trim() || "집하완료";
+
+    const trackingNumberByMailbox =
+      trackingNumberByMailboxRaw &&
+      typeof trackingNumberByMailboxRaw === "object"
+        ? Object.fromEntries(
+            Object.entries(trackingNumberByMailboxRaw)
+              .map(([mailbox, trackingNumber]) => [
+                String(mailbox || "").trim(),
+                String(trackingNumber || "").trim(),
+              ])
+              .filter(([mailbox, trackingNumber]) => mailbox && trackingNumber),
+          )
+        : {};
+
+    // 수동 집하 시각 SSOT: "당일 16:00 KST"
+    // 사용자 입력 시각을 받지 않고 서버에서 고정 계산해 기록한다.
+    const now = new Date();
+    const kstNow = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+    const kstYmd = kstNow.toISOString().slice(0, 10);
+    const manualPickedUpAt = new Date(`${kstYmd}T16:00:00+09:00`);
 
     const addressList = Array.isArray(mailboxAddresses)
       ? mailboxAddresses
@@ -83,6 +120,24 @@ export async function mockHanjinPickupCompleted(req, res) {
         success: false,
         message: "mailboxAddresses가 필요합니다.",
       });
+    }
+
+    const routePath = String(req?.originalUrl || req?.path || "").trim();
+    const isLegacyMockRoute = routePath.includes("mock-pickup-complete");
+    if (!isLegacyMockRoute) {
+      const missingTrackingMailboxes = addressList.filter((mailboxAddress) => {
+        const perMailbox = String(
+          trackingNumberByMailbox?.[mailboxAddress] || "",
+        ).trim();
+        const resolved = perMailbox || manualTrackingNumber;
+        return !resolved;
+      });
+      if (missingTrackingMailboxes.length > 0) {
+        return res.status(400).json({
+          success: false,
+          message: `운송장번호가 없는 우편함이 있습니다: ${missingTrackingMailboxes.join(", ")}`,
+        });
+      }
     }
 
     // shippingPackageId는 string/ObjectId/object 모두 허용하되, 유효한 ObjectId만 사용한다.
@@ -115,7 +170,7 @@ export async function mockHanjinPickupCompleted(req, res) {
     if (!targetRequests.length) {
       return res.status(404).json({
         success: false,
-        message: "MOCK 집하 처리할 우편함을 찾을 수 없습니다.",
+        message: "수동 집하 처리할 우편함을 찾을 수 없습니다.",
       });
     }
 
@@ -129,10 +184,9 @@ export async function mockHanjinPickupCompleted(req, res) {
       requestsByMailbox.get(mailboxAddress).push(requestDoc);
     }
 
-    const now = new Date();
     const results = [];
 
-    console.log("[MOCK_PICKUP] base candidates", {
+    console.log("[MANUAL_PICKUP] base candidates", {
       mailboxCount: requestsByMailbox.size,
       requestCount: targetRequests.length,
       packageIdCount: packageIdList.length,
@@ -152,7 +206,7 @@ export async function mockHanjinPickupCompleted(req, res) {
         continue;
       }
 
-      // [SSOT] MOCK 집하 대상은 '우편함 단위'로 확정한다.
+      // [SSOT] 수동 집하 대상은 '우편함 단위'로 확정한다.
       // - 프론트는 편의상 shippingPackageIds를 보낼 수 있지만,
       //   우편함 내부의 미할당(shippingPackageId 없음) 건은 pickup 직전 정상 상태다.
       // - 따라서 packageId 필터는 "배제"가 아니라 "우선 매칭 + 미할당 포함" 규칙으로 해석한다.
@@ -191,16 +245,19 @@ export async function mockHanjinPickupCompleted(req, res) {
           effectiveMailboxRequests = Array.from(mergedById.values());
 
           if (withoutPackage.length > 0) {
-            console.warn("[MOCK_PICKUP] include unassigned package requests", {
-              mailboxAddress,
-              requestedPackageIds: packageIdList,
-              matchedByPackageCount: matchedByPackage.length,
-              unassignedCount: withoutPackage.length,
-            });
+            console.warn(
+              "[MANUAL_PICKUP] include unassigned package requests",
+              {
+                mailboxAddress,
+                requestedPackageIds: packageIdList,
+                matchedByPackageCount: matchedByPackage.length,
+                unassignedCount: withoutPackage.length,
+              },
+            );
           }
         } else {
           console.warn(
-            "[MOCK_PICKUP] skip mailbox by package filter mismatch",
+            "[MANUAL_PICKUP] skip mailbox by package filter mismatch",
             {
               mailboxAddress,
               requestedPackageIds: packageIdList,
@@ -236,12 +293,12 @@ export async function mockHanjinPickupCompleted(req, res) {
 
       // [SSOT] trackingNumber는 '우편함의 이번 집하 1회'를 대표한다.
       // 그룹 키(pkg/mailbox)는 내부 처리 순서용이며, 사용자/추적 화면의 집하 단위를 쪼개면 안 된다.
-      // 그래서 그룹(패키지/미할당) 수와 무관하게 mailboxTrackingNumber 하나를 재사용한다.
-      const mailboxTrackingNumber = resolveMailboxTrackingNumber(
-        effectiveMailboxRequests,
-        "MOCK",
-        now,
-      );
+      // 수동 집하는 사용자가 입력한 운송장번호를 우편함 전체에 강제 적용한다.
+      // (레거시 mock 경로와 호환을 위해 trackingNumber가 비어 있으면 fallback 생성값을 사용)
+      const mailboxTrackingNumber =
+        String(trackingNumberByMailbox?.[mailboxAddress] || "").trim() ||
+        manualTrackingNumber ||
+        resolveMailboxTrackingNumber(effectiveMailboxRequests, "MOCK", now);
 
       for (const group of groups) {
         const trackingNumber = mailboxTrackingNumber;
@@ -268,22 +325,26 @@ export async function mockHanjinPickupCompleted(req, res) {
 
           if (!deliveryInfo) {
             console.log(
-              `[MOCK_PICKUP] SKIP: no deliveryInfo for mailbox=${mailboxAddress}, requestId=${requestDoc.requestId}`,
+              `[MANUAL_PICKUP] SKIP: no deliveryInfo for mailbox=${mailboxAddress}, requestId=${requestDoc.requestId}`,
             );
             continue;
           }
 
           console.log(
-            `[MOCK_PICKUP] processing mailbox=${mailboxAddress}, requestId=${requestDoc.requestId}, trackingNumber=${trackingNumber}`,
+            `[MANUAL_PICKUP] processing mailbox=${mailboxAddress}, requestId=${requestDoc.requestId}, trackingNumber=${trackingNumber}`,
           );
 
           deliveryInfo.trackingNumber = trackingNumber;
+          deliveryInfo.carrier = manualCarrier;
           deliveryInfo.tracking = deliveryInfo.tracking || {};
-          deliveryInfo.tracking.lastStatusCode = "11";
-          deliveryInfo.tracking.lastStatusText = "집하완료";
-          deliveryInfo.tracking.lastEventAt = now;
+          deliveryInfo.tracking.lastStatusCode = manualStatusCode;
+          deliveryInfo.tracking.lastStatusText = manualStatusText;
+          deliveryInfo.tracking.lastEventAt = manualPickedUpAt;
           deliveryInfo.tracking.lastSyncedAt = now;
-          deliveryInfo.pickedUpAt = now;
+          if (!deliveryInfo.shippedAt) {
+            deliveryInfo.shippedAt = manualPickedUpAt;
+          }
+          deliveryInfo.pickedUpAt = manualPickedUpAt;
           deliverySaveJobs.push(deliveryInfo.save());
 
           requestDoc.manufacturerStage = "추적관리";
@@ -291,18 +352,18 @@ export async function mockHanjinPickupCompleted(req, res) {
           applyShippingWorkflowState(requestDoc, {
             code: SHIPPING_WORKFLOW_CODES.PICKED_UP,
             label: SHIPPING_WORKFLOW_LABELS[SHIPPING_WORKFLOW_CODES.PICKED_UP],
-            pickedUpAt: now,
-            trackingStatusCode: "11",
-            trackingStatusText: "집하완료",
-            source: "hanjin-tracking-mock-pickup",
+            pickedUpAt: manualPickedUpAt,
+            trackingStatusCode: manualStatusCode,
+            trackingStatusText: manualStatusText,
+            source: "hanjin-tracking-manual-pickup",
             updatedAt: now,
           });
           requestSaveJobs.push(requestDoc.save());
 
           emitJobs.push(
             emitDeliveryUpdated(requestDoc, {
-              source: "hanjin-tracking-mock-pickup",
-              shippingStatusLabel: "집하완료",
+              source: "hanjin-tracking-manual-pickup",
+              shippingStatusLabel: manualStatusText,
             }),
           );
 
@@ -321,15 +382,15 @@ export async function mockHanjinPickupCompleted(req, res) {
           processedCount: processedRequestIds.length,
           requestIds: processedRequestIds,
           trackingNumber,
-          statusCode: "11",
-          statusText: "집하완료",
+          statusCode: manualStatusCode,
+          statusText: manualStatusText,
         });
       }
     }
 
     const pickedUpCount = results.filter((item) => item.success).length;
 
-    console.log(`[MOCK_PICKUP] completed count=${pickedUpCount}`);
+    console.log(`[MANUAL_PICKUP] completed count=${pickedUpCount}`);
 
     if (pickedUpCount === 0) {
       const failedMailboxes = results
@@ -341,7 +402,7 @@ export async function mockHanjinPickupCompleted(req, res) {
       return res.status(404).json({
         success: false,
         message:
-          "MOCK 집하 처리 가능한 우편함을 찾지 못했습니다. (package 필터 또는 대상 상태를 확인하세요)",
+          "수동 집하 처리 가능한 우편함을 찾지 못했습니다. (package 필터 또는 대상 상태를 확인하세요)",
         data: {
           pickedUpCount,
           results,
@@ -359,13 +420,18 @@ export async function mockHanjinPickupCompleted(req, res) {
       },
     });
   } catch (error) {
-    console.error("Error in mockHanjinPickupCompleted:", error);
+    console.error("Error in manualHanjinPickupCompleted:", error);
     return res.status(500).json({
       success: false,
-      message: "MOCK 집하 처리 중 오류가 발생했습니다.",
+      message: "수동 집하 처리 중 오류가 발생했습니다.",
       error: error.message,
     });
   }
+}
+
+// 하위 호환: 기존 mock 경로는 manual 로직을 그대로 사용한다.
+export async function mockHanjinPickupCompleted(req, res) {
+  return manualHanjinPickupCompleted(req, res);
 }
 
 export async function setMailboxForceTodayShipment(req, res) {
