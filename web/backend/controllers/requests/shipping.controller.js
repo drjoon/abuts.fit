@@ -152,6 +152,11 @@ export async function mockHanjinPickupCompleted(req, res) {
         continue;
       }
 
+      // [SSOT] MOCK 집하 대상은 '우편함 단위'로 확정한다.
+      // - 프론트는 편의상 shippingPackageIds를 보낼 수 있지만,
+      //   우편함 내부의 미할당(shippingPackageId 없음) 건은 pickup 직전 정상 상태다.
+      // - 따라서 packageId 필터는 "배제"가 아니라 "우선 매칭 + 미할당 포함" 규칙으로 해석한다.
+      // - 목표: 같은 우편함에서 2건/4건처럼 분할 집하되는 현상 방지.
       let effectiveMailboxRequests = mailboxRequestsAll;
       if (packageIdSet.size > 0) {
         const matchedByPackage = mailboxRequestsAll.filter((requestDoc) => {
@@ -229,8 +234,9 @@ export async function mockHanjinPickupCompleted(req, res) {
         continue;
       }
 
-      // 우편함 단위 MOCK 집하는 같은 집하건으로 간주하여
-      // 그룹(패키지/미할당)과 무관하게 trackingNumber를 하나로 통일한다.
+      // [SSOT] trackingNumber는 '우편함의 이번 집하 1회'를 대표한다.
+      // 그룹 키(pkg/mailbox)는 내부 처리 순서용이며, 사용자/추적 화면의 집하 단위를 쪼개면 안 된다.
+      // 그래서 그룹(패키지/미할당) 수와 무관하게 mailboxTrackingNumber 하나를 재사용한다.
       const mailboxTrackingNumber = resolveMailboxTrackingNumber(
         effectiveMailboxRequests,
         "MOCK",

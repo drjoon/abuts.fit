@@ -24,6 +24,12 @@
   - 우편함 재사용/배정은 **BusinessAnchor 단일 점유**를 반드시 보장합니다.
   - `businessAnchorId`가 비어 있는 점유 의뢰는 `UNKNOWN`으로 취급하여 재사용 대상에서 제외합니다.
   - 택배/배송 그룹핑 및 병합 기준에서 `trackingNumber`를 `shippingPackageId`보다 우선 SSOT로 사용합니다.
+  - MOCK 집하(`POST /api/requests/shipping/hanjin/mock-pickup-complete`)는 우편함 단위 집하를 강제합니다.
+    - packageId 매칭 건 + 미할당(shippingPackageId 없음) 건을 함께 처리합니다.
+    - 같은 우편함의 같은 집하 처리에서는 trackingNumber를 1개로 통일합니다.
+- 분리 tracking 병합 보정 스크립트:
+  - `web/backend/scripts/db/merge-tracking-number-by-request-ids.mjs`
+  - dry-run 기본, `--yes`일 때만 반영
 
 ## 3. 정리 원칙
 

@@ -128,6 +128,20 @@
 
 ---
 
+### 1.2.2 포장.발송 → 추적관리 집하 그룹핑 SSOT (2026-07-01)
+
+- 집하/추적 카드의 canonical 그룹 키는 **trackingNumber 우선**이다.
+- 같은 우편함에서 같은 집하 작업으로 처리된 건은 `shippingPackageId` 유무와 무관하게
+  **동일 trackingNumber**를 공유해야 한다.
+- `shippingPackageId`는 내부 처리/출력 흐름 보조 값이며, 집하 단위를 분할하는 기준으로 사용하지 않는다.
+- MOCK 집하에서도 동일 규칙을 적용한다:
+  - packageId 매칭 건 + 미할당 건을 함께 집하 대상으로 본다.
+  - 우편함 단위로 trackingNumber를 1개만 사용한다.
+- 과거 데이터가 2건+4건처럼 분리된 경우에는 DB 보정 스크립트로 trackingNumber를 통일한다.
+  - `web/backend/scripts/db/merge-tracking-number-by-request-ids.mjs`
+
+---
+
 ### 1.3 CNC 알람 코드
 
 ### 1.3.1 Esprit Composite2SplitAB 장애 재발 방지 체크포인트

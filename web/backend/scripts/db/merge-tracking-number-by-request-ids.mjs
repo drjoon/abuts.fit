@@ -2,6 +2,23 @@ import { connectDb, disconnectDb } from "./_mongo.js";
 import Request from "../../models/request.model.js";
 import DeliveryInfo from "../../models/deliveryInfo.model.js";
 
+/**
+ * trackingNumber 병합 보정 스크립트
+ *
+ * 사용 목적:
+ * - 과거 버그로 같은 우편함/같은 집하여야 할 의뢰가
+ *   서로 다른 trackingNumber(예: 2건 + 4건)로 분리된 경우를 수동 복구한다.
+ *
+ * 사용 예시:
+ * ABUTS_DB_FORCE=true ENV_FILE=local.env \
+ * node scripts/db/merge-tracking-number-by-request-ids.mjs \
+ *   --requestIds A,B,C,D --trackingNumber 5371... --yes
+ *
+ * 안전장치:
+ * - 기본은 dry-run (미반영)
+ * - 실제 반영은 --yes 명시 시에만 수행
+ */
+
 function parseArgs() {
   const args = process.argv.slice(2);
   const getArg = (name) => {
@@ -52,7 +69,8 @@ async function resolveTrackingNumber(targetRequests, explicitTrackingNumber) {
 }
 
 async function run() {
-  const { requestIds, trackingNumber, statusCode, statusText, yes } = parseArgs();
+  const { requestIds, trackingNumber, statusCode, statusText, yes } =
+    parseArgs();
 
   if (!requestIds.length) {
     throw new Error("--requestIds 가 필요합니다. (comma-separated)");
@@ -60,14 +78,25 @@ async function run() {
 
   await connectDb();
   try {
-    const targetRequests = await Request.find({ requestId: { $in: requestIds } })
-      .select({ requestId: 1, manufacturerStage: 1, deliveryInfoRef: 1, mailboxAddress: 1 })
+    const targetRequests = await Request.find({
+      requestId: { $in: requestIds },
+    })
+      .select({
+        requestId: 1,
+        manufacturerStage: 1,
+        deliveryInfoRef: 1,
+        mailboxAddress: 1,
+      })
       .populate("deliveryInfoRef");
 
     const foundRequestIds = new Set(
-      targetRequests.map((r) => String(r?.requestId || "").trim()).filter(Boolean),
+      targetRequests
+        .map((r) => String(r?.requestId || "").trim())
+        .filter(Boolean),
     );
-    const missingRequestIds = requestIds.filter((id) => !foundRequestIds.has(id));
+    const missingRequestIds = requestIds.filter(
+      (id) => !foundRequestIds.has(id),
+    );
 
     const resolvedTrackingNumber = await resolveTrackingNumber(
       targetRequests,
@@ -86,7 +115,8 @@ async function run() {
       const deliveryRef = req?.deliveryInfoRef;
       const deliveryId = String(deliveryRef?._id || deliveryRef || "").trim();
       const beforeTrackingNumber = String(
-        (typeof deliveryRef === "object" ? deliveryRef?.trackingNumber : "") || "",
+        (typeof deliveryRef === "object" ? deliveryRef?.trackingNumber : "") ||
+          "",
       ).trim();
       console.log(
         `[merge-tracking-number] request=${String(req?.requestId || "")} mailbox=${String(req?.mailboxAddress || "")} stage=${String(req?.manufacturerStage || "")} deliveryId=${deliveryId || "-"} beforeTracking=${beforeTrackingNumber || "-"}`,
@@ -94,7 +124,9 @@ async function run() {
     }
 
     if (!yes) {
-      console.log("[merge-tracking-number] dry-run 완료. 실제 반영하려면 --yes를 추가하세요.");
+      console.log(
+        "[merge-tracking-number] dry-run 완료. 실제 반영하려면 --yes를 추가하세요.",
+      );
       return;
     }
 
@@ -114,7 +146,8 @@ async function run() {
       delivery.tracking = delivery.tracking || {};
       if (statusCode) delivery.tracking.lastStatusCode = statusCode;
       if (statusText) delivery.tracking.lastStatusText = statusText;
-      if (!delivery.tracking.lastEventAt) delivery.tracking.lastEventAt = new Date();
+      if (!delivery.tracking.lastEventAt)
+        delivery.tracking.lastEventAt = new Date();
       delivery.tracking.lastSyncedAt = new Date();
       await delivery.save();
       updatedCount += 1;
