@@ -416,11 +416,12 @@ namespace DentalAddin
                 opB.PassPosition = espMill5xCompositePassPosition.espMill5xCompositePassPositionStartEndPosition;
             }
             double? firstPassPercentOverride = TryGetCompositeFirstPassPercentOverride();
+            const double fixedAFirstPassPercent = 0.1;
             const double aStartOffsetFromFrontMm = 0.1;
             double baseAFirstPercentByFrontX = XToPassPercentByStartEndScale(MoveSTL_Module.FrontPointX - aStartOffsetFromFrontMm, 0.0, splitPercent);
             double baseAFirstPercent = firstPassPercentOverride.HasValue
                 ? Clamp(firstPassPercentOverride.Value, 0.0, splitPercent)
-                : baseAFirstPercentByFrontX;
+                : Clamp(fixedAFirstPassPercent, 0.0, splitPercent);
 
             const double aEndOffsetFromSplitMm = 0.0; // 요청: FINISH_A 끝점 = 기준점(splitPercent)
             // 요청 반영: FINISH_B 시작점 오프셋 제거(정치수)
@@ -458,10 +459,11 @@ namespace DentalAddin
                 opB.LastPassPercent = Clamp(compositeEndPassPercent, opB.FirstPassPercent, 100.0);
             }
 
-            // FINISH_A 시작점 정책:
-            // - 기본: FrontPointX - 0.1mm를 StartEndScale pass-percent로 변환한 값
+            // FINISH_A 시작점 정책(이력 포함):
+            // - 기존 기본값: FrontPointX - 0.1mm를 StartEndScale pass-percent로 변환하여 사용
+            // - 변경 기본값: FirstPassPercent=0.1
             // - env(ABUTS_COMPOSITE_FIRST_PASS_PERCENT_A) 지정 시 env 우선
-            // 중요: 0% 근처는 축 특이구간으로 경로가 불안정해질 수 있어, 정상 케이스에서는 0% 강제 폴백을 하지 않는다.
+            // 참고: frontBased 값(baseAFirstPercentByFrontX)은 기존 대비 진단 로그 비교용으로만 유지한다.
             double requestedAFirstPass = baseAFirstPercent;
             opA.FirstPassPercent = Clamp(requestedAFirstPass, 0.0, opA.LastPassPercent);
 
