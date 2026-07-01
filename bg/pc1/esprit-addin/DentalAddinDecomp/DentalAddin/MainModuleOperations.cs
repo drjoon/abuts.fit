@@ -791,10 +791,14 @@ namespace DentalAddin
                 {
                     if (string.Equals(twoPhaseRegion, "BACK", StringComparison.OrdinalIgnoreCase))
                     {
-                        // 요청사항: Back_Turn은 과거 Turn_B 로직 그대로 사용
-                        // - splitX 기준 우측 가공
-                        // - 시작점: splitX - 0.5mm
-                        twoPhaseSplitReady = TryPrepareBackTurnRangeFromLegacyTurnB(out regionMinX, out regionMaxX);
+                        // 요청사항 반영:
+                        // Back_Turn 시작점은 splitX-0.5(레거시) 대신 BackPointX 근처(소재 근처) 기준을 우선 사용한다.
+                        twoPhaseSplitReady = TryPrepareTurningRegionRange(twoPhaseRegion, out regionMinX, out regionMaxX);
+                        if (!twoPhaseSplitReady)
+                        {
+                            DentalLogger.Log("TurningOp BACK - BackPointX 기반 구간 계산 실패, 레거시 Turn_B(range=splitX-0.5~xMax)로 1회 폴백");
+                            twoPhaseSplitReady = TryPrepareBackTurnRangeFromLegacyTurnB(out regionMinX, out regionMaxX);
+                        }
                     }
                     else
                     {

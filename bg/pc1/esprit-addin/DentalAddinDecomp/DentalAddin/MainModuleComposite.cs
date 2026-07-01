@@ -1108,7 +1108,7 @@ namespace DentalAddin
 
         /// <summary>
         /// Front Face(ParallelPlanes) 가공 끝점을 FrontPointX 기준으로 고정 적용한다.
-        /// - 목표: Face.RightX = FrontPointX + 0.5mm
+        /// - 목표: Face.RightX = FrontPointX
         /// - RL=1: BottomZLimit = -Face.RightX
         /// - RL=2: BottomZLimit = +Face.RightX
         /// 주의: 이 설정 이후에 Rough 안전가드(TryApplyFaceRightEndGuard)가 추가 보정할 수 있다.
@@ -1135,8 +1135,8 @@ namespace DentalAddin
 
                 LastAppliedFrontFaceDepthMm = configuredDepthMm;
 
-                // 사용자 요청: Front Face 끝점은 FrontPointX 기준 +0.5mm
-                const double frontFaceEndOffsetFromFrontMm = 0.5;
+                // 사용자 요청: Front Face 끝점은 FrontPointX 기준(오프셋 0.0mm)
+                const double frontFaceEndOffsetFromFrontMm = 0.0;
                 double requestedFaceRightX = MoveSTL_Module.FrontPointX + frontFaceEndOffsetFromFrontMm;
                 double appliedFaceRightX = requestedFaceRightX;
 

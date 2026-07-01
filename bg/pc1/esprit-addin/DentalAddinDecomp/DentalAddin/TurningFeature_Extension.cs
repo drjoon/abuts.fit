@@ -707,7 +707,11 @@ internal sealed class TurningFeature_Extension
 		{
 			for (int i = 1; i <= turningTimes; i++)
 			{
-				array2[2] = MainModule.EndXValue + MainModule.TurningExtend - 1.0;
+				double legacyStartX = MainModule.EndXValue + MainModule.TurningExtend - 1.0;
+				double stockNearStartX = MoveSTL_Module.BackPointX;
+				array2[2] = (!MainModule.SpindleSide)
+					? Math.Max(legacyStartX, stockNearStartX)
+					: Math.Min(legacyStartX, stockNearStartX);
 				array3[2] = MainModule.LowerY + (double)(MainModule.TurningTimes - i) * MainModule.TurningDepth;
 				array3[1] = MainModule.Document.LatheMachineSetup.BarDiameter / 2.0;
 				array2[1] = array2[2] - (array3[1] - array3[2]) / Math.Tan(Math.PI * (90.0 - MainModule.Chamfer) / 180.0);
