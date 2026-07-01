@@ -85,23 +85,29 @@ export async function mockHanjinPickupCompleted(req, res) {
       });
     }
 
-    // shippingPackageId가 있으면 해당 ID만 처리하여 날짜별 박스를 구분한다.
-    // 같은 mailboxAddress를 어제/오늘 재사용하는 경우 어제 미처리 건과 오늘 건이 혼합되는 것을 방지.
+    // shippingPackageId는 string/ObjectId/object 모두 허용하되, 유효한 ObjectId만 사용한다.
+    // 프론트에서 object가 그대로 넘어온 경우 "[object Object]" 같은 값이 들어올 수 있어
+    // 여기서 강하게 정규화한다.
     const packageIdList = Array.isArray(shippingPackageIds)
       ? shippingPackageIds
-          .map((value) => String(value || "").trim())
-          .filter(Boolean)
+          .map((value) => {
+            if (value && typeof value === "object") {
+              return String(value?._id || value?.id || "").trim();
+            }
+            return String(value || "").trim();
+          })
+          .filter((value) => Types.ObjectId.isValid(value))
       : [];
+    const packageIdSet = new Set(packageIdList);
 
-    const dbQuery = {
+    // 1차: 우편함+포장.발송 기준으로 모두 가져온 뒤,
+    // 2차: 각 우편함 내부에서 shippingPackageId 조건을 적용한다.
+    // 이유: print 직후(아직 pickup 전) 의뢰는 shippingPackageId가 비어 있을 수 있는데,
+    // 이때 전역 쿼리에 shippingPackageId $in을 넣으면 정상 대상까지 통째로 누락된다.
+    const targetRequests = await Request.find({
       mailboxAddress: { $in: addressList },
       manufacturerStage: "포장.발송",
-    };
-    if (packageIdList.length) {
-      dbQuery.shippingPackageId = { $in: packageIdList };
-    }
-
-    const targetRequests = await Request.find(dbQuery)
+    })
       .populate("requestor", "name business phoneNumber address")
       .populate("businessAnchorId", "name metadata")
       .populate("deliveryInfoRef");
@@ -113,24 +119,100 @@ export async function mockHanjinPickupCompleted(req, res) {
       });
     }
 
-    const now = new Date();
-    const boxesByMailbox = buildShippingBoxesByMailbox(targetRequests);
+    const requestsByMailbox = new Map();
+    for (const requestDoc of targetRequests) {
+      const mailboxAddress = String(requestDoc?.mailboxAddress || "").trim();
+      if (!mailboxAddress) continue;
+      if (!requestsByMailbox.has(mailboxAddress)) {
+        requestsByMailbox.set(mailboxAddress, []);
+      }
+      requestsByMailbox.get(mailboxAddress).push(requestDoc);
+    }
 
+    const now = new Date();
     const results = [];
 
-    console.log(
-      `[MOCK_PICKUP] Found ${boxesByMailbox.size} mailboxes with ${targetRequests.length} requests`,
-    );
+    console.log("[MOCK_PICKUP] base candidates", {
+      mailboxCount: requestsByMailbox.size,
+      requestCount: targetRequests.length,
+      packageIdCount: packageIdList.length,
+    });
 
     for (const mailboxAddress of addressList) {
-      const groups = boxesByMailbox.get(mailboxAddress) || [];
-      if (!groups.length) {
+      const mailboxRequestsAll = requestsByMailbox.get(mailboxAddress) || [];
+      if (!mailboxRequestsAll.length) {
         results.push({
           mailboxAddress,
           success: false,
           skipped: true,
           reason: "no_requests",
           requestCount: 0,
+          processedCount: 0,
+        });
+        continue;
+      }
+
+      let effectiveMailboxRequests = mailboxRequestsAll;
+      if (packageIdSet.size > 0) {
+        const matchedByPackage = mailboxRequestsAll.filter((requestDoc) => {
+          const packageId = String(requestDoc?.shippingPackageId || "").trim();
+          return packageIdSet.has(packageId);
+        });
+
+        if (matchedByPackage.length > 0) {
+          effectiveMailboxRequests = matchedByPackage;
+        } else {
+          // 현재 우편함의 포장.발송 건이 shippingPackageId 미할당(=pickup 전) 상태면
+          // packageId 필터를 적용하지 않고 해당 건을 대상으로 집하를 진행한다.
+          const withoutPackage = mailboxRequestsAll.filter(
+            (requestDoc) => !requestDoc?.shippingPackageId,
+          );
+          if (withoutPackage.length > 0) {
+            console.warn(
+              "[MOCK_PICKUP] package filter miss → use unassigned package requests",
+              {
+                mailboxAddress,
+                requestedPackageIds: packageIdList,
+                requestIds: withoutPackage
+                  .map((requestDoc) =>
+                    String(requestDoc?.requestId || "").trim(),
+                  )
+                  .filter(Boolean),
+              },
+            );
+            effectiveMailboxRequests = withoutPackage;
+          } else {
+            console.warn(
+              "[MOCK_PICKUP] skip mailbox by package filter mismatch",
+              {
+                mailboxAddress,
+                requestedPackageIds: packageIdList,
+                mailboxRequestCount: mailboxRequestsAll.length,
+              },
+            );
+            results.push({
+              mailboxAddress,
+              success: false,
+              skipped: true,
+              reason: "package_filter_mismatch",
+              requestCount: mailboxRequestsAll.length,
+              processedCount: 0,
+            });
+            continue;
+          }
+        }
+      }
+
+      const groups = Array.from(
+        buildRequestsByShippingBox(effectiveMailboxRequests).values(),
+      );
+      if (!groups.length) {
+        results.push({
+          mailboxAddress,
+          success: false,
+          skipped: true,
+          reason: "no_groups",
+          requestCount: effectiveMailboxRequests.length,
           processedCount: 0,
         });
         continue;
@@ -223,6 +305,25 @@ export async function mockHanjinPickupCompleted(req, res) {
     const pickedUpCount = results.filter((item) => item.success).length;
 
     console.log(`[MOCK_PICKUP] completed count=${pickedUpCount}`);
+
+    if (pickedUpCount === 0) {
+      const failedMailboxes = results
+        .filter((item) => item.success === false)
+        .map((item) => ({
+          mailboxAddress: item.mailboxAddress,
+          reason: item.reason || "unknown",
+        }));
+      return res.status(404).json({
+        success: false,
+        message:
+          "MOCK 집하 처리 가능한 우편함을 찾지 못했습니다. (package 필터 또는 대상 상태를 확인하세요)",
+        data: {
+          pickedUpCount,
+          results,
+          failedMailboxes,
+        },
+      });
+    }
 
     return res.status(200).json({
       success: true,

@@ -560,13 +560,25 @@ export const MailboxGrid = ({
       return;
     }
 
-    // 현재 화면에 표시된 requests의 shippingPackageId를 함께 전송하여
-    // 날짜별 박스(shippingPackageId)를 구분 - 어제 미처리 건과 오늘 건 혼합 방지
+    // 현재 화면 의뢰 중에서 유효한 shippingPackageId만 정규화해서 전송한다.
+    // - object/문자열 혼합 입력을 허용하되 _id/id 우선으로 추출
+    // - "[object Object]" 같은 비정상 문자열은 제외
+    // - 대상 우편함(addressList)에 속한 의뢰만 수집
+    const targetMailboxSet = new Set(mailboxAddresses);
     const shippingPackageIds = Array.from(
       new Set(
         requests
-          .map((r) => String(r.shippingPackageId || "").trim())
-          .filter(Boolean),
+          .filter((r) =>
+            targetMailboxSet.has(String(r?.mailboxAddress || "").trim()),
+          )
+          .map((r) => {
+            const raw = (r as any)?.shippingPackageId;
+            if (raw && typeof raw === "object") {
+              return String(raw?._id || raw?.id || "").trim();
+            }
+            return String(raw || "").trim();
+          })
+          .filter((value) => /^[a-f\d]{24}$/i.test(value)),
       ),
     );
 
