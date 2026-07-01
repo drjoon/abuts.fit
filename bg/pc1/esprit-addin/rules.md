@@ -100,6 +100,21 @@
 - 목적:
   - CAM 직경 8.0 케이스에서 대구경 선행 가공을 제거해 불필요 공정/시간을 줄인다.
 
+### 4.6 Front Face/Back Turn 경계 보정 (2026-07-01)
+
+- Front Face 종료점 정책(현행 SSOT):
+  - `Face.RightX = FrontPointX + 1.0mm`
+  - 구현 위치: `MainModuleComposite.ApplyFrontFaceFixedDepth`
+  - 단, 후속 안전 가드(`TryApplyFaceRightEndGuard`) 및 경계 클램프로 추가 보정될 수 있다.
+
+- Back Turn 시작점/퇴출 정책(현행 SSOT):
+  - 시작점은 `FrontPointX` anchor로 통일한다. (`Front_Turn`, `Middle_Turn`과 동일 기준)
+  - 끝점은 `xMax` 고정 클램프를 쓰지 않고, `exitAllowance`를 더해
+    수평 extension + 45도 퇴출 형상이 유지되도록 한다.
+  - 구현 위치: `MainModuleOperations.TryPrepareTurningRegionRange` (`BACK`),
+    `TryPrepareBackTurnRangeFromLegacyTurnB` (legacy fallback),
+    `TurningFeature_Extension.BackT` (legacy 체인 생성)
+
 ## 5. 정리 원칙
 
 - 전체 정책은 루트 `rules.md`에서 관리합니다.

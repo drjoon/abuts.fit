@@ -1608,9 +1608,13 @@ namespace DentalAddin
                         rangeMaxX = Math.Min(xMax, middleRoughEnd + roughToTurnMm);
                         break;
                     case "BACK":
-                        // 요청사항 반영:
-                        // 1) 시작점은 Front/Middle과 동일하게 소재 근처(FrontPointX)로 맞춘다.
-                        // 2) 끝점은 기존처럼 수평 extension + 45도 퇴출이 보이도록 xMax를 확장한다.
+                        // 요청사항 반영(2026-07-01):
+                        // 1) 시작점은 Front/Middle과 동일한 anchor(FrontPointX)로 통일한다.
+                        //    - 증상: Back_Turn만 과도하게 좌측(-X)에서 시작해 에러/비정상 접근이 발생.
+                        //    - 조치: 시작 하한을 FrontPointX로 고정해 세 구간의 시작 기준을 일치시킨다.
+                        // 2) 끝점은 기존 Back_Turn 형상(수평 extension + 45도 퇴출)을 유지한다.
+                        //    - 범위를 xMax로 자르면 퇴출부가 클리핑되어 수평+45 형상이 사라질 수 있다.
+                        //    - 따라서 xMax + exitAllowance까지 허용해 기존 퇴출 형상을 보존한다.
                         rangeMinX = Clamp(MoveSTL_Module.FrontPointX, xMin + 1e-6, xMax - 1e-6);
 
                         double exitAllowance = Math.Max(0.5, Math.Abs(TurningExtend) + Math.Abs(BackTurn));
