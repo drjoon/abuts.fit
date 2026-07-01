@@ -455,6 +455,7 @@ async function finalizeMailboxPickupShipment({
   pickupData,
   actorUserId,
   isDuplicate = false,
+  fallbackTrackingNumber = "",
 }) {
   const list = Array.isArray(requests) ? requests.filter(Boolean) : [];
   if (!list.length) return [];
@@ -465,7 +466,11 @@ async function finalizeMailboxPickupShipment({
   });
   const affectedBusinessAnchorId = String(pkg?.businessAnchorId || "").trim();
   // 중복(ERROR-03)이어도 wblNo가 반환되면 저장 (운송장 출력에 필요)
-  const trackingNumber = extractTrackingNumberFromPickupData(pickupData);
+  // 실배송 API가 trackingNumber를 응답하지 않는 케이스를 대비해,
+  // insert-order에 사용한 wblNo(fallbackTrackingNumber)를 보조 SSOT로 사용한다.
+  const trackingNumber = String(
+    extractTrackingNumberFromPickupData(pickupData) || fallbackTrackingNumber,
+  ).trim();
   const actualShipPickup = new Date();
   const updatedIds = [];
 
@@ -636,6 +641,7 @@ async function finalizeMailboxPickupResult({
   pickupData,
   actorUserId,
   isDuplicate = false,
+  fallbackTrackingNumber = "",
 }) {
   const requestDocs = await Request.find({
     _id: { $in: group.map((request) => request._id) },
@@ -647,6 +653,7 @@ async function finalizeMailboxPickupResult({
     pickupData,
     actorUserId,
     isDuplicate,
+    fallbackTrackingNumber,
   });
   await emitDeliveryUpdatedBatch(eventItems, {
     source: "hanjin-pickup",
@@ -692,12 +699,28 @@ async function executeSingleMailboxPickup({
       .filter(Boolean);
     let wblNo = null;
     if (deliveryInfoRefIds.length > 0) {
-      const di = await DeliveryInfo.findOne({
+      const deliveryInfos = await DeliveryInfo.find({
         _id: { $in: deliveryInfoRefIds },
       })
-        .select({ trackingNumber: 1 })
+        .select({ _id: 1, trackingNumber: 1 })
         .lean();
-      wblNo = String(di?.trackingNumber || "").trim() || null;
+      const trackingCandidates = Array.from(
+        new Set(
+          deliveryInfos
+            .map((di) => String(di?.trackingNumber || "").trim())
+            .filter(Boolean),
+        ),
+      );
+      if (trackingCandidates.length > 1) {
+        console.warn("[hanjin][pickup] mixed tracking numbers in mailbox", {
+          mailbox,
+          trackingCandidates,
+          deliveryInfoIds: deliveryInfos
+            .map((di) => String(di?._id || "").trim())
+            .filter(Boolean),
+        });
+      }
+      wblNo = trackingCandidates[0] || null;
     }
 
     const orderBody = await buildHanjinInsertOrderBody({
@@ -715,6 +738,7 @@ async function executeSingleMailboxPickup({
         pickupData: data,
         actorUserId,
         isDuplicate: true,
+        fallbackTrackingNumber: wblNo || "",
       });
     }
     return finalizeMailboxPickupResult({
@@ -722,6 +746,7 @@ async function executeSingleMailboxPickup({
       group,
       pickupData: data,
       actorUserId,
+      fallbackTrackingNumber: wblNo || "",
     });
   } catch (error) {
     return {
