@@ -159,47 +159,58 @@ export async function mockHanjinPickupCompleted(req, res) {
           return packageIdSet.has(packageId);
         });
 
-        if (matchedByPackage.length > 0) {
-          effectiveMailboxRequests = matchedByPackage;
-        } else {
-          // 현재 우편함의 포장.발송 건이 shippingPackageId 미할당(=pickup 전) 상태면
-          // packageId 필터를 적용하지 않고 해당 건을 대상으로 집하를 진행한다.
-          const withoutPackage = mailboxRequestsAll.filter(
-            (requestDoc) => !requestDoc?.shippingPackageId,
-          );
-          if (withoutPackage.length > 0) {
-            console.warn(
-              "[MOCK_PICKUP] package filter miss → use unassigned package requests",
-              {
-                mailboxAddress,
-                requestedPackageIds: packageIdList,
-                requestIds: withoutPackage
-                  .map((requestDoc) =>
-                    String(requestDoc?.requestId || "").trim(),
-                  )
-                  .filter(Boolean),
-              },
-            );
-            effectiveMailboxRequests = withoutPackage;
-          } else {
-            console.warn(
-              "[MOCK_PICKUP] skip mailbox by package filter mismatch",
-              {
-                mailboxAddress,
-                requestedPackageIds: packageIdList,
-                mailboxRequestCount: mailboxRequestsAll.length,
-              },
-            );
-            results.push({
-              mailboxAddress,
-              success: false,
-              skipped: true,
-              reason: "package_filter_mismatch",
-              requestCount: mailboxRequestsAll.length,
-              processedCount: 0,
-            });
-            continue;
+        // packageId가 없는(미할당) 의뢰는 pickup 전 정상 상태일 수 있으므로,
+        // package 매칭 건과 함께 항상 포함한다.
+        // (기존에는 매칭 건이 1개라도 있으면 미할당 건이 누락되어
+        // 같은 우편함에서 일부만 집하 처리되는 문제가 있었다.)
+        const withoutPackage = mailboxRequestsAll.filter(
+          (requestDoc) => !requestDoc?.shippingPackageId,
+        );
+
+        if (matchedByPackage.length > 0 || withoutPackage.length > 0) {
+          const mergedById = new Map();
+          for (const requestDoc of matchedByPackage) {
+            const key = String(
+              requestDoc?._id || requestDoc?.requestId || "",
+            ).trim();
+            if (!key) continue;
+            mergedById.set(key, requestDoc);
           }
+          for (const requestDoc of withoutPackage) {
+            const key = String(
+              requestDoc?._id || requestDoc?.requestId || "",
+            ).trim();
+            if (!key) continue;
+            mergedById.set(key, requestDoc);
+          }
+          effectiveMailboxRequests = Array.from(mergedById.values());
+
+          if (withoutPackage.length > 0) {
+            console.warn("[MOCK_PICKUP] include unassigned package requests", {
+              mailboxAddress,
+              requestedPackageIds: packageIdList,
+              matchedByPackageCount: matchedByPackage.length,
+              unassignedCount: withoutPackage.length,
+            });
+          }
+        } else {
+          console.warn(
+            "[MOCK_PICKUP] skip mailbox by package filter mismatch",
+            {
+              mailboxAddress,
+              requestedPackageIds: packageIdList,
+              mailboxRequestCount: mailboxRequestsAll.length,
+            },
+          );
+          results.push({
+            mailboxAddress,
+            success: false,
+            skipped: true,
+            reason: "package_filter_mismatch",
+            requestCount: mailboxRequestsAll.length,
+            processedCount: 0,
+          });
+          continue;
         }
       }
 
@@ -218,8 +229,16 @@ export async function mockHanjinPickupCompleted(req, res) {
         continue;
       }
 
+      // 우편함 단위 MOCK 집하는 같은 집하건으로 간주하여
+      // 그룹(패키지/미할당)과 무관하게 trackingNumber를 하나로 통일한다.
+      const mailboxTrackingNumber = resolveMailboxTrackingNumber(
+        effectiveMailboxRequests,
+        "MOCK",
+        now,
+      );
+
       for (const group of groups) {
-        const trackingNumber = resolveMailboxTrackingNumber(group, "MOCK", now);
+        const trackingNumber = mailboxTrackingNumber;
         const processedRequestIds = [];
         const deliverySaveJobs = [];
         const requestSaveJobs = [];
