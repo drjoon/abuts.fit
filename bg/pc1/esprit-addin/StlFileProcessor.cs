@@ -1263,12 +1263,12 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                         Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_PHASE_MODE", null);
                         break;
                     case "shallow":
-                        stepIncrement = 0.20;
+                        stepIncrement = 0.15;
                         Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_DYNAMIC_DISABLE", "1");
                         Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_PHASE_MODE", null);
                         break;
                     case "deep":  // 유지홈 있음
-                        stepIncrement = 0.25;
+                        stepIncrement = 0.20;
                         Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_DYNAMIC_DISABLE", "0");
                         // deep도 동일하게 Front/Back 2단 기준
                         Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_PHASE_MODE", null);
