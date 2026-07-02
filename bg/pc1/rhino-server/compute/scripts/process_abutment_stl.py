@@ -66,7 +66,7 @@ def _extract_request_id_from_path(p: str):
         return None
 
 
-def _detect_finish_line_latest(doc, visualize=False):
+def _detect_finish_line_latest(doc, visualize=False, mesh_id=None):
     import importlib
 
     module = finishline_detection_module
@@ -86,7 +86,7 @@ def _detect_finish_line_latest(doc, visualize=False):
                 module.set_external_logger(log)
         except Exception:
             pass
-        return module.detect_finish_line(doc=doc, visualize=visualize)
+        return module.detect_finish_line(doc=doc, mesh_id=mesh_id, visualize=visualize)
     except Exception as e:
         log("[finishline] detect_finish_line raised: " + str(e))
         raise
@@ -410,6 +410,51 @@ def _pick_primary_piece(candidates, tol):
     return chosen[1].get("id"), (chosen[1].get("r"), chosen[1].get("maxZ")), pool
 
 
+def _pick_finishline_mesh_id(doc, mesh_obj_refs):
+    if not mesh_obj_refs:
+        return None
+
+    import_ids = set()
+    for o in mesh_obj_refs:
+        try:
+            if o is not None:
+                import_ids.add(o.Id)
+        except Exception:
+            pass
+
+    infos = _collect_mesh_infos(doc)
+    if not infos:
+        return None
+
+    scoped = [i for i in infos if i.get("id") in import_ids]
+    if not scoped:
+        scoped = infos
+
+    tol = float(os.environ.get("ABUTS_R_TOL", "0.05"))
+    candidates = []
+    for i in scoped:
+        candidates.append(
+            {
+                "id": i.get("id"),
+                "r": float(i.get("r") or 0.0),
+                "maxZ": float(i.get("maxZ") or 0.0),
+                "naked": int(i.get("nakedEdges") or 0),
+            }
+        )
+
+    best_id, best_meta, pool = _pick_primary_piece(candidates, tol)
+    log(
+        "[finishline-target] importMeshes={} scoped={} pool={} selected={} meta={}".format(
+            len(import_ids),
+            len(scoped),
+            len(pool) if pool else 0,
+            best_id,
+            best_meta,
+        )
+    )
+    return best_id
+
+
 def _pick_fill_targets(pool):
     ordered = sorted(
         pool,
@@ -679,7 +724,48 @@ def _transform_finishline_point(pt, alignment_transform):
     return pt
 
 
+def _add_finishline_curve(doc, points):
+    if doc is None or not points:
+        return None
+
+    pts = []
+    for p in points:
+        if p is None:
+            continue
+        try:
+            pts.append(Rhino.Geometry.Point3d(float(p.X), float(p.Y), float(p.Z)))
+        except Exception:
+            continue
+
+    if len(pts) < 2:
+        return None
+
+    try:
+        if pts[0].DistanceTo(pts[-1]) > 1e-6:
+            pts.append(Rhino.Geometry.Point3d(pts[0]))
+    except Exception:
+        pass
+
+    try:
+        poly = Rhino.Geometry.Polyline(pts)
+        curve = Rhino.Geometry.PolylineCurve(poly)
+        cid = doc.Objects.AddCurve(curve)
+        if cid:
+            log("[finishline-curve] added id={} pts={}".format(cid, len(pts)))
+            return cid
+    except Exception as e:
+        log("[finishline-curve] add failed: {}".format(str(e)))
+
+    return None
+
+
 def _import_stl_meshes(doc, input_path, skip_align=False, target_diameter=3.33):
+    before_ids = set()
+    try:
+        before_ids = set(o.Id for o in list(doc.Objects) if o is not None)
+    except Exception:
+        before_ids = set()
+
     try:
         read_opts = Rhino.FileIO.FileStlReadOptions()
         ok = Rhino.FileIO.FileStl.Read(str(input_path), doc, read_opts)
@@ -699,7 +785,8 @@ def _import_stl_meshes(doc, input_path, skip_align=False, target_diameter=3.33):
             target_diameter=target_diameter,
         )
 
-    mesh_obj_refs = []
+    all_mesh_obj_refs = []
+    new_mesh_obj_refs = []
     try:
         objs = list(doc.Objects)
     except Exception:
@@ -713,12 +800,23 @@ def _import_stl_meshes(doc, input_path, skip_align=False, target_diameter=3.33):
         geom = obj.Geometry
         if geom is None:
             continue
-        mesh_obj_refs.append(obj)
+        all_mesh_obj_refs.append(obj)
+        if obj.Id not in before_ids:
+            new_mesh_obj_refs.append(obj)
+
+    # 정상이라면 new_mesh_obj_refs를 사용. (문서 잔존 오브젝트 혼입 방지)
+    mesh_obj_refs = new_mesh_obj_refs if new_mesh_obj_refs else all_mesh_obj_refs
 
     if not mesh_obj_refs:
         fail("Import 후 Mesh가 없습니다")
 
-    log("mesh objects after import=" + str(len(mesh_obj_refs)))
+    log(
+        "mesh objects after import total={} new={} selected={}".format(
+            len(all_mesh_obj_refs),
+            len(new_mesh_obj_refs),
+            len(mesh_obj_refs),
+        )
+    )
     return mesh_obj_refs, alignment_transform
 
 
@@ -1171,10 +1269,17 @@ def main(input_path_arg=None, output_path_arg=None, log_path_arg=None):
         strategy_used = None
         stage_started_at = time.perf_counter()
         try:
-            fl = _detect_finish_line_latest(doc=doc, visualize=False)
+            finishline_mesh_id = _pick_finishline_mesh_id(doc, mesh_obj_refs)
+            fl = _detect_finish_line_latest(
+                doc=doc,
+                visualize=False,
+                mesh_id=finishline_mesh_id,
+            )
             pts = fl.get("points") or []
             pt0 = fl.get("pt0")
             strategy_used = fl.get("strategy_used")
+            # 후속 메시 처리(Explode/Join)와 독립적으로 피니시라인 커브를 문서에 유지
+            _add_finishline_curve(doc, pts)
         except Exception as e:
             log("Finishline failed: " + str(e))
         _perf_mark(

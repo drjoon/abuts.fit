@@ -49,6 +49,8 @@ _SHOW_ALL_SECTION_CURVES = os.environ.get("FINISHLINE_SHOW_ALL_SECTIONS", "0") i
 _EDGE_MIN_Z_VALID_THRESHOLD_MM = 0.5
 # edge 루프가 pt0 대비 지나치게 안쪽(내부 홀)일 때 차단하는 반경 비율 임계값
 _EDGE_MIN_RADIUS_TO_PT0_RATIO = 0.45
+# edge 루프가 메시 외곽 반경 대비 지나치게 안쪽이면 내부 루프 오검출로 간주
+_EDGE_MIN_RADIUS_TO_MESH_MAX_RATIO = 0.72
 # edge 루프가 pt0 대비 과도하게 상단에 있으면 오검출로 간주
 _EDGE_MAX_Z_ABOVE_PT0_MM = 2.5
 # edge 루프가 pt0 대비 과도하게 하단에 있으면 내부 루프/홀 경계 오검출로 간주
@@ -190,6 +192,7 @@ def _detect_finishline_points_edge(
     rejected_high_z = 0
     rejected_low_vs_pt0 = 0
     rejected_small_radius = 0
+    rejected_small_vs_mesh = 0
     rejected_below_band = 0
     rejected_flat_z = 0
 
@@ -198,17 +201,24 @@ def _detect_finishline_points_edge(
     best_strategy: Optional[str] = None
 
     for idx, target_mesh in enumerate(candidates):
+        target_mesh_max_radius = _mesh_xy_radius_from_bbox(target_mesh)
         _trace_log(
-            "[detect-edge] candidate[{}] vertices={} faces={} key={}".format(
+            "[detect-edge] candidate[{}] vertices={} faces={} key={} mesh_max_r={:.6f}".format(
                 idx,
                 target_mesh.Vertices.Count,
                 target_mesh.Faces.Count,
                 _mesh_z_key(target_mesh),
+                target_mesh_max_radius,
             )
         )
 
         edge_curves = _extract_mesh_edges_with_command(doc, target_mesh)
         strategy_used = "C_EXTRACT_MESH_EDGES_UNWELDED"
+        if not edge_curves:
+            # Rhino command 기반 추출이 실패하면, 수동 Explode와 동일 경로를 코드로 수행
+            # (사용자 환경에서 Explode 시 분리되는 seam 경계 회수)
+            edge_curves = _extract_edges_via_command_explode(doc, target_mesh)
+            strategy_used = "C_EXPLODE_CMD_NAKED_EDGES"
         if not edge_curves:
             edge_curves = _extract_naked_edges_fallback(target_mesh)
             strategy_used = "C_FALLBACK_NAKED_EDGES"
@@ -315,6 +325,21 @@ def _detect_finishline_points_edge(
                     continue
 
             edge_median_radius = _points_median_radius(traced_points)
+            if edge_median_radius is not None and target_mesh_max_radius > _DIST_TOL:
+                mesh_ratio = edge_median_radius / target_mesh_max_radius
+                if mesh_ratio <= _EDGE_MIN_RADIUS_TO_MESH_MAX_RATIO:
+                    rejected_small_vs_mesh += 1
+                    _trace_log(
+                        "[detect-edge] candidate[{}] rejected mesh_radius_ratio={:.4f} edge_median_r={:.4f} mesh_max_r={:.4f} <= {:.3f}".format(
+                            idx,
+                            mesh_ratio,
+                            edge_median_radius,
+                            target_mesh_max_radius,
+                            _EDGE_MIN_RADIUS_TO_MESH_MAX_RATIO,
+                        )
+                    )
+                    continue
+
             if (
                 ref_pt0_radius is not None
                 and ref_pt0_radius > _DIST_TOL
@@ -383,6 +408,8 @@ def _detect_finishline_points_edge(
         return None, "C_EDGE_REJECTED_HIGH_Z"
     if rejected_low_vs_pt0 > 0:
         return None, "C_EDGE_REJECTED_LOW_VS_PT0"
+    if rejected_small_vs_mesh > 0:
+        return None, "C_EDGE_REJECTED_SMALL_VS_MESH"
     if rejected_small_radius > 0:
         return None, "C_EDGE_REJECTED_SMALL_RADIUS"
     if rejected_below_band > 0:
@@ -677,6 +704,84 @@ def _extract_mesh_edges_with_command(
             pass
 
     return curve_geometries
+
+
+def _extract_edges_via_command_explode(
+    doc: Rhino.RhinoDoc,
+    mesh: rg.Mesh,
+) -> List[rg.Curve]:
+    """수동 Explode와 동일한 커맨드 경로로 seam 경계를 추출한다.
+
+    절차:
+      1) 임시 mesh 추가
+      2) `_Explode` 실행
+      3) 생성된 mesh 조각들의 naked-edge 루프 수집
+      4) 생성 오브젝트 정리
+    """
+    temp_mesh_id = doc.Objects.AddMesh(mesh)
+    if temp_mesh_id == System.Guid.Empty:
+        _diag_log("explode-cmd fallback: temp mesh add failed")
+        return []
+
+    baseline_ids = set(obj.Id for obj in doc.Objects)
+    created_ids: List[System.Guid] = []
+    curves: List[rg.Curve] = []
+    created_mesh_count = 0
+    naked_loop_count = 0
+
+    try:
+        macro = "! _SelNone _SelID {} _-Explode _Enter".format(temp_mesh_id)
+        try:
+            Rhino.RhinoApp.RunScript(macro, False)
+        except Exception as e:
+            _diag_log("explode-cmd fallback: RunScript exception={}".format(str(e)))
+
+        for obj in doc.Objects:
+            if obj is None or obj.Id in baseline_ids:
+                continue
+            created_ids.append(obj.Id)
+
+            if obj.ObjectType != rdo.ObjectType.Mesh or obj.Geometry is None:
+                continue
+
+            created_mesh_count += 1
+            part = obj.Geometry
+            try:
+                loops = part.GetNakedEdges()
+            except Exception:
+                loops = None
+
+            if not loops:
+                continue
+
+            naked_loop_count += len(loops)
+            for loop in loops:
+                if not loop or len(loop) < 3:
+                    continue
+                try:
+                    curves.append(rg.PolylineCurve(loop))
+                except Exception:
+                    continue
+    finally:
+        for oid in created_ids:
+            try:
+                doc.Objects.Delete(oid, True)
+            except Exception:
+                pass
+        try:
+            doc.Objects.Delete(temp_mesh_id, True)
+        except Exception:
+            pass
+
+    _diag_log(
+        "explode-cmd fallback: created_meshes={} naked_loops={} curves={}".format(
+            created_mesh_count,
+            naked_loop_count,
+            len(curves),
+        )
+    )
+
+    return curves
 
 
 def _extract_naked_edges_fallback(mesh: rg.Mesh) -> List[rg.Curve]:
