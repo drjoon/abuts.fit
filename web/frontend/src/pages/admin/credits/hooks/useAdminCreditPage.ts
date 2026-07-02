@@ -45,10 +45,9 @@ const isFreeCreditEligibleBusiness = (business: BusinessCredit | null) => {
 };
 
 export function useAdminCreditPage() {
-  const { token, user } = useAuthStore();
+  const { token } = useAuthStore();
   const { period, setPeriod } = usePeriodStore();
   const { toast } = useToast();
-  const isAdminOwner = user?.role === "admin";
 
   const [stats, setStats] = useState<CreditStats | null>(null);
   const [loadingStats, setLoadingStats] = useState(false);
@@ -458,15 +457,7 @@ export function useAdminCreditPage() {
       });
       return;
     }
-    if (!isAdminOwner && selectedBonusAmount >= 300000) {
-      toast({
-        title: "권한 없음",
-        description:
-          "30만원/50만원 무료 크레딧은 관리자 대표만 지급할 수 있습니다.",
-        variant: "destructive",
-      });
-      return;
-    }
+
     const targetBusiness = businesses.find(
       (business) => String(business._id) === businessAnchorId,
     );
@@ -1188,6 +1179,5 @@ export function useAdminCreditPage() {
     selectedShippingCreditBusiness,
     filteredBonusGrantRows,
     filteredFreeCreditUsageRows,
-    isAdminOwner,
   };
 }
