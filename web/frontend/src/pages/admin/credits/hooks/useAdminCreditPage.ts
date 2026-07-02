@@ -48,8 +48,7 @@ export function useAdminCreditPage() {
   const { token, user } = useAuthStore();
   const { period, setPeriod } = usePeriodStore();
   const { toast } = useToast();
-  const isAdminOwner =
-    user?.role === "admin" && String(user?.subRole || "") === "owner";
+  const isAdminOwner = user?.role === "admin";
 
   const [stats, setStats] = useState<CreditStats | null>(null);
   const [loadingStats, setLoadingStats] = useState(false);

@@ -323,12 +323,12 @@ router.post(
 router.get("/bonus-grants", adminListBonusGrants);
 router.post(
   "/bonus-grants/welcome-bonus/override",
-  authorize(["admin"], { subRoles: ["owner"] }),
+  authorize(["admin"], { subRoles: ["owner", "staff"] }),
   adminOverrideWelcomeBonus,
 );
 router.post(
   "/bonus-grants/free-shipping-credit/grant",
-  authorize(["admin"], { subRoles: ["owner"] }),
+  authorize(["admin"], { subRoles: ["owner", "staff"] }),
   adminGrantFreeShippingCredit,
 );
 router.post(
