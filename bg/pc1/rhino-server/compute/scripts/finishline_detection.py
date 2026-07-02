@@ -59,8 +59,11 @@ _EDGE_MIN_RADIUS_TO_PT0_RATIO = 0.45
 _EDGE_MIN_RADIUS_TO_MESH_MAX_RATIO = 0.72
 # edge 루프가 pt0 대비 과도하게 상단에 있으면 오검출로 간주
 _EDGE_MAX_Z_ABOVE_PT0_MM = 2.5
-# edge 루프가 pt0 대비 과도하게 하단에 있으면 내부 루프/홀 경계 오검출로 간주
+# edge 루프가 pt0 대비 과도하게 하단에 있으면 내부 루프/홀 경계 오검출로 간주.
+# 실데이터에서 pt0가 상대적으로 높게 잡히는 케이스가 있어 고정값 2.5mm만 쓰면
+# 정상 finishline까지 탈락할 수 있다. 따라서 base값 + 메시 높이 비율 기반 적응 임계값을 사용한다.
 _EDGE_MAX_Z_BELOW_PT0_MM = 2.5
+_EDGE_MAX_Z_BELOW_PT0_HEIGHT_RATIO = 0.33
 # edge 루프의 Z 변화폭이 지나치게 작으면(거의 수평 링) 내부 경계 오검출로 간주
 _EDGE_MIN_Z_SPAN_MM = 0.08
 # Explode 분해 후 너무 작은 조각(상단 파편/노이즈)이 edge 후보로 채택되는 것을 방지.
@@ -69,6 +72,9 @@ _EDGE_MIN_Z_SPAN_MM = 0.08
 # 둘 중 하나라도 충족하면 살리고, 둘 다 너무 작으면 조각 후보에서 제외한다.
 _EDGE_COMPONENT_MIN_RADIUS_RATIO = 0.35
 _EDGE_COMPONENT_MIN_VERTEX_RATIO = 0.03
+# Edge 추출 커맨드는 비싸므로, 분해 컴포넌트 중 상위 후보만 검사한다.
+# (명령창 "명령" 스팸/지연 완화)
+_EDGE_MAX_COMPONENT_CANDIDATES = 8
 
 # traced finishline 품질 검증(아웃라이어 세그먼트) 임계값
 # 절대 임계값은 메시 높이 대비 비율(%) 기반으로 계산한다.
@@ -194,6 +200,25 @@ def _edge_min_z_cutoff(mesh: rg.Mesh) -> float:
     return float(_EDGE_MIN_Z_VALID_THRESHOLD_MM)
 
 
+def _edge_max_z_below_pt0_limit(mesh: rg.Mesh) -> float:
+    """pt0 대비 허용 하향 밴드(mm)를 계산한다.
+
+    base(2.5mm)만 사용하면 backend 정렬 좌표계에서 정상 finishline도 탈락할 수 있어,
+    메시 높이 비율 기반 하한(예: height*0.33)과 max를 취한다.
+    """
+    try:
+        bbox = mesh.GetBoundingBox(True)
+        if bbox.IsValid:
+            h = max(1e-6, float(bbox.Max.Z - bbox.Min.Z))
+            return max(
+                float(_EDGE_MAX_Z_BELOW_PT0_MM),
+                float(h * _EDGE_MAX_Z_BELOW_PT0_HEIGHT_RATIO),
+            )
+    except Exception:
+        pass
+    return float(_EDGE_MAX_Z_BELOW_PT0_MM)
+
+
 def _detect_finishline_points_edge(
     doc: Rhino.RhinoDoc,
     mesh: rg.Mesh,
@@ -201,6 +226,27 @@ def _detect_finishline_points_edge(
     candidates = _explode_components_sorted_by_max_z(mesh)
     if not candidates:
         candidates = [mesh]
+
+    # 성능 최적화: 분해 조각이 매우 많을 때는 상위 몇 개만 edge 추출 대상으로 제한.
+    # 점수: XY 외곽 반경 우선, 그다음 vertex 수, 그다음 maxZ.
+    if len(candidates) > _EDGE_MAX_COMPONENT_CANDIDATES:
+        ranked: List[Tuple[Tuple[float, float, float], rg.Mesh]] = []
+        for c in candidates:
+            if c is None:
+                continue
+            r = _mesh_xy_radius_from_bbox(c)
+            v = float(c.Vertices.Count)
+            kz = _mesh_z_key(c)
+            mz = float(kz[0]) if kz is not None else -float("inf")
+            ranked.append(((float(r), float(v), float(mz)), c))
+        ranked.sort(key=lambda it: it[0], reverse=True)
+        candidates = [it[1] for it in ranked[:_EDGE_MAX_COMPONENT_CANDIDATES]]
+        _diag_log(
+            "edge candidate cap applied: total={} capped={}".format(
+                len(ranked),
+                len(candidates),
+            )
+        )
 
     ref_pt0 = None
     ref_pt0_radius = None
@@ -287,12 +333,21 @@ def _detect_finishline_points_edge(
             )
         )
         min_z_cutoff = _edge_min_z_cutoff(target_mesh)
+        below_pt0_limit = _edge_max_z_below_pt0_limit(target_mesh)
+        _trace_log(
+            "[detect-edge] candidate[{}] min_z_cutoff(minZ+0.5)={:.6f} below_pt0_limit={:.6f}".format(
+                idx,
+                min_z_cutoff,
+                below_pt0_limit,
+            )
+        )
         traced_points = _pick_best_edge_loop_points(
             edge_curves,
             doc.ModelAbsoluteTolerance,
             ref_pt0,
             ref_pt0_radius,
             min_z_cutoff,
+            below_pt0_limit,
         )
         if traced_points and len(traced_points) >= 3:
             edge_min_z = _points_min_z(traced_points)
@@ -371,14 +426,14 @@ def _detect_finishline_points_edge(
                     )
                     continue
 
-                min_allowed_z = ref_pt0.Z - _EDGE_MAX_Z_BELOW_PT0_MM
+                min_allowed_z = ref_pt0.Z - below_pt0_limit
                 if edge_min_z <= min_allowed_z:
                     rejected_low_vs_pt0 += 1
                     _trace_log(
                         "[detect-edge] candidate[{}] rejected low_vs_pt0 min_z={:.6f} <= pt0_z-{:.3f} ({:.6f})".format(
                             idx,
                             edge_min_z,
-                            _EDGE_MAX_Z_BELOW_PT0_MM,
+                            below_pt0_limit,
                             min_allowed_z,
                         )
                     )
@@ -895,6 +950,7 @@ def _pick_best_edge_loop_points(
     ref_pt0: Optional[rg.Point3d],
     ref_pt0_radius: Optional[float],
     mesh_min_z_cutoff: float,
+    max_z_below_pt0_limit: float,
 ) -> Optional[List[rg.Point3d]]:
     if not curves:
         return None
@@ -952,7 +1008,9 @@ def _pick_best_edge_loop_points(
 
         if ref_pt0 is not None:
             max_allowed_z = ref_pt0.Z + _EDGE_MAX_Z_ABOVE_PT0_MM
-            min_allowed_z = ref_pt0.Z - _EDGE_MAX_Z_BELOW_PT0_MM
+            # strict 루프 필터에서도 메시 높이 기반 하향 밴드를 동일 적용
+            # (backend 정렬 경로와 스크립트 수동 실행 간 편차 완화)
+            min_allowed_z = ref_pt0.Z - max_z_below_pt0_limit
             if min_z >= max_allowed_z or min_z <= min_allowed_z:
                 continue
 
@@ -1252,14 +1310,17 @@ def _validate_finishline_points(
     max_dz = max(seg_dz) if seg_dz else 0.0
     if med_dz is not None and med_dz > _DIST_TOL:
         dz_ratio = max_dz / max(1e-9, med_dz)
-        if dz_ratio >= _OUTLIER_DZ_HARD_RATIO:
+        # hard ratio라도 절대 dz가 충분히 큰 경우에만 reject한다.
+        # (med_dz가 매우 작은 데이터에서 ratio만으로 과잉 탈락 방지)
+        if dz_ratio >= _OUTLIER_DZ_HARD_RATIO and max_dz >= dz_abs_th:
             return (
                 False,
-                "outlier_dz_hard max_dz={:.4f} med_dz={:.4f} ratio={:.3f} hard_ratio={:.3f}".format(
+                "outlier_dz_hard max_dz={:.4f} med_dz={:.4f} ratio={:.3f} hard_ratio={:.3f} th_abs={:.4f}".format(
                     max_dz,
                     med_dz,
                     dz_ratio,
                     _OUTLIER_DZ_HARD_RATIO,
+                    dz_abs_th,
                 ),
             )
         if max_dz >= dz_abs_th and max_dz >= (med_dz * _OUTLIER_DZ_RATIO):

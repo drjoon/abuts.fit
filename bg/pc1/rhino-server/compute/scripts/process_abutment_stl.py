@@ -1249,20 +1249,19 @@ def main(input_path_arg=None, output_path_arg=None, log_path_arg=None):
         # 기존 문서 정리 (ActiveDoc를 사용할 수 있으므로 안전하게 비우기)
         stage_started_at = time.perf_counter()
         _clear_doc_objects(doc, stage_label="before-import")
-        # 정렬을 포함하여 import (skip_align=False): finishline 감지 전에 원점 정렬 필수
-        # 원본 STL이 원점에서 크게 벗어난 경우(예: zmin=-22mm) 정렬 없이 finishline을 감지하면
-        # _EDGE_MIN_Z_VALID_THRESHOLD_MM(0.5) 체크 및 단면 평면이 모두 원점 기준이라 실패함
+
+        # 중요: finishline은 import 직후(원본 좌표) 먼저 계산한다.
+        # 이후 정렬/Explode/Fill 등 후처리를 수행하되, finishline 좌표는 필요 시 정렬 변환을 적용해 사용한다.
         mesh_obj_refs, alignment_transform = _import_stl_meshes(
             doc,
             input_path,
-            skip_align=False,
+            skip_align=True,
             target_diameter=target_diameter,
         )
-        _log_doc_mesh_stats(doc, "after-import-align")
-        _apply_alignment_transform_to_doc_curves(doc, alignment_transform)
+        _log_doc_mesh_stats(doc, "after-import")
         _perf_mark("import_align", stage_started_at)
 
-        # Finish line 계산 (정렬 완료 후 단계 — 좌표계가 원점 기준으로 보정된 상태)
+        # Finish line 계산 (다른 처리보다 먼저)
         fl = None
         pts = []
         pt0 = None
@@ -1278,8 +1277,6 @@ def main(input_path_arg=None, output_path_arg=None, log_path_arg=None):
             pts = fl.get("points") or []
             pt0 = fl.get("pt0")
             strategy_used = fl.get("strategy_used")
-            # 후속 메시 처리(Explode/Join)와 독립적으로 피니시라인 커브를 문서에 유지
-            _add_finishline_curve(doc, pts)
         except Exception as e:
             log("Finishline failed: " + str(e))
         _perf_mark(
@@ -1288,7 +1285,23 @@ def main(input_path_arg=None, output_path_arg=None, log_path_arg=None):
             extra="strategy={} points={}".format(strategy_used, len(pts)),
         )
 
-        # 백엔드 등록: 이미 정렬된 좌표계 기준이므로 별도 transform 불필요
+        # 정렬은 finishline 계산 후 수행한다.
+        # (backend 경로에서 edge 기반이 무너지는 케이스를 피하기 위해 순서를 변경)
+        stage_started_at = time.perf_counter()
+        alignment_transform = _run_alignment_on_first_mesh(
+            doc,
+            target_diameter=target_diameter,
+        )
+        _log_doc_mesh_stats(doc, "after-align")
+
+        # 디버그 가시화용 커브는 정렬 좌표계로 변환된 점으로 추가
+        pts_aligned = _transform_finishline_points(pts, alignment_transform)
+        pt0_aligned = _transform_finishline_point(pt0, alignment_transform)
+        _add_finishline_curve(doc, pts_aligned)
+
+        _perf_mark("align_post_finishline", stage_started_at)
+
+        # 백엔드 등록: 정렬 좌표계를 사용하므로 finishline 점도 동일 변환 적용
         stage_started_at = time.perf_counter()
         if fl is not None:
             try:
@@ -1301,8 +1314,16 @@ def main(input_path_arg=None, output_path_arg=None, log_path_arg=None):
                     "maxStepDistance": float(
                         os.environ.get("ABUTS_FINISHLINE_MAX_STEP", "1") or 1
                     ),
-                    "points": [[float(p.X), float(p.Y), float(p.Z)] for p in pts],
-                    "pt0": [float(pt0.X), float(pt0.Y), float(pt0.Z)] if pt0 else None,
+                    "points": [
+                        [float(p.X), float(p.Y), float(p.Z)] for p in pts_aligned
+                    ],
+                    "pt0": [
+                        float(pt0_aligned.X),
+                        float(pt0_aligned.Y),
+                        float(pt0_aligned.Z),
+                    ]
+                    if pt0_aligned
+                    else None,
                 }
 
                 log(
