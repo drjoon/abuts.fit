@@ -67,21 +67,29 @@ def _extract_request_id_from_path(p: str):
 
 
 def _detect_finish_line_latest(doc, visualize=False):
-    try:
-        import importlib
+    import importlib
 
+    module = finishline_detection_module
+    try:
         module = importlib.reload(finishline_detection_module)
         log(
             "[finishline] module reloaded path={}".format(
                 getattr(module, "__file__", "unknown")
             )
         )
+    except Exception as e:
+        log("[finishline] module reload failed; using cached module: " + str(e))
+
+    try:
+        try:
+            if hasattr(module, "set_external_logger"):
+                module.set_external_logger(log)
+        except Exception:
+            pass
         return module.detect_finish_line(doc=doc, visualize=visualize)
     except Exception as e:
-        log("[finishline] module reload failed, fallback cached module: " + str(e))
-        return finishline_detection_module.detect_finish_line(
-            doc=doc, visualize=visualize
-        )
+        log("[finishline] detect_finish_line raised: " + str(e))
+        raise
 
 
 def _run_fill_steps_latest(doc):
@@ -150,13 +158,25 @@ def _post_finish_line(request_id: str, input_file_name: str, finish_line: dict):
         status_code = int(resp.StatusCode) if resp is not None else -1
         ok = bool(resp.IsSuccessStatusCode) if resp is not None else False
         log("finishline post status={} ok={}".format(status_code, ok))
-        if not ok:
-            try:
-                resp_text = resp.Content.ReadAsStringAsync().Result
-            except Exception:
-                resp_text = ""
-            if resp_text:
-                log("finishline post response=" + str(resp_text)[:500])
+
+        resp_text = ""
+        try:
+            if resp is not None and resp.Content is not None:
+                resp_text = resp.Content.ReadAsStringAsync().Result or ""
+        except Exception:
+            resp_text = ""
+
+        if resp_text:
+            log("finishline post response=" + str(resp_text)[:1000])
+
+        if ok and resp_text:
+            lower = str(resp_text).lower()
+            if '"found":false' in lower:
+                log(
+                    "finishline post warning: backend returned found=false (request match failed)"
+                )
+            if '"updated":true' in lower:
+                log("finishline post confirmed: updated=true")
     except Exception as e:
         log("finishline post failed: " + str(e))
 
