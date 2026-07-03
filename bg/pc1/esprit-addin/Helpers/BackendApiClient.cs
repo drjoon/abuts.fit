@@ -360,6 +360,19 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
             // 유지홈 옵션 ("none"|"deep", legacy "shallow" 허용) —
             // 5axisComposite_A.prc StepIncrement 오버라이드에 사용.
             [DataMember] public string retentionGroove { get; set; }
+
+            // Composite 경사축 벡터(백엔드 필드명 변형 대응)
+            // 우선순위는 StlFileProcessor.TryApplyCompositeOrientationVectorEnv 참고.
+            [DataMember(Name = "compositeTiltVector")] public double[] compositeTiltVector { get; set; }
+            [DataMember(Name = "tiltAxisVector")] public double[] tiltAxisVector { get; set; }
+            [DataMember(Name = "inclinedAxisVector")] public double[] inclinedAxisVector { get; set; }
+            [DataMember(Name = "slopeAxisVector")] public double[] slopeAxisVector { get; set; }
+
+            [DataMember(Name = "compositeTiltVectorCsv")] public string compositeTiltVectorCsv { get; set; }
+            [DataMember(Name = "tiltAxisVectorCsv")] public string tiltAxisVectorCsv { get; set; }
+            [DataMember(Name = "inclinedAxisVectorCsv")] public string inclinedAxisVectorCsv { get; set; }
+            [DataMember(Name = "slopeAxisVectorCsv")] public string slopeAxisVectorCsv { get; set; }
+
             [DataMember] public RequestMetaFinishLine finishLine { get; set; }
         }
 

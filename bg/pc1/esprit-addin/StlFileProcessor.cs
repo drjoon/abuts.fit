@@ -123,11 +123,12 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         // requestIdHint:
         // - 백엔드가 트리거 시 전달한 canonical requestId
         // - R&D 샘플 복사본이 원본과 동일 STL 파일명을 공유해도, 공정/콜백 귀속이 원본으로 섞이지 않도록 우선 사용한다.
-        public void Process(string stlPath, double? frontLimitX = null, double? backLimitX = null, double? materialDiameter = null, bool twoPhase = false, string requestIdHint = null)
+        public void Process(string stlPath, double? frontLimitX = null, double? backLimitX = null, double? materialDiameter = null, bool twoPhase = false, string requestIdHint = null, double? tiltAxisX = null, double? tiltAxisY = null, double? tiltAxisZ = null)
         {
             AppLogger.BeginRun();
             AppLogger.Log("StlFileProcessor: Process 시작");
             ResetPerRunState();
+            TryApplyCompositeOrientationVectorEnvFromPayload(tiltAxisX, tiltAxisY, tiltAxisZ);
             Directory.CreateDirectory(_outputFolder);
             Document document = _documentManager.EnsureDocument(materialDiameter);
             if (document == null)
@@ -230,6 +231,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                             ? null
                             : requestMeta.retentionGroove.Trim();
                         TryApplyCompositeFirstPassPercentEnv(requestMeta.tooth);
+                        TryApplyCompositeOrientationVectorEnv(requestMeta);
                         AppLogger.Log($"StlFileProcessor: request-meta loaded requestId={requestId}, Clinic={requestMeta.clinicName}, Patient={requestMeta.patientName}, Tooth={requestMeta.tooth}, Implant={requestMeta.implantManufacturer}/{requestMeta.implantBrand}/{requestMeta.implantType}, MaxDia={requestMeta.maxDiameter}, ConnDia={requestMeta.connectionDiameter}, CamDia={requestMeta.camDiameter}, WorkType={requestMeta.workType}, Lot={requestMeta.lotNumber}, SerialCode={(_backendSerialCode ?? "")}, RetentionGroove={(_backendRetentionGroove ?? "<null>")}");
                         AppLogger.Log($"StlFileProcessor: finishLine topZ={(finishLineTopZ.HasValue ? finishLineTopZ.Value.ToString("F4", CultureInfo.InvariantCulture) : "<null>")}, minZ={(finishLineMinZ.HasValue ? finishLineMinZ.Value.ToString("F4", CultureInfo.InvariantCulture) : "<null>")}, espritR={(finishLineEspritR.HasValue ? finishLineEspritR.Value.ToString("F4", CultureInfo.InvariantCulture) : "<null>")}, TwoPhase={twoPhase}");
                         if (!_prcManager.ApplyBackendPrcNames((BackendApiClient.RequestMetaCaseInfos)requestMeta, requestId, _backendImplantLabel))
@@ -445,6 +447,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_PHASE_MODE", null);
             Environment.SetEnvironmentVariable("ABUTS_RETENTION_GROOVE", null);
             Environment.SetEnvironmentVariable("ABUTS_CAM_DIAMETER", null);
+            Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_ORIENTATION_VECTOR", null);
+            Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_ORIENTATION_PROFILE_LENGTH_MM", null);
             FaceHoleProcessFilePath = null;
             ConnectionMachiningProcessFilePath = null;
             lotNumber = "ACR";
@@ -1221,6 +1225,140 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                         AppLogger.Log($"DentalAddin: TwoPhase split 설정 실패 - {ex.GetType().Name}:{ex.Message}");
                     }
                 }
+
+        private void TryApplyCompositeOrientationVectorEnvFromPayload(double? tiltAxisX, double? tiltAxisY, double? tiltAxisZ)
+        {
+            try
+            {
+                if (!tiltAxisX.HasValue || !tiltAxisY.HasValue || !tiltAxisZ.HasValue)
+                {
+                    return;
+                }
+
+                double vx = tiltAxisX.Value;
+                double vy = tiltAxisY.Value;
+                double vz = tiltAxisZ.Value;
+                double magnitude = Math.Sqrt(vx * vx + vy * vy + vz * vz);
+                if (double.IsNaN(magnitude) || double.IsInfinity(magnitude) || magnitude < 1e-6)
+                {
+                    AppLogger.Log($"DentalAddin: payload TiltAxisVector 무효 - raw=({vx},{vy},{vz})");
+                    return;
+                }
+
+                string envValue = string.Format(CultureInfo.InvariantCulture, "{0:0.######},{1:0.######},{2:0.######}", vx, vy, vz);
+                Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_ORIENTATION_VECTOR", envValue);
+                AppLogger.Log($"DentalAddin: payload TiltAxisVector 적용 - ABUTS_COMPOSITE_ORIENTATION_VECTOR={envValue}");
+            }
+            catch (Exception ex)
+            {
+                AppLogger.Log($"DentalAddin: payload TiltAxisVector 적용 실패 - {ex.GetType().Name}:{ex.Message}");
+            }
+        }
+
+        private void TryApplyCompositeOrientationVectorEnv(BackendApiClient.RequestMetaCaseInfos requestMeta)
+        {
+            try
+            {
+                if (requestMeta == null)
+                {
+                    return;
+                }
+
+                double[] vector = null;
+                string vectorSource = null;
+
+                if (requestMeta.compositeTiltVector != null && requestMeta.compositeTiltVector.Length >= 3)
+                {
+                    vector = requestMeta.compositeTiltVector;
+                    vectorSource = "caseInfos.compositeTiltVector";
+                }
+                else if (requestMeta.tiltAxisVector != null && requestMeta.tiltAxisVector.Length >= 3)
+                {
+                    vector = requestMeta.tiltAxisVector;
+                    vectorSource = "caseInfos.tiltAxisVector";
+                }
+                else if (requestMeta.inclinedAxisVector != null && requestMeta.inclinedAxisVector.Length >= 3)
+                {
+                    vector = requestMeta.inclinedAxisVector;
+                    vectorSource = "caseInfos.inclinedAxisVector";
+                }
+                else if (requestMeta.slopeAxisVector != null && requestMeta.slopeAxisVector.Length >= 3)
+                {
+                    vector = requestMeta.slopeAxisVector;
+                    vectorSource = "caseInfos.slopeAxisVector";
+                }
+
+                if (vector == null)
+                {
+                    string vectorCsv = null;
+                    if (!string.IsNullOrWhiteSpace(requestMeta.compositeTiltVectorCsv))
+                    {
+                        vectorCsv = requestMeta.compositeTiltVectorCsv;
+                        vectorSource = "caseInfos.compositeTiltVectorCsv";
+                    }
+                    else if (!string.IsNullOrWhiteSpace(requestMeta.tiltAxisVectorCsv))
+                    {
+                        vectorCsv = requestMeta.tiltAxisVectorCsv;
+                        vectorSource = "caseInfos.tiltAxisVectorCsv";
+                    }
+                    else if (!string.IsNullOrWhiteSpace(requestMeta.inclinedAxisVectorCsv))
+                    {
+                        vectorCsv = requestMeta.inclinedAxisVectorCsv;
+                        vectorSource = "caseInfos.inclinedAxisVectorCsv";
+                    }
+                    else if (!string.IsNullOrWhiteSpace(requestMeta.slopeAxisVectorCsv))
+                    {
+                        vectorCsv = requestMeta.slopeAxisVectorCsv;
+                        vectorSource = "caseInfos.slopeAxisVectorCsv";
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(vectorCsv))
+                    {
+                        char[] separators = new[] { ',', ';', ' ', '\t', '|', '/' };
+                        string[] parts = vectorCsv.Split(separators, StringSplitOptions.RemoveEmptyEntries);
+                        if (parts.Length >= 3
+                            && double.TryParse(parts[0], NumberStyles.Float, CultureInfo.InvariantCulture, out double x)
+                            && double.TryParse(parts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out double y)
+                            && double.TryParse(parts[2], NumberStyles.Float, CultureInfo.InvariantCulture, out double z))
+                        {
+                            vector = new[] { x, y, z };
+                        }
+                    }
+                }
+
+                if (vector == null || vector.Length < 3)
+                {
+                    string existing = Environment.GetEnvironmentVariable("ABUTS_COMPOSITE_ORIENTATION_VECTOR");
+                    if (!string.IsNullOrWhiteSpace(existing))
+                    {
+                        AppLogger.Log($"DentalAddin: request-meta 경사축 벡터 없음 - payload/env 벡터 유지 ({existing})");
+                    }
+                    else
+                    {
+                        AppLogger.Log("DentalAddin: Composite 경사축 벡터 없음 - OrientationProfile env 주입 생략");
+                    }
+                    return;
+                }
+
+                double vx = vector[0];
+                double vy = vector[1];
+                double vz = vector[2];
+                double magnitude = Math.Sqrt(vx * vx + vy * vy + vz * vz);
+                if (double.IsNaN(magnitude) || double.IsInfinity(magnitude) || magnitude < 1e-6)
+                {
+                    AppLogger.Log($"DentalAddin: Composite 경사축 벡터 무효 - source={vectorSource}, raw=({vx},{vy},{vz})");
+                    return;
+                }
+
+                string envValue = string.Format(CultureInfo.InvariantCulture, "{0:0.######},{1:0.######},{2:0.######}", vx, vy, vz);
+                Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_ORIENTATION_VECTOR", envValue);
+                AppLogger.Log($"DentalAddin: Composite 경사축 벡터 적용 - source={vectorSource}, ABUTS_COMPOSITE_ORIENTATION_VECTOR={envValue}");
+            }
+            catch (Exception ex)
+            {
+                AppLogger.Log($"DentalAddin: Composite 경사축 벡터 적용 실패 - {ex.GetType().Name}:{ex.Message}");
+            }
+        }
 
         // 유지홈(retentionGroove) → FINISH_A StepIncrement 매핑
         //   none    → 0.1

@@ -500,7 +500,16 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             AppLogger.Log("[NC Processing] Invoking StlFileProcessor.Process()...");
             // requestId는 payload의 canonical 값을 사용한다.
             // stlPath 파일명에서 requestId를 역추론하면 원본/샘플이 섞여 잘못된 의뢰가 갱신될 수 있다.
-            processor.Process(stlPath, frontLimitX, null, req.MaterialDiameter, req.TwoPhase, req.RequestId);
+            processor.Process(
+                stlPath,
+                frontLimitX,
+                null,
+                req.MaterialDiameter,
+                req.TwoPhase,
+                req.RequestId,
+                req.TiltAxisVector?.x,
+                req.TiltAxisVector?.y,
+                req.TiltAxisVector?.z);
             AppLogger.Log($"[NC Processing] CAM processing completed successfully: {req.RequestId}");
         }
         private async Task ProcessQueueLoop(CancellationToken token)
