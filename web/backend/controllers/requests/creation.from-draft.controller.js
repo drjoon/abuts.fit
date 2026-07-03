@@ -884,7 +884,7 @@ export async function createRequestsFromDraft(req, res) {
               throw err;
             }
 
-            if (existingStage !== "취소") {
+            if (normalizedStage !== "취소") {
               existingDoc.manufacturerStage = "취소";
               await existingDoc.save({ session });
             }

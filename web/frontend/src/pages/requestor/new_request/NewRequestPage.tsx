@@ -302,7 +302,8 @@ export const NewRequestPage = () => {
       return;
     }
 
-    // 모든 중복 건 처리 완료 - 모달 닫고 즉시 재제출
+    // 모든 중복 건 처리 완료 - 모달만 닫고 선택 결과를 저장
+    // 실제 제출(업로드/신규 의뢰 생성)은 메인 페이지의 "의뢰하기" 버튼에서만 진행
     const finalResolutions = nextResolutions.map((r) => ({
       caseId: r.caseId,
       strategy: r.strategy,
@@ -311,9 +312,6 @@ export const NewRequestPage = () => {
 
     setDuplicateResolutions(finalResolutions as any);
     setDuplicatePrompt(null);
-
-    // 사용자가 다시 버튼을 누르지 않아도 바로 처리되도록 즉시 재제출
-    await handleSubmitWithDuplicateResolutions(finalResolutions as any);
   };
 
   const renderDuplicateActions = (dup: any) => {
@@ -337,22 +335,6 @@ export const NewRequestPage = () => {
           onClick={(e) => {
             e.preventDefault();
             e.stopPropagation();
-
-            if (isCancelableStage) {
-              const confirmed = window.confirm(
-                "기존 의뢰(의뢰/CAM 단계)는 취소되고 새 의뢰가 접수됩니다.\n\n확인: 기존 의뢰 취소 후 재의뢰\n취소: 기존 의뢰 유지\n\n(이 경우 무료 재의뢰 카운트는 증가하지 않습니다)",
-              );
-
-              if (!confirmed) {
-                void applyDuplicateChoice({
-                  strategy: "skip",
-                  caseId: dup.caseId,
-                  existingRequestId: resolveExistingRequestId(dup),
-                });
-                return;
-              }
-            }
-
             void applyDuplicateChoice({
               strategy: primaryStrategy,
               caseId: dup.caseId,
