@@ -1636,16 +1636,12 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         {
             try
             {
-                // 기존 정책:
-                // - AppConfig.CompositeFirstPassPercentAEnv 를 null로 두고,
-                //   MainModuleComposite 쪽 FrontPointX 기반 시작점 계산을 사용.
-                // 변경 정책(요청 반영):
-                // - FINISH_A 시작점을 FirstPassPercent=0.1(%)로 고정하기 위해 env를 주입.
-                const double fixedFirstPassPercent = 0.1;
-                Environment.SetEnvironmentVariable(
-                    AppConfig.CompositeFirstPassPercentAEnv,
-                    fixedFirstPassPercent.ToString(CultureInfo.InvariantCulture));
-                AppLogger.Log($"DentalAddin: Composite FirstPassPercent env 적용(tooth='{tooth ?? ""}') - {AppConfig.CompositeFirstPassPercentAEnv}={fixedFirstPassPercent.ToString(CultureInfo.InvariantCulture)}");
+                // 정책 정리:
+                // - ABUTS_COMPOSITE_FIRST_PASS_PERCENT_A 는 "퍼센트 override" 전용이다.
+                // - 기본 시작점(Splitline_1-0.3mm → percent 변환)은 MainModuleComposite에서 계산한다.
+                //   따라서 여기서는 기본적으로 env를 주입하지 않는다.
+                Environment.SetEnvironmentVariable(AppConfig.CompositeFirstPassPercentAEnv, null);
+                AppLogger.Log($"DentalAddin: Composite FirstPassPercent env 미주입(tooth='{tooth ?? ""}') - 기본값은 MainModuleComposite의 Splitline_1-0.3mm 정책 사용");
             }
             catch (Exception ex)
             {
