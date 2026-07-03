@@ -430,6 +430,10 @@
   - 수정: `PUT /api/businesses/me/request-settings`
 - 수정 권한은 **대표자(owner)** 만 가집니다. (직원/member는 조회만 가능)
 - 이 값은 해당 기공소 소속 사용자의 **의뢰 기본 동작 전체**에 공통 적용됩니다.
+- 신규 의뢰 생성 시(`POST /api/requests`, `/api/requests/bulk`, `/api/requests/from-draft`)에는
+  `BusinessAnchor.requestSettings.anodizingEnabled` 값을 `Request.caseInfos.anodizingEnabled`로 스냅샷 저장합니다.
+- 제조사 워크시트 카드(의뢰/CAM/세척.패킹/포장.발송)는 `caseInfos.anodizingEnabled === false`일 때
+  회색 배지 `아노다이징 X`를 표시합니다.
 - 레거시 금지: `/api/users/request-settings` 또는 `User.preferences.request.*` 경로를 재도입하지 않습니다.
 
 ### 2.3.2 BusinessAnchor SSOT 원칙 (Business 컬렉션 완전 제거)

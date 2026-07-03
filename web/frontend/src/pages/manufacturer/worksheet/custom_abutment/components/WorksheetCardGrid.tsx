@@ -178,6 +178,11 @@ export const WorksheetCardGrid = ({
           if (ciWorkType === "mixed") return "mixed";
           return "unknown";
         })();
+        const shouldShowAnodizingOffBadge =
+          caseInfos.anodizingEnabled === false &&
+          ["request", "cam", "packing", "shipping"].includes(
+            String(tabStage || "request"),
+          );
 
         const isDownloading = !!downloading[request._id];
 
@@ -747,6 +752,14 @@ export const WorksheetCardGrid = ({
               >
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
+                    {shouldShowAnodizingOffBadge && (
+                      <Badge
+                        variant="outline"
+                        className="text-[11px] px-2 py-0.5 font-semibold leading-[1.1] border border-slate-300 bg-slate-100 text-slate-700"
+                      >
+                        아노다이징 X
+                      </Badge>
+                    )}
                     {shouldShowFullLot && (
                       <div className="flex items-center gap-1.5">
                         <Badge variant="outline" className={lotBadgeClass}>

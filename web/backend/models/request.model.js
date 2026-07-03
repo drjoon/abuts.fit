@@ -92,6 +92,12 @@ const requestSchema = new mongoose.Schema(
       faceHolePrcFileName: String,
       connectionPrcFileName: String,
       workType: String,
+      // 기공소(사업체) 의뢰 기본 설정에서 신규 생성 시 스냅샷되는 아노다이징 여부.
+      // false이면 제조사 워크시트 카드에 "아노다이징 X" 배지를 노출한다.
+      anodizingEnabled: {
+        type: Boolean,
+        default: true,
+      },
       // 유지홈(retentionGroove) 옵션 — 현재 UI 정책은 없음/있음(2단계).
       // legacy shallow 데이터는 none으로 정규화해 사용한다.
       // esprit-addin StepIncrement 매핑의 SSOT 필드.

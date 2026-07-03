@@ -33,6 +33,7 @@ import { recomputeBulkShippingSnapshotForBusinessAnchorId } from "../../services
 export async function createRequest(req, res) {
   try {
     let requestorWeeklyBatchDays = [];
+    let requestorAnodizingEnabled = true;
     if (req.user?.role === "requestor") {
       const orgId = getRequestorOrgId(req);
       if (!orgId || !Types.ObjectId.isValid(orgId)) {
@@ -54,7 +55,10 @@ export async function createRequest(req, res) {
       }
 
       const requestorOrg = await BusinessAnchor.findById(orgId)
-        .select({ "shippingPolicy.weeklyBatchDays": 1 })
+        .select({
+          "shippingPolicy.weeklyBatchDays": 1,
+          "requestSettings.anodizingEnabled": 1,
+        })
         .lean();
       requestorWeeklyBatchDays = Array.isArray(
         requestorOrg?.shippingPolicy?.weeklyBatchDays,
@@ -63,6 +67,10 @@ export async function createRequest(req, res) {
             .map((value) => String(value || "").trim())
             .filter(Boolean)
         : [];
+      requestorAnodizingEnabled =
+        typeof requestorOrg?.requestSettings?.anodizingEnabled === "boolean"
+          ? requestorOrg.requestSettings.anodizingEnabled
+          : true;
       if (requestorWeeklyBatchDays.length === 0) {
         return res.status(400).json({
           success: false,
@@ -135,7 +143,10 @@ export async function createRequest(req, res) {
 
     const newRequest = new Request({
       ...bodyRest,
-      caseInfos: normalizedCaseInfos,
+      caseInfos: {
+        ...normalizedCaseInfos,
+        anodizingEnabled: requestorAnodizingEnabled,
+      },
       requestor: req.user._id,
       businessAnchorId:
         req.user?.role === "requestor" && req.user?.businessAnchorId
@@ -326,6 +337,7 @@ export async function createRequestsBulk(req, res) {
   try {
     // 권한 및 조직/크레딧 검사
     let requestorWeeklyBatchDays = [];
+    let requestorAnodizingEnabled = true;
     if (req.user?.role === "requestor") {
       const orgId = getRequestorOrgId(req);
       if (!orgId || !Types.ObjectId.isValid(orgId)) {
@@ -345,7 +357,10 @@ export async function createRequestsBulk(req, res) {
       }
 
       const requestorOrg = await BusinessAnchor.findById(orgId)
-        .select({ "shippingPolicy.weeklyBatchDays": 1 })
+        .select({
+          "shippingPolicy.weeklyBatchDays": 1,
+          "requestSettings.anodizingEnabled": 1,
+        })
         .lean();
       requestorWeeklyBatchDays = Array.isArray(
         requestorOrg?.shippingPolicy?.weeklyBatchDays,
@@ -354,6 +369,10 @@ export async function createRequestsBulk(req, res) {
             .map((value) => String(value || "").trim())
             .filter(Boolean)
         : [];
+      requestorAnodizingEnabled =
+        typeof requestorOrg?.requestSettings?.anodizingEnabled === "boolean"
+          ? requestorOrg.requestSettings.anodizingEnabled
+          : true;
       if (requestorWeeklyBatchDays.length === 0) {
         return res.status(400).json({
           success: false,
@@ -861,7 +880,10 @@ export async function createRequestsBulk(req, res) {
 
           const newRequest = new Request({
             ...rest,
-            caseInfos: normalizedCaseInfos,
+            caseInfos: {
+              ...normalizedCaseInfos,
+              anodizingEnabled: requestorAnodizingEnabled,
+            },
             requestor: req.user._id,
             businessAnchorId:
               req.user?.role === "requestor" && req.user?.businessAnchorId

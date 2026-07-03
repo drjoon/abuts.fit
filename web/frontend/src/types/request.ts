@@ -55,6 +55,7 @@ export interface RequestCaseInfos {
   maxDiameter?: number;
   connectionDiameter?: number;
   workType?: string;
+  anodizingEnabled?: boolean;
   finishLine?: {
     version?: number;
     sectionCount?: number;

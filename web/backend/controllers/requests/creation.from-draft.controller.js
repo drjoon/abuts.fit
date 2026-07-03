@@ -791,7 +791,10 @@ export async function createRequestsFromDraft(req, res) {
       SystemSettings.findOne().lean(),
       shippingOrgId && Types.ObjectId.isValid(shippingOrgId)
         ? BusinessAnchor.findById(shippingOrgId)
-            .select({ "shippingPolicy.weeklyBatchDays": 1 })
+            .select({
+              "shippingPolicy.weeklyBatchDays": 1,
+              "requestSettings.anodizingEnabled": 1,
+            })
             .lean()
         : Promise.resolve(null),
       (async () => {
@@ -811,6 +814,10 @@ export async function createRequestsFromDraft(req, res) {
     )
       ? shippingOrg.shippingPolicy.weeklyBatchDays
       : [];
+    const requestorAnodizingEnabled =
+      typeof shippingOrg?.requestSettings?.anodizingEnabled === "boolean"
+        ? shippingOrg.requestSettings.anodizingEnabled
+        : true;
     const shipDate = estimatedShipYmd || createdYmd;
     const boxCount = 1;
     const totalShippingFee = boxCount * shippingFeePerBox;
@@ -1028,7 +1035,10 @@ export async function createRequestsFromDraft(req, res) {
             price: item.computedPrice,
             shippingMode,
             requestedShipDate,
-            caseInfos: item.caseInfosWithFile,
+            caseInfos: {
+              ...(item.caseInfosWithFile || {}),
+              anodizingEnabled: requestorAnodizingEnabled,
+            },
             manufacturerStage: "의뢰",
           };
 
