@@ -367,14 +367,31 @@ export async function triggerNextAutoMachiningManually(req, res) {
         .json({ success: false, message: "machineId is required" });
     }
 
+    // 수동 트리거 모드:
+    // - 기본(default): 기존 자동 가공 정책과 동일하게 아노다이징 OFF 건은 제외
+    // - mode=anodizing-off: 아노다이징 OFF 건만 선택해서 시작
+    //   (생산 직원이 "아노 X 가공" 버튼으로 묶음 가공을 시작할 때 사용)
+    const mode = String(req.query?.mode || "")
+      .trim()
+      .toLowerCase();
+    const isAnodizingOffMode =
+      mode === "anodizing-off" ||
+      mode === "anodizing_off" ||
+      mode === "anod-off";
+
     await triggerNextAutoMachiningAfterComplete({
       machineId: mid,
       completedRequestId: "",
+      allowAnodizingOff: isAnodizingOffMode,
+      onlyAnodizingOff: isAnodizingOffMode,
     });
 
     return res.status(200).json({
       success: true,
-      data: { machineId: mid },
+      data: {
+        machineId: mid,
+        mode: isAnodizingOffMode ? "anodizing-off" : "default",
+      },
     });
   } catch (error) {
     console.warn(
@@ -612,13 +629,19 @@ export async function getLastCompletedMachiningMap(req, res) {
 export async function triggerNextAutoMachiningAfterComplete({
   machineId,
   completedRequestId,
+  // 정책 기본값: 아노다이징 OFF 의뢰건은 자동 연속 가공에서 제외한다.
+  // (생산 직원이 "아노 X 가공"을 눌렀을 때만 별도 시작)
+  allowAnodizingOff = false,
+  // true면 아노다이징 OFF 건만 선택해서 트리거한다.
+  // OFF 묶음 가공 세션에서 다음 건을 이어서 시작할 때 사용.
+  onlyAnodizingOff = false,
 }) {
   const mid = String(machineId || "").trim();
   if (!mid) return;
 
   const startedAt = Date.now();
   console.log(
-    `[bridge:auto-next] complete received machine=${mid} completedRequestId=${String(completedRequestId || "").trim() || "null"}`,
+    `[bridge:auto-next] complete received machine=${mid} completedRequestId=${String(completedRequestId || "").trim() || "null"} allowAnodizingOff=${allowAnodizingOff} onlyAnodizingOff=${onlyAnodizingOff}`,
   );
 
   try {
@@ -678,6 +701,17 @@ export async function triggerNextAutoMachiningAfterComplete({
       const rid = String(r?.requestId || "").trim();
       if (!rid) continue;
       if (completedRequestId && rid === completedRequestId) continue;
+
+      const isAnodizingOff = r?.caseInfos?.anodizingEnabled === false;
+      if (onlyAnodizingOff && !isAnodizingOff) {
+        continue;
+      }
+      if (!allowAnodizingOff && isAnodizingOff) {
+        // 기본 자동 연속 가공에서는 아노다이징 OFF 의뢰건을 건너뛴다.
+        // OFF 건은 생산 직원이 "아노 X 가공" 버튼으로 별도 시작한다.
+        continue;
+      }
+
       const path = String(
         r?.ncFile?.filePath || r?.caseInfos?.ncFile?.filePath || "",
       ).trim();
@@ -794,6 +828,8 @@ export async function triggerNextAutoMachiningAfterComplete({
               void triggerNextAutoMachiningAfterComplete({
                 machineId: targetMachineId,
                 completedRequestId: "",
+                allowAnodizingOff,
+                onlyAnodizingOff,
               });
             }
           }
@@ -1944,9 +1980,16 @@ export async function recordMachiningCompleteForBridge(req, res) {
 
     // ...
     try {
+      // 아노다이징 OFF 건을 수동으로 시작한 뒤에는,
+      // 동일 OFF 묶음을 연속으로 처리할 수 있도록 다음 자동 트리거도 OFF 전용으로 이어간다.
+      // (ON 건 완료 시에는 기존 정책대로 OFF 자동 시작을 막는다.)
+      const completedIsAnodizingOff =
+        request?.caseInfos?.anodizingEnabled === false;
       void triggerNextAutoMachiningAfterComplete({
         machineId: mid,
         completedRequestId: requestId || requestIdRaw || "",
+        allowAnodizingOff: completedIsAnodizingOff,
+        onlyAnodizingOff: completedIsAnodizingOff,
       });
     } catch {
       // ignore

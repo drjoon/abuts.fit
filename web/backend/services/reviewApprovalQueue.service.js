@@ -379,6 +379,81 @@ async function executeTask(item) {
 }
 
 /**
+ * CAM 승인 시 머신 큐 순서를 아노다이징 정책에 맞게 보정한다.
+ *
+ * 정책:
+ * - 아노다이징 ON(또는 미지정) 건이 항상 앞쪽
+ * - 아노다이징 OFF 건은 항상 마지막 그룹
+ * - ON 건이 나중에 승인되어도 OFF 그룹 앞으로 삽입되도록 queuePosition을 재배치
+ */
+async function placeRequestAtPolicyQueuePosition({
+  machineId,
+  requestMongoId,
+  anodizingEnabled,
+}) {
+  const mid = String(machineId || "").trim();
+  if (!mid || !requestMongoId) return null;
+
+  const queueRows = await Request.find({
+    manufacturerStage: "가공",
+    "productionSchedule.assignedMachine": mid,
+    _id: { $ne: requestMongoId },
+  })
+    .select(
+      "_id requestId productionSchedule.queuePosition caseInfos.anodizingEnabled",
+    )
+    .lean();
+
+  const sorted = [...(Array.isArray(queueRows) ? queueRows : [])].sort(
+    (a, b) => {
+      const aPos = Number(a?.productionSchedule?.queuePosition || 0);
+      const bPos = Number(b?.productionSchedule?.queuePosition || 0);
+      if (aPos !== bPos) return aPos - bPos;
+      return String(a?.requestId || "").localeCompare(
+        String(b?.requestId || ""),
+      );
+    },
+  );
+
+  const isOff = anodizingEnabled === false;
+
+  // 아노다이징 OFF는 가장 마지막에 붙인다.
+  if (isOff) {
+    const maxPos = sorted.reduce((acc, item) => {
+      const pos = Number(item?.productionSchedule?.queuePosition || 0);
+      return Number.isFinite(pos) && pos > acc ? pos : acc;
+    }, 0);
+    return Math.max(1, maxPos + 1);
+  }
+
+  // 아노다이징 ON은 기존 ON 그룹 뒤(=첫 OFF 앞)에 삽입한다.
+  const firstOffIndex = sorted.findIndex(
+    (item) => item?.caseInfos?.anodizingEnabled === false,
+  );
+  if (firstOffIndex < 0) {
+    return Math.max(1, sorted.length + 1);
+  }
+
+  const insertPos = firstOffIndex + 1;
+  const offRowsToShift = sorted
+    .filter((item) => {
+      const pos = Number(item?.productionSchedule?.queuePosition || 0);
+      return item?.caseInfos?.anodizingEnabled === false && pos >= insertPos;
+    })
+    .map((item) => item?._id)
+    .filter(Boolean);
+
+  if (offRowsToShift.length > 0) {
+    await Request.updateMany(
+      { _id: { $in: offRowsToShift } },
+      { $inc: { "productionSchedule.queuePosition": 1 } },
+    );
+  }
+
+  return insertPos;
+}
+
+/**
  * CAM 단계 승인 후처리:
  *   - 장비 배정이 안 된 경우 배정
  *   - 자동 가공 트리거
@@ -413,7 +488,21 @@ async function runCamApproveTask({ requestMongoId, requestId }) {
 
     request.productionSchedule = request.productionSchedule || {};
     request.productionSchedule.assignedMachine = selected.machineId;
-    request.productionSchedule.queuePosition = selected.queuePosition;
+
+    // 아노다이징 정책 반영 queuePosition 계산:
+    // - ON: OFF 그룹 앞에 삽입
+    // - OFF: 항상 마지막
+    const policyQueuePosition = await placeRequestAtPolicyQueuePosition({
+      machineId: selected.machineId,
+      requestMongoId,
+      anodizingEnabled: request?.caseInfos?.anodizingEnabled,
+    });
+    request.productionSchedule.queuePosition =
+      Number.isFinite(Number(policyQueuePosition)) &&
+      Number(policyQueuePosition) > 0
+        ? Number(policyQueuePosition)
+        : selected.queuePosition;
+
     request.assignedMachine = selected.machineId;
     if (selected.diameterGroup) {
       request.productionSchedule.diameterGroup = selected.diameterGroup;
@@ -427,7 +516,7 @@ async function runCamApproveTask({ requestMongoId, requestId }) {
     console.log("[ReviewApprovalQueue] CAM task: assigned machine", {
       requestId,
       machineId: selected.machineId,
-      queuePosition: selected.queuePosition,
+      queuePosition: request.productionSchedule.queuePosition,
       diameterGroup: selected.diameterGroup || null,
     });
   }
@@ -455,8 +544,27 @@ async function runCamApproveTask({ requestMongoId, requestId }) {
   }
 
   // 자동 가공 큐에 추가 시도
+  // 아노다이징 OFF 의뢰건은 작업자가 "아노 X 가공" 버튼을 누를 때만 시작한다.
+  // 따라서 CAM 승인 직후에는 자동 트리거하지 않는다.
+  const isAnodizingOff = request?.caseInfos?.anodizingEnabled === false;
+  if (isAnodizingOff) {
+    console.log(
+      "[ReviewApprovalQueue] CAM task: skip auto machining trigger for anodizing-off",
+      {
+        requestId,
+        machineId: selectedMachineId,
+      },
+    );
+    return;
+  }
+
   try {
-    await triggerNextAutoMachiningAfterComplete(selectedMachineId);
+    await triggerNextAutoMachiningAfterComplete({
+      machineId: selectedMachineId,
+      completedRequestId: "",
+      allowAnodizingOff: false,
+      onlyAnodizingOff: false,
+    });
     console.log("[ReviewApprovalQueue] CAM task: auto machining triggered", {
       requestId,
       machineId: selectedMachineId,

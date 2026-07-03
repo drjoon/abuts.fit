@@ -22,6 +22,8 @@ export interface PlaylistJobItem {
   requestId?: string;
   requestMongoId?: string | null;
   rollbackCount?: number;
+  // 아노다이징 OFF(아노 X) 여부. 워크시트 가공 정책 뱃지 표시용.
+  anodizingEnabled?: boolean;
   programNo?: number | null;
   source?: string;
 }
@@ -222,6 +224,11 @@ export const CncPlaylistDrawer: React.FC<CncPlaylistDrawerProps> = ({
                                     {badge}
                                   </span>
                                 )}
+                                {job.anodizingEnabled === false ? (
+                                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-extrabold bg-rose-50 text-rose-700 border border-rose-200">
+                                    아노 X
+                                  </span>
+                                ) : null}
                                 {lastCode && (
                                   <span
                                     className="ml-1 text-[11px] text-slate-400"

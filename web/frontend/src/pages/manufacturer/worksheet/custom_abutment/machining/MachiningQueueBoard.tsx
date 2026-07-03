@@ -88,6 +88,7 @@ export const MachiningQueueBoard = ({
   const [siIdx, setSiIdx] = useState(0);
   const [siOpen, setSiOpen] = useState(false);
   const [siFetching, setSiFetching] = useState(false);
+  const [anodizingOffTriggering, setAnodizingOffTriggering] = useState(false);
 
   // 마지막으로 본 의룰건 requestId를 localStorage에 저장/복원
   const SI_LAST_KEY = "abuts:si-last-request-id";
@@ -388,6 +389,84 @@ export const MachiningQueueBoard = ({
     [machines, toast, updateMachineAuto],
   );
 
+  const triggerAnodizingOffMachining = useCallback(async () => {
+    if (!token || anodizingOffTriggering) return;
+
+    // "아노 X 가공" 버튼 정책:
+    // - 대기열에서 아노다이징 OFF(caseInfos.anodizingEnabled===false) 건이 있는 장비만 대상으로 삼는다.
+    // - 각 장비에 대해 mode=anodizing-off 트리거를 보내 OFF 묶음 가공을 시작한다.
+    // - 백엔드는 OFF 건만 선택해서 시작하고, 완료 시 다음 OFF 건을 연속으로 이어서 처리한다.
+    const targetMachineIds = (Array.isArray(machines) ? machines : [])
+      .map((m) => String((m as { uid?: string } | null)?.uid || "").trim())
+      .filter((uid) => {
+        if (!uid || uid === "unassigned") return false;
+        const machineQueue = Array.isArray(queueMap?.[uid])
+          ? (queueMap[uid] as QueueItem[])
+          : [];
+
+        return machineQueue.some((item) => {
+          if (
+            (item as { caseInfos?: { anodizingEnabled?: boolean } })?.caseInfos
+              ?.anodizingEnabled !== false
+          ) {
+            return false;
+          }
+          const recordStatus = String(item?.machiningRecord?.status || "")
+            .trim()
+            .toUpperCase();
+          // 이미 RUNNING/PROCESSING인 건은 대기건이 아니므로 제외
+          return !(recordStatus === "RUNNING" || recordStatus === "PROCESSING");
+        });
+      });
+
+    if (targetMachineIds.length === 0) {
+      toast({
+        title: "대상 없음",
+        description: "대기 중인 아노다이징 X 가공 건이 없습니다.",
+      });
+      return;
+    }
+
+    setAnodizingOffTriggering(true);
+    try {
+      const results = await Promise.allSettled(
+        targetMachineIds.map(async (mid) => {
+          const res = await fetch(
+            `/api/cnc-machines/machining/auto-trigger/${encodeURIComponent(mid)}?mode=anodizing-off`,
+            {
+              method: "POST",
+              headers: {
+                Authorization: `Bearer ${token}`,
+                "Content-Type": "application/json",
+              },
+            },
+          );
+          const body = (await res.json().catch(() => ({}))) as {
+            success?: boolean;
+            message?: string;
+            error?: string;
+          };
+          if (!res.ok || body?.success === false) {
+            throw new Error(
+              body?.message || body?.error || "아노 X 가공 시작 실패",
+            );
+          }
+          return mid;
+        }),
+      );
+
+      const okCount = results.filter((r) => r.status === "fulfilled").length;
+      const failCount = results.length - okCount;
+      toast({
+        title: "아노 X 가공 시작",
+        description: `성공 ${okCount}대, 실패 ${failCount}대`,
+        variant: failCount > 0 ? "destructive" : undefined,
+      });
+    } finally {
+      setAnodizingOffTriggering(false);
+    }
+  }, [anodizingOffTriggering, machines, queueMap, toast, token]);
+
   const displayMachines = useMemo(
     () =>
       (Array.isArray(filteredMachines) ? filteredMachines : []).filter(
@@ -520,6 +599,17 @@ export const MachiningQueueBoard = ({
             </div>
           ) : null}
 
+          <button
+            type="button"
+            disabled={anodizingOffTriggering}
+            className="rounded-xl border border-slate-200 bg-white px-3 py-1 text-[12px] font-extrabold text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-50"
+            onClick={() => {
+              void triggerAnodizingOffMachining();
+            }}
+            title="대기 중인 아노다이징 X 의뢰건 묶음 가공 시작"
+          >
+            {anodizingOffTriggering ? "시작 중…" : "아노 X 가공"}
+          </button>
           <button
             type="button"
             disabled={siFetching}

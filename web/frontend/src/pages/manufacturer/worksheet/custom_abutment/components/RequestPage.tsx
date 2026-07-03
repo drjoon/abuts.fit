@@ -1072,6 +1072,9 @@ export const RequestPage = ({
         >
           <div className={`pb-12 ${tabStage === "shipping" ? "pt-0" : "pt-2"}`}>
             {tabStage === "machining" ? (
+              // CAM 승인 후 가공 큐 우선순위/자동시작 정책은 백엔드 SSOT로 관리한다.
+              // - 아노다이징 ON 우선
+              // - 아노다이징 OFF는 큐 마지막 + "아노 X 가공" 수동 시작
               <MachiningQueueBoard searchQuery={worksheetSearch} />
             ) : tabStage === "shipping" ? (
               <div className="w-full">

@@ -657,6 +657,9 @@ export const useMachiningBoard = ({
         const s3Key = String(nc?.s3Key || "").trim();
         const s3Bucket = String(nc?.s3Bucket || "").trim();
         const rollbackCount = Number((q as any)?.rollbackCount || 0);
+        const anodizingEnabled = (
+          q as { caseInfos?: { anodizingEnabled?: boolean } }
+        )?.caseInfos?.anodizingEnabled;
         return {
           id: rid,
           name: formatMachiningLabel(q),
@@ -669,6 +672,7 @@ export const useMachiningBoard = ({
           requestMongoId,
           source: bridgePath ? "bridge_store" : s3Key ? "s3" : "db",
           rollbackCount,
+          anodizingEnabled,
         } satisfies PlaylistJobItem;
       })
       .filter(Boolean) as PlaylistJobItem[];

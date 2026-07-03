@@ -70,20 +70,6 @@ const getNcPreloadBadge = (slot: QueueItem | null) => {
   );
 };
 
-const resolveCamDiameterLabel = (slot?: QueueItem | null) => {
-  const group = String(slot?.diameterGroup || "").trim();
-  const normalizedGroup = group.replace(/[^0-9+]/g, "");
-  if (normalizedGroup) return `CAM D${normalizedGroup}`;
-
-  const dia = Number(slot?.diameter);
-  if (Number.isFinite(dia) && dia > 0) {
-    const v = dia > 10 ? 12 : dia;
-    return `CAM D${Number.isInteger(v) ? v : v.toFixed(1)}`;
-  }
-
-  return "";
-};
-
 export const MachineQueueCard = ({
   machineId,
   machineName,
@@ -223,7 +209,9 @@ export const MachineQueueCard = ({
     : machineStatus?.nextProgram
       ? String(machineStatus.nextProgram)
       : "없음";
-  const nextUpCamDiameterLabel = resolveCamDiameterLabel(nextSlot);
+  const nextUpAnodizingOff =
+    (nextSlot as { caseInfos?: { anodizingEnabled?: boolean } } | null)
+      ?.caseInfos?.anodizingEnabled === false;
 
   const elapsedLabel = (() => {
     if (machiningElapsedSeconds === -1) {
@@ -619,9 +607,9 @@ export const MachineQueueCard = ({
                     <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2 py-0.3 text-[10px] font-extrabold text-slate-700">
                       대기 {totalMachiningCount}건
                     </span>
-                    {nextUpCamDiameterLabel ? (
-                      <span className="inline-flex items-center rounded-full border border-indigo-200 bg-indigo-50 px-2 py-0.3 text-[10px] font-extrabold text-indigo-700">
-                        {nextUpCamDiameterLabel}
+                    {nextUpAnodizingOff ? (
+                      <span className="inline-flex items-center rounded-full border border-rose-200 bg-rose-50 px-2 py-0.3 text-[10px] font-extrabold text-rose-700">
+                        아노 X
                       </span>
                     ) : null}
                   </div>

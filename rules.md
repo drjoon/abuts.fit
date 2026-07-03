@@ -6,6 +6,22 @@
 - 하위 폴더의 `rules.md`는 **로컬 구현 메모**만 담아야 하며, 루트와 충돌하면 루트가 우선입니다.
 - 제거하기로 한 레거시 규칙은 문서와 코드에 남겨두지 않습니다.
 
+## 0. rules.md 문서 운영 원칙
+
+### 0.1 규칙 추가/변경 시 관련 파일 경로 동시 기록 (항상 적용)
+
+- 앞으로 `rules.md`에 정책을 추가/수정할 때는 **정책 설명만 쓰지 말고, 관련 코드 파일 경로를 반드시 함께 기록**합니다.
+- 최소 기록 단위:
+  - 백엔드 파일(컨트롤러/서비스/모델)
+  - 프론트엔드 파일(페이지/컴포넌트/훅)
+  - 필요 시 라우트/유틸/스크립트
+- 목적: 나중에 정책 변경 시 코드 탐색 시간을 줄이고, 영향 범위를 빠르게 파악하기 위함입니다.
+- 형식 권장:
+  - 섹션 본문 끝에 `관련 파일:` 목록 추가
+  - 경로는 저장소 루트 기준 상대경로로 명시
+- 예시 형식:
+  - `관련 파일: web/backend/controllers/cnc/machiningBridge.js, web/backend/services/reviewApprovalQueue.service.js, web/frontend/src/pages/.../MachiningQueueBoard.tsx`
+
 ## 1. 기본 원칙
 
 ### 1.0 레거시 제거 원칙 (최우선)
@@ -923,6 +939,8 @@
 
 - `REQUEST_STAGE_APPROVED` (의뢰 단계): Esprit NC 생성 트리거
 - `CAM_STAGE_APPROVED` (CAM 단계): 장비 배정 + CNC 자동 가공 트리거
+  - 단, `caseInfos.anodizingEnabled === false`(아노다이징 X) 의뢰건은 CAM 승인 직후 자동 트리거하지 않는다.
+  - 아노다이징 X 의뢰건은 가공 큐 마지막 그룹으로 유지하고, 작업자가 `아노 X 가공` 액션으로 별도 시작한다.
 
 **관련 파일:**
 
@@ -1003,7 +1021,25 @@
 
 **중요**: 두 훅은 서로 다른 백엔드 엔드포인트를 호출하므로, 애초에 섞일 수 없는 구조입니다. 별도의 강제 구분 코드가 필요하지 않습니다.
 
-#### 4.8.7 금지 사항
+#### 4.8.7 아노다이징 X 가공 정책 (Worksheet)
+
+- SSOT 필드: `Request.caseInfos.anodizingEnabled`
+- 기본 자동 연속 가공(`triggerNextAutoMachiningAfterComplete`)은 **아노다이징 ON(또는 미지정)** 의뢰건만 대상으로 한다.
+- 아노다이징 X 의뢰건은 기본 자동 연속 가공에서 제외한다.
+- CAM 승인으로 가공 단계에 진입할 때 큐 순서는 항상 다음을 만족해야 한다.
+  1. 아노다이징 ON 그룹
+  2. 아노다이징 X 그룹(항상 마지막)
+- 생산 직원이 워크시트의 `아노 X 가공` 버튼을 누르면,
+  - `POST /api/cnc-machines/machining/auto-trigger/:machineId?mode=anodizing-off`로 아노다이징 X 건만 시작한다.
+  - 완료 후 다음 자동 트리거도 아노다이징 X 전용으로 이어서 처리한다(OFF 묶음 연속 가공).
+- 관련 파일:
+  - `web/backend/controllers/cnc/machiningBridge.js`
+  - `web/backend/services/reviewApprovalQueue.service.js`
+  - `web/backend/controllers/cnc/production.js`
+  - `web/frontend/src/pages/manufacturer/worksheet/custom_abutment/machining/MachiningQueueBoard.tsx`
+  - `web/frontend/src/pages/manufacturer/worksheet/custom_abutment/machining/components/MachineQueueCard.tsx`
+
+#### 4.8.8 금지 사항
 
 - `triggerNextAutoMachiningAfterComplete` 완료 후 브리지 큐 스냅샷을 재읽어 DB에 저장하는 것 금지.
 - 의뢰건 NC 파일 경로가 브리지 큐 스냅샷 `jobs` 배열에 `requestId`와 함께 남아 있는 것 금지.
