@@ -1318,8 +1318,7 @@ def main(input_path_arg=None, output_path_arg=None, log_path_arg=None):
         stage_started_at = time.perf_counter()
         _clear_doc_objects(doc, stage_label="before-import")
 
-        # 중요: finishline은 import 직후(원본 좌표) 먼저 계산한다.
-        # 이후 정렬/Explode/Fill 등 후처리를 수행하되, finishline 좌표는 필요 시 정렬 변환을 적용해 사용한다.
+        # 순서: import -> align -> (pre-explode) screwhole fill -> finishline -> explode
         mesh_obj_refs, alignment_transform = _import_stl_meshes(
             doc,
             input_path,
@@ -1329,14 +1328,40 @@ def main(input_path_arg=None, output_path_arg=None, log_path_arg=None):
         _log_doc_mesh_stats(doc, "after-import")
         _perf_mark("import_align", stage_started_at)
 
-        # Finish line 계산 (다른 처리보다 먼저)
+        # 1) 원점 정렬
+        stage_started_at = time.perf_counter()
+        alignment_transform = _run_alignment_on_first_mesh(
+            doc,
+            target_diameter=target_diameter,
+        )
+        _log_doc_mesh_stats(doc, "after-align")
+        _perf_mark("align_post_finishline", stage_started_at)
+
+        # 2) explode 전 스크류홀 메움 (원본 단일/대표 mesh 기준)
+        stage_started_at = time.perf_counter()
+        fill_mesh_refs = _get_mesh_objects(doc)
+        fill_mesh_id = _pick_finishline_mesh_id(doc, fill_mesh_refs)
+        if fill_mesh_id:
+            filled = _run_fill_mesh_holes(doc, fill_mesh_id)
+            log(
+                "[pre-explode-fill] mesh_id={} changed={}".format(
+                    fill_mesh_id, bool(filled)
+                )
+            )
+        else:
+            log("[pre-explode-fill] target mesh not found")
+        _log_doc_mesh_stats(doc, "after-pre-explode-fill")
+        _perf_mark("fill_selection_and_holes", stage_started_at, extra="targets=1")
+
+        # 3) finishline 검출 (홀 메움/정렬 반영본 기준)
         fl = None
         pts = []
         pt0 = None
         strategy_used = None
         stage_started_at = time.perf_counter()
         try:
-            finishline_mesh_id = _pick_finishline_mesh_id(doc, mesh_obj_refs)
+            finishline_mesh_refs = _get_mesh_objects(doc)
+            finishline_mesh_id = _pick_finishline_mesh_id(doc, finishline_mesh_refs)
             fl = _detect_finish_line_latest(
                 doc=doc,
                 visualize=False,
@@ -1353,23 +1378,12 @@ def main(input_path_arg=None, output_path_arg=None, log_path_arg=None):
             extra="strategy={} points={}".format(strategy_used, len(pts)),
         )
 
-        # 정렬은 finishline 계산 후 수행한다.
-        # (backend 경로에서 edge 기반이 무너지는 케이스를 피하기 위해 순서를 변경)
-        stage_started_at = time.perf_counter()
-        alignment_transform = _run_alignment_on_first_mesh(
-            doc,
-            target_diameter=target_diameter,
-        )
-        _log_doc_mesh_stats(doc, "after-align")
-
-        # 디버그 가시화용 커브는 정렬 좌표계로 변환된 점으로 추가
-        pts_aligned = _transform_finishline_points(pts, alignment_transform)
-        pt0_aligned = _transform_finishline_point(pt0, alignment_transform)
+        # 이미 정렬 좌표계에서 검출했으므로 그대로 사용
+        pts_aligned = pts or []
+        pt0_aligned = pt0
         _add_finishline_curve(doc, pts_aligned)
 
-        _perf_mark("align_post_finishline", stage_started_at)
-
-        # 백엔드 등록: 정렬 좌표계를 사용하므로 finishline 점도 동일 변환 적용
+        # 4) 백엔드 등록
         stage_started_at = time.perf_counter()
         if fl is not None:
             try:
@@ -1462,128 +1476,7 @@ def main(input_path_arg=None, output_path_arg=None, log_path_arg=None):
             "explode", stage_started_at, extra="pieces={}".format(len(piece_ids))
         )
 
-        # 2) 홀메우기 대상 조각 선택
-        stage_started_at = time.perf_counter()
-        # - 우선순위: (nakedEdges>0인 조각만 후보) -> +Z 상단(top band) XY 반경(topR) 최대 -> +Z 최대
-        candidates = []
-        for oid in piece_ids:
-            rh_obj = doc.Objects.FindId(oid)
-            if rh_obj is None:
-                continue
-            geo = rh_obj.Geometry
-            if geo is None:
-                continue
-            try:
-                bbox = geo.GetBoundingBox(True)
-            except Exception:
-                continue
-
-            # 전체 반경(참고용)
-            r = 0.0
-            try:
-                corners = bbox.GetCorners()
-            except Exception:
-                corners = None
-            if corners:
-                for p in corners:
-                    try:
-                        rr = float((p.X * p.X + p.Y * p.Y) ** 0.5)
-                        if rr > r:
-                            r = rr
-                    except Exception:
-                        pass
-
-            # 핵심 기준: +Z 상단에서 넓은지(topR)
-            top_r = _calc_top_xy_radius(geo, top_band_height=0.3)
-
-            max_z = float(bbox.Max.Z)
-            naked = _count_naked_edges(geo)
-            candidates.append(
-                {
-                    "id": oid,
-                    "r": r,
-                    "topR": top_r,
-                    "maxZ": max_z,
-                    "naked": naked,
-                }
-            )
-
-        # 후보 로그(top)
-        # nakedEdges>0 후보만 추리기
-        open_candidates = [c for c in candidates if (c.get("naked") or 0) > 0]
-        pool = open_candidates if open_candidates else candidates
-
-        best_id = None
-        best_key = None
-        # +Z 상단 폭(topR) 기준으로 상위 밴드를 만들고, 그 안에서 +Z(maxZ) 최대를 선택
-        tol = float(os.environ.get("ABUTS_R_TOL", "0.05"))
-        if pool:
-            max_top_r = max([float(c.get("topR") or 0) for c in pool])
-            # 절대 tol + (상대 tol 1%) 중 큰 값 적용
-            band = max(tol, max_top_r * 0.01)
-            top_band = [
-                c for c in pool if float(c.get("topR") or 0) >= (max_top_r - band)
-            ]
-            chosen = None
-            for c in top_band:
-                # 상위 밴드 내에서는 +Z 최대가 우선, 동률이면 topR
-                key = (float(c.get("maxZ") or 0), float(c.get("topR") or 0))
-                if chosen is None or key > chosen[0]:
-                    chosen = (key, c)
-            if chosen is not None:
-                best_id = chosen[1].get("id")
-                best_key = (
-                    chosen[1].get("topR"),
-                    chosen[1].get("maxZ"),
-                    chosen[1].get("r"),
-                )
-
-        if best_id is None:
-            fail("홀 메우기 대상 Mesh를 찾지 못했습니다")
-
-        log("selected piece id=" + str(best_id))
-        log("selected key(topR,maxZ,r)=" + str(best_key))
-        log(
-            "total candidates={} open_candidates={} tol={}".format(
-                len(candidates),
-                len(open_candidates),
-                tol,
-            )
-        )
-
-        # ray 기반 스크류홀 메움은 선택된 대표 조각(best_id) 1개에만 적용
-        picked = next((c for c in pool if c.get("id") == best_id), None)
-        fill_targets = [picked] if picked is not None else []
-        if not fill_targets:
-            fail("FillMeshHoles 대상 Mesh 목록을 만들지 못했습니다")
-
-        log("FillMeshHoles target count={} (best-only)".format(len(fill_targets)))
-
-        _log_doc_mesh_stats(doc, "before-fill")
-
-        for idx, c in enumerate(fill_targets):
-            oid = c.get("id")
-            log(
-                "FillMeshHoles target[{}] id={} topR={} maxZ={} r={} nakedEdges={}".format(
-                    idx,
-                    oid,
-                    c.get("topR"),
-                    c.get("maxZ"),
-                    c.get("r"),
-                    c.get("naked"),
-                )
-            )
-            _log_doc_mesh_stats(
-                doc, "before-fill-target-{}".format(idx), detail_limit=4
-            )
-            filled = _run_fill_mesh_holes(doc, oid)
-            if not filled:
-                log("FillMeshHoles 결과 변화 없음 (id={})".format(oid))
-            else:
-                log("FillMeshHoles 성공 감지 (id={})".format(oid))
-            _log_doc_mesh_stats(doc, "after-fill-target-{}".format(idx), detail_limit=4)
-
-        # 최신 Mesh 목록으로 갱신 (Fill 과정에서 Replace가 발생했으므로)
+        # pre-explode 단계에서 홀메움을 완료했으므로 여기서는 join만 수행
         try:
             piece_ids = [
                 o.Id
@@ -1594,11 +1487,6 @@ def main(input_path_arg=None, output_path_arg=None, log_path_arg=None):
             piece_ids = []
 
         _log_doc_mesh_stats(doc, "before-join")
-        _perf_mark(
-            "fill_selection_and_holes",
-            stage_started_at,
-            extra="targets={}".format(len(fill_targets)),
-        )
 
         # 4) Join (RhinoCommon API 사용 + 미지원/실패 시 커맨드 fallback)
         stage_started_at = time.perf_counter()
