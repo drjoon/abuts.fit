@@ -2,6 +2,7 @@ import os
 import sys
 import time
 
+import fill_screwholes as fill_screwholes_module
 import fill_steps as fill_steps_module
 import finishline_detection as finishline_detection_module
 
@@ -255,6 +256,11 @@ _FILL_TARGET_LIMIT = max(
     1, _safe_int(os.environ.get("ABUTS_FILL_TARGET_LIMIT", "3"), 3)
 )
 
+# 스크류홀 추정 루프 필터: 이 길이(mm)보다 짧은 loop은 노이즈로 제외
+_SCREWHOLE_MIN_LOOP_LENGTH = float(
+    os.environ.get("ABUTS_SCREWHOLE_MIN_LOOP_LENGTH", "3.0") or 3.0
+)
+
 
 def _get_mesh_objects(doc):
     try:
@@ -460,12 +466,57 @@ def _pick_fill_targets(pool):
         pool,
         key=lambda x: (
             1 if (x.get("naked") or 0) > 0 else 0,
-            float(x.get("r") or 0.0),
+            float(x.get("topR") or 0.0),
             float(x.get("maxZ") or 0.0),
+            float(x.get("r") or 0.0),
         ),
         reverse=True,
     )
     return ordered[:_FILL_TARGET_LIMIT]
+
+
+def _calc_top_xy_radius(mesh, top_band_height=0.3):
+    """
+    +Z 상단 영역(top band)에서의 XY 최대 반경을 계산.
+    explode 후 '위쪽으로 넓은' 조각 선택에 사용.
+    """
+    if mesh is None:
+        return 0.0
+
+    try:
+        bbox = mesh.GetBoundingBox(True)
+        max_z = float(bbox.Max.Z)
+    except Exception:
+        return 0.0
+
+    band_h = max(0.05, float(top_band_height))
+    z_min_in_band = max_z - band_h
+
+    max_r = 0.0
+    try:
+        vcount = int(mesh.Vertices.Count)
+    except Exception:
+        vcount = 0
+
+    for i in range(vcount):
+        try:
+            v = mesh.Vertices[i]
+            if float(v.Z) < z_min_in_band:
+                continue
+            rr = float((v.X * v.X + v.Y * v.Y) ** 0.5)
+            if rr > max_r:
+                max_r = rr
+        except Exception:
+            continue
+
+    # 상단 band에 버텍스가 거의 없으면 전체 bbox 기반 반경으로 fallback
+    if max_r <= 0.0:
+        try:
+            max_r = _calc_xy_radius_from_bbox(bbox)
+        except Exception:
+            max_r = 0.0
+
+    return max_r
 
 
 def fail(msg):
@@ -836,163 +887,108 @@ def _parse_args(argv, input_path_arg=None, output_path_arg=None):
     return argv[1], argv[2]
 
 
+def _run_fill_screwholes_latest(doc, target_id):
+    try:
+        import importlib
+
+        module = importlib.reload(fill_screwholes_module)
+        log(
+            "[screwhole-fill] module reloaded path={}".format(
+                getattr(module, "__file__", "unknown")
+            )
+        )
+    except Exception as e:
+        module = fill_screwholes_module
+        log(
+            "[screwhole-fill] module reload failed; using cached module: {}".format(
+                str(e)
+            )
+        )
+
+    if not hasattr(module, "fill_mesh_object"):
+        log("[screwhole-fill] fill_mesh_object API not found")
+        return None
+
+    try:
+        return module.fill_mesh_object(
+            doc=doc,
+            obj_id=target_id,
+            obj_index=0,
+            mode="auto",
+            min_loop_length=_SCREWHOLE_MIN_LOOP_LENGTH,
+            loop_indices_to_fill=None,
+            visualize=False,
+            logger=log,
+            redraw=False,
+        )
+    except Exception as e:
+        log("[screwhole-fill] API call failed: {}".format(str(e)))
+        return None
+
+
 def _run_fill_mesh_holes(doc, target_id):
     target = doc.Objects.FindId(target_id)
-    if target is None:
+    if target is None or target.Geometry is None:
         return False
 
-    before_naked = None
-    before_v = None
-    before_f = None
+    before_naked = _count_naked_edges(target.Geometry)
     try:
-        if target.Geometry is not None:
-            before_naked = _count_naked_edges(target.Geometry)
-            try:
-                before_v = int(target.Geometry.Vertices.Count)
-            except Exception:
-                before_v = None
-            try:
-                before_f = int(target.Geometry.Faces.Count)
-            except Exception:
-                before_f = None
+        before_v = int(target.Geometry.Vertices.Count)
     except Exception:
-        pass
+        before_v = None
+    try:
+        before_f = int(target.Geometry.Faces.Count)
+    except Exception:
+        before_f = None
 
     log(
-        "FillMeshHoles pre id={} v={} f={} nakedEdges={}".format(
+        "[screwhole-fill] pre id={} v={} f={} nakedEdges={} minLoopLen={}".format(
             target_id,
             before_v,
             before_f,
             before_naked,
+            _SCREWHOLE_MIN_LOOP_LENGTH,
         )
     )
 
+    ret = _run_fill_screwholes_latest(doc, target_id) or {}
+
+    refreshed = doc.Objects.FindId(target_id)
+    geom = refreshed.Geometry if refreshed and refreshed.Geometry is not None else None
+    after_naked = _count_naked_edges(geom) if geom is not None else None
     try:
-        doc.Objects.UnselectAll()
+        after_v = int(geom.Vertices.Count) if geom is not None else None
     except Exception:
-        pass
-
-    try:
-        target.Select(True)
-    except Exception:
-        pass
-
-    # 1st: RhinoCommon API로 간단하고 빠르게 홀 메우기
-    try:
-        geom = target.Geometry
-        if geom is not None:
-            mesh_copy = geom.DuplicateMesh()
-            if mesh_copy is not None:
-                log("Starting fast hole filling...")
-
-                # 간단한 FillHoles 호출 (1회)
-                try:
-                    mesh_copy.FillHoles()
-                except Exception as e:
-                    log("FillHoles failed: {}".format(str(e)))
-
-                # 기본 메시 정리
-                try:
-                    mesh_copy.Vertices.CombineIdentical(True, True)
-                    mesh_copy.Vertices.CullUnused()
-                    mesh_copy.Normals.ComputeNormals()
-                except Exception as e:
-                    log("Mesh cleanup failed: {}".format(str(e)))
-
-                # 메시 교체
-                replaced = doc.Objects.Replace(target_id, mesh_copy)
-                log("FillMeshHoles (Fast) replaced={}".format(replaced))
-
-                if replaced:
-                    after_naked = _count_naked_edges(mesh_copy)
-                    try:
-                        after_v = int(mesh_copy.Vertices.Count)
-                    except Exception:
-                        after_v = None
-                    try:
-                        after_f = int(mesh_copy.Faces.Count)
-                    except Exception:
-                        after_f = None
-
-                    log(
-                        "FillMeshHoles fast post id={} v:{}->{} f:{}->{} naked:{}->{}".format(
-                            target_id,
-                            before_v,
-                            after_v,
-                            before_f,
-                            after_f,
-                            before_naked,
-                            after_naked,
-                        )
-                    )
-
-                    if (
-                        before_naked is None
-                        or after_naked is None
-                        or after_naked < before_naked
-                    ):
-                        return True
-    except Exception as e:
-        log("FillMeshHoles Fast 예외: " + str(e))
-
-    # 2nd: Fallback - 커맨드 기반 실행
-    try:
-        Rhino.RhinoApp.RunScript("!_-SelNone _Enter", False)
-        Rhino.RhinoApp.RunScript(
-            "!_-SelID {} _Enter".format(str(target_id)),
-            False,
-        )
-    except Exception:
-        pass
-
-    cmds = [
-        "!_-FillMeshHoles _All _Enter",
-        "!_-FillMeshHoles _Auto _Enter",
-        "!_-FillMeshHoles _Enter",
-    ]
-
-    for cmd in cmds:
-        try:
-            log("RunScript=" + cmd)
-            ok_cmd = Rhino.RhinoApp.RunScript(cmd, True)
-            log("FillMeshHoles command ok=" + str(ok_cmd))
-        except Exception as e:
-            log("FillMeshHoles 커맨드 실행 예외: " + str(e))
-
-        after_naked = None
         after_v = None
+    try:
+        after_f = int(geom.Faces.Count) if geom is not None else None
+    except Exception:
         after_f = None
-        try:
-            refreshed = doc.Objects.FindId(target_id)
-            if refreshed and refreshed.Geometry is not None:
-                after_naked = _count_naked_edges(refreshed.Geometry)
-                try:
-                    after_v = int(refreshed.Geometry.Vertices.Count)
-                except Exception:
-                    after_v = None
-                try:
-                    after_f = int(refreshed.Geometry.Faces.Count)
-                except Exception:
-                    after_f = None
-        except Exception:
-            pass
 
-        log(
-            "FillMeshHoles cmd post id={} v:{}->{} f:{}->{} naked:{}->{}".format(
-                target_id,
-                before_v,
-                after_v,
-                before_f,
-                after_f,
-                before_naked,
-                after_naked,
-            )
+    log(
+        "[screwhole-fill] post id={} v:{}->{} f:{}->{} naked:{}->{} filled_count={} selected_loop={} reason={}".format(
+            target_id,
+            before_v,
+            after_v,
+            before_f,
+            after_f,
+            before_naked,
+            after_naked,
+            ret.get("filled_count"),
+            ret.get("selected_loop_index"),
+            ret.get("reason"),
         )
+    )
 
-        if before_naked is None or after_naked is None or after_naked < before_naked:
-            return True
+    if int(ret.get("filled_count") or 0) > 0:
+        return True
 
-    return False
+    return (
+        before_naked is None
+        or after_naked is None
+        or int(after_naked) < int(before_naked)
+        or after_f != before_f
+    )
 
 
 def _join_all_meshes(doc, label="final"):
@@ -1396,7 +1392,7 @@ def main(input_path_arg=None, output_path_arg=None, log_path_arg=None):
 
         # 2) 홀메우기 대상 조각 선택
         stage_started_at = time.perf_counter()
-        # - 우선순위: (nakedEdges>0인 조각만 후보) -> XY 외측(r) 최대 -> r 동률 tolerance 내에서 +Z 최대
+        # - 우선순위: (nakedEdges>0인 조각만 후보) -> +Z 상단(top band) XY 반경(topR) 최대 -> +Z 최대
         candidates = []
         for oid in piece_ids:
             rh_obj = doc.Objects.FindId(oid)
@@ -1410,7 +1406,7 @@ def main(input_path_arg=None, output_path_arg=None, log_path_arg=None):
             except Exception:
                 continue
 
-            # XY 외측: bbox 코너 중 원점으로부터 XY 반경이 가장 큰 값을 사용
+            # 전체 반경(참고용)
             r = 0.0
             try:
                 corners = bbox.GetCorners()
@@ -1425,9 +1421,20 @@ def main(input_path_arg=None, output_path_arg=None, log_path_arg=None):
                     except Exception:
                         pass
 
+            # 핵심 기준: +Z 상단에서 넓은지(topR)
+            top_r = _calc_top_xy_radius(geo, top_band_height=0.3)
+
             max_z = float(bbox.Max.Z)
             naked = _count_naked_edges(geo)
-            candidates.append({"id": oid, "r": r, "maxZ": max_z, "naked": naked})
+            candidates.append(
+                {
+                    "id": oid,
+                    "r": r,
+                    "topR": top_r,
+                    "maxZ": max_z,
+                    "naked": naked,
+                }
+            )
 
         # 후보 로그(top)
         # nakedEdges>0 후보만 추리기
@@ -1436,29 +1443,34 @@ def main(input_path_arg=None, output_path_arg=None, log_path_arg=None):
 
         best_id = None
         best_key = None
-        # r tolerance는 실제 데이터에서 소수점 오차/조각화에 따라 근소하게 달라질 수 있어
-        # max_r 근처 "상위 밴드"로 후보를 잡고 그 안에서 +Z 최대를 선택한다.
+        # +Z 상단 폭(topR) 기준으로 상위 밴드를 만들고, 그 안에서 +Z(maxZ) 최대를 선택
         tol = float(os.environ.get("ABUTS_R_TOL", "0.05"))
         if pool:
-            max_r = max([float(c.get("r") or 0) for c in pool])
+            max_top_r = max([float(c.get("topR") or 0) for c in pool])
             # 절대 tol + (상대 tol 1%) 중 큰 값 적용
-            band = max(tol, max_r * 0.01)
-            top_r = [c for c in pool if float(c.get("r") or 0) >= (max_r - band)]
+            band = max(tol, max_top_r * 0.01)
+            top_band = [
+                c for c in pool if float(c.get("topR") or 0) >= (max_top_r - band)
+            ]
             chosen = None
-            for c in top_r:
-                # 상위 밴드 내에서는 +Z 최대가 우선, 동률이면 r
-                key = (float(c.get("maxZ") or 0), float(c.get("r") or 0))
+            for c in top_band:
+                # 상위 밴드 내에서는 +Z 최대가 우선, 동률이면 topR
+                key = (float(c.get("maxZ") or 0), float(c.get("topR") or 0))
                 if chosen is None or key > chosen[0]:
                     chosen = (key, c)
             if chosen is not None:
                 best_id = chosen[1].get("id")
-                best_key = (chosen[1].get("r"), chosen[1].get("maxZ"))
+                best_key = (
+                    chosen[1].get("topR"),
+                    chosen[1].get("maxZ"),
+                    chosen[1].get("r"),
+                )
 
         if best_id is None:
             fail("홀 메우기 대상 Mesh를 찾지 못했습니다")
 
         log("selected piece id=" + str(best_id))
-        log("selected key(r,maxZ)=" + str(best_key))
+        log("selected key(topR,maxZ,r)=" + str(best_key))
         log(
             "total candidates={} open_candidates={} tol={}".format(
                 len(candidates),
@@ -1487,11 +1499,12 @@ def main(input_path_arg=None, output_path_arg=None, log_path_arg=None):
         for idx, c in enumerate(fill_targets):
             oid = c.get("id")
             log(
-                "FillMeshHoles target[{}] id={} r={} maxZ={} nakedEdges={}".format(
+                "FillMeshHoles target[{}] id={} topR={} maxZ={} r={} nakedEdges={}".format(
                     idx,
                     oid,
-                    c.get("r"),
+                    c.get("topR"),
                     c.get("maxZ"),
+                    c.get("r"),
                     c.get("naked"),
                 )
             )
