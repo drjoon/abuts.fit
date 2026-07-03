@@ -440,6 +440,8 @@ export function useAdminCreditPage() {
   const handleGrantFreeCredit = async () => {
     if (!token) return;
     const businessAnchorId = String(selectedBonusBusinessAnchorId || "").trim();
+    const freeCreditBusinessPool =
+      allRequestorBusinesses.length > 0 ? allRequestorBusinesses : businesses;
     const reason = String(bonusReason || "").trim();
     if (!businessAnchorId) {
       toast({
@@ -458,7 +460,7 @@ export function useAdminCreditPage() {
       return;
     }
 
-    const targetBusiness = businesses.find(
+    const targetBusiness = freeCreditBusinessPool.find(
       (business) => String(business._id) === businessAnchorId,
     );
     if (!isFreeCreditEligibleBusiness(targetBusiness || null)) {
@@ -525,6 +527,8 @@ export function useAdminCreditPage() {
     const businessAnchorId = String(
       selectedShippingCreditBusinessAnchorId || "",
     ).trim();
+    const freeCreditBusinessPool =
+      allRequestorBusinesses.length > 0 ? allRequestorBusinesses : businesses;
     const reason = String(shippingCreditReason || "").trim();
     if (!businessAnchorId) {
       toast({
@@ -542,7 +546,7 @@ export function useAdminCreditPage() {
       });
       return;
     }
-    const targetBusiness = businesses.find(
+    const targetBusiness = freeCreditBusinessPool.find(
       (business) => String(business._id) === businessAnchorId,
     );
     if (!isFreeCreditEligibleBusiness(targetBusiness || null)) {
