@@ -31,8 +31,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         private const string StlImportLayerName = "AbutsStlImport";
         private const double DefaultWAxisRotationDegrees = 30.0;
 
-        // Composite OrientationProfile 시작점 X 전달용 env.
-        // 값은 MoveSTL 이후 STL 실제 좌측 끝(minX)이며, MainModuleComposite에서 우선 사용한다.
+        // Composite OrientationProfile startX 진단용 env(현재 선택 로직에는 미사용).
+        // SSOT는 MainModuleComposite 내부의 MoveSTL_Module.FrontPointX 고정값이다.
         private const string CompositeOrientationProfileStartXEnv = "ABUTS_COMPOSITE_ORIENTATION_PROFILE_START_X";
         private static readonly HttpClient BackendHttp;
 
@@ -760,8 +760,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             }
         }
 
-        // MoveSTL 직후 호출: OrientationProfile 시작점 X를 env로 전달한다.
-        // MainModuleComposite는 해당 값을 최우선 사용해, STL 우측 이동과 프로파일 커브를 항상 동기화한다.
+        // (레거시/진단용) MoveSTL 직후 OrientationProfile startX 후보를 env로 기록한다.
+        // 현재 MainModuleComposite 선택 로직은 FrontPointX SSOT를 사용하므로, 본 값은 관찰용이다.
         private void TryApplyCompositeOrientationProfileStartXEnv(Document document)
         {
             try
@@ -955,9 +955,9 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 AppLogger.Log($"DentalAddin: MoveSTL 실행 시작 (FrontLimit:{frontLimitX}, BackLimit:{backLimitX})");
                 InvokeMoveSTL(mainModuleType);
 
-                // 중요: Composite OrientationProfile 시작점도 STL Move와 같은 좌표를 따라야 한다.
-                // MoveSTL 직후 실제 STL 좌측 끝(minX)을 계산해 env로 전달한다.
-                TryApplyCompositeOrientationProfileStartXEnv(document);
+                // 정책 변경(2026-07-03): OrientationProfile 시작점 SSOT는 MoveSTL_Module.FrontPointX.
+                // startX env 주입은 좌표계 불일치 원인이 될 수 있어 비활성화한다.
+                // TryApplyCompositeOrientationProfileStartXEnv(document);
 
                 TryApplyCompositeSplitByFinishLine(mainModuleType, stlTopZ, finishLineTopZ);
                 TryApplyTwoPhaseSplitByFinishLine(mainModuleType, stlTopZ, finishLineTopZ, twoPhase);
