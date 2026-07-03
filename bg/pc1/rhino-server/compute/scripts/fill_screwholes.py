@@ -1,15 +1,29 @@
 # -*- coding: utf-8 -*-
 """
-fill_screwholes.py
-- 선택한 메쉬에서 열린 edge loop들을 찾음
-- MODE = "visualize" : 메우지 않고 각 loop을 색깔 커브 + 라벨로 화면에 표시 (확인용)
-- MODE = "auto"      : 짧은(아티팩트) loop 제외 후, Z값이 가장 높은 loop을 스크류홀로 자동 판단해 메움
-- MODE = "fill"      : LOOP_INDICES_TO_FILL 에 지정한 인덱스의 loop만 메움 (수동 지정, 예외 상황용)
+fill_screwholes.py (axis/cylinder based)
 
-이 파일은 2가지 방식으로 사용 가능:
-1) 단독 실행 (Rhino ScriptEditor): 기존과 동일하게 동작
-2) 모듈 import: fill_mesh_object(...) API를 통해 외부 스크립트에서 호출
+핵심 가정(고정 규격):
+1) 스크류홀 축은 Z축과 평행하며 원점을 지난다. (x=0, y=0 축)
+2) 레귤러 직경은 약 2.35mm, 미니는 더 작고 축/형상 조건은 동일하다.
+3) 스크류홀을 제외하면 포스트 메쉬는 닫혀 있다.
+4) 스크류홀 개구는 상/하 2개이며, 메워야 할 대상은 상부 개구이다.
+
+로직 요약:
+- naked loop들을 축-동심 원기둥 시그니처(반경 분산, 직경 범위)로 필터링
+- 필터 통과 loop 중 Z 중심이 가장 높은 loop 1개만 상부 홀로 선택
+- 해당 loop만 patch 생성/메움
+
+(실무적으로는 "약간 큰 동축 원기둥으로 찍어 얻는 교차 커브"와 동일한 분류 효과를,
+loop의 축-원기둥 적합도 메트릭으로 안정적으로 구현)
+
+- MODE="visualize": 각 loop 메트릭/후보 여부 시각화
+- MODE="auto": 상부 스크류홀 1개 자동 메움
+- MODE="fill": LOOP_INDICES_TO_FILL 인덱스만 수동 메움
+
+외부 API는 기존과 동일하게 fill_mesh_object(...) 제공.
 """
+
+import math
 
 import Rhino
 import Rhino.Geometry as rg
@@ -27,11 +41,38 @@ except Exception:
 # ----------------- 설정값 -----------------
 MODE = "auto"
 
-# "auto" 모드에서, 이 값(mm)보다 둘레가 짧은 loop은 노이즈/아티팩트로 간주해 후보에서 제외
+# 최소 loop 둘레(mm): 너무 작은 아티팩트 제거
 MIN_LOOP_LENGTH = 3.0
 
-# MODE = "fill" 일 때, 메쉬별로 몇 번째 loop을 메울지 지정
-LOOP_INDICES_TO_FILL = {0: [4]}
+# 스크류홀 레귤러 직경(mm)
+REGULAR_DIAMETER = 2.35
+
+# auto 모드에서 허용할 최대 직경(mm)
+# - 레귤러 오차 + 메쉬 노이즈 여유
+MAX_DIAMETER = 2.75
+
+# 원점 Z축 동심성 판정용 반경 표준편차 허용치(mm)
+# - 값이 작을수록 "동축 원기둥" 적합성이 높음
+MAX_RADIAL_STD = 0.20
+
+# 너무 작은 루프(노이즈) 제외용 최소 직경(mm)
+MIN_DIAMETER = 1.00
+
+# 메시와 교차시킬 탐사용 원기둥 직경(mm)
+PROBE_DIAMETER = 2.4
+
+# 원기둥 높이 여유(mm)
+PROBE_Z_MARGIN = 1.0
+
+# Ray 샘플링 기반 상부 루프 추출 설정
+RAY_ANGLE_SAMPLES = 180
+RAY_RADIUS_STEPS = 28
+RAY_RADIUS_MIN = 0.10
+RAY_BOTTOM_REJECT_RATIO = 0.55  # z_min + ratio*(z_max-z_min) 아래는 바닥 히트로 간주
+
+
+# MODE = "fill"일 때 수동 인덱스
+LOOP_INDICES_TO_FILL = {0: [0]}
 # -------------------------------------------
 
 
@@ -48,17 +89,266 @@ def _log(msg, logger=None):
         pass
 
 
-def loop_z_centroid(pl):
-    total = 0.0
-    count = 0
-    for p in pl:
-        total += p.Z
-        count += 1
-    return total / count if count else 0.0
+def _safe_float(v, default=0.0):
+    try:
+        return float(v)
+    except Exception:
+        return float(default)
 
 
-def draw_loop_debug(pl, idx, obj_index):
-    if sc is None or rs is None:
+def _unique_loop_points(polyline):
+    """닫힌 폴리라인에서 중복 마지막 점 제거한 점 리스트 반환."""
+    pts = [p for p in polyline] if polyline is not None else []
+    if len(pts) >= 2:
+        try:
+            if pts[0].DistanceTo(pts[-1]) < 1e-6:
+                pts = pts[:-1]
+        except Exception:
+            pass
+    return pts
+
+
+def _loop_z_centroid(polyline):
+    pts = _unique_loop_points(polyline)
+    if not pts:
+        return 0.0
+    s = 0.0
+    for p in pts:
+        s += _safe_float(p.Z)
+    return s / float(len(pts))
+
+
+def _compute_loop_metrics(polyline):
+    """
+    loop를 Z축(원점 통과) 기준으로 평가한다.
+
+    Returns dict keys:
+      length, z_centroid, z_span,
+      r_mean, r_std, r_min, r_max,
+      diameter_est, circularity_err,
+      ok_geom
+    """
+    m = {
+        "length": 0.0,
+        "z_centroid": 0.0,
+        "z_span": 0.0,
+        "r_mean": 0.0,
+        "r_std": 0.0,
+        "r_min": 0.0,
+        "r_max": 0.0,
+        "diameter_est": 0.0,
+        "circularity_err": 1e9,
+        "ok_geom": False,
+    }
+
+    if polyline is None:
+        return m
+
+    pts = _unique_loop_points(polyline)
+    if len(pts) < 3:
+        return m
+
+    try:
+        m["length"] = _safe_float(polyline.Length)
+    except Exception:
+        m["length"] = 0.0
+
+    zs = []
+    rs_ = []
+    for p in pts:
+        x = _safe_float(p.X)
+        y = _safe_float(p.Y)
+        z = _safe_float(p.Z)
+        r = math.sqrt(x * x + y * y)  # 원점 Z축 거리
+        zs.append(z)
+        rs_.append(r)
+
+    if not rs_:
+        return m
+
+    n = float(len(rs_))
+    r_mean = sum(rs_) / n
+    var = 0.0
+    for rv in rs_:
+        d = rv - r_mean
+        var += d * d
+    r_std = math.sqrt(var / n)
+
+    z_min = min(zs)
+    z_max = max(zs)
+    z_cent = sum(zs) / float(len(zs))
+
+    m["z_centroid"] = z_cent
+    m["z_span"] = z_max - z_min
+    m["r_mean"] = r_mean
+    m["r_std"] = r_std
+    m["r_min"] = min(rs_)
+    m["r_max"] = max(rs_)
+    m["diameter_est"] = 2.0 * r_mean
+
+    # 원형일수록 실제 둘레와 2πr 평균이 유사
+    c_ref = 2.0 * math.pi * max(r_mean, 1e-9)
+    c_len = max(m["length"], 1e-9)
+    m["circularity_err"] = abs(c_len - c_ref) / c_ref
+
+    m["ok_geom"] = True
+    return m
+
+
+def _is_screwhole_candidate(metrics, min_loop_length):
+    """고정 규격/축 가정에 따른 후보 판정.
+
+    주의: 상부 개구는 포스트 경사에 따라 비평면/기울어진 루프일 수 있으므로
+    z_span(평면성)으로 배제하지 않는다.
+    """
+    if not metrics or not metrics.get("ok_geom"):
+        return False, "bad-geom"
+
+    length = _safe_float(metrics.get("length"))
+    dia = _safe_float(metrics.get("diameter_est"))
+    r_std = _safe_float(metrics.get("r_std"))
+
+    if length < float(min_loop_length):
+        return False, "short"
+
+    if dia < float(MIN_DIAMETER):
+        return False, "too-small-dia"
+
+    # 미니는 더 작을 수 있으므로 하한을 작게 두고, 상한으로 큰 외곽 개구를 배제
+    if dia > float(MAX_DIAMETER):
+        return False, "too-large-dia"
+
+    # 동축 원기둥 적합도
+    if r_std > float(MAX_RADIAL_STD):
+        return False, "off-axis"
+
+    return True, "ok"
+
+
+def _curve_to_polyline(curve, seg_count=128):
+    if curve is None:
+        return None
+
+    # 1) PolylineCurve 캐스팅 시도
+    try:
+        plc = rg.PolylineCurve(curve)
+        pl = plc.ToPolyline()
+        if pl is not None and pl.Count >= 4:
+            return pl
+    except Exception:
+        pass
+
+    # 2) 샘플링 폴백
+    pts = []
+    try:
+        t_vals = curve.DivideByCount(int(max(16, seg_count)), True)
+        if t_vals:
+            for t in t_vals:
+                pts.append(curve.PointAt(t))
+    except Exception:
+        pass
+
+    if len(pts) < 4:
+        return None
+
+    try:
+        if pts[0].DistanceTo(pts[-1]) > 1e-6:
+            pts.append(rg.Point3d(pts[0]))
+    except Exception:
+        pass
+
+    try:
+        pl = rg.Polyline(pts)
+        return pl if pl.Count >= 4 else None
+    except Exception:
+        return None
+
+
+def _build_upper_loop_by_vertical_rays(mesh, logger=None):
+    """위→아래 수직 ray 샘플링으로 상부 개구 경계(loop) 1개를 구성.
+
+    아이디어:
+    - 각 각도(theta)마다 반지름 r을 작게→크게 스캔하며 수직 ray 교차점을 수집
+    - 낮은 z(바닥) 히트는 버리고
+    - 남은 점 중 z축(원점)에서 가장 가까운 점을 선택
+    - 선택점들을 theta 순서로 이으면 상부 홀 경계 근사 루프가 됨
+    """
+    if mesh is None:
+        return None
+
+    try:
+        bbox = mesh.GetBoundingBox(True)
+        z_min = _safe_float(bbox.Min.Z)
+        z_max = _safe_float(bbox.Max.Z)
+    except Exception:
+        z_min = -10.0
+        z_max = 10.0
+
+    z_top = z_max + float(PROBE_Z_MARGIN)
+    z_cut = z_min + (z_max - z_min) * float(RAY_BOTTOM_REJECT_RATIO)
+
+    r_max = max(0.5 * float(MAX_DIAMETER) + 0.35, 0.5 * float(PROBE_DIAMETER) + 0.15)
+    n_ang = max(24, int(RAY_ANGLE_SAMPLES))
+    n_rad = max(8, int(RAY_RADIUS_STEPS))
+
+    pts = []
+    for ai in range(n_ang):
+        th = (2.0 * math.pi * float(ai)) / float(n_ang)
+        ct = math.cos(th)
+        st = math.sin(th)
+
+        best_pt = None
+        best_r = 1e18
+
+        for ri in range(n_rad):
+            t = float(ri) / float(max(1, n_rad - 1))
+            r = float(RAY_RADIUS_MIN) + (r_max - float(RAY_RADIUS_MIN)) * t
+            origin = rg.Point3d(r * ct, r * st, z_top)
+            ray = rg.Ray3d(origin, -rg.Vector3d.ZAxis)
+
+            try:
+                hit_t = rg.Intersect.Intersection.MeshRay(mesh, ray)
+            except Exception:
+                hit_t = -1.0
+
+            if hit_t is None or _safe_float(hit_t, -1.0) < 0.0:
+                continue
+
+            p = ray.PointAt(hit_t)
+            if p is None:
+                continue
+
+            # 바닥쪽 히트 제거
+            if _safe_float(p.Z) < z_cut:
+                continue
+
+            pr = math.sqrt(_safe_float(p.X) ** 2 + _safe_float(p.Y) ** 2)
+            if pr < best_r:
+                best_r = pr
+                best_pt = p
+
+        if best_pt is not None:
+            pts.append(best_pt)
+
+    # 최소 샘플 충족
+    if len(pts) < max(18, int(0.35 * n_ang)):
+        _log(
+            "ray-loop failed: insufficient points {} / {}".format(len(pts), n_ang),
+            logger,
+        )
+        return None
+
+    try:
+        pl = rg.Polyline(pts + [rg.Point3d(pts[0])])
+        if pl is None or pl.Count < 4:
+            return None
+        return pl
+    except Exception:
+        return None
+
+
+def draw_loop_debug(polyline, idx, obj_index, text):
+    if sc is None or rs is None or polyline is None:
         return
 
     color = [
@@ -69,135 +359,135 @@ def draw_loop_debug(pl, idx, obj_index):
         (200, 0, 255),
         (0, 200, 200),
     ][idx % 6]
-    crv = pl.ToPolylineCurve()
-    crv_id = sc.doc.Objects.AddCurve(crv)
-    rs.ObjectColor(crv_id, color)
-    rs.ObjectColorSource(crv_id, 1)  # 오브젝트 색 사용
-    mid = pl.PointAt(pl.Count // 2) if pl.Count else pl[0]
-    rs.AddTextDot("obj{}-loop{} ({:.2f}mm)".format(obj_index, idx, pl.Length), mid)
+
+    crv = polyline.ToPolylineCurve()
+    cid = sc.doc.Objects.AddCurve(crv)
+    rs.ObjectColor(cid, color)
+    rs.ObjectColorSource(cid, 1)
+
+    pts = _unique_loop_points(polyline)
+    if pts:
+        mid = pts[len(pts) // 2]
+    else:
+        mid = rg.Point3d.Origin
+    rs.AddTextDot("obj{}-loop{} {}".format(obj_index, idx, text), mid)
 
 
 def fan_fill_polyline(polyline):
-    """단순 팬(fan) 삼각분할로 폐곡선 폴리라인을 메쉬 패치로 만든다.
-    loop이 볼록(convex)하고 중심점이 폴리곤 내부에 있을 때만 안전하다.
-    오목(concave)한 loop에서는 삼각형이 꼬일 수 있으므로,
-    가능하면 planar_fill_polyline을 우선 사용하고 이 함수는 폴백으로만 쓴다."""
-    pts = list(polyline)
-    if not pts:
-        return None
-
-    if pts[0].DistanceTo(pts[-1]) < 1e-6:
-        pts = pts[:-1]  # 중복 시작/끝점 제거
-
+    """폴백용 fan 삼각분할."""
+    pts = _unique_loop_points(polyline)
     if len(pts) < 3:
         return None
 
-    # 중심점 계산
-    centroid = rg.Point3d(0, 0, 0)
+    c = rg.Point3d(0, 0, 0)
     for p in pts:
-        centroid += p
-    centroid = centroid / len(pts)
+        c += p
+    c = c / len(pts)
 
     mesh = rg.Mesh()
-    mesh.Vertices.Add(centroid)  # index 0 = 중심점
+    mesh.Vertices.Add(c)
     for p in pts:
         mesh.Vertices.Add(p)
 
     n = len(pts)
     for i in range(n):
         a = i + 1
-        b = (i + 1) % n + 1
+        b = ((i + 1) % n) + 1
         mesh.Faces.AddFace(0, a, b)
 
-    mesh.Normals.ComputeNormals()
-    mesh.FaceNormals.ComputeFaceNormals()
+    try:
+        mesh.Normals.ComputeNormals()
+        mesh.FaceNormals.ComputeFaceNormals()
+    except Exception:
+        pass
     mesh.Compact()
     return mesh
 
 
 def planar_fill_polyline(polyline, tolerance=0.001, logger=None):
-    """평면 영역 메싱(Brep.CreatePlanarBreps -> Mesh.CreateFromBrep) 기반 홀 메움.
-    오목(concave)한 loop, 별모양 등도 안전하게 처리 가능.
-    loop이 평면이 아니거나 CreatePlanarBreps가 실패하면 None을 반환한다."""
-    pts = list(polyline)
+    """우선 경로: planar brep -> mesh."""
+    pts = [p for p in polyline] if polyline is not None else []
     if not pts:
         return None
 
-    if pts[0].DistanceTo(pts[-1]) > 1e-6:
-        pts = pts + [rg.Point3d(pts[0])]
+    try:
+        if pts[0].DistanceTo(pts[-1]) > 1e-6:
+            pts.append(rg.Point3d(pts[0]))
+    except Exception:
+        pass
 
-    if len(pts) < 4:  # 최소 삼각형(닫힘 포함 4점) 필요
+    if len(pts) < 4:
         return None
 
     try:
-        poly = rg.Polyline(pts)
-        curve = poly.ToPolylineCurve()
+        curve = rg.Polyline(pts).ToPolylineCurve()
     except Exception as e:
-        _log(
-            "planar_fill_polyline: polyline curve 생성 실패: {}".format(str(e)), logger
-        )
+        _log("planar_fill_polyline: curve fail: {}".format(str(e)), logger)
         return None
 
     if curve is None or not curve.IsValid or not curve.IsClosed:
         return None
 
-    breps = None
     try:
-        breps = rg.Brep.CreatePlanarBreps(curve, tolerance)
+        breps = rg.Brep.CreatePlanarBreps(curve, float(max(1e-6, tolerance)))
     except Exception as e:
-        _log("planar_fill_polyline: CreatePlanarBreps 예외: {}".format(str(e)), logger)
+        _log("planar_fill_polyline: CreatePlanarBreps fail: {}".format(str(e)), logger)
         breps = None
 
-    if not breps or len(breps) == 0:
+    if not breps:
         return None
 
-    mesh_params = rg.MeshingParameters.Default
+    params = rg.MeshingParameters.Default
     try:
-        mesh_params.SimplePlanes = True
+        params.SimplePlanes = True
     except Exception:
         pass
 
-    combined = rg.Mesh()
+    out = rg.Mesh()
     for b in breps:
         try:
-            sub_meshes = rg.Mesh.CreateFromBrep(b, mesh_params)
+            subs = rg.Mesh.CreateFromBrep(b, params)
         except Exception:
-            sub_meshes = None
-        if not sub_meshes:
-            continue
-        for m in sub_meshes:
-            if m is not None:
-                combined.Append(m)
+            subs = None
+        if subs:
+            for sm in subs:
+                if sm is not None:
+                    out.Append(sm)
         try:
             b.Dispose()
         except Exception:
             pass
 
-    if combined.Faces.Count == 0:
+    if out.Faces.Count <= 0:
         return None
 
-    combined.Normals.ComputeNormals()
-    combined.FaceNormals.ComputeFaceNormals()
-    combined.Compact()
-    return combined
+    try:
+        out.Normals.ComputeNormals()
+        out.FaceNormals.ComputeFaceNormals()
+    except Exception:
+        pass
+    out.Compact()
+    return out
 
 
 def _mesh_centroid(mesh):
+    if mesh is None:
+        return rg.Point3d.Unset
     try:
-        vcount = int(mesh.Vertices.Count)
+        vc = int(mesh.Vertices.Count)
     except Exception:
-        vcount = 0
-    if vcount <= 0:
+        vc = 0
+    if vc <= 0:
         return rg.Point3d.Unset
 
     sx = sy = sz = 0.0
     n = 0
-    for i in range(vcount):
+    for i in range(vc):
         try:
             v = mesh.Vertices[i]
-            sx += float(v.X)
-            sy += float(v.Y)
-            sz += float(v.Z)
+            sx += _safe_float(v.X)
+            sy += _safe_float(v.Y)
+            sz += _safe_float(v.Z)
             n += 1
         except Exception:
             continue
@@ -208,24 +498,30 @@ def _mesh_centroid(mesh):
 
 
 def _mesh_avg_face_normal(mesh):
+    if mesh is None:
+        return rg.Vector3d.Unset
+
     try:
         mesh.FaceNormals.ComputeFaceNormals()
     except Exception:
         pass
 
+    try:
+        fc = int(mesh.FaceNormals.Count)
+    except Exception:
+        fc = 0
+
+    if fc <= 0:
+        return rg.Vector3d.Unset
+
     sx = sy = sz = 0.0
     n = 0
-    try:
-        fcount = int(mesh.FaceNormals.Count)
-    except Exception:
-        fcount = 0
-
-    for i in range(fcount):
+    for i in range(fc):
         try:
             fn = mesh.FaceNormals[i]
-            sx += float(fn.X)
-            sy += float(fn.Y)
-            sz += float(fn.Z)
+            sx += _safe_float(fn.X)
+            sy += _safe_float(fn.Y)
+            sz += _safe_float(fn.Z)
             n += 1
         except Exception:
             continue
@@ -239,6 +535,7 @@ def _mesh_avg_face_normal(mesh):
             return rg.Vector3d.Unset
     except Exception:
         pass
+
     try:
         v.Unitize()
     except Exception:
@@ -247,7 +544,8 @@ def _mesh_avg_face_normal(mesh):
 
 
 def _flip_mesh(mesh):
-    # Rhino 버전에 따라 Flip 시그니처가 달라 안전하게 순차 시도
+    if mesh is None:
+        return False
     try:
         mesh.Flip(True, True, True)
         return True
@@ -266,8 +564,6 @@ def _flip_mesh(mesh):
 
 
 def _orient_patch_normals(patch, host_mesh, logger=None):
-    """패치 노멀을 host mesh의 바깥 방향과 맞춘다.
-    기준: (patch_centroid - host_centroid) 벡터와 patch 평균 법선의 내적 부호."""
     if patch is None or host_mesh is None:
         return False
 
@@ -282,6 +578,7 @@ def _orient_patch_normals(patch, host_mesh, logger=None):
             return False
     except Exception:
         pass
+
     try:
         ref.Unitize()
     except Exception:
@@ -307,12 +604,6 @@ def _orient_patch_normals(patch, host_mesh, logger=None):
 
 
 def build_hole_patch(polyline, tolerance=0.001, logger=None, host_mesh=None):
-    """loop 하나를 메울 패치를 만든다.
-    1순위: 평면 영역 메싱 (오목한 loop도 안전)
-    2순위(폴백): fan 삼각분할 (평면 메싱이 실패한 경우에만)
-    + 생성 후 host mesh 기준 노멀 방향 보정
-    Returns: (mesh_or_None, method_str)
-    """
     patch = planar_fill_polyline(polyline, tolerance=tolerance, logger=logger)
     if patch is not None and patch.Faces.Count > 0:
         _orient_patch_normals(patch, host_mesh, logger=logger)
@@ -338,19 +629,7 @@ def fill_mesh_object(
     redraw=False,
     planar_tolerance=None,
 ):
-    """
-    외부 호출용 API.
-
-    Returns:
-      {
-        "filled_count": int,
-        "selected_loop_index": int|None,
-        "candidate_count": int,
-        "loop_count": int,
-        "ok": bool,
-        "reason": str,
-      }
-    """
+    """외부 호출용 API(호환 유지)."""
     result = {
         "filled_count": 0,
         "selected_loop_index": None,
@@ -378,47 +657,67 @@ def fill_mesh_object(
         work_mesh = mesh.DuplicateMesh()
     except Exception:
         work_mesh = None
-
     if work_mesh is None:
         result["reason"] = "duplicate mesh failed"
         return result
 
-    naked_polylines = work_mesh.GetNakedEdges()
-    if not naked_polylines:
-        result["reason"] = "no naked loops"
+    tol = planar_tolerance
+    if tol is None:
+        try:
+            tol = float(doc.ModelAbsoluteTolerance)
+        except Exception:
+            tol = 0.001
+    if not tol or tol <= 0:
+        tol = 0.001
+
+    effective_mode = "visualize" if visualize else mode
+
+    # 1) 수직 ray 기반 상부 루프 생성
+    ray_loop = _build_upper_loop_by_vertical_rays(work_mesh, logger=logger)
+
+    loop_source = "ray"
+    if ray_loop is None:
         result["ok"] = True
+        result["reason"] = "no loops (ray)"
+        _log("obj {} : ray-loop 실패".format(obj_index), logger)
         return result
 
-    tolerance = planar_tolerance
-    if tolerance is None:
-        try:
-            tolerance = float(doc.ModelAbsoluteTolerance)
-        except Exception:
-            tolerance = 0.001
-    if not tolerance or tolerance <= 0:
-        tolerance = 0.001
+    loops = [ray_loop]
+    result["loop_count"] = 1
+    _log("obj {} : ray-loop 추출 성공".format(obj_index), logger)
 
-    result["loop_count"] = len(naked_polylines)
-
-    effective_mode = mode
-    if visualize:
-        effective_mode = "visualize"
+    analyzed = []
+    for idx, pl in enumerate(loops):
+        met = _compute_loop_metrics(pl)
+        ok, why = _is_screwhole_candidate(met, min_loop_length=min_loop_length)
+        analyzed.append(
+            {"idx": idx, "pl": pl, "metrics": met, "is_candidate": ok, "why": why}
+        )
 
     if effective_mode == "visualize":
         _log(
-            "=== obj {} ({}) : naked loop {}개 발견 ===".format(
-                obj_index, obj_id, len(naked_polylines)
+            "=== obj {} ({}) : {} loop {}개 ===".format(
+                obj_index, obj_id, loop_source, len(loops)
             ),
             logger,
         )
-        for idx, pl in enumerate(naked_polylines):
-            _log(
-                "  loop {} : 둘레 = {:.2f} mm, 점 개수 = {}, Z중심 = {:.2f}".format(
-                    idx, pl.Length, pl.Count, loop_z_centroid(pl)
-                ),
-                logger,
+        for item in analyzed:
+            met = item["metrics"]
+            msg = "loop {}: cand={}({}), len={:.2f}, dia={:.3f}, rStd={:.3f}, zC={:.3f}".format(
+                item["idx"],
+                item["is_candidate"],
+                item["why"],
+                _safe_float(met.get("length")),
+                _safe_float(met.get("diameter_est")),
+                _safe_float(met.get("r_std")),
+                _safe_float(met.get("z_centroid")),
             )
-            draw_loop_debug(pl, idx, obj_index)
+            _log("  " + msg, logger)
+            draw_loop_debug(
+                polyline=item["pl"], idx=item["idx"], obj_index=obj_index, text=msg
+            )
+
+        result["candidate_count"] = len([a for a in analyzed if a["is_candidate"]])
         result["ok"] = True
         result["reason"] = "visualized"
         return result
@@ -426,75 +725,73 @@ def fill_mesh_object(
     patches = []
 
     if effective_mode == "auto":
-        candidates = [
-            (idx, pl)
-            for idx, pl in enumerate(naked_polylines)
-            if float(pl.Length) >= float(min_loop_length)
-        ]
+        candidates = [a for a in analyzed if a["is_candidate"]]
         result["candidate_count"] = len(candidates)
-        if not candidates:
-            result["reason"] = "no candidates"
-            _log(
-                "obj {} : 스크류홀 후보(둘레 {}mm 이상)를 찾지 못했습니다.".format(
-                    obj_index, min_loop_length
-                ),
-                logger,
-            )
-            return result
 
-        best_idx, best_pl = max(candidates, key=lambda t: loop_z_centroid(t[1]))
-        result["selected_loop_index"] = int(best_idx)
-        _log(
-            "obj {} : 자동 선택된 스크류홀 = loop {} (둘레 {:.2f}mm, Z중심 {:.2f})".format(
-                obj_index, best_idx, best_pl.Length, loop_z_centroid(best_pl)
-            ),
-            logger,
+        if not candidates:
+            # ray에서 직접 얻은 loop 1개는 규격 필터 실패하더라도 상부 홀 후보로 사용
+            if loop_source == "ray" and len(loops) == 1:
+                candidates = [analyzed[0]]
+                result["candidate_count"] = 1
+                _log(
+                    "obj {} : ray-loop 1개를 상부 홀로 강제 채택".format(obj_index),
+                    logger,
+                )
+            else:
+                result["reason"] = "no axis-based candidates"
+                _log(
+                    "obj {} : ray-loop 후보 조건 불일치".format(obj_index),
+                    logger,
+                )
+                return result
+
+        # 상부 개구 1개만 메움
+        upper = max(
+            candidates, key=lambda a: _safe_float(a["metrics"].get("z_centroid"))
         )
+        idx = int(upper["idx"])
+        result["selected_loop_index"] = idx
 
         patch, method = build_hole_patch(
-            best_pl,
-            tolerance=tolerance,
+            upper["pl"],
+            tolerance=tol,
             logger=logger,
             host_mesh=work_mesh,
         )
+        if patch is None:
+            result["reason"] = "patch failed"
+            return result
+
+        patches.append(patch)
         _log(
-            "obj {} : loop {} patch method={}".format(obj_index, best_idx, method),
+            "obj {} : auto-fill upper loop {} method={}".format(obj_index, idx, method),
             logger,
         )
-        if patch:
-            patches.append(patch)
 
     elif effective_mode == "fill":
         indices_to_fill = loop_indices_to_fill or []
         if not indices_to_fill:
             result["reason"] = "no manual indices"
-            _log(
-                "obj {} : 메울 loop 인덱스가 지정되지 않았습니다.".format(obj_index),
-                logger,
-            )
             return result
 
         for idx in indices_to_fill:
-            if idx >= len(naked_polylines):
+            if idx < 0 or idx >= len(loops):
                 _log(
-                    "obj {} : loop 인덱스 {} 가 범위를 벗어남 (총 {}개)".format(
-                        obj_index, idx, len(naked_polylines)
-                    ),
+                    "obj {} : loop index out of range: {}".format(obj_index, idx),
                     logger,
                 )
                 continue
-            pl = naked_polylines[idx]
             patch, method = build_hole_patch(
-                pl,
-                tolerance=tolerance,
+                loops[idx],
+                tolerance=tol,
                 logger=logger,
                 host_mesh=work_mesh,
             )
-            if patch:
+            if patch is not None:
                 patches.append(patch)
                 _log(
-                    "obj {} : loop {} (둘레 {:.2f}mm) 메움 method={}".format(
-                        obj_index, idx, pl.Length, method
+                    "obj {} : manual-fill loop {} method={}".format(
+                        obj_index, idx, method
                     ),
                     logger,
                 )
@@ -505,18 +802,13 @@ def fill_mesh_object(
 
     if not patches:
         result["reason"] = "no patches"
-        _log("obj {} : 메울 patch가 생성되지 않았습니다.".format(obj_index), logger)
         return result
 
-    for patch in patches:
-        work_mesh.Append(patch)
+    for p in patches:
+        work_mesh.Append(p)
         result["filled_count"] += 1
 
-    work_mesh.Weld(Rhino.RhinoMath.ToRadians(5))
-    try:
-        work_mesh.UnifyNormals()
-    except Exception:
-        pass
+    # 요청사항: join/boolean union 없이 패치만 추가
     try:
         work_mesh.Normals.ComputeNormals()
         work_mesh.FaceNormals.ComputeFaceNormals()
@@ -540,17 +832,71 @@ def fill_mesh_object(
     return result
 
 
+def _collect_mesh_ids(doc):
+    if doc is None:
+        return []
+
+    out = []
+    try:
+        settings = Rhino.DocObjects.ObjectEnumeratorSettings()
+        settings.ObjectTypeFilter = Rhino.DocObjects.ObjectType.Mesh
+        settings.HiddenObjects = False
+        settings.LockedObjects = False
+        objs = list(doc.Objects.GetObjectList(settings))
+    except Exception:
+        objs = []
+        try:
+            for o in list(doc.Objects):
+                if o and o.ObjectType == Rhino.DocObjects.ObjectType.Mesh:
+                    objs.append(o)
+        except Exception:
+            objs = []
+
+    for o in objs:
+        if o is None:
+            continue
+        g = getattr(o, "Geometry", None)
+        if g is None:
+            continue
+        try:
+            if int(g.Faces.Count) <= 0:
+                continue
+        except Exception:
+            pass
+        out.append(o.Id)
+
+    return out
+
+
+def _pick_target_mesh_ids(doc):
+    mesh_ids = _collect_mesh_ids(doc)
+    if len(mesh_ids) == 1:
+        return mesh_ids
+
+    # 여러 개인 경우에만 수동 선택
+    if rs is not None:
+        picked = rs.GetObjects(
+            "스크류홀을 메울 메쉬 선택", rs.filter.mesh, preselect=True
+        )
+        return list(picked) if picked else []
+
+    return []
+
+
 def main():
     if rs is None or sc is None:
         print("rhinoscriptsyntax/scriptcontext 를 사용할 수 없는 환경입니다.")
         return
 
-    obj_ids = rs.GetObjects("스크류홀을 메울 메쉬 선택", rs.filter.mesh, preselect=True)
+    obj_ids = _pick_target_mesh_ids(sc.doc)
     if not obj_ids:
+        print("처리할 메쉬를 찾지 못했습니다.")
         return
 
-    filled_count = 0
+    if len(obj_ids) == 1:
+        print("메쉬 1개 자동 선택: {}".format(obj_ids[0]))
 
+    total = 0
     for obj_index, obj_id in enumerate(obj_ids):
         indices = LOOP_INDICES_TO_FILL.get(obj_index, []) if MODE == "fill" else None
         ret = fill_mesh_object(
@@ -564,10 +910,10 @@ def main():
             logger=None,
             redraw=False,
         )
-        filled_count += int(ret.get("filled_count") or 0)
+        total += int(ret.get("filled_count") or 0)
 
     sc.doc.Views.Redraw()
-    print("총 {}개의 스크류홀(추정) 루프를 메웠습니다.".format(filled_count))
+    print("총 {}개의 스크류홀 loop를 메웠습니다.".format(total))
 
 
 if __name__ == "__main__":

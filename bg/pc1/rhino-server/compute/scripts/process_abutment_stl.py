@@ -519,6 +519,78 @@ def _calc_top_xy_radius(mesh, top_band_height=0.3):
     return max_r
 
 
+def _explode_mesh_piece_candidates(mesh, doc=None):
+    """
+    메시가 weld 상태로 붙어 있는 경우를 대비해,
+    Unweld(각도 기반) -> ExplodeAtUnweldedEdges 를 단계적으로 시도한다.
+    """
+    if mesh is None:
+        return []
+
+    try:
+        base = mesh.DuplicateMesh()
+    except Exception:
+        base = mesh
+
+    # 0) 원본 상태 explode 먼저
+    try:
+        pieces = base.ExplodeAtUnweldedEdges()
+        if pieces and len(pieces) > 1:
+            log("[explode] base explode pieces={}".format(len(pieces)))
+            return list(pieces)
+    except Exception as e:
+        log("[explode] base explode failed: {}".format(str(e)))
+
+    raw = os.environ.get("ABUTS_UNWELD_ANGLES_DEG", "25,40,55,70")
+    angles = []
+    for tok in str(raw).split(","):
+        tok = tok.strip()
+        if not tok:
+            continue
+        try:
+            v = float(tok)
+            if v > 0:
+                angles.append(v)
+        except Exception:
+            pass
+    if not angles:
+        angles = [25.0, 40.0, 55.0, 70.0]
+
+    # 1) 각도별 unweld 후 explode 재시도
+    for deg in angles:
+        try:
+            trial = base.DuplicateMesh()
+        except Exception:
+            trial = None
+        if trial is None:
+            continue
+
+        ok_unweld = False
+        try:
+            # RhinoCommon: angle(rad), modifyNormals(bool)
+            trial.Unweld(Rhino.RhinoMath.ToRadians(float(deg)), True)
+            ok_unweld = True
+        except Exception as e:
+            log("[explode] Unweld({}deg) failed: {}".format(deg, str(e)))
+
+        if not ok_unweld:
+            continue
+
+        try:
+            pieces = trial.ExplodeAtUnweldedEdges()
+        except Exception as e:
+            log("[explode] explode after Unweld({}deg) failed: {}".format(deg, str(e)))
+            pieces = None
+
+        cnt = len(pieces) if pieces else 0
+        log("[explode] Unweld({}deg) -> pieces={}".format(deg, cnt))
+        if pieces and len(pieces) > 1:
+            return list(pieces)
+
+    # 2) 끝까지 분리 안 되면 원본 유지
+    return [base]
+
+
 def fail(msg):
     print("ERROR:" + msg)
     raise Exception(msg)
@@ -1354,6 +1426,7 @@ def main(input_path_arg=None, output_path_arg=None, log_path_arg=None):
         _perf_mark("finishline_payload_post", stage_started_at)
 
         # 1) Explode: RhinoCommon API를 사용하여 고속 처리 (문서 리셋 없이 바로 진행)
+        #    - 분리가 안 되는 weld 메시 대응: Unweld(각도) -> Explode 단계적 시도
         stage_started_at = time.perf_counter()
         try:
             objs = list(doc.Objects)
@@ -1361,8 +1434,7 @@ def main(input_path_arg=None, output_path_arg=None, log_path_arg=None):
             for obj in objs:
                 if obj.ObjectType == Rhino.DocObjects.ObjectType.Mesh:
                     g = obj.Geometry
-                    # Unwelded edges에서 분리하여 개별 파트로 나눔
-                    pieces = g.ExplodeAtUnweldedEdges()
+                    pieces = _explode_mesh_piece_candidates(g, doc=doc)
                     if pieces and len(pieces) > 0:
                         new_meshes.extend(pieces)
                     else:
@@ -1479,20 +1551,13 @@ def main(input_path_arg=None, output_path_arg=None, log_path_arg=None):
             )
         )
 
-        fill_targets = _pick_fill_targets(pool)
-        fill_targets = [c for c in fill_targets if c.get("id")]
-        if best_id and all(c.get("id") != best_id for c in fill_targets):
-            picked = next((c for c in pool if c.get("id") == best_id), None)
-            if picked is not None:
-                fill_targets.insert(0, picked)
+        # ray 기반 스크류홀 메움은 선택된 대표 조각(best_id) 1개에만 적용
+        picked = next((c for c in pool if c.get("id") == best_id), None)
+        fill_targets = [picked] if picked is not None else []
         if not fill_targets:
             fail("FillMeshHoles 대상 Mesh 목록을 만들지 못했습니다")
 
-        log(
-            "FillMeshHoles target count={} (limit={})".format(
-                len(fill_targets), _FILL_TARGET_LIMIT
-            )
-        )
+        log("FillMeshHoles target count={} (best-only)".format(len(fill_targets)))
 
         _log_doc_mesh_stats(doc, "before-fill")
 
