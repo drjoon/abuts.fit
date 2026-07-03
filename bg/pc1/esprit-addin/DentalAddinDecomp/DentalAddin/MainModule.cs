@@ -2179,7 +2179,7 @@ namespace DentalAddin
                 return;
             }
 
-            // backend 경사축 벡터가 있으면 OrientationStrategy=프로파일(3)로 런타임 적용
+            // backend 경사축 벡터가 있으면 OrientationStrategy=프로파일(4)로 런타임 적용
             TryApplyCompositeOrientationProfileFromEnv(techLatheMill5xComposite, "Single");
 
             int beforeCompositeAdd = Document?.Operations?.Count ?? -1;

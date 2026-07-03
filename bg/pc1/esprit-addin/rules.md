@@ -115,6 +115,21 @@
     `TryPrepareBackTurnRangeFromLegacyTurnB` (legacy fallback),
     `TurningFeature_Extension.BackT` (legacy 체인 생성)
 
+### 4.7 Composite Orientation SSOT (2026-07-03)
+
+- `OrientationStrategy` 매직넘버는 코드 상수로 관리한다.
+  - `CompositeOrientationStrategyDefault = 1`
+  - `CompositeOrientationStrategyProfile = 4`
+  - 구현 위치: `DentalAddinDecomp/DentalAddin/MainModuleComposite.cs`
+- `OrientationProfile` 시작점 X는 **STL Move와 반드시 동기화**한다.
+  - 우선순위:
+    1. `ABUTS_COMPOSITE_ORIENTATION_PROFILE_START_X` (권장, MoveSTL 직후 실제 STL 좌측 끝 `minX`)
+    2. `MoveSTL_Module.FrontPointX` (fallback)
+  - env 주입 위치: `StlFileProcessor.TryApplyCompositeOrientationProfileStartXEnv`
+  - env 소비 위치: `MainModuleComposite.TryCreateCompositeOrientationProfileFromVector`
+- 실행 초기화 정책:
+  - `ResetPerRunState()`에서 `ABUTS_COMPOSITE_ORIENTATION_PROFILE_START_X`를 반드시 clear 한다.
+
 ## 5. 정리 원칙
 
 - 전체 정책은 루트 `rules.md`에서 관리합니다.

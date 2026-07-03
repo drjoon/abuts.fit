@@ -369,6 +369,7 @@ namespace DentalAddin
             selectionSet.RemoveAll();
             int stlCount = 0;
             int surfaceCount = 0;
+            int orientationProfileCount = 0;
             foreach (GraphicObject item in MainModule.Document.GraphicsCollection)
             {
                 if (item.GraphicObjectType == espGraphicObjectType.espSTL_Model)
@@ -382,12 +383,38 @@ namespace DentalAddin
                     surfaceCount++;
                 }
             }
+
+            // OrientationProfile 커브도 MoveSTL과 함께 같은 deltaX로 이동시켜 좌표 불일치를 방지한다.
+            // (이미 생성된 CompositeOrientationProfile_* 체인이 있을 때만 함께 선택)
+            try
+            {
+                foreach (FeatureChain fc in MainModule.Document.FeatureChains)
+                {
+                    if (fc == null)
+                    {
+                        continue;
+                    }
+
+                    string name = (fc.Name ?? string.Empty).Trim();
+                    if (!name.StartsWith("CompositeOrientationProfile", StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+
+                    selectionSet.Add(fc, RuntimeHelpers.GetObjectValue(Missing.Value));
+                    orientationProfileCount++;
+                }
+            }
+            catch (Exception ex)
+            {
+                DentalLogger.Log($"MoveSTL - OrientationProfile 선택 추가 실패: {ex.GetType().Name}:{ex.Message}");
+            }
             if (stlCount == 0)
             {
                 DentalLogger.Log("MoveSTL - STL 모델을 찾지 못함");
                 return;
             }
-            DentalLogger.Log($"MoveSTL - shift 대상: STL={stlCount}, Surface={surfaceCount}");
+            DentalLogger.Log($"MoveSTL - shift 대상: STL={stlCount}, Surface={surfaceCount}, OrientationProfile={orientationProfileCount}");
             FeatureList();
             MainModule.Document.FeatureRecognition.CreatePartProfileShadow(selectionSet, MainModule.Document.Planes["XYZ"], espGraphicObjectReturnType.espFeatureChains);
             FeatureChain featureChain = NewFeature();

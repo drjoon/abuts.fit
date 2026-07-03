@@ -30,6 +30,10 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
     {
         private const string StlImportLayerName = "AbutsStlImport";
         private const double DefaultWAxisRotationDegrees = 30.0;
+
+        // Composite OrientationProfile 시작점 X 전달용 env.
+        // 값은 MoveSTL 이후 STL 실제 좌측 끝(minX)이며, MainModuleComposite에서 우선 사용한다.
+        private const string CompositeOrientationProfileStartXEnv = "ABUTS_COMPOSITE_ORIENTATION_PROFILE_START_X";
         private static readonly HttpClient BackendHttp;
 
         // gp.exe 비정상 종료 시 Windows GPF 모달(오류 대화상자) 억제
@@ -449,6 +453,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             Environment.SetEnvironmentVariable("ABUTS_CAM_DIAMETER", null);
             Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_ORIENTATION_VECTOR", null);
             Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_ORIENTATION_PROFILE_LENGTH_MM", null);
+            Environment.SetEnvironmentVariable(CompositeOrientationProfileStartXEnv, null);
             FaceHoleProcessFilePath = null;
             ConnectionMachiningProcessFilePath = null;
             lotNumber = "ACR";
@@ -621,6 +626,179 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             return result;
         }
 
+        // MoveSTL 이후 STL의 X 범위(min/max)를 계산해 Composite OrientationProfile 시작점 SSOT로 사용한다.
+        // - minX: 화면 좌측 끝(요청사항 기준 "왼쪽 끝")
+        // - maxX: 진단 로그 용도
+        private static bool TryComputeStlBoundingXRange(Document document, out double minX, out double maxX)
+        {
+            minX = 0.0;
+            maxX = 0.0;
+
+            List<string> createdFeatureKeys = null;
+            SelectionSet selectionSet = null;
+            try
+            {
+                if (document?.GraphicsCollection == null || document?.FeatureRecognition == null)
+                {
+                    return false;
+                }
+
+                const string selectionName = "StlBoundingXTemp";
+                try { selectionSet = document.SelectionSets.Add(selectionName); }
+                catch { selectionSet = document.SelectionSets[selectionName]; }
+                if (selectionSet == null)
+                {
+                    return false;
+                }
+
+                selectionSet.RemoveAll();
+                foreach (GraphicObject graphic in document.GraphicsCollection)
+                {
+                    if (graphic?.GraphicObjectType == espGraphicObjectType.espSTL_Model)
+                    {
+                        selectionSet.Add(graphic, Missing.Value);
+                        break;
+                    }
+                }
+                if (selectionSet.Count == 0)
+                {
+                    return false;
+                }
+
+                Plane plane = null;
+                try { plane = document.Planes["XYZ"]; } catch { }
+                if (plane == null)
+                {
+                    try { plane = document.Planes["YZX"]; } catch { }
+                }
+                if (plane == null)
+                {
+                    return false;
+                }
+
+                HashSet<string> beforeKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                try
+                {
+                    foreach (FeatureChain fc in document.FeatureChains)
+                    {
+                        if (fc?.Key != null)
+                        {
+                            beforeKeys.Add(fc.Key);
+                        }
+                    }
+                }
+                catch { }
+
+                document.FeatureRecognition.CreatePartProfileShadow(selectionSet, plane, espGraphicObjectReturnType.espFeatureChains);
+                document.Refresh();
+
+                FeatureChain created = null;
+                createdFeatureKeys = new List<string>();
+                try
+                {
+                    foreach (FeatureChain fc in document.FeatureChains)
+                    {
+                        if (fc?.Key == null)
+                        {
+                            continue;
+                        }
+                        if (!beforeKeys.Contains(fc.Key))
+                        {
+                            createdFeatureKeys.Add(fc.Key);
+                            if (created == null)
+                            {
+                                created = fc;
+                            }
+                        }
+                    }
+                }
+                catch { }
+
+                if (created == null || created.Length <= 0.0)
+                {
+                    return false;
+                }
+
+                double localMinX = double.PositiveInfinity;
+                double localMaxX = double.NegativeInfinity;
+                int sampleCount = (int)Math.Max(10.0, Math.Floor(created.Length / 0.1));
+                for (int i = 0; i <= sampleCount; i++)
+                {
+                    double along = created.Length * i / sampleCount;
+                    Point p = null;
+                    try { p = created.PointAlong(along); } catch { }
+                    if (p == null || double.IsNaN(p.X) || double.IsInfinity(p.X))
+                    {
+                        continue;
+                    }
+
+                    if (p.X < localMinX) localMinX = p.X;
+                    if (p.X > localMaxX) localMaxX = p.X;
+                }
+
+                if (double.IsInfinity(localMinX) || double.IsInfinity(localMaxX))
+                {
+                    return false;
+                }
+
+                minX = localMinX;
+                maxX = localMaxX;
+                return true;
+            }
+            catch (Exception ex)
+            {
+                AppLogger.Log($"StlFileProcessor: STL bounding X 계산 실패 - {ex.GetType().Name}:{ex.Message}");
+                return false;
+            }
+            finally
+            {
+                if (selectionSet != null)
+                {
+                    try { selectionSet.RemoveAll(); } catch { }
+                }
+                CleanupTemporaryFeatureChains(document, createdFeatureKeys, "Stl bounding X");
+            }
+        }
+
+        // MoveSTL 직후 호출: OrientationProfile 시작점 X를 env로 전달한다.
+        // MainModuleComposite는 해당 값을 최우선 사용해, STL 우측 이동과 프로파일 커브를 항상 동기화한다.
+        private void TryApplyCompositeOrientationProfileStartXEnv(Document document)
+        {
+            try
+            {
+                if (TryComputeStlBoundingXRange(document, out double minX, out double maxX))
+                {
+                    Environment.SetEnvironmentVariable(CompositeOrientationProfileStartXEnv, minX.ToString(CultureInfo.InvariantCulture));
+                    AppLogger.Log($"DentalAddin: Composite OrientationProfile StartX env 적용 - {CompositeOrientationProfileStartXEnv}={minX.ToString("F4", CultureInfo.InvariantCulture)} (maxX={maxX.ToString("F4", CultureInfo.InvariantCulture)})");
+                    return;
+                }
+
+                // 계산 실패 시 fallback: MoveSTL_Module.FrontPointX 사용
+                Type mainModuleType = DentalAddinReflectionHelper.ResolveMainModuleType();
+                Type moveModuleType = DentalAddinReflectionHelper.ResolveMoveModuleType(mainModuleType);
+                if (moveModuleType != null)
+                {
+                    object frontObj = moveModuleType.GetField("FrontPointX", BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic)?.GetValue(null);
+                    if (frontObj != null)
+                    {
+                        double frontX = Convert.ToDouble(frontObj, CultureInfo.InvariantCulture);
+                        if (!double.IsNaN(frontX) && !double.IsInfinity(frontX))
+                        {
+                            Environment.SetEnvironmentVariable(CompositeOrientationProfileStartXEnv, frontX.ToString(CultureInfo.InvariantCulture));
+                            AppLogger.Log($"DentalAddin: Composite OrientationProfile StartX env fallback 적용 - {CompositeOrientationProfileStartXEnv}={frontX.ToString("F4", CultureInfo.InvariantCulture)} (source=MoveSTL_Module.FrontPointX)");
+                            return;
+                        }
+                    }
+                }
+
+                AppLogger.Log("DentalAddin: Composite OrientationProfile StartX env 적용 생략 - X 기준 계산 실패");
+            }
+            catch (Exception ex)
+            {
+                AppLogger.Log($"DentalAddin: Composite OrientationProfile StartX env 적용 실패 - {ex.GetType().Name}:{ex.Message}");
+            }
+        }
+
         public static void CleanupTemporaryFeatureChains(Document document, List<string> createdKeys, string context)
         {
             if (document?.FeatureChains == null || createdKeys == null)
@@ -776,6 +954,11 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
 
                 AppLogger.Log($"DentalAddin: MoveSTL 실행 시작 (FrontLimit:{frontLimitX}, BackLimit:{backLimitX})");
                 InvokeMoveSTL(mainModuleType);
+
+                // 중요: Composite OrientationProfile 시작점도 STL Move와 같은 좌표를 따라야 한다.
+                // MoveSTL 직후 실제 STL 좌측 끝(minX)을 계산해 env로 전달한다.
+                TryApplyCompositeOrientationProfileStartXEnv(document);
+
                 TryApplyCompositeSplitByFinishLine(mainModuleType, stlTopZ, finishLineTopZ);
                 TryApplyTwoPhaseSplitByFinishLine(mainModuleType, stlTopZ, finishLineTopZ, twoPhase);
                 // 유지홈 옵션을 5axisComposite_A 의 StepIncrement 에 반영.

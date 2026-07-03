@@ -9,6 +9,7 @@ using System;
 using System.Globalization;
 using System.IO;
 using System.Reflection;
+using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
@@ -19,6 +20,16 @@ namespace DentalAddin
         private static string CompositePrcBackPath => Path.Combine(AppConfig.AddInRootDirectory, "AcroDent", "11_Composite prc", "5axisComposite_Back.prc");
         private static string CompositePrcAllPath => Path.Combine(AppConfig.AddInRootDirectory, "AcroDent", "11_Composite prc", "5axisComposite_All.prc");
         private static string CompositePrcFrontPath => Path.Combine(AppConfig.AddInRootDirectory, "AcroDent", "11_Composite prc", "5axisComposite_Front.prc");
+
+        // Composite OrientationStrategy 매직넘버 SSOT
+        // - 1: 기본 전략(프로파일 미사용)
+        // - 4: 프로파일 기반 공구축 (현장 검증값)
+        private const int CompositeOrientationStrategyDefault = 1;
+        private const int CompositeOrientationStrategyProfile = 4;
+
+        // StlFileProcessor가 MoveSTL 이후 실제 STL 좌측 끝(X)을 전달할 때 사용하는 env 키.
+        // 값이 없으면 MainModule 내부 계산(FrontPointX)을 fallback으로 사용한다.
+        private const string CompositeOrientationProfileStartXEnv = "ABUTS_COMPOSITE_ORIENTATION_PROFILE_START_X";
 
         private static bool TryGetComposite2SplitABConfig(out bool enabled, out double splitX, out string prcA, out string prcB)
         {
@@ -223,6 +234,148 @@ namespace DentalAddin
             return true;
         }
 
+        // OrientationProfile 시작점 X를 현재 STL 실제 위치에서 직접 해석한다.
+        // 목적: MoveSTL 이후 모델 이동량과 OrientationProfile 커브 시작점을 항상 동기화.
+        // 우선순위(호출부에서 사용):
+        //   1) env(ABUTS_COMPOSITE_ORIENTATION_PROFILE_START_X)
+        //   2) STL shadow(minX) 직접 해석
+        //   3) MoveSTL_Module.FrontPointX fallback
+        private static bool TryResolveCompositeOrientationStartXFromCurrentStl(out double startX)
+        {
+            startX = MoveSTL_Module.FrontPointX;
+
+            if (Document?.GraphicsCollection == null || Document?.FeatureRecognition == null)
+            {
+                return false;
+            }
+
+            SelectionSet selectionSet = null;
+            List<FeatureChain> createdChains = null;
+            try
+            {
+                const string selectionName = "CompositeOrientationStartXTemp";
+                try { selectionSet = Document.SelectionSets.Add(selectionName); }
+                catch { selectionSet = Document.SelectionSets[selectionName]; }
+                if (selectionSet == null)
+                {
+                    return false;
+                }
+
+                selectionSet.RemoveAll();
+                int stlCount = 0;
+                foreach (GraphicObject graphic in Document.GraphicsCollection)
+                {
+                    if (graphic?.GraphicObjectType == espGraphicObjectType.espSTL_Model)
+                    {
+                        selectionSet.Add(graphic, RuntimeHelpers.GetObjectValue(Missing.Value));
+                        stlCount++;
+                    }
+                }
+
+                if (stlCount <= 0)
+                {
+                    return false;
+                }
+
+                Plane plane = null;
+                try { plane = Document.Planes["XYZ"]; } catch { }
+                if (plane == null)
+                {
+                    try { plane = Document.Planes["YZX"]; } catch { }
+                }
+                if (plane == null)
+                {
+                    return false;
+                }
+
+                HashSet<string> beforeKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                try
+                {
+                    foreach (FeatureChain fc in Document.FeatureChains)
+                    {
+                        if (fc?.Key != null)
+                        {
+                            beforeKeys.Add(fc.Key);
+                        }
+                    }
+                }
+                catch { }
+
+                Document.FeatureRecognition.CreatePartProfileShadow(selectionSet, plane, espGraphicObjectReturnType.espFeatureChains);
+                Document.Refresh(RuntimeHelpers.GetObjectValue(Missing.Value), RuntimeHelpers.GetObjectValue(Missing.Value));
+
+                createdChains = new List<FeatureChain>();
+                FeatureChain target = null;
+                try
+                {
+                    foreach (FeatureChain fc in Document.FeatureChains)
+                    {
+                        if (fc?.Key == null)
+                        {
+                            continue;
+                        }
+                        if (!beforeKeys.Contains(fc.Key))
+                        {
+                            createdChains.Add(fc);
+                            if (target == null)
+                            {
+                                target = fc;
+                            }
+                        }
+                    }
+                }
+                catch { }
+
+                if (target == null || target.Length <= 0.0)
+                {
+                    return false;
+                }
+
+                double minX = double.PositiveInfinity;
+                int sampleCount = (int)Math.Max(20.0, Math.Floor(target.Length / 0.05));
+                for (int i = 0; i <= sampleCount; i++)
+                {
+                    double along = target.Length * i / sampleCount;
+                    Point p = null;
+                    try { p = target.PointAlong(along); } catch { }
+                    if (p == null || double.IsNaN(p.X) || double.IsInfinity(p.X))
+                    {
+                        continue;
+                    }
+
+                    if (p.X < minX)
+                    {
+                        minX = p.X;
+                    }
+                }
+
+                if (double.IsInfinity(minX))
+                {
+                    return false;
+                }
+
+                startX = minX;
+                return true;
+            }
+            catch (Exception ex)
+            {
+                DentalLogger.Log($"Composite2SplitLine2 - OrientationProfile startX(STL shadow) 해석 실패: {ex.GetType().Name}:{ex.Message}");
+                return false;
+            }
+            finally
+            {
+                try { selectionSet?.RemoveAll(); } catch { }
+
+                if (createdChains != null)
+                {
+                    for (int i = createdChains.Count - 1; i >= 0; i--)
+                    {
+                        try { Document.FeatureChains.Remove(createdChains[i]); } catch { }
+                    }
+                }
+            }
+        }
+
         private static bool TryCreateCompositeOrientationProfileFromVector(double vx, double vy, double vz, string label, out string orientationProfile)
         {
             orientationProfile = null;
@@ -235,10 +388,9 @@ namespace DentalAddin
 
                 string profileName = string.IsNullOrWhiteSpace(label) ? "CompositeOrientationProfile" : $"CompositeOrientationProfile_{label}";
 
-                // 중복 생성 방지: 동일 이름 프로파일이 있으면 가장 마지막 것을 재사용하고,
-                // 나머지 중복은 정리한다.
-                FeatureChain keep = null;
-                int keepIndex = -1;
+                // 중요: OrientationProfile은 각 케이스의 STL 이동/정렬 결과(FrontPointX)를 반드시 따라야 한다.
+                // 동일 이름 체인을 재사용하면 이전 케이스 좌표가 남아 위치 불일치가 발생할 수 있으므로,
+                // 기존 동일 이름 체인은 모두 제거 후 현재 좌표로 다시 생성한다.
                 try
                 {
                     int count = Document.FeatureChains?.Count ?? 0;
@@ -254,34 +406,16 @@ namespace DentalAddin
                         {
                             continue;
                         }
-                        if (keep == null)
+
+                        try
                         {
-                            keep = candidate;
-                            keepIndex = i;
+                            Document.FeatureChains.Remove(i);
+                            DentalLogger.Log($"Composite2SplitLine2 - OrientationProfile 기존 체인 제거(label={label}, removedIndex={i}, name={profileName})");
                         }
-                        else
-                        {
-                            try
-                            {
-                                Document.FeatureChains.Remove(i);
-                                DentalLogger.Log($"Composite2SplitLine2 - OrientationProfile 중복 정리(label={label}, removedIndex={i}, name={profileName})");
-                            }
-                            catch { }
-                        }
+                        catch { }
                     }
                 }
                 catch { }
-
-                if (keep != null)
-                {
-                    int existingKey = SafeParseKey(Convert.ToString(keep.Key, CultureInfo.InvariantCulture));
-                    if (existingKey > 0)
-                    {
-                        orientationProfile = "6," + existingKey.ToString(CultureInfo.InvariantCulture);
-                        DentalLogger.Log($"Composite2SplitLine2 - OrientationProfile 재사용(label={label}, index={keepIndex}, key={existingKey}, profile='{orientationProfile}')");
-                        return true;
-                    }
-                }
 
                 double vectorNorm = Math.Sqrt(vx * vx + vy * vy + vz * vz);
                 if (vectorNorm < 1e-6)
@@ -318,8 +452,43 @@ namespace DentalAddin
                 double profileLengthMm = GetEnvDoubleNullable("ABUTS_COMPOSITE_ORIENTATION_PROFILE_LENGTH_MM") ?? 20.0;
                 profileLengthMm = Clamp(profileLengthMm, 1.0, 200.0);
 
-                // STL MoveSTL 이후 위치를 따르도록 시작점을 현재 FrontPointX 축선에 둔다.
-                double startX = MoveSTL_Module.FrontPointX;
+                // STL MoveSTL과 동일 좌표를 보장하기 위해 시작점 X는 FrontPointX를 SSOT로 사용한다.
+                // env/shadow 값은 보조 신호로만 사용하고, FrontPointX와 크게 어긋나면(비정상) 폐기한다.
+                double frontX = MoveSTL_Module.FrontPointX;
+                double backX = MoveSTL_Module.BackPointX;
+                double startX = frontX;
+                string startXSource = "MoveSTL_Module.FrontPointX";
+
+                double span = Math.Abs(backX - frontX);
+                double maxAllowedDeltaFromFront = Math.Max(0.5, span * 0.05); // 최소 0.5mm, 또는 span의 5%
+
+                double? startXFromEnv = GetEnvDoubleNullable(CompositeOrientationProfileStartXEnv);
+                if (startXFromEnv.HasValue && !double.IsNaN(startXFromEnv.Value) && !double.IsInfinity(startXFromEnv.Value))
+                {
+                    double delta = Math.Abs(startXFromEnv.Value - frontX);
+                    if (delta <= maxAllowedDeltaFromFront)
+                    {
+                        startX = startXFromEnv.Value;
+                        startXSource = CompositeOrientationProfileStartXEnv;
+                    }
+                    else
+                    {
+                        DentalLogger.Log($"Composite2SplitLine2 - OrientationProfile startX env 폐기: env={startXFromEnv.Value.ToString("F3", CultureInfo.InvariantCulture)}, frontX={frontX.ToString("F3", CultureInfo.InvariantCulture)}, backX={backX.ToString("F3", CultureInfo.InvariantCulture)}, delta={delta.ToString("F3", CultureInfo.InvariantCulture)}, allow={maxAllowedDeltaFromFront.ToString("F3", CultureInfo.InvariantCulture)}");
+                    }
+                }
+                else if (TryResolveCompositeOrientationStartXFromCurrentStl(out double startXFromShadow))
+                {
+                    double delta = Math.Abs(startXFromShadow - frontX);
+                    if (delta <= maxAllowedDeltaFromFront)
+                    {
+                        startX = startXFromShadow;
+                        startXSource = "STLShadowMinX";
+                    }
+                    else
+                    {
+                        DentalLogger.Log($"Composite2SplitLine2 - OrientationProfile startX shadow 폐기: shadow={startXFromShadow.ToString("F3", CultureInfo.InvariantCulture)}, frontX={frontX.ToString("F3", CultureInfo.InvariantCulture)}, backX={backX.ToString("F3", CultureInfo.InvariantCulture)}, delta={delta.ToString("F3", CultureInfo.InvariantCulture)}, allow={maxAllowedDeltaFromFront.ToString("F3", CultureInfo.InvariantCulture)}");
+                    }
+                }
                 Point p0 = Document.GetPoint(startX, 0.0, 0.0);
                 Point p1 = Document.GetPoint(startX + nx * profileLengthMm, ny * profileLengthMm, nz * profileLengthMm);
 
@@ -336,7 +505,7 @@ namespace DentalAddin
                 }
 
                 orientationProfile = "6," + key.ToString(CultureInfo.InvariantCulture);
-                DentalLogger.Log($"Composite2SplitLine2 - OrientationProfile 생성 완료(label={label}, key={key}, profile='{orientationProfile}', startX={startX.ToString("F3", CultureInfo.InvariantCulture)}, p0=({startX.ToString("F3", CultureInfo.InvariantCulture)},0,0), p1=({(startX + nx * profileLengthMm).ToString("F3", CultureInfo.InvariantCulture)},{(ny * profileLengthMm).ToString("F3", CultureInfo.InvariantCulture)},{(nz * profileLengthMm).ToString("F3", CultureInfo.InvariantCulture)}), vectorRaw=({vx.ToString("F6", CultureInfo.InvariantCulture)},{vy.ToString("F6", CultureInfo.InvariantCulture)},{vz.ToString("F6", CultureInfo.InvariantCulture)}), vectorRot=({nx.ToString("F6", CultureInfo.InvariantCulture)},{ny.ToString("F6", CultureInfo.InvariantCulture)},{nz.ToString("F6", CultureInfo.InvariantCulture)}))");
+                DentalLogger.Log($"Composite2SplitLine2 - OrientationProfile 생성 완료(label={label}, key={key}, profile='{orientationProfile}', startX={startX.ToString("F3", CultureInfo.InvariantCulture)}, startXSource={startXSource}, p0=({startX.ToString("F3", CultureInfo.InvariantCulture)},0,0), p1=({(startX + nx * profileLengthMm).ToString("F3", CultureInfo.InvariantCulture)},{(ny * profileLengthMm).ToString("F3", CultureInfo.InvariantCulture)},{(nz * profileLengthMm).ToString("F3", CultureInfo.InvariantCulture)}), vectorRaw=({vx.ToString("F6", CultureInfo.InvariantCulture)},{vy.ToString("F6", CultureInfo.InvariantCulture)},{vz.ToString("F6", CultureInfo.InvariantCulture)}), vectorRot=({nx.ToString("F6", CultureInfo.InvariantCulture)},{ny.ToString("F6", CultureInfo.InvariantCulture)},{nz.ToString("F6", CultureInfo.InvariantCulture)}))");
                 return true;
             }
             catch (Exception ex)
@@ -355,14 +524,14 @@ namespace DentalAddin
 
             if (!TryGetCompositeOrientationVectorFromEnv(out double vx, out double vy, out double vz))
             {
-                // 벡터가 없으면 PRC가 OrientationStrategy=3 이어도 Add 단계에서
+                // 벡터가 없으면 PRC가 OrientationStrategy=4 이어도 Add 단계에서
                 // "할당되지 않은 공구 축" COM 예외가 날 수 있다.
                 // 안전하게 기본 전략(1)으로 폴백한다.
                 try
                 {
-                    op.GetType().InvokeMember("OrientationStrategy", BindingFlags.SetProperty, null, op, new object[] { 1 }, CultureInfo.InvariantCulture);
+                    op.GetType().InvokeMember("OrientationStrategy", BindingFlags.SetProperty, null, op, new object[] { CompositeOrientationStrategyDefault }, CultureInfo.InvariantCulture);
                     op.GetType().InvokeMember("OrientationProfile", BindingFlags.SetProperty, null, op, new object[] { string.Empty }, CultureInfo.InvariantCulture);
-                    DentalLogger.Log($"Composite2SplitLine2 - {label} OrientationVector 없음: OrientationStrategy=1 폴백 적용");
+                    DentalLogger.Log($"Composite2SplitLine2 - {label} OrientationVector 없음: OrientationStrategy={CompositeOrientationStrategyDefault} 폴백 적용");
                 }
                 catch (Exception ex)
                 {
@@ -378,11 +547,11 @@ namespace DentalAddin
 
             try
             {
-                op.GetType().InvokeMember("OrientationStrategy", BindingFlags.SetProperty, null, op, new object[] { 3 }, CultureInfo.InvariantCulture);
+                op.GetType().InvokeMember("OrientationStrategy", BindingFlags.SetProperty, null, op, new object[] { CompositeOrientationStrategyProfile }, CultureInfo.InvariantCulture);
             }
             catch (Exception ex)
             {
-                DentalLogger.Log($"Composite2SplitLine2 - {label} OrientationStrategy=3 설정 실패: {ex.GetType().Name}:{ex.Message}");
+                DentalLogger.Log($"Composite2SplitLine2 - {label} OrientationStrategy={CompositeOrientationStrategyProfile} 설정 실패: {ex.GetType().Name}:{ex.Message}");
             }
 
             try
@@ -802,7 +971,7 @@ namespace DentalAddin
 
 
 
-            // OrientationStrategy=프로파일(3) 지원:
+            // OrientationStrategy=프로파일(4) 지원:
             // - backend 경사축 벡터(ABUTS_COMPOSITE_ORIENTATION_VECTOR)가 있으면
             //   FINISH_FRONT(opA)에 OrientationProfile을 런타임 생성/적용한다.
             // - 벡터가 없으면 PRC 기본값을 그대로 사용한다.
