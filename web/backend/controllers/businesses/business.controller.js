@@ -366,6 +366,13 @@ export async function getMyBusiness(req, res) {
         businessLicense: anchor?.businessLicense || null,
         payoutAccount: anchor?.payoutAccount || {},
         shippingPolicy: anchor?.shippingPolicy || null,
+        requestSettings: {
+          anodizingEnabled:
+            typeof anchor?.requestSettings?.anodizingEnabled === "boolean"
+              ? anchor.requestSettings.anodizingEnabled
+              : true,
+          updatedAt: anchor?.requestSettings?.updatedAt || null,
+        },
       },
     };
 
@@ -536,6 +543,174 @@ export async function clearMyBusinessLicense(req, res) {
     return res.status(500).json({
       success: false,
       message: "사업자등록증 삭제 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
+function getAnchorMembership(anchor, userId) {
+  if (!anchor) return "none";
+
+  const meId = String(userId || "");
+  const primaryContactId = String(anchor.primaryContactUserId || "");
+  const isOwner =
+    Array.isArray(anchor.owners) &&
+    anchor.owners.some((ownerId) => String(ownerId) === meId);
+
+  if (primaryContactId === meId || isOwner) return "owner";
+
+  const isMember =
+    Array.isArray(anchor.members) &&
+    anchor.members.some((memberId) => String(memberId) === meId);
+  if (isMember) return "member";
+
+  return "none";
+}
+
+/**
+ * 기공소(사업체) 의뢰 기본 설정 조회
+ * @route GET /api/businesses/me/request-settings
+ */
+export async function getMyRequestSettings(req, res) {
+  try {
+    const roleCheck = assertBusinessRole(req, res);
+    if (!roleCheck) return;
+    const { businessType } = roleCheck;
+
+    const freshUser = await User.findById(req.user._id)
+      .select({ businessAnchorId: 1 })
+      .lean();
+    const businessAnchorId =
+      freshUser?.businessAnchorId || req.user.businessAnchorId || null;
+
+    if (!businessAnchorId) {
+      return res.status(200).json({
+        success: true,
+        data: {
+          scope: "business",
+          membership: "none",
+          canEdit: false,
+          anodizingEnabled: true,
+          updatedAt: null,
+        },
+      });
+    }
+
+    const anchor = await BusinessAnchor.findOne({
+      _id: businessAnchorId,
+      businessType,
+    })
+      .select({
+        primaryContactUserId: 1,
+        owners: 1,
+        members: 1,
+        requestSettings: 1,
+      })
+      .lean();
+
+    const membership = getAnchorMembership(anchor, req.user._id);
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        scope: "business",
+        membership,
+        canEdit: membership === "owner",
+        anodizingEnabled:
+          typeof anchor?.requestSettings?.anodizingEnabled === "boolean"
+            ? anchor.requestSettings.anodizingEnabled
+            : true,
+        updatedAt: anchor?.requestSettings?.updatedAt || null,
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "의뢰 설정 조회 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
+/**
+ * 기공소(사업체) 의뢰 기본 설정 수정
+ * @route PUT /api/businesses/me/request-settings
+ */
+export async function updateMyRequestSettings(req, res) {
+  try {
+    const roleCheck = assertBusinessRole(req, res);
+    if (!roleCheck) return;
+    const { businessType } = roleCheck;
+
+    const anodizingEnabled = req.body?.anodizingEnabled;
+    if (typeof anodizingEnabled !== "boolean") {
+      return res.status(400).json({
+        success: false,
+        message:
+          "유효하지 않은 의뢰 설정입니다. anodizingEnabled(boolean)가 필요합니다.",
+      });
+    }
+
+    const freshUser = await User.findById(req.user._id)
+      .select({ businessAnchorId: 1 })
+      .lean();
+    const businessAnchorId =
+      freshUser?.businessAnchorId || req.user.businessAnchorId || null;
+
+    if (!businessAnchorId) {
+      return res.status(404).json({
+        success: false,
+        message: "소속된 기공소를 찾을 수 없습니다.",
+      });
+    }
+
+    const anchor = await BusinessAnchor.findOne({
+      _id: businessAnchorId,
+      businessType,
+    })
+      .select({ primaryContactUserId: 1, owners: 1, members: 1 })
+      .lean();
+
+    const membership = getAnchorMembership(anchor, req.user._id);
+    if (membership !== "owner") {
+      return res.status(403).json({
+        success: false,
+        message: "대표자 계정만 기공소 의뢰 설정을 변경할 수 있습니다.",
+      });
+    }
+
+    const updated = await BusinessAnchor.findByIdAndUpdate(
+      businessAnchorId,
+      {
+        $set: {
+          "requestSettings.anodizingEnabled": anodizingEnabled,
+          "requestSettings.updatedAt": new Date(),
+        },
+      },
+      {
+        new: true,
+        runValidators: true,
+      },
+    ).select({ requestSettings: 1 });
+
+    invalidateMyBusinessCache(businessAnchorId);
+
+    return res.status(200).json({
+      success: true,
+      message: "기공소 의뢰 설정이 성공적으로 수정되었습니다.",
+      data: {
+        scope: "business",
+        anodizingEnabled:
+          typeof updated?.requestSettings?.anodizingEnabled === "boolean"
+            ? updated.requestSettings.anodizingEnabled
+            : true,
+        updatedAt: updated?.requestSettings?.updatedAt || null,
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "의뢰 설정 수정 중 오류가 발생했습니다.",
       error: error.message,
     });
   }

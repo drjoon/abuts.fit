@@ -14,6 +14,7 @@ router.get(
   "/manufacturer-lead-times",
   leadTimeController.getManufacturerLeadTimes,
 );
+router.get("/me/request-settings", businessController.getMyRequestSettings);
 
 // 사업자 정보 수정
 router.put(
@@ -26,6 +27,12 @@ router.patch(
   "/me",
   authorize(["requestor", "salesman", "manufacturer", "admin", "devops"]),
   businessController.updateMyBusiness,
+);
+
+router.put(
+  "/me/request-settings",
+  authorize(["requestor", "salesman", "manufacturer", "admin", "devops"]),
+  businessController.updateMyRequestSettings,
 );
 
 router.post(

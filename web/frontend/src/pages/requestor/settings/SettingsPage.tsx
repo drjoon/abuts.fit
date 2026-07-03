@@ -11,7 +11,15 @@ import { BusinessTab } from "@/shared/components/business/settings/BusinessTab";
 import { StaffTab } from "@/features/settings/tabs/StaffTab";
 import { PaymentTab } from "@/features/settings/tabs/CreditPaymentTab";
 import { NotificationsTab } from "@/features/settings/tabs/NotificationsTab";
-import { User, Building2, CreditCard, Bell, Users } from "lucide-react";
+import { RequestTab } from "@/features/settings/tabs/RequestTab";
+import {
+  User,
+  Building2,
+  CreditCard,
+  Bell,
+  Users,
+  FileText,
+} from "lucide-react";
 import { request } from "@/shared/api/apiClient";
 import { RequestorSecurity } from "./Security";
 import { Shield } from "lucide-react";
@@ -22,6 +30,7 @@ type TabKey =
   | "account"
   | "business"
   | "staff"
+  | "request"
   | "payment"
   | "notifications"
   | "security";
@@ -71,10 +80,7 @@ export const RequestorSettingsPage = () => {
         const body: any = res.data || {};
         const data = body.data || body;
         const next = String(data?.membership || "none") as
-          | "owner"
-          | "member"
-          | "pending"
-          | "none";
+          "owner" | "member" | "pending" | "none";
         setMembership(next);
         setCanManageStaff(next === "owner");
       } catch {
@@ -108,6 +114,12 @@ export const RequestorSettingsPage = () => {
         icon: Users,
         content: <StaffTab userData={user} />,
       },
+      {
+        key: "request",
+        label: "의뢰",
+        icon: FileText,
+        content: <RequestTab />,
+      },
     ];
 
     base.push(
@@ -132,7 +144,7 @@ export const RequestorSettingsPage = () => {
     );
 
     return base;
-  }, [canManageStaff, user]);
+  }, [user]);
 
   const tabFromUrl =
     (searchParams.get("tab") as TabKey | null) || (tabs[0]?.key as TabKey);

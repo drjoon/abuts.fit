@@ -421,6 +421,17 @@
 - business owner는 사업자를 생성/검증 요청하는 사용자 역할일 뿐, 사업자 생성 이후 관련 데이터의 canonical 귀속 주체는 **owner 개인이 아니라 BusinessAnchor 엔터티 자체**입니다.
 - 개인 사용자 기준 처리가 필요한 경우는 인증/세션/알림 수신 주체처럼 **사용자 자체가 엔터티인 기능**으로 한정합니다.
 
+### 2.3.2.1 기공소 의뢰 기본 설정 SSOT (아노다이징 처리)
+
+- `아노다이징 처리` 기본값은 **개인(User) 설정이 아니라 기공소(사업자) 단위 설정**입니다.
+- SSOT 저장 위치는 **`BusinessAnchor.requestSettings.anodizingEnabled`** 입니다.
+- API SSOT 경로는 아래 2개만 사용합니다.
+  - 조회: `GET /api/businesses/me/request-settings`
+  - 수정: `PUT /api/businesses/me/request-settings`
+- 수정 권한은 **대표자(owner)** 만 가집니다. (직원/member는 조회만 가능)
+- 이 값은 해당 기공소 소속 사용자의 **의뢰 기본 동작 전체**에 공통 적용됩니다.
+- 레거시 금지: `/api/users/request-settings` 또는 `User.preferences.request.*` 경로를 재도입하지 않습니다.
+
 ### 2.3.2 BusinessAnchor SSOT 원칙 (Business 컬렉션 완전 제거)
 
 - `BusinessAnchor`는 **모든 사업자 데이터의 단일 SSOT**입니다 (법적 식별, 정산, 소개, 멤버십 통합).

@@ -10,6 +10,8 @@ export const {
   checkBusinessNumberDuplicate,
   lookupPostalCode,
   updateBusinessShippingAddress,
+  getMyRequestSettings,
+  updateMyRequestSettings,
 } = businessController;
 
 export const {
@@ -38,6 +40,8 @@ export default {
   checkBusinessNumberDuplicate,
   lookupPostalCode,
   updateBusinessShippingAddress,
+  getMyRequestSettings,
+  updateMyRequestSettings,
   requestJoinBusiness,
   cancelJoinRequest,
   leaveBusiness,

@@ -18,7 +18,7 @@ router.post("/phone-verification/send", userController.sendPhoneVerification);
 // 전화번호 인증번호 확인
 router.post(
   "/phone-verification/verify",
-  userController.verifyPhoneVerification
+  userController.verifyPhoneVerification,
 );
 
 // 알림 설정 조회

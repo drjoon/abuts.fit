@@ -114,6 +114,16 @@ const businessAnchorSchema = new mongoose.Schema(
       },
       updatedAt: { type: Date, default: null },
     },
+    requestSettings: {
+      anodizingEnabled: {
+        type: Boolean,
+        default: true,
+      },
+      updatedAt: {
+        type: Date,
+        default: null,
+      },
+    },
     referralMembershipAggregate: {
       requestorDirectCircleAnchorIds: {
         type: [
