@@ -25,7 +25,7 @@ namespace DentalAddin
         // - 1: 기본 전략(프로파일 미사용)
         // - 4: 프로파일 기반 공구축 (현장 검증값)
         private const int CompositeOrientationStrategyDefault = 1;
-        private const int CompositeOrientationStrategyProfile = 4;
+        private const int CompositeOrientationStrategyProfile = 1;
 
         // 진단용 env 키(선택에는 사용하지 않음).
         // startX SSOT는 MoveSTL_Module.FrontPointX이며, env/shadow 값은 로그 관찰 용도로만 읽는다.
