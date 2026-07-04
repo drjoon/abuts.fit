@@ -77,6 +77,9 @@ _EDGE_MAX_Z_ABOVE_PT0_MM = 8.0
 _EDGE_MAX_Z_BELOW_PT0_MM = 2.5
 # edge 루프의 Z 변화폭이 지나치게 작으면(거의 수평 링) 내부 경계 오검출로 간주
 _EDGE_MIN_Z_SPAN_MM = 0.08
+# edge 루프가 축 주위를 충분히 감싸지 못하면(측면 홈/로컬 슬롯) 오검출로 간주
+# 2π(약 6.283) 중 최소 커버리지
+_EDGE_MIN_AZIMUTH_COVERAGE_RAD = 4.5
 
 # traced finishline 품질 검증(아웃라이어 세그먼트) 임계값
 _OUTLIER_SEGMENT_RATIO = 2.8  # max(segment) / median(segment)
@@ -383,16 +386,14 @@ def _detect_finishline_points_edge(
                             cheight = max(1e-6, float(cbbox.Max.Z - cbbox.Min.Z))
                             band_low = float(cbbox.Min.Z + _Z_RATIO_LOW * cheight)
                             if edge_min_z < band_low:
-                                counters["rejected_below_band"] += 1
                                 _trace_log(
-                                    "[detect-edge:{}] candidate[{}] rejected below_band min_z={:.6f} < band_low={:.6f}".format(
+                                    "[detect-edge:{}] candidate[{}] note below_band min_z={:.6f} < band_low={:.6f} (kept; low-z priority)".format(
                                         pass_name,
                                         idx,
                                         edge_min_z,
                                         band_low,
                                     )
                                 )
-                                continue
                     except Exception:
                         pass
 
@@ -411,11 +412,12 @@ def _detect_finishline_points_edge(
                         )
                         continue
 
+                    # 도메인 규칙: finishline은 하방에 위치할 수 있으므로
+                    # pt0 대비 하한 reject는 적용하지 않고 참고 로그만 남긴다.
                     min_allowed_z = z_ref_pt0.Z - _EDGE_MAX_Z_BELOW_PT0_MM
                     if edge_min_z <= min_allowed_z:
-                        counters["rejected_low_vs_pt0"] += 1
                         _trace_log(
-                            "[detect-edge:{}] candidate[{}] rejected low_vs_pt0 min_z={:.6f} <= pt0_z-{:.3f} ({:.6f})".format(
+                            "[detect-edge:{}] candidate[{}] note low_vs_pt0 min_z={:.6f} <= pt0_z-{:.3f} ({:.6f}) (kept; lowest-loop priority)".format(
                                 pass_name,
                                 idx,
                                 edge_min_z,
@@ -423,7 +425,6 @@ def _detect_finishline_points_edge(
                                 min_allowed_z,
                             )
                         )
-                        continue
 
                 edge_median_radius = _points_median_radius(traced_points)
                 if (
@@ -462,27 +463,36 @@ def _detect_finishline_points_edge(
                         )
                         continue
 
-                z_score = (
+                # finishline은 항상 최하단 폐곡선이라는 도메인 규칙을 우선 적용
+                # score 우선순위:
+                # 1) 낮은 min_z 우선 (score에서는 -min_z를 maximize)
+                # 2) 더 큰 반경(외곽 루프) 우선
+                # 3) pt0 높이 근접도(동률 보조)
+                # 4) 점 개수(동률 보조)
+                lowest_z_score = (
+                    -float(edge_min_z) if edge_min_z is not None else -float("inf")
+                )
+                pt0_align_score = (
                     -abs(float(edge_min_z) - float(z_ref_pt0.Z))
                     if (z_ref_pt0 is not None and edge_min_z is not None)
-                    else float(edge_min_z)
-                    if edge_min_z is not None
-                    else -float("inf")
+                    else 0.0
                 )
                 score = (
+                    float(lowest_z_score),
                     float(edge_median_radius)
                     if edge_median_radius is not None
                     else -1.0,
-                    float(z_score),
+                    float(pt0_align_score),
                     float(len(traced_points)),
                 )
                 _trace_log(
-                    "[detect-edge:{}] candidate[{}] accepted score=(r={:.6f},z={:.6f},n={:.0f})".format(
+                    "[detect-edge:{}] candidate[{}] accepted score=(low_z={:.6f},r={:.6f},pt0_align={:.6f},n={:.0f})".format(
                         pass_name,
                         idx,
                         score[0],
                         score[1],
                         score[2],
+                        score[3],
                     )
                 )
                 if best_score is None or score > best_score:
@@ -1051,6 +1061,7 @@ def _pick_best_edge_loop_points(
         "low_vs_pt0": 0,
         "small_vs_pt0": 0,
         "small_vs_mesh": 0,
+        "low_azimuth_coverage": 0,
     }
 
     for cv_idx, cv in enumerate(source):
@@ -1073,6 +1084,7 @@ def _pick_best_edge_loop_points(
             else float("nan")
         )
         median_r = _points_median_radius(pts)
+        az_coverage = _loop_azimuth_coverage(pts)
 
         try:
             length = float(cv.GetLength())
@@ -1107,13 +1119,23 @@ def _pick_best_edge_loop_points(
                     continue
                 min_allowed_z = ref_pt0.Z - _EDGE_MAX_Z_BELOW_PT0_MM
                 if min_z <= min_allowed_z:
-                    reject_counts["low_vs_pt0"] += 1
                     _trace_log(
-                        "[edge-loop:{}] curve[{}] rejected reason=low_vs_pt0 min_z={:.6f} <= {:.6f}".format(
+                        "[edge-loop:{}] curve[{}] note low_vs_pt0 min_z={:.6f} <= {:.6f} (kept; lowest-loop priority)".format(
                             debug_tag, cv_idx, float(min_z), float(min_allowed_z)
                         )
                     )
-                    continue
+
+            if az_coverage < float(_EDGE_MIN_AZIMUTH_COVERAGE_RAD):
+                reject_counts["low_azimuth_coverage"] += 1
+                _trace_log(
+                    "[edge-loop:{}] curve[{}] rejected reason=low_azimuth_coverage cov={:.4f} < {:.4f}".format(
+                        debug_tag,
+                        cv_idx,
+                        float(az_coverage),
+                        float(_EDGE_MIN_AZIMUTH_COVERAGE_RAD),
+                    )
+                )
+                continue
 
             if (
                 ref_pt0_radius is not None
@@ -1158,7 +1180,7 @@ def _pick_best_edge_loop_points(
 
         accepted += 1
         _trace_log(
-            "[edge-loop:{}] curve[{}] accepted min_z={:.6f} max_z={:.6f} z_span={:.6f} len={:.4f} med_r={:.4f} z_score={:.6f}".format(
+            "[edge-loop:{}] curve[{}] accepted min_z={:.6f} max_z={:.6f} z_span={:.6f} len={:.4f} med_r={:.4f} az_cov={:.4f} z_score={:.6f}".format(
                 debug_tag,
                 cv_idx,
                 float(min_z) if min_z is not None else float("nan"),
@@ -1166,6 +1188,7 @@ def _pick_best_edge_loop_points(
                 float(z_span),
                 float(length),
                 float(median_r) if median_r is not None else float("nan"),
+                float(az_coverage),
                 float(z_score),
             )
         )
@@ -1175,7 +1198,7 @@ def _pick_best_edge_loop_points(
                 float(median_r) if median_r is not None else -1.0,
                 float(z_score),
                 length,
-                float(min_z) if min_z is not None else -float("inf"),
+                float(min_z) if min_z is not None else float("inf"),
                 pts,
             )
         )
@@ -1193,8 +1216,10 @@ def _pick_best_edge_loop_points(
     if not loop_infos:
         return None
 
-    # 외곽 반경 우선 + (pt0 기준 높이 일치도) + 길이 우선
-    loop_infos.sort(key=lambda item: (item[0], item[1], item[2]), reverse=True)
+    # finishline은 최하단 폐곡선이라는 규칙을 우선 적용
+    # 1) min_z가 가장 낮은 루프 우선
+    # 2) 동률이면 외곽 반경/pt0 일치도/길이로 tie-break
+    loop_infos.sort(key=lambda item: (item[3], -item[0], -item[1], -item[2]))
     selected = loop_infos[0]
     _trace_log(
         "[finishline] edge loops={} selected median_r={:.6f} z_score={:.6f} min_z={:.6f} len={:.3f} pts={} tag={}".format(
@@ -1247,6 +1272,43 @@ def _points_median_radius(points: Sequence[rg.Point3d]) -> Optional[float]:
     if n % 2 == 1:
         return float(radii[mid])
     return float((radii[mid - 1] + radii[mid]) * 0.5)
+
+
+def _loop_azimuth_coverage(points: Sequence[rg.Point3d]) -> float:
+    """XY 평면에서 루프가 원점을 기준으로 감싸는 각도 범위(0..2π)를 계산한다.
+
+    구현: atan2 각을 정렬한 뒤, 인접 각도 사이 최대 gap을 제외한 나머지를 coverage로 본다.
+    - 전체를 둘러싸는 폐곡선이면 coverage가 2π에 가깝다.
+    - 측면 홈/슬롯 같은 국소 루프는 coverage가 작다.
+    """
+    if not points:
+        return 0.0
+
+    angles: List[float] = []
+    for p in points:
+        if p is None:
+            continue
+        try:
+            angles.append(float(math.atan2(float(p.Y), float(p.X))))
+        except Exception:
+            continue
+
+    if len(angles) < 3:
+        return 0.0
+
+    angles.sort()
+    max_gap = 0.0
+    for i in range(1, len(angles)):
+        gap = float(angles[i] - angles[i - 1])
+        if gap > max_gap:
+            max_gap = gap
+
+    wrap_gap = float((angles[0] + 2.0 * math.pi) - angles[-1])
+    if wrap_gap > max_gap:
+        max_gap = wrap_gap
+
+    coverage = max(0.0, min(2.0 * math.pi, 2.0 * math.pi - max_gap))
+    return float(coverage)
 
 
 def _median(values: Sequence[float]) -> Optional[float]:
