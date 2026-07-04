@@ -91,16 +91,53 @@ def _detect_finish_line_latest(doc, visualize=False, mesh_id=None):
     except Exception as e:
         log("[finishline] module reload failed; using cached module: " + str(e))
 
+    keep_debug_objects = _is_env_true("ABUTS_FINISHLINE_KEEP_DEBUG_OBJECTS", True)
+    prev_show_sections = os.environ.get("FINISHLINE_SHOW_ALL_SECTIONS")
+    prev_keep_temp = os.environ.get("FINISHLINE_DEBUG_KEEP_TEMP_OBJECTS")
+    prev_trace = os.environ.get("FINISHLINE_TRACE_DEBUG")
+
     try:
+        if keep_debug_objects:
+            os.environ["FINISHLINE_SHOW_ALL_SECTIONS"] = "1"
+            os.environ["FINISHLINE_DEBUG_KEEP_TEMP_OBJECTS"] = "1"
+            os.environ["FINISHLINE_TRACE_DEBUG"] = "1"
+
         try:
             if hasattr(module, "set_external_logger"):
                 module.set_external_logger(log)
         except Exception:
             pass
-        return module.detect_finish_line(doc=doc, mesh_id=mesh_id, visualize=visualize)
+
+        return module.detect_finish_line(
+            doc=doc,
+            mesh_id=mesh_id,
+            visualize=bool(visualize or keep_debug_objects),
+        )
     except Exception as e:
         log("[finishline] detect_finish_line raised: " + str(e))
         raise
+    finally:
+        try:
+            if prev_show_sections is None:
+                os.environ.pop("FINISHLINE_SHOW_ALL_SECTIONS", None)
+            else:
+                os.environ["FINISHLINE_SHOW_ALL_SECTIONS"] = str(prev_show_sections)
+        except Exception:
+            pass
+        try:
+            if prev_keep_temp is None:
+                os.environ.pop("FINISHLINE_DEBUG_KEEP_TEMP_OBJECTS", None)
+            else:
+                os.environ["FINISHLINE_DEBUG_KEEP_TEMP_OBJECTS"] = str(prev_keep_temp)
+        except Exception:
+            pass
+        try:
+            if prev_trace is None:
+                os.environ.pop("FINISHLINE_TRACE_DEBUG", None)
+            else:
+                os.environ["FINISHLINE_TRACE_DEBUG"] = str(prev_trace)
+        except Exception:
+            pass
 
 
 def _run_fill_steps_latest(doc):

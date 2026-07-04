@@ -50,8 +50,8 @@ _DEBUG_ADD_POLYLINE_CURVE = os.environ.get("FINISHLINE_DEBUG_CURVE_DOC", "0") in
     "true",
     "TRUE",
 )
-# 섹션 곡선(40개 평면)을 문서에 모두 그리면 느려질 수 있어 기본 비활성
-_SHOW_ALL_SECTION_CURVES = os.environ.get("FINISHLINE_SHOW_ALL_SECTIONS", "0") in (
+# 섹션 곡선(40개 평면) 디버깅용 기본 활성
+_SHOW_ALL_SECTION_CURVES = os.environ.get("FINISHLINE_SHOW_ALL_SECTIONS", "1") in (
     "1",
     "true",
     "TRUE",
@@ -1599,90 +1599,139 @@ def _sample_plane_section_all_points(
 def _detect_finishline_points_max_radius_from_z_axis(
     mesh: rg.Mesh,
     planes: Sequence[rg.Plane],
+    ref_pt0: Optional[rg.Point3d] = None,
 ) -> Tuple[List[rg.Point3d], List[Dict[str, object]]]:
-    """Z축에서 가장 먼 점(=XY 반경 최대)을 각 단면에서 뽑아 연결한다.
+    """원점을 지나는 경사축 기반 단면에서 "최대 반경" 후보를 순차 추적한다.
 
-    중요: 단면 평면은 원점(Z축)을 지나므로 반대편 점(θ+180°)도 동시에 존재할 수 있다.
-    반쪽 루프를 방지하기 위해, 각 단면의 X축(+방위각) 방향(dot>=0) 후보를 우선해서 선택한다.
+    절차:
+    1) 각 섹션에서 max-radius 후보(동률/근접 포함)를 수집
+    2) 시작점(최초 max-radius 점) 선택
+    3) 다음 섹션으로 진행하며 max-radius 후보 중 직전 점과 가장 연속적인 점 선택
     """
+
+    def _radius(pt: rg.Point3d) -> float:
+        return float(math.sqrt(pt.X * pt.X + pt.Y * pt.Y))
+
+    def _max_radius_band(points: Sequence[rg.Point3d]) -> List[rg.Point3d]:
+        if not points:
+            return []
+        valid: List[Tuple[float, rg.Point3d]] = []
+        for p in points:
+            try:
+                valid.append((_radius(p), p))
+            except Exception:
+                continue
+        if not valid:
+            return []
+        max_r = max(r for r, _ in valid)
+        # 반대편 대칭점을 포함할 수 있게 max 근접 밴드를 유지
+        cutoff = float(max_r) * 0.985
+        band = [rg.Point3d(p) for r, p in valid if r >= cutoff]
+        if band:
+            return band
+        best = max(valid, key=lambda item: item[0])[1]
+        return [rg.Point3d(best)]
+
     traced: List[rg.Point3d] = []
     sections: List[Dict[str, object]] = []
+    section_band_candidates: List[List[rg.Point3d]] = []
 
     for idx, plane in enumerate(planes):
         pts, curves = _sample_plane_section_all_points(mesh, plane)
-
-        # max-radius 전략에서 controls/merge는 품질 이득이 작고 비용이 커서 생략
+        band = _max_radius_band(pts)
         sections.append(
             {
                 "index": idx,
                 "points": pts,
                 "curves": curves,
-                "controls": [],
+                "controls": band,
                 "plane": plane,
             }
         )
-
-        if not pts:
-            _trace_log("[max-r] plane_idx={} no candidates".format(idx))
-            continue
-
-        try:
-            xdir = plane.XAxis
-            ux = float(xdir.X)
-            uy = float(xdir.Y)
-        except Exception:
-            ux, uy = 1.0, 0.0
-
-        selected = None
-        selected_key = None
-        front_count = 0
-        back_count = 0
-
-        for p in pts:
-            try:
-                dot = float(p.X * ux + p.Y * uy)
-                r2 = float(p.X * p.X + p.Y * p.Y)
-                key = (r2, -float(p.Z))
-            except Exception:
-                continue
-
-            if dot >= 0.0:
-                front_count += 1
-                if selected is None or selected_key is None or key > selected_key:
-                    selected = p
-                    selected_key = key
-            else:
-                back_count += 1
-
-        if selected is None:
-            # front 후보가 전혀 없을 때만 전체 후보에서 선택
-            for p in pts:
-                try:
-                    r2 = float(p.X * p.X + p.Y * p.Y)
-                    key = (r2, -float(p.Z))
-                except Exception:
-                    continue
-                if selected is None or selected_key is None or key > selected_key:
-                    selected = p
-                    selected_key = key
-
-        if selected is None:
-            continue
-
-        traced.append(rg.Point3d(selected))
+        section_band_candidates.append(band)
         _trace_log(
-            "[max-r] plane_idx={} candidates={} front={} back={} selected r={:.6f} z={:.6f}".format(
+            "[max-r] collect plane_idx={} candidates={} max_band={}".format(
                 idx,
                 len(pts),
-                front_count,
-                back_count,
-                math.sqrt(selected.X * selected.X + selected.Y * selected.Y),
-                selected.Z,
+                len(band),
             )
         )
 
-    # 방위각 순으로 정렬 후 폐곡선화 (누락 단면이 있어도 연결 안정화)
-    traced = _order_by_azimuth(traced)
+    if not section_band_candidates:
+        return traced, sections
+
+    # 시작점: pt0가 있으면 pt0와 가장 가까운 max-radius 후보, 없으면 첫 유효 섹션 후보
+    start_idx = -1
+    start_pt = None
+    best_key = None
+    for idx, band in enumerate(section_band_candidates):
+        if not band:
+            continue
+        for p in band:
+            try:
+                if ref_pt0 is not None:
+                    key = (float(p.DistanceTo(ref_pt0)), -_radius(p))
+                else:
+                    key = (0.0, -_radius(p), idx)
+            except Exception:
+                continue
+            if best_key is None or key < best_key:
+                best_key = key
+                start_idx = idx
+                start_pt = rg.Point3d(p)
+
+    if start_idx < 0 or start_pt is None:
+        return traced, sections
+
+    _trace_log(
+        "[max-r] start plane_idx={} pt=({:.6f},{:.6f},{:.6f}) r={:.6f}".format(
+            start_idx,
+            start_pt.X,
+            start_pt.Y,
+            start_pt.Z,
+            _radius(start_pt),
+        )
+    )
+
+    last = rg.Point3d(start_pt)
+    traced.append(rg.Point3d(start_pt))
+
+    total = len(section_band_candidates)
+    for step in range(1, total):
+        idx = (start_idx + step) % total
+        band = section_band_candidates[idx]
+        if not band:
+            _trace_log(
+                "[max-r] step={} plane_idx={} skipped(no max-band)".format(step, idx)
+            )
+            continue
+
+        # 다음 섹션에서는 max-radius 후보 중 직전 점과 가장 가까운 점을 선택
+        try:
+            best = min(
+                band,
+                key=lambda p: (
+                    float(p.DistanceTo(last)),
+                    abs(float(p.Z) - float(last.Z)),
+                    -_radius(p),
+                ),
+            )
+        except Exception:
+            best = band[0]
+
+        new_pt = rg.Point3d(best)
+        traced.append(new_pt)
+        _trace_log(
+            "[max-r] step={} plane_idx={} selected r={:.6f} z={:.6f} move={:.6f}".format(
+                step,
+                idx,
+                _radius(new_pt),
+                new_pt.Z,
+                float(new_pt.DistanceTo(last)),
+            )
+        )
+        last = new_pt
+
     if len(traced) > 2:
         traced.append(rg.Point3d(traced[0]))
 
@@ -2176,7 +2225,7 @@ def detect_finish_line(
             axis_dir=section_axis,
         )
         _trace_log(
-            "[detect] starting section tracking planes={} step_deg={} axis=({:.6f},{:.6f},{:.6f})".format(
+            "[detect] starting section tracking planes={} step_deg={} axis=({:.6f},{:.6f},{:.6f}) mode=max_radius_sequential".format(
                 len(planes),
                 _SECTION_STEP_DEG,
                 float(section_axis.X),
@@ -2185,7 +2234,11 @@ def detect_finish_line(
             )
         )
         try:
-            traced_points, sections = _detect_finishline_points(mesh_copy, planes)
+            traced_points, sections = _detect_finishline_points_max_radius_from_z_axis(
+                mesh_copy,
+                planes,
+                ref_pt0=pt0,
+            )
         except Exception as e:
             # 내부 에러도 포함해서 진단 로그에 남김
             _trace_log("[detect] section tracking raised exception: {}".format(str(e)))
@@ -2266,7 +2319,7 @@ def detect_finish_line(
                             )
                         )
             if ok_shape:
-                strategy_used = "SECTION_TRACKING_{}x{}_FALLBACK".format(
+                strategy_used = "SECTION_MAX_RADIUS_TRACK_{}x{}_FALLBACK".format(
                     _SECTION_COUNT, int(_SECTION_STEP_DEG)
                 )
 
