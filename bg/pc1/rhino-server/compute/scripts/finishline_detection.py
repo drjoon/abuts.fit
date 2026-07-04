@@ -25,6 +25,11 @@ _SECTION_COUNT = 40  # increased sampling (was 20)
 _SECTION_STEP_DEG = 9.0  # 360/40 = 9 degrees
 _NEAREST_LIMIT = 10
 _MAX_STEP_DISTANCE = 1.5  # allow slightly larger step to tolerate gaps
+
+# 섹션 평면 기준축(경사축) 추정 파라미터
+_TILT_AXIS_BAND_LOW = 0.15
+_TILT_AXIS_BAND_HIGH = 0.95
+_TILT_AXIS_MIN_VERTS = 120
 _PT0_Z_RATIO_LOW = 0.2
 _PT0_Z_RATIO_HIGH = 0.6
 _Z_RATIO_LOW = 0.2
@@ -1301,17 +1306,164 @@ def _select_pt0(mesh: rg.Mesh) -> rg.Point3d:
 # ---------------------------------------------------------------------------
 # Section sampling
 # ---------------------------------------------------------------------------
+def _estimate_tilt_axis(mesh: rg.Mesh) -> rg.Vector3d:
+    """메시 분포에서 원점을 지나는 경사축(주축)을 추정한다."""
+    try:
+        bbox = mesh.GetBoundingBox(True)
+    except Exception:
+        bbox = None
+
+    if bbox is None or not bbox.IsValid:
+        return rg.Vector3d(0, 0, 1)
+
+    z_min = float(bbox.Min.Z)
+    z_max = float(bbox.Max.Z)
+    height = max(1e-6, z_max - z_min)
+    low = z_min + _TILT_AXIS_BAND_LOW * height
+    high = z_min + _TILT_AXIS_BAND_HIGH * height
+
+    s_xx = s_xy = s_xz = 0.0
+    s_yy = s_yz = s_zz = 0.0
+    n = 0
+
+    try:
+        vcount = int(mesh.Vertices.Count)
+    except Exception:
+        vcount = 0
+
+    for i in range(vcount):
+        try:
+            v = mesh.Vertices[i]
+            z = float(v.Z)
+            if z < low or z > high:
+                continue
+            x = float(v.X)
+            y = float(v.Y)
+            t = (z - z_min) / height
+            w = max(1e-6, t * t)  # 상부 영역 가중
+            s_xx += w * x * x
+            s_xy += w * x * y
+            s_xz += w * x * z
+            s_yy += w * y * y
+            s_yz += w * y * z
+            s_zz += w * z * z
+            n += 1
+        except Exception:
+            continue
+
+    if n < _TILT_AXIS_MIN_VERTS:
+        _trace_log(
+            "[axis] fallback=Z reason=too_few_verts n={} (<{})".format(
+                n,
+                _TILT_AXIS_MIN_VERTS,
+            )
+        )
+        return rg.Vector3d(0, 0, 1)
+
+    # power iteration (3x3 symmetric) for principal eigenvector
+    vx, vy, vz = 0.0, 0.0, 1.0
+    for _ in range(14):
+        nx = s_xx * vx + s_xy * vy + s_xz * vz
+        ny = s_xy * vx + s_yy * vy + s_yz * vz
+        nz = s_xz * vx + s_yz * vy + s_zz * vz
+        norm = math.sqrt(nx * nx + ny * ny + nz * nz)
+        if norm <= _DIST_TOL:
+            break
+        vx, vy, vz = nx / norm, ny / norm, nz / norm
+
+    axis = rg.Vector3d(vx, vy, vz)
+    if not axis.IsValid or axis.IsZero:
+        return rg.Vector3d(0, 0, 1)
+
+    try:
+        axis.Unitize()
+    except Exception:
+        return rg.Vector3d(0, 0, 1)
+
+    # 상향 방향 통일
+    if float(axis.Z) < 0.0:
+        axis = rg.Vector3d(-axis.X, -axis.Y, -axis.Z)
+
+    # 수평에 너무 가까우면 비정상으로 보고 Z축 fallback
+    if abs(float(axis.Z)) < 0.2:
+        _trace_log(
+            "[axis] fallback=Z reason=low_z_component axis=({:.6f},{:.6f},{:.6f})".format(
+                axis.X,
+                axis.Y,
+                axis.Z,
+            )
+        )
+        return rg.Vector3d(0, 0, 1)
+
+    try:
+        dot = max(-1.0, min(1.0, float(axis.Z)))
+        tilt_deg = math.degrees(math.acos(dot))
+    except Exception:
+        tilt_deg = float("nan")
+    _trace_log(
+        "[axis] estimated tilt_axis=({:.6f},{:.6f},{:.6f}) tilt_deg={:.3f} samples={}".format(
+            axis.X,
+            axis.Y,
+            axis.Z,
+            tilt_deg,
+            n,
+        )
+    )
+
+    return axis
+
+
 def _build_section_planes(
-    count: int = _SECTION_COUNT, step_deg: float = _SECTION_STEP_DEG
+    count: int = _SECTION_COUNT,
+    step_deg: float = _SECTION_STEP_DEG,
+    axis_dir: Optional[rg.Vector3d] = None,
 ) -> List[rg.Plane]:
     planes: List[rg.Plane] = []
-    z_axis = rg.Vector3d(0, 0, 1)
+
+    axis = rg.Vector3d(axis_dir) if axis_dir is not None else rg.Vector3d(0, 0, 1)
+    if not axis.IsValid or axis.IsZero:
+        axis = rg.Vector3d(0, 0, 1)
+    try:
+        axis.Unitize()
+    except Exception:
+        axis = rg.Vector3d(0, 0, 1)
+
+    helper = rg.Vector3d(0, 0, 1)
+    try:
+        if abs(float(axis * helper)) > 0.95:
+            helper = rg.Vector3d(1, 0, 0)
+    except Exception:
+        helper = rg.Vector3d(1, 0, 0)
+
+    u_dir = rg.Vector3d.CrossProduct(axis, helper)
+    if not u_dir.IsValid or u_dir.IsZero:
+        helper = rg.Vector3d(0, 1, 0)
+        u_dir = rg.Vector3d.CrossProduct(axis, helper)
+    if not u_dir.IsValid or u_dir.IsZero:
+        u_dir = rg.Vector3d(1, 0, 0)
+    try:
+        u_dir.Unitize()
+    except Exception:
+        pass
+
+    v_dir = rg.Vector3d.CrossProduct(axis, u_dir)
+    if not v_dir.IsValid or v_dir.IsZero:
+        v_dir = rg.Vector3d(0, 1, 0)
+    try:
+        v_dir.Unitize()
+    except Exception:
+        pass
+
     for idx in range(count):
         angle = math.radians(step_deg * idx)
-        x_dir = rg.Vector3d(math.cos(angle), math.sin(angle), 0)
-        if not x_dir.IsValid or x_dir.IsZero:
-            x_dir = rg.Vector3d(1, 0, 0)
-        planes.append(rg.Plane(rg.Point3d.Origin, x_dir, z_axis))
+        radial = rg.Vector3d(
+            u_dir.X * math.cos(angle) + v_dir.X * math.sin(angle),
+            u_dir.Y * math.cos(angle) + v_dir.Y * math.sin(angle),
+            u_dir.Z * math.cos(angle) + v_dir.Z * math.sin(angle),
+        )
+        if not radial.IsValid or radial.IsZero:
+            continue
+        planes.append(rg.Plane(rg.Point3d.Origin, radial, axis))
     return planes
 
 
@@ -2017,10 +2169,19 @@ def detect_finish_line(
 
     # 2) 단면 추적(fallback)
     if not traced_points or len(traced_points) < 3:
-        planes = _build_section_planes(count=_SECTION_COUNT, step_deg=_SECTION_STEP_DEG)
+        section_axis = _estimate_tilt_axis(mesh_copy)
+        planes = _build_section_planes(
+            count=_SECTION_COUNT,
+            step_deg=_SECTION_STEP_DEG,
+            axis_dir=section_axis,
+        )
         _trace_log(
-            "[detect] starting section tracking planes={} step_deg={}".format(
-                len(planes), _SECTION_STEP_DEG
+            "[detect] starting section tracking planes={} step_deg={} axis=({:.6f},{:.6f},{:.6f})".format(
+                len(planes),
+                _SECTION_STEP_DEG,
+                float(section_axis.X),
+                float(section_axis.Y),
+                float(section_axis.Z),
             )
         )
         try:
