@@ -91,16 +91,22 @@ def _detect_finish_line_latest(doc, visualize=False, mesh_id=None):
     except Exception as e:
         log("[finishline] module reload failed; using cached module: " + str(e))
 
-    keep_debug_objects = _is_env_true("ABUTS_FINISHLINE_KEEP_DEBUG_OBJECTS", True)
+    keep_debug_objects = _is_env_true(
+        "ABUTS_FINISHLINE_KEEP_DEBUG_OBJECTS", _DEBUG_KEEP_INTERMEDIATE_OBJECTS
+    )
+    enable_trace = _DEBUG_ENABLE_FINISHLINE_TRACE
     prev_show_sections = os.environ.get("FINISHLINE_SHOW_ALL_SECTIONS")
     prev_keep_temp = os.environ.get("FINISHLINE_DEBUG_KEEP_TEMP_OBJECTS")
     prev_trace = os.environ.get("FINISHLINE_TRACE_DEBUG")
+    prev_curve_doc = os.environ.get("FINISHLINE_DEBUG_CURVE_DOC")
 
     try:
-        if keep_debug_objects:
-            os.environ["FINISHLINE_SHOW_ALL_SECTIONS"] = "1"
-            os.environ["FINISHLINE_DEBUG_KEEP_TEMP_OBJECTS"] = "1"
-            os.environ["FINISHLINE_TRACE_DEBUG"] = "1"
+        os.environ["FINISHLINE_SHOW_ALL_SECTIONS"] = "1" if keep_debug_objects else "0"
+        os.environ["FINISHLINE_DEBUG_KEEP_TEMP_OBJECTS"] = (
+            "1" if keep_debug_objects else "0"
+        )
+        os.environ["FINISHLINE_DEBUG_CURVE_DOC"] = "1" if keep_debug_objects else "0"
+        os.environ["FINISHLINE_TRACE_DEBUG"] = "1" if enable_trace else "0"
 
         try:
             if hasattr(module, "set_external_logger"):
@@ -136,6 +142,13 @@ def _detect_finish_line_latest(doc, visualize=False, mesh_id=None):
                 os.environ.pop("FINISHLINE_TRACE_DEBUG", None)
             else:
                 os.environ["FINISHLINE_TRACE_DEBUG"] = str(prev_trace)
+        except Exception:
+            pass
+        try:
+            if prev_curve_doc is None:
+                os.environ.pop("FINISHLINE_DEBUG_CURVE_DOC", None)
+            else:
+                os.environ["FINISHLINE_DEBUG_CURVE_DOC"] = str(prev_curve_doc)
         except Exception:
             pass
 
@@ -342,22 +355,29 @@ _FILL_TARGET_LIMIT = max(
     1, _safe_int(os.environ.get("ABUTS_FILL_TARGET_LIMIT", "3"), 3)
 )
 
-# 디버그 모드: 중간 오브젝트 보존/finishline 상세로그 활성화
-_DEBUG_KEEP_INTERMEDIATE_OBJECTS = _is_env_true(
-    "ABUTS_DEBUG_KEEP_INTERMEDIATE_OBJECTS",
+# 단일 DEBUG 플래그(권장): DEBUG=1/0
+# - 기존 ABUTS_DEBUG* 환경변수는 하위호환으로만 유지
+_GLOBAL_DEBUG = _is_env_true(
+    "DEBUG",
     default=(
         _is_env_true("ABUTS_DEBUG_MODE", False) or _is_env_true("ABUTS_DEBUG", False)
     ),
 )
+
+# 디버그 모드: 중간 오브젝트 보존/finishline 상세로그 활성화
+_DEBUG_KEEP_INTERMEDIATE_OBJECTS = _is_env_true(
+    "ABUTS_DEBUG_KEEP_INTERMEDIATE_OBJECTS",
+    default=_GLOBAL_DEBUG,
+)
 _DEBUG_ENABLE_FINISHLINE_TRACE = _is_env_true(
     "ABUTS_DEBUG_FINISHLINE_TRACE",
-    default=_DEBUG_KEEP_INTERMEDIATE_OBJECTS,
+    default=_GLOBAL_DEBUG,
 )
 # finishline 실패 시 강제 재시도는 비용이 크므로 기본 OFF,
 # 디버그 모드거나 명시 env에서만 수행
 _FINISHLINE_RETRY_ON_FAIL = _is_env_true(
     "ABUTS_FINISHLINE_RETRY_ON_FAIL",
-    default=(_DEBUG_KEEP_INTERMEDIATE_OBJECTS or _DEBUG_ENABLE_FINISHLINE_TRACE),
+    default=_GLOBAL_DEBUG,
 )
 
 # 스크류홀 추정 루프 필터: 이 길이(mm)보다 짧은 loop은 노이즈로 제외
@@ -1400,8 +1420,15 @@ def _export_doc_to_stl(doc, output_path, mesh_ids_to_export=None):
             )
         )
     except Exception:
+        # selection 단계 예외 시에도 "mesh만" 선택하도록 재시도 (SelAll 금지)
         try:
-            Rhino.RhinoApp.RunScript("!_-SelAll _Enter", True)
+            doc.Objects.UnselectAll()
+            for obj in list(doc.Objects):
+                if obj and obj.ObjectType == Rhino.DocObjects.ObjectType.Mesh:
+                    try:
+                        obj.Select(True)
+                    except Exception:
+                        pass
         except Exception:
             pass
 
@@ -1414,7 +1441,8 @@ def _export_doc_to_stl(doc, output_path, mesh_ids_to_export=None):
         if hasattr(write_opts, "ExportFileAsBinary"):
             write_opts.ExportFileAsBinary = True
         if hasattr(write_opts, "ExportSelectedObjectsOnly"):
-            write_opts.ExportSelectedObjectsOnly = False
+            # 선택된 최종 메시만 export (디버그 커브/브렙/점 객체 제외)
+            write_opts.ExportSelectedObjectsOnly = True
     except Exception:
         pass
 
@@ -1432,7 +1460,29 @@ def _export_doc_to_stl(doc, output_path, mesh_ids_to_export=None):
                 active_doc = Rhino.RhinoDoc.ActiveDoc
                 if active_doc:
                     active_doc.Objects.UnselectAll()
-                    Rhino.RhinoApp.RunScript("!_SelAll", True)
+                    if mesh_ids_to_export:
+                        for oid in mesh_ids_to_export:
+                            try:
+                                obj = active_doc.Objects.FindId(oid)
+                                if (
+                                    obj
+                                    and obj.ObjectType
+                                    == Rhino.DocObjects.ObjectType.Mesh
+                                ):
+                                    obj.Select(True)
+                            except Exception:
+                                pass
+                    else:
+                        for obj in list(active_doc.Objects):
+                            try:
+                                if (
+                                    obj
+                                    and obj.ObjectType
+                                    == Rhino.DocObjects.ObjectType.Mesh
+                                ):
+                                    obj.Select(True)
+                            except Exception:
+                                pass
 
                 cmd = '-_Export "{}" _Enter _Enter'.format(str(output_path))
                 log("RunScript=" + cmd)
@@ -1523,20 +1573,30 @@ def main(input_path_arg=None, output_path_arg=None, log_path_arg=None):
         log("output=" + output_path)
         log("[align] target connection diameter={:.4f}mm".format(target_diameter))
         log(
-            "[debug] keep_intermediate_objects={} finishline_trace={}".format(
+            "[debug] DEBUG(global)={} keep_intermediate_objects={} finishline_trace={}".format(
+                bool(_GLOBAL_DEBUG),
                 bool(_DEBUG_KEEP_INTERMEDIATE_OBJECTS),
                 bool(_DEBUG_ENABLE_FINISHLINE_TRACE),
             )
         )
-        if not _DEBUG_KEEP_INTERMEDIATE_OBJECTS and not _DEBUG_ENABLE_FINISHLINE_TRACE:
+        if not _GLOBAL_DEBUG:
             log(
-                "[debug] env hint: set ABUTS_DEBUG_KEEP_INTERMEDIATE_OBJECTS=1 and ABUTS_DEBUG_FINISHLINE_TRACE=1 in launcher/service"
+                "[debug] hint: set DEBUG=1 for full pipeline debug (finishline/process)"
             )
 
-        if _DEBUG_ENABLE_FINISHLINE_TRACE:
-            os.environ["FINISHLINE_TRACE_DEBUG"] = "1"
-        if _DEBUG_KEEP_INTERMEDIATE_OBJECTS:
-            os.environ["FINISHLINE_DEBUG_KEEP_TEMP_OBJECTS"] = "1"
+        # 실행 중 일관성 유지: FINISHLINE 개별 env를 명시적으로 동기화
+        os.environ["FINISHLINE_TRACE_DEBUG"] = (
+            "1" if _DEBUG_ENABLE_FINISHLINE_TRACE else "0"
+        )
+        os.environ["FINISHLINE_DEBUG_KEEP_TEMP_OBJECTS"] = (
+            "1" if _DEBUG_KEEP_INTERMEDIATE_OBJECTS else "0"
+        )
+        os.environ["FINISHLINE_DEBUG_CURVE_DOC"] = (
+            "1" if _DEBUG_KEEP_INTERMEDIATE_OBJECTS else "0"
+        )
+        os.environ["FINISHLINE_SHOW_ALL_SECTIONS"] = (
+            "1" if _DEBUG_KEEP_INTERMEDIATE_OBJECTS else "0"
+        )
 
         # 기존 문서 정리 (ActiveDoc를 사용할 수 있으므로 안전하게 비우기)
         stage_started_at = time.perf_counter()
@@ -1639,7 +1699,8 @@ def main(input_path_arg=None, output_path_arg=None, log_path_arg=None):
         # 이미 정렬 좌표계에서 검출했으므로 그대로 사용
         pts_aligned = _sanitize_finishline_points(pts or [])
         pt0_aligned = pt0
-        _add_finishline_curve(doc, pts_aligned)
+        if _DEBUG_KEEP_INTERMEDIATE_OBJECTS:
+            _add_finishline_curve(doc, pts_aligned)
 
         # 3) 백엔드 등록
         stage_started_at = time.perf_counter()
@@ -1664,6 +1725,7 @@ def main(input_path_arg=None, output_path_arg=None, log_path_arg=None):
                     ]
                     if pt0_aligned
                     else None,
+                    "strategyUsed": strategy_used,
                 }
 
                 log(
@@ -1891,16 +1953,16 @@ def main(input_path_arg=None, output_path_arg=None, log_path_arg=None):
 
         # 최종 모델(단차 메움 반영본) export
         stage_started_at = time.perf_counter()
+        # export는 항상 최종 메시 1개만 대상으로 수행
         export_mesh_ids = None
-        if _DEBUG_KEEP_INTERMEDIATE_OBJECTS:
-            preferred_mesh_id = _pick_largest_mesh_id(doc)
-            if preferred_mesh_id:
-                export_mesh_ids = [preferred_mesh_id]
-            log(
-                "[debug] export mesh filter enabled ids={}".format(
-                    export_mesh_ids if export_mesh_ids else []
-                )
+        preferred_mesh_id = _pick_largest_mesh_id(doc)
+        if preferred_mesh_id:
+            export_mesh_ids = [preferred_mesh_id]
+        log(
+            "[export] mesh filter ids={}".format(
+                export_mesh_ids if export_mesh_ids else []
             )
+        )
         try:
             ok = _export_doc_to_stl(
                 doc,

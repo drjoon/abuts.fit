@@ -35,31 +35,35 @@ _PT0_Z_RATIO_HIGH = 0.6
 _Z_RATIO_LOW = 0.2
 _Z_RATIO_HIGH = 0.7
 
-# max-radius sequential 추적용 Z band (포스트 상단/하단 노이즈 배제)
-_MAXR_Z_RATIO_LOW = 0.22
-_MAXR_Z_RATIO_HIGH = 0.58
+# max-radius sequential 추적용 축 투영 band (경사체에서 world-Z 반쪽 누락 방지)
+_MAXR_AXIS_RATIO_LOW = 0.18
+_MAXR_AXIS_RATIO_HIGH = 0.72
 _TARGET_TRACE_POINT_COUNT = 120
 _SHOW_POINT_TEXTDOTS = False
 _DIST_TOL = 1e-8
-_DEBUG_TRACE = os.environ.get("FINISHLINE_TRACE_DEBUG", "0") in ("1", "true", "TRUE")
-_DEBUG_KEEP_TEMP_OBJECTS = os.environ.get(
-    "FINISHLINE_DEBUG_KEEP_TEMP_OBJECTS", "0"
-) in (
-    "1",
-    "true",
-    "TRUE",
+
+
+def _env_true(name: str, default: bool = False) -> bool:
+    raw = os.environ.get(str(name), "")
+    if raw is None:
+        return bool(default)
+    s = str(raw).strip().lower()
+    if s == "":
+        return bool(default)
+    return s in ("1", "true", "yes", "y", "on")
+
+
+# 단일 DEBUG 플래그 우선(개별 플래그는 override 용도로만 유지)
+# - DEBUG=1 이면 trace/임시객체/디버그커브/전체섹션 표시 활성
+# - DEBUG=0 (또는 미설정) 이면 모두 비활성
+_GLOBAL_DEBUG = _env_true("DEBUG", False)
+_DEBUG_TRACE = _env_true("FINISHLINE_TRACE_DEBUG", _GLOBAL_DEBUG)
+_DEBUG_KEEP_TEMP_OBJECTS = _env_true(
+    "FINISHLINE_DEBUG_KEEP_TEMP_OBJECTS", _GLOBAL_DEBUG
 )
-_DEBUG_ADD_POLYLINE_CURVE = os.environ.get("FINISHLINE_DEBUG_CURVE_DOC", "0") in (
-    "1",
-    "true",
-    "TRUE",
-)
-# 섹션 곡선(40개 평면) 디버깅용 기본 활성
-_SHOW_ALL_SECTION_CURVES = os.environ.get("FINISHLINE_SHOW_ALL_SECTIONS", "1") in (
-    "1",
-    "true",
-    "TRUE",
-)
+_DEBUG_ADD_POLYLINE_CURVE = _env_true("FINISHLINE_DEBUG_CURVE_DOC", _GLOBAL_DEBUG)
+# 섹션 곡선(40개 평면)은 디버그시에만 기본 표시
+_SHOW_ALL_SECTION_CURVES = _env_true("FINISHLINE_SHOW_ALL_SECTIONS", _GLOBAL_DEBUG)
 # ExtractMeshEdges 결과가 너무 낮은 Z로 잡히는 경우(포스트/치은 미분리 샘플) 차단 임계값
 _EDGE_MIN_Z_VALID_THRESHOLD_MM = 0.5
 # edge 루프가 pt0 대비 지나치게 안쪽(내부 홀)일 때 차단하는 반경 비율 임계값
@@ -1278,32 +1282,102 @@ def _extract_lowest_cross_section(mesh: rg.Mesh) -> Optional[List[rg.Point3d]]:
 
 
 def _select_pt0(mesh: rg.Mesh) -> rg.Point3d:
-    bbox = mesh.GetBoundingBox(True)
-    z_min = bbox.Min.Z
-    z_max = bbox.Max.Z
-    height = max(1e-6, z_max - z_min)
-    low = z_min + _PT0_Z_RATIO_LOW * height
-    high = z_min + _PT0_Z_RATIO_HIGH * height
+    """pt0를 경사축 기준으로 선택한다.
+
+    기존(world-Z + XY 반경) 방식은 경사 샘플에서 포스트 중간으로 끌리는 경우가 있어,
+    - 축 방향 투영값(axial) band 내에서
+    - 축까지의 거리(radius-to-axis)가 최대인 점
+    을 선택한다.
+    """
+
+    axis = _estimate_tilt_axis(mesh)
+    if not axis.IsValid or axis.IsZero:
+        axis = rg.Vector3d(0, 0, 1)
+    try:
+        axis.Unitize()
+    except Exception:
+        axis = rg.Vector3d(0, 0, 1)
+    if float(axis.Z) < 0.0:
+        axis = rg.Vector3d(-axis.X, -axis.Y, -axis.Z)
+
+    def _axial(pt: rg.Point3d) -> float:
+        return float(pt.X * axis.X + pt.Y * axis.Y + pt.Z * axis.Z)
+
+    def _radius_to_axis(pt: rg.Point3d) -> float:
+        try:
+            pv = rg.Vector3d(float(pt.X), float(pt.Y), float(pt.Z))
+            cp = rg.Vector3d.CrossProduct(pv, axis)
+            return float(cp.Length)
+        except Exception:
+            return 0.0
+
+    try:
+        vcount = int(mesh.Vertices.Count)
+    except Exception:
+        vcount = 0
+    if vcount <= 0:
+        raise RuntimeError("pt0 후보를 찾을 수 없습니다 (Mesh에 버텍스가 없습니다)")
+
+    a_min = float("inf")
+    a_max = -float("inf")
+    for i in range(vcount):
+        try:
+            v = mesh.Vertices[i]
+            a = _axial(v)
+            if a < a_min:
+                a_min = a
+            if a > a_max:
+                a_max = a
+        except Exception:
+            continue
+
+    if not math.isfinite(a_min) or not math.isfinite(a_max):
+        raise RuntimeError("pt0 후보 축 범위를 계산할 수 없습니다")
+
+    a_span = max(1e-6, a_max - a_min)
+    low = a_min + _PT0_Z_RATIO_LOW * a_span
+    high = a_min + _PT0_Z_RATIO_HIGH * a_span
 
     best_pt: Optional[rg.Point3d] = None
     best_r = -1.0
 
-    for v in mesh.Vertices:
-        if low <= v.Z <= high:
-            r = math.sqrt(v.X * v.X + v.Y * v.Y)
+    for i in range(vcount):
+        try:
+            v = mesh.Vertices[i]
+            a = _axial(v)
+            if a < low or a > high:
+                continue
+            r = _radius_to_axis(v)
             if r > best_r:
                 best_r = r
                 best_pt = rg.Point3d(v)
+        except Exception:
+            continue
 
     if best_pt is None:
-        for v in mesh.Vertices:
-            r = math.sqrt(v.X * v.X + v.Y * v.Y)
-            if r > best_r:
-                best_r = r
-                best_pt = rg.Point3d(v)
+        for i in range(vcount):
+            try:
+                v = mesh.Vertices[i]
+                r = _radius_to_axis(v)
+                if r > best_r:
+                    best_r = r
+                    best_pt = rg.Point3d(v)
+            except Exception:
+                continue
 
     if best_pt is None:
         raise RuntimeError("pt0 후보를 찾을 수 없습니다 (Mesh에 버텍스가 없습니다)")
+
+    _trace_log(
+        "[pt0] axis_based selected x={:.6f} y={:.6f} z={:.6f} r_axis={:.6f} axial_band=({:.6f},{:.6f})".format(
+            float(best_pt.X),
+            float(best_pt.Y),
+            float(best_pt.Z),
+            float(best_r),
+            float(low),
+            float(high),
+        )
+    )
     return best_pt
 
 
@@ -1311,7 +1385,12 @@ def _select_pt0(mesh: rg.Mesh) -> rg.Point3d:
 # Section sampling
 # ---------------------------------------------------------------------------
 def _estimate_tilt_axis(mesh: rg.Mesh) -> rg.Vector3d:
-    """메시 분포에서 원점을 지나는 경사축(주축)을 추정한다."""
+    """메시 분포에서 경사축(주축)을 추정한다.
+
+    중요: 축 추정은 원점 기준 모멘트가 아니라 "평균 중심 공분산"(PCA) 기반으로 계산한다.
+    원점 기준 모멘트는 모델 위치 오프셋에 의해 world-Z로 끌리는 문제가 있어,
+    경사 샘플에서 축이 잘못 Z축으로 고정될 수 있다.
+    """
     try:
         bbox = mesh.GetBoundingBox(True)
     except Exception:
@@ -1326,75 +1405,143 @@ def _estimate_tilt_axis(mesh: rg.Mesh) -> rg.Vector3d:
     low = z_min + _TILT_AXIS_BAND_LOW * height
     high = z_min + _TILT_AXIS_BAND_HIGH * height
 
-    s_xx = s_xy = s_xz = 0.0
-    s_yy = s_yz = s_zz = 0.0
-    n = 0
-
     try:
         vcount = int(mesh.Vertices.Count)
     except Exception:
         vcount = 0
 
-    for i in range(vcount):
-        try:
-            v = mesh.Vertices[i]
-            z = float(v.Z)
-            if z < low or z > high:
+    if vcount <= 0:
+        return rg.Vector3d(0, 0, 1)
+
+    def _accumulate(use_band: bool):
+        sw = 0.0
+        sx = sy = sz = 0.0
+        s_xx = s_xy = s_xz = 0.0
+        s_yy = s_yz = s_zz = 0.0
+        n_local = 0
+
+        for i in range(vcount):
+            try:
+                v = mesh.Vertices[i]
+                x = float(v.X)
+                y = float(v.Y)
+                z = float(v.Z)
+
+                if use_band and (z < low or z > high):
+                    continue
+
+                t = max(0.0, min(1.0, (z - z_min) / height))
+                # 상부를 다소 강조하되, 저부 샘플도 완전히 버리지 않음
+                w = 0.2 + 0.8 * (t * t)
+
+                sw += w
+                sx += w * x
+                sy += w * y
+                sz += w * z
+
+                s_xx += w * x * x
+                s_xy += w * x * y
+                s_xz += w * x * z
+                s_yy += w * y * y
+                s_yz += w * y * z
+                s_zz += w * z * z
+                n_local += 1
+            except Exception:
                 continue
-            x = float(v.X)
-            y = float(v.Y)
-            t = (z - z_min) / height
-            w = max(1e-6, t * t)  # 상부 영역 가중
-            s_xx += w * x * x
-            s_xy += w * x * y
-            s_xz += w * x * z
-            s_yy += w * y * y
-            s_yz += w * y * z
-            s_zz += w * z * z
-            n += 1
+
+        return (n_local, sw, sx, sy, sz, s_xx, s_xy, s_xz, s_yy, s_yz, s_zz)
+
+    def _axis_from_moments(stats):
+        (
+            _n,
+            sw,
+            sx,
+            sy,
+            sz,
+            s_xx,
+            s_xy,
+            s_xz,
+            s_yy,
+            s_yz,
+            s_zz,
+        ) = stats
+
+        if sw <= _DIST_TOL:
+            return None
+
+        mx = sx / sw
+        my = sy / sw
+        mz = sz / sw
+
+        # 평균 중심 공분산
+        c_xx = max(0.0, s_xx / sw - mx * mx)
+        c_xy = s_xy / sw - mx * my
+        c_xz = s_xz / sw - mx * mz
+        c_yy = max(0.0, s_yy / sw - my * my)
+        c_yz = s_yz / sw - my * mz
+        c_zz = max(0.0, s_zz / sw - mz * mz)
+
+        # power iteration (3x3 symmetric) for principal eigenvector
+        vx, vy, vz = 0.0, 0.0, 1.0
+        for _ in range(16):
+            nx = c_xx * vx + c_xy * vy + c_xz * vz
+            ny = c_xy * vx + c_yy * vy + c_yz * vz
+            nz = c_xz * vx + c_yz * vy + c_zz * vz
+            norm = math.sqrt(nx * nx + ny * ny + nz * nz)
+            if norm <= _DIST_TOL:
+                break
+            vx, vy, vz = nx / norm, ny / norm, nz / norm
+
+        axis_local = rg.Vector3d(vx, vy, vz)
+        if not axis_local.IsValid or axis_local.IsZero:
+            return None
+        try:
+            axis_local.Unitize()
         except Exception:
-            continue
+            return None
+        if float(axis_local.Z) < 0.0:
+            axis_local = rg.Vector3d(-axis_local.X, -axis_local.Y, -axis_local.Z)
+        return axis_local
 
-    if n < _TILT_AXIS_MIN_VERTS:
-        _trace_log(
-            "[axis] fallback=Z reason=too_few_verts n={} (<{})".format(
-                n,
-                _TILT_AXIS_MIN_VERTS,
+    # 1차: 중상부 band 기반 추정
+    band_stats = _accumulate(use_band=True)
+    n_band = int(band_stats[0])
+
+    axis = None
+    source = "band"
+    if n_band >= _TILT_AXIS_MIN_VERTS:
+        axis = _axis_from_moments(band_stats)
+
+    # 2차: band 샘플 부족 또는 band 추정 실패 시 전체 버텍스로 재시도
+    if axis is None:
+        full_stats = _accumulate(use_band=False)
+        n_full = int(full_stats[0])
+        source = "full"
+        if n_band < _TILT_AXIS_MIN_VERTS:
+            _trace_log(
+                "[axis] band_samples_low n_band={} (<{}), retry_full_vertices n_full={}".format(
+                    n_band,
+                    _TILT_AXIS_MIN_VERTS,
+                    n_full,
+                )
             )
-        )
+        axis = _axis_from_moments(full_stats)
+        n_used = n_full
+    else:
+        n_used = n_band
+
+    if axis is None:
+        _trace_log("[axis] fallback=Z reason=axis_estimation_failed")
         return rg.Vector3d(0, 0, 1)
-
-    # power iteration (3x3 symmetric) for principal eigenvector
-    vx, vy, vz = 0.0, 0.0, 1.0
-    for _ in range(14):
-        nx = s_xx * vx + s_xy * vy + s_xz * vz
-        ny = s_xy * vx + s_yy * vy + s_yz * vz
-        nz = s_xz * vx + s_yz * vy + s_zz * vz
-        norm = math.sqrt(nx * nx + ny * ny + nz * nz)
-        if norm <= _DIST_TOL:
-            break
-        vx, vy, vz = nx / norm, ny / norm, nz / norm
-
-    axis = rg.Vector3d(vx, vy, vz)
-    if not axis.IsValid or axis.IsZero:
-        return rg.Vector3d(0, 0, 1)
-
-    try:
-        axis.Unitize()
-    except Exception:
-        return rg.Vector3d(0, 0, 1)
-
-    # 상향 방향 통일
-    if float(axis.Z) < 0.0:
-        axis = rg.Vector3d(-axis.X, -axis.Y, -axis.Z)
 
     # 수평에 너무 가까우면 비정상으로 보고 Z축 fallback
     if abs(float(axis.Z)) < 0.2:
         _trace_log(
-            "[axis] fallback=Z reason=low_z_component axis=({:.6f},{:.6f},{:.6f})".format(
+            "[axis] fallback=Z reason=low_z_component axis=({:.6f},{:.6f},{:.6f}) source={}".format(
                 axis.X,
                 axis.Y,
                 axis.Z,
+                source,
             )
         )
         return rg.Vector3d(0, 0, 1)
@@ -1404,13 +1551,15 @@ def _estimate_tilt_axis(mesh: rg.Mesh) -> rg.Vector3d:
         tilt_deg = math.degrees(math.acos(dot))
     except Exception:
         tilt_deg = float("nan")
+
     _trace_log(
-        "[axis] estimated tilt_axis=({:.6f},{:.6f},{:.6f}) tilt_deg={:.3f} samples={}".format(
+        "[axis] estimated tilt_axis=({:.6f},{:.6f},{:.6f}) tilt_deg={:.3f} samples={} source={}".format(
             axis.X,
             axis.Y,
             axis.Z,
             tilt_deg,
-            n,
+            n_used,
+            source,
         )
     )
 
@@ -1610,7 +1759,7 @@ def _detect_finishline_points_max_radius_from_z_axis(
 
     주의:
     - 반경은 Z축(XY) 기준이 아니라 경사축(axis)까지의 거리로 계산
-    - 시작점이 포스트 중앙/상단으로 치우치지 않도록 Z-band를 제한
+    - 경사체 반쪽 누락을 막기 위해 world-Z band 대신 축 투영(axial) band를 사용
     """
 
     axis = rg.Vector3d(axis_dir)
@@ -1623,16 +1772,34 @@ def _detect_finishline_points_max_radius_from_z_axis(
     if float(axis.Z) < 0.0:
         axis = rg.Vector3d(-axis.X, -axis.Y, -axis.Z)
 
+    def _axial(pt: rg.Point3d) -> float:
+        return float(pt.X * axis.X + pt.Y * axis.Y + pt.Z * axis.Z)
+
     try:
-        bbox = mesh.GetBoundingBox(True)
-        z_min = float(bbox.Min.Z)
-        z_max = float(bbox.Max.Z)
-        h = max(1e-6, z_max - z_min)
-        z_low = z_min + _MAXR_Z_RATIO_LOW * h
-        z_high = z_min + _MAXR_Z_RATIO_HIGH * h
+        vcount = int(mesh.Vertices.Count)
     except Exception:
-        z_low = -1e9
-        z_high = 1e9
+        vcount = 0
+
+    a_min = float("inf")
+    a_max = -float("inf")
+    for i in range(vcount):
+        try:
+            v = mesh.Vertices[i]
+            a = _axial(v)
+            if a < a_min:
+                a_min = a
+            if a > a_max:
+                a_max = a
+        except Exception:
+            continue
+
+    if not math.isfinite(a_min) or not math.isfinite(a_max):
+        a_low = -1e9
+        a_high = 1e9
+    else:
+        a_span = max(1e-6, a_max - a_min)
+        a_low = a_min + _MAXR_AXIS_RATIO_LOW * a_span
+        a_high = a_min + _MAXR_AXIS_RATIO_HIGH * a_span
 
     def _radius(pt: rg.Point3d) -> float:
         # 원점을 지나는 경사축(axis)까지의 거리: |p x axis|
@@ -1665,11 +1832,15 @@ def _detect_finishline_points_max_radius_from_z_axis(
     traced: List[rg.Point3d] = []
     sections: List[Dict[str, object]] = []
     section_band_candidates: List[List[rg.Point3d]] = []
-    section_reps: List[Tuple[int, rg.Point3d, float]] = []
+    section_reps: List[Tuple[int, rg.Point3d, float, float]] = []
 
     for idx, plane in enumerate(planes):
         pts_all, curves = _sample_plane_section_all_points(mesh, plane)
-        pts = [p for p in pts_all if (p is not None and z_low <= float(p.Z) <= z_high)]
+        pts = [
+            p
+            for p in pts_all
+            if (p is not None and a_low <= float(_axial(p)) <= a_high)
+        ]
         band = _max_radius_band(pts)
 
         sections.append(
@@ -1687,18 +1858,19 @@ def _detect_finishline_points_max_radius_from_z_axis(
             try:
                 rep = max(band, key=lambda p: _radius(p))
                 rep_r = _radius(rep)
-                section_reps.append((idx, rg.Point3d(rep), float(rep_r)))
+                rep_a = _axial(rep)
+                section_reps.append((idx, rg.Point3d(rep), float(rep_r), float(rep_a)))
             except Exception:
                 pass
 
         _trace_log(
-            "[max-r] collect plane_idx={} candidates={} filtered={} max_band={} z_band=({:.3f},{:.3f})".format(
+            "[max-r] collect plane_idx={} candidates={} filtered={} max_band={} axial_band=({:.3f},{:.3f})".format(
                 idx,
                 len(pts_all),
                 len(pts),
                 len(band),
-                z_low,
-                z_high,
+                a_low,
+                a_high,
             )
         )
 
@@ -1709,31 +1881,46 @@ def _detect_finishline_points_max_radius_from_z_axis(
     if z_hint is None:
         z_hint = float(section_reps[0][1].Z)
 
-    # 시작점: 전 섹션 대표점 중 "경사축 거리" 절대 최대점
+    a_hint = _median([float(rep[3]) for rep in section_reps])
+    if a_hint is None:
+        a_hint = float(section_reps[0][3])
+
+    # 시작점: 전역 최대 반경 단일점이 아닌,
+    # "상위 반경 군" 안에서 axial 중앙값에 가까운 안정점 선택(점프 완화)
+    reps_sorted = sorted(section_reps, key=lambda item: float(item[2]), reverse=True)
+    top_n = max(1, int(round(len(reps_sorted) * 0.25)))
+    top_reps = reps_sorted[:top_n]
+
     start_idx = -1
     start_pt = None
     start_r = -1.0
-    for idx, p, r in section_reps:
+    best_key = None
+    for idx, p, r, a in top_reps:
         try:
-            rr = float(r)
+            key = (
+                -abs(float(a) - float(a_hint)),
+                float(r),
+            )
         except Exception:
-            continue
-        if rr > start_r:
-            start_r = rr
+            key = (-1e9, float(r))
+        if best_key is None or key > best_key:
+            best_key = key
             start_idx = int(idx)
             start_pt = rg.Point3d(p)
+            start_r = float(r)
 
     if start_idx < 0 or start_pt is None:
         return traced, sections
 
     _trace_log(
-        "[max-r] start plane_idx={} pt=({:.6f},{:.6f},{:.6f}) r={:.6f} z_hint={:.6f}".format(
+        "[max-r] start plane_idx={} pt=({:.6f},{:.6f},{:.6f}) r={:.6f} z_hint={:.6f} a_hint={:.6f}".format(
             start_idx,
             start_pt.X,
             start_pt.Y,
             start_pt.Z,
             _radius(start_pt),
             float(z_hint),
+            float(a_hint),
         )
     )
 
@@ -1761,6 +1948,7 @@ def _detect_finishline_points_max_radius_from_z_axis(
                     float(p.DistanceTo(last)),
                     abs(float(p.Z) - float(last.Z)),
                     abs(float(p.Z) - float(z_hint)),
+                    abs(float(_axial(p)) - float(a_hint)),
                     -_radius(p),
                 ),
             )
@@ -2153,6 +2341,7 @@ def _visualize_tracking_debug_objects(
     section_axis: Optional[rg.Vector3d],
     sections: Sequence[Dict[str, object]],
     traced_points: Sequence[rg.Point3d],
+    mesh_for_axis: Optional[rg.Mesh] = None,
 ) -> Dict[str, List[str]]:
     ids: Dict[str, List[str]] = {
         "axis": [],
@@ -2162,7 +2351,7 @@ def _visualize_tracking_debug_objects(
         "max_band": [],
     }
 
-    # 1) 경사축 +방향만 표시 (파랑, 굵은 pipe)
+    # 1) 경사축 표시: "포스트 탑 ~ 마진(피니시라인)" 구간만 제한해서 그림
     try:
         axis = (
             rg.Vector3d(section_axis)
@@ -2175,14 +2364,69 @@ def _visualize_tracking_debug_objects(
         if float(axis.Z) < 0.0:
             axis = rg.Vector3d(-axis.X, -axis.Y, -axis.Z)
 
-        axis_len = 18.0
-        p0 = rg.Point3d.Origin
-        p1 = rg.Point3d(axis.X * axis_len, axis.Y * axis_len, axis.Z * axis_len)
+        def _axial(pt: rg.Point3d) -> float:
+            return float(pt.X * axis.X + pt.Y * axis.Y + pt.Z * axis.Z)
+
+        margin_axial = None
+        if traced_points:
+            vals = []
+            for p in traced_points:
+                if p is None:
+                    continue
+                try:
+                    vals.append(_axial(rg.Point3d(p)))
+                except Exception:
+                    continue
+            if vals:
+                vals.sort()
+                margin_axial = float(vals[len(vals) // 2])
+
+        top_axial = None
+        if mesh_for_axis is not None:
+            try:
+                vcount = int(mesh_for_axis.Vertices.Count)
+            except Exception:
+                vcount = 0
+            for i in range(vcount):
+                try:
+                    v = mesh_for_axis.Vertices[i]
+                    a = _axial(v)
+                    if top_axial is None or a > top_axial:
+                        top_axial = a
+                except Exception:
+                    continue
+
+        # 기본 fallback: 과도하게 긴 선을 피하기 위해 짧은 길이 사용
+        if margin_axial is None:
+            margin_axial = 0.0
+        if top_axial is None:
+            top_axial = margin_axial + 8.0
+
+        # 포스트 탑 + 소량 margin까지만 (너무 길게 뻗는 문제 방지)
+        top_axial = float(top_axial) + 0.8
+        if top_axial < margin_axial:
+            top_axial, margin_axial = margin_axial, top_axial
+
+        # 표시 길이 hard clamp
+        seg_len = max(0.5, float(top_axial - margin_axial))
+        if seg_len > 14.0:
+            top_axial = margin_axial + 14.0
+
+        p0 = rg.Point3d(
+            axis.X * margin_axial,
+            axis.Y * margin_axial,
+            axis.Z * margin_axial,
+        )
+        p1 = rg.Point3d(
+            axis.X * top_axial,
+            axis.Y * top_axial,
+            axis.Z * top_axial,
+        )
         axis_curve = rg.LineCurve(p0, p1)
 
         pipe = rg.Brep.CreatePipe(
             axis_curve,
-            System.Array[System.Double]([0.06]),
+            System.Array[System.Double]([0.10]),
             System.Array[System.Double]([axis_curve.Domain.T0]),
             False,
             rg.PipeCapMode.Round,
@@ -2193,18 +2437,18 @@ def _visualize_tracking_debug_objects(
         if pipe:
             for brep in pipe:
                 aid = _add_colored_object(
-                    doc, brep, drawing.Color.FromArgb(40, 120, 255)
+                    doc, brep, drawing.Color.FromArgb(20, 230, 90)
                 )
                 ids["axis"].append(str(aid))
         else:
             a1 = _add_colored_object(
-                doc, axis_curve, drawing.Color.FromArgb(40, 120, 255)
+                doc, axis_curve, drawing.Color.FromArgb(20, 230, 90)
             )
             ids["axis"].append(str(a1))
 
-        tip = rg.Sphere(p1, 0.12)
+        tip = rg.Sphere(p1, 0.16)
         tid = _add_colored_object(
-            doc, tip.ToBrep(), drawing.Color.FromArgb(40, 120, 255)
+            doc, tip.ToBrep(), drawing.Color.FromArgb(20, 230, 90)
         )
         ids["axis"].append(str(tid))
     except Exception:
@@ -2490,6 +2734,7 @@ def detect_finish_line(
             section_axis=section_axis,
             sections=sections,
             traced_points=traced_points or [],
+            mesh_for_axis=mesh_copy,
         )
         for key, values in debug_viz.items():
             if values:
