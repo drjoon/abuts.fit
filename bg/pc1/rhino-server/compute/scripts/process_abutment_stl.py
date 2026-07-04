@@ -960,21 +960,25 @@ def _sanitize_finishline_points(points):
     if len(pts) < 3:
         return pts
 
-    # seam 점프가 크면 해당 edge를 seam으로 재배치(rotate)하여 open polyline으로 전달
-    seg_lens = []
-    n = len(pts)
-    for i in range(n):
-        a = pts[i]
-        b = pts[(i + 1) % n]
-        try:
-            seg_lens.append(float(a.DistanceTo(b)))
-        except Exception:
-            seg_lens.append(0.0)
+    def _segment_stats(local_pts):
+        segs = []
+        count = len(local_pts)
+        for i in range(count):
+            a = local_pts[i]
+            b = local_pts[(i + 1) % count]
+            try:
+                segs.append(float(a.DistanceTo(b)))
+            except Exception:
+                segs.append(0.0)
+        ordered_vals = sorted(segs)
+        med_v = ordered_vals[len(ordered_vals) // 2] if ordered_vals else 0.0
+        max_v = max(segs) if segs else 0.0
+        max_i = segs.index(max_v) if segs else -1
+        return segs, med_v, max_v, max_i
 
-    ordered = sorted(seg_lens)
-    med = ordered[len(ordered) // 2] if ordered else 0.0
-    max_len = max(seg_lens) if seg_lens else 0.0
-    max_idx = seg_lens.index(max_len) if seg_lens else -1
+    # seam 점프가 크면 해당 edge를 seam으로 재배치(rotate)하여 open polyline으로 전달
+    n = len(pts)
+    seg_lens, med, max_len, max_idx = _segment_stats(pts)
 
     if (
         max_idx >= 0
@@ -999,6 +1003,39 @@ def _sanitize_finishline_points(points):
                 n,
             )
         )
+
+    # seam 회전 이후에도 내부 긴 연결선이 남으면 azimuth 재정렬 fallback 적용
+    seg2, med2, max2, max2_idx = _segment_stats(pts)
+    if (
+        max2_idx >= 0
+        and max2 >= 2.0
+        and max2 >= (med2 * 2.8 if med2 > 1e-9 else 2.0)
+        and len(pts) >= 4
+    ):
+        try:
+            import math
+
+            az_ordered = sorted(pts, key=lambda p: math.atan2(float(p.Y), float(p.X)))
+            if az_ordered and len(az_ordered) == len(pts):
+                pts = [Rhino.Geometry.Point3d(p.X, p.Y, p.Z) for p in az_ordered]
+                seg3, med3, max3, max3_idx = _segment_stats(pts)
+                if (
+                    max3_idx >= 0
+                    and max3 >= 2.0
+                    and max3 >= (med3 * 2.8 if med3 > 1e-9 else 2.0)
+                ):
+                    start3 = (max3_idx + 1) % len(pts)
+                    pts = pts[start3:] + pts[:start3]
+                log(
+                    "[finishline-clean] azimuth-reorder fallback applied pre_max={:.4f}/med={:.4f} post_max={:.4f}/med={:.4f}".format(
+                        max2,
+                        med2,
+                        max3 if "max3" in locals() else -1.0,
+                        med3 if "med3" in locals() else -1.0,
+                    )
+                )
+        except Exception as e:
+            log("[finishline-clean] azimuth-reorder fallback failed: {}".format(str(e)))
 
     return pts
 
