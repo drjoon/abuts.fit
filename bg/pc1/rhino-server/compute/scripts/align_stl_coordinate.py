@@ -671,13 +671,11 @@ def _best_delta_to_align_face_normal_with_zy_plane_normal(face_normal_angle_deg)
     return d1 if abs(d1) <= abs(d2) else d2
 
 
-def _estimate_hex_rotation_delta_deg_from_face_normals(mesh):
+def _compute_hex_phase_from_face_normal_observations(observations):
     """
-    one-shot 방식:
-    헥스 side-face 법선 관측치로 60도 주기 위상을 한 번 측정하고,
-    계산된 delta를 한 번만 적용하도록 Z회전량을 산출.
+    관측된 side-face 법선 각도들로 60도 주기 위상을 계산.
+    반환: {phase_deg, coherence, sum_w}
     """
-    observations = _collect_hex_face_normal_observations(mesh)
     if not observations:
         return None
 
@@ -694,15 +692,38 @@ def _estimate_hex_rotation_delta_deg_from_face_normals(mesh):
     if sum_w <= 1e-12 or (abs(sx) <= 1e-9 and abs(cx6) <= 1e-9):
         return None
 
-    # 60도 주기 위상 (헥스 면 법선 패턴의 기준 각도)
     phase_deg = math.degrees(math.atan2(sx, cx6)) / 6.0
+    coherence = math.hypot(sx, cx6) / max(sum_w, 1e-12)
+
+    return {
+        "phase_deg": phase_deg,
+        "coherence": coherence,
+        "sum_w": sum_w,
+    }
+
+
+def _estimate_hex_rotation_delta_deg_from_face_normals(mesh):
+    """
+    one-shot 방식:
+    헥스 side-face 법선 관측치로 60도 주기 위상을 한 번 측정하고,
+    계산된 delta를 한 번만 적용하도록 Z회전량을 산출.
+    """
+    observations = _collect_hex_face_normal_observations(mesh)
+    if not observations:
+        return None
+
+    solved = _compute_hex_phase_from_face_normal_observations(observations)
+    if solved is None:
+        return None
+
+    phase_deg = solved["phase_deg"]
+    coherence = solved["coherence"]
 
     # 목표: 한 면 법선이 ±X(= ZY 평면 법선)으로 정렬되게 회전
     # phase를 60도 주기 기준으로 0에 맞추면 된다.
     phase_mod = _wrap_angle_deg(phase_deg, 60.0)
     delta_deg = -phase_mod
 
-    coherence = math.hypot(sx, cx6) / max(sum_w, 1e-12)
     if coherence < 0.20:
         return None
 
@@ -798,6 +819,37 @@ def _estimate_hex_rotation_delta_deg(mesh):
     return _estimate_hex_rotation_delta_deg_from_sections(mesh)
 
 
+def _measure_hex_residual_to_x_deg(mesh):
+    """
+    회전 적용 후 잔차 측정.
+    목표는 face-normal 위상 phase_mod=0 (mod 60), 즉 면 법선이 ±X.
+    반환: {residual_deg, method, samples, coherence}
+    """
+    observations = _collect_hex_face_normal_observations(mesh)
+    if observations:
+        solved = _compute_hex_phase_from_face_normal_observations(observations)
+        if solved is not None:
+            phase_mod = _wrap_angle_deg(solved["phase_deg"], 60.0)
+            return {
+                "residual_deg": abs(phase_mod),
+                "method": "face_normals_postcheck",
+                "samples": len(observations),
+                "coherence": solved["coherence"],
+            }
+
+    # 폴백: section 위상 기반 residual
+    sec = _estimate_hex_rotation_delta_deg_from_sections(mesh)
+    if sec is not None:
+        return {
+            "residual_deg": abs(_wrap_angle_deg(sec.get("phase_deg", 0.0), 60.0)),
+            "method": "section_phase_postcheck",
+            "samples": sec.get("samples", 0),
+            "coherence": None,
+        }
+
+    return None
+
+
 def _align_hex_angle_for_right_view(mesh):
     info = _estimate_hex_rotation_delta_deg(mesh)
     if info is None:
@@ -827,16 +879,37 @@ def _align_hex_angle_for_right_view(mesh):
         )
 
     # 0.01도 요구사항 대비, 매우 작은 수치만 no-op 처리
-    if abs(delta_deg) < 1e-4:
-        return (True, "Hex already aligned")
+    if abs(delta_deg) >= 1e-4:
+        rot = rg.Transform.Rotation(
+            math.radians(delta_deg),
+            rg.Vector3d(0, 0, 1),
+            rg.Point3d(0, 0, 0),
+        )
+        if not mesh.Transform(rot):
+            return (False, "Failed to rotate mesh for hex angle alignment")
 
-    rot = rg.Transform.Rotation(
-        math.radians(delta_deg),
-        rg.Vector3d(0, 0, 1),
-        rg.Point3d(0, 0, 0),
-    )
-    if not mesh.Transform(rot):
-        return (False, "Failed to rotate mesh for hex angle alignment")
+    # 적용 후 잔차 측정 로그
+    residual = _measure_hex_residual_to_x_deg(mesh)
+    if residual is not None:
+        if residual.get("coherence") is None:
+            _log(
+                "Hex residual: residual_to_X_deg={:.6f} method={} samples={} target<=0.010000".format(
+                    residual.get("residual_deg", 999.0),
+                    residual.get("method", "unknown"),
+                    residual.get("samples", 0),
+                )
+            )
+        else:
+            _log(
+                "Hex residual: residual_to_X_deg={:.6f} method={} samples={} coherence={:.4f} target<=0.010000".format(
+                    residual.get("residual_deg", 999.0),
+                    residual.get("method", "unknown"),
+                    residual.get("samples", 0),
+                    residual.get("coherence", 0.0),
+                )
+            )
+    else:
+        _log("Hex residual: unavailable (could not re-measure)")
 
     return (True, "Hex angle aligned")
 
