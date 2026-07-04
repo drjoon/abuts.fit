@@ -934,6 +934,75 @@ def _transform_finishline_point(pt, alignment_transform):
     return pt
 
 
+def _sanitize_finishline_points(points):
+    if not points:
+        return []
+
+    pts = []
+    for p in points:
+        if p is None:
+            continue
+        try:
+            pts.append(Rhino.Geometry.Point3d(float(p.X), float(p.Y), float(p.Z)))
+        except Exception:
+            continue
+
+    if len(pts) < 3:
+        return pts
+
+    # 끝점 중복 제거(closed ring duplicate)
+    try:
+        if pts[0].DistanceTo(pts[-1]) <= 1e-4:
+            pts = pts[:-1]
+    except Exception:
+        pass
+
+    if len(pts) < 3:
+        return pts
+
+    # seam 점프가 크면 해당 edge를 seam으로 재배치(rotate)하여 open polyline으로 전달
+    seg_lens = []
+    n = len(pts)
+    for i in range(n):
+        a = pts[i]
+        b = pts[(i + 1) % n]
+        try:
+            seg_lens.append(float(a.DistanceTo(b)))
+        except Exception:
+            seg_lens.append(0.0)
+
+    ordered = sorted(seg_lens)
+    med = ordered[len(ordered) // 2] if ordered else 0.0
+    max_len = max(seg_lens) if seg_lens else 0.0
+    max_idx = seg_lens.index(max_len) if seg_lens else -1
+
+    if (
+        max_idx >= 0
+        and max_len >= 2.0
+        and max_len >= (med * 2.8 if med > 1e-9 else 2.0)
+    ):
+        start = (max_idx + 1) % n
+        pts = pts[start:] + pts[:start]
+        log(
+            "[finishline-clean] rotated seam at edge={} max_len={:.4f} med_len={:.4f} n={}".format(
+                max_idx,
+                max_len,
+                med,
+                n,
+            )
+        )
+    else:
+        log(
+            "[finishline-clean] keep order max_len={:.4f} med_len={:.4f} n={}".format(
+                max_len,
+                med,
+                n,
+            )
+        )
+
+    return pts
+
+
 def _add_finishline_curve(doc, points):
     if doc is None or not points:
         return None
@@ -949,12 +1018,6 @@ def _add_finishline_curve(doc, points):
 
     if len(pts) < 2:
         return None
-
-    try:
-        if pts[0].DistanceTo(pts[-1]) > 1e-6:
-            pts.append(Rhino.Geometry.Point3d(pts[0]))
-    except Exception:
-        pass
 
     try:
         poly = Rhino.Geometry.Polyline(pts)
@@ -1537,7 +1600,7 @@ def main(input_path_arg=None, output_path_arg=None, log_path_arg=None):
         )
 
         # 이미 정렬 좌표계에서 검출했으므로 그대로 사용
-        pts_aligned = pts or []
+        pts_aligned = _sanitize_finishline_points(pts or [])
         pt0_aligned = pt0
         _add_finishline_curve(doc, pts_aligned)
 
@@ -1550,7 +1613,7 @@ def main(input_path_arg=None, output_path_arg=None, log_path_arg=None):
 
                 finish_line_payload = {
                     "version": 1,
-                    "sectionCount": int(fl.get("plane_count") or 0),
+                    "sectionCount": int(len(pts_aligned) or 0),
                     "maxStepDistance": float(
                         os.environ.get("ABUTS_FINISHLINE_MAX_STEP", "1") or 1
                     ),
