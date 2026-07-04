@@ -858,9 +858,9 @@ namespace DentalAddin
             }
             double? firstPassPercentOverride = TryGetCompositeFirstPassPercentOverride();
             // 요청 반영:
-            // - FINISH_A(Finish_Front) 시작점 = Splitline_1 + 0.2mm
+            // - FINISH_A(Finish_Front) 시작점 = Splitline_1 + 0.5mm
             // - 단, Splitline_2 - 1.0mm를 침범하지 않도록 상한 클램프
-            const double finishFrontStartOffsetFromSplitline1Mm = 0.2;
+            const double finishFrontStartOffsetFromSplitline1Mm = 0.5;
             const double finishFrontStartMaxBySplitline2GapMm = 1.0;
 
             double splitline1X = MoveSTL_Module.FrontPointX;
@@ -897,7 +897,7 @@ namespace DentalAddin
                 baseAFirstPercent = overridePercent;
             }
 
-            DentalLogger.Log($"Composite2SplitLine2 - FINISH_FRONT 시작점 정책 적용: splitlineResolved={splitlineResolved}, splitline1X={splitline1X:F3}, splitline2X={splitline2X:F3}, requestedStartX(splitline1+0.2)={requestedAStartX:F3}, maxStartX(splitline2-1.0)={finishFrontStartMaxX:F3}, appliedStartX={appliedAStartX:F3}, guardApplied={finishFrontStartGuardApplied}, maxFirst%={maxAFirstPercentBySplitline2:F2}, overrideGuardApplied={overrideGuardApplied}");
+            DentalLogger.Log($"Composite2SplitLine2 - FINISH_FRONT 시작점 정책 적용: splitlineResolved={splitlineResolved}, splitline1X={splitline1X:F3}, splitline2X={splitline2X:F3}, requestedStartX(splitline1+0.5)={requestedAStartX:F3}, maxStartX(splitline2-1.0)={finishFrontStartMaxX:F3}, appliedStartX={appliedAStartX:F3}, guardApplied={finishFrontStartGuardApplied}, maxFirst%={maxAFirstPercentBySplitline2:F2}, overrideGuardApplied={overrideGuardApplied}");
 
             const double aEndOffsetFromSplitMm = 0.0; // 요청: FINISH_A 끝점 = 기준점(splitPercent)
             // 요청 반영: FINISH_B 시작점 오프셋 제거(정치수)
@@ -936,7 +936,7 @@ namespace DentalAddin
             }
 
             // FINISH_A 시작점 정책:
-            // - 기본값: Splitline_1 + 0.2mm (단, Splitline_2 - 1.0mm 상한)
+            // - 기본값: Splitline_1 + 0.5mm (단, Splitline_2 - 1.0mm 상한)
             // - env(ABUTS_COMPOSITE_FIRST_PASS_PERCENT_A) 지정 시 env(퍼센트) 우선
             double requestedAFirstPass = baseAFirstPercent;
             opA.FirstPassPercent = Clamp(requestedAFirstPass, 0.0, opA.LastPassPercent);
@@ -1590,7 +1590,7 @@ namespace DentalAddin
 
         /// <summary>
         /// Front Face(ParallelPlanes) 가공 끝점을 FrontPointX 기준으로 고정 적용한다.
-        /// - 목표: Face.RightX = FrontPointX + 0.5mm
+        /// - 목표: Face.RightX = FrontPointX + 1.0mm
         /// - 추가 상한: Face.RightX <= Splitline_2 - 1.0mm
         /// - RL=1: BottomZLimit = -Face.RightX
         /// - RL=2: BottomZLimit = +Face.RightX
@@ -1618,11 +1618,11 @@ namespace DentalAddin
 
                 LastAppliedFrontFaceDepthMm = configuredDepthMm;
 
-                // 사용자 요청(2026-07-04): Front_Face 끝점을 Splitline_1(=FrontPointX) + 0.5mm로 적용한다.
+                // 사용자 요청(2026-07-04): Front_Face 끝점을 Splitline_1(=FrontPointX) + 1.0mm로 적용한다.
                 // 단, Splitline_2 - 1.0mm를 침범하지 않도록 상한 클램프를 적용한다.
                 // 주의:
                 // - 아래 FinishLine 경계 클램프/FaceRoughGuard가 후속으로 더 보수적으로 조정할 수 있다.
-                const double frontFaceEndOffsetFromFrontMm = 0.5;
+                const double frontFaceEndOffsetFromFrontMm = 1.0;
                 double requestedFaceRightX = MoveSTL_Module.FrontPointX + frontFaceEndOffsetFromFrontMm;
                 double appliedFaceRightX = requestedFaceRightX;
 
