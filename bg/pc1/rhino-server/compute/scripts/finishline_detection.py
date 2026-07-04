@@ -58,7 +58,8 @@ _EDGE_MIN_RADIUS_TO_PT0_RATIO = 0.45
 # edge 루프가 메시 외곽 반경 대비 너무 작으면(내부 스크류홀/내부 경계) 차단
 _EDGE_MIN_RADIUS_TO_MESH_BAND_RATIO = 0.55
 # edge 루프가 pt0 대비 과도하게 상단에 있으면 오검출로 간주
-_EDGE_MAX_Z_ABOVE_PT0_MM = 2.5
+# (기존 2.5mm는 경사 심한 케이스에서 정상 finishline을 과도하게 배제해 완화)
+_EDGE_MAX_Z_ABOVE_PT0_MM = 8.0
 # edge 루프가 pt0 대비 과도하게 하단에 있으면 내부 루프/홀 경계 오검출로 간주
 _EDGE_MAX_Z_BELOW_PT0_MM = 2.5
 # edge 루프의 Z 변화폭이 지나치게 작으면(거의 수평 링) 내부 경계 오검출로 간주
@@ -176,202 +177,245 @@ def _detect_finishline_points_edge(
         ref_pt0 = None
         ref_pt0_radius = None
 
-    rejected_low_z = 0
-    rejected_high_z = 0
-    rejected_low_vs_pt0 = 0
-    rejected_small_radius = 0
-    rejected_below_band = 0
-    rejected_flat_z = 0
+    def _reason_from_counters(counters: Dict[str, int]) -> str:
+        if counters.get("rejected_low_z", 0) > 0:
+            return "C_EDGE_REJECTED_LOW_Z"
+        if counters.get("rejected_flat_z", 0) > 0:
+            return "C_EDGE_REJECTED_FLAT_Z"
+        if counters.get("rejected_high_z", 0) > 0:
+            return "C_EDGE_REJECTED_HIGH_Z"
+        if counters.get("rejected_low_vs_pt0", 0) > 0:
+            return "C_EDGE_REJECTED_LOW_VS_PT0"
+        if counters.get("rejected_small_radius", 0) > 0:
+            return "C_EDGE_REJECTED_SMALL_RADIUS"
+        if counters.get("rejected_below_band", 0) > 0:
+            return "C_EDGE_REJECTED_BELOW_BAND"
+        return "C_EDGE_FAILED"
 
-    best_score = None
-    best_points: Optional[List[rg.Point3d]] = None
-    best_strategy: Optional[str] = None
+    def _run_edge_pass(
+        pass_name: str,
+        z_ref_pt0,
+        z_ref_pt0_radius,
+    ):
+        counters = {
+            "rejected_low_z": 0,
+            "rejected_high_z": 0,
+            "rejected_low_vs_pt0": 0,
+            "rejected_small_radius": 0,
+            "rejected_below_band": 0,
+            "rejected_flat_z": 0,
+        }
 
-    for idx, target_mesh in enumerate(candidates):
-        _trace_log(
-            "[detect-edge] candidate[{}] vertices={} faces={} key={}".format(
-                idx,
-                target_mesh.Vertices.Count,
-                target_mesh.Faces.Count,
-                _mesh_z_key(target_mesh),
-            )
-        )
+        best_score = None
+        best_points = None
+        best_strategy = None
 
-        edge_curves = _extract_mesh_edges_with_command(doc, target_mesh)
-        strategy_used = "C_EXTRACT_MESH_EDGES_UNWELDED"
-        if not edge_curves:
-            edge_curves = _extract_naked_edges_fallback(target_mesh)
-            strategy_used = "C_FALLBACK_NAKED_EDGES"
-
-        _trace_log(
-            "[detect-edge] candidate[{}] edge_curves_count={}".format(
-                idx, len(edge_curves) if edge_curves else 0
-            )
-        )
-        mesh_band_max_r = _mesh_max_radius_in_z_band(target_mesh)
-        traced_points = _pick_best_edge_loop_points(
-            edge_curves,
-            doc.ModelAbsoluteTolerance,
-            ref_pt0,
-            ref_pt0_radius,
-            mesh_band_max_radius=mesh_band_max_r,
-        )
-        if traced_points and len(traced_points) >= 3:
-            edge_min_z = _points_min_z(traced_points)
-            edge_max_z = _points_max_z(traced_points)
-            edge_z_span = (
-                float(edge_max_z - edge_min_z)
-                if edge_min_z is not None and edge_max_z is not None
-                else None
-            )
+        for idx, target_mesh in enumerate(candidates):
             _trace_log(
-                "[detect-edge] candidate[{}] traced_pts={} min_z={} max_z={} z_span={}".format(
+                "[detect-edge:{}] candidate[{}] vertices={} faces={} key={}".format(
+                    pass_name,
                     idx,
-                    len(traced_points),
-                    edge_min_z if edge_min_z is not None else float("nan"),
-                    edge_max_z if edge_max_z is not None else float("nan"),
-                    edge_z_span if edge_z_span is not None else float("nan"),
+                    target_mesh.Vertices.Count,
+                    target_mesh.Faces.Count,
+                    _mesh_z_key(target_mesh),
                 )
             )
-            # 요구 사항: edge 결과 min-Z가 0.5mm 이하면 비정상으로 간주
-            # -> 해당 후보는 버리고 다음 edge 후보를 계속 탐색한다.
-            if edge_min_z is not None and edge_min_z <= _EDGE_MIN_Z_VALID_THRESHOLD_MM:
-                rejected_low_z += 1
+
+            edge_curves = _extract_mesh_edges_with_command(doc, target_mesh)
+            strategy_used = "C_EXTRACT_MESH_EDGES_UNWELDED"
+            if not edge_curves:
+                edge_curves = _extract_naked_edges_fallback(target_mesh)
+                strategy_used = "C_FALLBACK_NAKED_EDGES"
+
+            _trace_log(
+                "[detect-edge:{}] candidate[{}] edge_curves_count={}".format(
+                    pass_name,
+                    idx,
+                    len(edge_curves) if edge_curves else 0,
+                )
+            )
+            mesh_band_max_r = _mesh_max_radius_in_z_band(target_mesh)
+            traced_points = _pick_best_edge_loop_points(
+                edge_curves,
+                doc.ModelAbsoluteTolerance,
+                z_ref_pt0,
+                z_ref_pt0_radius,
+                mesh_band_max_radius=mesh_band_max_r,
+            )
+            if traced_points and len(traced_points) >= 3:
+                edge_min_z = _points_min_z(traced_points)
+                edge_max_z = _points_max_z(traced_points)
+                edge_z_span = (
+                    float(edge_max_z - edge_min_z)
+                    if edge_min_z is not None and edge_max_z is not None
+                    else None
+                )
                 _trace_log(
-                    "[detect-edge] candidate[{}] rejected min_z={:.6f} <= {:.3f}".format(
+                    "[detect-edge:{}] candidate[{}] traced_pts={} min_z={} max_z={} z_span={}".format(
+                        pass_name,
                         idx,
-                        edge_min_z,
-                        _EDGE_MIN_Z_VALID_THRESHOLD_MM,
+                        len(traced_points),
+                        edge_min_z if edge_min_z is not None else float("nan"),
+                        edge_max_z if edge_max_z is not None else float("nan"),
+                        edge_z_span if edge_z_span is not None else float("nan"),
                     )
                 )
-                continue
-
-            # 거의 수평인 edge 링은 finishline이 아닌 내부 경계일 가능성이 높아 제외
-            if edge_z_span is not None and edge_z_span <= _EDGE_MIN_Z_SPAN_MM:
-                rejected_flat_z += 1
-                _trace_log(
-                    "[detect-edge] candidate[{}] rejected flat_z z_span={:.6f} <= {:.3f}".format(
-                        idx,
-                        edge_z_span,
-                        _EDGE_MIN_Z_SPAN_MM,
+                if (
+                    edge_min_z is not None
+                    and edge_min_z <= _EDGE_MIN_Z_VALID_THRESHOLD_MM
+                ):
+                    counters["rejected_low_z"] += 1
+                    _trace_log(
+                        "[detect-edge:{}] candidate[{}] rejected min_z={:.6f} <= {:.3f}".format(
+                            pass_name,
+                            idx,
+                            edge_min_z,
+                            _EDGE_MIN_Z_VALID_THRESHOLD_MM,
+                        )
                     )
-                )
-                continue
+                    continue
 
-            # 단면 추적과 동일한 높이 대역(20~70%)의 하한보다 지나치게 낮은 edge 루프는
-            # 커넥션 내부 루프/홀 경계일 가능성이 높아 제외한다.
-            if edge_min_z is not None:
-                try:
-                    cbbox = target_mesh.GetBoundingBox(True)
-                    if cbbox.IsValid:
-                        cheight = max(1e-6, float(cbbox.Max.Z - cbbox.Min.Z))
-                        band_low = float(cbbox.Min.Z + _Z_RATIO_LOW * cheight)
-                        if edge_min_z < band_low:
-                            rejected_below_band += 1
-                            _trace_log(
-                                "[detect-edge] candidate[{}] rejected below_band min_z={:.6f} < band_low={:.6f}".format(
-                                    idx,
-                                    edge_min_z,
-                                    band_low,
+                if edge_z_span is not None and edge_z_span <= _EDGE_MIN_Z_SPAN_MM:
+                    counters["rejected_flat_z"] += 1
+                    _trace_log(
+                        "[detect-edge:{}] candidate[{}] rejected flat_z z_span={:.6f} <= {:.3f}".format(
+                            pass_name,
+                            idx,
+                            edge_z_span,
+                            _EDGE_MIN_Z_SPAN_MM,
+                        )
+                    )
+                    continue
+
+                if edge_min_z is not None:
+                    try:
+                        cbbox = target_mesh.GetBoundingBox(True)
+                        if cbbox.IsValid:
+                            cheight = max(1e-6, float(cbbox.Max.Z - cbbox.Min.Z))
+                            band_low = float(cbbox.Min.Z + _Z_RATIO_LOW * cheight)
+                            if edge_min_z < band_low:
+                                counters["rejected_below_band"] += 1
+                                _trace_log(
+                                    "[detect-edge:{}] candidate[{}] rejected below_band min_z={:.6f} < band_low={:.6f}".format(
+                                        pass_name,
+                                        idx,
+                                        edge_min_z,
+                                        band_low,
+                                    )
                                 )
+                                continue
+                    except Exception:
+                        pass
+
+                if z_ref_pt0 is not None and edge_min_z is not None:
+                    max_allowed_z = z_ref_pt0.Z + _EDGE_MAX_Z_ABOVE_PT0_MM
+                    if edge_min_z >= max_allowed_z:
+                        counters["rejected_high_z"] += 1
+                        _trace_log(
+                            "[detect-edge:{}] candidate[{}] rejected high_z min_z={:.6f} >= pt0_z+{:.3f} ({:.6f})".format(
+                                pass_name,
+                                idx,
+                                edge_min_z,
+                                _EDGE_MAX_Z_ABOVE_PT0_MM,
+                                max_allowed_z,
                             )
-                            continue
-                except Exception:
-                    pass
-
-            if ref_pt0 is not None and edge_min_z is not None:
-                max_allowed_z = ref_pt0.Z + _EDGE_MAX_Z_ABOVE_PT0_MM
-                if edge_min_z >= max_allowed_z:
-                    rejected_high_z += 1
-                    _trace_log(
-                        "[detect-edge] candidate[{}] rejected high_z min_z={:.6f} >= pt0_z+{:.3f} ({:.6f})".format(
-                            idx,
-                            edge_min_z,
-                            _EDGE_MAX_Z_ABOVE_PT0_MM,
-                            max_allowed_z,
                         )
-                    )
-                    continue
+                        continue
 
-                min_allowed_z = ref_pt0.Z - _EDGE_MAX_Z_BELOW_PT0_MM
-                if edge_min_z <= min_allowed_z:
-                    rejected_low_vs_pt0 += 1
-                    _trace_log(
-                        "[detect-edge] candidate[{}] rejected low_vs_pt0 min_z={:.6f} <= pt0_z-{:.3f} ({:.6f})".format(
-                            idx,
-                            edge_min_z,
-                            _EDGE_MAX_Z_BELOW_PT0_MM,
-                            min_allowed_z,
+                    min_allowed_z = z_ref_pt0.Z - _EDGE_MAX_Z_BELOW_PT0_MM
+                    if edge_min_z <= min_allowed_z:
+                        counters["rejected_low_vs_pt0"] += 1
+                        _trace_log(
+                            "[detect-edge:{}] candidate[{}] rejected low_vs_pt0 min_z={:.6f} <= pt0_z-{:.3f} ({:.6f})".format(
+                                pass_name,
+                                idx,
+                                edge_min_z,
+                                _EDGE_MAX_Z_BELOW_PT0_MM,
+                                min_allowed_z,
+                            )
                         )
-                    )
-                    continue
+                        continue
 
-            edge_median_radius = _points_median_radius(traced_points)
-            if (
-                ref_pt0_radius is not None
-                and ref_pt0_radius > _DIST_TOL
-                and edge_median_radius is not None
-            ):
-                radius_ratio = edge_median_radius / ref_pt0_radius
-                if radius_ratio <= _EDGE_MIN_RADIUS_TO_PT0_RATIO:
-                    rejected_small_radius += 1
-                    _trace_log(
-                        "[detect-edge] candidate[{}] rejected radius_ratio={:.4f} edge_median_r={:.4f} pt0_r={:.4f} <= {:.3f}".format(
-                            idx,
-                            radius_ratio,
-                            edge_median_radius,
-                            ref_pt0_radius,
-                            _EDGE_MIN_RADIUS_TO_PT0_RATIO,
+                edge_median_radius = _points_median_radius(traced_points)
+                if (
+                    z_ref_pt0_radius is not None
+                    and z_ref_pt0_radius > _DIST_TOL
+                    and edge_median_radius is not None
+                ):
+                    radius_ratio = edge_median_radius / z_ref_pt0_radius
+                    if radius_ratio <= _EDGE_MIN_RADIUS_TO_PT0_RATIO:
+                        counters["rejected_small_radius"] += 1
+                        _trace_log(
+                            "[detect-edge:{}] candidate[{}] rejected radius_ratio={:.4f} edge_median_r={:.4f} pt0_r={:.4f} <= {:.3f}".format(
+                                pass_name,
+                                idx,
+                                radius_ratio,
+                                edge_median_radius,
+                                z_ref_pt0_radius,
+                                _EDGE_MIN_RADIUS_TO_PT0_RATIO,
+                            )
                         )
-                    )
-                    continue
+                        continue
 
-            if edge_median_radius is not None and mesh_band_max_r > _DIST_TOL:
-                mesh_ratio = edge_median_radius / mesh_band_max_r
-                if mesh_ratio <= _EDGE_MIN_RADIUS_TO_MESH_BAND_RATIO:
-                    rejected_small_radius += 1
-                    _trace_log(
-                        "[detect-edge] candidate[{}] rejected mesh_ratio={:.4f} edge_median_r={:.4f} mesh_band_max_r={:.4f} <= {:.3f}".format(
-                            idx,
-                            mesh_ratio,
-                            edge_median_radius,
-                            mesh_band_max_r,
-                            _EDGE_MIN_RADIUS_TO_MESH_BAND_RATIO,
+                if edge_median_radius is not None and mesh_band_max_r > _DIST_TOL:
+                    mesh_ratio = edge_median_radius / mesh_band_max_r
+                    if mesh_ratio <= _EDGE_MIN_RADIUS_TO_MESH_BAND_RATIO:
+                        counters["rejected_small_radius"] += 1
+                        _trace_log(
+                            "[detect-edge:{}] candidate[{}] rejected mesh_ratio={:.4f} edge_median_r={:.4f} mesh_band_max_r={:.4f} <= {:.3f}".format(
+                                pass_name,
+                                idx,
+                                mesh_ratio,
+                                edge_median_radius,
+                                mesh_band_max_r,
+                                _EDGE_MIN_RADIUS_TO_MESH_BAND_RATIO,
+                            )
                         )
-                    )
-                    continue
+                        continue
 
-            # 첫 valid 즉시 반환하지 않고, 전체 후보 중 최적 루프를 선택한다.
-            z_score = (
-                -abs(float(edge_min_z) - float(ref_pt0.Z))
-                if (ref_pt0 is not None and edge_min_z is not None)
-                else float(edge_min_z)
-                if edge_min_z is not None
-                else -float("inf")
-            )
-            score = (
-                float(edge_median_radius) if edge_median_radius is not None else -1.0,
-                float(z_score),
-                float(len(traced_points)),
-            )
-            _trace_log(
-                "[detect-edge] candidate[{}] accepted score=(r={:.6f},z={:.6f},n={:.0f})".format(
-                    idx,
-                    score[0],
-                    score[1],
-                    score[2],
+                z_score = (
+                    -abs(float(edge_min_z) - float(z_ref_pt0.Z))
+                    if (z_ref_pt0 is not None and edge_min_z is not None)
+                    else float(edge_min_z)
+                    if edge_min_z is not None
+                    else -float("inf")
                 )
-            )
-            if best_score is None or score > best_score:
-                best_score = score
-                best_points = traced_points
-                best_strategy = "{}#candidate{}".format(strategy_used, idx)
-        else:
-            _trace_log(
-                "[detect-edge] candidate[{}] no valid closed traced points (found={})".format(
-                    idx, len(traced_points) if traced_points else 0
+                score = (
+                    float(edge_median_radius)
+                    if edge_median_radius is not None
+                    else -1.0,
+                    float(z_score),
+                    float(len(traced_points)),
                 )
-            )
+                _trace_log(
+                    "[detect-edge:{}] candidate[{}] accepted score=(r={:.6f},z={:.6f},n={:.0f})".format(
+                        pass_name,
+                        idx,
+                        score[0],
+                        score[1],
+                        score[2],
+                    )
+                )
+                if best_score is None or score > best_score:
+                    best_score = score
+                    best_points = traced_points
+                    best_strategy = "{}#candidate{}".format(strategy_used, idx)
+            else:
+                _trace_log(
+                    "[detect-edge:{}] candidate[{}] no valid closed traced points (found={})".format(
+                        pass_name,
+                        idx,
+                        len(traced_points) if traced_points else 0,
+                    )
+                )
+
+        return best_points, best_strategy, best_score, counters
+
+    best_points, best_strategy, best_score, counters = _run_edge_pass(
+        "strict_pt0",
+        ref_pt0,
+        ref_pt0_radius,
+    )
 
     if best_points and len(best_points) >= 3:
         _trace_log(
@@ -382,19 +426,36 @@ def _detect_finishline_points_edge(
         )
         return best_points, str(best_strategy or "C_EXTRACT_MESH_EDGES_UNWELDED")
 
-    if rejected_low_z > 0:
-        return None, "C_EDGE_REJECTED_LOW_Z"
-    if rejected_flat_z > 0:
-        return None, "C_EDGE_REJECTED_FLAT_Z"
-    if rejected_high_z > 0:
-        return None, "C_EDGE_REJECTED_HIGH_Z"
-    if rejected_low_vs_pt0 > 0:
-        return None, "C_EDGE_REJECTED_LOW_VS_PT0"
-    if rejected_small_radius > 0:
-        return None, "C_EDGE_REJECTED_SMALL_RADIUS"
-    if rejected_below_band > 0:
-        return None, "C_EDGE_REJECTED_BELOW_BAND"
-    return None, "C_EDGE_FAILED"
+    # pt0 기반 상한 조건으로 모두 탈락한 케이스는, pt0 제약을 해제한 2차 패스로 1회 재시도
+    if counters.get("rejected_high_z", 0) > 0 and ref_pt0 is not None:
+        _trace_log(
+            "[detect-edge] strict pass rejected_high_z={} -> retry without pt0 constraints".format(
+                counters.get("rejected_high_z", 0)
+            )
+        )
+        best_points2, best_strategy2, best_score2, counters2 = _run_edge_pass(
+            "relaxed_no_pt0",
+            None,
+            None,
+        )
+        if best_points2 and len(best_points2) >= 3:
+            _trace_log(
+                "[detect-edge] relaxed retry selected strategy={} score={}".format(
+                    best_strategy2,
+                    best_score2,
+                )
+            )
+            return best_points2, str(
+                (best_strategy2 or "C_EXTRACT_MESH_EDGES_UNWELDED") + "#relaxed"
+            )
+
+        reason2 = _reason_from_counters(counters2)
+        return None, "{}+RELAXED_FAIL:{}".format(
+            _reason_from_counters(counters),
+            reason2,
+        )
+
+    return None, _reason_from_counters(counters)
 
 
 def _mesh_xy_radius_from_bbox(mesh: rg.Mesh) -> float:
@@ -1883,7 +1944,9 @@ def detect_finish_line(
                     strategy_used = "LEGACY_LOWEST_BOUNDARY"
                 else:
                     raise RuntimeError(
-                        "section result rejected by outlier check and legacy fallback failed"
+                        "section result rejected by outlier check ({}) and legacy fallback failed".format(
+                            reason
+                        )
                     )
             else:
                 strategy_used = "SECTION_TRACKING_{}x{}_FALLBACK".format(
