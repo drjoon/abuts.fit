@@ -105,8 +105,12 @@ export function resolveLeadDaysWithSameDayCutoff({ leadDays, requestedAt }) {
   if (baseDays <= 0) return 0;
 
   const beforeCutoff = isBeforeSameDayCutoffKst(requestedAt || new Date());
-  if (beforeCutoff && baseDays === 1) {
-    return 0;
+
+  // rules.md 기준:
+  // "자정(0시 KST)까지 접수분은 당일 집하 일정으로 계산"해야 하므로,
+  // 리드타임 N 영업일은 접수 당일을 1일차로 포함해 (N-1) 영업일로 환산한다.
+  if (beforeCutoff) {
+    return Math.max(0, baseDays - 1);
   }
 
   return baseDays;
