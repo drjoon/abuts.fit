@@ -1599,6 +1599,7 @@ def _sample_plane_section_all_points(
 def _detect_finishline_points_max_radius_from_z_axis(
     mesh: rg.Mesh,
     planes: Sequence[rg.Plane],
+    axis_dir: rg.Vector3d,
     ref_pt0: Optional[rg.Point3d] = None,
 ) -> Tuple[List[rg.Point3d], List[Dict[str, object]]]:
     """원점을 지나는 경사축 기반 단면에서 "최대 반경" 후보를 순차 추적한다.
@@ -1609,8 +1610,23 @@ def _detect_finishline_points_max_radius_from_z_axis(
     3) 다음 섹션으로 진행하며 max-radius 후보 중 직전 점과 가장 연속적인 점 선택
     """
 
+    axis = rg.Vector3d(axis_dir)
+    if not axis.IsValid or axis.IsZero:
+        axis = rg.Vector3d(0, 0, 1)
+    try:
+        axis.Unitize()
+    except Exception:
+        axis = rg.Vector3d(0, 0, 1)
+
     def _radius(pt: rg.Point3d) -> float:
-        return float(math.sqrt(pt.X * pt.X + pt.Y * pt.Y))
+        # Z축이 아닌, 원점을 지나는 경사축(axis)까지의 거리
+        # distance = |p x axis|
+        try:
+            pv = rg.Vector3d(float(pt.X), float(pt.Y), float(pt.Z))
+            cp = rg.Vector3d.CrossProduct(pv, axis)
+            return float(cp.Length)
+        except Exception:
+            return 0.0
 
     def _max_radius_band(points: Sequence[rg.Point3d]) -> List[rg.Point3d]:
         if not points:
@@ -2084,27 +2100,107 @@ def _visualize_all_sections(
     doc: Rhino.RhinoDoc,
     sections: Sequence[Dict[str, object]],
 ) -> List[str]:
-    palette = [
-        drawing.Color.FromArgb(255, 215, 0),  # gold
-        drawing.Color.FromArgb(135, 206, 250),  # light sky blue
-        drawing.Color.FromArgb(255, 105, 180),  # hot pink
-        drawing.Color.FromArgb(152, 251, 152),  # pale green
-        drawing.Color.FromArgb(238, 130, 238),  # violet
-        drawing.Color.FromArgb(255, 165, 0),  # orange
-        drawing.Color.FromArgb(176, 196, 222),  # steel blue light
-    ]
+    # 섹션 커브는 한 계열 색(하늘색)로 통일
+    color = drawing.Color.FromArgb(100, 180, 255)
 
     ids: List[str] = []
-    for idx, section in enumerate(sections):
+    for section in sections:
         curves = section.get("curves") or []
         if not curves:
             continue
-        color = palette[idx % len(palette)]
         for curve in curves:
             if curve is None:
                 continue
             cid = _add_colored_object(doc, curve, color)
             ids.append(str(cid))
+    return ids
+
+
+def _visualize_tracking_debug_objects(
+    doc: Rhino.RhinoDoc,
+    section_axis: Optional[rg.Vector3d],
+    sections: Sequence[Dict[str, object]],
+    traced_points: Sequence[rg.Point3d],
+) -> Dict[str, List[str]]:
+    ids: Dict[str, List[str]] = {
+        "axis": [],
+        "start": [],
+        "trace_points": [],
+        "trace_curve": [],
+        "max_band": [],
+    }
+
+    # 1) 경사축 (파랑)
+    try:
+        axis = (
+            rg.Vector3d(section_axis)
+            if section_axis is not None
+            else rg.Vector3d(0, 0, 1)
+        )
+        if not axis.IsValid or axis.IsZero:
+            axis = rg.Vector3d(0, 0, 1)
+        axis.Unitize()
+        axis_len = 12.0
+        p0 = rg.Point3d.Origin
+        p1 = rg.Point3d(axis.X * axis_len, axis.Y * axis_len, axis.Z * axis_len)
+        p2 = rg.Point3d(-axis.X * axis_len, -axis.Y * axis_len, -axis.Z * axis_len)
+        c1 = rg.LineCurve(p0, p1)
+        c2 = rg.LineCurve(p0, p2)
+        a1 = _add_colored_object(doc, c1, drawing.Color.FromArgb(40, 120, 255))
+        a2 = _add_colored_object(doc, c2, drawing.Color.FromArgb(40, 120, 255))
+        ids["axis"].extend([str(a1), str(a2)])
+    except Exception:
+        pass
+
+    # 2) 섹션별 max-radius band 후보 (연보라 점)
+    for section in sections:
+        band = section.get("controls") or []
+        for p in band:
+            if p is None:
+                continue
+            try:
+                sph = rg.Sphere(rg.Point3d(p), 0.04)
+                oid = _add_colored_object(
+                    doc, sph.ToBrep(), drawing.Color.FromArgb(190, 140, 255)
+                )
+                ids["max_band"].append(str(oid))
+            except Exception:
+                continue
+
+    # 3) 시작점 (노랑)
+    if traced_points and len(traced_points) >= 1 and traced_points[0] is not None:
+        try:
+            start_sphere = rg.Sphere(rg.Point3d(traced_points[0]), 0.12)
+            sid = _add_colored_object(
+                doc, start_sphere.ToBrep(), drawing.Color.FromArgb(255, 220, 0)
+            )
+            ids["start"].append(str(sid))
+        except Exception:
+            pass
+
+    # 4) 피니시라인 점들 (자홍)
+    for p in traced_points or []:
+        if p is None:
+            continue
+        try:
+            sph = rg.Sphere(rg.Point3d(p), 0.05)
+            oid = _add_colored_object(
+                doc, sph.ToBrep(), drawing.Color.FromArgb(255, 40, 170)
+            )
+            ids["trace_points"].append(str(oid))
+        except Exception:
+            continue
+
+    # 5) 피니시라인 폴리라인 (주황)
+    try:
+        if traced_points and len(traced_points) >= 2:
+            pl = rg.Polyline([rg.Point3d(p) for p in traced_points if p is not None])
+            curve = rg.PolylineCurve(pl)
+            cid = _add_colored_object(doc, curve, drawing.Color.FromArgb(255, 140, 0))
+            ids["trace_curve"].append(str(cid))
+    except Exception:
+        pass
+
     return ids
 
 
@@ -2170,6 +2266,7 @@ def detect_finish_line(
     )
 
     sections: List[Dict[str, object]] = []
+    section_axis = rg.Vector3d(0, 0, 1)
 
     # 1) Edge 기반 시도
     traced_points, strategy_used = _detect_finishline_points_edge(doc, mesh_copy)
@@ -2237,6 +2334,7 @@ def detect_finish_line(
             traced_points, sections = _detect_finishline_points_max_radius_from_z_axis(
                 mesh_copy,
                 planes,
+                axis_dir=section_axis,
                 ref_pt0=pt0,
             )
         except Exception as e:
@@ -2299,26 +2397,20 @@ def detect_finish_line(
                         ok_shape = True
                         reason = "normalized_from:{}".format(reason)
                 if not ok_shape:
+                    # max-radius sequential 추적은 디버깅/시각화 우선: outlier여도 결과를 반환한다.
                     _trace_log(
-                        "[detect] section result rejected by outlier check: {}; fallback=legacy".format(
+                        "[detect] section result outlier warning (kept): {}".format(
                             reason
                         )
                     )
-                    legacy_pts = _extract_lowest_boundary_loop_points(
-                        mesh_copy,
-                        ref_pt0=pt0,
-                        ref_pt0_radius=pt0_radius,
+                    strategy_used = "SECTION_MAX_RADIUS_TRACK_{}x{}_RAW_OUTLIER".format(
+                        _SECTION_COUNT, int(_SECTION_STEP_DEG)
                     )
-                    if legacy_pts and len(legacy_pts) >= 3:
-                        traced_points = legacy_pts
-                        strategy_used = "LEGACY_LOWEST_BOUNDARY"
-                    else:
-                        raise RuntimeError(
-                            "section result rejected by outlier check ({}) and legacy fallback failed".format(
-                                reason
-                            )
-                        )
-            if ok_shape:
+                    ok_shape = True
+
+            if ok_shape and not str(strategy_used or "").startswith(
+                "SECTION_MAX_RADIUS_TRACK_"
+            ):
                 strategy_used = "SECTION_MAX_RADIUS_TRACK_{}x{}_FALLBACK".format(
                     _SECTION_COUNT, int(_SECTION_STEP_DEG)
                 )
@@ -2331,9 +2423,20 @@ def detect_finish_line(
             viz_ids["debug_curve"] = [debug_curve_id]
 
     if visualize:
-        base_viz = _visualize(doc, pt0, traced_points)
+        base_viz = _visualize(doc, pt0, traced_points or [])
         for key, values in base_viz.items():
             viz_ids[key] = values
+
+        debug_viz = _visualize_tracking_debug_objects(
+            doc=doc,
+            section_axis=section_axis,
+            sections=sections,
+            traced_points=traced_points or [],
+        )
+        for key, values in debug_viz.items():
+            if values:
+                viz_ids[key] = values
+
         if _SHOW_ALL_SECTION_CURVES:
             section_ids = _visualize_all_sections(doc, sections)
             if section_ids:
