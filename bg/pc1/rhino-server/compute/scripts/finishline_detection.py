@@ -1604,10 +1604,9 @@ def _detect_finishline_points_max_radius_from_z_axis(
 ) -> Tuple[List[rg.Point3d], List[Dict[str, object]]]:
     """원점을 지나는 경사축 기반 단면에서 "최대 반경" 후보를 순차 추적한다.
 
-    절차:
-    1) 각 섹션에서 max-radius 후보(동률/근접 포함)를 수집
-    2) 시작점(최초 max-radius 점) 선택
-    3) 다음 섹션으로 진행하며 max-radius 후보 중 직전 점과 가장 연속적인 점 선택
+    주의:
+    - 반경은 Z축(XY) 기준이 아니라 경사축(axis)까지의 거리로 계산
+    - 시작점이 포스트 중앙/상단으로 치우치지 않도록 Z-band를 제한
     """
 
     axis = rg.Vector3d(axis_dir)
@@ -1617,10 +1616,22 @@ def _detect_finishline_points_max_radius_from_z_axis(
         axis.Unitize()
     except Exception:
         axis = rg.Vector3d(0, 0, 1)
+    if float(axis.Z) < 0.0:
+        axis = rg.Vector3d(-axis.X, -axis.Y, -axis.Z)
+
+    try:
+        bbox = mesh.GetBoundingBox(True)
+        z_min = float(bbox.Min.Z)
+        z_max = float(bbox.Max.Z)
+        h = max(1e-6, z_max - z_min)
+        z_low = z_min + _Z_RATIO_LOW * h
+        z_high = z_min + _Z_RATIO_HIGH * h
+    except Exception:
+        z_low = -1e9
+        z_high = 1e9
 
     def _radius(pt: rg.Point3d) -> float:
-        # Z축이 아닌, 원점을 지나는 경사축(axis)까지의 거리
-        # distance = |p x axis|
+        # 원점을 지나는 경사축(axis)까지의 거리: |p x axis|
         try:
             pv = rg.Vector3d(float(pt.X), float(pt.Y), float(pt.Z))
             cp = rg.Vector3d.CrossProduct(pv, axis)
@@ -1640,7 +1651,6 @@ def _detect_finishline_points_max_radius_from_z_axis(
         if not valid:
             return []
         max_r = max(r for r, _ in valid)
-        # 반대편 대칭점을 포함할 수 있게 max 근접 밴드를 유지
         cutoff = float(max_r) * 0.985
         band = [rg.Point3d(p) for r, p in valid if r >= cutoff]
         if band:
@@ -1651,10 +1661,13 @@ def _detect_finishline_points_max_radius_from_z_axis(
     traced: List[rg.Point3d] = []
     sections: List[Dict[str, object]] = []
     section_band_candidates: List[List[rg.Point3d]] = []
+    section_reps: List[Tuple[int, rg.Point3d, float]] = []
 
     for idx, plane in enumerate(planes):
-        pts, curves = _sample_plane_section_all_points(mesh, plane)
+        pts_all, curves = _sample_plane_section_all_points(mesh, plane)
+        pts = [p for p in pts_all if (p is not None and z_low <= float(p.Z) <= z_high)]
         band = _max_radius_band(pts)
+
         sections.append(
             {
                 "index": idx,
@@ -1665,47 +1678,60 @@ def _detect_finishline_points_max_radius_from_z_axis(
             }
         )
         section_band_candidates.append(band)
+
+        if band:
+            try:
+                rep = max(band, key=lambda p: _radius(p))
+                rep_r = _radius(rep)
+                section_reps.append((idx, rg.Point3d(rep), float(rep_r)))
+            except Exception:
+                pass
+
         _trace_log(
-            "[max-r] collect plane_idx={} candidates={} max_band={}".format(
+            "[max-r] collect plane_idx={} candidates={} filtered={} max_band={} z_band=({:.3f},{:.3f})".format(
                 idx,
+                len(pts_all),
                 len(pts),
                 len(band),
+                z_low,
+                z_high,
             )
         )
 
-    if not section_band_candidates:
+    if not section_band_candidates or not section_reps:
         return traced, sections
 
-    # 시작점: pt0가 있으면 pt0와 가장 가까운 max-radius 후보, 없으면 첫 유효 섹션 후보
+    z_hint = _median([float(rep[1].Z) for rep in section_reps])
+    if z_hint is None:
+        z_hint = float(section_reps[0][1].Z)
+
+    # 시작점: max-radius 우선, z_hint 근접 보조(포스트 중앙 치우침 방지)
     start_idx = -1
     start_pt = None
-    best_key = None
-    for idx, band in enumerate(section_band_candidates):
-        if not band:
+    best_score = None
+    for idx, p, r in section_reps:
+        try:
+            dz = abs(float(p.Z) - float(z_hint))
+            dpt0 = float(p.DistanceTo(ref_pt0)) if ref_pt0 is not None else 0.0
+            score = (float(r), -float(dz), -float(dpt0))
+        except Exception:
             continue
-        for p in band:
-            try:
-                if ref_pt0 is not None:
-                    key = (float(p.DistanceTo(ref_pt0)), -_radius(p))
-                else:
-                    key = (0.0, -_radius(p), idx)
-            except Exception:
-                continue
-            if best_key is None or key < best_key:
-                best_key = key
-                start_idx = idx
-                start_pt = rg.Point3d(p)
+        if best_score is None or score > best_score:
+            best_score = score
+            start_idx = int(idx)
+            start_pt = rg.Point3d(p)
 
     if start_idx < 0 or start_pt is None:
         return traced, sections
 
     _trace_log(
-        "[max-r] start plane_idx={} pt=({:.6f},{:.6f},{:.6f}) r={:.6f}".format(
+        "[max-r] start plane_idx={} pt=({:.6f},{:.6f},{:.6f}) r={:.6f} z_hint={:.6f}".format(
             start_idx,
             start_pt.X,
             start_pt.Y,
             start_pt.Z,
             _radius(start_pt),
+            float(z_hint),
         )
     )
 
@@ -1722,12 +1748,13 @@ def _detect_finishline_points_max_radius_from_z_axis(
             )
             continue
 
-        # 다음 섹션에서는 max-radius 후보 중 직전 점과 가장 가까운 점을 선택
+        # 다음 섹션: 연속성(거리) + z_hint 근접 + 반경 유지
         try:
             best = min(
                 band,
                 key=lambda p: (
                     float(p.DistanceTo(last)),
+                    abs(float(p.Z) - float(z_hint)),
                     abs(float(p.Z) - float(last.Z)),
                     -_radius(p),
                 ),
@@ -2130,7 +2157,7 @@ def _visualize_tracking_debug_objects(
         "max_band": [],
     }
 
-    # 1) 경사축 (파랑)
+    # 1) 경사축 +방향만 표시 (파랑)
     try:
         axis = (
             rg.Vector3d(section_axis)
@@ -2140,15 +2167,21 @@ def _visualize_tracking_debug_objects(
         if not axis.IsValid or axis.IsZero:
             axis = rg.Vector3d(0, 0, 1)
         axis.Unitize()
+        if float(axis.Z) < 0.0:
+            axis = rg.Vector3d(-axis.X, -axis.Y, -axis.Z)
+
         axis_len = 12.0
         p0 = rg.Point3d.Origin
         p1 = rg.Point3d(axis.X * axis_len, axis.Y * axis_len, axis.Z * axis_len)
-        p2 = rg.Point3d(-axis.X * axis_len, -axis.Y * axis_len, -axis.Z * axis_len)
         c1 = rg.LineCurve(p0, p1)
-        c2 = rg.LineCurve(p0, p2)
         a1 = _add_colored_object(doc, c1, drawing.Color.FromArgb(40, 120, 255))
-        a2 = _add_colored_object(doc, c2, drawing.Color.FromArgb(40, 120, 255))
-        ids["axis"].extend([str(a1), str(a2)])
+        ids["axis"].append(str(a1))
+
+        tip = rg.Sphere(p1, 0.08)
+        tid = _add_colored_object(
+            doc, tip.ToBrep(), drawing.Color.FromArgb(40, 120, 255)
+        )
+        ids["axis"].append(str(tid))
     except Exception:
         pass
 
