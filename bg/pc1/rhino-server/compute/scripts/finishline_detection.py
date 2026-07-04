@@ -85,9 +85,11 @@ _OUTLIER_DZ_RATIO = 4.0  # max(|dz|) / median(|dz|)
 _OUTLIER_DZ_ABS_MM = 1.5  # mm
 
 # edge 후보 탐색 성능/안정성 튜닝
-_EDGE_CANDIDATE_MAX_COUNT = 8
-_EDGE_CANDIDATE_MIN_VERT_RATIO = 0.05
-_EDGE_CANDIDATE_MIN_VERT_ABS = 120
+# - 실제 샘플에서 수동 explode 후 정상 루프가 상위 8개 밖에 존재하는 케이스가 있어
+#   후보 개수를 늘리고, 최소 버텍스 컷을 완화해 누락을 줄인다.
+_EDGE_CANDIDATE_MAX_COUNT = 20
+_EDGE_CANDIDATE_MIN_VERT_RATIO = 0.03
+_EDGE_CANDIDATE_MIN_VERT_ABS = 40
 
 # 거의 닫힌 커브를 폐곡선으로 간주하는 허용치(mm)
 _EDGE_CLOSE_GAP_TOL_MM = 0.2
@@ -207,6 +209,9 @@ def _detect_finishline_points_edge(
         if m is not None and int(m.Vertices.Count) >= int(min_keep_verts)
     ]
     if not filtered_candidates:
+        _trace_log(
+            "[detect-edge] candidate_filter produced 0; fallback to unfiltered candidates"
+        )
         filtered_candidates = candidates[:]
     candidates = filtered_candidates[:_EDGE_CANDIDATE_MAX_COUNT]
     _trace_log(
@@ -218,6 +223,18 @@ def _detect_finishline_points_edge(
             int(_EDGE_CANDIDATE_MAX_COUNT),
         )
     )
+    for ci, cm in enumerate(candidates):
+        try:
+            _trace_log(
+                "[detect-edge] candidate_summary[{}] key={} verts={} faces={}".format(
+                    ci,
+                    _mesh_z_key(cm),
+                    int(cm.Vertices.Count),
+                    int(cm.Faces.Count),
+                )
+            )
+        except Exception:
+            continue
 
     ref_pt0 = None
     ref_pt0_radius = None
@@ -292,7 +309,28 @@ def _detect_finishline_points_edge(
                 z_ref_pt0,
                 z_ref_pt0_radius,
                 mesh_band_max_radius=mesh_band_max_r,
+                strict_filters=True,
+                debug_tag="{}#candidate{}#strict".format(pass_name, idx),
             )
+            if not traced_points or len(traced_points) < 3:
+                # strict 내부필터에서 모두 걸러진 경우, 루프 선정만 완화해 재시도
+                traced_points = _pick_best_edge_loop_points(
+                    edge_curves,
+                    doc.ModelAbsoluteTolerance,
+                    z_ref_pt0,
+                    z_ref_pt0_radius,
+                    mesh_band_max_radius=mesh_band_max_r,
+                    strict_filters=False,
+                    debug_tag="{}#candidate{}#relaxed_select".format(pass_name, idx),
+                )
+                if traced_points and len(traced_points) >= 3:
+                    _trace_log(
+                        "[detect-edge:{}] candidate[{}] strict_select_failed -> relaxed_select recovered pts={}".format(
+                            pass_name,
+                            idx,
+                            len(traced_points),
+                        )
+                    )
             if traced_points and len(traced_points) >= 3:
                 edge_min_z = _points_min_z(traced_points)
                 edge_max_z = _points_max_z(traced_points)
@@ -460,6 +498,14 @@ def _detect_finishline_points_edge(
                     )
                 )
 
+        _trace_log(
+            "[detect-edge:{}] pass_summary best_found={} best_strategy={} counters={}".format(
+                pass_name,
+                bool(best_points and len(best_points) >= 3),
+                best_strategy,
+                counters,
+            )
+        )
         return best_points, best_strategy, best_score, counters
 
     best_points, best_strategy, best_score, counters = _run_edge_pass(
@@ -477,11 +523,11 @@ def _detect_finishline_points_edge(
         )
         return best_points, str(best_strategy or "C_EXTRACT_MESH_EDGES_UNWELDED")
 
-    # pt0 기반 상한 조건으로 모두 탈락한 케이스는, pt0 제약을 해제한 2차 패스로 1회 재시도
-    if counters.get("rejected_high_z", 0) > 0 and ref_pt0 is not None:
+    # strict pass 실패 시 pt0 제약을 해제한 2차 패스로 1회 재시도
+    if ref_pt0 is not None:
         _trace_log(
-            "[detect-edge] strict pass rejected_high_z={} -> retry without pt0 constraints".format(
-                counters.get("rejected_high_z", 0)
+            "[detect-edge] strict pass failed -> retry without pt0 constraints counters={}".format(
+                counters
             )
         )
         best_points2, best_strategy2, best_score2, counters2 = _run_edge_pass(
@@ -970,6 +1016,8 @@ def _pick_best_edge_loop_points(
     ref_pt0: Optional[rg.Point3d],
     ref_pt0_radius: Optional[float],
     mesh_band_max_radius: Optional[float] = None,
+    strict_filters: bool = True,
+    debug_tag: str = "edge",
 ) -> Optional[List[rg.Point3d]]:
     if not curves:
         return None
@@ -980,68 +1028,167 @@ def _pick_best_edge_loop_points(
         joined = None
     source = list(joined) if joined else list(curves)
 
+    _trace_log(
+        "[edge-loop:{}] input_curves={} joined_curves={} tol={:.6f} strict_filters={}".format(
+            debug_tag,
+            len(curves),
+            len(source),
+            float(tolerance),
+            bool(strict_filters),
+        )
+    )
+
     # tuple: (median_radius, z_score, length, min_z, points)
     # - median_radius: 외곽 루프 우선
     # - z_score: pt0가 있으면 |min_z-pt0_z|가 작은 루프 우선, 없으면 min_z가 높은 루프 우선
     loop_infos: List[Tuple[float, float, float, float, List[rg.Point3d]]] = []
-    for cv in source:
+    inspected = 0
+    accepted = 0
+    reject_counts = {
+        "open_or_invalid": 0,
+        "low_z": 0,
+        "high_vs_pt0": 0,
+        "low_vs_pt0": 0,
+        "small_vs_pt0": 0,
+        "small_vs_mesh": 0,
+    }
+
+    for cv_idx, cv in enumerate(source):
+        inspected += 1
         pts = _curve_to_closed_points(cv)
         if not pts or len(pts) < 3:
+            reject_counts["open_or_invalid"] += 1
+            _trace_log(
+                "[edge-loop:{}] curve[{}] rejected reason=open_or_invalid".format(
+                    debug_tag, cv_idx
+                )
+            )
             continue
 
         min_z = _points_min_z(pts)
-        if min_z is None:
-            continue
-
-        if min_z <= _EDGE_MIN_Z_VALID_THRESHOLD_MM:
-            continue
-
-        if ref_pt0 is not None:
-            max_allowed_z = ref_pt0.Z + _EDGE_MAX_Z_ABOVE_PT0_MM
-            if min_z >= max_allowed_z:
-                continue
-            min_allowed_z = ref_pt0.Z - _EDGE_MAX_Z_BELOW_PT0_MM
-            if min_z <= min_allowed_z:
-                continue
-
+        max_z = _points_max_z(pts)
+        z_span = (
+            float(max_z - min_z)
+            if (min_z is not None and max_z is not None)
+            else float("nan")
+        )
         median_r = _points_median_radius(pts)
-        if (
-            ref_pt0_radius is not None
-            and ref_pt0_radius > _DIST_TOL
-            and median_r is not None
-        ):
-            ratio = median_r / ref_pt0_radius
-            if ratio <= _EDGE_MIN_RADIUS_TO_PT0_RATIO:
-                continue
-
-        if (
-            mesh_band_max_radius is not None
-            and mesh_band_max_radius > _DIST_TOL
-            and median_r is not None
-        ):
-            mesh_ratio = median_r / mesh_band_max_radius
-            if mesh_ratio <= _EDGE_MIN_RADIUS_TO_MESH_BAND_RATIO:
-                continue
 
         try:
             length = float(cv.GetLength())
         except Exception:
             length = float(len(pts))
 
-        if ref_pt0 is not None:
+        if strict_filters:
+            if min_z is not None and min_z <= _EDGE_MIN_Z_VALID_THRESHOLD_MM:
+                reject_counts["low_z"] += 1
+                _trace_log(
+                    "[edge-loop:{}] curve[{}] rejected reason=low_z min_z={:.6f} <= {:.3f} len={:.4f} med_r={:.4f} z_span={:.4f}".format(
+                        debug_tag,
+                        cv_idx,
+                        float(min_z),
+                        _EDGE_MIN_Z_VALID_THRESHOLD_MM,
+                        float(length),
+                        float(median_r) if median_r is not None else float("nan"),
+                        float(z_span),
+                    )
+                )
+                continue
+
+            if ref_pt0 is not None and min_z is not None:
+                max_allowed_z = ref_pt0.Z + _EDGE_MAX_Z_ABOVE_PT0_MM
+                if min_z >= max_allowed_z:
+                    reject_counts["high_vs_pt0"] += 1
+                    _trace_log(
+                        "[edge-loop:{}] curve[{}] rejected reason=high_vs_pt0 min_z={:.6f} >= {:.6f}".format(
+                            debug_tag, cv_idx, float(min_z), float(max_allowed_z)
+                        )
+                    )
+                    continue
+                min_allowed_z = ref_pt0.Z - _EDGE_MAX_Z_BELOW_PT0_MM
+                if min_z <= min_allowed_z:
+                    reject_counts["low_vs_pt0"] += 1
+                    _trace_log(
+                        "[edge-loop:{}] curve[{}] rejected reason=low_vs_pt0 min_z={:.6f} <= {:.6f}".format(
+                            debug_tag, cv_idx, float(min_z), float(min_allowed_z)
+                        )
+                    )
+                    continue
+
+            if (
+                ref_pt0_radius is not None
+                and ref_pt0_radius > _DIST_TOL
+                and median_r is not None
+            ):
+                ratio = median_r / ref_pt0_radius
+                if ratio <= _EDGE_MIN_RADIUS_TO_PT0_RATIO:
+                    reject_counts["small_vs_pt0"] += 1
+                    _trace_log(
+                        "[edge-loop:{}] curve[{}] rejected reason=small_vs_pt0 ratio={:.4f} <= {:.3f}".format(
+                            debug_tag,
+                            cv_idx,
+                            float(ratio),
+                            _EDGE_MIN_RADIUS_TO_PT0_RATIO,
+                        )
+                    )
+                    continue
+
+            if (
+                mesh_band_max_radius is not None
+                and mesh_band_max_radius > _DIST_TOL
+                and median_r is not None
+            ):
+                mesh_ratio = median_r / mesh_band_max_radius
+                if mesh_ratio <= _EDGE_MIN_RADIUS_TO_MESH_BAND_RATIO:
+                    reject_counts["small_vs_mesh"] += 1
+                    _trace_log(
+                        "[edge-loop:{}] curve[{}] rejected reason=small_vs_mesh ratio={:.4f} <= {:.3f}".format(
+                            debug_tag,
+                            cv_idx,
+                            float(mesh_ratio),
+                            _EDGE_MIN_RADIUS_TO_MESH_BAND_RATIO,
+                        )
+                    )
+                    continue
+
+        if ref_pt0 is not None and min_z is not None:
             z_score = -abs(float(min_z) - float(ref_pt0.Z))
         else:
-            z_score = float(min_z)
+            z_score = float(min_z) if min_z is not None else -float("inf")
+
+        accepted += 1
+        _trace_log(
+            "[edge-loop:{}] curve[{}] accepted min_z={:.6f} max_z={:.6f} z_span={:.6f} len={:.4f} med_r={:.4f} z_score={:.6f}".format(
+                debug_tag,
+                cv_idx,
+                float(min_z) if min_z is not None else float("nan"),
+                float(max_z) if max_z is not None else float("nan"),
+                float(z_span),
+                float(length),
+                float(median_r) if median_r is not None else float("nan"),
+                float(z_score),
+            )
+        )
 
         loop_infos.append(
             (
                 float(median_r) if median_r is not None else -1.0,
                 float(z_score),
                 length,
-                float(min_z),
+                float(min_z) if min_z is not None else -float("inf"),
                 pts,
             )
         )
+
+    _trace_log(
+        "[edge-loop:{}] summary inspected={} accepted={} rejected={} reject_counts={}".format(
+            debug_tag,
+            inspected,
+            accepted,
+            max(0, inspected - accepted),
+            reject_counts,
+        )
+    )
 
     if not loop_infos:
         return None
@@ -1050,13 +1197,14 @@ def _pick_best_edge_loop_points(
     loop_infos.sort(key=lambda item: (item[0], item[1], item[2]), reverse=True)
     selected = loop_infos[0]
     _trace_log(
-        "[finishline] edge loops={} selected median_r={:.6f} z_score={:.6f} min_z={:.6f} len={:.3f} pts={}".format(
+        "[finishline] edge loops={} selected median_r={:.6f} z_score={:.6f} min_z={:.6f} len={:.3f} pts={} tag={}".format(
             len(loop_infos),
             selected[0],
             selected[1],
             selected[3],
             selected[2],
             len(selected[4]),
+            debug_tag,
         )
     )
     return selected[4]
