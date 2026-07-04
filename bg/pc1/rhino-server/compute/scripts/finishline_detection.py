@@ -71,6 +71,14 @@ _OUTLIER_SEGMENT_ABS_MM = 2.0  # mm
 _OUTLIER_DZ_RATIO = 4.0  # max(|dz|) / median(|dz|)
 _OUTLIER_DZ_ABS_MM = 1.5  # mm
 
+# edge 후보 탐색 성능/안정성 튜닝
+_EDGE_CANDIDATE_MAX_COUNT = 8
+_EDGE_CANDIDATE_MIN_VERT_RATIO = 0.05
+_EDGE_CANDIDATE_MIN_VERT_ABS = 120
+
+# 거의 닫힌 커브를 폐곡선으로 간주하는 허용치(mm)
+_EDGE_CLOSE_GAP_TOL_MM = 0.2
+
 _EXTERNAL_LOGGER = None
 
 
@@ -167,6 +175,36 @@ def _detect_finishline_points_edge(
     candidates = _explode_components_sorted_by_max_z(mesh)
     if not candidates:
         candidates = [mesh]
+
+    # 성능/안정성: 너무 작은 파편 후보는 제외하고, 상위 후보만 평가
+    raw_candidate_count = len(candidates)
+    try:
+        max_verts = max(
+            (int(m.Vertices.Count) for m in candidates if m is not None), default=0
+        )
+    except Exception:
+        max_verts = 0
+    min_keep_verts = max(
+        _EDGE_CANDIDATE_MIN_VERT_ABS,
+        int(float(max_verts) * _EDGE_CANDIDATE_MIN_VERT_RATIO),
+    )
+    filtered_candidates = [
+        m
+        for m in candidates
+        if m is not None and int(m.Vertices.Count) >= int(min_keep_verts)
+    ]
+    if not filtered_candidates:
+        filtered_candidates = candidates[:]
+    candidates = filtered_candidates[:_EDGE_CANDIDATE_MAX_COUNT]
+    _trace_log(
+        "[detect-edge] candidate_filter total={} filtered={} kept={} min_keep_verts={} max_count={}".format(
+            raw_candidate_count,
+            len(filtered_candidates),
+            len(candidates),
+            int(min_keep_verts),
+            int(_EDGE_CANDIDATE_MAX_COUNT),
+        )
+    )
 
     ref_pt0 = None
     ref_pt0_radius = None
@@ -828,8 +866,10 @@ def _curve_to_closed_points(curve: rg.Curve) -> Optional[List[rg.Point3d]]:
     except Exception:
         joined = curve
 
-    if joined is None or not joined.IsClosed:
+    if joined is None:
         return None
+
+    is_closed = bool(getattr(joined, "IsClosed", False))
 
     try:
         ok, poly = joined.TryGetPolyline()
@@ -850,7 +890,14 @@ def _curve_to_closed_points(curve: rg.Curve) -> Optional[List[rg.Point3d]]:
 
     if len(points) < 3:
         return None
-    if points[0].DistanceTo(points[-1]) > 1e-6:
+
+    gap = points[0].DistanceTo(points[-1])
+    if not is_closed:
+        # ExtractMeshEdges 결과가 미세 gap으로 열린 경우가 있어, 작은 gap은 폐곡선으로 보정
+        if gap > _EDGE_CLOSE_GAP_TOL_MM:
+            return None
+
+    if gap > 1e-6:
         points.append(rg.Point3d(points[0]))
     return points
 
@@ -1060,6 +1107,9 @@ def _validate_finishline_points(
     - 한 세그먼트가 전체 대비 지나치게 길거나
     - 한 세그먼트의 |dz|가 비정상적으로 크면
       해당 전략 결과를 실패로 간주한다.
+
+    예외: 단 하나의 seam 점프(주로 루프 닫힘 구간)가 존재하고,
+    그 한 세그먼트를 제외하면 정상 통계인 경우는 허용한다.
     """
     if not points or len(points) < 4:
         return False, "too_few_points"
@@ -1080,35 +1130,90 @@ def _validate_finishline_points(
     if len(seg_lens) < 3:
         return False, "too_few_segments"
 
-    med_len = _median(seg_lens)
-    max_len = max(seg_lens) if seg_lens else 0.0
-    if med_len is None or med_len <= _DIST_TOL:
-        return False, "invalid_segment_stats"
+    def _metric_outlier(values: Sequence[float], ratio_th: float, abs_th: float):
+        if not values:
+            return False, None
+        med = _median(values)
+        if med is None or med <= _DIST_TOL:
+            return False, None
+        max_v = max(values)
+        limit = max(float(abs_th), float(med) * float(ratio_th))
+        if max_v < limit:
+            return False, {
+                "max": float(max_v),
+                "med": float(med),
+                "ratio": float(max_v / max(1e-9, med)),
+                "idx": -1,
+                "count": 0,
+            }
 
-    if max_len >= _OUTLIER_SEGMENT_ABS_MM and max_len >= (
-        med_len * _OUTLIER_SEGMENT_RATIO
-    ):
+        try:
+            idx = max(range(len(values)), key=lambda i: values[i])
+        except Exception:
+            idx = -1
+        count = sum(1 for v in values if v >= limit)
+
+        # 단일 outlier는 seam 점프일 수 있으므로 해당 세그먼트 제외 후 재검증
+        if count == 1 and 0 <= idx < len(values) and len(values) >= 4:
+            trimmed = [v for i, v in enumerate(values) if i != idx]
+            med2 = _median(trimmed)
+            if med2 is not None and med2 > _DIST_TOL:
+                max2 = max(trimmed)
+                limit2 = max(float(abs_th), float(med2) * float(ratio_th))
+                if max2 < limit2:
+                    return False, {
+                        "max": float(max_v),
+                        "med": float(med),
+                        "ratio": float(max_v / max(1e-9, med)),
+                        "idx": int(idx),
+                        "count": int(count),
+                        "accepted_single_outlier": True,
+                    }
+
+        return True, {
+            "max": float(max_v),
+            "med": float(med),
+            "ratio": float(max_v / max(1e-9, med)),
+            "idx": int(idx),
+            "count": int(count),
+        }
+
+    seg_bad, seg_info = _metric_outlier(
+        seg_lens,
+        _OUTLIER_SEGMENT_RATIO,
+        _OUTLIER_SEGMENT_ABS_MM,
+    )
+    if seg_bad:
+        info = seg_info or {}
         return (
             False,
             "outlier_segment max_len={:.4f} med_len={:.4f} ratio={:.3f}".format(
-                max_len,
-                med_len,
-                max_len / max(1e-9, med_len),
+                info.get("max", 0.0),
+                info.get("med", 0.0),
+                info.get("ratio", 0.0),
             ),
         )
 
-    med_dz = _median(seg_dz)
-    max_dz = max(seg_dz) if seg_dz else 0.0
-    if med_dz is not None and med_dz > _DIST_TOL:
-        if max_dz >= _OUTLIER_DZ_ABS_MM and max_dz >= (med_dz * _OUTLIER_DZ_RATIO):
-            return (
-                False,
-                "outlier_dz max_dz={:.4f} med_dz={:.4f} ratio={:.3f}".format(
-                    max_dz,
-                    med_dz,
-                    max_dz / max(1e-9, med_dz),
-                ),
-            )
+    dz_bad, dz_info = _metric_outlier(
+        seg_dz,
+        _OUTLIER_DZ_RATIO,
+        _OUTLIER_DZ_ABS_MM,
+    )
+    if dz_bad:
+        info = dz_info or {}
+        return (
+            False,
+            "outlier_dz max_dz={:.4f} med_dz={:.4f} ratio={:.3f}".format(
+                info.get("max", 0.0),
+                info.get("med", 0.0),
+                info.get("ratio", 0.0),
+            ),
+        )
+
+    if seg_info and seg_info.get("accepted_single_outlier"):
+        return True, "ok_with_single_segment_outlier"
+    if dz_info and dz_info.get("accepted_single_outlier"):
+        return True, "ok_with_single_dz_outlier"
 
     return True, "ok"
 
@@ -1512,6 +1617,31 @@ def _order_by_azimuth(pts: Sequence[rg.Point3d]) -> List[rg.Point3d]:
     return [rg.Point3d(p) for p in ordered]
 
 
+def _normalize_loop_points(points: Sequence[rg.Point3d]) -> List[rg.Point3d]:
+    if not points or len(points) < 4:
+        return []
+
+    core = [rg.Point3d(p) for p in points if p is not None]
+    if len(core) < 4:
+        return []
+
+    try:
+        is_closed = core[0].DistanceTo(core[-1]) <= 1e-4
+    except Exception:
+        is_closed = False
+
+    if is_closed:
+        core = core[:-1]
+    if len(core) < 3:
+        return []
+
+    ordered = _order_by_azimuth(core)
+    if len(ordered) < 3:
+        return []
+    ordered.append(rg.Point3d(ordered[0]))
+    return ordered
+
+
 def _pick_start_pt(pt0: rg.Point3d, sections: Sequence[Dict[str, Sequence]]):
     best = None
     for idx, section in enumerate(sections):
@@ -1865,12 +1995,25 @@ def detect_finish_line(
         else:
             ok_shape, reason = _validate_finishline_points(traced_points)
             if not ok_shape:
-                _trace_log(
-                    "[detect] edge result rejected by outlier check: {}; fallback=section_tracking".format(
-                        reason
+                normalized = _normalize_loop_points(traced_points)
+                if normalized and len(normalized) >= 4:
+                    ok2, reason2 = _validate_finishline_points(normalized)
+                    if ok2:
+                        _trace_log(
+                            "[detect] edge result normalized by azimuth and accepted (prev_reason={})".format(
+                                reason
+                            )
+                        )
+                        traced_points = normalized
+                        ok_shape = True
+                        reason = "normalized_from:{}".format(reason)
+                if not ok_shape:
+                    _trace_log(
+                        "[detect] edge result rejected by outlier check: {}; fallback=section_tracking".format(
+                            reason
+                        )
                     )
-                )
-                traced_points = None
+                    traced_points = None
 
     # 2) 단면 추적(fallback)
     if not traced_points or len(traced_points) < 3:
@@ -1929,26 +2072,39 @@ def detect_finish_line(
         else:
             ok_shape, reason = _validate_finishline_points(traced_points)
             if not ok_shape:
-                _trace_log(
-                    "[detect] section result rejected by outlier check: {}; fallback=legacy".format(
-                        reason
-                    )
-                )
-                legacy_pts = _extract_lowest_boundary_loop_points(
-                    mesh_copy,
-                    ref_pt0=pt0,
-                    ref_pt0_radius=pt0_radius,
-                )
-                if legacy_pts and len(legacy_pts) >= 3:
-                    traced_points = legacy_pts
-                    strategy_used = "LEGACY_LOWEST_BOUNDARY"
-                else:
-                    raise RuntimeError(
-                        "section result rejected by outlier check ({}) and legacy fallback failed".format(
+                normalized = _normalize_loop_points(traced_points)
+                if normalized and len(normalized) >= 4:
+                    ok2, reason2 = _validate_finishline_points(normalized)
+                    if ok2:
+                        _trace_log(
+                            "[detect] section result normalized by azimuth and accepted (prev_reason={})".format(
+                                reason
+                            )
+                        )
+                        traced_points = normalized
+                        ok_shape = True
+                        reason = "normalized_from:{}".format(reason)
+                if not ok_shape:
+                    _trace_log(
+                        "[detect] section result rejected by outlier check: {}; fallback=legacy".format(
                             reason
                         )
                     )
-            else:
+                    legacy_pts = _extract_lowest_boundary_loop_points(
+                        mesh_copy,
+                        ref_pt0=pt0,
+                        ref_pt0_radius=pt0_radius,
+                    )
+                    if legacy_pts and len(legacy_pts) >= 3:
+                        traced_points = legacy_pts
+                        strategy_used = "LEGACY_LOWEST_BOUNDARY"
+                    else:
+                        raise RuntimeError(
+                            "section result rejected by outlier check ({}) and legacy fallback failed".format(
+                                reason
+                            )
+                        )
+            if ok_shape:
                 strategy_used = "SECTION_TRACKING_{}x{}_FALLBACK".format(
                     _SECTION_COUNT, int(_SECTION_STEP_DEG)
                 )

@@ -316,6 +316,12 @@ _DEBUG_ENABLE_FINISHLINE_TRACE = _is_env_true(
     "ABUTS_DEBUG_FINISHLINE_TRACE",
     default=_DEBUG_KEEP_INTERMEDIATE_OBJECTS,
 )
+# finishline 실패 시 강제 재시도는 비용이 크므로 기본 OFF,
+# 디버그 모드거나 명시 env에서만 수행
+_FINISHLINE_RETRY_ON_FAIL = _is_env_true(
+    "ABUTS_FINISHLINE_RETRY_ON_FAIL",
+    default=(_DEBUG_KEEP_INTERMEDIATE_OBJECTS or _DEBUG_ENABLE_FINISHLINE_TRACE),
+)
 
 # 스크류홀 추정 루프 필터: 이 길이(mm)보다 짧은 loop은 노이즈로 제외
 _SCREWHOLE_MIN_LOOP_LENGTH = float(
@@ -1479,46 +1485,51 @@ def main(input_path_arg=None, output_path_arg=None, log_path_arg=None):
             strategy_used = fl.get("strategy_used")
         except Exception as e:
             log("Finishline failed: " + str(e))
-            # 관측용 1회 재시도: trace 강제 ON + visualize ON
-            prev_trace = os.environ.get("FINISHLINE_TRACE_DEBUG")
-            prev_keep_temp = os.environ.get("FINISHLINE_DEBUG_KEEP_TEMP_OBJECTS")
-            try:
-                os.environ["FINISHLINE_TRACE_DEBUG"] = "1"
-                os.environ["FINISHLINE_DEBUG_KEEP_TEMP_OBJECTS"] = "1"
-                log("[finishline] retry once with forced trace+visualize")
-                fl = _detect_finish_line_latest(
-                    doc=doc,
-                    visualize=True,
-                    mesh_id=finishline_mesh_id,
-                )
-                pts = fl.get("points") or []
-                pt0 = fl.get("pt0")
-                strategy_used = fl.get("strategy_used")
-                log(
-                    "[finishline] retry success strategy={} points={}".format(
-                        strategy_used,
-                        len(pts),
+            if _FINISHLINE_RETRY_ON_FAIL:
+                # 선택적 1회 재시도: trace ON + visualize(디버그 시에만)
+                prev_trace = os.environ.get("FINISHLINE_TRACE_DEBUG")
+                prev_keep_temp = os.environ.get("FINISHLINE_DEBUG_KEEP_TEMP_OBJECTS")
+                try:
+                    os.environ["FINISHLINE_TRACE_DEBUG"] = "1"
+                    # retry에서 임시 객체를 무조건 남기지 않음(문서 오염 방지)
+                    if _DEBUG_KEEP_INTERMEDIATE_OBJECTS:
+                        os.environ["FINISHLINE_DEBUG_KEEP_TEMP_OBJECTS"] = "1"
+                    else:
+                        os.environ["FINISHLINE_DEBUG_KEEP_TEMP_OBJECTS"] = "0"
+                    log("[finishline] retry once with forced trace")
+                    fl = _detect_finish_line_latest(
+                        doc=doc,
+                        visualize=bool(_DEBUG_KEEP_INTERMEDIATE_OBJECTS),
+                        mesh_id=finishline_mesh_id,
                     )
-                )
-            except Exception as retry_err:
-                log("[finishline] retry failed: " + str(retry_err))
-            finally:
-                try:
-                    if prev_trace is None:
-                        os.environ.pop("FINISHLINE_TRACE_DEBUG", None)
-                    else:
-                        os.environ["FINISHLINE_TRACE_DEBUG"] = str(prev_trace)
-                except Exception:
-                    pass
-                try:
-                    if prev_keep_temp is None:
-                        os.environ.pop("FINISHLINE_DEBUG_KEEP_TEMP_OBJECTS", None)
-                    else:
-                        os.environ["FINISHLINE_DEBUG_KEEP_TEMP_OBJECTS"] = str(
-                            prev_keep_temp
+                    pts = fl.get("points") or []
+                    pt0 = fl.get("pt0")
+                    strategy_used = fl.get("strategy_used")
+                    log(
+                        "[finishline] retry success strategy={} points={}".format(
+                            strategy_used,
+                            len(pts),
                         )
-                except Exception:
-                    pass
+                    )
+                except Exception as retry_err:
+                    log("[finishline] retry failed: " + str(retry_err))
+                finally:
+                    try:
+                        if prev_trace is None:
+                            os.environ.pop("FINISHLINE_TRACE_DEBUG", None)
+                        else:
+                            os.environ["FINISHLINE_TRACE_DEBUG"] = str(prev_trace)
+                    except Exception:
+                        pass
+                    try:
+                        if prev_keep_temp is None:
+                            os.environ.pop("FINISHLINE_DEBUG_KEEP_TEMP_OBJECTS", None)
+                        else:
+                            os.environ["FINISHLINE_DEBUG_KEEP_TEMP_OBJECTS"] = str(
+                                prev_keep_temp
+                            )
+                    except Exception:
+                        pass
         _perf_mark(
             "finishline_detect",
             stage_started_at,
