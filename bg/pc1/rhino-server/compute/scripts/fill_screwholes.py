@@ -9,16 +9,15 @@ fill_screwholes.py (axis/cylinder based)
 4) 스크류홀 개구는 상/하 2개이며, 메워야 할 대상은 상부 개구이다.
 
 로직 요약:
-- naked loop들을 축-동심 원기둥 시그니처(반경 분산, 직경 범위)로 필터링
-- 필터 통과 loop 중 Z 중심이 가장 높은 loop 1개만 상부 홀로 선택
+- 직경 2.4mm, XY평면과 평행한 원을 메쉬 상단(z_max + margin)에 배치
+- 원을 -Z 방향으로 project하여 상부 개구 loop를 얻음
+- loop 메트릭(직경/동축성)을 평가해 상부 홀 1개를 선택
 - 해당 loop만 patch 생성/메움
-
-(실무적으로는 "약간 큰 동축 원기둥으로 찍어 얻는 교차 커브"와 동일한 분류 효과를,
-loop의 축-원기둥 적합도 메트릭으로 안정적으로 구현)
 
 - MODE="visualize": 각 loop 메트릭/후보 여부 시각화
 - MODE="auto": 상부 스크류홀 1개 자동 메움
 - MODE="fill": LOOP_INDICES_TO_FILL 인덱스만 수동 메움
+- MODE="debug": auto와 동일하게 메우되, 중간 디버그 오브젝트를 문서에 남김
 
 외부 API는 기존과 동일하게 fill_mesh_object(...) 제공.
 """
@@ -41,6 +40,10 @@ except Exception:
 # ----------------- 설정값 -----------------
 MODE = "auto"
 
+# 디버깅용 중간 산출물(루프/패치/원본 복사본)을 문서에 남길지 여부
+# - MODE="debug" 인 경우 자동으로 True 처럼 동작
+DEBUG_KEEP_INTERMEDIATE_OBJECTS = True
+
 # 최소 loop 둘레(mm): 너무 작은 아티팩트 제거
 MIN_LOOP_LENGTH = 3.0
 
@@ -58,17 +61,11 @@ MAX_RADIAL_STD = 0.20
 # 너무 작은 루프(노이즈) 제외용 최소 직경(mm)
 MIN_DIAMETER = 1.00
 
-# 메시와 교차시킬 탐사용 원기둥 직경(mm)
+# 위에서 project할 탐사용 원 직경(mm)
 PROBE_DIAMETER = 2.4
 
-# 원기둥 높이 여유(mm)
+# 원을 배치할 상단 높이 여유(mm)
 PROBE_Z_MARGIN = 1.0
-
-# Ray 샘플링 기반 상부 루프 추출 설정
-RAY_ANGLE_SAMPLES = 180
-RAY_RADIUS_STEPS = 28
-RAY_RADIUS_MIN = 0.10
-RAY_BOTTOM_REJECT_RATIO = 0.55  # z_min + ratio*(z_max-z_min) 아래는 바닥 히트로 간주
 
 
 # MODE = "fill"일 때 수동 인덱스
@@ -264,86 +261,125 @@ def _curve_to_polyline(curve, seg_count=128):
         return None
 
 
-def _build_upper_loop_by_vertical_rays(mesh, logger=None):
-    """위→아래 수직 ray 샘플링으로 상부 개구 경계(loop) 1개를 구성.
+def _project_curve_to_mesh(curve, mesh, direction, tolerance, logger=None):
+    """Rhino 버전에 따라 다른 ProjectToMesh 시그니처를 유연하게 호출."""
+    if curve is None or mesh is None:
+        return []
 
-    아이디어:
-    - 각 각도(theta)마다 반지름 r을 작게→크게 스캔하며 수직 ray 교차점을 수집
-    - 낮은 z(바닥) 히트는 버리고
-    - 남은 점 중 z축(원점)에서 가장 가까운 점을 선택
-    - 선택점들을 theta 순서로 이으면 상부 홀 경계 근사 루프가 됨
-    """
+    out = []
+    try:
+        # (curve, meshes, dir, tol)
+        projected = rg.Curve.ProjectToMesh(curve, [mesh], direction, tolerance)
+        if projected:
+            out.extend(list(projected))
+    except Exception:
+        pass
+
+    if out:
+        return out
+
+    try:
+        # ([curve], [mesh], dir, tol)
+        projected = rg.Curve.ProjectToMesh([curve], [mesh], direction, tolerance)
+        if projected:
+            out.extend(list(projected))
+    except Exception as e:
+        _log("project curve to mesh failed: {}".format(str(e)), logger)
+
+    return out
+
+
+def _build_upper_loop_by_projected_circle(mesh, tolerance=0.001, logger=None):
+    """직경 2.4mm, XY평면 평행 원을 상부에 두고 -Z로 project하여 상부 루프를 얻는다."""
     if mesh is None:
-        return None
+        return None, None
 
     try:
         bbox = mesh.GetBoundingBox(True)
-        z_min = _safe_float(bbox.Min.Z)
         z_max = _safe_float(bbox.Max.Z)
     except Exception:
-        z_min = -10.0
         z_max = 10.0
 
     z_top = z_max + float(PROBE_Z_MARGIN)
-    z_cut = z_min + (z_max - z_min) * float(RAY_BOTTOM_REJECT_RATIO)
-
-    r_max = max(0.5 * float(MAX_DIAMETER) + 0.35, 0.5 * float(PROBE_DIAMETER) + 0.15)
-    n_ang = max(24, int(RAY_ANGLE_SAMPLES))
-    n_rad = max(8, int(RAY_RADIUS_STEPS))
-
-    pts = []
-    for ai in range(n_ang):
-        th = (2.0 * math.pi * float(ai)) / float(n_ang)
-        ct = math.cos(th)
-        st = math.sin(th)
-
-        best_pt = None
-        best_r = 1e18
-
-        for ri in range(n_rad):
-            t = float(ri) / float(max(1, n_rad - 1))
-            r = float(RAY_RADIUS_MIN) + (r_max - float(RAY_RADIUS_MIN)) * t
-            origin = rg.Point3d(r * ct, r * st, z_top)
-            ray = rg.Ray3d(origin, -rg.Vector3d.ZAxis)
-
-            try:
-                hit_t = rg.Intersect.Intersection.MeshRay(mesh, ray)
-            except Exception:
-                hit_t = -1.0
-
-            if hit_t is None or _safe_float(hit_t, -1.0) < 0.0:
-                continue
-
-            p = ray.PointAt(hit_t)
-            if p is None:
-                continue
-
-            # 바닥쪽 히트 제거
-            if _safe_float(p.Z) < z_cut:
-                continue
-
-            pr = math.sqrt(_safe_float(p.X) ** 2 + _safe_float(p.Y) ** 2)
-            if pr < best_r:
-                best_r = pr
-                best_pt = p
-
-        if best_pt is not None:
-            pts.append(best_pt)
-
-    # 최소 샘플 충족
-    if len(pts) < max(18, int(0.35 * n_ang)):
-        _log(
-            "ray-loop failed: insufficient points {} / {}".format(len(pts), n_ang),
-            logger,
-        )
-        return None
+    radius = 0.5 * float(PROBE_DIAMETER)
 
     try:
-        pl = rg.Polyline(pts + [rg.Point3d(pts[0])])
-        if pl is None or pl.Count < 4:
-            return None
-        return pl
+        plane = rg.Plane(rg.Point3d(0.0, 0.0, z_top), rg.Vector3d.ZAxis)
+        probe_circle = rg.Circle(plane, radius)
+        probe_curve = probe_circle.ToNurbsCurve()
+    except Exception as e:
+        _log("build probe circle failed: {}".format(str(e)), logger)
+        return None, None
+
+    proj_curves = _project_curve_to_mesh(
+        probe_curve,
+        mesh,
+        -rg.Vector3d.ZAxis,
+        float(max(1e-6, tolerance)),
+        logger=logger,
+    )
+    if not proj_curves:
+        _log("project-loop failed: no projected curves", logger)
+        return None, probe_curve
+
+    candidates = []
+    for c in proj_curves:
+        pl = _curve_to_polyline(c, seg_count=180)
+        if pl is None:
+            continue
+        met = _compute_loop_metrics(pl)
+        candidates.append((pl, met))
+
+    if not candidates:
+        _log("project-loop failed: projected curves -> no polyline", logger)
+        return None, probe_curve
+
+    # 상부 개구를 우선 선택: z가 높고(주), 축에 더 잘 맞는(r_std가 작은) 루프
+    candidates.sort(
+        key=lambda x: (
+            _safe_float(x[1].get("z_centroid")),
+            -_safe_float(x[1].get("r_std")),
+        ),
+        reverse=True,
+    )
+
+    return candidates[0][0], probe_curve
+
+
+def _make_obj_attrs(name=None):
+    if not name:
+        return None
+    try:
+        attrs = Rhino.DocObjects.ObjectAttributes()
+        attrs.Name = str(name)
+        return attrs
     except Exception:
+        return None
+
+
+def _debug_add_curve(doc, curve, name=None, logger=None):
+    if doc is None or curve is None:
+        return None
+    attrs = _make_obj_attrs(name)
+    try:
+        if attrs is not None:
+            return doc.Objects.AddCurve(curve, attrs)
+        return doc.Objects.AddCurve(curve)
+    except Exception as e:
+        _log("debug add curve failed: {}".format(str(e)), logger)
+        return None
+
+
+def _debug_add_mesh(doc, mesh, name=None, logger=None):
+    if doc is None or mesh is None:
+        return None
+    attrs = _make_obj_attrs(name)
+    try:
+        if attrs is not None:
+            return doc.Objects.AddMesh(mesh, attrs)
+        return doc.Objects.AddMesh(mesh)
+    except Exception as e:
+        _log("debug add mesh failed: {}".format(str(e)), logger)
         return None
 
 
@@ -628,6 +664,7 @@ def fill_mesh_object(
     logger=None,
     redraw=False,
     planar_tolerance=None,
+    debug_keep_intermediate_objects=False,
 ):
     """외부 호출용 API(호환 유지)."""
     result = {
@@ -670,21 +707,59 @@ def fill_mesh_object(
     if not tol or tol <= 0:
         tol = 0.001
 
-    effective_mode = "visualize" if visualize else mode
+    mode_l = str(mode).strip().lower()
+    debug_mode = bool(debug_keep_intermediate_objects) or (mode_l == "debug")
+    effective_mode = (
+        "visualize" if visualize else ("auto" if mode_l == "debug" else mode)
+    )
 
-    # 1) 수직 ray 기반 상부 루프 생성
-    ray_loop = _build_upper_loop_by_vertical_rays(work_mesh, logger=logger)
+    if debug_mode:
+        src_copy = None
+        try:
+            src_copy = mesh.DuplicateMesh()
+        except Exception:
+            src_copy = None
+        if src_copy is not None:
+            _debug_add_mesh(
+                doc,
+                src_copy,
+                name="fill_screwhole_dbg_obj{}_source".format(obj_index),
+                logger=logger,
+            )
 
-    loop_source = "ray"
-    if ray_loop is None:
+    # 1) 상부 원(project) 기반 상부 루프 생성
+    proj_loop, probe_curve = _build_upper_loop_by_projected_circle(
+        work_mesh, tolerance=tol, logger=logger
+    )
+
+    loop_source = "project"
+    if proj_loop is None:
         result["ok"] = True
-        result["reason"] = "no loops (ray)"
-        _log("obj {} : ray-loop 실패".format(obj_index), logger)
+        result["reason"] = "no loops (project)"
+        _log("obj {} : project-loop 실패".format(obj_index), logger)
         return result
 
-    loops = [ray_loop]
+    loops = [proj_loop]
     result["loop_count"] = 1
-    _log("obj {} : ray-loop 추출 성공".format(obj_index), logger)
+    _log("obj {} : project-loop 추출 성공".format(obj_index), logger)
+
+    if debug_mode:
+        if probe_curve is not None:
+            _debug_add_curve(
+                doc,
+                probe_curve,
+                name="fill_screwhole_dbg_obj{}_probe_circle".format(obj_index),
+                logger=logger,
+            )
+        try:
+            _debug_add_curve(
+                doc,
+                proj_loop.ToPolylineCurve(),
+                name="fill_screwhole_dbg_obj{}_project_loop".format(obj_index),
+                logger=logger,
+            )
+        except Exception:
+            pass
 
     analyzed = []
     for idx, pl in enumerate(loops):
@@ -693,6 +768,21 @@ def fill_mesh_object(
         analyzed.append(
             {"idx": idx, "pl": pl, "metrics": met, "is_candidate": ok, "why": why}
         )
+
+    if debug_mode and effective_mode != "visualize":
+        for item in analyzed:
+            met = item["metrics"]
+            msg = "cand={}({}), len={:.2f}, dia={:.3f}, rStd={:.3f}, zC={:.3f}".format(
+                item["is_candidate"],
+                item["why"],
+                _safe_float(met.get("length")),
+                _safe_float(met.get("diameter_est")),
+                _safe_float(met.get("r_std")),
+                _safe_float(met.get("z_centroid")),
+            )
+            draw_loop_debug(
+                polyline=item["pl"], idx=item["idx"], obj_index=obj_index, text=msg
+            )
 
     if effective_mode == "visualize":
         _log(
@@ -729,18 +819,18 @@ def fill_mesh_object(
         result["candidate_count"] = len(candidates)
 
         if not candidates:
-            # ray에서 직접 얻은 loop 1개는 규격 필터 실패하더라도 상부 홀 후보로 사용
-            if loop_source == "ray" and len(loops) == 1:
+            # project에서 직접 얻은 loop 1개는 규격 필터 실패하더라도 상부 홀 후보로 사용
+            if loop_source == "project" and len(loops) == 1:
                 candidates = [analyzed[0]]
                 result["candidate_count"] = 1
                 _log(
-                    "obj {} : ray-loop 1개를 상부 홀로 강제 채택".format(obj_index),
+                    "obj {} : project-loop 1개를 상부 홀로 강제 채택".format(obj_index),
                     logger,
                 )
             else:
                 result["reason"] = "no axis-based candidates"
                 _log(
-                    "obj {} : ray-loop 후보 조건 불일치".format(obj_index),
+                    "obj {} : project-loop 후보 조건 불일치".format(obj_index),
                     logger,
                 )
                 return result
@@ -763,6 +853,20 @@ def fill_mesh_object(
             return result
 
         patches.append(patch)
+        if debug_mode:
+            patch_dbg = None
+            try:
+                patch_dbg = patch.DuplicateMesh()
+            except Exception:
+                patch_dbg = patch
+            _debug_add_mesh(
+                doc,
+                patch_dbg,
+                name="fill_screwhole_dbg_obj{}_patch_loop{}_{}".format(
+                    obj_index, idx, method
+                ),
+                logger=logger,
+            )
         _log(
             "obj {} : auto-fill upper loop {} method={}".format(obj_index, idx, method),
             logger,
@@ -789,6 +893,20 @@ def fill_mesh_object(
             )
             if patch is not None:
                 patches.append(patch)
+                if debug_mode:
+                    patch_dbg = None
+                    try:
+                        patch_dbg = patch.DuplicateMesh()
+                    except Exception:
+                        patch_dbg = patch
+                    _debug_add_mesh(
+                        doc,
+                        patch_dbg,
+                        name="fill_screwhole_dbg_obj{}_patch_loop{}_{}".format(
+                            obj_index, idx, method
+                        ),
+                        logger=logger,
+                    )
                 _log(
                     "obj {} : manual-fill loop {} method={}".format(
                         obj_index, idx, method
@@ -820,6 +938,14 @@ def fill_mesh_object(
     if not replaced:
         result["reason"] = "replace failed"
         return result
+
+    if debug_mode:
+        _debug_add_mesh(
+            doc,
+            work_mesh,
+            name="fill_screwhole_dbg_obj{}_result".format(obj_index),
+            logger=logger,
+        )
 
     if redraw:
         try:
@@ -909,6 +1035,9 @@ def main():
             visualize=(MODE == "visualize"),
             logger=None,
             redraw=False,
+            debug_keep_intermediate_objects=(
+                MODE == "debug" or DEBUG_KEEP_INTERMEDIATE_OBJECTS
+            ),
         )
         total += int(ret.get("filled_count") or 0)
 
