@@ -25,8 +25,6 @@ _SECTION_COUNT = 40  # increased sampling (was 20)
 _SECTION_STEP_DEG = 9.0  # 360/40 = 9 degrees
 _NEAREST_LIMIT = 10
 _MAX_STEP_DISTANCE = 1.5  # allow slightly larger step to tolerate gaps
-_MAX_STEP_DZ_MM = 0.9
-_MAX_Z_DEV_FROM_TRACK_MEDIAN_MM = 1.4
 
 # 섹션 평면 기준축(경사축) 추정 파라미터
 _TILT_AXIS_BAND_LOW = 0.15
@@ -137,20 +135,6 @@ def _trace_log(msg: str) -> None:
     if _EXTERNAL_LOGGER is not None:
         try:
             _EXTERNAL_LOGGER("[finishline-debug] " + str(msg))
-        except Exception:
-            pass
-
-
-def _info_log(msg: str) -> None:
-    """디버그 옵션과 무관하게 항상 남기는 핵심 로그."""
-    try:
-        print(msg)
-    except Exception:
-        pass
-
-    if _EXTERNAL_LOGGER is not None:
-        try:
-            _EXTERNAL_LOGGER("[finishline] " + str(msg))
         except Exception:
             pass
 
@@ -1368,12 +1352,12 @@ def _estimate_tilt_axis(mesh: rg.Mesh) -> rg.Vector3d:
             continue
 
     if n < _TILT_AXIS_MIN_VERTS:
-        msg = "[axis] fallback=Z reason=too_few_verts n={} (<{})".format(
-            n,
-            _TILT_AXIS_MIN_VERTS,
+        _trace_log(
+            "[axis] fallback=Z reason=too_few_verts n={} (<{})".format(
+                n,
+                _TILT_AXIS_MIN_VERTS,
+            )
         )
-        _trace_log(msg)
-        _info_log(msg)
         return rg.Vector3d(0, 0, 1)
 
     # power iteration (3x3 symmetric) for principal eigenvector
@@ -1402,13 +1386,13 @@ def _estimate_tilt_axis(mesh: rg.Mesh) -> rg.Vector3d:
 
     # 수평에 너무 가까우면 비정상으로 보고 Z축 fallback
     if abs(float(axis.Z)) < 0.2:
-        msg = "[axis] fallback=Z reason=low_z_component axis=({:.6f},{:.6f},{:.6f})".format(
-            axis.X,
-            axis.Y,
-            axis.Z,
+        _trace_log(
+            "[axis] fallback=Z reason=low_z_component axis=({:.6f},{:.6f},{:.6f})".format(
+                axis.X,
+                axis.Y,
+                axis.Z,
+            )
         )
-        _trace_log(msg)
-        _info_log(msg)
         return rg.Vector3d(0, 0, 1)
 
     try:
@@ -1416,15 +1400,15 @@ def _estimate_tilt_axis(mesh: rg.Mesh) -> rg.Vector3d:
         tilt_deg = math.degrees(math.acos(dot))
     except Exception:
         tilt_deg = float("nan")
-    axis_msg = "[axis] estimated tilt_axis=({:.6f},{:.6f},{:.6f}) tilt_deg={:.3f} samples={}".format(
-        axis.X,
-        axis.Y,
-        axis.Z,
-        tilt_deg,
-        n,
+    _trace_log(
+        "[axis] estimated tilt_axis=({:.6f},{:.6f},{:.6f}) tilt_deg={:.3f} samples={}".format(
+            axis.X,
+            axis.Y,
+            axis.Z,
+            tilt_deg,
+            n,
+        )
     )
-    _trace_log(axis_msg)
-    _info_log(axis_msg)
 
     return axis
 
@@ -1712,7 +1696,6 @@ def _select_outermost_nearby(
     max_distance: Optional[float] = None,
     debug_label: Optional[str] = None,
     return_details: bool = False,
-    allow_distance_fallback: bool = True,
 ):
     if not candidates:
         return (None, []) if return_details else None
@@ -1753,14 +1736,6 @@ def _select_outermost_nearby(
         return (best_pt, details) if return_details else best_pt
 
     if all_candidates:
-        if not allow_distance_fallback and max_distance is not None:
-            _trace_log(
-                "[trace] no candidates within {:.3f}mm (distance fallback disabled)".format(
-                    max_distance
-                )
-            )
-            return (None, []) if return_details else None
-
         _trace_log(
             "[trace] fallback: no candidates within {:.3f}mm, using outermost regardless".format(
                 max_distance or 0
@@ -1819,104 +1794,26 @@ def _normalize_loop_points(points: Sequence[rg.Point3d]) -> List[rg.Point3d]:
     return ordered
 
 
-def _estimate_trace_z_hint(
-    pt0: rg.Point3d, sections: Sequence[Dict[str, Sequence]]
-) -> float:
-    """단면별 외곽 고반경 후보의 Z 분포에서 추적 시작 높이 힌트를 구한다."""
-    z_samples: List[float] = []
-
-    for section in sections:
-        candidates = _merge_candidates(
-            section.get("controls") or [], section.get("points") or []
-        )
-        if not candidates:
-            continue
-
-        radii = []
-        for p in candidates:
-            try:
-                radii.append((float(math.sqrt(p.X * p.X + p.Y * p.Y)), p))
-            except Exception:
-                continue
-        if not radii:
-            continue
-
-        max_r = max(r for r, _ in radii)
-        cutoff = max_r * 0.92
-        band = [p for r, p in radii if r >= cutoff]
-        if not band:
-            continue
-
-        z_med = _median([float(p.Z) for p in band])
-        if z_med is None:
-            continue
-        z_samples.append(float(z_med))
-
-    z_hint = _median(z_samples)
-    if z_hint is None:
-        try:
-            return float(pt0.Z)
-        except Exception:
-            return 0.0
-    return float(z_hint)
-
-
 def _pick_start_pt(pt0: rg.Point3d, sections: Sequence[Dict[str, Sequence]]):
-    z_hint = _estimate_trace_z_hint(pt0, sections)
-    _trace_log("[start] z_hint={:.6f}".format(z_hint))
-
     best = None
     for idx, section in enumerate(sections):
         candidates = _merge_candidates(
             section.get("controls") or [], section.get("points") or []
         )
-        if not candidates:
-            continue
-
-        for p in candidates:
-            try:
-                dz_hint = abs(float(p.Z) - float(z_hint))
-                radius = float(math.sqrt(p.X * p.X + p.Y * p.Y))
-                dist_pt0 = float(p.DistanceTo(pt0))
-                # z_hint 우선, 반경 보조(내림차순), pt0 거리 보조
-                rank = (dz_hint, -radius, dist_pt0)
-            except Exception:
-                continue
-            if best is None or rank < best[0]:
-                best = (rank, idx, rg.Point3d(p))
-
+        # 시작점은 거리 제한 없이 pt0에서 가장 가까운 영역 중 외곽 선택
+        chosen = _select_outermost_nearby(
+            pt0,
+            candidates,
+            max_distance=None,
+            debug_label="start plane_idx={}".format(idx),
+        )
+        if chosen is not None:
+            dist = chosen.DistanceTo(pt0)
+            if best is None or dist < best[0]:
+                best = (dist, idx, chosen)
     if best is None:
         raise RuntimeError("단면 교차에서 어떤 점도 얻지 못했습니다")
-
-    _trace_log(
-        "[start] selected plane_idx={} z={:.6f} dz_hint={:.6f}".format(
-            best[1],
-            best[2].Z,
-            abs(float(best[2].Z) - float(z_hint)),
-        )
-    )
     return best[1], best[2]
-
-
-def _filter_candidates_by_z(
-    candidates: Sequence[rg.Point3d],
-    last_z: float,
-    median_z: float,
-    step_dz_limit: float,
-    median_dev_limit: float,
-) -> List[rg.Point3d]:
-    filtered: List[rg.Point3d] = []
-    for p in candidates:
-        try:
-            z = float(p.Z)
-        except Exception:
-            continue
-        if abs(z - float(last_z)) > float(step_dz_limit):
-            continue
-        if abs(z - float(median_z)) > float(median_dev_limit):
-            continue
-        filtered.append(p)
-    return filtered
 
 
 def _trace_finishline_points(
@@ -1944,59 +1841,20 @@ def _trace_finishline_points(
             )
         )
 
-        if not candidates:
-            _trace_log("[trace] STOP: no candidates at step={}".format(step))
-            break
-
-        z_values = [float(p.Z) for p in traced if p is not None]
-        running_median_z = _median(z_values)
-        if running_median_z is None:
-            running_median_z = float(last.Z)
-
-        strict_candidates = _filter_candidates_by_z(
-            candidates,
-            last_z=float(last.Z),
-            median_z=float(running_median_z),
-            step_dz_limit=float(_MAX_STEP_DZ_MM),
-            median_dev_limit=float(_MAX_Z_DEV_FROM_TRACK_MEDIAN_MM),
-        )
-
-        relax_candidates = strict_candidates
-        if not strict_candidates:
-            relax_candidates = _filter_candidates_by_z(
-                candidates,
-                last_z=float(last.Z),
-                median_z=float(running_median_z),
-                step_dz_limit=float(_MAX_STEP_DZ_MM) * 1.5,
-                median_dev_limit=float(_MAX_Z_DEV_FROM_TRACK_MEDIAN_MM) * 1.5,
-            )
-
-        _trace_log(
-            "[trace] step={} plane_idx={} z_filter strict={}/{} relaxed={}/{} last_z={:.4f} med_z={:.4f}".format(
-                step,
-                idx,
-                len(strict_candidates),
-                len(candidates),
-                len(relax_candidates),
-                len(candidates),
-                float(last.Z),
-                float(running_median_z),
-            )
-        )
-
-        select_pool = strict_candidates or relax_candidates or list(candidates)
-
-        # 추적 단계에서는 max_distance 밖 후보 강제 fallback을 막는다.
+        # 3D 거리 1mm 제한 적용
         best_pt = _select_outermost_nearby(
             last,
-            select_pool,
+            candidates,
             max_distance=_MAX_STEP_DISTANCE,
             debug_label="step={} plane_idx={}".format(step, idx),
-            allow_distance_fallback=False,
         )
 
         if best_pt is None:
-            all_sorted = sorted(candidates, key=lambda p: p.DistanceTo(last))
+            all_sorted = (
+                sorted(candidates, key=lambda p: p.DistanceTo(last))
+                if candidates
+                else []
+            )
             min_dist = all_sorted[0].DistanceTo(last) if all_sorted else -1
             _trace_log(
                 "[trace] STOP: no candidates within {:.3f}mm at step {} (closest {:.3f}mm)".format(
@@ -2317,18 +2175,15 @@ def detect_finish_line(
             step_deg=_SECTION_STEP_DEG,
             axis_dir=section_axis,
         )
-        axis_dot = max(-1.0, min(1.0, float(section_axis.Z)))
-        axis_tilt_deg = math.degrees(math.acos(axis_dot))
-        section_msg = "[detect] starting section tracking planes={} step_deg={} axis=({:.6f},{:.6f},{:.6f}) tilt_deg={:.3f}".format(
-            len(planes),
-            _SECTION_STEP_DEG,
-            float(section_axis.X),
-            float(section_axis.Y),
-            float(section_axis.Z),
-            float(axis_tilt_deg),
+        _trace_log(
+            "[detect] starting section tracking planes={} step_deg={} axis=({:.6f},{:.6f},{:.6f})".format(
+                len(planes),
+                _SECTION_STEP_DEG,
+                float(section_axis.X),
+                float(section_axis.Y),
+                float(section_axis.Z),
+            )
         )
-        _trace_log(section_msg)
-        _info_log(section_msg)
         try:
             traced_points, sections = _detect_finishline_points(mesh_copy, planes)
         except Exception as e:
