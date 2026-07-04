@@ -22,10 +22,11 @@ namespace DentalAddin
         private static string CompositePrcFrontPath => Path.Combine(AppConfig.AddInRootDirectory, "AcroDent", "11_Composite prc", "5axisComposite_Front.prc");
 
         // Composite OrientationStrategy 매직넘버 SSOT
+        // - 0: 모델쪽으로 법선 방향
         // - 1: 기본 전략(프로파일 미사용)
         // - 4: 프로파일 기반 공구축 (현장 검증값)
-        private const int CompositeOrientationStrategyDefault = 1;
-        private const int CompositeOrientationStrategyProfile = 1;
+        private const int CompositeOrientationStrategyDefault = 0;
+        private const int CompositeOrientationStrategyProfile = 0;
 
         // 진단용 env 키(선택에는 사용하지 않음).
         // startX SSOT는 MoveSTL_Module.FrontPointX이며, env/shadow 값은 로그 관찰 용도로만 읽는다.
@@ -856,13 +857,47 @@ namespace DentalAddin
                 opB.PassPosition = espMill5xCompositePassPosition.espMill5xCompositePassPositionStartEndPosition;
             }
             double? firstPassPercentOverride = TryGetCompositeFirstPassPercentOverride();
-            // 요청 반영: FINISH_A 시작 기본값은 Splitline_1(=FrontPointX) - 0.3mm
-            // (StartEndScale에서 mm→pass-percent로 변환)
-            const double aStartOffsetFromFrontMm = 0.3;
-            double baseAFirstPercentByFrontX = XToPassPercentByStartEndScale(MoveSTL_Module.FrontPointX - aStartOffsetFromFrontMm, 0.0, splitPercent);
-            double baseAFirstPercent = firstPassPercentOverride.HasValue
-                ? Clamp(firstPassPercentOverride.Value, 0.0, splitPercent)
-                : Clamp(baseAFirstPercentByFrontX, 0.0, splitPercent);
+            // 요청 반영:
+            // - FINISH_A(Finish_Front) 시작점 = Splitline_1 + 0.2mm
+            // - 단, Splitline_2 - 1.0mm를 침범하지 않도록 상한 클램프
+            const double finishFrontStartOffsetFromSplitline1Mm = 0.2;
+            const double finishFrontStartMaxBySplitline2GapMm = 1.0;
+
+            double splitline1X = MoveSTL_Module.FrontPointX;
+            double splitline2X = splitX;
+            bool splitlineResolved = TryGetThreeStageSplitConfig(out double resolvedSplitline1, out double resolvedSplitline2, out _, out _);
+            if (splitlineResolved)
+            {
+                splitline1X = resolvedSplitline1;
+                splitline2X = resolvedSplitline2;
+            }
+
+            double requestedAStartX = splitline1X + finishFrontStartOffsetFromSplitline1Mm;
+            double finishFrontStartMaxX = splitline2X - finishFrontStartMaxBySplitline2GapMm;
+            double appliedAStartX = requestedAStartX;
+            bool finishFrontStartGuardApplied = false;
+            if (appliedAStartX > finishFrontStartMaxX)
+            {
+                appliedAStartX = finishFrontStartMaxX;
+                finishFrontStartGuardApplied = true;
+            }
+
+            double baseAFirstPercentBySplitline1X = XToPassPercentByStartEndScale(appliedAStartX, 0.0, splitPercent);
+            double maxAFirstPercentBySplitline2 = XToPassPercentByStartEndScale(finishFrontStartMaxX, 0.0, splitPercent);
+            double baseAFirstPercent = Clamp(baseAFirstPercentBySplitline1X, 0.0, splitPercent);
+            bool overrideGuardApplied = false;
+            if (firstPassPercentOverride.HasValue)
+            {
+                double overridePercent = Clamp(firstPassPercentOverride.Value, 0.0, splitPercent);
+                if (overridePercent > maxAFirstPercentBySplitline2 + 1e-6)
+                {
+                    overridePercent = maxAFirstPercentBySplitline2;
+                    overrideGuardApplied = true;
+                }
+                baseAFirstPercent = overridePercent;
+            }
+
+            DentalLogger.Log($"Composite2SplitLine2 - FINISH_FRONT 시작점 정책 적용: splitlineResolved={splitlineResolved}, splitline1X={splitline1X:F3}, splitline2X={splitline2X:F3}, requestedStartX(splitline1+0.2)={requestedAStartX:F3}, maxStartX(splitline2-1.0)={finishFrontStartMaxX:F3}, appliedStartX={appliedAStartX:F3}, guardApplied={finishFrontStartGuardApplied}, maxFirst%={maxAFirstPercentBySplitline2:F2}, overrideGuardApplied={overrideGuardApplied}");
 
             const double aEndOffsetFromSplitMm = 0.0; // 요청: FINISH_A 끝점 = 기준점(splitPercent)
             // 요청 반영: FINISH_B 시작점 오프셋 제거(정치수)
@@ -901,7 +936,7 @@ namespace DentalAddin
             }
 
             // FINISH_A 시작점 정책:
-            // - 기본값: Splitline_1(=FrontPointX) - 0.3mm를 StartEndScale pass-percent로 변환하여 사용
+            // - 기본값: Splitline_1 + 0.2mm (단, Splitline_2 - 1.0mm 상한)
             // - env(ABUTS_COMPOSITE_FIRST_PASS_PERCENT_A) 지정 시 env(퍼센트) 우선
             double requestedAFirstPass = baseAFirstPercent;
             opA.FirstPassPercent = Clamp(requestedAFirstPass, 0.0, opA.LastPassPercent);
@@ -919,11 +954,11 @@ namespace DentalAddin
                 opA.FirstPassPercent = fallbackFirst;
                 aWindowPercent = opA.LastPassPercent - opA.FirstPassPercent;
                 aFirstPassFallbackApplied = true;
-                DentalLogger.Log($"Composite2SplitLine2 - A 시작점 최소폭 보정 적용: requested={requestedAFirstPass:F2}, frontBased={baseAFirstPercentByFrontX:F2}, envOverride={(firstPassPercentOverride.HasValue ? firstPassPercentOverride.Value.ToString("F2", CultureInfo.InvariantCulture) : "none")}, applied={before:F2}->{opA.FirstPassPercent:F2}, LastPass={opA.LastPassPercent:F2}, window={aWindowPercent:F2} (<{minAWindowPercent:F2})");
+                DentalLogger.Log($"Composite2SplitLine2 - A 시작점 최소폭 보정 적용: requested={requestedAFirstPass:F2}, splitline1Based={baseAFirstPercentBySplitline1X:F2}, envOverride={(firstPassPercentOverride.HasValue ? firstPassPercentOverride.Value.ToString("F2", CultureInfo.InvariantCulture) : "none")}, applied={before:F2}->{opA.FirstPassPercent:F2}, LastPass={opA.LastPassPercent:F2}, window={aWindowPercent:F2} (<{minAWindowPercent:F2})");
             }
             else
             {
-                DentalLogger.Log($"Composite2SplitLine2 - A 시작점 적용: Requested={requestedAFirstPass:F2}, frontBased={baseAFirstPercentByFrontX:F2}, envOverride={(firstPassPercentOverride.HasValue ? firstPassPercentOverride.Value.ToString("F2", CultureInfo.InvariantCulture) : "none")}, Applied={opA.FirstPassPercent:F2}, LastPass={opA.LastPassPercent:F2}, window={aWindowPercent:F2}");
+                DentalLogger.Log($"Composite2SplitLine2 - A 시작점 적용: Requested={requestedAFirstPass:F2}, splitline1Based={baseAFirstPercentBySplitline1X:F2}, envOverride={(firstPassPercentOverride.HasValue ? firstPassPercentOverride.Value.ToString("F2", CultureInfo.InvariantCulture) : "none")}, Applied={opA.FirstPassPercent:F2}, LastPass={opA.LastPassPercent:F2}, window={aWindowPercent:F2}");
             }
 
             // 정책 변경: Finish_All 단일 패스는 사용하지 않는다(항상 Front/Back 2단).
@@ -1555,7 +1590,8 @@ namespace DentalAddin
 
         /// <summary>
         /// Front Face(ParallelPlanes) 가공 끝점을 FrontPointX 기준으로 고정 적용한다.
-        /// - 목표: Face.RightX = FrontPointX + 1.0mm
+        /// - 목표: Face.RightX = FrontPointX + 0.5mm
+        /// - 추가 상한: Face.RightX <= Splitline_2 - 1.0mm
         /// - RL=1: BottomZLimit = -Face.RightX
         /// - RL=2: BottomZLimit = +Face.RightX
         /// 주의: 이 설정 이후에 Rough 안전가드(TryApplyFaceRightEndGuard)가 추가 보정할 수 있다.
@@ -1582,13 +1618,11 @@ namespace DentalAddin
 
                 LastAppliedFrontFaceDepthMm = configuredDepthMm;
 
-                // 사용자 요청(2026-07-01): Front Face 끝점을 FrontPointX + 1.0mm로 확장한다.
-                // 배경:
-                // - +0.2mm에서는 실제 현장 케이스에서 가공 잔여/접속 형상이 빡빡해지는 문제가 있었고,
-                // - +1.0mm는 기존(문제 없던) Front Face 연장 감각에 더 가깝게 동작한다.
+                // 사용자 요청(2026-07-04): Front_Face 끝점을 Splitline_1(=FrontPointX) + 0.5mm로 적용한다.
+                // 단, Splitline_2 - 1.0mm를 침범하지 않도록 상한 클램프를 적용한다.
                 // 주의:
                 // - 아래 FinishLine 경계 클램프/FaceRoughGuard가 후속으로 더 보수적으로 조정할 수 있다.
-                const double frontFaceEndOffsetFromFrontMm = 1.0;
+                const double frontFaceEndOffsetFromFrontMm = 0.5;
                 double requestedFaceRightX = MoveSTL_Module.FrontPointX + frontFaceEndOffsetFromFrontMm;
                 double appliedFaceRightX = requestedFaceRightX;
 
@@ -1623,20 +1657,20 @@ namespace DentalAddin
                     }
                 }
 
-                // 추가 정책(요청 반영): Front_Face 끝점은 Splitline_2보다 반드시 왼쪽에 있어야 한다.
-                // strict-left 보장을 위해 아주 작은 마진(0.001mm)을 둔다.
+                // 추가 정책(요청 반영): Front_Face 끝점은 Splitline_2 - 1.0mm를 침범하면 안 된다.
                 bool splitline2ClampApplied = false;
                 double splitline2Used = double.NaN;
                 if (TryGetThreeStageSplitConfig(out _, out double splitline2, out _, out _))
                 {
                     splitline2Used = splitline2;
-                    double maxFaceRightBySplitline2 = splitline2 - 0.001;
+                    const double splitline2SafetyGapMm = 1.0;
+                    double maxFaceRightBySplitline2 = splitline2 - splitline2SafetyGapMm;
                     if (appliedFaceRightX >= maxFaceRightBySplitline2)
                     {
                         double before = appliedFaceRightX;
                         appliedFaceRightX = maxFaceRightBySplitline2;
                         splitline2ClampApplied = true;
-                        DentalLogger.Log($"FrontFaceDepth[{context}] - Splitline_2 좌측 클램프 적용: Face.RightX {before:F3}->{appliedFaceRightX:F3}, Splitline_2={splitline2:F3}");
+                        DentalLogger.Log($"FrontFaceDepth[{context}] - Splitline_2 안전간격 클램프 적용: Face.RightX {before:F3}->{appliedFaceRightX:F3}, Splitline_2={splitline2:F3}, gap={splitline2SafetyGapMm:F3}");
                     }
                 }
                 else
@@ -2608,6 +2642,26 @@ namespace DentalAddin
                 double radius = (Document.LatheMachineSetup.BarDiameter + 10.0) / 2.0;
 
                 FeatureChain line1 = FindFeatureChainByName("Splitline_1");
+                if (line1 != null)
+                {
+                    try
+                    {
+                        Point l1p0 = line1.PointAlong(0.0);
+                        Point l1p1 = line1.PointAlong(1.0);
+                        double currentX = (l1p0 != null && l1p1 != null) ? (l1p0.X + l1p1.X) / 2.0 : (l1p0 != null ? l1p0.X : (l1p1 != null ? l1p1.X : double.NaN));
+                        if (double.IsNaN(currentX) || Math.Abs(currentX - splitline1) > 0.001)
+                        {
+                            Document.FeatureChains.Remove(line1);
+                            line1 = null;
+                        }
+                    }
+                    catch
+                    {
+                        try { Document.FeatureChains.Remove(line1); } catch { }
+                        line1 = null;
+                    }
+                }
+
                 if (line1 == null)
                 {
                     Point pTop1 = Document.GetPoint(splitline1, radius, 0);
