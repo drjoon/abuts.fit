@@ -1069,12 +1069,14 @@ namespace DentalAddin
             // [중요] StockAllowance 적용 범위
             // - 과거 장애: A만 적용하고 B 적용이 누락되면, B 활성화 시 후속 NC 단계 불안정 가능.
             // - 원칙: A/B 모두 명시적으로 적용(또는 미적용 사유 로그)한다.
-            DentalLogger.Log("Composite2SplitLine2 - opA/opB StepIncrement/StockAllowance 적용 시작");
+            DentalLogger.Log("Composite2SplitLine2 - opA/opB StepIncrement/StockAllowance/MaxLinkDistance 적용 시작");
             TrySetCompositeStepIncrement(opA, "A");
             if (runB && opB != null) TrySetCompositeStepIncrement(opB, "B");
+            TryTouchCompositeMaximumLinkDistanceOnTechnology(opA, "A");
+            if (runB && opB != null) TryTouchCompositeMaximumLinkDistanceOnTechnology(opB, "B");
             TrySetCompositeStockAllowance(opA, "A");
             if (runB && opB != null) TrySetCompositeStockAllowance(opB, "B");
-            DentalLogger.Log("Composite2SplitLine2 - opA/opB StepIncrement/StockAllowance 적용 완료");
+            DentalLogger.Log("Composite2SplitLine2 - opA/opB StepIncrement/StockAllowance/MaxLinkDistance 적용 완료");
 
             int beforeAddCount = Document?.Operations?.Count ?? -1;
             DentalLogger.Log($"Composite2SplitLine2 - Operation 추가 시작 (beforeCount={beforeAddCount})");
@@ -1275,6 +1277,55 @@ namespace DentalAddin
             {
                 DentalLogger.Log($"Composite2SplitLine2 - {label} StepIncrement 설정 실패: {ex.GetType().Name}:{ex.Message}");
             }
+        }
+
+        private static void TryTouchCompositeMaximumLinkDistanceOnTechnology(TechLatheMill5xComposite op, string label)
+        {
+            if (op == null)
+            {
+                return;
+            }
+
+            string[] propertyNames = new[]
+            {
+                "MaximumLinkDistance",
+                "MaxLinkDistance"
+            };
+
+            foreach (string propertyName in propertyNames)
+            {
+                try
+                {
+                    object current = op.GetType().InvokeMember(
+                        propertyName,
+                        BindingFlags.GetProperty,
+                        null,
+                        op,
+                        null,
+                        CultureInfo.InvariantCulture);
+
+                    if (current == null)
+                    {
+                        continue;
+                    }
+
+                    op.GetType().InvokeMember(
+                        propertyName,
+                        BindingFlags.SetProperty,
+                        null,
+                        op,
+                        new object[] { current },
+                        CultureInfo.InvariantCulture);
+
+                    DentalLogger.Log($"Composite2SplitLine2 - {label} {propertyName} touch 적용(value={current})");
+                    return;
+                }
+                catch
+                {
+                }
+            }
+
+            DentalLogger.Log($"Composite2SplitLine2 - {label} MaximumLinkDistance touch 미지원(속성명 미해결)");
         }
 
 
