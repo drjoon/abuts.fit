@@ -34,6 +34,10 @@ _PT0_Z_RATIO_LOW = 0.2
 _PT0_Z_RATIO_HIGH = 0.6
 _Z_RATIO_LOW = 0.2
 _Z_RATIO_HIGH = 0.7
+
+# max-radius sequential 추적용 Z band (포스트 상단/하단 노이즈 배제)
+_MAXR_Z_RATIO_LOW = 0.22
+_MAXR_Z_RATIO_HIGH = 0.58
 _TARGET_TRACE_POINT_COUNT = 120
 _SHOW_POINT_TEXTDOTS = False
 _DIST_TOL = 1e-8
@@ -1624,8 +1628,8 @@ def _detect_finishline_points_max_radius_from_z_axis(
         z_min = float(bbox.Min.Z)
         z_max = float(bbox.Max.Z)
         h = max(1e-6, z_max - z_min)
-        z_low = z_min + _Z_RATIO_LOW * h
-        z_high = z_min + _Z_RATIO_HIGH * h
+        z_low = z_min + _MAXR_Z_RATIO_LOW * h
+        z_high = z_min + _MAXR_Z_RATIO_HIGH * h
     except Exception:
         z_low = -1e9
         z_high = 1e9
@@ -1705,19 +1709,17 @@ def _detect_finishline_points_max_radius_from_z_axis(
     if z_hint is None:
         z_hint = float(section_reps[0][1].Z)
 
-    # 시작점: max-radius 우선, z_hint 근접 보조(포스트 중앙 치우침 방지)
+    # 시작점: 전 섹션 대표점 중 "경사축 거리" 절대 최대점
     start_idx = -1
     start_pt = None
-    best_score = None
+    start_r = -1.0
     for idx, p, r in section_reps:
         try:
-            dz = abs(float(p.Z) - float(z_hint))
-            dpt0 = float(p.DistanceTo(ref_pt0)) if ref_pt0 is not None else 0.0
-            score = (float(r), -float(dz), -float(dpt0))
+            rr = float(r)
         except Exception:
             continue
-        if best_score is None or score > best_score:
-            best_score = score
+        if rr > start_r:
+            start_r = rr
             start_idx = int(idx)
             start_pt = rg.Point3d(p)
 
@@ -1748,14 +1750,17 @@ def _detect_finishline_points_max_radius_from_z_axis(
             )
             continue
 
-        # 다음 섹션: 연속성(거리) + z_hint 근접 + 반경 유지
+        # 다음 섹션: 반경 우선(near-max), 이후 연속성으로 branch 선택
         try:
+            best_r = max(float(_radius(p)) for p in band)
+            near = [p for p in band if float(_radius(p)) >= (best_r * 0.985)]
+            pool = near if near else band
             best = min(
-                band,
+                pool,
                 key=lambda p: (
                     float(p.DistanceTo(last)),
-                    abs(float(p.Z) - float(z_hint)),
                     abs(float(p.Z) - float(last.Z)),
+                    abs(float(p.Z) - float(z_hint)),
                     -_radius(p),
                 ),
             )
@@ -2157,7 +2162,7 @@ def _visualize_tracking_debug_objects(
         "max_band": [],
     }
 
-    # 1) 경사축 +방향만 표시 (파랑)
+    # 1) 경사축 +방향만 표시 (파랑, 굵은 pipe)
     try:
         axis = (
             rg.Vector3d(section_axis)
@@ -2170,14 +2175,34 @@ def _visualize_tracking_debug_objects(
         if float(axis.Z) < 0.0:
             axis = rg.Vector3d(-axis.X, -axis.Y, -axis.Z)
 
-        axis_len = 12.0
+        axis_len = 18.0
         p0 = rg.Point3d.Origin
         p1 = rg.Point3d(axis.X * axis_len, axis.Y * axis_len, axis.Z * axis_len)
-        c1 = rg.LineCurve(p0, p1)
-        a1 = _add_colored_object(doc, c1, drawing.Color.FromArgb(40, 120, 255))
-        ids["axis"].append(str(a1))
+        axis_curve = rg.LineCurve(p0, p1)
 
-        tip = rg.Sphere(p1, 0.08)
+        pipe = rg.Brep.CreatePipe(
+            axis_curve,
+            System.Array[System.Double]([0.06]),
+            System.Array[System.Double]([axis_curve.Domain.T0]),
+            False,
+            rg.PipeCapMode.Round,
+            True,
+            doc.ModelAbsoluteTolerance,
+            doc.ModelAngleToleranceRadians,
+        )
+        if pipe:
+            for brep in pipe:
+                aid = _add_colored_object(
+                    doc, brep, drawing.Color.FromArgb(40, 120, 255)
+                )
+                ids["axis"].append(str(aid))
+        else:
+            a1 = _add_colored_object(
+                doc, axis_curve, drawing.Color.FromArgb(40, 120, 255)
+            )
+            ids["axis"].append(str(a1))
+
+        tip = rg.Sphere(p1, 0.12)
         tid = _add_colored_object(
             doc, tip.ToBrep(), drawing.Color.FromArgb(40, 120, 255)
         )
