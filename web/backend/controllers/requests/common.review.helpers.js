@@ -621,6 +621,62 @@ export async function ensureShippingFeeRefundOnShippingRollback({
   });
 }
 
+export async function hasRequestShippingOrCompletionHistory({
+  request,
+  session,
+}) {
+  if (!request) return false;
+
+  const workflowCode = String(request?.shippingWorkflow?.code || "")
+    .trim()
+    .toLowerCase();
+  const hasWorkflowHistory =
+    workflowCode === "picked_up" ||
+    workflowCode === "completed" ||
+    Boolean(
+      request?.shippingWorkflow?.pickedUpAt ||
+      request?.shippingWorkflow?.completedAt,
+    );
+
+  const hasCompletionHistory = Boolean(request?.timeline?.actualCompletion);
+  if (hasWorkflowHistory || hasCompletionHistory) {
+    return true;
+  }
+
+  if (!request?.deliveryInfoRef) {
+    return false;
+  }
+
+  const deliveryInfo = await DeliveryInfo.findById(request.deliveryInfoRef)
+    .select({
+      trackingNumber: 1,
+      shippedAt: 1,
+      pickedUpAt: 1,
+      deliveredAt: 1,
+      "events.0": 1,
+    })
+    .session(session || null)
+    .lean()
+    .catch(() => null);
+
+  if (!deliveryInfo) {
+    return false;
+  }
+
+  const hasTrackingNumber = Boolean(
+    String(deliveryInfo?.trackingNumber || "").trim(),
+  );
+  const hasDeliveryTimestamps = Boolean(
+    deliveryInfo?.shippedAt ||
+    deliveryInfo?.pickedUpAt ||
+    deliveryInfo?.deliveredAt,
+  );
+  const hasTrackingEvents =
+    Array.isArray(deliveryInfo?.events) && deliveryInfo.events.length > 0;
+
+  return hasTrackingNumber || hasDeliveryTimestamps || hasTrackingEvents;
+}
+
 // Ensure delivery info shippedAt timestamp
 export async function ensureDeliveryInfoShippedAtNow({ request, session }) {
   if (!request) return;

@@ -22,6 +22,7 @@ import {
   ensureShippingFeeSpendOnPackingApprove,
   ensureShippingFeeRefundOnShippingRollback,
   ensureDeliveryInfoShippedAtNow,
+  hasRequestShippingOrCompletionHistory,
   updateCurrentEstimatedShipYmdOnPackingEnter,
 } from "./common.review.helpers.js";
 import {
@@ -648,13 +649,15 @@ export async function updateReviewStatusByStage(req, res) {
       if (status === "APPROVED" && effectiveStage === "request") {
         const isNormalSource =
           String(request.source || "normal").trim() !== "manufacturer_sample";
-        const hasShippingArtifacts = Boolean(
-          request.shippingPackageId || request.deliveryInfoRef,
-        );
+        const hasShippingOrCompletionHistory =
+          await hasRequestShippingOrCompletionHistory({
+            request,
+            session,
+          });
         const isActuallyRequestStage = previousManufacturerStage === "의뢰";
         if (
           isNormalSource &&
-          (!isActuallyRequestStage || hasShippingArtifacts)
+          (!isActuallyRequestStage || hasShippingOrCompletionHistory)
         ) {
           console.error("[REVIEW_GUARD_BLOCK_NORMAL_SOURCE_REAPPROVAL]", {
             requestId: request.requestId,
@@ -663,6 +666,7 @@ export async function updateReviewStatusByStage(req, res) {
             previousManufacturerStage,
             effectiveStage,
             status,
+            hasShippingOrCompletionHistory,
             hasShippingPackageId: Boolean(request.shippingPackageId),
             hasDeliveryInfoRef: Boolean(request.deliveryInfoRef),
           });
