@@ -1,3 +1,4 @@
+import importlib
 import os
 import sys
 import time
@@ -741,15 +742,29 @@ def fail(msg):
     raise Exception(msg)
 
 
-def _align_mesh_to_origin(mesh, target_diameter=3.33):
+def _align_mesh_to_origin(mesh, target_diameter=None, implant_profile=None):
     """
     공용 정렬 모듈(`align_stl_coordinate.py`)을 사용해 메시를 원점 정렬한다.
 
     Returns:
         (center_x, center_y, z_target) 또는 False
     """
-    success, message, translation = align_stl_coordinate_module.align_mesh_to_origin(
-        mesh, target_diameter=target_diameter
+    module = align_stl_coordinate_module
+    try:
+        module = importlib.reload(align_stl_coordinate_module)
+        log(
+            "[align] module reloaded path={} version={}".format(
+                getattr(module, "__file__", "unknown"),
+                getattr(module, "ALIGN_MODULE_VERSION", "unknown"),
+            )
+        )
+    except Exception as e:
+        log("[align] module reload failed; using cached module: {}".format(str(e)))
+
+    success, message, translation = module.align_mesh_to_origin(
+        mesh,
+        target_diameter=target_diameter,
+        implant_profile=implant_profile,
     )
     if not success or translation is None:
         log("[align] {}".format(message if message else "alignment failed"))
@@ -759,7 +774,7 @@ def _align_mesh_to_origin(mesh, target_diameter=3.33):
     return (-float(translation.X), -float(translation.Y), -float(translation.Z))
 
 
-def _run_alignment_on_first_mesh(doc, target_diameter=3.33):
+def _run_alignment_on_first_mesh(doc, target_diameter=None, implant_profile=None):
     alignment_transform = None
     try:
         log("[align] Starting coordinate alignment...")
@@ -769,7 +784,9 @@ def _run_alignment_on_first_mesh(doc, target_diameter=3.33):
                 mesh = obj.Geometry
                 if mesh:
                     result = _align_mesh_to_origin(
-                        mesh, target_diameter=target_diameter
+                        mesh,
+                        target_diameter=target_diameter,
+                        implant_profile=implant_profile,
                     )
                     if result:
                         alignment_transform = result  # (center_x, center_y, best_z)
@@ -1017,7 +1034,13 @@ def _cleanup_doc_objects_for_non_debug(doc, finishline_curve_id=None):
     )
 
 
-def _import_stl_meshes(doc, input_path, skip_align=False, target_diameter=3.33):
+def _import_stl_meshes(
+    doc,
+    input_path,
+    skip_align=False,
+    target_diameter=None,
+    implant_profile=None,
+):
     before_ids = set()
     try:
         before_ids = set(o.Id for o in list(doc.Objects) if o is not None)
@@ -1041,6 +1064,7 @@ def _import_stl_meshes(doc, input_path, skip_align=False, target_diameter=3.33):
         alignment_transform = _run_alignment_on_first_mesh(
             doc,
             target_diameter=target_diameter,
+            implant_profile=implant_profile,
         )
 
     all_mesh_obj_refs = []
@@ -1456,7 +1480,7 @@ def main(input_path_arg=None, output_path_arg=None, log_path_arg=None):
 
     input_path, output_path = _parse_args(sys.argv, input_path_arg, output_path_arg)
 
-    target_diameter = 3.33
+    target_diameter = None
     raw_target_diameter = os.environ.get("ABUTS_CONNECTION_TARGET_DIAMETER", "").strip()
     if raw_target_diameter:
         try:
@@ -1464,7 +1488,16 @@ def main(input_path_arg=None, output_path_arg=None, log_path_arg=None):
             if parsed_target > 0:
                 target_diameter = parsed_target
         except Exception:
-            pass
+            target_diameter = None
+
+    implant_profile = {
+        "implantManufacturer": os.environ.get("ABUTS_IMPLANT_MANUFACTURER", ""),
+        "implantBrand": os.environ.get("ABUTS_IMPLANT_BRAND", ""),
+        "implantFamily": os.environ.get("ABUTS_IMPLANT_FAMILY", ""),
+        "implantType": os.environ.get("ABUTS_IMPLANT_TYPE", ""),
+        "system": os.environ.get("ABUTS_IMPLANT_SYSTEM", ""),
+        "spec": os.environ.get("ABUTS_IMPLANT_SPEC", ""),
+    }
 
     input_path = str(input_path)
     output_path = str(output_path)
@@ -1499,7 +1532,22 @@ def main(input_path_arg=None, output_path_arg=None, log_path_arg=None):
         log("start")
         log("input=" + input_path)
         log("output=" + output_path)
-        log("[align] target connection diameter={:.4f}mm".format(target_diameter))
+        if target_diameter is not None:
+            log(
+                "[align] target connection diameter(explicit)={:.4f}mm".format(
+                    target_diameter
+                )
+            )
+        else:
+            log(
+                "[align] target connection diameter will be resolved by implant profile/default: "
+                "{}/{}/{}/{}".format(
+                    implant_profile.get("implantManufacturer", ""),
+                    implant_profile.get("implantBrand", ""),
+                    implant_profile.get("implantFamily", ""),
+                    implant_profile.get("implantType", ""),
+                )
+            )
         log(
             "[debug] DEBUG(global)={} keep_intermediate_objects={} finishline_trace={}".format(
                 bool(_GLOBAL_DEBUG),
@@ -1536,6 +1584,7 @@ def main(input_path_arg=None, output_path_arg=None, log_path_arg=None):
             input_path,
             skip_align=True,
             target_diameter=target_diameter,
+            implant_profile=implant_profile,
         )
         _log_doc_mesh_stats(doc, "after-import")
         _perf_mark("import_align", stage_started_at)
@@ -1545,6 +1594,7 @@ def main(input_path_arg=None, output_path_arg=None, log_path_arg=None):
         alignment_transform = _run_alignment_on_first_mesh(
             doc,
             target_diameter=target_diameter,
+            implant_profile=implant_profile,
         )
         _log_doc_mesh_stats(doc, "after-align")
         _perf_mark("align_post_finishline", stage_started_at)

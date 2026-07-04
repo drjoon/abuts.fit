@@ -9,7 +9,7 @@ fill_screwholes.py (axis/cylinder based)
 4) 스크류홀 개구는 상/하 2개이며, 메워야 할 대상은 상부 개구이다.
 
 로직 요약:
-- 직경 2.4mm, XY평면과 평행한 원을 메쉬 상단(z_max + margin)에 배치
+- 직경 2.5mm, XY평면과 평행한 원을 메쉬 상단(z_max + margin)에 배치
 - 원을 -Z 방향으로 project하여 상부 개구 loop를 얻음
 - loop 메트릭(직경/동축성)을 평가해 상부 홀 1개를 선택
 - 해당 loop만 patch 생성/메움
@@ -62,7 +62,7 @@ MAX_RADIAL_STD = 0.20
 MIN_DIAMETER = 1.00
 
 # 위에서 project할 탐사용 원 직경(mm)
-PROBE_DIAMETER = 2.4
+PROBE_DIAMETER = 2.5
 
 # 원을 배치할 상단 높이 여유(mm)
 PROBE_Z_MARGIN = 1.0
@@ -290,7 +290,7 @@ def _project_curve_to_mesh(curve, mesh, direction, tolerance, logger=None):
 
 
 def _build_upper_loop_by_projected_circle(mesh, tolerance=0.001, logger=None):
-    """직경 2.4mm, XY평면 평행 원을 상부에 두고 -Z로 project하여 상부 루프를 얻는다."""
+    """직경 2.5mm, XY평면 평행 원을 상부에 두고 -Z로 project하여 상부 루프를 얻는다."""
     if mesh is None:
         return None, None
 

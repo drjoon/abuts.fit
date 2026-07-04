@@ -167,17 +167,29 @@ async def store_fillhole(req: StoreFillHoleRequest):
     out_name = settings.sanitize_filename(f"{in_base}.filled.stl")
     output_path = settings.STORE_OUT_DIR / out_name
 
-    # 커넥션 직경 결정: 직접 전달된 값 > requestId로 조회 > None(기본값 3.33)
+    # 커넥션 직경 결정: 직접 전달된 값 > requestId로 조회 > None(align 모듈에서 프로파일/기본값 사용)
     connection_target_diameter: float | None = None
+    implant_manufacturer = ""
+    implant_brand = ""
+    implant_family = ""
+    implant_type = ""
     if req.connectionTargetDiameter is not None and req.connectionTargetDiameter > 0:
         connection_target_diameter = req.connectionTargetDiameter
         log(
             f"[store/fillhole] connectionTargetDiameter from request: {connection_target_diameter:.4f}mm"
         )
     elif req.requestId:
-        from .processing import fetch_connection_target_diameter
+        from .processing import (
+            fetch_connection_target_diameter,
+            fetch_request_meta_case_infos,
+        )
 
         connection_target_diameter = fetch_connection_target_diameter(req.requestId)
+        case_infos = fetch_request_meta_case_infos(req.requestId)
+        implant_manufacturer = str(case_infos.get("implantManufacturer") or "").strip()
+        implant_brand = str(case_infos.get("implantBrand") or "").strip()
+        implant_family = str(case_infos.get("implantFamily") or "").strip()
+        implant_type = str(case_infos.get("implantType") or "").strip()
         if connection_target_diameter is not None:
             log(
                 f"[store/fillhole] connectionTargetDiameter from backend: {connection_target_diameter:.4f}mm (requestId={req.requestId})"
@@ -196,6 +208,10 @@ async def store_fillhole(req: StoreFillHoleRequest):
             input_stl=input_path,
             output_stl=output_path,
             connection_target_diameter=connection_target_diameter,
+            implant_manufacturer=implant_manufacturer,
+            implant_brand=implant_brand,
+            implant_family=implant_family,
+            implant_type=implant_type,
             timeout_sec=settings.DEFAULT_TIMEOUT_SEC,
         )
     except subprocess.TimeoutExpired:

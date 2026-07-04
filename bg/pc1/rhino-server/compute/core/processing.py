@@ -220,22 +220,48 @@ def download_original_to_input(item: dict) -> bool:
 # key: (manufacturer, brand, family, type)  — 모두 정규화된 값
 # 레퍼런스: connections.seed.js — DB 시드 변경 시 함께 업데이트
 _BRAND_DIAMETER_FALLBACK: dict[tuple[str, str, str, str], float] = {
+    # NeoBiotech
     ("NEOBIOTECH", "IS", "Regular", "Hex"): 3.35,
     ("NEOBIOTECH", "IS", "Regular", "Non-Hex"): 3.35,
+    ("NEOBIOTECH", "IS / ALX", "Regular", "Hex"): 3.35,
+    ("NEOBIOTECH", "IS / ALX", "Regular", "Non-Hex"): 3.35,
+    ("NEOBIOTECH", "IS / ALX", "Small Narrow", "Hex"): 2.60,
+    ("NEOBIOTECH", "IS / ALX", "Small Narrow", "Non-Hex"): 2.60,
+    # Dentis
     ("DENTIS", "SQ", "Regular", "Hex"): 3.35,
     ("DENTIS", "SQ", "Regular", "Non-Hex"): 3.35,
+    ("DENTIS", "SQ / One-Q", "Regular", "Hex"): 3.35,
+    ("DENTIS", "SQ / One-Q", "Regular", "Non-Hex"): 3.35,
+    ("DENTIS", "SQ / One-Q", "Mini", "Hex"): 2.80,
+    ("DENTIS", "SQ / One-Q", "Mini", "Non-Hex"): 2.80,
+    ("DENTIS", "SQ / One-Q", "Narrow", "Hex"): 2.30,
+    ("DENTIS", "SQ / One-Q", "Narrow", "Non-Hex"): 2.30,
     ("DENTIS", "Mini", "Mini", "Hex"): 2.8,
     ("DENTIS", "Mini", "Mini", "Non-Hex"): 2.8,
+    # Dentium
     ("DENTIUM", "SuperLine", "Regular", "Hex"): 3.33,
     ("DENTIUM", "SuperLine", "Regular", "Non-Hex"): 3.33,
+    # DIO
     ("DIO", "UF", "Regular", "Hex"): 3.35,
     ("DIO", "UF", "Regular", "Non-Hex"): 3.35,
+    ("DIO", "UF", "Narrow", "Hex"): 2.30,
+    ("DIO", "UF", "Narrow", "Non-Hex"): 2.30,
     ("DIO", "Mini", "Mini", "Hex"): 2.3,
     ("DIO", "Mini", "Mini", "Non-Hex"): 2.3,
+    # Megagen
     ("MEGAGEN", "AnyOne", "Regular", "Hex"): 3.3,
     ("MEGAGEN", "AnyOne", "Regular", "Non-Hex"): 3.3,
+    ("MEGAGEN", "AnyOne", "Mini", "Hex"): 3.10,
+    ("MEGAGEN", "AnyOne", "Mini", "Non-Hex"): 3.10,
+    ("MEGAGEN", "Mini internal", "Mini internal", "Hex"): 2.30,
+    ("MEGAGEN", "Mini internal", "Mini internal", "Non-Hex"): 2.30,
+    # Osstem
     ("OSSTEM", "TS", "Regular", "Hex"): 3.35,
     ("OSSTEM", "TS", "Regular", "Non-Hex"): 3.35,
+    ("OSSTEM", "TS3", "Regular", "Hex"): 3.35,
+    ("OSSTEM", "TS3", "Regular", "Non-Hex"): 3.35,
+    ("OSSTEM", "TS3", "Mini", "Hex"): 2.60,
+    ("OSSTEM", "TS3", "Mini", "Non-Hex"): 2.60,
     ("OSSTEM", "Mini", "Mini", "Hex"): 2.6,
     ("OSSTEM", "Mini", "Mini", "Non-Hex"): 2.6,
 }
@@ -432,19 +458,38 @@ async def process_single_stl(
                 metadata={"fileName": p.name, "outputName": out_name},
             )
             connection_target_diameter = fetch_connection_target_diameter(req_id)
+            case_infos = fetch_request_meta_case_infos(req_id)
+            implant_manufacturer = str(
+                case_infos.get("implantManufacturer") or ""
+            ).strip()
+            implant_brand = str(case_infos.get("implantBrand") or "").strip()
+            implant_family = str(case_infos.get("implantFamily") or "").strip()
+            implant_type = str(case_infos.get("implantType") or "").strip()
+
             if connection_target_diameter is not None:
                 log(
                     f"[align] requestId={req_id} connection target diameter={connection_target_diameter:.4f}mm"
                 )
             else:
                 log(
-                    f"[align] requestId={req_id} connection target diameter not found; using default"
+                    f"[align] requestId={req_id} connection target diameter not found; using implant profile/default"
                 )
+
+            if implant_manufacturer or implant_brand or implant_family or implant_type:
+                log(
+                    "[align] implant profile: "
+                    f"{implant_manufacturer}/{implant_brand}/{implant_family}/{implant_type}"
+                )
+
             log(f"Calling run_rhino_python for: {p.name}")
             log_text, output_info = await run_rhino_python(
                 input_stl=p,
                 output_stl=out_path,
                 connection_target_diameter=connection_target_diameter,
+                implant_manufacturer=implant_manufacturer,
+                implant_brand=implant_brand,
+                implant_family=implant_family,
+                implant_type=implant_type,
             )
             log(f"Auto-processing done: {out_name}")
             if log_text:

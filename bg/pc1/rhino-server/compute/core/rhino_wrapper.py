@@ -89,6 +89,10 @@ WRAPPER_TEMPLATE = Template(
     "os.environ['ABUTS_OUTPUT_STL'] = r\"${output_stl}\"\n"
     "os.environ['ABUTS_LOG_PATH'] = r\"${log_path}\"\n"
     "os.environ['ABUTS_CONNECTION_TARGET_DIAMETER'] = \"${connection_target_diameter}\"\n"
+    "os.environ['ABUTS_IMPLANT_MANUFACTURER'] = \"${implant_manufacturer}\"\n"
+    "os.environ['ABUTS_IMPLANT_BRAND'] = \"${implant_brand}\"\n"
+    "os.environ['ABUTS_IMPLANT_FAMILY'] = \"${implant_family}\"\n"
+    "os.environ['ABUTS_IMPLANT_TYPE'] = \"${implant_type}\"\n"
     "os.environ['BACKEND_BASE'] = \"${backend_base}\"\n"
     "os.environ['RHINO_SHARED_SECRET'] = \"${rhino_shared_secret}\"\n"
     "os.environ['BRIDGE_SHARED_SECRET'] = \"${bridge_shared_secret}\"\n"
@@ -115,6 +119,10 @@ def write_wrapper_script(
     output_stl: Path,
     log_path: Path,
     connection_target_diameter: float | None = None,
+    implant_manufacturer: str | None = None,
+    implant_brand: str | None = None,
+    implant_family: str | None = None,
+    implant_type: str | None = None,
 ) -> Path:
     settings.TMP_DIR.mkdir(parents=True, exist_ok=True)
     wrapper_path = settings.TMP_DIR / f"job_{token}.py"
@@ -137,6 +145,10 @@ def write_wrapper_script(
                 if connection_target_diameter is not None
                 else ""
             ),
+            implant_manufacturer=repr_path_for_template(implant_manufacturer or ""),
+            implant_brand=repr_path_for_template(implant_brand or ""),
+            implant_family=repr_path_for_template(implant_family or ""),
+            implant_type=repr_path_for_template(implant_type or ""),
             backend_base=repr_path_for_template(backend_base),
             rhino_shared_secret=repr_path_for_template(shared_secret),
             bridge_shared_secret=repr_path_for_template(bridge_secret),

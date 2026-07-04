@@ -6,8 +6,7 @@ import traceback
 import uuid
 from pathlib import Path
 
-from . import settings
-from . import state
+from . import settings, state
 from .logger import log
 from .rhino_pool import acquire_rhino_id
 from .rhino_wrapper import write_wrapper_script
@@ -18,6 +17,10 @@ async def run_rhino_python(
     input_stl: Path,
     output_stl: Path,
     connection_target_diameter: float | None = None,
+    implant_manufacturer: str | None = None,
+    implant_brand: str | None = None,
+    implant_family: str | None = None,
+    implant_type: str | None = None,
     timeout_sec: float = settings.DEFAULT_TIMEOUT_SEC,
 ) -> tuple[str, dict | None]:
     rhinocode = settings.get_rhinocode_bin()
@@ -48,6 +51,10 @@ async def run_rhino_python(
         output_stl=output_stl,
         log_path=log_path,
         connection_target_diameter=connection_target_diameter,
+        implant_manufacturer=implant_manufacturer,
+        implant_brand=implant_brand,
+        implant_family=implant_family,
+        implant_type=implant_type,
     )
 
     try:
@@ -156,7 +163,9 @@ async def run_rhino_python(
                             try:
                                 await asyncio.wait_for(process.wait(), timeout=5.0)
                             except asyncio.TimeoutError:
-                                log(f"process wait timeout after kill (pid={getattr(process,'pid',None)})")
+                                log(
+                                    f"process wait timeout after kill (pid={getattr(process, 'pid', None)})"
+                                )
                             except Exception:
                                 pass
                     except Exception:
