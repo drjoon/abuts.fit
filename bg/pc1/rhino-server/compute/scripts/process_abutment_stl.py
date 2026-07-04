@@ -2,6 +2,7 @@ import os
 import sys
 import time
 
+import align_stl_coordinate as align_stl_coordinate_module
 import fill_screwholes as fill_screwholes_module
 import fill_steps as fill_steps_module
 import finishline_detection as finishline_detection_module
@@ -742,156 +743,20 @@ def fail(msg):
 
 def _align_mesh_to_origin(mesh, target_diameter=3.33):
     """
-    메시를 원점에 정렬
-    1. Z_min + 2mm 위치의 가로 단면 원 중심을 XY 원점으로 이동
-    2. 커넥션 외부 직경(target_diameter) 위치를 Z=0으로 이동
-       - plane intersection 기반 반지름으로 테이퍼 기울기 계산 후 1-shot Z 계산
-       - 이후 이진탐색으로 ±0.005mm 이내로 수렴
+    공용 정렬 모듈(`align_stl_coordinate.py`)을 사용해 메시를 원점 정렬한다.
+
+    Returns:
+        (center_x, center_y, z_target) 또는 False
     """
-    import math
-
-    import Rhino.Geometry as rg
-
-    bbox = mesh.GetBoundingBox(True)
-    z_min = bbox.Min.Z
-    z_max = bbox.Max.Z
-    target_radius = target_diameter / 2.0
-
-    def get_circle_at_z(z):
-        """plane intersection 기반 최대 반지름 반환 (center_x, center_y, max_r)"""
-        plane = rg.Plane(rg.Point3d(0, 0, z), rg.Vector3d(0, 0, 1))
-        polylines = rg.Intersect.Intersection.MeshPlane(mesh, plane)
-        if not polylines or len(polylines) == 0:
-            return None
-        longest = max(polylines, key=lambda pl: pl.Length)
-        pts = [(longest[i].X, longest[i].Y) for i in range(longest.Count)]
-        if len(pts) < 3:
-            return None
-        cx = (min(p[0] for p in pts) + max(p[0] for p in pts)) / 2.0
-        cy = (min(p[1] for p in pts) + max(p[1] for p in pts)) / 2.0
-        mr = max(math.sqrt((px - cx) ** 2 + (py - cy) ** 2) for px, py in pts)
-        return cx, cy, mr
-
-    def get_radius_at_z(z):
-        """Node.js stl_metadata와 동일: z 평면 통과 edge intersection만 사용 (연속/monotonic)"""
-        mr = 0.0
-        found = False
-        for fi in range(mesh.Faces.Count):
-            face = mesh.Faces[fi]
-            va = mesh.Vertices[face.A]
-            vb = mesh.Vertices[face.B]
-            vc = mesh.Vertices[face.C]
-            for pa, pb in ((va, vb), (vb, vc), (vc, va)):
-                za = pa.Z - z
-                zb = pb.Z - z
-                if (za > 0 and zb < 0) or (za < 0 and zb > 0):
-                    denom = abs(za - zb)
-                    if denom < 1e-12:
-                        continue
-                    t = abs(za) / denom
-                    ix = pa.X + t * (pb.X - pa.X)
-                    iy = pa.Y + t * (pb.Y - pa.Y)
-                    r = math.sqrt(ix * ix + iy * iy)
-                    if r > mr:
-                        mr = r
-                    found = True
-        return mr if found and mr > 0 else None
-
-    # 1단계: XY 원점 정렬 (Z_min + 2mm 단면 중심)
-    z_reference = z_min + 2.0
-    ref = get_circle_at_z(z_reference)
-    if ref is None:
-        log("[align] No intersection at Z={:.2f}".format(z_reference))
-        return False
-    center_x, center_y, _ = ref
-    total_center_x = center_x
-    total_center_y = center_y
-    log(
-        "[align] Circle center at Z={:.4f}: ({:.4f}, {:.4f})".format(
-            z_reference, center_x, center_y
-        )
+    success, message, translation = align_stl_coordinate_module.align_mesh_to_origin(
+        mesh, target_diameter=target_diameter
     )
-    mesh.Translate(rg.Vector3d(-center_x, -center_y, 0))
-
-    bbox = mesh.GetBoundingBox(True)
-    z_min = bbox.Min.Z
-    z_max = bbox.Max.Z
-
-    # 2단계: 테이퍼 기울기로 target Z 1-shot 계산
-    z1 = z_min + 2.0
-    z2 = z_min + 2.2
-    r1 = get_radius_at_z(z1)
-    r2 = get_radius_at_z(z2)
-    if r1 is None or r2 is None:
-        log("[align] Could not measure radii in connection area")
+    if not success or translation is None:
+        log("[align] {}".format(message if message else "alignment failed"))
         return False
 
-    dz = z2 - z1
-    dr = r2 - r1
-    if abs(dz) < 0.0001:
-        log("[align] dz too small")
-        return False
-    measured_slope = dr / dz
-    log("[align] Measured at z1={:.6f}mm: r={:.6f}mm".format(z1, r1))
-    log("[align] Measured at z2={:.6f}mm: r={:.6f}mm".format(z2, r2))
-    log(
-        "[align] Measured slope={:.8f} angle={:.4f}°".format(
-            measured_slope, math.degrees(math.atan(measured_slope))
-        )
-    )
-
-    # 11도 편측 테이퍼 강제 (모델에 실제 target_radius 구간이 없을 수 있음)
-    # 측정 slope이 11±도 범위면 채택, 너무 벗어나면 11도 강제
-    nominal_slope = math.tan(math.radians(11.0))  # ≈ 0.19438
-    angle_tol_deg = float(os.environ.get("ABUTS_ALIGN_TAPER_ANGLE_TOL_DEG", "1.5"))
-    measured_angle = math.degrees(math.atan(measured_slope))
-    if abs(measured_angle - 11.0) <= angle_tol_deg:
-        taper_slope = measured_slope
-    else:
-        taper_slope = nominal_slope
-        log(
-            "[align] slope deviates from 11° by {:.2f}° → using nominal 11°".format(
-                measured_angle - 11.0
-            )
-        )
-
-    # 1-shot 계산: z1 + (target_r - r1)/slope. 모델에 실제 구간이 없으면 가상 위치가 됨
-    delta_r = target_radius - r1
-    delta_z = delta_r / taper_slope
-    best_z = z1 + delta_z
-    log(
-        "[align] 1-shot Z calc: delta_r={:.8f}mm delta_z={:.8f}mm best_z={:.8f}mm".format(
-            delta_r, delta_z, best_z
-        )
-    )
-    mesh.Translate(rg.Vector3d(0, 0, -best_z))
-    log("[align] Mesh translated by Z={:.8f}mm (virtual 3.35 origin)".format(-best_z))
-
-    # 4단계: XY 중심 미세보정
-    final_circle = get_circle_at_z(0)
-    if final_circle is not None:
-        fcx, fcy, _ = final_circle
-        log("[align] Z=0 center: ({:.6f}, {:.6f})".format(fcx, fcy))
-        if abs(fcx) > 0.0001 or abs(fcy) > 0.0001:
-            mesh.Translate(rg.Vector3d(-fcx, -fcy, 0))
-            total_center_x = round(total_center_x + fcx, 4)
-            total_center_y = round(total_center_y + fcy, 4)
-
-    conn_r = get_radius_at_z(0)
-    final_diameter = (conn_r * 2.0) if conn_r is not None else 0.0
-    log(
-        "[align] Final translation: XY=({:.4f}, {:.4f}), Z={:.6f}".format(
-            -total_center_x, -total_center_y, -best_z
-        )
-    )
-    # 참고: 모델에 실제 target_diameter 구간이 없으면 Z=0은 가상 위치→측정값이 target과 다를 수 있음
-    log(
-        "[align] Measured diameter at Z=0: {:.6f}mm (target virtual: {:.4f}mm)".format(
-            final_diameter, target_diameter
-        )
-    )
-
-    return (total_center_x, total_center_y, best_z)
+    # 기존 호출부와 호환되도록 (center_x, center_y, z_target) 형태로 변환
+    return (-float(translation.X), -float(translation.Y), -float(translation.Z))
 
 
 def _run_alignment_on_first_mesh(doc, target_diameter=3.33):
