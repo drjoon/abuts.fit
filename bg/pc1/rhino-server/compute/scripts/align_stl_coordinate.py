@@ -20,7 +20,7 @@ import sys
 
 import Rhino.Geometry as rg
 
-ALIGN_MODULE_VERSION = "2026-07-05.z-orientation-v7-hex-one-shot-normal"
+ALIGN_MODULE_VERSION = "2026-07-05.z-orientation-v8-hex-residual-report"
 DEFAULT_TARGET_DIAMETER = 3.33
 
 # 표 기준 정적 매핑 (정규화된 키 사용)
@@ -1375,6 +1375,9 @@ def align_mesh_to_origin(mesh, target_diameter=None, implant_profile=None):
     if not ok_hex:
         _log("{} (skip hex-angle alignment)".format(hex_msg))
 
+    # 7) 최종 잔차 재측정(성공 메시지로도 전달)
+    residual = _measure_hex_residual_to_x_deg(mesh)
+
     _log("Final Z translation: {:.3f}".format(translation.Z))
 
     final_bbox = mesh.GetBoundingBox(True)
@@ -1389,7 +1392,15 @@ def align_mesh_to_origin(mesh, target_diameter=None, implant_profile=None):
         )
     )
 
-    return (True, "Successfully aligned", translation)
+    if residual is None:
+        summary = "Successfully aligned; residual_to_X_deg=unavailable"
+    else:
+        summary = "Successfully aligned; residual_to_X_deg={:.6f}; residual_method={}; target<=0.010000".format(
+            residual.get("residual_deg", 999.0),
+            residual.get("method", "unknown"),
+        )
+
+    return (True, summary, translation)
 
 
 # Rhino.Compute 또는 스크립트 실행 시 사용할 메인 함수

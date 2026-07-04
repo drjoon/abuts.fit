@@ -766,8 +766,13 @@ def _align_mesh_to_origin(mesh, target_diameter=None, implant_profile=None):
         target_diameter=target_diameter,
         implant_profile=implant_profile,
     )
+
+    if message:
+        log("[align] {}".format(message))
+
     if not success or translation is None:
-        log("[align] {}".format(message if message else "alignment failed"))
+        if not message:
+            log("[align] alignment failed")
         return False
 
     # 기존 호출부와 호환되도록 (center_x, center_y, z_target) 형태로 변환
