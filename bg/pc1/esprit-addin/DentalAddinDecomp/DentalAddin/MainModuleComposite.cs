@@ -1669,11 +1669,11 @@ namespace DentalAddin
 
                 LastAppliedFrontFaceDepthMm = configuredDepthMm;
 
-                // 사용자 요청(2026-07-04): Front_Face 끝점을 Splitline_1(=FrontPointX) + 2.0mm로 적용한다.
+                // 사용자 요청(2026-07-04): Front_Face 끝점을 Splitline_1(=FrontPointX) + 2.5mm로 적용한다.
                 // 단, Splitline_2 - 1.0mm를 침범하지 않도록 상한 클램프를 적용한다.
                 // 주의:
                 // - 아래 FinishLine 경계 클램프/FaceRoughGuard가 후속으로 더 보수적으로 조정할 수 있다.
-                const double frontFaceEndOffsetFromFrontMm = 2.0;
+                const double frontFaceEndOffsetFromFrontMm = 2.5;
                 double requestedFaceRightX = MoveSTL_Module.FrontPointX + frontFaceEndOffsetFromFrontMm;
                 double appliedFaceRightX = requestedFaceRightX;
 
