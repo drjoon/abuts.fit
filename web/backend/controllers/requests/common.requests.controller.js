@@ -594,8 +594,14 @@ export async function getAllRequests(req, res) {
       const sortField = req.query.sortBy;
       const sortOrder = req.query.sortOrder === "desc" ? -1 : 1;
       sort[sortField] = sortOrder;
+      // 페이지 경계 중복/누락 방지를 위해 항상 안정적인 tie-breaker를 추가
+      if (sortField !== "_id") {
+        sort._id = sortOrder;
+      }
     } else {
-      sort.createdAt = -1; // 기본 정렬: 최신순
+      // 기본 정렬: 최신순 + _id tie-breaker
+      sort.createdAt = -1;
+      sort._id = -1;
     }
 
     // 의뢰 조회

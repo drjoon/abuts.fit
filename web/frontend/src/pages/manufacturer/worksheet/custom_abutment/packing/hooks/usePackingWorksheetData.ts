@@ -35,13 +35,26 @@ export const usePackingWorksheetData = ({
   const sentinelRef = useRef<HTMLDivElement | null>(null);
   const serverTotalRef = useRef<number | null>(null);
   const requestsRef = useRef<ManufacturerRequest[]>([]);
+  const reconcileInFlightRef = useRef(false);
 
   const requestKey = useCallback((req: ManufacturerRequest) => {
     const mongoId = String(req?._id || "").trim();
-    if (mongoId) return mongoId;
+    if (mongoId) return `oid:${mongoId}`;
+
     const requestId = String(req?.requestId || "").trim();
-    if (requestId) return requestId;
-    return `${Date.now()}-${Math.random()}`;
+    if (requestId) return `rid:${requestId}`;
+
+    // 비정상 데이터(_id/requestId 누락)라도 서로 덮어쓰지 않도록 결정적 합성 키 사용
+    const caseInfos = (req.caseInfos || {}) as Record<string, unknown>;
+    return [
+      "unknown",
+      String(req.createdAt || ""),
+      String(req.manufacturerStage || ""),
+      String(req.description || ""),
+      String(caseInfos.patientName || ""),
+      String(caseInfos.tooth || ""),
+      String(req.lotNumber?.value || ""),
+    ].join("|");
   }, []);
 
   const fetchRequestsList = useCallback(
@@ -135,7 +148,9 @@ export const usePackingWorksheetData = ({
               } else if (typeof knownTotal === "number") {
                 hasMoreRef.current = merged.length < knownTotal;
               } else {
-                hasMoreRef.current = list.length >= PAGE_LIMIT;
+                // total 미제공 시 부분 페이지(중복/정렬 경계) 누락을 방지하기 위해
+                // 빈 페이지가 나올 때까지 한 번 더 탐색한다.
+                hasMoreRef.current = list.length > 0;
               }
             }
           } else {
@@ -146,7 +161,9 @@ export const usePackingWorksheetData = ({
               if (typeof knownTotal === "number") {
                 hasMoreRef.current = list.length < knownTotal;
               } else {
-                hasMoreRef.current = list.length >= PAGE_LIMIT;
+                // total 미제공 시 부분 페이지(중복/정렬 경계) 누락을 방지하기 위해
+                // 빈 페이지가 나올 때까지 한 번 더 탐색한다.
+                hasMoreRef.current = list.length > 0;
               }
             }
           }
@@ -176,6 +193,135 @@ export const usePackingWorksheetData = ({
       await fetchRequestsList(silent, append);
     },
     [fetchRequestsList],
+  );
+
+  const reconcileMissingRequests = useCallback(
+    async (knownTotal: number) => {
+      if (!token) return;
+      if (reconcileInFlightRef.current) return;
+      if (!(userRole === "manufacturer" || userRole === "admin")) return;
+
+      reconcileInFlightRef.current = true;
+      try {
+        const basePath =
+          userRole === "admin" || userRole === "manufacturer"
+            ? "/api/requests/all"
+            : "/api/requests";
+        const stageFilterForTab = showCompleted
+          ? [
+              "세척.패킹",
+              "세척.포장",
+              "packing",
+              "포장.발송",
+              "shipping",
+              "추적관리",
+              "tracking",
+            ]
+          : ["세척.패킹", "세척.포장", "packing"];
+
+        const mergedMap = new Map<string, ManufacturerRequest>();
+        for (const req of requestsRef.current) {
+          mergedMap.set(requestKey(req), req);
+        }
+
+        // 1) 우선 대용량 1페이지 조회로 skip/limit 경계 누락을 우회한다.
+        const bulkLimit = Math.min(
+          Math.max(knownTotal + 20, PAGE_LIMIT * 3),
+          500,
+        );
+        const bulkUrl = new URL(basePath, window.location.origin);
+        bulkUrl.searchParams.set("page", "1");
+        bulkUrl.searchParams.set("limit", String(bulkLimit));
+        bulkUrl.searchParams.set("view", "worksheet");
+        bulkUrl.searchParams.set("includeTotal", "0");
+        bulkUrl.searchParams.set("rndDone", "0");
+        for (const stage of stageFilterForTab) {
+          bulkUrl.searchParams.append("manufacturerStageIn", stage);
+        }
+
+        try {
+          const bulkRes = await fetch(bulkUrl.pathname + bulkUrl.search, {
+            method: "GET",
+            headers: { Authorization: `Bearer ${token}` },
+            cache: "no-store",
+          });
+          if (bulkRes.ok) {
+            const bulkData = await bulkRes.json().catch(() => null);
+            const bulkRaw = bulkData?.data;
+            const bulkList = Array.isArray(bulkRaw?.requests)
+              ? bulkRaw.requests
+              : Array.isArray(bulkRaw)
+                ? bulkRaw
+                : [];
+            for (const req of bulkList as ManufacturerRequest[]) {
+              mergedMap.set(requestKey(req), req);
+            }
+          }
+        } catch (error) {
+          console.warn("[PackingWorksheet] bulk reconcile fetch failed", error);
+        }
+
+        const maxPages = Math.max(6, Math.ceil(knownTotal / PAGE_LIMIT) + 4);
+        let stagnantPages = 0;
+
+        for (let page = 1; page <= maxPages; page += 1) {
+          const url = new URL(basePath, window.location.origin);
+          url.searchParams.set("page", String(page));
+          url.searchParams.set("limit", String(PAGE_LIMIT));
+          url.searchParams.set("view", "worksheet");
+          url.searchParams.set("includeTotal", "0");
+          url.searchParams.set("rndDone", "0");
+          for (const stage of stageFilterForTab) {
+            url.searchParams.append("manufacturerStageIn", stage);
+          }
+
+          const res = await fetch(url.pathname + url.search, {
+            method: "GET",
+            headers: { Authorization: `Bearer ${token}` },
+            cache: "no-store",
+          });
+          if (!res.ok) break;
+
+          const data = await res.json().catch(() => null);
+          const raw = data?.data;
+          const list = Array.isArray(raw?.requests)
+            ? raw.requests
+            : Array.isArray(raw)
+              ? raw
+              : [];
+          if (!Array.isArray(list) || list.length === 0) break;
+
+          const beforeSize = mergedMap.size;
+          for (const req of list as ManufacturerRequest[]) {
+            mergedMap.set(requestKey(req), req);
+          }
+
+          const grew = mergedMap.size > beforeSize;
+          stagnantPages = grew ? 0 : stagnantPages + 1;
+          if (mergedMap.size >= knownTotal) break;
+          if (stagnantPages >= 2) break;
+        }
+
+        const reconciled = Array.from(mergedMap.values());
+        if (reconciled.length > 0) {
+          setRequests(reconciled);
+          setVisibleCount((prev) => Math.max(prev, reconciled.length));
+          pageRef.current = Math.max(
+            1,
+            Math.ceil(reconciled.length / PAGE_LIMIT),
+          );
+          hasMoreRef.current = reconciled.length < knownTotal;
+        }
+      } catch (error) {
+        console.warn(
+          "[PackingWorksheet] reconcile missing requests failed",
+          error,
+        );
+      } finally {
+        reconcileInFlightRef.current = false;
+      }
+    },
+    [PAGE_LIMIT, requestKey, showCompleted, token, userRole],
   );
 
   const fetchNextPage = useCallback(async () => {
@@ -208,7 +354,7 @@ export const usePackingWorksheetData = ({
     hasMoreRef.current = true;
   }, [showCompleted, worksheetSearch]);
 
-  const searchLower = worksheetSearch.toLowerCase();
+  const searchLower = worksheetSearch.trim().toLowerCase();
   const currentStageForTab = "세척.패킹";
   const currentStageOrder = stageOrder[currentStageForTab] ?? 0;
 
@@ -248,6 +394,7 @@ export const usePackingWorksheetData = ({
           (caseInfos.implantFamily || "") +
           (caseInfos.implantType || "")
         ).toLowerCase();
+        if (!searchLower) return true;
         return text.includes(searchLower);
       })
       .sort((a, b) => {
@@ -346,20 +493,27 @@ export const usePackingWorksheetData = ({
   useEffect(() => {
     if (isLoading) return;
     if (worksheetSearch.trim()) return;
-    if (!hasMoreRef.current) return;
     if (visibleCount < filteredAndSorted.length) return;
 
     const knownTotal = serverTotalRef.current;
     if (
-      typeof knownTotal === "number" &&
-      filteredAndSorted.length < knownTotal
+      typeof knownTotal !== "number" ||
+      filteredAndSorted.length >= knownTotal
     ) {
-      void fetchNextPage();
+      return;
     }
+
+    if (hasMoreRef.current) {
+      void fetchNextPage();
+      return;
+    }
+
+    void reconcileMissingRequests(knownTotal);
   }, [
     fetchNextPage,
     filteredAndSorted.length,
     isLoading,
+    reconcileMissingRequests,
     visibleCount,
     worksheetSearch,
   ]);

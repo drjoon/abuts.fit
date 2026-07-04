@@ -538,7 +538,9 @@ export const PackingPageContent = ({
             (caseInfos.implantFamily || "") +
             (caseInfos.implantType || "")
           ).toLowerCase();
-          return text.includes(worksheetSearch.toLowerCase());
+          const normalizedSearch = worksheetSearch.trim().toLowerCase();
+          if (!normalizedSearch) return true;
+          return text.includes(normalizedSearch);
         })
         .sort((a, b) => {
           const aScore = a.shippingPriority?.score ?? 0;

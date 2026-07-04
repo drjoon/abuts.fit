@@ -543,7 +543,7 @@ export const WorksheetCardGrid = ({
 
         return (
           <Card
-            key={request._id}
+            key={String(request._id || request.requestId || "")}
             onClick={onToggleSelected ? handleToggleSelected : undefined}
             className={`relative h-full border ${
               isSelected
