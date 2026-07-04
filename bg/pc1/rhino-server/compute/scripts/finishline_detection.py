@@ -33,6 +33,13 @@ _TARGET_TRACE_POINT_COUNT = 120
 _SHOW_POINT_TEXTDOTS = False
 _DIST_TOL = 1e-8
 _DEBUG_TRACE = os.environ.get("FINISHLINE_TRACE_DEBUG", "0") in ("1", "true", "TRUE")
+_DEBUG_KEEP_TEMP_OBJECTS = os.environ.get(
+    "FINISHLINE_DEBUG_KEEP_TEMP_OBJECTS", "0"
+) in (
+    "1",
+    "true",
+    "TRUE",
+)
 _DEBUG_ADD_POLYLINE_CURVE = os.environ.get("FINISHLINE_DEBUG_CURVE_DOC", "0") in (
     "1",
     "true",
@@ -48,6 +55,8 @@ _SHOW_ALL_SECTION_CURVES = os.environ.get("FINISHLINE_SHOW_ALL_SECTIONS", "0") i
 _EDGE_MIN_Z_VALID_THRESHOLD_MM = 0.5
 # edge 루프가 pt0 대비 지나치게 안쪽(내부 홀)일 때 차단하는 반경 비율 임계값
 _EDGE_MIN_RADIUS_TO_PT0_RATIO = 0.45
+# edge 루프가 메시 외곽 반경 대비 너무 작으면(내부 스크류홀/내부 경계) 차단
+_EDGE_MIN_RADIUS_TO_MESH_BAND_RATIO = 0.55
 # edge 루프가 pt0 대비 과도하게 상단에 있으면 오검출로 간주
 _EDGE_MAX_Z_ABOVE_PT0_MM = 2.5
 # edge 루프가 pt0 대비 과도하게 하단에 있으면 내부 루프/홀 경계 오검출로 간주
@@ -60,6 +69,13 @@ _OUTLIER_SEGMENT_RATIO = 2.8  # max(segment) / median(segment)
 _OUTLIER_SEGMENT_ABS_MM = 2.0  # mm
 _OUTLIER_DZ_RATIO = 4.0  # max(|dz|) / median(|dz|)
 _OUTLIER_DZ_ABS_MM = 1.5  # mm
+
+_EXTERNAL_LOGGER = None
+
+
+def set_external_logger(logger_fn) -> None:
+    global _EXTERNAL_LOGGER
+    _EXTERNAL_LOGGER = logger_fn
 
 
 def _merge_candidates(
@@ -101,6 +117,12 @@ def _trace_log(msg: str) -> None:
         print(msg)
     except Exception:
         pass
+
+    if _EXTERNAL_LOGGER is not None:
+        try:
+            _EXTERNAL_LOGGER("[finishline-debug] " + str(msg))
+        except Exception:
+            pass
 
 
 # ---------------------------------------------------------------------------
@@ -186,11 +208,13 @@ def _detect_finishline_points_edge(
                 idx, len(edge_curves) if edge_curves else 0
             )
         )
+        mesh_band_max_r = _mesh_max_radius_in_z_band(target_mesh)
         traced_points = _pick_best_edge_loop_points(
             edge_curves,
             doc.ModelAbsoluteTolerance,
             ref_pt0,
             ref_pt0_radius,
+            mesh_band_max_radius=mesh_band_max_r,
         )
         if traced_points and len(traced_points) >= 3:
             edge_min_z = _points_min_z(traced_points)
@@ -302,6 +326,21 @@ def _detect_finishline_points_edge(
                     )
                     continue
 
+            if edge_median_radius is not None and mesh_band_max_r > _DIST_TOL:
+                mesh_ratio = edge_median_radius / mesh_band_max_r
+                if mesh_ratio <= _EDGE_MIN_RADIUS_TO_MESH_BAND_RATIO:
+                    rejected_small_radius += 1
+                    _trace_log(
+                        "[detect-edge] candidate[{}] rejected mesh_ratio={:.4f} edge_median_r={:.4f} mesh_band_max_r={:.4f} <= {:.3f}".format(
+                            idx,
+                            mesh_ratio,
+                            edge_median_radius,
+                            mesh_band_max_r,
+                            _EDGE_MIN_RADIUS_TO_MESH_BAND_RATIO,
+                        )
+                    )
+                    continue
+
             # 첫 valid 즉시 반환하지 않고, 전체 후보 중 최적 루프를 선택한다.
             z_score = (
                 -abs(float(edge_min_z) - float(ref_pt0.Z))
@@ -381,6 +420,51 @@ def _mesh_xy_radius_from_bbox(mesh: rg.Mesh) -> float:
         except Exception:
             continue
     return max_r
+
+
+def _mesh_max_radius_in_z_band(
+    mesh: rg.Mesh,
+    low_ratio: float = _Z_RATIO_LOW,
+    high_ratio: float = _Z_RATIO_HIGH,
+) -> float:
+    try:
+        bbox = mesh.GetBoundingBox(True)
+    except Exception:
+        return 0.0
+    if not bbox.IsValid:
+        return 0.0
+
+    z_min = float(bbox.Min.Z)
+    z_max = float(bbox.Max.Z)
+    height = max(1e-6, z_max - z_min)
+    low_z = z_min + float(low_ratio) * height
+    high_z = z_min + float(high_ratio) * height
+
+    max_r = 0.0
+    found = False
+    try:
+        vcount = int(mesh.Vertices.Count)
+    except Exception:
+        vcount = 0
+
+    for i in range(vcount):
+        try:
+            v = mesh.Vertices[i]
+            z = float(v.Z)
+            if z < low_z or z > high_z:
+                continue
+            rr = float(math.sqrt(v.X * v.X + v.Y * v.Y))
+            if rr > max_r:
+                max_r = rr
+            found = True
+        except Exception:
+            continue
+
+    if found and max_r > 0.0:
+        return max_r
+
+    # band 내 점이 부족한 경우 bbox 기반으로 fallback
+    return _mesh_xy_radius_from_bbox(mesh)
 
 
 def _pick_primary_mesh(
@@ -634,15 +718,23 @@ def _extract_mesh_edges_with_command(
         if not curve_geometries:
             _trace_log("[extract_edges] command failed: no curves created")
     finally:
-        for oid in created_ids:
+        if _DEBUG_KEEP_TEMP_OBJECTS:
+            _trace_log(
+                "[extract_edges] debug keep temp objects enabled created_curves={} temp_mesh_id={}".format(
+                    len(created_ids),
+                    temp_mesh_id,
+                )
+            )
+        else:
+            for oid in created_ids:
+                try:
+                    doc.Objects.Delete(oid, True)
+                except Exception:
+                    pass
             try:
-                doc.Objects.Delete(oid, True)
+                doc.Objects.Delete(temp_mesh_id, True)
             except Exception:
                 pass
-        try:
-            doc.Objects.Delete(temp_mesh_id, True)
-        except Exception:
-            pass
 
     return curve_geometries
 
@@ -756,6 +848,7 @@ def _pick_best_edge_loop_points(
     tolerance: float,
     ref_pt0: Optional[rg.Point3d],
     ref_pt0_radius: Optional[float],
+    mesh_band_max_radius: Optional[float] = None,
 ) -> Optional[List[rg.Point3d]]:
     if not curves:
         return None
@@ -798,6 +891,15 @@ def _pick_best_edge_loop_points(
         ):
             ratio = median_r / ref_pt0_radius
             if ratio <= _EDGE_MIN_RADIUS_TO_PT0_RATIO:
+                continue
+
+        if (
+            mesh_band_max_radius is not None
+            and mesh_band_max_radius > _DIST_TOL
+            and median_r is not None
+        ):
+            mesh_ratio = median_r / mesh_band_max_radius
+            if mesh_ratio <= _EDGE_MIN_RADIUS_TO_MESH_BAND_RATIO:
                 continue
 
         try:
@@ -950,20 +1052,43 @@ def _validate_finishline_points(
     return True, "ok"
 
 
-def _extract_lowest_boundary_loop_points(mesh: rg.Mesh) -> Optional[List[rg.Point3d]]:
-    # 기존 방식: naked edge 폐곡선 중 min-Z 루프 사용
+def _extract_lowest_boundary_loop_points(
+    mesh: rg.Mesh,
+    ref_pt0: Optional[rg.Point3d] = None,
+    ref_pt0_radius: Optional[float] = None,
+) -> Optional[List[rg.Point3d]]:
+    # legacy fallback 개선: 단순 min-Z가 아니라 edge 전략과 동일한 품질 필터를 적용해
+    # 내부 홀/캡 경계 오검출을 줄인다.
     loops = _extract_naked_edges_fallback(mesh)
     if not loops:
         _trace_log("[legacy] no naked edge loops")
         return None
-    points = _pick_min_z_closed_curve_points(loops, 1e-6)
+
+    mesh_band_max_r = _mesh_max_radius_in_z_band(mesh)
+    points = _pick_best_edge_loop_points(
+        loops,
+        1e-6,
+        ref_pt0,
+        ref_pt0_radius,
+        mesh_band_max_radius=mesh_band_max_r,
+    )
     if not points or len(points) < 3:
-        _trace_log("[legacy] lowest boundary loop not found")
+        _trace_log("[legacy] no valid loop after edge-like filtering")
         return None
+
+    # legacy 결과도 shape/outlier 검증 적용
+    ok_shape, reason = _validate_finishline_points(points)
+    if not ok_shape:
+        _trace_log("[legacy] rejected by outlier check: {}".format(reason))
+        return None
+
     _trace_log(
-        "[legacy] lowest boundary loop selected min_z={:.6f} pts={}".format(
+        "[legacy] selected loop min_z={:.6f} max_z={:.6f} pts={}".format(
             _points_min_z(points)
             if _points_min_z(points) is not None
+            else float("nan"),
+            _points_max_z(points)
+            if _points_max_z(points) is not None
             else float("nan"),
             len(points),
         )
@@ -1602,8 +1727,7 @@ def detect_finish_line(
 ) -> Dict[str, object]:
     """피니시라인 계산 우선순위:
     1) Edge 추출 기반
-    2) XY 반경 최대(Z축에서 가장 먼 점 연결)
-    3) 단면 추적
+    2) 단면 추적(40개 XZ 평면)
 
     추가 로깅: 실패 원인을 추적하기 위해 메시(bbox, vertex/face counts), pt0,
     per-strategy 요약 정보를 _trace_log로 남깁니다.
@@ -1640,8 +1764,17 @@ def detect_finish_line(
         _trace_log("[detect] mesh info read failed: {}".format(str(e)))
 
     pt0 = _select_pt0(mesh_copy)
+    try:
+        pt0_radius = float(math.sqrt(pt0.X * pt0.X + pt0.Y * pt0.Y))
+    except Exception:
+        pt0_radius = None
     _trace_log(
-        "[detect] selected pt0 x={:.6f} y={:.6f} z={:.6f}".format(pt0.X, pt0.Y, pt0.Z)
+        "[detect] selected pt0 x={:.6f} y={:.6f} z={:.6f} r={}".format(
+            pt0.X,
+            pt0.Y,
+            pt0.Z,
+            pt0_radius if pt0_radius is not None else float("nan"),
+        )
     )
 
     sections: List[Dict[str, object]] = []
@@ -1662,7 +1795,7 @@ def detect_finish_line(
         )
         if edge_min_z is not None and edge_min_z <= _EDGE_MIN_Z_VALID_THRESHOLD_MM:
             _trace_log(
-                "[detect] edge result rejected min_z={:.6f} <= {:.3f}; fallback=max_radius_from_z_axis".format(
+                "[detect] edge result rejected min_z={:.6f} <= {:.3f}; fallback=section_tracking".format(
                     edge_min_z,
                     _EDGE_MIN_Z_VALID_THRESHOLD_MM,
                 )
@@ -1672,52 +1805,13 @@ def detect_finish_line(
             ok_shape, reason = _validate_finishline_points(traced_points)
             if not ok_shape:
                 _trace_log(
-                    "[detect] edge result rejected by outlier check: {}; fallback=max_radius_from_z_axis".format(
+                    "[detect] edge result rejected by outlier check: {}; fallback=section_tracking".format(
                         reason
                     )
                 )
                 traced_points = None
 
-    # 2) Z축 최대 반경 기반(요청 로직)
-    if not traced_points or len(traced_points) < 3:
-        planes = _build_section_planes(count=_SECTION_COUNT, step_deg=_SECTION_STEP_DEG)
-        _trace_log(
-            "[detect] starting max-radius-from-z-axis planes={} step_deg={}".format(
-                len(planes), _SECTION_STEP_DEG
-            )
-        )
-        try:
-            traced_points, sections = _detect_finishline_points_max_radius_from_z_axis(
-                mesh_copy, planes
-            )
-        except Exception as e:
-            _trace_log(
-                "[detect] max-radius strategy raised exception: {}".format(str(e))
-            )
-            traced_points = None
-            sections = []
-
-        _trace_log(
-            "[detect] max-radius strategy returned pts={}".format(
-                len(traced_points) if traced_points else 0
-            )
-        )
-        if traced_points and len(traced_points) >= 3:
-            ok_shape, reason = _validate_finishline_points(traced_points)
-            if not ok_shape:
-                _trace_log(
-                    "[detect] max-radius result rejected by outlier check: {}; fallback=section_tracking".format(
-                        reason
-                    )
-                )
-                traced_points = None
-                sections = []
-            else:
-                strategy_used = "MAX_RADIUS_FROM_Z_AXIS_{}x{}".format(
-                    _SECTION_COUNT, int(_SECTION_STEP_DEG)
-                )
-
-    # 3) 단면 추적(fallback)
+    # 2) 단면 추적(fallback)
     if not traced_points or len(traced_points) < 3:
         planes = _build_section_planes(count=_SECTION_COUNT, step_deg=_SECTION_STEP_DEG)
         _trace_log(
@@ -1740,7 +1834,11 @@ def detect_finish_line(
         )
         if not traced_points or len(traced_points) < 3:
             # 우선 간단한 legacy naked-edge 루프를 시도해본다(포스트/작은 파편이 섞인 경우 유용할 수 있음)
-            legacy_pts = _extract_lowest_boundary_loop_points(mesh_copy)
+            legacy_pts = _extract_lowest_boundary_loop_points(
+                mesh_copy,
+                ref_pt0=pt0,
+                ref_pt0_radius=pt0_radius,
+            )
             if legacy_pts and len(legacy_pts) >= 3:
                 _trace_log(
                     "[detect] legacy lowest boundary provided pts={}".format(
@@ -1756,7 +1854,7 @@ def detect_finish_line(
                 except Exception:
                     comp_count = -1
                 msg = (
-                    "edge/Z축최대반경/단면추적 모두 피니시라인 점을 찾지 못했습니다 | "
+                    "edge/단면추적 모두 피니시라인 점을 찾지 못했습니다 | "
                     "mesh_v={} mesh_f={} zmin={:.6f} zmax={:.6f} components={}"
                 ).format(
                     mesh_copy.Vertices.Count if hasattr(mesh_copy, "Vertices") else -1,
@@ -1775,7 +1873,11 @@ def detect_finish_line(
                         reason
                     )
                 )
-                legacy_pts = _extract_lowest_boundary_loop_points(mesh_copy)
+                legacy_pts = _extract_lowest_boundary_loop_points(
+                    mesh_copy,
+                    ref_pt0=pt0,
+                    ref_pt0_radius=pt0_radius,
+                )
                 if legacy_pts and len(legacy_pts) >= 3:
                     traced_points = legacy_pts
                     strategy_used = "LEGACY_LOWEST_BOUNDARY"

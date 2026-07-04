@@ -14,6 +14,16 @@ from diameter_analysis import analyze_diameters
 _log_initialized = False
 
 
+def _is_env_true(name, default=False):
+    raw = os.environ.get(str(name), "")
+    if raw is None:
+        return bool(default)
+    s = str(raw).strip().lower()
+    if s == "":
+        return bool(default)
+    return s in ("1", "true", "yes", "y", "on")
+
+
 def log(msg):
     global _log_initialized
     import datetime
@@ -190,6 +200,45 @@ def _count_naked_edges(mesh):
         return None
 
 
+def _debug_clone_before_delete(doc, obj, stage_label="unknown"):
+    if not _DEBUG_KEEP_INTERMEDIATE_OBJECTS or doc is None or obj is None:
+        return None
+
+    try:
+        geo = getattr(obj, "Geometry", None)
+        if geo is None:
+            return None
+        dup = geo.Duplicate()
+        if dup is None:
+            return None
+
+        attrs = Rhino.DocObjects.ObjectAttributes()
+        try:
+            attrs = obj.Attributes.Duplicate()
+        except Exception:
+            attrs = Rhino.DocObjects.ObjectAttributes()
+
+        try:
+            old_name = attrs.Name or ""
+        except Exception:
+            old_name = ""
+        attrs.Name = "DBG_KEEP:{}:{}".format(stage_label, old_name)
+
+        new_id = doc.Objects.Add(dup, attrs)
+        if new_id:
+            log(
+                "[debug-keep] cloned before delete stage={} src={} clone={}".format(
+                    stage_label,
+                    getattr(obj, "Id", "unknown"),
+                    new_id,
+                )
+            )
+        return new_id
+    except Exception as e:
+        log("[debug-keep] clone failed stage={} err={}".format(stage_label, str(e)))
+        return None
+
+
 def _clear_doc_objects(doc, stage_label="startup"):
     if doc is None:
         return
@@ -256,6 +305,18 @@ _FILL_TARGET_LIMIT = max(
     1, _safe_int(os.environ.get("ABUTS_FILL_TARGET_LIMIT", "3"), 3)
 )
 
+# 디버그 모드: 중간 오브젝트 보존/finishline 상세로그 활성화
+_DEBUG_KEEP_INTERMEDIATE_OBJECTS = _is_env_true(
+    "ABUTS_DEBUG_KEEP_INTERMEDIATE_OBJECTS",
+    default=(
+        _is_env_true("ABUTS_DEBUG_MODE", False) or _is_env_true("ABUTS_DEBUG", False)
+    ),
+)
+_DEBUG_ENABLE_FINISHLINE_TRACE = _is_env_true(
+    "ABUTS_DEBUG_FINISHLINE_TRACE",
+    default=_DEBUG_KEEP_INTERMEDIATE_OBJECTS,
+)
+
 # 스크류홀 추정 루프 필터: 이 길이(mm)보다 짧은 loop은 노이즈로 제외
 _SCREWHOLE_MIN_LOOP_LENGTH = float(
     os.environ.get("ABUTS_SCREWHOLE_MIN_LOOP_LENGTH", "3.0") or 3.0
@@ -278,6 +339,23 @@ def _iter_mesh_geometries(doc):
         geo = getattr(obj, "Geometry", None)
         if geo is not None:
             yield obj, geo
+
+
+def _pick_largest_mesh_id(doc):
+    best = None
+    for obj, geo in _iter_mesh_geometries(doc):
+        try:
+            f = int(geo.Faces.Count)
+        except Exception:
+            f = -1
+        try:
+            v = int(geo.Vertices.Count)
+        except Exception:
+            v = -1
+        key = (f, v)
+        if best is None or key > best[0]:
+            best = (key, obj.Id)
+    return best[1] if best else None
 
 
 def _calc_xy_radius_from_bbox(bbox):
@@ -397,9 +475,9 @@ def _log_doc_mesh_stats(doc, label, detail_limit=8):
         )
 
 
-def _pick_primary_piece(candidates, tol):
+def _pick_primary_piece(candidates, tol, prefer_open=True):
     open_candidates = [c for c in candidates if (c.get("naked") or 0) > 0]
-    pool = open_candidates if open_candidates else candidates
+    pool = open_candidates if (prefer_open and open_candidates) else candidates
     if not pool:
         return None, None, []
 
@@ -416,7 +494,7 @@ def _pick_primary_piece(candidates, tol):
     return chosen[1].get("id"), (chosen[1].get("r"), chosen[1].get("maxZ")), pool
 
 
-def _pick_finishline_mesh_id(doc, mesh_obj_refs):
+def _pick_finishline_mesh_id(doc, mesh_obj_refs, prefer_open=False):
     if not mesh_obj_refs:
         return None
 
@@ -448,9 +526,12 @@ def _pick_finishline_mesh_id(doc, mesh_obj_refs):
             }
         )
 
-    best_id, best_meta, pool = _pick_primary_piece(candidates, tol)
+    best_id, best_meta, pool = _pick_primary_piece(
+        candidates, tol, prefer_open=prefer_open
+    )
     log(
-        "[finishline-target] importMeshes={} scoped={} pool={} selected={} meta={}".format(
+        "[finishline-target] prefer_open={} importMeshes={} scoped={} pool={} selected={} meta={}".format(
+            bool(prefer_open),
             len(import_ids),
             len(scoped),
             len(pool) if pool else 0,
@@ -1113,6 +1194,8 @@ def _join_all_meshes(doc, label="final"):
         deleted = 0
         for oid in mesh_ids:
             try:
+                src_obj = doc.Objects.FindId(oid)
+                _debug_clone_before_delete(doc, src_obj, stage_label="join-all-source")
                 if doc.Objects.Delete(oid, True):
                     deleted += 1
             except Exception:
@@ -1174,7 +1257,7 @@ def _join_all_meshes(doc, label="final"):
     return final_count if final_count >= 0 else 0
 
 
-def _export_doc_to_stl(doc, output_path):
+def _export_doc_to_stl(doc, output_path, mesh_ids_to_export=None):
     try:
         out_dir = os.path.dirname(str(output_path))
         if out_dir and not os.path.exists(out_dir):
@@ -1184,12 +1267,32 @@ def _export_doc_to_stl(doc, output_path):
 
     try:
         doc.Objects.UnselectAll()
-        for obj in list(doc.Objects):
-            if obj and obj.ObjectType == Rhino.DocObjects.ObjectType.Mesh:
+
+        selected = 0
+        if mesh_ids_to_export:
+            for oid in mesh_ids_to_export:
                 try:
-                    obj.Select(True)
+                    obj = doc.Objects.FindId(oid)
+                    if obj and obj.ObjectType == Rhino.DocObjects.ObjectType.Mesh:
+                        if obj.Select(True):
+                            selected += 1
                 except Exception:
                     pass
+        else:
+            for obj in list(doc.Objects):
+                if obj and obj.ObjectType == Rhino.DocObjects.ObjectType.Mesh:
+                    try:
+                        if obj.Select(True):
+                            selected += 1
+                    except Exception:
+                        pass
+
+        log(
+            "[export] selected mesh count={} explicit_ids={}".format(
+                selected,
+                len(mesh_ids_to_export) if mesh_ids_to_export else 0,
+            )
+        )
     except Exception:
         try:
             Rhino.RhinoApp.RunScript("!_-SelAll _Enter", True)
@@ -1313,6 +1416,17 @@ def main(input_path_arg=None, output_path_arg=None, log_path_arg=None):
         log("input=" + input_path)
         log("output=" + output_path)
         log("[align] target connection diameter={:.4f}mm".format(target_diameter))
+        log(
+            "[debug] keep_intermediate_objects={} finishline_trace={}".format(
+                bool(_DEBUG_KEEP_INTERMEDIATE_OBJECTS),
+                bool(_DEBUG_ENABLE_FINISHLINE_TRACE),
+            )
+        )
+
+        if _DEBUG_ENABLE_FINISHLINE_TRACE:
+            os.environ["FINISHLINE_TRACE_DEBUG"] = "1"
+        if _DEBUG_KEEP_INTERMEDIATE_OBJECTS:
+            os.environ["FINISHLINE_DEBUG_KEEP_TEMP_OBJECTS"] = "1"
 
         # 기존 문서 정리 (ActiveDoc를 사용할 수 있으므로 안전하게 비우기)
         stage_started_at = time.perf_counter()
@@ -1337,23 +1451,9 @@ def main(input_path_arg=None, output_path_arg=None, log_path_arg=None):
         _log_doc_mesh_stats(doc, "after-align")
         _perf_mark("align_post_finishline", stage_started_at)
 
-        # 2) explode 전 스크류홀 메움 (원본 단일/대표 mesh 기준)
-        stage_started_at = time.perf_counter()
-        fill_mesh_refs = _get_mesh_objects(doc)
-        fill_mesh_id = _pick_finishline_mesh_id(doc, fill_mesh_refs)
-        if fill_mesh_id:
-            filled = _run_fill_mesh_holes(doc, fill_mesh_id)
-            log(
-                "[pre-explode-fill] mesh_id={} changed={}".format(
-                    fill_mesh_id, bool(filled)
-                )
-            )
-        else:
-            log("[pre-explode-fill] target mesh not found")
-        _log_doc_mesh_stats(doc, "after-pre-explode-fill")
-        _perf_mark("fill_selection_and_holes", stage_started_at, extra="targets=1")
-
-        # 3) finishline 검출 (홀 메움/정렬 반영본 기준)
+        # 2) finishline 검출 (정렬 반영본, 홀메움 이전 기준)
+        #    - 홀메움 후 생성되는 open edge/내부 경계 영향으로
+        #      피니시라인이 스크류홀로 잡히는 케이스를 줄이기 위해 순서를 앞당긴다.
         fl = None
         pts = []
         pt0 = None
@@ -1361,10 +1461,12 @@ def main(input_path_arg=None, output_path_arg=None, log_path_arg=None):
         stage_started_at = time.perf_counter()
         try:
             finishline_mesh_refs = _get_mesh_objects(doc)
-            finishline_mesh_id = _pick_finishline_mesh_id(doc, finishline_mesh_refs)
+            finishline_mesh_id = _pick_finishline_mesh_id(
+                doc, finishline_mesh_refs, prefer_open=False
+            )
             fl = _detect_finish_line_latest(
                 doc=doc,
-                visualize=False,
+                visualize=bool(_DEBUG_KEEP_INTERMEDIATE_OBJECTS),
                 mesh_id=finishline_mesh_id,
             )
             pts = fl.get("points") or []
@@ -1383,7 +1485,7 @@ def main(input_path_arg=None, output_path_arg=None, log_path_arg=None):
         pt0_aligned = pt0
         _add_finishline_curve(doc, pts_aligned)
 
-        # 4) 백엔드 등록
+        # 3) 백엔드 등록
         stage_started_at = time.perf_counter()
         if fl is not None:
             try:
@@ -1439,6 +1541,22 @@ def main(input_path_arg=None, output_path_arg=None, log_path_arg=None):
                 log("Finishline post failed after alignment: " + str(e))
         _perf_mark("finishline_payload_post", stage_started_at)
 
+        # 4) explode 전 스크류홀 메움 (원본 단일/대표 mesh 기준)
+        stage_started_at = time.perf_counter()
+        fill_mesh_refs = _get_mesh_objects(doc)
+        fill_mesh_id = _pick_finishline_mesh_id(doc, fill_mesh_refs, prefer_open=True)
+        if fill_mesh_id:
+            filled = _run_fill_mesh_holes(doc, fill_mesh_id)
+            log(
+                "[pre-explode-fill] mesh_id={} changed={}".format(
+                    fill_mesh_id, bool(filled)
+                )
+            )
+        else:
+            log("[pre-explode-fill] target mesh not found")
+        _log_doc_mesh_stats(doc, "after-pre-explode-fill")
+        _perf_mark("fill_selection_and_holes", stage_started_at, extra="targets=1")
+
         # 1) Explode: RhinoCommon API를 사용하여 고속 처리 (문서 리셋 없이 바로 진행)
         #    - 분리가 안 되는 weld 메시 대응: Unweld(각도) -> Explode 단계적 시도
         stage_started_at = time.perf_counter()
@@ -1453,6 +1571,7 @@ def main(input_path_arg=None, output_path_arg=None, log_path_arg=None):
                         new_meshes.extend(pieces)
                     else:
                         new_meshes.append(g)
+                    _debug_clone_before_delete(doc, obj, stage_label="explode-source")
                     doc.Objects.Delete(obj.Id, True)
 
             piece_ids = []
@@ -1527,12 +1646,16 @@ def main(input_path_arg=None, output_path_arg=None, log_path_arg=None):
                 # 기존 메시 제거 후 병합 메시 추가
                 for oid in piece_ids:
                     try:
+                        src_obj = doc.Objects.FindId(oid)
+                        _debug_clone_before_delete(
+                            doc, src_obj, stage_label="join-source"
+                        )
                         doc.Objects.Delete(oid, True)
                     except Exception:
                         pass
-                doc.Objects.AddMesh(merged)
+                merged_id = doc.Objects.AddMesh(merged)
                 joined_with_rhinocommon = True
-                log("Join (RhinoCommon) ok")
+                log("Join (RhinoCommon) ok merged_id={}".format(merged_id))
             else:
                 log("Join (RhinoCommon) skipped: merged mesh unavailable")
 
@@ -1612,8 +1735,22 @@ def main(input_path_arg=None, output_path_arg=None, log_path_arg=None):
 
         # 최종 모델(단차 메움 반영본) export
         stage_started_at = time.perf_counter()
+        export_mesh_ids = None
+        if _DEBUG_KEEP_INTERMEDIATE_OBJECTS:
+            preferred_mesh_id = _pick_largest_mesh_id(doc)
+            if preferred_mesh_id:
+                export_mesh_ids = [preferred_mesh_id]
+            log(
+                "[debug] export mesh filter enabled ids={}".format(
+                    export_mesh_ids if export_mesh_ids else []
+                )
+            )
         try:
-            ok = _export_doc_to_stl(doc, output_path)
+            ok = _export_doc_to_stl(
+                doc,
+                output_path,
+                mesh_ids_to_export=export_mesh_ids,
+            )
         except Exception as e:
             fail("STL Export 예외: " + str(e))
 
