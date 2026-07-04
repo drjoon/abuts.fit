@@ -1089,6 +1089,69 @@ def _add_finishline_curve(doc, points):
     return None
 
 
+def _cleanup_doc_objects_for_non_debug(doc, finishline_curve_id=None):
+    """DEBUG=0일 때 문서에 모델 mesh + finishline curve만 남긴다."""
+    if doc is None:
+        return
+
+    keep_curve = None
+    try:
+        keep_curve = finishline_curve_id
+    except Exception:
+        keep_curve = None
+
+    removed = 0
+    mesh_kept = 0
+    curve_kept = 0
+
+    try:
+        objs = list(doc.Objects)
+    except Exception:
+        objs = []
+
+    for obj in objs:
+        if obj is None:
+            continue
+
+        try:
+            oid = obj.Id
+            otype = obj.ObjectType
+        except Exception:
+            continue
+
+        keep = False
+        try:
+            if otype == Rhino.DocObjects.ObjectType.Mesh:
+                keep = True
+                mesh_kept += 1
+            elif (
+                keep_curve is not None
+                and otype == Rhino.DocObjects.ObjectType.Curve
+                and oid == keep_curve
+            ):
+                keep = True
+                curve_kept += 1
+        except Exception:
+            keep = False
+
+        if keep:
+            continue
+
+        try:
+            if doc.Objects.Delete(oid, True):
+                removed += 1
+        except Exception:
+            pass
+
+    log(
+        "[doc-cleanup:non-debug] removed={} mesh_kept={} finishline_curve_kept={}".format(
+            removed,
+            mesh_kept,
+            curve_kept,
+        )
+    )
+
+
 def _import_stl_meshes(doc, input_path, skip_align=False, target_diameter=3.33):
     before_ids = set()
     try:
@@ -1629,6 +1692,7 @@ def main(input_path_arg=None, output_path_arg=None, log_path_arg=None):
         pt0 = None
         strategy_used = None
         finishline_mesh_id = None
+        finishline_curve_id = None
         stage_started_at = time.perf_counter()
         try:
             finishline_mesh_refs = _get_mesh_objects(doc)
@@ -1699,8 +1763,7 @@ def main(input_path_arg=None, output_path_arg=None, log_path_arg=None):
         # 이미 정렬 좌표계에서 검출했으므로 그대로 사용
         pts_aligned = _sanitize_finishline_points(pts or [])
         pt0_aligned = pt0
-        if _DEBUG_KEEP_INTERMEDIATE_OBJECTS:
-            _add_finishline_curve(doc, pts_aligned)
+        finishline_curve_id = _add_finishline_curve(doc, pts_aligned)
 
         # 3) 백엔드 등록
         stage_started_at = time.perf_counter()
@@ -1975,6 +2038,15 @@ def main(input_path_arg=None, output_path_arg=None, log_path_arg=None):
         if not ok:
             fail("STL Export 실패")
         _perf_mark("export", stage_started_at)
+
+        # DEBUG=0: 문서 오브젝트를 모델 mesh + finishline curve만 남기도록 정리
+        if not _GLOBAL_DEBUG:
+            try:
+                _cleanup_doc_objects_for_non_debug(doc, finishline_curve_id)
+            except Exception as e:
+                log("[doc-cleanup:non-debug] failed: {}".format(str(e)))
+        else:
+            log("[doc-cleanup] skipped (DEBUG=1, keep all Rhino objects)")
 
         total_elapsed = _perf_mark("total", total_started_at)
         try:
