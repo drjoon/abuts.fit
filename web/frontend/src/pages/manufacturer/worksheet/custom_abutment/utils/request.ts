@@ -47,12 +47,7 @@ export type ManufacturerRequest = RequestBase & {
 };
 
 export type ReviewStageKey =
-  | "request"
-  | "cam"
-  | "machining"
-  | "packing"
-  | "shipping"
-  | "tracking";
+  "request" | "cam" | "machining" | "packing" | "shipping" | "tracking";
 
 export interface DeadlineInfo {
   remainingMs: number;
@@ -213,15 +208,25 @@ export const deriveStageForFilter = (req: ManufacturerRequest) => {
   const saved = (req.manufacturerStage || "").trim();
   if (saved) {
     switch (saved) {
+      case "request":
+        return "의뢰";
+      case "cam":
+        return "CAM";
+      case "machining":
+        return "가공";
       case "세척.패킹":
+      case "세척.포장":
+      case "packing":
         // 레거시/신 명칭 모두 필터용 라벨은 "세척.패킹"으로 통일
         return "세척.패킹";
       case "포장.발송":
       case "배송대기":
       case "배송중":
+      case "shipping":
         return "포장.발송";
       case "완료":
       case "배송완료":
+      case "tracking":
         return "추적관리";
       default:
         return saved;

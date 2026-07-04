@@ -33,23 +33,43 @@ export const usePackingWorksheetData = ({
   const lastFetchTimeRef = useRef(0);
   const userScrolledRef = useRef(false);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
+  const serverTotalRef = useRef<number | null>(null);
+  const requestsRef = useRef<ManufacturerRequest[]>([]);
+
+  const requestKey = useCallback((req: ManufacturerRequest) => {
+    const mongoId = String(req?._id || "").trim();
+    if (mongoId) return mongoId;
+    const requestId = String(req?.requestId || "").trim();
+    if (requestId) return requestId;
+    return `${Date.now()}-${Math.random()}`;
+  }, []);
 
   const fetchRequestsList = useCallback(
     async (silent = false, append = false) => {
       if (!token) return null;
       try {
         if (!silent) setIsLoading(true);
+        if (!append) {
+          pageRef.current = 1;
+          hasMoreRef.current = true;
+        }
         const basePath =
-          userRole === "admin"
-            ? "/api/admin/requests"
-            : userRole === "manufacturer"
-              ? "/api/requests/all"
-              : "/api/requests";
+          userRole === "admin" || userRole === "manufacturer"
+            ? "/api/requests/all"
+            : "/api/requests";
         const stageFilterForTab = showCompleted
-          ? ["세척.패킹", "포장.발송", "추적관리"]
-          : ["세척.패킹"];
+          ? [
+              "세척.패킹",
+              "세척.포장",
+              "packing",
+              "포장.발송",
+              "shipping",
+              "추적관리",
+              "tracking",
+            ]
+          : ["세척.패킹", "세척.포장", "packing"];
         const url = new URL(basePath, window.location.origin);
-        if (userRole === "manufacturer") {
+        if (userRole === "manufacturer" || userRole === "admin") {
           url.searchParams.set("page", String(pageRef.current));
           url.searchParams.set("limit", String(PAGE_LIMIT));
           url.searchParams.set("view", "worksheet");
@@ -88,38 +108,47 @@ export const usePackingWorksheetData = ({
             : [];
 
         if (data?.success && Array.isArray(list)) {
-          if (!append) {
-            const total = data?.data?.pagination?.total;
-            if (typeof total === "number") {
-              setServerTotal(total);
-            }
+          const total = data?.data?.pagination?.total;
+          if (typeof total === "number") {
+            serverTotalRef.current = total;
+            setServerTotal(total);
           }
           if (append) {
-            setRequests((prev) => {
-              const map = new Map<string, any>();
-              for (const r of prev) {
-                map.set(
-                  String(
-                    (r as any)?._id || (r as any)?.requestId || Math.random(),
-                  ),
-                  r,
-                );
+            const current = requestsRef.current;
+            const mergedMap = new Map<string, ManufacturerRequest>();
+            for (const r of current) {
+              mergedMap.set(requestKey(r), r);
+            }
+            for (const r of list as ManufacturerRequest[]) {
+              mergedMap.set(requestKey(r), r);
+            }
+            const merged = Array.from(
+              mergedMap.values(),
+            ) as ManufacturerRequest[];
+            setRequests(merged);
+
+            if (userRole === "manufacturer" || userRole === "admin") {
+              const knownTotal =
+                typeof total === "number" ? total : serverTotalRef.current;
+              if (list.length === 0) {
+                hasMoreRef.current = false;
+              } else if (typeof knownTotal === "number") {
+                hasMoreRef.current = merged.length < knownTotal;
+              } else {
+                hasMoreRef.current = list.length >= PAGE_LIMIT;
               }
-              for (const r of list) {
-                map.set(
-                  String(
-                    (r as any)?._id || (r as any)?.requestId || Math.random(),
-                  ),
-                  r,
-                );
-              }
-              return Array.from(map.values()) as any[];
-            });
+            }
           } else {
             setRequests(list);
-          }
-          if (userRole === "manufacturer") {
-            hasMoreRef.current = list.length >= PAGE_LIMIT;
+            if (userRole === "manufacturer" || userRole === "admin") {
+              const knownTotal =
+                typeof total === "number" ? total : serverTotalRef.current;
+              if (typeof knownTotal === "number") {
+                hasMoreRef.current = list.length < knownTotal;
+              } else {
+                hasMoreRef.current = list.length >= PAGE_LIMIT;
+              }
+            }
           }
           if (append && list.length > 0) {
             setVisibleCount((prev) => prev + list.length);
@@ -139,7 +168,7 @@ export const usePackingWorksheetData = ({
         if (!silent) setIsLoading(false);
       }
     },
-    [showCompleted, token, toast, userRole],
+    [requestKey, showCompleted, token, toast, userRole],
   );
 
   const fetchRequests = useCallback(
@@ -168,8 +197,15 @@ export const usePackingWorksheetData = ({
   }, [fetchRequests]);
 
   useEffect(() => {
+    requestsRef.current = requests;
+  }, [requests]);
+
+  useEffect(() => {
     setVisibleCount(12);
     setServerTotal(null);
+    serverTotalRef.current = null;
+    pageRef.current = 1;
+    hasMoreRef.current = true;
   }, [showCompleted, worksheetSearch]);
 
   const searchLower = worksheetSearch.toLowerCase();
@@ -300,11 +336,33 @@ export const usePackingWorksheetData = ({
       },
       { threshold: 0.2 },
     );
-    if (sentinelRef.current) observer.observe(sentinelRef.current);
+    const sentinelEl = sentinelRef.current;
+    if (sentinelEl) observer.observe(sentinelEl);
     return () => {
-      if (sentinelRef.current) observer.unobserve(sentinelRef.current);
+      if (sentinelEl) observer.unobserve(sentinelEl);
     };
   }, [fetchNextPage, filteredAndSorted.length, visibleCount]);
+
+  useEffect(() => {
+    if (isLoading) return;
+    if (worksheetSearch.trim()) return;
+    if (!hasMoreRef.current) return;
+    if (visibleCount < filteredAndSorted.length) return;
+
+    const knownTotal = serverTotalRef.current;
+    if (
+      typeof knownTotal === "number" &&
+      filteredAndSorted.length < knownTotal
+    ) {
+      void fetchNextPage();
+    }
+  }, [
+    fetchNextPage,
+    filteredAndSorted.length,
+    isLoading,
+    visibleCount,
+    worksheetSearch,
+  ]);
 
   return {
     requests,
