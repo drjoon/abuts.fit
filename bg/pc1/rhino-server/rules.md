@@ -2,7 +2,7 @@
 
 루트 `rules.md`가 최종 기준입니다.
 
-이 문서는 `bg/pc1/rhino-server` 폴더의 로컬 메모만 남깁니다.
+이 문서는 `bg/pc1/rhino-server` 폴더의 로컬 실행 메모와 트러블슈팅만 기록합니다.
 
 ## 1. 구현 메모
 
@@ -10,12 +10,25 @@
 - 파일 감시는 이벤트 기반으로 처리합니다.
 - Rhino 안정성을 위해 단일 인스턴스/전역 락 기준을 유지합니다.
 - 처리 완료 결과는 백엔드 `register-file`로 등록합니다.
+- 정렬(align) 단계는 헥스 면 방향을 one-shot 계산으로 맞추고, 실행 로그에 최종 잔차를 남깁니다.
+  - 로그 키: `residual_to_X_deg`
+  - 현재 운영 기준: `target<=0.010000` (0.01° 이내)
+
+관련 파일:
+- `bg/pc1/rhino-server/compute/scripts/align_stl_coordinate.py`
+- `bg/pc1/rhino-server/compute/scripts/process_abutment_stl.py`
 
 ## 2. 트러블슈팅
 
 - `No active Rhino instances found via RhinoCode list`가 뜨면 Rhino 실행 후 `RhinoCode` 또는 `ScriptEditor`를 한 번 열어 RhinoCode 서비스를 깨웁니다.
+- align 버전은 올라갔는데 `residual_to_X_deg` 로그가 안 보이면, 실행 경로의 `process_abutment_stl.py` 반영 여부를 먼저 확인합니다.
+  - `align_stl_coordinate.py`만 반영되고 래퍼 로그 출력 코드가 누락되면 잔차 로그가 사라질 수 있습니다.
+
+관련 파일:
+- `bg/pc1/rhino-server/compute/scripts/process_abutment_stl.py`
 
 ## 3. 정리 원칙
 
 - 전체 정책은 루트 `rules.md`에서 관리합니다.
 - 이 파일에는 Rhino 로컬 실행 메모와 트러블슈팅만 남깁니다.
+- 로컬 `rules.md` 수정 시에도 관련 코드 파일 경로를 함께 기록합니다.

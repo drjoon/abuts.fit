@@ -746,6 +746,10 @@ def _align_mesh_to_origin(mesh, target_diameter=None, implant_profile=None):
     """
     공용 정렬 모듈(`align_stl_coordinate.py`)을 사용해 메시를 원점 정렬한다.
 
+    중요:
+    - align 모듈이 반환하는 message에는 `residual_to_X_deg` 등 정량 검증 정보가 포함될 수 있다.
+    - 이 래퍼에서 message를 그대로 로그에 남겨야 파이프라인 로그만으로 정렬 품질(예: <=0.01°)을 판정할 수 있다.
+
     Returns:
         (center_x, center_y, z_target) 또는 False
     """
