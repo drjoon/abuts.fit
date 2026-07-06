@@ -23,10 +23,13 @@ import sys
 
 import Rhino.Geometry as rg
 
-ALIGN_MODULE_VERSION = "2026-07-06.z-reanchor-lowerband-v3"
+ALIGN_MODULE_VERSION = "2026-07-06.z-reanchor-lowerband-v4"
 DEFAULT_TARGET_DIAMETER = 3.33
 HEX_RESIDUAL_TARGET_DEG = 0.01
 HEX_REFINEMENT_MAX_ITERS = 3
+# 기본은 '경고 후 진행'으로 두고, 필요 시 엄격 모드를 env로 켠다.
+# ABUTS_ALIGN_STRICT_HEX_RESIDUAL=1 이면 기존처럼 residual 초과 시 실패 반환
+STRICT_HEX_RESIDUAL_DEFAULT = False
 
 # 표 기준 정적 매핑 (정규화된 키 사용)
 # key: (manufacturer, system, spec)
@@ -551,6 +554,22 @@ def _collect_hex_face_normal_observations(mesh):
 
     raw = []  # (angle_deg, weight, radial)
 
+    # connection/hex 근처 반경만 사용해 크라운 외형(큰 반경) 오염을 줄인다.
+    radial_min = 0.45
+    radial_max = 4.2
+
+    raw_target_diameter = os.environ.get("ABUTS_CONNECTION_TARGET_DIAMETER", "").strip()
+    if raw_target_diameter:
+        try:
+            td = float(raw_target_diameter)
+            if td > 0:
+                target_r = td * 0.5
+                # 타겟 반경 기반 안전 윈도우
+                radial_min = max(0.35, target_r * 0.45)
+                radial_max = min(4.8, target_r * 2.25)
+        except Exception:
+            pass
+
     for fi in range(mesh.Faces.Count):
         f = mesh.Faces[fi]
         n = mesh.FaceNormals[fi]
@@ -588,7 +607,7 @@ def _collect_hex_face_normal_observations(mesh):
             continue
 
         radial = math.hypot(cx, cy)
-        if radial < 0.2:
+        if radial < radial_min or radial > radial_max:
             continue
 
         angle_deg = math.degrees(math.atan2(n.Y, n.X))
@@ -600,16 +619,9 @@ def _collect_hex_face_normal_observations(mesh):
     if not raw:
         return []
 
-    # 외곽 헥스 측면에 더 집중
-    radial_cut = _percentile([r for _, _, r in raw], 0.80)
-    if radial_cut is None:
-        return []
-
-    observations = []
-    for angle_deg, weight, radial in raw:
-        if radial >= radial_cut:
-            observations.append((angle_deg, weight))
-
+    # 반경 상위 편향 대신, 이미 제한된 반경 윈도우 내 샘플을 모두 사용한다.
+    # (상위 반경만 고르면 크라운 외면 쪽으로 다시 치우칠 수 있음)
+    observations = [(angle_deg, weight) for angle_deg, weight, _radial in raw]
     return observations
 
 
@@ -980,35 +992,125 @@ def _bbox_axis_lengths(mesh):
     return bbox, lx, ly, lz
 
 
+def _estimate_principal_axis(mesh, max_iters=24):
+    """
+    정점 분포의 공분산에서 주축(최대 고유벡터)을 power iteration으로 근사.
+    반환: rg.Vector3d 또는 None
+    """
+    n = int(mesh.Vertices.Count)
+    if n < 3:
+        return None
+
+    mx = my = mz = 0.0
+    for i in range(n):
+        v = mesh.Vertices[i]
+        mx += v.X
+        my += v.Y
+        mz += v.Z
+    mx /= float(n)
+    my /= float(n)
+    mz /= float(n)
+
+    cxx = cxy = cxz = cyy = cyz = czz = 0.0
+    for i in range(n):
+        v = mesh.Vertices[i]
+        dx = v.X - mx
+        dy = v.Y - my
+        dz = v.Z - mz
+        cxx += dx * dx
+        cxy += dx * dy
+        cxz += dx * dz
+        cyy += dy * dy
+        cyz += dy * dz
+        czz += dz * dz
+
+    # 초기벡터는 bbox 최장축 방향으로 시작(수렴 안정성)
+    bbox, lx, ly, lz = _bbox_axis_lengths(mesh)
+    if lx >= ly and lx >= lz:
+        vx, vy, vz = 1.0, 0.0, 0.0
+    elif ly >= lx and ly >= lz:
+        vx, vy, vz = 0.0, 1.0, 0.0
+    else:
+        vx, vy, vz = 0.0, 0.0, 1.0
+
+    for _ in range(int(max(4, max_iters))):
+        nx = cxx * vx + cxy * vy + cxz * vz
+        ny = cxy * vx + cyy * vy + cyz * vz
+        nz = cxz * vx + cyz * vy + czz * vz
+
+        norm = math.sqrt(nx * nx + ny * ny + nz * nz)
+        if norm <= 1e-12:
+            return None
+
+        vx, vy, vz = nx / norm, ny / norm, nz / norm
+
+    out = rg.Vector3d(vx, vy, vz)
+    if out.IsTiny(1e-10):
+        return None
+    if not out.Unitize():
+        return None
+
+    return out
+
+
 def _rotate_longest_axis_to_z(mesh):
     bbox, lx, ly, lz = _bbox_axis_lengths(mesh)
     center = bbox.Center
 
-    axis = "Z"
-    from_vec = rg.Vector3d(0, 0, 1)
-    if lx >= ly and lx >= lz:
-        axis = "X"
-        from_vec = rg.Vector3d(1, 0, 0)
-    elif ly >= lx and ly >= lz:
-        axis = "Y"
-        from_vec = rg.Vector3d(0, 1, 0)
+    _log("BBox lengths: X={:.3f} Y={:.3f} Z={:.3f}".format(lx, ly, lz))
 
-    _log(
-        "BBox lengths: X={:.3f} Y={:.3f} Z={:.3f} -> longest={} axis".format(
-            lx, ly, lz, axis
-        )
-    )
+    principal = _estimate_principal_axis(mesh)
+    if principal is None:
+        # 폴백: 기존 월드축 기반 판단
+        axis = "Z"
+        from_vec = rg.Vector3d(0, 0, 1)
+        if lx >= ly and lx >= lz:
+            axis = "X"
+            from_vec = rg.Vector3d(1, 0, 0)
+        elif ly >= lx and ly >= lz:
+            axis = "Y"
+            from_vec = rg.Vector3d(0, 1, 0)
 
-    if axis == "Z":
+        _log("Principal axis unavailable -> fallback longest={} axis".format(axis))
+        if axis == "Z":
+            return False
+
+        rot = rg.Transform.Rotation(from_vec, rg.Vector3d(0, 0, 1), center)
+        if mesh.Transform(rot):
+            _log("Rotated longest axis {} -> Z (fallback)".format(axis))
+            return True
+
+        _log_error("Failed to rotate longest axis {} -> Z (fallback)".format(axis))
         return False
 
     to_vec = rg.Vector3d(0, 0, 1)
-    rot = rg.Transform.Rotation(from_vec, to_vec, center)
+    dot = max(-1.0, min(1.0, principal * to_vec))
+    angle_deg = math.degrees(math.acos(dot))
+
+    # 주축이 -Z를 향하면 +Z로 올리도록 반전
+    if principal.Z < 0:
+        principal = rg.Vector3d(-principal.X, -principal.Y, -principal.Z)
+        dot = max(-1.0, min(1.0, principal * to_vec))
+        angle_deg = math.degrees(math.acos(dot))
+
+    _log(
+        "Principal axis: ({:.5f}, {:.5f}, {:.5f}), angle_to_Z={:.4f}deg".format(
+            principal.X,
+            principal.Y,
+            principal.Z,
+            angle_deg,
+        )
+    )
+
+    if angle_deg <= 1e-3:
+        return False
+
+    rot = rg.Transform.Rotation(principal, to_vec, center)
     if mesh.Transform(rot):
-        _log("Rotated longest axis {} -> Z".format(axis))
+        _log("Rotated principal longest axis -> Z")
         return True
 
-    _log_error("Failed to rotate longest axis {} -> Z".format(axis))
+    _log_error("Failed to rotate principal longest axis -> Z")
     return False
 
 
@@ -1529,8 +1631,8 @@ def align_mesh_to_origin(mesh, target_diameter=None, implant_profile=None):
         stage_label="[Z-1]",
         prefer_negative_side=False,
     )
-    if not ok_z1:
-        return (False, z1_msg, None)
+    if not ok_z1 or translation_1 is None:
+        return (False, z1_msg or "Z-1 alignment failed", None)
 
     total_translation = rg.Vector3d(translation_1.X, translation_1.Y, translation_1.Z)
 
@@ -1550,8 +1652,8 @@ def align_mesh_to_origin(mesh, target_diameter=None, implant_profile=None):
         stage_label="[Z-2]",
         prefer_negative_side=True,
     )
-    if not ok_z2:
-        return (False, z2_msg, None)
+    if not ok_z2 or translation_2 is None:
+        return (False, z2_msg or "Z-2 alignment failed", None)
     total_translation = rg.Vector3d(
         total_translation.X + translation_2.X,
         total_translation.Y + translation_2.Y,
@@ -1588,14 +1690,26 @@ def align_mesh_to_origin(mesh, target_diameter=None, implant_profile=None):
     )
 
     if residual_deg > float(HEX_RESIDUAL_TARGET_DEG):
-        return (
-            False,
-            "Alignment residual too high: {:.6f} > {:.6f} (method={})".format(
-                residual_deg,
-                float(HEX_RESIDUAL_TARGET_DEG),
-                residual.get("method", "unknown"),
-            ),
-            None,
+        strict_env = (
+            os.environ.get("ABUTS_ALIGN_STRICT_HEX_RESIDUAL", "").strip().lower()
+        )
+        strict = STRICT_HEX_RESIDUAL_DEFAULT or strict_env in ("1", "true", "yes", "on")
+        warn_msg = (
+            "Alignment residual high: {:.6f} > {:.6f} (method={}); "
+            "apply-aligned-mesh-with-warning strict={}"
+        ).format(
+            residual_deg,
+            float(HEX_RESIDUAL_TARGET_DEG),
+            residual.get("method", "unknown"),
+            strict,
+        )
+        if strict:
+            return (False, warn_msg, None)
+        _log(warn_msg)
+        summary = "Aligned with warning; residual_to_X_deg={:.6f}; residual_method={}; target<={:.6f}".format(
+            residual_deg,
+            residual.get("method", "unknown"),
+            float(HEX_RESIDUAL_TARGET_DEG),
         )
 
     # 반환값은 기존 의미(마지막 Z 정렬 평행이동 벡터)에 맞춰 stage-2 값을 반환

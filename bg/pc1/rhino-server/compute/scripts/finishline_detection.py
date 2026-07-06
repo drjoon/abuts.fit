@@ -2449,29 +2449,83 @@ def _detect_finishline_points_max_radius_from_z_axis(
 
     traced_dual = _order_by_axis_azimuth(merged_dual)
 
+    # C안: max-radius band 전체를 합쳐 축 방위각 기준으로 루프 재구성
+    merged_band: List[rg.Point3d] = []
+    seen_band = set()
+    for band in section_band_candidates:
+        for p in band:
+            if p is None:
+                continue
+            try:
+                key = (
+                    int(round(float(p.X) * 1e6)),
+                    int(round(float(p.Y) * 1e6)),
+                    int(round(float(p.Z) * 1e6)),
+                )
+            except Exception:
+                continue
+            if key in seen_band:
+                continue
+            seen_band.add(key)
+            merged_band.append(rg.Point3d(p))
+    traced_band = _order_by_axis_azimuth(merged_band)
+
     cov_single = _coverage_by_axis_azimuth(
         traced_single[:-1] if len(traced_single) > 1 else traced_single
     )
     cov_dual = _coverage_by_axis_azimuth(
         traced_dual[:-1] if len(traced_dual) > 1 else traced_dual
     )
+    cov_band = _coverage_by_axis_azimuth(
+        traced_band[:-1] if len(traced_band) > 1 else traced_band
+    )
 
     _trace_log(
-        "[max-r] coverage single={:.4f}rad pts_single={} dual={:.4f}rad pts_dual={}".format(
+        "[max-r] coverage single={:.4f}rad pts_single={} dual={:.4f}rad pts_dual={} band={:.4f}rad pts_band={}".format(
             float(cov_single),
             len(traced_single),
             float(cov_dual),
             len(traced_dual),
+            float(cov_band),
+            len(traced_band),
         )
     )
 
-    # dual 재구성이 단일 추적보다 유의미하게 넓은 방위각을 커버하면 dual 채택
-    if len(traced_dual) >= max(8, len(planes) // 2) and cov_dual >= (cov_single + 1.0):
-        _trace_log("[max-r] selected=dual_reconstructed")
-        traced = traced_dual
-    else:
-        _trace_log("[max-r] selected=single_trace")
-        traced = traced_single
+    # 단일 추적이 지나치게 sparse/저커버리지면, 재구성 루프를 우선 채택한다.
+    single_sparse = len(traced_single) < max(10, len(planes) // 3)
+    single_low_cov = cov_single < 4.8  # 약 275도 미만 커버
+
+    candidates = [
+        ("single_trace", traced_single, float(cov_single)),
+        ("dual_reconstructed", traced_dual, float(cov_dual)),
+        ("band_reconstructed", traced_band, float(cov_band)),
+    ]
+
+    def _candidate_key(item):
+        name, pts, cov = item
+        usable = 1 if (pts and len(pts) >= 8) else 0
+        # 기본은 coverage 우선, 동률이면 점 개수 우선
+        return (usable, float(cov), len(pts) if pts else 0)
+
+    # sparse/저커버리지일 때는 재구성 루프 최우선
+    if single_sparse or single_low_cov:
+        recon_only = [c for c in candidates if c[0] != "single_trace"]
+        recon_best = max(recon_only, key=_candidate_key) if recon_only else None
+        if recon_best is not None and _candidate_key(recon_best)[0] == 1:
+            traced = recon_best[1]
+            _trace_log(
+                "[max-r] selected={} reason=single_sparse_or_low_cov single_pts={} single_cov={:.4f}".format(
+                    recon_best[0],
+                    len(traced_single),
+                    float(cov_single),
+                )
+            )
+            return traced, sections
+
+    # 일반 케이스: 전체 후보 중 최적 선택
+    best = max(candidates, key=_candidate_key)
+    traced = best[1] if best[1] else traced_single
+    _trace_log("[max-r] selected={}".format(best[0]))
 
     return traced, sections
 
