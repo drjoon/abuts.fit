@@ -23,7 +23,7 @@ import sys
 
 import Rhino.Geometry as rg
 
-ALIGN_MODULE_VERSION = "2026-07-06.z-reanchor-lowerband-v4"
+ALIGN_MODULE_VERSION = "2026-07-06.z-reanchor-lowerband-v5-holeaxis"
 DEFAULT_TARGET_DIAMETER = 3.33
 HEX_RESIDUAL_TARGET_DEG = 0.01
 HEX_REFINEMENT_MAX_ITERS = 3
@@ -288,11 +288,13 @@ def _fit_circle_xy_least_squares(points):
 
 def _estimate_hole_circle_candidate(polyline):
     """
-    홀 단면 후보용 엄격 필터:
-    - 충분한 포인트 수
-    - 폐곡선에 가까움
-    - 너무 짧은 루프 제외
-    - 원 적합 잔차(r_std) 기준 통과
+    홀 단면 후보 추정.
+
+    우선순위:
+    1) 원 적합(기존)
+    2) 실패 시 루프 중심(centroid) + 등가 반경 기반 fallback
+       - 기울어진 원기둥은 수평 단면에서 타원으로 보일 수 있으므로
+         원 적합 강제 시 축 추정이 실패할 수 있다.
     """
     pts = []
     for i in range(polyline.Count):
@@ -323,29 +325,65 @@ def _estimate_hole_circle_candidate(polyline):
         return None
 
     # 아주 짧은 루프(노이즈) 제거
-    if perimeter < 4.0:
+    if perimeter < 3.0:
         return None
 
     fitted = _fit_circle_xy_least_squares(pts)
-    if fitted is None:
+    if fitted is not None:
+        cx, cy, r, r_std = fitted
+        if r > 0.0:
+            rel = r_std / max(r, 1e-9)
+            # 원형성이 충분하면 기존 방식 사용
+            if not (r_std > 0.18 and rel > 0.12):
+                return {
+                    "cx": cx,
+                    "cy": cy,
+                    "r": r,
+                    "r_std": r_std,
+                    "perimeter": perimeter,
+                    "close_gap": close_gap,
+                    "method": "circle_fit",
+                }
+
+    # fallback: 루프 중심 + 등가 반경 (타원 단면 허용)
+    cx = sum(p[0] for p in pts) / float(len(pts))
+    cy = sum(p[1] for p in pts) / float(len(pts))
+
+    radii = []
+    for x, y in pts:
+        radii.append(math.sqrt((x - cx) ** 2 + (y - cy) ** 2))
+
+    if not radii:
         return None
 
-    cx, cy, r, r_std = fitted
-    if r <= 0.0:
+    radii_sorted = sorted(radii)
+    n = len(radii_sorted)
+    if n % 2 == 1:
+        r_med = radii_sorted[n // 2]
+    else:
+        r_med = 0.5 * (radii_sorted[n // 2 - 1] + radii_sorted[n // 2])
+
+    if r_med <= 1e-8:
         return None
 
-    # 원형성 체크 (절대/상대 잔차)
-    rel = r_std / max(r, 1e-9)
-    if r_std > 0.18 and rel > 0.12:
+    mean_r = sum(radii) / float(len(radii))
+    var_r = sum((rv - mean_r) * (rv - mean_r) for rv in radii) / float(len(radii))
+    r_std = math.sqrt(max(var_r, 0.0))
+    rel = r_std / max(r_med, 1e-9)
+
+    # 타원/노이즈 허용하되 과도한 왜곡은 제외
+    if rel > 0.55:
         return None
 
     return {
         "cx": cx,
         "cy": cy,
-        "r": r,
+        "r": r_med,
         "r_std": r_std,
         "perimeter": perimeter,
         "close_gap": close_gap,
+        "method": "loop_centroid",
+        "ellipse_rel": rel,
     }
 
 
@@ -1114,7 +1152,13 @@ def _rotate_longest_axis_to_z(mesh):
     return False
 
 
-def _pick_inner_hole_circle(candidates, bbox_center_x, bbox_center_y, prev_circle=None):
+def _pick_inner_hole_circle(
+    candidates,
+    bbox_center_x,
+    bbox_center_y,
+    prev_circle=None,
+    target_diameter=None,
+):
     if not candidates:
         return None
 
@@ -1122,13 +1166,30 @@ def _pick_inner_hole_circle(candidates, bbox_center_x, bbox_center_y, prev_circl
     outer_r = outer["r"]
 
     scored = []
+    target_r = None
+    if target_diameter is not None:
+        try:
+            td = float(target_diameter)
+            if td > 0:
+                target_r = td * 0.5
+        except Exception:
+            target_r = None
+
+    # 내부 스크류홀 반경의 경험적 유효 범위 (target_diameter가 있으면 동적 조정)
+    min_r = 0.15
+    max_r = 2.4
+    expected_r = 0.75
+    if target_r is not None:
+        expected_r = max(0.45, min(1.6, target_r * 0.35))
+        max_r = max(1.8, min(2.6, target_r * 0.95))
+
     for c in candidates:
         cx = c["cx"]
         cy = c["cy"]
         r = c["r"]
 
         # 비정상적으로 작은 노이즈/과도한 원은 제외
-        if r < 0.2 or r > 4.0:
+        if r < min_r or r > max_r:
             continue
 
         # 큰 외곽 원이 함께 잡힌 경우 제외
@@ -1138,9 +1199,16 @@ def _pick_inner_hole_circle(candidates, bbox_center_x, bbox_center_y, prev_circl
             continue
 
         dist_bbox = math.sqrt((cx - bbox_center_x) ** 2 + (cy - bbox_center_y) ** 2)
+        dist_origin = math.sqrt((cx * cx) + (cy * cy))
+        dr_exp = abs(r - expected_r)
 
         if prev_circle is None:
-            score = dist_bbox + (0.12 * r) + (0.8 * c["r_std"])
+            score = (
+                (0.55 * dist_bbox)
+                + (0.95 * dist_origin)
+                + (0.9 * dr_exp)
+                + (0.65 * c["r_std"])
+            )
             dist_prev = 0.0
             dr = 0.0
         else:
@@ -1149,7 +1217,12 @@ def _pick_inner_hole_circle(candidates, bbox_center_x, bbox_center_y, prev_circl
             )
             dr = abs(r - prev_circle[2])
             score = (
-                (2.0 * dist_prev) + (1.2 * dr) + (0.35 * dist_bbox) + (0.8 * c["r_std"])
+                (2.1 * dist_prev)
+                + (1.35 * dr)
+                + (0.45 * dist_bbox)
+                + (0.65 * dist_origin)
+                + (0.8 * dr_exp)
+                + (0.55 * c["r_std"])
             )
 
         scored.append((score, dist_prev, dr, c))
@@ -1167,7 +1240,7 @@ def _pick_inner_hole_circle(candidates, bbox_center_x, bbox_center_y, prev_circl
     return (best["cx"], best["cy"], best["r"])
 
 
-def _fit_hole_axis(mesh, sample_count=28):
+def _fit_hole_axis(mesh, sample_count=36, target_diameter=None):
     bbox = mesh.GetBoundingBox(True)
     z_min = bbox.Min.Z
     z_max = bbox.Max.Z
@@ -1191,7 +1264,11 @@ def _fit_hole_axis(mesh, sample_count=28):
 
         candidates = _find_hole_circle_candidates_at_z(mesh, z)
         hole = _pick_inner_hole_circle(
-            candidates, bbox_cx, bbox_cy, prev_circle=prev_circle
+            candidates,
+            bbox_cx,
+            bbox_cy,
+            prev_circle=prev_circle,
+            target_diameter=target_diameter,
         )
         if hole is None:
             continue
@@ -1241,40 +1318,75 @@ def _fit_hole_axis(mesh, sample_count=28):
     }
 
 
-def _align_screw_hole_axis_to_z(mesh):
+def _axis_tilt_to_z_deg(v):
+    try:
+        u = rg.Vector3d(v)
+        if not u.IsValid or u.IsZero:
+            return None
+        if not u.Unitize():
+            return None
+        dz = max(-1.0, min(1.0, abs(float(u.Z))))
+        return math.degrees(math.acos(dz))
+    except Exception:
+        return None
+
+
+def _align_screw_hole_axis_to_z(mesh, target_diameter=None):
     """
     스크류 홀 축을 추정해 Z축 정렬 + XY 중심 원점 이동.
+
+    강화 포인트:
+    - 기울어진 홀(수평 단면에서 타원)도 추적 가능하도록 축 피팅 후보 완화
+    - 1회 회전에 그치지 않고 재측정 후 최대 3회 미세 보정
     """
-    info = _fit_hole_axis(mesh)
+    info = _fit_hole_axis(mesh, target_diameter=target_diameter)
     if info is None:
         return (False, "Could not detect screw hole axis")
 
-    axis_point = info["axis_point"]
-    axis_dir = info["axis_dir"]
-    _log(
-        "Screw hole axis detected: dir=({:.5f}, {:.5f}, {:.5f}) samples={} avg_r={:.4f}".format(
-            axis_dir.X,
-            axis_dir.Y,
-            axis_dir.Z,
-            info["samples"],
-            info["avg_radius"],
-        )
-    )
-
     z_axis = rg.Vector3d(0, 0, 1)
-    rot = rg.Transform.Rotation(axis_dir, z_axis, axis_point)
-    if not mesh.Transform(rot):
-        return (False, "Failed to rotate screw hole axis to Z")
+    for it in range(3):
+        axis_point = info["axis_point"]
+        axis_dir = info["axis_dir"]
+        tilt_deg = _axis_tilt_to_z_deg(axis_dir)
 
-    # 회전 후 다시 축 추정해서 XY 중심 보정
-    info2 = _fit_hole_axis(mesh)
-    if info2 is not None:
+        _log(
+            "Screw hole axis(iter={}): dir=({:.5f}, {:.5f}, {:.5f}) tilt_to_Z={}deg samples={} avg_r={:.4f}".format(
+                it + 1,
+                axis_dir.X,
+                axis_dir.Y,
+                axis_dir.Z,
+                "{:.4f}".format(tilt_deg) if tilt_deg is not None else "nan",
+                info["samples"],
+                info["avg_radius"],
+            )
+        )
+
+        if tilt_deg is not None and tilt_deg <= 0.2:
+            break
+
+        rot = rg.Transform.Rotation(axis_dir, z_axis, axis_point)
+        if not mesh.Transform(rot):
+            return (False, "Failed to rotate screw hole axis to Z")
+
+        info2 = _fit_hole_axis(mesh, target_diameter=target_diameter)
+        if info2 is None:
+            break
+
+        # 회전 직후 XY 중심 보정
         p2 = info2["axis_point"]
         if abs(p2.X) > 1e-4 or abs(p2.Y) > 1e-4:
             mesh.Translate(rg.Vector3d(-p2.X, -p2.Y, 0))
             _log(
                 "Screw hole axis XY translated by ({:.5f}, {:.5f})".format(-p2.X, -p2.Y)
             )
+            # 평행이동 후 축을 다시 갱신
+            info2 = _fit_hole_axis(mesh, target_diameter=target_diameter) or info2
+
+        info = info2
+
+    final_tilt = _axis_tilt_to_z_deg(info["axis_dir"]) if info is not None else None
+    if final_tilt is not None:
+        _log("Screw hole final tilt_to_Z={:.4f}deg".format(final_tilt))
 
     return (True, "Screw hole aligned to Z")
 
@@ -1606,18 +1718,22 @@ def align_mesh_to_origin(mesh, target_diameter=None, implant_profile=None):
     # 0) BBox 최장축을 Z로 정렬
     _rotate_longest_axis_to_z(mesh)
 
-    # 1) 스크류 홀 축 정렬 (실패 시 로그 후 계속)
-    ok_hole, hole_msg = _align_screw_hole_axis_to_z(mesh)
-    if not ok_hole:
-        _log("{} (fallback to diameter-only Z alignment)".format(hole_msg))
-
-    # 1.5) 선행 방향 강제는 생략
-
-    # 2) 임플란트 정보/명시값으로 목표 직경 결정
+    # 1) 임플란트 정보/명시값으로 목표 직경 결정
+    #    (홀축 추정의 반경 가중치 힌트로도 사용)
     resolved_diameter, source = resolve_target_diameter(
         target_diameter=target_diameter,
         implant_profile=implant_profile,
     )
+
+    # 2) 스크류 홀 축 정렬 (실패 시 로그 후 계속)
+    ok_hole, hole_msg = _align_screw_hole_axis_to_z(
+        mesh,
+        target_diameter=resolved_diameter,
+    )
+    if not ok_hole:
+        _log("{} (fallback to diameter-only Z alignment)".format(hole_msg))
+
+    # 2.5) 선행 방향 강제는 생략
     _log(
         "Target connection diameter: {:.4f}mm (source={})".format(
             resolved_diameter, source
