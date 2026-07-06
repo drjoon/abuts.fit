@@ -902,8 +902,8 @@ namespace DentalAddin
             const double aEndOffsetFromSplitMm = 0.0; // 요청: FINISH_A 끝점 = 기준점(splitPercent)
             // 요청 반영: FINISH_B 시작점 오프셋 제거(정치수)
             const double bStartOffsetFromSplitMm = 0.0; // FINISH_B 시작점 = 기준점(splitPercent)
-            // 요청 반영: FINISH_All / FINISH_Back 끝점 = BackPointX (오프셋 0.0)
-            const double compositeEndOffsetFromBackPointMm = 0.0;
+            // 요청 반영: FINISH_All / FINISH_Back 끝점 = BackPointX + 0.1mm
+            const double compositeEndOffsetFromBackPointMm = 0.1;
 
             // 기준점(splitPercent)을 기준으로 A/B 경계를 독립 적용한다.
             // - A.End: split + 0.0mm(=split)
@@ -927,7 +927,7 @@ namespace DentalAddin
                 opB.LastPassPercent = effectiveLastPercent;
             }
 
-            // 정책: FINISH_B 종료 기준점은 BackPointX (+0.3mm 제거 적용)
+            // 정책: FINISH_B 종료 기준점은 BackPointX + 0.1mm
             double compositeEndTargetX = MoveSTL_Module.BackPointX + compositeEndOffsetFromBackPointMm;
             double compositeEndPassPercent = XToPassPercentByStartEndScale(compositeEndTargetX, 0.0, 100.0);
             if (runB && opB != null)
@@ -966,7 +966,7 @@ namespace DentalAddin
             // A/B 끝점 정책 재확인:
             // - FINISH_A 끝점: 기준점(splitPercent)
             // - FINISH_B 시작점: 기준점(splitPercent) (오프셋 제거)
-            // - FINISH_B 끝점: BackPointX (+0.3mm 제거)
+            // - FINISH_B 끝점: BackPointX + 0.1mm
             double aLastBeforeClamp = opA.LastPassPercent;
             opA.LastPassPercent = Clamp(opA.LastPassPercent, opA.FirstPassPercent, effectiveLastPercent);
 
@@ -1069,14 +1069,16 @@ namespace DentalAddin
             // [중요] StockAllowance 적용 범위
             // - 과거 장애: A만 적용하고 B 적용이 누락되면, B 활성화 시 후속 NC 단계 불안정 가능.
             // - 원칙: A/B 모두 명시적으로 적용(또는 미적용 사유 로그)한다.
-            DentalLogger.Log("Composite2SplitLine2 - opA/opB StepIncrement/StockAllowance/MaxLinkDistance 적용 시작");
+            DentalLogger.Log("Composite2SplitLine2 - opA/opB StepIncrement/StockAllowance/MaxLinkDistance/Tolerance 적용 시작");
             TrySetCompositeStepIncrement(opA, "A");
             if (runB && opB != null) TrySetCompositeStepIncrement(opB, "B");
             TryTouchCompositeMaximumLinkDistanceOnTechnology(opA, "A");
             if (runB && opB != null) TryTouchCompositeMaximumLinkDistanceOnTechnology(opB, "B");
             TrySetCompositeStockAllowance(opA, "A");
             if (runB && opB != null) TrySetCompositeStockAllowance(opB, "B");
-            DentalLogger.Log("Composite2SplitLine2 - opA/opB StepIncrement/StockAllowance/MaxLinkDistance 적용 완료");
+            TrySetCompositeFinishTolerance(opA, "A");
+            if (runB && opB != null) TrySetCompositeFinishTolerance(opB, "B");
+            DentalLogger.Log("Composite2SplitLine2 - opA/opB StepIncrement/StockAllowance/MaxLinkDistance/Tolerance 적용 완료");
 
             int beforeAddCount = Document?.Operations?.Count ?? -1;
             DentalLogger.Log($"Composite2SplitLine2 - Operation 추가 시작 (beforeCount={beforeAddCount})");
@@ -1276,6 +1278,43 @@ namespace DentalAddin
             catch (Exception ex)
             {
                 DentalLogger.Log($"Composite2SplitLine2 - {label} StepIncrement 설정 실패: {ex.GetType().Name}:{ex.Message}");
+            }
+        }
+
+        private static void TrySetCompositeFinishTolerance(TechLatheMill5xComposite op, string label)
+        {
+            if (op == null)
+            {
+                return;
+            }
+
+            double? tolerance = GetEnvDoubleNullable(AppConfig.CompositeFinishToleranceEnv);
+            if (!tolerance.HasValue)
+            {
+                DentalLogger.Log($"Composite2SplitLine2 - {label} Tolerance env 비어있음 (env={AppConfig.CompositeFinishToleranceEnv}), PRC 기본값 사용");
+                return;
+            }
+
+            if (tolerance.Value <= 0.0)
+            {
+                DentalLogger.Log($"Composite2SplitLine2 - {label} Tolerance env 값 무효({tolerance.Value.ToString("0.###", CultureInfo.InvariantCulture)}), PRC 기본값 사용");
+                return;
+            }
+
+            try
+            {
+                op.GetType().InvokeMember(
+                    "Tolerance",
+                    BindingFlags.SetProperty,
+                    null,
+                    op,
+                    new object[] { tolerance.Value },
+                    CultureInfo.InvariantCulture);
+                DentalLogger.Log($"Composite2SplitLine2 - {label} Tolerance={tolerance.Value.ToString("0.###", CultureInfo.InvariantCulture)} 적용 (PRC 파일 무변경, env={AppConfig.CompositeFinishToleranceEnv})");
+            }
+            catch (Exception ex)
+            {
+                DentalLogger.Log($"Composite2SplitLine2 - {label} Tolerance 설정 실패: {ex.GetType().Name}:{ex.Message}");
             }
         }
 

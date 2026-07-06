@@ -75,6 +75,10 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
 
         public const string CompositeFirstPassPercentAEnv = "ABUTS_COMPOSITE_FIRST_PASS_PERCENT_A";
 
+        // Composite Finish_Front/Finish_Back 공차 런타임 오버라이드(mm).
+        // 값이 없으면 PRC 기본값(예: 0.02)을 그대로 사용한다.
+        public const string CompositeFinishToleranceEnv = "ABUTS_COMPOSITE_FINISH_TOLERANCE";
+
         public const string BackendUrlEnv = "BACKEND_BASE";
 
         public const string EspritPortEnv = "ESPRIT_ADDIN_PORT";

@@ -34,6 +34,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         // Composite OrientationProfile startX 진단용 env(현재 선택 로직에는 미사용).
         // SSOT는 MainModuleComposite 내부의 MoveSTL_Module.FrontPointX 고정값이다.
         private const string CompositeOrientationProfileStartXEnv = "ABUTS_COMPOSITE_ORIENTATION_PROFILE_START_X";
+        private const double CompositeFinishToleranceThresholdZMm = 15.0;
+        private const double CompositeFinishToleranceOverrideMm = 0.03;
         private static readonly HttpClient BackendHttp;
 
         // gp.exe 비정상 종료 시 Windows GPF 모달(오류 대화상자) 억제
@@ -127,12 +129,13 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         // requestIdHint:
         // - 백엔드가 트리거 시 전달한 canonical requestId
         // - R&D 샘플 복사본이 원본과 동일 STL 파일명을 공유해도, 공정/콜백 귀속이 원본으로 섞이지 않도록 우선 사용한다.
-        public void Process(string stlPath, double? frontLimitX = null, double? backLimitX = null, double? materialDiameter = null, bool twoPhase = false, string requestIdHint = null, double? tiltAxisX = null, double? tiltAxisY = null, double? tiltAxisZ = null)
+        public void Process(string stlPath, double? frontLimitX = null, double? backLimitX = null, double? materialDiameter = null, bool twoPhase = false, string requestIdHint = null, double? tiltAxisX = null, double? tiltAxisY = null, double? tiltAxisZ = null, double? stlZLengthMm = null)
         {
             AppLogger.BeginRun();
             AppLogger.Log("StlFileProcessor: Process 시작");
             ResetPerRunState();
             TryApplyCompositeOrientationVectorEnvFromPayload(tiltAxisX, tiltAxisY, tiltAxisZ);
+            TryApplyCompositeFinishToleranceEnv(stlZLengthMm);
             Directory.CreateDirectory(_outputFolder);
             Document document = _documentManager.EnsureDocument(materialDiameter);
             if (document == null)
@@ -441,6 +444,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             _backendImplantLabel = null;
             _effectiveFrontLimitX = null;
             Environment.SetEnvironmentVariable(AppConfig.CompositeFirstPassPercentAEnv, null);
+            Environment.SetEnvironmentVariable(AppConfig.CompositeFinishToleranceEnv, null);
             Environment.SetEnvironmentVariable(AppConfig.TwoPhaseEnableEnv, null);
             Environment.SetEnvironmentVariable(AppConfig.TwoPhaseSplitXEnv, null);
             Environment.SetEnvironmentVariable(AppConfig.TwoPhaseTurningRegionEnv, null);
@@ -1408,6 +1412,37 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                         AppLogger.Log($"DentalAddin: TwoPhase split 설정 실패 - {ex.GetType().Name}:{ex.Message}");
                     }
                 }
+
+        private void TryApplyCompositeFinishToleranceEnv(double? stlZLengthMm)
+        {
+            try
+            {
+                if (!stlZLengthMm.HasValue || double.IsNaN(stlZLengthMm.Value) || double.IsInfinity(stlZLengthMm.Value))
+                {
+                    Environment.SetEnvironmentVariable(AppConfig.CompositeFinishToleranceEnv, null);
+                    AppLogger.Log("DentalAddin: STL Z 길이 메타데이터 없음 - Composite Finish 공차는 PRC 기본값(0.02) 유지");
+                    return;
+                }
+
+                double zLength = stlZLengthMm.Value;
+                if (zLength > CompositeFinishToleranceThresholdZMm)
+                {
+                    string toleranceValue = CompositeFinishToleranceOverrideMm.ToString("0.###", CultureInfo.InvariantCulture);
+                    Environment.SetEnvironmentVariable(AppConfig.CompositeFinishToleranceEnv, toleranceValue);
+                    AppLogger.Log($"DentalAddin: STL Z 길이 조건 충족(zLength={zLength.ToString("F3", CultureInfo.InvariantCulture)}mm > {CompositeFinishToleranceThresholdZMm.ToString("F3", CultureInfo.InvariantCulture)}mm) - Finish_Front/Back Tolerance={toleranceValue} 적용");
+                }
+                else
+                {
+                    Environment.SetEnvironmentVariable(AppConfig.CompositeFinishToleranceEnv, null);
+                    AppLogger.Log($"DentalAddin: STL Z 길이 조건 미충족(zLength={zLength.ToString("F3", CultureInfo.InvariantCulture)}mm <= {CompositeFinishToleranceThresholdZMm.ToString("F3", CultureInfo.InvariantCulture)}mm) - Composite Finish 공차는 PRC 기본값(0.02) 유지");
+                }
+            }
+            catch (Exception ex)
+            {
+                Environment.SetEnvironmentVariable(AppConfig.CompositeFinishToleranceEnv, null);
+                AppLogger.Log($"DentalAddin: Composite Finish 공차 env 적용 실패 - {ex.GetType().Name}:{ex.Message}");
+            }
+        }
 
         private void TryApplyCompositeOrientationVectorEnvFromPayload(double? tiltAxisX, double? tiltAxisY, double? tiltAxisZ)
         {
