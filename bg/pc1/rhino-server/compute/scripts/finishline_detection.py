@@ -47,11 +47,6 @@ _TARGET_TRACE_POINT_COUNT = 120
 _SHOW_POINT_TEXTDOTS = False
 _DIST_TOL = 1e-8
 
-# 단면 수집 성능 튜닝(정확도 보존 목적의 보수적 샘플링)
-# - 매우 긴 polyline만 적응형으로 포인트 수를 줄인다.
-# - 일반 케이스(점 수가 작거나 중간)는 기존과 동일하게 전점 사용.
-_SECTION_MAX_POINTS_PER_POLYLINE = 480
-
 
 def _env_true(name: str, default: bool = False) -> bool:
     raw = os.environ.get(str(name), "")
@@ -2003,50 +1998,9 @@ def _collect_section_data(mesh: rg.Mesh, planes: Sequence[rg.Plane]):
     return sections
 
 
-def _polyline_points_adaptive(pl, max_points: int = _SECTION_MAX_POINTS_PER_POLYLINE):
-    pts: List[rg.Point3d] = []
-    if not pl:
-        return pts
-
-    try:
-        n = int(pl.Count)
-    except Exception:
-        n = 0
-
-    if n <= 0:
-        return pts
-
-    # 큰 polyline에서만 stride 샘플링(보수적)
-    stride = 1
-    if max_points is not None and max_points > 0 and n > int(max_points):
-        stride = int(math.ceil(float(n) / float(max_points)))
-        if stride < 1:
-            stride = 1
-
-    i = 0
-    while i < n:
-        try:
-            pts.append(rg.Point3d(pl[i]))
-        except Exception:
-            pass
-        i += stride
-
-    # 마지막 점 보존(닫힘/끝점 정보 유실 방지)
-    if n > 1:
-        try:
-            last_pt = rg.Point3d(pl[n - 1])
-            if not pts or pts[-1].DistanceTo(last_pt) > 1e-9:
-                pts.append(last_pt)
-        except Exception:
-            pass
-
-    return pts
-
-
 def _sample_plane_section_all_points(
     mesh: rg.Mesh,
     plane: rg.Plane,
-    include_curves: bool = False,
 ) -> Tuple[List[rg.Point3d], List[rg.Curve]]:
     """단면 교차에서 Z 필터 없이 전체 후보를 수집한다(고속)."""
     try:
@@ -2062,13 +2016,12 @@ def _sample_plane_section_all_points(
     for pl in polylines:
         if not pl:
             continue
-        pts = _polyline_points_adaptive(pl)
+        pts = [rg.Point3d(pt) for pt in pl]
         points.extend(pts)
-        if include_curves:
-            try:
-                curves.append(rg.PolylineCurve(pl))
-            except Exception:
-                pass
+        try:
+            curves.append(rg.PolylineCurve(pl))
+        except Exception:
+            pass
 
     return points, curves
 
@@ -2304,14 +2257,8 @@ def _detect_finishline_points_max_radius_from_z_axis(
         except Exception:
             pt0_z = None
 
-    include_section_curves = bool(_SHOW_ALL_SECTION_CURVES)
-
     for idx, plane in enumerate(planes):
-        pts_all, curves = _sample_plane_section_all_points(
-            mesh,
-            plane,
-            include_curves=include_section_curves,
-        )
+        pts_all, curves = _sample_plane_section_all_points(mesh, plane)
 
         # 1차: 기존 축 투영 band
         pts_axis = [
