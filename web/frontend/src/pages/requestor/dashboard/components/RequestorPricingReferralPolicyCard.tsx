@@ -14,12 +14,40 @@ import { useToast } from "@/shared/hooks/use-toast";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PricingPolicyDialog } from "@/shared/ui/PricingPolicyDialog";
 
+type ReferralTreeLite = {
+  memberCount?: number;
+};
+
+type PricingReferralStats = {
+  myLastMonthOrders?: number;
+  myLast30DaysOrders?: number;
+  groupTotalOrders?: number;
+  selfBusinessOrders?: number;
+  referralBusinessOrders?: number;
+  baseUnitPrice?: number;
+  referralDiscountAmount?: number;
+  effectiveUnitPrice?: number;
+  rule?: string;
+  monthlyRemakeFreeLimit?: number;
+  monthlyRemakeUsed?: number;
+  monthlyRemakeFreeRemaining?: number;
+};
+
+type ApiEnvelope<T> = {
+  success?: boolean;
+  data?: T;
+  message?: string;
+  error?: string;
+};
+
 export const RequestorPricingReferralPolicyCard = () => {
   const [open, setOpen] = useState(false);
   const { user, token } = useAuthStore();
   const { toast } = useToast();
 
-  const referralCode = String((user as any)?.referralCode || "")
+  const referralCode = String(
+    (user as { referralCode?: string } | null)?.referralCode || "",
+  )
     .trim()
     .toUpperCase();
 
@@ -40,7 +68,7 @@ export const RequestorPricingReferralPolicyCard = () => {
     queryFn: async () => {
       if (!user?.id) throw new Error("사용자 정보를 불러오지 못했습니다.");
 
-      const res = await apiFetch<any>({
+      const res = await apiFetch<ApiEnvelope<ReferralTreeLite>>({
         path: `/api/referral-groups/${user.businessAnchorId}/tree?lite=1`,
         method: "GET",
         token,
@@ -65,7 +93,7 @@ export const RequestorPricingReferralPolicyCard = () => {
   const { data, isLoading, isFetching, isError, error } = useQuery({
     queryKey: ["requestor-pricing-referral-stats", "v8"],
     queryFn: async () => {
-      const res = await apiFetch<any>({
+      const res = await apiFetch<ApiEnvelope<PricingReferralStats>>({
         path: "/api/requests/my/pricing-referral-stats",
         method: "GET",
         token,
@@ -142,7 +170,7 @@ export const RequestorPricingReferralPolicyCard = () => {
   const isNewUserFixedPrice =
     String(data.rule || "") === "new_user_90days_fixed_10000";
 
-  const monthlyRemakeFreeLimit = Number(data.monthlyRemakeFreeLimit ?? 10);
+  const monthlyRemakeFreeLimit = Number(data.monthlyRemakeFreeLimit ?? 3);
   const monthlyRemakeUsed = Number(data.monthlyRemakeUsed ?? 0);
   const monthlyRemakeFreeRemaining = Math.max(
     0,

@@ -693,10 +693,11 @@
 ### 4.2.1 리메이크 과금 규칙 (2026-06-07)
 
 - 리메이크 판정은 기존과 동일하게 **최근 90일 내 동일 치과명 + 환자명 + 치아번호** 기준을 사용합니다.
-- 리메이크로 판정된 의뢰는 **사업자(기공소) 단위 월 10건까지 무료(0원)** 처리합니다. (KST 월 경계 기준)
-- 같은 월에서 리메이크 무료 10건을 모두 사용한 뒤의 리메이크는 **건당 10,000원**을 적용합니다.
+- 리메이크로 판정된 의뢰는 **사업자(기공소) 단위 월 3건까지 무료(0원)** 처리합니다. (KST 월 경계 기준)
+- 같은 월에서 리메이크 무료 3건을 모두 사용한 뒤의 리메이크는 **건당 10,000원**을 적용합니다.
 - 리메이크가 아닌 일반 의뢰는 기존 기본 단가 정책(기본 15,000원 + 기존 할인/이벤트 정책)을 따릅니다.
 - 배송비는 리메이크 무료 여부와 관계없이 **별도 청구**합니다.
+- 관련 파일: `web/backend/controllers/requests/utils.js`, `web/backend/controllers/requests/creation.from-draft.controller.js`, `web/backend/controllers/requests/dashboard.controller.js`, `web/backend/scripts/db/migrate-remake-monthly-free-rule.js`, `web/frontend/src/shared/ui/PricingPolicyDialog.tsx`, `web/frontend/src/features/requests/components/RequestDetailDialog.tsx`, `web/frontend/src/pages/requestor/dashboard/components/RequestorRecentRequestsCard.tsx`, `web/frontend/src/pages/requestor/dashboard/components/RequestorPricingReferralPolicyCard.tsx`
 
 ### 4.3 ETA와 배송일
 

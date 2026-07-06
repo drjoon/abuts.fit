@@ -100,9 +100,9 @@ const generateRequestIdBatch = async (count, session) => {
   return requestIds;
 };
 
-const MONTHLY_REMAKE_FREE_LIMIT = 10;
+const MONTHLY_REMAKE_FREE_LIMIT = 3;
 const REMAKE_PRICE_RULES = [
-  "remake_monthly_free_10",
+  "remake_monthly_free_3",
   "remake_general_pricing",
   "remake_fixed_10000",
 ];

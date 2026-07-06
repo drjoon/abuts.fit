@@ -942,7 +942,7 @@ export async function computePriceForRequest({
   const NEW_USER_FIXED_PRICE = 10000;
   const DISCOUNT_PER_ORDER = 100;
   const MAX_DISCOUNT = 5000;
-  const MONTHLY_REMAKE_FREE_LIMIT = 10;
+  const MONTHLY_REMAKE_FREE_LIMIT = 3;
 
   // 0) 리메이크 기준(90일): 동일 치과+환자+치아에 대해 직전 의뢰가 있으면 리메이크
   const nowYmd = toKstYmd(now);
@@ -968,7 +968,7 @@ export async function computePriceForRequest({
 
   if (existing && !forceNewOrderPricing) {
     isRemake = true;
-    // 리메이크 무료 쿼터(월 10건): 사업자 단위, KST 월 경계
+    // 리메이크 무료 쿼터(월 3건): 사업자 단위, KST 월 경계
     const [year, month] = String(nowYmd)
       .split("-")
       .map((v) => Number(v || 0));
@@ -987,7 +987,7 @@ export async function computePriceForRequest({
       createdAt: { $gte: currentMonthStart, $lt: nextMonthStart },
       "price.rule": {
         $in: [
-          "remake_monthly_free_10",
+          "remake_monthly_free_3",
           "remake_general_pricing",
           "remake_fixed_10000",
         ],
@@ -1005,7 +1005,7 @@ export async function computePriceForRequest({
         discountAmount: BASE_UNIT_PRICE,
         amount: 0,
         currency: "KRW",
-        rule: "remake_monthly_free_10",
+        rule: "remake_monthly_free_3",
         discountMeta: {
           monthlyRemakeFreeLimit: MONTHLY_REMAKE_FREE_LIMIT,
           monthlyRemakeUsed,

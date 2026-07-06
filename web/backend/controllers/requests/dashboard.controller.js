@@ -1344,7 +1344,7 @@ export async function getMyPricingReferralStats(req, res) {
         const totalOrders = totalLastMonthOrders;
 
         const baseUnitPrice = 15000;
-        const monthlyRemakeFreeLimit = 10;
+        const monthlyRemakeFreeLimit = 3;
         const [todayYear, todayMonth] = String(todayYmd)
           .split("-")
           .map((v) => Number(v || 0));
@@ -1371,7 +1371,7 @@ export async function getMyPricingReferralStats(req, res) {
           createdAt: { $gte: monthStartKst, $lt: nextMonthStartKst },
           "price.rule": {
             $in: [
-              "remake_monthly_free_10",
+              "remake_monthly_free_3",
               "remake_general_pricing",
               "remake_fixed_10000",
             ],

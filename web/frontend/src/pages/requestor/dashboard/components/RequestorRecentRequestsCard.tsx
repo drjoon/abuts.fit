@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { FunctionalItemCard } from "@/shared/ui/components/FunctionalItemCard";
 import { Badge } from "@/components/ui/badge";
@@ -41,17 +41,72 @@ const STAGE_BADGE_STYLES: Record<
   취소: { variant: "destructive" },
 };
 
-const resolveStageLabel = (item: any): string | null => {
+type EditableCaseInfos = {
+  clinicName?: string;
+  patientName?: string;
+  tooth?: string;
+  implantManufacturer?: string;
+  implantBrand?: string;
+  implantFamily?: string;
+  implantType?: string;
+  retentionGroove?: "none" | "shallow" | "deep";
+  maxDiameter?: number | null;
+  connectionDiameter?: number | null;
+  [key: string]: unknown;
+};
+
+type RecentRequestCardItem = {
+  _id?: string;
+  id?: string;
+  requestId?: string;
+  title?: string;
+  manufacturerStage?: string;
+  createdAt?: string;
+  estimatedShipYmd?: string;
+  daysOverdue?: number;
+  daysUntilDue?: number;
+  price?: {
+    amount?: number;
+    rule?: string;
+  };
+  caseInfos?: EditableCaseInfos;
+  timeline?: {
+    estimatedShipYmd?: string;
+  };
+  deliveryInfoRef?: {
+    deliveredAt?: string;
+  };
+  [key: string]: unknown;
+};
+
+type ImplantConnection = {
+  manufacturer?: string;
+  brand?: string;
+  family?: string;
+  type?: string;
+};
+
+type ApiEnvelope<T> = {
+  success?: boolean;
+  data?: T;
+  message?: string;
+  error?: string;
+};
+
+const resolveStageLabel = (
+  item: RecentRequestCardItem | null,
+): string | null => {
   if (!item) return null;
   try {
     const label = getNormalizedStageLabel(item);
     if (label) return label;
-  } catch {}
-
+  } catch {
+    return null;
+  }
   return null;
 };
 
-const renderStageBadge = (item: any) => {
+const renderStageBadge = (item: RecentRequestCardItem | null) => {
   const label = resolveStageLabel(item);
   if (!label) return null;
   const style = STAGE_BADGE_STYLES[label] || { variant: "outline" };
@@ -66,9 +121,9 @@ const renderStageBadge = (item: any) => {
 };
 
 type Props = {
-  items: any[];
+  items: RecentRequestCardItem[];
   onRefresh: () => void;
-  onEdit: (item: any) => void;
+  onEdit: (item: RecentRequestCardItem) => void;
   onCancel: (id: string) => void;
 };
 
@@ -82,10 +137,12 @@ export const RequestorRecentRequestsCard = ({
   const { toast } = useToast();
   const [open, setOpen] = useState(false);
   const [selectedRequestId, setSelectedRequestId] = useState<string>("");
-  const [detail, setDetail] = useState<any>(null);
+  const [detail, setDetail] = useState<RecentRequestCardItem | null>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [savingEdit, setSavingEdit] = useState(false);
-  const [editCaseInfos, setEditCaseInfos] = useState<any>(null);
+  const [editCaseInfos, setEditCaseInfos] = useState<EditableCaseInfos | null>(
+    null,
+  );
   const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false);
 
   const {
@@ -135,93 +192,109 @@ export const RequestorRecentRequestsCard = ({
     [teethPresets],
   );
 
+  const selectedSummary = useMemo(() => {
+    if (!selectedRequestId) return null;
+    return items.find((it) => (it._id || it.id) === selectedRequestId) || null;
+  }, [items, selectedRequestId]);
+
   const handleCancelRequest = async (requestId: string) => {
     if (!requestId) return;
     await Promise.resolve(onCancel(requestId));
   };
 
-  const resolveCurrentCaseInfos = () => {
+  const resolveCurrentCaseInfos = useCallback((): EditableCaseInfos => {
     const fromDetail = detail?.caseInfos;
     const fromSummary = selectedSummary?.caseInfos;
-    return (fromDetail || fromSummary || {}) as any;
-  };
+    return (fromDetail || fromSummary || {}) as EditableCaseInfos;
+  }, [detail, selectedSummary]);
 
   const canEditRequest = (manufacturerStage?: string | null) => {
     if (!manufacturerStage) return false;
     return EDITABLE_STATUSES.has(manufacturerStage);
   };
 
-  const normalizeImplantCaseInfos = (ci: any) => {
-    const rawManufacturer =
-      typeof ci?.implantManufacturer === "string" ? ci.implantManufacturer : "";
-    const rawBrand =
-      typeof ci?.implantBrand === "string" ? ci.implantBrand : "";
-    const rawFamily =
-      typeof ci?.implantFamily === "string" ? ci.implantFamily : "";
-    const rawType = typeof ci?.implantType === "string" ? ci.implantType : "";
+  const normalizeImplantCaseInfos = useCallback(
+    (ci: EditableCaseInfos | null | undefined) => {
+      const rawManufacturer =
+        typeof ci?.implantManufacturer === "string"
+          ? ci.implantManufacturer
+          : "";
+      const rawBrand =
+        typeof ci?.implantBrand === "string" ? ci.implantBrand : "";
+      const rawFamily =
+        typeof ci?.implantFamily === "string" ? ci.implantFamily : "";
+      const rawType = typeof ci?.implantType === "string" ? ci.implantType : "";
 
-    if (!connections || connections.length === 0) {
+      const typedConnections: ImplantConnection[] = Array.isArray(connections)
+        ? (connections as ImplantConnection[])
+        : [];
+
+      if (typedConnections.length === 0) {
+        return {
+          manufacturer: rawManufacturer,
+          brand: rawBrand,
+          family: rawFamily,
+          type: rawType,
+        };
+      }
+
+      const manufacturers = new Set(
+        typedConnections.map((c) => c.manufacturer),
+      );
+      const brands = new Set(typedConnections.map((c) => c.brand));
+      const families = new Set(typedConnections.map((c) => c.family));
+      const types = new Set(typedConnections.map((c) => c.type));
+
+      const direct = typedConnections.find(
+        (c) =>
+          c.manufacturer === rawManufacturer &&
+          c.brand === rawBrand &&
+          c.family === rawFamily &&
+          c.type === rawType,
+      );
+      if (direct) {
+        return {
+          manufacturer: direct.manufacturer || "",
+          brand: direct.brand || "",
+          family: direct.family || "",
+          type: direct.type || "",
+        };
+      }
+
+      // 제조사는 맞는데 family/type 기준으로만 좁혀서 복원
+      if (manufacturers.has(rawManufacturer)) {
+        let candidates = typedConnections.filter(
+          (c) => c.manufacturer === rawManufacturer,
+        );
+        if (rawBrand && brands.has(rawBrand)) {
+          candidates = candidates.filter((c) => c.brand === rawBrand);
+        }
+        if (rawFamily && families.has(rawFamily)) {
+          candidates = candidates.filter((c) => c.family === rawFamily);
+        }
+        if (rawType && types.has(rawType)) {
+          candidates = candidates.filter((c) => c.type === rawType);
+        }
+        const chosen = candidates[0];
+        if (chosen) {
+          return {
+            manufacturer: chosen.manufacturer || "",
+            brand: chosen.brand || "",
+            family: chosen.family || "",
+            type: chosen.type || "",
+          };
+        }
+      }
+
       return {
         manufacturer: rawManufacturer,
         brand: rawBrand,
         family: rawFamily,
         type: rawType,
       };
-    }
-
-    const manufacturers = new Set(connections.map((c: any) => c.manufacturer));
-    const brands = new Set(connections.map((c: any) => c.brand));
-    const families = new Set(connections.map((c: any) => c.family));
-    const types = new Set(connections.map((c: any) => c.type));
-
-    const direct = connections.find(
-      (c: any) =>
-        c.manufacturer === rawManufacturer &&
-        c.brand === rawBrand &&
-        c.family === rawFamily &&
-        c.type === rawType,
-    );
-    if (direct) {
-      return {
-        manufacturer: direct.manufacturer,
-        brand: direct.brand,
-        family: direct.family,
-        type: direct.type,
-      };
-    }
-
-    // 제조사는 맞는데 family/type 기준으로만 좁혀서 복원
-    if (manufacturers.has(rawManufacturer)) {
-      let candidates = connections.filter(
-        (c: any) => c.manufacturer === rawManufacturer,
-      );
-      if (rawBrand && brands.has(rawBrand)) {
-        candidates = candidates.filter((c: any) => c.brand === rawBrand);
-      }
-      if (rawFamily && families.has(rawFamily)) {
-        candidates = candidates.filter((c: any) => c.family === rawFamily);
-      }
-      if (rawType && types.has(rawType)) {
-        candidates = candidates.filter((c: any) => c.type === rawType);
-      }
-      const chosen = candidates[0];
-      if (chosen) {
-        return {
-          manufacturer: chosen.manufacturer,
-          brand: chosen.brand,
-          family: chosen.family,
-          type: chosen.type,
-        };
-      }
-    }
-
-    return {
-      manufacturer: rawManufacturer,
-      brand: rawBrand,
-      family: rawFamily,
-      type: rawType,
-    };
-  };
+    },
+    [connections],
+  );
 
   const handleSaveEditFromDetail = async () => {
     try {
@@ -260,7 +333,7 @@ export const RequestorRecentRequestsCard = ({
         },
       };
 
-      const res = await apiFetch<any>({
+      const res = await apiFetch<ApiEnvelope<RecentRequestCardItem>>({
         path: `/api/requests/${selectedRequestId}`,
         method: "PUT",
         token,
@@ -284,10 +357,11 @@ export const RequestorRecentRequestsCard = ({
       setEditCaseInfos(null);
 
       await Promise.resolve(onRefresh());
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "다시 시도해주세요.";
       toast({
         title: "의뢰 변경 실패",
-        description: err?.message || "다시 시도해주세요.",
+        description: message,
         variant: "destructive",
         duration: 3000,
       });
@@ -325,11 +399,6 @@ export const RequestorRecentRequestsCard = ({
     setCancelConfirmOpen(true);
   };
 
-  const selectedSummary = useMemo(() => {
-    if (!selectedRequestId) return null;
-    return items.find((it) => (it._id || it.id) === selectedRequestId) || null;
-  }, [items, selectedRequestId]);
-
   useEffect(() => {
     if (!open) return;
 
@@ -346,14 +415,14 @@ export const RequestorRecentRequestsCard = ({
       maxDiameter: ci?.maxDiameter ?? null,
       connectionDiameter: ci?.connectionDiameter ?? null,
     });
-  }, [open, detail, selectedSummary, connections]);
+  }, [open, normalizeImplantCaseInfos, resolveCurrentCaseInfos]);
 
   useEffect(() => {
     const run = async () => {
       if (!open || !selectedRequestId) return;
       setLoadingDetail(true);
       try {
-        const res = await apiFetch<any>({
+        const res = await apiFetch<ApiEnvelope<RecentRequestCardItem>>({
           path: `/api/requests/${selectedRequestId}`,
           method: "GET",
           token,
@@ -377,7 +446,7 @@ export const RequestorRecentRequestsCard = ({
     }
   }, [open]);
 
-  const isCancelableRequest = (r: any) => {
+  const isCancelableRequest = (r: RecentRequestCardItem | null) => {
     const stage = String(r?.manufacturerStage || "");
     return stage === "의뢰" || stage === "CAM";
   };
@@ -392,7 +461,7 @@ export const RequestorRecentRequestsCard = ({
       </CardHeader>
       <CardContent className="flex-1 flex flex-col justify-between pt-2">
         <div className="space-y-3 max-h-[550px] overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-transparent">
-          {items.map((item: any) => {
+          {items.map((item) => {
             const rawRequestId = String(item.requestId || "").trim();
             const stableKey = item._id || item.id || rawRequestId || "";
             const displayId = rawRequestId || String(item.id || item._id || "");
@@ -400,7 +469,7 @@ export const RequestorRecentRequestsCard = ({
             const priceAmount = item.price?.amount;
             const isRemakeFixed = item.price?.rule === "remake_fixed_10000";
             const isRemakeMonthlyFree =
-              item.price?.rule === "remake_monthly_free_10";
+              item.price?.rule === "remake_monthly_free_3";
             const retentionGrooveLabel =
               item.caseInfos?.retentionGroove === "deep" ? "있음" : "없음";
 
@@ -477,7 +546,7 @@ export const RequestorRecentRequestsCard = ({
                     )}
                     {isRemakeMonthlyFree && (
                       <Badge variant="secondary" className="text-[10px]">
-                        리메이크 무료(월 10건)
+                        리메이크 무료(월 3건)
                       </Badge>
                     )}
                   </div>

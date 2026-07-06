@@ -156,7 +156,7 @@ export const RequestDetailDialog = ({
   const priceAmount = request?.price?.amount;
   const priceRule = request?.price?.rule;
   const isRemakeFixed = priceRule === "remake_fixed_10000";
-  const isRemakeMonthlyFree = priceRule === "remake_monthly_free_10";
+  const isRemakeMonthlyFree = priceRule === "remake_monthly_free_3";
 
   const selectedDetailLedgerRow = request
     ? rows.find(
@@ -219,7 +219,7 @@ export const RequestDetailDialog = ({
                   )}
                   {isRemakeMonthlyFree && (
                     <Badge variant="secondary" className="text-[11px]">
-                      리메이크 무료(월 10건)
+                      리메이크 무료(월 3건)
                     </Badge>
                   )}
                 </span>
