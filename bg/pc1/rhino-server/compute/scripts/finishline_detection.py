@@ -4,7 +4,7 @@
 1) Edge 기반(ExtractMeshEdges) 피니시라인을 먼저 시도
 2) edge 결과 min-Z가 0.5mm 이하면 비정상으로 간주
 3) 비정상 시 단면 추적 기반으로 재시도
-4) 단면 추적은 XZ 평면 40개(9도 간격) 사용
+4) 단면 추적은 축 통과 단면 평면 40개(유효 180도 범위 균등 간격) 사용
 5) 시각화: pt0 반경 0.1 구(녹색), 추적 곡선 빨간 튜브(반경 0.03)
 """
 
@@ -21,8 +21,10 @@ import Rhino.Geometry.Intersect as intersect
 import System
 import System.Drawing as drawing
 
-_SECTION_COUNT = 40  # increased sampling (was 20)
-_SECTION_STEP_DEG = 9.0  # 360/40 = 9 degrees
+_SECTION_COUNT = 40  # section plane count
+# 축을 지나는 단면 평면은 기하학적으로 180도 주기(θ와 θ+180 동일 평면)라
+# 유효 샘플은 180도 범위에서 균등 분할한다.
+_SECTION_STEP_DEG = 4.5  # 180/40 = 4.5 degrees (unique section planes)
 _NEAREST_LIMIT = 10
 _MAX_STEP_DISTANCE = 1.5  # allow slightly larger step to tolerate gaps
 
@@ -38,6 +40,9 @@ _Z_RATIO_HIGH = 0.7
 # max-radius sequential 추적용 축 투영 band (경사체에서 world-Z 반쪽 누락 방지)
 _MAXR_AXIS_RATIO_LOW = 0.18
 _MAXR_AXIS_RATIO_HIGH = 0.72
+# pt0 중심 finishline 후보 Z 윈도우(반쪽 누락 방지용 완화 필터)
+_MAXR_PT0_Z_WINDOW_LOW = 2.8
+_MAXR_PT0_Z_WINDOW_HIGH = 3.0
 _TARGET_TRACE_POINT_COUNT = 120
 _SHOW_POINT_TEXTDOTS = False
 _DIST_TOL = 1e-8
@@ -1817,8 +1822,51 @@ def _build_section_planes(
     except Exception:
         pass
 
+    # 핵심 수정:
+    # 축을 지나는 단면 평면은 180도 주기다(θ와 θ+180은 동일 평면).
+    # 따라서 count개 유효 평면을 얻으려면 180도 범위를 균등 분할해야 한다.
+    if count <= 0:
+        return planes
+
+    effective_step_deg = float(step_deg)
+    min_unique_step = 180.0 / float(count)
+    if effective_step_deg > min_unique_step + 1e-9:
+        _trace_log(
+            "[section-plane] step_deg {:.4f} causes duplicate planes for axis-through sections; auto-adjust -> {:.4f}".format(
+                effective_step_deg,
+                min_unique_step,
+            )
+        )
+        effective_step_deg = min_unique_step
+
+    seen_normals = set()
+
+    def _normal_key(plane_obj: rg.Plane):
+        n = rg.Vector3d(plane_obj.Normal)
+        if not n.IsValid or n.IsZero:
+            return None
+        try:
+            n.Unitize()
+        except Exception:
+            return None
+
+        # n과 -n은 동일 평면으로 간주하도록 canonicalize
+        x, y, z = float(n.X), float(n.Y), float(n.Z)
+        if (
+            x < 0.0
+            or (abs(x) <= 1e-12 and y < 0.0)
+            or (abs(x) <= 1e-12 and abs(y) <= 1e-12 and z < 0.0)
+        ):
+            x, y, z = -x, -y, -z
+
+        return (
+            int(round(x * 1e6)),
+            int(round(y * 1e6)),
+            int(round(z * 1e6)),
+        )
+
     for idx in range(count):
-        angle = math.radians(step_deg * idx)
+        angle = math.radians(effective_step_deg * idx)
         radial = rg.Vector3d(
             u_dir.X * math.cos(angle) + v_dir.X * math.sin(angle),
             u_dir.Y * math.cos(angle) + v_dir.Y * math.sin(angle),
@@ -1826,7 +1874,26 @@ def _build_section_planes(
         )
         if not radial.IsValid or radial.IsZero:
             continue
-        planes.append(rg.Plane(rg.Point3d.Origin, radial, axis))
+
+        pl = rg.Plane(rg.Point3d.Origin, radial, axis)
+        key = _normal_key(pl)
+        if key is not None and key in seen_normals:
+            continue
+        if key is not None:
+            seen_normals.add(key)
+        planes.append(pl)
+
+    _trace_log(
+        "[section-plane] built planes={} requested={} step_deg={:.4f} axis=({:.4f},{:.4f},{:.4f})".format(
+            len(planes),
+            count,
+            effective_step_deg,
+            float(axis.X),
+            float(axis.Y),
+            float(axis.Z),
+        )
+    )
+
     return planes
 
 
@@ -2042,16 +2109,190 @@ def _detect_finishline_points_max_radius_from_z_axis(
     traced: List[rg.Point3d] = []
     sections: List[Dict[str, object]] = []
     section_band_candidates: List[List[rg.Point3d]] = []
+    section_dual_candidates: List[List[rg.Point3d]] = []
     section_reps: List[Tuple[int, rg.Point3d, float, float]] = []
+
+    def _axis_basis(ax: rg.Vector3d):
+        helper = rg.Vector3d(0, 0, 1)
+        try:
+            if abs(float(ax * helper)) > 0.95:
+                helper = rg.Vector3d(1, 0, 0)
+        except Exception:
+            helper = rg.Vector3d(1, 0, 0)
+
+        u = rg.Vector3d.CrossProduct(ax, helper)
+        if not u.IsValid or u.IsZero:
+            helper = rg.Vector3d(0, 1, 0)
+            u = rg.Vector3d.CrossProduct(ax, helper)
+        if not u.IsValid or u.IsZero:
+            u = rg.Vector3d(1, 0, 0)
+        try:
+            u.Unitize()
+        except Exception:
+            pass
+
+        v = rg.Vector3d.CrossProduct(ax, u)
+        if not v.IsValid or v.IsZero:
+            v = rg.Vector3d(0, 1, 0)
+        try:
+            v.Unitize()
+        except Exception:
+            pass
+
+        return u, v
+
+    axis_u, axis_v = _axis_basis(axis)
+
+    def _axis_azimuth(pt: rg.Point3d) -> float:
+        try:
+            uu = float(pt.X * axis_u.X + pt.Y * axis_u.Y + pt.Z * axis_u.Z)
+            vv = float(pt.X * axis_v.X + pt.Y * axis_v.Y + pt.Z * axis_v.Z)
+            return float(math.atan2(vv, uu))
+        except Exception:
+            return 0.0
+
+    def _wrap_pi(v: float) -> float:
+        return float((v + math.pi) % (2.0 * math.pi) - math.pi)
+
+    def _coverage_by_axis_azimuth(points: Sequence[rg.Point3d]) -> float:
+        if not points:
+            return 0.0
+        angs: List[float] = []
+        for p in points:
+            if p is None:
+                continue
+            try:
+                angs.append(_axis_azimuth(p))
+            except Exception:
+                continue
+        if len(angs) < 3:
+            return 0.0
+        angs.sort()
+        max_gap = 0.0
+        for i in range(1, len(angs)):
+            gap = float(angs[i] - angs[i - 1])
+            if gap > max_gap:
+                max_gap = gap
+        wrap_gap = float((angs[0] + 2.0 * math.pi) - angs[-1])
+        if wrap_gap > max_gap:
+            max_gap = wrap_gap
+        return float(max(0.0, min(2.0 * math.pi, 2.0 * math.pi - max_gap)))
+
+    def _order_by_axis_azimuth(points: Sequence[rg.Point3d]) -> List[rg.Point3d]:
+        core = [rg.Point3d(p) for p in points if p is not None]
+        if len(core) < 3:
+            return []
+        core.sort(key=lambda p: _axis_azimuth(p))
+        core.append(rg.Point3d(core[0]))
+        return core
+
+    def _pick_dual_from_candidates(
+        primary_band: Sequence[rg.Point3d],
+        fallback_points: Sequence[rg.Point3d],
+    ) -> List[rg.Point3d]:
+        pool_raw = list(primary_band or []) + list(fallback_points or [])
+        if not pool_raw:
+            return []
+
+        valid: List[Tuple[float, float, rg.Point3d]] = []
+        seen = set()
+        for p in pool_raw:
+            if p is None:
+                continue
+            try:
+                key = (
+                    int(round(float(p.X) * 1e6)),
+                    int(round(float(p.Y) * 1e6)),
+                    int(round(float(p.Z) * 1e6)),
+                )
+                if key in seen:
+                    continue
+                seen.add(key)
+                valid.append(
+                    (float(_radius(p)), float(_axis_azimuth(p)), rg.Point3d(p))
+                )
+            except Exception:
+                continue
+
+        if not valid:
+            return []
+
+        # 1) 최대 반경 대표점
+        valid.sort(key=lambda t: t[0], reverse=True)
+        p0 = valid[0][2]
+        a0 = valid[0][1]
+
+        # 2) 반대편(약 180도) 대표점
+        best2 = None
+        best2_key = None
+        for r, ang, pt in valid:
+            try:
+                sep = abs(_wrap_pi(float(ang) - float(a0)))
+                key = (
+                    -abs(sep - math.pi),
+                    float(r),
+                )
+            except Exception:
+                continue
+            if best2_key is None or key > best2_key:
+                best2_key = key
+                best2 = pt
+
+        out = [rg.Point3d(p0)]
+        if best2 is not None:
+            try:
+                sep2 = abs(_wrap_pi(float(_axis_azimuth(best2)) - float(a0)))
+            except Exception:
+                sep2 = 0.0
+            # 반대편 분기라고 볼 수 있는 각도 분리(최소 120도)
+            if sep2 >= math.radians(120.0):
+                out.append(rg.Point3d(best2))
+
+        return out
+
+    pt0_z = None
+    if ref_pt0 is not None:
+        try:
+            pt0_z = float(ref_pt0.Z)
+        except Exception:
+            pt0_z = None
 
     for idx, plane in enumerate(planes):
         pts_all, curves = _sample_plane_section_all_points(mesh, plane)
-        pts = [
+
+        # 1차: 기존 축 투영 band
+        pts_axis = [
             p
             for p in pts_all
             if (p is not None and a_low <= float(_axial(p)) <= a_high)
         ]
+
+        # 2차: pt0 중심 z-window (반쪽 누락 완화)
+        if pt0_z is not None:
+            z_low = float(pt0_z - float(_MAXR_PT0_Z_WINDOW_LOW))
+            z_high = float(pt0_z + float(_MAXR_PT0_Z_WINDOW_HIGH))
+            pts_z = [
+                p for p in pts_all if (p is not None and z_low <= float(p.Z) <= z_high)
+            ]
+        else:
+            z_low = None
+            z_high = None
+            pts_z = []
+
+        # 필터 선택 우선순위:
+        # axis band가 충분하면 유지, 부족하면 z-window, 그래도 부족하면 전체
+        if len(pts_axis) >= 8:
+            pts = pts_axis
+            filter_used = "axis"
+        elif len(pts_z) >= 8:
+            pts = pts_z
+            filter_used = "z_window"
+        else:
+            pts = [p for p in pts_all if p is not None]
+            filter_used = "all"
+
         band = _max_radius_band(pts)
+        dual = _pick_dual_from_candidates(band, pts)
 
         sections.append(
             {
@@ -2063,6 +2304,7 @@ def _detect_finishline_points_max_radius_from_z_axis(
             }
         )
         section_band_candidates.append(band)
+        section_dual_candidates.append(dual)
 
         if band:
             try:
@@ -2074,13 +2316,19 @@ def _detect_finishline_points_max_radius_from_z_axis(
                 pass
 
         _trace_log(
-            "[max-r] collect plane_idx={} candidates={} filtered={} max_band={} axial_band=({:.3f},{:.3f})".format(
+            "[max-r] collect plane_idx={} candidates={} axis_filtered={} z_filtered={} selected={} filter={} max_band={} dual={} axial_band=({:.3f},{:.3f}) z_window=({},{})".format(
                 idx,
                 len(pts_all),
+                len(pts_axis),
+                len(pts_z),
                 len(pts),
+                filter_used,
                 len(band),
+                len(dual),
                 a_low,
                 a_high,
+                "{:.3f}".format(z_low) if z_low is not None else "None",
+                "{:.3f}".format(z_high) if z_high is not None else "None",
             )
         )
 
@@ -2103,7 +2351,6 @@ def _detect_finishline_points_max_radius_from_z_axis(
 
     start_idx = -1
     start_pt = None
-    start_r = -1.0
     best_key = None
     for idx, p, r, a in top_reps:
         try:
@@ -2117,7 +2364,6 @@ def _detect_finishline_points_max_radius_from_z_axis(
             best_key = key
             start_idx = int(idx)
             start_pt = rg.Point3d(p)
-            start_r = float(r)
 
     if start_idx < 0 or start_pt is None:
         return traced, sections
@@ -2134,8 +2380,9 @@ def _detect_finishline_points_max_radius_from_z_axis(
         )
     )
 
+    # A안: 기존 단일 branch 연속 추적
+    traced_single: List[rg.Point3d] = [rg.Point3d(start_pt)]
     last = rg.Point3d(start_pt)
-    traced.append(rg.Point3d(start_pt))
 
     total = len(section_band_candidates)
     for step in range(1, total):
@@ -2147,7 +2394,6 @@ def _detect_finishline_points_max_radius_from_z_axis(
             )
             continue
 
-        # 다음 섹션: 반경 우선(near-max), 이후 연속성으로 branch 선택
         try:
             best_r = max(float(_radius(p)) for p in band)
             near = [p for p in band if float(_radius(p)) >= (best_r * 0.985)]
@@ -2166,7 +2412,7 @@ def _detect_finishline_points_max_radius_from_z_axis(
             best = band[0]
 
         new_pt = rg.Point3d(best)
-        traced.append(new_pt)
+        traced_single.append(new_pt)
         _trace_log(
             "[max-r] step={} plane_idx={} selected r={:.6f} z={:.6f} move={:.6f}".format(
                 step,
@@ -2178,8 +2424,54 @@ def _detect_finishline_points_max_radius_from_z_axis(
         )
         last = new_pt
 
-    if len(traced) > 2:
-        traced.append(rg.Point3d(traced[0]))
+    if len(traced_single) > 2:
+        traced_single.append(rg.Point3d(traced_single[0]))
+
+    # B안: 각 단면의 양측 후보를 합쳐 360도 루프로 재구성
+    merged_dual: List[rg.Point3d] = []
+    seen = set()
+    for dual in section_dual_candidates:
+        for p in dual:
+            if p is None:
+                continue
+            try:
+                key = (
+                    int(round(float(p.X) * 1e6)),
+                    int(round(float(p.Y) * 1e6)),
+                    int(round(float(p.Z) * 1e6)),
+                )
+            except Exception:
+                continue
+            if key in seen:
+                continue
+            seen.add(key)
+            merged_dual.append(rg.Point3d(p))
+
+    traced_dual = _order_by_axis_azimuth(merged_dual)
+
+    cov_single = _coverage_by_axis_azimuth(
+        traced_single[:-1] if len(traced_single) > 1 else traced_single
+    )
+    cov_dual = _coverage_by_axis_azimuth(
+        traced_dual[:-1] if len(traced_dual) > 1 else traced_dual
+    )
+
+    _trace_log(
+        "[max-r] coverage single={:.4f}rad pts_single={} dual={:.4f}rad pts_dual={}".format(
+            float(cov_single),
+            len(traced_single),
+            float(cov_dual),
+            len(traced_dual),
+        )
+    )
+
+    # dual 재구성이 단일 추적보다 유의미하게 넓은 방위각을 커버하면 dual 채택
+    if len(traced_dual) >= max(8, len(planes) // 2) and cov_dual >= (cov_single + 1.0):
+        _trace_log("[max-r] selected=dual_reconstructed")
+        traced = traced_dual
+    else:
+        _trace_log("[max-r] selected=single_trace")
+        traced = traced_single
 
     return traced, sections
 
@@ -2915,16 +3207,18 @@ def detect_finish_line(
                             reason
                         )
                     )
-                    strategy_used = "SECTION_MAX_RADIUS_TRACK_{}x{}_RAW_OUTLIER".format(
-                        _SECTION_COUNT, int(_SECTION_STEP_DEG)
+                    strategy_used = (
+                        "SECTION_MAX_RADIUS_TRACK_{}x{:.1f}_RAW_OUTLIER".format(
+                            _SECTION_COUNT, float(_SECTION_STEP_DEG)
+                        )
                     )
                     ok_shape = True
 
             if ok_shape and not str(strategy_used or "").startswith(
                 "SECTION_MAX_RADIUS_TRACK_"
             ):
-                strategy_used = "SECTION_MAX_RADIUS_TRACK_{}x{}_FALLBACK".format(
-                    _SECTION_COUNT, int(_SECTION_STEP_DEG)
+                strategy_used = "SECTION_MAX_RADIUS_TRACK_{}x{:.1f}_FALLBACK".format(
+                    _SECTION_COUNT, float(_SECTION_STEP_DEG)
                 )
 
         # Visualization hooks

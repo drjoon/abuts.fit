@@ -801,8 +801,10 @@ def _run_alignment_on_first_mesh(doc, target_diameter=None, implant_profile=None
                         alignment_transform = result  # (center_x, center_y, best_z)
                         doc.Objects.Replace(obj.Id, mesh)
                         log("[align] Mesh replaced in document")
+                        log("[align] Alignment complete (ok)")
+                    else:
+                        log("[align] Alignment complete (failed)")
                     break  # 첫 번째 메시만 정렬
-        log("[align] Alignment complete")
     except Exception as e:
         log("[align] Alignment failed: " + str(e))
     return alignment_transform
@@ -1605,6 +1607,10 @@ def main(input_path_arg=None, output_path_arg=None, log_path_arg=None):
             target_diameter=target_diameter,
             implant_profile=implant_profile,
         )
+        if not alignment_transform:
+            log(
+                "[align] warning: alignment failed or residual target not met; continue to finishline detection"
+            )
         _log_doc_mesh_stats(doc, "after-align")
         _perf_mark("align_post_finishline", stage_started_at)
 

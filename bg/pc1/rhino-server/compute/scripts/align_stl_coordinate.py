@@ -23,8 +23,10 @@ import sys
 
 import Rhino.Geometry as rg
 
-ALIGN_MODULE_VERSION = "2026-07-06.z-reanchor-lowerband-v2"
+ALIGN_MODULE_VERSION = "2026-07-06.z-reanchor-lowerband-v3"
 DEFAULT_TARGET_DIAMETER = 3.33
+HEX_RESIDUAL_TARGET_DEG = 0.01
+HEX_REFINEMENT_MAX_ITERS = 3
 
 # 표 기준 정적 매핑 (정규화된 키 사용)
 # key: (manufacturer, system, spec)
@@ -830,7 +832,9 @@ def _measure_hex_residual_to_x_deg(mesh):
     반환값 `residual_deg`는 파이프라인 로그의 품질 판정 기준으로 사용된다.
     (운영 기준 예: residual_to_X_deg <= 0.01)
 
-    반환: {residual_deg, method, samples, coherence}
+    반환: {residual_deg, phase_mod_deg, method, samples, coherence}
+      - residual_deg: abs(phase_mod_deg)
+      - phase_mod_deg: 부호 있는 60도 주기 위상 오차 (보정 회전량 = -phase_mod_deg)
     """
     observations = _collect_hex_face_normal_observations(mesh)
     if observations:
@@ -839,6 +843,7 @@ def _measure_hex_residual_to_x_deg(mesh):
             phase_mod = _wrap_angle_deg(solved["phase_deg"], 60.0)
             return {
                 "residual_deg": abs(phase_mod),
+                "phase_mod_deg": phase_mod,
                 "method": "face_normals_postcheck",
                 "samples": len(observations),
                 "coherence": solved["coherence"],
@@ -847,8 +852,10 @@ def _measure_hex_residual_to_x_deg(mesh):
     # 폴백: section 위상 기반 residual
     sec = _estimate_hex_rotation_delta_deg_from_sections(mesh)
     if sec is not None:
+        phase_mod = _wrap_angle_deg(sec.get("phase_deg", 0.0), 60.0)
         return {
-            "residual_deg": abs(_wrap_angle_deg(sec.get("phase_deg", 0.0), 60.0)),
+            "residual_deg": abs(phase_mod),
+            "phase_mod_deg": phase_mod,
             "method": "section_phase_postcheck",
             "samples": sec.get("samples", 0),
             "coherence": None,
@@ -885,7 +892,7 @@ def _align_hex_angle_for_right_view(mesh):
             )
         )
 
-    # 0.01도 요구사항 대비, 매우 작은 수치만 no-op 처리
+    # 초기 one-shot 회전
     if abs(delta_deg) >= 1e-4:
         rot = rg.Transform.Rotation(
             math.radians(delta_deg),
@@ -895,25 +902,69 @@ def _align_hex_angle_for_right_view(mesh):
         if not mesh.Transform(rot):
             return (False, "Failed to rotate mesh for hex angle alignment")
 
-    # 적용 후 잔차 측정 로그
+    # 적용 후 잔차 측정 + 미세 보정(최대 N회)
     residual = _measure_hex_residual_to_x_deg(mesh)
+    for i in range(int(max(1, HEX_REFINEMENT_MAX_ITERS))):
+        if residual is None:
+            break
+
+        residual_deg = float(residual.get("residual_deg", 999.0))
+        if residual_deg <= float(HEX_RESIDUAL_TARGET_DEG):
+            break
+
+        phase_mod_deg = float(residual.get("phase_mod_deg", 0.0))
+        correction_deg = -phase_mod_deg
+        if abs(correction_deg) < 1e-4:
+            break
+
+        _log(
+            "Hex refine iter={} residual={:.6f}deg -> correction={:.6f}deg".format(
+                i + 1,
+                residual_deg,
+                correction_deg,
+            )
+        )
+
+        rot_refine = rg.Transform.Rotation(
+            math.radians(correction_deg),
+            rg.Vector3d(0, 0, 1),
+            rg.Point3d(0, 0, 0),
+        )
+        if not mesh.Transform(rot_refine):
+            return (False, "Failed to rotate mesh during hex residual refinement")
+
+        residual = _measure_hex_residual_to_x_deg(mesh)
+
+    # 최종 잔차 로그
     if residual is not None:
         if residual.get("coherence") is None:
             _log(
-                "Hex residual: residual_to_X_deg={:.6f} method={} samples={} target<=0.010000".format(
+                "Hex residual: residual_to_X_deg={:.6f} method={} samples={} target<={:.6f}".format(
                     residual.get("residual_deg", 999.0),
                     residual.get("method", "unknown"),
                     residual.get("samples", 0),
+                    float(HEX_RESIDUAL_TARGET_DEG),
                 )
             )
         else:
             _log(
-                "Hex residual: residual_to_X_deg={:.6f} method={} samples={} coherence={:.4f} target<=0.010000".format(
+                "Hex residual: residual_to_X_deg={:.6f} method={} samples={} coherence={:.4f} target<={:.6f}".format(
                     residual.get("residual_deg", 999.0),
                     residual.get("method", "unknown"),
                     residual.get("samples", 0),
                     residual.get("coherence", 0.0),
+                    float(HEX_RESIDUAL_TARGET_DEG),
                 )
+            )
+
+        final_residual = float(residual.get("residual_deg", 999.0))
+        if final_residual > float(HEX_RESIDUAL_TARGET_DEG):
+            return (
+                False,
+                "Hex residual too high after refinement: {:.6f} > {:.6f}".format(
+                    final_residual,
+                    float(HEX_RESIDUAL_TARGET_DEG),
+                ),
             )
     else:
         _log("Hex residual: unavailable (could not re-measure)")
@@ -1526,11 +1577,25 @@ def align_mesh_to_origin(mesh, target_diameter=None, implant_profile=None):
     )
 
     if residual is None:
-        summary = "Successfully aligned; residual_to_X_deg=unavailable"
-    else:
-        summary = "Successfully aligned; residual_to_X_deg={:.6f}; residual_method={}; target<=0.010000".format(
-            residual.get("residual_deg", 999.0),
-            residual.get("method", "unknown"),
+        summary = "Aligned with warning; residual_to_X_deg=unavailable"
+        return (True, summary, translation_2)
+
+    residual_deg = float(residual.get("residual_deg", 999.0))
+    summary = "Successfully aligned; residual_to_X_deg={:.6f}; residual_method={}; target<={:.6f}".format(
+        residual_deg,
+        residual.get("method", "unknown"),
+        float(HEX_RESIDUAL_TARGET_DEG),
+    )
+
+    if residual_deg > float(HEX_RESIDUAL_TARGET_DEG):
+        return (
+            False,
+            "Alignment residual too high: {:.6f} > {:.6f} (method={})".format(
+                residual_deg,
+                float(HEX_RESIDUAL_TARGET_DEG),
+                residual.get("method", "unknown"),
+            ),
+            None,
         )
 
     # 반환값은 기존 의미(마지막 Z 정렬 평행이동 벡터)에 맞춰 stage-2 값을 반환
