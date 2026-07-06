@@ -23,7 +23,7 @@ import sys
 
 import Rhino.Geometry as rg
 
-ALIGN_MODULE_VERSION = "2026-07-06.z-reanchor-lowerband-v5-holeaxis"
+ALIGN_MODULE_VERSION = "2026-07-06.z-reanchor-lowerband-v6-holeaxis-multiband"
 DEFAULT_TARGET_DIAMETER = 3.33
 HEX_RESIDUAL_TARGET_DEG = 0.01
 HEX_REFINEMENT_MAX_ITERS = 3
@@ -1199,16 +1199,10 @@ def _pick_inner_hole_circle(
             continue
 
         dist_bbox = math.sqrt((cx - bbox_center_x) ** 2 + (cy - bbox_center_y) ** 2)
-        dist_origin = math.sqrt((cx * cx) + (cy * cy))
         dr_exp = abs(r - expected_r)
 
         if prev_circle is None:
-            score = (
-                (0.55 * dist_bbox)
-                + (0.95 * dist_origin)
-                + (0.9 * dr_exp)
-                + (0.65 * c["r_std"])
-            )
+            score = (0.85 * dist_bbox) + (0.95 * dr_exp) + (0.65 * c["r_std"])
             dist_prev = 0.0
             dr = 0.0
         else:
@@ -1217,11 +1211,10 @@ def _pick_inner_hole_circle(
             )
             dr = abs(r - prev_circle[2])
             score = (
-                (2.1 * dist_prev)
-                + (1.35 * dr)
-                + (0.45 * dist_bbox)
-                + (0.65 * dist_origin)
-                + (0.8 * dr_exp)
+                (2.25 * dist_prev)
+                + (1.45 * dr)
+                + (0.55 * dist_bbox)
+                + (0.85 * dr_exp)
                 + (0.55 * c["r_std"])
             )
 
@@ -1240,7 +1233,7 @@ def _pick_inner_hole_circle(
     return (best["cx"], best["cy"], best["r"])
 
 
-def _fit_hole_axis(mesh, sample_count=36, target_diameter=None):
+def _fit_hole_axis(mesh, sample_count=44, target_diameter=None):
     bbox = mesh.GetBoundingBox(True)
     z_min = bbox.Min.Z
     z_max = bbox.Max.Z
@@ -1251,71 +1244,133 @@ def _fit_hole_axis(mesh, sample_count=36, target_diameter=None):
     bbox_cx = (bbox.Min.X + bbox.Max.X) / 2.0
     bbox_cy = (bbox.Min.Y + bbox.Max.Y) / 2.0
 
-    points = []  # (z, x, y, r)
-    prev_circle = None
+    # 상부 크라운 공동/오픈 루프 영향 완화를 위해 lower~mid band 우선 탐색
+    band_candidates = [
+        (0.06, 0.66),
+        (0.08, 0.72),
+        (0.08, 0.82),
+        (0.10, 0.90),
+    ]
 
-    # 끝단 노이즈를 더 피하기 위해 유효 샘플 구간을 중앙으로 좁힘
-    z_start = z_min + z_span * 0.10
-    z_end = z_max - z_span * 0.10
+    best = None
 
-    for i in range(sample_count):
-        t = (i + 0.5) / float(sample_count)
-        z = z_start + (z_end - z_start) * t
+    for band_idx, (r0, r1) in enumerate(band_candidates):
+        points = []  # (z, x, y, r)
+        prev_circle = None
 
-        candidates = _find_hole_circle_candidates_at_z(mesh, z)
-        hole = _pick_inner_hole_circle(
-            candidates,
-            bbox_cx,
-            bbox_cy,
-            prev_circle=prev_circle,
-            target_diameter=target_diameter,
-        )
-        if hole is None:
+        z_start = z_min + z_span * float(r0)
+        z_end = z_min + z_span * float(r1)
+        if z_end - z_start <= 0.02:
             continue
 
-        hx, hy, hr = hole
-        points.append((z, hx, hy, hr))
-        prev_circle = hole
+        for i in range(sample_count):
+            t = (i + 0.5) / float(sample_count)
+            z = z_start + (z_end - z_start) * t
 
-    if len(points) < 4:
+            candidates = _find_hole_circle_candidates_at_z(mesh, z)
+            hole = _pick_inner_hole_circle(
+                candidates,
+                bbox_cx,
+                bbox_cy,
+                prev_circle=prev_circle,
+                target_diameter=target_diameter,
+            )
+            if hole is None:
+                continue
+
+            hx, hy, hr = hole
+            points.append((z, hx, hy, hr))
+            prev_circle = hole
+
+        if len(points) < 5:
+            _log(
+                "Hole-axis band[{}] skipped: insufficient slices ({}) range=[{:.2f},{:.2f}]".format(
+                    band_idx,
+                    len(points),
+                    r0,
+                    r1,
+                )
+            )
+            continue
+
+        # x(z), y(z) 선형 회귀
+        zs = [p[0] for p in points]
+        xs = [p[1] for p in points]
+        ys = [p[2] for p in points]
+
+        mz = sum(zs) / len(zs)
+        mx = sum(xs) / len(xs)
+        my = sum(ys) / len(ys)
+
+        szz = sum((z - mz) * (z - mz) for z in zs)
+        if szz <= 1e-12:
+            continue
+
+        sxz = sum((z - mz) * (x - mx) for z, x in zip(zs, xs))
+        syz = sum((z - mz) * (y - my) for z, y in zip(zs, ys))
+
+        ax = sxz / szz
+        ay = syz / szz
+
+        direction = rg.Vector3d(ax, ay, 1.0)
+        if not direction.Unitize():
+            continue
+
+        # 회귀 품질(RMSE): 축 선택 시 최소화
+        err2 = 0.0
+        for z, x, y, _r in points:
+            px = mx + ax * (z - mz)
+            py = my + ay * (z - mz)
+            dx = x - px
+            dy = y - py
+            err2 += dx * dx + dy * dy
+        rmse = math.sqrt(max(err2 / float(len(points)), 0.0))
+
+        avg_r = sum(p[3] for p in points) / len(points)
+        axis_point = rg.Point3d(mx, my, mz)
+
+        candidate = {
+            "axis_point": axis_point,
+            "axis_dir": direction,
+            "avg_radius": avg_r,
+            "samples": len(points),
+            "rmse": rmse,
+            "band": (r0, r1),
+        }
+
         _log(
-            "Hole-axis fit skipped: insufficient valid hole slices ({})".format(
-                len(points)
+            "Hole-axis band[{}] fit: samples={} rmse={:.5f} avg_r={:.4f} range=[{:.2f},{:.2f}]".format(
+                band_idx,
+                candidate["samples"],
+                candidate["rmse"],
+                candidate["avg_radius"],
+                r0,
+                r1,
             )
         )
+
+        # 우선순위: samples 충분 + rmse 낮은 후보
+        if best is None:
+            best = candidate
+        else:
+            best_key = (
+                int(best["samples"] >= 8),
+                -float(best["rmse"]),
+                best["samples"],
+            )
+            cur_key = (
+                int(candidate["samples"] >= 8),
+                -float(candidate["rmse"]),
+                candidate["samples"],
+            )
+            if cur_key > best_key:
+                best = candidate
+
+    if best is None:
+        _log("Hole-axis fit skipped: no valid candidate in all bands")
         return None
 
-    # x(z), y(z) 선형 회귀
-    zs = [p[0] for p in points]
-    xs = [p[1] for p in points]
-    ys = [p[2] for p in points]
-
-    mz = sum(zs) / len(zs)
-    mx = sum(xs) / len(xs)
-    my = sum(ys) / len(ys)
-
-    szz = sum((z - mz) * (z - mz) for z in zs)
-    if szz <= 1e-12:
-        return None
-
-    sxz = sum((z - mz) * (x - mx) for z, x in zip(zs, xs))
-    syz = sum((z - mz) * (y - my) for z, y in zip(zs, ys))
-
-    ax = sxz / szz
-    ay = syz / szz
-
-    direction = rg.Vector3d(ax, ay, 1.0)
-    if not direction.Unitize():
-        return None
-
-    avg_r = sum(p[3] for p in points) / len(points)
-    axis_point = rg.Point3d(mx, my, mz)
-    return {
-        "axis_point": axis_point,
-        "axis_dir": direction,
-        "avg_radius": avg_r,
-        "samples": len(points),
-    }
+    return best
 
 
 def _axis_tilt_to_z_deg(v):
