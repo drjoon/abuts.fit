@@ -341,6 +341,178 @@ var src = (job.source ?? string.Empty).Trim();
 if (string.Equals(src, "cam_approve", StringComparison.OrdinalIgnoreCase)) return 1;
 return 0;
 }
+
+private const int DUPLICATE_REQUEST_COOLDOWN_SEC = 120;
+
+private static string NormalizeRequestId(string requestId, string fileName = null, string originalFileName = null)
+{
+    var rid = (requestId ?? string.Empty).Trim();
+    if (!string.IsNullOrEmpty(rid)) return rid;
+
+    // requestId가 비어있으면 파일명에서 토큰(예: 20260706-ZPLWWUWC)을 추출해 보조 키로 사용
+    var candidates = new[] { originalFileName, fileName };
+    foreach (var c in candidates)
+    {
+        var name = (c ?? string.Empty).Trim();
+        if (string.IsNullOrEmpty(name)) continue;
+        try
+        {
+            var stem = Path.GetFileNameWithoutExtension(name) ?? string.Empty;
+            var m = Regex.Match(stem, @"^(\d{8}-[A-Za-z0-9]+)", RegexOptions.IgnoreCase);
+            if (m.Success)
+            {
+                return m.Groups[1].Value.Trim();
+            }
+        }
+        catch { }
+    }
+
+    return string.Empty;
+}
+
+private static string BuildJobIdentityKey(string fileName, string originalFileName, string bridgePath)
+{
+    var candidate = (originalFileName ?? string.Empty).Trim();
+    if (string.IsNullOrEmpty(candidate))
+    {
+        candidate = (fileName ?? string.Empty).Trim();
+    }
+    if (string.IsNullOrEmpty(candidate))
+    {
+        candidate = (bridgePath ?? string.Empty).Trim();
+    }
+
+    if (string.IsNullOrEmpty(candidate)) return string.Empty;
+
+    try
+    {
+        var only = Path.GetFileName(candidate) ?? candidate;
+        return only.Trim().ToLowerInvariant();
+    }
+    catch
+    {
+        return candidate.Trim().ToLowerInvariant();
+    }
+}
+
+public static bool TryEnqueueProcessRequest(
+    string machineId,
+    string fileName,
+    string requestId,
+    string originalFileName,
+    string bridgePath,
+    string s3Key,
+    string s3Bucket,
+    out CncJobItem job,
+    out string ignoreReason)
+{
+    job = null;
+    ignoreReason = null;
+
+    var mid = (machineId ?? string.Empty).Trim();
+    var fn = (fileName ?? string.Empty).Trim();
+    var ofn = (originalFileName ?? string.Empty).Trim();
+    var bp = (bridgePath ?? string.Empty).Trim();
+    var rid = NormalizeRequestId(requestId, fn, ofn);
+    var key = BuildJobIdentityKey(fn, ofn, bp);
+
+    if (string.IsNullOrEmpty(mid) || string.IsNullOrEmpty(fn))
+    {
+        ignoreReason = "invalid-request";
+        return false;
+    }
+
+    // 1) 현재 장비가 같은 요청을 실행/시작대기 중이면 중복 enqueue 무시
+    lock (StateLock)
+    {
+        if (MachineStates.TryGetValue(mid, out var state) && state != null)
+        {
+            var active = state.CurrentJob != null || state.IsRunning || state.AwaitingStart;
+            if (active)
+            {
+                var activeRid = NormalizeRequestId(state.CurrentJob?.requestId, state.CurrentJob?.fileName, state.CurrentJob?.originalFileName);
+                var activeKey = BuildJobIdentityKey(state.CurrentJob?.fileName, state.CurrentJob?.originalFileName, state.CurrentJob?.bridgePath);
+
+                if (!string.IsNullOrEmpty(rid) && !string.IsNullOrEmpty(activeRid) && string.Equals(activeRid, rid, StringComparison.OrdinalIgnoreCase))
+                {
+                    ignoreReason = "already-running";
+                    return false;
+                }
+
+                if (string.IsNullOrEmpty(rid) && !string.IsNullOrEmpty(key) && !string.IsNullOrEmpty(activeKey) && string.Equals(activeKey, key, StringComparison.OrdinalIgnoreCase))
+                {
+                    ignoreReason = "already-running-same-file";
+                    return false;
+                }
+            }
+
+            // 2) 방금 완료한 동일 요청의 짧은 시간 내 재수신은 레이스/중복으로 간주해 무시
+            var justCompletedAgo = state.LastCompletedRequestAtUtc == DateTime.MinValue
+                ? TimeSpan.MaxValue
+                : (DateTime.UtcNow - state.LastCompletedRequestAtUtc);
+
+            if (justCompletedAgo <= TimeSpan.FromSeconds(DUPLICATE_REQUEST_COOLDOWN_SEC))
+            {
+                if (!string.IsNullOrEmpty(rid) && !string.IsNullOrEmpty(state.LastCompletedRequestId) && string.Equals(state.LastCompletedRequestId, rid, StringComparison.OrdinalIgnoreCase))
+                {
+                    ignoreReason = "just-completed-request";
+                    return false;
+                }
+
+                if (string.IsNullOrEmpty(rid) && !string.IsNullOrEmpty(key) && !string.IsNullOrEmpty(state.LastCompletedFileKey) && string.Equals(state.LastCompletedFileKey, key, StringComparison.OrdinalIgnoreCase))
+                {
+                    ignoreReason = "just-completed-file";
+                    return false;
+                }
+            }
+        }
+    }
+
+    // 3) 큐에 이미 같은 요청이 대기 중이면 중복 enqueue 무시
+    var snapshot = CncJobQueue.Snapshot(mid) ?? new List<CncJobItem>();
+    if (!string.IsNullOrEmpty(rid))
+    {
+        foreach (var q in snapshot)
+        {
+            if (q == null) continue;
+            var qRid = NormalizeRequestId(q.requestId, q.fileName, q.originalFileName);
+            if (!string.IsNullOrEmpty(qRid) && string.Equals(qRid, rid, StringComparison.OrdinalIgnoreCase))
+            {
+                ignoreReason = "already-queued-request";
+                return false;
+            }
+        }
+    }
+    else if (!string.IsNullOrEmpty(key))
+    {
+        foreach (var q in snapshot)
+        {
+            if (q == null) continue;
+            var qKey = BuildJobIdentityKey(q.fileName, q.originalFileName, q.bridgePath);
+            if (!string.IsNullOrEmpty(qKey) && string.Equals(qKey, key, StringComparison.OrdinalIgnoreCase))
+            {
+                ignoreReason = "already-queued-file";
+                return false;
+            }
+        }
+    }
+
+    job = CncJobQueue.EnqueueFileBack(mid, fn, string.IsNullOrWhiteSpace(requestId) ? null : requestId, string.IsNullOrWhiteSpace(ofn) ? fn : ofn);
+    if (job == null)
+    {
+        ignoreReason = "enqueue-failed";
+        return false;
+    }
+
+    if (!string.IsNullOrEmpty(bp)) job.bridgePath = bp;
+    var sk = (s3Key ?? string.Empty).Trim();
+    if (!string.IsNullOrEmpty(sk)) job.s3Key = sk;
+    var sb = (s3Bucket ?? string.Empty).Trim();
+    if (!string.IsNullOrEmpty(sb)) job.s3Bucket = sb;
+
+    return true;
+}
+
 private class MachineState
 {
 public string MachineId;
@@ -371,6 +543,10 @@ public DateTime HadAlarmSinceIdleUtc;
 public DateTime LastAlarmClearCheckUtc;
 // 가공 완료 시각: 다음 건 시작 전 settle 대기 기준 (척 오픈 M코드 처리, HOME 복귀 대기)
 public DateTime LastCompletedAtUtc;
+// 중복 process 요청 방지용 마지막 완료 식별자
+public string LastCompletedRequestId;
+public string LastCompletedFileKey;
+public DateTime LastCompletedRequestAtUtc;
 }
 private static readonly object StateLock = new object();
 private static readonly Dictionary<string, MachineState> MachineStates
@@ -732,6 +908,9 @@ state.AwaitingStart = false;
 state.SawBusy = false;
 state.MockCompletionDueUtc = DateTime.MinValue;
 state.LastCompletedAtUtc = completedAt;
+state.LastCompletedRequestId = NormalizeRequestId(completedJob?.requestId, completedJob?.fileName, completedJob?.originalFileName);
+state.LastCompletedFileKey = BuildJobIdentityKey(completedJob?.fileName, completedJob?.originalFileName, completedJob?.bridgePath);
+state.LastCompletedRequestAtUtc = completedAt;
 }
 Console.WriteLine("[CncMachining] job completed machine={0} jobId={1} completedAt={2:o} minSettleSec={3} maxSettleSec={4}",
     machineId, completedJob?.id, completedAt, Config.CncPostCompleteMinSettleSeconds, Config.CncPostCompleteMaxSettleSeconds);
@@ -1169,7 +1348,7 @@ if (!Mode1Api.TrySetMachineMode(machineId, "EDIT", out var modeErr))
     {
         Console.WriteLine("[CncMachining] edit mode failed - CNC 장비 연결 실패 machine={0} err={1}", machineId, modeErr);
         Console.WriteLine("[CncMachining] 확인사항: 1) CNC 장비 전원 ON, 2) Auto 모드 선택, 3) Idle 상태, 4) Hi-Link 서비스 활성화");
-        
+
         // 백엔드에 실패 통보
         var failureMessage = "CNC 장비 연결 실패. 장비 상태를 확인하세요: 1) 전원 ON, 2) Auto 모드, 3) Idle 상태, 4) Hi-Link 서비스 활성화";
         _ = Task.Run(() => NotifyMachiningFailed(job, machineId, failureMessage, null, "CNC_OPEN_MACHINE_HANDLE_FAILED"));
@@ -1325,7 +1504,7 @@ state.LastAwaitingStartSignalUtc = DateTime.MinValue;
     var flags = await GetMachineFlagsFromBackend(machineId);
     var allowRemoteStart = flags != null && flags.AllowJobStart;
     var allowAutoStart = flags != null && flags.AllowAutoMachining;
-    Console.WriteLine("[CncMachining] flags check machine={0} jobId={1} allowRemoteStart={2} allowAutoStart={3} flagsNull={4}", 
+    Console.WriteLine("[CncMachining] flags check machine={0} jobId={1} allowRemoteStart={2} allowAutoStart={3} flagsNull={4}",
         machineId, job?.id, allowRemoteStart, allowAutoStart, flags == null);
     if (allowAutoStart)
     {

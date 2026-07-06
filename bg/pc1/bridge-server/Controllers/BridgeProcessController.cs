@@ -41,37 +41,46 @@ namespace HiLinkBridgeWebApi48.Controllers
 
             try
             {
-                var job = CncJobQueue.EnqueueFileBack(
+                CncJobItem job;
+                string ignoreReason;
+                if (!CncMachining.TryEnqueueProcessRequest(
                     req.machineId,
                     req.fileName,
-                    string.IsNullOrWhiteSpace(req.requestId) ? null : req.requestId,
-                    req.originalFileName
-                );
-
-                try
+                    req.requestId,
+                    req.originalFileName,
+                    req.bridgePath,
+                    req.s3Key,
+                    req.s3Bucket,
+                    out job,
+                    out ignoreReason
+                ))
                 {
-                    var bp = (req.bridgePath ?? string.Empty).Trim();
-                    if (!string.IsNullOrEmpty(bp))
+                    if (job == null && !string.IsNullOrEmpty(ignoreReason) &&
+                        (ignoreReason.StartsWith("already-", StringComparison.OrdinalIgnoreCase) ||
+                         ignoreReason.StartsWith("just-completed", StringComparison.OrdinalIgnoreCase)))
                     {
-                        job.bridgePath = bp;
+                        Console.WriteLine("[Bridge-API] Duplicate process request ignored machine={0} requestId={1} file={2} reason={3}", req.machineId, req.requestId, req.fileName, ignoreReason);
+                        return Content(HttpStatusCode.Accepted, new
+                        {
+                            ok = true,
+                            status = "IGNORED_DUPLICATE",
+                            reason = ignoreReason,
+                            machineId = req.machineId,
+                            fileName = req.fileName,
+                            requestId = req.requestId,
+                        });
                     }
-                }
-                catch { }
 
-                try
-                {
-                    var sk = (req.s3Key ?? string.Empty).Trim();
-                    if (!string.IsNullOrEmpty(sk))
+                    return Content(HttpStatusCode.BadRequest, new
                     {
-                        job.s3Key = sk;
-                    }
-                    var sb = (req.s3Bucket ?? string.Empty).Trim();
-                    if (!string.IsNullOrEmpty(sb))
-                    {
-                        job.s3Bucket = sb;
-                    }
+                        ok = false,
+                        status = "REJECTED",
+                        reason = ignoreReason ?? "enqueue-failed",
+                        machineId = req.machineId,
+                        fileName = req.fileName,
+                        requestId = req.requestId,
+                    });
                 }
-                catch { }
 
                 CncMachining.ResetStartBackoff(req.machineId);
                 CncMachining.TriggerProcessNow(req.machineId);

@@ -115,7 +115,7 @@ export const MachineQueueCard = ({
     const hintJid = String(nowPlayingHint?.jobId || "").trim();
     const hintPath = String(nowPlayingHint?.bridgePath || "").trim();
 
-    const idx =
+    const hintedIdx =
       hintRid || hintJid || hintPath
         ? items.findIndex((j: any) => {
             const rid = String(j?.requestId || "").trim();
@@ -129,6 +129,22 @@ export const MachineQueueCard = ({
             return false;
           })
         : -1;
+
+    const runningIdx = items.findIndex((j: any) => {
+      const rec = j?.machiningRecord;
+      if (!rec || typeof rec !== "object") return false;
+      const recStatus = String(rec?.status || "")
+        .trim()
+        .toUpperCase();
+      if (recStatus === "RUNNING" || recStatus === "PROCESSING") return true;
+      const startedAt = rec?.startedAt ? new Date(rec.startedAt).getTime() : 0;
+      const completedAt = rec?.completedAt
+        ? new Date(rec.completedAt).getTime()
+        : 0;
+      return startedAt > 0 && completedAt <= 0;
+    });
+
+    const idx = hintedIdx >= 0 ? hintedIdx : runningIdx >= 0 ? runningIdx : -1;
 
     const current = idx >= 0 ? (items[idx] ?? null) : (items[0] ?? null);
     const next = idx >= 0 ? (items[idx + 1] ?? null) : (items[1] ?? null);
