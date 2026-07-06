@@ -23,10 +23,20 @@ import sys
 
 import Rhino.Geometry as rg
 
-ALIGN_MODULE_VERSION = "2026-07-06.z-reanchor-lowerband-v6-holeaxis-multiband"
+ALIGN_MODULE_VERSION = "2026-07-06.z-perf-v13-direct-phase-correction"
 DEFAULT_TARGET_DIAMETER = 3.33
 HEX_RESIDUAL_TARGET_DEG = 0.01
 HEX_REFINEMENT_MAX_ITERS = 3
+
+# 성능 튜닝 파라미터
+HOLE_AXIS_BASE_SAMPLE_COUNT = 18
+HOLE_AXIS_REFINEMENT_SAMPLE_COUNT = 10
+HOLE_AXIS_RMSE_EARLY_ACCEPT = 0.08
+HEX_FAST_REFINEMENT_TARGET_DEG = 0.05
+HEX_RECOVERY_TRIGGER_DEG = 0.35
+HEX_ROBUST_INLIER_DEG = 6.5
+HEX_RESIDUAL_SEARCH_TRIGGER_DEG = 0.35
+HEX_DIRECT_PHASE_CORRECTION_TRIGGER_DEG = 20.0
 # 기본은 '경고 후 진행'으로 두고, 필요 시 엄격 모드를 env로 켠다.
 # ABUTS_ALIGN_STRICT_HEX_RESIDUAL=1 이면 기존처럼 residual 초과 시 실패 반환
 STRICT_HEX_RESIDUAL_DEFAULT = False
@@ -387,9 +397,30 @@ def _estimate_hole_circle_candidate(polyline):
     }
 
 
-def _find_hole_circle_candidates_at_z(mesh, z_height):
+def _z_cache_key(z_height, q=1e-5):
+    return round(float(z_height) / float(q)) * float(q)
+
+
+def _mesh_plane_polylines(mesh, z_height, cache=None):
+    if cache is not None:
+        key = _z_cache_key(z_height)
+        if key in cache:
+            return cache[key]
+
     plane = rg.Plane(rg.Point3d(0, 0, z_height), rg.Vector3d(0, 0, 1))
     polylines = rg.Intersect.Intersection.MeshPlane(mesh, plane)
+
+    if not polylines:
+        polylines = []
+
+    if cache is not None:
+        cache[key] = polylines
+
+    return polylines
+
+
+def _find_hole_circle_candidates_at_z(mesh, z_height, section_cache=None):
+    polylines = _mesh_plane_polylines(mesh, z_height, cache=section_cache)
 
     if not polylines or len(polylines) == 0:
         return []
@@ -402,9 +433,8 @@ def _find_hole_circle_candidates_at_z(mesh, z_height):
     return out
 
 
-def find_all_circles_at_z(mesh, z_height):
-    plane = rg.Plane(rg.Point3d(0, 0, z_height), rg.Vector3d(0, 0, 1))
-    polylines = rg.Intersect.Intersection.MeshPlane(mesh, plane)
+def find_all_circles_at_z(mesh, z_height, section_cache=None):
+    polylines = _mesh_plane_polylines(mesh, z_height, cache=section_cache)
 
     if not polylines or len(polylines) == 0:
         return []
@@ -417,11 +447,11 @@ def find_all_circles_at_z(mesh, z_height):
     return circles
 
 
-def find_circle_at_z(mesh, z_height):
+def find_circle_at_z(mesh, z_height, section_cache=None):
     """
     기존 호환 API: 해당 Z 단면에서 가장 바깥 원(최대 반지름)을 반환
     """
-    circles = find_all_circles_at_z(mesh, z_height)
+    circles = find_all_circles_at_z(mesh, z_height, section_cache=section_cache)
     if not circles:
         return None
     return max(circles, key=lambda c: c[2])
@@ -591,6 +621,16 @@ def _collect_hex_face_normal_observations(mesh):
     mesh.FaceNormals.UnitizeFaceNormals()
 
     raw = []  # (angle_deg, weight, radial)
+    target_r = None
+
+    # 대형 메시에서 헥스 위상 추정용 샘플링 stride 적용 (속도 우선)
+    face_count = int(mesh.Faces.Count)
+    if face_count > 90000:
+        face_stride = 3
+    elif face_count > 60000:
+        face_stride = 2
+    else:
+        face_stride = 1
 
     # connection/hex 근처 반경만 사용해 크라운 외형(큰 반경) 오염을 줄인다.
     radial_min = 0.45
@@ -602,13 +642,13 @@ def _collect_hex_face_normal_observations(mesh):
             td = float(raw_target_diameter)
             if td > 0:
                 target_r = td * 0.5
-                # 타겟 반경 기반 안전 윈도우
-                radial_min = max(0.35, target_r * 0.45)
-                radial_max = min(4.8, target_r * 2.25)
+                # 1차 윈도우(너무 좁히지 않음): 이후 2차 타이트닝에서 추가 정제
+                radial_min = max(0.45, target_r * 0.50)
+                radial_max = min(4.0, target_r * 1.95)
         except Exception:
             pass
 
-    for fi in range(mesh.Faces.Count):
+    for fi in range(0, face_count, face_stride):
         f = mesh.Faces[fi]
         n = mesh.FaceNormals[fi]
 
@@ -625,12 +665,10 @@ def _collect_hex_face_normal_observations(mesh):
             cz = (v0.Z + v1.Z + v2.Z + v3.Z) / 4.0
             cx = (v0.X + v1.X + v2.X + v3.X) / 4.0
             cy = (v0.Y + v1.Y + v2.Y + v3.Y) / 4.0
-            area = _triangle_area(v0, v1, v2) + _triangle_area(v0, v2, v3)
         else:
             cz = (v0.Z + v1.Z + v2.Z) / 3.0
             cx = (v0.X + v1.X + v2.X) / 3.0
             cy = (v0.Y + v1.Y + v2.Y) / 3.0
-            area = _triangle_area(v0, v1, v2)
 
         in_band = False
         for z0, z1 in z_bands:
@@ -650,6 +688,13 @@ def _collect_hex_face_normal_observations(mesh):
 
         angle_deg = math.degrees(math.atan2(n.Y, n.X))
         # 수직성에 가까울수록 가중치 강화
+        # 품질 회복을 위해 area 가중치를 복원한다.
+        if f.IsQuad:
+            v3 = mesh.Vertices[f.D]
+            area = _triangle_area(v0, v1, v2) + _triangle_area(v0, v2, v3)
+        else:
+            area = _triangle_area(v0, v1, v2)
+
         side_weight = max(0.0, 1.0 - abs(n.Z))
         weight = max(area * side_weight, 1e-6)
         raw.append((angle_deg, weight, radial))
@@ -657,9 +702,25 @@ def _collect_hex_face_normal_observations(mesh):
     if not raw:
         return []
 
-    # 반경 상위 편향 대신, 이미 제한된 반경 윈도우 내 샘플을 모두 사용한다.
-    # (상위 반경만 고르면 크라운 외면 쪽으로 다시 치우칠 수 있음)
-    observations = [(angle_deg, weight) for angle_deg, weight, _radial in raw]
+    # 2차 반경 타이트닝: 타겟 반경 근처 관측치를 우선 사용해 잡면 오염을 줄인다.
+    filtered_raw = raw
+    if target_r is not None:
+        tight_min = max(0.55, target_r * 0.62)
+        tight_max = min(2.9, target_r * 1.45)
+        tight = [t for t in raw if tight_min <= t[2] <= tight_max]
+        if len(tight) >= max(18, int(len(raw) * 0.18)):
+            filtered_raw = tight
+
+    observations = []
+    for angle_deg, weight, radial in filtered_raw:
+        ww = weight
+        if target_r is not None and target_r > 1e-6:
+            dr = abs(radial - target_r)
+            band = max(0.35, target_r * 0.55)
+            radial_weight = max(0.20, 1.0 - (dr / band))
+            ww = max(weight * radial_weight, 1e-9)
+        observations.append((angle_deg, ww))
+
     return observations
 
 
@@ -757,6 +818,68 @@ def _compute_hex_phase_from_face_normal_observations(observations):
     }
 
 
+def _nearest_hex_lattice_error_deg(angle_deg, phase_deg):
+    # angle이 (phase + 60*k)에 얼마나 가까운지의 최소 각도 오차
+    best = 999.0
+    for k in range(6):
+        target = phase_deg + 60.0 * k
+        d = _angle_distance_deg(angle_deg, target)
+        if d < best:
+            best = d
+    return best
+
+
+def _compute_hex_phase_from_face_normal_observations_robust(observations):
+    """
+    2-pass robust 위상 계산:
+    1) 전체 샘플로 초기 위상 계산
+    2) 60도 격자 인라이어만 재가중해서 위상 재계산
+    """
+    base = _compute_hex_phase_from_face_normal_observations(observations)
+    if base is None:
+        return None
+
+    phase0 = float(base["phase_deg"])
+    inlier_deg = float(HEX_ROBUST_INLIER_DEG)
+
+    inliers = []
+    for ang, w in observations:
+        err = _nearest_hex_lattice_error_deg(ang, phase0)
+        if err > inlier_deg:
+            continue
+
+        # 격자에 가까울수록 가중 강화 (선형)
+        closeness = max(0.05, 1.0 - (err / max(inlier_deg, 1e-6)))
+        inliers.append((ang, max(w, 1e-9) * closeness))
+
+    if len(inliers) < 12:
+        return {
+            "phase_deg": base["phase_deg"],
+            "coherence": base["coherence"],
+            "sum_w": base["sum_w"],
+            "inlier_count": 0,
+            "method": "face_normals_raw",
+        }
+
+    refined = _compute_hex_phase_from_face_normal_observations(inliers)
+    if refined is None:
+        return {
+            "phase_deg": base["phase_deg"],
+            "coherence": base["coherence"],
+            "sum_w": base["sum_w"],
+            "inlier_count": 0,
+            "method": "face_normals_raw",
+        }
+
+    return {
+        "phase_deg": refined["phase_deg"],
+        "coherence": refined["coherence"],
+        "sum_w": refined["sum_w"],
+        "inlier_count": len(inliers),
+        "method": "face_normals_robust",
+    }
+
+
 def _estimate_hex_rotation_delta_deg_from_face_normals(mesh):
     """
     one-shot 방식:
@@ -767,7 +890,7 @@ def _estimate_hex_rotation_delta_deg_from_face_normals(mesh):
     if not observations:
         return None
 
-    solved = _compute_hex_phase_from_face_normal_observations(observations)
+    solved = _compute_hex_phase_from_face_normal_observations_robust(observations)
     if solved is None:
         return None
 
@@ -787,7 +910,50 @@ def _estimate_hex_rotation_delta_deg_from_face_normals(mesh):
         "phase_deg": phase_deg,
         "samples": len(observations),
         "coherence": coherence,
-        "method": "face_normals_one_shot",
+        "inlier_count": solved.get("inlier_count", 0),
+        "method": "face_normals_one_shot_{}".format(solved.get("method", "raw")),
+    }
+
+
+def _estimate_hex_rotation_delta_deg_from_dominant_cluster(mesh):
+    """
+    지배적인 side-face 법선 클러스터를 직접 ±X로 스냅하는 방식.
+    평균 phase가 흔들리는 케이스에서 더 안정적으로 동작한다.
+    """
+    observations = _collect_hex_face_normal_observations(mesh)
+    if not observations:
+        return None
+
+    cluster_info = _cluster_hex_face_normals(observations)
+    if cluster_info is None:
+        return None
+
+    clusters = sorted(
+        cluster_info.get("clusters", []),
+        key=lambda c: float(c.get("weight", 0.0)),
+        reverse=True,
+    )
+    if not clusters:
+        return None
+
+    best = clusters[0]
+    best_angle = float(best.get("angle_deg", 0.0))
+    delta_deg = _best_delta_to_align_face_normal_with_zy_plane_normal(best_angle)
+
+    total_w = sum(float(c.get("weight", 0.0)) for c in clusters)
+    best_w = float(best.get("weight", 0.0))
+    dominance = best_w / max(total_w, 1e-9)
+    if dominance < 0.16:
+        return None
+
+    return {
+        "delta_deg": delta_deg,
+        "phase_deg": float(cluster_info.get("phase_deg", 0.0)),
+        "samples": len(observations),
+        "coherence": None,
+        "dominance": dominance,
+        "cluster_angle_deg": best_angle,
+        "method": "face_normals_dominant_cluster_snap",
     }
 
 
@@ -868,98 +1034,107 @@ def _estimate_hex_rotation_delta_deg_from_sections(mesh):
 
 
 def _estimate_hex_rotation_delta_deg(mesh):
-    info = _estimate_hex_rotation_delta_deg_from_face_normals(mesh)
-    if info is not None:
-        return info
-    return _estimate_hex_rotation_delta_deg_from_sections(mesh)
+    # 단순화: 6개 헥스 면 각도 클러스터를 만들고,
+    # 가장 강한 면 법선을 ±X(0/180deg)로 맞추는 회전량을 사용한다.
+    observations = _collect_hex_face_normal_observations(mesh)
+    if not observations:
+        return None
+
+    cluster_info = _cluster_hex_face_normals(observations)
+    if cluster_info is None:
+        return None
+
+    clusters = sorted(
+        cluster_info.get("clusters", []),
+        key=lambda c: float(c.get("weight", 0.0)),
+        reverse=True,
+    )
+    if not clusters:
+        return None
+
+    dominant = clusters[0]
+    dominant_angle = float(dominant.get("angle_deg", 0.0))
+    delta_deg = _best_delta_to_align_face_normal_with_zy_plane_normal(dominant_angle)
+
+    return {
+        "delta_deg": delta_deg,
+        "phase_deg": float(cluster_info.get("phase_deg", 0.0)),
+        "samples": len(observations),
+        "method": "hex6face_dominant_to_X",
+    }
 
 
 def _measure_hex_residual_to_x_deg(mesh):
     """
-    회전 적용 후 잔차 측정.
-    목표는 face-normal 위상 phase_mod=0 (mod 60), 즉 면 법선이 ±X.
-
-    반환값 `residual_deg`는 파이프라인 로그의 품질 판정 기준으로 사용된다.
-    (운영 기준 예: residual_to_X_deg <= 0.01)
-
-    반환: {residual_deg, phase_mod_deg, method, samples, coherence}
-      - residual_deg: abs(phase_mod_deg)
-      - phase_mod_deg: 부호 있는 60도 주기 위상 오차 (보정 회전량 = -phase_mod_deg)
+    6개 헥스 면 각도 기준 residual 측정.
+    dominant face normal을 ±X에 맞추기 위한 회전량 절대값을 residual로 사용.
     """
     observations = _collect_hex_face_normal_observations(mesh)
-    if observations:
-        solved = _compute_hex_phase_from_face_normal_observations(observations)
-        if solved is not None:
-            phase_mod = _wrap_angle_deg(solved["phase_deg"], 60.0)
-            return {
-                "residual_deg": abs(phase_mod),
-                "phase_mod_deg": phase_mod,
-                "method": "face_normals_postcheck",
-                "samples": len(observations),
-                "coherence": solved["coherence"],
-            }
+    if not observations:
+        return None
 
-    # 폴백: section 위상 기반 residual
-    sec = _estimate_hex_rotation_delta_deg_from_sections(mesh)
-    if sec is not None:
-        phase_mod = _wrap_angle_deg(sec.get("phase_deg", 0.0), 60.0)
-        return {
-            "residual_deg": abs(phase_mod),
-            "phase_mod_deg": phase_mod,
-            "method": "section_phase_postcheck",
-            "samples": sec.get("samples", 0),
-            "coherence": None,
-        }
+    cluster_info = _cluster_hex_face_normals(observations)
+    if cluster_info is None:
+        return None
 
-    return None
+    clusters = sorted(
+        cluster_info.get("clusters", []),
+        key=lambda c: float(c.get("weight", 0.0)),
+        reverse=True,
+    )
+    if not clusters:
+        return None
+
+    dominant_angle = float(clusters[0].get("angle_deg", 0.0))
+    correction_deg = _best_delta_to_align_face_normal_with_zy_plane_normal(
+        dominant_angle
+    )
+
+    return {
+        "residual_deg": abs(correction_deg),
+        "phase_mod_deg": -correction_deg,  # 파이프라인 보정식 correction=-phase_mod와 호환
+        "method": "hex6face_cluster_postcheck",
+        "samples": len(observations),
+        "coherence": None,
+    }
+
+
+def _is_strict_hex_residual():
+    strict_env = os.environ.get("ABUTS_ALIGN_STRICT_HEX_RESIDUAL", "").strip().lower()
+    return STRICT_HEX_RESIDUAL_DEFAULT or strict_env in ("1", "true", "yes", "on")
+
+
+def _apply_z_rotation_deg(mesh, delta_deg):
+    if abs(float(delta_deg)) < 1e-9:
+        return True
+    rot = rg.Transform.Rotation(
+        math.radians(float(delta_deg)),
+        rg.Vector3d(0, 0, 1),
+        rg.Point3d(0, 0, 0),
+    )
+    return bool(mesh.Transform(rot))
 
 
 def _align_hex_angle_for_right_view(mesh):
     info = _estimate_hex_rotation_delta_deg(mesh)
     if info is None:
-        return (False, "Could not estimate hex angle")
+        return (False, "Could not estimate hex angle from 6 faces")
 
-    delta_deg = info["delta_deg"]
-    phase_deg = info["phase_deg"]
+    strict_hex = _is_strict_hex_residual()
+    max_iters = int(max(1, HEX_REFINEMENT_MAX_ITERS if strict_hex else 3))
+    refinement_target = (
+        float(HEX_RESIDUAL_TARGET_DEG)
+        if strict_hex
+        else float(HEX_FAST_REFINEMENT_TARGET_DEG)
+    )
 
-    method = info.get("method", "unknown")
-    if method == "face_normals_one_shot":
-        _log(
-            "Hex(face_normals_one_shot): phase={:.6f}deg samples={} coherence={:.4f} -> z-rotation delta={:.6f}deg".format(
-                phase_deg,
-                info.get("samples", 0),
-                info.get("coherence", 0.0),
-                delta_deg,
-            )
-        )
-    else:
-        _log(
-            "Hex({}): phase={:.6f}deg samples={} -> z-rotation delta={:.6f}deg".format(
-                method,
-                phase_deg,
-                info.get("samples", 0),
-                delta_deg,
-            )
-        )
-
-    # 초기 one-shot 회전
-    if abs(delta_deg) >= 1e-4:
-        rot = rg.Transform.Rotation(
-            math.radians(delta_deg),
-            rg.Vector3d(0, 0, 1),
-            rg.Point3d(0, 0, 0),
-        )
-        if not mesh.Transform(rot):
-            return (False, "Failed to rotate mesh for hex angle alignment")
-
-    # 적용 후 잔차 측정 + 미세 보정(최대 N회)
-    residual = _measure_hex_residual_to_x_deg(mesh)
-    for i in range(int(max(1, HEX_REFINEMENT_MAX_ITERS))):
+    for i in range(max_iters):
+        residual = _measure_hex_residual_to_x_deg(mesh)
         if residual is None:
-            break
+            return (False, "Hex residual unavailable")
 
         residual_deg = float(residual.get("residual_deg", 999.0))
-        if residual_deg <= float(HEX_RESIDUAL_TARGET_DEG):
+        if residual_deg <= refinement_target:
             break
 
         phase_mod_deg = float(residual.get("phase_mod_deg", 0.0))
@@ -968,58 +1143,40 @@ def _align_hex_angle_for_right_view(mesh):
             break
 
         _log(
-            "Hex refine iter={} residual={:.6f}deg -> correction={:.6f}deg".format(
+            "Hex(6face) refine iter={} residual={:.6f}deg -> correction={:.6f}deg".format(
                 i + 1,
                 residual_deg,
                 correction_deg,
             )
         )
 
-        rot_refine = rg.Transform.Rotation(
-            math.radians(correction_deg),
-            rg.Vector3d(0, 0, 1),
-            rg.Point3d(0, 0, 0),
+        if not _apply_z_rotation_deg(mesh, correction_deg):
+            return (False, "Failed to rotate mesh during 6face hex refinement")
+
+    residual = _measure_hex_residual_to_x_deg(mesh)
+    if residual is None:
+        return (False, "Hex residual unavailable")
+
+    _log(
+        "Hex residual: residual_to_X_deg={:.6f} method={} samples={} target<={:.6f}".format(
+            residual.get("residual_deg", 999.0),
+            residual.get("method", "unknown"),
+            residual.get("samples", 0),
+            float(HEX_RESIDUAL_TARGET_DEG),
         )
-        if not mesh.Transform(rot_refine):
-            return (False, "Failed to rotate mesh during hex residual refinement")
+    )
 
-        residual = _measure_hex_residual_to_x_deg(mesh)
+    final_residual = float(residual.get("residual_deg", 999.0))
+    if final_residual > float(HEX_RESIDUAL_TARGET_DEG):
+        return (
+            False,
+            "Hex residual too high after 6face alignment: {:.6f} > {:.6f}".format(
+                final_residual,
+                float(HEX_RESIDUAL_TARGET_DEG),
+            ),
+        )
 
-    # 최종 잔차 로그
-    if residual is not None:
-        if residual.get("coherence") is None:
-            _log(
-                "Hex residual: residual_to_X_deg={:.6f} method={} samples={} target<={:.6f}".format(
-                    residual.get("residual_deg", 999.0),
-                    residual.get("method", "unknown"),
-                    residual.get("samples", 0),
-                    float(HEX_RESIDUAL_TARGET_DEG),
-                )
-            )
-        else:
-            _log(
-                "Hex residual: residual_to_X_deg={:.6f} method={} samples={} coherence={:.4f} target<={:.6f}".format(
-                    residual.get("residual_deg", 999.0),
-                    residual.get("method", "unknown"),
-                    residual.get("samples", 0),
-                    residual.get("coherence", 0.0),
-                    float(HEX_RESIDUAL_TARGET_DEG),
-                )
-            )
-
-        final_residual = float(residual.get("residual_deg", 999.0))
-        if final_residual > float(HEX_RESIDUAL_TARGET_DEG):
-            return (
-                False,
-                "Hex residual too high after refinement: {:.6f} > {:.6f}".format(
-                    final_residual,
-                    float(HEX_RESIDUAL_TARGET_DEG),
-                ),
-            )
-    else:
-        _log("Hex residual: unavailable (could not re-measure)")
-
-    return (True, "Hex angle aligned")
+    return (True, "Hex angle aligned (6face)")
 
 
 def _bbox_axis_lengths(mesh):
@@ -1233,7 +1390,12 @@ def _pick_inner_hole_circle(
     return (best["cx"], best["cy"], best["r"])
 
 
-def _fit_hole_axis(mesh, sample_count=44, target_diameter=None):
+def _fit_hole_axis(
+    mesh,
+    sample_count=HOLE_AXIS_BASE_SAMPLE_COUNT,
+    target_diameter=None,
+    section_cache=None,
+):
     bbox = mesh.GetBoundingBox(True)
     z_min = bbox.Min.Z
     z_max = bbox.Max.Z
@@ -1245,16 +1407,16 @@ def _fit_hole_axis(mesh, sample_count=44, target_diameter=None):
     bbox_cy = (bbox.Min.Y + bbox.Max.Y) / 2.0
 
     # 상부 크라운 공동/오픈 루프 영향 완화를 위해 lower~mid band 우선 탐색
+    # 성능을 위해 밴드별 샘플 수를 점진적으로 줄이고, 좋은 후보를 찾으면 조기 종료
     band_candidates = [
-        (0.06, 0.66),
-        (0.08, 0.72),
-        (0.08, 0.82),
-        (0.10, 0.90),
+        (0.08, 0.66, int(max(8, sample_count))),
+        (0.08, 0.78, int(max(8, round(sample_count * 0.75)))),
+        (0.10, 0.90, int(max(8, round(sample_count * 0.60)))),
     ]
 
     best = None
 
-    for band_idx, (r0, r1) in enumerate(band_candidates):
+    for band_idx, (r0, r1, band_sample_count) in enumerate(band_candidates):
         points = []  # (z, x, y, r)
         prev_circle = None
 
@@ -1263,11 +1425,13 @@ def _fit_hole_axis(mesh, sample_count=44, target_diameter=None):
         if z_end - z_start <= 0.02:
             continue
 
-        for i in range(sample_count):
-            t = (i + 0.5) / float(sample_count)
+        for i in range(int(max(6, band_sample_count))):
+            t = (i + 0.5) / float(max(1, int(band_sample_count)))
             z = z_start + (z_end - z_start) * t
 
-            candidates = _find_hole_circle_candidates_at_z(mesh, z)
+            candidates = _find_hole_circle_candidates_at_z(
+                mesh, z, section_cache=section_cache
+            )
             hole = _pick_inner_hole_circle(
                 candidates,
                 bbox_cx,
@@ -1366,6 +1530,19 @@ def _fit_hole_axis(mesh, sample_count=44, target_diameter=None):
             if cur_key > best_key:
                 best = candidate
 
+        # 성능 최적화: 충분히 좋은 축을 찾았으면 추가 밴드 탐색 중단
+        if candidate["samples"] >= 8 and candidate["rmse"] <= float(
+            HOLE_AXIS_RMSE_EARLY_ACCEPT
+        ):
+            _log(
+                "Hole-axis early accept: band[{}] samples={} rmse={:.5f}".format(
+                    band_idx,
+                    candidate["samples"],
+                    candidate["rmse"],
+                )
+            )
+            break
+
     if best is None:
         _log("Hole-axis fit skipped: no valid candidate in all bands")
         return None
@@ -1394,7 +1571,12 @@ def _align_screw_hole_axis_to_z(mesh, target_diameter=None):
     - 기울어진 홀(수평 단면에서 타원)도 추적 가능하도록 축 피팅 후보 완화
     - 1회 회전에 그치지 않고 재측정 후 최대 3회 미세 보정
     """
-    info = _fit_hole_axis(mesh, target_diameter=target_diameter)
+    info = _fit_hole_axis(
+        mesh,
+        sample_count=HOLE_AXIS_BASE_SAMPLE_COUNT,
+        target_diameter=target_diameter,
+        section_cache={},
+    )
     if info is None:
         return (False, "Could not detect screw hole axis")
 
@@ -1423,7 +1605,12 @@ def _align_screw_hole_axis_to_z(mesh, target_diameter=None):
         if not mesh.Transform(rot):
             return (False, "Failed to rotate screw hole axis to Z")
 
-        info2 = _fit_hole_axis(mesh, target_diameter=target_diameter)
+        info2 = _fit_hole_axis(
+            mesh,
+            sample_count=HOLE_AXIS_REFINEMENT_SAMPLE_COUNT,
+            target_diameter=target_diameter,
+            section_cache={},
+        )
         if info2 is None:
             break
 
@@ -1435,7 +1622,15 @@ def _align_screw_hole_axis_to_z(mesh, target_diameter=None):
                 "Screw hole axis XY translated by ({:.5f}, {:.5f})".format(-p2.X, -p2.Y)
             )
             # 평행이동 후 축을 다시 갱신
-            info2 = _fit_hole_axis(mesh, target_diameter=target_diameter) or info2
+            info2 = (
+                _fit_hole_axis(
+                    mesh,
+                    sample_count=HOLE_AXIS_REFINEMENT_SAMPLE_COUNT,
+                    target_diameter=target_diameter,
+                    section_cache={},
+                )
+                or info2
+            )
 
         info = info2
 
@@ -1456,8 +1651,8 @@ def _xy_span_metric_from_vertices(vertices):
     return max(span_x, span_y)
 
 
-def _xy_metric_at_z(mesh, z):
-    circle = find_circle_at_z(mesh, z)
+def _xy_metric_at_z(mesh, z, section_cache=None):
+    circle = find_circle_at_z(mesh, z, section_cache=section_cache)
     if circle is not None:
         return circle[2] * 2.0  # diameter
     return None
@@ -1483,8 +1678,9 @@ def _enforce_wider_end_points_to_positive_z(mesh):
     z_low = z_min + z_span * 0.08
     z_high = z_max - z_span * 0.08
 
-    low_metric = _xy_metric_at_z(mesh, z_low)
-    high_metric = _xy_metric_at_z(mesh, z_high)
+    section_cache = {}
+    low_metric = _xy_metric_at_z(mesh, z_low, section_cache=section_cache)
+    high_metric = _xy_metric_at_z(mesh, z_high, section_cache=section_cache)
 
     # intersection 실패 시, 끝단 band의 vertex XY span으로 폴백
     if low_metric is None or high_metric is None:
@@ -1604,7 +1800,9 @@ def _enforce_positive_z_side_longer_in_zspan(mesh):
     return False
 
 
-def find_z_for_diameter(mesh, target_diameter, z_min, z_max, tolerance=0.01):
+def find_z_for_diameter(
+    mesh, target_diameter, z_min, z_max, tolerance=0.01, section_cache=None
+):
     """
     외부 직경이 target_diameter가 되는 Z 높이를 이진 탐색으로 찾기
     """
@@ -1614,7 +1812,7 @@ def find_z_for_diameter(mesh, target_diameter, z_min, z_max, tolerance=0.01):
 
     while iterations < max_iterations and (z_max - z_min) > 0.001:
         z_mid = (z_min + z_max) / 2.0
-        result = find_circle_at_z(mesh, z_mid)
+        result = find_circle_at_z(mesh, z_mid, section_cache=section_cache)
 
         if result is None:
             z_max = z_mid
@@ -1642,7 +1840,8 @@ def _find_best_z_for_diameter_by_sampling(
     target_diameter,
     z_min,
     z_max,
-    sample_count=220,
+    sample_count=120,
+    section_cache=None,
 ):
     """
     비단조 형상(동일 직경이 여러 Z에서 나타나는 경우)을 위해
@@ -1658,7 +1857,7 @@ def _find_best_z_for_diameter_by_sampling(
     for i in range(sample_count):
         t = (i + 0.5) / float(sample_count)
         z = z_min + (z_max - z_min) * t
-        c = find_circle_at_z(mesh, z)
+        c = find_circle_at_z(mesh, z, section_cache=section_cache)
         if c is None:
             continue
 
@@ -1699,6 +1898,8 @@ def _translate_z_to_target_diameter_zero(
 
     z_target = None
 
+    section_cache = {}
+
     # 우선: -Z 쪽(하단)에서 직경 매칭 시도 -> 상부/하부 다중해 중 하단 해 선택
     if prefer_negative_side and z_span > 1e-6:
         band_min = z_min + z_span * 0.05
@@ -1708,7 +1909,8 @@ def _translate_z_to_target_diameter_zero(
             target_diameter,
             band_min,
             band_max,
-            sample_count=220,
+            sample_count=120,
+            section_cache=section_cache,
         )
         if z_band is not None:
             z_target = z_band
@@ -1724,12 +1926,18 @@ def _translate_z_to_target_diameter_zero(
 
     # 폴백: 기존 이진탐색(구버전 로직)
     if z_target is None:
-        z_target = find_z_for_diameter(mesh, target_diameter, z_min, z_max)
+        z_target = find_z_for_diameter(
+            mesh,
+            target_diameter,
+            z_min,
+            z_max,
+            section_cache=section_cache,
+        )
         if z_target is None:
             return (False, "Could not find Z height for target diameter", None)
         _log("{}Found Z height for target diameter: {:.3f}mm".format(prefix, z_target))
 
-    result = find_circle_at_z(mesh, z_target)
+    result = find_circle_at_z(mesh, z_target, section_cache=section_cache)
     if result is None:
         return (False, "Could not find circle at target Z height", None)
 
@@ -1861,10 +2069,7 @@ def align_mesh_to_origin(mesh, target_diameter=None, implant_profile=None):
     )
 
     if residual_deg > float(HEX_RESIDUAL_TARGET_DEG):
-        strict_env = (
-            os.environ.get("ABUTS_ALIGN_STRICT_HEX_RESIDUAL", "").strip().lower()
-        )
-        strict = STRICT_HEX_RESIDUAL_DEFAULT or strict_env in ("1", "true", "yes", "on")
+        strict = _is_strict_hex_residual()
         warn_msg = (
             "Alignment residual high: {:.6f} > {:.6f} (method={}); "
             "apply-aligned-mesh-with-warning strict={}"
