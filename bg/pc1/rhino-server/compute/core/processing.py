@@ -553,6 +553,18 @@ async def process_single_stl(
                             meta["finishLine"] = data
                     except Exception:
                         pass
+
+                m3 = re.search(r"HEX_ROTATION_RESULT:([A-Za-z0-9+/=]+)", text)
+                if m3:
+                    try:
+                        raw = base64.b64decode(m3.group(1)).decode(
+                            "utf-8", errors="ignore"
+                        )
+                        data = json.loads(raw)
+                        if isinstance(data, dict):
+                            meta["hexRotation"] = data
+                    except Exception:
+                        pass
                 return meta
 
             metadata = _parse_metadata_from_log(log_text)
@@ -616,6 +628,7 @@ async def process_single_stl(
                         None,  # requestMongoId는 백엔드에서 찾음
                         finish_line_points,
                         connection_target_diameter=connection_target_diameter,
+                        hex_rotation=metadata.get("hexRotation"),
                     )
                     if stl_metadata:
                         # 메타데이터를 metadata dict에 병합

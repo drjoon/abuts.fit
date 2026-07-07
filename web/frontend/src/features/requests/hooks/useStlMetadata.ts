@@ -20,6 +20,17 @@ export interface StlMetadata {
   taperAngle?: number;
   tiltAxisVector?: { x: number; y: number; z: number } | null;
   frontPoint?: { x: number; y: number; z: number } | null;
+  hexRotation?: {
+    version?: number;
+    moduleVersion?: string;
+    beforeToXDeg?: number;
+    appliedDeg?: number;
+    residualToXDeg?: number;
+    method?: string;
+    samples?: number;
+    aligned?: boolean;
+    message?: string;
+  } | null;
   taperGuide?: unknown;
 }
 
@@ -33,6 +44,8 @@ function toRevisionValue(metadata: StlMetadata | null | undefined): string {
     l1: metadata.l1 ?? null,
     l2: metadata.l2 ?? null,
     taperAngle: metadata.taperAngle ?? null,
+    hexRotationAppliedDeg: metadata.hexRotation?.appliedDeg ?? null,
+    hexRotationResidualDeg: metadata.hexRotation?.residualToXDeg ?? null,
   });
 }
 

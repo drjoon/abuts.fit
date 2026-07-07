@@ -774,6 +774,41 @@ def _align_mesh_to_origin(mesh, target_diameter=None, implant_profile=None):
     if message:
         log("[align] {}".format(message))
 
+    # align 모듈에서 제공한 헥스 회전각 텔레메트리를 로그로 노출
+    # (compute/core/processing.py에서 파싱해 metadata로 백엔드 전달)
+    try:
+        telemetry = getattr(module, "LAST_ALIGNMENT_TELEMETRY", None)
+        hex_rotation = (
+            telemetry.get("hexRotation") if isinstance(telemetry, dict) else None
+        )
+        if isinstance(hex_rotation, dict):
+            import base64
+            import json
+
+            payload = {
+                "version": int(telemetry.get("version", 1) or 1)
+                if isinstance(telemetry, dict)
+                else 1,
+                "moduleVersion": (
+                    telemetry.get("moduleVersion")
+                    if isinstance(telemetry, dict)
+                    else None
+                ),
+                "beforeToXDeg": hex_rotation.get("beforeToXDeg"),
+                "appliedDeg": hex_rotation.get("appliedDeg"),
+                "residualToXDeg": hex_rotation.get("residualToXDeg"),
+                "method": hex_rotation.get("method"),
+                "samples": hex_rotation.get("samples"),
+                "aligned": bool(hex_rotation.get("aligned", False)),
+                "message": hex_rotation.get("message"),
+            }
+            encoded = base64.b64encode(
+                json.dumps(payload, ensure_ascii=False).encode("utf-8")
+            ).decode("ascii")
+            log("HEX_ROTATION_RESULT:" + encoded)
+    except Exception as telemetry_err:
+        log("[align] Hex telemetry encode failed: {}".format(str(telemetry_err)))
+
     if not success or translation is None:
         if not message:
             log("[align] alignment failed")

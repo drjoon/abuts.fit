@@ -20,6 +20,7 @@ def calculate_and_register_metadata(
     request_mongo_id: str | None,
     finish_line_points: list | None = None,
     connection_target_diameter: float | None = None,
+    hex_rotation: dict | None = None,
 ) -> dict | None:
     """
     Node.js STL 메타데이터 계산 서비스를 호출하고 백엔드에 등록
@@ -82,6 +83,9 @@ def calculate_and_register_metadata(
             log(
                 f"[stl_metadata] connectionDiameter override: measured={measured} → target={connection_target_diameter}"
             )
+
+        if isinstance(hex_rotation, dict) and hex_rotation:
+            metadata["hexRotation"] = hex_rotation
 
         # 2. 백엔드에 메타데이터 등록
         success = _register_metadata_to_backend(
@@ -224,6 +228,7 @@ def _register_metadata_to_backend(
             "tiltAxisVector": metadata.get("tiltAxisVector"),
             "frontPoint": metadata.get("frontPoint"),
             "taperGuide": metadata.get("taperGuide"),
+            "hexRotation": metadata.get("hexRotation"),
             "coordinateError": coord_validation.get("error")
             if not coord_validation.get("valid")
             else None,

@@ -66,6 +66,9 @@ export function StlPreviewViewer({
     y: number;
     z: number;
   } | null>(null);
+  const [hexRotationDegState, setHexRotationDegState] = useState<number | null>(
+    null,
+  );
   const [error, setError] = useState<string | null>(null);
   const resolvedMetadata = metadata ?? fetchedMetadata;
   const shouldWaitForMetadata = showOverlay;
@@ -195,6 +198,10 @@ export function StlPreviewViewer({
       if (resolvedMetadata.frontPoint !== undefined) {
         setFrontPointState(toValidPoint(resolvedMetadata.frontPoint));
       }
+      const hexAppliedDeg = Number(resolvedMetadata?.hexRotation?.appliedDeg);
+      if (Number.isFinite(hexAppliedDeg)) {
+        setHexRotationDegState(hexAppliedDeg);
+      }
 
       // 콜백 호출
       if (
@@ -226,6 +233,7 @@ export function StlPreviewViewer({
     resolvedMetadata?.frontPoint?.x,
     resolvedMetadata?.frontPoint?.y,
     resolvedMetadata?.frontPoint?.z,
+    resolvedMetadata?.hexRotation?.appliedDeg,
   ]);
 
   useEffect(() => {
@@ -1736,6 +1744,15 @@ export function StlPreviewViewer({
                   ? connectionDiameterState.toFixed(2)
                   : "-"}{" "}
                 mm
+              </span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="text-slate-500">헥스 회전각:</span>
+              <span>
+                {hexRotationDegState !== null &&
+                Number.isFinite(hexRotationDegState)
+                  ? `${hexRotationDegState > 0 ? "+" : ""}${hexRotationDegState.toFixed(2)}°`
+                  : "-"}
               </span>
             </div>
             {isFilledFile &&

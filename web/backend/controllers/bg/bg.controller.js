@@ -759,6 +759,11 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
         updatedAt: now,
       };
     }
+
+    const hexRotation = metadata.hexRotation;
+    if (hexRotation && typeof hexRotation === "object") {
+      metadataUpdates["caseInfos.hexRotation"] = hexRotation;
+    }
   }
 
   if (status === "success") {
@@ -1745,6 +1750,7 @@ export const registerStlMetadata = asyncHandler(async (req, res) => {
     tiltAxisVector,
     frontPoint,
     taperGuide,
+    hexRotation,
     coordinateError,
   } = req.body;
   const metadataUpdatedAt = new Date();
@@ -1770,6 +1776,10 @@ export const registerStlMetadata = asyncHandler(async (req, res) => {
   request.caseInfos.taperAngle = taperAngle;
   request.caseInfos.tiltAxisVector = tiltAxisVector;
   request.caseInfos.frontPoint = frontPoint;
+
+  if (hexRotation && typeof hexRotation === "object") {
+    request.caseInfos.hexRotation = hexRotation;
+  }
 
   // taperGuide는 필요시 별도 필드로 저장 (선택적)
   if (taperGuide) {
@@ -1800,6 +1810,7 @@ export const registerStlMetadata = asyncHandler(async (req, res) => {
     tiltAxisVector,
     frontPoint,
     taperGuide: request.caseInfos?.taperGuide,
+    hexRotation: request.caseInfos?.hexRotation,
   };
 
   try {
@@ -1845,6 +1856,7 @@ export const registerStlMetadata = asyncHandler(async (req, res) => {
           taperAngle,
           tiltAxisVector,
           frontPoint,
+          hexRotation: request.caseInfos?.hexRotation,
         },
       },
       "STL metadata registered",
@@ -1877,6 +1889,7 @@ export const getStlMetadata = asyncHandler(async (req, res) => {
     tiltAxisVector: request.caseInfos?.tiltAxisVector,
     frontPoint: request.caseInfos?.frontPoint,
     taperGuide: request.caseInfos?.taperGuide,
+    hexRotation: request.caseInfos?.hexRotation,
   };
 
   console.log(

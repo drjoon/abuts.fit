@@ -77,6 +77,17 @@ const requestSchema = new mongoose.Schema(
         y: Number,
         z: Number,
       },
+      hexRotation: {
+        version: Number,
+        moduleVersion: String,
+        beforeToXDeg: Number,
+        appliedDeg: Number,
+        residualToXDeg: Number,
+        method: String,
+        samples: Number,
+        aligned: Boolean,
+        message: String,
+      },
       taperGuide: mongoose.Schema.Types.Mixed,
       newSystemRequest: {
         requested: { type: Boolean, default: false },

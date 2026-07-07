@@ -23,10 +23,13 @@ import sys
 
 import Rhino.Geometry as rg
 
-ALIGN_MODULE_VERSION = "2026-07-06.z-perf-v21-hole-telemetry"
+ALIGN_MODULE_VERSION = "2026-07-07.hex-rotation-metadata-v1"
 DEFAULT_TARGET_DIAMETER = 3.33
 HEX_RESIDUAL_TARGET_DEG = 0.01
 HEX_REFINEMENT_MAX_ITERS = 3
+
+# align 결과 텔레메트리(외부 래퍼에서 읽어 메타데이터 전달)
+LAST_ALIGNMENT_TELEMETRY = {}
 
 # 성능 튜닝 파라미터
 HOLE_AXIS_BASE_SAMPLE_COUNT = 16
@@ -1214,7 +1217,15 @@ def _align_hex_angle_for_right_view(mesh):
     observations = _collect_hex_face_normal_observations(mesh)
     residual = _measure_hex_residual_to_x_deg_from_observations(observations)
     if residual is None:
-        return (False, "Could not estimate hex angle from 6 faces")
+        return (
+            False,
+            "Could not estimate hex angle from 6 faces",
+            {"error": "initial_residual_unavailable"},
+        )
+
+    initial_phase_mod_deg = float(residual.get("phase_mod_deg", 0.0))
+    initial_residual_deg = float(residual.get("residual_deg", 999.0))
+    total_applied_rotation_deg = 0.0
 
     strict_hex = _is_strict_hex_residual()
     max_iters = int(max(1, HEX_REFINEMENT_MAX_ITERS if strict_hex else 3))
@@ -1235,13 +1246,30 @@ def _align_hex_angle_for_right_view(mesh):
             )
         )
         if not _apply_z_rotation_deg(mesh, initial_delta):
-            return (False, "Failed to rotate mesh during 6face initial snap")
+            return (
+                False,
+                "Failed to rotate mesh during 6face initial snap",
+                {
+                    "initial_phase_mod_deg": initial_phase_mod_deg,
+                    "initial_residual_deg": initial_residual_deg,
+                    "applied_rotation_deg": total_applied_rotation_deg,
+                },
+            )
+        total_applied_rotation_deg += float(initial_delta)
 
         # 회전이 발생했으면 관측 갱신
         observations = _collect_hex_face_normal_observations(mesh)
         residual = _measure_hex_residual_to_x_deg_from_observations(observations)
         if residual is None:
-            return (False, "Hex residual unavailable")
+            return (
+                False,
+                "Hex residual unavailable",
+                {
+                    "initial_phase_mod_deg": initial_phase_mod_deg,
+                    "initial_residual_deg": initial_residual_deg,
+                    "applied_rotation_deg": total_applied_rotation_deg,
+                },
+            )
 
     # 2) 잔차 기반 미세 보정
     for i in range(max_iters):
@@ -1263,13 +1291,31 @@ def _align_hex_angle_for_right_view(mesh):
         )
 
         if not _apply_z_rotation_deg(mesh, correction_deg):
-            return (False, "Failed to rotate mesh during 6face hex refinement")
+            return (
+                False,
+                "Failed to rotate mesh during 6face hex refinement",
+                {
+                    "initial_phase_mod_deg": initial_phase_mod_deg,
+                    "initial_residual_deg": initial_residual_deg,
+                    "applied_rotation_deg": total_applied_rotation_deg,
+                },
+            )
+
+        total_applied_rotation_deg += float(correction_deg)
 
         # 보정 후에만 재관측
         observations = _collect_hex_face_normal_observations(mesh)
         residual = _measure_hex_residual_to_x_deg_from_observations(observations)
         if residual is None:
-            return (False, "Hex residual unavailable")
+            return (
+                False,
+                "Hex residual unavailable",
+                {
+                    "initial_phase_mod_deg": initial_phase_mod_deg,
+                    "initial_residual_deg": initial_residual_deg,
+                    "applied_rotation_deg": total_applied_rotation_deg,
+                },
+            )
 
     _log(
         "Hex residual: residual_to_X_deg={:.6f} method={} samples={} target<={:.6f}".format(
@@ -1281,6 +1327,16 @@ def _align_hex_angle_for_right_view(mesh):
     )
 
     final_residual = float(residual.get("residual_deg", 999.0))
+    telemetry = {
+        "initial_phase_mod_deg": initial_phase_mod_deg,
+        "initial_residual_deg": initial_residual_deg,
+        "applied_rotation_deg": float(total_applied_rotation_deg),
+        "final_residual_deg": final_residual,
+        "final_phase_mod_deg": float(residual.get("phase_mod_deg", 0.0)),
+        "method": residual.get("method", "unknown"),
+        "samples": int(residual.get("samples", 0) or 0),
+    }
+
     if final_residual > float(HEX_RESIDUAL_TARGET_DEG):
         msg = "Hex residual too high after 6face alignment: {:.6f} > {:.6f}".format(
             final_residual,
@@ -1288,10 +1344,10 @@ def _align_hex_angle_for_right_view(mesh):
         )
         # non-strict 기본 정책: 경고만 남기고 파이프라인은 진행
         if strict_hex:
-            return (False, msg)
+            return (False, msg, telemetry)
         _log(msg + " (non-strict: continue)")
 
-    return (True, "Hex angle aligned (6face)")
+    return (True, "Hex angle aligned (6face)", telemetry)
 
 
 def _bbox_axis_lengths(mesh):
@@ -2268,6 +2324,7 @@ def _translate_z_to_target_diameter_zero(
 
 
 def align_mesh_to_origin(mesh, target_diameter=None, implant_profile=None):
+    global LAST_ALIGNMENT_TELEMETRY
     """
     메시를 원점에 정렬
 
@@ -2280,6 +2337,8 @@ def align_mesh_to_origin(mesh, target_diameter=None, implant_profile=None):
         (success, message, translation_vector)
         - translation_vector: 마지막 Z 정렬 평행이동 벡터
     """
+    LAST_ALIGNMENT_TELEMETRY = {}
+
     if mesh is None or mesh.Vertices.Count == 0:
         return (False, "Invalid mesh", None)
 
@@ -2345,12 +2404,40 @@ def align_mesh_to_origin(mesh, target_diameter=None, implant_profile=None):
 
     # 6) 헥스 각도 정렬(post-Z2 1회): 관측 안정화 구간에서만 수행
     #    (Z축 회전은 Z=0 기준 자체에는 영향이 없으므로 재-Z 정렬은 불필요)
-    ok_hex, hex_msg = _align_hex_angle_for_right_view(mesh)
+    ok_hex, hex_msg, hex_alignment = _align_hex_angle_for_right_view(mesh)
     if not ok_hex:
         _log("{} (skip hex-angle alignment @post-Z2)".format(hex_msg))
 
     # 7) 최종 잔차 재측정(성공 메시지로도 전달)
     residual = _measure_hex_residual_to_x_deg(mesh)
+
+    LAST_ALIGNMENT_TELEMETRY = {
+        "version": 1,
+        "moduleVersion": ALIGN_MODULE_VERSION,
+        "hexRotation": {
+            "beforeToXDeg": float(hex_alignment.get("initial_phase_mod_deg", 0.0))
+            if isinstance(hex_alignment, dict)
+            else None,
+            "appliedDeg": float(hex_alignment.get("applied_rotation_deg", 0.0))
+            if isinstance(hex_alignment, dict)
+            else None,
+            "residualToXDeg": float(residual.get("residual_deg", 999.0))
+            if isinstance(residual, dict)
+            else None,
+            "method": (
+                hex_alignment.get("method", "unknown")
+                if isinstance(hex_alignment, dict)
+                else "unknown"
+            ),
+            "samples": (
+                int(hex_alignment.get("samples", 0) or 0)
+                if isinstance(hex_alignment, dict)
+                else 0
+            ),
+            "aligned": bool(ok_hex),
+            "message": hex_msg,
+        },
+    }
 
     _log("Final Z translation(last stage): {:.3f}".format(translation_2.Z))
     _log("Final Z translation(total): {:.3f}".format(total_translation.Z))
