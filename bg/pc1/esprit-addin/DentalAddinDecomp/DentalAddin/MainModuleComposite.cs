@@ -1680,7 +1680,8 @@ namespace DentalAddin
 
         /// <summary>
         /// Front Face(ParallelPlanes) 가공 끝점을 FrontPointX 기준으로 고정 적용한다.
-        /// - 목표: Face.RightX = Splitline_1(=FrontPointX) + 2.0mm
+        /// - 목표: Face.RightX = Splitline_1(=FrontPointX) + 1.0mm
+        /// - 단, Face.RightX는 Splitline_2를 침범하지 않도록 항상 Splitline_2보다 작게 클램프한다.
         /// - RL=1: BottomZLimit = -Face.RightX
         /// - RL=2: BottomZLimit = +Face.RightX
         /// 주의: 이 설정 이후에 Rough 안전가드(TryApplyFaceRightEndGuard)가 추가 보정할 수 있다.
@@ -1707,10 +1708,25 @@ namespace DentalAddin
 
                 LastAppliedFrontFaceDepthMm = configuredDepthMm;
 
-                // 사용자 요청: Front_Face 끝점을 Splitline_1(=FrontPointX) + 2.0mm로 고정 적용한다.
-                const double frontFaceEndOffsetFromFrontMm = 2.0;
+                // 사용자 요청: Front_Face 끝점을 Splitline_1(=FrontPointX) + 1.0mm로 고정 적용한다.
+                // 단, Splitline_2를 침범하지 않도록 Splitline_2보다 약간 작은 값으로 상한 클램프한다.
+                const double frontFaceEndOffsetFromFrontMm = 1.0;
+                const double splitline2NoCrossMarginMm = 0.001;
                 double requestedFaceRightX = MoveSTL_Module.FrontPointX + frontFaceEndOffsetFromFrontMm;
                 double appliedFaceRightX = requestedFaceRightX;
+
+                bool splitline2ClampApplied = false;
+                double splitline2Used = double.NaN;
+                if (TryGetThreeStageSplitConfig(out _, out double splitline2, out _, out _))
+                {
+                    splitline2Used = splitline2;
+                    double maxFaceRightBySplitline2 = splitline2 - splitline2NoCrossMarginMm;
+                    if (appliedFaceRightX >= maxFaceRightBySplitline2)
+                    {
+                        appliedFaceRightX = maxFaceRightBySplitline2;
+                        splitline2ClampApplied = true;
+                    }
+                }
 
                 faceOp.TopZLimit = 1.0;
                 double oldBottom2 = faceOp.BottomZLimit;
@@ -1729,7 +1745,7 @@ namespace DentalAddin
                     DentalLogger.Log($"FrontFaceDepth[{context}] - RL 비정상({RL}), RL=1 기준으로 적용");
                 }
 
-                DentalLogger.Log($"FrontFaceDepth[{context}] - FrontPoint 고정 오프셋 적용: requestRightX={requestedFaceRightX:F3}, appliedRightX={appliedFaceRightX:F3}, TopZ:{oldTop:F3}->{faceOp.TopZLimit:F3}, BottomZ:{oldBottom:F3}->{oldBottom2:F3}->{faceOp.BottomZLimit:F3}, PRCDepthRef={configuredDepthMm:F3}");
+                DentalLogger.Log($"FrontFaceDepth[{context}] - FrontPoint 고정 오프셋 적용: requestRightX={requestedFaceRightX:F3}, appliedRightX={appliedFaceRightX:F3}, TopZ:{oldTop:F3}->{faceOp.TopZLimit:F3}, BottomZ:{oldBottom:F3}->{oldBottom2:F3}->{faceOp.BottomZLimit:F3}, PRCDepthRef={configuredDepthMm:F3}, Splitline2={splitline2Used:F3}, Splitline2Clamp={splitline2ClampApplied}, Splitline2Margin={splitline2NoCrossMarginMm:F3}");
             }
             catch (Exception ex)
             {
