@@ -123,11 +123,12 @@ export const MailboxGrid = ({
   const addressMap = useMemo(() => {
     const map = new Map<string, ManufacturerRequest[]>();
     for (const req of requests) {
-      const addr = req.mailboxAddress;
-      if (addr) {
-        if (!map.has(addr)) map.set(addr, []);
-        map.get(addr)!.push(req);
-      }
+      const addr = String(req?.mailboxAddress || "")
+        .trim()
+        .toUpperCase();
+      if (!addr) continue;
+      if (!map.has(addr)) map.set(addr, []);
+      map.get(addr)!.push(req);
     }
     return map;
   }, [requests]);

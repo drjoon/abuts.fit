@@ -10,7 +10,10 @@ import {
   ensureReviewByStageDefaults,
   normalizeRequestForResponse,
 } from "./utils.js";
-import { ensureMailboxAddressForBusiness } from "./mailbox.utils.js";
+import {
+  ensureMailboxAddressForBusiness,
+  isManufacturerSampleRequest,
+} from "./mailbox.utils.js";
 import { triggerNextAutoMachiningAfterComplete } from "../cnc/machiningBridge.js";
 import s3Utils, { deleteFileFromS3 } from "../../utils/s3.utils.js";
 import { resolvePrcFileNames } from "./prcMapping.utils.js";
@@ -872,8 +875,56 @@ export async function updateReviewStatusByStage(req, res) {
               );
             }
             applyStatusMapping(request, "세척.패킹");
+            if (isManufacturerSampleRequest(request)) {
+              request.mailboxAddress = null;
+            } else {
+              try {
+                const requestorBusinessAnchorId = resolvedBusinessAnchorId;
+                const nextMailboxAddress =
+                  await ensureMailboxAddressForBusiness({
+                    requestMongoId: request._id,
+                    requestorOrgId: requestorBusinessAnchorId,
+                    currentMailboxAddress: request.mailboxAddress,
+                  });
+                if (nextMailboxAddress) {
+                  request.mailboxAddress = nextMailboxAddress;
+                }
+              } catch (err) {
+                console.error("[MAILBOX_ALLOCATION_ERROR]", err);
+              }
+            }
+          } else if (effectiveStage === "packing") {
+            // R&D 샘플은 발송/추적 대상이 아니다.
+            // SSOT: source=manufacturer_sample(또는 price.rule=manufacturer_sample)는
+            // 세척.패킹 이후 포장.발송/추적관리로 진입시키지 않는다.
+            if (isManufacturerSampleRequest(request)) {
+              request.mailboxAddress = null;
+            } else {
+              applyStatusMapping(request, "포장.발송");
+            }
+          } else if (effectiveStage === "shipping") {
+            if (isManufacturerSampleRequest(request)) {
+              const err = new Error(
+                "R&D 샘플은 발송/추적 대상이 아니므로 추적관리로 진행할 수 없습니다.",
+              );
+              err.statusCode = 400;
+              throw err;
+            }
+            applyStatusMapping(request, "추적관리");
+          }
+        }
+
+        if (effectiveStage === "packing") {
+          await ensureFinishedLotNumberForPacking(request);
+          updateCurrentEstimatedShipYmdOnPackingEnter(request);
+          if (isManufacturerSampleRequest(request)) {
+            request.mailboxAddress = null;
+          } else {
             try {
               const requestorBusinessAnchorId = resolvedBusinessAnchorId;
+              console.log(
+                `[PACKING_APPROVAL] 의뢰 ${request.requestId} 우편함 점검/할당 시작 - 사업자 anchor ID: ${requestorBusinessAnchorId}`,
+              );
               const nextMailboxAddress = await ensureMailboxAddressForBusiness({
                 requestMongoId: request._id,
                 requestorOrgId: requestorBusinessAnchorId,
@@ -882,51 +933,12 @@ export async function updateReviewStatusByStage(req, res) {
               if (nextMailboxAddress) {
                 request.mailboxAddress = nextMailboxAddress;
               }
+              console.log(
+                `[PACKING_APPROVAL] 의뢰 ${request.requestId} 우편함 점검/할당 완료: ${request.mailboxAddress}`,
+              );
             } catch (err) {
               console.error("[MAILBOX_ALLOCATION_ERROR]", err);
             }
-          } else if (effectiveStage === "packing") {
-            // 내부 샘플 의뢰건은 세척.패킹까지만 처리 (포장.발송으로 넘어가지 않음)
-            if (request.source === "manufacturer_sample") {
-              // 샘플은 바로 추적관리(완료)로 이동
-              applyStatusMapping(request, "추적관리");
-              // 샘플 완료 표시를 위한 상태 이력 추가
-              request.statusHistory = request.statusHistory || [];
-              request.statusHistory.push({
-                status: "내부 샘플 완료",
-                note: "세척.패킹 승인으로 자동 완료 처리",
-                updatedBy: req.user?._id,
-                updatedAt: new Date(),
-              });
-            } else {
-              applyStatusMapping(request, "포장.발송");
-            }
-          } else if (effectiveStage === "shipping") {
-            applyStatusMapping(request, "추적관리");
-          }
-        }
-
-        if (effectiveStage === "packing") {
-          await ensureFinishedLotNumberForPacking(request);
-          updateCurrentEstimatedShipYmdOnPackingEnter(request);
-          try {
-            const requestorBusinessAnchorId = resolvedBusinessAnchorId;
-            console.log(
-              `[PACKING_APPROVAL] 의뢰 ${request.requestId} 우편함 점검/할당 시작 - 사업자 anchor ID: ${requestorBusinessAnchorId}`,
-            );
-            const nextMailboxAddress = await ensureMailboxAddressForBusiness({
-              requestMongoId: request._id,
-              requestorOrgId: requestorBusinessAnchorId,
-              currentMailboxAddress: request.mailboxAddress,
-            });
-            if (nextMailboxAddress) {
-              request.mailboxAddress = nextMailboxAddress;
-            }
-            console.log(
-              `[PACKING_APPROVAL] 의뢰 ${request.requestId} 우편함 점검/할당 완료: ${request.mailboxAddress}`,
-            );
-          } catch (err) {
-            console.error("[MAILBOX_ALLOCATION_ERROR]", err);
           }
           if (resolvedBusinessAnchorId) {
             await ensureShippingFeeSpendOnPackingApprove({

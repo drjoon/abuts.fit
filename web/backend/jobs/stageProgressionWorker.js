@@ -6,7 +6,10 @@ import {
   addKoreanBusinessDays,
   applyStatusMapping,
 } from "../controllers/requests/utils.js";
-import { allocateVirtualMailboxAddress } from "../controllers/requests/mailbox.utils.js";
+import {
+  allocateVirtualMailboxAddress,
+  isManufacturerSampleRequest,
+} from "../controllers/requests/mailbox.utils.js";
 
 /**
  * 공정 단계 자동 진행 워커
@@ -81,7 +84,9 @@ async function progressStages() {
 
     for (const req of productionToPackaging) {
       applyStatusMapping(req, "세척.패킹");
-      if (!req.mailboxAddress) {
+      if (isManufacturerSampleRequest(req)) {
+        req.mailboxAddress = null;
+      } else if (!req.mailboxAddress) {
         try {
           const requestorOrgId = req.businessAnchorId;
           req.mailboxAddress =
@@ -104,6 +109,9 @@ async function progressStages() {
     const packagingToShipping = await Request.find({
       manufacturerStage: "세척.패킹",
       "timeline.estimatedShipYmd": { $exists: true, $lte: oneDayFromNow },
+      // R&D 샘플은 발송/추적 대상이 아니므로 자동 워커에서도 제외한다.
+      source: { $ne: "manufacturer_sample" },
+      "price.rule": { $ne: "manufacturer_sample" },
     });
 
     for (const req of packagingToShipping) {

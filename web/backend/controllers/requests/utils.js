@@ -622,6 +622,13 @@ function canonicalizeLotNumberValue(raw) {
   return value.replace(/^CAP/i, "CA");
 }
 
+function normalizeMailboxAddressValue(raw) {
+  const value = String(raw || "")
+    .trim()
+    .toUpperCase();
+  return value || null;
+}
+
 function deriveDeliveryMetaFields(deliveryInfo) {
   if (!deliveryInfo || typeof deliveryInfo !== "object") {
     return {
@@ -663,6 +670,16 @@ export async function normalizeRequestForResponse(requestDoc) {
     typeof requestDoc.toObject === "function"
       ? requestDoc.toObject()
       : requestDoc;
+  obj.mailboxAddress = normalizeMailboxAddressValue(obj?.mailboxAddress);
+  if (
+    obj?.shippingLabelPrinted &&
+    typeof obj.shippingLabelPrinted === "object"
+  ) {
+    obj.shippingLabelPrinted.mailboxAddress = normalizeMailboxAddressValue(
+      obj.shippingLabelPrinted.mailboxAddress,
+    );
+  }
+
   const ci = obj.caseInfos || {};
   obj.caseInfos = await normalizeCaseInfosImplantFields(ci, false);
   normalizeProductionScheduleDiameter(obj);
@@ -739,6 +756,16 @@ export async function normalizeWorksheetRequestForResponse(requestDoc) {
     typeof requestDoc.toObject === "function"
       ? requestDoc.toObject()
       : { ...requestDoc };
+  obj.mailboxAddress = normalizeMailboxAddressValue(obj?.mailboxAddress);
+  if (
+    obj?.shippingLabelPrinted &&
+    typeof obj.shippingLabelPrinted === "object"
+  ) {
+    obj.shippingLabelPrinted.mailboxAddress = normalizeMailboxAddressValue(
+      obj.shippingLabelPrinted.mailboxAddress,
+    );
+  }
+
   if (obj?.businessAnchorId && typeof obj.businessAnchorId === "object") {
     obj.business = obj.businessAnchorId;
     obj.requestorBusinessAnchor = obj.businessAnchorId;

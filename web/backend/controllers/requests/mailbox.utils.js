@@ -1,5 +1,19 @@
 const UNKNOWN_ANCHOR_KEY = "__UNKNOWN_BUSINESS_ANCHOR__";
 
+const normalizeMailboxAddress = (raw) =>
+  String(raw || "")
+    .trim()
+    .toUpperCase();
+
+export const isManufacturerSampleRequest = (requestLike) => {
+  if (!requestLike || typeof requestLike !== "object") return false;
+  const source = String(requestLike?.source || "").trim();
+  const priceRule = String(requestLike?.price?.rule || "").trim();
+  return (
+    source === "manufacturer_sample" || priceRule === "manufacturer_sample"
+  );
+};
+
 /**
  * 우편함 점유 의뢰에서 사업자 anchor를 추출한다.
  *
@@ -53,10 +67,15 @@ export async function allocateVirtualMailboxAddress(
     options?.excludeRequestMongoId || "",
   ).trim();
 
-  // 현재 '세척.패킹' 및 '포장.발송' 단계에 있는 의뢰들의 할당된 우편함 조회
+  // 현재 '세척.패킹' 및 '포장.발송' 단계 중
+  // 실제 포장.발송 대상(=R&D 샘플 제외) 의뢰의 우편함만 점유로 본다.
+  // SSOT: source/price.rule 이 manufacturer_sample 이면 배송 비대상.
   const activeRequestsRaw = await Request.find({
     manufacturerStage: { $in: ["세척.패킹", "포장.발송"] },
     mailboxAddress: { $ne: null },
+    "rnd.doneAt": null,
+    source: { $ne: "manufacturer_sample" },
+    "price.rule": { $ne: "manufacturer_sample" },
   })
     .select("_id mailboxAddress businessAnchorId requestor")
     .populate("requestor", "businessAnchorId")
@@ -75,7 +94,7 @@ export async function allocateVirtualMailboxAddress(
 
     const orgSetByAddress = new Map();
     for (const r of activeRequests) {
-      const address = String(r?.mailboxAddress || "").trim();
+      const address = normalizeMailboxAddress(r?.mailboxAddress);
       if (!address) continue;
       const orgKey = resolveOccupantAnchorKey(r);
       if (!orgSetByAddress.has(address)) {
@@ -97,7 +116,11 @@ export async function allocateVirtualMailboxAddress(
   }
 
   // 사용 중인 우편함 주소 목록
-  const usedAddresses = new Set(activeRequests.map((r) => r.mailboxAddress));
+  const usedAddresses = new Set(
+    activeRequests
+      .map((r) => normalizeMailboxAddress(r?.mailboxAddress))
+      .filter(Boolean),
+  );
 
   // 사용 중이지 않은 첫 번째 주소 찾기
   const availableAddress = allAddresses.find(
@@ -119,7 +142,9 @@ export async function ensureMailboxAddressForBusiness({
   const { default: Request } = await import("../../models/request.model.js");
 
   const requestorOrgIdStr = String(requestorOrgId || "").trim();
-  const currentMailboxAddressStr = String(currentMailboxAddress || "").trim();
+  const currentMailboxAddressStr = normalizeMailboxAddress(
+    currentMailboxAddress,
+  );
 
   if (!requestorOrgIdStr) {
     return currentMailboxAddressStr || null;
@@ -133,7 +158,21 @@ export async function ensureMailboxAddressForBusiness({
 
   const mailboxOccupants = await Request.find({
     manufacturerStage: { $in: ["세척.패킹", "포장.발송"] },
-    mailboxAddress: currentMailboxAddressStr,
+    "rnd.doneAt": null,
+    source: { $ne: "manufacturer_sample" },
+    "price.rule": { $ne: "manufacturer_sample" },
+    $expr: {
+      $eq: [
+        {
+          $toUpper: {
+            $trim: {
+              input: { $ifNull: ["$mailboxAddress", ""] },
+            },
+          },
+        },
+        currentMailboxAddressStr,
+      ],
+    },
     ...(requestMongoId ? { _id: { $ne: requestMongoId } } : {}),
   })
     .select("requestId businessAnchorId requestor manufacturerStage")

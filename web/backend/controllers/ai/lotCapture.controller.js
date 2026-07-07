@@ -12,7 +12,10 @@ import {
   ensureFinishedLotNumberForPacking,
   normalizeRequestForResponse,
 } from "../../controllers/requests/utils.js";
-import { allocateVirtualMailboxAddress } from "../requests/mailbox.utils.js";
+import {
+  allocateVirtualMailboxAddress,
+  isManufacturerSampleRequest,
+} from "../requests/mailbox.utils.js";
 import sharp from "sharp";
 
 let _apiKey = null;
@@ -364,7 +367,10 @@ export const handlePackingCapture = asyncHandler(async (req, res) => {
     request.businessAnchorId = request.requestor.businessAnchorId;
   }
 
-  if (!request.mailboxAddress) {
+  // R&D 샘플은 발송하지 않으므로 우편함을 배정하지 않는다.
+  if (isManufacturerSampleRequest(request)) {
+    request.mailboxAddress = null;
+  } else if (!request.mailboxAddress) {
     try {
       request.mailboxAddress =
         await allocateVirtualMailboxAddress(effectiveAnchorIdStr);
@@ -376,7 +382,10 @@ export const handlePackingCapture = asyncHandler(async (req, res) => {
       });
     }
   }
-  applyStatusMapping(request, "발송");
+  // R&D 샘플은 포장.발송/추적관리로 보내지 않는다.
+  if (!isManufacturerSampleRequest(request)) {
+    applyStatusMapping(request, "발송");
+  }
 
   console.log("[lot-capture] before save - businessAnchorId state", {
     requestId: request.requestId,

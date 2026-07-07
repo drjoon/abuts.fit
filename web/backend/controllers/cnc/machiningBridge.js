@@ -18,7 +18,10 @@ import {
   saveBridgeQueueSnapshot,
   invalidateBridgeFlagsCache,
 } from "./shared.js";
-import { allocateVirtualMailboxAddress } from "../requests/mailbox.utils.js";
+import {
+  allocateVirtualMailboxAddress,
+  isManufacturerSampleRequest,
+} from "../requests/mailbox.utils.js";
 import { appendMachiningJobStats } from "./tooling.js";
 import {
   inferMaterialDiameterGroup,
@@ -1717,7 +1720,10 @@ export async function recordMachiningCompleteForBridge(req, res) {
           request.businessAnchorId = request.requestor.businessAnchorId;
         }
 
-        if (!request.mailboxAddress) {
+        // R&D 샘플은 배송 비대상이므로 우편함을 배정하지 않는다.
+        if (isManufacturerSampleRequest(request)) {
+          request.mailboxAddress = null;
+        } else if (!request.mailboxAddress) {
           try {
             request.mailboxAddress =
               await allocateVirtualMailboxAddress(effectiveAnchorIdStr);

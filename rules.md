@@ -158,6 +158,23 @@
 
 ---
 
+### 1.2.3 R&D 샘플 배송 제외 정책 (2026-07-07)
+
+- `source=manufacturer_sample`(또는 `price.rule=manufacturer_sample`) 의뢰는 **배송 프로세스 비대상**이다.
+- R&D 샘플에는 우편함을 할당하지 않는다. 기존 값이 있으면 `null`로 정리한다.
+- R&D 샘플은 `포장.발송` 및 `추적관리` 단계로 진입시키지 않는다.
+  - 승인/자동 워커/백그라운드 캡처 경로 모두 동일 정책을 적용한다.
+- R&D 샘플은 세척.패킹 단계까지만 제조 공정에서 사용한다.
+
+관련 파일:
+- `web/backend/controllers/requests/mailbox.utils.js`
+- `web/backend/controllers/requests/common.review.controller.js`
+- `web/backend/controllers/ai/lotCapture.controller.js`
+- `web/backend/controllers/cnc/machiningBridge.js`
+- `web/backend/jobs/stageProgressionWorker.js`
+
+---
+
 ### 1.3 CNC 알람 코드
 
 ### 1.3.1 Esprit Composite2SplitAB 장애 재발 방지 체크포인트
