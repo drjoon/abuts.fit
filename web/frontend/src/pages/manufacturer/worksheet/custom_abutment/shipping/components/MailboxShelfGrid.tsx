@@ -1,5 +1,5 @@
 import * as React from "react";
-import type { ManufacturerRequest } from "../../utils/request";
+
 import {
   Tooltip,
   TooltipContent,
@@ -22,7 +22,13 @@ type MailboxShelfGridProps = {
   shelfRows: string[];
   binCols: string[];
   binRows: string[];
-  addressMap: Map<string, ManufacturerRequest[]>;
+  mailboxSummaryMap: Map<
+    string,
+    {
+      requestCount: number;
+      earliestEstimatedShipYmd?: string | null;
+    }
+  >;
   printedMailboxes: Set<string>;
   pickupRequestedMailboxes: Map<string, MailboxPickupStatus>;
   failedMailboxes: Set<string>;
@@ -32,8 +38,11 @@ type MailboxShelfGridProps = {
   scrollContainerRef: React.RefObject<HTMLDivElement>;
   handleTouchStart: (e: React.TouchEvent) => void;
   handleTouchEnd: (e: React.TouchEvent) => void;
-  getMailboxColorClass: (items: ManufacturerRequest[]) => string;
-  onBoxClick?: (address: string, requests: ManufacturerRequest[]) => void;
+  getMailboxColorClass: (summary: {
+    requestCount: number;
+    earliestEstimatedShipYmd?: string | null;
+  }) => string;
+  onBoxClick?: (address: string) => void;
 };
 
 export const MailboxShelfGrid = ({
@@ -41,7 +50,7 @@ export const MailboxShelfGrid = ({
   shelfRows,
   binCols,
   binRows,
-  addressMap,
+  mailboxSummaryMap,
   printedMailboxes,
   pickupRequestedMailboxes,
   failedMailboxes,
@@ -65,13 +74,7 @@ export const MailboxShelfGrid = ({
     address: string;
     isOccupied: boolean;
     mailboxStatus:
-      | "없음"
-      | "접수"
-      | "운송장 출력"
-      | "집하"
-      | "완료"
-      | "취소"
-      | "오류 발생";
+      "없음" | "접수" | "운송장 출력" | "집하" | "완료" | "취소" | "오류 발생";
     nextShippingDayLabel?: string | null;
   }) => {
     const lines = [address];
@@ -119,8 +122,11 @@ export const MailboxShelfGrid = ({
                     <div key={bCol} className="flex flex-col gap-1">
                       {binRows.map((bRow) => {
                         const address = `${shelf}${sRow}${bCol}${bRow}`;
-                        const items = addressMap.get(address) || [];
-                        const isOccupied = items.length > 0;
+                        const summary = mailboxSummaryMap.get(address) || {
+                          requestCount: 0,
+                          earliestEstimatedShipYmd: null,
+                        };
+                        const isOccupied = summary.requestCount > 0;
                         const hasPrinted = printedMailboxes.has(address);
                         const pickupStatus =
                           pickupRequestedMailboxes.get(address) || "none";
@@ -174,7 +180,7 @@ export const MailboxShelfGrid = ({
                           e.preventDefault();
                           e.stopPropagation();
                           if (isOccupied && onBoxClick) {
-                            onBoxClick(address, items);
+                            onBoxClick(address);
                           }
                         };
 
@@ -243,11 +249,11 @@ export const MailboxShelfGrid = ({
                                           ? "text-slate-900"
                                           : isOccupied
                                             ? getMailboxColorClass(
-                                                items,
+                                                summary,
                                               ).includes("bg-blue")
                                               ? "text-blue-800"
                                               : getMailboxColorClass(
-                                                    items,
+                                                    summary,
                                                   ).includes("bg-red")
                                                 ? "text-red-800"
                                                 : "text-slate-700"
@@ -270,11 +276,11 @@ export const MailboxShelfGrid = ({
                                             : showPrintedBorder
                                               ? "text-slate-900"
                                               : getMailboxColorClass(
-                                                    items,
+                                                    summary,
                                                   ).includes("bg-blue")
                                                 ? "text-blue-700"
                                                 : getMailboxColorClass(
-                                                      items,
+                                                      summary,
                                                     ).includes("bg-red")
                                                   ? "text-red-700"
                                                   : "text-slate-700"
@@ -282,7 +288,7 @@ export const MailboxShelfGrid = ({
                                       style={{ fontSize: "18px" }}
                                       aria-label={`${address} 내용 보기`}
                                     >
-                                      {items.length}
+                                      {summary.requestCount}
                                     </button>
                                   )}
                                 </div>

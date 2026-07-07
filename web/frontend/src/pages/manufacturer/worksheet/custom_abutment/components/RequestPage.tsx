@@ -35,7 +35,10 @@ import {
   usePagination,
   useInfiniteScroll,
 } from "@/pages/manufacturer/worksheet/custom_abutment/utils/requestPagination";
-import { MailboxGrid } from "../shipping/components/MailboxGrid";
+import {
+  MailboxGrid,
+  type MailboxSummaryItem,
+} from "../shipping/components/MailboxGrid";
 import { MailboxContentsModal } from "../shipping/components/MailboxContentsModal";
 import { WorksheetCardGrid } from "./WorksheetCardGrid";
 import { MachiningQueueBoard } from "../machining/MachiningQueueBoard";
@@ -84,9 +87,15 @@ export const RequestPage = ({
     (searchParams.get("stage") || "request") === "machining";
   const tabStage = String(searchParams.get("stage") || "request").trim();
 
-  const PAGE_LIMIT = 12;
+  const DEFAULT_PAGE_LIMIT = 12;
+  const SHIPPING_PAGE_LIMIT = 200;
+  const effectivePageLimit =
+    tabStage === "shipping" ? SHIPPING_PAGE_LIMIT : DEFAULT_PAGE_LIMIT;
 
   const pageState = useRequestPageState();
+  const [mailboxSummaries, setMailboxSummaries] = useState<
+    MailboxSummaryItem[]
+  >([]);
 
   const decodeNcText = useCallback((buffer: ArrayBuffer) => {
     const utf8Decoder = new TextDecoder("utf-8", { fatal: false });
@@ -139,10 +148,83 @@ export const RequestPage = ({
           return [] as string[];
         })();
 
-        const path = (() => {
+        if (tabStage === "shipping") {
+          if (append) {
+            pageState.hasMoreRefForCore.current = false;
+            hasMoreRef.current = false;
+            return [] as ManufacturerRequest[];
+          }
+
+          const summaryRes = await fetch(
+            "/api/requests/shipping/mailbox-summary",
+            {
+              method: "GET",
+              headers: {
+                Authorization: `Bearer ${token}`,
+              },
+              cache: "no-store",
+            },
+          );
+
+          if (!summaryRes.ok) {
+            toast({
+              title: "우편함 요약 불러오기 실패",
+              description: "잠시 후 다시 시도해주세요.",
+              variant: "destructive",
+            });
+            return null;
+          }
+
+          const summaryJson = await summaryRes.json();
+          if (!summaryJson?.success) {
+            toast({
+              title: "우편함 요약 불러오기 실패",
+              description: "잠시 후 다시 시도해주세요.",
+              variant: "destructive",
+            });
+            return null;
+          }
+
+          const mailboxList = Array.isArray(summaryJson?.data?.mailboxes)
+            ? (summaryJson.data.mailboxes as MailboxSummaryItem[])
+            : [];
+          setMailboxSummaries(mailboxList);
+          pageState.setRequests([]);
+
+          const totalRequestsRaw = summaryJson?.data?.totalRequests;
+          if (typeof totalRequestsRaw === "number") {
+            pageState.setServerTotal(totalRequestsRaw);
+          } else {
+            pageState.setServerTotal(
+              mailboxList.reduce(
+                (acc, item) => acc + Number(item?.requestCount || 0),
+                0,
+              ),
+            );
+          }
+
+          pageState.hasMoreRefForCore.current = false;
+          hasMoreRef.current = false;
+
+          if (!silent) {
+            void queryClient.invalidateQueries({
+              queryKey: ["worksheet-assigned-summary"],
+            });
+            void queryClient.refetchQueries({
+              queryKey: ["worksheet-assigned-summary"],
+              type: "active",
+            });
+          }
+
+          return [] as ManufacturerRequest[];
+        }
+
+        setMailboxSummaries([]);
+
+        const buildPath = (targetPage: number) => {
           const url = new URL(basePath, window.location.origin);
-          url.searchParams.set("page", String(pageRef.current));
-          url.searchParams.set("limit", String(PAGE_LIMIT));
+          url.searchParams.set("page", String(targetPage));
+          url.searchParams.set("limit", String(effectivePageLimit));
           url.searchParams.set("view", "worksheet");
           if (tabStage === "shipping") {
             url.searchParams.set("worksheetProfile", "shipping");
@@ -165,17 +247,46 @@ export const RequestPage = ({
             }
           }
           return url.pathname + url.search;
-        })();
+        };
 
-        const res = await fetch(path, {
-          method: "GET",
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-          cache: "no-store",
-        });
+        const fetchPage = async (targetPage: number) => {
+          const res = await fetch(buildPath(targetPage), {
+            method: "GET",
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+            cache: "no-store",
+          });
 
-        if (!res.ok) {
+          if (!res.ok) {
+            return {
+              ok: false,
+              list: [] as ManufacturerRequest[],
+              total: null,
+            };
+          }
+
+          const data = await res.json();
+          const raw = data?.data;
+          const pageList = Array.isArray(raw?.requests)
+            ? raw.requests
+            : Array.isArray(raw)
+              ? raw
+              : [];
+          const total =
+            typeof raw?.pagination?.total === "number"
+              ? raw.pagination.total
+              : null;
+
+          return {
+            ok: Boolean(data?.success),
+            list: pageList as ManufacturerRequest[],
+            total,
+          };
+        };
+
+        const firstPage = await fetchPage(pageRef.current);
+        if (!firstPage.ok) {
           toast({
             title: "의뢰 불러오기 실패",
             description: "잠시 후 다시 시도해주세요.",
@@ -184,20 +295,33 @@ export const RequestPage = ({
           return null;
         }
 
-        const data = await res.json();
-        const raw = data?.data;
-        const list = Array.isArray(raw?.requests)
-          ? raw.requests
-          : Array.isArray(raw)
-            ? raw
-            : [];
+        let list = firstPage.list;
+        let totalFromServer = firstPage.total;
 
-        if (data?.success && Array.isArray(list)) {
-          if (!append) {
-            const total = data?.data?.pagination?.total;
-            if (typeof total === "number") {
-              pageState.setServerTotal(total);
+        if (tabStage === "shipping" && !append) {
+          let currentPage = pageRef.current;
+          let merged = [...firstPage.list];
+          let lastBatchSize = firstPage.list.length;
+
+          while (lastBatchSize >= effectivePageLimit) {
+            currentPage += 1;
+            const nextPage = await fetchPage(currentPage);
+            if (!nextPage.ok || !nextPage.list.length) {
+              break;
             }
+            merged = merged.concat(nextPage.list);
+            lastBatchSize = nextPage.list.length;
+            if (typeof nextPage.total === "number") {
+              totalFromServer = nextPage.total;
+            }
+          }
+
+          list = merged;
+        }
+
+        if (Array.isArray(list)) {
+          if (!append && typeof totalFromServer === "number") {
+            pageState.setServerTotal(totalFromServer);
           }
           if (append) {
             pageState.setRequests((prev) => {
@@ -231,8 +355,14 @@ export const RequestPage = ({
               ),
             );
           }
-          pageState.hasMoreRefForCore.current = list.length >= PAGE_LIMIT;
-          hasMoreRef.current = list.length >= PAGE_LIMIT;
+          if (tabStage === "shipping" && !append) {
+            pageState.hasMoreRefForCore.current = false;
+            hasMoreRef.current = false;
+          } else {
+            pageState.hasMoreRefForCore.current =
+              list.length >= effectivePageLimit;
+            hasMoreRef.current = list.length >= effectivePageLimit;
+          }
           if (append && list.length > 0) {
             pageState.setVisibleCount((prev) => prev + list.length);
           }
@@ -281,13 +411,14 @@ export const RequestPage = ({
       isCamStage,
       isMachiningStage,
       showCompleted,
+      effectivePageLimit,
       pageState,
     ],
   );
 
   const { pageRef, hasMoreRef, fetchNextPage, resetPagination } = usePagination(
     fetchRequestsCore,
-    PAGE_LIMIT,
+    effectivePageLimit,
   );
 
   const fetchRequests = useCallback(
@@ -313,6 +444,50 @@ export const RequestPage = ({
   const mailboxState = useMailboxManagement(token, async () => {
     await fetchRequests();
   });
+
+  const handleOpenMailboxDetails = useCallback(
+    async (address: string) => {
+      const mailboxAddress = String(address || "").trim();
+      if (!mailboxAddress || !token) return;
+
+      try {
+        const response = await fetch(
+          `/api/requests/shipping/mailbox-requests?mailboxAddress=${encodeURIComponent(mailboxAddress)}`,
+          {
+            method: "GET",
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+            cache: "no-store",
+          },
+        );
+
+        if (!response.ok) {
+          throw new Error("우편함 상세 조회에 실패했습니다.");
+        }
+
+        const body = await response.json();
+        const detailRequests = Array.isArray(body?.data?.requests)
+          ? (body.data.requests as ManufacturerRequest[])
+          : [];
+
+        await mailboxState.handleRegisterShipment(
+          mailboxAddress,
+          detailRequests,
+        );
+      } catch (error) {
+        toast({
+          title: "우편함 상세 조회 실패",
+          description:
+            error instanceof Error && error.message
+              ? error.message
+              : "우편함 상세 조회 중 오류가 발생했습니다.",
+          variant: "destructive",
+        });
+      }
+    },
+    [mailboxState, toast, token],
+  );
 
   const currentStageForTab = isMachiningStage
     ? "가공"
@@ -1079,15 +1254,13 @@ export const RequestPage = ({
             ) : tabStage === "shipping" ? (
               <div className="w-full">
                 <MailboxGrid
-                  requests={filteredAndSorted.filter(
-                    (r) => r.mailboxAddress || isPrePickupShippingVisible(r),
-                  )}
+                  mailboxSummaries={mailboxSummaries}
                   forceTodayMailboxAddresses={
                     mailboxState.forceTodayMailboxAddresses
                   }
-                  onBoxClick={(address, reqs) =>
-                    mailboxState.handleRegisterShipment(address, reqs)
-                  }
+                  onBoxClick={(address) => {
+                    void handleOpenMailboxDetails(address);
+                  }}
                   onMailboxError={(address, message) => {
                     const key = String(address || "").trim();
                     if (!key) return;

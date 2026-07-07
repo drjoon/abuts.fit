@@ -187,6 +187,20 @@ router.post(
   requestController.resetMailboxShippingWorkingState,
 );
 
+router.get(
+  "/shipping/mailbox-summary",
+  authenticate,
+  authorize(["manufacturer", "admin"]),
+  requestController.getShippingMailboxSummary,
+);
+
+router.get(
+  "/shipping/mailbox-requests",
+  authenticate,
+  authorize(["manufacturer", "admin"]),
+  requestController.getShippingMailboxRequests,
+);
+
 // 한진 운송장 출력 (메일박스 기준)
 router.post(
   "/shipping/hanjin/print-labels",

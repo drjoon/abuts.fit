@@ -1,5 +1,4 @@
 import { useMemo, useState, useRef, useEffect, useCallback } from "react";
-import type { ManufacturerRequest } from "../../utils/request";
 import { useToast } from "@/shared/hooks/use-toast";
 import { request } from "@/shared/api/apiClient";
 import {
@@ -17,11 +16,7 @@ import { MailboxShelfGroupTabs } from "./MailboxShelfGroupTabs";
 import { MailboxStickyHeader } from "./MailboxStickyHeader";
 import { useMailboxPrintSettings } from "./useMailboxPrintSettings";
 import { ToastAction } from "@/components/ui/toast";
-import {
-  getKstDayKey,
-  resolveMailboxShippingDayInfo,
-  type MailboxShippingDayInfo,
-} from "./shippingDay.helpers";
+import { type MailboxShippingDayInfo } from "./shippingDay.helpers";
 
 const MAILBOX_SHELF_NAMES = ["A", "B", "C", "D", "E", "F", "G", "H", "I"];
 
@@ -34,16 +29,28 @@ type MailboxPickupStatus =
   | "canceled"
   | "error";
 
+export type MailboxSummaryItem = {
+  mailboxAddress: string;
+  requestCount: number;
+  requestIds: string[];
+  shippingPackageIds: string[];
+  workflowCodes: string[];
+  printed: boolean;
+  forceTodayShipment: boolean;
+  earliestEstimatedShipYmd?: string | null;
+  shippingDayInfo?: MailboxShippingDayInfo | null;
+};
+
 type MailboxGridProps = {
-  requests: ManufacturerRequest[];
+  mailboxSummaries: MailboxSummaryItem[];
   forceTodayMailboxAddresses?: Set<string>;
-  onBoxClick?: (address: string, requests: ManufacturerRequest[]) => void;
+  onBoxClick?: (address: string) => void | Promise<void>;
   onMailboxError?: (address: string, message: string) => void;
   onRefresh?: () => void | Promise<void>;
 };
 
 export const MailboxGrid = ({
-  requests,
+  mailboxSummaries,
   forceTodayMailboxAddresses,
   onBoxClick,
   onMailboxError,
@@ -120,18 +127,20 @@ export const MailboxGrid = ({
   const binCols = ["A", "B", "C"];
   const binRows = ["1", "2", "3", "4"];
 
-  const addressMap = useMemo(() => {
-    const map = new Map<string, ManufacturerRequest[]>();
-    for (const req of requests) {
-      const addr = String(req?.mailboxAddress || "")
+  const mailboxSummaryMap = useMemo(() => {
+    const map = new Map<string, MailboxSummaryItem>();
+    for (const item of mailboxSummaries || []) {
+      const addr = String(item?.mailboxAddress || "")
         .trim()
         .toUpperCase();
       if (!addr) continue;
-      if (!map.has(addr)) map.set(addr, []);
-      map.get(addr)!.push(req);
+      map.set(addr, {
+        ...item,
+        mailboxAddress: addr,
+      });
     }
     return map;
-  }, [requests]);
+  }, [mailboxSummaries]);
 
   const clearWorkflowOverridesForMailboxes = (mailboxAddresses: string[]) => {
     const targetMailboxSet = new Set(
@@ -143,14 +152,15 @@ export const MailboxGrid = ({
     setWorkflowOverrideByRequestId((prev) => {
       let changed = false;
       const next = { ...prev };
-      for (const req of requests) {
-        const mailboxAddress = String(req?.mailboxAddress || "").trim();
-        const requestId = String(req?.requestId || "").trim();
-        if (!mailboxAddress || !requestId) continue;
+      for (const [mailboxAddress, summary] of mailboxSummaryMap.entries()) {
         if (!targetMailboxSet.has(mailboxAddress)) continue;
-        if (!(requestId in next)) continue;
-        delete next[requestId];
-        changed = true;
+        for (const requestId of summary.requestIds || []) {
+          const normalizedRequestId = String(requestId || "").trim();
+          if (!normalizedRequestId) continue;
+          if (!(normalizedRequestId in next)) continue;
+          delete next[normalizedRequestId];
+          changed = true;
+        }
       }
       return changed ? next : prev;
     });
@@ -172,31 +182,32 @@ export const MailboxGrid = ({
     setWorkflowOverrideByRequestId((prev) => {
       const next = { ...prev };
       let changed = false;
-      for (const req of requests) {
-        const mailboxAddress = String(req?.mailboxAddress || "").trim();
-        const requestId = String(req?.requestId || "").trim();
-        if (!mailboxAddress || !requestId) continue;
+      for (const [mailboxAddress, summary] of mailboxSummaryMap.entries()) {
         if (!targetMailboxSet.has(mailboxAddress)) continue;
-        if (
-          next[requestId]?.code === override.code &&
-          next[requestId]?.label === override.label
-        ) {
-          continue;
+        for (const requestId of summary.requestIds || []) {
+          const normalizedRequestId = String(requestId || "").trim();
+          if (!normalizedRequestId) continue;
+          if (
+            next[normalizedRequestId]?.code === override.code &&
+            next[normalizedRequestId]?.label === override.label
+          ) {
+            continue;
+          }
+          next[normalizedRequestId] = override;
+          changed = true;
         }
-        next[requestId] = override;
-        changed = true;
       }
       return changed ? next : prev;
     });
   };
-  const getMailboxColorClass = (items: ManufacturerRequest[]) => {
-    if (items.length === 0) return "bg-white border-slate-200";
-    const earliestShipDate = items.reduce((earliest, req) => {
-      const shipYmd = req.timeline?.estimatedShipYmd;
-      if (!shipYmd) return earliest;
-      if (!earliest || shipYmd < earliest) return shipYmd;
-      return earliest;
-    }, "");
+  const getMailboxColorClass = (summary: {
+    requestCount: number;
+    earliestEstimatedShipYmd?: string | null;
+  }) => {
+    if (!summary.requestCount) return "bg-white border-slate-200";
+    const earliestShipDate = String(
+      summary.earliestEstimatedShipYmd || "",
+    ).trim();
     if (!earliestShipDate) {
       return "bg-blue-50 border-blue-400 cursor-pointer hover:bg-blue-100 hover:shadow-md";
     }
@@ -590,21 +601,14 @@ export const MailboxGrid = ({
     );
     const trackingNumberByMailbox = Object.fromEntries(selectedEntries);
 
-    // 현재 화면 의뢰 중에서 유효한 shippingPackageId만 정규화해서 전송한다.
+    // 우편함 요약에서 유효한 shippingPackageId만 전송한다.
     const targetMailboxSet = new Set(mailboxAddresses);
     const shippingPackageIds = Array.from(
       new Set(
-        requests
-          .filter((r) =>
-            targetMailboxSet.has(String(r?.mailboxAddress || "").trim()),
-          )
-          .map((r) => {
-            const raw = (r as any)?.shippingPackageId;
-            if (raw && typeof raw === "object") {
-              return String(raw?._id || raw?.id || "").trim();
-            }
-            return String(raw || "").trim();
-          })
+        Array.from(mailboxSummaryMap.entries())
+          .filter(([mailboxAddress]) => targetMailboxSet.has(mailboxAddress))
+          .flatMap(([, summary]) => summary.shippingPackageIds || [])
+          .map((value) => String(value || "").trim())
           .filter((value) => /^[a-f\d]{24}$/i.test(value)),
       ),
     );
@@ -681,19 +685,19 @@ export const MailboxGrid = ({
   }, [selectedGroupIdx, shelfGroups]);
   const allShelvesToShow = MAILBOX_SHELF_NAMES;
   const occupiedAddresses = useMemo(() => {
-    return Array.from(addressMap.keys());
-  }, [addressMap]);
+    return Array.from(mailboxSummaryMap.keys());
+  }, [mailboxSummaryMap]);
 
-  // 오늘 발송 여부: 의뢰자별 weeklyBatchDays 중 오늘 기준 가장 먼저 도래한 발송일이
-  // 오늘인지 여부로 판정한다. 오늘이 아니면 이미 생산된 제품도 계속 모아 둔다.
   const mailboxShippingDayMap = useMemo(() => {
-    const todayKey = getKstDayKey();
     const map = new Map<string, MailboxShippingDayInfo>();
-    for (const [address, items] of addressMap.entries()) {
-      map.set(address, resolveMailboxShippingDayInfo(items, todayKey));
+    for (const [address, summary] of mailboxSummaryMap.entries()) {
+      map.set(
+        address,
+        summary.shippingDayInfo || { notToday: false, nextDayLabel: null },
+      );
     }
     return map;
-  }, [addressMap]);
+  }, [mailboxSummaryMap]);
 
   const notTodayAddressSet = useMemo(() => {
     const set = new Set<string>();
@@ -705,13 +709,13 @@ export const MailboxGrid = ({
 
   const persistedForceTodayAddressSet = useMemo(() => {
     const set = new Set<string>();
-    for (const [address, items] of addressMap.entries()) {
-      if (items.some((req) => Boolean(req?.timeline?.forceTodayShipment))) {
+    for (const [address, summary] of mailboxSummaryMap.entries()) {
+      if (summary.forceTodayShipment) {
         set.add(address);
       }
     }
     return set;
-  }, [addressMap]);
+  }, [mailboxSummaryMap]);
 
   const forceTodayAddressSet = useMemo(() => {
     const next = new Set<string>(persistedForceTodayAddressSet);
@@ -733,70 +737,61 @@ export const MailboxGrid = ({
   );
 
   const pickupRequestedMailboxes = useMemo(() => {
-    const workflowCodesByMailbox = new Map<string, Set<string>>();
-    for (const req of requests) {
-      const mailbox = String(req?.mailboxAddress || "").trim();
-      if (!mailbox) continue;
-      const requestId = String(req?.requestId || "").trim();
-      const workflowCode = String(
-        workflowOverrideByRequestId[requestId]?.code ||
-          req?.shippingWorkflow?.code ||
-          "",
-      ).trim();
-      if (!workflowCodesByMailbox.has(mailbox)) {
-        workflowCodesByMailbox.set(mailbox, new Set<string>());
-      }
-      if (workflowCode) {
-        workflowCodesByMailbox.get(mailbox)?.add(workflowCode);
-      }
-    }
-
     const map = new Map<string, MailboxPickupStatus>();
-    for (const [mailbox, codes] of workflowCodesByMailbox.entries()) {
+
+    for (const [mailboxAddress, summary] of mailboxSummaryMap.entries()) {
+      const codes = new Set<string>(
+        (summary.workflowCodes || [])
+          .map((value) => String(value || "").trim())
+          .filter(Boolean),
+      );
+
+      for (const requestId of summary.requestIds || []) {
+        const normalizedRequestId = String(requestId || "").trim();
+        if (!normalizedRequestId) continue;
+        const overrideCode = String(
+          workflowOverrideByRequestId[normalizedRequestId]?.code || "",
+        ).trim();
+        if (overrideCode) codes.add(overrideCode);
+      }
+
       let nextStatus: MailboxPickupStatus = "none";
       if (codes.has("error")) nextStatus = "error";
       else if (codes.has("canceled")) nextStatus = "canceled";
       else if (codes.has("completed")) nextStatus = "completed";
       else if (codes.has("picked_up")) nextStatus = "picked_up";
-      // accepted 상태 제거: 운송장번호 부여 시점을 printed로 통합
       else if (codes.has("printed")) nextStatus = "printed";
-      map.set(mailbox, nextStatus);
+      else if (codes.has("accepted")) nextStatus = "accepted";
+
+      map.set(mailboxAddress, nextStatus);
     }
 
     return map;
-  }, [requests, workflowOverrideByRequestId]);
+  }, [mailboxSummaryMap, workflowOverrideByRequestId]);
 
   const printedMailboxes = useMemo(() => {
     const set = new Set<string>();
-    for (const req of requests) {
-      const mailbox = String(req?.mailboxAddress || "").trim();
-      if (!mailbox) continue;
-      const printed = Boolean((req as any)?.shippingLabelPrinted?.printed);
-      if (printed) {
+    for (const [mailbox, summary] of mailboxSummaryMap.entries()) {
+      if (summary.printed) {
         set.add(mailbox);
       }
     }
     return set;
-  }, [requests]);
+  }, [mailboxSummaryMap]);
 
   useEffect(() => {
     if (failedMailboxes.size === 0) return;
     setFailedMailboxes((prev) => {
       const next = new Set(prev);
       for (const mailbox of prev) {
-        const mailboxRequests = requests.filter(
-          (req) => String(req?.mailboxAddress || "").trim() === mailbox,
+        const printedSuccessfully = Boolean(
+          mailboxSummaryMap.get(mailbox)?.printed,
         );
-        const printedSuccessfully =
-          mailboxRequests.length > 0 &&
-          mailboxRequests.every((req) =>
-            Boolean((req as any)?.shippingLabelPrinted?.printed),
-          );
         if (printedSuccessfully) next.delete(mailbox);
       }
       return next;
     });
-  }, [failedMailboxes.size, requests]);
+  }, [failedMailboxes.size, mailboxSummaryMap]);
 
   function resolveHanjinFailureMessage(error: unknown) {
     const anyErr = error as any;
@@ -1445,7 +1440,9 @@ export const MailboxGrid = ({
                               null)
                             : null;
                           const count = exists
-                            ? (addressMap.get(addr!) ?? []).length
+                            ? Number(
+                                mailboxSummaryMap.get(addr!)?.requestCount || 0,
+                              )
                             : 0;
                           return (
                             <td
@@ -1578,7 +1575,9 @@ export const MailboxGrid = ({
               </div>
               <div className="max-h-[360px] overflow-auto space-y-2 pr-1">
                 {occupiedAddresses.map((addr) => {
-                  const count = (addressMap.get(addr) || []).length;
+                  const count = Number(
+                    mailboxSummaryMap.get(addr)?.requestCount || 0,
+                  );
                   return (
                     <div
                       key={addr}
@@ -1663,7 +1662,20 @@ export const MailboxGrid = ({
         shelfRows={shelfRows}
         binCols={binCols}
         binRows={binRows}
-        addressMap={addressMap}
+        mailboxSummaryMap={
+          new Map(
+            Array.from(mailboxSummaryMap.entries()).map(
+              ([address, summary]) => [
+                address,
+                {
+                  requestCount: Number(summary.requestCount || 0),
+                  earliestEstimatedShipYmd:
+                    summary.earliestEstimatedShipYmd || null,
+                },
+              ],
+            ),
+          )
+        }
         printedMailboxes={printedMailboxes}
         pickupRequestedMailboxes={pickupRequestedMailboxes}
         failedMailboxes={failedMailboxes}

@@ -1,5 +1,6 @@
 import Request from "../../models/request.model.js";
 import { Types } from "mongoose";
+import { createHash } from "crypto";
 
 import {
   applyStatusMapping,
@@ -8,6 +9,8 @@ import {
   ensureReviewByStageDefaults,
   SHIPPING_WORKFLOW_CODES,
   SHIPPING_WORKFLOW_LABELS,
+  buildManufacturerOrgScopeFilter,
+  normalizeWorksheetRequestForResponse,
 } from "./utils.js";
 
 import { emitDeliveryUpdated } from "./shipping.Tracking.helpers.js";
@@ -62,6 +65,448 @@ function resolveMailboxTrackingNumber(group = [], prefix, now) {
     group?.[0]?.shippingPackageId || group?.[0]?.mailboxAddress || "BOX",
   ).trim();
   return `${prefix}-${fallbackPackageId}-${now.getTime()}`;
+}
+
+const DAY_KEYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
+const DAY_LABELS = {
+  sun: "일",
+  mon: "월",
+  tue: "화",
+  wed: "수",
+  thu: "목",
+  fri: "금",
+  sat: "토",
+};
+
+const MAILBOX_SUMMARY_CACHE_TTL_MS = Number(
+  process.env.MAILBOX_SUMMARY_CACHE_TTL_MS || 5000,
+);
+const MAILBOX_SUMMARY_CACHE_MAX_ENTRIES = Number(
+  process.env.MAILBOX_SUMMARY_CACHE_MAX_ENTRIES || 200,
+);
+const mailboxSummaryCache = new Map();
+
+function resolveMailboxSummaryCacheTtlMs() {
+  const ttl = Number(MAILBOX_SUMMARY_CACHE_TTL_MS);
+  if (!Number.isFinite(ttl) || ttl < 0) return 5000;
+  return ttl;
+}
+
+function pruneMailboxSummaryCache() {
+  const now = Date.now();
+  for (const [key, entry] of mailboxSummaryCache.entries()) {
+    if (!entry || Number(entry.expiresAt || 0) <= now) {
+      mailboxSummaryCache.delete(key);
+    }
+  }
+
+  const maxEntries = Number.isFinite(MAILBOX_SUMMARY_CACHE_MAX_ENTRIES)
+    ? Math.max(10, Math.floor(MAILBOX_SUMMARY_CACHE_MAX_ENTRIES))
+    : 200;
+
+  if (mailboxSummaryCache.size <= maxEntries) return;
+
+  const overflow = mailboxSummaryCache.size - maxEntries;
+  const keys = Array.from(mailboxSummaryCache.keys());
+  for (let i = 0; i < overflow; i += 1) {
+    mailboxSummaryCache.delete(keys[i]);
+  }
+}
+
+function buildMailboxSummaryCacheKey(req) {
+  const role = String(req?.user?.role || "").trim();
+  const businessAnchorId = String(req?.user?.businessAnchorId || "").trim();
+  const userId = String(req?.user?._id || "").trim();
+  if (role === "manufacturer") {
+    return `manufacturer:${businessAnchorId || userId}`;
+  }
+  return `${role || "unknown"}:${businessAnchorId || userId || "global"}`;
+}
+
+function buildEtagFromPayload(payload) {
+  const raw = JSON.stringify(payload || {});
+  const hash = createHash("sha1").update(raw).digest("hex");
+  return `W/"mailbox-summary-${hash}"`;
+}
+
+function applyMailboxSummaryCacheHeaders(res, etag, ttlMs) {
+  const maxAge = Math.max(0, Math.floor(ttlMs / 1000));
+  res.setHeader("ETag", etag);
+  res.setHeader("Cache-Control", `private, max-age=${maxAge}, must-revalidate`);
+  res.setHeader("Vary", "Authorization");
+}
+
+function isNotModified(req, etag) {
+  const candidate = String(req?.headers?.["if-none-match"] || "").trim();
+  return Boolean(candidate && etag && candidate === etag);
+}
+
+function escapeRegex(value = "") {
+  return String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function getKstDayKey(date = new Date()) {
+  const kst = new Date(date.getTime() + 9 * 60 * 60 * 1000);
+  return DAY_KEYS[kst.getUTCDay()] || "";
+}
+
+function normalizeDays(raw) {
+  if (!Array.isArray(raw)) return [];
+  return Array.from(
+    new Set(
+      raw
+        .map((v) =>
+          String(v || "")
+            .trim()
+            .toLowerCase(),
+        )
+        .filter((v) => DAY_KEYS.includes(v)),
+    ),
+  );
+}
+
+function getNextShippingDayKey(days = [], todayKey = getKstDayKey()) {
+  const valid = normalizeDays(days);
+  if (!valid.length) return null;
+  if (valid.includes(todayKey)) return null;
+  const todayIdx = DAY_KEYS.indexOf(todayKey);
+  if (todayIdx < 0) return valid[0] || null;
+
+  let best = null;
+  let bestDiff = 8;
+  for (const d of valid) {
+    const idx = DAY_KEYS.indexOf(d);
+    if (idx < 0) continue;
+    const diff = (idx - todayIdx + 7) % 7 || 7;
+    if (diff < bestDiff) {
+      bestDiff = diff;
+      best = d;
+    }
+  }
+  return best;
+}
+
+function getTrackingStatusCode(requestDoc) {
+  const fromWorkflow = String(
+    requestDoc?.shippingWorkflow?.trackingStatusCode || "",
+  ).trim();
+  if (fromWorkflow) return fromWorkflow;
+  return String(
+    requestDoc?.deliveryInfoRef?.tracking?.lastStatusCode || "",
+  ).trim();
+}
+
+function isPrePickupTrackingRequest(requestDoc) {
+  const stage = String(requestDoc?.manufacturerStage || "").trim();
+  if (stage !== "추적관리") return false;
+
+  const di =
+    requestDoc?.deliveryInfoRef &&
+    typeof requestDoc.deliveryInfoRef === "object"
+      ? requestDoc.deliveryInfoRef
+      : null;
+  if (!di) return false;
+
+  const statusCode = Number(getTrackingStatusCode(requestDoc));
+  const isCanceled =
+    String(di?.tracking?.lastStatusText || "").trim() === "예약취소";
+  const hasPickupReservation = Boolean(
+    di?.trackingNumber || di?.shippedAt || di?.tracking?.lastStatusText,
+  );
+
+  return (
+    hasPickupReservation &&
+    !di?.deliveredAt &&
+    !isCanceled &&
+    (!Number.isFinite(statusCode) || statusCode < 11)
+  );
+}
+
+function resolveMailboxShippingDayInfo({
+  weeklyBatchDays = [],
+  forceTodayShipment = false,
+}) {
+  if (forceTodayShipment) {
+    return { notToday: false, nextDayLabel: null };
+  }
+
+  const days = normalizeDays(weeklyBatchDays);
+  if (!days.length) return { notToday: false, nextDayLabel: null };
+
+  const todayKey = getKstDayKey();
+  if (days.includes(todayKey)) {
+    return { notToday: false, nextDayLabel: null };
+  }
+
+  const next = getNextShippingDayKey(days, todayKey);
+  return {
+    notToday: true,
+    nextDayLabel: (next && DAY_LABELS[next]) || null,
+  };
+}
+
+export async function getShippingMailboxSummary(req, res) {
+  try {
+    pruneMailboxSummaryCache();
+
+    const cacheKey = buildMailboxSummaryCacheKey(req);
+    const now = Date.now();
+    const cacheHit = mailboxSummaryCache.get(cacheKey);
+    if (cacheHit && Number(cacheHit.expiresAt || 0) > now) {
+      applyMailboxSummaryCacheHeaders(
+        res,
+        String(cacheHit.etag || ""),
+        resolveMailboxSummaryCacheTtlMs(),
+      );
+      if (isNotModified(req, String(cacheHit.etag || ""))) {
+        return res.status(304).end();
+      }
+      return res.status(200).json({
+        success: true,
+        data: cacheHit.payload,
+        cached: true,
+      });
+    }
+
+    const role = String(req.user?.role || "").trim();
+    const orgScope =
+      role === "manufacturer" ? await buildManufacturerOrgScopeFilter(req) : {};
+
+    const baseFilter = {
+      ...orgScope,
+      mailboxAddress: { $nin: [null, ""] },
+      manufacturerStage: { $in: ["포장.발송", "추적관리"] },
+    };
+
+    const docs = await Request.find(baseFilter)
+      .select({
+        _id: 1,
+        requestId: 1,
+        manufacturerStage: 1,
+        mailboxAddress: 1,
+        shippingPackageId: 1,
+        shippingWorkflow: 1,
+        shippingLabelPrinted: 1,
+        timeline: 1,
+        deliveryInfoRef: 1,
+        businessAnchorId: 1,
+      })
+      .populate(
+        "deliveryInfoRef",
+        "shippedAt deliveredAt trackingNumber tracking.lastStatusCode tracking.lastStatusText",
+      )
+      .populate("businessAnchorId", "shippingPolicy");
+
+    const byMailbox = new Map();
+
+    for (const requestDoc of docs) {
+      const mailboxAddress = String(requestDoc?.mailboxAddress || "")
+        .trim()
+        .toUpperCase();
+      if (!mailboxAddress) continue;
+
+      const stage = String(requestDoc?.manufacturerStage || "").trim();
+      const include =
+        stage === "포장.발송" || isPrePickupTrackingRequest(requestDoc);
+      if (!include) continue;
+
+      if (!byMailbox.has(mailboxAddress)) {
+        byMailbox.set(mailboxAddress, {
+          mailboxAddress,
+          requestCount: 0,
+          requestIds: [],
+          shippingPackageIds: new Set(),
+          workflowCodes: new Set(),
+          printed: false,
+          forceTodayShipment: false,
+          earliestEstimatedShipYmd: null,
+          weeklyBatchDays: [],
+        });
+      }
+
+      const summary = byMailbox.get(mailboxAddress);
+      summary.requestCount += 1;
+
+      const requestId = String(requestDoc?.requestId || "").trim();
+      if (requestId) summary.requestIds.push(requestId);
+
+      const shippingPackageId = String(
+        requestDoc?.shippingPackageId || "",
+      ).trim();
+      if (shippingPackageId) summary.shippingPackageIds.add(shippingPackageId);
+
+      const workflowCode = String(
+        requestDoc?.shippingWorkflow?.code || "",
+      ).trim();
+      if (workflowCode) summary.workflowCodes.add(workflowCode);
+
+      if (Boolean(requestDoc?.shippingLabelPrinted?.printed)) {
+        summary.printed = true;
+      }
+
+      if (Boolean(requestDoc?.timeline?.forceTodayShipment)) {
+        summary.forceTodayShipment = true;
+      }
+
+      const ymd = String(requestDoc?.timeline?.estimatedShipYmd || "").trim();
+      if (ymd) {
+        if (
+          !summary.earliestEstimatedShipYmd ||
+          ymd < summary.earliestEstimatedShipYmd
+        ) {
+          summary.earliestEstimatedShipYmd = ymd;
+        }
+      }
+
+      if (!summary.weeklyBatchDays.length) {
+        summary.weeklyBatchDays = normalizeDays(
+          requestDoc?.businessAnchorId?.shippingPolicy?.weeklyBatchDays,
+        );
+      }
+    }
+
+    const mailboxes = Array.from(byMailbox.values())
+      .map((item) => ({
+        mailboxAddress: item.mailboxAddress,
+        requestCount: item.requestCount,
+        requestIds: item.requestIds,
+        shippingPackageIds: Array.from(item.shippingPackageIds),
+        workflowCodes: Array.from(item.workflowCodes),
+        printed: item.printed,
+        forceTodayShipment: item.forceTodayShipment,
+        earliestEstimatedShipYmd: item.earliestEstimatedShipYmd,
+        shippingDayInfo: resolveMailboxShippingDayInfo({
+          weeklyBatchDays: item.weeklyBatchDays,
+          forceTodayShipment: item.forceTodayShipment,
+        }),
+      }))
+      .sort((a, b) => a.mailboxAddress.localeCompare(b.mailboxAddress));
+
+    const payload = {
+      mailboxes,
+      totalRequests: mailboxes.reduce(
+        (acc, item) => acc + Number(item.requestCount || 0),
+        0,
+      ),
+    };
+
+    const etag = buildEtagFromPayload(payload);
+    const ttlMs = resolveMailboxSummaryCacheTtlMs();
+    mailboxSummaryCache.set(cacheKey, {
+      payload,
+      etag,
+      expiresAt: Date.now() + ttlMs,
+    });
+
+    applyMailboxSummaryCacheHeaders(res, etag, ttlMs);
+    if (isNotModified(req, etag)) {
+      return res.status(304).end();
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: payload,
+      cached: false,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "우편함 요약 조회 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
+export async function getShippingMailboxRequests(req, res) {
+  try {
+    const role = String(req.user?.role || "").trim();
+    const orgScope =
+      role === "manufacturer" ? await buildManufacturerOrgScopeFilter(req) : {};
+
+    const mailboxAddress = String(req.query?.mailboxAddress || "")
+      .trim()
+      .toUpperCase();
+    if (!mailboxAddress) {
+      return res.status(400).json({
+        success: false,
+        message: "mailboxAddress가 필요합니다.",
+      });
+    }
+
+    const docs = await Request.find({
+      ...orgScope,
+      mailboxAddress: {
+        $regex: `^${escapeRegex(mailboxAddress)}$`,
+        $options: "i",
+      },
+      manufacturerStage: { $in: ["포장.발송", "추적관리"] },
+    })
+      .sort({ createdAt: -1, _id: -1 })
+      .select({
+        requestId: 1,
+        manufacturerStage: 1,
+        createdAt: 1,
+        lotNumber: 1,
+        mailboxAddress: 1,
+        shippingPackageId: 1,
+        shippingWorkflow: 1,
+        shippingLabelPrinted: 1,
+        businessAnchorId: 1,
+        referenceIds: 1,
+        source: 1,
+        "rnd.doneAt": 1,
+        "rnd.doneFromStage": 1,
+        "rnd.memo": 1,
+        "rnd.memoUpdatedAt": 1,
+        "rnd.memoUpdatedBy": 1,
+        description: 1,
+        "caseInfos.clinicName": 1,
+        "caseInfos.patientName": 1,
+        "caseInfos.tooth": 1,
+        "caseInfos.anodizingEnabled": 1,
+        "caseInfos.connectionDiameter": 1,
+        "caseInfos.implantManufacturer": 1,
+        "caseInfos.implantBrand": 1,
+        "caseInfos.implantFamily": 1,
+        "caseInfos.implantType": 1,
+        "caseInfos.rollbackCounts": 1,
+        timeline: 1,
+        requestor: 1,
+        deliveryInfoRef: 1,
+      })
+      .populate(
+        "requestor",
+        "name business businessAnchorId address addressText zipCode",
+      )
+      .populate("businessAnchorId", "name metadata shippingPolicy")
+      .populate(
+        "deliveryInfoRef",
+        "shippedAt pickedUpAt deliveredAt carrier trackingNumber updatedAt tracking",
+      );
+
+    const normalized = await Promise.all(
+      docs.map((doc) => normalizeWorksheetRequestForResponse(doc)),
+    );
+
+    const requests = normalized.filter((requestDoc) => {
+      const stage = String(requestDoc?.manufacturerStage || "").trim();
+      return stage === "포장.발송" || isPrePickupTrackingRequest(requestDoc);
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        mailboxAddress,
+        requests,
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "우편함 상세 조회 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
 }
 
 /**

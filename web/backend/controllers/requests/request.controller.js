@@ -57,8 +57,12 @@ export const {
   registerShipment,
 } = shippingRequestorController;
 
-export const { rollbackMailboxShipping, setMailboxForceTodayShipment } =
-  shippingController;
+export const {
+  rollbackMailboxShipping,
+  setMailboxForceTodayShipment,
+  getShippingMailboxSummary,
+  getShippingMailboxRequests,
+} = shippingController;
 export const { resetMailboxShippingWorkingState } = shippingController;
 
 export const {

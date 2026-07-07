@@ -342,74 +342,81 @@ export async function getAssignedDashboardSummary(req, res) {
         : {}),
     });
 
-    // compute unique package counts for shipping/tracking boxes within the same filter
-    try {
-      const docs = await Request.find({
-        ...baseFilter,
-        ...dateFilter,
-      })
-        .select({
-          shippingPackageId: 1,
-          mailboxAddress: 1,
-          manufacturerStage: 1,
-        })
-        .lean();
-
-      const shippingMailboxAddresses = new Set();
-      const trackingPackageIds = new Set();
-      for (const d of docs || []) {
-        const pkg = String(d?.shippingPackageId || "").trim();
-        const mailbox = String(d?.mailboxAddress || "").trim();
-        const stage = String(d?.manufacturerStage || "").trim();
-
-        if (stage === "포장.발송" || stage === "shipping") {
-          // 포장.발송의 박스 수는 실제 화면 단위(우편함) 기준으로 집계
-          if (mailbox) {
-            shippingMailboxAddresses.add(mailbox);
-          } else if (pkg) {
-            // mailbox 누락 레거시 데이터는 packageId로 보정 집계
-            shippingMailboxAddresses.add(`pkg:${pkg}`);
-          }
-        }
-
-        if ((stage === "추적관리" || stage === "tracking") && pkg) {
-          trackingPackageIds.add(pkg);
-        }
-      }
-
-      return res.status(200).json({
-        success: true,
-        data: {
-          total: Number(statsResult?.total ?? 0) || 0,
-          canceledCount: Number(statsResult?.canceledCount ?? 0) || 0,
-          trackingCount: Number(statsResult?.trackingCount ?? 0) || 0,
-          trackingBoxes: trackingPackageIds.size,
-          requestCount: Number(statsResult?.requestCount ?? 0) || 0,
-          camCount: Number(statsResult?.camCount ?? 0) || 0,
-          machiningCount: Number(statsResult?.machiningCount ?? 0) || 0,
-          packingCount: Number(statsResult?.packingCount ?? 0) || 0,
-          shippingCount: Number(statsResult?.shippingCount ?? 0) || 0,
-          shippingBoxes: shippingMailboxAddresses.size,
-          rndCount,
+    // 박스 수 집계는 전체 문서 로드 없이 DB에서 distinct key만 계산한다.
+    const [shippingBoxesAgg, trackingBoxesAgg] = await Promise.all([
+      Request.aggregate([
+        {
+          $match: {
+            ...baseFilter,
+            ...dateFilter,
+            manufacturerStage: { $in: ["포장.발송", "shipping"] },
+          },
         },
-      });
-    } catch (e) {
-      // fallback to original minimal payload
-      return res.status(200).json({
-        success: true,
-        data: {
-          total: Number(statsResult?.total ?? 0) || 0,
-          canceledCount: Number(statsResult?.canceledCount ?? 0) || 0,
-          trackingCount: Number(statsResult?.trackingCount ?? 0) || 0,
-          requestCount: Number(statsResult?.requestCount ?? 0) || 0,
-          camCount: Number(statsResult?.camCount ?? 0) || 0,
-          machiningCount: Number(statsResult?.machiningCount ?? 0) || 0,
-          packingCount: Number(statsResult?.packingCount ?? 0) || 0,
-          shippingCount: Number(statsResult?.shippingCount ?? 0) || 0,
-          rndCount,
+        {
+          $project: {
+            mailboxAddress: {
+              $trim: { input: { $ifNull: ["$mailboxAddress", ""] } },
+            },
+            shippingPackageId: {
+              $trim: {
+                input: {
+                  $toString: { $ifNull: ["$shippingPackageId", ""] },
+                },
+              },
+            },
+          },
         },
-      });
-    }
+        {
+          $project: {
+            boxKey: {
+              $cond: [
+                { $ne: ["$mailboxAddress", ""] },
+                { $concat: ["mailbox:", "$mailboxAddress"] },
+                {
+                  $cond: [
+                    { $ne: ["$shippingPackageId", ""] },
+                    { $concat: ["pkg:", "$shippingPackageId"] },
+                    null,
+                  ],
+                },
+              ],
+            },
+          },
+        },
+        { $match: { boxKey: { $ne: null } } },
+        { $group: { _id: "$boxKey" } },
+        { $count: "count" },
+      ]),
+      Request.aggregate([
+        {
+          $match: {
+            ...baseFilter,
+            ...dateFilter,
+            manufacturerStage: { $in: ["추적관리", "tracking"] },
+            shippingPackageId: { $ne: null },
+          },
+        },
+        { $group: { _id: "$shippingPackageId" } },
+        { $count: "count" },
+      ]),
+    ]);
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        total: Number(statsResult?.total ?? 0) || 0,
+        canceledCount: Number(statsResult?.canceledCount ?? 0) || 0,
+        trackingCount: Number(statsResult?.trackingCount ?? 0) || 0,
+        trackingBoxes: Number(trackingBoxesAgg?.[0]?.count ?? 0) || 0,
+        requestCount: Number(statsResult?.requestCount ?? 0) || 0,
+        camCount: Number(statsResult?.camCount ?? 0) || 0,
+        machiningCount: Number(statsResult?.machiningCount ?? 0) || 0,
+        packingCount: Number(statsResult?.packingCount ?? 0) || 0,
+        shippingCount: Number(statsResult?.shippingCount ?? 0) || 0,
+        shippingBoxes: Number(shippingBoxesAgg?.[0]?.count ?? 0) || 0,
+        rndCount,
+      },
+    });
   } catch (error) {
     console.error("getAssignedDashboardSummary error", error);
     return res.status(500).json({
