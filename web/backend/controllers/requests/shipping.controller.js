@@ -80,7 +80,7 @@ const DAY_LABELS = {
 };
 
 const MAILBOX_SUMMARY_CACHE_TTL_MS = Number(
-  process.env.MAILBOX_SUMMARY_CACHE_TTL_MS || 5000,
+  process.env.MAILBOX_SUMMARY_CACHE_TTL_MS || 3600000,
 );
 const MAILBOX_SUMMARY_CACHE_MAX_ENTRIES = Number(
   process.env.MAILBOX_SUMMARY_CACHE_MAX_ENTRIES || 200,
@@ -89,7 +89,7 @@ const mailboxSummaryCache = new Map();
 
 function resolveMailboxSummaryCacheTtlMs() {
   const ttl = Number(MAILBOX_SUMMARY_CACHE_TTL_MS);
-  if (!Number.isFinite(ttl) || ttl < 0) return 5000;
+  if (!Number.isFinite(ttl) || ttl < 0) return 3600000;
   return ttl;
 }
 
@@ -252,15 +252,20 @@ export async function getShippingMailboxSummary(req, res) {
     pruneMailboxSummaryCache();
 
     const cacheKey = buildMailboxSummaryCacheKey(req);
+    const forceRefresh =
+      String(req?.query?.refresh || "").trim() === "1" ||
+      String(req?.query?.refresh || "")
+        .trim()
+        .toLowerCase() === "true";
     const now = Date.now();
     const cacheHit = mailboxSummaryCache.get(cacheKey);
-    if (cacheHit && Number(cacheHit.expiresAt || 0) > now) {
+    if (!forceRefresh && cacheHit && Number(cacheHit.expiresAt || 0) > now) {
       applyMailboxSummaryCacheHeaders(
         res,
         String(cacheHit.etag || ""),
         resolveMailboxSummaryCacheTtlMs(),
       );
-      if (isNotModified(req, String(cacheHit.etag || ""))) {
+      if (!forceRefresh && isNotModified(req, String(cacheHit.etag || ""))) {
         console.info("[shipping][mailbox-summary][perf]", {
           cache: "memory-hit-304",
           status: 304,
@@ -313,6 +318,9 @@ export async function getShippingMailboxSummary(req, res) {
         ...baseFilter,
         manufacturerStage: "추적관리",
         deliveryInfoRef: { $exists: true, $ne: null },
+        "shippingWorkflow.code": {
+          $nin: ["picked_up", "completed", "canceled"],
+        },
       })
         .select({
           requestId: 1,
@@ -331,10 +339,29 @@ export async function getShippingMailboxSummary(req, res) {
     ]);
     const requestsQueryMs = Date.now() - requestsFetchStartedAt;
 
+    const prePickupTrackingCandidates = trackingDocs.filter((doc) => {
+      const workflowCode = String(doc?.shippingWorkflow?.code || "").trim();
+      // 집하 이후/완료/취소 상태는 delivery 조회 없이 제외 가능
+      if (
+        workflowCode === "picked_up" ||
+        workflowCode === "completed" ||
+        workflowCode === "canceled"
+      ) {
+        return false;
+      }
+
+      const statusCode = Number(doc?.shippingWorkflow?.trackingStatusCode);
+      if (Number.isFinite(statusCode) && statusCode >= 11) {
+        return false;
+      }
+
+      return true;
+    });
+
     const deliveryFetchStartedAt = Date.now();
     const trackingDeliveryIds = Array.from(
       new Set(
-        trackingDocs
+        prePickupTrackingCandidates
           .map((doc) => String(doc?.deliveryInfoRef || "").trim())
           .filter((id) => Types.ObjectId.isValid(id)),
       ),
@@ -351,26 +378,6 @@ export async function getShippingMailboxSummary(req, res) {
 
     const deliveryById = new Map(
       deliveryDocs.map((item) => [String(item?._id || "").trim(), item]),
-    );
-
-    const anchorFetchStartedAt = Date.now();
-    const anchorIds = Array.from(
-      new Set(
-        [...packingDocs, ...trackingDocs]
-          .map((doc) => String(doc?.businessAnchorId || "").trim())
-          .filter((id) => Types.ObjectId.isValid(id)),
-      ),
-    ).map((id) => new Types.ObjectId(id));
-
-    const anchors = anchorIds.length
-      ? await BusinessAnchor.find({ _id: { $in: anchorIds } })
-          .select("shippingPolicy.weeklyBatchDays")
-          .lean()
-      : [];
-    const anchorQueryMs = Date.now() - anchorFetchStartedAt;
-
-    const anchorById = new Map(
-      anchors.map((item) => [String(item?._id || "").trim(), item]),
     );
 
     const processStartedAt = Date.now();
@@ -393,6 +400,7 @@ export async function getShippingMailboxSummary(req, res) {
           forceTodayShipment: false,
           earliestEstimatedShipYmd: null,
           weeklyBatchDays: [],
+          anchorIds: new Set(),
         });
       }
 
@@ -430,12 +438,9 @@ export async function getShippingMailboxSummary(req, res) {
         }
       }
 
-      if (!summary.weeklyBatchDays.length) {
-        const anchorId = String(requestDoc?.businessAnchorId || "").trim();
-        const anchor = anchorId ? anchorById.get(anchorId) : null;
-        summary.weeklyBatchDays = normalizeDays(
-          anchor?.shippingPolicy?.weeklyBatchDays,
-        );
+      const anchorId = String(requestDoc?.businessAnchorId || "").trim();
+      if (Types.ObjectId.isValid(anchorId)) {
+        summary.anchorIds.add(anchorId);
       }
     };
 
@@ -443,7 +448,7 @@ export async function getShippingMailboxSummary(req, res) {
       upsertSummary(requestDoc);
     }
 
-    for (const requestDoc of trackingDocs) {
+    for (const requestDoc of prePickupTrackingCandidates) {
       const deliveryId = String(requestDoc?.deliveryInfoRef || "").trim();
       const deliveryInfo = deliveryId ? deliveryById.get(deliveryId) : null;
       const mergedTrackingDoc = {
@@ -452,6 +457,39 @@ export async function getShippingMailboxSummary(req, res) {
       };
       if (!isPrePickupTrackingRequest(mergedTrackingDoc)) continue;
       upsertSummary(mergedTrackingDoc);
+    }
+
+    const anchorFetchStartedAt = Date.now();
+    const neededAnchorIds = Array.from(
+      new Set(
+        Array.from(byMailbox.values()).flatMap((item) =>
+          Array.from(item.anchorIds || []),
+        ),
+      ),
+    )
+      .filter((id) => Types.ObjectId.isValid(id))
+      .map((id) => new Types.ObjectId(id));
+
+    const anchors = neededAnchorIds.length
+      ? await BusinessAnchor.find({ _id: { $in: neededAnchorIds } })
+          .select("shippingPolicy.weeklyBatchDays")
+          .lean()
+      : [];
+    const anchorQueryMs = Date.now() - anchorFetchStartedAt;
+
+    const anchorById = new Map(
+      anchors.map((item) => [String(item?._id || "").trim(), item]),
+    );
+
+    for (const item of byMailbox.values()) {
+      if (item.weeklyBatchDays?.length) continue;
+      for (const anchorId of item.anchorIds || []) {
+        const anchor = anchorById.get(String(anchorId || "").trim());
+        const days = normalizeDays(anchor?.shippingPolicy?.weeklyBatchDays);
+        if (!days.length) continue;
+        item.weeklyBatchDays = days;
+        break;
+      }
     }
 
     const mailboxes = Array.from(byMailbox.values())
@@ -489,7 +527,7 @@ export async function getShippingMailboxSummary(req, res) {
     });
 
     applyMailboxSummaryCacheHeaders(res, etag, ttlMs);
-    if (isNotModified(req, etag)) {
+    if (!forceRefresh && isNotModified(req, etag)) {
       console.info("[shipping][mailbox-summary][perf]", {
         cache: "miss-built-304",
         status: 304,
@@ -507,7 +545,7 @@ export async function getShippingMailboxSummary(req, res) {
     }
 
     console.info("[shipping][mailbox-summary][perf]", {
-      cache: "miss",
+      cache: forceRefresh ? "force-refresh" : "miss",
       status: 200,
       requestsQueryMs,
       deliveryQueryMs,

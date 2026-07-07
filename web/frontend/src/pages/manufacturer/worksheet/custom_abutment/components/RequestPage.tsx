@@ -122,7 +122,11 @@ export const RequestPage = ({
   const { toast } = useToast();
 
   const fetchRequestsCore = useCallback(
-    async (silent = false, append = false) => {
+    async (
+      silent = false,
+      append = false,
+      options?: { forceMailboxRefresh?: boolean },
+    ) => {
       if (!token) return null;
 
       try {
@@ -189,8 +193,9 @@ export const RequestPage = ({
 
           const summaryCache = mailboxSummarySnapshotRef.current;
           const nowTs = Date.now();
-          const CLIENT_CACHE_TTL_MS = 3000;
+          const CLIENT_CACHE_TTL_MS = 60 * 60 * 1000;
           if (
+            !options?.forceMailboxRefresh &&
             summaryCache &&
             nowTs - summaryCache.fetchedAt <= CLIENT_CACHE_TTL_MS
           ) {
@@ -200,15 +205,15 @@ export const RequestPage = ({
 
           if (!mailboxSummaryInFlightRef.current) {
             mailboxSummaryInFlightRef.current = (async () => {
-              const summaryRes = await fetch(
-                "/api/requests/shipping/mailbox-summary",
-                {
-                  method: "GET",
-                  headers: {
-                    Authorization: `Bearer ${token}`,
-                  },
+              const summaryUrl = options?.forceMailboxRefresh
+                ? `/api/requests/shipping/mailbox-summary?refresh=1&t=${Date.now()}`
+                : "/api/requests/shipping/mailbox-summary";
+              const summaryRes = await fetch(summaryUrl, {
+                method: "GET",
+                headers: {
+                  Authorization: `Bearer ${token}`,
                 },
-              );
+              });
 
               if (summaryRes.status === 304) {
                 if (mailboxSummarySnapshotRef.current?.payload) {
@@ -468,24 +473,27 @@ export const RequestPage = ({
   );
 
   const fetchRequests = useCallback(
-    async (silent = false) => {
+    async (silent = false, options?: { forceMailboxRefresh?: boolean }) => {
       resetPagination();
-      return await fetchRequestsCore(silent, false);
+      return await fetchRequestsCore(silent, false, options);
     },
     [fetchRequestsCore, resetPagination],
   );
 
   const refreshRequests = useCallback(
-    async (silent = false) => {
+    async (silent = false, options?: { forceMailboxRefresh?: boolean }) => {
       resetPagination();
-      return await fetchRequestsCore(silent, false);
+      return await fetchRequestsCore(silent, false, options);
     },
     [fetchRequestsCore, resetPagination],
   );
 
-  const reloadRequests = useCallback(async () => {
-    await refreshRequests();
-  }, [refreshRequests]);
+  const reloadRequests = useCallback(
+    async (forceMailboxRefresh = false) => {
+      await refreshRequests(false, { forceMailboxRefresh });
+    },
+    [refreshRequests],
+  );
 
   const mailboxState = useMailboxManagement(token, async () => {
     await fetchRequests();
@@ -1317,7 +1325,7 @@ export const RequestPage = ({
                       [key]: normalized,
                     }));
                   }}
-                  onRefresh={reloadRequests}
+                  onRefresh={() => reloadRequests(true)}
                 />
               </div>
             ) : isEmpty ? (

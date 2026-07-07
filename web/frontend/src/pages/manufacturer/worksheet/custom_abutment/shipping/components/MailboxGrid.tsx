@@ -1,4 +1,5 @@
 import { useMemo, useState, useRef, useEffect, useCallback } from "react";
+import { RefreshCw } from "lucide-react";
 import { useToast } from "@/shared/hooks/use-toast";
 import { request } from "@/shared/api/apiClient";
 import {
@@ -68,7 +69,7 @@ export const MailboxGrid = ({
   const [selectedGroupIdx, setSelectedGroupIdx] = useState(0);
   const [isRequestingPickup, setIsRequestingPickup] = useState(false);
   const [activeHeaderAction, setActiveHeaderAction] = useState<
-    "print" | "pickup" | "manual" | "reset" | null
+    "print" | "pickup" | "manual" | "reset" | "refresh" | null
   >(null);
   const [failedMailboxes, setFailedMailboxes] = useState<Set<string>>(
     new Set(),
@@ -1203,6 +1204,40 @@ export const MailboxGrid = ({
   }, [printedWorkflowAddressSet, reprintSelectedAddresses]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const actionButtons = [
+    {
+      label: "",
+      ariaLabel: "우편함 새로고침",
+      icon: <RefreshCw className="h-4 w-4" />,
+      iconOnly: true,
+      loading: activeHeaderAction === "refresh" && isRequestingPickup,
+      loadingLabel: "...",
+      disabled: false,
+      variant: "white" as const,
+      onClick: async () => {
+        if (!onRefresh) return;
+        setIsRequestingPickup(true);
+        setActiveHeaderAction("refresh");
+        try {
+          await onRefresh();
+          toast({
+            title: "새로고침 완료",
+            description: "우편함 데이터를 다시 불러왔습니다.",
+          });
+        } catch (error) {
+          toast({
+            title: "새로고침 실패",
+            description:
+              error instanceof Error
+                ? error.message
+                : "우편함 데이터를 다시 불러오지 못했습니다.",
+            variant: "destructive",
+          });
+        } finally {
+          setIsRequestingPickup(false);
+          setActiveHeaderAction(null);
+        }
+      },
+    },
     {
       // 운송장 출력: 항상 다이얼로그로 대상 선택 후 출력
       label: "🖨️ 운송장 출력",

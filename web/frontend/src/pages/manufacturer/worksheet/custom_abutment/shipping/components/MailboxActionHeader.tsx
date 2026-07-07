@@ -1,4 +1,5 @@
 import { Settings } from "lucide-react";
+import type { ReactNode } from "react";
 
 type HeaderActionButton = {
   disabled: boolean;
@@ -7,6 +8,9 @@ type HeaderActionButton = {
   loadingLabel?: string;
   onClick: () => void;
   variant?: "blue" | "rose" | "slate" | "white";
+  icon?: ReactNode;
+  iconOnly?: boolean;
+  ariaLabel?: string;
 };
 
 type MailboxActionHeaderProps = {
@@ -48,20 +52,26 @@ export const MailboxActionHeader = ({
         </div>
 
         <div className="flex flex-wrap gap-2 justify-center">
-          {actionButtons.map((button) => (
+          {actionButtons.map((button, idx) => (
             <button
-              key={button.label}
+              key={`${button.ariaLabel || button.label || "action"}-${idx}`}
               onClick={button.onClick}
               disabled={isRequestingPickup || button.disabled}
-              className={`px-4 py-1.5 text-sm font-medium rounded-lg transition-colors border ${
+              aria-label={button.ariaLabel || button.label}
+              className={`${button.iconOnly ? "h-9 w-9 px-0" : "px-4 py-1.5"} text-sm font-medium rounded-lg transition-colors border inline-flex items-center justify-center gap-1 ${
                 isRequestingPickup || button.disabled
                   ? "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed"
                   : getButtonClass(button.variant)
               }`}
             >
-              {button.loading
-                ? button.loadingLabel || "처리 중..."
-                : button.label}
+              {button.loading ? (
+                button.loadingLabel || "처리 중..."
+              ) : (
+                <>
+                  {button.icon}
+                  {!button.iconOnly && button.label}
+                </>
+              )}
             </button>
           ))}
         </div>

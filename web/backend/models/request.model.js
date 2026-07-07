@@ -819,6 +819,15 @@ requestSchema.index({
   createdAt: -1,
 });
 
+// 추적관리(pre-pickup 후보) 조회 최적화
+requestSchema.index({
+  manufacturerStage: 1,
+  "shippingWorkflow.code": 1,
+  deliveryInfoRef: 1,
+  caManufacturer: 1,
+  createdAt: -1,
+});
+
 // 의뢰 모델 생성
 const Request = mongoose.model("Request", requestSchema);
 
