@@ -1,5 +1,6 @@
 import mongoose, { Types } from "mongoose";
 import path from "path";
+import { createHash } from "crypto";
 import Request from "../../models/request.model.js";
 import Connection from "../../models/connection.model.js";
 import CncMachine from "../../models/cncMachine.model.js";
@@ -50,6 +51,88 @@ const ESPRIT_BASE =
 
 const __myRequestsCache = new Map();
 const __myRequestsInFlight = new Map();
+const __trackingWorksheetCache = new Map();
+
+const TRACKING_WORKSHEET_CACHE_TTL_MS = Number(
+  process.env.TRACKING_WORKSHEET_CACHE_TTL_MS || 5000,
+);
+const TRACKING_WORKSHEET_CACHE_MAX_ENTRIES = Number(
+  process.env.TRACKING_WORKSHEET_CACHE_MAX_ENTRIES || 300,
+);
+
+const resolveTrackingWorksheetCacheTtlMs = () => {
+  const ttl = Number(TRACKING_WORKSHEET_CACHE_TTL_MS);
+  if (!Number.isFinite(ttl) || ttl < 0) return 5000;
+  return ttl;
+};
+
+const pruneTrackingWorksheetCache = () => {
+  const now = Date.now();
+  for (const [key, entry] of __trackingWorksheetCache.entries()) {
+    if (!entry || Number(entry.expiresAt || 0) <= now) {
+      __trackingWorksheetCache.delete(key);
+    }
+  }
+
+  const maxEntries = Number.isFinite(TRACKING_WORKSHEET_CACHE_MAX_ENTRIES)
+    ? Math.max(50, Math.floor(TRACKING_WORKSHEET_CACHE_MAX_ENTRIES))
+    : 300;
+
+  if (__trackingWorksheetCache.size <= maxEntries) return;
+  const overflow = __trackingWorksheetCache.size - maxEntries;
+  const keys = Array.from(__trackingWorksheetCache.keys());
+  for (let i = 0; i < overflow; i += 1) {
+    __trackingWorksheetCache.delete(keys[i]);
+  }
+};
+
+const buildTrackingWorksheetEtag = (payload) => {
+  const raw = JSON.stringify(payload || {});
+  const hash = createHash("sha1").update(raw).digest("hex");
+  return `W/"tracking-worksheet-${hash}"`;
+};
+
+const resolveTrackingWorksheetCacheKey = ({ req, page, limit }) => {
+  const role = String(req?.user?.role || "").trim();
+  const userId = String(req?.user?._id || "").trim();
+  const businessAnchorId = String(req?.user?.businessAnchorId || "").trim();
+
+  const queryPairs = Object.entries(req?.query || {})
+    .map(([key, value]) => {
+      if (Array.isArray(value)) {
+        return [
+          key,
+          value
+            .map((v) => String(v || ""))
+            .sort()
+            .join(","),
+        ];
+      }
+      return [key, String(value || "")];
+    })
+    .sort(([a], [b]) => a.localeCompare(b));
+
+  return JSON.stringify({
+    role,
+    userId,
+    businessAnchorId,
+    page,
+    limit,
+    query: queryPairs,
+  });
+};
+
+const applyTrackingWorksheetCacheHeaders = (res, etag, ttlMs) => {
+  const maxAge = Math.max(0, Math.floor(ttlMs / 1000));
+  res.setHeader("ETag", etag);
+  res.setHeader("Cache-Control", `private, max-age=${maxAge}, must-revalidate`);
+  res.setHeader("Vary", "Authorization");
+};
+
+const isTrackingWorksheetNotModified = (req, etag) => {
+  const ifNoneMatch = String(req?.headers?.["if-none-match"] || "").trim();
+  return Boolean(ifNoneMatch && etag && ifNoneMatch === etag);
+};
 
 const getMyRequestsCacheValue = (key) => {
   const hit = __myRequestsCache.get(key);
@@ -496,6 +579,36 @@ export async function getAllRequests(req, res) {
       String(req.query.includeDelivery || "").toLowerCase() === "1" ||
       String(req.query.includeDelivery || "").toLowerCase() === "true";
 
+    const isTrackingWorksheetRequest =
+      view === "worksheet" && worksheetProfile === "tracking";
+    let trackingWorksheetCacheKey = "";
+
+    if (isTrackingWorksheetRequest) {
+      pruneTrackingWorksheetCache();
+      trackingWorksheetCacheKey = resolveTrackingWorksheetCacheKey({
+        req,
+        page,
+        limit,
+      });
+      const cached = __trackingWorksheetCache.get(trackingWorksheetCacheKey);
+      if (cached && Number(cached.expiresAt || 0) > Date.now()) {
+        const etag = String(cached.etag || "");
+        applyTrackingWorksheetCacheHeaders(
+          res,
+          etag,
+          resolveTrackingWorksheetCacheTtlMs(),
+        );
+        if (isTrackingWorksheetNotModified(req, etag)) {
+          return res.status(304).end();
+        }
+        return res.status(200).json({
+          success: true,
+          data: cached.payload,
+          cached: true,
+        });
+      }
+    }
+
     // 필터링 파라미터
     const role = req.user?.role;
     let filter = {};
@@ -915,17 +1028,33 @@ export async function getAllRequests(req, res) {
       ? await Request.countDocuments(totalFilter)
       : null;
 
+    const responseData = {
+      requests,
+      pagination: {
+        total,
+        page,
+        limit,
+        pages: total ? Math.ceil(total / limit) : null,
+      },
+    };
+
+    if (isTrackingWorksheetRequest && trackingWorksheetCacheKey) {
+      const etag = buildTrackingWorksheetEtag(responseData);
+      const ttlMs = resolveTrackingWorksheetCacheTtlMs();
+      __trackingWorksheetCache.set(trackingWorksheetCacheKey, {
+        payload: responseData,
+        etag,
+        expiresAt: Date.now() + ttlMs,
+      });
+      applyTrackingWorksheetCacheHeaders(res, etag, ttlMs);
+      if (isTrackingWorksheetNotModified(req, etag)) {
+        return res.status(304).end();
+      }
+    }
+
     res.status(200).json({
       success: true,
-      data: {
-        requests,
-        pagination: {
-          total,
-          page,
-          limit,
-          pages: total ? Math.ceil(total / limit) : null,
-        },
-      },
+      data: responseData,
     });
   } catch (error) {
     res.status(500).json({

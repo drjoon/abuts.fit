@@ -238,7 +238,7 @@ export const TrackingInquiryPage = () => {
           url.searchParams.set("includeDelivery", "1");
           const res = await fetch(url.pathname + url.search, {
             headers: { Authorization: `Bearer ${token}` },
-            cache: "no-store",
+            cache: "no-cache",
           });
           const body: any = await res.json().catch(() => ({}));
           if (!res.ok || body?.success === false) {
@@ -345,7 +345,7 @@ export const TrackingInquiryPage = () => {
           url.searchParams.set("includeDelivery", "1");
           const res = await fetch(url.pathname + url.search, {
             headers: { Authorization: `Bearer ${token}` },
-            cache: "no-store",
+            cache: "no-cache",
           });
           const body: any = await res.json().catch(() => ({}));
           if (!res.ok || body?.success === false) {
