@@ -811,6 +811,14 @@ requestSchema.index({
   createdAt: -1,
 });
 
+// 우편함 요약 조회 최적화 (포장.발송/추적관리 + 우편함 주소)
+requestSchema.index({
+  manufacturerStage: 1,
+  mailboxAddress: 1,
+  caManufacturer: 1,
+  createdAt: -1,
+});
+
 // 의뢰 모델 생성
 const Request = mongoose.model("Request", requestSchema);
 

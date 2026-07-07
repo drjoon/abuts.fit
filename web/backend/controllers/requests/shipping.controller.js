@@ -15,6 +15,7 @@ import {
 
 import { emitDeliveryUpdated } from "./shipping.Tracking.helpers.js";
 import DeliveryInfo from "../../models/deliveryInfo.model.js";
+import BusinessAnchor from "../../models/businessAnchor.model.js";
 import { cancelHanjinPickupForReset } from "./shipping.Hanjin.controller.js";
 import { triggerPricingSnapshotForBusinessAnchorId } from "../../services/requestSnapshotTriggers.service.js";
 
@@ -246,6 +247,7 @@ function resolveMailboxShippingDayInfo({
 }
 
 export async function getShippingMailboxSummary(req, res) {
+  const perfStartedAt = Date.now();
   try {
     pruneMailboxSummaryCache();
 
@@ -259,8 +261,22 @@ export async function getShippingMailboxSummary(req, res) {
         resolveMailboxSummaryCacheTtlMs(),
       );
       if (isNotModified(req, String(cacheHit.etag || ""))) {
+        console.info("[shipping][mailbox-summary][perf]", {
+          cache: "memory-hit-304",
+          status: 304,
+          totalMs: Date.now() - perfStartedAt,
+          mailboxCount: Number(cacheHit?.payload?.mailboxes?.length || 0),
+          totalRequests: Number(cacheHit?.payload?.totalRequests || 0),
+        });
         return res.status(304).end();
       }
+      console.info("[shipping][mailbox-summary][perf]", {
+        cache: "memory-hit",
+        status: 200,
+        totalMs: Date.now() - perfStartedAt,
+        mailboxCount: Number(cacheHit?.payload?.mailboxes?.length || 0),
+        totalRequests: Number(cacheHit?.payload?.totalRequests || 0),
+      });
       return res.status(200).json({
         success: true,
         data: cacheHit.payload,
@@ -274,41 +290,97 @@ export async function getShippingMailboxSummary(req, res) {
 
     const baseFilter = {
       ...orgScope,
-      mailboxAddress: { $nin: [null, ""] },
+      mailboxAddress: { $exists: true, $type: "string", $ne: "" },
       manufacturerStage: { $in: ["포장.발송", "추적관리"] },
     };
 
-    const docs = await Request.find(baseFilter)
-      .select({
-        _id: 1,
-        requestId: 1,
-        manufacturerStage: 1,
-        mailboxAddress: 1,
-        shippingPackageId: 1,
-        shippingWorkflow: 1,
-        shippingLabelPrinted: 1,
-        timeline: 1,
-        deliveryInfoRef: 1,
-        businessAnchorId: 1,
+    const requestsFetchStartedAt = Date.now();
+    const [packingDocs, trackingDocs] = await Promise.all([
+      Request.find({ ...baseFilter, manufacturerStage: "포장.발송" })
+        .select({
+          requestId: 1,
+          manufacturerStage: 1,
+          mailboxAddress: 1,
+          shippingPackageId: 1,
+          "shippingWorkflow.code": 1,
+          "shippingLabelPrinted.printed": 1,
+          "timeline.forceTodayShipment": 1,
+          "timeline.estimatedShipYmd": 1,
+          businessAnchorId: 1,
+        })
+        .lean(),
+      Request.find({
+        ...baseFilter,
+        manufacturerStage: "추적관리",
+        deliveryInfoRef: { $exists: true, $ne: null },
       })
-      .populate(
-        "deliveryInfoRef",
-        "shippedAt deliveredAt trackingNumber tracking.lastStatusCode tracking.lastStatusText",
-      )
-      .populate("businessAnchorId", "shippingPolicy");
+        .select({
+          requestId: 1,
+          manufacturerStage: 1,
+          mailboxAddress: 1,
+          shippingPackageId: 1,
+          "shippingWorkflow.code": 1,
+          "shippingWorkflow.trackingStatusCode": 1,
+          "shippingLabelPrinted.printed": 1,
+          "timeline.forceTodayShipment": 1,
+          "timeline.estimatedShipYmd": 1,
+          deliveryInfoRef: 1,
+          businessAnchorId: 1,
+        })
+        .lean(),
+    ]);
+    const requestsQueryMs = Date.now() - requestsFetchStartedAt;
 
+    const deliveryFetchStartedAt = Date.now();
+    const trackingDeliveryIds = Array.from(
+      new Set(
+        trackingDocs
+          .map((doc) => String(doc?.deliveryInfoRef || "").trim())
+          .filter((id) => Types.ObjectId.isValid(id)),
+      ),
+    ).map((id) => new Types.ObjectId(id));
+
+    const deliveryDocs = trackingDeliveryIds.length
+      ? await DeliveryInfo.find({ _id: { $in: trackingDeliveryIds } })
+          .select(
+            "shippedAt deliveredAt trackingNumber tracking.lastStatusCode tracking.lastStatusText",
+          )
+          .lean()
+      : [];
+    const deliveryQueryMs = Date.now() - deliveryFetchStartedAt;
+
+    const deliveryById = new Map(
+      deliveryDocs.map((item) => [String(item?._id || "").trim(), item]),
+    );
+
+    const anchorFetchStartedAt = Date.now();
+    const anchorIds = Array.from(
+      new Set(
+        [...packingDocs, ...trackingDocs]
+          .map((doc) => String(doc?.businessAnchorId || "").trim())
+          .filter((id) => Types.ObjectId.isValid(id)),
+      ),
+    ).map((id) => new Types.ObjectId(id));
+
+    const anchors = anchorIds.length
+      ? await BusinessAnchor.find({ _id: { $in: anchorIds } })
+          .select("shippingPolicy.weeklyBatchDays")
+          .lean()
+      : [];
+    const anchorQueryMs = Date.now() - anchorFetchStartedAt;
+
+    const anchorById = new Map(
+      anchors.map((item) => [String(item?._id || "").trim(), item]),
+    );
+
+    const processStartedAt = Date.now();
     const byMailbox = new Map();
 
-    for (const requestDoc of docs) {
+    const upsertSummary = (requestDoc) => {
       const mailboxAddress = String(requestDoc?.mailboxAddress || "")
         .trim()
         .toUpperCase();
-      if (!mailboxAddress) continue;
-
-      const stage = String(requestDoc?.manufacturerStage || "").trim();
-      const include =
-        stage === "포장.발송" || isPrePickupTrackingRequest(requestDoc);
-      if (!include) continue;
+      if (!mailboxAddress) return;
 
       if (!byMailbox.has(mailboxAddress)) {
         byMailbox.set(mailboxAddress, {
@@ -359,10 +431,27 @@ export async function getShippingMailboxSummary(req, res) {
       }
 
       if (!summary.weeklyBatchDays.length) {
+        const anchorId = String(requestDoc?.businessAnchorId || "").trim();
+        const anchor = anchorId ? anchorById.get(anchorId) : null;
         summary.weeklyBatchDays = normalizeDays(
-          requestDoc?.businessAnchorId?.shippingPolicy?.weeklyBatchDays,
+          anchor?.shippingPolicy?.weeklyBatchDays,
         );
       }
+    };
+
+    for (const requestDoc of packingDocs) {
+      upsertSummary(requestDoc);
+    }
+
+    for (const requestDoc of trackingDocs) {
+      const deliveryId = String(requestDoc?.deliveryInfoRef || "").trim();
+      const deliveryInfo = deliveryId ? deliveryById.get(deliveryId) : null;
+      const mergedTrackingDoc = {
+        ...requestDoc,
+        deliveryInfoRef: deliveryInfo || null,
+      };
+      if (!isPrePickupTrackingRequest(mergedTrackingDoc)) continue;
+      upsertSummary(mergedTrackingDoc);
     }
 
     const mailboxes = Array.from(byMailbox.values())
@@ -389,6 +478,7 @@ export async function getShippingMailboxSummary(req, res) {
         0,
       ),
     };
+    const processMs = Date.now() - processStartedAt;
 
     const etag = buildEtagFromPayload(payload);
     const ttlMs = resolveMailboxSummaryCacheTtlMs();
@@ -400,8 +490,35 @@ export async function getShippingMailboxSummary(req, res) {
 
     applyMailboxSummaryCacheHeaders(res, etag, ttlMs);
     if (isNotModified(req, etag)) {
+      console.info("[shipping][mailbox-summary][perf]", {
+        cache: "miss-built-304",
+        status: 304,
+        requestsQueryMs,
+        deliveryQueryMs,
+        anchorQueryMs,
+        processMs,
+        totalMs: Date.now() - perfStartedAt,
+        packingCount: packingDocs.length,
+        trackingCount: trackingDocs.length,
+        mailboxCount: payload.mailboxes.length,
+        totalRequests: payload.totalRequests,
+      });
       return res.status(304).end();
     }
+
+    console.info("[shipping][mailbox-summary][perf]", {
+      cache: "miss",
+      status: 200,
+      requestsQueryMs,
+      deliveryQueryMs,
+      anchorQueryMs,
+      processMs,
+      totalMs: Date.now() - perfStartedAt,
+      packingCount: packingDocs.length,
+      trackingCount: trackingDocs.length,
+      mailboxCount: payload.mailboxes.length,
+      totalRequests: payload.totalRequests,
+    });
 
     return res.status(200).json({
       success: true,

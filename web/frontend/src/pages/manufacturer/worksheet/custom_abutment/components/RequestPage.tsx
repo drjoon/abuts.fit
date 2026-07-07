@@ -3,6 +3,7 @@ import {
   useEffect,
   useCallback,
   useState,
+  useRef,
   type ReactNode,
 } from "react";
 import { useOutletContext, useSearchParams } from "react-router-dom";
@@ -96,6 +97,14 @@ export const RequestPage = ({
   const [mailboxSummaries, setMailboxSummaries] = useState<
     MailboxSummaryItem[]
   >([]);
+  const mailboxSummarySnapshotRef = useRef<{
+    fetchedAt: number;
+    payload: { mailboxes: MailboxSummaryItem[]; totalRequests: number };
+  } | null>(null);
+  const mailboxSummaryInFlightRef = useRef<Promise<{
+    success: boolean;
+    data: { mailboxes: MailboxSummaryItem[]; totalRequests: number };
+  }> | null>(null);
 
   const decodeNcText = useCallback((buffer: ArrayBuffer) => {
     const utf8Decoder = new TextDecoder("utf-8", { fatal: false });
@@ -155,56 +164,93 @@ export const RequestPage = ({
             return [] as ManufacturerRequest[];
           }
 
-          const summaryRes = await fetch(
-            "/api/requests/shipping/mailbox-summary",
-            {
-              method: "GET",
-              headers: {
-                Authorization: `Bearer ${token}`,
-              },
-              cache: "no-store",
-            },
-          );
+          const applySummaryPayload = (payload: {
+            mailboxes: MailboxSummaryItem[];
+            totalRequests: number;
+          }) => {
+            const mailboxList = Array.isArray(payload?.mailboxes)
+              ? payload.mailboxes
+              : [];
+            setMailboxSummaries(mailboxList);
+            pageState.setRequests([]);
 
-          if (!summaryRes.ok) {
-            toast({
-              title: "우편함 요약 불러오기 실패",
-              description: "잠시 후 다시 시도해주세요.",
-              variant: "destructive",
-            });
-            return null;
-          }
-
-          const summaryJson = await summaryRes.json();
-          if (!summaryJson?.success) {
-            toast({
-              title: "우편함 요약 불러오기 실패",
-              description: "잠시 후 다시 시도해주세요.",
-              variant: "destructive",
-            });
-            return null;
-          }
-
-          const mailboxList = Array.isArray(summaryJson?.data?.mailboxes)
-            ? (summaryJson.data.mailboxes as MailboxSummaryItem[])
-            : [];
-          setMailboxSummaries(mailboxList);
-          pageState.setRequests([]);
-
-          const totalRequestsRaw = summaryJson?.data?.totalRequests;
-          if (typeof totalRequestsRaw === "number") {
-            pageState.setServerTotal(totalRequestsRaw);
-          } else {
             pageState.setServerTotal(
-              mailboxList.reduce(
-                (acc, item) => acc + Number(item?.requestCount || 0),
-                0,
-              ),
+              Number.isFinite(payload?.totalRequests)
+                ? Number(payload.totalRequests)
+                : mailboxList.reduce(
+                    (acc, item) => acc + Number(item?.requestCount || 0),
+                    0,
+                  ),
             );
+
+            pageState.hasMoreRefForCore.current = false;
+            hasMoreRef.current = false;
+          };
+
+          const summaryCache = mailboxSummarySnapshotRef.current;
+          const nowTs = Date.now();
+          const CLIENT_CACHE_TTL_MS = 3000;
+          if (
+            summaryCache &&
+            nowTs - summaryCache.fetchedAt <= CLIENT_CACHE_TTL_MS
+          ) {
+            applySummaryPayload(summaryCache.payload);
+            return [] as ManufacturerRequest[];
           }
 
-          pageState.hasMoreRefForCore.current = false;
-          hasMoreRef.current = false;
+          if (!mailboxSummaryInFlightRef.current) {
+            mailboxSummaryInFlightRef.current = (async () => {
+              const summaryRes = await fetch(
+                "/api/requests/shipping/mailbox-summary",
+                {
+                  method: "GET",
+                  headers: {
+                    Authorization: `Bearer ${token}`,
+                  },
+                },
+              );
+
+              if (summaryRes.status === 304) {
+                if (mailboxSummarySnapshotRef.current?.payload) {
+                  return {
+                    success: true,
+                    data: mailboxSummarySnapshotRef.current.payload,
+                  };
+                }
+                throw new Error("우편함 요약 캐시를 찾지 못했습니다.");
+              }
+
+              const summaryJson = await summaryRes.json().catch(() => ({}));
+              if (!summaryRes.ok || !summaryJson?.success) {
+                throw new Error("우편함 요약 불러오기에 실패했습니다.");
+              }
+              return summaryJson;
+            })().finally(() => {
+              mailboxSummaryInFlightRef.current = null;
+            });
+          }
+
+          try {
+            const summaryJson = await mailboxSummaryInFlightRef.current;
+            const payload = {
+              mailboxes: Array.isArray(summaryJson?.data?.mailboxes)
+                ? (summaryJson.data.mailboxes as MailboxSummaryItem[])
+                : [],
+              totalRequests: Number(summaryJson?.data?.totalRequests || 0),
+            };
+            mailboxSummarySnapshotRef.current = {
+              fetchedAt: Date.now(),
+              payload,
+            };
+            applySummaryPayload(payload);
+          } catch {
+            toast({
+              title: "우편함 요약 불러오기 실패",
+              description: "잠시 후 다시 시도해주세요.",
+              variant: "destructive",
+            });
+            return null;
+          }
 
           if (!silent) {
             void queryClient.invalidateQueries({

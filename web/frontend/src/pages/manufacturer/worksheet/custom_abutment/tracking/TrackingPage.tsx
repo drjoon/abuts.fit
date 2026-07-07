@@ -182,7 +182,7 @@ export const TrackingInquiryPage = () => {
   >(null);
   const fetchSequenceRef = useRef(0);
   // Network pagination per stage (tracking)
-  const PAGE_LIMIT = 12;
+  const PAGE_LIMIT = 50;
   const pageRef = useRef(1);
   const hasMoreRef = useRef(true);
   const isFetchingPageRef = useRef(false);
@@ -208,54 +208,57 @@ export const TrackingInquiryPage = () => {
     matchesCurrentPage,
   });
 
-  useEffect(() => {
-    if (!token) return;
+  const getStableRequestKey = useCallback((item: ManufacturerRequest) => {
+    const key = String((item as any)?._id || item?.requestId || "").trim();
+    if (!key) {
+      console.error("[tracking][missing-request-key]", {
+        requestId: String(item?.requestId || "").trim() || null,
+        stage: String(item?.manufacturerStage || "").trim() || null,
+      });
+    }
+    return key;
+  }, []);
 
-    const getStableRequestKey = (item: ManufacturerRequest) => {
-      const key = String((item as any)?._id || item?.requestId || "").trim();
-      if (!key) {
-        console.error("[tracking][missing-request-key]", {
-          requestId: String(item?.requestId || "").trim() || null,
-          stage: String(item?.manufacturerStage || "").trim() || null,
-        });
+  const fetchTrackingPage = useCallback(
+    async (page: number) => {
+      if (!token) return [] as ManufacturerRequest[];
+      const url = new URL("/api/requests/all", window.location.origin);
+      url.searchParams.set("page", String(page));
+      url.searchParams.set("limit", String(PAGE_LIMIT));
+      url.searchParams.set("view", "worksheet");
+      url.searchParams.set("worksheetProfile", "tracking");
+      url.searchParams.set("includeTotal", "0");
+      url.searchParams.set("includeDelivery", "1");
+      const res = await fetch(url.pathname + url.search, {
+        headers: { Authorization: `Bearer ${token}` },
+        cache: "no-cache",
+      });
+      const body: any = await res.json().catch(() => ({}));
+      if (!res.ok || body?.success === false) {
+        throw new Error(body?.message || "의뢰 목록 조회에 실패했습니다.");
       }
-      return key;
-    };
+      return Array.isArray(body?.data?.requests)
+        ? (body.data.requests as ManufacturerRequest[])
+        : [];
+    },
+    [token],
+  );
 
-    const run = async (silent = false, append = false) => {
+  const runTrackingFetch = useCallback(
+    async ({
+      silent = false,
+      append = false,
+    }: { silent?: boolean; append?: boolean } = {}) => {
+      if (!token) return;
       const fetchSeq = ++fetchSequenceRef.current;
       isFetchingPageRef.current = true;
       try {
         if (!silent) setLoading(true);
 
-        const fetchPage = async (page: number) => {
-          const url = new URL("/api/requests/all", window.location.origin);
-          url.searchParams.set("page", String(page));
-          url.searchParams.set("limit", String(PAGE_LIMIT));
-          url.searchParams.set("view", "worksheet");
-          url.searchParams.set("worksheetProfile", "tracking");
-          url.searchParams.set("includeTotal", "0");
-          url.searchParams.set("includeDelivery", "1");
-          const res = await fetch(url.pathname + url.search, {
-            headers: { Authorization: `Bearer ${token}` },
-            cache: "no-cache",
-          });
-          const body: any = await res.json().catch(() => ({}));
-          if (!res.ok || body?.success === false) {
-            throw new Error(body?.message || "의뢰 목록 조회에 실패했습니다.");
-          }
-          const list = Array.isArray(body?.data?.requests)
-            ? body.data.requests
-            : [];
-          return list as ManufacturerRequest[];
-        };
+        const list = await fetchTrackingPage(pageRef.current);
 
-        const list = await fetchPage(pageRef.current);
-
-        // 새로고침/탭 전환 시 늦게 도착한 이전 응답은 폐기한다.
-        if (fetchSeq !== fetchSequenceRef.current) {
-          return;
-        }
+        // 늦게 도착한 이전 응답은 폐기
+        if (fetchSeq !== fetchSequenceRef.current) return;
 
         if (append) {
           setRequests((prev) => {
@@ -275,6 +278,7 @@ export const TrackingInquiryPage = () => {
         } else {
           setRequests(list);
         }
+
         hasMoreRef.current = list.length >= PAGE_LIMIT;
       } catch (e: any) {
         toast({
@@ -288,118 +292,32 @@ export const TrackingInquiryPage = () => {
         }
         if (!silent) setLoading(false);
       }
-    };
+    },
+    [fetchTrackingPage, getStableRequestKey, token, toast],
+  );
+
+  useEffect(() => {
+    if (!token) return;
 
     // initial load or token change → reset paging
     pageRef.current = 1;
     hasMoreRef.current = true;
-    void run(false, false);
+    lastFetchTimeRef.current = 0;
+    void runTrackingFetch({ silent: false, append: false });
 
-    // expose helpers on ref for pagination
     (window as any).__trackingFetchNext = async () => {
       if (isFetchingPageRef.current || !hasMoreRef.current) return;
-      // throttle: min 500ms between fetches
       const now = Date.now();
       if (now - lastFetchTimeRef.current < 500) return;
       lastFetchTimeRef.current = now;
       pageRef.current += 1;
-      await run(true, true);
+      await runTrackingFetch({ silent: true, append: true });
     };
 
     return () => {
       delete (window as any).__trackingFetchNext;
     };
-  }, [token, toast, tab]);
-
-  // Reset pagination on UI filter changes
-  useEffect(() => {
-    if (!token) return;
-    // shipping 탭은 초기 로드에서 전체 페이지를 이미 수집하므로,
-    // 기간/검색/완료토글 변경 시에는 클라이언트 필터만 적용한다.
-    if (tab === "shipping") return;
-
-    const getStableRequestKey = (item: ManufacturerRequest) => {
-      const key = String((item as any)?._id || item?.requestId || "").trim();
-      if (!key) {
-        console.error("[tracking][missing-request-key]", {
-          requestId: String(item?.requestId || "").trim() || null,
-          stage: String(item?.manufacturerStage || "").trim() || null,
-        });
-      }
-      return key;
-    };
-
-    const run = async (silent = false, append = false) => {
-      const fetchSeq = ++fetchSequenceRef.current;
-      isFetchingPageRef.current = true;
-      try {
-        if (!silent) setLoading(true);
-
-        const fetchPage = async (page: number) => {
-          const url = new URL("/api/requests/all", window.location.origin);
-          url.searchParams.set("page", String(page));
-          url.searchParams.set("limit", String(PAGE_LIMIT));
-          url.searchParams.set("view", "worksheet");
-          url.searchParams.set("worksheetProfile", "tracking");
-          url.searchParams.set("includeTotal", "0");
-          url.searchParams.set("includeDelivery", "1");
-          const res = await fetch(url.pathname + url.search, {
-            headers: { Authorization: `Bearer ${token}` },
-            cache: "no-cache",
-          });
-          const body: any = await res.json().catch(() => ({}));
-          if (!res.ok || body?.success === false) {
-            throw new Error(body?.message || "의뢰 목록 조회에 실패했습니다.");
-          }
-          const list = Array.isArray(body?.data?.requests)
-            ? body.data.requests
-            : [];
-          return list as ManufacturerRequest[];
-        };
-
-        const list = await fetchPage(pageRef.current);
-
-        if (fetchSeq !== fetchSequenceRef.current) {
-          return;
-        }
-
-        if (append) {
-          setRequests((prev) => {
-            const map = new Map<string, ManufacturerRequest>();
-            for (const r of prev) {
-              const key = getStableRequestKey(r);
-              if (!key) continue;
-              map.set(key, r);
-            }
-            for (const r of list) {
-              const key = getStableRequestKey(r);
-              if (!key) continue;
-              map.set(key, r);
-            }
-            return Array.from(map.values());
-          });
-        } else {
-          setRequests(list);
-        }
-        hasMoreRef.current = list.length >= PAGE_LIMIT;
-      } catch (e: any) {
-        toast({
-          title: "조회 실패",
-          description: e?.message || "네트워크 오류가 발생했습니다.",
-          variant: "destructive",
-        });
-      } finally {
-        if (fetchSeq === fetchSequenceRef.current) {
-          isFetchingPageRef.current = false;
-        }
-        if (!silent) setLoading(false);
-      }
-    };
-
-    pageRef.current = 1;
-    hasMoreRef.current = true;
-    void run(false, false);
-  }, [tab, period, worksheetSearch, showCompleted, token, toast]);
+  }, [runTrackingFetch, token]);
 
   const searchLower = String(worksheetSearch || "")
     .trim()
@@ -450,56 +368,83 @@ export const TrackingInquiryPage = () => {
     return { fromDate: startOfDay(from), toDate: endOfDay(to) };
   }, [period]);
 
-  const baseFiltered = useMemo(() => {
-    return requests
-      .filter(
-        (r) =>
-          String((r as any)?.source || "").trim() !== "manufacturer_sample",
-      )
-      .filter((r) => {
-        // 추적관리 단계는 '완료' 성격이므로, 완료포함 토글과 무관하게 항상 표시
-        const stage = String(r.manufacturerStage || "").trim();
-        if (stage === "추적관리") return true;
-        return showCompleted ? true : !isDone(r);
-      })
-      .filter((r) => {
-        // 추적관리 노출 기준은 isTrackingEligible SSOT를 사용한다.
-        // printed(라벨만 출력) 상태는 우편함 내부 단계이므로 제외한다.
-        const stage = String(r.manufacturerStage || "").trim();
-        if (stage === "추적관리") return true;
-        return isTrackingEligible(r);
-      })
-      .filter((r) => {
-        if (!fromDate && !toDate) return true;
-        const di = normalizeDeliveryInfo(r.deliveryInfoRef);
-        const base = di.deliveredAt || di.shippedAt || r.createdAt;
-        if (!base) return false;
-        const t = new Date(base);
-        if (Number.isNaN(t.getTime())) return false;
-        if (fromDate && t < fromDate) return false;
-        if (toDate && t > toDate) return false;
-        return true;
-      })
-      .filter((r) => {
-        if (!searchLower) return true;
-
-        const ci: any = r.caseInfos || {};
-        const di = normalizeDeliveryInfo(r.deliveryInfoRef);
-        const lotMaterial = String(r.lotNumber?.material || "");
-        const lotValue = String(r.lotNumber?.value || "");
-        const hay = (
+  const requestSearchTextMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const r of requests) {
+      const key = getStableRequestKey(r);
+      if (!key) continue;
+      const ci: any = r.caseInfos || {};
+      const di = normalizeDeliveryInfo(r.deliveryInfoRef);
+      const lotMaterial = String(r.lotNumber?.material || "");
+      const lotValue = String(r.lotNumber?.value || "");
+      map.set(
+        key,
+        (
           String(r.requestId || "") +
           String(r.assignedMachine || "") +
           String(ci.patientName || "") +
           String(ci.tooth || "") +
           String(ci.clinicName || "") +
-          String(lotMaterial || "") +
-          String(lotValue || "") +
+          lotMaterial +
+          lotValue +
           String(di.trackingNumber || "")
-        ).toLowerCase();
-        return hay.includes(searchLower);
-      });
-  }, [requests, searchLower, showCompleted, fromDate, toDate]);
+        ).toLowerCase(),
+      );
+    }
+    return map;
+  }, [getStableRequestKey, requests]);
+
+  const baseFiltered = useMemo(() => {
+    const fromTs = fromDate ? fromDate.getTime() : null;
+    const toTs = toDate ? toDate.getTime() : null;
+    const out: ManufacturerRequest[] = [];
+
+    for (const r of requests) {
+      if (String((r as any)?.source || "").trim() === "manufacturer_sample") {
+        continue;
+      }
+
+      const stage = String(r.manufacturerStage || "").trim();
+
+      // 추적관리 단계는 '완료' 성격이므로, 완료포함 토글과 무관하게 항상 표시
+      if (stage !== "추적관리" && !showCompleted && isDone(r)) {
+        continue;
+      }
+
+      // 추적관리 노출 기준 SSOT
+      if (stage !== "추적관리" && !isTrackingEligible(r)) {
+        continue;
+      }
+
+      if (fromTs !== null || toTs !== null) {
+        const di = normalizeDeliveryInfo(r.deliveryInfoRef);
+        const base = di.deliveredAt || di.shippedAt || r.createdAt;
+        if (!base) continue;
+        const t = new Date(base).getTime();
+        if (!Number.isFinite(t)) continue;
+        if (fromTs !== null && t < fromTs) continue;
+        if (toTs !== null && t > toTs) continue;
+      }
+
+      if (searchLower) {
+        const key = getStableRequestKey(r);
+        const hay = key ? requestSearchTextMap.get(key) || "" : "";
+        if (!hay.includes(searchLower)) continue;
+      }
+
+      out.push(r);
+    }
+
+    return out;
+  }, [
+    fromDate,
+    getStableRequestKey,
+    requestSearchTextMap,
+    requests,
+    searchLower,
+    showCompleted,
+    toDate,
+  ]);
 
   const handlePrint = (type: InquiryTab) => {
     const win = window.open("", "_blank", "width=1024,height=768");
@@ -832,11 +777,7 @@ export const TrackingInquiryPage = () => {
   }, [baseFiltered, fromDate, toDate]);
 
   const shippingRows = useMemo(() => {
-    const only = baseFiltered.filter((r) => {
-      const stage = String(r.manufacturerStage || "").trim();
-      if (stage === "추적관리") return true;
-      return isTrackingEligible(r);
-    });
+    const only = baseFiltered;
 
     // 우편함 단위로 그룹핑
     // 집하 단위 SSOT: trackingNumber가 있으면 같은 송장 = 같은 집하 박스
@@ -1189,11 +1130,16 @@ export const TrackingInquiryPage = () => {
       // Only after explicit user scroll
       if (!nearBottom || !userScrolledRef.current) return;
 
-      // 스크롤 하단 도달 시 목표 표시 건수를 12건 증가
-      visibleCountRef.current += 12;
-      setVisibleCount(visibleCountRef.current);
+      // 이미 가진 데이터 범위 내에서만 표시 건수 증가 (불필요한 re-render 방지)
+      if (visibleCountRef.current < totalCountRef.current) {
+        visibleCountRef.current = Math.min(
+          visibleCountRef.current + 12,
+          totalCountRef.current,
+        );
+        setVisibleCount(visibleCountRef.current);
+      }
 
-      // 현재 보유 데이터가 부족하면 즉시 다음 페이지 로드를 시도
+      // 현재 보유 데이터가 부족하면 다음 페이지 로드
       if (
         visibleCountRef.current >= totalCountRef.current - 3 &&
         hasMoreRef.current

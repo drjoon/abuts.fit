@@ -934,13 +934,16 @@ export const MailboxGrid = ({
     [occupiedAddresses, pickupRequestedMailboxes, printedMailboxes],
   );
 
+  const printedWorkflowAddressSet = useMemo(
+    () => new Set(printedWorkflowAddresses),
+    [printedWorkflowAddresses],
+  );
+
   // 미출력 우편함: 점유됐지만 아직 운송장 출력 안 된 것
   const unprintedMailboxAddresses = useMemo(
     () =>
-      occupiedAddresses.filter(
-        (addr) => !printedWorkflowAddresses.includes(addr),
-      ),
-    [occupiedAddresses, printedWorkflowAddresses],
+      occupiedAddresses.filter((addr) => !printedWorkflowAddressSet.has(addr)),
+    [occupiedAddresses, printedWorkflowAddressSet],
   );
 
   const printedMailboxChanges = useMemo(
@@ -1181,7 +1184,7 @@ export const MailboxGrid = ({
     // 신규 우편함이 있으면 pickup-and-print (운송장번호 신청+출력)
     // 기출력 우편함만 있으면 print-labels (재출력만)
     const hasUnprinted = selectedList.some(
-      (addr) => !printedWorkflowAddresses.includes(addr),
+      (addr) => !printedWorkflowAddressSet.has(addr),
     );
 
     if (hasUnprinted) {
@@ -1197,7 +1200,7 @@ export const MailboxGrid = ({
         modifyOnly: true,
       });
     }
-  }, [reprintSelectedAddresses, printedWorkflowAddresses]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [printedWorkflowAddressSet, reprintSelectedAddresses]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const actionButtons = [
     {
@@ -1259,6 +1262,14 @@ export const MailboxGrid = ({
     }));
   }, [occupiedAddresses]);
 
+  const parsedTargetAddressByBinCell = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const item of parsedTargetAddresses) {
+      map.set(`${item.binCol}:${item.binRow}`, item.addr);
+    }
+    return map;
+  }, [parsedTargetAddresses]);
+
   // 열(BinCol) / 행(BinRow) 그룹
   const reprintBinCols = useMemo(
     () => [...new Set(parsedTargetAddresses.map((p) => p.binCol))].sort(),
@@ -1300,6 +1311,20 @@ export const MailboxGrid = ({
       setReprintSelectedAddresses(new Set(occupiedAddresses));
     }
   };
+
+  const mailboxShelfSummaryMap = useMemo(
+    () =>
+      new Map(
+        Array.from(mailboxSummaryMap.entries()).map(([address, summary]) => [
+          address,
+          {
+            requestCount: Number(summary.requestCount || 0),
+            earliestEstimatedShipYmd: summary.earliestEstimatedShipYmd || null,
+          },
+        ]),
+      ),
+    [mailboxSummaryMap],
+  );
 
   return (
     <div className="w-full flex flex-col h-full relative">
@@ -1419,16 +1444,16 @@ export const MailboxGrid = ({
                         </td>
                         {/* 셀: 각 BinCol × BinRow 교차점 */}
                         {reprintBinCols.map((col) => {
-                          const addr = parsedTargetAddresses.find(
-                            (p) => p.binCol === col && p.binRow === row,
-                          )?.addr;
+                          const addr = parsedTargetAddressByBinCell.get(
+                            `${col}:${row}`,
+                          );
                           const exists =
                             addr !== undefined &&
                             occupiedAddresses.includes(addr);
                           const selected =
                             exists && reprintSelectedAddresses.has(addr!);
                           const isPrinted =
-                            exists && printedWorkflowAddresses.includes(addr!);
+                            exists && printedWorkflowAddressSet.has(addr!);
                           const isForceToday =
                             exists && forceTodayAddressSet.has(addr!);
                           const isNotToday =
@@ -1662,20 +1687,7 @@ export const MailboxGrid = ({
         shelfRows={shelfRows}
         binCols={binCols}
         binRows={binRows}
-        mailboxSummaryMap={
-          new Map(
-            Array.from(mailboxSummaryMap.entries()).map(
-              ([address, summary]) => [
-                address,
-                {
-                  requestCount: Number(summary.requestCount || 0),
-                  earliestEstimatedShipYmd:
-                    summary.earliestEstimatedShipYmd || null,
-                },
-              ],
-            ),
-          )
-        }
+        mailboxSummaryMap={mailboxShelfSummaryMap}
         printedMailboxes={printedMailboxes}
         pickupRequestedMailboxes={pickupRequestedMailboxes}
         failedMailboxes={failedMailboxes}
