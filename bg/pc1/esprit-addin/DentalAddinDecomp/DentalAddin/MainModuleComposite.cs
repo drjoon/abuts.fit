@@ -1704,10 +1704,65 @@ namespace DentalAddin
             }
         }
 
+        private static bool TryResolveFinishFrontStartAndFaceOverlapRequirement(
+            out double finishFrontStartX,
+            out double requiredFaceRightMinX,
+            out double splitline1X,
+            out double splitline2X,
+            out double stlStartX)
+        {
+            finishFrontStartX = MoveSTL_Module.FrontPointX;
+            requiredFaceRightMinX = finishFrontStartX;
+            splitline1X = MoveSTL_Module.FrontPointX;
+            splitline2X = MoveSTL_Module.FrontPointX;
+            stlStartX = Math.Min(0.0, Math.Min(MoveSTL_Module.FrontPointX, MoveSTL_Module.BackPointX));
+
+            try
+            {
+                if (TryGetThreeStageSplitConfig(out double resolvedSplitline1, out double resolvedSplitline2, out double resolvedXMin, out _))
+                {
+                    splitline1X = resolvedSplitline1;
+                    splitline2X = resolvedSplitline2;
+                    stlStartX = resolvedXMin;
+                }
+
+                const double finishFrontFaceEndOffsetFromSplitline1Mm = 2.5;
+                const double finishFrontRequiredOverlapMm = 2.0;
+                const double finishFrontStartAlphaDefaultMm = 0.5;
+                const double finishFrontStartMinFromStlStartMm = 0.5;
+                const double finishFrontStartMaxBySplitline2GapMm = 1.0;
+
+                double frontFaceEndX = splitline1X + finishFrontFaceEndOffsetFromSplitline1Mm;
+                double requestedStartX = splitline1X - finishFrontStartAlphaDefaultMm;
+                double latestStartXForMinOverlap = frontFaceEndX - finishFrontRequiredOverlapMm;
+                if (requestedStartX > latestStartXForMinOverlap)
+                {
+                    requestedStartX = latestStartXForMinOverlap;
+                }
+
+                double startMinX = stlStartX + finishFrontStartMinFromStlStartMm;
+                double startMaxX = splitline2X - finishFrontStartMaxBySplitline2GapMm;
+                if (startMaxX < startMinX)
+                {
+                    startMaxX = startMinX;
+                }
+
+                finishFrontStartX = Clamp(requestedStartX, startMinX, startMaxX);
+                requiredFaceRightMinX = finishFrontStartX + finishFrontRequiredOverlapMm;
+                return true;
+            }
+            catch (Exception ex)
+            {
+                DentalLogger.Log($"FrontFaceOverlap - Finish_Front 시작/겹침 요구 해석 실패: {ex.GetType().Name}:{ex.Message}");
+                return false;
+            }
+        }
+
         /// <summary>
         /// Front Face(ParallelPlanes) 가공 끝점을 FrontPointX 기준으로 고정 적용한다.
         /// - 목표: Face.RightX = Splitline_1(=FrontPointX) + 2.5mm
         /// - 추가 상한: Face.RightX <= Splitline_2 - 1.0mm
+        /// - 단, Finish_Front 시작점과의 최소 겹침 2.0mm가 깨지면 겹침 규칙을 우선해 우측 보정한다.
         /// - RL=1: BottomZLimit = -Face.RightX
         /// - RL=2: BottomZLimit = +Face.RightX
         /// 주의: 이 설정 이후에 Rough 안전가드(TryApplyFaceRightEndGuard)가 추가 보정할 수 있다.
@@ -1794,6 +1849,27 @@ namespace DentalAddin
                     DentalLogger.Log($"FrontFaceDepth[{context}] - Splitline_2 해석 실패로 좌측 클램프 생략");
                 }
 
+                // 겹침 보장 정책(요청 반영):
+                // Front_Face.EndX - Finish_Front.StartX >= 2.0mm
+                bool overlapMinGuardApplied = false;
+                double finishFrontStartXForOverlap = double.NaN;
+                double requiredFaceRightMinX = double.NaN;
+                if (TryResolveFinishFrontStartAndFaceOverlapRequirement(
+                    out finishFrontStartXForOverlap,
+                    out requiredFaceRightMinX,
+                    out _,
+                    out _,
+                    out _))
+                {
+                    if (appliedFaceRightX < requiredFaceRightMinX)
+                    {
+                        double before = appliedFaceRightX;
+                        appliedFaceRightX = requiredFaceRightMinX;
+                        overlapMinGuardApplied = true;
+                        DentalLogger.Log($"FrontFaceDepth[{context}] - 겹침 최소폭 보정 적용: Face.RightX {before:F3}->{appliedFaceRightX:F3}, FinishFront.StartX={finishFrontStartXForOverlap:F3}, requiredOverlap=2.000");
+                    }
+                }
+
                 faceOp.TopZLimit = 1.0;
                 double oldBottom2 = faceOp.BottomZLimit;
                 if (RL == 1.0)
@@ -1811,7 +1887,7 @@ namespace DentalAddin
                     DentalLogger.Log($"FrontFaceDepth[{context}] - RL 비정상({RL}), RL=1 기준으로 적용");
                 }
 
-                DentalLogger.Log($"FrontFaceDepth[{context}] - FrontPoint 고정 오프셋 적용: requestRightX={requestedFaceRightX:F3}, appliedRightX={appliedFaceRightX:F3}, TopZ:{oldTop:F3}->{faceOp.TopZLimit:F3}, BottomZ:{oldBottom:F3}->{oldBottom2:F3}->{faceOp.BottomZLimit:F3}, PRCDepthRef={configuredDepthMm:F3}, FinishBoundaryX={boundaryX:F3}, ClampApplied={finishLineClampApplied}, ClampIgnored={finishLineClampIgnored}, Splitline2={splitline2Used:F3}, Splitline2Clamp={splitline2ClampApplied}");
+                DentalLogger.Log($"FrontFaceDepth[{context}] - FrontPoint 고정 오프셋 적용: requestRightX={requestedFaceRightX:F3}, appliedRightX={appliedFaceRightX:F3}, TopZ:{oldTop:F3}->{faceOp.TopZLimit:F3}, BottomZ:{oldBottom:F3}->{oldBottom2:F3}->{faceOp.BottomZLimit:F3}, PRCDepthRef={configuredDepthMm:F3}, FinishBoundaryX={boundaryX:F3}, ClampApplied={finishLineClampApplied}, ClampIgnored={finishLineClampIgnored}, Splitline2={splitline2Used:F3}, Splitline2Clamp={splitline2ClampApplied}, FinishFrontStartX={finishFrontStartXForOverlap:F3}, OverlapMinFaceRightX={requiredFaceRightMinX:F3}, OverlapMinGuard={overlapMinGuardApplied}");
             }
             catch (Exception ex)
             {
@@ -1854,10 +1930,31 @@ namespace DentalAddin
                 }
 
                 double adjustedFaceRightX = roughARightX - FaceRightGuardMinGapMm;
+
+                // 겹침 보장 정책 우선:
+                // Front_Face.EndX - Finish_Front.StartX >= 2.0mm
+                bool overlapPriorityApplied = false;
+                double finishFrontStartXForOverlap = double.NaN;
+                double requiredFaceRightMinX = double.NaN;
+                if (TryResolveFinishFrontStartAndFaceOverlapRequirement(
+                    out finishFrontStartXForOverlap,
+                    out requiredFaceRightMinX,
+                    out _,
+                    out _,
+                    out _))
+                {
+                    if (adjustedFaceRightX < requiredFaceRightMinX)
+                    {
+                        adjustedFaceRightX = requiredFaceRightMinX;
+                        overlapPriorityApplied = true;
+                    }
+                }
+
                 double oldBottom = faceOp.BottomZLimit;
                 faceOp.BottomZLimit = (RL == 1.0) ? -adjustedFaceRightX : adjustedFaceRightX;
+                double adjustedGap = roughARightX - adjustedFaceRightX;
 
-                DentalLogger.Log($"FaceRoughGuard[{context}] - 보정 적용 (RoughA.RightX={roughARightX:F3}, Face.RightX:{currentFaceRightX:F3}->{adjustedFaceRightX:F3}, gap:{currentGap:F3}->{FaceRightGuardMinGapMm:F3}, BottomZLimit:{oldBottom:F3}->{faceOp.BottomZLimit:F3}, splitX={splitXUsed:F3})");
+                DentalLogger.Log($"FaceRoughGuard[{context}] - 보정 적용 (RoughA.RightX={roughARightX:F3}, Face.RightX:{currentFaceRightX:F3}->{adjustedFaceRightX:F3}, gap:{currentGap:F3}->{adjustedGap:F3}, GuardMinGap={FaceRightGuardMinGapMm:F3}, BottomZLimit:{oldBottom:F3}->{faceOp.BottomZLimit:F3}, splitX={splitXUsed:F3}, FinishFrontStartX={finishFrontStartXForOverlap:F3}, OverlapMinFaceRightX={requiredFaceRightMinX:F3}, OverlapPriority={overlapPriorityApplied})");
                 return true;
             }
             catch (Exception ex)
