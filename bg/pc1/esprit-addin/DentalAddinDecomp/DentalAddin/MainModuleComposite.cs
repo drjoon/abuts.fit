@@ -858,72 +858,43 @@ namespace DentalAddin
             }
             double? firstPassPercentOverride = TryGetCompositeFirstPassPercentOverride();
             // 요청 반영:
-            // - Front face 끝점: Splitline_1 + 2.5mm
-            // - FINISH_A(Finish_Front) 시작점: Splitline_1 - alpha (좌측 이동)
-            // - Front face 끝점과 FINISH_A 시작점은 최소 2.0mm 이상 겹침
-            // - 단, FINISH_A 시작점은 STL 시작점(xMin) + 0.5mm 보다 작아지면 안 됨
-            // - 기존 안전가드 유지: Splitline_2 - 1.0mm 침범 금지
-            const double finishFrontFaceEndOffsetFromSplitline1Mm = 2.5;
-            const double finishFrontRequiredOverlapMm = 2.0;
-            const double finishFrontStartAlphaDefaultMm = 0.5;
-            const double finishFrontStartMinFromStlStartMm = 0.5;
-            const double finishFrontStartMaxBySplitline2GapMm = 1.0;
+            // - FINISH_A(Finish_Front) 시작점: Splitline_1 - 1.0mm
+            // - 단, STL 모델 시작점(xMin)보다 좌측으로 넘어가지 않도록 하한 클램프
+            const double finishFrontStartOffsetFromSplitline1Mm = -1.0;
 
             double splitline1X = MoveSTL_Module.FrontPointX;
-            double splitline2X = splitX;
             double stlStartX = Math.Min(0.0, Math.Min(MoveSTL_Module.FrontPointX, MoveSTL_Module.BackPointX));
-            bool splitlineResolved = TryGetThreeStageSplitConfig(out double resolvedSplitline1, out double resolvedSplitline2, out double resolvedXMin, out _);
+            bool splitlineResolved = TryGetThreeStageSplitConfig(out double resolvedSplitline1, out _, out double resolvedXMin, out _);
             if (splitlineResolved)
             {
                 splitline1X = resolvedSplitline1;
-                splitline2X = resolvedSplitline2;
                 stlStartX = resolvedXMin;
             }
 
-            double frontFaceEndX = splitline1X + finishFrontFaceEndOffsetFromSplitline1Mm;
-            double requestedAStartX = splitline1X - finishFrontStartAlphaDefaultMm;
-            double latestStartXForMinOverlap = frontFaceEndX - finishFrontRequiredOverlapMm;
-            if (requestedAStartX > latestStartXForMinOverlap)
-            {
-                requestedAStartX = latestStartXForMinOverlap;
-            }
-
-            double finishFrontStartMinX = stlStartX + finishFrontStartMinFromStlStartMm;
-            double finishFrontStartMaxX = splitline2X - finishFrontStartMaxBySplitline2GapMm;
+            double requestedAStartX = splitline1X + finishFrontStartOffsetFromSplitline1Mm;
             double appliedAStartX = requestedAStartX;
-
             bool finishFrontStartMinGuardApplied = false;
-            bool finishFrontStartMaxGuardApplied = false;
-            if (appliedAStartX < finishFrontStartMinX)
+            if (appliedAStartX < stlStartX)
             {
-                appliedAStartX = finishFrontStartMinX;
+                appliedAStartX = stlStartX;
                 finishFrontStartMinGuardApplied = true;
-            }
-            if (appliedAStartX > finishFrontStartMaxX)
-            {
-                appliedAStartX = finishFrontStartMaxX;
-                finishFrontStartMaxGuardApplied = true;
             }
 
             double baseAFirstPercentBySplitline1X = XToPassPercentByStartEndScale(appliedAStartX, 0.0, splitPercent);
-            double maxAFirstPercentBySplitline2 = XToPassPercentByStartEndScale(finishFrontStartMaxX, 0.0, splitPercent);
-            double minAFirstPercentByStlStart = XToPassPercentByStartEndScale(finishFrontStartMinX, 0.0, splitPercent);
+            double minAFirstPercentByStlStart = XToPassPercentByStartEndScale(stlStartX, 0.0, splitPercent);
             double baseAFirstPercent = Clamp(baseAFirstPercentBySplitline1X, minAFirstPercentByStlStart, splitPercent);
             bool overrideGuardApplied = false;
             if (firstPassPercentOverride.HasValue)
             {
                 double overridePercent = Clamp(firstPassPercentOverride.Value, minAFirstPercentByStlStart, splitPercent);
-                if (overridePercent > maxAFirstPercentBySplitline2 + 1e-6)
+                if (Math.Abs(overridePercent - firstPassPercentOverride.Value) > 1e-6)
                 {
-                    overridePercent = maxAFirstPercentBySplitline2;
                     overrideGuardApplied = true;
                 }
                 baseAFirstPercent = overridePercent;
             }
 
-            double appliedOverlapMm = frontFaceEndX - appliedAStartX;
-            bool overlapSatisfied = appliedOverlapMm + 1e-6 >= finishFrontRequiredOverlapMm;
-            DentalLogger.Log($"Composite2SplitLine2 - FINISH_FRONT 시작점 정책 적용: splitlineResolved={splitlineResolved}, splitline1X={splitline1X:F3}, splitline2X={splitline2X:F3}, stlStartX={stlStartX:F3}, frontFaceEndX(splitline1+2.5)={frontFaceEndX:F3}, requestedStartX(splitline1-alpha)={requestedAStartX:F3}, minStartX(stlStart+0.5)={finishFrontStartMinX:F3}, maxStartX(splitline2-1.0)={finishFrontStartMaxX:F3}, appliedStartX={appliedAStartX:F3}, minGuard={finishFrontStartMinGuardApplied}, maxGuard={finishFrontStartMaxGuardApplied}, overlap={appliedOverlapMm:F3}, overlapSatisfied={overlapSatisfied}, minFirst%={minAFirstPercentByStlStart:F2}, maxFirst%={maxAFirstPercentBySplitline2:F2}, overrideGuardApplied={overrideGuardApplied}");
+            DentalLogger.Log($"Composite2SplitLine2 - FINISH_FRONT 시작점 정책 적용: splitlineResolved={splitlineResolved}, splitline1X={splitline1X:F3}, stlStartX={stlStartX:F3}, requestedStartX(splitline1-1.0)={requestedAStartX:F3}, appliedStartX={appliedAStartX:F3}, minGuard={finishFrontStartMinGuardApplied}, minFirst%={minAFirstPercentByStlStart:F2}, overrideGuardApplied={overrideGuardApplied}");
 
             const double aEndOffsetFromSplitMm = 0.0; // 요청: FINISH_A 끝점 = 기준점(splitPercent)
             // 요청 반영: FINISH_B 시작점 오프셋 제거(정치수)
@@ -962,7 +933,8 @@ namespace DentalAddin
             }
 
             // FINISH_A 시작점 정책:
-            // - 기본값: Splitline_1 + 0.5mm (단, Splitline_2 - 1.0mm 상한)
+            // - 기본값: Splitline_1 - 1.0mm
+            // - 단, STL 시작점(xMin)보다 좌측으로는 내려가지 않음
             // - env(ABUTS_COMPOSITE_FIRST_PASS_PERCENT_A) 지정 시 env(퍼센트) 우선
             double requestedAFirstPass = baseAFirstPercent;
             opA.FirstPassPercent = Clamp(requestedAFirstPass, 0.0, opA.LastPassPercent);
@@ -1704,65 +1676,11 @@ namespace DentalAddin
             }
         }
 
-        private static bool TryResolveFinishFrontStartAndFaceOverlapRequirement(
-            out double finishFrontStartX,
-            out double requiredFaceRightMinX,
-            out double splitline1X,
-            out double splitline2X,
-            out double stlStartX)
-        {
-            finishFrontStartX = MoveSTL_Module.FrontPointX;
-            requiredFaceRightMinX = finishFrontStartX;
-            splitline1X = MoveSTL_Module.FrontPointX;
-            splitline2X = MoveSTL_Module.FrontPointX;
-            stlStartX = Math.Min(0.0, Math.Min(MoveSTL_Module.FrontPointX, MoveSTL_Module.BackPointX));
 
-            try
-            {
-                if (TryGetThreeStageSplitConfig(out double resolvedSplitline1, out double resolvedSplitline2, out double resolvedXMin, out _))
-                {
-                    splitline1X = resolvedSplitline1;
-                    splitline2X = resolvedSplitline2;
-                    stlStartX = resolvedXMin;
-                }
-
-                const double finishFrontFaceEndOffsetFromSplitline1Mm = 2.5;
-                const double finishFrontRequiredOverlapMm = 2.0;
-                const double finishFrontStartAlphaDefaultMm = 0.5;
-                const double finishFrontStartMinFromStlStartMm = 0.5;
-                const double finishFrontStartMaxBySplitline2GapMm = 1.0;
-
-                double frontFaceEndX = splitline1X + finishFrontFaceEndOffsetFromSplitline1Mm;
-                double requestedStartX = splitline1X - finishFrontStartAlphaDefaultMm;
-                double latestStartXForMinOverlap = frontFaceEndX - finishFrontRequiredOverlapMm;
-                if (requestedStartX > latestStartXForMinOverlap)
-                {
-                    requestedStartX = latestStartXForMinOverlap;
-                }
-
-                double startMinX = stlStartX + finishFrontStartMinFromStlStartMm;
-                double startMaxX = splitline2X - finishFrontStartMaxBySplitline2GapMm;
-                if (startMaxX < startMinX)
-                {
-                    startMaxX = startMinX;
-                }
-
-                finishFrontStartX = Clamp(requestedStartX, startMinX, startMaxX);
-                requiredFaceRightMinX = finishFrontStartX + finishFrontRequiredOverlapMm;
-                return true;
-            }
-            catch (Exception ex)
-            {
-                DentalLogger.Log($"FrontFaceOverlap - Finish_Front 시작/겹침 요구 해석 실패: {ex.GetType().Name}:{ex.Message}");
-                return false;
-            }
-        }
 
         /// <summary>
         /// Front Face(ParallelPlanes) 가공 끝점을 FrontPointX 기준으로 고정 적용한다.
-        /// - 목표: Face.RightX = Splitline_1(=FrontPointX) + 2.5mm
-        /// - 추가 상한: Face.RightX <= Splitline_2 - 1.0mm
-        /// - 단, Finish_Front 시작점과의 최소 겹침 2.0mm가 깨지면 겹침 규칙을 우선해 우측 보정한다.
+        /// - 목표: Face.RightX = Splitline_1(=FrontPointX) + 2.0mm
         /// - RL=1: BottomZLimit = -Face.RightX
         /// - RL=2: BottomZLimit = +Face.RightX
         /// 주의: 이 설정 이후에 Rough 안전가드(TryApplyFaceRightEndGuard)가 추가 보정할 수 있다.
@@ -1789,86 +1707,10 @@ namespace DentalAddin
 
                 LastAppliedFrontFaceDepthMm = configuredDepthMm;
 
-                // 사용자 요청: Front_Face 끝점을 Splitline_1(=FrontPointX) + 2.5mm로 적용한다.
-                // 단, Splitline_2 - 1.0mm를 침범하지 않도록 상한 클램프를 적용한다.
-                // 주의:
-                // - 아래 FinishLine 경계 클램프/FaceRoughGuard가 후속으로 더 보수적으로 조정할 수 있다.
-                const double frontFaceEndOffsetFromFrontMm = 2.5;
+                // 사용자 요청: Front_Face 끝점을 Splitline_1(=FrontPointX) + 2.0mm로 고정 적용한다.
+                const double frontFaceEndOffsetFromFrontMm = 2.0;
                 double requestedFaceRightX = MoveSTL_Module.FrontPointX + frontFaceEndOffsetFromFrontMm;
                 double appliedFaceRightX = requestedFaceRightX;
-
-                // FinishLine 경계가 정상적이고, 요청 끝점보다 충분히 우측일 때만 상한 클램프를 적용한다.
-                // (경계값이 FrontPointX 근처로 비정상 해석되는 케이스에서 요청값이 0으로 꺾이는 것을 방지)
-                double boundaryX = MoveSTL_Module.FinishLineX;
-                double front = MoveSTL_Module.FrontPointX;
-                double back = MoveSTL_Module.BackPointX;
-                double xMin = Math.Min(front, back) - 0.5;
-                double xMax = Math.Max(front, back) + 0.5;
-                bool boundaryValid = !double.IsNaN(boundaryX) && !double.IsInfinity(boundaryX) && Math.Abs(boundaryX) > 1e-6 && boundaryX >= xMin && boundaryX <= xMax;
-                if (!boundaryValid)
-                {
-                    boundaryX = ResolveTurnConnectionBoundaryX($"FrontFaceDepth[{context}]");
-                }
-
-                bool finishLineClampApplied = false;
-                bool finishLineClampIgnored = false;
-                if (!double.IsNaN(boundaryX) && !double.IsInfinity(boundaryX))
-                {
-                    if (boundaryX > requestedFaceRightX + 1e-6)
-                    {
-                        if (appliedFaceRightX > boundaryX)
-                        {
-                            appliedFaceRightX = boundaryX;
-                            finishLineClampApplied = true;
-                        }
-                    }
-                    else
-                    {
-                        finishLineClampIgnored = true;
-                    }
-                }
-
-                // 추가 정책(요청 반영): Front_Face 끝점은 Splitline_2 - 1.0mm를 침범하면 안 된다.
-                bool splitline2ClampApplied = false;
-                double splitline2Used = double.NaN;
-                if (TryGetThreeStageSplitConfig(out _, out double splitline2, out _, out _))
-                {
-                    splitline2Used = splitline2;
-                    const double splitline2SafetyGapMm = 1.0;
-                    double maxFaceRightBySplitline2 = splitline2 - splitline2SafetyGapMm;
-                    if (appliedFaceRightX >= maxFaceRightBySplitline2)
-                    {
-                        double before = appliedFaceRightX;
-                        appliedFaceRightX = maxFaceRightBySplitline2;
-                        splitline2ClampApplied = true;
-                        DentalLogger.Log($"FrontFaceDepth[{context}] - Splitline_2 안전간격 클램프 적용: Face.RightX {before:F3}->{appliedFaceRightX:F3}, Splitline_2={splitline2:F3}, gap={splitline2SafetyGapMm:F3}");
-                    }
-                }
-                else
-                {
-                    DentalLogger.Log($"FrontFaceDepth[{context}] - Splitline_2 해석 실패로 좌측 클램프 생략");
-                }
-
-                // 겹침 보장 정책(요청 반영):
-                // Front_Face.EndX - Finish_Front.StartX >= 2.0mm
-                bool overlapMinGuardApplied = false;
-                double finishFrontStartXForOverlap = double.NaN;
-                double requiredFaceRightMinX = double.NaN;
-                if (TryResolveFinishFrontStartAndFaceOverlapRequirement(
-                    out finishFrontStartXForOverlap,
-                    out requiredFaceRightMinX,
-                    out _,
-                    out _,
-                    out _))
-                {
-                    if (appliedFaceRightX < requiredFaceRightMinX)
-                    {
-                        double before = appliedFaceRightX;
-                        appliedFaceRightX = requiredFaceRightMinX;
-                        overlapMinGuardApplied = true;
-                        DentalLogger.Log($"FrontFaceDepth[{context}] - 겹침 최소폭 보정 적용: Face.RightX {before:F3}->{appliedFaceRightX:F3}, FinishFront.StartX={finishFrontStartXForOverlap:F3}, requiredOverlap=2.000");
-                    }
-                }
 
                 faceOp.TopZLimit = 1.0;
                 double oldBottom2 = faceOp.BottomZLimit;
@@ -1887,7 +1729,7 @@ namespace DentalAddin
                     DentalLogger.Log($"FrontFaceDepth[{context}] - RL 비정상({RL}), RL=1 기준으로 적용");
                 }
 
-                DentalLogger.Log($"FrontFaceDepth[{context}] - FrontPoint 고정 오프셋 적용: requestRightX={requestedFaceRightX:F3}, appliedRightX={appliedFaceRightX:F3}, TopZ:{oldTop:F3}->{faceOp.TopZLimit:F3}, BottomZ:{oldBottom:F3}->{oldBottom2:F3}->{faceOp.BottomZLimit:F3}, PRCDepthRef={configuredDepthMm:F3}, FinishBoundaryX={boundaryX:F3}, ClampApplied={finishLineClampApplied}, ClampIgnored={finishLineClampIgnored}, Splitline2={splitline2Used:F3}, Splitline2Clamp={splitline2ClampApplied}, FinishFrontStartX={finishFrontStartXForOverlap:F3}, OverlapMinFaceRightX={requiredFaceRightMinX:F3}, OverlapMinGuard={overlapMinGuardApplied}");
+                DentalLogger.Log($"FrontFaceDepth[{context}] - FrontPoint 고정 오프셋 적용: requestRightX={requestedFaceRightX:F3}, appliedRightX={appliedFaceRightX:F3}, TopZ:{oldTop:F3}->{faceOp.TopZLimit:F3}, BottomZ:{oldBottom:F3}->{oldBottom2:F3}->{faceOp.BottomZLimit:F3}, PRCDepthRef={configuredDepthMm:F3}");
             }
             catch (Exception ex)
             {
@@ -1930,31 +1772,10 @@ namespace DentalAddin
                 }
 
                 double adjustedFaceRightX = roughARightX - FaceRightGuardMinGapMm;
-
-                // 겹침 보장 정책 우선:
-                // Front_Face.EndX - Finish_Front.StartX >= 2.0mm
-                bool overlapPriorityApplied = false;
-                double finishFrontStartXForOverlap = double.NaN;
-                double requiredFaceRightMinX = double.NaN;
-                if (TryResolveFinishFrontStartAndFaceOverlapRequirement(
-                    out finishFrontStartXForOverlap,
-                    out requiredFaceRightMinX,
-                    out _,
-                    out _,
-                    out _))
-                {
-                    if (adjustedFaceRightX < requiredFaceRightMinX)
-                    {
-                        adjustedFaceRightX = requiredFaceRightMinX;
-                        overlapPriorityApplied = true;
-                    }
-                }
-
                 double oldBottom = faceOp.BottomZLimit;
                 faceOp.BottomZLimit = (RL == 1.0) ? -adjustedFaceRightX : adjustedFaceRightX;
-                double adjustedGap = roughARightX - adjustedFaceRightX;
 
-                DentalLogger.Log($"FaceRoughGuard[{context}] - 보정 적용 (RoughA.RightX={roughARightX:F3}, Face.RightX:{currentFaceRightX:F3}->{adjustedFaceRightX:F3}, gap:{currentGap:F3}->{adjustedGap:F3}, GuardMinGap={FaceRightGuardMinGapMm:F3}, BottomZLimit:{oldBottom:F3}->{faceOp.BottomZLimit:F3}, splitX={splitXUsed:F3}, FinishFrontStartX={finishFrontStartXForOverlap:F3}, OverlapMinFaceRightX={requiredFaceRightMinX:F3}, OverlapPriority={overlapPriorityApplied})");
+                DentalLogger.Log($"FaceRoughGuard[{context}] - 보정 적용 (RoughA.RightX={roughARightX:F3}, Face.RightX:{currentFaceRightX:F3}->{adjustedFaceRightX:F3}, gap:{currentGap:F3}->{FaceRightGuardMinGapMm:F3}, BottomZLimit:{oldBottom:F3}->{faceOp.BottomZLimit:F3}, splitX={splitXUsed:F3})");
                 return true;
             }
             catch (Exception ex)
