@@ -39,6 +39,20 @@ const resolveCompletedDisplayLabel = (q: QueueItem | null) => {
   return formatMachiningLabel(q);
 };
 
+const isQueueItemRunning = (item?: QueueItem | null) => {
+  const rec = item?.machiningRecord;
+  if (!rec || typeof rec !== "object") return false;
+  const recStatus = String(rec?.status || "")
+    .trim()
+    .toUpperCase();
+  if (recStatus === "RUNNING" || recStatus === "PROCESSING") return true;
+  const startedAt = rec?.startedAt ? new Date(rec.startedAt).getTime() : 0;
+  const completedAt = rec?.completedAt
+    ? new Date(rec.completedAt).getTime()
+    : 0;
+  return startedAt > 0 && completedAt <= 0;
+};
+
 type MachiningAlertItem = {
   machineId: string;
   requestId: string | null;
@@ -246,13 +260,21 @@ export const useMachiningBoard = ({
         }
 
         if (next === true) {
+          const machineQueue = Array.isArray(queueMapRef.current?.[uid])
+            ? (queueMapRef.current[uid] as QueueItem[])
+            : [];
+          const hasRunningNowPlaying = machineQueue.some((item) =>
+            isQueueItemRunning(item),
+          );
+
           toast({
             title: "자동 가공 ON",
-            description:
-              "이 장비는 대기 중인 의뢰가 있으면 자동으로 가공을 시작합니다.",
+            description: hasRunningNowPlaying
+              ? "현재 가공 중인 건 완료 후 Next Up부터 자동 연속 가공됩니다."
+              : "이 장비는 대기 중인 의뢰가 있으면 자동으로 가공을 시작합니다.",
           });
 
-          if (token) {
+          if (!hasRunningNowPlaying && token) {
             const name = target?.name || uid;
             try {
               const resp = await fetch(
@@ -1131,23 +1153,31 @@ export const useMachiningBoard = ({
         }
 
         if (enabled === true) {
-          const resp = await fetch(
-            `/api/cnc-machines/machining/auto-trigger/${encodeURIComponent(m.uid)}`,
-            {
-              method: "POST",
-              headers: {
-                Authorization: `Bearer ${token}`,
-                "Content-Type": "application/json",
-              },
-            },
+          const machineQueue = Array.isArray(queueMapRef.current?.[m.uid])
+            ? (queueMapRef.current[m.uid] as QueueItem[])
+            : [];
+          const hasRunningNowPlaying = machineQueue.some((item) =>
+            isQueueItemRunning(item),
           );
-          const triggerBody: any = await resp.json().catch(() => ({}));
-          if (!resp.ok || triggerBody?.success === false) {
-            throw new Error(
-              triggerBody?.message ||
-                triggerBody?.error ||
-                `${m.name || m.uid} 자동 가공 트리거 호출 실패`,
+          if (!hasRunningNowPlaying) {
+            const resp = await fetch(
+              `/api/cnc-machines/machining/auto-trigger/${encodeURIComponent(m.uid)}`,
+              {
+                method: "POST",
+                headers: {
+                  Authorization: `Bearer ${token}`,
+                  "Content-Type": "application/json",
+                },
+              },
             );
+            const triggerBody: any = await resp.json().catch(() => ({}));
+            if (!resp.ok || triggerBody?.success === false) {
+              throw new Error(
+                triggerBody?.message ||
+                  triggerBody?.error ||
+                  `${m.name || m.uid} 자동 가공 트리거 호출 실패`,
+              );
+            }
           }
         }
       }
@@ -1155,7 +1185,8 @@ export const useMachiningBoard = ({
       if (enabled) {
         toast({
           title: "전체 자동 가공 ON",
-          description: "각 장비의 대기 의뢰 자동 시작을 요청했습니다.",
+          description:
+            "각 장비의 자동 연속 가공을 활성화했습니다. (가공 중 장비는 완료 후 다음 건부터 적용)",
         });
       }
     } catch (e: any) {

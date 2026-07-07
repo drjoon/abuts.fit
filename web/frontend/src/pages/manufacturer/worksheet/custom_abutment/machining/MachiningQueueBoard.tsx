@@ -10,7 +10,7 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
-import { ToastAction } from "@/components/ui/toast";
+
 import { CncEventLogModal } from "@/features/cnc/components/CncEventLogModal";
 import { useCncRaw } from "@/features/manufacturer/cnc/hooks/useCncRaw";
 import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
@@ -358,35 +358,9 @@ export const MachiningQueueBoard = ({
 
   const requestToggleMachineAuto = useCallback(
     (uid: string, next: boolean) => {
-      if (!next) {
-        void updateMachineAuto(uid, false);
-        return;
-      }
-
-      const t = (Array.isArray(machines) ? machines : []).find(
-        (m: any) => m.uid === uid,
-      );
-      const name = t?.name || uid;
-
-      toast({
-        title: "자동 가공을 켤까요?",
-        description:
-          "ON 하면 대기 중인 의뢰의 자동 가공이 즉시 시작될 수 있습니다. 계속 진행하시겠습니까?",
-        variant: "destructive",
-        duration: 8000,
-        action: (
-          <ToastAction
-            altText="자동 가공 ON"
-            onClick={() => {
-              void updateMachineAuto(uid, true);
-            }}
-          >
-            {name} ON
-          </ToastAction>
-        ),
-      });
+      void updateMachineAuto(uid, next);
     },
-    [machines, toast, updateMachineAuto],
+    [updateMachineAuto],
   );
 
   const triggerAnodizingOffMachining = useCallback(async () => {
