@@ -23,6 +23,10 @@
 - `No active Rhino instances found via RhinoCode list`가 뜨면 Rhino 실행 후 `RhinoCode` 또는 `ScriptEditor`를 한 번 열어 RhinoCode 서비스를 깨웁니다.
 - align 버전은 올라갔는데 `residual_to_X_deg` 로그가 안 보이면, 실행 경로의 `process_abutment_stl.py` 반영 여부를 먼저 확인합니다.
   - `align_stl_coordinate.py`만 반영되고 래퍼 로그 출력 코드가 누락되면 잔차 로그가 사라질 수 있습니다.
+- **원격 PC 실행 경로 주의(2026-07-08):**
+  - 운영 로그의 절대 경로(예: `C:\Users\user\abuts.fit\...`)는 개발 PC 경로와 다를 수 있습니다.
+  - 경로 문자열이 달라도 동일 모듈 버전(`moduleVersion`)과 로그 키로 반영 여부를 판단합니다.
+  - 로컬 디버깅 시에도 경로 동일성을 기준으로 오판하지 않습니다.
 
 관련 파일:
 - `bg/pc1/rhino-server/compute/scripts/process_abutment_stl.py`
