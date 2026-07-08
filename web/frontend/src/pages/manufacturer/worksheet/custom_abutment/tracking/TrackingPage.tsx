@@ -908,6 +908,67 @@ export const TrackingInquiryPage = () => {
     });
   }, [baseFiltered]);
 
+  const shippingColumns = useMemo(() => {
+    type ShippingColumnItem = {
+      box: any;
+      summaryDate: string;
+    };
+
+    const grouped: Record<
+      "accepted" | "pickedUp" | "delivered",
+      ShippingColumnItem[]
+    > = {
+      accepted: [],
+      pickedUp: [],
+      delivered: [],
+    };
+
+    for (const box of shippingRows.slice(0, visibleCount) as any[]) {
+      const di = normalizeDeliveryInfo(box.deliveryInfoRef);
+      const shippedAt = String(di?.shippedAt || "").trim();
+      const pickedUpAt = String(di?.pickedUpAt || "").trim();
+      const deliveredAt = String(di?.deliveredAt || "").trim();
+      const requests = Array.isArray(box?.requests) ? box.requests : [];
+
+      const createdAtYmdList: string[] = requests
+        .map((req: any) => formatYmd(String(req?.createdAt || "")))
+        .filter((v: string) => v && v !== "-");
+      const uniqueCreatedAtYmd: string[] = Array.from(
+        new Set<string>(createdAtYmdList),
+      ).sort();
+      const requestDateLabel =
+        uniqueCreatedAtYmd.length === 0
+          ? "-"
+          : uniqueCreatedAtYmd.length === 1
+            ? uniqueCreatedAtYmd[0]
+            : `${uniqueCreatedAtYmd[0]} ~ ${
+                uniqueCreatedAtYmd[uniqueCreatedAtYmd.length - 1]
+              }`;
+
+      if (deliveredAt) {
+        grouped.delivered.push({ box, summaryDate: formatYmd(deliveredAt) });
+        continue;
+      }
+
+      if (pickedUpAt) {
+        grouped.pickedUp.push({ box, summaryDate: formatYmd(pickedUpAt) });
+        continue;
+      }
+
+      const shippedDate = formatYmd(shippedAt);
+      grouped.accepted.push({
+        box,
+        summaryDate: shippedDate !== "-" ? shippedDate : requestDateLabel,
+      });
+    }
+
+    return [
+      { key: "accepted", title: "발송접수", items: grouped.accepted },
+      { key: "pickedUp", title: "집하완료", items: grouped.pickedUp },
+      { key: "delivered", title: "배송완료", items: grouped.delivered },
+    ];
+  }, [shippingRows, visibleCount]);
+
   const recallSelectableRequests = useMemo(() => {
     const map = new Map<string, ManufacturerRequest>();
     for (const box of shippingRows as any[]) {
@@ -1571,322 +1632,344 @@ export const TrackingInquiryPage = () => {
                 </div>
               )}
 
-              <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
-                {shippingRows.slice(0, visibleCount).map((box) => {
-                  const di = normalizeDeliveryInfo(box.deliveryInfoRef);
-                  const shippedAt = di.shippedAt ? String(di.shippedAt) : "";
-                  const deliveredAt = di.deliveredAt
-                    ? String(di.deliveredAt)
-                    : "";
-                  const pickedUpAt = di.pickedUpAt ? String(di.pickedUpAt) : "";
-                  const status = getShippingStatus(box);
-                  const requestCount = (box as any)?.requestCount || 1;
-                  const requests = (box as any)?.requests || [];
-                  const cardRequestIds = requests
-                    .map((req: any) => String(req?._id || "").trim())
-                    .filter(Boolean);
-                  const allCardSelected =
-                    cardRequestIds.length > 0 &&
-                    cardRequestIds.every((id: string) =>
-                      selectedRecallRequestIds.has(id),
-                    );
-                  const firstRequest = requests[0] || {};
-                  const mailboxCode = String(
-                    box.mailboxAddress || box.boxKey || "",
-                  ).trim();
-                  const requestorBusiness = String(
-                    firstRequest?.requestor?.business || "",
-                  ).trim();
-                  const createdAtYmdList: string[] = requests
-                    .map((req: any) => formatYmd(String(req?.createdAt || "")))
-                    .filter((v: string) => v && v !== "-");
-                  const uniqueCreatedAtYmd: string[] = Array.from(
-                    new Set<string>(createdAtYmdList),
-                  ).sort();
-                  const requestDateLabel =
-                    uniqueCreatedAtYmd.length === 0
-                      ? "-"
-                      : uniqueCreatedAtYmd.length === 1
-                        ? uniqueCreatedAtYmd[0]
-                        : `${uniqueCreatedAtYmd[0]} ~ ${
-                            uniqueCreatedAtYmd[uniqueCreatedAtYmd.length - 1]
-                          }`;
-                  const latestTimelineLabel = deliveredAt
-                    ? `배송완료 ${formatYmd(deliveredAt)}`
-                    : pickedUpAt
-                      ? `집하 ${formatYmd(pickedUpAt)}`
-                      : shippedAt
-                        ? `발송접수 ${formatYmd(shippedAt)}`
-                        : `의뢰 ${requestDateLabel}`;
-                  const boxId = String(box._id || box.trackingNumber);
-                  const isExpanded = expandedBoxes.has(boxId);
+              <div className="grid grid-cols-1 xl:grid-cols-3 gap-3">
+                {shippingColumns.map((column) => (
+                  <div
+                    key={column.key}
+                    className="rounded-lg border bg-slate-50/60 p-3 space-y-2"
+                  >
+                    <div className="flex items-center justify-between px-1">
+                      <h4 className="text-sm font-semibold text-gray-700">
+                        {column.title}
+                      </h4>
+                      <span className="text-xs text-gray-500">
+                        {column.items.length}건
+                      </span>
+                    </div>
 
-                  const toggleExpanded = () => {
-                    const newSet = new Set(expandedBoxes);
-                    if (newSet.has(boxId)) {
-                      newSet.delete(boxId);
-                    } else {
-                      newSet.add(boxId);
-                    }
-                    setExpandedBoxes(newSet);
-                  };
+                    <div className="space-y-2">
+                      {column.items.map(({ box, summaryDate }) => {
+                        const di = normalizeDeliveryInfo(box.deliveryInfoRef);
+                        const shippedAt = di.shippedAt
+                          ? String(di.shippedAt)
+                          : "";
+                        const deliveredAt = di.deliveredAt
+                          ? String(di.deliveredAt)
+                          : "";
+                        const pickedUpAt = di.pickedUpAt
+                          ? String(di.pickedUpAt)
+                          : "";
+                        const requestCount = (box as any)?.requestCount || 1;
+                        const requests = (box as any)?.requests || [];
+                        const cardRequestIds = requests
+                          .map((req: any) => String(req?._id || "").trim())
+                          .filter(Boolean);
+                        const allCardSelected =
+                          cardRequestIds.length > 0 &&
+                          cardRequestIds.every((id: string) =>
+                            selectedRecallRequestIds.has(id),
+                          );
+                        const firstRequest = requests[0] || {};
+                        const mailboxCode = String(
+                          box.mailboxAddress || box.boxKey || "",
+                        ).trim();
+                        const requestorBusiness = String(
+                          firstRequest?.requestor?.business || "",
+                        ).trim();
+                        const boxId = String(box._id || box.trackingNumber);
+                        const isExpanded = expandedBoxes.has(boxId);
 
-                  return (
-                    <div
-                      key={boxId}
-                      className="rounded-lg border bg-white shadow-sm hover:shadow-md transition-shadow"
-                    >
-                      <div
-                        className="p-4 cursor-pointer hover:bg-gray-50 transition-colors"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          toggleExpanded();
-                        }}
-                      >
-                        <div className="flex items-center justify-between gap-4">
-                          <div className="flex items-center gap-3 flex-1">
-                            {recallMode && (
-                              <label
-                                className="inline-flex items-center gap-1 text-xs text-gray-700"
-                                onClick={(e) => e.stopPropagation()}
-                              >
-                                <input
-                                  type="checkbox"
-                                  checked={allCardSelected}
-                                  onChange={(e) => {
-                                    e.stopPropagation();
-                                    setSelectedRecallRequestIds((prev) => {
-                                      const next = new Set(prev);
-                                      if (allCardSelected) {
-                                        cardRequestIds.forEach((id: string) =>
-                                          next.delete(id),
-                                        );
-                                      } else {
-                                        cardRequestIds.forEach((id: string) =>
-                                          next.add(id),
-                                        );
-                                      }
-                                      return next;
-                                    });
-                                  }}
-                                />
-                                카드전체
-                              </label>
-                            )}
-                            <span className="inline-block bg-blue-100 text-blue-800 text-xs font-semibold px-2.5 py-0.5 rounded whitespace-nowrap">
-                              {requestCount}건
-                            </span>
-                            <span
-                              className={`inline-block text-xs font-semibold px-2.5 py-0.5 rounded whitespace-nowrap ${
-                                status === "배송완료"
-                                  ? "bg-green-100 text-green-800"
-                                  : status === "집하완료"
-                                    ? "bg-blue-100 text-blue-800"
-                                    : status === "배송중"
-                                      ? "bg-amber-100 text-amber-800"
-                                      : "bg-gray-100 text-gray-800"
-                              }`}
+                        const toggleExpanded = () => {
+                          const newSet = new Set(expandedBoxes);
+                          if (newSet.has(boxId)) {
+                            newSet.delete(boxId);
+                          } else {
+                            newSet.add(boxId);
+                          }
+                          setExpandedBoxes(newSet);
+                        };
+
+                        return (
+                          <div
+                            key={boxId}
+                            className="rounded-lg border bg-white shadow-sm hover:shadow-md transition-shadow"
+                          >
+                            <div
+                              className="p-3 cursor-pointer hover:bg-gray-50 transition-colors"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleExpanded();
+                              }}
                             >
-                              {status}
-                            </span>
-                            <span className="text-sm text-gray-600">
-                              {mailboxCode || "-"}
-                              {requestorBusiness
-                                ? ` / ${requestorBusiness}`
-                                : ""}
-                            </span>
-                          </div>
-                          <div className="flex items-center gap-3">
-                            <div className="flex items-center gap-2 text-xs text-gray-500">
-                              <span>{latestTimelineLabel}</span>
-                            </div>
-                            <span className="text-sm text-gray-500">
-                              {di.carrier || "-"}
-                            </span>
-                            <button className="text-gray-400 hover:text-gray-600 flex-shrink-0">
-                              {isExpanded ? "▼" : "▶"}
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-
-                      {isExpanded && (
-                        <div className="border-t bg-gray-50 p-4 space-y-3">
-                          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-                            <div>
-                              <div className="text-xs text-gray-500 mb-1">
-                                접수(발송)
-                              </div>
-                              <div className="text-sm font-medium">
-                                {formatDateTime(shippedAt) || "-"}
-                              </div>
-                            </div>
-                            <div>
-                              <div className="text-xs text-gray-500 mb-1">
-                                집하완료
-                              </div>
-                              <div className="text-sm font-medium">
-                                {formatDateTime(pickedUpAt) || "-"}
-                              </div>
-                            </div>
-                            <div>
-                              <div className="text-xs text-gray-500 mb-1">
-                                배송완료
-                              </div>
-                              <div className="text-sm font-medium">
-                                {formatDateTime(deliveredAt) || "-"}
-                              </div>
-                            </div>
-                          </div>
-
-                          {requests.length > 0 && (
-                            <div>
-                              <div className="text-xs text-gray-500 mb-2 font-medium">
-                                포함된 의뢰
-                              </div>
-                              <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
-                                {requests.map((req: any) => {
-                                  const ci: any = req.caseInfos || {};
-                                  const recallReqId = String(
-                                    req?._id || "",
-                                  ).trim();
-                                  const recallChecked =
-                                    recallReqId &&
-                                    selectedRecallRequestIds.has(recallReqId);
-                                  const stage = String(
-                                    req.manufacturerStage || "",
-                                  ).trim();
-                                  const di = normalizeDeliveryInfo(
-                                    req.deliveryInfoRef,
-                                  );
-                                  const isDelivered = !!di.deliveredAt;
-                                  const isTrackingStage = stage === "추적관리";
-                                  const isSampleRequest =
-                                    String(
-                                      (req as any)?.source || "",
-                                    ).trim() === "manufacturer_sample";
-                                  const canCloneAsSample =
-                                    !isSampleRequest &&
-                                    (isTrackingStage || isDelivered);
-                                  return (
-                                    <div
-                                      key={String(req._id || req.requestId)}
-                                      className="text-sm bg-white p-2 rounded border border-gray-200"
-                                    >
-                                      <div className="flex items-center justify-between">
-                                        <div className="flex items-center gap-2">
-                                          {recallMode && (
-                                            <input
-                                              type="checkbox"
-                                              checked={Boolean(recallChecked)}
-                                              onChange={(e) => {
-                                                e.stopPropagation();
-                                                if (!recallReqId) return;
-                                                setSelectedRecallRequestIds(
-                                                  (prev) => {
-                                                    const next = new Set(prev);
-                                                    if (next.has(recallReqId)) {
-                                                      next.delete(recallReqId);
-                                                    } else {
-                                                      next.add(recallReqId);
-                                                    }
-                                                    return next;
-                                                  },
-                                                );
-                                              }}
-                                            />
-                                          )}
-                                          <div className="font-medium">
-                                            {req.requestId || "-"}
-                                          </div>
-                                        </div>
-                                        <div className="flex items-center gap-1">
-                                          {canCloneAsSample && (
-                                            <Button
-                                              variant="outline"
-                                              size="sm"
-                                              className="h-6 px-2 text-xs border-purple-300 bg-purple-50 text-purple-700 hover:bg-purple-100"
-                                              onClick={async (e) => {
-                                                e.stopPropagation();
-                                                try {
-                                                  const res = await fetch(
-                                                    `/api/requests/${req._id}/clone-as-sample`,
-                                                    {
-                                                      method: "POST",
-                                                      headers: {
-                                                        Authorization: `Bearer ${token}`,
-                                                        "Content-Type":
-                                                          "application/json",
-                                                      },
-                                                    },
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="min-w-0 flex-1 space-y-1">
+                                  <div className="flex items-center gap-2 min-w-0">
+                                    {recallMode && (
+                                      <label
+                                        className="inline-flex items-center gap-1 text-[11px] text-gray-700"
+                                        onClick={(e) => e.stopPropagation()}
+                                      >
+                                        <input
+                                          type="checkbox"
+                                          checked={allCardSelected}
+                                          onChange={(e) => {
+                                            e.stopPropagation();
+                                            setSelectedRecallRequestIds(
+                                              (prev) => {
+                                                const next = new Set(prev);
+                                                if (allCardSelected) {
+                                                  cardRequestIds.forEach(
+                                                    (id: string) =>
+                                                      next.delete(id),
                                                   );
-                                                  const data = await res.json();
-                                                  if (data.success) {
-                                                    toast({
-                                                      title:
-                                                        "R&D 샘플 복사 완료",
-                                                      description: `새 의뢰ID: ${data.data.requestId}`,
-                                                    });
-                                                  } else {
-                                                    toast({
-                                                      title: "복사 실패",
-                                                      description:
-                                                        data.message ||
-                                                        "알 수 없는 오류",
-                                                      variant: "destructive",
-                                                    });
-                                                  }
-                                                } catch (e: any) {
-                                                  toast({
-                                                    title: "복사 실패",
-                                                    description:
-                                                      e?.message ||
-                                                      "네트워크 오류",
-                                                    variant: "destructive",
-                                                  });
+                                                } else {
+                                                  cardRequestIds.forEach(
+                                                    (id: string) =>
+                                                      next.add(id),
+                                                  );
                                                 }
-                                              }}
-                                            >
-                                              <FlaskConical className="h-3 w-3 mr-1" />
-                                              R&D
-                                            </Button>
-                                          )}
-                                          {isSampleRequest && (
-                                            <Button
-                                              variant="destructive"
-                                              size="sm"
-                                              className="h-6 px-2 text-xs"
-                                              onClick={(e) => {
-                                                e.stopPropagation();
-                                                void handleDeleteSampleRequest(
-                                                  req,
-                                                );
-                                              }}
-                                            >
-                                              <Trash2 className="h-3 w-3 mr-1" />
-                                              삭제
-                                            </Button>
-                                          )}
-                                        </div>
-                                      </div>
-                                      <div className="text-xs text-gray-600">
-                                        {ci.clinicName || "-"}
-                                      </div>
-                                      <div className="text-xs text-gray-600">
-                                        {ci.patientName || "-"} /{" "}
-                                        {ci.tooth || "-"}
-                                      </div>
-                                    </div>
-                                  );
-                                })}
+                                                return next;
+                                              },
+                                            );
+                                          }}
+                                        />
+                                      </label>
+                                    )}
+                                    <span
+                                      className="text-sm font-medium text-gray-700 truncate"
+                                      title={mailboxCode || "-"}
+                                    >
+                                      {mailboxCode || "-"}
+                                    </span>
+                                  </div>
+                                  <div
+                                    className="text-xs text-gray-500 truncate"
+                                    title={requestorBusiness || "-"}
+                                  >
+                                    {requestorBusiness || "-"}
+                                  </div>
+                                </div>
+                                <button className="text-gray-400 hover:text-gray-600 flex-shrink-0 text-xs">
+                                  {isExpanded ? "▼" : "▶"}
+                                </button>
+                              </div>
+
+                              <div className="mt-2 flex items-center justify-between gap-2 text-xs">
+                                <span className="inline-block bg-blue-100 text-blue-800 font-semibold px-2 py-0.5 rounded whitespace-nowrap">
+                                  {requestCount}건
+                                </span>
+                                <span className="text-gray-500 truncate">
+                                  {summaryDate || "-"}
+                                </span>
                               </div>
                             </div>
-                          )}
+
+                            {isExpanded && (
+                              <div className="border-t bg-gray-50 p-4 space-y-3">
+                                <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                                  <div>
+                                    <div className="text-xs text-gray-500 mb-1">
+                                      접수(발송)
+                                    </div>
+                                    <div className="text-sm font-medium">
+                                      {formatDateTime(shippedAt) || "-"}
+                                    </div>
+                                  </div>
+                                  <div>
+                                    <div className="text-xs text-gray-500 mb-1">
+                                      집하완료
+                                    </div>
+                                    <div className="text-sm font-medium">
+                                      {formatDateTime(pickedUpAt) || "-"}
+                                    </div>
+                                  </div>
+                                  <div>
+                                    <div className="text-xs text-gray-500 mb-1">
+                                      배송완료
+                                    </div>
+                                    <div className="text-sm font-medium">
+                                      {formatDateTime(deliveredAt) || "-"}
+                                    </div>
+                                  </div>
+                                </div>
+
+                                {requests.length > 0 && (
+                                  <div>
+                                    <div className="text-xs text-gray-500 mb-2 font-medium">
+                                      포함된 의뢰
+                                    </div>
+                                    <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
+                                      {requests.map((req: any) => {
+                                        const ci: any = req.caseInfos || {};
+                                        const recallReqId = String(
+                                          req?._id || "",
+                                        ).trim();
+                                        const recallChecked =
+                                          recallReqId &&
+                                          selectedRecallRequestIds.has(
+                                            recallReqId,
+                                          );
+                                        const stage = String(
+                                          req.manufacturerStage || "",
+                                        ).trim();
+                                        const di = normalizeDeliveryInfo(
+                                          req.deliveryInfoRef,
+                                        );
+                                        const isDelivered = !!di.deliveredAt;
+                                        const isTrackingStage =
+                                          stage === "추적관리";
+                                        const isSampleRequest =
+                                          String(
+                                            (req as any)?.source || "",
+                                          ).trim() === "manufacturer_sample";
+                                        const canCloneAsSample =
+                                          !isSampleRequest &&
+                                          (isTrackingStage || isDelivered);
+                                        return (
+                                          <div
+                                            key={String(
+                                              req._id || req.requestId,
+                                            )}
+                                            className="text-sm bg-white p-2 rounded border border-gray-200"
+                                          >
+                                            <div className="flex items-center justify-between">
+                                              <div className="flex items-center gap-2">
+                                                {recallMode && (
+                                                  <input
+                                                    type="checkbox"
+                                                    checked={Boolean(
+                                                      recallChecked,
+                                                    )}
+                                                    onChange={(e) => {
+                                                      e.stopPropagation();
+                                                      if (!recallReqId) return;
+                                                      setSelectedRecallRequestIds(
+                                                        (prev) => {
+                                                          const next = new Set(
+                                                            prev,
+                                                          );
+                                                          if (
+                                                            next.has(
+                                                              recallReqId,
+                                                            )
+                                                          ) {
+                                                            next.delete(
+                                                              recallReqId,
+                                                            );
+                                                          } else {
+                                                            next.add(
+                                                              recallReqId,
+                                                            );
+                                                          }
+                                                          return next;
+                                                        },
+                                                      );
+                                                    }}
+                                                  />
+                                                )}
+                                                <div className="font-medium">
+                                                  {req.requestId || "-"}
+                                                </div>
+                                              </div>
+                                              <div className="flex items-center gap-1">
+                                                {canCloneAsSample && (
+                                                  <Button
+                                                    variant="outline"
+                                                    size="sm"
+                                                    className="h-6 px-2 text-xs border-purple-300 bg-purple-50 text-purple-700 hover:bg-purple-100"
+                                                    onClick={async (e) => {
+                                                      e.stopPropagation();
+                                                      try {
+                                                        const res = await fetch(
+                                                          `/api/requests/${req._id}/clone-as-sample`,
+                                                          {
+                                                            method: "POST",
+                                                            headers: {
+                                                              Authorization: `Bearer ${token}`,
+                                                              "Content-Type":
+                                                                "application/json",
+                                                            },
+                                                          },
+                                                        );
+                                                        const data =
+                                                          await res.json();
+                                                        if (data.success) {
+                                                          toast({
+                                                            title:
+                                                              "R&D 샘플 복사 완료",
+                                                            description: `새 의뢰ID: ${data.data.requestId}`,
+                                                          });
+                                                        } else {
+                                                          toast({
+                                                            title: "복사 실패",
+                                                            description:
+                                                              data.message ||
+                                                              "알 수 없는 오류",
+                                                            variant:
+                                                              "destructive",
+                                                          });
+                                                        }
+                                                      } catch (e: any) {
+                                                        toast({
+                                                          title: "복사 실패",
+                                                          description:
+                                                            e?.message ||
+                                                            "네트워크 오류",
+                                                          variant:
+                                                            "destructive",
+                                                        });
+                                                      }
+                                                    }}
+                                                  >
+                                                    <FlaskConical className="h-3 w-3 mr-1" />
+                                                    R&D
+                                                  </Button>
+                                                )}
+                                                {isSampleRequest && (
+                                                  <Button
+                                                    variant="destructive"
+                                                    size="sm"
+                                                    className="h-6 px-2 text-xs"
+                                                    onClick={(e) => {
+                                                      e.stopPropagation();
+                                                      void handleDeleteSampleRequest(
+                                                        req,
+                                                      );
+                                                    }}
+                                                  >
+                                                    <Trash2 className="h-3 w-3 mr-1" />
+                                                    삭제
+                                                  </Button>
+                                                )}
+                                              </div>
+                                            </div>
+                                            <div className="text-xs text-gray-600">
+                                              {ci.clinicName || "-"}
+                                            </div>
+                                            <div className="text-xs text-gray-600">
+                                              {ci.patientName || "-"} /{" "}
+                                              {ci.tooth || "-"}
+                                            </div>
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+
+                      {column.items.length === 0 && (
+                        <div className="rounded-md border border-dashed bg-white/70 px-3 py-6 text-center text-xs text-gray-400">
+                          데이터 없음
                         </div>
                       )}
                     </div>
-                  );
-                })}
+                  </div>
+                ))}
               </div>
 
               {!loading && shippingRows.length === 0 && (
