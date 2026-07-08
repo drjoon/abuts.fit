@@ -42,12 +42,16 @@ export type MailboxSummaryItem = {
   shippingDayInfo?: MailboxShippingDayInfo | null;
 };
 
+export type MailboxRefreshOptions = {
+  invalidateMailboxDetailsCache?: boolean;
+};
+
 type MailboxGridProps = {
   mailboxSummaries: MailboxSummaryItem[];
   forceTodayMailboxAddresses?: Set<string>;
   onBoxClick?: (address: string) => void | Promise<void>;
   onMailboxError?: (address: string, message: string) => void;
-  onRefresh?: () => void | Promise<void>;
+  onRefresh?: (options?: MailboxRefreshOptions) => void | Promise<void>;
 };
 
 export const MailboxGrid = ({
@@ -352,7 +356,7 @@ export const MailboxGrid = ({
 
       const notifyPickupUpdated = async () => {
         if (onRefresh) {
-          await onRefresh();
+          await onRefresh({ invalidateMailboxDetailsCache: true });
         }
         if (!modifyOnly || pickupUpdatedMailboxAddresses.length === 0) return;
         toast({
@@ -639,7 +643,7 @@ export const MailboxGrid = ({
       });
 
       if (onRefresh) {
-        await onRefresh();
+        await onRefresh({ invalidateMailboxDetailsCache: true });
       }
 
       setManualPickupDialogOpen(false);
@@ -1218,7 +1222,7 @@ export const MailboxGrid = ({
         setIsRequestingPickup(true);
         setActiveHeaderAction("refresh");
         try {
-          await onRefresh();
+          await onRefresh({ invalidateMailboxDetailsCache: true });
           toast({
             title: "새로고침 완료",
             description: "우편함 데이터를 다시 불러왔습니다.",

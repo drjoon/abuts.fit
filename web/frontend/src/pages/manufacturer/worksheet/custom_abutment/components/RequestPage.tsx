@@ -38,6 +38,7 @@ import {
 } from "@/pages/manufacturer/worksheet/custom_abutment/utils/requestPagination";
 import {
   MailboxGrid,
+  type MailboxRefreshOptions,
   type MailboxSummaryItem,
 } from "../shipping/components/MailboxGrid";
 import { MailboxContentsModal } from "../shipping/components/MailboxContentsModal";
@@ -70,6 +71,7 @@ import {
 type RemakeStartStage = "의뢰" | "CAM" | "가공";
 
 const MAILBOX_DETAILS_CACHE_TTL_MS = 60 * 60 * 1000;
+const MAILBOX_DETAILS_STORAGE_PREFIX = "ca:shipping:mailbox-details:";
 
 export const RequestPage = ({
   showQueueBar = true,
@@ -506,12 +508,31 @@ export const RequestPage = ({
   const clearMailboxDetailsCache = useCallback(() => {
     mailboxDetailsCacheRef.current = {};
     mailboxDetailsInFlightRef.current = {};
+
+    if (typeof window === "undefined") return;
+    try {
+      const keysToRemove: string[] = [];
+      for (let i = 0; i < window.localStorage.length; i += 1) {
+        const key = window.localStorage.key(i);
+        if (!key) continue;
+        if (!key.startsWith(MAILBOX_DETAILS_STORAGE_PREFIX)) continue;
+        keysToRemove.push(key);
+      }
+      keysToRemove.forEach((key) => window.localStorage.removeItem(key));
+    } catch {
+      // noop
+    }
   }, []);
 
-  const handleMailboxGridRefresh = useCallback(async () => {
-    clearMailboxDetailsCache();
-    await reloadRequests(true);
-  }, [clearMailboxDetailsCache, reloadRequests]);
+  const handleMailboxGridRefresh = useCallback(
+    async (options?: MailboxRefreshOptions) => {
+      if (options?.invalidateMailboxDetailsCache) {
+        clearMailboxDetailsCache();
+      }
+      await reloadRequests(true);
+    },
+    [clearMailboxDetailsCache, reloadRequests],
+  );
 
   const mailboxState = useMailboxManagement(token, async () => {
     await fetchRequests();
@@ -523,8 +544,46 @@ export const RequestPage = ({
       if (!mailboxAddress || !token) return;
 
       const normalizedAddress = mailboxAddress.toUpperCase();
+      const storageKey = `${MAILBOX_DETAILS_STORAGE_PREFIX}${normalizedAddress}`;
       const now = Date.now();
-      const cachedEntry = mailboxDetailsCacheRef.current[normalizedAddress];
+
+      const inMemoryCacheEntry =
+        mailboxDetailsCacheRef.current[normalizedAddress] || null;
+
+      let persistedCacheEntry: {
+        fetchedAt: number;
+        requests: ManufacturerRequest[];
+      } | null = null;
+
+      if (typeof window !== "undefined") {
+        try {
+          const raw = window.localStorage.getItem(storageKey);
+          if (raw) {
+            const parsed = JSON.parse(raw) as {
+              fetchedAt?: number;
+              requests?: ManufacturerRequest[];
+            };
+            const parsedFetchedAt = Number(parsed?.fetchedAt || 0);
+            const parsedRequests = Array.isArray(parsed?.requests)
+              ? parsed.requests
+              : [];
+            if (parsedFetchedAt > 0) {
+              persistedCacheEntry = {
+                fetchedAt: parsedFetchedAt,
+                requests: parsedRequests,
+              };
+            }
+          }
+        } catch {
+          // noop
+        }
+      }
+
+      const cachedEntry = inMemoryCacheEntry || persistedCacheEntry;
+      if (cachedEntry && !inMemoryCacheEntry) {
+        mailboxDetailsCacheRef.current[normalizedAddress] = cachedEntry;
+      }
+
       const hasFreshCache =
         Boolean(cachedEntry) &&
         now - Number(cachedEntry?.fetchedAt || 0) <
@@ -580,10 +639,22 @@ export const RequestPage = ({
               ? (body.data.requests as ManufacturerRequest[])
               : [];
 
-            mailboxDetailsCacheRef.current[normalizedAddress] = {
+            const nextCacheEntry = {
               fetchedAt: Date.now(),
               requests: detailRequests,
             };
+
+            mailboxDetailsCacheRef.current[normalizedAddress] = nextCacheEntry;
+            if (typeof window !== "undefined") {
+              try {
+                window.localStorage.setItem(
+                  storageKey,
+                  JSON.stringify(nextCacheEntry),
+                );
+              } catch {
+                // noop
+              }
+            }
 
             return detailRequests;
           })().finally(() => {
