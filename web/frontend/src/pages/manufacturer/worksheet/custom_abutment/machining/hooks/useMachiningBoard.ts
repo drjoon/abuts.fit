@@ -64,6 +64,8 @@ type MachiningAlertItem = {
 };
 
 const MACHINING_ALERT_STORAGE_KEY = "abuts:machining-alert-map";
+const GHOST_HINT_CLEAR_GRACE_SECONDS = 8;
+const GHOST_HINT_SWEEP_INTERVAL_MS = 2000;
 
 export const useMachiningBoard = ({
   token,
@@ -790,6 +792,84 @@ export const useMachiningBoard = ({
 
     return () => window.clearInterval(id);
   }, [nowPlayingHintMap]);
+
+  // 유령 타이머 자동 정리:
+  // - nowPlayingHint/elapsed가 남아있지만 실제 가공 큐 항목이 없는 경우 일정 시간 후 제거
+  // - 힌트 없이 elapsed만 고아로 남은 경우도 제거
+  useEffect(() => {
+    const hasRuntimeState =
+      Object.keys(nowPlayingHintMap || {}).length > 0 ||
+      Object.keys(machiningElapsedSecondsMap || {}).length > 0;
+    if (!hasRuntimeState) return;
+
+    const id = window.setInterval(() => {
+      const nowMs = Date.now();
+      const staleIds = new Set<string>();
+
+      for (const mid of Object.keys(nowPlayingHintMap || {})) {
+        const q = Array.isArray(queueMapRef.current?.[mid])
+          ? queueMapRef.current[mid]
+          : [];
+        const hasMachiningQueue = q.some((item) =>
+          isMachiningStatus(item?.status),
+        );
+        if (hasMachiningQueue) continue;
+
+        const hint = nowPlayingHintMap[mid];
+        const startedAtMs = hint?.startedAt
+          ? new Date(hint.startedAt).getTime()
+          : 0;
+        const elapsedSec =
+          typeof machiningElapsedSecondsMap?.[mid] === "number"
+            ? machiningElapsedSecondsMap[mid]
+            : -1;
+        const ageSec =
+          elapsedSec >= 0
+            ? elapsedSec
+            : startedAtMs > 0
+              ? Math.max(0, Math.floor((nowMs - startedAtMs) / 1000))
+              : 0;
+
+        if (ageSec >= GHOST_HINT_CLEAR_GRACE_SECONDS) {
+          staleIds.add(mid);
+        }
+      }
+
+      for (const mid of Object.keys(machiningElapsedSecondsMap || {})) {
+        if (nowPlayingHintMap?.[mid]) continue;
+        const q = Array.isArray(queueMapRef.current?.[mid])
+          ? queueMapRef.current[mid]
+          : [];
+        const hasMachiningQueue = q.some((item) =>
+          isMachiningStatus(item?.status),
+        );
+        if (!hasMachiningQueue) staleIds.add(mid);
+      }
+
+      if (staleIds.size === 0) return;
+      const mids = Array.from(staleIds);
+
+      setNowPlayingHintMap((prev) => {
+        const next = { ...prev };
+        for (const mid of mids) delete next[mid];
+        return next;
+      });
+
+      setMachiningElapsedSecondsMap((prev) => {
+        const next = { ...prev };
+        for (const mid of mids) delete next[mid];
+        return next;
+      });
+
+      for (const mid of mids) delete machiningElapsedBaseRef.current[mid];
+
+      console.warn("[MACHINING_BOARD] cleared ghost runtime state", {
+        machineIds: mids,
+      });
+    }, GHOST_HINT_SWEEP_INTERVAL_MS);
+
+    return () => window.clearInterval(id);
+  }, [nowPlayingHintMap, machiningElapsedSecondsMap]);
 
   useEffect(() => {
     if (!token) return;

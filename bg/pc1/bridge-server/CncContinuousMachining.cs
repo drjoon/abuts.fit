@@ -24,6 +24,13 @@ private static readonly Dictionary<string, DateTime> LastBackendSyncUtc = new Di
 private static readonly Dictionary<string, DateTime> LastSnapshotLogUtc = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
 private static readonly Dictionary<string, DateTime> LastTickLogUtc = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
 private const int TickLogIntervalSeconds = 60;
+private static readonly Dictionary<string, int> TickNotifyFailCountByMachine = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+private static readonly Dictionary<string, DateTime> TickNotifyNextAttemptUtcByMachine = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
+private static readonly Dictionary<string, DateTime> TickNotifyLastErrorLogUtcByMachine = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
+private static readonly Dictionary<string, int> TickNotifySuppressedCountByMachine = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+private const int TickNotifyBackoffMaxSeconds = 30;
+private const int TickNotifyErrorLogIntervalSeconds = 15;
+private const int TickNotifySuppressedLogIntervalSeconds = 20;
 private class MachineFlags
 {
 public bool AllowAutoMachining;
@@ -50,6 +57,18 @@ lock (StateLock)
     }
 }
 return false;
+}
+private static bool IsCriticalTickPhase(string phase)
+{
+var p = string.IsNullOrWhiteSpace(phase) ? string.Empty : phase.Trim().ToUpperInvariant();
+return p == "ALARM" || p == "FAILED" || p == "COMPLETED";
+}
+private static string TrimForLog(string input, int maxLen = 280)
+{
+if (string.IsNullOrEmpty(input)) return input;
+var s = input;
+if (s.Length <= maxLen) return s;
+return s.Substring(0, maxLen) + "...";
 }
 private static async Task NotifyMachiningCompleted(CncJobItem job, string machineId)
 {
@@ -2475,6 +2494,40 @@ try
 {
     var backend = GetBackendBase();
     if (string.IsNullOrEmpty(backend)) return;
+
+    var nowUtc = DateTime.UtcNow;
+    var criticalPhase = IsCriticalTickPhase(phase);
+    if (!criticalPhase)
+    {
+        var shouldSkip = false;
+        var remainingMs = 0;
+        var shouldLogSkip = false;
+        lock (StateLock)
+        {
+            if (TickNotifyNextAttemptUtcByMachine.TryGetValue(machineId, out var nextUtc) && nextUtc > nowUtc)
+            {
+                shouldSkip = true;
+                remainingMs = (int)Math.Max(0, Math.Ceiling((nextUtc - nowUtc).TotalMilliseconds));
+                var suppressed = TickNotifySuppressedCountByMachine.TryGetValue(machineId, out var c) ? c : 0;
+                TickNotifySuppressedCountByMachine[machineId] = suppressed + 1;
+                if (!TickNotifyLastErrorLogUtcByMachine.TryGetValue(machineId, out var lastLogUtc) ||
+                    (nowUtc - lastLogUtc) >= TimeSpan.FromSeconds(TickNotifySuppressedLogIntervalSeconds))
+                {
+                    TickNotifyLastErrorLogUtcByMachine[machineId] = nowUtc;
+                    shouldLogSkip = true;
+                }
+            }
+        }
+        if (shouldSkip)
+        {
+            if (shouldLogSkip)
+            {
+                Console.WriteLine("[CncMachining] NotifyMachiningTick backoff skip machine={0} phase={1} retryAfterMs={2}", machineId, phase, remainingMs);
+            }
+            return;
+        }
+    }
+
     var startedAt = DateTime.MinValue;
     lock (StateLock)
     {
@@ -2489,6 +2542,7 @@ try
     {
         Console.WriteLine("[CncMachining] tick machine={0} jobId={1} phase={2} elapsed={3}s", machineId, job?.id, phase, elapsedSeconds);
     }
+
     var tickUrl = backend + "/cnc-machines/bridge/machining/tick/" + Uri.EscapeDataString(machineId);
     var tickPayload = new
     {
@@ -2514,16 +2568,76 @@ try
         using (var resp = await Http.SendAsync(req))
         {
             var body = await resp.Content.ReadAsStringAsync();
-            if (!resp.IsSuccessStatusCode)
+            if (resp.IsSuccessStatusCode)
             {
-                Console.WriteLine("[CncMachining] NotifyMachiningTick failed status={0} body={1}", (int)resp.StatusCode, body);
+                var recovered = false;
+                var suppressed = 0;
+                lock (StateLock)
+                {
+                    recovered = (TickNotifyFailCountByMachine.TryGetValue(machineId, out var failCount) && failCount > 0)
+                        || (TickNotifySuppressedCountByMachine.TryGetValue(machineId, out var supCount) && supCount > 0);
+                    suppressed = TickNotifySuppressedCountByMachine.TryGetValue(machineId, out var sc) ? sc : 0;
+                    TickNotifyFailCountByMachine[machineId] = 0;
+                    TickNotifyNextAttemptUtcByMachine[machineId] = DateTime.MinValue;
+                    TickNotifySuppressedCountByMachine[machineId] = 0;
+                }
+                if (recovered && suppressed > 0)
+                {
+                    Console.WriteLine("[CncMachining] NotifyMachiningTick recovered machine={0} suppressed={1}", machineId, suppressed);
+                }
+            }
+            else
+            {
+                var failCount = 0;
+                var backoffSec = 1;
+                var shouldLog = false;
+                lock (StateLock)
+                {
+                    failCount = (TickNotifyFailCountByMachine.TryGetValue(machineId, out var fc) ? fc : 0) + 1;
+                    TickNotifyFailCountByMachine[machineId] = failCount;
+                    backoffSec = Math.Min(TickNotifyBackoffMaxSeconds, (int)Math.Pow(2, Math.Min(5, Math.Max(0, failCount - 1))));
+                    TickNotifyNextAttemptUtcByMachine[machineId] = DateTime.UtcNow.AddSeconds(backoffSec);
+                    if (!TickNotifyLastErrorLogUtcByMachine.TryGetValue(machineId, out var lastErrLogUtc) ||
+                        failCount == 1 ||
+                        (DateTime.UtcNow - lastErrLogUtc) >= TimeSpan.FromSeconds(TickNotifyErrorLogIntervalSeconds) ||
+                        criticalPhase)
+                    {
+                        TickNotifyLastErrorLogUtcByMachine[machineId] = DateTime.UtcNow;
+                        shouldLog = true;
+                    }
+                }
+                if (shouldLog)
+                {
+                    Console.WriteLine("[CncMachining] NotifyMachiningTick failed machine={0} status={1} backoffSec={2} failCount={3} body={4}", machineId, (int)resp.StatusCode, backoffSec, failCount, TrimForLog(body));
+                }
             }
         }
     }
 }
 catch (Exception ex)
 {
-    Console.WriteLine("[CncMachining] NotifyMachiningTick error: backend={0} err={1}", GetBackendBase(), ex);
+    var nowUtc = DateTime.UtcNow;
+    var failCount = 0;
+    var backoffSec = 1;
+    var shouldLog = false;
+    lock (StateLock)
+    {
+        failCount = (TickNotifyFailCountByMachine.TryGetValue(machineId, out var fc) ? fc : 0) + 1;
+        TickNotifyFailCountByMachine[machineId] = failCount;
+        backoffSec = Math.Min(TickNotifyBackoffMaxSeconds, (int)Math.Pow(2, Math.Min(5, Math.Max(0, failCount - 1))));
+        TickNotifyNextAttemptUtcByMachine[machineId] = nowUtc.AddSeconds(backoffSec);
+        if (!TickNotifyLastErrorLogUtcByMachine.TryGetValue(machineId, out var lastErrLogUtc) ||
+            failCount == 1 ||
+            (nowUtc - lastErrLogUtc) >= TimeSpan.FromSeconds(TickNotifyErrorLogIntervalSeconds))
+        {
+            TickNotifyLastErrorLogUtcByMachine[machineId] = nowUtc;
+            shouldLog = true;
+        }
+    }
+    if (shouldLog)
+    {
+        Console.WriteLine("[CncMachining] NotifyMachiningTick error machine={0} backend={1} backoffSec={2} failCount={3} err={4}", machineId, GetBackendBase(), backoffSec, failCount, TrimForLog(ex.ToString()));
+    }
 }
 }
 private static async Task NotifyNcPreloadStatus(CncJobItem job, string machineId, string status, string error)

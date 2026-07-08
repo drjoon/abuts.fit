@@ -230,6 +230,9 @@ export const MachineQueueCard = ({
       ?.caseInfos?.anodizingEnabled === false;
 
   const elapsedLabel = (() => {
+    // 실제 Now Playing 슬롯이 없으면 타이머를 숨긴다.
+    // (socket 지연/유실 등으로 잔여 elapsed 값만 남아 00:00~00:02가 반복 표시되는 현상 방지)
+    if (!currentSlot) return "";
     if (machiningElapsedSeconds === -1) {
       return "가공 시작!";
     }
