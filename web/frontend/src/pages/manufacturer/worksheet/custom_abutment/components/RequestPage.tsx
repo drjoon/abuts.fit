@@ -546,6 +546,14 @@ export const RequestPage = ({
       const normalizedAddress = mailboxAddress.toUpperCase();
       const storageKey = `${MAILBOX_DETAILS_STORAGE_PREFIX}${normalizedAddress}`;
       const now = Date.now();
+      const expectedRequestCount = Number(
+        mailboxSummaries.find(
+          (item) =>
+            String(item?.mailboxAddress || "")
+              .trim()
+              .toUpperCase() === normalizedAddress,
+        )?.requestCount || 0,
+      );
 
       const inMemoryCacheEntry =
         mailboxDetailsCacheRef.current[normalizedAddress] || null;
@@ -588,6 +596,13 @@ export const RequestPage = ({
         Boolean(cachedEntry) &&
         now - Number(cachedEntry?.fetchedAt || 0) <
           MAILBOX_DETAILS_CACHE_TTL_MS;
+      const hasUsableFreshCache =
+        hasFreshCache &&
+        !(
+          expectedRequestCount > 0 &&
+          Array.isArray(cachedEntry?.requests) &&
+          cachedEntry!.requests.length === 0
+        );
 
       const requestsFromCurrentPage = pageState.requests.filter((req) => {
         const reqMailboxAddress = String(req.mailboxAddress || "")
@@ -596,14 +611,14 @@ export const RequestPage = ({
         return reqMailboxAddress === normalizedAddress;
       });
 
-      const initialRequests = hasFreshCache
+      const initialRequests = hasUsableFreshCache
         ? cachedEntry?.requests || []
         : requestsFromCurrentPage.length > 0
           ? requestsFromCurrentPage
-          : cachedEntry?.requests || [];
+          : [];
 
       // auto-close effect 레이스 방지를 위해, 네트워크가 필요하면 로딩 상태를 먼저 올린다.
-      mailboxState.setIsMailboxDetailsLoading(!hasFreshCache);
+      mailboxState.setIsMailboxDetailsLoading(!hasUsableFreshCache);
 
       // 클릭 즉시 모달 오픈 (체감 속도 개선)
       await mailboxState.handleRegisterShipment(
@@ -611,7 +626,7 @@ export const RequestPage = ({
         initialRequests,
       );
 
-      if (hasFreshCache) {
+      if (hasUsableFreshCache) {
         return;
       }
 
@@ -639,20 +654,35 @@ export const RequestPage = ({
               ? (body.data.requests as ManufacturerRequest[])
               : [];
 
-            const nextCacheEntry = {
-              fetchedAt: Date.now(),
-              requests: detailRequests,
-            };
+            const shouldPersistCache =
+              detailRequests.length > 0 || expectedRequestCount === 0;
 
-            mailboxDetailsCacheRef.current[normalizedAddress] = nextCacheEntry;
-            if (typeof window !== "undefined") {
-              try {
-                window.localStorage.setItem(
-                  storageKey,
-                  JSON.stringify(nextCacheEntry),
-                );
-              } catch {
-                // noop
+            if (shouldPersistCache) {
+              const nextCacheEntry = {
+                fetchedAt: Date.now(),
+                requests: detailRequests,
+              };
+
+              mailboxDetailsCacheRef.current[normalizedAddress] =
+                nextCacheEntry;
+              if (typeof window !== "undefined") {
+                try {
+                  window.localStorage.setItem(
+                    storageKey,
+                    JSON.stringify(nextCacheEntry),
+                  );
+                } catch {
+                  // noop
+                }
+              }
+            } else {
+              delete mailboxDetailsCacheRef.current[normalizedAddress];
+              if (typeof window !== "undefined") {
+                try {
+                  window.localStorage.removeItem(storageKey);
+                } catch {
+                  // noop
+                }
               }
             }
 
@@ -679,7 +709,7 @@ export const RequestPage = ({
         mailboxState.setIsMailboxDetailsLoading(false);
       }
     },
-    [mailboxState, pageState.requests, toast, token],
+    [mailboxState, mailboxSummaries, pageState.requests, toast, token],
   );
 
   const currentStageForTab = isMachiningStage
