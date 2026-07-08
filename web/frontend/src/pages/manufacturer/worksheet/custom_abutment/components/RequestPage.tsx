@@ -69,6 +69,8 @@ import {
 
 type RemakeStartStage = "의뢰" | "CAM" | "가공";
 
+const MAILBOX_DETAILS_CACHE_TTL_MS = 60 * 60 * 1000;
+
 export const RequestPage = ({
   showQueueBar = true,
   filterRequests,
@@ -105,6 +107,12 @@ export const RequestPage = ({
     success: boolean;
     data: { mailboxes: MailboxSummaryItem[]; totalRequests: number };
   }> | null>(null);
+  const mailboxDetailsCacheRef = useRef<
+    Record<string, { fetchedAt: number; requests: ManufacturerRequest[] }>
+  >({});
+  const mailboxDetailsInFlightRef = useRef<
+    Record<string, Promise<ManufacturerRequest[]>>
+  >({});
 
   const decodeNcText = useCallback((buffer: ArrayBuffer) => {
     const utf8Decoder = new TextDecoder("utf-8", { fatal: false });
@@ -495,6 +503,16 @@ export const RequestPage = ({
     [refreshRequests],
   );
 
+  const clearMailboxDetailsCache = useCallback(() => {
+    mailboxDetailsCacheRef.current = {};
+    mailboxDetailsInFlightRef.current = {};
+  }, []);
+
+  const handleMailboxGridRefresh = useCallback(async () => {
+    clearMailboxDetailsCache();
+    await reloadRequests(true);
+  }, [clearMailboxDetailsCache, reloadRequests]);
+
   const mailboxState = useMailboxManagement(token, async () => {
     await fetchRequests();
   });
@@ -504,31 +522,79 @@ export const RequestPage = ({
       const mailboxAddress = String(address || "").trim();
       if (!mailboxAddress || !token) return;
 
-      try {
-        const response = await fetch(
-          `/api/requests/shipping/mailbox-requests?mailboxAddress=${encodeURIComponent(mailboxAddress)}`,
-          {
-            method: "GET",
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
-            cache: "no-store",
-          },
-        );
+      const normalizedAddress = mailboxAddress.toUpperCase();
+      const now = Date.now();
+      const cachedEntry = mailboxDetailsCacheRef.current[normalizedAddress];
+      const hasFreshCache =
+        Boolean(cachedEntry) &&
+        now - Number(cachedEntry?.fetchedAt || 0) <
+          MAILBOX_DETAILS_CACHE_TTL_MS;
 
-        if (!response.ok) {
-          throw new Error("우편함 상세 조회에 실패했습니다.");
+      const requestsFromCurrentPage = pageState.requests.filter((req) => {
+        const reqMailboxAddress = String(req.mailboxAddress || "")
+          .trim()
+          .toUpperCase();
+        return reqMailboxAddress === normalizedAddress;
+      });
+
+      const initialRequests = hasFreshCache
+        ? cachedEntry?.requests || []
+        : requestsFromCurrentPage.length > 0
+          ? requestsFromCurrentPage
+          : cachedEntry?.requests || [];
+
+      // auto-close effect 레이스 방지를 위해, 네트워크가 필요하면 로딩 상태를 먼저 올린다.
+      mailboxState.setIsMailboxDetailsLoading(!hasFreshCache);
+
+      // 클릭 즉시 모달 오픈 (체감 속도 개선)
+      await mailboxState.handleRegisterShipment(
+        mailboxAddress,
+        initialRequests,
+      );
+
+      if (hasFreshCache) {
+        return;
+      }
+
+      try {
+        let inFlight = mailboxDetailsInFlightRef.current[normalizedAddress];
+        if (!inFlight) {
+          inFlight = (async () => {
+            const response = await fetch(
+              `/api/requests/shipping/mailbox-requests?mailboxAddress=${encodeURIComponent(mailboxAddress)}`,
+              {
+                method: "GET",
+                headers: {
+                  Authorization: `Bearer ${token}`,
+                },
+                cache: "no-store",
+              },
+            );
+
+            if (!response.ok) {
+              throw new Error("우편함 상세 조회에 실패했습니다.");
+            }
+
+            const body = await response.json();
+            const detailRequests = Array.isArray(body?.data?.requests)
+              ? (body.data.requests as ManufacturerRequest[])
+              : [];
+
+            mailboxDetailsCacheRef.current[normalizedAddress] = {
+              fetchedAt: Date.now(),
+              requests: detailRequests,
+            };
+
+            return detailRequests;
+          })().finally(() => {
+            delete mailboxDetailsInFlightRef.current[normalizedAddress];
+          });
+
+          mailboxDetailsInFlightRef.current[normalizedAddress] = inFlight;
         }
 
-        const body = await response.json();
-        const detailRequests = Array.isArray(body?.data?.requests)
-          ? (body.data.requests as ManufacturerRequest[])
-          : [];
-
-        await mailboxState.handleRegisterShipment(
-          mailboxAddress,
-          detailRequests,
-        );
+        const detailRequests = await inFlight;
+        mailboxState.setMailboxModalRequests(detailRequests);
       } catch (error) {
         toast({
           title: "우편함 상세 조회 실패",
@@ -538,9 +604,11 @@ export const RequestPage = ({
               : "우편함 상세 조회 중 오류가 발생했습니다.",
           variant: "destructive",
         });
+      } finally {
+        mailboxState.setIsMailboxDetailsLoading(false);
       }
     },
-    [mailboxState, toast, token],
+    [mailboxState, pageState.requests, toast, token],
   );
 
   const currentStageForTab = isMachiningStage
@@ -1325,7 +1393,7 @@ export const RequestPage = ({
                       [key]: normalized,
                     }));
                   }}
-                  onRefresh={() => reloadRequests(true)}
+                  onRefresh={handleMailboxGridRefresh}
                 />
               </div>
             ) : isEmpty ? (
@@ -1448,12 +1516,17 @@ export const RequestPage = ({
       <MailboxContentsModal
         open={mailboxState.mailboxModalOpen}
         onOpenChange={(next) => {
-          if (!next && !mailboxState.isForceTodayUpdating) {
+          if (
+            !next &&
+            !mailboxState.isForceTodayUpdating &&
+            !mailboxState.isMailboxDetailsLoading
+          ) {
             mailboxState.handleShipmentModalClose();
           }
         }}
         address={mailboxState.mailboxModalAddress}
         requests={mailboxState.mailboxModalRequests}
+        isLoading={mailboxState.isMailboxDetailsLoading}
         errorMessage={
           mailboxState.mailboxErrorByAddress[
             mailboxState.mailboxModalAddress

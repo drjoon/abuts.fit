@@ -20,11 +20,11 @@ export const useMailboxManagement = (
   >({});
   const [isRollingBackAll, setIsRollingBackAll] = useState(false);
   const [isForceTodayUpdating, setIsForceTodayUpdating] = useState(false);
+  const [isMailboxDetailsLoading, setIsMailboxDetailsLoading] = useState(false);
   const { toast } = useToast();
 
   const handleRegisterShipment = useCallback(
     async (address: string, reqs: ManufacturerRequest[]) => {
-      if (!reqs.length) return;
       setMailboxModalAddress(address);
       setMailboxModalRequests(reqs);
       setIsRollingBackAll(false);
@@ -38,6 +38,7 @@ export const useMailboxManagement = (
     setMailboxModalAddress("");
     setMailboxModalRequests([]);
     setIsRollingBackAll(false);
+    setIsMailboxDetailsLoading(false);
   }, []);
 
   const setMailboxForceToday = useCallback(
@@ -197,6 +198,8 @@ export const useMailboxManagement = (
     isRollingBackAll,
     setIsRollingBackAll,
     isForceTodayUpdating,
+    isMailboxDetailsLoading,
+    setIsMailboxDetailsLoading,
     handleRegisterShipment,
     handleShipmentModalClose,
     handleMailboxAddressSaved,

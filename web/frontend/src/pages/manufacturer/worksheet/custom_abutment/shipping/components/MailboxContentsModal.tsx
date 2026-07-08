@@ -81,6 +81,7 @@ type MailboxContentsModalProps = {
   }) => void;
   forceToday?: boolean;
   onForceTodayChange?: (checked: boolean) => void;
+  isLoading?: boolean;
 };
 
 export const MailboxContentsModal = ({
@@ -97,6 +98,7 @@ export const MailboxContentsModal = ({
   onAddressSaved,
   forceToday = false,
   onForceTodayChange,
+  isLoading = false,
 }: MailboxContentsModalProps) => {
   const { toast } = useToast();
   const getLotShortCode = (req: ManufacturerRequest) => {
@@ -329,6 +331,12 @@ export const MailboxContentsModal = ({
               <Badge variant="outline" className="text-[11px]">
                 {requests.length}건
               </Badge>
+              {isLoading ? (
+                <span className="inline-flex items-center gap-1 text-[11px] text-slate-500">
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  불러오는 중...
+                </span>
+              ) : null}
               {onRollbackAll ? (
                 <Button
                   type="button"
@@ -460,6 +468,12 @@ export const MailboxContentsModal = ({
                 주소 저장
               </Button>
             </div>
+          </div>
+        ) : null}
+        {isLoading && requests.length === 0 ? (
+          <div className="mt-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-6 text-sm text-slate-600 flex items-center gap-2">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            우편함 상세를 불러오는 중입니다...
           </div>
         ) : null}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
