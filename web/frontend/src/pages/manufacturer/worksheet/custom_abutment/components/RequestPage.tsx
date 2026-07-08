@@ -1229,8 +1229,13 @@ export const RequestPage = ({
 
   useEffect(() => {
     resetPagination();
+    // 포장.발송 탭 진입 시에는 우편함 요약을 강제 새로고침해 사용자별 stale 서버 캐시 영향을 줄인다.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    void fetchRequestsCore(false, false);
+    void fetchRequestsCore(
+      false,
+      false,
+      tabStage === "shipping" ? { forceMailboxRefresh: true } : undefined,
+    );
   }, [tabStage, showCompleted]);
 
   const { filteredBase, filteredAndSorted, getFilteredAndSortedRequests } =
