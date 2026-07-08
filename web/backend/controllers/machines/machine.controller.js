@@ -32,6 +32,7 @@ import {
   appendMachiningJobStats,
   resetCurrentMachiningStats,
 } from "../../controllers/cnc/tooling.js";
+import { triggerNextAutoMachiningAfterComplete } from "../../controllers/cnc/machiningBridge.js";
 
 function withBridgeHeaders(extra = {}) {
   const base = {};
@@ -1508,6 +1509,42 @@ export async function upsertMachine(req, res) {
         `[machine.controller] allowAutoMachining changed for ${finalUid}: ${prevAuto} -> ${nextAuto}, invalidating cache`,
       );
       invalidateBridgeFlagsCache(finalUid).catch(() => {});
+
+      // false -> true 전환 시, 이전에 auto-next가 skip 된 장비가 멈춰있을 수 있으므로
+      // 즉시 다음 자동가공 트리거를 1회 시도한다.
+      if (nextAuto === true) {
+        setTimeout(() => {
+          triggerNextAutoMachiningAfterComplete({
+            machineId: finalUid,
+            completedRequestId: null,
+            allowAnodizingOff: false,
+            onlyAnodizingOff: false,
+          })
+            .then((result) => {
+              if (result?.started) {
+                console.log(
+                  `[machine.controller] auto-next retrigger started for ${finalUid}`,
+                  {
+                    requestId: result.requestId || null,
+                  },
+                );
+              } else {
+                console.log(
+                  `[machine.controller] auto-next retrigger skipped for ${finalUid}`,
+                  {
+                    reason: result?.reason || null,
+                  },
+                );
+              }
+            })
+            .catch((err) => {
+              console.warn(
+                `[machine.controller] auto-next retrigger failed for ${finalUid}`,
+                err?.message || err,
+              );
+            });
+        }, 200);
+      }
     }
 
     return res.json({
