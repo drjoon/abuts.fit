@@ -1,9 +1,9 @@
 import { useAuthStore } from "@/store/useAuthStore";
 import { RequestorDashboardPage } from "@/pages/requestor/dashboard/RequestorDashboardPage";
-import { ManufacturerDashboardPage } from "@/pages/manufacturer/dashboard/ManufacturerDashboardPage";
 import { AdminDashboardPage } from "@/pages/admin/dashboard/AdminDashboardPage";
 import { SalesmanDashboardPage } from "@/pages/salesman/SalesmanDashboardPage";
 import { DevopsDashboardPage } from "@/pages/devops/DevopsDashboardPage";
+import { Navigate } from "react-router-dom";
 
 export const DashboardHome = () => {
   const { user } = useAuthStore();
@@ -15,7 +15,7 @@ export const DashboardHome = () => {
   }
 
   if (user.role === "manufacturer") {
-    return <ManufacturerDashboardPage />;
+    return <Navigate to="/dashboard/worksheet" replace />;
   }
 
   if (user.role === "salesman") {
