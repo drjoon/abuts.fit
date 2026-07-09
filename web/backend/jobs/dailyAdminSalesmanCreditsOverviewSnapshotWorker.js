@@ -23,6 +23,7 @@ import {
   getTodayMidnightUtcInKst,
   getLast30DaysRangeUtc,
 } from "../utils/krBusinessDays.js";
+import { resolveMongoUri } from "../utils/mongoUri.js";
 
 const PERIOD_KEY = "30d";
 const REFERRAL_LEADER_ROLES = ["salesman", "devops"];
@@ -59,10 +60,10 @@ async function isTodaySnapshotMissing(ymd) {
 }
 
 async function computeAndUpsertSnapshot({ ymd, range }) {
-  const mongoUri = process.env.MONGODB_URI;
+  const mongoUri = resolveMongoUri();
   if (!mongoUri) {
     console.error(
-      "[dailyAdminSalesmanCreditsOverviewSnapshot] MONGODB_URI is not set",
+      "[dailyAdminSalesmanCreditsOverviewSnapshot] Mongo URI is not set",
     );
     return;
   }

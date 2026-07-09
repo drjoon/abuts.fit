@@ -27,6 +27,7 @@ import {
   getYesterdayYmdInKst,
   getTodayMidnightUtcInKst,
 } from "../utils/krBusinessDays.js";
+import { resolveMongoUri } from "../utils/mongoUri.js";
 
 function kstYmdToUtcRange(ymd) {
   const dt = new Date(`${ymd}T00:00:00.000+09:00`);
@@ -63,9 +64,9 @@ async function isTodaySnapshotMissing(ymd) {
 }
 
 async function runDailySnapshot(ymd) {
-  const mongoUri = process.env.MONGODB_URI;
+  const mongoUri = resolveMongoUri();
   if (!mongoUri) {
-    console.error("[dailyReferralSnapshot] MONGODB_URI is not set");
+    console.error("[dailyReferralSnapshot] Mongo URI is not set");
     return;
   }
 

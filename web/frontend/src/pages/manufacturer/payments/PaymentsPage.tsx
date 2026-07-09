@@ -40,24 +40,20 @@ type PaymentItem = {
   printedContent?: string;
 };
 
-type ManufacturerLedgerRow = {
-  _id: string;
-  manufacturerOrganization: string;
-  manufacturerId?: string | null;
-  type: "EARN" | "REFUND" | "PAYOUT" | "ADJUST";
-  amount: number;
-  refType?: string;
-  refId?: string | null;
-  uniqueKey: string;
-  occurredAt: string;
-};
-
 type ManufacturerDailySnapshotRow = {
   ymd: string;
   earnRequestAmount: number;
   earnRequestCount: number;
+  earnRequestPaidAmount?: number;
+  earnRequestPaidCount?: number;
+  earnRequestFreeAmount?: number;
+  earnRequestFreeCount?: number;
   earnShippingAmount: number;
   earnShippingCount: number;
+  earnShippingPaidAmount?: number;
+  earnShippingPaidCount?: number;
+  earnShippingFreeAmount?: number;
+  earnShippingFreeCount?: number;
   refundAmount: number;
   payoutAmount: number;
   adjustAmount: number;
@@ -93,14 +89,6 @@ const statusColor = (s: string) => {
   return "";
 };
 
-const typeLabel = (t: string) => {
-  if (t === "EARN") return "적립";
-  if (t === "REFUND") return "환불";
-  if (t === "PAYOUT") return "정산";
-  if (t === "ADJUST") return "조정";
-  return t;
-};
-
 const periodToDays = (period: PeriodFilterValue): number | null => {
   if (period === "7d") return 7;
   if (period === "30d") return 30;
@@ -112,14 +100,15 @@ export const ManufacturerPaymentPage = () => {
   const { token, user } = useAuthStore();
   const { toast } = useToast();
 
-  const [tab, setTab] = useState<"snapshot" | "ledger" | "payments">(
-    "snapshot",
-  );
+  const [tab, setTab] = useState<"snapshot" | "payments">("snapshot");
 
   const [period, setPeriod] = useState<PeriodFilterValue>("30d");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [q, setQ] = useState("");
+  const [requestSettlementFilter, setRequestSettlementFilter] = useState<
+    "all" | "paid" | "free"
+  >("all");
 
   const [loading, setLoading] = useState(false);
   const [items, setItems] = useState<PaymentItem[]>([]);
@@ -127,21 +116,14 @@ export const ManufacturerPaymentPage = () => {
   const [hasMore, setHasMore] = useState(true);
   const [totalAmount, setTotalAmount] = useState(0);
 
-  const [ledgerLoading, setLedgerLoading] = useState(false);
-  const [ledgerItems, setLedgerItems] = useState<ManufacturerLedgerRow[]>([]);
-  const [ledgerPage, setLedgerPage] = useState(1);
-  const [ledgerHasMore, setLedgerHasMore] = useState(true);
-
   const [snapLoading, setSnapLoading] = useState(false);
   const [snapItems, setSnapItems] = useState<ManufacturerDailySnapshotRow[]>(
     [],
   );
-  const anyLoading = loading || ledgerLoading || snapLoading;
+  const anyLoading = loading || snapLoading;
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
-  const ledgerScrollRef = useRef<HTMLDivElement | null>(null);
-  const ledgerSentinelRef = useRef<HTMLDivElement | null>(null);
 
   if (!user || user.role !== "manufacturer") return null;
 
@@ -150,6 +132,7 @@ export const ManufacturerPaymentPage = () => {
     setFrom("");
     setTo("");
     setQ("");
+    setRequestSettlementFilter("all");
   };
 
   const buildQueryParams = (p: number) => {
@@ -165,6 +148,7 @@ export const ManufacturerPaymentPage = () => {
       params.set("from", toKstYmd(cutoff) || "");
     }
     if (q.trim()) params.set("q", q.trim());
+
     return params.toString();
   };
 
@@ -200,35 +184,6 @@ export const ManufacturerPaymentPage = () => {
       });
     } finally {
       setLoading(false);
-    }
-  };
-
-  const loadLedger = async (p: number, reset: boolean) => {
-    if (!token) return;
-    setLedgerLoading(true);
-    try {
-      const res = await apiFetch<any>({
-        path: `/api/manufacturer/credits/ledger?${buildQueryParams(p)}`,
-        method: "GET",
-        token,
-      });
-      if (!res.ok || !res.data?.success) {
-        throw new Error(res.data?.message || "조회 실패");
-      }
-      const fetched: ManufacturerLedgerRow[] = Array.isArray(res.data.data)
-        ? res.data.data
-        : [];
-      setLedgerItems((prev) => (reset ? fetched : [...prev, ...fetched]));
-      setLedgerHasMore(fetched.length >= PAGE_SIZE);
-      setLedgerPage(p);
-    } catch (err: any) {
-      toast({
-        title: "조회 실패",
-        description: err?.message,
-        variant: "destructive",
-      });
-    } finally {
-      setLedgerLoading(false);
     }
   };
 
@@ -280,12 +235,6 @@ export const ManufacturerPaymentPage = () => {
       loadPayments(1, true);
       return;
     }
-    if (tab === "ledger") {
-      setLedgerPage(1);
-      setLedgerHasMore(true);
-      loadLedger(1, true);
-      return;
-    }
     if (tab === "snapshot") {
       loadSnapshots();
     }
@@ -307,30 +256,10 @@ export const ManufacturerPaymentPage = () => {
     return () => io.disconnect();
   }, [hasMore, loading, page]);
 
-  useEffect(() => {
-    const sentinel = ledgerSentinelRef.current;
-    const root = ledgerScrollRef.current;
-    if (!sentinel || !root || !ledgerHasMore || ledgerLoading) return;
-    const io = new IntersectionObserver(
-      (entries) => {
-        if (
-          entries.some((e) => e.isIntersecting) &&
-          ledgerHasMore &&
-          !ledgerLoading
-        ) {
-          loadLedger(ledgerPage + 1, false);
-        }
-      },
-      { root, rootMargin: "200px", threshold: 0 },
-    );
-    io.observe(sentinel);
-    return () => io.disconnect();
-  }, [ledgerHasMore, ledgerLoading, ledgerPage]);
-
   return (
     <DashboardShell
       title="정산 내역"
-      subtitle="일별 정산 집계, 원장, 입금 내역을 확인하세요."
+      subtitle="일별 정산 집계와 입금 내역을 확인하세요."
       stats={null}
       mainLeft={
         <div className="space-y-4">
@@ -340,7 +269,6 @@ export const ManufacturerPaymentPage = () => {
                 <PeriodFilter value={period} onChange={setPeriod} />
                 <TabsList className="h-9">
                   <TabsTrigger value="snapshot">일별 정산</TabsTrigger>
-                  <TabsTrigger value="ledger">정산 원장</TabsTrigger>
                   <TabsTrigger value="payments">입금 내역</TabsTrigger>
                 </TabsList>
 
@@ -364,7 +292,8 @@ export const ManufacturerPaymentPage = () => {
                         <div className="min-w-0">
                           <div className="font-medium">CAM 승인 적립</div>
                           <div className="text-muted-foreground">
-                            가공 시작 시 제조사 적립 +6,500원 (재제작 포함)
+                            유료 의뢰비 기준 제조사 분배율 적용 (기본 60%,
+                            영업자 미연결 시 65%) + VAT 10%
                           </div>
                         </div>
                       </div>
@@ -427,9 +356,47 @@ export const ManufacturerPaymentPage = () => {
                 <Input
                   value={q}
                   onChange={(e) => setQ(e.target.value)}
-                  placeholder="검색 (메모/외부ID)"
+                  placeholder="검색 (메모/외부ID/키)"
                   className="h-9 w-full sm:w-[280px]"
                 />
+                <div className="inline-flex items-center rounded-md border bg-background p-0.5">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={
+                      requestSettlementFilter === "all" ? "default" : "ghost"
+                    }
+                    className="h-7 px-2"
+                    onClick={() => setRequestSettlementFilter("all")}
+                    disabled={anyLoading}
+                  >
+                    전체
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={
+                      requestSettlementFilter === "paid" ? "default" : "ghost"
+                    }
+                    className="h-7 px-2"
+                    onClick={() => setRequestSettlementFilter("paid")}
+                    disabled={anyLoading}
+                  >
+                    유료(의뢰+배송)
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={
+                      requestSettlementFilter === "free" ? "default" : "ghost"
+                    }
+                    className="h-7 px-2"
+                    onClick={() => setRequestSettlementFilter("free")}
+                    disabled={anyLoading}
+                  >
+                    무료(의뢰+배송)
+                  </Button>
+                </div>
                 <Button
                   type="button"
                   variant="outline"
@@ -448,10 +415,11 @@ export const ManufacturerPaymentPage = () => {
                   <TableHeader>
                     <TableRow>
                       <TableHead className="w-[110px]">일자</TableHead>
-                      <TableHead className="w-[120px] text-right">
-                        요청
+                      <TableHead className="w-[90px]">타입</TableHead>
+                      <TableHead className="w-[150px] text-right">
+                        의뢰
                       </TableHead>
-                      <TableHead className="w-[120px] text-right">
+                      <TableHead className="w-[150px] text-right">
                         배송
                       </TableHead>
                       <TableHead className="w-[120px] text-right">
@@ -466,38 +434,84 @@ export const ManufacturerPaymentPage = () => {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {snapItems.map((r) => (
-                      <TableRow key={r.ymd}>
-                        <TableCell className="text-xs tabular-nums">
-                          {r.ymd}
-                        </TableCell>
-                        <TableCell className="text-right text-xs tabular-nums">
-                          ₩{Number(r.earnRequestAmount || 0).toLocaleString()} (
-                          {Number(r.earnRequestCount || 0)})
-                        </TableCell>
-                        <TableCell className="text-right text-xs tabular-nums">
-                          ₩{Number(r.earnShippingAmount || 0).toLocaleString()}{" "}
-                          ({Number(r.earnShippingCount || 0)})
-                        </TableCell>
-                        <TableCell className="text-right text-xs tabular-nums text-rose-700">
-                          {Number(r.refundAmount || 0) !== 0
-                            ? `₩${Number(r.refundAmount).toLocaleString()}`
-                            : "-"}
-                        </TableCell>
-                        <TableCell className="text-right text-xs tabular-nums text-rose-700">
-                          {Number(r.payoutAmount || 0) !== 0
-                            ? `₩${Number(r.payoutAmount).toLocaleString()}`
-                            : "-"}
-                        </TableCell>
-                        <TableCell className="text-right text-xs font-semibold tabular-nums text-blue-700">
-                          ₩{Number(r.netAmount || 0).toLocaleString()}
-                        </TableCell>
-                      </TableRow>
-                    ))}
+                    {snapItems.map((r) => {
+                      const paidAmount = Number(
+                        r.earnRequestPaidAmount ?? r.earnRequestAmount ?? 0,
+                      );
+                      const paidCount = Number(
+                        r.earnRequestPaidCount ?? r.earnRequestCount ?? 0,
+                      );
+                      const freeCount = Number(r.earnRequestFreeCount ?? 0);
+
+                      const shippingPaidAmount = Number(
+                        r.earnShippingPaidAmount ?? r.earnShippingAmount ?? 0,
+                      );
+                      const shippingPaidCount = Number(
+                        r.earnShippingPaidCount ?? r.earnShippingCount ?? 0,
+                      );
+                      const shippingFreeAmount = Number(
+                        r.earnShippingFreeAmount ?? 0,
+                      );
+                      const shippingFreeCount = Number(
+                        r.earnShippingFreeCount ?? 0,
+                      );
+
+                      let typeText = "전체";
+                      let requestText = `유료 ₩${paidAmount.toLocaleString()} (${paidCount}) / 무료 ₩0 (${freeCount})`;
+                      let shippingText = `유료 ₩${shippingPaidAmount.toLocaleString()} (${shippingPaidCount}) / 무료 ₩${shippingFreeAmount.toLocaleString()} (${shippingFreeCount})`;
+                      let refundText =
+                        Number(r.refundAmount || 0) !== 0
+                          ? `₩${Number(r.refundAmount).toLocaleString()}`
+                          : "-";
+                      let payoutText =
+                        Number(r.payoutAmount || 0) !== 0
+                          ? `₩${Number(r.payoutAmount).toLocaleString()}`
+                          : "-";
+                      let netText = `₩${Number(r.netAmount || 0).toLocaleString()}`;
+
+                      if (requestSettlementFilter === "paid") {
+                        typeText = "유료";
+                        requestText = `₩${paidAmount.toLocaleString()} (${paidCount})`;
+                        shippingText = `₩${shippingPaidAmount.toLocaleString()} (${shippingPaidCount})`;
+                      }
+
+                      if (requestSettlementFilter === "free") {
+                        typeText = "무료";
+                        requestText = `₩0 (${freeCount})`;
+                        shippingText = `₩${shippingFreeAmount.toLocaleString()} (${shippingFreeCount})`;
+                        refundText = "-";
+                        payoutText = "-";
+                        netText = "-";
+                      }
+
+                      return (
+                        <TableRow key={r.ymd}>
+                          <TableCell className="text-xs tabular-nums">
+                            {r.ymd}
+                          </TableCell>
+                          <TableCell className="text-xs">{typeText}</TableCell>
+                          <TableCell className="text-right text-xs tabular-nums">
+                            {requestText}
+                          </TableCell>
+                          <TableCell className="text-right text-xs tabular-nums">
+                            {shippingText}
+                          </TableCell>
+                          <TableCell className="text-right text-xs tabular-nums text-rose-700">
+                            {refundText}
+                          </TableCell>
+                          <TableCell className="text-right text-xs tabular-nums text-rose-700">
+                            {payoutText}
+                          </TableCell>
+                          <TableCell className="text-right text-xs font-semibold tabular-nums text-blue-700">
+                            {netText}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
                     {snapLoading && (
                       <TableRow>
                         <TableCell
-                          colSpan={6}
+                          colSpan={7}
                           className="text-center text-sm text-muted-foreground py-4"
                         >
                           불러오는 중...
@@ -507,7 +521,7 @@ export const ManufacturerPaymentPage = () => {
                     {!snapLoading && snapItems.length === 0 && (
                       <TableRow>
                         <TableCell
-                          colSpan={6}
+                          colSpan={7}
                           className="text-center text-sm text-muted-foreground py-8"
                         >
                           조회 결과가 없습니다.
@@ -516,72 +530,6 @@ export const ManufacturerPaymentPage = () => {
                     )}
                   </TableBody>
                 </Table>
-              </div>
-            </TabsContent>
-
-            <TabsContent value="ledger" className="mt-0">
-              <div
-                ref={ledgerScrollRef}
-                className="overflow-y-auto overflow-x-auto rounded-md border max-h-[60vh]"
-              >
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="w-[160px]">일시</TableHead>
-                      <TableHead className="w-[90px]">구분</TableHead>
-                      <TableHead className="w-[140px] text-right">
-                        금액
-                      </TableHead>
-                      <TableHead>키</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {ledgerItems.map((r) => (
-                      <TableRow key={r._id}>
-                        <TableCell className="text-xs">
-                          {formatDate(String(r.occurredAt || ""))}
-                        </TableCell>
-                        <TableCell className="text-xs font-medium">
-                          <div>{typeLabel(r.type)}</div>
-                          {r.refType ? (
-                            <div className="text-[10px] text-muted-foreground">
-                              {r.refType}
-                            </div>
-                          ) : null}
-                        </TableCell>
-                        <TableCell className="text-right text-xs font-semibold text-blue-700 tabular-nums">
-                          ₩{Number(r.amount || 0).toLocaleString()}
-                        </TableCell>
-                        <TableCell className="text-xs text-muted-foreground">
-                          {r.uniqueKey}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                    {ledgerLoading && (
-                      <TableRow>
-                        <TableCell
-                          colSpan={4}
-                          className="text-center text-sm text-muted-foreground py-4"
-                        >
-                          불러오는 중...
-                        </TableCell>
-                      </TableRow>
-                    )}
-                    {!ledgerLoading && ledgerItems.length === 0 && (
-                      <TableRow>
-                        <TableCell
-                          colSpan={4}
-                          className="text-center text-sm text-muted-foreground py-8"
-                        >
-                          조회 결과가 없습니다.
-                        </TableCell>
-                      </TableRow>
-                    )}
-                  </TableBody>
-                </Table>
-                {ledgerHasMore && !ledgerLoading && (
-                  <div ref={ledgerSentinelRef} className="h-8" />
-                )}
               </div>
             </TabsContent>
 

@@ -10,6 +10,7 @@ import {
   allocateVirtualMailboxAddress,
   isManufacturerSampleRequest,
 } from "../controllers/requests/mailbox.utils.js";
+import { resolveMongoUri } from "../utils/mongoUri.js";
 
 /**
  * 공정 단계 자동 진행 워커
@@ -24,9 +25,9 @@ import {
  */
 
 async function progressStages() {
-  const mongoUri = process.env.MONGODB_URI;
+  const mongoUri = resolveMongoUri();
   if (!mongoUri) {
-    console.error("MONGODB_URI is not set");
+    console.error("Mongo URI is not set");
     process.exit(1);
   }
 

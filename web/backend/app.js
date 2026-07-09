@@ -17,6 +17,7 @@ import SignupVerification from "./models/signupVerification.model.js";
 import TaxInvoiceDraft from "./models/taxInvoiceDraft.model.js";
 import ShippingPackage from "./models/shippingPackage.model.js";
 import { requestFloodBlocker } from "./middlewares/requestFloodBlocker.js";
+import { resolveMongoSourceLabel, resolveMongoUri } from "./utils/mongoUri.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -29,33 +30,14 @@ app.set("trust proxy", 1);
 
 // 데이터베이스 연결
 // MONGO_URI는 기존 레거시 키를 위한 백업으로 유지
-const mongoUri =
-  process.env.NODE_ENV === "test"
-    ? process.env.MONGODB_URI_TEST ||
-      process.env.MONGO_URI_TEST ||
-      "mongodb://localhost:27017/abutsFitTest"
-    : process.env.NODE_ENV === "production"
-      ? process.env.MONGODB_URI ||
-        process.env.MONGO_URI ||
-        "mongodb://localhost:27017/abutsFit"
-      : process.env.MONGODB_URI ||
-        process.env.MONGO_URI ||
-        process.env.MONGODB_URI_TEST ||
-        process.env.MONGO_URI_TEST ||
-        "mongodb://localhost:27017/abutsFit";
+const mongoUri = resolveMongoUri();
+const mongoSource = resolveMongoSourceLabel();
 
-const mongoSource =
-  process.env.NODE_ENV === "test"
-    ? "TEST DB"
-    : process.env.NODE_ENV === "production"
-      ? process.env.MONGODB_URI || process.env.MONGO_URI
-        ? "PROD DB"
-        : "LOCAL DB"
-      : process.env.MONGODB_URI || process.env.MONGO_URI
-        ? "DEV DB"
-        : process.env.MONGODB_URI_TEST || process.env.MONGO_URI_TEST
-          ? "TEST DB"
-          : "LOCAL DB";
+if (!mongoUri) {
+  throw new Error(
+    "MongoDB URI is not configured. Set MONGODB_URI_TEST (or MONGO_URI_TEST) for development/test, and MONGODB_URI for production.",
+  );
+}
 
 const dbReady = connect(mongoUri)
   .then(async () => {

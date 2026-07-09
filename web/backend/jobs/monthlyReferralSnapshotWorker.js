@@ -14,6 +14,7 @@ import mongoose, { Types } from "mongoose";
 import User from "../models/user.model.js";
 import { getThisMonthStartYmdInKst } from "../controllers/requests/utils.js";
 import { recomputePricingReferralSnapshotForLeaderAnchorId } from "../services/pricingReferralSnapshot.service.js";
+import { resolveMongoUri } from "../utils/mongoUri.js";
 
 /**
  * 지난 달 범위를 KST 기준으로 계산한다.
@@ -66,9 +67,9 @@ function isFirstDayOfMonthKst() {
 }
 
 async function runMonthlySnapshot() {
-  const mongoUri = process.env.MONGODB_URI;
+  const mongoUri = resolveMongoUri();
   if (!mongoUri) {
-    console.error("[monthlyReferralSnapshot] MONGODB_URI is not set");
+    console.error("[monthlyReferralSnapshot] Mongo URI is not set");
     return;
   }
 

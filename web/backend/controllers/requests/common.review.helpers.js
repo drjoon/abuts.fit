@@ -177,11 +177,47 @@ export async function ensureRequestCreditSpendOnMachiningEnter({
   const resolvedAmount = Number(computedPrice?.amount || 0);
 
   if (!Number.isFinite(resolvedAmount) || resolvedAmount <= 0) {
-    console.log("[CREDIT_SPEND] skip non-positive machining spend", {
-      requestId: request?.requestId,
-      requestMongoId: String(request?._id || ""),
-      resolvedAmount,
-    });
+    request.price = {
+      ...(request.price || {}),
+      ...(computedPrice && typeof computedPrice === "object"
+        ? computedPrice
+        : {}),
+      amount: 0,
+    };
+
+    const freeMarkerResult = await CreditLedger.updateOne(
+      { uniqueKey },
+      {
+        $setOnInsert: {
+          businessAnchorId,
+          userId: actorUserId || null,
+          type: "SPEND",
+          amount: 0,
+          refType: "REQUEST",
+          refId: request._id,
+          uniqueKey,
+          spentPaidAmount: 0,
+          spentBonusAmount: 0,
+          hasFreeRequest: true,
+        },
+      },
+      { upsert: true, session },
+    );
+
+    if (freeMarkerResult?.upsertedCount) {
+      console.log("[CREDIT_SPEND] free request marker inserted", {
+        requestId: request?.requestId,
+        requestMongoId: String(request?._id || ""),
+        uniqueKey,
+      });
+    } else {
+      console.log("[CREDIT_SPEND] skip existing free request marker", {
+        requestId: request?.requestId,
+        requestMongoId: String(request?._id || ""),
+        uniqueKey,
+      });
+    }
+
     return;
   }
 

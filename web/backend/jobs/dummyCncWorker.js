@@ -5,6 +5,7 @@ import {
   getTodayYmdInKst,
   isKoreanBusinessDay,
 } from "../utils/krBusinessDays.js";
+import { resolveMongoUri } from "../utils/mongoUri.js";
 
 const KST_TZ = "Asia/Seoul";
 const BRIDGE_BASE = process.env.BRIDGE_BASE;
@@ -97,9 +98,9 @@ export async function runDummySchedulesOnce() {
     return;
   }
 
-  const mongoUri = process.env.MONGODB_URI;
+  const mongoUri = resolveMongoUri();
   if (!mongoUri) {
-    console.error("dummyCncWorker: MONGODB_URI is not set");
+    console.error("dummyCncWorker: Mongo URI is not set");
     return;
   }
 
