@@ -70,6 +70,8 @@ export const useNewRequestPage = (existingRequestId?: string) => {
       existingRequestId: string;
     }[]
   >([]);
+  const [duplicatePromptFromSubmit, setDuplicatePromptFromSubmit] =
+    useState(false);
 
   const clinicStorageKey = useMemo(() => {
     const userId = user?.id ? String(user.id) : "guest";
@@ -180,6 +182,7 @@ export const useNewRequestPage = (existingRequestId?: string) => {
       setDraftFiles([]);
       setSelectedPreviewIndex(null);
       setDuplicatePrompt(null);
+      setDuplicatePromptFromSubmit(false);
     }
 
     prevDraftIdRef.current = draftId ?? null;
@@ -262,7 +265,8 @@ export const useNewRequestPage = (existingRequestId?: string) => {
               const stageOrder = Number(data?.stageOrder || 0);
               const existingRequest = data?.existingRequest;
 
-              // 중복 발견 시 모달 표시
+              // 중복 발견 시 모달 표시 (입력 중 체크: 제출 플로우 아님)
+              setDuplicatePromptFromSubmit(false);
               setDuplicatePrompt({
                 mode: "active",
                 duplicates: [
@@ -805,6 +809,7 @@ export const useNewRequestPage = (existingRequestId?: string) => {
 
       // 자동 적용 대신, 사용자 선택 모달을 노출한다.
       setDuplicateResolutions([]);
+      setDuplicatePromptFromSubmit(true);
       setDuplicatePrompt({
         mode: payload.mode,
         duplicates: normalizedDuplicates,
@@ -820,7 +825,13 @@ export const useNewRequestPage = (existingRequestId?: string) => {
         duration: 3500,
       });
     },
-    [files, setDuplicatePrompt, setDuplicateResolutions, toast],
+    [
+      files,
+      setDuplicatePrompt,
+      setDuplicatePromptFromSubmit,
+      setDuplicateResolutions,
+      toast,
+    ],
   );
 
   // V2 제출: Draft 기반 워크플로우 (SSOT)
@@ -929,6 +940,8 @@ export const useNewRequestPage = (existingRequestId?: string) => {
     selectedRequest,
     duplicatePrompt,
     setDuplicatePrompt,
+    duplicatePromptFromSubmit,
+    setDuplicatePromptFromSubmit,
     duplicateResolutions,
     setDuplicateResolutions,
   };

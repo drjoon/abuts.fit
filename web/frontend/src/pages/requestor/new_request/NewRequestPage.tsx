@@ -83,6 +83,8 @@ export const NewRequestPage = () => {
     handleAddOrSelectClinic,
     duplicatePrompt,
     setDuplicatePrompt,
+    duplicatePromptFromSubmit,
+    setDuplicatePromptFromSubmit,
     duplicateResolutions,
     setDuplicateResolutions,
     handleSubmitWithDuplicateResolutions,
@@ -302,8 +304,7 @@ export const NewRequestPage = () => {
       return;
     }
 
-    // 모든 중복 건 처리 완료 - 모달만 닫고 선택 결과를 저장
-    // 실제 제출(업로드/신규 의뢰 생성)은 메인 페이지의 "의뢰하기" 버튼에서만 진행
+    // 모든 중복 건 처리 완료
     const finalResolutions = nextResolutions.map((r) => ({
       caseId: r.caseId,
       strategy: r.strategy,
@@ -312,6 +313,18 @@ export const NewRequestPage = () => {
 
     setDuplicateResolutions(finalResolutions as any);
     setDuplicatePrompt(null);
+
+    // 제출 중 서버 중복 응답으로 열린 모달이면, 선택 즉시 재제출한다.
+    // useNewRequestSubmitV2의 preparedDraft 재사용으로 기존 업로드를 재사용해 재업로드를 피한다.
+    if (duplicatePromptFromSubmit) {
+      setDuplicatePromptFromSubmit(false);
+      toast({
+        title: "중복 처리 완료",
+        description: "선택한 방식으로 의뢰를 접수하고 있어요.",
+        duration: 4000,
+      });
+      await handleSubmitWithDuplicateResolutions(finalResolutions as any);
+    }
   };
 
   const renderDuplicateActions = (dup: any) => {
@@ -450,6 +463,7 @@ export const NewRequestPage = () => {
           preventCloseOnOverlayClick={false}
           onClose={() => {
             setDuplicatePrompt(null);
+            setDuplicatePromptFromSubmit(false);
           }}
           title={
             duplicatePrompt?.mode === "tracking"
