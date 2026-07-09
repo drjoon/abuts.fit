@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { usePeriodStore, periodToRange } from "@/store/usePeriodStore";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useQuery } from "@tanstack/react-query";
@@ -65,6 +66,8 @@ type PricingSsotHealth = {
     businessAnchorId?: string;
     name?: string;
     gap?: number;
+    latestRequestMongoId?: string;
+    latestRequestId?: string;
   }>;
 };
 
@@ -82,6 +85,7 @@ const getAlertIcon = (type: string) => {
 
 export const AdminDashboardPage = () => {
   const { user, token } = useAuthStore();
+  const navigate = useNavigate();
   const { period, setPeriod } = usePeriodStore();
   const { counts: commBadgeCounts } = useAdminCommBadges();
   const [pricingSummary, setPricingSummary] = useState<PricingSummary | null>(
@@ -605,19 +609,68 @@ export const AdminDashboardPage = () => {
                         <div className="space-y-1">
                           {(pricingSsotHealth?.topMismatches || [])
                             .slice(0, 3)
-                            .map((m) => (
-                              <div
-                                key={String(m.businessAnchorId || m.name || "")}
-                                className="flex items-center justify-between text-xs"
-                              >
-                                <span className="truncate mr-2">
-                                  {m.name || m.businessAnchorId || "-"}
-                                </span>
-                                <span className="font-semibold text-yellow-700">
-                                  gap {Number(m.gap || 0).toLocaleString()}
-                                </span>
-                              </div>
-                            ))}
+                            .map((m) => {
+                              const key = String(
+                                m.businessAnchorId ||
+                                  m.latestRequestMongoId ||
+                                  m.name ||
+                                  "",
+                              );
+                              const latestRequestMongoId = String(
+                                m.latestRequestMongoId || "",
+                              ).trim();
+                              const latestRequestId = String(
+                                m.latestRequestId || "",
+                              ).trim();
+                              const businessAnchorId = String(
+                                m.businessAnchorId || "",
+                              ).trim();
+
+                              return (
+                                <button
+                                  key={key}
+                                  type="button"
+                                  className="w-full flex items-center justify-between text-xs hover:bg-yellow-50 rounded px-1 py-0.5"
+                                  onClick={() => {
+                                    // 우선순위:
+                                    // 1) 대표 요청이 있으면 요청 모니터링으로 이동(해당 요청 focus)
+                                    // 2) 요청이 없으면 사업자 페이지로 이동(해당 anchor focus)
+                                    if (latestRequestMongoId) {
+                                      const qs = new URLSearchParams();
+                                      if (latestRequestMongoId) {
+                                        qs.set(
+                                          "focusRequestMongoId",
+                                          latestRequestMongoId,
+                                        );
+                                      }
+                                      if (latestRequestId) {
+                                        qs.set("q", latestRequestId);
+                                      }
+                                      navigate(
+                                        `/dashboard/monitoring?${qs.toString()}`,
+                                      );
+                                      return;
+                                    }
+
+                                    if (businessAnchorId) {
+                                      const qs = new URLSearchParams();
+                                      qs.set("focusAnchorId", businessAnchorId);
+                                      qs.set("q", businessAnchorId);
+                                      navigate(
+                                        `/dashboard/businesses?${qs.toString()}`,
+                                      );
+                                    }
+                                  }}
+                                >
+                                  <span className="truncate mr-2 text-left">
+                                    {m.name || m.businessAnchorId || "-"}
+                                  </span>
+                                  <span className="font-semibold text-yellow-700 shrink-0">
+                                    gap {Number(m.gap || 0).toLocaleString()}
+                                  </span>
+                                </button>
+                              );
+                            })}
                         </div>
                       </div>
                     )}

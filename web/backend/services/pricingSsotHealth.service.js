@@ -113,23 +113,50 @@ export const computePricingSsotConsistency = async () => {
     : [];
 
   const anchorMap = new Map(
-    (anchors || []).map((anchor) => [
-      String(anchor?._id || "").trim(),
-      anchor,
-    ]),
+    (anchors || []).map((anchor) => [String(anchor?._id || "").trim(), anchor]),
   );
+
+  const latestRequestsByAnchorId = new Map();
+  if (mismatchAnchorIds.length > 0) {
+    const latestRequestRows = await Promise.all(
+      mismatchAnchorIds.map(async (anchorId) => {
+        const row = await Request.findOne({
+          businessAnchorId: new Types.ObjectId(anchorId),
+          manufacturerStage: { $in: SHIPPING_TRACKING_STAGES },
+          createdAt: {
+            $gte: startAtKst,
+            $lt: endExclusiveKst,
+          },
+        })
+          .sort({ createdAt: -1 })
+          .select({ _id: 1, requestId: 1 })
+          .lean();
+        return [anchorId, row];
+      }),
+    );
+
+    for (const [anchorId, row] of latestRequestRows) {
+      latestRequestsByAnchorId.set(String(anchorId), row || null);
+    }
+  }
 
   const mismatches = mismatchesRaw
     .map((row) => {
-      const anchor = anchorMap.get(String(row.businessAnchorId || "").trim());
+      const key = String(row.businessAnchorId || "").trim();
+      const anchor = anchorMap.get(key);
+      const latestRequest = latestRequestsByAnchorId.get(key) || null;
       return {
-        businessAnchorId: String(row.businessAnchorId || "").trim(),
+        businessAnchorId: key,
         name: String(anchor?.name || ""),
         businessType: String(anchor?.businessType || ""),
         requestCount: Number(row.requestCount || 0),
         snapshotCount: Number(row.snapshotCount || 0),
         gap: Number(row.gap || 0),
         snapshotComputedAt: row.snapshotComputedAt || null,
+        latestRequestMongoId: latestRequest?._id
+          ? String(latestRequest._id)
+          : null,
+        latestRequestId: String(latestRequest?.requestId || ""),
       };
     })
     .sort((a, b) => Math.abs(b.gap) - Math.abs(a.gap));
@@ -193,6 +220,12 @@ export const storePricingSsotConsistencyResult = async (
               snapshotComputedAt: row?.snapshotComputedAt
                 ? new Date(row.snapshotComputedAt)
                 : null,
+              latestRequestMongoId: Types.ObjectId.isValid(
+                String(row?.latestRequestMongoId || ""),
+              )
+                ? new Types.ObjectId(String(row.latestRequestMongoId))
+                : null,
+              latestRequestId: String(row?.latestRequestId || ""),
             };
           })
           .filter(Boolean),

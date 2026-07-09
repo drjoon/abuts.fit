@@ -1,4 +1,5 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Building2,
@@ -116,9 +117,12 @@ const getBusinessTypeBadgeClass = (type?: string) => {
 
 export default function AdminBusinessPage() {
   const { token } = useAuthStore();
+  const [searchParams] = useSearchParams();
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const [search, setSearch] = useState("");
+  const initialQuery = String(searchParams.get("q") || "").trim();
+  const focusAnchorId = String(searchParams.get("focusAnchorId") || "").trim();
+  const [search, setSearch] = useState(initialQuery);
   const [typeFilter, setTypeFilter] = useState("all");
 
   // 연결된 사용자 목록 다이얼로그 상태
@@ -148,6 +152,11 @@ export default function AdminBusinessPage() {
     business: BusinessCredit | null;
     userCount: number;
   }>({ open: false, business: null, userCount: 0 });
+
+  useEffect(() => {
+    const q = String(searchParams.get("q") || "").trim();
+    if (q) setSearch(q);
+  }, [searchParams]);
 
   // 연결된 사용자 목록 조회
   const fetchLinkedUsers = async (businessAnchorId: string) => {
@@ -440,8 +449,17 @@ export default function AdminBusinessPage() {
             <div className="grid gap-3 xl:grid-cols-2 2xl:grid-cols-3">
               {filteredBusinesses.map((business) => {
                 const anchorId = String(business.businessAnchorId || "").trim();
+                const isFocused =
+                  Boolean(focusAnchorId) &&
+                  String(anchorId || "").trim() === focusAnchorId;
+
                 return (
-                  <Card key={business._id} className="border-border/70">
+                  <Card
+                    key={business._id}
+                    className={`border-border/70 ${
+                      isFocused ? "ring-2 ring-primary border-primary" : ""
+                    }`}
+                  >
                     <CardHeader className="space-y-2">
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">

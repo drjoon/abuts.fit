@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useAuthStore } from "@/store/useAuthStore";
 import { usePeriodStore, periodToRange } from "@/store/usePeriodStore";
 import { PeriodFilter } from "@/shared/ui/PeriodFilter";
@@ -110,10 +111,18 @@ const PAGE_SIZE = 9;
 
 export const AdminRequestMonitoring = () => {
   const { token } = useAuthStore();
+  const [searchParams] = useSearchParams();
   const { period, setPeriod } = usePeriodStore();
   const { toast } = useToast();
   const [requests, setRequests] = useState<any[]>([]);
-  const [searchQuery, setSearchQuery] = useState("");
+  const initialQuery = String(searchParams.get("q") || "").trim();
+  const focusRequestMongoId = String(
+    searchParams.get("focusRequestMongoId") || "",
+  ).trim();
+  const focusRequestId = String(
+    searchParams.get("focusRequestId") || "",
+  ).trim();
+  const [searchQuery, setSearchQuery] = useState(initialQuery);
   const [selectedStatus, setSelectedStatus] = useState("all");
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set());
@@ -310,6 +319,12 @@ export const AdminRequestMonitoring = () => {
         .toLowerCase()
         .includes(searchQuery.toLowerCase()) ||
       (requestor.business || "")
+        .toLowerCase()
+        .includes(searchQuery.toLowerCase()) ||
+      String(request.requestId || "")
+        .toLowerCase()
+        .includes(searchQuery.toLowerCase()) ||
+      String(request._id || "")
         .toLowerCase()
         .includes(searchQuery.toLowerCase());
 
@@ -529,12 +544,20 @@ export const AdminRequestMonitoring = () => {
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                 {filteredRequests.slice(0, visibleCount).map((request) => {
                   const isDeleting = deletingIds.has(request._id);
+                  const isFocused =
+                    (focusRequestMongoId &&
+                      String(request._id || "").trim() ===
+                        focusRequestMongoId) ||
+                    (focusRequestId &&
+                      String(request.requestId || "").trim() ===
+                        focusRequestId);
+
                   return (
                     <div
                       key={request._id || request.id}
                       className={`p-4 border border-border rounded-lg hover:bg-muted/50 transition-colors relative ${
                         isDeleting ? "opacity-50 pointer-events-none" : ""
-                      }`}
+                      } ${isFocused ? "ring-2 ring-primary border-primary" : ""}`}
                     >
                       {/* 삭제 버튼 - 취소 상태가 아닐 때만 표시 */}
                       {getNormalizedStageLabel(request) !== "취소" && (

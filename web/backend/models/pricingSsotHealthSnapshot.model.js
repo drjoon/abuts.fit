@@ -32,6 +32,15 @@ const pricingSsotMismatchItemSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+    latestRequestMongoId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Request",
+      default: null,
+    },
+    latestRequestId: {
+      type: String,
+      default: "",
+    },
   },
   { _id: false },
 );

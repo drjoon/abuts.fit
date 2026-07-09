@@ -120,7 +120,15 @@ export async function getDashboardStats(req, res) {
       checkedAt: latestPricingSsotHealth?.checkedAt || null,
       range: latestPricingSsotHealth?.range || null,
       topMismatches: Array.isArray(latestPricingSsotHealth?.mismatches)
-        ? latestPricingSsotHealth.mismatches.slice(0, 5)
+        ? latestPricingSsotHealth.mismatches.slice(0, 5).map((row) => ({
+            businessAnchorId: String(row?.businessAnchorId || "").trim(),
+            name: String(row?.name || ""),
+            gap: Number(row?.gap || 0),
+            latestRequestMongoId: String(
+              row?.latestRequestMongoId || "",
+            ).trim(),
+            latestRequestId: String(row?.latestRequestId || "").trim(),
+          }))
         : [],
     };
 
