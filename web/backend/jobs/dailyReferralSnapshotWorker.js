@@ -22,6 +22,7 @@ import { recomputeBulkShippingSnapshotForBusinessAnchorId } from "../services/bu
 import { recomputeRequestorDashboardSummarySnapshotsForBusinessAnchorId } from "../services/requestorDashboardSummarySnapshot.service.js";
 import { recomputePricingReferralSnapshotForLeaderAnchorId } from "../services/pricingReferralSnapshot.service.js";
 import { recomputePricingReferralDailyOrderBucketsForBusinessAnchorId } from "../services/pricingReferralOrderBucket.service.js";
+import { runPricingSsotConsistencyCheck } from "../services/pricingSsotHealth.service.js";
 import {
   getTodayYmdInKst,
   getYesterdayYmdInKst,
@@ -167,6 +168,28 @@ async function runDailySnapshot(ymd) {
     );
   } catch (e) {
     console.error("[requestorDashboardSnapshotWarmup] failed:", e);
+  }
+
+  // 가격/리퍼럴 SSOT 일치성 점검 (관리자 대시보드 노출용 스냅샷 생성)
+  // 주의: 이 점검은 Request 원본 집계와 rolling snapshot의 일치성을 확인한다.
+  // mismatch > 0이면 데이터 누락/집계 경로 이탈 신호이므로 운영 경고 대상으로 본다.
+  try {
+    const ssotResult = await runPricingSsotConsistencyCheck({
+      write: true,
+    });
+    if (!ssotResult.success) {
+      console.warn("[pricingSsotHealth] mismatch detected", {
+        mismatchCount: ssotResult.mismatchCount,
+        range: ssotResult.range,
+      });
+    } else {
+      console.log("[pricingSsotHealth] check passed", {
+        checkedSnapshotCount: ssotResult.checkedSnapshotCount,
+        range: ssotResult.range,
+      });
+    }
+  } catch (e) {
+    console.error("[pricingSsotHealth] failed:", e);
   }
 
   // 제조사 일별 정산 스냅샷 (전일분)

@@ -51,6 +51,22 @@ npm run db:migrate-payout-rates -- --dry-run
 npm run db:migrate-payout-rates
 ```
 
+- **가격/리퍼럴 SSOT 일치성 점검 (관리자용)**
+
+```bash
+# strict 모드(불일치가 1건 이상이면 실패 코드 반환)
+npm run db:check-pricing-ssot
+
+# CI 모드(local.env 로드 없이, 주입된 MONGODB_URI 사용)
+npm run db:check-pricing-ssot:ci
+
+# 필요 시 strict 없이 직접 실행 (기본값: 결과 write)
+ENV_FILE=local.env node scripts/db/check-pricing-ssot-consistency.js
+
+# write 없이 조회만 실행
+ENV_FILE=local.env node scripts/db/check-pricing-ssot-consistency.js --no-write
+```
+
 ## 안전장치
 
 - 기본적으로 **production에서는 DB 변경을 거부**합니다.

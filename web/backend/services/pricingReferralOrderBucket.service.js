@@ -22,19 +22,43 @@ export const getPricingReferralOrderCountMapByBusinessAnchorIds = async ({
     return new Map();
   }
 
-  const rows = await PricingReferralDailyOrderBucket.aggregate([
+  const startAtKst = new Date(`${startYmd}T00:00:00+09:00`);
+  const endAtKst = new Date(`${endYmd}T00:00:00+09:00`);
+  if (
+    Number.isNaN(startAtKst.getTime()) ||
+    Number.isNaN(endAtKst.getTime()) ||
+    endAtKst < startAtKst
+  ) {
+    return new Map();
+  }
+
+  const endExclusiveKst = new Date(endAtKst.getTime());
+  endExclusiveKst.setDate(endExclusiveKst.getDate() + 1);
+
+  // SSOT 원칙:
+  // - 리퍼럴/가격 집계의 원본은 Request 컬렉션 하나만 사용한다.
+  // - PricingReferralDailyOrderBucket / ShippingPackage 는 성능/보조 데이터이며,
+  //   기준 집계값을 결정하는 원본으로 사용하지 않는다.
+  // - 이렇게 해야 패키지 연결 누락/지연이 있어도 가격 정책 수량이 왜곡되지 않는다.
+  const rows = await Request.aggregate([
     {
       $match: {
         businessAnchorId: {
           $in: anchorIds.map((id) => new Types.ObjectId(id)),
         },
-        shipDateYmd: { $gte: startYmd, $lte: endYmd },
+        manufacturerStage: {
+          $in: ["shipping", "포장.발송", "tracking", "추적관리"],
+        },
+        createdAt: {
+          $gte: startAtKst,
+          $lt: endExclusiveKst,
+        },
       },
     },
     {
       $group: {
         _id: "$businessAnchorId",
-        count: { $sum: "$requestCount" },
+        count: { $sum: 1 },
       },
     },
   ]);

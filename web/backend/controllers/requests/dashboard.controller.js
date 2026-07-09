@@ -110,6 +110,9 @@ const getShippingOrderCountsByBusinessAnchorIds = async ({
     return cached;
   }
 
+  // SSOT: Request 원본 집계를 사용한다.
+  // getPricingReferralOrderCountMapByBusinessAnchorIds 내부가 Request 기준으로 계산되므로
+  // 캐시는 성능 최적화 용도일 뿐, 기준 데이터는 단일 원본(Request)이다.
   const countMap = await getPricingReferralOrderCountMapByBusinessAnchorIds({
     businessAnchorIds: orgKeys,
     startYmd,
@@ -1346,6 +1349,9 @@ export async function getMyPricingReferralStats(req, res) {
 
         const user = me;
 
+        // 가격 정책 카드의 "최근 30일 주문" 기준은 rolling snapshot(self/group)이다.
+        // SSOT는 Request 원본 데이터이며, 최근 30일(createdAt, KST) + 배송/추적 단계 기준으로 집계한다.
+        // 즉, 보조 집계 컬렉션(버킷/패키지)이 누락되어도 기준 수치는 Request 집계로 유지된다.
         const totalLastMonthOrders = freshGroupTotalOrders;
 
         const totalOrders = totalLastMonthOrders;

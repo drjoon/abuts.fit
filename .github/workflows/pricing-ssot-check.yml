@@ -1,0 +1,48 @@
+name: Pricing SSOT Consistency Check
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 매일 KST 01:20 (UTC 16:20)
+    - cron: "20 16 * * *"
+  push:
+    branches: ["main", "master"]
+    paths:
+      - "web/backend/controllers/requests/dashboard.controller.js"
+      - "web/backend/controllers/admin/admin.dashboard.controller.js"
+      - "web/backend/services/pricingReferralOrderBucket.service.js"
+      - "web/backend/services/pricingReferralSnapshot.service.js"
+      - "web/backend/services/pricingSsotHealth.service.js"
+      - "web/backend/models/pricingSsotHealthSnapshot.model.js"
+      - "web/backend/scripts/db/check-pricing-ssot-consistency.js"
+      - "web/backend/jobs/dailyReferralSnapshotWorker.js"
+      - "web/backend/package.json"
+
+jobs:
+  pricing-ssot-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/backend/package-lock.json
+
+      - name: Install backend dependencies
+        run: npm --prefix web/backend ci
+
+      - name: Run pricing SSOT strict check
+        env:
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+        run: |
+          if [ -z "$MONGODB_URI" ]; then
+            echo "MONGODB_URI secret is required for pricing SSOT check." >&2
+            exit 1
+          fi
+          npm --prefix web/backend run db:check-pricing-ssot:ci

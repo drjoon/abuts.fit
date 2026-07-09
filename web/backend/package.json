@@ -23,6 +23,8 @@
     "db:migrate-remake-monthly-free-rule": "cross-env ENV_FILE=local.env node scripts/db/migrate-remake-monthly-free-rule.js",
     "db:fix-mailbox-anchor-mismatch": "cross-env ENV_FILE=local.env node scripts/db/fix-request-mailbox-anchor-mismatch.js",
     "db:fix-mailbox-shipping-integrity": "cross-env ENV_FILE=local.env node scripts/db/fix-mailbox-shipping-integrity.js",
+    "db:check-pricing-ssot": "cross-env ENV_FILE=local.env node scripts/db/check-pricing-ssot-consistency.js --strict",
+    "db:check-pricing-ssot:ci": "node scripts/db/check-pricing-ssot-consistency.js --strict",
     "worker:monthly-referral-snapshot": "cross-env ENV_FILE=local.env node jobs/dailyReferralSnapshotWorker.js",
     "worker:daily-admin-salesman-credits-overview-snapshot": "cross-env ENV_FILE=local.env node jobs/dailyAdminSalesmanCreditsOverviewSnapshotWorker.js"
   },

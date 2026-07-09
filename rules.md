@@ -48,6 +48,33 @@
 
 **이 원칙을 위반하면 데이터 불일치, 버그, 혼란이 발생합니다.**
 
+### 1.0.1 가격/리퍼럴 주문 집계 SSOT (2026-07-09)
+
+- 가격 정책의 최근 30일 주문 수(`selfBusinessOrders30d`, `groupTotalOrders30d`)는 **Request 컬렉션 원본 집계만 SSOT**로 사용합니다.
+- `PricingReferralDailyOrderBucket`, `ShippingPackage`는 운영/성능 보조 데이터이며, 가격 정책 주문 수량의 기준 원본으로 사용하지 않습니다.
+- 집계 기준은 아래로 고정합니다.
+  - 기간: 최근 30일 KST (`createdAt` 기준)
+  - 단계: `shipping|포장.발송|tracking|추적관리`
+- 스냅샷(`PricingReferralRolling30dAggregate`)은 위 Request SSOT 집계를 materialize한 파생 데이터입니다.
+- 운영 점검은 관리자 스크립트/워커/CI 3중 경로로 수행합니다.
+  - 로컬/운영 수동 점검: `npm --prefix web/backend run db:check-pricing-ssot`
+  - CI 점검: `npm --prefix web/backend run db:check-pricing-ssot:ci`
+  - daily worker는 마지막 단계에서 SSOT 점검을 자동 실행하고 스냅샷에 기록합니다.
+- 관리자 대시보드는 저장된 SSOT 점검 스냅샷을 표시하고, 불일치/미실행/stale 상태를 시스템 경고로 노출합니다.
+
+관련 파일:
+- `web/backend/services/pricingReferralOrderBucket.service.js`
+- `web/backend/services/pricingReferralSnapshot.service.js`
+- `web/backend/services/pricingSsotHealth.service.js`
+- `web/backend/models/pricingSsotHealthSnapshot.model.js`
+- `web/backend/controllers/requests/dashboard.controller.js`
+- `web/backend/controllers/admin/admin.dashboard.controller.js`
+- `web/backend/jobs/dailyReferralSnapshotWorker.js`
+- `web/backend/scripts/db/check-pricing-ssot-consistency.js`
+- `web/backend/package.json`
+- `web/frontend/src/pages/admin/dashboard/AdminDashboardPage.tsx`
+- `.github/workflows/pricing-ssot-check.yml`
+
 ---
 
 ### 1.1 보안 정보 관리
