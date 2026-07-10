@@ -1597,27 +1597,39 @@ namespace DentalAddin
                 string rangePolicy;
 
                 // 요청 반영:
-                // Finish_End(B)는 BackPointX에서 시작하여 BackPointX+0.4mm까지 고정 구간 가공한다.
-                // (기존 1피치 end-lap 윈도우 정책보다 우선)
+                // Finish_End(B)
+                // - 시작점: Finish_Back의 끝점(= sourceOp/opB LastPassPercent)
+                // - 끝점: BackPointX + (1.3 - finishLineMinZ)
+                // - 끝점 < 시작점이면 공정 자체를 생성하지 않는다.
                 bool isFinishEndB = string.Equals(finishLabel, "END", StringComparison.OrdinalIgnoreCase)
                     && string.Equals(abLabel, "B", StringComparison.OrdinalIgnoreCase);
                 if (isFinishEndB)
                 {
-                    const double finishEndStartOffsetFromBackMm = 0.0;
-                    const double finishEndEndOffsetFromBackMm = 0.4;
-                    double startX = MoveSTL_Module.BackPointX + finishEndStartOffsetFromBackMm;
-                    double endX = MoveSTL_Module.BackPointX + finishEndEndOffsetFromBackMm;
+                    const double finishEndEndOffsetBaseMm = 0.8;
 
-                    startPercent = XToPassPercentByStartEndScale(startX, 0.0, 100.0);
-                    endPercent = XToPassPercentByStartEndScale(endX, 0.0, 100.0);
-                    if (endPercent < startPercent)
+                    startPercent = fixedPercent;
+                    double startX = startPercent / 100.0 * StartEndScaleMm;
+
+                    string finishMinZRaw = GetEnvString("ABUTS_FINISHLINE_MIN_Z");
+                    if (string.IsNullOrWhiteSpace(finishMinZRaw)
+                        || !double.TryParse(finishMinZRaw, NumberStyles.Float, CultureInfo.InvariantCulture, out double finishLineMinZ)
+                        || double.IsNaN(finishLineMinZ)
+                        || double.IsInfinity(finishLineMinZ))
                     {
-                        double tmp = startPercent;
-                        startPercent = endPercent;
-                        endPercent = tmp;
+                        DentalLogger.Log($"Composite2ExitLap - END(B) 생성 생략: ABUTS_FINISHLINE_MIN_Z 해석 실패(raw='{finishMinZRaw ?? ""}')");
+                        return;
                     }
 
-                    rangePolicy = $"BackPointX-fixed(startX={startX:F3}, endX={endX:F3})";
+                    double endX = MoveSTL_Module.BackPointX + (finishEndEndOffsetBaseMm - finishLineMinZ);
+                    endPercent = XToPassPercentByStartEndScale(endX, 0.0, 100.0);
+
+                    if (endPercent < startPercent - 1e-6)
+                    {
+                        DentalLogger.Log($"Composite2ExitLap - END(B) 생성 생략: end<start (start%={startPercent:F3}, end%={endPercent:F3}, startX={startX:F3}, endX={endX:F3}, backX={MoveSTL_Module.BackPointX:F3}, finishLineMinZ={finishLineMinZ:F4})");
+                        return;
+                    }
+
+                    rangePolicy = $"BackEndTo(BackPointX+(0.8-minZ))(start%={startPercent:F3}, endX={endX:F3}, minZ={finishLineMinZ:F4})";
                 }
                 else
                 {
@@ -2361,7 +2373,37 @@ namespace DentalAddin
             double middleEnd = Clamp(splitline2 + middleRoughOverCutMm, xMin + 1e-6, xMax - 1e-6);
 
             double backStart = Clamp(splitline2 - backRoughOverCutMm, xMin + 1e-6, xMax - 1e-6);
+
+            // 요청 반영:
+            // Back_Rough 끝점 = finishline min_z + 4.1mm (무클램프)
+            // 단, 이 값이 Back 기준선(splitline2)보다 좌측이면 Back 구간이 비어 툴패스가 사라질 수 있어
+            // BackPoint 기준식(BackPointX + (4.1 - minZ))으로 자동 보정한다.
+            const double backRoughEndOffsetFromFinishMinZMm = 4.1;
             double backEnd = xMax;
+            if (!string.IsNullOrWhiteSpace(finishMinZRaw)
+                && double.TryParse(finishMinZRaw, NumberStyles.Float, CultureInfo.InvariantCulture, out double finishLineMinZForBackRough)
+                && !double.IsNaN(finishLineMinZForBackRough)
+                && !double.IsInfinity(finishLineMinZForBackRough))
+            {
+                double rawBackEnd = finishLineMinZForBackRough + backRoughEndOffsetFromFinishMinZMm;
+                backEnd = rawBackEnd;
+
+                // Back_Rough 경계가 splitline2 좌측에 전부 위치하면 실질 Back 툴패스가 비게 된다.
+                // 이 경우 요청식으로 재해석한다: BackPointX + (2.1 - finishLineMinZ)
+                if (backEnd <= splitline2 + 1e-6)
+                {
+                    const double backRoughEndTranslatedBaseMm = 2.1;
+                    double translatedBackEnd = MoveSTL_Module.BackPointX + (backRoughEndTranslatedBaseMm - finishLineMinZForBackRough);
+                    DentalLogger.Log($"RoughFreeFromMillSplitAB - Back_Rough 끝점 재해석: rawEnd={rawBackEnd.ToString("F3", CultureInfo.InvariantCulture)} <= splitline2={splitline2.ToString("F3", CultureInfo.InvariantCulture)} -> translatedEnd={translatedBackEnd.ToString("F3", CultureInfo.InvariantCulture)} (BackPointX + (2.1 - minZ))");
+                    backEnd = translatedBackEnd;
+                }
+
+                DentalLogger.Log($"RoughFreeFromMillSplitAB - Back_Rough 끝점 적용(무클램프): minZ={finishLineMinZForBackRough.ToString("F4", CultureInfo.InvariantCulture)}, endX={backEnd.ToString("F3", CultureInfo.InvariantCulture)}");
+            }
+            else
+            {
+                DentalLogger.Log($"RoughFreeFromMillSplitAB - Back_Rough 끝점 fallback(xMax): finishLineMinZ raw='{finishMinZRaw ?? ""}'");
+            }
 
             double radius = (Document.LatheMachineSetup.BarDiameter + 10.0) / 2.0;
             FeatureChain frontBoundary = EnsureRectBoundary("RoughBoundryFront1", frontStart, frontEnd, radius, -radius);
