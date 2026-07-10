@@ -36,6 +36,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         private const string CompositeOrientationProfileStartXEnv = "ABUTS_COMPOSITE_ORIENTATION_PROFILE_START_X";
         private const double CompositeFinishToleranceThresholdZMm = 15.0;
         private const double CompositeFinishToleranceOverrideMm = 0.03;
+        private const string BackRoughFourWayEnableEnv = "ABUTS_BACK_ROUGH_4WAY_ENABLE";
+        private const string FinishLineMinZEnv = "ABUTS_FINISHLINE_MIN_Z";
         private static readonly HttpClient BackendHttp;
 
         // gp.exe 비정상 종료 시 Windows GPF 모달(오류 대화상자) 억제
@@ -457,6 +459,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             Environment.SetEnvironmentVariable("ABUTS_CAM_DIAMETER", null);
             Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_ORIENTATION_VECTOR", null);
             Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_ORIENTATION_PROFILE_LENGTH_MM", null);
+            Environment.SetEnvironmentVariable(BackRoughFourWayEnableEnv, null);
+            Environment.SetEnvironmentVariable(FinishLineMinZEnv, null);
             Environment.SetEnvironmentVariable(CompositeOrientationProfileStartXEnv, null);
             FaceHoleProcessFilePath = null;
             ConnectionMachiningProcessFilePath = null;
@@ -965,6 +969,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
 
                 TryApplyCompositeSplitByFinishLine(mainModuleType, stlTopZ, finishLineTopZ);
                 TryApplyTwoPhaseSplitByFinishLine(mainModuleType, stlTopZ, finishLineTopZ, twoPhase);
+                TryApplyBackRoughModeByFinishLineMinZ(finishLineMinZ);
                 // 유지홈 옵션을 5axisComposite_A 의 StepIncrement 에 반영.
                 // PRC 파일은 건드리지 않고, env 변수에 numeric 값만 주입한다.
                 // 실제 적용은 MainModuleComposite.TryRunComposite2SplitLine2 → TrySetCompositeStepIncrement 가
@@ -1406,14 +1411,43 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                         double faceRightMaxX = roughAEndX - faceMinGapMm;
 
                         AppLogger.Log($"DentalAddin: TwoPhase split 적용 - finishLineTopZ:{finishLineTopZ.Value.ToString("F4", CultureInfo.InvariantCulture)}, targetZ(top):{targetZ.ToString("F4", CultureInfo.InvariantCulture)}, stlTopZ:{stlTopZ.Value.ToString("F4", CultureInfo.InvariantCulture)}, topX:{topX.ToString("F4", CultureInfo.InvariantCulture)}, splitOffsetMm:{splitOffsetMm.ToString("F3", CultureInfo.InvariantCulture)}, rawSplitX(top-1.0):{rawSplitX.ToString("F4", CultureInfo.InvariantCulture)}, splitX(clamped):{splitX.ToString("F4", CultureInfo.InvariantCulture)}, roughAEndX(split-0.5):{roughAEndX.ToString("F4", CultureInfo.InvariantCulture)}, faceRightMaxX(roughAEnd-0.3):{faceRightMaxX.ToString("F4", CultureInfo.InvariantCulture)} (Front:{frontX.ToString("F4", CultureInfo.InvariantCulture)}, Back:{backX.ToString("F4", CultureInfo.InvariantCulture)})");
+                            }
+                            catch (Exception ex)
+                            {
+                                AppLogger.Log($"DentalAddin: TwoPhase split 설정 실패 - {ex.GetType().Name}:{ex.Message}");
+                            }
+                        }
+
+                private void TryApplyBackRoughModeByFinishLineMinZ(double? finishLineMinZ)
+                {
+                    try
+                    {
+                        if (!finishLineMinZ.HasValue || double.IsNaN(finishLineMinZ.Value) || double.IsInfinity(finishLineMinZ.Value))
+                        {
+                            Environment.SetEnvironmentVariable(BackRoughFourWayEnableEnv, null);
+                            Environment.SetEnvironmentVariable(FinishLineMinZEnv, null);
+                            AppLogger.Log("DentalAddin: Back_Rough 각도 정책 생략 - finishLine minZ 없음");
+                            return;
+                        }
+
+                        const double thresholdMm = 1.0;
+                        double minZ = finishLineMinZ.Value;
+                        bool useFourWay = minZ <= thresholdMm;
+
+                        Environment.SetEnvironmentVariable(FinishLineMinZEnv, minZ.ToString(CultureInfo.InvariantCulture));
+                        Environment.SetEnvironmentVariable(BackRoughFourWayEnableEnv, useFourWay ? "1" : "0");
+
+                        AppLogger.Log($"DentalAddin: Back_Rough 각도 정책 적용 - finishLineMinZ:{minZ.ToString("F4", CultureInfo.InvariantCulture)}, threshold:{thresholdMm.ToString("F3", CultureInfo.InvariantCulture)}, mode:{(useFourWay ? "90deg x4" : "180deg x2")}");
                     }
                     catch (Exception ex)
                     {
-                        AppLogger.Log($"DentalAddin: TwoPhase split 설정 실패 - {ex.GetType().Name}:{ex.Message}");
+                        Environment.SetEnvironmentVariable(BackRoughFourWayEnableEnv, null);
+                        Environment.SetEnvironmentVariable(FinishLineMinZEnv, null);
+                        AppLogger.Log($"DentalAddin: Back_Rough 각도 정책 설정 실패 - {ex.GetType().Name}:{ex.Message}");
                     }
                 }
 
-        private void TryApplyCompositeFinishToleranceEnv(double? stlZLengthMm)
+                private void TryApplyCompositeFinishToleranceEnv(double? stlZLengthMm)
         {
             try
             {

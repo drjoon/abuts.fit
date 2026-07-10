@@ -2318,11 +2318,20 @@ namespace DentalAddin
 
             FreeFormFeature ff0 = FindFreeFormFeatureByName("3DRoughMilling_0Degree");
             FreeFormFeature ff180 = FindFreeFormFeatureByName("3DRoughMilling_180Degree");
+            // 90/270은 기존 WorkPlane(3DMilling_90/270) feature를 우선 사용한다.
+            // Rough 전용 90/270은 fallback으로만 사용.
+            FreeFormFeature ff90 = FindFreeFormFeatureByName("3DMilling_90Degree") ?? FindFreeFormFeatureByName("3DRoughMilling_90Degree");
+            FreeFormFeature ff270 = FindFreeFormFeatureByName("3DMilling_270Degree") ?? FindFreeFormFeatureByName("3DRoughMilling_270Degree");
             if (ff0 == null || ff180 == null)
             {
                 DentalLogger.Log("RoughFreeFromMillSplitAB - FreeFormFeature(0/180) 누락. 분할 중단");
                 return true;
             }
+
+            string back4WayRaw = (GetEnvString("ABUTS_BACK_ROUGH_4WAY_ENABLE") ?? string.Empty).Trim();
+            bool useBackFourWay = string.Equals(back4WayRaw, "1", StringComparison.OrdinalIgnoreCase) || string.Equals(back4WayRaw, "true", StringComparison.OrdinalIgnoreCase);
+            string finishMinZRaw = GetEnvString("ABUTS_FINISHLINE_MIN_Z");
+            DentalLogger.Log($"RoughFreeFromMillSplitAB - Back rough mode env: ABUTS_BACK_ROUGH_4WAY_ENABLE='{back4WayRaw}', ABUTS_FINISHLINE_MIN_Z='{finishMinZRaw ?? ""}', useBackFourWay={useBackFourWay}, has90={ff90 != null}, has270={ff270 != null}");
 
             if (!TryGetThreeStageSplitConfig(out double splitline1, out double splitline2, out double xMin, out double xMax))
             {
@@ -2358,6 +2367,20 @@ namespace DentalAddin
             int keyFront = SafeParseKey(frontBoundary.Key);
             int keyMiddle = SafeParseKey(middleBoundary.Key);
             int keyBack = SafeParseKey(backBoundary.Key);
+            int keyBackSide = keyBack;
+            if (useBackFourWay)
+            {
+                FeatureChain backSideBoundary = EnsureRectBoundaryXZ("RoughBoundryBackSide1", backStart, backEnd, radius, -radius);
+                if (backSideBoundary != null)
+                {
+                    keyBackSide = SafeParseKey(backSideBoundary.Key);
+                    DentalLogger.Log($"RoughFreeFromMillSplitAB - BACK 90/270용 회전 Boundary 생성/재사용 key={keyBackSide}");
+                }
+                else
+                {
+                    DentalLogger.Log("RoughFreeFromMillSplitAB - BACK 90/270용 회전 Boundary 생성 실패, 기본 Boundary로 fallback");
+                }
+            }
             double twoPhaseSplitLineDiag = 0.0;
             if (!TryResolveTwoPhaseSplitLineX(out twoPhaseSplitLineDiag))
             {
@@ -2377,31 +2400,66 @@ namespace DentalAddin
             EnsureThreeStageSplitGuideLines(splitline1, splitline2);
 
             string region = (GetEnvString("ABUTS_ROUGHFREEFORM_SPLIT_REGION") ?? string.Empty).Trim().ToUpperInvariant();
-            string frontMiddlePrc = !string.IsNullOrWhiteSpace(prcA) ? prcA : prcB;
-            string backPrc = !string.IsNullOrWhiteSpace(prcB) ? prcB : frontMiddlePrc;
-            if (string.Equals(region, "FRONT", StringComparison.OrdinalIgnoreCase))
+
+            // 요청 정책:
+            // - Back_Rough 4-way(90도 간격 4개)일 때만 Back은 MillRough_3D_Back.prc 사용
+            // - Back_Rough 2-way(180도 간격 2개)일 때는 Front/Middle/Back 모두 MillRough_3D.prc 사용
+            string roughDir = null;
+            try
             {
-                AddSplitOpsForRegion("FRONT", frontMiddlePrc, keyFront, technologyUtility, ff0, ff180);
+                string baseRef = !string.IsNullOrWhiteSpace(prcA) ? prcA : (!string.IsNullOrWhiteSpace(prcB) ? prcB : ((PrcFilePath != null && PrcFilePath.Length > 3) ? PrcFilePath[3] : null));
+                if (!string.IsNullOrWhiteSpace(baseRef))
+                {
+                    roughDir = Path.GetDirectoryName(baseRef);
+                }
             }
-            else if (string.Equals(region, "MIDDLE", StringComparison.OrdinalIgnoreCase))
+            catch
             {
-                AddSplitOpsForRegion("MIDDLE", frontMiddlePrc, keyMiddle, technologyUtility, ff0, ff180);
+                roughDir = null;
             }
-            else if (string.Equals(region, "BACK", StringComparison.OrdinalIgnoreCase))
+
+            string canonicalFrontMiddlePrc = !string.IsNullOrWhiteSpace(roughDir)
+                ? Path.Combine(roughDir, "MillRough_3D.prc")
+                : ((!string.IsNullOrWhiteSpace(prcA) ? prcA : ((PrcFilePath != null && PrcFilePath.Length > 3) ? PrcFilePath[3] : null)));
+            string canonicalBackPrc = !string.IsNullOrWhiteSpace(roughDir)
+                ? Path.Combine(roughDir, "MillRough_3D_Back.prc")
+                : (!string.IsNullOrWhiteSpace(prcB) ? prcB : canonicalFrontMiddlePrc);
+
+            string frontMiddlePrc = canonicalFrontMiddlePrc;
+            string backPrc = useBackFourWay ? canonicalBackPrc : canonicalFrontMiddlePrc;
+
+            if (useBackFourWay)
             {
-                AddSplitOpsForRegion("BACK", backPrc, keyBack, technologyUtility, ff0, ff180);
+                DentalLogger.Log($"RoughFreeFromMillSplitAB - PRC 선택(4-way): Front/Middle={frontMiddlePrc}, Back={backPrc}");
             }
             else
             {
-                AddSplitOpsForRegion("FRONT", frontMiddlePrc, keyFront, technologyUtility, ff0, ff180);
-                AddSplitOpsForRegion("MIDDLE", frontMiddlePrc, keyMiddle, technologyUtility, ff0, ff180);
-                AddSplitOpsForRegion("BACK", backPrc, keyBack, technologyUtility, ff0, ff180);
+                DentalLogger.Log($"RoughFreeFromMillSplitAB - PRC 선택(2-way): Front/Middle/Back 모두 {frontMiddlePrc}");
+            }
+
+            if (string.Equals(region, "FRONT", StringComparison.OrdinalIgnoreCase))
+            {
+                AddSplitOpsForRegion("FRONT", frontMiddlePrc, keyFront, keyBackSide, technologyUtility, ff0, ff180, ff90, ff270, useBackFourWay);
+            }
+            else if (string.Equals(region, "MIDDLE", StringComparison.OrdinalIgnoreCase))
+            {
+                AddSplitOpsForRegion("MIDDLE", frontMiddlePrc, keyMiddle, keyBackSide, technologyUtility, ff0, ff180, ff90, ff270, useBackFourWay);
+            }
+            else if (string.Equals(region, "BACK", StringComparison.OrdinalIgnoreCase))
+            {
+                AddSplitOpsForRegion("BACK", backPrc, keyBack, keyBackSide, technologyUtility, ff0, ff180, ff90, ff270, useBackFourWay);
+            }
+            else
+            {
+                AddSplitOpsForRegion("FRONT", frontMiddlePrc, keyFront, keyBackSide, technologyUtility, ff0, ff180, ff90, ff270, useBackFourWay);
+                AddSplitOpsForRegion("MIDDLE", frontMiddlePrc, keyMiddle, keyBackSide, technologyUtility, ff0, ff180, ff90, ff270, useBackFourWay);
+                AddSplitOpsForRegion("BACK", backPrc, keyBack, keyBackSide, technologyUtility, ff0, ff180, ff90, ff270, useBackFourWay);
             }
 
             return true;
         }
 
-        private static void AddSplitOpsForRegion(string region, string prcFile, int boundaryKey, TechnologyUtility technologyUtility, FreeFormFeature ff0, FreeFormFeature ff180)
+        private static void AddSplitOpsForRegion(string region, string prcFile, int boundaryKey, int boundaryKeyRotated, TechnologyUtility technologyUtility, FreeFormFeature ff0, FreeFormFeature ff180, FreeFormFeature ff90, FreeFormFeature ff270, bool useBackFourWay)
         {
             if (string.IsNullOrWhiteSpace(prcFile))
             {
@@ -2409,11 +2467,29 @@ namespace DentalAddin
                 DentalLogger.Log($"RoughFreeFromMillSplitAB - {region} 기본 PRC 사용: PRC[3]={prcFile}");
             }
 
-            AddSplitOp(region, "0Degree", boundaryKey, ff0, prcFile, technologyUtility);
-            AddSplitOp(region, "180Degree", boundaryKey, ff180, prcFile, technologyUtility);
+            bool backFourWayAvailable = ff90 != null && ff270 != null;
+            if (string.Equals(region, "BACK", StringComparison.OrdinalIgnoreCase) && useBackFourWay)
+            {
+                if (backFourWayAvailable)
+                {
+                    DentalLogger.Log("RoughFreeFromMillSplitAB - BACK 4-way 모드 적용(0/90/180/270)");
+                    AddSplitOp(region, "0Degree", boundaryKey, ff0, prcFile, technologyUtility, applyBoundary: true);
+                    // 90/270은 회전된 BoundaryProfile(XZ) 키를 사용한다.
+                    int rotatedKey = boundaryKeyRotated > 0 ? boundaryKeyRotated : boundaryKey;
+                    AddSplitOp(region, "90Degree", rotatedKey, ff90, prcFile, technologyUtility, applyBoundary: true);
+                    AddSplitOp(region, "180Degree", boundaryKey, ff180, prcFile, technologyUtility, applyBoundary: true);
+                    AddSplitOp(region, "270Degree", rotatedKey, ff270, prcFile, technologyUtility, applyBoundary: true);
+                    return;
+                }
+
+                DentalLogger.Log("RoughFreeFromMillSplitAB - BACK 4-way 요청이나 90/270 FreeFormFeature 누락으로 2-way(0/180) fallback");
+            }
+
+            AddSplitOp(region, "0Degree", boundaryKey, ff0, prcFile, technologyUtility, applyBoundary: true);
+            AddSplitOp(region, "180Degree", boundaryKey, ff180, prcFile, technologyUtility, applyBoundary: true);
         }
 
-        private static void AddSplitOp(string region, string angleLabel, int boundaryKey, FreeFormFeature freeFormFeature, string prcFile, TechnologyUtility technologyUtility)
+        private static void AddSplitOp(string region, string angleLabel, int boundaryKey, FreeFormFeature freeFormFeature, string prcFile, TechnologyUtility technologyUtility, bool applyBoundary)
         {
             if (freeFormFeature == null)
             {
@@ -2437,8 +2513,15 @@ namespace DentalAddin
                 }
                 else
                 {
-                    roughing.BoundaryProfiles = "";
-                    roughing.BoundaryProfiles = "6," + boundaryKey.ToString(CultureInfo.InvariantCulture);
+                    if (applyBoundary)
+                    {
+                        roughing.BoundaryProfiles = "";
+                        roughing.BoundaryProfiles = "6," + boundaryKey.ToString(CultureInfo.InvariantCulture);
+                    }
+                    else
+                    {
+                        DentalLogger.Log($"RoughFreeFromMillSplitAB - Region:{region} Angle:{angleLabel} 경계 프로파일 미적용(applyBoundary=false)");
+                    }
                     TryAddOperation(roughing, freeFormFeature, $"SplitAB:{region}:{angleLabel}:Roughing");
                 }
             }
@@ -2451,8 +2534,15 @@ namespace DentalAddin
                 }
                 else
                 {
-                    zlevel.BoundaryProfiles = "";
-                    zlevel.BoundaryProfiles = "6," + boundaryKey.ToString(CultureInfo.InvariantCulture);
+                    if (applyBoundary)
+                    {
+                        zlevel.BoundaryProfiles = "";
+                        zlevel.BoundaryProfiles = "6," + boundaryKey.ToString(CultureInfo.InvariantCulture);
+                    }
+                    else
+                    {
+                        DentalLogger.Log($"RoughFreeFromMillSplitAB - Region:{region} Angle:{angleLabel} ZLevel 경계 프로파일 미적용(applyBoundary=false)");
+                    }
                     TryAddOperation(zlevel, freeFormFeature, $"SplitAB:{region}:{angleLabel}:ZLevel");
                 }
             }
@@ -3185,6 +3275,56 @@ namespace DentalAddin
             catch (Exception ex)
             {
                 DentalLogger.Log($"EnsureRectBoundary({name}) 실패: {ex.GetType().Name}:{ex.Message}");
+                return null;
+            }
+        }
+
+        private static FeatureChain EnsureRectBoundaryXZ(string name, double x1, double x2, double zTop, double zBottom)
+        {
+            FeatureChain existing = FindFeatureChainByName(name);
+            if (existing != null)
+            {
+                int existingKey = SafeParseKey(Convert.ToString(existing.Key, CultureInfo.InvariantCulture));
+                DentalLogger.Log($"EnsureRectBoundaryXZ({name}) - 기존 체인 재사용 (Key:{existingKey})");
+                return existing;
+            }
+
+            string targetName = name;
+
+            try
+            {
+                double xLeft = Math.Min(x1, x2);
+                double xRight = Math.Max(x1, x2);
+                double zUpper = Math.Max(zTop, zBottom);
+                double zLower = Math.Min(zTop, zBottom);
+
+                if (Math.Abs(xRight - xLeft) < 1e-6)
+                {
+                    xRight = xLeft + 1e-6;
+                }
+                if (Math.Abs(zUpper - zLower) < 1e-6)
+                {
+                    zUpper = zLower + 1e-6;
+                }
+
+                Point p1 = Document.GetPoint(xLeft, 0, zUpper);
+                Point p2 = Document.GetPoint(xLeft, 0, zLower);
+                Point p3 = Document.GetPoint(xRight, 0, zLower);
+                Point p4 = Document.GetPoint(xRight, 0, zUpper);
+
+                FeatureChain fc = Document.FeatureChains.Add(p1);
+                fc.Add(Document.GetSegment(p1, p2));
+                fc.Add(Document.GetSegment(p2, p3));
+                fc.Add(Document.GetSegment(p3, p4));
+                fc.Add(Document.GetSegment(p4, p1));
+                fc.Name = targetName;
+
+                DentalLogger.Log($"EnsureRectBoundaryXZ({targetName}) 생성 - X[{xLeft:0.###}~{xRight:0.###}], Z[{zLower:0.###}~{zUpper:0.###}]");
+                return fc;
+            }
+            catch (Exception ex)
+            {
+                DentalLogger.Log($"EnsureRectBoundaryXZ({name}) 실패: {ex.GetType().Name}:{ex.Message}");
                 return null;
             }
         }
