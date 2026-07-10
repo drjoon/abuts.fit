@@ -2375,10 +2375,10 @@ namespace DentalAddin
             double backStart = Clamp(splitline2 - backRoughOverCutMm, xMin + 1e-6, xMax - 1e-6);
 
             // 요청 반영:
-            // Back_Rough 끝점 = finishline min_z + 4.1mm (무클램프)
-            // 단, 이 값이 Back 기준선(splitline2)보다 좌측이면 Back 구간이 비어 툴패스가 사라질 수 있어
-            // BackPoint 기준식(BackPointX + (4.1 - minZ))으로 자동 보정한다.
+            // Back_Rough 끝점 기본식 = finishline min_z + 4.1mm
+            // 단, 기본식이 무효(음수/역전/좌측 과침범)인 경우 BackPoint 기준식(BackPointX + (2.1 - minZ))으로 재해석한다.
             const double backRoughEndOffsetFromFinishMinZMm = 4.1;
+            const double backRoughEndTranslatedBaseMm = 2.1;
             double backEnd = xMax;
             if (!string.IsNullOrWhiteSpace(finishMinZRaw)
                 && double.TryParse(finishMinZRaw, NumberStyles.Float, CultureInfo.InvariantCulture, out double finishLineMinZForBackRough)
@@ -2386,19 +2386,34 @@ namespace DentalAddin
                 && !double.IsInfinity(finishLineMinZForBackRough))
             {
                 double rawBackEnd = finishLineMinZForBackRough + backRoughEndOffsetFromFinishMinZMm;
+                double translatedBackEnd = MoveSTL_Module.BackPointX + (backRoughEndTranslatedBaseMm - finishLineMinZForBackRough);
+
                 backEnd = rawBackEnd;
 
-                // Back_Rough 경계가 splitline2 좌측에 전부 위치하면 실질 Back 툴패스가 비게 된다.
-                // 이 경우 요청식으로 재해석한다: BackPointX + (2.1 - finishLineMinZ)
-                if (backEnd <= splitline2 + 1e-6)
+                bool useTranslated =
+                    double.IsNaN(backEnd)
+                    || double.IsInfinity(backEnd)
+                    || backEnd <= splitline2 + 1e-6
+                    || backEnd <= backStart + 1e-6
+                    || backEnd < xMin - 1e-6;
+
+                if (useTranslated)
                 {
-                    const double backRoughEndTranslatedBaseMm = 2.1;
-                    double translatedBackEnd = MoveSTL_Module.BackPointX + (backRoughEndTranslatedBaseMm - finishLineMinZForBackRough);
-                    DentalLogger.Log($"RoughFreeFromMillSplitAB - Back_Rough 끝점 재해석: rawEnd={rawBackEnd.ToString("F3", CultureInfo.InvariantCulture)} <= splitline2={splitline2.ToString("F3", CultureInfo.InvariantCulture)} -> translatedEnd={translatedBackEnd.ToString("F3", CultureInfo.InvariantCulture)} (BackPointX + (2.1 - minZ))");
                     backEnd = translatedBackEnd;
+                    DentalLogger.Log($"RoughFreeFromMillSplitAB - Back_Rough 끝점 재해석: rawEnd={rawBackEnd.ToString("F3", CultureInfo.InvariantCulture)} -> translatedEnd={translatedBackEnd.ToString("F3", CultureInfo.InvariantCulture)} (BackPointX + (2.1 - minZ), split2={splitline2.ToString("F3", CultureInfo.InvariantCulture)}, backStart={backStart.ToString("F3", CultureInfo.InvariantCulture)})");
                 }
 
-                DentalLogger.Log($"RoughFreeFromMillSplitAB - Back_Rough 끝점 적용(무클램프): minZ={finishLineMinZForBackRough.ToString("F4", CultureInfo.InvariantCulture)}, endX={backEnd.ToString("F3", CultureInfo.InvariantCulture)}");
+                // 최종 안전 가드: 재해석 이후에도 역전이면 BackPointX를 끝점으로 강제한다.
+                if (double.IsNaN(backEnd)
+                    || double.IsInfinity(backEnd)
+                    || backEnd <= backStart + 1e-6)
+                {
+                    double safeFallbackEnd = MoveSTL_Module.BackPointX;
+                    DentalLogger.Log($"RoughFreeFromMillSplitAB - Back_Rough 끝점 안전복구: endX={backEnd.ToString("F3", CultureInfo.InvariantCulture)} -> {safeFallbackEnd.ToString("F3", CultureInfo.InvariantCulture)} (BackPointX 강제)");
+                    backEnd = safeFallbackEnd;
+                }
+
+                DentalLogger.Log($"RoughFreeFromMillSplitAB - Back_Rough 끝점 적용: minZ={finishLineMinZForBackRough.ToString("F4", CultureInfo.InvariantCulture)}, rawEnd={rawBackEnd.ToString("F3", CultureInfo.InvariantCulture)}, translatedEnd={translatedBackEnd.ToString("F3", CultureInfo.InvariantCulture)}, finalEnd={backEnd.ToString("F3", CultureInfo.InvariantCulture)}");
             }
             else
             {
