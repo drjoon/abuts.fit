@@ -2377,24 +2377,25 @@ namespace DentalAddin
             EnsureThreeStageSplitGuideLines(splitline1, splitline2);
 
             string region = (GetEnvString("ABUTS_ROUGHFREEFORM_SPLIT_REGION") ?? string.Empty).Trim().ToUpperInvariant();
-            string sharedPrc = !string.IsNullOrWhiteSpace(prcA) ? prcA : prcB;
+            string frontMiddlePrc = !string.IsNullOrWhiteSpace(prcA) ? prcA : prcB;
+            string backPrc = !string.IsNullOrWhiteSpace(prcB) ? prcB : frontMiddlePrc;
             if (string.Equals(region, "FRONT", StringComparison.OrdinalIgnoreCase))
             {
-                AddSplitOpsForRegion("FRONT", sharedPrc, keyFront, technologyUtility, ff0, ff180);
+                AddSplitOpsForRegion("FRONT", frontMiddlePrc, keyFront, technologyUtility, ff0, ff180);
             }
             else if (string.Equals(region, "MIDDLE", StringComparison.OrdinalIgnoreCase))
             {
-                AddSplitOpsForRegion("MIDDLE", sharedPrc, keyMiddle, technologyUtility, ff0, ff180);
+                AddSplitOpsForRegion("MIDDLE", frontMiddlePrc, keyMiddle, technologyUtility, ff0, ff180);
             }
             else if (string.Equals(region, "BACK", StringComparison.OrdinalIgnoreCase))
             {
-                AddSplitOpsForRegion("BACK", sharedPrc, keyBack, technologyUtility, ff0, ff180);
+                AddSplitOpsForRegion("BACK", backPrc, keyBack, technologyUtility, ff0, ff180);
             }
             else
             {
-                AddSplitOpsForRegion("FRONT", sharedPrc, keyFront, technologyUtility, ff0, ff180);
-                AddSplitOpsForRegion("MIDDLE", sharedPrc, keyMiddle, technologyUtility, ff0, ff180);
-                AddSplitOpsForRegion("BACK", sharedPrc, keyBack, technologyUtility, ff0, ff180);
+                AddSplitOpsForRegion("FRONT", frontMiddlePrc, keyFront, technologyUtility, ff0, ff180);
+                AddSplitOpsForRegion("MIDDLE", frontMiddlePrc, keyMiddle, technologyUtility, ff0, ff180);
+                AddSplitOpsForRegion("BACK", backPrc, keyBack, technologyUtility, ff0, ff180);
             }
 
             return true;
@@ -2530,12 +2531,38 @@ namespace DentalAddin
             if (string.IsNullOrWhiteSpace(prcA))
             {
                 prcA = (PrcFilePath != null && PrcFilePath.Length > 3) ? PrcFilePath[3] : null;
-                DentalLogger.Log($"RoughFreeFromMillSplitAB - prcA 기본값 사용: PRC[3]={prcA}");
+                DentalLogger.Log($"RoughFreeFromMillSplitAB - prcA 기본값 사용(Front/Middle): PRC[3]={prcA}");
             }
             if (string.IsNullOrWhiteSpace(prcB))
             {
-                prcB = (PrcFilePath != null && PrcFilePath.Length > 3) ? PrcFilePath[3] : null;
-                DentalLogger.Log($"RoughFreeFromMillSplitAB - prcB 기본값 사용: PRC[3]={prcB}");
+                string baseRoughPrc = (PrcFilePath != null && PrcFilePath.Length > 3) ? PrcFilePath[3] : null;
+                string backRoughPrc = null;
+                try
+                {
+                    if (!string.IsNullOrWhiteSpace(baseRoughPrc))
+                    {
+                        string dir = Path.GetDirectoryName(baseRoughPrc);
+                        if (!string.IsNullOrWhiteSpace(dir))
+                        {
+                            backRoughPrc = Path.Combine(dir, "MillRough_3D_Back.prc");
+                        }
+                    }
+                }
+                catch
+                {
+                    backRoughPrc = null;
+                }
+
+                if (!string.IsNullOrWhiteSpace(backRoughPrc) && File.Exists(backRoughPrc))
+                {
+                    prcB = backRoughPrc;
+                    DentalLogger.Log($"RoughFreeFromMillSplitAB - prcB 기본값 사용(Back): {prcB}");
+                }
+                else
+                {
+                    prcB = baseRoughPrc;
+                    DentalLogger.Log($"RoughFreeFromMillSplitAB - prcB 기본값 사용(Back fallback): PRC[3]={prcB}");
+                }
             }
 
             return true;
