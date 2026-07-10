@@ -15,6 +15,13 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
     /// </summary>
     public class EspritDocumentManager
     {
+        // ROUGH_20 실험 플래그(로컬 local.env)
+        // - 1/true: D2 rough 실험 모드
+        // - 0/false: 기본 모드
+        private const string Rough20Env = "ROUGH_20";
+        private const string Rough20TemplateFileName = "Hanwha-20.est";
+        private const string DefaultTemplateFileName = "Hanwha.est";
+
         private readonly Application _espApp;
 
         public EspritDocumentManager(Application espApp)
@@ -500,7 +507,35 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
         private static string ResolveTemplatePath(int templateDiameter)
         {
             string templateDir = Path.Combine(AppConfig.AddInRootDirectory, "Templates");
-            return Path.Combine(templateDir, $"Hanwha.est");
+
+            // 요청 반영:
+            // ROUGH_20=1 실험 중에는 D2 rough 전용 템플릿(Hanwha-20.est)을 강제 사용한다.
+            // 템플릿이 없거나 플래그가 꺼져 있으면 기존 Hanwha.est로 안전 폴백한다.
+            if (IsRough20Enabled())
+            {
+                string rough20Path = Path.Combine(templateDir, Rough20TemplateFileName);
+                if (File.Exists(rough20Path))
+                {
+                    AppLogger.Log($"EspritDocumentManager: ROUGH_20 활성 - 템플릿 오버라이드 적용 ({rough20Path})");
+                    return rough20Path;
+                }
+
+                AppLogger.Log($"EspritDocumentManager: ROUGH_20 활성이나 템플릿 파일이 없어 기본 템플릿으로 폴백 ({rough20Path})");
+            }
+
+            return Path.Combine(templateDir, DefaultTemplateFileName);
+        }
+
+        private static bool IsRough20Enabled()
+        {
+            string raw = Environment.GetEnvironmentVariable(Rough20Env);
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                return false;
+            }
+
+            return string.Equals(raw, "1", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(raw, "true", StringComparison.OrdinalIgnoreCase);
         }
 
         private static string BuildTempEspSavePath()

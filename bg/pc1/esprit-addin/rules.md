@@ -65,7 +65,9 @@
 
 - `Splitline_1 = FrontPointX`
 - `Splitline_2 = TwoPhaseSplitLine` (midpoint 사용 금지)
-- Turn/Rough 경계는 각 split 기준 `±2.2mm` 오버컷을 적용한다.
+- Turn/Rough 경계는 rough 공구 반경 + 안전여유(`+0.2mm`) 오버컷을 적용한다.
+  - 기본(D4): `±2.2mm`
+  - `ROUGH_20=1` 실험(D2): `±1.2mm`
 
 ### 4.3.1 TwoPhaseSplitLine 계산식 SSOT (검색 키워드: `finishlineTopZ-1mm`, `splitOffsetMm=-1.0`)
 
@@ -151,13 +153,49 @@
 ### 4.9 Back_Rough 끝점 고정값 SSOT (2026-07-11)
 
 - Back_Rough 끝점은 finishline min_z와 무관하게 **고정식**을 사용한다.
-  - `BackRoughEndX = BackPointX + 2.0mm` (D4 공구 반경 기준)
+  - `BackRoughEndX = BackPointX + roughToolRadius`
+  - 기본(D4): `+2.0mm`
+  - `ROUGH_20=1` 실험(D2): `+1.0mm`
 - 기존 `min_z` 기반 raw/translated 계산(`finishline min_z + 4.1`, `BackPointX + ...`)은 사용하지 않는다.
 - 구현 위치:
   - `DentalAddinDecomp/DentalAddin/MainModuleComposite.cs`
     - `TryRunRoughFreeFromMillSplitAB`
 - 디버깅 기준 로그:
-  - `RoughFreeFromMillSplitAB - Back_Rough 끝점 고정 적용: backPointX=..., offset=2.000, endX=...`
+  - `RoughFreeFromMillSplitAB - Back_Rough 끝점 고정 적용: ... roughDia=..., rough20=...`
+
+### 4.10 ROUGH_20 실험 토글 SSOT (2026-07-11)
+
+- 실험 플래그:
+  - `ROUGH_20=1` → D2 rough 실험 모드
+  - `ROUGH_20=0` 또는 미설정 → 기본(D4) 모드
+- 템플릿 선택:
+  - `ROUGH_20=1`이면 `Templates/Hanwha-20.est` 우선 사용
+  - 파일이 없으면 `Templates/Hanwha.est`로 안전 폴백
+  - 구현: `Helpers/EspritDocumentManager.ResolveTemplatePath`
+- UserData Turning Extend 오버라이드:
+  - `Tech_Default_Path.xml`의 `NumData[5]`를 기본값으로 읽되,
+    `ROUGH_20=1`이면 런타임에서 `4.0mm`로 강제 오버라이드
+  - 필요 시 `ROUGH_20_TURNING_EXTEND_MM` env로 값 조정 가능
+  - 구현: `DentalAddin/DentalAddinConfigurator.ApplyRough20TurningExtendOverride`
+- Rough PRC 선택:
+  - `ROUGH_20=1`이면 `AcroDent/5_Rough prc/MillRough_3D_20.prc` 사용
+  - 기본 모드면 `AcroDent/5_Rough prc/MillRough_3D.prc` 사용
+  - 구현: `DentalAddinConfigurator.EnsurePrcBaseDefaults`(PRC[3] 주입), `MainModuleComposite.TryRunRoughFreeFromMillSplitAB`(split 경로)
+- ROUGH_20 런타임 기술값 고정(중요):
+  - 배경: PRC의 `SOURCE/BEGIN_EXPRESSION` 규칙으로 일부 값이 Add 직전 재계산될 수 있음
+  - `ROUGH_20=1`에서는 Rough 기술에 아래 항목을 코드에서 최종 고정 적용
+    - `IncrementalDepth=0.2`
+    - `MaximumIncrementalDepth=0.5`
+    - `ProfitMillingIncrementalDepth=0.2`
+    - `CornerRoundingTolerance=0.2`
+    - `ContactCornerRadius=0.4`
+    - `Tolerance=0.02`
+    - `SpindleSpeedRPM=5000`
+  - 구현: `MainModuleComposite.TryApplyRough20TechnologyOverrides`
+- Rough 경계(Front/Middle/Back) 오프셋:
+  - 공통식: `roughToolRadius + 0.2`
+  - 기본(D4): `2.2mm`, 실험(D2): `1.2mm`
+  - 구현: `MainModuleComposite.GetRoughBoundaryOffsetMm`
 
 ## 5. 정리 원칙
 

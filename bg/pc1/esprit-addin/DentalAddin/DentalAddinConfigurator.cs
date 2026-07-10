@@ -15,6 +15,13 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.DentalAddin
     /// </summary>
     public class DentalAddinConfigurator
     {
+        // ROUGH_20 실험 모드에서 Turning Extend(UserData.NumData[5])를 런타임 오버라이드하기 위한 키.
+        // - ROUGH_20=1 이면 기본 4.0mm를 적용한다.
+        // - 필요 시 ROUGH_20_TURNING_EXTEND_MM 값으로 쉽게 조정 가능하다.
+        private const string Rough20Env = "ROUGH_20";
+        private const string Rough20TurningExtendEnv = "ROUGH_20_TURNING_EXTEND_MM";
+        private const double Rough20DefaultTurningExtendMm = 4.0;
+
         private readonly DentalAddinPrcManager _prcManager;
 
         public DentalAddinConfigurator(DentalAddinPrcManager prcManager)
@@ -116,6 +123,12 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.DentalAddin
                 int[] udNumCombobox = userDataType.GetField("NumCombobox")?.GetValue(ud) as int[];
                 if (udNumData != null)
                 {
+                    // 요청 반영:
+                    // Tech_Default_Path.xml의 Turning Extend 값을 사용하되,
+                    // ROUGH_20=1 실험 중에는 런타임에서 NumData[5]를 오버라이드한다.
+                    // (파일 원본을 매번 수정하지 않고 local.env만으로 제어 가능)
+                    ApplyRough20TurningExtendOverride(udNumData);
+
                     DentalAddinReflectionHelper.SetStaticField(mainModuleType, "NumData", udNumData);
                     AppLogger.Log($"DentalAddinConfigurator: UserData.NumData 적용 (Len:{udNumData.Length})");
                 }
@@ -134,6 +147,44 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.DentalAddin
             {
                 AppLogger.Log($"DentalAddinConfigurator: UserData 적용 실패 - {ex.GetType().Name}:{ex.Message}");
             }
+        }
+
+        private static void ApplyRough20TurningExtendOverride(double[] udNumData)
+        {
+            if (udNumData == null || udNumData.Length <= 5)
+            {
+                return;
+            }
+
+            if (!IsRough20Enabled())
+            {
+                return;
+            }
+
+            double previous = udNumData[5];
+            double overrideValue = Rough20DefaultTurningExtendMm;
+            string rawOverride = Environment.GetEnvironmentVariable(Rough20TurningExtendEnv);
+            if (!string.IsNullOrWhiteSpace(rawOverride)
+                && double.TryParse(rawOverride, NumberStyles.Float, CultureInfo.InvariantCulture, out double parsed)
+                && parsed > 0)
+            {
+                overrideValue = parsed;
+            }
+
+            udNumData[5] = overrideValue;
+            AppLogger.Log($"DentalAddinConfigurator: ROUGH_20 활성 - NumData[5](Turning Extend) 오버라이드 {previous.ToString("F3", CultureInfo.InvariantCulture)} -> {overrideValue.ToString("F3", CultureInfo.InvariantCulture)} (env={Rough20TurningExtendEnv})");
+        }
+
+        private static bool IsRough20Enabled()
+        {
+            string raw = Environment.GetEnvironmentVariable(Rough20Env);
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                return false;
+            }
+
+            return string.Equals(raw, "1", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(raw, "true", StringComparison.OrdinalIgnoreCase);
         }
 
         private static double DetermineRoughType(int[] numCombobox, string[] prcPaths, out string reason)
@@ -199,7 +250,13 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.DentalAddin
                 }
                 EnsurePrcSlot(prcDirectory, prcPaths, prcNames, 1, @"3_Turning prc\Turning.prc");
                 EnsurePrcSlot(prcDirectory, prcPaths, prcNames, 2, @"4_ReverseTurning prc\Reverse Turning Process.prc");
-                EnsurePrcSlot(prcDirectory, prcPaths, prcNames, 3, @"5_Rough prc\MillRough_3D.prc");
+                // ROUGH_20 실험 모드에서는 Rough PRC를 D2 전용 파일로 전환한다.
+                // - ROUGH_20=1: MillRough_3D_20.prc
+                // - 기본: MillRough_3D.prc
+                string roughRelativePath = IsRough20Enabled()
+                    ? @"5_Rough prc\MillRough_3D_20.prc"
+                    : @"5_Rough prc\MillRough_3D.prc";
+                EnsurePrcSlot(prcDirectory, prcPaths, prcNames, 3, roughRelativePath);
 
                 bool faceBeforeComposite = DetermineFaceBeforeComposite();
                 if (faceBeforeComposite)

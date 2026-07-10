@@ -1730,6 +1730,45 @@ namespace DentalAddin
         // 기존 roughAEnd = splitX - 0.5mm  ->  변경 roughAEnd = splitX + 1.5mm
         private const double RoughAEndOffsetFromSplitMm = -1.5;
 
+        // ROUGH_20 실험 모드(= D2 rough) 설정
+        // - ROUGH_20=1/true: rough 공구를 D2로 간주
+        // - 그 외: 기존 D4 정책 유지
+        // 주의: 여기의 직경은 rough 경계(Front/Middle/Back) 계산 SSOT이다.
+        private const string Rough20Env = "ROUGH_20";
+        private const double RoughToolDiameterDefaultMm = 4.0;
+        private const double RoughToolDiameterWhenRough20Mm = 2.0;
+        private const double RoughBoundarySafetyMarginMm = 0.2;
+
+        private static bool IsRough20Enabled()
+        {
+            string raw = GetEnvString(Rough20Env);
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                return false;
+            }
+
+            return string.Equals(raw, "1", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(raw, "true", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static double GetActiveRoughToolDiameterMm()
+        {
+            return IsRough20Enabled() ? RoughToolDiameterWhenRough20Mm : RoughToolDiameterDefaultMm;
+        }
+
+        private static double GetActiveRoughToolRadiusMm()
+        {
+            return GetActiveRoughToolDiameterMm() / 2.0;
+        }
+
+        // Front/Middle/Back rough 경계 확장 오프셋(mm)
+        // - D4 기본: 반경 2.0 + 안전여유 0.2 = 2.2
+        // - D2 실험: 반경 1.0 + 안전여유 0.2 = 1.2
+        private static double GetRoughBoundaryOffsetMm()
+        {
+            return GetActiveRoughToolRadiusMm() + RoughBoundarySafetyMarginMm;
+        }
+
 
 
         /// <summary>
@@ -1749,7 +1788,9 @@ namespace DentalAddin
                     return false;
                 }
 
-                const double faceToRoughMm = 2.2;
+                // ROUGH_20 실험 모드에서는 D2 기준 오프셋(1.2mm)을 사용한다.
+                // 기본 모드에서는 기존 D4 기준 오프셋(2.2mm)을 유지한다.
+                double faceToRoughMm = GetRoughBoundaryOffsetMm();
                 const double frontFaceOffsetMm = 0.5;
                 splitXUsed = splitline1;
                 roughARightEndX = Clamp(splitline1 + frontFaceOffsetMm + faceToRoughMm, xMin + 1e-6, xMax - 1e-6);
@@ -2360,13 +2401,17 @@ namespace DentalAddin
                 return true;
             }
 
-            const double faceToRoughMm = 2.2;
+            // ROUGH_20 토글에 따라 rough 경계 오프셋을 동적으로 계산한다.
+            // - ROUGH_20=0: D4 기준(2.2mm)
+            // - ROUGH_20=1: D2 기준(1.2mm)
+            double roughBoundaryOffsetMm = GetRoughBoundaryOffsetMm();
             const double frontFaceOffsetMm = 0.5;
-            const double middleRoughOverCutMm = 2.2;
-            const double backRoughOverCutMm = 2.2;
+            double faceToRoughMm = roughBoundaryOffsetMm;
+            double middleRoughOverCutMm = roughBoundaryOffsetMm;
+            double backRoughOverCutMm = roughBoundaryOffsetMm;
 
             double frontStart = xMin;
-            // 요청사항: Front Rough는 Face(FrontPointX+0.5)보다 +2.2mm 길게
+            // Front Rough 끝점: Face(FrontPointX+0.5)보다 rough 경계 오프셋만큼 더 길게 (D4:+2.2 / D2:+1.2)
             double frontEnd = Clamp(splitline1 + frontFaceOffsetMm + faceToRoughMm, xMin + 1e-6, xMax - 1e-6);
 
             double middleStart = Clamp(splitline1 - middleRoughOverCutMm, xMin + 1e-6, xMax - 1e-6);
@@ -2374,14 +2419,15 @@ namespace DentalAddin
 
             double backStart = Clamp(splitline2 - backRoughOverCutMm, xMin + 1e-6, xMax - 1e-6);
 
-            // 요청 반영(2026-07-11):
-            // Back_Rough 끝점은 finishline min_z와 무관하게 BackPointX + 2.0mm로 고정한다.
-            // (D4 공구 반경 2.0mm 기준)
+            // 요청 반영(2026-07-11, ROUGH_20 실험 확장):
+            // Back_Rough 끝점은 finishline min_z와 무관하게 BackPointX + (rough 공구 반경)으로 고정한다.
+            // - 기본(D4): +2.0mm
+            // - 실험(D2): +1.0mm
             // (기존 raw/translated 이중 계산 및 min_z 기반 보정 로직은 사용하지 않는다.)
-            const double backRoughEndOffsetFromBackPointMm = 2.0;
+            double backRoughEndOffsetFromBackPointMm = GetActiveRoughToolRadiusMm();
             double backEnd = MoveSTL_Module.BackPointX + backRoughEndOffsetFromBackPointMm;
 
-            DentalLogger.Log($"RoughFreeFromMillSplitAB - Back_Rough 끝점 고정 적용: backPointX={MoveSTL_Module.BackPointX.ToString("F3", CultureInfo.InvariantCulture)}, offset={backRoughEndOffsetFromBackPointMm.ToString("F3", CultureInfo.InvariantCulture)}, endX={backEnd.ToString("F3", CultureInfo.InvariantCulture)}, finishLineMinZ(raw)='{finishMinZRaw ?? ""}'");
+            DentalLogger.Log($"RoughFreeFromMillSplitAB - Back_Rough 끝점 고정 적용: backPointX={MoveSTL_Module.BackPointX.ToString("F3", CultureInfo.InvariantCulture)}, offset={backRoughEndOffsetFromBackPointMm.ToString("F3", CultureInfo.InvariantCulture)}, endX={backEnd.ToString("F3", CultureInfo.InvariantCulture)}, roughDia={GetActiveRoughToolDiameterMm().ToString("F3", CultureInfo.InvariantCulture)}, rough20={IsRough20Enabled()}, boundaryOffset={roughBoundaryOffsetMm.ToString("F3", CultureInfo.InvariantCulture)}, finishLineMinZ(raw)='{finishMinZRaw ?? ""}'");
 
             double radius = (Document.LatheMachineSetup.BarDiameter + 10.0) / 2.0;
             FeatureChain frontBoundary = EnsureRectBoundary("RoughBoundryFront1", frontStart, frontEnd, radius, -radius);
@@ -2417,7 +2463,9 @@ namespace DentalAddin
             string region = (GetEnvString("ABUTS_ROUGHFREEFORM_SPLIT_REGION") ?? string.Empty).Trim().ToUpperInvariant();
 
             // 정책: Back_Rough는 항상 2-way(0/180)로 고정한다.
-            // Front/Middle/Back 모두 MillRough_3D.prc를 사용한다.
+            // Front/Middle/Back rough PRC는 ROUGH_20 토글에 따라 선택한다.
+            // - ROUGH_20=1: MillRough_3D_20.prc (D2 실험)
+            // - 기본: MillRough_3D.prc
             string roughDir = null;
             try
             {
@@ -2432,11 +2480,22 @@ namespace DentalAddin
                 roughDir = null;
             }
 
+            string roughPrcFileName = IsRough20Enabled() ? "MillRough_3D_20.prc" : "MillRough_3D.prc";
             string roughPrc = !string.IsNullOrWhiteSpace(roughDir)
-                ? Path.Combine(roughDir, "MillRough_3D.prc")
+                ? Path.Combine(roughDir, roughPrcFileName)
                 : ((!string.IsNullOrWhiteSpace(prcA) ? prcA : ((PrcFilePath != null && PrcFilePath.Length > 3) ? PrcFilePath[3] : null)));
 
-            DentalLogger.Log($"RoughFreeFromMillSplitAB - PRC 선택(고정 2-way): Front/Middle/Back 모두 {roughPrc}");
+            // 디렉터리 조합 경로에 파일이 없으면 기존 경로(prcA 또는 PrcFilePath[3])로 안전 폴백한다.
+            if (!string.IsNullOrWhiteSpace(roughPrc) && !File.Exists(roughPrc))
+            {
+                string fallbackRoughPrc = !string.IsNullOrWhiteSpace(prcA)
+                    ? prcA
+                    : ((PrcFilePath != null && PrcFilePath.Length > 3) ? PrcFilePath[3] : null);
+                DentalLogger.Log($"RoughFreeFromMillSplitAB - 요청 Rough PRC 미존재로 폴백: requested='{roughPrc}', fallback='{fallbackRoughPrc ?? ""}'");
+                roughPrc = fallbackRoughPrc;
+            }
+
+            DentalLogger.Log($"RoughFreeFromMillSplitAB - PRC 선택(고정 2-way): Front/Middle/Back 모두 {roughPrc} (rough20={IsRough20Enabled()}, file={roughPrcFileName})");
 
             if (string.Equals(region, "FRONT", StringComparison.OrdinalIgnoreCase))
             {
@@ -2505,6 +2564,11 @@ namespace DentalAddin
                     {
                         DentalLogger.Log($"RoughFreeFromMillSplitAB - Region:{region} Angle:{angleLabel} 경계 프로파일 미적용(applyBoundary=false)");
                     }
+
+                    // ROUGH_20 실험 모드에서는 PRC의 SOURCE/EXPRESSION 재계산으로 값이 되돌아가는 항목을
+                    // 런타임에서 한 번 더 고정해 D2 세팅을 일관되게 유지한다.
+                    TryApplyRough20TechnologyOverrides(roughing, region, angleLabel);
+
                     TryAddOperation(roughing, freeFormFeature, $"SplitAB:{region}:{angleLabel}:Roughing");
                 }
             }
@@ -2531,6 +2595,57 @@ namespace DentalAddin
             }
 
             DentalLogger.Log($"RoughFreeFromMillSplitAB - AddOp 완료 Region:{region} Angle:{angleLabel} BoundaryKey:{boundaryKey}");
+        }
+
+        // ROUGH_20=1일 때 Rough Mill 3D 기술 파라미터를 강제 보정한다.
+        // 배경:
+        // - MillRough_3D_20.prc를 열어도 일부 항목은 SOURCE/EXPRESSION 규칙으로 재계산되어
+        //   기대값(예: D2 기준 증분/코너 공차)이 유지되지 않을 수 있다.
+        // - ToolID 라벨(BM_D4)을 유지하는 운영 정책과 충돌하지 않도록,
+        //   ToolID는 건드리지 않고 기술값만 최종 오버라이드한다.
+        private static void TryApplyRough20TechnologyOverrides(TechLatheMoldRoughing roughing, string region, string angleLabel)
+        {
+            if (roughing == null || !IsRough20Enabled())
+            {
+                return;
+            }
+
+            // MillRough_3D_20.prc 의 의도값과 동일하게 유지할 항목들.
+            // (필요 시 env 확장을 통해 손쉽게 조정 가능하도록 이름 기반 SetProperty 사용)
+            bool changed = false;
+            changed |= TrySetTechProperty(roughing, "IncrementalDepth", 0.2);
+            changed |= TrySetTechProperty(roughing, "MaximumIncrementalDepth", 0.5);
+            changed |= TrySetTechProperty(roughing, "ProfitMillingIncrementalDepth", 0.2);
+            changed |= TrySetTechProperty(roughing, "CornerRoundingTolerance", 0.2);
+            changed |= TrySetTechProperty(roughing, "ContactCornerRadius", 0.4);
+            changed |= TrySetTechProperty(roughing, "Tolerance", 0.02);
+            changed |= TrySetTechProperty(roughing, "SpindleSpeedRPM", 5000);
+
+            DentalLogger.Log($"RoughFreeFromMillSplitAB - ROUGH_20 기술값 고정 적용(region={region}, angle={angleLabel}, changed={changed})");
+        }
+
+        private static bool TrySetTechProperty(object target, string propertyName, object value)
+        {
+            if (target == null || string.IsNullOrWhiteSpace(propertyName))
+            {
+                return false;
+            }
+
+            try
+            {
+                target.GetType().InvokeMember(
+                    propertyName,
+                    BindingFlags.SetProperty,
+                    null,
+                    target,
+                    new[] { value },
+                    CultureInfo.InvariantCulture);
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         private static bool TryGetSplitABConfig(out double splitX, out string prcA, out string prcB)
