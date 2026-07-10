@@ -2616,7 +2616,10 @@ namespace DentalAddin
             changed |= TrySetTechProperty(roughing, "IncrementalDepth", 0.2);
             changed |= TrySetTechProperty(roughing, "MaximumIncrementalDepth", 0.5);
             changed |= TrySetTechProperty(roughing, "ProfitMillingIncrementalDepth", 0.2);
-            changed |= TrySetTechProperty(roughing, "CornerRoundingTolerance", 0.2);
+
+            // 요청 반영:
+            // CornerRoundingTolerance(코너 라운딩 공차)는 코드 오버라이드하지 않는다.
+            // PRC(MillRough_3D_20.prc 포함)의 값을 그대로 사용한다.
             changed |= TrySetTechProperty(roughing, "ContactCornerRadius", 0.4);
             changed |= TrySetTechProperty(roughing, "Tolerance", 0.02);
             changed |= TrySetTechProperty(roughing, "SpindleSpeedRPM", 5000);

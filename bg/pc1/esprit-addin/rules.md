@@ -187,10 +187,10 @@
     - `IncrementalDepth=0.2`
     - `MaximumIncrementalDepth=0.5`
     - `ProfitMillingIncrementalDepth=0.2`
-    - `CornerRoundingTolerance=0.2`
     - `ContactCornerRadius=0.4`
     - `Tolerance=0.02`
     - `SpindleSpeedRPM=5000`
+  - 예외: `CornerRoundingTolerance`는 코드 오버라이드 금지, PRC 값을 그대로 사용
   - 구현: `MainModuleComposite.TryApplyRough20TechnologyOverrides`
 - Rough 경계(Front/Middle/Back) 오프셋:
   - 공통식: `roughToolRadius + 0.2`
