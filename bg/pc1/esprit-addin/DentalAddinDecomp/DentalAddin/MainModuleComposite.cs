@@ -899,8 +899,8 @@ namespace DentalAddin
             const double aEndOffsetFromSplitMm = 0.0; // 요청: FINISH_A 끝점 = 기준점(splitPercent)
             // 요청 반영: FINISH_B 시작점 오프셋 제거(정치수)
             const double bStartOffsetFromSplitMm = 0.0; // FINISH_B 시작점 = 기준점(splitPercent)
-            // 요청 반영: FINISH_All / FINISH_Back 끝점 = BackPointX + 0.0mm
-            const double compositeEndOffsetFromBackPointMm = 0.0;
+            // 요청 반영: FINISH_Back 끝점 = BackPointX + 0.6mm
+            const double compositeEndOffsetFromBackPointMm = 0.6;
 
             // 기준점(splitPercent)을 기준으로 A/B 경계를 독립 적용한다.
             // - A.End: split + 0.0mm(=split)
@@ -924,7 +924,7 @@ namespace DentalAddin
                 opB.LastPassPercent = effectiveLastPercent;
             }
 
-            // 정책: FINISH_B 종료 기준점은 BackPointX + 0.0mm
+            // 정책: FINISH_B 종료 기준점은 BackPointX + 0.6mm
             double compositeEndTargetX = MoveSTL_Module.BackPointX + compositeEndOffsetFromBackPointMm;
             double compositeEndPassPercent = XToPassPercentByStartEndScale(compositeEndTargetX, 0.0, 100.0);
             if (runB && opB != null)
@@ -964,7 +964,7 @@ namespace DentalAddin
             // A/B 끝점 정책 재확인:
             // - FINISH_A 끝점: 기준점(splitPercent)
             // - FINISH_B 시작점: 기준점(splitPercent) (오프셋 제거)
-            // - FINISH_B 끝점: BackPointX + 0.0mm
+            // - FINISH_B 끝점: BackPointX + 0.6mm
             double aLastBeforeClamp = opA.LastPassPercent;
             opA.LastPassPercent = Clamp(opA.LastPassPercent, opA.FirstPassPercent, effectiveLastPercent);
 
