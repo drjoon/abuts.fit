@@ -37,10 +37,10 @@ export async function getManufacturerLeadTimes(req, res) {
         const entry = raw?.[key];
         if (!entry) return;
         const min = Number.isFinite(entry.minBusinessDays)
-          ? Math.max(0, Math.floor(entry.minBusinessDays))
+          ? Math.max(1, Math.floor(entry.minBusinessDays))
           : base[key].minBusinessDays;
         const max = Number.isFinite(entry.maxBusinessDays)
-          ? Math.max(0, Math.floor(entry.maxBusinessDays))
+          ? Math.max(1, Math.floor(entry.maxBusinessDays))
           : base[key].maxBusinessDays;
         base[key] = {
           minBusinessDays: Math.min(min, max),
@@ -97,10 +97,10 @@ export async function getManufacturerLeadTimesUtil() {
         const entry = raw?.[key];
         if (!entry) return;
         const min = Number.isFinite(entry.minBusinessDays)
-          ? Math.max(0, Math.floor(entry.minBusinessDays))
+          ? Math.max(1, Math.floor(entry.minBusinessDays))
           : base[key].minBusinessDays;
         const max = Number.isFinite(entry.maxBusinessDays)
-          ? Math.max(0, Math.floor(entry.maxBusinessDays))
+          ? Math.max(1, Math.floor(entry.maxBusinessDays))
           : base[key].maxBusinessDays;
         base[key] = {
           minBusinessDays: Math.min(min, max),

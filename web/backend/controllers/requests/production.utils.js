@@ -83,11 +83,12 @@ function createKstDateTime(ymd, hour = 0, minute = 0) {
 }
 
 export function resolveLeadDaysWithSameDayCutoff({ leadDays, requestedAt }) {
-  const baseDays = Number.isFinite(leadDays) ? Number(leadDays) : 0;
-  if (baseDays <= 0) return 0;
+  const rawDays = Number.isFinite(leadDays) ? Number(leadDays) : 1;
+  const baseDays = Math.max(1, Math.floor(rawDays));
 
-  // ETA 리드타임은 "오늘 자정 전 접수 = 최소 1일" 정책을 따르므로
-  // 생성 시각 cutoff로 (N-1) 보정하지 않고 설정값(N일)을 그대로 사용한다.
+  // ETA 리드타임은 "오늘 자정 전 접수 = 최소 1일" 정책을 따른다.
+  // 생성 시각 cutoff로 (N-1) 보정하지 않고, 설정값(N일)을 그대로 사용하되
+  // 잘못된 설정값(0 이하)이 들어와도 최소 1일을 강제한다.
   void requestedAt;
   return baseDays;
 }
