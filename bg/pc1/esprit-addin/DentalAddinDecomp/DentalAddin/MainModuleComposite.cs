@@ -2375,9 +2375,10 @@ namespace DentalAddin
             double backStart = Clamp(splitline2 - backRoughOverCutMm, xMin + 1e-6, xMax - 1e-6);
 
             // 요청 반영(2026-07-11):
-            // Back_Rough 끝점은 finishline min_z와 무관하게 BackPointX + 4.0mm로 고정한다.
+            // Back_Rough 끝점은 finishline min_z와 무관하게 BackPointX + 2.0mm로 고정한다.
+            // (D4 공구 반경 2.0mm 기준)
             // (기존 raw/translated 이중 계산 및 min_z 기반 보정 로직은 사용하지 않는다.)
-            const double backRoughEndOffsetFromBackPointMm = 4.0;
+            const double backRoughEndOffsetFromBackPointMm = 2.0;
             double backEnd = MoveSTL_Module.BackPointX + backRoughEndOffsetFromBackPointMm;
 
             DentalLogger.Log($"RoughFreeFromMillSplitAB - Back_Rough 끝점 고정 적용: backPointX={MoveSTL_Module.BackPointX.ToString("F3", CultureInfo.InvariantCulture)}, offset={backRoughEndOffsetFromBackPointMm.ToString("F3", CultureInfo.InvariantCulture)}, endX={backEnd.ToString("F3", CultureInfo.InvariantCulture)}, finishLineMinZ(raw)='{finishMinZRaw ?? ""}'");

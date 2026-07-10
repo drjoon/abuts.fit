@@ -151,13 +151,13 @@
 ### 4.9 Back_Rough 끝점 고정값 SSOT (2026-07-11)
 
 - Back_Rough 끝점은 finishline min_z와 무관하게 **고정식**을 사용한다.
-  - `BackRoughEndX = BackPointX + 4.0mm`
+  - `BackRoughEndX = BackPointX + 2.0mm` (D4 공구 반경 기준)
 - 기존 `min_z` 기반 raw/translated 계산(`finishline min_z + 4.1`, `BackPointX + ...`)은 사용하지 않는다.
 - 구현 위치:
   - `DentalAddinDecomp/DentalAddin/MainModuleComposite.cs`
     - `TryRunRoughFreeFromMillSplitAB`
 - 디버깅 기준 로그:
-  - `RoughFreeFromMillSplitAB - Back_Rough 끝점 고정 적용: backPointX=..., offset=4.000, endX=...`
+  - `RoughFreeFromMillSplitAB - Back_Rough 끝점 고정 적용: backPointX=..., offset=2.000, endX=...`
 
 ## 5. 정리 원칙
 
