@@ -899,8 +899,8 @@ namespace DentalAddin
             const double aEndOffsetFromSplitMm = 0.0; // 요청: FINISH_A 끝점 = 기준점(splitPercent)
             // 요청 반영: FINISH_B 시작점 오프셋 제거(정치수)
             const double bStartOffsetFromSplitMm = 0.0; // FINISH_B 시작점 = 기준점(splitPercent)
-            // 요청 반영: FINISH_Back 끝점 = BackPointX + 0.6mm
-            const double compositeEndOffsetFromBackPointMm = 0.6;
+            // 요청 반영: FINISH_Back 끝점 = BackPointX + 0.0mm
+            const double compositeEndOffsetFromBackPointMm = 0.0;
 
             // 기준점(splitPercent)을 기준으로 A/B 경계를 독립 적용한다.
             // - A.End: split + 0.0mm(=split)
@@ -924,7 +924,7 @@ namespace DentalAddin
                 opB.LastPassPercent = effectiveLastPercent;
             }
 
-            // 정책: FINISH_B 종료 기준점은 BackPointX + 0.6mm
+            // 정책: FINISH_B 종료 기준점은 BackPointX + 0.0mm
             double compositeEndTargetX = MoveSTL_Module.BackPointX + compositeEndOffsetFromBackPointMm;
             double compositeEndPassPercent = XToPassPercentByStartEndScale(compositeEndTargetX, 0.0, 100.0);
             if (runB && opB != null)
@@ -964,7 +964,7 @@ namespace DentalAddin
             // A/B 끝점 정책 재확인:
             // - FINISH_A 끝점: 기준점(splitPercent)
             // - FINISH_B 시작점: 기준점(splitPercent) (오프셋 제거)
-            // - FINISH_B 끝점: BackPointX + 0.6mm
+            // - FINISH_B 끝점: BackPointX + 0.0mm
             double aLastBeforeClamp = opA.LastPassPercent;
             opA.LastPassPercent = Clamp(opA.LastPassPercent, opA.FirstPassPercent, effectiveLastPercent);
 
@@ -1114,9 +1114,10 @@ namespace DentalAddin
                 int afterB = Document?.Operations?.Count ?? -1;
                 DentalLogger.Log($"Composite2SplitLine2 - Operation 추가 완료: FINISH_BACK(opB) (afterCount={afterB})");
 
-                // Finish_Back 끝점 End lap(Finish_End) 공정은 요청에 따라 임시 비활성화한다.
-                // TryAddCompositeExitLap(technologyUtility, effectivePrcB, freeFormFeature, opB, opB.LastPassPercent, "END", "B");
-                DentalLogger.Log("Composite2SplitLine2 - Finish_End(B) 생성 비활성화(주석 처리)");
+                // 요청 반영: Finish_End 추가 생성
+                // - 구간: BackPointX -> BackPointX + 1.2mm
+                // - StockAllowance: 0.03
+                TryAddCompositeExitLap(technologyUtility, effectivePrcB, freeFormFeature, opB, opB.LastPassPercent, "END", "B");
 
                 // FINISH_B 이후 추가 확장 공정은 생성하지 않는다.
             }
@@ -1576,25 +1577,57 @@ namespace DentalAddin
 
                 lapOp.PassPosition = espMill5xCompositePassPosition.espMill5xCompositePassPositionStartEndPosition;
 
-                // 완전 0폭(First==Last)은 ESPRIT에서 툴패스가 사라질 수 있으므로,
-                // StepIncrement 1피치(mm)를 StartEndScale(20mm) 기준 pass-percent로 변환해
-                // 약 1회전(360°)에 해당하는 최소 유효 폭을 만든다.
-                string stepEnvKey = string.Equals(abLabel, "B", StringComparison.OrdinalIgnoreCase)
-                    ? AppConfig.CompositeStepIncrementBEnv
-                    : AppConfig.CompositeStepIncrementAEnv;
-                double stepMm = GetEnvDoubleNullable(stepEnvKey) ?? 0.25;
-                const double startEndScaleMm = 20.0;
-                double endLapWindowPercent = Clamp((stepMm / startEndScaleMm) * 100.0, 0.2, 5.0);
+                double startPercent;
+                double endPercent;
+                string rangePolicy;
 
-                double startPercent = Clamp(fixedPercent - endLapWindowPercent, 0.0, fixedPercent);
-                double endPercent = fixedPercent;
-                if (Math.Abs(endPercent - startPercent) < 1e-6)
+                // 요청 반영:
+                // Finish_End(B)는 BackPointX에서 시작하여 BackPointX+0.4mm까지 고정 구간 가공한다.
+                // (기존 1피치 end-lap 윈도우 정책보다 우선)
+                bool isFinishEndB = string.Equals(finishLabel, "END", StringComparison.OrdinalIgnoreCase)
+                    && string.Equals(abLabel, "B", StringComparison.OrdinalIgnoreCase);
+                if (isFinishEndB)
                 {
-                    endPercent = Clamp(fixedPercent + endLapWindowPercent, fixedPercent, 100.0);
+                    const double finishEndStartOffsetFromBackMm = 0.0;
+                    const double finishEndEndOffsetFromBackMm = 0.4;
+                    double startX = MoveSTL_Module.BackPointX + finishEndStartOffsetFromBackMm;
+                    double endX = MoveSTL_Module.BackPointX + finishEndEndOffsetFromBackMm;
+
+                    startPercent = XToPassPercentByStartEndScale(startX, 0.0, 100.0);
+                    endPercent = XToPassPercentByStartEndScale(endX, 0.0, 100.0);
+                    if (endPercent < startPercent)
+                    {
+                        double tmp = startPercent;
+                        startPercent = endPercent;
+                        endPercent = tmp;
+                    }
+
+                    rangePolicy = $"BackPointX-fixed(startX={startX:F3}, endX={endX:F3})";
+                }
+                else
+                {
+                    // 완전 0폭(First==Last)은 ESPRIT에서 툴패스가 사라질 수 있으므로,
+                    // StepIncrement 1피치(mm)를 StartEndScale(20mm) 기준 pass-percent로 변환해
+                    // 약 1회전(360°)에 해당하는 최소 유효 폭을 만든다.
+                    string stepEnvKey = string.Equals(abLabel, "B", StringComparison.OrdinalIgnoreCase)
+                        ? AppConfig.CompositeStepIncrementBEnv
+                        : AppConfig.CompositeStepIncrementAEnv;
+                    double stepMm = GetEnvDoubleNullable(stepEnvKey) ?? 0.25;
+                    const double startEndScaleMm = 20.0;
+                    double endLapWindowPercent = Clamp((stepMm / startEndScaleMm) * 100.0, 0.2, 5.0);
+
+                    startPercent = Clamp(fixedPercent - endLapWindowPercent, 0.0, fixedPercent);
+                    endPercent = fixedPercent;
+                    if (Math.Abs(endPercent - startPercent) < 1e-6)
+                    {
+                        endPercent = Clamp(fixedPercent + endLapWindowPercent, fixedPercent, 100.0);
+                    }
+
+                    rangePolicy = $"StepWindow(stepMm={stepMm:F3}, window%={endLapWindowPercent:F3})";
                 }
 
-                lapOp.FirstPassPercent = startPercent;
-                lapOp.LastPassPercent = endPercent;
+                lapOp.FirstPassPercent = Clamp(startPercent, 0.0, 100.0);
+                lapOp.LastPassPercent = Clamp(endPercent, lapOp.FirstPassPercent, 100.0);
 
                 if (sourceOp != null && !string.IsNullOrWhiteSpace(sourceOp.DriveSurface))
                 {
@@ -1614,14 +1647,40 @@ namespace DentalAddin
                 }
 
                 TrySetCompositeStepIncrement(lapOp, abLabel);
-                TrySetCompositeStockAllowance(lapOp, abLabel);
+
+                // 요청 반영:
+                // Finish_End(B)는 StockAllowance를 고정 0.03으로 적용한다.
+                if (isFinishEndB)
+                {
+                    const double finishEndStockAllowance = 0.03;
+                    try
+                    {
+                        lapOp.GetType().InvokeMember(
+                            "StockAllowance",
+                            BindingFlags.SetProperty,
+                            null,
+                            lapOp,
+                            new object[] { finishEndStockAllowance },
+                            CultureInfo.InvariantCulture);
+                        DentalLogger.Log($"Composite2ExitLap - END(B) StockAllowance 고정 적용: {finishEndStockAllowance.ToString("0.###", CultureInfo.InvariantCulture)}");
+                    }
+                    catch (Exception saEx)
+                    {
+                        DentalLogger.Log($"Composite2ExitLap - END(B) StockAllowance 적용 실패: {saEx.GetType().Name}:{saEx.Message}");
+                    }
+                }
+                else
+                {
+                    TrySetCompositeStockAllowance(lapOp, abLabel);
+                }
+
                 TryDisableCompositeDynamicIfRequested(lapOp, abLabel);
 
                 int before = Document?.Operations?.Count ?? -1;
                 TryAddOperation(lapOp, freeFormFeature, $"Composite2ExitLap:{finishLabel}");
                 TryAppendCompositeSuffixToNewOperations(before, finishLabel);
 
-                DentalLogger.Log($"Composite2ExitLap - 추가 완료 (label={finishLabel}, pass%={startPercent:F3}->{endPercent:F3}, stepMm={stepMm:F3}, window%={endLapWindowPercent:F3}, ToolID='{lapOp.ToolID ?? ""}', DriveSurface='{lapOp.DriveSurface ?? ""}')");
+                DentalLogger.Log($"Composite2ExitLap - 추가 완료 (label={finishLabel}, pass%={lapOp.FirstPassPercent:F3}->{lapOp.LastPassPercent:F3}, policy={rangePolicy}, ToolID='{lapOp.ToolID ?? ""}', DriveSurface='{lapOp.DriveSurface ?? ""}')");
             }
             catch (Exception ex)
             {
