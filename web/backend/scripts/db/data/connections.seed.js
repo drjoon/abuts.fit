@@ -148,7 +148,7 @@ export const CONNECTIONS_SEED = [
     diameter: 2.6,
     l2: 2.1,
     hexSize: 2.1,
-    screwType: "C",
+    screwType: "D",
     isActive: true,
   },
   {
@@ -164,7 +164,7 @@ export const CONNECTIONS_SEED = [
     diameter: 2.6,
     l2: 2.1,
     hexSize: 2.1,
-    screwType: "C",
+    screwType: "D",
     isActive: true,
   },
   {
@@ -180,7 +180,7 @@ export const CONNECTIONS_SEED = [
     diameter: 2.6,
     l2: 2.1,
     hexSize: 2.1,
-    screwType: "C",
+    screwType: "D",
     isActive: true,
   },
 

@@ -2,8 +2,8 @@ import { useEffect, useState } from "react";
 import { apiFetch } from "@/shared/api/apiClient";
 import type { Connection } from "./newRequestTypes";
 
-// v5: 2026-06-15 스크류 타입/커넥션 직경 컬럼 반영 캐시 키
-const IMPLANT_PRESETS_STORAGE_KEY = "abutsfit:implant-presets:v5";
+// v6: 2026-07-10 스크류 정보 정정(NEOBIOTECH Small Narrow) 반영 캐시 키
+const IMPLANT_PRESETS_STORAGE_KEY = "abutsfit:implant-presets:v6";
 const IMPLANT_PRESETS_TTL_MS = 365 * 24 * 60 * 60 * 1000; // 1년
 
 export type UseNewRequestImplantParams = {
