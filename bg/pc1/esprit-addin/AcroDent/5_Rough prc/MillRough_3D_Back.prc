@@ -129,7 +129,7 @@ BEGIN_OPERATION; 553; Rough Mill 3D; 0;
 	BEGIN_STRING; 498;;
 		:BM_D4
 	END_STRING
-   IncrementalDepth; 175; 0.5;  CAPTION; 증분 깊이; SOURCE; 2; TECHCODETYPE; 2;
+   IncrementalDepth; 175; 0.3;  CAPTION; 증분 깊이; SOURCE; 2; TECHCODETYPE; 2;
    4422; 4422; 5;  SOURCE; 0; TECHCODETYPE; 2;
    Rough5SeamPointZ; 6666; 0;  HIDDEN; CAPTION; 실린더 심 포인트 Z | 실린더 심 포인트 X, Y, Z; SOURCE; 1; TECHCODETYPE; 2;
    MinimumCornerRadius; 6615; 1.6000000000000001;  CAPTION; 최소 모서리 반경; SOURCE; 1; TECHCODETYPE; 2;
@@ -180,7 +180,7 @@ BEGIN_OPERATION; 553; Rough Mill 3D; 0;
    TrochoidTransitionFeedPercent; 492; 200;  CAPTION; 트랜지션 피드값%; SOURCE; 1; TECHCODETYPE; 1;
    EnableZLimits; 6646; 1;  CAPTION; 허용 Z리미트; SOURCE; 2; TECHCODETYPE; 67;
    EnableSmoothing; 3365; 0;  HIDDEN; CAPTION; 스무딩 사용; SOURCE; 1; TECHCODETYPE; 522;
-   CornerRoundingTolerance; 3331; 0.30;  CAPTION; 코너 라운딩 공차; SOURCE; 1; TECHCODETYPE; 2;
+   CornerRoundingTolerance; 3331; 0.3;  CAPTION; 코너 라운딩 공차; SOURCE; 1; TECHCODETYPE; 2;
    4909; 4909; ;  SOURCE; 0; TECHCODETYPE; 3;
 	BEGIN_STRING; 4909;;
 		:
