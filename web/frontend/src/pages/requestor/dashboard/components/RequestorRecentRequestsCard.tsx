@@ -13,6 +13,12 @@ import { RequestDetailDialog } from "@/features/requests/components/RequestDetai
 import { getNormalizedStageLabel } from "@/utils/stage";
 import { formatImplantDisplay } from "@/utils/implant";
 import { formatDateWithDay, formatDateOnly } from "@/utils/dateFormat";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 const EDITABLE_STATUSES = new Set(["의뢰", "CAM"]);
 
@@ -144,6 +150,8 @@ export const RequestorRecentRequestsCard = ({
     null,
   );
   const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false);
+  const [cancelTarget, setCancelTarget] =
+    useState<RecentRequestCardItem | null>(null);
 
   const {
     connections,
@@ -447,8 +455,8 @@ export const RequestorRecentRequestsCard = ({
   }, [open]);
 
   const isCancelableRequest = (r: RecentRequestCardItem | null) => {
-    const stage = String(r?.manufacturerStage || "");
-    return stage === "의뢰" || stage === "CAM";
+    const normalizedStageLabel = resolveStageLabel(r);
+    return normalizedStageLabel === "의뢰" || normalizedStageLabel === "CAM";
   };
 
   return (
@@ -477,7 +485,6 @@ export const RequestorRecentRequestsCard = ({
               <FunctionalItemCard
                 key={stableKey || displayId}
                 className="flex items-center justify-between p-3 border border-border rounded-lg"
-                alwaysShowActions={canCancel}
                 onClick={(e) => {
                   e.stopPropagation();
                   const reqId = item._id || item.id;
@@ -485,55 +492,38 @@ export const RequestorRecentRequestsCard = ({
                   setSelectedRequestId(reqId);
                   setOpen(true);
                 }}
-                onRemove={
-                  canCancel && (item._id || item.id)
-                    ? () => handleCancelRequest(item._id || (item.id as string))
-                    : undefined
-                }
-                confirmTitle="이 의뢰를 취소하시겠습니까?"
-                confirmDescription={
-                  <div className="text-md">
-                    <div className="font-medium mb-1 truncate">
-                      <div className="flex items-center justify-between gap-4 mb-2">
-                        {renderStageBadge(item)}
-                        <span className="text-xs text-muted-foreground">
-                          {item.createdAt && formatDateOnly(item.createdAt)}
-                        </span>
-                      </div>
-                      {item.caseInfos?.clinicName && (
-                        <span>{item.caseInfos.clinicName}</span>
-                      )}
-                      {item.caseInfos?.patientName && (
-                        <span className="ml-1">
-                          {item.caseInfos.patientName}
-                        </span>
-                      )}
-                      {item.caseInfos?.tooth && (
-                        <span className="ml-1">{item.caseInfos.tooth}</span>
-                      )}
-                      <span className="ml-1">
-                        {formatImplantDisplay(item.caseInfos)}
-                      </span>
-                      <span className="ml-1">
-                        유지홈 {retentionGrooveLabel}
-                      </span>
-                      {item.caseInfos?.maxDiameter && (
-                        <span className="ml-1">
-                          {item.caseInfos.maxDiameter.toFixed(1)}
-                        </span>
-                      )}
-                      {item.caseInfos?.connectionDiameter && (
-                        <span className="ml-1">
-                          {item.caseInfos.connectionDiameter.toFixed(1)}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                }
-                confirmLabel="의뢰 취소"
-                cancelLabel="닫기"
               >
-                <div className="flex-1 min-w-0 mr-2">
+                <TooltipProvider>
+                  <div className="absolute top-2 right-2 z-10">
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <span className="inline-flex">
+                          <button
+                            type="button"
+                            className={`inline-flex h-6 min-w-[42px] items-center justify-center rounded-full px-2 text-[11px] font-bold shadow-sm transition-colors ${
+                              canCancel
+                                ? "bg-red-500 text-white hover:bg-red-600"
+                                : "bg-gray-200 text-gray-500 cursor-not-allowed"
+                            }`}
+                            disabled={!canCancel}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (!canCancel) return;
+                              setCancelTarget(item);
+                            }}
+                            aria-label="의뢰 취소"
+                          >
+                            취소
+                          </button>
+                        </span>
+                      </TooltipTrigger>
+                      <TooltipContent side="top">
+                        의뢰, CAM 공정에서만 취소할 수 있습니다.
+                      </TooltipContent>
+                    </Tooltip>
+                  </div>
+                </TooltipProvider>
+                <div className="flex-1 min-w-0 mr-2 pr-12">
                   <div className="flex items-center gap-2 mb-1">
                     <div className="text-sm font-medium truncate text-foreground">
                       {item.title || displayId}
@@ -597,6 +587,56 @@ export const RequestorRecentRequestsCard = ({
           })}
         </div>
       </CardContent>
+
+      <ConfirmDialog
+        open={Boolean(cancelTarget)}
+        title="이 의뢰를 취소하시겠습니까?"
+        description={
+          <div className="text-md">
+            <div className="font-medium mb-1 truncate">
+              <div className="flex items-center justify-between gap-4 mb-2">
+                {renderStageBadge(cancelTarget)}
+                <span className="text-xs text-muted-foreground">
+                  {cancelTarget?.createdAt &&
+                    formatDateOnly(cancelTarget.createdAt)}
+                </span>
+              </div>
+              {cancelTarget?.caseInfos?.clinicName && (
+                <span>{cancelTarget.caseInfos.clinicName}</span>
+              )}
+              {cancelTarget?.caseInfos?.patientName && (
+                <span className="ml-1">
+                  {cancelTarget.caseInfos.patientName}
+                </span>
+              )}
+              {cancelTarget?.caseInfos?.tooth && (
+                <span className="ml-1">{cancelTarget.caseInfos.tooth}</span>
+              )}
+              <span className="ml-1">
+                {formatImplantDisplay(cancelTarget?.caseInfos)}
+              </span>
+              <span className="ml-1">
+                유지홈{" "}
+                {cancelTarget?.caseInfos?.retentionGroove === "deep"
+                  ? "있음"
+                  : "없음"}
+              </span>
+            </div>
+          </div>
+        }
+        confirmLabel="의뢰 취소"
+        cancelLabel="닫기"
+        onConfirm={async () => {
+          const targetId = cancelTarget?._id || cancelTarget?.id;
+          if (!targetId) {
+            setCancelTarget(null);
+            return;
+          }
+          await handleCancelRequest(String(targetId));
+          setCancelTarget(null);
+        }}
+        onCancel={() => setCancelTarget(null)}
+      />
 
       <RequestDetailDialog
         open={open}
