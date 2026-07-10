@@ -14,17 +14,14 @@ import {
   computePriceForRequest,
   canAccessRequestAsRequestor,
   buildRequestorOrgScopeFilter,
-  normalizeKoreanBusinessDay,
+  addKoreanBusinessDays,
   getTodayYmdInKst,
   toKstYmd,
   getRequestorOrgId,
   normalizeRequestStage,
   REQUEST_STAGE_ORDER,
 } from "./utils.js";
-import {
-  resolveLeadDaysWithSameDayCutoff,
-  addKstCalendarDays,
-} from "./production.utils.js";
+import { resolveLeadDaysWithSameDayCutoff } from "./production.utils.js";
 import { checkCreditLock } from "../../utils/creditLock.util.js";
 import { triggerDashboardSummaryRefreshForAnchorId } from "../../services/requestSnapshotTriggers.service.js";
 import { recomputeBulkShippingSnapshotForBusinessAnchorId } from "../../services/bulkShippingSnapshot.service.js";
@@ -804,7 +801,7 @@ export async function createRequestsFromDraft(req, res) {
           leadDays: 1,
           requestedAt: requestedAtForPrefetch,
         });
-        return addKstCalendarDays({
+        return addKoreanBusinessDays({
           startYmd: createdYmd,
           days: resolvedLeadDays,
         });
@@ -1107,7 +1104,7 @@ export async function createRequestsFromDraft(req, res) {
               requestedAt,
             });
 
-            const estimatedShipYmd = addKstCalendarDays({
+            const estimatedShipYmd = await addKoreanBusinessDays({
               startYmd: createdYmd,
               days: resolvedLeadDays,
             });

@@ -1,4 +1,9 @@
-import { getTodayYmdInKst, getDeliveryEtaLeadDays, toKstYmd } from "./utils.js";
+import {
+  getTodayYmdInKst,
+  addKoreanBusinessDays,
+  getDeliveryEtaLeadDays,
+  toKstYmd,
+} from "./utils.js";
 import { normalizeRequestStage } from "./utils.js";
 import { isKoreanBusinessDay } from "../../utils/krBusinessDays.js";
 import CncMachine from "../../models/cncMachine.model.js";
@@ -274,7 +279,7 @@ export async function calculateInitialProductionSchedule({
 
   const machiningCompleteYmd = toKstYmd(scheduledMachiningComplete);
   const baseBatchStartYmd = getTodayYmdInKst(now) || machiningCompleteYmd;
-  const batchProcessingYmd = addKstCalendarDays({
+  const batchProcessingYmd = await addKoreanBusinessDays({
     startYmd: baseBatchStartYmd,
     days: resolvedLeadDays,
   });

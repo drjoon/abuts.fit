@@ -26,6 +26,7 @@ function parseArgs() {
   return {
     apply: has("--apply"),
     verbose: has("--verbose"),
+    currentPrePackingAll: has("--current-prepacking-all"),
     limit: Number.isFinite(limitRaw) && limitRaw > 0 ? Math.floor(limitRaw) : 0,
     requestId,
     targetYmdRaw,
@@ -101,22 +102,39 @@ function pickScheduleSetPayload(nextSchedule) {
 async function run() {
   const args = parseArgs();
   const targetYmd = args.targetYmdRaw || getTodayYmdInKst();
-  const range = getKstDayRangeUtc(targetYmd);
-  if (!range) {
+  const range = args.currentPrePackingAll ? null : getKstDayRangeUtc(targetYmd);
+  if (!args.currentPrePackingAll && !range) {
     throw new Error(`Invalid --ymd value: ${targetYmd}`);
   }
 
   await connectDb();
 
   try {
+    const PRE_PACKING_STAGES = [
+      "request",
+      "의뢰",
+      "cam",
+      "CAM",
+      "machining",
+      "가공",
+      "packing",
+      "세척.패킹",
+      "세척.포장",
+    ];
+
     const query = {
-      createdAt: {
+      source: { $ne: "manufacturer_sample" },
+      manufacturerStage: args.currentPrePackingAll
+        ? { $in: PRE_PACKING_STAGES }
+        : { $ne: "취소" },
+    };
+
+    if (!args.currentPrePackingAll) {
+      query.createdAt = {
         $gte: range.start,
         $lte: range.end,
-      },
-      source: { $ne: "manufacturer_sample" },
-      manufacturerStage: { $ne: "취소" },
-    };
+      };
+    }
 
     if (args.requestId) {
       query.requestId = args.requestId;
@@ -284,6 +302,9 @@ async function run() {
 
     console.log("[db] fix-today-estimated-ship-ymd summary", {
       mode: args.apply ? "apply" : "dry-run",
+      scope: args.currentPrePackingAll
+        ? "current-prepacking-all"
+        : "created-at-ymd",
       targetYmd,
       inputCount: rows.length,
       changed,
