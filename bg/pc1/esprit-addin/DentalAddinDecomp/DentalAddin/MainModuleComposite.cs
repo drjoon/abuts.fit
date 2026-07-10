@@ -1114,10 +1114,25 @@ namespace DentalAddin
                 int afterB = Document?.Operations?.Count ?? -1;
                 DentalLogger.Log($"Composite2SplitLine2 - Operation 추가 완료: FINISH_BACK(opB) (afterCount={afterB})");
 
-                // 요청 반영: Finish_End 추가 생성
-                // - 구간: BackPointX -> BackPointX + 1.2mm
-                // - StockAllowance: 0.03
-                TryAddCompositeExitLap(technologyUtility, effectivePrcB, freeFormFeature, opB, opB.LastPassPercent, "END", "B");
+                // 요청 반영: finishline min_z가 1.0 이하일 때만 Finish_End 생성
+                // - 구간: BackPointX -> BackPointX + 0.4mm (TryAddCompositeExitLap 내부 정책)
+                // - StockAllowance: 0.03 (TryAddCompositeExitLap 내부 정책)
+                const double finishEndMinZThresholdMm = 1.0;
+                double? finishLineMinZ = GetEnvDoubleNullable("ABUTS_FINISHLINE_MIN_Z");
+                bool shouldCreateFinishEnd = finishLineMinZ.HasValue
+                    && !double.IsNaN(finishLineMinZ.Value)
+                    && !double.IsInfinity(finishLineMinZ.Value)
+                    && finishLineMinZ.Value <= finishEndMinZThresholdMm;
+
+                if (shouldCreateFinishEnd)
+                {
+                    TryAddCompositeExitLap(technologyUtility, effectivePrcB, freeFormFeature, opB, opB.LastPassPercent, "END", "B");
+                    DentalLogger.Log($"Composite2SplitLine2 - Finish_End(B) 생성: finishLineMinZ={finishLineMinZ.Value.ToString("F4", CultureInfo.InvariantCulture)} <= {finishEndMinZThresholdMm.ToString("F3", CultureInfo.InvariantCulture)}");
+                }
+                else
+                {
+                    DentalLogger.Log($"Composite2SplitLine2 - Finish_End(B) 생성 생략: finishLineMinZ={(finishLineMinZ.HasValue ? finishLineMinZ.Value.ToString("F4", CultureInfo.InvariantCulture) : "<null>")}, threshold={finishEndMinZThresholdMm.ToString("F3", CultureInfo.InvariantCulture)}");
+                }
 
                 // FINISH_B 이후 추가 확장 공정은 생성하지 않는다.
             }
