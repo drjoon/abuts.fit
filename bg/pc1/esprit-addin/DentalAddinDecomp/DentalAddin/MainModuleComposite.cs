@@ -2376,7 +2376,8 @@ namespace DentalAddin
 
             // 요청 반영:
             // Back_Rough 끝점 기본식 = finishline min_z + 4.1mm
-            // 단, 기본식이 무효(음수/역전/좌측 과침범)인 경우 BackPoint 기준식(BackPointX + (2.1 - minZ))으로 재해석한다.
+            // 단, 기본식이 무효(음수/역전/좌측 과침범)이거나 BackPoint 대비 과도하게 좌측이면
+            // BackPoint 기준식(BackPointX + max(2.1 - minZ, 0.0))으로 재해석한다.
             const double backRoughEndOffsetFromFinishMinZMm = 4.1;
             const double backRoughEndTranslatedBaseMm = 2.1;
             double backEnd = xMax;
@@ -2386,7 +2387,8 @@ namespace DentalAddin
                 && !double.IsInfinity(finishLineMinZForBackRough))
             {
                 double rawBackEnd = finishLineMinZForBackRough + backRoughEndOffsetFromFinishMinZMm;
-                double translatedBackEnd = MoveSTL_Module.BackPointX + (backRoughEndTranslatedBaseMm - finishLineMinZForBackRough);
+                double translatedOffset = Math.Max(backRoughEndTranslatedBaseMm - finishLineMinZForBackRough, 0.0);
+                double translatedBackEnd = MoveSTL_Module.BackPointX + translatedOffset;
 
                 backEnd = rawBackEnd;
 
@@ -2395,12 +2397,13 @@ namespace DentalAddin
                     || double.IsInfinity(backEnd)
                     || backEnd <= splitline2 + 1e-6
                     || backEnd <= backStart + 1e-6
-                    || backEnd < xMin - 1e-6;
+                    || backEnd < xMin - 1e-6
+                    || backEnd < MoveSTL_Module.BackPointX - 1e-6;
 
                 if (useTranslated)
                 {
                     backEnd = translatedBackEnd;
-                    DentalLogger.Log($"RoughFreeFromMillSplitAB - Back_Rough 끝점 재해석: rawEnd={rawBackEnd.ToString("F3", CultureInfo.InvariantCulture)} -> translatedEnd={translatedBackEnd.ToString("F3", CultureInfo.InvariantCulture)} (BackPointX + (2.1 - minZ), split2={splitline2.ToString("F3", CultureInfo.InvariantCulture)}, backStart={backStart.ToString("F3", CultureInfo.InvariantCulture)})");
+                    DentalLogger.Log($"RoughFreeFromMillSplitAB - Back_Rough 끝점 재해석: rawEnd={rawBackEnd.ToString("F3", CultureInfo.InvariantCulture)} -> translatedEnd={translatedBackEnd.ToString("F3", CultureInfo.InvariantCulture)} (BackPointX + max(2.1 - minZ, 0.0), split2={splitline2.ToString("F3", CultureInfo.InvariantCulture)}, backStart={backStart.ToString("F3", CultureInfo.InvariantCulture)})");
                 }
 
                 // 최종 안전 가드: 재해석 이후에도 역전이면 BackPointX를 끝점으로 강제한다.
