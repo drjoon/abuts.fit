@@ -1798,7 +1798,7 @@ export const TrackingInquiryPage = () => {
                                     <div className="text-xs text-gray-500 mb-2 font-medium">
                                       포함된 의뢰
                                     </div>
-                                    <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
+                                    <div className="grid grid-cols-1 gap-2">
                                       {requests.map((req: any) => {
                                         const ci: any = req.caseInfos || {};
                                         const recallReqId = String(
