@@ -2374,54 +2374,13 @@ namespace DentalAddin
 
             double backStart = Clamp(splitline2 - backRoughOverCutMm, xMin + 1e-6, xMax - 1e-6);
 
-            // 요청 반영:
-            // Back_Rough 끝점 기본식 = finishline min_z + 4.1mm
-            // 단, 기본식이 무효(음수/역전/좌측 과침범)이거나 BackPoint 대비 과도하게 좌측이면
-            // BackPoint 기준식(BackPointX + max(2.1 - minZ, 0.0))으로 재해석한다.
-            const double backRoughEndOffsetFromFinishMinZMm = 4.1;
-            const double backRoughEndTranslatedBaseMm = 2.1;
-            double backEnd = xMax;
-            if (!string.IsNullOrWhiteSpace(finishMinZRaw)
-                && double.TryParse(finishMinZRaw, NumberStyles.Float, CultureInfo.InvariantCulture, out double finishLineMinZForBackRough)
-                && !double.IsNaN(finishLineMinZForBackRough)
-                && !double.IsInfinity(finishLineMinZForBackRough))
-            {
-                double rawBackEnd = finishLineMinZForBackRough + backRoughEndOffsetFromFinishMinZMm;
-                double translatedOffset = Math.Max(backRoughEndTranslatedBaseMm - finishLineMinZForBackRough, 0.0);
-                double translatedBackEnd = MoveSTL_Module.BackPointX + translatedOffset;
+            // 요청 반영(2026-07-11):
+            // Back_Rough 끝점은 finishline min_z와 무관하게 BackPointX + 4.0mm로 고정한다.
+            // (기존 raw/translated 이중 계산 및 min_z 기반 보정 로직은 사용하지 않는다.)
+            const double backRoughEndOffsetFromBackPointMm = 4.0;
+            double backEnd = MoveSTL_Module.BackPointX + backRoughEndOffsetFromBackPointMm;
 
-                backEnd = rawBackEnd;
-
-                bool useTranslated =
-                    double.IsNaN(backEnd)
-                    || double.IsInfinity(backEnd)
-                    || backEnd <= splitline2 + 1e-6
-                    || backEnd <= backStart + 1e-6
-                    || backEnd < xMin - 1e-6
-                    || backEnd < MoveSTL_Module.BackPointX - 1e-6;
-
-                if (useTranslated)
-                {
-                    backEnd = translatedBackEnd;
-                    DentalLogger.Log($"RoughFreeFromMillSplitAB - Back_Rough 끝점 재해석: rawEnd={rawBackEnd.ToString("F3", CultureInfo.InvariantCulture)} -> translatedEnd={translatedBackEnd.ToString("F3", CultureInfo.InvariantCulture)} (BackPointX + max(2.1 - minZ, 0.0), split2={splitline2.ToString("F3", CultureInfo.InvariantCulture)}, backStart={backStart.ToString("F3", CultureInfo.InvariantCulture)})");
-                }
-
-                // 최종 안전 가드: 재해석 이후에도 역전이면 BackPointX를 끝점으로 강제한다.
-                if (double.IsNaN(backEnd)
-                    || double.IsInfinity(backEnd)
-                    || backEnd <= backStart + 1e-6)
-                {
-                    double safeFallbackEnd = MoveSTL_Module.BackPointX;
-                    DentalLogger.Log($"RoughFreeFromMillSplitAB - Back_Rough 끝점 안전복구: endX={backEnd.ToString("F3", CultureInfo.InvariantCulture)} -> {safeFallbackEnd.ToString("F3", CultureInfo.InvariantCulture)} (BackPointX 강제)");
-                    backEnd = safeFallbackEnd;
-                }
-
-                DentalLogger.Log($"RoughFreeFromMillSplitAB - Back_Rough 끝점 적용: minZ={finishLineMinZForBackRough.ToString("F4", CultureInfo.InvariantCulture)}, rawEnd={rawBackEnd.ToString("F3", CultureInfo.InvariantCulture)}, translatedEnd={translatedBackEnd.ToString("F3", CultureInfo.InvariantCulture)}, finalEnd={backEnd.ToString("F3", CultureInfo.InvariantCulture)}");
-            }
-            else
-            {
-                DentalLogger.Log($"RoughFreeFromMillSplitAB - Back_Rough 끝점 fallback(xMax): finishLineMinZ raw='{finishMinZRaw ?? ""}'");
-            }
+            DentalLogger.Log($"RoughFreeFromMillSplitAB - Back_Rough 끝점 고정 적용: backPointX={MoveSTL_Module.BackPointX.ToString("F3", CultureInfo.InvariantCulture)}, offset={backRoughEndOffsetFromBackPointMm.ToString("F3", CultureInfo.InvariantCulture)}, endX={backEnd.ToString("F3", CultureInfo.InvariantCulture)}, finishLineMinZ(raw)='{finishMinZRaw ?? ""}'");
 
             double radius = (Document.LatheMachineSetup.BarDiameter + 10.0) / 2.0;
             FeatureChain frontBoundary = EnsureRectBoundary("RoughBoundryFront1", frontStart, frontEnd, radius, -radius);

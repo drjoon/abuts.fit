@@ -495,9 +495,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.DentalAddin
             double frontMillDepth = (numData != null && numData.Length > 2 && numData[2] > 0) ? numData[2] : AppConfig.TurningDepth;
             double turningDepth = (numData != null && numData.Length > 3 && numData[3] > 0) ? numData[3] : AppConfig.TurningDepth;
             double angleNumber = (numData != null && numData.Length > 4 && numData[4] > 0) ? numData[4] : exitAngle;
-            // 중요: 여기서 설정하는 turningExtend는 MainModule의 "초기 입력값(seed)"이다.
-            // Back_Turn 최종 적용값은 공정 단계에서 별도 SSOT로 재해석/보정된다.
-            // (예: finishLineMinZ 기반 계산 + 최소 4.0mm 보장)
+            // 중요: 여기서 설정하는 turningExtend는 MainModule의 입력값이며,
+            // Back_Turn/ExtendTurning 공정에서도 같은 값을 코드 override 없이 직접 사용한다.
             double turningExtend = (numData != null && numData.Length > 5 && numData[5] > 0) ? numData[5] : AppConfig.TurningExtend;
 
             DentalAddinReflectionHelper.SetStaticField(mainModuleType, "MillingDepth", frontMillDepth);
@@ -506,8 +505,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.DentalAddin
             DentalAddinReflectionHelper.SetStaticField(mainModuleType, "TurningExtend", turningExtend);
             DentalAddinReflectionHelper.SetStaticField(mainModuleType, "Chamfer", exitAngle);
             DentalAddinReflectionHelper.SetStaticField(mainModuleType, "AngleNumber", angleNumber);
-            // 로그의 Extend는 "초기 로드값"이며, Back_Turn 최종 적용값 로그와 구분해서 해석해야 한다.
-            // 최종값 확인은 TurningFeature_Extension.BackT / MainModuleOperations.ResolveBackTurningExtendForBackTurnRange 로그를 사용.
+            // 로그의 Extend는 MainModule.TurningExtend 설정값이며,
+            // Back_Turn/TurningOp BACK 로그와 동일 소스 값으로 해석한다.
             AppLogger.Log($"DentalAddinConfigurator: Turning/Milling 파라미터 설정 - FrontDepth:{frontMillDepth}, TurningDepth:{turningDepth}, Extend:{turningExtend}, ExitAngle:{exitAngle}, AngleNumber:{angleNumber}");
         }
     }

@@ -36,7 +36,7 @@
     <double>1</double> # Front Mill Depth
     <double>1</double> # Turning Depth
     <double>3</double>
-    <double>3.5</double> # Turning Extend (초기 seed 값. Back_Turn 최종 적용값은 코드에서 min 4.0mm 보정)
+    <double>6.0</double> # Turning Extend (D4 러프 가로폭 4.0mm + 45도 퇴출 구간 1.5mm + 여유 0.5mm)
     <double>1.5</double> # Rough Mill Step
     <double>5</double>
   </NumData>

@@ -113,9 +113,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
 
         public const double DefaultExitAngle = 30.0;
 
-        // 주의: 이 값(3.5)은 UserData/환경변수 초기 로드용 seed 값이다.
-        // Back_Turn 최종 적용값 SSOT는 공정 코드에서 별도 보정하며,
-        // 현재 정책상 Back_Turn 경로는 최소 4.0mm를 강제한다.
+        // 주의: 기본값은 UserData/env 미주입 시 fallback으로 사용된다.
+        // Back_Turn/ExtendTurning에서도 MainModule.TurningExtend 값을 코드 override 없이 직접 사용한다.
         public const double DefaultTurningExtend = 3.5;
 
         public const double DefaultStlShift = 0.05;  // #523: 탑과 포스트 상단 사이 거리

@@ -130,25 +130,34 @@
 - 실행 초기화 정책:
   - `ResetPerRunState()`에서 `ABUTS_COMPOSITE_ORIENTATION_PROFILE_START_X`를 반드시 clear 한다.
 
-### 4.8 Back_Turn Turning Extend 최소값 SSOT (2026-07-11)
+### 4.8 Back_Turn Turning Extend direct 적용 SSOT (2026-07-11)
 
 - 혼동 포인트 정리:
-  - `Tech_Default_Path.xml`의 `Turning Extend=3.5`는 **초기 로드 seed 값**이다.
-  - 즉, Configurator 로그(`Extend:3.5`)는 초기값 로드 로그일 수 있으며, Back_Turn 최종 적용값과 동일하지 않다.
-- Back_Turn 최종 정책:
-  - Back_Turn 계산 경로에서는 `TurningExtend`를 **최소 4.0mm**로 강제한다.
-  - 식 우선순위:
-    1. `computed = 6.0 - finishLineMinZ` (when `ABUTS_FINISHLINE_MIN_Z` available)
-    2. `applied = max(computed, 4.0)`
-    3. env 미사용 시에도 `applied = max(TurningExtend, 4.0)`
+  - `Turning Extend` 값은 `Tech_Default_Path.xml`(또는 env)에서 주입된 `MainModule.TurningExtend`를 사용한다.
+  - 코드에서 고정값(예: 6.0)이나 `finishLineMinZ` 계산으로 재override하지 않는다.
+- Back_Turn/ExtendTurning 최종 정책:
+  - `BackT`, `ResolveBackTurningExtendForBackTurnRange`, `ExtendTurning` 모두
+    `MainModule.TurningExtend` 값을 **direct 적용**한다.
 - 적용 위치(코드 SSOT):
   - `DentalAddinDecomp/DentalAddin/TurningFeature_Extension.cs`
-    - `BackT` (legacy Back_Turning 체인 생성)
+    - `BackT`, `ExtendTurning`
   - `DentalAddinDecomp/DentalAddin/MainModuleOperations.cs`
-    - `ResolveBackTurningExtendForBackTurnRange` (3-stage/legacy fallback range 계산 공통)
+    - `ResolveBackTurningExtendForBackTurnRange`
 - 디버깅 기준 로그:
-  - `TurningOp BACK - ... applied=... (min=4.0mm)`
-  - `BackT: TurningExtend 최소값 보정 적용 ... (min=4.0mm)`
+  - `TurningOp BACK - TurningExtend direct 적용: ... (source=MainModule.TurningExtend)`
+  - `BackT: TurningExtend direct 적용 - ... (source=MainModule.TurningExtend)`
+  - `ExtendTurning: TurningExtend direct 적용 - ... (source=MainModule.TurningExtend)`
+
+### 4.9 Back_Rough 끝점 고정값 SSOT (2026-07-11)
+
+- Back_Rough 끝점은 finishline min_z와 무관하게 **고정식**을 사용한다.
+  - `BackRoughEndX = BackPointX + 4.0mm`
+- 기존 `min_z` 기반 raw/translated 계산(`finishline min_z + 4.1`, `BackPointX + ...`)은 사용하지 않는다.
+- 구현 위치:
+  - `DentalAddinDecomp/DentalAddin/MainModuleComposite.cs`
+    - `TryRunRoughFreeFromMillSplitAB`
+- 디버깅 기준 로그:
+  - `RoughFreeFromMillSplitAB - Back_Rough 끝점 고정 적용: backPointX=..., offset=4.000, endX=...`
 
 ## 5. 정리 원칙
 

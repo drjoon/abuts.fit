@@ -1653,31 +1653,11 @@ namespace DentalAddin
 
         private static double ResolveBackTurningExtendForBackTurnRange()
         {
-            // Back_Turn range 계산의 TurningExtend SSOT.
-            // 중요: TurningExtend(예: XML/Configurator 3.5)는 초기 seed이며,
-            // 실제 Back_Turn range 계산에서는 아래 규칙으로 최종값을 재결정한다.
-            // - finishLineMinZ 사용 가능: computed = 6.0 - minZ
-            // - finishLineMinZ 미사용: computed = seed(TurningExtend)
-            // - 공통 하한: applied = max(computed, 4.0)
-            const double backTurningExtendMinMm = 4.0;
-
-            double fallback = TurningExtend;
-            string raw = Environment.GetEnvironmentVariable("ABUTS_FINISHLINE_MIN_Z");
-
-            if (!string.IsNullOrWhiteSpace(raw)
-                && double.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out double finishLineMinZ)
-                && !double.IsNaN(finishLineMinZ)
-                && !double.IsInfinity(finishLineMinZ))
-            {
-                double computed = 6.0 - finishLineMinZ;
-                double applied = Math.Max(backTurningExtendMinMm, computed);
-                DentalLogger.Log($"TurningOp BACK - TurningExtend override: 6.0 - finishLineMinZ({finishLineMinZ.ToString("F4", CultureInfo.InvariantCulture)}) = {computed.ToString("F4", CultureInfo.InvariantCulture)}, applied={applied.ToString("F4", CultureInfo.InvariantCulture)} (min={backTurningExtendMinMm.ToString("F1", CultureInfo.InvariantCulture)}mm)");
-                return applied;
-            }
-
-            double fallbackApplied = Math.Max(backTurningExtendMinMm, fallback);
-            DentalLogger.Log($"TurningOp BACK - ABUTS_FINISHLINE_MIN_Z 미사용('{raw ?? ""}'), 기존 TurningExtend({fallback.ToString("F4", CultureInfo.InvariantCulture)}) -> applied({fallbackApplied.ToString("F4", CultureInfo.InvariantCulture)}) (min={backTurningExtendMinMm.ToString("F1", CultureInfo.InvariantCulture)}mm)");
-            return fallbackApplied;
+            // 정책(2026-07-11): Back_Turn range 계산에서도 TurningExtend를 코드에서 override하지 않는다.
+            // MainModule.TurningExtend(UserData/XML/env 반영값)를 그대로 사용한다.
+            double applied = TurningExtend;
+            DentalLogger.Log($"TurningOp BACK - TurningExtend direct 적용: {applied.ToString("F4", CultureInfo.InvariantCulture)} (source=MainModule.TurningExtend)");
+            return applied;
         }
 
         // 레거시 Turn_B(2-phase B) 구간 계산을 3-stage Back_Turn에 그대로 적용
