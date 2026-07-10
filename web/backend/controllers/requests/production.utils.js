@@ -1,9 +1,4 @@
-import {
-  getTodayYmdInKst,
-  addKoreanBusinessDays,
-  getDeliveryEtaLeadDays,
-  toKstYmd,
-} from "./utils.js";
+import { getTodayYmdInKst, getDeliveryEtaLeadDays, toKstYmd } from "./utils.js";
 import { normalizeRequestStage } from "./utils.js";
 import { isKoreanBusinessDay } from "../../utils/krBusinessDays.js";
 import CncMachine from "../../models/cncMachine.model.js";
@@ -43,7 +38,6 @@ const BATCH_PROCESSING_DAYS = 1; // 세척/검사/포장 (50~100개 모아서)
 const PACKING_CUTOFF_HOUR = 14; // 포장 마감 시각 (14:00)
 const PICKUP_REQUEST_HOUR = 15; // 택배 수거 신청 시각 (15:00)
 const DAILY_PICKUP_HOUR = 16; // 택배 수거 시각 (16:00)
-const SAME_DAY_SHIPPING_CUTOFF_HOUR_KST = 24; // 자정(0시)까지 접수분 당일 집하
 
 /**
  * KST 시각 생성
@@ -88,32 +82,25 @@ function createKstDateTime(ymd, hour = 0, minute = 0) {
   throw new Error(`Invalid ymd for createKstDateTime: ${ymdString}`);
 }
 
-function isBeforeSameDayCutoffKst(dateInput) {
-  const date =
-    dateInput instanceof Date ? dateInput : new Date(dateInput || Date.now());
-  if (Number.isNaN(date.getTime())) return false;
-
-  // KST 보정을 위해 UTC 기준에 +9h 적용
-  const kst = new Date(date.getTime() + 9 * 60 * 60 * 1000);
-  const hour = kst.getUTCHours();
-
-  return hour < SAME_DAY_SHIPPING_CUTOFF_HOUR_KST;
-}
-
 export function resolveLeadDaysWithSameDayCutoff({ leadDays, requestedAt }) {
   const baseDays = Number.isFinite(leadDays) ? Number(leadDays) : 0;
   if (baseDays <= 0) return 0;
 
-  const beforeCutoff = isBeforeSameDayCutoffKst(requestedAt || new Date());
+  // ETA 리드타임은 "오늘 자정 전 접수 = 최소 1일" 정책을 따르므로
+  // 생성 시각 cutoff로 (N-1) 보정하지 않고 설정값(N일)을 그대로 사용한다.
+  void requestedAt;
+  return baseDays;
+}
 
-  // rules.md 기준:
-  // "자정(0시 KST)까지 접수분은 당일 집하 일정으로 계산"해야 하므로,
-  // 리드타임 N 영업일은 접수 당일을 1일차로 포함해 (N-1) 영업일로 환산한다.
-  if (beforeCutoff) {
-    return Math.max(0, baseDays - 1);
+export function addKstCalendarDays({ startYmd, days }) {
+  const base = new Date(`${startYmd}T00:00:00+09:00`);
+  if (Number.isNaN(base.getTime())) {
+    throw new Error(`Invalid startYmd: ${startYmd}`);
   }
 
-  return baseDays;
+  const targetDays = Number.isFinite(days) && days > 0 ? Math.floor(days) : 0;
+  base.setDate(base.getDate() + targetDays);
+  return toKstYmd(base);
 }
 
 /**
@@ -286,7 +273,7 @@ export async function calculateInitialProductionSchedule({
 
   const machiningCompleteYmd = toKstYmd(scheduledMachiningComplete);
   const baseBatchStartYmd = getTodayYmdInKst(now) || machiningCompleteYmd;
-  const batchProcessingYmd = await addKoreanBusinessDays({
+  const batchProcessingYmd = addKstCalendarDays({
     startYmd: baseBatchStartYmd,
     days: resolvedLeadDays,
   });
@@ -296,10 +283,11 @@ export async function calculateInitialProductionSchedule({
     0,
   );
 
-  const resolvedShipPickupYmd = await resolveNextWeeklyBatchYmd({
-    baseYmd: batchProcessingYmd,
-    weeklyBatchDays,
-  });
+  // ETA/마감은 리드타임 기준으로 계산한다.
+  // requestor 주간 발송 요일 정책은 포장.발송 운영 액션 필터에서 적용하고,
+  // 의뢰 생성 시 ETA 자체를 추가 지연시키는 용도로는 사용하지 않는다.
+  void weeklyBatchDays;
+  const resolvedShipPickupYmd = batchProcessingYmd;
   const scheduledPickupBase = createKstDateTime(
     resolvedShipPickupYmd,
     PACKING_CUTOFF_HOUR,

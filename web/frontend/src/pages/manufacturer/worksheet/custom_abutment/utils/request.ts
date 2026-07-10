@@ -3,7 +3,7 @@ import type { RequestBase } from "@/types/request";
 export type ManufacturerRequest = RequestBase & {
   referenceIds?: string[];
   mailboxAddress?: string | null;
-  requestorBusiness?: any;
+  requestorBusiness?: unknown;
   requestor?:
     | (RequestBase["requestor"] & {
         business?: string;
@@ -12,12 +12,12 @@ export type ManufacturerRequest = RequestBase & {
   business?: {
     _id?: string;
     name?: string;
-    metadata?: any;
+    metadata?: unknown;
     shippingPolicy?: {
       weeklyBatchDays?: string[];
     };
   } | null;
-  deliveryInfoRef?: any;
+  deliveryInfoRef?: unknown;
   wasPickedUp?: boolean;
   pickupStatusCode?: string | null;
   pickupStatusText?: string | null;

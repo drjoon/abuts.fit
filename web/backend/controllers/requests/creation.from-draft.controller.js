@@ -14,7 +14,6 @@ import {
   computePriceForRequest,
   canAccessRequestAsRequestor,
   buildRequestorOrgScopeFilter,
-  addKoreanBusinessDays,
   normalizeKoreanBusinessDay,
   getTodayYmdInKst,
   toKstYmd,
@@ -22,7 +21,10 @@ import {
   normalizeRequestStage,
   REQUEST_STAGE_ORDER,
 } from "./utils.js";
-import { resolveLeadDaysWithSameDayCutoff } from "./production.utils.js";
+import {
+  resolveLeadDaysWithSameDayCutoff,
+  addKstCalendarDays,
+} from "./production.utils.js";
 import { checkCreditLock } from "../../utils/creditLock.util.js";
 import { triggerDashboardSummaryRefreshForAnchorId } from "../../services/requestSnapshotTriggers.service.js";
 import { recomputeBulkShippingSnapshotForBusinessAnchorId } from "../../services/bulkShippingSnapshot.service.js";
@@ -802,7 +804,7 @@ export async function createRequestsFromDraft(req, res) {
           leadDays: 1,
           requestedAt: requestedAtForPrefetch,
         });
-        return addKoreanBusinessDays({
+        return addKstCalendarDays({
           startYmd: createdYmd,
           days: resolvedLeadDays,
         });
@@ -1080,13 +1082,10 @@ export async function createRequestsFromDraft(req, res) {
             ? toKstYmd(productionSchedule.scheduledShipPickup)
             : null;
           if (pickupYmdRaw) {
-            const pickupYmd = await normalizeKoreanBusinessDay({
-              ymd: pickupYmdRaw,
-            });
             newRequest.timeline = newRequest.timeline || {};
-            newRequest.timeline.originalEstimatedShipYmd = pickupYmd;
-            newRequest.timeline.nextEstimatedShipYmd = pickupYmd;
-            newRequest.timeline.estimatedShipYmd = pickupYmd;
+            newRequest.timeline.originalEstimatedShipYmd = pickupYmdRaw;
+            newRequest.timeline.nextEstimatedShipYmd = pickupYmdRaw;
+            newRequest.timeline.estimatedShipYmd = pickupYmdRaw;
           } else {
             // Use manufacturer lead times based on diameter
             const { getManufacturerLeadTimesUtil } =
@@ -1108,12 +1107,9 @@ export async function createRequestsFromDraft(req, res) {
               requestedAt,
             });
 
-            const estimatedShipYmdRaw = await addKoreanBusinessDays({
+            const estimatedShipYmd = addKstCalendarDays({
               startYmd: createdYmd,
               days: resolvedLeadDays,
-            });
-            const estimatedShipYmd = await normalizeKoreanBusinessDay({
-              ymd: estimatedShipYmdRaw,
             });
             newRequest.timeline = newRequest.timeline || {};
             newRequest.timeline.originalEstimatedShipYmd = estimatedShipYmd;
