@@ -441,13 +441,46 @@ export const MachiningQueueBoard = ({
     }
   }, [anodizingOffTriggering, machines, queueMap, toast, token]);
 
-  const displayMachines = useMemo(
-    () =>
-      (Array.isArray(filteredMachines) ? filteredMachines : []).filter(
-        (m: any) => String(m?.uid || "").trim() !== "unassigned",
-      ),
-    [filteredMachines],
-  );
+  const displayMachines = useMemo(() => {
+    const getMachineOrder = (
+      machine: { uid?: string; name?: string } | null | undefined,
+    ) => {
+      const candidates = [machine?.uid, machine?.name]
+        .map((v) => String(v || "").trim())
+        .filter(Boolean);
+      for (const text of candidates) {
+        const matched = text.match(/(\d+)/);
+        if (!matched) continue;
+        const value = Number(matched[1]);
+        if (Number.isFinite(value)) return value;
+      }
+      return Number.POSITIVE_INFINITY;
+    };
+
+    return (Array.isArray(filteredMachines) ? filteredMachines : [])
+      .filter(
+        (m) =>
+          String((m as { uid?: string } | null | undefined)?.uid || "").trim() !==
+          "unassigned",
+      )
+      .sort((a, b) => {
+        const aOrder = getMachineOrder(
+          a as { uid?: string; name?: string } | null | undefined,
+        );
+        const bOrder = getMachineOrder(
+          b as { uid?: string; name?: string } | null | undefined,
+        );
+
+        if (aOrder !== bOrder) return aOrder - bOrder;
+
+        const aUid = String((a as { uid?: string } | null | undefined)?.uid || "").trim();
+        const bUid = String((b as { uid?: string } | null | undefined)?.uid || "").trim();
+        return aUid.localeCompare(bUid, undefined, {
+          numeric: true,
+          sensitivity: "base",
+        });
+      });
+  }, [filteredMachines]);
 
   const unassignedQueue = useMemo(
     () =>
