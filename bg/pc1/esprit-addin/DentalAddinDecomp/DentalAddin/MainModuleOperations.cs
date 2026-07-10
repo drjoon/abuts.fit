@@ -1618,7 +1618,8 @@ namespace DentalAddin
                         //    - 따라서 xMax + exitAllowance까지 허용해 기존 퇴출 형상을 보존한다.
                         rangeMinX = Clamp(MoveSTL_Module.FrontPointX, xMin + 1e-6, xMax - 1e-6);
 
-                        double exitAllowance = Math.Max(0.5, Math.Abs(TurningExtend) + Math.Abs(BackTurn));
+                        double backTurningExtend = ResolveBackTurningExtendForBackTurnRange();
+                        double exitAllowance = Math.Max(0.5, Math.Abs(backTurningExtend) + Math.Abs(BackTurn));
                         double chamferTan = Math.Abs(Math.Tan(Math.PI * Chamfer / 180.0));
                         if (Math.Abs(Chamfer - 90.0) > 0.001 && chamferTan > 1e-6)
                         {
@@ -1648,6 +1649,25 @@ namespace DentalAddin
                 DentalLogger.Log($"TurningOp 3-Stage - 구간 준비 실패(region={region}): {ex.GetType().Name}:{ex.Message}");
                 return false;
             }
+        }
+
+        private static double ResolveBackTurningExtendForBackTurnRange()
+        {
+            double fallback = TurningExtend;
+            string raw = Environment.GetEnvironmentVariable("ABUTS_FINISHLINE_MIN_Z");
+
+            if (!string.IsNullOrWhiteSpace(raw)
+                && double.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out double finishLineMinZ)
+                && !double.IsNaN(finishLineMinZ)
+                && !double.IsInfinity(finishLineMinZ))
+            {
+                double computed = 6.0 - finishLineMinZ;
+                DentalLogger.Log($"TurningOp BACK - TurningExtend override: 6.0 - finishLineMinZ({finishLineMinZ.ToString("F4", CultureInfo.InvariantCulture)}) = {computed.ToString("F4", CultureInfo.InvariantCulture)}");
+                return computed;
+            }
+
+            DentalLogger.Log($"TurningOp BACK - ABUTS_FINISHLINE_MIN_Z 미사용('{raw ?? ""}'), 기존 TurningExtend({fallback.ToString("F4", CultureInfo.InvariantCulture)}) 사용");
+            return fallback;
         }
 
         // 레거시 Turn_B(2-phase B) 구간 계산을 3-stage Back_Turn에 그대로 적용
@@ -1682,7 +1702,8 @@ namespace DentalAddin
                 rangeMinX = effectiveSplitX;
 
                 // 끝점은 기존 Back_Turn 형상(수평 extension + 45도 퇴출)을 유지하도록 확장한다.
-                double exitAllowance = Math.Max(0.5, Math.Abs(TurningExtend) + Math.Abs(BackTurn));
+                double backTurningExtend = ResolveBackTurningExtendForBackTurnRange();
+                double exitAllowance = Math.Max(0.5, Math.Abs(backTurningExtend) + Math.Abs(BackTurn));
                 double chamferTan = Math.Abs(Math.Tan(Math.PI * Chamfer / 180.0));
                 if (Math.Abs(Chamfer - 90.0) > 0.001 && chamferTan > 1e-6)
                 {

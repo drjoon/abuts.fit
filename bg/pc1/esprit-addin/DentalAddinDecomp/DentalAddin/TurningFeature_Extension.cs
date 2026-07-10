@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using Esprit;
@@ -20,6 +21,16 @@ internal sealed class TurningFeature_Extension
 		{
 			double topY = MainModule.Document.LatheMachineSetup.BarDiameter / 2.0;
 			double turningExtend = MainModule.TurningExtend;
+			string finishMinZRaw = Environment.GetEnvironmentVariable("ABUTS_FINISHLINE_MIN_Z");
+			if (!string.IsNullOrWhiteSpace(finishMinZRaw) && double.TryParse(finishMinZRaw, NumberStyles.Float, CultureInfo.InvariantCulture, out double finishLineMinZ) && !double.IsNaN(finishLineMinZ) && !double.IsInfinity(finishLineMinZ))
+			{
+				turningExtend = 6.0 - finishLineMinZ;
+				DentalLogger.Log($"ExtendTurning: TurningExtend override 적용 - 6.0 - finishLineMinZ({finishLineMinZ.ToString("F4", CultureInfo.InvariantCulture)}) = {turningExtend.ToString("F4", CultureInfo.InvariantCulture)}");
+			}
+			else
+			{
+				DentalLogger.Log($"ExtendTurning: ABUTS_FINISHLINE_MIN_Z 미사용('{finishMinZRaw ?? ""}'), 기존 TurningExtend({turningExtend.ToString("F4", CultureInfo.InvariantCulture)}) 사용");
+			}
 			double chamfer = MainModule.Chamfer;
 
 			// 모든 패스의 끝점 X 좌표 중 최대값 찾기
@@ -703,11 +714,22 @@ internal sealed class TurningFeature_Extension
 		double[] array2 = new double[5];
 		double[] array3 = new double[5];
 		int turningTimes = MainModule.TurningTimes;
+		double backTurningExtend = MainModule.TurningExtend;
+		string finishMinZRaw = Environment.GetEnvironmentVariable("ABUTS_FINISHLINE_MIN_Z");
+		if (!string.IsNullOrWhiteSpace(finishMinZRaw) && double.TryParse(finishMinZRaw, NumberStyles.Float, CultureInfo.InvariantCulture, out double finishLineMinZ) && !double.IsNaN(finishLineMinZ) && !double.IsInfinity(finishLineMinZ))
+		{
+			backTurningExtend = Math.Max(0.0, 6.0 - finishLineMinZ);
+			DentalLogger.Log($"BackT: TurningExtend override 적용 - 6.0 - finishLineMinZ({finishLineMinZ.ToString("F4", CultureInfo.InvariantCulture)}) = {backTurningExtend.ToString("F4", CultureInfo.InvariantCulture)}");
+		}
+		else
+		{
+			DentalLogger.Log($"BackT: ABUTS_FINISHLINE_MIN_Z 미사용('{finishMinZRaw ?? ""}'), 기존 TurningExtend({backTurningExtend.ToString("F4", CultureInfo.InvariantCulture)}) 유지");
+		}
 		checked
 		{
 			for (int i = 1; i <= turningTimes; i++)
 			{
-				double legacyStartX = MainModule.EndXValue + MainModule.TurningExtend - 1.0;
+				double legacyStartX = MainModule.EndXValue + backTurningExtend - 1.0;
 				double stockNearStartX = MoveSTL_Module.FrontPointX;
 				array2[2] = (!MainModule.SpindleSide)
 					? Math.Max(legacyStartX, stockNearStartX)
