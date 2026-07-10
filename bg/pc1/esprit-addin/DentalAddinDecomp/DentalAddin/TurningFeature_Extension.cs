@@ -714,16 +714,30 @@ internal sealed class TurningFeature_Extension
 		double[] array2 = new double[5];
 		double[] array3 = new double[5];
 		int turningTimes = MainModule.TurningTimes;
+		// Back_Turn 전용 TurningExtend SSOT:
+		// 1) 기본 seed는 MainModule.TurningExtend(Configurator/UserData)에서 시작
+		// 2) finishLineMinZ가 있으면 6.0 - minZ로 재계산
+		// 3) 최종적으로 최소 4.0mm를 강제
+		// => 따라서 Configurator의 Extend 로그(예: 3.5)와 Back_Turn 최종 적용값은 다를 수 있다.
 		double backTurningExtend = MainModule.TurningExtend;
 		string finishMinZRaw = Environment.GetEnvironmentVariable("ABUTS_FINISHLINE_MIN_Z");
 		if (!string.IsNullOrWhiteSpace(finishMinZRaw) && double.TryParse(finishMinZRaw, NumberStyles.Float, CultureInfo.InvariantCulture, out double finishLineMinZ) && !double.IsNaN(finishLineMinZ) && !double.IsInfinity(finishLineMinZ))
 		{
-			backTurningExtend = Math.Max(0.0, 6.0 - finishLineMinZ);
+			backTurningExtend = 6.0 - finishLineMinZ;
 			DentalLogger.Log($"BackT: TurningExtend override 적용 - 6.0 - finishLineMinZ({finishLineMinZ.ToString("F4", CultureInfo.InvariantCulture)}) = {backTurningExtend.ToString("F4", CultureInfo.InvariantCulture)}");
 		}
 		else
 		{
 			DentalLogger.Log($"BackT: ABUTS_FINISHLINE_MIN_Z 미사용('{finishMinZRaw ?? ""}'), 기존 TurningExtend({backTurningExtend.ToString("F4", CultureInfo.InvariantCulture)}) 유지");
+		}
+
+		// 정책(2026-07-11): Back_Turn은 퇴출 형상 안정성을 위해 최소 4.0mm 보장
+		const double backTurningExtendMinMm = 4.0;
+		double beforeMinClamp = backTurningExtend;
+		backTurningExtend = Math.Max(backTurningExtendMinMm, backTurningExtend);
+		if (backTurningExtend > beforeMinClamp + 1e-9)
+		{
+			DentalLogger.Log($"BackT: TurningExtend 최소값 보정 적용 - {beforeMinClamp.ToString("F4", CultureInfo.InvariantCulture)} -> {backTurningExtend.ToString("F4", CultureInfo.InvariantCulture)} (min={backTurningExtendMinMm.ToString("F1", CultureInfo.InvariantCulture)}mm)");
 		}
 		checked
 		{
