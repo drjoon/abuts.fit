@@ -1114,10 +1114,10 @@ namespace DentalAddin
                 int afterB = Document?.Operations?.Count ?? -1;
                 DentalLogger.Log($"Composite2SplitLine2 - Operation 추가 완료: FINISH_BACK(opB) (afterCount={afterB})");
 
-                // 요청 반영: finishline min_z가 1.0 이하일 때만 Finish_End 생성
+                // 요청 반영: finishline min_z가 1.8 이하일 때만 Finish_End 생성
                 // - 구간: BackPointX -> BackPointX + 0.4mm (TryAddCompositeExitLap 내부 정책)
                 // - StockAllowance: 0.03 (TryAddCompositeExitLap 내부 정책)
-                const double finishEndMinZThresholdMm = 1.0;
+                const double finishEndMinZThresholdMm = 1.8;
                 double? finishLineMinZ = GetEnvDoubleNullable("ABUTS_FINISHLINE_MIN_Z");
                 bool shouldCreateFinishEnd = finishLineMinZ.HasValue
                     && !double.IsNaN(finishLineMinZ.Value)
