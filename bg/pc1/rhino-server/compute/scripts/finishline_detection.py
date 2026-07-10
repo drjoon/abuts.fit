@@ -70,7 +70,7 @@ _DEBUG_ADD_POLYLINE_CURVE = _env_true("FINISHLINE_DEBUG_CURVE_DOC", _GLOBAL_DEBU
 # 섹션 곡선(40개 평면)은 디버그시에만 기본 표시
 _SHOW_ALL_SECTION_CURVES = _env_true("FINISHLINE_SHOW_ALL_SECTIONS", _GLOBAL_DEBUG)
 # ExtractMeshEdges 결과가 너무 낮은 Z로 잡히는 경우(포스트/치은 미분리 샘플) 차단 임계값
-_EDGE_MIN_Z_VALID_THRESHOLD_MM = 0.5
+_EDGE_MIN_Z_VALID_THRESHOLD_MM = 0.2
 # edge 루프가 pt0 대비 지나치게 안쪽(내부 홀)일 때 차단하는 반경 비율 임계값
 _EDGE_MIN_RADIUS_TO_PT0_RATIO = 0.45
 # edge 루프가 메시 외곽 반경 대비 너무 작으면(내부 스크류홀/내부 경계) 차단
