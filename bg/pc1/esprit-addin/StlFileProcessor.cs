@@ -1424,24 +1424,22 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                     {
                         if (!finishLineMinZ.HasValue || double.IsNaN(finishLineMinZ.Value) || double.IsInfinity(finishLineMinZ.Value))
                         {
-                            Environment.SetEnvironmentVariable(BackRoughFourWayEnableEnv, null);
+                            Environment.SetEnvironmentVariable(BackRoughFourWayEnableEnv, "0");
                             Environment.SetEnvironmentVariable(FinishLineMinZEnv, null);
-                            AppLogger.Log("DentalAddin: Back_Rough 각도 정책 생략 - finishLine minZ 없음");
+                            AppLogger.Log("DentalAddin: Back_Rough 각도 정책 적용 - finishLine minZ 없음, 2-way(180deg x2) 고정");
                             return;
                         }
 
-                        const double thresholdMm = 1.0;
                         double minZ = finishLineMinZ.Value;
-                        bool useFourWay = minZ <= thresholdMm;
 
                         Environment.SetEnvironmentVariable(FinishLineMinZEnv, minZ.ToString(CultureInfo.InvariantCulture));
-                        Environment.SetEnvironmentVariable(BackRoughFourWayEnableEnv, useFourWay ? "1" : "0");
+                        Environment.SetEnvironmentVariable(BackRoughFourWayEnableEnv, "0");
 
-                        AppLogger.Log($"DentalAddin: Back_Rough 각도 정책 적용 - finishLineMinZ:{minZ.ToString("F4", CultureInfo.InvariantCulture)}, threshold:{thresholdMm.ToString("F3", CultureInfo.InvariantCulture)}, mode:{(useFourWay ? "90deg x4" : "180deg x2")}");
+                        AppLogger.Log($"DentalAddin: Back_Rough 각도 정책 적용 - finishLineMinZ:{minZ.ToString("F4", CultureInfo.InvariantCulture)}, mode:180deg x2(고정)");
                     }
                     catch (Exception ex)
                     {
-                        Environment.SetEnvironmentVariable(BackRoughFourWayEnableEnv, null);
+                        Environment.SetEnvironmentVariable(BackRoughFourWayEnableEnv, "0");
                         Environment.SetEnvironmentVariable(FinishLineMinZEnv, null);
                         AppLogger.Log($"DentalAddin: Back_Rough 각도 정책 설정 실패 - {ex.GetType().Name}:{ex.Message}");
                     }

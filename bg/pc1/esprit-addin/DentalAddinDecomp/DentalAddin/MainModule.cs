@@ -1500,60 +1500,7 @@ namespace DentalAddin
                     freeFormFeature2.Name = "3DRoughMilling_0Degree";
                     freeFormFeature2.Add(RuntimeHelpers.GetObjectValue(obj), espFreeFormElementType.espFreeFormPartSurfaceItem);
 
-                    string back4WayRaw = Environment.GetEnvironmentVariable("ABUTS_BACK_ROUGH_4WAY_ENABLE");
-                    bool useBack4Way = string.Equals(back4WayRaw, "1", StringComparison.OrdinalIgnoreCase) || string.Equals(back4WayRaw, "true", StringComparison.OrdinalIgnoreCase);
-                    if (useBack4Way)
-                    {
-                        Plane rough270 = GetOrCreatePlane("Rough270Degree");
-                        if (rough270 == null)
-                        {
-                            DentalLogger.Log("Roughworkplane: Rough270Degree plane 생성 실패");
-                            return;
-                        }
-                        rough270.X = 0.0;
-                        rough270.Y = 0.0;
-                        rough270.Z = 0.0;
-                        rough270.Ux = 1.0;
-                        rough270.Uy = 0.0;
-                        rough270.Uz = 0.0;
-                        rough270.Vx = 0.0;
-                        rough270.Vy = 0.0;
-                        rough270.Vz = 1.0;
-                        rough270.Wx = 0.0;
-                        rough270.Wy = -1.0;
-                        rough270.Wz = 0.0;
-                        rough270.IsView = false;
-                        Document.ActivePlane = rough270;
-                        FreeFormFeature rough270Feature = Document.FreeFormFeatures.Add();
-                        rough270Feature.Name = "3DRoughMilling_270Degree";
-                        rough270Feature.Add(RuntimeHelpers.GetObjectValue(obj), espFreeFormElementType.espFreeFormPartSurfaceItem);
-
-                        Plane rough90 = GetOrCreatePlane("Rough90Degree");
-                        if (rough90 == null)
-                        {
-                            DentalLogger.Log("Roughworkplane: Rough90Degree plane 생성 실패");
-                            return;
-                        }
-                        rough90.X = 0.0;
-                        rough90.Y = 0.0;
-                        rough90.Z = 0.0;
-                        rough90.Ux = 1.0;
-                        rough90.Uy = 0.0;
-                        rough90.Uz = 0.0;
-                        rough90.Vx = 0.0;
-                        rough90.Vy = 0.0;
-                        rough90.Vz = -1.0;
-                        rough90.Wx = 0.0;
-                        rough90.Wy = 1.0;
-                        rough90.Wz = 0.0;
-                        rough90.IsView = false;
-                        Document.ActivePlane = rough90;
-                        FreeFormFeature rough90Feature = Document.FreeFormFeatures.Add();
-                        rough90Feature.Name = "3DRoughMilling_90Degree";
-                        rough90Feature.Add(RuntimeHelpers.GetObjectValue(obj), espFreeFormElementType.espFreeFormPartSurfaceItem);
-
-                        DentalLogger.Log("Roughworkplane - Back_Rough 4-way용 90/270 Rough FreeFormFeature 생성 완료");
-                    }
+                    DentalLogger.Log("Roughworkplane - Back_Rough는 2-way(0/180) 고정, 90/270 Rough FreeFormFeature 생성 생략");
                 }
                 if (RoughType != 3.0)
                 {
