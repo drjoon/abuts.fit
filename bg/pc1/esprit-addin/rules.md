@@ -190,43 +190,35 @@
   - 기본(D4): `2.2mm`, 실험(D2): `1.2mm`
   - 구현: `MainModuleComposite.GetRoughBoundaryOffsetMm`
 
-### 4.11 Finish_Cuff finishline 곡선 추종 SSOT (2026-07-11)
+### 4.11 Finish_Cuff Back_Rough 스타일 SSOT (2026-07-11)
 
-- 목표:
-  - Finish_Cuff는 `Rough milling 3d`처럼 backend가 준 finishline 곡선을 실제로 추종하는 자유 곡선 툴패스로 생성한다.
+- 기본 공정 모드(SSOT):
+  - Finish_Cuff는 Back_Rough와 동일한 Rough3D 기술 패턴(0/180 + 동일 boundary)을 사용한다.
+  - 기존 Z_PARALLEL/FOLLOW_LINE 실험 경로는 사용하지 않는다.
 
-- 입력 데이터 SSOT:
-  - backend `request-meta.caseInfos.finishLine.points`를 사용한다.
-  - 단순 `topZ/minZ`만 쓰는 것이 아니라 points 전체를 `FeatureChain`으로 변환한다.
+- 시작/종료 정책:
+  - 시작점은 `ABUTS_COMPOSITE_CUFF_START_X`(finishline `min_z + 0.70`)를 우선 사용한다.
+  - 접촉 기준 보정으로 `-0.10mm`를 적용한다.
+  - 종료점은 `BackPointX` 고정.
 
-- profile 생성/전달 SSOT:
-  - `StlFileProcessor.TryCreateCompositeCuffFinishLineProfile`에서 backend points를 ESPRIT 좌표계로 변환해
-    `BackendFinishLineCurve`를 생성한다.
-  - env 전달:
-    - `ABUTS_COMPOSITE_CUFF_PROFILE = "6,<FeatureChainKey>"`
-    - `ABUTS_COMPOSITE_CUFF_START_X = <시작 X>`
-
-- 좌표 변환 SSOT (backend points → 현재 문서 좌표):
-  1. `Rotate90Degrees`와 동일하게 Y축 `-90°`
-  2. `RotateByWAxisDegrees`와 동일하게 X축 `+30°`
-  3. `MoveSTL` 이후 이동량 보정 `deltaX = movedBackX - originalBackLimitX`
-
-- 시작점/스텝 정책 SSOT:
-  - 시작점: `finishline min_z + 0.70mm`
-    - `+0.70 = tool radius 0.60 + clearance 0.10`
-  - 반복 스텝: `StepIncrement = 0.1mm` 고정
-    - 의미: finishline 360도 1회전 후 X +0.1mm 이동하여 다시 360도 절삭
-  - 종료점: `BackPointX`
-
-- 공구 SSOT:
-  - Finish_Cuff 포함 `Finish_*` 공통 공구는 D1.2 볼엔드밀(`BM_D1.2`)을 사용한다.
+- 공구/기술 정책:
+  - 기술은 Rough PRC(`PrcFilePath[3]`)를 사용한다.
+  - `ROUGH_20=1`이면 `MillRough_3D_20.prc` 우선, 미존재 시 `PrcFilePath[3]` 폴백.
+  - 공구는 Finish_Back과 동일하게 D1.2 볼엔드밀(`BM_D1.2`, T07) 강제.
+  - 오퍼레이션 이름은 `Finish_Cuff`로 생성한다.
 
 - 구현 위치:
-  - `StlFileProcessor.cs`
-    - `TryCreateCompositeCuffFinishLineProfile`
-    - `InvokeDentalAddin` (MoveSTL 직후 profile 생성 호출)
   - `DentalAddinDecomp/DentalAddin/MainModuleComposite.cs`
-    - `TryAddCompositeCuff` (`SpineProfile` 적용, Start/End pass 설정, StepIncrement=0.1)
+    - `TryAddCompositeCuff`
+    - `ResolveCompositeCuffBackRoughPrcPath`
+    - `TryAddCompositeCuffBackRoughStylePasses`
+    - `TryAddCompositeCuffBackRoughStyleOp`
+
+### 4.12 Finish_Cuff 디버깅 로그 기준 (2026-07-11)
+
+- `startX/endX/startXSource`
+- `boundaryKey/prc/angle(0,180)`
+- 생성 결과: `BackRoughStyle 종료(created=...)`
 
 ## 5. 정리 원칙
 

@@ -40,10 +40,12 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         private const string FinishLineMinZEnv = "ABUTS_FINISHLINE_MIN_Z";
         // Finish_Cuff SSOT env
         // - ABUTS_COMPOSITE_CUFF_PROFILE: backend finishline points를 ESPRIT FeatureChain으로 변환한 profile token("6,<key>")
-        // - ABUTS_COMPOSITE_CUFF_START_X: Finish_Cuff 시작 X (정책: finishline min_z + 0.70mm)
-        //   * +0.70 = tool radius 0.60 + clearance 0.10
+        // - ABUTS_COMPOSITE_CUFF_START_X: 시작 X (정책: finishline max_z)
+        // - ABUTS_COMPOSITE_CUFF_END_X: 종료 X (정책: finishline min_z + 1.2mm)
         private const string CompositeCuffProfileEnv = "ABUTS_COMPOSITE_CUFF_PROFILE";
         private const string CompositeCuffStartXEnv = "ABUTS_COMPOSITE_CUFF_START_X";
+        private const string CompositeCuffEndXEnv = "ABUTS_COMPOSITE_CUFF_END_X";
+        private const string CompositeCuffProfilePointsEnv = "ABUTS_COMPOSITE_CUFF_PROFILE_POINTS_XYZ";
         private static readonly HttpClient BackendHttp;
 
         // gp.exe 비정상 종료 시 Windows GPF 모달(오류 대화상자) 억제
@@ -473,6 +475,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             Environment.SetEnvironmentVariable(FinishLineMinZEnv, null);
             Environment.SetEnvironmentVariable(CompositeCuffProfileEnv, null);
             Environment.SetEnvironmentVariable(CompositeCuffStartXEnv, null);
+            Environment.SetEnvironmentVariable(CompositeCuffEndXEnv, null);
+            Environment.SetEnvironmentVariable(CompositeCuffProfilePointsEnv, null);
             Environment.SetEnvironmentVariable(CompositeOrientationProfileStartXEnv, null);
             FaceHoleProcessFilePath = null;
             ConnectionMachiningProcessFilePath = null;
@@ -1539,6 +1543,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
 
                 List<Point> transformed = new List<Point>();
                 double minSourceZ = double.PositiveInfinity;
+                double maxSourceZ = double.NegativeInfinity;
                 for (int i = 0; i < _backendFinishLinePoints.Length; i++)
                 {
                     double[] p = _backendFinishLinePoints[i];
@@ -1558,6 +1563,10 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                     if (sz < minSourceZ)
                     {
                         minSourceZ = sz;
+                    }
+                    if (sz > maxSourceZ)
+                    {
+                        maxSourceZ = sz;
                     }
 
                     // STL 전처리와 동일 변환 적용
@@ -1583,14 +1592,75 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                     return;
                 }
 
-                FeatureChain fc = document.FeatureChains.Add(transformed[0]);
-                for (int i = 1; i < transformed.Count; i++)
+                // backend finishline points 순서는 보장되지 않을 수 있다.
+                // 순서가 섞이면 profile에 긴 cross-link가 생기고, 결과적으로 Finish_Cuff가
+                // 나선/그물 형태로 붕괴할 수 있으므로 YZ 평면 극각으로 1회전 순서를 재정렬한다.
+                double cy = transformed.Average(p => p.Y);
+                double cz = transformed.Average(p => p.Z);
+                List<Point> ordered = transformed
+                    .OrderBy(p => Math.Atan2(p.Z - cz, p.Y - cy))
+                    .ToList();
+
+                // 동일/근접점 중복은 짧은 진동 링크를 만들 수 있어 제거한다.
+                List<Point> filtered = new List<Point>();
+                const double duplicateTol = 1e-4;
+                for (int i = 0; i < ordered.Count; i++)
                 {
-                    fc.Add(transformed[i]);
+                    Point p = ordered[i];
+                    if (filtered.Count == 0)
+                    {
+                        filtered.Add(p);
+                        continue;
+                    }
+
+                    Point prev = filtered[filtered.Count - 1];
+                    double d = Math.Sqrt(
+                        (p.X - prev.X) * (p.X - prev.X)
+                        + (p.Y - prev.Y) * (p.Y - prev.Y)
+                        + (p.Z - prev.Z) * (p.Z - prev.Z));
+                    if (d > duplicateTol)
+                    {
+                        filtered.Add(p);
+                    }
                 }
 
-                Point first = transformed[0];
-                Point last = transformed[transformed.Count - 1];
+                if (filtered.Count < 3)
+                {
+                    AppLogger.Log($"DentalAddin: Composite Cuff FinishLine profile 생성 생략 - 정렬/중복제거 후 포인트 부족(count={filtered.Count})");
+                    return;
+                }
+
+                // Main.Clean 이후에도 Finish_Cuff 시점에서 동일 피쳐를 재생성할 수 있도록
+                // 변환 완료된 points를 env로 직렬화하여 함께 저장한다.
+                try
+                {
+                    StringBuilder sbPoints = new StringBuilder(filtered.Count * 32);
+                    for (int i = 0; i < filtered.Count; i++)
+                    {
+                        Point p = filtered[i];
+                        if (i > 0) sbPoints.Append('|');
+                        sbPoints.Append(p.X.ToString("0.######", CultureInfo.InvariantCulture));
+                        sbPoints.Append(',');
+                        sbPoints.Append(p.Y.ToString("0.######", CultureInfo.InvariantCulture));
+                        sbPoints.Append(',');
+                        sbPoints.Append(p.Z.ToString("0.######", CultureInfo.InvariantCulture));
+                    }
+                    Environment.SetEnvironmentVariable(CompositeCuffProfilePointsEnv, sbPoints.ToString());
+                }
+                catch (Exception serEx)
+                {
+                    Environment.SetEnvironmentVariable(CompositeCuffProfilePointsEnv, null);
+                    AppLogger.Log($"DentalAddin: Composite Cuff profile points 직렬화 실패 - {serEx.GetType().Name}:{serEx.Message}");
+                }
+
+                FeatureChain fc = document.FeatureChains.Add(filtered[0]);
+                for (int i = 1; i < filtered.Count; i++)
+                {
+                    fc.Add(filtered[i]);
+                }
+
+                Point first = filtered[0];
+                Point last = filtered[filtered.Count - 1];
                 double closeDist = Math.Sqrt(
                     (last.X - first.X) * (last.X - first.X)
                     + (last.Y - first.Y) * (last.Y - first.Y)
@@ -1601,6 +1671,18 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 }
 
                 fc.Name = chainName;
+                try
+                {
+                    // 시각 확인/디버깅 편의를 위해 전용 가이드 레이어에 배치
+                    Layer guideLayer = null;
+                    try { guideLayer = document.Layers.Add("CompositeGuides"); } catch { guideLayer = document.Layers["CompositeGuides"]; }
+                    if (guideLayer != null)
+                    {
+                        fc.Layer = guideLayer;
+                    }
+                }
+                catch { }
+
                 int key = 0;
                 int.TryParse(Convert.ToString(fc.Key, CultureInfo.InvariantCulture), NumberStyles.Integer, CultureInfo.InvariantCulture, out key);
                 if (key > 0)
@@ -1608,29 +1690,36 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                     string profileToken = "6," + key.ToString(CultureInfo.InvariantCulture);
                     Environment.SetEnvironmentVariable(CompositeCuffProfileEnv, profileToken);
 
-                    // Finish_Cuff 시작점 SSOT:
-                    // - source 기준: finishline min_z + 0.70mm
-                    // - 0.70 = 툴 반경 0.60 + 안전 여유 0.10
-                    // - 현 좌표계 X 환산: Y축 -90° 회전에서 X'=-Z 관계를 이용해
-                    //   cuffStartX = -(minZ + 0.70) + deltaX
-                    const double cuffStartOffsetFromFinishMinZMm = 0.70;
-                    if (!double.IsInfinity(minSourceZ))
+                    // Finish_Cuff 시작/종료점 SSOT:
+                    // - 시작 X: finishline max_z
+                    // - 종료 X: finishline min_z + 1.2mm
+                    // - 현 좌표계 환산: Y축 -90° 회전에서 X'=-Z, 이후 MoveSTL deltaX 보정
+                    //   startX = -(maxZ) + deltaX
+                    //   endX   = -(minZ + 1.2) + deltaX
+                    const double cuffEndOffsetFromFinishMinZMm = 1.2;
+                    if (!double.IsInfinity(minSourceZ) && !double.IsInfinity(maxSourceZ))
                     {
-                        // 회전 후 X는 source Z의 부호 반전 성분(rx1=-z)에 의해 결정됨
-                        double cuffStartX = -(minSourceZ + cuffStartOffsetFromFinishMinZMm) + deltaX;
+                        double cuffStartX = -(maxSourceZ) + deltaX;
+                        double cuffEndX = -(minSourceZ + cuffEndOffsetFromFinishMinZMm) + deltaX;
+
                         Environment.SetEnvironmentVariable(CompositeCuffStartXEnv, cuffStartX.ToString(CultureInfo.InvariantCulture));
-                        AppLogger.Log($"DentalAddin: Composite Cuff profile 생성 완료 - profile={profileToken}, points={transformed.Count}, movedBackX={movedBackX.ToString("F4", CultureInfo.InvariantCulture)}, deltaX={deltaX.ToString("F4", CultureInfo.InvariantCulture)}, finishMinZ={minSourceZ.ToString("F4", CultureInfo.InvariantCulture)}, cuffStartX(minZ+0.70)={cuffStartX.ToString("F4", CultureInfo.InvariantCulture)}");
+                        Environment.SetEnvironmentVariable(CompositeCuffEndXEnv, cuffEndX.ToString(CultureInfo.InvariantCulture));
+
+                        AppLogger.Log($"DentalAddin: Composite Cuff profile 생성 완료 - profile={profileToken}, pointsRaw={transformed.Count}, pointsOrdered={filtered.Count}, movedBackX={movedBackX.ToString("F4", CultureInfo.InvariantCulture)}, deltaX={deltaX.ToString("F4", CultureInfo.InvariantCulture)}, finishMinZ={minSourceZ.ToString("F4", CultureInfo.InvariantCulture)}, finishMaxZ={maxSourceZ.ToString("F4", CultureInfo.InvariantCulture)}, cuffStartX(maxZ)={cuffStartX.ToString("F4", CultureInfo.InvariantCulture)}, cuffEndX(minZ+1.2)={cuffEndX.ToString("F4", CultureInfo.InvariantCulture)}");
                     }
                     else
                     {
                         Environment.SetEnvironmentVariable(CompositeCuffStartXEnv, null);
-                        AppLogger.Log($"DentalAddin: Composite Cuff profile 생성 완료 - profile={profileToken}, points={transformed.Count}, movedBackX={movedBackX.ToString("F4", CultureInfo.InvariantCulture)}, deltaX={deltaX.ToString("F4", CultureInfo.InvariantCulture)}, finishMinZ=<null>");
+                        Environment.SetEnvironmentVariable(CompositeCuffEndXEnv, null);
+                        AppLogger.Log($"DentalAddin: Composite Cuff profile 생성 완료 - profile={profileToken}, pointsRaw={transformed.Count}, pointsOrdered={filtered.Count}, movedBackX={movedBackX.ToString("F4", CultureInfo.InvariantCulture)}, deltaX={deltaX.ToString("F4", CultureInfo.InvariantCulture)}, finishMinZ/finishMaxZ=<null>");
                     }
                 }
                 else
                 {
                     Environment.SetEnvironmentVariable(CompositeCuffProfileEnv, null);
                     Environment.SetEnvironmentVariable(CompositeCuffStartXEnv, null);
+                    Environment.SetEnvironmentVariable(CompositeCuffEndXEnv, null);
+                    Environment.SetEnvironmentVariable(CompositeCuffProfilePointsEnv, null);
                     AppLogger.Log("DentalAddin: Composite Cuff profile 생성 실패 - key 파싱 오류");
                 }
             }
@@ -1638,6 +1727,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             {
                 Environment.SetEnvironmentVariable(CompositeCuffProfileEnv, null);
                 Environment.SetEnvironmentVariable(CompositeCuffStartXEnv, null);
+                Environment.SetEnvironmentVariable(CompositeCuffEndXEnv, null);
+                Environment.SetEnvironmentVariable(CompositeCuffProfilePointsEnv, null);
                 AppLogger.Log($"DentalAddin: Composite Cuff FinishLine profile 생성 실패 - {ex.GetType().Name}:{ex.Message}");
             }
         }
