@@ -2565,10 +2565,9 @@ namespace DentalAddin
                         DentalLogger.Log($"RoughFreeFromMillSplitAB - Region:{region} Angle:{angleLabel} 경계 프로파일 미적용(applyBoundary=false)");
                     }
 
-                    // ROUGH_20 실험 모드에서는 PRC의 SOURCE/EXPRESSION 재계산으로 값이 되돌아가는 항목을
-                    // 런타임에서 한 번 더 고정해 D2 세팅을 일관되게 유지한다.
-                    TryApplyRough20TechnologyOverrides(roughing, region, angleLabel);
-
+                    // 요청 반영:
+                    // MillRough_3D_20.prc 의 기술 파라미터는 코드에서 오버라이드하지 않는다.
+                    // Roughing은 PRC 값을 그대로 사용한다.
                     TryAddOperation(roughing, freeFormFeature, $"SplitAB:{region}:{angleLabel}:Roughing");
                 }
             }
@@ -2597,62 +2596,7 @@ namespace DentalAddin
             DentalLogger.Log($"RoughFreeFromMillSplitAB - AddOp 완료 Region:{region} Angle:{angleLabel} BoundaryKey:{boundaryKey}");
         }
 
-        // ROUGH_20=1일 때 Rough Mill 3D 기술 파라미터를 강제 보정한다.
-        // 배경:
-        // - MillRough_3D_20.prc를 열어도 일부 항목은 SOURCE/EXPRESSION 규칙으로 재계산되어
-        //   기대값(예: D2 기준 증분/코너 공차)이 유지되지 않을 수 있다.
-        // - ToolID 라벨(BM_D4)을 유지하는 운영 정책과 충돌하지 않도록,
-        //   ToolID는 건드리지 않고 기술값만 최종 오버라이드한다.
-        private static void TryApplyRough20TechnologyOverrides(TechLatheMoldRoughing roughing, string region, string angleLabel)
-        {
-            if (roughing == null || !IsRough20Enabled())
-            {
-                return;
-            }
 
-            // MillRough_3D_20.prc 의 의도값과 동일하게 유지할 항목들.
-            // (필요 시 env 확장을 통해 손쉽게 조정 가능하도록 이름 기반 SetProperty 사용)
-            bool changed = false;
-            changed |= TrySetTechProperty(roughing, "IncrementalDepth", 0.2);
-            changed |= TrySetTechProperty(roughing, "MaximumIncrementalDepth", 0.5);
-            changed |= TrySetTechProperty(roughing, "ProfitMillingIncrementalDepth", 0.2);
-
-            // 요청 반영:
-            // CornerRoundingTolerance(코너 라운딩 공차)는 코드 오버라이드하지 않는다.
-            // PRC(MillRough_3D_20.prc 포함)의 값을 그대로 사용한다.
-            changed |= TrySetTechProperty(roughing, "ContactCornerRadius", 0.4);
-            changed |= TrySetTechProperty(roughing, "Tolerance", 0.02);
-
-            // 요청 반영:
-            // 절삭 속도(SpindleSpeedRPM)는 코드 오버라이드하지 않는다.
-            // PRC(MillRough_3D_20.prc 포함)의 값을 그대로 사용한다.
-
-            DentalLogger.Log($"RoughFreeFromMillSplitAB - ROUGH_20 기술값 고정 적용(region={region}, angle={angleLabel}, changed={changed})");
-        }
-
-        private static bool TrySetTechProperty(object target, string propertyName, object value)
-        {
-            if (target == null || string.IsNullOrWhiteSpace(propertyName))
-            {
-                return false;
-            }
-
-            try
-            {
-                target.GetType().InvokeMember(
-                    propertyName,
-                    BindingFlags.SetProperty,
-                    null,
-                    target,
-                    new[] { value },
-                    CultureInfo.InvariantCulture);
-                return true;
-            }
-            catch
-            {
-                return false;
-            }
-        }
 
         private static bool TryGetSplitABConfig(out double splitX, out string prcA, out string prcB)
         {

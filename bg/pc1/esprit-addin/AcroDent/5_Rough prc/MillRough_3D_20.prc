@@ -124,12 +124,12 @@ BEGIN_OPERATION; 553; Rough Mill 3D; 0;
    AlternateCutDirection; 1705; 0;  CAPTION; 대안적인 절삭 사용; SOURCE; 1; TECHCODETYPE; 67;
    SmoothingDistance; 3405; 0;  HIDDEN; CAPTION; 스무딩 거리; SOURCE; 1; TECHCODETYPE; 2;
    CustomSetting4; 634; 0;  CAPTION; 사용자 정의 설정 4; SOURCE; 1; TECHCODETYPE; 2;
-   LateralFeedRatePercent; 3201; 100;  CAPTION; 측면방향 피드값%; SOURCE; 1; TECHCODETYPE; 2;
+   LateralFeedRatePercent; 3201; 50;  CAPTION; 측면방향 피드값%; SOURCE; 1; TECHCODETYPE; 2;
    ToolID; 498; ;  CAPTION; 공구 ID; SOURCE; 2; TECHCODETYPE; 3;
 	BEGIN_STRING; 498;;
 		:BM_D4
 	END_STRING
-   IncrementalDepth; 175; 0.2;  CAPTION; 증분 깊이; SOURCE; 2; TECHCODETYPE; 2;
+   IncrementalDepth; 175; 0.3;  CAPTION; 증분 깊이; SOURCE; 2; TECHCODETYPE; 2;
    4422; 4422; 5;  SOURCE; 0; TECHCODETYPE; 2;
    Rough5SeamPointZ; 6666; 0;  HIDDEN; CAPTION; 실린더 심 포인트 Z | 실린더 심 포인트 X, Y, Z; SOURCE; 1; TECHCODETYPE; 2;
    MinimumCornerRadius; 6615; 1.6000000000000001;  CAPTION; 최소 모서리 반경; SOURCE; 1; TECHCODETYPE; 2;
@@ -186,7 +186,7 @@ BEGIN_OPERATION; 553; Rough Mill 3D; 0;
 		:
 	END_STRING
    Rough5AxisStartPointZ; 6660; 0;  HIDDEN; CAPTION; 축 끝 점 X| 축 끝 점 X, Y, Z; SOURCE; 1; TECHCODETYPE; 2;
-   ContactCornerRadius; 3328; 0.4;  HIDDEN; CAPTION; 코너 반경에 접촉; SOURCE; 1; TECHCODETYPE; 2;
+   ContactCornerRadius; 3328; 0.2;  HIDDEN; CAPTION; 코너 반경에 접촉; SOURCE; 1; TECHCODETYPE; 2;
    StepOver; 217; 1;  CAPTION; 스텝 오버|스텝 오버, 직경의 %값; SOURCE; 2; TECHCODETYPE; 2;
    4413; 4413; 4;  SOURCE; 0; TECHCODETYPE; 2;
    4906; 4906; ;  SOURCE; 0; TECHCODETYPE; 3;
@@ -213,7 +213,7 @@ BEGIN_OPERATION; 553; Rough Mill 3D; 0;
 	END_STRING
    TopZLimitRemapped; 6875; 0;  HIDDEN; CAPTION; 상단 Z 리미트; SOURCE; 1; TECHCODETYPE; 2;
    MaxTrochoidWidth; 7215; 16;  CAPTION; 최대. 트로코이달 폭 | 최대. 트로코이달 폭,%; SOURCE; 3; TECHCODETYPE; 2;
-   ProfitMillingIncrementalDepth; 6722; 0.2;  CAPTION; 증분 깊이; SOURCE; 1; TECHCODETYPE; 2;
+   ProfitMillingIncrementalDepth; 6722; 0.3;  CAPTION; 증분 깊이; SOURCE; 1; TECHCODETYPE; 2;
    MaxDistanceBetweenPoints; 3322; 0.10000000000000001;  HIDDEN; CAPTION; 포인트 사이의 최대 거리; SOURCE; 1; TECHCODETYPE; 2;
    CustomSetting6; 636; 0;  CAPTION; 사용자 정의 설정 6; SOURCE; 1; TECHCODETYPE; 2;
    RetractOptimization; 3203; 2;  CAPTION; 복귀 최적화; SOURCE; 1; TECHCODETYPE; 456;
@@ -221,7 +221,7 @@ BEGIN_OPERATION; 553; Rough Mill 3D; 0;
 	BEGIN_STRING; 432;;
 		:
 	END_STRING
-   SpindleSpeedRPM; 194; 5000;  CAPTION; 절삭 속도 RPM|절삭 속도RPM, SPM; SOURCE; 2; TECHCODETYPE; 1;
+   SpindleSpeedRPM; 194; 6000;  CAPTION; 절삭 속도 RPM|절삭 속도RPM, SPM; SOURCE; 2; TECHCODETYPE; 1;
    Comment; 7; ;  CAPTION; 주석; SOURCE; 1; TECHCODETYPE; 3;
 	BEGIN_STRING; 7;;
 		:
@@ -285,7 +285,7 @@ BEGIN_OPERATION; 553; Rough Mill 3D; 0;
    ProfitMillingSpindleSpeedSPM; 6721; 0;  CAPTION; 절삭 속도 SPM|절삭 속도 RPM, SPM; SOURCE; 1; TECHCODETYPE; 1;
    LimitDistanceBetweenPoints; 3321; 0;  CAPTION; 지점 사이의 거리 리미트; SOURCE; 1; TECHCODETYPE; 67;
    CustomSetting5; 635; 0;  CAPTION; 사용자 정의 설정 5; SOURCE; 1; TECHCODETYPE; 2;
-   PlungeFeedRatePercent; 3202; 400;  CAPTION; 플런지 피드값%; SOURCE; 2; TECHCODETYPE; 2;
+   PlungeFeedRatePercent; 3202; 50;  CAPTION; 플런지 피드값%; SOURCE; 2; TECHCODETYPE; 2;
    4423; 4423; 10;  SOURCE; 0; TECHCODETYPE; 2;
    MoldFollowCurvedFloor; 6837; 0;  CAPTION; 곡선 바닥을 따라; SOURCE; 1; TECHCODETYPE; 564;
    MaximumFeedratePM; 190; 0;  CAPTION; 최대 피드값 PM|최대 피드값 PM, PT; SOURCE; 1; TECHCODETYPE; 2;
@@ -295,12 +295,10 @@ BEGIN_OPERATION; 553; Rough Mill 3D; 0;
    CollisionTolerance; 3471; 0.10000000000000001;  HIDDEN; CAPTION; 충돌 공차; SOURCE; 1; TECHCODETYPE; 2;
    CustomSetting2; 632; 0;  CAPTION; 사용자 정의 설정 2; SOURCE; 1; TECHCODETYPE; 2;
    BEGIN_EXPRESSION
-     3380; CoverttoSysUnit(Tool1("ToolDiameter").value ,Tool1("ToolUnit").value )*0.25
+
      6615; CoverttoSysUnit(Tool1("ToolDiameter").value ,Tool1("ToolUnit").value )*(TechObj("6616").value)/100
      172; im(0.1,2)
-     3331; DefaultCornerRoundingTolerance(Techobj,Tool1)
-     3328; DefaultContactCornerRadius(Techobj,Tool1)
-     6722; CoverttoSysUnit(Tool1("ToolDiameter").value ,Tool1("ToolUnit").value )*0.1
+
      3322; im(.005,.1)
      1293; TopZLimitFromFreeformFeature(Feature,4,100)
      392; im(.005,.1)

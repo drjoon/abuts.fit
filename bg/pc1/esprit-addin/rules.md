@@ -181,18 +181,10 @@
   - `ROUGH_20=1`이면 `AcroDent/5_Rough prc/MillRough_3D_20.prc` 사용
   - 기본 모드면 `AcroDent/5_Rough prc/MillRough_3D.prc` 사용
   - 구현: `DentalAddinConfigurator.EnsurePrcBaseDefaults`(PRC[3] 주입), `MainModuleComposite.TryRunRoughFreeFromMillSplitAB`(split 경로)
-- ROUGH_20 런타임 기술값 고정(중요):
-  - 배경: PRC의 `SOURCE/BEGIN_EXPRESSION` 규칙으로 일부 값이 Add 직전 재계산될 수 있음
-  - `ROUGH_20=1`에서는 Rough 기술에 아래 항목을 코드에서 최종 고정 적용
-    - `IncrementalDepth=0.2`
-    - `MaximumIncrementalDepth=0.5`
-    - `ProfitMillingIncrementalDepth=0.2`
-    - `ContactCornerRadius=0.4`
-    - `Tolerance=0.02`
-  - 예외: 아래 항목은 코드 오버라이드 금지, PRC 값을 그대로 사용
-    - `CornerRoundingTolerance`
-    - `SpindleSpeedRPM` (절삭 속도)
-  - 구현: `MainModuleComposite.TryApplyRough20TechnologyOverrides`
+- Rough 기술 파라미터 SSOT:
+  - `MillRough_3D_20.prc`의 기술 파라미터(증분 깊이/절삭 속도/공차/코너값 포함)는
+    코드에서 오버라이드하지 않고 PRC 값을 그대로 사용한다.
+  - 구현: `MainModuleComposite.AddSplitOp`에서 Roughing/ZLevel에 별도 SetProperty 적용 금지
 - Rough 경계(Front/Middle/Back) 오프셋:
   - 공통식: `roughToolRadius + 0.2`
   - 기본(D4): `2.2mm`, 실험(D2): `1.2mm`
