@@ -40,8 +40,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         private const string FinishLineMinZEnv = "ABUTS_FINISHLINE_MIN_Z";
         // Finish_Cuff SSOT env
         // - ABUTS_COMPOSITE_CUFF_PROFILE: backend finishline points를 ESPRIT FeatureChain으로 변환한 profile token("6,<key>")
-        // - ABUTS_COMPOSITE_CUFF_START_X: 시작 X (정책: finishline max_z)
-        // - ABUTS_COMPOSITE_CUFF_END_X: 종료 X (정책: finishline min_z + 1.2mm)
+        // - ABUTS_COMPOSITE_CUFF_START_X: 시작 X (정책: finishline top_z)
+        // - ABUTS_COMPOSITE_CUFF_END_X: 종료 X (정책: finishline min_z - 1.2mm)
         private const string CompositeCuffProfileEnv = "ABUTS_COMPOSITE_CUFF_PROFILE";
         private const string CompositeCuffStartXEnv = "ABUTS_COMPOSITE_CUFF_START_X";
         private const string CompositeCuffEndXEnv = "ABUTS_COMPOSITE_CUFF_END_X";
@@ -1474,7 +1474,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         //
         // 출력:
         // - ABUTS_COMPOSITE_CUFF_PROFILE = "6,<featureChainKey>"
-        // - ABUTS_COMPOSITE_CUFF_START_X = finishline min_z + 0.70mm를 현 좌표계 X로 환산한 값
+        // - ABUTS_COMPOSITE_CUFF_START_X = finishline top_z를 현 좌표계 X로 환산한 값
+        // - ABUTS_COMPOSITE_CUFF_END_X   = finishline min_z 기준 우측 +1.5mm를 현 좌표계 X로 환산한 값
         //
         // 좌표 변환 SSOT:
         // 1) Rotate90Degrees(Y축 -90°)
@@ -1691,12 +1692,13 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                     Environment.SetEnvironmentVariable(CompositeCuffProfileEnv, profileToken);
 
                     // Finish_Cuff 시작/종료점 SSOT:
-                    // - 시작 X: finishline max_z
-                    // - 종료 X: finishline min_z + 1.2mm
+                    // - 시작 X: finishline top_z (= max_z)
+                    // - 종료 X: finishline min_z - 1.2mm
+                    // - 주의: splitline_1(top_z+1.0) 기준이 아니라 finishline z 기준을 직접 사용
                     // - 현 좌표계 환산: Y축 -90° 회전에서 X'=-Z, 이후 MoveSTL deltaX 보정
-                    //   startX = -(maxZ) + deltaX
-                    //   endX   = -(minZ + 1.2) + deltaX
-                    const double cuffEndOffsetFromFinishMinZMm = 1.2;
+                    //   startX = -(topZ) + deltaX
+                    //   endX   = -(minZ - 1.2) + deltaX
+                    const double cuffEndOffsetFromFinishMinZMm = -1.2;
                     if (!double.IsInfinity(minSourceZ) && !double.IsInfinity(maxSourceZ))
                     {
                         double cuffStartX = -(maxSourceZ) + deltaX;
@@ -1705,7 +1707,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                         Environment.SetEnvironmentVariable(CompositeCuffStartXEnv, cuffStartX.ToString(CultureInfo.InvariantCulture));
                         Environment.SetEnvironmentVariable(CompositeCuffEndXEnv, cuffEndX.ToString(CultureInfo.InvariantCulture));
 
-                        AppLogger.Log($"DentalAddin: Composite Cuff profile 생성 완료 - profile={profileToken}, pointsRaw={transformed.Count}, pointsOrdered={filtered.Count}, movedBackX={movedBackX.ToString("F4", CultureInfo.InvariantCulture)}, deltaX={deltaX.ToString("F4", CultureInfo.InvariantCulture)}, finishMinZ={minSourceZ.ToString("F4", CultureInfo.InvariantCulture)}, finishMaxZ={maxSourceZ.ToString("F4", CultureInfo.InvariantCulture)}, cuffStartX(maxZ)={cuffStartX.ToString("F4", CultureInfo.InvariantCulture)}, cuffEndX(minZ+1.2)={cuffEndX.ToString("F4", CultureInfo.InvariantCulture)}");
+                        AppLogger.Log($"DentalAddin: Composite Cuff profile 생성 완료 - profile={profileToken}, pointsRaw={transformed.Count}, pointsOrdered={filtered.Count}, movedBackX={movedBackX.ToString("F4", CultureInfo.InvariantCulture)}, deltaX={deltaX.ToString("F4", CultureInfo.InvariantCulture)}, finishMinZ={minSourceZ.ToString("F4", CultureInfo.InvariantCulture)}, finishTopZ={maxSourceZ.ToString("F4", CultureInfo.InvariantCulture)}, cuffStartX(topZ)={cuffStartX.ToString("F4", CultureInfo.InvariantCulture)}, cuffEndX(minZ-1.2)={cuffEndX.ToString("F4", CultureInfo.InvariantCulture)}");
                     }
                     else
                     {

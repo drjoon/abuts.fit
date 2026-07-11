@@ -1890,9 +1890,10 @@ namespace DentalAddin
         }
 
         // Finish_Cuff 공정 SSOT(단순화):
-        // - Back_Rough와 동일한 Rough3D 기술 패턴(0/180, 동일 boundary)을 사용한다.
+        // - Back_Rough와 동일한 Rough3D 기술 패턴(0/180)을 사용한다.
         // - 단, 공구는 Finish_Back과 동일한 BM_D1.2(T07) 강제.
-        // - 시작점: finishline max_z, 종료점: finishline min_z + 1.2mm (둘 다 env 우선).
+        // - 시작점: finishline top_z, 종료점: finishline min_z - 1.2mm (env 우선).
+        // - 폭 과대를 막기 위해 RoughBoundryBack1 재사용 대신 Cuff 전용 boundary(start~end)를 사용한다.
         private static void TryAddCompositeCuff(
             TechnologyUtility technologyUtility,
             FreeFormFeature freeFormFeature,
@@ -1909,6 +1910,12 @@ namespace DentalAddin
                 double back = MoveSTL_Module.BackPointX;
                 double xMin = Math.Min(0.0, Math.Min(front, back));
                 double xMax = Math.Max(front, back);
+                const double cuffEndRightClampAllowanceMm = 1.0;
+                double cuffEndXMax = back + cuffEndRightClampAllowanceMm;
+                if (cuffEndXMax < xMin)
+                {
+                    cuffEndXMax = xMin;
+                }
 
                 double? startXFromEnv = GetEnvDoubleNullable(CompositeCuffStartXEnv);
                 double? endXFromEnv = GetEnvDoubleNullable(CompositeCuffEndXEnv);
@@ -1940,7 +1947,9 @@ namespace DentalAddin
                 string endXSource;
                 if (endXFromEnv.HasValue && !double.IsNaN(endXFromEnv.Value) && !double.IsInfinity(endXFromEnv.Value))
                 {
-                    endX = Clamp(endXFromEnv.Value, xMin, xMax);
+                    // Cuff 종료점은 BackPointX 우측 확장을 허용한다.
+                    // (예: finishline min_z 기준 우측 +1.5mm)
+                    endX = Clamp(endXFromEnv.Value, xMin, cuffEndXMax);
                     endXSource = CompositeCuffEndXEnv;
                 }
                 else
@@ -3542,36 +3551,27 @@ namespace DentalAddin
                     return false;
                 }
 
-                int boundaryKey = 0;
-                FeatureChain backBoundary = FindFeatureChainByName("RoughBoundryBack1");
-                if (backBoundary != null)
+                double lowerX = Math.Min(startX, endX);
+                double upperX = Math.Max(startX, endX);
+                if (upperX - lowerX < 0.01)
                 {
-                    boundaryKey = SafeParseKey(Convert.ToString(backBoundary.Key, CultureInfo.InvariantCulture));
+                    return false;
                 }
 
-                if (boundaryKey <= 0)
+                // Cuff는 시작/종료 폭을 정확히 반영하기 위해 Back_Rough 공용 경계 대신 전용 경계를 사용한다.
+                double radius = (Document?.LatheMachineSetup?.BarDiameter > 0.0)
+                    ? ((Document.LatheMachineSetup.BarDiameter + 10.0) / 2.0)
+                    : 20.0;
+
+                long lowerToken = (long)Math.Round(lowerX * 1000.0, MidpointRounding.AwayFromZero);
+                long upperToken = (long)Math.Round(upperX * 1000.0, MidpointRounding.AwayFromZero);
+                string boundaryName = $"CompositeCuffBackRoughStyleBoundary_{lowerToken}_{upperToken}";
+                FeatureChain boundary = EnsureRectBoundary(boundaryName, lowerX, upperX, radius, -radius);
+                int boundaryKey = SafeParseKey(Convert.ToString(boundary?.Key, CultureInfo.InvariantCulture));
+                if (boundary == null || boundaryKey <= 0)
                 {
-                    double lowerX = Math.Min(startX, endX);
-                    double upperX = Math.Max(startX, endX);
-                    if (upperX - lowerX < 0.01)
-                    {
-                        return false;
-                    }
-
-                    double radius = (Document?.LatheMachineSetup?.BarDiameter > 0.0)
-                        ? ((Document.LatheMachineSetup.BarDiameter + 10.0) / 2.0)
-                        : 20.0;
-
-                    long lowerToken = (long)Math.Round(lowerX * 1000.0, MidpointRounding.AwayFromZero);
-                    long upperToken = (long)Math.Round(upperX * 1000.0, MidpointRounding.AwayFromZero);
-                    string boundaryName = $"CompositeCuffBackRoughStyleBoundary_{lowerToken}_{upperToken}";
-                    FeatureChain boundary = EnsureRectBoundary(boundaryName, lowerX, upperX, radius, -radius);
-                    boundaryKey = SafeParseKey(Convert.ToString(boundary?.Key, CultureInfo.InvariantCulture));
-                    if (boundary == null || boundaryKey <= 0)
-                    {
-                        DentalLogger.Log($"Composite2Cuff - boundary 생성 실패(name={boundaryName})");
-                        return false;
-                    }
+                    DentalLogger.Log($"Composite2Cuff - boundary 생성 실패(name={boundaryName})");
+                    return false;
                 }
 
                 int created = 0;
@@ -3641,7 +3641,7 @@ namespace DentalAddin
                 }
             }
 
-            // 요청값: step 0.1, tol 0.02, stock 0.00, incrementalDepth 0.2
+            // 요청값: step 0.1, tol 0.02, stock 0.03, incrementalDepth 0.2
             TrySet("StepOver", 0.1);
             TrySet("StepIncrement", 0.1);
             TrySet("StepPercentOfDiameter", 8.3333333333); // D1.2 기준 0.1mm
@@ -3649,9 +3649,9 @@ namespace DentalAddin
             TrySet("IncrementalDepth", 0.2);
             TrySet("ProfitMillingIncrementalDepth", 0.2);
             TrySet("MaximumIncrementalDepth", 0.2);
-            TrySet("StockAllowance", 0.0);
-            TrySet("StockAllowanceWalls", 0.0);
-            TrySet("StockAllowanceFloors", 0.0);
+            TrySet("StockAllowance", 0.03);
+            TrySet("StockAllowanceWalls", 0.03);
+            TrySet("StockAllowanceFloors", 0.03);
 
             // passes-rounding 충돌 해제(0.1 step과 충돌하는 후보 모두 0 처리)
             TrySet("PassesRoundingAmplitude", 0.0);
@@ -3667,7 +3667,7 @@ namespace DentalAddin
             TrySet("SmoothingDistance", 0.0);
             TrySet("EnableSmoothing", 0);
 
-            DentalLogger.Log($"Composite2Cuff:{angleLabel} - override 적용(step=0.1,tol=0.02,stock=0.00,incDepth=0.2,rounding=off)");
+            DentalLogger.Log($"Composite2Cuff:{angleLabel} - override 적용(step=0.1,tol=0.02,stock=0.03,incDepth=0.2,rounding=off)");
         }
 
         private static bool TryAddCompositeCuffBackRoughStyleOp(
@@ -3758,7 +3758,7 @@ namespace DentalAddin
             if (anyAdded)
             {
                 TryAppendCompositeSuffixToNewOperations(before, "CUFF");
-                DentalLogger.Log($"Composite2Cuff - BackRoughStyle 추가(angle={angleLabel}, boundaryKey={boundaryKey}, tool='{finishToolId ?? ""}', step=0.1, tol=0.02, stock=0.00, incDepth=0.2)");
+                DentalLogger.Log($"Composite2Cuff - BackRoughStyle 추가(angle={angleLabel}, boundaryKey={boundaryKey}, tool='{finishToolId ?? ""}', step=0.1, tol=0.02, stock=0.03, incDepth=0.2)");
             }
 
             return anyAdded;
