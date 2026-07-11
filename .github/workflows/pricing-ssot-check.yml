@@ -40,9 +40,16 @@ jobs:
       - name: Run pricing SSOT strict check
         env:
           MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          MONGO_URI: ${{ secrets.MONGO_URI }}
         run: |
-          if [ -z "$MONGODB_URI" ]; then
-            echo "MONGODB_URI secret is required for pricing SSOT check." >&2
+          DB_URI="$MONGODB_URI"
+          if [ -z "$DB_URI" ]; then
+            DB_URI="$MONGO_URI"
+          fi
+
+          if [ -z "$DB_URI" ]; then
+            echo "MONGODB_URI or MONGO_URI secret is required for pricing SSOT check." >&2
             exit 1
           fi
-          npm --prefix web/backend run db:check-pricing-ssot:ci
+
+          MONGODB_URI="$DB_URI" MONGO_URI="$DB_URI" npm --prefix web/backend run db:check-pricing-ssot:ci

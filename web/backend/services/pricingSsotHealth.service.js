@@ -118,25 +118,42 @@ export const computePricingSsotConsistency = async () => {
 
   const latestRequestsByAnchorId = new Map();
   if (mismatchAnchorIds.length > 0) {
-    const latestRequestRows = await Promise.all(
-      mismatchAnchorIds.map(async (anchorId) => {
-        const row = await Request.findOne({
-          businessAnchorId: new Types.ObjectId(anchorId),
+    const latestRequestRows = await Request.aggregate([
+      {
+        $match: {
+          businessAnchorId: {
+            $in: mismatchAnchorIds.map((id) => new Types.ObjectId(id)),
+          },
           manufacturerStage: { $in: SHIPPING_TRACKING_STAGES },
           createdAt: {
             $gte: startAtKst,
             $lt: endExclusiveKst,
           },
-        })
-          .sort({ createdAt: -1 })
-          .select({ _id: 1, requestId: 1 })
-          .lean();
-        return [anchorId, row];
-      }),
-    );
+        },
+      },
+      {
+        $sort: {
+          businessAnchorId: 1,
+          createdAt: -1,
+          _id: -1,
+        },
+      },
+      {
+        $group: {
+          _id: "$businessAnchorId",
+          latestRequestMongoId: { $first: "$_id" },
+          latestRequestId: { $first: "$requestId" },
+        },
+      },
+    ]);
 
-    for (const [anchorId, row] of latestRequestRows) {
-      latestRequestsByAnchorId.set(String(anchorId), row || null);
+    for (const row of latestRequestRows || []) {
+      const anchorId = String(row?._id || "").trim();
+      if (!anchorId) continue;
+      latestRequestsByAnchorId.set(anchorId, {
+        _id: row?.latestRequestMongoId || null,
+        requestId: row?.latestRequestId || "",
+      });
     }
   }
 
