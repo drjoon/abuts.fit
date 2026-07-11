@@ -1,34 +1,15 @@
-"""Finish line detection helpers for abutment STL meshes.
-
-요구 사항
-1) Edge 기반(ExtractMeshEdges) 피니시라인을 먼저 시도
-2) edge 결과 min-Z가 0.5mm 이하면 비정상으로 간주
-3) 비정상 시 단면 추적 기반으로 재시도
-4) 단면 추적은 축 통과 단면 평면 40개(유효 180도 범위 균등 간격) 사용
-5) 시각화: pt0 반경 0.1 구(녹색), 추적 곡선 빨간 튜브(반경 0.03)
-"""
-
 from __future__ import annotations
-
 import math
 import os
 from typing import Dict, List, Optional, Sequence, Tuple
-
 import Rhino
 import Rhino.DocObjects as rdo
 import Rhino.Geometry as rg
 import Rhino.Geometry.Intersect as intersect
 import System
 import System.Drawing as drawing
-
 _SECTION_COUNT = 40  # section plane count
-# 축을 지나는 단면 평면은 기하학적으로 180도 주기(θ와 θ+180 동일 평면)라
-# 유효 샘플은 180도 범위에서 균등 분할한다.
 _SECTION_STEP_DEG = 4.5  # 180/40 = 4.5 degrees (unique section planes)
-_NEAREST_LIMIT = 10
-_MAX_STEP_DISTANCE = 1.5  # allow slightly larger step to tolerate gaps
-
-# 섹션 평면 기준축(경사축) 추정 파라미터
 _TILT_AXIS_BAND_LOW = 0.15
 _TILT_AXIS_BAND_HIGH = 0.95
 _TILT_AXIS_MIN_VERTS = 120
@@ -36,18 +17,13 @@ _PT0_Z_RATIO_LOW = 0.2
 _PT0_Z_RATIO_HIGH = 0.6
 _Z_RATIO_LOW = 0.2
 _Z_RATIO_HIGH = 0.7
-
-# max-radius sequential 추적용 축 투영 band (경사체에서 world-Z 반쪽 누락 방지)
 _MAXR_AXIS_RATIO_LOW = 0.18
 _MAXR_AXIS_RATIO_HIGH = 0.72
-# pt0 중심 finishline 후보 Z 윈도우(반쪽 누락 방지용 완화 필터)
 _MAXR_PT0_Z_WINDOW_LOW = 2.8
 _MAXR_PT0_Z_WINDOW_HIGH = 3.0
 _TARGET_TRACE_POINT_COUNT = 120
 _SHOW_POINT_TEXTDOTS = False
 _DIST_TOL = 1e-8
-
-
 def _env_true(name: str, default: bool = False) -> bool:
     raw = os.environ.get(str(name), "")
     if raw is None:
@@ -56,92 +32,32 @@ def _env_true(name: str, default: bool = False) -> bool:
     if s == "":
         return bool(default)
     return s in ("1", "true", "yes", "y", "on")
-
-
-# 단일 DEBUG 플래그 우선(개별 플래그는 override 용도로만 유지)
-# - DEBUG=1 이면 trace/임시객체/디버그커브/전체섹션 표시 활성
-# - DEBUG=0 (또는 미설정) 이면 모두 비활성
 _GLOBAL_DEBUG = _env_true("DEBUG", False)
 _DEBUG_TRACE = _env_true("FINISHLINE_TRACE_DEBUG", _GLOBAL_DEBUG)
 _DEBUG_KEEP_TEMP_OBJECTS = _env_true(
     "FINISHLINE_DEBUG_KEEP_TEMP_OBJECTS", _GLOBAL_DEBUG
 )
 _DEBUG_ADD_POLYLINE_CURVE = _env_true("FINISHLINE_DEBUG_CURVE_DOC", _GLOBAL_DEBUG)
-# 섹션 곡선(40개 평면)은 디버그시에만 기본 표시
 _SHOW_ALL_SECTION_CURVES = _env_true("FINISHLINE_SHOW_ALL_SECTIONS", _GLOBAL_DEBUG)
-# ExtractMeshEdges 결과가 너무 낮은 Z로 잡히는 경우(포스트/치은 미분리 샘플) 차단 임계값
 _EDGE_MIN_Z_VALID_THRESHOLD_MM = 0.2
-# edge 루프가 pt0 대비 지나치게 안쪽(내부 홀)일 때 차단하는 반경 비율 임계값
 _EDGE_MIN_RADIUS_TO_PT0_RATIO = 0.45
-# edge 루프가 메시 외곽 반경 대비 너무 작으면(내부 스크류홀/내부 경계) 차단
 _EDGE_MIN_RADIUS_TO_MESH_BAND_RATIO = 0.55
-# edge 루프가 pt0 대비 과도하게 상단에 있으면 오검출로 간주
-# (기존 2.5mm는 경사 심한 케이스에서 정상 finishline을 과도하게 배제해 완화)
 _EDGE_MAX_Z_ABOVE_PT0_MM = 8.0
-# edge 루프가 pt0 대비 과도하게 하단에 있으면 내부 루프/홀 경계 오검출로 간주
 _EDGE_MAX_Z_BELOW_PT0_MM = 2.5
-# edge 루프의 Z 변화폭이 지나치게 작으면(거의 수평 링) 내부 경계 오검출로 간주
 _EDGE_MIN_Z_SPAN_MM = 0.08
-# edge 루프가 축 주위를 충분히 감싸지 못하면(측면 홈/로컬 슬롯) 오검출로 간주
-# 2π(약 6.283) 중 최소 커버리지
 _EDGE_MIN_AZIMUTH_COVERAGE_RAD = 4.5
-
-# traced finishline 품질 검증(아웃라이어 세그먼트) 임계값
 _OUTLIER_SEGMENT_RATIO = 2.8  # max(segment) / median(segment)
 _OUTLIER_SEGMENT_ABS_MM = 2.0  # mm
 _OUTLIER_DZ_RATIO = 4.0  # max(|dz|) / median(|dz|)
 _OUTLIER_DZ_ABS_MM = 1.5  # mm
-
-# edge 후보 탐색 성능/안정성 튜닝
-# - 실제 샘플에서 수동 explode 후 정상 루프가 상위 8개 밖에 존재하는 케이스가 있어
-#   후보 개수를 늘리고, 최소 버텍스 컷을 완화해 누락을 줄인다.
 _EDGE_CANDIDATE_MAX_COUNT = 20
 _EDGE_CANDIDATE_MIN_VERT_RATIO = 0.03
 _EDGE_CANDIDATE_MIN_VERT_ABS = 40
-
-# 거의 닫힌 커브를 폐곡선으로 간주하는 허용치(mm)
 _EDGE_CLOSE_GAP_TOL_MM = 0.2
-
 _EXTERNAL_LOGGER = None
-
-
 def set_external_logger(logger_fn) -> None:
     global _EXTERNAL_LOGGER
     _EXTERNAL_LOGGER = logger_fn
-
-
-def _merge_candidates(
-    primary: Sequence[rg.Point3d], secondary: Sequence[rg.Point3d]
-) -> List[rg.Point3d]:
-    # 기존 O(n^2) Distance 비교를 피하기 위해 좌표 quantization 기반으로 dedup
-    # (동일/근접 중복 제거 목적에는 충분하고, 단면 추적 성능을 크게 개선)
-    merged: List[rg.Point3d] = []
-    seen = set()
-
-    def _add(pt: rg.Point3d) -> None:
-        if pt is None:
-            return
-        try:
-            key = (
-                int(round(float(pt.X) * 1e6)),
-                int(round(float(pt.Y) * 1e6)),
-                int(round(float(pt.Z) * 1e6)),
-            )
-        except Exception:
-            return
-        if key in seen:
-            return
-        seen.add(key)
-        merged.append(rg.Point3d(pt))
-
-    for pt in primary:
-        _add(pt)
-    for pt in secondary:
-        _add(pt)
-
-    return merged
-
-
 def _trace_log(msg: str) -> None:
     if not _DEBUG_TRACE:
         return
@@ -149,24 +65,16 @@ def _trace_log(msg: str) -> None:
         print(msg)
     except Exception:
         pass
-
     if _EXTERNAL_LOGGER is not None:
         try:
             _EXTERNAL_LOGGER("[finishline-debug] " + str(msg))
         except Exception:
             pass
-
-
-# ---------------------------------------------------------------------------
-# Document / mesh helpers
-# ---------------------------------------------------------------------------
 def _get_active_doc(doc: Optional[Rhino.RhinoDoc] = None) -> Rhino.RhinoDoc:
     doc = doc or Rhino.RhinoDoc.ActiveDoc
     if doc is None:
         raise RuntimeError("RhinoDoc가 필요합니다 (활성 문서가 없습니다)")
     return doc
-
-
 def _collect_mesh_objects(doc: Rhino.RhinoDoc) -> List[rdo.MeshObject]:
     meshes: List[rdo.MeshObject] = []
     for obj in doc.Objects:
@@ -174,8 +82,6 @@ def _collect_mesh_objects(doc: Rhino.RhinoDoc) -> List[rdo.MeshObject]:
             continue
         meshes.append(obj)
     return meshes
-
-
 def _mesh_z_key(mesh: rg.Mesh) -> Optional[Tuple[float, float, float, float]]:
     try:
         bbox = mesh.GetBoundingBox(True)
@@ -189,8 +95,30 @@ def _mesh_z_key(mesh: rg.Mesh) -> Optional[Tuple[float, float, float, float]]:
         float(mesh.Vertices.Count),
         float(bbox.Diagonal.Length),
     )
-
-
+def _dedup_points_quantized(
+    points: Sequence[rg.Point3d],
+    scale: float = 1e6,
+) -> List[rg.Point3d]:
+    out: List[rg.Point3d] = []
+    seen = set()
+    if not points:
+        return out
+    for p in points:
+        if p is None:
+            continue
+        try:
+            key = (
+                int(round(float(p.X) * float(scale))),
+                int(round(float(p.Y) * float(scale))),
+                int(round(float(p.Z) * float(scale))),
+            )
+        except Exception:
+            continue
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(rg.Point3d(p))
+    return out
 def _detect_finishline_points_edge(
     doc: Rhino.RhinoDoc,
     mesh: rg.Mesh,
@@ -198,8 +126,6 @@ def _detect_finishline_points_edge(
     candidates = _explode_components_sorted_by_max_z(mesh)
     if not candidates:
         candidates = [mesh]
-
-    # 성능/안정성: 너무 작은 파편 후보는 제외하고, 상위 후보만 평가
     raw_candidate_count = len(candidates)
     try:
         max_verts = max(
@@ -243,7 +169,6 @@ def _detect_finishline_points_edge(
             )
         except Exception:
             continue
-
     ref_pt0 = None
     ref_pt0_radius = None
     try:
@@ -252,7 +177,6 @@ def _detect_finishline_points_edge(
     except Exception:
         ref_pt0 = None
         ref_pt0_radius = None
-
     def _reason_from_counters(counters: Dict[str, int]) -> str:
         if counters.get("rejected_low_z", 0) > 0:
             return "C_EDGE_REJECTED_LOW_Z"
@@ -267,7 +191,6 @@ def _detect_finishline_points_edge(
         if counters.get("rejected_below_band", 0) > 0:
             return "C_EDGE_REJECTED_BELOW_BAND"
         return "C_EDGE_FAILED"
-
     def _run_edge_pass(
         pass_name: str,
         z_ref_pt0,
@@ -281,11 +204,9 @@ def _detect_finishline_points_edge(
             "rejected_below_band": 0,
             "rejected_flat_z": 0,
         }
-
         best_score = None
         best_points = None
         best_strategy = None
-
         for idx, target_mesh in enumerate(candidates):
             _trace_log(
                 "[detect-edge:{}] candidate[{}] vertices={} faces={} key={}".format(
@@ -296,13 +217,11 @@ def _detect_finishline_points_edge(
                     _mesh_z_key(target_mesh),
                 )
             )
-
             edge_curves = _extract_mesh_edges_with_command(doc, target_mesh)
             strategy_used = "C_EXTRACT_MESH_EDGES_UNWELDED"
             if not edge_curves:
                 edge_curves = _extract_naked_edges_fallback(target_mesh)
                 strategy_used = "C_FALLBACK_NAKED_EDGES"
-
             _trace_log(
                 "[detect-edge:{}] candidate[{}] edge_curves_count={}".format(
                     pass_name,
@@ -321,7 +240,6 @@ def _detect_finishline_points_edge(
                 debug_tag="{}#candidate{}#strict".format(pass_name, idx),
             )
             if not traced_points or len(traced_points) < 3:
-                # strict 내부필터에서 모두 걸러진 경우, 루프 선정만 완화해 재시도
                 traced_points = _pick_best_edge_loop_points(
                     edge_curves,
                     doc.ModelAbsoluteTolerance,
@@ -371,7 +289,6 @@ def _detect_finishline_points_edge(
                         )
                     )
                     continue
-
                 if edge_z_span is not None and edge_z_span <= _EDGE_MIN_Z_SPAN_MM:
                     counters["rejected_flat_z"] += 1
                     _trace_log(
@@ -383,7 +300,6 @@ def _detect_finishline_points_edge(
                         )
                     )
                     continue
-
                 if edge_min_z is not None:
                     try:
                         cbbox = target_mesh.GetBoundingBox(True)
@@ -401,7 +317,6 @@ def _detect_finishline_points_edge(
                                 )
                     except Exception:
                         pass
-
                 if z_ref_pt0 is not None and edge_min_z is not None:
                     max_allowed_z = z_ref_pt0.Z + _EDGE_MAX_Z_ABOVE_PT0_MM
                     if edge_min_z >= max_allowed_z:
@@ -416,9 +331,6 @@ def _detect_finishline_points_edge(
                             )
                         )
                         continue
-
-                    # 도메인 규칙: finishline은 하방에 위치할 수 있으므로
-                    # pt0 대비 하한 reject는 적용하지 않고 참고 로그만 남긴다.
                     min_allowed_z = z_ref_pt0.Z - _EDGE_MAX_Z_BELOW_PT0_MM
                     if edge_min_z <= min_allowed_z:
                         _trace_log(
@@ -430,7 +342,6 @@ def _detect_finishline_points_edge(
                                 min_allowed_z,
                             )
                         )
-
                 edge_median_radius = _points_median_radius(traced_points)
                 if (
                     z_ref_pt0_radius is not None
@@ -451,7 +362,6 @@ def _detect_finishline_points_edge(
                             )
                         )
                         continue
-
                 if edge_median_radius is not None and mesh_band_max_r > _DIST_TOL:
                     mesh_ratio = edge_median_radius / mesh_band_max_r
                     if mesh_ratio <= _EDGE_MIN_RADIUS_TO_MESH_BAND_RATIO:
@@ -467,13 +377,6 @@ def _detect_finishline_points_edge(
                             )
                         )
                         continue
-
-                # finishline은 항상 최하단 폐곡선이라는 도메인 규칙을 우선 적용
-                # score 우선순위:
-                # 1) 낮은 min_z 우선 (score에서는 -min_z를 maximize)
-                # 2) 더 큰 반경(외곽 루프) 우선
-                # 3) pt0 높이 근접도(동률 보조)
-                # 4) 점 개수(동률 보조)
                 lowest_z_score = (
                     -float(edge_min_z) if edge_min_z is not None else -float("inf")
                 )
@@ -512,7 +415,6 @@ def _detect_finishline_points_edge(
                         len(traced_points) if traced_points else 0,
                     )
                 )
-
         _trace_log(
             "[detect-edge:{}] pass_summary best_found={} best_strategy={} counters={}".format(
                 pass_name,
@@ -522,13 +424,11 @@ def _detect_finishline_points_edge(
             )
         )
         return best_points, best_strategy, best_score, counters
-
     best_points, best_strategy, best_score, counters = _run_edge_pass(
         "strict_pt0",
         ref_pt0,
         ref_pt0_radius,
     )
-
     if best_points and len(best_points) >= 3:
         _trace_log(
             "[detect-edge] selected best strategy={} score={}".format(
@@ -537,8 +437,6 @@ def _detect_finishline_points_edge(
             )
         )
         return best_points, str(best_strategy or "C_EXTRACT_MESH_EDGES_UNWELDED")
-
-    # strict pass 실패 시 pt0 제약을 해제한 2차 패스로 1회 재시도
     if ref_pt0 is not None:
         _trace_log(
             "[detect-edge] strict pass failed -> retry without pt0 constraints counters={}".format(
@@ -560,16 +458,12 @@ def _detect_finishline_points_edge(
             return best_points2, str(
                 (best_strategy2 or "C_EXTRACT_MESH_EDGES_UNWELDED") + "#relaxed"
             )
-
         reason2 = _reason_from_counters(counters2)
         return None, "{}+RELAXED_FAIL:{}".format(
             _reason_from_counters(counters),
             reason2,
         )
-
     return None, _reason_from_counters(counters)
-
-
 def _mesh_xy_radius_from_bbox(mesh: rg.Mesh) -> float:
     try:
         bbox = mesh.GetBoundingBox(True)
@@ -583,7 +477,6 @@ def _mesh_xy_radius_from_bbox(mesh: rg.Mesh) -> float:
         corners = None
     if not corners:
         return 0.0
-
     max_r = 0.0
     for p in corners:
         try:
@@ -593,8 +486,6 @@ def _mesh_xy_radius_from_bbox(mesh: rg.Mesh) -> float:
         except Exception:
             continue
     return max_r
-
-
 def _mesh_max_radius_in_z_band(
     mesh: rg.Mesh,
     low_ratio: float = _Z_RATIO_LOW,
@@ -606,20 +497,17 @@ def _mesh_max_radius_in_z_band(
         return 0.0
     if not bbox.IsValid:
         return 0.0
-
     z_min = float(bbox.Min.Z)
     z_max = float(bbox.Max.Z)
     height = max(1e-6, z_max - z_min)
     low_z = z_min + float(low_ratio) * height
     high_z = z_min + float(high_ratio) * height
-
     max_r = 0.0
     found = False
     try:
         vcount = int(mesh.Vertices.Count)
     except Exception:
         vcount = 0
-
     for i in range(vcount):
         try:
             v = mesh.Vertices[i]
@@ -632,14 +520,9 @@ def _mesh_max_radius_in_z_band(
             found = True
         except Exception:
             continue
-
     if found and max_r > 0.0:
         return max_r
-
-    # band 내 점이 부족한 경우 bbox 기반으로 fallback
     return _mesh_xy_radius_from_bbox(mesh)
-
-
 def _pick_primary_mesh(
     doc: Rhino.RhinoDoc, mesh_id=None
 ) -> Tuple[rdo.MeshObject, rg.Mesh]:
@@ -653,10 +536,7 @@ def _pick_primary_mesh(
     if not meshes:
         raise RuntimeError("문서에서 Mesh 객체를 찾을 수 없습니다")
 
-    # 다중 Mesh 문서(분해/보조 파편 포함)에서 max-Z만으로 고르면
-    # 작은 상단 파편이 선택될 수 있다. 먼저 XY 외곽 반경이 큰 후보군을 잡고,
-    # 그 안에서 max-Z/vertex 수로 최종 선택한다.
-    infos: List[Tuple[float, Tuple[float, float, float, float], rdo.MeshObject]] = []
+    infos = []
     for mo in meshes:
         geom = mo.Geometry
         if geom is None:
@@ -665,118 +545,93 @@ def _pick_primary_mesh(
         if z_key is None:
             continue
         xy_r = _mesh_xy_radius_from_bbox(geom)
-        infos.append((xy_r, z_key, mo))
+        try:
+            bbox = geom.GetBoundingBox(True)
+        except Exception:
+            bbox = None
+        if bbox is None or not bbox.IsValid:
+            continue
+        infos.append(
+            {
+                "mesh_obj": mo,
+                "geom": geom,
+                "xy_r": float(xy_r),
+                "z_key": z_key,
+                "zmin": float(bbox.Min.Z),
+                "zmax": float(bbox.Max.Z),
+                "verts": int(geom.Vertices.Count),
+            }
+        )
 
     if not infos:
-        # 기존 동작과 유사한 안전 fallback
         target = meshes[0]
         geom = target.Geometry
         if geom is None:
             raise RuntimeError("선택된 Mesh 객체에서 Geometry를 읽을 수 없습니다")
         return target, geom
 
-    max_r = max(item[0] for item in infos)
-    band = max(0.05, max_r * 0.01)
-    top_band = [item for item in infos if item[0] >= (max_r - band)]
-    if not top_band:
-        top_band = infos
+    # 우선순위: 치은(하방) 메시 우선
+    # - global min_z에 0.1mm 이내로 닿는 메시만 1차 후보
+    # - 그 중에서 외곽 반경/버텍스 수가 큰 메시를 선택
+    global_min_z = min(item["zmin"] for item in infos)
+    near_min_tol = 0.10
+    gingiva_candidates = [
+        item for item in infos if float(item["zmin"]) <= (float(global_min_z) + near_min_tol)
+    ]
 
-    # (xy_r, z_key(maxZ,minZ,verts,diag)) 내에서 z_key 우선 + xy_r 보조
-    top_band.sort(key=lambda item: (item[1], item[0]), reverse=True)
-    target = top_band[0][2]
+    chosen = None
+    if gingiva_candidates:
+        gingiva_candidates.sort(
+            key=lambda item: (
+                float(item["xy_r"]),
+                int(item["verts"]),
+                float(item["zmax"]),
+            ),
+            reverse=True,
+        )
+        chosen = gingiva_candidates[0]
+        _trace_log(
+            "[pick-mesh] mode=gingiva_min_z global_min_z={:.4f} tol={:.3f} candidates={} chosen_id={} chosen_z=({:.4f},{:.4f}) xy_r={:.4f} verts={}".format(
+                float(global_min_z),
+                float(near_min_tol),
+                len(gingiva_candidates),
+                chosen["mesh_obj"].Id,
+                float(chosen["zmin"]),
+                float(chosen["zmax"]),
+                float(chosen["xy_r"]),
+                int(chosen["verts"]),
+            )
+        )
+    else:
+        max_r = max(float(item["xy_r"]) for item in infos)
+        band = max(0.05, max_r * 0.01)
+        top_band = [item for item in infos if float(item["xy_r"]) >= (max_r - band)]
+        if not top_band:
+            top_band = infos
+        top_band.sort(
+            key=lambda item: (item["z_key"], float(item["xy_r"])),
+            reverse=True,
+        )
+        chosen = top_band[0]
+        _trace_log(
+            "[pick-mesh] mode=fallback_upper max_r={:.4f} band={:.4f} chosen_id={} chosen_key={} xy_r={:.4f}".format(
+                float(max_r),
+                float(band),
+                chosen["mesh_obj"].Id,
+                chosen["z_key"],
+                float(chosen["xy_r"]),
+            )
+        )
+
+    target = chosen["mesh_obj"]
     geom = target.Geometry
     if geom is None:
         raise RuntimeError("선택된 Mesh 객체에서 Geometry를 읽을 수 없습니다")
-
-    _trace_log(
-        "[pick-mesh] meshes={} max_r={:.4f} band={:.4f} chosen_id={} chosen_xy_r={:.4f} chosen_key={}".format(
-            len(meshes),
-            max_r,
-            band,
-            target.Id,
-            top_band[0][0],
-            top_band[0][1],
-        )
-    )
     return target, geom
-
-
-def _pick_highest_z_component(mesh: rg.Mesh) -> rg.Mesh:
-    """메시를 분해해 Z 최상단 파트만 반환한다.
-
-    배경:
-      피니시라인 계산 시 단면 교차에 다른 분리 파트(예: 포스트 하단 파편)의 경계가
-      함께 들어오면 일부 방위각에서 잘못된 저부 경계가 선택될 수 있다.
-
-    동작:
-      1) ExplodeAtUnweldedEdges
-      2) 각 결과를 SplitDisjointPieces
-      3) 후보 중 bbox.Max.Z가 가장 큰 파트를 선택 (동률 시 bbox.Min.Z, vertex 수)
-    """
-    mesh_copy = mesh.DuplicateMesh()
-    if mesh_copy is None:
-        raise RuntimeError("Mesh 복제에 실패했습니다")
-
-    exploded: List[rg.Mesh] = []
-    try:
-        raw_exploded = mesh_copy.ExplodeAtUnweldedEdges()
-        if raw_exploded:
-            exploded = [
-                m for m in raw_exploded if m is not None and m.Vertices.Count > 0
-            ]
-    except Exception:
-        exploded = []
-
-    if not exploded:
-        exploded = [mesh_copy]
-
-    candidates: List[rg.Mesh] = []
-    for part in exploded:
-        if part is None or part.Vertices.Count <= 0:
-            continue
-        try:
-            disjoint = part.SplitDisjointPieces()
-        except Exception:
-            disjoint = None
-
-        if disjoint:
-            for sub in disjoint:
-                if sub is not None and sub.Vertices.Count > 0:
-                    candidates.append(sub)
-        else:
-            candidates.append(part)
-
-    if not candidates:
-        return mesh_copy
-
-    best_mesh: Optional[rg.Mesh] = None
-    best_key = None
-    for part in candidates:
-        key = _mesh_z_key(part)
-        if key is None:
-            continue
-        if best_key is None or key > best_key:
-            best_key = key
-            best_mesh = part
-
-    if best_mesh is None:
-        return mesh_copy
-
-    _trace_log(
-        "[mesh] components={} selected_key(maxZ,minZ,verts)={}".format(
-            len(candidates),
-            best_key,
-        )
-    )
-    selected = best_mesh.DuplicateMesh()
-    return selected if selected is not None else best_mesh
-
-
 def _explode_components_sorted_by_max_z(mesh: rg.Mesh) -> List[rg.Mesh]:
     mesh_copy = mesh.DuplicateMesh()
     if mesh_copy is None:
         return [mesh]
-
     exploded: List[rg.Mesh] = []
     try:
         raw_exploded = mesh_copy.ExplodeAtUnweldedEdges()
@@ -786,10 +641,8 @@ def _explode_components_sorted_by_max_z(mesh: rg.Mesh) -> List[rg.Mesh]:
             ]
     except Exception:
         exploded = []
-
     if not exploded:
         exploded = [mesh_copy]
-
     candidates: List[rg.Mesh] = []
     for part in exploded:
         if part is None or part.Vertices.Count <= 0:
@@ -798,31 +651,25 @@ def _explode_components_sorted_by_max_z(mesh: rg.Mesh) -> List[rg.Mesh]:
             disjoint = part.SplitDisjointPieces()
         except Exception:
             disjoint = None
-
         if disjoint:
             for sub in disjoint:
                 if sub is not None and sub.Vertices.Count > 0:
                     candidates.append(sub)
         else:
             candidates.append(part)
-
     keyed: List[Tuple[Tuple[float, float, float, float], rg.Mesh]] = []
     for part in candidates:
         key = _mesh_z_key(part)
         if key is None:
             continue
         keyed.append((key, part))
-
     keyed.sort(key=lambda item: item[0], reverse=True)
     ordered: List[rg.Mesh] = []
     for key, part in keyed:
         dup = part.DuplicateMesh()
         ordered.append(dup if dup is not None else part)
-
     _trace_log("[mesh] ordered_components={}".format(len(ordered)))
     return ordered if ordered else [mesh_copy]
-
-
 def _collect_new_curve_geometries(
     doc: Rhino.RhinoDoc,
     baseline_ids,
@@ -841,20 +688,15 @@ def _collect_new_curve_geometries(
         except Exception:
             continue
     return curves, created_ids
-
-
 def _extract_mesh_edges_with_command(
     doc: Rhino.RhinoDoc, mesh: rg.Mesh
 ) -> List[rg.Curve]:
     temp_mesh_id = doc.Objects.AddMesh(mesh)
     if temp_mesh_id == System.Guid.Empty:
         return []
-
     baseline_ids = set(obj.Id for obj in doc.Objects)
     curve_geometries: List[rg.Curve] = []
     created_ids: List[System.Guid] = []
-
-    # Rhino 버전에 따라 ExtractMeshEdges 옵션 토큰명이 다를 수 있어 순차 시도.
     macros = [
         "! _SelNone _SelID {} _-ExtractMeshEdges _Extract=_Unwelded _Join=_Yes _Enter".format(
             temp_mesh_id
@@ -866,7 +708,6 @@ def _extract_mesh_edges_with_command(
             temp_mesh_id
         ),
     ]
-
     try:
         for idx, macro in enumerate(macros):
             _trace_log(
@@ -879,7 +720,6 @@ def _extract_mesh_edges_with_command(
             except Exception:
                 _trace_log("[extract_edges] macro exception")
                 continue
-
             curve_geometries, created_ids = _collect_new_curve_geometries(
                 doc, baseline_ids
             )
@@ -908,20 +748,15 @@ def _extract_mesh_edges_with_command(
                 doc.Objects.Delete(temp_mesh_id, True)
             except Exception:
                 pass
-
     return curve_geometries
-
-
 def _extract_naked_edges_fallback(mesh: rg.Mesh) -> List[rg.Curve]:
     curves: List[rg.Curve] = []
     try:
         loops = mesh.GetNakedEdges()
     except Exception:
         loops = None
-
     if not loops:
         return curves
-
     for loop in loops:
         if not loop or len(loop) < 3:
             continue
@@ -930,8 +765,6 @@ def _extract_naked_edges_fallback(mesh: rg.Mesh) -> List[rg.Curve]:
         except Exception:
             continue
     return curves
-
-
 def _curve_to_closed_points(curve: rg.Curve) -> Optional[List[rg.Point3d]]:
     if curve is None:
         return None
@@ -939,17 +772,13 @@ def _curve_to_closed_points(curve: rg.Curve) -> Optional[List[rg.Point3d]]:
         joined = curve.DuplicateCurve()
     except Exception:
         joined = curve
-
     if joined is None:
         return None
-
     is_closed = bool(getattr(joined, "IsClosed", False))
-
     try:
         ok, poly = joined.TryGetPolyline()
     except Exception:
         ok, poly = False, None
-
     points: List[rg.Point3d]
     if ok and poly and len(poly) >= 3:
         points = [rg.Point3d(p) for p in poly]
@@ -961,70 +790,15 @@ def _curve_to_closed_points(curve: rg.Curve) -> Optional[List[rg.Point3d]]:
         if not t_values:
             return None
         points = [joined.PointAt(t) for t in t_values]
-
     if len(points) < 3:
         return None
-
     gap = points[0].DistanceTo(points[-1])
     if not is_closed:
-        # ExtractMeshEdges 결과가 미세 gap으로 열린 경우가 있어, 작은 gap은 폐곡선으로 보정
         if gap > _EDGE_CLOSE_GAP_TOL_MM:
             return None
-
     if gap > 1e-6:
         points.append(rg.Point3d(points[0]))
     return points
-
-
-def _pick_min_z_closed_curve_points(
-    curves: Sequence[rg.Curve], tolerance: float
-) -> Optional[List[rg.Point3d]]:
-    if not curves:
-        _trace_log("[finishline] no input curves")
-        return None
-
-    try:
-        joined = rg.Curve.JoinCurves(list(curves), tolerance)
-    except Exception:
-        joined = None
-    source = list(joined) if joined else list(curves)
-    _trace_log(
-        "[finishline] pick_min_z input_curves={} joined_curves={} tolerance={:.6f}".format(
-            len(curves),
-            len(source),
-            float(tolerance),
-        )
-    )
-
-    candidates = []
-    for cv in source:
-        pts = _curve_to_closed_points(cv)
-        if not pts:
-            continue
-        try:
-            min_z = min(p.Z for p in pts)
-            length = cv.GetLength()
-        except Exception:
-            continue
-        candidates.append((float(min_z), -float(length), pts))
-
-    if not candidates:
-        _trace_log("[finishline] closed curve candidates=0")
-        return None
-
-    selected_min_z, _, selected_points = min(
-        candidates, key=lambda item: (item[0], item[1])
-    )
-    _trace_log(
-        "[finishline] closed_curves={} selected_min_z={:.6f} selected_pts={}".format(
-            len(candidates),
-            selected_min_z,
-            len(selected_points),
-        )
-    )
-    return selected_points
-
-
 def _pick_best_edge_loop_points(
     curves: Sequence[rg.Curve],
     tolerance: float,
@@ -1036,13 +810,11 @@ def _pick_best_edge_loop_points(
 ) -> Optional[List[rg.Point3d]]:
     if not curves:
         return None
-
     try:
         joined = rg.Curve.JoinCurves(list(curves), tolerance)
     except Exception:
         joined = None
     source = list(joined) if joined else list(curves)
-
     _trace_log(
         "[edge-loop:{}] input_curves={} joined_curves={} tol={:.6f} strict_filters={}".format(
             debug_tag,
@@ -1052,10 +824,6 @@ def _pick_best_edge_loop_points(
             bool(strict_filters),
         )
     )
-
-    # tuple: (median_radius, z_score, length, min_z, points)
-    # - median_radius: 외곽 루프 우선
-    # - z_score: pt0가 있으면 |min_z-pt0_z|가 작은 루프 우선, 없으면 min_z가 높은 루프 우선
     loop_infos: List[Tuple[float, float, float, float, List[rg.Point3d]]] = []
     inspected = 0
     accepted = 0
@@ -1068,7 +836,6 @@ def _pick_best_edge_loop_points(
         "small_vs_mesh": 0,
         "low_azimuth_coverage": 0,
     }
-
     for cv_idx, cv in enumerate(source):
         inspected += 1
         pts = _curve_to_closed_points(cv)
@@ -1080,7 +847,6 @@ def _pick_best_edge_loop_points(
                 )
             )
             continue
-
         min_z = _points_min_z(pts)
         max_z = _points_max_z(pts)
         z_span = (
@@ -1090,12 +856,10 @@ def _pick_best_edge_loop_points(
         )
         median_r = _points_median_radius(pts)
         az_coverage = _loop_azimuth_coverage(pts)
-
         try:
             length = float(cv.GetLength())
         except Exception:
             length = float(len(pts))
-
         if strict_filters:
             if min_z is not None and min_z <= _EDGE_MIN_Z_VALID_THRESHOLD_MM:
                 reject_counts["low_z"] += 1
@@ -1111,7 +875,6 @@ def _pick_best_edge_loop_points(
                     )
                 )
                 continue
-
             if ref_pt0 is not None and min_z is not None:
                 max_allowed_z = ref_pt0.Z + _EDGE_MAX_Z_ABOVE_PT0_MM
                 if min_z >= max_allowed_z:
@@ -1129,7 +892,6 @@ def _pick_best_edge_loop_points(
                             debug_tag, cv_idx, float(min_z), float(min_allowed_z)
                         )
                     )
-
             if az_coverage < float(_EDGE_MIN_AZIMUTH_COVERAGE_RAD):
                 reject_counts["low_azimuth_coverage"] += 1
                 _trace_log(
@@ -1141,7 +903,6 @@ def _pick_best_edge_loop_points(
                     )
                 )
                 continue
-
             if (
                 ref_pt0_radius is not None
                 and ref_pt0_radius > _DIST_TOL
@@ -1159,7 +920,6 @@ def _pick_best_edge_loop_points(
                         )
                     )
                     continue
-
             if (
                 mesh_band_max_radius is not None
                 and mesh_band_max_radius > _DIST_TOL
@@ -1177,12 +937,10 @@ def _pick_best_edge_loop_points(
                         )
                     )
                     continue
-
         if ref_pt0 is not None and min_z is not None:
             z_score = -abs(float(min_z) - float(ref_pt0.Z))
         else:
             z_score = float(min_z) if min_z is not None else -float("inf")
-
         accepted += 1
         _trace_log(
             "[edge-loop:{}] curve[{}] accepted min_z={:.6f} max_z={:.6f} z_span={:.6f} len={:.4f} med_r={:.4f} az_cov={:.4f} z_score={:.6f}".format(
@@ -1197,7 +955,6 @@ def _pick_best_edge_loop_points(
                 float(z_score),
             )
         )
-
         loop_infos.append(
             (
                 float(median_r) if median_r is not None else -1.0,
@@ -1207,7 +964,6 @@ def _pick_best_edge_loop_points(
                 pts,
             )
         )
-
     _trace_log(
         "[edge-loop:{}] summary inspected={} accepted={} rejected={} reject_counts={}".format(
             debug_tag,
@@ -1217,13 +973,8 @@ def _pick_best_edge_loop_points(
             reject_counts,
         )
     )
-
     if not loop_infos:
         return None
-
-    # finishline은 최하단 폐곡선이라는 규칙을 우선 적용
-    # 1) min_z가 가장 낮은 루프 우선
-    # 2) 동률이면 외곽 반경/pt0 일치도/길이로 tie-break
     loop_infos.sort(key=lambda item: (item[3], -item[0], -item[1], -item[2]))
     selected = loop_infos[0]
     _trace_log(
@@ -1238,8 +989,6 @@ def _pick_best_edge_loop_points(
         )
     )
     return selected[4]
-
-
 def _points_min_z(points: Sequence[rg.Point3d]) -> Optional[float]:
     if not points:
         return None
@@ -1247,8 +996,6 @@ def _points_min_z(points: Sequence[rg.Point3d]) -> Optional[float]:
         return float(min(p.Z for p in points))
     except Exception:
         return None
-
-
 def _points_max_z(points: Sequence[rg.Point3d]) -> Optional[float]:
     if not points:
         return None
@@ -1256,34 +1003,15 @@ def _points_max_z(points: Sequence[rg.Point3d]) -> Optional[float]:
         return float(max(p.Z for p in points))
     except Exception:
         return None
-
-
 def _points_z_extrema(
     points: Sequence[rg.Point3d],
 ) -> Tuple[Optional[rg.Point3d], Optional[float], Optional[rg.Point3d], Optional[float]]:
-    """피니시라인 점열의 Z extrema(min/max)와 해당 대표 점을 함께 계산한다.
-
-    반환 순서:
-      (min_z_point, min_z, max_z_point, max_z)
-
-    정책(SSOT):
-    - 피니시라인 높이 메타데이터는 `top_z` 같은 별칭 없이
-      `max_z`, `min_z`로만 저장/전달한다.
-    - 점 포인트도 함께 저장해(= `max_z_point`, `min_z_point`) downstream(백엔드/프론트/에스프릿)
-      에서 재탐색 없이 동일 기준을 재사용하도록 한다.
-
-    구현 메모:
-    - 동일 Z 값이 여러 점에서 반복될 수 있으므로, "첫 번째 발견점"을 대표점으로 사용한다.
-      (도메인적으로 Z extrema가 핵심이고, 같은 Z 내 다중 후보의 순서는 의미가 약함)
-    """
     if not points:
         return None, None, None, None
-
     min_pt: Optional[rg.Point3d] = None
     max_pt: Optional[rg.Point3d] = None
     min_z = float("inf")
     max_z = -float("inf")
-
     for pt in points:
         if pt is None:
             continue
@@ -1291,19 +1019,15 @@ def _points_z_extrema(
             z = float(pt.Z)
         except Exception:
             continue
-
         if z < min_z:
             min_z = z
             min_pt = rg.Point3d(pt)
         if z > max_z:
             max_z = z
             max_pt = rg.Point3d(pt)
-
     if min_pt is None or max_pt is None:
         return None, None, None, None
-
     return min_pt, float(min_z), max_pt, float(max_z)
-
 
 def _points_median_radius(points: Sequence[rg.Point3d]) -> Optional[float]:
     if not points:
@@ -1324,18 +1048,9 @@ def _points_median_radius(points: Sequence[rg.Point3d]) -> Optional[float]:
     if n % 2 == 1:
         return float(radii[mid])
     return float((radii[mid - 1] + radii[mid]) * 0.5)
-
-
 def _loop_azimuth_coverage(points: Sequence[rg.Point3d]) -> float:
-    """XY 평면에서 루프가 원점을 기준으로 감싸는 각도 범위(0..2π)를 계산한다.
-
-    구현: atan2 각을 정렬한 뒤, 인접 각도 사이 최대 gap을 제외한 나머지를 coverage로 본다.
-    - 전체를 둘러싸는 폐곡선이면 coverage가 2π에 가깝다.
-    - 측면 홈/슬롯 같은 국소 루프는 coverage가 작다.
-    """
     if not points:
         return 0.0
-
     angles: List[float] = []
     for p in points:
         if p is None:
@@ -1344,25 +1059,19 @@ def _loop_azimuth_coverage(points: Sequence[rg.Point3d]) -> float:
             angles.append(float(math.atan2(float(p.Y), float(p.X))))
         except Exception:
             continue
-
     if len(angles) < 3:
         return 0.0
-
     angles.sort()
     max_gap = 0.0
     for i in range(1, len(angles)):
         gap = float(angles[i] - angles[i - 1])
         if gap > max_gap:
             max_gap = gap
-
     wrap_gap = float((angles[0] + 2.0 * math.pi) - angles[-1])
     if wrap_gap > max_gap:
         max_gap = wrap_gap
-
     coverage = max(0.0, min(2.0 * math.pi, 2.0 * math.pi - max_gap))
     return float(coverage)
-
-
 def _median(values: Sequence[float]) -> Optional[float]:
     if not values:
         return None
@@ -1372,23 +1081,11 @@ def _median(values: Sequence[float]) -> Optional[float]:
     if n % 2 == 1:
         return float(ordered[mid])
     return float((ordered[mid - 1] + ordered[mid]) * 0.5)
-
-
 def _validate_finishline_points(
     points: Sequence[rg.Point3d],
 ) -> Tuple[bool, str]:
-    """연결 세그먼트 기반 아웃라이어 검증.
-
-    - 한 세그먼트가 전체 대비 지나치게 길거나
-    - 한 세그먼트의 |dz|가 비정상적으로 크면
-      해당 전략 결과를 실패로 간주한다.
-
-    예외: 단 하나의 seam 점프(주로 루프 닫힘 구간)가 존재하고,
-    그 한 세그먼트를 제외하면 정상 통계인 경우는 허용한다.
-    """
     if not points or len(points) < 4:
         return False, "too_few_points"
-
     seg_lens: List[float] = []
     seg_dz: List[float] = []
     for i in range(1, len(points)):
@@ -1401,10 +1098,8 @@ def _validate_finishline_points(
             seg_dz.append(float(abs(b.Z - a.Z)))
         except Exception:
             continue
-
     if len(seg_lens) < 3:
         return False, "too_few_segments"
-
     def _metric_outlier(values: Sequence[float], ratio_th: float, abs_th: float):
         if not values:
             return False, None
@@ -1421,14 +1116,11 @@ def _validate_finishline_points(
                 "idx": -1,
                 "count": 0,
             }
-
         try:
             idx = max(range(len(values)), key=lambda i: values[i])
         except Exception:
             idx = -1
         count = sum(1 for v in values if v >= limit)
-
-        # 단일 outlier는 seam 점프일 수 있으므로 해당 세그먼트 제외 후 재검증
         if count == 1 and 0 <= idx < len(values) and len(values) >= 4:
             trimmed = [v for i, v in enumerate(values) if i != idx]
             med2 = _median(trimmed)
@@ -1444,7 +1136,6 @@ def _validate_finishline_points(
                         "count": int(count),
                         "accepted_single_outlier": True,
                     }
-
         return True, {
             "max": float(max_v),
             "med": float(med),
@@ -1452,7 +1143,6 @@ def _validate_finishline_points(
             "idx": int(idx),
             "count": int(count),
         }
-
     seg_bad, seg_info = _metric_outlier(
         seg_lens,
         _OUTLIER_SEGMENT_RATIO,
@@ -1468,7 +1158,6 @@ def _validate_finishline_points(
                 info.get("ratio", 0.0),
             ),
         )
-
     dz_bad, dz_info = _metric_outlier(
         seg_dz,
         _OUTLIER_DZ_RATIO,
@@ -1484,27 +1173,20 @@ def _validate_finishline_points(
                 info.get("ratio", 0.0),
             ),
         )
-
     if seg_info and seg_info.get("accepted_single_outlier"):
         return True, "ok_with_single_segment_outlier"
     if dz_info and dz_info.get("accepted_single_outlier"):
         return True, "ok_with_single_dz_outlier"
-
     return True, "ok"
-
-
 def _extract_lowest_boundary_loop_points(
     mesh: rg.Mesh,
     ref_pt0: Optional[rg.Point3d] = None,
     ref_pt0_radius: Optional[float] = None,
 ) -> Optional[List[rg.Point3d]]:
-    # legacy fallback 개선: 단순 min-Z가 아니라 edge 전략과 동일한 품질 필터를 적용해
-    # 내부 홀/캡 경계 오검출을 줄인다.
     loops = _extract_naked_edges_fallback(mesh)
     if not loops:
         _trace_log("[legacy] no naked edge loops")
         return None
-
     mesh_band_max_r = _mesh_max_radius_in_z_band(mesh)
     points = _pick_best_edge_loop_points(
         loops,
@@ -1516,13 +1198,10 @@ def _extract_lowest_boundary_loop_points(
     if not points or len(points) < 3:
         _trace_log("[legacy] no valid loop after edge-like filtering")
         return None
-
-    # legacy 결과도 shape/outlier 검증 적용
     ok_shape, reason = _validate_finishline_points(points)
     if not ok_shape:
         _trace_log("[legacy] rejected by outlier check: {}".format(reason))
         return None
-
     _trace_log(
         "[legacy] selected loop min_z={:.6f} max_z={:.6f} pts={}".format(
             _points_min_z(points)
@@ -1535,23 +1214,7 @@ def _extract_lowest_boundary_loop_points(
         )
     )
     return points
-
-
-def _extract_lowest_cross_section(mesh: rg.Mesh) -> Optional[List[rg.Point3d]]:
-    # LEGACY 비활성: 메시에지 추출 기반(C 전략)만 사용.
-    _trace_log("[legacy-disabled] _extract_lowest_cross_section")
-    return None
-
-
 def _select_pt0(mesh: rg.Mesh) -> rg.Point3d:
-    """pt0를 경사축 기준으로 선택한다.
-
-    기존(world-Z + XY 반경) 방식은 경사 샘플에서 포스트 중간으로 끌리는 경우가 있어,
-    - 축 방향 투영값(axial) band 내에서
-    - 축까지의 거리(radius-to-axis)가 최대인 점
-    을 선택한다.
-    """
-
     axis = _estimate_tilt_axis(mesh)
     if not axis.IsValid or axis.IsZero:
         axis = rg.Vector3d(0, 0, 1)
@@ -1561,10 +1224,8 @@ def _select_pt0(mesh: rg.Mesh) -> rg.Point3d:
         axis = rg.Vector3d(0, 0, 1)
     if float(axis.Z) < 0.0:
         axis = rg.Vector3d(-axis.X, -axis.Y, -axis.Z)
-
     def _axial(pt: rg.Point3d) -> float:
         return float(pt.X * axis.X + pt.Y * axis.Y + pt.Z * axis.Z)
-
     def _radius_to_axis(pt: rg.Point3d) -> float:
         try:
             pv = rg.Vector3d(float(pt.X), float(pt.Y), float(pt.Z))
@@ -1572,14 +1233,12 @@ def _select_pt0(mesh: rg.Mesh) -> rg.Point3d:
             return float(cp.Length)
         except Exception:
             return 0.0
-
     try:
         vcount = int(mesh.Vertices.Count)
     except Exception:
         vcount = 0
     if vcount <= 0:
         raise RuntimeError("pt0 후보를 찾을 수 없습니다 (Mesh에 버텍스가 없습니다)")
-
     a_min = float("inf")
     a_max = -float("inf")
     for i in range(vcount):
@@ -1592,17 +1251,13 @@ def _select_pt0(mesh: rg.Mesh) -> rg.Point3d:
                 a_max = a
         except Exception:
             continue
-
     if not math.isfinite(a_min) or not math.isfinite(a_max):
         raise RuntimeError("pt0 후보 축 범위를 계산할 수 없습니다")
-
     a_span = max(1e-6, a_max - a_min)
     low = a_min + _PT0_Z_RATIO_LOW * a_span
     high = a_min + _PT0_Z_RATIO_HIGH * a_span
-
     best_pt: Optional[rg.Point3d] = None
     best_r = -1.0
-
     for i in range(vcount):
         try:
             v = mesh.Vertices[i]
@@ -1615,7 +1270,6 @@ def _select_pt0(mesh: rg.Mesh) -> rg.Point3d:
                 best_pt = rg.Point3d(v)
         except Exception:
             continue
-
     if best_pt is None:
         for i in range(vcount):
             try:
@@ -1626,10 +1280,8 @@ def _select_pt0(mesh: rg.Mesh) -> rg.Point3d:
                     best_pt = rg.Point3d(v)
             except Exception:
                 continue
-
     if best_pt is None:
         raise RuntimeError("pt0 후보를 찾을 수 없습니다 (Mesh에 버텍스가 없습니다)")
-
     _trace_log(
         "[pt0] axis_based selected x={:.6f} y={:.6f} z={:.6f} r_axis={:.6f} axial_band=({:.6f},{:.6f})".format(
             float(best_pt.X),
@@ -1641,66 +1293,44 @@ def _select_pt0(mesh: rg.Mesh) -> rg.Point3d:
         )
     )
     return best_pt
-
-
-# ---------------------------------------------------------------------------
-# Section sampling
-# ---------------------------------------------------------------------------
 def _estimate_tilt_axis(mesh: rg.Mesh) -> rg.Vector3d:
-    """메시 분포에서 경사축(주축)을 추정한다.
-
-    중요: 축 추정은 원점 기준 모멘트가 아니라 "평균 중심 공분산"(PCA) 기반으로 계산한다.
-    원점 기준 모멘트는 모델 위치 오프셋에 의해 world-Z로 끌리는 문제가 있어,
-    경사 샘플에서 축이 잘못 Z축으로 고정될 수 있다.
-    """
     try:
         bbox = mesh.GetBoundingBox(True)
     except Exception:
         bbox = None
-
     if bbox is None or not bbox.IsValid:
         return rg.Vector3d(0, 0, 1)
-
     z_min = float(bbox.Min.Z)
     z_max = float(bbox.Max.Z)
     height = max(1e-6, z_max - z_min)
     low = z_min + _TILT_AXIS_BAND_LOW * height
     high = z_min + _TILT_AXIS_BAND_HIGH * height
-
     try:
         vcount = int(mesh.Vertices.Count)
     except Exception:
         vcount = 0
-
     if vcount <= 0:
         return rg.Vector3d(0, 0, 1)
-
     def _accumulate(use_band: bool):
         sw = 0.0
         sx = sy = sz = 0.0
         s_xx = s_xy = s_xz = 0.0
         s_yy = s_yz = s_zz = 0.0
         n_local = 0
-
         for i in range(vcount):
             try:
                 v = mesh.Vertices[i]
                 x = float(v.X)
                 y = float(v.Y)
                 z = float(v.Z)
-
                 if use_band and (z < low or z > high):
                     continue
-
                 t = max(0.0, min(1.0, (z - z_min) / height))
-                # 상부를 다소 강조하되, 저부 샘플도 완전히 버리지 않음
                 w = 0.2 + 0.8 * (t * t)
-
                 sw += w
                 sx += w * x
                 sy += w * y
                 sz += w * z
-
                 s_xx += w * x * x
                 s_xy += w * x * y
                 s_xz += w * x * z
@@ -1710,9 +1340,7 @@ def _estimate_tilt_axis(mesh: rg.Mesh) -> rg.Vector3d:
                 n_local += 1
             except Exception:
                 continue
-
         return (n_local, sw, sx, sy, sz, s_xx, s_xy, s_xz, s_yy, s_yz, s_zz)
-
     def _axis_from_moments(stats):
         (
             _n,
@@ -1727,23 +1355,17 @@ def _estimate_tilt_axis(mesh: rg.Mesh) -> rg.Vector3d:
             s_yz,
             s_zz,
         ) = stats
-
         if sw <= _DIST_TOL:
             return None
-
         mx = sx / sw
         my = sy / sw
         mz = sz / sw
-
-        # 평균 중심 공분산
         c_xx = max(0.0, s_xx / sw - mx * mx)
         c_xy = s_xy / sw - mx * my
         c_xz = s_xz / sw - mx * mz
         c_yy = max(0.0, s_yy / sw - my * my)
         c_yz = s_yz / sw - my * mz
         c_zz = max(0.0, s_zz / sw - mz * mz)
-
-        # power iteration (3x3 symmetric) for principal eigenvector
         vx, vy, vz = 0.0, 0.0, 1.0
         for _ in range(16):
             nx = c_xx * vx + c_xy * vy + c_xz * vz
@@ -1753,7 +1375,6 @@ def _estimate_tilt_axis(mesh: rg.Mesh) -> rg.Vector3d:
             if norm <= _DIST_TOL:
                 break
             vx, vy, vz = nx / norm, ny / norm, nz / norm
-
         axis_local = rg.Vector3d(vx, vy, vz)
         if not axis_local.IsValid or axis_local.IsZero:
             return None
@@ -1764,17 +1385,12 @@ def _estimate_tilt_axis(mesh: rg.Mesh) -> rg.Vector3d:
         if float(axis_local.Z) < 0.0:
             axis_local = rg.Vector3d(-axis_local.X, -axis_local.Y, -axis_local.Z)
         return axis_local
-
-    # 1차: 중상부 band 기반 추정
     band_stats = _accumulate(use_band=True)
     n_band = int(band_stats[0])
-
     axis = None
     source = "band"
     if n_band >= _TILT_AXIS_MIN_VERTS:
         axis = _axis_from_moments(band_stats)
-
-    # 2차: band 샘플 부족 또는 band 추정 실패 시 전체 버텍스로 재시도
     if axis is None:
         full_stats = _accumulate(use_band=False)
         n_full = int(full_stats[0])
@@ -1791,12 +1407,9 @@ def _estimate_tilt_axis(mesh: rg.Mesh) -> rg.Vector3d:
         n_used = n_full
     else:
         n_used = n_band
-
     if axis is None:
         _trace_log("[axis] fallback=Z reason=axis_estimation_failed")
         return rg.Vector3d(0, 0, 1)
-
-    # 수평에 너무 가까우면 비정상으로 보고 Z축 fallback
     if abs(float(axis.Z)) < 0.2:
         _trace_log(
             "[axis] fallback=Z reason=low_z_component axis=({:.6f},{:.6f},{:.6f}) source={}".format(
@@ -1807,13 +1420,11 @@ def _estimate_tilt_axis(mesh: rg.Mesh) -> rg.Vector3d:
             )
         )
         return rg.Vector3d(0, 0, 1)
-
     try:
         dot = max(-1.0, min(1.0, float(axis.Z)))
         tilt_deg = math.degrees(math.acos(dot))
     except Exception:
         tilt_deg = float("nan")
-
     _trace_log(
         "[axis] estimated tilt_axis=({:.6f},{:.6f},{:.6f}) tilt_deg={:.3f} samples={} source={}".format(
             axis.X,
@@ -1824,17 +1435,13 @@ def _estimate_tilt_axis(mesh: rg.Mesh) -> rg.Vector3d:
             source,
         )
     )
-
     return axis
-
-
 def _build_section_planes(
     count: int = _SECTION_COUNT,
     step_deg: float = _SECTION_STEP_DEG,
     axis_dir: Optional[rg.Vector3d] = None,
 ) -> List[rg.Plane]:
     planes: List[rg.Plane] = []
-
     axis = rg.Vector3d(axis_dir) if axis_dir is not None else rg.Vector3d(0, 0, 1)
     if not axis.IsValid or axis.IsZero:
         axis = rg.Vector3d(0, 0, 1)
@@ -1842,14 +1449,12 @@ def _build_section_planes(
         axis.Unitize()
     except Exception:
         axis = rg.Vector3d(0, 0, 1)
-
     helper = rg.Vector3d(0, 0, 1)
     try:
         if abs(float(axis * helper)) > 0.95:
             helper = rg.Vector3d(1, 0, 0)
     except Exception:
         helper = rg.Vector3d(1, 0, 0)
-
     u_dir = rg.Vector3d.CrossProduct(axis, helper)
     if not u_dir.IsValid or u_dir.IsZero:
         helper = rg.Vector3d(0, 1, 0)
@@ -1860,7 +1465,6 @@ def _build_section_planes(
         u_dir.Unitize()
     except Exception:
         pass
-
     v_dir = rg.Vector3d.CrossProduct(axis, u_dir)
     if not v_dir.IsValid or v_dir.IsZero:
         v_dir = rg.Vector3d(0, 1, 0)
@@ -1868,13 +1472,8 @@ def _build_section_planes(
         v_dir.Unitize()
     except Exception:
         pass
-
-    # 핵심 수정:
-    # 축을 지나는 단면 평면은 180도 주기다(θ와 θ+180은 동일 평면).
-    # 따라서 count개 유효 평면을 얻으려면 180도 범위를 균등 분할해야 한다.
     if count <= 0:
         return planes
-
     effective_step_deg = float(step_deg)
     min_unique_step = 180.0 / float(count)
     if effective_step_deg > min_unique_step + 1e-9:
@@ -1885,9 +1484,7 @@ def _build_section_planes(
             )
         )
         effective_step_deg = min_unique_step
-
     seen_normals = set()
-
     def _normal_key(plane_obj: rg.Plane):
         n = rg.Vector3d(plane_obj.Normal)
         if not n.IsValid or n.IsZero:
@@ -1896,8 +1493,6 @@ def _build_section_planes(
             n.Unitize()
         except Exception:
             return None
-
-        # n과 -n은 동일 평면으로 간주하도록 canonicalize
         x, y, z = float(n.X), float(n.Y), float(n.Z)
         if (
             x < 0.0
@@ -1905,13 +1500,11 @@ def _build_section_planes(
             or (abs(x) <= 1e-12 and abs(y) <= 1e-12 and z < 0.0)
         ):
             x, y, z = -x, -y, -z
-
         return (
             int(round(x * 1e6)),
             int(round(y * 1e6)),
             int(round(z * 1e6)),
         )
-
     for idx in range(count):
         angle = math.radians(effective_step_deg * idx)
         radial = rg.Vector3d(
@@ -1921,7 +1514,6 @@ def _build_section_planes(
         )
         if not radial.IsValid or radial.IsZero:
             continue
-
         pl = rg.Plane(rg.Point3d.Origin, radial, axis)
         key = _normal_key(pl)
         if key is not None and key in seen_normals:
@@ -1929,7 +1521,6 @@ def _build_section_planes(
         if key is not None:
             seen_normals.add(key)
         planes.append(pl)
-
     _trace_log(
         "[section-plane] built planes={} requested={} step_deg={:.4f} axis=({:.4f},{:.4f},{:.4f})".format(
             len(planes),
@@ -1940,126 +1531,19 @@ def _build_section_planes(
             float(axis.Z),
         )
     )
-
     return planes
-
-
-def _curve_control_points(curve: rg.Curve) -> List[rg.Point3d]:
-    pts: List[rg.Point3d] = []
-    nurbs = None
-    try:
-        nurbs = curve.ToNurbsCurve()
-    except Exception:
-        nurbs = None
-
-    if nurbs is not None:
-        try:
-            for i in range(nurbs.Points.Count):
-                pts.append(nurbs.Points[i].Location)
-            return pts
-        except Exception:
-            pts = []
-
-    try:
-        polyline = curve.ToPolyline(0, 0, 0, 0, 0, 0, True)
-        if polyline:
-            pts.extend([rg.Point3d(pt) for pt in polyline])
-    except Exception:
-        pass
-
-    return pts
-
-
-def _filter_points_by_z(
-    points: Sequence[rg.Point3d], low_z: float, high_z: float
-) -> List[rg.Point3d]:
-    return [pt for pt in points if low_z <= pt.Z <= high_z]
-
-
-def _sample_plane_section(
-    mesh: rg.Mesh,
-    plane: rg.Plane,
-    low_z: float,
-    high_z: float,
-) -> Tuple[List[rg.Point3d], List[rg.Curve], List[rg.Point3d]]:
-    try:
-        polylines = intersect.Intersection.MeshPlane(mesh, plane)
-    except Exception:
-        polylines = None
-
-    points: List[rg.Point3d] = []
-    curves: List[rg.Curve] = []
-    control_points: List[rg.Point3d] = []
-    if not polylines:
-        return points, curves, control_points
-
-    for pl in polylines:
-        if not pl:
-            continue
-        sample_pts = [rg.Point3d(pt) for pt in pl]
-        points.extend(sample_pts)
-        try:
-            poly_curve = rg.PolylineCurve(pl)
-        except Exception:
-            poly_curve = None
-        if poly_curve is not None:
-            curves.append(poly_curve)
-
-    filtered_points = _filter_points_by_z(points, low_z, high_z)
-    filtered_controls = _filter_points_by_z(control_points, low_z, high_z)
-    _trace_log(
-        "[section] plane_idx={} raw_pts={} ctrl_pts={} filtered_ctrls={}".format(
-            plane, len(points), len(control_points), len(filtered_controls)
-        )
-    )
-    return filtered_points, curves, filtered_controls
-
-
-def _collect_section_data(mesh: rg.Mesh, planes: Sequence[rg.Plane]):
-    sections = []
-    bbox = mesh.GetBoundingBox(True)
-    z_min = bbox.Min.Z
-    z_max = bbox.Max.Z
-    height = max(1e-6, z_max - z_min)
-
-    # _select_pt0와 동일한 20~70% 구간 필터
-    low_z = z_min + _Z_RATIO_LOW * height
-    high_z = z_min + _Z_RATIO_HIGH * height
-
-    for idx, plane in enumerate(planes):
-        pts, curves, ctrl_pts = _sample_plane_section(mesh, plane, low_z, high_z)
-        sections.append(
-            {
-                "index": idx,
-                "points": pts,
-                "curves": curves,
-                "controls": ctrl_pts,
-                "plane": plane,
-            }
-        )
-        _trace_log(
-            "[collect] plane_idx={} ctrl_candidates={} point_candidates={}".format(
-                idx, len(ctrl_pts), len(pts)
-            )
-        )
-    return sections
-
-
 def _sample_plane_section_all_points(
     mesh: rg.Mesh,
     plane: rg.Plane,
 ) -> Tuple[List[rg.Point3d], List[rg.Curve]]:
-    """단면 교차에서 Z 필터 없이 전체 후보를 수집한다(고속)."""
     try:
         polylines = intersect.Intersection.MeshPlane(mesh, plane)
     except Exception:
         polylines = None
-
     points: List[rg.Point3d] = []
     curves: List[rg.Curve] = []
     if not polylines:
         return points, curves
-
     for pl in polylines:
         if not pl:
             continue
@@ -2069,23 +1553,13 @@ def _sample_plane_section_all_points(
             curves.append(rg.PolylineCurve(pl))
         except Exception:
             pass
-
     return points, curves
-
-
 def _detect_finishline_points_max_radius_from_z_axis(
     mesh: rg.Mesh,
     planes: Sequence[rg.Plane],
     axis_dir: rg.Vector3d,
     ref_pt0: Optional[rg.Point3d] = None,
 ) -> Tuple[List[rg.Point3d], List[Dict[str, object]]]:
-    """원점을 지나는 경사축 기반 단면에서 "최대 반경" 후보를 순차 추적한다.
-
-    주의:
-    - 반경은 Z축(XY) 기준이 아니라 경사축(axis)까지의 거리로 계산
-    - 경사체 반쪽 누락을 막기 위해 world-Z band 대신 축 투영(axial) band를 사용
-    """
-
     axis = rg.Vector3d(axis_dir)
     if not axis.IsValid or axis.IsZero:
         axis = rg.Vector3d(0, 0, 1)
@@ -2095,15 +1569,12 @@ def _detect_finishline_points_max_radius_from_z_axis(
         axis = rg.Vector3d(0, 0, 1)
     if float(axis.Z) < 0.0:
         axis = rg.Vector3d(-axis.X, -axis.Y, -axis.Z)
-
     def _axial(pt: rg.Point3d) -> float:
         return float(pt.X * axis.X + pt.Y * axis.Y + pt.Z * axis.Z)
-
     try:
         vcount = int(mesh.Vertices.Count)
     except Exception:
         vcount = 0
-
     a_min = float("inf")
     a_max = -float("inf")
     for i in range(vcount):
@@ -2116,7 +1587,6 @@ def _detect_finishline_points_max_radius_from_z_axis(
                 a_max = a
         except Exception:
             continue
-
     if not math.isfinite(a_min) or not math.isfinite(a_max):
         a_low = -1e9
         a_high = 1e9
@@ -2124,16 +1594,13 @@ def _detect_finishline_points_max_radius_from_z_axis(
         a_span = max(1e-6, a_max - a_min)
         a_low = a_min + _MAXR_AXIS_RATIO_LOW * a_span
         a_high = a_min + _MAXR_AXIS_RATIO_HIGH * a_span
-
     def _radius(pt: rg.Point3d) -> float:
-        # 원점을 지나는 경사축(axis)까지의 거리: |p x axis|
         try:
             pv = rg.Vector3d(float(pt.X), float(pt.Y), float(pt.Z))
             cp = rg.Vector3d.CrossProduct(pv, axis)
             return float(cp.Length)
         except Exception:
             return 0.0
-
     def _max_radius_band(points: Sequence[rg.Point3d]) -> List[rg.Point3d]:
         if not points:
             return []
@@ -2152,13 +1619,11 @@ def _detect_finishline_points_max_radius_from_z_axis(
             return band
         best = max(valid, key=lambda item: item[0])[1]
         return [rg.Point3d(best)]
-
     traced: List[rg.Point3d] = []
     sections: List[Dict[str, object]] = []
     section_band_candidates: List[List[rg.Point3d]] = []
     section_dual_candidates: List[List[rg.Point3d]] = []
     section_reps: List[Tuple[int, rg.Point3d, float, float]] = []
-
     def _axis_basis(ax: rg.Vector3d):
         helper = rg.Vector3d(0, 0, 1)
         try:
@@ -2166,7 +1631,6 @@ def _detect_finishline_points_max_radius_from_z_axis(
                 helper = rg.Vector3d(1, 0, 0)
         except Exception:
             helper = rg.Vector3d(1, 0, 0)
-
         u = rg.Vector3d.CrossProduct(ax, helper)
         if not u.IsValid or u.IsZero:
             helper = rg.Vector3d(0, 1, 0)
@@ -2177,7 +1641,6 @@ def _detect_finishline_points_max_radius_from_z_axis(
             u.Unitize()
         except Exception:
             pass
-
         v = rg.Vector3d.CrossProduct(ax, u)
         if not v.IsValid or v.IsZero:
             v = rg.Vector3d(0, 1, 0)
@@ -2185,11 +1648,8 @@ def _detect_finishline_points_max_radius_from_z_axis(
             v.Unitize()
         except Exception:
             pass
-
         return u, v
-
     axis_u, axis_v = _axis_basis(axis)
-
     def _axis_azimuth(pt: rg.Point3d) -> float:
         try:
             uu = float(pt.X * axis_u.X + pt.Y * axis_u.Y + pt.Z * axis_u.Z)
@@ -2197,10 +1657,8 @@ def _detect_finishline_points_max_radius_from_z_axis(
             return float(math.atan2(vv, uu))
         except Exception:
             return 0.0
-
     def _wrap_pi(v: float) -> float:
         return float((v + math.pi) % (2.0 * math.pi) - math.pi)
-
     def _coverage_by_axis_azimuth(points: Sequence[rg.Point3d]) -> float:
         if not points:
             return 0.0
@@ -2224,7 +1682,6 @@ def _detect_finishline_points_max_radius_from_z_axis(
         if wrap_gap > max_gap:
             max_gap = wrap_gap
         return float(max(0.0, min(2.0 * math.pi, 2.0 * math.pi - max_gap)))
-
     def _order_by_axis_azimuth(points: Sequence[rg.Point3d]) -> List[rg.Point3d]:
         core = [rg.Point3d(p) for p in points if p is not None]
         if len(core) < 3:
@@ -2232,7 +1689,6 @@ def _detect_finishline_points_max_radius_from_z_axis(
         core.sort(key=lambda p: _axis_azimuth(p))
         core.append(rg.Point3d(core[0]))
         return core
-
     def _pick_dual_from_candidates(
         primary_band: Sequence[rg.Point3d],
         fallback_points: Sequence[rg.Point3d],
@@ -2240,7 +1696,6 @@ def _detect_finishline_points_max_radius_from_z_axis(
         pool_raw = list(primary_band or []) + list(fallback_points or [])
         if not pool_raw:
             return []
-
         valid: List[Tuple[float, float, rg.Point3d]] = []
         seen = set()
         for p in pool_raw:
@@ -2260,16 +1715,11 @@ def _detect_finishline_points_max_radius_from_z_axis(
                 )
             except Exception:
                 continue
-
         if not valid:
             return []
-
-        # 1) 최대 반경 대표점
         valid.sort(key=lambda t: t[0], reverse=True)
         p0 = valid[0][2]
         a0 = valid[0][1]
-
-        # 2) 반대편(약 180도) 대표점
         best2 = None
         best2_key = None
         for r, ang, pt in valid:
@@ -2284,37 +1734,28 @@ def _detect_finishline_points_max_radius_from_z_axis(
             if best2_key is None or key > best2_key:
                 best2_key = key
                 best2 = pt
-
         out = [rg.Point3d(p0)]
         if best2 is not None:
             try:
                 sep2 = abs(_wrap_pi(float(_axis_azimuth(best2)) - float(a0)))
             except Exception:
                 sep2 = 0.0
-            # 반대편 분기라고 볼 수 있는 각도 분리(최소 120도)
             if sep2 >= math.radians(120.0):
                 out.append(rg.Point3d(best2))
-
         return out
-
     pt0_z = None
     if ref_pt0 is not None:
         try:
             pt0_z = float(ref_pt0.Z)
         except Exception:
             pt0_z = None
-
     for idx, plane in enumerate(planes):
         pts_all, curves = _sample_plane_section_all_points(mesh, plane)
-
-        # 1차: 기존 축 투영 band
         pts_axis = [
             p
             for p in pts_all
             if (p is not None and a_low <= float(_axial(p)) <= a_high)
         ]
-
-        # 2차: pt0 중심 z-window (반쪽 누락 완화)
         if pt0_z is not None:
             z_low = float(pt0_z - float(_MAXR_PT0_Z_WINDOW_LOW))
             z_high = float(pt0_z + float(_MAXR_PT0_Z_WINDOW_HIGH))
@@ -2325,9 +1766,6 @@ def _detect_finishline_points_max_radius_from_z_axis(
             z_low = None
             z_high = None
             pts_z = []
-
-        # 필터 선택 우선순위:
-        # axis band가 충분하면 유지, 부족하면 z-window, 그래도 부족하면 전체
         if len(pts_axis) >= 8:
             pts = pts_axis
             filter_used = "axis"
@@ -2337,10 +1775,8 @@ def _detect_finishline_points_max_radius_from_z_axis(
         else:
             pts = [p for p in pts_all if p is not None]
             filter_used = "all"
-
         band = _max_radius_band(pts)
         dual = _pick_dual_from_candidates(band, pts)
-
         sections.append(
             {
                 "index": idx,
@@ -2352,7 +1788,6 @@ def _detect_finishline_points_max_radius_from_z_axis(
         )
         section_band_candidates.append(band)
         section_dual_candidates.append(dual)
-
         if band:
             try:
                 rep = max(band, key=lambda p: _radius(p))
@@ -2361,7 +1796,6 @@ def _detect_finishline_points_max_radius_from_z_axis(
                 section_reps.append((idx, rg.Point3d(rep), float(rep_r), float(rep_a)))
             except Exception:
                 pass
-
         _trace_log(
             "[max-r] collect plane_idx={} candidates={} axis_filtered={} z_filtered={} selected={} filter={} max_band={} dual={} axial_band=({:.3f},{:.3f}) z_window=({},{})".format(
                 idx,
@@ -2378,24 +1812,17 @@ def _detect_finishline_points_max_radius_from_z_axis(
                 "{:.3f}".format(z_high) if z_high is not None else "None",
             )
         )
-
     if not section_band_candidates or not section_reps:
         return traced, sections
-
     z_hint = _median([float(rep[1].Z) for rep in section_reps])
     if z_hint is None:
         z_hint = float(section_reps[0][1].Z)
-
     a_hint = _median([float(rep[3]) for rep in section_reps])
     if a_hint is None:
         a_hint = float(section_reps[0][3])
-
-    # 시작점: 전역 최대 반경 단일점이 아닌,
-    # "상위 반경 군" 안에서 axial 중앙값에 가까운 안정점 선택(점프 완화)
     reps_sorted = sorted(section_reps, key=lambda item: float(item[2]), reverse=True)
     top_n = max(1, int(round(len(reps_sorted) * 0.25)))
     top_reps = reps_sorted[:top_n]
-
     start_idx = -1
     start_pt = None
     best_key = None
@@ -2411,10 +1838,8 @@ def _detect_finishline_points_max_radius_from_z_axis(
             best_key = key
             start_idx = int(idx)
             start_pt = rg.Point3d(p)
-
     if start_idx < 0 or start_pt is None:
         return traced, sections
-
     _trace_log(
         "[max-r] start plane_idx={} pt=({:.6f},{:.6f},{:.6f}) r={:.6f} z_hint={:.6f} a_hint={:.6f}".format(
             start_idx,
@@ -2426,11 +1851,8 @@ def _detect_finishline_points_max_radius_from_z_axis(
             float(a_hint),
         )
     )
-
-    # A안: 기존 단일 branch 연속 추적
     traced_single: List[rg.Point3d] = [rg.Point3d(start_pt)]
     last = rg.Point3d(start_pt)
-
     total = len(section_band_candidates)
     for step in range(1, total):
         idx = (start_idx + step) % total
@@ -2440,7 +1862,6 @@ def _detect_finishline_points_max_radius_from_z_axis(
                 "[max-r] step={} plane_idx={} skipped(no max-band)".format(step, idx)
             )
             continue
-
         try:
             best_r = max(float(_radius(p)) for p in band)
             near = [p for p in band if float(_radius(p)) >= (best_r * 0.985)]
@@ -2457,7 +1878,6 @@ def _detect_finishline_points_max_radius_from_z_axis(
             )
         except Exception:
             best = band[0]
-
         new_pt = rg.Point3d(best)
         traced_single.append(new_pt)
         _trace_log(
@@ -2470,53 +1890,16 @@ def _detect_finishline_points_max_radius_from_z_axis(
             )
         )
         last = new_pt
-
     if len(traced_single) > 2:
         traced_single.append(rg.Point3d(traced_single[0]))
-
-    # B안: 각 단면의 양측 후보를 합쳐 360도 루프로 재구성
-    merged_dual: List[rg.Point3d] = []
-    seen = set()
-    for dual in section_dual_candidates:
-        for p in dual:
-            if p is None:
-                continue
-            try:
-                key = (
-                    int(round(float(p.X) * 1e6)),
-                    int(round(float(p.Y) * 1e6)),
-                    int(round(float(p.Z) * 1e6)),
-                )
-            except Exception:
-                continue
-            if key in seen:
-                continue
-            seen.add(key)
-            merged_dual.append(rg.Point3d(p))
-
+    merged_dual = _dedup_points_quantized(
+        [p for dual in section_dual_candidates for p in dual if p is not None]
+    )
     traced_dual = _order_by_axis_azimuth(merged_dual)
-
-    # C안: max-radius band 전체를 합쳐 축 방위각 기준으로 루프 재구성
-    merged_band: List[rg.Point3d] = []
-    seen_band = set()
-    for band in section_band_candidates:
-        for p in band:
-            if p is None:
-                continue
-            try:
-                key = (
-                    int(round(float(p.X) * 1e6)),
-                    int(round(float(p.Y) * 1e6)),
-                    int(round(float(p.Z) * 1e6)),
-                )
-            except Exception:
-                continue
-            if key in seen_band:
-                continue
-            seen_band.add(key)
-            merged_band.append(rg.Point3d(p))
+    merged_band = _dedup_points_quantized(
+        [p for band in section_band_candidates for p in band if p is not None]
+    )
     traced_band = _order_by_axis_azimuth(merged_band)
-
     cov_single = _coverage_by_axis_azimuth(
         traced_single[:-1] if len(traced_single) > 1 else traced_single
     )
@@ -2526,7 +1909,6 @@ def _detect_finishline_points_max_radius_from_z_axis(
     cov_band = _coverage_by_axis_azimuth(
         traced_band[:-1] if len(traced_band) > 1 else traced_band
     )
-
     _trace_log(
         "[max-r] coverage single={:.4f}rad pts_single={} dual={:.4f}rad pts_dual={} band={:.4f}rad pts_band={}".format(
             float(cov_single),
@@ -2537,24 +1919,17 @@ def _detect_finishline_points_max_radius_from_z_axis(
             len(traced_band),
         )
     )
-
-    # 단일 추적이 지나치게 sparse/저커버리지면, 재구성 루프를 우선 채택한다.
     single_sparse = len(traced_single) < max(10, len(planes) // 3)
     single_low_cov = cov_single < 4.8  # 약 275도 미만 커버
-
     candidates = [
         ("single_trace", traced_single, float(cov_single)),
         ("dual_reconstructed", traced_dual, float(cov_dual)),
         ("band_reconstructed", traced_band, float(cov_band)),
     ]
-
     def _candidate_key(item):
         name, pts, cov = item
         usable = 1 if (pts and len(pts) >= 8) else 0
-        # 기본은 coverage 우선, 동률이면 점 개수 우선
         return (usable, float(cov), len(pts) if pts else 0)
-
-    # sparse/저커버리지일 때는 재구성 루프 최우선
     if single_sparse or single_low_cov:
         recon_only = [c for c in candidates if c[0] != "single_trace"]
         recon_best = max(recon_only, key=_candidate_key) if recon_only else None
@@ -2568,264 +1943,39 @@ def _detect_finishline_points_max_radius_from_z_axis(
                 )
             )
             return traced, sections
-
-    # 일반 케이스: 전체 후보 중 최적 선택
     best = max(candidates, key=_candidate_key)
     traced = best[1] if best[1] else traced_single
     _trace_log("[max-r] selected={}".format(best[0]))
-
     return traced, sections
-
-
-def _select_outermost_nearby(
-    ref_point: rg.Point3d,
-    candidates: Sequence[rg.Point3d],
-    limit: int = _NEAREST_LIMIT,
-    max_distance: Optional[float] = None,
-    debug_label: Optional[str] = None,
-    return_details: bool = False,
-):
-    if not candidates:
-        return (None, []) if return_details else None
-
-    within_limit: List[Tuple[float, float, rg.Point3d]] = []
-    all_candidates: List[Tuple[float, float, rg.Point3d]] = []
-
-    for pt in candidates:
-        try:
-            dist = pt.DistanceTo(ref_point)
-            radius_sq = pt.X * pt.X + pt.Y * pt.Y
-            all_candidates.append((radius_sq, dist, pt))
-            if max_distance is not None and dist > (max_distance + _DIST_TOL):
-                continue
-            within_limit.append((radius_sq, dist, pt))
-        except Exception:
-            continue
-
-    def pick_best(items: Sequence[Tuple[float, float, rg.Point3d]]):
-        ordered = sorted(items, key=lambda item: (-item[0], item[1]))
-        limited = ordered[: max(1, limit)]
-        return limited[0][2], limited
-
-    if within_limit:
-        if debug_label and max_distance is not None:
-            detail = ", ".join(
-                "r={:.3f} d={:.3f}".format(math.sqrt(r_sq), dist)
-                for r_sq, dist, _ in within_limit
-            )
-            _trace_log(
-                "[filter] {} candidates (<= {:.3f}mm): {}".format(
-                    debug_label,
-                    max_distance,
-                    detail or "(none)",
-                )
-            )
-        best_pt, details = pick_best(within_limit)
-        return (best_pt, details) if return_details else best_pt
-
-    if all_candidates:
-        _trace_log(
-            "[trace] fallback: no candidates within {:.3f}mm, using outermost regardless".format(
-                max_distance or 0
-            )
-        )
-        best_pt, details = pick_best(all_candidates)
-        return (best_pt, details) if return_details else best_pt
-
-    return (None, []) if return_details else None
-
-
-# ---------------------------------------------------------------------------
-# 피니시라인 점 추출 (핵심 알고리즘)
-# ---------------------------------------------------------------------------
-_SIGNIFICANT_RATIO = 0.80  # 전역 max-u 대비 "의미있는" local max 비율 임계
-
-
-def _find_finishline_point_on_section(
-    plane: rg.Plane,
-    polylines: Sequence,
-) -> Optional[rg.Point3d]:
-    # LEGACY 비활성: 메시에지 추출 기반(C 전략)만 사용.
-    _trace_log("[legacy-disabled] _find_finishline_point_on_section")
-    return None
-
-
 def _order_by_azimuth(pts: Sequence[rg.Point3d]) -> List[rg.Point3d]:
     if not pts:
         return []
     ordered = sorted(pts, key=lambda p: math.atan2(p.Y, p.X))
     return [rg.Point3d(p) for p in ordered]
-
-
 def _normalize_loop_points(points: Sequence[rg.Point3d]) -> List[rg.Point3d]:
     if not points or len(points) < 4:
         return []
-
     core = [rg.Point3d(p) for p in points if p is not None]
     if len(core) < 4:
         return []
-
     try:
         is_closed = core[0].DistanceTo(core[-1]) <= 1e-4
     except Exception:
         is_closed = False
-
     if is_closed:
         core = core[:-1]
     if len(core) < 3:
         return []
-
     ordered = _order_by_azimuth(core)
     if len(ordered) < 3:
         return []
     ordered.append(rg.Point3d(ordered[0]))
     return ordered
-
-
-def _pick_start_pt(pt0: rg.Point3d, sections: Sequence[Dict[str, Sequence]]):
-    best = None
-    for idx, section in enumerate(sections):
-        candidates = _merge_candidates(
-            section.get("controls") or [], section.get("points") or []
-        )
-        # 시작점은 거리 제한 없이 pt0에서 가장 가까운 영역 중 외곽 선택
-        chosen = _select_outermost_nearby(
-            pt0,
-            candidates,
-            max_distance=None,
-            debug_label="start plane_idx={}".format(idx),
-        )
-        if chosen is not None:
-            dist = chosen.DistanceTo(pt0)
-            if best is None or dist < best[0]:
-                best = (dist, idx, chosen)
-    if best is None:
-        raise RuntimeError("단면 교차에서 어떤 점도 얻지 못했습니다")
-    return best[1], best[2]
-
-
-def _trace_finishline_points(
-    start_idx: int,
-    start_pt: rg.Point3d,
-    sections: Sequence[Dict[str, Sequence]],
-) -> Tuple[List[rg.Point3d], Dict[int, rg.Point3d]]:
-    total = len(sections)
-    if total == 0:
-        raise RuntimeError("Plane 후보가 없습니다")
-
-    traced: List[rg.Point3d] = [rg.Point3d(start_pt)]
-    last = rg.Point3d(start_pt)
-    section_points: Dict[int, rg.Point3d] = {start_idx: rg.Point3d(start_pt)}
-
-    for step in range(1, total):
-        idx = (start_idx + step) % total
-        candidates = _merge_candidates(
-            sections[idx].get("controls") or [],
-            sections[idx].get("points") or [],
-        )
-        _trace_log(
-            "[trace] step={} plane_idx={} ctrl_candidates={}".format(
-                step, idx, len(candidates)
-            )
-        )
-
-        # 3D 거리 1mm 제한 적용
-        best_pt = _select_outermost_nearby(
-            last,
-            candidates,
-            max_distance=_MAX_STEP_DISTANCE,
-            debug_label="step={} plane_idx={}".format(step, idx),
-        )
-
-        if best_pt is None:
-            all_sorted = (
-                sorted(candidates, key=lambda p: p.DistanceTo(last))
-                if candidates
-                else []
-            )
-            min_dist = all_sorted[0].DistanceTo(last) if all_sorted else -1
-            _trace_log(
-                "[trace] STOP: no candidates within {:.3f}mm at step {} (closest {:.3f}mm)".format(
-                    _MAX_STEP_DISTANCE, step, min_dist
-                )
-            )
-            break
-
-        new_pt = rg.Point3d(best_pt)
-        move_len = new_pt.DistanceTo(last)
-        _trace_log(
-            "[trace] step={} plane_idx={} move_len={:.4f}mm".format(step, idx, move_len)
-        )
-
-        if move_len > (_MAX_STEP_DISTANCE + _DIST_TOL):
-            _trace_log(
-                "[trace] ERROR: jump {:.3f}mm at step {}, terminating trace".format(
-                    move_len, step
-                )
-            )
-            break
-
-        section_points[idx] = new_pt
-        traced.append(new_pt)
-        last = new_pt
-
-    if len(traced) > 2:
-        traced.append(rg.Point3d(traced[0]))
-
-    return traced, section_points
-
-
-def _detect_finishline_points(
-    mesh: rg.Mesh,
-    planes: Sequence[rg.Plane],
-) -> Tuple[List[rg.Point3d], List[Dict[str, object]]]:
-    if not planes:
-        return [], []
-    pt0 = _select_pt0(mesh)
-    sections = _collect_section_data(mesh, planes)
-
-    # 간단한 섹션 요약 로깅
-    try:
-        counts = [
-            (s.get("index"), len(s.get("controls") or []), len(s.get("points") or []))
-            for s in sections
-        ]
-        _trace_log(
-            "[detect-sections] total={} per-section=(index,controls,points) sample={}".format(
-                len(sections), counts[:6]
-            )
-        )
-    except Exception:
-        _trace_log("[detect-sections] summary failed")
-
-    start_idx, start_pt = _pick_start_pt(pt0, sections)
-    _trace_log(
-        "[detect] start_idx={} start_pt=({:.6f},{:.6f},{:.6f})".format(
-            start_idx, start_pt.X, start_pt.Y, start_pt.Z
-        )
-    )
-
-    traced_points, section_points = _trace_finishline_points(
-        start_idx, start_pt, sections
-    )
-    _trace_log(
-        "[detect] traced_points_len={} section_points_count={}".format(
-            len(traced_points) if traced_points else 0, len(section_points)
-        )
-    )
-    return traced_points, sections
-
-
-# ---------------------------------------------------------------------------
-# Visualization
-# ---------------------------------------------------------------------------
 def _add_colored_object(doc: Rhino.RhinoDoc, geom, color: drawing.Color):
     attrs = rdo.ObjectAttributes()
     attrs.ObjectColor = color
     attrs.ColorSource = rdo.ObjectColorSource.ColorFromObject
     return doc.Objects.Add(geom, attrs)
-
-
 def _add_debug_finishline_polyline_curve(
     doc: Rhino.RhinoDoc,
     points: Sequence[rg.Point3d],
@@ -2837,23 +1987,18 @@ def _add_debug_finishline_polyline_curve(
         curve = rg.PolylineCurve(polyline)
     except Exception:
         return None
-
     try:
         obj_id = _add_colored_object(doc, curve, drawing.Color.FromArgb(0, 255, 255))
     except Exception:
         return None
-
     if obj_id == System.Guid.Empty:
         return None
-
     try:
         doc.Views.Redraw()
     except Exception:
         pass
-
     _trace_log("[debug] finishline polyline curve added id={}".format(obj_id))
     return str(obj_id)
-
 
 def _visualize(
     doc: Rhino.RhinoDoc,
@@ -2861,20 +2006,16 @@ def _visualize(
     points: Sequence[rg.Point3d],
 ) -> Dict[str, List[str]]:
     added_ids: Dict[str, List[str]] = {"points": [], "mesh": []}
-
     sphere = rg.Sphere(pt0, 0.1)
     sphere_id = _add_colored_object(
         doc, sphere.ToBrep(), drawing.Color.FromArgb(0, 200, 0)
     )
     added_ids["points"].append(str(sphere_id))
-
     if len(points) < 2:
         doc.Views.Redraw()
         return added_ids
-
     polyline = rg.Polyline(points)
     tube_curve = polyline.ToNurbsCurve()
-
     radii = System.Array[System.Double]([0.03])
     params = System.Array[System.Double]([tube_curve.Domain.T0])
     pipes = rg.Brep.CreatePipe(
@@ -2887,7 +2028,6 @@ def _visualize(
         doc.ModelAbsoluteTolerance,
         doc.ModelAngleToleranceRadians,
     )
-
     if pipes:
         for brep in pipes:
             obj_id = _add_colored_object(doc, brep, drawing.Color.FromArgb(220, 30, 30))
@@ -2897,7 +2037,6 @@ def _visualize(
             doc, tube_curve, drawing.Color.FromArgb(220, 30, 30)
         )
         added_ids["mesh"].append(str(obj_id))
-
     if _SHOW_POINT_TEXTDOTS:
         dot_ids: List[str] = []
         for idx, point in enumerate(points):
@@ -2911,21 +2050,15 @@ def _visualize(
                 dot_ids.append(str(dot_id))
             except Exception:
                 continue
-
         if dot_ids:
             added_ids["dots"] = dot_ids
-
     doc.Views.Redraw()
     return added_ids
-
-
 def _visualize_all_sections(
     doc: Rhino.RhinoDoc,
     sections: Sequence[Dict[str, object]],
 ) -> List[str]:
-    # 섹션 커브는 한 계열 색(하늘색)로 통일
     color = drawing.Color.FromArgb(100, 180, 255)
-
     ids: List[str] = []
     for section in sections:
         curves = section.get("curves") or []
@@ -2937,8 +2070,6 @@ def _visualize_all_sections(
             cid = _add_colored_object(doc, curve, color)
             ids.append(str(cid))
     return ids
-
-
 def _visualize_tracking_debug_objects(
     doc: Rhino.RhinoDoc,
     section_axis: Optional[rg.Vector3d],
@@ -2953,8 +2084,6 @@ def _visualize_tracking_debug_objects(
         "trace_curve": [],
         "max_band": [],
     }
-
-    # 1) 경사축 표시: "포스트 탑 ~ 마진(피니시라인)" 구간만 제한해서 그림
     try:
         axis = (
             rg.Vector3d(section_axis)
@@ -2966,10 +2095,8 @@ def _visualize_tracking_debug_objects(
         axis.Unitize()
         if float(axis.Z) < 0.0:
             axis = rg.Vector3d(-axis.X, -axis.Y, -axis.Z)
-
         def _axial(pt: rg.Point3d) -> float:
             return float(pt.X * axis.X + pt.Y * axis.Y + pt.Z * axis.Z)
-
         margin_axial = None
         if traced_points:
             vals = []
@@ -2983,7 +2110,6 @@ def _visualize_tracking_debug_objects(
             if vals:
                 vals.sort()
                 margin_axial = float(vals[len(vals) // 2])
-
         top_axial = None
         if mesh_for_axis is not None:
             try:
@@ -2998,23 +2124,16 @@ def _visualize_tracking_debug_objects(
                         top_axial = a
                 except Exception:
                     continue
-
-        # 기본 fallback: 과도하게 긴 선을 피하기 위해 짧은 길이 사용
         if margin_axial is None:
             margin_axial = 0.0
         if top_axial is None:
             top_axial = margin_axial + 8.0
-
-        # 포스트 탑 + 소량 margin까지만 (너무 길게 뻗는 문제 방지)
         top_axial = float(top_axial) + 0.8
         if top_axial < margin_axial:
             top_axial, margin_axial = margin_axial, top_axial
-
-        # 표시 길이 hard clamp
         seg_len = max(0.5, float(top_axial - margin_axial))
         if seg_len > 14.0:
             top_axial = margin_axial + 14.0
-
         p0 = rg.Point3d(
             axis.X * margin_axial,
             axis.Y * margin_axial,
@@ -3026,7 +2145,6 @@ def _visualize_tracking_debug_objects(
             axis.Z * top_axial,
         )
         axis_curve = rg.LineCurve(p0, p1)
-
         pipe = rg.Brep.CreatePipe(
             axis_curve,
             System.Array[System.Double]([0.10]),
@@ -3048,7 +2166,6 @@ def _visualize_tracking_debug_objects(
                 doc, axis_curve, drawing.Color.FromArgb(20, 230, 90)
             )
             ids["axis"].append(str(a1))
-
         tip = rg.Sphere(p1, 0.16)
         tid = _add_colored_object(
             doc, tip.ToBrep(), drawing.Color.FromArgb(20, 230, 90)
@@ -3056,8 +2173,6 @@ def _visualize_tracking_debug_objects(
         ids["axis"].append(str(tid))
     except Exception:
         pass
-
-    # 2) 섹션별 max-radius band 후보 (연보라 점)
     for section in sections:
         band = section.get("controls") or []
         for p in band:
@@ -3071,8 +2186,6 @@ def _visualize_tracking_debug_objects(
                 ids["max_band"].append(str(oid))
             except Exception:
                 continue
-
-    # 3) 시작점 (노랑)
     if traced_points and len(traced_points) >= 1 and traced_points[0] is not None:
         try:
             start_sphere = rg.Sphere(rg.Point3d(traced_points[0]), 0.12)
@@ -3082,8 +2195,6 @@ def _visualize_tracking_debug_objects(
             ids["start"].append(str(sid))
         except Exception:
             pass
-
-    # 4) 피니시라인 점들 (자홍)
     for p in traced_points or []:
         if p is None:
             continue
@@ -3095,8 +2206,6 @@ def _visualize_tracking_debug_objects(
             ids["trace_points"].append(str(oid))
         except Exception:
             continue
-
-    # 5) 피니시라인 폴리라인 (주황)
     try:
         if traced_points and len(traced_points) >= 2:
             pl = rg.Polyline([rg.Point3d(p) for p in traced_points if p is not None])
@@ -3105,256 +2214,175 @@ def _visualize_tracking_debug_objects(
             ids["trace_curve"].append(str(cid))
     except Exception:
         pass
-
     return ids
-
-
-# ---------------------------------------------------------------------------
-# Public entry point
-# ---------------------------------------------------------------------------
+def _accept_or_normalize_points(
+    points: Optional[List[rg.Point3d]],
+    label: str,
+    allow_raw_outlier: bool,
+) -> Tuple[Optional[List[rg.Point3d]], bool]:
+    if not points or len(points) < 3:
+        return None, False
+    ok_shape, reason = _validate_finishline_points(points)
+    if ok_shape:
+        return points, True
+    normalized = _normalize_loop_points(points)
+    if normalized and len(normalized) >= 4:
+        ok2, _ = _validate_finishline_points(normalized)
+        if ok2:
+            _trace_log(
+                "[detect] {} normalized by azimuth and accepted (prev_reason={})".format(
+                    label,
+                    reason,
+                )
+            )
+            return normalized, True
+    if allow_raw_outlier:
+        _trace_log("[detect] {} outlier warning (kept): {}".format(label, reason))
+        return points, True
+    _trace_log("[detect] {} rejected by outlier check: {}".format(label, reason))
+    return None, False
+def _run_edge_strategy(
+    doc: Rhino.RhinoDoc,
+    mesh: rg.Mesh,
+) -> Tuple[Optional[List[rg.Point3d]], str]:
+    traced_points, strategy_used = _detect_finishline_points_edge(doc, mesh)
+    _trace_log(
+        "[detect] edge strategy returned pts={} strategy={}".format(
+            len(traced_points) if traced_points else 0,
+            strategy_used,
+        )
+    )
+    if not traced_points or len(traced_points) < 3:
+        return None, strategy_used
+    edge_min_z = _points_min_z(traced_points)
+    if edge_min_z is not None and edge_min_z <= _EDGE_MIN_Z_VALID_THRESHOLD_MM:
+        _trace_log(
+            "[detect] edge result rejected min_z={:.6f} <= {:.3f}; fallback=section_tracking".format(
+                edge_min_z,
+                _EDGE_MIN_Z_VALID_THRESHOLD_MM,
+            )
+        )
+        return None, strategy_used
+    accepted, ok = _accept_or_normalize_points(
+        traced_points,
+        label="edge result",
+        allow_raw_outlier=False,
+    )
+    return accepted if ok else None, strategy_used
+def _run_section_strategy(
+    mesh: rg.Mesh,
+    pt0: rg.Point3d,
+    pt0_radius: Optional[float],
+) -> Tuple[Optional[List[rg.Point3d]], List[Dict[str, object]], rg.Vector3d, str]:
+    sections: List[Dict[str, object]] = []
+    section_axis = _estimate_tilt_axis(mesh)
+    planes = _build_section_planes(
+        count=_SECTION_COUNT,
+        step_deg=_SECTION_STEP_DEG,
+        axis_dir=section_axis,
+    )
+    try:
+        traced_points, sections = _detect_finishline_points_max_radius_from_z_axis(
+            mesh,
+            planes,
+            axis_dir=section_axis,
+            ref_pt0=pt0,
+        )
+    except Exception as e:
+        _trace_log("[detect] section tracking raised exception: {}".format(str(e)))
+        traced_points = None
+        sections = []
+    if not traced_points or len(traced_points) < 3:
+        legacy_pts = _extract_lowest_boundary_loop_points(
+            mesh,
+            ref_pt0=pt0,
+            ref_pt0_radius=pt0_radius,
+        )
+        if legacy_pts and len(legacy_pts) >= 3:
+            return legacy_pts, sections, section_axis, "LEGACY_LOWEST_BOUNDARY"
+        return None, sections, section_axis, "SECTION_FAILED"
+    accepted, ok = _accept_or_normalize_points(
+        traced_points,
+        label="section result",
+        allow_raw_outlier=True,
+    )
+    if not ok:
+        return None, sections, section_axis, "SECTION_FAILED"
+    return accepted, sections, section_axis, "SECTION_MAX_RADIUS_TRACK_{}x{:.1f}_FALLBACK".format(
+        _SECTION_COUNT,
+        float(_SECTION_STEP_DEG),
+    )
+def _build_detect_failure_message(mesh: rg.Mesh, bbox) -> str:
+    try:
+        comp_count = len(_explode_components_sorted_by_max_z(mesh))
+    except Exception:
+        comp_count = -1
+    return (
+        "edge/단면추적 모두 피니시라인 점을 찾지 못했습니다 | "
+        "mesh_v={} mesh_f={} zmin={:.6f} zmax={:.6f} components={}"
+    ).format(
+        mesh.Vertices.Count if hasattr(mesh, "Vertices") else -1,
+        mesh.Faces.Count if hasattr(mesh, "Faces") else -1,
+        float(bbox.Min.Z) if bbox is not None else float("nan"),
+        float(bbox.Max.Z) if bbox is not None else float("nan"),
+        comp_count,
+    )
 def detect_finish_line(
     doc: Optional[Rhino.RhinoDoc] = None,
     mesh_id=None,
     visualize: bool = True,
-    strategy: str = "A",  # 호환성 유지용 (A만 지원)
+    strategy: str = "A",
 ) -> Dict[str, object]:
-    """피니시라인 계산 우선순위:
-    1) Edge 추출 기반
-    2) 단면 추적(40개 XZ 평면)
-
-    추가 로깅: 실패 원인을 추적하기 위해 메시(bbox, vertex/face counts), pt0,
-    per-strategy 요약 정보를 _trace_log로 남깁니다.
-    """
     doc = _get_active_doc(doc)
     mesh_obj, mesh_geom = _pick_primary_mesh(doc, mesh_id=mesh_id)
-    try:
-        _trace_log(
-            "[detect] target mesh id={} provided_mesh_id={}".format(
-                mesh_obj.Id,
-                mesh_id,
-            )
-        )
-    except Exception:
-        pass
     mesh_copy = mesh_geom.DuplicateMesh()
     if mesh_copy is None:
         raise RuntimeError("Mesh 복제에 실패했습니다")
-
-    # 기본 메쉬 정보 로깅
     try:
         bbox = mesh_copy.GetBoundingBox(True)
-        vcount = mesh_copy.Vertices.Count
-        fcount = mesh_copy.Faces.Count
-        zmin = float(bbox.Min.Z)
-        zmax = float(bbox.Max.Z)
-        height = max(1e-6, zmax - zmin)
-        _trace_log(
-            "[detect] mesh v={} f={} z_min={:.6f} z_max={:.6f} height={:.6f}".format(
-                vcount, fcount, zmin, zmax, height
-            )
-        )
-    except Exception as e:
-        _trace_log("[detect] mesh info read failed: {}".format(str(e)))
-
+    except Exception:
+        bbox = None
     pt0 = _select_pt0(mesh_copy)
     try:
         pt0_radius = float(math.sqrt(pt0.X * pt0.X + pt0.Y * pt0.Y))
     except Exception:
         pt0_radius = None
-    _trace_log(
-        "[detect] selected pt0 x={:.6f} y={:.6f} z={:.6f} r={}".format(
-            pt0.X,
-            pt0.Y,
-            pt0.Z,
-            pt0_radius if pt0_radius is not None else float("nan"),
-        )
-    )
-
+    traced_points, strategy_used = _run_edge_strategy(doc, mesh_copy)
     sections: List[Dict[str, object]] = []
     section_axis = rg.Vector3d(0, 0, 1)
-
-    # 1) Edge 기반 시도
-    traced_points, strategy_used = _detect_finishline_points_edge(doc, mesh_copy)
-    _trace_log(
-        "[detect] edge strategy returned pts={} strategy={}".format(
-            len(traced_points) if traced_points else 0, strategy_used
+    if not traced_points:
+        traced_points, sections, section_axis, strategy_used = _run_section_strategy(
+            mesh_copy,
+            pt0,
+            pt0_radius,
         )
-    )
-    if traced_points and len(traced_points) >= 3:
-        edge_min_z = _points_min_z(traced_points)
-        _trace_log(
-            "[detect] edge result min_z={}".format(
-                edge_min_z if edge_min_z is not None else float("nan")
-            )
-        )
-        if edge_min_z is not None and edge_min_z <= _EDGE_MIN_Z_VALID_THRESHOLD_MM:
-            _trace_log(
-                "[detect] edge result rejected min_z={:.6f} <= {:.3f}; fallback=section_tracking".format(
-                    edge_min_z,
-                    _EDGE_MIN_Z_VALID_THRESHOLD_MM,
-                )
-            )
-            traced_points = None
-        else:
-            ok_shape, reason = _validate_finishline_points(traced_points)
-            if not ok_shape:
-                normalized = _normalize_loop_points(traced_points)
-                if normalized and len(normalized) >= 4:
-                    ok2, reason2 = _validate_finishline_points(normalized)
-                    if ok2:
-                        _trace_log(
-                            "[detect] edge result normalized by azimuth and accepted (prev_reason={})".format(
-                                reason
-                            )
-                        )
-                        traced_points = normalized
-                        ok_shape = True
-                        reason = "normalized_from:{}".format(reason)
-                if not ok_shape:
-                    _trace_log(
-                        "[detect] edge result rejected by outlier check: {}; fallback=section_tracking".format(
-                            reason
-                        )
-                    )
-                    traced_points = None
-
-    # 2) 단면 추적(fallback)
     if not traced_points or len(traced_points) < 3:
-        section_axis = _estimate_tilt_axis(mesh_copy)
-        planes = _build_section_planes(
-            count=_SECTION_COUNT,
-            step_deg=_SECTION_STEP_DEG,
-            axis_dir=section_axis,
-        )
-        _trace_log(
-            "[detect] starting section tracking planes={} step_deg={} axis=({:.6f},{:.6f},{:.6f}) mode=max_radius_sequential".format(
-                len(planes),
-                _SECTION_STEP_DEG,
-                float(section_axis.X),
-                float(section_axis.Y),
-                float(section_axis.Z),
-            )
-        )
-        try:
-            traced_points, sections = _detect_finishline_points_max_radius_from_z_axis(
-                mesh_copy,
-                planes,
-                axis_dir=section_axis,
-                ref_pt0=pt0,
-            )
-        except Exception as e:
-            # 내부 에러도 포함해서 진단 로그에 남김
-            _trace_log("[detect] section tracking raised exception: {}".format(str(e)))
-            traced_points = None
-            sections = []
-
-        _trace_log(
-            "[detect] section strategy returned pts={}".format(
-                len(traced_points) if traced_points else 0
-            )
-        )
-        if not traced_points or len(traced_points) < 3:
-            # 우선 간단한 legacy naked-edge 루프를 시도해본다(포스트/작은 파편이 섞인 경우 유용할 수 있음)
-            legacy_pts = _extract_lowest_boundary_loop_points(
-                mesh_copy,
-                ref_pt0=pt0,
-                ref_pt0_radius=pt0_radius,
-            )
-            if legacy_pts and len(legacy_pts) >= 3:
-                _trace_log(
-                    "[detect] legacy lowest boundary provided pts={}".format(
-                        len(legacy_pts)
-                    )
-                )
-                traced_points = legacy_pts
-                strategy_used = "LEGACY_LOWEST_BOUNDARY"
-            else:
-                # 실패시 상세 진단 메시지 생성
-                try:
-                    comp_count = len(_explode_components_sorted_by_max_z(mesh_copy))
-                except Exception:
-                    comp_count = -1
-                msg = (
-                    "edge/단면추적 모두 피니시라인 점을 찾지 못했습니다 | "
-                    "mesh_v={} mesh_f={} zmin={:.6f} zmax={:.6f} components={}"
-                ).format(
-                    mesh_copy.Vertices.Count if hasattr(mesh_copy, "Vertices") else -1,
-                    mesh_copy.Faces.Count if hasattr(mesh_copy, "Faces") else -1,
-                    float(bbox.Min.Z) if "bbox" in locals() else float("nan"),
-                    float(bbox.Max.Z) if "bbox" in locals() else float("nan"),
-                    comp_count,
-                )
-                _trace_log("[detect] " + msg)
-                raise RuntimeError(msg)
-        else:
-            ok_shape, reason = _validate_finishline_points(traced_points)
-            if not ok_shape:
-                normalized = _normalize_loop_points(traced_points)
-                if normalized and len(normalized) >= 4:
-                    ok2, reason2 = _validate_finishline_points(normalized)
-                    if ok2:
-                        _trace_log(
-                            "[detect] section result normalized by azimuth and accepted (prev_reason={})".format(
-                                reason
-                            )
-                        )
-                        traced_points = normalized
-                        ok_shape = True
-                        reason = "normalized_from:{}".format(reason)
-                if not ok_shape:
-                    # max-radius sequential 추적은 디버깅/시각화 우선: outlier여도 결과를 반환한다.
-                    _trace_log(
-                        "[detect] section result outlier warning (kept): {}".format(
-                            reason
-                        )
-                    )
-                    strategy_used = (
-                        "SECTION_MAX_RADIUS_TRACK_{}x{:.1f}_RAW_OUTLIER".format(
-                            _SECTION_COUNT, float(_SECTION_STEP_DEG)
-                        )
-                    )
-                    ok_shape = True
-
-            if ok_shape and not str(strategy_used or "").startswith(
-                "SECTION_MAX_RADIUS_TRACK_"
-            ):
-                strategy_used = "SECTION_MAX_RADIUS_TRACK_{}x{:.1f}_FALLBACK".format(
-                    _SECTION_COUNT, float(_SECTION_STEP_DEG)
-                )
-
-        # Visualization hooks
+        msg = _build_detect_failure_message(mesh_copy, bbox)
+        _trace_log("[detect] " + msg)
+        raise RuntimeError(msg)
+    min_z_point, min_z, max_z_point, max_z = _points_z_extrema(traced_points)
     viz_ids: Dict[str, List[str]] = {"points": [], "mesh": []}
     if _DEBUG_ADD_POLYLINE_CURVE:
         debug_curve_id = _add_debug_finishline_polyline_curve(doc, traced_points)
         if debug_curve_id:
             viz_ids["debug_curve"] = [debug_curve_id]
-
     if visualize:
-        base_viz = _visualize(doc, pt0, traced_points or [])
-        for key, values in base_viz.items():
+        for key, values in _visualize(doc, pt0, traced_points).items():
             viz_ids[key] = values
-
         debug_viz = _visualize_tracking_debug_objects(
             doc=doc,
             section_axis=section_axis,
             sections=sections,
-            traced_points=traced_points or [],
+            traced_points=traced_points,
             mesh_for_axis=mesh_copy,
         )
         for key, values in debug_viz.items():
             if values:
                 viz_ids[key] = values
-
         if _SHOW_ALL_SECTION_CURVES:
             section_ids = _visualize_all_sections(doc, sections)
             if section_ids:
                 viz_ids["sections"] = section_ids
-
-    # 결과 반환
-    # - finishline 높이 메타데이터 SSOT는 max_z/min_z로 통일한다.
-    # - 좌표 재탐색 비용을 줄이기 위해 extrema point(max_z_point/min_z_point)도 함께 반환한다.
-    min_z_point, min_z, max_z_point, max_z = _points_z_extrema(traced_points or [])
-
     return {
         "pt0": pt0,
         "points": traced_points,
@@ -3364,23 +2392,9 @@ def detect_finish_line(
         "strategy_used": strategy_used,
         "max_z": max_z,
         "min_z": min_z,
-        "max_z_point": [
-            float(max_z_point.X),
-            float(max_z_point.Y),
-            float(max_z_point.Z),
-        ]
-        if max_z_point is not None
-        else None,
-        "min_z_point": [
-            float(min_z_point.X),
-            float(min_z_point.Y),
-            float(min_z_point.Z),
-        ]
-        if min_z_point is not None
-        else None,
+        "max_z_point": [float(max_z_point.X), float(max_z_point.Y), float(max_z_point.Z)] if max_z_point is not None else None,
+        "min_z_point": [float(min_z_point.X), float(min_z_point.Y), float(min_z_point.Z)] if min_z_point is not None else None,
     }
-
-
 def main():
     result = detect_finish_line()
     print(
@@ -3389,7 +2403,5 @@ def main():
         "pts=",
         len(result["points"]),
     )
-
-
 if __name__ == "__main__":
     main()

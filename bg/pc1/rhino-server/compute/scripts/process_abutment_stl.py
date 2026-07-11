@@ -239,10 +239,22 @@ def _post_finish_line(request_id: str, input_file_name: str, finish_line: dict):
         import System.Net.Http
         import System.Text
 
-        backend = (
-            os.environ.get("BACKEND_BASE", "https://abuts.fit/api").strip().rstrip("/")
-        )
+        # 백엔드 URL 해석 우선순위(하위호환):
+        # 1) BACKEND_BASE (신규 표준)
+        # 2) BACKEND_URL  (레거시 rhino-server 환경)
+        # 3) 기본값       (운영)
+        backend = str(os.environ.get("BACKEND_BASE") or "").strip().rstrip("/")
+        if not backend:
+            backend = str(os.environ.get("BACKEND_URL") or "").strip().rstrip("/")
+        if not backend:
+            backend = "https://abuts.fit/api"
+
+        # BACKEND_BASE/BACKEND_URL에 /api가 빠진 경우 보정
+        if not backend.lower().endswith("/api"):
+            backend = backend + "/api"
+
         url = backend + "/bg/register-finish-line"
+        log("finishline post url=" + str(url))
 
         payload = {
             "requestId": request_id,

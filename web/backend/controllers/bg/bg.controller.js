@@ -1329,13 +1329,13 @@ export const getRequestMeta = asyncHandler(async (req, res) => {
           finishLine:
             Array.isArray(finishLinePoints) && finishLinePoints.length >= 2
               ? {
-                  points: finishLinePoints,
-                  max_z: normalizedFinishLine?.max_z,
-                  min_z: normalizedFinishLine?.min_z,
-                  max_z_point: normalizedFinishLine?.max_z_point,
-                  min_z_point: normalizedFinishLine?.min_z_point,
-                }
-              : null,
+                points: finishLinePoints,
+                max_z: normalizedFinishLine?.max_z,
+                min_z: normalizedFinishLine?.min_z,
+                max_z_point: normalizedFinishLine?.max_z_point,
+                min_z_point: normalizedFinishLine?.min_z_point,
+              }
+            : null,
         },
       },
       "Request meta",

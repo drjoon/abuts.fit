@@ -215,6 +215,8 @@ export const PreviewModal = ({
 
   const { maxZ: finishLineMaxZ, minZ: finishLineMinZ } = getFinishLineExtremaZ();
 
+
+
   const currentReviewStageKey = getReviewStageKeyByTab({
     stage,
     isCamStage,
