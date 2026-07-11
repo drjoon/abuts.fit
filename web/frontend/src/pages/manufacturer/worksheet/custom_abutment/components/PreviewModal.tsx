@@ -183,8 +183,37 @@ export const PreviewModal = ({
   };
 
   const finishLinePoints = ((previewFiles.finishLinePoints ??
-    activeReq?.caseInfos?.finishLine?.points) ||
+    activeReq?.caseInfos?.finishLine?.points ??
+    stlMetadata?.finishLine?.points) ||
     null) as number[][] | null;
+
+  const getFinishLineExtremaZ = () => {
+    const metaMax = Number(stlMetadata?.finishLine?.max_z);
+    const metaMin = Number(stlMetadata?.finishLine?.min_z);
+    if (Number.isFinite(metaMax) && Number.isFinite(metaMin)) {
+      return { maxZ: metaMax, minZ: metaMin };
+    }
+
+    const reqMax = Number(activeReq?.caseInfos?.finishLine?.max_z);
+    const reqMin = Number(activeReq?.caseInfos?.finishLine?.min_z);
+    if (Number.isFinite(reqMax) && Number.isFinite(reqMin)) {
+      return { maxZ: reqMax, minZ: reqMin };
+    }
+
+    if (Array.isArray(finishLinePoints) && finishLinePoints.length > 0) {
+      const zs = finishLinePoints
+        .filter((p) => Array.isArray(p) && p.length >= 3)
+        .map((p) => Number(p[2]))
+        .filter((z) => Number.isFinite(z));
+      if (zs.length > 0) {
+        return { maxZ: Math.max(...zs), minZ: Math.min(...zs) };
+      }
+    }
+
+    return { maxZ: null as number | null, minZ: null as number | null };
+  };
+
+  const { maxZ: finishLineMaxZ, minZ: finishLineMinZ } = getFinishLineExtremaZ();
 
   const currentReviewStageKey = getReviewStageKeyByTab({
     stage,
@@ -749,14 +778,52 @@ export const PreviewModal = ({
                       유지홈 {retentionGrooveLabel}
                     </Badge>
                   )}
+                  {Number.isFinite(finishLineMaxZ) && (
+                    <Badge
+                      variant="outline"
+                      className="text-[11px] px-2 py-0.5 font-semibold leading-[1.1] border border-emerald-200 bg-emerald-50 text-emerald-700"
+                    >
+                      max_z {Number(finishLineMaxZ).toFixed(2)}
+                    </Badge>
+                  )}
+                  {Number.isFinite(finishLineMinZ) && (
+                    <Badge
+                      variant="outline"
+                      className="text-[11px] px-2 py-0.5 font-semibold leading-[1.1] border border-emerald-200 bg-emerald-50 text-emerald-700"
+                    >
+                      min_z {Number(finishLineMinZ).toFixed(2)}
+                    </Badge>
+                  )}
                 </div>
-              ) : retentionGrooveLabel ? (
-                <Badge
-                  variant="outline"
-                  className="text-[11px] px-2 py-0.5 font-semibold leading-[1.1] border border-amber-200 bg-amber-50 text-amber-700"
-                >
-                  유지홈 {retentionGrooveLabel}
-                </Badge>
+              ) : retentionGrooveLabel ||
+                Number.isFinite(finishLineMaxZ) ||
+                Number.isFinite(finishLineMinZ) ? (
+                <div className="flex items-center gap-1.5">
+                  {retentionGrooveLabel && (
+                    <Badge
+                      variant="outline"
+                      className="text-[11px] px-2 py-0.5 font-semibold leading-[1.1] border border-amber-200 bg-amber-50 text-amber-700"
+                    >
+                      유지홈 {retentionGrooveLabel}
+                    </Badge>
+                  )}
+                  {Number.isFinite(finishLineMaxZ) && (
+                    <Badge
+                      variant="outline"
+                      className="text-[11px] px-2 py-0.5 font-semibold leading-[1.1] border border-emerald-200 bg-emerald-50 text-emerald-700"
+                    >
+                      max_z {Number(finishLineMaxZ).toFixed(2)}
+                    </Badge>
+                  )}
+                  {Number.isFinite(finishLineMinZ) && (
+                    <Badge
+                      variant="outline"
+                      className="text-[11px] px-2 py-0.5 font-semibold leading-[1.1] border border-emerald-200 bg-emerald-50 text-emerald-700"
+                    >
+                      min_z {Number(finishLineMinZ).toFixed(2)}
+                    </Badge>
+                  )}
+                </div>
               ) : null}
 
               <Button

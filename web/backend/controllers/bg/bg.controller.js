@@ -202,6 +202,36 @@ const buildStoredFileMeta = ({
   return meta;
 };
 
+const normalizeFinishLineWithZExtrema = (finishLine) => {
+  // finishline Z 메타데이터 SSOT 정책
+  // - 레거시 별칭(top_z 등)은 저장/반환하지 않는다.
+  // - `max_z`, `min_z`, `max_z_point`, `min_z_point`만 canonical 필드로 사용한다.
+  // - 값 일관성을 위해 payload에 값이 있더라도 points 기준으로 서버에서 재계산해 덮어쓴다.
+  const pointsRaw = Array.isArray(finishLine?.points) ? finishLine.points : [];
+  const points = pointsRaw
+    .filter((p) => Array.isArray(p) && p.length >= 3)
+    .map((p) => [Number(p[0]), Number(p[1]), Number(p[2])])
+    .filter((p) => p.every((v) => Number.isFinite(v)));
+
+  if (points.length < 2) return null;
+
+  let minIdx = 0;
+  let maxIdx = 0;
+  for (let i = 1; i < points.length; i += 1) {
+    if (points[i][2] < points[minIdx][2]) minIdx = i;
+    if (points[i][2] > points[maxIdx][2]) maxIdx = i;
+  }
+
+  return {
+    ...(finishLine || {}),
+    points,
+    min_z: points[minIdx][2],
+    max_z: points[maxIdx][2],
+    min_z_point: points[minIdx],
+    max_z_point: points[maxIdx],
+  };
+};
+
 export const registerFinishLine = asyncHandler(async (req, res) => {
   const { requestId, filePath, finishLine } = req.body || {};
   const now = new Date();
@@ -278,13 +308,13 @@ export const registerFinishLine = asyncHandler(async (req, res) => {
       );
   }
 
-  const points = finishLine?.points;
-  if (!Array.isArray(points) || points.length < 2) {
-    throw new ApiError(400, "finishLine.points must have at least 2 points");
+  const safeFinishLineCore = normalizeFinishLineWithZExtrema(finishLine);
+  if (!safeFinishLineCore) {
+    throw new ApiError(400, "finishLine.points must have at least 2 valid xyz points");
   }
 
   const safeFinishLine = {
-    ...finishLine,
+    ...safeFinishLineCore,
     updatedAt: now,
   };
   request.caseInfos = request.caseInfos || {};
@@ -752,10 +782,12 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
       }
     }
 
-    const finishLinePoints = metadata.finishLine?.points;
-    if (Array.isArray(finishLinePoints) && finishLinePoints.length >= 2) {
+    const normalizedFinishLine = normalizeFinishLineWithZExtrema(
+      metadata.finishLine,
+    );
+    if (normalizedFinishLine) {
       metadataUpdates["caseInfos.finishLine"] = {
-        ...metadata.finishLine,
+        ...normalizedFinishLine,
         updatedAt: now,
       };
     }
@@ -1223,12 +1255,13 @@ export const getRequestMeta = asyncHandler(async (req, res) => {
   }
 
   const ci = request.caseInfos || {};
-  const finishLinePoints = Array.isArray(ci?.finishLine?.points)
-    ? ci.finishLine.points
+  const normalizedFinishLine = normalizeFinishLineWithZExtrema(ci?.finishLine);
+  const finishLinePoints = Array.isArray(normalizedFinishLine?.points)
+    ? normalizedFinishLine.points
     : null;
   if (Array.isArray(finishLinePoints) && finishLinePoints.length >= 2) {
     console.log(
-      `[BG] getRequestMeta: finishLine points available requestId=${request.requestId} count=${finishLinePoints.length}`,
+      `[BG] getRequestMeta: finishLine points available requestId=${request.requestId} count=${finishLinePoints.length} max_z=${normalizedFinishLine?.max_z} min_z=${normalizedFinishLine?.min_z}`,
     );
   }
   // PRC 파일명: DB에 저장된 값 우선, 없으면 임플란트 정보로 동적 계산
@@ -1295,7 +1328,13 @@ export const getRequestMeta = asyncHandler(async (req, res) => {
           connectionPrcFileName: resolvedPrcFiles.connectionPrcFileName,
           finishLine:
             Array.isArray(finishLinePoints) && finishLinePoints.length >= 2
-              ? { points: finishLinePoints }
+              ? {
+                  points: finishLinePoints,
+                  max_z: normalizedFinishLine?.max_z,
+                  min_z: normalizedFinishLine?.min_z,
+                  max_z_point: normalizedFinishLine?.max_z_point,
+                  min_z_point: normalizedFinishLine?.min_z_point,
+                }
               : null,
         },
       },
@@ -1811,6 +1850,8 @@ export const registerStlMetadata = asyncHandler(async (req, res) => {
     frontPoint,
     taperGuide: request.caseInfos?.taperGuide,
     hexRotation: request.caseInfos?.hexRotation,
+    // finishline 높이 메타데이터는 max_z/min_z SSOT로만 전달
+    finishLine: request.caseInfos?.finishLine || null,
   };
 
   try {
@@ -1857,6 +1898,7 @@ export const registerStlMetadata = asyncHandler(async (req, res) => {
           tiltAxisVector,
           frontPoint,
           hexRotation: request.caseInfos?.hexRotation,
+          finishLine: request.caseInfos?.finishLine || null,
         },
       },
       "STL metadata registered",
@@ -1890,6 +1932,8 @@ export const getStlMetadata = asyncHandler(async (req, res) => {
     frontPoint: request.caseInfos?.frontPoint,
     taperGuide: request.caseInfos?.taperGuide,
     hexRotation: request.caseInfos?.hexRotation,
+    // PreviewModal(useStlMetadata)에서 finishline extrema를 바로 사용하도록 포함
+    finishLine: request.caseInfos?.finishLine || null,
   };
 
   console.log(
@@ -1900,7 +1944,9 @@ export const getStlMetadata = asyncHandler(async (req, res) => {
       `totalLength=${metadata.totalLength} ` +
       `l1=${metadata.l1} ` +
       `l2=${metadata.l2} ` +
-      `taperAngle=${metadata.taperAngle}`,
+      `taperAngle=${metadata.taperAngle} ` +
+      `finishLine.max_z=${metadata.finishLine?.max_z} ` +
+      `finishLine.min_z=${metadata.finishLine?.min_z}`,
   );
 
   return res.status(200).json(

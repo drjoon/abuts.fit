@@ -357,6 +357,19 @@ const requestSchema = new mongoose.Schema(
           type: [Number],
           default: undefined,
         },
+        // finishline 높이 SSOT
+        // - 레거시 top_z 별칭은 사용하지 않고 max_z/min_z로 통일한다.
+        // - point도 함께 저장해 downstream에서 동일 기준점을 재사용한다.
+        max_z: Number,
+        min_z: Number,
+        max_z_point: {
+          type: [Number],
+          default: undefined,
+        },
+        min_z_point: {
+          type: [Number],
+          default: undefined,
+        },
         updatedAt: {
           type: Date,
           default: Date.now,

@@ -1843,6 +1843,8 @@ rhino-server (Python)
    - taperAngle (테이퍼 각도)
    - tiltAxisVector (경사축 벡터)
    - frontPoint (프론트 포인트)
+   - finishLine.max_z / finishLine.min_z (피니시라인 Z extrema)
+   - finishLine.max_z_point / finishLine.min_z_point (extrema 대표 포인트)
   ↓
 4) 백엔드에 등록
    - /bg/register-file (CAM 파일)
@@ -1874,8 +1876,20 @@ rhino-server (Python)
 - finish line이 있을 때만 다음 메타데이터를 계산합니다:
   - maxDiameter, connectionDiameter, totalLength (기본)
   - taperAngle, tiltAxisVector, frontPoint (finish line 기반)
+  - finishLine.max_z/min_z + max_z_point/min_z_point (finishline payload 기반)
+- finishline 높이 필드 명칭 SSOT는 `max_z`, `min_z`입니다.
+  - 레거시 별칭(`top_z`)은 저장/반환/표시에 사용하지 않습니다.
 - 재계산 API 호출 시 finish line이 없으면 400 에러를 반환합니다.
 - 초기 처리 시 finish line이 없으면 메타데이터 계산을 건너뜁니다.
+
+관련 파일:
+- `bg/pc1/rhino-server/compute/scripts/finishline_detection.py`
+- `bg/pc1/rhino-server/compute/scripts/process_abutment_stl.py`
+- `web/backend/controllers/bg/bg.controller.js`
+- `web/backend/models/request.model.js`
+- `web/frontend/src/features/requests/hooks/useStlMetadata.ts`
+- `web/frontend/src/features/requests/components/StlPreviewViewer.tsx`
+- `web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx`
 
 ## 10. Brevo 인바운드 이메일 수신
 

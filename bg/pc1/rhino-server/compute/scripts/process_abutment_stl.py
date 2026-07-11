@@ -79,6 +79,67 @@ def _extract_request_id_from_path(p: str):
         return None
 
 
+def _extract_finishline_z_extrema(points):
+    """finishline 점열에서 Z extrema와 대표점(min/max)을 계산한다.
+
+    반환 포맷(backend/프론트 SSOT):
+    {
+      "min_z": float | None,
+      "max_z": float | None,
+      "min_z_point": [x, y, z] | None,
+      "max_z_point": [x, y, z] | None,
+    }
+
+    중요:
+    - 레거시 명칭(top_z)은 사용하지 않는다.
+    - 이후 파이프라인(백엔드 저장/프론트 표시/에스프릿 env)은 max_z/min_z만 사용한다.
+    """
+    if not points:
+        return {
+            "min_z": None,
+            "max_z": None,
+            "min_z_point": None,
+            "max_z_point": None,
+        }
+
+    min_pt = None
+    max_pt = None
+    min_z = float("inf")
+    max_z = -float("inf")
+
+    for p in points:
+        if p is None:
+            continue
+        try:
+            x = float(p.X)
+            y = float(p.Y)
+            z = float(p.Z)
+        except Exception:
+            continue
+
+        if z < min_z:
+            min_z = z
+            min_pt = [x, y, z]
+        if z > max_z:
+            max_z = z
+            max_pt = [x, y, z]
+
+    if min_pt is None or max_pt is None:
+        return {
+            "min_z": None,
+            "max_z": None,
+            "min_z_point": None,
+            "max_z_point": None,
+        }
+
+    return {
+        "min_z": float(min_z),
+        "max_z": float(max_z),
+        "min_z_point": min_pt,
+        "max_z_point": max_pt,
+    }
+
+
 def _detect_finish_line_latest(doc, visualize=False, mesh_id=None):
     import importlib
 
@@ -1737,6 +1798,8 @@ def main(input_path_arg=None, output_path_arg=None, log_path_arg=None):
                 import base64
                 import json
 
+                z_extrema = _extract_finishline_z_extrema(pts_aligned)
+
                 finish_line_payload = {
                     "version": 1,
                     "sectionCount": int(len(pts_aligned) or 0),
@@ -1754,14 +1817,23 @@ def main(input_path_arg=None, output_path_arg=None, log_path_arg=None):
                     if pt0_aligned
                     else None,
                     "strategyUsed": strategy_used,
+                    # finishline 높이 메타데이터 SSOT
+                    # - 레거시 top_z는 저장하지 않고, max_z/min_z로 통일한다.
+                    # - extrema point를 함께 저장해 downstream에서 동일 점을 재사용한다.
+                    "max_z": z_extrema.get("max_z"),
+                    "min_z": z_extrema.get("min_z"),
+                    "max_z_point": z_extrema.get("max_z_point"),
+                    "min_z_point": z_extrema.get("min_z_point"),
                 }
 
                 log(
-                    "finishline detected points={} planeCount={} hasPt0={} strategy={}".format(
+                    "finishline detected points={} planeCount={} hasPt0={} strategy={} max_z={} min_z={}".format(
                         len(finish_line_payload.get("points") or []),
                         finish_line_payload.get("sectionCount"),
                         bool(finish_line_payload.get("pt0")),
                         strategy_used,
+                        finish_line_payload.get("max_z"),
+                        finish_line_payload.get("min_z"),
                     )
                 )
 

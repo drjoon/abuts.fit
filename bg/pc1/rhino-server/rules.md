@@ -13,10 +13,20 @@
 - 정렬(align) 단계는 헥스 면 방향을 one-shot 계산으로 맞추고, 실행 로그에 최종 잔차를 남깁니다.
   - 로그 키: `residual_to_X_deg`
   - 현재 운영 기준: `target<=0.010000` (0.01° 이내)
+- **finishline Z 메타데이터 명칭 SSOT는 `max_z`, `min_z`입니다.**
+  - `top_z` 같은 별칭은 저장/전달하지 않습니다.
+  - finishline payload에는 `max_z`, `min_z`와 함께 `max_z_point`, `min_z_point`를 포함합니다.
+  - 목적: 백엔드/프론트/에스프릿이 동일 기준점을 재탐색 없이 재사용하도록 통일하기 위함입니다.
 
 관련 파일:
 - `bg/pc1/rhino-server/compute/scripts/align_stl_coordinate.py`
+- `bg/pc1/rhino-server/compute/scripts/finishline_detection.py`
 - `bg/pc1/rhino-server/compute/scripts/process_abutment_stl.py`
+- `web/backend/controllers/bg/bg.controller.js`
+- `web/backend/models/request.model.js`
+- `web/frontend/src/features/requests/hooks/useStlMetadata.ts`
+- `web/frontend/src/features/requests/components/StlPreviewViewer.tsx`
+- `web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx`
 
 ## 2. 트러블슈팅
 

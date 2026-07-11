@@ -31,6 +31,14 @@ export interface StlMetadata {
     aligned?: boolean;
     message?: string;
   } | null;
+  // finishline 높이 메타데이터는 max_z/min_z SSOT로만 사용한다.
+  finishLine?: {
+    max_z?: number;
+    min_z?: number;
+    max_z_point?: number[];
+    min_z_point?: number[];
+    points?: number[][];
+  } | null;
   taperGuide?: unknown;
 }
 
@@ -46,6 +54,8 @@ function toRevisionValue(metadata: StlMetadata | null | undefined): string {
     taperAngle: metadata.taperAngle ?? null,
     hexRotationAppliedDeg: metadata.hexRotation?.appliedDeg ?? null,
     hexRotationResidualDeg: metadata.hexRotation?.residualToXDeg ?? null,
+    finishLineMaxZ: metadata.finishLine?.max_z ?? null,
+    finishLineMinZ: metadata.finishLine?.min_z ?? null,
   });
 }
 

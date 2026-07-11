@@ -62,6 +62,12 @@ export interface RequestCaseInfos {
     maxStepDistance?: number;
     points?: number[][];
     pt0?: number[];
+    // finishline Z 메타데이터 SSOT
+    // - top_z 별칭 없이 max_z/min_z만 사용
+    max_z?: number;
+    min_z?: number;
+    max_z_point?: number[];
+    min_z_point?: number[];
     updatedAt?: string;
   };
   reviewByStage?: {

@@ -1694,7 +1694,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                     // Finish_Cuff 시작/종료점 SSOT:
                     // - 시작 X: finishline min_z
                     // - 종료 X: finishline min_z - 1.2mm
-                    // - 주의: splitline_1(top_z+1.0) 기준이 아니라 finishline z 기준을 직접 사용
+                    // - 주의: splitline_1(max_z+1.0) 기준이 아니라 finishline z 기준을 직접 사용
                     // - 현 좌표계 환산: Y축 -90° 회전에서 X'=-Z, 이후 MoveSTL deltaX 보정
                     //   startX = -(minZ) + deltaX
                     //   endX   = -(minZ - 1.2) + deltaX

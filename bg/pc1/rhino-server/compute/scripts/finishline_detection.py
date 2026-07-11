@@ -1258,6 +1258,53 @@ def _points_max_z(points: Sequence[rg.Point3d]) -> Optional[float]:
         return None
 
 
+def _points_z_extrema(
+    points: Sequence[rg.Point3d],
+) -> Tuple[Optional[rg.Point3d], Optional[float], Optional[rg.Point3d], Optional[float]]:
+    """피니시라인 점열의 Z extrema(min/max)와 해당 대표 점을 함께 계산한다.
+
+    반환 순서:
+      (min_z_point, min_z, max_z_point, max_z)
+
+    정책(SSOT):
+    - 피니시라인 높이 메타데이터는 `top_z` 같은 별칭 없이
+      `max_z`, `min_z`로만 저장/전달한다.
+    - 점 포인트도 함께 저장해(= `max_z_point`, `min_z_point`) downstream(백엔드/프론트/에스프릿)
+      에서 재탐색 없이 동일 기준을 재사용하도록 한다.
+
+    구현 메모:
+    - 동일 Z 값이 여러 점에서 반복될 수 있으므로, "첫 번째 발견점"을 대표점으로 사용한다.
+      (도메인적으로 Z extrema가 핵심이고, 같은 Z 내 다중 후보의 순서는 의미가 약함)
+    """
+    if not points:
+        return None, None, None, None
+
+    min_pt: Optional[rg.Point3d] = None
+    max_pt: Optional[rg.Point3d] = None
+    min_z = float("inf")
+    max_z = -float("inf")
+
+    for pt in points:
+        if pt is None:
+            continue
+        try:
+            z = float(pt.Z)
+        except Exception:
+            continue
+
+        if z < min_z:
+            min_z = z
+            min_pt = rg.Point3d(pt)
+        if z > max_z:
+            max_z = z
+            max_pt = rg.Point3d(pt)
+
+    if min_pt is None or max_pt is None:
+        return None, None, None, None
+
+    return min_pt, float(min_z), max_pt, float(max_z)
+
+
 def _points_median_radius(points: Sequence[rg.Point3d]) -> Optional[float]:
     if not points:
         return None
@@ -3304,6 +3351,10 @@ def detect_finish_line(
                 viz_ids["sections"] = section_ids
 
     # 결과 반환
+    # - finishline 높이 메타데이터 SSOT는 max_z/min_z로 통일한다.
+    # - 좌표 재탐색 비용을 줄이기 위해 extrema point(max_z_point/min_z_point)도 함께 반환한다.
+    min_z_point, min_z, max_z_point, max_z = _points_z_extrema(traced_points or [])
+
     return {
         "pt0": pt0,
         "points": traced_points,
@@ -3311,6 +3362,22 @@ def detect_finish_line(
         "mesh_object_id": mesh_obj.Id,
         "visualization": viz_ids,
         "strategy_used": strategy_used,
+        "max_z": max_z,
+        "min_z": min_z,
+        "max_z_point": [
+            float(max_z_point.X),
+            float(max_z_point.Y),
+            float(max_z_point.Z),
+        ]
+        if max_z_point is not None
+        else None,
+        "min_z_point": [
+            float(min_z_point.X),
+            float(min_z_point.Y),
+            float(min_z_point.Z),
+        ]
+        if min_z_point is not None
+        else None,
     }
 
 

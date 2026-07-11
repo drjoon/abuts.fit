@@ -91,6 +91,47 @@ export function StlPreviewViewer({
     return { x, y, z };
   };
 
+  const toValidArrayPoint = (value: unknown) => {
+    if (!Array.isArray(value) || value.length < 3) return null;
+    const x = Number(value[0]);
+    const y = Number(value[1]);
+    const z = Number(value[2]);
+    if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) {
+      return null;
+    }
+    return { x, y, z };
+  };
+
+  const getFinishLineExtremaFromPoints = (points?: number[][] | null) => {
+    if (!Array.isArray(points) || points.length === 0) return null;
+    const valid = points
+      .filter((p) => Array.isArray(p) && p.length >= 3)
+      .map((p) => ({ x: Number(p[0]), y: Number(p[1]), z: Number(p[2]) }))
+      .filter(
+        (p) => Number.isFinite(p.x) && Number.isFinite(p.y) && Number.isFinite(p.z),
+      );
+    if (valid.length === 0) return null;
+
+    let min = valid[0];
+    let max = valid[0];
+    for (let i = 1; i < valid.length; i += 1) {
+      const p = valid[i];
+      if (p.z < min.z) min = p;
+      if (p.z > max.z) max = p;
+    }
+    return { min, max };
+  };
+
+  const finishLineExtremaFromPoints = getFinishLineExtremaFromPoints(
+    finishLinePoints,
+  );
+  const finishLineMaxZ = Number.isFinite(Number(resolvedMetadata?.finishLine?.max_z))
+    ? Number(resolvedMetadata?.finishLine?.max_z)
+    : finishLineExtremaFromPoints?.max?.z ?? null;
+  const finishLineMinZ = Number.isFinite(Number(resolvedMetadata?.finishLine?.min_z))
+    ? Number(resolvedMetadata?.finishLine?.min_z)
+    : finishLineExtremaFromPoints?.min?.z ?? null;
+
   const isFilledFile = file.name.toLowerCase().includes("filled");
   const hasTiltAxis = toValidPoint(resolvedMetadata?.tiltAxisVector) !== null;
   const shouldBlockSceneForMetadata =
@@ -339,6 +380,8 @@ export function StlPreviewViewer({
     let mesh: THREE.Mesh | null = null;
     let geometry: THREE.BufferGeometry | null = null;
     let finishLine: THREE.Object3D | null = null;
+    let finishLineMaxPointMarker: THREE.Mesh | null = null;
+    let finishLineMinPointMarker: THREE.Mesh | null = null;
     let taperAxisGuide: Line2 | THREE.Line | null = null;
     const taperMeasureGuide: Line2 | THREE.Line | null = null;
     const taperAngleArcGuide: THREE.Line | null = null;
@@ -645,17 +688,27 @@ export function StlPreviewViewer({
               .map((p) => Number(p[2]))
               .filter((z) => Number.isFinite(z))
           : [];
-        const finishLineTopZ =
-          finishLineZs.length > 0 ? Math.max(...finishLineZs) : null;
 
-        // 마진을 제외한 중간 영역으로 재조정 (finishLineTopZ ~ z_max 사이의 40%~60% 구간, 중앙 20%)
+        // finishline 높이 SSOT: max_z/min_z
+        // - 서버가 내려준 finishLine.max_z를 우선 사용한다.
+        // - 값이 없을 때만 점열(points)에서 계산해 fallback한다.
+        const metadataFinishLineMaxZ = Number(
+          resolvedMetadataRef.current?.finishLine?.max_z,
+        );
+        const finishLineMaxZ = Number.isFinite(metadataFinishLineMaxZ)
+          ? metadataFinishLineMaxZ
+          : finishLineZs.length > 0
+            ? Math.max(...finishLineZs)
+            : null;
+
+        // 마진을 제외한 중간 영역으로 재조정 (finishLineMaxZ ~ z_max 사이의 40%~60% 구간, 중앙 20%)
         let postStartZ = bbox.min.z + totalLength * 0.6;
         let postEndZ = bbox.max.z - totalLength * 0.8;
 
-        if (finishLineTopZ != null) {
-          const availableHeight = bbox.max.z - finishLineTopZ;
+        if (finishLineMaxZ != null) {
+          const availableHeight = bbox.max.z - finishLineMaxZ;
           // 마진 곡면 제외 (하단 40%), 상단 플랫 제외 (상단 40%)
-          postStartZ = finishLineTopZ + availableHeight * 0.4;
+          postStartZ = finishLineMaxZ + availableHeight * 0.4;
           postEndZ = bbox.max.z - availableHeight * 0.4;
         }
 
@@ -796,7 +849,7 @@ export function StlPreviewViewer({
                     const dirY = Math.sin(dirAngle);
 
                     let dirFinishLineZ =
-                      finishLineTopZ ?? bbox.min.z + totalLength * 0.2;
+                      finishLineMaxZ ?? bbox.min.z + totalLength * 0.2;
                     if (
                       finishLineZs.length > 0 &&
                       Array.isArray(finishLinePoints)
@@ -1519,6 +1572,81 @@ export function StlPreviewViewer({
           }
         }
 
+        // finishline extrema 포인트 시각화 (max_z / min_z)
+        // - 서버 metadata.finishLine.max_z_point/min_z_point를 우선 사용
+        // - 값이 없으면 finishLinePoints로 계산한 extrema를 사용
+        if (showOverlay && isFilled) {
+          const metadataMaxPoint = toValidArrayPoint(
+            latestMetadata?.finishLine?.max_z_point,
+          );
+          const metadataMinPoint = toValidArrayPoint(
+            latestMetadata?.finishLine?.min_z_point,
+          );
+
+          let fallbackMaxPoint: { x: number; y: number; z: number } | null =
+            null;
+          let fallbackMinPoint: { x: number; y: number; z: number } | null =
+            null;
+          if (Array.isArray(finishLinePoints) && finishLinePoints.length > 0) {
+            for (const raw of finishLinePoints) {
+              if (!Array.isArray(raw) || raw.length < 3) continue;
+              const x = Number(raw[0]);
+              const y = Number(raw[1]);
+              const z = Number(raw[2]);
+              if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) {
+                continue;
+              }
+              const p = { x, y, z };
+              if (!fallbackMaxPoint || z > fallbackMaxPoint.z) fallbackMaxPoint = p;
+              if (!fallbackMinPoint || z < fallbackMinPoint.z) fallbackMinPoint = p;
+            }
+          }
+
+          const maxPoint = metadataMaxPoint ?? fallbackMaxPoint;
+          const minPoint = metadataMinPoint ?? fallbackMinPoint;
+
+          const size = new THREE.Vector3();
+          bbox.getSize(size);
+          const diag = size.length() || 40;
+          // finishline extrema 포인트는 front point처럼 즉시 눈에 띄어야 하므로
+          // 기존보다 반경을 크게 잡는다.
+          // - 모델 스케일(diag) 기반
+          // - 최대직경(maxDiameterRef) 기반
+          // - 최소 하한을 함께 적용해서 작은 모델에서도 충분히 보이게 유지
+          const markerRadius = Math.max(
+            diag * 0.012,
+            (maxDiameterRef.current || 0) * 0.03,
+            0.18,
+          );
+
+          const toSceneVec = (p: { x: number; y: number; z: number }) => {
+            const vec = new THREE.Vector3(p.x, p.y, p.z);
+            return isFilled ? vec : vec.sub(center);
+          };
+
+          if (maxPoint) {
+            const g = new THREE.SphereGeometry(markerRadius, 28, 28);
+            const m = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
+            m.depthTest = false;
+            m.depthWrite = false;
+            finishLineMaxPointMarker = new THREE.Mesh(g, m);
+            finishLineMaxPointMarker.position.copy(toSceneVec(maxPoint));
+            finishLineMaxPointMarker.renderOrder = 30;
+            scene.add(finishLineMaxPointMarker);
+          }
+
+          if (minPoint) {
+            const g = new THREE.SphereGeometry(markerRadius, 28, 28);
+            const m = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
+            m.depthTest = false;
+            m.depthWrite = false;
+            finishLineMinPointMarker = new THREE.Mesh(g, m);
+            finishLineMinPointMarker.position.copy(toSceneVec(minPoint));
+            finishLineMinPointMarker.renderOrder = 30;
+            scene.add(finishLineMinPointMarker);
+          }
+        }
+
         const sphere = geometry.boundingSphere;
         const radius = sphere ? sphere.radius : maxR || 40;
 
@@ -1602,6 +1730,24 @@ export function StlPreviewViewer({
           } else {
             mat.dispose();
           }
+        }
+      }
+      if (finishLineMaxPointMarker) {
+        scene.remove(finishLineMaxPointMarker);
+        finishLineMaxPointMarker.geometry?.dispose?.();
+        if (Array.isArray(finishLineMaxPointMarker.material)) {
+          finishLineMaxPointMarker.material.forEach((mm) => mm.dispose());
+        } else {
+          finishLineMaxPointMarker.material.dispose();
+        }
+      }
+      if (finishLineMinPointMarker) {
+        scene.remove(finishLineMinPointMarker);
+        finishLineMinPointMarker.geometry?.dispose?.();
+        if (Array.isArray(finishLineMinPointMarker.material)) {
+          finishLineMinPointMarker.material.forEach((mm) => mm.dispose());
+        } else {
+          finishLineMinPointMarker.material.dispose();
         }
       }
       disposeFrontPointMesh();
@@ -1690,6 +1836,8 @@ export function StlPreviewViewer({
     resolvedMetadata?.frontPoint?.x,
     resolvedMetadata?.frontPoint?.y,
     resolvedMetadata?.frontPoint?.z,
+    resolvedMetadata?.finishLine?.max_z,
+    resolvedMetadata?.finishLine?.min_z,
   ]);
 
   return (
@@ -1752,6 +1900,22 @@ export function StlPreviewViewer({
                 {hexRotationDegState !== null &&
                 Number.isFinite(hexRotationDegState)
                   ? `${hexRotationDegState > 0 ? "+" : ""}${hexRotationDegState.toFixed(2)}°`
+                  : "-"}
+              </span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="text-slate-500">finishLine max_z:</span>
+              <span>
+                {Number.isFinite(finishLineMaxZ)
+                  ? `${Number(finishLineMaxZ).toFixed(2)} mm`
+                  : "-"}
+              </span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="text-slate-500">finishLine min_z:</span>
+              <span>
+                {Number.isFinite(finishLineMinZ)
+                  ? `${Number(finishLineMinZ).toFixed(2)} mm`
                   : "-"}
               </span>
             </div>
