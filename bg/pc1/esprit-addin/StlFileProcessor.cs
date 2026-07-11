@@ -38,6 +38,12 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         private const double CompositeFinishToleranceOverrideMm = 0.03;
         private const string BackRoughFourWayEnableEnv = "ABUTS_BACK_ROUGH_4WAY_ENABLE";
         private const string FinishLineMinZEnv = "ABUTS_FINISHLINE_MIN_Z";
+        // Finish_Cuff SSOT env
+        // - ABUTS_COMPOSITE_CUFF_PROFILE: backend finishline points를 ESPRIT FeatureChain으로 변환한 profile token("6,<key>")
+        // - ABUTS_COMPOSITE_CUFF_START_X: Finish_Cuff 시작 X (정책: finishline min_z + 0.70mm)
+        //   * +0.70 = tool radius 0.60 + clearance 0.10
+        private const string CompositeCuffProfileEnv = "ABUTS_COMPOSITE_CUFF_PROFILE";
+        private const string CompositeCuffStartXEnv = "ABUTS_COMPOSITE_CUFF_START_X";
         private static readonly HttpClient BackendHttp;
 
         // gp.exe 비정상 종료 시 Windows GPF 모달(오류 대화상자) 억제
@@ -97,6 +103,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         private string _backendSerialCode;
         private string _backendRequestId;
         private string _backendImplantLabel;
+        private double[][] _backendFinishLinePoints;
         // 유지홈(retentionGroove) 옵션 캐시 — request-meta 수신 직후 저장.
         // 이후 5axisComposite_A.prc 의 StepIncrement 를 의뢰별로 덮어쓰기 위해 사용.
         private string _backendRetentionGroove;
@@ -172,6 +179,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             _backendSerialCode = null;
             _backendRequestId = null;
             _backendImplantLabel = null;
+            _backendFinishLinePoints = null;
             try
             {
                 requestId = string.IsNullOrWhiteSpace(requestIdHint)
@@ -183,6 +191,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                     BackendApiClient.RequestMetaResponse requestMetaResponse = FetchRequestMeta(requestId);
                     requestMeta = requestMetaResponse?.data?.caseInfos;
                     double[][] finishLinePoints = requestMetaResponse?.data?.caseInfos?.finishLine?.points;
+                    _backendFinishLinePoints = finishLinePoints;
                     if (finishLinePoints != null && finishLinePoints.Length > 0)
                     {
                         double[] finishTopPoint = null;
@@ -444,6 +453,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             _backendSerialCode = null;
             _backendRequestId = null;
             _backendImplantLabel = null;
+            _backendFinishLinePoints = null;
             _effectiveFrontLimitX = null;
             Environment.SetEnvironmentVariable(AppConfig.CompositeFirstPassPercentAEnv, null);
             Environment.SetEnvironmentVariable(AppConfig.CompositeFinishToleranceEnv, null);
@@ -461,6 +471,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_ORIENTATION_PROFILE_LENGTH_MM", null);
             Environment.SetEnvironmentVariable(BackRoughFourWayEnableEnv, null);
             Environment.SetEnvironmentVariable(FinishLineMinZEnv, null);
+            Environment.SetEnvironmentVariable(CompositeCuffProfileEnv, null);
+            Environment.SetEnvironmentVariable(CompositeCuffStartXEnv, null);
             Environment.SetEnvironmentVariable(CompositeOrientationProfileStartXEnv, null);
             FaceHoleProcessFilePath = null;
             ConnectionMachiningProcessFilePath = null;
@@ -963,6 +975,11 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 AppLogger.Log($"DentalAddin: MoveSTL 실행 시작 (FrontLimit:{frontLimitX}, BackLimit:{backLimitX})");
                 InvokeMoveSTL(mainModuleType);
 
+                // Finish_Cuff용 finishline profile을 MoveSTL 이후 좌표계로 생성/등록한다.
+                // 중요: profile 생성은 MoveSTL 이후에 수행해야 한다.
+                // 이유: MoveSTL이 모델 X를 이동시키므로, 생성 시점이 어긋나면 SpineProfile과 실제 모델 좌표가 불일치한다.
+                TryCreateCompositeCuffFinishLineProfile(document, mainModuleType, backLimitX);
+
                 // 정책 변경(2026-07-03): OrientationProfile 시작점 SSOT는 MoveSTL_Module.FrontPointX.
                 // startX env 주입은 좌표계 불일치 원인이 될 수 있어 비활성화한다.
                 // TryApplyCompositeOrientationProfileStartXEnv(document);
@@ -1444,6 +1461,186 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                         AppLogger.Log($"DentalAddin: Back_Rough 각도 정책 설정 실패 - {ex.GetType().Name}:{ex.Message}");
                     }
                 }
+
+        // Finish_Cuff용 backend finishline curve 생성.
+        //
+        // 입력:
+        // - _backendFinishLinePoints: backend request-meta.finishLine.points (source STL 좌표계)
+        // - originalBackLimitX: MoveSTL 전 BackPointX(payload)
+        //
+        // 출력:
+        // - ABUTS_COMPOSITE_CUFF_PROFILE = "6,<featureChainKey>"
+        // - ABUTS_COMPOSITE_CUFF_START_X = finishline min_z + 0.70mm를 현 좌표계 X로 환산한 값
+        //
+        // 좌표 변환 SSOT:
+        // 1) Rotate90Degrees(Y축 -90°)
+        // 2) RotateByWAxisDegrees(X축 +30°)
+        // 3) MoveSTL 후 X 이동량(deltaX = movedBackX - originalBackLimitX) 반영
+        private void TryCreateCompositeCuffFinishLineProfile(Document document, Type mainModuleType, double originalBackLimitX)
+        {
+            try
+            {
+                if (document == null || _backendFinishLinePoints == null || _backendFinishLinePoints.Length < 3)
+                {
+                    AppLogger.Log("DentalAddin: Composite Cuff FinishLine profile 생성 생략 - finishLine points 부족");
+                    return;
+                }
+
+                Type moveModuleType = DentalAddinReflectionHelper.ResolveMoveModuleType(mainModuleType);
+                if (moveModuleType == null)
+                {
+                    AppLogger.Log("DentalAddin: Composite Cuff FinishLine profile 생성 생략 - MoveSTL_Module 타입 없음");
+                    return;
+                }
+
+                FieldInfo backField = moveModuleType.GetField("BackPointX", BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
+                if (backField == null)
+                {
+                    AppLogger.Log("DentalAddin: Composite Cuff FinishLine profile 생성 생략 - BackPointX 필드 없음");
+                    return;
+                }
+
+                double movedBackX = Convert.ToDouble(backField.GetValue(null), CultureInfo.InvariantCulture);
+                // MoveSTL 이후 실제 좌표계로 맞추기 위한 X 이동 보정량
+                // - originalBackLimitX: MoveSTL 전 값
+                // - movedBackX: MoveSTL 후 값
+                double deltaX = movedBackX - originalBackLimitX;
+
+                const string chainName = "BackendFinishLineCurve";
+                try
+                {
+                    if (document?.FeatureChains != null)
+                    {
+                        for (int i = document.FeatureChains.Count; i >= 1; i--)
+                        {
+                            FeatureChain existing = null;
+                            try { existing = document.FeatureChains[i]; } catch { }
+                            if (existing == null)
+                            {
+                                continue;
+                            }
+
+                            if (!string.Equals(existing.Name ?? string.Empty, chainName, StringComparison.OrdinalIgnoreCase))
+                            {
+                                continue;
+                            }
+
+                            try { document.FeatureChains.Remove(existing); } catch { }
+                        }
+                    }
+                }
+                catch { }
+
+                // STL 전처리 회전과 동일한 각도(SSOT)로 finishline points를 변환한다.
+                const double wAxisDeg = 30.0;
+                double wAxisRad = wAxisDeg * Math.PI / 180.0;
+                double cosX = Math.Cos(wAxisRad);
+                double sinX = Math.Sin(wAxisRad);
+
+                List<Point> transformed = new List<Point>();
+                double minSourceZ = double.PositiveInfinity;
+                for (int i = 0; i < _backendFinishLinePoints.Length; i++)
+                {
+                    double[] p = _backendFinishLinePoints[i];
+                    if (p == null || p.Length < 3)
+                    {
+                        continue;
+                    }
+
+                    double sx = p[0];
+                    double sy = p[1];
+                    double sz = p[2];
+                    if (double.IsNaN(sx) || double.IsInfinity(sx) || double.IsNaN(sy) || double.IsInfinity(sy) || double.IsNaN(sz) || double.IsInfinity(sz))
+                    {
+                        continue;
+                    }
+
+                    if (sz < minSourceZ)
+                    {
+                        minSourceZ = sz;
+                    }
+
+                    // STL 전처리와 동일 변환 적용
+                    // 1) Y축 -90도
+                    double rx1 = -sz;
+                    double ry1 = sy;
+                    double rz1 = sx;
+
+                    // 2) X축 +30도
+                    double rx2 = rx1;
+                    double ry2 = ry1 * cosX - rz1 * sinX;
+                    double rz2 = ry1 * sinX + rz1 * cosX;
+
+                    // 3) MoveSTL 이후 X 이동 보정(deltaX)
+                    //    여기까지 적용해야 backend finishline curve와 현재 모델 좌표계가 일치한다.
+                    Point tp = document.GetPoint(rx2 + deltaX, ry2, rz2);
+                    transformed.Add(tp);
+                }
+
+                if (transformed.Count < 3)
+                {
+                    AppLogger.Log($"DentalAddin: Composite Cuff FinishLine profile 생성 생략 - 유효 포인트 부족(count={transformed.Count})");
+                    return;
+                }
+
+                FeatureChain fc = document.FeatureChains.Add(transformed[0]);
+                for (int i = 1; i < transformed.Count; i++)
+                {
+                    fc.Add(transformed[i]);
+                }
+
+                Point first = transformed[0];
+                Point last = transformed[transformed.Count - 1];
+                double closeDist = Math.Sqrt(
+                    (last.X - first.X) * (last.X - first.X)
+                    + (last.Y - first.Y) * (last.Y - first.Y)
+                    + (last.Z - first.Z) * (last.Z - first.Z));
+                if (closeDist > 1e-4)
+                {
+                    fc.Add(document.GetSegment(last, first));
+                }
+
+                fc.Name = chainName;
+                int key = 0;
+                int.TryParse(Convert.ToString(fc.Key, CultureInfo.InvariantCulture), NumberStyles.Integer, CultureInfo.InvariantCulture, out key);
+                if (key > 0)
+                {
+                    string profileToken = "6," + key.ToString(CultureInfo.InvariantCulture);
+                    Environment.SetEnvironmentVariable(CompositeCuffProfileEnv, profileToken);
+
+                    // Finish_Cuff 시작점 SSOT:
+                    // - source 기준: finishline min_z + 0.70mm
+                    // - 0.70 = 툴 반경 0.60 + 안전 여유 0.10
+                    // - 현 좌표계 X 환산: Y축 -90° 회전에서 X'=-Z 관계를 이용해
+                    //   cuffStartX = -(minZ + 0.70) + deltaX
+                    const double cuffStartOffsetFromFinishMinZMm = 0.70;
+                    if (!double.IsInfinity(minSourceZ))
+                    {
+                        // 회전 후 X는 source Z의 부호 반전 성분(rx1=-z)에 의해 결정됨
+                        double cuffStartX = -(minSourceZ + cuffStartOffsetFromFinishMinZMm) + deltaX;
+                        Environment.SetEnvironmentVariable(CompositeCuffStartXEnv, cuffStartX.ToString(CultureInfo.InvariantCulture));
+                        AppLogger.Log($"DentalAddin: Composite Cuff profile 생성 완료 - profile={profileToken}, points={transformed.Count}, movedBackX={movedBackX.ToString("F4", CultureInfo.InvariantCulture)}, deltaX={deltaX.ToString("F4", CultureInfo.InvariantCulture)}, finishMinZ={minSourceZ.ToString("F4", CultureInfo.InvariantCulture)}, cuffStartX(minZ+0.70)={cuffStartX.ToString("F4", CultureInfo.InvariantCulture)}");
+                    }
+                    else
+                    {
+                        Environment.SetEnvironmentVariable(CompositeCuffStartXEnv, null);
+                        AppLogger.Log($"DentalAddin: Composite Cuff profile 생성 완료 - profile={profileToken}, points={transformed.Count}, movedBackX={movedBackX.ToString("F4", CultureInfo.InvariantCulture)}, deltaX={deltaX.ToString("F4", CultureInfo.InvariantCulture)}, finishMinZ=<null>");
+                    }
+                }
+                else
+                {
+                    Environment.SetEnvironmentVariable(CompositeCuffProfileEnv, null);
+                    Environment.SetEnvironmentVariable(CompositeCuffStartXEnv, null);
+                    AppLogger.Log("DentalAddin: Composite Cuff profile 생성 실패 - key 파싱 오류");
+                }
+            }
+            catch (Exception ex)
+            {
+                Environment.SetEnvironmentVariable(CompositeCuffProfileEnv, null);
+                Environment.SetEnvironmentVariable(CompositeCuffStartXEnv, null);
+                AppLogger.Log($"DentalAddin: Composite Cuff FinishLine profile 생성 실패 - {ex.GetType().Name}:{ex.Message}");
+            }
+        }
 
                 private void TryApplyCompositeFinishToleranceEnv(double? stlZLengthMm)
         {

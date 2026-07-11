@@ -20,6 +20,10 @@ namespace DentalAddin
         private static string CompositePrcBackPath => Path.Combine(AppConfig.AddInRootDirectory, "AcroDent", "11_Composite prc", "5axisComposite_Back.prc");
         private static string CompositePrcAllPath => Path.Combine(AppConfig.AddInRootDirectory, "AcroDent", "11_Composite prc", "5axisComposite_All.prc");
         private static string CompositePrcFrontPath => Path.Combine(AppConfig.AddInRootDirectory, "AcroDent", "11_Composite prc", "5axisComposite_Front.prc");
+        private static string CompositePrcCuffPath => Path.Combine(AppConfig.AddInRootDirectory, "AcroDent", "11_Composite prc", "5axisComposite_Cuff.prc");
+
+        private const string CompositeFinishCommonToolId = "BM_D1.2";
+        private const double CompositeFinishCommonToolDiameterMm = 1.2;
 
         // Composite OrientationStrategy 매직넘버 SSOT
         // - 0: 모델쪽으로 법선 방향
@@ -31,6 +35,8 @@ namespace DentalAddin
         // 진단용 env 키(선택에는 사용하지 않음).
         // startX SSOT는 MoveSTL_Module.FrontPointX이며, env/shadow 값은 로그 관찰 용도로만 읽는다.
         private const string CompositeOrientationProfileStartXEnv = "ABUTS_COMPOSITE_ORIENTATION_PROFILE_START_X";
+        private const string CompositeCuffProfileEnv = "ABUTS_COMPOSITE_CUFF_PROFILE";
+        private const string CompositeCuffStartXEnv = "ABUTS_COMPOSITE_CUFF_START_X";
 
         private static bool TryGetComposite2SplitABConfig(out bool enabled, out double splitX, out string prcA, out string prcB)
         {
@@ -84,6 +90,75 @@ namespace DentalAddin
                 prcForA = CompositePrcFrontPath;
                 prcForB = CompositePrcBackPath;
             }
+        }
+
+        private static string ResolveCompositeFinishCommonToolId()
+        {
+            try
+            {
+                if (Document?.Tools == null)
+                {
+                    return null;
+                }
+
+                // 1) 명시 ID 우선
+                foreach (Tool tool in (System.Collections.IEnumerable)Document.Tools)
+                {
+                    if (tool == null || string.IsNullOrWhiteSpace(tool.ToolID))
+                    {
+                        continue;
+                    }
+
+                    if (string.Equals(tool.ToolID.Trim(), CompositeFinishCommonToolId, StringComparison.OrdinalIgnoreCase))
+                    {
+                        return tool.ToolID;
+                    }
+                }
+
+                // 2) D1.2 BallMill로 fallback
+                foreach (Tool tool in (System.Collections.IEnumerable)Document.Tools)
+                {
+                    if (tool == null || string.IsNullOrWhiteSpace(tool.ToolID))
+                    {
+                        continue;
+                    }
+
+                    if (!(tool is ToolMillBallMill ball))
+                    {
+                        continue;
+                    }
+
+                    if (Math.Abs(ball.ToolDiameter - CompositeFinishCommonToolDiameterMm) <= 0.01)
+                    {
+                        return tool.ToolID;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                DentalLogger.Log($"Composite2SplitLine2 - Finish 공통 공구(D1.2) 탐색 실패: {ex.GetType().Name}:{ex.Message}");
+            }
+
+            return null;
+        }
+
+        private static void TryApplyCompositeFinishCommonTool(TechLatheMill5xComposite op, string label)
+        {
+            if (op == null)
+            {
+                return;
+            }
+
+            string finishToolId = ResolveCompositeFinishCommonToolId();
+            if (string.IsNullOrWhiteSpace(finishToolId))
+            {
+                DentalLogger.Log($"Composite2SplitLine2 - {label} Finish 공통 공구(D1.2) 미발견: 기존 ToolID 유지('{op.ToolID ?? ""}')");
+                return;
+            }
+
+            string before = op.ToolID;
+            op.ToolID = finishToolId;
+            DentalLogger.Log($"Composite2SplitLine2 - {label} Finish 공통 공구 적용: '{before ?? ""}' -> '{op.ToolID}'");
         }
 
         // Composite_B(+rightOffset 구간) 가공여유 보정.
@@ -1051,6 +1126,13 @@ namespace DentalAddin
                 }
             }
 
+            // Finish_* 공통 공구 정책: D1.2 볼엔드밀(BM_D1.2) 강제
+            TryApplyCompositeFinishCommonTool(opA, "A");
+            if (runB && opB != null)
+            {
+                TryApplyCompositeFinishCommonTool(opB, "B");
+            }
+
             string passRangeB = (runB && opB != null)
                 ? "(" + opB.FirstPassPercent.ToString("F2", CultureInfo.InvariantCulture) + "->" + opB.LastPassPercent.ToString("F2", CultureInfo.InvariantCulture) + ")"
                 : "<skip>";
@@ -1114,6 +1196,13 @@ namespace DentalAddin
                 int afterB = Document?.Operations?.Count ?? -1;
                 DentalLogger.Log($"Composite2SplitLine2 - Operation 추가 완료: FINISH_BACK(opB) (afterCount={afterB})");
 
+                // 요청 반영: Finish_Cuff 추가
+                // - PRC: 5axisComposite_Cuff.prc
+                // - 시작: finish line + 공구 반경 0.6mm(좌반경 접촉)
+                // - 종료: BackPointX
+                // - 공구: Finish_* 공통 D1.2 볼엔드밀
+                TryAddCompositeCuff(technologyUtility, freeFormFeature, opB);
+
                 // 요청 반영: finishline min_z가 1.8 이하일 때만 Finish_End 생성
                 // - 구간: BackPointX -> BackPointX + 0.4mm (TryAddCompositeExitLap 내부 정책)
                 // - StockAllowance: 0.03 (TryAddCompositeExitLap 내부 정책)
@@ -1134,7 +1223,7 @@ namespace DentalAddin
                     DentalLogger.Log($"Composite2SplitLine2 - Finish_End(B) 생성 생략: finishLineMinZ={(finishLineMinZ.HasValue ? finishLineMinZ.Value.ToString("F4", CultureInfo.InvariantCulture) : "<null>")}, threshold={finishEndMinZThresholdMm.ToString("F3", CultureInfo.InvariantCulture)}");
                 }
 
-                // FINISH_B 이후 추가 확장 공정은 생성하지 않는다.
+                // FINISH_BACK 이후에는 Finish_Cuff/Finish_End 외 추가 확장 공정은 생성하지 않는다.
             }
             else
             {
@@ -1715,6 +1804,169 @@ namespace DentalAddin
             }
         }
 
+        // Finish_Cuff 공정 SSOT:
+        // - 공구: Finish_* 공통 D1.2 볼엔드밀(BM_D1.2)
+        // - 곡선 추종: backend finishline points를 변환한 SpineProfile("ABUTS_COMPOSITE_CUFF_PROFILE")을 우선 사용
+        // - 시작 X: ABUTS_COMPOSITE_CUFF_START_X (finishline min_z + 0.70mm 정책) 우선
+        //   * +0.70 = tool radius 0.60 + clearance 0.10
+        // - 스텝: StepIncrement=0.1mm 고정(360도 1회전 후 +0.1mm 이동, 반복)
+        // - 종료: BackPointX까지
+        // - 안전 폴백: profile/startX env 누락 시 기존 FinishLineX 기반으로 degrade
+        private static void TryAddCompositeCuff(
+            TechnologyUtility technologyUtility,
+            FreeFormFeature freeFormFeature,
+            TechLatheMill5xComposite sourceOpB)
+        {
+            try
+            {
+                if (Document == null || freeFormFeature == null)
+                {
+                    return;
+                }
+
+                ITechnology[] cuffTech = TryOpenProcess(technologyUtility, CompositePrcCuffPath, "Composite2Cuff");
+                if (cuffTech.Length == 0 || !(cuffTech[0] is TechLatheMill5xComposite cuffOp))
+                {
+                    DentalLogger.Log($"Composite2Cuff - PRC 로드/캐스팅 실패(path={CompositePrcCuffPath})");
+                    return;
+                }
+
+                cuffOp.PassPosition = espMill5xCompositePassPosition.espMill5xCompositePassPositionStartEndPosition;
+
+                double front = MoveSTL_Module.FrontPointX;
+                double back = MoveSTL_Module.BackPointX;
+                double direction = (back - front) >= 0.0 ? 1.0 : -1.0;
+                double xMin = Math.Min(0.0, Math.Min(front, back));
+                double xMax = Math.Max(front, back);
+
+                // 1) SpineProfile 우선 적용
+                //    - backend finishline points를 StlFileProcessor에서 변환/생성한 profile token 사용
+                //    - 적용 실패 시에도 공정 자체는 fallback 경로로 유지한다.
+                string cuffProfile = GetEnvString(CompositeCuffProfileEnv);
+                bool cuffProfileApplied = false;
+                if (!string.IsNullOrWhiteSpace(cuffProfile))
+                {
+                    try
+                    {
+                        cuffOp.GetType().InvokeMember(
+                            "SpineProfile",
+                            BindingFlags.SetProperty,
+                            null,
+                            cuffOp,
+                            new object[] { cuffProfile },
+                            CultureInfo.InvariantCulture);
+                        cuffProfileApplied = true;
+                    }
+                    catch (Exception spEx)
+                    {
+                        DentalLogger.Log($"Composite2Cuff - SpineProfile 설정 실패(profile={cuffProfile}): {spEx.GetType().Name}:{spEx.Message}");
+                    }
+                }
+
+                // 2) 시작점 정책
+                //    - 우선: ABUTS_COMPOSITE_CUFF_START_X (finishline min_z + 0.70mm 환산값)
+                //    - 폴백: FinishLineX + tool radius(0.6)
+                double? startXFromEnv = GetEnvDoubleNullable(CompositeCuffStartXEnv);
+                double startX;
+                string finishLineSource;
+                if (startXFromEnv.HasValue && !double.IsNaN(startXFromEnv.Value) && !double.IsInfinity(startXFromEnv.Value))
+                {
+                    startX = Clamp(startXFromEnv.Value, xMin, xMax);
+                    finishLineSource = CompositeCuffStartXEnv;
+                }
+                else
+                {
+                    // env 누락 시 fallback: 기존 finishline X + 반경0.6
+                    double finishLineX = MoveSTL_Module.FinishLineX;
+                    finishLineSource = "FinishLineX(fallback)";
+                    if (double.IsNaN(finishLineX) || double.IsInfinity(finishLineX) || Math.Abs(finishLineX) < 1e-6)
+                    {
+                        if (TryResolveTwoPhaseSplitLineX(out double splitGuideX))
+                        {
+                            finishLineX = splitGuideX;
+                            finishLineSource = "TwoPhaseSplitLine(fallback)";
+                        }
+                        else if (TryResolveTwoPhaseSplitLineTargetX(out double splitTargetX, out string splitSource))
+                        {
+                            finishLineX = splitTargetX;
+                            finishLineSource = splitSource + "(fallback)";
+                        }
+                        else
+                        {
+                            finishLineX = back;
+                            finishLineSource = "BackPointXFallback";
+                        }
+                    }
+
+                    const double toolLeftHalfRadiusMmFallback = 0.6;
+                    double requestedStartXFallback = finishLineX + direction * toolLeftHalfRadiusMmFallback;
+                    startX = Clamp(requestedStartXFallback, xMin, xMax);
+                }
+
+                double endX = Clamp(back, xMin, xMax);
+
+                double startPercent = XToPassPercentByStartEndScale(startX, 0.0, 100.0);
+                double endPercent = XToPassPercentByStartEndScale(endX, 0.0, 100.0);
+                cuffOp.FirstPassPercent = Math.Min(startPercent, endPercent);
+                cuffOp.LastPassPercent = Math.Max(startPercent, endPercent);
+
+                if (Math.Abs(cuffOp.LastPassPercent - cuffOp.FirstPassPercent) < 0.05)
+                {
+                    DentalLogger.Log($"Composite2Cuff - 유효 가공 폭 부족으로 생성 생략(start%={cuffOp.FirstPassPercent:F3}, end%={cuffOp.LastPassPercent:F3}, startX={startX:F3}, endX={endX:F3})");
+                    return;
+                }
+
+                if (sourceOpB != null && !string.IsNullOrWhiteSpace(sourceOpB.DriveSurface))
+                {
+                    cuffOp.DriveSurface = sourceOpB.DriveSurface;
+                }
+                else if (SurfaceNumber > 0)
+                {
+                    cuffOp.DriveSurface = "19," + Conversions.ToString(SurfaceNumber);
+                }
+
+                if (sourceOpB != null && !string.IsNullOrWhiteSpace(sourceOpB.ToolID))
+                {
+                    cuffOp.ToolID = sourceOpB.ToolID;
+                }
+
+                TryApplyCompositeFinishCommonTool(cuffOp, "CUFF");
+                // 3) 반복 절삭 스텝 정책
+                //    - StepIncrement=0.1mm 고정
+                //    - 의미: finishline 360도 한 바퀴 가공 후 X +0.1mm 이동하여 다음 360도 반복
+                try
+                {
+                    cuffOp.GetType().InvokeMember(
+                        "StepIncrement",
+                        BindingFlags.SetProperty,
+                        null,
+                        cuffOp,
+                        new object[] { 0.1 },
+                        CultureInfo.InvariantCulture);
+                    DentalLogger.Log("Composite2Cuff - StepIncrement=0.1 고정 적용");
+                }
+                catch (Exception stepEx)
+                {
+                    DentalLogger.Log($"Composite2Cuff - StepIncrement=0.1 설정 실패: {stepEx.GetType().Name}:{stepEx.Message}");
+                    TrySetCompositeStepIncrement(cuffOp, "B");
+                }
+                TryTouchCompositeMaximumLinkDistanceOnTechnology(cuffOp, "CUFF");
+                TrySetCompositeStockAllowance(cuffOp, "B");
+                TrySetCompositeFinishTolerance(cuffOp, "B");
+                TryDisableCompositeDynamicIfRequested(cuffOp, "CUFF");
+
+                int before = Document?.Operations?.Count ?? -1;
+                TryAddOperation(cuffOp, freeFormFeature, "Composite2Cuff");
+                TryAppendCompositeSuffixToNewOperations(before, "CUFF");
+
+                DentalLogger.Log($"Composite2Cuff - 추가 완료(path={CompositePrcCuffPath}, startX={startX:F3}, endX={endX:F3}, start%={cuffOp.FirstPassPercent:F3}, end%={cuffOp.LastPassPercent:F3}, startXEnv={(startXFromEnv.HasValue ? startXFromEnv.Value.ToString("F3", CultureInfo.InvariantCulture) : "<null>")}, startXSource={finishLineSource}, spineProfileEnv='{cuffProfile ?? ""}', spineProfileApplied={cuffProfileApplied})");
+            }
+            catch (Exception ex)
+            {
+                DentalLogger.Log($"Composite2Cuff - 예외: {ex.GetType().Name}:{ex.Message}");
+            }
+        }
+
         // Front Face 기본 절삭 깊이(mm)
         // 우선순위: PRC BottomZLimit(절대값) > 기본값
         private const double FrontFaceFixedDepthMm = 1.0;
@@ -1972,6 +2224,10 @@ namespace DentalAddin
             {
                 return "Finish_End";
             }
+            if (string.Equals(suffix, "FINISH_CUFF", StringComparison.OrdinalIgnoreCase))
+            {
+                return "Finish_Cuff";
+            }
             return $"5 Axis Composite [{suffix}]";
         }
 
@@ -2003,6 +2259,10 @@ namespace DentalAddin
             if (normalized.StartsWith("END", StringComparison.OrdinalIgnoreCase))
             {
                 return "FINISH_END";
+            }
+            if (normalized.StartsWith("CUFF", StringComparison.OrdinalIgnoreCase))
+            {
+                return "FINISH_CUFF";
             }
 
             // 레거시 라벨(A/B)은 입력 호환만 허용하고 표준 토큰으로 승격한다.
@@ -2054,11 +2314,13 @@ namespace DentalAddin
                     baseName = RemoveTokenIgnoreCase(baseName, "[FINISH_BACK]").Trim();
                     baseName = RemoveTokenIgnoreCase(baseName, "[FINISH_ALL]").Trim();
                     baseName = RemoveTokenIgnoreCase(baseName, "[FINISH_END]").Trim();
+                    baseName = RemoveTokenIgnoreCase(baseName, "[FINISH_CUFF]").Trim();
 
                     baseName = RemoveTokenIgnoreCase(baseName, "[Finish_Front]").Trim();
                     baseName = RemoveTokenIgnoreCase(baseName, "[Finish_Back]").Trim();
                     baseName = RemoveTokenIgnoreCase(baseName, "[Finish_All]").Trim();
                     baseName = RemoveTokenIgnoreCase(baseName, "[Finish_End]").Trim();
+                    baseName = RemoveTokenIgnoreCase(baseName, "[Finish_Cuff]").Trim();
 
                     // 레거시 토큰 정리
                     baseName = RemoveTokenIgnoreCase(baseName, "[FINISH_A]").Trim();
@@ -2319,6 +2581,10 @@ namespace DentalAddin
                     else if (oldName.IndexOf("FINISH_END", StringComparison.OrdinalIgnoreCase) >= 0 || oldName.IndexOf("Finish_End", StringComparison.OrdinalIgnoreCase) >= 0)
                     {
                         mapped = "FINISH_END";
+                    }
+                    else if (oldName.IndexOf("FINISH_CUFF", StringComparison.OrdinalIgnoreCase) >= 0 || oldName.IndexOf("Finish_Cuff", StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        mapped = "FINISH_CUFF";
                     }
 
 
