@@ -1892,7 +1892,7 @@ namespace DentalAddin
         // Finish_Cuff 공정 SSOT(단순화):
         // - Back_Rough와 동일한 Rough3D 기술 패턴(0/180)을 사용한다.
         // - 단, 공구는 Finish_Back과 동일한 BM_D1.2(T07) 강제.
-        // - 시작점: finishline top_z, 종료점: finishline min_z - 1.2mm (env 우선).
+        // - 시작점: finishline min_z, 종료점: finishline min_z - 1.2mm (env 우선).
         // - 폭 과대를 막기 위해 RoughBoundryBack1 재사용 대신 Cuff 전용 boundary(start~end)를 사용한다.
         private static void TryAddCompositeCuff(
             TechnologyUtility technologyUtility,
