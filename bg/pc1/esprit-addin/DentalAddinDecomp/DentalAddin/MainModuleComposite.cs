@@ -2622,7 +2622,10 @@ namespace DentalAddin
             // PRC(MillRough_3D_20.prc 포함)의 값을 그대로 사용한다.
             changed |= TrySetTechProperty(roughing, "ContactCornerRadius", 0.4);
             changed |= TrySetTechProperty(roughing, "Tolerance", 0.02);
-            changed |= TrySetTechProperty(roughing, "SpindleSpeedRPM", 5000);
+
+            // 요청 반영:
+            // 절삭 속도(SpindleSpeedRPM)는 코드 오버라이드하지 않는다.
+            // PRC(MillRough_3D_20.prc 포함)의 값을 그대로 사용한다.
 
             DentalLogger.Log($"RoughFreeFromMillSplitAB - ROUGH_20 기술값 고정 적용(region={region}, angle={angleLabel}, changed={changed})");
         }

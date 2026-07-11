@@ -189,8 +189,9 @@
     - `ProfitMillingIncrementalDepth=0.2`
     - `ContactCornerRadius=0.4`
     - `Tolerance=0.02`
-    - `SpindleSpeedRPM=5000`
-  - 예외: `CornerRoundingTolerance`는 코드 오버라이드 금지, PRC 값을 그대로 사용
+  - 예외: 아래 항목은 코드 오버라이드 금지, PRC 값을 그대로 사용
+    - `CornerRoundingTolerance`
+    - `SpindleSpeedRPM` (절삭 속도)
   - 구현: `MainModuleComposite.TryApplyRough20TechnologyOverrides`
 - Rough 경계(Front/Middle/Back) 오프셋:
   - 공통식: `roughToolRadius + 0.2`
