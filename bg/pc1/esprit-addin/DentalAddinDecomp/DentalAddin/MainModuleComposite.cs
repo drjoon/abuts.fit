@@ -1893,6 +1893,7 @@ namespace DentalAddin
         // - Back_Rough와 동일한 Rough3D 기술 패턴(0/180)을 사용한다.
         // - 단, 공구는 Finish_Back과 동일한 BM_D1.2(T07) 강제.
         // - 시작점: finishline min_z, 종료점: finishline min_z - 1.2mm (env 우선).
+        // - 생성 조건: finishline min_z < 1.0mm 인 경우에만 생성한다.
         // - 폭 과대를 막기 위해 RoughBoundryBack1 재사용 대신 Cuff 전용 boundary(start~end)를 사용한다.
         private static void TryAddCompositeCuff(
             TechnologyUtility technologyUtility,
@@ -1903,6 +1904,18 @@ namespace DentalAddin
             {
                 if (Document == null || technologyUtility == null)
                 {
+                    return;
+                }
+
+                const double finishCuffMinZThresholdMm = 1.0;
+                double? finishLineMinZ = GetEnvDoubleNullable("ABUTS_FINISHLINE_MIN_Z");
+                bool shouldCreateFinishCuff = finishLineMinZ.HasValue
+                    && !double.IsNaN(finishLineMinZ.Value)
+                    && !double.IsInfinity(finishLineMinZ.Value)
+                    && finishLineMinZ.Value < finishCuffMinZThresholdMm;
+                if (!shouldCreateFinishCuff)
+                {
+                    DentalLogger.Log($"Composite2Cuff - 생성 생략: finishLineMinZ={(finishLineMinZ.HasValue ? finishLineMinZ.Value.ToString("F4", CultureInfo.InvariantCulture) : "<null>")} (조건: < {finishCuffMinZThresholdMm.ToString("F3", CultureInfo.InvariantCulture)})");
                     return;
                 }
 
