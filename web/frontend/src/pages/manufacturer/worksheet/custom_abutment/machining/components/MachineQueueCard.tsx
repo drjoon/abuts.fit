@@ -239,6 +239,26 @@ export const MachineQueueCard = ({
     return formatElapsedMMSS(machiningElapsedSeconds);
   })();
 
+  const isNowPlayingMachining = (() => {
+    const recStatus = String(currentSlot?.machiningRecord?.status || "")
+      .trim()
+      .toUpperCase();
+    const slotStatus = String(currentSlot?.status || "").trim();
+    return (
+      !!currentSlot &&
+      (machiningActive ||
+        recStatus === "RUNNING" ||
+        recStatus === "PROCESSING" ||
+        slotStatus === "가공" ||
+        slotStatus === "가공중")
+    );
+  })();
+
+  const canRollbackNowPlaying =
+    !isNowPlayingMachining && !!headRequestId && !!onRollbackNowPlaying;
+  const canApproveNowPlaying =
+    !isNowPlayingMachining && !!headCanApproveWithoutRemachining;
+
   const [completedRolledBack, setCompletedRolledBack] = useState(false);
   const isCompletedRolledBack = completedRolledBack;
 
@@ -538,17 +558,16 @@ export const MachineQueueCard = ({
                     <button
                       type="button"
                       className={`inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-300 bg-white text-slate-600 hover:bg-slate-50 ${
-                        headRequestId && onRollbackNowPlaying
+                        canRollbackNowPlaying
                           ? ""
                           : "opacity-30 cursor-not-allowed"
                       }`}
                       onClick={(e) => {
                         e.stopPropagation();
-                        if (!headRequestId) return;
-                        if (!onRollbackNowPlaying) return;
-                        onRollbackNowPlaying(headRequestId, machineId);
+                        if (!canRollbackNowPlaying) return;
+                        onRollbackNowPlaying?.(headRequestId, machineId);
                       }}
-                      disabled={!headRequestId || !onRollbackNowPlaying}
+                      disabled={!canRollbackNowPlaying}
                       title="CAM으로 되돌리기"
                     >
                       <ArrowLeft className="h-3 w-3" />
@@ -557,16 +576,16 @@ export const MachineQueueCard = ({
                     <button
                       type="button"
                       className={`inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-300 bg-white text-slate-600 hover:bg-slate-50 ${
-                        headCanApproveWithoutRemachining
+                        canApproveNowPlaying
                           ? ""
                           : "opacity-30 cursor-not-allowed"
                       }`}
                       onClick={(e) => {
                         e.stopPropagation();
-                        if (!headCanApproveWithoutRemachining) return;
+                        if (!canApproveNowPlaying) return;
                         onApproveFromRollback?.(headRequestMongoId);
                       }}
-                      disabled={!headCanApproveWithoutRemachining}
+                      disabled={!canApproveNowPlaying}
                       title="재가공 없이 세척.패킹으로 승인"
                     >
                       <ArrowRight className="h-3 w-3" />
