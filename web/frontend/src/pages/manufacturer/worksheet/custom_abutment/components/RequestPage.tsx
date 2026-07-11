@@ -1251,36 +1251,85 @@ export const RequestPage = ({
   const handleRegenerateAllCam = useCallback(async () => {
     if (!token || bulkCamRegenerating) return;
 
-    const targets = filteredAndSorted
-      .map((req) => String(req?.requestId || "").trim())
-      .filter(Boolean);
+    const targets = filteredAndSorted;
 
     if (!targets.length) {
       toast({
         title: "재생성 대상 없음",
-        description: "CAM 재생성할 의뢰가 없습니다.",
+        description:
+          tabStage === "request"
+            ? "Filled STL 재생성할 의뢰가 없습니다."
+            : "CAM 재생성할 의뢰가 없습니다.",
       });
       return;
     }
+
+    const buildStandardStlFileName = (req: ManufacturerRequest) => {
+      const requestId = String(req?.requestId || "").trim();
+      if (!requestId) return "";
+      const originalFileName = String(req?.caseInfos?.file?.originalName || "");
+      const ext = originalFileName.includes(".")
+        ? `.${String(originalFileName).split(".").pop()?.toLowerCase()}`
+        : ".stl";
+      return `${requestId}-${String(req?.caseInfos?.clinicName || "")}-${String(req?.caseInfos?.patientName || "")}-${String(req?.caseInfos?.tooth || "")}${ext}`;
+    };
 
     setBulkCamRegenerating(true);
     let successCount = 0;
     let failCount = 0;
 
     try {
-      for (const requestId of targets) {
+      for (const req of targets) {
+        const requestId = String(req?.requestId || "").trim();
+        if (!requestId) {
+          failCount += 1;
+          continue;
+        }
+
         try {
-          const res = await fetch(
-            `/api/requests/by-request/${encodeURIComponent(requestId)}/nc-file/regenerate`,
-            {
+          let res: Response;
+
+          if (tabStage === "request") {
+            const standardFilePath = buildStandardStlFileName(req);
+            const filePath = String(
+              standardFilePath ||
+                req?.caseInfos?.file?.filePath ||
+                req?.caseInfos?.file?.originalName ||
+                "",
+            ).trim();
+
+            if (!filePath) {
+              failCount += 1;
+              continue;
+            }
+
+            res = await fetch("/api/rhino/process-file", {
               method: "POST",
               headers: {
                 Authorization: `Bearer ${token}`,
                 "Content-Type": "application/json",
               },
-              body: JSON.stringify({}),
-            },
-          );
+              body: JSON.stringify({
+                filePath,
+                fileName: filePath,
+                requestId,
+                force: true,
+              }),
+            });
+          } else {
+            res = await fetch(
+              `/api/requests/by-request/${encodeURIComponent(requestId)}/nc-file/regenerate`,
+              {
+                method: "POST",
+                headers: {
+                  Authorization: `Bearer ${token}`,
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify({}),
+              },
+            );
+          }
+
           const data = await res.json().catch(() => ({}));
           if (!res.ok || data?.success === false) {
             failCount += 1;
@@ -1293,7 +1342,10 @@ export const RequestPage = ({
       }
 
       toast({
-        title: "CAM 재생성 요청 완료",
+        title:
+          tabStage === "request"
+            ? "Filled STL 재생성 요청 완료"
+            : "CAM 재생성 요청 완료",
         description: `성공 ${successCount}건, 실패 ${failCount}건`,
         variant: failCount > 0 ? "destructive" : undefined,
       });
@@ -1302,7 +1354,14 @@ export const RequestPage = ({
     } finally {
       setBulkCamRegenerating(false);
     }
-  }, [bulkCamRegenerating, filteredAndSorted, reloadRequests, toast, token]);
+  }, [
+    bulkCamRegenerating,
+    filteredAndSorted,
+    reloadRequests,
+    tabStage,
+    toast,
+    token,
+  ]);
 
   useEffect(() => {
     if (!Object.keys(mailboxState.mailboxErrorByAddress).length) return;
@@ -1508,7 +1567,7 @@ export const RequestPage = ({
               </div>
             ) : (
               <>
-                {isCamStage && (
+                {(isCamStage || tabStage === "request") && (
                   <div className="mb-4 flex flex-wrap items-center justify-center gap-2">
                     <Button
                       type="button"
@@ -1518,9 +1577,12 @@ export const RequestPage = ({
                         !filteredAndSorted.length || bulkCamRegenerating
                       }
                       onClick={() => {
-                        pageState.setConfirmTitle("모든 의뢰 CAM 재생성");
+                        const actionLabel = isCamStage
+                          ? "전체 CAM 재생성"
+                          : "전체 Filled STL 재생성";
+                        pageState.setConfirmTitle(actionLabel);
                         pageState.setConfirmDescription(
-                          `현재 목록의 ${filteredAndSorted.length}개 의뢰에 CAM 재생성 요청을 보냅니다. 진행할까요?`,
+                          `현재 목록의 ${filteredAndSorted.length}개 의뢰에 ${actionLabel} 요청을 보냅니다. 진행할까요?`,
                         );
                         pageState.setConfirmAction(() => async () => {
                           await handleRegenerateAllCam();
@@ -1529,8 +1591,12 @@ export const RequestPage = ({
                       }}
                     >
                       {bulkCamRegenerating
-                        ? "CAM 재생성 요청 중..."
-                        : "모든 의뢰 CAM 재생성"}
+                        ? isCamStage
+                          ? "CAM 재생성 요청 중..."
+                          : "Filled STL 재생성 요청 중..."
+                        : isCamStage
+                          ? "전체 CAM 재생성"
+                          : "전체 Filled STL 재생성"}
                     </Button>
                   </div>
                 )}
