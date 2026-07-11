@@ -3654,16 +3654,16 @@ namespace DentalAddin
                 }
             }
 
-            // 요청값: step 0.1, tol 0.02, stock 0.03, incrementalDepth 0.2
+            // 요청값: step 0.1, tol 0.02, stock 0.03, incrementalDepth 0.05
             // 깊이 단계(DepthStrategy): 옵션 2 강제
             TrySet("DepthStrategy", 2);
             TrySet("StepOver", 0.1);
             TrySet("StepIncrement", 0.1);
             TrySet("StepPercentOfDiameter", 8.3333333333); // D1.2 기준 0.1mm
             TrySet("Tolerance", 0.02);
-            TrySet("IncrementalDepth", 0.2);
-            TrySet("ProfitMillingIncrementalDepth", 0.2);
-            TrySet("MaximumIncrementalDepth", 0.2);
+            TrySet("IncrementalDepth", 0.05);
+            // TrySet("ProfitMillingIncrementalDepth", 0.2);
+            // TrySet("MaximumIncrementalDepth", 0.2);
             TrySet("StockAllowance", 0.03);
             TrySet("StockAllowanceWalls", 0.03);
             TrySet("StockAllowanceFloors", 0.03);
