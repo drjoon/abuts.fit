@@ -150,6 +150,12 @@ export const RequestorDashboardPage = () => {
     return false;
   };
 
+  const isUnmachinableRequest = (requestLike: any): boolean =>
+    Boolean(requestLike?.rnd?.unmachinableAt);
+
+  const getUnmachinableReason = (requestLike: any): string =>
+    String(requestLike?.rnd?.unmachinableReason || "").trim();
+
   const filterAbutmentRequest = (r: any) => {
     if (!r) return false;
     const ci = r.caseInfos || {};
@@ -434,6 +440,12 @@ export const RequestorDashboardPage = () => {
     return requests.filter((r: any) => !isCanceledRequest(r));
   }, [summaryResponse]);
 
+  const unmachinableAlertCount = useMemo(() => {
+    const fromStats = Number(summaryResponse?.data?.stats?.unmachinableCount);
+    if (Number.isFinite(fromStats)) return Math.max(0, fromStats);
+    return recentRequests.filter((r) => isUnmachinableRequest(r)).length;
+  }, [recentRequests, summaryResponse]);
+
   const isInitialLoading =
     isLoading || isBulkLoading || loadingCreditBalance || !summaryResponse;
 
@@ -649,61 +661,68 @@ export const RequestorDashboardPage = () => {
                 : "의뢰 현황을 확인하세요."
         }
         headerRight={
-          <div className="flex flex-wrap items-center gap-2">
-            <PeriodFilter value={period} onChange={setPeriod} />
-            {canOpenCreditLedger && (
-              <TooltipProvider>
-                <Tooltip
-                  open={insufficientCredit || insufficientShippingCredit}
-                >
-                  <TooltipTrigger asChild>
-                    <Button
-                      type="button"
-                      variant={
-                        insufficientCredit || insufficientShippingCredit
-                          ? "destructive"
-                          : "outline"
-                      }
-                      size="sm"
-                      className={`h-8 transition-all ${
-                        insufficientCredit || insufficientShippingCredit
-                          ? "ring-2 ring-destructive ring-offset-2 animate-pulse"
-                          : ""
-                      }`}
-                      onClick={() => setCreditLedgerOpen(true)}
-                    >
-                      {loadingCreditBalance
-                        ? "보유 크레딧: ..."
-                        : `보유 크레딧: ${Number(
-                            creditBalance || 0,
-                          ).toLocaleString()}원`}
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent
-                    side="bottom"
-                    className="bg-destructive text-destructive-foreground"
-                  >
-                    <p>
-                      {insufficientCredit && insufficientShippingCredit
-                        ? "의뢰비와 배송비 크레딧이 모두 부족합니다"
-                        : insufficientCredit
-                          ? "의뢰비 크레딧이 부족합니다. 충전하시면 생산이 진행됩니다"
-                          : "배송비 크레딧이 부족합니다. 충전해주세요"}
-                    </p>
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
+          <div className="flex flex-col gap-2 w-full">
+            {unmachinableAlertCount > 0 && (
+              <div className="inline-flex w-fit items-center rounded-md border border-red-300 bg-red-50 px-3 py-1.5 text-sm font-semibold text-red-700 ring-2 ring-red-200">
+                가공불가 의뢰 {unmachinableAlertCount}건 발생
+              </div>
             )}
+            <div className="flex flex-wrap items-center gap-2">
+              <PeriodFilter value={period} onChange={setPeriod} />
+              {canOpenCreditLedger && (
+                <TooltipProvider>
+                  <Tooltip
+                    open={insufficientCredit || insufficientShippingCredit}
+                  >
+                    <TooltipTrigger asChild>
+                      <Button
+                        type="button"
+                        variant={
+                          insufficientCredit || insufficientShippingCredit
+                            ? "destructive"
+                            : "outline"
+                        }
+                        size="sm"
+                        className={`h-8 transition-all ${
+                          insufficientCredit || insufficientShippingCredit
+                            ? "ring-2 ring-destructive ring-offset-2 animate-pulse"
+                            : ""
+                        }`}
+                        onClick={() => setCreditLedgerOpen(true)}
+                      >
+                        {loadingCreditBalance
+                          ? "보유 크레딧: ..."
+                          : `보유 크레딧: ${Number(
+                              creditBalance || 0,
+                            ).toLocaleString()}원`}
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent
+                      side="bottom"
+                      className="bg-destructive text-destructive-foreground"
+                    >
+                      <p>
+                        {insufficientCredit && insufficientShippingCredit
+                          ? "의뢰비와 배송비 크레딧이 모두 부족합니다"
+                          : insufficientCredit
+                            ? "의뢰비 크레딧이 부족합니다. 충전하시면 생산이 진행됩니다"
+                            : "배송비 크레딧이 부족합니다. 충전해주세요"}
+                      </p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              )}
 
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="h-8"
-              onClick={() => setPastRequestsOpen(true)}
-            >
-              지난 의뢰
-            </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-8"
+                onClick={() => setPastRequestsOpen(true)}
+              >
+                지난 의뢰
+              </Button>
+            </div>
           </div>
         }
         stats={
@@ -926,23 +945,39 @@ export const RequestorDashboardPage = () => {
                   String(r?.title || "").trim() ||
                   [ci?.patientName, ci?.tooth].filter(Boolean).join(" ") ||
                   String(r?.requestId || "");
+                const isUnmachinable = isUnmachinableRequest(r);
+                const unmachinableReason = getUnmachinableReason(r);
                 return (
                   <button
                     key={String(r?._id || r?.id || Math.random())}
                     type="button"
-                    className="w-full text-left rounded-md border border-gray-200 bg-white px-3 py-2 hover:bg-gray-50"
+                    className={`w-full text-left rounded-md border px-3 py-2 hover:bg-gray-50 ${
+                      isUnmachinable
+                        ? "border-red-300 ring-2 ring-red-200 bg-red-50/40"
+                        : "border-gray-200 bg-white"
+                    }`}
                     onClick={() => {
                       setStatsModalOpen(false);
                       openEditDialogFromRequest(r);
                     }}
                   >
-                    <div className="text-sm font-semibold text-gray-900 truncate">
-                      {title}
+                    <div className="text-sm font-semibold text-gray-900 truncate flex items-center gap-2">
+                      <span className="truncate">{title}</span>
+                      {isUnmachinable && (
+                        <Badge variant="destructive" className="text-[10px] h-5">
+                          가공불가
+                        </Badge>
+                      )}
                     </div>
                     <div className="text-xs text-muted-foreground truncate">
                       상태: {getNormalizedStageLabel(r)} / 의뢰번호:{" "}
                       {String(r?.requestId || "")}
                     </div>
+                    {isUnmachinable && (
+                      <div className="text-[11px] text-red-700 truncate mt-1">
+                        가공불가 사유: {unmachinableReason || "미등록"}
+                      </div>
+                    )}
                   </button>
                 );
               })}

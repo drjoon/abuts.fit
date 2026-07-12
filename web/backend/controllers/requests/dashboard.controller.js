@@ -792,7 +792,7 @@ export async function getMyDashboardSummary(req, res) {
           ],
         };
 
-        const [recentRequestsResult, riskData] = await Promise.all([
+        const [recentRequestsResult, riskData, unmachinableCountRaw] = await Promise.all([
           Request.find({
             ...requestFilter,
             manufacturerStage: { $ne: "취소" },
@@ -811,6 +811,7 @@ export async function getMyDashboardSummary(req, res) {
               originalShipping: 1,
               deliveryInfoRef: 1,
               price: 1,
+              rnd: 1,
             })
             .sort({ createdAt: -1 })
             .limit(10)
@@ -822,16 +823,17 @@ export async function getMyDashboardSummary(req, res) {
             role: "requestor",
             populateRelated: false,
           }),
+          Request.countDocuments({
+            ...requestFilter,
+            ...dateFilter,
+            "rnd.unmachinableAt": { $ne: null },
+          }),
         ]);
 
         const snapshotStats = summarySnapshot?.stats || null;
         const snapshotManufacturingSummary =
           summarySnapshot?.manufacturingSummary || null;
-        const snapshotRecentRequests = Array.isArray(
-          summarySnapshot?.recentRequests,
-        )
-          ? summarySnapshot.recentRequests
-          : null;
+
 
         const activeRequests = Array.isArray(riskData?.activeRequests)
           ? riskData.activeRequests
@@ -920,40 +922,49 @@ export async function getMyDashboardSummary(req, res) {
             requestor: r.requestor || null,
             deliveryInfoRef: r.deliveryInfoRef || null,
             price: r.price || null,
+            rnd: r.rnd || null,
             createdAt: r.createdAt,
           };
         });
 
+        const resolvedUnmachinableCount = Number(
+          snapshotStats?.unmachinableCount ?? unmachinableCountRaw ?? 0,
+        );
+
         const responseData = {
-          stats: snapshotStats || {
-            totalRequests: 0,
-            totalRequestsChange: "+0%",
-            inProgress: 0,
-            inProgressChange: "+0%",
-            inCam: 0,
-            inCamChange: "+0%",
-            inProduction: 0,
-            inProductionChange: "+0%",
-            inPacking: 0,
-            inPackingChange: "+0%",
-            inShipping: 0,
-            inShippingBoxes: 0,
-            inShippingChange: "+0%",
-            inTracking: 0,
-            inTrackingBoxes: 0,
-            inTrackingChange: "+0%",
-            canceled: 0,
-            canceledChange: "+0%",
-            tracking: 0,
-            doneOrCanceled: 0,
-            doneOrCanceledChange: "+0%",
+          stats: {
+            ...(snapshotStats || {
+              totalRequests: 0,
+              totalRequestsChange: "+0%",
+              inProgress: 0,
+              inProgressChange: "+0%",
+              inCam: 0,
+              inCamChange: "+0%",
+              inProduction: 0,
+              inProductionChange: "+0%",
+              inPacking: 0,
+              inPackingChange: "+0%",
+              inShipping: 0,
+              inShippingBoxes: 0,
+              inShippingChange: "+0%",
+              inTracking: 0,
+              inTrackingBoxes: 0,
+              inTrackingChange: "+0%",
+              canceled: 0,
+              canceledChange: "+0%",
+              tracking: 0,
+              doneOrCanceled: 0,
+              doneOrCanceledChange: "+0%",
+            }),
+            unmachinableCount: resolvedUnmachinableCount,
           },
           manufacturingSummary: snapshotManufacturingSummary || {
             totalActive: 0,
             stages: [],
           },
           riskSummary,
-          recentRequests: snapshotRecentRequests || recentRequestsData,
+          // 최근 의뢰는 최신 상태(가공불가 등)를 우선 반영하기 위해 실시간 조회 결과를 사용
+          recentRequests: recentRequestsData,
         };
 
         if (debug) {

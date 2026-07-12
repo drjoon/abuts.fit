@@ -14,6 +14,13 @@ import { getNormalizedStageLabel } from "@/utils/stage";
 import { formatImplantDisplay } from "@/utils/implant";
 import { formatDateWithDay, formatDateOnly } from "@/utils/dateFormat";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
@@ -65,6 +72,10 @@ type RecentRequestCardItem = {
   _id?: string;
   id?: string;
   requestId?: string;
+  rnd?: {
+    unmachinableAt?: string | null;
+    unmachinableReason?: string | null;
+  } | null;
   title?: string;
   manufacturerStage?: string;
   createdAt?: string;
@@ -112,17 +123,35 @@ const resolveStageLabel = (
   return null;
 };
 
+const isUnmachinableRequest = (item: RecentRequestCardItem | null) =>
+  Boolean(item?.rnd?.unmachinableAt);
+
+const getUnmachinableReason = (item: RecentRequestCardItem | null) =>
+  String(item?.rnd?.unmachinableReason || "").trim();
+
 const renderStageBadge = (item: RecentRequestCardItem | null) => {
   const label = resolveStageLabel(item);
-  if (!label) return null;
-  const style = STAGE_BADGE_STYLES[label] || { variant: "outline" };
+  const style = label ? STAGE_BADGE_STYLES[label] || { variant: "outline" } : null;
+  const unmachinable = isUnmachinableRequest(item);
+
+  if (!label && !unmachinable) return null;
+
   return (
-    <Badge
-      variant={style.variant}
-      className={`${STAGE_BADGE_BASE} ${style.extra ? style.extra : ""}`.trim()}
-    >
-      {label}
-    </Badge>
+    <>
+      {label && style && (
+        <Badge
+          variant={style.variant}
+          className={`${STAGE_BADGE_BASE} ${style.extra ? style.extra : ""}`.trim()}
+        >
+          {label}
+        </Badge>
+      )}
+      {unmachinable && (
+        <Badge variant="destructive" className={STAGE_BADGE_BASE}>
+          가공불가
+        </Badge>
+      )}
+    </>
   );
 };
 
@@ -151,6 +180,9 @@ export const RequestorRecentRequestsCard = ({
   );
   const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false);
   const [cancelTarget, setCancelTarget] =
+    useState<RecentRequestCardItem | null>(null);
+  const [unmachinableInfoOpen, setUnmachinableInfoOpen] = useState(false);
+  const [unmachinableTarget, setUnmachinableTarget] =
     useState<RecentRequestCardItem | null>(null);
 
   const {
@@ -480,11 +512,19 @@ export const RequestorRecentRequestsCard = ({
               item.price?.rule === "remake_monthly_free_3";
             const retentionGrooveLabel =
               item.caseInfos?.retentionGroove === "deep" ? "있음" : "없음";
+            const isUnmachinable = isUnmachinableRequest(item);
+            const unmachinableReason = String(
+              item?.rnd?.unmachinableReason || "",
+            ).trim();
 
             return (
               <FunctionalItemCard
                 key={stableKey || displayId}
-                className="flex items-center justify-between p-3 border border-border rounded-lg"
+                className={`flex items-center justify-between p-3 border rounded-lg ${
+                  isUnmachinable
+                    ? "border-red-300 ring-2 ring-red-200 bg-red-50/40"
+                    : "border-border"
+                }`}
                 onClick={(e) => {
                   e.stopPropagation();
                   const reqId = item._id || item.id;
@@ -493,36 +533,53 @@ export const RequestorRecentRequestsCard = ({
                   setOpen(true);
                 }}
               >
-                <TooltipProvider>
+                {isUnmachinable ? (
                   <div className="absolute top-2 right-2 z-10">
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <span className="inline-flex">
-                          <button
-                            type="button"
-                            className={`inline-flex h-6 min-w-[42px] items-center justify-center rounded-full px-2 text-[11px] font-bold shadow-sm transition-colors ${
-                              canCancel
-                                ? "bg-red-500 text-white hover:bg-red-600"
-                                : "bg-gray-200 text-gray-500 cursor-not-allowed"
-                            }`}
-                            disabled={!canCancel}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              if (!canCancel) return;
-                              setCancelTarget(item);
-                            }}
-                            aria-label="의뢰 취소"
-                          >
-                            취소
-                          </button>
-                        </span>
-                      </TooltipTrigger>
-                      <TooltipContent side="top">
-                        의뢰, CAM 공정에서만 취소할 수 있습니다.
-                      </TooltipContent>
-                    </Tooltip>
+                    <button
+                      type="button"
+                      className="inline-flex h-6 min-w-[62px] items-center justify-center rounded-full px-2 text-[11px] font-bold shadow-sm transition-colors bg-red-500 text-white hover:bg-red-600"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setUnmachinableTarget(item);
+                        setUnmachinableInfoOpen(true);
+                      }}
+                      aria-label="가공 불가 사유 보기"
+                    >
+                      가공 불가
+                    </button>
                   </div>
-                </TooltipProvider>
+                ) : (
+                  <TooltipProvider>
+                    <div className="absolute top-2 right-2 z-10">
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <span className="inline-flex">
+                            <button
+                              type="button"
+                              className={`inline-flex h-6 min-w-[42px] items-center justify-center rounded-full px-2 text-[11px] font-bold shadow-sm transition-colors ${
+                                canCancel
+                                  ? "bg-red-500 text-white hover:bg-red-600"
+                                  : "bg-gray-200 text-gray-500 cursor-not-allowed"
+                              }`}
+                              disabled={!canCancel}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (!canCancel) return;
+                                setCancelTarget(item);
+                              }}
+                              aria-label="의뢰 취소"
+                            >
+                              취소
+                            </button>
+                          </span>
+                        </TooltipTrigger>
+                        <TooltipContent side="top">
+                          의뢰, CAM 공정에서만 취소할 수 있습니다.
+                        </TooltipContent>
+                      </Tooltip>
+                    </div>
+                  </TooltipProvider>
+                )}
                 <div className="flex-1 min-w-0 mr-2 pr-12">
                   <div className="flex items-center gap-2 mb-1">
                     <div className="text-sm font-medium truncate text-foreground">
@@ -555,6 +612,11 @@ export const RequestorRecentRequestsCard = ({
                     </span>
                     <span className="ml-1">유지홈 {retentionGrooveLabel}</span>
                   </div>
+                  {isUnmachinable && (
+                    <div className="text-[11px] text-red-700 mt-1 truncate">
+                      가공불가 사유: {unmachinableReason || "미등록"}
+                    </div>
+                  )}
                   <div className="text-[10px] text-slate-600 mt-0.5 flex items-center gap-2">
                     <span>
                       의뢰: {item.createdAt && formatDateOnly(item.createdAt)}
@@ -637,6 +699,47 @@ export const RequestorRecentRequestsCard = ({
         }}
         onCancel={() => setCancelTarget(null)}
       />
+
+      <Dialog
+        open={unmachinableInfoOpen}
+        onOpenChange={(next) => {
+          setUnmachinableInfoOpen(next);
+          if (!next) setUnmachinableTarget(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-md border-red-300 ring-2 ring-red-200">
+          <DialogHeader>
+            <DialogTitle className="text-red-700">가공 불가 안내</DialogTitle>
+            <DialogDescription>
+              해당 의뢰는 제조사에서 가공 불가 판정을 받았습니다.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2">
+              <div className="text-xs font-semibold text-red-700 mb-1">상세 사유</div>
+              <div className="text-sm text-red-800">
+                {getUnmachinableReason(unmachinableTarget) ||
+                  "가공 불가 사유가 등록되지 않았습니다."}
+              </div>
+            </div>
+            <div className="text-sm text-slate-700 leading-relaxed">
+              문의 사항은 <span className="font-semibold">전화</span>나
+              <span className="font-semibold"> 채팅</span>, 혹은
+              <span className="font-semibold"> 문의 게시판</span>으로 남겨주세요.
+            </div>
+            <div className="flex justify-end">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setUnmachinableInfoOpen(false)}
+              >
+                닫기
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <RequestDetailDialog
         open={open}

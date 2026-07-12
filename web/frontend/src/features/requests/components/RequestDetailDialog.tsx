@@ -30,6 +30,10 @@ export type RequestDetailDialogRequest = {
   manufacturerStage?: string;
   requestId?: string;
   createdAt?: string;
+  rnd?: {
+    unmachinableAt?: string | null;
+    unmachinableReason?: string | null;
+  } | null;
   lotNumber?: {
     value?: string | null;
   } | null;
@@ -158,6 +162,9 @@ export const RequestDetailDialog = ({
   const isRemakeFixed = priceRule === "remake_fixed_10000";
   const isRemakeMonthlyFree = priceRule === "remake_monthly_free_3";
 
+  const isUnmachinable = Boolean(request?.rnd?.unmachinableAt);
+  const unmachinableReason = String(request?.rnd?.unmachinableReason || "").trim();
+
   const selectedDetailLedgerRow = request
     ? rows.find(
         (item) =>
@@ -176,7 +183,11 @@ export const RequestDetailDialog = ({
         onOpenChange(next);
       }}
     >
-      <DialogContent className="sm:w-[48%] max-w-[460px] max-h-[80vh] overflow-y-auto">
+      <DialogContent
+        className={`sm:w-[48%] max-w-[460px] max-h-[80vh] overflow-y-auto ${
+          isUnmachinable ? "border-red-300 ring-2 ring-red-200" : ""
+        }`}
+      >
         <DialogHeader>
           <div className="flex items-start justify-between gap-4">
             <div>
@@ -195,12 +206,21 @@ export const RequestDetailDialog = ({
                   request.manufacturerStage || "-",
                   request.manufacturerStage,
                 )}
+              {isUnmachinable && <Badge variant="destructive">가공불가</Badge>}
               {extraBadge}
             </div>
           </div>
         </DialogHeader>
         <DialogDescription asChild>
           <div className="space-y-4 text-sm text-foreground">
+            {isUnmachinable && (
+              <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 space-y-1">
+                <div className="text-xs font-semibold text-red-700">가공불가 판정</div>
+                <div className="text-sm text-red-800">
+                  {unmachinableReason || "가공불가 사유가 등록되지 않았습니다."}
+                </div>
+              </div>
+            )}
             {estimatedShipYmd && (
               <div className="grid grid-cols-[90px_1fr] gap-3 items-center text-blue-700 font-medium">
                 <span>발송 예정일</span>
