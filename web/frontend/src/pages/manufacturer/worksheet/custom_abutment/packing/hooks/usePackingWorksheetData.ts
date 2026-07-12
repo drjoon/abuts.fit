@@ -36,6 +36,37 @@ export const usePackingWorksheetData = ({
   const serverTotalRef = useRef<number | null>(null);
   const requestsRef = useRef<ManufacturerRequest[]>([]);
   const reconcileInFlightRef = useRef(false);
+  const hiddenRequestIdsRef = useRef<Set<string>>(new Set());
+
+  const getRequestIdentity = useCallback((req: ManufacturerRequest | null | undefined) => {
+    const mongoId = String(req?._id || "").trim();
+    const requestId = String(req?.requestId || "").trim();
+    return { mongoId, requestId };
+  }, []);
+
+  const isHiddenRequest = useCallback((req: ManufacturerRequest | null | undefined) => {
+    const { mongoId, requestId } = getRequestIdentity(req);
+    if (mongoId && hiddenRequestIdsRef.current.has(`oid:${mongoId}`)) return true;
+    if (requestId && hiddenRequestIdsRef.current.has(`rid:${requestId}`)) return true;
+    return false;
+  }, [getRequestIdentity]);
+
+  const applyHiddenFilter = useCallback(
+    (list: ManufacturerRequest[]) => list.filter((req) => !isHiddenRequest(req)),
+    [isHiddenRequest],
+  );
+
+  const hideRequestFromList = useCallback((req: ManufacturerRequest | null | undefined) => {
+    const { mongoId, requestId } = getRequestIdentity(req);
+    if (mongoId) hiddenRequestIdsRef.current.add(`oid:${mongoId}`);
+    if (requestId) hiddenRequestIdsRef.current.add(`rid:${requestId}`);
+  }, [getRequestIdentity]);
+
+  const restoreHiddenRequest = useCallback((req: ManufacturerRequest | null | undefined) => {
+    const { mongoId, requestId } = getRequestIdentity(req);
+    if (mongoId) hiddenRequestIdsRef.current.delete(`oid:${mongoId}`);
+    if (requestId) hiddenRequestIdsRef.current.delete(`rid:${requestId}`);
+  }, [getRequestIdentity]);
 
   const requestKey = useCallback((req: ManufacturerRequest) => {
     const mongoId = String(req?._id || "").trim();
@@ -140,7 +171,7 @@ export const usePackingWorksheetData = ({
             const merged = Array.from(
               mergedMap.values(),
             ) as ManufacturerRequest[];
-            setRequests(merged);
+            setRequests(applyHiddenFilter(merged));
 
             if (userRole === "manufacturer" || userRole === "admin") {
               const knownTotal =
@@ -156,7 +187,7 @@ export const usePackingWorksheetData = ({
               }
             }
           } else {
-            setRequests(list);
+            setRequests(applyHiddenFilter(list));
             if (userRole === "manufacturer" || userRole === "admin") {
               const knownTotal =
                 typeof total === "number" ? total : serverTotalRef.current;
@@ -187,7 +218,7 @@ export const usePackingWorksheetData = ({
         if (!silent) setIsLoading(false);
       }
     },
-    [requestKey, showCompleted, token, toast, userRole],
+    [applyHiddenFilter, requestKey, showCompleted, token, toast, userRole],
   );
 
   const fetchRequests = useCallback(
@@ -308,7 +339,7 @@ export const usePackingWorksheetData = ({
 
         const reconciled = Array.from(mergedMap.values());
         if (reconciled.length > 0) {
-          setRequests(reconciled);
+          setRequests(applyHiddenFilter(reconciled));
           setVisibleCount((prev) => Math.max(prev, reconciled.length));
           pageRef.current = Math.max(
             1,
@@ -325,7 +356,7 @@ export const usePackingWorksheetData = ({
         reconcileInFlightRef.current = false;
       }
     },
-    [PAGE_LIMIT, requestKey, showCompleted, token, userRole],
+    [PAGE_LIMIT, applyHiddenFilter, requestKey, showCompleted, token, userRole],
   );
 
   const fetchNextPage = useCallback(async () => {
@@ -372,6 +403,7 @@ export const usePackingWorksheetData = ({
     if (showCompleted) {
       return requests.filter(
         (req) =>
+          !isHiddenRequest(req) &&
           !isDoneRndSample(req) &&
           !isUnmachinable(req) &&
           shouldShowRequestInIncludeCompleted(req, currentStageOrder),
@@ -379,11 +411,12 @@ export const usePackingWorksheetData = ({
     }
     return requests.filter(
       (req) =>
+        !isHiddenRequest(req) &&
         !isDoneRndSample(req) &&
         !isUnmachinable(req) &&
         deriveStageForFilter(req) === "세척.패킹",
     );
-  }, [currentStageOrder, requests, showCompleted]);
+  }, [currentStageOrder, isHiddenRequest, requests, showCompleted]);
 
   const filteredAndSorted = useMemo(() => {
     return filteredBase
@@ -530,8 +563,9 @@ export const usePackingWorksheetData = ({
   return {
     requests,
     setRequests,
+    hideRequestFromList,
+    restoreHiddenRequest,
     isLoading,
-    setIsLoading,
     fetchRequestsList,
     fetchRequests,
     fetchNextPage,

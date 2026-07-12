@@ -99,6 +99,8 @@ export const PackingPageContent = ({
     requests,
     setRequests,
     isLoading,
+    hideRequestFromList,
+    restoreHiddenRequest,
     fetchRequestsList,
     fetchRequests,
     filteredAndSorted,
@@ -509,6 +511,7 @@ export const PackingPageContent = ({
       }
 
       const requestMongoId = String(req._id || "").trim();
+      hideRequestFromList(req);
       const prevAt = req.rnd?.unmachinableAt || null;
       const prevReason = String(req.rnd?.unmachinableReason || "");
       const prevFromStage = String(req.rnd?.unmachinableFromStage || "") || null;
@@ -565,6 +568,7 @@ export const PackingPageContent = ({
           type: "active",
         });
       } catch (e: any) {
+        restoreHiddenRequest(req);
         setRequests((prev) =>
           prev.map((item) => {
             if (String(item?._id || "").trim() !== requestMongoId) return item;
@@ -589,7 +593,7 @@ export const PackingPageContent = ({
         throw e;
       }
     },
-    [queryClient, setRequests, toast, token],
+    [hideRequestFromList, queryClient, restoreHiddenRequest, setRequests, toast, token],
   );
 
   const handleTogglePackingRequest = useCallback((req: ManufacturerRequest) => {
