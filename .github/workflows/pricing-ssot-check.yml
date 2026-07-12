@@ -41,14 +41,22 @@ jobs:
         env:
           MONGODB_URI: ${{ secrets.MONGODB_URI }}
           MONGO_URI: ${{ secrets.MONGO_URI }}
+          MONGODB_URI_TEST: ${{ secrets.MONGODB_URI_TEST }}
+          MONGO_URI_TEST: ${{ secrets.MONGO_URI_TEST }}
         run: |
           DB_URI="$MONGODB_URI"
           if [ -z "$DB_URI" ]; then
             DB_URI="$MONGO_URI"
           fi
+          if [ -z "$DB_URI" ]; then
+            DB_URI="$MONGODB_URI_TEST"
+          fi
+          if [ -z "$DB_URI" ]; then
+            DB_URI="$MONGO_URI_TEST"
+          fi
 
           if [ -z "$DB_URI" ]; then
-            echo "MONGODB_URI or MONGO_URI secret is required for pricing SSOT check." >&2
+            echo "One of MONGODB_URI, MONGO_URI, MONGODB_URI_TEST, or MONGO_URI_TEST secret is required for pricing SSOT check." >&2
             exit 1
           fi
 
