@@ -2311,8 +2311,8 @@ namespace DentalAddin
             double backStart = Clamp(splitline2 - backRoughOverCutMm, xMin + 1e-6, xMax - 1e-6);
 
             // 요청 반영:
-            // Back_Rough 끝점 = BackPointX - (2.1 - finishLineMinZ)
-            //            = BackPointX + finishLineMinZ - 2.1
+            // Back_Rough 끝점 = BackPointX - (finishLineMinZ - 2.1)
+            //            = BackPointX - finishLineMinZ + 2.1
             const double backRoughBaseMm = 2.1;
             double backPointX = MoveSTL_Module.BackPointX;
 
@@ -2321,8 +2321,8 @@ namespace DentalAddin
                 && !double.IsNaN(finishLineMinZ)
                 && !double.IsInfinity(finishLineMinZ))
             {
-                backEnd = backPointX - (backRoughBaseMm - finishLineMinZ);
-                DentalLogger.Log($"RoughFreeFromMillSplitAB - Back_Rough 끝점 적용(min_z 기반): backPointX={backPointX.ToString("F3", CultureInfo.InvariantCulture)}, finishLineMinZ={finishLineMinZ.ToString("F3", CultureInfo.InvariantCulture)}, appliedEndX={backEnd.ToString("F3", CultureInfo.InvariantCulture)}, rule=BackPointX-(2.1-min_z)");
+                backEnd = backPointX - (finishLineMinZ - backRoughBaseMm);
+                DentalLogger.Log($"RoughFreeFromMillSplitAB - Back_Rough 끝점 적용(min_z 기반): backPointX={backPointX.ToString("F3", CultureInfo.InvariantCulture)}, finishLineMinZ={finishLineMinZ.ToString("F3", CultureInfo.InvariantCulture)}, appliedEndX={backEnd.ToString("F3", CultureInfo.InvariantCulture)}, rule=BackPointX-(min_z-2.1)");
             }
             else
             {
