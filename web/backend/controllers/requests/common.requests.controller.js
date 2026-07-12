@@ -1592,6 +1592,33 @@ export const updateRndUnmachinableStatus = asyncHandler(async (req, res) => {
 
   await request.save();
 
+  const requestorBusinessAnchorId = String(request.businessAnchorId || "").trim();
+  emitAppEventToRoles(
+    ["requestor", "manufacturer", "admin"],
+    "request:rnd-unmachinable-updated",
+    {
+      requestId: request.requestId,
+      requestMongoId: String(request._id || "").trim() || null,
+      requestorBusinessAnchorId: requestorBusinessAnchorId || null,
+      unmachinable: Boolean(request.rnd?.unmachinableAt),
+      reason: String(request.rnd?.unmachinableReason || ""),
+      request: {
+        _id: request._id,
+        requestId: request.requestId,
+        manufacturerStage: request.manufacturerStage,
+        businessAnchorId: request.businessAnchorId,
+        requestorBusinessAnchorId: requestorBusinessAnchorId || null,
+        rnd: {
+          ...(request.rnd || {}),
+          unmachinableAt: request.rnd?.unmachinableAt || null,
+          unmachinableReason: String(request.rnd?.unmachinableReason || ""),
+          unmachinableFromStage:
+            String(request.rnd?.unmachinableFromStage || "") || null,
+        },
+      },
+    },
+  );
+
   return res.status(200).json({
     success: true,
     data: {

@@ -369,7 +369,9 @@ export const RequestorDashboardPage = () => {
       const payload = evt?.data || {};
       const eventRequest = payload?.request;
       const eventOrgId = String(
-        eventRequest?.requestorBusinessAnchorId ||
+        payload?.requestorBusinessAnchorId ||
+          eventRequest?.requestorBusinessAnchorId ||
+          eventRequest?.businessAnchorId ||
           eventRequest?.requestor?.businessAnchorId ||
           "",
       ).trim();
@@ -393,6 +395,19 @@ export const RequestorDashboardPage = () => {
             queryKey: ["requestor-bulk-shipping"],
           });
         }
+        return;
+      }
+
+      if (type === "request:rnd-unmachinable-updated") {
+        void queryClient.invalidateQueries({
+          queryKey: summaryQueryKey,
+        });
+        void queryClient.invalidateQueries({
+          queryKey: ["requestor-my-requests"],
+        });
+        void queryClient.invalidateQueries({
+          queryKey: ["requestor-bulk-shipping"],
+        });
       }
     });
 
@@ -661,68 +676,67 @@ export const RequestorDashboardPage = () => {
                 : "의뢰 현황을 확인하세요."
         }
         headerRight={
-          <div className="flex flex-col gap-2 w-full">
+          <div className="flex flex-wrap items-center gap-2 w-full">
+            <PeriodFilter value={period} onChange={setPeriod} />
+            {canOpenCreditLedger && (
+              <TooltipProvider>
+                <Tooltip
+                  open={insufficientCredit || insufficientShippingCredit}
+                >
+                  <TooltipTrigger asChild>
+                    <Button
+                      type="button"
+                      variant={
+                        insufficientCredit || insufficientShippingCredit
+                          ? "destructive"
+                          : "outline"
+                      }
+                      size="sm"
+                      className={`h-8 transition-all ${
+                        insufficientCredit || insufficientShippingCredit
+                          ? "ring-2 ring-destructive ring-offset-2 animate-pulse"
+                          : ""
+                      }`}
+                      onClick={() => setCreditLedgerOpen(true)}
+                    >
+                      {loadingCreditBalance
+                        ? "보유 크레딧: ..."
+                        : `보유 크레딧: ${Number(
+                            creditBalance || 0,
+                          ).toLocaleString()}원`}
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent
+                    side="bottom"
+                    className="bg-destructive text-destructive-foreground"
+                  >
+                    <p>
+                      {insufficientCredit && insufficientShippingCredit
+                        ? "의뢰비와 배송비 크레딧이 모두 부족합니다"
+                        : insufficientCredit
+                          ? "의뢰비 크레딧이 부족합니다. 충전하시면 생산이 진행됩니다"
+                          : "배송비 크레딧이 부족합니다. 충전해주세요"}
+                    </p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            )}
+
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-8"
+              onClick={() => setPastRequestsOpen(true)}
+            >
+              지난 의뢰
+            </Button>
+
             {unmachinableAlertCount > 0 && (
-              <div className="inline-flex w-fit items-center rounded-md border border-red-300 bg-red-50 px-3 py-1.5 text-sm font-semibold text-red-700 ring-2 ring-red-200">
+              <div className="inline-flex h-8 items-center rounded-md border border-red-300 bg-red-50 px-3 text-sm font-semibold text-red-700 ring-2 ring-red-200">
                 가공불가 의뢰 {unmachinableAlertCount}건 발생
               </div>
             )}
-            <div className="flex flex-wrap items-center gap-2">
-              <PeriodFilter value={period} onChange={setPeriod} />
-              {canOpenCreditLedger && (
-                <TooltipProvider>
-                  <Tooltip
-                    open={insufficientCredit || insufficientShippingCredit}
-                  >
-                    <TooltipTrigger asChild>
-                      <Button
-                        type="button"
-                        variant={
-                          insufficientCredit || insufficientShippingCredit
-                            ? "destructive"
-                            : "outline"
-                        }
-                        size="sm"
-                        className={`h-8 transition-all ${
-                          insufficientCredit || insufficientShippingCredit
-                            ? "ring-2 ring-destructive ring-offset-2 animate-pulse"
-                            : ""
-                        }`}
-                        onClick={() => setCreditLedgerOpen(true)}
-                      >
-                        {loadingCreditBalance
-                          ? "보유 크레딧: ..."
-                          : `보유 크레딧: ${Number(
-                              creditBalance || 0,
-                            ).toLocaleString()}원`}
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent
-                      side="bottom"
-                      className="bg-destructive text-destructive-foreground"
-                    >
-                      <p>
-                        {insufficientCredit && insufficientShippingCredit
-                          ? "의뢰비와 배송비 크레딧이 모두 부족합니다"
-                          : insufficientCredit
-                            ? "의뢰비 크레딧이 부족합니다. 충전하시면 생산이 진행됩니다"
-                            : "배송비 크레딧이 부족합니다. 충전해주세요"}
-                      </p>
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
-              )}
-
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="h-8"
-                onClick={() => setPastRequestsOpen(true)}
-              >
-                지난 의뢰
-              </Button>
-            </div>
           </div>
         }
         stats={

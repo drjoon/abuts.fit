@@ -131,27 +131,15 @@ const getUnmachinableReason = (item: RecentRequestCardItem | null) =>
 
 const renderStageBadge = (item: RecentRequestCardItem | null) => {
   const label = resolveStageLabel(item);
-  const style = label ? STAGE_BADGE_STYLES[label] || { variant: "outline" } : null;
-  const unmachinable = isUnmachinableRequest(item);
-
-  if (!label && !unmachinable) return null;
-
+  if (!label) return null;
+  const style = STAGE_BADGE_STYLES[label] || { variant: "outline" };
   return (
-    <>
-      {label && style && (
-        <Badge
-          variant={style.variant}
-          className={`${STAGE_BADGE_BASE} ${style.extra ? style.extra : ""}`.trim()}
-        >
-          {label}
-        </Badge>
-      )}
-      {unmachinable && (
-        <Badge variant="destructive" className={STAGE_BADGE_BASE}>
-          가공불가
-        </Badge>
-      )}
-    </>
+    <Badge
+      variant={style.variant}
+      className={`${STAGE_BADGE_BASE} ${style.extra ? style.extra : ""}`.trim()}
+    >
+      {label}
+    </Badge>
   );
 };
 

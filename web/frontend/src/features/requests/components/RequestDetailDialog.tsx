@@ -184,7 +184,7 @@ export const RequestDetailDialog = ({
       }}
     >
       <DialogContent
-        className={`sm:w-[48%] max-w-[460px] max-h-[80vh] overflow-y-auto ${
+        className={`w-[min(94vw,620px)] max-w-[620px] max-h-[92vh] ${
           isUnmachinable ? "border-red-300 ring-2 ring-red-200" : ""
         }`}
       >
