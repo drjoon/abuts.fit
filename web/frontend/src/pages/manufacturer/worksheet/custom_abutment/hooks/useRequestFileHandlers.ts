@@ -71,6 +71,7 @@ export const useRequestFileHandlers = ({
 
   const getApprovedManufacturerStage = useCallback(
     (stageKey: ReviewStageKey) => {
+      if (stageKey === "request") return "CAM";
       if (stageKey === "cam") return "가공";
       if (stageKey === "machining") return "세척.패킹";
       if (stageKey === "packing") return "포장.발송";
@@ -82,6 +83,7 @@ export const useRequestFileHandlers = ({
 
   const getRolledBackManufacturerStage = useCallback(
     (stageKey: ReviewStageKey) => {
+      if (stageKey === "cam") return "의뢰";
       if (stageKey === "machining") return "CAM";
       if (stageKey === "packing") return "가공";
       if (stageKey === "shipping") return "세척.패킹";
@@ -89,6 +91,86 @@ export const useRequestFileHandlers = ({
       return null;
     },
     [],
+  );
+
+  const getSummaryCountKeyByStage = useCallback(
+    (stageKey: ReviewStageKey):
+      | "requestCount"
+      | "camCount"
+      | "machiningCount"
+      | "packingCount"
+      | "shippingCount"
+      | "trackingCount" => {
+      if (stageKey === "request") return "requestCount";
+      if (stageKey === "cam") return "camCount";
+      if (stageKey === "machining") return "machiningCount";
+      if (stageKey === "packing") return "packingCount";
+      if (stageKey === "shipping") return "shippingCount";
+      return "trackingCount";
+    },
+    [],
+  );
+
+  const getNextStageForSummary = useCallback(
+    (stageKey: ReviewStageKey, status: "PENDING" | "APPROVED" | "REJECTED") => {
+      if (status === "APPROVED") {
+        if (stageKey === "request") return "cam" as ReviewStageKey;
+        if (stageKey === "cam") return "machining" as ReviewStageKey;
+        if (stageKey === "machining") return "packing" as ReviewStageKey;
+        if (stageKey === "packing") return "shipping" as ReviewStageKey;
+        if (stageKey === "shipping") return "tracking" as ReviewStageKey;
+        return null;
+      }
+
+      if (status === "PENDING") {
+        if (stageKey === "cam") return "request" as ReviewStageKey;
+        if (stageKey === "machining") return "cam" as ReviewStageKey;
+        if (stageKey === "packing") return "machining" as ReviewStageKey;
+        if (stageKey === "shipping") return "packing" as ReviewStageKey;
+        if (stageKey === "tracking") return "shipping" as ReviewStageKey;
+        return null;
+      }
+
+      return null;
+    },
+    [],
+  );
+
+  const applyWorksheetSummaryCounterDelta = useCallback(
+    (stageKey: ReviewStageKey, status: "PENDING" | "APPROVED" | "REJECTED") => {
+      const nextStage = getNextStageForSummary(stageKey, status);
+      if (!nextStage) return;
+
+      const fromKey = getSummaryCountKeyByStage(stageKey);
+      const toKey = getSummaryCountKeyByStage(nextStage);
+      if (fromKey === toKey) return;
+
+      queryClient.setQueriesData(
+        { queryKey: ["worksheet-assigned-summary"] },
+        (prev: any) => {
+          if (!prev || typeof prev !== "object") return prev;
+          if (!prev.success || !prev.data || typeof prev.data !== "object") {
+            return prev;
+          }
+
+          const nextData = {
+            ...(prev.data as Record<string, unknown>),
+          } as Record<string, number | unknown>;
+
+          const fromValue = Number(nextData[fromKey] || 0);
+          const toValue = Number(nextData[toKey] || 0);
+
+          nextData[fromKey] = Math.max(0, fromValue - 1);
+          nextData[toKey] = Math.max(0, toValue + 1);
+
+          return {
+            ...prev,
+            data: nextData,
+          };
+        },
+      );
+    },
+    [getNextStageForSummary, getSummaryCountKeyByStage, queryClient],
   );
 
   const patchReviewStatusLocally = useCallback(
@@ -503,6 +585,9 @@ export const useRequestFileHandlers = ({
           // 필요 시 수동으로 탭 전환하도록 유지
         }
 
+        // 상단 워크시트 카운터를 즉시 반영(낙관적) 후 서버값으로 재동기화
+        applyWorksheetSummaryCounterDelta(stageKey, params.status);
+
         void queryClient.invalidateQueries({
           queryKey: ["worksheet-assigned-summary"],
         });
@@ -572,6 +657,7 @@ export const useRequestFileHandlers = ({
       setPreviewOpen,
       setReviewSaving,
       queryClient,
+      applyWorksheetSummaryCounterDelta,
     ],
   );
 
@@ -629,6 +715,15 @@ export const useRequestFileHandlers = ({
           description: "의뢰 단계로 되돌렸습니다.",
         });
 
+        applyWorksheetSummaryCounterDelta("cam", "PENDING");
+        void queryClient.invalidateQueries({
+          queryKey: ["worksheet-assigned-summary"],
+        });
+        void queryClient.refetchQueries({
+          queryKey: ["worksheet-assigned-summary"],
+          type: "active",
+        });
+
         if (navigate) {
           setPreviewOpen(false);
           setPreviewFiles({});
@@ -658,6 +753,8 @@ export const useRequestFileHandlers = ({
       setPreviewNcText,
       setPreviewNcName,
       setSearchParams,
+      queryClient,
+      applyWorksheetSummaryCounterDelta,
     ],
   );
 
@@ -715,6 +812,18 @@ export const useRequestFileHandlers = ({
           description: `${stageLabel} 단계로 되돌렸습니다.`,
         });
 
+        applyWorksheetSummaryCounterDelta(
+          targetStage === "request" ? "cam" : "machining",
+          "PENDING",
+        );
+        void queryClient.invalidateQueries({
+          queryKey: ["worksheet-assigned-summary"],
+        });
+        void queryClient.refetchQueries({
+          queryKey: ["worksheet-assigned-summary"],
+          type: "active",
+        });
+
         if (navigate) {
           setPreviewOpen(false);
           setPreviewNcText("");
@@ -744,6 +853,8 @@ export const useRequestFileHandlers = ({
       setPreviewNcName,
       setPreviewFiles,
       setSearchParams,
+      queryClient,
+      applyWorksheetSummaryCounterDelta,
     ],
   );
 
