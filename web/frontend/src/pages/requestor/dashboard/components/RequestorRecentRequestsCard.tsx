@@ -129,6 +129,15 @@ const isUnmachinableRequest = (item: RecentRequestCardItem | null) =>
 const getUnmachinableReason = (item: RecentRequestCardItem | null) =>
   String(item?.rnd?.unmachinableReason || "").trim();
 
+const parseUnmachinableReasonLines = (reasonRaw: string): string[] => {
+  const raw = String(reasonRaw || "").trim();
+  if (!raw) return [];
+  return raw
+    .split(/\s*\/\s*|\n+/)
+    .map((line) => String(line || "").trim())
+    .filter(Boolean);
+};
+
 const renderStageBadge = (item: RecentRequestCardItem | null) => {
   const label = resolveStageLabel(item);
   if (!label) return null;
@@ -705,10 +714,25 @@ export const RequestorRecentRequestsCard = ({
           <div className="space-y-3">
             <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2">
               <div className="text-xs font-semibold text-red-700 mb-1">상세 사유</div>
-              <div className="text-sm text-red-800">
-                {getUnmachinableReason(unmachinableTarget) ||
-                  "가공 불가 사유가 등록되지 않았습니다."}
-              </div>
+              {(() => {
+                const reasonLines = parseUnmachinableReasonLines(
+                  getUnmachinableReason(unmachinableTarget),
+                );
+                if (!reasonLines.length) {
+                  return (
+                    <div className="text-sm text-red-800">
+                      가공 불가 사유가 등록되지 않았습니다.
+                    </div>
+                  );
+                }
+                return (
+                  <div className="text-sm text-red-800 space-y-0.5">
+                    {reasonLines.map((line, idx) => (
+                      <div key={`unmachinable-reason-line-${idx}`}>{line}</div>
+                    ))}
+                  </div>
+                );
+              })()}
             </div>
             <div className="text-sm text-slate-700 leading-relaxed">
               문의 사항은 <span className="font-semibold">전화</span>나
