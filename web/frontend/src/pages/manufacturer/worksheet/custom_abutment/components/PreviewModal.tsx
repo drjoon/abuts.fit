@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { DialogClose } from "@radix-ui/react-dialog";
 import { RefreshCw, Trash2, Upload, RotateCcw } from "lucide-react";
 import {
@@ -28,6 +28,36 @@ type PreviewFiles = {
   request?: ManufacturerRequest | null;
   finishLinePoints?: number[][] | null;
   finishLineSource?: "caseInfos" | "file" | null;
+};
+
+const UNMACHINABLE_REASON_PRESETS = [
+  "얇은 부위 찢어지고 휘어짐",
+  "이머전스 프로파일 낮아서 커프 부위 툴 진입 불가",
+] as const;
+
+const UNMACHINABLE_REASON_LIST_STORAGE_KEY =
+  "worksheet:custom-abutment:unmachinable-reasons";
+
+const parseUnmachinableReasonTokens = (reasonRaw: string): string[] => {
+  const raw = String(reasonRaw || "").trim();
+  if (!raw) return [];
+  return raw
+    .split(/\s*\/\s*|\n+/)
+    .map((item) => String(item || "").trim())
+    .filter(Boolean);
+};
+
+const normalizeReasonOptions = (items: unknown): string[] => {
+  if (!Array.isArray(items)) return [];
+  const deduped: string[] = [];
+  for (const item of items) {
+    const reason = String(item || "").slice(0, 500).trim();
+    if (!reason) continue;
+    if (deduped.includes(reason)) continue;
+    deduped.push(reason);
+    if (deduped.length >= 100) break;
+  }
+  return deduped;
 };
 
 type PreviewModalProps = {
@@ -84,6 +114,11 @@ type PreviewModalProps = {
     req: ManufacturerRequest,
     opts?: { forceRefresh?: boolean },
   ) => Promise<void>;
+  onMarkUnmachinable?: (
+    req: ManufacturerRequest,
+    reason: string,
+  ) => Promise<void>;
+  onRestoreUnmachinable?: (req: ManufacturerRequest) => Promise<void>;
   onOpenNextRequest?: (currentReqId: string) => Promise<void>;
   setSearchParams: (
     nextInit: ((prev: URLSearchParams) => URLSearchParams) | URLSearchParams,
@@ -127,6 +162,8 @@ export const PreviewModal = ({
   onDownloadNcFile,
   onDownloadStageFile,
   onRefreshPreview,
+  onMarkUnmachinable,
+  onRestoreUnmachinable,
   onOpenNextRequest,
   setSearchParams,
   setConfirmTitle,
@@ -138,6 +175,17 @@ export const PreviewModal = ({
   const { toast } = useToast();
   const [regenerating, setRegenerating] = useState(false);
   const [twoPhasing, setTwoPhasing] = useState(false);
+  const [unmachinableEditorOpen, setUnmachinableEditorOpen] = useState(false);
+  const [unmachinableReasonDraft, setUnmachinableReasonDraft] = useState("");
+  const [unmachinableSaving, setUnmachinableSaving] = useState(false);
+  const [customReasonLibrary, setCustomReasonLibrary] = useState<string[]>(
+    [...UNMACHINABLE_REASON_PRESETS],
+  );
+  const [customReasonEditIndex, setCustomReasonEditIndex] = useState<number | null>(
+    null,
+  );
+  const [customReasonEditDraft, setCustomReasonEditDraft] = useState("");
+  const [selectedReasonValues, setSelectedReasonValues] = useState<string[]>([]);
   const req = previewFiles.request as ManufacturerRequest | null;
   const lastStableReqRef = useRef<ManufacturerRequest | null>(null);
 
@@ -146,6 +194,108 @@ export const PreviewModal = ({
       lastStableReqRef.current = req;
     }
   }, [req]);
+
+  const persistReasonLibraryToLocal = useCallback((next: string[]) => {
+    if (typeof window === "undefined") return;
+    try {
+      window.localStorage.setItem(
+        UNMACHINABLE_REASON_LIST_STORAGE_KEY,
+        JSON.stringify(next),
+      );
+    } catch {
+      // noop
+    }
+  }, []);
+
+  const saveReasonLibraryToServer = useCallback(
+    async (next: string[]) => {
+      if (!token) return;
+      try {
+        await fetch("/api/requests/rnd-unmachinable-reasons", {
+          method: "PUT",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ options: next }),
+        });
+      } catch {
+        // noop
+      }
+    },
+    [token],
+  );
+
+  const setReasonLibraryWithSync = useCallback(
+    (updater: (prev: string[]) => string[]) => {
+      setCustomReasonLibrary((prev) => {
+        const next = normalizeReasonOptions(updater(prev));
+        persistReasonLibraryToLocal(next);
+        void saveReasonLibraryToServer(next);
+        return next;
+      });
+    },
+    [persistReasonLibraryToLocal, saveReasonLibraryToServer],
+  );
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const raw = window.localStorage.getItem(
+        UNMACHINABLE_REASON_LIST_STORAGE_KEY,
+      );
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      const normalized = normalizeReasonOptions(parsed);
+      setCustomReasonLibrary(
+        normalized.length ? normalized : [...UNMACHINABLE_REASON_PRESETS],
+      );
+    } catch {
+      // noop
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!open || !token) return;
+    void (async () => {
+      try {
+        const res = await fetch("/api/requests/rnd-unmachinable-reasons", {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok || body?.success === false) return;
+        const serverOptions = normalizeReasonOptions(body?.data?.options || []);
+        const next = serverOptions.length
+          ? serverOptions
+          : [...UNMACHINABLE_REASON_PRESETS];
+        setCustomReasonLibrary(next);
+        persistReasonLibraryToLocal(next);
+      } catch {
+        // noop
+      }
+    })();
+  }, [open, persistReasonLibraryToLocal, token]);
+
+  useEffect(() => {
+    if (!req) return;
+    setUnmachinableEditorOpen(false);
+    const existingReason = String(req.rnd?.unmachinableReason || "").trim();
+    const tokens = parseUnmachinableReasonTokens(existingReason);
+    setSelectedReasonValues(tokens);
+    setUnmachinableReasonDraft("");
+    if (tokens.length) {
+      setReasonLibraryWithSync((prev) => {
+        const next = [...prev];
+        for (const token of tokens) {
+          if (!next.includes(token)) next.unshift(token);
+        }
+        return next;
+      });
+    }
+  }, [req, setReasonLibraryWithSync]);
 
   // Hook은 항상 같은 순서로 호출되어야 하므로 조건부 로직 이전에 호출
   const requestId = req?.requestId || lastStableReqRef.current?.requestId;
@@ -215,7 +365,10 @@ export const PreviewModal = ({
 
   const { maxZ: finishLineMaxZ, minZ: finishLineMinZ } = getFinishLineExtremaZ();
 
-
+  const isFinishLineMinZRisky =
+    Number.isFinite(finishLineMinZ) && Number(finishLineMinZ) < 1;
+  const isUnmachinable = Boolean((activeReq as any)?.rnd?.unmachinableAt);
+  const shouldShowUnmachinableWarning = isFinishLineMinZRisky && !isUnmachinable;
 
   const currentReviewStageKey = getReviewStageKeyByTab({
     stage,
@@ -717,6 +870,78 @@ export const PreviewModal = ({
     void onDeleteCam(activeReq);
   };
 
+  const toggleReasonSelection = (reasonRaw: string) => {
+    const reason = String(reasonRaw || "").trim();
+    if (!reason) return;
+    setSelectedReasonValues((prev) =>
+      prev.includes(reason) ? prev.filter((item) => item !== reason) : [...prev, reason],
+    );
+  };
+
+  const addCustomReasonToLibrary = (reasonRaw: string) => {
+    const reason = String(reasonRaw || "").slice(0, 500).trim();
+    if (!reason) return;
+    if (UNMACHINABLE_REASON_PRESETS.includes(reason as (typeof UNMACHINABLE_REASON_PRESETS)[number])) {
+      return;
+    }
+    setReasonLibraryWithSync((prev) => {
+      if (prev.some((item) => item === reason)) return prev;
+      return [reason, ...prev];
+    });
+  };
+
+  const handleSubmitUnmachinable = async () => {
+    if (!onMarkUnmachinable || isUnmachinable) {
+      return;
+    }
+    const normalizedReasons = Array.from(
+      new Set(
+        selectedReasonValues
+          .map((item) => String(item || "").slice(0, 500).trim())
+          .filter(Boolean),
+      ),
+    );
+
+    if (!normalizedReasons.length) {
+      toast({
+        title: "사유 선택 필요",
+        description: "가공불가 사유를 1개 이상 선택해주세요.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const reason = normalizedReasons.join(" / ");
+
+    setUnmachinableSaving(true);
+    try {
+      await onMarkUnmachinable(activeReq, reason);
+      normalizedReasons.forEach((item) => addCustomReasonToLibrary(item));
+      setUnmachinableEditorOpen(false);
+      onOpenChange(false);
+    } catch {
+      // 실패 토스트는 상위 핸들러에서 표시
+    } finally {
+      setUnmachinableSaving(false);
+    }
+  };
+
+  const handleRestoreUnmachinable = async () => {
+    if (!onRestoreUnmachinable || !isUnmachinable || unmachinableSaving || reviewSaving) {
+      return;
+    }
+
+    setUnmachinableSaving(true);
+    try {
+      await onRestoreUnmachinable(activeReq);
+      onOpenChange(false);
+    } catch {
+      // 실패 토스트는 상위 핸들러에서 표시
+    } finally {
+      setUnmachinableSaving(false);
+    }
+  };
+
   const pickInputId = `right-upload-${activeReq?._id || "pending"}`;
 
   const realtimeBadge = String(activeReq?.realtimeProgress?.badge || "").trim();
@@ -746,7 +971,11 @@ export const PreviewModal = ({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         hideClose
-        className="w-[92vw] max-w-5xl h-[85vh] overflow-hidden"
+        className={`w-[92vw] max-w-5xl h-[85vh] overflow-hidden ${
+          shouldShowUnmachinableWarning || isUnmachinable
+            ? "border-red-300 ring-2 ring-red-200"
+            : ""
+        }`}
       >
         <DialogTitle className="sr-only">의뢰 미리보기</DialogTitle>
         <DialogDescription className="sr-only">
@@ -796,10 +1025,23 @@ export const PreviewModal = ({
                       min_z {Number(finishLineMinZ).toFixed(2)}
                     </Badge>
                   )}
+                  {(shouldShowUnmachinableWarning || isUnmachinable) && (
+                    <Badge
+                      variant="outline"
+                      className={`text-[11px] px-2 py-0.5 font-semibold leading-[1.1] border ${
+                        isUnmachinable
+                          ? "border-red-300 bg-red-50 text-red-700"
+                          : "border-red-200 bg-red-50 text-red-600"
+                      }`}
+                    >
+                      {isUnmachinable ? "가공불가" : "가공불가 확인요망"}
+                    </Badge>
+                  )}
                 </div>
               ) : retentionGrooveLabel ||
                 Number.isFinite(finishLineMaxZ) ||
-                Number.isFinite(finishLineMinZ) ? (
+                Number.isFinite(finishLineMinZ) ||
+                isUnmachinable ? (
                 <div className="flex items-center gap-1.5">
                   {retentionGrooveLabel && (
                     <Badge
@@ -825,6 +1067,18 @@ export const PreviewModal = ({
                       min_z {Number(finishLineMinZ).toFixed(2)}
                     </Badge>
                   )}
+                  {(shouldShowUnmachinableWarning || isUnmachinable) && (
+                    <Badge
+                      variant="outline"
+                      className={`text-[11px] px-2 py-0.5 font-semibold leading-[1.1] border ${
+                        isUnmachinable
+                          ? "border-red-300 bg-red-50 text-red-700"
+                          : "border-red-200 bg-red-50 text-red-600"
+                      }`}
+                    >
+                      {isUnmachinable ? "가공불가" : "가공불가 확인요망"}
+                    </Badge>
+                  )}
                 </div>
               ) : null}
 
@@ -844,6 +1098,42 @@ export const PreviewModal = ({
             </div>
 
             <div className="flex items-center gap-2">
+              {isUnmachinable ? (
+                  <button
+                    type="button"
+                    className={`h-8 rounded-md border px-2 text-[12px] font-semibold transition ${
+                      unmachinableSaving || reviewSaving
+                        ? "border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed"
+                        : "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                    }`}
+                    disabled={unmachinableSaving || reviewSaving}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      void handleRestoreUnmachinable();
+                    }}
+                  >
+                    {unmachinableSaving ? "복귀 중..." : "가공불가 복귀"}
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className={`h-8 rounded-md border px-2 text-[12px] font-semibold transition ${
+                      unmachinableSaving || reviewSaving
+                        ? "border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed"
+                        : "border-red-200 bg-red-50 text-red-700 hover:bg-red-100"
+                    }`}
+                    disabled={unmachinableSaving || reviewSaving}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      if (unmachinableSaving || reviewSaving) return;
+                      setUnmachinableEditorOpen(true);
+                    }}
+                  >
+                    가공불가
+                  </button>
+                )}
               {!isRequestStage && (
                 <button
                   type="button"
@@ -960,6 +1250,183 @@ export const PreviewModal = ({
               </DialogClose>
             </div>
           </div>
+
+          {unmachinableEditorOpen && (
+            <div className="shrink-0 rounded-lg border border-red-200 bg-red-50/70 p-2 space-y-2 max-h-[34vh] overflow-y-auto">
+              <div className="text-xs font-semibold text-red-700">가공불가 사유 입력</div>
+
+              <div className="space-y-1.5 rounded-md border border-red-200 bg-white/80 p-1.5">
+                {customReasonLibrary.map((reason, idx) => {
+                  const selected = selectedReasonValues.includes(reason);
+                  return (
+                    <div
+                      key={`${reason}-${idx}`}
+                      className="flex items-center gap-1 rounded border border-slate-200 bg-white p-1"
+                    >
+                      {customReasonEditIndex === idx ? (
+                        <>
+                          <input
+                            value={customReasonEditDraft}
+                            onChange={(e) =>
+                              setCustomReasonEditDraft(
+                                String(e.target.value || "").slice(0, 500),
+                              )
+                            }
+                            className="flex-1 h-7 rounded border border-slate-200 px-2 text-xs"
+                          />
+                          <Button
+                            type="button"
+                            size="sm"
+                            className="h-7 px-2 text-xs"
+                            onClick={() => {
+                              const next = customReasonEditDraft.trim();
+                              if (!next) return;
+                              setReasonLibraryWithSync((prev) => {
+                                const clone = [...prev];
+                                clone[idx] = next;
+                                return Array.from(new Set(clone));
+                              });
+                              setSelectedReasonValues((prev) => {
+                                const filtered = prev.filter((item) => item !== reason);
+                                return filtered.includes(next)
+                                  ? filtered
+                                  : [...filtered, next];
+                              });
+                              setCustomReasonEditIndex(null);
+                              setCustomReasonEditDraft("");
+                            }}
+                          >
+                            저장
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="h-7 px-2 text-xs"
+                            onClick={() => {
+                              setCustomReasonEditIndex(null);
+                              setCustomReasonEditDraft("");
+                            }}
+                          >
+                            취소
+                          </Button>
+                        </>
+                      ) : (
+                        <>
+                          <button
+                            type="button"
+                            className={`flex-1 text-left text-xs rounded px-2 h-7 ${
+                              selected
+                                ? "bg-blue-50 text-blue-700 border border-blue-200"
+                                : "text-slate-700 hover:bg-slate-50"
+                            }`}
+                            onClick={() => toggleReasonSelection(reason)}
+                          >
+                            {reason}
+                          </button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="h-7 px-2 text-xs"
+                            onClick={() => {
+                              setCustomReasonEditIndex(idx);
+                              setCustomReasonEditDraft(reason);
+                            }}
+                          >
+                            수정
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="h-7 px-2 text-xs text-red-600 hover:text-red-700"
+                            onClick={() => {
+                              setReasonLibraryWithSync((prev) =>
+                                prev.filter((_, i) => i !== idx),
+                              );
+                              setSelectedReasonValues((prev) =>
+                                prev.filter((item) => item !== reason),
+                              );
+                            }}
+                          >
+                            삭제
+                          </Button>
+                        </>
+                      )}
+                    </div>
+                  );
+                })}
+
+                <div className="flex items-center gap-1 rounded border border-dashed border-slate-300 bg-slate-50 p-1">
+                  <input
+                    value={unmachinableReasonDraft}
+                    onChange={(e) =>
+                      setUnmachinableReasonDraft(
+                        String(e.target.value || "").slice(0, 500),
+                      )
+                    }
+                    placeholder="새 사유 입력"
+                    className="flex-1 h-7 rounded border border-slate-200 px-2 text-xs bg-white"
+                  />
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="h-7 px-2 text-xs"
+                    disabled={unmachinableSaving || !unmachinableReasonDraft.trim()}
+                    onClick={() => {
+                      addCustomReasonToLibrary(unmachinableReasonDraft);
+                      setUnmachinableReasonDraft("");
+                    }}
+                  >
+                    추가
+                  </Button>
+                </div>
+              </div>
+
+              <div className="rounded-md border border-red-200 bg-white px-2 py-2">
+                <div className="text-[11px] font-semibold text-slate-700 mb-1">
+                  선택된 사유 ({selectedReasonValues.length})
+                </div>
+                {selectedReasonValues.length ? (
+                  <div className="flex flex-wrap gap-1">
+                    {selectedReasonValues.map((reason) => (
+                      <Badge
+                        key={`selected-reason-${reason}`}
+                        variant="outline"
+                        className="text-[11px] border-red-200 bg-red-50 text-red-700"
+                      >
+                        {reason}
+                      </Badge>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-[11px] text-slate-500">선택된 사유가 없습니다.</div>
+                )}
+              </div>
+
+              <div className="flex items-center justify-end gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={unmachinableSaving}
+                  onClick={() => setUnmachinableEditorOpen(false)}
+                >
+                  취소
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  className="bg-red-600 hover:bg-red-700"
+                  disabled={unmachinableSaving}
+                  onClick={() => void handleSubmitUnmachinable()}
+                >
+                  {unmachinableSaving ? "처리 중..." : "확인"}
+                </Button>
+              </div>
+            </div>
+          )}
 
           {previewLoading ? (
             <div className="rounded-lg border border-dashed p-8 flex flex-col items-center gap-2 text-sm text-slate-500">

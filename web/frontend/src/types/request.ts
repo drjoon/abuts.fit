@@ -291,6 +291,9 @@ export interface RequestBase {
   source?: "normal" | "manufacturer_sample" | string;
   rnd?: {
     doneAt?: string | null;
+    unmachinableAt?: string | null;
+    unmachinableFromStage?: string | null;
+    unmachinableReason?: string | null;
     memo?: string | null;
     memoUpdatedAt?: string | null;
     memoUpdatedBy?:

@@ -77,6 +77,10 @@ const systemSettingsSchema = new mongoose.Schema(
       type: [String],
       default: ["현미경(AD-T-07)", "비전(AD-T-19)", "MICRO(AD-T-02)"],
     },
+    rndUnmachinableReasonOptions: {
+      type: [String],
+      default: [],
+    },
   },
   {
     timestamps: true,

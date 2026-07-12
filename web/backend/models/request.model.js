@@ -400,6 +400,24 @@ const requestSchema = new mongoose.Schema(
         type: String,
         default: null,
       },
+      unmachinableAt: {
+        type: Date,
+        default: null,
+        index: true,
+      },
+      unmachinableBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+        default: null,
+      },
+      unmachinableFromStage: {
+        type: String,
+        default: null,
+      },
+      unmachinableReason: {
+        type: String,
+        default: "",
+      },
       memo: {
         type: String,
         default: "",

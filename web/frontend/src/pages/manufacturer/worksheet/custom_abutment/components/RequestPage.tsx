@@ -168,6 +168,7 @@ export const RequestPage = ({
             return showCompleted ? ["포장.발송", "추적관리"] : ["포장.발송"];
           if (tabStage === "tracking") return ["추적관리"];
           if (tabStage === "rnd") return [] as string[];
+          if (tabStage === "unmachinable") return [] as string[];
           return [] as string[];
         })();
 
@@ -293,8 +294,12 @@ export const RequestPage = ({
           if (tabStage === "rnd") {
             url.searchParams.set("source", "manufacturer_sample");
             url.searchParams.set("rndDone", "1");
+            url.searchParams.set("rndUnmachinable", "0");
+          } else if (tabStage === "unmachinable") {
+            url.searchParams.set("rndUnmachinable", "1");
           } else {
             url.searchParams.set("rndDone", "0");
+            url.searchParams.set("rndUnmachinable", "0");
           }
           url.searchParams.set("includeTotal", append ? "0" : "1");
           if (tabStage === "shipping" || tabStage === "tracking") {
@@ -716,7 +721,7 @@ export const RequestPage = ({
     ? "가공"
     : isCamStage
       ? "CAM"
-      : tabStage === "rnd"
+      : tabStage === "rnd" || tabStage === "unmachinable"
         ? "추적관리"
         : tabStage === "shipping"
           ? "포장.발송"
@@ -727,18 +732,22 @@ export const RequestPage = ({
 
   const matchesCurrentPage = useCallback(
     (req: ManufacturerRequest) => {
-      if (filterRequests) {
-        return filterRequests(req);
+      const isManufacturerSample =
+        String(req.source || "").trim() === "manufacturer_sample";
+      const isDoneRndSample = isManufacturerSample && Boolean(req.rnd?.doneAt);
+      const isUnmachinable = Boolean((req as any)?.rnd?.unmachinableAt);
+      if (tabStage === "rnd") {
+        return isDoneRndSample && !isUnmachinable;
+      }
+      if (tabStage === "unmachinable") {
+        return isUnmachinable;
+      }
+      if (isDoneRndSample || isUnmachinable) {
+        return false;
       }
 
-      const isDoneRndSample =
-        String(req.source || "").trim() === "manufacturer_sample" &&
-        Boolean(req.rnd?.doneAt);
-      if (tabStage === "rnd") {
-        return isDoneRndSample;
-      }
-      if (isDoneRndSample) {
-        return false;
+      if (filterRequests) {
+        return filterRequests(req);
       }
 
       if (showCompleted && tabStage !== "tracking") {
@@ -1046,6 +1055,183 @@ export const RequestPage = ({
           description: e?.message || "네트워크 오류",
           variant: "destructive",
         });
+      }
+    },
+    [pageState, queryClient, toast, token],
+  );
+
+  const handleMarkUnmachinable = useCallback(
+    async (req: ManufacturerRequest, reasonRaw: string) => {
+      if (!req?._id) return;
+      const reason = String(reasonRaw || "").slice(0, 500).trim();
+      if (!reason) {
+        throw new Error("가공불가 사유를 입력해주세요.");
+      }
+
+      const requestMongoId = String(req._id || "").trim();
+      const optimisticAt = new Date().toISOString();
+
+      pageState.setRequests((prev) =>
+        prev.map((item) => {
+          if (String(item?._id || "").trim() !== requestMongoId) return item;
+          return {
+            ...item,
+            rnd: {
+              ...(item.rnd || {}),
+              unmachinableAt: optimisticAt,
+              unmachinableReason: reason,
+              unmachinableFromStage:
+                String(item.manufacturerStage || "").trim() || null,
+            },
+          };
+        }),
+      );
+
+      try {
+        const res = await fetch(`/api/requests/${req._id}/rnd-unmachinable`, {
+          method: "PATCH",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            unmachinable: true,
+            reason,
+          }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || data?.success === false) {
+          throw new Error(data?.message || "가공불가 처리에 실패했습니다.");
+        }
+
+        toast({
+          title: "가공불가 처리 완료",
+          description: `의뢰 ${req.requestId}가 가공불가 탭으로 이동되었습니다.`,
+        });
+
+        // 현재 탭 목록에서 해당 의뢰만 즉시 제거해 잔상(이전 탭 잔류)을 방지한다.
+        if (tabStage !== "unmachinable") {
+          pageState.setRequests((prev) =>
+            prev.filter(
+              (item) =>
+                String(item?._id || "").trim() !== requestMongoId,
+            ),
+          );
+        }
+
+        void queryClient.invalidateQueries({
+          queryKey: ["worksheet-assigned-summary"],
+        });
+        void queryClient.refetchQueries({
+          queryKey: ["worksheet-assigned-summary"],
+          type: "active",
+        });
+      } catch (e: any) {
+        pageState.setRequests((prev) =>
+          prev.map((item) => {
+            if (String(item?._id || "").trim() !== requestMongoId) return item;
+            return {
+              ...item,
+              rnd: {
+                ...(item.rnd || {}),
+                unmachinableAt: (req as any)?.rnd?.unmachinableAt || null,
+                unmachinableReason:
+                  String((req as any)?.rnd?.unmachinableReason || "") || "",
+              },
+            };
+          }),
+        );
+
+        toast({
+          title: "가공불가 처리 실패",
+          description: e?.message || "네트워크 오류",
+          variant: "destructive",
+        });
+
+        throw e;
+      }
+    },
+    [pageState, queryClient, tabStage, toast, token],
+  );
+
+  const handleRestoreUnmachinable = useCallback(
+    async (req: ManufacturerRequest) => {
+      if (!req?._id) return;
+
+      const requestMongoId = String(req._id || "").trim();
+      const prevAt = req.rnd?.unmachinableAt || null;
+      const prevReason = String(req.rnd?.unmachinableReason || "");
+      const prevFromStage = String(req.rnd?.unmachinableFromStage || "") || null;
+
+      pageState.setRequests((prev) =>
+        prev.map((item) => {
+          if (String(item?._id || "").trim() !== requestMongoId) return item;
+          return {
+            ...item,
+            rnd: {
+              ...(item.rnd || {}),
+              unmachinableAt: null,
+              unmachinableReason: "",
+              unmachinableFromStage: prevFromStage,
+            },
+          };
+        }),
+      );
+
+      try {
+        const res = await fetch(`/api/requests/${req._id}/rnd-unmachinable`, {
+          method: "PATCH",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            unmachinable: false,
+          }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || data?.success === false) {
+          throw new Error(data?.message || "가공불가 복귀에 실패했습니다.");
+        }
+
+        const restoreStageLabel =
+          String(prevFromStage || req.manufacturerStage || "").trim() || "원래";
+
+        toast({
+          title: "가공불가 복귀 완료",
+          description: `의뢰 ${req.requestId}가 ${restoreStageLabel} 공정으로 복귀되었습니다.`,
+        });
+
+        void queryClient.invalidateQueries({
+          queryKey: ["worksheet-assigned-summary"],
+        });
+        void queryClient.refetchQueries({
+          queryKey: ["worksheet-assigned-summary"],
+          type: "active",
+        });
+      } catch (e: any) {
+        pageState.setRequests((prev) =>
+          prev.map((item) => {
+            if (String(item?._id || "").trim() !== requestMongoId) return item;
+            return {
+              ...item,
+              rnd: {
+                ...(item.rnd || {}),
+                unmachinableAt: prevAt,
+                unmachinableReason: prevReason,
+                unmachinableFromStage: prevFromStage,
+              },
+            };
+          }),
+        );
+
+        toast({
+          title: "가공불가 복귀 실패",
+          description: e?.message || "네트워크 오류",
+          variant: "destructive",
+        });
+
+        throw e;
       }
     },
     [pageState, queryClient, toast, token],
@@ -1648,6 +1834,7 @@ export const RequestPage = ({
                   onApprove={enableCardApprove ? handleCardApprove : undefined}
                   onDelete={handleCardDelete}
                   onDone={handleCardDone}
+                  onRestoreUnmachinable={handleRestoreUnmachinable}
                   onUploadNc={handleUploadNc}
                   uploadProgress={pageState.uploadProgress}
                   uploading={pageState.uploading}
@@ -1759,6 +1946,8 @@ export const RequestPage = ({
         onDownloadNcFile={handleDownloadNcFile}
         onDownloadStageFile={handleDownloadStageFile}
         onRefreshPreview={handleOpenPreview}
+        onMarkUnmachinable={handleMarkUnmachinable}
+        onRestoreUnmachinable={handleRestoreUnmachinable}
         setSearchParams={setSearchParams}
         setConfirmTitle={pageState.setConfirmTitle}
         setConfirmDescription={pageState.setConfirmDescription}

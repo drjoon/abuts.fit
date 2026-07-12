@@ -96,6 +96,8 @@ export function filterRequestsByStage(
   const isDoneRndSample = (req: ManufacturerRequest) =>
     String(req.source || "").trim() === "manufacturer_sample" &&
     Boolean(req.rnd?.doneAt);
+  const isUnmachinable = (req: ManufacturerRequest) =>
+    Boolean(req.rnd?.unmachinableAt);
 
   const passExternalFilter = (req: ManufacturerRequest) => {
     if (!filterRequests) return true;
@@ -109,7 +111,15 @@ export function filterRequestsByStage(
   if (tabStage === "rnd") {
     return requests.filter((req) => {
       if (!passExternalFilter(req)) return false;
+      if (isUnmachinable(req)) return false;
       return isDoneRndSample(req);
+    });
+  }
+
+  if (tabStage === "unmachinable") {
+    return requests.filter((req) => {
+      if (!passExternalFilter(req)) return false;
+      return isUnmachinable(req);
     });
   }
 
@@ -124,6 +134,7 @@ export function filterRequestsByStage(
     return requests.filter((req) => {
       if (!passExternalFilter(req)) return false;
       if (isDoneRndSample(req)) return false;
+      if (isUnmachinable(req)) return false;
       if (tabStage === "shipping" && isPrePickupShippingVisible(req))
         return true;
       return shouldShowRequestInIncludeCompleted(req, currentStageOrder);
@@ -133,6 +144,7 @@ export function filterRequestsByStage(
   return requests.filter((req) => {
     if (!passExternalFilter(req)) return false;
     if (isDoneRndSample(req)) return false;
+    if (isUnmachinable(req)) return false;
 
     const stage = deriveStageForFilter(req);
     if (tabStage === "request") return stage === "의뢰";

@@ -254,6 +254,12 @@ export async function getAssignedDashboardSummary(req, res) {
                   branches: [
                     {
                       case: {
+                        $ne: [{ $ifNull: ["$rnd.unmachinableAt", null] }, null],
+                      },
+                      then: "unmachinable",
+                    },
+                    {
+                      case: {
                         $and: [
                           { $eq: ["$source", "manufacturer_sample"] },
                           { $ne: [{ $ifNull: ["$rnd.doneAt", null] }, null] },
@@ -317,6 +323,11 @@ export async function getAssignedDashboardSummary(req, res) {
           trackingCount: {
             $sum: { $cond: [{ $eq: ["$normalizedStage", "tracking"] }, 1, 0] },
           },
+          unmachinableCount: {
+            $sum: {
+              $cond: [{ $eq: ["$normalizedStage", "unmachinable"] }, 1, 0],
+            },
+          },
           requestCount: {
             $sum: { $cond: [{ $eq: ["$normalizedStage", "request"] }, 1, 0] },
           },
@@ -340,6 +351,7 @@ export async function getAssignedDashboardSummary(req, res) {
       ...dateFilter,
       source: "manufacturer_sample",
       "rnd.doneAt": { $ne: null },
+      "rnd.unmachinableAt": null,
       ...(role === "manufacturer"
         ? await buildManufacturerOrgScopeFilter(req)
         : {}),
@@ -411,6 +423,7 @@ export async function getAssignedDashboardSummary(req, res) {
         canceledCount: Number(statsResult?.canceledCount ?? 0) || 0,
         trackingCount: Number(statsResult?.trackingCount ?? 0) || 0,
         trackingBoxes: Number(trackingBoxesAgg?.[0]?.count ?? 0) || 0,
+        unmachinableCount: Number(statsResult?.unmachinableCount ?? 0) || 0,
         requestCount: Number(statsResult?.requestCount ?? 0) || 0,
         camCount: Number(statsResult?.camCount ?? 0) || 0,
         machiningCount: Number(statsResult?.machiningCount ?? 0) || 0,

@@ -184,6 +184,23 @@ const DEFAULT_SELF_INSPECTION_INSTRUMENT_OPTIONS = [
   "MICRO(AD-T-02)",
 ];
 
+const DEFAULT_RND_UNMACHINABLE_REASON_OPTIONS = [];
+
+const normalizeReasonOptions = (optionsRaw, max = 100) => {
+  if (!Array.isArray(optionsRaw)) return [];
+  const unique = [];
+  for (const raw of optionsRaw) {
+    const normalized = String(raw || "")
+      .slice(0, 500)
+      .trim();
+    if (!normalized) continue;
+    if (unique.includes(normalized)) continue;
+    unique.push(normalized);
+    if (unique.length >= max) break;
+  }
+  return unique;
+};
+
 function withBridgeHeaders(extra = {}) {
   const base = {};
   if (BRIDGE_SHARED_SECRET) {
@@ -439,6 +456,69 @@ export async function saveSelfInspectionInstrumentOptions(req, res) {
   }
 }
 
+export async function getRndUnmachinableReasonOptions(req, res) {
+  try {
+    if (req.user.role !== "manufacturer" && req.user.role !== "admin")
+      return res
+        .status(403)
+        .json({ success: false, message: "권한이 없습니다." });
+
+    const settings = await SystemSettings.findOne({ key: "global" })
+      .select({ rndUnmachinableReasonOptions: 1 })
+      .lean();
+
+    const options = normalizeReasonOptions(
+      settings?.rndUnmachinableReasonOptions ||
+        DEFAULT_RND_UNMACHINABLE_REASON_OPTIONS,
+    );
+
+    return res.json({ success: true, data: { options } });
+  } catch (e) {
+    return res.status(500).json({
+      success: false,
+      message: "가공불가 사유 목록 조회 실패",
+    });
+  }
+}
+
+export async function saveRndUnmachinableReasonOptions(req, res) {
+  try {
+    if (req.user.role !== "manufacturer" && req.user.role !== "admin")
+      return res
+        .status(403)
+        .json({ success: false, message: "권한이 없습니다." });
+
+    const options = normalizeReasonOptions(req.body?.options || []);
+
+    const updated = await SystemSettings.findOneAndUpdate(
+      { key: "global" },
+      {
+        $set: {
+          rndUnmachinableReasonOptions: options,
+        },
+      },
+      {
+        upsert: true,
+        new: true,
+        setDefaultsOnInsert: true,
+        select: { rndUnmachinableReasonOptions: 1 },
+      },
+    ).lean();
+
+    return res.json({
+      success: true,
+      data: {
+        options: normalizeReasonOptions(updated?.rndUnmachinableReasonOptions),
+      },
+    });
+  } catch (e) {
+    return res.status(500).json({
+      success: false,
+      message: "가공불가 사유 목록 저장 실패",
+    });
+  }
+}
+
 export async function getConnectionSpecByRequestId(req, res) {
   try {
     const requestId = String(req.params?.requestId || "").trim();
@@ -637,6 +717,19 @@ export async function getAllRequests(req, res) {
         filter["rnd.doneAt"] = null;
       }
     }
+    if (req.query.rndUnmachinable !== undefined) {
+      const rndUnmachinableRaw = String(req.query.rndUnmachinable || "")
+        .trim()
+        .toLowerCase();
+      if (rndUnmachinableRaw === "1" || rndUnmachinableRaw === "true") {
+        filter["rnd.unmachinableAt"] = { $ne: null };
+      } else if (
+        rndUnmachinableRaw === "0" ||
+        rndUnmachinableRaw === "false"
+      ) {
+        filter["rnd.unmachinableAt"] = null;
+      }
+    }
     if (req.query.implantType) filter.implantType = req.query.implantType;
 
     // 생성일 범위 필터 (관리자 모니터링 등 기간 조회 최적화)
@@ -732,6 +825,9 @@ export async function getAllRequests(req, res) {
       "source",
       "rnd.doneAt",
       "rnd.doneFromStage",
+      "rnd.unmachinableAt",
+      "rnd.unmachinableFromStage",
+      "rnd.unmachinableReason",
       "rnd.memo",
       "rnd.memoUpdatedAt",
       "rnd.memoUpdatedBy",
@@ -777,6 +873,9 @@ export async function getAllRequests(req, res) {
       "source",
       "rnd.doneAt",
       "rnd.doneFromStage",
+      "rnd.unmachinableAt",
+      "rnd.unmachinableFromStage",
+      "rnd.unmachinableReason",
       "rnd.memo",
       "rnd.memoUpdatedAt",
       "rnd.memoUpdatedBy",
@@ -801,6 +900,9 @@ export async function getAllRequests(req, res) {
       "source",
       "rnd.doneAt",
       "rnd.doneFromStage",
+      "rnd.unmachinableAt",
+      "rnd.unmachinableFromStage",
+      "rnd.unmachinableReason",
       "rnd.memo",
       "rnd.memoUpdatedAt",
       "rnd.memoUpdatedBy",
@@ -1435,6 +1537,67 @@ export const updateRndDoneStatus = asyncHandler(async (req, res) => {
       requestId: request.requestId,
       doneAt: request.rnd?.doneAt || null,
       restoredStage,
+    },
+  });
+});
+
+export const updateRndUnmachinableStatus = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const unmachinable = Boolean(req.body?.unmachinable);
+  const reason = String(req.body?.reason || "")
+    .slice(0, 500)
+    .trim();
+
+  if (!mongoose.Types.ObjectId.isValid(id)) {
+    return res.status(400).json({
+      success: false,
+      message: "유효하지 않은 의뢰 ID입니다.",
+    });
+  }
+
+  const request = await Request.findById(id);
+  if (!request) {
+    return res.status(404).json({
+      success: false,
+      message: "의뢰를 찾을 수 없습니다.",
+    });
+  }
+
+
+
+  if (req.user.role === "manufacturer") {
+    const orgScope = await buildManufacturerOrgScopeFilter(req);
+    const allowed = await Request.exists({
+      _id: request._id,
+      ...orgScope,
+    });
+    if (!allowed) {
+      return res.status(403).json({
+        success: false,
+        message: "이 의뢰를 변경할 권한이 없습니다.",
+      });
+    }
+  }
+
+  const currentStage = String(request.manufacturerStage || "").trim();
+  request.rnd = {
+    ...(request.rnd || {}),
+    unmachinableAt: unmachinable ? new Date() : null,
+    unmachinableBy: unmachinable ? req.user._id : null,
+    unmachinableFromStage: unmachinable
+      ? currentStage || null
+      : String(request.rnd?.unmachinableFromStage || "").trim() || null,
+    unmachinableReason: unmachinable ? reason : "",
+  };
+
+  await request.save();
+
+  return res.status(200).json({
+    success: true,
+    data: {
+      requestId: request.requestId,
+      unmachinableAt: request.rnd?.unmachinableAt || null,
+      unmachinableReason: String(request.rnd?.unmachinableReason || ""),
     },
   });
 });

@@ -1107,6 +1107,25 @@ export const DashboardLayout = () => {
                                   {wsSummary.rndCount ?? 0}
                                 </span>
                               </Button>
+                              <Button
+                                variant={
+                                  worksheetStage === "unmachinable"
+                                    ? "default"
+                                    : "ghost"
+                                }
+                                size="sm"
+                                className="h-7 px-2 text-xs gap-1"
+                                onClick={() =>
+                                  navigate(
+                                    "/dashboard/worksheet?type=cnc&stage=unmachinable",
+                                  )
+                                }
+                              >
+                                <span>가공불가</span>
+                                <span className="tabular-nums opacity-70">
+                                  {wsSummary.unmachinableCount ?? 0}
+                                </span>
+                              </Button>
                             </div>
                           </>
                         )}

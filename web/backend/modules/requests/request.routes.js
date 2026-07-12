@@ -306,6 +306,21 @@ router.post(
   requestController.wblPrintPng,
 );
 
+// 제조사/관리자: 가공불가 사유 옵션 목록 조회/저장
+router.get(
+  "/rnd-unmachinable-reasons",
+  authenticate,
+  authorize(["manufacturer", "admin"]),
+  requestController.getRndUnmachinableReasonOptions,
+);
+
+router.put(
+  "/rnd-unmachinable-reasons",
+  authenticate,
+  authorize(["manufacturer", "admin"]),
+  requestController.saveRndUnmachinableReasonOptions,
+);
+
 // 의뢰 상세 조회 (권한 검증은 컨트롤러에서 처리)
 router.get("/:id", authenticate, requestController.getRequestById);
 
@@ -332,6 +347,13 @@ router.patch(
   authenticate,
   authorize(["manufacturer", "admin"]),
   requestController.updateRndDoneStatus,
+);
+
+router.patch(
+  "/:id/rnd-unmachinable",
+  authenticate,
+  authorize(["manufacturer", "admin"]),
+  requestController.updateRndUnmachinableStatus,
 );
 
 router.patch(

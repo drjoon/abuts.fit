@@ -182,7 +182,8 @@ export const PackingPageContent = ({
       const isDoneRndSample =
         String(req.source || "").trim() === "manufacturer_sample" &&
         Boolean(req.rnd?.doneAt);
-      if (isDoneRndSample) return false;
+      const isUnmachinable = Boolean(req.rnd?.unmachinableAt);
+      if (isDoneRndSample || isUnmachinable) return false;
       if (showCompleted) {
         return shouldShowRequestInIncludeCompleted(req, currentStageOrder);
       }
@@ -365,6 +366,18 @@ export const PackingPageContent = ({
         });
         return;
       }
+      const requestMongoId = String(req._id || "").trim();
+      const requestRid = String(req.requestId || "").trim();
+      setRequests((prev) =>
+        prev.filter((item) => {
+          const itemMongoId = String(item?._id || "").trim();
+          const itemRid = String(item?.requestId || "").trim();
+          if (requestMongoId && itemMongoId === requestMongoId) return false;
+          if (requestRid && itemRid === requestRid) return false;
+          return true;
+        }),
+      );
+
       try {
         const res = await fetch(`/api/requests/${req._id}`, {
           method: "DELETE",
@@ -385,8 +398,20 @@ export const PackingPageContent = ({
           queryKey: ["worksheet-assigned-summary"],
           type: "active",
         });
-        void fetchRequests();
       } catch (e: any) {
+        setRequests((prev) => {
+          const exists = prev.some((item) => {
+            const itemMongoId = String(item?._id || "").trim();
+            const itemRid = String(item?.requestId || "").trim();
+            return (
+              (requestMongoId && itemMongoId === requestMongoId) ||
+              (requestRid && itemRid === requestRid)
+            );
+          });
+          if (exists) return prev;
+          return [req, ...prev];
+        });
+
         toast({
           title: "삭제 실패",
           description: e?.message || "네트워크 오류",
@@ -394,7 +419,7 @@ export const PackingPageContent = ({
         });
       }
     },
-    [fetchRequests, queryClient, toast, token],
+    [queryClient, setRequests, toast, token],
   );
 
   const handleCardDone = useCallback(
@@ -410,6 +435,21 @@ export const PackingPageContent = ({
         });
         return;
       }
+      const requestMongoId = String(req._id || "").trim();
+      const optimisticDoneAt = new Date().toISOString();
+      setRequests((prev) =>
+        prev.map((item) => {
+          if (String(item?._id || "").trim() !== requestMongoId) return item;
+          return {
+            ...item,
+            rnd: {
+              ...(item.rnd || {}),
+              doneAt: optimisticDoneAt,
+            },
+          };
+        }),
+      );
+
       try {
         const res = await fetch(`/api/requests/${req._id}/rnd-done`, {
           method: "PATCH",
@@ -428,20 +468,93 @@ export const PackingPageContent = ({
           description: `의뢰 ${req.requestId}가 R&D 탭으로 이동되었습니다.`,
         });
 
-        // 즉시 반영: packing 목록에서 숨김
+
+        void queryClient.invalidateQueries({
+          queryKey: ["worksheet-assigned-summary"],
+        });
+        void queryClient.refetchQueries({
+          queryKey: ["worksheet-assigned-summary"],
+          type: "active",
+        });
+      } catch (e: any) {
         setRequests((prev) =>
           prev.map((item) => {
-            if (String(item?._id || "") !== String(req._id || "")) return item;
+            if (String(item?._id || "").trim() !== requestMongoId) return item;
             return {
               ...item,
               rnd: {
                 ...(item.rnd || {}),
-                doneAt: new Date().toISOString(),
-                doneFromStage:
-                  String(item.manufacturerStage || "").trim() || null,
+                doneAt: req?.rnd?.doneAt || null,
               },
             };
           }),
+        );
+
+        toast({
+          title: "Done 실패",
+          description: e?.message || "네트워크 오류",
+          variant: "destructive",
+        });
+      }
+    },
+    [queryClient, setRequests, toast, token],
+  );
+
+  const handleMarkUnmachinable = useCallback(
+    async (req: ManufacturerRequest, reasonRaw: string) => {
+      if (!req?._id) return;
+      const reason = String(reasonRaw || "").slice(0, 500).trim();
+      if (!reason) {
+        throw new Error("가공불가 사유를 입력해주세요.");
+      }
+
+      const requestMongoId = String(req._id || "").trim();
+      const prevAt = req.rnd?.unmachinableAt || null;
+      const prevReason = String(req.rnd?.unmachinableReason || "");
+      const prevFromStage = String(req.rnd?.unmachinableFromStage || "") || null;
+      const optimisticAt = new Date().toISOString();
+
+      setRequests((prev) =>
+        prev.map((item) => {
+          if (String(item?._id || "").trim() !== requestMongoId) return item;
+          return {
+            ...item,
+            rnd: {
+              ...(item.rnd || {}),
+              unmachinableAt: optimisticAt,
+              unmachinableReason: reason,
+              unmachinableFromStage:
+                String(item.manufacturerStage || "").trim() || null,
+            },
+          };
+        }),
+      );
+
+      try {
+        const res = await fetch(`/api/requests/${req._id}/rnd-unmachinable`, {
+          method: "PATCH",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            unmachinable: true,
+            reason,
+          }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || data?.success === false) {
+          throw new Error(data?.message || "가공불가 처리에 실패했습니다.");
+        }
+
+        toast({
+          title: "가공불가 처리 완료",
+          description: `의뢰 ${req.requestId}가 가공불가 탭으로 이동되었습니다.`,
+        });
+
+        // 현재 탭 목록에서 해당 의뢰만 즉시 제거해 잔상을 방지한다.
+        setRequests((prev) =>
+          prev.filter((item) => String(item?._id || "").trim() !== requestMongoId),
         );
 
         void queryClient.invalidateQueries({
@@ -451,16 +564,32 @@ export const PackingPageContent = ({
           queryKey: ["worksheet-assigned-summary"],
           type: "active",
         });
-        void fetchRequests();
       } catch (e: any) {
+        setRequests((prev) =>
+          prev.map((item) => {
+            if (String(item?._id || "").trim() !== requestMongoId) return item;
+            return {
+              ...item,
+              rnd: {
+                ...(item.rnd || {}),
+                unmachinableAt: prevAt,
+                unmachinableReason: prevReason,
+                unmachinableFromStage: prevFromStage,
+              },
+            };
+          }),
+        );
+
         toast({
-          title: "Done 실패",
+          title: "가공불가 처리 실패",
           description: e?.message || "네트워크 오류",
           variant: "destructive",
         });
+
+        throw e;
       }
     },
-    [fetchRequests, queryClient, setRequests, toast, token],
+    [queryClient, setRequests, toast, token],
   );
 
   const handleTogglePackingRequest = useCallback((req: ManufacturerRequest) => {
@@ -516,7 +645,8 @@ export const PackingPageContent = ({
           const isDoneRndSample =
             String(req.source || "").trim() === "manufacturer_sample" &&
             Boolean(req.rnd?.doneAt);
-          if (isDoneRndSample) return false;
+          const isUnmachinable = Boolean(req.rnd?.unmachinableAt);
+          if (isDoneRndSample || isUnmachinable) return false;
           if (showCompleted) {
             return shouldShowRequestInIncludeCompleted(req, currentStageOrder);
           }
@@ -1161,6 +1291,7 @@ export const PackingPageContent = ({
           onDownloadNcFile={() => Promise.resolve()}
           onDownloadStageFile={handleDownloadStageFile}
           onRefreshPreview={handleOpenPreview}
+          onMarkUnmachinable={handleMarkUnmachinable}
           // onOpenNextRequest 제거: 승인 후 다음 의뢰 자동 열기 방지 정책 적용
           setSearchParams={setSearchParams}
           setConfirmTitle={setConfirmTitle}

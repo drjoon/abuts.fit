@@ -1172,9 +1172,26 @@ export const useRequestFileHandlers = ({
           },
         );
 
-        if (!res.ok) {
-          throw new Error("delete stage file failed");
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok || body?.success === false) {
+          throw new Error(body?.message || "delete stage file failed");
         }
+
+        const updatedFromServer =
+          body?.data && typeof body.data === "object"
+            ? (body.data as ManufacturerRequest)
+            : null;
+        if (updatedFromServer) {
+          applySingleRequestPatch(updatedFromServer);
+        }
+
+        void queryClient.invalidateQueries({
+          queryKey: ["worksheet-assigned-summary"],
+        });
+        void queryClient.refetchQueries({
+          queryKey: ["worksheet-assigned-summary"],
+          type: "active",
+        });
 
         toast(
           rollbackOnly
@@ -1220,8 +1237,11 @@ export const useRequestFileHandlers = ({
       applySingleRequestPatch,
       patchDeleteStageFileLocally,
       patchReviewStatusLocally,
+      queryClient,
       removeSingleRequest,
       setUploading,
+      setPreviewOpen,
+      setPreviewFiles,
       setPreviewStageUrl,
       setPreviewStageName,
     ],

@@ -89,6 +89,8 @@ export const usePackingWorksheetData = ({
           url.searchParams.set("includeTotal", append ? "0" : "1");
           // R&D Done 샘플은 packing 목록에서 제외 (R&D 탭 전용)
           url.searchParams.set("rndDone", "0");
+          // 가공불가 건은 unmachinable 탭 전용
+          url.searchParams.set("rndUnmachinable", "0");
           if (stageFilterForTab.length === 1) {
             url.searchParams.set("manufacturerStage", stageFilterForTab[0]);
           } else {
@@ -219,10 +221,10 @@ export const usePackingWorksheetData = ({
             ]
           : ["세척.패킹", "세척.포장", "packing"];
 
+        // 중요: 현재 로컬 목록(requestsRef.current)을 시드로 쓰면
+        // 방금 롤백/이동으로 제거된 카드가 레이스로 다시 합쳐질 수 있다.
+        // reconcile은 서버 재조회 결과만 SSOT로 삼아 재구성한다.
         const mergedMap = new Map<string, ManufacturerRequest>();
-        for (const req of requestsRef.current) {
-          mergedMap.set(requestKey(req), req);
-        }
 
         // 1) 우선 대용량 1페이지 조회로 skip/limit 경계 누락을 우회한다.
         const bulkLimit = Math.min(
@@ -235,6 +237,7 @@ export const usePackingWorksheetData = ({
         bulkUrl.searchParams.set("view", "worksheet");
         bulkUrl.searchParams.set("includeTotal", "0");
         bulkUrl.searchParams.set("rndDone", "0");
+        bulkUrl.searchParams.set("rndUnmachinable", "0");
         for (const stage of stageFilterForTab) {
           bulkUrl.searchParams.append("manufacturerStageIn", stage);
         }
@@ -271,6 +274,7 @@ export const usePackingWorksheetData = ({
           url.searchParams.set("view", "worksheet");
           url.searchParams.set("includeTotal", "0");
           url.searchParams.set("rndDone", "0");
+          url.searchParams.set("rndUnmachinable", "0");
           for (const stage of stageFilterForTab) {
             url.searchParams.append("manufacturerStageIn", stage);
           }
@@ -362,17 +366,22 @@ export const usePackingWorksheetData = ({
     const isDoneRndSample = (req: ManufacturerRequest) =>
       String(req.source || "").trim() === "manufacturer_sample" &&
       Boolean(req.rnd?.doneAt);
+    const isUnmachinable = (req: ManufacturerRequest) =>
+      Boolean(req.rnd?.unmachinableAt);
 
     if (showCompleted) {
       return requests.filter(
         (req) =>
           !isDoneRndSample(req) &&
+          !isUnmachinable(req) &&
           shouldShowRequestInIncludeCompleted(req, currentStageOrder),
       );
     }
     return requests.filter(
       (req) =>
-        !isDoneRndSample(req) && deriveStageForFilter(req) === "세척.패킹",
+        !isDoneRndSample(req) &&
+        !isUnmachinable(req) &&
+        deriveStageForFilter(req) === "세척.패킹",
     );
   }, [currentStageOrder, requests, showCompleted]);
 

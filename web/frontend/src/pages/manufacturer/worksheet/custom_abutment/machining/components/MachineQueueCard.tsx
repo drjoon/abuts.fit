@@ -244,12 +244,14 @@ export const MachineQueueCard = ({
       .trim()
       .toUpperCase();
     const slotStatus = String(currentSlot?.status || "").trim();
+
+    // '가공'은 큐 단계(대기 포함)로도 사용될 수 있어 비활성 조건에서 제외한다.
+    // 실제 가공중 판정은 machiningActive / machiningRecord 상태 / 명시적 '가공중'만 허용.
     return (
       !!currentSlot &&
       (machiningActive ||
         recStatus === "RUNNING" ||
         recStatus === "PROCESSING" ||
-        slotStatus === "가공" ||
         slotStatus === "가공중")
     );
   })();

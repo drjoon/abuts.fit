@@ -37,6 +37,7 @@ type WorksheetCardGridProps = {
   onApprove?: (req: ManufacturerRequest) => void;
   onDelete?: (req: ManufacturerRequest) => void;
   onDone?: (req: ManufacturerRequest) => void;
+  onRestoreUnmachinable?: (req: ManufacturerRequest) => void;
   onSaveRndMemo?: (
     req: ManufacturerRequest,
     memo: string,
@@ -74,6 +75,7 @@ export const WorksheetCardGrid = ({
   onApprove,
   onDelete,
   onDone,
+  onRestoreUnmachinable,
   onSaveRndMemo,
   onUploadNc,
   uploadProgress,
@@ -212,6 +214,12 @@ export const WorksheetCardGrid = ({
 
         const hasNcFile = !!caseInfos.ncFile?.s3Key;
         const isDeletingNc = !!deletingNc[request._id];
+        const finishLineMinZRaw = Number((caseInfos as any)?.finishLine?.min_z);
+        const isFinishLineMinZRisky =
+          Number.isFinite(finishLineMinZRaw) && finishLineMinZRaw < 1;
+        const isUnmachinableSample = Boolean(
+          (request as any)?.rnd?.unmachinableAt,
+        );
         const lotCodeSource = String(request.lotNumber?.value || "").trim();
         const camMaterialDiameter = (() => {
           const sched = request.productionSchedule || {};
@@ -484,6 +492,11 @@ export const WorksheetCardGrid = ({
           Boolean(onRollback && canRollback) ||
           Boolean(onDelete && isSampleRequest) ||
           Boolean(onDone && isSampleRequest && !request.rnd?.doneAt) ||
+          Boolean(
+            onRestoreUnmachinable &&
+              tabStage === "unmachinable" &&
+              isUnmachinableSample,
+          ) ||
           Boolean(onApprove && !isCompletedForCurrentStage);
 
         const hasBottomFloatingBadges = Boolean(
@@ -563,6 +576,10 @@ export const WorksheetCardGrid = ({
                             : urgency === "warning"
                               ? "border-amber-500 border-2"
                               : "border-slate-200"
+            } ${
+              isFinishLineMinZRisky || isUnmachinableSample
+                ? "border-red-300 ring-2 ring-red-200"
+                : ""
             } ${onToggleSelected ? "cursor-pointer" : ""}`}
             role={onToggleSelected ? "button" : undefined}
             aria-pressed={onToggleSelected ? isSelected : undefined}
@@ -595,7 +612,19 @@ export const WorksheetCardGrid = ({
                 )}
               </div>
             )}
-            <div className="absolute right-2 top-2 z-20 flex gap-1">
+            <div className="absolute right-2 top-2 z-20 flex items-center gap-1">
+              {(isFinishLineMinZRisky || isUnmachinableSample) && (
+                <Badge
+                  variant="outline"
+                  className={`h-7 text-[11px] px-2 py-0.5 font-semibold leading-[1.1] border flex items-center ${
+                    isUnmachinableSample
+                      ? "border-red-300 bg-red-50 text-red-700"
+                      : "border-red-200 bg-red-50 text-red-600"
+                  }`}
+                >
+                  {isUnmachinableSample ? "가공불가" : "가공불가 확인요망"}
+                </Badge>
+              )}
               {onSaveToRnd && tabStage === "packing" && (
                 <button
                   type="button"
@@ -668,6 +697,24 @@ export const WorksheetCardGrid = ({
                   <Check className="h-4 w-4" />
                 </button>
               )}
+              {onRestoreUnmachinable &&
+                tabStage === "unmachinable" &&
+                isUnmachinableSample && (
+                  <button
+                    type="button"
+                    className="h-7 px-2 inline-flex items-center justify-center gap-1 rounded-md border bg-white/90 text-emerald-700 shadow-sm transition hover:bg-emerald-50"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      onRestoreUnmachinable(request);
+                    }}
+                    aria-label="가공불가 복귀"
+                    title="가공불가 복귀"
+                  >
+                    <ArrowLeft className="h-3.5 w-3.5" />
+                    <span className="text-[11px] font-semibold">복귀</span>
+                  </button>
+                )}
               {onApprove && !isCompletedForCurrentStage && (
                 <button
                   type="button"
@@ -800,6 +847,7 @@ export const WorksheetCardGrid = ({
                         배송비 부족
                       </Badge>
                     )}
+
                   </div>
                 </div>
                 {!!machiningElapsedLabel && (

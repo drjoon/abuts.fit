@@ -67,8 +67,16 @@ export const ManufacturerWorksheetPage = () => {
               showQueueBar={true}
               filterRequests={(req) =>
                 String(req.source || "").trim() === "manufacturer_sample" &&
-                Boolean(req.rnd?.doneAt)
+                Boolean(req.rnd?.doneAt) &&
+                req.rnd?.unmachinableAt == null
               }
+            />
+          );
+        case "unmachinable":
+          return (
+            <RequestPage
+              showQueueBar={true}
+              filterRequests={(req) => req.rnd?.unmachinableAt != null}
             />
           );
         default:

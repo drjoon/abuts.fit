@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/shared/hooks/use-toast";
 import {
   initializeSocket,
@@ -73,6 +74,7 @@ export const useMachiningBoard = ({
   token: string | null | undefined;
 }) => {
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
 
   const {
@@ -1342,6 +1344,63 @@ export const useMachiningBoard = ({
       const directMongoId = String(requestMongoId || "").trim();
       if (!rid && !directMongoId) return;
 
+      const prevMachineQueue = Array.isArray(queueMapRef.current?.[machineId])
+        ? [...queueMapRef.current[machineId]]
+        : [];
+      const prevHint = nowPlayingHintMap[machineId] || null;
+      const prevElapsed = machiningElapsedSecondsMap[machineId];
+      const prevBase = machiningElapsedBaseRef.current[machineId];
+
+      const matchesTarget = (slot?: QueueItem | null) => {
+        const slotRid = String(slot?.requestId || "").trim();
+        const slotMongoId = String(slot?.requestMongoId || "").trim();
+        if (rid && slotRid && slotRid === rid) return true;
+        if (directMongoId && slotMongoId && slotMongoId === directMongoId)
+          return true;
+        return false;
+      };
+
+      const removedIndex = prevMachineQueue.findIndex((slot) =>
+        matchesTarget(slot),
+      );
+      const removedSlot =
+        removedIndex >= 0 ? (prevMachineQueue[removedIndex] ?? null) : null;
+      const removedWasRunning = isQueueItemRunning(removedSlot);
+
+      if (removedSlot) {
+        setQueueMap((prev) => {
+          const list = Array.isArray(prev?.[machineId]) ? [...prev[machineId]] : [];
+          const idx = list.findIndex((slot) => matchesTarget(slot));
+          if (idx < 0) return prev;
+          list.splice(idx, 1);
+          return {
+            ...prev,
+            [machineId]: list,
+          };
+        });
+
+        setNowPlayingHintMap((prev) => {
+          const hint = prev?.[machineId];
+          if (!hint) return prev;
+          const hintRid = String(hint.requestId || "").trim();
+          const removedRid = String(removedSlot.requestId || "").trim();
+          if (!removedRid || hintRid !== removedRid) return prev;
+          const next = { ...prev };
+          delete next[machineId];
+          return next;
+        });
+
+        if (removedWasRunning) {
+          setMachiningElapsedSecondsMap((prev) => {
+            if (!Object.prototype.hasOwnProperty.call(prev, machineId)) return prev;
+            const next = { ...prev };
+            delete next[machineId];
+            return next;
+          });
+          delete machiningElapsedBaseRef.current[machineId];
+        }
+      }
+
       try {
         let reqId = directMongoId;
         if (!reqId) {
@@ -1385,7 +1444,40 @@ export const useMachiningBoard = ({
         window.dispatchEvent(new Event("request-rollback"));
         void refreshProductionQueues();
         void refreshLastCompletedFromServer();
+        void queryClient.invalidateQueries({
+          queryKey: ["worksheet-assigned-summary"],
+        });
+        void queryClient.refetchQueries({
+          queryKey: ["worksheet-assigned-summary"],
+          type: "active",
+        });
       } catch (e: any) {
+        if (removedSlot) {
+          setQueueMap((prev) => ({
+            ...prev,
+            [machineId]: prevMachineQueue,
+          }));
+
+          if (prevHint) {
+            setNowPlayingHintMap((prev) => ({
+              ...prev,
+              [machineId]: prevHint,
+            }));
+          }
+
+          if (removedWasRunning) {
+            if (typeof prevElapsed === "number") {
+              setMachiningElapsedSecondsMap((prev) => ({
+                ...prev,
+                [machineId]: prevElapsed,
+              }));
+            }
+            if (typeof prevBase === "number") {
+              machiningElapsedBaseRef.current[machineId] = prevBase;
+            }
+          }
+        }
+
         toast({
           title: "CAM으로 되돌리기 실패",
           description: e?.message || "잠시 후 다시 시도해주세요.",
@@ -1393,7 +1485,15 @@ export const useMachiningBoard = ({
         });
       }
     },
-    [refreshLastCompletedFromServer, refreshProductionQueues, toast, token],
+    [
+      machiningElapsedSecondsMap,
+      nowPlayingHintMap,
+      queryClient,
+      refreshLastCompletedFromServer,
+      refreshProductionQueues,
+      toast,
+      token,
+    ],
   );
 
   const approveMachiningFromRollback = useCallback(
@@ -1426,6 +1526,13 @@ export const useMachiningBoard = ({
 
         window.dispatchEvent(new Event("cnc-queues-updated"));
         await refreshProductionQueues();
+        void queryClient.invalidateQueries({
+          queryKey: ["worksheet-assigned-summary"],
+        });
+        void queryClient.refetchQueries({
+          queryKey: ["worksheet-assigned-summary"],
+          type: "active",
+        });
         toast({
           title: "승인 완료",
           description: "재가공 없이 다음 단계로 전환했습니다.",
@@ -1439,7 +1546,7 @@ export const useMachiningBoard = ({
         });
       }
     },
-    [refreshProductionQueues, toast, token],
+    [queryClient, refreshProductionQueues, toast, token],
   );
 
   const machiningAlerts = useMemo(

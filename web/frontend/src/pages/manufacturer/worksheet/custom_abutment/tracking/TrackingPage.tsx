@@ -194,6 +194,9 @@ export const TrackingInquiryPage = () => {
     if (String((req as any)?.source || "").trim() === "manufacturer_sample") {
       return false;
     }
+    if (req.rnd?.unmachinableAt) {
+      return false;
+    }
 
     const stage = deriveStageForFilter(req);
     if (stage === "추적관리") return true;
@@ -229,6 +232,7 @@ export const TrackingInquiryPage = () => {
       url.searchParams.set("worksheetProfile", "tracking");
       url.searchParams.set("includeTotal", "0");
       url.searchParams.set("includeDelivery", "1");
+      url.searchParams.set("rndUnmachinable", "0");
       const res = await fetch(url.pathname + url.search, {
         headers: { Authorization: `Bearer ${token}` },
         cache: "no-cache",
