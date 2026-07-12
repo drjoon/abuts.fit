@@ -2310,28 +2310,25 @@ namespace DentalAddin
 
             double backStart = Clamp(splitline2 - backRoughOverCutMm, xMin + 1e-6, xMax - 1e-6);
 
-            // 요청 반영(2026-07-12):
-            // Back_Rough 끝점 = finishline min_z + 2.1mm
-            // 단, 최대값은 BackPointX + 0.1mm를 넘지 않도록 클램프한다.
-            const double backRoughEndOffsetFromFinishLineMinZMm = 2.1;
-            const double backRoughEndMaxFromBackPointMm = 0.1;
+            // 요청 반영:
+            // Back_Rough 끝점 = BackPointX - (2.1 - finishLineMinZ)
+            //            = BackPointX + finishLineMinZ - 2.1
+            const double backRoughBaseMm = 2.1;
             double backPointX = MoveSTL_Module.BackPointX;
-            double backEndMax = backPointX + backRoughEndMaxFromBackPointMm;
 
             double backEnd;
             if (double.TryParse(finishMinZRaw, NumberStyles.Float, CultureInfo.InvariantCulture, out double finishLineMinZ)
                 && !double.IsNaN(finishLineMinZ)
                 && !double.IsInfinity(finishLineMinZ))
             {
-                double requestedBackEnd = finishLineMinZ + backRoughEndOffsetFromFinishLineMinZMm;
-                backEnd = Math.Min(requestedBackEnd, backEndMax);
-                DentalLogger.Log($"RoughFreeFromMillSplitAB - Back_Rough 끝점 적용(min_z 기반): finishLineMinZ={finishLineMinZ.ToString("F3", CultureInfo.InvariantCulture)}, requestedEndX={requestedBackEnd.ToString("F3", CultureInfo.InvariantCulture)}, maxEndX={backEndMax.ToString("F3", CultureInfo.InvariantCulture)}, appliedEndX={backEnd.ToString("F3", CultureInfo.InvariantCulture)}, rule=min_z+{backRoughEndOffsetFromFinishLineMinZMm.ToString("F1", CultureInfo.InvariantCulture)} clamp<=BackPointX+{backRoughEndMaxFromBackPointMm.ToString("F1", CultureInfo.InvariantCulture)}");
+                backEnd = backPointX - (backRoughBaseMm - finishLineMinZ);
+                DentalLogger.Log($"RoughFreeFromMillSplitAB - Back_Rough 끝점 적용(min_z 기반): backPointX={backPointX.ToString("F3", CultureInfo.InvariantCulture)}, finishLineMinZ={finishLineMinZ.ToString("F3", CultureInfo.InvariantCulture)}, appliedEndX={backEnd.ToString("F3", CultureInfo.InvariantCulture)}, rule=BackPointX-(2.1-min_z)");
             }
             else
             {
-                // min_z가 없으면 안전 fallback: 기존 BackPointX 기준 상한값 사용
-                backEnd = backEndMax;
-                DentalLogger.Log($"RoughFreeFromMillSplitAB - Back_Rough 끝점 fallback 적용: ABUTS_FINISHLINE_MIN_Z 해석 실패(raw='{finishMinZRaw ?? ""}'), appliedEndX={backEnd.ToString("F3", CultureInfo.InvariantCulture)} (BackPointX+{backRoughEndMaxFromBackPointMm.ToString("F1", CultureInfo.InvariantCulture)})");
+                // min_z 해석 실패 시 안전 fallback: BackPointX 사용
+                backEnd = backPointX;
+                DentalLogger.Log($"RoughFreeFromMillSplitAB - Back_Rough 끝점 fallback 적용: ABUTS_FINISHLINE_MIN_Z 해석 실패(raw='{finishMinZRaw ?? ""}'), appliedEndX={backEnd.ToString("F3", CultureInfo.InvariantCulture)} (BackPointX)");
             }
 
             double radius = (Document.LatheMachineSetup.BarDiameter + 10.0) / 2.0;
