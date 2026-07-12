@@ -2311,24 +2311,18 @@ namespace DentalAddin
             double backStart = Clamp(splitline2 - backRoughOverCutMm, xMin + 1e-6, xMax - 1e-6);
 
             // 요청 반영:
-            // Back_Rough 끝점 = BackPointX - (finishLineMinZ - 2.1)
-            //            = BackPointX - finishLineMinZ + 2.1
-            const double backRoughBaseMm = 2.1;
+            // Back_Rough 끝점은 항상 BackPointX로 고정한다.
             double backPointX = MoveSTL_Module.BackPointX;
-
-            double backEnd;
+            double backEnd = backPointX;
             if (double.TryParse(finishMinZRaw, NumberStyles.Float, CultureInfo.InvariantCulture, out double finishLineMinZ)
                 && !double.IsNaN(finishLineMinZ)
                 && !double.IsInfinity(finishLineMinZ))
             {
-                backEnd = backPointX - (finishLineMinZ - backRoughBaseMm);
-                DentalLogger.Log($"RoughFreeFromMillSplitAB - Back_Rough 끝점 적용(min_z 기반): backPointX={backPointX.ToString("F3", CultureInfo.InvariantCulture)}, finishLineMinZ={finishLineMinZ.ToString("F3", CultureInfo.InvariantCulture)}, appliedEndX={backEnd.ToString("F3", CultureInfo.InvariantCulture)}, rule=BackPointX-(min_z-2.1)");
+                DentalLogger.Log($"RoughFreeFromMillSplitAB - Back_Rough 끝점 고정 적용: backPointX={backPointX.ToString("F3", CultureInfo.InvariantCulture)}, finishLineMinZ={finishLineMinZ.ToString("F3", CultureInfo.InvariantCulture)}, appliedEndX={backEnd.ToString("F3", CultureInfo.InvariantCulture)}, rule=BackPointX(fixed)");
             }
             else
             {
-                // min_z 해석 실패 시 안전 fallback: BackPointX 사용
-                backEnd = backPointX;
-                DentalLogger.Log($"RoughFreeFromMillSplitAB - Back_Rough 끝점 fallback 적용: ABUTS_FINISHLINE_MIN_Z 해석 실패(raw='{finishMinZRaw ?? ""}'), appliedEndX={backEnd.ToString("F3", CultureInfo.InvariantCulture)} (BackPointX)");
+                DentalLogger.Log($"RoughFreeFromMillSplitAB - Back_Rough 끝점 고정 적용: ABUTS_FINISHLINE_MIN_Z 해석 실패(raw='{finishMinZRaw ?? ""}'), appliedEndX={backEnd.ToString("F3", CultureInfo.InvariantCulture)} (BackPointX fixed)");
             }
 
             double radius = (Document.LatheMachineSetup.BarDiameter + 10.0) / 2.0;
