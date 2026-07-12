@@ -1892,7 +1892,7 @@ namespace DentalAddin
         // Finish_Cuff 공정 SSOT(단순화):
         // - Back_Rough와 동일한 Rough3D 기술 패턴(0/180)을 사용한다.
         // - 단, 공구는 Finish_Back과 동일한 BM_D1.2(T07) 강제.
-        // - 시작점: finishline min_z, 종료점: finishline min_z - 1.2mm (env 우선).
+        // - 시작점: finishline max_z(=FinishLineTopZ 역산 X), 종료점: BackPointX (env 우선).
         // - 생성 조건: finishline min_z < 1.0mm 인 경우에만 생성한다.
         // - 폭 과대를 막기 위해 RoughBoundryBack1 재사용 대신 Cuff 전용 boundary(start~end)를 사용한다.
         private static void TryAddCompositeCuff(
@@ -1942,17 +1942,31 @@ namespace DentalAddin
                 }
                 else
                 {
-                    // fallback: finishline topX
-                    double fallback = MoveSTL_Module.FinishLineX;
-                    if (double.IsNaN(fallback) || double.IsInfinity(fallback) || Math.Abs(fallback) < 1e-6)
+                    // fallback 우선순위:
+                    // 1) finishline max_z(=FinishLineTopZ) 역산 X
+                    // 2) FinishLineX
+                    // 3) BackPointX
+                    double fallback;
+                    double finishLineTopZ = MoveSTL_Module.FinishLineTopZ;
+                    if (!double.IsNaN(finishLineTopZ) && !double.IsInfinity(finishLineTopZ) && finishLineTopZ > 0.001)
                     {
-                        fallback = back;
-                        startXSource = "BackPointXFallback";
+                        fallback = back - finishLineTopZ + AppConfig.DefaultStlShift;
+                        startXSource = "FinishLineMaxZ(FinishLineTopZ)(fallback)";
                     }
                     else
                     {
-                        startXSource = "FinishLineX(fallback)";
+                        fallback = MoveSTL_Module.FinishLineX;
+                        if (double.IsNaN(fallback) || double.IsInfinity(fallback) || Math.Abs(fallback) < 1e-6)
+                        {
+                            fallback = back;
+                            startXSource = "BackPointXFallback";
+                        }
+                        else
+                        {
+                            startXSource = "FinishLineX(fallback)";
+                        }
                     }
+
                     startX = Clamp(fallback, xMin, xMax);
                 }
 
@@ -3656,33 +3670,44 @@ namespace DentalAddin
 
             // 요청값: step 0.1, tol 0.02, stock 0.03, incrementalDepth 0.05
             // 깊이 단계(DepthStrategy): 옵션 2 강제
-            TrySet("DepthStrategy", 2);
+            TrySet("DepthStrategy", 1);   // 깊이 단계 : 위에서 아래로
+            TrySet("CuttingStrategy", 2); // 절삭 단계 설정 : 밖에서 안으로 클라임컷
+
+            // 시작점 요청 반영: finishline max_z(=FinishLineTopZ)를 시작 Z로 시도 적용.
+            double finishLineMaxZ = MoveSTL_Module.FinishLineTopZ;
+            if (!double.IsNaN(finishLineMaxZ) && !double.IsInfinity(finishLineMaxZ) && finishLineMaxZ > 0.001)
+            {
+                TrySet("TopZLimit", finishLineMaxZ);
+            }
+
+            TrySet("RoundContactCorners", 1); // 접촉 코어에 라운드: 예
+            TrySet("ContactCornerRadius", 0.00);//코너 반경에 접촉
+
             TrySet("StepOver", 0.1);
             TrySet("StepIncrement", 0.1);
+            TrySet("IncrementalDepth", 0.10);
             TrySet("StepPercentOfDiameter", 8.3333333333); // D1.2 기준 0.1mm
             TrySet("Tolerance", 0.02);
-            TrySet("IncrementalDepth", 0.05);
             // TrySet("ProfitMillingIncrementalDepth", 0.2);
             // TrySet("MaximumIncrementalDepth", 0.2);
-            TrySet("StockAllowance", 0.03);
-            TrySet("StockAllowanceWalls", 0.03);
-            TrySet("StockAllowanceFloors", 0.03);
+            TrySet("StockAllowance", 0.01);
+            TrySet("StockAllowanceWalls", 0.01);
+            TrySet("StockAllowanceFloors", 0.01);
 
             // passes-rounding 충돌 해제(0.1 step과 충돌하는 후보 모두 0 처리)
-            TrySet("PassesRoundingAmplitude", 0.0);
-            TrySet("PassRoundingAmplitude", 0.0);
-            TrySet("RoundingAmplitude", 0.0);
-            TrySet("RoundingRadius", 0.0);
-            TrySet("RoundAllCorners", 0);
-            TrySet("RoundContactCorners", 0);
-            TrySet("ContactCornerRadius", 0.0);
-            TrySet("CornerRoundingTolerance", 0.0);
-            TrySet("CornerRadius", 0.0);
-            TrySet("MinimumCornerRadius", 0.0);
-            TrySet("SmoothingDistance", 0.0);
-            TrySet("EnableSmoothing", 0);
+            TrySet("PassesRoundingAmplitude", 0.00);
+            TrySet("PassRoundingAmplitude", 0.00);
+            TrySet("RoundingAmplitude", 0.00);
+            TrySet("RoundingRadius", 0.00);
+            TrySet("RoundAllCorners", 0.00);
 
-            DentalLogger.Log($"Composite2Cuff:{angleLabel} - override 적용(step=0.1,tol=0.02,stock=0.03,incDepth=0.2,rounding=off)");
+            TrySet("CornerRoundingTolerance", 0.00);
+            TrySet("CornerRadius", 0.00);
+            TrySet("MinimumCornerRadius", 0.00);
+            TrySet("SmoothingDistance", 0.00);
+            TrySet("EnableSmoothing", 0.00);
+
+            DentalLogger.Log($"Composite2Cuff:{angleLabel} - override 적용(step=0.1,tol=0.0,stock=0.03,incDepth=0.2,rounding=off,finishLineMaxZ={MoveSTL_Module.FinishLineTopZ.ToString("F3", CultureInfo.InvariantCulture)})");
         }
 
         private static bool TryAddCompositeCuffBackRoughStyleOp(
