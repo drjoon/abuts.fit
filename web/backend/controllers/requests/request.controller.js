@@ -22,6 +22,8 @@ export const {
   updateRequest,
   updateRndDoneStatus,
   updateRndUnmachinableStatus,
+  confirmRndUnmachinableByRequestor,
+  confirmAllRndUnmachinableByRequestor,
   updateRndMemo,
   updateRequestStatus,
   deleteRequest,
@@ -50,6 +52,7 @@ export const {
   getDashboardRiskSummary,
   getMyPricingReferralStats,
   getMyReferralDirectMembers,
+  getUnmachinableOverview,
 } = dashboardController;
 
 export const {

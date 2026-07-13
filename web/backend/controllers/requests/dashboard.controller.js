@@ -328,6 +328,58 @@ export async function getAssignedDashboardSummary(req, res) {
               $cond: [{ $eq: ["$normalizedStage", "unmachinable"] }, 1, 0],
             },
           },
+          unmachinablePotentialCount: {
+            $sum: {
+              $cond: [
+                {
+                  $and: [
+                    {
+                      $ne: [
+                        { $ifNull: ["$rnd.unmachinablePotentialAt", null] },
+                        null,
+                      ],
+                    },
+                    { $eq: [{ $ifNull: ["$rnd.unmachinableAt", null] }, null] },
+                  ],
+                },
+                1,
+                0,
+              ],
+            },
+          },
+          unmachinablePendingConfirmCount: {
+            $sum: {
+              $cond: [
+                {
+                  $and: [
+                    { $ne: [{ $ifNull: ["$rnd.unmachinableAt", null] }, null] },
+                    {
+                      $eq: [
+                        { $ifNull: ["$rnd.unmachinableConfirmedAt", null] },
+                        null,
+                      ],
+                    },
+                  ],
+                },
+                1,
+                0,
+              ],
+            },
+          },
+          unmachinableConfirmedCount: {
+            $sum: {
+              $cond: [
+                {
+                  $ne: [
+                    { $ifNull: ["$rnd.unmachinableConfirmedAt", null] },
+                    null,
+                  ],
+                },
+                1,
+                0,
+              ],
+            },
+          },
           requestCount: {
             $sum: { $cond: [{ $eq: ["$normalizedStage", "request"] }, 1, 0] },
           },
@@ -424,6 +476,12 @@ export async function getAssignedDashboardSummary(req, res) {
         trackingCount: Number(statsResult?.trackingCount ?? 0) || 0,
         trackingBoxes: Number(trackingBoxesAgg?.[0]?.count ?? 0) || 0,
         unmachinableCount: Number(statsResult?.unmachinableCount ?? 0) || 0,
+        unmachinablePotentialCount:
+          Number(statsResult?.unmachinablePotentialCount ?? 0) || 0,
+        unmachinablePendingConfirmCount:
+          Number(statsResult?.unmachinablePendingConfirmCount ?? 0) || 0,
+        unmachinableConfirmedCount:
+          Number(statsResult?.unmachinableConfirmedCount ?? 0) || 0,
         requestCount: Number(statsResult?.requestCount ?? 0) || 0,
         camCount: Number(statsResult?.camCount ?? 0) || 0,
         machiningCount: Number(statsResult?.machiningCount ?? 0) || 0,
@@ -438,6 +496,191 @@ export async function getAssignedDashboardSummary(req, res) {
     return res.status(500).json({
       success: false,
       message: "제조사 대시보드 요약 조회 중 오류가 발생했습니다.",
+    });
+  }
+}
+
+/**
+ * 가공불가 상태 개요 (5개 role 공통)
+ * - 공정 레벨: 가공불가(unmachinable)
+ * - 상세 코드: potential → judged → confirmed
+ * @route GET /api/requests/unmachinable-overview
+ */
+export async function getUnmachinableOverview(req, res) {
+  try {
+    const role = String(req.user?.role || "").trim();
+    const allowedRoles = [
+      "requestor",
+      "manufacturer",
+      "admin",
+      "salesman",
+      "devops",
+    ];
+    if (!allowedRoles.includes(role)) {
+      return res.status(403).json({
+        success: false,
+        message: "권한이 없습니다.",
+      });
+    }
+
+    const period = String(req.query?.period || "30d").trim() || "30d";
+    const dateFilter = buildDateFilter(period);
+
+    const limitRaw = Number(req.query?.limit || 8);
+    const limit = Number.isFinite(limitRaw)
+      ? Math.min(50, Math.max(1, Math.floor(limitRaw)))
+      : 8;
+
+    // 기본 정책
+    // - 샘플 의뢰(source=manufacturer_sample)는 제외
+    // - requestor/manufacturer는 조직 스코프를 강제
+    const filter = {
+      ...dateFilter,
+      source: { $ne: "manufacturer_sample" },
+      $or: [
+        { "rnd.unmachinablePotentialAt": { $ne: null } },
+        { "rnd.unmachinableAt": { $ne: null } },
+        { "rnd.unmachinableConfirmedAt": { $ne: null } },
+      ],
+    };
+
+    if (role === "requestor") {
+      Object.assign(filter, await buildRequestorOrgScopeFilter(req));
+    } else if (role === "manufacturer") {
+      Object.assign(filter, await buildManufacturerOrgScopeFilter(req));
+    }
+
+    const [countsAgg, rows] = await Promise.all([
+      Request.aggregate([
+        { $match: filter },
+        {
+          $group: {
+            _id: null,
+            totalCount: { $sum: 1 },
+            potentialCount: {
+              $sum: {
+                $cond: [
+                  {
+                    $and: [
+                      { $ne: [{ $ifNull: ["$rnd.unmachinablePotentialAt", null] }, null] },
+                      { $eq: [{ $ifNull: ["$rnd.unmachinableAt", null] }, null] },
+                    ],
+                  },
+                  1,
+                  0,
+                ],
+              },
+            },
+            judgedCount: {
+              $sum: {
+                $cond: [
+                  {
+                    $and: [
+                      { $ne: [{ $ifNull: ["$rnd.unmachinableAt", null] }, null] },
+                      {
+                        $eq: [
+                          { $ifNull: ["$rnd.unmachinableConfirmedAt", null] },
+                          null,
+                        ],
+                      },
+                    ],
+                  },
+                  1,
+                  0,
+                ],
+              },
+            },
+            confirmedCount: {
+              $sum: {
+                $cond: [
+                  {
+                    $ne: [
+                      { $ifNull: ["$rnd.unmachinableConfirmedAt", null] },
+                      null,
+                    ],
+                  },
+                  1,
+                  0,
+                ],
+              },
+            },
+          },
+        },
+      ]),
+      Request.find(filter)
+        .select({
+          _id: 1,
+          requestId: 1,
+          title: 1,
+          manufacturerStage: 1,
+          createdAt: 1,
+          caseInfos: 1,
+          rnd: 1,
+        })
+        .sort({
+          "rnd.unmachinableConfirmedAt": -1,
+          "rnd.unmachinableAt": -1,
+          "rnd.unmachinablePotentialAt": -1,
+          createdAt: -1,
+        })
+        .limit(limit)
+        .lean(),
+    ]);
+
+    const counts = countsAgg?.[0] || {
+      totalCount: 0,
+      potentialCount: 0,
+      judgedCount: 0,
+      confirmedCount: 0,
+    };
+
+    const items = (Array.isArray(rows) ? rows : []).map((row) => {
+      const potentialAt = row?.rnd?.unmachinablePotentialAt || null;
+      const judgedAt = row?.rnd?.unmachinableAt || null;
+      const confirmedAt = row?.rnd?.unmachinableConfirmedAt || null;
+      const detailCode = confirmedAt
+        ? "confirmed"
+        : judgedAt
+          ? "judged"
+          : potentialAt
+            ? "potential"
+            : "none";
+      return {
+        _id: row._id,
+        requestId: row.requestId,
+        title: row.title || "",
+        manufacturerStage: row.manufacturerStage,
+        createdAt: row.createdAt || null,
+        caseInfos: row.caseInfos || {},
+        rnd: {
+          ...(row.rnd || {}),
+          unmachinablePotentialAt: potentialAt,
+          unmachinableAt: judgedAt,
+          unmachinableConfirmedAt: confirmedAt,
+          unmachinableReason: String(row?.rnd?.unmachinableReason || ""),
+        },
+        unmachinableDetailCode: detailCode,
+      };
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        counts: {
+          totalCount: Number(counts.totalCount || 0),
+          potentialCount: Number(counts.potentialCount || 0),
+          judgedCount: Number(counts.judgedCount || 0),
+          confirmedCount: Number(counts.confirmedCount || 0),
+          pendingConfirmCount: Number(counts.judgedCount || 0),
+        },
+        items,
+      },
+    });
+  } catch (error) {
+    console.error("getUnmachinableOverview error", error);
+    return res.status(500).json({
+      success: false,
+      message: "가공불가 현황 조회 중 오류가 발생했습니다.",
     });
   }
 }
@@ -792,7 +1035,13 @@ export async function getMyDashboardSummary(req, res) {
           ],
         };
 
-        const [recentRequestsResult, riskData, unmachinableCountRaw] = await Promise.all([
+        const [
+          recentRequestsResult,
+          riskData,
+          unmachinablePendingConfirmCountRaw,
+          unmachinableJudgedTotalCountRaw,
+          unmachinableConfirmedCountRaw,
+        ] = await Promise.all([
           Request.find({
             ...requestFilter,
             manufacturerStage: { $ne: "취소" },
@@ -823,10 +1072,25 @@ export async function getMyDashboardSummary(req, res) {
             role: "requestor",
             populateRelated: false,
           }),
+          // 의뢰자 상단 알림은 "미확인(읽지 않음) 판정" 건수만 집계한다.
           Request.countDocuments({
             ...requestFilter,
             ...dateFilter,
             "rnd.unmachinableAt": { $ne: null },
+            "rnd.unmachinableConfirmedAt": null,
+          }),
+          // 기록용 총 판정 건수(확인 여부 무관)
+          Request.countDocuments({
+            ...requestFilter,
+            ...dateFilter,
+            "rnd.unmachinableAt": { $ne: null },
+          }),
+          // 확인 완료 건수
+          Request.countDocuments({
+            ...requestFilter,
+            ...dateFilter,
+            "rnd.unmachinableAt": { $ne: null },
+            "rnd.unmachinableConfirmedAt": { $ne: null },
           }),
         ]);
 
@@ -927,8 +1191,23 @@ export async function getMyDashboardSummary(req, res) {
           };
         });
 
-        const resolvedUnmachinableCount = Number(
-          snapshotStats?.unmachinableCount ?? unmachinableCountRaw ?? 0,
+        const resolvedUnmachinablePendingConfirmCount = Number(
+          unmachinablePendingConfirmCountRaw ??
+            snapshotStats?.unmachinablePendingConfirmCount ??
+            snapshotStats?.unmachinableCount ??
+            0,
+        );
+
+        const resolvedUnmachinableJudgedTotalCount = Number(
+          unmachinableJudgedTotalCountRaw ??
+            snapshotStats?.unmachinableJudgedTotalCount ??
+            0,
+        );
+
+        const resolvedUnmachinableConfirmedCount = Number(
+          unmachinableConfirmedCountRaw ??
+            snapshotStats?.unmachinableConfirmedCount ??
+            0,
         );
 
         const responseData = {
@@ -956,7 +1235,13 @@ export async function getMyDashboardSummary(req, res) {
               doneOrCanceled: 0,
               doneOrCanceledChange: "+0%",
             }),
-            unmachinableCount: resolvedUnmachinableCount,
+            // 상단 alert(미확인) 카운트
+            unmachinableCount: resolvedUnmachinablePendingConfirmCount,
+            // 상세 카운트(카드/모달/역할별 화면 공통)
+            unmachinablePendingConfirmCount:
+              resolvedUnmachinablePendingConfirmCount,
+            unmachinableConfirmedCount: resolvedUnmachinableConfirmedCount,
+            unmachinableJudgedTotalCount: resolvedUnmachinableJudgedTotalCount,
           },
           manufacturingSummary: snapshotManufacturingSummary || {
             totalActive: 0,

@@ -150,6 +150,12 @@ const recomputeSingleRequestorDashboardSummarySnapshot = async ({
                   $switch: {
                     branches: [
                       {
+                        case: {
+                          $ne: [{ $ifNull: ["$rnd.unmachinableAt", null] }, null],
+                        },
+                        then: "unmachinable",
+                      },
+                      {
                         case: { $eq: ["$$stage", "취소"] },
                         then: "cancel",
                       },
@@ -228,6 +234,44 @@ const recomputeSingleRequestorDashboardSummarySnapshot = async ({
             shippingCount: {
               $sum: {
                 $cond: [{ $eq: ["$normalizedStage", "shipping"] }, 1, 0],
+              },
+            },
+            unmachinableCount: {
+              $sum: {
+                $cond: [{ $eq: ["$normalizedStage", "unmachinable"] }, 1, 0],
+              },
+            },
+            unmachinablePendingConfirmCount: {
+              $sum: {
+                $cond: [
+                  {
+                    $and: [
+                      { $ne: [{ $ifNull: ["$rnd.unmachinableAt", null] }, null] },
+                      {
+                        $eq: [
+                          { $ifNull: ["$rnd.unmachinableConfirmedAt", null] },
+                          null,
+                        ],
+                      },
+                    ],
+                  },
+                  1,
+                  0,
+                ],
+              },
+            },
+            unmachinableConfirmedCount: {
+              $sum: {
+                $cond: [
+                  {
+                    $ne: [
+                      { $ifNull: ["$rnd.unmachinableConfirmedAt", null] },
+                      null,
+                    ],
+                  },
+                  1,
+                  0,
+                ],
               },
             },
           },
@@ -314,6 +358,7 @@ const recomputeSingleRequestorDashboardSummarySnapshot = async ({
           originalShipping: 1,
           deliveryInfoRef: 1,
           price: 1,
+          rnd: 1,
         })
         .sort({ createdAt: -1 })
         .limit(10)
@@ -329,6 +374,9 @@ const recomputeSingleRequestorDashboardSummarySnapshot = async ({
     machiningCount: 0,
     packingCount: 0,
     shippingCount: 0,
+    unmachinableCount: 0,
+    unmachinablePendingConfirmCount: 0,
+    unmachinableConfirmedCount: 0,
   };
 
   const shippingPackageStatsMap = new Map(
@@ -410,6 +458,13 @@ const recomputeSingleRequestorDashboardSummarySnapshot = async ({
     tracking: trackingTotal,
     doneOrCanceled: trackingTotal + Number(stats.canceledCount || 0),
     doneOrCanceledChange: "+0%",
+    // 읽음 UX와 일관성을 위해 알림용 기본 카운트는 "미확인 판정"을 사용한다.
+    unmachinableCount: Number(stats.unmachinablePendingConfirmCount || 0),
+    unmachinablePendingConfirmCount: Number(
+      stats.unmachinablePendingConfirmCount || 0,
+    ),
+    unmachinableConfirmedCount: Number(stats.unmachinableConfirmedCount || 0),
+    unmachinableJudgedTotalCount: Number(stats.unmachinableCount || 0),
   };
 
   const recentRequestFallbackEntries = (recentRequestsResult || [])
@@ -483,6 +538,7 @@ const recomputeSingleRequestorDashboardSummarySnapshot = async ({
       requestor: r.requestor || null,
       deliveryInfoRef: r.deliveryInfoRef || null,
       price: r.price || null,
+      rnd: r.rnd || null,
       createdAt: r.createdAt,
     };
   });

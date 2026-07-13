@@ -74,6 +74,8 @@ type RecentRequestCardItem = {
   requestId?: string;
   rnd?: {
     unmachinableAt?: string | null;
+    unmachinablePotentialAt?: string | null;
+    unmachinableConfirmedAt?: string | null;
     unmachinableReason?: string | null;
   } | null;
   title?: string;
@@ -157,6 +159,7 @@ type Props = {
   onRefresh: () => void;
   onEdit: (item: RecentRequestCardItem) => void;
   onCancel: (id: string) => void;
+  onConfirmUnmachinable?: (id: string) => Promise<void> | void;
 };
 
 export const RequestorRecentRequestsCard = ({
@@ -164,6 +167,7 @@ export const RequestorRecentRequestsCard = ({
   onRefresh,
   onEdit,
   onCancel,
+  onConfirmUnmachinable,
 }: Props) => {
   const { token, user } = useAuthStore();
   const { toast } = useToast();
@@ -237,6 +241,14 @@ export const RequestorRecentRequestsCard = ({
   const handleCancelRequest = async (requestId: string) => {
     if (!requestId) return;
     await Promise.resolve(onCancel(requestId));
+  };
+
+  // 가공불가 배지 클릭 시, 상세 보기 이전에 읽음(확인) 처리한다.
+  // 채팅 읽음 UX와 동일하게 한 번 확인되면 서버에 확인 시각이 기록된다.
+  const handleConfirmUnmachinable = async (requestId: string) => {
+    if (!requestId) return;
+    if (!onConfirmUnmachinable) return;
+    await Promise.resolve(onConfirmUnmachinable(requestId));
   };
 
   const resolveCurrentCaseInfos = useCallback((): EditableCaseInfos => {
@@ -510,6 +522,9 @@ export const RequestorRecentRequestsCard = ({
             const retentionGrooveLabel =
               item.caseInfos?.retentionGroove === "deep" ? "있음" : "없음";
             const isUnmachinable = isUnmachinableRequest(item);
+            const isUnmachinableConfirmed = Boolean(
+              item?.rnd?.unmachinableConfirmedAt,
+            );
             const unmachinableReason = String(
               item?.rnd?.unmachinableReason || "",
             ).trim();
@@ -537,6 +552,10 @@ export const RequestorRecentRequestsCard = ({
                       className="inline-flex h-6 min-w-[62px] items-center justify-center rounded-full px-2 text-[11px] font-bold shadow-sm transition-colors bg-red-500 text-white hover:bg-red-600"
                       onClick={(e) => {
                         e.stopPropagation();
+                        const reqId = String(item?._id || item?.id || "").trim();
+                        if (reqId) {
+                          void handleConfirmUnmachinable(reqId);
+                        }
                         setUnmachinableTarget(item);
                         setUnmachinableInfoOpen(true);
                       }}
@@ -610,8 +629,13 @@ export const RequestorRecentRequestsCard = ({
                     <span className="ml-1">유지홈 {retentionGrooveLabel}</span>
                   </div>
                   {isUnmachinable && (
-                    <div className="text-[11px] text-red-700 mt-1 truncate">
-                      가공불가 사유: {unmachinableReason || "미등록"}
+                    <div className="text-[11px] text-red-700 mt-1 truncate flex items-center gap-2">
+                      <span>가공불가 사유: {unmachinableReason || "미등록"}</span>
+                      {isUnmachinableConfirmed && (
+                        <Badge variant="outline" className="text-[10px] h-4 px-1.5">
+                          확인됨
+                        </Badge>
+                      )}
                     </div>
                   )}
                   <div className="text-[10px] text-slate-600 mt-0.5 flex items-center gap-2">

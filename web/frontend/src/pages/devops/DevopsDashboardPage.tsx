@@ -8,8 +8,11 @@
  */
 
 import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useAuthStore } from "@/store/useAuthStore";
+import { apiFetch } from "@/shared/api/apiClient";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DashboardShell } from "@/shared/ui/dashboard/DashboardShell";
 import { PeriodFilter, type PeriodFilterValue } from "@/shared/ui/PeriodFilter";
@@ -22,12 +25,33 @@ import {
 } from "@/features/commission/useCommissionDashboard";
 
 export const DevopsDashboardPage = () => {
-  const { user } = useAuthStore();
+  const { user, token } = useAuthStore();
 
   const [policyOpen, setPolicyOpen] = useState(false);
   const [period, setPeriod] = useState<PeriodFilterValue>("30d");
 
   const { data, loading } = useCommissionDashboard(period);
+
+  const { data: unmachinableOverviewResponse } = useQuery({
+    queryKey: ["devops-unmachinable-overview", period],
+    enabled: Boolean(token),
+    queryFn: async () => {
+      const res = await apiFetch<{
+        success?: boolean;
+        data?: {
+          counts?: Record<string, number>;
+          items?: Array<Record<string, unknown>>;
+        };
+      }>({
+        path: `/api/requests/unmachinable-overview?period=${period}&limit=6`,
+        method: "GET",
+        token,
+      });
+      if (!res.ok) throw new Error("가공불가 현황 조회에 실패했습니다.");
+      return res.data;
+    },
+    retry: false,
+  });
 
   if (!user) return null;
 
@@ -41,6 +65,15 @@ export const DevopsDashboardPage = () => {
   const unaffiliatedRatePct = Math.round(
     Number(data?.unaffiliatedCommissionRate || 0) * 100,
   );
+
+  const unmachinableCounts = unmachinableOverviewResponse?.success
+    ? unmachinableOverviewResponse.data?.counts || {}
+    : {};
+  const unmachinableItems =
+    unmachinableOverviewResponse?.success &&
+    Array.isArray(unmachinableOverviewResponse.data?.items)
+      ? unmachinableOverviewResponse.data.items
+      : [];
 
   return (
     <>
@@ -62,6 +95,51 @@ export const DevopsDashboardPage = () => {
           </div>
         }
         statsGridClassName="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4"
+        topSection={
+          <Card className="app-glass-card app-glass-card--lg">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium">가공불가 단계 현황</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              <div className="grid grid-cols-3 gap-2 text-xs">
+                <div>가능성 {Number(unmachinableCounts.potentialCount || 0).toLocaleString()}건</div>
+                <div>판정 {Number(unmachinableCounts.judgedCount || 0).toLocaleString()}건</div>
+                <div>확인 {Number(unmachinableCounts.confirmedCount || 0).toLocaleString()}건</div>
+              </div>
+              <div className="space-y-1 max-h-24 overflow-auto pr-1">
+                {unmachinableItems.map((item, idx) => {
+                  const rid = String((item as Record<string, unknown>)?.requestId || "").trim();
+                  const key = String((item as Record<string, unknown>)?._id || rid || `unmach-${idx}`);
+                  const code = String(
+                    (item as Record<string, unknown>)?.unmachinableDetailCode || "",
+                  );
+                  return (
+                  <div
+                    key={key}
+                    className="flex items-center justify-between gap-2 rounded border px-2 py-1"
+                  >
+                    <span className="text-xs truncate">{rid || "-"}</span>
+                    <Badge variant="outline" className="text-[10px]">
+                      {code === "confirmed"
+                        ? "확인"
+                        : code === "judged"
+                          ? "판정"
+                          : code === "potential"
+                            ? "가능성"
+                            : "-"}
+                    </Badge>
+                  </div>
+                  );
+                })}
+                {unmachinableItems.length === 0 && (
+                  <div className="text-xs text-muted-foreground">
+                    표시할 가공불가 의뢰가 없습니다.
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        }
         stats={
           <>
             {/* 기본 X%: 소개 의뢰자 수수료 */}

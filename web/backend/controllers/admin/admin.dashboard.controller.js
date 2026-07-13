@@ -47,6 +47,11 @@ export async function getDashboardStats(req, res) {
         .select({
           manufacturerStage: 1,
           shippingPackageId: 1,
+          requestId: 1,
+          title: 1,
+          caseInfos: 1,
+          createdAt: 1,
+          rnd: 1,
         })
         .lean(),
       getLatestPricingSsotHealthSnapshot(),
@@ -84,6 +89,14 @@ export async function getDashboardStats(req, res) {
       추적관리: 0,
       추적관리박스: 0,
       취소: 0,
+      가공불가: 0,
+    };
+
+    const unmachinableSummary = {
+      potentialCount: 0,
+      judgedCount: 0,
+      confirmedCount: 0,
+      items: [],
     };
     const shippingPackageIds = new Set();
     const trackingPackageIds = new Set();
@@ -91,19 +104,74 @@ export async function getDashboardStats(req, res) {
       const s = normalizeStage(r);
       if (requestStatsByStatus[s] != null) requestStatsByStatus[s] += 1;
 
-      const shippingPackageId = String(r.shippingPackageId || "").trim();
-      if (!shippingPackageId) return;
+      const hasPotential = Boolean(r?.rnd?.unmachinablePotentialAt);
+      const hasJudged = Boolean(r?.rnd?.unmachinableAt);
+      const hasConfirmed = Boolean(r?.rnd?.unmachinableConfirmedAt);
+      const detailCode = hasConfirmed
+        ? "confirmed"
+        : hasJudged
+          ? "judged"
+          : hasPotential
+            ? "potential"
+            : "none";
 
-      if (s === "포장.발송") {
-        shippingPackageIds.add(shippingPackageId);
-      } else if (s === "추적관리") {
-        trackingPackageIds.add(shippingPackageId);
+      if (detailCode !== "none") {
+        requestStatsByStatus["가공불가"] += 1;
+      }
+      if (detailCode === "potential") unmachinableSummary.potentialCount += 1;
+      if (detailCode === "judged") unmachinableSummary.judgedCount += 1;
+      if (detailCode === "confirmed") unmachinableSummary.confirmedCount += 1;
+
+      const shippingPackageId = String(r.shippingPackageId || "").trim();
+      if (shippingPackageId) {
+        if (s === "포장.발송") {
+          shippingPackageIds.add(shippingPackageId);
+        } else if (s === "추적관리") {
+          trackingPackageIds.add(shippingPackageId);
+        }
+      }
+
+      if (detailCode !== "none") {
+        unmachinableSummary.items.push({
+          _id: r._id,
+          requestId: r.requestId,
+          title: r.title || "",
+          manufacturerStage: r.manufacturerStage,
+          createdAt: r.createdAt || null,
+          caseInfos: r.caseInfos || {},
+          rnd: {
+            ...(r.rnd || {}),
+            unmachinablePotentialAt: r?.rnd?.unmachinablePotentialAt || null,
+            unmachinableAt: r?.rnd?.unmachinableAt || null,
+            unmachinableConfirmedAt: r?.rnd?.unmachinableConfirmedAt || null,
+            unmachinableReason: String(r?.rnd?.unmachinableReason || ""),
+          },
+          unmachinableDetailCode: detailCode,
+        });
       }
     });
     requestStatsByStatus["포장.발송박스"] = shippingPackageIds.size;
     requestStatsByStatus["추적관리박스"] = trackingPackageIds.size;
 
     const totalRequests = allRequestsForStats.length;
+
+    unmachinableSummary.items = unmachinableSummary.items
+      .sort((a, b) => {
+        const aKey =
+          a?.rnd?.unmachinableConfirmedAt ||
+          a?.rnd?.unmachinableAt ||
+          a?.rnd?.unmachinablePotentialAt ||
+          a?.createdAt ||
+          0;
+        const bKey =
+          b?.rnd?.unmachinableConfirmedAt ||
+          b?.rnd?.unmachinableAt ||
+          b?.rnd?.unmachinablePotentialAt ||
+          b?.createdAt ||
+          0;
+        return new Date(bKey).getTime() - new Date(aKey).getTime();
+      })
+      .slice(0, 10);
 
     const ssotCheckedAt = latestPricingSsotHealth?.checkedAt
       ? new Date(latestPricingSsotHealth.checkedAt)
@@ -198,6 +266,7 @@ export async function getDashboardStats(req, res) {
         recentActivity: dashboardData.files,
         systemAlerts,
         pricingSsotHealth,
+        unmachinableSummary,
       },
     });
   } catch (error) {

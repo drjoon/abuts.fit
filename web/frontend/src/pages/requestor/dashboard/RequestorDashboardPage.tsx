@@ -18,9 +18,11 @@ import {
   Package,
   Boxes,
   Wrench,
+  AlertTriangle,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import type { PeriodFilterValue } from "@/shared/ui/PeriodFilter";
 import {
   RequestorEditRequestDialog,
@@ -106,6 +108,14 @@ export const RequestorDashboardPage = () => {
   const [statsModalOpen, setStatsModalOpen] = useState(false);
   const [statsModalLabel, setStatsModalLabel] = useState<string>("");
 
+  const [unmachinableAlertModalOpen, setUnmachinableAlertModalOpen] =
+    useState(false);
+  const [selectedUnmachinableIds, setSelectedUnmachinableIds] = useState<
+    Set<string>
+  >(new Set());
+  const [confirmingUnmachinableSelection, setConfirmingUnmachinableSelection] =
+    useState(false);
+
   const summaryQueryKey = useMemo(
     () => [
       "requestor-dashboard-summary-page",
@@ -124,6 +134,8 @@ export const RequestorDashboardPage = () => {
     "세척.패킹": ["packing"],
     "포장.발송": ["shipping"],
     추적관리: ["tracking"],
+    // 상세 공정 코드(가공불가)는 별도 분기 처리
+    가공불가: null,
   };
 
   const getNormalizedStageOrNull = (requestLike: any): string | null => {
@@ -166,6 +178,12 @@ export const RequestorDashboardPage = () => {
   const getModalItems = (all: any[], label: string) => {
     const group = stageGroupByLabel[label];
     const base = (all || []).filter(filterAbutmentRequest);
+
+    // 가공불가는 stage(manufacturerStage)가 아니라 rnd 상세 상태로 분류한다.
+    if (label === "가공불가") {
+      return base.filter((r) => Boolean(r?.rnd?.unmachinableAt));
+    }
+
     if (!group) return base;
     return base.filter((r) => {
       const normalized = getNormalizedStageOrNull(r);
@@ -276,6 +294,24 @@ export const RequestorDashboardPage = () => {
     refetchOnWindowFocus: false,
     enabled: !!token,
   });
+
+  const { data: unmachinableOverviewResponse, isLoading: loadingUnmachinableOverview } =
+    useQuery({
+      queryKey: ["requestor-unmachinable-overview", period],
+      queryFn: async () => {
+        const res = await apiFetch<any>({
+          path: `/api/requests/unmachinable-overview?period=${period}&limit=100`,
+          method: "GET",
+          token,
+        });
+        if (!res.ok) {
+          throw new Error("가공불가 목록 조회에 실패했습니다.");
+        }
+        return res.data;
+      },
+      enabled: Boolean(token) && unmachinableAlertModalOpen,
+      retry: false,
+    });
 
   // 의뢰비 충전 경고
   // 의뢰, CAM 단계에 의뢰건이 있으면서 크레딧이 부족한지 확인
@@ -398,7 +434,10 @@ export const RequestorDashboardPage = () => {
         return;
       }
 
-      if (type === "request:rnd-unmachinable-updated") {
+      if (
+        type === "request:rnd-unmachinable-updated" ||
+        type === "request:rnd-unmachinable-confirmed"
+      ) {
         void queryClient.invalidateQueries({
           queryKey: summaryQueryKey,
         });
@@ -455,18 +494,40 @@ export const RequestorDashboardPage = () => {
     return requests.filter((r: any) => !isCanceledRequest(r));
   }, [summaryResponse]);
 
+  // 상단 alert 배지는 "미확인(읽지 않음)" 판정 건수를 사용한다.
   const unmachinableAlertCount = useMemo(() => {
     const fromStats = Number(summaryResponse?.data?.stats?.unmachinableCount);
     if (Number.isFinite(fromStats)) return Math.max(0, fromStats);
     return recentRequests.filter((r) => isUnmachinableRequest(r)).length;
   }, [recentRequests, summaryResponse]);
 
+  // 상단 통계카드(가공불가)는 기록용 누적(확인 포함) 건수를 사용한다.
+  const unmachinableRecordedCount = useMemo(() => {
+    const stats = summaryResponse?.data?.stats || {};
+    const fromJudgedTotal = Number(stats?.unmachinableJudgedTotalCount);
+    if (Number.isFinite(fromJudgedTotal)) return Math.max(0, fromJudgedTotal);
+
+    // 상세 필드가 실제로 내려온 경우에만 pending+confirmed 합을 사용한다.
+    // (구버전 응답에서 unmachinableCount=0만 있으면 잘못 0으로 고정되는 문제 방지)
+    const hasPendingField = Object.prototype.hasOwnProperty.call(
+      stats,
+      "unmachinablePendingConfirmCount",
+    );
+    const hasConfirmedField = Object.prototype.hasOwnProperty.call(
+      stats,
+      "unmachinableConfirmedCount",
+    );
+    if (hasPendingField || hasConfirmedField) {
+      const pending = Number(stats?.unmachinablePendingConfirmCount ?? 0);
+      const confirmed = Number(stats?.unmachinableConfirmedCount ?? 0);
+      return Math.max(0, pending + confirmed);
+    }
+
+    return recentRequests.filter((r) => isUnmachinableRequest(r)).length;
+  }, [recentRequests, summaryResponse]);
+
   const isInitialLoading =
     isLoading || isBulkLoading || loadingCreditBalance || !summaryResponse;
-
-  if (isInitialLoading) {
-    return <DashboardShellSkeleton showMain />;
-  }
 
   const openEditDialogFromRequest = (request: any) => {
     const mongoId = request._id || request.id;
@@ -595,6 +656,118 @@ export const RequestorDashboardPage = () => {
     }
   };
 
+  // 의뢰자 가공불가 확인(읽음) 처리
+  const confirmUnmachinableRequest = async (requestId: string) => {
+    if (!token || !requestId) return;
+    try {
+      const res = await apiFetch<any>({
+        path: `/api/requests/${requestId}/rnd-unmachinable/confirm`,
+        method: "PATCH",
+        token,
+      });
+      if (!res.ok) {
+        throw new Error(res.data?.message || "가공불가 확인 처리에 실패했습니다.");
+      }
+      refreshDashboard();
+    } catch (error) {
+      console.error("가공불가 확인 처리 실패", error);
+      toast({
+        title: "가공불가 확인 처리 실패",
+        description: "잠시 후 다시 시도해주세요.",
+        variant: "destructive",
+        duration: 2500,
+      });
+    }
+  };
+
+  const unmachinableOverviewItems = useMemo(() => {
+    const rows = Array.isArray(unmachinableOverviewResponse?.data?.items)
+      ? unmachinableOverviewResponse?.data?.items
+      : [];
+    return rows.filter((row: any) => Boolean(row?.rnd?.unmachinableAt));
+  }, [unmachinableOverviewResponse]);
+
+  const selectableUnmachinableIds = useMemo(() => {
+    return unmachinableOverviewItems
+      .filter((row: any) => !row?.rnd?.unmachinableConfirmedAt)
+      .map((row: any) => String(row?._id || "").trim())
+      .filter(Boolean);
+  }, [unmachinableOverviewItems]);
+
+  useEffect(() => {
+    if (!unmachinableAlertModalOpen) return;
+    setSelectedUnmachinableIds(new Set(selectableUnmachinableIds));
+  }, [unmachinableAlertModalOpen, selectableUnmachinableIds]);
+
+  const toggleUnmachinableSelection = (requestId: string, checked: boolean) => {
+    setSelectedUnmachinableIds((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(requestId);
+      else next.delete(requestId);
+      return next;
+    });
+  };
+
+  const toggleSelectAllUnmachinable = (checked: boolean) => {
+    if (checked) {
+      setSelectedUnmachinableIds(new Set(selectableUnmachinableIds));
+      return;
+    }
+    setSelectedUnmachinableIds(new Set());
+  };
+
+  const confirmSelectedUnmachinableRequests = async () => {
+    if (!token) return;
+    const targetIds = Array.from(selectedUnmachinableIds.values()).filter(Boolean);
+    if (!targetIds.length) {
+      toast({
+        title: "선택된 의뢰가 없습니다",
+        description: "확인 처리할 가공불가 의뢰를 선택해주세요.",
+        duration: 1800,
+      });
+      return;
+    }
+
+    setConfirmingUnmachinableSelection(true);
+    try {
+      let successCount = 0;
+      for (const requestId of targetIds) {
+        const res = await apiFetch<any>({
+          path: `/api/requests/${requestId}/rnd-unmachinable/confirm`,
+          method: "PATCH",
+          token,
+        });
+        if (res.ok) successCount += 1;
+      }
+
+      toast({
+        title: "가공불가 확인 처리 완료",
+        description: `${successCount}건을 확인 처리했습니다.`,
+        duration: 2000,
+      });
+      setUnmachinableAlertModalOpen(false);
+      refreshDashboard();
+    } catch (error) {
+      console.error("가공불가 선택 확인 처리 실패", error);
+      toast({
+        title: "가공불가 확인 처리 실패",
+        description: "잠시 후 다시 시도해주세요.",
+        variant: "destructive",
+        duration: 2500,
+      });
+    } finally {
+      setConfirmingUnmachinableSelection(false);
+    }
+  };
+
+  const allSelectableChecked =
+    selectableUnmachinableIds.length > 0 &&
+    selectableUnmachinableIds.every((id) => selectedUnmachinableIds.has(id));
+
+  if (isInitialLoading) {
+    return <DashboardShellSkeleton showMain />;
+  }
+
   const showSkeleton = (isLoading || isFetching) && !summaryResponse;
 
   const stats: RequestorDashboardStat[] = (() => {
@@ -606,6 +779,7 @@ export const RequestorDashboardPage = () => {
         { label: "세척.패킹", value: "0", icon: Boxes },
         { label: "포장.발송", value: "0건/0박스", icon: Package },
         { label: "추적관리", value: "0건/0박스", icon: CheckCircle },
+        { label: "가공불가", value: "0", icon: AlertTriangle },
       ];
     }
 
@@ -653,6 +827,12 @@ export const RequestorDashboardPage = () => {
         change: s.inTrackingChange ?? "+0%",
         icon: CheckCircle,
       },
+      {
+        label: "가공불가",
+        value: String(unmachinableRecordedCount),
+        change: "+0%",
+        icon: AlertTriangle,
+      },
     ];
   })();
 
@@ -666,6 +846,7 @@ export const RequestorDashboardPage = () => {
     <div>
       <DashboardShell
         title={`안녕하세요, ${user.name}님!`}
+        statsGridClassName="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-2.5"
         subtitle={
           insufficientCredit && insufficientShippingCredit
             ? "의뢰비와 배송비 크레딧 부족. 충전해주세요"
@@ -733,9 +914,14 @@ export const RequestorDashboardPage = () => {
             </Button>
 
             {unmachinableAlertCount > 0 && (
-              <div className="inline-flex h-8 items-center rounded-md border border-red-300 bg-red-50 px-3 text-sm font-semibold text-red-700 ring-2 ring-red-200">
+              <button
+                type="button"
+                onClick={() => setUnmachinableAlertModalOpen(true)}
+                className="inline-flex h-8 items-center rounded-md border border-red-300 bg-red-50 px-3 text-sm font-semibold text-red-700 ring-2 ring-red-200 hover:bg-red-100"
+                title="가공불가 의뢰 목록을 확인합니다"
+              >
                 가공불가 의뢰 {unmachinableAlertCount}건 발생
-              </div>
+              </button>
             )}
           </div>
         }
@@ -771,6 +957,7 @@ export const RequestorDashboardPage = () => {
                 }}
                 onEdit={openEditDialogFromRequest}
                 onCancel={cancelRequest}
+                onConfirmUnmachinable={confirmUnmachinableRequest}
               />
 
               <RequestorRiskSummaryCard
@@ -905,6 +1092,128 @@ export const RequestorDashboardPage = () => {
           openEditDialogFromRequest(r);
         }}
       />
+
+      <Dialog
+        open={unmachinableAlertModalOpen}
+        onOpenChange={(open) => {
+          setUnmachinableAlertModalOpen(open);
+          if (!open) {
+            // 취소/닫기는 읽음 처리 없이 선택 상태만 초기화
+            setSelectedUnmachinableIds(new Set());
+          }
+        }}
+      >
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>가공불가 의뢰 목록</DialogTitle>
+            <DialogDescription>
+              확인할 의뢰를 체크한 뒤 [선택 확인 처리]를 누르면 읽음 처리됩니다.
+              [취소/닫기] 시에는 읽음 처리되지 않습니다.
+            </DialogDescription>
+          </DialogHeader>
+
+          {loadingUnmachinableOverview ? (
+            <div className="text-sm text-muted-foreground">불러오는 중...</div>
+          ) : unmachinableOverviewItems.length === 0 ? (
+            <div className="text-sm text-muted-foreground">표시할 가공불가 의뢰가 없습니다.</div>
+          ) : (
+            <div className="space-y-3">
+              <div className="flex items-center gap-2 rounded-md border px-3 py-2">
+                <Checkbox
+                  checked={allSelectableChecked}
+                  onCheckedChange={(checked) =>
+                    toggleSelectAllUnmachinable(Boolean(checked))
+                  }
+                />
+                <span className="text-sm">
+                  전체 선택 ({selectedUnmachinableIds.size}/{selectableUnmachinableIds.length})
+                </span>
+              </div>
+
+              <div className="space-y-2 max-h-[45vh] overflow-auto pr-1">
+                {unmachinableOverviewItems.map((item: any) => {
+                  const requestMongoId = String(item?._id || "").trim();
+                  const requestId = String(item?.requestId || "-").trim() || "-";
+                  const ci = item?.caseInfos || {};
+                  const title =
+                    String(item?.title || "").trim() ||
+                    [ci?.patientName, ci?.tooth].filter(Boolean).join(" ") ||
+                    requestId;
+                  const reason = String(item?.rnd?.unmachinableReason || "").trim();
+                  const confirmed = Boolean(item?.rnd?.unmachinableConfirmedAt);
+                  const checked = selectedUnmachinableIds.has(requestMongoId);
+
+                  return (
+                    <div
+                      key={requestMongoId || requestId}
+                      className={`rounded-md border px-3 py-2 ${
+                        confirmed
+                          ? "border-slate-200 bg-slate-50"
+                          : "border-red-300 bg-red-50/40"
+                      }`}
+                    >
+                      <div className="flex items-start gap-3">
+                        <Checkbox
+                          checked={confirmed ? true : checked}
+                          disabled={confirmed}
+                          onCheckedChange={(next) =>
+                            toggleUnmachinableSelection(
+                              requestMongoId,
+                              Boolean(next),
+                            )
+                          }
+                        />
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2">
+                            <div className="text-sm font-medium truncate">{title}</div>
+                            <Badge
+                              variant={confirmed ? "outline" : "destructive"}
+                              className="text-[10px]"
+                            >
+                              {confirmed ? "확인됨" : "미확인"}
+                            </Badge>
+                          </div>
+                          <div className="text-xs text-muted-foreground truncate">
+                            의뢰번호: {requestId}
+                          </div>
+                          <div className="text-xs text-red-700 truncate mt-1">
+                            가공불가 사유: {reason || "미등록"}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="flex items-center justify-end gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setUnmachinableAlertModalOpen(false)}
+                  disabled={confirmingUnmachinableSelection}
+                >
+                  취소
+                </Button>
+                <Button
+                  type="button"
+                  onClick={() => {
+                    void confirmSelectedUnmachinableRequests();
+                  }}
+                  disabled={
+                    confirmingUnmachinableSelection ||
+                    selectedUnmachinableIds.size === 0
+                  }
+                >
+                  {confirmingUnmachinableSelection
+                    ? "처리 중..."
+                    : "선택 확인 처리"}
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       <RequestDetailDialog
         open={Boolean(selectedRiskSummaryItem)}

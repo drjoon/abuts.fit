@@ -105,6 +105,14 @@ router.get(
   requestController.getDashboardRiskSummary,
 );
 
+// 가공불가 상태 개요 (5개 role 공통)
+router.get(
+  "/unmachinable-overview",
+  authenticate,
+  authorize(["requestor", "manufacturer", "admin", "salesman", "devops"]),
+  requestController.getUnmachinableOverview,
+);
+
 // 가격/리퍼럴 통계 (의뢰자용)
 router.get(
   "/my/pricing-referral-stats",
@@ -319,6 +327,22 @@ router.put(
   authenticate,
   authorize(["manufacturer", "admin"]),
   requestController.saveRndUnmachinableReasonOptions,
+);
+
+// 의뢰자/관리자: 가공불가 판정 전체 읽음(확인) 처리
+router.patch(
+  "/my/rnd-unmachinable/confirm-all",
+  authenticate,
+  authorize(["requestor", "admin"], { subRoles: ["owner", "staff"] }),
+  requestController.confirmAllRndUnmachinableByRequestor,
+);
+
+// 의뢰자/관리자: 단건 가공불가 판정 읽음(확인) 처리
+router.patch(
+  "/:id/rnd-unmachinable/confirm",
+  authenticate,
+  authorize(["requestor", "admin"], { subRoles: ["owner", "staff"] }),
+  requestController.confirmRndUnmachinableByRequestor,
 );
 
 // 의뢰 상세 조회 (권한 검증은 컨트롤러에서 처리)

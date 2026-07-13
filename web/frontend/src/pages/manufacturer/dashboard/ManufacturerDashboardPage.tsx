@@ -123,6 +123,16 @@ export const ManufacturerDashboardPage = () => {
     (assignedSummary.packingCount ?? 0) +
     (assignedSummary.shippingCount ?? 0);
 
+  const unmachinablePotentialCount = Number(
+    assignedSummary.unmachinablePotentialCount ?? 0,
+  );
+  const unmachinablePendingConfirmCount = Number(
+    assignedSummary.unmachinablePendingConfirmCount ?? 0,
+  );
+  const unmachinableConfirmedCount = Number(
+    assignedSummary.unmachinableConfirmedCount ?? 0,
+  );
+
   const riskDelayed = riskSummary?.delayedCount ?? 0;
   const riskWarning = riskSummary?.warningCount ?? 0;
   const hasRisk = riskDelayed > 0 || riskWarning > 0;
@@ -169,6 +179,13 @@ export const ManufacturerDashboardPage = () => {
       value: `${assignedSummary.trackingCount ?? 0}건/${assignedSummary.trackingBoxes ?? 0}박스`,
       icon: CheckCircle,
       hint: "집하/배송 추적",
+    },
+    {
+      key: "unmachinable",
+      label: "가공불가",
+      value: `${unmachinablePendingConfirmCount}/${unmachinableConfirmedCount}`,
+      icon: AlertTriangle,
+      hint: `판정·미확인 / 의뢰자 확인 (${unmachinablePotentialCount} 가능성)`,
     },
   ];
 

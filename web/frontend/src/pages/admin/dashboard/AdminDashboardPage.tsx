@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { usePeriodStore, periodToRange } from "@/store/usePeriodStore";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { useQuery } from "@tanstack/react-query";
 import { apiFetch, request } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
@@ -69,6 +70,23 @@ type PricingSsotHealth = {
     latestRequestMongoId?: string;
     latestRequestId?: string;
   }>;
+};
+
+type UnmachinableDetailCode = "potential" | "judged" | "confirmed" | "none";
+
+const UNMACHINABLE_DETAIL_LABEL: Record<UnmachinableDetailCode, string> = {
+  potential: "가공불가 가능성 있음",
+  judged: "제조사 가공불가 판정",
+  confirmed: "의뢰자 가공불가 확인",
+  none: "-",
+};
+
+const UNMACHINABLE_DETAIL_BADGE_VARIANT = (
+  code: UnmachinableDetailCode,
+): "outline" | "secondary" | "destructive" => {
+  if (code === "judged") return "destructive";
+  if (code === "confirmed") return "secondary";
+  return "outline";
 };
 
 const getAlertIcon = (type: string) => {
@@ -245,6 +263,10 @@ export const AdminDashboardPage = () => {
     ? (riskSummaryResponse.data?.riskSummary ?? null)
     : null;
 
+  const unmachinableSummary = adminDashboardResponse?.success
+    ? (adminDashboardResponse.data?.unmachinableSummary ?? null)
+    : null;
+
   if (adminDashboardResponse?.success) {
     const userStats = adminDashboardResponse.data.userStats || {};
     const requestStats = adminDashboardResponse.data.requestStats || {};
@@ -318,8 +340,82 @@ export const AdminDashboardPage = () => {
         headerRight={undefined}
         statsGridClassName="flex flex-col gap-3"
         topSection={
-          <div className="grid grid-cols-1 gap-3 items-stretch">
+          <div className="grid grid-cols-1 gap-3 items-stretch xl:grid-cols-2">
             <RequestorRiskSummaryCard riskSummary={riskSummary} />
+
+            <Card className="app-glass-card app-glass-card--lg">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium">가공불가 의뢰 현황</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="grid grid-cols-3 gap-2">
+                  <div className="rounded-md border px-2 py-2">
+                    <div className="text-[11px] text-muted-foreground">가능성</div>
+                    <div className="text-lg font-semibold">
+                      {Number(unmachinableSummary?.potentialCount || 0).toLocaleString()}
+                    </div>
+                  </div>
+                  <div className="rounded-md border px-2 py-2 border-red-200 bg-red-50/60">
+                    <div className="text-[11px] text-muted-foreground">판정</div>
+                    <div className="text-lg font-semibold text-red-700">
+                      {Number(unmachinableSummary?.judgedCount || 0).toLocaleString()}
+                    </div>
+                  </div>
+                  <div className="rounded-md border px-2 py-2 border-blue-200 bg-blue-50/60">
+                    <div className="text-[11px] text-muted-foreground">확인</div>
+                    <div className="text-lg font-semibold text-blue-700">
+                      {Number(unmachinableSummary?.confirmedCount || 0).toLocaleString()}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-1.5 max-h-40 overflow-auto pr-1">
+                  {(Array.isArray(unmachinableSummary?.items)
+                    ? unmachinableSummary.items
+                    : []
+                  ).map((rawItem, idx) => {
+                    const item = rawItem as Record<string, unknown>;
+                    const code = String(
+                      item?.unmachinableDetailCode || "none",
+                    ) as UnmachinableDetailCode;
+                    const caseInfos =
+                      (item?.caseInfos as Record<string, unknown> | undefined) || {};
+                    const clinic = String(caseInfos?.clinicName || "").trim();
+                    const patient = String(caseInfos?.patientName || "").trim();
+                    const title =
+                      String(item?.title || "").trim() ||
+                      [clinic, patient].filter(Boolean).join(" ") ||
+                      String(item?.requestId || "");
+                    const key = String(item?._id || item?.requestId || `unmach-${idx}`);
+                    return (
+                      <div
+                        key={key}
+                        className="rounded-md border px-2 py-1.5"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="text-xs font-medium truncate">{title}</div>
+                          <Badge
+                            variant={UNMACHINABLE_DETAIL_BADGE_VARIANT(code)}
+                            className="text-[10px]"
+                          >
+                            {UNMACHINABLE_DETAIL_LABEL[code] || UNMACHINABLE_DETAIL_LABEL.none}
+                          </Badge>
+                        </div>
+                        <div className="text-[11px] text-muted-foreground truncate">
+                          의뢰번호: {String(item?.requestId || "-")} · 상태: {String(item?.manufacturerStage || "-")}
+                        </div>
+                      </div>
+                    );
+                  })}
+
+                  {Number((unmachinableSummary?.items || []).length || 0) === 0 && (
+                    <div className="text-xs text-muted-foreground py-2 text-center">
+                      표시할 가공불가 의뢰가 없습니다.
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
           </div>
         }
         stats={

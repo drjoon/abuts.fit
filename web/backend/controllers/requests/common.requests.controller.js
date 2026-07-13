@@ -201,6 +201,28 @@ const normalizeReasonOptions = (optionsRaw, max = 100) => {
   return unique;
 };
 
+/**
+ * 가공불가 상세 단계 코드를 계산한다.
+ * - none: 관련 없음
+ * - potential: 가능성 표시
+ * - judged: 제조사/관리자 가공불가 판정
+ * - confirmed: 의뢰자가 판정 내역 확인(읽음)
+ */
+const resolveUnmachinableDetailCode = (requestLike) => {
+  if (requestLike?.rnd?.unmachinableConfirmedAt) return "confirmed";
+  if (requestLike?.rnd?.unmachinableAt) return "judged";
+  if (requestLike?.rnd?.unmachinablePotentialAt) return "potential";
+  return "none";
+};
+
+const UNMACHINABLE_EVENT_ROLES = [
+  "requestor",
+  "manufacturer",
+  "admin",
+  "salesman",
+  "devops",
+];
+
 function withBridgeHeaders(extra = {}) {
   const base = {};
   if (BRIDGE_SHARED_SECRET) {
@@ -825,7 +847,9 @@ export async function getAllRequests(req, res) {
       "source",
       "rnd.doneAt",
       "rnd.doneFromStage",
+      "rnd.unmachinablePotentialAt",
       "rnd.unmachinableAt",
+      "rnd.unmachinableConfirmedAt",
       "rnd.unmachinableFromStage",
       "rnd.unmachinableReason",
       "rnd.memo",
@@ -873,7 +897,9 @@ export async function getAllRequests(req, res) {
       "source",
       "rnd.doneAt",
       "rnd.doneFromStage",
+      "rnd.unmachinablePotentialAt",
       "rnd.unmachinableAt",
+      "rnd.unmachinableConfirmedAt",
       "rnd.unmachinableFromStage",
       "rnd.unmachinableReason",
       "rnd.memo",
@@ -900,7 +926,9 @@ export async function getAllRequests(req, res) {
       "source",
       "rnd.doneAt",
       "rnd.doneFromStage",
+      "rnd.unmachinablePotentialAt",
       "rnd.unmachinableAt",
+      "rnd.unmachinableConfirmedAt",
       "rnd.unmachinableFromStage",
       "rnd.unmachinableReason",
       "rnd.memo",
@@ -934,6 +962,10 @@ export async function getAllRequests(req, res) {
       "caseInfos.clinicName",
       "caseInfos.patientName",
       "caseInfos.tooth",
+      "rnd.unmachinablePotentialAt",
+      "rnd.unmachinableAt",
+      "rnd.unmachinableConfirmedAt",
+      "rnd.unmachinableReason",
       "requestor",
     ].join(" ");
 
@@ -1580,10 +1612,27 @@ export const updateRndUnmachinableStatus = asyncHandler(async (req, res) => {
   }
 
   const currentStage = String(request.manufacturerStage || "").trim();
+  const now = new Date();
+
+  // 정책: 제조사/관리자의 "가공불가" 액션은
+  // 가능성(potential) + 판정(judged)을 동시에 기록한다.
+  // 판정 해제 시 confirmed(의뢰자 확인)도 함께 초기화한다.
   request.rnd = {
     ...(request.rnd || {}),
-    unmachinableAt: unmachinable ? new Date() : null,
+    unmachinablePotentialAt: unmachinable
+      ? request.rnd?.unmachinablePotentialAt || now
+      : null,
+    unmachinablePotentialBy: unmachinable
+      ? request.rnd?.unmachinablePotentialBy || req.user._id
+      : null,
+    unmachinableAt: unmachinable ? now : null,
     unmachinableBy: unmachinable ? req.user._id : null,
+    unmachinableConfirmedAt: unmachinable
+      ? request.rnd?.unmachinableConfirmedAt || null
+      : null,
+    unmachinableConfirmedBy: unmachinable
+      ? request.rnd?.unmachinableConfirmedBy || null
+      : null,
     unmachinableFromStage: unmachinable
       ? currentStage || null
       : String(request.rnd?.unmachinableFromStage || "").trim() || null,
@@ -1593,14 +1642,31 @@ export const updateRndUnmachinableStatus = asyncHandler(async (req, res) => {
   await request.save();
 
   const requestorBusinessAnchorId = String(request.businessAnchorId || "").trim();
+
+  // 대시보드 스냅샷/캐시도 즉시 무효화하여 읽음 카운트가 지연되지 않게 한다.
+  if (requestorBusinessAnchorId) {
+    try {
+      await triggerDashboardSummaryRefreshForAnchorId(
+        requestorBusinessAnchorId,
+        "rnd-unmachinable-updated",
+      );
+    } catch (refreshError) {
+      console.warn("[rnd-unmachinable] dashboard refresh trigger failed", {
+        requestId: request.requestId,
+        error: refreshError?.message,
+      });
+    }
+  }
+
   emitAppEventToRoles(
-    ["requestor", "manufacturer", "admin"],
+    UNMACHINABLE_EVENT_ROLES,
     "request:rnd-unmachinable-updated",
     {
       requestId: request.requestId,
       requestMongoId: String(request._id || "").trim() || null,
       requestorBusinessAnchorId: requestorBusinessAnchorId || null,
       unmachinable: Boolean(request.rnd?.unmachinableAt),
+      detailCode: resolveUnmachinableDetailCode(request),
       reason: String(request.rnd?.unmachinableReason || ""),
       request: {
         _id: request._id,
@@ -1610,7 +1676,9 @@ export const updateRndUnmachinableStatus = asyncHandler(async (req, res) => {
         requestorBusinessAnchorId: requestorBusinessAnchorId || null,
         rnd: {
           ...(request.rnd || {}),
+          unmachinablePotentialAt: request.rnd?.unmachinablePotentialAt || null,
           unmachinableAt: request.rnd?.unmachinableAt || null,
+          unmachinableConfirmedAt: request.rnd?.unmachinableConfirmedAt || null,
           unmachinableReason: String(request.rnd?.unmachinableReason || ""),
           unmachinableFromStage:
             String(request.rnd?.unmachinableFromStage || "") || null,
@@ -1623,11 +1691,210 @@ export const updateRndUnmachinableStatus = asyncHandler(async (req, res) => {
     success: true,
     data: {
       requestId: request.requestId,
+      detailCode: resolveUnmachinableDetailCode(request),
+      unmachinablePotentialAt: request.rnd?.unmachinablePotentialAt || null,
       unmachinableAt: request.rnd?.unmachinableAt || null,
+      unmachinableConfirmedAt: request.rnd?.unmachinableConfirmedAt || null,
       unmachinableReason: String(request.rnd?.unmachinableReason || ""),
     },
   });
 });
+
+export const confirmRndUnmachinableByRequestor = asyncHandler(
+  async (req, res) => {
+    const { id } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: "유효하지 않은 의뢰 ID입니다.",
+      });
+    }
+
+    const request = await Request.findById(id);
+    if (!request) {
+      return res.status(404).json({
+        success: false,
+        message: "의뢰를 찾을 수 없습니다.",
+      });
+    }
+
+    // 의뢰자 본인(또는 같은 조직)만 읽음(확인) 처리 가능
+    const isRequestor = await canAccessRequestAsRequestor(req, request);
+    const isAdmin = req.user.role === "admin";
+    if (!isRequestor && !isAdmin) {
+      return res.status(403).json({
+        success: false,
+        message: "이 의뢰를 확인 처리할 권한이 없습니다.",
+      });
+    }
+
+    // 판정 상태가 없으면 확인 처리할 수 없다.
+    if (!request?.rnd?.unmachinableAt) {
+      return res.status(400).json({
+        success: false,
+        message: "가공불가 판정 의뢰만 확인 처리할 수 있습니다.",
+      });
+    }
+
+    const alreadyConfirmed = Boolean(request?.rnd?.unmachinableConfirmedAt);
+    request.rnd = {
+      ...(request.rnd || {}),
+      unmachinableConfirmedAt: request.rnd?.unmachinableConfirmedAt || new Date(),
+      unmachinableConfirmedBy: request.rnd?.unmachinableConfirmedBy || req.user._id,
+    };
+    await request.save();
+
+    const requestorBusinessAnchorId = String(request.businessAnchorId || "").trim();
+
+    if (requestorBusinessAnchorId) {
+      try {
+        await triggerDashboardSummaryRefreshForAnchorId(
+          requestorBusinessAnchorId,
+          "rnd-unmachinable-confirmed",
+        );
+      } catch (refreshError) {
+        console.warn("[rnd-unmachinable-confirm] dashboard refresh trigger failed", {
+          requestId: request.requestId,
+          error: refreshError?.message,
+        });
+      }
+    }
+
+    // 읽음 상태 변화도 실시간 이벤트로 전파하여 제조사/관리자/기타 역할 대시보드에 즉시 반영한다.
+    emitAppEventToRoles(
+      UNMACHINABLE_EVENT_ROLES,
+      "request:rnd-unmachinable-confirmed",
+      {
+        requestId: request.requestId,
+        requestMongoId: String(request._id || "").trim() || null,
+        requestorBusinessAnchorId: requestorBusinessAnchorId || null,
+        detailCode: resolveUnmachinableDetailCode(request),
+        confirmedByRole: String(req.user?.role || "").trim() || null,
+        request: {
+          _id: request._id,
+          requestId: request.requestId,
+          manufacturerStage: request.manufacturerStage,
+          businessAnchorId: request.businessAnchorId,
+          requestorBusinessAnchorId: requestorBusinessAnchorId || null,
+          rnd: {
+            ...(request.rnd || {}),
+            unmachinablePotentialAt: request.rnd?.unmachinablePotentialAt || null,
+            unmachinableAt: request.rnd?.unmachinableAt || null,
+            unmachinableConfirmedAt: request.rnd?.unmachinableConfirmedAt || null,
+            unmachinableReason: String(request.rnd?.unmachinableReason || ""),
+            unmachinableFromStage:
+              String(request.rnd?.unmachinableFromStage || "") || null,
+          },
+        },
+      },
+    );
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        requestId: request.requestId,
+        alreadyConfirmed,
+        detailCode: resolveUnmachinableDetailCode(request),
+        unmachinableConfirmedAt: request.rnd?.unmachinableConfirmedAt || null,
+      },
+    });
+  },
+);
+
+export const confirmAllRndUnmachinableByRequestor = asyncHandler(
+  async (req, res) => {
+    const scope = await buildRequestorOrgScopeFilter(req);
+
+    const targetRequests = await Request.find({
+      ...scope,
+      "rnd.unmachinableAt": { $ne: null },
+      "rnd.unmachinableConfirmedAt": null,
+      manufacturerStage: { $ne: "취소" },
+    })
+      .select({ _id: 1, requestId: 1, businessAnchorId: 1, rnd: 1, manufacturerStage: 1 })
+      .lean();
+
+    if (!targetRequests.length) {
+      return res.status(200).json({ success: true, data: { updatedCount: 0 } });
+    }
+
+    const now = new Date();
+    const targetIds = targetRequests.map((row) => row._id);
+
+    await Request.updateMany(
+      { _id: { $in: targetIds } },
+      {
+        $set: {
+          "rnd.unmachinableConfirmedAt": now,
+          "rnd.unmachinableConfirmedBy": req.user._id,
+        },
+      },
+    );
+
+    // 영향받은 조직 스냅샷을 먼저 무효화하고,
+    // 이후 개별 이벤트를 발행해 프론트 리스트를 즉시 동기화한다.
+    const affectedAnchorIds = Array.from(
+      new Set(
+        targetRequests
+          .map((row) => String(row?.businessAnchorId || "").trim())
+          .filter(Boolean),
+      ),
+    );
+    for (const anchorId of affectedAnchorIds) {
+      try {
+        await triggerDashboardSummaryRefreshForAnchorId(
+          anchorId,
+          "rnd-unmachinable-confirmed-batch",
+        );
+      } catch (refreshError) {
+        console.warn("[rnd-unmachinable-confirm-all] dashboard refresh trigger failed", {
+          anchorId,
+          error: refreshError?.message,
+        });
+      }
+    }
+
+    // 배치 확인 처리도 개별 이벤트를 발행해 각 역할 대시보드가 즉시 반응하도록 한다.
+    for (const row of targetRequests) {
+      const requestorBusinessAnchorId = String(row.businessAnchorId || "").trim();
+      emitAppEventToRoles(
+        UNMACHINABLE_EVENT_ROLES,
+        "request:rnd-unmachinable-confirmed",
+        {
+          requestId: row.requestId,
+          requestMongoId: String(row._id || "").trim() || null,
+          requestorBusinessAnchorId: requestorBusinessAnchorId || null,
+          detailCode: "confirmed",
+          confirmedByRole: String(req.user?.role || "").trim() || null,
+          request: {
+            _id: row._id,
+            requestId: row.requestId,
+            manufacturerStage: row.manufacturerStage,
+            businessAnchorId: row.businessAnchorId,
+            requestorBusinessAnchorId: requestorBusinessAnchorId || null,
+            rnd: {
+              ...(row.rnd || {}),
+              unmachinablePotentialAt: row?.rnd?.unmachinablePotentialAt || null,
+              unmachinableAt: row?.rnd?.unmachinableAt || null,
+              unmachinableConfirmedAt: now,
+              unmachinableReason: String(row?.rnd?.unmachinableReason || ""),
+              unmachinableFromStage:
+                String(row?.rnd?.unmachinableFromStage || "") || null,
+            },
+          },
+        },
+      );
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        updatedCount: targetRequests.length,
+      },
+    });
+  },
+);
 
 export const updateRndMemo = asyncHandler(async (req, res) => {
   const { id } = req.params;

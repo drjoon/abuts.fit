@@ -58,11 +58,11 @@ export const RequestorDashboardStatsCards = ({
               <Icon className="h-4 w-4 text-slate-600 flex-shrink-0" />
             </CardHeader>
             <CardContent>
-              <div className="text-lg sm:text-xl md:text-2xl font-bold text-foreground whitespace-nowrap tracking-tight">
+              <div className="w-full flex items-center justify-center text-lg sm:text-xl md:text-2xl font-bold text-foreground whitespace-nowrap tracking-tight tabular-nums">
                 {stat.value}
               </div>
               {stat.change && (
-                <p className="text-xs text-slate-600 truncate">
+                <p className="text-xs text-slate-600 leading-tight whitespace-normal break-keep min-h-[2.1em] text-center">
                   <span
                     className={
                       String(stat.change).includes("-")

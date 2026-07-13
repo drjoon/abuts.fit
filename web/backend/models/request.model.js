@@ -400,12 +400,36 @@ const requestSchema = new mongoose.Schema(
         type: String,
         default: null,
       },
+      // 가공불가 상태 3단계 SSOT
+      // 1) potential: 가공불가 가능성
+      // 2) judged: 제조사/관리자 가공불가 판정
+      // 3) confirmed: 의뢰자 확인(읽음 처리와 동일 의미)
+      unmachinablePotentialAt: {
+        type: Date,
+        default: null,
+        index: true,
+      },
+      unmachinablePotentialBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+        default: null,
+      },
       unmachinableAt: {
         type: Date,
         default: null,
         index: true,
       },
       unmachinableBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+        default: null,
+      },
+      unmachinableConfirmedAt: {
+        type: Date,
+        default: null,
+        index: true,
+      },
+      unmachinableConfirmedBy: {
         type: mongoose.Schema.Types.ObjectId,
         ref: "User",
         default: null,

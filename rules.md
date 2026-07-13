@@ -2560,7 +2560,39 @@ PRC 파일 경로 SSOT는 아래를 사용합니다.
 
 `seedCoreShared` 실행 시 `hanhwa-connection` 카테고리에서 다음을 수행합니다.
 
-1. `CONNECTIONS_SEED` 기준 upsert
-2. seed에 없는 기존 `hanhwa-connection` row는 prune(delete)
+2. `CONNECTIONS_SEED` 기준 upsert
+3. seed에 없는 기존 `hanhwa-connection` row는 prune(delete)
 
 목적은 과거 stale 옵션(브랜드명 변경/삭제된 시스템)이 프론트에 다시 노출되지 않게 보장하기 위함입니다.
+
+---
+
+## 20. 가공불가 단계/상세코드 운영 정책 (2026-07-13)
+
+### 20.1 공정 레벨
+
+- `가공불가`는 `완료`, `취소`와 동일하게 **공정 레벨 상태**로 취급합니다.
+- 단, DB SSOT `manufacturerStage`는 기존 6단계를 유지하고, 가공불가는 `Request.rnd.*`로 오버레이합니다.
+- 화면/집계에서 가공불가 판단 시 `manufacturerStage` 단독이 아니라 `rnd` 상세 필드를 함께 확인해야 합니다.
+
+### 20.2 상세 코드(SSOT)
+
+가공불가 상세 코드는 아래 순서로 계산합니다.
+
+1. `confirmed`: `rnd.unmachinableConfirmedAt` 존재
+2. `judged`: `rnd.unmachinableAt` 존재
+3. `potential`: `rnd.unmachinablePotentialAt` 존재
+4. `none`: 위 조건 없음
+
+### 20.3 읽음(확인) 정책
+
+- 의뢰자가 가공불가 항목을 클릭하면 `rnd.unmachinableConfirmedAt`, `rnd.unmachinableConfirmedBy`를 기록합니다.
+- 읽음 처리 후 의뢰자 알림 카운트는 감소해야 하며, 제조사/관리자/영업자/개발운영사 화면에도 동일 상태가 전파되어야 합니다.
+- 읽음 카운트는 "판정됨 + 미확인" 기준(`judged && !confirmed`)을 사용합니다.
+
+### 20.4 이벤트/캐시 정책
+
+- 가공불가 판정 변경 시: `request:rnd-unmachinable-updated`
+- 의뢰자 확인(읽음) 시: `request:rnd-unmachinable-confirmed`
+- 두 이벤트 모두 5개 role(`requestor`, `manufacturer`, `admin`, `salesman`, `devops`)에 전파합니다.
+- 이벤트 발행 전후로 대시보드 스냅샷/캐시 무효화 트리거를 수행해 stale 카운트를 방지합니다.
