@@ -1,8 +1,12 @@
+import { Types } from "mongoose";
 import ManufacturerPayment from "../../models/manufacturerPayment.model.js";
 import ManufacturerCreditLedger from "../../models/manufacturerCreditLedger.model.js";
 import ManufacturerDailySettlementSnapshot from "../../models/manufacturerDailySettlementSnapshot.model.js";
 import CreditLedger from "../../models/creditLedger.model.js";
+import DeliveryInfo from "../../models/deliveryInfo.model.js";
 import Request from "../../models/request.model.js";
+import ShippingPackage from "../../models/shippingPackage.model.js";
+import BusinessAnchor from "../../models/businessAnchor.model.js";
 import { sendNotificationViaQueue } from "../../utils/notificationQueue.js";
 import User from "../../models/user.model.js";
 import {
@@ -17,6 +21,40 @@ function kstYmdToUtcRange(ymd) {
   const start = new Date(dt.getTime() - 9 * 60 * 60 * 1000);
   const end = new Date(start.getTime() + 24 * 60 * 60 * 1000 - 1);
   return { start, end };
+}
+
+async function resolveManufacturerMemberObjectIds(user) {
+  const ids = new Set();
+  const myId = String(user?._id || "").trim();
+  if (myId && Types.ObjectId.isValid(myId)) ids.add(myId);
+
+  const anchorId = String(user?.businessAnchorId || "").trim();
+  if (!anchorId || !Types.ObjectId.isValid(anchorId)) {
+    return Array.from(ids).map((id) => new Types.ObjectId(id));
+  }
+
+  const anchor = await BusinessAnchor.findById(anchorId)
+    .select({ primaryContactUserId: 1, owners: 1, members: 1 })
+    .lean();
+
+  if (!anchor) {
+    return Array.from(ids).map((id) => new Types.ObjectId(id));
+  }
+
+  const primaryId = String(anchor.primaryContactUserId || "").trim();
+  if (primaryId && Types.ObjectId.isValid(primaryId)) ids.add(primaryId);
+
+  for (const ownerId of Array.isArray(anchor.owners) ? anchor.owners : []) {
+    const id = String(ownerId || "").trim();
+    if (id && Types.ObjectId.isValid(id)) ids.add(id);
+  }
+
+  for (const memberId of Array.isArray(anchor.members) ? anchor.members : []) {
+    const id = String(memberId || "").trim();
+    if (id && Types.ObjectId.isValid(id)) ids.add(id);
+  }
+
+  return Array.from(ids).map((id) => new Types.ObjectId(id));
 }
 
 export async function getManufacturerCreditLedger(req, res) {
@@ -36,6 +74,9 @@ export async function getManufacturerCreditLedger(req, res) {
         message: "조직 정보가 필요합니다.",
       });
     }
+
+    const manufacturerMemberObjectIds =
+      await resolveManufacturerMemberObjectIds(user);
 
     const {
       page = 1,
@@ -133,7 +174,11 @@ export async function getManufacturerCreditLedger(req, res) {
           },
         },
         { $unwind: "$requestDoc" },
-        { $match: { "requestDoc.caManufacturer": user._id } },
+        {
+          $match: {
+            "requestDoc.caManufacturer": { $in: manufacturerMemberObjectIds },
+          },
+        },
       ];
 
       if (rx) {
@@ -178,7 +223,7 @@ export async function getManufacturerCreditLedger(req, res) {
           : [];
 
       const requestFreeRuleQuery = {
-        caManufacturer: user._id,
+        caManufacturer: { $in: manufacturerMemberObjectIds },
         "price.rule": "remake_monthly_free_3",
         manufacturerStage: { $ne: "취소" },
       };
@@ -834,6 +879,9 @@ export async function getManufacturerCreditDailySummary(req, res) {
       });
     }
 
+    const manufacturerMemberObjectIds =
+      await resolveManufacturerMemberObjectIds(user);
+
     const { fromYmd, toYmd, limit = "60", debug } = req.query;
     const l = Math.min(366, Math.max(1, parseInt(limit)));
     const shouldDebugSummary =
@@ -969,8 +1017,13 @@ export async function getManufacturerCreditDailySummary(req, res) {
     const freeMatch = {
       type: "SPEND",
       refType: "REQUEST",
-      spentBonusAmount: { $gt: 0 },
-      $or: [{ spentPaidAmount: { $lte: 0 } }, { spentPaidAmount: null }],
+      $or: [
+        {
+          spentBonusAmount: { $gt: 0 },
+          $or: [{ spentPaidAmount: { $lte: 0 } }, { spentPaidAmount: null }],
+        },
+        { hasFreeRequest: true },
+      ],
     };
 
     if (typeof fromYmd === "string" && fromYmd.trim()) {
@@ -997,7 +1050,11 @@ export async function getManufacturerCreditDailySummary(req, res) {
         },
       },
       { $unwind: "$requestDoc" },
-      { $match: { "requestDoc.caManufacturer": user._id } },
+      {
+        $match: {
+          "requestDoc.caManufacturer": { $in: manufacturerMemberObjectIds },
+        },
+      },
       {
         $group: {
           _id: {
@@ -1022,7 +1079,7 @@ export async function getManufacturerCreditDailySummary(req, res) {
     ]);
 
     const freeRuleRequestMatch = {
-      caManufacturer: user._id,
+      caManufacturer: { $in: manufacturerMemberObjectIds },
       "price.rule": "remake_monthly_free_3",
       manufacturerStage: { $ne: "취소" },
     };
@@ -1090,56 +1147,137 @@ export async function getManufacturerCreditDailySummary(req, res) {
       ([ymd, count]) => ({ ymd, earnRequestFreeCount: count }),
     );
 
-    const shippingMatch = {
-      manufacturerOrganization,
-      type: "EARN",
-      refType: "SHIPPING_PACKAGE",
+    const shippingRequestMatch = {
+      manufacturerStage: { $ne: "취소" },
+      shippingPackageId: { $exists: true, $ne: null },
+      $or: [
+        { caManufacturer: { $in: manufacturerMemberObjectIds } },
+        { caManufacturer: null },
+        { caManufacturer: { $exists: false } },
+      ],
     };
 
-    if (typeof fromYmd === "string" && fromYmd.trim()) {
-      const from = new Date(`${fromYmd.trim()}T00:00:00.000+09:00`);
-      if (!Number.isNaN(from.getTime())) {
-        shippingMatch.occurredAt = {
-          ...(shippingMatch.occurredAt || {}),
-          $gte: from,
-        };
-      }
-    }
-    if (typeof toYmd === "string" && toYmd.trim()) {
-      const to = new Date(`${toYmd.trim()}T23:59:59.999+09:00`);
-      if (!Number.isNaN(to.getTime())) {
-        shippingMatch.occurredAt = {
-          ...(shippingMatch.occurredAt || {}),
-          $lte: to,
-        };
-      }
-    }
-
-    const shippingClassRows = await ManufacturerCreditLedger.aggregate([
-      { $match: shippingMatch },
+    const shippingPackagePipeline = [
+      { $match: shippingRequestMatch },
+      {
+        $lookup: {
+          from: DeliveryInfo.collection.name,
+          localField: "deliveryInfoRef",
+          foreignField: "_id",
+          as: "deliveryDoc",
+        },
+      },
+      {
+        $unwind: {
+          path: "$deliveryDoc",
+          preserveNullAndEmptyArrays: true,
+        },
+      },
+      {
+        $lookup: {
+          from: ShippingPackage.collection.name,
+          localField: "shippingPackageId",
+          foreignField: "_id",
+          as: "packageDoc",
+        },
+      },
+      {
+        $unwind: {
+          path: "$packageDoc",
+          preserveNullAndEmptyArrays: true,
+        },
+      },
+      {
+        $addFields: {
+          settlementYmd: {
+            $switch: {
+              branches: [
+                {
+                  case: {
+                    $ne: [{ $ifNull: ["$deliveryDoc.deliveredAt", null] }, null],
+                  },
+                  then: {
+                    $dateToString: {
+                      format: "%Y-%m-%d",
+                      date: "$deliveryDoc.deliveredAt",
+                      timezone: "Asia/Seoul",
+                    },
+                  },
+                },
+                {
+                  case: {
+                    $ne: [{ $ifNull: ["$deliveryDoc.pickedUpAt", null] }, null],
+                  },
+                  then: {
+                    $dateToString: {
+                      format: "%Y-%m-%d",
+                      date: "$deliveryDoc.pickedUpAt",
+                      timezone: "Asia/Seoul",
+                    },
+                  },
+                },
+                {
+                  case: {
+                    $ne: [{ $ifNull: ["$deliveryDoc.shippedAt", null] }, null],
+                  },
+                  then: {
+                    $dateToString: {
+                      format: "%Y-%m-%d",
+                      date: "$deliveryDoc.shippedAt",
+                      timezone: "Asia/Seoul",
+                    },
+                  },
+                },
+                {
+                  case: {
+                    $regexMatch: {
+                      input: { $ifNull: ["$packageDoc.shipDateYmd", ""] },
+                      regex: "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+                    },
+                  },
+                  then: "$packageDoc.shipDateYmd",
+                },
+              ],
+              default: {
+                $dateToString: {
+                  format: "%Y-%m-%d",
+                  date: "$createdAt",
+                  timezone: "Asia/Seoul",
+                },
+              },
+            },
+          },
+        },
+      },
+      {
+        $group: {
+          _id: "$shippingPackageId",
+          settlementYmd: { $max: "$settlementYmd" },
+        },
+      },
       {
         $lookup: {
           from: CreditLedger.collection.name,
-          let: { shippingRefId: "$refId" },
+          let: { shippingPackageId: "$_id" },
           pipeline: [
             {
               $match: {
                 $expr: {
                   $and: [
-                    { $eq: ["$refId", "$$shippingRefId"] },
+                    { $eq: ["$refId", "$$shippingPackageId"] },
                     { $eq: ["$type", "SPEND"] },
-                    { $eq: ["$refType", "SHIPPING_PACKAGE"] },
+                    { $in: ["$refType", ["SHIPPING_PACKAGE", "SHIPPING_FEE"]] },
                   ],
                 },
               },
             },
-            { $sort: { createdAt: -1 } },
+            { $sort: { createdAt: -1, _id: -1 } },
             { $limit: 1 },
             {
               $project: {
                 _id: 0,
+                amount: 1,
                 spentPaidAmount: 1,
-                spentBonusAmount: 1,
               },
             },
           ],
@@ -1152,22 +1290,38 @@ export async function getManufacturerCreditDailySummary(req, res) {
           preserveNullAndEmptyArrays: true,
         },
       },
+    ];
+
+    if (typeof fromYmd === "string" && fromYmd.trim()) {
+      shippingPackagePipeline.push({
+        $match: { settlementYmd: { $gte: fromYmd.trim() } },
+      });
+    }
+    if (typeof toYmd === "string" && toYmd.trim()) {
+      shippingPackagePipeline.push({
+        $match: { settlementYmd: { $lte: toYmd.trim() } },
+      });
+    }
+
+    shippingPackagePipeline.push(
       {
         $group: {
-          _id: {
-            ymd: {
-              $dateToString: {
-                format: "%Y-%m-%d",
-                date: "$occurredAt",
-                timezone: "Asia/Seoul",
-              },
+          _id: "$settlementYmd",
+          earnShippingAmount: {
+            $sum: {
+              $cond: [
+                { $gt: ["$shippingSpend.spentPaidAmount", 0] },
+                { $abs: { $ifNull: ["$shippingSpend.amount", 0] } },
+                0,
+              ],
             },
           },
+          earnShippingCount: { $sum: 1 },
           earnShippingPaidAmount: {
             $sum: {
               $cond: [
                 { $gt: ["$shippingSpend.spentPaidAmount", 0] },
-                "$amount",
+                { $abs: { $ifNull: ["$shippingSpend.amount", 0] } },
                 0,
               ],
             },
@@ -1177,42 +1331,10 @@ export async function getManufacturerCreditDailySummary(req, res) {
               $cond: [{ $gt: ["$shippingSpend.spentPaidAmount", 0] }, 1, 0],
             },
           },
-          earnShippingFreeAmount: {
-            $sum: {
-              $cond: [
-                {
-                  $and: [
-                    { $gt: ["$shippingSpend.spentBonusAmount", 0] },
-                    {
-                      $or: [
-                        { $lte: ["$shippingSpend.spentPaidAmount", 0] },
-                        { $eq: ["$shippingSpend.spentPaidAmount", null] },
-                      ],
-                    },
-                  ],
-                },
-                "$amount",
-                0,
-              ],
-            },
-          },
+          earnShippingFreeAmount: { $sum: 0 },
           earnShippingFreeCount: {
             $sum: {
-              $cond: [
-                {
-                  $and: [
-                    { $gt: ["$shippingSpend.spentBonusAmount", 0] },
-                    {
-                      $or: [
-                        { $lte: ["$shippingSpend.spentPaidAmount", 0] },
-                        { $eq: ["$shippingSpend.spentPaidAmount", null] },
-                      ],
-                    },
-                  ],
-                },
-                1,
-                0,
-              ],
+              $cond: [{ $gt: ["$shippingSpend.spentPaidAmount", 0] }, 0, 1],
             },
           },
         },
@@ -1220,14 +1342,18 @@ export async function getManufacturerCreditDailySummary(req, res) {
       {
         $project: {
           _id: 0,
-          ymd: "$_id.ymd",
+          ymd: "$_id",
+          earnShippingAmount: 1,
+          earnShippingCount: 1,
           earnShippingPaidAmount: 1,
           earnShippingPaidCount: 1,
           earnShippingFreeAmount: 1,
           earnShippingFreeCount: 1,
         },
       },
-    ]);
+    );
+
+    const shippingClassRows = await Request.aggregate(shippingPackagePipeline);
 
     const rowMap = new Map();
 
@@ -1294,6 +1420,12 @@ export async function getManufacturerCreditDailySummary(req, res) {
         earnShippingFreeCount: 0,
       };
 
+      const shippingAmountFromSpend = Number(shipping?.earnShippingAmount || 0);
+      const shippingCountFromSpend = Number(shipping?.earnShippingCount || 0);
+
+      existing.earnShippingAmount = shippingAmountFromSpend;
+      existing.earnShippingCount = shippingCountFromSpend;
+
       existing.earnShippingPaidAmount = Number(
         shipping?.earnShippingPaidAmount || 0,
       );
@@ -1306,6 +1438,12 @@ export async function getManufacturerCreditDailySummary(req, res) {
       existing.earnShippingFreeCount = Number(
         shipping?.earnShippingFreeCount || 0,
       );
+      existing.netAmount =
+        Number(existing.earnRequestAmount || 0) +
+        Number(existing.earnShippingAmount || 0) +
+        Number(existing.refundAmount || 0) +
+        Number(existing.payoutAmount || 0) +
+        Number(existing.adjustAmount || 0);
       rowMap.set(ymd, existing);
     }
 
