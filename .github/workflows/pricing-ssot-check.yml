@@ -56,8 +56,13 @@ jobs:
           fi
 
           if [ -z "$DB_URI" ]; then
-            echo "One of MONGODB_URI, MONGO_URI, MONGODB_URI_TEST, or MONGO_URI_TEST secret is required for pricing SSOT check." >&2
-            exit 1
+            if [ "$GITHUB_EVENT_NAME" = "schedule" ] || [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+              echo "One of MONGODB_URI, MONGO_URI, MONGODB_URI_TEST, or MONGO_URI_TEST secret is required for pricing SSOT check." >&2
+              exit 1
+            fi
+
+            echo "No MongoDB URI secret configured. Skipping pricing SSOT strict check for event: $GITHUB_EVENT_NAME"
+            exit 0
           fi
 
           MONGODB_URI="$DB_URI" MONGO_URI="$DB_URI" npm --prefix web/backend run db:check-pricing-ssot:ci
