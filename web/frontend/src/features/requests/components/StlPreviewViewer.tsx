@@ -26,6 +26,7 @@ type Props = {
   enableManualPick?: boolean;
   manualPickPoints?: number[][] | null;
   onSurfacePointDoubleClick?: (point: [number, number, number]) => void;
+  onManualUndo?: () => void;
   className?: string;
   metadata?: StlMetadata | null;
 };
@@ -39,6 +40,7 @@ export function StlPreviewViewer({
   enableManualPick = false,
   manualPickPoints,
   onSurfacePointDoubleClick,
+  onManualUndo,
   className,
   metadata,
 }: Props) {
@@ -49,6 +51,9 @@ export function StlPreviewViewer({
   const sceneRef = useRef<THREE.Scene | null>(null);
   const meshRef = useRef<THREE.Mesh | null>(null);
   const dblClickHandlerRef = useRef<((event: MouseEvent) => void) | null>(null);
+  const contextMenuHandlerRef = useRef<((event: MouseEvent) => void) | null>(null);
+  const onSurfacePointDoubleClickRef = useRef(onSurfacePointDoubleClick);
+  const onManualUndoRef = useRef(onManualUndo);
   const manualPickMarkersRef = useRef<THREE.Mesh[]>([]);
   const modelDiagRef = useRef<number>(0);
   const centerRef = useRef<THREE.Vector3 | null>(null);
@@ -210,6 +215,14 @@ export function StlPreviewViewer({
   useEffect(() => {
     onDiameterComputedRef.current = onDiameterComputed;
   }, [onDiameterComputed]);
+
+  useEffect(() => {
+    onSurfacePointDoubleClickRef.current = onSurfacePointDoubleClick;
+  }, [onSurfacePointDoubleClick]);
+
+  useEffect(() => {
+    onManualUndoRef.current = onManualUndo;
+  }, [onManualUndo]);
 
   useEffect(() => {
     resolvedMetadataRef.current = resolvedMetadata;
@@ -1266,7 +1279,7 @@ export function StlPreviewViewer({
         scene.add(mesh);
         meshRef.current = mesh;
 
-        if (enableManualPick && onSurfacePointDoubleClick) {
+        if (enableManualPick && onSurfacePointDoubleClickRef.current) {
           const raycaster = new THREE.Raycaster();
           const pointer = new THREE.Vector2();
           const onDblClick = (event: MouseEvent) => {
@@ -1282,7 +1295,7 @@ export function StlPreviewViewer({
               if (!hit) return;
               const modelPoint = hit.clone();
               if (!isFilled) modelPoint.add(center);
-              onSurfacePointDoubleClick([
+              onSurfacePointDoubleClickRef.current?.([
                 Number(modelPoint.x),
                 Number(modelPoint.y),
                 Number(modelPoint.z),
@@ -1296,6 +1309,17 @@ export function StlPreviewViewer({
           }
           renderer.domElement.addEventListener("dblclick", onDblClick);
           dblClickHandlerRef.current = onDblClick;
+
+          const onContextMenu = (event: MouseEvent) => {
+            event.preventDefault();
+            event.stopPropagation();
+            onManualUndoRef.current?.();
+          };
+          if (contextMenuHandlerRef.current) {
+            renderer.domElement.removeEventListener("contextmenu", contextMenuHandlerRef.current);
+          }
+          renderer.domElement.addEventListener("contextmenu", onContextMenu);
+          contextMenuHandlerRef.current = onContextMenu;
         }
 
         // Draw tilt axis (dotted line passing through origin)
@@ -1759,6 +1783,10 @@ export function StlPreviewViewer({
         if (dblClickHandlerRef.current) {
           renderer.domElement.removeEventListener("dblclick", dblClickHandlerRef.current);
           dblClickHandlerRef.current = null;
+        }
+        if (contextMenuHandlerRef.current) {
+          renderer.domElement.removeEventListener("contextmenu", contextMenuHandlerRef.current);
+          contextMenuHandlerRef.current = null;
         }
       } catch {
         // noop

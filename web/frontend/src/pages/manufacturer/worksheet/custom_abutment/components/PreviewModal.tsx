@@ -147,35 +147,135 @@ const smoothOpenPath = (pts: number[][], iterations = 3): number[][] => {
   return current;
 };
 
+const farthestPair = (pts: number[][]): [number, number] => {
+  let bestA = 0;
+  let bestB = Math.min(1, Math.max(0, pts.length - 1));
+  let best = -1;
+  for (let i = 0; i < pts.length; i += 1) {
+    for (let j = i + 1; j < pts.length; j += 1) {
+      const dx = pts[j][0] - pts[i][0];
+      const dy = pts[j][1] - pts[i][1];
+      const dz = pts[j][2] - pts[i][2];
+      const d = dx * dx + dy * dy + dz * dz;
+      if (d > best) {
+        best = d;
+        bestA = i;
+        bestB = j;
+      }
+    }
+  }
+  return [bestA, bestB];
+};
+
+const orderPickedByEndpoints = (
+  picked: number[][],
+  start: number[],
+  end: number[],
+): number[][] => {
+  const vx = end[0] - start[0];
+  const vy = end[1] - start[1];
+  const vz = end[2] - start[2];
+  const vLen2 = Math.max(1e-9, vx * vx + vy * vy + vz * vz);
+  return [...picked].sort((a, b) => {
+    const ta =
+      ((a[0] - start[0]) * vx + (a[1] - start[1]) * vy + (a[2] - start[2]) * vz) /
+      vLen2;
+    const tb =
+      ((b[0] - start[0]) * vx + (b[1] - start[1]) * vy + (b[2] - start[2]) * vz) /
+      vLen2;
+    return ta - tb;
+  });
+};
+
+const pointToPolylineMinDistSq = (p: number[], poly: number[][]): number => {
+  if (poly.length === 0) return Number.POSITIVE_INFINITY;
+  if (poly.length === 1) {
+    const dx = p[0] - poly[0][0];
+    const dy = p[1] - poly[0][1];
+    const dz = p[2] - poly[0][2];
+    return dx * dx + dy * dy + dz * dz;
+  }
+  let best = Number.POSITIVE_INFINITY;
+  for (let i = 1; i < poly.length; i += 1) {
+    const a = poly[i - 1];
+    const b = poly[i];
+    const abx = b[0] - a[0];
+    const aby = b[1] - a[1];
+    const abz = b[2] - a[2];
+    const apx = p[0] - a[0];
+    const apy = p[1] - a[1];
+    const apz = p[2] - a[2];
+    const denom = Math.max(1e-9, abx * abx + aby * aby + abz * abz);
+    const t = Math.max(0, Math.min(1, (apx * abx + apy * aby + apz * abz) / denom));
+    const qx = a[0] + abx * t;
+    const qy = a[1] + aby * t;
+    const qz = a[2] + abz * t;
+    const dx = p[0] - qx;
+    const dy = p[1] - qy;
+    const dz = p[2] - qz;
+    const d = dx * dx + dy * dy + dz * dz;
+    if (d < best) best = d;
+  }
+  return best;
+};
+
+const avgDistToArc = (picked: number[][], arc: number[][]): number => {
+  if (picked.length === 0 || arc.length === 0) return Number.POSITIVE_INFINITY;
+  let total = 0;
+  for (const p of picked) total += Math.sqrt(pointToPolylineMinDistSq(p, arc));
+  return total / picked.length;
+};
+
 const buildPatchedFinishLinePoints = (
   basePointsRaw: number[][],
   pickedPointsRaw: number[][],
 ): number[][] => {
   const base = normalizeLoopPoints(basePointsRaw);
-  const picked = normalizeLoopPoints(pickedPointsRaw);
+  const pickedRaw = normalizeLoopPoints(pickedPointsRaw);
   if (base.length < 6) return base;
-  if (picked.length < 2) return base;
+  if (pickedRaw.length < 2) return base;
 
-  const startIdx = nearestIndex(base, picked[0]);
-  let endIdx = nearestIndex(base, picked[picked.length - 1]);
+  const [ea, eb] = farthestPair(pickedRaw);
+  const pickedStart = pickedRaw[ea];
+  const pickedEnd = pickedRaw[eb];
+  const pickedOrdered = orderPickedByEndpoints(pickedRaw, pickedStart, pickedEnd);
+
+  const startIdx = nearestIndex(base, pickedStart);
+  let endIdx = nearestIndex(base, pickedEnd);
   if (startIdx === endIdx) {
     endIdx = (startIdx + Math.max(2, Math.floor(base.length * 0.08))) % base.length;
   }
 
-  const forwardArc = collectArcIndices(base.length, startIdx, endIdx, true);
-  const backwardArc = collectArcIndices(base.length, startIdx, endIdx, false);
+  const forwardArcIdx = collectArcIndices(base.length, startIdx, endIdx, true);
+  const backwardArcIdx = collectArcIndices(base.length, startIdx, endIdx, false);
+  const forwardArc = forwardArcIdx.map((idx) => base[idx]);
+  const backwardArc = backwardArcIdx.map((idx) => base[idx]);
 
-  const forwardLen = polylineLength(forwardArc.map((idx) => base[idx]));
-  const backwardLen = polylineLength(backwardArc.map((idx) => base[idx]));
+  const forwardScore = avgDistToArc(pickedOrdered, forwardArc);
+  const backwardScore = avgDistToArc(pickedOrdered, backwardArc);
 
-  const replaceForward = forwardLen <= backwardLen;
+  const replaceForward = forwardScore <= backwardScore;
   const keptArc = replaceForward
     ? collectArcIndices(base.length, endIdx, startIdx, true)
     : collectArcIndices(base.length, endIdx, startIdx, false);
 
   const startSnap = base[startIdx];
   const endSnap = base[endIdx];
-  const patchCore = [startSnap, ...picked.slice(1, -1), endSnap];
+  const inner = pickedOrdered.filter(
+    (p) =>
+      !(
+        Math.abs(p[0] - pickedStart[0]) < 1e-9 &&
+        Math.abs(p[1] - pickedStart[1]) < 1e-9 &&
+        Math.abs(p[2] - pickedStart[2]) < 1e-9
+      ) &&
+      !(
+        Math.abs(p[0] - pickedEnd[0]) < 1e-9 &&
+        Math.abs(p[1] - pickedEnd[1]) < 1e-9 &&
+        Math.abs(p[2] - pickedEnd[2]) < 1e-9
+      ),
+  );
+
+  const patchCore = [startSnap, ...inner, endSnap];
   const patchSmooth = smoothOpenPath(patchCore, 3);
   const keepInner = keptArc.slice(1, -1).map((idx) => base[idx]);
 
@@ -1058,6 +1158,11 @@ export const PreviewModal = ({
     });
   };
 
+  const handleUndoGuidedFinishLinePoint = () => {
+    if (!guidedFinishLineMode || guidedFinishLineSubmitting || isUploading) return;
+    setGuidedFinishLinePoints((prev) => prev.slice(0, -1));
+  };
+
   const handleSubmitGuidedFinishLine = async () => {
     if (!canGuideFinishLine || guidedFinishLineSubmitting || isUploading) return;
 
@@ -1749,8 +1854,8 @@ export const PreviewModal = ({
                         type="button"
                         className={`inline-flex items-center justify-center h-8 w-8 rounded-md border text-[11px] font-bold transition ${
                           guidedFinishLineMode
-                            ? "border-indigo-300 bg-indigo-50 text-indigo-700"
-                            : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                            ? "border-orange-300 bg-orange-50 text-orange-700"
+                            : "border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100"
                         } ${guidedFinishLineSubmitting || isUploading ? "opacity-60 cursor-not-allowed" : ""}`}
                         disabled={guidedFinishLineSubmitting || isUploading}
                         onClick={(e) => {
@@ -1761,7 +1866,7 @@ export const PreviewModal = ({
                         aria-label={guidedFinishLineMode ? "피니시라인 수동편집 완료" : "피니시라인 수동편집 시작"}
                         title={guidedFinishLineMode ? "피니시라인 수동편집 완료" : "피니시라인 수동편집 시작"}
                       >
-                        [FL]
+                        FL
                       </button>
                     )}
                     {canRegenerateFilledStl && (
@@ -1883,6 +1988,7 @@ export const PreviewModal = ({
                       enableManualPick={canGuideFinishLine && guidedFinishLineMode}
                       manualPickPoints={guidedFinishLinePoints}
                       onSurfacePointDoubleClick={handleAddGuidedFinishLinePoint}
+                      onManualUndo={handleUndoGuidedFinishLinePoint}
                     />
                   </div>
                 ) : (
