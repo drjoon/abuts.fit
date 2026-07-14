@@ -127,25 +127,7 @@ const polylineLength = (pts: number[][]): number => {
   return total;
 };
 
-const smoothOpenPath = (pts: number[][], iterations = 3): number[][] => {
-  let current = [...pts];
-  for (let iter = 0; iter < iterations; iter += 1) {
-    if (current.length < 3) return current;
-    const next = current.map((p) => [...p]);
-    for (let i = 1; i < current.length - 1; i += 1) {
-      const a = current[i - 1];
-      const b = current[i];
-      const c = current[i + 1];
-      next[i] = [
-        a[0] * 0.25 + b[0] * 0.5 + c[0] * 0.25,
-        a[1] * 0.25 + b[1] * 0.5 + c[1] * 0.25,
-        a[2] * 0.25 + b[2] * 0.5 + c[2] * 0.25,
-      ];
-    }
-    current = next;
-  }
-  return current;
-};
+
 
 const farthestPair = (pts: number[][]): [number, number] => {
   let bestA = 0;
@@ -275,11 +257,12 @@ const buildPatchedFinishLinePoints = (
       ),
   );
 
+  // 사용자 요청: 시작/끝점을 제외한 입력 포인트는 반드시 커브가 통과해야 한다.
+  // 따라서 패치 구간에서 내부 포인트는 스무딩으로 이동시키지 않고 그대로 사용한다.
   const patchCore = [startSnap, ...inner, endSnap];
-  const patchSmooth = smoothOpenPath(patchCore, 3);
   const keepInner = keptArc.slice(1, -1).map((idx) => base[idx]);
 
-  return [...patchSmooth, ...keepInner];
+  return [...patchCore, ...keepInner];
 };
 
 type PreviewModalProps = {

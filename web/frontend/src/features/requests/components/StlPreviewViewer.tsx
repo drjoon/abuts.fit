@@ -54,6 +54,7 @@ export function StlPreviewViewer({
   const contextMenuHandlerRef = useRef<((event: MouseEvent) => void) | null>(null);
   const onSurfacePointDoubleClickRef = useRef(onSurfacePointDoubleClick);
   const onManualUndoRef = useRef(onManualUndo);
+  const enableManualPickRef = useRef(enableManualPick);
   const manualPickMarkersRef = useRef<THREE.Mesh[]>([]);
   const modelDiagRef = useRef<number>(0);
   const centerRef = useRef<THREE.Vector3 | null>(null);
@@ -223,6 +224,10 @@ export function StlPreviewViewer({
   useEffect(() => {
     onManualUndoRef.current = onManualUndo;
   }, [onManualUndo]);
+
+  useEffect(() => {
+    enableManualPickRef.current = enableManualPick;
+  }, [enableManualPick]);
 
   useEffect(() => {
     resolvedMetadataRef.current = resolvedMetadata;
@@ -1279,10 +1284,12 @@ export function StlPreviewViewer({
         scene.add(mesh);
         meshRef.current = mesh;
 
-        if (enableManualPick && onSurfacePointDoubleClickRef.current) {
+        if (onSurfacePointDoubleClickRef.current || onManualUndoRef.current) {
           const raycaster = new THREE.Raycaster();
           const pointer = new THREE.Vector2();
           const onDblClick = (event: MouseEvent) => {
+            if (!enableManualPickRef.current) return;
+            if (!onSurfacePointDoubleClickRef.current) return;
             try {
               const rect = renderer.domElement.getBoundingClientRect();
               const px = ((event.clientX - rect.left) / Math.max(1, rect.width)) * 2 - 1;
@@ -1311,6 +1318,7 @@ export function StlPreviewViewer({
           dblClickHandlerRef.current = onDblClick;
 
           const onContextMenu = (event: MouseEvent) => {
+            if (!enableManualPickRef.current) return;
             event.preventDefault();
             event.stopPropagation();
             onManualUndoRef.current?.();
@@ -1738,6 +1746,7 @@ export function StlPreviewViewer({
         // 카메라 위치 조정: 세로로 긴 모델일 경우 상하가 꽉 차도록 Y, Z축을 조정
         // dist 값을 키워서 모델 전체가 한눈에 들어오도록 줌아웃 (기존보다 더 멀리서 보게)
         const cameraDist = dist * (showOverlay ? 1.0 : 1.2); // 의뢰자 페이지(showOverlay=false)에서는 조금 더 멀리서
+
         camera.position.set(cameraDist, -cameraDist, cameraDist * 0.9);
         camera.lookAt(0, 0, 0);
       } catch (e) {
@@ -1934,7 +1943,6 @@ export function StlPreviewViewer({
     resolvedMetadata?.frontPoint?.z,
     resolvedMetadata?.finishLine?.max_z,
     resolvedMetadata?.finishLine?.min_z,
-    enableManualPick,
   ]);
 
   useEffect(() => {
