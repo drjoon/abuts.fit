@@ -2339,7 +2339,7 @@ function buildClonedCaseInfos(sourceCaseInfos, startStage, now = new Date()) {
  * - 복사본은 제조사 내부 테스트/개발용으로 사용 (크레딧 미소비)
  * - 복사본은 R&D 탭에 즉시 보관되도록 생성 (`source=manufacturer_sample`, `rnd.doneAt!=null`)
  * - 원본 단계/배송정보/크레딧에는 영향 없이 분리 저장
- * - 허용 원본 단계: 세척.패킹, 추적관리, 배송완료 건
+ * - 허용 원본 단계: 의뢰, CAM, 세척.패킹, 추적관리, 배송완료 건
  * @route POST /api/requests/:id/clone-as-sample
  */
 export async function cloneAsSample(req, res) {
@@ -2359,18 +2359,26 @@ export async function cloneAsSample(req, res) {
       }
 
       // 제조사 단계 확인
-      // - 추적관리/배송완료는 기존과 동일하게 허용
-      // - 세척.패킹 단계도 허용 (원본은 계속 진행, 복사본만 R&D로 생성)
+      // - 기존 허용: 세척.패킹/추적관리/배송완료
+      // - 확장 허용: 의뢰/CAM (워크시트 의뢰, CAM 탭에서 R&D 저장)
       const stage = String(request.manufacturerStage || "").trim();
       const di = request.deliveryInfoRef || {};
       const isDelivered = !!di.deliveredAt;
       const isTrackingStage = stage === "추적관리";
       const isPackingStage = stage === "세척.패킹" || stage === "세척.포장";
+      const isRequestStage = stage === "의뢰" || stage.toLowerCase() === "request";
+      const isCamStage = stage === "CAM" || stage.toLowerCase() === "cam";
 
-      if (!isTrackingStage && !isDelivered && !isPackingStage) {
+      if (
+        !isRequestStage &&
+        !isCamStage &&
+        !isTrackingStage &&
+        !isDelivered &&
+        !isPackingStage
+      ) {
         throw new ApiError(
           400,
-          "세척.패킹 진행중, 추적관리 완료 또는 배송 완료된 의뢰건만 샘플 복사가 가능합니다.",
+          "의뢰, CAM, 세척.패킹 진행중, 추적관리 완료 또는 배송 완료된 의뢰건만 샘플 복사가 가능합니다.",
         );
       }
 

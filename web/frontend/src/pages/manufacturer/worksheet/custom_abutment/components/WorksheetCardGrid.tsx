@@ -488,7 +488,12 @@ export const WorksheetCardGrid = ({
         const hasTopFloatingControls =
           Boolean(isSampleRequest) ||
           Boolean(realtimeBadge || realtimeElapsedLabel) ||
-          Boolean(onSaveToRnd && tabStage === "packing") ||
+          Boolean(
+            onSaveToRnd &&
+              (tabStage === "packing" ||
+                tabStage === "request" ||
+                tabStage === "cam"),
+          ) ||
           Boolean(onRollback && canRollback) ||
           Boolean(onDelete && isSampleRequest) ||
           Boolean(onDone && isSampleRequest && !request.rnd?.doneAt) ||
@@ -625,7 +630,10 @@ export const WorksheetCardGrid = ({
                   {isUnmachinableSample ? "가공불가" : "가공불가 확인요망"}
                 </Badge>
               )}
-              {onSaveToRnd && tabStage === "packing" && (
+              {onSaveToRnd &&
+                (tabStage === "packing" ||
+                  tabStage === "request" ||
+                  tabStage === "cam") && (
                 <button
                   type="button"
                   className="h-7 px-2 inline-flex items-center justify-center gap-1 rounded-md border bg-white/90 text-purple-700 shadow-sm transition hover:bg-purple-50"
