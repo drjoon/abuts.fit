@@ -289,36 +289,7 @@ namespace DentalAddin
             return false;
         }
 
-        private static void ExecuteTwoPhaseTurningAndRough(string region)
-        {
-            Environment.SetEnvironmentVariable(AppConfig.TwoPhaseTurningRegionEnv, region);
-            Environment.SetEnvironmentVariable(AppConfig.TwoPhaseRoughRegionEnv, region);
-            Environment.SetEnvironmentVariable("ABUTS_ROUGHFREEFORM_SPLIT_REGION", region);
-            try
-            {
-                int turnStart = Document?.Operations?.Count ?? 0;
-                ValidateBeforeOperation($"TurningOp_{region}", Array.Empty<string>(), Array.Empty<string>());
-                TurningOp();
-                TagNewOperations(turnStart, $"TURN_{region}");
 
-                int roughStart = Document?.Operations?.Count ?? 0;
-                string[] roughFreeForms = (RoughType == 2.0)
-                    ? new[] { "3DRoughMilling_0Degree", "3DRoughMilling_180Degree" }
-                    : new[] { "3DRoughMilling_0Degree", "3DRoughMilling_120Degree", "3DRoughMilling_240Degree" };
-                string[] roughBoundaries = (RoughType == 2.0)
-                    ? new[] { "RoughBoundry1" }
-                    : new[] { "RoughBoundry1", "RoughBoundry2", "RoughBoundry3" };
-                ValidateBeforeOperation($"RoughFreeFromMill_{region}", roughBoundaries, roughFreeForms);
-                RoughFreeFromMill();
-                TagNewOperations(roughStart, $"ROUGH_{region}");
-            }
-            finally
-            {
-                Environment.SetEnvironmentVariable(AppConfig.TwoPhaseTurningRegionEnv, null);
-                Environment.SetEnvironmentVariable(AppConfig.TwoPhaseRoughRegionEnv, null);
-                Environment.SetEnvironmentVariable("ABUTS_ROUGHFREEFORM_SPLIT_REGION", null);
-            }
-        }
 
         public static void FrontFaceMill()
         {
@@ -986,68 +957,7 @@ namespace DentalAddin
             }
         }
 
-        private static List<FeatureChain> BuildLegacyBackTurningChainsByCallingLegacy()
-        {
-            List<FeatureChain> result = new List<FeatureChain>();
-            try
-            {
-                if (Document == null)
-                {
-                    return result;
-                }
 
-                // 기존 레거시 체인 정리(중복 방지)
-                for (int i = Document.FeatureChains.Count; i >= 1; i--)
-                {
-                    FeatureChain fc = null;
-                    try { fc = Document.FeatureChains[i]; } catch { }
-                    if (fc == null) continue;
-                    string name = fc.Name ?? string.Empty;
-                    if (name.StartsWith("Back_Turning_", StringComparison.OrdinalIgnoreCase))
-                    {
-                        try { Document.FeatureChains.Remove(fc.Key); } catch { }
-                    }
-                }
-
-                // 레거시 생성 함수 직접 호출
-                TurningFeature_Extension.BackT();
-
-                List<(int order, FeatureChain chain)> ordered = new List<(int order, FeatureChain chain)>();
-                for (int i = 1; i <= Document.FeatureChains.Count; i++)
-                {
-                    FeatureChain fc = null;
-                    try { fc = Document.FeatureChains[i]; } catch { }
-                    if (fc == null) continue;
-
-                    string name = fc.Name ?? string.Empty;
-                    if (!name.StartsWith("Back_Turning_", StringComparison.OrdinalIgnoreCase))
-                    {
-                        continue;
-                    }
-
-                    int order = int.MaxValue;
-                    int us = name.LastIndexOf('_');
-                    if (us >= 0 && us + 1 < name.Length)
-                    {
-                        int.TryParse(name.Substring(us + 1), NumberStyles.Integer, CultureInfo.InvariantCulture, out order);
-                    }
-                    ordered.Add((order, fc));
-                }
-
-                foreach (var pair in ordered.OrderBy(x => x.order))
-                {
-                    result.Add(pair.chain);
-                }
-
-                DentalLogger.Log($"TurningOp BACK - 레거시 BackT 직접 호출 완료, chains={result.Count}");
-                return result;
-            }
-            catch (Exception ex)
-            {
-                DentalLogger.Log($"TurningOp BACK - 레거시 BackT 호출 실패: {ex.GetType().Name}:{ex.Message}");
-                return result;
-            }
-        }
 
         private static void ApplyTwoPhaseTurningToolOverride(string region, IList<TechLatheContour1> turningTechs, IList<TechLatheContour1> reverseTechs)
         {
@@ -1174,29 +1084,7 @@ namespace DentalAddin
             return null;
         }
 
-        private static bool IsLatheOrTurningTool(Tool tool)
-        {
-            try
-            {
-                if (tool == null)
-                {
-                    return false;
-                }
 
-                string style = tool.ToolStyle.ToString();
-                if (string.IsNullOrWhiteSpace(style))
-                {
-                    return false;
-                }
-
-                return style.IndexOf("Lathe", StringComparison.OrdinalIgnoreCase) >= 0
-                    || style.IndexOf("Turn", StringComparison.OrdinalIgnoreCase) >= 0;
-            }
-            catch
-            {
-                return false;
-            }
-        }
 
         private static bool TryGetToolNumber(Tool tool, out int number)
         {
@@ -1871,46 +1759,7 @@ namespace DentalAddin
             };
         }
 
-        private static void ApplyBoundaryProfiles(object tech, int boundaryKey, string context)
-        {
-            if (tech == null || boundaryKey <= 0)
-            {
-                return;
-            }
 
-            string value = "6," + boundaryKey.ToString(CultureInfo.InvariantCulture);
-            try
-            {
-                PropertyInfo p = tech.GetType().GetProperty("BoundaryProfiles", BindingFlags.Public | BindingFlags.Instance);
-                if (p != null && p.CanWrite)
-                {
-                    p.SetValue(tech, value, null);
-                    DentalLogger.Log($"{context} - BoundaryProfiles={value}");
-                    return;
-                }
-            }
-            catch (Exception ex)
-            {
-                DentalLogger.Log($"{context} - BoundaryProfiles 적용 실패: {ex.GetType().Name}:{ex.Message}");
-            }
-
-            try
-            {
-                PropertyInfo p = tech.GetType().GetProperty("BoundaryProfile", BindingFlags.Public | BindingFlags.Instance);
-                if (p != null && p.CanWrite)
-                {
-                    p.SetValue(tech, value, null);
-                    DentalLogger.Log($"{context} - BoundaryProfile={value}");
-                    return;
-                }
-            }
-            catch (Exception ex)
-            {
-                DentalLogger.Log($"{context} - BoundaryProfile 적용 실패: {ex.GetType().Name}:{ex.Message}");
-            }
-
-            DentalLogger.Log($"{context} - BoundaryProfiles 속성을 찾지 못해 영역 분할을 적용하지 못했습니다.");
-        }
 
         public static void RoughMill()
         {
@@ -2102,46 +1951,7 @@ namespace DentalAddin
             }
         }
 
-        public static void BackTurning()
-        {
-            FeatureChain[] array = new FeatureChain[7];
-            string file = PrcFilePath[1];
-            DentalLogger.Log($"BackTurning - OpenProcess: PRC[1]={file}");
-            TechLatheContour1 pITechnology = (TechLatheContour1)((ITechnology[])((TechnologyUtility)Activator.CreateInstance(Marshal.GetTypeFromCLSID(new Guid("C30D1110-1549-48C5-84D0-F66DCAD0F16F")))).OpenProcess(file))[0];
-            int count = Document.FeatureChains.Count;
-            checked
-            {
-                int i;
-                for (i = 1; i <= count; i++)
-                {
-                    FeatureChain featureChain = Document.FeatureChains[i];
-                    if (Operators.CompareString(Strings.Left(featureChain.Name, 4), "Back", false) == 0)
-                    {
-                        int num = Conversions.ToInteger(Strings.Right(featureChain.Name, 1));
-                        array[num] = featureChain;
-                    }
-                }
-                int count2 = Document.Layers.Count;
-                for (i = 1; i <= count2; i++)
-                {
-                    Layer layer = Document.Layers[i];
-                    if (Operators.CompareString(layer.Name, "TurnOperation", false) == 0)
-                    {
-                        Document.ActiveLayer = layer;
-                    }
-                }
-                i = 1;
-                do
-                {
-                    if (array[i] != null)
-                    {
-                        Document.Operations.Add(pITechnology, array[i], RuntimeHelpers.GetObjectValue(Missing.Value));
-                    }
-                    i++;
-                }
-                while (i <= 6);
-            }
-        }
+
 
         public static void SearchTool()
         {

@@ -12,7 +12,7 @@ using System.Runtime.InteropServices;
 using System.Runtime.Serialization;
 using System.Runtime.Serialization.Json;
 using System.Text;
-using System.Text.RegularExpressions;
+
 using DPTechnology.AnnexLibraries.EspritAnnex;
 using Esprit;
 using EspritConstants;
@@ -31,9 +31,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         private const string StlImportLayerName = "AbutsStlImport";
         private const double DefaultWAxisRotationDegrees = 30.0;
 
-        // Composite OrientationProfile startX 진단용 env(현재 선택 로직에는 미사용).
-        // SSOT는 MainModuleComposite 내부의 MoveSTL_Module.FrontPointX 고정값이다.
-        private const string CompositeOrientationProfileStartXEnv = "ABUTS_COMPOSITE_ORIENTATION_PROFILE_START_X";
+
         private const double CompositeFinishToleranceThresholdZMm = 15.0;
         private const double CompositeFinishToleranceOverrideMm = 0.03;
         private const string BackRoughFourWayEnableEnv = "ABUTS_BACK_ROUGH_4WAY_ENABLE";
@@ -78,15 +76,6 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             {
                 // 모달 억제 실패 시에도 기능은 계속 수행
             }
-        }
-        private static bool DetermineFaceBeforeComposite()
-        {
-            string flag = Environment.GetEnvironmentVariable("ABUTS_FACE_BEFORE_COMPOSITE");
-            if (!string.IsNullOrWhiteSpace(flag))
-            {
-                return flag.Equals("1", StringComparison.OrdinalIgnoreCase) || flag.Equals("true", StringComparison.OrdinalIgnoreCase);
-            }
-            return AppConfig.FaceBeforeCompositeDefault;
         }
 
 
@@ -477,7 +466,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             Environment.SetEnvironmentVariable(CompositeCuffStartXEnv, null);
             Environment.SetEnvironmentVariable(CompositeCuffEndXEnv, null);
             Environment.SetEnvironmentVariable(CompositeCuffProfilePointsEnv, null);
-            Environment.SetEnvironmentVariable(CompositeOrientationProfileStartXEnv, null);
+
             FaceHoleProcessFilePath = null;
             ConnectionMachiningProcessFilePath = null;
             lotNumber = "ACR";
@@ -650,178 +639,9 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             return result;
         }
 
-        // MoveSTL 이후 STL의 X 범위(min/max)를 계산해 Composite OrientationProfile 시작점 SSOT로 사용한다.
-        // - minX: 화면 좌측 끝(요청사항 기준 "왼쪽 끝")
-        // - maxX: 진단 로그 용도
-        private static bool TryComputeStlBoundingXRange(Document document, out double minX, out double maxX)
-        {
-            minX = 0.0;
-            maxX = 0.0;
 
-            List<string> createdFeatureKeys = null;
-            SelectionSet selectionSet = null;
-            try
-            {
-                if (document?.GraphicsCollection == null || document?.FeatureRecognition == null)
-                {
-                    return false;
-                }
 
-                const string selectionName = "StlBoundingXTemp";
-                try { selectionSet = document.SelectionSets.Add(selectionName); }
-                catch { selectionSet = document.SelectionSets[selectionName]; }
-                if (selectionSet == null)
-                {
-                    return false;
-                }
 
-                selectionSet.RemoveAll();
-                foreach (GraphicObject graphic in document.GraphicsCollection)
-                {
-                    if (graphic?.GraphicObjectType == espGraphicObjectType.espSTL_Model)
-                    {
-                        selectionSet.Add(graphic, Missing.Value);
-                        break;
-                    }
-                }
-                if (selectionSet.Count == 0)
-                {
-                    return false;
-                }
-
-                Plane plane = null;
-                try { plane = document.Planes["XYZ"]; } catch { }
-                if (plane == null)
-                {
-                    try { plane = document.Planes["YZX"]; } catch { }
-                }
-                if (plane == null)
-                {
-                    return false;
-                }
-
-                HashSet<string> beforeKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                try
-                {
-                    foreach (FeatureChain fc in document.FeatureChains)
-                    {
-                        if (fc?.Key != null)
-                        {
-                            beforeKeys.Add(fc.Key);
-                        }
-                    }
-                }
-                catch { }
-
-                document.FeatureRecognition.CreatePartProfileShadow(selectionSet, plane, espGraphicObjectReturnType.espFeatureChains);
-                document.Refresh();
-
-                FeatureChain created = null;
-                createdFeatureKeys = new List<string>();
-                try
-                {
-                    foreach (FeatureChain fc in document.FeatureChains)
-                    {
-                        if (fc?.Key == null)
-                        {
-                            continue;
-                        }
-                        if (!beforeKeys.Contains(fc.Key))
-                        {
-                            createdFeatureKeys.Add(fc.Key);
-                            if (created == null)
-                            {
-                                created = fc;
-                            }
-                        }
-                    }
-                }
-                catch { }
-
-                if (created == null || created.Length <= 0.0)
-                {
-                    return false;
-                }
-
-                double localMinX = double.PositiveInfinity;
-                double localMaxX = double.NegativeInfinity;
-                int sampleCount = (int)Math.Max(10.0, Math.Floor(created.Length / 0.1));
-                for (int i = 0; i <= sampleCount; i++)
-                {
-                    double along = created.Length * i / sampleCount;
-                    Point p = null;
-                    try { p = created.PointAlong(along); } catch { }
-                    if (p == null || double.IsNaN(p.X) || double.IsInfinity(p.X))
-                    {
-                        continue;
-                    }
-
-                    if (p.X < localMinX) localMinX = p.X;
-                    if (p.X > localMaxX) localMaxX = p.X;
-                }
-
-                if (double.IsInfinity(localMinX) || double.IsInfinity(localMaxX))
-                {
-                    return false;
-                }
-
-                minX = localMinX;
-                maxX = localMaxX;
-                return true;
-            }
-            catch (Exception ex)
-            {
-                AppLogger.Log($"StlFileProcessor: STL bounding X 계산 실패 - {ex.GetType().Name}:{ex.Message}");
-                return false;
-            }
-            finally
-            {
-                if (selectionSet != null)
-                {
-                    try { selectionSet.RemoveAll(); } catch { }
-                }
-                CleanupTemporaryFeatureChains(document, createdFeatureKeys, "Stl bounding X");
-            }
-        }
-
-        // (레거시/진단용) MoveSTL 직후 OrientationProfile startX 후보를 env로 기록한다.
-        // 현재 MainModuleComposite 선택 로직은 FrontPointX SSOT를 사용하므로, 본 값은 관찰용이다.
-        private void TryApplyCompositeOrientationProfileStartXEnv(Document document)
-        {
-            try
-            {
-                if (TryComputeStlBoundingXRange(document, out double minX, out double maxX))
-                {
-                    Environment.SetEnvironmentVariable(CompositeOrientationProfileStartXEnv, minX.ToString(CultureInfo.InvariantCulture));
-                    AppLogger.Log($"DentalAddin: Composite OrientationProfile StartX env 적용 - {CompositeOrientationProfileStartXEnv}={minX.ToString("F4", CultureInfo.InvariantCulture)} (maxX={maxX.ToString("F4", CultureInfo.InvariantCulture)})");
-                    return;
-                }
-
-                // 계산 실패 시 fallback: MoveSTL_Module.FrontPointX 사용
-                Type mainModuleType = DentalAddinReflectionHelper.ResolveMainModuleType();
-                Type moveModuleType = DentalAddinReflectionHelper.ResolveMoveModuleType(mainModuleType);
-                if (moveModuleType != null)
-                {
-                    object frontObj = moveModuleType.GetField("FrontPointX", BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic)?.GetValue(null);
-                    if (frontObj != null)
-                    {
-                        double frontX = Convert.ToDouble(frontObj, CultureInfo.InvariantCulture);
-                        if (!double.IsNaN(frontX) && !double.IsInfinity(frontX))
-                        {
-                            Environment.SetEnvironmentVariable(CompositeOrientationProfileStartXEnv, frontX.ToString(CultureInfo.InvariantCulture));
-                            AppLogger.Log($"DentalAddin: Composite OrientationProfile StartX env fallback 적용 - {CompositeOrientationProfileStartXEnv}={frontX.ToString("F4", CultureInfo.InvariantCulture)} (source=MoveSTL_Module.FrontPointX)");
-                            return;
-                        }
-                    }
-                }
-
-                AppLogger.Log("DentalAddin: Composite OrientationProfile StartX env 적용 생략 - X 기준 계산 실패");
-            }
-            catch (Exception ex)
-            {
-                AppLogger.Log($"DentalAddin: Composite OrientationProfile StartX env 적용 실패 - {ex.GetType().Name}:{ex.Message}");
-            }
-        }
 
         public static void CleanupTemporaryFeatureChains(Document document, List<string> createdKeys, string context)
         {
@@ -984,9 +804,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 // 이유: MoveSTL이 모델 X를 이동시키므로, 생성 시점이 어긋나면 SpineProfile과 실제 모델 좌표가 불일치한다.
                 TryCreateCompositeCuffFinishLineProfile(document, mainModuleType, backLimitX);
 
-                // 정책 변경(2026-07-03): OrientationProfile 시작점 SSOT는 MoveSTL_Module.FrontPointX.
-                // startX env 주입은 좌표계 불일치 원인이 될 수 있어 비활성화한다.
-                // TryApplyCompositeOrientationProfileStartXEnv(document);
+
 
                 TryApplyCompositeSplitByFinishLine(mainModuleType, stlTopZ, finishLineTopZ);
                 TryApplyTwoPhaseSplitByFinishLine(mainModuleType, stlTopZ, finishLineTopZ, twoPhase);
@@ -1002,11 +820,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 // Main 이전에 Emerge를 반드시 1회 수행해 SurfaceNumber를 확보한다.
                 InvokeEmerge(mainModuleType, document);
                 AppLogger.Log("DentalAddin: Emerge 실행 완료");
-                // TODO: Composite split by finish line
-                // TODO: Normalize feature chain names
-                // ApplyAdditionalStlShift(document, mainModuleType, AppConfig.DefaultStlShift);
-                // AppLogger.Log("DentalAddin: MoveSTL 실행 완료");
-                // TODO: Cleanup legacy turning profiles
+
                 AppLogger.Log("DentalAddin: Main 실행 시작");
                 bool searchToolInvoked = DentalAddinReflectionHelper.TryInvokeMainModuleMethod(mainModuleType, "SearchTool", false);
                 AppLogger.Log(searchToolInvoked
@@ -2080,197 +1894,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             }
         }
 
-        private bool TryInvokeCustomSurfaceMerge(Type mainModuleType, Document document)
-        {
-            string surfaceRoot = AppConfig.SurfaceRootDirectory;
-            if (string.IsNullOrWhiteSpace(surfaceRoot) || !Directory.Exists(surfaceRoot))
-            {
-                AppLogger.Log($"DentalAddin: SurfaceRoot 없음 - {surfaceRoot}");
-                return false;
-            }
 
-            double rl = 1.0;
-            try
-            {
-                FieldInfo rlField = mainModuleType.GetField("RL", BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
-                if (rlField != null)
-                {
-                    rl = Convert.ToDouble(rlField.GetValue(null), CultureInfo.InvariantCulture);
-                }
-            }
-            catch
-            {
-                rl = 1.0;
-            }
-
-            string projectFile = rl == 2.0 ? "Project2.igs" : "Project1.igs";
-            string extrudeFile = rl == 2.0 ? "ExtrudeL.igs" : "ExtrudeR.igs";
-            string projectPath = Path.Combine(surfaceRoot, projectFile);
-            string extrudePath = Path.Combine(surfaceRoot, extrudeFile);
-
-            if (!File.Exists(projectPath))
-            {
-                AppLogger.Log($"DentalAddin: Surface 파일 없음 - {projectPath}");
-                return false;
-            }
-
-            try
-            {
-                int beforeCount = document.GraphicsCollection.Count;
-                HashSet<string> beforeSurfaceKeys = SnapshotSurfaceKeys(document);
-                AppLogger.Log($"DentalAddin: Surface Merge(1) - {projectPath}");
-                document.MergeFile(projectPath, Missing.Value);
-
-                GraphicObject surface = FindMergedSurface(document, beforeCount, beforeSurfaceKeys);
-                if (surface == null)
-                {
-                    int afterCount = document?.GraphicsCollection?.Count ?? 0;
-                    AppLogger.Log($"DentalAddin: Merge된 Surface를 찾지 못했습니다. (beforeCount={beforeCount}, afterCount={afterCount}, project={projectFile})");
-                    return true;
-                }
-
-                surface.Layer.Visible = false;
-                FieldInfo surfaceNumberField = mainModuleType.GetField("SurfaceNumber", BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
-                surfaceNumberField?.SetValue(null, Convert.ToInt32(surface.Key, CultureInfo.InvariantCulture));
-
-                SelectionSet selectionSet = EspritDocumentHelper.GetOrCreateSelectionSet(document, "Smove");
-                selectionSet.RemoveAll();
-
-                Type moveModuleType = DentalAddinReflectionHelper.ResolveMoveModuleType(mainModuleType);
-                bool needMove = moveModuleType != null && Convert.ToBoolean(moveModuleType.GetField("NeedMove", BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic)?.GetValue(null) ?? false);
-                double needMoveY = moveModuleType != null ? Convert.ToDouble(moveModuleType.GetField("NeedMoveY", BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic)?.GetValue(null) ?? 0.0) : 0.0;
-                double needMoveZ = moveModuleType != null ? Convert.ToDouble(moveModuleType.GetField("NeedMoveZ", BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic)?.GetValue(null) ?? 0.0) : 0.0;
-
-                if (needMove)
-                {
-                    selectionSet.Add(surface, Missing.Value);
-                    selectionSet.Translate(0.0, needMoveY, needMoveZ, Missing.Value);
-                    selectionSet.RemoveAll();
-                }
-
-                int[] numCombobox = DentalAddinReflectionHelper.GetMainModuleField<int[]>(mainModuleType, "NumCombobox");
-                int finishingMethod = (numCombobox != null && numCombobox.Length > 1) ? numCombobox[1] : 0;
-                if (finishingMethod == 1)
-                {
-                    AppLogger.Log("DentalAddin: FinishingMethod==1, Extrude Merge 생략");
-                    return true;
-                }
-
-                if (!File.Exists(extrudePath))
-                {
-                    AppLogger.Log($"DentalAddin: Extrude 파일 없음 - {extrudePath}");
-                    return true;
-                }
-
-                beforeCount = document.GraphicsCollection.Count;
-                beforeSurfaceKeys = SnapshotSurfaceKeys(document);
-                AppLogger.Log($"DentalAddin: Surface Merge(2) - {extrudePath}");
-                document.MergeFile(extrudePath, Missing.Value);
-                GraphicObject extrudeSurface = FindMergedSurface(document, beforeCount, beforeSurfaceKeys, surface.Key);
-                if (extrudeSurface != null)
-                {
-                    extrudeSurface.Layer.Visible = false;
-                    FieldInfo surfaceNumber2Field = mainModuleType.GetField("SurfaceNumber2", BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
-                    surfaceNumber2Field?.SetValue(null, Convert.ToDouble(extrudeSurface.Key, CultureInfo.InvariantCulture));
-                    FieldInfo gasField = mainModuleType.GetField("Gas", BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
-                    gasField?.SetValue(null, extrudeSurface);
-                }
-
-                return true;
-            }
-            catch (Exception ex)
-            {
-                AppLogger.Log($"DentalAddin: 커스텀 Surface Merge 실패 - {ex.GetType().Name}:{ex.Message}");
-                return false;
-            }
-        }
-
-        private static HashSet<string> SnapshotSurfaceKeys(Document document)
-        {
-            HashSet<string> keys = new HashSet<string>(StringComparer.Ordinal);
-            if (document?.GraphicsCollection == null)
-            {
-                return keys;
-            }
-            try
-            {
-                foreach (GraphicObject graphic in document.GraphicsCollection)
-                {
-                    if (graphic?.GraphicObjectType != espGraphicObjectType.espSurface)
-                    {
-                        continue;
-                    }
-                    keys.Add(Convert.ToString(graphic.Key, CultureInfo.InvariantCulture) ?? string.Empty);
-                }
-            }
-            catch
-            {
-            }
-            return keys;
-        }
-
-        private static GraphicObject FindMergedSurface(Document document, int beforeCount, HashSet<string> beforeSurfaceKeys = null, object excludedKey = null)
-        {
-            if (document?.GraphicsCollection == null)
-            {
-                return null;
-            }
-            string excluded = excludedKey != null ? Convert.ToString(excludedKey, CultureInfo.InvariantCulture) : null;
-            if (beforeSurfaceKeys != null && beforeSurfaceKeys.Count > 0)
-            {
-                try
-                {
-                    foreach (GraphicObject graphic in document.GraphicsCollection)
-                    {
-                        if (graphic?.GraphicObjectType != espGraphicObjectType.espSurface)
-                        {
-                            continue;
-                        }
-                        string key = Convert.ToString(graphic.Key, CultureInfo.InvariantCulture);
-                        if (!string.IsNullOrWhiteSpace(excluded) && string.Equals(key, excluded, StringComparison.Ordinal))
-                        {
-                            continue;
-                        }
-                        if (!beforeSurfaceKeys.Contains(key))
-                        {
-                            return graphic;
-                        }
-                    }
-                }
-                catch
-                {
-                }
-            }
-            int count = document.GraphicsCollection.Count;
-            for (int i = beforeCount + 1; i <= count; i++)
-            {
-                GraphicObject graphicObject = document.GraphicsCollection[i] as GraphicObject;
-                if (graphicObject?.GraphicObjectType != espGraphicObjectType.espSurface)
-                {
-                    continue;
-                }
-                if (excludedKey != null && Equals(graphicObject.Key, excludedKey))
-                {
-                    continue;
-                }
-                return graphicObject;
-            }
-            // 최후 수단: 컬렉션 끝에서 역순 탐색하여 Surface를 반환
-            for (int i = count; i >= 1; i--)
-            {
-                GraphicObject graphicObject = document.GraphicsCollection[i] as GraphicObject;
-                if (graphicObject?.GraphicObjectType != espGraphicObjectType.espSurface)
-                {
-                    continue;
-                }
-                if (excludedKey != null && Equals(graphicObject.Key, excludedKey))
-                {
-                    continue;
-                }
-                return graphicObject;
-            }
-            return null;
-        }
 
         private void InvokeMoveSTL(Type mainModuleType)
         {
@@ -2286,144 +1910,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 AppLogger.Log("DentalAddin: MoveSTL 메서드 호출 실패");
             }
         }
-        private void ApplyAdditionalStlShift(Document document, Type mainModuleType, double deltaX)
-        {
-            if (document == null || deltaX <= 0)
-            {
-                return;
-            }
-            try
-            {
-                const string selectionName = "StlProcessorShift";
-                SelectionSet selectionSet = EspritDocumentHelper.GetOrCreateSelectionSet(document, selectionName);
-                if (selectionSet == null)
-                {
-                    AppLogger.Log("DentalAddin: 추가 이동 SelectionSet 생성 실패");
-                    return;
-                }
-                selectionSet.RemoveAll();
-                foreach (GraphicObject graphic in document.GraphicsCollection)
-                {
-                    if (graphic?.GraphicObjectType == espGraphicObjectType.espSTL_Model)
-                    {
-                        selectionSet.Add(graphic, Missing.Value);
-                    }
-                }
-                if (selectionSet.Count == 0)
-                {
-                    AppLogger.Log("DentalAddin: 추가 X 이동 대상 STL 없음");
-                    return;
-                }
-                selectionSet.Translate(deltaX, 0.0, 0.0, Missing.Value);
-                selectionSet.RemoveAll();
-                Type moveModuleType = DentalAddinReflectionHelper.ResolveMoveModuleType(mainModuleType);
-                if (moveModuleType == null)
-                {
-                    AppLogger.Log("DentalAddin: 추가 이동 후 MoveSTL_Module 타입을 찾을 수 없습니다.");
-                    return;
-                }
-                double? originalFront = 0.0;
-                double? originalBack = 0.0;
-                double? updatedFront = originalFront.HasValue ? originalFront + deltaX : (double?)null;
-                double? updatedBack = originalBack.HasValue ? originalBack + deltaX : (double?)null;
-                if (updatedFront.HasValue)
-                {
-                    DentalAddinReflectionHelper.SetStaticField(moveModuleType, "FrontPointX", updatedFront.Value);
-                }
-                if (updatedBack.HasValue)
-                {
-                    DentalAddinReflectionHelper.SetStaticField(moveModuleType, "BackPointX", updatedBack.Value);
-                }
 
-                AppLogger.Log($"DentalAddin: STL 추가 X 이동 완료 - delta:{deltaX:F3}, Front:{updatedFront:F3}, Back:{updatedBack:F3}");
-            }
-            catch (Exception ex)
-            {
-                AppLogger.Log($"DentalAddin: STL 추가 이동 실패 - {ex.GetType().Name}:{ex.Message}");
-            }
-        }
-        private void AdjustOperationStartPointY(Document document, double deltaX)
-        {
-            if (document?.Operations == null || deltaX <= 0)
-            {
-                return;
-            }
-            try
-            {
-                int adjustedCount = 0;
-                for (int i = 1; i <= document.Operations.Count; i++)
-                {
-                    try
-                    {
-                        dynamic op = document.Operations[i];
-                        if (op == null) continue;
-
-                        string opName = null;
-                        try { opName = op.Name; } catch { }
-
-                        // CONNECTION Operation만 조정 (각인 코드)
-                        if (string.IsNullOrEmpty(opName) || !opName.Contains("CONNECTION"))
-                        {
-                            continue;
-                        }
-
-                        // Operation의 Text 속성 (NC 코드) 가져오기
-                        string text = null;
-                        try { text = op.Text; } catch { }
-                        if (string.IsNullOrWhiteSpace(text))
-                        {
-                            AppLogger.Log($"DentalAddin: Op[{i}] {opName} - Text(NC코드) null");
-                            continue;
-                        }
-
-                        // NC 코드에서 Y 좌표(ESPRIT X축)를 deltaX만큼 증가
-                        string adjustedText = AdjustNcCodeYCoordinates(text, deltaX);
-                        if (adjustedText != text)
-                        {
-                            op.Text = adjustedText;
-                            adjustedCount++;
-                            AppLogger.Log($"DentalAddin: Op[{i}] {opName} NC 코드 Y 좌표 조정 완료");
-                        }
-                        else
-                        {
-                            AppLogger.Log($"DentalAddin: Op[{i}] {opName} - NC 코드에 Y 좌표 없음");
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        AppLogger.Log($"DentalAddin: Operation[{i}] NC 코드 조정 실패 - {ex.Message}");
-                    }
-                }
-                AppLogger.Log($"DentalAddin: Connection NC 코드 조정 완료 - {adjustedCount}개 Operation, deltaX:{deltaX:F3}");
-            }
-            catch (Exception ex)
-            {
-                AppLogger.Log($"DentalAddin: NC 코드 조정 실패 - {ex.GetType().Name}:{ex.Message}");
-            }
-        }
-        private string AdjustNcCodeYCoordinates(string ncCode, double deltaX)
-        {
-            if (string.IsNullOrWhiteSpace(ncCode) || deltaX <= 0)
-            {
-                return ncCode;
-            }
-
-            // NC 코드에서 Y 좌표를 찾아서 deltaX만큼 증가
-            // 패턴: Y숫자 (예: Y0.525, Y2.03, Y-1.5)
-            var regex = new Regex(@"Y(-?\d+\.?\d*)", RegexOptions.IgnoreCase);
-            string result = regex.Replace(ncCode, match =>
-            {
-                string originalValue = match.Groups[1].Value;
-                if (double.TryParse(originalValue, NumberStyles.Float, CultureInfo.InvariantCulture, out double yValue))
-                {
-                    double adjustedValue = yValue + deltaX;
-                    return $"Y{adjustedValue.ToString("F3", CultureInfo.InvariantCulture)}";
-                }
-                return match.Value;
-            });
-
-            return result;
-        }
         private void EnsureMainModuleContext(Type mainModuleType, Document document)
         {
             DentalAddinReflectionHelper.SetStaticField(mainModuleType, "Document", document);
