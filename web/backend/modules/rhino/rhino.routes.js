@@ -28,9 +28,13 @@ router.post(
   rhinoController.processFileByName,
 );
 
+
+
 // Other routes require normal authentication/authorization
 router.use(authenticate);
 router.use(authorize(["requestor", "manufacturer", "admin"]));
+
+router.post("/finish-line/manual", rhinoController.saveManualFinishLine);
 
 const upload = multer({
   storage: multer.memoryStorage(),

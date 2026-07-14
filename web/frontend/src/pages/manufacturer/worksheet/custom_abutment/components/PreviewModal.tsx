@@ -1,6 +1,6 @@
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { DialogClose } from "@radix-ui/react-dialog";
-import { RefreshCw, Trash2, Upload, RotateCcw } from "lucide-react";
+import { RefreshCw } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -58,6 +58,128 @@ const normalizeReasonOptions = (items: unknown): string[] => {
     if (deduped.length >= 100) break;
   }
   return deduped;
+};
+
+const normalizeLoopPoints = (pts: number[][]): number[][] => {
+  const valid = (Array.isArray(pts) ? pts : [])
+    .filter((p) => Array.isArray(p) && p.length >= 3)
+    .map((p) => [Number(p[0]), Number(p[1]), Number(p[2])])
+    .filter((p) => p.every((v) => Number.isFinite(v)));
+  if (valid.length < 3) return [];
+  const first = valid[0];
+  const last = valid[valid.length - 1];
+  if (
+    Math.abs(first[0] - last[0]) < 1e-6 &&
+    Math.abs(first[1] - last[1]) < 1e-6 &&
+    Math.abs(first[2] - last[2]) < 1e-6
+  ) {
+    return valid.slice(0, -1);
+  }
+  return valid;
+};
+
+const nearestIndex = (pts: number[][], q: number[]): number => {
+  let bestIdx = 0;
+  let bestDist = Number.POSITIVE_INFINITY;
+  for (let i = 0; i < pts.length; i += 1) {
+    const p = pts[i];
+    const dx = p[0] - q[0];
+    const dy = p[1] - q[1];
+    const dz = p[2] - q[2];
+    const d = dx * dx + dy * dy + dz * dz;
+    if (d < bestDist) {
+      bestDist = d;
+      bestIdx = i;
+    }
+  }
+  return bestIdx;
+};
+
+const collectArcIndices = (
+  n: number,
+  start: number,
+  end: number,
+  forward: boolean,
+): number[] => {
+  if (n <= 0) return [];
+  const out = [start];
+  let cur = start;
+  let guard = 0;
+  while (cur !== end && guard < n + 2) {
+    cur = forward ? (cur + 1) % n : (cur - 1 + n) % n;
+    out.push(cur);
+    guard += 1;
+  }
+  return out;
+};
+
+const polylineLength = (pts: number[][]): number => {
+  if (pts.length < 2) return 0;
+  let total = 0;
+  for (let i = 1; i < pts.length; i += 1) {
+    const a = pts[i - 1];
+    const b = pts[i];
+    const dx = b[0] - a[0];
+    const dy = b[1] - a[1];
+    const dz = b[2] - a[2];
+    total += Math.sqrt(dx * dx + dy * dy + dz * dz);
+  }
+  return total;
+};
+
+const smoothOpenPath = (pts: number[][], iterations = 3): number[][] => {
+  let current = [...pts];
+  for (let iter = 0; iter < iterations; iter += 1) {
+    if (current.length < 3) return current;
+    const next = current.map((p) => [...p]);
+    for (let i = 1; i < current.length - 1; i += 1) {
+      const a = current[i - 1];
+      const b = current[i];
+      const c = current[i + 1];
+      next[i] = [
+        a[0] * 0.25 + b[0] * 0.5 + c[0] * 0.25,
+        a[1] * 0.25 + b[1] * 0.5 + c[1] * 0.25,
+        a[2] * 0.25 + b[2] * 0.5 + c[2] * 0.25,
+      ];
+    }
+    current = next;
+  }
+  return current;
+};
+
+const buildPatchedFinishLinePoints = (
+  basePointsRaw: number[][],
+  pickedPointsRaw: number[][],
+): number[][] => {
+  const base = normalizeLoopPoints(basePointsRaw);
+  const picked = normalizeLoopPoints(pickedPointsRaw);
+  if (base.length < 6) return base;
+  if (picked.length < 2) return base;
+
+  const startIdx = nearestIndex(base, picked[0]);
+  let endIdx = nearestIndex(base, picked[picked.length - 1]);
+  if (startIdx === endIdx) {
+    endIdx = (startIdx + Math.max(2, Math.floor(base.length * 0.08))) % base.length;
+  }
+
+  const forwardArc = collectArcIndices(base.length, startIdx, endIdx, true);
+  const backwardArc = collectArcIndices(base.length, startIdx, endIdx, false);
+
+  const forwardLen = polylineLength(forwardArc.map((idx) => base[idx]));
+  const backwardLen = polylineLength(backwardArc.map((idx) => base[idx]));
+
+  const replaceForward = forwardLen <= backwardLen;
+  const keptArc = replaceForward
+    ? collectArcIndices(base.length, endIdx, startIdx, true)
+    : collectArcIndices(base.length, endIdx, startIdx, false);
+
+  const startSnap = base[startIdx];
+  const endSnap = base[endIdx];
+  const patchCore = [startSnap, ...picked.slice(1, -1), endSnap];
+  const patchSmooth = smoothOpenPath(patchCore, 3);
+  const keepInner = keptArc.slice(1, -1).map((idx) => base[idx]);
+
+  return [...patchSmooth, ...keepInner];
 };
 
 type PreviewModalProps = {
@@ -186,6 +308,13 @@ export const PreviewModal = ({
   );
   const [customReasonEditDraft, setCustomReasonEditDraft] = useState("");
   const [selectedReasonValues, setSelectedReasonValues] = useState<string[]>([]);
+  const [guidedFinishLineMode, setGuidedFinishLineMode] = useState(false);
+  const [guidedFinishLinePoints, setGuidedFinishLinePoints] = useState<number[][]>(
+    [],
+  );
+  const [guidedFinishLineSubmitting, setGuidedFinishLineSubmitting] = useState(false);
+  const [guidedFinishLineOverridePoints, setGuidedFinishLineOverridePoints] =
+    useState<number[][] | null>(null);
   const req = previewFiles.request as ManufacturerRequest | null;
   const lastStableReqRef = useRef<ManufacturerRequest | null>(null);
 
@@ -282,6 +411,9 @@ export const PreviewModal = ({
   useEffect(() => {
     if (!req) return;
     setUnmachinableEditorOpen(false);
+    setGuidedFinishLineMode(false);
+    setGuidedFinishLinePoints([]);
+    setGuidedFinishLineOverridePoints(null);
     const existingReason = String(req.rnd?.unmachinableReason || "").trim();
     const tokens = parseUnmachinableReasonTokens(existingReason);
     setSelectedReasonValues(tokens);
@@ -296,6 +428,20 @@ export const PreviewModal = ({
       });
     }
   }, [req, setReasonLibraryWithSync]);
+
+  useEffect(() => {
+    if (!open || !guidedFinishLineMode) return;
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      e.preventDefault();
+      setGuidedFinishLineMode(false);
+      setGuidedFinishLinePoints([]);
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [open, guidedFinishLineMode]);
 
   // Hook은 항상 같은 순서로 호출되어야 하므로 조건부 로직 이전에 호출
   const requestId = req?.requestId || lastStableReqRef.current?.requestId;
@@ -332,7 +478,8 @@ export const PreviewModal = ({
     }
   };
 
-  const finishLinePoints = ((previewFiles.finishLinePoints ??
+  const finishLinePoints = ((guidedFinishLineOverridePoints ??
+    previewFiles.finishLinePoints ??
     activeReq?.caseInfos?.finishLine?.points ??
     stlMetadata?.finishLine?.points) ||
     null) as number[][] | null;
@@ -520,6 +667,23 @@ export const PreviewModal = ({
       ? activeReq?.caseInfos?.ncFile
       : activeReq?.caseInfos?.camFile;
   const hasRightFile = !!rightMeta?.s3Key;
+
+  const canGuideFinishLine =
+    !!token &&
+    !isStageFileStage &&
+    !isCamStage &&
+    !!rightViewer &&
+    !!activeReq?.requestId;
+
+  const guidedFinishLineFilePath = String(
+    activeReq?.caseInfos?.camFile?.filePath ||
+      activeReq?.caseInfos?.camFile?.originalName ||
+      activeReq?.caseInfos?.file?.filePath ||
+      activeReq?.caseInfos?.file?.originalName ||
+      previewFiles.cam?.name ||
+      previewFiles.original?.name ||
+      "",
+  ).trim();
 
   const canRegenerateFilledStl = !isStageFileStage;
 
@@ -878,6 +1042,125 @@ export const PreviewModal = ({
     );
   };
 
+  const handleAddGuidedFinishLinePoint = (point: [number, number, number]) => {
+    setGuidedFinishLinePoints((prev) => {
+      const nextPoint = [Number(point[0]), Number(point[1]), Number(point[2])];
+      if (!nextPoint.every((v) => Number.isFinite(v))) return prev;
+      const exists = prev.some(
+        (p) =>
+          Math.abs(Number(p[0]) - nextPoint[0]) < 1e-6 &&
+          Math.abs(Number(p[1]) - nextPoint[1]) < 1e-6 &&
+          Math.abs(Number(p[2]) - nextPoint[2]) < 1e-6,
+      );
+      if (exists) return prev;
+      if (prev.length >= 24) return prev;
+      return [...prev, nextPoint];
+    });
+  };
+
+  const handleSubmitGuidedFinishLine = async () => {
+    if (!canGuideFinishLine || guidedFinishLineSubmitting || isUploading) return;
+
+    const basePoints = Array.isArray(finishLinePoints) ? finishLinePoints : [];
+    const patchedPoints = buildPatchedFinishLinePoints(
+      basePoints,
+      guidedFinishLinePoints,
+    );
+
+    if (patchedPoints.length < 3) {
+      setGuidedFinishLineMode(false);
+      setGuidedFinishLinePoints([]);
+      return;
+    }
+
+    if (!guidedFinishLineFilePath) {
+      toast({
+        title: "실패",
+        description: "대상 STL 파일 경로를 찾을 수 없습니다.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setGuidedFinishLineSubmitting(true);
+    setGuidedFinishLineOverridePoints(patchedPoints);
+
+    try {
+      const res = await fetch("/api/rhino/finish-line/manual", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          requestId: String(activeReq?.requestId || "").trim(),
+          filePath: guidedFinishLineFilePath,
+          finishLine: {
+            version: 1,
+            sectionCount: patchedPoints.length,
+            points: patchedPoints,
+            strategyUsed: "FRONTEND_GUIDED_PATCH",
+          },
+        }),
+      });
+
+      const body = (await res.json().catch(() => ({}))) as {
+        success?: boolean;
+        message?: string;
+        error?: string;
+        detail?: string;
+        data?: {
+          finishLine?: { points?: unknown };
+        };
+      };
+
+      if (!res.ok || body?.success === false) {
+        const msg =
+          body?.message ||
+          body?.error ||
+          body?.detail ||
+          "피니시라인 수동 보정 저장에 실패했습니다.";
+        toast({
+          title: "저장 실패",
+          description: msg,
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const savedPoints = body?.data?.finishLine?.points;
+      if (Array.isArray(savedPoints) && savedPoints.length >= 3) {
+        setGuidedFinishLineOverridePoints(savedPoints as number[][]);
+      }
+
+      setGuidedFinishLineMode(false);
+      setGuidedFinishLinePoints([]);
+
+      if (onRefreshPreview) {
+        await onRefreshPreview(activeReq, { forceRefresh: true });
+      }
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "";
+      toast({
+        title: "저장 실패",
+        description: message || "피니시라인 수동 보정 저장에 실패했습니다.",
+        variant: "destructive",
+      });
+    } finally {
+      setGuidedFinishLineSubmitting(false);
+    }
+  };
+
+  const handleToggleFinishLineEdit = () => {
+    if (!canGuideFinishLine || guidedFinishLineSubmitting || isUploading) return;
+    if (!guidedFinishLineMode) {
+      setGuidedFinishLinePoints([]);
+      setGuidedFinishLineMode(true);
+      return;
+    }
+    void handleSubmitGuidedFinishLine();
+  };
+
   const addCustomReasonToLibrary = (reasonRaw: string) => {
     const reason = String(reasonRaw || "").slice(0, 500).trim();
     if (!reason) return;
@@ -1009,22 +1292,6 @@ export const PreviewModal = ({
                       유지홈 {retentionGrooveLabel}
                     </Badge>
                   )}
-                  {Number.isFinite(finishLineMaxZ) && (
-                    <Badge
-                      variant="outline"
-                      className="text-[11px] px-2 py-0.5 font-semibold leading-[1.1] border border-emerald-200 bg-emerald-50 text-emerald-700"
-                    >
-                      max_z {Number(finishLineMaxZ).toFixed(2)}
-                    </Badge>
-                  )}
-                  {Number.isFinite(finishLineMinZ) && (
-                    <Badge
-                      variant="outline"
-                      className="text-[11px] px-2 py-0.5 font-semibold leading-[1.1] border border-emerald-200 bg-emerald-50 text-emerald-700"
-                    >
-                      min_z {Number(finishLineMinZ).toFixed(2)}
-                    </Badge>
-                  )}
                   {(shouldShowUnmachinableWarning || isUnmachinable) && (
                     <Badge
                       variant="outline"
@@ -1038,10 +1305,7 @@ export const PreviewModal = ({
                     </Badge>
                   )}
                 </div>
-              ) : retentionGrooveLabel ||
-                Number.isFinite(finishLineMaxZ) ||
-                Number.isFinite(finishLineMinZ) ||
-                isUnmachinable ? (
+              ) : retentionGrooveLabel || isUnmachinable ? (
                 <div className="flex items-center gap-1.5">
                   {retentionGrooveLabel && (
                     <Badge
@@ -1049,22 +1313,6 @@ export const PreviewModal = ({
                       className="text-[11px] px-2 py-0.5 font-semibold leading-[1.1] border border-amber-200 bg-amber-50 text-amber-700"
                     >
                       유지홈 {retentionGrooveLabel}
-                    </Badge>
-                  )}
-                  {Number.isFinite(finishLineMaxZ) && (
-                    <Badge
-                      variant="outline"
-                      className="text-[11px] px-2 py-0.5 font-semibold leading-[1.1] border border-emerald-200 bg-emerald-50 text-emerald-700"
-                    >
-                      max_z {Number(finishLineMaxZ).toFixed(2)}
-                    </Badge>
-                  )}
-                  {Number.isFinite(finishLineMinZ) && (
-                    <Badge
-                      variant="outline"
-                      className="text-[11px] px-2 py-0.5 font-semibold leading-[1.1] border border-emerald-200 bg-emerald-50 text-emerald-700"
-                    >
-                      min_z {Number(finishLineMinZ).toFixed(2)}
                     </Badge>
                   )}
                   {(shouldShowUnmachinableWarning || isUnmachinable) && (
@@ -1082,19 +1330,7 @@ export const PreviewModal = ({
                 </div>
               ) : null}
 
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                onClick={handleRecalculateMetadata}
-                disabled={regenerating || metadataLoading}
-                className="h-7 text-xs gap-1.5 border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100"
-              >
-                <RotateCcw
-                  className={`w-3 h-3 ${regenerating || metadataLoading ? "animate-spin" : ""}`}
-                />
-                메타데이터 재계산
-              </Button>
+
             </div>
 
             <div className="flex items-center gap-2">
@@ -1479,12 +1715,12 @@ export const PreviewModal = ({
               <div
                 className="border rounded-lg p-3 space-y-2 flex flex-col overflow-hidden"
                 onDragOver={(e) => {
-                  if (isUploading) return;
+                  if (!isStageFileStage || isUploading) return;
                   e.preventDefault();
                   e.stopPropagation();
                 }}
                 onDrop={(e) => {
-                  if (isUploading) return;
+                  if (!isStageFileStage || isUploading) return;
                   e.preventDefault();
                   e.stopPropagation();
                   const file = e.dataTransfer.files?.[0];
@@ -1508,6 +1744,26 @@ export const PreviewModal = ({
                       : fileLabel}
                   </button>
                   <div className="flex items-center gap-2">
+                    {canGuideFinishLine && (
+                      <button
+                        type="button"
+                        className={`inline-flex items-center justify-center h-8 w-8 rounded-md border text-[11px] font-bold transition ${
+                          guidedFinishLineMode
+                            ? "border-indigo-300 bg-indigo-50 text-indigo-700"
+                            : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                        } ${guidedFinishLineSubmitting || isUploading ? "opacity-60 cursor-not-allowed" : ""}`}
+                        disabled={guidedFinishLineSubmitting || isUploading}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          handleToggleFinishLineEdit();
+                        }}
+                        aria-label={guidedFinishLineMode ? "피니시라인 수동편집 완료" : "피니시라인 수동편집 시작"}
+                        title={guidedFinishLineMode ? "피니시라인 수동편집 완료" : "피니시라인 수동편집 시작"}
+                      >
+                        [FL]
+                      </button>
+                    )}
                     {canRegenerateFilledStl && (
                       <button
                         type="button"
@@ -1537,52 +1793,58 @@ export const PreviewModal = ({
                       </button>
                     )}
 
-                    <button
-                      type="button"
-                      className={`inline-flex items-center justify-center h-8 w-8 rounded-md border text-[13px] font-medium transition ${
-                        !hasRightFile || isUploading
-                          ? "border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed"
-                          : "border-slate-200 bg-white text-slate-700 hover:bg-rose-50 hover:border-rose-200 hover:text-rose-700"
-                      }`}
-                      disabled={!hasRightFile || isUploading}
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        onDelete();
-                      }}
-                      aria-label="삭제"
-                      title="삭제"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
+                    {isStageFileStage && (
+                      <>
+                        <button
+                          type="button"
+                          className={`inline-flex items-center justify-center h-8 w-8 rounded-md border text-[13px] font-medium transition ${
+                            !hasRightFile || isUploading
+                              ? "border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed"
+                              : "border-slate-200 bg-white text-slate-700 hover:bg-rose-50 hover:border-rose-200 hover:text-rose-700"
+                          }`}
+                          disabled={!hasRightFile || isUploading}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            onDelete();
+                          }}
+                          aria-label="삭제"
+                          title="삭제"
+                        >
+                          삭제
+                        </button>
 
-                    <label
-                      htmlFor={pickInputId}
-                      className={`inline-flex items-center justify-center h-8 w-8 rounded-md border text-[13px] font-medium transition ${
-                        isUploading
-                          ? "border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed"
-                          : "border-slate-200 bg-white text-slate-700 cursor-pointer hover:bg-orange-50 hover:border-orange-200 hover:text-orange-700"
-                      }`}
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      {isUploading ? "…" : <Upload className="h-4 w-4" />}
-                    </label>
-                    <input
-                      id={pickInputId}
-                      type="file"
-                      accept={accept}
-                      className="hidden"
-                      disabled={isUploading}
-                      onChange={(e) => {
-                        e.stopPropagation();
-                        const file = e.target.files?.[0];
-                        if (!file) return;
-                        onUploadRight(file);
-                        e.target.value = "";
-                      }}
-                    />
+                        <label
+                          htmlFor={pickInputId}
+                          className={`inline-flex items-center justify-center h-8 rounded-md border px-2 text-[12px] font-medium transition ${
+                            isUploading
+                              ? "border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed"
+                              : "border-slate-200 bg-white text-slate-700 cursor-pointer hover:bg-orange-50 hover:border-orange-200 hover:text-orange-700"
+                          }`}
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          업로드
+                        </label>
+                        <input
+                          id={pickInputId}
+                          type="file"
+                          accept={accept}
+                          className="hidden"
+                          disabled={isUploading}
+                          onChange={(e) => {
+                            e.stopPropagation();
+                            const file = e.target.files?.[0];
+                            if (!file) return;
+                            onUploadRight(file);
+                            e.target.value = "";
+                          }}
+                        />
+                      </>
+                    )}
                   </div>
                 </div>
+
+
 
                 {isStageFileStage ? (
                   <div className="flex-1 min-h-0 overflow-auto">
@@ -1618,6 +1880,9 @@ export const PreviewModal = ({
                       metadata={stlMetadata}
                       showOverlay={true}
                       finishLinePoints={finishLinePoints}
+                      enableManualPick={canGuideFinishLine && guidedFinishLineMode}
+                      manualPickPoints={guidedFinishLinePoints}
+                      onSurfacePointDoubleClick={handleAddGuidedFinishLinePoint}
                     />
                   </div>
                 ) : (

@@ -2,8 +2,10 @@ import axios from "axios";
 import { asyncHandler } from "../../utils/asyncHandler.js";
 import { ApiError } from "../../utils/ApiError.js";
 import { emitBgRuntimeStatus } from "../bg/bgRuntimeEvents.js";
+import { emitAppEventToRoles } from "../../socket.js";
 import Request from "../../models/request.model.js";
 import { resolveConnectionTargetDiameter } from "../requests/prcMapping.utils.js";
+import { normalizeRequestForResponse } from "../requests/utils.js";
 
 const RHINO_COMPUTE_BASE_URL = String(
   process.env.RHINO_COMPUTE_BASE_URL || "http://127.0.0.1:8000",
@@ -55,6 +57,32 @@ const sanitizeStlName = (name) => {
       .pop() || "input.stl";
   const cleaned = base.replace(/[^a-zA-Z0-9._\-가-힣]/g, "_");
   return cleaned.toLowerCase().endsWith(".stl") ? cleaned : `${cleaned}.stl`;
+};
+
+const normalizeFinishLinePayload = (finishLine) => {
+  const pointsRaw = Array.isArray(finishLine?.points) ? finishLine.points : [];
+  const points = pointsRaw
+    .filter((p) => Array.isArray(p) && p.length >= 3)
+    .map((p) => [Number(p[0]), Number(p[1]), Number(p[2])])
+    .filter((p) => p.every((v) => Number.isFinite(v)));
+
+  if (points.length < 3) return null;
+
+  let minIdx = 0;
+  let maxIdx = 0;
+  for (let i = 1; i < points.length; i += 1) {
+    if (points[i][2] < points[minIdx][2]) minIdx = i;
+    if (points[i][2] > points[maxIdx][2]) maxIdx = i;
+  }
+
+  return {
+    ...(finishLine || {}),
+    points,
+    min_z: points[minIdx][2],
+    max_z: points[maxIdx][2],
+    min_z_point: points[minIdx],
+    max_z_point: points[maxIdx],
+  };
 };
 
 // [정책] uploadBufferToRhino / ensureStlOnRhinoStore 제거
@@ -164,6 +192,72 @@ export const processFileByName = asyncHandler(async (req, res) => {
 
     throw error;
   }
+});
+
+
+
+export const saveManualFinishLine = asyncHandler(async (req, res) => {
+  const requestId = String(req.body?.requestId || "").trim();
+  const filePath = String(req.body?.filePath || req.body?.fileName || "").trim();
+  const finishLineRaw =
+    req.body?.finishLine && typeof req.body.finishLine === "object"
+      ? req.body.finishLine
+      : null;
+
+  if (!requestId) {
+    throw new ApiError(400, "requestId is required");
+  }
+  if (!filePath) {
+    throw new ApiError(400, "filePath is required");
+  }
+  if (!finishLineRaw) {
+    throw new ApiError(400, "finishLine is required");
+  }
+
+  const normalized = normalizeFinishLinePayload(finishLineRaw);
+  if (!normalized) {
+    throw new ApiError(400, "finishLine.points must have at least 3 valid xyz points");
+  }
+
+  const request = await Request.findOne({ requestId });
+  if (!request) {
+    throw new ApiError(404, "Request not found");
+  }
+
+  request.caseInfos = request.caseInfos || {};
+  request.caseInfos.finishLine = {
+    ...normalized,
+    updatedAt: new Date(),
+    strategyUsed: normalized.strategyUsed || "FRONTEND_GUIDED_SMOOTH",
+    source: "frontend-manual",
+  };
+  await request.save();
+
+  let normalizedUpdatedRequest = null;
+  try {
+    normalizedUpdatedRequest = await normalizeRequestForResponse(request);
+  } catch {
+    normalizedUpdatedRequest = null;
+  }
+
+  emitAppEventToRoles(["manufacturer", "admin"], "request:stl-metadata-updated", {
+    source: "manual-finish-line",
+    requestId: request.requestId,
+    requestMongoId: String(request._id || "").trim() || null,
+    metadata: {
+      finishLine: request.caseInfos.finishLine,
+    },
+    request: normalizedUpdatedRequest,
+  });
+
+  return res.status(200).json({
+    success: true,
+    data: {
+      requestId: request.requestId,
+      filePath,
+      finishLine: request.caseInfos.finishLine,
+    },
+  });
 });
 
 export const fillholeFromUpload = asyncHandler(async (req, res) => {

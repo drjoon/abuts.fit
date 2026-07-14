@@ -23,6 +23,9 @@ type Props = {
   ) => void;
   showOverlay?: boolean;
   finishLinePoints?: number[][] | null;
+  enableManualPick?: boolean;
+  manualPickPoints?: number[][] | null;
+  onSurfacePointDoubleClick?: (point: [number, number, number]) => void;
   className?: string;
   metadata?: StlMetadata | null;
 };
@@ -33,6 +36,9 @@ export function StlPreviewViewer({
   onDiameterComputed,
   showOverlay = true,
   finishLinePoints,
+  enableManualPick = false,
+  manualPickPoints,
+  onSurfacePointDoubleClick,
   className,
   metadata,
 }: Props) {
@@ -41,6 +47,10 @@ export function StlPreviewViewer({
   const containerRef = useRef<HTMLDivElement | null>(null);
   const onDiameterComputedRef = useRef(onDiameterComputed);
   const sceneRef = useRef<THREE.Scene | null>(null);
+  const meshRef = useRef<THREE.Mesh | null>(null);
+  const dblClickHandlerRef = useRef<((event: MouseEvent) => void) | null>(null);
+  const manualPickMarkersRef = useRef<THREE.Mesh[]>([]);
+  const modelDiagRef = useRef<number>(0);
   const centerRef = useRef<THREE.Vector3 | null>(null);
   const centeredBoundsRef = useRef<{
     min: THREE.Vector3;
@@ -1254,6 +1264,39 @@ export function StlPreviewViewer({
           mesh.position.sub(center);
         }
         scene.add(mesh);
+        meshRef.current = mesh;
+
+        if (enableManualPick && onSurfacePointDoubleClick) {
+          const raycaster = new THREE.Raycaster();
+          const pointer = new THREE.Vector2();
+          const onDblClick = (event: MouseEvent) => {
+            try {
+              const rect = renderer.domElement.getBoundingClientRect();
+              const px = ((event.clientX - rect.left) / Math.max(1, rect.width)) * 2 - 1;
+              const py = -((event.clientY - rect.top) / Math.max(1, rect.height)) * 2 + 1;
+              pointer.set(px, py);
+              raycaster.setFromCamera(pointer, camera);
+              const hits = raycaster.intersectObject(mesh, true);
+              if (!hits || hits.length === 0) return;
+              const hit = hits[0]?.point;
+              if (!hit) return;
+              const modelPoint = hit.clone();
+              if (!isFilled) modelPoint.add(center);
+              onSurfacePointDoubleClick([
+                Number(modelPoint.x),
+                Number(modelPoint.y),
+                Number(modelPoint.z),
+              ]);
+            } catch {
+              // noop
+            }
+          };
+          if (dblClickHandlerRef.current) {
+            renderer.domElement.removeEventListener("dblclick", dblClickHandlerRef.current);
+          }
+          renderer.domElement.addEventListener("dblclick", onDblClick);
+          dblClickHandlerRef.current = onDblClick;
+        }
 
         // Draw tilt axis (dotted line passing through origin)
         // 원본 STL은 오버레이 표시 안함, filled STL만 표시
@@ -1637,7 +1680,7 @@ export function StlPreviewViewer({
 
           if (minPoint) {
             const g = new THREE.SphereGeometry(markerRadius, 28, 28);
-            const m = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
+            const m = new THREE.MeshBasicMaterial({ color: 0xff4d4f });
             m.depthTest = false;
             m.depthWrite = false;
             finishLineMinPointMarker = new THREE.Mesh(g, m);
@@ -1645,6 +1688,12 @@ export function StlPreviewViewer({
             finishLineMinPointMarker.renderOrder = 30;
             scene.add(finishLineMinPointMarker);
           }
+        }
+
+        {
+          const modelSize = new THREE.Vector3();
+          bbox.getSize(modelSize);
+          modelDiagRef.current = modelSize.length() || 40;
         }
 
         const sphere = geometry.boundingSphere;
@@ -1706,6 +1755,14 @@ export function StlPreviewViewer({
     return () => {
       cancelled = true;
       cancelAnimationFrame(frameId);
+      try {
+        if (dblClickHandlerRef.current) {
+          renderer.domElement.removeEventListener("dblclick", dblClickHandlerRef.current);
+          dblClickHandlerRef.current = null;
+        }
+      } catch {
+        // noop
+      }
       if (resizeObserver) {
         resizeObserver.disconnect();
       } else {
@@ -1720,6 +1777,7 @@ export function StlPreviewViewer({
           material.dispose();
         }
       }
+      meshRef.current = null;
       if (finishLine) {
         scene.remove(finishLine);
         if (finishLine instanceof THREE.Mesh) {
@@ -1750,6 +1808,16 @@ export function StlPreviewViewer({
           finishLineMinPointMarker.material.dispose();
         }
       }
+      manualPickMarkersRef.current.forEach((marker) => {
+        scene.remove(marker);
+        marker.geometry?.dispose?.();
+        if (Array.isArray(marker.material)) {
+          marker.material.forEach((mm) => mm.dispose());
+        } else {
+          marker.material.dispose();
+        }
+      });
+      manualPickMarkersRef.current = [];
       disposeFrontPointMesh();
       if (taperAxisGuide) {
         scene.remove(taperAxisGuide);
@@ -1838,7 +1906,47 @@ export function StlPreviewViewer({
     resolvedMetadata?.frontPoint?.z,
     resolvedMetadata?.finishLine?.max_z,
     resolvedMetadata?.finishLine?.min_z,
+    enableManualPick,
   ]);
+
+  useEffect(() => {
+    const scene = sceneRef.current;
+    if (!scene) return;
+
+    manualPickMarkersRef.current.forEach((marker) => {
+      scene.remove(marker);
+      marker.geometry?.dispose?.();
+      if (Array.isArray(marker.material)) {
+        marker.material.forEach((mm) => mm.dispose());
+      } else {
+        marker.material.dispose();
+      }
+    });
+    manualPickMarkersRef.current = [];
+
+    if (!Array.isArray(manualPickPoints) || manualPickPoints.length === 0) return;
+
+    const diag = modelDiagRef.current > 0 ? modelDiagRef.current : 40;
+    const pickRadius = Math.max(diag * 0.01, 0.14);
+    for (const raw of manualPickPoints) {
+      if (!Array.isArray(raw) || raw.length < 3) continue;
+      const x = Number(raw[0]);
+      const y = Number(raw[1]);
+      const z = Number(raw[2]);
+      if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) {
+        continue;
+      }
+      const g = new THREE.SphereGeometry(pickRadius, 20, 20);
+      const m = new THREE.MeshBasicMaterial({ color: 0xffb020 });
+      m.depthTest = false;
+      m.depthWrite = false;
+      const marker = new THREE.Mesh(g, m);
+      marker.position.set(x, y, z);
+      marker.renderOrder = 32;
+      scene.add(marker);
+      manualPickMarkersRef.current.push(marker);
+    }
+  }, [manualPickPoints, stableFileKey]);
 
   return (
     <div
