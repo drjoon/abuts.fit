@@ -1709,7 +1709,7 @@ namespace DentalAddin
 
         /// <summary>
         /// Front Face(ParallelPlanes) 가공 끝점을 FrontPointX 기준으로 고정 적용한다.
-        /// - 목표: Face.RightX = Splitline_1(=FrontPointX) + 1.0mm
+        /// - 목표: Face.RightX = Splitline_1(=FrontPointX) + 0.5mm
         /// - 단, Face.RightX는 Splitline_2를 침범하지 않도록 항상 Splitline_2보다 작게 클램프한다.
         /// - RL=1: BottomZLimit = -Face.RightX
         /// - RL=2: BottomZLimit = +Face.RightX
@@ -1737,9 +1737,9 @@ namespace DentalAddin
 
                 LastAppliedFrontFaceDepthMm = configuredDepthMm;
 
-                // 사용자 요청: Front_Face 끝점을 Splitline_1(=FrontPointX) + 1.0mm로 고정 적용한다.
+                // 사용자 요청: Front_Face 끝점을 Splitline_1(=FrontPointX) + 0.5mm로 고정 적용한다.
                 // 단, Splitline_2를 침범하지 않도록 Splitline_2보다 약간 작은 값으로 상한 클램프한다.
-                const double frontFaceEndOffsetFromFrontMm = 1.0;
+                const double frontFaceEndOffsetFromFrontMm = 0.5;
                 const double splitline2NoCrossMarginMm = 0.001;
                 double requestedFaceRightX = MoveSTL_Module.FrontPointX + frontFaceEndOffsetFromFrontMm;
                 double appliedFaceRightX = requestedFaceRightX;
