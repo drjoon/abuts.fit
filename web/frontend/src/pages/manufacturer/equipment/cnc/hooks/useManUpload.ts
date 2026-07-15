@@ -20,6 +20,25 @@ export type ManUploadProgress = {
  *   - 기본 paused 상태 (allowJobStart 플래그로 제어)
  *   - 의뢰건 자동 가공(useLabUpload /lab/)와 완전 분리됨
  */
+const parseNcMaterialDiameter = (code: string): number | null => {
+  const text = String(code || "");
+  const lines = text.split(/\r?\n/);
+  for (const rawLine of lines) {
+    const line = String(rawLine || "").trim();
+    if (!line) continue;
+    // ';' 시작 라인은 주석으로 간주
+    if (line.startsWith(";")) continue;
+    const m = line.match(/#\s*521\s*=\s*([+-]?\d+(?:\.\d+)?)/i);
+    if (!m?.[1]) continue;
+    const v = Number.parseFloat(m[1]);
+    if (!Number.isFinite(v)) continue;
+    return v;
+  }
+  return null;
+};
+
+const isSameDiameter = (a: number, b: number) => Math.abs(a - b) <= 0.001;
+
 export const useManUpload = () => {
   const { token } = useAuthStore();
   const { toast } = useToast();
@@ -32,7 +51,11 @@ export const useManUpload = () => {
     async (
       machineId: string,
       files: FileList | File[],
-      options?: { onDone?: () => void },
+      options?: {
+        onDone?: () => void;
+        expectedMaterialDiameter?: number | null;
+        machineName?: string;
+      },
     ) => {
       const mid = String(machineId || "").trim();
       if (!mid) throw new Error("장비 ID가 올바르지 않습니다.");
@@ -56,6 +79,29 @@ export const useManUpload = () => {
         for (const file of list) {
           if (!file) continue;
           const fileName = String(file.name || "").trim() || "(unknown)";
+
+          const expectedDiameter =
+            typeof options?.expectedMaterialDiameter === "number" &&
+            Number.isFinite(options.expectedMaterialDiameter) &&
+            options.expectedMaterialDiameter > 0
+              ? Number(options.expectedMaterialDiameter)
+              : null;
+          if (expectedDiameter != null) {
+            const code = await file.text();
+            const actualDiameter = parseNcMaterialDiameter(code);
+            const targetName = String(options?.machineName || mid).trim() || mid;
+            if (actualDiameter == null) {
+              throw new Error(
+                `${targetName} 업로드 차단: ${fileName} 파일에서 #521(소재 직경) 값을 찾지 못했습니다. 설정 직경은 ${expectedDiameter.toFixed(3)} 입니다.`,
+              );
+            }
+            if (!isSameDiameter(actualDiameter, expectedDiameter)) {
+              throw new Error(
+                `${targetName} 업로드 차단: ${fileName}의 #521=${actualDiameter.toFixed(3)} 이고 장비 설정 직경은 ${expectedDiameter.toFixed(3)} 입니다.`,
+              );
+            }
+          }
+
           await new Promise<void>((resolve, reject) => {
             const xhr = new XMLHttpRequest();
             xhr.timeout = 10 * 60 * 1000;
@@ -83,9 +129,21 @@ export const useManUpload = () => {
                 resolve();
                 return;
               }
+
+              let serverMessage = "";
+              try {
+                const body = JSON.parse(String(xhr.responseText || "{}"));
+                serverMessage = String(
+                  body?.message || body?.error || body?.data?.message || "",
+                ).trim();
+              } catch {
+                // noop
+              }
+
               reject(
                 new Error(
-                  `장비카드 업로드 실패: ${fileName} (HTTP ${xhr.status})`,
+                  serverMessage ||
+                    `장비카드 업로드 실패: ${fileName} (HTTP ${xhr.status})`,
                 ),
               );
             };
@@ -111,8 +169,8 @@ export const useManUpload = () => {
           });
         }
         options?.onDone?.();
-      } catch (e: any) {
-        const msg = e?.message || "업로드 중 오류";
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : "업로드 중 오류";
         toast({
           title: "업로드 실패",
           description: msg,

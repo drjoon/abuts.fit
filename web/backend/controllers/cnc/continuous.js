@@ -43,7 +43,10 @@ function buildDirectBridgePath({ machineId, originalFileName }) {
   });
   const extMatch = String(originalFileName).match(/\.(nc|txt)$/i);
   const ext = extMatch ? String(extMatch[0]).toLowerCase() : ".nc";
-  return `3-direct/${base}${ext}`;
+
+  // bridge 서버의 NC 처리 파이프라인은 3-nc 경로를 기준으로 동작한다.
+  // 수동 업로드(manual_upload)도 동일한 루트에 두고 source 필드로만 구분한다.
+  return `3-nc/manual/${base}${ext}`;
 }
 
 function resolveRequestNcBridgePath({
@@ -175,9 +178,9 @@ export async function manUpload(req, res) {
 
     const savedPath = String(storeBody?.path || bridgePath).trim();
 
-    const enqueueUrl = `${BRIDGE_BASE.replace(/\/$/, "")}/api/cnc/machines/${encodeURIComponent(
+    const enqueueUrl = `${BRIDGE_BASE.replace(/\/$/, "")}/api/cnc/continuous/enqueue?machines=${encodeURIComponent(
       mid,
-    )}/continuous/enqueue`;
+    )}`;
     const enqueuePayload = {
       fileName: savedPath.split(/[\/\\]/).pop(),
       originalFileName,
@@ -422,7 +425,7 @@ export async function smartUpload(req, res) {
         .json({ success: false, message: "path is required" });
     }
 
-    const url = `${BRIDGE_BASE.replace(/\/$/, "")}/api/cnc/machines/${encodeURIComponent(mid)}/smart/upload`;
+    const url = `${BRIDGE_BASE.replace(/\/$/, "")}/api/cnc/smart/upload?machines=${encodeURIComponent(mid)}`;
     const resp = await fetch(url, {
       method: "POST",
       headers: withBridgeHeaders({ "Content-Type": "application/json" }),
@@ -460,7 +463,7 @@ export async function getJobResult(req, res) {
         .json({ success: false, message: "machineId and jobId are required" });
     }
 
-    const url = `${BRIDGE_BASE.replace(/\/$/, "")}/api/cnc/machines/${encodeURIComponent(mid)}/jobs/${encodeURIComponent(jid)}`;
+    const url = `${BRIDGE_BASE.replace(/\/$/, "")}/api/cnc/jobs/${encodeURIComponent(jid)}`;
     const resp = await fetch(url, {
       method: "GET",
       headers: withBridgeHeaders(),
@@ -505,9 +508,9 @@ export async function enqueueBridgeContinuousJob(req, res) {
       });
     }
 
-    const url = `${BRIDGE_BASE.replace(/\/$/, "")}/api/cnc/machines/${encodeURIComponent(
+    const url = `${BRIDGE_BASE.replace(/\/$/, "")}/api/cnc/continuous/enqueue?machines=${encodeURIComponent(
       mid,
-    )}/continuous/enqueue`;
+    )}`;
 
     const payload = {
       fileName,
@@ -622,9 +625,9 @@ export async function enqueueBridgeContinuousJobFromDb(req, res) {
       console.warn("enqueue-from-db ncPreload UPLOADING update failed", e);
     }
 
-    const url = `${BRIDGE_BASE.replace(/\/$/, "")}/api/cnc/machines/${encodeURIComponent(
+    const url = `${BRIDGE_BASE.replace(/\/$/, "")}/api/cnc/continuous/enqueue?machines=${encodeURIComponent(
       mid,
-    )}/continuous/enqueue`;
+    )}`;
 
     const payload = {
       fileName,
@@ -708,10 +711,6 @@ export async function getBridgeContinuousState(req, res) {
         message: "machineId is required",
       });
     }
-
-    const url = `${BRIDGE_BASE.replace(/\/$/, "")}/api/cnc/machines/${encodeURIComponent(
-      mid,
-    )}`;
 
     try {
       const resp = await fetch(

@@ -256,10 +256,19 @@ export async function saveBridgeQueueSnapshot(machineId, jobs, options = {}) {
             contentType:
               j.contentType != null ? String(j.contentType).trim() : "",
             requestId: j.requestId != null ? String(j.requestId).trim() : "",
-            priority:
-              typeof j.priority === "number" && Number.isFinite(j.priority)
-                ? j.priority
-                : null,
+            priority: (() => {
+              const rawPriority =
+                typeof j.priority === "number" && Number.isFinite(j.priority)
+                  ? j.priority
+                  : null;
+              const src = String(j.source || "")
+                .trim()
+                .toLowerCase();
+              // 장비 페이지 수동 업로드(manual_upload)는 장비 큐 우선순위(1)로 취급
+              // paused 상태를 큐 replace 왕복에서도 보존하기 위함
+              if (src === "manual_upload") return 1;
+              return rawPriority;
+            })(),
             programNo:
               typeof j.programNo === "number" && Number.isFinite(j.programNo)
                 ? j.programNo
@@ -274,10 +283,14 @@ export async function saveBridgeQueueSnapshot(machineId, jobs, options = {}) {
             source: j.source != null ? String(j.source).trim() : "",
             paused:
               j.paused === true &&
-              (typeof j.priority === "number" ? j.priority : 2) === 1,
+              ((typeof j.priority === "number" ? j.priority : 2) === 1 ||
+                String(j.source || "").trim().toLowerCase() ===
+                  "manual_upload"),
             allowAutoStart:
               j.allowAutoStart === true ||
-              ((typeof j.priority === "number" ? j.priority : null) === 1 &&
+              (((typeof j.priority === "number" ? j.priority : null) === 1 ||
+                String(j.source || "").trim().toLowerCase() ===
+                  "manual_upload") &&
                 j.paused !== true),
           };
         })

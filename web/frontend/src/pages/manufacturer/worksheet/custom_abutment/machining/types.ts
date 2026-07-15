@@ -88,6 +88,7 @@ export type MachineQueueCardProps = {
   machine?: any;
   queue: QueueItem[];
   onOpenRequestLog?: (requestId: string) => void;
+  onUploadFiles?: (files: FileList | File[]) => void;
   autoEnabled: boolean;
   machiningActive?: boolean;
   onToggleAuto: (next: boolean) => void;

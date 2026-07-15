@@ -33,8 +33,43 @@ import { MachineQueueCard } from "./components/MachineQueueCard";
 import type { MachineActionLevel, MachineStatus, QueueItem } from "./types";
 import { useMachiningBoard } from "./hooks/useMachiningBoard";
 import { CncMaterialModal } from "@/pages/manufacturer/equipment/cnc/components/CncMaterialModal";
+import { useManUpload } from "@/pages/manufacturer/equipment/cnc/hooks/useManUpload";
 import { MachiningRequestLabel } from "./components/MachiningRequestLabel";
 import { buildLabelExtraProps } from "./utils/label";
+
+type MaterialLikeMachine = {
+  currentMaterial?: { diameter?: unknown; diameterGroup?: unknown } | null;
+  maxModelDiameterGroups?: unknown[] | null;
+} | null;
+
+const resolveMachineMaterialDiameter = (machine: MaterialLikeMachine): number | null => {
+  const rawDia = machine?.currentMaterial?.diameter;
+  let numeric = Number.isFinite(rawDia)
+    ? Number(rawDia)
+    : Number.parseFloat(String(rawDia || "").replace(/[^0-9.]/g, ""));
+
+  if (!Number.isFinite(numeric) || numeric <= 0) {
+    const group = machine?.currentMaterial?.diameterGroup;
+    numeric = Number.parseFloat(String(group || "").replace(/[^0-9.]/g, ""));
+  }
+
+  if (!Number.isFinite(numeric) || numeric <= 0) {
+    const firstGroup =
+      Array.isArray(machine?.maxModelDiameterGroups) &&
+      machine.maxModelDiameterGroups.length > 0
+        ? machine.maxModelDiameterGroups[0]
+        : null;
+    if (firstGroup != null) {
+      numeric = Number.parseFloat(
+        String(firstGroup).replace(/[^0-9.]/g, ""),
+      );
+    }
+  }
+
+  if (!Number.isFinite(numeric) || numeric <= 0) return null;
+  const normalized = numeric > 10 ? 12 : numeric;
+  return Number(normalized.toFixed(3));
+};
 
 const resolveMachineActionLevel = (
   level?: string | null,
@@ -64,6 +99,7 @@ export const MachiningQueueBoard = ({
 }) => {
   const { token } = useAuthStore();
   const { toast } = useToast();
+  const { uploadMachineFiles } = useManUpload();
   const board = useMachiningBoard({ token });
   const { callRaw } = useCncRaw();
   const { ensureCncWriteAllowed, PinModal } = useCncWriteGuard();
@@ -725,6 +761,17 @@ export const MachiningQueueBoard = ({
               lastCompleted={lastCompletedMap?.[m.uid] || null}
               nowPlayingHint={nowPlayingHint}
               onOpenRequestLog={(requestId) => setEventLogRequestId(requestId)}
+              onUploadFiles={(files) => {
+                void uploadMachineFiles(m.uid, files, {
+                  expectedMaterialDiameter: resolveMachineMaterialDiameter(m),
+                  machineName: String(m?.name || m?.uid || ""),
+                  onDone: () => {
+                    void loadProductionQueueForMachine(m.uid);
+                  },
+                }).catch(() => {
+                  // useManUpload 훅에서 토스트 처리
+                });
+              }}
               autoEnabled={m.allowAutoMachining === true}
               machiningActive={machiningActive}
               onToggleAuto={(next) => {
@@ -769,7 +816,9 @@ export const MachiningQueueBoard = ({
               onOpenMachineInfo={() => {
                 void openMachineInfo(m.uid);
               }}
-              onOpenQueueManager={() => openReservationForMachine(m.uid)}
+              onOpenQueueManager={() => {
+                void loadProductionQueueForMachine(m.uid);
+              }}
               onOpenTemperature={() => {
                 void openTempDetail(m.uid);
               }}

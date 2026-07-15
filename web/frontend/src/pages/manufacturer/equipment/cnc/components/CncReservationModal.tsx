@@ -28,6 +28,38 @@ interface CncReservationModalProps {
   onConfirm: (config: CncReservationConfig) => void;
 }
 
+const resolveMachineMaterialDiameter = (machine: Machine | null): number | null => {
+  const m = machine as
+    | {
+        currentMaterial?: { diameter?: unknown; diameterGroup?: unknown } | null;
+        maxModelDiameterGroups?: unknown[] | null;
+      }
+    | null;
+
+  const rawDia = m?.currentMaterial?.diameter;
+  let numeric = Number.isFinite(rawDia)
+    ? Number(rawDia)
+    : Number.parseFloat(String(rawDia || "").replace(/[^0-9.]/g, ""));
+
+  if (!Number.isFinite(numeric) || numeric <= 0) {
+    const group = m?.currentMaterial?.diameterGroup;
+    numeric = Number.parseFloat(String(group || "").replace(/[^0-9.]/g, ""));
+  }
+
+  if (!Number.isFinite(numeric) || numeric <= 0) {
+    const groups = Array.isArray(m?.maxModelDiameterGroups)
+      ? m.maxModelDiameterGroups
+      : [];
+    if (groups.length > 0) {
+      numeric = Number.parseFloat(String(groups[0]).replace(/[^0-9.]/g, ""));
+    }
+  }
+
+  if (!Number.isFinite(numeric) || numeric <= 0) return null;
+  const normalized = numeric > 10 ? 12 : numeric;
+  return Number(normalized.toFixed(3));
+};
+
 export const CncReservationModal = ({
   open,
   machine,
@@ -70,7 +102,10 @@ export const CncReservationModal = ({
 
       setSubmitting(true);
       try {
-        await uploadMachineFiles(machine.uid, list);
+        await uploadMachineFiles(machine.uid, list, {
+          expectedMaterialDiameter: resolveMachineMaterialDiameter(machine),
+          machineName: String(machine?.name || machine?.uid || ""),
+        });
         toast({
           title: "업로드 완료",
           description: "다음 가공 파일로 등록되었습니다.",
@@ -78,17 +113,18 @@ export const CncReservationModal = ({
 
         onConfirm({ mode: "reserved", jobs: [] });
         onRequestClose();
-      } catch (e: any) {
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : "업로드 중 오류가 발생했습니다.";
         toast({
           title: "업로드 실패",
-          description: e?.message || "업로드 중 오류가 발생했습니다.",
+          description: msg,
           variant: "destructive",
         });
       } finally {
         setSubmitting(false);
       }
     },
-    [machine?.uid, onConfirm, onRequestClose, toast, uploadMachineFiles],
+    [machine, onConfirm, onRequestClose, toast, uploadMachineFiles],
   );
 
   useEffect(() => {

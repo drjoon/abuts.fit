@@ -20,6 +20,40 @@ import { CncMaterialModal } from "./components/CncMaterialModal";
 import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
 import { CncEventLogModal } from "@/features/cnc/components/CncEventLogModal";
 
+type MaterialLikeMachine = {
+  currentMaterial?: { diameter?: unknown; diameterGroup?: unknown } | null;
+  maxModelDiameterGroups?: unknown[] | null;
+} | null;
+
+const resolveMachineMaterialDiameter = (machine: MaterialLikeMachine): number | null => {
+  const rawDia = machine?.currentMaterial?.diameter;
+  let numeric = Number.isFinite(rawDia)
+    ? Number(rawDia)
+    : Number.parseFloat(String(rawDia || "").replace(/[^0-9.]/g, ""));
+
+  if (!Number.isFinite(numeric) || numeric <= 0) {
+    const group = machine?.currentMaterial?.diameterGroup;
+    numeric = Number.parseFloat(String(group || "").replace(/[^0-9.]/g, ""));
+  }
+
+  if (!Number.isFinite(numeric) || numeric <= 0) {
+    const firstGroup =
+      Array.isArray(machine?.maxModelDiameterGroups) &&
+      machine.maxModelDiameterGroups.length > 0
+        ? machine.maxModelDiameterGroups[0]
+        : null;
+    if (firstGroup != null) {
+      numeric = Number.parseFloat(
+        String(firstGroup).replace(/[^0-9.]/g, ""),
+      );
+    }
+  }
+
+  if (!Number.isFinite(numeric) || numeric <= 0) return null;
+  const normalized = numeric > 10 ? 12 : numeric;
+  return Number(normalized.toFixed(3));
+};
+
 export const CncDashboardPageView = (props: any) => {
   const {
     machines,
@@ -313,6 +347,9 @@ export const CncDashboardPageView = (props: any) => {
                   void (async () => {
                     try {
                       await uploadMachineFiles(machine.uid, files, {
+                        expectedMaterialDiameter:
+                          resolveMachineMaterialDiameter(machine),
+                        machineName: String(machine?.name || machine?.uid || ""),
                         onDone: async () => {
                           if (refreshDbQueuesForAllMachines) {
                             await refreshDbQueuesForAllMachines();
