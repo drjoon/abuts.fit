@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, ArrowRight, Plus } from "lucide-react";
+import { ArrowLeft, ArrowRight } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/shared/hooks/use-toast";
 import { useAuthStore } from "@/store/useAuthStore";
@@ -504,36 +504,21 @@ export const MachineQueueCard = ({
 
         <div className="flex justify-end">
           <div className="mr-2 flex items-center gap-2">
-            {onUploadFiles ? (
-              <>
-                <button
-                  type="button"
-                  className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white/80 text-slate-700 shadow-sm transition-colors hover:bg-white hover:text-slate-900"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    fileInputRef.current?.click();
-                  }}
-                  title="파일 업로드"
-                >
-                  <Plus className="h-3.5 w-3.5" />
-                </button>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept=".nc,.txt"
-                  className="hidden"
-                  multiple
-                  onChange={(e) => {
-                    const files = e.target.files;
-                    if (!files || files.length === 0) return;
-                    onUploadFiles(files);
-                    if (fileInputRef.current) {
-                      fileInputRef.current.value = "";
-                    }
-                  }}
-                />
-              </>
-            ) : null}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".nc,.txt"
+              className="hidden"
+              multiple
+              onChange={(e) => {
+                const files = e.target.files;
+                if (!files || files.length === 0) return;
+                onUploadFiles?.(files);
+                if (fileInputRef.current) {
+                  fileInputRef.current.value = "";
+                }
+              }}
+            />
             <MaterialDiameterChip
               label={materialDiameterLabel || "-"}
               variant="circle"
@@ -554,12 +539,19 @@ export const MachineQueueCard = ({
               e.stopPropagation();
               onOpenMachineInfo?.();
             }}
+            onUploadClick={(e) => {
+              e.stopPropagation();
+              if (!onUploadFiles) return;
+              fileInputRef.current?.click();
+            }}
+            uploadTooltip="파일 업로드"
             onQueueClick={(e) => {
               e.stopPropagation();
               const next = !queueAdminOpen;
               setQueueAdminOpen(next);
               if (next) void loadQueueAdmin();
             }}
+            queueTooltip="수동 업로드 큐관리"
             onTempClick={(e) => {
               e.stopPropagation();
               onOpenTemperature?.();
@@ -578,12 +570,12 @@ export const MachineQueueCard = ({
 
       {queueAdminOpen && (
         <div
-          className="app-glass-card-content mb-2 rounded-2xl border border-slate-200 bg-white/70 px-3 py-3"
+          className="app-glass-card-content rounded-2xl border border-slate-200 bg-white/70 px-3 py-3 mt-4"
           onClick={(e) => e.stopPropagation()}
         >
           <div className="flex items-center justify-between gap-2">
             <div className="text-[12px] font-extrabold text-slate-800">
-              큐 관리
+              수동 업로드 큐 관리
             </div>
             <div className="flex items-center gap-2">
               <button

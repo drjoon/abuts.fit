@@ -1,4 +1,11 @@
-import { Info, ListChecks, Settings, Thermometer, Wrench } from "lucide-react";
+import {
+  Info,
+  ListChecks,
+  Plus,
+  Settings,
+  Thermometer,
+  Wrench,
+} from "lucide-react";
 
 export type CncToolAlertLevel = "ok" | "warn" | "alarm" | "unknown" | "disabled";
 
@@ -9,7 +16,10 @@ interface CncMachineActionButtonsProps {
   tempTooltip?: string;
   toolTooltip?: string;
   onInfoClick?: (e: React.MouseEvent<HTMLButtonElement>) => void;
+  onUploadClick?: (e: React.MouseEvent<HTMLButtonElement>) => void;
+  uploadTooltip?: string;
   onQueueClick?: (e: React.MouseEvent<HTMLButtonElement>) => void;
+  queueTooltip?: string;
   onTempClick?: (e: React.MouseEvent<HTMLButtonElement>) => void;
   onToolClick?: (e: React.MouseEvent<HTMLButtonElement>) => void;
   onSettingsClick?: (e: React.MouseEvent<HTMLButtonElement>) => void;
@@ -35,7 +45,10 @@ export const CncMachineActionButtons = ({
   tempTooltip,
   toolTooltip,
   onInfoClick,
+  onUploadClick,
+  uploadTooltip,
   onQueueClick,
+  queueTooltip,
   onTempClick,
   onToolClick,
   onSettingsClick,
@@ -51,11 +64,22 @@ export const CncMachineActionButtons = ({
       >
         <Info className="h-3.5 w-3.5" />
       </button>
+      {onUploadClick ? (
+        <button
+          type="button"
+          className={`${baseClass} border-slate-200 bg-white/80 text-slate-700 hover:bg-white hover:text-slate-900`}
+          onClick={onUploadClick}
+          title={uploadTooltip || "파일 업로드"}
+          disabled={loading || !onUploadClick}
+        >
+          <Plus className="h-3.5 w-3.5" />
+        </button>
+      ) : null}
       <button
         type="button"
         className={`${baseClass} border-slate-200 bg-white/80 text-slate-700 hover:bg-white hover:text-slate-900`}
         onClick={onQueueClick}
-        title="큐 관리"
+        title={queueTooltip || "수동 업로드 큐 관리"}
         disabled={loading || !onQueueClick}
       >
         <ListChecks className="h-3.5 w-3.5" />
