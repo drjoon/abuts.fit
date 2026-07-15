@@ -1652,8 +1652,54 @@ export const RequestPage = ({
     tabStage,
   ]);
 
-  // handleOpenNextRequest 제거: 승인/롤백 후 다음 의뢰를 자동으로 열지 않는다.
-  // 작업자가 직접 다음 의뢰 카드를 선택하도록 유도한다. (백엔드 큐 과부하 방지)
+  const handleOpenNextRequest = useCallback(
+    async (currentReqId: string) => {
+      const normalizedCurrentReqId = String(currentReqId || "").trim();
+      if (!normalizedCurrentReqId) return;
+
+      const getReqIdentity = (req: ManufacturerRequest | undefined | null) =>
+        String(req?._id || req?.requestId || "").trim();
+
+      const currentIndex = filteredAndSorted.findIndex(
+        (req) => getReqIdentity(req) === normalizedCurrentReqId,
+      );
+      const preferredNextId =
+        currentIndex >= 0
+          ? getReqIdentity(filteredAndSorted[currentIndex + 1]) || null
+          : null;
+
+      const refreshed = await refreshRequests(true);
+      const latestList = Array.isArray(refreshed) ? refreshed : pageState.requests;
+      const latestFilteredAndSorted = getFilteredAndSortedRequests(latestList);
+
+      let nextReq: ManufacturerRequest | undefined;
+      if (preferredNextId) {
+        nextReq = latestFilteredAndSorted.find(
+          (req) => getReqIdentity(req) === preferredNextId,
+        );
+      }
+      if (!nextReq) {
+        nextReq = latestFilteredAndSorted.find(
+          (req) => getReqIdentity(req) !== normalizedCurrentReqId,
+        );
+      }
+
+      if (!nextReq) {
+        setPreviewOpen(false);
+        return;
+      }
+
+      await handleOpenPreview(nextReq);
+    },
+    [
+      filteredAndSorted,
+      getFilteredAndSortedRequests,
+      handleOpenPreview,
+      pageState.requests,
+      refreshRequests,
+      setPreviewOpen,
+    ],
+  );
 
   const setVisibleCount = pageState.setVisibleCount;
   const visibleCountRef = pageState.visibleCountRef;
@@ -1991,6 +2037,7 @@ export const RequestPage = ({
         onRefreshPreview={handleOpenPreview}
         onMarkUnmachinable={handleMarkUnmachinable}
         onRestoreUnmachinable={handleRestoreUnmachinable}
+        onOpenNextRequest={handleOpenNextRequest}
         setSearchParams={setSearchParams}
         setConfirmTitle={pageState.setConfirmTitle}
         setConfirmDescription={pageState.setConfirmDescription}

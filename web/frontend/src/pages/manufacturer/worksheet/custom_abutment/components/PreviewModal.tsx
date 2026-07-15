@@ -1508,6 +1508,29 @@ export const PreviewModal = ({
               <button
                 type="button"
                 className={`${controlBtnClass} ${
+                  reviewSaving || !onOpenNextRequest
+                    ? "border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed"
+                    : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                }`}
+                disabled={reviewSaving || !onOpenNextRequest}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  const currentReqId = String(
+                    activeReq?._id || activeReq?.requestId || "",
+                  ).trim();
+                  if (!currentReqId || !onOpenNextRequest) return;
+                  void onOpenNextRequest(currentReqId);
+                }}
+                aria-label="Skip"
+                title="Skip"
+              >
+                S
+              </button>
+
+              <button
+                type="button"
+                className={`${controlBtnClass} ${
                   reviewSaving || !canApprove || isNcGenerating
                     ? "border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed"
                     : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"

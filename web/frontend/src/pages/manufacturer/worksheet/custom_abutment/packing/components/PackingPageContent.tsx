@@ -1296,7 +1296,7 @@ export const PackingPageContent = ({
           onDownloadStageFile={handleDownloadStageFile}
           onRefreshPreview={handleOpenPreview}
           onMarkUnmachinable={handleMarkUnmachinable}
-          // onOpenNextRequest 제거: 승인 후 다음 의뢰 자동 열기 방지 정책 적용
+          onOpenNextRequest={handleOpenNextRequest}
           setSearchParams={setSearchParams}
           setConfirmTitle={setConfirmTitle}
           setConfirmDescription={setConfirmDescription}
