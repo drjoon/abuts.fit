@@ -43,7 +43,6 @@ import {
   Shield,
   Users2,
   ClipboardList,
-  Factory,
   Printer,
   Search,
   Sparkles,
@@ -82,7 +81,6 @@ const sidebarItems = {
   ],
   manufacturer: [
     { icon: ClipboardList, label: "작업", href: "/dashboard/worksheet" },
-    { icon: Factory, label: "장비", href: "/dashboard/cnc" },
     { icon: Wallet, label: "정산", href: "/dashboard/payments" },
     { icon: Settings, label: "설정", href: "/dashboard/settings" },
   ],
