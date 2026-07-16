@@ -1879,15 +1879,46 @@ export async function recordMachiningCompleteForBridge(req, res) {
         ? new Date(completedRecord.completedAt)
         : now;
 
-      // 장비(toolNum=0) 단위 통계 누적
+      // 장비(toolNum=0) + 공구별(toolNum>0) 통계 누적
+      // 정책:
+      // - 1건 완료 시 장비 전체(toolNum=0)는 항상 +1 / +duration
+      // - 공구별은 "장착중(mounted)" 슬롯 각각에 대해 동일 duration을 더한다.
+      //   (의뢰 1건의 전체 소요시간을, 장착된 각 공구의 누계에 합산)
       const cncMachine = await CncMachine.findOne({ machineId: mid });
       if (cncMachine) {
-        const { nextStats } = appendMachiningJobStats({
-          existingStats: cncMachine.tooling?.machiningStats,
+        let nextStats = cncMachine.tooling?.machiningStats;
+
+        ({ nextStats } = appendMachiningJobStats({
+          existingStats: nextStats,
           toolNum: 0,
           jobDurationSeconds: recordedDuration,
           completedAt,
-        });
+        }));
+
+        const mountedToolNums = [
+          ...new Set(
+            (Array.isArray(cncMachine.tooling?.toolSlots)
+              ? cncMachine.tooling.toolSlots
+              : []
+            )
+              .filter(
+                (slot) =>
+                  String(slot?.replacementStatus || "").trim() === "mounted",
+              )
+              .map((slot) => Number(slot?.toolNum || 0))
+              .filter((n) => Number.isFinite(n) && n > 0),
+          ),
+        ];
+
+        for (const toolNum of mountedToolNums) {
+          ({ nextStats } = appendMachiningJobStats({
+            existingStats: nextStats,
+            toolNum,
+            jobDurationSeconds: recordedDuration,
+            completedAt,
+          }));
+        }
+
         cncMachine.tooling = {
           ...(cncMachine.tooling?.toObject?.() || cncMachine.tooling || {}),
           machiningStats: nextStats,

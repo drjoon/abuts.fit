@@ -512,9 +512,11 @@ function toKstYmdString(date) {
  */
 export function normalizeMachiningStats(stats) {
   const list = Array.isArray(stats) ? stats : [];
-  return list
+
+  // 1) 기본 정규화: toolNum=0(장비 전체)도 유효 키로 유지한다.
+  const normalized = list
     .map((s) => ({
-      toolNum: Math.max(1, toNumber(s?.toolNum, 0)),
+      toolNum: Math.max(0, toNumber(s?.toolNum, 0)),
       totalJobCount: Math.max(0, toNumber(s?.totalJobCount, 0)),
       totalMachiningSeconds: Math.max(0, toNumber(s?.totalMachiningSeconds, 0)),
       currentJobCount: Math.max(0, toNumber(s?.currentJobCount, 0)),
@@ -533,7 +535,105 @@ export function normalizeMachiningStats(stats) {
             .filter((b) => /^\d{4}-\d{2}-\d{2}$/.test(b.ymd))
         : [],
     }))
-    .filter((s) => s.toolNum > 0);
+    .filter((s) => s.toolNum >= 0);
+
+  // 2) toolNum별 병합(중복 행 방지): 카운트/시간 합산 + lastJobAt 최신값 유지.
+  const byToolNum = new Map();
+  for (const row of normalized) {
+    const key = row.toolNum;
+    const prev = byToolNum.get(key);
+    if (!prev) {
+      byToolNum.set(key, {
+        ...row,
+        dailyBuckets: [...row.dailyBuckets],
+      });
+      continue;
+    }
+
+    const bucketMap = new Map();
+    for (const b of prev.dailyBuckets || []) {
+      bucketMap.set(b.ymd, {
+        ymd: b.ymd,
+        count: Math.max(0, toNumber(b.count, 0)),
+        seconds: Math.max(0, toNumber(b.seconds, 0)),
+      });
+    }
+    for (const b of row.dailyBuckets || []) {
+      const cur = bucketMap.get(b.ymd) || { ymd: b.ymd, count: 0, seconds: 0 };
+      cur.count += Math.max(0, toNumber(b.count, 0));
+      cur.seconds += Math.max(0, toNumber(b.seconds, 0));
+      bucketMap.set(b.ymd, cur);
+    }
+
+    byToolNum.set(key, {
+      toolNum: key,
+      totalJobCount: prev.totalJobCount + row.totalJobCount,
+      totalMachiningSeconds:
+        prev.totalMachiningSeconds + row.totalMachiningSeconds,
+      currentJobCount: prev.currentJobCount + row.currentJobCount,
+      currentMachiningSeconds:
+        prev.currentMachiningSeconds + row.currentMachiningSeconds,
+      lastJobAt:
+        (prev.lastJobAt && row.lastJobAt
+          ? prev.lastJobAt > row.lastJobAt
+            ? prev.lastJobAt
+            : row.lastJobAt
+          : prev.lastJobAt || row.lastJobAt || null),
+      dailyBuckets: Array.from(bucketMap.values())
+        .sort((a, b) => b.ymd.localeCompare(a.ymd))
+        .slice(0, MAX_DAILY_BUCKETS),
+    });
+  }
+
+  // 3) 레거시 복구: 과거 버그로 toolNum=0 누계가 toolNum=1로 누락 전환된 데이터 병합.
+  // 패턴: toolNum=0,1만 있고 1번이 복수 중복 행으로 존재할 때 1번을 0번으로 흡수한다.
+  const rawCountByToolNum = new Map();
+  for (const s of list) {
+    const key = Math.max(0, toNumber(s?.toolNum, 0));
+    rawCountByToolNum.set(key, (rawCountByToolNum.get(key) || 0) + 1);
+  }
+  const hasZero = byToolNum.has(0);
+  const hasOne = byToolNum.has(1);
+  const hasToolOverOne = Array.from(byToolNum.keys()).some((k) => k > 1);
+  const oneDuplicated = (rawCountByToolNum.get(1) || 0) > 1;
+
+  if (hasZero && hasOne && !hasToolOverOne && oneDuplicated) {
+    const zero = byToolNum.get(0);
+    const one = byToolNum.get(1);
+
+    const bucketMap = new Map();
+    for (const b of zero.dailyBuckets || []) {
+      bucketMap.set(b.ymd, { ymd: b.ymd, count: b.count, seconds: b.seconds });
+    }
+    for (const b of one.dailyBuckets || []) {
+      const cur = bucketMap.get(b.ymd) || { ymd: b.ymd, count: 0, seconds: 0 };
+      cur.count += Math.max(0, toNumber(b.count, 0));
+      cur.seconds += Math.max(0, toNumber(b.seconds, 0));
+      bucketMap.set(b.ymd, cur);
+    }
+
+    byToolNum.set(0, {
+      toolNum: 0,
+      totalJobCount: zero.totalJobCount + one.totalJobCount,
+      totalMachiningSeconds:
+        zero.totalMachiningSeconds + one.totalMachiningSeconds,
+      currentJobCount: zero.currentJobCount + one.currentJobCount,
+      currentMachiningSeconds:
+        zero.currentMachiningSeconds + one.currentMachiningSeconds,
+      lastJobAt:
+        (zero.lastJobAt && one.lastJobAt
+          ? zero.lastJobAt > one.lastJobAt
+            ? zero.lastJobAt
+            : one.lastJobAt
+          : zero.lastJobAt || one.lastJobAt || null),
+      dailyBuckets: Array.from(bucketMap.values())
+        .sort((a, b) => b.ymd.localeCompare(a.ymd))
+        .slice(0, MAX_DAILY_BUCKETS),
+    });
+    byToolNum.delete(1);
+  }
+
+  return Array.from(byToolNum.values()).sort((a, b) => a.toolNum - b.toolNum);
 }
 
 /**

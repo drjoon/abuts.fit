@@ -1485,20 +1485,51 @@ export const useCncToolPanels = ({
    * 슬롯별 누적/현재 가공 건수와 시간을 표시한다.
    */
   const openMachiningStatsModal = () => {
+    const statsMap = new Map<number, MachiningStatEntry>();
+    for (const s of machiningStats) {
+      statsMap.set(s.toolNum, s);
+    }
+
+    // 공구 슬롯은 있는데 아직 통계가 없는 경우도 0값으로 노출
+    for (const slot of toolSlots) {
+      const toolNum = Number(slot?.toolNum || 0);
+      if (!Number.isFinite(toolNum) || toolNum <= 0) continue;
+      if (statsMap.has(toolNum)) continue;
+      statsMap.set(toolNum, {
+        toolNum,
+        totalJobCount: 0,
+        totalMachiningSeconds: 0,
+        currentJobCount: 0,
+        currentMachiningSeconds: 0,
+        lastJobAt: null,
+        dailyBuckets: [],
+      });
+    }
+
+    const displayStats = Array.from(statsMap.values()).sort(
+      (a, b) => a.toolNum - b.toolNum,
+    );
+
     const body = (
       <div className="space-y-4 text-sm text-gray-700">
-        <div className="text-xs text-slate-500">
-          슬롯별 누적 가공 건수 및 시간. 현재 장착 이후 통계는 교체 완료 시
-          리셋됩니다.
+        <div className="text-xs text-slate-500 space-y-1">
+          <div>
+            슬롯별 누적 가공 건수 및 시간. 현재 장착 이후 통계는 교체 완료 시
+            리셋됩니다.
+          </div>
+          <div>
+            ※ 공구별 통계는 의뢰 1건의 전체 소요시간을 장착된 각 공구에 동일
+            합산하는 방식입니다. 따라서 공구별 합계는 전체(툴#0)보다 클 수 있습니다.
+          </div>
         </div>
 
-        {machiningStats.length === 0 ? (
+        {displayStats.length === 0 ? (
           <div className="text-base text-gray-400 text-center py-8">
             가공 통계 데이터가 없습니다.
           </div>
         ) : (
           <div className="rounded-xl border border-gray-100 bg-white shadow-sm overflow-auto max-h-[60vh]">
-            <table className="w-full text-xs table-fixed">
+            <table className="w-full min-w-[860px] text-xs">
               <thead className="bg-gray-50 text-gray-500">
                 <tr>
                   <th className="px-3 py-2.5 text-center w-12">툴#</th>
@@ -1511,31 +1542,31 @@ export const useCncToolPanels = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {machiningStats.map((stat) => {
+                {displayStats.map((stat) => {
                   const slot = toolSlots.find(
                     (s) => s.toolNum === stat.toolNum,
                   );
                   return (
                     <tr key={stat.toolNum} className="hover:bg-gray-50">
-                      <td className="px-3 py-2.5 text-center font-semibold text-gray-800">
+                      <td className="px-3 py-2.5 text-center font-semibold text-gray-800 whitespace-nowrap">
                         {stat.toolNum === 0 ? "전체" : stat.toolNum}
                       </td>
-                      <td className="px-2 py-2.5 text-left text-slate-700 truncate">
+                      <td className="px-2 py-2.5 text-left text-slate-700 whitespace-nowrap">
                         {slot?.toolName || "-"}
                       </td>
-                      <td className="px-2 py-2.5 text-center font-mono text-slate-800">
+                      <td className="px-2 py-2.5 text-center font-mono text-slate-800 whitespace-nowrap">
                         {stat.totalJobCount.toLocaleString()}건
                       </td>
-                      <td className="px-2 py-2.5 text-center font-mono text-slate-700">
+                      <td className="px-2 py-2.5 text-center font-mono text-slate-700 whitespace-nowrap">
                         {formatSeconds(stat.totalMachiningSeconds)}
                       </td>
-                      <td className="px-2 py-2.5 text-center font-mono text-blue-700">
+                      <td className="px-2 py-2.5 text-center font-mono text-blue-700 whitespace-nowrap">
                         {stat.currentJobCount.toLocaleString()}건
                       </td>
-                      <td className="px-2 py-2.5 text-center font-mono text-blue-600">
+                      <td className="px-2 py-2.5 text-center font-mono text-blue-600 whitespace-nowrap">
                         {formatSeconds(stat.currentMachiningSeconds)}
                       </td>
-                      <td className="px-2 py-2.5 text-center text-slate-400 text-[10px]">
+                      <td className="px-2 py-2.5 text-center text-slate-400 text-[10px] whitespace-nowrap">
                         {stat.lastJobAt
                           ? String(stat.lastJobAt).slice(0, 10)
                           : "-"}

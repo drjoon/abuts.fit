@@ -1593,7 +1593,10 @@
 **가공 통계 누적 정책:**
 
 - 가공 1건 완료 시(`recordMachiningCompleteForBridge`) `MachiningRecord.durationSeconds`를 사용해 자동으로 `toolNum=0`(장비 단위) 통계에 누적합니다. 통계 누적 실패는 메인 워크플로우에 영향을 주지 않도록 `try/catch`로 보호합니다.
-- 슬롯 단위(`toolNum > 0`) 통계는 추후 NC 프로그램 사용 공구를 식별할 수 있을 때 별도 `RecordMachiningJobStats` 호출로 누적합니다.
+- 동시에 슬롯 단위(`toolNum > 0`) 통계는 **완료 시점에 `replacementStatus=mounted`인 각 공구 슬롯에 동일 duration을 합산**합니다.
+  - 공구별 시간 분해 데이터가 없으므로, 의뢰 1건의 전체 소요시간을 장착 공구별로 동일 반영합니다.
+  - 이 정책으로 인해 공구별 합계는 전체(`toolNum=0`)보다 클 수 있습니다.
+- `RecordMachiningJobStats`는 슬롯 식별 정보가 별도로 제공되는 경로(브리지/외부 연동)에서 계속 사용 가능하며, 위 자동 누적 정책과 충돌하지 않게 동일 키 기준으로 누적합니다.
 - 일별 버킷(`dailyBuckets`)은 KST 기준 `YYYY-MM-DD`로 키잉하며 최근 60일치만 유지합니다(오래된 버킷은 자동 삭제).
 - 공구 교체 시 `currentJobCount/currentMachiningSeconds`는 리셋되지만 `totalJobCount/totalMachiningSeconds`는 절대 누계로 유지합니다.
 
@@ -1608,6 +1611,13 @@
 
 - `useCncToolSlots` — 슬롯/통계 데이터 로드 + 교체 워크플로우 API 호출.
 - `useCncToolPanels` — UI 모달(공구 상태, 3단계 교체, 가공 통계)을 빌드. `useCncToolSlots`가 제공하는 데이터/콜백을 props로 주입받아 슬롯 강화 UI(`openToolDetailWithSlots`)와 통계 모달(`openMachiningStatsModal`)을 렌더링합니다.
+  - 가공 통계 모달에는 `toolNum=0(전체)`와 공구별 합산 기준의 관계(공구별 합계가 전체보다 커질 수 있음)를 명시적으로 안내합니다.
+
+관련 파일:
+- `web/backend/controllers/cnc/machiningBridge.js`
+- `web/backend/controllers/cnc/tooling.js`
+- `web/frontend/src/pages/manufacturer/equipment/cnc/hooks/useCncToolPanels.tsx`
+- `web/frontend/src/pages/manufacturer/equipment/cnc/components/CncToolStatusModal.tsx`
 
 **사용 페이지:**
 
