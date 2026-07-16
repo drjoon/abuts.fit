@@ -540,6 +540,9 @@ export async function triggerManufacturerDailySettlementSnapshotRecalc(
         .json({ success: false, message: "날짜 계산 실패" });
     }
 
+    const manufacturerMemberObjectIds =
+      await resolveManufacturerMemberObjectIds(user);
+
     const utcRange = kstYmdToUtcRange(snapshotYmd);
     if (!utcRange) {
       return res
@@ -594,6 +597,179 @@ export async function triggerManufacturerDailySettlementSnapshotRecalc(
         sums.adjustAmount += amount;
       }
     }
+
+    // 배송비 정산 건수/금액은 집하일(pickedUpAt) 기준 SSOT로 재계산해 덮어쓴다.
+    // (ManufacturerCreditLedger.occurredAt 시점 집계와 일자 기준이 어긋나는 문제 방지)
+    const shippingRequestMatch = {
+      manufacturerStage: { $ne: "취소" },
+      shippingPackageId: { $exists: true, $ne: null },
+      $or: [
+        { caManufacturer: { $in: manufacturerMemberObjectIds } },
+        { caManufacturer: null },
+        { caManufacturer: { $exists: false } },
+      ],
+    };
+
+    const shippingPackageRows = await Request.aggregate([
+      { $match: shippingRequestMatch },
+      {
+        $lookup: {
+          from: DeliveryInfo.collection.name,
+          localField: "deliveryInfoRef",
+          foreignField: "_id",
+          as: "deliveryDoc",
+        },
+      },
+      {
+        $unwind: {
+          path: "$deliveryDoc",
+          preserveNullAndEmptyArrays: true,
+        },
+      },
+      {
+        $lookup: {
+          from: ShippingPackage.collection.name,
+          localField: "shippingPackageId",
+          foreignField: "_id",
+          as: "packageDoc",
+        },
+      },
+      {
+        $unwind: {
+          path: "$packageDoc",
+          preserveNullAndEmptyArrays: true,
+        },
+      },
+      {
+        $addFields: {
+          settlementYmd: {
+            $switch: {
+              branches: [
+                {
+                  case: {
+                    $ne: [{ $ifNull: ["$deliveryDoc.pickedUpAt", null] }, null],
+                  },
+                  then: {
+                    $dateToString: {
+                      format: "%Y-%m-%d",
+                      date: "$deliveryDoc.pickedUpAt",
+                      timezone: "Asia/Seoul",
+                    },
+                  },
+                },
+                {
+                  case: {
+                    $ne: [{ $ifNull: ["$deliveryDoc.deliveredAt", null] }, null],
+                  },
+                  then: {
+                    $dateToString: {
+                      format: "%Y-%m-%d",
+                      date: "$deliveryDoc.deliveredAt",
+                      timezone: "Asia/Seoul",
+                    },
+                  },
+                },
+                {
+                  case: {
+                    $ne: [{ $ifNull: ["$deliveryDoc.shippedAt", null] }, null],
+                  },
+                  then: {
+                    $dateToString: {
+                      format: "%Y-%m-%d",
+                      date: "$deliveryDoc.shippedAt",
+                      timezone: "Asia/Seoul",
+                    },
+                  },
+                },
+                {
+                  case: {
+                    $regexMatch: {
+                      input: { $ifNull: ["$packageDoc.shipDateYmd", ""] },
+                      regex: "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+                    },
+                  },
+                  then: "$packageDoc.shipDateYmd",
+                },
+              ],
+              default: {
+                $dateToString: {
+                  format: "%Y-%m-%d",
+                  date: "$createdAt",
+                  timezone: "Asia/Seoul",
+                },
+              },
+            },
+          },
+        },
+      },
+      { $match: { settlementYmd: snapshotYmd } },
+      {
+        $group: {
+          _id: "$shippingPackageId",
+        },
+      },
+      {
+        $lookup: {
+          from: CreditLedger.collection.name,
+          let: { shippingPackageId: "$_id" },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ["$refId", "$$shippingPackageId"] },
+                    { $eq: ["$type", "SPEND"] },
+                    { $in: ["$refType", ["SHIPPING_PACKAGE", "SHIPPING_FEE"]] },
+                  ],
+                },
+              },
+            },
+            { $sort: { createdAt: -1, _id: -1 } },
+            { $limit: 1 },
+            {
+              $project: {
+                _id: 0,
+                amount: 1,
+                spentPaidAmount: 1,
+              },
+            },
+          ],
+          as: "shippingSpend",
+        },
+      },
+      {
+        $unwind: {
+          path: "$shippingSpend",
+          preserveNullAndEmptyArrays: true,
+        },
+      },
+      {
+        $group: {
+          _id: null,
+          earnShippingCount: { $sum: 1 },
+          earnShippingAmount: {
+            $sum: {
+              $cond: [
+                { $gt: ["$shippingSpend.spentPaidAmount", 0] },
+                { $abs: { $ifNull: ["$shippingSpend.amount", 0] } },
+                0,
+              ],
+            },
+          },
+        },
+      },
+      {
+        $project: {
+          _id: 0,
+          earnShippingCount: 1,
+          earnShippingAmount: 1,
+        },
+      },
+    ]);
+
+    const shippingSummary = shippingPackageRows?.[0] || {};
+    sums.earnShippingCount = Number(shippingSummary.earnShippingCount || 0);
+    sums.earnShippingAmount = Number(shippingSummary.earnShippingAmount || 0);
 
     const netAmount =
       Math.round(Number(sums.earnRequestAmount || 0)) +
@@ -1193,18 +1369,8 @@ export async function getManufacturerCreditDailySummary(req, res) {
             $switch: {
               branches: [
                 {
-                  case: {
-                    $ne: [{ $ifNull: ["$deliveryDoc.deliveredAt", null] }, null],
-                  },
-                  then: {
-                    $dateToString: {
-                      format: "%Y-%m-%d",
-                      date: "$deliveryDoc.deliveredAt",
-                      timezone: "Asia/Seoul",
-                    },
-                  },
-                },
-                {
+                  // 배송비 정산일 SSOT: 집하일(pickedUpAt) 기준
+                  // deliveredAt가 나중에 들어와도 집하일로 집계되어야 중복/이월 집계가 발생하지 않는다.
                   case: {
                     $ne: [{ $ifNull: ["$deliveryDoc.pickedUpAt", null] }, null],
                   },
@@ -1212,6 +1378,19 @@ export async function getManufacturerCreditDailySummary(req, res) {
                     $dateToString: {
                       format: "%Y-%m-%d",
                       date: "$deliveryDoc.pickedUpAt",
+                      timezone: "Asia/Seoul",
+                    },
+                  },
+                },
+                {
+                  // 레거시/예외 데이터 fallback: pickedUpAt 누락 시 deliveredAt 사용
+                  case: {
+                    $ne: [{ $ifNull: ["$deliveryDoc.deliveredAt", null] }, null],
+                  },
+                  then: {
+                    $dateToString: {
+                      format: "%Y-%m-%d",
+                      date: "$deliveryDoc.deliveredAt",
                       timezone: "Asia/Seoul",
                     },
                   },

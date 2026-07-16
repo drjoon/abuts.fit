@@ -18,6 +18,9 @@ import ShippingPackage from "../models/shippingPackage.model.js";
 import PricingReferralDailyOrderBucket from "../models/pricingReferralDailyOrderBucket.model.js";
 import ManufacturerCreditLedger from "../models/manufacturerCreditLedger.model.js";
 import ManufacturerDailySettlementSnapshot from "../models/manufacturerDailySettlementSnapshot.model.js";
+import Request from "../models/request.model.js";
+import DeliveryInfo from "../models/deliveryInfo.model.js";
+import CreditLedger from "../models/creditLedger.model.js";
 import { recomputeBulkShippingSnapshotForBusinessAnchorId } from "../services/bulkShippingSnapshot.service.js";
 import { recomputeRequestorDashboardSummarySnapshotsForBusinessAnchorId } from "../services/requestorDashboardSummarySnapshot.service.js";
 import { recomputePricingReferralSnapshotForLeaderAnchorId } from "../services/pricingReferralSnapshot.service.js";
@@ -238,9 +241,6 @@ async function runDailySnapshot(ymd) {
         if (type === "EARN" && refType === "REQUEST") {
           cur.earnRequestAmount += amount;
           cur.earnRequestCount += count;
-        } else if (type === "EARN" && refType === "SHIPPING_PACKAGE") {
-          cur.earnShippingAmount += amount;
-          cur.earnShippingCount += count;
         } else if (type === "REFUND") {
           cur.refundAmount += amount;
         } else if (type === "PAYOUT") {
@@ -248,6 +248,225 @@ async function runDailySnapshot(ymd) {
         } else if (type === "ADJUST") {
           cur.adjustAmount += amount;
         }
+        byOrg.set(org, cur);
+      }
+
+      // 배송비는 집하일(pickedUpAt) 기준으로 재집계한다.
+      // (배송완료일 우선/ledger occurredAt 기준 집계와의 불일치 방지)
+      const shippingAgg = await Request.aggregate([
+        {
+          $match: {
+            manufacturerStage: { $ne: "취소" },
+            shippingPackageId: { $exists: true, $ne: null },
+            caManufacturer: { $exists: true, $ne: null },
+          },
+        },
+        {
+          $lookup: {
+            from: DeliveryInfo.collection.name,
+            localField: "deliveryInfoRef",
+            foreignField: "_id",
+            as: "deliveryDoc",
+          },
+        },
+        {
+          $unwind: {
+            path: "$deliveryDoc",
+            preserveNullAndEmptyArrays: true,
+          },
+        },
+        {
+          $lookup: {
+            from: ShippingPackage.collection.name,
+            localField: "shippingPackageId",
+            foreignField: "_id",
+            as: "packageDoc",
+          },
+        },
+        {
+          $unwind: {
+            path: "$packageDoc",
+            preserveNullAndEmptyArrays: true,
+          },
+        },
+        {
+          $addFields: {
+            settlementYmd: {
+              $switch: {
+                branches: [
+                  {
+                    case: {
+                      $ne: [{ $ifNull: ["$deliveryDoc.pickedUpAt", null] }, null],
+                    },
+                    then: {
+                      $dateToString: {
+                        format: "%Y-%m-%d",
+                        date: "$deliveryDoc.pickedUpAt",
+                        timezone: "Asia/Seoul",
+                      },
+                    },
+                  },
+                  {
+                    case: {
+                      $ne: [{ $ifNull: ["$deliveryDoc.deliveredAt", null] }, null],
+                    },
+                    then: {
+                      $dateToString: {
+                        format: "%Y-%m-%d",
+                        date: "$deliveryDoc.deliveredAt",
+                        timezone: "Asia/Seoul",
+                      },
+                    },
+                  },
+                  {
+                    case: {
+                      $ne: [{ $ifNull: ["$deliveryDoc.shippedAt", null] }, null],
+                    },
+                    then: {
+                      $dateToString: {
+                        format: "%Y-%m-%d",
+                        date: "$deliveryDoc.shippedAt",
+                        timezone: "Asia/Seoul",
+                      },
+                    },
+                  },
+                  {
+                    case: {
+                      $regexMatch: {
+                        input: { $ifNull: ["$packageDoc.shipDateYmd", ""] },
+                        regex: "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+                      },
+                    },
+                    then: "$packageDoc.shipDateYmd",
+                  },
+                ],
+                default: {
+                  $dateToString: {
+                    format: "%Y-%m-%d",
+                    date: "$createdAt",
+                    timezone: "Asia/Seoul",
+                  },
+                },
+              },
+            },
+          },
+        },
+        { $match: { settlementYmd: yesterdayYmd } },
+        {
+          $group: {
+            _id: {
+              shippingPackageId: "$shippingPackageId",
+              caManufacturer: "$caManufacturer",
+            },
+          },
+        },
+        {
+          $lookup: {
+            from: User.collection.name,
+            localField: "_id.caManufacturer",
+            foreignField: "_id",
+            as: "manufacturerUser",
+          },
+        },
+        {
+          $unwind: {
+            path: "$manufacturerUser",
+            preserveNullAndEmptyArrays: true,
+          },
+        },
+        {
+          $addFields: {
+            manufacturerOrganization: {
+              $trim: {
+                input: {
+                  $ifNull: [
+                    "$manufacturerUser.business",
+                    { $ifNull: ["$manufacturerUser.name", ""] },
+                  ],
+                },
+              },
+            },
+          },
+        },
+        {
+          $match: {
+            manufacturerOrganization: { $ne: "" },
+          },
+        },
+        {
+          $lookup: {
+            from: CreditLedger.collection.name,
+            let: { shippingPackageId: "$_id.shippingPackageId" },
+            pipeline: [
+              {
+                $match: {
+                  $expr: {
+                    $and: [
+                      { $eq: ["$refId", "$$shippingPackageId"] },
+                      { $eq: ["$type", "SPEND"] },
+                      { $in: ["$refType", ["SHIPPING_PACKAGE", "SHIPPING_FEE"]] },
+                    ],
+                  },
+                },
+              },
+              { $sort: { createdAt: -1, _id: -1 } },
+              { $limit: 1 },
+              {
+                $project: {
+                  _id: 0,
+                  amount: 1,
+                  spentPaidAmount: 1,
+                },
+              },
+            ],
+            as: "shippingSpend",
+          },
+        },
+        {
+          $unwind: {
+            path: "$shippingSpend",
+            preserveNullAndEmptyArrays: true,
+          },
+        },
+        {
+          $group: {
+            _id: "$manufacturerOrganization",
+            earnShippingCount: { $sum: 1 },
+            earnShippingAmount: {
+              $sum: {
+                $cond: [
+                  { $gt: ["$shippingSpend.spentPaidAmount", 0] },
+                  { $abs: { $ifNull: ["$shippingSpend.amount", 0] } },
+                  0,
+                ],
+              },
+            },
+          },
+        },
+        {
+          $project: {
+            _id: 0,
+            manufacturerOrganization: "$_id",
+            earnShippingCount: 1,
+            earnShippingAmount: 1,
+          },
+        },
+      ]);
+
+      for (const row of shippingAgg || []) {
+        const org = String(row?.manufacturerOrganization || "").trim();
+        if (!org) continue;
+        const cur = byOrg.get(org) || {
+          earnRequestAmount: 0,
+          earnRequestCount: 0,
+          earnShippingAmount: 0,
+          earnShippingCount: 0,
+          refundAmount: 0,
+          payoutAmount: 0,
+          adjustAmount: 0,
+        };
+        cur.earnShippingCount = Number(row?.earnShippingCount || 0);
+        cur.earnShippingAmount = Number(row?.earnShippingAmount || 0);
         byOrg.set(org, cur);
       }
 
