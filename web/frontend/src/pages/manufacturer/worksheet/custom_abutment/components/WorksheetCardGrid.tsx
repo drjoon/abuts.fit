@@ -485,9 +485,12 @@ export const WorksheetCardGrid = ({
           request.createdAt,
           request.timeline?.estimatedShipYmd,
         );
+        const hasRealtimeProgress = Boolean(
+          realtimeBadge || realtimeElapsedLabel,
+        );
         const hasTopFloatingControls =
           Boolean(isSampleRequest) ||
-          Boolean(realtimeBadge || realtimeElapsedLabel) ||
+          hasRealtimeProgress ||
           Boolean(
             onSaveToRnd &&
               (tabStage === "packing" ||
@@ -600,8 +603,8 @@ export const WorksheetCardGrid = ({
               )}
             </div>
             {/* 실시간 상태 뱃지 (CAM 생성중 등) - 상단 배치 */}
-            {(realtimeBadge || realtimeElapsedLabel) && (
-              <div className="absolute left-28 top-3 z-30 flex items-center gap-2">
+            {hasRealtimeProgress && (
+              <div className="absolute left-2 right-2 top-10 z-20 flex flex-wrap items-center gap-2">
                 {realtimeBadge && (
                   <Badge
                     variant="outline"
@@ -611,7 +614,7 @@ export const WorksheetCardGrid = ({
                   </Badge>
                 )}
                 {realtimeElapsedLabel && (
-                  <span className="text-[12px] tabular-nums font-bold text-blue-600">
+                  <span className="text-[12px] tabular-nums font-bold text-blue-600 whitespace-nowrap">
                     {realtimeElapsedLabel}
                   </span>
                 )}
@@ -796,7 +799,11 @@ export const WorksheetCardGrid = ({
             )}
             <CardContent
               className={`relative z-10 px-3 flex-1 flex flex-col gap-2 ${
-                hasTopFloatingControls ? "pt-10" : "pt-6"
+                hasRealtimeProgress
+                  ? "pt-14"
+                  : hasTopFloatingControls
+                    ? "pt-10"
+                    : "pt-6"
               } ${hasBottomFloatingBadges ? "pb-8" : "pb-4"} ${
                 isNewSystemRequest ? "bg-emerald-50/40" : ""
               }`}
