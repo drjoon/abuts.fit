@@ -24,9 +24,10 @@ import {
   Truck,
   XCircle,
   Trash2,
+  RotateCcw,
 } from "lucide-react";
 import { getNormalizedStageLabel } from "@/utils/stage";
-import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
+
 
 const getStatusBadge = (requestLike: any) => {
   const norm = getNormalizedStageLabel(requestLike);
@@ -126,24 +127,15 @@ export const AdminRequestMonitoring = () => {
   const [selectedStatus, setSelectedStatus] = useState("all");
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set());
-  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
-  const [deleteTarget, setDeleteTarget] = useState<{
-    requestId: string;
-    requestMongoId: string;
-  } | null>(null);
+  const [restoringIds, setRestoringIds] = useState<Set<string>>(new Set());
   const listScrollRef = useRef<HTMLDivElement | null>(null);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
 
-  const handleDeleteRequest = (requestId: string, requestMongoId: string) => {
-    setDeleteTarget({ requestId, requestMongoId });
-    setDeleteConfirmOpen(true);
-  };
-
-  const handleConfirmDeleteRequest = async () => {
+  const handleDeleteRequest = async (
+    requestId: string,
+    requestMongoId: string,
+  ) => {
     if (!token) return;
-    if (!deleteTarget) return;
-
-    const { requestMongoId } = deleteTarget;
 
     setDeletingIds((prev) => new Set(prev).add(requestMongoId));
 
@@ -163,7 +155,7 @@ export const AdminRequestMonitoring = () => {
         );
         toast({
           title: "의뢰 삭제 완료",
-          description: `의뢰 ${deleteTarget.requestId}이(가) 취소 처리되었습니다.`,
+          description: `의뢰 ${requestId}이(가) 취소 처리되었습니다.`,
         });
       } else {
         toast({
@@ -185,8 +177,55 @@ export const AdminRequestMonitoring = () => {
         next.delete(requestMongoId);
         return next;
       });
-      setDeleteConfirmOpen(false);
-      setDeleteTarget(null);
+    }
+  };
+
+  const handleRestoreRequest = async (requestId: string, requestMongoId: string) => {
+    if (!token) return;
+
+    setRestoringIds((prev) => new Set(prev).add(requestMongoId));
+
+    try {
+      const res = await apiFetch<any>({
+        path: `/api/requests/${requestMongoId}/status`,
+        method: "PATCH",
+        token,
+        headers: {
+          "Content-Type": "application/json",
+        },
+        jsonBody: { manufacturerStage: "의뢰" },
+      });
+
+      if (res.ok) {
+        setRequests((prev) =>
+          prev.map((r) =>
+            r._id === requestMongoId ? { ...r, manufacturerStage: "의뢰" } : r,
+          ),
+        );
+        toast({
+          title: "의뢰 복구 완료",
+          description: `의뢰 ${requestId}이(가) 의뢰 상태로 복구되었습니다.`,
+        });
+      } else {
+        toast({
+          title: "의뢰 복구 실패",
+          description: res.data?.message || "알 수 없는 오류",
+          variant: "destructive",
+        });
+      }
+    } catch (error: any) {
+      console.error("Failed to restore request:", error);
+      toast({
+        title: "의뢰 복구 실패",
+        description: `복구 중 오류가 발생했습니다: ${error.message}`,
+        variant: "destructive",
+      });
+    } finally {
+      setRestoringIds((prev) => {
+        const next = new Set(prev);
+        next.delete(requestMongoId);
+        return next;
+      });
     }
   };
 
@@ -544,6 +583,8 @@ export const AdminRequestMonitoring = () => {
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                 {filteredRequests.slice(0, visibleCount).map((request) => {
                   const isDeleting = deletingIds.has(request._id);
+                  const isRestoring = restoringIds.has(request._id);
+                  const isActionPending = isDeleting || isRestoring;
                   const isFocused =
                     (focusRequestMongoId &&
                       String(request._id || "").trim() ===
@@ -556,16 +597,26 @@ export const AdminRequestMonitoring = () => {
                     <div
                       key={request._id || request.id}
                       className={`p-4 border border-border rounded-lg hover:bg-muted/50 transition-colors relative ${
-                        isDeleting ? "opacity-50 pointer-events-none" : ""
+                        isActionPending ? "opacity-50 pointer-events-none" : ""
                       } ${isFocused ? "ring-2 ring-primary border-primary" : ""}`}
                     >
-                      {/* 삭제 버튼 - 취소 상태가 아닐 때만 표시 */}
-                      {getNormalizedStageLabel(request) !== "취소" && (
+                      {getNormalizedStageLabel(request) === "취소" ? (
+                        <button
+                          onClick={() =>
+                            handleRestoreRequest(request.requestId, request._id)
+                          }
+                          disabled={isActionPending}
+                          className="absolute top-2 right-2 p-1.5 rounded-md hover:bg-primary/10 text-muted-foreground hover:text-primary transition-colors"
+                          title="의뢰 상태로 복구"
+                        >
+                          <RotateCcw className="h-4 w-4" />
+                        </button>
+                      ) : (
                         <button
                           onClick={() =>
                             handleDeleteRequest(request.requestId, request._id)
                           }
-                          disabled={isDeleting}
+                          disabled={isActionPending}
                           className="absolute top-2 right-2 p-1.5 rounded-md hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors"
                           title="의뢰 삭제"
                         >
@@ -635,29 +686,7 @@ export const AdminRequestMonitoring = () => {
         </Card>
       </div>
 
-      <ConfirmDialog
-        open={deleteConfirmOpen}
-        title="의뢰 삭제"
-        description={
-          deleteTarget ? (
-            <span>
-              의뢰 <strong>{deleteTarget.requestId}</strong>을(를)
-              삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.
-            </span>
-          ) : null
-        }
-        confirmLabel="삭제"
-        cancelLabel="취소"
-        onConfirm={handleConfirmDeleteRequest}
-        onCancel={() => {
-          if (deleteTarget?.requestMongoId) {
-            const isDeleting = deletingIds.has(deleteTarget.requestMongoId);
-            if (isDeleting) return;
-          }
-          setDeleteConfirmOpen(false);
-          setDeleteTarget(null);
-        }}
-      />
+
     </div>
   );
 };
