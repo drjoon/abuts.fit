@@ -164,6 +164,33 @@ function snapshotToMotorTemperatureResponse(uiSnapshot) {
   };
 }
 
+function normalizeBridgeMotorTemperatureRows(rawBody) {
+  const data = rawBody?.data ?? rawBody ?? {};
+  const m = data?.machineMotorTemperature ?? {};
+
+  const rows = [];
+  const pushRows = (list) => {
+    const normalized = normalizeTemperatureRows(list);
+    for (const row of normalized) rows.push(row);
+  };
+
+  pushRows(m?.tempInfo);
+  pushRows(m?.mainMotorArray);
+  pushRows(m?.subMotorArray);
+  pushRows(m?.spindleMotorArray);
+
+  if (rows.length === 0) return [];
+
+  const dedup = new Map();
+  for (const row of rows) {
+    const key = String(row?.name || "").trim();
+    if (!key) continue;
+    if (!dedup.has(key)) dedup.set(key, row);
+  }
+
+  return Array.from(dedup.values());
+}
+
 function snapshotToToolLifeResponse(uiSnapshot, tooling) {
   const rows = normalizeToolLifeRows(uiSnapshot?.toolLifeRows);
   const toolingSummary = buildToolingSummary({ toolLifeRows: rows, tooling });
@@ -838,9 +865,79 @@ export async function callRawProxy(req, res) {
     const dataType = req.body?.dataType;
     const normalizedDataType = String(dataType || "").trim();
 
+    const fetchWithTimeout = async (url, options, timeoutMs = 15000) => {
+      const controller = new AbortController();
+      const id = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        return await fetch(url, {
+          ...(options || {}),
+          signal: controller.signal,
+        });
+      } finally {
+        clearTimeout(id);
+      }
+    };
+
     if (UI_SNAPSHOT_READ_TYPES.has(normalizedDataType)) {
       const { uiSnapshot, tooling } = await getCncToolingState(uid);
       if (normalizedDataType === "GetMotorTemperature") {
+        const snapshotRows = normalizeTemperatureRows(
+          uiSnapshot?.motorTemperatureRows,
+        );
+        if (snapshotRows.length > 0) {
+          return res
+            .status(200)
+            .json(snapshotToMotorTemperatureResponse(uiSnapshot));
+        }
+
+        // 스냅샷이 비어 있으면 브리지(Mode2)에서 1회 조회 후 스냅샷을 보강한다.
+        // 실패해도 모달 오픈은 막지 않도록 빈 스냅샷 응답으로 폴백한다.
+        if (BRIDGE_BASE) {
+          try {
+            const payload = {
+              ...(req.body || {}),
+              uid: req.body?.uid ?? uid,
+              dataType: "GetMotorTemperature",
+              bypassCooldown: true,
+            };
+
+            const response = await fetchWithTimeout(
+              `${BRIDGE_BASE}/api/cnc/raw`,
+              {
+                method: "POST",
+                headers: withBridgeHeaders({ "Content-Type": "application/json" }),
+                body: JSON.stringify(payload),
+              },
+              6000,
+            );
+            const bridgeData = await response.json().catch(() => ({}));
+
+            if (response.ok && bridgeData?.success !== false) {
+              const bridgeRows = normalizeBridgeMotorTemperatureRows(bridgeData);
+              if (bridgeRows.length > 0) {
+                const mergedRows = mergeRowsByKey(
+                  uiSnapshot?.motorTemperatureRows,
+                  bridgeRows,
+                  (row) => row?.name,
+                );
+                await persistCncUiSnapshot(uid, {
+                  motorTemperatureRows: mergedRows,
+                });
+                return res.status(200).json({
+                  success: true,
+                  data: {
+                    machineMotorTemperature: {
+                      tempInfo: mergedRows,
+                    },
+                  },
+                });
+              }
+            }
+          } catch (e) {
+            console.warn("[machine.callRawProxy] GetMotorTemperature bridge fallback failed", e);
+          }
+        }
+
         return res
           .status(200)
           .json(snapshotToMotorTemperatureResponse(uiSnapshot));
@@ -1319,19 +1416,6 @@ export async function callRawProxy(req, res) {
       }
       lastRawReadCall.set(key, now);
     }
-
-    const fetchWithTimeout = async (url, options, timeoutMs = 15000) => {
-      const controller = new AbortController();
-      const id = setTimeout(() => controller.abort(), timeoutMs);
-      try {
-        return await fetch(url, {
-          ...(options || {}),
-          signal: controller.signal,
-        });
-      } finally {
-        clearTimeout(id);
-      }
-    };
 
     const payload = {
       ...(req.body || {}),

@@ -117,6 +117,7 @@
     <Compile Include="Mode1WorkerQueue.cs" />
     <Compile Include="Mode1Api.cs" />
     <Compile Include="Mode1HandleStore.cs" />
+    <Compile Include="HiLinkMode2Client.cs" />
     <Compile Include="Controllers\MachinesController.cs" />
     <Compile Include="BridgeAuthHandler.cs" />
     <Compile Include="Models\MachineConfigItem.cs" />

@@ -1,9 +1,11 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Net;
 using System.Net.Http;
 using System.Web.Http;
 using Hi_Link.Libraries.Model;
+using Hi_Link_Advanced.LinkBridge;
 using HiLinkBridgeWebApi48.Models;
 using PayloadUpdateActivateProg = Hi_Link.Libraries.Model.UpdateMachineActivateProgNo;
 
@@ -12,6 +14,97 @@ namespace HiLinkBridgeWebApi48.Controllers
     [RoutePrefix("api/cnc")]
     public class RawController : ApiController
     {
+        private static readonly HiLinkMode2Client Mode2Client = new HiLinkMode2Client();
+
+        private static object ReadProp(object obj, string propName)
+        {
+            if (obj == null || string.IsNullOrWhiteSpace(propName)) return null;
+            var p = obj.GetType().GetProperty(propName);
+            return p == null ? null : p.GetValue(obj, null);
+        }
+
+        private static bool TryEnsureMode2Machine(string uid, out string err)
+        {
+            err = null;
+            var id = (uid ?? string.Empty).Trim();
+            if (string.IsNullOrWhiteSpace(id))
+            {
+                err = "uid is required";
+                return false;
+            }
+
+            MachineConfigItem cfg = null;
+            var list = MachinesConfigStore.Load();
+            if (list != null)
+            {
+                foreach (var item in list)
+                {
+                    if (item == null) continue;
+                    if (string.Equals((item.uid ?? string.Empty).Trim(), id, StringComparison.OrdinalIgnoreCase))
+                    {
+                        cfg = item;
+                        break;
+                    }
+                }
+            }
+
+            if (cfg == null || string.IsNullOrWhiteSpace(cfg.ip) || cfg.port <= 0)
+            {
+                err = "machine config not found for Mode2";
+                return false;
+            }
+
+            try
+            {
+                var add = Mode2Client.AddMachineAsync(id, cfg.ip, cfg.port).GetAwaiter().GetResult();
+                if (add.success) return true;
+
+                // 이미 등록된 장비 등 Add 실패 케이스는 Update로 재동기화 시도
+                var upd = Mode2Client.UpdateMachineAsync(id, cfg.ip, cfg.port).GetAwaiter().GetResult();
+                if (upd.success) return true;
+
+                err = string.Format("Mode2 add/update failed (add={0}, update={1})", add.resultCode.HasValue ? add.resultCode.Value.ToString() : "null", upd.resultCode.HasValue ? upd.resultCode.Value.ToString() : "null");
+                return false;
+            }
+            catch (Exception ex)
+            {
+                err = ex.Message;
+                return false;
+            }
+        }
+
+        private static List<object> BuildTempInfoRows(object machineMotorTemperature)
+        {
+            var rows = new List<object>();
+            if (machineMotorTemperature == null) return rows;
+
+            var names = new[] { "tempInfo", "mainMotorArray", "subMotorArray", "spindleMotorArray" };
+            foreach (var n in names)
+            {
+                var listObj = ReadProp(machineMotorTemperature, n);
+                var enumerable = listObj as IEnumerable;
+                if (enumerable == null) continue;
+
+                foreach (var item in enumerable)
+                {
+                    if (item == null) continue;
+                    var name = Convert.ToString(ReadProp(item, "name") ?? string.Empty).Trim();
+                    if (string.IsNullOrWhiteSpace(name)) continue;
+
+                    var temperatureObj = ReadProp(item, "temperature");
+                    double parsed;
+                    var hasTemp = double.TryParse(Convert.ToString(temperatureObj), out parsed);
+                    rows.Add(new
+                    {
+                        name,
+                        temperature = hasTemp ? (double?)parsed : null,
+                    });
+                }
+            }
+
+            return rows;
+        }
+
         // POST /api/cnc/raw
         [HttpPost]
         [Route("raw")]
@@ -39,6 +132,7 @@ namespace HiLinkBridgeWebApi48.Controllers
             var isGetMachineList = string.Equals(dataType, "GetMachineList", StringComparison.OrdinalIgnoreCase);
             var isGetMachineStatus = string.Equals(dataType, "GetMachineStatus", StringComparison.OrdinalIgnoreCase);
             var isGetOpStatus = string.Equals(dataType, "GetOPStatus", StringComparison.OrdinalIgnoreCase);
+            var isGetMotorTemperature = string.Equals(dataType, "GetMotorTemperature", StringComparison.OrdinalIgnoreCase);
 
             // Alarm은 Mode1 API로 처리 (안정성)
             if (isAlarm)
@@ -91,6 +185,71 @@ namespace HiLinkBridgeWebApi48.Controllers
                     success = true,
                     data = new { headType = data.headType, alarms }
                 });
+            }
+
+            // Motor temperature (Mode2)
+            if (isGetMotorTemperature)
+            {
+                try
+                {
+                    if (!TryEnsureMode2Machine(raw.uid, out var mode2Err))
+                    {
+                        return Request.CreateResponse((HttpStatusCode)500, new
+                        {
+                            success = false,
+                            message = "GetMotorTemperature failed: " + mode2Err,
+                        });
+                    }
+
+                    var obj = Mode2Client
+                        .RequestRawAsync(raw.uid, CollectDataType.GetMotorTemperature, null, 4000)
+                        .GetAwaiter()
+                        .GetResult();
+
+                    if (obj == null)
+                    {
+                        return Request.CreateResponse((HttpStatusCode)500, new
+                        {
+                            success = false,
+                            message = "GetMotorTemperature failed: no response"
+                        });
+                    }
+
+                    var resultObj = ReadProp(obj, "result");
+                    int resultCode;
+                    if (resultObj != null && int.TryParse(Convert.ToString(resultObj), out resultCode) && resultCode != 0)
+                    {
+                        return Request.CreateResponse((HttpStatusCode)500, new
+                        {
+                            success = false,
+                            message = "GetMotorTemperature failed",
+                            result = resultCode,
+                        });
+                    }
+
+                    var machineMotorTemperature = ReadProp(obj, "machineMotorTemperature");
+                    var tempInfo = BuildTempInfoRows(machineMotorTemperature);
+
+                    return Request.CreateResponse(HttpStatusCode.OK, new
+                    {
+                        success = true,
+                        data = new
+                        {
+                            machineMotorTemperature = new
+                            {
+                                tempInfo = tempInfo,
+                            }
+                        }
+                    });
+                }
+                catch (Exception ex)
+                {
+                    return Request.CreateResponse((HttpStatusCode)500, new
+                    {
+                        success = false,
+                        message = "GetMotorTemperature exception: " + ex.Message,
+                    });
+                }
             }
 
             // Machine list (Mode1, SSOT=machines.json)
@@ -246,8 +405,7 @@ namespace HiLinkBridgeWebApi48.Controllers
             return Request.CreateResponse(HttpStatusCode.BadRequest, new
             {
                 success = false,
-                message = $"Unsupported Mode1 dataType: {dataType}" +
-                          " (Mode2 types like GetMotorTemperature/GetToolLifeInfo are disabled)"
+                message = $"Unsupported Mode1 dataType: {dataType}"
             });
         }
     }
