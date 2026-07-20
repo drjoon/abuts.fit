@@ -357,6 +357,9 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
             [DataMember] public string lotNumber { get; set; }
             [DataMember] public string faceHolePrcFileName { get; set; }
             [DataMember] public string connectionPrcFileName { get; set; }
+            // 제조사 수동 헥스 회전값(0/30)
+            // - add-in에서는 "최종각"이 아니라 "기본 회전에 더하는 추가 회전 델타"로 해석한다.
+            [DataMember(Name = "manufacturerHexRotation")] public string manufacturerHexRotation { get; set; }
             // 유지홈 옵션 ("none"|"deep", legacy "shallow" 허용) —
             // 5axisComposite_A.prc StepIncrement 오버라이드에 사용.
             [DataMember] public string retentionGroove { get; set; }

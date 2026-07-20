@@ -842,6 +842,31 @@
   - 사전 체크는 의뢰 생성 가능 여부만 판단하는 용도
   - 의뢰 생성 후 ~ 차감 전 사이에 크레딧이 부족해질 수 있으므로, 차감 시점에도 잔액 체크 필요
 
+### 4.3.4 제조사 헥스 회전(PreviewModal) → DB 저장 → Esprit 추가 회전 정책 (2026-07-20)
+
+검색 키워드: `rnd-hex-rotation`, `manufacturerHexRotation`, `request-meta`, `StlFileProcessor 추가 회전`
+
+- 제조사 워크시트 PreviewModal의 `헥스 회전` 선택값은 반드시 백엔드 API를 통해 DB에 저장한다.
+  - API: `PATCH /api/requests/:id/rnd-hex-rotation`
+  - 저장 필드(SSOT):
+    - `Request.rnd.manufacturerHexRotation` (`"0" | "30"`)
+    - `Request.caseInfos.finalHexRotation` (표시/조회용 최종값)
+- BG/esprit-addin 연동에서 사용하는 `manufacturerHexRotation` 의미는 **최종 각도값이 아니라 "추가 회전 델타"**다.
+  - `"30"`이면 **기존 W축 기본 회전에 추가로 +30도** 회전
+  - `"0"`이면 **추가 회전 없음**
+- `request-meta` 응답은 add-in이 파일명 추론/폴백 없이 SSOT를 직접 쓰도록 `caseInfos.manufacturerHexRotation`을 포함해야 한다.
+- add-in 적용 순서 SSOT:
+  1. 기존 기본 회전 적용 (`DefaultWAxisRotationDegrees`)
+  2. `manufacturerHexRotation`이 `"30"`일 때만 추가 회전 적용
+
+관련 파일:
+- `web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx`
+- `web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx`
+- `web/backend/modules/requests/request.routes.js`
+- `web/backend/controllers/requests/common.requests.controller.js`
+- `web/backend/controllers/bg/bg.controller.js`
+- `bg/pc1/esprit-addin/StlFileProcessor.cs`
+
 ### 4.4 가상 우편함
 
 - 주소 형식: `{Shelf}{ShelfRow}{BinCol}{BinRow}`

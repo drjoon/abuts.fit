@@ -30,6 +30,11 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
     {
         private const string StlImportLayerName = "AbutsStlImport";
         private const double DefaultWAxisRotationDegrees = 30.0;
+        // 제조사 수동 헥스 회전값은 "추가 회전" 정책으로 처리한다.
+        // - 30: 기본 회전에 +30도 추가
+        // - 0 : 추가 회전 없음
+        // 주의: 기본 회전(DefaultWAxisRotationDegrees)은 기존 공정 정렬 SSOT이므로 유지한다.
+        private const double ManufacturerHexAdditionalRotationDegrees = 30.0;
 
 
         private const double CompositeFinishToleranceThresholdZMm = 15.0;
@@ -95,6 +100,9 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         private string _backendRequestId;
         private string _backendImplantLabel;
         private double[][] _backendFinishLinePoints;
+        // request-meta(caseInfos.manufacturerHexRotation)에서 내려받는 제조사 추가 회전값(0/30)
+        // StlFileProcessor에서는 이 값을 델타로만 사용한다.
+        private string _backendManufacturerHexRotation;
         // 유지홈(retentionGroove) 옵션 캐시 — request-meta 수신 직후 저장.
         // 이후 5axisComposite_A.prc 의 StepIncrement 를 의뢰별로 덮어쓰기 위해 사용.
         private string _backendRetentionGroove;
@@ -171,6 +179,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             _backendRequestId = null;
             _backendImplantLabel = null;
             _backendFinishLinePoints = null;
+            _backendManufacturerHexRotation = null;
             try
             {
                 requestId = string.IsNullOrWhiteSpace(requestIdHint)
@@ -239,9 +248,14 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                         _backendRetentionGroove = string.IsNullOrWhiteSpace(requestMeta.retentionGroove)
                             ? null
                             : requestMeta.retentionGroove.Trim();
+                        // 제조사 수동 헥스 회전값(0/30) 캐시.
+                        // 이 값은 "최종 각도"가 아니라 "기본 회전에 더할 추가 각도" 의미로만 사용한다.
+                        _backendManufacturerHexRotation = string.IsNullOrWhiteSpace(requestMeta.manufacturerHexRotation)
+                            ? "0"
+                            : requestMeta.manufacturerHexRotation.Trim();
                         TryApplyCompositeFirstPassPercentEnv(requestMeta.tooth);
                         TryApplyCompositeOrientationVectorEnv(requestMeta);
-                        AppLogger.Log($"StlFileProcessor: request-meta loaded requestId={requestId}, Clinic={requestMeta.clinicName}, Patient={requestMeta.patientName}, Tooth={requestMeta.tooth}, Implant={requestMeta.implantManufacturer}/{requestMeta.implantBrand}/{requestMeta.implantType}, MaxDia={requestMeta.maxDiameter}, ConnDia={requestMeta.connectionDiameter}, CamDia={requestMeta.camDiameter}, WorkType={requestMeta.workType}, Lot={requestMeta.lotNumber}, SerialCode={(_backendSerialCode ?? "")}, RetentionGroove={(_backendRetentionGroove ?? "<null>")}");
+                        AppLogger.Log($"StlFileProcessor: request-meta loaded requestId={requestId}, Clinic={requestMeta.clinicName}, Patient={requestMeta.patientName}, Tooth={requestMeta.tooth}, Implant={requestMeta.implantManufacturer}/{requestMeta.implantBrand}/{requestMeta.implantType}, MaxDia={requestMeta.maxDiameter}, ConnDia={requestMeta.connectionDiameter}, CamDia={requestMeta.camDiameter}, WorkType={requestMeta.workType}, Lot={requestMeta.lotNumber}, SerialCode={(_backendSerialCode ?? "")}, RetentionGroove={(_backendRetentionGroove ?? "<null>")}, ManufacturerHexRotation(additional)={(_backendManufacturerHexRotation ?? "<null>")}");
                         AppLogger.Log($"StlFileProcessor: finishLine topZ={(finishLineTopZ.HasValue ? finishLineTopZ.Value.ToString("F4", CultureInfo.InvariantCulture) : "<null>")}, minZ={(finishLineMinZ.HasValue ? finishLineMinZ.Value.ToString("F4", CultureInfo.InvariantCulture) : "<null>")}, espritR={(finishLineEspritR.HasValue ? finishLineEspritR.Value.ToString("F4", CultureInfo.InvariantCulture) : "<null>")}, TwoPhase={twoPhase}");
                         if (!_prcManager.ApplyBackendPrcNames((BackendApiClient.RequestMetaCaseInfos)requestMeta, requestId, _backendImplantLabel))
                         {
@@ -319,7 +333,21 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                     AppLogger.Log($"StlFileProcessor: CAM 직경 SSOT 고정 - BarDiameter={backendCamDiameter.Value:F3}");
                 }
                 Rotate90Degrees(document);
+                // 1) 기본 정렬 회전(기존 SSOT)
                 RotateByWAxisDegrees(document, DefaultWAxisRotationDegrees);
+                // 2) 제조사 수동 헥스 회전(추가 델타)
+                //    - request-meta에서 30이 오면 +30도 추가
+                //    - 0(또는 누락/비정상)이면 추가 회전 없음
+                double additionalHexRotationDegrees = ResolveManufacturerAdditionalHexRotationDegrees();
+                if (Math.Abs(additionalHexRotationDegrees) > 0.0001)
+                {
+                    RotateByWAxisDegrees(document, additionalHexRotationDegrees);
+                    AppLogger.Log($"StlFileProcessor: 제조사 추가 헥스 회전 적용 - +{additionalHexRotationDegrees:F1}도 (base:{DefaultWAxisRotationDegrees:F1}도)");
+                }
+                else
+                {
+                    AppLogger.Log($"StlFileProcessor: 제조사 추가 헥스 회전 없음 - raw='{_backendManufacturerHexRotation ?? ""}' (base:{DefaultWAxisRotationDegrees:F1}도만 적용)");
+                }
                 EspritDocumentHelper.LogBoundingBox(document, "AfterRotate");
                 // add-in 실행 직전에도 CAM 직경 재확인/재적용(중간 단계에서 값이 변경되는 케이스 방지)
                 if (backendCamDiameter.HasValue && backendCamDiameter.Value > 0 && document?.LatheMachineSetup != null)
@@ -445,6 +473,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             _backendRequestId = null;
             _backendImplantLabel = null;
             _backendFinishLinePoints = null;
+            _backendManufacturerHexRotation = null;
             _effectiveFrontLimitX = null;
             Environment.SetEnvironmentVariable(AppConfig.CompositeFirstPassPercentAEnv, null);
             Environment.SetEnvironmentVariable(AppConfig.CompositeFinishToleranceEnv, null);
@@ -517,6 +546,10 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             [DataMember] public string lotNumber { get; set; }
             [DataMember] public string faceHolePrcFileName { get; set; }
             [DataMember] public string connectionPrcFileName { get; set; }
+            // 제조사 수동 헥스 회전값(0/30)
+            // - 30: 기본 회전 후 +30도 추가
+            // - 0 : 추가 회전 없음
+            [DataMember] public string manufacturerHexRotation { get; set; }
             // 유지홈(retentionGroove) — 5axisComposite_A.prc 의 StepIncrement
             // 값을 의뢰별로 덮어쓰기 위한 필드. rules.md §7.4.1 참조.
             [DataMember] public string retentionGroove { get; set; }
@@ -756,6 +789,20 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 {
                 }
             }
+        }
+        private double ResolveManufacturerAdditionalHexRotationDegrees()
+        {
+            // request-meta에서 내려오는 manufacturerHexRotation은
+            // "기본 회전값 대체"가 아니라 "추가 회전 델타"로만 해석한다.
+            // 정책:
+            // - "30" => +30도
+            // - 그 외  => +0도
+            string raw = string.IsNullOrWhiteSpace(_backendManufacturerHexRotation)
+                ? ""
+                : _backendManufacturerHexRotation.Trim();
+            return string.Equals(raw, "30", StringComparison.Ordinal)
+                ? ManufacturerHexAdditionalRotationDegrees
+                : 0.0;
         }
         private void InvokeDentalAddin(Document document, double frontLimitX, double backLimitX, double? stlTopZ, double? finishLineTopZ, double? finishLineMinZ, double? finishLineEspritR, bool twoPhase)
         {

@@ -220,6 +220,23 @@
 - `boundaryKey/prc/angle(0,180)`
 - 생성 결과: `BackRoughStyle 종료(created=...)`
 
+### 4.13 제조사 헥스 추가 회전 정책 (2026-07-20)
+
+검색 키워드: `manufacturerHexRotation`, `request-meta`, `W축 추가 회전`, `DefaultWAxisRotationDegrees`
+
+- `request-meta.caseInfos.manufacturerHexRotation`은 add-in에서 **추가 회전 델타**로만 해석한다.
+  - `"30"` → 기본 W축 회전에 `+30°` 추가
+  - `"0"`/누락/비정상 → 추가 회전 없음
+- 기본 회전(`DefaultWAxisRotationDegrees`)은 기존 정렬 SSOT이므로 유지하고, 제조사값은 2차 회전으로만 적용한다.
+- 적용 순서 SSOT:
+  1. `Rotate90Degrees`
+  2. `RotateByWAxisDegrees(DefaultWAxisRotationDegrees)`
+  3. `manufacturerHexRotation=="30"`이면 `RotateByWAxisDegrees(+30)`
+- 구현 위치:
+  - `StlFileProcessor.Process` (회전 순서)
+  - `StlFileProcessor.ResolveManufacturerAdditionalHexRotationDegrees` (델타 해석)
+  - `StlFileProcessor.RequestMetaCaseInfos.manufacturerHexRotation` (payload 바인딩)
+
 ## 5. 정리 원칙
 
 - 전체 정책은 루트 `rules.md`에서 관리합니다.

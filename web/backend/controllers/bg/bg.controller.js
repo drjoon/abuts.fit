@@ -1221,14 +1221,27 @@ export const getRequestMeta = asyncHandler(async (req, res) => {
   let request = null;
   if (requestId) {
     request = await Request.findOne({ requestId })
-      .select({ requestId: 1, caseInfos: 1, lotNumber: 1 })
+      .select({
+        requestId: 1,
+        caseInfos: 1,
+        lotNumber: 1,
+        // 제조사 수동 헥스 회전값(0/30)도 함께 로드한다.
+        // Esprit add-in은 이 값을 "기본 회전에 더할 추가 회전"으로 사용한다.
+        "rnd.manufacturerHexRotation": 1,
+      })
       .lean();
   }
 
   if (!request && filePath) {
     const normalized = normalizeFilePath(filePath);
     const all = await Request.find({ manufacturerStage: { $ne: "취소" } })
-      .select({ requestId: 1, caseInfos: 1, lotNumber: 1 })
+      .select({
+        requestId: 1,
+        caseInfos: 1,
+        lotNumber: 1,
+        // filePath 기반 조회 fallback에서도 동일하게 회전값을 내려주기 위해 포함한다.
+        "rnd.manufacturerHexRotation": 1,
+      })
       .lean();
 
     for (const r of all) {
@@ -1255,6 +1268,14 @@ export const getRequestMeta = asyncHandler(async (req, res) => {
   }
 
   const ci = request.caseInfos || {};
+  // 제조사 수동 헥스 회전값은 "추가 회전(델타)" 의미로만 사용한다.
+  // - "30"이면 기존 회전에 +30도 추가
+  // - 그 외/누락은 +0도
+  // request-meta에서 명시적으로 내려주어 add-in이 파일명/추정 로직 없이 SSOT를 직접 사용하게 한다.
+  const manufacturerHexRotationAdditional =
+    String(request?.rnd?.manufacturerHexRotation || "").trim() === "30"
+      ? "30"
+      : "0";
   const normalizedFinishLine = normalizeFinishLineWithZExtrema(ci?.finishLine);
   const finishLinePoints = Array.isArray(normalizedFinishLine?.points)
     ? normalizedFinishLine.points
@@ -1326,6 +1347,10 @@ export const getRequestMeta = asyncHandler(async (req, res) => {
           // NC 재생성 경로(request-meta 직접 조회)에서도 PRC 파일명이 필요하므로 여기서 보장.
           faceHolePrcFileName: resolvedPrcFiles.faceHolePrcFileName,
           connectionPrcFileName: resolvedPrcFiles.connectionPrcFileName,
+          // 제조사 수동 헥스 회전값(0/30).
+          // StlFileProcessor는 이 값을 "기본 W축 회전 이후 추가 회전"으로만 적용한다.
+          // (30 => +30도, 0 => 추가 회전 없음)
+          manufacturerHexRotation: manufacturerHexRotationAdditional,
           finishLine:
             Array.isArray(finishLinePoints) && finishLinePoints.length >= 2
               ? {
