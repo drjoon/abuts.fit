@@ -858,8 +858,11 @@ export function NewRequestDetailsSection({
                 })}
           </div>
         </div>
-        <div className="flex flex-col justify-center items-center">
-          타사 대비 조금 크게 생산됩니다. 접착 공간 +30 micron 추가!
+        <div className="flex flex-col justify-center items-center mt-2 text-center text-sm text-slate-500 leading-relaxed">
+          <ul className="inline-block text-left list-disc list-inside space-y-0.5">
+            <li>크라운이 꽉 끼면 0.03mm 정도 시멘트 스페이스 추가해주세요.</li>
+            <li>픽스쳐 체결시 헥스 각도가 안맞으면 "헥스 회전"을 30도로 맞춰주세요.</li>
+          </ul>
         </div>
       </div>
 
