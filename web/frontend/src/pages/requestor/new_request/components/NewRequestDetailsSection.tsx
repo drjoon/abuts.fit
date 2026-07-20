@@ -876,8 +876,8 @@ export function NewRequestDetailsSection({
                 {detailFile ? (
                   <StlPreviewViewer
                     file={detailFile}
-                    showOverlay={true}
-                    className="min-h-[240px] h-[240px] md:h-[280px]"
+                    showOverlay={false}
+                    className="min-h-[240px] h-full"
                     onDiameterComputed={handleDiameterComputed}
                   />
                 ) : (
