@@ -44,10 +44,11 @@ const normalizeRetentionGroove = (value) => {
   return "deep";
 };
 
-const normalizeRequestorHexRotation = (value) => {
+const normalizeRequestorHexRotation = (value, fallback = "0") => {
   const v = String(value || "").trim();
   if (v === "30") return "30";
-  return "0";
+  if (v === "0") return "0";
+  return String(fallback || "").trim() === "30" ? "30" : "0";
 };
 
 const buildRequestIdPrefix = () => {
@@ -806,6 +807,7 @@ export async function createRequestsFromDraft(req, res) {
             .select({
               "shippingPolicy.weeklyBatchDays": 1,
               "requestSettings.anodizingEnabled": 1,
+              "requestSettings.defaultRequestorHexRotation": 1,
             })
             .lean()
         : Promise.resolve(null),
@@ -830,6 +832,10 @@ export async function createRequestsFromDraft(req, res) {
       typeof shippingOrg?.requestSettings?.anodizingEnabled === "boolean"
         ? shippingOrg.requestSettings.anodizingEnabled
         : true;
+    const requestorDefaultHexRotation = normalizeRequestorHexRotation(
+      shippingOrg?.requestSettings?.defaultRequestorHexRotation,
+      "0",
+    );
     const shipDate = estimatedShipYmd || createdYmd;
     const boxCount = 1;
     const totalShippingFee = boxCount * shippingFeePerBox;
@@ -1037,6 +1043,11 @@ export async function createRequestsFromDraft(req, res) {
           const requestedShipDate = item.requestedShipDate || undefined;
           const requestId = requestIds[index];
 
+          const resolvedRequestorHexRotation = normalizeRequestorHexRotation(
+            item.caseInfosWithFile?.requestorHexRotation,
+            requestorDefaultHexRotation,
+          );
+
           const newRequest = {
             requestId,
             requestor: req.user._id,
@@ -1050,6 +1061,8 @@ export async function createRequestsFromDraft(req, res) {
             caseInfos: {
               ...(item.caseInfosWithFile || {}),
               anodizingEnabled: requestorAnodizingEnabled,
+              requestorHexRotation: resolvedRequestorHexRotation,
+              finalHexRotation: resolvedRequestorHexRotation,
             },
             manufacturerStage: "의뢰",
           };
@@ -1159,6 +1172,24 @@ export async function createRequestsFromDraft(req, res) {
 
             // [정책] uploadS3ToRhinoServer 제거 — rhino-server가 process-file 트리거 시 S3에서 직접 다운로드
             // 실제 트리거는 트랜잭션 커밋 이후에 일괄 호출 (아래 createdRequests 루프 참고).
+          }
+
+          if (process.env.NODE_ENV !== "production") {
+            console.info("[createRequestsFromDraft][hexRotation]", {
+              requestId,
+              draftCaseId: item.caseId,
+              businessAnchorId: shippingOrgId || null,
+              defaultRequestorHexRotation: requestorDefaultHexRotation,
+              draftRequestorHexRotation: String(
+                item.caseInfosWithFile?.requestorHexRotation || "",
+              ),
+              savedRequestorHexRotation: String(
+                newRequest?.caseInfos?.requestorHexRotation || "",
+              ),
+              savedFinalHexRotation: String(
+                newRequest?.caseInfos?.finalHexRotation || "",
+              ),
+            });
           }
 
           requestDocs.push(newRequest);

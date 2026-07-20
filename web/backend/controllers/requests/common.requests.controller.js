@@ -238,6 +238,14 @@ const UNMACHINABLE_EVENT_ROLES = [
   "devops",
 ];
 
+const REQUEST_HEX_ROTATION_EVENT_ROLES = [
+  "requestor",
+  "manufacturer",
+  "admin",
+  "salesman",
+  "devops",
+];
+
 function withBridgeHeaders(extra = {}) {
   const base = {};
   if (BRIDGE_SHARED_SECRET) {
@@ -1996,6 +2004,53 @@ export const updateRndHexRotation = asyncHandler(async (req, res) => {
   request.set("caseInfos.finalHexRotation", finalHexRotation);
 
   await request.save();
+
+  const requestorBusinessAnchorId = String(request.businessAnchorId || "").trim();
+
+  if (requestorBusinessAnchorId) {
+    try {
+      await triggerDashboardSummaryRefreshForAnchorId(
+        requestorBusinessAnchorId,
+        "rnd-hex-rotation-updated",
+      );
+    } catch (refreshError) {
+      console.warn("[rnd-hex-rotation] dashboard refresh trigger failed", {
+        requestId: request.requestId,
+        error: refreshError?.message,
+      });
+    }
+  }
+
+  emitAppEventToRoles(
+    REQUEST_HEX_ROTATION_EVENT_ROLES,
+    "request:hex-rotation-updated",
+    {
+      requestId: request.requestId,
+      requestMongoId: String(request._id || "").trim() || null,
+      requestorBusinessAnchorId: requestorBusinessAnchorId || null,
+      requestorHexRotation,
+      manufacturerHexRotation,
+      finalHexRotation,
+      request: {
+        _id: request._id,
+        requestId: request.requestId,
+        manufacturerStage: request.manufacturerStage,
+        businessAnchorId: request.businessAnchorId,
+        requestorBusinessAnchorId: requestorBusinessAnchorId || null,
+        caseInfos: {
+          requestorHexRotation,
+          finalHexRotation,
+        },
+        rnd: {
+          manufacturerHexRotation,
+          manufacturerHexRotationUpdatedAt:
+            request.rnd?.manufacturerHexRotationUpdatedAt || null,
+          manufacturerHexRotationUpdatedBy:
+            request.rnd?.manufacturerHexRotationUpdatedBy || null,
+        },
+      },
+    },
+  );
 
   return res.status(200).json({
     success: true,

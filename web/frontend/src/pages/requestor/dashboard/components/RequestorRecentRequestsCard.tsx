@@ -10,6 +10,7 @@ import { useToast } from "@/shared/hooks/use-toast";
 import { useNewRequestImplant } from "@/pages/requestor/new_request/hooks/useNewRequestImplant";
 import { usePresetStorage } from "@/pages/requestor/new_request/hooks/usePresetStorage";
 import { RequestDetailDialog } from "@/features/requests/components/RequestDetailDialog";
+import { onAppEvent } from "@/shared/realtime/socket";
 import { getNormalizedStageLabel } from "@/utils/stage";
 import { formatImplantDisplay } from "@/utils/implant";
 import { formatDateWithDay, formatDateOnly } from "@/utils/dateFormat";
@@ -490,6 +491,61 @@ export const RequestorRecentRequestsCard = ({
   }, [open, selectedRequestId, token]);
 
   useEffect(() => {
+    if (!open || !selectedRequestId || !token) return;
+
+    const unsubscribe = onAppEvent((evt) => {
+      const type = String(evt?.type || "").trim();
+      if (type !== "request:hex-rotation-updated") return;
+
+      const payload = evt?.data || {};
+      const eventRequest = payload?.request || {};
+      const eventOrgId = String(
+        payload?.requestorBusinessAnchorId ||
+          eventRequest?.requestorBusinessAnchorId ||
+          eventRequest?.businessAnchorId ||
+          "",
+      ).trim();
+      const myOrgId = String(user?.businessAnchorId || "").trim();
+      if (!eventOrgId || !myOrgId || eventOrgId !== myOrgId) return;
+
+      const eventRequestMongoId = String(
+        payload?.requestMongoId || eventRequest?._id || "",
+      ).trim();
+      const eventRequestId = String(
+        payload?.requestId || eventRequest?.requestId || "",
+      ).trim();
+      const selectedSummaryRequestId = String(selectedSummary?.requestId || "").trim();
+
+      const isSameRequest =
+        (eventRequestMongoId && eventRequestMongoId === selectedRequestId) ||
+        (eventRequestId && selectedSummaryRequestId && eventRequestId === selectedSummaryRequestId);
+
+      if (!isSameRequest) return;
+
+      void Promise.resolve(onRefresh());
+
+      setLoadingDetail(true);
+      void apiFetch<ApiEnvelope<RecentRequestCardItem>>({
+        path: `/api/requests/${selectedRequestId}`,
+        method: "GET",
+        token,
+      })
+        .then((res) => {
+          if (res.ok && res.data?.success) {
+            setDetail(res.data.data);
+          }
+        })
+        .finally(() => {
+          setLoadingDetail(false);
+        });
+    });
+
+    return () => {
+      unsubscribe?.();
+    };
+  }, [open, onRefresh, selectedRequestId, selectedSummary?.requestId, token, user]);
+
+  useEffect(() => {
     if (!open) {
       setEditCaseInfos(null);
     }
@@ -521,6 +577,17 @@ export const RequestorRecentRequestsCard = ({
               item.price?.rule === "remake_monthly_free_3";
             const retentionGrooveLabel =
               item.caseInfos?.retentionGroove === "deep" ? "있음" : "없음";
+            const requestorHexRotationLabel =
+              String(item.caseInfos?.requestorHexRotation || "").trim() === "30"
+                ? "30도"
+                : "0도";
+            const finalHexRaw = String(item.caseInfos?.finalHexRotation || "").trim();
+            const finalHexRotationLabel =
+              finalHexRaw === "30"
+                ? "30도"
+                : finalHexRaw === "0"
+                  ? "0도"
+                  : requestorHexRotationLabel;
             const isUnmachinable = isUnmachinableRequest(item);
             const isUnmachinableConfirmed = Boolean(
               item?.rnd?.unmachinableConfirmedAt,
@@ -627,6 +694,7 @@ export const RequestorRecentRequestsCard = ({
                       {formatImplantDisplay(item.caseInfos)}
                     </span>
                     <span className="ml-1">유지홈 {retentionGrooveLabel}</span>
+                    <span className="ml-1">헥스 {finalHexRotationLabel}</span>
                   </div>
                   {isUnmachinable && (
                     <div className="text-[11px] text-red-700 mt-1 truncate flex items-center gap-2">
@@ -703,6 +771,21 @@ export const RequestorRecentRequestsCard = ({
                 {cancelTarget?.caseInfos?.retentionGroove === "deep"
                   ? "있음"
                   : "없음"}
+              </span>
+              <span className="ml-1">
+                헥스{" "}
+                {(() => {
+                  const finalHexRaw = String(
+                    cancelTarget?.caseInfos?.finalHexRotation || "",
+                  ).trim();
+                  if (finalHexRaw === "30") return "30도";
+                  if (finalHexRaw === "0") return "0도";
+                  return String(
+                    cancelTarget?.caseInfos?.requestorHexRotation || "",
+                  ).trim() === "30"
+                    ? "30도"
+                    : "0도";
+                })()}
               </span>
             </div>
           </div>

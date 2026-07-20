@@ -436,7 +436,8 @@ export const RequestorDashboardPage = () => {
 
       if (
         type === "request:rnd-unmachinable-updated" ||
-        type === "request:rnd-unmachinable-confirmed"
+        type === "request:rnd-unmachinable-confirmed" ||
+        type === "request:hex-rotation-updated"
       ) {
         void queryClient.invalidateQueries({
           queryKey: summaryQueryKey,
@@ -447,13 +448,37 @@ export const RequestorDashboardPage = () => {
         void queryClient.invalidateQueries({
           queryKey: ["requestor-bulk-shipping"],
         });
+
+        if (type === "request:hex-rotation-updated" && selectedRiskSummaryItem?.id) {
+          const selectedRequestMongoId = String(selectedRiskSummaryItem.id || "").trim();
+          const eventRequestMongoId = String(
+            payload?.requestMongoId || eventRequest?._id || "",
+          ).trim();
+
+          if (selectedRequestMongoId && eventRequestMongoId === selectedRequestMongoId) {
+            setRiskSummaryDetailLoading(true);
+            void apiFetch<any>({
+              path: `/api/requests/${selectedRequestMongoId}`,
+              method: "GET",
+              token,
+            })
+              .then((res) => {
+                if (res.ok && res.data?.success) {
+                  setRiskSummaryDetail(res.data.data || null);
+                }
+              })
+              .finally(() => {
+                setRiskSummaryDetailLoading(false);
+              });
+          }
+        }
       }
     });
 
     return () => {
       unsubscribe?.();
     };
-  }, [queryClient, summaryQueryKey, token, user]);
+  }, [queryClient, selectedRiskSummaryItem, summaryQueryKey, token, user]);
 
   const bulkData = bulkResponse?.success ? bulkResponse.data : null;
 
@@ -1293,8 +1318,17 @@ export const RequestorDashboardPage = () => {
                       )}
                     </div>
                     <div className="text-xs text-muted-foreground truncate">
-                      상태: {getNormalizedStageLabel(r)} / 의뢰번호:{" "}
-                      {String(r?.requestId || "")}
+                      상태: {getNormalizedStageLabel(r)} / 의뢰번호: {String(r?.requestId || "")}
+                    </div>
+                    <div className="text-xs text-muted-foreground truncate">
+                      헥스 회전: {(() => {
+                        const finalHexRaw = String(ci?.finalHexRotation || "").trim();
+                        if (finalHexRaw === "30") return "30도";
+                        if (finalHexRaw === "0") return "0도";
+                        return String(ci?.requestorHexRotation || "").trim() === "30"
+                          ? "30도"
+                          : "0도";
+                      })()}
                     </div>
                     {isUnmachinable && (
                       <div className="text-[11px] text-red-700 truncate mt-1">

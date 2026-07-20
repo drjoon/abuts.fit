@@ -1,6 +1,7 @@
 import { Types } from "mongoose";
 import DraftRequest from "../../models/draftRequest.model.js";
 import Connection from "../../models/connection.model.js";
+import BusinessAnchor from "../../models/businessAnchor.model.js";
 import { asyncHandler } from "../../utils/asyncHandler.js";
 import { ApiResponse } from "../../utils/ApiResponse.js";
 import { ApiError } from "../../utils/ApiError.js";
@@ -17,13 +18,31 @@ const normalizeRetentionGroove = (value) => {
   return "deep";
 };
 
-const normalizeRequestorHexRotation = (value) => {
+const normalizeRequestorHexRotation = (value, fallback = "0") => {
   const v = String(value || "").trim();
   if (v === "30") return "30";
-  return "0";
+  if (v === "0") return "0";
+  return String(fallback || "").trim() === "30" ? "30" : "0";
 };
 
-async function buildNormalizedDraftCaseInfos(caseInfosInput = []) {
+const resolveDefaultRequestorHexRotation = async (req) => {
+  const anchorId = String(req?.user?.businessAnchorId || "").trim();
+  if (!Types.ObjectId.isValid(anchorId)) return "0";
+
+  const anchor = await BusinessAnchor.findById(anchorId)
+    .select({ "requestSettings.defaultRequestorHexRotation": 1 })
+    .lean();
+
+  return normalizeRequestorHexRotation(
+    anchor?.requestSettings?.defaultRequestorHexRotation,
+    "0",
+  );
+};
+
+async function buildNormalizedDraftCaseInfos(
+  caseInfosInput = [],
+  opts = {},
+) {
   const incomingList = Array.isArray(caseInfosInput)
     ? caseInfosInput
     : [caseInfosInput];
@@ -38,6 +57,7 @@ async function buildNormalizedDraftCaseInfos(caseInfosInput = []) {
         retentionGroove: normalizeRetentionGroove(ci?.retentionGroove),
         requestorHexRotation: normalizeRequestorHexRotation(
           ci?.requestorHexRotation,
+          opts?.defaultRequestorHexRotation,
         ),
       };
     }),
@@ -50,15 +70,16 @@ async function findOrCreateDraftByRequestedId({
   draftId,
   requestorId,
   caseInfos,
+  defaultRequestorHexRotation,
 }) {
   let draft = await DraftRequest.findById(draftId);
   if (draft) {
     return draft;
   }
 
-  const normalizedCaseInfos = await buildNormalizedDraftCaseInfos(
-    caseInfos || [],
-  );
+  const normalizedCaseInfos = await buildNormalizedDraftCaseInfos(caseInfos || [], {
+    defaultRequestorHexRotation,
+  });
 
   draft = await DraftRequest.create({
     _id: draftId,
@@ -73,6 +94,8 @@ async function findOrCreateDraftByRequestedId({
 // 새 드래프트 생성
 export const createDraft = asyncHandler(async (req, res) => {
   const { caseInfos = [] } = req.body || {};
+  const defaultRequestorHexRotation =
+    await resolveDefaultRequestorHexRotation(req);
 
   const normalizedCaseInfos = Array.isArray(caseInfos)
     ? caseInfos
@@ -89,6 +112,7 @@ export const createDraft = asyncHandler(async (req, res) => {
           retentionGroove: normalizeRetentionGroove(ci?.retentionGroove),
           requestorHexRotation: normalizeRequestorHexRotation(
             ci?.requestorHexRotation,
+            defaultRequestorHexRotation,
           ),
         };
       }),
@@ -132,6 +156,8 @@ export const updateDraft = asyncHandler(async (req, res) => {
   }
 
   const { caseInfos } = req.body || {};
+  const defaultRequestorHexRotation =
+    await resolveDefaultRequestorHexRotation(req);
   const draft = await DraftRequest.findById(id).lean();
 
   if (!draft) {
@@ -139,6 +165,7 @@ export const updateDraft = asyncHandler(async (req, res) => {
       draftId: id,
       requestorId: req.user._id,
       caseInfos,
+      defaultRequestorHexRotation,
     });
 
     return res
@@ -177,6 +204,7 @@ export const updateDraft = asyncHandler(async (req, res) => {
         draftId: id,
         requestorId: req.user._id,
         caseInfos,
+        defaultRequestorHexRotation,
       });
 
       const prevCaseInfos = Array.isArray(currentDraft.caseInfos)
@@ -222,6 +250,7 @@ export const updateDraft = asyncHandler(async (req, res) => {
             ...normalized,
             requestorHexRotation: normalizeRequestorHexRotation(
               ci?.requestorHexRotation,
+              defaultRequestorHexRotation,
             ),
           };
         }),
@@ -298,6 +327,8 @@ export const addFileToDraft = asyncHandler(async (req, res) => {
     throw new ApiError(400, "fileId or s3Key is required");
   }
 
+  const defaultRequestorHexRotation =
+    await resolveDefaultRequestorHexRotation(req);
   const draft = await DraftRequest.findById(id);
 
   if (!draft) {
@@ -342,7 +373,10 @@ export const addFileToDraft = asyncHandler(async (req, res) => {
     workType,
     // 유지홈 옵션 (없음/있음) — legacy shallow는 none으로 정규화
     retentionGroove: normalizeRetentionGroove(retentionGroove),
-    requestorHexRotation: normalizeRequestorHexRotation(requestorHexRotation),
+    requestorHexRotation: normalizeRequestorHexRotation(
+      requestorHexRotation,
+      defaultRequestorHexRotation,
+    ),
     shippingMode: "normal", // 항상 묶음 배송
     requestedShipDate,
   });
@@ -377,6 +411,8 @@ export const addFilesToDraftBulk = asyncHandler(async (req, res) => {
     throw new ApiError(400, "items is required");
   }
 
+  const defaultRequestorHexRotation =
+    await resolveDefaultRequestorHexRotation(req);
   const draft = await DraftRequest.findById(id);
 
   if (!draft) {
@@ -458,7 +494,10 @@ export const addFilesToDraftBulk = asyncHandler(async (req, res) => {
         workType,
         // 유지홈 옵션 (없음/있음) — legacy shallow는 none으로 정규화
         retentionGroove: normalizeRetentionGroove(retentionGroove),
-        requestorHexRotation: normalizeRequestorHexRotation(requestorHexRotation),
+        requestorHexRotation: normalizeRequestorHexRotation(
+          requestorHexRotation,
+          defaultRequestorHexRotation,
+        ),
         shippingMode: "normal", // 항상 묶음 배송
         requestedShipDate,
       };
