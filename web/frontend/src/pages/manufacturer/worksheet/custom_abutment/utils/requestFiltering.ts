@@ -245,13 +245,24 @@ export function mergeTransientRealtimeProgress(
       }
     }
 
-    if (!prev?.realtimeProgress && !restoredProgress) {
+    const prevProgress = prev?.realtimeProgress || null;
+    if (!prevProgress && !restoredProgress) {
       return req;
     }
 
+    // 서버가 startedAt/elapsedSeconds를 제공하면, 이전 임시값(null startedAt 등)보다 우선한다.
+    const preferRestoredOverPrev = Boolean(
+      restoredProgress &&
+        !prevProgress?.startedAt &&
+        (restoredProgress.startedAt ||
+          Number.isFinite(Number(restoredProgress.elapsedSeconds))),
+    );
+
     return {
       ...req,
-      realtimeProgress: prev?.realtimeProgress || restoredProgress,
+      realtimeProgress: preferRestoredOverPrev
+        ? { ...(prevProgress || {}), ...(restoredProgress || {}) }
+        : prevProgress || restoredProgress,
     };
   });
 }

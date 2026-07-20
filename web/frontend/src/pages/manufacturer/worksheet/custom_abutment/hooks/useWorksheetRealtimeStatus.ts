@@ -154,16 +154,34 @@ export function useWorksheetRealtimeStatus({
             }
           }
 
+          // startedAt이 없어도 서버 elapsedSeconds가 있으면 로컬 기준시각을 역산해 타이머를 이어간다.
+          if (
+            typeof base !== "number" &&
+            Number.isFinite(Number((current as any)?.elapsedSeconds))
+          ) {
+            const elapsed = Math.max(
+              0,
+              Math.floor(Number((current as any)?.elapsedSeconds)),
+            );
+            base = Date.now() - elapsed * 1000;
+            realtimeBaseRef.current[rid] = base;
+          }
+
           if (typeof base !== "number" || !current?.badge) return req;
+
+          const nextElapsed = Math.max(
+            0,
+            Math.floor((Date.now() - base) / 1000),
+          );
+          if (nextElapsed === Number((current as any)?.elapsedSeconds || 0)) {
+            return req;
+          }
 
           return {
             ...req,
             realtimeProgress: {
               ...current,
-              elapsedSeconds: Math.max(
-                0,
-                Math.floor((Date.now() - base) / 1000),
-              ),
+              elapsedSeconds: nextElapsed,
             },
           };
         }),
@@ -271,8 +289,9 @@ export function useWorksheetRealtimeStatus({
       if (!requestId && !isBatchDeliveryUpdate) return;
 
       switch (type) {
-        case "request:cam-processing-started":
-          delete realtimeBaseRef.current[requestId];
+        case "request:cam-processing-started": {
+          const startedAt = new Date().toISOString();
+          realtimeBaseRef.current[requestId] = Date.now();
           setRequests((prev) =>
             prev.map((r) => {
               if (String((r as any)?.requestId || "").trim() !== requestId) {
@@ -282,16 +301,18 @@ export function useWorksheetRealtimeStatus({
                 ...(r as any),
                 realtimeProgress: {
                   badge: "NC 생성중",
-                  elapsedSeconds: null,
-                  startedAt: null,
+                  elapsedSeconds: 0,
+                  startedAt,
                   tone: "blue",
                 },
               } as any;
             }),
           );
           return;
-        case "request:filled-processing-started":
-          delete realtimeBaseRef.current[requestId];
+        }
+        case "request:filled-processing-started": {
+          const startedAt = new Date().toISOString();
+          realtimeBaseRef.current[requestId] = Date.now();
           setRequests((prev) =>
             prev.map((r) => {
               if (String((r as any)?.requestId || "").trim() !== requestId) {
@@ -301,14 +322,15 @@ export function useWorksheetRealtimeStatus({
                 ...(r as any),
                 realtimeProgress: {
                   badge: "Filled STL 생성중",
-                  elapsedSeconds: null,
-                  startedAt: null,
+                  elapsedSeconds: 0,
+                  startedAt,
                   tone: "blue",
                 },
               } as any;
             }),
           );
           return;
+        }
         case "packing:capture-processed": {
           const eventRequest = payload?.request as
             | ManufacturerRequest
@@ -480,7 +502,14 @@ export function useWorksheetRealtimeStatus({
           const parsedBase = hasStartedAt
             ? new Date(startedAt as string).getTime()
             : Number.NaN;
-          const hasValidBase = Number.isFinite(parsedBase);
+          const inferredBase =
+            elapsedSeconds != null
+              ? Date.now() - elapsedSeconds * 1000
+              : Number.NaN;
+          const effectiveBase = Number.isFinite(parsedBase)
+            ? parsedBase
+            : inferredBase;
+          const hasValidBase = Number.isFinite(effectiveBase);
           const shouldClearRealtime =
             clear || (status === "completed" && !hasValidBase);
           if (!hasValidBase || shouldClearRealtime) {
@@ -500,7 +529,7 @@ export function useWorksheetRealtimeStatus({
                 } as any;
               }
               if (hasValidBase) {
-                realtimeBaseRef.current[requestId] = parsedBase;
+                realtimeBaseRef.current[requestId] = effectiveBase;
               }
               return {
                 ...(r as any),
