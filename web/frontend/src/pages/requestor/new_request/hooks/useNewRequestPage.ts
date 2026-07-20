@@ -102,7 +102,7 @@ export const useNewRequestPage = (existingRequestId?: string) => {
   }, [user?.role]);
 
   useEffect(() => {
-    const localDefault = (() => {
+    const readLocalDefault = (): "0" | "30" | null => {
       try {
         const raw = localStorage.getItem(requestorHexRotationStorageKey);
         if (raw !== "0" && raw !== "30") return null;
@@ -110,13 +110,17 @@ export const useNewRequestPage = (existingRequestId?: string) => {
       } catch {
         return null;
       }
-    })();
+    };
 
-    if (localDefault === "0" || localDefault === "30") {
-      setDefaultRequestorHexRotation(localDefault);
+    // BusinessAnchor 기반 서버 설정을 1순위로 사용한다.
+    // localStorage는 서버 조회 실패 시 fallback cache 로만 사용.
+    if (!token || !businessAnchorId) {
+      const localDefault = readLocalDefault();
+      if (localDefault) {
+        setDefaultRequestorHexRotation(localDefault);
+      }
+      return;
     }
-
-    if (!token || !businessAnchorId) return;
 
     (async () => {
       try {
@@ -126,24 +130,31 @@ export const useNewRequestPage = (existingRequestId?: string) => {
           token,
         });
 
-        if (!res.ok) return;
+        if (res.ok) {
+          const body = res.data || {};
+          const data = body?.data || body;
+          const serverDefault = normalizeRequestorHexRotation(
+            data?.defaultRequestorHexRotation,
+          );
+          setDefaultRequestorHexRotation(serverDefault);
 
-        const body = res.data || {};
-        const data = body?.data || body;
-        const serverDefault = normalizeRequestorHexRotation(
-          data?.defaultRequestorHexRotation,
-        );
+          try {
+            localStorage.setItem(requestorHexRotationStorageKey, serverDefault);
+          } catch {
+            // ignore
+          }
+          return;
+        }
 
-        const next = localDefault || serverDefault || "0";
-        setDefaultRequestorHexRotation(next);
-
-        try {
-          localStorage.setItem(requestorHexRotationStorageKey, next);
-        } catch {
-          // ignore
+        const localDefault = readLocalDefault();
+        if (localDefault) {
+          setDefaultRequestorHexRotation(localDefault);
         }
       } catch {
-        // ignore
+        const localDefault = readLocalDefault();
+        if (localDefault) {
+          setDefaultRequestorHexRotation(localDefault);
+        }
       }
     })();
   }, [token, businessAnchorId, requestorHexRotationStorageKey]);
@@ -153,13 +164,14 @@ export const useNewRequestPage = (existingRequestId?: string) => {
       const next = normalizeRequestorHexRotation(value);
       setDefaultRequestorHexRotation(next);
 
-      try {
-        localStorage.setItem(requestorHexRotationStorageKey, next);
-      } catch {
-        // ignore
+      if (!token || !businessAnchorId) {
+        try {
+          localStorage.setItem(requestorHexRotationStorageKey, next);
+        } catch {
+          // ignore
+        }
+        return;
       }
-
-      if (!token || !businessAnchorId) return;
 
       const res = await request<any>({
         path: "/api/businesses/me/request-settings",
@@ -168,7 +180,22 @@ export const useNewRequestPage = (existingRequestId?: string) => {
         jsonBody: { defaultRequestorHexRotation: next },
       });
 
-      if (!res.ok && res.status !== 403) {
+      if (res.ok) {
+        const body = res.data || {};
+        const data = body?.data || body;
+        const persisted = normalizeRequestorHexRotation(
+          data?.defaultRequestorHexRotation ?? next,
+        );
+        setDefaultRequestorHexRotation(persisted);
+        try {
+          localStorage.setItem(requestorHexRotationStorageKey, persisted);
+        } catch {
+          // ignore
+        }
+        return;
+      }
+
+      if (res.status !== 403) {
         const body = res.data || {};
         const message = String(
           body?.message ||
