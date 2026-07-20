@@ -119,6 +119,12 @@ const businessAnchorSchema = new mongoose.Schema(
         type: Boolean,
         default: true,
       },
+      // 의뢰자(사업체) 단위 기본 헥스 회전값 (신규 의뢰 기본값)
+      defaultRequestorHexRotation: {
+        type: String,
+        enum: ["0", "30"],
+        default: "0",
+      },
       updatedAt: {
         type: Date,
         default: null,

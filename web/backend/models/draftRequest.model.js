@@ -73,6 +73,12 @@ const draftCaseSchema = new mongoose.Schema(
           enum: ["none", "shallow", "deep"],
           default: "deep",
         },
+        // 의뢰자 헥스 회전 선택값 (0도/30도)
+        requestorHexRotation: {
+          type: String,
+          enum: ["0", "30"],
+          default: "0",
+        },
         // 배송 요청 정보 (묶음 배송만 사용)
         requestedShipDate: Date,
       },

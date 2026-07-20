@@ -15,6 +15,12 @@ const normalizeRetentionGroove = (value) => {
   return "deep";
 };
 
+const normalizeRequestorHexRotation = (value) => {
+  const v = String(value || "").trim();
+  if (v === "30") return "30";
+  return "0";
+};
+
 /**
  * 기존 의뢰를 Draft로 복제 (파일 포함)
  * @route POST /api/requests/:id/clone-to-draft
@@ -77,6 +83,9 @@ export async function cloneRequestToDraft(req, res) {
       workType: ci.workType,
       // 유지홈 옵션 전달 (없음/있음) — legacy shallow는 none으로 정규화
       retentionGroove: normalizeRetentionGroove(ci.retentionGroove),
+      requestorHexRotation: normalizeRequestorHexRotation(
+        ci.requestorHexRotation,
+      ),
       shippingMode: "normal", // 항상 묶음 배송
       requestedShipDate: request.requestedShipDate,
     };

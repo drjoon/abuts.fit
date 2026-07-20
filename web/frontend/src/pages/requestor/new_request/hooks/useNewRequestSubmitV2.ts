@@ -199,6 +199,7 @@ export const useNewRequestSubmitV2 = ({
             taperAngle: base.taperAngle,
             workType: base.workType,
             retentionGroove: base.retentionGroove,
+            requestorHexRotation: base.requestorHexRotation,
             shippingMode: base.shippingMode,
             requestedShipDate: base.requestedShipDate,
           };
@@ -445,6 +446,7 @@ export const useNewRequestSubmitV2 = ({
                 taperAngle: ci.taperAngle,
                 workType: ci.workType || "abutment",
                 retentionGroove: ci.retentionGroove,
+                requestorHexRotation: ci.requestorHexRotation,
                 shippingMode: ci.shippingMode,
                 requestedShipDate: ci.requestedShipDate,
                 file: tf?.key

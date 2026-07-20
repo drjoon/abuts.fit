@@ -9,6 +9,13 @@ import {
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { StlPreviewViewer } from "@/features/requests/components/StlPreviewViewer";
 import { useStlMetadata } from "@/features/requests/hooks/useStlMetadata";
 import { useToast } from "@/shared/hooks/use-toast";
@@ -324,6 +331,10 @@ type PreviewModalProps = {
     reason: string,
   ) => Promise<void>;
   onRestoreUnmachinable?: (req: ManufacturerRequest) => Promise<void>;
+  onSaveManufacturerHexRotation?: (
+    req: ManufacturerRequest,
+    value: "0" | "30",
+  ) => Promise<void>;
   onOpenNextRequest?: (currentReqId: string) => Promise<void>;
   setSearchParams: (
     nextInit: ((prev: URLSearchParams) => URLSearchParams) | URLSearchParams,
@@ -369,6 +380,7 @@ export const PreviewModal = ({
   onRefreshPreview,
   onMarkUnmachinable,
   onRestoreUnmachinable,
+  onSaveManufacturerHexRotation,
   onOpenNextRequest,
   setSearchParams,
   setConfirmTitle,
@@ -398,6 +410,10 @@ export const PreviewModal = ({
   const [guidedFinishLineSubmitting, setGuidedFinishLineSubmitting] = useState(false);
   const [guidedFinishLineOverridePoints, setGuidedFinishLineOverridePoints] =
     useState<number[][] | null>(null);
+  const [hexRotationSaving, setHexRotationSaving] = useState(false);
+  const [manufacturerHexRotationDraft, setManufacturerHexRotationDraft] = useState<
+    "0" | "30"
+  >("0");
   const req = previewFiles.request as ManufacturerRequest | null;
   const lastStableReqRef = useRef<ManufacturerRequest | null>(null);
 
@@ -501,6 +517,23 @@ export const PreviewModal = ({
     const tokens = parseUnmachinableReasonTokens(existingReason);
     setSelectedReasonValues(tokens);
     setUnmachinableReasonDraft("");
+
+    const requestorHex =
+      String((req as any)?.caseInfos?.requestorHexRotation || "").trim() ===
+      "30"
+        ? "30"
+        : "0";
+    const manufacturerHex = String(
+      (req as any)?.rnd?.manufacturerHexRotation || "",
+    ).trim();
+    const effectiveHex =
+      manufacturerHex === "30"
+        ? "30"
+        : manufacturerHex === "0"
+          ? "0"
+          : requestorHex;
+    setManufacturerHexRotationDraft(effectiveHex);
+
     if (tokens.length) {
       setReasonLibraryWithSync((prev) => {
         const next = [...prev];
@@ -600,6 +633,19 @@ export const PreviewModal = ({
   const isUnmachinable = Boolean((activeReq as any)?.rnd?.unmachinableAt);
   const shouldShowUnmachinableWarning = isFinishLineMinZRisky && !isUnmachinable;
 
+  const requestorHexRotation =
+    String((activeReq as any)?.caseInfos?.requestorHexRotation || "").trim() ===
+    "30"
+      ? "30"
+      : "0";
+  const manufacturerHexRotationSaved =
+    String((activeReq as any)?.rnd?.manufacturerHexRotation || "").trim() ===
+    "30"
+      ? "30"
+      : String((activeReq as any)?.rnd?.manufacturerHexRotation || "").trim() ===
+            "0"
+        ? "0"
+        : null;
   const currentReviewStageKey = getReviewStageKeyByTab({
     stage,
     isCamStage,
@@ -1313,6 +1359,22 @@ export const PreviewModal = ({
     }
   };
 
+  const handleSaveManufacturerHexRotation = async (next: "0" | "30") => {
+    if (!onSaveManufacturerHexRotation || hexRotationSaving || reviewSaving) {
+      return;
+    }
+    const prev = manufacturerHexRotationDraft;
+    setManufacturerHexRotationDraft(next);
+    setHexRotationSaving(true);
+    try {
+      await onSaveManufacturerHexRotation(activeReq, next);
+    } catch {
+      setManufacturerHexRotationDraft(prev);
+    } finally {
+      setHexRotationSaving(false);
+    }
+  };
+
   const pickInputId = `right-upload-${activeReq?._id || "pending"}`;
 
   const realtimeBadge = String(activeReq?.realtimeProgress?.badge || "").trim();
@@ -1355,9 +1417,9 @@ export const PreviewModal = ({
 
         <div className="h-full flex flex-col gap-4 overflow-hidden">
           <div className="flex items-center justify-between gap-2 rounded-lg border border-slate-200/80 bg-slate-50/70 px-3 py-2 shrink-0">
-            <div className="flex items-center gap-2">
+            <div className="flex min-w-0 items-center gap-2">
               {fullLotLabel ? (
-                <div className="flex items-center gap-1.5">
+                <div className="flex flex-wrap items-center gap-1.5">
                   <Badge
                     variant="outline"
                     className="text-[11px] px-2 py-0.5 font-semibold bg-violet-50 text-violet-700 border-violet-200"
@@ -1394,7 +1456,7 @@ export const PreviewModal = ({
                   )}
                 </div>
               ) : retentionGrooveLabel || isUnmachinable ? (
-                <div className="flex items-center gap-1.5">
+                <div className="flex flex-wrap items-center gap-1.5">
                   {retentionGrooveLabel && (
                     <Badge
                       variant="outline"
@@ -1421,7 +1483,34 @@ export const PreviewModal = ({
 
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex shrink-0 items-center gap-2">
+              <div className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-1.5 py-1">
+                <span className="text-[11px] font-semibold text-slate-500">
+                  헥스 회전
+                </span>
+                <Select
+                  value={manufacturerHexRotationDraft}
+                  onValueChange={(value) => {
+                    const next = value === "30" ? "30" : "0";
+                    void handleSaveManufacturerHexRotation(next);
+                  }}
+                  disabled={
+                    hexRotationSaving || reviewSaving || !onSaveManufacturerHexRotation
+                  }
+                >
+                  <SelectTrigger className="h-7 min-w-[82px] rounded-md border border-slate-200 bg-slate-50 px-2 text-[12px] font-semibold text-slate-700 shadow-sm focus:ring-1 focus:ring-blue-200 disabled:opacity-60">
+                    <SelectValue placeholder="0도" />
+                  </SelectTrigger>
+                  <SelectContent align="end" className="min-w-[82px]">
+                    <SelectItem value="0" className="text-[12px] font-medium">
+                      0도
+                    </SelectItem>
+                    <SelectItem value="30" className="text-[12px] font-medium">
+                      30도
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
               {isUnmachinable ? (
                   <button
                     type="button"

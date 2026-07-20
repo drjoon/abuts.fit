@@ -75,6 +75,8 @@ export const NewRequestPage = () => {
     handleCancel,
     caseInfos,
     setCaseInfos,
+    defaultRequestorHexRotation,
+    persistRequestorHexRotationDefault,
     connections,
     resetDraft,
     caseInfosMap,
@@ -563,6 +565,8 @@ export const NewRequestPage = () => {
               setCaseInfos={setCaseInfos}
               caseInfosMap={caseInfosMap}
               updateCaseInfos={updateCaseInfos}
+              defaultRequestorHexRotation={defaultRequestorHexRotation}
+              onRequestorHexRotationChange={persistRequestorHexRotationDefault}
               connections={connections}
               familyOptions={familyOptions}
               typeOptions={typeOptions}

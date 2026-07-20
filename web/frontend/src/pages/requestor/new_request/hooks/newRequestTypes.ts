@@ -66,6 +66,7 @@ export type CaseInfos = {
     tag?: string;
   };
   retentionGroove?: "none" | "shallow" | "deep";
+  requestorHexRotation?: "0" | "30";
 };
 
 export type DraftFileMeta = {

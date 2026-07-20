@@ -22,6 +22,7 @@ export const {
   updateRequest,
   updateRndDoneStatus,
   updateRndUnmachinableStatus,
+  updateRndHexRotation,
   confirmRndUnmachinableByRequestor,
   confirmAllRndUnmachinableByRequestor,
   updateRndMemo,

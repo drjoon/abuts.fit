@@ -201,6 +201,21 @@ const normalizeReasonOptions = (optionsRaw, max = 100) => {
   return unique;
 };
 
+const normalizeHexRotationValue = (value) => {
+  const v = String(value || "").trim();
+  if (v === "30") return "30";
+  return "0";
+};
+
+const resolveFinalHexRotationValue = ({
+  requestorHexRotation,
+  manufacturerHexRotation,
+}) => {
+  if (String(manufacturerHexRotation || "").trim() === "30") return "30";
+  if (String(manufacturerHexRotation || "").trim() === "0") return "0";
+  return normalizeHexRotationValue(requestorHexRotation);
+};
+
 /**
  * 가공불가 상세 단계 코드를 계산한다.
  * - none: 관련 없음
@@ -855,10 +870,13 @@ export async function getAllRequests(req, res) {
       "rnd.memo",
       "rnd.memoUpdatedAt",
       "rnd.memoUpdatedBy",
+      "rnd.manufacturerHexRotation",
       "caseInfos.clinicName",
       "caseInfos.patientName",
       "caseInfos.tooth",
       "caseInfos.anodizingEnabled",
+      "caseInfos.requestorHexRotation",
+      "caseInfos.finalHexRotation",
       "caseInfos.file",
       "caseInfos.camFile",
       "caseInfos.ncFile",
@@ -905,9 +923,12 @@ export async function getAllRequests(req, res) {
       "rnd.memo",
       "rnd.memoUpdatedAt",
       "rnd.memoUpdatedBy",
+      "rnd.manufacturerHexRotation",
       "caseInfos.clinicName",
       "caseInfos.patientName",
       "caseInfos.tooth",
+      "caseInfos.requestorHexRotation",
+      "caseInfos.finalHexRotation",
       "requestor",
       "deliveryInfoRef",
     ].join(" ");
@@ -934,12 +955,15 @@ export async function getAllRequests(req, res) {
       "rnd.memo",
       "rnd.memoUpdatedAt",
       "rnd.memoUpdatedBy",
+      "rnd.manufacturerHexRotation",
       "description",
       "caseInfos.clinicName",
       "caseInfos.patientName",
       "caseInfos.tooth",
       "caseInfos.anodizingEnabled",
       "caseInfos.connectionDiameter",
+      "caseInfos.requestorHexRotation",
+      "caseInfos.finalHexRotation",
       "caseInfos.implantManufacturer",
       "caseInfos.implantBrand",
       "caseInfos.implantFamily",
@@ -966,6 +990,9 @@ export async function getAllRequests(req, res) {
       "rnd.unmachinableAt",
       "rnd.unmachinableConfirmedAt",
       "rnd.unmachinableReason",
+      "rnd.manufacturerHexRotation",
+      "caseInfos.requestorHexRotation",
+      "caseInfos.finalHexRotation",
       "requestor",
     ].join(" ");
 
@@ -1455,6 +1482,26 @@ export async function updateRequest(req, res) {
           updateData.caseInfos,
         );
 
+        // 의뢰자 헥스 회전 값 정규화 + 최종값 재계산
+        if (
+          Object.prototype.hasOwnProperty.call(
+            updateData.caseInfos,
+            "requestorHexRotation",
+          )
+        ) {
+          const requestorHexRotation = normalizeHexRotationValue(
+            updateData.caseInfos.requestorHexRotation,
+          );
+          updateData.caseInfos.requestorHexRotation = requestorHexRotation;
+          const existingManufacturerHex = String(
+            request?.rnd?.manufacturerHexRotation || "",
+          ).trim();
+          updateData.caseInfos.finalHexRotation = resolveFinalHexRotationValue({
+            requestorHexRotation,
+            manufacturerHexRotation: existingManufacturerHex || undefined,
+          });
+        }
+
         // 주문 가능(활성화) 임플란트 조합만 수정 허용
         await assertOrderableImplantPresetOrThrow(updateData.caseInfos);
       } catch (validationError) {
@@ -1895,6 +1942,75 @@ export const confirmAllRndUnmachinableByRequestor = asyncHandler(
     });
   },
 );
+
+export const updateRndHexRotation = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const manufacturerHexRotation = normalizeHexRotationValue(
+    req.body?.manufacturerHexRotation,
+  );
+
+  if (!mongoose.Types.ObjectId.isValid(id)) {
+    return res.status(400).json({
+      success: false,
+      message: "유효하지 않은 의뢰 ID입니다.",
+    });
+  }
+
+  const request = await Request.findById(id);
+  if (!request) {
+    return res.status(404).json({
+      success: false,
+      message: "의뢰를 찾을 수 없습니다.",
+    });
+  }
+
+  if (req.user.role === "manufacturer") {
+    const orgScope = await buildManufacturerOrgScopeFilter(req);
+    const allowed = await Request.exists({
+      _id: request._id,
+      ...orgScope,
+    });
+    if (!allowed) {
+      return res.status(403).json({
+        success: false,
+        message: "이 의뢰를 변경할 권한이 없습니다.",
+      });
+    }
+  }
+
+  const requestorHexRotation = normalizeHexRotationValue(
+    request?.caseInfos?.requestorHexRotation,
+  );
+  const finalHexRotation = resolveFinalHexRotationValue({
+    requestorHexRotation,
+    manufacturerHexRotation,
+  });
+
+  request.set("rnd.manufacturerHexRotation", manufacturerHexRotation);
+  request.set("rnd.manufacturerHexRotationUpdatedAt", new Date());
+  request.set(
+    "rnd.manufacturerHexRotationUpdatedBy",
+    req.user?._id || null,
+  );
+  request.set("caseInfos.requestorHexRotation", requestorHexRotation);
+  request.set("caseInfos.finalHexRotation", finalHexRotation);
+
+  await request.save();
+
+  return res.status(200).json({
+    success: true,
+    data: {
+      requestId: request.requestId,
+      requestorHexRotation,
+      manufacturerHexRotation,
+      finalHexRotation,
+      manufacturerHexRotationUpdatedAt:
+        request.rnd?.manufacturerHexRotationUpdatedAt || null,
+      manufacturerHexRotationUpdatedBy:
+        request.rnd?.manufacturerHexRotationUpdatedBy || null,
+    },
+  });
+});
 
 export const updateRndMemo = asyncHandler(async (req, res) => {
   const { id } = req.params;

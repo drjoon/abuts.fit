@@ -381,6 +381,13 @@ router.patch(
 );
 
 router.patch(
+  "/:id/rnd-hex-rotation",
+  authenticate,
+  authorize(["manufacturer", "admin"]),
+  requestController.updateRndHexRotation,
+);
+
+router.patch(
   "/:id/rnd-memo",
   authenticate,
   authorize(["manufacturer", "admin"]),

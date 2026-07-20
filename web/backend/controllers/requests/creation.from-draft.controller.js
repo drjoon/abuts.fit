@@ -44,6 +44,12 @@ const normalizeRetentionGroove = (value) => {
   return "deep";
 };
 
+const normalizeRequestorHexRotation = (value) => {
+  const v = String(value || "").trim();
+  if (v === "30") return "30";
+  return "0";
+};
+
 const buildRequestIdPrefix = () => {
   // KST 기준 날짜
   const now = new Date();
@@ -382,6 +388,9 @@ export async function createRequestsFromDraft(req, res) {
         const retentionGrooveValue = normalizeRetentionGroove(
           ci?.retentionGroove,
         );
+        const requestorHexRotationValue = normalizeRequestorHexRotation(
+          ci?.requestorHexRotation,
+        );
 
         const caseInfosWithFile = ci?.file
           ? {
@@ -393,6 +402,8 @@ export async function createRequestsFromDraft(req, res) {
               tiltAxisVector: ci.tiltAxisVector,
               frontPoint: ci.frontPoint,
               retentionGroove: retentionGrooveValue,
+              requestorHexRotation: requestorHexRotationValue,
+              finalHexRotation: requestorHexRotationValue,
               newSystemRequest,
               file: {
                 originalName: ci.file.originalName,
@@ -411,6 +422,8 @@ export async function createRequestsFromDraft(req, res) {
               tiltAxisVector: ci.tiltAxisVector,
               frontPoint: ci.frontPoint,
               retentionGroove: retentionGrooveValue,
+              requestorHexRotation: requestorHexRotationValue,
+              finalHexRotation: requestorHexRotationValue,
               newSystemRequest,
             };
 

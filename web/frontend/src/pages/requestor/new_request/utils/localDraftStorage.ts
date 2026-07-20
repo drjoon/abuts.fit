@@ -34,6 +34,7 @@ export interface CaseInfos {
   shippingMode?: string;
   requestedShipDate?: string;
   workType?: string;
+  requestorHexRotation?: "0" | "30";
 }
 
 export interface DuplicateResolution {

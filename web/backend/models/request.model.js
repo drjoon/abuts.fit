@@ -117,6 +117,18 @@ const requestSchema = new mongoose.Schema(
         enum: ["none", "shallow", "deep"],
         default: "deep",
       },
+      // 의뢰자 헥스 회전 선택값 (0도/30도)
+      requestorHexRotation: {
+        type: String,
+        enum: ["0", "30"],
+        default: "0",
+      },
+      // 최종 헥스 회전 값 (제조사 값이 있으면 우선, 없으면 의뢰자 값)
+      finalHexRotation: {
+        type: String,
+        enum: ["0", "30"],
+        default: "0",
+      },
       reviewByStage: {
         request: {
           status: {
@@ -451,6 +463,21 @@ const requestSchema = new mongoose.Schema(
         default: null,
       },
       memoUpdatedBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+        default: null,
+      },
+      // 제조사 헥스 회전 선택값 (0도/30도)
+      manufacturerHexRotation: {
+        type: String,
+        enum: ["0", "30"],
+        default: null,
+      },
+      manufacturerHexRotationUpdatedAt: {
+        type: Date,
+        default: null,
+      },
+      manufacturerHexRotationUpdatedBy: {
         type: mongoose.Schema.Types.ObjectId,
         ref: "User",
         default: null,

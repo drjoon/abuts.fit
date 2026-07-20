@@ -1353,7 +1353,136 @@ export const RequestPage = ({
   const [rndMemoSaving, setRndMemoSaving] = useState<Record<string, boolean>>(
     {},
   );
+  const [, setHexRotationSavingMap] = useState<Record<string, boolean>>({});
   const [bulkCamRegenerating, setBulkCamRegenerating] = useState(false);
+
+  const handleSaveManufacturerHexRotation = useCallback(
+    async (req: ManufacturerRequest, value: "0" | "30") => {
+      if (!req?._id) return;
+      const requestMongoId = String(req._id || "").trim();
+      const nextValue = value === "30" ? "30" : "0";
+
+      const prevManufacturer =
+        String((req as any)?.rnd?.manufacturerHexRotation || "").trim() === "30"
+          ? "30"
+          : String((req as any)?.rnd?.manufacturerHexRotation || "").trim() ===
+              "0"
+            ? "0"
+            : null;
+      const prevFinal: "0" | "30" =
+        String((req as any)?.caseInfos?.finalHexRotation || "").trim() === "30"
+          ? "30"
+          : "0";
+      const prevUpdatedAt = (req as any)?.rnd?.manufacturerHexRotationUpdatedAt || null;
+      const prevUpdatedBy = (req as any)?.rnd?.manufacturerHexRotationUpdatedBy || null;
+
+      setHexRotationSavingMap((prev) => ({ ...prev, [requestMongoId]: true }));
+
+      pageState.setRequests((prev) =>
+        prev.map((item) => {
+          if (String(item?._id || "").trim() !== requestMongoId) return item;
+          return {
+            ...item,
+            caseInfos: {
+              ...(item.caseInfos || {}),
+              finalHexRotation: nextValue,
+            },
+            rnd: {
+              ...(item.rnd || {}),
+              manufacturerHexRotation: nextValue,
+              manufacturerHexRotationUpdatedAt: new Date().toISOString(),
+            },
+          };
+        }),
+      );
+
+      try {
+        const res = await fetch(`/api/requests/${req._id}/rnd-hex-rotation`, {
+          method: "PATCH",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            manufacturerHexRotation: nextValue,
+          }),
+        });
+
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || data?.success === false) {
+          throw new Error(data?.message || "헥스 회전 저장에 실패했습니다.");
+        }
+
+        const savedManufacturer =
+          String(data?.data?.manufacturerHexRotation || "").trim() === "30"
+            ? "30"
+            : "0";
+        const savedFinal =
+          String(data?.data?.finalHexRotation || "").trim() === "30" ? "30" : "0";
+
+        pageState.setRequests((prev) =>
+          prev.map((item) => {
+            if (String(item?._id || "").trim() !== requestMongoId) return item;
+            return {
+              ...item,
+              caseInfos: {
+                ...(item.caseInfos || {}),
+                requestorHexRotation:
+                  String(item.caseInfos?.requestorHexRotation || "").trim() ===
+                  "30"
+                    ? "30"
+                    : "0",
+                finalHexRotation: savedFinal,
+              },
+              rnd: {
+                ...(item.rnd || {}),
+                manufacturerHexRotation: savedManufacturer,
+                manufacturerHexRotationUpdatedAt:
+                  data?.data?.manufacturerHexRotationUpdatedAt || null,
+                manufacturerHexRotationUpdatedBy:
+                  data?.data?.manufacturerHexRotationUpdatedBy || null,
+              },
+            };
+          }),
+        );
+
+        toast({
+          title: "헥스 회전 저장 완료",
+          description: `제조사 기준 ${savedManufacturer}도로 저장되었습니다.`,
+        });
+      } catch (e: any) {
+        pageState.setRequests((prev) =>
+          prev.map((item) => {
+            if (String(item?._id || "").trim() !== requestMongoId) return item;
+            return {
+              ...item,
+              caseInfos: {
+                ...(item.caseInfos || {}),
+                finalHexRotation: prevFinal,
+              },
+              rnd: {
+                ...(item.rnd || {}),
+                manufacturerHexRotation: prevManufacturer,
+                manufacturerHexRotationUpdatedAt: prevUpdatedAt,
+                manufacturerHexRotationUpdatedBy: prevUpdatedBy,
+              },
+            };
+          }),
+        );
+
+        toast({
+          title: "헥스 회전 저장 실패",
+          description: e?.message || "네트워크 오류",
+          variant: "destructive",
+        });
+
+        throw e;
+      } finally {
+        setHexRotationSavingMap((prev) => ({ ...prev, [requestMongoId]: false }));
+      }
+    },
+    [pageState, toast, token],
+  );
 
   const handleSaveRndMemo = useCallback(
     async (req: ManufacturerRequest, memoRaw: string) => {
@@ -2037,6 +2166,7 @@ export const RequestPage = ({
         onRefreshPreview={handleOpenPreview}
         onMarkUnmachinable={handleMarkUnmachinable}
         onRestoreUnmachinable={handleRestoreUnmachinable}
+        onSaveManufacturerHexRotation={handleSaveManufacturerHexRotation}
         onOpenNextRequest={handleOpenNextRequest}
         setSearchParams={setSearchParams}
         setConfirmTitle={pageState.setConfirmTitle}

@@ -56,6 +56,8 @@ export interface RequestCaseInfos {
   connectionDiameter?: number;
   workType?: string;
   anodizingEnabled?: boolean;
+  requestorHexRotation?: "0" | "30";
+  finalHexRotation?: "0" | "30";
   finishLine?: {
     version?: number;
     sectionCount?: number;
@@ -295,6 +297,9 @@ export interface RequestBase {
     unmachinableFromStage?: string | null;
     unmachinableReason?: string | null;
     memo?: string | null;
+    manufacturerHexRotation?: "0" | "30" | null;
+    manufacturerHexRotationUpdatedAt?: string | null;
+    manufacturerHexRotationUpdatedBy?: string | null;
     memoUpdatedAt?: string | null;
     memoUpdatedBy?:
       | string

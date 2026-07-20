@@ -16,6 +16,12 @@ import { getFile } from "../utils/fileIndexedDB";
 
 const NEW_REQUEST_CLINIC_STORAGE_KEY_PREFIX =
   "abutsfit:new-request-clinics:v1:";
+const NEW_REQUEST_HEX_ROTATION_STORAGE_KEY_PREFIX =
+  "abutsfit:new-request:hex-rotation:v1:";
+
+const normalizeRequestorHexRotation = (value: unknown): "0" | "30" => {
+  return String(value || "").trim() === "30" ? "30" : "0";
+};
 
 /**
  * New Request 페이지 통합 훅 (리팩터링 버전)
@@ -78,9 +84,105 @@ export const useNewRequestPage = (existingRequestId?: string) => {
     return `${NEW_REQUEST_CLINIC_STORAGE_KEY_PREFIX}${userId}`;
   }, [user?.id]);
 
+  const businessAnchorId = useMemo(() => {
+    const raw = String(user?.businessAnchorId || "").trim();
+    return raw || null;
+  }, [user?.businessAnchorId]);
+
+  const requestorHexRotationStorageKey = useMemo(() => {
+    const scopeKey = businessAnchorId || "no-business";
+    return `${NEW_REQUEST_HEX_ROTATION_STORAGE_KEY_PREFIX}${scopeKey}`;
+  }, [businessAnchorId]);
+
+  const [defaultRequestorHexRotation, setDefaultRequestorHexRotation] =
+    useState<"0" | "30">("0");
+
   const businessType = useMemo(() => {
     return resolveBusinessType(user?.role, "requestor");
   }, [user?.role]);
+
+  useEffect(() => {
+    const localDefault = (() => {
+      try {
+        const raw = localStorage.getItem(requestorHexRotationStorageKey);
+        if (raw !== "0" && raw !== "30") return null;
+        return raw;
+      } catch {
+        return null;
+      }
+    })();
+
+    if (localDefault === "0" || localDefault === "30") {
+      setDefaultRequestorHexRotation(localDefault);
+    }
+
+    if (!token || !businessAnchorId) return;
+
+    (async () => {
+      try {
+        const res = await request<any>({
+          path: "/api/businesses/me/request-settings",
+          method: "GET",
+          token,
+        });
+
+        if (!res.ok) return;
+
+        const body = res.data || {};
+        const data = body?.data || body;
+        const serverDefault = normalizeRequestorHexRotation(
+          data?.defaultRequestorHexRotation,
+        );
+
+        const next = localDefault || serverDefault || "0";
+        setDefaultRequestorHexRotation(next);
+
+        try {
+          localStorage.setItem(requestorHexRotationStorageKey, next);
+        } catch {
+          // ignore
+        }
+      } catch {
+        // ignore
+      }
+    })();
+  }, [token, businessAnchorId, requestorHexRotationStorageKey]);
+
+  const persistRequestorHexRotationDefault = useCallback(
+    async (value: "0" | "30") => {
+      const next = normalizeRequestorHexRotation(value);
+      setDefaultRequestorHexRotation(next);
+
+      try {
+        localStorage.setItem(requestorHexRotationStorageKey, next);
+      } catch {
+        // ignore
+      }
+
+      if (!token || !businessAnchorId) return;
+
+      const res = await request<any>({
+        path: "/api/businesses/me/request-settings",
+        method: "PUT",
+        token,
+        jsonBody: { defaultRequestorHexRotation: next },
+      });
+
+      if (!res.ok && res.status !== 403) {
+        const body = res.data || {};
+        const message = String(
+          body?.message ||
+            "헥스 회전 기본값을 서버에 저장하지 못했습니다. 잠시 후 다시 시도해주세요.",
+        );
+        toast({
+          title: "기본값 저장 실패",
+          description: message,
+          variant: "destructive",
+        });
+      }
+    },
+    [token, businessAnchorId, requestorHexRotationStorageKey, toast],
+  );
 
   // Draft 메타 관리 (caseInfosMap)
   const {
@@ -216,13 +318,47 @@ export const useNewRequestPage = (existingRequestId?: string) => {
   const currentCaseInfos = useMemo(() => {
     const key =
       currentFileKey === "__default__" ? "__default__" : currentFileKey;
-    return (() => {
+    const fallback = {
+      workType: "abutment",
+      requestorHexRotation: defaultRequestorHexRotation,
+    } as CaseInfos;
+
+    const current = (() => {
       if (key === "__default__") {
-        return caseInfosMap.__default__ || { workType: "abutment" };
+        return caseInfosMap.__default__ || fallback;
       }
-      return caseInfosMap[key] || { workType: "abutment" };
+      return caseInfosMap[key] || fallback;
     })();
-  }, [currentFileKey, caseInfosMap]);
+
+    if (!current?.requestorHexRotation) {
+      return {
+        ...current,
+        requestorHexRotation: defaultRequestorHexRotation,
+      } as CaseInfos;
+    }
+
+    return current;
+  }, [currentFileKey, caseInfosMap, defaultRequestorHexRotation]);
+
+  useEffect(() => {
+    if (selectedPreviewIndex === null || !files[selectedPreviewIndex]) return;
+    const file = files[selectedPreviewIndex];
+    const fileKey = toNormalizedFileKey(file);
+    const current = caseInfosMap[fileKey];
+
+    if (current?.requestorHexRotation) return;
+
+    updateCaseInfos(fileKey, {
+      requestorHexRotation: defaultRequestorHexRotation,
+    });
+  }, [
+    selectedPreviewIndex,
+    files,
+    toNormalizedFileKey,
+    caseInfosMap,
+    updateCaseInfos,
+    defaultRequestorHexRotation,
+  ]);
 
   // 현재 파일의 caseInfos 업데이트 함수
   const setCaseInfos = useCallback(
@@ -721,6 +857,9 @@ export const useNewRequestPage = (existingRequestId?: string) => {
                 typeof ci.requestedShipDate === "string"
                   ? ci.requestedShipDate
                   : undefined,
+              requestorHexRotation: normalizeRequestorHexRotation(
+                ci.requestorHexRotation,
+              ),
             },
           });
         }
@@ -893,6 +1032,8 @@ export const useNewRequestPage = (existingRequestId?: string) => {
     // Case 정보 (파일별 독립적 관리)
     caseInfos: currentCaseInfos,
     setCaseInfos,
+    defaultRequestorHexRotation,
+    persistRequestorHexRotationDefault,
 
     // 파일 관리
     files: fileList,
