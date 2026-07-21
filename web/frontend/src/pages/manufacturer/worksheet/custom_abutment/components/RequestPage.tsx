@@ -1417,6 +1417,8 @@ export const RequestPage = ({
           String(data?.data?.manufacturerHexRotation || "").trim() === "30"
             ? "30"
             : "0";
+        const savedManufacturerLabel =
+          savedManufacturer === "30" ? "30도 회전" : "기본값";
         const savedFinal =
           String(data?.data?.finalHexRotation || "").trim() === "30" ? "30" : "0";
 
@@ -1448,7 +1450,7 @@ export const RequestPage = ({
 
         toast({
           title: "헥스 회전 저장 완료",
-          description: `제조사 기준 ${savedManufacturer}도로 저장되었습니다.`,
+          description: `제조사 기준 ${savedManufacturerLabel}으로 저장되었습니다.`,
         });
       } catch (e: any) {
         pageState.setRequests((prev) =>

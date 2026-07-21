@@ -1498,15 +1498,15 @@ export const PreviewModal = ({
                     hexRotationSaving || reviewSaving || !onSaveManufacturerHexRotation
                   }
                 >
-                  <SelectTrigger className="h-7 min-w-[82px] rounded-md border border-slate-200 bg-slate-50 px-2 text-[12px] font-semibold text-slate-700 shadow-sm focus:ring-1 focus:ring-blue-200 disabled:opacity-60">
-                    <SelectValue placeholder="0도" />
+                  <SelectTrigger className="h-7 min-w-[118px] rounded-md border border-slate-200 bg-slate-50 px-2 text-[12px] font-semibold text-slate-700 shadow-sm focus:ring-1 focus:ring-blue-200 disabled:opacity-60">
+                    <SelectValue placeholder="기본값" />
                   </SelectTrigger>
-                  <SelectContent align="end" className="min-w-[82px]">
+                  <SelectContent align="end" className="min-w-[118px]">
                     <SelectItem value="0" className="text-[12px] font-medium">
-                      0도
+                      기본값
                     </SelectItem>
                     <SelectItem value="30" className="text-[12px] font-medium">
-                      30도
+                      30도 회전
                     </SelectItem>
                   </SelectContent>
                 </Select>
