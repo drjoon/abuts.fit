@@ -852,8 +852,11 @@
     - `Request.rnd.manufacturerHexRotation` (`"0" | "30"`)
     - `Request.caseInfos.finalHexRotation` (표시/조회용 최종값)
 - BG/esprit-addin 연동에서 `manufacturerHexRotation`은 **추가각 숫자 자체가 아니라 모드값**으로 해석한다.
-  - `"0"`  → 기본값(현행 회전 유지)
-  - `"30"` → **원복 후 +30** 경로 사용
+  - `"0"`  → 각도 보정(현행 회전 유지)
+  - `"30"` → 원본 각도(**원복 후 +30** 경로 사용)
+- **표시명 변경 원칙(고정):**
+  - 이번 변경은 UI/문서의 표시명만 바꾼다. (`기본값`→`각도 보정`, `30도 회전`→`원본 각도`)
+  - 저장값(`"0" | "30"`)과 Esprit 실행 로직(0=현행 유지, 30=원복 후 +30)은 변경하지 않는다.
 - `"30"` 모드 계산 SSOT:
   - `request-meta.caseInfos.hexRotation.appliedDeg`(Rhino 정렬에서 적용한 헥스 회전각)를 사용한다.
   - Esprit는 기본 회전 이후 아래 보정을 수행한다.

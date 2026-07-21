@@ -861,7 +861,7 @@ export function NewRequestDetailsSection({
         <div className="flex flex-col justify-center items-center mt-2 text-center text-sm text-slate-500 leading-relaxed">
           <ul className="inline-block text-left list-disc list-inside space-y-0.5">
             <li>크라운이 꽉 끼면 0.03mm 정도 시멘트 스페이스 추가해주세요.</li>
-            <li>픽스쳐 체결시 헥스 각도가 안맞으면 "헥스 회전"을 "30도 회전"으로 맞춰주세요.</li>
+            <li>픽스쳐 체결시 헥스 각도가 안맞으면 "헥스 회전"을 "원본 각도"로 맞춰주세요.</li>
           </ul>
         </div>
       </div>
@@ -1042,7 +1042,7 @@ export function NewRequestDetailsSection({
                         </TooltipTrigger>
                         <TooltipContent side="bottom" align="center">
                           <div className="text-xs text-slate-700">
-                            대부분 '기본값'을 사용하고, 일부 ExoCAD에서만 '30도 회전'을 선택해주세요.
+                            대부분 '각도 보정'을 사용하고, 일부 ExoCAD에서만 '원본 각도'를 선택해주세요.
                           </div>
                         </TooltipContent>
                       </Tooltip>
@@ -1091,7 +1091,7 @@ export function NewRequestDetailsSection({
                           htmlFor="hr-0"
                           className="text-sm text-slate-700 cursor-pointer"
                         >
-                          기본값
+                          각도 보정
                         </Label>
                       </div>
 
@@ -1105,7 +1105,7 @@ export function NewRequestDetailsSection({
                           htmlFor="hr-30"
                           className="text-sm text-slate-700 cursor-pointer"
                         >
-                          30도 회전
+                          원본 각도
                         </Label>
                       </div>
                     </RadioGroup>

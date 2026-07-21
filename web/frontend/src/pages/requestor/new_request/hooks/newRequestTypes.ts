@@ -66,6 +66,9 @@ export type CaseInfos = {
     tag?: string;
   };
   retentionGroove?: "none" | "shallow" | "deep";
+  // 헥스 회전 모드값 SSOT
+  // - "0": 각도 보정
+  // - "30": 원본 각도
   requestorHexRotation?: "0" | "30";
 };
 

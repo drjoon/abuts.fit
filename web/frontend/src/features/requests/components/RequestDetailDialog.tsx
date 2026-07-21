@@ -156,14 +156,14 @@ export const RequestDetailDialog = ({
     caseInfos.retentionGroove === "deep" ? "있음" : "없음";
   const requestorHexRotationLabel =
     String(caseInfos.requestorHexRotation || "").trim() === "30"
-      ? "30도 회전"
-      : "기본값";
+      ? "원본 각도"
+      : "각도 보정";
   const finalHexRaw = String(caseInfos.finalHexRotation || "").trim();
   const finalHexRotationLabel =
     finalHexRaw === "30"
-      ? "30도 회전"
+      ? "원본 각도"
       : finalHexRaw === "0"
-        ? "기본값"
+        ? "각도 보정"
         : requestorHexRotationLabel;
 
   const estimatedShipYmd =

@@ -579,14 +579,14 @@ export const RequestorRecentRequestsCard = ({
               item.caseInfos?.retentionGroove === "deep" ? "있음" : "없음";
             const requestorHexRotationLabel =
               String(item.caseInfos?.requestorHexRotation || "").trim() === "30"
-                ? "30도 회전"
-                : "기본값";
+                ? "원본 각도"
+                : "각도 보정";
             const finalHexRaw = String(item.caseInfos?.finalHexRotation || "").trim();
             const finalHexRotationLabel =
               finalHexRaw === "30"
-                ? "30도 회전"
+                ? "원본 각도"
                 : finalHexRaw === "0"
-                  ? "기본값"
+                  ? "각도 보정"
                   : requestorHexRotationLabel;
             const isUnmachinable = isUnmachinableRequest(item);
             const isUnmachinableConfirmed = Boolean(
@@ -778,13 +778,13 @@ export const RequestorRecentRequestsCard = ({
                   const finalHexRaw = String(
                     cancelTarget?.caseInfos?.finalHexRotation || "",
                   ).trim();
-                  if (finalHexRaw === "30") return "30도 회전";
-                  if (finalHexRaw === "0") return "기본값";
+                  if (finalHexRaw === "30") return "원본 각도";
+                  if (finalHexRaw === "0") return "각도 보정";
                   return String(
                     cancelTarget?.caseInfos?.requestorHexRotation || "",
                   ).trim() === "30"
-                    ? "30도 회전"
-                    : "기본값";
+                    ? "원본 각도"
+                    : "각도 보정";
                 })()}
               </span>
             </div>

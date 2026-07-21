@@ -225,8 +225,11 @@
 검색 키워드: `manufacturerHexRotation`, `hexRotation.appliedDeg`, `request-meta`, `원복 후 +30`, `DefaultWAxisRotationDegrees`
 
 - `request-meta.caseInfos.manufacturerHexRotation`은 add-in에서 **모드값**으로 해석한다.
-  - `"0"`  → 기본값(현행 회전 유지)
-  - `"30"` → **원복 후 +30** 경로 사용
+  - `"0"`  → 각도 보정(현행 회전 유지)
+  - `"30"` → 원본 각도(**원복 후 +30** 경로 사용)
+- **표시명 변경 원칙(고정):**
+  - `기본값`→`각도 보정`, `30도 회전`→`원본 각도`는 UI/문서 라벨 변경이다.
+  - mode 값(`"0"|"30"`)과 add-in 실행 로직(0=현행 유지, 30=원복 후 +30)은 기존 그대로 유지한다.
 - `"30"` 모드 계산 SSOT:
   - 사용 데이터: `request-meta.caseInfos.hexRotation.appliedDeg` (Rhino 정렬에서 적용된 헥스 회전각)
   - 단계:
