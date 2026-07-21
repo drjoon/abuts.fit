@@ -883,8 +883,8 @@ namespace DentalAddin
             bool splitDegenerate = Math.Abs(splitPercent - firstPercent) < 0.01 || Math.Abs(effectiveLastPercent - splitPercent) < 0.01;
             if (splitDegenerate)
             {
-                // 중요: 여기서 false를 반환하면 caller가 Composite2 단일 경로(A만)로 fallback 되어
-                // FINISH_B가 누락될 수 있다. 따라서 SplitAB 경로를 유지한 채 최소 경계로 degrade한다.
+                // 중요: 여기서 false를 반환하면 caller가 Composite2 단일 경로(Front만)로 fallback 되어
+                // Finish_Back이 누락될 수 있다. 따라서 SplitAB 경로를 유지한 채 최소 경계로 degrade한다.
                 DentalLogger.Log($"Composite2SplitLine2 - SplitPercent 범위가 작음(First={firstPercent:F2}, Split={splitPercent:F2}, Last={effectiveLastPercent:F2}). SplitAB 중단 대신 최소 경계로 degrade하여 계속 진행");
                 splitPercent = firstPercent;
             }
@@ -930,9 +930,8 @@ namespace DentalAddin
             }
             double? firstPassPercentOverride = TryGetCompositeFirstPassPercentOverride();
             // 요청 반영:
-            // - FINISH_A(Finish_Front) 시작점: Splitline_1 - 1.0mm
-            // - 단, STL 모델 시작점(xMin)보다 좌측으로 넘어가지 않도록 하한 클램프
-            const double finishFrontStartOffsetFromSplitline1Mm = -1.0;
+            // - Finish_Front 시작점: STL 모델 최좌측(xMin) + 0.5mm
+            const double finishFrontStartOffsetFromStlMinMm = 0.5;
 
             double splitline1X = MoveSTL_Module.FrontPointX;
             double stlStartX = Math.Min(0.0, Math.Min(MoveSTL_Module.FrontPointX, MoveSTL_Module.BackPointX));
@@ -943,18 +942,12 @@ namespace DentalAddin
                 stlStartX = resolvedXMin;
             }
 
-            double requestedAStartX = splitline1X + finishFrontStartOffsetFromSplitline1Mm;
+            double requestedAStartX = stlStartX + finishFrontStartOffsetFromStlMinMm;
             double appliedAStartX = requestedAStartX;
-            bool finishFrontStartMinGuardApplied = false;
-            if (appliedAStartX < stlStartX)
-            {
-                appliedAStartX = stlStartX;
-                finishFrontStartMinGuardApplied = true;
-            }
 
-            double baseAFirstPercentBySplitline1X = XToPassPercentByStartEndScale(appliedAStartX, 0.0, splitPercent);
+            double baseAFirstPercentByStlMinX = XToPassPercentByStartEndScale(appliedAStartX, 0.0, splitPercent);
             double minAFirstPercentByStlStart = XToPassPercentByStartEndScale(stlStartX, 0.0, splitPercent);
-            double baseAFirstPercent = Clamp(baseAFirstPercentBySplitline1X, minAFirstPercentByStlStart, splitPercent);
+            double baseAFirstPercent = Clamp(baseAFirstPercentByStlMinX, minAFirstPercentByStlStart, splitPercent);
             bool overrideGuardApplied = false;
             if (firstPassPercentOverride.HasValue)
             {
@@ -966,12 +959,12 @@ namespace DentalAddin
                 baseAFirstPercent = overridePercent;
             }
 
-            DentalLogger.Log($"Composite2SplitLine2 - FINISH_FRONT 시작점 정책 적용: splitlineResolved={splitlineResolved}, splitline1X={splitline1X:F3}, stlStartX={stlStartX:F3}, requestedStartX(splitline1-1.0)={requestedAStartX:F3}, appliedStartX={appliedAStartX:F3}, minGuard={finishFrontStartMinGuardApplied}, minFirst%={minAFirstPercentByStlStart:F2}, overrideGuardApplied={overrideGuardApplied}");
+            DentalLogger.Log($"Composite2SplitLine2 - FINISH_FRONT 시작점 정책 적용: splitlineResolved={splitlineResolved}, splitline1X={splitline1X:F3}, stlStartX={stlStartX:F3}, requestedStartX(stlMin+0.5)={requestedAStartX:F3}, appliedStartX={appliedAStartX:F3}, minFirst%={minAFirstPercentByStlStart:F2}, overrideGuardApplied={overrideGuardApplied}");
 
-            const double aEndOffsetFromSplitMm = 0.0; // 요청: FINISH_A 끝점 = 기준점(splitPercent)
-            // 요청 반영: FINISH_B 시작점 오프셋 제거(정치수)
-            const double bStartOffsetFromSplitMm = 0.0; // FINISH_B 시작점 = 기준점(splitPercent)
-            // 요청 반영: FINISH_Back 끝점 = BackPointX + 0.0mm
+            const double aEndOffsetFromSplitMm = 0.0; // 요청: Finish_Front 끝점 = 기준점(splitPercent)
+            // 요청 반영: Finish_Back 시작점 오프셋 제거(정치수)
+            const double bStartOffsetFromSplitMm = 0.0; // Finish_Back 시작점 = 기준점(splitPercent)
+            // 요청 반영: Finish_Back 끝점 = BackPointX + 0.0mm
             const double compositeEndOffsetFromBackPointMm = 0.0;
 
             // 기준점(splitPercent)을 기준으로 A/B 경계를 독립 적용한다.
@@ -996,7 +989,7 @@ namespace DentalAddin
                 opB.LastPassPercent = effectiveLastPercent;
             }
 
-            // 정책: FINISH_B 종료 기준점은 BackPointX + 0.0mm
+            // 정책: Finish_Back 종료 기준점은 BackPointX + 0.0mm
             double compositeEndTargetX = MoveSTL_Module.BackPointX + compositeEndOffsetFromBackPointMm;
             double compositeEndPassPercent = XToPassPercentByStartEndScale(compositeEndTargetX, 0.0, 100.0);
             if (runB && opB != null)
@@ -1004,9 +997,8 @@ namespace DentalAddin
                 opB.LastPassPercent = Clamp(compositeEndPassPercent, opB.FirstPassPercent, 100.0);
             }
 
-            // FINISH_A 시작점 정책:
-            // - 기본값: Splitline_1 - 1.0mm
-            // - 단, STL 시작점(xMin)보다 좌측으로는 내려가지 않음
+            // Finish_Front 시작점 정책:
+            // - 기본값: STL 시작점(xMin) + 0.5mm
             // - env(ABUTS_COMPOSITE_FIRST_PASS_PERCENT_A) 지정 시 env(퍼센트) 우선
             double requestedAFirstPass = baseAFirstPercent;
             opA.FirstPassPercent = Clamp(requestedAFirstPass, 0.0, opA.LastPassPercent);
@@ -1024,19 +1016,19 @@ namespace DentalAddin
                 opA.FirstPassPercent = fallbackFirst;
                 aWindowPercent = opA.LastPassPercent - opA.FirstPassPercent;
                 aFirstPassFallbackApplied = true;
-                DentalLogger.Log($"Composite2SplitLine2 - A 시작점 최소폭 보정 적용: requested={requestedAFirstPass:F2}, splitline1Based={baseAFirstPercentBySplitline1X:F2}, envOverride={(firstPassPercentOverride.HasValue ? firstPassPercentOverride.Value.ToString("F2", CultureInfo.InvariantCulture) : "none")}, applied={before:F2}->{opA.FirstPassPercent:F2}, LastPass={opA.LastPassPercent:F2}, window={aWindowPercent:F2} (<{minAWindowPercent:F2})");
+                DentalLogger.Log($"Composite2SplitLine2 - A 시작점 최소폭 보정 적용: requested={requestedAFirstPass:F2}, stlMinBased={baseAFirstPercentByStlMinX:F2}, envOverride={(firstPassPercentOverride.HasValue ? firstPassPercentOverride.Value.ToString("F2", CultureInfo.InvariantCulture) : "none")}, applied={before:F2}->{opA.FirstPassPercent:F2}, LastPass={opA.LastPassPercent:F2}, window={aWindowPercent:F2} (<{minAWindowPercent:F2})");
             }
             else
             {
-                DentalLogger.Log($"Composite2SplitLine2 - A 시작점 적용: Requested={requestedAFirstPass:F2}, splitline1Based={baseAFirstPercentBySplitline1X:F2}, envOverride={(firstPassPercentOverride.HasValue ? firstPassPercentOverride.Value.ToString("F2", CultureInfo.InvariantCulture) : "none")}, Applied={opA.FirstPassPercent:F2}, LastPass={opA.LastPassPercent:F2}, window={aWindowPercent:F2}");
+                DentalLogger.Log($"Composite2SplitLine2 - A 시작점 적용: Requested={requestedAFirstPass:F2}, stlMinBased={baseAFirstPercentByStlMinX:F2}, envOverride={(firstPassPercentOverride.HasValue ? firstPassPercentOverride.Value.ToString("F2", CultureInfo.InvariantCulture) : "none")}, Applied={opA.FirstPassPercent:F2}, LastPass={opA.LastPassPercent:F2}, window={aWindowPercent:F2}");
             }
 
             // 정책 변경: Finish_All 단일 패스는 사용하지 않는다(항상 Front/Back 2단).
 
-            // A/B 끝점 정책 재확인:
-            // - FINISH_A 끝점: 기준점(splitPercent)
-            // - FINISH_B 시작점: 기준점(splitPercent) (오프셋 제거)
-            // - FINISH_B 끝점: BackPointX + 0.0mm
+            // Front/Back 끝점 정책 재확인:
+            // - Finish_Front 끝점: 기준점(splitPercent)
+            // - Finish_Back 시작점: 기준점(splitPercent) (오프셋 제거)
+            // - Finish_Back 끝점: BackPointX + 0.0mm
             double aLastBeforeClamp = opA.LastPassPercent;
             opA.LastPassPercent = Clamp(opA.LastPassPercent, opA.FirstPassPercent, effectiveLastPercent);
 
@@ -1060,7 +1052,7 @@ namespace DentalAddin
             bool surfaceReady = TryEnsureCompositeSurfaceNumber("Composite2SplitLine2");
 
             // 요청 반영:
-            // FINISH_A / FINISH_B 각각에 독립 DriveSurface를 새로 추가하여 사용한다.
+            // Finish_Front / Finish_Back 각각에 독립 DriveSurface를 새로 추가하여 사용한다.
             // (기본 SurfaceNumber는 생성 실패 시에만 fallback)
             int dedicatedAKey = 0;
             int dedicatedBKey = 0;
@@ -1161,9 +1153,9 @@ namespace DentalAddin
             DentalLogger.Log($"Composite2SplitLine2 - Operation 추가 시작 (beforeCount={beforeAddCount})");
 
             // 공정 순서 정책:
-            // - A_PHASE 모드: FINISH_A만 생성 (TURN_B 이전 배치용)
-            // - B_PHASE 모드: FINISH_B만 생성 (원래 순서 유지용)
-            // - 기본 모드: A → B 생성
+            // - A_PHASE 모드: Finish_Front만 생성 (TURN_B 이전 배치용)
+            // - B_PHASE 모드: Finish_Back만 생성 (원래 순서 유지용)
+            // - 기본 모드: Front → Back 생성
             if (runA)
             {
                 int beforeAddCountBaseA = Document?.Operations?.Count ?? -1;
@@ -1623,11 +1615,11 @@ namespace DentalAddin
         private static double LastAppliedFrontFaceDepthMm = FrontFaceFixedDepthMm;
 
         // Face(EM2_0BALL) 안전가드 상수:
-        // Rough_A 우측 끝보다 Face 우측 끝이 우측으로 더 나가면 공구 파손 위험이 있어,
+        // Front_Rough 우측 끝보다 Face 우측 끝이 우측으로 더 나가면 공구 파손 위험이 있어,
         // 최소 0.3mm의 선행 절삭 여유를 강제한다.
         private const double FaceRightGuardMinGapMm = 0.3;
 
-        // Rough_A 우측 종료 오프셋
+        // Front_Rough 우측 종료 오프셋
         // 요청 반영: 기존 끝점에서 +2.0mm 이동
         // 기존 roughAEnd = splitX - 0.5mm  ->  변경 roughAEnd = splitX + 1.5mm
         private const double RoughAEndOffsetFromSplitMm = -1.5;
@@ -1674,7 +1666,7 @@ namespace DentalAddin
 
 
         /// <summary>
-        /// TwoPhase Rough_A의 우측 끝(X) 좌표를 기존 Rough 분할 규칙과 동일하게 계산한다.
+        /// TwoPhase Front_Rough의 우측 끝(X) 좌표를 기존 Rough 분할 규칙과 동일하게 계산한다.
         /// 실패 시 false를 반환하며 caller는 Face 보정을 건너뛴다.
         /// </summary>
         private static bool TryGetRoughARightEndX(out double roughARightEndX, out double splitXUsed)
@@ -1783,8 +1775,8 @@ namespace DentalAddin
         }
 
         /// <summary>
-        /// Face(ParallelPlanes)의 우측 끝을 Rough_A 우측 끝 기준으로 안전 보정한다.
-        /// 규칙: (Rough_A.RightX - Face.RightX) < 0.3mm 이면 Face.RightX = Rough_A.RightX - 0.3mm 로 조정.
+        /// Face(ParallelPlanes)의 우측 끝을 Front_Rough 우측 끝 기준으로 안전 보정한다.
+        /// 규칙: (Front_Rough.RightX - Face.RightX) < 0.3mm 이면 Face.RightX = Front_Rough.RightX - 0.3mm 로 조정.
         /// </summary>
         private static bool TryApplyFaceRightEndGuard(TechLatheMoldParallelPlanes faceOp, string context)
         {
@@ -1845,6 +1837,12 @@ namespace DentalAddin
                 return true;
             }
 
+            // 단순 표기 호환: Finish_Front/Finish_Back 형태도 composite 계열로 간주
+            if (normalized.IndexOf("finish_", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return true;
+            }
+
             // 현장 오타 호환: "5Axisomposite"(c 누락) 같은 케이스도 composite 계열로 인식
             bool hasOmp = normalized.IndexOf("omposite", StringComparison.OrdinalIgnoreCase) >= 0;
             bool hasAxis = normalized.IndexOf("axis", StringComparison.OrdinalIgnoreCase) >= 0;
@@ -1853,16 +1851,12 @@ namespace DentalAddin
 
         private static string BuildCompositeOperationName(string suffix)
         {
-            // 표준 토큰: FINISH_FRONT / FINISH_BACK / FINISH_ALL
-            // (FINISH_A/B는 레거시 입력 호환만 유지)
-            if (string.Equals(suffix, "FINISH_FRONT", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(suffix, "FINISH_A", StringComparison.OrdinalIgnoreCase))
+            // 표준 토큰만 지원: FINISH_FRONT / FINISH_BACK / FINISH_ALL
+            if (string.Equals(suffix, "FINISH_FRONT", StringComparison.OrdinalIgnoreCase))
             {
                 return "Finish_Front";
             }
-            if (string.Equals(suffix, "FINISH_BACK", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(suffix, "FINISH_B", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(suffix, "FINISH_B1", StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(suffix, "FINISH_BACK", StringComparison.OrdinalIgnoreCase))
             {
                 return "Finish_Back";
             }
@@ -1896,17 +1890,6 @@ namespace DentalAddin
                 return "FINISH_FRONT";
             }
             if (normalized.StartsWith("BACK", StringComparison.OrdinalIgnoreCase))
-            {
-                return "FINISH_BACK";
-            }
-
-
-            // 레거시 라벨(A/B)은 입력 호환만 허용하고 표준 토큰으로 승격한다.
-            if (normalized.StartsWith("A", StringComparison.OrdinalIgnoreCase))
-            {
-                return "FINISH_FRONT";
-            }
-            if (normalized.StartsWith("B", StringComparison.OrdinalIgnoreCase))
             {
                 return "FINISH_BACK";
             }
@@ -1954,20 +1937,7 @@ namespace DentalAddin
                     baseName = RemoveTokenIgnoreCase(baseName, "[Finish_Back]").Trim();
                     baseName = RemoveTokenIgnoreCase(baseName, "[Finish_All]").Trim();
 
-                    // 레거시 토큰 정리
-                    baseName = RemoveTokenIgnoreCase(baseName, "[FINISH_A]").Trim();
-                    baseName = RemoveTokenIgnoreCase(baseName, "[FINISH_B]").Trim();
-                    baseName = RemoveTokenIgnoreCase(baseName, "[Finish_A]").Trim();
-                    baseName = RemoveTokenIgnoreCase(baseName, "[Finish_B]").Trim();
 
-                    // 구버전 토큰 정리(마이그레이션 호환)
-                    baseName = RemoveTokenIgnoreCase(baseName, "[FINISH_B1]").Trim();
-                    baseName = RemoveTokenIgnoreCase(baseName, "[Finish_B1]").Trim();
-
-                    baseName = RemoveTokenIgnoreCase(baseName, "_A").Trim();
-                    baseName = RemoveTokenIgnoreCase(baseName, "_B").Trim();
-                    baseName = RemoveTokenIgnoreCase(baseName, "_C").Trim();
-                    baseName = RemoveTokenIgnoreCase(baseName, "_D").Trim();
                     while (baseName.IndexOf("  ", StringComparison.Ordinal) >= 0)
                     {
                         baseName = baseName.Replace("  ", " ");
@@ -2156,8 +2126,8 @@ namespace DentalAddin
             try
             {
                 // FreeFormMill 종료 후 후처리 보정:
-                // 1) 이름 포맷 표준화(5 Axis Composite [FINISH_*])
-                // 2) FINISH_A를 TURN_B 바로 위로 재정렬
+                // 1) 이름 포맷 표준화(Finish_Front / Finish_Back / Finish_All)
+                // 2) Finish_Front를 TURN_B 바로 위로 재정렬
                 if (Document?.Operations == null)
                 {
                     return;
@@ -2191,18 +2161,12 @@ namespace DentalAddin
 
                     string mapped = null;
                     if (oldName.IndexOf("FINISH_FRONT", StringComparison.OrdinalIgnoreCase) >= 0
-                        || oldName.IndexOf("Finish_Front", StringComparison.OrdinalIgnoreCase) >= 0
-                        || oldName.IndexOf("FINISH_A", StringComparison.OrdinalIgnoreCase) >= 0
-                        || oldName.IndexOf("Finish_A", StringComparison.OrdinalIgnoreCase) >= 0)
+                        || oldName.IndexOf("Finish_Front", StringComparison.OrdinalIgnoreCase) >= 0)
                     {
                         mapped = "FINISH_FRONT";
                     }
                     else if (oldName.IndexOf("FINISH_BACK", StringComparison.OrdinalIgnoreCase) >= 0
-                        || oldName.IndexOf("Finish_Back", StringComparison.OrdinalIgnoreCase) >= 0
-                        || oldName.IndexOf("FINISH_B", StringComparison.OrdinalIgnoreCase) >= 0
-                        || oldName.IndexOf("Finish_B", StringComparison.OrdinalIgnoreCase) >= 0
-                        || oldName.IndexOf("FINISH_B1", StringComparison.OrdinalIgnoreCase) >= 0
-                        || oldName.IndexOf("Finish_B1", StringComparison.OrdinalIgnoreCase) >= 0)
+                        || oldName.IndexOf("Finish_Back", StringComparison.OrdinalIgnoreCase) >= 0)
                     {
                         mapped = "FINISH_BACK";
                     }
