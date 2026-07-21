@@ -842,22 +842,31 @@
   - 사전 체크는 의뢰 생성 가능 여부만 판단하는 용도
   - 의뢰 생성 후 ~ 차감 전 사이에 크레딧이 부족해질 수 있으므로, 차감 시점에도 잔액 체크 필요
 
-### 4.3.4 제조사 헥스 회전(PreviewModal) → DB 저장 → Esprit 추가 회전 정책 (2026-07-20)
+### 4.3.4 제조사 헥스 회전(PreviewModal) → DB 저장 → Esprit 모드 보정 정책 (2026-07-21)
 
-검색 키워드: `rnd-hex-rotation`, `manufacturerHexRotation`, `request-meta`, `StlFileProcessor 추가 회전`
+검색 키워드: `rnd-hex-rotation`, `manufacturerHexRotation`, `hexRotation.appliedDeg`, `request-meta`, `원복 후 +30`
 
 - 제조사 워크시트 PreviewModal의 `헥스 회전` 선택값은 반드시 백엔드 API를 통해 DB에 저장한다.
   - API: `PATCH /api/requests/:id/rnd-hex-rotation`
   - 저장 필드(SSOT):
     - `Request.rnd.manufacturerHexRotation` (`"0" | "30"`)
     - `Request.caseInfos.finalHexRotation` (표시/조회용 최종값)
-- BG/esprit-addin 연동에서 사용하는 `manufacturerHexRotation` 의미는 **최종 각도값이 아니라 "추가 회전 델타"**다.
-  - `"30"`이면 **기존 W축 기본 회전에 추가로 +30도** 회전
-  - `"0"`이면 **추가 회전 없음**
-- `request-meta` 응답은 add-in이 파일명 추론/폴백 없이 SSOT를 직접 쓰도록 `caseInfos.manufacturerHexRotation`을 포함해야 한다.
+- BG/esprit-addin 연동에서 `manufacturerHexRotation`은 **추가각 숫자 자체가 아니라 모드값**으로 해석한다.
+  - `"0"`  → 기본값(현행 회전 유지)
+  - `"30"` → **원복 후 +30** 경로 사용
+- `"30"` 모드 계산 SSOT:
+  - `request-meta.caseInfos.hexRotation.appliedDeg`(Rhino 정렬에서 적용한 헥스 회전각)를 사용한다.
+  - Esprit는 기본 회전 이후 아래 보정을 수행한다.
+    1. 기본 +30 역회전(-30)
+    2. `hexRotation.appliedDeg` 역회전(-hex)
+    3. +30 재적용
+  - 동치식: 기본 회전 이후 추가 보정량은 `-hexRotation.appliedDeg`
+- `request-meta` 응답은 add-in이 파일명 추론/폴백 없이 SSOT를 직접 쓰도록 아래를 포함해야 한다.
+  - `caseInfos.manufacturerHexRotation`
+  - `caseInfos.hexRotation.appliedDeg` (및 관련 telemetry)
 - add-in 적용 순서 SSOT:
   1. 기존 기본 회전 적용 (`DefaultWAxisRotationDegrees`)
-  2. `manufacturerHexRotation`이 `"30"`일 때만 추가 회전 적용
+  2. `manufacturerHexRotation`이 `"30"`이면 보정 델타(`-hexRotation.appliedDeg`) 적용
 
 관련 파일:
 - `web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx`
@@ -865,6 +874,7 @@
 - `web/backend/modules/requests/request.routes.js`
 - `web/backend/controllers/requests/common.requests.controller.js`
 - `web/backend/controllers/bg/bg.controller.js`
+- `bg/pc1/esprit-addin/Helpers/BackendApiClient.cs`
 - `bg/pc1/esprit-addin/StlFileProcessor.cs`
 
 ### 4.4 가상 우편함

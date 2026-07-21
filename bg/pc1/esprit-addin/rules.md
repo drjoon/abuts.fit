@@ -220,22 +220,29 @@
 - `boundaryKey/prc/angle(0,180)`
 - 생성 결과: `BackRoughStyle 종료(created=...)`
 
-### 4.13 제조사 헥스 추가 회전 정책 (2026-07-20)
+### 4.13 제조사 헥스 회전 모드 정책 (2026-07-21)
 
-검색 키워드: `manufacturerHexRotation`, `request-meta`, `W축 추가 회전`, `DefaultWAxisRotationDegrees`
+검색 키워드: `manufacturerHexRotation`, `hexRotation.appliedDeg`, `request-meta`, `원복 후 +30`, `DefaultWAxisRotationDegrees`
 
-- `request-meta.caseInfos.manufacturerHexRotation`은 add-in에서 **추가 회전 델타**로만 해석한다.
-  - `"30"` → 기본 W축 회전에 `+30°` 추가
-  - `"0"`/누락/비정상 → 추가 회전 없음
-- 기본 회전(`DefaultWAxisRotationDegrees`)은 기존 정렬 SSOT이므로 유지하고, 제조사값은 2차 회전으로만 적용한다.
+- `request-meta.caseInfos.manufacturerHexRotation`은 add-in에서 **모드값**으로 해석한다.
+  - `"0"`  → 기본값(현행 회전 유지)
+  - `"30"` → **원복 후 +30** 경로 사용
+- `"30"` 모드 계산 SSOT:
+  - 사용 데이터: `request-meta.caseInfos.hexRotation.appliedDeg` (Rhino 정렬에서 적용된 헥스 회전각)
+  - 단계:
+    1. 기본 W축 회전(+30)을 역회전(-30)
+    2. `hexRotation.appliedDeg`를 역회전(-hex)
+    3. +30 재적용
+  - 동치식: default 이후 추가 보정량은 `-hexRotation.appliedDeg`
+- 기본 회전(`DefaultWAxisRotationDegrees`) 자체는 기존 정렬 SSOT로 유지한다.
 - 적용 순서 SSOT:
   1. `Rotate90Degrees`
   2. `RotateByWAxisDegrees(DefaultWAxisRotationDegrees)`
-  3. `manufacturerHexRotation=="30"`이면 `RotateByWAxisDegrees(+30)`
+  3. `manufacturerHexRotation=="30"`이면 보정 델타(`-hexRotation.appliedDeg`) 적용
 - 구현 위치:
   - `StlFileProcessor.Process` (회전 순서)
-  - `StlFileProcessor.ResolveManufacturerAdditionalHexRotationDegrees` (델타 해석)
-  - `StlFileProcessor.RequestMetaCaseInfos.manufacturerHexRotation` (payload 바인딩)
+  - `StlFileProcessor.ResolveManufacturerAdditionalHexRotationDegrees` (모드 해석/보정량 계산)
+  - `Helpers/BackendApiClient.RequestMetaCaseInfos.hexRotation` (payload 바인딩)
 
 ## 5. 정리 원칙
 

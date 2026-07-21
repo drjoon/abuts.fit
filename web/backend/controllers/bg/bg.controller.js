@@ -1268,11 +1268,11 @@ export const getRequestMeta = asyncHandler(async (req, res) => {
   }
 
   const ci = request.caseInfos || {};
-  // 제조사 수동 헥스 회전값은 "추가 회전(델타)" 의미로만 사용한다.
-  // - "30"이면 기존 회전에 +30도 추가
-  // - 그 외/누락은 +0도
+  // 제조사 수동 헥스 회전값은 request-meta에서 모드값("0"|"30")으로 전달한다.
+  // - "0"  : 기본값(현행 회전 유지)
+  // - "30" : Esprit의 "원복 후 +30" 보정 경로 사용
   // request-meta에서 명시적으로 내려주어 add-in이 파일명/추정 로직 없이 SSOT를 직접 사용하게 한다.
-  const manufacturerHexRotationAdditional =
+  const manufacturerHexRotationMode =
     String(request?.rnd?.manufacturerHexRotation || "").trim() === "30"
       ? "30"
       : "0";
@@ -1347,10 +1347,17 @@ export const getRequestMeta = asyncHandler(async (req, res) => {
           // NC 재생성 경로(request-meta 직접 조회)에서도 PRC 파일명이 필요하므로 여기서 보장.
           faceHolePrcFileName: resolvedPrcFiles.faceHolePrcFileName,
           connectionPrcFileName: resolvedPrcFiles.connectionPrcFileName,
-          // 제조사 수동 헥스 회전값(0/30).
-          // StlFileProcessor는 이 값을 "기본 W축 회전 이후 추가 회전"으로만 적용한다.
-          // (30 => +30도, 0 => 추가 회전 없음)
-          manufacturerHexRotation: manufacturerHexRotationAdditional,
+          // 제조사 수동 헥스 회전 모드값(0/30).
+          // - "0"  : 기본값(현행 회전 유지)
+          // - "30" : Esprit에서 "원복 후 +30" 보정 경로를 사용
+          //   (hexRotation.appliedDeg와 기본 30도를 역회전해 원복한 뒤 +30 적용)
+          manufacturerHexRotation: manufacturerHexRotationMode,
+          // Rhino 정렬 telemetry(헥스 회전각).
+          // Esprit가 30도 회전 모드에서 "원복 후 +30" 계산 시 사용한다.
+          hexRotation:
+            ci?.hexRotation && typeof ci.hexRotation === "object"
+              ? ci.hexRotation
+              : null,
           finishLine:
             Array.isArray(finishLinePoints) && finishLinePoints.length >= 2
               ? {

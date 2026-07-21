@@ -376,7 +376,20 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
             [DataMember(Name = "inclinedAxisVectorCsv")] public string inclinedAxisVectorCsv { get; set; }
             [DataMember(Name = "slopeAxisVectorCsv")] public string slopeAxisVectorCsv { get; set; }
 
+            // Rhino 정렬 telemetry(헥스 회전각)
+            // - 30도 회전 모드에서 StlFileProcessor가 "원복 후 +30" 계산에 사용한다.
+            [DataMember(Name = "hexRotation")] public RequestMetaHexRotation hexRotation { get; set; }
+
             [DataMember] public RequestMetaFinishLine finishLine { get; set; }
+        }
+
+        [DataContract]
+        public class RequestMetaHexRotation
+        {
+            [DataMember(Name = "beforeToXDeg")] public double? beforeToXDeg { get; set; }
+            [DataMember(Name = "appliedDeg")] public double? appliedDeg { get; set; }
+            [DataMember(Name = "residualToXDeg")] public double? residualToXDeg { get; set; }
+            [DataMember(Name = "method")] public string method { get; set; }
         }
 
         [DataContract]
