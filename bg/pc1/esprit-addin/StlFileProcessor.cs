@@ -810,9 +810,12 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             // - mode="0"  : 기본값. default(+30)만 적용하고 추가 보정 없음.
             // - mode="30" : "원복 후 +30" 정책.
             //   1) 기본 회전 +30을 역회전(-30)
-            //   2) Rhino 헥스 회전각(caseInfos.hexRotation.appliedDeg)을 역회전(-hex)
+            //   2) Rhino 헥스 회전각(caseInfos.hexRotation.appliedDeg) 보정(+hex)
             //   3) +30 재적용
-            //   => default 이후 추가 보정량은 (-30 - hex + 30) = -hex 와 동치.
+            //   => default 이후 추가 보정량은 (-30 + hex + 30) = +hex 와 동치.
+            // 주의:
+            //   Rhino telemetry의 appliedDeg 부호와 Esprit W축 체감 회전 방향을 실측 비교했을 때
+            //   mode=30 정합에는 +hexAppliedDeg 적용이 일치한다.
             string mode = string.IsNullOrWhiteSpace(_backendManufacturerHexRotation)
                 ? ""
                 : _backendManufacturerHexRotation.Trim();
@@ -830,17 +833,17 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 !double.IsNaN(_backendHexRotationAppliedDeg.Value) &&
                 !double.IsInfinity(_backendHexRotationAppliedDeg.Value))
             {
-                rollbackHexDeg = -_backendHexRotationAppliedDeg.Value;
+                rollbackHexDeg = _backendHexRotationAppliedDeg.Value;
             }
             else
             {
                 // telemetry가 없으면 원복량을 계산할 수 없으므로 hex 원복은 생략한다.
                 // (결과적으로 추가 보정 0도)
-                AppLogger.Log("StlFileProcessor: mode=30 이지만 hexRotation.appliedDeg 없음 - hex 원복 생략");
+                AppLogger.Log("StlFileProcessor: mode=30 이지만 hexRotation.appliedDeg 없음 - hex 보정 생략");
             }
 
             double delta = rollbackDefaultDeg + rollbackHexDeg + restoreThirtyDeg;
-            AppLogger.Log($"StlFileProcessor: mode=30 보정 계산 - rollback30={rollbackDefaultDeg:F4}, rollbackHex={rollbackHexDeg:F4}, reapply30={restoreThirtyDeg:F4}, delta={delta:F4}");
+            AppLogger.Log($"StlFileProcessor: mode=30 보정 계산 - rollback30={rollbackDefaultDeg:F4}, hexComp={rollbackHexDeg:F4}, reapply30={restoreThirtyDeg:F4}, delta={delta:F4}");
             return delta;
         }
         private void InvokeDentalAddin(Document document, double frontLimitX, double backLimitX, double? stlTopZ, double? finishLineTopZ, double? finishLineMinZ, double? finishLineEspritR, bool twoPhase)

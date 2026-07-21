@@ -858,15 +858,15 @@
   - `request-meta.caseInfos.hexRotation.appliedDeg`(Rhino 정렬에서 적용한 헥스 회전각)를 사용한다.
   - Esprit는 기본 회전 이후 아래 보정을 수행한다.
     1. 기본 +30 역회전(-30)
-    2. `hexRotation.appliedDeg` 역회전(-hex)
+    2. `hexRotation.appliedDeg` 보정(+hex)
     3. +30 재적용
-  - 동치식: 기본 회전 이후 추가 보정량은 `-hexRotation.appliedDeg`
+  - 동치식: 기본 회전 이후 추가 보정량은 `+hexRotation.appliedDeg`
 - `request-meta` 응답은 add-in이 파일명 추론/폴백 없이 SSOT를 직접 쓰도록 아래를 포함해야 한다.
   - `caseInfos.manufacturerHexRotation`
   - `caseInfos.hexRotation.appliedDeg` (및 관련 telemetry)
 - add-in 적용 순서 SSOT:
   1. 기존 기본 회전 적용 (`DefaultWAxisRotationDegrees`)
-  2. `manufacturerHexRotation`이 `"30"`이면 보정 델타(`-hexRotation.appliedDeg`) 적용
+  2. `manufacturerHexRotation`이 `"30"`이면 보정 델타(`+hexRotation.appliedDeg`) 적용
 
 관련 파일:
 - `web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx`
