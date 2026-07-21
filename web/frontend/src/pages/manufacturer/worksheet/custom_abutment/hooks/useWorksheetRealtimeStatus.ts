@@ -1,4 +1,10 @@
-import { useEffect, useRef, type Dispatch, type SetStateAction } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  type Dispatch,
+  type SetStateAction,
+} from "react";
 
 import { useToast } from "@/shared/hooks/use-toast";
 import {
@@ -42,6 +48,7 @@ export function useWorksheetRealtimeStatus({
   matchesCurrentPage,
 }: UseWorksheetRealtimeStatusParams) {
   const realtimeBaseRef = useRef<Record<string, number>>({});
+  const startedToastShownRef = useRef<Record<string, number>>({});
   const latestRef = useRef({
     previewOpen,
     previewFiles,
@@ -55,6 +62,25 @@ export function useWorksheetRealtimeStatus({
     handleOpenPreview,
   };
   const { toast } = useToast();
+
+  const showStartedToast = useCallback(
+    (kind: "filled" | "nc", requestId: string) => {
+      const key = `${kind}:${requestId}`;
+      const now = Date.now();
+      const lastShownAt = Number(startedToastShownRef.current[key] || 0);
+      if (now - lastShownAt < 4000) return;
+      startedToastShownRef.current[key] = now;
+
+      toast({
+        title: "작업 시작",
+        description:
+          kind === "filled"
+            ? "Filled STL 생성을 시작했습니다."
+            : "NC 코드 생성을 시작했습니다.",
+      });
+    },
+    [toast],
+  );
 
   const toStageLabel = (raw: unknown) => {
     const stage = String(raw || "")
@@ -88,7 +114,7 @@ export function useWorksheetRealtimeStatus({
     return action === "nc-bridge-cleanup";
   };
 
-  const applyRequestPatch = (
+  const applyRequestPatch = useCallback((
     prev: ManufacturerRequest[],
     nextRequest: ManufacturerRequest | null | undefined,
   ) => {
@@ -132,7 +158,7 @@ export function useWorksheetRealtimeStatus({
     // found=false인 경우: 현재 페이지에 없는 항목이므로 추가하지 않음
     // (페이지 로딩 중이거나, 무한 스크롤로 아직 불러오지 않은 페이지의 항목일 수 있음)
     return prev;
-  };
+  }, [matchesCurrentPage]);
 
   useEffect(() => {
     if (!enabled) return;
@@ -292,6 +318,7 @@ export function useWorksheetRealtimeStatus({
         case "request:cam-processing-started": {
           const startedAt = new Date().toISOString();
           realtimeBaseRef.current[requestId] = Date.now();
+          showStartedToast("nc", requestId);
           setRequests((prev) =>
             prev.map((r) => {
               if (String((r as any)?.requestId || "").trim() !== requestId) {
@@ -313,6 +340,7 @@ export function useWorksheetRealtimeStatus({
         case "request:filled-processing-started": {
           const startedAt = new Date().toISOString();
           realtimeBaseRef.current[requestId] = Date.now();
+          showStartedToast("filled", requestId);
           setRequests((prev) =>
             prev.map((r) => {
               if (String((r as any)?.requestId || "").trim() !== requestId) {
@@ -611,7 +639,16 @@ export function useWorksheetRealtimeStatus({
       if (typeof unsubTick === "function") unsubTick();
       if (typeof unsubCompleted === "function") unsubCompleted();
     };
-  }, [enabled, token, setRequests, fetchRequests, toast]);
+  }, [
+    enabled,
+    token,
+    setRequests,
+    fetchRequests,
+    applyRequestPatch,
+    removeOnMachiningComplete,
+    showStartedToast,
+    toast,
+  ]);
 
   return {
     realtimeBaseRef,

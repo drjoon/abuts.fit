@@ -485,9 +485,10 @@ export const WorksheetCardGrid = ({
           request.createdAt,
           request.timeline?.estimatedShipYmd,
         );
-        const hasRealtimeProgress = Boolean(
-          realtimeBadge || realtimeElapsedLabel,
-        );
+        const hasRealtimeProgress =
+          reviewStageKey !== "request" &&
+          reviewStageKey !== "cam" &&
+          Boolean(realtimeBadge || realtimeElapsedLabel);
         const hasTopFloatingControls =
           Boolean(isSampleRequest) ||
           hasRealtimeProgress ||
