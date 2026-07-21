@@ -685,7 +685,7 @@ export async function updateMyRequestSettings(req, res) {
         return res.status(400).json({
           success: false,
           message:
-            "유효하지 않은 의뢰 설정입니다. defaultRequestorHexRotation은 '각도 보정(0)' 또는 '원본 각도(30)'여야 합니다.",
+            "유효하지 않은 의뢰 설정입니다. defaultRequestorHexRotation은 '보정(0)' 또는 '무보정(30)'이어야 합니다.",
         });
       }
       defaultRequestorHexRotation = raw;

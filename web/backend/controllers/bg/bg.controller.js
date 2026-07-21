@@ -1271,7 +1271,7 @@ export const getRequestMeta = asyncHandler(async (req, res) => {
   const ci = request.caseInfos || {};
   // 제조사 수동 헥스 회전값은 request-meta에서 모드값("0"|"30")으로 전달한다.
   // [중요] 이번 변경은 UI 표시명만 변경한다. mode 값과 실행 로직은 기존 그대로다.
-  // - UI 표시: "0" => "각도 보정", "30" => "원본 각도"
+  // - UI 표시: "0" => "보정", "30" => "무보정"
   // - 실행 의미: mode 0=현행 회전 유지, mode 30=Esprit "원복 후 +30" 경로
   // request-meta에서 명시적으로 내려주어 add-in이 파일명/추정 로직 없이 SSOT를 직접 사용하게 한다.
   const manufacturerHexRotationMode =
@@ -1351,12 +1351,12 @@ export const getRequestMeta = asyncHandler(async (req, res) => {
           connectionPrcFileName: resolvedPrcFiles.connectionPrcFileName,
           // 제조사 수동 헥스 회전 모드값(0/30).
           // [중요] 표시명만 변경되며 mode 값/실행 로직은 기존과 동일.
-          // - UI 표시: "0" => "각도 보정", "30" => "원본 각도"
+          // - UI 표시: "0" => "보정", "30" => "무보정"
           // - 실행 의미: mode 0=현행 유지, mode 30=원복 후 +30
           //   (hexRotation.appliedDeg와 기본 30도를 역회전해 원복한 뒤 +30 적용)
           manufacturerHexRotation: manufacturerHexRotationMode,
           // Rhino 정렬 telemetry(헥스 회전각).
-          // Esprit가 원본 각도(30) 모드에서 "원복 후 +30" 계산 시 사용한다.
+          // Esprit가 무보정(30) 모드에서 "원복 후 +30" 계산 시 사용한다.
           hexRotation:
             ci?.hexRotation && typeof ci.hexRotation === "object"
               ? ci.hexRotation

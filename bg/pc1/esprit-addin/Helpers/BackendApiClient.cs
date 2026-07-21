@@ -359,7 +359,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
             [DataMember] public string connectionPrcFileName { get; set; }
             // 제조사 수동 헥스 회전 모드값(0/30)
             // [중요] 이번 변경은 "표시명"만 바뀐다. 저장값("0"/"30")과 실행 로직은 기존과 동일.
-            // - UI 표시: "0" => "각도 보정", "30" => "원본 각도"
+            // - UI 표시: "0" => "보정", "30" => "무보정"
             // - 실행 의미(변경 없음):
             //   "0"  => 기존 기본 경로 유지
             //   "30" => 기존 "원복 후 +30" 경로 사용
@@ -382,8 +382,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
             [DataMember(Name = "slopeAxisVectorCsv")] public string slopeAxisVectorCsv { get; set; }
 
             // Rhino 정렬 telemetry(헥스 회전각)
-            // - mode="30"(UI 표시: 원본 각도)에서만 기존 "원복 후 +30" 계산에 사용한다.
-            // - mode="0"(UI 표시: 각도 보정)에서는 기존과 동일하게 추가 보정 계산에 사용하지 않는다.
+            // - mode="30"(UI 표시: 무보정)에서만 기존 "원복 후 +30" 계산에 사용한다.
+            // - mode="0"(UI 표시: 보정)에서는 기존과 동일하게 추가 보정 계산에 사용하지 않는다.
             [DataMember(Name = "hexRotation")] public RequestMetaHexRotation hexRotation { get; set; }
 
             [DataMember] public RequestMetaFinishLine finishLine { get; set; }

@@ -1323,11 +1323,11 @@ export const RequestorDashboardPage = () => {
                     <div className="text-xs text-muted-foreground truncate">
                       헥스 회전: {(() => {
                         const finalHexRaw = String(ci?.finalHexRotation || "").trim();
-                        if (finalHexRaw === "30") return "원본 각도";
-                        if (finalHexRaw === "0") return "각도 보정";
+                        if (finalHexRaw === "30") return "무보정";
+                        if (finalHexRaw === "0") return "보정";
                         return String(ci?.requestorHexRotation || "").trim() === "30"
-                          ? "원본 각도"
-                          : "각도 보정";
+                          ? "무보정"
+                          : "보정";
                       })()}
                     </div>
                     {isUnmachinable && (

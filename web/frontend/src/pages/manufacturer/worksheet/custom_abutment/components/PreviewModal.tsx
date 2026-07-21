@@ -1499,14 +1499,14 @@ export const PreviewModal = ({
                   }
                 >
                   <SelectTrigger className="h-7 min-w-[118px] rounded-md border border-slate-200 bg-slate-50 px-2 text-[12px] font-semibold text-slate-700 shadow-sm focus:ring-1 focus:ring-blue-200 disabled:opacity-60">
-                    <SelectValue placeholder="각도 보정" />
+                    <SelectValue placeholder="보정" />
                   </SelectTrigger>
                   <SelectContent align="end" className="min-w-[118px]">
                     <SelectItem value="0" className="text-[12px] font-medium">
-                      각도 보정
+                      보정
                     </SelectItem>
                     <SelectItem value="30" className="text-[12px] font-medium">
-                      원본 각도
+                      무보정
                     </SelectItem>
                   </SelectContent>
                 </Select>

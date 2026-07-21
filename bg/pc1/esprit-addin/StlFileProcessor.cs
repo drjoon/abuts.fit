@@ -33,7 +33,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         // 제조사 수동 헥스 회전 모드값("0"|"30") 정책
         // [중요] 이번 변경은 UI 표시명만 변경한다.
         //        저장값("0"/"30")과 실행 로직은 기존과 동일하다.
-        // - UI 표시: "0" => "각도 보정", "30" => "원본 각도"
+        // - UI 표시: "0" => "보정", "30" => "무보정"
         // - 실행 의미(변경 없음):
         //   0  => 현행 기본 회전 유지
         //   30 => 기존 "원복 후 +30" 경로
@@ -108,7 +108,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         // request-meta(caseInfos.manufacturerHexRotation) 제조사 헥스 회전 모드값("0"|"30")
         private string _backendManufacturerHexRotation;
         // request-meta(caseInfos.hexRotation.appliedDeg) Rhino 정렬 시 적용된 헥스 회전각.
-        // 원본 각도(30) 모드에서 "원복 후 +30" 계산의 보정량으로 사용한다.
+        // 무보정(30) 모드에서 "원복 후 +30" 계산의 보정량으로 사용한다.
         private double? _backendHexRotationAppliedDeg;
         // 유지홈(retentionGroove) 옵션 캐시 — request-meta 수신 직후 저장.
         // 이후 5axisComposite_A.prc 의 StepIncrement 를 의뢰별로 덮어쓰기 위해 사용.
@@ -263,7 +263,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
 
                         // Rhino 정렬 telemetry(헥스 회전각) 캐시
                         // - caseInfos.hexRotation.appliedDeg
-                        // - 원본 각도(30) 모드에서 "원복 후 +30" 계산의 보정량으로 사용
+                        // - 무보정(30) 모드에서 "원복 후 +30" 계산의 보정량으로 사용
                         double? appliedHex = requestMeta.hexRotation?.appliedDeg;
                         if (appliedHex.HasValue && !double.IsNaN(appliedHex.Value) && !double.IsInfinity(appliedHex.Value))
                         {
@@ -353,8 +353,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 RotateByWAxisDegrees(document, DefaultWAxisRotationDegrees);
                 // 2) 제조사 수동 헥스 회전 모드별 보정
                 //    [중요] mode 값(0/30)은 기존과 동일하며, UI 표시명만 변경됨.
-                //    - mode 0(각도 보정): 추가 보정 없음(현행 유지)
-                //    - mode 30(원본 각도): "원복 후 +30" 정책 => default 이후 추가 보정량은 +hexRotation.appliedDeg
+                //    - mode 0(보정): 추가 보정 없음(현행 유지)
+                //    - mode 30(무보정): "원복 후 +30" 정책 => default 이후 추가 보정량은 +hexRotation.appliedDeg
                 double additionalHexRotationDegrees = ResolveManufacturerAdditionalHexRotationDegrees();
                 if (Math.Abs(additionalHexRotationDegrees) > 0.0001)
                 {
@@ -566,7 +566,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             [DataMember] public string connectionPrcFileName { get; set; }
             // 제조사 수동 헥스 회전 모드값(0/30)
             // [중요] 표시명만 변경되고, 값/로직은 기존과 동일하다.
-            // - UI 표시: "0" => "각도 보정", "30" => "원본 각도"
+            // - UI 표시: "0" => "보정", "30" => "무보정"
             // - 실행 의미: mode 0=현행 유지, mode 30=원복 후 +30 경로
             [DataMember] public string manufacturerHexRotation { get; set; }
             // 유지홈(retentionGroove) — 5axisComposite_A.prc 의 StepIncrement
@@ -812,8 +812,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         private double ResolveManufacturerAdditionalHexRotationDegrees()
         {
             // 제조사 헥스 회전 모드값 해석(SSOT)
-            // - mode="0"  : 각도 보정. default(+30)만 적용하고 추가 보정 없음.
-            // - mode="30" : 원본 각도("원복 후 +30") 정책.
+            // - mode="0"  : 보정. default(+30)만 적용하고 추가 보정 없음.
+            // - mode="30" : 무보정("원복 후 +30") 정책.
             //   1) 기본 회전 +30을 역회전(-30)
             //   2) Rhino 헥스 회전각(caseInfos.hexRotation.appliedDeg) 보정(+hex)
             //   3) +30 재적용

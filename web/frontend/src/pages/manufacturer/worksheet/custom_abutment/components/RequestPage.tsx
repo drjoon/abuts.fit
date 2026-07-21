@@ -1418,7 +1418,7 @@ export const RequestPage = ({
             ? "30"
             : "0";
         const savedManufacturerLabel =
-          savedManufacturer === "30" ? "원본 각도" : "각도 보정";
+          savedManufacturer === "30" ? "무보정" : "보정";
         const savedFinal =
           String(data?.data?.finalHexRotation || "").trim() === "30" ? "30" : "0";
 
