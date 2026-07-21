@@ -94,7 +94,7 @@ BEGIN_OPERATION; 316; FACE DRILL; 0;
    4421; 4421; 3;  SOURCE; 0; TECHCODETYPE; 2;
    OperationName; 613; ;  CAPTION; 작업 이름; SOURCE; 2; TECHCODETYPE; 3;
 	BEGIN_STRING; 613;;
-		:FACE DRILL
+		:MEGAGEN_MiNi_H_FACE DRILL
 	END_STRING
    CustomSettingStr4; 1803; ;  CAPTION; 사용자 정의 문자열 4; SOURCE; 1; TECHCODETYPE; 3;
 	BEGIN_STRING; 1803;;
@@ -137,19 +137,19 @@ BEGIN_OPERATION; 316; FACE DRILL; 0;
    Text; 513; ;  CAPTION; 문자; SOURCE; 2; TECHCODETYPE; 3;
 	BEGIN_STRING; 513;;
     :
-		:(FOR OSSTEM TS Regular)
+		:(FOR MEGAGEN MiNi internal)
     :M93001
     :
     :(Tool/Offset)
     :(T01:CUT[UT-L/T1.5]WZ-0.4/GZ12.0)
     :(T02:Turn[KY-R/NR0.4])
-    :(T03:B-Turn[KY-R/NR0.05]WZ-0.4/GZ3.7)
+    :(T04:B-Turn[UT-R/NR0.08]WZ-0.4/GZ)
     :(T06:HEX[EM*D1.5]WX-0.3/WZ-0.4/GZ10.9)
     :(T07:Finish[Ball D1.2*L3.0]WX-0.3/WZ-0.4/GZ10.9)
     :(T08:Rough[Ball D4.0]WX-0.3/WZ-0.4/GX5.0/GZ10.9)
     :(T09:Engraving[D2.0*A90]WX-0.3/WZ-0.4/GZ15.86)
     :(T41:C-drill[D5.0*A90]WZ-0.4)
-    :(T45:S-drill[D2.015*L4.25/D2.35]WZ-0.4)
+    :(T43:S-drill[D1.415*L3.10/D2.25]WZ-0.4)
     :(T48:Finish[Ball D2.0]WZ-0.4/GZ4.0)
     :(T21:Shuter[D6.0])
     :
@@ -199,12 +199,12 @@ BEGIN_OPERATION; 316; FACE DRILL; 0;
 		:
 		:(Step drill)
 		:M88
-		:T4545 (D2.015*L4.25/D2.35)
+		:T4343 (D1.415*L3.10/D2.25)
 		:M3 S3000
 		:G99 G0 X0.0 Z-1.5
 		:G4 U0.1
 		:G1 Z-0.5 F0.1
-		:G83 Z[#520+#523+3.6] Q500 P5 F0.025
+		:G83 Z[#520+#523+2.75] Q350 P5 F0.025
     :G80
 		:G0 Z-1.5
     :G0 T0
