@@ -1355,7 +1355,7 @@ export const AdminDashboardPage = () => {
                 </div>
 
                 <div className="flex-1 min-h-0 overflow-auto pr-1">
-                  <div className="grid grid-cols-1 xl:grid-cols-2 gap-2">
+                  <div className="grid grid-cols-2 xl:grid-cols-3 gap-2">
                     {happyCallCompletionItems.map((row) => {
                       const businessName = String(row.businessName || "").trim();
                       const companyName = String(row.companyName || "").trim();
