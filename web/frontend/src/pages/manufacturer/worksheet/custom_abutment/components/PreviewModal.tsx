@@ -1400,6 +1400,42 @@ export const PreviewModal = ({
     return rg === "deep" ? "있음" : "없음";
   })();
 
+  const overlayCaseInfos = (activeReq?.caseInfos || {}) as Record<string, any>;
+  const overlayFlat = (activeReq || {}) as Record<string, any>;
+  const overlayRequestor = (activeReq?.requestor || {}) as Record<string, any>;
+  const overlayCreatedDate = activeReq?.createdAt
+    ? new Date(activeReq.createdAt).toLocaleDateString("ko-KR")
+    : "-";
+
+  const toFiniteNumber = (value: unknown): number | null => {
+    const num = Number(value);
+    return Number.isFinite(num) ? num : null;
+  };
+
+  const displayConnectionDiameter =
+    toFiniteNumber(overlayCaseInfos?.connectionDiameter) ??
+    toFiniteNumber(overlayFlat?.connectionDiameter) ??
+    toFiniteNumber(overlayCaseInfos?.connectionSpec?.diameter) ??
+    toFiniteNumber(overlayCaseInfos?.fixtureConnectionDiameter);
+
+  const maxDiameter =
+    toFiniteNumber(stlMetadata?.maxDiameter) ??
+    toFiniteNumber(overlayCaseInfos?.maxDiameter) ??
+    toFiniteNumber(overlayFlat?.maxDiameter);
+
+  const maxLength =
+    toFiniteNumber(stlMetadata?.totalLength) ??
+    toFiniteNumber(overlayCaseInfos?.maxLength) ??
+    toFiniteNumber(overlayCaseInfos?.totalLength) ??
+    toFiniteNumber(overlayFlat?.totalLength);
+
+  const overlayImplantLine = [
+    String(overlayCaseInfos?.implantManufacturer || overlayFlat?.implantManufacturer || "-").trim() || "-",
+    String(overlayCaseInfos?.implantBrand || overlayFlat?.implantBrand || "-").trim() || "-",
+    String(overlayCaseInfos?.implantFamily || overlayFlat?.implantFamily || "-").trim() || "-",
+    String(overlayCaseInfos?.implantType || overlayFlat?.implantType || "-").trim() || "-",
+  ].join(" / ");
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
@@ -1684,6 +1720,41 @@ export const PreviewModal = ({
                   X
                 </button>
               </DialogClose>
+            </div>
+          </div>
+
+          <div className="shrink-0 rounded-lg border border-slate-200 bg-white px-4 py-3 space-y-2">
+            <div className="flex flex-wrap items-center gap-2 text-[13px] text-slate-600">
+              <span>{String(overlayRequestor?.business || overlayRequestor?.name || "-").trim() || "-"}</span>
+              <span>•</span>
+              <span>{String(overlayCaseInfos?.clinicName || overlayFlat?.clinicName || "-").trim() || "-"}</span>
+              <span>•</span>
+              <span>{overlayCreatedDate}</span>
+              <span>•</span>
+              <span>
+                {String(overlayCaseInfos?.patientName || overlayFlat?.patientName || "-").trim() || "-"} /{" "}
+                {String(overlayCaseInfos?.tooth || overlayFlat?.tooth || "-").trim() || "-"}
+              </span>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2 text-[13px] text-slate-600">
+              {displayConnectionDiameter != null && (
+                <span>커넥션 직경 {displayConnectionDiameter.toFixed(2)}</span>
+              )}
+              {displayConnectionDiameter != null && (maxDiameter != null || maxLength != null || !!overlayImplantLine) && (
+                <span>•</span>
+              )}
+              {maxDiameter != null && <span>최대 직경 {maxDiameter.toFixed(3)}</span>}
+              {maxDiameter != null && maxLength != null && <span>•</span>}
+              {maxLength != null && <span>최대 길이 {maxLength.toFixed(2)}</span>}
+              {(maxDiameter != null || maxLength != null) && !!overlayImplantLine && <span>•</span>}
+              <span>{overlayImplantLine}</span>
+              {retentionGrooveLabel && (
+                <>
+                  <span>•</span>
+                  <span>유지홈 {retentionGrooveLabel}</span>
+                </>
+              )}
             </div>
           </div>
 

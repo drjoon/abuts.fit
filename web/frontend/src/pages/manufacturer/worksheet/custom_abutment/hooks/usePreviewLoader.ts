@@ -36,6 +36,20 @@ function buildBlobCacheKey(
   return `${base}:v=${fileSize}:${uploadedAt}`;
 }
 
+function buildFallbackBlobCacheKey(
+  stableId: string,
+  kind: "original" | "cam",
+  meta?: { fileSize?: unknown; uploadedAt?: unknown } | null,
+): string | null {
+  const id = String(stableId || "").trim();
+  if (!id) return null;
+  const fileSize = meta?.fileSize != null ? String(meta.fileSize) : "";
+  const uploadedAt = meta?.uploadedAt ? String(meta.uploadedAt) : "";
+  const base = `stl:${id}:${kind}`;
+  if (!fileSize && !uploadedAt) return base;
+  return `${base}:v=${fileSize}:${uploadedAt}`;
+}
+
 type PreviewLoaderParams = {
   token: string | null;
   isCamStage: boolean;
@@ -165,23 +179,73 @@ export function usePreviewLoader({
           return blobToFile(blob, filename);
         };
 
+        let targetReq = req;
+        const summaryRequestId = String(req?.requestId || "").trim();
+        const shouldEnrichFromSummary =
+          tabStage === "tracking" ||
+          !req?.caseInfos?.implantManufacturer ||
+          !req?.requestor?.business;
+
+        if (token && summaryRequestId && shouldEnrichFromSummary) {
+          try {
+            const summaryRes = await fetch(
+              `/api/requests/by-request/${encodeURIComponent(summaryRequestId)}/summary`,
+              {
+                method: "GET",
+                headers: { Authorization: `Bearer ${token}` },
+                cache: "no-store",
+              },
+            );
+            const summaryBody: any = await summaryRes.json().catch(() => ({}));
+            const summaryData = summaryBody?.data;
+            if (summaryRes.ok && summaryBody?.success !== false && summaryData) {
+              targetReq = {
+                ...req,
+                ...summaryData,
+                caseInfos: {
+                  ...(req?.caseInfos || {}),
+                  ...(summaryData?.caseInfos || {}),
+                },
+                requestor: {
+                  ...(req?.requestor || {}),
+                  ...(summaryData?.requestor || {}),
+                },
+                lotNumber: {
+                  ...(req?.lotNumber || {}),
+                  ...(summaryData?.lotNumber || {}),
+                },
+              } as ManufacturerRequest;
+            }
+          } catch {
+            // summary 보강 실패 시 원본 req로 계속 진행
+          }
+        }
+
         const title =
-          req.caseInfos?.patientName ||
-          req.requestor?.business ||
-          req.requestor?.name ||
+          targetReq.caseInfos?.patientName ||
+          targetReq.requestor?.business ||
+          targetReq.requestor?.name ||
           "파일 미리보기";
 
         const originalName =
-          req.caseInfos?.file?.filePath ||
-          req.caseInfos?.file?.originalName ||
+          targetReq.caseInfos?.file?.filePath ||
+          targetReq.caseInfos?.file?.originalName ||
           "original.stl";
 
-        const originalCacheKeyBase = req.caseInfos?.file?.s3Key || null;
-        const originalFileMeta: any = (req as any)?.caseInfos?.file;
-        const originalCacheKey = buildBlobCacheKey(
-          originalCacheKeyBase,
-          originalFileMeta,
-        );
+        const originalCacheKeyBase = targetReq.caseInfos?.file?.s3Key || null;
+        const originalFileMeta: any = (targetReq as any)?.caseInfos?.file;
+        const requestMongoId = String(targetReq?._id || "").trim();
+        const requestStableId =
+          requestMongoId || String(targetReq?.requestId || "").trim();
+        const originalCacheKey =
+          buildBlobCacheKey(originalCacheKeyBase, originalFileMeta) ||
+          buildFallbackBlobCacheKey(requestStableId, "original", originalFileMeta);
+
+        const camFileMeta: any = (targetReq as any)?.caseInfos?.camFile;
+        const camCacheKeyBase = targetReq.caseInfos?.camFile?.s3Key || null;
+        const camCacheKey =
+          buildBlobCacheKey(camCacheKeyBase, camFileMeta) ||
+          buildFallbackBlobCacheKey(requestStableId, "cam", camFileMeta);
 
         const previewStageKey = getReviewStageKeyByTab({
           stage: tabStage,
@@ -190,64 +254,60 @@ export function usePreviewLoader({
         });
         const disableStlCache = forceRefresh;
 
-        const hasCamFile = !!req.caseInfos?.camFile?.s3Key;
         const shouldUseSingleLeftStl = isCamStage;
 
-        const hasOriginalFile = !!req.caseInfos?.file?.s3Key;
-        const originalFilePromise: Promise<File | null> =
-          shouldUseSingleLeftStl || !hasOriginalFile || isMachiningStage
-            ? Promise.resolve(null)
-            : fetchAsFileWithCache(
-                originalCacheKey,
-                () =>
-                  fetchSignedUrl(`/api/requests/${req._id}/original-file-url`),
-                originalName,
-                { disableCache: disableStlCache },
-              );
+        const loadOriginalStl = async (): Promise<File | null> => {
+          if (!requestMongoId) return null;
+          return fetchAsFileWithCache(
+            originalCacheKey,
+            () =>
+              fetchSignedUrl(`/api/requests/${requestMongoId}/original-file-url`),
+            originalName,
+            { disableCache: disableStlCache },
+          ).catch(() => null);
+        };
 
-        const camFilePromise: Promise<File | null> =
-          hasCamFile && !isMachiningStage
-            ? (() => {
-                const camName =
-                  req.caseInfos?.camFile?.filePath ||
-                  req.caseInfos?.camFile?.originalName ||
-                  originalName;
-                const camCacheKeyBase = req.caseInfos?.camFile?.s3Key || null;
-                const camCacheKey = buildBlobCacheKey(
-                  camCacheKeyBase,
-                  req.caseInfos?.camFile,
-                );
-                return fetchAsFileWithCache(
-                  camCacheKey,
-                  () => fetchSignedUrl(`/api/requests/${req._id}/cam-file-url`),
-                  camName,
-                  { disableCache: disableStlCache },
-                ).catch(() => null);
-              })()
-            : Promise.resolve(null);
+        const loadCamStl = async (): Promise<File | null> => {
+          if (!requestMongoId) return null;
+          const camName =
+            targetReq.caseInfos?.camFile?.filePath ||
+            targetReq.caseInfos?.camFile?.originalName ||
+            originalName;
+          return fetchAsFileWithCache(
+            camCacheKey,
+            () => fetchSignedUrl(`/api/requests/${requestMongoId}/cam-file-url`),
+            camName,
+            { disableCache: disableStlCache },
+          ).catch(() => null);
+        };
+
+        const originalFilePromise: Promise<File | null> =
+          shouldUseSingleLeftStl || isMachiningStage
+            ? Promise.resolve(null)
+            : loadOriginalStl();
+
+        const camFilePromise: Promise<File | null> = isMachiningStage
+          ? Promise.resolve(null)
+          : loadCamStl();
 
         const leftStlPromise: Promise<File | null> = shouldUseSingleLeftStl
-          ? hasCamFile
-            ? camFilePromise
-            : fetchAsFileWithCache(
-                originalCacheKey,
-                () =>
-                  fetchSignedUrl(`/api/requests/${req._id}/original-file-url`),
-                originalName,
-                { disableCache: disableStlCache },
-              )
+          ? (async () => {
+              const cam = await loadCamStl();
+              if (cam) return cam;
+              return loadOriginalStl();
+            })()
           : originalFilePromise;
 
         const resolveFinishLine = async () => {
-          const casePoints = Array.isArray(req.caseInfos?.finishLine?.points)
-            ? req.caseInfos.finishLine.points
+          const casePoints = Array.isArray(targetReq.caseInfos?.finishLine?.points)
+            ? targetReq.caseInfos.finishLine.points
             : null;
           if (Array.isArray(casePoints) && casePoints.length >= 2) {
             console.log(
               "[usePreviewLoader] finish line loaded from caseInfos",
               {
-                requestId: req.requestId,
-                requestMongoId: req._id,
+                requestId: targetReq.requestId,
+                requestMongoId: targetReq._id,
                 pointCount: casePoints.length,
               },
             );
@@ -255,11 +315,11 @@ export function usePreviewLoader({
           }
 
           console.warn("[usePreviewLoader] finish line missing for preview", {
-            requestId: req.requestId,
-            requestMongoId: req._id,
-            hasFinishLineObject: !!req.caseInfos?.finishLine,
-            pointCount: Array.isArray(req.caseInfos?.finishLine?.points)
-              ? req.caseInfos.finishLine.points.length
+            requestId: targetReq.requestId,
+            requestMongoId: targetReq._id,
+            hasFinishLineObject: !!targetReq.caseInfos?.finishLine,
+            pointCount: Array.isArray(targetReq.caseInfos?.finishLine?.points)
+              ? targetReq.caseInfos.finishLine.points.length
               : 0,
           });
 
@@ -272,8 +332,8 @@ export function usePreviewLoader({
         const ncPromise =
           isCamStage || isMachiningStage
             ? (async () => {
-                const ncMeta = req.caseInfos?.ncFile;
-                if (!ncMeta?.s3Key) return;
+                const ncMeta = targetReq.caseInfos?.ncFile;
+                if (!ncMeta?.s3Key || !requestMongoId) return;
                 const ncNameRaw =
                   ncMeta?.originalName || ncMeta?.filePath || "program.nc";
                 const ncName = ncNameRaw.split("/").pop() || ncNameRaw;
@@ -283,7 +343,7 @@ export function usePreviewLoader({
                   : null;
                 const ncFile = await fetchAsFileWithCache(
                   ncCacheKey,
-                  () => fetchSignedUrl(`/api/requests/${req._id}/nc-file-url`),
+                  () => fetchSignedUrl(`/api/requests/${requestMongoId}/nc-file-url`),
                   ncName,
                   { disableCache: forceRefresh },
                 );
@@ -303,10 +363,10 @@ export function usePreviewLoader({
                 const effectiveStageKey =
                   previewStageKey === "shipping" ? "packing" : previewStageKey;
                 const stageMeta =
-                  req.caseInfos?.stageFiles?.[effectiveStageKey];
-                if (!stageMeta?.s3Key) return;
+                  targetReq.caseInfos?.stageFiles?.[effectiveStageKey];
+                if (!requestMongoId) return;
                 const signedUrl = await fetchSignedUrl(
-                  `/api/requests/${req._id}/stage-file-url?stage=${encodeURIComponent(
+                  `/api/requests/${requestMongoId}/stage-file-url?stage=${encodeURIComponent(
                     effectiveStageKey,
                   )}`,
                 ).catch(() => "");
@@ -329,7 +389,7 @@ export function usePreviewLoader({
           original: leftStlFile,
           cam: rightStlFile,
           title,
-          request: req,
+          request: targetReq,
           finishLinePoints: finishLineResult.points,
           finishLineSource: finishLineResult.source,
         });

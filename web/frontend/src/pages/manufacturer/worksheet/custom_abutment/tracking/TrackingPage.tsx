@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useOutletContext } from "react-router-dom";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useOutletContext, useSearchParams } from "react-router-dom";
 import { useToast } from "@/shared/hooks/use-toast";
 import { useAuthStore } from "@/store/useAuthStore";
 import { generateModelNumber } from "@/utils/modelNumber";
@@ -23,6 +23,13 @@ import {
 } from "../utils/request";
 import { useWorksheetRealtimeStatus } from "../hooks/useWorksheetRealtimeStatus";
 import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
+import { PreviewModal } from "../components/PreviewModal";
+import { usePreviewLoader } from "../hooks/usePreviewLoader";
+import { useRequestFileHandlers } from "../hooks/useRequestFileHandlers";
+import {
+  RemakeStartQuickModal,
+  type RemakeQuickStartStage,
+} from "../components/RemakeStartQuickModal";
 
 type InquiryTab = "process" | "shipping" | "udi";
 
@@ -84,6 +91,16 @@ const normalizeLotNumberLabel = (req: ManufacturerRequest) => {
 
 const formatDateTime = (d?: string) => {
   return formatKstDateTimeToKo(d);
+};
+
+const formatWeekdayKo = (d?: string) => {
+  if (!d) return "";
+  const dt = new Date(d);
+  if (Number.isNaN(dt.getTime())) return "";
+  const labels = ["일", "월", "화", "수", "목", "금", "토"];
+  const short = labels[dt.getDay()] || "";
+  if (!short) return "";
+  return `${short}요일 ${short}`;
 };
 
 const TRACKING_ELIGIBLE_WORKFLOW_CODES = new Set([
@@ -150,12 +167,14 @@ export const TrackingInquiryPage = () => {
   const { token } = useAuthStore();
   const { period } = usePeriodStore();
   const { toast } = useToast();
+  const [, setSearchParams] = useSearchParams();
   const { worksheetSearch, showCompleted } = useOutletContext<{
     worksheetSearch: string;
     showCompleted: boolean;
   }>();
 
   const [tab, setTab] = useState<InquiryTab>("shipping");
+  const [localSearch, setLocalSearch] = useState("");
   const [visibleCount, setVisibleCount] = useState(12);
   const visibleCountRef = useRef(12);
   const totalCountRef = useRef(0);
@@ -176,10 +195,35 @@ export const TrackingInquiryPage = () => {
   const [recallSubmitting, setRecallSubmitting] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [confirmTitle, setConfirmTitle] = useState("");
-  const [confirmDescription, setConfirmDescription] = useState("");
+  const [confirmDescription, setConfirmDescription] = useState<ReactNode>("");
   const [confirmAction, setConfirmAction] = useState<
     null | (() => Promise<void> | void)
   >(null);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewFiles, setPreviewFiles] = useState<{
+    original?: File | null;
+    cam?: File | null;
+    title?: string;
+    request?: ManufacturerRequest | null;
+    finishLinePoints?: number[][] | null;
+    finishLineSource?: "caseInfos" | "file" | null;
+  }>({});
+  const [previewNcText, setPreviewNcText] = useState("");
+  const [previewNcName, setPreviewNcName] = useState("");
+  const [previewStageUrl, setPreviewStageUrl] = useState("");
+  const [previewStageName, setPreviewStageName] = useState("");
+  const [uploading, setUploading] = useState<Record<string, boolean>>({});
+  const [downloading, setDownloading] = useState<Record<string, boolean>>({});
+  const [uploadProgress, setUploadProgress] = useState<Record<string, number>>({});
+  const [deletingCam, setDeletingCam] = useState<Record<string, boolean>>({});
+  const [deletingNc, setDeletingNc] = useState<Record<string, boolean>>({});
+  const [reviewSaving, setReviewSaving] = useState(false);
+
+  const [remakeDialogOpen, setRemakeDialogOpen] = useState(false);
+  const [remakeSubmitting, setRemakeSubmitting] = useState(false);
+  const [remakeSourceRequest, setRemakeSourceRequest] =
+    useState<ManufacturerRequest | null>(null);
   const fetchSequenceRef = useRef(0);
   // Network pagination per stage (tracking)
   const PAGE_LIMIT = 50;
@@ -300,6 +344,133 @@ export const TrackingInquiryPage = () => {
     [fetchTrackingPage, getStableRequestKey, token, toast],
   );
 
+  const decodeNcText = useCallback((buffer: ArrayBuffer) => {
+    const utf8Decoder = new TextDecoder("utf-8", { fatal: false });
+    const utf8Text = utf8Decoder.decode(buffer);
+    if (!utf8Text.includes("\uFFFD")) return utf8Text;
+    try {
+      const eucKrDecoder = new TextDecoder("euc-kr", { fatal: false });
+      return eucKrDecoder.decode(buffer);
+    } catch {
+      return utf8Text;
+    }
+  }, []);
+
+  const fetchRequestsForPreview = useCallback(async () => {
+    pageRef.current = 1;
+    hasMoreRef.current = true;
+    await runTrackingFetch({ silent: true, append: false });
+  }, [runTrackingFetch]);
+
+  const { handleOpenPreview } = usePreviewLoader({
+    token,
+    isCamStage: false,
+    isMachiningStage: false,
+    tabStage: "tracking",
+    decodeNcText,
+    setPreviewLoading,
+    setPreviewNcText,
+    setPreviewNcName,
+    setPreviewStageUrl,
+    setPreviewStageName,
+    setPreviewFiles,
+    setPreviewOpen,
+  });
+
+  const {
+    handleDownloadOriginalStl,
+    handleDownloadCamStl,
+    handleDownloadNcFile,
+    handleDownloadStageFile,
+    handleUpdateReviewStatus,
+    handleDeleteCam,
+    handleDeleteNc,
+    handleUploadCam,
+    handleUploadNc,
+    handleUploadStageFile,
+    handleDeleteStageFile,
+  } = useRequestFileHandlers({
+    token,
+    stage: "tracking",
+    isCamStage: false,
+    isMachiningStage: false,
+    fetchRequests: fetchRequestsForPreview,
+    setRequests,
+    matchesCurrentPage,
+    setDownloading,
+    setUploading,
+    setUploadProgress,
+    setDeletingCam,
+    setDeletingNc,
+    setReviewSaving,
+    setPreviewOpen,
+    setPreviewFiles,
+    setPreviewNcText,
+    setPreviewNcName,
+    setPreviewStageUrl,
+    setPreviewStageName,
+    setPreviewLoading,
+    setSearchParams,
+    decodeNcText,
+  });
+
+  const handleTrackingRemake = useCallback(
+    async (startStage: RemakeQuickStartStage) => {
+      if (!remakeSourceRequest?._id || remakeSubmitting) return;
+      try {
+        setRemakeSubmitting(true);
+        const isSampleRequest =
+          String((remakeSourceRequest as any)?.source || "").trim() ===
+          "manufacturer_sample";
+
+        const endpoint = isSampleRequest
+          ? `/api/requests/${remakeSourceRequest._id}/clone-from-sample-to-request`
+          : `/api/requests/remake-clone`;
+
+        const body = isSampleRequest
+          ? { startStage }
+          : {
+              requestIds: [String(remakeSourceRequest._id)],
+              startStage,
+            };
+
+        const res = await fetch(endpoint, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(body),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || data?.success === false) {
+          throw new Error(data?.message || "재제작 복사에 실패했습니다.");
+        }
+
+        const newRequestId = String(
+          data?.data?.requestId || data?.data?.createdRequestId || "",
+        ).trim();
+        toast({
+          title: "재제작 복사 완료",
+          description: `의뢰 ${remakeSourceRequest.requestId}가 ${startStage} 공정으로 복사되었습니다.${newRequestId ? ` (새 의뢰ID: ${newRequestId})` : ""}`,
+        });
+        setRemakeDialogOpen(false);
+        setRemakeSourceRequest(null);
+      } catch (e: any) {
+        toast({
+          title: "재제작 복사 실패",
+          description: e?.message || "네트워크 오류",
+          variant: "destructive",
+        });
+      } finally {
+        setRemakeSubmitting(false);
+      }
+    },
+    [remakeSourceRequest, remakeSubmitting, toast, token],
+  );
+
+
+
   useEffect(() => {
     if (!token) return;
 
@@ -323,9 +494,19 @@ export const TrackingInquiryPage = () => {
     };
   }, [runTrackingFetch, token]);
 
-  const searchLower = String(worksheetSearch || "")
+  const worksheetSearchLower = String(worksheetSearch || "")
     .trim()
     .toLowerCase();
+  const localSearchLower = String(localSearch || "").trim().toLowerCase();
+  const searchTerms = useMemo(
+    () =>
+      `${worksheetSearchLower} ${localSearchLower}`
+        .trim()
+        .split(/\s+/)
+        .map((v) => v.trim())
+        .filter(Boolean),
+    [localSearchLower, worksheetSearchLower],
+  );
 
   const { fromDate, toDate } = useMemo(() => {
     const today = new Date();
@@ -381,17 +562,58 @@ export const TrackingInquiryPage = () => {
       const di = normalizeDeliveryInfo(r.deliveryInfoRef);
       const lotMaterial = String(r.lotNumber?.material || "");
       const lotValue = String(r.lotNumber?.value || "");
+      const requestorName = String((r as any)?.requestor?.name || "");
+      const requestorBusiness = String((r as any)?.requestor?.business || "");
+      const requestorPhone = String((r as any)?.requestor?.phone || "");
+      const createdYmd = formatYmd(String(r.createdAt || ""));
+      const shippedYmd = formatYmd(String(di.shippedAt || ""));
+      const pickedUpYmd = formatYmd(String(di.pickedUpAt || ""));
+      const deliveredYmd = formatYmd(String(di.deliveredAt || ""));
+      const weekdayTokens = [
+        formatWeekdayKo(String(r.createdAt || "")),
+        formatWeekdayKo(String(di.shippedAt || "")),
+        formatWeekdayKo(String(di.pickedUpAt || "")),
+        formatWeekdayKo(String(di.deliveredAt || "")),
+      ]
+        .filter(Boolean)
+        .join(" ");
+
       map.set(
         key,
         (
           String(r.requestId || "") +
+          " " +
           String(r.assignedMachine || "") +
+          " " +
           String(ci.patientName || "") +
+          " " +
           String(ci.tooth || "") +
+          " " +
           String(ci.clinicName || "") +
+          " " +
+          requestorName +
+          " " +
+          requestorBusiness +
+          " " +
+          requestorPhone +
+          " " +
           lotMaterial +
+          " " +
           lotValue +
-          String(di.trackingNumber || "")
+          " " +
+          normalizeLotNumberLabel(r) +
+          " " +
+          String(di.trackingNumber || "") +
+          " " +
+          createdYmd +
+          " " +
+          shippedYmd +
+          " " +
+          pickedUpYmd +
+          " " +
+          deliveredYmd +
+          " " +
+          weekdayTokens
         ).toLowerCase(),
       );
     }
@@ -430,10 +652,11 @@ export const TrackingInquiryPage = () => {
         if (toTs !== null && t > toTs) continue;
       }
 
-      if (searchLower) {
+      if (searchTerms.length) {
         const key = getStableRequestKey(r);
         const hay = key ? requestSearchTextMap.get(key) || "" : "";
-        if (!hay.includes(searchLower)) continue;
+        const matchedAll = searchTerms.every((term) => hay.includes(term));
+        if (!matchedAll) continue;
       }
 
       out.push(r);
@@ -445,7 +668,7 @@ export const TrackingInquiryPage = () => {
     getStableRequestKey,
     requestSearchTextMap,
     requests,
-    searchLower,
+    searchTerms,
     showCompleted,
     toDate,
   ]);
@@ -750,6 +973,19 @@ export const TrackingInquiryPage = () => {
     [executeDeleteSampleRequest],
   );
 
+  const openRequestPreview = useCallback(
+    (req: ManufacturerRequest) => {
+      void handleOpenPreview(req);
+    },
+    [handleOpenPreview],
+  );
+
+  const openRemakeDialog = useCallback((req: ManufacturerRequest) => {
+    if (!req?._id) return;
+    setRemakeSourceRequest(req);
+    setRemakeDialogOpen(true);
+  }, []);
+
   const processRows = useMemo(() => {
     return baseFiltered.slice().sort((a, b) => {
       const aTime = new Date(a.createdAt || 0).getTime();
@@ -757,6 +993,22 @@ export const TrackingInquiryPage = () => {
       return bTime - aTime;
     });
   }, [baseFiltered]);
+
+  const handleOpenNextPreviewRequest = useCallback(
+    async (currentReqId: string) => {
+      const ordered = processRows;
+      const idx = ordered.findIndex((r) => {
+        const a = String(r?._id || r?.requestId || "").trim();
+        return a === String(currentReqId || "").trim();
+      });
+      if (idx < 0 || idx + 1 >= ordered.length) {
+        setPreviewOpen(false);
+        return;
+      }
+      await handleOpenPreview(ordered[idx + 1]);
+    },
+    [handleOpenPreview, processRows],
+  );
 
   const udiRows = useMemo(() => {
     return baseFiltered
@@ -1154,7 +1406,7 @@ export const TrackingInquiryPage = () => {
     if (tab !== "shipping") {
       setRecallMode(false);
     }
-  }, [tab, period, worksheetSearch, showCompleted]);
+  }, [tab, period, worksheetSearch, localSearch, showCompleted]);
 
   // 목표 표시 건수(visibleCount)를 채울 때까지 페이지를 추가 로드한다.
   // - 초기 로드: 12건 채울 때까지
@@ -1174,6 +1426,7 @@ export const TrackingInquiryPage = () => {
     tab,
     period,
     worksheetSearch,
+    localSearch,
     showCompleted,
   ]);
 
@@ -1286,6 +1539,16 @@ export const TrackingInquiryPage = () => {
             </div>
           </div>
 
+          <div className="mt-3">
+            <input
+              type="text"
+              value={localSearch}
+              onChange={(e) => setLocalSearch(e.target.value)}
+              placeholder="검색: 의뢰자명 · 치과명 · 환자명 · 치아번호 · 날짜 · 요일 · 로트번호 · 의뢰번호"
+              className="h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 placeholder:text-slate-400 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-slate-300"
+            />
+          </div>
+
           <TabsContent
             value="process"
             className="space-y-3 mt-4 flex-1 min-h-0 flex flex-col"
@@ -1373,52 +1636,63 @@ export const TrackingInquiryPage = () => {
                         <TableCell>{r.lotNumber?.material || "-"}</TableCell>
                         <TableCell>{normalizeLotNumberLabel(r)}</TableCell>
                         <TableCell>
-                          <div className="flex items-center gap-2">
-                            {canCloneAsSample && (
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                className="border-purple-300 bg-purple-50 text-purple-700 hover:bg-purple-100"
-                                onClick={async () => {
-                                  try {
-                                    const res = await fetch(
-                                      `/api/requests/${r._id}/clone-as-sample`,
-                                      {
-                                        method: "POST",
-                                        headers: {
-                                          Authorization: `Bearer ${token}`,
-                                          "Content-Type": "application/json",
+                          <div className="flex items-start gap-2">
+                            <div className="flex flex-col gap-1">
+                              {canCloneAsSample && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="border-purple-300 bg-purple-50 text-purple-700 hover:bg-purple-100"
+                                  onClick={async () => {
+                                    try {
+                                      const res = await fetch(
+                                        `/api/requests/${r._id}/clone-as-sample`,
+                                        {
+                                          method: "POST",
+                                          headers: {
+                                            Authorization: `Bearer ${token}`,
+                                            "Content-Type": "application/json",
+                                          },
                                         },
-                                      },
-                                    );
-                                    const data = await res.json();
-                                    if (data.success) {
-                                      toast({
-                                        title: "R&D 샘플 복사 완료",
-                                        description: `새 의뢰ID: ${data.data.requestId}`,
-                                      });
-                                    } else {
+                                      );
+                                      const data = await res.json();
+                                      if (data.success) {
+                                        toast({
+                                          title: "R&D 샘플 복사 완료",
+                                          description: `새 의뢰ID: ${data.data.requestId}`,
+                                        });
+                                      } else {
+                                        toast({
+                                          title: "복사 실패",
+                                          description:
+                                            data.message || "알 수 없는 오류",
+                                          variant: "destructive",
+                                        });
+                                      }
+                                    } catch (e: any) {
                                       toast({
                                         title: "복사 실패",
                                         description:
-                                          data.message || "알 수 없는 오류",
+                                          e?.message || "네트워크 오류",
                                         variant: "destructive",
                                       });
                                     }
-                                  } catch (e: any) {
-                                    toast({
-                                      title: "복사 실패",
-                                      description:
-                                        e?.message || "네트워크 오류",
-                                      variant: "destructive",
-                                    });
-                                  }
-                                }}
+                                  }}
+                                >
+                                  <FlaskConical className="h-4 w-4 mr-1" />
+                                  R&D
+                                </Button>
+                              )}
+
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => openRemakeDialog(r)}
                               >
-                                <FlaskConical className="h-4 w-4 mr-1" />
-                                R&D
+                                재제작
                               </Button>
-                            )}
+                            </div>
+
                             {isSampleRequest && (
                               <Button
                                 variant="destructive"
@@ -1524,7 +1798,7 @@ export const TrackingInquiryPage = () => {
           >
             <div
               ref={setScrollContainer}
-              className="space-y-3 overflow-auto flex-1 min-h-0 pr-3"
+              className="space-y-3 overflow-auto flex-1 min-h-0"
             >
               {recallMode && (
                 <div className="rounded-lg border bg-amber-50 p-3 space-y-3">
@@ -1834,7 +2108,19 @@ export const TrackingInquiryPage = () => {
                                             key={String(
                                               req._id || req.requestId,
                                             )}
-                                            className="text-sm bg-white p-2 rounded border border-gray-200"
+                                            role="button"
+                                            tabIndex={0}
+                                            onClick={() => openRequestPreview(req)}
+                                            onKeyDown={(e) => {
+                                              if (
+                                                e.key === "Enter" ||
+                                                e.key === " "
+                                              ) {
+                                                e.preventDefault();
+                                                openRequestPreview(req);
+                                              }
+                                            }}
+                                            className="text-sm bg-white p-2 rounded border border-gray-200 cursor-pointer hover:border-blue-200 hover:bg-blue-50/30 transition-colors"
                                           >
                                             <div className="flex items-center justify-between">
                                               <div className="flex items-center gap-2">
@@ -1875,60 +2161,75 @@ export const TrackingInquiryPage = () => {
                                                   {req.requestId || "-"}
                                                 </div>
                                               </div>
-                                              <div className="flex items-center gap-1">
-                                                {canCloneAsSample && (
-                                                  <Button
-                                                    variant="outline"
-                                                    size="sm"
-                                                    className="h-6 px-2 text-xs border-purple-300 bg-purple-50 text-purple-700 hover:bg-purple-100"
-                                                    onClick={async (e) => {
-                                                      e.stopPropagation();
-                                                      try {
-                                                        const res = await fetch(
-                                                          `/api/requests/${req._id}/clone-as-sample`,
-                                                          {
-                                                            method: "POST",
-                                                            headers: {
-                                                              Authorization: `Bearer ${token}`,
-                                                              "Content-Type":
-                                                                "application/json",
+                                              <div className="flex items-start gap-1">
+                                                <div className="flex flex-col gap-1">
+                                                  {canCloneAsSample && (
+                                                    <Button
+                                                      variant="outline"
+                                                      size="sm"
+                                                      className="h-6 px-2 text-xs border-purple-300 bg-purple-50 text-purple-700 hover:bg-purple-100"
+                                                      onClick={async (e) => {
+                                                        e.stopPropagation();
+                                                        try {
+                                                          const res = await fetch(
+                                                            `/api/requests/${req._id}/clone-as-sample`,
+                                                            {
+                                                              method: "POST",
+                                                              headers: {
+                                                                Authorization: `Bearer ${token}`,
+                                                                "Content-Type":
+                                                                  "application/json",
+                                                              },
                                                             },
-                                                          },
-                                                        );
-                                                        const data =
-                                                          await res.json();
-                                                        if (data.success) {
-                                                          toast({
-                                                            title:
-                                                              "R&D 샘플 복사 완료",
-                                                            description: `새 의뢰ID: ${data.data.requestId}`,
-                                                          });
-                                                        } else {
+                                                          );
+                                                          const data =
+                                                            await res.json();
+                                                          if (data.success) {
+                                                            toast({
+                                                              title:
+                                                                "R&D 샘플 복사 완료",
+                                                              description: `새 의뢰ID: ${data.data.requestId}`,
+                                                            });
+                                                          } else {
+                                                            toast({
+                                                              title: "복사 실패",
+                                                              description:
+                                                                data.message ||
+                                                                "알 수 없는 오류",
+                                                              variant:
+                                                                "destructive",
+                                                            });
+                                                          }
+                                                        } catch (e: any) {
                                                           toast({
                                                             title: "복사 실패",
                                                             description:
-                                                              data.message ||
-                                                              "알 수 없는 오류",
+                                                              e?.message ||
+                                                              "네트워크 오류",
                                                             variant:
                                                               "destructive",
                                                           });
                                                         }
-                                                      } catch (e: any) {
-                                                        toast({
-                                                          title: "복사 실패",
-                                                          description:
-                                                            e?.message ||
-                                                            "네트워크 오류",
-                                                          variant:
-                                                            "destructive",
-                                                        });
-                                                      }
+                                                      }}
+                                                    >
+                                                      <FlaskConical className="h-3 w-3 mr-1" />
+                                                      R&D
+                                                    </Button>
+                                                  )}
+
+                                                  <Button
+                                                    variant="outline"
+                                                    size="sm"
+                                                    className="h-6 px-2 text-xs"
+                                                    onClick={(e) => {
+                                                      e.stopPropagation();
+                                                      openRemakeDialog(req);
                                                     }}
                                                   >
-                                                    <FlaskConical className="h-3 w-3 mr-1" />
-                                                    R&D
+                                                    재제작
                                                   </Button>
-                                                )}
+                                                </div>
+
                                                 {isSampleRequest && (
                                                   <Button
                                                     variant="destructive"
@@ -1985,6 +2286,52 @@ export const TrackingInquiryPage = () => {
           </TabsContent>
         </Tabs>
       </div>
+
+      <PreviewModal
+        open={previewOpen}
+        onOpenChange={setPreviewOpen}
+        previewLoading={previewLoading}
+        previewFiles={previewFiles}
+        previewNcText={previewNcText}
+        previewNcName={previewNcName}
+        previewStageUrl={previewStageUrl}
+        previewStageName={previewStageName}
+        uploading={uploading}
+        reviewSaving={reviewSaving}
+        stage="tracking"
+        isCamStage={false}
+        isMachiningStage={false}
+        onUpdateReviewStatus={handleUpdateReviewStatus}
+        onDeleteCam={handleDeleteCam}
+        onDeleteNc={handleDeleteNc}
+        onDeleteStageFile={handleDeleteStageFile}
+        onUploadCam={handleUploadCam}
+        onUploadNc={handleUploadNc}
+        onUploadStageFile={handleUploadStageFile}
+        onDownloadOriginalStl={handleDownloadOriginalStl}
+        onDownloadCamStl={handleDownloadCamStl}
+        onDownloadNcFile={handleDownloadNcFile}
+        onDownloadStageFile={handleDownloadStageFile}
+        onRefreshPreview={handleOpenPreview}
+        onOpenNextRequest={handleOpenNextPreviewRequest}
+        setSearchParams={setSearchParams}
+        setConfirmTitle={setConfirmTitle}
+        setConfirmDescription={setConfirmDescription}
+        setConfirmAction={setConfirmAction}
+        setConfirmOpen={setConfirmOpen}
+      />
+
+      <RemakeStartQuickModal
+        open={remakeDialogOpen}
+        onOpenChange={(open) => {
+          if (remakeSubmitting) return;
+          setRemakeDialogOpen(open);
+          if (!open) setRemakeSourceRequest(null);
+        }}
+        sourceRequestId={remakeSourceRequest?.requestId || ""}
+        submitting={remakeSubmitting}
+        onSelectStage={handleTrackingRemake}
+      />
 
       <ConfirmDialog
         open={confirmOpen}
