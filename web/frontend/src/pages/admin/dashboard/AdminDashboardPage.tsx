@@ -206,6 +206,7 @@ export const AdminDashboardPage = () => {
     open: false,
     item: null,
   });
+  const [happyCallNoteDraft, setHappyCallNoteDraft] = useState("");
   const [lastCompletedHappyCallAnchorId, setLastCompletedHappyCallAnchorId] =
     useState<string>("");
 
@@ -365,7 +366,10 @@ export const AdminDashboardPage = () => {
             : false,
         );
 
-  const handleCompleteHappyCall = async (item: HappyCallItem) => {
+  const handleCompleteHappyCall = async (
+    item: HappyCallItem,
+    noteRaw?: string,
+  ) => {
     const businessAnchorId = String(item?.businessAnchorId || "").trim();
     if (!businessAnchorId || !token) return;
 
@@ -404,6 +408,7 @@ export const AdminDashboardPage = () => {
         jsonBody: {
           businessAnchorId,
           reasonCodes,
+          note: String(noteRaw || "").slice(0, 500).trim(),
         },
       });
 
@@ -1171,6 +1176,7 @@ export const AdminDashboardPage = () => {
                           }`}
                           disabled={Boolean(completingHappyCallByAnchor[anchorId])}
                           onClick={() => {
+                            setHappyCallNoteDraft("");
                             setHappyCallConfirm({ open: true, item });
                           }}
                         >
@@ -1200,18 +1206,22 @@ export const AdminDashboardPage = () => {
         open={happyCallConfirm.open}
         onClose={() => {
           setHappyCallConfirm({ open: false, item: null });
+          setHappyCallNoteDraft("");
         }}
         title="해피콜 완료 처리"
         description={
           <div className="space-y-2 text-sm text-gray-700">
-            <div>
-              <span className="font-semibold text-gray-900">
-                {String(happyCallConfirm.item?.businessName || "의뢰자")}
-              </span>
-              {" "}해피콜을 완료 처리할까요?
-            </div>
-            <div className="text-xs text-gray-500">
-              완료 처리 시 이 의뢰자는 모든 해피콜 항목에서 숨김 처리됩니다.
+
+            <div className="space-y-1">
+              <div className="text-xs font-medium text-gray-700">대화 내용 메모</div>
+              <textarea
+                value={happyCallNoteDraft}
+                onChange={(e) =>
+                  setHappyCallNoteDraft(String(e.target.value || "").slice(0, 500))
+                }
+                placeholder="예) 제품 만족도 좋음, 다음 주 추가 의뢰 예정"
+                className="w-full min-h-[96px] rounded-md border border-slate-300 px-2.5 py-2 text-xs text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-200"
+              />
             </div>
           </div>
         }
@@ -1221,6 +1231,7 @@ export const AdminDashboardPage = () => {
             variant: "secondary",
             onClick: () => {
               setHappyCallConfirm({ open: false, item: null });
+              setHappyCallNoteDraft("");
             },
           },
           {
@@ -1228,9 +1239,11 @@ export const AdminDashboardPage = () => {
             variant: "primary",
             onClick: async () => {
               const target = happyCallConfirm.item;
+              const noteToSave = happyCallNoteDraft;
               setHappyCallConfirm({ open: false, item: null });
+              setHappyCallNoteDraft("");
               if (!target) return;
-              await handleCompleteHappyCall(target);
+              await handleCompleteHappyCall(target, noteToSave);
             },
           },
         ]}
