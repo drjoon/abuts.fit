@@ -374,13 +374,47 @@ export const AdminDashboardPage = () => {
   const pricingSsotOk =
     Boolean(pricingSsotHealth?.success) && pricingSsotMismatchCount === 0;
 
-  const riskSummary = riskSummaryResponse?.success
-    ? (riskSummaryResponse.data?.riskSummary ?? null)
-    : null;
-
   const unmachinableSummary = adminDashboardResponse?.success
     ? (adminDashboardResponse.data?.unmachinableSummary ?? null)
     : null;
+
+  const unmachinableRequestIdSet = new Set(
+    (Array.isArray(unmachinableSummary?.items)
+      ? unmachinableSummary.items
+      : []
+    )
+      .map((item: any) => String(item?.requestId || "").trim())
+      .filter(Boolean),
+  );
+
+  const riskSummary = (() => {
+    if (!riskSummaryResponse?.success) return null;
+    const baseSummary = riskSummaryResponse.data?.riskSummary ?? null;
+    if (!baseSummary) return null;
+
+    const originalItems = Array.isArray(baseSummary.items)
+      ? baseSummary.items
+      : [];
+    const filteredItems = originalItems.filter(
+      (item: any) => !unmachinableRequestIdSet.has(String(item?.id || "").trim()),
+    );
+
+    if (filteredItems.length === originalItems.length) {
+      return baseSummary;
+    }
+
+    const delayedCount = filteredItems.filter(
+      (item: any) => item?.riskLevel === "danger",
+    ).length;
+    const warningCount = filteredItems.length - delayedCount;
+
+    return {
+      ...baseSummary,
+      items: filteredItems,
+      delayedCount,
+      warningCount,
+    };
+  })();
 
   const pricingSummary: PricingSummary | null = adminDashboardResponse?.success
     ? (adminDashboardResponse.data?.pricingSummary ?? null)

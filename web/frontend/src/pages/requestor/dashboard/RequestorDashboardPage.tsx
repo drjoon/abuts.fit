@@ -466,7 +466,7 @@ export const RequestorDashboardPage = () => {
       ? baseSummary.items
       : [];
     const filteredItems = originalItems.filter(
-      (item) => !isCanceledRequest(item),
+      (item) => !isCanceledRequest(item) && !isUnmachinableRequest(item),
     );
 
     if (filteredItems.length === originalItems.length) {

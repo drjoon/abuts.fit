@@ -131,19 +131,19 @@ export const RequestorRiskSummaryCard = ({
   };
 
   return (
-    <Card className="app-glass-card app-glass-card--lg">
+    <Card className="app-glass-card app-glass-card--lg h-full min-h-[360px]">
       <CardHeader className="pb-3">
         <CardTitle className="text-base font-semibold">
           지연 위험 요약
         </CardTitle>
       </CardHeader>
-      <CardContent className="flex-1 flex flex-col space-y-3">
+      <CardContent className="flex-1 min-h-0 flex flex-col space-y-3">
         <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
           <span>지연 가능 의뢰: {summary.warningCount ?? 0}건</span>
           <span>지연 확정 의뢰: {summary.delayedCount ?? 0}건</span>
           <span>정시 발송 비율: {summary.onTimeRate ?? 0}%</span>
         </div>
-        <div className="space-y-2 flex-1 max-h-[550px] overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-transparent">
+        <div className="space-y-2 flex-1 min-h-0 overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-transparent">
           {summary.items && summary.items.length > 0 ? (
             summary.items.map((item) => {
               const originalYmd =

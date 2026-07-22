@@ -49,6 +49,21 @@ export const getDashboardRiskSummaryData = async ({
       for (const r of requests) {
         if (!r) continue;
 
+        const unmachinableAt = r?.rnd?.unmachinableAt
+          ? new Date(r.rnd.unmachinableAt)
+          : null;
+        const unmachinableDetailCode = String(
+          r?.rnd?.unmachinableDetailCode || r?.unmachinableDetailCode || "",
+        )
+          .trim()
+          .toLowerCase();
+        const isUnmachinable =
+          Boolean(unmachinableAt) ||
+          (Boolean(unmachinableDetailCode) && unmachinableDetailCode !== "none");
+        // 가공불가(판정/확인 포함)는 진행 상태가 종료된 것으로 간주하여
+        // 지연 위험(지연확정/지연가능) 집계에서 제외한다.
+        if (isUnmachinable) continue;
+
         const pickedUpAt = r.deliveryInfoRef?.pickedUpAt
           ? new Date(r.deliveryInfoRef.pickedUpAt)
           : null;
