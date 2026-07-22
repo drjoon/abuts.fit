@@ -13,6 +13,93 @@ import {
   getAssignedLikeDashboardSummary,
 } from "../../services/requestDashboardStats.service.js";
 
+const HAPPY_CALL_REASON_META = {
+  first_completion_this_week: {
+    label: "최근 가입 후 첫 거래 완료(이번 주)",
+    description:
+      "첫 완료 직후 제품 만족도·재주문 의향을 확인하면 장기 전환율을 높일 수 있습니다.",
+    severity: "high",
+  },
+  first_completion_after_signup: {
+    label: "가입 후 첫 주문 완료",
+    description:
+      "첫 주문 완료 직후 품질 만족도와 재주문 의향을 확인하면 재구매 전환에 도움이 됩니다.",
+    severity: "high",
+  },
+  no_completion_30d_from_join: {
+    label: "가입 1개월 경과, 완료 0건",
+    description:
+      "온보딩 이탈 가능성이 높은 구간입니다. 주문 장애 요인을 파악하고 첫 완료를 유도하세요.",
+    severity: "high",
+  },
+  dormant_60d_since_last_completion: {
+    label: "최근 거래(완료) 2개월 이상 공백",
+    description:
+      "휴면 전환 위험 고객입니다. 품질/납기/가격 이슈를 점검해 재활성화를 시도하세요.",
+    severity: "high",
+  },
+  high_cancel_rate_30d: {
+    label: "최근 30일 취소율 높음",
+    description:
+      "사양 입력/커뮤니케이션/납기 관련 불편 가능성이 있습니다.",
+    severity: "medium",
+  },
+  recent_unmachinable_14d: {
+    label: "최근 14일 가공불가 판정 발생",
+    description:
+      "임플란트 정보 입력/데이터 품질 이슈 가능성이 있어 사전 안내가 필요합니다.",
+    severity: "medium",
+  },
+  active_but_no_completion_30d: {
+    label: "최근 주문은 있으나 30일 내 완료 없음",
+    description:
+      "진행 정체 가능성이 있습니다. 병목 단계와 체감 리드타임을 확인하세요.",
+    severity: "medium",
+  },
+  new_signup_no_first_request_14d: {
+    label: "가입 14일 경과, 첫 주문 없음",
+    description:
+      "초기 사용 가이드/샘플 안내 등 온보딩 지원이 필요한 상태입니다.",
+    severity: "low",
+  },
+};
+
+const HAPPY_CALL_REASON_PRIORITY = {
+  high: 3,
+  medium: 2,
+  low: 1,
+};
+
+const toDateOrNull = (value) => {
+  if (!value) return null;
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? null : d;
+};
+
+const toIsoOrNull = (value) => {
+  const d = toDateOrNull(value);
+  return d ? d.toISOString() : null;
+};
+
+const getCurrentKstWeekRangeUtc = () => {
+  const now = new Date();
+  const kstNow = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+  const kstDay = kstNow.getUTCDay();
+  const daysFromMonday = (kstDay + 6) % 7;
+
+  const kstWeekStart = new Date(kstNow);
+  kstWeekStart.setUTCHours(0, 0, 0, 0);
+  kstWeekStart.setUTCDate(kstWeekStart.getUTCDate() - daysFromMonday);
+
+  const kstWeekEnd = new Date(kstWeekStart);
+  kstWeekEnd.setUTCDate(kstWeekEnd.getUTCDate() + 7);
+
+  return {
+    startUtc: new Date(kstWeekStart.getTime() - 9 * 60 * 60 * 1000),
+    endUtc: new Date(kstWeekEnd.getTime() - 9 * 60 * 60 * 1000),
+  };
+};
+
 export async function getDashboardStats(req, res) {
   try {
     const systemAlerts = [];
@@ -40,6 +127,13 @@ export async function getDashboardStats(req, res) {
       "caseInfos.implantBrand": { $exists: true, $ne: "" },
     };
 
+    const now = new Date();
+    const fourteenDaysAgo = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);
+    const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    const sixtyDaysAgo = new Date(now.getTime() - 60 * 24 * 60 * 60 * 1000);
+    const { startUtc: weekStartUtc, endUtc: weekEndUtc } =
+      getCurrentKstWeekRangeUtc();
+
     // 모든 핵심 통계를 동일 집계식으로 병렬 조회
     const [
       userStats,
@@ -50,6 +144,7 @@ export async function getDashboardStats(req, res) {
       pricingSummary,
       unmachinableRows,
       latestPricingSsotHealth,
+      requestorAnchors,
     ] = await Promise.all([
       User.aggregate([{ $group: { _id: "$role", count: { $sum: 1 } } }]),
       User.countDocuments({ role: "requestor" }),
@@ -79,6 +174,15 @@ export async function getDashboardStats(req, res) {
         })
         .lean(),
       getLatestPricingSsotHealthSnapshot(),
+      BusinessAnchor.find({ businessType: "requestor", status: { $ne: "merged" } })
+        .select({
+          _id: 1,
+          name: 1,
+          metadata: 1,
+          createdAt: 1,
+          status: 1,
+        })
+        .lean(),
     ]);
 
     const userStatsByRole = {};
@@ -192,6 +296,276 @@ export async function getDashboardStats(req, res) {
         : [],
     };
 
+    const requestorAnchorIds = (Array.isArray(requestorAnchors)
+      ? requestorAnchors
+      : []
+    )
+      .map((a) => a?._id)
+      .filter(Boolean);
+
+    const [requestorRequestStats, firstCompletions] =
+      requestorAnchorIds.length > 0
+        ? await Promise.all([
+            Request.aggregate([
+              {
+                $match: {
+                  ...requestBaseFilter,
+                  businessAnchorId: { $in: requestorAnchorIds },
+                },
+              },
+              {
+                $group: {
+                  _id: "$businessAnchorId",
+                  totalRequests: { $sum: 1 },
+                  firstRequestAt: { $min: "$createdAt" },
+                  lastRequestAt: { $max: "$createdAt" },
+                  completedCount: {
+                    $sum: {
+                      $cond: [
+                        { $ne: ["$shippingWorkflow.completedAt", null] },
+                        1,
+                        0,
+                      ],
+                    },
+                  },
+                  lastCompletedAt: {
+                    $max: {
+                      $cond: [
+                        { $ne: ["$shippingWorkflow.completedAt", null] },
+                        "$shippingWorkflow.completedAt",
+                        null,
+                      ],
+                    },
+                  },
+                  recent30Total: {
+                    $sum: {
+                      $cond: [{ $gte: ["$createdAt", thirtyDaysAgo] }, 1, 0],
+                    },
+                  },
+                  recent30Canceled: {
+                    $sum: {
+                      $cond: [
+                        {
+                          $and: [
+                            { $gte: ["$createdAt", thirtyDaysAgo] },
+                            { $eq: ["$manufacturerStage", "취소"] },
+                          ],
+                        },
+                        1,
+                        0,
+                      ],
+                    },
+                  },
+                  recent30Completed: {
+                    $sum: {
+                      $cond: [
+                        { $gte: ["$shippingWorkflow.completedAt", thirtyDaysAgo] },
+                        1,
+                        0,
+                      ],
+                    },
+                  },
+                  recent14UnmachinableJudged: {
+                    $sum: {
+                      $cond: [
+                        { $gte: ["$rnd.unmachinableAt", fourteenDaysAgo] },
+                        1,
+                        0,
+                      ],
+                    },
+                  },
+                },
+              },
+            ]),
+            Request.aggregate([
+              {
+                $match: {
+                  ...requestBaseFilter,
+                  businessAnchorId: { $in: requestorAnchorIds },
+                  "shippingWorkflow.completedAt": { $ne: null },
+                },
+              },
+              { $sort: { "shippingWorkflow.completedAt": 1 } },
+              {
+                $group: {
+                  _id: "$businessAnchorId",
+                  firstCompletedAt: { $first: "$shippingWorkflow.completedAt" },
+                  firstCompletedRequestId: { $first: "$requestId" },
+                  firstCompletedRequestMongoId: { $first: "$_id" },
+                },
+              },
+            ]),
+          ])
+        : [[], []];
+
+    const requestStatsByAnchorId = new Map(
+      (Array.isArray(requestorRequestStats) ? requestorRequestStats : []).map(
+        (row) => [String(row?._id || "").trim(), row],
+      ),
+    );
+
+    const firstCompletionByAnchorId = new Map(
+      (Array.isArray(firstCompletions) ? firstCompletions : []).map((row) => [
+        String(row?._id || "").trim(),
+        row,
+      ]),
+    );
+
+    const happyCallItems = [];
+    const reasonCounter = new Map();
+
+    for (const anchorRaw of Array.isArray(requestorAnchors) ? requestorAnchors : []) {
+      const anchor = anchorRaw || {};
+      const anchorId = String(anchor?._id || "").trim();
+      if (!anchorId) continue;
+
+      const statsRow = requestStatsByAnchorId.get(anchorId) || {};
+      const firstCompletionRow = firstCompletionByAnchorId.get(anchorId) || {};
+
+      const anchorCreatedAt = toDateOrNull(anchor?.createdAt);
+      const totalRequestsByAnchor = Number(statsRow?.totalRequests || 0);
+      const completedCount = Number(statsRow?.completedCount || 0);
+      const firstCompletedAt = toDateOrNull(firstCompletionRow?.firstCompletedAt);
+      const lastCompletedAt = toDateOrNull(statsRow?.lastCompletedAt);
+      const lastRequestAt = toDateOrNull(statsRow?.lastRequestAt);
+      const recent30Total = Number(statsRow?.recent30Total || 0);
+      const recent30Canceled = Number(statsRow?.recent30Canceled || 0);
+      const recent30Completed = Number(statsRow?.recent30Completed || 0);
+      const recent14UnmachinableJudged = Number(
+        statsRow?.recent14UnmachinableJudged || 0,
+      );
+
+      const reasons = [];
+
+      if (
+        firstCompletedAt &&
+        firstCompletedAt >= weekStartUtc &&
+        firstCompletedAt < weekEndUtc
+      ) {
+        reasons.push({ code: "first_completion_this_week" });
+      }
+
+      if (firstCompletedAt && firstCompletedAt >= thirtyDaysAgo) {
+        reasons.push({ code: "first_completion_after_signup" });
+      }
+
+      if (anchorCreatedAt && anchorCreatedAt <= thirtyDaysAgo && completedCount === 0) {
+        reasons.push({ code: "no_completion_30d_from_join" });
+      }
+
+      if (lastCompletedAt && lastCompletedAt <= sixtyDaysAgo) {
+        reasons.push({ code: "dormant_60d_since_last_completion" });
+      }
+
+      if (recent30Total >= 3 && recent30Canceled / recent30Total >= 0.5) {
+        reasons.push({ code: "high_cancel_rate_30d" });
+      }
+
+      if (recent14UnmachinableJudged > 0) {
+        reasons.push({ code: "recent_unmachinable_14d" });
+      }
+
+      if (completedCount > 0 && recent30Total >= 2 && recent30Completed === 0) {
+        reasons.push({ code: "active_but_no_completion_30d" });
+      }
+
+      if (anchorCreatedAt && anchorCreatedAt <= fourteenDaysAgo && totalRequestsByAnchor === 0) {
+        reasons.push({ code: "new_signup_no_first_request_14d" });
+      }
+
+      if (!reasons.length) {
+        continue;
+      }
+
+      const normalizedReasons = reasons
+        .map((r) => {
+          const code = String(r?.code || "").trim();
+          const meta = HAPPY_CALL_REASON_META[code] || null;
+          if (!code || !meta) return null;
+          reasonCounter.set(code, Number(reasonCounter.get(code) || 0) + 1);
+          return {
+            code,
+            label: meta.label,
+            description: meta.description,
+            severity: meta.severity,
+          };
+        })
+        .filter(Boolean);
+
+      if (!normalizedReasons.length) continue;
+
+      const maxSeverity = normalizedReasons.reduce((acc, reason) => {
+        return Math.max(acc, Number(HAPPY_CALL_REASON_PRIORITY[reason.severity] || 0));
+      }, 0);
+
+      happyCallItems.push({
+        businessAnchorId: anchorId,
+        businessName: String(anchor?.name || "").trim() || "-",
+        companyName: String(anchor?.metadata?.companyName || "").trim() || "",
+        phoneNumber: String(anchor?.metadata?.phoneNumber || "").trim() || "",
+        email: String(anchor?.metadata?.email || "").trim() || "",
+        createdAt: toIsoOrNull(anchorCreatedAt),
+        firstCompletedAt: toIsoOrNull(firstCompletedAt),
+        lastCompletedAt: toIsoOrNull(lastCompletedAt),
+        lastRequestAt: toIsoOrNull(lastRequestAt),
+        firstCompletedRequestId: String(firstCompletionRow?.firstCompletedRequestId || "").trim(),
+        firstCompletedRequestMongoId: String(
+          firstCompletionRow?.firstCompletedRequestMongoId || "",
+        ).trim(),
+        stats: {
+          totalRequests: totalRequestsByAnchor,
+          completedCount,
+          recent30Total,
+          recent30Canceled,
+          recent30Completed,
+          recent14UnmachinableJudged,
+        },
+        reasons: normalizedReasons,
+        _priority: maxSeverity,
+      });
+    }
+
+    happyCallItems.sort((a, b) => {
+      if (b._priority !== a._priority) return b._priority - a._priority;
+
+      const aLast = new Date(a.lastCompletedAt || a.lastRequestAt || a.createdAt || 0).getTime();
+      const bLast = new Date(b.lastCompletedAt || b.lastRequestAt || b.createdAt || 0).getTime();
+      return aLast - bLast;
+    });
+
+    const reasonCounts = Array.from(reasonCounter.entries())
+      .map(([code, count]) => {
+        const meta = HAPPY_CALL_REASON_META[code] || {};
+        return {
+          code,
+          label: String(meta.label || code),
+          severity: String(meta.severity || "low"),
+          count: Number(count || 0),
+        };
+      })
+      .sort((a, b) => {
+        const severityGap =
+          Number(HAPPY_CALL_REASON_PRIORITY[b.severity] || 0) -
+          Number(HAPPY_CALL_REASON_PRIORITY[a.severity] || 0);
+        if (severityGap !== 0) return severityGap;
+        return b.count - a.count;
+      });
+
+    const happyCallSummary = {
+      generatedAt: now.toISOString(),
+      weekRange: {
+        start: weekStartUtc.toISOString(),
+        end: weekEndUtc.toISOString(),
+      },
+      totalRequestorCount: happyCallItems.length,
+      totalReasonCount: happyCallItems.reduce(
+        (acc, item) => acc + Number(item?.reasons?.length || 0),
+        0,
+      ),
+      reasonCounts,
+      items: happyCallItems.map(({ _priority, ...rest }) => rest),
+    };
+
     // SSOT 점검 상태를 관리자 알림에 반영한다.
     // - 누락: 점검 자체가 아직 실행되지 않음
     // - stale: 워커/배치가 정상 수행되지 않았을 가능성
@@ -266,6 +640,7 @@ export async function getDashboardStats(req, res) {
         systemAlerts,
         pricingSsotHealth,
         unmachinableSummary,
+        happyCallSummary,
       },
     });
   } catch (error) {

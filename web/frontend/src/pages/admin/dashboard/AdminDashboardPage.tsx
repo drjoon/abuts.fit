@@ -1,9 +1,11 @@
 
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { usePeriodStore } from "@/store/usePeriodStore";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useQuery } from "@tanstack/react-query";
+import { MultiActionDialog } from "@/features/support/components/MultiActionDialog";
 import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { DashboardShell } from "@/shared/ui/dashboard/DashboardShell";
@@ -20,6 +22,7 @@ import {
   Mail,
   MessageCircle,
   HelpCircle,
+  PhoneCall,
 } from "lucide-react";
 
 type PricingSummary = {
@@ -52,6 +55,53 @@ type DashboardData = {
     type: string;
     date: string;
   }>;
+};
+
+type HappyCallReason = {
+  code: string;
+  label: string;
+  description: string;
+  severity: "high" | "medium" | "low";
+};
+
+type HappyCallItem = {
+  businessAnchorId: string;
+  businessName: string;
+  companyName?: string;
+  phoneNumber?: string;
+  email?: string;
+  createdAt?: string | null;
+  firstCompletedAt?: string | null;
+  lastCompletedAt?: string | null;
+  lastRequestAt?: string | null;
+  firstCompletedRequestId?: string;
+  firstCompletedRequestMongoId?: string;
+  stats?: {
+    totalRequests?: number;
+    completedCount?: number;
+    recent30Total?: number;
+    recent30Canceled?: number;
+    recent30Completed?: number;
+    recent14UnmachinableJudged?: number;
+  };
+  reasons: HappyCallReason[];
+};
+
+type HappyCallSummary = {
+  generatedAt?: string;
+  weekRange?: {
+    start?: string;
+    end?: string;
+  };
+  totalRequestorCount?: number;
+  totalReasonCount?: number;
+  reasonCounts?: Array<{
+    code: string;
+    label: string;
+    severity: "high" | "medium" | "low";
+    count: number;
+  }>;
+  items?: HappyCallItem[];
 };
 
 type PricingSsotHealth = {
@@ -101,17 +151,42 @@ const getAlertIcon = (type: string) => {
   }
 };
 
+const HAPPY_CALL_SEVERITY_BADGE: Record<
+  "high" | "medium" | "low",
+  "destructive" | "secondary" | "outline"
+> = {
+  high: "destructive",
+  medium: "secondary",
+  low: "outline",
+};
+
+const toDateLabel = (raw?: string | null) => {
+  if (!raw) return "-";
+  const d = new Date(raw);
+  if (Number.isNaN(d.getTime())) return "-";
+  return d.toLocaleDateString("ko-KR");
+};
+
 export const AdminDashboardPage = () => {
   const { user, token } = useAuthStore();
   const navigate = useNavigate();
   const { period, setPeriod } = usePeriodStore();
   const { counts: commBadgeCounts } = useAdminCommBadges();
-
-  if (!user || user.role !== "admin") return null;
+  const [happyCallDialogOpen, setHappyCallDialogOpen] = useState(false);
+  const [happyCallReasonFilter, setHappyCallReasonFilter] = useState<string>("all");
+  const [phoneConfirm, setPhoneConfirm] = useState<{
+    open: boolean;
+    phone: string;
+    businessName: string;
+  }>({
+    open: false,
+    phone: "",
+    businessName: "",
+  });
 
   const { data: riskSummaryResponse } = useQuery({
     queryKey: ["admin-dashboard-risk-summary", period],
-    enabled: Boolean(token),
+    enabled: Boolean(token) && user?.role === "admin",
     queryFn: async () => {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 8000);
@@ -141,7 +216,7 @@ export const AdminDashboardPage = () => {
 
   const { data: adminDashboardResponse } = useQuery({
     queryKey: ["admin-dashboard-page", period],
-    enabled: Boolean(token),
+    enabled: Boolean(token) && user?.role === "admin",
     queryFn: async () => {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 8000);
@@ -169,8 +244,7 @@ export const AdminDashboardPage = () => {
     retry: false,
   });
 
-
-
+  if (!user || user.role !== "admin") return null;
 
   const baseData: DashboardData = {
     stats: [
@@ -220,6 +294,30 @@ export const AdminDashboardPage = () => {
   const completionSummary = adminDashboardResponse?.success
     ? (adminDashboardResponse.data?.completionSummary ?? null)
     : null;
+
+  const happyCallSummary: HappyCallSummary | null = adminDashboardResponse?.success
+    ? (adminDashboardResponse.data?.happyCallSummary ?? null)
+    : null;
+
+  const totalRequestorBusinessCount = Number(
+    adminDashboardResponse?.data?.userStats?.requestorBusinessCount ?? 0,
+  );
+
+  const happyCallItems = Array.isArray(happyCallSummary?.items)
+    ? happyCallSummary.items
+    : [];
+
+  const filteredHappyCallItems =
+    happyCallReasonFilter === "all"
+      ? happyCallItems
+      : happyCallItems.filter((item) =>
+          Array.isArray(item?.reasons)
+            ? item.reasons.some(
+                (reason) =>
+                  String(reason?.code || "").trim() === happyCallReasonFilter,
+              )
+            : false,
+        );
 
   if (adminDashboardResponse?.success) {
     const userStats = adminDashboardResponse.data.userStats || {};
@@ -374,7 +472,7 @@ export const AdminDashboardPage = () => {
         }
         stats={
           <>
-            <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+            <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
               {/* 카드1: 전체 사용자 / 전체 완료 주문 */}
               <Card className="app-glass-card app-glass-card--lg">
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -403,6 +501,57 @@ export const AdminDashboardPage = () => {
                     <div className="text-lg font-semibold">
                       {Number(completionSummary?.total || 0).toLocaleString()}건
                     </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* 카드X: 이번 주 해피콜 의뢰자 */}
+              <Card className="app-glass-card app-glass-card--lg">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">
+                    이번 주 해피콜 의뢰자
+                  </CardTitle>
+                  <PhoneCall className="h-4 w-4 text-muted-foreground" />
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <button
+                    type="button"
+                    className="w-full rounded-md border px-3 py-2 text-left hover:bg-slate-50 transition"
+                    onClick={() => {
+                      setHappyCallReasonFilter("all");
+                      setHappyCallDialogOpen(true);
+                    }}
+                  >
+                    <div className="flex items-end justify-between gap-2">
+                      <div className="text-xs text-muted-foreground">대상 의뢰자 수</div>
+                      <div className="text-2xl font-bold text-blue-700">
+                        {Number(happyCallSummary?.totalRequestorCount || 0).toLocaleString()}개
+                      </div>
+                    </div>
+                    <div className="mt-1 text-[11px] text-muted-foreground">
+                      클릭하면 해피콜 대상 목록과 사유를 확인할 수 있습니다.
+                    </div>
+                  </button>
+
+                  <div className="space-y-1">
+                    {(happyCallSummary?.reasonCounts || []).slice(0, 3).map((row) => (
+                      <div
+                        key={String(row.code || row.label)}
+                        className="flex items-center justify-between text-xs gap-2"
+                      >
+                        <span className="truncate text-muted-foreground">{row.label}</span>
+                        <Badge
+                          variant={HAPPY_CALL_SEVERITY_BADGE[row.severity] || "outline"}
+                          className="text-[10px] shrink-0"
+                        >
+                          {Number(row.count || 0).toLocaleString()}개
+                        </Badge>
+                      </div>
+                    ))}
+
+                    {Number((happyCallSummary?.reasonCounts || []).length || 0) === 0 && (
+                      <div className="text-xs text-muted-foreground">이번 주 해피콜 대상이 없습니다.</div>
+                    )}
                   </div>
                 </CardContent>
               </Card>
@@ -735,6 +884,215 @@ export const AdminDashboardPage = () => {
           </>
         }
         mainLeft={undefined}
+      />
+
+      <MultiActionDialog
+        open={happyCallDialogOpen}
+        onClose={() => {
+          setHappyCallDialogOpen(false);
+          setHappyCallReasonFilter("all");
+        }}
+        panelClassName="w-[94vw] max-w-[1500px] h-[88vh]"
+        descriptionClassName="h-full"
+        descriptionScrollable={false}
+        title="이번 주 해피콜 의뢰자 목록"
+        description={
+          <div className="h-full min-h-0 flex flex-col gap-2">
+            <div className="text-sm text-gray-700">
+              품질 만족도/재주문 의향 확인을 위해 우선 연락이 필요한 의뢰자 목록입니다.
+              (기준: 첫 완료, 장기 미완료, 휴면, 취소율, 가공불가 등)
+            </div>
+
+            <div className="text-sm text-slate-600">
+              전체 의뢰자 {totalRequestorBusinessCount.toLocaleString()}개 / 해피콜 대상 {happyCallItems.length.toLocaleString()}개
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setHappyCallReasonFilter("all")}
+                className={`inline-flex items-center rounded-md border px-2.5 py-1 text-sm transition ${
+                  happyCallReasonFilter === "all"
+                    ? "border-blue-300 bg-blue-50 text-blue-700"
+                    : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                }`}
+              >
+                <span className="mr-1">전체(해피콜)</span>
+                <Badge
+                  variant={happyCallReasonFilter === "all" ? "destructive" : "secondary"}
+                  className="text-[11px]"
+                >
+                  {happyCallItems.length}개
+                </Badge>
+              </button>
+
+              {(happyCallSummary?.reasonCounts || []).map((row) => {
+                const code = String(row.code || "").trim();
+                const isActive = happyCallReasonFilter === code;
+                return (
+                  <button
+                    key={String(code || row.label)}
+                    type="button"
+                    onClick={() => setHappyCallReasonFilter(code || "all")}
+                    className={`inline-flex items-center rounded-md border px-2.5 py-1 text-sm transition ${
+                      isActive
+                        ? "border-blue-300 bg-blue-50 text-blue-700"
+                        : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                    }`}
+                  >
+                    <span className="mr-1">{row.label}</span>
+                    <Badge
+                      variant={HAPPY_CALL_SEVERITY_BADGE[row.severity] || "outline"}
+                      className="text-[11px]"
+                    >
+                      {Number(row.count || 0).toLocaleString()}개
+                    </Badge>
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="flex-1 min-h-0 overflow-auto pr-1">
+              <div className="grid grid-cols-2 xl:grid-cols-3 gap-2">
+              {filteredHappyCallItems.map((item) => {
+                const anchorId = String(item.businessAnchorId || "").trim();
+                const phone = String(item.phoneNumber || "").trim();
+                const email = String(item.email || "").trim();
+                const qs = new URLSearchParams();
+                if (anchorId) {
+                  qs.set("focusAnchorId", anchorId);
+                  qs.set("q", anchorId);
+                }
+
+                return (
+                  <div key={anchorId || item.businessName} className="rounded-md border px-3 py-2.5 bg-white">
+                    <div className="flex flex-col gap-2">
+                      <div className="min-w-0">
+                        <div className="text-sm font-semibold truncate text-gray-900">
+                          {item.businessName || "-"}
+                        </div>
+                        <div className="text-xs text-gray-500 truncate">
+                          {item.companyName || "-"}
+                        </div>
+                        <div className="text-[11px] text-gray-500 mt-1">
+                          가입일 {toDateLabel(item.createdAt)} · 첫 완료 {toDateLabel(item.firstCompletedAt)} · 최근 완료 {toDateLabel(item.lastCompletedAt)}
+                        </div>
+                        <div className="text-[11px] text-gray-500">
+                          최근30일 주문 {Number(item.stats?.recent30Total || 0)}건 / 취소 {Number(item.stats?.recent30Canceled || 0)}건 / 완료 {Number(item.stats?.recent30Completed || 0)}건
+                        </div>
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        {phone ? (
+                          <button
+                            type="button"
+                            className="inline-flex h-7 items-center rounded-md border px-2 text-xs hover:bg-slate-50"
+                            onClick={() => {
+                              setPhoneConfirm({
+                                open: true,
+                                phone,
+                                businessName: String(item.businessName || "").trim() || "의뢰자",
+                              });
+                            }}
+                          >
+                            전화
+                          </button>
+                        ) : null}
+                        <button
+                          type="button"
+                          className="inline-flex h-7 items-center rounded-md border px-2 text-xs hover:bg-slate-50"
+                          onClick={() => navigate(`/dashboard/chat-management${anchorId ? `?q=${encodeURIComponent(anchorId)}` : ""}`)}
+                        >
+                          채팅
+                        </button>
+                        <button
+                          type="button"
+                          className="inline-flex h-7 items-center rounded-md border px-2 text-xs hover:bg-slate-50"
+                          onClick={() => navigate(`/dashboard/sms${phone ? `?q=${encodeURIComponent(phone)}` : ""}`)}
+                        >
+                          문자
+                        </button>
+                        <button
+                          type="button"
+                          className="inline-flex h-7 items-center rounded-md border px-2 text-xs hover:bg-slate-50"
+                          onClick={() => navigate(`/dashboard/businesses${anchorId ? `?${qs.toString()}` : ""}`)}
+                        >
+                          사업체
+                        </button>
+                        {email ? (
+                          <a
+                            href={`mailto:${email}`}
+                            className="inline-flex h-7 items-center rounded-md border px-2 text-xs hover:bg-slate-50"
+                          >
+                            메일
+                          </a>
+                        ) : null}
+                      </div>
+                    </div>
+
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {(item.reasons || []).map((reason) => (
+                        <Badge
+                          key={`${anchorId}-${reason.code}`}
+                          variant={HAPPY_CALL_SEVERITY_BADGE[reason.severity] || "outline"}
+                          className="text-[10px]"
+                          title={reason.description}
+                        >
+                          {reason.label}
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+
+              {filteredHappyCallItems.length === 0 && (
+                <div className="col-span-full text-sm text-gray-500 text-center py-6">
+                  해당 조건의 해피콜 대상 의뢰자가 없습니다.
+                </div>
+              )}
+              </div>
+            </div>
+          </div>
+        }
+        actions={[]}
+      />
+
+      <MultiActionDialog
+        open={phoneConfirm.open}
+        onClose={() => {
+          setPhoneConfirm({ open: false, phone: "", businessName: "" });
+        }}
+        title="전화 연결"
+        description={
+          <div className="space-y-2 text-sm text-gray-700">
+            <div>
+              <span className="font-semibold text-gray-900">{phoneConfirm.businessName}</span>
+              {" "}의 연락처로 전화를 연결할까요?
+            </div>
+            <div className="text-xs text-gray-500">번호: {phoneConfirm.phone || "-"}</div>
+          </div>
+        }
+        actions={[
+          {
+            label: "취소",
+            variant: "secondary",
+            onClick: () => {
+              setPhoneConfirm({ open: false, phone: "", businessName: "" });
+            },
+          },
+          {
+            label: "전화 연결",
+            variant: "primary",
+            onClick: () => {
+              const normalized = String(phoneConfirm.phone || "").replace(/\s+/g, "");
+              if (normalized) {
+                window.location.href = `tel:${normalized}`;
+              }
+              setPhoneConfirm({ open: false, phone: "", businessName: "" });
+            },
+          },
+        ]}
       />
     </>
   );

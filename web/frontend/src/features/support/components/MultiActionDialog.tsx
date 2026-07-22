@@ -16,6 +16,9 @@ interface MultiActionDialogProps {
   actions: DialogAction[];
   onClose?: () => void;
   preventCloseOnOverlayClick?: boolean;
+  panelClassName?: string;
+  descriptionClassName?: string;
+  descriptionScrollable?: boolean;
 }
 
 const getButtonClass = (variant: DialogAction["variant"]) => {
@@ -39,7 +42,11 @@ export const MultiActionDialog = ({
   actions,
   onClose,
   preventCloseOnOverlayClick = false,
+  panelClassName,
+  descriptionClassName,
+  descriptionScrollable = true,
 }: MultiActionDialogProps) => {
+  const hasActions = actions.length > 0;
   if (!open) return null;
 
   if (typeof document === "undefined") return null;
@@ -50,7 +57,7 @@ export const MultiActionDialog = ({
       onClick={() => !preventCloseOnOverlayClick && onClose?.()}
     >
       <div
-        className="bg-white p-6 rounded-2xl shadow-2xl w-full max-w-md transform transition-all relative max-h-[90vh] flex flex-col min-h-0"
+        className={`bg-white p-6 rounded-2xl shadow-2xl w-full max-w-md transform transition-all relative max-h-[90vh] flex flex-col min-h-0 ${panelClassName || ""}`}
         onClick={(e) => e.stopPropagation()}
       >
         {onClose && (
@@ -67,25 +74,31 @@ export const MultiActionDialog = ({
           {title}
         </h2>
         {description && (
-          <div className="text-gray-700 mb-6 text-sm sm:text-base overflow-y-auto flex-1 min-h-0 max-h-[65vh] pr-1 custom-scrollbar">
+          <div
+            className={`text-gray-700 ${hasActions ? "mb-6" : "mb-0"} text-sm sm:text-base flex-1 min-h-0 pr-1 custom-scrollbar ${
+              descriptionScrollable ? "overflow-y-auto max-h-[65vh]" : "overflow-hidden max-h-none"
+            } ${descriptionClassName || ""}`}
+          >
             {description}
           </div>
         )}
-        <div className="flex justify-end gap-3 flex-none pt-2">
-          {actions.map((action, idx) => (
-            <button
-              key={idx}
-              type="button"
-              disabled={action.disabled}
-              onClick={() => void action.onClick()}
-              className={`px-4 py-2 rounded-lg font-semibold text-sm transition-colors disabled:opacity-60 disabled:cursor-not-allowed ${getButtonClass(
-                action.variant,
-              )}`}
-            >
-              {action.label}
-            </button>
-          ))}
-        </div>
+        {hasActions && (
+          <div className="flex justify-end gap-3 flex-none pt-2">
+            {actions.map((action, idx) => (
+              <button
+                key={idx}
+                type="button"
+                disabled={action.disabled}
+                onClick={() => void action.onClick()}
+                className={`px-4 py-2 rounded-lg font-semibold text-sm transition-colors disabled:opacity-60 disabled:cursor-not-allowed ${getButtonClass(
+                  action.variant,
+                )}`}
+              >
+                {action.label}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
     </div>,
     document.body,
