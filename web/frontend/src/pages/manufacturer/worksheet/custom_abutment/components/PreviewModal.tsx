@@ -27,6 +27,8 @@ import {
   type ReviewStageKey,
   getReviewStageKeyByTab,
 } from "../utils/request";
+import { resolveImplantConnectionSpec } from "@/utils/implantConnectionSpec";
+
 
 type PreviewFiles = {
   original?: File | null;
@@ -1408,6 +1410,43 @@ export const PreviewModal = ({
     ? new Date(activeReq.createdAt).toLocaleDateString("ko-KR")
     : "-";
 
+  const packMailboxCode = String(activeReq?.mailboxAddress || "").trim();
+  const packMaterial = String(
+    overlayCaseInfos?.material ||
+      overlayFlat?.material ||
+      overlayFlat?.lotNumber?.material ||
+      "",
+  ).trim();
+  const packResolvedSpec = resolveImplantConnectionSpec({
+    implantManufacturer: String(
+      overlayCaseInfos?.implantManufacturer ||
+        overlaySpec?.implantCompany ||
+        overlayFlat?.implantManufacturer ||
+        "",
+    ).trim(),
+    implantBrand: String(
+      overlayCaseInfos?.implantBrand ||
+        overlaySpec?.implantBrand ||
+        overlaySpec?.implantProduct ||
+        overlayFlat?.implantBrand ||
+        "",
+    ).trim(),
+    implantFamily: String(
+      overlayCaseInfos?.implantFamily ||
+        overlaySpec?.implantFamily ||
+        overlayFlat?.implantFamily ||
+        "",
+    ).trim(),
+    implantType: String(
+      overlayCaseInfos?.implantType ||
+        overlaySpec?.implantType ||
+        overlayFlat?.implantType ||
+        "",
+    ).trim(),
+    connectionDiameter: overlayCaseInfos?.connectionDiameter,
+  });
+  const packScrewType = String(packResolvedSpec?.screwType || "").trim();
+
   const toFiniteNumber = (value: unknown): number | null => {
     const num = Number(value);
     return Number.isFinite(num) ? num : null;
@@ -1458,6 +1497,12 @@ export const PreviewModal = ({
         "-",
     ).trim() || "-",
   ].join(" / ");
+
+  const overlayPackMetaItems = [
+    packMailboxCode ? `메일함: ${packMailboxCode}` : "",
+    packScrewType && packScrewType !== "-" ? `스크류: ${packScrewType}` : "",
+    packMaterial ? `재질: ${packMaterial}` : "",
+  ].filter(Boolean);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -1772,6 +1817,13 @@ export const PreviewModal = ({
               {maxLength != null && <span>최대 길이 {maxLength.toFixed(2)}</span>}
               {(maxDiameter != null || maxLength != null) && !!overlayImplantLine && <span>•</span>}
               <span>{overlayImplantLine}</span>
+              {overlayPackMetaItems.length > 0 && <span>•</span>}
+              {overlayPackMetaItems.map((item, idx) => (
+                <span key={`${item}-${idx}`}>
+                  {idx > 0 ? " · " : ""}
+                  {item}
+                </span>
+              ))}
               {retentionGrooveLabel && (
                 <>
                   <span>•</span>
