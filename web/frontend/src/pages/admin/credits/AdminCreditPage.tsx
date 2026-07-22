@@ -1,6 +1,9 @@
 import { usePeriodStore } from "@/store/usePeriodStore";
 import { PeriodFilter } from "@/shared/ui/PeriodFilter";
+import { useNavigate } from "react-router-dom";
+import { Wrench } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Button } from "@/components/ui/button";
 import { CreditLedgerModal } from "@/shared/components/CreditLedgerModal";
 import { SalesmanLedgerModal } from "@/shared/components/SalesmanLedgerModal";
 import { RequestorCreditTab } from "./components/RequestorCreditTab";
@@ -11,6 +14,7 @@ import { useAdminCreditPage } from "./hooks/useAdminCreditPage";
 export default function AdminCreditPage() {
   const state = useAdminCreditPage();
   const { setPeriod } = usePeriodStore();
+  const navigate = useNavigate();
 
   return (
     <div className="space-y-6 p-6 overflow-hidden">
@@ -30,6 +34,14 @@ export default function AdminCreditPage() {
             </TabsList>
             <PeriodFilter value={state.period} onChange={setPeriod} />
           </div>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => navigate("/dashboard/businesses?reconcile=1")}
+          >
+            <Wrench className="mr-2 h-4 w-4" />
+            크레딧 업데이트
+          </Button>
         </div>
 
         <TabsContent value="requestor" className="space-y-4">

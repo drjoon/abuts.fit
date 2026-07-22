@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+
 import { useNavigate } from "react-router-dom";
-import { usePeriodStore, periodToRange } from "@/store/usePeriodStore";
+import { usePeriodStore } from "@/store/usePeriodStore";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useQuery } from "@tanstack/react-query";
-import { apiFetch, request } from "@/shared/api/apiClient";
+import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { DashboardShell } from "@/shared/ui/dashboard/DashboardShell";
 import { RequestorRiskSummaryCard } from "@/shared/ui/dashboard/RequestorRiskSummaryCard";
@@ -106,10 +106,6 @@ export const AdminDashboardPage = () => {
   const navigate = useNavigate();
   const { period, setPeriod } = usePeriodStore();
   const { counts: commBadgeCounts } = useAdminCommBadges();
-  const [pricingSummary, setPricingSummary] = useState<PricingSummary | null>(
-    null,
-  );
-  const [pricingLoading, setPricingLoading] = useState(false);
 
   if (!user || user.role !== "admin") return null;
 
@@ -152,7 +148,7 @@ export const AdminDashboardPage = () => {
 
       try {
         const res = await apiFetch<any>({
-          path: `/api/admin/dashboard${rangeQuery}`,
+          path: `/api/admin/dashboard?period=${encodeURIComponent(period)}`,
           method: "GET",
           token,
           signal: controller.signal,
@@ -173,58 +169,8 @@ export const AdminDashboardPage = () => {
     retry: false,
   });
 
-  useEffect(() => {
-    setPricingLoading(false);
-  }, []);
 
-  const rangeQuery = useMemo(() => {
-    const r = periodToRange(period);
-    if (!r) return "";
-    const qs = new URLSearchParams({
-      startDate: r.startDate,
-      endDate: r.endDate,
-    });
-    return `?${qs.toString()}`;
-  }, [period]);
 
-  const { data: pricingSummaryResponse, isFetching: isPricingSummaryFetching } =
-    useQuery({
-      queryKey: ["admin-pricing-summary", period],
-      enabled: Boolean(token),
-      queryFn: async () => {
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), 8000);
-
-        try {
-          const res = await request<any>({
-            path: `/api/admin/pricing-stats${rangeQuery}`,
-            method: "GET",
-            signal: controller.signal,
-            token,
-          });
-          if (!res.ok || !res.data?.success) {
-            throw new Error("가격 통계 조회에 실패했습니다.");
-          }
-          return res.data;
-        } catch (e: any) {
-          if (e?.name === "AbortError") {
-            throw new Error("요청 시간이 초과되었습니다.");
-          }
-          throw e;
-        } finally {
-          clearTimeout(timer);
-        }
-      },
-      retry: false,
-    });
-
-  useEffect(() => {
-    const s = pricingSummaryResponse?.success
-      ? pricingSummaryResponse.data
-      : null;
-    setPricingSummary(s);
-    setPricingLoading(isPricingSummaryFetching);
-  }, [pricingSummaryResponse, isPricingSummaryFetching]);
 
   const baseData: DashboardData = {
     stats: [
@@ -265,6 +211,14 @@ export const AdminDashboardPage = () => {
 
   const unmachinableSummary = adminDashboardResponse?.success
     ? (adminDashboardResponse.data?.unmachinableSummary ?? null)
+    : null;
+
+  const pricingSummary: PricingSummary | null = adminDashboardResponse?.success
+    ? (adminDashboardResponse.data?.pricingSummary ?? null)
+    : null;
+
+  const completionSummary = adminDashboardResponse?.success
+    ? (adminDashboardResponse.data?.completionSummary ?? null)
     : null;
 
   if (adminDashboardResponse?.success) {
@@ -432,13 +386,14 @@ export const AdminDashboardPage = () => {
                 <CardContent className="space-y-1">
                   <div className="flex items-end justify-between gap-2">
                     <div className="text-xs text-muted-foreground">
-                      전체 의뢰자
+                      의뢰자 사업자
                     </div>
                     <div className="text-lg sm:text-xl md:text-2xl font-bold">
                       {(
-                        adminDashboardResponse?.data?.userStats?.total ?? 0
+                        adminDashboardResponse?.data?.userStats
+                          ?.requestorBusinessCount ?? 0
                       ).toLocaleString()}
-                      명
+                      개
                     </div>
                   </div>
                   <div className="flex items-end justify-between gap-2">
@@ -446,7 +401,7 @@ export const AdminDashboardPage = () => {
                       전체 완료 주문
                     </div>
                     <div className="text-lg font-semibold">
-                      {(pricingSummary?.totalOrders ?? 0).toLocaleString()}건
+                      {Number(completionSummary?.total || 0).toLocaleString()}건
                     </div>
                   </div>
                 </CardContent>
@@ -485,6 +440,10 @@ export const AdminDashboardPage = () => {
                           Number(
                             adminDashboardResponse?.data?.requestStats
                               ?.byStatus?.["포장.발송"] || 0,
+                          ) +
+                          Number(
+                            adminDashboardResponse?.data?.requestStats
+                              ?.byStatus?.["추적관리"] || 0,
                           )
                         ).toLocaleString()}
                       </div>
@@ -506,7 +465,7 @@ export const AdminDashboardPage = () => {
                         완료(유료)
                       </div>
                       <div className="text-lg font-semibold">
-                        {(pricingSummary?.paidOrders ?? 0).toLocaleString()}건
+                        {Number(completionSummary?.paid || 0).toLocaleString()}건
                       </div>
                     </div>
                     <div className="flex items-end justify-between gap-2 ml-6">
@@ -514,7 +473,7 @@ export const AdminDashboardPage = () => {
                         완료(무료)
                       </div>
                       <div className="text-lg font-semibold text-muted-foreground">
-                        {(pricingSummary?.bonusOrders ?? 0).toLocaleString()}건
+                        {Number(completionSummary?.free || 0).toLocaleString()}건
                       </div>
                     </div>
                   </div>

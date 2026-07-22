@@ -145,26 +145,6 @@ export async function ensureRequestCreditSpendOnMachiningEnter({
 
   const cycle = Number(request?.caseInfos?.rollbackCounts?.cam || 0);
   const uniqueKey = `request:${String(request._id)}:machining_spend:${cycle}`;
-  const existingSpend = await CreditLedger.findOne({
-    type: "SPEND",
-    refType: "REQUEST",
-    refId: request._id,
-    uniqueKey: {
-      $regex: `^request:${String(request._id)}:machining_spend(?::\\d+)?$`,
-    },
-  })
-    .select({ _id: 1, uniqueKey: 1 })
-    .session(session || null)
-    .lean();
-  if (existingSpend?._id) {
-    console.log("[CREDIT_SPEND] skip existing machining spend for request", {
-      requestId: request?.requestId,
-      requestMongoId: String(request?._id || ""),
-      existingUniqueKey: existingSpend.uniqueKey,
-      currentUniqueKey: uniqueKey,
-    });
-    return;
-  }
 
   const computedPrice = await computePriceForRequest({
     requestorId: request?.requestor,
@@ -172,7 +152,30 @@ export async function ensureRequestCreditSpendOnMachiningEnter({
     clinicName: request?.caseInfos?.clinicName || "",
     patientName: request?.caseInfos?.patientName || "",
     tooth: request?.caseInfos?.tooth || "",
+    currentRequestId: request?._id,
   });
+
+  const existingKeys = [
+    uniqueKey,
+    `request:${String(request._id)}:machining_spend`,
+  ];
+
+  const existingSpend = await CreditLedger.findOne({
+    type: "SPEND",
+    refType: "REQUEST",
+    refId: request._id,
+    uniqueKey: { $in: existingKeys },
+  })
+    .select({
+      _id: 1,
+      uniqueKey: 1,
+      amount: 1,
+      hasFreeRequest: 1,
+      spentPaidAmount: 1,
+      spentBonusAmount: 1,
+    })
+    .session(session || null)
+    .lean();
 
   const resolvedAmount = Number(computedPrice?.amount || 0);
 
@@ -225,6 +228,21 @@ export async function ensureRequestCreditSpendOnMachiningEnter({
     businessAnchorId,
     session,
   });
+
+  // 과거 버그로 amount=0 free-marker가 먼저 저장된 경우,
+  // 실제 과금 대상(resolvedAmount>0)이면 해당 row를 정상 과금 row로 보정한다.
+  if (existingSpend?._id) {
+    const existingAmount = Number(existingSpend.amount || 0);
+    if (existingAmount < 0) {
+      console.log("[CREDIT_SPEND] skip existing machining spend for request", {
+        requestId: request?.requestId,
+        requestMongoId: String(request?._id || ""),
+        existingUniqueKey: existingSpend.uniqueKey,
+        currentUniqueKey: uniqueKey,
+      });
+      return;
+    }
+  }
   const availableForMachining = paidCredit + bonusRequestCredit;
   if (availableForMachining < resolvedAmount) {
     const err = new Error("의뢰자 잔액 부족으로 가공 진입 불가");
@@ -244,32 +262,85 @@ export async function ensureRequestCreditSpendOnMachiningEnter({
   const fromBonusRequest = Math.min(bonusRequestCredit, resolvedAmount);
   const fromPaid = resolvedAmount - fromBonusRequest;
 
-  const result = await CreditLedger.updateOne(
-    { uniqueKey },
-    {
-      $setOnInsert: {
-        businessAnchorId,
-        userId: actorUserId || null,
-        type: "SPEND",
-        amount: -resolvedAmount,
-        refType: "REQUEST",
-        refId: request._id,
-        uniqueKey,
-        spentPaidAmount: fromPaid,
-        spentBonusAmount: fromBonusRequest,
-      },
-    },
-    { upsert: true, session },
-  );
+  let wasInsertedOrCorrected = false;
 
-  if (!result?.upsertedCount) {
-    console.log("[CREDIT_SPEND] skip duplicate machining spend upsert", {
-      requestId: request?.requestId,
-      requestMongoId: String(request?._id || ""),
-      uniqueKey,
-    });
-    return;
+  if (existingSpend?._id) {
+    const existingAmount = Number(existingSpend.amount || 0);
+    const isLegacyFreeMarker =
+      existingAmount === 0 && existingSpend.hasFreeRequest === true;
+
+    if (!isLegacyFreeMarker) {
+      console.log("[CREDIT_SPEND] skip duplicate machining spend upsert", {
+        requestId: request?.requestId,
+        requestMongoId: String(request?._id || ""),
+        uniqueKey,
+        existingUniqueKey: existingSpend.uniqueKey,
+      });
+      return;
+    }
+
+    const corrected = await CreditLedger.updateOne(
+      { _id: existingSpend._id, amount: 0, hasFreeRequest: true },
+      {
+        $set: {
+          userId: actorUserId || null,
+          amount: -resolvedAmount,
+          spentPaidAmount: fromPaid,
+          spentBonusAmount: fromBonusRequest,
+          hasFreeRequest: false,
+        },
+      },
+      { session },
+    );
+
+    if (Number(corrected?.modifiedCount || 0) > 0) {
+      wasInsertedOrCorrected = true;
+      console.log("[CREDIT_SPEND] corrected legacy free marker to paid spend", {
+        requestId: request?.requestId,
+        requestMongoId: String(request?._id || ""),
+        uniqueKey: existingSpend.uniqueKey,
+        amount: resolvedAmount,
+      });
+    } else {
+      console.log("[CREDIT_SPEND] skip duplicate machining spend correction", {
+        requestId: request?.requestId,
+        requestMongoId: String(request?._id || ""),
+        uniqueKey,
+      });
+      return;
+    }
+  } else {
+    const result = await CreditLedger.updateOne(
+      { uniqueKey },
+      {
+        $setOnInsert: {
+          businessAnchorId,
+          userId: actorUserId || null,
+          type: "SPEND",
+          amount: -resolvedAmount,
+          refType: "REQUEST",
+          refId: request._id,
+          uniqueKey,
+          spentPaidAmount: fromPaid,
+          spentBonusAmount: fromBonusRequest,
+        },
+      },
+      { upsert: true, session },
+    );
+
+    if (!result?.upsertedCount) {
+      console.log("[CREDIT_SPEND] skip duplicate machining spend upsert", {
+        requestId: request?.requestId,
+        requestMongoId: String(request?._id || ""),
+        uniqueKey,
+      });
+      return;
+    }
+
+    wasInsertedOrCorrected = true;
   }
+
+  if (!wasInsertedOrCorrected) return;
 
   request.price = {
     ...(request.price || {}),

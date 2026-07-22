@@ -10,7 +10,6 @@ import {
   AlertCircle,
   Trash2,
   Loader2,
-  X,
 } from "lucide-react";
 import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
 import {
@@ -77,12 +76,64 @@ type LinkedUsersResponse = {
   error?: string;
 };
 
+type ReconcileSummary = {
+  scope: string;
+  mode: "dry-run" | "execute";
+  targetAnchors: number;
+  requestsChecked: number;
+  target: {
+    requestSpendCorrections: number;
+    requestSpendInsertions: number;
+    shippingSpendInsertions: number;
+  };
+  applied: {
+    correctedCount: number;
+    insertedRequestSpendCount: number;
+    insertedShippingSpendCount: number;
+  };
+  changedAnchors: Array<{
+    anchorId: string;
+    anchorName: string;
+    targetCount: number;
+    requestSpendCorrections: number;
+    requestSpendInsertions: number;
+    shippingSpendInsertions: number;
+  }>;
+};
+
+type ReconcileResponse = {
+  success: boolean;
+  data?: ReconcileSummary;
+  message?: string;
+  error?: string;
+};
+
+type ReconcileHistoryResponse = {
+  success: boolean;
+  data?: {
+    items: Array<{
+      _id: string;
+      action: string;
+      createdAt?: string;
+      actor?: { _id?: string; name?: string; email?: string };
+      details?: ReconcileSummary | null;
+    }>;
+  };
+  message?: string;
+  error?: string;
+};
+
 const formatMoney = (value: number) => {
   try {
     return Number(value || 0).toLocaleString("ko-KR");
   } catch {
     return String(value || 0);
   }
+};
+
+const getErrorMessage = (error: unknown, fallback: string) => {
+  if (error instanceof Error && error.message) return error.message;
+  return fallback;
 };
 
 const getBusinessTypeLabel = (type?: string) => {
@@ -115,6 +166,37 @@ const getBusinessTypeBadgeClass = (type?: string) => {
   }
 };
 
+const getCreditBreakdown = (business?: BusinessCredit | null) => {
+  const paidCredit = Number(
+    business?.paidCredit ?? business?.paidBalance ?? 0,
+  );
+  const bonusRequestCredit = Number(business?.bonusRequestCredit ?? 0);
+  const bonusShippingCredit = Number(business?.bonusShippingCredit ?? 0);
+  const totalBalance = Number(
+    business?.balance ??
+      paidCredit + bonusRequestCredit + bonusShippingCredit,
+  );
+
+  const spentPaid = Number(business?.spentPaidAmount ?? 0);
+  const spentBonusRequest = Number(business?.spentBonusRequestAmount ?? 0);
+  const spentBonusShipping = Number(business?.spentBonusShippingAmount ?? 0);
+  const totalSpent = Number(
+    business?.spentAmount ??
+      spentPaid + spentBonusRequest + spentBonusShipping,
+  );
+
+  return {
+    paidCredit,
+    bonusRequestCredit,
+    bonusShippingCredit,
+    totalBalance,
+    spentPaid,
+    spentBonusRequest,
+    spentBonusShipping,
+    totalSpent,
+  };
+};
+
 export default function AdminBusinessPage() {
   const { token } = useAuthStore();
   const [searchParams] = useSearchParams();
@@ -124,6 +206,33 @@ export default function AdminBusinessPage() {
   const focusAnchorId = String(searchParams.get("focusAnchorId") || "").trim();
   const [search, setSearch] = useState(initialQuery);
   const [typeFilter, setTypeFilter] = useState("all");
+  const [detailDialog, setDetailDialog] = useState<{
+    open: boolean;
+    business: BusinessCredit | null;
+  }>({
+    open: false,
+    business: null,
+  });
+
+  const [reconcileDialog, setReconcileDialog] = useState<{
+    open: boolean;
+    loading: boolean;
+    summary: ReconcileSummary | null;
+    history: Array<{
+      _id: string;
+      action: string;
+      createdAt?: string;
+      actor?: { _id?: string; name?: string; email?: string };
+      details?: ReconcileSummary | null;
+    }>;
+    error: string | null;
+  }>({
+    open: false,
+    loading: false,
+    summary: null,
+    history: [],
+    error: null,
+  });
 
   // 연결된 사용자 목록 다이얼로그 상태
   const [linkedUsersDialog, setLinkedUsersDialog] = useState<{
@@ -158,6 +267,15 @@ export default function AdminBusinessPage() {
     if (q) setSearch(q);
   }, [searchParams]);
 
+  useEffect(() => {
+    const shouldOpenReconcile =
+      String(searchParams.get("reconcile") || "").trim() === "1";
+    if (!shouldOpenReconcile) return;
+    setReconcileDialog((prev) => ({ ...prev, open: true }));
+    void loadReconcileData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
+
   // 연결된 사용자 목록 조회
   const fetchLinkedUsers = async (businessAnchorId: string) => {
     const res = await apiFetch<LinkedUsersResponse>({
@@ -174,6 +292,56 @@ export default function AdminBusinessPage() {
     }
     return res.data.data;
   };
+
+  const loadReconcileData = async () => {
+    setReconcileDialog((prev) => ({ ...prev, loading: true, error: null }));
+    try {
+      const [checkRes, historyRes] = await Promise.all([
+        apiFetch<ReconcileResponse>({
+          path: "/api/admin/businesses/credit-reconcile/check?scope=all-requestors",
+          method: "GET",
+          token,
+        }),
+        apiFetch<ReconcileHistoryResponse>({
+          path: "/api/admin/businesses/credit-reconcile/history?limit=20",
+          method: "GET",
+          token,
+        }),
+      ]);
+
+      if (!checkRes.ok || !checkRes.data?.success || !checkRes.data?.data) {
+        throw new Error(
+          checkRes.data?.message ||
+            checkRes.data?.error ||
+            "누락 확인 조회에 실패했습니다.",
+        );
+      }
+
+      if (!historyRes.ok || !historyRes.data?.success) {
+        throw new Error(
+          historyRes.data?.message ||
+            historyRes.data?.error ||
+            "업데이트 이력 조회에 실패했습니다.",
+        );
+      }
+
+      setReconcileDialog((prev) => ({
+        ...prev,
+        loading: false,
+        summary: checkRes.data?.data || null,
+        history: historyRes.data?.data?.items || [],
+        error: null,
+      }));
+    } catch (error: unknown) {
+      setReconcileDialog((prev) => ({
+        ...prev,
+        loading: false,
+        error: getErrorMessage(error, "누락 확인 중 오류가 발생했습니다."),
+      }));
+    }
+  };
+
+
 
   // 삭제 버튼 클릭 핸들러
   const handleDeleteClick = async (business: BusinessCredit) => {
@@ -198,14 +366,14 @@ export default function AdminBusinessPage() {
         loading: false,
         error: null,
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       setLinkedUsersDialog({
         open: true,
         business,
         users: [],
         stats: null,
         loading: false,
-        error: error.message,
+        error: getErrorMessage(error, "연결된 사용자 조회에 실패했습니다."),
       });
     }
   };
@@ -273,6 +441,8 @@ export default function AdminBusinessPage() {
     retry: false,
   });
 
+
+
   const businesses = data?.items || [];
 
   const filteredBusinesses = useMemo(() => {
@@ -316,6 +486,7 @@ export default function AdminBusinessPage() {
   const devopsCount = businesses.filter(
     (business) => business.businessType === "devops",
   ).length;
+  const detailCredit = getCreditBreakdown(detailDialog.business);
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-6 bg-gradient-subtle p-6">
@@ -452,11 +623,29 @@ export default function AdminBusinessPage() {
                 const isFocused =
                   Boolean(focusAnchorId) &&
                   String(anchorId || "").trim() === focusAnchorId;
+                const credit = getCreditBreakdown(business);
 
                 return (
                   <Card
                     key={business._id}
-                    className={`border-border/70 ${
+                    role="button"
+                    tabIndex={0}
+                    onClick={() =>
+                      setDetailDialog({
+                        open: true,
+                        business,
+                      })
+                    }
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        setDetailDialog({
+                          open: true,
+                          business,
+                        });
+                      }
+                    }}
+                    className={`border-border/70 cursor-pointer transition hover:border-primary/40 hover:shadow-sm ${
                       isFocused ? "ring-2 ring-primary border-primary" : ""
                     }`}
                   >
@@ -482,7 +671,11 @@ export default function AdminBusinessPage() {
                             variant="ghost"
                             size="icon"
                             className="h-7 w-7 text-muted-foreground hover:text-destructive"
-                            onClick={() => handleDeleteClick(business)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeleteClick(business);
+                            }}
+                            onKeyDown={(e) => e.stopPropagation()}
                             disabled={
                               deleteMutation.isPending ||
                               !business.businessAnchorId
@@ -524,22 +717,28 @@ export default function AdminBusinessPage() {
                     <CardContent className="grid gap-2 text-sm sm:grid-cols-2">
                       <div className="rounded-lg border p-3">
                         <div className="text-xs text-muted-foreground">
-                          {business.businessType === "requestor"
-                            ? "크레딧 소비액"
-                            : "미정산 잔액"}
+                          크레딧 소비액 (유형별)
                         </div>
                         <div className="mt-1 text-xl font-bold">
-                          {formatMoney(business.spentAmount || 0)}원
+                          {formatMoney(credit.totalSpent)}원
+                        </div>
+                        <div className="mt-2 space-y-1 text-xs text-muted-foreground">
+                          <div>유료: {formatMoney(credit.spentPaid)}원</div>
+                          <div>무료(의뢰): {formatMoney(credit.spentBonusRequest)}원</div>
+                          <div>무료(배송): {formatMoney(credit.spentBonusShipping)}원</div>
                         </div>
                       </div>
                       <div className="rounded-lg border p-3">
                         <div className="text-xs text-muted-foreground">
-                          {business.businessType === "requestor"
-                            ? "크레딧 잔액"
-                            : "정산 잔액"}
+                          크레딧 잔액 (유형별)
                         </div>
                         <div className="mt-1 text-xl font-bold">
-                          {formatMoney(business.balance)}원
+                          {formatMoney(credit.totalBalance)}원
+                        </div>
+                        <div className="mt-2 space-y-1 text-xs text-muted-foreground">
+                          <div>유료: {formatMoney(credit.paidCredit)}원</div>
+                          <div>무료(의뢰): {formatMoney(credit.bonusRequestCredit)}원</div>
+                          <div>무료(배송): {formatMoney(credit.bonusShippingCredit)}원</div>
                         </div>
                       </div>
                     </CardContent>
@@ -550,6 +749,302 @@ export default function AdminBusinessPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* 누락 확인 및 업데이트 다이얼로그 */}
+      <Dialog
+        open={reconcileDialog.open}
+        onOpenChange={(open) =>
+          setReconcileDialog((prev) => ({
+            ...prev,
+            open,
+            error: open ? prev.error : null,
+          }))
+        }
+      >
+        <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>크레딧 업데이트</DialogTitle>
+            <DialogDescription>
+              의뢰자 전체를 검사하여 의뢰/배송 크레딧 소비 누락 건을 확인합니다.
+            </DialogDescription>
+          </DialogHeader>
+
+          {reconcileDialog.loading ? (
+            <div className="flex items-center justify-center py-10 text-sm text-muted-foreground">
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              누락 현황 조회 중...
+            </div>
+          ) : reconcileDialog.error ? (
+            <div className="rounded-lg bg-red-50 p-3 text-sm text-red-700">
+              {reconcileDialog.error}
+            </div>
+          ) : reconcileDialog.summary ? (
+            <div className="space-y-4">
+              <div className="grid gap-2 sm:grid-cols-3">
+                <div className="rounded border p-3">
+                  <div className="text-xs text-muted-foreground">대상 사업자</div>
+                  <div className="mt-1 text-lg font-semibold">
+                    {reconcileDialog.summary.targetAnchors.toLocaleString()}개
+                  </div>
+                </div>
+                <div className="rounded border p-3">
+                  <div className="text-xs text-muted-foreground">점검 의뢰</div>
+                  <div className="mt-1 text-lg font-semibold">
+                    {reconcileDialog.summary.requestsChecked.toLocaleString()}건
+                  </div>
+                </div>
+                <div className="rounded border p-3">
+                  <div className="text-xs text-muted-foreground">변경 필요 사업자</div>
+                  <div className="mt-1 text-lg font-semibold">
+                    {reconcileDialog.summary.changedAnchors.length.toLocaleString()}개
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-lg border p-3">
+                <div className="text-sm font-medium">누락 후보</div>
+                <div className="mt-2 grid gap-2 text-sm sm:grid-cols-3">
+                  <div className="rounded bg-muted/40 p-2">
+                    의뢰 업데이트 후보
+                    <div className="font-semibold">
+                      {reconcileDialog.summary.target.requestSpendCorrections.toLocaleString()}건
+                    </div>
+                  </div>
+                  <div className="rounded bg-muted/40 p-2">
+                    의뢰 삽입 후보
+                    <div className="font-semibold">
+                      {reconcileDialog.summary.target.requestSpendInsertions.toLocaleString()}건
+                    </div>
+                  </div>
+                  <div className="rounded bg-muted/40 p-2">
+                    배송 삽입 후보
+                    <div className="font-semibold">
+                      {reconcileDialog.summary.target.shippingSpendInsertions.toLocaleString()}건
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-lg border p-3">
+                <div className="text-sm font-medium">최근 업데이트 이력</div>
+                {reconcileDialog.history.length === 0 ? (
+                  <div className="mt-2 text-sm text-muted-foreground">이력이 없습니다.</div>
+                ) : (
+                  <div className="mt-2 space-y-2">
+                    {reconcileDialog.history.slice(0, 4).map((row) => (
+                      <div key={row._id} className="rounded border p-2 text-sm">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="font-medium">
+                            {row.action === "BUSINESS_CREDIT_RECONCILE_EXECUTE"
+                              ? "업데이트 실행"
+                              : "누락 확인"}
+                          </div>
+                          <div className="text-xs text-muted-foreground">
+                            {row.createdAt
+                              ? new Date(row.createdAt).toLocaleString("ko-KR")
+                              : "-"}
+                          </div>
+                        </div>
+                        <div className="mt-1 text-xs text-muted-foreground">
+                          실행자: {row.actor?.name || "-"} ({row.actor?.email || "-"})
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : null}
+
+          <DialogFooter className="gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={loadReconcileData}
+              disabled={reconcileDialog.loading}
+            >
+              다시 확인
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* 사업자 상세 다이얼로그 */}
+      <Dialog
+        open={detailDialog.open}
+        onOpenChange={(open) =>
+          setDetailDialog((prev) => ({
+            ...prev,
+            open,
+            business: open ? prev.business : null,
+          }))
+        }
+      >
+        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>사업자 세부 정보</DialogTitle>
+            <DialogDescription>
+              선택한 사업자의 등록 정보와 계정 정보를 확인합니다.
+            </DialogDescription>
+          </DialogHeader>
+
+          {detailDialog.business ? (
+            <div className="space-y-4">
+              <div className="rounded-lg border bg-muted/30 p-4">
+                <div className="text-lg font-semibold break-words">
+                  {detailDialog.business.companyName || detailDialog.business.name}
+                </div>
+                <div className="mt-1 text-sm text-muted-foreground break-all">
+                  Anchor ID: {detailDialog.business.businessAnchorId || "-"}
+                </div>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="rounded-lg border p-3">
+                  <div className="text-xs text-muted-foreground">사업자명</div>
+                  <div className="mt-1 font-medium break-words">
+                    {detailDialog.business.name || "-"}
+                  </div>
+                </div>
+                <div className="rounded-lg border p-3">
+                  <div className="text-xs text-muted-foreground">사업자번호</div>
+                  <div className="mt-1 font-medium break-words">
+                    {detailDialog.business.businessNumber || "-"}
+                  </div>
+                </div>
+
+                <div className="rounded-lg border p-3">
+                  <div className="text-xs text-muted-foreground">사업자 유형</div>
+                  <div className="mt-1 font-medium">
+                    {getBusinessTypeLabel(detailDialog.business.businessType)}
+                  </div>
+                </div>
+                <div className="rounded-lg border p-3">
+                  <div className="text-xs text-muted-foreground">대표자명(사업자 정보)</div>
+                  <div className="mt-1 font-medium break-words">
+                    {detailDialog.business.representativeName || "-"}
+                  </div>
+                </div>
+
+                <div className="rounded-lg border p-3">
+                  <div className="text-xs text-muted-foreground">대표 계정명</div>
+                  <div className="mt-1 font-medium break-words">
+                    {detailDialog.business.ownerName || "-"}
+                  </div>
+                </div>
+                <div className="rounded-lg border p-3">
+                  <div className="text-xs text-muted-foreground">대표 계정 이메일</div>
+                  <div className="mt-1 font-medium break-all">
+                    {detailDialog.business.ownerEmail || "-"}
+                  </div>
+                </div>
+
+                <div className="rounded-lg border p-3">
+                  <div className="text-xs text-muted-foreground">전화번호</div>
+                  <div className="mt-1 font-medium break-words">
+                    {detailDialog.business.phoneNumber || "-"}
+                  </div>
+                </div>
+                <div className="rounded-lg border p-3">
+                  <div className="text-xs text-muted-foreground">사업자 이메일</div>
+                  <div className="mt-1 font-medium break-all">
+                    {detailDialog.business.businessEmail || "-"}
+                  </div>
+                </div>
+
+                <div className="rounded-lg border p-3 sm:col-span-2">
+                  <div className="text-xs text-muted-foreground">주소</div>
+                  <div className="mt-1 font-medium break-words">
+                    {[
+                      detailDialog.business.zipCode
+                        ? `(${detailDialog.business.zipCode})`
+                        : "",
+                      detailDialog.business.address || "",
+                      detailDialog.business.addressDetail || "",
+                    ]
+                      .filter(Boolean)
+                      .join(" ") || "-"}
+                  </div>
+                </div>
+
+                <div className="rounded-lg border p-3">
+                  <div className="text-xs text-muted-foreground">업태</div>
+                  <div className="mt-1 font-medium break-words">
+                    {detailDialog.business.businessCategory || "-"}
+                  </div>
+                </div>
+                <div className="rounded-lg border p-3">
+                  <div className="text-xs text-muted-foreground">종목</div>
+                  <div className="mt-1 font-medium break-words">
+                    {detailDialog.business.businessItem || "-"}
+                  </div>
+                </div>
+
+                <div className="rounded-lg border p-3">
+                  <div className="text-xs text-muted-foreground">개업일</div>
+                  <div className="mt-1 font-medium break-words">
+                    {detailDialog.business.startDate || "-"}
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-lg border p-3">
+                <div className="text-xs text-muted-foreground">크레딧 소비액 (합계)</div>
+                <div className="mt-1 text-lg font-semibold">
+                  {formatMoney(detailCredit.totalSpent)}원
+                </div>
+                <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                  <div className="rounded border bg-muted/30 p-2">
+                    <div className="text-[11px] text-muted-foreground">유료 소비</div>
+                    <div className="mt-0.5 font-semibold">
+                      {formatMoney(detailCredit.spentPaid)}원
+                    </div>
+                  </div>
+                  <div className="rounded border bg-muted/30 p-2">
+                    <div className="text-[11px] text-muted-foreground">무료 소비 (의뢰)</div>
+                    <div className="mt-0.5 font-semibold">
+                      {formatMoney(detailCredit.spentBonusRequest)}원
+                    </div>
+                  </div>
+                  <div className="rounded border bg-muted/30 p-2">
+                    <div className="text-[11px] text-muted-foreground">무료 소비 (배송)</div>
+                    <div className="mt-0.5 font-semibold">
+                      {formatMoney(detailCredit.spentBonusShipping)}원
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-lg border p-3">
+                <div className="text-xs text-muted-foreground">크레딧 잔액 (합계)</div>
+                <div className="mt-1 text-lg font-semibold">
+                  {formatMoney(detailCredit.totalBalance)}원
+                </div>
+                <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                  <div className="rounded border bg-muted/30 p-2">
+                    <div className="text-[11px] text-muted-foreground">유료 잔액</div>
+                    <div className="mt-0.5 font-semibold">
+                      {formatMoney(detailCredit.paidCredit)}원
+                    </div>
+                  </div>
+                  <div className="rounded border bg-muted/30 p-2">
+                    <div className="text-[11px] text-muted-foreground">무료 잔액 (의뢰)</div>
+                    <div className="mt-0.5 font-semibold">
+                      {formatMoney(detailCredit.bonusRequestCredit)}원
+                    </div>
+                  </div>
+                  <div className="rounded border bg-muted/30 p-2">
+                    <div className="text-[11px] text-muted-foreground">무료 잔액 (배송)</div>
+                    <div className="mt-0.5 font-semibold">
+                      {formatMoney(detailCredit.bonusShippingCredit)}원
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : null}
+        </DialogContent>
+      </Dialog>
 
       {/* 연결된 사용자 목록 다이얼로그 */}
       <Dialog

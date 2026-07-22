@@ -116,6 +116,10 @@ export const AdminRequestMonitoring = () => {
   const { period, setPeriod } = usePeriodStore();
   const { toast } = useToast();
   const [requests, setRequests] = useState<any[]>([]);
+  const [serverStageStats, setServerStageStats] = useState<{
+    total: number;
+    byStatus: Record<string, number>;
+  } | null>(null);
   const initialQuery = String(searchParams.get("q") || "").trim();
   const focusRequestMongoId = String(
     searchParams.get("focusRequestMongoId") || "",
@@ -157,6 +161,7 @@ export const AdminRequestMonitoring = () => {
           title: "의뢰 삭제 완료",
           description: `의뢰 ${requestId}이(가) 취소 처리되었습니다.`,
         });
+        setServerStageStats(null);
       } else {
         toast({
           title: "의뢰 삭제 실패",
@@ -206,6 +211,7 @@ export const AdminRequestMonitoring = () => {
           title: "의뢰 복구 완료",
           description: `의뢰 ${requestId}이(가) 의뢰 상태로 복구되었습니다.`,
         });
+        setServerStageStats(null);
       } else {
         toast({
           title: "의뢰 복구 실패",
@@ -261,6 +267,7 @@ export const AdminRequestMonitoring = () => {
         if (!firstRes.ok || !firstRes.data?.data?.requests) {
           if (!canceled) {
             setRequests([]);
+            setServerStageStats(null);
             setVisibleCount(PAGE_SIZE);
           }
           return;
@@ -273,6 +280,21 @@ export const AdminRequestMonitoring = () => {
         if (!canceled) {
           // 첫 페이지를 먼저 그려 초기 체감 로딩 개선
           setRequests(firstPageRequests);
+          const stats = firstRes.data?.data?.stats;
+          if (
+            stats &&
+            typeof stats === "object" &&
+            typeof stats.total === "number" &&
+            stats.byStatus &&
+            typeof stats.byStatus === "object"
+          ) {
+            setServerStageStats({
+              total: Number(stats.total || 0),
+              byStatus: stats.byStatus as Record<string, number>,
+            });
+          } else {
+            setServerStageStats(null);
+          }
           setVisibleCount(PAGE_SIZE);
         }
 
@@ -320,6 +342,10 @@ export const AdminRequestMonitoring = () => {
   }, [requests, period]);
 
   const requestStats = useMemo(() => {
+    if (serverStageStats) {
+      return serverStageStats;
+    }
+
     const byStatus: Record<string, number> = {
       의뢰: 0,
       CAM: 0,
@@ -341,7 +367,7 @@ export const AdminRequestMonitoring = () => {
       total: periodFilteredRequests.length,
       byStatus,
     };
-  }, [periodFilteredRequests]);
+  }, [periodFilteredRequests, serverStageStats]);
 
   const filteredRequests = periodFilteredRequests.filter((request) => {
     const caseInfos = request.caseInfos || {};

@@ -102,6 +102,9 @@ import { adminGetCommBadges } from "../../controllers/admin/adminCommBadges.cont
 import {
   deleteBusinessAnchor,
   getBusinessAnchorLinkedUsers,
+  adminCheckCreditReconcile,
+  adminExecuteCreditReconcile,
+  adminGetCreditReconcileHistory,
 } from "../../controllers/admin/adminBusiness.controller.js";
 import {
   adminSendSms,
@@ -188,6 +191,21 @@ router.patch(
 );
 
 // 사업자 관리
+router.get(
+  "/businesses/credit-reconcile/check",
+  authorize(["admin"], { subRoles: ["owner"] }),
+  adminCheckCreditReconcile,
+);
+router.post(
+  "/businesses/credit-reconcile/execute",
+  authorize(["admin"], { subRoles: ["owner"] }),
+  adminExecuteCreditReconcile,
+);
+router.get(
+  "/businesses/credit-reconcile/history",
+  authorize(["admin"], { subRoles: ["owner"] }),
+  adminGetCreditReconcileHistory,
+);
 router.get(
   "/businesses/:id/linked-users",
   authorize(["admin"], { subRoles: ["owner"] }),

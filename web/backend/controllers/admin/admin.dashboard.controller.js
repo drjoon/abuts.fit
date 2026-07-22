@@ -1,11 +1,17 @@
 import User from "../../models/user.model.js";
 import Request from "../../models/request.model.js";
 import File from "../../models/file.model.js";
+import BusinessAnchor from "../../models/businessAnchor.model.js";
 import {
   getDateRangeFromQuery,
   getMongoHealth,
 } from "./admin.shared.controller.js";
 import { getLatestPricingSsotHealthSnapshot } from "../../services/pricingSsotHealth.service.js";
+import {
+  buildMonitoringByStatusFromAssignedLikeSummary,
+  getAdminPricingStatsSummary,
+  getAssignedLikeDashboardSummary,
+} from "../../services/requestDashboardStats.service.js";
 
 export async function getDashboardStats(req, res) {
   try {
@@ -29,28 +35,46 @@ export async function getDashboardStats(req, res) {
 
     const { start, end } = getDateRangeFromQuery(req);
 
-    // 모든 쿼리를 병렬로 실행
+    const createdAtFilter = { createdAt: { $gte: start, $lte: end } };
+    const requestBaseFilter = {
+      "caseInfos.implantBrand": { $exists: true, $ne: "" },
+    };
+
+    // 모든 핵심 통계를 동일 집계식으로 병렬 조회
     const [
       userStats,
       totalUsers,
       activeUsers,
-      allRequestsForStats,
+      requestorBusinessCount,
+      assignedLikeSummary,
+      pricingSummary,
+      unmachinableRows,
       latestPricingSsotHealth,
     ] = await Promise.all([
       User.aggregate([{ $group: { _id: "$role", count: { $sum: 1 } } }]),
       User.countDocuments({ role: "requestor" }),
       User.countDocuments({ role: "requestor", active: true }),
+      BusinessAnchor.countDocuments({ businessType: "requestor" }),
+      getAssignedLikeDashboardSummary({
+        baseFilter: requestBaseFilter,
+        dateFilter: createdAtFilter,
+      }),
+      getAdminPricingStatsSummary({ start, end }),
       Request.find({
-        createdAt: { $gte: start, $lte: end },
-        source: { $ne: "manufacturer_sample" },
+        ...requestBaseFilter,
+        ...createdAtFilter,
+        $or: [
+          { "rnd.unmachinablePotentialAt": { $ne: null } },
+          { "rnd.unmachinableAt": { $ne: null } },
+          { "rnd.unmachinableConfirmedAt": { $ne: null } },
+        ],
       })
         .select({
-          manufacturerStage: 1,
-          shippingPackageId: 1,
           requestId: 1,
           title: 1,
-          caseInfos: 1,
+          manufacturerStage: 1,
           createdAt: 1,
+          caseInfos: 1,
           rnd: 1,
         })
         .lean(),
@@ -65,113 +89,81 @@ export async function getDashboardStats(req, res) {
     console.log("[Admin Dashboard] User stats:", {
       totalUsers,
       activeUsers,
+      requestorBusinessCount,
       byRole: userStatsByRole,
     });
 
-    const normalizeStage = (r) => {
-      const stage = String(r.manufacturerStage || "");
-      if (stage === "취소") return "취소";
-      if (["tracking", "추적관리"].includes(stage)) return "추적관리";
-      if (["shipping", "포장.발송"].includes(stage)) return "포장.발송";
-      if (["packing", "세척.패킹"].includes(stage)) return "세척.패킹";
-      if (["machining", "가공"].includes(stage)) return "가공";
-      if (["cam", "CAM"].includes(stage)) return "CAM";
-      return "의뢰";
-    };
+    const requestStatsByStatus =
+      buildMonitoringByStatusFromAssignedLikeSummary(assignedLikeSummary);
+    const totalRequests =
+      Number(assignedLikeSummary?.total || 0) +
+      Number(assignedLikeSummary?.canceledCount || 0);
 
-    const requestStatsByStatus = {
-      의뢰: 0,
-      CAM: 0,
-      가공: 0,
-      "세척.패킹": 0,
-      "포장.발송": 0,
-      "포장.발송박스": 0,
-      추적관리: 0,
-      추적관리박스: 0,
-      취소: 0,
-      가공불가: 0,
+    const completionSummary = {
+      total: Number(assignedLikeSummary?.trackingCount || 0),
+      paid: Number(assignedLikeSummary?.trackingPaidCount || 0),
+      free: Math.max(
+        0,
+        Number(assignedLikeSummary?.trackingCount || 0) -
+          Number(assignedLikeSummary?.trackingPaidCount || 0),
+      ),
     };
 
     const unmachinableSummary = {
-      potentialCount: 0,
-      judgedCount: 0,
-      confirmedCount: 0,
-      items: [],
+      potentialCount: Number(assignedLikeSummary?.unmachinablePotentialCount || 0),
+      judgedCount: Number(
+        assignedLikeSummary?.unmachinablePendingConfirmCount || 0,
+      ),
+      confirmedCount: Number(
+        assignedLikeSummary?.unmachinableConfirmedCount || 0,
+      ),
+      items: (Array.isArray(unmachinableRows) ? unmachinableRows : [])
+        .map((r) => {
+          const hasPotential = Boolean(r?.rnd?.unmachinablePotentialAt);
+          const hasJudged = Boolean(r?.rnd?.unmachinableAt);
+          const hasConfirmed = Boolean(r?.rnd?.unmachinableConfirmedAt);
+          const detailCode = hasConfirmed
+            ? "confirmed"
+            : hasJudged
+              ? "judged"
+              : hasPotential
+                ? "potential"
+                : "none";
+
+          return {
+            _id: r._id,
+            requestId: r.requestId,
+            title: r.title || "",
+            manufacturerStage: r.manufacturerStage,
+            createdAt: r.createdAt || null,
+            caseInfos: r.caseInfos || {},
+            rnd: {
+              ...(r.rnd || {}),
+              unmachinablePotentialAt: r?.rnd?.unmachinablePotentialAt || null,
+              unmachinableAt: r?.rnd?.unmachinableAt || null,
+              unmachinableConfirmedAt: r?.rnd?.unmachinableConfirmedAt || null,
+              unmachinableReason: String(r?.rnd?.unmachinableReason || ""),
+            },
+            unmachinableDetailCode: detailCode,
+          };
+        })
+        .sort((a, b) => {
+          const aKey =
+            a?.rnd?.unmachinableConfirmedAt ||
+            a?.rnd?.unmachinableAt ||
+            a?.rnd?.unmachinablePotentialAt ||
+            a?.createdAt ||
+            0;
+          const bKey =
+            b?.rnd?.unmachinableConfirmedAt ||
+            b?.rnd?.unmachinableAt ||
+            b?.rnd?.unmachinablePotentialAt ||
+            b?.createdAt ||
+            0;
+          return new Date(bKey).getTime() - new Date(aKey).getTime();
+        })
+        .slice(0, 10),
     };
-    const shippingPackageIds = new Set();
-    const trackingPackageIds = new Set();
-    allRequestsForStats.forEach((r) => {
-      const s = normalizeStage(r);
-      if (requestStatsByStatus[s] != null) requestStatsByStatus[s] += 1;
-
-      const hasPotential = Boolean(r?.rnd?.unmachinablePotentialAt);
-      const hasJudged = Boolean(r?.rnd?.unmachinableAt);
-      const hasConfirmed = Boolean(r?.rnd?.unmachinableConfirmedAt);
-      const detailCode = hasConfirmed
-        ? "confirmed"
-        : hasJudged
-          ? "judged"
-          : hasPotential
-            ? "potential"
-            : "none";
-
-      if (detailCode !== "none") {
-        requestStatsByStatus["가공불가"] += 1;
-      }
-      if (detailCode === "potential") unmachinableSummary.potentialCount += 1;
-      if (detailCode === "judged") unmachinableSummary.judgedCount += 1;
-      if (detailCode === "confirmed") unmachinableSummary.confirmedCount += 1;
-
-      const shippingPackageId = String(r.shippingPackageId || "").trim();
-      if (shippingPackageId) {
-        if (s === "포장.발송") {
-          shippingPackageIds.add(shippingPackageId);
-        } else if (s === "추적관리") {
-          trackingPackageIds.add(shippingPackageId);
-        }
-      }
-
-      if (detailCode !== "none") {
-        unmachinableSummary.items.push({
-          _id: r._id,
-          requestId: r.requestId,
-          title: r.title || "",
-          manufacturerStage: r.manufacturerStage,
-          createdAt: r.createdAt || null,
-          caseInfos: r.caseInfos || {},
-          rnd: {
-            ...(r.rnd || {}),
-            unmachinablePotentialAt: r?.rnd?.unmachinablePotentialAt || null,
-            unmachinableAt: r?.rnd?.unmachinableAt || null,
-            unmachinableConfirmedAt: r?.rnd?.unmachinableConfirmedAt || null,
-            unmachinableReason: String(r?.rnd?.unmachinableReason || ""),
-          },
-          unmachinableDetailCode: detailCode,
-        });
-      }
-    });
-    requestStatsByStatus["포장.발송박스"] = shippingPackageIds.size;
-    requestStatsByStatus["추적관리박스"] = trackingPackageIds.size;
-
-    const totalRequests = allRequestsForStats.length;
-
-    unmachinableSummary.items = unmachinableSummary.items
-      .sort((a, b) => {
-        const aKey =
-          a?.rnd?.unmachinableConfirmedAt ||
-          a?.rnd?.unmachinableAt ||
-          a?.rnd?.unmachinablePotentialAt ||
-          a?.createdAt ||
-          0;
-        const bKey =
-          b?.rnd?.unmachinableConfirmedAt ||
-          b?.rnd?.unmachinableAt ||
-          b?.rnd?.unmachinablePotentialAt ||
-          b?.createdAt ||
-          0;
-        return new Date(bKey).getTime() - new Date(aKey).getTime();
-      })
-      .slice(0, 10);
 
     const ssotCheckedAt = latestPricingSsotHealth?.checkedAt
       ? new Date(latestPricingSsotHealth.checkedAt)
@@ -244,6 +236,7 @@ export async function getDashboardStats(req, res) {
         total: totalUsers,
         active: activeUsers,
         inactive: totalUsers - activeUsers,
+        requestorBusinessCount,
         byRole: userStatsByRole,
       },
       requests: {
@@ -251,6 +244,10 @@ export async function getDashboardStats(req, res) {
         byStatus: requestStatsByStatus,
         range: { startDate: start, endDate: end },
         recent: recentRequests,
+      },
+      pricing: {
+        range: { startDate: start, endDate: end },
+        ...pricingSummary,
       },
       files: {
         total: totalFiles,
@@ -264,6 +261,8 @@ export async function getDashboardStats(req, res) {
         userStats: dashboardData.users,
         requestStats: dashboardData.requests,
         recentActivity: dashboardData.files,
+        pricingSummary: dashboardData.pricing,
+        completionSummary,
         systemAlerts,
         pricingSsotHealth,
         unmachinableSummary,

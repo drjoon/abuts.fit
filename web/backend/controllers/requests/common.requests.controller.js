@@ -42,6 +42,8 @@ import {
   triggerPricingSnapshotForBusinessAnchorId,
 } from "../../services/requestSnapshotTriggers.service.js";
 import { emitAppEventToRoles } from "../../socket.js";
+import { buildMonitoringStageStatsFromGroupedRows } from "../../services/requestStageStats.service.js";
+import { buildCreatedAtFilterFromQuery } from "../../utils/dateRange.js";
 
 const ESPRIT_BASE =
   process.env.ESPRIT_ADDIN_BASE_URL ||
@@ -777,26 +779,9 @@ export async function getAllRequests(req, res) {
     }
     if (req.query.implantType) filter.implantType = req.query.implantType;
 
-    // 생성일 범위 필터 (관리자 모니터링 등 기간 조회 최적화)
-    const startDateRaw = String(req.query.startDate || "").trim();
-    const endDateRaw = String(req.query.endDate || "").trim();
-    const createdAtFilter = {};
-
-    if (startDateRaw) {
-      const startDate = new Date(startDateRaw);
-      if (!Number.isNaN(startDate.getTime())) {
-        createdAtFilter.$gte = startDate;
-      }
-    }
-
-    if (endDateRaw) {
-      const endDate = new Date(endDateRaw);
-      if (!Number.isNaN(endDate.getTime())) {
-        createdAtFilter.$lte = endDate;
-      }
-    }
-
-    if (Object.keys(createdAtFilter).length > 0) {
+    // 생성일 범위 필터 (관리자 모니터링/대시보드와 동일 파서 사용)
+    const createdAtFilter = buildCreatedAtFilterFromQuery(req.query);
+    if (createdAtFilter) {
       filter.createdAt = createdAtFilter;
     }
 
@@ -1218,6 +1203,24 @@ export async function getAllRequests(req, res) {
       ? await Request.countDocuments(totalFilter)
       : null;
 
+    let monitoringStats = null;
+    if (isMonitoringView) {
+      const groupedRows = await Request.aggregate([
+        { $match: totalFilter },
+        {
+          $group: {
+            _id: "$manufacturerStage",
+            count: { $sum: 1 },
+          },
+        },
+      ]);
+
+      monitoringStats = buildMonitoringStageStatsFromGroupedRows(
+        groupedRows,
+        total,
+      );
+    }
+
     const responseData = {
       requests,
       pagination: {
@@ -1226,6 +1229,7 @@ export async function getAllRequests(req, res) {
         limit,
         pages: total ? Math.ceil(total / limit) : null,
       },
+      ...(isMonitoringView && monitoringStats ? { stats: monitoringStats } : {}),
     };
 
     if (isTrackingWorksheetRequest && trackingWorksheetCacheKey) {

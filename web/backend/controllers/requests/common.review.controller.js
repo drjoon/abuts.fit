@@ -914,6 +914,23 @@ export async function updateReviewStatusByStage(req, res) {
           }
         }
 
+        const shouldEnsureRequestSpend =
+          ["cam", "machining", "packing", "shipping"].includes(
+            String(effectiveStage || ""),
+          ) &&
+          resolvedBusinessAnchorId &&
+          !isNewSystemFree &&
+          !isManufacturerSampleRequest(request);
+
+        if (shouldEnsureRequestSpend) {
+          await ensureRequestCreditSpendOnMachiningEnter({
+            request,
+            businessAnchorId: resolvedBusinessAnchorId,
+            actorUserId: req.user?._id || null,
+            session,
+          });
+        }
+
         if (effectiveStage === "packing") {
           await ensureFinishedLotNumberForPacking(request);
           updateCurrentEstimatedShipYmdOnPackingEnter(request);
@@ -950,16 +967,17 @@ export async function updateReviewStatusByStage(req, res) {
           }
         }
 
-        if (effectiveStage === "cam") {
-          if (resolvedBusinessAnchorId && !isNewSystemFree) {
-            await ensureRequestCreditSpendOnMachiningEnter({
-              request,
-              businessAnchorId: resolvedBusinessAnchorId,
-              actorUserId: req.user?._id || null,
-              session,
-            });
-          }
+        if (effectiveStage === "shipping" && resolvedBusinessAnchorId) {
+          // 운영 중 과거 누락이 있더라도 shipping 승인 시점에 배송비 소비를 보강한다.
+          await ensureShippingFeeSpendOnPackingApprove({
+            request,
+            businessAnchorId: resolvedBusinessAnchorId,
+            actorUserId: req.user?._id || null,
+            session,
+          });
+        }
 
+        if (effectiveStage === "cam") {
           await ensureMachineCompatibilityOrThrow({
             request,
             stageKey: "cam",

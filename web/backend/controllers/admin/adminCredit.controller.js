@@ -2018,6 +2018,15 @@ export async function adminGetBusinessCredits(req, res) {
         ownerEmail: ownerInfo?.email || "",
         companyName: org.metadata?.companyName || "",
         businessNumber: org.metadata?.businessNumber || "",
+        representativeName: org.metadata?.representativeName || "",
+        address: org.metadata?.address || "",
+        addressDetail: org.metadata?.addressDetail || "",
+        zipCode: org.metadata?.zipCode || "",
+        phoneNumber: org.metadata?.phoneNumber || "",
+        businessEmail: org.metadata?.email || "",
+        businessItem: org.metadata?.businessItem || "",
+        businessCategory: org.metadata?.businessType || "",
+        startDate: org.metadata?.startDate || "",
         // 프론트엔드 호환: paidBalance, bonusBalance 필드 제공
         paidBalance: balanceInfo.paidCredit, // 유료 잔액
         bonusBalance:

@@ -2,7 +2,7 @@ import { Types } from "mongoose";
 import User from "../../models/user.model.js";
 import Request from "../../models/request.model.js";
 import ActivityLog from "../../models/activityLog.model.js";
-import ShippingPackage from "../../models/shippingPackage.model.js";
+
 import {
   getReferralGroups,
   getReferralGroupTree,
@@ -14,6 +14,7 @@ import {
   getDateRangeFromQuery,
   getMongoHealth,
 } from "./admin.shared.controller.js";
+import { getAdminPricingStatsSummary } from "../../services/requestDashboardStats.service.js";
 
 export {
   getReferralGroups,
@@ -26,163 +27,13 @@ export {
 export async function getPricingStats(req, res) {
   try {
     const { start, end } = getDateRangeFromQuery(req);
-    const match = {
-      createdAt: { $gte: start, $lte: end },
-      manufacturerStage: "추적관리",
-      // R&D 샘플 의뢰는 통계에서 제외
-      source: { $ne: "manufacturer_sample" },
-    };
-
-    const rows = await Request.aggregate([
-      { $match: match },
-      {
-        $group: {
-          _id: null,
-          totalOrders: { $sum: 1 },
-          explicitPaidOrders: {
-            $sum: {
-              $cond: [
-                { $gt: [{ $ifNull: ["$price.paidAmount", 0] }, 0] },
-                1,
-                0,
-              ],
-            },
-          },
-          explicitBonusOrders: {
-            $sum: {
-              $cond: [
-                { $gt: [{ $ifNull: ["$price.bonusAmount", 0] }, 0] },
-                1,
-                0,
-              ],
-            },
-          },
-          legacyAmountOnlyOrders: {
-            $sum: {
-              $cond: [
-                {
-                  $and: [
-                    { $eq: ["$price.paidAmount", null] },
-                    { $eq: ["$price.bonusAmount", null] },
-                    { $gt: [{ $ifNull: ["$price.amount", 0] }, 0] },
-                  ],
-                },
-                1,
-                0,
-              ],
-            },
-          },
-          totalRevenue: {
-            $sum: { $ifNull: ["$price.paidAmount", 0] },
-          },
-          totalBonusRevenueExplicit: {
-            $sum: { $ifNull: ["$price.bonusAmount", 0] },
-          },
-          totalLegacyAmountOnlyRevenue: {
-            $sum: {
-              $cond: [
-                {
-                  $and: [
-                    { $eq: ["$price.paidAmount", null] },
-                    { $eq: ["$price.bonusAmount", null] },
-                    { $gt: [{ $ifNull: ["$price.amount", 0] }, 0] },
-                  ],
-                },
-                { $ifNull: ["$price.amount", 0] },
-                0,
-              ],
-            },
-          },
-          totalBaseAmount: { $sum: { $ifNull: ["$price.baseAmount", 0] } },
-          totalDiscountAmount: {
-            $sum: { $ifNull: ["$price.discountAmount", 0] },
-          },
-          shippingPackageIds: { $addToSet: "$shippingPackageId" },
-        },
-      },
-    ]);
-
-    const summary = rows?.[0] || {};
-    const totalOrders = Number(summary.totalOrders || 0);
-    const explicitPaidOrders = Number(summary.explicitPaidOrders || 0);
-    const explicitBonusOrders = Number(summary.explicitBonusOrders || 0);
-    const legacyAmountOnlyOrders = Number(summary.legacyAmountOnlyOrders || 0);
-    const paidOrders = explicitPaidOrders;
-    const bonusOrders = explicitBonusOrders + legacyAmountOnlyOrders;
-    const totalRevenue = Number(summary.totalRevenue || 0);
-    const totalBonusRevenue =
-      Number(summary.totalBonusRevenueExplicit || 0) +
-      Number(summary.totalLegacyAmountOnlyRevenue || 0);
-    const totalBaseAmount = Number(summary.totalBaseAmount || 0);
-    const totalDiscountAmount = Number(summary.totalDiscountAmount || 0);
-
-    const shippingPackageIds = Array.isArray(summary.shippingPackageIds)
-      ? summary.shippingPackageIds.filter(Boolean)
-      : [];
-    const shippingPackages = shippingPackageIds.length
-      ? await ShippingPackage.find({ _id: { $in: shippingPackageIds } })
-          .select({ shippingFeeSupply: 1 })
-          .lean()
-      : [];
-    const rawPackageCount = shippingPackages.length;
-    const totalShippingFeeSupply = shippingPackages.reduce(
-      (acc, pkg) => acc + Number(pkg?.shippingFeeSupply || 0),
-      0,
-    );
-    const avgShippingFeeSupply = rawPackageCount
-      ? Math.round(totalShippingFeeSupply / rawPackageCount)
-      : 0;
-
-    const referralRows = await Request.aggregate([
-      { $match: match },
-      {
-        $lookup: {
-          from: "users",
-          localField: "requestor",
-          foreignField: "_id",
-          as: "requestorUser",
-        },
-      },
-      { $unwind: "$requestorUser" },
-      {
-        $group: {
-          _id: "$requestorUser.referredByAnchorId",
-          referralOrders: { $sum: 1 },
-        },
-      },
-      { $match: { _id: { $ne: null } } },
-    ]);
-    const totalReferralOrders = referralRows.reduce(
-      (acc, r) => acc + Number(r.referralOrders || 0),
-      0,
-    );
-
-    const avgUnitPrice = totalOrders
-      ? Math.round(totalRevenue / totalOrders)
-      : 0;
-    const avgBonusUnitPrice = bonusOrders
-      ? Math.round(totalBonusRevenue / bonusOrders)
-      : 0;
+    const summary = await getAdminPricingStatsSummary({ start, end });
 
     return res.status(200).json({
       success: true,
       data: {
         range: { startDate: start, endDate: end },
-        totalOrders,
-        paidOrders,
-        bonusOrders,
-        totalReferralOrders,
-        totalRevenue,
-        totalBonusRevenue,
-        totalBaseAmount,
-        totalDiscountAmount,
-        totalShippingFeeSupply,
-        avgShippingFeeSupply,
-        avgUnitPrice,
-        avgBonusUnitPrice,
-        avgDiscountPerOrder: totalOrders
-          ? Math.round(totalDiscountAmount / totalOrders)
-          : 0,
+        ...summary,
       },
     });
   } catch (error) {

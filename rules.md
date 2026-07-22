@@ -77,6 +77,30 @@
 
 ---
 
+### 1.0.2 관리자 대시보드/모니터링/제조사 상단 카운트 집계 SSOT (2026-07-22)
+
+- 관리자 대시보드의 요청 단계 카운트(의뢰/CAM/가공/세척.패킹/포장.발송/추적관리/취소)는
+  제조사 상단 메뉴 카운트와 **동일한 공통 집계 함수**를 사용합니다.
+- 단계 카운트와 박스 카운트(`shippingBoxes`, `trackingBoxes`)는
+  `getAssignedLikeDashboardSummary` 집계식을 단일 기준으로 사용합니다.
+- 관리자 대시보드의 `전체 완료 주문`은 `추적관리 건수`를 기준으로 표시합니다.
+  - 즉, `completionSummary.total = trackingCount`
+- 관리자 대시보드의 `완료(유료)`, `완료(무료)`는 추적관리 단계 내부 분할값을 사용합니다.
+  - `completionSummary.paid = trackingPaidCount`
+  - `completionSummary.free = trackingCount - trackingPaidCount`
+- `완료(무료)`는 legacy bonus-only 카운트가 아니라, 추적관리 완료건 중 유료 제외 건으로 해석합니다.
+- 관리자 대시보드 프론트는 카드별로 서로 다른 API를 섞지 않고,
+  **`/api/admin/dashboard` 단일 응답**(`requestStats`, `pricingSummary`, `completionSummary`)을 SSOT로 사용합니다.
+- R&D 샘플 제외/포함 여부는 화면별 기존 정책을 따르되, 같은 화면 내 카드끼리는 동일 집계 기준을 유지합니다.
+
+관련 파일:
+- `web/backend/services/requestDashboardStats.service.js`
+- `web/backend/controllers/admin/admin.dashboard.controller.js`
+- `web/backend/controllers/admin/admin.controller.js`
+- `web/backend/controllers/requests/dashboard.controller.js`
+- `web/frontend/src/pages/admin/dashboard/AdminDashboardPage.tsx`
+- `web/frontend/src/features/layout/DashboardLayout.tsx`
+
 ### 1.1 보안 정보 관리
 
 **보안 정보(비밀번호, API 키, DB URI 등)는 절대 하드코딩하지 않습니다.**
@@ -150,6 +174,25 @@
   - ✅ `new Date("2026-04-23T15:48:51+09:00")` → KST 15:48 (올바름)
 
 ---
+
+### 1.2.0 기간 필터(range) 생성 공통화 (2026-07-22)
+
+- 대시보드/모니터링/의뢰 API의 기간 필터는 공통 유틸을 사용해 생성합니다.
+- 기간 파라미터는 아래 우선순위를 고정합니다.
+  1. `startDate`/`endDate` 명시값
+  2. `period` (`7d`, `30d`, `90d`, `thisMonth`, `lastMonth`, `all`)
+  3. 기본값(최근 30일)
+- `thisMonth`, `lastMonth` 경계는 반드시 **KST 월 경계**를 기준으로 계산합니다.
+- 시작/종료 경계의 포함 규칙은 API마다 혼용하지 않고 공통 유틸에서 일관되게 처리합니다.
+- 프론트 기간 선택(`usePeriodStore`)과 백엔드 기간 파서의 월 경계 해석이 동일해야 하며,
+  브라우저 로컬 타임존이 KST가 아니어도 같은 결과가 나오도록 유지합니다.
+
+관련 파일:
+- `web/backend/utils/dateRange.js`
+- `web/backend/controllers/admin/admin.shared.controller.js`
+- `web/backend/controllers/requests/common.requests.controller.js`
+- `web/frontend/src/store/usePeriodStore.ts`
+- `web/frontend/src/pages/admin/dashboard/AdminDashboardPage.tsx`
 
 ### 1.2.1 리콜/재제작 복사 정책 (2026-06-22)
 

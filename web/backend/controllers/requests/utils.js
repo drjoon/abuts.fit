@@ -957,6 +957,7 @@ export async function computePriceForRequest({
   patientName,
   tooth,
   forceNewOrderPricing = false,
+  currentRequestId = null,
 }) {
   const now = new Date();
 
@@ -971,6 +972,11 @@ export async function computePriceForRequest({
   const MAX_DISCOUNT = 5000;
   const MONTHLY_REMAKE_FREE_LIMIT = 3;
 
+  const selfExclusionFilter =
+    currentRequestId && Types.ObjectId.isValid(String(currentRequestId))
+      ? { _id: { $ne: new Types.ObjectId(String(currentRequestId)) } }
+      : {};
+
   // 0) 리메이크 기준(90일): 동일 치과+환자+치아에 대해 직전 의뢰가 있으면 리메이크
   const nowYmd = toKstYmd(now);
   const nowKst = new Date(`${nowYmd}T00:00:00+09:00`);
@@ -979,6 +985,7 @@ export async function computePriceForRequest({
 
   const existing = await Request.findOne({
     ...scopeFilter,
+    ...selfExclusionFilter,
     "caseInfos.patientName": patientName,
     "caseInfos.tooth": tooth,
     "caseInfos.clinicName": clinicName,
@@ -1010,6 +1017,7 @@ export async function computePriceForRequest({
 
     monthlyRemakeUsed = await Request.countDocuments({
       ...scopeFilter,
+      ...selfExclusionFilter,
       manufacturerStage: { $ne: "취소" },
       createdAt: { $gte: currentMonthStart, $lt: nextMonthStart },
       "price.rule": {
@@ -1095,6 +1103,7 @@ export async function computePriceForRequest({
   const [last30DaysOrders, referredAnchors] = await Promise.all([
     Request.countDocuments({
       ...scopeFilter,
+      ...selfExclusionFilter,
       manufacturerStage: { $ne: "취소" },
       createdAt: { $gte: last30Cutoff },
     }),

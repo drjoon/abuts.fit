@@ -89,6 +89,11 @@ const sidebarItems = {
     { icon: Building2, label: "사업자", href: "/dashboard/businesses" },
     { icon: Users, label: "사용자", href: "/dashboard/users" },
     { icon: Wallet, label: "크레딧", href: "/dashboard/credits" },
+    {
+      icon: Wrench,
+      label: "누락 확인/보정",
+      href: "/dashboard/businesses?reconcile=1",
+    },
     { icon: Users2, label: "소개그룹", href: "/dashboard/referral-groups" },
     {
       icon: FileText,
@@ -143,6 +148,11 @@ const adminSidebarSections: SidebarSection[] = [
     title: "재무",
     items: [
       { icon: Wallet, label: "크레딧", href: "/dashboard/credits" },
+      {
+        icon: Wrench,
+        label: "누락 확인/보정",
+        href: "/dashboard/businesses?reconcile=1",
+      },
       { icon: Wallet, label: "정산", href: "/dashboard/payments" },
       { icon: FileText, label: "세금계산서", href: "/dashboard/tax-invoices" },
     ],

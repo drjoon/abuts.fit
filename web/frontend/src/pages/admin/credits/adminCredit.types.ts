@@ -108,6 +108,15 @@ export type BusinessCredit = {
   name: string;
   companyName: string;
   businessNumber: string;
+  representativeName?: string;
+  address?: string;
+  addressDetail?: string;
+  zipCode?: string;
+  phoneNumber?: string;
+  businessEmail?: string;
+  businessItem?: string;
+  businessCategory?: string;
+  startDate?: string;
   ownerName?: string;
   ownerEmail?: string;
   ownerRole?: string;

@@ -7,6 +7,11 @@ import {
   getTodayYmdInKst,
   ymdToMmDd,
 } from "../../utils/krBusinessDays.js";
+import {
+  getDefaultLastNDaysRange,
+  getQueryDateRange,
+  getDateRangeFromPeriod,
+} from "../../utils/dateRange.js";
 
 export const BASE_UNIT_PRICE = 15000;
 const DISCOUNT_PER_ORDER = 10;
@@ -100,23 +105,28 @@ export async function getDeliveryEtaLeadDays() {
 
 export function getDateRangeFromQuery(req) {
   const now = new Date();
-  const startDateRaw = req.query.startDate;
-  const endDateRaw = req.query.endDate;
+  const fallback = getDefaultLastNDaysRange({ days: 30, now });
+  const range = getQueryDateRange(req.query, { now });
 
-  if (startDateRaw && endDateRaw) {
-    const start = new Date(startDateRaw);
-    const end = new Date(endDateRaw);
-    if (!Number.isNaN(start.getTime()) && !Number.isNaN(end.getTime())) {
-      return { start, end };
-    }
+  if (range.start || range.end) {
+    return {
+      start: range.start ?? fallback.start,
+      end: range.end ?? fallback.end,
+    };
   }
 
-  // KST 기준 30일 전
-  const { toKstYmd } = require("../requests/utils.js");
-  const todayYmd = toKstYmd(now);
-  const todayKst = new Date(`${todayYmd}T00:00:00+09:00`);
-  todayKst.setDate(todayKst.getDate() - 30);
-  return { start: todayKst, end: now };
+  const periodRange = getDateRangeFromPeriod(req.query?.period, { now });
+  if (periodRange.start || periodRange.end) {
+    return {
+      start: periodRange.start ?? fallback.start,
+      end: periodRange.end ?? fallback.end,
+    };
+  }
+
+  return {
+    start: fallback.start,
+    end: fallback.end,
+  };
 }
 
 async function fetchHealthJson(url, fallbackMessage) {
