@@ -24,6 +24,7 @@ import {
   MessageCircle,
   HelpCircle,
   PhoneCall,
+  RotateCcw,
 } from "lucide-react";
 
 type PricingSummary = {
@@ -1377,6 +1378,8 @@ export const AdminDashboardPage = () => {
                             </div>
                             <button
                               type="button"
+                              title="롤백"
+                              aria-label="롤백"
                               className={`inline-flex h-7 items-center rounded-md border px-2.5 text-xs font-semibold transition shrink-0 ${
                                 reverting
                                   ? "border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed"
@@ -1390,7 +1393,7 @@ export const AdminDashboardPage = () => {
                                 );
                               }}
                             >
-                              {reverting ? "롤백 중..." : "<- 롤백"}
+                              {reverting ? "롤백 중..." : <RotateCcw className="h-3.5 w-3.5" />}
                             </button>
                           </div>
                           <div className="mt-1 text-[11px] text-gray-500">
