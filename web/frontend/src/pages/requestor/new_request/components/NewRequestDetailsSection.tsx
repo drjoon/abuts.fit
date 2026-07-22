@@ -52,8 +52,6 @@ type Props = {
   setCaseInfos: (updates: Partial<CaseInfos>) => void;
   caseInfosMap?: Record<string, CaseInfos>;
   updateCaseInfos: (fileKey: string, updates: Partial<CaseInfos>) => void;
-  defaultRequestorHexRotation?: "0" | "30";
-  onRequestorHexRotationChange?: (value: "0" | "30") => void | Promise<void>;
   connections: Connection[];
   familyOptions: string[];
   typeOptions: string[];
@@ -112,8 +110,6 @@ export function NewRequestDetailsSection({
   setCaseInfos,
   caseInfosMap,
   updateCaseInfos,
-  defaultRequestorHexRotation = "0",
-  onRequestorHexRotationChange,
   connections,
   familyOptions,
   typeOptions,
@@ -451,19 +447,7 @@ export function NewRequestDetailsSection({
     [detailFileKey, setCaseInfos, updateCaseInfos],
   );
 
-  useEffect(() => {
-    if (!detailFile) return;
-    if (detailCaseInfos?.requestorHexRotation) return;
 
-    setDetailCaseInfos({
-      requestorHexRotation: defaultRequestorHexRotation,
-    });
-  }, [
-    detailFile,
-    detailCaseInfos?.requestorHexRotation,
-    setDetailCaseInfos,
-    defaultRequestorHexRotation,
-  ]);
 
   const resetNewSystemForm = useCallback(() => {
     setShowNewSystemForm(false);
@@ -858,12 +842,6 @@ export function NewRequestDetailsSection({
                 })}
           </div>
         </div>
-        <div className="flex flex-col justify-center items-center mt-2 text-center text-sm text-slate-500 leading-relaxed">
-          <ul className="inline-block text-left list-disc list-inside space-y-0.5">
-            <li>크라운이 꽉 끼면 0.03mm 정도 시멘트 스페이스 추가해주세요.</li>
-            <li>픽스쳐 체결시 헥스 각도가 안맞으면 "헥스 회전"을 "무보정"으로 맞춰주세요.</li>
-          </ul>
-        </div>
       </div>
 
       <Dialog open={isDetailOpen} onOpenChange={handleDialogOpenChange}>
@@ -1024,92 +1002,7 @@ export function NewRequestDetailsSection({
                     </RadioGroup>
                   </div>
 
-                  {/* 헥스 회전 옵션 */}
-                  <div className="flex flex-row items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2.5">
-                    <div className="flex items-center gap-1.5">
-                      <div className="text-sm font-semibold text-slate-600">
-                        헥스 회전
-                      </div>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <button
-                            type="button"
-                            className="inline-flex items-center justify-center text-slate-400 hover:text-blue-600 transition-colors"
-                            aria-label="헥스 회전 옵션 가이드"
-                          >
-                            <CircleHelp className="h-4 w-4" />
-                          </button>
-                        </TooltipTrigger>
-                        <TooltipContent side="bottom" align="center">
-                          <div className="text-xs text-slate-700">
-                            대부분 '보정'을 사용하고, 일부 ExoCAD에서만 '무보정'을 선택해주세요.
-                          </div>
-                        </TooltipContent>
-                      </Tooltip>
-                    </div>
-                    <RadioGroup
-                      value={
-                        detailCaseInfos?.requestorHexRotation === "30"
-                          ? "30"
-                          : "0"
-                      }
-                      onValueChange={(value) => {
-                        const next = value === "30" ? "30" : "0";
 
-                        // 정책: 헥스 회전은 케이스별이 아니라 의뢰자 단위 기본값으로 운용.
-                        // 현재 Draft의 모든 케이스에도 동일 값으로 반영한다.
-                        const keys = Object.keys(caseInfosMap || {});
-                        if (keys.length > 0) {
-                          keys.forEach((key) => {
-                            updateCaseInfos(key, { requestorHexRotation: next });
-                          });
-                        } else {
-                          setDetailCaseInfos({
-                            requestorHexRotation: next,
-                          });
-                        }
-
-                        // __default__ 엔트리도 함께 갱신해 신규 파일 기본값으로 사용
-                        updateCaseInfos("__default__", {
-                          requestorHexRotation: next,
-                        });
-
-                        if (onRequestorHexRotationChange) {
-                          void onRequestorHexRotationChange(next);
-                        }
-                      }}
-                      className="flex items-center gap-10"
-                      disabled={!detailFile}
-                    >
-                      <div className="flex items-center space-x-2">
-                        <RadioGroupItem
-                          value="0"
-                          id="hr-0"
-                          className="border-slate-300 text-blue-600"
-                        />
-                        <Label
-                          htmlFor="hr-0"
-                          className="text-sm text-slate-700 cursor-pointer"
-                        >
-                          보정
-                        </Label>
-                      </div>
-
-                      <div className="flex items-center space-x-2">
-                        <RadioGroupItem
-                          value="30"
-                          id="hr-30"
-                          className="border-slate-300 text-blue-600"
-                        />
-                        <Label
-                          htmlFor="hr-30"
-                          className="text-sm text-slate-700 cursor-pointer"
-                        >
-                          무보정
-                        </Label>
-                      </div>
-                    </RadioGroup>
-                  </div>
 
                   <div className="flex flex-col gap-2 rounded-lg border border-blue-100 bg-blue-50/60 px-3 py-2">
                     <div className="flex items-center justify-between gap-2 flex-wrap">
