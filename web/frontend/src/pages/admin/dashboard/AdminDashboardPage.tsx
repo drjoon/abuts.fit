@@ -105,6 +105,19 @@ type HappyCallSummary = {
   items?: HappyCallItem[];
 };
 
+type HappyCallCompletionItem = {
+  id: string;
+  businessAnchorId: string;
+  businessName?: string;
+  companyName?: string;
+  reasonCode?: string;
+  note?: string;
+  completedAt?: string | null;
+  suppressUntil?: string | null;
+  completedByName?: string;
+  completedByEmail?: string;
+};
+
 type PricingSsotHealth = {
   success?: boolean;
   mismatchCount?: number;
@@ -179,6 +192,13 @@ const toDateLabel = (raw?: string | null) => {
   return d.toLocaleDateString("ko-KR");
 };
 
+const toDateTimeLabel = (raw?: string | null) => {
+  if (!raw) return "-";
+  const d = new Date(raw);
+  if (Number.isNaN(d.getTime())) return "-";
+  return d.toLocaleString("ko-KR");
+};
+
 export const AdminDashboardPage = () => {
   const { user, token } = useAuthStore();
   const navigate = useNavigate();
@@ -186,6 +206,7 @@ export const AdminDashboardPage = () => {
   const { period, setPeriod } = usePeriodStore();
   const { counts: commBadgeCounts } = useAdminCommBadges();
   const [happyCallDialogOpen, setHappyCallDialogOpen] = useState(false);
+  const [happyCallDialogTab, setHappyCallDialogTab] = useState<"targets" | "completed">("targets");
   const [happyCallReasonFilter, setHappyCallReasonFilter] = useState<string>("all");
   const [phoneConfirm, setPhoneConfirm] = useState<{
     open: boolean;
@@ -270,6 +291,27 @@ export const AdminDashboardPage = () => {
     retry: false,
   });
 
+  const {
+    data: happyCallCompletionsResponse,
+    isFetching: loadingHappyCallCompletions,
+    refetch: refetchHappyCallCompletions,
+  } = useQuery({
+    queryKey: ["admin-happy-call-completions"],
+    enabled: Boolean(token) && user?.role === "admin" && happyCallDialogOpen,
+    queryFn: async () => {
+      const res = await apiFetch<any>({
+        path: "/api/admin/dashboard/happy-call/completions?limit=100",
+        method: "GET",
+        token,
+      });
+      if (!res.ok || !res.data?.success) {
+        throw new Error(res.data?.message || "해피콜 완료 내역 조회에 실패했습니다.");
+      }
+      return res.data;
+    },
+    retry: false,
+  });
+
   if (!user || user.role !== "admin") return null;
 
   const baseData: DashboardData = {
@@ -332,6 +374,16 @@ export const AdminDashboardPage = () => {
   const happyCallItems = Array.isArray(happyCallSummary?.items)
     ? happyCallSummary.items
     : [];
+
+  const happyCallCompletionItems: HappyCallCompletionItem[] = Array.isArray(
+    happyCallCompletionsResponse?.data?.items,
+  )
+    ? happyCallCompletionsResponse.data.items
+    : [];
+
+  const happyCallCompletionTotalCount = Number(
+    happyCallCompletionsResponse?.data?.totalCount || 0,
+  );
 
   const happyCallReasonCounts = Array.isArray(happyCallSummary?.reasonCounts)
     ? happyCallSummary.reasonCounts
@@ -422,6 +474,7 @@ export const AdminDashboardPage = () => {
         description: "해당 의뢰자를 해피콜 목록에서 숨겼습니다.",
       });
       void refetchAdminDashboard();
+      void refetchHappyCallCompletions();
     } catch (error: any) {
       toast({
         title: "해피콜 완료 처리 실패",
@@ -463,6 +516,7 @@ export const AdminDashboardPage = () => {
         description: "가장 최근 해피콜 완료 1건을 복구했습니다.",
       });
       void refetchAdminDashboard();
+      void refetchHappyCallCompletions();
     } catch (error: any) {
       toast({
         title: "되돌리기 실패",
@@ -674,6 +728,7 @@ export const AdminDashboardPage = () => {
                     className="w-full rounded-md border px-3 py-3 text-left hover:bg-slate-50 transition"
                     onClick={() => {
                       setHappyCallReasonFilter("all");
+                      setHappyCallDialogTab("targets");
                       setHappyCallDialogOpen(true);
                     }}
                   >
@@ -1028,6 +1083,7 @@ export const AdminDashboardPage = () => {
         onClose={() => {
           setHappyCallDialogOpen(false);
           setHappyCallReasonFilter("all");
+          setHappyCallDialogTab("targets");
         }}
         panelClassName="w-[94vw] max-w-[1500px] h-[88vh]"
         descriptionClassName="h-full"
@@ -1040,10 +1096,32 @@ export const AdminDashboardPage = () => {
               (기준: 첫 완료, 장기 미완료, 휴면, 취소율, 가공불가 등)
             </div>
 
-            <div className="flex items-center justify-between gap-2 text-sm text-slate-600">
-              <span>
-                전체 의뢰자 {totalRequestorBusinessCount.toLocaleString()}개 / 해피콜 대상 {happyCallItems.length.toLocaleString()}개
-              </span>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="inline-flex items-center rounded-md border border-slate-200 bg-white p-0.5">
+                <button
+                  type="button"
+                  onClick={() => setHappyCallDialogTab("targets")}
+                  className={`inline-flex h-8 items-center rounded-md px-3 text-xs font-semibold transition ${
+                    happyCallDialogTab === "targets"
+                      ? "bg-blue-600 text-white"
+                      : "text-slate-700 hover:bg-slate-50"
+                  }`}
+                >
+                  해피콜 대상
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setHappyCallDialogTab("completed")}
+                  className={`inline-flex h-8 items-center rounded-md px-3 text-xs font-semibold transition ${
+                    happyCallDialogTab === "completed"
+                      ? "bg-blue-600 text-white"
+                      : "text-slate-700 hover:bg-slate-50"
+                  }`}
+                >
+                  완료 내역
+                </button>
+              </div>
+
               <button
                 type="button"
                 className={`inline-flex h-7 items-center rounded-md border px-2 text-xs transition ${
@@ -1060,143 +1138,214 @@ export const AdminDashboardPage = () => {
               </button>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setHappyCallReasonFilter("all")}
-                className={`inline-flex items-center rounded-md border px-2.5 py-1 text-sm transition ${
-                  happyCallReasonFilter === "all"
-                    ? "border-blue-300 bg-blue-50 text-blue-700"
-                    : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-                }`}
-              >
-                <span className="mr-1">전체(해피콜)</span>
-                <Badge
-                  variant="destructive"
-                  className="text-[11px]"
-                >
-                  {happyCallItems.length}개
-                </Badge>
-              </button>
+            {happyCallDialogTab === "targets" ? (
+              <>
+                <div className="flex items-center justify-between gap-2 text-sm text-slate-600">
+                  <span>
+                    전체 의뢰자 {totalRequestorBusinessCount.toLocaleString()}개 / 해피콜 대상 {happyCallItems.length.toLocaleString()}개
+                  </span>
+                </div>
 
-              {sortedHappyCallReasonCounts.map((row) => {
-                const code = String(row.code || "").trim();
-                const isActive = happyCallReasonFilter === code;
-                return (
+                <div className="flex flex-wrap items-center gap-2">
                   <button
-                    key={String(code || row.label)}
                     type="button"
-                    onClick={() => setHappyCallReasonFilter(code || "all")}
+                    onClick={() => setHappyCallReasonFilter("all")}
                     className={`inline-flex items-center rounded-md border px-2.5 py-1 text-sm transition ${
-                      isActive
+                      happyCallReasonFilter === "all"
                         ? "border-blue-300 bg-blue-50 text-blue-700"
                         : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
                     }`}
                   >
-                    <span className="mr-1">{row.label}</span>
+                    <span className="mr-1">전체(해피콜)</span>
                     <Badge
                       variant="destructive"
                       className="text-[11px]"
                     >
-                      {Number(row.count || 0).toLocaleString()}개
+                      {happyCallItems.length}개
                     </Badge>
                   </button>
-                );
-              })}
-            </div>
 
-            <div className="flex-1 min-h-0 overflow-auto pr-1">
-              <div className="grid grid-cols-2 xl:grid-cols-3 gap-2">
-              {filteredHappyCallItems.map((item) => {
-                const anchorId = String(item.businessAnchorId || "").trim();
-                const phone = String(item.phoneNumber || "").trim();
-                const businessName = String(item.businessName || "").trim();
-                const companyName = String(item.companyName || "").trim();
-                const showCompanyName =
-                  Boolean(companyName) && companyName !== businessName;
+                  {sortedHappyCallReasonCounts.map((row) => {
+                    const code = String(row.code || "").trim();
+                    const isActive = happyCallReasonFilter === code;
+                    return (
+                      <button
+                        key={String(code || row.label)}
+                        type="button"
+                        onClick={() => setHappyCallReasonFilter(code || "all")}
+                        className={`inline-flex items-center rounded-md border px-2.5 py-1 text-sm transition ${
+                          isActive
+                            ? "border-blue-300 bg-blue-50 text-blue-700"
+                            : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                        }`}
+                      >
+                        <span className="mr-1">{row.label}</span>
+                        <Badge
+                          variant="destructive"
+                          className="text-[11px]"
+                        >
+                          {Number(row.count || 0).toLocaleString()}개
+                        </Badge>
+                      </button>
+                    );
+                  })}
+                </div>
 
-                return (
-                  <div key={anchorId || item.businessName} className="rounded-md border px-3 py-2.5 bg-white">
-                    <div className="flex h-full flex-col gap-2">
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="min-w-0">
-                          <div className="text-sm font-semibold truncate text-gray-900">
-                            {item.businessName || "-"}
+                <div className="flex-1 min-h-0 overflow-auto pr-1">
+                  <div className="grid grid-cols-2 xl:grid-cols-3 gap-2">
+                  {filteredHappyCallItems.map((item) => {
+                    const anchorId = String(item.businessAnchorId || "").trim();
+                    const phone = String(item.phoneNumber || "").trim();
+                    const businessName = String(item.businessName || "").trim();
+                    const companyName = String(item.companyName || "").trim();
+                    const showCompanyName =
+                      Boolean(companyName) && companyName !== businessName;
+
+                    return (
+                      <div key={anchorId || item.businessName} className="rounded-md border px-3 py-2.5 bg-white">
+                        <div className="flex h-full flex-col gap-2">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <div className="text-sm font-semibold truncate text-gray-900">
+                                {item.businessName || "-"}
+                              </div>
+                              {showCompanyName && (
+                                <div className="text-xs text-gray-500 truncate">
+                                  {companyName}
+                                </div>
+                              )}
+                              <div className="text-[11px] text-gray-500 mt-1">
+                                가입일 {toDateLabel(item.createdAt)} · 첫 완료 {toDateLabel(item.firstCompletedAt)} · 최근 완료 {toDateLabel(item.lastCompletedAt)}
+                              </div>
+                              <div className="text-[11px] text-gray-500">
+                                최근30일 주문 {Number(item.stats?.recent30Total || 0)}건 / 취소 {Number(item.stats?.recent30Canceled || 0)}건 / 완료 {Number(item.stats?.recent30Completed || 0)}건
+                              </div>
+                            </div>
+
+                            {phone ? (
+                              <button
+                                type="button"
+                                className="inline-flex h-8 items-center rounded-md border border-blue-600 bg-blue-600 px-3 text-xs font-semibold text-white hover:bg-blue-700"
+                                onClick={() => {
+                                  setPhoneConfirm({
+                                    open: true,
+                                    phone,
+                                    businessName: String(item.businessName || "").trim() || "의뢰자",
+                                  });
+                                }}
+                              >
+                                전화
+                              </button>
+                            ) : null}
+                          </div>
+
+                          <div className="mt-1 flex items-start justify-between gap-2">
+                            <div className="flex flex-wrap gap-1.5">
+                              {(item.reasons || []).map((reason) => (
+                                <Badge
+                                  key={`${anchorId}-${reason.code}`}
+                                  variant={HAPPY_CALL_SEVERITY_BADGE[reason.severity] || "outline"}
+                                  className="text-[10px]"
+                                  title={reason.description}
+                                >
+                                  {reason.label}
+                                </Badge>
+                              ))}
+                            </div>
+
+                            <button
+                              type="button"
+                              className={`inline-flex h-8 items-center rounded-md border px-3 text-xs font-semibold transition shrink-0 ${
+                                completingHappyCallByAnchor[anchorId]
+                                  ? "border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed"
+                                  : "border-blue-400 bg-white text-blue-700 hover:bg-blue-50"
+                              }`}
+                              disabled={Boolean(completingHappyCallByAnchor[anchorId])}
+                              onClick={() => {
+                                setHappyCallNoteDraft("");
+                                setHappyCallConfirm({ open: true, item });
+                              }}
+                            >
+                              {completingHappyCallByAnchor[anchorId]
+                                ? "처리 중..."
+                                : "해피콜 완료"}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+
+                  {filteredHappyCallItems.length === 0 && (
+                    <div className="col-span-full text-sm text-gray-500 text-center py-6">
+                      해당 조건의 해피콜 대상 의뢰자가 없습니다.
+                    </div>
+                  )}
+                  </div>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="flex items-center justify-between gap-2 text-sm text-slate-600">
+                  <span>
+                    완료 내역 총 {happyCallCompletionTotalCount.toLocaleString()}건 (최근 {happyCallCompletionItems.length.toLocaleString()}건 표시)
+                  </span>
+                  <button
+                    type="button"
+                    className={`inline-flex h-7 items-center rounded-md border px-2 text-xs transition ${
+                      loadingHappyCallCompletions
+                        ? "border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed"
+                        : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+                    }`}
+                    disabled={loadingHappyCallCompletions}
+                    onClick={() => {
+                      void refetchHappyCallCompletions();
+                    }}
+                  >
+                    {loadingHappyCallCompletions ? "불러오는 중..." : "새로고침"}
+                  </button>
+                </div>
+
+                <div className="flex-1 min-h-0 overflow-auto pr-1">
+                  <div className="grid grid-cols-1 xl:grid-cols-2 gap-2">
+                    {happyCallCompletionItems.map((row) => {
+                      const businessName = String(row.businessName || "").trim();
+                      const companyName = String(row.companyName || "").trim();
+                      const showCompanyName = Boolean(companyName) && companyName !== businessName;
+                      const actorName = String(row.completedByName || "").trim();
+                      const actorEmail = String(row.completedByEmail || "").trim();
+
+                      return (
+                        <div key={row.id || `${row.businessAnchorId}-${row.completedAt}`} className="rounded-md border bg-white px-3 py-2.5">
+                          <div className="text-sm font-semibold text-gray-900 truncate">
+                            {businessName || row.businessAnchorId || "-"}
                           </div>
                           {showCompanyName && (
-                            <div className="text-xs text-gray-500 truncate">
-                              {companyName}
-                            </div>
+                            <div className="text-xs text-gray-500 truncate">{companyName}</div>
                           )}
-                          <div className="text-[11px] text-gray-500 mt-1">
-                            가입일 {toDateLabel(item.createdAt)} · 첫 완료 {toDateLabel(item.firstCompletedAt)} · 최근 완료 {toDateLabel(item.lastCompletedAt)}
+                          <div className="mt-1 text-[11px] text-gray-500">
+                            완료 시각 {toDateTimeLabel(row.completedAt)} · 숨김 해제 예정 {toDateLabel(row.suppressUntil)}
                           </div>
                           <div className="text-[11px] text-gray-500">
-                            최근30일 주문 {Number(item.stats?.recent30Total || 0)}건 / 취소 {Number(item.stats?.recent30Canceled || 0)}건 / 완료 {Number(item.stats?.recent30Completed || 0)}건
+                            처리자 {actorName || "-"}
+                            {actorEmail ? ` (${actorEmail})` : ""}
+                          </div>
+                          <div className="mt-1 rounded-md border border-slate-200 bg-slate-50 px-2 py-1.5 text-xs text-slate-700 whitespace-pre-wrap break-words">
+                            {String(row.note || "").trim() || "메모 없음"}
                           </div>
                         </div>
+                      );
+                    })}
 
-                        {phone ? (
-                          <button
-                            type="button"
-                            className="inline-flex h-8 items-center rounded-md border border-blue-600 bg-blue-600 px-3 text-xs font-semibold text-white hover:bg-blue-700"
-                            onClick={() => {
-                              setPhoneConfirm({
-                                open: true,
-                                phone,
-                                businessName: String(item.businessName || "").trim() || "의뢰자",
-                              });
-                            }}
-                          >
-                            전화
-                          </button>
-                        ) : null}
+                    {!loadingHappyCallCompletions && happyCallCompletionItems.length === 0 && (
+                      <div className="col-span-full text-sm text-gray-500 text-center py-6">
+                        완료 처리된 해피콜 내역이 없습니다.
                       </div>
-
-                      <div className="mt-1 flex items-start justify-between gap-2">
-                        <div className="flex flex-wrap gap-1.5">
-                          {(item.reasons || []).map((reason) => (
-                            <Badge
-                              key={`${anchorId}-${reason.code}`}
-                              variant={HAPPY_CALL_SEVERITY_BADGE[reason.severity] || "outline"}
-                              className="text-[10px]"
-                              title={reason.description}
-                            >
-                              {reason.label}
-                            </Badge>
-                          ))}
-                        </div>
-
-                        <button
-                          type="button"
-                          className={`inline-flex h-8 items-center rounded-md border px-3 text-xs font-semibold transition shrink-0 ${
-                            completingHappyCallByAnchor[anchorId]
-                              ? "border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed"
-                              : "border-blue-400 bg-white text-blue-700 hover:bg-blue-50"
-                          }`}
-                          disabled={Boolean(completingHappyCallByAnchor[anchorId])}
-                          onClick={() => {
-                            setHappyCallNoteDraft("");
-                            setHappyCallConfirm({ open: true, item });
-                          }}
-                        >
-                          {completingHappyCallByAnchor[anchorId]
-                            ? "처리 중..."
-                            : "해피콜 완료"}
-                        </button>
-                      </div>
-                    </div>
+                    )}
                   </div>
-                );
-              })}
-
-              {filteredHappyCallItems.length === 0 && (
-                <div className="col-span-full text-sm text-gray-500 text-center py-6">
-                  해당 조건의 해피콜 대상 의뢰자가 없습니다.
                 </div>
-              )}
-              </div>
-            </div>
+              </>
+            )}
           </div>
         }
         actions={[]}
@@ -1211,7 +1360,6 @@ export const AdminDashboardPage = () => {
         title="해피콜 완료 처리"
         description={
           <div className="space-y-2 text-sm text-gray-700">
-
             <div className="space-y-1">
               <div className="text-xs font-medium text-gray-700">대화 내용 메모</div>
               <textarea

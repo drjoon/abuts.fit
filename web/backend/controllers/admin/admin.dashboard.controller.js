@@ -744,6 +744,89 @@ export async function getDashboardStats(req, res) {
   }
 }
 
+export async function listHappyCallCompletions(req, res) {
+  try {
+    const rawLimit = Number(req.query?.limit || 50);
+    const limit = Number.isFinite(rawLimit)
+      ? Math.min(Math.max(Math.trunc(rawLimit), 1), 200)
+      : 50;
+
+    const [rows, totalCount] = await Promise.all([
+      AdminHappyCallCompletion.find({
+        reasonCode: HAPPY_CALL_GLOBAL_REASON_CODE,
+      })
+        .sort({ completedAt: -1, updatedAt: -1 })
+        .limit(limit)
+        .populate({
+          path: "businessAnchorId",
+          select: "name metadata.companyName",
+        })
+        .populate({
+          path: "completedBy",
+          select: "name email",
+        })
+        .lean(),
+      AdminHappyCallCompletion.countDocuments({
+        reasonCode: HAPPY_CALL_GLOBAL_REASON_CODE,
+      }),
+    ]);
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        totalCount,
+        items: rows.map((row) => {
+          const anchor = row?.businessAnchorId || null;
+          const actor = row?.completedBy || null;
+          const anchorId =
+            anchor && typeof anchor === "object" && anchor?._id
+              ? String(anchor._id)
+              : String(row?.businessAnchorId || "");
+
+          const businessName =
+            anchor && typeof anchor === "object"
+              ? String(anchor?.name || "").trim()
+              : "";
+
+          const companyName =
+            anchor && typeof anchor === "object"
+              ? String(anchor?.metadata?.companyName || "").trim()
+              : "";
+
+          const completedByName =
+            actor && typeof actor === "object"
+              ? String(actor?.name || "").trim()
+              : "";
+
+          const completedByEmail =
+            actor && typeof actor === "object"
+              ? String(actor?.email || "").trim()
+              : "";
+
+          return {
+            id: String(row?._id || ""),
+            businessAnchorId: anchorId,
+            businessName,
+            companyName,
+            reasonCode: String(row?.reasonCode || ""),
+            note: String(row?.note || ""),
+            completedAt: toIsoOrNull(row?.completedAt),
+            suppressUntil: toIsoOrNull(row?.suppressUntil),
+            completedByName,
+            completedByEmail,
+          };
+        }),
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "해피콜 완료 내역 조회 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
 export async function completeHappyCall(req, res) {
   try {
     const businessAnchorId = String(req.body?.businessAnchorId || "").trim();
