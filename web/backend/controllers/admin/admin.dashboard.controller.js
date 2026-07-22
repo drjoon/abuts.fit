@@ -751,10 +751,51 @@ export async function listHappyCallCompletions(req, res) {
       ? Math.min(Math.max(Math.trunc(rawLimit), 1), 200)
       : 50;
 
-    const [rows, totalCount] = await Promise.all([
-      AdminHappyCallCompletion.find({
-        reasonCode: HAPPY_CALL_GLOBAL_REASON_CODE,
+    const rawDays = Number(req.query?.days || 0);
+    const days = Number.isFinite(rawDays)
+      ? Math.max(Math.trunc(rawDays), 0)
+      : 0;
+
+    const query = {
+      reasonCode: HAPPY_CALL_GLOBAL_REASON_CODE,
+    };
+
+    if (days > 0) {
+      query.completedAt = {
+        $gte: new Date(Date.now() - days * 24 * 60 * 60 * 1000),
+      };
+    }
+
+    const q = String(req.query?.q || "").trim();
+    if (q) {
+      const escaped = q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const regex = new RegExp(escaped, "i");
+      const anchors = await BusinessAnchor.find({
+        $or: [{ name: regex }, { "metadata.companyName": regex }],
       })
+        .select("_id")
+        .limit(1000)
+        .lean();
+
+      const anchorIds = anchors
+        .map((anchor) => String(anchor?._id || "").trim())
+        .filter(Boolean);
+
+      if (!anchorIds.length) {
+        return res.status(200).json({
+          success: true,
+          data: {
+            totalCount: 0,
+            items: [],
+          },
+        });
+      }
+
+      query.businessAnchorId = { $in: anchorIds };
+    }
+
+    const [rows, totalCount] = await Promise.all([
+      AdminHappyCallCompletion.find(query)
         .sort({ completedAt: -1, updatedAt: -1 })
         .limit(limit)
         .populate({
@@ -766,9 +807,7 @@ export async function listHappyCallCompletions(req, res) {
           select: "name email",
         })
         .lean(),
-      AdminHappyCallCompletion.countDocuments({
-        reasonCode: HAPPY_CALL_GLOBAL_REASON_CODE,
-      }),
+      AdminHappyCallCompletion.countDocuments(query),
     ]);
 
     return res.status(200).json({
