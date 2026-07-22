@@ -85,6 +85,7 @@ export const RequestPage = ({
   const isMachiningStage =
     (searchParams.get("stage") || "request") === "machining";
   const tabStage = String(searchParams.get("stage") || "request").trim();
+  const [localSearch, setLocalSearch] = useState("");
 
   const DEFAULT_PAGE_LIMIT = 12;
   const SHIPPING_PAGE_LIMIT = 200;
@@ -1579,13 +1580,18 @@ export const RequestPage = ({
     );
   }, [tabStage, showCompleted]);
 
+  const effectiveWorksheetSearch = useMemo(() => {
+    if (tabStage !== "rnd") return worksheetSearch;
+    return `${String(worksheetSearch || "").trim()} ${String(localSearch || "").trim()}`.trim();
+  }, [localSearch, tabStage, worksheetSearch]);
+
   const { filteredBase, filteredAndSorted, getFilteredAndSortedRequests } =
     useRequestFiltering(
       pageState.requests,
       tabStage,
       showCompleted,
       currentStageOrder,
-      worksheetSearch,
+      effectiveWorksheetSearch,
       filterRequests,
     );
 
@@ -1826,7 +1832,7 @@ export const RequestPage = ({
     setVisibleCount(12);
     setServerTotal(null);
   }, [
-    worksheetSearch,
+    effectiveWorksheetSearch,
     showCompleted,
     tabStage,
     setVisibleCount,
@@ -1914,6 +1920,18 @@ export const RequestPage = ({
             labels={diameterQueueForReceive.labels}
             counts={diameterQueueForReceive.counts}
           />
+        )}
+
+        {tabStage === "rnd" && (
+          <div className="mt-3">
+            <input
+              type="text"
+              value={localSearch}
+              onChange={(e) => setLocalSearch(e.target.value)}
+              placeholder="검색: 의뢰자명 · 치과명 · 환자명 · 치아번호 · 날짜 · 요일 · 로트번호 · 의뢰번호"
+              className="h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 placeholder:text-slate-400 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-slate-300"
+            />
+          </div>
         )}
 
         <div
