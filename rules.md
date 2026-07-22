@@ -245,11 +245,13 @@
 
 ---
 
-### 1.2.4 Rhino STL 정렬 헥스 회전각 기록/조사 시작 (2026-07-07)
+### 1.2.4 Rhino STL 정렬 헥스 회전각 telemetry-only 정책 (2026-07-23)
 
-- 오늘부터 STL 자동 정렬 파이프라인에서 **헥스 Z축 회전각 관련 값**(초기값/적용값/잔차)을 기록하고, 케이스별 오차 원인을 조사한다.
-- 조사 목적은 하악 전치부 등 **스크류홀 측면 개방이 큰 형상**에서 발생하는 기울어짐/회전 오차를 줄이는 것이다.
-- 기록된 회전각 메타데이터를 기준으로 재현 케이스를 분류하고, 정렬 순서 및 샘플링 구간을 지속 보정한다.
+- Rhino STL 정렬은 **헥스 기준 Z축 실회전 정렬을 수행하지 않는다.**
+- 헥스 각도는 측정/기록만 수행하며, STL 저장 결과는 헥스 회전 미적용 상태를 유지한다.
+- `hexRotation.appliedDeg` 의미 SSOT는 **"Rhino 미적용 가상 보정량(-phase_mod)"** 이다.
+- 잔차(`residual_to_X_deg`)는 품질 telemetry/경고 용도로만 사용하고, strict residual 실패로 파이프라인을 중단하지 않는다.
+- 헥스 법선 측정은 단일 face가 아니라 다수 side-face 관측치(robust inlier 포함) 기반으로 수행해 face 노이즈를 완화한다.
 
 관련 파일:
 - `bg/pc1/rhino-server/compute/scripts/align_stl_coordinate.py`
@@ -885,34 +887,25 @@
   - 사전 체크는 의뢰 생성 가능 여부만 판단하는 용도
   - 의뢰 생성 후 ~ 차감 전 사이에 크레딧이 부족해질 수 있으므로, 차감 시점에도 잔액 체크 필요
 
-### 4.3.4 제조사 헥스 회전(PreviewModal) → DB 저장 → Esprit 모드 보정 정책 (2026-07-21)
+### 4.3.4 제조사 헥스 회전(PreviewModal) → DB 저장 → Esprit 모드 정책 (2026-07-23)
 
-검색 키워드: `rnd-hex-rotation`, `manufacturerHexRotation`, `hexRotation.appliedDeg`, `request-meta`, `원복 후 +30`
+검색 키워드: `rnd-hex-rotation`, `manufacturerHexRotation`, `hexRotation.appliedDeg`, `request-meta`, `보정`, `무보정`
 
 - 제조사 워크시트 PreviewModal의 `헥스 회전` 선택값은 반드시 백엔드 API를 통해 DB에 저장한다.
   - API: `PATCH /api/requests/:id/rnd-hex-rotation`
   - 저장 필드(SSOT):
-    - `Request.rnd.manufacturerHexRotation` (`"0" | "30"`)
+    - `Request.rnd.manufacturerHexRotation`
     - `Request.caseInfos.finalHexRotation` (표시/조회용 최종값)
-- BG/esprit-addin 연동에서 `manufacturerHexRotation`은 **추가각 숫자 자체가 아니라 모드값**으로 해석한다.
-  - `"0"`  → 보정(현행 회전 유지)
-  - `"30"` → 무보정(**원복 후 +30** 경로 사용)
-- **표시명 변경 원칙(고정):**
-  - 이번 변경은 UI/문서의 표시명만 바꾼다. (`기본값`→`보정`, `30도 회전`→`무보정`)
-  - 저장값(`"0" | "30"`)과 Esprit 실행 로직(0=현행 유지, 30=원복 후 +30)은 변경하지 않는다.
-- `"30"` 모드 계산 SSOT:
-  - `request-meta.caseInfos.hexRotation.appliedDeg`(Rhino 정렬에서 적용한 헥스 회전각)를 사용한다.
-  - Esprit는 기본 회전 이후 아래 보정을 수행한다.
-    1. 기본 +30 역회전(-30)
-    2. `hexRotation.appliedDeg` 보정(+hex)
-    3. +30 재적용
-  - 동치식: 기본 회전 이후 추가 보정량은 `+hexRotation.appliedDeg`
+- `manufacturerHexRotation`의 canonical 모드는 **`보정` / `무보정`** 이다.
+  - 레거시 입력값 `"0"`/`"30"`은 하위호환으로만 허용하고, add-in에서 canonical 모드로 정규화한다.
+- Esprit 적용 정책 SSOT:
+  1. `보정`: 기본 W축 `+30` 적용 후, `hexRotation.appliedDeg`를 추가 적용
+  2. `무보정`: **회전 완전 미적용** (기본 `+30`도 미적용, telemetry도 무시)
+- Rhino telemetry 의미 SSOT:
+  - `request-meta.caseInfos.hexRotation.appliedDeg`는 Rhino가 실제 mesh에 적용하지 않은 **가상 보정량(-phase_mod)** 이다.
 - `request-meta` 응답은 add-in이 파일명 추론/폴백 없이 SSOT를 직접 쓰도록 아래를 포함해야 한다.
   - `caseInfos.manufacturerHexRotation`
   - `caseInfos.hexRotation.appliedDeg` (및 관련 telemetry)
-- add-in 적용 순서 SSOT:
-  1. 기존 기본 회전 적용 (`DefaultWAxisRotationDegrees`)
-  2. `manufacturerHexRotation`이 `"30"`이면 보정 델타(`+hexRotation.appliedDeg`) 적용
 
 관련 파일:
 - `web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx`
@@ -922,6 +915,7 @@
 - `web/backend/controllers/bg/bg.controller.js`
 - `bg/pc1/esprit-addin/Helpers/BackendApiClient.cs`
 - `bg/pc1/esprit-addin/StlFileProcessor.cs`
+- `bg/pc1/rhino-server/compute/scripts/align_stl_coordinate.py`
 
 ### 4.4 가상 우편함
 

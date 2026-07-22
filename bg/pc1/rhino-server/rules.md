@@ -10,9 +10,10 @@
 - 파일 감시는 이벤트 기반으로 처리합니다.
 - Rhino 안정성을 위해 단일 인스턴스/전역 락 기준을 유지합니다.
 - 처리 완료 결과는 백엔드 `register-file`로 등록합니다.
-- 정렬(align) 단계는 헥스 면 방향을 one-shot 계산으로 맞추고, 실행 로그에 최종 잔차를 남깁니다.
-  - 로그 키: `residual_to_X_deg`
-  - 현재 운영 기준: `target<=0.010000` (0.01° 이내)
+- 정렬(align) 단계는 헥스 기준 Z축 실회전을 수행하지 않고, 헥스 각도는 telemetry-only로 측정/기록합니다.
+  - 로그 키: `before_to_X`, `virtual_applied`, `residual_to_X_deg`
+  - `hexRotation.appliedDeg` 의미 SSOT: Rhino 미적용 가상 보정량(`-phase_mod`)
+  - `residual_to_X_deg` 초과는 실패가 아니라 경고로 처리합니다.
 - **finishline Z 메타데이터 명칭 SSOT는 `max_z`, `min_z`입니다.**
   - `top_z` 같은 별칭은 저장/전달하지 않습니다.
   - finishline payload에는 `max_z`, `min_z`와 함께 `max_z_point`, `min_z_point`를 포함합니다.

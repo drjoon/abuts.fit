@@ -357,13 +357,9 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
             [DataMember] public string lotNumber { get; set; }
             [DataMember] public string faceHolePrcFileName { get; set; }
             [DataMember] public string connectionPrcFileName { get; set; }
-            // 제조사 수동 헥스 회전 모드값(0/30)
-            // [중요] 이번 변경은 "표시명"만 바뀐다. 저장값("0"/"30")과 실행 로직은 기존과 동일.
-            // - UI 표시: "0" => "보정", "30" => "무보정"
-            // - 실행 의미(변경 없음):
-            //   "0"  => 기존 기본 경로 유지
-            //   "30" => 기존 "원복 후 +30" 경로 사용
-            // add-in은 mode 값("0"/"30") 기반으로 기존 보정 계산을 그대로 수행한다.
+            // 제조사 수동 헥스 회전 모드값
+            // - canonical: "보정" | "무보정"
+            // - legacy 입력("0"|"30")은 add-in에서 canonical로 정규화해 처리
             [DataMember(Name = "manufacturerHexRotation")] public string manufacturerHexRotation { get; set; }
             // 유지홈 옵션 ("none"|"deep", legacy "shallow" 허용) —
             // 5axisComposite_A.prc StepIncrement 오버라이드에 사용.
@@ -382,8 +378,9 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
             [DataMember(Name = "slopeAxisVectorCsv")] public string slopeAxisVectorCsv { get; set; }
 
             // Rhino 정렬 telemetry(헥스 회전각)
-            // - mode="30"(UI 표시: 무보정)에서만 기존 "원복 후 +30" 계산에 사용한다.
-            // - mode="0"(UI 표시: 보정)에서는 기존과 동일하게 추가 보정 계산에 사용하지 않는다.
+            // - appliedDeg 의미 SSOT: Rhino가 실제 mesh에는 적용하지 않은 "가상 보정량(-phase_mod)"
+            // - add-in은 "보정" 모드에서만 appliedDeg를 +30 기본 회전에 추가 적용한다.
+            // - "무보정" 모드에서는 +30/telemetry 모두 적용하지 않는다.
             [DataMember(Name = "hexRotation")] public RequestMetaHexRotation hexRotation { get; set; }
 
             [DataMember] public RequestMetaFinishLine finishLine { get; set; }

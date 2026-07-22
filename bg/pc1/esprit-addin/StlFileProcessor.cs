@@ -30,16 +30,12 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
     {
         private const string StlImportLayerName = "AbutsStlImport";
         private const double DefaultWAxisRotationDegrees = 30.0;
-        // 제조사 수동 헥스 회전 모드값("0"|"30") 정책
-        // [중요] 이번 변경은 UI 표시명만 변경한다.
-        //        저장값("0"/"30")과 실행 로직은 기존과 동일하다.
-        // - UI 표시: "0" => "보정", "30" => "무보정"
-        // - 실행 의미(변경 없음):
-        //   0  => 현행 기본 회전 유지
-        //   30 => 기존 "원복 후 +30" 경로
-        //   => default 이후 추가 보정량은 "+hexRotation.appliedDeg" 와 동치.
-        // 주의: DefaultWAxisRotationDegrees 자체는 기존 정렬 SSOT로 유지한다.
-        private const double ManufacturerHexAdditionalRotationDegrees = 30.0;
+        // 제조사 수동 헥스 회전 canonical 모드값
+        // - "보정"   : 기본 +30도 + Rhino telemetry(hexRotation.appliedDeg)
+        // - "무보정" : 회전 완전 미적용(+30도도 미적용, telemetry도 무시)
+        // 하위호환: 백엔드가 레거시 "0"/"30"을 보내도 내부에서 canonical 모드로 정규화한다.
+        private const string ManufacturerHexModeCorrected = "보정";
+        private const string ManufacturerHexModeUncorrected = "무보정";
 
 
         private const double CompositeFinishToleranceThresholdZMm = 15.0;
@@ -105,10 +101,13 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         private string _backendRequestId;
         private string _backendImplantLabel;
         private double[][] _backendFinishLinePoints;
-        // request-meta(caseInfos.manufacturerHexRotation) 제조사 헥스 회전 모드값("0"|"30")
+        // request-meta(caseInfos.manufacturerHexRotation) 제조사 헥스 회전 모드값
+        // - canonical: "보정" | "무보정"
+        // - legacy 입력("0"|"30")은 NormalizeManufacturerHexRotationMode에서 canonical로 변환
         private string _backendManufacturerHexRotation;
-        // request-meta(caseInfos.hexRotation.appliedDeg) Rhino 정렬 시 적용된 헥스 회전각.
-        // 무보정(30) 모드에서 "원복 후 +30" 계산의 보정량으로 사용한다.
+        // request-meta(caseInfos.hexRotation.appliedDeg)
+        // Rhino가 실제 mesh에는 적용하지 않고 전달하는 "가상 보정량" telemetry.
+        // canonical "보정" 모드에서만 +30 기본 회전에 추가 적용한다.
         private double? _backendHexRotationAppliedDeg;
         // 유지홈(retentionGroove) 옵션 캐시 — request-meta 수신 직후 저장.
         // 이후 Finish_Front(legacy A env 경로)의 StepIncrement 런타임 오버라이드에 사용.
@@ -256,14 +255,16 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                         _backendRetentionGroove = string.IsNullOrWhiteSpace(requestMeta.retentionGroove)
                             ? null
                             : requestMeta.retentionGroove.Trim();
-                        // 제조사 헥스 회전 모드값("0"|"30") 캐시
+                        // 제조사 헥스 회전 모드값 캐시
+                        // - 빈값은 기본 모드 "보정"으로 해석한다.
+                        // - legacy("0"/"30")는 NormalizeManufacturerHexRotationMode에서 canonical 모드로 변환한다.
                         _backendManufacturerHexRotation = string.IsNullOrWhiteSpace(requestMeta.manufacturerHexRotation)
-                            ? "0"
+                            ? ManufacturerHexModeCorrected
                             : requestMeta.manufacturerHexRotation.Trim();
 
                         // Rhino 정렬 telemetry(헥스 회전각) 캐시
                         // - caseInfos.hexRotation.appliedDeg
-                        // - 무보정(30) 모드에서 "원복 후 +30" 계산의 보정량으로 사용
+                        // - canonical "보정" 모드에서만 +30 기본 회전에 추가 적용
                         double? appliedHex = requestMeta.hexRotation?.appliedDeg;
                         if (appliedHex.HasValue && !double.IsNaN(appliedHex.Value) && !double.IsInfinity(appliedHex.Value))
                         {
@@ -349,21 +350,24 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                     AppLogger.Log($"StlFileProcessor: CAM 직경 SSOT 고정 - BarDiameter={backendCamDiameter.Value:F3}");
                 }
                 Rotate90Degrees(document);
-                // 1) 기본 정렬 회전(기존 SSOT)
-                RotateByWAxisDegrees(document, DefaultWAxisRotationDegrees);
-                // 2) 제조사 수동 헥스 회전 모드별 보정
-                //    [중요] mode 값(0/30)은 기존과 동일하며, UI 표시명만 변경됨.
-                //    - mode 0(보정): 추가 보정 없음(현행 유지)
-                //    - mode 30(무보정): "원복 후 +30" 정책 => default 이후 추가 보정량은 +hexRotation.appliedDeg
-                double additionalHexRotationDegrees = ResolveManufacturerAdditionalHexRotationDegrees();
-                if (Math.Abs(additionalHexRotationDegrees) > 0.0001)
+
+                string hexMode = NormalizeManufacturerHexRotationMode(_backendManufacturerHexRotation);
+                // 제조사 헥스 회전 정책 SSOT
+                // - 보정: 기본 +30도 + Rhino telemetry(appliedDeg)
+                // - 무보정: 회전 미적용(+30도/telemetry 모두 미적용)
+                if (string.Equals(hexMode, ManufacturerHexModeUncorrected, StringComparison.Ordinal))
                 {
-                    RotateByWAxisDegrees(document, additionalHexRotationDegrees);
-                    AppLogger.Log($"StlFileProcessor: 제조사 헥스 회전 보정 적용 - delta={additionalHexRotationDegrees:F4}도 (base:{DefaultWAxisRotationDegrees:F1}도)");
+                    AppLogger.Log($"StlFileProcessor: 제조사 헥스 회전 무보정 모드 - W축 회전 완전 미적용 (raw='{_backendManufacturerHexRotation ?? ""}')");
                 }
                 else
                 {
-                    AppLogger.Log($"StlFileProcessor: 제조사 헥스 회전 보정 없음 - mode='{_backendManufacturerHexRotation ?? ""}', hexAppliedDeg={(_backendHexRotationAppliedDeg.HasValue ? _backendHexRotationAppliedDeg.Value.ToString("F4", CultureInfo.InvariantCulture) : "<null>")} (base:{DefaultWAxisRotationDegrees:F1}도만 적용)");
+                    RotateByWAxisDegrees(document, DefaultWAxisRotationDegrees);
+                    double additionalHexRotationDegrees = ResolveManufacturerAdditionalHexRotationDegrees(hexMode);
+                    if (Math.Abs(additionalHexRotationDegrees) > 0.0001)
+                    {
+                        RotateByWAxisDegrees(document, additionalHexRotationDegrees);
+                    }
+                    AppLogger.Log($"StlFileProcessor: 제조사 헥스 회전 보정 모드 적용 - base={DefaultWAxisRotationDegrees:F1}도, hexTelemetry={additionalHexRotationDegrees:F4}도, total={(DefaultWAxisRotationDegrees + additionalHexRotationDegrees):F4}도 (raw='{_backendManufacturerHexRotation ?? ""}')");
                 }
                 EspritDocumentHelper.LogBoundingBox(document, "AfterRotate");
                 // add-in 실행 직전에도 CAM 직경 재확인/재적용(중간 단계에서 값이 변경되는 케이스 방지)
@@ -564,10 +568,9 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             [DataMember] public string lotNumber { get; set; }
             [DataMember] public string faceHolePrcFileName { get; set; }
             [DataMember] public string connectionPrcFileName { get; set; }
-            // 제조사 수동 헥스 회전 모드값(0/30)
-            // [중요] 표시명만 변경되고, 값/로직은 기존과 동일하다.
-            // - UI 표시: "0" => "보정", "30" => "무보정"
-            // - 실행 의미: mode 0=현행 유지, mode 30=원복 후 +30 경로
+            // 제조사 수동 헥스 회전 모드값
+            // - canonical: "보정" | "무보정"
+            // - legacy: "0" | "30" (하위호환 입력)
             [DataMember] public string manufacturerHexRotation { get; set; }
             // 유지홈(retentionGroove) — Finish_Front(legacy A env 경로) StepIncrement
             // 값을 의뢰별로 덮어쓰기 위한 필드. rules.md §7.4.1 참조.
@@ -809,47 +812,54 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 }
             }
         }
-        private double ResolveManufacturerAdditionalHexRotationDegrees()
+        private string NormalizeManufacturerHexRotationMode(string rawMode)
         {
-            // 제조사 헥스 회전 모드값 해석(SSOT)
-            // - mode="0"  : 보정. default(+30)만 적용하고 추가 보정 없음.
-            // - mode="30" : 무보정("원복 후 +30") 정책.
-            //   1) 기본 회전 +30을 역회전(-30)
-            //   2) Rhino 헥스 회전각(caseInfos.hexRotation.appliedDeg) 보정(+hex)
-            //   3) +30 재적용
-            //   => default 이후 추가 보정량은 (-30 + hex + 30) = +hex 와 동치.
-            // 주의:
-            //   Rhino telemetry의 appliedDeg 부호와 Esprit W축 체감 회전 방향을 실측 비교했을 때
-            //   mode=30 정합에는 +hexAppliedDeg 적용이 일치한다.
-            string mode = string.IsNullOrWhiteSpace(_backendManufacturerHexRotation)
+            string mode = string.IsNullOrWhiteSpace(rawMode)
                 ? ""
-                : _backendManufacturerHexRotation.Trim();
+                : rawMode.Trim();
 
-            if (!string.Equals(mode, "30", StringComparison.Ordinal))
+            // canonical 입력 우선
+            if (string.Equals(mode, ManufacturerHexModeCorrected, StringComparison.Ordinal))
+            {
+                return ManufacturerHexModeCorrected;
+            }
+            if (string.Equals(mode, ManufacturerHexModeUncorrected, StringComparison.Ordinal))
+            {
+                return ManufacturerHexModeUncorrected;
+            }
+
+            // legacy 입력 하위호환
+            if (string.Equals(mode, "30", StringComparison.Ordinal))
+            {
+                return ManufacturerHexModeUncorrected;
+            }
+            if (string.Equals(mode, "0", StringComparison.Ordinal) || string.IsNullOrWhiteSpace(mode))
+            {
+                return ManufacturerHexModeCorrected;
+            }
+
+            // 알 수 없는 값은 안전하게 보정 모드로 수렴시키고 로그를 남긴다.
+            AppLogger.Log($"StlFileProcessor: 알 수 없는 manufacturerHexRotation='{mode}' - '{ManufacturerHexModeCorrected}'로 처리");
+            return ManufacturerHexModeCorrected;
+        }
+
+        private double ResolveManufacturerAdditionalHexRotationDegrees(string normalizedMode)
+        {
+            // 정책: 보정 모드에서만 Rhino telemetry를 추가 회전으로 적용한다.
+            if (!string.Equals(normalizedMode, ManufacturerHexModeCorrected, StringComparison.Ordinal))
             {
                 return 0.0;
             }
-
-            double rollbackDefaultDeg = -ManufacturerHexAdditionalRotationDegrees;
-            double restoreThirtyDeg = ManufacturerHexAdditionalRotationDegrees;
-            double rollbackHexDeg = 0.0;
 
             if (_backendHexRotationAppliedDeg.HasValue &&
                 !double.IsNaN(_backendHexRotationAppliedDeg.Value) &&
                 !double.IsInfinity(_backendHexRotationAppliedDeg.Value))
             {
-                rollbackHexDeg = _backendHexRotationAppliedDeg.Value;
-            }
-            else
-            {
-                // telemetry가 없으면 원복량을 계산할 수 없으므로 hex 원복은 생략한다.
-                // (결과적으로 추가 보정 0도)
-                AppLogger.Log("StlFileProcessor: mode=30 이지만 hexRotation.appliedDeg 없음 - hex 보정 생략");
+                return _backendHexRotationAppliedDeg.Value;
             }
 
-            double delta = rollbackDefaultDeg + rollbackHexDeg + restoreThirtyDeg;
-            AppLogger.Log($"StlFileProcessor: mode=30 보정 계산 - rollback30={rollbackDefaultDeg:F4}, hexComp={rollbackHexDeg:F4}, reapply30={restoreThirtyDeg:F4}, delta={delta:F4}");
-            return delta;
+            AppLogger.Log("StlFileProcessor: 보정 모드지만 hexRotation.appliedDeg 없음 - telemetry 보정 0도 적용");
+            return 0.0;
         }
         private void InvokeDentalAddin(Document document, double frontLimitX, double backLimitX, double? stlTopZ, double? finishLineTopZ, double? finishLineMinZ, double? finishLineEspritR, bool twoPhase)
         {
