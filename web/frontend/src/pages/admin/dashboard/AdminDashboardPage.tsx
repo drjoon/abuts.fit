@@ -1105,7 +1105,6 @@ export const AdminDashboardPage = () => {
               {filteredHappyCallItems.map((item) => {
                 const anchorId = String(item.businessAnchorId || "").trim();
                 const phone = String(item.phoneNumber || "").trim();
-                const email = String(item.email || "").trim();
                 const businessName = String(item.businessName || "").trim();
                 const companyName = String(item.companyName || "").trim();
                 const showCompanyName =
@@ -1113,29 +1112,29 @@ export const AdminDashboardPage = () => {
 
                 return (
                   <div key={anchorId || item.businessName} className="rounded-md border px-3 py-2.5 bg-white">
-                    <div className="flex flex-col gap-2">
-                      <div className="min-w-0">
-                        <div className="text-sm font-semibold truncate text-gray-900">
-                          {item.businessName || "-"}
-                        </div>
-                        {showCompanyName && (
-                          <div className="text-xs text-gray-500 truncate">
-                            {companyName}
+                    <div className="flex h-full flex-col gap-2">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <div className="text-sm font-semibold truncate text-gray-900">
+                            {item.businessName || "-"}
                           </div>
-                        )}
-                        <div className="text-[11px] text-gray-500 mt-1">
-                          가입일 {toDateLabel(item.createdAt)} · 첫 완료 {toDateLabel(item.firstCompletedAt)} · 최근 완료 {toDateLabel(item.lastCompletedAt)}
+                          {showCompanyName && (
+                            <div className="text-xs text-gray-500 truncate">
+                              {companyName}
+                            </div>
+                          )}
+                          <div className="text-[11px] text-gray-500 mt-1">
+                            가입일 {toDateLabel(item.createdAt)} · 첫 완료 {toDateLabel(item.firstCompletedAt)} · 최근 완료 {toDateLabel(item.lastCompletedAt)}
+                          </div>
+                          <div className="text-[11px] text-gray-500">
+                            최근30일 주문 {Number(item.stats?.recent30Total || 0)}건 / 취소 {Number(item.stats?.recent30Canceled || 0)}건 / 완료 {Number(item.stats?.recent30Completed || 0)}건
+                          </div>
                         </div>
-                        <div className="text-[11px] text-gray-500">
-                          최근30일 주문 {Number(item.stats?.recent30Total || 0)}건 / 취소 {Number(item.stats?.recent30Canceled || 0)}건 / 완료 {Number(item.stats?.recent30Completed || 0)}건
-                        </div>
-                      </div>
 
-                      <div className="flex flex-wrap items-center gap-1.5">
                         {phone ? (
                           <button
                             type="button"
-                            className="inline-flex h-7 items-center rounded-md border px-2 text-xs hover:bg-slate-50"
+                            className="inline-flex h-8 items-center rounded-md border border-blue-600 bg-blue-600 px-3 text-xs font-semibold text-white hover:bg-blue-700"
                             onClick={() => {
                               setPhoneConfirm({
                                 open: true,
@@ -1147,19 +1146,28 @@ export const AdminDashboardPage = () => {
                             전화
                           </button>
                         ) : null}
+                      </div>
+
+                      <div className="mt-1 flex items-start justify-between gap-2">
+                        <div className="flex flex-wrap gap-1.5">
+                          {(item.reasons || []).map((reason) => (
+                            <Badge
+                              key={`${anchorId}-${reason.code}`}
+                              variant={HAPPY_CALL_SEVERITY_BADGE[reason.severity] || "outline"}
+                              className="text-[10px]"
+                              title={reason.description}
+                            >
+                              {reason.label}
+                            </Badge>
+                          ))}
+                        </div>
+
                         <button
                           type="button"
-                          className="inline-flex h-7 items-center rounded-md border px-2 text-xs hover:bg-slate-50"
-                          onClick={() => navigate(`/dashboard/sms${phone ? `?q=${encodeURIComponent(phone)}` : ""}`)}
-                        >
-                          문자
-                        </button>
-                        <button
-                          type="button"
-                          className={`ml-auto inline-flex h-7 items-center rounded-md border px-2 text-xs transition ${
+                          className={`inline-flex h-8 items-center rounded-md border px-3 text-xs font-semibold transition shrink-0 ${
                             completingHappyCallByAnchor[anchorId]
                               ? "border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed"
-                              : "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                              : "border-blue-400 bg-white text-blue-700 hover:bg-blue-50"
                           }`}
                           disabled={Boolean(completingHappyCallByAnchor[anchorId])}
                           onClick={() => {
@@ -1171,19 +1179,6 @@ export const AdminDashboardPage = () => {
                             : "해피콜 완료"}
                         </button>
                       </div>
-                    </div>
-
-                    <div className="mt-2 flex flex-wrap gap-1.5">
-                      {(item.reasons || []).map((reason) => (
-                        <Badge
-                          key={`${anchorId}-${reason.code}`}
-                          variant={HAPPY_CALL_SEVERITY_BADGE[reason.severity] || "outline"}
-                          className="text-[10px]"
-                          title={reason.description}
-                        >
-                          {reason.label}
-                        </Badge>
-                      ))}
                     </div>
                   </div>
                 );
