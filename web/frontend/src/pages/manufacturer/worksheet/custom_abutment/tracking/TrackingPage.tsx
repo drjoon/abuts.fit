@@ -277,6 +277,8 @@ export const TrackingInquiryPage = () => {
       url.searchParams.set("includeTotal", "0");
       url.searchParams.set("includeDelivery", "1");
       url.searchParams.set("rndUnmachinable", "0");
+      // backend tracking worksheet 캐시 키 분기용(필드 projection 업데이트 반영)
+      url.searchParams.set("trackingProjectionV", "2");
       const res = await fetch(url.pathname + url.search, {
         headers: { Authorization: `Bearer ${token}` },
         cache: "no-cache",

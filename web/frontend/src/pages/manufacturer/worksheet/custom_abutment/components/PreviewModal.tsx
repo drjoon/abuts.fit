@@ -1402,6 +1402,7 @@ export const PreviewModal = ({
 
   const overlayCaseInfos = (activeReq?.caseInfos || {}) as Record<string, any>;
   const overlayFlat = (activeReq || {}) as Record<string, any>;
+  const overlaySpec = (overlayFlat?.spec || {}) as Record<string, any>;
   const overlayRequestor = (activeReq?.requestor || {}) as Record<string, any>;
   const overlayCreatedDate = activeReq?.createdAt
     ? new Date(activeReq.createdAt).toLocaleDateString("ko-KR")
@@ -1415,6 +1416,7 @@ export const PreviewModal = ({
   const displayConnectionDiameter =
     toFiniteNumber(overlayCaseInfos?.connectionDiameter) ??
     toFiniteNumber(overlayFlat?.connectionDiameter) ??
+    toFiniteNumber(stlMetadata?.connectionDiameter) ??
     toFiniteNumber(overlayCaseInfos?.connectionSpec?.diameter) ??
     toFiniteNumber(overlayCaseInfos?.fixtureConnectionDiameter);
 
@@ -1430,10 +1432,31 @@ export const PreviewModal = ({
     toFiniteNumber(overlayFlat?.totalLength);
 
   const overlayImplantLine = [
-    String(overlayCaseInfos?.implantManufacturer || overlayFlat?.implantManufacturer || "-").trim() || "-",
-    String(overlayCaseInfos?.implantBrand || overlayFlat?.implantBrand || "-").trim() || "-",
-    String(overlayCaseInfos?.implantFamily || overlayFlat?.implantFamily || "-").trim() || "-",
-    String(overlayCaseInfos?.implantType || overlayFlat?.implantType || "-").trim() || "-",
+    String(
+      overlayCaseInfos?.implantManufacturer ||
+        overlaySpec?.implantCompany ||
+        overlayFlat?.implantManufacturer ||
+        "-",
+    ).trim() || "-",
+    String(
+      overlayCaseInfos?.implantBrand ||
+        overlaySpec?.implantBrand ||
+        overlaySpec?.implantProduct ||
+        overlayFlat?.implantBrand ||
+        "-",
+    ).trim() || "-",
+    String(
+      overlayCaseInfos?.implantFamily ||
+        overlaySpec?.implantFamily ||
+        overlayFlat?.implantFamily ||
+        "-",
+    ).trim() || "-",
+    String(
+      overlayCaseInfos?.implantType ||
+        overlaySpec?.implantType ||
+        overlayFlat?.implantType ||
+        "-",
+    ).trim() || "-",
   ].join(" / ");
 
   return (

@@ -198,23 +198,84 @@ export function usePreviewLoader({
             );
             const summaryBody: any = await summaryRes.json().catch(() => ({}));
             const summaryData = summaryBody?.data;
-            if (summaryRes.ok && summaryBody?.success !== false && summaryData) {
+            const summaryReq = summaryData?.request || summaryData;
+
+            if (summaryRes.ok && summaryBody?.success !== false && summaryReq) {
               targetReq = {
                 ...req,
-                ...summaryData,
+                ...summaryReq,
+                _id: String(summaryReq?._id || summaryData?._id || req?._id || "").trim() || req?._id,
+                requestId: String(summaryReq?.requestId || summaryData?.requestId || req?.requestId || "").trim() || req?.requestId,
                 caseInfos: {
                   ...(req?.caseInfos || {}),
-                  ...(summaryData?.caseInfos || {}),
+                  ...(summaryReq?.caseInfos || {}),
                 },
                 requestor: {
                   ...(req?.requestor || {}),
-                  ...(summaryData?.requestor || {}),
+                  ...(summaryReq?.requestor || {}),
                 },
                 lotNumber: {
                   ...(req?.lotNumber || {}),
-                  ...(summaryData?.lotNumber || {}),
+                  ...(summaryReq?.lotNumber || {}),
+                },
+                spec: {
+                  ...((req as any)?.spec || {}),
+                  ...(summaryReq?.spec || {}),
                 },
               } as ManufacturerRequest;
+
+              const hasImplantData = Boolean(
+                targetReq?.caseInfos?.implantManufacturer ||
+                  targetReq?.caseInfos?.implantBrand ||
+                  targetReq?.caseInfos?.implantFamily ||
+                  targetReq?.caseInfos?.implantType ||
+                  (targetReq as any)?.spec?.implantCompany ||
+                  (targetReq as any)?.spec?.implantBrand ||
+                  (targetReq as any)?.spec?.implantProduct ||
+                  (targetReq as any)?.spec?.implantFamily ||
+                  (targetReq as any)?.spec?.implantType ||
+                  (targetReq as any)?.implantManufacturer ||
+                  (targetReq as any)?.implantBrand ||
+                  (targetReq as any)?.implantFamily ||
+                  (targetReq as any)?.implantType,
+              );
+
+              const enrichedMongoId = String(targetReq?._id || "").trim();
+              if (tabStage === "tracking" && enrichedMongoId && !hasImplantData) {
+                try {
+                  const fullRes = await fetch(`/api/requests/${encodeURIComponent(enrichedMongoId)}`, {
+                    method: "GET",
+                    headers: { Authorization: `Bearer ${token}` },
+                    cache: "no-store",
+                  });
+                  const fullBody: any = await fullRes.json().catch(() => ({}));
+                  const fullReq = fullBody?.data?.request || fullBody?.data || null;
+                  if (fullRes.ok && fullBody?.success !== false && fullReq) {
+                    targetReq = {
+                      ...targetReq,
+                      ...fullReq,
+                      caseInfos: {
+                        ...(targetReq?.caseInfos || {}),
+                        ...(fullReq?.caseInfos || {}),
+                      },
+                      requestor: {
+                        ...(targetReq?.requestor || {}),
+                        ...(fullReq?.requestor || {}),
+                      },
+                      lotNumber: {
+                        ...(targetReq?.lotNumber || {}),
+                        ...(fullReq?.lotNumber || {}),
+                      },
+                      spec: {
+                        ...((targetReq as any)?.spec || {}),
+                        ...(fullReq?.spec || {}),
+                      },
+                    } as ManufacturerRequest;
+                  }
+                } catch {
+                  // no-op
+                }
+              }
             }
           } catch {
             // summary 보강 실패 시 원본 req로 계속 진행
