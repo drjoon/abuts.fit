@@ -29,7 +29,11 @@ import {
   assignManufacturer,
   fixMissingBusinessAnchorId,
 } from "../../controllers/admin/admin.requests.controller.js";
-import { getDashboardStats } from "../../controllers/admin/admin.dashboard.controller.js";
+import {
+  getDashboardStats,
+  completeHappyCall,
+  revertLastHappyCallCompletion,
+} from "../../controllers/admin/admin.dashboard.controller.js";
 import {
   getSystemLogs,
   getActivityLogs,
@@ -172,6 +176,11 @@ router.post("/requests/fix-business-anchor-id", fixMissingBusinessAnchorId);
 
 // 대시보드 통계
 router.get("/dashboard", getDashboardStats);
+router.post("/dashboard/happy-call/complete", completeHappyCall);
+router.post(
+  "/dashboard/happy-call/revert-last",
+  revertLastHappyCallCompletion,
+);
 
 // 소통 메뉴 배지 카운트 (초기 로드용)
 router.get("/comm-badges", adminGetCommBadges);

@@ -5,6 +5,7 @@ import { usePeriodStore } from "@/store/usePeriodStore";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useQuery } from "@tanstack/react-query";
+import { useToast } from "@/shared/hooks/use-toast";
 import { MultiActionDialog } from "@/features/support/components/MultiActionDialog";
 import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
@@ -160,6 +161,17 @@ const HAPPY_CALL_SEVERITY_BADGE: Record<
   low: "outline",
 };
 
+const HAPPY_CALL_REASON_DISPLAY_ORDER = [
+  "no_completion_30d_from_join",
+  "first_completion_after_signup",
+  "new_signup_no_first_request_14d",
+  "first_completion_this_week",
+  "recent_unmachinable_14d",
+  "high_cancel_rate_30d",
+  "active_but_no_completion_30d",
+  "dormant_60d_since_last_completion",
+] as const;
+
 const toDateLabel = (raw?: string | null) => {
   if (!raw) return "-";
   const d = new Date(raw);
@@ -170,6 +182,7 @@ const toDateLabel = (raw?: string | null) => {
 export const AdminDashboardPage = () => {
   const { user, token } = useAuthStore();
   const navigate = useNavigate();
+  const { toast } = useToast();
   const { period, setPeriod } = usePeriodStore();
   const { counts: commBadgeCounts } = useAdminCommBadges();
   const [happyCallDialogOpen, setHappyCallDialogOpen] = useState(false);
@@ -183,6 +196,18 @@ export const AdminDashboardPage = () => {
     phone: "",
     businessName: "",
   });
+  const [completingHappyCallByAnchor, setCompletingHappyCallByAnchor] =
+    useState<Record<string, boolean>>({});
+  const [revertingLastHappyCall, setRevertingLastHappyCall] = useState(false);
+  const [happyCallConfirm, setHappyCallConfirm] = useState<{
+    open: boolean;
+    item: HappyCallItem | null;
+  }>({
+    open: false,
+    item: null,
+  });
+  const [lastCompletedHappyCallAnchorId, setLastCompletedHappyCallAnchorId] =
+    useState<string>("");
 
   const { data: riskSummaryResponse } = useQuery({
     queryKey: ["admin-dashboard-risk-summary", period],
@@ -214,7 +239,7 @@ export const AdminDashboardPage = () => {
     retry: false,
   });
 
-  const { data: adminDashboardResponse } = useQuery({
+  const { data: adminDashboardResponse, refetch: refetchAdminDashboard } = useQuery({
     queryKey: ["admin-dashboard-page", period],
     enabled: Boolean(token) && user?.role === "admin",
     queryFn: async () => {
@@ -307,6 +332,27 @@ export const AdminDashboardPage = () => {
     ? happyCallSummary.items
     : [];
 
+  const happyCallReasonCounts = Array.isArray(happyCallSummary?.reasonCounts)
+    ? happyCallSummary.reasonCounts
+    : [];
+
+  const sortedHappyCallReasonCounts = [...happyCallReasonCounts].sort((a, b) => {
+    const aCode = String(a?.code || "").trim();
+    const bCode = String(b?.code || "").trim();
+    const aIdx = HAPPY_CALL_REASON_DISPLAY_ORDER.indexOf(
+      aCode as (typeof HAPPY_CALL_REASON_DISPLAY_ORDER)[number],
+    );
+    const bIdx = HAPPY_CALL_REASON_DISPLAY_ORDER.indexOf(
+      bCode as (typeof HAPPY_CALL_REASON_DISPLAY_ORDER)[number],
+    );
+
+    if (aIdx !== -1 && bIdx !== -1) return aIdx - bIdx;
+    if (aIdx !== -1) return -1;
+    if (bIdx !== -1) return 1;
+
+    return Number(b?.count || 0) - Number(a?.count || 0);
+  });
+
   const filteredHappyCallItems =
     happyCallReasonFilter === "all"
       ? happyCallItems
@@ -318,6 +364,110 @@ export const AdminDashboardPage = () => {
               )
             : false,
         );
+
+  const handleCompleteHappyCall = async (item: HappyCallItem) => {
+    const businessAnchorId = String(item?.businessAnchorId || "").trim();
+    if (!businessAnchorId || !token) return;
+
+    const reasonCodes = Array.isArray(item?.reasons)
+      ? Array.from(
+          new Set(
+            item.reasons
+              .map((r) => String(r?.code || "").trim())
+              .filter(Boolean),
+          ),
+        )
+      : [];
+
+    if (!reasonCodes.length) {
+      toast({
+        title: "해피콜 사유 없음",
+        description: "완료 처리할 사유가 없습니다.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setCompletingHappyCallByAnchor((prev) => ({
+      ...prev,
+      [businessAnchorId]: true,
+    }));
+
+    try {
+      const res = await apiFetch<any>({
+        path: "/api/admin/dashboard/happy-call/complete",
+        method: "POST",
+        token,
+        headers: {
+          "Content-Type": "application/json",
+        },
+        jsonBody: {
+          businessAnchorId,
+          reasonCodes,
+        },
+      });
+
+      if (!res.ok || res.data?.success === false) {
+        throw new Error(res.data?.message || "해피콜 완료 처리에 실패했습니다.");
+      }
+
+      setLastCompletedHappyCallAnchorId(businessAnchorId);
+      toast({
+        title: "해피콜 완료",
+        description: "해당 의뢰자를 해피콜 목록에서 숨겼습니다.",
+      });
+      void refetchAdminDashboard();
+    } catch (error: any) {
+      toast({
+        title: "해피콜 완료 처리 실패",
+        description: String(error?.message || "잠시 후 다시 시도해주세요."),
+        variant: "destructive",
+      });
+    } finally {
+      setCompletingHappyCallByAnchor((prev) => ({
+        ...prev,
+        [businessAnchorId]: false,
+      }));
+    }
+  };
+
+  const handleRevertLastHappyCall = async () => {
+    if (!token || revertingLastHappyCall) return;
+    setRevertingLastHappyCall(true);
+
+    try {
+      const res = await apiFetch<any>({
+        path: "/api/admin/dashboard/happy-call/revert-last",
+        method: "POST",
+        token,
+        headers: {
+          "Content-Type": "application/json",
+        },
+        jsonBody: lastCompletedHappyCallAnchorId
+          ? { businessAnchorId: lastCompletedHappyCallAnchorId }
+          : {},
+      });
+
+      if (!res.ok || res.data?.success === false) {
+        throw new Error(res.data?.message || "되돌리기에 실패했습니다.");
+      }
+
+      setLastCompletedHappyCallAnchorId("");
+      toast({
+        title: "되돌리기 완료",
+        description: "가장 최근 해피콜 완료 1건을 복구했습니다.",
+      });
+      void refetchAdminDashboard();
+    } catch (error: any) {
+      toast({
+        title: "되돌리기 실패",
+        description: String(error?.message || "잠시 후 다시 시도해주세요."),
+        variant: "destructive",
+      });
+    } finally {
+      setRevertingLastHappyCall(false);
+    }
+  };
 
   if (adminDashboardResponse?.success) {
     const userStats = adminDashboardResponse.data.userStats || {};
@@ -513,46 +663,28 @@ export const AdminDashboardPage = () => {
                   </CardTitle>
                   <PhoneCall className="h-4 w-4 text-muted-foreground" />
                 </CardHeader>
-                <CardContent className="space-y-3">
+                <CardContent>
                   <button
                     type="button"
-                    className="w-full rounded-md border px-3 py-2 text-left hover:bg-slate-50 transition"
+                    className="w-full rounded-md border px-3 py-3 text-left hover:bg-slate-50 transition"
                     onClick={() => {
                       setHappyCallReasonFilter("all");
                       setHappyCallDialogOpen(true);
                     }}
                   >
                     <div className="flex items-end justify-between gap-2">
-                      <div className="text-xs text-muted-foreground">대상 의뢰자 수</div>
-                      <div className="text-2xl font-bold text-blue-700">
+                      <div className="text-xs text-muted-foreground">해피콜 대상 의뢰자</div>
+                      <div className="text-3xl font-bold text-blue-700 leading-none">
                         {Number(happyCallSummary?.totalRequestorCount || 0).toLocaleString()}개
                       </div>
                     </div>
+                    <div className="mt-1 text-xs text-muted-foreground">
+                      전체 {totalRequestorBusinessCount.toLocaleString()}개 중
+                    </div>
                     <div className="mt-1 text-[11px] text-muted-foreground">
-                      클릭하면 해피콜 대상 목록과 사유를 확인할 수 있습니다.
+                      클릭하면 해피콜 대상 목록을 확인할 수 있습니다.
                     </div>
                   </button>
-
-                  <div className="space-y-1">
-                    {(happyCallSummary?.reasonCounts || []).slice(0, 3).map((row) => (
-                      <div
-                        key={String(row.code || row.label)}
-                        className="flex items-center justify-between text-xs gap-2"
-                      >
-                        <span className="truncate text-muted-foreground">{row.label}</span>
-                        <Badge
-                          variant={HAPPY_CALL_SEVERITY_BADGE[row.severity] || "outline"}
-                          className="text-[10px] shrink-0"
-                        >
-                          {Number(row.count || 0).toLocaleString()}개
-                        </Badge>
-                      </div>
-                    ))}
-
-                    {Number((happyCallSummary?.reasonCounts || []).length || 0) === 0 && (
-                      <div className="text-xs text-muted-foreground">이번 주 해피콜 대상이 없습니다.</div>
-                    )}
-                  </div>
                 </CardContent>
               </Card>
 
@@ -903,8 +1035,24 @@ export const AdminDashboardPage = () => {
               (기준: 첫 완료, 장기 미완료, 휴면, 취소율, 가공불가 등)
             </div>
 
-            <div className="text-sm text-slate-600">
-              전체 의뢰자 {totalRequestorBusinessCount.toLocaleString()}개 / 해피콜 대상 {happyCallItems.length.toLocaleString()}개
+            <div className="flex items-center justify-between gap-2 text-sm text-slate-600">
+              <span>
+                전체 의뢰자 {totalRequestorBusinessCount.toLocaleString()}개 / 해피콜 대상 {happyCallItems.length.toLocaleString()}개
+              </span>
+              <button
+                type="button"
+                className={`inline-flex h-7 items-center rounded-md border px-2 text-xs transition ${
+                  revertingLastHappyCall
+                    ? "border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed"
+                    : "border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100"
+                }`}
+                disabled={revertingLastHappyCall}
+                onClick={() => {
+                  void handleRevertLastHappyCall();
+                }}
+              >
+                {revertingLastHappyCall ? "되돌리는 중..." : "방금 완료 되돌리기"}
+              </button>
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
@@ -919,14 +1067,14 @@ export const AdminDashboardPage = () => {
               >
                 <span className="mr-1">전체(해피콜)</span>
                 <Badge
-                  variant={happyCallReasonFilter === "all" ? "destructive" : "secondary"}
+                  variant="destructive"
                   className="text-[11px]"
                 >
                   {happyCallItems.length}개
                 </Badge>
               </button>
 
-              {(happyCallSummary?.reasonCounts || []).map((row) => {
+              {sortedHappyCallReasonCounts.map((row) => {
                 const code = String(row.code || "").trim();
                 const isActive = happyCallReasonFilter === code;
                 return (
@@ -942,7 +1090,7 @@ export const AdminDashboardPage = () => {
                   >
                     <span className="mr-1">{row.label}</span>
                     <Badge
-                      variant={HAPPY_CALL_SEVERITY_BADGE[row.severity] || "outline"}
+                      variant="destructive"
                       className="text-[11px]"
                     >
                       {Number(row.count || 0).toLocaleString()}개
@@ -958,11 +1106,10 @@ export const AdminDashboardPage = () => {
                 const anchorId = String(item.businessAnchorId || "").trim();
                 const phone = String(item.phoneNumber || "").trim();
                 const email = String(item.email || "").trim();
-                const qs = new URLSearchParams();
-                if (anchorId) {
-                  qs.set("focusAnchorId", anchorId);
-                  qs.set("q", anchorId);
-                }
+                const businessName = String(item.businessName || "").trim();
+                const companyName = String(item.companyName || "").trim();
+                const showCompanyName =
+                  Boolean(companyName) && companyName !== businessName;
 
                 return (
                   <div key={anchorId || item.businessName} className="rounded-md border px-3 py-2.5 bg-white">
@@ -971,9 +1118,11 @@ export const AdminDashboardPage = () => {
                         <div className="text-sm font-semibold truncate text-gray-900">
                           {item.businessName || "-"}
                         </div>
-                        <div className="text-xs text-gray-500 truncate">
-                          {item.companyName || "-"}
-                        </div>
+                        {showCompanyName && (
+                          <div className="text-xs text-gray-500 truncate">
+                            {companyName}
+                          </div>
+                        )}
                         <div className="text-[11px] text-gray-500 mt-1">
                           가입일 {toDateLabel(item.createdAt)} · 첫 완료 {toDateLabel(item.firstCompletedAt)} · 최근 완료 {toDateLabel(item.lastCompletedAt)}
                         </div>
@@ -1001,32 +1150,26 @@ export const AdminDashboardPage = () => {
                         <button
                           type="button"
                           className="inline-flex h-7 items-center rounded-md border px-2 text-xs hover:bg-slate-50"
-                          onClick={() => navigate(`/dashboard/chat-management${anchorId ? `?q=${encodeURIComponent(anchorId)}` : ""}`)}
-                        >
-                          채팅
-                        </button>
-                        <button
-                          type="button"
-                          className="inline-flex h-7 items-center rounded-md border px-2 text-xs hover:bg-slate-50"
                           onClick={() => navigate(`/dashboard/sms${phone ? `?q=${encodeURIComponent(phone)}` : ""}`)}
                         >
                           문자
                         </button>
                         <button
                           type="button"
-                          className="inline-flex h-7 items-center rounded-md border px-2 text-xs hover:bg-slate-50"
-                          onClick={() => navigate(`/dashboard/businesses${anchorId ? `?${qs.toString()}` : ""}`)}
+                          className={`ml-auto inline-flex h-7 items-center rounded-md border px-2 text-xs transition ${
+                            completingHappyCallByAnchor[anchorId]
+                              ? "border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed"
+                              : "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                          }`}
+                          disabled={Boolean(completingHappyCallByAnchor[anchorId])}
+                          onClick={() => {
+                            setHappyCallConfirm({ open: true, item });
+                          }}
                         >
-                          사업체
+                          {completingHappyCallByAnchor[anchorId]
+                            ? "처리 중..."
+                            : "해피콜 완료"}
                         </button>
-                        {email ? (
-                          <a
-                            href={`mailto:${email}`}
-                            className="inline-flex h-7 items-center rounded-md border px-2 text-xs hover:bg-slate-50"
-                          >
-                            메일
-                          </a>
-                        ) : null}
                       </div>
                     </div>
 
@@ -1056,6 +1199,46 @@ export const AdminDashboardPage = () => {
           </div>
         }
         actions={[]}
+      />
+
+      <MultiActionDialog
+        open={happyCallConfirm.open}
+        onClose={() => {
+          setHappyCallConfirm({ open: false, item: null });
+        }}
+        title="해피콜 완료 처리"
+        description={
+          <div className="space-y-2 text-sm text-gray-700">
+            <div>
+              <span className="font-semibold text-gray-900">
+                {String(happyCallConfirm.item?.businessName || "의뢰자")}
+              </span>
+              {" "}해피콜을 완료 처리할까요?
+            </div>
+            <div className="text-xs text-gray-500">
+              완료 처리 시 이 의뢰자는 모든 해피콜 항목에서 숨김 처리됩니다.
+            </div>
+          </div>
+        }
+        actions={[
+          {
+            label: "취소",
+            variant: "secondary",
+            onClick: () => {
+              setHappyCallConfirm({ open: false, item: null });
+            },
+          },
+          {
+            label: "완료 처리",
+            variant: "primary",
+            onClick: async () => {
+              const target = happyCallConfirm.item;
+              setHappyCallConfirm({ open: false, item: null });
+              if (!target) return;
+              await handleCompleteHappyCall(target);
+            },
+          },
+        ]}
       />
 
       <MultiActionDialog

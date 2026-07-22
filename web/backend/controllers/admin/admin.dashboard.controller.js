@@ -2,6 +2,7 @@ import User from "../../models/user.model.js";
 import Request from "../../models/request.model.js";
 import File from "../../models/file.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
+import AdminHappyCallCompletion from "../../models/adminHappyCallCompletion.model.js";
 import {
   getDateRangeFromQuery,
   getMongoHealth,
@@ -70,6 +71,10 @@ const HAPPY_CALL_REASON_PRIORITY = {
   low: 1,
 };
 
+// 정책: 해피콜 완료 1회로 해당 의뢰자(사업체)의 모든 해피콜 사유를 해소한 것으로 본다.
+const HAPPY_CALL_GLOBAL_REASON_CODE = "__all__";
+const HAPPY_CALL_SUPPRESS_DAYS = 3650;
+
 const toDateOrNull = (value) => {
   if (!value) return null;
   const d = new Date(value);
@@ -128,7 +133,9 @@ export async function getDashboardStats(req, res) {
     };
 
     const now = new Date();
+    const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
     const fourteenDaysAgo = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);
+    const twentyOneDaysAgo = new Date(now.getTime() - 21 * 24 * 60 * 60 * 1000);
     const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
     const sixtyDaysAgo = new Date(now.getTime() - 60 * 24 * 60 * 60 * 1000);
     const { startUtc: weekStartUtc, endUtc: weekEndUtc } =
@@ -303,7 +310,7 @@ export async function getDashboardStats(req, res) {
       .map((a) => a?._id)
       .filter(Boolean);
 
-    const [requestorRequestStats, firstCompletions] =
+    const [requestorRequestStats, firstCompletions, activeHappyCallCompletions] =
       requestorAnchorIds.length > 0
         ? await Promise.all([
             Request.aggregate([
@@ -322,7 +329,12 @@ export async function getDashboardStats(req, res) {
                   completedCount: {
                     $sum: {
                       $cond: [
-                        { $ne: ["$shippingWorkflow.completedAt", null] },
+                        {
+                          $or: [
+                            { $ne: ["$shippingWorkflow.completedAt", null] },
+                            { $eq: ["$manufacturerStage", "추적관리"] },
+                          ],
+                        },
                         1,
                         0,
                       ],
@@ -331,8 +343,15 @@ export async function getDashboardStats(req, res) {
                   lastCompletedAt: {
                     $max: {
                       $cond: [
-                        { $ne: ["$shippingWorkflow.completedAt", null] },
-                        "$shippingWorkflow.completedAt",
+                        {
+                          $or: [
+                            { $ne: ["$shippingWorkflow.completedAt", null] },
+                            { $eq: ["$manufacturerStage", "추적관리"] },
+                          ],
+                        },
+                        {
+                          $ifNull: ["$shippingWorkflow.completedAt", "$createdAt"],
+                        },
                         null,
                       ],
                     },
@@ -359,7 +378,18 @@ export async function getDashboardStats(req, res) {
                   recent30Completed: {
                     $sum: {
                       $cond: [
-                        { $gte: ["$shippingWorkflow.completedAt", thirtyDaysAgo] },
+                        {
+                          $or: [
+                            { $gte: ["$shippingWorkflow.completedAt", thirtyDaysAgo] },
+                            {
+                              $and: [
+                                { $eq: ["$shippingWorkflow.completedAt", null] },
+                                { $eq: ["$manufacturerStage", "추적관리"] },
+                                { $gte: ["$createdAt", thirtyDaysAgo] },
+                              ],
+                            },
+                          ],
+                        },
                         1,
                         0,
                       ],
@@ -382,21 +412,37 @@ export async function getDashboardStats(req, res) {
                 $match: {
                   ...requestBaseFilter,
                   businessAnchorId: { $in: requestorAnchorIds },
-                  "shippingWorkflow.completedAt": { $ne: null },
+                  $or: [
+                    { "shippingWorkflow.completedAt": { $ne: null } },
+                    { manufacturerStage: "추적관리" },
+                  ],
                 },
               },
-              { $sort: { "shippingWorkflow.completedAt": 1 } },
+              {
+                $addFields: {
+                  __completionAt: {
+                    $ifNull: ["$shippingWorkflow.completedAt", "$createdAt"],
+                  },
+                },
+              },
+              { $sort: { __completionAt: 1 } },
               {
                 $group: {
                   _id: "$businessAnchorId",
-                  firstCompletedAt: { $first: "$shippingWorkflow.completedAt" },
+                  firstCompletedAt: { $first: "$__completionAt" },
                   firstCompletedRequestId: { $first: "$requestId" },
                   firstCompletedRequestMongoId: { $first: "$_id" },
                 },
               },
             ]),
+            AdminHappyCallCompletion.find({
+              businessAnchorId: { $in: requestorAnchorIds },
+              suppressUntil: { $gt: now },
+            })
+              .select({ businessAnchorId: 1, reasonCode: 1, suppressUntil: 1 })
+              .lean(),
           ])
-        : [[], []];
+        : [[], [], []];
 
     const requestStatsByAnchorId = new Map(
       (Array.isArray(requestorRequestStats) ? requestorRequestStats : []).map(
@@ -411,6 +457,35 @@ export async function getDashboardStats(req, res) {
       ]),
     );
 
+    const suppressedReasonKeySet = new Set(
+      (Array.isArray(activeHappyCallCompletions)
+        ? activeHappyCallCompletions
+        : []
+      )
+        .map((row) => {
+          const anchorId = String(row?.businessAnchorId || "").trim();
+          const reasonCode = String(row?.reasonCode || "").trim();
+          if (!anchorId || !reasonCode) return "";
+          return `${anchorId}:${reasonCode}`;
+        })
+        .filter(Boolean),
+    );
+
+    const suppressedAnchorSet = new Set(
+      (Array.isArray(activeHappyCallCompletions)
+        ? activeHappyCallCompletions
+        : []
+      )
+        .map((row) => {
+          const anchorId = String(row?.businessAnchorId || "").trim();
+          const reasonCode = String(row?.reasonCode || "").trim();
+          if (!anchorId) return "";
+          if (reasonCode !== HAPPY_CALL_GLOBAL_REASON_CODE) return "";
+          return anchorId;
+        })
+        .filter(Boolean),
+    );
+
     const happyCallItems = [];
     const reasonCounter = new Map();
 
@@ -418,6 +493,10 @@ export async function getDashboardStats(req, res) {
       const anchor = anchorRaw || {};
       const anchorId = String(anchor?._id || "").trim();
       if (!anchorId) continue;
+
+      if (suppressedAnchorSet.has(anchorId)) {
+        continue;
+      }
 
       const statsRow = requestStatsByAnchorId.get(anchorId) || {};
       const firstCompletionRow = firstCompletionByAnchorId.get(anchorId) || {};
@@ -445,11 +524,23 @@ export async function getDashboardStats(req, res) {
         reasons.push({ code: "first_completion_this_week" });
       }
 
-      if (firstCompletedAt && firstCompletedAt >= thirtyDaysAgo) {
+      if (
+        firstCompletedAt &&
+        firstCompletedAt <= sevenDaysAgo &&
+        firstCompletedAt >= twentyOneDaysAgo
+      ) {
         reasons.push({ code: "first_completion_after_signup" });
       }
 
-      if (anchorCreatedAt && anchorCreatedAt <= thirtyDaysAgo && completedCount === 0) {
+      // 운영 정책 보정:
+      // 가입 1개월 경과 + 완료 0건이라도 최근 주문 활동이 활발하면
+      // 해당 사유로는 해피콜 대상에서 제외한다.
+      if (
+        anchorCreatedAt &&
+        anchorCreatedAt <= thirtyDaysAgo &&
+        completedCount === 0 &&
+        recent30Total === 0
+      ) {
         reasons.push({ code: "no_completion_30d_from_join" });
       }
 
@@ -482,6 +573,7 @@ export async function getDashboardStats(req, res) {
           const code = String(r?.code || "").trim();
           const meta = HAPPY_CALL_REASON_META[code] || null;
           if (!code || !meta) return null;
+          if (suppressedReasonKeySet.has(`${anchorId}:${code}`)) return null;
           reasonCounter.set(code, Number(reasonCounter.get(code) || 0) + 1);
           return {
             code,
@@ -647,6 +739,150 @@ export async function getDashboardStats(req, res) {
     res.status(500).json({
       success: false,
       message: "대시보드 통계 조회 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
+export async function completeHappyCall(req, res) {
+  try {
+    const businessAnchorId = String(req.body?.businessAnchorId || "").trim();
+    const rawReasonCodes = Array.isArray(req.body?.reasonCodes)
+      ? req.body.reasonCodes
+      : [];
+    const note = String(req.body?.note || "").slice(0, 500).trim();
+
+    if (!businessAnchorId) {
+      return res.status(400).json({
+        success: false,
+        message: "businessAnchorId가 필요합니다.",
+      });
+    }
+
+    const reasonCodes = Array.from(
+      new Set(
+        rawReasonCodes
+          .map((code) => String(code || "").trim())
+          .filter((code) => Boolean(HAPPY_CALL_REASON_META[code])),
+      ),
+    );
+
+    const suppressUntil = new Date(
+      Date.now() + HAPPY_CALL_SUPPRESS_DAYS * 24 * 60 * 60 * 1000,
+    );
+
+    await AdminHappyCallCompletion.findOneAndUpdate(
+      {
+        businessAnchorId,
+        reasonCode: HAPPY_CALL_GLOBAL_REASON_CODE,
+      },
+      {
+        $set: {
+          completedAt: new Date(),
+          completedBy: req.user?._id || null,
+          suppressUntil,
+          note,
+        },
+      },
+      {
+        upsert: true,
+        new: true,
+        setDefaultsOnInsert: true,
+      },
+    );
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        businessAnchorId,
+        reasonCodes,
+        suppressedScope: "anchor:all-reasons",
+        suppressUntil: suppressUntil.toISOString(),
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "해피콜 완료 처리 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
+export async function revertLastHappyCallCompletion(req, res) {
+  try {
+    const completedBy = req.user?._id || null;
+    if (!completedBy) {
+      return res.status(401).json({
+        success: false,
+        message: "로그인이 필요합니다.",
+      });
+    }
+
+    const businessAnchorId = String(req.body?.businessAnchorId || "").trim();
+
+    if (businessAnchorId) {
+      const target = await AdminHappyCallCompletion.findOne({
+        businessAnchorId,
+        reasonCode: HAPPY_CALL_GLOBAL_REASON_CODE,
+      })
+        .sort({ updatedAt: -1 })
+        .lean();
+
+      if (!target?._id) {
+        return res.status(404).json({
+          success: false,
+          message: "해당 의뢰자의 해피콜 완료 이력이 없습니다.",
+        });
+      }
+
+      await AdminHappyCallCompletion.deleteOne({ _id: target._id });
+
+      return res.status(200).json({
+        success: true,
+        data: {
+          revertedId: String(target._id),
+          businessAnchorId: String(target.businessAnchorId || "").trim(),
+        },
+      });
+    }
+
+    let last = await AdminHappyCallCompletion.findOne({
+      completedBy,
+      reasonCode: HAPPY_CALL_GLOBAL_REASON_CODE,
+    })
+      .sort({ updatedAt: -1 })
+      .lean();
+
+    // 운영 편의: completedBy 누락/불일치 케이스를 위해 최신 전역 이력으로 fallback
+    if (!last?._id) {
+      last = await AdminHappyCallCompletion.findOne({
+        reasonCode: HAPPY_CALL_GLOBAL_REASON_CODE,
+      })
+        .sort({ updatedAt: -1 })
+        .lean();
+    }
+
+    if (!last?._id) {
+      return res.status(404).json({
+        success: false,
+        message: "되돌릴 해피콜 완료 이력이 없습니다.",
+      });
+    }
+
+    await AdminHappyCallCompletion.deleteOne({ _id: last._id });
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        revertedId: String(last._id),
+        businessAnchorId: String(last.businessAnchorId || "").trim(),
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "해피콜 완료 되돌리기 중 오류가 발생했습니다.",
       error: error.message,
     });
   }
