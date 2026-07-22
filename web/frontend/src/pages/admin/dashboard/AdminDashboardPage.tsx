@@ -1120,7 +1120,7 @@ export const AdminDashboardPage = () => {
           setHappyCallReasonFilter("all");
           setHappyCallDialogTab("targets");
         }}
-        panelClassName="w-[94vw] max-w-[1500px] h-[88vh]"
+        panelClassName="!w-[94vw] !max-w-[1500px] !h-[88vh]"
         descriptionClassName="h-full"
         descriptionScrollable={false}
         title="이번 주 해피콜 의뢰자 목록"
