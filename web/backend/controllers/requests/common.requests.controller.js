@@ -209,7 +209,7 @@ const normalizeHexRotationValue = (value) => {
   return "0";
 };
 
-const normalizeManufacturerHexRotationMode = (value) => {
+const parseManufacturerHexRotationMode = (value) => {
   const v = String(value || "").trim();
   // canonical
   if (v === "무보정") return "무보정";
@@ -217,7 +217,11 @@ const normalizeManufacturerHexRotationMode = (value) => {
   // legacy fallback: "30" => 무보정, "0" => 보정
   if (v === "30") return "무보정";
   if (v === "0") return "보정";
-  return "보정";
+  return null;
+};
+
+const normalizeManufacturerHexRotationMode = (value) => {
+  return parseManufacturerHexRotationMode(value) || "보정";
 };
 
 const resolveFinalHexRotationValue = ({
@@ -1990,9 +1994,18 @@ export const confirmAllRndUnmachinableByRequestor = asyncHandler(
 
 export const updateRndHexRotation = asyncHandler(async (req, res) => {
   const { id } = req.params;
-  const manufacturerHexRotation = normalizeManufacturerHexRotationMode(
-    req.body?.manufacturerHexRotation,
+  const manufacturerHexRotationInput = req.body?.manufacturerHexRotation;
+  const manufacturerHexRotation = parseManufacturerHexRotationMode(
+    manufacturerHexRotationInput,
   );
+
+  if (!manufacturerHexRotation) {
+    return res.status(400).json({
+      success: false,
+      message:
+        "유효하지 않은 manufacturerHexRotation 값입니다. '보정' 또는 '무보정'을 사용하세요. (legacy: '0'|'30')",
+    });
+  }
 
   if (!mongoose.Types.ObjectId.isValid(id)) {
     return res.status(400).json({
