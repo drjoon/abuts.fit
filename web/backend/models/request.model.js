@@ -467,10 +467,12 @@ const requestSchema = new mongoose.Schema(
         ref: "User",
         default: null,
       },
-      // 제조사 헥스 회전 선택값 (0도/30도)
+      // 제조사 헥스 회전 선택값 (canonical)
+      // - "보정"(legacy 0도)
+      // - "무보정"(legacy 30도)
       manufacturerHexRotation: {
         type: String,
-        enum: ["0", "30"],
+        enum: ["보정", "무보정"],
         default: null,
       },
       manufacturerHexRotationUpdatedAt: {

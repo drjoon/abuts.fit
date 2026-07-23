@@ -1225,9 +1225,9 @@ export const getRequestMeta = asyncHandler(async (req, res) => {
         requestId: 1,
         caseInfos: 1,
         lotNumber: 1,
-        // 제조사 수동 헥스 회전 모드값(0/30)도 함께 로드한다.
-        // [중요] 표시명만 변경되며 저장값/실행 로직은 기존과 동일하다.
-        // Esprit add-in은 이 값을 mode로 해석해 기존 경로(0=현행 유지, 30=원복 후 +30)를 사용한다.
+        // 제조사 수동 헥스 회전 모드값(canonical: "보정"|"무보정")도 함께 로드한다.
+        // legacy 저장값("0"/"30")은 하위호환으로만 해석한다.
+        // - 0 => 보정, 30 => 무보정
         "rnd.manufacturerHexRotation": 1,
       })
       .lean();
@@ -1269,15 +1269,17 @@ export const getRequestMeta = asyncHandler(async (req, res) => {
   }
 
   const ci = request.caseInfos || {};
-  // 제조사 수동 헥스 회전값은 request-meta에서 모드값("0"|"30")으로 전달한다.
-  // [중요] 이번 변경은 UI 표시명만 변경한다. mode 값과 실행 로직은 기존 그대로다.
-  // - UI 표시: "0" => "보정", "30" => "무보정"
-  // - 실행 의미: mode 0=현행 회전 유지, mode 30=Esprit "원복 후 +30" 경로
+  // 제조사 수동 헥스 회전값은 request-meta에서 canonical 모드값("보정"|"무보정")으로 전달한다.
+  // legacy 저장값("0"/"30")은 하위호환으로만 해석한다.
+  // - 0 => 보정, 30 => 무보정
   // request-meta에서 명시적으로 내려주어 add-in이 파일명/추정 로직 없이 SSOT를 직접 사용하게 한다.
+  const manufacturerHexRotationRaw = String(
+    request?.rnd?.manufacturerHexRotation || "",
+  ).trim();
   const manufacturerHexRotationMode =
-    String(request?.rnd?.manufacturerHexRotation || "").trim() === "30"
-      ? "30"
-      : "0";
+    manufacturerHexRotationRaw === "무보정" || manufacturerHexRotationRaw === "30"
+      ? "무보정"
+      : "보정";
   const normalizedFinishLine = normalizeFinishLineWithZExtrema(ci?.finishLine);
   const finishLinePoints = Array.isArray(normalizedFinishLine?.points)
     ? normalizedFinishLine.points
@@ -1349,14 +1351,13 @@ export const getRequestMeta = asyncHandler(async (req, res) => {
           // NC 재생성 경로(request-meta 직접 조회)에서도 PRC 파일명이 필요하므로 여기서 보장.
           faceHolePrcFileName: resolvedPrcFiles.faceHolePrcFileName,
           connectionPrcFileName: resolvedPrcFiles.connectionPrcFileName,
-          // 제조사 수동 헥스 회전 모드값(0/30).
-          // [중요] 표시명만 변경되며 mode 값/실행 로직은 기존과 동일.
-          // - UI 표시: "0" => "보정", "30" => "무보정"
-          // - 실행 의미: mode 0=보정, mode 30=무보정
-          //   (보정 모드에서 add-in이 appliedDeg를 Esprit 부호계로 반전 해석해 +30에 합산)
+          // 제조사 수동 헥스 회전 모드값(canonical: "보정"|"무보정").
+          // legacy 값("0"/"30")은 하위호환으로만 해석한다.
+          // - 0 => 보정, 30 => 무보정
+          // 보정 모드에서 add-in이 appliedDeg를 Esprit 부호계로 반전 해석해 +30에 합산한다.
           manufacturerHexRotation: manufacturerHexRotationMode,
           // Rhino 정렬 telemetry(헥스 회전각).
-          // Esprit가 보정(0) 모드에서 appliedDeg를 부호 반전 해석해 +30에 합산할 때 사용한다.
+          // Esprit가 보정(legacy 0) 모드에서 appliedDeg를 부호 반전 해석해 +30에 합산할 때 사용한다.
           hexRotation:
             ci?.hexRotation && typeof ci.hexRotation === "object"
               ? ci.hexRotation

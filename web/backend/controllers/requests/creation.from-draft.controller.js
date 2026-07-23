@@ -51,6 +51,27 @@ const normalizeRequestorHexRotation = (value, fallback = "0") => {
   return String(fallback || "").trim() === "30" ? "30" : "0";
 };
 
+const normalizeManufacturerHexRotationModeOrNull = (value) => {
+  const v = String(value || "").trim();
+  // canonical
+  if (v === "무보정") return "무보정";
+  if (v === "보정") return "보정";
+  // legacy fallback: "30" => 무보정, "0" => 보정
+  if (v === "30") return "무보정";
+  if (v === "0") return "보정";
+  return null;
+};
+
+const resolveFinalHexRotationValue = ({
+  requestorHexRotation,
+  manufacturerHexRotation,
+}) => {
+  const mode = normalizeManufacturerHexRotationModeOrNull(manufacturerHexRotation);
+  if (mode === "무보정") return "30";
+  if (mode === "보정") return "0";
+  return normalizeRequestorHexRotation(requestorHexRotation);
+};
+
 const buildRequestIdPrefix = () => {
   // KST 기준 날짜
   const now = new Date();
@@ -808,6 +829,7 @@ export async function createRequestsFromDraft(req, res) {
               "shippingPolicy.weeklyBatchDays": 1,
               "requestSettings.anodizingEnabled": 1,
               "requestSettings.defaultRequestorHexRotation": 1,
+              "requestSettings.defaultManufacturerHexRotation": 1,
             })
             .lean()
         : Promise.resolve(null),
@@ -836,6 +858,10 @@ export async function createRequestsFromDraft(req, res) {
       shippingOrg?.requestSettings?.defaultRequestorHexRotation,
       "0",
     );
+    const requestorDefaultManufacturerHexRotation =
+      normalizeManufacturerHexRotationModeOrNull(
+        shippingOrg?.requestSettings?.defaultManufacturerHexRotation,
+      );
     const shipDate = estimatedShipYmd || createdYmd;
     const boxCount = 1;
     const totalShippingFee = boxCount * shippingFeePerBox;
@@ -1048,6 +1074,12 @@ export async function createRequestsFromDraft(req, res) {
             requestorDefaultHexRotation,
           );
 
+          const resolvedFinalHexRotation = resolveFinalHexRotationValue({
+            requestorHexRotation: resolvedRequestorHexRotation,
+            manufacturerHexRotation:
+              requestorDefaultManufacturerHexRotation || undefined,
+          });
+
           const newRequest = {
             requestId,
             requestor: req.user._id,
@@ -1062,8 +1094,15 @@ export async function createRequestsFromDraft(req, res) {
               ...(item.caseInfosWithFile || {}),
               anodizingEnabled: requestorAnodizingEnabled,
               requestorHexRotation: resolvedRequestorHexRotation,
-              finalHexRotation: resolvedRequestorHexRotation,
+              finalHexRotation: resolvedFinalHexRotation,
             },
+            ...(requestorDefaultManufacturerHexRotation
+              ? {
+                  rnd: {
+                    manufacturerHexRotation: requestorDefaultManufacturerHexRotation,
+                  },
+                }
+              : {}),
             manufacturerStage: "의뢰",
           };
 
@@ -1180,11 +1219,16 @@ export async function createRequestsFromDraft(req, res) {
               draftCaseId: item.caseId,
               businessAnchorId: shippingOrgId || null,
               defaultRequestorHexRotation: requestorDefaultHexRotation,
+              defaultManufacturerHexRotation:
+                requestorDefaultManufacturerHexRotation,
               draftRequestorHexRotation: String(
                 item.caseInfosWithFile?.requestorHexRotation || "",
               ),
               savedRequestorHexRotation: String(
                 newRequest?.caseInfos?.requestorHexRotation || "",
+              ),
+              savedManufacturerHexRotation: String(
+                newRequest?.rnd?.manufacturerHexRotation || "",
               ),
               savedFinalHexRotation: String(
                 newRequest?.caseInfos?.finalHexRotation || "",

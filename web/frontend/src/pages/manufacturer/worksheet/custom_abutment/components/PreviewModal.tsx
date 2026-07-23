@@ -39,6 +39,20 @@ type PreviewFiles = {
   finishLineSource?: "caseInfos" | "file" | null;
 };
 
+type ManufacturerHexRotationMode = "보정" | "무보정";
+
+const normalizeManufacturerHexRotationMode = (
+  value: unknown,
+): ManufacturerHexRotationMode | null => {
+  const raw = String(value || "").trim();
+  // canonical 우선
+  if (raw === "보정" || raw === "무보정") return raw;
+  // legacy fallback: 0 => 보정, 30 => 무보정
+  if (raw === "0") return "보정";
+  if (raw === "30") return "무보정";
+  return null;
+};
+
 const UNMACHINABLE_REASON_PRESETS = [
   "얇은 부위 찢어지고 휘어짐",
   "이머전스 프로파일 낮아서 커프 부위 툴 진입 불가",
@@ -335,7 +349,7 @@ type PreviewModalProps = {
   onRestoreUnmachinable?: (req: ManufacturerRequest) => Promise<void>;
   onSaveManufacturerHexRotation?: (
     req: ManufacturerRequest,
-    value: "0" | "30",
+    value: ManufacturerHexRotationMode,
   ) => Promise<void>;
   onOpenNextRequest?: (currentReqId: string) => Promise<void>;
   setSearchParams: (
@@ -413,9 +427,8 @@ export const PreviewModal = ({
   const [guidedFinishLineOverridePoints, setGuidedFinishLineOverridePoints] =
     useState<number[][] | null>(null);
   const [hexRotationSaving, setHexRotationSaving] = useState(false);
-  const [manufacturerHexRotationDraft, setManufacturerHexRotationDraft] = useState<
-    "0" | "30"
-  >("0");
+  const [manufacturerHexRotationDraft, setManufacturerHexRotationDraft] =
+    useState<ManufacturerHexRotationMode>("보정");
   const req = previewFiles.request as ManufacturerRequest | null;
   const lastStableReqRef = useRef<ManufacturerRequest | null>(null);
 
@@ -523,17 +536,12 @@ export const PreviewModal = ({
     const requestorHex =
       String((req as any)?.caseInfos?.requestorHexRotation || "").trim() ===
       "30"
-        ? "30"
-        : "0";
-    const manufacturerHex = String(
-      (req as any)?.rnd?.manufacturerHexRotation || "",
-    ).trim();
-    const effectiveHex =
-      manufacturerHex === "30"
-        ? "30"
-        : manufacturerHex === "0"
-          ? "0"
-          : requestorHex;
+        ? "무보정"
+        : "보정";
+    const manufacturerHex = normalizeManufacturerHexRotationMode(
+      (req as any)?.rnd?.manufacturerHexRotation,
+    );
+    const effectiveHex = manufacturerHex || requestorHex;
     setManufacturerHexRotationDraft(effectiveHex);
 
     if (tokens.length) {
@@ -635,19 +643,7 @@ export const PreviewModal = ({
   const isUnmachinable = Boolean((activeReq as any)?.rnd?.unmachinableAt);
   const shouldShowUnmachinableWarning = isFinishLineMinZRisky && !isUnmachinable;
 
-  const requestorHexRotation =
-    String((activeReq as any)?.caseInfos?.requestorHexRotation || "").trim() ===
-    "30"
-      ? "30"
-      : "0";
-  const manufacturerHexRotationSaved =
-    String((activeReq as any)?.rnd?.manufacturerHexRotation || "").trim() ===
-    "30"
-      ? "30"
-      : String((activeReq as any)?.rnd?.manufacturerHexRotation || "").trim() ===
-            "0"
-        ? "0"
-        : null;
+
   const currentReviewStageKey = getReviewStageKeyByTab({
     stage,
     isCamStage,
@@ -1361,7 +1357,9 @@ export const PreviewModal = ({
     }
   };
 
-  const handleSaveManufacturerHexRotation = async (next: "0" | "30") => {
+  const handleSaveManufacturerHexRotation = async (
+    next: ManufacturerHexRotationMode,
+  ) => {
     if (!onSaveManufacturerHexRotation || hexRotationSaving || reviewSaving) {
       return;
     }
@@ -1595,7 +1593,8 @@ export const PreviewModal = ({
                 <Select
                   value={manufacturerHexRotationDraft}
                   onValueChange={(value) => {
-                    const next = value === "30" ? "30" : "0";
+                    const next: ManufacturerHexRotationMode =
+                      value === "무보정" ? "무보정" : "보정";
                     void handleSaveManufacturerHexRotation(next);
                   }}
                   disabled={
@@ -1606,10 +1605,10 @@ export const PreviewModal = ({
                     <SelectValue placeholder="보정" />
                   </SelectTrigger>
                   <SelectContent align="end" className="min-w-[118px]">
-                    <SelectItem value="0" className="text-[12px] font-medium">
+                    <SelectItem value="보정" className="text-[12px] font-medium">
                       보정
                     </SelectItem>
-                    <SelectItem value="30" className="text-[12px] font-medium">
+                    <SelectItem value="무보정" className="text-[12px] font-medium">
                       무보정
                     </SelectItem>
                   </SelectContent>

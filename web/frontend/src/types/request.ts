@@ -297,7 +297,9 @@ export interface RequestBase {
     unmachinableFromStage?: string | null;
     unmachinableReason?: string | null;
     memo?: string | null;
-    manufacturerHexRotation?: "0" | "30" | null;
+    // canonical: "보정" | "무보정"
+    // legacy "0"|"30"은 하위호환 입력/표시용으로만 사용
+    manufacturerHexRotation?: "보정" | "무보정" | null;
     manufacturerHexRotationUpdatedAt?: string | null;
     manufacturerHexRotationUpdatedBy?: string | null;
     memoUpdatedAt?: string | null;

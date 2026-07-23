@@ -1344,18 +1344,27 @@ export const RequestPage = ({
   const [bulkCamRegenerating, setBulkCamRegenerating] = useState(false);
 
   const handleSaveManufacturerHexRotation = useCallback(
-    async (req: ManufacturerRequest, value: "0" | "30") => {
+    async (req: ManufacturerRequest, value: "보정" | "무보정") => {
       if (!req?._id) return;
       const requestMongoId = String(req._id || "").trim();
-      const nextValue = value === "30" ? "30" : "0";
 
-      const prevManufacturer =
-        String((req as any)?.rnd?.manufacturerHexRotation || "").trim() === "30"
-          ? "30"
-          : String((req as any)?.rnd?.manufacturerHexRotation || "").trim() ===
-              "0"
-            ? "0"
-            : null;
+      // canonical 우선, legacy fallback: "0" => 보정, "30" => 무보정
+      const normalizeManufacturerHexMode = (
+        raw: unknown,
+      ): "보정" | "무보정" => {
+        const v = String(raw || "").trim();
+        if (v === "무보정" || v === "30") return "무보정";
+        return "보정";
+      };
+      const toFinalHexRotation = (mode: "보정" | "무보정"): "0" | "30" =>
+        mode === "무보정" ? "30" : "0";
+
+      const nextValue: "보정" | "무보정" =
+        value === "무보정" ? "무보정" : "보정";
+
+      const prevManufacturer = normalizeManufacturerHexMode(
+        (req as any)?.rnd?.manufacturerHexRotation,
+      );
       const prevFinal: "0" | "30" =
         String((req as any)?.caseInfos?.finalHexRotation || "").trim() === "30"
           ? "30"
@@ -1372,7 +1381,7 @@ export const RequestPage = ({
             ...item,
             caseInfos: {
               ...(item.caseInfos || {}),
-              finalHexRotation: nextValue,
+              finalHexRotation: toFinalHexRotation(nextValue),
             },
             rnd: {
               ...(item.rnd || {}),
@@ -1400,13 +1409,10 @@ export const RequestPage = ({
           throw new Error(data?.message || "헥스 회전 저장에 실패했습니다.");
         }
 
-        const savedManufacturer =
-          String(data?.data?.manufacturerHexRotation || "").trim() === "30"
-            ? "30"
-            : "0";
-        const savedManufacturerLabel =
-          savedManufacturer === "30" ? "무보정" : "보정";
-        const savedFinal =
+        const savedManufacturer = normalizeManufacturerHexMode(
+          data?.data?.manufacturerHexRotation,
+        );
+        const savedFinal: "0" | "30" =
           String(data?.data?.finalHexRotation || "").trim() === "30" ? "30" : "0";
 
         pageState.setRequests((prev) =>
@@ -1437,7 +1443,7 @@ export const RequestPage = ({
 
         toast({
           title: "헥스 회전 저장 완료",
-          description: `제조사 기준 ${savedManufacturerLabel}으로 저장되었습니다.`,
+          description: `제조사 기준 ${savedManufacturer}으로 저장되었습니다.`,
         });
       } catch (e: any) {
         pageState.setRequests((prev) =>

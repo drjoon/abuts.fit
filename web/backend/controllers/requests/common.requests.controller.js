@@ -209,12 +209,24 @@ const normalizeHexRotationValue = (value) => {
   return "0";
 };
 
+const normalizeManufacturerHexRotationMode = (value) => {
+  const v = String(value || "").trim();
+  // canonical
+  if (v === "무보정") return "무보정";
+  if (v === "보정") return "보정";
+  // legacy fallback: "30" => 무보정, "0" => 보정
+  if (v === "30") return "무보정";
+  if (v === "0") return "보정";
+  return "보정";
+};
+
 const resolveFinalHexRotationValue = ({
   requestorHexRotation,
   manufacturerHexRotation,
 }) => {
-  if (String(manufacturerHexRotation || "").trim() === "30") return "30";
-  if (String(manufacturerHexRotation || "").trim() === "0") return "0";
+  const mode = normalizeManufacturerHexRotationMode(manufacturerHexRotation);
+  if (mode === "무보정") return "30";
+  if (mode === "보정") return "0";
   return normalizeHexRotationValue(requestorHexRotation);
 };
 
@@ -1978,7 +1990,7 @@ export const confirmAllRndUnmachinableByRequestor = asyncHandler(
 
 export const updateRndHexRotation = asyncHandler(async (req, res) => {
   const { id } = req.params;
-  const manufacturerHexRotation = normalizeHexRotationValue(
+  const manufacturerHexRotation = normalizeManufacturerHexRotationMode(
     req.body?.manufacturerHexRotation,
   );
 
@@ -2019,6 +2031,8 @@ export const updateRndHexRotation = asyncHandler(async (req, res) => {
     manufacturerHexRotation,
   });
 
+  const requestorBusinessAnchorId = String(request.businessAnchorId || "").trim();
+
   request.set("rnd.manufacturerHexRotation", manufacturerHexRotation);
   request.set("rnd.manufacturerHexRotationUpdatedAt", new Date());
   request.set(
@@ -2028,9 +2042,20 @@ export const updateRndHexRotation = asyncHandler(async (req, res) => {
   request.set("caseInfos.requestorHexRotation", requestorHexRotation);
   request.set("caseInfos.finalHexRotation", finalHexRotation);
 
-  await request.save();
+  if (Types.ObjectId.isValid(requestorBusinessAnchorId)) {
+    await BusinessAnchor.updateOne(
+      { _id: new Types.ObjectId(requestorBusinessAnchorId) },
+      {
+        $set: {
+          "requestSettings.defaultManufacturerHexRotation":
+            manufacturerHexRotation,
+          "requestSettings.updatedAt": new Date(),
+        },
+      },
+    );
+  }
 
-  const requestorBusinessAnchorId = String(request.businessAnchorId || "").trim();
+  await request.save();
 
   if (requestorBusinessAnchorId) {
     try {

@@ -125,6 +125,16 @@ const businessAnchorSchema = new mongoose.Schema(
         enum: ["0", "30"],
         default: "0",
       },
+      // 제조사 워크시트(PreviewModal)에서 설정하는 의뢰자(사업체) 단위 기본 헥스 회전값
+      // - canonical: "보정" | "무보정"
+      // - legacy 매핑(주석): 0 => 보정, 30 => 무보정
+      // - 저장 주체: 제조사
+      // - 적용 대상: 해당 businessAnchorId의 이후 신규 의뢰
+      defaultManufacturerHexRotation: {
+        type: String,
+        enum: ["보정", "무보정"],
+        default: null,
+      },
       updatedAt: {
         type: Date,
         default: null,
