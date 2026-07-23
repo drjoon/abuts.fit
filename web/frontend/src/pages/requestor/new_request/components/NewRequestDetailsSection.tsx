@@ -538,6 +538,7 @@ export function NewRequestDetailsSection({
 
   const hasActiveSession = files.length > 0;
   const hasCompanionOnlySession = files.length === 0 && companionFiles.length > 0;
+  const hasAnyAttachment = hasActiveSession || hasCompanionOnlySession;
   const [detailIndex, setDetailIndex] = useState<number | null>(null);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [
@@ -1295,14 +1296,14 @@ export function NewRequestDetailsSection({
 
           <div
             ref={listContainerRef}
-            className="flex flex-col gap-2.5 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 px-2 py-2 flex-1 min-h-0 focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0 -mx-1"
+            className={`flex flex-col gap-2.5 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 px-2 py-2 flex-1 min-h-0 focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0 -mx-1 ${hasAnyAttachment ? "" : "justify-center"}`}
             tabIndex={0}
             role="listbox"
             aria-label="첨부 파일 목록"
             onKeyDown={handleKeyboardNavigation}
           >
             <div
-              className={`shrink-0 w-full border-2 border-dashed rounded-2xl p-3 md:p-4 text-center transition-colors flex flex-col items-center justify-center gap-1.5 cursor-pointer ${
+              className={`shrink-0 w-full border-2 border-dashed rounded-2xl text-center transition-colors flex flex-col items-center justify-center gap-1.5 cursor-pointer ${hasAnyAttachment ? "p-3 md:p-4" : "p-5 md:p-6 max-w-[420px] mx-auto"} ${
                 isDragOver
                   ? "border-primary bg-primary/5"
                   : "border-gray-300 hover:border-primary/50 bg-white"
