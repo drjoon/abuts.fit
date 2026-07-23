@@ -839,7 +839,15 @@ export const PreviewModal = ({
       });
       return;
     }
-    if (twoPhasing || isUploading) return;
+    if (twoPhasing || isUploading || hexRotationSaving) {
+      if (hexRotationSaving) {
+        toast({
+          title: "헥스 회전 저장 중",
+          description: "헥스 회전 저장 완료 후 다시 시도해주세요.",
+        });
+      }
+      return;
+    }
 
     setTwoPhasing(true);
     try {
@@ -913,7 +921,15 @@ export const PreviewModal = ({
       });
       return;
     }
-    if (regenerating || isUploading) return;
+    if (regenerating || isUploading || hexRotationSaving) {
+      if (hexRotationSaving) {
+        toast({
+          title: "헥스 회전 저장 중",
+          description: "헥스 회전 저장 완료 후 다시 시도해주세요.",
+        });
+      }
+      return;
+    }
 
     if (isCamStage) {
       setRegenerating(true);
@@ -2113,11 +2129,13 @@ export const PreviewModal = ({
                       <button
                         type="button"
                         className={`inline-flex items-center justify-center h-8 w-8 rounded-md border text-[13px] font-medium transition ${
-                          twoPhasing || regenerating || isUploading
+                          twoPhasing || regenerating || isUploading || hexRotationSaving
                             ? "border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed"
                             : "border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100"
                         }`}
-                        disabled={twoPhasing || regenerating || isUploading}
+                        disabled={
+                          twoPhasing || regenerating || isUploading || hexRotationSaving
+                        }
                         onClick={(e) => {
                           e.preventDefault();
                           e.stopPropagation();
