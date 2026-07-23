@@ -74,15 +74,7 @@ const getStem = (name: string) => {
   return trimmed.slice(0, dot);
 };
 
-const isLikelyThreeShapeMetadataXml = (fileName: string) => {
-  const lower = String(fileName || "").toLowerCase();
-  return (
-    lower.includes("implantdirectionposition") ||
-    lower.includes("dentalproject") ||
-    lower.includes("3shape") ||
-    lower.includes("order")
-  );
-};
+
 
 const buildStemKeys = (stemRaw: string) => {
   const stem = String(stemRaw || "").trim().toLowerCase();
@@ -591,7 +583,6 @@ export function NewRequestDetailsSection({
 
       const accepted: File[] = [];
       const rejectedExt: string[] = [];
-      const rejectedXml: string[] = [];
       const ignoredPts: string[] = [];
 
       for (const file of selected) {
@@ -602,10 +593,6 @@ export function NewRequestDetailsSection({
         }
         if (!CAD_COMPANION_EXTS.includes(ext as (typeof CAD_COMPANION_EXTS)[number])) {
           rejectedExt.push(file.name);
-          continue;
-        }
-        if (ext === ".xml" && !isLikelyThreeShapeMetadataXml(file.name)) {
-          rejectedXml.push(file.name);
           continue;
         }
         accepted.push(file);
@@ -621,15 +608,7 @@ export function NewRequestDetailsSection({
         });
       }
 
-      if (rejectedXml.length) {
-        toast({
-          title: "지원하지 않는 XML 파일",
-          description:
-            "XML은 3Shape 메타파일만 받을 수 있어요. 예: ImplantDirectionPosition*.xml",
-          variant: "destructive",
-          duration: 4500,
-        });
-      }
+
 
       if (ignoredPts.length) {
         toast({

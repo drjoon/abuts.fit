@@ -27,8 +27,9 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { StlPreviewViewer } from "@/features/requests/components/StlPreviewViewer";
+
 
 /**
  * New Request 페이지 (리팩터링 버전)
@@ -39,8 +40,6 @@ import { Button } from "@/components/ui/button";
 export const NewRequestPage = () => {
   const { id: existingRequestId } = useParams<{ id?: string }>();
   const navigate = useNavigate();
-  const FILE_SIZE_THRESHOLD_BYTES = 30 * 1024 * 1024;
-  const ABUTMENT_MAX_BYTES = 1 * 1024 * 1024; // 어벗 STL은 1MB 이하만 허용
 
   const { toast } = useToast();
 
@@ -406,48 +405,14 @@ export const NewRequestPage = () => {
     ".xml",
   ]);
 
-  const ABUT_HINT_KEYWORDS = [
-    "abut",
-    "abutment",
-    "tibase",
-    "ti-base",
-    "customabut",
-    "custom_abut",
-    "angulated",
-    "hybrid",
-    "어벗",
-  ];
-
-  const CROWN_HINT_KEYWORDS = [
-    "crown",
-    "coping",
-    "bridge",
-    "pontic",
-    "inlay",
-    "onlay",
-    "veneer",
-    "provisional",
-    "temporary",
-    "temp",
-    "zirconia",
-    "fullarch",
-    "full-arch",
-    "크라운",
-    "브릿지",
-    "코핑",
-  ];
-
-  type AmbiguousUploadCandidate = {
+  type StlSelectionCandidate = {
     id: string;
     file: File;
-    reason: string;
-    recommended: boolean;
   };
 
   type ClassifiedUploadBatch = {
-    stlFilesToUpload: File[];
+    stlCandidates: StlSelectionCandidate[];
     companionFilesToHandle: File[];
-    ambiguousFiles: AmbiguousUploadCandidate[];
     rejectedFiles: { name: string; reason: string }[];
     ignoredFiles: { name: string; reason: string }[];
   };
@@ -487,49 +452,17 @@ export const NewRequestPage = () => {
     return [...map.values()];
   };
 
-  const isLikelyCrownDesignStl = (fileName: string) => {
-    const lower = String(fileName || "").toLowerCase();
-    const hasCrownHint = CROWN_HINT_KEYWORDS.some((k) => lower.includes(k));
-    if (!hasCrownHint) return false;
-    const hasAbutHint = ABUT_HINT_KEYWORDS.some((k) => lower.includes(k));
-    return !hasAbutHint;
-  };
-
-  const isLikelyAbutStlName = (fileName: string) => {
-    const lower = String(fileName || "").toLowerCase();
-    return ABUT_HINT_KEYWORDS.some((k) => lower.includes(k));
-  };
-
-  const isLikelyThreeShapeMetadataXml = (fileName: string) => {
-    const lower = String(fileName || "").toLowerCase();
-    return (
-      lower.includes("implantdirectionposition") ||
-      lower.includes("dentalproject") ||
-      lower.includes("3shape") ||
-      lower.includes("order")
-    );
-  };
-
   const classifyIncomingFiles = (selectedFiles: File[]): ClassifiedUploadBatch => {
-    const stlFilesToUpload: File[] = [];
+    const stlCandidates: StlSelectionCandidate[] = [];
     const companionFilesToHandle: File[] = [];
-    const ambiguousFiles: AmbiguousUploadCandidate[] = [];
     const rejectedFiles: { name: string; reason: string }[] = [];
     const ignoredFiles: { name: string; reason: string }[] = [];
 
     selectedFiles.forEach((file) => {
       const ext = getFileExtLower(file.name);
-      const sizeMb = file.size / (1024 * 1024);
 
       if (ext === ".xml") {
-        if (isLikelyThreeShapeMetadataXml(file.name)) {
-          companionFilesToHandle.push(file);
-        } else {
-          rejectedFiles.push({
-            name: file.name,
-            reason: "XML 파일은 3Shape 메타파일(예: ImplantDirectionPosition)만 받습니다.",
-          });
-        }
+        companionFilesToHandle.push(file);
         return;
       }
 
@@ -546,61 +479,21 @@ export const NewRequestPage = () => {
         return;
       }
 
-      if (ext !== ".stl") {
-        rejectedFiles.push({
-          name: file.name,
-          reason:
-            "필요한 파일만 받습니다. 어벗 STL과 구성정보 파일만 업로드할 수 있어요.",
-        });
+      if (ext === ".stl") {
+        stlCandidates.push({ id: toNormalizedFileKey(file), file });
         return;
       }
 
-      if (file.size > ABUTMENT_MAX_BYTES) {
-        ambiguousFiles.push({
-          id: toNormalizedFileKey(file),
-          file,
-          recommended: false,
-          reason: `STL (${sizeMb.toFixed(2)}MB): 1MB 초과라 크라운/브릿지 가능성이 높아 비추천합니다.`,
-        });
-        return;
-      }
-
-      if (file.size >= FILE_SIZE_THRESHOLD_BYTES) {
-        rejectedFiles.push({
-          name: file.name,
-          reason: "30MB 이상 STL은 제외됩니다.",
-        });
-        return;
-      }
-
-      if (isLikelyCrownDesignStl(file.name)) {
-        rejectedFiles.push({
-          name: file.name,
-          reason: "크라운/브릿지 디자인 STL로 보여서 제외했습니다.",
-        });
-        return;
-      }
-
-      if (isLikelyAbutStlName(file.name)) {
-        stlFilesToUpload.push(file);
-        return;
-      }
-
-      const likelyBySize = file.size >= 80 * 1024 && file.size <= 12 * 1024 * 1024;
-      ambiguousFiles.push({
-        id: toNormalizedFileKey(file),
-        file,
-        recommended: likelyBySize,
-        reason: likelyBySize
-          ? `STL (${sizeMb.toFixed(2)}MB): 어벗 가능성이 높습니다.`
-          : `STL (${sizeMb.toFixed(2)}MB): 파일명 기준으로 용도 판단이 어려워요.`,
+      rejectedFiles.push({
+        name: file.name,
+        reason:
+          "필요한 파일만 받습니다. STL과 구성정보 파일만 업로드할 수 있어요.",
       });
     });
 
     return {
-      stlFilesToUpload,
+      stlCandidates,
       companionFilesToHandle,
-      ambiguousFiles,
       rejectedFiles,
       ignoredFiles,
     };
@@ -619,12 +512,16 @@ export const NewRequestPage = () => {
     }
   };
 
-  const applyClassifiedBatch = (batch: ClassifiedUploadBatch, selection?: Record<string, boolean>) => {
-    const selectedAmbiguous = (batch.ambiguousFiles || [])
-      .filter((item) => selection?.[item.id])
-      .map((item) => item.file);
-
-    const stlFiles = [...batch.stlFilesToUpload, ...selectedAmbiguous];
+  const applyClassifiedBatch = (
+    batch: ClassifiedUploadBatch,
+    selection?: Record<string, boolean>,
+  ) => {
+    const stlFiles =
+      batch.stlCandidates.length <= 1
+        ? batch.stlCandidates.map((item) => item.file)
+        : batch.stlCandidates
+            .filter((item) => selection?.[item.id])
+            .map((item) => item.file);
 
     if (batch.companionFilesToHandle.length > 0) {
       companionFileHandlerRef.current(batch.companionFilesToHandle);
@@ -680,19 +577,18 @@ export const NewRequestPage = () => {
 
     const batch = classifyIncomingFiles(normalized);
 
-    if (batch.ambiguousFiles.length === 0) {
-      applyClassifiedBatch(batch);
+    if (batch.stlCandidates.length >= 2) {
+      const initialSelection: Record<string, boolean> = {};
+      for (const item of batch.stlCandidates) {
+        initialSelection[item.id] = false;
+      }
+      setReviewBatch(batch);
+      setReviewSelection(initialSelection);
+      setFileReviewOpen(true);
       return;
     }
 
-    const initialSelection: Record<string, boolean> = {};
-    for (const item of batch.ambiguousFiles) {
-      initialSelection[item.id] = item.recommended;
-    }
-
-    setReviewBatch(batch);
-    setReviewSelection(initialSelection);
-    setFileReviewOpen(true);
+    applyClassifiedBatch(batch);
   };
 
   const readAllEntries = async (reader: {
@@ -892,52 +788,56 @@ export const NewRequestPage = () => {
         />
 
         <Dialog open={fileReviewOpen} onOpenChange={setFileReviewOpen}>
-          <DialogContent className="sm:max-w-[680px]">
+          <DialogContent className="sm:max-w-[980px]">
             <DialogHeader>
-              <DialogTitle>파일 확인 후 업로드</DialogTitle>
+              <DialogTitle>업로드할 STL 선택</DialogTitle>
               <DialogDescription>
-                어벗 디자인 파일을 선택해주세요.
-                <span className="font-medium">
-                  추천 파일은 파란 배지로 강조되어 있습니다.
-                </span>
-                <br />
+                커스텀 어벗으로 의뢰할 STL만 선택해주세요. (크라운 STL은 선택 해제)
               </DialogDescription>
             </DialogHeader>
 
-            <div className="max-h-[360px] overflow-y-auto rounded-md border p-2 space-y-1.5">
-              {(reviewBatch?.ambiguousFiles || []).map((item) => {
-                const checked = Boolean(reviewSelection[item.id]);
-                return (
-                  <label
-                    key={item.id}
-                    className={`flex items-start gap-3 rounded-md border px-3 py-2 cursor-pointer ${
-                      checked ? "border-blue-300 bg-blue-50/60" : "border-slate-200"
-                    }`}
-                  >
-                    <Checkbox
-                      checked={checked}
-                      onCheckedChange={(next) => {
-                        setReviewSelection((prev) => ({
-                          ...prev,
-                          [item.id]: Boolean(next),
-                        }));
-                      }}
-                      className="mt-0.5"
-                    />
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium truncate">{item.file.name}</span>
-                        {item.recommended ? (
-                          <Badge className="bg-blue-600 hover:bg-blue-600">추천 업로드</Badge>
-                        ) : (
-                          <Badge variant="secondary">비추천</Badge>
-                        )}
+            <div className="rounded-md border p-3 max-h-[70vh] overflow-y-auto">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {(reviewBatch?.stlCandidates || []).map((item) => {
+                  const checked = Boolean(reviewSelection[item.id]);
+                  const sizeMb = (item.file.size / (1024 * 1024)).toFixed(2);
+                  return (
+                    <label
+                      key={item.id}
+                      className={`relative rounded-md border p-2 cursor-pointer ${
+                        checked ? "border-blue-300 bg-blue-50/60" : "border-slate-200"
+                      }`}
+                    >
+                      <Checkbox
+                        checked={checked}
+                        onCheckedChange={(next) => {
+                          setReviewSelection((prev) => ({
+                            ...prev,
+                            [item.id]: Boolean(next),
+                          }));
+                        }}
+                        className="absolute left-2 top-2 z-10 bg-white"
+                      />
+                      <div className="h-48 w-full overflow-hidden rounded border border-slate-200 bg-white">
+                        <StlPreviewViewer
+                          file={item.file}
+                          showOverlay={false}
+                          className="h-full w-full"
+                        />
                       </div>
-                      <p className="text-xs text-slate-600 mt-0.5">{item.reason}</p>
-                    </div>
-                  </label>
-                );
-              })}
+                      <div className="mt-2 min-w-0">
+                        <div
+                          className="text-sm font-semibold leading-snug truncate"
+                          title={item.file.name}
+                        >
+                          {item.file.name}
+                        </div>
+                        <p className="text-xs text-slate-500 mt-1">STL · {sizeMb}MB</p>
+                      </div>
+                    </label>
+                  );
+                })}
+              </div>
             </div>
 
             <DialogFooter>
@@ -961,7 +861,7 @@ export const NewRequestPage = () => {
                   setReviewSelection({});
                 }}
               >
-                선택 파일 업로드
+                선택한 STL 업로드
               </Button>
             </DialogFooter>
           </DialogContent>
