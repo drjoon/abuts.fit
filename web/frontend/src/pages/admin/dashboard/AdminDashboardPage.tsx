@@ -116,12 +116,38 @@ type HappyCallCompletionItem = {
   businessAnchorId: string;
   businessName?: string;
   companyName?: string;
+  representativeName?: string;
+  phoneNumber?: string;
+  email?: string;
+  address?: string;
+  addressDetail?: string;
+  zipCode?: string;
+  businessNumber?: string;
   reasonCode?: string;
   note?: string;
   completedAt?: string | null;
   suppressUntil?: string | null;
   completedByName?: string;
   completedByEmail?: string;
+};
+
+type HappyCallBusinessDetail = {
+  businessAnchorId: string;
+  businessName?: string;
+  companyName?: string;
+  representativeName?: string;
+  phoneNumber?: string;
+  email?: string;
+  address?: string;
+  addressDetail?: string;
+  zipCode?: string;
+  businessNumber?: string;
+};
+
+type HappyCallMemoEntry = {
+  id: string;
+  message: string;
+  savedAt: string;
 };
 
 type PricingSsotHealth = {
@@ -212,6 +238,17 @@ const toDateTimeLabel = (raw?: string | null) => {
   return d.toLocaleString("ko-KR");
 };
 
+const toHappyCallMemoLine = (entry: HappyCallMemoEntry) => {
+  return `[${toDateTimeLabel(entry.savedAt)}] ${String(entry.message || "").trim()}`;
+};
+
+const toHappyCallMemoPayload = (entries: HappyCallMemoEntry[]) => {
+  return entries
+    .map((entry) => toHappyCallMemoLine(entry))
+    .filter((line) => Boolean(String(line || "").trim()))
+    .join("\n");
+};
+
 export const AdminDashboardPage = () => {
   const { user, token } = useAuthStore();
   const navigate = useNavigate();
@@ -254,9 +291,27 @@ export const AdminDashboardPage = () => {
   });
   const [happyCallMemoDraft, setHappyCallMemoDraft] = useState("");
   const [happyCallNotesByAnchor, setHappyCallNotesByAnchor] = useState<
-    Record<string, { note: string; savedAt: string | null }>
+    Record<string, HappyCallMemoEntry[]>
   >({});
-  const [happyCallDetailItem, setHappyCallDetailItem] = useState<HappyCallItem | null>(null);
+  const [happyCallDetailItem, setHappyCallDetailItem] = useState<HappyCallBusinessDetail | null>(null);
+
+  const openHappyCallBusinessDetail = (
+    source: Partial<HappyCallBusinessDetail> | null | undefined,
+  ) => {
+    if (!source) return;
+    setHappyCallDetailItem({
+      businessAnchorId: String(source.businessAnchorId || "").trim(),
+      businessName: String(source.businessName || "").trim(),
+      companyName: String(source.companyName || "").trim(),
+      representativeName: String(source.representativeName || "").trim(),
+      phoneNumber: String(source.phoneNumber || "").trim(),
+      email: String(source.email || "").trim(),
+      address: String(source.address || "").trim(),
+      addressDetail: String(source.addressDetail || "").trim(),
+      zipCode: String(source.zipCode || "").trim(),
+      businessNumber: String(source.businessNumber || "").trim(),
+    });
+  };
 
   const { data: riskSummaryResponse } = useQuery({
     queryKey: ["admin-dashboard-risk-summary", period],
@@ -537,7 +592,7 @@ export const AdminDashboardPage = () => {
         jsonBody: {
           businessAnchorId,
           reasonCodes,
-          note: String(noteRaw || "").slice(0, 500).trim(),
+          note: String(noteRaw || "").slice(0, 5000).trim(),
         },
       });
 
@@ -1276,8 +1331,10 @@ export const AdminDashboardPage = () => {
                     const showCompanyName =
                       Boolean(companyName) && companyName !== businessName;
 
-                    const memoEntry = happyCallNotesByAnchor[anchorId];
-                    const memoExists = Boolean(String(memoEntry?.note || "").trim());
+                    const memoEntries = Array.isArray(happyCallNotesByAnchor[anchorId])
+                      ? happyCallNotesByAnchor[anchorId]
+                      : [];
+                    const memoExists = memoEntries.length > 0;
 
                     return (
                       <div
@@ -1285,11 +1342,11 @@ export const AdminDashboardPage = () => {
                         className="rounded-md border px-3 py-2.5 bg-white cursor-pointer hover:border-blue-300 hover:bg-blue-50/20 transition"
                         role="button"
                         tabIndex={0}
-                        onClick={() => setHappyCallDetailItem(item)}
+                        onClick={() => openHappyCallBusinessDetail(item)}
                         onKeyDown={(e) => {
                           if (e.key === "Enter" || e.key === " ") {
                             e.preventDefault();
-                            setHappyCallDetailItem(item);
+                            openHappyCallBusinessDetail(item);
                           }
                         }}
                       >
@@ -1368,13 +1425,11 @@ export const AdminDashboardPage = () => {
                               }`}
                               onClick={(e) => {
                                 e.stopPropagation();
-                                setHappyCallMemoDraft(
-                                  String(memoEntry?.note || "").slice(0, 500),
-                                );
+                                setHappyCallMemoDraft("");
                                 setHappyCallMemoDialog({ open: true, item });
                               }}
                             >
-                              메모
+                              메모{memoExists ? ` (${memoEntries.length})` : ""}
                             </button>
 
                             <button
@@ -1470,7 +1525,19 @@ export const AdminDashboardPage = () => {
                       const reverting = Boolean(revertingHappyCallByAnchor[rowAnchorId]);
 
                       return (
-                        <div key={row.id || `${row.businessAnchorId}-${row.completedAt}`} className="rounded-md border bg-white px-3 py-2.5">
+                        <div
+                          key={row.id || `${row.businessAnchorId}-${row.completedAt}`}
+                          className="rounded-md border bg-white px-3 py-2.5 cursor-pointer hover:border-blue-300 hover:bg-blue-50/20 transition"
+                          role="button"
+                          tabIndex={0}
+                          onClick={() => openHappyCallBusinessDetail(row)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              openHappyCallBusinessDetail(row);
+                            }
+                          }}
+                        >
                           <div className="flex items-start justify-between gap-2">
                             <div className="min-w-0">
                               <div className="text-sm font-semibold text-gray-900 truncate">
@@ -1490,7 +1557,8 @@ export const AdminDashboardPage = () => {
                                   : "border-amber-300 bg-white text-amber-700 hover:bg-amber-50"
                               }`}
                               disabled={reverting || !rowAnchorId}
-                              onClick={() => {
+                              onClick={(e) => {
+                                e.stopPropagation();
                                 void handleRevertHappyCallByAnchor(
                                   rowAnchorId,
                                   businessName || companyName || "의뢰자",
@@ -1543,21 +1611,32 @@ export const AdminDashboardPage = () => {
               의 해피콜을 완료 처리할까요?
             </div>
             <div className="space-y-1">
-              <div className="text-xs font-medium text-gray-700">저장될 메모</div>
-              <div className="rounded-md border border-slate-200 bg-slate-50 px-2.5 py-2 text-xs text-slate-700 whitespace-pre-wrap break-words min-h-[64px]">
-                {String(
-                  happyCallNotesByAnchor[
-                    String(happyCallConfirm.item?.businessAnchorId || "").trim()
-                  ]?.note || "",
-                ).trim() || "메모 없음"}
-              </div>
-              <div className="text-[11px] text-slate-500">
-                저장 일시: {toDateTimeLabel(
-                  happyCallNotesByAnchor[
-                    String(happyCallConfirm.item?.businessAnchorId || "").trim()
-                  ]?.savedAt || null,
-                )}
-              </div>
+              <div className="text-xs font-medium text-gray-700">저장될 메모 로그</div>
+              {(() => {
+                const anchorId = String(happyCallConfirm.item?.businessAnchorId || "").trim();
+                const memoEntries = Array.isArray(happyCallNotesByAnchor[anchorId])
+                  ? happyCallNotesByAnchor[anchorId]
+                  : [];
+
+                if (!memoEntries.length) {
+                  return (
+                    <div className="rounded-md border border-slate-200 bg-slate-50 px-2.5 py-2 text-xs text-slate-700 min-h-[64px]">
+                      메모 없음
+                    </div>
+                  );
+                }
+
+                return (
+                  <div className="space-y-1.5 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-2 max-h-[180px] overflow-auto">
+                    {memoEntries.map((entry) => (
+                      <div key={entry.id} className="rounded-md bg-white px-2 py-1.5 text-xs text-slate-700 border border-slate-200">
+                        <div className="text-[10px] text-slate-500 mb-0.5">{toDateTimeLabel(entry.savedAt)}</div>
+                        <div className="whitespace-pre-wrap break-words">{String(entry.message || "-")}</div>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
             </div>
           </div>
         }
@@ -1575,7 +1654,10 @@ export const AdminDashboardPage = () => {
             onClick: async () => {
               const target = happyCallConfirm.item;
               const anchorId = String(target?.businessAnchorId || "").trim();
-              const noteToSave = String(happyCallNotesByAnchor[anchorId]?.note || "");
+              const memoEntries = Array.isArray(happyCallNotesByAnchor[anchorId])
+                ? happyCallNotesByAnchor[anchorId]
+                : [];
+              const noteToSave = toHappyCallMemoPayload(memoEntries);
               setHappyCallConfirm({ open: false, item: null });
               if (!target) return;
               await handleCompleteHappyCall(target, noteToSave);
@@ -1592,29 +1674,54 @@ export const AdminDashboardPage = () => {
         }}
         title="해피콜 메모"
         description={
-          <div className="space-y-2 text-sm text-gray-700">
+          <div className="space-y-3 text-sm text-gray-700">
             <div>
               <span className="font-semibold text-gray-900">
                 {String(happyCallMemoDialog.item?.businessName || happyCallMemoDialog.item?.companyName || "해당 의뢰자")}
               </span>
-              의 대화 내용을 메모하세요.
+              의 대화 메모를 계속 추가하세요.
             </div>
-            <textarea
-              value={happyCallMemoDraft}
-              onChange={(e) =>
-                setHappyCallMemoDraft(String(e.target.value || "").slice(0, 500))
+
+            {(() => {
+              const anchorId = String(happyCallMemoDialog.item?.businessAnchorId || "").trim();
+              const memoEntries = Array.isArray(happyCallNotesByAnchor[anchorId])
+                ? happyCallNotesByAnchor[anchorId]
+                : [];
+
+              if (!memoEntries.length) {
+                return (
+                  <div className="rounded-md border border-dashed border-slate-300 bg-slate-50 px-2.5 py-2 text-xs text-slate-500">
+                    아직 저장된 메모가 없습니다. 아래에 새 메모를 입력해 추가하세요.
+                  </div>
+                );
               }
-              placeholder="예) 제품 만족도 좋음, 다음 주 추가 의뢰 예정"
-              className="w-full min-h-[120px] rounded-md border border-slate-300 px-2.5 py-2 text-xs text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-200"
-            />
+
+              return (
+                <div className="space-y-1.5 rounded-md border border-slate-200 bg-slate-50 p-2 max-h-[180px] overflow-auto">
+                  {memoEntries.map((entry) => (
+                    <div key={entry.id} className="rounded-md border border-slate-200 bg-white px-2 py-1.5">
+                      <div className="text-[10px] text-slate-500 mb-0.5">{toDateTimeLabel(entry.savedAt)}</div>
+                      <div className="text-xs text-slate-700 whitespace-pre-wrap break-words">
+                        {String(entry.message || "-")}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
+
+            <div className="space-y-1">
+              <div className="text-xs font-medium text-slate-700">새 메모 추가</div>
+              <textarea
+                value={happyCallMemoDraft}
+                onChange={(e) =>
+                  setHappyCallMemoDraft(String(e.target.value || "").slice(0, 500))
+                }
+                className="w-full min-h-[110px] rounded-md border border-slate-300 px-2.5 py-2 text-xs text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-200"
+              />
+            </div>
             <div className="flex items-center justify-between text-[11px] text-slate-500">
-              <span>
-                저장 일시: {toDateTimeLabel(
-                  happyCallNotesByAnchor[
-                    String(happyCallMemoDialog.item?.businessAnchorId || "").trim()
-                  ]?.savedAt || null,
-                )}
-              </span>
+              <span>저장 시 현재 시각이 자동으로 기록됩니다.</span>
               <span>{String(happyCallMemoDraft || "").length}/500</span>
             </div>
           </div>
@@ -1629,28 +1736,45 @@ export const AdminDashboardPage = () => {
             },
           },
           {
-            label: "저장",
+            label: "메모 추가",
             variant: "primary",
             onClick: () => {
               const anchorId = String(happyCallMemoDialog.item?.businessAnchorId || "").trim();
+              const message = String(happyCallMemoDraft || "").slice(0, 500).trim();
+
               if (!anchorId) {
                 setHappyCallMemoDialog({ open: false, item: null });
                 setHappyCallMemoDraft("");
                 return;
               }
+
+              if (!message) {
+                toast({
+                  title: "메모를 입력해주세요",
+                  description: "추가할 메모 내용을 입력한 뒤 저장해주세요.",
+                  variant: "destructive",
+                });
+                return;
+              }
+
               const savedAt = new Date().toISOString();
-              setHappyCallNotesByAnchor((prev) => ({
-                ...prev,
-                [anchorId]: {
-                  note: String(happyCallMemoDraft || "").slice(0, 500).trim(),
-                  savedAt,
-                },
-              }));
-              setHappyCallMemoDialog({ open: false, item: null });
+              const entry: HappyCallMemoEntry = {
+                id: `${savedAt}-${Math.random().toString(36).slice(2, 8)}`,
+                message,
+                savedAt,
+              };
+
+              setHappyCallNotesByAnchor((prev) => {
+                const current = Array.isArray(prev[anchorId]) ? prev[anchorId] : [];
+                return {
+                  ...prev,
+                  [anchorId]: [...current, entry],
+                };
+              });
               setHappyCallMemoDraft("");
               toast({
-                title: "메모 저장",
-                description: "해피콜 메모를 저장했습니다.",
+                title: "메모 추가",
+                description: "해피콜 메모가 누적 저장되었습니다.",
               });
             },
           },

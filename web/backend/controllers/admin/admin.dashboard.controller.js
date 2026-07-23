@@ -817,7 +817,8 @@ export async function listHappyCallCompletions(req, res) {
         .limit(limit)
         .populate({
           path: "businessAnchorId",
-          select: "name metadata.companyName",
+          select:
+            "name businessNumberNormalized metadata.companyName metadata.representativeName metadata.phoneNumber metadata.email metadata.address metadata.addressDetail metadata.zipCode metadata.businessNumber",
         })
         .populate({
           path: "completedBy",
@@ -849,6 +850,42 @@ export async function listHappyCallCompletions(req, res) {
               ? String(anchor?.metadata?.companyName || "").trim()
               : "";
 
+          const representativeName =
+            anchor && typeof anchor === "object"
+              ? String(anchor?.metadata?.representativeName || "").trim()
+              : "";
+
+          const phoneNumber =
+            anchor && typeof anchor === "object"
+              ? String(anchor?.metadata?.phoneNumber || "").trim()
+              : "";
+
+          const email =
+            anchor && typeof anchor === "object"
+              ? String(anchor?.metadata?.email || "").trim()
+              : "";
+
+          const address =
+            anchor && typeof anchor === "object"
+              ? String(anchor?.metadata?.address || "").trim()
+              : "";
+
+          const addressDetail =
+            anchor && typeof anchor === "object"
+              ? String(anchor?.metadata?.addressDetail || "").trim()
+              : "";
+
+          const zipCode =
+            anchor && typeof anchor === "object"
+              ? String(anchor?.metadata?.zipCode || "").trim()
+              : "";
+
+          const businessNumber =
+            anchor && typeof anchor === "object"
+              ? String(anchor?.metadata?.businessNumber || "").trim() ||
+                String(anchor?.businessNumberNormalized || "").trim()
+              : "";
+
           const completedByName =
             actor && typeof actor === "object"
               ? String(actor?.name || "").trim()
@@ -864,6 +901,13 @@ export async function listHappyCallCompletions(req, res) {
             businessAnchorId: anchorId,
             businessName,
             companyName,
+            representativeName,
+            phoneNumber,
+            email,
+            address,
+            addressDetail,
+            zipCode,
+            businessNumber,
             reasonCode: String(row?.reasonCode || ""),
             note: String(row?.note || ""),
             completedAt: toIsoOrNull(row?.completedAt),
@@ -889,7 +933,7 @@ export async function completeHappyCall(req, res) {
     const rawReasonCodes = Array.isArray(req.body?.reasonCodes)
       ? req.body.reasonCodes
       : [];
-    const note = String(req.body?.note || "").slice(0, 500).trim();
+    const note = String(req.body?.note || "").slice(0, 5000).trim();
 
     if (!businessAnchorId) {
       return res.status(400).json({

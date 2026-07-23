@@ -33,7 +33,7 @@ const adminHappyCallCompletionSchema = new mongoose.Schema(
       type: String,
       default: "",
       trim: true,
-      maxlength: 500,
+      maxlength: 5000,
     },
   },
   {
