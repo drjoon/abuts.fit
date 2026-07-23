@@ -75,6 +75,14 @@ const HAPPY_CALL_REASON_PRIORITY = {
 const HAPPY_CALL_GLOBAL_REASON_CODE = "__all__";
 const HAPPY_CALL_SUPPRESS_DAYS = 3650;
 
+const isGlobalHappyCallReasonCode = (reasonCodeRaw) => {
+  const reasonCode = String(reasonCodeRaw || "").trim();
+  return (
+    reasonCode === HAPPY_CALL_GLOBAL_REASON_CODE ||
+    reasonCode.startsWith(`${HAPPY_CALL_GLOBAL_REASON_CODE}:`)
+  );
+};
+
 const toDateOrNull = (value) => {
   if (!value) return null;
   const d = new Date(value);
@@ -185,6 +193,7 @@ export async function getDashboardStats(req, res) {
         .select({
           _id: 1,
           name: 1,
+          businessNumberNormalized: 1,
           metadata: 1,
           createdAt: 1,
           status: 1,
@@ -466,7 +475,8 @@ export async function getDashboardStats(req, res) {
           const anchorId = String(row?.businessAnchorId || "").trim();
           const reasonCode = String(row?.reasonCode || "").trim();
           if (!anchorId || !reasonCode) return "";
-          return `${anchorId}:${reasonCode}`;
+          if (!isGlobalHappyCallReasonCode(reasonCode)) return "";
+          return `${anchorId}:${HAPPY_CALL_GLOBAL_REASON_CODE}`;
         })
         .filter(Boolean),
     );
@@ -480,7 +490,7 @@ export async function getDashboardStats(req, res) {
           const anchorId = String(row?.businessAnchorId || "").trim();
           const reasonCode = String(row?.reasonCode || "").trim();
           if (!anchorId) return "";
-          if (reasonCode !== HAPPY_CALL_GLOBAL_REASON_CODE) return "";
+          if (!isGlobalHappyCallReasonCode(reasonCode)) return "";
           return anchorId;
         })
         .filter(Boolean),
@@ -594,8 +604,15 @@ export async function getDashboardStats(req, res) {
         businessAnchorId: anchorId,
         businessName: String(anchor?.name || "").trim() || "-",
         companyName: String(anchor?.metadata?.companyName || "").trim() || "",
+        representativeName: String(anchor?.metadata?.representativeName || "").trim() || "",
         phoneNumber: String(anchor?.metadata?.phoneNumber || "").trim() || "",
         email: String(anchor?.metadata?.email || "").trim() || "",
+        address: String(anchor?.metadata?.address || "").trim() || "",
+        addressDetail: String(anchor?.metadata?.addressDetail || "").trim() || "",
+        zipCode: String(anchor?.metadata?.zipCode || "").trim() || "",
+        businessNumber:
+          String(anchor?.metadata?.businessNumber || "").trim() ||
+          String(anchor?.businessNumberNormalized || "").trim() || "",
         createdAt: toIsoOrNull(anchorCreatedAt),
         firstCompletedAt: toIsoOrNull(firstCompletedAt),
         lastCompletedAt: toIsoOrNull(lastCompletedAt),
@@ -757,7 +774,7 @@ export async function listHappyCallCompletions(req, res) {
       : 0;
 
     const query = {
-      reasonCode: HAPPY_CALL_GLOBAL_REASON_CODE,
+      reasonCode: new RegExp(`^${HAPPY_CALL_GLOBAL_REASON_CODE}(?::|$)`),
     };
 
     if (days > 0) {
@@ -893,32 +910,27 @@ export async function completeHappyCall(req, res) {
       Date.now() + HAPPY_CALL_SUPPRESS_DAYS * 24 * 60 * 60 * 1000,
     );
 
-    await AdminHappyCallCompletion.findOneAndUpdate(
-      {
-        businessAnchorId,
-        reasonCode: HAPPY_CALL_GLOBAL_REASON_CODE,
-      },
-      {
-        $set: {
-          completedAt: new Date(),
-          completedBy: req.user?._id || null,
-          suppressUntil,
-          note,
-        },
-      },
-      {
-        upsert: true,
-        new: true,
-        setDefaultsOnInsert: true,
-      },
-    );
+    const completedAt = new Date();
+
+    const completionReasonCode = `${HAPPY_CALL_GLOBAL_REASON_CODE}:${completedAt.getTime()}`;
+
+    const created = await AdminHappyCallCompletion.create({
+      businessAnchorId,
+      reasonCode: completionReasonCode,
+      completedAt,
+      completedBy: req.user?._id || null,
+      suppressUntil,
+      note,
+    });
 
     return res.status(200).json({
       success: true,
       data: {
+        id: String(created?._id || ""),
         businessAnchorId,
         reasonCodes,
         suppressedScope: "anchor:all-reasons",
+        completedAt: completedAt.toISOString(),
         suppressUntil: suppressUntil.toISOString(),
       },
     });
@@ -946,9 +958,9 @@ export async function revertLastHappyCallCompletion(req, res) {
     if (businessAnchorId) {
       const target = await AdminHappyCallCompletion.findOne({
         businessAnchorId,
-        reasonCode: HAPPY_CALL_GLOBAL_REASON_CODE,
+        reasonCode: new RegExp(`^${HAPPY_CALL_GLOBAL_REASON_CODE}(?::|$)`),
       })
-        .sort({ updatedAt: -1 })
+        .sort({ completedAt: -1, updatedAt: -1 })
         .lean();
 
       if (!target?._id) {
@@ -971,17 +983,17 @@ export async function revertLastHappyCallCompletion(req, res) {
 
     let last = await AdminHappyCallCompletion.findOne({
       completedBy,
-      reasonCode: HAPPY_CALL_GLOBAL_REASON_CODE,
+      reasonCode: new RegExp(`^${HAPPY_CALL_GLOBAL_REASON_CODE}(?::|$)`),
     })
-      .sort({ updatedAt: -1 })
+      .sort({ completedAt: -1, updatedAt: -1 })
       .lean();
 
     // 운영 편의: completedBy 누락/불일치 케이스를 위해 최신 전역 이력으로 fallback
     if (!last?._id) {
       last = await AdminHappyCallCompletion.findOne({
-        reasonCode: HAPPY_CALL_GLOBAL_REASON_CODE,
+        reasonCode: new RegExp(`^${HAPPY_CALL_GLOBAL_REASON_CODE}(?::|$)`),
       })
-        .sort({ updatedAt: -1 })
+        .sort({ completedAt: -1, updatedAt: -1 })
         .lean();
     }
 

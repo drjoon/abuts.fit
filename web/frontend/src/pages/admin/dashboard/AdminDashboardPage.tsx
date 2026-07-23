@@ -70,8 +70,13 @@ type HappyCallItem = {
   businessAnchorId: string;
   businessName: string;
   companyName?: string;
+  representativeName?: string;
   phoneNumber?: string;
   email?: string;
+  address?: string;
+  addressDetail?: string;
+  zipCode?: string;
+  businessNumber?: string;
   createdAt?: string | null;
   firstCompletedAt?: string | null;
   lastCompletedAt?: string | null;
@@ -240,7 +245,18 @@ export const AdminDashboardPage = () => {
     open: false,
     item: null,
   });
-  const [happyCallNoteDraft, setHappyCallNoteDraft] = useState("");
+  const [happyCallMemoDialog, setHappyCallMemoDialog] = useState<{
+    open: boolean;
+    item: HappyCallItem | null;
+  }>({
+    open: false,
+    item: null,
+  });
+  const [happyCallMemoDraft, setHappyCallMemoDraft] = useState("");
+  const [happyCallNotesByAnchor, setHappyCallNotesByAnchor] = useState<
+    Record<string, { note: string; savedAt: string | null }>
+  >({});
+  const [happyCallDetailItem, setHappyCallDetailItem] = useState<HappyCallItem | null>(null);
 
   const { data: riskSummaryResponse } = useQuery({
     queryKey: ["admin-dashboard-risk-summary", period],
@@ -532,6 +548,11 @@ export const AdminDashboardPage = () => {
       toast({
         title: "해피콜 완료",
         description: "해당 의뢰자를 해피콜 목록에서 숨겼습니다.",
+      });
+      setHappyCallNotesByAnchor((prev) => {
+        const next = { ...prev };
+        delete next[businessAnchorId];
+        return next;
       });
       void refetchAdminDashboard();
       void refetchHappyCallCompletions();
@@ -1255,8 +1276,23 @@ export const AdminDashboardPage = () => {
                     const showCompanyName =
                       Boolean(companyName) && companyName !== businessName;
 
+                    const memoEntry = happyCallNotesByAnchor[anchorId];
+                    const memoExists = Boolean(String(memoEntry?.note || "").trim());
+
                     return (
-                      <div key={anchorId || item.businessName} className="rounded-md border px-3 py-2.5 bg-white">
+                      <div
+                        key={anchorId || item.businessName}
+                        className="rounded-md border px-3 py-2.5 bg-white cursor-pointer hover:border-blue-300 hover:bg-blue-50/20 transition"
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => setHappyCallDetailItem(item)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            setHappyCallDetailItem(item);
+                          }
+                        }}
+                      >
                         <div className="flex h-full flex-col gap-2">
                           <div className="flex items-start justify-between gap-2">
                             <div className="min-w-0">
@@ -1277,35 +1313,69 @@ export const AdminDashboardPage = () => {
                             </div>
 
                             {phone ? (
-                              <button
-                                type="button"
-                                className="inline-flex h-8 items-center rounded-md border border-blue-600 bg-blue-600 px-3 text-xs font-semibold text-white hover:bg-blue-700"
-                                onClick={() => {
-                                  setPhoneConfirm({
-                                    open: true,
-                                    phone,
-                                    businessName: String(item.businessName || "").trim() || "의뢰자",
-                                  });
-                                }}
-                              >
-                                전화
-                              </button>
+                              <div className="flex flex-col items-end gap-1.5 shrink-0">
+                                <button
+                                  type="button"
+                                  className="inline-flex h-8 items-center rounded-md border border-blue-600 bg-blue-600 px-3 text-xs font-semibold text-white hover:bg-blue-700"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setPhoneConfirm({
+                                      open: true,
+                                      phone,
+                                      businessName: String(item.businessName || "").trim() || "의뢰자",
+                                    });
+                                  }}
+                                >
+                                  전화
+                                </button>
+                                <button
+                                  type="button"
+                                  className="inline-flex h-8 items-center rounded-md border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    const normalized = String(phone || "").replace(/\s+/g, "");
+                                    if (normalized) {
+                                      window.location.href = `sms:${normalized}`;
+                                    }
+                                  }}
+                                >
+                                  문자
+                                </button>
+                              </div>
                             ) : null}
                           </div>
 
-                          <div className="mt-1 flex items-start justify-between gap-2">
-                            <div className="flex flex-wrap gap-1.5">
-                              {(item.reasons || []).map((reason) => (
-                                <Badge
-                                  key={`${anchorId}-${reason.code}`}
-                                  variant={HAPPY_CALL_SEVERITY_BADGE[reason.severity] || "outline"}
-                                  className="text-[10px]"
-                                  title={reason.description}
-                                >
-                                  {reason.label}
-                                </Badge>
-                              ))}
-                            </div>
+                          <div className="mt-1 flex flex-wrap gap-1.5">
+                            {(item.reasons || []).map((reason) => (
+                              <Badge
+                                key={`${anchorId}-${reason.code}`}
+                                variant={HAPPY_CALL_SEVERITY_BADGE[reason.severity] || "outline"}
+                                className="text-[10px]"
+                                title={reason.description}
+                              >
+                                {reason.label}
+                              </Badge>
+                            ))}
+                          </div>
+
+                          <div className="flex items-center justify-end gap-2">
+                            <button
+                              type="button"
+                              className={`inline-flex h-8 items-center rounded-md border px-3 text-xs font-semibold transition shrink-0 ${
+                                memoExists
+                                  ? "border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100"
+                                  : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+                              }`}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setHappyCallMemoDraft(
+                                  String(memoEntry?.note || "").slice(0, 500),
+                                );
+                                setHappyCallMemoDialog({ open: true, item });
+                              }}
+                            >
+                              메모
+                            </button>
 
                             <button
                               type="button"
@@ -1315,8 +1385,8 @@ export const AdminDashboardPage = () => {
                                   : "border-blue-400 bg-white text-blue-700 hover:bg-blue-50"
                               }`}
                               disabled={Boolean(completingHappyCallByAnchor[anchorId])}
-                              onClick={() => {
-                                setHappyCallNoteDraft("");
+                              onClick={(e) => {
+                                e.stopPropagation();
                                 setHappyCallConfirm({ open: true, item });
                               }}
                             >
@@ -1462,21 +1532,32 @@ export const AdminDashboardPage = () => {
         open={happyCallConfirm.open}
         onClose={() => {
           setHappyCallConfirm({ open: false, item: null });
-          setHappyCallNoteDraft("");
         }}
         title="해피콜 완료 처리"
         description={
           <div className="space-y-2 text-sm text-gray-700">
+            <div>
+              <span className="font-semibold text-gray-900">
+                {String(happyCallConfirm.item?.businessName || happyCallConfirm.item?.companyName || "해당 의뢰자")}
+              </span>
+              의 해피콜을 완료 처리할까요?
+            </div>
             <div className="space-y-1">
-              <div className="text-xs font-medium text-gray-700">대화 내용 메모</div>
-              <textarea
-                value={happyCallNoteDraft}
-                onChange={(e) =>
-                  setHappyCallNoteDraft(String(e.target.value || "").slice(0, 500))
-                }
-                placeholder="예) 제품 만족도 좋음, 다음 주 추가 의뢰 예정"
-                className="w-full min-h-[96px] rounded-md border border-slate-300 px-2.5 py-2 text-xs text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-200"
-              />
+              <div className="text-xs font-medium text-gray-700">저장될 메모</div>
+              <div className="rounded-md border border-slate-200 bg-slate-50 px-2.5 py-2 text-xs text-slate-700 whitespace-pre-wrap break-words min-h-[64px]">
+                {String(
+                  happyCallNotesByAnchor[
+                    String(happyCallConfirm.item?.businessAnchorId || "").trim()
+                  ]?.note || "",
+                ).trim() || "메모 없음"}
+              </div>
+              <div className="text-[11px] text-slate-500">
+                저장 일시: {toDateTimeLabel(
+                  happyCallNotesByAnchor[
+                    String(happyCallConfirm.item?.businessAnchorId || "").trim()
+                  ]?.savedAt || null,
+                )}
+              </div>
             </div>
           </div>
         }
@@ -1486,7 +1567,6 @@ export const AdminDashboardPage = () => {
             variant: "secondary",
             onClick: () => {
               setHappyCallConfirm({ open: false, item: null });
-              setHappyCallNoteDraft("");
             },
           },
           {
@@ -1494,11 +1574,124 @@ export const AdminDashboardPage = () => {
             variant: "primary",
             onClick: async () => {
               const target = happyCallConfirm.item;
-              const noteToSave = happyCallNoteDraft;
+              const anchorId = String(target?.businessAnchorId || "").trim();
+              const noteToSave = String(happyCallNotesByAnchor[anchorId]?.note || "");
               setHappyCallConfirm({ open: false, item: null });
-              setHappyCallNoteDraft("");
               if (!target) return;
               await handleCompleteHappyCall(target, noteToSave);
+            },
+          },
+        ]}
+      />
+
+      <MultiActionDialog
+        open={happyCallMemoDialog.open}
+        onClose={() => {
+          setHappyCallMemoDialog({ open: false, item: null });
+          setHappyCallMemoDraft("");
+        }}
+        title="해피콜 메모"
+        description={
+          <div className="space-y-2 text-sm text-gray-700">
+            <div>
+              <span className="font-semibold text-gray-900">
+                {String(happyCallMemoDialog.item?.businessName || happyCallMemoDialog.item?.companyName || "해당 의뢰자")}
+              </span>
+              의 대화 내용을 메모하세요.
+            </div>
+            <textarea
+              value={happyCallMemoDraft}
+              onChange={(e) =>
+                setHappyCallMemoDraft(String(e.target.value || "").slice(0, 500))
+              }
+              placeholder="예) 제품 만족도 좋음, 다음 주 추가 의뢰 예정"
+              className="w-full min-h-[120px] rounded-md border border-slate-300 px-2.5 py-2 text-xs text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-200"
+            />
+            <div className="flex items-center justify-between text-[11px] text-slate-500">
+              <span>
+                저장 일시: {toDateTimeLabel(
+                  happyCallNotesByAnchor[
+                    String(happyCallMemoDialog.item?.businessAnchorId || "").trim()
+                  ]?.savedAt || null,
+                )}
+              </span>
+              <span>{String(happyCallMemoDraft || "").length}/500</span>
+            </div>
+          </div>
+        }
+        actions={[
+          {
+            label: "취소",
+            variant: "secondary",
+            onClick: () => {
+              setHappyCallMemoDialog({ open: false, item: null });
+              setHappyCallMemoDraft("");
+            },
+          },
+          {
+            label: "저장",
+            variant: "primary",
+            onClick: () => {
+              const anchorId = String(happyCallMemoDialog.item?.businessAnchorId || "").trim();
+              if (!anchorId) {
+                setHappyCallMemoDialog({ open: false, item: null });
+                setHappyCallMemoDraft("");
+                return;
+              }
+              const savedAt = new Date().toISOString();
+              setHappyCallNotesByAnchor((prev) => ({
+                ...prev,
+                [anchorId]: {
+                  note: String(happyCallMemoDraft || "").slice(0, 500).trim(),
+                  savedAt,
+                },
+              }));
+              setHappyCallMemoDialog({ open: false, item: null });
+              setHappyCallMemoDraft("");
+              toast({
+                title: "메모 저장",
+                description: "해피콜 메모를 저장했습니다.",
+              });
+            },
+          },
+        ]}
+      />
+
+      <MultiActionDialog
+        open={Boolean(happyCallDetailItem)}
+        onClose={() => {
+          setHappyCallDetailItem(null);
+        }}
+        title="의뢰자 상세 정보"
+        description={
+          <div className="space-y-2 text-sm text-gray-700">
+            <div className="text-base font-semibold text-gray-900">
+              {String(happyCallDetailItem?.businessName || "-")}
+            </div>
+            {String(happyCallDetailItem?.companyName || "").trim() && (
+              <div className="text-xs text-gray-500">
+                상호명: {String(happyCallDetailItem?.companyName || "-")}
+              </div>
+            )}
+            <div className="grid grid-cols-1 gap-2 rounded-md border border-slate-200 bg-slate-50 p-3">
+              <div className="text-xs"><span className="font-medium text-slate-700">대표자명:</span> {String(happyCallDetailItem?.representativeName || "-")}</div>
+              <div className="text-xs"><span className="font-medium text-slate-700">전화번호:</span> {String(happyCallDetailItem?.phoneNumber || "-")}</div>
+              <div className="text-xs"><span className="font-medium text-slate-700">이메일:</span> {String(happyCallDetailItem?.email || "-")}</div>
+              <div className="text-xs"><span className="font-medium text-slate-700">사업자번호:</span> {String(happyCallDetailItem?.businessNumber || "-")}</div>
+              <div className="text-xs"><span className="font-medium text-slate-700">주소:</span> {[
+                String(happyCallDetailItem?.address || "").trim(),
+                String(happyCallDetailItem?.addressDetail || "").trim(),
+              ].filter(Boolean).join(" ") || "-"}</div>
+              <div className="text-xs"><span className="font-medium text-slate-700">우편번호:</span> {String(happyCallDetailItem?.zipCode || "-")}</div>
+            </div>
+          </div>
+        }
+        actions={[
+          {
+            label: "닫기",
+            variant: "secondary",
+            onClick: () => {
+              setHappyCallDetailItem(null);
             },
           },
         ]}
