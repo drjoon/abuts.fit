@@ -899,7 +899,8 @@
 - `manufacturerHexRotation`의 canonical 모드는 **`보정` / `무보정`** 이다.
   - 레거시 입력값 `"0"`/`"30"`은 하위호환으로만 허용하고, add-in에서 canonical 모드로 정규화한다.
 - Esprit 적용 정책 SSOT:
-  1. `보정`: 기본 W축 `+30` 적용 후, `hexRotation.appliedDeg`를 추가 적용
+  1. `보정`: 기본 W축 `+30` 적용 후, `hexRotation.appliedDeg`를 **Esprit 부호계로 반전하여** 추가 적용
+     - 식: `totalW = 30 + (-appliedDeg)`
   2. `무보정`: **회전 완전 미적용** (기본 `+30`도 미적용, telemetry도 무시)
 - Rhino telemetry 의미 SSOT:
   - `request-meta.caseInfos.hexRotation.appliedDeg`는 Rhino가 실제 mesh에 적용하지 않은 **가상 보정량(-phase_mod)** 이다.

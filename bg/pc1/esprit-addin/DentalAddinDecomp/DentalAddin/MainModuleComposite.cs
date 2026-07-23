@@ -24,16 +24,17 @@ namespace DentalAddin
         private const string CompositeFinishCommonToolId = "BM_D1.2";
         private const double CompositeFinishCommonToolDiameterMm = 1.2;
 
-        // Composite OrientationStrategy 매직넘버 SSOT
-        // - 0: 모델쪽으로 법선 방향
-        // - 1: 기본 전략(프로파일 미사용)
-        // - 4: 프로파일 기반 공구축 (현장 검증값)
+        // Composite OrientationStrategy 정책 SSOT
+        // - 운영 설정에 따라 법선 방향(0)을 사용한다.
+        // - 본 저장소의 현재 정책은 default/profile 모두 0으로 고정한다.
         private const int CompositeOrientationStrategyDefault = 0;
         private const int CompositeOrientationStrategyProfile = 0;
 
         // 진단용 env 키(선택에는 사용하지 않음).
         // startX SSOT는 MoveSTL_Module.FrontPointX이며, env/shadow 값은 로그 관찰 용도로만 읽는다.
         private const string CompositeOrientationProfileStartXEnv = "ABUTS_COMPOSITE_ORIENTATION_PROFILE_START_X";
+        // STL 실회전에 사용된 W축 총 회전각(도). StlFileProcessor가 의뢰별로 주입한다.
+        private const string CompositeOrientationWAxisDegreesEnv = "ABUTS_COMPOSITE_ORIENTATION_W_AXIS_DEGREES";
 
         private static bool TryGetComposite2SplitABConfig(out bool enabled, out double splitX, out string prcA, out string prcB)
         {
@@ -499,8 +500,9 @@ namespace DentalAddin
                 double ry1 = vy;
                 double rz1 = vx;
 
-                // 2) RotateByWAxisDegrees: X축 +30° (StlFileProcessor.DefaultWAxisRotationDegrees)
-                const double wAxisDeg = 30.0;
+                // 2) RotateByWAxisDegrees: X축 W회전
+                // StlFileProcessor가 실제 STL에 적용한 총 회전각(기본 +30, 보정 시 +telemetry, 무보정 0)을 사용한다.
+                double wAxisDeg = GetEnvDoubleNullable(CompositeOrientationWAxisDegreesEnv) ?? 30.0;
                 double wAxisRad = wAxisDeg * Math.PI / 180.0;
                 double cosX = Math.Cos(wAxisRad);
                 double sinX = Math.Sin(wAxisRad);
@@ -633,7 +635,7 @@ namespace DentalAddin
                 Point actualEnd = null;
                 try { actualStart = fc.Extremity(espExtremityType.espExtremityStart); } catch { }
                 try { actualEnd = fc.Extremity(espExtremityType.espExtremityEnd); } catch { }
-                DentalLogger.Log($"Composite2SplitLine2 - OrientationProfile 생성 완료(label={label}, key={key}, profile='{orientationProfile}', startX={startX.ToString("F3", CultureInfo.InvariantCulture)}, startXSource={startXSource}, p0=({startX.ToString("F3", CultureInfo.InvariantCulture)},0,0), p1=({(startX + nx * profileLengthMm).ToString("F3", CultureInfo.InvariantCulture)},{(ny * profileLengthMm).ToString("F3", CultureInfo.InvariantCulture)},{(nz * profileLengthMm).ToString("F3", CultureInfo.InvariantCulture)}), actualStart=({(actualStart != null ? actualStart.X.ToString("F3", CultureInfo.InvariantCulture) : "<null>")},{(actualStart != null ? actualStart.Y.ToString("F3", CultureInfo.InvariantCulture) : "<null>")},{(actualStart != null ? actualStart.Z.ToString("F3", CultureInfo.InvariantCulture) : "<null>")}), actualEnd=({(actualEnd != null ? actualEnd.X.ToString("F3", CultureInfo.InvariantCulture) : "<null>")},{(actualEnd != null ? actualEnd.Y.ToString("F3", CultureInfo.InvariantCulture) : "<null>")},{(actualEnd != null ? actualEnd.Z.ToString("F3", CultureInfo.InvariantCulture) : "<null>")}), vectorRaw=({vx.ToString("F6", CultureInfo.InvariantCulture)},{vy.ToString("F6", CultureInfo.InvariantCulture)},{vz.ToString("F6", CultureInfo.InvariantCulture)}), vectorRot=({nx.ToString("F6", CultureInfo.InvariantCulture)},{ny.ToString("F6", CultureInfo.InvariantCulture)},{nz.ToString("F6", CultureInfo.InvariantCulture)}))");
+                DentalLogger.Log($"Composite2SplitLine2 - OrientationProfile 생성 완료(label={label}, key={key}, profile='{orientationProfile}', startX={startX.ToString("F3", CultureInfo.InvariantCulture)}, startXSource={startXSource}, wAxisDeg={wAxisDeg.ToString("F4", CultureInfo.InvariantCulture)}, p0=({startX.ToString("F3", CultureInfo.InvariantCulture)},0,0), p1=({(startX + nx * profileLengthMm).ToString("F3", CultureInfo.InvariantCulture)},{(ny * profileLengthMm).ToString("F3", CultureInfo.InvariantCulture)},{(nz * profileLengthMm).ToString("F3", CultureInfo.InvariantCulture)}), actualStart=({(actualStart != null ? actualStart.X.ToString("F3", CultureInfo.InvariantCulture) : "<null>")},{(actualStart != null ? actualStart.Y.ToString("F3", CultureInfo.InvariantCulture) : "<null>")},{(actualStart != null ? actualStart.Z.ToString("F3", CultureInfo.InvariantCulture) : "<null>")}), actualEnd=({(actualEnd != null ? actualEnd.X.ToString("F3", CultureInfo.InvariantCulture) : "<null>")},{(actualEnd != null ? actualEnd.Y.ToString("F3", CultureInfo.InvariantCulture) : "<null>")},{(actualEnd != null ? actualEnd.Z.ToString("F3", CultureInfo.InvariantCulture) : "<null>")}), vectorRaw=({vx.ToString("F6", CultureInfo.InvariantCulture)},{vy.ToString("F6", CultureInfo.InvariantCulture)},{vz.ToString("F6", CultureInfo.InvariantCulture)}), vectorRot=({nx.ToString("F6", CultureInfo.InvariantCulture)},{ny.ToString("F6", CultureInfo.InvariantCulture)},{nz.ToString("F6", CultureInfo.InvariantCulture)}))");
                 return true;
             }
             catch (Exception ex)

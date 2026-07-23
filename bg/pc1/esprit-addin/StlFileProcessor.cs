@@ -31,7 +31,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         private const string StlImportLayerName = "AbutsStlImport";
         private const double DefaultWAxisRotationDegrees = 30.0;
         // 제조사 수동 헥스 회전 canonical 모드값
-        // - "보정"   : 기본 +30도 + Rhino telemetry(hexRotation.appliedDeg)
+        // - "보정"   : 기본 +30도 + Rhino telemetry 보정량(Esprit 적용 시 부호 반전)
         // - "무보정" : 회전 완전 미적용(+30도도 미적용, telemetry도 무시)
         // 하위호환: 백엔드가 레거시 "0"/"30"을 보내도 내부에서 canonical 모드로 정규화한다.
         private const string ManufacturerHexModeCorrected = "보정";
@@ -50,6 +50,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         private const string CompositeCuffStartXEnv = "ABUTS_COMPOSITE_CUFF_START_X";
         private const string CompositeCuffEndXEnv = "ABUTS_COMPOSITE_CUFF_END_X";
         private const string CompositeCuffProfilePointsEnv = "ABUTS_COMPOSITE_CUFF_PROFILE_POINTS_XYZ";
+        // STL에 실제 적용된 W축 총 회전각(도). OrientationProfile/finishline 좌표변환 SSOT로 공유한다.
+        private const string CompositeOrientationWAxisDegreesEnv = "ABUTS_COMPOSITE_ORIENTATION_W_AXIS_DEGREES";
         private static readonly HttpClient BackendHttp;
 
         // gp.exe 비정상 종료 시 Windows GPF 모달(오류 대화상자) 억제
@@ -107,6 +109,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         private string _backendManufacturerHexRotation;
         // request-meta(caseInfos.hexRotation.appliedDeg)
         // Rhino가 실제 mesh에는 적용하지 않고 전달하는 "가상 보정량" telemetry.
+        // 주의: Rhino와 Esprit의 회전 부호 기준이 달라, Esprit 적용 시 부호를 반전해 사용한다.
         // canonical "보정" 모드에서만 +30 기본 회전에 추가 적용한다.
         private double? _backendHexRotationAppliedDeg;
         // 유지홈(retentionGroove) 옵션 캐시 — request-meta 수신 직후 저장.
@@ -352,11 +355,13 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 Rotate90Degrees(document);
 
                 string hexMode = NormalizeManufacturerHexRotationMode(_backendManufacturerHexRotation);
+                double effectiveWAxisRotationDeg = 0.0;
                 // 제조사 헥스 회전 정책 SSOT
-                // - 보정: 기본 +30도 + Rhino telemetry(appliedDeg)
+                // - 보정: 기본 +30도 + Rhino telemetry(appliedDeg)를 Esprit 부호계로 반전 적용
                 // - 무보정: 회전 미적용(+30도/telemetry 모두 미적용)
                 if (string.Equals(hexMode, ManufacturerHexModeUncorrected, StringComparison.Ordinal))
                 {
+                    effectiveWAxisRotationDeg = 0.0;
                     AppLogger.Log($"StlFileProcessor: 제조사 헥스 회전 무보정 모드 - W축 회전 완전 미적용 (raw='{_backendManufacturerHexRotation ?? ""}')");
                 }
                 else
@@ -367,8 +372,12 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                     {
                         RotateByWAxisDegrees(document, additionalHexRotationDegrees);
                     }
-                    AppLogger.Log($"StlFileProcessor: 제조사 헥스 회전 보정 모드 적용 - base={DefaultWAxisRotationDegrees:F1}도, hexTelemetry={additionalHexRotationDegrees:F4}도, total={(DefaultWAxisRotationDegrees + additionalHexRotationDegrees):F4}도 (raw='{_backendManufacturerHexRotation ?? ""}')");
+                    effectiveWAxisRotationDeg = DefaultWAxisRotationDegrees + additionalHexRotationDegrees;
+                    AppLogger.Log($"StlFileProcessor: 제조사 헥스 회전 보정 모드 적용 - base={DefaultWAxisRotationDegrees:F1}도, hexTelemetry={additionalHexRotationDegrees:F4}도, total={effectiveWAxisRotationDeg:F4}도 (raw='{_backendManufacturerHexRotation ?? ""}')");
                 }
+                // OrientationProfile/FinishLine 좌표변환도 STL 실회전과 동일한 각도를 사용하도록 env로 공유한다.
+                Environment.SetEnvironmentVariable(CompositeOrientationWAxisDegreesEnv, effectiveWAxisRotationDeg.ToString(CultureInfo.InvariantCulture));
+                AppLogger.Log($"StlFileProcessor: 실효 W축 회전각 공유 - {CompositeOrientationWAxisDegreesEnv}={effectiveWAxisRotationDeg.ToString("F4", CultureInfo.InvariantCulture)}");
                 EspritDocumentHelper.LogBoundingBox(document, "AfterRotate");
                 // add-in 실행 직전에도 CAM 직경 재확인/재적용(중간 단계에서 값이 변경되는 케이스 방지)
                 if (backendCamDiameter.HasValue && backendCamDiameter.Value > 0 && document?.LatheMachineSetup != null)
@@ -511,6 +520,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             Environment.SetEnvironmentVariable("ABUTS_CAM_DIAMETER", null);
             Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_ORIENTATION_VECTOR", null);
             Environment.SetEnvironmentVariable("ABUTS_COMPOSITE_ORIENTATION_PROFILE_LENGTH_MM", null);
+            Environment.SetEnvironmentVariable(CompositeOrientationWAxisDegreesEnv, null);
             Environment.SetEnvironmentVariable(BackRoughFourWayEnableEnv, null);
             Environment.SetEnvironmentVariable(FinishLineMinZEnv, null);
             Environment.SetEnvironmentVariable(CompositeCuffProfileEnv, null);
@@ -846,6 +856,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         private double ResolveManufacturerAdditionalHexRotationDegrees(string normalizedMode)
         {
             // 정책: 보정 모드에서만 Rhino telemetry를 추가 회전으로 적용한다.
+            // 중요: appliedDeg는 Rhino 좌표계 기준 값이며 Esprit W축 회전 부호계와 반대이므로
+            //        Esprit 적용값은 부호를 반전한다. (SSOT: +30 + (-appliedDeg))
             if (!string.Equals(normalizedMode, ManufacturerHexModeCorrected, StringComparison.Ordinal))
             {
                 return 0.0;
@@ -855,7 +867,10 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 !double.IsNaN(_backendHexRotationAppliedDeg.Value) &&
                 !double.IsInfinity(_backendHexRotationAppliedDeg.Value))
             {
-                return _backendHexRotationAppliedDeg.Value;
+                double rawAppliedDeg = _backendHexRotationAppliedDeg.Value;
+                double espritAppliedDeg = -rawAppliedDeg;
+                AppLogger.Log($"StlFileProcessor: hex telemetry 부호 반전 적용 - rawAppliedDeg={rawAppliedDeg.ToString("F4", CultureInfo.InvariantCulture)}, espritAppliedDeg={espritAppliedDeg.ToString("F4", CultureInfo.InvariantCulture)}");
+                return espritAppliedDeg;
             }
 
             AppLogger.Log("StlFileProcessor: 보정 모드지만 hexRotation.appliedDeg 없음 - telemetry 보정 0도 적용");
@@ -1455,7 +1470,18 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 catch { }
 
                 // STL 전처리 회전과 동일한 각도(SSOT)로 finishline points를 변환한다.
-                const double wAxisDeg = 30.0;
+                // - 기본: +30°
+                // - 보정 모드: +30° + hex telemetry(appliedDeg)
+                // - 무보정 모드: 0°
+                double wAxisDeg = DefaultWAxisRotationDegrees;
+                string wAxisDegRaw = Environment.GetEnvironmentVariable(CompositeOrientationWAxisDegreesEnv);
+                if (!string.IsNullOrWhiteSpace(wAxisDegRaw) &&
+                    double.TryParse(wAxisDegRaw, NumberStyles.Float, CultureInfo.InvariantCulture, out double parsedWAxisDeg) &&
+                    !double.IsNaN(parsedWAxisDeg) &&
+                    !double.IsInfinity(parsedWAxisDeg))
+                {
+                    wAxisDeg = parsedWAxisDeg;
+                }
                 double wAxisRad = wAxisDeg * Math.PI / 180.0;
                 double cosX = Math.Cos(wAxisRad);
                 double sinX = Math.Sin(wAxisRad);

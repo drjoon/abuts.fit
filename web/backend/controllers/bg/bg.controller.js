@@ -1352,11 +1352,11 @@ export const getRequestMeta = asyncHandler(async (req, res) => {
           // 제조사 수동 헥스 회전 모드값(0/30).
           // [중요] 표시명만 변경되며 mode 값/실행 로직은 기존과 동일.
           // - UI 표시: "0" => "보정", "30" => "무보정"
-          // - 실행 의미: mode 0=현행 유지, mode 30=원복 후 +30
-          //   (hexRotation.appliedDeg와 기본 30도를 역회전해 원복한 뒤 +30 적용)
+          // - 실행 의미: mode 0=보정, mode 30=무보정
+          //   (보정 모드에서 add-in이 appliedDeg를 Esprit 부호계로 반전 해석해 +30에 합산)
           manufacturerHexRotation: manufacturerHexRotationMode,
           // Rhino 정렬 telemetry(헥스 회전각).
-          // Esprit가 무보정(30) 모드에서 "원복 후 +30" 계산 시 사용한다.
+          // Esprit가 보정(0) 모드에서 appliedDeg를 부호 반전 해석해 +30에 합산할 때 사용한다.
           hexRotation:
             ci?.hexRotation && typeof ci.hexRotation === "object"
               ? ci.hexRotation

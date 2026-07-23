@@ -1224,6 +1224,8 @@ def _align_hex_angle_for_right_view(mesh):
     중요 정책:
     - 원본 mesh에는 헥스 기준 Z축 회전을 절대 적용하지 않는다.
     - telemetry의 appliedDeg는 "Rhino 미적용 가상 보정량(-phase_mod)" 의미로 유지한다.
+    - 주의: Rhino 좌표계와 Esprit W축 회전의 부호 기준이 다를 수 있으므로,
+      Esprit 소비자는 appliedDeg를 직접 더하지 말고 부호 반전 적용 여부를 명시적으로 처리한다.
     - 필요 시 검증은 복제 mesh에 가상 회전을 적용해 잔차만 측정한다.
     """
     observations = _collect_hex_face_normal_observations(mesh)
@@ -1272,6 +1274,7 @@ def _align_hex_angle_for_right_view(mesh):
         "initial_phase_mod_deg": phase_mod_deg,
         "initial_residual_deg": initial_residual_deg,
         # appliedDeg SSOT: Rhino가 실제로 적용하지 않은 '가상 보정량'
+        # 소비자(예: Esprit)는 좌표계 부호 규약에 맞춰 별도 해석(필요 시 부호 반전)한다.
         "applied_rotation_deg": float(virtual_applied_deg),
         "final_residual_deg": initial_residual_deg,
         "final_phase_mod_deg": phase_mod_deg,
