@@ -397,13 +397,11 @@ export const NewRequestPage = () => {
 
   const [focusUnverifiedTick, setFocusUnverifiedTick] = useState(0);
 
-  const CAD_COMPANION_EXTS = new Set([
-    ".constructioninfo",
-    ".dentalproject",
-    ".cln",
-    ".3shapeorder",
-    ".xml",
-  ]);
+  const isCadCompanionFile = (fileName: string) => {
+    const lower = String(fileName || "").trim().toLowerCase();
+    const ext = getFileExtLower(fileName);
+    return ext === ".xml" || ext === ".constructioninfo" || lower.includes("constructioninfo");
+  };
 
   type StlSelectionCandidate = {
     id: string;
@@ -461,11 +459,6 @@ export const NewRequestPage = () => {
     selectedFiles.forEach((file) => {
       const ext = getFileExtLower(file.name);
 
-      if (ext === ".xml") {
-        companionFilesToHandle.push(file);
-        return;
-      }
-
       if (ext === ".pts") {
         ignoredFiles.push({
           name: file.name,
@@ -474,7 +467,7 @@ export const NewRequestPage = () => {
         return;
       }
 
-      if (CAD_COMPANION_EXTS.has(ext)) {
+      if (isCadCompanionFile(file.name)) {
         companionFilesToHandle.push(file);
         return;
       }
@@ -559,6 +552,15 @@ export const NewRequestPage = () => {
         description: batch.ignoredFiles[0].reason,
         duration: 2500,
       });
+    }
+
+    if (stlFiles.length === 0 && batch.companionFilesToHandle.length > 0) {
+      toast({
+        title: "STL 파일도 올려주세요",
+        description: "구성정보 파일은 등록됐어요. 같은 폴더의 STL 파일을 추가해 주세요.",
+        duration: 3200,
+      });
+      return;
     }
 
     if (stlFiles.length === 0 && batch.companionFilesToHandle.length === 0) {
@@ -802,14 +804,21 @@ export const NewRequestPage = () => {
                   const checked = Boolean(reviewSelection[item.id]);
                   const sizeMb = (item.file.size / (1024 * 1024)).toFixed(2);
                   return (
-                    <label
+                    <div
                       key={item.id}
+                      onClick={() => {
+                        setReviewSelection((prev) => ({
+                          ...prev,
+                          [item.id]: !prev[item.id],
+                        }));
+                      }}
                       className={`relative rounded-md border p-2 cursor-pointer ${
                         checked ? "border-blue-300 bg-blue-50/60" : "border-slate-200"
                       }`}
                     >
                       <Checkbox
                         checked={checked}
+                        onClick={(e) => e.stopPropagation()}
                         onCheckedChange={(next) => {
                           setReviewSelection((prev) => ({
                             ...prev,
@@ -834,7 +843,7 @@ export const NewRequestPage = () => {
                         </div>
                         <p className="text-xs text-slate-500 mt-1">STL · {sizeMb}MB</p>
                       </div>
-                    </label>
+                    </div>
                   );
                 })}
               </div>
@@ -853,9 +862,23 @@ export const NewRequestPage = () => {
               </Button>
               <Button
                 onClick={() => {
-                  if (reviewBatch) {
-                    applyClassifiedBatch(reviewBatch, reviewSelection);
+                  if (!reviewBatch) return;
+
+                  const selectedCount = (reviewBatch.stlCandidates || []).filter(
+                    (item) => Boolean(reviewSelection[item.id]),
+                  ).length;
+
+                  if (selectedCount <= 0) {
+                    toast({
+                      title: "업로드할 STL을 선택해주세요",
+                      description: "커스텀 어벗 STL을 최소 1개 선택해야 합니다.",
+                      variant: "destructive",
+                      duration: 2600,
+                    });
+                    return;
                   }
+
+                  applyClassifiedBatch(reviewBatch, reviewSelection);
                   setFileReviewOpen(false);
                   setReviewBatch(null);
                   setReviewSelection({});

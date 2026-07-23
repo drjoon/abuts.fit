@@ -52,13 +52,11 @@ const WEEKDAY_TO_KST_INDEX: Record<string, number> = {
   fri: 5,
 };
 
-const CAD_COMPANION_EXTS = [
-  ".constructioninfo",
-  ".dentalproject",
-  ".cln",
-  ".3shapeorder",
-  ".xml",
-] as const;
+const isCadCompanionFile = (fileName: string) => {
+  const lower = String(fileName || "").trim().toLowerCase();
+  const ext = getLowerExt(fileName);
+  return ext === ".xml" || ext === ".constructioninfo" || lower.includes("constructioninfo");
+};
 
 const getLowerExt = (name: string) => {
   const lower = String(name || "").trim().toLowerCase();
@@ -137,13 +135,7 @@ const readKeyValue = (raw: string, keys: string[]) => {
 };
 
 const parseCadCompanionMetadata = async (file: File) => {
-  const ext = getLowerExt(file.name);
-  if (
-    ext !== ".constructioninfo" &&
-    ext !== ".dentalproject" &&
-    ext !== ".3shapeorder" &&
-    ext !== ".xml"
-  ) {
+  if (!isCadCompanionFile(file.name)) {
     return {} as Partial<CaseInfos>;
   }
 
@@ -466,6 +458,16 @@ export function NewRequestDetailsSection({
     Record<string, boolean>
   >({});
   const [companionPromptOpen, setCompanionPromptOpen] = useState(false);
+  const [suppressCompanionPrompt, setSuppressCompanionPrompt] =
+    useState(false);
+  const [manualCompanionLinksByStlKey, setManualCompanionLinksByStlKey] = useState<
+    Record<string, string[]>
+  >({});
+  const [pendingCompanionTargetStlKey, setPendingCompanionTargetStlKey] = useState<
+    string | null
+  >(null);
+  const [pendingCompanionCardForStlUpload, setPendingCompanionCardForStlUpload] =
+    useState<string | null>(null);
 
   const stlStemList = useMemo(() => {
     return (files || [])
@@ -477,8 +479,7 @@ export function NewRequestDetailsSection({
   const companionStems = useMemo(() => {
     const stems: string[] = [];
     for (const file of companionFiles) {
-      const ext = getLowerExt(file.name);
-      if (!CAD_COMPANION_EXTS.includes(ext as (typeof CAD_COMPANION_EXTS)[number])) {
+      if (!isCadCompanionFile(file.name)) {
         continue;
       }
       stems.push(getStem(file.name));
@@ -488,13 +489,19 @@ export function NewRequestDetailsSection({
 
   const missingCompanionStems = useMemo(() => {
     const uniqueStems = [...new Set(stlStemList)];
+
+    // 단일 STL 케이스에서는 xml이 하나라도 있으면 해당 STL에 연결된 것으로 본다.
+    if (uniqueStems.length === 1 && companionFiles.length > 0) {
+      return [];
+    }
+
     return uniqueStems.filter((stlStem) => {
       const matched = companionStems.some((companionStem) =>
         isStemMatch(stlStem, companionStem),
       );
       return !matched && !companionBypassStemMap[stlStem];
     });
-  }, [stlStemList, companionStems, companionBypassStemMap]);
+  }, [stlStemList, companionStems, companionBypassStemMap, companionFiles.length]);
 
   // STL 프리뷰에서 계산한 최대직경을 저장 (리드타임 표시용)
   const handleDiameterComputed = useCallback(
@@ -530,6 +537,7 @@ export function NewRequestDetailsSection({
   );
 
   const hasActiveSession = files.length > 0;
+  const hasCompanionOnlySession = files.length === 0 && companionFiles.length > 0;
   const [detailIndex, setDetailIndex] = useState<number | null>(null);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [
@@ -549,6 +557,11 @@ export function NewRequestDetailsSection({
   const listContainerRef = useRef<HTMLDivElement | null>(null);
   const uploadInputRef = useRef<HTMLInputElement | null>(null);
   const companionInputRef = useRef<HTMLInputElement | null>(null);
+
+  const getCompanionFileKey = useCallback((file: File) => {
+    return `${file.name}:${file.size}:${file.lastModified}`;
+  }, []);
+  const [cardDragOverKey, setCardDragOverKey] = useState<string | null>(null);
 
   const handleDialogOpenChange = useCallback(
     (nextOpen: boolean) => {
@@ -570,15 +583,24 @@ export function NewRequestDetailsSection({
   useEffect(() => {
     if (!files.length) {
       setCompanionPromptOpen(false);
+      setCompanionBypassStemMap({});
+      if (suppressCompanionPrompt) {
+        setSuppressCompanionPrompt(false);
+      }
       return;
     }
+
+    if (suppressCompanionPrompt) {
+      return;
+    }
+
     if (missingCompanionStems.length > 0) {
       setCompanionPromptOpen(true);
     }
-  }, [files.length, missingCompanionStems.length]);
+  }, [files.length, missingCompanionStems.length, suppressCompanionPrompt]);
 
   const handleCompanionFilesSelected = useCallback(
-    (selected: File[]) => {
+    (selected: File[], options?: { targetStlFileKey?: string }) => {
       if (!selected.length) return;
 
       const accepted: File[] = [];
@@ -591,7 +613,7 @@ export function NewRequestDetailsSection({
           ignoredPts.push(file.name);
           continue;
         }
-        if (!CAD_COMPANION_EXTS.includes(ext as (typeof CAD_COMPANION_EXTS)[number])) {
+        if (!isCadCompanionFile(file.name)) {
           rejectedExt.push(file.name);
           continue;
         }
@@ -601,8 +623,7 @@ export function NewRequestDetailsSection({
       if (rejectedExt.length) {
         toast({
           title: "지원하지 않는 보조 파일 형식",
-          description:
-            "지원 형식: .constructionInfo, .dentalProject, .cln, .3shapeOrder, .xml",
+          description: "지원 형식: 3Shape(.xml), ExoCAD(*constructionInfo*)",
           variant: "destructive",
           duration: 4500,
         });
@@ -643,8 +664,25 @@ export function NewRequestDetailsSection({
           }
           delete next[companionStem];
         }
+
+        // 단일 STL이면 이름이 달라도 방금 올린 구성정보를 그 STL과 연결 처리
+        if (stlStemList.length === 1 && accepted.length > 0) {
+          delete next[stlStemList[0]];
+        }
+
         return next;
       });
+
+      if (options?.targetStlFileKey) {
+        const companionKeys = accepted.map((f) => getCompanionFileKey(f));
+        setManualCompanionLinksByStlKey((prev) => {
+          const next = { ...prev };
+          const current = new Set(next[options.targetStlFileKey || ""] || []);
+          companionKeys.forEach((k) => current.add(k));
+          next[options.targetStlFileKey || ""] = [...current];
+          return next;
+        });
+      }
 
       void (async () => {
         let updatedFieldsCount = 0;
@@ -657,11 +695,16 @@ export function NewRequestDetailsSection({
             }
 
             const stem = getStem(companion.name);
-            const targets = files.filter(
-              (f) =>
-                String(f?.name || "").toLowerCase().endsWith(".stl") &&
-                isStemMatch(getStem(f.name), stem),
-            );
+            const forcedTarget = options?.targetStlFileKey
+              ? files.find((f) => toNormalizedFileKey(f) === options.targetStlFileKey)
+              : null;
+            const targets = forcedTarget
+              ? [forcedTarget]
+              : files.filter(
+                  (f) =>
+                    String(f?.name || "").toLowerCase().endsWith(".stl") &&
+                    isStemMatch(getStem(f.name), stem),
+                );
 
             for (const stl of targets) {
               const fileKey = toNormalizedFileKey(stl);
@@ -712,6 +755,7 @@ export function NewRequestDetailsSection({
       caseInfosMap,
       updateCaseInfos,
       onCompanionFilesAccepted,
+      getCompanionFileKey,
     ],
   );
 
@@ -739,6 +783,17 @@ export function NewRequestDetailsSection({
     });
   }, [missingCompanionStems, toast]);
 
+  const handleClearAll = useCallback(() => {
+    setSuppressCompanionPrompt(true);
+    setCompanionFiles([]);
+    setCompanionBypassStemMap({});
+    setManualCompanionLinksByStlKey({});
+    setPendingCompanionTargetStlKey(null);
+    setPendingCompanionCardForStlUpload(null);
+    setCompanionPromptOpen(false);
+    onCancelAll();
+  }, [onCancelAll]);
+
   useEffect(() => {
     if (!registerCompanionFileHandler) return;
     registerCompanionFileHandler(handleCompanionFilesSelected);
@@ -748,14 +803,25 @@ export function NewRequestDetailsSection({
     onCompanionFilesChange?.(companionFiles);
   }, [companionFiles, onCompanionFilesChange]);
 
-  const handleRemoveCompanionFile = useCallback((target: File) => {
-    const targetKey = `${target.name}:${target.size}:${target.lastModified}`;
-    setCompanionFiles((prev) =>
-      prev.filter(
-        (f) => `${f.name}:${f.size}:${f.lastModified}` !== targetKey,
-      ),
-    );
-  }, []);
+  const handleRemoveCompanionFile = useCallback(
+    (target: File) => {
+      const targetKey = `${target.name}:${target.size}:${target.lastModified}`;
+      setCompanionFiles((prev) =>
+        prev.filter(
+          (f) => `${f.name}:${f.size}:${f.lastModified}` !== targetKey,
+        ),
+      );
+      setManualCompanionLinksByStlKey((prev) => {
+        const next: Record<string, string[]> = {};
+        for (const [stlKey, companionKeys] of Object.entries(prev)) {
+          const filtered = companionKeys.filter((k) => k !== targetKey);
+          if (filtered.length > 0) next[stlKey] = filtered;
+        }
+        return next;
+      });
+    },
+    [],
+  );
 
 
 
@@ -1065,6 +1131,69 @@ export function NewRequestDetailsSection({
     }
   };
 
+  const handleCardDrop = (
+    event: React.DragEvent<HTMLDivElement>,
+    dropKey: string,
+    options?: {
+      selectIndex?: number;
+      targetStlFileKey?: string;
+      targetCompanionFileKey?: string;
+    },
+  ) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setCardDragOverKey((prev) => (prev === dropKey ? null : prev));
+
+    const itemFiles = Array.from(event.dataTransfer?.items || [])
+      .map((item) => item.getAsFile())
+      .filter((f): f is File => Boolean(f));
+    const directFiles = Array.from(event.dataTransfer?.files || []);
+
+    const deduped = (() => {
+      const map = new Map<string, File>();
+      for (const file of [...itemFiles, ...directFiles]) {
+        const key = `${file.name}:${file.size}:${file.lastModified}`;
+        if (!map.has(key)) map.set(key, file);
+      }
+      return [...map.values()];
+    })();
+
+    if (!deduped.length) return;
+
+    const companionFiles = deduped.filter((f) => isCadCompanionFile(f.name));
+    const stlFiles = deduped.filter((f) => getLowerExt(f.name) === ".stl");
+    const otherFiles = deduped.filter(
+      (f) => !isCadCompanionFile(f.name) && getLowerExt(f.name) !== ".stl",
+    );
+
+    if (companionFiles.length > 0) {
+      handleCompanionFilesSelected(companionFiles, {
+        targetStlFileKey: options?.targetStlFileKey,
+      });
+    }
+
+    if (options?.targetCompanionFileKey && stlFiles.length > 0) {
+      setManualCompanionLinksByStlKey((prev) => {
+        const next = { ...prev };
+        for (const stl of stlFiles) {
+          const stlKey = toNormalizedFileKey(stl);
+          const current = new Set(next[stlKey] || []);
+          current.add(options.targetCompanionFileKey as string);
+          next[stlKey] = [...current];
+        }
+        return next;
+      });
+    }
+
+    const forwardFiles = [...stlFiles, ...otherFiles];
+    if (forwardFiles.length > 0) {
+      if (typeof options?.selectIndex === "number") {
+        setSelectedPreviewIndex(options.selectIndex);
+      }
+      onFilesSelected(forwardFiles);
+    }
+  };
+
   const handleKeyboardNavigation = (
     event: React.KeyboardEvent<HTMLDivElement>,
   ) => {
@@ -1099,11 +1228,39 @@ export function NewRequestDetailsSection({
             onChange={(e) => {
               const fileList = e.currentTarget.files;
               if (fileList) {
-                onFilesSelected(Array.from(fileList));
+                const selected = Array.from(fileList);
+                const stlFiles = selected.filter((f) => getLowerExt(f.name) === ".stl");
+                const companionSelected = selected.filter((f) => isCadCompanionFile(f.name));
+                const restFiles = selected.filter(
+                  (f) => !isCadCompanionFile(f.name) && getLowerExt(f.name) !== ".stl",
+                );
+
+                if (companionSelected.length > 0) {
+                  handleCompanionFilesSelected(companionSelected);
+                }
+
+                if (pendingCompanionCardForStlUpload && stlFiles.length > 0) {
+                  setManualCompanionLinksByStlKey((prev) => {
+                    const next = { ...prev };
+                    for (const stl of stlFiles) {
+                      const stlKey = toNormalizedFileKey(stl);
+                      const current = new Set(next[stlKey] || []);
+                      current.add(pendingCompanionCardForStlUpload);
+                      next[stlKey] = [...current];
+                    }
+                    return next;
+                  });
+                }
+
+                const forward = [...stlFiles, ...restFiles];
+                if (forward.length > 0) {
+                  onFilesSelected(forward);
+                }
               }
+              setPendingCompanionCardForStlUpload(null);
               e.currentTarget.value = "";
             }}
-            accept=".stl,.constructionInfo,.dentalProject,.cln,.3shapeOrder,.xml"
+            accept=".stl,.xml,.constructionInfo"
           />
           <input
             ref={companionInputRef}
@@ -1113,113 +1270,120 @@ export function NewRequestDetailsSection({
             onChange={(e) => {
               const fileList = e.currentTarget.files;
               if (fileList) {
-                handleCompanionFilesSelected(Array.from(fileList));
+                handleCompanionFilesSelected(Array.from(fileList), {
+                  targetStlFileKey: pendingCompanionTargetStlKey || undefined,
+                });
               }
+              setPendingCompanionTargetStlKey(null);
               e.currentTarget.value = "";
             }}
-            accept=".constructionInfo,.dentalProject,.cln,.3shapeOrder,.xml"
+            accept=".xml,.constructionInfo"
           />
+
           <div className="flex justify-end gap-2 px-2 pb-1">
             <Button
               type="button"
               variant="outline"
               size="sm"
-              onClick={() => uploadInputRef.current?.click()}
-            >
-              파일 추가
-            </Button>
-
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={onCancelAll}
+              onClick={handleClearAll}
               disabled={!files.length && companionFiles.length === 0}
             >
               전체 삭제
             </Button>
           </div>
 
-          {missingCompanionStems.length > 0 && (
-            <div className="mx-2 mb-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-              <div className="font-semibold">폴더 안 파일도 같이 올려주세요</div>
-              <div className="mt-1 leading-relaxed">
-                STL만 올려도 작업은 가능해요.
-                <br />
-                하지만 <strong>폴더 내 모든 파일</strong>을 같이 올리면,
-                <span className="mx-1 inline-flex items-center gap-1 align-middle">
-                  구성정보
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <button
-                        type="button"
-                        className="inline-flex items-center justify-center text-amber-700 hover:text-amber-900"
-                        aria-label="구성정보 안내"
-                      >
-                        <CircleHelp className="h-3.5 w-3.5" />
-                      </button>
-                    </TooltipTrigger>
-                    <TooltipContent side="top" className="max-w-[320px] text-xs leading-relaxed">
-                      CAD에서 만든 기준 정보 파일입니다.
-                      원점 위치와 회전 방향 같은 기준이 들어 있어,
-                      STL만 있을 때보다 더 정확한 작업에 도움이 됩니다.
-                    </TooltipContent>
-                  </Tooltip>
-                </span>
-                파일을 찾아 더 정확한 원점/회전값을 적용할 수 있어요.
-              </div>
-              <div className="mt-2 text-[11px] text-amber-800/90">
-                예) ExoCAD: <code>.constructionInfo</code>, 3Shape: <code>.dentalProject</code> / <code>ImplantDirectionPosition*.xml</code>
-              </div>
-              <div className="mt-2 flex items-center gap-2">
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  className="h-7"
-                  onClick={() => companionInputRef.current?.click()}
-                >
-                  누락 파일 업로드
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="ghost"
-                  className="h-7 text-amber-900"
-                  onClick={handleBypassMissingCompanion}
-                >
-                  없이 진행
-                </Button>
-              </div>
-            </div>
-          )}
+
           <div
             ref={listContainerRef}
             className="flex flex-col gap-2.5 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 px-2 py-2 flex-1 min-h-0 focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0 -mx-1"
             tabIndex={0}
             role="listbox"
-            aria-label="첨부된 STL 파일 목록"
+            aria-label="첨부 파일 목록"
             onKeyDown={handleKeyboardNavigation}
           >
-            {!hasActiveSession && (
-              <div className="flex flex-1 items-center justify-center py-6">
-                <div
-                  className={`w-full max-w-[420px] border-2 border-dashed rounded-2xl p-4 md:p-6 text-center transition-colors flex flex-col items-center justify-center gap-2 cursor-pointer ${
-                    isDragOver
-                      ? "border-primary bg-primary/5"
-                      : "border-gray-300 hover:border-primary/50 bg-white"
-                  }`}
-                  onDragOver={onDragOver}
-                  onDragLeave={onDragLeave}
-                  onDrop={onDrop}
-                  onClick={() => uploadInputRef.current?.click()}
-                >
-                  <p className="text-xs md:text-sm text-muted-foreground">
-                    파일명에서 치과이름, 환자이름, 치아번호를 자동 인식합니다.
-                  </p>
-                </div>
-              </div>
-            )}
+            <div
+              className={`shrink-0 w-full border-2 border-dashed rounded-2xl p-3 md:p-4 text-center transition-colors flex flex-col items-center justify-center gap-1.5 cursor-pointer ${
+                isDragOver
+                  ? "border-primary bg-primary/5"
+                  : "border-gray-300 hover:border-primary/50 bg-white"
+              }`}
+              onDragOver={onDragOver}
+              onDragLeave={onDragLeave}
+              onDrop={onDrop}
+              onClick={() => uploadInputRef.current?.click()}
+            >
+              <p className="text-xs md:text-sm text-muted-foreground">
+                여기를 클릭하거나 파일을 드래그해 추가하세요.
+              </p>
+              <p className="text-xs md:text-sm text-muted-foreground">
+                파일명에서 치과/환자/치아번호를 자동 인식합니다.
+              </p>
+            </div>
+            {hasCompanionOnlySession &&
+              companionFiles.map((companion) => {
+                const companionKey = `${companion.name}:${companion.size}:${companion.lastModified}`;
+                return (
+                  <div
+                    key={companionKey}
+                    onDragOver={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      setCardDragOverKey(companionKey);
+                    }}
+                    onDragLeave={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      setCardDragOverKey((prev) => (prev === companionKey ? null : prev));
+                    }}
+                    onDrop={(event) =>
+                      handleCardDrop(event, companionKey, {
+                        targetCompanionFileKey: companionKey,
+                      })
+                    }
+                    className={`relative shrink-0 app-glass-card w-full px-4 py-3.5 rounded-xl border border-gray-200 bg-white text-gray-900 ${cardDragOverKey === companionKey ? "ring-2 ring-blue-300 ring-offset-2 ring-offset-white border-blue-300 bg-blue-50/40" : ""}`}
+                  >
+                    <div className="relative z-10 flex flex-col gap-1.5">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="truncate flex-1 text-[11px] text-slate-500" title="STL 파일을 추가해 의뢰를 계속해주세요. (카드 드롭 가능)">
+                          STL 파일을 추가해 의뢰를 계속해주세요. (카드 드롭 가능)
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="h-7 px-2 text-xs"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              setPendingCompanionCardForStlUpload(companionKey);
+                              uploadInputRef.current?.click();
+                            }}
+                          >
+                            stl 추가
+                          </Button>
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              handleRemoveCompanionFile(companion);
+                            }}
+                            className="p-1 text-slate-400 hover:text-red-500"
+                            aria-label="구성정보 삭제"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1.5 text-xs text-sky-700 min-w-0">
+                        <Badge className="bg-sky-600 hover:bg-sky-600">구성정보</Badge>
+                        <span className="truncate" title={companion.name}>{companion.name}</span>
+                      </div>
+
+                    </div>
+                  </div>
+                );
+              })}
+
             {hasActiveSession &&
               files
                 .map((file, index) => ({ file, index }))
@@ -1261,7 +1425,20 @@ export function NewRequestDetailsSection({
                   const matchedCompanions = companionFiles.filter((companion) =>
                     isStemMatch(getStem(filename), getStem(companion.name)),
                   );
-                  const primaryCompanion = matchedCompanions[0] || null;
+                  const manualLinkedCompanions = companionFiles.filter((companion) =>
+                    (manualCompanionLinksByStlKey[fileKey] || []).includes(
+                      getCompanionFileKey(companion),
+                    ),
+                  );
+                  const effectiveCompanions =
+                    matchedCompanions.length > 0
+                      ? matchedCompanions
+                      : manualLinkedCompanions.length > 0
+                        ? manualLinkedCompanions
+                        : files.length === 1
+                          ? companionFiles
+                          : [];
+                  const primaryCompanion = effectiveCompanions[0] || null;
 
                   return (
                     <div
@@ -1269,13 +1446,45 @@ export function NewRequestDetailsSection({
                       onClick={() => {
                         openDetailModal(index);
                       }}
+                      onDragOver={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        setCardDragOverKey(fileKey);
+                      }}
+                      onDragLeave={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        setCardDragOverKey((prev) => (prev === fileKey ? null : prev));
+                      }}
+                      onDrop={(event) =>
+                        handleCardDrop(event, fileKey, {
+                          selectIndex: index,
+                          targetStlFileKey: fileKey,
+                        })
+                      }
                       data-file-index={index}
-                      className={`relative shrink-0 app-glass-card w-full px-4 py-3.5 rounded-xl cursor-pointer transition-all ${baseClasses} ${stateClasses} ${ringClasses} hover:border-gray-400`}
+                      className={`relative shrink-0 app-glass-card w-full px-4 py-3.5 rounded-xl cursor-pointer transition-all ${baseClasses} ${stateClasses} ${ringClasses} ${cardDragOverKey === fileKey ? "ring-2 ring-blue-300 ring-offset-2 ring-offset-white border-blue-300 bg-blue-50/40" : ""} hover:border-gray-400`}
                     >
                       <div className="relative z-10 flex flex-col gap-1.5">
                         <div className="flex items-center justify-between gap-3">
                           <div className="truncate flex-1">{filename}</div>
                           <div className="flex items-center gap-1">
+                            {!primaryCompanion && (
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                className="h-7 px-2 text-xs"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  setSelectedPreviewIndex(index);
+                                  setPendingCompanionTargetStlKey(fileKey);
+                                  companionInputRef.current?.click();
+                                }}
+                              >
+                                구성정보 추가
+                              </Button>
+                            )}
                             {isVerified && (
                               <Check
                                 className="w-4 h-4 text-primary"
@@ -1303,10 +1512,15 @@ export function NewRequestDetailsSection({
                                 {primaryCompanion.name}
                               </span>
                             ) : (
-                              <span className="truncate text-slate-500">없음</span>
+                              <span
+                                className="truncate text-slate-500"
+                                title="STL 파일이 있는 폴더에서 구성정보 파일을 추가해 주세요."
+                              >
+                                STL 파일이 있는 폴더에서 구성정보 파일을 추가해 주세요.
+                              </span>
                             )}
-                            {matchedCompanions.length > 1 && (
-                              <span className="text-slate-500">+{matchedCompanions.length - 1}개</span>
+                            {effectiveCompanions.length > 1 && (
+                              <span className="text-slate-500">+{effectiveCompanions.length - 1}개</span>
                             )}
                           </div>
                           {primaryCompanion && (
@@ -1323,6 +1537,7 @@ export function NewRequestDetailsSection({
                             </button>
                           )}
                         </div>
+
                         {estimatedShip && (
                           <div className="flex items-center gap-1.5 text-xs text-slate-500">
                             <Calendar className="w-3 h-3" />
@@ -1623,46 +1838,28 @@ export function NewRequestDetailsSection({
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>폴더 안 파일도 같이 올릴까요?</AlertDialogTitle>
+            <AlertDialogTitle>구성정보 파일도 함께 올릴까요?</AlertDialogTitle>
             <AlertDialogDescription>
-              STL만 올려도 작업은 가능해요.
+              지금은 STL만 첨부되었어요.
               <br />
-              다만 폴더 내 모든 파일을 같이 올리면,
-              <span className="mx-1 inline-flex items-center gap-1 align-middle">
-                구성정보
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <button
-                      type="button"
-                      className="inline-flex items-center justify-center text-slate-500 hover:text-slate-700"
-                      aria-label="구성정보 안내"
-                    >
-                      <CircleHelp className="h-3.5 w-3.5" />
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent side="top" className="max-w-[320px] text-xs leading-relaxed">
-                    CAD에서 만든 기준 정보 파일입니다.
-                    원점 위치와 회전 방향 같은 기준이 들어 있어,
-                    STL만 있을 때보다 더 정확한 작업에 도움이 됩니다.
-                  </TooltipContent>
-                </Tooltip>
-              </span>
-              파일을 찾아 더 정확한 원점/회전값을 적용할 수 있어요.
-
+              더 정확한 작업을 위해 <strong>.xml 파일(3Shape)</strong> 또는 <strong>constructionInfo 파일(ExoCAD)</strong>을 함께 올려주세요.
+              <br />
+              없으면 이번에는 구성정보 없이 진행할 수 있어요.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel onClick={handleBypassMissingCompanion}>
-              이번엔 없이 진행
+              구성정보 없이 진행
             </AlertDialogCancel>
             <AlertDialogAction
               onClick={(e) => {
                 e.preventDefault();
+                setPendingCompanionTargetStlKey(null);
                 companionInputRef.current?.click();
                 setCompanionPromptOpen(false);
               }}
             >
-              누락 파일 업로드
+              구성정보 파일 업로드
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
