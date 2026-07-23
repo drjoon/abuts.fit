@@ -3,6 +3,7 @@ import Request from "../../models/request.model.js";
 import File from "../../models/file.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 import AdminHappyCallCompletion from "../../models/adminHappyCallCompletion.model.js";
+import AdminHappyCallMemoDraft from "../../models/adminHappyCallMemoDraft.model.js";
 import {
   getDateRangeFromQuery,
   getMongoHealth,
@@ -319,7 +320,12 @@ export async function getDashboardStats(req, res) {
       .map((a) => a?._id)
       .filter(Boolean);
 
-    const [requestorRequestStats, firstCompletions, activeHappyCallCompletions] =
+    const [
+      requestorRequestStats,
+      firstCompletions,
+      activeHappyCallCompletions,
+      happyCallMemoDrafts,
+    ] =
       requestorAnchorIds.length > 0
         ? await Promise.all([
             Request.aggregate([
@@ -450,8 +456,13 @@ export async function getDashboardStats(req, res) {
             })
               .select({ businessAnchorId: 1, reasonCode: 1, suppressUntil: 1 })
               .lean(),
+            AdminHappyCallMemoDraft.find({
+              businessAnchorId: { $in: requestorAnchorIds },
+            })
+              .select({ businessAnchorId: 1, entries: 1 })
+              .lean(),
           ])
-        : [[], [], []];
+        : [[], [], [], []];
 
     const requestStatsByAnchorId = new Map(
       (Array.isArray(requestorRequestStats) ? requestorRequestStats : []).map(
@@ -463,6 +474,19 @@ export async function getDashboardStats(req, res) {
       (Array.isArray(firstCompletions) ? firstCompletions : []).map((row) => [
         String(row?._id || "").trim(),
         row,
+      ]),
+    );
+
+    const happyCallMemoEntryMap = new Map(
+      (Array.isArray(happyCallMemoDrafts) ? happyCallMemoDrafts : []).map((row) => [
+        String(row?.businessAnchorId || "").trim(),
+        (Array.isArray(row?.entries) ? row.entries : [])
+          .map((entry) => ({
+            id: String(entry?._id || "").trim(),
+            message: String(entry?.message || "").trim(),
+            savedAt: toIsoOrNull(entry?.savedAt),
+          }))
+          .filter((entry) => Boolean(entry.id) && Boolean(entry.message)),
       ]),
     );
 
@@ -521,6 +545,8 @@ export async function getDashboardStats(req, res) {
         statsRow?.recent14UnmachinableJudged || 0,
       );
 
+      const memoEntries = happyCallMemoEntryMap.get(anchorId) || [];
+
       const baseItem = {
         businessAnchorId: anchorId,
         businessName: String(anchor?.name || "").trim() || "-",
@@ -551,6 +577,7 @@ export async function getDashboardStats(req, res) {
           recent14UnmachinableJudged,
         },
         reasons: [],
+        memoEntries,
       };
 
       requestorItems.push(baseItem);
@@ -937,6 +964,79 @@ export async function listHappyCallCompletions(req, res) {
   }
 }
 
+export async function saveHappyCallMemoDraft(req, res) {
+  try {
+    const businessAnchorId = String(req.body?.businessAnchorId || "").trim();
+    const message = String(req.body?.message || "").slice(0, 500).trim();
+
+    if (!businessAnchorId) {
+      return res.status(400).json({
+        success: false,
+        message: "businessAnchorId가 필요합니다.",
+      });
+    }
+
+    if (!message) {
+      return res.status(400).json({
+        success: false,
+        message: "메모 내용을 입력해주세요.",
+      });
+    }
+
+    const savedAt = new Date();
+    const savedBy = req.user?._id || null;
+
+    await AdminHappyCallMemoDraft.findOneAndUpdate(
+      { businessAnchorId },
+      {
+        $push: {
+          entries: {
+            $each: [
+              {
+                message,
+                savedAt,
+                savedBy,
+              },
+            ],
+            $slice: -200,
+          },
+        },
+      },
+      {
+        upsert: true,
+        new: false,
+        setDefaultsOnInsert: true,
+      },
+    );
+
+    const draft = await AdminHappyCallMemoDraft.findOne({ businessAnchorId })
+      .select({ businessAnchorId: 1, entries: 1 })
+      .lean();
+
+    const entries = (Array.isArray(draft?.entries) ? draft.entries : [])
+      .map((entry) => ({
+        id: String(entry?._id || "").trim(),
+        message: String(entry?.message || "").trim(),
+        savedAt: toIsoOrNull(entry?.savedAt),
+      }))
+      .filter((entry) => Boolean(entry.id) && Boolean(entry.message));
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        businessAnchorId,
+        entries,
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "해피콜 메모 저장 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
 export async function completeHappyCall(req, res) {
   try {
     const businessAnchorId = String(req.body?.businessAnchorId || "").trim();
@@ -976,6 +1076,8 @@ export async function completeHappyCall(req, res) {
       suppressUntil,
       note,
     });
+
+    await AdminHappyCallMemoDraft.deleteOne({ businessAnchorId });
 
     return res.status(200).json({
       success: true,

@@ -1,5 +1,5 @@
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { usePeriodStore } from "@/store/usePeriodStore";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -77,6 +77,11 @@ type HappyCallItem = {
   addressDetail?: string;
   zipCode?: string;
   businessNumber?: string;
+  memoEntries?: Array<{
+    id?: string;
+    message?: string;
+    savedAt?: string | null;
+  }>;
   createdAt?: string | null;
   firstCompletedAt?: string | null;
   lastCompletedAt?: string | null;
@@ -291,6 +296,7 @@ export const AdminDashboardPage = () => {
     item: null,
   });
   const [happyCallMemoDraft, setHappyCallMemoDraft] = useState("");
+  const [happyCallSelectedMemoId, setHappyCallSelectedMemoId] = useState<string | null>(null);
   const [happyCallNotesByAnchor, setHappyCallNotesByAnchor] = useState<
     Record<string, HappyCallMemoEntry[]>
   >({});
@@ -410,6 +416,66 @@ export const AdminDashboardPage = () => {
     },
     retry: false,
   });
+
+  useEffect(() => {
+    const summary = adminDashboardResponse?.success
+      ? (adminDashboardResponse.data?.happyCallSummary ?? null)
+      : null;
+
+    const sourceItems: HappyCallItem[] = Array.isArray(summary?.allItems)
+      ? summary.allItems
+      : Array.isArray(summary?.items)
+        ? summary.items
+        : [];
+
+    const next: Record<string, HappyCallMemoEntry[]> = {};
+
+    sourceItems.forEach((item) => {
+      const anchorId = String(item?.businessAnchorId || "").trim();
+      if (!anchorId) return;
+
+      const entries = (Array.isArray(item?.memoEntries) ? item.memoEntries : [])
+        .map((entry, idx: number) => {
+          const message = String(entry?.message || "").trim();
+          const savedAt = String(entry?.savedAt || "").trim();
+          const id = String(entry?.id || `${anchorId}-${savedAt}-${idx}`).trim();
+          if (!message || !savedAt) return null;
+          return {
+            id,
+            message,
+            savedAt,
+          } as HappyCallMemoEntry;
+        })
+        .filter(Boolean) as HappyCallMemoEntry[];
+
+      next[anchorId] = entries;
+    });
+
+    setHappyCallNotesByAnchor(next);
+  }, [adminDashboardResponse]);
+
+  useEffect(() => {
+    if (!happyCallMemoDialog.open) return;
+    const anchorId = String(happyCallMemoDialog.item?.businessAnchorId || "").trim();
+    if (!anchorId) {
+      setHappyCallSelectedMemoId(null);
+      return;
+    }
+
+    const entries = Array.isArray(happyCallNotesByAnchor[anchorId])
+      ? happyCallNotesByAnchor[anchorId]
+      : [];
+
+    if (!entries.length) {
+      setHappyCallSelectedMemoId(null);
+      return;
+    }
+
+    const hasCurrent = entries.some((entry) => entry.id === happyCallSelectedMemoId);
+    if (!hasCurrent) {
+      setHappyCallSelectedMemoId(entries[entries.length - 1]?.id || null);
+    }
+  }, [happyCallMemoDialog, happyCallNotesByAnchor, happyCallSelectedMemoId]);
 
   if (!user || user.role !== "admin") return null;
 
@@ -1452,6 +1518,11 @@ export const AdminDashboardPage = () => {
                               onClick={(e) => {
                                 e.stopPropagation();
                                 setHappyCallMemoDraft("");
+                                setHappyCallSelectedMemoId(
+                                  memoEntries.length
+                                    ? String(memoEntries[memoEntries.length - 1]?.id || "") || null
+                                    : null,
+                                );
                                 setHappyCallMemoDialog({ open: true, item });
                               }}
                             >
@@ -1699,15 +1770,17 @@ export const AdminDashboardPage = () => {
         onClose={() => {
           setHappyCallMemoDialog({ open: false, item: null });
           setHappyCallMemoDraft("");
+          setHappyCallSelectedMemoId(null);
         }}
         title="해피콜 메모"
+        panelClassName="!w-[92vw] !max-w-[1100px] overflow-hidden"
         description={
           <div className="space-y-3 text-sm text-gray-700">
             <div>
               <span className="font-semibold text-gray-900">
                 {String(happyCallMemoDialog.item?.businessName || happyCallMemoDialog.item?.companyName || "해당 의뢰자")}
               </span>
-              의 대화 메모를 계속 추가하세요.
+              의 해피콜 메모입니다.
             </div>
 
             {(() => {
@@ -1716,42 +1789,86 @@ export const AdminDashboardPage = () => {
                 ? happyCallNotesByAnchor[anchorId]
                 : [];
 
-              if (!memoEntries.length) {
-                return (
-                  <div className="rounded-md border border-dashed border-slate-300 bg-slate-50 px-2.5 py-2 text-xs text-slate-500">
-                    아직 저장된 메모가 없습니다. 아래에 새 메모를 입력해 추가하세요.
-                  </div>
-                );
-              }
+              const selectedEntry = memoEntries.find(
+                (entry) => entry.id === happyCallSelectedMemoId,
+              ) || null;
 
               return (
-                <div className="space-y-1.5 rounded-md border border-slate-200 bg-slate-50 p-2 max-h-[180px] overflow-auto">
-                  {memoEntries.map((entry) => (
-                    <div key={entry.id} className="rounded-md border border-slate-200 bg-white px-2 py-1.5">
-                      <div className="text-[10px] text-slate-500 mb-0.5">{toDateTimeLabel(entry.savedAt)}</div>
+                <div className="grid grid-cols-1 gap-3 xl:grid-cols-12">
+                  <div className="xl:col-span-7 min-w-0 rounded-md border border-slate-200 bg-slate-50 p-3 space-y-2.5">
+                    <div className="text-xs font-semibold text-slate-700">기존 메모 목록</div>
+
+                    <div className="max-h-[260px] overflow-y-auto space-y-1.5 pr-1">
+                      {memoEntries.length === 0 ? (
+                        <div className="rounded-md border border-dashed border-slate-300 bg-white px-2.5 py-3 text-xs text-slate-500 text-center">
+                          저장된 메모가 없습니다.
+                        </div>
+                      ) : (
+                        [...memoEntries]
+                          .sort((a, b) =>
+                            new Date(b.savedAt).getTime() - new Date(a.savedAt).getTime(),
+                          )
+                          .map((entry, idx) => {
+                            const isActive = entry.id === happyCallSelectedMemoId;
+                            return (
+                              <button
+                                key={entry.id}
+                                type="button"
+                                onClick={() => setHappyCallSelectedMemoId(entry.id)}
+                                className={`w-full rounded-md border px-2.5 py-2 text-left transition ${
+                                  isActive
+                                    ? "border-blue-300 bg-blue-50"
+                                    : "border-slate-200 bg-white hover:bg-slate-50"
+                                }`}
+                              >
+                                <div className="flex items-center justify-between gap-2">
+                                  <div className="text-[11px] font-medium text-slate-700">
+                                    메모 {memoEntries.length - idx}
+                                  </div>
+                                  <div className="text-[10px] text-slate-500 shrink-0">
+                                    {toDateTimeLabel(entry.savedAt)}
+                                  </div>
+                                </div>
+                                <div className="mt-1 text-xs text-slate-600 truncate">
+                                  {String(entry.message || "-")}
+                                </div>
+                              </button>
+                            );
+                          })
+                      )}
+                    </div>
+
+                    <div className="rounded-md border border-slate-200 bg-white p-2.5 min-h-[150px] max-h-[220px] overflow-y-auto">
+                      <div className="text-[11px] text-slate-500 mb-1">
+                        {selectedEntry ? toDateTimeLabel(selectedEntry.savedAt) : "메모를 선택하세요"}
+                      </div>
                       <div className="text-xs text-slate-700 whitespace-pre-wrap break-words">
-                        {String(entry.message || "-")}
+                        {selectedEntry
+                          ? String(selectedEntry.message || "-")
+                          : memoEntries.length
+                            ? "왼쪽 목록에서 메모를 선택하면 내용이 표시됩니다."
+                            : "아직 메모가 없습니다."}
                       </div>
                     </div>
-                  ))}
+                  </div>
+
+                  <div className="xl:col-span-5 min-w-0 rounded-md border border-slate-200 bg-white p-3 space-y-2.5">
+                    <div className="text-xs font-semibold text-slate-700">신규 메모 추가</div>
+                    <textarea
+                      value={happyCallMemoDraft}
+                      onChange={(e) =>
+                        setHappyCallMemoDraft(String(e.target.value || "").slice(0, 500))
+                      }
+                      className="w-full min-h-[260px] rounded-md border border-slate-300 px-2.5 py-2 text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-200 resize-y"
+                    />
+                    <div className="flex items-center justify-between gap-2 text-[11px] text-slate-500">
+                      <span className="truncate">저장 시 현재 시각이 자동 기록됩니다.</span>
+                      <span className="shrink-0">{String(happyCallMemoDraft || "").length}/500</span>
+                    </div>
+                  </div>
                 </div>
               );
             })()}
-
-            <div className="space-y-1">
-              <div className="text-xs font-medium text-slate-700">새 메모 추가</div>
-              <textarea
-                value={happyCallMemoDraft}
-                onChange={(e) =>
-                  setHappyCallMemoDraft(String(e.target.value || "").slice(0, 500))
-                }
-                className="w-full min-h-[110px] rounded-md border border-slate-300 px-2.5 py-2 text-xs text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-200"
-              />
-            </div>
-            <div className="flex items-center justify-between text-[11px] text-slate-500">
-              <span>저장 시 현재 시각이 자동으로 기록됩니다.</span>
-              <span>{String(happyCallMemoDraft || "").length}/500</span>
-            </div>
           </div>
         }
         actions={[
@@ -1761,12 +1878,13 @@ export const AdminDashboardPage = () => {
             onClick: () => {
               setHappyCallMemoDialog({ open: false, item: null });
               setHappyCallMemoDraft("");
+              setHappyCallSelectedMemoId(null);
             },
           },
           {
             label: "메모 추가",
             variant: "primary",
-            onClick: () => {
+            onClick: async () => {
               const anchorId = String(happyCallMemoDialog.item?.businessAnchorId || "").trim();
               const message = String(happyCallMemoDraft || "").slice(0, 500).trim();
 
@@ -1785,25 +1903,59 @@ export const AdminDashboardPage = () => {
                 return;
               }
 
-              const savedAt = new Date().toISOString();
-              const entry: HappyCallMemoEntry = {
-                id: `${savedAt}-${Math.random().toString(36).slice(2, 8)}`,
-                message,
-                savedAt,
-              };
+              try {
+                const res = await apiFetch<any>({
+                  path: "/api/admin/dashboard/happy-call/memo",
+                  method: "POST",
+                  token,
+                  headers: {
+                    "Content-Type": "application/json",
+                  },
+                  jsonBody: {
+                    businessAnchorId: anchorId,
+                    message,
+                  },
+                });
 
-              setHappyCallNotesByAnchor((prev) => {
-                const current = Array.isArray(prev[anchorId]) ? prev[anchorId] : [];
-                return {
+                if (!res.ok || res.data?.success === false) {
+                  throw new Error(res.data?.message || "해피콜 메모 저장에 실패했습니다.");
+                }
+
+                const entriesRaw = Array.isArray(res.data?.data?.entries)
+                  ? res.data.data.entries
+                  : [];
+
+                const entries: HappyCallMemoEntry[] = entriesRaw
+                  .map((entry: any, idx: number) => {
+                    const savedAt = String(entry?.savedAt || "").trim();
+                    const msg = String(entry?.message || "").trim();
+                    const id = String(entry?.id || `${anchorId}-${savedAt}-${idx}`).trim();
+                    if (!savedAt || !msg) return null;
+                    return {
+                      id,
+                      message: msg,
+                      savedAt,
+                    } as HappyCallMemoEntry;
+                  })
+                  .filter(Boolean) as HappyCallMemoEntry[];
+
+                setHappyCallNotesByAnchor((prev) => ({
                   ...prev,
-                  [anchorId]: [...current, entry],
-                };
-              });
-              setHappyCallMemoDraft("");
-              toast({
-                title: "메모 추가",
-                description: "해피콜 메모가 누적 저장되었습니다.",
-              });
+                  [anchorId]: entries,
+                }));
+                setHappyCallSelectedMemoId(entries[entries.length - 1]?.id || null);
+                setHappyCallMemoDraft("");
+                toast({
+                  title: "메모 추가",
+                  description: "해피콜 메모가 저장되었습니다.",
+                });
+              } catch (error: any) {
+                toast({
+                  title: "메모 저장 실패",
+                  description: String(error?.message || "잠시 후 다시 시도해주세요."),
+                  variant: "destructive",
+                });
+              }
             },
           },
         ]}

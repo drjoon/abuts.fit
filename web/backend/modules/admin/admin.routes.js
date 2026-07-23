@@ -34,6 +34,7 @@ import {
   listHappyCallCompletions,
   completeHappyCall,
   revertLastHappyCallCompletion,
+  saveHappyCallMemoDraft,
 } from "../../controllers/admin/admin.dashboard.controller.js";
 import {
   getSystemLogs,
@@ -178,6 +179,7 @@ router.post("/requests/fix-business-anchor-id", fixMissingBusinessAnchorId);
 // 대시보드 통계
 router.get("/dashboard", getDashboardStats);
 router.get("/dashboard/happy-call/completions", listHappyCallCompletions);
+router.post("/dashboard/happy-call/memo", saveHappyCallMemoDraft);
 router.post("/dashboard/happy-call/complete", completeHappyCall);
 router.post(
   "/dashboard/happy-call/revert-last",
