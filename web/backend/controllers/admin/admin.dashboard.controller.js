@@ -497,16 +497,13 @@ export async function getDashboardStats(req, res) {
     );
 
     const happyCallItems = [];
+    const requestorItems = [];
     const reasonCounter = new Map();
 
     for (const anchorRaw of Array.isArray(requestorAnchors) ? requestorAnchors : []) {
       const anchor = anchorRaw || {};
       const anchorId = String(anchor?._id || "").trim();
       if (!anchorId) continue;
-
-      if (suppressedAnchorSet.has(anchorId)) {
-        continue;
-      }
 
       const statsRow = requestStatsByAnchorId.get(anchorId) || {};
       const firstCompletionRow = firstCompletionByAnchorId.get(anchorId) || {};
@@ -523,6 +520,44 @@ export async function getDashboardStats(req, res) {
       const recent14UnmachinableJudged = Number(
         statsRow?.recent14UnmachinableJudged || 0,
       );
+
+      const baseItem = {
+        businessAnchorId: anchorId,
+        businessName: String(anchor?.name || "").trim() || "-",
+        companyName: String(anchor?.metadata?.companyName || "").trim() || "",
+        representativeName: String(anchor?.metadata?.representativeName || "").trim() || "",
+        phoneNumber: String(anchor?.metadata?.phoneNumber || "").trim() || "",
+        email: String(anchor?.metadata?.email || "").trim() || "",
+        address: String(anchor?.metadata?.address || "").trim() || "",
+        addressDetail: String(anchor?.metadata?.addressDetail || "").trim() || "",
+        zipCode: String(anchor?.metadata?.zipCode || "").trim() || "",
+        businessNumber:
+          String(anchor?.metadata?.businessNumber || "").trim() ||
+          String(anchor?.businessNumberNormalized || "").trim() || "",
+        createdAt: toIsoOrNull(anchorCreatedAt),
+        firstCompletedAt: toIsoOrNull(firstCompletedAt),
+        lastCompletedAt: toIsoOrNull(lastCompletedAt),
+        lastRequestAt: toIsoOrNull(lastRequestAt),
+        firstCompletedRequestId: String(firstCompletionRow?.firstCompletedRequestId || "").trim(),
+        firstCompletedRequestMongoId: String(
+          firstCompletionRow?.firstCompletedRequestMongoId || "",
+        ).trim(),
+        stats: {
+          totalRequests: totalRequestsByAnchor,
+          completedCount,
+          recent30Total,
+          recent30Canceled,
+          recent30Completed,
+          recent14UnmachinableJudged,
+        },
+        reasons: [],
+      };
+
+      requestorItems.push(baseItem);
+
+      if (suppressedAnchorSet.has(anchorId)) {
+        continue;
+      }
 
       const reasons = [];
 
@@ -600,36 +635,10 @@ export async function getDashboardStats(req, res) {
         return Math.max(acc, Number(HAPPY_CALL_REASON_PRIORITY[reason.severity] || 0));
       }, 0);
 
+      baseItem.reasons = normalizedReasons;
+
       happyCallItems.push({
-        businessAnchorId: anchorId,
-        businessName: String(anchor?.name || "").trim() || "-",
-        companyName: String(anchor?.metadata?.companyName || "").trim() || "",
-        representativeName: String(anchor?.metadata?.representativeName || "").trim() || "",
-        phoneNumber: String(anchor?.metadata?.phoneNumber || "").trim() || "",
-        email: String(anchor?.metadata?.email || "").trim() || "",
-        address: String(anchor?.metadata?.address || "").trim() || "",
-        addressDetail: String(anchor?.metadata?.addressDetail || "").trim() || "",
-        zipCode: String(anchor?.metadata?.zipCode || "").trim() || "",
-        businessNumber:
-          String(anchor?.metadata?.businessNumber || "").trim() ||
-          String(anchor?.businessNumberNormalized || "").trim() || "",
-        createdAt: toIsoOrNull(anchorCreatedAt),
-        firstCompletedAt: toIsoOrNull(firstCompletedAt),
-        lastCompletedAt: toIsoOrNull(lastCompletedAt),
-        lastRequestAt: toIsoOrNull(lastRequestAt),
-        firstCompletedRequestId: String(firstCompletionRow?.firstCompletedRequestId || "").trim(),
-        firstCompletedRequestMongoId: String(
-          firstCompletionRow?.firstCompletedRequestMongoId || "",
-        ).trim(),
-        stats: {
-          totalRequests: totalRequestsByAnchor,
-          completedCount,
-          recent30Total,
-          recent30Canceled,
-          recent30Completed,
-          recent14UnmachinableJudged,
-        },
-        reasons: normalizedReasons,
+        ...baseItem,
         _priority: maxSeverity,
       });
     }
@@ -672,6 +681,7 @@ export async function getDashboardStats(req, res) {
         0,
       ),
       reasonCounts,
+      allItems: requestorItems,
       items: happyCallItems.map(({ _priority, ...rest }) => rest),
     };
 

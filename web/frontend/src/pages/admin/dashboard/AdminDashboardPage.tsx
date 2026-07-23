@@ -108,6 +108,7 @@ type HappyCallSummary = {
     severity: "high" | "medium" | "low";
     count: number;
   }>;
+  allItems?: HappyCallItem[];
   items?: HappyCallItem[];
 };
 
@@ -507,6 +508,10 @@ export const AdminDashboardPage = () => {
     ? happyCallSummary.items
     : [];
 
+  const allRequestorItems = Array.isArray(happyCallSummary?.allItems)
+    ? happyCallSummary.allItems
+    : [];
+
   const happyCallCompletionItems: HappyCallCompletionItem[] = Array.isArray(
     happyCallCompletionsResponse?.data?.items,
   )
@@ -539,16 +544,18 @@ export const AdminDashboardPage = () => {
   });
 
   const filteredHappyCallItems =
-    happyCallReasonFilter === "all"
-      ? happyCallItems
-      : happyCallItems.filter((item) =>
-          Array.isArray(item?.reasons)
-            ? item.reasons.some(
-                (reason) =>
-                  String(reason?.code || "").trim() === happyCallReasonFilter,
-              )
-            : false,
-        );
+    happyCallReasonFilter === "all_requestors"
+      ? allRequestorItems
+      : happyCallReasonFilter === "all"
+        ? happyCallItems
+        : happyCallItems.filter((item) =>
+            Array.isArray(item?.reasons)
+              ? item.reasons.some(
+                  (reason) =>
+                    String(reason?.code || "").trim() === happyCallReasonFilter,
+                )
+              : false,
+          );
 
   const handleCompleteHappyCall = async (
     item: HappyCallItem,
@@ -1279,6 +1286,25 @@ export const AdminDashboardPage = () => {
                 <div className="flex flex-wrap items-center gap-2">
                   <button
                     type="button"
+                    onClick={() => setHappyCallReasonFilter("all_requestors")}
+                    className={`inline-flex items-center rounded-md border px-2.5 py-1 text-sm transition ${
+                      happyCallReasonFilter === "all_requestors"
+                        ? "border-blue-300 bg-blue-50 text-blue-700"
+                        : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                    }`}
+                    aria-label="전체 의뢰자"
+                  >
+                    <span className="mr-1">전체(의뢰자)</span>
+                    <Badge
+                      variant={happyCallReasonFilter === "all_requestors" ? "destructive" : "secondary"}
+                      className="text-[11px]"
+                    >
+                      {totalRequestorBusinessCount.toLocaleString()}개
+                    </Badge>
+                  </button>
+
+                  <button
+                    type="button"
                     onClick={() => setHappyCallReasonFilter("all")}
                     className={`inline-flex items-center rounded-md border px-2.5 py-1 text-sm transition ${
                       happyCallReasonFilter === "all"
@@ -1457,7 +1483,9 @@ export const AdminDashboardPage = () => {
 
                   {filteredHappyCallItems.length === 0 && (
                     <div className="col-span-full text-sm text-gray-500 text-center py-6">
-                      해당 조건의 해피콜 대상 의뢰자가 없습니다.
+                      {happyCallReasonFilter === "all_requestors"
+                        ? "표시할 의뢰자가 없습니다."
+                        : "해당 조건의 해피콜 대상 의뢰자가 없습니다."}
                     </div>
                   )}
                   </div>
