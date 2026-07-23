@@ -66,10 +66,14 @@ export type CaseInfos = {
     tag?: string;
   };
   retentionGroove?: "none" | "shallow" | "deep";
+  cadCompanionFiles?: {
+    originalName?: string;
+    size?: number;
+    mimetype?: string;
+    s3Key?: string;
+  }[];
   // 헥스 회전 모드값 SSOT
-  // - "0": 보정
-  // - "30": 무보정
-  requestorHexRotation?: "0" | "30";
+  requestorHexRotation?: "보정" | "무보정";
 };
 
 export type DraftFileMeta = {

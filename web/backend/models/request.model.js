@@ -117,17 +117,15 @@ const requestSchema = new mongoose.Schema(
         enum: ["none", "shallow", "deep"],
         default: "deep",
       },
-      // 의뢰자 헥스 회전 선택값 (0도/30도)
+      // 의뢰자 헥스 회전 선택값
       requestorHexRotation: {
         type: String,
-        enum: ["0", "30"],
-        default: "0",
+        default: "보정",
       },
       // 최종 헥스 회전 값 (제조사 값이 있으면 우선, 없으면 의뢰자 값)
       finalHexRotation: {
         type: String,
-        enum: ["0", "30"],
-        default: "0",
+        default: "보정",
       },
       reviewByStage: {
         request: {
@@ -316,6 +314,25 @@ const requestSchema = new mongoose.Schema(
           default: Date.now,
         },
       },
+      // STL과 함께 업로드된 CAD 구성 보조파일 메타정보
+      cadCompanionFiles: {
+        type: [
+          {
+            originalName: String,
+            fileType: String,
+            fileSize: Number,
+            filePath: String,
+            s3Key: String,
+            s3Url: String,
+            uploadedAt: {
+              type: Date,
+              default: Date.now,
+            },
+            _id: false,
+          },
+        ],
+        default: [],
+      },
       camFile: {
         fileName: String,
         fileType: String,
@@ -467,12 +484,13 @@ const requestSchema = new mongoose.Schema(
         ref: "User",
         default: null,
       },
-      // 제조사 헥스 회전 선택값 (canonical)
+      // 제조사 헥스 회전/좌표계 전처리 선택값 (canonical)
       // - "보정"(legacy 0도)
       // - "무보정"(legacy 30도)
+      // - "구성정보"(ExoCAD/3Shape 좌표 구성파일 기반 전처리)
       manufacturerHexRotation: {
         type: String,
-        enum: ["보정", "무보정"],
+        enum: ["보정", "무보정", "구성정보"],
         default: null,
       },
       manufacturerHexRotationUpdatedAt: {

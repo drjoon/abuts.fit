@@ -157,7 +157,7 @@ export function NewRequestShippingSection({
     }
   };
 
-  const holidayRolloverNote = "공휴일은 다음날 발송합니다";
+  const holidayRolloverNote = "공휴일/비영업일은 다음 영업 집하일로 자동 이월됩니다";
   return (
     <div
       ref={containerRef}
@@ -208,8 +208,9 @@ export function NewRequestShippingSection({
             </div>
           </div>
           <div className="mt-2 text-center text-sm text-slate-600 leading-relaxed">
-            가장 먼저 도래한 날에 일괄 발송합니다.
+            선택한 요일 중 가장 먼저 도래한 집하일에 일괄 발송합니다.
             <span className="text-red-500"> (복수 선택 권장)</span>
+
           </div>
         </div>
       </div>

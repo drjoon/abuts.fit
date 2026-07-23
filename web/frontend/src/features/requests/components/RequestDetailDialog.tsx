@@ -23,8 +23,8 @@ export type RequestDetailDialogCaseInfos = {
   maxDiameter?: number | null;
   connectionDiameter?: number | null;
   retentionGroove?: "none" | "shallow" | "deep";
-  requestorHexRotation?: "0" | "30";
-  finalHexRotation?: "0" | "30";
+  requestorHexRotation?: "보정" | "무보정";
+  finalHexRotation?: "보정" | "무보정";
 };
 
 export type RequestDetailDialogRequest = {
@@ -155,14 +155,14 @@ export const RequestDetailDialog = ({
   const retentionGrooveLabel =
     caseInfos.retentionGroove === "deep" ? "있음" : "없음";
   const requestorHexRotationLabel =
-    String(caseInfos.requestorHexRotation || "").trim() === "30"
+    String(caseInfos.requestorHexRotation || "").trim() === "무보정"
       ? "무보정"
       : "보정";
   const finalHexRaw = String(caseInfos.finalHexRotation || "").trim();
   const finalHexRotationLabel =
-    finalHexRaw === "30"
+    finalHexRaw === "무보정"
       ? "무보정"
-      : finalHexRaw === "0"
+      : finalHexRaw === "보정"
         ? "보정"
         : requestorHexRotationLabel;
 

@@ -16,6 +16,16 @@ const draftFileSchema = new mongoose.Schema(
   { _id: false },
 );
 
+const draftCompanionFileSchema = new mongoose.Schema(
+  {
+    originalName: String,
+    size: Number,
+    mimetype: String,
+    s3Key: String,
+  },
+  { _id: false },
+);
+
 const draftCaseSchema = new mongoose.Schema(
   {
     requestor: {
@@ -32,6 +42,11 @@ const draftCaseSchema = new mongoose.Schema(
       {
         // 이 case 에 연결된 파일 메타정보 (임시 업로드 파일)
         file: draftFileSchema,
+        // STL과 함께 업로드된 CAD 구성 보조파일 메타정보
+        cadCompanionFiles: {
+          type: [draftCompanionFileSchema],
+          default: [],
+        },
         clinicName: String,
         patientName: String,
         tooth: String,
@@ -73,11 +88,10 @@ const draftCaseSchema = new mongoose.Schema(
           enum: ["none", "shallow", "deep"],
           default: "deep",
         },
-        // 의뢰자 헥스 회전 선택값 (0도/30도)
+        // 의뢰자 헥스 회전 선택값(canonical)
         requestorHexRotation: {
           type: String,
-          enum: ["0", "30"],
-          default: "0",
+          default: "보정",
         },
         // 배송 요청 정보 (묶음 배송만 사용)
         requestedShipDate: Date,

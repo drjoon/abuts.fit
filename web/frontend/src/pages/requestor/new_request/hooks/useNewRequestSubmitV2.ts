@@ -26,6 +26,7 @@ type UseNewRequestSubmitV2Params = {
   token: string | null;
   navigate: (path: string) => void;
   files: File[];
+  companionFiles?: File[];
   setFiles: (v: File[]) => void;
   clinicPresets: ClinicPreset[];
   selectedClinicId: string | null;
@@ -57,6 +58,7 @@ export const useNewRequestSubmitV2 = ({
   token,
   navigate,
   files,
+  companionFiles = [],
   setFiles,
   clinicPresets,
   selectedClinicId,
@@ -69,7 +71,7 @@ export const useNewRequestSubmitV2 = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const preparedDraftRef = useRef<{
     draftId: string;
-    filesFingerprint: string;
+    uploadFingerprint: string;
   } | null>(null);
   const { uploadFilesWithToast } = useUploadWithProgressToast({ token });
   const { data: systemSettings } = useSystemSettings();
@@ -91,6 +93,57 @@ export const useNewRequestSubmitV2 = ({
       .map((f) => `${normalizeKeyPart(f.name)}:${f.size}`)
       .sort()
       .join("|");
+  };
+
+  const buildUploadFingerprint = (stlFiles: File[], cadCompanionFiles: File[]) => {
+    return [
+      buildFilesFingerprint(stlFiles),
+      buildFilesFingerprint(cadCompanionFiles),
+    ].join("||");
+  };
+
+  const getStem = (name: string) => {
+    const trimmed = String(name || "").trim();
+    const dot = trimmed.lastIndexOf(".");
+    if (dot < 0) return trimmed;
+    return trimmed.slice(0, dot);
+  };
+
+  const buildStemKeys = (stemRaw: string) => {
+    const stem = String(stemRaw || "").trim().toLowerCase();
+    const keys = new Set<string>();
+    if (!stem) return keys;
+    keys.add(stem);
+    const tokens = stem.split(/[-_\s]+/).filter(Boolean);
+    if (tokens[0]) keys.add(tokens[0]);
+    if (tokens[0] && tokens[1]) keys.add(`${tokens[0]}-${tokens[1]}`);
+    return keys;
+  };
+
+  const extractTrailingIndex = (valueRaw: string) => {
+    const value = String(valueRaw || "").trim().toLowerCase();
+    const match = value.match(/(?:^|[-_\s])(\d{1,4})$/);
+    return match?.[1] || "";
+  };
+
+  const isStemMatch = (aRaw: string, bRaw: string) => {
+    const a = String(aRaw || "").trim().toLowerCase();
+    const b = String(bRaw || "").trim().toLowerCase();
+    if (!a || !b) return false;
+    if (a === b) return true;
+    if (a.startsWith(b) || b.startsWith(a)) return true;
+
+    const aKeys = buildStemKeys(a);
+    const bKeys = buildStemKeys(b);
+    for (const key of aKeys) {
+      if (bKeys.has(key)) return true;
+    }
+
+    const aIndex = extractTrailingIndex(a);
+    const bIndex = extractTrailingIndex(b);
+    if (aIndex && bIndex && aIndex === bIndex) return true;
+
+    return false;
   };
 
   const redirectToProfileIfNeeded = async () => false;
@@ -306,12 +359,18 @@ export const useNewRequestSubmitV2 = ({
         }
       }
 
-      const filesFingerprint = buildFilesFingerprint(files);
+      const normalizedCompanionFiles = Array.isArray(companionFiles)
+        ? companionFiles
+        : [];
+      const uploadFingerprint = buildUploadFingerprint(
+        files,
+        normalizedCompanionFiles,
+      );
       const canReusePreparedDraft =
         Array.isArray(duplicateResolutions) &&
         duplicateResolutions.length > 0 &&
         preparedDraftRef.current?.draftId === String(draftId) &&
-        preparedDraftRef.current?.filesFingerprint === filesFingerprint;
+        preparedDraftRef.current?.uploadFingerprint === uploadFingerprint;
 
       if (canReusePreparedDraft) {
         console.log(
@@ -319,15 +378,20 @@ export const useNewRequestSubmitV2 = ({
           {
             draftId,
             filesCount: files.length,
+            companionCount: normalizedCompanionFiles.length,
           },
         );
       } else {
         let creditShortfallMsg: string | null = null;
         let tempFiles: TempUploadedFile[] = [];
+        let companionTempFiles: TempUploadedFile[] = [];
         try {
-          const [uploadResult] = await Promise.all([
+          const [uploadResult, companionUploadResult] = await Promise.all([
             files.length > 0
               ? uploadFilesWithToast(files)
+              : Promise.resolve([] as TempUploadedFile[]),
+            normalizedCompanionFiles.length > 0
+              ? uploadFilesWithToast(normalizedCompanionFiles)
               : Promise.resolve([] as TempUploadedFile[]),
             (async () => {
               try {
@@ -399,6 +463,7 @@ export const useNewRequestSubmitV2 = ({
           ]);
 
           tempFiles = uploadResult ?? [];
+          companionTempFiles = companionUploadResult ?? [];
         } catch {
           // S3 업로드 실패 - toast는 uploadFilesWithToast에서 이미 처리됨
           return;
@@ -425,6 +490,13 @@ export const useNewRequestSubmitV2 = ({
             }
           };
 
+          const companionByKey = new Map<string, TempUploadedFile>();
+          normalizedCompanionFiles.forEach((file, i) => {
+            const uploaded = companionTempFiles[i];
+            if (!uploaded?.key) return;
+            companionByKey.set(toNormalizedFileKey(file), uploaded);
+          });
+
           const caseInfosPayload = files
             .map((file, i) => {
               const tf = tempFiles[i];
@@ -432,6 +504,22 @@ export const useNewRequestSubmitV2 = ({
               const ci = (caseInfosMap?.[fileKey] ||
                 filteredMap[fileKey] ||
                 {}) as Partial<CaseInfos>;
+
+              const stlStem = getStem(file.name);
+              const cadCompanionFiles = normalizedCompanionFiles
+                .filter((companion) => isStemMatch(stlStem, getStem(companion.name)))
+                .map((companion) => {
+                  const uploaded = companionByKey.get(toNormalizedFileKey(companion));
+                  if (!uploaded?.key) return null;
+                  return {
+                    originalName: uploaded.originalName,
+                    size: uploaded.size,
+                    mimetype: uploaded.mimetype,
+                    s3Key: uploaded.key,
+                  };
+                })
+                .filter(Boolean);
+
               return {
                 clinicName: ci.clinicName,
                 patientName: ci.patientName,
@@ -449,6 +537,7 @@ export const useNewRequestSubmitV2 = ({
                 requestorHexRotation: ci.requestorHexRotation,
                 shippingMode: ci.shippingMode,
                 requestedShipDate: ci.requestedShipDate,
+                cadCompanionFiles,
                 file: tf?.key
                   ? {
                       originalName: tf.originalName,
@@ -498,7 +587,7 @@ export const useNewRequestSubmitV2 = ({
 
         preparedDraftRef.current = {
           draftId: String(draftId),
-          filesFingerprint,
+          uploadFingerprint,
         };
       }
 
@@ -628,7 +717,9 @@ export const useNewRequestSubmitV2 = ({
           method: "DELETE",
           headers: getHeaders(),
         });
-      } catch {}
+      } catch {
+        // noop
+      }
 
       // 상태 초기화
       preparedDraftRef.current = null;
@@ -641,7 +732,9 @@ export const useNewRequestSubmitV2 = ({
           window.localStorage.removeItem(NEW_REQUEST_DRAFT_ID_STORAGE_KEY);
           clearFileCache();
         }
-      } catch {}
+      } catch {
+        // noop
+      }
 
       // V3 로컬 드래프트 정리 (localStorage + IndexedDB)
       try {
@@ -657,7 +750,9 @@ export const useNewRequestSubmitV2 = ({
         if (typeof window !== "undefined") {
           window.dispatchEvent(new Event("abuts:credits:updated"));
         }
-      } catch {}
+      } catch {
+        // noop
+      }
 
       dismiss();
       toast({ title: "의뢰가 제출되었습니다" });

@@ -578,14 +578,15 @@ export const RequestorRecentRequestsCard = ({
             const retentionGrooveLabel =
               item.caseInfos?.retentionGroove === "deep" ? "있음" : "없음";
             const requestorHexRotationLabel =
-              String(item.caseInfos?.requestorHexRotation || "").trim() === "30"
+              String(item.caseInfos?.requestorHexRotation || "").trim() ===
+              "무보정"
                 ? "무보정"
                 : "보정";
             const finalHexRaw = String(item.caseInfos?.finalHexRotation || "").trim();
             const finalHexRotationLabel =
-              finalHexRaw === "30"
+              finalHexRaw === "무보정"
                 ? "무보정"
-                : finalHexRaw === "0"
+                : finalHexRaw === "보정"
                   ? "보정"
                   : requestorHexRotationLabel;
             const isUnmachinable = isUnmachinableRequest(item);
@@ -778,11 +779,11 @@ export const RequestorRecentRequestsCard = ({
                   const finalHexRaw = String(
                     cancelTarget?.caseInfos?.finalHexRotation || "",
                   ).trim();
-                  if (finalHexRaw === "30") return "무보정";
-                  if (finalHexRaw === "0") return "보정";
+                  if (finalHexRaw === "무보정") return "무보정";
+                  if (finalHexRaw === "보정") return "보정";
                   return String(
                     cancelTarget?.caseInfos?.requestorHexRotation || "",
-                  ).trim() === "30"
+                  ).trim() === "무보정"
                     ? "무보정"
                     : "보정";
                 })()}

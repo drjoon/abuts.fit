@@ -19,8 +19,10 @@ const NEW_REQUEST_CLINIC_STORAGE_KEY_PREFIX =
 const NEW_REQUEST_HEX_ROTATION_STORAGE_KEY_PREFIX =
   "abutsfit:new-request:hex-rotation:v1:";
 
-const normalizeRequestorHexRotation = (value: unknown): "0" | "30" => {
-  return String(value || "").trim() === "30" ? "30" : "0";
+const normalizeRequestorHexRotation = (
+  value: unknown,
+): "보정" | "무보정" => {
+  return String(value || "").trim() === "무보정" ? "무보정" : "보정";
 };
 
 /**
@@ -31,10 +33,14 @@ const normalizeRequestorHexRotation = (value: unknown): "0" | "30" => {
  * - useNewRequestClinics: 클리닉 프리셋 관리
  * - useNewRequestSubmitV2: 제출/취소 처리
  */
-export const useNewRequestPage = (existingRequestId?: string) => {
+export const useNewRequestPage = (
+  existingRequestId?: string,
+  options?: { companionFiles?: File[] },
+) => {
   const { user, token } = useAuthStore();
   const navigate = useNavigate();
   const { toast } = useToast();
+  const companionFiles = options?.companionFiles || [];
   const navigateWithDashboardRefresh = useCallback(
     (path: string) => {
       if (path === "/dashboard") {
@@ -95,17 +101,17 @@ export const useNewRequestPage = (existingRequestId?: string) => {
   }, [businessAnchorId]);
 
   const [defaultRequestorHexRotation, setDefaultRequestorHexRotation] =
-    useState<"0" | "30">("0");
+    useState<"보정" | "무보정">("보정");
 
   const businessType = useMemo(() => {
     return resolveBusinessType(user?.role, "requestor");
   }, [user?.role]);
 
   useEffect(() => {
-    const readLocalDefault = (): "0" | "30" | null => {
+    const readLocalDefault = (): "보정" | "무보정" | null => {
       try {
         const raw = localStorage.getItem(requestorHexRotationStorageKey);
-        if (raw !== "0" && raw !== "30") return null;
+        if (raw !== "보정" && raw !== "무보정") return null;
         return raw;
       } catch {
         return null;
@@ -160,7 +166,7 @@ export const useNewRequestPage = (existingRequestId?: string) => {
   }, [token, businessAnchorId, requestorHexRotationStorageKey]);
 
   const persistRequestorHexRotationDefault = useCallback(
-    async (value: "0" | "30") => {
+    async (value: "보정" | "무보정") => {
       const next = normalizeRequestorHexRotation(value);
       setDefaultRequestorHexRotation(next);
 
@@ -263,6 +269,12 @@ export const useNewRequestPage = (existingRequestId?: string) => {
               next[k] = {
                 ...v,
                 shippingMode,
+                requestorHexRotation: normalizeRequestorHexRotation(
+                  (v as any)?.requestorHexRotation,
+                ),
+                finalHexRotation: normalizeRequestorHexRotation(
+                  (v as any)?.finalHexRotation,
+                ),
               } as CaseInfos;
             });
             return next;
@@ -1019,6 +1031,7 @@ export const useNewRequestPage = (existingRequestId?: string) => {
     caseInfosMap,
     patchDraftImmediately,
     onDuplicateDetected: handleServerDuplicateDetected,
+    companionFiles,
   });
 
   const handleSubmit = useCallback(async () => {

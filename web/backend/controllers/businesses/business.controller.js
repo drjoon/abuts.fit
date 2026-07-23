@@ -569,8 +569,8 @@ function getAnchorMembership(anchor, userId) {
 
 function normalizeRequestorHexRotation(value) {
   const v = String(value || "").trim();
-  if (v === "30") return "30";
-  return "0";
+  if (v === "무보정") return "무보정";
+  return "보정";
 }
 
 /**
@@ -597,7 +597,7 @@ export async function getMyRequestSettings(req, res) {
           membership: "none",
           canEdit: false,
           anodizingEnabled: true,
-          defaultRequestorHexRotation: "0",
+          defaultRequestorHexRotation: "보정",
           updatedAt: null,
         },
       });
@@ -681,11 +681,11 @@ export async function updateMyRequestSettings(req, res) {
     let defaultRequestorHexRotation;
     if (hasDefaultRequestorHexRotation) {
       const raw = String(req.body?.defaultRequestorHexRotation || "").trim();
-      if (raw !== "0" && raw !== "30") {
+      if (raw !== "보정" && raw !== "무보정") {
         return res.status(400).json({
           success: false,
           message:
-            "유효하지 않은 의뢰 설정입니다. defaultRequestorHexRotation은 '보정(0)' 또는 '무보정(30)'이어야 합니다.",
+            "유효하지 않은 의뢰 설정입니다. defaultRequestorHexRotation은 '보정' 또는 '무보정'이어야 합니다.",
         });
       }
       defaultRequestorHexRotation = raw;

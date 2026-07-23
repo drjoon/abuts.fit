@@ -150,7 +150,7 @@
 **모든 시각은 KST(한국 표준시, Asia/Seoul)를 기준으로 합니다.**
 
 - 날짜/시각 표시, 계산, 저장 시 **KST 기준**을 사용합니다.
-- 주문 마감: **자정(0시 KST)까지 접수분은 당일 16:00 집하**, 이후 접수분은 다음 영업일 16:00 집하
+- 주문/집하 기준: **오늘(0시~24시 KST) 접수분은 다음 영업일 16:00 집하**하며, 당일 집하는 하지 않습니다.
 - 마감 시간: **발송 예정일(estimatedShipYmd) 16:00 KST**
 - 백엔드 시간 유틸리티: `/web/backend/utils/krBusinessDays.js`
   - `toKstYmd()`: Date → YYYY-MM-DD (KST)
@@ -889,23 +889,28 @@
 
 ### 4.3.4 제조사 헥스 회전(PreviewModal) → DB 저장 → Esprit 모드 정책 (2026-07-23)
 
-검색 키워드: `rnd-hex-rotation`, `manufacturerHexRotation`, `hexRotation.appliedDeg`, `request-meta`, `보정`, `무보정`
+검색 키워드: `rnd-hex-rotation`, `manufacturerHexRotation`, `hexRotation.appliedDeg`, `request-meta`, `보정`, `무보정`, `구성정보`, `constructionInfo`, `.pts`, `.cln`, `.3shapeOrder`
 
 - 제조사 워크시트 PreviewModal의 `헥스 회전` 선택값은 반드시 백엔드 API를 통해 DB에 저장한다.
   - API: `PATCH /api/requests/:id/rnd-hex-rotation`
   - 저장 필드(SSOT):
     - `Request.rnd.manufacturerHexRotation`
     - `Request.caseInfos.finalHexRotation` (표시/조회용 최종값)
-- `manufacturerHexRotation`의 canonical 모드는 **`보정` / `무보정`** 이다.
+- `manufacturerHexRotation`의 canonical 모드는 **`보정` / `무보정` / `구성정보`** 이다.
   - 레거시 입력값 `"0"`/`"30"`은 하위호환으로만 허용하고, add-in에서 canonical 모드로 정규화한다.
+  - `구성정보`는 CAD별 좌표 구성파일 기반 전처리 모드다.
+    - ExoCAD: `.constructionInfo` (선택: `.dentalProject`)
+    - 3Shape: `.pts` (대체: `.cln`, `.3shapeOrder`)
 - Esprit 적용 정책 SSOT:
   1. `보정`: 기본 W축 `+30` 적용 후, `hexRotation.appliedDeg`를 **Esprit 부호계로 반전하여** 추가 적용
      - 식: `totalW = 30 + (-appliedDeg)`
   2. `무보정`: **회전 완전 미적용** (기본 `+30`도 미적용, telemetry도 무시)
+  3. `구성정보`: CAD 좌표 구성파일(ExoCAD/3Shape) 기반 전처리 경로를 사용한다. `finalHexRotation`은 canonical 값(`보정`/`무보정`)만 사용하며, `구성정보` 선택 시 `보정`으로 저장한다.
 - Rhino telemetry 의미 SSOT:
   - `request-meta.caseInfos.hexRotation.appliedDeg`는 Rhino가 실제 mesh에 적용하지 않은 **가상 보정량(-phase_mod)** 이다.
 - `request-meta` 응답은 add-in이 파일명 추론/폴백 없이 SSOT를 직접 쓰도록 아래를 포함해야 한다.
   - `caseInfos.manufacturerHexRotation`
+  - `caseInfos.cadConstruction` (`modeEnabled`, `source`, `detectedFiles`, `expectedCompanionFiles`)
   - `caseInfos.hexRotation.appliedDeg` (및 관련 telemetry)
 
 관련 파일:
@@ -914,9 +919,45 @@
 - `web/backend/modules/requests/request.routes.js`
 - `web/backend/controllers/requests/common.requests.controller.js`
 - `web/backend/controllers/bg/bg.controller.js`
+- `web/backend/models/request.model.js`
+- `web/backend/models/businessAnchor.model.js`
+- `web/frontend/src/types/request.ts`
 - `bg/pc1/esprit-addin/Helpers/BackendApiClient.cs`
 - `bg/pc1/esprit-addin/StlFileProcessor.cs`
 - `bg/pc1/rhino-server/compute/scripts/align_stl_coordinate.py`
+
+### 4.3.5 신규의뢰 CAD 구성파일(ExoCAD/3Shape) 업로드/저장 정책 (2026-07-23)
+
+- 신규의뢰 파일 입력 UI는 STL/구성파일 버튼을 분리하지 않고 단일 `파일 추가`로 받는다.
+- 드롭/선택된 파일은 **업로드 전에** 확장자/파일크기/파일명으로 1차 분류한다.
+  - 허용 대상: 어벗 STL + CAD 구성파일 (`.constructionInfo`, `.dentalProject`, `.cln`, `.3shapeOrder`, `ImplantDirectionPosition*.xml`)
+  - `.pts`는 현재 업로드 대상에서 제외(자동 생략)한다.
+  - 어벗 STL은 **1MB 이하**를 기본 권장으로 처리하며, **1MB 초과 STL은 크라운/브릿지 가능성이 높은 비추천 목록**으로 분류한다.
+  - 크라운/브릿지로 분류된 STL은 기본 제외
+  - 애매한 STL은 즉시 업로드하지 않고 사용자 확인 다이얼로그에서 선택하게 한다(추천 후보 강조)
+- 폴더 드롭을 지원하며, 폴더 내부 파일을 재귀 수집 후 동일 분류 규칙을 적용한다.
+- 구성파일이 없어도 의뢰 진행은 허용한다.
+  - 안내 문구는 "안 올려도 작업은 가능하나, 올리면 정확도가 높아진다" 원칙을 명시한다.
+  - 사용자는 `없이 진행`을 선택할 수 있어야 한다.
+- 구성파일은 제출 시 S3에 업로드하고, STL case 단위로 매칭(stem 유사도 + trailing index 매칭)해 Draft/Request에 메타데이터를 저장한다.
+  - Draft 저장 필드(SSOT): `DraftRequest.caseInfos[].cadCompanionFiles[]`
+  - Request 저장 필드(SSOT): `Request.caseInfos.cadCompanionFiles[]`
+  - 각 항목 필드: `originalName`, `size/fileSize`, `mimetype/fileType`, `s3Key` (선택: `filePath`)
+- `request-meta`는 저장된 `cadCompanionFiles`를 함께 내려주며, `cadConstruction.detectedFiles` 계산에도 해당 파일명을 포함한다.
+
+관련 파일:
+- `web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx`
+- `web/frontend/src/pages/requestor/new_request/components/NewRequestDetailsSection.tsx`
+- `web/frontend/src/pages/requestor/new_request/hooks/useNewRequestPage.ts`
+- `web/frontend/src/pages/requestor/new_request/hooks/useNewRequestSubmitV2.ts`
+- `web/frontend/src/pages/requestor/new_request/hooks/newRequestTypes.ts`
+- `web/frontend/src/pages/requestor/new_request/utils/localDraftStorage.ts`
+- `web/backend/models/draftRequest.model.js`
+- `web/backend/models/request.model.js`
+- `web/backend/controllers/requests/draftRequest.controller.js`
+- `web/backend/controllers/requests/creation.draft.controller.js`
+- `web/backend/controllers/requests/creation.from-draft.controller.js`
+- `web/backend/controllers/bg/bg.controller.js`
 
 ### 4.4 가상 우편함
 
@@ -1002,7 +1043,7 @@
 - 운송장 출력도 제품별이 아니라 **조직(박스)별 1매**가 SSOT입니다.
 - 한 우편함은 한 조직의 한 박스를 의미하며, 운송장 `address_list`/라벨/ZPL도 박스당 1행만 생성합니다.
 - 운송장 라벨 비고는 `우편함번호 / 사업자명 / 제품수` 형식(예: `A1A3 / 메이븐 / 5건`)을 사용합니다.
-- 운영 기준 시각은 **오후 2시 라벨 출력, 오후 4시 집하(code 11)** 입니다. `printed`는 출력 완료, `accepted`는 접수 완료, `picked_up`는 집하 완료, `completed`는 최종 배송 완료를 의미합니다. **자정(0시 KST)까지 접수분은 같은 날 집하(16:00), 이후 접수분은 다음 영업일 집하** 기준으로 작업을 계획합니다.
+- 운영 기준 시각은 **오후 2시 라벨 출력, 오후 4시 집하(code 11)** 입니다. `printed`는 출력 완료, `accepted`는 접수 완료, `picked_up`는 집하 완료, `completed`는 최종 배송 완료를 의미합니다. **오늘(0시~24시 KST) 접수분은 다음 영업일 16:00 집하** 기준으로 작업을 계획합니다.
 - 분실은 별도 배송 예외 처리로 관리하고, 취소는 `canceled`, 오류는 `error` 상태로 관리하며 재시도를 허용합니다.
 - 우편함 상태 테두리 색상 규칙 (프론트/백엔드 공통 기준)
   - `printed`: 검정색 점선

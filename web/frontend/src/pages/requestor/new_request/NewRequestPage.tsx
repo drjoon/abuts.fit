@@ -18,6 +18,17 @@ import { PageFileDropZone } from "@/features/requests/components/PageFileDropZon
 import { NewRequestDetailsSection } from "./components/NewRequestDetailsSection";
 import { NewRequestShippingSection } from "./components/NewRequestShippingSection";
 import { NewRequestPageSkeleton } from "@/shared/ui/skeletons/NewRequestPageSkeleton";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 
 /**
  * New Request 페이지 (리팩터링 버전)
@@ -28,7 +39,8 @@ import { NewRequestPageSkeleton } from "@/shared/ui/skeletons/NewRequestPageSkel
 export const NewRequestPage = () => {
   const { id: existingRequestId } = useParams<{ id?: string }>();
   const navigate = useNavigate();
-  const FILE_SIZE_THRESHOLD_BYTES = 30 * 1024 * 1024; // 3MB
+  const FILE_SIZE_THRESHOLD_BYTES = 30 * 1024 * 1024;
+  const ABUTMENT_MAX_BYTES = 1 * 1024 * 1024; // 어벗 STL은 1MB 이하만 허용
 
   const { toast } = useToast();
 
@@ -36,6 +48,7 @@ export const NewRequestPage = () => {
   const [filledStlFiles, setFilledStlFiles] = useState<Record<string, File>>(
     {},
   );
+  const [companionFilesForSubmit, setCompanionFilesForSubmit] = useState<File[]>([]);
 
   const normalizeKeyPart = (s: string) => {
     try {
@@ -89,7 +102,9 @@ export const NewRequestPage = () => {
     setDuplicateResolutions,
     handleSubmitWithDuplicateResolutions,
     draftStatus,
-  } = useNewRequestPage(existingRequestId);
+  } = useNewRequestPage(existingRequestId, {
+    companionFiles: companionFilesForSubmit,
+  });
 
   const {
     fileVerificationStatus,
@@ -162,6 +177,7 @@ export const NewRequestPage = () => {
     setImplantBrand("");
     setImplantFamily("");
     setImplantType("");
+    setCompanionFilesForSubmit([]);
 
     const fileInput = document.getElementById(
       "file-input",
@@ -382,69 +398,391 @@ export const NewRequestPage = () => {
 
   const [focusUnverifiedTick, setFocusUnverifiedTick] = useState(0);
 
-  const validateFileForUpload = (
-    file: File,
-  ): { valid: boolean; message?: string } => {
-    // Check file extension for STL
-    const fileName = file.name.toLowerCase();
-    if (!fileName.endsWith(".stl")) {
-      return {
-        valid: false,
-        message: "STL 파일만 업로드 가능합니다.",
-      };
-    }
+  const CAD_COMPANION_EXTS = new Set([
+    ".constructioninfo",
+    ".dentalproject",
+    ".cln",
+    ".3shapeorder",
+    ".xml",
+  ]);
 
-    if (file.size >= FILE_SIZE_THRESHOLD_BYTES) {
-      return {
-        valid: false,
-        message:
-          "30MB 이상의 파일은 업로드할 수 없습니다. 커스텀 어벗 STL 파일만 업로드해주세요.",
-      };
+  const ABUT_HINT_KEYWORDS = [
+    "abut",
+    "abutment",
+    "tibase",
+    "ti-base",
+    "customabut",
+    "custom_abut",
+    "angulated",
+    "hybrid",
+    "어벗",
+  ];
+
+  const CROWN_HINT_KEYWORDS = [
+    "crown",
+    "coping",
+    "bridge",
+    "pontic",
+    "inlay",
+    "onlay",
+    "veneer",
+    "provisional",
+    "temporary",
+    "temp",
+    "zirconia",
+    "fullarch",
+    "full-arch",
+    "크라운",
+    "브릿지",
+    "코핑",
+  ];
+
+  type AmbiguousUploadCandidate = {
+    id: string;
+    file: File;
+    reason: string;
+    recommended: boolean;
+  };
+
+  type ClassifiedUploadBatch = {
+    stlFilesToUpload: File[];
+    companionFilesToHandle: File[];
+    ambiguousFiles: AmbiguousUploadCandidate[];
+    rejectedFiles: { name: string; reason: string }[];
+    ignoredFiles: { name: string; reason: string }[];
+  };
+
+  type WebkitFileSystemEntry = {
+    isFile: boolean;
+    isDirectory: boolean;
+    file?: (callback: (file: File) => void) => void;
+    createReader?: () => {
+      readEntries: (callback: (entries: WebkitFileSystemEntry[]) => void) => void;
+    };
+  };
+
+  type DataTransferItemWithEntry = DataTransferItem & {
+    webkitGetAsEntry?: () => WebkitFileSystemEntry | null;
+  };
+
+  const [fileReviewOpen, setFileReviewOpen] = useState(false);
+  const [reviewBatch, setReviewBatch] = useState<ClassifiedUploadBatch | null>(null);
+  const [reviewSelection, setReviewSelection] = useState<Record<string, boolean>>({});
+
+  const getFileExtLower = (name: string) => {
+    const lower = String(name || "").trim().toLowerCase();
+    const dot = lower.lastIndexOf(".");
+    if (dot < 0) return "";
+    return lower.slice(dot);
+  };
+
+  const companionFileHandlerRef = useRef<(files: File[]) => void>(() => {});
+
+  const dedupeFiles = (input: File[]) => {
+    const map = new Map<string, File>();
+    for (const file of input) {
+      const key = `${file.name}:${file.size}:${file.lastModified}`;
+      if (!map.has(key)) map.set(key, file);
     }
-    return { valid: true };
+    return [...map.values()];
+  };
+
+  const isLikelyCrownDesignStl = (fileName: string) => {
+    const lower = String(fileName || "").toLowerCase();
+    const hasCrownHint = CROWN_HINT_KEYWORDS.some((k) => lower.includes(k));
+    if (!hasCrownHint) return false;
+    const hasAbutHint = ABUT_HINT_KEYWORDS.some((k) => lower.includes(k));
+    return !hasAbutHint;
+  };
+
+  const isLikelyAbutStlName = (fileName: string) => {
+    const lower = String(fileName || "").toLowerCase();
+    return ABUT_HINT_KEYWORDS.some((k) => lower.includes(k));
+  };
+
+  const isLikelyThreeShapeMetadataXml = (fileName: string) => {
+    const lower = String(fileName || "").toLowerCase();
+    return (
+      lower.includes("implantdirectionposition") ||
+      lower.includes("dentalproject") ||
+      lower.includes("3shape") ||
+      lower.includes("order")
+    );
+  };
+
+  const classifyIncomingFiles = (selectedFiles: File[]): ClassifiedUploadBatch => {
+    const stlFilesToUpload: File[] = [];
+    const companionFilesToHandle: File[] = [];
+    const ambiguousFiles: AmbiguousUploadCandidate[] = [];
+    const rejectedFiles: { name: string; reason: string }[] = [];
+    const ignoredFiles: { name: string; reason: string }[] = [];
+
+    selectedFiles.forEach((file) => {
+      const ext = getFileExtLower(file.name);
+      const sizeMb = file.size / (1024 * 1024);
+
+      if (ext === ".xml") {
+        if (isLikelyThreeShapeMetadataXml(file.name)) {
+          companionFilesToHandle.push(file);
+        } else {
+          rejectedFiles.push({
+            name: file.name,
+            reason: "XML 파일은 3Shape 메타파일(예: ImplantDirectionPosition)만 받습니다.",
+          });
+        }
+        return;
+      }
+
+      if (ext === ".pts") {
+        ignoredFiles.push({
+          name: file.name,
+          reason: "PTS 파일은 현재 업로드 대상에서 자동 제외됩니다.",
+        });
+        return;
+      }
+
+      if (CAD_COMPANION_EXTS.has(ext)) {
+        companionFilesToHandle.push(file);
+        return;
+      }
+
+      if (ext !== ".stl") {
+        rejectedFiles.push({
+          name: file.name,
+          reason:
+            "필요한 파일만 받습니다. 어벗 STL과 구성정보 파일만 업로드할 수 있어요.",
+        });
+        return;
+      }
+
+      if (file.size > ABUTMENT_MAX_BYTES) {
+        ambiguousFiles.push({
+          id: toNormalizedFileKey(file),
+          file,
+          recommended: false,
+          reason: `STL (${sizeMb.toFixed(2)}MB): 1MB 초과라 크라운/브릿지 가능성이 높아 비추천합니다.`,
+        });
+        return;
+      }
+
+      if (file.size >= FILE_SIZE_THRESHOLD_BYTES) {
+        rejectedFiles.push({
+          name: file.name,
+          reason: "30MB 이상 STL은 제외됩니다.",
+        });
+        return;
+      }
+
+      if (isLikelyCrownDesignStl(file.name)) {
+        rejectedFiles.push({
+          name: file.name,
+          reason: "크라운/브릿지 디자인 STL로 보여서 제외했습니다.",
+        });
+        return;
+      }
+
+      if (isLikelyAbutStlName(file.name)) {
+        stlFilesToUpload.push(file);
+        return;
+      }
+
+      const likelyBySize = file.size >= 80 * 1024 && file.size <= 12 * 1024 * 1024;
+      ambiguousFiles.push({
+        id: toNormalizedFileKey(file),
+        file,
+        recommended: likelyBySize,
+        reason: likelyBySize
+          ? `STL (${sizeMb.toFixed(2)}MB): 어벗 가능성이 높습니다.`
+          : `STL (${sizeMb.toFixed(2)}MB): 파일명 기준으로 용도 판단이 어려워요.`,
+      });
+    });
+
+    return {
+      stlFilesToUpload,
+      companionFilesToHandle,
+      ambiguousFiles,
+      rejectedFiles,
+      ignoredFiles,
+    };
   };
 
   const onUpload = async (filesToUpload: File[]) => {
     try {
       await handleUpload(filesToUpload);
-    } catch (e: any) {
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : "파일 업로드 중 오류가 발생했습니다.";
       toast({
         title: "오류",
-        description: e.message || "파일 업로드 중 오류가 발생했습니다.",
+        description: message,
         variant: "destructive",
       });
     }
   };
 
-  const handleIncomingFiles = (selectedFiles: File[]) => {
-    const filesToUpload: File[] = [];
-    const rejectedFiles: { name: string; reason: string }[] = [];
+  const applyClassifiedBatch = (batch: ClassifiedUploadBatch, selection?: Record<string, boolean>) => {
+    const selectedAmbiguous = (batch.ambiguousFiles || [])
+      .filter((item) => selection?.[item.id])
+      .map((item) => item.file);
 
-    selectedFiles.forEach((file) => {
-      const validation = validateFileForUpload(file);
-      if (validation.valid) {
-        filesToUpload.push(file);
-      } else {
-        rejectedFiles.push({
-          name: file.name,
-          reason: validation.message || "알 수 없는 오류",
-        });
-      }
-    });
+    const stlFiles = [...batch.stlFilesToUpload, ...selectedAmbiguous];
 
-    if (rejectedFiles.length > 0) {
-      const firstReason = rejectedFiles[0].reason;
+    if (batch.companionFilesToHandle.length > 0) {
+      companionFileHandlerRef.current(batch.companionFilesToHandle);
+      setCompanionFilesForSubmit((prev) => {
+        const map = new Map<string, File>();
+        for (const file of [...prev, ...batch.companionFilesToHandle]) {
+          const key = `${file.name}:${file.size}:${file.lastModified}`;
+          if (!map.has(key)) map.set(key, file);
+        }
+        return [...map.values()];
+      });
+    }
+
+    if (stlFiles.length > 0) {
+      setFileVerificationStatus((prev) => {
+        const next = { ...prev };
+        for (const file of stlFiles) {
+          next[toNormalizedFileKey(file)] = false;
+        }
+        return next;
+      });
+      void onUpload(stlFiles);
+    }
+
+    if (batch.rejectedFiles.length > 0) {
       toast({
-        title: "파일 업로드 실패",
-        description: firstReason,
+        title: "일부 파일이 제외되었습니다",
+        description: batch.rejectedFiles[0].reason,
+        variant: "destructive",
+        duration: 3500,
+      });
+    } else if (batch.ignoredFiles.length > 0) {
+      toast({
+        title: "일부 파일은 자동 제외되었어요",
+        description: batch.ignoredFiles[0].reason,
+        duration: 2500,
+      });
+    }
+
+    if (stlFiles.length === 0 && batch.companionFilesToHandle.length === 0) {
+      toast({
+        title: "업로드할 파일이 없습니다",
+        description: "선택된 파일 중 업로드 가능한 파일이 없었습니다.",
         variant: "destructive",
         duration: 3000,
       });
     }
+  };
 
-    if (filesToUpload.length > 0) {
-      void onUpload(filesToUpload);
+  const handleIncomingFiles = (selectedFiles: File[]) => {
+    const normalized = dedupeFiles(selectedFiles || []);
+    if (!normalized.length) return;
+
+    const batch = classifyIncomingFiles(normalized);
+
+    if (batch.ambiguousFiles.length === 0) {
+      applyClassifiedBatch(batch);
+      return;
     }
+
+    const initialSelection: Record<string, boolean> = {};
+    for (const item of batch.ambiguousFiles) {
+      initialSelection[item.id] = item.recommended;
+    }
+
+    setReviewBatch(batch);
+    setReviewSelection(initialSelection);
+    setFileReviewOpen(true);
+  };
+
+  const readAllEntries = async (reader: {
+    readEntries: (callback: (entries: WebkitFileSystemEntry[]) => void) => void;
+  }): Promise<WebkitFileSystemEntry[]> => {
+    const all: WebkitFileSystemEntry[] = [];
+
+    while (true) {
+      const chunk = await new Promise<WebkitFileSystemEntry[]>((resolve) => {
+        reader.readEntries((entries) => resolve(entries || []));
+      });
+      if (!chunk.length) break;
+      all.push(...chunk);
+    }
+
+    return all;
+  };
+
+  const traverseDroppedEntry = async (
+    entry: WebkitFileSystemEntry,
+  ): Promise<File[]> => {
+    if (entry.isFile && entry.file) {
+      const file = await new Promise<File | null>((resolve) => {
+        try {
+          entry.file?.((f) => resolve(f));
+        } catch {
+          resolve(null);
+        }
+      });
+      return file ? [file] : [];
+    }
+
+    if (entry.isDirectory && entry.createReader) {
+      const reader = entry.createReader();
+      const entries = await readAllEntries(reader);
+      const nested = await Promise.all(entries.map((child) => traverseDroppedEntry(child)));
+      return nested.flat();
+    }
+
+    return [];
+  };
+
+  const extractDroppedFiles = async (
+    droppedItems: DataTransferItem[],
+    droppedDirectFiles: File[],
+  ) => {
+    const items = Array.from(droppedItems || []);
+
+    if (!items.length) {
+      return dedupeFiles(Array.from(droppedDirectFiles || []));
+    }
+
+    const all: File[] = [];
+
+    for (const item of items) {
+      const withHandle = item as DataTransferItem & {
+        getAsFileSystemHandle?: () => Promise<unknown>;
+      };
+      if (typeof withHandle.getAsFileSystemHandle === "function") {
+        try {
+          const handle = await withHandle.getAsFileSystemHandle();
+          if (
+            handle &&
+            (handle as { kind?: string }).kind === "file" &&
+            typeof (handle as { getFile?: () => Promise<File> }).getFile === "function"
+          ) {
+            const file = await (handle as { getFile: () => Promise<File> }).getFile();
+            if (file) {
+              all.push(file);
+              continue;
+            }
+          }
+        } catch {
+          // fallback to webkit/dataTransfer path
+        }
+      }
+
+      const withEntry = item as DataTransferItemWithEntry;
+      const entry = withEntry.webkitGetAsEntry?.();
+      if (entry) {
+        const filesFromEntry = await traverseDroppedEntry(entry);
+        all.push(...filesFromEntry);
+        continue;
+      }
+      const file = item.getAsFile();
+      if (file) all.push(file);
+    }
+
+    const directFiles = Array.from(droppedDirectFiles || []);
+    return dedupeFiles([...all, ...directFiles]);
   };
 
   if (draftStatus === "loading") {
@@ -553,6 +891,82 @@ export const NewRequestPage = () => {
           actions={[]}
         />
 
+        <Dialog open={fileReviewOpen} onOpenChange={setFileReviewOpen}>
+          <DialogContent className="sm:max-w-[680px]">
+            <DialogHeader>
+              <DialogTitle>파일 확인 후 업로드</DialogTitle>
+              <DialogDescription>
+                어벗 디자인 파일을 선택해주세요.
+                <span className="font-medium">
+                  추천 파일은 파란 배지로 강조되어 있습니다.
+                </span>
+                <br />
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="max-h-[360px] overflow-y-auto rounded-md border p-2 space-y-1.5">
+              {(reviewBatch?.ambiguousFiles || []).map((item) => {
+                const checked = Boolean(reviewSelection[item.id]);
+                return (
+                  <label
+                    key={item.id}
+                    className={`flex items-start gap-3 rounded-md border px-3 py-2 cursor-pointer ${
+                      checked ? "border-blue-300 bg-blue-50/60" : "border-slate-200"
+                    }`}
+                  >
+                    <Checkbox
+                      checked={checked}
+                      onCheckedChange={(next) => {
+                        setReviewSelection((prev) => ({
+                          ...prev,
+                          [item.id]: Boolean(next),
+                        }));
+                      }}
+                      className="mt-0.5"
+                    />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium truncate">{item.file.name}</span>
+                        {item.recommended ? (
+                          <Badge className="bg-blue-600 hover:bg-blue-600">추천 업로드</Badge>
+                        ) : (
+                          <Badge variant="secondary">비추천</Badge>
+                        )}
+                      </div>
+                      <p className="text-xs text-slate-600 mt-0.5">{item.reason}</p>
+                    </div>
+                  </label>
+                );
+              })}
+            </div>
+
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setFileReviewOpen(false);
+                  setReviewBatch(null);
+                  setReviewSelection({});
+                }}
+              >
+                취소
+              </Button>
+              <Button
+                onClick={() => {
+                  if (reviewBatch) {
+                    applyClassifiedBatch(reviewBatch, reviewSelection);
+                  }
+                  setFileReviewOpen(false);
+                  setReviewBatch(null);
+                  setReviewSelection({});
+                }}
+              >
+                선택 파일 업로드
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 items-stretch flex-1 min-h-0 h-full">
           <div className="flex flex-col gap-2.5 flex-1 min-h-0 h-full">
             <NewRequestDetailsSection
@@ -601,9 +1015,34 @@ export const NewRequestPage = () => {
               onDrop={(e) => {
                 e.preventDefault();
                 handleDragLeave(e);
-                handleIncomingFiles(Array.from(e.dataTransfer.files));
+                const droppedItems = Array.from(e.dataTransfer?.items || []);
+                const droppedDirectFiles = Array.from(e.dataTransfer?.files || []);
+                void (async () => {
+                  const dropped = await extractDroppedFiles(
+                    droppedItems,
+                    droppedDirectFiles,
+                  );
+                  handleIncomingFiles(dropped);
+                })();
               }}
               onFilesSelected={handleIncomingFiles}
+              registerCompanionFileHandler={(handler) => {
+                companionFileHandlerRef.current = handler;
+              }}
+              onCompanionFilesAccepted={(filesAccepted) => {
+                setCompanionFilesForSubmit((prev) => {
+                  const map = new Map<string, File>();
+                  for (const file of [...prev, ...filesAccepted]) {
+                    const key = `${file.name}:${file.size}:${file.lastModified}`;
+                    if (!map.has(key)) map.set(key, file);
+                  }
+                  return [...map.values()];
+                });
+              }}
+              onCompanionFilesChange={(nextFiles) => {
+                setCompanionFilesForSubmit(nextFiles);
+              }}
+              weeklyBatchDays={weeklyBatchDays}
               onCancelAll={handleCancelAll}
               onDuplicateDetected={({ file, duplicate }) => {
                 const caseId = String(
@@ -692,7 +1131,9 @@ export const NewRequestPage = () => {
                           new CustomEvent("abuts:shipping:needs-weekly-days"),
                         );
                       }
-                    } catch {}
+                    } catch {
+                      // noop
+                    }
                     toast({
                       title: "설정 필요",
                       description:

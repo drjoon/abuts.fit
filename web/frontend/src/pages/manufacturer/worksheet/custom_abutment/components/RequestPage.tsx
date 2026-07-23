@@ -1344,31 +1344,39 @@ export const RequestPage = ({
   const [bulkCamRegenerating, setBulkCamRegenerating] = useState(false);
 
   const handleSaveManufacturerHexRotation = useCallback(
-    async (req: ManufacturerRequest, value: "보정" | "무보정") => {
+    async (req: ManufacturerRequest, value: "보정" | "무보정" | "구성정보") => {
       if (!req?._id) return;
       const requestMongoId = String(req._id || "").trim();
 
-      // canonical 우선, legacy fallback: "0" => 보정, "30" => 무보정
       const normalizeManufacturerHexMode = (
         raw: unknown,
-      ): "보정" | "무보정" => {
+      ): "보정" | "무보정" | "구성정보" => {
         const v = String(raw || "").trim();
-        if (v === "무보정" || v === "30") return "무보정";
+        if (v === "구성정보") return "구성정보";
+        if (v === "무보정") return "무보정";
         return "보정";
       };
-      const toFinalHexRotation = (mode: "보정" | "무보정"): "0" | "30" =>
-        mode === "무보정" ? "30" : "0";
+      const toFinalHexRotation = (
+        mode: "보정" | "무보정" | "구성정보",
+      ): "보정" | "무보정" => {
+        if (mode === "무보정") return "무보정";
+        return "보정";
+      };
 
-      const nextValue: "보정" | "무보정" =
-        value === "무보정" ? "무보정" : "보정";
+      const nextValue: "보정" | "무보정" | "구성정보" =
+        value === "무보정"
+          ? "무보정"
+          : value === "구성정보"
+            ? "구성정보"
+            : "보정";
 
       const prevManufacturer = normalizeManufacturerHexMode(
         (req as any)?.rnd?.manufacturerHexRotation,
       );
-      const prevFinal: "0" | "30" =
-        String((req as any)?.caseInfos?.finalHexRotation || "").trim() === "30"
-          ? "30"
-          : "0";
+      const prevFinal: "보정" | "무보정" =
+        String((req as any)?.caseInfos?.finalHexRotation || "").trim() === "무보정"
+          ? "무보정"
+          : "보정";
       const prevUpdatedAt = (req as any)?.rnd?.manufacturerHexRotationUpdatedAt || null;
       const prevUpdatedBy = (req as any)?.rnd?.manufacturerHexRotationUpdatedBy || null;
 
@@ -1412,8 +1420,10 @@ export const RequestPage = ({
         const savedManufacturer = normalizeManufacturerHexMode(
           data?.data?.manufacturerHexRotation,
         );
-        const savedFinal: "0" | "30" =
-          String(data?.data?.finalHexRotation || "").trim() === "30" ? "30" : "0";
+        const savedFinal: "보정" | "무보정" =
+          String(data?.data?.finalHexRotation || "").trim() === "무보정"
+            ? "무보정"
+            : "보정";
 
         pageState.setRequests((prev) =>
           prev.map((item) => {
@@ -1424,9 +1434,9 @@ export const RequestPage = ({
                 ...(item.caseInfos || {}),
                 requestorHexRotation:
                   String(item.caseInfos?.requestorHexRotation || "").trim() ===
-                  "30"
-                    ? "30"
-                    : "0",
+                  "무보정"
+                    ? "무보정"
+                    : "보정",
                 finalHexRotation: savedFinal,
               },
               rnd: {

@@ -17,8 +17,8 @@ const normalizeRetentionGroove = (value) => {
 
 const normalizeRequestorHexRotation = (value) => {
   const v = String(value || "").trim();
-  if (v === "30") return "30";
-  return "0";
+  if (v === "무보정") return "무보정";
+  return "보정";
 };
 
 /**
@@ -69,6 +69,16 @@ export async function cloneRequestToDraft(req, res) {
             s3Key: file.s3Key,
           }
         : undefined,
+      cadCompanionFiles: Array.isArray(ci?.cadCompanionFiles)
+        ? ci.cadCompanionFiles
+            .map((f) => ({
+              originalName: String(f?.originalName || "").trim(),
+              size: Number(f?.fileSize || 0),
+              mimetype: String(f?.fileType || "").trim(),
+              s3Key: String(f?.s3Key || "").trim(),
+            }))
+            .filter((f) => f.originalName && f.s3Key)
+        : [],
       clinicName: ci.clinicName,
       patientName: ci.patientName,
       tooth: ci.tooth,

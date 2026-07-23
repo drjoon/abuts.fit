@@ -38,6 +38,99 @@ const normalizeRetentionGroove = (value) => {
   return "deep";
 };
 
+const parseManufacturerHexRotationModeOrNull = (value) => {
+  const v = String(value || "").trim();
+  if (v === "구성정보") return "구성정보";
+  if (v === "무보정") return "무보정";
+  if (v === "보정") return "보정";
+  return null;
+};
+
+const collectCaseInfoFileNameCandidates = (caseInfos) => {
+  const ci = caseInfos || {};
+  const cadCompanionFiles = Array.isArray(ci?.cadCompanionFiles)
+    ? ci.cadCompanionFiles
+    : [];
+
+  const names = [
+    ci?.file?.originalName,
+    ci?.file?.filePath,
+    ci?.camFile?.fileName,
+    ci?.camFile?.filePath,
+    ci?.ncFile?.fileName,
+    ci?.ncFile?.filePath,
+    ...cadCompanionFiles.flatMap((f) => [f?.originalName, f?.filePath, f?.s3Key]),
+  ]
+    .map((v) => String(v || "").trim())
+    .filter(Boolean);
+
+  const deduped = [];
+  for (const n of names) {
+    if (deduped.includes(n)) continue;
+    deduped.push(n);
+  }
+  return deduped;
+};
+
+const buildCadConstructionMeta = (caseInfos) => {
+  const candidates = collectCaseInfoFileNameCandidates(caseInfos);
+  const lower = candidates.map((n) => n.toLowerCase());
+
+  const exocadConstructionInfoFiles = candidates.filter((_, idx) =>
+    lower[idx].endsWith(".constructioninfo"),
+  );
+  const exocadDentalProjectFiles = candidates.filter((_, idx) =>
+    lower[idx].endsWith(".dentalproject"),
+  );
+
+  const threeShapePtsFiles = candidates.filter((_, idx) =>
+    lower[idx].endsWith(".pts"),
+  );
+  const threeShapeClnFiles = candidates.filter((_, idx) =>
+    lower[idx].endsWith(".cln"),
+  );
+  const threeShapeOrderFiles = candidates.filter((_, idx) =>
+    lower[idx].endsWith(".3shapeorder"),
+  );
+
+  const hasExocad =
+    exocadConstructionInfoFiles.length > 0 || exocadDentalProjectFiles.length > 0;
+  const hasThreeShape =
+    threeShapePtsFiles.length > 0 ||
+    threeShapeClnFiles.length > 0 ||
+    threeShapeOrderFiles.length > 0;
+
+  const source = hasExocad
+    ? "exocad"
+    : hasThreeShape
+      ? "3shape"
+      : "unknown";
+
+  const stlLike = candidates.find((name) => /\.stl$/i.test(name));
+  const stlStem = stlLike
+    ? path.basename(stlLike).replace(/\.stl$/i, "")
+    : "*";
+
+  return {
+    source,
+    detectedFiles: {
+      exocad: {
+        constructionInfo: exocadConstructionInfoFiles,
+        dentalProject: exocadDentalProjectFiles,
+      },
+      threeShape: {
+        pts: threeShapePtsFiles,
+        cln: threeShapeClnFiles,
+        order: threeShapeOrderFiles,
+      },
+    },
+    expectedCompanionFiles: {
+      exocad: [`${stlStem}.constructionInfo`, `${stlStem}.dentalProject`],
+      threeShape: [`${stlStem}.pts`, `${stlStem}.cln`, `${stlStem}.3shapeOrder`],
+    },
+  };
+};
+
 function withBridgeHeaders(extra = {}) {
   const base = {};
   if (BRIDGE_SHARED_SECRET) {
@@ -1225,9 +1318,7 @@ export const getRequestMeta = asyncHandler(async (req, res) => {
         requestId: 1,
         caseInfos: 1,
         lotNumber: 1,
-        // 제조사 수동 헥스 회전 모드값(canonical: "보정"|"무보정")도 함께 로드한다.
-        // legacy 저장값("0"/"30")은 하위호환으로만 해석한다.
-        // - 0 => 보정, 30 => 무보정
+        // 제조사 수동 좌표계 전처리 모드(canonical: "보정"|"무보정"|"구성정보")도 함께 로드한다.
         "rnd.manufacturerHexRotation": 1,
       })
       .lean();
@@ -1240,7 +1331,7 @@ export const getRequestMeta = asyncHandler(async (req, res) => {
         requestId: 1,
         caseInfos: 1,
         lotNumber: 1,
-        // filePath 기반 조회 fallback에서도 동일하게 회전값을 내려주기 위해 포함한다.
+        // filePath 기반 조회 fallback에서도 동일하게 전처리 모드값을 내려주기 위해 포함한다.
         "rnd.manufacturerHexRotation": 1,
       })
       .lean();
@@ -1269,17 +1360,15 @@ export const getRequestMeta = asyncHandler(async (req, res) => {
   }
 
   const ci = request.caseInfos || {};
-  // 제조사 수동 헥스 회전값은 request-meta에서 canonical 모드값("보정"|"무보정")으로 전달한다.
-  // legacy 저장값("0"/"30")은 하위호환으로만 해석한다.
-  // - 0 => 보정, 30 => 무보정
+  // 제조사 수동 좌표계 전처리 모드는 request-meta에서 canonical 값으로 전달한다.
+  // canonical: "보정" | "무보정" | "구성정보"
   // request-meta에서 명시적으로 내려주어 add-in이 파일명/추정 로직 없이 SSOT를 직접 사용하게 한다.
   const manufacturerHexRotationRaw = String(
     request?.rnd?.manufacturerHexRotation || "",
   ).trim();
   const manufacturerHexRotationMode =
-    manufacturerHexRotationRaw === "무보정" || manufacturerHexRotationRaw === "30"
-      ? "무보정"
-      : "보정";
+    parseManufacturerHexRotationModeOrNull(manufacturerHexRotationRaw) || "보정";
+  const cadConstructionMeta = buildCadConstructionMeta(ci);
   const normalizedFinishLine = normalizeFinishLineWithZExtrema(ci?.finishLine);
   const finishLinePoints = Array.isArray(normalizedFinishLine?.points)
     ? normalizedFinishLine.points
@@ -1351,11 +1440,28 @@ export const getRequestMeta = asyncHandler(async (req, res) => {
           // NC 재생성 경로(request-meta 직접 조회)에서도 PRC 파일명이 필요하므로 여기서 보장.
           faceHolePrcFileName: resolvedPrcFiles.faceHolePrcFileName,
           connectionPrcFileName: resolvedPrcFiles.connectionPrcFileName,
-          // 제조사 수동 헥스 회전 모드값(canonical: "보정"|"무보정").
-          // legacy 값("0"/"30")은 하위호환으로만 해석한다.
-          // - 0 => 보정, 30 => 무보정
+          // 제조사 수동 좌표계 전처리 모드(canonical: "보정"|"무보정"|"구성정보").
           // 보정 모드에서 add-in이 appliedDeg를 Esprit 부호계로 반전 해석해 +30에 합산한다.
           manufacturerHexRotation: manufacturerHexRotationMode,
+          // 요청 시 업로드된 CAD 구성 보조파일 메타정보 (S3 key 포함)
+          cadCompanionFiles: Array.isArray(ci?.cadCompanionFiles)
+            ? ci.cadCompanionFiles
+                .map((f) => ({
+                  originalName: String(f?.originalName || "").trim(),
+                  fileType: String(f?.fileType || "").trim(),
+                  fileSize: Number(f?.fileSize || 0),
+                  filePath: String(f?.filePath || "").trim(),
+                  s3Key: String(f?.s3Key || "").trim(),
+                }))
+                .filter((f) => f.originalName || f.s3Key)
+            : [],
+          // "구성정보" 모드에서 CAD별 좌표 구성파일 탐지/예상 파일명을 함께 내려준다.
+          // - exocad: .constructionInfo (선택: .dentalProject)
+          // - 3shape: .pts (대체: .cln, .3shapeOrder)
+          cadConstruction: {
+            modeEnabled: manufacturerHexRotationMode === "구성정보",
+            ...cadConstructionMeta,
+          },
           // Rhino 정렬 telemetry(헥스 회전각).
           // Esprit가 보정(legacy 0) 모드에서 appliedDeg를 부호 반전 해석해 +30에 합산할 때 사용한다.
           hexRotation:

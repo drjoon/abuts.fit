@@ -18,6 +18,117 @@ const hasFiles = (event: DragEvent) => {
   return types.includes("Files");
 };
 
+type WebkitFileSystemEntry = {
+  isFile: boolean;
+  isDirectory: boolean;
+  file?: (callback: (file: File) => void) => void;
+  createReader?: () => {
+    readEntries: (callback: (entries: WebkitFileSystemEntry[]) => void) => void;
+  };
+};
+
+type DataTransferItemWithEntry = DataTransferItem & {
+  webkitGetAsEntry?: () => WebkitFileSystemEntry | null;
+};
+
+const dedupeFiles = (input: File[]) => {
+  const map = new Map<string, File>();
+  for (const file of input) {
+    const key = `${file.name}:${file.size}:${file.lastModified}`;
+    if (!map.has(key)) map.set(key, file);
+  }
+  return [...map.values()];
+};
+
+const readAllEntries = async (reader: {
+  readEntries: (callback: (entries: WebkitFileSystemEntry[]) => void) => void;
+}): Promise<WebkitFileSystemEntry[]> => {
+  const all: WebkitFileSystemEntry[] = [];
+
+  while (true) {
+    const chunk = await new Promise<WebkitFileSystemEntry[]>((resolve) => {
+      reader.readEntries((entries) => resolve(entries || []));
+    });
+    if (!chunk.length) break;
+    all.push(...chunk);
+  }
+
+  return all;
+};
+
+const traverseDroppedEntry = async (
+  entry: WebkitFileSystemEntry,
+): Promise<File[]> => {
+  if (entry.isFile && entry.file) {
+    const file = await new Promise<File | null>((resolve) => {
+      try {
+        entry.file?.((f) => resolve(f));
+      } catch {
+        resolve(null);
+      }
+    });
+    return file ? [file] : [];
+  }
+
+  if (entry.isDirectory && entry.createReader) {
+    const reader = entry.createReader();
+    const entries = await readAllEntries(reader);
+    const nested = await Promise.all(entries.map((child) => traverseDroppedEntry(child)));
+    return nested.flat();
+  }
+
+  return [];
+};
+
+const extractDroppedFiles = async (dataTransfer: DataTransfer | null) => {
+  if (!dataTransfer) return [];
+
+  const items = Array.from(dataTransfer.items || []);
+
+  if (!items.length) {
+    return dedupeFiles(Array.from(dataTransfer.files || []));
+  }
+
+  const all: File[] = [];
+
+  for (const item of items) {
+    const withHandle = item as DataTransferItem & {
+      getAsFileSystemHandle?: () => Promise<unknown>;
+    };
+    if (typeof withHandle.getAsFileSystemHandle === "function") {
+      try {
+        const handle = await withHandle.getAsFileSystemHandle();
+        if (
+          handle &&
+          (handle as { kind?: string }).kind === "file" &&
+          typeof (handle as { getFile?: () => Promise<File> }).getFile === "function"
+        ) {
+          const file = await (handle as { getFile: () => Promise<File> }).getFile();
+          if (file) {
+            all.push(file);
+            continue;
+          }
+        }
+      } catch {
+        // fallback to webkit/dataTransfer path
+      }
+    }
+
+    const withEntry = item as DataTransferItemWithEntry;
+    const entry = withEntry.webkitGetAsEntry?.();
+    if (entry) {
+      const filesFromEntry = await traverseDroppedEntry(entry);
+      all.push(...filesFromEntry);
+      continue;
+    }
+    const file = item.getAsFile();
+    if (file) all.push(file);
+  }
+
+  const directFiles = Array.from(dataTransfer.files || []);
+  return dedupeFiles([...all, ...directFiles]);
+};
+
 export function PageFileDropZone({
   onFiles,
   disabled,
@@ -65,10 +176,12 @@ export function PageFileDropZone({
       dragCounterRef.current = 0;
       setIsDragActive(false);
 
-      const files = Array.from(event.dataTransfer?.files || []);
-      if (files.length > 0) {
-        onFilesRef.current(files);
-      }
+      void (async () => {
+        const files = await extractDroppedFiles(event.dataTransfer || null);
+        if (files.length > 0) {
+          onFilesRef.current(files);
+        }
+      })();
     };
 
     window.addEventListener("dragenter", handleDragEnter);

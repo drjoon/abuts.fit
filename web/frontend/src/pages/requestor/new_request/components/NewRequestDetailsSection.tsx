@@ -19,6 +19,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
@@ -42,7 +43,138 @@ type ToastFn = (props: {
 }) => void;
 
 type Option = { id: string; label: string };
-const SAME_DAY_SHIPPING_CUTOFF_HOUR_KST = 24;
+
+const WEEKDAY_TO_KST_INDEX: Record<string, number> = {
+  mon: 1,
+  tue: 2,
+  wed: 3,
+  thu: 4,
+  fri: 5,
+};
+
+const CAD_COMPANION_EXTS = [
+  ".constructioninfo",
+  ".dentalproject",
+  ".cln",
+  ".3shapeorder",
+  ".xml",
+] as const;
+
+const getLowerExt = (name: string) => {
+  const lower = String(name || "").trim().toLowerCase();
+  const dot = lower.lastIndexOf(".");
+  if (dot < 0) return "";
+  return lower.slice(dot);
+};
+
+const getStem = (name: string) => {
+  const trimmed = String(name || "").trim();
+  const dot = trimmed.lastIndexOf(".");
+  if (dot < 0) return trimmed;
+  return trimmed.slice(0, dot);
+};
+
+const isLikelyThreeShapeMetadataXml = (fileName: string) => {
+  const lower = String(fileName || "").toLowerCase();
+  return (
+    lower.includes("implantdirectionposition") ||
+    lower.includes("dentalproject") ||
+    lower.includes("3shape") ||
+    lower.includes("order")
+  );
+};
+
+const buildStemKeys = (stemRaw: string) => {
+  const stem = String(stemRaw || "").trim().toLowerCase();
+  const keys = new Set<string>();
+  if (!stem) return keys;
+
+  keys.add(stem);
+
+  const tokens = stem.split(/[-_\s]+/).filter(Boolean);
+  if (tokens[0]) keys.add(tokens[0]);
+  if (tokens[0] && tokens[1]) keys.add(`${tokens[0]}-${tokens[1]}`);
+
+  return keys;
+};
+
+const extractTrailingIndex = (valueRaw: string) => {
+  const value = String(valueRaw || "").trim().toLowerCase();
+  const match = value.match(/(?:^|[-_\s])(\d{1,4})$/);
+  return match?.[1] || "";
+};
+
+const isStemMatch = (aRaw: string, bRaw: string) => {
+  const a = String(aRaw || "").trim().toLowerCase();
+  const b = String(bRaw || "").trim().toLowerCase();
+  if (!a || !b) return false;
+  if (a === b) return true;
+  if (a.startsWith(b) || b.startsWith(a)) return true;
+
+  const aKeys = buildStemKeys(a);
+  const bKeys = buildStemKeys(b);
+  for (const k of aKeys) {
+    if (bKeys.has(k)) return true;
+  }
+
+  const aIndex = extractTrailingIndex(a);
+  const bIndex = extractTrailingIndex(b);
+  if (aIndex && bIndex && aIndex === bIndex) return true;
+
+  return false;
+};
+
+const readTextTag = (raw: string, tagNames: string[]) => {
+  for (const tag of tagNames) {
+    const re = new RegExp(`<\\s*${tag}\\b[^>]*>([^<]+)<\\s*\\/\\s*${tag}\\s*>`, "i");
+    const m = raw.match(re);
+    const value = String(m?.[1] || "").trim();
+    if (value) return value;
+  }
+  return "";
+};
+
+const readKeyValue = (raw: string, keys: string[]) => {
+  for (const key of keys) {
+    const re = new RegExp(`${key}\\s*[:=]\\s*["']?([^"'\\r\\n]+)`, "i");
+    const m = raw.match(re);
+    const value = String(m?.[1] || "").trim();
+    if (value) return value;
+  }
+  return "";
+};
+
+const parseCadCompanionMetadata = async (file: File) => {
+  const ext = getLowerExt(file.name);
+  if (
+    ext !== ".constructioninfo" &&
+    ext !== ".dentalproject" &&
+    ext !== ".3shapeorder" &&
+    ext !== ".xml"
+  ) {
+    return {} as Partial<CaseInfos>;
+  }
+
+  const raw = await file.text();
+
+  const clinicName =
+    readTextTag(raw, ["ClinicName", "Clinic", "Practice", "OfficeName"]) ||
+    readKeyValue(raw, ["ClinicName", "Clinic", "Practice", "OfficeName"]);
+
+  const patientName =
+    readTextTag(raw, ["PatientName", "Patient", "Name"]) ||
+    readKeyValue(raw, ["PatientName", "PatientNameFull", "Patient"]);
+
+  const tooth =
+    readTextTag(raw, ["Tooth", "ToothNumber", "ToothNo", "ToothNum"]) ||
+    readKeyValue(raw, ["Tooth", "ToothNumber", "ToothNo", "ToothNum"]);
+
+  const result: Partial<CaseInfos> = {};
+  if (clinicName) result.clinicName = clinicName;
+  if (patientName) result.patientName = patientName;
+  if (tooth) result.tooth = tooth;
+  return result;
+};
 
 type Props = {
   files: File[];
@@ -99,6 +231,10 @@ type Props = {
   onDragLeave: (e: React.DragEvent<HTMLDivElement>) => void;
   onDrop: (e: React.DragEvent<HTMLDivElement>) => void;
   onFilesSelected: (files: File[]) => void;
+  registerCompanionFileHandler?: (handler: (files: File[]) => void) => void;
+  onCompanionFilesAccepted?: (files: File[]) => void;
+  onCompanionFilesChange?: (files: File[]) => void;
+  weeklyBatchDays?: string[];
   onCancelAll: () => void;
 };
 
@@ -148,6 +284,10 @@ export function NewRequestDetailsSection({
   onDragLeave,
   onDrop,
   onFilesSelected,
+  registerCompanionFileHandler,
+  onCompanionFilesAccepted,
+  onCompanionFilesChange,
+  weeklyBatchDays = [],
   onCancelAll,
 }: Props) {
   const { token } = useAuthStore();
@@ -176,17 +316,22 @@ export function NewRequestDetailsSection({
     void loadLeadTimes();
   }, [token]);
 
+  const getKstWeekday = useCallback((dateInput: Date) => {
+    const kst = new Date(dateInput.getTime() + 9 * 60 * 60 * 1000);
+    return kst.getUTCDay();
+  }, []);
+
   const addBusinessDaysFromKstYmd = useCallback(
     (startYmd: string, days: number) => {
       if (!Number.isFinite(days) || days <= 0) return startYmd;
 
-      const result = new Date(`${startYmd}T00:00:00+09:00`);
+      const result = new Date(`${startYmd}T12:00:00+09:00`);
       if (Number.isNaN(result.getTime())) return startYmd;
 
       let added = 0;
       while (added < days) {
         result.setUTCDate(result.getUTCDate() + 1);
-        const day = result.getUTCDay();
+        const day = getKstWeekday(result);
         if (day !== 0 && day !== 6) {
           added += 1;
         }
@@ -194,25 +339,13 @@ export function NewRequestDetailsSection({
 
       return toKstYmd(result) || startYmd;
     },
-    [],
+    [getKstWeekday],
   );
 
-  const isBeforeSameDayCutoffKst = useCallback((dateInput: Date) => {
-    if (Number.isNaN(dateInput.getTime())) return false;
-    const kst = new Date(dateInput.getTime() + 9 * 60 * 60 * 1000);
-    return kst.getUTCHours() < SAME_DAY_SHIPPING_CUTOFF_HOUR_KST;
+  const resolveLeadDaysForPickup = useCallback((leadDays: number) => {
+    if (!Number.isFinite(leadDays) || leadDays <= 0) return 1;
+    return Math.max(1, leadDays);
   }, []);
-
-  const resolveLeadDaysWithSameDayCutoff = useCallback(
-    (leadDays: number, requestedAt: Date) => {
-      if (!Number.isFinite(leadDays) || leadDays <= 0) return 0;
-      if (leadDays === 1 && isBeforeSameDayCutoffKst(requestedAt)) {
-        return 0;
-      }
-      return leadDays;
-    },
-    [isBeforeSameDayCutoffKst],
-  );
 
   const formatKstMonthDayWithWeekday = useCallback((ymd: string) => {
     const date = new Date(`${ymd}T00:00:00+09:00`);
@@ -224,6 +357,48 @@ export function NewRequestDetailsSection({
       weekday: "short",
     }).format(date);
   }, []);
+
+  const resolveWeeklyPickupYmd = useCallback(
+    (baseYmd: string) => {
+      const enabledDays = Array.from(
+        new Set(
+          (weeklyBatchDays || [])
+            .map((d) => String(d || "").trim().toLowerCase())
+            .filter((d) => Object.prototype.hasOwnProperty.call(WEEKDAY_TO_KST_INDEX, d)),
+        ),
+      );
+
+      if (!enabledDays.length) {
+        return baseYmd;
+      }
+
+      const enabledIndexes = enabledDays
+        .map((d) => WEEKDAY_TO_KST_INDEX[d])
+        .filter((v): v is number => Number.isFinite(v));
+
+      if (!enabledIndexes.length) {
+        return baseYmd;
+      }
+
+      const baseDate = new Date(`${baseYmd}T12:00:00+09:00`);
+      if (Number.isNaN(baseDate.getTime())) {
+        return baseYmd;
+      }
+
+      for (let offset = 0; offset < 14; offset += 1) {
+        const candidate = new Date(baseDate);
+        candidate.setUTCDate(candidate.getUTCDate() + offset);
+        const candidateDay = getKstWeekday(candidate);
+        if (!enabledIndexes.includes(candidateDay)) continue;
+
+        const candidateYmd = toKstYmd(candidate) || baseYmd;
+        return candidateYmd;
+      }
+
+      return baseYmd;
+    },
+    [getKstWeekday, weeklyBatchDays],
+  );
 
   const calculateEstimatedShipDate = useCallback(() => {
     if (!leadTimes) return null;
@@ -249,23 +424,18 @@ export function NewRequestDetailsSection({
       const leadDays = Number.isFinite(leadNumber)
         ? Math.max(1, leadNumber)
         : 1;
-      const resolvedLeadDays = resolveLeadDaysWithSameDayCutoff(
-        leadDays,
-        requestedAt,
-      );
+      const resolvedLeadDays = resolveLeadDaysForPickup(leadDays);
       const cacheKey = `${requestedYmd}:${diameterKey}:${resolvedLeadDays}`;
 
       if (cache.has(cacheKey)) {
         return cache.get(cacheKey) || null;
       }
 
-      const shipYmd = addBusinessDaysFromKstYmd(requestedYmd, resolvedLeadDays);
+      const baseShipYmd = addBusinessDaysFromKstYmd(requestedYmd, resolvedLeadDays);
+      const shipYmd = resolveWeeklyPickupYmd(baseShipYmd);
       const formatted = formatKstMonthDayWithWeekday(shipYmd);
 
-      const result =
-        resolvedLeadDays === 0
-          ? `${formatted} • 당일 집하`
-          : `${formatted} • ${resolvedLeadDays}영업일 후`;
+      const result = `${formatted} • ${resolvedLeadDays}영업일 후`;
       cache.set(cacheKey, result);
       return result;
     };
@@ -273,7 +443,8 @@ export function NewRequestDetailsSection({
     addBusinessDaysFromKstYmd,
     formatKstMonthDayWithWeekday,
     leadTimes,
-    resolveLeadDaysWithSameDayCutoff,
+    resolveLeadDaysForPickup,
+    resolveWeeklyPickupYmd,
   ]);
 
   const getEstimatedShipForDiameter = useMemo(
@@ -294,9 +465,44 @@ export function NewRequestDetailsSection({
     }
   };
 
-  const toNormalizedFileKey = (file: File) => {
+  const toNormalizedFileKey = useCallback((file: File) => {
     return `${normalizeKeyPart(file.name)}:${file.size}`;
-  };
+  }, []);
+
+  const [companionFiles, setCompanionFiles] = useState<File[]>([]);
+  const [companionBypassStemMap, setCompanionBypassStemMap] = useState<
+    Record<string, boolean>
+  >({});
+  const [companionPromptOpen, setCompanionPromptOpen] = useState(false);
+
+  const stlStemList = useMemo(() => {
+    return (files || [])
+      .map((f) => String(f?.name || "").trim())
+      .filter((name) => name.toLowerCase().endsWith(".stl"))
+      .map((name) => getStem(name));
+  }, [files]);
+
+  const companionStems = useMemo(() => {
+    const stems: string[] = [];
+    for (const file of companionFiles) {
+      const ext = getLowerExt(file.name);
+      if (!CAD_COMPANION_EXTS.includes(ext as (typeof CAD_COMPANION_EXTS)[number])) {
+        continue;
+      }
+      stems.push(getStem(file.name));
+    }
+    return stems;
+  }, [companionFiles]);
+
+  const missingCompanionStems = useMemo(() => {
+    const uniqueStems = [...new Set(stlStemList)];
+    return uniqueStems.filter((stlStem) => {
+      const matched = companionStems.some((companionStem) =>
+        isStemMatch(stlStem, companionStem),
+      );
+      return !matched && !companionBypassStemMap[stlStem];
+    });
+  }, [stlStemList, companionStems, companionBypassStemMap]);
 
   // STL 프리뷰에서 계산한 최대직경을 저장 (리드타임 표시용)
   const handleDiameterComputed = useCallback(
@@ -350,6 +556,7 @@ export function NewRequestDetailsSection({
   } | null>(null);
   const listContainerRef = useRef<HTMLDivElement | null>(null);
   const uploadInputRef = useRef<HTMLInputElement | null>(null);
+  const companionInputRef = useRef<HTMLInputElement | null>(null);
 
   const handleDialogOpenChange = useCallback(
     (nextOpen: boolean) => {
@@ -367,6 +574,211 @@ export function NewRequestDetailsSection({
       setShouldRestoreDetailAfterDuplicate(false);
     }
   }, [duplicatePromptOpen, shouldRestoreDetailAfterDuplicate]);
+
+  useEffect(() => {
+    if (!files.length) {
+      setCompanionPromptOpen(false);
+      return;
+    }
+    if (missingCompanionStems.length > 0) {
+      setCompanionPromptOpen(true);
+    }
+  }, [files.length, missingCompanionStems.length]);
+
+  const handleCompanionFilesSelected = useCallback(
+    (selected: File[]) => {
+      if (!selected.length) return;
+
+      const accepted: File[] = [];
+      const rejectedExt: string[] = [];
+      const rejectedXml: string[] = [];
+      const ignoredPts: string[] = [];
+
+      for (const file of selected) {
+        const ext = getLowerExt(file.name);
+        if (ext === ".pts") {
+          ignoredPts.push(file.name);
+          continue;
+        }
+        if (!CAD_COMPANION_EXTS.includes(ext as (typeof CAD_COMPANION_EXTS)[number])) {
+          rejectedExt.push(file.name);
+          continue;
+        }
+        if (ext === ".xml" && !isLikelyThreeShapeMetadataXml(file.name)) {
+          rejectedXml.push(file.name);
+          continue;
+        }
+        accepted.push(file);
+      }
+
+      if (rejectedExt.length) {
+        toast({
+          title: "지원하지 않는 보조 파일 형식",
+          description:
+            "지원 형식: .constructionInfo, .dentalProject, .cln, .3shapeOrder, .xml",
+          variant: "destructive",
+          duration: 4500,
+        });
+      }
+
+      if (rejectedXml.length) {
+        toast({
+          title: "지원하지 않는 XML 파일",
+          description:
+            "XML은 3Shape 메타파일만 받을 수 있어요. 예: ImplantDirectionPosition*.xml",
+          variant: "destructive",
+          duration: 4500,
+        });
+      }
+
+      if (ignoredPts.length) {
+        toast({
+          title: "PTS 파일은 자동 제외되었어요",
+          description: "3Shape 폴더 업로드 시 PTS는 생략됩니다.",
+          duration: 2200,
+        });
+      }
+
+      if (!accepted.length) return;
+
+      onCompanionFilesAccepted?.(accepted);
+
+      setCompanionFiles((prev) => {
+        const next = [...prev];
+        for (const file of accepted) {
+          const key = toNormalizedFileKey(file);
+          const exists = next.some((p) => toNormalizedFileKey(p) === key);
+          if (!exists) next.push(file);
+        }
+        return next;
+      });
+
+      setCompanionBypassStemMap((prev) => {
+        const next = { ...prev };
+        for (const file of accepted) {
+          const companionStem = getStem(file.name);
+          for (const stlStem of stlStemList) {
+            if (isStemMatch(stlStem, companionStem)) {
+              delete next[stlStem];
+            }
+          }
+          delete next[companionStem];
+        }
+        return next;
+      });
+
+      void (async () => {
+        let updatedFieldsCount = 0;
+
+        for (const companion of accepted) {
+          try {
+            const meta = await parseCadCompanionMetadata(companion);
+            if (!meta.clinicName && !meta.patientName && !meta.tooth) {
+              continue;
+            }
+
+            const stem = getStem(companion.name);
+            const targets = files.filter(
+              (f) =>
+                String(f?.name || "").toLowerCase().endsWith(".stl") &&
+                isStemMatch(getStem(f.name), stem),
+            );
+
+            for (const stl of targets) {
+              const fileKey = toNormalizedFileKey(stl);
+              const current = caseInfosMap?.[fileKey];
+              const patch: Partial<CaseInfos> = {};
+
+              if (!String(current?.clinicName || "").trim() && meta.clinicName) {
+                patch.clinicName = meta.clinicName;
+              }
+              if (!String(current?.patientName || "").trim() && meta.patientName) {
+                patch.patientName = meta.patientName;
+              }
+              if (!String(current?.tooth || "").trim() && meta.tooth) {
+                patch.tooth = meta.tooth;
+              }
+
+              if (Object.keys(patch).length > 0) {
+                updateCaseInfos(fileKey, patch);
+                updatedFieldsCount += Object.keys(patch).length;
+              }
+            }
+          } catch {
+            // 파싱 실패는 무시하고 업로드 자체는 유지
+          }
+        }
+
+        if (updatedFieldsCount > 0) {
+          toast({
+            title: "보조 파일에서 정보 자동 입력",
+            description:
+              "환자/치과/치아번호를 읽어 비어 있던 입력란에 자동 반영했습니다.",
+            duration: 3500,
+          });
+        }
+      })();
+
+      toast({
+        title: "보조 파일이 추가되었습니다",
+        description: `추가됨: ${accepted.length}개`,
+        duration: 2500,
+      });
+    },
+    [
+      toast,
+      toNormalizedFileKey,
+      files,
+      stlStemList,
+      caseInfosMap,
+      updateCaseInfos,
+      onCompanionFilesAccepted,
+    ],
+  );
+
+  const handleBypassMissingCompanion = useCallback(() => {
+    if (!missingCompanionStems.length) {
+      setCompanionPromptOpen(false);
+      return;
+    }
+
+    setCompanionBypassStemMap((prev) => {
+      const next = { ...prev };
+      for (const stem of missingCompanionStems) {
+        next[stem] = true;
+      }
+      return next;
+    });
+
+    setCompanionPromptOpen(false);
+
+    toast({
+      title: "보조 파일 없이 진행",
+      description:
+        "작업은 계속할 수 있지만, 보조 파일 업로드 시 좌표/회전 정확도가 더 높아질 수 있습니다.",
+      duration: 4500,
+    });
+  }, [missingCompanionStems, toast]);
+
+  useEffect(() => {
+    if (!registerCompanionFileHandler) return;
+    registerCompanionFileHandler(handleCompanionFilesSelected);
+  }, [registerCompanionFileHandler, handleCompanionFilesSelected]);
+
+  useEffect(() => {
+    onCompanionFilesChange?.(companionFiles);
+  }, [companionFiles, onCompanionFilesChange]);
+
+  const handleRemoveCompanionFile = useCallback((target: File) => {
+    const targetKey = `${target.name}:${target.size}:${target.lastModified}`;
+    setCompanionFiles((prev) =>
+      prev.filter(
+        (f) => `${f.name}:${f.size}:${f.lastModified}` !== targetKey,
+      ),
+    );
+  }, []);
+
+
 
   const getFileWorkType = (_file: File): "abutment" | "crown" => {
     return "abutment";
@@ -661,7 +1073,7 @@ export function NewRequestDetailsSection({
     if (target) {
       target.scrollIntoView({ block: "nearest", behavior: "smooth" });
     }
-  }, [focusUnverifiedTick, files, fileVerificationStatus]);
+  }, [focusUnverifiedTick, files, fileVerificationStatus, toNormalizedFileKey]);
 
   const focusSelectedCard = (index: number) => {
     const container = listContainerRef.current;
@@ -712,7 +1124,21 @@ export function NewRequestDetailsSection({
               }
               e.currentTarget.value = "";
             }}
-            accept=".stl"
+            accept=".stl,.constructionInfo,.dentalProject,.cln,.3shapeOrder,.xml"
+          />
+          <input
+            ref={companionInputRef}
+            type="file"
+            multiple
+            className="hidden"
+            onChange={(e) => {
+              const fileList = e.currentTarget.files;
+              if (fileList) {
+                handleCompanionFilesSelected(Array.from(fileList));
+              }
+              e.currentTarget.value = "";
+            }}
+            accept=".constructionInfo,.dentalProject,.cln,.3shapeOrder,.xml"
           />
           <div className="flex justify-end gap-2 px-2 pb-1">
             <Button
@@ -721,18 +1147,73 @@ export function NewRequestDetailsSection({
               size="sm"
               onClick={() => uploadInputRef.current?.click()}
             >
-              STL 파일 추가
+              파일 추가
             </Button>
+
             <Button
               type="button"
               variant="outline"
               size="sm"
               onClick={onCancelAll}
-              disabled={!files.length}
+              disabled={!files.length && companionFiles.length === 0}
             >
               전체 삭제
             </Button>
           </div>
+
+          {missingCompanionStems.length > 0 && (
+            <div className="mx-2 mb-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+              <div className="font-semibold">폴더 안 파일도 같이 올려주세요</div>
+              <div className="mt-1 leading-relaxed">
+                STL만 올려도 작업은 가능해요.
+                <br />
+                하지만 <strong>폴더 내 모든 파일</strong>을 같이 올리면,
+                <span className="mx-1 inline-flex items-center gap-1 align-middle">
+                  구성정보
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        className="inline-flex items-center justify-center text-amber-700 hover:text-amber-900"
+                        aria-label="구성정보 안내"
+                      >
+                        <CircleHelp className="h-3.5 w-3.5" />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent side="top" className="max-w-[320px] text-xs leading-relaxed">
+                      CAD에서 만든 기준 정보 파일입니다.
+                      원점 위치와 회전 방향 같은 기준이 들어 있어,
+                      STL만 있을 때보다 더 정확한 작업에 도움이 됩니다.
+                    </TooltipContent>
+                  </Tooltip>
+                </span>
+                파일을 찾아 더 정확한 원점/회전값을 적용할 수 있어요.
+              </div>
+              <div className="mt-2 text-[11px] text-amber-800/90">
+                예) ExoCAD: <code>.constructionInfo</code>, 3Shape: <code>.dentalProject</code> / <code>ImplantDirectionPosition*.xml</code>
+              </div>
+              <div className="mt-2 flex items-center gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-7"
+                  onClick={() => companionInputRef.current?.click()}
+                >
+                  누락 파일 업로드
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  className="h-7 text-amber-900"
+                  onClick={handleBypassMissingCompanion}
+                >
+                  없이 진행
+                </Button>
+              </div>
+            </div>
+          )}
           <div
             ref={listContainerRef}
             className="flex flex-col gap-2.5 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 px-2 py-2 flex-1 min-h-0 focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0 -mx-1"
@@ -798,6 +1279,11 @@ export function NewRequestDetailsSection({
                     ? getEstimatedShipForDiameter(diameter)
                     : null;
 
+                  const matchedCompanions = companionFiles.filter((companion) =>
+                    isStemMatch(getStem(filename), getStem(companion.name)),
+                  );
+                  const primaryCompanion = matchedCompanions[0] || null;
+
                   return (
                     <div
                       key={`${fileKey}-${index}`}
@@ -829,6 +1315,34 @@ export function NewRequestDetailsSection({
                               <X className="w-4 h-4" />
                             </button>
                           </div>
+                        </div>
+                        <div className="flex items-center justify-between gap-2 text-xs">
+                          <div className="min-w-0 flex items-center gap-1.5 text-sky-700">
+                            <Badge className="bg-sky-600 hover:bg-sky-600">구성정보</Badge>
+                            {primaryCompanion ? (
+                              <span className="truncate" title={primaryCompanion.name}>
+                                {primaryCompanion.name}
+                              </span>
+                            ) : (
+                              <span className="truncate text-slate-500">없음</span>
+                            )}
+                            {matchedCompanions.length > 1 && (
+                              <span className="text-slate-500">+{matchedCompanions.length - 1}개</span>
+                            )}
+                          </div>
+                          {primaryCompanion && (
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                handleRemoveCompanionFile(primaryCompanion);
+                              }}
+                              className="p-1 text-slate-400 hover:text-red-500"
+                              aria-label="구성정보 삭제"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          )}
                         </div>
                         {estimatedShip && (
                           <div className="flex items-center gap-1.5 text-xs text-slate-500">
@@ -1122,6 +1636,59 @@ export function NewRequestDetailsSection({
           </div>
         </DialogContent>
       </Dialog>
+      <AlertDialog
+        open={companionPromptOpen}
+        onOpenChange={(open) => {
+          setCompanionPromptOpen(open);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>폴더 안 파일도 같이 올릴까요?</AlertDialogTitle>
+            <AlertDialogDescription>
+              STL만 올려도 작업은 가능해요.
+              <br />
+              다만 폴더 내 모든 파일을 같이 올리면,
+              <span className="mx-1 inline-flex items-center gap-1 align-middle">
+                구성정보
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      className="inline-flex items-center justify-center text-slate-500 hover:text-slate-700"
+                      aria-label="구성정보 안내"
+                    >
+                      <CircleHelp className="h-3.5 w-3.5" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="max-w-[320px] text-xs leading-relaxed">
+                    CAD에서 만든 기준 정보 파일입니다.
+                    원점 위치와 회전 방향 같은 기준이 들어 있어,
+                    STL만 있을 때보다 더 정확한 작업에 도움이 됩니다.
+                  </TooltipContent>
+                </Tooltip>
+              </span>
+              파일을 찾아 더 정확한 원점/회전값을 적용할 수 있어요.
+
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={handleBypassMissingCompanion}>
+              이번엔 없이 진행
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                companionInputRef.current?.click();
+                setCompanionPromptOpen(false);
+              }}
+            >
+              누락 파일 업로드
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       <AlertDialog
         open={confirmNewSystemOpen}
         onOpenChange={(open) => {

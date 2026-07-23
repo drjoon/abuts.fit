@@ -39,17 +39,14 @@ type PreviewFiles = {
   finishLineSource?: "caseInfos" | "file" | null;
 };
 
-type ManufacturerHexRotationMode = "보정" | "무보정";
+type ManufacturerHexRotationMode = "보정" | "무보정" | "구성정보";
 
 const normalizeManufacturerHexRotationMode = (
   value: unknown,
 ): ManufacturerHexRotationMode | null => {
   const raw = String(value || "").trim();
   // canonical 우선
-  if (raw === "보정" || raw === "무보정") return raw;
-  // legacy fallback: 0 => 보정, 30 => 무보정
-  if (raw === "0") return "보정";
-  if (raw === "30") return "무보정";
+  if (raw === "보정" || raw === "무보정" || raw === "구성정보") return raw;
   return null;
 };
 
@@ -535,7 +532,7 @@ export const PreviewModal = ({
 
     const requestorHex =
       String((req as any)?.caseInfos?.requestorHexRotation || "").trim() ===
-      "30"
+      "무보정"
         ? "무보정"
         : "보정";
     const manufacturerHex = normalizeManufacturerHexRotationMode(
@@ -1610,22 +1607,29 @@ export const PreviewModal = ({
                   value={manufacturerHexRotationDraft}
                   onValueChange={(value) => {
                     const next: ManufacturerHexRotationMode =
-                      value === "무보정" ? "무보정" : "보정";
+                      value === "무보정"
+                        ? "무보정"
+                        : value === "구성정보"
+                          ? "구성정보"
+                          : "보정";
                     void handleSaveManufacturerHexRotation(next);
                   }}
                   disabled={
                     hexRotationSaving || reviewSaving || !onSaveManufacturerHexRotation
                   }
                 >
-                  <SelectTrigger className="h-7 min-w-[118px] rounded-md border border-slate-200 bg-slate-50 px-2 text-[12px] font-semibold text-slate-700 shadow-sm focus:ring-1 focus:ring-blue-200 disabled:opacity-60">
+                  <SelectTrigger className="h-7 min-w-[132px] rounded-md border border-slate-200 bg-slate-50 px-2 text-[12px] font-semibold text-slate-700 shadow-sm focus:ring-1 focus:ring-blue-200 disabled:opacity-60">
                     <SelectValue placeholder="보정" />
                   </SelectTrigger>
-                  <SelectContent align="end" className="min-w-[118px]">
+                  <SelectContent align="end" className="min-w-[132px]">
                     <SelectItem value="보정" className="text-[12px] font-medium">
                       보정
                     </SelectItem>
                     <SelectItem value="무보정" className="text-[12px] font-medium">
                       무보정
+                    </SelectItem>
+                    <SelectItem value="구성정보" className="text-[12px] font-medium">
+                      구성정보
                     </SelectItem>
                   </SelectContent>
                 </Select>

@@ -205,18 +205,16 @@ const normalizeReasonOptions = (optionsRaw, max = 100) => {
 
 const normalizeHexRotationValue = (value) => {
   const v = String(value || "").trim();
-  if (v === "30") return "30";
-  return "0";
+  if (v === "무보정") return "무보정";
+  return "보정";
 };
 
 const parseManufacturerHexRotationMode = (value) => {
   const v = String(value || "").trim();
   // canonical
+  if (v === "구성정보") return "구성정보";
   if (v === "무보정") return "무보정";
   if (v === "보정") return "보정";
-  // legacy fallback: "30" => 무보정, "0" => 보정
-  if (v === "30") return "무보정";
-  if (v === "0") return "보정";
   return null;
 };
 
@@ -225,13 +223,13 @@ const normalizeManufacturerHexRotationMode = (value) => {
 };
 
 const resolveFinalHexRotationValue = ({
-  requestorHexRotation,
   manufacturerHexRotation,
 }) => {
   const mode = normalizeManufacturerHexRotationMode(manufacturerHexRotation);
-  if (mode === "무보정") return "30";
-  if (mode === "보정") return "0";
-  return normalizeHexRotationValue(requestorHexRotation);
+  // finalHexRotation은 canonical 모드 문자열만 사용한다.
+  // 매핑 고정: 보정=보정, 무보정=무보정, 구성정보=보정
+  if (mode === "무보정") return "무보정";
+  return "보정";
 };
 
 /**
@@ -1546,7 +1544,6 @@ export async function updateRequest(req, res) {
             request?.rnd?.manufacturerHexRotation || "",
           ).trim();
           updateData.caseInfos.finalHexRotation = resolveFinalHexRotationValue({
-            requestorHexRotation,
             manufacturerHexRotation: existingManufacturerHex || undefined,
           });
         }
@@ -2003,7 +2000,7 @@ export const updateRndHexRotation = asyncHandler(async (req, res) => {
     return res.status(400).json({
       success: false,
       message:
-        "유효하지 않은 manufacturerHexRotation 값입니다. '보정' 또는 '무보정'을 사용하세요. (legacy: '0'|'30')",
+        "유효하지 않은 manufacturerHexRotation 값입니다. '보정' | '무보정' | '구성정보'를 사용하세요.",
     });
   }
 
@@ -2040,7 +2037,6 @@ export const updateRndHexRotation = asyncHandler(async (req, res) => {
     request?.caseInfos?.requestorHexRotation,
   );
   const finalHexRotation = resolveFinalHexRotationValue({
-    requestorHexRotation,
     manufacturerHexRotation,
   });
 

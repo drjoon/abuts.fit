@@ -18,16 +18,28 @@ const normalizeRetentionGroove = (value) => {
   return "deep";
 };
 
-const normalizeRequestorHexRotation = (value, fallback = "0") => {
+const normalizeRequestorHexRotation = (value, fallback = "보정") => {
   const v = String(value || "").trim();
-  if (v === "30") return "30";
-  if (v === "0") return "0";
-  return String(fallback || "").trim() === "30" ? "30" : "0";
+  if (v === "무보정") return "무보정";
+  if (v === "보정") return "보정";
+  return String(fallback || "").trim() === "무보정" ? "무보정" : "보정";
+};
+
+const normalizeCadCompanionFiles = (value) => {
+  const list = Array.isArray(value) ? value : [];
+  return list
+    .map((item) => ({
+      originalName: String(item?.originalName || "").trim(),
+      size: Number(item?.size || 0),
+      mimetype: String(item?.mimetype || "").trim(),
+      s3Key: String(item?.s3Key || "").trim(),
+    }))
+    .filter((item) => item.originalName && item.s3Key);
 };
 
 const resolveDefaultRequestorHexRotation = async (req) => {
   const anchorId = String(req?.user?.businessAnchorId || "").trim();
-  if (!Types.ObjectId.isValid(anchorId)) return "0";
+  if (!Types.ObjectId.isValid(anchorId)) return "보정";
 
   const anchor = await BusinessAnchor.findById(anchorId)
     .select({ "requestSettings.defaultRequestorHexRotation": 1 })
@@ -35,7 +47,7 @@ const resolveDefaultRequestorHexRotation = async (req) => {
 
   return normalizeRequestorHexRotation(
     anchor?.requestSettings?.defaultRequestorHexRotation,
-    "0",
+    "보정",
   );
 };
 
@@ -59,6 +71,7 @@ async function buildNormalizedDraftCaseInfos(
           ci?.requestorHexRotation,
           opts?.defaultRequestorHexRotation,
         ),
+        cadCompanionFiles: normalizeCadCompanionFiles(ci?.cadCompanionFiles),
       };
     }),
   );
@@ -114,6 +127,7 @@ export const createDraft = asyncHandler(async (req, res) => {
             ci?.requestorHexRotation,
             defaultRequestorHexRotation,
           ),
+          cadCompanionFiles: normalizeCadCompanionFiles(ci?.cadCompanionFiles),
         };
       }),
     ),
@@ -236,6 +250,8 @@ export const updateDraft = asyncHandler(async (req, res) => {
           _id: incoming._id || prev?._id || undefined,
           ...incoming,
           file: incoming.file || prev?.file || undefined,
+          cadCompanionFiles:
+            incoming.cadCompanionFiles || prev?.cadCompanionFiles || [],
           workType: (incoming.workType || prev?.workType || "abutment").trim(),
         };
       });
@@ -252,6 +268,7 @@ export const updateDraft = asyncHandler(async (req, res) => {
               ci?.requestorHexRotation,
               defaultRequestorHexRotation,
             ),
+            cadCompanionFiles: normalizeCadCompanionFiles(ci?.cadCompanionFiles),
           };
         }),
       );
@@ -310,6 +327,7 @@ export const addFileToDraft = asyncHandler(async (req, res) => {
     // legacy shallow 입력은 none으로 처리.
     retentionGroove,
     requestorHexRotation,
+    cadCompanionFiles,
     shippingMode,
     requestedShipDate,
   } = req.body || {};
@@ -377,6 +395,7 @@ export const addFileToDraft = asyncHandler(async (req, res) => {
       requestorHexRotation,
       defaultRequestorHexRotation,
     ),
+    cadCompanionFiles: normalizeCadCompanionFiles(cadCompanionFiles),
     shippingMode: "normal", // 항상 묶음 배송
     requestedShipDate,
   });
@@ -448,6 +467,7 @@ export const addFilesToDraftBulk = asyncHandler(async (req, res) => {
         // 유지홈(retentionGroove) — bulk 파일 추가 시에도 보존 (rules.md §7.4.1)
         retentionGroove,
         requestorHexRotation,
+        cadCompanionFiles,
         shippingMode,
         requestedShipDate,
       } = raw || {};
@@ -498,6 +518,7 @@ export const addFilesToDraftBulk = asyncHandler(async (req, res) => {
           requestorHexRotation,
           defaultRequestorHexRotation,
         ),
+        cadCompanionFiles: normalizeCadCompanionFiles(cadCompanionFiles),
         shippingMode: "normal", // 항상 묶음 배송
         requestedShipDate,
       };

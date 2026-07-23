@@ -34,7 +34,13 @@ export interface CaseInfos {
   shippingMode?: string;
   requestedShipDate?: string;
   workType?: string;
-  requestorHexRotation?: "0" | "30";
+  cadCompanionFiles?: {
+    originalName?: string;
+    size?: number;
+    mimetype?: string;
+    s3Key?: string;
+  }[];
+  requestorHexRotation?: "보정" | "무보정";
 }
 
 export interface DuplicateResolution {
