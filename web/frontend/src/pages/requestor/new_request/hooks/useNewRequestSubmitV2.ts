@@ -102,12 +102,7 @@ export const useNewRequestSubmitV2 = ({
     ].join("||");
   };
 
-  const getStem = (name: string) => {
-    const trimmed = String(name || "").trim();
-    const dot = trimmed.lastIndexOf(".");
-    if (dot < 0) return trimmed;
-    return trimmed.slice(0, dot);
-  };
+
 
   const buildStemKeys = (stemRaw: string) => {
     const stem = String(stemRaw || "").trim().toLowerCase();
@@ -491,10 +486,14 @@ export const useNewRequestSubmitV2 = ({
           };
 
           const companionByKey = new Map<string, TempUploadedFile>();
+          const companionFileByNameSize = new Map<string, File>();
           normalizedCompanionFiles.forEach((file, i) => {
             const uploaded = companionTempFiles[i];
-            if (!uploaded?.key) return;
-            companionByKey.set(toNormalizedFileKey(file), uploaded);
+            if (uploaded?.key) {
+              companionByKey.set(toNormalizedFileKey(file), uploaded);
+            }
+            const nameSizeKey = `${toNfcName(file.name)}:${file.size}`;
+            companionFileByNameSize.set(nameSizeKey, file);
           });
 
           const caseInfosPayload = files
@@ -505,9 +504,26 @@ export const useNewRequestSubmitV2 = ({
                 filteredMap[fileKey] ||
                 {}) as Partial<CaseInfos>;
 
-              const stlStem = getStem(file.name);
-              const cadCompanionFiles = normalizedCompanionFiles
-                .filter((companion) => isStemMatch(stlStem, getStem(companion.name)))
+              const explicitCompanionMetas = Array.isArray(ci?.cadCompanionFiles)
+                ? ci.cadCompanionFiles
+                    .map((item) => ({
+                      originalName: toNfcName(String(item?.originalName || "")),
+                      size: Number(item?.size || 0),
+                    }))
+                    .filter((item) => item.originalName && Number.isFinite(item.size))
+                : [];
+
+              const explicitlyLinkedCompanions = explicitCompanionMetas
+                .map((item) =>
+                  companionFileByNameSize.get(`${item.originalName}:${item.size}`),
+                )
+                .filter((item): item is File => Boolean(item));
+
+              // 정책: 제출 시 STL-구성정보 매칭은 명시 연결(cadCompanionFiles)만 사용한다.
+              // stem 기반 추정 매칭은 잘못된 연결을 만들 수 있으므로 저장 경로에서는 금지한다.
+              const companionCandidates = explicitlyLinkedCompanions;
+
+              const cadCompanionFiles = companionCandidates
                 .map((companion) => {
                   const uploaded = companionByKey.get(toNormalizedFileKey(companion));
                   if (!uploaded?.key) return null;
@@ -518,7 +534,13 @@ export const useNewRequestSubmitV2 = ({
                     s3Key: uploaded.key,
                   };
                 })
-                .filter(Boolean);
+                .filter((item): item is {
+                  originalName: string;
+                  size: number;
+                  mimetype: string;
+                  s3Key: string;
+                } => Boolean(item))
+                .filter((item, idx, arr) => arr.findIndex((x) => x.s3Key === item.s3Key) === idx);
 
               return {
                 clinicName: ci.clinicName,

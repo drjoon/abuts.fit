@@ -792,6 +792,68 @@ export function useCompanionBinding({
     });
   }, [initialCompanionFiles]);
 
+  // 제출 훅에서 STL-구성정보 연결 관계를 정확히 재사용할 수 있도록
+  // 화면에서 확정된 연결 결과를 caseInfosMap[fileKey].cadCompanionFiles에 동기화한다.
+  // (기존 stem 추정만으로는 수동 카드 연결 케이스에서 누락될 수 있음)
+  useEffect(() => {
+    const normalizeCompanionMeta = (items: unknown) => {
+      if (!Array.isArray(items)) return [] as Array<{
+        originalName?: string;
+        size?: number;
+        mimetype?: string;
+      }>;
+      return items
+        .map((item) => {
+          const row = item as Record<string, unknown>;
+          return {
+            originalName: String(row.originalName || "").trim(),
+            size: Number(row.size || 0),
+            mimetype: String(row.mimetype || "").trim(),
+          };
+        })
+        .filter((item) => !!item.originalName && Number.isFinite(item.size));
+    };
+
+    const toSignature = (
+      items: Array<{ originalName?: string; size?: number; mimetype?: string }>,
+    ) =>
+      items
+        .map((item) => `${String(item.originalName || "")}::${Number(item.size || 0)}`)
+        .sort()
+        .join("|");
+
+    for (const stl of files) {
+      const stlName = String(stl?.name || "").toLowerCase();
+      if (!stlName.endsWith(".stl")) continue;
+
+      const stlKey = toNormalizedFileKey(stl);
+      const linkedCompanions = getEffectiveCompanionsForStl(stl);
+      const nextCadCompanionFiles = linkedCompanions.map((companion) => ({
+        originalName: String(companion.name || "").trim(),
+        size: Number(companion.size || 0),
+        mimetype: String(companion.type || "").trim() || undefined,
+      }));
+
+      const prevCadCompanionFiles = normalizeCompanionMeta(
+        caseInfosMap?.[stlKey]?.cadCompanionFiles,
+      );
+
+      if (toSignature(prevCadCompanionFiles) === toSignature(nextCadCompanionFiles)) {
+        continue;
+      }
+
+      updateCaseInfos(stlKey, {
+        cadCompanionFiles: nextCadCompanionFiles,
+      });
+    }
+  }, [
+    caseInfosMap,
+    files,
+    getEffectiveCompanionsForStl,
+    toNormalizedFileKey,
+    updateCaseInfos,
+  ]);
+
   return {
     companionFiles,
     standaloneCompanionFiles,
