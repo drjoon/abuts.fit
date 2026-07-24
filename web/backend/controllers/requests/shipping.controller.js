@@ -730,9 +730,7 @@ export async function manualHanjinPickupCompleted(req, res) {
       });
     }
 
-    const manualCarrier = useNonHanjinShippingMethods
-      ? nonHanjinShippingMethods.join(", ")
-      : "hanjin";
+    const manualCarrier = useNonHanjinShippingMethods ? "한진 외" : "hanjin";
     const manualStatusCode = useNonHanjinShippingMethods
       ? "91"
       : requestedManualStatusCode;
@@ -972,6 +970,9 @@ export async function manualHanjinPickupCompleted(req, res) {
                 request: requestDoc._id,
                 trackingNumber: trackingNumber || undefined,
                 carrier: manualCarrier,
+                manualDeliveryMethods: useNonHanjinShippingMethods
+                  ? nonHanjinShippingMethods
+                  : [],
                 shippedAt: useNonHanjinShippingMethods
                   ? manualDeliveredAt
                   : manualPickedUpAt,
@@ -1007,6 +1008,9 @@ export async function manualHanjinPickupCompleted(req, res) {
 
           deliveryInfo.trackingNumber = trackingNumber || null;
           deliveryInfo.carrier = manualCarrier;
+          deliveryInfo.manualDeliveryMethods = useNonHanjinShippingMethods
+            ? nonHanjinShippingMethods
+            : [];
           deliveryInfo.tracking = deliveryInfo.tracking || {};
           deliveryInfo.tracking.lastStatusCode = manualStatusCode;
           deliveryInfo.tracking.lastStatusText = manualStatusText;

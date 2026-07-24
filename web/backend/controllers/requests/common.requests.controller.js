@@ -1324,7 +1324,7 @@ export async function getAllRequests(req, res) {
         // 배송 정보가 필요한 경우에만 최소 필드로 populate
         query = query.populate(
           "deliveryInfoRef",
-          "shippedAt pickedUpAt deliveredAt carrier trackingNumber updatedAt tracking",
+          "shippedAt pickedUpAt deliveredAt carrier manualDeliveryMethods trackingNumber updatedAt tracking",
         );
       }
     } else {

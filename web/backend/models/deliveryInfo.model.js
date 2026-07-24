@@ -16,6 +16,10 @@ const deliveryInfoSchema = new mongoose.Schema(
     },
     trackingNumber: String,
     carrier: String,
+    manualDeliveryMethods: {
+      type: [String],
+      default: [],
+    },
     shippedAt: Date,
     pickedUpAt: Date,
     deliveredAt: Date,

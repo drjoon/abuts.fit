@@ -189,13 +189,34 @@ const getManualDeliveryMethodsFromRequests = (requests: ManufacturerRequest[]) =
 };
 
 const getShippingModeLabel = (requests: ManufacturerRequest[]) => {
-  // 1) SSOT: Request.shippingWorkflow.manualDeliveryMethods (DB 저장값)
+  // 1) SSOT: DeliveryInfo.manualDeliveryMethods (세부 발송 방식)
+  const deliveryMethods = Array.from(
+    new Set(
+      requests.flatMap((req) => {
+        const di =
+          req?.deliveryInfoRef && typeof req.deliveryInfoRef === "object"
+            ? (req.deliveryInfoRef as any)
+            : null;
+        return (Array.isArray(di?.manualDeliveryMethods)
+          ? di.manualDeliveryMethods
+          : []
+        )
+          .map((value: unknown) => String(value || "").trim())
+          .filter(Boolean);
+      }),
+    ),
+  );
+  if (deliveryMethods.length > 0) {
+    return `${deliveryMethods.join(", ")}`;
+  }
+
+  // 2) 보조: Request.shippingWorkflow.manualDeliveryMethods
   const methods = getManualDeliveryMethodsFromRequests(requests);
   if (methods.length > 0) {
     return `${methods.join(", ")}`;
   }
 
-  // 2) 보조: deliveryInfo.carrier (DB 저장값)
+  // 3) 기본 택배사 표기
   const carriers = Array.from(
     new Set(
       requests
@@ -208,7 +229,6 @@ const getShippingModeLabel = (requests: ManufacturerRequest[]) => {
           if (!carrier) return "";
           const normalized = carrier.toLowerCase();
           if (normalized === "hanjin") return "한진택배";
-          if (carrier === "한진 외" || carrier === "한진외") return "방문 전달";
           return carrier;
         })
         .filter(Boolean),
