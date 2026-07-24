@@ -2,6 +2,12 @@
 
 루트 `rules.md`가 최종 기준입니다.
 
+- 강제 준수: 루트 `rules.md`의 **[최상단 강제 규칙] 대규모 파일 수정 시 문서/주석 동시 갱신**을 항상 적용합니다.
+  - 특히 5개 이상 파일을 탐색/수정한 작업은
+    - 관련 rules 문서에 폴더/파일/변경내용 업데이트
+    - 코드 내 `related files` 상호참조 주석 추가
+    를 완료 조건으로 봅니다.
+
 이 문서는 `web/backend` 폴더에서만 필요한 **구현 메모**만 남깁니다.
 
 ## 1. 구조
@@ -12,6 +18,12 @@
 - 공통 모델의 기준 폴더는 `web/backend/models` 입니다.
 
 ## 2. 구현 메모
+
+- 스크류 로트 추적(세척.패킹)은 루트 `rules.md` 섹션 **1.0.3**을 따릅니다.
+  - 전역 설정 저장 SSOT: `models/systemSettings.model.js` (`packingScrewLotSettings: [{type, lotNumber}]`)
+  - 의뢰 스냅샷 SSOT: `models/request.model.js` (`screwTracking`)
+  - API/정규화: `controllers/requests/common.requests.controller.js`
+  - packing 승인 자동 반영: `controllers/requests/common.review.controller.js`
 
 - `Request.requestId`는 서버가 생성합니다.
 - overview 성 집계는 스냅샷 컬렉션을 SSOT로 사용합니다.

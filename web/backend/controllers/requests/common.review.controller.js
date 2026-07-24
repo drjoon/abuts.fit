@@ -2,6 +2,8 @@ import mongoose, { Types } from "mongoose";
 import Request from "../../models/request.model.js";
 import Machine from "../../models/machine.model.js";
 import CncMachine from "../../models/cncMachine.model.js";
+import Connection from "../../models/connection.model.js";
+import SystemSettings from "../../models/systemSettings.model.js";
 import {
   applyStatusMapping,
   ensureLotNumberForMachining,
@@ -89,6 +91,100 @@ function emitManufacturingAsyncFailure({
     },
   );
 }
+
+// related files (screw lot tracking):
+// - web/backend/controllers/requests/common.requests.controller.js
+// - web/backend/models/systemSettings.model.js
+// - web/backend/models/request.model.js
+const normalizePackingScrewType = (value) =>
+  String(value || "")
+    .slice(0, 30)
+    .trim()
+    .toUpperCase();
+
+const normalizePackingScrewLot = (value) =>
+  String(value || "")
+    .slice(0, 120)
+    .trim();
+
+const normalizePackingScrewLotSettings = (raw) => {
+  const source = Array.isArray(raw)
+    ? raw
+    : raw && typeof raw === "object" && !Array.isArray(raw)
+      ? Object.entries(raw).map(([type, lotNumber]) => ({ type, lotNumber }))
+      : [];
+
+  const items = [];
+  for (const row of source) {
+    const type = normalizePackingScrewType(row?.type);
+    const lotNumber = normalizePackingScrewLot(row?.lotNumber);
+    if (!type) continue;
+    if (items.some((item) => item.type === type)) continue;
+    items.push({ type, lotNumber });
+  }
+  return items;
+};
+
+const resolveScrewTypeByRequestCaseInfos = async (request) => {
+  const caseInfos = request?.caseInfos || {};
+  const manufacturer = String(caseInfos?.implantManufacturer || "").trim();
+  const brand = String(caseInfos?.implantBrand || "").trim();
+  const family = String(caseInfos?.implantFamily || "").trim();
+  const implantType = String(caseInfos?.implantType || "").trim();
+
+  if (!manufacturer || !brand || !family) return "";
+
+  const candidateTypes = [];
+  if (implantType === "Hex" || implantType === "Non-Hex") {
+    candidateTypes.push(implantType);
+  }
+  if (!candidateTypes.includes("Hex")) candidateTypes.push("Hex");
+  if (!candidateTypes.includes("Non-Hex")) candidateTypes.push("Non-Hex");
+
+  let connection = null;
+  for (const type of candidateTypes) {
+    // eslint-disable-next-line no-await-in-loop
+    connection = await Connection.findOne({
+      manufacturer,
+      brand,
+      family,
+      type,
+      category: "hanhwa-connection",
+    })
+      .select({ screwType: 1 })
+      .lean();
+    if (connection) break;
+  }
+
+  const screwType = normalizePackingScrewType(connection?.screwType);
+  return screwType || "";
+};
+
+const autoAssignPackingScrewLotIfPossible = async ({ request, actorUser }) => {
+  const screwType = await resolveScrewTypeByRequestCaseInfos(request);
+  if (!screwType) return;
+
+  const settings = await SystemSettings.findOne({ key: "global" })
+    .select({ packingScrewLotSettings: 1 })
+    .lean();
+  const lotMap = normalizePackingScrewLotSettings(
+    settings?.packingScrewLotSettings || [],
+  ).reduce((acc, row) => {
+    acc[row.type] = row.lotNumber;
+    return acc;
+  }, {});
+  const lotNumber = normalizePackingScrewLot(lotMap[screwType]);
+  if (!lotNumber) return;
+
+  request.screwTracking = {
+    screwType,
+    lotNumber,
+    assignedAt: new Date(),
+    assignedBy: actorUser?._id || null,
+    assignedByName: String(actorUser?.name || "").trim(),
+    source: "auto",
+  };
+};
 
 function runStageFileCleanupInBackground({ requestId, stage, s3Key }) {
   Promise.resolve()
@@ -955,6 +1051,18 @@ export async function updateReviewStatusByStage(req, res) {
               );
             } catch (err) {
               console.error("[MAILBOX_ALLOCATION_ERROR]", err);
+            }
+
+            // 스크류 로트 추적 스냅샷 자동 귀속
+            // - 현재 전역 설정(A~E) 기준으로 의뢰에 고정 저장
+            // - 이후 전역 로트가 변경되어도 기존 의뢰 스냅샷은 유지
+            try {
+              await autoAssignPackingScrewLotIfPossible({
+                request,
+                actorUser: req.user,
+              });
+            } catch (err) {
+              console.error("[SCREW_LOT_AUTO_ASSIGN_ERROR]", err);
             }
           }
           if (resolvedBusinessAnchorId) {

@@ -329,6 +329,36 @@ router.put(
   requestController.saveRndUnmachinableReasonOptions,
 );
 
+// 제조사/관리자: 세척.패킹 스크류 로트번호(A~E) 전역 설정
+// related files (screw lot tracking):
+// - web/backend/controllers/requests/common.requests.controller.js
+// - web/backend/controllers/requests/common.review.controller.js
+// - web/backend/models/systemSettings.model.js
+// - web/backend/models/request.model.js
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/packing/components/PackingPageContent.tsx
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx
+router.get(
+  "/packing/screw-lot-settings",
+  authenticate,
+  authorize(["manufacturer", "admin"]),
+  requestController.getPackingScrewLotSettings,
+);
+
+router.put(
+  "/packing/screw-lot-settings",
+  authenticate,
+  authorize(["manufacturer", "admin"]),
+  requestController.savePackingScrewLotSettings,
+);
+
+// 제조사/관리자: 의뢰 단위 스크류 로트 스냅샷 귀속
+router.patch(
+  "/:id/packing/screw-lot",
+  authenticate,
+  authorize(["manufacturer", "admin"]),
+  requestController.assignPackingScrewLotToRequest,
+);
+
 // 의뢰자/관리자: 가공불가 판정 전체 읽음(확인) 처리
 router.patch(
   "/my/rnd-unmachinable/confirm-all",

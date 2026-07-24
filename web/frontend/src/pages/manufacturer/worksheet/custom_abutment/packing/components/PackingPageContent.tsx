@@ -39,7 +39,27 @@ import {
 } from "../utils/packLabelRenderer";
 import { savePackingLabelsAsZip } from "../utils/packLabelZip";
 import { resolveImplantConnectionSpec } from "@/utils/implantConnectionSpec";
-import { Settings } from "lucide-react";
+import { Plus, Settings, Trash2 } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+
+type ScrewLotSettingItem = {
+  type: string;
+  lotNumber: string;
+};
+
+// related files (screw lot tracking):
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/WorksheetCardGrid.tsx
+// - web/backend/controllers/requests/common.requests.controller.js
+// - web/backend/models/systemSettings.model.js
+// - web/backend/models/request.model.js
 
 export const PackingPageContent = ({
   showQueueBar = true,
@@ -82,6 +102,10 @@ export const PackingPageContent = ({
   >([]);
   const didInitPackingSelectionRef = useRef(false);
   const [captureHistory, setCaptureHistory] = useState<CaptureResult[]>([]);
+  const [screwLotSettingsOpen, setScrewLotSettingsOpen] = useState(false);
+  const [screwLotItems, setScrewLotItems] = useState<ScrewLotSettingItem[]>([]);
+  const [screwLotLoading, setScrewLotLoading] = useState(false);
+  const [screwLotSaving, setScrewLotSaving] = useState(false);
 
   const decodeNcText = useCallback((buffer: ArrayBuffer) => {
     const utf8Decoder = new TextDecoder("utf-8", { fatal: false });
@@ -632,6 +656,177 @@ export const PackingPageContent = ({
     });
   }, [allPackingRequestIds, unprintedPackingRequestIds]);
 
+  const normalizeScrewLotItems = useCallback((raw: unknown) => {
+    const source = Array.isArray(raw) ? raw : [];
+    const unique: ScrewLotSettingItem[] = [];
+    for (const item of source) {
+      const type = String((item as any)?.type || "")
+        .slice(0, 30)
+        .trim()
+        .toUpperCase();
+      const lotNumber = String((item as any)?.lotNumber || "")
+        .slice(0, 120)
+        .trim();
+      if (!type) continue;
+      if (unique.some((row) => row.type === type)) continue;
+      unique.push({ type, lotNumber });
+      if (unique.length >= 50) break;
+    }
+    return unique;
+  }, []);
+
+  const parseScrewLotResponseItems = useCallback(
+    (json: any): ScrewLotSettingItem[] => {
+      const itemsFromApi = normalizeScrewLotItems(json?.data?.items);
+      if (itemsFromApi.length > 0) return itemsFromApi;
+
+      // backward compatibility: 레거시 { lots: { A: "..." } } 응답 허용
+      const lots = json?.data?.lots;
+      if (!lots || typeof lots !== "object") return [];
+
+      return normalizeScrewLotItems(
+        Object.entries(lots as Record<string, unknown>).map(([type, lotNumber]) => ({
+          type,
+          lotNumber,
+        })),
+      );
+    },
+    [normalizeScrewLotItems],
+  );
+
+  const fetchScrewLotSettings = useCallback(async () => {
+    if (!token) return;
+    setScrewLotLoading(true);
+    try {
+      const res = await fetch("/api/requests/packing/screw-lot-settings", {
+        method: "GET",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.success) {
+        throw new Error(json?.message || "스크류 로트번호 설정 조회 실패");
+      }
+      setScrewLotItems(parseScrewLotResponseItems(json));
+    } catch (e: any) {
+      toast({
+        title: "스크류 로트번호 설정 조회 실패",
+        description: e?.message || "네트워크 오류",
+        variant: "destructive",
+      });
+    } finally {
+      setScrewLotLoading(false);
+    }
+  }, [parseScrewLotResponseItems, toast, token]);
+
+  useEffect(() => {
+    if (!token) return;
+    void fetchScrewLotSettings();
+  }, [fetchScrewLotSettings, token]);
+
+  const handleOpenScrewLotSettings = useCallback(() => {
+    setScrewLotSettingsOpen(true);
+    void fetchScrewLotSettings();
+  }, [fetchScrewLotSettings]);
+
+  const handleAddScrewLotRow = useCallback(() => {
+    setScrewLotItems((prev) => [...prev, { type: "", lotNumber: "" }]);
+  }, []);
+
+  const handleRemoveScrewLotRow = useCallback((index: number) => {
+    setScrewLotItems((prev) => prev.filter((_, rowIdx) => rowIdx !== index));
+  }, []);
+
+  const handleChangeScrewLotRow = useCallback(
+    (index: number, field: "type" | "lotNumber", value: string) => {
+      setScrewLotItems((prev) =>
+        prev.map((row, rowIdx) => {
+          if (rowIdx !== index) return row;
+          if (field === "type") {
+            return {
+              ...row,
+              type: String(value || "").slice(0, 30).trim().toUpperCase(),
+            };
+          }
+          return {
+            ...row,
+            lotNumber: String(value || "").slice(0, 120).trimStart(),
+          };
+        }),
+      );
+    },
+    [],
+  );
+
+  const handleSaveScrewLotSettings = useCallback(async () => {
+    if (!token) return;
+
+    const normalizedTypeList = screwLotItems
+      .map((row) => String(row?.type || "").slice(0, 30).trim().toUpperCase())
+      .filter(Boolean);
+
+    const hasDuplicateType = (() => {
+      const seen = new Set<string>();
+      for (const type of normalizedTypeList) {
+        if (seen.has(type)) return true;
+        seen.add(type);
+      }
+      return false;
+    })();
+
+    if (hasDuplicateType) {
+      toast({
+        title: "중복 타입",
+        description: "스크류 타입은 중복 없이 입력해주세요.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const normalizedItems = normalizeScrewLotItems(screwLotItems);
+    if (normalizedItems.length === 0) {
+      toast({
+        title: "입력 필요",
+        description: "최소 1개 이상의 스크류 타입을 입력해주세요.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setScrewLotSaving(true);
+    try {
+      const res = await fetch("/api/requests/packing/screw-lot-settings", {
+        method: "PUT",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          items: normalizedItems,
+        }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.success) {
+        throw new Error(json?.message || "스크류 로트번호 설정 저장 실패");
+      }
+
+      const next = parseScrewLotResponseItems(json);
+      setScrewLotItems(next);
+      setScrewLotSettingsOpen(false);
+      toast({
+        title: "스크류 로트번호 설정 저장 완료",
+        description: `${next.length}개 타입 설정이 반영되었습니다.`,
+      });
+    } catch (e: any) {
+      toast({
+        title: "스크류 로트번호 설정 저장 실패",
+        description: e?.message || "네트워크 오류",
+        variant: "destructive",
+      });
+    } finally {
+      setScrewLotSaving(false);
+    }
+  }, [normalizeScrewLotItems, parseScrewLotResponseItems, screwLotItems, toast, token]);
+
   const handleOpenNextRequest = useCallback(
     async (currentReqId: string) => {
       const currentIndex = filteredAndSorted.findIndex(
@@ -1071,6 +1266,13 @@ export const PackingPageContent = ({
             <div className="flex flex-wrap items-center justify-center gap-2">
               <button
                 type="button"
+                onClick={handleOpenScrewLotSettings}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-violet-300 bg-violet-50 px-3 py-1.5 text-xs font-semibold text-violet-700 hover:bg-violet-100"
+              >
+                스크류 로트번호 설정
+              </button>
+              <button
+                type="button"
                 onClick={() => setPrinterModalOpen(true)}
                 className="inline-flex items-center justify-center h-9 w-9 rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-100"
                 aria-label="프린터 설정"
@@ -1095,7 +1297,6 @@ export const PackingPageContent = ({
                   : `🏷️ 패킹 라벨 출력 (${selectedPackingRequestIds.length}건)`}
               </button>
               <div className="w-2" />
-              {/* 미출력 선택 */}
               <button
                 type="button"
                 onClick={handleSelectUnprintedPackingRequests}
@@ -1109,7 +1310,6 @@ export const PackingPageContent = ({
               >
                 미출력만 ({unprintedPackingRequestIds.length})
               </button>
-              {/* 기출력 선택 */}
               <button
                 type="button"
                 onClick={handleSelectPrintedPackingRequests}
@@ -1123,7 +1323,6 @@ export const PackingPageContent = ({
               >
                 기출력만 ({printedPackingRequestIds.length})
               </button>
-              {/* 전체 선택/해제 */}
               <button
                 type="button"
                 onClick={handleSelectAllPackingRequests}
@@ -1268,6 +1467,92 @@ export const PackingPageContent = ({
           paperError={paperError}
           onRefreshPrinters={() => void fetchPrinters()}
         />
+
+        <Dialog open={screwLotSettingsOpen} onOpenChange={setScrewLotSettingsOpen}>
+          <DialogContent className="sm:max-w-2xl border-slate-300 shadow-2xl ring-1 ring-slate-200 overflow-visible">
+            <DialogHeader>
+              <DialogTitle>스크류 로트번호 설정</DialogTitle>
+              <DialogDescription>
+                전역 설정입니다. 저장 후 새로 패킹 승인되는 의뢰에는 타입별 최신 로트번호가 스냅샷으로 기록됩니다.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-2 px-2 py-2 max-h-[60vh] overflow-auto pr-1">
+              {screwLotItems.map((row, idx) => (
+                <div
+                  key={`${idx}-${row.type}`}
+                  className="grid grid-cols-[120px_minmax(0,1fr)_44px] items-center gap-2"
+                >
+                  <Input
+                    value={row.type}
+                    onChange={(e) =>
+                      handleChangeScrewLotRow(idx, "type", e.target.value)
+                    }
+                    placeholder="타입 (예: A)"
+                    maxLength={30}
+                  />
+                  <Input
+                    value={row.lotNumber}
+                    onChange={(e) =>
+                      handleChangeScrewLotRow(idx, "lotNumber", e.target.value)
+                    }
+                    placeholder="로트번호"
+                    maxLength={120}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveScrewLotRow(idx)}
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-red-200 text-red-600 hover:bg-red-50"
+                    aria-label={`스크류 타입 ${idx + 1} 삭제`}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
+              ))}
+
+              {screwLotItems.length === 0 && (
+                <div className="rounded-md border border-dashed border-slate-300 p-4 text-center text-sm text-slate-500">
+                  등록된 스크류 타입이 없습니다. 아래 버튼으로 타입을 추가하세요.
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center justify-between pt-2">
+              <button
+                type="button"
+                onClick={handleAddScrewLotRow}
+                className="inline-flex items-center gap-1 rounded-md border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
+              >
+                <Plus className="h-4 w-4" />
+                타입 추가
+              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setScrewLotSettingsOpen(false);
+                    void fetchScrewLotSettings();
+                  }}
+                  className="rounded-md border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
+                >
+                  취소
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveScrewLotSettings}
+                  disabled={screwLotSaving || screwLotLoading}
+                  className={`rounded-md px-3 py-1.5 text-sm font-semibold ${
+                    screwLotSaving || screwLotLoading
+                      ? "cursor-not-allowed border border-slate-200 bg-slate-100 text-slate-400"
+                      : "border border-violet-300 bg-violet-600 text-white hover:bg-violet-700"
+                  }`}
+                >
+                  {screwLotSaving ? "저장 중..." : "저장"}
+                </button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
 
         <PreviewModal
           open={previewOpen}

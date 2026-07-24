@@ -588,6 +588,43 @@ const requestSchema = new mongoose.Schema(
         default: 0,
       },
     },
+    // related files (screw lot tracking):
+    // - web/backend/models/systemSettings.model.js
+    // - web/backend/controllers/requests/common.requests.controller.js
+    // - web/backend/controllers/requests/common.review.controller.js
+    // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx
+    // 스크류 로트 추적(의뢰별 스냅샷)
+    // - packing 승인/수동 할당 시점의 타입/로트번호를 의뢰에 귀속해 이력 추적한다.
+    // - 이후 전역 로트 재설정과 무관하게 본 스냅샷은 유지된다.
+    screwTracking: {
+      screwType: {
+        type: String,
+        default: null,
+      },
+      lotNumber: {
+        type: String,
+        default: "",
+      },
+      assignedAt: {
+        type: Date,
+        default: null,
+      },
+      assignedBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+        default: null,
+      },
+      assignedByName: {
+        type: String,
+        default: "",
+      },
+      source: {
+        type: String,
+        enum: ["manual", "auto"],
+        default: "manual",
+      },
+    },
+
     shippingWorkflow: {
       code: {
         type: String,

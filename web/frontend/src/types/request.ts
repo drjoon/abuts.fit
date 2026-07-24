@@ -221,6 +221,14 @@ export interface RequestBase {
     material?: string;
     value?: string;
   };
+  screwTracking?: {
+    screwType?: "A" | "B" | "C" | "D" | "E" | string | null;
+    lotNumber?: string;
+    assignedAt?: string | null;
+    assignedBy?: string | null;
+    assignedByName?: string | null;
+    source?: "manual" | "auto" | string | null;
+  };
   assignedMachine?: string; // 가공 직전 배정된 장비 (M3, M4 등)
   createdAt?: string;
   updatedAt?: string;

@@ -81,6 +81,27 @@ const systemSettingsSchema = new mongoose.Schema(
       type: [String],
       default: [],
     },
+    // related files (screw lot tracking):
+    // - web/backend/controllers/requests/common.requests.controller.js
+    // - web/backend/controllers/requests/common.review.controller.js
+    // - web/backend/models/request.model.js
+    // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/packing/components/PackingPageContent.tsx
+    // 세척.패킹 단계 스크류 로트번호 전역 설정 (동적 타입 목록)
+    packingScrewLotSettings: {
+      type: [
+        {
+          type: { type: String, default: "" },
+          lotNumber: { type: String, default: "" },
+        },
+      ],
+      default: () => [
+        { type: "A", lotNumber: "" },
+        { type: "B", lotNumber: "" },
+        { type: "C", lotNumber: "" },
+        { type: "D", lotNumber: "" },
+        { type: "E", lotNumber: "" },
+      ],
+    },
   },
   {
     timestamps: true,

@@ -29,6 +29,11 @@ import {
 } from "../utils/request";
 import { resolveImplantConnectionSpec } from "@/utils/implantConnectionSpec";
 
+// related files (screw lot tracking):
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/packing/components/PackingPageContent.tsx
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/WorksheetCardGrid.tsx
+// - web/backend/controllers/requests/common.requests.controller.js
+
 
 type PreviewFiles = {
   original?: File | null;
@@ -1466,6 +1471,10 @@ export const PreviewModal = ({
     connectionDiameter: overlayCaseInfos?.connectionDiameter,
   });
   const packScrewType = String(packResolvedSpec?.screwType || "").trim();
+  const trackedScrewType = String((activeReq as any)?.screwTracking?.screwType || "").trim();
+  const trackedScrewLotNumber = String(
+    (activeReq as any)?.screwTracking?.lotNumber || "",
+  ).trim();
 
   const toFiniteNumber = (value: unknown): number | null => {
     const num = Number(value);
@@ -1520,7 +1529,12 @@ export const PreviewModal = ({
 
   const overlayPackMetaItems = [
     packMailboxCode ? `메일함: ${packMailboxCode}` : "",
-    packScrewType && packScrewType !== "-" ? `스크류: ${packScrewType}` : "",
+    trackedScrewType
+      ? `스크류타입: ${trackedScrewType}`
+      : packScrewType && packScrewType !== "-"
+        ? `스크류타입: ${packScrewType}`
+        : "",
+    `스크류 로트번호: ${trackedScrewLotNumber || "미설정"}`,
     packMaterial ? `재질: ${packMaterial}` : "",
   ].filter(Boolean);
 
@@ -1888,13 +1902,6 @@ export const PreviewModal = ({
               {maxLength != null && <span>최대 길이 {maxLength.toFixed(2)}</span>}
               {(maxDiameter != null || maxLength != null) && !!overlayImplantLine && <span>•</span>}
               <span>{overlayImplantLine}</span>
-              {overlayPackMetaItems.length > 0 && <span>•</span>}
-              {overlayPackMetaItems.map((item, idx) => (
-                <span key={`${item}-${idx}`}>
-                  {idx > 0 ? " · " : ""}
-                  {item}
-                </span>
-              ))}
               {retentionGrooveLabel && (
                 <>
                   <span>•</span>
@@ -1902,6 +1909,17 @@ export const PreviewModal = ({
                 </>
               )}
             </div>
+
+            {overlayPackMetaItems.length > 0 && (
+              <div className="flex flex-wrap items-center gap-1 text-[13px] text-slate-600">
+                {overlayPackMetaItems.map((item, idx) => (
+                  <span key={`${item}-${idx}`}>
+                    {idx > 0 ? " · " : ""}
+                    {item}
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
 
           {unmachinableEditorOpen && (

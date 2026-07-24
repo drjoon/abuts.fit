@@ -21,6 +21,11 @@ import {
   stageOrder,
 } from "../utils/request";
 
+// related files (screw lot tracking):
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/packing/components/PackingPageContent.tsx
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx
+// - web/backend/controllers/requests/common.requests.controller.js
+
 type WorksheetCardGridProps = {
   requests: ManufacturerRequest[];
   selectedRequestIds?: string[];
@@ -354,6 +359,8 @@ export const WorksheetCardGrid = ({
             : Number.isFinite(Number((caseInfos as any)?.connectionDiameter))
               ? Number((caseInfos as any)?.connectionDiameter)
               : null;
+
+
 
         const requestStageRollbackCount = Number(
           caseInfos.rollbackCounts?.request || 0,
@@ -884,6 +891,7 @@ export const WorksheetCardGrid = ({
 
                   </div>
                 </div>
+
                 {!!machiningElapsedLabel && (
                   <div className="flex items-center gap-2 text-[12px] text-slate-500">
                     <span className="font-semibold text-blue-600">

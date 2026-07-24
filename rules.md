@@ -1,5 +1,18 @@
 # abuts.fit rules
 
+## [최상단 강제 규칙] 대규모 파일 수정 시 문서/주석 동시 갱신 (항상 실행)
+
+- 적용 조건: 한 작업에서 **5개 이상 파일을 탐색/수정**한 경우
+- 필수 조치:
+  1. `rules.md`(루트)와 필요 시 하위 `web/frontend/rules.md`, `web/backend/rules.md`에
+     - 관련 **폴더명/파일명**
+     - 변경 **핵심 내용(무엇을 왜 바꿨는지)**
+     를 함께 업데이트한다.
+  2. 실제 수정한 **관련 코드 파일들 상단 또는 관련 블록 근처에 상호 참조 주석**을 남긴다.
+     - 예: `// related files: ...` 형태로 폴더/파일 경로를 명시
+  3. 위 1~2를 누락한 코드 변경은 완료로 간주하지 않는다.
+- 목적: 다음 작업에서 파일 검색 비용을 줄이고, 영향 범위를 즉시 파악하기 위함.
+
 이 문서는 프로젝트 전체의 **최신 단일 규칙 문서**입니다.
 
 - 루트 `rules.md`가 **최종 기준**입니다.
@@ -100,6 +113,41 @@
 - `web/backend/controllers/requests/dashboard.controller.js`
 - `web/frontend/src/pages/admin/dashboard/AdminDashboardPage.tsx`
 - `web/frontend/src/features/layout/DashboardLayout.tsx`
+
+### 1.0.3 세척.패킹 스크류 로트 추적 SSOT (2026-07-24)
+
+- 스크류 로트 설정은 **전역 설정**으로 관리하고, 의뢰 카드 단위에서 직접 설정하지 않습니다.
+- 전역 설정 데이터 구조 SSOT:
+  - `SystemSettings.packingScrewLotSettings: [{ type, lotNumber }]`
+  - 타입은 고정 A~E가 아니라 **동적 추가/삭제 가능** 구조를 유지합니다.
+- API SSOT:
+  - `GET /api/requests/packing/screw-lot-settings` → `{ items, lots }`
+  - `PUT /api/requests/packing/screw-lot-settings` → `{ items }` 권장, `{ lots }` 레거시 호환 허용
+- 의뢰 추적 SSOT:
+  - `Request.screwTracking`은 승인/할당 시점 **스냅샷**으로 저장
+  - 이후 전역 로트번호가 바뀌어도 기존 의뢰의 `screwTracking`은 변경하지 않습니다.
+- UI 정책:
+  - 패킹 카드/상단 라인에는 스크류 로트번호를 표시하지 않습니다.
+  - 의뢰 클릭 후 `PreviewModal` 상세 메타에서만 `스크류타입`, `스크류 로트번호`를 표시합니다.
+  - 패킹 상단 컨트롤 줄 우측에 `스크류 로트번호 설정` 버튼을 두고, 모달에서 타입 추가/삭제/수정합니다.
+
+관련 파일:
+- `web/frontend/src/pages/manufacturer/worksheet/custom_abutment/packing/components/PackingPageContent.tsx`
+- `web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/WorksheetCardGrid.tsx`
+- `web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx`
+- `web/frontend/src/types/request.ts`
+- `web/backend/models/systemSettings.model.js`
+- `web/backend/models/request.model.js`
+- `web/backend/controllers/requests/common.requests.controller.js`
+- `web/backend/controllers/requests/common.review.controller.js`
+- `web/backend/controllers/requests/request.controller.js`
+- `web/backend/modules/requests/request.routes.js`
+
+관련 폴더:
+- `web/frontend/src/pages/manufacturer/worksheet/custom_abutment/`
+- `web/backend/controllers/requests/`
+- `web/backend/models/`
+- `web/backend/modules/requests/`
 
 ### 1.1 보안 정보 관리
 

@@ -188,6 +188,89 @@ const DEFAULT_SELF_INSPECTION_INSTRUMENT_OPTIONS = [
 
 const DEFAULT_RND_UNMACHINABLE_REASON_OPTIONS = [];
 
+// related files (screw lot tracking):
+// - web/backend/models/systemSettings.model.js
+// - web/backend/models/request.model.js
+// - web/backend/controllers/requests/common.review.controller.js
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/packing/components/PackingPageContent.tsx
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx
+const DEFAULT_PACKING_SCREW_TYPES = ["A", "B", "C", "D", "E"];
+
+const normalizePackingScrewType = (value) =>
+  String(value || "")
+    .slice(0, 30)
+    .trim()
+    .toUpperCase();
+
+const normalizePackingScrewLot = (value) =>
+  String(value || "")
+    .slice(0, 120)
+    .trim();
+
+const normalizePackingScrewLotItems = (itemsRaw, { withDefault = false } = {}) => {
+  const source = Array.isArray(itemsRaw) ? itemsRaw : [];
+  const items = [];
+
+  for (const row of source) {
+    const type = normalizePackingScrewType(row?.type);
+    const lotNumber = normalizePackingScrewLot(row?.lotNumber);
+    if (!type) continue;
+    if (items.some((item) => item.type === type)) continue;
+    items.push({ type, lotNumber });
+    if (items.length >= 50) break;
+  }
+
+  if (items.length > 0 || !withDefault) return items;
+
+  return DEFAULT_PACKING_SCREW_TYPES.map((type) => ({
+    type,
+    lotNumber: "",
+  }));
+};
+
+const normalizePackingScrewLotSettings = (raw, { withDefault = false } = {}) => {
+  if (Array.isArray(raw)) {
+    return normalizePackingScrewLotItems(raw, { withDefault });
+  }
+
+  if (raw && typeof raw === "object") {
+    if (Array.isArray(raw.items)) {
+      return normalizePackingScrewLotItems(raw.items, { withDefault });
+    }
+
+    // backward compatibility: legacy map object { A: "LOT-1", ... }
+    return normalizePackingScrewLotItems(
+      Object.entries(raw).map(([type, lotNumber]) => ({ type, lotNumber })),
+      { withDefault },
+    );
+  }
+
+  return normalizePackingScrewLotItems([], { withDefault });
+};
+
+const toPackingScrewLotMap = (itemsRaw) => {
+  const items = normalizePackingScrewLotSettings(itemsRaw, { withDefault: false });
+  return items.reduce((acc, item) => {
+    acc[item.type] = item.lotNumber;
+    return acc;
+  }, {});
+};
+
+const mergePackingScrewLotItems = (currentRaw, patchRaw) => {
+  const current = normalizePackingScrewLotSettings(currentRaw, { withDefault: true });
+  const patch = normalizePackingScrewLotSettings(patchRaw, { withDefault: false });
+  const map = new Map(current.map((item) => [item.type, item.lotNumber]));
+
+  for (const row of patch) {
+    map.set(row.type, row.lotNumber);
+  }
+
+  return Array.from(map.entries()).map(([type, lotNumber]) => ({
+    type,
+    lotNumber,
+  }));
+};
+
 const normalizeReasonOptions = (optionsRaw, max = 100) => {
   if (!Array.isArray(optionsRaw)) return [];
   const unique = [];
@@ -580,6 +663,176 @@ export async function saveRndUnmachinableReasonOptions(req, res) {
   }
 }
 
+export async function getPackingScrewLotSettings(req, res) {
+  try {
+    if (req.user.role !== "manufacturer" && req.user.role !== "admin")
+      return res
+        .status(403)
+        .json({ success: false, message: "권한이 없습니다." });
+
+    const settings = await SystemSettings.findOne({ key: "global" })
+      .select({ packingScrewLotSettings: 1 })
+      .lean();
+
+    const items = normalizePackingScrewLotSettings(
+      settings?.packingScrewLotSettings,
+      { withDefault: true },
+    );
+
+    return res.json({
+      success: true,
+      data: {
+        items,
+        lots: toPackingScrewLotMap(items),
+      },
+    });
+  } catch (e) {
+    return res.status(500).json({
+      success: false,
+      message: "스크류 로트번호 설정 조회 실패",
+    });
+  }
+}
+
+export async function savePackingScrewLotSettings(req, res) {
+  try {
+    if (req.user.role !== "manufacturer" && req.user.role !== "admin")
+      return res
+        .status(403)
+        .json({ success: false, message: "권한이 없습니다." });
+
+    const hasItemsPayload = Array.isArray(req.body?.items);
+    const hasLegacyLotsPayload =
+      req.body?.lots && typeof req.body?.lots === "object" && !Array.isArray(req.body?.lots);
+
+    if (!hasItemsPayload && !hasLegacyLotsPayload) {
+      return res.status(400).json({
+        success: false,
+        message: "items 배열(권장) 또는 lots 객체가 필요합니다.",
+      });
+    }
+
+    const existing = await SystemSettings.findOne({ key: "global" })
+      .select({ packingScrewLotSettings: 1 })
+      .lean();
+
+    let nextItems;
+    if (hasItemsPayload) {
+      nextItems = normalizePackingScrewLotSettings(req.body?.items, {
+        withDefault: false,
+      });
+    } else {
+      // backward compatibility: legacy { lots } payload는 patch merge로 처리
+      nextItems = mergePackingScrewLotItems(existing?.packingScrewLotSettings, req.body?.lots);
+    }
+
+    const updated = await SystemSettings.findOneAndUpdate(
+      { key: "global" },
+      {
+        $set: {
+          packingScrewLotSettings: nextItems,
+        },
+      },
+      {
+        upsert: true,
+        new: true,
+        setDefaultsOnInsert: true,
+        select: { packingScrewLotSettings: 1 },
+      },
+    ).lean();
+
+    const savedItems = normalizePackingScrewLotSettings(
+      updated?.packingScrewLotSettings || nextItems,
+      { withDefault: true },
+    );
+
+    return res.json({
+      success: true,
+      data: {
+        items: savedItems,
+        lots: toPackingScrewLotMap(savedItems),
+      },
+    });
+  } catch (e) {
+    return res.status(500).json({
+      success: false,
+      message: "스크류 로트번호 설정 저장 실패",
+    });
+  }
+}
+
+export async function assignPackingScrewLotToRequest(req, res) {
+  try {
+    const { id } = req.params;
+
+    if (req.user.role !== "manufacturer" && req.user.role !== "admin") {
+      return res
+        .status(403)
+        .json({ success: false, message: "권한이 없습니다." });
+    }
+
+    if (!Types.ObjectId.isValid(id)) {
+      return res
+        .status(400)
+        .json({ success: false, message: "유효하지 않은 의뢰 ID입니다." });
+    }
+
+    const screwType = normalizePackingScrewType(req.body?.screwType);
+    if (!screwType) {
+      return res.status(400).json({
+        success: false,
+        message: "유효하지 않은 스크류 타입입니다.",
+      });
+    }
+
+    const request = await Request.findById(id);
+    if (!request) {
+      return res
+        .status(404)
+        .json({ success: false, message: "의뢰를 찾을 수 없습니다." });
+    }
+
+    const settings = await SystemSettings.findOne({ key: "global" })
+      .select({ packingScrewLotSettings: 1 })
+      .lean();
+    const lots = toPackingScrewLotMap(settings?.packingScrewLotSettings);
+    const lotNumber = normalizePackingScrewLot(lots[screwType]);
+
+    if (!lotNumber) {
+      return res.status(400).json({
+        success: false,
+        message: `스크류 ${screwType} 로트번호가 설정되지 않았습니다.`,
+      });
+    }
+
+    const actorName = String(req.user?.name || "").trim();
+
+    request.screwTracking = {
+      screwType,
+      lotNumber,
+      assignedAt: new Date(),
+      assignedBy: req.user?._id || null,
+      assignedByName: actorName,
+      source: "manual",
+    };
+
+    await request.save();
+
+    return res.json({
+      success: true,
+      data: {
+        requestId: request.requestId,
+        screwTracking: request.screwTracking,
+      },
+    });
+  } catch (e) {
+    return res.status(500).json({
+      success: false,
+      message: "의뢰 스크류 로트번호 설정 실패",
+    });
+  }
+}
+
 export async function getConnectionSpecByRequestId(req, res) {
   try {
     const requestId = String(req.params?.requestId || "").trim();
@@ -861,6 +1114,7 @@ export async function getAllRequests(req, res) {
       "manufacturerStage",
       "createdAt",
       "lotNumber",
+      "screwTracking",
       "mailboxAddress",
       "shippingLabelPrinted",
       "shippingWorkflow",
@@ -916,6 +1170,7 @@ export async function getAllRequests(req, res) {
       "manufacturerStage",
       "createdAt",
       "lotNumber",
+      "screwTracking",
       "mailboxAddress",
       "shippingPackageId",
       "businessAnchorId",
@@ -968,6 +1223,7 @@ export async function getAllRequests(req, res) {
       "manufacturerStage",
       "createdAt",
       "lotNumber",
+      "screwTracking",
       "mailboxAddress",
       "shippingPackageId",
       "shippingWorkflow",
