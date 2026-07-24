@@ -88,12 +88,6 @@ const buildStemKeys = (stemRaw: string) => {
   return keys;
 };
 
-const extractTrailingIndex = (valueRaw: string) => {
-  const value = String(valueRaw || "").trim().toLowerCase();
-  const match = value.match(/(?:^|[-_\s])(\d{1,4})$/);
-  return match?.[1] || "";
-};
-
 const isStemMatch = (aRaw: string, bRaw: string) => {
   const a = String(aRaw || "").trim().toLowerCase();
   const b = String(bRaw || "").trim().toLowerCase();
@@ -106,10 +100,6 @@ const isStemMatch = (aRaw: string, bRaw: string) => {
   for (const k of aKeys) {
     if (bKeys.has(k)) return true;
   }
-
-  const aIndex = extractTrailingIndex(a);
-  const bIndex = extractTrailingIndex(b);
-  if (aIndex && bIndex && aIndex === bIndex) return true;
 
   return false;
 };
@@ -463,6 +453,16 @@ export function NewRequestDetailsSection({
   const [manualCompanionLinksByStlKey, setManualCompanionLinksByStlKey] = useState<
     Record<string, string[]>
   >({});
+  const [companionPinnedByStlKey, setCompanionPinnedByStlKey] = useState<
+    Record<string, string>
+  >({});
+  const [companionOverrideByStlKey, setCompanionOverrideByStlKey] = useState<
+    Record<string, boolean>
+  >({});
+  const [pendingCompanionReplace, setPendingCompanionReplace] = useState<{
+    stlFileKey: string;
+    companionFileKey: string;
+  } | null>(null);
   const [pendingCompanionTargetStlKey, setPendingCompanionTargetStlKey] = useState<
     string | null
   >(null);
@@ -488,20 +488,50 @@ export function NewRequestDetailsSection({
   }, [companionFiles]);
 
   const missingCompanionStems = useMemo(() => {
-    const uniqueStems = [...new Set(stlStemList)];
+    const stlFiles = (files || []).filter((f) =>
+      String(f?.name || "").toLowerCase().endsWith(".stl"),
+    );
 
-    // 단일 STL 케이스에서는 xml이 하나라도 있으면 해당 STL에 연결된 것으로 본다.
-    if (uniqueStems.length === 1 && companionFiles.length > 0) {
-      return [];
-    }
+    return stlFiles
+      .map((stlFile) => {
+        const stlStem = getStem(stlFile.name);
+        const stlKey = toNormalizedFileKey(stlFile);
 
-    return uniqueStems.filter((stlStem) => {
-      const matched = companionStems.some((companionStem) =>
-        isStemMatch(stlStem, companionStem),
-      );
-      return !matched && !companionBypassStemMap[stlStem];
-    });
-  }, [stlStemList, companionStems, companionBypassStemMap, companionFiles.length]);
+        const pinnedKey = companionPinnedByStlKey[stlKey];
+        const hasPinned = Boolean(
+          pinnedKey &&
+            companionFiles.some(
+              (c) => `${c.name}:${c.size}:${c.lastModified}` === pinnedKey,
+            ),
+        );
+
+        const manualKeys = manualCompanionLinksByStlKey[stlKey] || [];
+        const hasManual = manualKeys.some((k) =>
+          companionFiles.some(
+            (c) => `${c.name}:${c.size}:${c.lastModified}` === k,
+          ),
+        );
+
+        const hasStemMatch = companionStems.some((companionStem) =>
+          isStemMatch(stlStem, companionStem),
+        );
+
+        const hasCompanion = hasPinned || hasManual || hasStemMatch;
+        return { stlStem, hasCompanion };
+      })
+      .filter(({ stlStem, hasCompanion }) => {
+        return !hasCompanion && !companionBypassStemMap[stlStem];
+      })
+      .map(({ stlStem }) => stlStem);
+  }, [
+    files,
+    toNormalizedFileKey,
+    companionPinnedByStlKey,
+    manualCompanionLinksByStlKey,
+    companionFiles,
+    companionStems,
+    companionBypassStemMap,
+  ]);
 
   // STL 프리뷰에서 계산한 최대직경을 저장 (리드타임 표시용)
   const handleDiameterComputed = useCallback(
@@ -537,8 +567,7 @@ export function NewRequestDetailsSection({
   );
 
   const hasActiveSession = files.length > 0;
-  const hasCompanionOnlySession = files.length === 0 && companionFiles.length > 0;
-  const hasAnyAttachment = hasActiveSession || hasCompanionOnlySession;
+  const hasAnyAttachment = hasActiveSession || companionFiles.length > 0;
   const [detailIndex, setDetailIndex] = useState<number | null>(null);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [
@@ -562,7 +591,154 @@ export function NewRequestDetailsSection({
   const getCompanionFileKey = useCallback((file: File) => {
     return `${file.name}:${file.size}:${file.lastModified}`;
   }, []);
+
+  const standaloneCompanionFiles = useMemo(() => {
+    if (!companionFiles.length) return [] as File[];
+
+    const linkedCompanionKeys = new Set<string>();
+
+    // 1) STL별 자동/수동 연결 구성정보 수집
+    for (const stl of files) {
+      const stlName = String(stl?.name || "").toLowerCase();
+      if (!stlName.endsWith(".stl")) continue;
+
+      const stlFileKey = toNormalizedFileKey(stl);
+      const hasOverride = Boolean(companionOverrideByStlKey[stlFileKey]);
+
+      const pinnedKey = companionPinnedByStlKey[stlFileKey];
+      if (pinnedKey) {
+        linkedCompanionKeys.add(pinnedKey);
+      }
+
+      const manualKeys = manualCompanionLinksByStlKey[stlFileKey] || [];
+      for (const k of manualKeys) {
+        linkedCompanionKeys.add(k);
+      }
+
+      // override가 없을 때만 이름 매칭 자동 연결을 사용
+      if (!hasOverride) {
+        const stlStem = getStem(stl.name);
+        for (const companion of companionFiles) {
+          if (isStemMatch(stlStem, getStem(companion.name))) {
+            linkedCompanionKeys.add(getCompanionFileKey(companion));
+          }
+        }
+      }
+    }
+
+    return companionFiles.filter(
+      (companion) => !linkedCompanionKeys.has(getCompanionFileKey(companion)),
+    );
+  }, [
+    companionFiles,
+    files,
+    toNormalizedFileKey,
+    companionOverrideByStlKey,
+    companionPinnedByStlKey,
+    manualCompanionLinksByStlKey,
+    getCompanionFileKey,
+  ]);
+
   const [cardDragOverKey, setCardDragOverKey] = useState<string | null>(null);
+
+  const getCurrentCompanionKeyForStl = useCallback(
+    (stlFileKey: string) => {
+      const stl = files.find((f) => toNormalizedFileKey(f) === stlFileKey);
+      if (!stl) return null;
+
+      const pinnedKey = companionPinnedByStlKey[stlFileKey];
+      if (pinnedKey) {
+        const pinnedFile = companionFiles.find(
+          (c) => getCompanionFileKey(c) === pinnedKey,
+        );
+        if (pinnedFile) return pinnedKey;
+      }
+
+      const manual = companionFiles.filter((companion) =>
+        (manualCompanionLinksByStlKey[stlFileKey] || []).includes(
+          getCompanionFileKey(companion),
+        ),
+      );
+      if (manual[0]) return getCompanionFileKey(manual[0]);
+
+      const hasOverride = Boolean(companionOverrideByStlKey[stlFileKey]);
+      if (hasOverride) {
+        return null;
+      }
+
+      const matched = companionFiles.filter((companion) =>
+        isStemMatch(getStem(stl.name), getStem(companion.name)),
+      );
+      if (matched[0]) return getCompanionFileKey(matched[0]);
+
+      return null;
+    },
+    [
+      files,
+      toNormalizedFileKey,
+      companionPinnedByStlKey,
+      companionFiles,
+      getCompanionFileKey,
+      manualCompanionLinksByStlKey,
+      companionOverrideByStlKey,
+    ],
+  );
+  const [cardLinkDrag, setCardLinkDrag] = useState<{
+    kind: "stl" | "companion";
+    stlFileKey?: string;
+    companionFileKey?: string;
+    sourceStlFileKey?: string;
+  } | null>(null);
+
+  const linkCompanionToStl = useCallback(
+    (
+      stlFileKey: string,
+      companionFileKey: string,
+      options?: { replace?: boolean },
+    ) => {
+      if (!stlFileKey || !companionFileKey) return;
+
+      setManualCompanionLinksByStlKey((prev) => {
+        const next = { ...prev };
+        if (options?.replace) {
+          next[stlFileKey] = [companionFileKey];
+          return next;
+        }
+        const current = new Set(next[stlFileKey] || []);
+        current.add(companionFileKey);
+        next[stlFileKey] = [...current];
+        return next;
+      });
+
+      setCompanionPinnedByStlKey((prev) => ({
+        ...prev,
+        [stlFileKey]: companionFileKey,
+      }));
+      setCompanionOverrideByStlKey((prev) => ({
+        ...prev,
+        [stlFileKey]: true,
+      }));
+    },
+    [],
+  );
+
+  const unlinkCompanionFromStl = useCallback((stlFileKey: string, companionFileKey: string) => {
+    if (!stlFileKey || !companionFileKey) return;
+    setManualCompanionLinksByStlKey((prev) => {
+      const current = prev[stlFileKey] || [];
+      const filtered = current.filter((k) => k !== companionFileKey);
+      const next = { ...prev };
+      if (filtered.length > 0) next[stlFileKey] = filtered;
+      else delete next[stlFileKey];
+      return next;
+    });
+    setCompanionPinnedByStlKey((prev) => {
+      if (prev[stlFileKey] !== companionFileKey) return prev;
+      const next = { ...prev };
+      delete next[stlFileKey];
+      return next;
+    });
+  }, []);
 
   const handleDialogOpenChange = useCallback(
     (nextOpen: boolean) => {
@@ -585,6 +761,9 @@ export function NewRequestDetailsSection({
     if (!files.length) {
       setCompanionPromptOpen(false);
       setCompanionBypassStemMap({});
+      setCompanionPinnedByStlKey({});
+      setCompanionOverrideByStlKey({});
+      setPendingCompanionReplace(null);
       if (suppressCompanionPrompt) {
         setSuppressCompanionPrompt(false);
       }
@@ -666,23 +845,25 @@ export function NewRequestDetailsSection({
           delete next[companionStem];
         }
 
-        // 단일 STL이면 이름이 달라도 방금 올린 구성정보를 그 STL과 연결 처리
-        if (stlStemList.length === 1 && accepted.length > 0) {
-          delete next[stlStemList[0]];
-        }
-
         return next;
       });
 
-      if (options?.targetStlFileKey) {
-        const companionKeys = accepted.map((f) => getCompanionFileKey(f));
-        setManualCompanionLinksByStlKey((prev) => {
-          const next = { ...prev };
-          const current = new Set(next[options.targetStlFileKey || ""] || []);
-          companionKeys.forEach((k) => current.add(k));
-          next[options.targetStlFileKey || ""] = [...current];
-          return next;
-        });
+      let effectiveTargetStlFileKey = options?.targetStlFileKey;
+      if (effectiveTargetStlFileKey) {
+        const incomingKey = accepted[0] ? getCompanionFileKey(accepted[0]) : null;
+        const currentKey = getCurrentCompanionKeyForStl(effectiveTargetStlFileKey);
+
+        if (incomingKey) {
+          if (currentKey && currentKey !== incomingKey) {
+            setPendingCompanionReplace({
+              stlFileKey: effectiveTargetStlFileKey,
+              companionFileKey: incomingKey,
+            });
+            effectiveTargetStlFileKey = undefined;
+          } else {
+            linkCompanionToStl(effectiveTargetStlFileKey, incomingKey);
+          }
+        }
       }
 
       void (async () => {
@@ -696,8 +877,8 @@ export function NewRequestDetailsSection({
             }
 
             const stem = getStem(companion.name);
-            const forcedTarget = options?.targetStlFileKey
-              ? files.find((f) => toNormalizedFileKey(f) === options.targetStlFileKey)
+            const forcedTarget = effectiveTargetStlFileKey
+              ? files.find((f) => toNormalizedFileKey(f) === effectiveTargetStlFileKey)
               : null;
             const targets = forcedTarget
               ? [forcedTarget]
@@ -757,6 +938,8 @@ export function NewRequestDetailsSection({
       updateCaseInfos,
       onCompanionFilesAccepted,
       getCompanionFileKey,
+      getCurrentCompanionKeyForStl,
+      linkCompanionToStl,
     ],
   );
 
@@ -789,8 +972,13 @@ export function NewRequestDetailsSection({
     setCompanionFiles([]);
     setCompanionBypassStemMap({});
     setManualCompanionLinksByStlKey({});
+    setCompanionPinnedByStlKey({});
+    setCompanionOverrideByStlKey({});
+    setPendingCompanionReplace(null);
     setPendingCompanionTargetStlKey(null);
     setPendingCompanionCardForStlUpload(null);
+    setCardLinkDrag(null);
+    setCardDragOverKey(null);
     setCompanionPromptOpen(false);
     onCancelAll();
   }, [onCancelAll]);
@@ -817,6 +1005,15 @@ export function NewRequestDetailsSection({
         for (const [stlKey, companionKeys] of Object.entries(prev)) {
           const filtered = companionKeys.filter((k) => k !== targetKey);
           if (filtered.length > 0) next[stlKey] = filtered;
+        }
+        return next;
+      });
+      setCompanionPinnedByStlKey((prev) => {
+        const next = { ...prev };
+        for (const [stlKey, companionKey] of Object.entries(prev)) {
+          if (companionKey === targetKey) {
+            delete next[stlKey];
+          }
         }
         return next;
       });
@@ -1159,7 +1356,54 @@ export function NewRequestDetailsSection({
       return [...map.values()];
     })();
 
-    if (!deduped.length) return;
+    // 카드 간 드래그(파일 없음)로 결합
+    if (!deduped.length && cardLinkDrag) {
+      if (
+        options?.targetStlFileKey &&
+        cardLinkDrag.kind === "companion" &&
+        cardLinkDrag.companionFileKey
+      ) {
+        const currentKey = getCurrentCompanionKeyForStl(options.targetStlFileKey);
+        if (currentKey && currentKey !== cardLinkDrag.companionFileKey) {
+          setPendingCompanionReplace({
+            stlFileKey: options.targetStlFileKey,
+            companionFileKey: cardLinkDrag.companionFileKey,
+          });
+          setCardLinkDrag(null);
+          return;
+        }
+
+        linkCompanionToStl(options.targetStlFileKey, cardLinkDrag.companionFileKey);
+        toast({
+          title: "카드를 결합했어요",
+          description: "구성정보를 해당 STL 케이스에 연결했습니다.",
+          duration: 2200,
+        });
+      } else if (
+        options?.targetCompanionFileKey &&
+        cardLinkDrag.kind === "stl" &&
+        cardLinkDrag.stlFileKey
+      ) {
+        const currentKey = getCurrentCompanionKeyForStl(cardLinkDrag.stlFileKey);
+        if (currentKey && currentKey !== options.targetCompanionFileKey) {
+          setPendingCompanionReplace({
+            stlFileKey: cardLinkDrag.stlFileKey,
+            companionFileKey: options.targetCompanionFileKey,
+          });
+          setCardLinkDrag(null);
+          return;
+        }
+
+        linkCompanionToStl(cardLinkDrag.stlFileKey, options.targetCompanionFileKey);
+        toast({
+          title: "카드를 결합했어요",
+          description: "해당 STL 케이스에 구성정보를 연결했습니다.",
+          duration: 2200,
+        });
+      }
+      setCardLinkDrag(null);
+      return;
+    }
 
     const companionFiles = deduped.filter((f) => isCadCompanionFile(f.name));
     const stlFiles = deduped.filter((f) => getLowerExt(f.name) === ".stl");
@@ -1174,16 +1418,19 @@ export function NewRequestDetailsSection({
     }
 
     if (options?.targetCompanionFileKey && stlFiles.length > 0) {
-      setManualCompanionLinksByStlKey((prev) => {
-        const next = { ...prev };
-        for (const stl of stlFiles) {
-          const stlKey = toNormalizedFileKey(stl);
-          const current = new Set(next[stlKey] || []);
-          current.add(options.targetCompanionFileKey as string);
-          next[stlKey] = [...current];
+      for (const stl of stlFiles) {
+        const stlKey = toNormalizedFileKey(stl);
+        const currentKey = getCurrentCompanionKeyForStl(stlKey);
+        if (currentKey && currentKey !== options.targetCompanionFileKey) {
+          setPendingCompanionReplace({
+            stlFileKey: stlKey,
+            companionFileKey: options.targetCompanionFileKey,
+          });
+          continue;
         }
-        return next;
-      });
+
+        linkCompanionToStl(stlKey, options.targetCompanionFileKey);
+      }
     }
 
     const forwardFiles = [...stlFiles, ...otherFiles];
@@ -1193,6 +1440,8 @@ export function NewRequestDetailsSection({
       }
       onFilesSelected(forwardFiles);
     }
+
+    setCardLinkDrag(null);
   };
 
   const handleKeyboardNavigation = (
@@ -1301,6 +1550,32 @@ export function NewRequestDetailsSection({
             role="listbox"
             aria-label="첨부 파일 목록"
             onKeyDown={handleKeyboardNavigation}
+            onDragOver={(e) => {
+              if (cardLinkDrag) {
+                e.preventDefault();
+              }
+            }}
+            onDrop={(e) => {
+              if (
+                cardLinkDrag?.kind === "companion" &&
+                cardLinkDrag.companionFileKey &&
+                cardLinkDrag.sourceStlFileKey
+              ) {
+                e.preventDefault();
+                e.stopPropagation();
+                unlinkCompanionFromStl(
+                  cardLinkDrag.sourceStlFileKey,
+                  cardLinkDrag.companionFileKey,
+                );
+                setCardLinkDrag(null);
+                setCardDragOverKey(null);
+                toast({
+                  title: "카드를 분리했어요",
+                  description: "구성정보를 STL 케이스에서 분리했습니다.",
+                  duration: 2200,
+                });
+              }
+            }}
           >
             <div
               className={`shrink-0 w-full border-2 border-dashed rounded-2xl text-center transition-colors flex flex-col items-center justify-center gap-1.5 cursor-pointer ${hasAnyAttachment ? "p-3 md:p-4" : "p-5 md:p-6 max-w-[420px] mx-auto"} ${
@@ -1308,9 +1583,44 @@ export function NewRequestDetailsSection({
                   ? "border-primary bg-primary/5"
                   : "border-gray-300 hover:border-primary/50 bg-white"
               }`}
-              onDragOver={onDragOver}
-              onDragLeave={onDragLeave}
-              onDrop={onDrop}
+              onDragOver={(e) => {
+                if (cardLinkDrag) {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  return;
+                }
+                onDragOver(e);
+              }}
+              onDragLeave={(e) => {
+                if (cardLinkDrag) {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  return;
+                }
+                onDragLeave(e);
+              }}
+              onDrop={(e) => {
+                if (
+                  cardLinkDrag?.kind === "companion" &&
+                  cardLinkDrag.companionFileKey &&
+                  cardLinkDrag.sourceStlFileKey
+                ) {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  unlinkCompanionFromStl(
+                    cardLinkDrag.sourceStlFileKey,
+                    cardLinkDrag.companionFileKey,
+                  );
+                  setCardLinkDrag(null);
+                  toast({
+                    title: "카드를 분리했어요",
+                    description: "구성정보를 STL 케이스에서 분리했습니다.",
+                    duration: 2200,
+                  });
+                  return;
+                }
+                onDrop(e);
+              }}
               onClick={() => uploadInputRef.current?.click()}
             >
               <p className="text-xs md:text-sm text-muted-foreground">
@@ -1320,12 +1630,24 @@ export function NewRequestDetailsSection({
                 파일명에서 치과/환자/치아번호를 자동 인식합니다.
               </p>
             </div>
-            {hasCompanionOnlySession &&
-              companionFiles.map((companion) => {
+            {standaloneCompanionFiles.length > 0 &&
+              standaloneCompanionFiles.map((companion) => {
                 const companionKey = `${companion.name}:${companion.size}:${companion.lastModified}`;
                 return (
                   <div
                     key={companionKey}
+                    draggable
+                    onDragStart={(event) => {
+                      event.stopPropagation();
+                      setCardLinkDrag({
+                        kind: "companion",
+                        companionFileKey: companionKey,
+                      });
+                    }}
+                    onDragEnd={() => {
+                      setCardLinkDrag(null);
+                      setCardDragOverKey(null);
+                    }}
                     onDragOver={(event) => {
                       event.preventDefault();
                       event.stopPropagation();
@@ -1423,6 +1745,15 @@ export function NewRequestDetailsSection({
                     ? getEstimatedShipForDiameter(diameter)
                     : null;
 
+                  const pinnedCompanion = (() => {
+                    const pinnedKey = companionPinnedByStlKey[fileKey];
+                    if (!pinnedKey) return null;
+                    return (
+                      companionFiles.find(
+                        (companion) => getCompanionFileKey(companion) === pinnedKey,
+                      ) || null
+                    );
+                  })();
                   const matchedCompanions = companionFiles.filter((companion) =>
                     isStemMatch(getStem(filename), getStem(companion.name)),
                   );
@@ -1431,19 +1762,30 @@ export function NewRequestDetailsSection({
                       getCompanionFileKey(companion),
                     ),
                   );
-                  const effectiveCompanions =
-                    matchedCompanions.length > 0
-                      ? matchedCompanions
-                      : manualLinkedCompanions.length > 0
-                        ? manualLinkedCompanions
-                        : files.length === 1
-                          ? companionFiles
+                  const hasCompanionOverride = Boolean(companionOverrideByStlKey[fileKey]);
+                  const effectiveCompanions = pinnedCompanion
+                    ? [pinnedCompanion]
+                    : hasCompanionOverride
+                      ? manualLinkedCompanions
+                      : matchedCompanions.length > 0
+                        ? matchedCompanions
+                        : manualLinkedCompanions.length > 0
+                          ? manualLinkedCompanions
                           : [];
                   const primaryCompanion = effectiveCompanions[0] || null;
 
                   return (
                     <div
                       key={`${fileKey}-${index}`}
+                      draggable
+                      onDragStart={(event) => {
+                        event.stopPropagation();
+                        setCardLinkDrag({ kind: "stl", stlFileKey: fileKey });
+                      }}
+                      onDragEnd={() => {
+                        setCardLinkDrag(null);
+                        setCardDragOverKey(null);
+                      }}
                       onClick={() => {
                         openDetailModal(index);
                       }}
@@ -1509,7 +1851,23 @@ export function NewRequestDetailsSection({
                           <div className="min-w-0 flex items-center gap-1.5 text-sky-700">
                             <Badge className="bg-sky-600 hover:bg-sky-600">구성정보</Badge>
                             {primaryCompanion ? (
-                              <span className="truncate" title={primaryCompanion.name}>
+                              <span
+                                className="truncate cursor-grab active:cursor-grabbing"
+                                title={`${primaryCompanion.name} (드래그해서 분리/결합)`}
+                                draggable
+                                onDragStart={(event) => {
+                                  event.stopPropagation();
+                                  setCardLinkDrag({
+                                    kind: "companion",
+                                    companionFileKey: getCompanionFileKey(primaryCompanion),
+                                    sourceStlFileKey: fileKey,
+                                  });
+                                }}
+                                onDragEnd={() => {
+                                  setCardLinkDrag(null);
+                                  setCardDragOverKey(null);
+                                }}
+                              >
                                 {primaryCompanion.name}
                               </span>
                             ) : (
@@ -1843,7 +2201,7 @@ export function NewRequestDetailsSection({
             <AlertDialogDescription>
               지금은 STL만 첨부되었어요.
               <br />
-              더 정확한 작업을 위해 <strong>.xml 파일(3Shape)</strong> 또는 <strong>constructionInfo 파일(ExoCAD)</strong>을 함께 올려주세요.
+              <strong>xml(3Shape)</strong> 또는 <strong>constructionInfo (ExoCAD)</strong> 파일을 함께 올려주세요.
               <br />
               없으면 이번에는 구성정보 없이 진행할 수 있어요.
             </AlertDialogDescription>
@@ -1861,6 +2219,53 @@ export function NewRequestDetailsSection({
               }}
             >
               구성정보 파일 업로드
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={!!pendingCompanionReplace}
+        onOpenChange={(open) => {
+          if (!open) {
+            setPendingCompanionReplace(null);
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>구성정보를 교체할까요?</AlertDialogTitle>
+            <AlertDialogDescription>
+              이미 이 STL 케이스에 구성정보가 연결되어 있습니다.
+              <br />
+              새로 선택한 구성정보로 교체하면 기존 연결은 해제됩니다.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel
+              onClick={() => {
+                setPendingCompanionReplace(null);
+              }}
+            >
+              취소
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (!pendingCompanionReplace) return;
+                linkCompanionToStl(
+                  pendingCompanionReplace.stlFileKey,
+                  pendingCompanionReplace.companionFileKey,
+                  { replace: true },
+                );
+                setPendingCompanionReplace(null);
+                toast({
+                  title: "구성정보를 교체했어요",
+                  description: "새 구성정보를 이 STL 케이스에 연결했습니다.",
+                  duration: 2200,
+                });
+              }}
+            >
+              교체하기
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
