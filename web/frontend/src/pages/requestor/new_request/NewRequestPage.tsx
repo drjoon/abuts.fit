@@ -13,6 +13,7 @@ import { useBulkShippingPolicy } from "./hooks/useBulkShippingPolicy";
 import { useFileVerification } from "./hooks/useFileVerification";
 import { parseFilenameWithRules } from "@/shared/filename/parseFilenameWithRules";
 import { clearLocalDraft } from "./utils/localDraftStorage";
+import { saveFile as saveFileToIndexedDb, getFile as getFileFromIndexedDb } from "./utils/fileIndexedDB";
 import { MultiActionDialog } from "@/features/support/components/MultiActionDialog";
 import { PageFileDropZone } from "@/features/requests/components/PageFileDropZone";
 import { NewRequestDetailsSection } from "./components/NewRequestDetailsSection";
@@ -48,6 +49,19 @@ export const NewRequestPage = () => {
     {},
   );
   const [companionFilesForSubmit, setCompanionFilesForSubmit] = useState<File[]>([]);
+
+  const COMPANION_STORAGE_KEY = "abutsfit:new-request-companions:v1";
+  const toCompanionMetaKey = (file: File) => {
+    const safeName = (() => {
+      try {
+        return String(file.name || "").normalize("NFC");
+      } catch {
+        return String(file.name || "");
+      }
+    })();
+    return `${safeName}:${file.size}:${file.lastModified}`;
+  };
+  const toCompanionIdbKey = (metaKey: string) => `companion:${metaKey}`;
 
   const normalizeKeyPart = (s: string) => {
     try {
@@ -177,6 +191,11 @@ export const NewRequestPage = () => {
     setImplantFamily("");
     setImplantType("");
     setCompanionFilesForSubmit([]);
+    try {
+      window.localStorage.removeItem(COMPANION_STORAGE_KEY);
+    } catch {
+      // noop
+    }
 
     const fileInput = document.getElementById(
       "file-input",
@@ -442,6 +461,51 @@ export const NewRequestPage = () => {
   const companionFileHandlerRef = useRef<
     (files: File[], options?: { targetStlFileKey?: string }) => void
   >(() => {});
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const raw = window.localStorage.getItem(COMPANION_STORAGE_KEY);
+        if (!raw) return;
+        const keys = JSON.parse(raw) as string[];
+        if (!Array.isArray(keys) || keys.length === 0) return;
+
+        const restored: File[] = [];
+        for (const metaKey of keys) {
+          const file = await getFileFromIndexedDb(toCompanionIdbKey(String(metaKey)));
+          if (file) restored.push(file);
+        }
+
+        if (restored.length > 0) {
+          setCompanionFilesForSubmit((prev) => {
+            const map = new Map<string, File>();
+            for (const file of [...prev, ...restored]) {
+              const key = toCompanionMetaKey(file);
+              if (!map.has(key)) map.set(key, file);
+            }
+            return [...map.values()];
+          });
+        }
+      } catch (e) {
+        console.warn("[NewRequestPage] failed to restore companion files", e);
+      }
+    })();
+  }, []);
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const keys = companionFilesForSubmit.map((f) => toCompanionMetaKey(f));
+        window.localStorage.setItem(COMPANION_STORAGE_KEY, JSON.stringify(keys));
+        for (const file of companionFilesForSubmit) {
+          const key = toCompanionMetaKey(file);
+          await saveFileToIndexedDb(toCompanionIdbKey(key), file);
+        }
+      } catch (e) {
+        console.warn("[NewRequestPage] failed to persist companion files", e);
+      }
+    })();
+  }, [companionFilesForSubmit]);
 
   const dedupeFiles = (input: File[]) => {
     const map = new Map<string, File>();
@@ -973,6 +1037,7 @@ export const NewRequestPage = () => {
               onCompanionFilesChange={(nextFiles) => {
                 setCompanionFilesForSubmit(nextFiles);
               }}
+              initialCompanionFiles={companionFilesForSubmit}
               weeklyBatchDays={weeklyBatchDays}
               onCancelAll={handleCancelAll}
               onDuplicateDetected={({ file, duplicate }) => {

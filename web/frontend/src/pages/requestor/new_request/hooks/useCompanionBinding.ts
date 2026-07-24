@@ -17,6 +17,7 @@ type ToastFn = (props: {
 
 type Params = {
   files: File[];
+  initialCompanionFiles?: File[];
   caseInfosMap?: Record<string, CaseInfos>;
   updateCaseInfos: (fileKey: string, updates: Partial<CaseInfos>) => void;
   toNormalizedFileKey: (file: File) => string;
@@ -44,6 +45,7 @@ type CardDropOptions = {
 
 export function useCompanionBinding({
   files,
+  initialCompanionFiles = [],
   caseInfosMap,
   updateCaseInfos,
   toNormalizedFileKey,
@@ -53,7 +55,9 @@ export function useCompanionBinding({
   onCompanionFilesChange,
   registerCompanionFileHandler,
 }: Params) {
-  const [companionFiles, setCompanionFiles] = useState<File[]>([]);
+  const [companionFiles, setCompanionFiles] = useState<File[]>(
+    initialCompanionFiles,
+  );
   const [companionBypassStemMap, setCompanionBypassStemMap] = useState<
     Record<string, boolean>
   >({});
@@ -779,6 +783,14 @@ export function useCompanionBinding({
   useEffect(() => {
     onCompanionFilesChange?.(companionFiles);
   }, [companionFiles, onCompanionFilesChange]);
+
+  useEffect(() => {
+    if (!initialCompanionFiles.length) return;
+    setCompanionFiles((prev) => {
+      if (prev.length > 0) return prev;
+      return initialCompanionFiles;
+    });
+  }, [initialCompanionFiles]);
 
   return {
     companionFiles,

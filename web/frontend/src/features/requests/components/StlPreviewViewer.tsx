@@ -453,13 +453,11 @@ export function StlPreviewViewer({
         }
 
         // 최대 직경(전체) + 커넥션 직경(원본 좌표계 z=0 단면) 계산
-        let maxR = 0;
-        for (let i = 0; i < position.count; i++) {
-          const x = position.getX(i);
-          const y = position.getY(i);
-          const r = Math.sqrt(x * x + y * y);
-          if (r > maxR) maxR = r;
-        }
+        // 주의: STL 원점이 모델에서 멀리 떨어진 경우를 대비해
+        // 직경 계산은 "원점"이 아니라 "모델 중심(center)" 기준으로 계산한다.
+        const bboxSizeX = bbox.max.x - bbox.min.x;
+        const bboxSizeY = bbox.max.y - bbox.min.y;
+        const maxDiameter = Math.max(bboxSizeX, bboxSizeY);
 
         let connectionMaxR = 0;
         const sliceTolerance = 1e-4;
@@ -479,7 +477,9 @@ export function StlPreviewViewer({
 
           const ix = x1 + t * (x2 - x1);
           const iy = y1 + t * (y2 - y1);
-          const r = Math.sqrt(ix * ix + iy * iy);
+          const dx = ix - center.x;
+          const dy = iy - center.y;
+          const r = Math.sqrt(dx * dx + dy * dy);
           if (r > connectionMaxR) connectionMaxR = r;
         };
 
@@ -503,15 +503,21 @@ export function StlPreviewViewer({
           const v2 = readVertex(i2);
 
           if (Math.abs(v0.z) <= sliceTolerance) {
-            const r = Math.sqrt(v0.x * v0.x + v0.y * v0.y);
+            const dx = v0.x - center.x;
+            const dy = v0.y - center.y;
+            const r = Math.sqrt(dx * dx + dy * dy);
             if (r > connectionMaxR) connectionMaxR = r;
           }
           if (Math.abs(v1.z) <= sliceTolerance) {
-            const r = Math.sqrt(v1.x * v1.x + v1.y * v1.y);
+            const dx = v1.x - center.x;
+            const dy = v1.y - center.y;
+            const r = Math.sqrt(dx * dx + dy * dy);
             if (r > connectionMaxR) connectionMaxR = r;
           }
           if (Math.abs(v2.z) <= sliceTolerance) {
-            const r = Math.sqrt(v2.x * v2.x + v2.y * v2.y);
+            const dx = v2.x - center.x;
+            const dy = v2.y - center.y;
+            const r = Math.sqrt(dx * dx + dy * dy);
             if (r > connectionMaxR) connectionMaxR = r;
           }
 
@@ -520,7 +526,6 @@ export function StlPreviewViewer({
           addIntersection(v2.x, v2.y, v2.z, v0.x, v0.y, v0.z);
         }
 
-        const maxDiameter = maxR * 2;
         maxDiameterRef.current = maxDiameter;
         const connectionDiameter =
           connectionMaxR > 0 ? connectionMaxR * 2 : maxDiameter;
@@ -529,17 +534,54 @@ export function StlPreviewViewer({
         const totalLength = bbox.max.z - bbox.min.z;
 
         const latestMetadata = resolvedMetadataRef.current;
-        const displayMaxDiameter = isFiniteNumber(latestMetadata?.maxDiameter)
-          ? latestMetadata.maxDiameter
-          : maxDiameter;
-        const displayConnectionDiameter = isFiniteNumber(
-          latestMetadata?.connectionDiameter,
-        )
-          ? latestMetadata.connectionDiameter
-          : connectionDiameter;
-        const displayTotalLength = isFiniteNumber(latestMetadata?.totalLength)
-          ? latestMetadata.totalLength
-          : totalLength;
+        const preferComputedMeasurement = !showOverlay;
+
+        const displayMaxDiameter =
+          preferComputedMeasurement || !isFiniteNumber(latestMetadata?.maxDiameter)
+            ? maxDiameter
+            : latestMetadata.maxDiameter;
+
+        const displayConnectionDiameter =
+          preferComputedMeasurement ||
+          !isFiniteNumber(latestMetadata?.connectionDiameter)
+            ? connectionDiameter
+            : latestMetadata.connectionDiameter;
+
+        const displayTotalLength =
+          preferComputedMeasurement || !isFiniteNumber(latestMetadata?.totalLength)
+            ? totalLength
+            : latestMetadata.totalLength;
+
+        if (import.meta.env.DEV) {
+          console.info("[StlPreviewViewer][diameter-debug]", {
+            fileName: file.name,
+            showOverlay,
+            center: { x: center.x, y: center.y, z: center.z },
+            bbox: {
+              min: { x: bbox.min.x, y: bbox.min.y, z: bbox.min.z },
+              max: { x: bbox.max.x, y: bbox.max.y, z: bbox.max.z },
+              sizeX: bboxSizeX,
+              sizeY: bboxSizeY,
+              sizeZ: bbox.max.z - bbox.min.z,
+            },
+            computed: {
+              maxDiameter,
+              connectionDiameter,
+              totalLength,
+            },
+            metadata: {
+              maxDiameter: latestMetadata?.maxDiameter,
+              connectionDiameter: latestMetadata?.connectionDiameter,
+              totalLength: latestMetadata?.totalLength,
+            },
+            display: {
+              maxDiameter: displayMaxDiameter,
+              connectionDiameter: displayConnectionDiameter,
+              totalLength: displayTotalLength,
+              preferComputedMeasurement,
+            },
+          });
+        }
 
         // 프론트에서 계산한 최대직경을 콜백으로 전달 (리드타임 표시용)
         if (onDiameterComputedRef.current && displayMaxDiameter > 0) {
@@ -1266,12 +1308,19 @@ export function StlPreviewViewer({
           }
         }
 
+        const frontPointDistToAxis = bestFrontPoint
+          ? Math.sqrt(
+              (bestFrontPoint.x - center.x) ** 2 +
+                (bestFrontPoint.y - center.y) ** 2,
+            )
+          : null;
+
         console.log(
           "[FrontPoint] 모서리 후보 점 개수:",
           edgePointCount,
           "검색 결과:",
           bestFrontPoint
-            ? `found at z=${bestFrontPoint.z}, distToAxis=${Math.sqrt((bestFrontPoint?.x || 0 - center.x) ** 2 + (bestFrontPoint?.y || 0 - center.y) ** 2).toFixed(2)}`
+            ? `found at z=${bestFrontPoint.z}, distToAxis=${frontPointDistToAxis?.toFixed(2)}`
             : "not found",
         );
 
@@ -1729,7 +1778,7 @@ export function StlPreviewViewer({
         }
 
         const sphere = geometry.boundingSphere;
-        const radius = sphere ? sphere.radius : maxR || 40;
+        const radius = sphere ? sphere.radius : Math.max(maxDiameter / 2, 40);
 
         // 모델의 실제 높이(totalLength)와 반경을 고려하여 카메라 거리 계산
         // 세로로 긴 모델이 화면 밖으로 벗어나지 않도록 bounding box의 크기를 반영

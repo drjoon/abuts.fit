@@ -13,6 +13,7 @@ import {
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -192,6 +193,9 @@ export function NewRequestDetailDialog({
         <DialogContent className="w-[calc(100vw-1rem)] sm:w-[1180px] lg:w-[980px] max-w-[calc(100vw-1rem)] max-h-[92vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="text-lg font-semibold">STL 확인 및 정보 입력</DialogTitle>
+            <DialogDescription className="sr-only">
+              STL 모델을 확인하고 환자/임플란트 정보를 입력한 뒤 다음 케이스로 이동합니다.
+            </DialogDescription>
           </DialogHeader>
 
           <div className="grid grid-cols-1 lg:grid-cols-[52%_48%] gap-4 items-stretch sm:pr-2">

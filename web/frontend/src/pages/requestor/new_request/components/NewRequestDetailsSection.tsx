@@ -76,6 +76,7 @@ type Props = {
   ) => void;
   onCompanionFilesAccepted?: (files: File[]) => void;
   onCompanionFilesChange?: (files: File[]) => void;
+  initialCompanionFiles?: File[];
   weeklyBatchDays?: string[];
   onCancelAll: () => void;
 };
@@ -129,6 +130,7 @@ export function NewRequestDetailsSection({
   registerCompanionFileHandler,
   onCompanionFilesAccepted,
   onCompanionFilesChange,
+  initialCompanionFiles = [],
   weeklyBatchDays = [],
   onCancelAll,
 }: Props) {
@@ -166,6 +168,7 @@ export function NewRequestDetailsSection({
 
   const companion = useCompanionBinding({
     files,
+    initialCompanionFiles,
     caseInfosMap,
     updateCaseInfos,
     toNormalizedFileKey,
