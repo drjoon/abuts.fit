@@ -1337,29 +1337,6 @@ export async function getAllRequests(req, res) {
 
     const rawRequests = await query.lean();
 
-    // 디버깅: 필터 조건과 결과 로그
-    if (role === "manufacturer") {
-      const stageFilter =
-        filter.manufacturerStage ||
-        filter.$and?.find((f) => f.manufacturerStage);
-      console.log("[DEBUG] getAllRequests - role:", role);
-      console.log(
-        "[DEBUG] manufacturerStage filter:",
-        JSON.stringify(stageFilter, null, 2),
-      );
-      console.log("[DEBUG] Full filter:", JSON.stringify(filter, null, 2));
-      console.log(`[DEBUG] Found ${rawRequests.length} requests`);
-      if (rawRequests.length > 0) {
-        console.log(
-          "[DEBUG] Sample requests:",
-          rawRequests.slice(0, 5).map((r) => ({
-            requestId: r.requestId,
-            manufacturerStage: r.manufacturerStage,
-            caManufacturer: r.caManufacturer,
-          })),
-        );
-      }
-    }
 
     const now = new Date();
     const isWorksheetView = view === "worksheet";
