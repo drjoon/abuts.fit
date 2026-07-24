@@ -115,9 +115,21 @@ const businessAnchorSchema = new mongoose.Schema(
       updatedAt: { type: Date, default: null },
     },
     requestSettings: {
+      // related files:
+      // - web/backend/controllers/businesses/business.controller.js
+      // - web/frontend/src/features/settings/tabs/RequestTab.tsx
+      // - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
       anodizingEnabled: {
         type: Boolean,
         default: true,
+      },
+      // 의뢰자(사업체) 단위 CAD 디자인 소프트웨어 설정
+      // - null: 미설정 (신규의뢰 진입 시 선택 모달 노출)
+      // - "3Shape" | "ExoCAD" | 직접입력 문자열
+      designSoftware: {
+        type: String,
+        default: null,
+        trim: true,
       },
       // 의뢰자(사업체) 단위 기본 헥스 회전값 (신규 의뢰 기본값)
       defaultRequestorHexRotation: {

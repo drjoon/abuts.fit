@@ -1,11 +1,19 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { CaseInfos } from "./newRequestTypes";
+
+// related files:
+// - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
+// - web/frontend/src/pages/requestor/new_request/components/NewRequestDetailsSection.tsx
+// - web/frontend/src/pages/requestor/new_request/components/NewRequestAttachmentsPanel.tsx
+// - web/frontend/src/pages/requestor/new_request/components/newRequestDetailsUtils.ts
 import {
   getLowerExt,
   getStem,
   isCadCompanionFile,
+  isCompanionAllowedByDesignSoftware,
   isStemMatch,
   parseCadCompanionMetadata,
+  type RequestDesignSoftwareMode,
 } from "../components/newRequestDetailsUtils";
 
 type ToastFn = (props: {
@@ -17,6 +25,7 @@ type ToastFn = (props: {
 
 type Params = {
   files: File[];
+  designSoftwareMode: RequestDesignSoftwareMode | null;
   initialCompanionFiles?: File[];
   caseInfosMap?: Record<string, CaseInfos>;
   updateCaseInfos: (fileKey: string, updates: Partial<CaseInfos>) => void;
@@ -45,6 +54,7 @@ type CardDropOptions = {
 
 export function useCompanionBinding({
   files,
+  designSoftwareMode,
   initialCompanionFiles = [],
   caseInfosMap,
   updateCaseInfos,
@@ -343,13 +353,24 @@ export function useCompanionBinding({
           rejectedExt.push(file.name);
           continue;
         }
+        if (!isCompanionAllowedByDesignSoftware(file.name, designSoftwareMode)) {
+          rejectedExt.push(file.name);
+          continue;
+        }
         accepted.push(file);
       }
 
       if (rejectedExt.length) {
+        const bySoftwareDescription =
+          designSoftwareMode === "3Shape"
+            ? "현재 설정은 3Shape입니다. .xml 파일만 업로드할 수 있어요."
+            : designSoftwareMode === "ExoCAD"
+              ? "현재 설정은 ExoCAD입니다. .constructionInfo 파일만 업로드할 수 있어요."
+              : "지원 형식: 3Shape(.xml), ExoCAD(.constructionInfo)";
+
         toast({
-          title: "지원하지 않는 보조 파일 형식",
-          description: "지원 형식: 3Shape(.xml), ExoCAD(*constructionInfo*)",
+          title: "지원하지 않는 구성정보 파일 형식",
+          description: bySoftwareDescription,
           variant: "destructive",
           duration: 4500,
         });
@@ -473,6 +494,7 @@ export function useCompanionBinding({
     },
     [
       caseInfosMap,
+      designSoftwareMode,
       files,
       getCompanionFileKey,
       getCurrentCompanionKeyForStl,
@@ -632,7 +654,11 @@ export function useCompanionBinding({
         return;
       }
 
-      const droppedCompanions = deduped.filter((f) => isCadCompanionFile(f.name));
+      const droppedCompanions = deduped.filter(
+        (f) =>
+          isCadCompanionFile(f.name) &&
+          isCompanionAllowedByDesignSoftware(f.name, designSoftwareMode),
+      );
       const stlFiles = deduped.filter((f) => getLowerExt(f.name) === ".stl");
       const otherFiles = deduped.filter(
         (f) => !isCadCompanionFile(f.name) && getLowerExt(f.name) !== ".stl",
@@ -679,6 +705,7 @@ export function useCompanionBinding({
     },
     [
       cardLinkDrag,
+      designSoftwareMode,
       getCurrentCompanionKeyForStl,
       handleCompanionFilesSelected,
       linkCompanionToStl,
@@ -691,7 +718,11 @@ export function useCompanionBinding({
   const handleMainInputFiles = useCallback(
     (selected: File[]) => {
       const stlFiles = selected.filter((f) => getLowerExt(f.name) === ".stl");
-      const companionSelected = selected.filter((f) => isCadCompanionFile(f.name));
+      const companionSelected = selected.filter(
+        (f) =>
+          isCadCompanionFile(f.name) &&
+          isCompanionAllowedByDesignSoftware(f.name, designSoftwareMode),
+      );
       const restFiles = selected.filter(
         (f) => !isCadCompanionFile(f.name) && getLowerExt(f.name) !== ".stl",
       );
@@ -724,6 +755,7 @@ export function useCompanionBinding({
       setPendingCompanionCardForStlUpload(null);
     },
     [
+      designSoftwareMode,
       handleCompanionFilesSelected,
       onFilesSelected,
       pendingCompanionCardForStlUpload,

@@ -1073,6 +1073,27 @@
 - `web/backend/controllers/requests/creation.from-draft.controller.js`
 - `web/backend/controllers/bg/bg.controller.js`
 
+### 4.3.6 신규의뢰 첨부패널 디자인 소프트웨어별 업로드 분기 (2026-07-25)
+
+- 신규의뢰 첨부패널의 STL/구성정보 업로드는 **의뢰 설정의 `requestSettings.designSoftware`** 값을 기준으로 동작합니다.
+- 적용 경로는 모두 동일해야 합니다.
+  - 페이지 전체 드롭존(`PageFileDropZone`)
+  - 첨부패널 `파일 추가`(open)
+  - 카드 간 드래그/드롭
+- 소프트웨어별 구성정보 허용 규칙:
+  - `3Shape`: `.xml`만 허용
+  - `ExoCAD`: `.constructionInfo`만 허용
+  - `직접 입력(custom)`: 기존 호환(`.xml`, `.constructionInfo`) 허용
+- 첨부패널의 파일 input `accept`와 미연결 안내 문구는 위 설정값과 일치해야 합니다.
+- 구성정보 확장자 검증은 `NewRequestPage`와 `useCompanionBinding`에서 각각 따로 추정하지 말고, 공통 유틸 기준(`newRequestDetailsUtils`)으로 통일합니다.
+
+관련 파일:
+- `web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx`
+- `web/frontend/src/pages/requestor/new_request/components/NewRequestDetailsSection.tsx`
+- `web/frontend/src/pages/requestor/new_request/components/NewRequestAttachmentsPanel.tsx`
+- `web/frontend/src/pages/requestor/new_request/components/newRequestDetailsUtils.ts`
+- `web/frontend/src/pages/requestor/new_request/hooks/useCompanionBinding.ts`
+
 ### 4.4 가상 우편함
 
 - 주소 형식: `{Shelf}{ShelfRow}{BinCol}{BinRow}`

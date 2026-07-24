@@ -1,7 +1,14 @@
 import { useEffect, useState } from "react";
+
+// related files:
+// - web/backend/controllers/businesses/business.controller.js
+// - web/backend/models/businessAnchor.model.js
+// - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { Input } from "@/components/ui/input";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { useToast } from "@/shared/hooks/use-toast";
 import { request } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
@@ -15,6 +22,7 @@ type RequestSettingsResponse = {
     membership?: "owner" | "member" | "pending" | "none";
     canEdit?: boolean;
     anodizingEnabled?: boolean;
+    designSoftware?: string | null;
     updatedAt?: string | null;
   };
 };
@@ -37,6 +45,13 @@ const readCanEdit = (payload: unknown): boolean | null => {
   return null;
 };
 
+const readDesignSoftware = (payload: unknown): string | null => {
+  if (!payload || typeof payload !== "object") return null;
+  const typed = payload as RequestSettingsResponse;
+  const value = String(typed.data?.designSoftware || "").trim();
+  return value || null;
+};
+
 const readMessage = (payload: unknown): string | null => {
   if (!payload || typeof payload !== "object") return null;
   const typed = payload as RequestSettingsResponse;
@@ -49,6 +64,10 @@ export const RequestTab = () => {
 
   const [anodizingEnabled, setAnodizingEnabled] = useState(true);
   const [canEdit, setCanEdit] = useState(false);
+  const [designMode, setDesignMode] = useState<"3Shape" | "ExoCAD" | "custom">(
+    "custom",
+  );
+  const [customDesignSoftware, setCustomDesignSoftware] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
@@ -74,6 +93,18 @@ export const RequestTab = () => {
         if (typeof editable === "boolean") {
           setCanEdit(editable);
         }
+
+        const designSoftware = readDesignSoftware(res.data);
+        if (designSoftware === "3Shape" || designSoftware === "ExoCAD") {
+          setDesignMode(designSoftware);
+          setCustomDesignSoftware("");
+        } else if (designSoftware) {
+          setDesignMode("custom");
+          setCustomDesignSoftware(designSoftware);
+        } else {
+          setDesignMode("custom");
+          setCustomDesignSoftware("");
+        }
       } finally {
         setIsLoading(false);
       }
@@ -82,7 +113,10 @@ export const RequestTab = () => {
     void load();
   }, [token]);
 
-  const saveAnodizing = async (next: boolean) => {
+  const saveRequestSettings = async (payload: {
+    anodizingEnabled?: boolean;
+    designSoftware?: string;
+  }) => {
     if (!token) {
       toast({
         title: "로그인이 필요합니다",
@@ -98,7 +132,7 @@ export const RequestTab = () => {
         path: "/api/businesses/me/request-settings",
         method: "PUT",
         token,
-        jsonBody: { anodizingEnabled: next },
+        jsonBody: payload,
       });
 
       if (!res.ok) {
@@ -130,8 +164,60 @@ export const RequestTab = () => {
     const prev = anodizingEnabled;
     setAnodizingEnabled(checked);
 
-    void saveAnodizing(checked).then((ok) => {
+    void saveRequestSettings({ anodizingEnabled: checked }).then((ok) => {
       if (!ok) setAnodizingEnabled(prev);
+    });
+  };
+
+  const persistDesignSoftware = async (value: string) => {
+    const normalized = String(value || "").trim();
+    if (!normalized) {
+      toast({
+        title: "입력값이 필요합니다",
+        description: "직접 입력을 선택한 경우 소프트웨어 이름을 입력해주세요.",
+        variant: "destructive",
+      });
+      return false;
+    }
+    return saveRequestSettings({ designSoftware: normalized });
+  };
+
+  const handleDesignModeChange = (next: "3Shape" | "ExoCAD" | "custom") => {
+    if (!canEdit) {
+      toast({
+        title: "권한이 없습니다",
+        description: "대표자 계정만 기공소 의뢰 설정을 변경할 수 있습니다.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const prevMode = designMode;
+    const prevCustom = customDesignSoftware;
+    setDesignMode(next);
+
+    if (next === "custom") return;
+
+    void saveRequestSettings({ designSoftware: next }).then((ok) => {
+      if (!ok) {
+        setDesignMode(prevMode);
+        setCustomDesignSoftware(prevCustom);
+      }
+    });
+  };
+
+  const handleCustomDesignSoftwareBlur = () => {
+    if (!canEdit || designMode !== "custom") return;
+    const next = String(customDesignSoftware || "").trim();
+    if (!next) return;
+
+    const prevMode = designMode;
+    const prevCustom = customDesignSoftware;
+    void persistDesignSoftware(next).then((ok) => {
+      if (!ok) {
+        setDesignMode(prevMode);
+        setCustomDesignSoftware(prevCustom);
+      }
     });
   };
 
@@ -172,6 +258,50 @@ export const RequestTab = () => {
               onCheckedChange={toggleAnodizing}
             />
           </div>
+        </div>
+
+        <div className="rounded-xl border bg-background/60 p-4 sm:p-5 space-y-3">
+          <div className="space-y-1">
+            <Label className="text-base font-medium">디자인 소프트웨어</Label>
+            <p className="text-sm text-muted-foreground">
+              신규 의뢰 시 기본 안내 문구와 함께 사용됩니다.
+            </p>
+          </div>
+
+          <RadioGroup
+            value={designMode}
+            onValueChange={(value) => {
+              if (value === "3Shape" || value === "ExoCAD" || value === "custom") {
+                handleDesignModeChange(value);
+              }
+            }}
+            className="space-y-2"
+          >
+            <div className="flex items-center gap-2">
+              <RadioGroupItem value="3Shape" id="design-software-3shape" />
+              <Label htmlFor="design-software-3shape">3Shape</Label>
+            </div>
+            <div className="flex items-center gap-2">
+              <RadioGroupItem value="ExoCAD" id="design-software-exocad" />
+              <Label htmlFor="design-software-exocad">ExoCAD</Label>
+            </div>
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <RadioGroupItem value="custom" id="design-software-custom" />
+                <Label htmlFor="design-software-custom">직접 입력</Label>
+              </div>
+              {designMode === "custom" ? (
+                <Input
+                  value={customDesignSoftware}
+                  onChange={(e) => setCustomDesignSoftware(e.target.value)}
+                  onBlur={handleCustomDesignSoftwareBlur}
+                  placeholder="사용 중인 디자인 소프트웨어를 입력해주세요"
+                  disabled={isLoading || !canEdit}
+                  maxLength={120}
+                />
+              ) : null}
+            </div>
+          </RadioGroup>
         </div>
       </CardContent>
     </Card>

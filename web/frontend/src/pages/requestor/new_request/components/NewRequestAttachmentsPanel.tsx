@@ -2,6 +2,16 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Check, Calendar, X } from "lucide-react";
 import type { CaseInfos } from "../hooks/newRequestTypes";
+import {
+  getCompanionAcceptByDesignSoftware,
+  getCompanionHintByDesignSoftware,
+  type RequestDesignSoftwareMode,
+} from "./newRequestDetailsUtils";
+
+// related files:
+// - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
+// - web/frontend/src/pages/requestor/new_request/components/NewRequestDetailsSection.tsx
+// - web/frontend/src/pages/requestor/new_request/hooks/useCompanionBinding.ts
 
 type CardLinkDrag = {
   kind: "stl" | "companion";
@@ -56,6 +66,7 @@ type Props = {
     onSelectIndex?: (index: number) => void,
   ) => void;
   detachDraggingCompanion: () => boolean;
+  designSoftwareMode: RequestDesignSoftwareMode | null;
 };
 
 export function NewRequestAttachmentsPanel({
@@ -94,7 +105,10 @@ export function NewRequestAttachmentsPanel({
   handleCompanionInputFiles,
   handleCardDrop,
   detachDraggingCompanion,
+  designSoftwareMode,
 }: Props) {
+  const companionAccept = getCompanionAcceptByDesignSoftware(designSoftwareMode);
+  const companionHint = getCompanionHintByDesignSoftware(designSoftwareMode);
   const hasActiveSession = files.length > 0;
   const hasAnyAttachment = hasActiveSession || companionFiles.length > 0;
 
@@ -112,7 +126,7 @@ export function NewRequestAttachmentsPanel({
           }
           e.currentTarget.value = "";
         }}
-        accept=".stl,.xml,.constructionInfo"
+        accept={`.stl,${companionAccept}`}
       />
 
       <input
@@ -127,7 +141,7 @@ export function NewRequestAttachmentsPanel({
           }
           e.currentTarget.value = "";
         }}
-        accept=".xml,.constructionInfo"
+        accept={companionAccept}
       />
 
       <div className="flex justify-end gap-2 px-2 pb-1">
@@ -418,11 +432,8 @@ export function NewRequestAttachmentsPanel({
                           {primaryCompanion.name}
                         </span>
                       ) : (
-                        <span
-                          className="truncate text-slate-500"
-                          title="STL 파일이 있는 폴더에서 구성정보 파일을 추가해 주세요."
-                        >
-                          STL 파일이 있는 폴더에서 구성정보 파일을 추가해 주세요.
+                        <span className="truncate text-slate-500" title={companionHint}>
+                          {companionHint}
                         </span>
                       )}
                       {effectiveCompanions.length > 1 && (

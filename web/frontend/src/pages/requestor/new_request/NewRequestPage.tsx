@@ -8,6 +8,8 @@ import React, {
 import { useParams, useNavigate } from "react-router-dom";
 import { useNewRequestPage } from "./hooks/useNewRequestPage";
 import { useToast } from "@/shared/hooks/use-toast";
+import { useAuthStore } from "@/store/useAuthStore";
+import { request } from "@/shared/api/apiClient";
 import { usePresetStorage } from "./hooks/usePresetStorage";
 import { useBulkShippingPolicy } from "./hooks/useBulkShippingPolicy";
 import { useFileVerification } from "./hooks/useFileVerification";
@@ -29,7 +31,19 @@ import {
 } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Label } from "@/components/ui/label";
 import { StlPreviewViewer } from "@/features/requests/components/StlPreviewViewer";
+import {
+  isCompanionAllowedByDesignSoftware,
+  type RequestDesignSoftwareMode,
+} from "./components/newRequestDetailsUtils";
+
+// related files:
+// - web/frontend/src/pages/requestor/new_request/components/NewRequestDetailsSection.tsx
+// - web/frontend/src/pages/requestor/new_request/components/NewRequestAttachmentsPanel.tsx
+// - web/frontend/src/pages/requestor/new_request/hooks/useCompanionBinding.ts
 
 
 /**
@@ -42,6 +56,7 @@ export const NewRequestPage = () => {
   const { id: existingRequestId } = useParams<{ id?: string }>();
   const navigate = useNavigate();
 
+  const { token } = useAuthStore();
   const { toast } = useToast();
 
   const [isFillHoleProcessing, setIsFillHoleProcessing] = useState(false);
@@ -49,6 +64,13 @@ export const NewRequestPage = () => {
     {},
   );
   const [companionFilesForSubmit, setCompanionFilesForSubmit] = useState<File[]>([]);
+  const [checkedDesignSoftware, setCheckedDesignSoftware] = useState(false);
+  const [designSoftwareModalOpen, setDesignSoftwareModalOpen] = useState(false);
+  const [designSoftwareSaving, setDesignSoftwareSaving] = useState(false);
+  const [designSoftwareChoice, setDesignSoftwareChoice] = useState<RequestDesignSoftwareMode>(
+    "3Shape",
+  );
+  const [customDesignSoftware, setCustomDesignSoftware] = useState("");
 
   const COMPANION_STORAGE_KEY = "abutsfit:new-request-companions:v1";
   const toCompanionMetaKey = (file: File) => {
@@ -127,6 +149,86 @@ export const NewRequestPage = () => {
     unverifiedCount,
     highlightStep,
   } = useFileVerification({ files });
+
+  useEffect(() => {
+    if (!token || checkedDesignSoftware) return;
+
+    void (async () => {
+      try {
+        const res = await request<RequestSettingsApiResponse>({
+          path: "/api/businesses/me/request-settings",
+          method: "GET",
+          token,
+        });
+
+        if (!res.ok) {
+          setCheckedDesignSoftware(true);
+          return;
+        }
+
+        const body = res.data || {};
+        const data = body?.data || body;
+        const designSoftware = String(data?.designSoftware || "").trim();
+
+        if (!designSoftware) {
+          setDesignSoftwareChoice("3Shape");
+          setCustomDesignSoftware("");
+          setDesignSoftwareModalOpen(true);
+        } else if (designSoftware === "3Shape" || designSoftware === "ExoCAD") {
+          setDesignSoftwareChoice(designSoftware);
+          setCustomDesignSoftware("");
+        } else {
+          setDesignSoftwareChoice("custom");
+          setCustomDesignSoftware(designSoftware);
+        }
+      } finally {
+        setCheckedDesignSoftware(true);
+      }
+    })();
+  }, [checkedDesignSoftware, token]);
+
+  const handleSaveDesignSoftware = useCallback(async () => {
+    if (!token) return;
+
+    const value =
+      designSoftwareChoice === "custom"
+        ? String(customDesignSoftware || "").trim()
+        : designSoftwareChoice;
+
+    if (!value) {
+      toast({
+        title: "입력값이 필요합니다",
+        description: "직접 입력을 선택한 경우 소프트웨어 이름을 입력해주세요.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setDesignSoftwareSaving(true);
+    try {
+      const res = await request<RequestSettingsApiResponse>({
+        path: "/api/businesses/me/request-settings",
+        method: "PUT",
+        token,
+        jsonBody: { designSoftware: value },
+      });
+
+      if (!res.ok) {
+        const body = res.data || {};
+        toast({
+          title: "저장 실패",
+          description:
+            String(body?.message || "디자인 소프트웨어 저장 중 오류가 발생했습니다."),
+          variant: "destructive",
+        });
+        return;
+      }
+
+      setDesignSoftwareModalOpen(false);
+    } finally {
+      setDesignSoftwareSaving(false);
+    }
+  }, [customDesignSoftware, designSoftwareChoice, toast, token]);
 
   // 파일 삭제는 rawHandleRemoveFile이 처리하고,
   // fileVerificationStatus cleanup은 useFileVerification의 effect가 자동으로 처리
@@ -417,9 +519,7 @@ export const NewRequestPage = () => {
   const [focusUnverifiedTick, setFocusUnverifiedTick] = useState(0);
 
   const isCadCompanionFile = (fileName: string) => {
-    const lower = String(fileName || "").trim().toLowerCase();
-    const ext = getFileExtLower(fileName);
-    return ext === ".xml" || ext === ".constructioninfo" || lower.includes("constructioninfo");
+    return isCompanionAllowedByDesignSoftware(fileName, designSoftwareChoice);
   };
 
   type StlSelectionCandidate = {
@@ -445,6 +545,14 @@ export const NewRequestPage = () => {
 
   type DataTransferItemWithEntry = DataTransferItem & {
     webkitGetAsEntry?: () => WebkitFileSystemEntry | null;
+  };
+
+  type RequestSettingsApiResponse = {
+    message?: string;
+    designSoftware?: string | null;
+    data?: {
+      designSoftware?: string | null;
+    };
   };
 
   const [fileReviewOpen, setFileReviewOpen] = useState(false);
@@ -861,6 +969,86 @@ export const NewRequestPage = () => {
           actions={[]}
         />
 
+        <Dialog
+          open={designSoftwareModalOpen}
+          onOpenChange={(open) => {
+            if (designSoftwareSaving) return;
+            setDesignSoftwareModalOpen(open);
+          }}
+        >
+          <DialogContent className="sm:max-w-[480px]">
+            <DialogHeader>
+              <DialogTitle>사용하시는 디자인 소프트웨어를 선택해 주세요</DialogTitle>
+              <DialogDescription>
+                저장 후에는 설정 &gt; 의뢰에서 수정할 수 있어요.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-4">
+              <RadioGroup
+                value={designSoftwareChoice}
+                onValueChange={(value) => {
+                  if (value === "3Shape" || value === "ExoCAD" || value === "custom") {
+                    setDesignSoftwareChoice(value);
+                  }
+                }}
+                className="space-y-2"
+              >
+                <div className="flex items-center gap-2">
+                  <RadioGroupItem value="3Shape" id="new-request-design-software-3shape" />
+                  <Label htmlFor="new-request-design-software-3shape">3Shape</Label>
+                </div>
+                <div className="flex items-center gap-2">
+                  <RadioGroupItem value="ExoCAD" id="new-request-design-software-exocad" />
+                  <Label htmlFor="new-request-design-software-exocad">ExoCAD</Label>
+                </div>
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <RadioGroupItem value="custom" id="new-request-design-software-custom" />
+                    <Label htmlFor="new-request-design-software-custom">직접 입력</Label>
+                  </div>
+                  {designSoftwareChoice === "custom" ? (
+                    <Input
+                      value={customDesignSoftware}
+                      onChange={(e) => setCustomDesignSoftware(e.target.value)}
+                      placeholder="사용 중인 디자인 소프트웨어를 입력해주세요"
+                      maxLength={120}
+                    />
+                  ) : null}
+                </div>
+              </RadioGroup>
+
+              {designSoftwareChoice === "3Shape" ? (
+                <p className="rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-900">
+                  STL 파일 업로드할 때 `ImplantDirectionPosition_0.xml`와 같은 정보 파일을 함께 올려주세요.
+                  <br />
+                  STL 파일과 동일 폴더에 들어있고, 파일 갯수는 STL 파일 갯수와 같아요.
+                </p>
+              ) : null}
+
+              {designSoftwareChoice === "ExoCAD" ? (
+                <p className="rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-900">
+                  ExoCAD는 케이스당 1개의 구성정보 파일이 필요합니다. 예:
+                  `2026-05-22_00002-002-홍**.constructionInfo` (환자명은 마스킹 처리)
+                </p>
+              ) : null}
+            </div>
+
+            <DialogFooter>
+              <Button
+                variant="outline"
+                disabled={designSoftwareSaving}
+                onClick={() => setDesignSoftwareModalOpen(false)}
+              >
+                다음에 하기
+              </Button>
+              <Button disabled={designSoftwareSaving} onClick={() => void handleSaveDesignSoftware()}>
+                저장
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
         <Dialog open={fileReviewOpen} onOpenChange={setFileReviewOpen}>
           <DialogContent className="sm:max-w-[980px]">
             <DialogHeader>
@@ -1040,10 +1228,12 @@ export const NewRequestPage = () => {
               initialCompanionFiles={companionFilesForSubmit}
               weeklyBatchDays={weeklyBatchDays}
               onCancelAll={handleCancelAll}
+              designSoftwareMode={designSoftwareChoice}
               onDuplicateDetected={({ file, duplicate }) => {
-                const caseId = String(
-                  (file as any)?._draftCaseInfoId || "",
-                ).trim();
+                const fileWithDraftCaseId = file as File & {
+                  _draftCaseInfoId?: string;
+                };
+                const caseId = String(fileWithDraftCaseId._draftCaseInfoId || "").trim();
                 const fallbackCaseId = `${file.name}:${file.size}`;
                 const effectiveCaseId = caseId || fallbackCaseId;
                 // 이미 해당 caseId에 대한 사용자의 결정이 저장되어 있다면 모달을 다시 열지 않는다
@@ -1053,26 +1243,31 @@ export const NewRequestPage = () => {
                 if (alreadyResolved) {
                   return;
                 }
-                const stageOrder = Number(duplicate?.stageOrder ?? 0);
+
+                const duplicateRecord: Record<string, unknown> =
+                  duplicate && typeof duplicate === "object"
+                    ? (duplicate as Record<string, unknown>)
+                    : {};
+                const stageOrder = Number(duplicateRecord.stageOrder ?? 0);
                 const mapped = {
                   caseId: effectiveCaseId,
                   fileName: file.name,
-                  existingRequest: duplicate?.existingRequest,
-                  existingRequestId: resolveExistingRequestId(duplicate),
+                  existingRequest: duplicateRecord.existingRequest,
+                  existingRequestId: resolveExistingRequestId(duplicateRecord),
                   stageOrder, // stageOrder를 전달하여 UI에서 올바른 옵션 표시
                 };
 
                 setDuplicatePrompt((prev) => {
                   const existing = prev?.duplicates || [];
                   const has = existing.some(
-                    (d: any) => d.caseId === mapped.caseId,
+                    (d) => (d as { caseId?: string }).caseId === mapped.caseId,
                   );
                   const duplicates = has ? existing : [...existing, mapped];
                   return {
                     mode: "active",
                     ...(prev || {}),
                     duplicates,
-                  } as any;
+                  };
                 });
               }}
             />

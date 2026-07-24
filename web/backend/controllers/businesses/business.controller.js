@@ -371,6 +371,9 @@ export async function getMyBusiness(req, res) {
             typeof anchor?.requestSettings?.anodizingEnabled === "boolean"
               ? anchor.requestSettings.anodizingEnabled
               : true,
+          designSoftware: normalizeDesignSoftware(
+            anchor?.requestSettings?.designSoftware,
+          ),
           updatedAt: anchor?.requestSettings?.updatedAt || null,
         },
       },
@@ -573,6 +576,15 @@ function normalizeRequestorHexRotation(value) {
   return "보정";
 }
 
+// related files:
+// - web/backend/models/businessAnchor.model.js
+// - web/frontend/src/features/settings/tabs/RequestTab.tsx
+// - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
+function normalizeDesignSoftware(value) {
+  const v = String(value || "").trim();
+  return v ? v : null;
+}
+
 /**
  * 기공소(사업체) 의뢰 기본 설정 조회
  * @route GET /api/businesses/me/request-settings
@@ -597,6 +609,7 @@ export async function getMyRequestSettings(req, res) {
           membership: "none",
           canEdit: false,
           anodizingEnabled: true,
+          designSoftware: null,
           defaultRequestorHexRotation: "보정",
           updatedAt: null,
         },
@@ -627,6 +640,9 @@ export async function getMyRequestSettings(req, res) {
           typeof anchor?.requestSettings?.anodizingEnabled === "boolean"
             ? anchor.requestSettings.anodizingEnabled
             : true,
+        designSoftware: normalizeDesignSoftware(
+          anchor?.requestSettings?.designSoftware,
+        ),
         defaultRequestorHexRotation: normalizeRequestorHexRotation(
           anchor?.requestSettings?.defaultRequestorHexRotation,
         ),
@@ -660,12 +676,20 @@ export async function updateMyRequestSettings(req, res) {
       req.body || {},
       "defaultRequestorHexRotation",
     );
+    const hasDesignSoftware = Object.prototype.hasOwnProperty.call(
+      req.body || {},
+      "designSoftware",
+    );
 
-    if (!hasAnodizingEnabled && !hasDefaultRequestorHexRotation) {
+    if (
+      !hasAnodizingEnabled &&
+      !hasDefaultRequestorHexRotation &&
+      !hasDesignSoftware
+    ) {
       return res.status(400).json({
         success: false,
         message:
-          "유효하지 않은 의뢰 설정입니다. anodizingEnabled 또는 defaultRequestorHexRotation이 필요합니다.",
+          "유효하지 않은 의뢰 설정입니다. anodizingEnabled, defaultRequestorHexRotation 또는 designSoftware가 필요합니다.",
       });
     }
 
@@ -689,6 +713,26 @@ export async function updateMyRequestSettings(req, res) {
         });
       }
       defaultRequestorHexRotation = raw;
+    }
+
+    let designSoftware;
+    if (hasDesignSoftware) {
+      const raw = String(req.body?.designSoftware || "").trim();
+      if (!raw) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "유효하지 않은 의뢰 설정입니다. designSoftware는 비어 있을 수 없습니다.",
+        });
+      }
+      if (raw.length > 120) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "유효하지 않은 의뢰 설정입니다. designSoftware는 120자 이하여야 합니다.",
+        });
+      }
+      designSoftware = raw;
     }
 
     const freshUser = await User.findById(req.user._id)
@@ -730,6 +774,9 @@ export async function updateMyRequestSettings(req, res) {
       setPayload["requestSettings.defaultRequestorHexRotation"] =
         defaultRequestorHexRotation;
     }
+    if (hasDesignSoftware) {
+      setPayload["requestSettings.designSoftware"] = designSoftware;
+    }
 
     const updated = await BusinessAnchor.findByIdAndUpdate(
       businessAnchorId,
@@ -753,6 +800,9 @@ export async function updateMyRequestSettings(req, res) {
           typeof updated?.requestSettings?.anodizingEnabled === "boolean"
             ? updated.requestSettings.anodizingEnabled
             : true,
+        designSoftware: normalizeDesignSoftware(
+          updated?.requestSettings?.designSoftware,
+        ),
         defaultRequestorHexRotation: normalizeRequestorHexRotation(
           updated?.requestSettings?.defaultRequestorHexRotation,
         ),

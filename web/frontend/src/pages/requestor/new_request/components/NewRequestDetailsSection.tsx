@@ -6,6 +6,12 @@ import { useCompanionBinding } from "../hooks/useCompanionBinding";
 import { NewRequestAttachmentsPanel } from "./NewRequestAttachmentsPanel";
 import { NewRequestDetailDialog } from "./NewRequestDetailDialog";
 import { NewRequestCompanionDialogs } from "./NewRequestCompanionDialogs";
+import type { RequestDesignSoftwareMode } from "./newRequestDetailsUtils";
+
+// related files:
+// - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
+// - web/frontend/src/pages/requestor/new_request/components/NewRequestAttachmentsPanel.tsx
+// - web/frontend/src/pages/requestor/new_request/hooks/useCompanionBinding.ts
 
 type ToastFn = (props: {
   title?: React.ReactNode;
@@ -79,6 +85,7 @@ type Props = {
   initialCompanionFiles?: File[];
   weeklyBatchDays?: string[];
   onCancelAll: () => void;
+  designSoftwareMode: RequestDesignSoftwareMode | null;
 };
 
 export function NewRequestDetailsSection({
@@ -133,6 +140,7 @@ export function NewRequestDetailsSection({
   initialCompanionFiles = [],
   weeklyBatchDays = [],
   onCancelAll,
+  designSoftwareMode,
 }: Props) {
   const { token } = useAuthStore();
   const listContainerRef = useRef<HTMLDivElement | null>(null);
@@ -168,6 +176,7 @@ export function NewRequestDetailsSection({
 
   const companion = useCompanionBinding({
     files,
+    designSoftwareMode,
     initialCompanionFiles,
     caseInfosMap,
     updateCaseInfos,
@@ -470,6 +479,7 @@ export function NewRequestDetailsSection({
             handleCompanionInputFiles={companion.handleCompanionInputFiles}
             handleCardDrop={companion.handleCardDrop}
             detachDraggingCompanion={companion.detachDraggingCompanion}
+            designSoftwareMode={designSoftwareMode}
           />
         </div>
       </div>
