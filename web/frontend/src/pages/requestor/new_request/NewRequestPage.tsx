@@ -439,7 +439,9 @@ export const NewRequestPage = () => {
     return lower.slice(dot);
   };
 
-  const companionFileHandlerRef = useRef<(files: File[]) => void>(() => {});
+  const companionFileHandlerRef = useRef<
+    (files: File[], options?: { targetStlFileKey?: string }) => void
+  >(() => {});
 
   const dedupeFiles = (input: File[]) => {
     const map = new Map<string, File>();
@@ -517,7 +519,13 @@ export const NewRequestPage = () => {
             .map((item) => item.file);
 
     if (batch.companionFilesToHandle.length > 0) {
-      companionFileHandlerRef.current(batch.companionFilesToHandle);
+      const forcedTargetStlFileKey =
+        stlFiles.length === 1 ? toNormalizedFileKey(stlFiles[0]) : undefined;
+
+      companionFileHandlerRef.current(batch.companionFilesToHandle, {
+        targetStlFileKey: forcedTargetStlFileKey,
+      });
+
       setCompanionFilesForSubmit((prev) => {
         const map = new Map<string, File>();
         for (const file of [...prev, ...batch.companionFilesToHandle]) {

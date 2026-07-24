@@ -1,39 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { StlPreviewViewer } from "@/features/requests/components/StlPreviewViewer";
-import { Check, Upload, X, Calendar, CircleHelp } from "lucide-react";
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { Label } from "@/components/ui/label";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 import type { CaseInfos, Connection } from "../hooks/newRequestTypes";
-import { NewRequestPatientImplantFields } from "./NewRequestPatientImplantFields";
-import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
-import { useSystemSettings } from "@/hooks/useSystemSettings";
-import { toKstYmd } from "@/shared/date/kst";
+import { useLeadTimeForecast } from "../hooks/useLeadTimeForecast";
+import { useCompanionBinding } from "../hooks/useCompanionBinding";
+import { NewRequestAttachmentsPanel } from "./NewRequestAttachmentsPanel";
+import { NewRequestDetailDialog } from "./NewRequestDetailDialog";
+import { NewRequestCompanionDialogs } from "./NewRequestCompanionDialogs";
 
 type ToastFn = (props: {
   title?: React.ReactNode;
@@ -43,112 +15,6 @@ type ToastFn = (props: {
 }) => void;
 
 type Option = { id: string; label: string };
-
-const WEEKDAY_TO_KST_INDEX: Record<string, number> = {
-  mon: 1,
-  tue: 2,
-  wed: 3,
-  thu: 4,
-  fri: 5,
-};
-
-const isCadCompanionFile = (fileName: string) => {
-  const lower = String(fileName || "").trim().toLowerCase();
-  const ext = getLowerExt(fileName);
-  return ext === ".xml" || ext === ".constructioninfo" || lower.includes("constructioninfo");
-};
-
-const getLowerExt = (name: string) => {
-  const lower = String(name || "").trim().toLowerCase();
-  const dot = lower.lastIndexOf(".");
-  if (dot < 0) return "";
-  return lower.slice(dot);
-};
-
-const getStem = (name: string) => {
-  const trimmed = String(name || "").trim();
-  const dot = trimmed.lastIndexOf(".");
-  if (dot < 0) return trimmed;
-  return trimmed.slice(0, dot);
-};
-
-
-
-const buildStemKeys = (stemRaw: string) => {
-  const stem = String(stemRaw || "").trim().toLowerCase();
-  const keys = new Set<string>();
-  if (!stem) return keys;
-
-  keys.add(stem);
-
-  const tokens = stem.split(/[-_\s]+/).filter(Boolean);
-  if (tokens[0]) keys.add(tokens[0]);
-  if (tokens[0] && tokens[1]) keys.add(`${tokens[0]}-${tokens[1]}`);
-
-  return keys;
-};
-
-const isStemMatch = (aRaw: string, bRaw: string) => {
-  const a = String(aRaw || "").trim().toLowerCase();
-  const b = String(bRaw || "").trim().toLowerCase();
-  if (!a || !b) return false;
-  if (a === b) return true;
-  if (a.startsWith(b) || b.startsWith(a)) return true;
-
-  const aKeys = buildStemKeys(a);
-  const bKeys = buildStemKeys(b);
-  for (const k of aKeys) {
-    if (bKeys.has(k)) return true;
-  }
-
-  return false;
-};
-
-const readTextTag = (raw: string, tagNames: string[]) => {
-  for (const tag of tagNames) {
-    const re = new RegExp(`<\\s*${tag}\\b[^>]*>([^<]+)<\\s*\\/\\s*${tag}\\s*>`, "i");
-    const m = raw.match(re);
-    const value = String(m?.[1] || "").trim();
-    if (value) return value;
-  }
-  return "";
-};
-
-const readKeyValue = (raw: string, keys: string[]) => {
-  for (const key of keys) {
-    const re = new RegExp(`${key}\\s*[:=]\\s*["']?([^"'\\r\\n]+)`, "i");
-    const m = raw.match(re);
-    const value = String(m?.[1] || "").trim();
-    if (value) return value;
-  }
-  return "";
-};
-
-const parseCadCompanionMetadata = async (file: File) => {
-  if (!isCadCompanionFile(file.name)) {
-    return {} as Partial<CaseInfos>;
-  }
-
-  const raw = await file.text();
-
-  const clinicName =
-    readTextTag(raw, ["ClinicName", "Clinic", "Practice", "OfficeName"]) ||
-    readKeyValue(raw, ["ClinicName", "Clinic", "Practice", "OfficeName"]);
-
-  const patientName =
-    readTextTag(raw, ["PatientName", "Patient", "Name"]) ||
-    readKeyValue(raw, ["PatientName", "PatientNameFull", "Patient"]);
-
-  const tooth =
-    readTextTag(raw, ["Tooth", "ToothNumber", "ToothNo", "ToothNum"]) ||
-    readKeyValue(raw, ["Tooth", "ToothNumber", "ToothNo", "ToothNum"]);
-
-  const result: Partial<CaseInfos> = {};
-  if (clinicName) result.clinicName = clinicName;
-  if (patientName) result.patientName = patientName;
-  if (tooth) result.tooth = tooth;
-  return result;
-};
 
 type Props = {
   files: File[];
@@ -198,14 +64,16 @@ type Props = {
   highlight: boolean;
   sectionHighlightClass: string;
   focusUnverifiedTick: number;
-  onDuplicateDetected?: (payload: { file: File; duplicate: any }) => void;
+  onDuplicateDetected?: (payload: { file: File; duplicate: unknown }) => void;
   duplicatePromptOpen: boolean;
   isDragOver: boolean;
   onDragOver: (e: React.DragEvent<HTMLDivElement>) => void;
   onDragLeave: (e: React.DragEvent<HTMLDivElement>) => void;
   onDrop: (e: React.DragEvent<HTMLDivElement>) => void;
   onFilesSelected: (files: File[]) => void;
-  registerCompanionFileHandler?: (handler: (files: File[]) => void) => void;
+  registerCompanionFileHandler?: (
+    handler: (files: File[], options?: { targetStlFileKey?: string }) => void,
+  ) => void;
   onCompanionFilesAccepted?: (files: File[]) => void;
   onCompanionFilesChange?: (files: File[]) => void;
   weeklyBatchDays?: string[];
@@ -248,10 +116,10 @@ export function NewRequestDetailsSection({
   clearAllTeethPresets,
   handleAddOrSelectClinic,
   toast,
-  highlight,
-  sectionHighlightClass,
+  highlight: _highlight,
+  sectionHighlightClass: _sectionHighlightClass,
   focusUnverifiedTick,
-  onDuplicateDetected,
+  onDuplicateDetected: _onDuplicateDetected,
   duplicatePromptOpen,
   isDragOver,
   onDragOver,
@@ -265,773 +133,51 @@ export function NewRequestDetailsSection({
   onCancelAll,
 }: Props) {
   const { token } = useAuthStore();
-  const { data: systemSettings } = useSystemSettings();
-  const [leadTimes, setLeadTimes] = useState<Record<string, any> | null>(null);
-  const [fileDiameters, setFileDiameters] = useState<Record<string, number>>(
-    {},
-  );
-  useEffect(() => {
-    const loadLeadTimes = async () => {
-      if (!token) return;
-      try {
-        const leadRes = await apiFetch<any>({
-          path: "/api/businesses/manufacturer-lead-times",
-          method: "GET",
-          token,
-        });
-        if (leadRes.ok && leadRes.data?.data) {
-          setLeadTimes(leadRes.data.data.leadTimes);
-        }
-      } catch (e) {
-        console.error("Failed to load lead times:", e);
-      }
-    };
+  const listContainerRef = useRef<HTMLDivElement | null>(null);
+  const uploadInputRef = useRef<HTMLInputElement | null>(null);
+  const companionInputRef = useRef<HTMLInputElement | null>(null);
 
-    void loadLeadTimes();
-  }, [token]);
+  const [detailIndex, setDetailIndex] = useState<number | null>(null);
+  const [isDetailOpen, setIsDetailOpen] = useState(false);
+  const [shouldRestoreDetailAfterDuplicate, setShouldRestoreDetailAfterDuplicate] =
+    useState(false);
 
-  const getKstWeekday = useCallback((dateInput: Date) => {
-    const kst = new Date(dateInput.getTime() + 9 * 60 * 60 * 1000);
-    return kst.getUTCDay();
-  }, []);
-
-  const addBusinessDaysFromKstYmd = useCallback(
-    (startYmd: string, days: number) => {
-      if (!Number.isFinite(days) || days <= 0) return startYmd;
-
-      const result = new Date(`${startYmd}T12:00:00+09:00`);
-      if (Number.isNaN(result.getTime())) return startYmd;
-
-      let added = 0;
-      while (added < days) {
-        result.setUTCDate(result.getUTCDate() + 1);
-        const day = getKstWeekday(result);
-        if (day !== 0 && day !== 6) {
-          added += 1;
-        }
-      }
-
-      return toKstYmd(result) || startYmd;
-    },
-    [getKstWeekday],
-  );
-
-  const resolveLeadDaysForPickup = useCallback((leadDays: number) => {
-    if (!Number.isFinite(leadDays) || leadDays <= 0) return 1;
-    return Math.max(1, leadDays);
-  }, []);
-
-  const formatKstMonthDayWithWeekday = useCallback((ymd: string) => {
-    const date = new Date(`${ymd}T00:00:00+09:00`);
-    if (Number.isNaN(date.getTime())) return ymd;
-    return new Intl.DateTimeFormat("ko-KR", {
-      timeZone: "Asia/Seoul",
-      month: "numeric",
-      day: "numeric",
-      weekday: "short",
-    }).format(date);
-  }, []);
-
-  const resolveWeeklyPickupYmd = useCallback(
-    (baseYmd: string) => {
-      const enabledDays = Array.from(
-        new Set(
-          (weeklyBatchDays || [])
-            .map((d) => String(d || "").trim().toLowerCase())
-            .filter((d) => Object.prototype.hasOwnProperty.call(WEEKDAY_TO_KST_INDEX, d)),
-        ),
-      );
-
-      if (!enabledDays.length) {
-        return baseYmd;
-      }
-
-      const enabledIndexes = enabledDays
-        .map((d) => WEEKDAY_TO_KST_INDEX[d])
-        .filter((v): v is number => Number.isFinite(v));
-
-      if (!enabledIndexes.length) {
-        return baseYmd;
-      }
-
-      const baseDate = new Date(`${baseYmd}T12:00:00+09:00`);
-      if (Number.isNaN(baseDate.getTime())) {
-        return baseYmd;
-      }
-
-      for (let offset = 0; offset < 14; offset += 1) {
-        const candidate = new Date(baseDate);
-        candidate.setUTCDate(candidate.getUTCDate() + offset);
-        const candidateDay = getKstWeekday(candidate);
-        if (!enabledIndexes.includes(candidateDay)) continue;
-
-        const candidateYmd = toKstYmd(candidate) || baseYmd;
-        return candidateYmd;
-      }
-
-      return baseYmd;
-    },
-    [getKstWeekday, weeklyBatchDays],
-  );
-
-  const calculateEstimatedShipDate = useCallback(() => {
-    if (!leadTimes) return null;
-
-    const cache = new Map<string, string>();
-
-    return (diameter: number | null) => {
-      if (!Number.isFinite(diameter) || diameter == null) return null;
-
-      const requestedAt = new Date();
-      const requestedYmd = toKstYmd(requestedAt);
-      if (!requestedYmd) return null;
-
-      const d = Number(diameter);
-      let diameterKey: "d6" | "d8" | "d10" | "d12" = "d8";
-      if (d <= 6) diameterKey = "d6";
-      else if (d <= 8) diameterKey = "d8";
-      else if (d <= 10) diameterKey = "d10";
-      else diameterKey = "d12";
-
-      const rawLead = leadTimes?.[diameterKey]?.minBusinessDays;
-      const leadNumber = Number(rawLead);
-      const leadDays = Number.isFinite(leadNumber)
-        ? Math.max(1, leadNumber)
-        : 1;
-      const resolvedLeadDays = resolveLeadDaysForPickup(leadDays);
-      const cacheKey = `${requestedYmd}:${diameterKey}:${resolvedLeadDays}`;
-
-      if (cache.has(cacheKey)) {
-        return cache.get(cacheKey) || null;
-      }
-
-      const baseShipYmd = addBusinessDaysFromKstYmd(requestedYmd, resolvedLeadDays);
-      const shipYmd = resolveWeeklyPickupYmd(baseShipYmd);
-      const formatted = formatKstMonthDayWithWeekday(shipYmd);
-
-      const result = `${formatted} • ${resolvedLeadDays}영업일 후`;
-      cache.set(cacheKey, result);
-      return result;
-    };
-  }, [
-    addBusinessDaysFromKstYmd,
-    formatKstMonthDayWithWeekday,
-    leadTimes,
-    resolveLeadDaysForPickup,
-    resolveWeeklyPickupYmd,
-  ]);
-
-  const getEstimatedShipForDiameter = useMemo(
-    () => calculateEstimatedShipDate(),
-    [calculateEstimatedShipDate],
-  );
-
-  const newSystemInfoCopy = useMemo(
-    () =>
-      "개발을 위해 랩 아날로그와 기성 어벗먼트 샘플을 보내주세요. 무료 크레딧을 충전해드립니다.",
-    [],
-  );
-  const normalizeKeyPart = (s: string) => {
+  const normalizeKeyPart = useCallback((s: string) => {
     try {
       return String(s || "").normalize("NFC");
     } catch {
       return String(s || "");
     }
-  };
-
-  const toNormalizedFileKey = useCallback((file: File) => {
-    return `${normalizeKeyPart(file.name)}:${file.size}`;
   }, []);
 
-  const [companionFiles, setCompanionFiles] = useState<File[]>([]);
-  const [companionBypassStemMap, setCompanionBypassStemMap] = useState<
-    Record<string, boolean>
-  >({});
-  const [companionPromptOpen, setCompanionPromptOpen] = useState(false);
-  const [suppressCompanionPrompt, setSuppressCompanionPrompt] =
-    useState(false);
-  const [manualCompanionLinksByStlKey, setManualCompanionLinksByStlKey] = useState<
-    Record<string, string[]>
-  >({});
-  const [companionPinnedByStlKey, setCompanionPinnedByStlKey] = useState<
-    Record<string, string>
-  >({});
-  const [companionOverrideByStlKey, setCompanionOverrideByStlKey] = useState<
-    Record<string, boolean>
-  >({});
-  const [pendingCompanionReplace, setPendingCompanionReplace] = useState<{
-    stlFileKey: string;
-    companionFileKey: string;
-  } | null>(null);
-  const [pendingCompanionTargetStlKey, setPendingCompanionTargetStlKey] = useState<
-    string | null
-  >(null);
-  const [pendingCompanionCardForStlUpload, setPendingCompanionCardForStlUpload] =
-    useState<string | null>(null);
-
-  const stlStemList = useMemo(() => {
-    return (files || [])
-      .map((f) => String(f?.name || "").trim())
-      .filter((name) => name.toLowerCase().endsWith(".stl"))
-      .map((name) => getStem(name));
-  }, [files]);
-
-  const companionStems = useMemo(() => {
-    const stems: string[] = [];
-    for (const file of companionFiles) {
-      if (!isCadCompanionFile(file.name)) {
-        continue;
-      }
-      stems.push(getStem(file.name));
-    }
-    return stems;
-  }, [companionFiles]);
-
-  const missingCompanionStems = useMemo(() => {
-    const stlFiles = (files || []).filter((f) =>
-      String(f?.name || "").toLowerCase().endsWith(".stl"),
-    );
-
-    return stlFiles
-      .map((stlFile) => {
-        const stlStem = getStem(stlFile.name);
-        const stlKey = toNormalizedFileKey(stlFile);
-
-        const pinnedKey = companionPinnedByStlKey[stlKey];
-        const hasPinned = Boolean(
-          pinnedKey &&
-            companionFiles.some(
-              (c) => `${c.name}:${c.size}:${c.lastModified}` === pinnedKey,
-            ),
-        );
-
-        const manualKeys = manualCompanionLinksByStlKey[stlKey] || [];
-        const hasManual = manualKeys.some((k) =>
-          companionFiles.some(
-            (c) => `${c.name}:${c.size}:${c.lastModified}` === k,
-          ),
-        );
-
-        const hasStemMatch = companionStems.some((companionStem) =>
-          isStemMatch(stlStem, companionStem),
-        );
-
-        const hasCompanion = hasPinned || hasManual || hasStemMatch;
-        return { stlStem, hasCompanion };
-      })
-      .filter(({ stlStem, hasCompanion }) => {
-        return !hasCompanion && !companionBypassStemMap[stlStem];
-      })
-      .map(({ stlStem }) => stlStem);
-  }, [
-    files,
-    toNormalizedFileKey,
-    companionPinnedByStlKey,
-    manualCompanionLinksByStlKey,
-    companionFiles,
-    companionStems,
-    companionBypassStemMap,
-  ]);
-
-  // STL 프리뷰에서 계산한 최대직경을 저장 (리드타임 표시용)
-  const handleDiameterComputed = useCallback(
-    (
-      filename: string,
-      maxDiameter: number,
-      connectionDiameter: number,
-      totalLength: number,
-      taperAngle: number,
-      tiltAxisVector?: { x: number; y: number; z: number } | null,
-      frontPoint?: { x: number; y: number; z: number } | null,
-    ) => {
-      // 파일명으로 해당 파일을 찾아 최대직경 저장
-      const matchedFile = files.find((f) => f.name === filename);
-      if (matchedFile) {
-        const fileKey = toNormalizedFileKey(matchedFile);
-        setFileDiameters((prev) => ({
-          ...prev,
-          [fileKey]: maxDiameter,
-        }));
-        // caseInfosMap에도 저장하여 백엔드 제출 시 사용
-        updateCaseInfos(fileKey, {
-          maxDiameter,
-          connectionDiameter,
-          totalLength,
-          taperAngle,
-          tiltAxisVector,
-          frontPoint,
-        });
-      }
-    },
-    [files, updateCaseInfos, toNormalizedFileKey],
+  const toNormalizedFileKey = useCallback(
+    (file: File) => `${normalizeKeyPart(file.name)}:${file.size}`,
+    [normalizeKeyPart],
   );
 
-  const hasActiveSession = files.length > 0;
-  const hasAnyAttachment = hasActiveSession || companionFiles.length > 0;
-  const [detailIndex, setDetailIndex] = useState<number | null>(null);
-  const [isDetailOpen, setIsDetailOpen] = useState(false);
-  const [
-    shouldRestoreDetailAfterDuplicate,
-    setShouldRestoreDetailAfterDuplicate,
-  ] = useState(false);
-  const [showNewSystemForm, setShowNewSystemForm] = useState(false);
-  const [newSystemManufacturer, setNewSystemManufacturer] = useState("");
-  const [newSystemBrand, setNewSystemBrand] = useState("");
-  const [newSystemFamily, setNewSystemFamily] = useState("");
-  const [confirmNewSystemOpen, setConfirmNewSystemOpen] = useState(false);
-  const [pendingNewSystem, setPendingNewSystem] = useState<{
-    manufacturer: string;
-    brand: string;
-    family: string;
-  } | null>(null);
-  const listContainerRef = useRef<HTMLDivElement | null>(null);
-  const uploadInputRef = useRef<HTMLInputElement | null>(null);
-  const companionInputRef = useRef<HTMLInputElement | null>(null);
-
-  const getCompanionFileKey = useCallback((file: File) => {
-    return `${file.name}:${file.size}:${file.lastModified}`;
-  }, []);
-
-  const standaloneCompanionFiles = useMemo(() => {
-    if (!companionFiles.length) return [] as File[];
-
-    const linkedCompanionKeys = new Set<string>();
-
-    // 1) STL별 자동/수동 연결 구성정보 수집
-    for (const stl of files) {
-      const stlName = String(stl?.name || "").toLowerCase();
-      if (!stlName.endsWith(".stl")) continue;
-
-      const stlFileKey = toNormalizedFileKey(stl);
-      const hasOverride = Boolean(companionOverrideByStlKey[stlFileKey]);
-
-      const pinnedKey = companionPinnedByStlKey[stlFileKey];
-      if (pinnedKey) {
-        linkedCompanionKeys.add(pinnedKey);
-      }
-
-      const manualKeys = manualCompanionLinksByStlKey[stlFileKey] || [];
-      for (const k of manualKeys) {
-        linkedCompanionKeys.add(k);
-      }
-
-      // override가 없을 때만 이름 매칭 자동 연결을 사용
-      if (!hasOverride) {
-        const stlStem = getStem(stl.name);
-        for (const companion of companionFiles) {
-          if (isStemMatch(stlStem, getStem(companion.name))) {
-            linkedCompanionKeys.add(getCompanionFileKey(companion));
-          }
-        }
-      }
-    }
-
-    return companionFiles.filter(
-      (companion) => !linkedCompanionKeys.has(getCompanionFileKey(companion)),
-    );
-  }, [
-    companionFiles,
-    files,
-    toNormalizedFileKey,
-    companionOverrideByStlKey,
-    companionPinnedByStlKey,
-    manualCompanionLinksByStlKey,
-    getCompanionFileKey,
-  ]);
-
-  const [cardDragOverKey, setCardDragOverKey] = useState<string | null>(null);
-
-  const getCurrentCompanionKeyForStl = useCallback(
-    (stlFileKey: string) => {
-      const stl = files.find((f) => toNormalizedFileKey(f) === stlFileKey);
-      if (!stl) return null;
-
-      const pinnedKey = companionPinnedByStlKey[stlFileKey];
-      if (pinnedKey) {
-        const pinnedFile = companionFiles.find(
-          (c) => getCompanionFileKey(c) === pinnedKey,
-        );
-        if (pinnedFile) return pinnedKey;
-      }
-
-      const manual = companionFiles.filter((companion) =>
-        (manualCompanionLinksByStlKey[stlFileKey] || []).includes(
-          getCompanionFileKey(companion),
-        ),
-      );
-      if (manual[0]) return getCompanionFileKey(manual[0]);
-
-      const hasOverride = Boolean(companionOverrideByStlKey[stlFileKey]);
-      if (hasOverride) {
-        return null;
-      }
-
-      const matched = companionFiles.filter((companion) =>
-        isStemMatch(getStem(stl.name), getStem(companion.name)),
-      );
-      if (matched[0]) return getCompanionFileKey(matched[0]);
-
-      return null;
-    },
-    [
+  const { fileDiameters, getEstimatedShipForDiameter, handleDiameterComputed } =
+    useLeadTimeForecast({
+      token,
+      weeklyBatchDays,
       files,
-      toNormalizedFileKey,
-      companionPinnedByStlKey,
-      companionFiles,
-      getCompanionFileKey,
-      manualCompanionLinksByStlKey,
-      companionOverrideByStlKey,
-    ],
-  );
-  const [cardLinkDrag, setCardLinkDrag] = useState<{
-    kind: "stl" | "companion";
-    stlFileKey?: string;
-    companionFileKey?: string;
-    sourceStlFileKey?: string;
-  } | null>(null);
-
-  const linkCompanionToStl = useCallback(
-    (
-      stlFileKey: string,
-      companionFileKey: string,
-      options?: { replace?: boolean },
-    ) => {
-      if (!stlFileKey || !companionFileKey) return;
-
-      setManualCompanionLinksByStlKey((prev) => {
-        const next = { ...prev };
-        if (options?.replace) {
-          next[stlFileKey] = [companionFileKey];
-          return next;
-        }
-        const current = new Set(next[stlFileKey] || []);
-        current.add(companionFileKey);
-        next[stlFileKey] = [...current];
-        return next;
-      });
-
-      setCompanionPinnedByStlKey((prev) => ({
-        ...prev,
-        [stlFileKey]: companionFileKey,
-      }));
-      setCompanionOverrideByStlKey((prev) => ({
-        ...prev,
-        [stlFileKey]: true,
-      }));
-    },
-    [],
-  );
-
-  const unlinkCompanionFromStl = useCallback((stlFileKey: string, companionFileKey: string) => {
-    if (!stlFileKey || !companionFileKey) return;
-    setManualCompanionLinksByStlKey((prev) => {
-      const current = prev[stlFileKey] || [];
-      const filtered = current.filter((k) => k !== companionFileKey);
-      const next = { ...prev };
-      if (filtered.length > 0) next[stlFileKey] = filtered;
-      else delete next[stlFileKey];
-      return next;
-    });
-    setCompanionPinnedByStlKey((prev) => {
-      if (prev[stlFileKey] !== companionFileKey) return prev;
-      const next = { ...prev };
-      delete next[stlFileKey];
-      return next;
-    });
-  }, []);
-
-  const handleDialogOpenChange = useCallback(
-    (nextOpen: boolean) => {
-      if (duplicatePromptOpen && !nextOpen) {
-        return;
-      }
-      setIsDetailOpen(nextOpen);
-    },
-    [duplicatePromptOpen],
-  );
-
-  useEffect(() => {
-    if (!duplicatePromptOpen && shouldRestoreDetailAfterDuplicate) {
-      setIsDetailOpen(true);
-      setShouldRestoreDetailAfterDuplicate(false);
-    }
-  }, [duplicatePromptOpen, shouldRestoreDetailAfterDuplicate]);
-
-  useEffect(() => {
-    if (!files.length) {
-      setCompanionPromptOpen(false);
-      setCompanionBypassStemMap({});
-      setCompanionPinnedByStlKey({});
-      setCompanionOverrideByStlKey({});
-      setPendingCompanionReplace(null);
-      if (suppressCompanionPrompt) {
-        setSuppressCompanionPrompt(false);
-      }
-      return;
-    }
-
-    if (suppressCompanionPrompt) {
-      return;
-    }
-
-    if (missingCompanionStems.length > 0) {
-      setCompanionPromptOpen(true);
-    }
-  }, [files.length, missingCompanionStems.length, suppressCompanionPrompt]);
-
-  const handleCompanionFilesSelected = useCallback(
-    (selected: File[], options?: { targetStlFileKey?: string }) => {
-      if (!selected.length) return;
-
-      const accepted: File[] = [];
-      const rejectedExt: string[] = [];
-      const ignoredPts: string[] = [];
-
-      for (const file of selected) {
-        const ext = getLowerExt(file.name);
-        if (ext === ".pts") {
-          ignoredPts.push(file.name);
-          continue;
-        }
-        if (!isCadCompanionFile(file.name)) {
-          rejectedExt.push(file.name);
-          continue;
-        }
-        accepted.push(file);
-      }
-
-      if (rejectedExt.length) {
-        toast({
-          title: "지원하지 않는 보조 파일 형식",
-          description: "지원 형식: 3Shape(.xml), ExoCAD(*constructionInfo*)",
-          variant: "destructive",
-          duration: 4500,
-        });
-      }
-
-
-
-      if (ignoredPts.length) {
-        toast({
-          title: "PTS 파일은 자동 제외되었어요",
-          description: "3Shape 폴더 업로드 시 PTS는 생략됩니다.",
-          duration: 2200,
-        });
-      }
-
-      if (!accepted.length) return;
-
-      onCompanionFilesAccepted?.(accepted);
-
-      setCompanionFiles((prev) => {
-        const next = [...prev];
-        for (const file of accepted) {
-          const key = toNormalizedFileKey(file);
-          const exists = next.some((p) => toNormalizedFileKey(p) === key);
-          if (!exists) next.push(file);
-        }
-        return next;
-      });
-
-      setCompanionBypassStemMap((prev) => {
-        const next = { ...prev };
-        for (const file of accepted) {
-          const companionStem = getStem(file.name);
-          for (const stlStem of stlStemList) {
-            if (isStemMatch(stlStem, companionStem)) {
-              delete next[stlStem];
-            }
-          }
-          delete next[companionStem];
-        }
-
-        return next;
-      });
-
-      let effectiveTargetStlFileKey = options?.targetStlFileKey;
-      if (effectiveTargetStlFileKey) {
-        const incomingKey = accepted[0] ? getCompanionFileKey(accepted[0]) : null;
-        const currentKey = getCurrentCompanionKeyForStl(effectiveTargetStlFileKey);
-
-        if (incomingKey) {
-          if (currentKey && currentKey !== incomingKey) {
-            setPendingCompanionReplace({
-              stlFileKey: effectiveTargetStlFileKey,
-              companionFileKey: incomingKey,
-            });
-            effectiveTargetStlFileKey = undefined;
-          } else {
-            linkCompanionToStl(effectiveTargetStlFileKey, incomingKey);
-          }
-        }
-      }
-
-      void (async () => {
-        let updatedFieldsCount = 0;
-
-        for (const companion of accepted) {
-          try {
-            const meta = await parseCadCompanionMetadata(companion);
-            if (!meta.clinicName && !meta.patientName && !meta.tooth) {
-              continue;
-            }
-
-            const stem = getStem(companion.name);
-            const forcedTarget = effectiveTargetStlFileKey
-              ? files.find((f) => toNormalizedFileKey(f) === effectiveTargetStlFileKey)
-              : null;
-            const targets = forcedTarget
-              ? [forcedTarget]
-              : files.filter(
-                  (f) =>
-                    String(f?.name || "").toLowerCase().endsWith(".stl") &&
-                    isStemMatch(getStem(f.name), stem),
-                );
-
-            for (const stl of targets) {
-              const fileKey = toNormalizedFileKey(stl);
-              const current = caseInfosMap?.[fileKey];
-              const patch: Partial<CaseInfos> = {};
-
-              if (!String(current?.clinicName || "").trim() && meta.clinicName) {
-                patch.clinicName = meta.clinicName;
-              }
-              if (!String(current?.patientName || "").trim() && meta.patientName) {
-                patch.patientName = meta.patientName;
-              }
-              if (!String(current?.tooth || "").trim() && meta.tooth) {
-                patch.tooth = meta.tooth;
-              }
-
-              if (Object.keys(patch).length > 0) {
-                updateCaseInfos(fileKey, patch);
-                updatedFieldsCount += Object.keys(patch).length;
-              }
-            }
-          } catch {
-            // 파싱 실패는 무시하고 업로드 자체는 유지
-          }
-        }
-
-        if (updatedFieldsCount > 0) {
-          toast({
-            title: "보조 파일에서 정보 자동 입력",
-            description:
-              "환자/치과/치아번호를 읽어 비어 있던 입력란에 자동 반영했습니다.",
-            duration: 3500,
-          });
-        }
-      })();
-
-      toast({
-        title: "보조 파일이 추가되었습니다",
-        description: `추가됨: ${accepted.length}개`,
-        duration: 2500,
-      });
-    },
-    [
-      toast,
-      toNormalizedFileKey,
-      files,
-      stlStemList,
-      caseInfosMap,
       updateCaseInfos,
-      onCompanionFilesAccepted,
-      getCompanionFileKey,
-      getCurrentCompanionKeyForStl,
-      linkCompanionToStl,
-    ],
-  );
-
-  const handleBypassMissingCompanion = useCallback(() => {
-    if (!missingCompanionStems.length) {
-      setCompanionPromptOpen(false);
-      return;
-    }
-
-    setCompanionBypassStemMap((prev) => {
-      const next = { ...prev };
-      for (const stem of missingCompanionStems) {
-        next[stem] = true;
-      }
-      return next;
+      toNormalizedFileKey,
     });
 
-    setCompanionPromptOpen(false);
-
-    toast({
-      title: "보조 파일 없이 진행",
-      description:
-        "작업은 계속할 수 있지만, 보조 파일 업로드 시 좌표/회전 정확도가 더 높아질 수 있습니다.",
-      duration: 4500,
-    });
-  }, [missingCompanionStems, toast]);
-
-  const handleClearAll = useCallback(() => {
-    setSuppressCompanionPrompt(true);
-    setCompanionFiles([]);
-    setCompanionBypassStemMap({});
-    setManualCompanionLinksByStlKey({});
-    setCompanionPinnedByStlKey({});
-    setCompanionOverrideByStlKey({});
-    setPendingCompanionReplace(null);
-    setPendingCompanionTargetStlKey(null);
-    setPendingCompanionCardForStlUpload(null);
-    setCardLinkDrag(null);
-    setCardDragOverKey(null);
-    setCompanionPromptOpen(false);
-    onCancelAll();
-  }, [onCancelAll]);
+  const companion = useCompanionBinding({
+    files,
+    caseInfosMap,
+    updateCaseInfos,
+    toNormalizedFileKey,
+    toast,
+    onFilesSelected,
+    onCompanionFilesAccepted,
+    onCompanionFilesChange,
+    registerCompanionFileHandler,
+  });
 
   useEffect(() => {
-    if (!registerCompanionFileHandler) return;
-    registerCompanionFileHandler(handleCompanionFilesSelected);
-  }, [registerCompanionFileHandler, handleCompanionFilesSelected]);
-
-  useEffect(() => {
-    onCompanionFilesChange?.(companionFiles);
-  }, [companionFiles, onCompanionFilesChange]);
-
-  const handleRemoveCompanionFile = useCallback(
-    (target: File) => {
-      const targetKey = `${target.name}:${target.size}:${target.lastModified}`;
-      setCompanionFiles((prev) =>
-        prev.filter(
-          (f) => `${f.name}:${f.size}:${f.lastModified}` !== targetKey,
-        ),
-      );
-      setManualCompanionLinksByStlKey((prev) => {
-        const next: Record<string, string[]> = {};
-        for (const [stlKey, companionKeys] of Object.entries(prev)) {
-          const filtered = companionKeys.filter((k) => k !== targetKey);
-          if (filtered.length > 0) next[stlKey] = filtered;
-        }
-        return next;
-      });
-      setCompanionPinnedByStlKey((prev) => {
-        const next = { ...prev };
-        for (const [stlKey, companionKey] of Object.entries(prev)) {
-          if (companionKey === targetKey) {
-            delete next[stlKey];
-          }
-        }
-        return next;
-      });
-    },
-    [],
-  );
-
-
-
-  const getFileWorkType = (_file: File): "abutment" | "crown" => {
-    return "abutment";
-  };
-
-  useEffect(() => {
-    if (
-      files.length > 0 &&
-      (selectedPreviewIndex === null || selectedPreviewIndex >= files.length)
-    ) {
+    if (files.length > 0 && (selectedPreviewIndex === null || selectedPreviewIndex >= files.length)) {
       setSelectedPreviewIndex(0);
     }
   }, [files, selectedPreviewIndex, setSelectedPreviewIndex]);
@@ -1049,21 +195,24 @@ export function NewRequestDetailsSection({
     }
   }, [isDetailOpen, files, selectedPreviewIndex, detailIndex]);
 
-  // 파일이 삭제되어 상세 모달이 비어 있으면 자동으로 닫는다
   useEffect(() => {
-    if (isDetailOpen) {
-      const noFiles = files.length === 0;
-      const invalidIndex =
-        detailIndex === null || (detailIndex ?? 0) >= files.length;
-      if (noFiles || invalidIndex) {
-        setIsDetailOpen(false);
-      }
+    if (!duplicatePromptOpen && shouldRestoreDetailAfterDuplicate) {
+      setIsDetailOpen(true);
+      setShouldRestoreDetailAfterDuplicate(false);
+    }
+  }, [duplicatePromptOpen, shouldRestoreDetailAfterDuplicate]);
+
+  useEffect(() => {
+    if (!isDetailOpen) return;
+    const noFiles = files.length === 0;
+    const invalidIndex = detailIndex === null || (detailIndex ?? 0) >= files.length;
+    if (noFiles || invalidIndex) {
+      setIsDetailOpen(false);
     }
   }, [isDetailOpen, files.length, detailIndex]);
 
   useEffect(() => {
     if (!files.length) return;
-
     if (caseInfos?.workType !== "abutment") {
       setCaseInfos({
         ...caseInfos,
@@ -1072,25 +221,30 @@ export function NewRequestDetailsSection({
     }
   }, [files, caseInfos, setCaseInfos]);
 
-  const selectedFile =
-    selectedPreviewIndex !== null ? files[selectedPreviewIndex] : null;
+  useEffect(() => {
+    if (!focusUnverifiedTick || !files.length) return;
+    const firstUnverifiedIndex = files.findIndex((file) => {
+      const key = toNormalizedFileKey(file);
+      return !fileVerificationStatus[key];
+    });
+    if (firstUnverifiedIndex < 0) return;
 
-  const selectedFileKey =
-    selectedPreviewIndex !== null && files[selectedPreviewIndex]
-      ? toNormalizedFileKey(files[selectedPreviewIndex])
-      : null;
+    const container = listContainerRef.current;
+    if (!container) return;
 
-  const previewFile = selectedFile;
-
-  const hasSelectedFile = Boolean(
-    selectedPreviewIndex !== null && files[selectedPreviewIndex],
-  );
+    const target = container.querySelector<HTMLElement>(
+      `[data-file-index="${firstUnverifiedIndex}"]`,
+    );
+    target?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, [focusUnverifiedTick, files, fileVerificationStatus, toNormalizedFileKey]);
 
   const detailFile = detailIndex !== null ? files[detailIndex] : null;
   const detailFileKey = detailFile ? toNormalizedFileKey(detailFile) : null;
+
   const detailCaseInfos = detailFileKey
     ? caseInfosMap?.[detailFileKey] || caseInfos
     : caseInfos;
+
   const setDetailCaseInfos = useCallback(
     (updates: Partial<CaseInfos>) => {
       if (detailFileKey) {
@@ -1102,1239 +256,277 @@ export function NewRequestDetailsSection({
     [detailFileKey, setCaseInfos, updateCaseInfos],
   );
 
+  const handleDialogOpenChange = useCallback(
+    (nextOpen: boolean) => {
+      if (duplicatePromptOpen && !nextOpen) return;
+      setIsDetailOpen(nextOpen);
+    },
+    [duplicatePromptOpen],
+  );
 
+  const openDetailModal = useCallback(
+    (index: number) => {
+      setSelectedPreviewIndex(index);
+      setDetailIndex(index);
+      setIsDetailOpen(true);
+    },
+    [setSelectedPreviewIndex],
+  );
 
-  const resetNewSystemForm = useCallback(() => {
-    setShowNewSystemForm(false);
-    setNewSystemManufacturer("");
-    setNewSystemBrand("");
-    setNewSystemFamily("");
-    setDetailCaseInfos({
-      newSystemRequest: undefined,
-    });
-  }, [setDetailCaseInfos]);
+  const focusSelectedCard = useCallback((index: number) => {
+    const container = listContainerRef.current;
+    if (!container) return;
+    const target = container.querySelector<HTMLElement>(`[data-file-index="${index}"]`);
+    target?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, []);
 
-  const handleNewSystemRequestClick = useCallback(() => {
-    const manufacturer = newSystemManufacturer.trim();
-    const brand = newSystemBrand.trim();
-    const family = newSystemFamily.trim();
-    if (!manufacturer || !brand || !family) {
-      toast({
-        title: "신규 임플란트 입력 필요",
-        description: "Manufacturer, Brand, Family를 모두 입력해주세요.",
-        variant: "destructive",
-        duration: 4000,
-      });
-      return;
-    }
-    setPendingNewSystem({ manufacturer, brand, family });
-    setConfirmNewSystemOpen(true);
-  }, [newSystemBrand, newSystemFamily, newSystemManufacturer, toast]);
+  const handleKeyboardNavigation = useCallback(
+    (event: React.KeyboardEvent<HTMLDivElement>) => {
+      if (!files.length) return;
 
-  const detailImplantInfo = {
-    clinicName: detailCaseInfos?.clinicName || "",
-    patientName: detailCaseInfos?.patientName || "",
-    tooth: detailCaseInfos?.tooth || "",
-    implantManufacturer: detailCaseInfos?.implantManufacturer || "",
-    implantBrand: detailCaseInfos?.implantBrand || "",
-    implantFamily: detailCaseInfos?.implantFamily || "",
-    implantType: detailCaseInfos?.implantType || "",
-  };
-
-  useEffect(() => {
-    if (detailCaseInfos?.newSystemRequest?.requested) {
-      setShowNewSystemForm(true);
-      setNewSystemManufacturer(
-        detailCaseInfos.newSystemRequest.manufacturer || "",
-      );
-      setNewSystemBrand(detailCaseInfos.newSystemRequest.brand || "");
-      setNewSystemFamily(detailCaseInfos.newSystemRequest.family || "");
-    }
-  }, [detailCaseInfos?.newSystemRequest?.requested]);
-
-  const openDetailModal = (index: number) => {
-    setSelectedPreviewIndex(index);
-    setDetailIndex(index);
-    setIsDetailOpen(true);
-  };
-
-  const findNextIndex = (
-    currentIndex: number,
-    options: { onlyUnverified?: boolean } = {},
-  ) => {
-    if (!files.length) return currentIndex;
-    for (let offset = 1; offset <= files.length; offset++) {
-      const candidate = (currentIndex + offset) % files.length;
-      if (!options.onlyUnverified) {
-        return candidate;
+      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+        event.preventDefault();
+        const direction = event.key === "ArrowDown" ? 1 : -1;
+        const currentIndex = selectedPreviewIndex ?? 0;
+        const nextIndex = (currentIndex + direction + files.length) % files.length;
+        setSelectedPreviewIndex(nextIndex);
+        focusSelectedCard(nextIndex);
       }
-      const candidateKey = toNormalizedFileKey(files[candidate]);
-      if (!fileVerificationStatus[candidateKey]) {
-        return candidate;
+
+      if (event.key === "Enter" && selectedPreviewIndex !== null) {
+        event.preventDefault();
+        openDetailModal(selectedPreviewIndex);
       }
-    }
-    return currentIndex;
-  };
+    },
+    [files.length, focusSelectedCard, openDetailModal, selectedPreviewIndex, setSelectedPreviewIndex],
+  );
 
-  const moveToNextDetail = (options: { onlyUnverified?: boolean } = {}) => {
-    if (!files.length) return false;
-    const currentIndex = detailIndex ?? selectedPreviewIndex ?? 0;
-    const nextIndex = findNextIndex(currentIndex, options);
-    if (nextIndex === currentIndex && options.onlyUnverified) {
-      return false;
-    }
-    setSelectedPreviewIndex(nextIndex);
-    setDetailIndex(nextIndex);
-    return true;
-  };
+  const findNextIndex = useCallback(
+    (currentIndex: number, options: { onlyUnverified?: boolean } = {}) => {
+      if (!files.length) return currentIndex;
+      for (let offset = 1; offset <= files.length; offset += 1) {
+        const candidate = (currentIndex + offset) % files.length;
+        if (!options.onlyUnverified) return candidate;
 
-  const handleVerifyFile = async (
-    index: number,
-    options: { stayInModal?: boolean } = {},
-  ) => {
-    const file = files[index];
-    if (!file) return;
-    const fileKey = toNormalizedFileKey(file);
-    const fileCaseInfos = caseInfosMap?.[fileKey] || caseInfos;
-
-    const missingFields: string[] = [];
-    if (!fileCaseInfos?.clinicName) {
-      missingFields.push("치과이름");
-    }
-    if (!fileCaseInfos?.patientName) {
-      missingFields.push("환자이름");
-    }
-    if (!fileCaseInfos?.tooth) {
-      missingFields.push("치아번호");
-    }
-    if (!fileCaseInfos?.implantManufacturer) {
-      missingFields.push("임플란트 제조사");
-    }
-    if (!fileCaseInfos?.implantBrand) {
-      missingFields.push("임플란트 브랜드");
-    }
-    if (!fileCaseInfos?.implantFamily) {
-      missingFields.push("Family");
-    }
-    if (!fileCaseInfos?.implantType) {
-      missingFields.push("Type");
-    }
-
-    if (missingFields.length > 0) {
-      toast({
-        title: "정보를 먼저 채워주세요",
-        description: `${missingFields.join(
-          ", ",
-        )}가(이) 비어 있습니다. 디자인과 정보가 모두 맞는지 확인 후 완료해 주세요.`,
-        variant: "destructive",
-      });
-      return;
-    }
-
-    const nextStatus: Record<string, boolean> = {
-      ...fileVerificationStatus,
-      [fileKey]: true,
-    };
-
-    const hasRemainingUnverified = files.some((candidate) => {
-      const key = toNormalizedFileKey(candidate);
-      return !nextStatus[key];
-    });
-
-    let nextIndex = -1;
-
-    if (hasRemainingUnverified) {
-      for (let i = index + 1; i < files.length; i++) {
-        const key = toNormalizedFileKey(files[i]);
-        if (!nextStatus[key]) {
-          nextIndex = i;
-          break;
+        const candidateKey = toNormalizedFileKey(files[candidate]);
+        if (!fileVerificationStatus[candidateKey]) {
+          return candidate;
         }
       }
+      return currentIndex;
+    },
+    [fileVerificationStatus, files, toNormalizedFileKey],
+  );
 
-      if (nextIndex === -1) {
-        for (let i = 0; i < index; i++) {
+  const moveToNextDetail = useCallback(
+    (options: { onlyUnverified?: boolean } = {}) => {
+      if (!files.length) return false;
+      const currentIndex = detailIndex ?? selectedPreviewIndex ?? 0;
+      const nextIndex = findNextIndex(currentIndex, options);
+      if (nextIndex === currentIndex && options.onlyUnverified) {
+        return false;
+      }
+      setSelectedPreviewIndex(nextIndex);
+      setDetailIndex(nextIndex);
+      return true;
+    },
+    [detailIndex, files.length, findNextIndex, selectedPreviewIndex, setSelectedPreviewIndex],
+  );
+
+  const handleVerifyFile = useCallback(
+    async (index: number, options: { stayInModal?: boolean } = {}) => {
+      const file = files[index];
+      if (!file) return;
+
+      const fileKey = toNormalizedFileKey(file);
+      const fileCaseInfos = caseInfosMap?.[fileKey] || caseInfos;
+      const missingFields: string[] = [];
+
+      if (!fileCaseInfos?.clinicName) missingFields.push("치과이름");
+      if (!fileCaseInfos?.patientName) missingFields.push("환자이름");
+      if (!fileCaseInfos?.tooth) missingFields.push("치아번호");
+      if (!fileCaseInfos?.implantManufacturer) missingFields.push("임플란트 제조사");
+      if (!fileCaseInfos?.implantBrand) missingFields.push("임플란트 브랜드");
+      if (!fileCaseInfos?.implantFamily) missingFields.push("Family");
+      if (!fileCaseInfos?.implantType) missingFields.push("Type");
+
+      if (missingFields.length > 0) {
+        toast({
+          title: "정보를 먼저 채워주세요",
+          description: `${missingFields.join(", ")}가(이) 비어 있습니다. 디자인과 정보가 모두 맞는지 확인 후 완료해 주세요.`,
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const nextStatus: Record<string, boolean> = {
+        ...fileVerificationStatus,
+        [fileKey]: true,
+      };
+
+      const hasRemainingUnverified = files.some((candidate) => {
+        const key = toNormalizedFileKey(candidate);
+        return !nextStatus[key];
+      });
+
+      let nextIndex = -1;
+      if (hasRemainingUnverified) {
+        for (let i = index + 1; i < files.length; i += 1) {
           const key = toNormalizedFileKey(files[i]);
           if (!nextStatus[key]) {
             nextIndex = i;
             break;
           }
         }
+        if (nextIndex === -1) {
+          for (let i = 0; i < index; i += 1) {
+            const key = toNormalizedFileKey(files[i]);
+            if (!nextStatus[key]) {
+              nextIndex = i;
+              break;
+            }
+          }
+        }
       }
-    }
 
-    if (hasRemainingUnverified) {
-      setShouldRestoreDetailAfterDuplicate(true);
-    }
+      if (hasRemainingUnverified) {
+        setShouldRestoreDetailAfterDuplicate(true);
+      }
 
-    setFileVerificationStatus(nextStatus);
-    if (nextIndex !== -1) {
-      setSelectedPreviewIndex(nextIndex);
-    }
-    setHighlightUnverifiedArrows(false);
+      setFileVerificationStatus(nextStatus);
+      if (nextIndex !== -1) {
+        setSelectedPreviewIndex(nextIndex);
+      }
+      setHighlightUnverifiedArrows(false);
 
-    if (options.stayInModal && hasRemainingUnverified && nextIndex !== -1) {
-      setDetailIndex(nextIndex);
-      setIsDetailOpen(true);
-    } else {
-      setIsDetailOpen(false);
-    }
-  };
-
-  const showImplantSelect = useMemo(() => {
-    const selectedWorkType = selectedFile
-      ? getFileWorkType(selectedFile)
-      : caseInfos?.workType;
-    return selectedWorkType === "abutment";
-  }, [selectedFile, caseInfos?.workType]);
-
-  const requiredFieldsPresent = (info?: CaseInfos | null) => {
-    if (!info) return false;
-    return Boolean(
-      info.clinicName &&
-      info.patientName &&
-      info.tooth &&
-      info.implantManufacturer &&
-      info.implantBrand &&
-      info.implantFamily &&
-      info.implantType,
-    );
-  };
-
-  useEffect(() => {
-    if (!focusUnverifiedTick || !files.length) return;
-    const firstUnverifiedIndex = files.findIndex((file) => {
-      const key = toNormalizedFileKey(file);
-      return !fileVerificationStatus[key];
-    });
-    if (firstUnverifiedIndex < 0) return;
-    const container = listContainerRef.current;
-    if (!container) return;
-    const target = container.querySelector<HTMLElement>(
-      `[data-file-index="${firstUnverifiedIndex}"]`,
-    );
-    if (target) {
-      target.scrollIntoView({ block: "nearest", behavior: "smooth" });
-    }
-  }, [focusUnverifiedTick, files, fileVerificationStatus, toNormalizedFileKey]);
-
-  const focusSelectedCard = (index: number) => {
-    const container = listContainerRef.current;
-    if (!container) return;
-    const target = container.querySelector<HTMLElement>(
-      `[data-file-index="${index}"]`,
-    );
-    if (target) {
-      target.scrollIntoView({ block: "nearest", behavior: "smooth" });
-    }
-  };
-
-  const handleCardDrop = (
-    event: React.DragEvent<HTMLDivElement>,
-    dropKey: string,
-    options?: {
-      selectIndex?: number;
-      targetStlFileKey?: string;
-      targetCompanionFileKey?: string;
+      if (options.stayInModal && hasRemainingUnverified && nextIndex !== -1) {
+        setDetailIndex(nextIndex);
+        setIsDetailOpen(true);
+      } else {
+        setIsDetailOpen(false);
+      }
     },
-  ) => {
-    event.preventDefault();
-    event.stopPropagation();
-    setCardDragOverKey((prev) => (prev === dropKey ? null : prev));
+    [
+      caseInfos,
+      caseInfosMap,
+      fileVerificationStatus,
+      files,
+      setFileVerificationStatus,
+      setHighlightUnverifiedArrows,
+      setSelectedPreviewIndex,
+      toast,
+      toNormalizedFileKey,
+    ],
+  );
 
-    const itemFiles = Array.from(event.dataTransfer?.items || [])
-      .map((item) => item.getAsFile())
-      .filter((f): f is File => Boolean(f));
-    const directFiles = Array.from(event.dataTransfer?.files || []);
-
-    const deduped = (() => {
-      const map = new Map<string, File>();
-      for (const file of [...itemFiles, ...directFiles]) {
-        const key = `${file.name}:${file.size}:${file.lastModified}`;
-        if (!map.has(key)) map.set(key, file);
-      }
-      return [...map.values()];
-    })();
-
-    // 카드 간 드래그(파일 없음)로 결합
-    if (!deduped.length && cardLinkDrag) {
-      if (
-        options?.targetStlFileKey &&
-        cardLinkDrag.kind === "companion" &&
-        cardLinkDrag.companionFileKey
-      ) {
-        const currentKey = getCurrentCompanionKeyForStl(options.targetStlFileKey);
-        if (currentKey && currentKey !== cardLinkDrag.companionFileKey) {
-          setPendingCompanionReplace({
-            stlFileKey: options.targetStlFileKey,
-            companionFileKey: cardLinkDrag.companionFileKey,
-          });
-          setCardLinkDrag(null);
-          return;
-        }
-
-        linkCompanionToStl(options.targetStlFileKey, cardLinkDrag.companionFileKey);
-        toast({
-          title: "카드를 결합했어요",
-          description: "구성정보를 해당 STL 케이스에 연결했습니다.",
-          duration: 2200,
-        });
-      } else if (
-        options?.targetCompanionFileKey &&
-        cardLinkDrag.kind === "stl" &&
-        cardLinkDrag.stlFileKey
-      ) {
-        const currentKey = getCurrentCompanionKeyForStl(cardLinkDrag.stlFileKey);
-        if (currentKey && currentKey !== options.targetCompanionFileKey) {
-          setPendingCompanionReplace({
-            stlFileKey: cardLinkDrag.stlFileKey,
-            companionFileKey: options.targetCompanionFileKey,
-          });
-          setCardLinkDrag(null);
-          return;
-        }
-
-        linkCompanionToStl(cardLinkDrag.stlFileKey, options.targetCompanionFileKey);
-        toast({
-          title: "카드를 결합했어요",
-          description: "해당 STL 케이스에 구성정보를 연결했습니다.",
-          duration: 2200,
-        });
-      }
-      setCardLinkDrag(null);
-      return;
-    }
-
-    const companionFiles = deduped.filter((f) => isCadCompanionFile(f.name));
-    const stlFiles = deduped.filter((f) => getLowerExt(f.name) === ".stl");
-    const otherFiles = deduped.filter(
-      (f) => !isCadCompanionFile(f.name) && getLowerExt(f.name) !== ".stl",
-    );
-
-    if (companionFiles.length > 0) {
-      handleCompanionFilesSelected(companionFiles, {
-        targetStlFileKey: options?.targetStlFileKey,
-      });
-    }
-
-    if (options?.targetCompanionFileKey && stlFiles.length > 0) {
-      for (const stl of stlFiles) {
-        const stlKey = toNormalizedFileKey(stl);
-        const currentKey = getCurrentCompanionKeyForStl(stlKey);
-        if (currentKey && currentKey !== options.targetCompanionFileKey) {
-          setPendingCompanionReplace({
-            stlFileKey: stlKey,
-            companionFileKey: options.targetCompanionFileKey,
-          });
-          continue;
-        }
-
-        linkCompanionToStl(stlKey, options.targetCompanionFileKey);
-      }
-    }
-
-    const forwardFiles = [...stlFiles, ...otherFiles];
-    if (forwardFiles.length > 0) {
-      if (typeof options?.selectIndex === "number") {
-        setSelectedPreviewIndex(options.selectIndex);
-      }
-      onFilesSelected(forwardFiles);
-    }
-
-    setCardLinkDrag(null);
-  };
-
-  const handleKeyboardNavigation = (
-    event: React.KeyboardEvent<HTMLDivElement>,
-  ) => {
-    if (!files.length) return;
-    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-      event.preventDefault();
-      const direction = event.key === "ArrowDown" ? 1 : -1;
-      const currentIndex = selectedPreviewIndex ?? 0;
-      const nextIndex =
-        (currentIndex + direction + files.length) % files.length;
-      setSelectedPreviewIndex(nextIndex);
-      focusSelectedCard(nextIndex);
-    }
-    if (event.key === "Enter" && selectedPreviewIndex !== null) {
-      event.preventDefault();
-      openDetailModal(selectedPreviewIndex);
-    }
-  };
+  const handleClearAll = useCallback(() => {
+    companion.clearCompanionStateForCancelAll();
+    onCancelAll();
+  }, [companion, onCancelAll]);
 
   return (
-    <div
-      className={`app-glass-card app-glass-card--lg relative flex flex-col border-2 border-gray-300 p-2.5 md:p-3.5 flex-1 min-h-0 h-full max-h-[500px]`}
-    >
+    <div className="app-glass-card app-glass-card--lg relative flex flex-col border-2 border-gray-300 p-2.5 md:p-3.5 flex-1 min-h-0 h-full max-h-[500px]">
       <div className="app-glass-card-content flex flex-col flex-1 min-h-0 h-full">
         <div className="flex flex-col flex-1 min-h-0 h-full">
-          {/* 숨겨진 파일 업로드 input - 항상 렌더링 */}
-          <input
-            ref={uploadInputRef}
-            type="file"
-            multiple
-            className="hidden"
-            onChange={(e) => {
-              const fileList = e.currentTarget.files;
-              if (fileList) {
-                const selected = Array.from(fileList);
-                const stlFiles = selected.filter((f) => getLowerExt(f.name) === ".stl");
-                const companionSelected = selected.filter((f) => isCadCompanionFile(f.name));
-                const restFiles = selected.filter(
-                  (f) => !isCadCompanionFile(f.name) && getLowerExt(f.name) !== ".stl",
-                );
-
-                if (companionSelected.length > 0) {
-                  handleCompanionFilesSelected(companionSelected);
-                }
-
-                if (pendingCompanionCardForStlUpload && stlFiles.length > 0) {
-                  setManualCompanionLinksByStlKey((prev) => {
-                    const next = { ...prev };
-                    for (const stl of stlFiles) {
-                      const stlKey = toNormalizedFileKey(stl);
-                      const current = new Set(next[stlKey] || []);
-                      current.add(pendingCompanionCardForStlUpload);
-                      next[stlKey] = [...current];
-                    }
-                    return next;
-                  });
-                }
-
-                const forward = [...stlFiles, ...restFiles];
-                if (forward.length > 0) {
-                  onFilesSelected(forward);
-                }
-              }
-              setPendingCompanionCardForStlUpload(null);
-              e.currentTarget.value = "";
-            }}
-            accept=".stl,.xml,.constructionInfo"
+          <NewRequestAttachmentsPanel
+            files={files}
+            selectedPreviewIndex={selectedPreviewIndex}
+            setSelectedPreviewIndex={setSelectedPreviewIndex}
+            fileVerificationStatus={fileVerificationStatus}
+            highlightUnverifiedArrows={highlightUnverifiedArrows}
+            caseInfosMap={caseInfosMap}
+            toNormalizedFileKey={toNormalizedFileKey}
+            getEstimatedShipForDiameter={getEstimatedShipForDiameter}
+            fileDiameters={fileDiameters}
+            handleRemoveFile={handleRemoveFile}
+            openDetailModal={openDetailModal}
+            handleClearAll={handleClearAll}
+            onFilesSelected={onFilesSelected}
+            isDragOver={isDragOver}
+            onDragOver={onDragOver}
+            onDragLeave={onDragLeave}
+            onDrop={onDrop}
+            onKeyboardNavigation={handleKeyboardNavigation}
+            listContainerRef={listContainerRef}
+            uploadInputRef={uploadInputRef}
+            companionInputRef={companionInputRef}
+            companionFiles={companion.companionFiles}
+            standaloneCompanionFiles={companion.standaloneCompanionFiles}
+            cardDragOverKey={companion.cardDragOverKey}
+            setCardDragOverKey={companion.setCardDragOverKey}
+            cardLinkDrag={companion.cardLinkDrag}
+            setCardLinkDrag={companion.setCardLinkDrag}
+            getCompanionFileKey={companion.getCompanionFileKey}
+            getEffectiveCompanionsForStl={companion.getEffectiveCompanionsForStl}
+            setPendingCompanionTargetStlKey={companion.setPendingCompanionTargetStlKey}
+            setPendingCompanionCardForStlUpload={
+              companion.setPendingCompanionCardForStlUpload
+            }
+            handleRemoveCompanionFile={companion.handleRemoveCompanionFile}
+            handleMainInputFiles={companion.handleMainInputFiles}
+            handleCompanionInputFiles={companion.handleCompanionInputFiles}
+            handleCardDrop={companion.handleCardDrop}
+            detachDraggingCompanion={companion.detachDraggingCompanion}
           />
-          <input
-            ref={companionInputRef}
-            type="file"
-            multiple
-            className="hidden"
-            onChange={(e) => {
-              const fileList = e.currentTarget.files;
-              if (fileList) {
-                handleCompanionFilesSelected(Array.from(fileList), {
-                  targetStlFileKey: pendingCompanionTargetStlKey || undefined,
-                });
-              }
-              setPendingCompanionTargetStlKey(null);
-              e.currentTarget.value = "";
-            }}
-            accept=".xml,.constructionInfo"
-          />
-
-          <div className="flex justify-end gap-2 px-2 pb-1">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={handleClearAll}
-              disabled={!files.length && companionFiles.length === 0}
-            >
-              전체 삭제
-            </Button>
-          </div>
-
-
-          <div
-            ref={listContainerRef}
-            className={`flex flex-col gap-2.5 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 px-2 py-2 flex-1 min-h-0 focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0 -mx-1 ${hasAnyAttachment ? "" : "justify-center"}`}
-            tabIndex={0}
-            role="listbox"
-            aria-label="첨부 파일 목록"
-            onKeyDown={handleKeyboardNavigation}
-            onDragOver={(e) => {
-              if (cardLinkDrag) {
-                e.preventDefault();
-              }
-            }}
-            onDrop={(e) => {
-              if (
-                cardLinkDrag?.kind === "companion" &&
-                cardLinkDrag.companionFileKey &&
-                cardLinkDrag.sourceStlFileKey
-              ) {
-                e.preventDefault();
-                e.stopPropagation();
-                unlinkCompanionFromStl(
-                  cardLinkDrag.sourceStlFileKey,
-                  cardLinkDrag.companionFileKey,
-                );
-                setCardLinkDrag(null);
-                setCardDragOverKey(null);
-                toast({
-                  title: "카드를 분리했어요",
-                  description: "구성정보를 STL 케이스에서 분리했습니다.",
-                  duration: 2200,
-                });
-              }
-            }}
-          >
-            <div
-              className={`shrink-0 w-full border-2 border-dashed rounded-2xl text-center transition-colors flex flex-col items-center justify-center gap-1.5 cursor-pointer ${hasAnyAttachment ? "p-3 md:p-4" : "p-5 md:p-6 max-w-[420px] mx-auto"} ${
-                isDragOver
-                  ? "border-primary bg-primary/5"
-                  : "border-gray-300 hover:border-primary/50 bg-white"
-              }`}
-              onDragOver={(e) => {
-                if (cardLinkDrag) {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  return;
-                }
-                onDragOver(e);
-              }}
-              onDragLeave={(e) => {
-                if (cardLinkDrag) {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  return;
-                }
-                onDragLeave(e);
-              }}
-              onDrop={(e) => {
-                if (
-                  cardLinkDrag?.kind === "companion" &&
-                  cardLinkDrag.companionFileKey &&
-                  cardLinkDrag.sourceStlFileKey
-                ) {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  unlinkCompanionFromStl(
-                    cardLinkDrag.sourceStlFileKey,
-                    cardLinkDrag.companionFileKey,
-                  );
-                  setCardLinkDrag(null);
-                  toast({
-                    title: "카드를 분리했어요",
-                    description: "구성정보를 STL 케이스에서 분리했습니다.",
-                    duration: 2200,
-                  });
-                  return;
-                }
-                onDrop(e);
-              }}
-              onClick={() => uploadInputRef.current?.click()}
-            >
-              <p className="text-xs md:text-sm text-muted-foreground">
-                여기를 클릭하거나 파일을 드래그해 추가하세요.
-              </p>
-              <p className="text-xs md:text-sm text-muted-foreground">
-                파일명에서 치과/환자/치아번호를 자동 인식합니다.
-              </p>
-            </div>
-            {standaloneCompanionFiles.length > 0 &&
-              standaloneCompanionFiles.map((companion) => {
-                const companionKey = `${companion.name}:${companion.size}:${companion.lastModified}`;
-                return (
-                  <div
-                    key={companionKey}
-                    draggable
-                    onDragStart={(event) => {
-                      event.stopPropagation();
-                      setCardLinkDrag({
-                        kind: "companion",
-                        companionFileKey: companionKey,
-                      });
-                    }}
-                    onDragEnd={() => {
-                      setCardLinkDrag(null);
-                      setCardDragOverKey(null);
-                    }}
-                    onDragOver={(event) => {
-                      event.preventDefault();
-                      event.stopPropagation();
-                      setCardDragOverKey(companionKey);
-                    }}
-                    onDragLeave={(event) => {
-                      event.preventDefault();
-                      event.stopPropagation();
-                      setCardDragOverKey((prev) => (prev === companionKey ? null : prev));
-                    }}
-                    onDrop={(event) =>
-                      handleCardDrop(event, companionKey, {
-                        targetCompanionFileKey: companionKey,
-                      })
-                    }
-                    className={`relative shrink-0 app-glass-card w-full px-4 py-3.5 rounded-xl border border-gray-200 bg-white text-gray-900 ${cardDragOverKey === companionKey ? "ring-2 ring-blue-300 ring-offset-2 ring-offset-white border-blue-300 bg-blue-50/40" : ""}`}
-                  >
-                    <div className="relative z-10 flex flex-col gap-1.5">
-                      <div className="flex items-center justify-between gap-3">
-                        <div className="truncate flex-1 text-[11px] text-slate-500" title="STL 파일을 추가해 의뢰를 계속해주세요. (카드 드롭 가능)">
-                          STL 파일을 추가해 의뢰를 계속해주세요. (카드 드롭 가능)
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="outline"
-                            className="h-7 px-2 text-xs"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              setPendingCompanionCardForStlUpload(companionKey);
-                              uploadInputRef.current?.click();
-                            }}
-                          >
-                            stl 추가
-                          </Button>
-                          <button
-                            type="button"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              handleRemoveCompanionFile(companion);
-                            }}
-                            className="p-1 text-slate-400 hover:text-red-500"
-                            aria-label="구성정보 삭제"
-                          >
-                            <X className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-1.5 text-xs text-sky-700 min-w-0">
-                        <Badge className="bg-sky-600 hover:bg-sky-600">구성정보</Badge>
-                        <span className="truncate" title={companion.name}>{companion.name}</span>
-                      </div>
-
-                    </div>
-                  </div>
-                );
-              })}
-
-            {hasActiveSession &&
-              files
-                .map((file, index) => ({ file, index }))
-                .map(({ file, index }) => {
-                  const filename = file.name;
-                  const fileKey = toNormalizedFileKey(file);
-                  const isSelected = selectedPreviewIndex === index;
-                  const isVerified = !!fileVerificationStatus[fileKey];
-                  const isUnverifiedHighlight =
-                    highlightUnverifiedArrows && !isVerified;
-
-                  const baseClasses = isVerified
-                    ? "border border-gray-200 bg-white text-gray-900"
-                    : "border border-red-300 bg-red-50 text-red-800";
-                  const stateClasses = isSelected
-                    ? isVerified
-                      ? "border-primary bg-primary/10 text-primary shadow-[0_4px_12px_rgba(37,99,235,0.2)]"
-                      : "border-red-400 bg-red-50 shadow-[0_4px_12px_rgba(248,113,113,0.2)]"
-                    : "";
-                  const ringClasses = (() => {
-                    if (isSelected) {
-                      return "ring-2 ring-primary ring-offset-2 ring-offset-white";
-                    }
-                    if (isUnverifiedHighlight) {
-                      return "ring-2 ring-red-400 ring-offset-2 ring-offset-white";
-                    }
-                    return "";
-                  })();
-
-                  // STL 프리뷰에서 계산한 최대직경 우선 사용, 없으면 caseInfosMap에서 조회
-                  const computedDiameter = fileDiameters[fileKey];
-                  const fileInfo = caseInfosMap?.[fileKey];
-                  const diameter =
-                    computedDiameter ?? fileInfo?.maxDiameter ?? null;
-                  const estimatedShip = getEstimatedShipForDiameter
-                    ? getEstimatedShipForDiameter(diameter)
-                    : null;
-
-                  const pinnedCompanion = (() => {
-                    const pinnedKey = companionPinnedByStlKey[fileKey];
-                    if (!pinnedKey) return null;
-                    return (
-                      companionFiles.find(
-                        (companion) => getCompanionFileKey(companion) === pinnedKey,
-                      ) || null
-                    );
-                  })();
-                  const matchedCompanions = companionFiles.filter((companion) =>
-                    isStemMatch(getStem(filename), getStem(companion.name)),
-                  );
-                  const manualLinkedCompanions = companionFiles.filter((companion) =>
-                    (manualCompanionLinksByStlKey[fileKey] || []).includes(
-                      getCompanionFileKey(companion),
-                    ),
-                  );
-                  const hasCompanionOverride = Boolean(companionOverrideByStlKey[fileKey]);
-                  const effectiveCompanions = pinnedCompanion
-                    ? [pinnedCompanion]
-                    : hasCompanionOverride
-                      ? manualLinkedCompanions
-                      : matchedCompanions.length > 0
-                        ? matchedCompanions
-                        : manualLinkedCompanions.length > 0
-                          ? manualLinkedCompanions
-                          : [];
-                  const primaryCompanion = effectiveCompanions[0] || null;
-
-                  return (
-                    <div
-                      key={`${fileKey}-${index}`}
-                      draggable
-                      onDragStart={(event) => {
-                        event.stopPropagation();
-                        setCardLinkDrag({ kind: "stl", stlFileKey: fileKey });
-                      }}
-                      onDragEnd={() => {
-                        setCardLinkDrag(null);
-                        setCardDragOverKey(null);
-                      }}
-                      onClick={() => {
-                        openDetailModal(index);
-                      }}
-                      onDragOver={(event) => {
-                        event.preventDefault();
-                        event.stopPropagation();
-                        setCardDragOverKey(fileKey);
-                      }}
-                      onDragLeave={(event) => {
-                        event.preventDefault();
-                        event.stopPropagation();
-                        setCardDragOverKey((prev) => (prev === fileKey ? null : prev));
-                      }}
-                      onDrop={(event) =>
-                        handleCardDrop(event, fileKey, {
-                          selectIndex: index,
-                          targetStlFileKey: fileKey,
-                        })
-                      }
-                      data-file-index={index}
-                      className={`relative shrink-0 app-glass-card w-full px-4 py-3.5 rounded-xl cursor-pointer transition-all ${baseClasses} ${stateClasses} ${ringClasses} ${cardDragOverKey === fileKey ? "ring-2 ring-blue-300 ring-offset-2 ring-offset-white border-blue-300 bg-blue-50/40" : ""} hover:border-gray-400`}
-                    >
-                      <div className="relative z-10 flex flex-col gap-1.5">
-                        <div className="flex items-center justify-between gap-3">
-                          <div className="truncate flex-1">{filename}</div>
-                          <div className="flex items-center gap-1">
-                            {!primaryCompanion && (
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant="outline"
-                                className="h-7 px-2 text-xs"
-                                onClick={(event) => {
-                                  event.stopPropagation();
-                                  setSelectedPreviewIndex(index);
-                                  setPendingCompanionTargetStlKey(fileKey);
-                                  companionInputRef.current?.click();
-                                }}
-                              >
-                                구성정보 추가
-                              </Button>
-                            )}
-                            {isVerified && (
-                              <Check
-                                className="w-4 h-4 text-primary"
-                                aria-label="확인됨"
-                              />
-                            )}
-                            <button
-                              type="button"
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                handleRemoveFile(index);
-                              }}
-                              className="p-1 text-slate-400 hover:text-red-500"
-                              aria-label="파일 삭제"
-                            >
-                              <X className="w-4 h-4" />
-                            </button>
-                          </div>
-                        </div>
-                        <div className="flex items-center justify-between gap-2 text-xs">
-                          <div className="min-w-0 flex items-center gap-1.5 text-sky-700">
-                            <Badge className="bg-sky-600 hover:bg-sky-600">구성정보</Badge>
-                            {primaryCompanion ? (
-                              <span
-                                className="truncate cursor-grab active:cursor-grabbing"
-                                title={`${primaryCompanion.name} (드래그해서 분리/결합)`}
-                                draggable
-                                onDragStart={(event) => {
-                                  event.stopPropagation();
-                                  setCardLinkDrag({
-                                    kind: "companion",
-                                    companionFileKey: getCompanionFileKey(primaryCompanion),
-                                    sourceStlFileKey: fileKey,
-                                  });
-                                }}
-                                onDragEnd={() => {
-                                  setCardLinkDrag(null);
-                                  setCardDragOverKey(null);
-                                }}
-                              >
-                                {primaryCompanion.name}
-                              </span>
-                            ) : (
-                              <span
-                                className="truncate text-slate-500"
-                                title="STL 파일이 있는 폴더에서 구성정보 파일을 추가해 주세요."
-                              >
-                                STL 파일이 있는 폴더에서 구성정보 파일을 추가해 주세요.
-                              </span>
-                            )}
-                            {effectiveCompanions.length > 1 && (
-                              <span className="text-slate-500">+{effectiveCompanions.length - 1}개</span>
-                            )}
-                          </div>
-                          {primaryCompanion && (
-                            <button
-                              type="button"
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                handleRemoveCompanionFile(primaryCompanion);
-                              }}
-                              className="p-1 text-slate-400 hover:text-red-500"
-                              aria-label="구성정보 삭제"
-                            >
-                              <X className="w-3.5 h-3.5" />
-                            </button>
-                          )}
-                        </div>
-
-                        {estimatedShip && (
-                          <div className="flex items-center gap-1.5 text-xs text-slate-500">
-                            <Calendar className="w-3 h-3" />
-                            <span>예상 발송: {estimatedShip}</span>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-          </div>
         </div>
       </div>
 
-      <Dialog open={isDetailOpen} onOpenChange={handleDialogOpenChange}>
-        <DialogContent className="w-[calc(100vw-1rem)] sm:w-[1180px] lg:w-[980px] max-w-[calc(100vw-1rem)] max-h-[92vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="text-lg font-semibold">
-              STL 확인 및 정보 입력
-            </DialogTitle>
-          </DialogHeader>
-          <div className="grid grid-cols-1 lg:grid-cols-[52%_48%] gap-4 items-stretch sm:pr-2">
-            <div className="app-glass-card app-glass-card--lg h-full flex flex-col">
-              <div className="app-glass-card-content flex-1">
-                {detailFile ? (
-                  <StlPreviewViewer
-                    file={detailFile}
-                    showOverlay={false}
-                    className="min-h-[240px] h-full"
-                    onDiameterComputed={handleDiameterComputed}
-                  />
-                ) : (
-                  <div className="flex items-center justify-center h-[200px] text-sm text-muted-foreground">
-                    STL Preview
-                  </div>
-                )}
-              </div>
-            </div>
-            <div className="flex flex-col gap-3 h-full">
-              <div className="app-glass-card app-glass-card--lg h-full flex flex-col">
-                <div className="app-glass-card-content space-y-3 text-sm flex-1 flex flex-col">
-                  <div className="flex flex-col gap-2">
-                    <div className="text-xs uppercase tracking-[0.2em] text-slate-400">
-                      임플란트/환자 정보
-                    </div>
-                  </div>
-                  <NewRequestPatientImplantFields
-                    caseInfos={detailCaseInfos}
-                    setCaseInfos={setDetailCaseInfos}
-                    showImplantSelect={showImplantSelect}
-                    readOnly={!detailFile}
-                    implantSelectSource="caseInfos"
-                    connections={connections}
-                    familyOptions={familyOptions}
-                    typeOptions={typeOptions}
-                    implantManufacturer={implantManufacturer}
-                    setImplantManufacturer={setImplantManufacturer}
-                    implantBrand={implantBrand}
-                    setImplantBrand={setImplantBrand}
-                    implantFamily={implantFamily}
-                    setImplantFamily={setImplantFamily}
-                    implantType={implantType}
-                    setImplantType={setImplantType}
-                    syncSelectedConnection={syncSelectedConnection}
-                    clinicNameOptions={clinicNameOptions}
-                    patientNameOptions={patientNameOptions}
-                    teethOptions={teethOptions}
-                    addClinicPreset={addClinicPreset}
-                    clearAllClinicPresets={clearAllClinicPresets}
-                    addPatientPreset={addPatientPreset}
-                    clearAllPatientPresets={clearAllPatientPresets}
-                    addTeethPreset={addTeethPreset}
-                    clearAllTeethPresets={clearAllTeethPresets}
-                    handleAddOrSelectClinic={handleAddOrSelectClinic}
-                  />
-
-                  {/* 유지홈 옵션 */}
-                  <div className="flex flex-row items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2.5">
-                    <div className="flex items-center gap-1.5">
-                      <div className="text-sm font-semibold text-slate-600">
-                        유지홈
-                      </div>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <button
-                            type="button"
-                            className="inline-flex items-center justify-center text-slate-400 hover:text-blue-600 transition-colors"
-                            aria-label="유지홈 옵션 가이드"
-                          >
-                            <CircleHelp className="h-4 w-4" />
-                          </button>
-                        </TooltipTrigger>
-                        <TooltipContent
-                          side="bottom"
-                          align="center"
-                          alignOffset={-220}
-                          collisionPadding={20}
-                          className="w-[700px] max-w-[calc(100vw-3rem)] p-4"
-                        >
-                          <div className="mb-2 text-xs font-semibold text-slate-600">
-                            유지홈 옵션 예시
-                          </div>
-                          <div className="grid grid-cols-2 gap-4">
-                            <div className="rounded-md border border-slate-200 bg-white p-2.5">
-                              <img
-                                src="/images/new-request/retention-groove-none.jpeg"
-                                alt="유지홈 없음"
-                                className="h-52 w-full rounded-md border border-slate-200 bg-slate-50 p-1 object-cover object-top"
-                              />
-                              <span className="mt-1.5 block text-center text-xs font-medium text-slate-600">
-                                없음
-                              </span>
-                            </div>
-
-                            <div className="rounded-md border border-slate-200 bg-white p-2.5">
-                              <img
-                                src="/images/new-request/retention-groove-exist.jpeg"
-                                alt="유지홈 있음"
-                                className="h-52 w-full rounded-md border border-slate-200 bg-slate-50 p-1 object-cover object-top"
-                              />
-                              <span className="mt-1.5 block text-center text-xs font-medium text-slate-600">
-                                있음
-                              </span>
-                            </div>
-                          </div>
-                        </TooltipContent>
-                      </Tooltip>
-                    </div>
-                    <RadioGroup
-                      value={
-                        detailCaseInfos?.retentionGroove === "deep"
-                          ? "deep"
-                          : "none"
-                      }
-                      onValueChange={(value) =>
-                        setDetailCaseInfos({
-                          retentionGroove: value as "none" | "deep",
-                        })
-                      }
-                      className="flex items-center gap-10"
-                      disabled={!detailFile}
-                    >
-                      <div className="flex items-center space-x-2">
-                        <RadioGroupItem
-                          value="none"
-                          id="rg-none"
-                          className="border-slate-300 text-blue-600"
-                        />
-                        <Label
-                          htmlFor="rg-none"
-                          className="text-sm text-slate-700 cursor-pointer"
-                        >
-                          없음
-                        </Label>
-                      </div>
-
-                      <div className="flex items-center space-x-2">
-                        <RadioGroupItem
-                          value="deep"
-                          id="rg-deep"
-                          className="border-slate-300 text-blue-600"
-                        />
-                        <Label
-                          htmlFor="rg-deep"
-                          className="text-sm text-slate-700 cursor-pointer"
-                        >
-                          있음
-                        </Label>
-                      </div>
-                    </RadioGroup>
-                  </div>
-
-
-
-                  <div className="flex flex-col gap-2 rounded-lg border border-blue-100 bg-blue-50/60 px-3 py-2">
-                    <div className="flex items-center justify-between gap-2 flex-wrap">
-                      <span className="text-sm font-semibold text-slate-700">
-                        찾으시는 임플란트가 없나요?
-                      </span>
-                      {!showNewSystemForm ? (
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="secondary"
-                          className="bg-white text-blue-700 border-blue-200 hover:bg-blue-50"
-                          onClick={() => setShowNewSystemForm(true)}
-                        >
-                          신규 임플란트 요청
-                        </Button>
-                      ) : (
-                        <div className="flex items-center gap-2">
-                          <Button
-                            type="button"
-                            size="sm"
-                            onClick={handleNewSystemRequestClick}
-                          >
-                            요청
-                          </Button>
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="outline"
-                            onClick={resetNewSystemForm}
-                          >
-                            취소
-                          </Button>
-                        </div>
-                      )}
-                    </div>
-                    {showNewSystemForm && (
-                      <div className="flex flex-col gap-2">
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                          <Input
-                            placeholder="Manufacturer"
-                            value={newSystemManufacturer}
-                            onChange={(e) =>
-                              setNewSystemManufacturer(e.target.value)
-                            }
-                          />
-                          <Input
-                            placeholder="Brand"
-                            value={newSystemBrand}
-                            onChange={(e) => setNewSystemBrand(e.target.value)}
-                          />
-                          <Input
-                            placeholder="Family"
-                            value={newSystemFamily}
-                            onChange={(e) => setNewSystemFamily(e.target.value)}
-                          />
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-                <DialogFooter className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between pt-4">
-                  <div className="flex items-center gap-2">
-                    <Button
-                      type="button"
-                      variant="destructive"
-                      onClick={() => {
-                        if (detailIndex !== null) {
-                          handleRemoveFile(detailIndex);
-                        }
-                        setIsDetailOpen(false);
-                      }}
-                    >
-                      삭제
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => setIsDetailOpen(false)}
-                    >
-                      취소
-                    </Button>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      type="button"
-                      className={
-                        highlightUnverifiedArrows
-                          ? "animate-bounce bg-primary text-white"
-                          : undefined
-                      }
-                      onClick={() => {
-                        if (detailIndex !== null) {
-                          void handleVerifyFile(detailIndex, {
-                            stayInModal: true,
-                          });
-                        }
-                      }}
-                    >
-                      확인 & 다음
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      className="text-slate-500"
-                      onClick={() => {
-                        moveToNextDetail(); // 옵션 없이 호출하여 항상 다음 파일로 이동. 모달은 닫지 않음.
-                      }}
-                      disabled={!files.length}
-                    >
-                      건너뛰기
-                    </Button>
-                  </div>
-                </DialogFooter>
-              </div>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-      <AlertDialog
-        open={companionPromptOpen}
-        onOpenChange={(open) => {
-          setCompanionPromptOpen(open);
+      <NewRequestDetailDialog
+        open={isDetailOpen}
+        onOpenChange={handleDialogOpenChange}
+        detailIndex={detailIndex}
+        selectedPreviewIndex={selectedPreviewIndex}
+        files={files}
+        detailFile={detailFile}
+        detailCaseInfos={detailCaseInfos}
+        setDetailCaseInfos={setDetailCaseInfos}
+        handleDiameterComputed={handleDiameterComputed}
+        connections={connections}
+        familyOptions={familyOptions}
+        typeOptions={typeOptions}
+        implantManufacturer={implantManufacturer}
+        setImplantManufacturer={setImplantManufacturer}
+        implantBrand={implantBrand}
+        setImplantBrand={setImplantBrand}
+        implantFamily={implantFamily}
+        setImplantFamily={setImplantFamily}
+        implantType={implantType}
+        setImplantType={setImplantType}
+        syncSelectedConnection={syncSelectedConnection}
+        clinicNameOptions={clinicNameOptions}
+        patientNameOptions={patientNameOptions}
+        teethOptions={teethOptions}
+        addClinicPreset={addClinicPreset}
+        clearAllClinicPresets={clearAllClinicPresets}
+        addPatientPreset={addPatientPreset}
+        clearAllPatientPresets={clearAllPatientPresets}
+        addTeethPreset={addTeethPreset}
+        clearAllTeethPresets={clearAllTeethPresets}
+        handleAddOrSelectClinic={handleAddOrSelectClinic}
+        highlightUnverifiedArrows={highlightUnverifiedArrows}
+        handleRemoveFile={handleRemoveFile}
+        onVerifyAndNext={(index) => handleVerifyFile(index, { stayInModal: true })}
+        onSkip={() => {
+          moveToNextDetail();
         }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>구성정보 파일도 함께 올릴까요?</AlertDialogTitle>
-            <AlertDialogDescription>
-              지금은 STL만 첨부되었어요.
-              <br />
-              <strong>xml(3Shape)</strong> 또는 <strong>constructionInfo (ExoCAD)</strong> 파일을 함께 올려주세요.
-              <br />
-              없으면 이번에는 구성정보 없이 진행할 수 있어요.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel onClick={handleBypassMissingCompanion}>
-              구성정보 없이 진행
-            </AlertDialogCancel>
-            <AlertDialogAction
-              onClick={(e) => {
-                e.preventDefault();
-                setPendingCompanionTargetStlKey(null);
-                companionInputRef.current?.click();
-                setCompanionPromptOpen(false);
-              }}
-            >
-              구성정보 파일 업로드
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+        toast={toast}
+      />
 
-      <AlertDialog
-        open={!!pendingCompanionReplace}
-        onOpenChange={(open) => {
-          if (!open) {
-            setPendingCompanionReplace(null);
-          }
+      <NewRequestCompanionDialogs
+        companionPromptOpen={companion.companionPromptOpen}
+        setCompanionPromptOpen={companion.setCompanionPromptOpen}
+        onBypassMissingCompanion={companion.handleBypassMissingCompanion}
+        onUploadCompanion={() => {
+          companion.setPendingCompanionTargetStlKey(null);
+          companionInputRef.current?.click();
         }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>구성정보를 교체할까요?</AlertDialogTitle>
-            <AlertDialogDescription>
-              이미 이 STL 케이스에 구성정보가 연결되어 있습니다.
-              <br />
-              새로 선택한 구성정보로 교체하면 기존 연결은 해제됩니다.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel
-              onClick={() => {
-                setPendingCompanionReplace(null);
-              }}
-            >
-              취소
-            </AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => {
-                if (!pendingCompanionReplace) return;
-                linkCompanionToStl(
-                  pendingCompanionReplace.stlFileKey,
-                  pendingCompanionReplace.companionFileKey,
-                  { replace: true },
-                );
-                setPendingCompanionReplace(null);
-                toast({
-                  title: "구성정보를 교체했어요",
-                  description: "새 구성정보를 이 STL 케이스에 연결했습니다.",
-                  duration: 2200,
-                });
-              }}
-            >
-              교체하기
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      <AlertDialog
-        open={confirmNewSystemOpen}
-        onOpenChange={(open) => {
-          if (!open) {
-            setConfirmNewSystemOpen(false);
-            setPendingNewSystem(null);
-          }
+        pendingCompanionReplace={companion.pendingCompanionReplace}
+        setPendingCompanionReplace={companion.setPendingCompanionReplace}
+        onConfirmReplace={(stlFileKey, companionFileKey) => {
+          companion.linkCompanionToStl(stlFileKey, companionFileKey, { replace: true });
         }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              신규 임플란트 의뢰로 접수할까요?
-            </AlertDialogTitle>
-            <AlertDialogDescription>{newSystemInfoCopy}</AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel
-              onClick={() => {
-                setConfirmNewSystemOpen(false);
-                setPendingNewSystem(null);
-              }}
-            >
-              취소
-            </AlertDialogCancel>
-            <AlertDialogAction
-              onClick={async () => {
-                if (!pendingNewSystem) return;
-                const { manufacturer, brand, family } = pendingNewSystem;
-                const message = "랩 아날로그 샘플 한 개를 요청드립니다";
-                setDetailCaseInfos({
-                  implantManufacturer: manufacturer,
-                  implantBrand: brand,
-                  implantFamily: family,
-                  newSystemRequest: {
-                    requested: true,
-                    manufacturer,
-                    brand,
-                    family,
-                    message,
-                    free: true,
-                    tag: "신규 임플란트 의뢰",
-                  },
-                });
-                toast({
-                  title: "신규 임플란트로 접수",
-                  description:
-                    "무상 처리 및 랩 아날로그 샘플 요청으로 전달됩니다.",
-                  duration: 3500,
-                });
-                setShowNewSystemForm(false);
-                setConfirmNewSystemOpen(false);
-                setPendingNewSystem(null);
-                const nextIndex = detailIndex ?? selectedPreviewIndex;
-                if (nextIndex !== null && nextIndex >= 0) {
-                  await handleVerifyFile(nextIndex, { stayInModal: true });
-                }
-              }}
-            >
-              확인
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+        toast={toast}
+      />
     </div>
   );
 }

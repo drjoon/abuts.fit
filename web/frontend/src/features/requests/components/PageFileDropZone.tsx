@@ -80,13 +80,14 @@ const traverseDroppedEntry = async (
   return [];
 };
 
-const extractDroppedFiles = async (dataTransfer: DataTransfer | null) => {
-  if (!dataTransfer) return [];
-
-  const items = Array.from(dataTransfer.items || []);
+const extractDroppedFiles = async (
+  droppedItems: DataTransferItem[],
+  droppedDirectFiles: File[],
+) => {
+  const items = Array.from(droppedItems || []);
 
   if (!items.length) {
-    return dedupeFiles(Array.from(dataTransfer.files || []));
+    return dedupeFiles(Array.from(droppedDirectFiles || []));
   }
 
   const all: File[] = [];
@@ -125,7 +126,7 @@ const extractDroppedFiles = async (dataTransfer: DataTransfer | null) => {
     if (file) all.push(file);
   }
 
-  const directFiles = Array.from(dataTransfer.files || []);
+  const directFiles = Array.from(droppedDirectFiles || []);
   return dedupeFiles([...all, ...directFiles]);
 };
 
@@ -176,8 +177,11 @@ export function PageFileDropZone({
       dragCounterRef.current = 0;
       setIsDragActive(false);
 
+      const droppedItems = Array.from(event.dataTransfer?.items || []);
+      const droppedDirectFiles = Array.from(event.dataTransfer?.files || []);
+
       void (async () => {
-        const files = await extractDroppedFiles(event.dataTransfer || null);
+        const files = await extractDroppedFiles(droppedItems, droppedDirectFiles);
         if (files.length > 0) {
           onFilesRef.current(files);
         }
