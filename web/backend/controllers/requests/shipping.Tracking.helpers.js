@@ -297,12 +297,33 @@ const buildDeliveryMeta = (deliveryInfo) => {
 };
 
 export const emitDeliveryUpdated = async (requestDoc, extra = {}) => {
-  const normalized = await normalizeRequestForResponse(requestDoc);
-  const deliveryInfo =
-    requestDoc?.deliveryInfoRef &&
-    typeof requestDoc.deliveryInfoRef === "object"
-      ? requestDoc.deliveryInfoRef
+  const deliveryInfoRef = requestDoc?.deliveryInfoRef;
+  let deliveryInfo =
+    deliveryInfoRef && typeof deliveryInfoRef === "object"
+      ? deliveryInfoRef
       : null;
+
+  if (!deliveryInfo) {
+    const deliveryInfoId = String(
+      deliveryInfoRef?._id || deliveryInfoRef || "",
+    ).trim();
+    if (deliveryInfoId && Types.ObjectId.isValid(deliveryInfoId)) {
+      deliveryInfo = await DeliveryInfo.findById(deliveryInfoId)
+        .lean()
+        .catch(() => null);
+    }
+  }
+
+  const requestForEvent = deliveryInfo
+    ? {
+        ...(typeof requestDoc?.toObject === "function"
+          ? requestDoc.toObject()
+          : requestDoc),
+        deliveryInfoRef: deliveryInfo,
+      }
+    : requestDoc;
+
+  const normalized = await normalizeRequestForResponse(requestForEvent);
   const deliveryMeta = buildDeliveryMeta(deliveryInfo);
   if (normalized && typeof normalized === "object") {
     normalized.wasPickedUp = deliveryMeta.wasPickedUp;

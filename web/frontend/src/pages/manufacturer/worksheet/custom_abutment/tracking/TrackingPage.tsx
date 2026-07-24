@@ -167,78 +167,24 @@ const getShippingStatus = (req: ManufacturerRequest) => {
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/shipping/components/MailboxGrid.tsx
 // - web/backend/controllers/requests/shipping.controller.js
 // - web/backend/models/request.model.js
-const getManualDeliveryMethodsFromRequest = (req: ManufacturerRequest) => {
-  return Array.from(
-    new Set(
-      (Array.isArray((req as any)?.shippingWorkflow?.manualDeliveryMethods)
-        ? (req as any).shippingWorkflow.manualDeliveryMethods
-        : []
-      )
-        .map((value: unknown) => String(value || "").trim())
-        .filter(Boolean),
-    ),
-  );
+const getManualDeliveryMethodsFromRequest = (
+  req: ManufacturerRequest,
+): string[] => {
+  const methods = (Array.isArray((req as any)?.shippingWorkflow?.manualDeliveryMethods)
+    ? (req as any).shippingWorkflow.manualDeliveryMethods
+    : []
+  )
+    .map((value: unknown) => String(value || "").trim())
+    .filter(Boolean) as string[];
+
+  return Array.from(new Set<string>(methods));
 };
 
-const getManualDeliveryMethodsFromRequests = (requests: ManufacturerRequest[]) => {
-  return Array.from(
-    new Set(
-      requests.flatMap((req) => getManualDeliveryMethodsFromRequest(req)),
-    ),
-  );
-};
-
-const getShippingModeLabel = (requests: ManufacturerRequest[]) => {
-  // 1) SSOT: DeliveryInfo.manualDeliveryMethods (세부 발송 방식)
-  const deliveryMethods = Array.from(
-    new Set(
-      requests.flatMap((req) => {
-        const di =
-          req?.deliveryInfoRef && typeof req.deliveryInfoRef === "object"
-            ? (req.deliveryInfoRef as any)
-            : null;
-        return (Array.isArray(di?.manualDeliveryMethods)
-          ? di.manualDeliveryMethods
-          : []
-        )
-          .map((value: unknown) => String(value || "").trim())
-          .filter(Boolean);
-      }),
-    ),
-  );
-  if (deliveryMethods.length > 0) {
-    return `${deliveryMethods.join(", ")}`;
+const getShippingModeLabel = (requests: ManufacturerRequest[]): string => {
+  for (const req of requests) {
+    const method = getManualDeliveryMethodsFromRequest(req)[0];
+    if (method) return method;
   }
-
-  // 2) 보조: Request.shippingWorkflow.manualDeliveryMethods
-  const methods = getManualDeliveryMethodsFromRequests(requests);
-  if (methods.length > 0) {
-    return `${methods.join(", ")}`;
-  }
-
-  // 3) 기본 택배사 표기
-  const carriers = Array.from(
-    new Set(
-      requests
-        .map((req) => {
-          const di =
-            req?.deliveryInfoRef && typeof req.deliveryInfoRef === "object"
-              ? (req.deliveryInfoRef as any)
-              : null;
-          const carrier = String(di?.carrier || "").trim();
-          if (!carrier) return "";
-          const normalized = carrier.toLowerCase();
-          if (normalized === "hanjin") return "한진택배";
-          return carrier;
-        })
-        .filter(Boolean),
-    ),
-  );
-
-  if (carriers.length > 0) {
-    return `${carriers.join(", ")}`;
-  }
-
   return "한진택배";
 };
 
@@ -356,9 +302,8 @@ export const TrackingInquiryPage = () => {
       url.searchParams.set("includeTotal", "0");
       url.searchParams.set("includeDelivery", "1");
       url.searchParams.set("rndUnmachinable", "0");
-      // backend tracking worksheet 캐시 키 분기용(필드 projection/정규화 업데이트 반영)
-      // v3: shippingWorkflow.manualDeliveryMethods 노출 보장
-      url.searchParams.set("trackingProjectionV", "3");
+      // backend tracking worksheet 캐시 키 분기용(발송 방식 SSOT를 shippingWorkflow.manualDeliveryMethods로 통일)
+      url.searchParams.set("trackingProjectionV", "5");
       const res = await fetch(url.pathname + url.search, {
         headers: { Authorization: `Bearer ${token}` },
         cache: "no-cache",
@@ -2352,17 +2297,17 @@ export const TrackingInquiryPage = () => {
                                               {ci.tooth || "-"}
                                             </div>
                                             {(() => {
-                                              const reqMethods =
+                                              const reqMethod =
                                                 getManualDeliveryMethodsFromRequest(
                                                   req as ManufacturerRequest,
-                                                );
-                                              if (!reqMethods.length) return null;
+                                                )[0];
+                                              if (!reqMethod) return null;
                                               return (
                                                 <div
                                                   className="text-[11px] text-indigo-700"
-                                                  title={reqMethods.join(", ")}
+                                                  title={reqMethod}
                                                 >
-                                                  기타 발송: {reqMethods.join(", ")}
+                                                  기타 발송: {reqMethod}
                                                 </div>
                                               );
                                             })()}

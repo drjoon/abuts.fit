@@ -142,7 +142,11 @@ export function resolveShippingWorkflowState({ requestLike, deliveryInfo }) {
       : {};
   const statusCode = String(tracking?.lastStatusCode || "").trim();
   const statusText = String(tracking?.lastStatusText || "").trim();
-  const manualDeliveryMethods = Array.from(
+  const carrierNormalized = String(deliveryInfo?.carrier || "")
+    .replace(/\s+/g, "")
+    .trim();
+
+  const savedManualDeliveryMethods = Array.from(
     new Set(
       (Array.isArray(saved?.manualDeliveryMethods)
         ? saved.manualDeliveryMethods
@@ -152,6 +156,25 @@ export function resolveShippingWorkflowState({ requestLike, deliveryInfo }) {
         .filter(Boolean),
     ),
   );
+  const deliveryInfoManualDeliveryMethods = Array.from(
+    new Set(
+      (Array.isArray(deliveryInfo?.manualDeliveryMethods)
+        ? deliveryInfo.manualDeliveryMethods
+        : []
+      )
+        .map((value) => String(value || "").trim())
+        .filter(Boolean),
+    ),
+  );
+
+  const manualDeliveryMethods =
+    savedManualDeliveryMethods.length > 0
+      ? savedManualDeliveryMethods
+      : deliveryInfoManualDeliveryMethods.length > 0
+        ? deliveryInfoManualDeliveryMethods
+        : carrierNormalized === "한진외"
+          ? ["방문 전달"]
+          : [];
   const printedAt =
     requestLike?.shippingLabelPrinted?.printedAt || saved?.printedAt || null;
   const acceptedAt = saved?.acceptedAt || null;

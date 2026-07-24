@@ -156,10 +156,13 @@
 - 저장 SSOT는 `Request.shippingWorkflow.manualDeliveryMethods` 입니다.
   - 배열은 중복/공백 제거 후 저장합니다.
   - `useNonHanjinShippingMethods=true` 인 경우 최소 1개 이상 방식이 필요합니다.
+- `DeliveryInfo.carrier`는 한진 외 발송 시 항상 `"한진 외"`로 저장합니다.
 - 한진 외 발송 선택 시 운송장번호 없이도 처리 가능해야 하며,
   추적관리 흐름은 `accepted/picked_up`을 거치지 않고 `completed(배송완료)`로 바로 반영합니다.
-- 추적관리/상세 화면은 `shippingWorkflow.manualDeliveryMethods`를 표시해,
-  한진 외 발송 이력을 확인할 수 있어야 합니다.
+- 추적관리/상세 화면은 `shippingWorkflow.manualDeliveryMethods` 단일 기준으로 표시합니다.
+- 레거시 데이터 보정 규칙:
+  - `carrier="한진 외"` 이고 `manualDeliveryMethods`가 비어 있는 과거 데이터는
+    응답 정규화(`resolveShippingWorkflowState`)에서 `"방문 전달"` 1개 방식으로 보정합니다.
 
 관련 파일:
 - `web/frontend/src/pages/manufacturer/worksheet/custom_abutment/shipping/components/MailboxGrid.tsx`
@@ -167,7 +170,10 @@
 - `web/frontend/src/pages/manufacturer/worksheet/custom_abutment/shipping/components/MailboxContentsModal.tsx`
 - `web/frontend/src/types/request.ts`
 - `web/backend/controllers/requests/shipping.controller.js`
+- `web/backend/controllers/requests/shipping.Tracking.helpers.js`
+- `web/backend/controllers/requests/utils.js`
 - `web/backend/models/request.model.js`
+- `web/backend/models/deliveryInfo.model.js`
 
 ### 1.1 보안 정보 관리
 
