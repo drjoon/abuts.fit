@@ -204,7 +204,12 @@ const getShippingModeLabel = (requests: ManufacturerRequest[]) => {
             req?.deliveryInfoRef && typeof req.deliveryInfoRef === "object"
               ? (req.deliveryInfoRef as any)
               : null;
-          return String(di?.carrier || "").trim();
+          const carrier = String(di?.carrier || "").trim();
+          if (!carrier) return "";
+          const normalized = carrier.toLowerCase();
+          if (normalized === "hanjin") return "한진택배";
+          if (carrier === "한진 외" || carrier === "한진외") return "방문 전달";
+          return carrier;
         })
         .filter(Boolean),
     ),

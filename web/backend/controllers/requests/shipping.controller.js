@@ -730,7 +730,9 @@ export async function manualHanjinPickupCompleted(req, res) {
       });
     }
 
-    const manualCarrier = useNonHanjinShippingMethods ? "한진 외" : "hanjin";
+    const manualCarrier = useNonHanjinShippingMethods
+      ? nonHanjinShippingMethods.join(", ")
+      : "hanjin";
     const manualStatusCode = useNonHanjinShippingMethods
       ? "91"
       : requestedManualStatusCode;
