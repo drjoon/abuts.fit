@@ -189,9 +189,32 @@ const getManualDeliveryMethodsFromRequests = (requests: ManufacturerRequest[]) =
 };
 
 const getShippingModeLabel = (requests: ManufacturerRequest[]) => {
+  // 1) SSOT: Request.shippingWorkflow.manualDeliveryMethods (DB 저장값)
   const methods = getManualDeliveryMethodsFromRequests(requests);
-  if (!methods.length) return "한진택배";
-  return `한진 외 (${methods.join(", ")})`;
+  if (methods.length > 0) {
+    return `${methods.join(", ")}`;
+  }
+
+  // 2) 보조: deliveryInfo.carrier (DB 저장값)
+  const carriers = Array.from(
+    new Set(
+      requests
+        .map((req) => {
+          const di =
+            req?.deliveryInfoRef && typeof req.deliveryInfoRef === "object"
+              ? (req.deliveryInfoRef as any)
+              : null;
+          return String(di?.carrier || "").trim();
+        })
+        .filter(Boolean),
+    ),
+  );
+
+  if (carriers.length > 0) {
+    return `${carriers.join(", ")}`;
+  }
+
+  return "한진택배";
 };
 
 export const TrackingInquiryPage = () => {
