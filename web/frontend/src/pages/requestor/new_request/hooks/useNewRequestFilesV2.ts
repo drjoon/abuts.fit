@@ -13,7 +13,6 @@ import {
   setStlBlob,
   setFileBlob,
 } from "@/shared/files/fileBlobCache";
-import { parseFilenames } from "@/shared/filename/parseFilename";
 import { parseFilenameWithRules } from "@/shared/filename/parseFilenameWithRules";
 import { request } from "@/shared/api/apiClient";
 import { removeUploadedFile } from "../utils/localFileStorage";
@@ -22,6 +21,121 @@ import { getLocalDraft, getFileKey } from "../utils/localDraftStorage";
 const API_BASE_URL =
   (import.meta.env.DEV && (import.meta.env.VITE_API_BASE_URL as string)) ||
   "/api";
+
+const FILENAME_AI_CACHE_STORAGE_KEY =
+  "abutsfit:new-request:filename-ai-cache:v1";
+const FILENAME_AI_CACHE_TTL_MS = 1000 * 60 * 60 * 24 * 7; // 7일
+
+type FilenameAiCacheEntry = {
+  clinicName: string;
+  patientName: string;
+  tooth: string;
+  cachedAt: number;
+};
+
+const filenameAiCache = new Map<string, FilenameAiCacheEntry>();
+let filenameAiCacheLoaded = false;
+
+const toFilenameAiCacheKey = (name: string, size: number) =>
+  `${normalize(name)}:${size}`;
+
+const loadFilenameAiCache = () => {
+  if (filenameAiCacheLoaded) return;
+  filenameAiCacheLoaded = true;
+
+  if (typeof window === "undefined") return;
+
+  try {
+    const raw = window.localStorage.getItem(FILENAME_AI_CACHE_STORAGE_KEY);
+    if (!raw) return;
+
+    const parsed = JSON.parse(raw) as Record<string, FilenameAiCacheEntry>;
+    if (!parsed || typeof parsed !== "object") return;
+
+    const now = Date.now();
+    Object.entries(parsed).forEach(([key, value]) => {
+      if (!value || typeof value !== "object") return;
+
+      const cachedAt = Number(value.cachedAt || 0);
+      if (!Number.isFinite(cachedAt) || now - cachedAt > FILENAME_AI_CACHE_TTL_MS) {
+        return;
+      }
+
+      filenameAiCache.set(key, {
+        clinicName: String(value.clinicName || ""),
+        patientName: String(value.patientName || ""),
+        tooth: String(value.tooth || ""),
+        cachedAt,
+      });
+    });
+  } catch {
+    // noop
+  }
+};
+
+const persistFilenameAiCache = () => {
+  if (typeof window === "undefined") return;
+
+  try {
+    const now = Date.now();
+    const serializable: Record<string, FilenameAiCacheEntry> = {};
+
+    filenameAiCache.forEach((value, key) => {
+      if (!value || now - value.cachedAt > FILENAME_AI_CACHE_TTL_MS) return;
+      serializable[key] = value;
+    });
+
+    window.localStorage.setItem(
+      FILENAME_AI_CACHE_STORAGE_KEY,
+      JSON.stringify(serializable),
+    );
+  } catch {
+    // noop
+  }
+};
+
+const getFilenameAiCache = (
+  key: string,
+): { clinicName: string; patientName: string; tooth: string } | null => {
+  loadFilenameAiCache();
+
+  const cached = filenameAiCache.get(key);
+  if (!cached) return null;
+
+  const now = Date.now();
+  if (now - cached.cachedAt > FILENAME_AI_CACHE_TTL_MS) {
+    filenameAiCache.delete(key);
+    persistFilenameAiCache();
+    return null;
+  }
+
+  return {
+    clinicName: String(cached.clinicName || ""),
+    patientName: String(cached.patientName || ""),
+    tooth: String(cached.tooth || ""),
+  };
+};
+
+const setFilenameAiCache = (
+  key: string,
+  value: { clinicName: string; patientName: string; tooth: string },
+) => {
+  const clinicName = String(value?.clinicName || "").trim();
+  const patientName = String(value?.patientName || "").trim();
+  const tooth = String(value?.tooth || "").trim();
+
+  // 의미 있는 값이 하나라도 있을 때만 캐시
+  if (!clinicName && !patientName && !tooth) return;
+
+  loadFilenameAiCache();
+  filenameAiCache.set(key, {
+    clinicName,
+    patientName,
+    tooth,
+    cachedAt: Date.now(),
+  });
+  persistFilenameAiCache();
+};
 
 type UseNewRequestFilesV2Params = {
   draftId: string | null;
@@ -98,9 +212,14 @@ export const useNewRequestFilesV2 = ({
   const pendingRemovalRef = useRef<Set<string>>(new Set());
 
   const draftIdRef = useRef(draftId);
+  const caseInfosMapRef = useRef(caseInfosMap);
   useEffect(() => {
     draftIdRef.current = draftId;
   }, [draftId]);
+
+  useEffect(() => {
+    caseInfosMapRef.current = caseInfosMap;
+  }, [caseInfosMap]);
 
   useEffect(() => {
     filesRef.current = files;
@@ -528,12 +647,20 @@ export const useNewRequestFilesV2 = ({
             duration: 2000,
           });
 
-          // 6. 파일 업로드 직후 파일명 파싱으로 환자정보 자동 채우기
-          //    1차: 파일명 파싱
-          //    2차: 파싱에 실패한 파일만 AI 분석(/api/ai/parse-filenames)으로 보완
+          // 6. 파일 업로드 직후 자동 인식
+          //    1차: 룰/regex 기반으로 빠르게 선반영
+          //    2차: 백엔드 AI(/api/ai/parse-filenames)는 "완전히 비어있는" 케이스만 호출
+          //         (치과/환자/치아 중 하나라도 이미 값이 있으면 재호출하지 않음)
           if (updateCaseInfos) {
             const filenamesForAi: string[] = [];
             const fileKeysForAi: string[] = [];
+            const parsedByRule = new Map<
+              string,
+              { clinicName?: string; patientName?: string; tooth?: string }
+            >();
+            const aiCacheKeyByFileKey = new Map<string, string>();
+
+            const trimText = (value: unknown) => String(value || "").trim();
 
             // Draft가 저장한 정규화된 originalName 기준으로 파싱/AI 대상을 구성한다.
             // (optimistic 단계에서는 NFD 등으로 파싱이 실패할 수 있음)
@@ -545,23 +672,59 @@ export const useNewRequestFilesV2 = ({
 
               const fileKey = `${originalName}:${size}`;
               const parsed = parseFilenameWithRules(originalName);
+              parsedByRule.set(fileKey, parsed);
 
-              if (parsed.clinicName || parsed.patientName || parsed.tooth) {
-                // 파일명에서 정보를 추출한 경우 바로 Draft.caseInfos에 반영
+              const current =
+                (caseInfosMapRef.current &&
+                  (caseInfosMapRef.current as any)[fileKey]) ||
+                {};
+
+              const hasAnyCurrentValue =
+                !!trimText(current?.clinicName) ||
+                !!trimText(current?.patientName) ||
+                !!trimText(current?.tooth);
+
+              const hasAnyParsedValue =
+                !!trimText(parsed?.clinicName) ||
+                !!trimText(parsed?.patientName) ||
+                !!trimText(parsed?.tooth);
+
+              if (hasAnyParsedValue) {
+                // 1차 룰 결과 선반영
                 updateCaseInfos(fileKey, {
-                  _id: draftCase?._id, // 서버에서 생성된 ID 반영
+                  _id: draftCase?._id,
                   clinicName: parsed.clinicName || "",
                   patientName: parsed.patientName || "",
                   tooth: parsed.tooth || "",
                 });
-              } else {
-                // 파일명에서 아무 것도 못 찾은 파일은 AI 분석 대상으로 모은다
+              }
+
+              // 비용 절감을 위해 완전히 비어있는 케이스만 AI 호출
+              // (치과/환자/치아 중 하나라도 값이 있으면 이미 한 번 인식/입력된 것으로 간주)
+              if (!hasAnyCurrentValue && !hasAnyParsedValue) {
+                const cacheKey = toFilenameAiCacheKey(originalName, size);
+                const cached = getFilenameAiCache(cacheKey);
+                const hasAnyCachedValue =
+                  !!trimText(cached?.clinicName) ||
+                  !!trimText(cached?.patientName) ||
+                  !!trimText(cached?.tooth);
+
+                if (hasAnyCachedValue && cached) {
+                  updateCaseInfos(fileKey, {
+                    _id: draftCase?._id,
+                    clinicName: trimText(cached.clinicName),
+                    patientName: trimText(cached.patientName),
+                    tooth: trimText(cached.tooth),
+                  });
+                  return;
+                }
+
                 filenamesForAi.push(originalName);
                 fileKeysForAi.push(fileKey);
+                aiCacheKeyByFileKey.set(fileKey, cacheKey);
               }
             });
 
-            // 2차: 파일명 파싱으로도 정보가 안 나온 파일에 대해서만 AI 분석 수행
             if (filenamesForAi.length > 0 && !aiQuotaExhaustedRef.current) {
               (async () => {
                 try {
@@ -595,25 +758,67 @@ export const useNewRequestFilesV2 = ({
                   const items = (res.data as any)?.data || res.data;
                   if (!Array.isArray(items) || !items.length) return;
 
-                  // 파일명 기준으로 결과를 매핑하여 Draft.caseInfos에 반영
+                  // 동일 filename이 여러 개일 수 있어 queue 방식으로 인덱스 매핑
+                  const queueByFilename = new Map<string, number[]>();
+                  filenamesForAi.forEach((name, idx) => {
+                    const q = queueByFilename.get(name) || [];
+                    q.push(idx);
+                    queueByFilename.set(name, q);
+                  });
+
                   items.forEach((item: any) => {
-                    const idx = filenamesForAi.indexOf(item.filename);
-                    if (idx === -1) return;
+                    const queue = queueByFilename.get(String(item?.filename || ""));
+                    if (!queue || queue.length === 0) return;
+
+                    const idx = queue.shift() as number;
                     const fileKey = fileKeysForAi[idx];
                     const draftCase = newDraftFiles.find((ci: any) => {
                       const fm = ci?.file;
                       return `${fm?.originalName}:${fm?.size}` === fileKey;
                     });
 
+                    const current =
+                      (caseInfosMapRef.current && (caseInfosMapRef.current as any)[fileKey]) ||
+                      {};
+                    const fallback = parsedByRule.get(fileKey) || {};
+
+                    // 수동 입력이 이미 있으면 유지하고,
+                    // 빈 값만 AI -> 룰 순으로 채운다.
+                    const aiClinicName = trimText(item?.clinicName);
+                    const aiPatientName = trimText(item?.patientName);
+                    const aiTooth = trimText(item?.tooth);
+
+                    const clinicName =
+                      trimText(current?.clinicName) ||
+                      aiClinicName ||
+                      trimText(fallback?.clinicName);
+                    const patientName =
+                      trimText(current?.patientName) ||
+                      aiPatientName ||
+                      trimText(fallback?.patientName);
+                    const tooth =
+                      trimText(current?.tooth) ||
+                      aiTooth ||
+                      trimText(fallback?.tooth);
+
                     updateCaseInfos(fileKey, {
-                      _id: item._id || draftCase?._id, // 서버에서 생성된 ID 반영
-                      clinicName: item.clinicName || "",
-                      patientName: item.patientName || "",
-                      tooth: item.tooth || "",
+                      _id: item._id || draftCase?._id,
+                      clinicName,
+                      patientName,
+                      tooth,
                     });
+
+                    const cacheKey = aiCacheKeyByFileKey.get(fileKey);
+                    if (cacheKey) {
+                      setFilenameAiCache(cacheKey, {
+                        clinicName: aiClinicName,
+                        patientName: aiPatientName,
+                        tooth: aiTooth,
+                      });
+                    }
                   });
                 } catch (error) {
-                  // AI 분석 실패는 무시 (빈 상태 유지)
+                  // AI 분석 실패 시 1차 룰 결과를 유지
                 }
               })();
             }

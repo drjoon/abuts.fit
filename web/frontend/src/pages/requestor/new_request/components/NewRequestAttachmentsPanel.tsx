@@ -197,7 +197,7 @@ export function NewRequestAttachmentsPanel({
             여기를 클릭하거나 파일을 드래그해 추가하세요.
           </p>
           <p className="text-xs md:text-sm text-muted-foreground">
-            파일명에서 치과/환자/치아번호를 자동 인식합니다.
+            파일명에서 AI로 치과/환자/치아번호를 자동 인식합니다.
           </p>
         </div>
 

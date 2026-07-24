@@ -520,7 +520,24 @@ export function NewRequestDetailsSection({
         setCompanionPromptOpen={companion.setCompanionPromptOpen}
         onBypassMissingCompanion={companion.handleBypassMissingCompanion}
         onUploadCompanion={() => {
-          companion.setPendingCompanionTargetStlKey(null);
+          const stlFiles = files.filter((f) =>
+            String(f?.name || "").toLowerCase().endsWith(".stl"),
+          );
+
+          const selectedFile =
+            selectedPreviewIndex !== null ? files[selectedPreviewIndex] : null;
+
+          const targetStlFile =
+            selectedFile &&
+            String(selectedFile?.name || "").toLowerCase().endsWith(".stl")
+              ? selectedFile
+              : stlFiles.length === 1
+                ? stlFiles[0]
+                : null;
+
+          companion.setPendingCompanionTargetStlKey(
+            targetStlFile ? toNormalizedFileKey(targetStlFile) : null,
+          );
           companionInputRef.current?.click();
         }}
         pendingCompanionReplace={companion.pendingCompanionReplace}

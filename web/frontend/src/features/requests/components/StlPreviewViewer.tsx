@@ -426,6 +426,7 @@ export function StlPreviewViewer({
         geometry = loader.parse(buffer);
         geometry = mergeVertices(geometry, 1e-5);
         geometry.computeBoundingBox();
+        geometry.computeBoundingSphere();
         geometry.computeVertexNormals();
 
         const bbox = geometry.boundingBox!;
@@ -1778,7 +1779,7 @@ export function StlPreviewViewer({
         }
 
         const sphere = geometry.boundingSphere;
-        const radius = sphere ? sphere.radius : Math.max(maxDiameter / 2, 40);
+        const radius = sphere ? sphere.radius : Math.max(maxDiameter / 2, 1);
 
         // 모델의 실제 높이(totalLength)와 반경을 고려하여 카메라 거리 계산
         // 세로로 긴 모델이 화면 밖으로 벗어나지 않도록 bounding box의 크기를 반영
