@@ -142,6 +142,16 @@ export function resolveShippingWorkflowState({ requestLike, deliveryInfo }) {
       : {};
   const statusCode = String(tracking?.lastStatusCode || "").trim();
   const statusText = String(tracking?.lastStatusText || "").trim();
+  const manualDeliveryMethods = Array.from(
+    new Set(
+      (Array.isArray(saved?.manualDeliveryMethods)
+        ? saved.manualDeliveryMethods
+        : []
+      )
+        .map((value) => String(value || "").trim())
+        .filter(Boolean),
+    ),
+  );
   const printedAt =
     requestLike?.shippingLabelPrinted?.printedAt || saved?.printedAt || null;
   const acceptedAt = saved?.acceptedAt || null;
@@ -181,6 +191,8 @@ export function resolveShippingWorkflowState({ requestLike, deliveryInfo }) {
     canceledAt: canceledAt || null,
     trackingStatusCode: statusCode || null,
     trackingStatusText: statusText || null,
+    manualDeliveryMethods,
+    manualDeliveryMethodsUpdatedAt: saved?.manualDeliveryMethodsUpdatedAt || null,
     updatedAt:
       saved?.updatedAt ||
       completedAt ||
