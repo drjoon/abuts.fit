@@ -538,7 +538,16 @@ export const PreviewModal = ({
     const manufacturerHex = normalizeManufacturerHexRotationMode(
       (req as any)?.rnd?.manufacturerHexRotation,
     );
-    const effectiveHex = manufacturerHex || requestorHex;
+    const hasCadCompanionFiles =
+      Array.isArray((req as any)?.caseInfos?.cadCompanionFiles) &&
+      (req as any).caseInfos.cadCompanionFiles.length > 0;
+    const hasManualManufacturerPick = Boolean(
+      (req as any)?.rnd?.manufacturerHexRotationUpdatedAt,
+    );
+    const effectiveHex =
+      hasCadCompanionFiles && !hasManualManufacturerPick
+        ? "구성정보"
+        : manufacturerHex || requestorHex;
     setManufacturerHexRotationDraft(effectiveHex);
 
     if (tokens.length) {
@@ -1515,6 +1524,23 @@ export const PreviewModal = ({
     packMaterial ? `재질: ${packMaterial}` : "",
   ].filter(Boolean);
 
+  const overlayCadCompanionNames = Array.isArray(overlayCaseInfos?.cadCompanionFiles)
+    ? (overlayCaseInfos.cadCompanionFiles as Array<Record<string, unknown>>)
+        .map((file) => {
+          const nameCandidate =
+            String(file?.originalName || file?.filePath || file?.s3Key || "").trim();
+          return nameCandidate.split("/").pop() || "";
+        })
+        .filter(Boolean)
+    : [];
+  const primaryCadCompanionName = overlayCadCompanionNames[0] || "";
+  const hasCadCompanionFiles = overlayCadCompanionNames.length > 0;
+  const cadCompanionSummaryLabel = primaryCadCompanionName
+    ? overlayCadCompanionNames.length > 1
+      ? `${primaryCadCompanionName} 외 ${overlayCadCompanionNames.length - 1}개`
+      : primaryCadCompanionName
+    : "";
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
@@ -1599,8 +1625,21 @@ export const PreviewModal = ({
             </div>
 
             <div className="flex shrink-0 items-center gap-2">
+              {cadCompanionSummaryLabel ? (
+                <div
+                  className="inline-flex h-8 max-w-[260px] items-center rounded-md border border-sky-200 bg-sky-50 px-2 text-[12px] font-medium text-sky-700"
+                  title={overlayCadCompanionNames.join("\n")}
+                >
+                  <span className="mr-1 shrink-0 text-sky-600">구성정보</span>
+                  <span className="truncate">{cadCompanionSummaryLabel}</span>
+                </div>
+              ) : manufacturerHexRotationDraft === "구성정보" ? (
+                <div className="inline-flex h-8 max-w-[220px] items-center rounded-md border border-amber-200 bg-amber-50 px-2 text-[12px] font-medium text-amber-700">
+                  구성정보 파일 없음
+                </div>
+              ) : null}
               <div className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-1.5 py-1">
-                <span className="text-[11px] font-semibold text-slate-500">
+                <span className="mr-2 whitespace-nowrap text-[11px] font-semibold text-slate-500">
                   헥스 회전
                 </span>
                 <Select
@@ -1612,23 +1651,28 @@ export const PreviewModal = ({
                         : value === "구성정보"
                           ? "구성정보"
                           : "보정";
+                    if (next === "구성정보" && !hasCadCompanionFiles) return;
                     void handleSaveManufacturerHexRotation(next);
                   }}
                   disabled={
                     hexRotationSaving || reviewSaving || !onSaveManufacturerHexRotation
                   }
                 >
-                  <SelectTrigger className="h-7 min-w-[132px] rounded-md border border-slate-200 bg-slate-50 px-2 text-[12px] font-semibold text-slate-700 shadow-sm focus:ring-1 focus:ring-blue-200 disabled:opacity-60">
+                  <SelectTrigger className="h-7 min-w-[108px] rounded-md border border-slate-200 bg-slate-50 px-2 text-[12px] font-semibold text-slate-700 shadow-sm focus:ring-1 focus:ring-blue-200 disabled:opacity-60">
                     <SelectValue placeholder="보정" />
                   </SelectTrigger>
-                  <SelectContent align="end" className="min-w-[132px]">
+                  <SelectContent align="end" className="min-w-[108px]">
                     <SelectItem value="보정" className="text-[12px] font-medium">
                       보정
                     </SelectItem>
                     <SelectItem value="무보정" className="text-[12px] font-medium">
                       무보정
                     </SelectItem>
-                    <SelectItem value="구성정보" className="text-[12px] font-medium">
+                    <SelectItem
+                      value="구성정보"
+                      className="text-[12px] font-medium"
+                      disabled={!hasCadCompanionFiles}
+                    >
                       구성정보
                     </SelectItem>
                   </SelectContent>
@@ -1827,6 +1871,14 @@ export const PreviewModal = ({
             <div className="flex flex-wrap items-center gap-2 text-[13px] text-slate-600">
               {displayConnectionDiameter != null && (
                 <span>커넥션 직경 {displayConnectionDiameter.toFixed(2)}</span>
+              )}
+              {primaryCadCompanionName && (
+                <>
+                  <span>•</span>
+                  <span className="max-w-[360px] truncate" title={primaryCadCompanionName}>
+                    구성정보: {primaryCadCompanionName}
+                  </span>
+                </>
               )}
               {displayConnectionDiameter != null && (maxDiameter != null || maxLength != null || !!overlayImplantLine) && (
                 <span>•</span>

@@ -906,6 +906,14 @@
      - 식: `totalW = 30 + (-appliedDeg)`
   2. `무보정`: **회전 완전 미적용** (기본 `+30`도 미적용, telemetry도 무시)
   3. `구성정보`: CAD 좌표 구성파일(ExoCAD/3Shape) 기반 전처리 경로를 사용한다. `finalHexRotation`은 canonical 값(`보정`/`무보정`)만 사용하며, `구성정보` 선택 시 `보정`으로 저장한다.
+- 건별 기본 선택 우선순위(신규의뢰 생성/제조사 미선택 상태 포함):
+  1. `caseInfos.cadCompanionFiles`가 있으면 해당 건의 기본 제조사 모드는 `구성정보`다.
+  2. 구성정보가 없으면 `BusinessAnchor.requestSettings.defaultManufacturerHexRotation`(보정/무보정)을 사용한다.
+  3. 제조사가 PreviewModal에서 직접 변경하면 그 값을 우선한다(`rnd.manufacturerHexRotationUpdatedAt` 기록).
+- 사업자 디폴트 업데이트 정책(필수):
+  - `PATCH /api/requests/:id/rnd-hex-rotation`에서 `보정`/`무보정`을 선택한 경우에만
+    `BusinessAnchor.requestSettings.defaultManufacturerHexRotation`을 갱신한다.
+  - `구성정보` 선택은 건별 처리 모드이므로 **사업자 디폴트로 저장하지 않는다.**
 - Rhino telemetry 의미 SSOT:
   - `request-meta.caseInfos.hexRotation.appliedDeg`는 Rhino가 실제 mesh에 적용하지 않은 **가상 보정량(-phase_mod)** 이다.
 - `request-meta` 응답은 add-in이 파일명 추론/폴백 없이 SSOT를 직접 쓰도록 아래를 포함해야 한다.
@@ -918,6 +926,8 @@
 - `web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx`
 - `web/backend/modules/requests/request.routes.js`
 - `web/backend/controllers/requests/common.requests.controller.js`
+- `web/backend/controllers/requests/creation.from-draft.controller.js`
+- `web/backend/controllers/businesses/business.controller.js`
 - `web/backend/controllers/bg/bg.controller.js`
 - `web/backend/models/request.model.js`
 - `web/backend/models/businessAnchor.model.js`
@@ -925,6 +935,13 @@
 - `bg/pc1/esprit-addin/Helpers/BackendApiClient.cs`
 - `bg/pc1/esprit-addin/StlFileProcessor.cs`
 - `bg/pc1/rhino-server/compute/scripts/align_stl_coordinate.py`
+
+관련 폴더:
+- `web/frontend/src/pages/manufacturer/worksheet/custom_abutment/`
+- `web/backend/controllers/requests/`
+- `web/backend/controllers/businesses/`
+- `web/backend/controllers/bg/`
+- `bg/pc1/esprit-addin/`
 
 ### 4.3.5 신규의뢰 CAD 구성파일(ExoCAD/3Shape) 업로드/저장 정책 (2026-07-23)
 

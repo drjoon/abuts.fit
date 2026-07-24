@@ -1360,15 +1360,25 @@ export const getRequestMeta = asyncHandler(async (req, res) => {
   }
 
   const ci = request.caseInfos || {};
+  const cadConstructionMeta = buildCadConstructionMeta(ci);
   // 제조사 수동 좌표계 전처리 모드는 request-meta에서 canonical 값으로 전달한다.
   // canonical: "보정" | "무보정" | "구성정보"
   // request-meta에서 명시적으로 내려주어 add-in이 파일명/추정 로직 없이 SSOT를 직접 사용하게 한다.
   const manufacturerHexRotationRaw = String(
     request?.rnd?.manufacturerHexRotation || "",
   ).trim();
+  const manufacturerHexRotationFromRequest = parseManufacturerHexRotationModeOrNull(
+    manufacturerHexRotationRaw,
+  );
+  const hasCadCompanionFiles =
+    Array.isArray(ci?.cadCompanionFiles) && ci.cadCompanionFiles.length > 0;
+  const hasManualManufacturerPick = Boolean(
+    request?.rnd?.manufacturerHexRotationUpdatedAt,
+  );
   const manufacturerHexRotationMode =
-    parseManufacturerHexRotationModeOrNull(manufacturerHexRotationRaw) || "보정";
-  const cadConstructionMeta = buildCadConstructionMeta(ci);
+    hasCadCompanionFiles && !hasManualManufacturerPick
+      ? "구성정보"
+      : manufacturerHexRotationFromRequest || "보정";
   const normalizedFinishLine = normalizeFinishLineWithZExtrema(ci?.finishLine);
   const finishLinePoints = Array.isArray(normalizedFinishLine?.points)
     ? normalizedFinishLine.points

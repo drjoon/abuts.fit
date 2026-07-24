@@ -887,6 +887,7 @@ export async function getAllRequests(req, res) {
       "caseInfos.file",
       "caseInfos.camFile",
       "caseInfos.ncFile",
+      "caseInfos.cadCompanionFiles",
       "caseInfos.stageFiles",
       "caseInfos.reviewByStage",
       "caseInfos.rollbackCounts",
@@ -936,6 +937,7 @@ export async function getAllRequests(req, res) {
       "caseInfos.tooth",
       "caseInfos.requestorHexRotation",
       "caseInfos.finalHexRotation",
+      "caseInfos.cadCompanionFiles",
       "caseInfos.connectionDiameter",
       "caseInfos.maxDiameter",
       "caseInfos.totalLength",
@@ -992,6 +994,7 @@ export async function getAllRequests(req, res) {
       "caseInfos.connectionDiameter",
       "caseInfos.requestorHexRotation",
       "caseInfos.finalHexRotation",
+      "caseInfos.cadCompanionFiles",
       "caseInfos.implantManufacturer",
       "caseInfos.implantBrand",
       "caseInfos.implantFamily",
@@ -2051,7 +2054,12 @@ export const updateRndHexRotation = asyncHandler(async (req, res) => {
   request.set("caseInfos.requestorHexRotation", requestorHexRotation);
   request.set("caseInfos.finalHexRotation", finalHexRotation);
 
-  if (Types.ObjectId.isValid(requestorBusinessAnchorId)) {
+  // 의뢰자 사업자 디폴트 헥스 회전값은 보정/무보정만 저장한다.
+  // 구성정보는 파일 첨부 여부에 따라 선택되는 작업 모드이므로, 사업자 기본값으로 승격하면 안 된다.
+  if (
+    Types.ObjectId.isValid(requestorBusinessAnchorId) &&
+    manufacturerHexRotation !== "구성정보"
+  ) {
     await BusinessAnchor.updateOne(
       { _id: new Types.ObjectId(requestorBusinessAnchorId) },
       {

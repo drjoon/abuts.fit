@@ -1097,9 +1097,19 @@ export async function createRequestsFromDraft(req, res) {
             requestorDefaultHexRotation,
           );
 
+          const hasCadCompanionFiles =
+            Array.isArray(item.caseInfosWithFile?.cadCompanionFiles) &&
+            item.caseInfosWithFile.cadCompanionFiles.length > 0;
+
+          // 건별 기본 제조사 헥스 회전 모드 우선순위
+          // 1) CAD 구성정보가 있으면 "구성정보" 기본 선택
+          // 2) 없으면 사업자 defaultManufacturerHexRotation(보정/무보정) 사용
+          const resolvedManufacturerHexRotation = hasCadCompanionFiles
+            ? "구성정보"
+            : requestorDefaultManufacturerHexRotation || undefined;
+
           const resolvedFinalHexRotation = resolveFinalHexRotationValue({
-            manufacturerHexRotation:
-              requestorDefaultManufacturerHexRotation || undefined,
+            manufacturerHexRotation: resolvedManufacturerHexRotation,
           });
 
           const newRequest = {
@@ -1118,10 +1128,10 @@ export async function createRequestsFromDraft(req, res) {
               requestorHexRotation: resolvedRequestorHexRotation,
               finalHexRotation: resolvedFinalHexRotation,
             },
-            ...(requestorDefaultManufacturerHexRotation
+            ...(resolvedManufacturerHexRotation
               ? {
                   rnd: {
-                    manufacturerHexRotation: requestorDefaultManufacturerHexRotation,
+                    manufacturerHexRotation: resolvedManufacturerHexRotation,
                   },
                 }
               : {}),
@@ -1243,12 +1253,14 @@ export async function createRequestsFromDraft(req, res) {
               defaultRequestorHexRotation: requestorDefaultHexRotation,
               defaultManufacturerHexRotation:
                 requestorDefaultManufacturerHexRotation,
+              hasCadCompanionFiles,
               draftRequestorHexRotation: String(
                 item.caseInfosWithFile?.requestorHexRotation || "",
               ),
               savedRequestorHexRotation: String(
                 newRequest?.caseInfos?.requestorHexRotation || "",
               ),
+              resolvedManufacturerHexRotation,
               savedManufacturerHexRotation: String(
                 newRequest?.rnd?.manufacturerHexRotation || "",
               ),
