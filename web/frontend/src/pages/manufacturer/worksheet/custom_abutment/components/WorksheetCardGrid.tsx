@@ -10,8 +10,6 @@ import {
   FlaskConical,
   X,
 } from "lucide-react";
-import { formatImplantDisplay } from "@/utils/implant";
-import { generateModelNumber } from "@/utils/modelNumber";
 import { resolveImplantConnectionSpec } from "@/utils/implantConnectionSpec";
 import {
   type ManufacturerRequest,
@@ -489,7 +487,12 @@ export const WorksheetCardGrid = ({
           reviewStageKey !== "request" &&
           reviewStageKey !== "cam" &&
           Boolean(realtimeBadge || realtimeElapsedLabel);
+        const showSideSpecBadges =
+          shouldShowAnodizingOffBadge ||
+          (tabStage === "packing" && Boolean(resolvedConnectionSpec.screwType));
+
         const hasTopFloatingControls =
+          Boolean(onToggleSelected) ||
           Boolean(isSampleRequest) ||
           hasRealtimeProgress ||
           Boolean(
@@ -509,7 +512,7 @@ export const WorksheetCardGrid = ({
           Boolean(onApprove && !isCompletedForCurrentStage);
 
         const hasBottomFloatingBadges = Boolean(
-          deadlineInfo || (tabStage === "packing" && isPrinted),
+          shouldShowFullLot || deadlineInfo || (tabStage === "packing" && isPrinted),
         );
         const handleDrop = async (e: React.DragEvent) => {
           e.preventDefault();
@@ -593,7 +596,29 @@ export const WorksheetCardGrid = ({
             role={onToggleSelected ? "button" : undefined}
             aria-pressed={onToggleSelected ? isSelected : undefined}
           >
-            <div className="absolute left-2 top-2 z-20">
+            <div className="absolute left-2 top-2 z-20 flex items-center gap-1">
+              {onToggleSelected ? (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    handleToggleSelected(e);
+                  }}
+                  className={`h-7 w-7 rounded-full border flex items-center justify-center text-sm font-semibold transition ${
+                    isSelected
+                      ? "bg-blue-500 border-blue-500 text-white"
+                      : "bg-white border-slate-300 text-slate-500"
+                  }`}
+                  aria-label={
+                    isSelected
+                      ? `${String(request.requestId || "의뢰")} 선택 해제`
+                      : `${String(request.requestId || "의뢰")} 선택`
+                  }
+                >
+                  {isSelected ? "✓" : ""}
+                </button>
+              ) : null}
               {isSampleRequest && (
                 <Badge
                   variant="outline"
@@ -757,6 +782,26 @@ export const WorksheetCardGrid = ({
                 </button>
               )}
             </div>
+            {showSideSpecBadges && (
+              <div className="absolute right-3 top-1/2 -translate-y-1/2 z-20 flex flex-col items-end gap-1.5">
+                {shouldShowAnodizingOffBadge && (
+                  <Badge
+                    variant="outline"
+                    className="text-[16px] px-3 py-1 font-semibold leading-[1.1] border border-slate-300 bg-slate-100 text-slate-700"
+                  >
+                    아노X
+                  </Badge>
+                )}
+                {tabStage === "packing" && resolvedConnectionSpec.screwType && (
+                  <Badge
+                    variant="outline"
+                    className="text-[16px] px-3 py-1 font-extrabold leading-[1.1] border border-violet-200 bg-violet-50 text-violet-700"
+                  >
+                    스크류 {resolvedConnectionSpec.screwType}
+                  </Badge>
+                )}
+              </div>
+            )}
             {hasBottomFloatingBadges ? (
               <div className="absolute right-2 bottom-2 z-20 flex items-center gap-1 flex-nowrap">
                 {tabStage === "packing" && isPrinted && (
@@ -765,6 +810,11 @@ export const WorksheetCardGrid = ({
                     className="text-[10px] px-1.5 py-0 font-semibold border-slate-300 bg-slate-100 text-slate-500"
                   >
                     ✓ 출력 완료
+                  </Badge>
+                )}
+                {shouldShowFullLot && (
+                  <Badge variant="outline" className={`${lotBadgeClass} whitespace-nowrap`}>
+                    {lotCodeSource}
                   </Badge>
                 )}
                 {deadlineInfo && (
@@ -810,43 +860,11 @@ export const WorksheetCardGrid = ({
               }`}
             >
               <div
-                className="space-y-2 text-[15px] text-slate-700 rounded-xl p-3 transition"
+                className={`space-y-2 text-[15px] text-slate-700 rounded-xl p-3 transition ${showSideSpecBadges ? "pr-28" : ""}`}
                 onClick={handleOpenCardPreview}
               >
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
-                    {shouldShowAnodizingOffBadge && (
-                      <Badge
-                        variant="outline"
-                        className="text-[11px] px-2 py-0.5 font-semibold leading-[1.1] border border-slate-300 bg-slate-100 text-slate-700"
-                      >
-                        아노다이징 X
-                      </Badge>
-                    )}
-                    {shouldShowFullLot && (
-                      <div className="flex items-center gap-1.5">
-                        <Badge variant="outline" className={lotBadgeClass}>
-                          {lotCodeSource}
-                        </Badge>
-                        {generateModelNumber(caseInfos) && (
-                          <Badge
-                            variant="outline"
-                            className="text-[11px] px-2 py-0.5 font-semibold leading-[1.1] border border-slate-200 bg-slate-50 text-slate-600"
-                          >
-                            {generateModelNumber(caseInfos)}
-                          </Badge>
-                        )}
-                        {tabStage === "packing" &&
-                          resolvedConnectionSpec.screwType && (
-                            <Badge
-                              variant="outline"
-                              className="text-[11px] px-2 py-0.5 font-extrabold leading-[1.1] border border-violet-200 bg-violet-50 text-violet-700"
-                            >
-                              스크류 {resolvedConnectionSpec.screwType}
-                            </Badge>
-                          )}
-                      </div>
-                    )}
                     {isNewSystemRequest && (
                       <Badge
                         variant="outline"
@@ -1055,28 +1073,7 @@ export const WorksheetCardGrid = ({
                 </div>
               )}
             </CardContent>
-            {onToggleSelected ? (
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  handleToggleSelected(e);
-                }}
-                className={`absolute right-3 top-1/2 -translate-y-1/2 z-20 h-7 w-7 rounded-full border flex items-center justify-center text-sm font-semibold transition ${
-                  isSelected
-                    ? "bg-blue-500 border-blue-500 text-white"
-                    : "bg-white border-slate-300 text-slate-500"
-                }`}
-                aria-label={
-                  isSelected
-                    ? `${String(request.requestId || "의뢰")} 선택 해제`
-                    : `${String(request.requestId || "의뢰")} 선택`
-                }
-              >
-                {isSelected ? "✓" : ""}
-              </button>
-            ) : null}
+
           </Card>
         );
       })}
