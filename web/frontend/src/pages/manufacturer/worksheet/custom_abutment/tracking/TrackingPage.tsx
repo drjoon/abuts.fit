@@ -224,6 +224,11 @@ export const TrackingInquiryPage = () => {
   const [confirmAction, setConfirmAction] = useState<
     null | (() => Promise<void> | void)
   >(null);
+  const [confirmCancelAction, setConfirmCancelAction] = useState<
+    null | (() => Promise<void> | void)
+  >(null);
+  const [confirmLabel, setConfirmLabel] = useState("확인");
+  const [cancelLabel, setCancelLabel] = useState("취소");
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewFiles, setPreviewFiles] = useState<{
@@ -2374,6 +2379,9 @@ export const TrackingInquiryPage = () => {
         setConfirmTitle={setConfirmTitle}
         setConfirmDescription={setConfirmDescription}
         setConfirmAction={setConfirmAction}
+        setConfirmCancelAction={setConfirmCancelAction}
+        setConfirmLabel={setConfirmLabel}
+        setCancelLabel={setCancelLabel}
         setConfirmOpen={setConfirmOpen}
       />
 
@@ -2393,13 +2401,16 @@ export const TrackingInquiryPage = () => {
         open={confirmOpen}
         title={confirmTitle}
         description={confirmDescription}
-        confirmLabel="확인"
-        cancelLabel="취소"
+        confirmLabel={confirmLabel}
+        cancelLabel={cancelLabel}
         onConfirm={async () => {
           if (!confirmAction) return;
           const action = confirmAction;
           setConfirmOpen(false);
           setConfirmAction(null);
+          setConfirmCancelAction(null);
+          setConfirmLabel("확인");
+          setCancelLabel("취소");
           try {
             await action();
           } catch (error) {
@@ -2407,8 +2418,17 @@ export const TrackingInquiryPage = () => {
           }
         }}
         onCancel={() => {
+          const cancelAction = confirmCancelAction;
           setConfirmOpen(false);
           setConfirmAction(null);
+          setConfirmCancelAction(null);
+          setConfirmLabel("확인");
+          setCancelLabel("취소");
+          if (cancelAction) {
+            void Promise.resolve(cancelAction()).catch((error) => {
+              console.error("Confirm cancel action failed:", error);
+            });
+          }
         }}
       />
     </div>

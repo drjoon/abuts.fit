@@ -92,6 +92,11 @@ export const PackingPageContent = ({
   const [confirmAction, setConfirmAction] = useState<
     (() => void | Promise<void>) | null
   >(null);
+  const [confirmCancelAction, setConfirmCancelAction] = useState<
+    (() => void | Promise<void>) | null
+  >(null);
+  const [confirmLabel, setConfirmLabel] = useState("확인");
+  const [cancelLabel, setCancelLabel] = useState("취소");
   const [deletingNc, setDeletingNc] = useState<Record<string, boolean>>({});
   const [uploadProgress, setUploadProgress] = useState<Record<string, number>>(
     {},
@@ -1586,6 +1591,9 @@ export const PackingPageContent = ({
           setConfirmTitle={setConfirmTitle}
           setConfirmDescription={setConfirmDescription}
           setConfirmAction={setConfirmAction}
+          setConfirmCancelAction={setConfirmCancelAction}
+          setConfirmLabel={setConfirmLabel}
+          setCancelLabel={setCancelLabel}
           setConfirmOpen={setConfirmOpen}
         />
 
@@ -1593,13 +1601,16 @@ export const PackingPageContent = ({
           open={confirmOpen}
           title={confirmTitle}
           description={confirmDescription}
-          confirmLabel="확인"
-          cancelLabel="취소"
+          confirmLabel={confirmLabel}
+          cancelLabel={cancelLabel}
           onConfirm={async () => {
             if (!confirmAction) return;
             const action = confirmAction;
             setConfirmOpen(false);
             setConfirmAction(null);
+            setConfirmCancelAction(null);
+            setConfirmLabel("확인");
+            setCancelLabel("취소");
             try {
               await action();
             } catch (error) {
@@ -1607,8 +1618,17 @@ export const PackingPageContent = ({
             }
           }}
           onCancel={() => {
+            const cancelAction = confirmCancelAction;
             setConfirmOpen(false);
             setConfirmAction(null);
+            setConfirmCancelAction(null);
+            setConfirmLabel("확인");
+            setCancelLabel("취소");
+            if (cancelAction) {
+              void Promise.resolve(cancelAction()).catch((error) => {
+                console.error("Confirm cancel action failed:", error);
+              });
+            }
           }}
         />
 

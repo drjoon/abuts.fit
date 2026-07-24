@@ -4,6 +4,7 @@ import Machine from "../../models/machine.model.js";
 import CncMachine from "../../models/cncMachine.model.js";
 import Connection from "../../models/connection.model.js";
 import SystemSettings from "../../models/systemSettings.model.js";
+import BusinessAnchor from "../../models/businessAnchor.model.js";
 import {
   applyStatusMapping,
   ensureLotNumberForMachining,
@@ -671,12 +672,100 @@ export async function deleteStageFile(req, res) {
   }
 }
 
+const normalizeFinalHexRotation = (value) => {
+  return String(value || "").trim() === "무보정" ? "무보정" : "보정";
+};
+
+const normalizeRequestorDefaultManufacturerHexRotationOrNull = (value) => {
+  const v = String(value || "").trim();
+  if (!v) return null;
+  if (v === "보정" || v === "무보정" || v === "구성정보") return v;
+  // legacy "헥스회전각" 호환: 0=보정, 30=무보정
+  if (v === "0") return "보정";
+  if (v === "30") return "무보정";
+  return null;
+};
+
+const resolveOppositeFinalHexRotation = (value) => {
+  return normalizeFinalHexRotation(value) === "무보정" ? "보정" : "무보정";
+};
+
+const buildCaseInfosForDualHexClone = ({ sourceCaseInfos, now, oppositeHex }) => {
+  const caseInfos = {
+    ...(sourceCaseInfos || {}),
+    reviewByStage: {
+      request: {
+        status: "APPROVED",
+        updatedAt: now,
+        updatedBy: null,
+        reason: "",
+      },
+      cam: {
+        status: "PENDING",
+        updatedAt: null,
+        updatedBy: null,
+        reason: "",
+      },
+      machining: {
+        status: "PENDING",
+        updatedAt: null,
+        updatedBy: null,
+        reason: "",
+      },
+      packing: {
+        status: "PENDING",
+        updatedAt: null,
+        updatedBy: null,
+        reason: "",
+      },
+      shipping: {
+        status: "PENDING",
+        updatedAt: null,
+        updatedBy: null,
+        reason: "",
+      },
+      tracking: {
+        status: "PENDING",
+        updatedAt: null,
+        updatedBy: null,
+        reason: "",
+      },
+    },
+    rollbackCounts: {
+      request: 0,
+      cam: 0,
+      machining: 0,
+      packing: 0,
+      shipping: 0,
+      tracking: 0,
+    },
+    stageFiles: {
+      machining: null,
+      packing: null,
+      shipping: null,
+      tracking: null,
+    },
+    // 원본 의뢰의 CAM 파일을 그대로 사용해 복사본도 즉시 NC 생성 가능해야 한다.
+    camFile: sourceCaseInfos?.camFile || null,
+    ncFile: null,
+    finalHexRotation: oppositeHex,
+  };
+
+  return caseInfos;
+};
+
 export async function updateReviewStatusByStage(req, res) {
   const session = await mongoose.startSession();
   const { id } = req.params;
   try {
-    const { stage, status, reason, stageOverride, forceReprocess } =
-      req.body || {};
+    const {
+      stage,
+      status,
+      reason,
+      stageOverride,
+      forceReprocess,
+      processBothHexVariants,
+    } = req.body || {};
 
     if (!Types.ObjectId.isValid(id)) {
       return res
@@ -721,11 +810,19 @@ export async function updateReviewStatusByStage(req, res) {
         .trim()
         .toLowerCase() === "true";
 
+    const processBothHexVariantsFlag =
+      processBothHexVariants === true ||
+      String(processBothHexVariants || "")
+        .trim()
+        .toLowerCase() === "true";
+
     let resultRequest = null;
     let acceptedMessage = "";
     let previousManufacturerStage = null;
     let pendingEspritTriggerRequest = null;
+    const pendingAdditionalEspritTriggerRequests = [];
     let requestStageMachineSelection = null;
+    let isDuplicateRequestApprovalNoop = false;
 
     await session.withTransaction(async () => {
       const request = await Request.findById(id)
@@ -741,6 +838,35 @@ export async function updateReviewStatusByStage(req, res) {
 
       previousManufacturerStage =
         String(request.manufacturerStage || "").trim() || null;
+
+      const currentRequestReviewStatus = String(
+        request?.caseInfos?.reviewByStage?.request?.status || "",
+      )
+        .trim()
+        .toUpperCase();
+
+      // idempotency: 의뢰 단계 승인(APPROVED)이 이미 접수된 건은
+      // 동일 승인 재호출을 no-op으로 처리하여 큐 재등록/재실행을 막는다.
+      if (
+        status === "APPROVED" &&
+        effectiveStage === "request" &&
+        currentRequestReviewStatus === "APPROVED" &&
+        previousManufacturerStage === "의뢰"
+      ) {
+        isDuplicateRequestApprovalNoop = true;
+        acceptedMessage =
+          "이미 의뢰 승인 접수된 건입니다. 중복 승인 요청은 무시되었습니다.";
+        resultRequest = request;
+        console.log("[REVIEW] duplicate request approval noop", {
+          requestId: request.requestId,
+          requestMongoId: String(request._id || ""),
+          effectiveStage,
+          status,
+          previousManufacturerStage,
+          currentRequestReviewStatus,
+        });
+        return;
+      }
 
       // 재제작/R&D 플로우 안전장치:
       // 배송/추적 이력이 있는 normal 원본은 request 단계 재승인으로 CAM에 되돌아가면 안 된다.
@@ -952,6 +1078,148 @@ export async function updateReviewStatusByStage(req, res) {
               ? "강제 재실행으로 CAM 작업을 다시 시작했습니다. 처리 완료 후 상태가 자동으로 업데이트됩니다."
               : "CAM 작업 명령이 접수되었습니다. 처리 완료 후 상태가 자동으로 업데이트됩니다.";
           }
+
+          // related files (dual hex machining flow):
+          // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx
+          // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/hooks/useRequestFileHandlers.ts
+          // - web/backend/controllers/requests/common.requests.controller.js
+          // 정책: 의뢰 단계 승인 시 헥스 회전값이 아직 미확정(null)이고
+          // 작업자가 "보정/무보정 둘 다 가공"을 선택하면 반대 헥스 모드의 내부 복사본을 추가 생성한다.
+          // 복사본은 제조사 전용(sample)으로 처리되어 크레딧 소모 없이 별도 lot/NC를 생성한다.
+          const requestorBusinessAnchorIdRaw =
+            request.businessAnchorId || request?.requestor?.businessAnchorId || null;
+          const requestorBusinessAnchorId = String(
+            requestorBusinessAnchorIdRaw || "",
+          ).trim();
+          let requestorDefaultManufacturerHexRotation = null;
+
+          if (requestorBusinessAnchorId && Types.ObjectId.isValid(requestorBusinessAnchorId)) {
+            const requestorBusinessAnchor = await BusinessAnchor.findById(
+              requestorBusinessAnchorId,
+            )
+              .select({
+                "requestSettings.defaultManufacturerHexRotation": 1,
+                metadata: 1,
+              })
+              .session(session)
+              .lean();
+
+            const legacyHexRotationAngle =
+              requestorBusinessAnchor?.metadata?.hexRotationAngle ||
+              requestorBusinessAnchor?.metadata?.defaultManufacturerHexRotation ||
+              requestorBusinessAnchor?.metadata?.manufacturerHexRotation ||
+              null;
+
+            requestorDefaultManufacturerHexRotation =
+              normalizeRequestorDefaultManufacturerHexRotationOrNull(
+                requestorBusinessAnchor?.requestSettings
+                  ?.defaultManufacturerHexRotation || legacyHexRotationAngle,
+              );
+          }
+
+          const shouldCreateDualHexVariant =
+            processBothHexVariantsFlag &&
+            requestorDefaultManufacturerHexRotation === null;
+
+          if (shouldCreateDualHexVariant) {
+            const originalHex = normalizeFinalHexRotation(
+              request?.caseInfos?.finalHexRotation ||
+                request?.caseInfos?.requestorHexRotation ||
+                "보정",
+            );
+            const oppositeHex = resolveOppositeFinalHexRotation(originalHex);
+            const now = new Date();
+
+            const cloneCaseInfos = buildCaseInfosForDualHexClone({
+              sourceCaseInfos: request.caseInfos || {},
+              now,
+              oppositeHex,
+            });
+            cloneCaseInfos.reviewByStage.request.updatedBy = req.user?._id || null;
+
+            const requestorId = request?.requestor?._id || request?.requestor || null;
+            const cloneBusinessAnchorId =
+              request.businessAnchorId || request?.requestor?.businessAnchorId || null;
+
+            const clonedRequest = new Request({
+              title: request.title || "",
+              description: request.description || "",
+              referenceIds: Array.isArray(request.referenceIds)
+                ? request.referenceIds
+                : [],
+              caseInfos: cloneCaseInfos,
+              requestor: requestorId,
+              businessAnchorId: cloneBusinessAnchorId,
+              caManufacturer: req.user?._id || request.caManufacturer || null,
+              manufacturerStage: "의뢰",
+              source: "manufacturer_sample",
+              lotNumber: {
+                material: String(request?.lotNumber?.material || "").trim() || null,
+                value: null,
+              },
+              assignedMachine: null,
+              productionSchedule: {
+                assignedMachine: null,
+                queuePosition: null,
+                machiningQty: 1,
+                diameter: request?.productionSchedule?.diameter || null,
+                diameterGroup: request?.productionSchedule?.diameterGroup || null,
+                actualCamStart: now,
+              },
+              rnd: {
+                doneAt: null,
+                doneBy: null,
+                doneFromStage: null,
+                memo: "",
+                memoUpdatedAt: null,
+                memoUpdatedBy: null,
+                manufacturerHexRotation: oppositeHex,
+                manufacturerHexRotationUpdatedAt: now,
+                manufacturerHexRotationUpdatedBy: req.user?._id || null,
+              },
+              price: {
+                amount: 0,
+                baseAmount: 0,
+                discountAmount: 0,
+                currency: "KRW",
+                rule: "manufacturer_sample",
+                paidAmount: 0,
+                bonusAmount: 0,
+              },
+              statusHistory: [
+                {
+                  status: "헥스 이중 가공 자동 복사",
+                  note: `원본 의뢰 ${request.requestId || "-"} 승인 시 반대 헥스(${oppositeHex}) 가공용으로 자동 생성`,
+                  updatedBy: req.user?._id || null,
+                  updatedAt: now,
+                },
+              ],
+            });
+
+            ensureReviewByStageDefaults(clonedRequest);
+            await ensureLotNumberForMachining(clonedRequest);
+            await clonedRequest.save({ session });
+
+            pendingAdditionalEspritTriggerRequests.push(
+              clonedRequest.toObject
+                ? clonedRequest.toObject()
+                : JSON.parse(JSON.stringify(clonedRequest)),
+            );
+
+            emitAppEventToRoles(
+              ["manufacturer", "admin"],
+              "worksheet:count-update",
+              {
+                stage: "request",
+                delta: 1,
+                requestId: clonedRequest.requestId,
+                source: "manufacturer_sample",
+                originalRequestId: request.requestId,
+              },
+            );
+
+            acceptedMessage = `${acceptedMessage} (헥스 보정/무보정 2건 가공용 복사본이 함께 생성되었습니다.)`;
+          }
         } else {
           // CAM, machining 등 이후 단계는 필요 시 단계별로 비동기 처리 여부를 나눠서 관리한다.
           // CAM 승인 시에는 제조사 공정을 '가공' 단계로 즉시 전환하되,
@@ -1122,6 +1390,31 @@ export async function updateReviewStatusByStage(req, res) {
       resultRequest = request;
     });
 
+    if (isDuplicateRequestApprovalNoop) {
+      const responseData = {
+        _id: String(resultRequest?._id || ""),
+        requestId: String(resultRequest?.requestId || ""),
+        manufacturerStage:
+          String(resultRequest?.manufacturerStage || "").trim() || null,
+        caseInfos: {
+          reviewByStage: resultRequest?.caseInfos?.reviewByStage || {},
+        },
+        mailboxAddress: resultRequest?.mailboxAddress || null,
+        assignedMachine: resultRequest?.assignedMachine || null,
+        productionSchedule: resultRequest?.productionSchedule || null,
+      };
+
+      return res.status(200).json({
+        success: true,
+        data: responseData,
+        message: acceptedMessage,
+        meta: {
+          noop: true,
+          reason: "already-approved-request-stage",
+        },
+      });
+    }
+
     // 공정 변경 시 스냅샷 재계산 트리거 (rules.md 섹션 6.1)
     // - 승인(APPROVED): 모든 공정 단계 진행 시
     // - 롤백(PENDING): 모든 공정 되돌림 시
@@ -1227,6 +1520,29 @@ export async function updateReviewStatusByStage(req, res) {
         });
         console.error("[REVIEW] enqueueApproval (esprit) failed", {
           requestId: pendingEspritTriggerRequest?.requestId || null,
+          message: error?.message || String(error || ""),
+        });
+      });
+    }
+
+    for (const extraRequest of pendingAdditionalEspritTriggerRequests) {
+      enqueueApproval({
+        taskType: "REQUEST_STAGE_APPROVED",
+        request: extraRequest,
+        actorUserId: req?.user?._id ? String(req.user._id) : null,
+        forceReprocess: forceReprocessFlag,
+      }).catch((error) => {
+        emitManufacturingAsyncFailure({
+          requestId: extraRequest?.requestId || null,
+          requestMongoId: extraRequest?._id || null,
+          action: "esprit-trigger-dual-hex-clone",
+          stage: "request",
+          message:
+            error?.message ||
+            "헥스 이중 가공 복사본의 Esprit 트리거 큐 등록에 실패했습니다.",
+        });
+        console.error("[REVIEW] enqueueApproval (dual-hex clone) failed", {
+          requestId: extraRequest?.requestId || null,
           message: error?.message || String(error || ""),
         });
       });

@@ -1314,11 +1314,12 @@ export async function getAllRequests(req, res) {
         query = query.populate("rnd.memoUpdatedBy", "name");
       }
 
-      if (view === "worksheet" && worksheetProfile === "shipping") {
-        query = query.populate(
-          "businessAnchorId",
-          "name metadata shippingPolicy",
-        );
+      if (view === "worksheet") {
+        const businessAnchorPopulateSelect =
+          worksheetProfile === "shipping"
+            ? "name metadata shippingPolicy requestSettings"
+            : "name metadata requestSettings";
+        query = query.populate("businessAnchorId", businessAnchorPopulateSelect);
       }
       if (includeDelivery) {
         // 배송 정보가 필요한 경우에만 최소 필드로 populate
@@ -1332,7 +1333,7 @@ export async function getAllRequests(req, res) {
         .select("-messages")
         .populate("requestor", "name email business phoneNumber address")
         .populate("deliveryInfoRef")
-        .populate("businessAnchorId", "name metadata");
+        .populate("businessAnchorId", "name metadata requestSettings");
     }
 
     const rawRequests = await query.lean();
@@ -1520,6 +1521,14 @@ export async function getMyRequests(req, res) {
 
     // 기본 필터: 로그인한 의뢰자 소속 기공소(조직) 기준
     const filter = await buildRequestorOrgScopeFilter(req);
+    // 제조사 내부 샘플/자동복사본은 의뢰자 화면에 노출하지 않는다.
+    // (헥스 이중 가공 복사본 포함)
+    filter.$and = [
+      ...(Array.isArray(filter.$and) ? filter.$and : []),
+      { source: { $ne: "manufacturer_sample" } },
+      { "price.rule": { $ne: "manufacturer_sample" } },
+    ];
+
     if (req.query.manufacturerStage) {
       filter.manufacturerStage = req.query.manufacturerStage;
     }
@@ -2269,6 +2278,20 @@ export const updateRndHexRotation = asyncHandler(async (req, res) => {
         message: "이 의뢰를 변경할 권한이 없습니다.",
       });
     }
+  }
+
+  // related files (hex rotation edit window):
+  // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx
+  // - web/backend/controllers/requests/common.review.controller.js
+  // 정책: 헥스 회전 설정/재설정은 의뢰 단계에서만 가능.
+  // CAM 이상 단계에서는 고정되어 변경할 수 없다.
+  const currentManufacturerStage = String(request?.manufacturerStage || "").trim();
+  if (currentManufacturerStage && currentManufacturerStage !== "의뢰") {
+    return res.status(409).json({
+      success: false,
+      message:
+        "헥스 회전은 의뢰 단계에서만 설정/재설정할 수 있습니다. CAM 단계부터는 고정됩니다.",
+    });
   }
 
   const requestorHexRotation = normalizeHexRotationValue(

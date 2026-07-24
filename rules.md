@@ -175,6 +175,28 @@
 - `web/backend/models/request.model.js`
 - `web/backend/models/deliveryInfo.model.js`
 
+### 1.0.5 헥스 회전 null 상태의 제조사 승인/이중 가공 정책 (2026-07-24)
+
+- 헥스 회전 설정 UI는 **의뢰 단계에서만** 변경 가능하며, CAM/가공/이후 단계에서는 고정(읽기 전용)으로 취급합니다.
+- 의뢰자 사업자(`BusinessAnchor.requestSettings.defaultManufacturerHexRotation`) 기본값이 `null`인 상태에서는,
+  제조사 의뢰 프리뷰 승인 시 **보정/무보정 2개 동시 가공 여부를 반드시 확인**합니다.
+  - 확인(Yes): 반대 헥스 모드 복사본을 자동 생성하여 함께 가공
+  - 취소(No): 현재 건 1개만 가공
+- 위 자동 복사본 정책:
+  - 복사본은 `source=manufacturer_sample`, `price.rule=manufacturer_sample`로 생성
+  - 의뢰자 화면에는 노출하지 않음(`getMyRequests`에서 sample 제외)
+  - 제조사 워크시트에는 노출(진행 대상)
+  - 복사본은 **새 lotNumber**를 즉시 부여하고, `REQUEST_STAGE_APPROVED` 큐를 별도로 등록하여 **NC도 별도 생성**
+  - 복사본 헥스 모드는 원본 `finalHexRotation`의 반대값으로 고정
+- 관리자용 null→보정/무보정 확정 UI/플로우는 별도 세션에서 구현하며,
+  그 전까지 제조사 작업 플로우는 null 상태를 유지한 채 승인 시점 선택으로 운영합니다.
+
+관련 파일:
+- `web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx`
+- `web/frontend/src/pages/manufacturer/worksheet/custom_abutment/hooks/useRequestFileHandlers.ts`
+- `web/backend/controllers/requests/common.review.controller.js`
+- `web/backend/controllers/requests/common.requests.controller.js`
+
 ### 1.1 보안 정보 관리
 
 **보안 정보(비밀번호, API 키, DB URI 등)는 절대 하드코딩하지 않습니다.**

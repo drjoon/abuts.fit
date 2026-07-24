@@ -71,7 +71,9 @@ export const useRequestFileHandlers = ({
 
   const getApprovedManufacturerStage = useCallback(
     (stageKey: ReviewStageKey) => {
-      if (stageKey === "request") return "CAM";
+      // request 승인 단계는 비동기 큐(ESPRIT 콜백) 완료 시점에만 CAM으로 전환된다.
+      // 프론트 낙관적 패치로 CAM으로 먼저 올리면 "CAM→의뢰" 튐 현상이 발생하므로 제외한다.
+      if (stageKey === "request") return null;
       if (stageKey === "cam") return "가공";
       if (stageKey === "machining") return "세척.패킹";
       if (stageKey === "packing") return "포장.발송";
@@ -114,7 +116,8 @@ export const useRequestFileHandlers = ({
   const getNextStageForSummary = useCallback(
     (stageKey: ReviewStageKey, status: "PENDING" | "APPROVED" | "REJECTED") => {
       if (status === "APPROVED") {
-        if (stageKey === "request") return "cam" as ReviewStageKey;
+        // request 승인 카운터 이동도 NC 생성 콜백 시점에 서버값으로 반영한다.
+        if (stageKey === "request") return null;
         if (stageKey === "cam") return "machining" as ReviewStageKey;
         if (stageKey === "machining") return "packing" as ReviewStageKey;
         if (stageKey === "packing") return "shipping" as ReviewStageKey;
@@ -486,6 +489,9 @@ export const useRequestFileHandlers = ({
     [downloadByEndpoint],
   );
 
+  // related files (hex dual-production on request approval):
+  // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx
+  // - web/backend/controllers/requests/common.review.controller.js
   const handleUpdateReviewStatus = useCallback(
     async (params: {
       req: ManufacturerRequest;
@@ -494,6 +500,7 @@ export const useRequestFileHandlers = ({
       stageOverride?: ReviewStageKey;
       keepPreviewOpen?: boolean;
       forceReprocess?: boolean;
+      processBothHexVariants?: boolean;
     }) => {
       if (!token) return;
       setReviewSaving(true);
@@ -528,6 +535,7 @@ export const useRequestFileHandlers = ({
               status: params.status,
               reason: params.reason || "",
               forceReprocess: params.forceReprocess === true,
+              processBothHexVariants: params.processBothHexVariants === true,
             }),
           },
         );

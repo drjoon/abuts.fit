@@ -750,7 +750,14 @@ export const RequestPage = ({
       }
       const stage = deriveStageForFilter(req);
       if (tabStage === "request") {
-        return stage === "의뢰";
+        const requestReviewStatus = String(
+          req?.caseInfos?.reviewByStage?.request?.status || "",
+        )
+          .trim()
+          .toUpperCase();
+        // 의뢰 승인 후 NC 콜백 전까지 manufacturerStage는 "의뢰"를 유지할 수 있으므로,
+        // 사용자 혼선을 줄이기 위해 승인 완료 건은 의뢰 탭에서 잠시 숨긴다.
+        return stage === "의뢰" && requestReviewStatus !== "APPROVED";
       }
       if (isCamStage) {
         return stage === "CAM";
@@ -2194,6 +2201,9 @@ export const RequestPage = ({
         setConfirmTitle={pageState.setConfirmTitle}
         setConfirmDescription={pageState.setConfirmDescription}
         setConfirmAction={pageState.setConfirmAction}
+        setConfirmCancelAction={pageState.setConfirmCancelAction}
+        setConfirmLabel={pageState.setConfirmLabel}
+        setCancelLabel={pageState.setCancelLabel}
         setConfirmOpen={pageState.setConfirmOpen}
         // onOpenNextRequest는 제거됨: 승인 후 다음 의뢰 자동 열기 방지
         // 승인 시 모달이 닫히고 작업자가 직접 다음 의뢰를 선택한다.
@@ -2217,13 +2227,16 @@ export const RequestPage = ({
         open={pageState.confirmOpen}
         title={pageState.confirmTitle}
         description={pageState.confirmDescription}
-        confirmLabel="확인"
-        cancelLabel="취소"
+        confirmLabel={pageState.confirmLabel}
+        cancelLabel={pageState.cancelLabel}
         onConfirm={async () => {
           if (!pageState.confirmAction) return;
           const action = pageState.confirmAction;
           pageState.setConfirmOpen(false);
           pageState.setConfirmAction(null);
+          pageState.setConfirmCancelAction(null);
+          pageState.setConfirmLabel("확인");
+          pageState.setCancelLabel("취소");
 
           try {
             await action();
@@ -2232,8 +2245,17 @@ export const RequestPage = ({
           }
         }}
         onCancel={() => {
+          const cancelAction = pageState.confirmCancelAction;
           pageState.setConfirmOpen(false);
           pageState.setConfirmAction(null);
+          pageState.setConfirmCancelAction(null);
+          pageState.setConfirmLabel("확인");
+          pageState.setCancelLabel("취소");
+          if (cancelAction) {
+            void Promise.resolve(cancelAction()).catch((error) => {
+              console.error("Confirm cancel action failed:", error);
+            });
+          }
         }}
       />
     </div>

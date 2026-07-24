@@ -52,6 +52,9 @@ const normalizeManufacturerHexRotationMode = (
   const raw = String(value || "").trim();
   // canonical 우선
   if (raw === "보정" || raw === "무보정" || raw === "구성정보") return raw;
+  // legacy "헥스회전각" 호환: 0=보정, 30=무보정
+  if (raw === "0") return "보정";
+  if (raw === "30") return "무보정";
   return null;
 };
 
@@ -310,6 +313,7 @@ type PreviewModalProps = {
     stageOverride?: ReviewStageKey;
     keepPreviewOpen?: boolean;
     forceReprocess?: boolean;
+    processBothHexVariants?: boolean;
   }) => Promise<void>;
   onDeleteCam: (
     req: ManufacturerRequest,
@@ -367,6 +371,15 @@ type PreviewModalProps = {
           prev: (() => void | Promise<void>) | null,
         ) => (() => void | Promise<void>) | null),
   ) => void;
+  setConfirmCancelAction: (
+    action:
+      | ((() => void | Promise<void>) | null)
+      | ((
+          prev: (() => void | Promise<void>) | null,
+        ) => (() => void | Promise<void>) | null),
+  ) => void;
+  setConfirmLabel: (label: string) => void;
+  setCancelLabel: (label: string) => void;
   setConfirmOpen: (open: boolean) => void;
 };
 
@@ -404,6 +417,9 @@ export const PreviewModal = ({
   setConfirmTitle,
   setConfirmDescription,
   setConfirmAction,
+  setConfirmCancelAction,
+  setConfirmLabel,
+  setCancelLabel,
   setConfirmOpen,
 }: PreviewModalProps) => {
   const { token } = useAuthStore();
@@ -429,6 +445,7 @@ export const PreviewModal = ({
   const [guidedFinishLineOverridePoints, setGuidedFinishLineOverridePoints] =
     useState<number[][] | null>(null);
   const [hexRotationSaving, setHexRotationSaving] = useState(false);
+  const [approving, setApproving] = useState(false);
   const [manufacturerHexRotationDraft, setManufacturerHexRotationDraft] =
     useState<ManufacturerHexRotationMode>("보정");
   const req = previewFiles.request as ManufacturerRequest | null;
@@ -439,6 +456,12 @@ export const PreviewModal = ({
       lastStableReqRef.current = req;
     }
   }, [req]);
+
+  useEffect(() => {
+    if (!open) {
+      setApproving(false);
+    }
+  }, [open]);
 
   const persistReasonLibraryToLocal = useCallback((next: string[]) => {
     if (typeof window === "undefined") return;
@@ -668,6 +691,19 @@ export const PreviewModal = ({
     currentReviewStageKey === "tracking";
 
   const isRequestStage = currentReviewStageKey === "request";
+  const requestorDefaultHexRotationRaw =
+    (activeReq as any)?.business?.requestSettings?.defaultManufacturerHexRotation ??
+    (activeReq as any)?.businessAnchorId?.requestSettings
+      ?.defaultManufacturerHexRotation ??
+    (activeReq as any)?.business?.metadata?.hexRotationAngle ??
+    (activeReq as any)?.business?.metadata?.defaultManufacturerHexRotation ??
+    (activeReq as any)?.business?.metadata?.manufacturerHexRotation ??
+    null;
+  const requestorDefaultHexRotation = normalizeManufacturerHexRotationMode(
+    requestorDefaultHexRotationRaw,
+  );
+  const shouldAskDualHexMachiningOnApprove =
+    isRequestStage && requestorDefaultHexRotation === null;
   const isNcStage = currentReviewStageKey === "machining";
   const isImageStage =
     currentReviewStageKey === "packing" ||
@@ -708,6 +744,8 @@ export const PreviewModal = ({
     isCamStage &&
     String((activeReq as any)?.realtimeProgress?.badge || "").trim() ===
       "NC 생성중";
+
+  const approveBusy = reviewSaving || approving;
 
   const controlBtnClass =
     "inline-flex h-8 w-8 items-center justify-center rounded-md border text-[13px] font-medium transition";
@@ -1369,7 +1407,7 @@ export const PreviewModal = ({
   };
 
   const handleRestoreUnmachinable = async () => {
-    if (!onRestoreUnmachinable || !isUnmachinable || unmachinableSaving || reviewSaving) {
+    if (!onRestoreUnmachinable || !isUnmachinable || unmachinableSaving || approveBusy) {
       return;
     }
 
@@ -1387,7 +1425,7 @@ export const PreviewModal = ({
   const handleSaveManufacturerHexRotation = async (
     next: ManufacturerHexRotationMode,
   ) => {
-    if (!onSaveManufacturerHexRotation || hexRotationSaving || reviewSaving) {
+    if (!onSaveManufacturerHexRotation || hexRotationSaving || approveBusy) {
       return;
     }
     const prev = manufacturerHexRotationDraft;
@@ -1666,10 +1704,15 @@ export const PreviewModal = ({
                           ? "구성정보"
                           : "보정";
                     if (next === "구성정보" && !hasCadCompanionFiles) return;
+                    if (shouldAskDualHexMachiningOnApprove) return;
                     void handleSaveManufacturerHexRotation(next);
                   }}
                   disabled={
-                    hexRotationSaving || reviewSaving || !onSaveManufacturerHexRotation
+                    hexRotationSaving ||
+                    approveBusy ||
+                    !onSaveManufacturerHexRotation ||
+                    !isRequestStage ||
+                    shouldAskDualHexMachiningOnApprove
                   }
                 >
                   <SelectTrigger className="h-7 min-w-[108px] rounded-md border border-slate-200 bg-slate-50 px-2 text-[12px] font-semibold text-slate-700 shadow-sm focus:ring-1 focus:ring-blue-200 disabled:opacity-60">
@@ -1696,11 +1739,11 @@ export const PreviewModal = ({
                   <button
                     type="button"
                     className={`h-8 rounded-md border px-2 text-[12px] font-semibold transition ${
-                      unmachinableSaving || reviewSaving
+                      unmachinableSaving || approveBusy
                         ? "border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed"
                         : "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
                     }`}
-                    disabled={unmachinableSaving || reviewSaving}
+                    disabled={unmachinableSaving || approveBusy}
                     onClick={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
@@ -1713,15 +1756,15 @@ export const PreviewModal = ({
                   <button
                     type="button"
                     className={`h-8 rounded-md border px-2 text-[12px] font-semibold transition ${
-                      unmachinableSaving || reviewSaving
+                      unmachinableSaving || approveBusy
                         ? "border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed"
                         : "border-red-200 bg-red-50 text-red-700 hover:bg-red-100"
                     }`}
-                    disabled={unmachinableSaving || reviewSaving}
+                    disabled={unmachinableSaving || approveBusy}
                     onClick={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
-                      if (unmachinableSaving || reviewSaving) return;
+                      if (unmachinableSaving || approveBusy) return;
                       setUnmachinableEditorOpen(true);
                     }}
                   >
@@ -1732,11 +1775,11 @@ export const PreviewModal = ({
                 <button
                   type="button"
                   className={`${controlBtnClass} ${
-                    reviewSaving
+                    approveBusy
                       ? "border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed"
                       : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
                   }`}
-                  disabled={reviewSaving}
+                  disabled={approveBusy}
                   onClick={(e) => {
                     e.preventDefault();
                     e.stopPropagation();
@@ -1778,11 +1821,11 @@ export const PreviewModal = ({
               <button
                 type="button"
                 className={`${controlBtnClass} ${
-                  reviewSaving || !onOpenNextRequest
+                  approveBusy || !onOpenNextRequest
                     ? "border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed"
                     : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
                 }`}
-                disabled={reviewSaving || !onOpenNextRequest}
+                disabled={approveBusy || !onOpenNextRequest}
                 onClick={(e) => {
                   e.preventDefault();
                   e.stopPropagation();
@@ -1801,48 +1844,87 @@ export const PreviewModal = ({
               <button
                 type="button"
                 className={`${controlBtnClass} ${
-                  reviewSaving || !canApprove || isNcGenerating
+                  approveBusy || !canApprove || isNcGenerating
                     ? "border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed"
                     : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
                 }`}
-                disabled={reviewSaving || !canApprove || isNcGenerating}
+                disabled={approveBusy || !canApprove || isNcGenerating}
                 onClick={async (e) => {
                   e.preventDefault();
                   e.stopPropagation();
-                  try {
-                    // 승인 처리: keepPreviewOpen=false → 승인 후 모달이 즉시 닫힌다.
-                    // BG 앱 트리거(Esprit 등)는 백엔드 ReviewApprovalQueue에서 직렬로 처리된다.
-                    // 다음 의뢰는 자동으로 열리지 않는다(연속 승인으로 인한 충돌 방지).
-                    await onUpdateReviewStatus({
-                      req: activeReq,
-                      status: "APPROVED",
-                      stageOverride: currentReviewStageKey,
-                      keepPreviewOpen: false,
-                      forceReprocess: true,
-                    });
+                  if (approveBusy || !canApprove || isNcGenerating) return;
 
-                    // CAM 단계 승인 시 NC 파일 bridge-store 동기화 (비동기, 실패 무시)
-                    if (isCamStage) {
-                      const requestId = String(activeReq.requestId).trim();
-                      if (token && requestId) {
-                        void fetch(
-                          `/api/requests/by-request/${encodeURIComponent(requestId)}/nc-file/ensure-bridge`,
-                          {
-                            method: "POST",
-                            headers: {
-                              Authorization: `Bearer ${token}`,
-                              "Content-Type": "application/json",
+                  const runApprove = async (processBothHexVariants?: boolean) => {
+                    if (approving) return;
+                    setApproving(true);
+                    try {
+                      // 승인 처리: keepPreviewOpen=false → 승인 후 모달이 즉시 닫힌다.
+                      // BG 앱 트리거(Esprit 등)는 백엔드 ReviewApprovalQueue에서 직렬로 처리된다.
+                      // 다음 의뢰는 자동으로 열리지 않는다(연속 승인으로 인한 충돌 방지).
+                      await onUpdateReviewStatus({
+                        req: activeReq,
+                        status: "APPROVED",
+                        stageOverride: currentReviewStageKey,
+                        keepPreviewOpen: false,
+                        forceReprocess: true,
+                        processBothHexVariants,
+                      });
+
+                      // CAM 단계 승인 시 NC 파일 bridge-store 동기화 (비동기, 실패 무시)
+                      if (isCamStage) {
+                        const requestId = String(activeReq.requestId).trim();
+                        if (token && requestId) {
+                          void fetch(
+                            `/api/requests/by-request/${encodeURIComponent(requestId)}/nc-file/ensure-bridge`,
+                            {
+                              method: "POST",
+                              headers: {
+                                Authorization: `Bearer ${token}`,
+                                "Content-Type": "application/json",
+                              },
+                              body: JSON.stringify({}),
                             },
-                            body: JSON.stringify({}),
-                          },
-                        ).catch((err) => {
-                          console.error("NC bridge ensure failed:", err);
-                        });
+                          ).catch((err) => {
+                            console.error("NC bridge ensure failed:", err);
+                          });
+                        }
                       }
+
+                      // 승인 완료 후 모달 닫기 (onOpenNextRequest는 더 이상 호출하지 않음)
+                      onOpenChange(false);
+                    } finally {
+                      setApproving(false);
+                    }
+                  };
+
+                  try {
+                    const resetConfirmUiState = () => {
+                      setConfirmLabel("확인");
+                      setCancelLabel("취소");
+                      setConfirmCancelAction(null);
+                    };
+
+                    if (shouldAskDualHexMachiningOnApprove) {
+                      setConfirmTitle("헥스 회전 미확정");
+                      setConfirmDescription(
+                        "헥스가 30도 돌아가 있을 가능성이 있어 첫 의뢰에서는 30도 회전한 제품도 함께 동봉하는 것을 권장합니다. 보정/무보정 모두 가공할까요?",
+                      );
+                      setConfirmLabel("모두 가공");
+                      setCancelLabel("1개만 가공");
+                      setConfirmAction(() => async () => {
+                        resetConfirmUiState();
+                        await runApprove(true);
+                      });
+                      setConfirmCancelAction(() => async () => {
+                        resetConfirmUiState();
+                        await runApprove(false);
+                      });
+                      setConfirmOpen(true);
+                      return;
                     }
 
-                    // 승인 완료 후 모달 닫기 (onOpenNextRequest는 더 이상 호출하지 않음)
-                    onOpenChange(false);
+                    resetConfirmUiState();
+                    await runApprove();
                   } catch (err) {
                     console.error("Review status update failed:", err);
                   }
@@ -1857,10 +1939,11 @@ export const PreviewModal = ({
                 <button
                   type="button"
                   className={`${controlBtnClass} ${
-                    reviewSaving
+                    approveBusy
                       ? "border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed"
                       : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
                   }`}
+                  disabled={approveBusy}
                 >
                   X
                 </button>

@@ -32,6 +32,11 @@ export const useRequestPageState = () => {
   const [confirmAction, setConfirmAction] = useState<
     (() => void | Promise<void>) | null
   >(null);
+  const [confirmCancelAction, setConfirmCancelAction] = useState<
+    (() => void | Promise<void>) | null
+  >(null);
+  const [confirmLabel, setConfirmLabel] = useState("확인");
+  const [cancelLabel, setCancelLabel] = useState("취소");
   const [deletingCam, setDeletingCam] = useState<Record<string, boolean>>({});
   const [deletingNc, setDeletingNc] = useState<Record<string, boolean>>({});
   const [uploadProgress, setUploadProgress] = useState<Record<string, number>>(
@@ -106,6 +111,12 @@ export const useRequestPageState = () => {
     setConfirmDescription,
     confirmAction,
     setConfirmAction,
+    confirmCancelAction,
+    setConfirmCancelAction,
+    confirmLabel,
+    setConfirmLabel,
+    cancelLabel,
+    setCancelLabel,
     deletingCam,
     setDeletingCam,
     deletingNc,

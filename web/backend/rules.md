@@ -31,7 +31,15 @@
 - 가공 이력의 영속 SSOT는 `MachiningRecord` 입니다.
 - 팝빌/세금계산서 작업은 web이 직접 처리하지 않고 큐에 넣습니다.
 - BG 콜백 의뢰 매칭 우선순위는 `requestMongoId` → `requestId` → 파일명 fallback 입니다.
+- 의뢰 단계 승인(`review-status`, stage=request)에서
+  의뢰자 BusinessAnchor의 `requestSettings.defaultManufacturerHexRotation`(레거시 `hexRotationAngle` 포함)이 null이고
+  `processBothHexVariants=true`이면,
+  반대 헥스 모드의 내부 복사본(`source=manufacturer_sample`, `price.rule=manufacturer_sample`)을 생성해
+  별도 lot/NC를 처리합니다.
+  - 구현: `controllers/requests/common.review.controller.js`
 - `source=manufacturer_sample` + `rnd.doneAt!=null`(R&D 보관 원본)은 BG 자동 업데이트 대상에서 제외합니다.
+- 요청자 목록(`getMyRequests`)에서는 `manufacturer_sample` 계열 의뢰를 제외해 의뢰자에게 노출하지 않습니다.
+  - 구현: `controllers/requests/common.requests.controller.js`
 - R&D 샘플(`source=manufacturer_sample` 또는 `price.rule=manufacturer_sample`)은 배송 비대상입니다.
   - 우편함 할당 금지 (필요 시 `mailboxAddress=null`로 정리)
   - `포장.발송`/`추적관리` 단계 진입 금지
