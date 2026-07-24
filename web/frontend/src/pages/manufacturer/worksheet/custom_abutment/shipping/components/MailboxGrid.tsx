@@ -46,6 +46,12 @@ export type MailboxRefreshOptions = {
   invalidateMailboxDetailsCache?: boolean;
 };
 
+type ManualPickupAlternateMethodItem = {
+  id: string;
+  label: string;
+  selected: boolean;
+};
+
 type MailboxGridProps = {
   mailboxSummaries: MailboxSummaryItem[];
   forceTodayMailboxAddresses?: Set<string>;
@@ -107,6 +113,21 @@ export const MailboxGrid = ({
   const [manualPickupDialogOpen, setManualPickupDialogOpen] = useState(false);
   const [manualPickupTrackingByAddress, setManualPickupTrackingByAddress] =
     useState<Record<string, string>>({});
+  // related files:
+  // - web/backend/controllers/requests/shipping.controller.js
+  // - web/backend/models/request.model.js
+  // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/tracking/TrackingPage.tsx
+  // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/shipping/components/MailboxContentsModal.tsx
+  const [manualPickupUseAlternateShipping, setManualPickupUseAlternateShipping] =
+    useState(false);
+  const [manualPickupAlternateMethods, setManualPickupAlternateMethods] =
+    useState<ManualPickupAlternateMethodItem[]>(() => [
+      {
+        id: "manual-delivery-method-default",
+        label: "방문 전달",
+        selected: true,
+      },
+    ]);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const touchStartXRef = useRef<number>(0);
   const shelfRefs = useRef<Record<string, HTMLDivElement | null>>({});
@@ -560,6 +581,17 @@ export const MailboxGrid = ({
     }
   };
 
+  const buildManualPickupAlternateMethod = (
+    label = "",
+    selected = true,
+  ): ManualPickupAlternateMethodItem => ({
+    id: `manual-delivery-method-${Date.now()}-${Math.random()
+      .toString(36)
+      .slice(2, 8)}`,
+    label: String(label || ""),
+    selected,
+  });
+
   const openManualPickupDialog = () => {
     const mailboxCandidates = occupiedAddresses
       .map((address) => String(address || "").trim())
@@ -576,6 +608,10 @@ export const MailboxGrid = ({
       mailboxCandidates.map((address) => [address, ""]),
     ) as Record<string, string>;
     setManualPickupTrackingByAddress(initialTrackingByAddress);
+    setManualPickupUseAlternateShipping(false);
+    setManualPickupAlternateMethods([
+      buildManualPickupAlternateMethod("방문 전달", true),
+    ]);
     setManualPickupDialogOpen(true);
   };
 
@@ -592,7 +628,11 @@ export const MailboxGrid = ({
         Boolean(mailboxAddress && trackingNumber),
       );
 
-    if (!selectedEntries.length) {
+    const manualOtherModeMailboxAddresses = occupiedAddresses
+      .map((address) => String(address || "").trim())
+      .filter(Boolean);
+
+    if (!manualPickupUseAlternateShipping && !selectedEntries.length) {
       toast({
         title: "수동 집하 입력 필요",
         description: "우편함별 운송장번호를 최소 1개 이상 입력해주세요.",
@@ -601,10 +641,38 @@ export const MailboxGrid = ({
       return;
     }
 
-    const mailboxAddresses = selectedEntries.map(([mailboxAddress]) =>
-      String(mailboxAddress || "").trim(),
-    );
+    if (manualPickupUseAlternateShipping && !manualOtherModeMailboxAddresses.length) {
+      toast({
+        title: "수동 발송 대상 없음",
+        description: "수동 발송 완료로 반영할 우편함이 없습니다.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const mailboxAddresses = manualPickupUseAlternateShipping
+      ? manualOtherModeMailboxAddresses
+      : selectedEntries.map(([mailboxAddress]) =>
+          String(mailboxAddress || "").trim(),
+        );
     const trackingNumberByMailbox = Object.fromEntries(selectedEntries);
+
+    const normalizedAlternateMethods = manualPickupAlternateMethods
+      .filter((item) => item.selected)
+      .map((item) => String(item.label || "").trim())
+      .filter(Boolean);
+
+    if (
+      manualPickupUseAlternateShipping &&
+      normalizedAlternateMethods.length === 0
+    ) {
+      toast({
+        title: "발송 방식 입력 필요",
+        description: "한진택배 외 발송 방식을 최소 1개 이상 입력해주세요.",
+        variant: "destructive",
+      });
+      return;
+    }
 
     // 우편함 요약에서 유효한 shippingPackageId만 전송한다.
     const targetMailboxSet = new Set(mailboxAddresses);
@@ -630,6 +698,10 @@ export const MailboxGrid = ({
           trackingNumberByMailbox,
           trackingStatusCode: "11",
           trackingStatusText: "집하완료",
+          useNonHanjinShippingMethods: manualPickupUseAlternateShipping,
+          nonHanjinShippingMethods: manualPickupUseAlternateShipping
+            ? normalizedAlternateMethods
+            : [],
         },
       });
       const body = response.data as any;
@@ -638,8 +710,8 @@ export const MailboxGrid = ({
       }
 
       applyWorkflowOverrideForMailboxes(mailboxAddresses, {
-        code: "picked_up",
-        label: "집하완료",
+        code: manualPickupUseAlternateShipping ? "completed" : "picked_up",
+        label: manualPickupUseAlternateShipping ? "배송완료" : "집하완료",
       });
 
       if (onRefresh) {
@@ -648,8 +720,10 @@ export const MailboxGrid = ({
 
       setManualPickupDialogOpen(false);
       toast({
-        title: "수동 집하 완료",
-        description: `${mailboxAddresses.length}개 우편함을 수동 집하 완료로 반영했습니다.`,
+        title: manualPickupUseAlternateShipping ? "수동 배송 완료" : "수동 집하 완료",
+        description: manualPickupUseAlternateShipping
+          ? `${mailboxAddresses.length}개 우편함을 수동 배송완료로 반영했습니다. (기타 발송 방식 ${normalizedAlternateMethods.length}개 저장)`
+          : `${mailboxAddresses.length}개 우편함을 수동 집하 완료로 반영했습니다.`,
       });
     } catch (error) {
       toast({
@@ -1613,7 +1687,7 @@ export const MailboxGrid = ({
 
       {manualPickupDialogOpen && (
         <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 pt-16">
-          <div className="bg-white rounded-2xl shadow-2xl w-[480px] max-w-[92vw] overflow-hidden">
+            <div className="bg-white rounded-2xl shadow-2xl w-[560px] max-w-[94vw] overflow-hidden">
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
               <div>
                 <div className="font-semibold text-base text-slate-800">
@@ -1632,12 +1706,12 @@ export const MailboxGrid = ({
               </button>
             </div>
 
-            <div className="px-6 py-4 space-y-3">
+            <div className="px-6 py-4 space-y-4">
               <div className="text-xs text-slate-500">
-                우편함별 운송장번호를 입력하세요. 집하 시각은 자동으로 당일
-                16:00(KST)로 기록됩니다.
+                기본은 우편함별 운송장번호 입력이 필요합니다. 한진택배 외 발송을
+                선택하면 운송장번호 없이 배송완료로 반영됩니다.
               </div>
-              <div className="max-h-[360px] overflow-auto space-y-2 pr-1">
+              <div className="max-h-[300px] overflow-auto space-y-2 pr-1">
                 {occupiedAddresses.map((addr) => {
                   const count = Number(
                     mailboxSummaryMap.get(addr)?.requestCount || 0,
@@ -1665,6 +1739,100 @@ export const MailboxGrid = ({
                     </div>
                   );
                 })}
+              </div>
+
+              <div className="border-t border-slate-100 pt-3">
+                <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={manualPickupUseAlternateShipping}
+                    onChange={(e) => {
+                      const nextChecked = e.target.checked;
+                      setManualPickupUseAlternateShipping(nextChecked);
+                      if (nextChecked && manualPickupAlternateMethods.length === 0) {
+                        setManualPickupAlternateMethods([
+                          buildManualPickupAlternateMethod("방문 전달", true),
+                        ]);
+                      }
+                    }}
+                    className="h-4 w-4 rounded border-slate-300 text-blue-500"
+                  />
+                  한진택배 외 다른 방식으로 발송
+                </label>
+
+                {manualPickupUseAlternateShipping && (
+                  <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div className="text-xs text-slate-500">
+                        체크된 방식만 저장됩니다. (예: 방문 전달, 퀵서비스)
+                      </div>
+                      <button
+                        type="button"
+                        className="px-2.5 py-1 rounded-md text-xs text-blue-600 hover:bg-blue-50 border border-blue-200"
+                        onClick={() => {
+                          setManualPickupAlternateMethods((prev) => [
+                            ...prev,
+                            buildManualPickupAlternateMethod("", true),
+                          ]);
+                        }}
+                      >
+                        + 방식 추가
+                      </button>
+                    </div>
+
+                    <div className="max-h-[180px] overflow-auto space-y-2 pr-1">
+                      {manualPickupAlternateMethods.map((method) => (
+                        <div
+                          key={method.id}
+                          className="grid grid-cols-[auto_1fr_auto] gap-2 items-center"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={Boolean(method.selected)}
+                            onChange={(e) => {
+                              const checked = e.target.checked;
+                              setManualPickupAlternateMethods((prev) =>
+                                prev.map((item) =>
+                                  item.id === method.id
+                                    ? { ...item, selected: checked }
+                                    : item,
+                                ),
+                              );
+                            }}
+                            className="h-4 w-4 rounded border-slate-300 text-blue-500"
+                            title="해당 방식 선택"
+                          />
+                          <input
+                            value={method.label}
+                            onChange={(e) => {
+                              const value = e.target.value;
+                              setManualPickupAlternateMethods((prev) =>
+                                prev.map((item) =>
+                                  item.id === method.id
+                                    ? { ...item, label: value }
+                                    : item,
+                                ),
+                              );
+                            }}
+                            placeholder="발송 방식 입력"
+                            className="w-full h-9 rounded-lg border border-slate-300 px-3 text-sm bg-white"
+                          />
+                          <button
+                            type="button"
+                            className="px-2.5 py-1.5 rounded-md text-xs text-rose-600 hover:bg-rose-50 border border-rose-200"
+                            onClick={() => {
+                              setManualPickupAlternateMethods((prev) =>
+                                prev.filter((item) => item.id !== method.id),
+                              );
+                            }}
+                          >
+                            삭제
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 

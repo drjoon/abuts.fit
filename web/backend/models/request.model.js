@@ -679,6 +679,18 @@ const requestSchema = new mongoose.Schema(
         type: String,
         default: null,
       },
+      // related files:
+      // - web/backend/controllers/requests/shipping.controller.js
+      // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/shipping/components/MailboxGrid.tsx
+      // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/tracking/TrackingPage.tsx
+      manualDeliveryMethods: {
+        type: [String],
+        default: [],
+      },
+      manualDeliveryMethodsUpdatedAt: {
+        type: Date,
+        default: null,
+      },
       updatedAt: {
         type: Date,
         default: null,

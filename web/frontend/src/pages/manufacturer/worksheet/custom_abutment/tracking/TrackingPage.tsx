@@ -163,6 +163,37 @@ const getShippingStatus = (req: ManufacturerRequest) => {
   return "-";
 };
 
+// related files:
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/shipping/components/MailboxGrid.tsx
+// - web/backend/controllers/requests/shipping.controller.js
+// - web/backend/models/request.model.js
+const getManualDeliveryMethodsFromRequest = (req: ManufacturerRequest) => {
+  return Array.from(
+    new Set(
+      (Array.isArray((req as any)?.shippingWorkflow?.manualDeliveryMethods)
+        ? (req as any).shippingWorkflow.manualDeliveryMethods
+        : []
+      )
+        .map((value: unknown) => String(value || "").trim())
+        .filter(Boolean),
+    ),
+  );
+};
+
+const getManualDeliveryMethodsFromRequests = (requests: ManufacturerRequest[]) => {
+  return Array.from(
+    new Set(
+      requests.flatMap((req) => getManualDeliveryMethodsFromRequest(req)),
+    ),
+  );
+};
+
+const getShippingModeLabel = (requests: ManufacturerRequest[]) => {
+  const methods = getManualDeliveryMethodsFromRequests(requests);
+  if (!methods.length) return "한진택배";
+  return `한진 외 (${methods.join(", ")})`;
+};
+
 export const TrackingInquiryPage = () => {
   const { token } = useAuthStore();
   const { period } = usePeriodStore();
@@ -1941,6 +1972,9 @@ export const TrackingInquiryPage = () => {
                           : "";
                         const requestCount = (box as any)?.requestCount || 1;
                         const requests = (box as any)?.requests || [];
+                        const shippingModeLabel = getShippingModeLabel(
+                          requests as ManufacturerRequest[],
+                        );
                         const cardRequestIds = requests
                           .map((req: any) => String(req?._id || "").trim())
                           .filter(Boolean);
@@ -2046,7 +2080,7 @@ export const TrackingInquiryPage = () => {
 
                             {isExpanded && (
                               <div className="border-t bg-gray-50 p-4 space-y-3">
-                                <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                                <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
                                   <div>
                                     <div className="text-xs text-gray-500 mb-1">
                                       접수(발송)
@@ -2069,6 +2103,17 @@ export const TrackingInquiryPage = () => {
                                     </div>
                                     <div className="text-sm font-medium">
                                       {formatDateTime(deliveredAt) || "-"}
+                                    </div>
+                                  </div>
+                                  <div>
+                                    <div className="text-xs text-gray-500 mb-1">
+                                      발송 방식
+                                    </div>
+                                    <div
+                                      className="text-sm font-medium truncate"
+                                      title={shippingModeLabel}
+                                    >
+                                      {shippingModeLabel}
                                     </div>
                                   </div>
                                 </div>
@@ -2257,6 +2302,21 @@ export const TrackingInquiryPage = () => {
                                               {ci.patientName || "-"} /{" "}
                                               {ci.tooth || "-"}
                                             </div>
+                                            {(() => {
+                                              const reqMethods =
+                                                getManualDeliveryMethodsFromRequest(
+                                                  req as ManufacturerRequest,
+                                                );
+                                              if (!reqMethods.length) return null;
+                                              return (
+                                                <div
+                                                  className="text-[11px] text-indigo-700"
+                                                  title={reqMethods.join(", ")}
+                                                >
+                                                  기타 발송: {reqMethods.join(", ")}
+                                                </div>
+                                              );
+                                            })()}
                                           </div>
                                         );
                                       })}

@@ -188,6 +188,23 @@ export const MailboxContentsModal = ({
     return parts.join(" / ");
   };
 
+  // related files:
+  // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/shipping/components/MailboxGrid.tsx
+  // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/tracking/TrackingPage.tsx
+  // - web/backend/controllers/requests/shipping.controller.js
+  const getManualDeliveryMethods = (req: ManufacturerRequest) => {
+    return Array.from(
+      new Set(
+        (Array.isArray((req as any)?.shippingWorkflow?.manualDeliveryMethods)
+          ? (req as any).shippingWorkflow.manualDeliveryMethods
+          : []
+        )
+          .map((value: unknown) => String(value || "").trim())
+          .filter(Boolean),
+      ),
+    );
+  };
+
   const handleOpenAddressSearch = () => {
     try {
       if (!window.daum?.Postcode) {
@@ -557,6 +574,15 @@ export const MailboxContentsModal = ({
                         <div>LOT: {getLotShortCode(req)}</div>
                       )}
                       {getImplantInfo(req) && <div>{getImplantInfo(req)}</div>}
+                      {(() => {
+                        const methods = getManualDeliveryMethods(req);
+                        if (!methods.length) return null;
+                        return (
+                          <div className="text-indigo-700" title={methods.join(", ")}>
+                            기타 발송: {methods.join(", ")}
+                          </div>
+                        );
+                      })()}
                     </div>
                   </div>
                 </div>

@@ -43,6 +43,10 @@
     - packageId 매칭 건 + 미할당(shippingPackageId 없음) 건을 함께 처리합니다.
     - 같은 우편함의 같은 집하 처리에서는 trackingNumber를 1개로 통일합니다.
     - 수동 집하 입력은 우편함별 운송장번호를 허용합니다. (`trackingNumberByMailbox`)
+    - `한진택배 외 발송` 선택 시 `nonHanjinShippingMethods`를 받아
+      `Request.shippingWorkflow.manualDeliveryMethods`에 저장합니다.
+    - `useNonHanjinShippingMethods=true`이면 발송 방식 1개 이상을 강제합니다.
+    - 한진 외 발송은 운송장번호 없이 허용하며, 워크플로우는 `completed(배송완료)`로 즉시 반영합니다.
     - 수동 집하 시각은 사용자 입력을 받지 않고 서버에서 당일 16:00(KST)로 고정 기록합니다.
     - 레거시 `mock-pickup-complete` 경로는 하위 호환 alias로 동일 로직을 사용합니다.
 - 분리 tracking 병합 보정 스크립트:

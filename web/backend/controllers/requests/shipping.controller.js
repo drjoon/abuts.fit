@@ -681,12 +681,14 @@ export async function manualHanjinPickupCompleted(req, res) {
       trackingNumberByMailbox: trackingNumberByMailboxRaw = {},
       trackingStatusCode: manualStatusCodeRaw = "11",
       trackingStatusText: manualStatusTextRaw = "집하완료",
+      useNonHanjinShippingMethods: useNonHanjinShippingMethodsRaw = false,
+      nonHanjinShippingMethods: nonHanjinShippingMethodsRaw = [],
     } = req.body || {};
 
     const manualTrackingNumber = String(manualTrackingNumberRaw || "").trim();
-    const manualCarrier = "hanjin";
-    const manualStatusCode = String(manualStatusCodeRaw || "11").trim() || "11";
-    const manualStatusText =
+    const requestedManualStatusCode =
+      String(manualStatusCodeRaw || "11").trim() || "11";
+    const requestedManualStatusText =
       String(manualStatusTextRaw || "집하완료").trim() || "집하완료";
 
     const trackingNumberByMailbox =
@@ -702,12 +704,47 @@ export async function manualHanjinPickupCompleted(req, res) {
           )
         : {};
 
+    // related files:
+    // - web/backend/models/request.model.js
+    // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/shipping/components/MailboxGrid.tsx
+    // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/tracking/TrackingPage.tsx
+    const useNonHanjinShippingMethods = Boolean(
+      useNonHanjinShippingMethodsRaw,
+    );
+    const nonHanjinShippingMethods = Array.from(
+      new Set(
+        (Array.isArray(nonHanjinShippingMethodsRaw)
+          ? nonHanjinShippingMethodsRaw
+          : []
+        )
+          .map((value) => String(value || "").trim())
+          .filter(Boolean),
+      ),
+    );
+
+    if (useNonHanjinShippingMethods && nonHanjinShippingMethods.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "한진택배 외 발송 방식을 선택한 경우 nonHanjinShippingMethods를 최소 1개 이상 입력해야 합니다.",
+      });
+    }
+
+    const manualCarrier = useNonHanjinShippingMethods ? "한진 외" : "hanjin";
+    const manualStatusCode = useNonHanjinShippingMethods
+      ? "91"
+      : requestedManualStatusCode;
+    const manualStatusText = useNonHanjinShippingMethods
+      ? "배송완료"
+      : requestedManualStatusText;
+
     // 수동 집하 시각 SSOT: "당일 16:00 KST"
     // 사용자 입력 시각을 받지 않고 서버에서 고정 계산해 기록한다.
     const now = new Date();
     const kstNow = new Date(now.getTime() + 9 * 60 * 60 * 1000);
     const kstYmd = kstNow.toISOString().slice(0, 10);
     const manualPickedUpAt = new Date(`${kstYmd}T16:00:00+09:00`);
+    const manualDeliveredAt = manualPickedUpAt;
 
     const addressList = Array.isArray(mailboxAddresses)
       ? mailboxAddresses
@@ -724,7 +761,7 @@ export async function manualHanjinPickupCompleted(req, res) {
 
     const routePath = String(req?.originalUrl || req?.path || "").trim();
     const isLegacyMockRoute = routePath.includes("mock-pickup-complete");
-    if (!isLegacyMockRoute) {
+    if (!isLegacyMockRoute && !useNonHanjinShippingMethods) {
       const missingTrackingMailboxes = addressList.filter((mailboxAddress) => {
         const perMailbox = String(
           trackingNumberByMailbox?.[mailboxAddress] || "",
@@ -895,10 +932,13 @@ export async function manualHanjinPickupCompleted(req, res) {
       // 그룹 키(pkg/mailbox)는 내부 처리 순서용이며, 사용자/추적 화면의 집하 단위를 쪼개면 안 된다.
       // 수동 집하는 사용자가 입력한 운송장번호를 우편함 전체에 강제 적용한다.
       // (레거시 mock 경로와 호환을 위해 trackingNumber가 비어 있으면 fallback 생성값을 사용)
-      const mailboxTrackingNumber =
-        String(trackingNumberByMailbox?.[mailboxAddress] || "").trim() ||
-        manualTrackingNumber ||
-        resolveMailboxTrackingNumber(effectiveMailboxRequests, "MOCK", now);
+      const mailboxTrackingNumber = useNonHanjinShippingMethods
+        ? String(
+            trackingNumberByMailbox?.[mailboxAddress] || manualTrackingNumber || "",
+          ).trim()
+        : String(trackingNumberByMailbox?.[mailboxAddress] || "").trim() ||
+          manualTrackingNumber ||
+          resolveMailboxTrackingNumber(effectiveMailboxRequests, "MOCK", now);
 
       for (const group of groups) {
         const trackingNumber = mailboxTrackingNumber;
@@ -906,6 +946,7 @@ export async function manualHanjinPickupCompleted(req, res) {
         const deliverySaveJobs = [];
         const requestSaveJobs = [];
         const emitJobs = [];
+        let deliveryInfoCreateFailedCount = 0;
         const shippingPackageId = String(
           group?.[0]?.shippingPackageId || "",
         ).trim();
@@ -924,38 +965,84 @@ export async function manualHanjinPickupCompleted(req, res) {
           }
 
           if (!deliveryInfo) {
-            console.log(
-              `[MANUAL_PICKUP] SKIP: no deliveryInfo for mailbox=${mailboxAddress}, requestId=${requestDoc.requestId}`,
-            );
-            continue;
+            try {
+              deliveryInfo = await DeliveryInfo.create({
+                request: requestDoc._id,
+                trackingNumber: trackingNumber || undefined,
+                carrier: manualCarrier,
+                shippedAt: useNonHanjinShippingMethods
+                  ? manualDeliveredAt
+                  : manualPickedUpAt,
+                pickedUpAt: useNonHanjinShippingMethods
+                  ? undefined
+                  : manualPickedUpAt,
+                deliveredAt: useNonHanjinShippingMethods
+                  ? manualDeliveredAt
+                  : undefined,
+                tracking: {
+                  lastStatusCode: manualStatusCode,
+                  lastStatusText: manualStatusText,
+                  lastEventAt: useNonHanjinShippingMethods
+                    ? manualDeliveredAt
+                    : manualPickedUpAt,
+                  lastSyncedAt: now,
+                },
+              });
+              requestDoc.deliveryInfoRef = deliveryInfo._id;
+            } catch (createError) {
+              deliveryInfoCreateFailedCount += 1;
+              console.log(
+                `[MANUAL_PICKUP] SKIP: failed to create deliveryInfo for mailbox=${mailboxAddress}, requestId=${requestDoc.requestId}`,
+                createError,
+              );
+              continue;
+            }
           }
 
           console.log(
             `[MANUAL_PICKUP] processing mailbox=${mailboxAddress}, requestId=${requestDoc.requestId}, trackingNumber=${trackingNumber}`,
           );
 
-          deliveryInfo.trackingNumber = trackingNumber;
+          deliveryInfo.trackingNumber = trackingNumber || null;
           deliveryInfo.carrier = manualCarrier;
           deliveryInfo.tracking = deliveryInfo.tracking || {};
           deliveryInfo.tracking.lastStatusCode = manualStatusCode;
           deliveryInfo.tracking.lastStatusText = manualStatusText;
-          deliveryInfo.tracking.lastEventAt = manualPickedUpAt;
+          deliveryInfo.tracking.lastEventAt = useNonHanjinShippingMethods
+            ? manualDeliveredAt
+            : manualPickedUpAt;
           deliveryInfo.tracking.lastSyncedAt = now;
-          if (!deliveryInfo.shippedAt) {
-            deliveryInfo.shippedAt = manualPickedUpAt;
+
+          if (useNonHanjinShippingMethods) {
+            deliveryInfo.shippedAt = deliveryInfo.shippedAt || manualDeliveredAt;
+            deliveryInfo.pickedUpAt = null;
+            deliveryInfo.deliveredAt = manualDeliveredAt;
+          } else {
+            if (!deliveryInfo.shippedAt) {
+              deliveryInfo.shippedAt = manualPickedUpAt;
+            }
+            deliveryInfo.pickedUpAt = manualPickedUpAt;
           }
-          deliveryInfo.pickedUpAt = manualPickedUpAt;
           deliverySaveJobs.push(deliveryInfo.save());
 
           requestDoc.manufacturerStage = "추적관리";
           requestDoc.status = "추적관리";
           applyShippingWorkflowState(requestDoc, {
-            code: SHIPPING_WORKFLOW_CODES.PICKED_UP,
-            label: SHIPPING_WORKFLOW_LABELS[SHIPPING_WORKFLOW_CODES.PICKED_UP],
-            pickedUpAt: manualPickedUpAt,
+            code: useNonHanjinShippingMethods
+              ? SHIPPING_WORKFLOW_CODES.COMPLETED
+              : SHIPPING_WORKFLOW_CODES.PICKED_UP,
+            label: useNonHanjinShippingMethods
+              ? SHIPPING_WORKFLOW_LABELS[SHIPPING_WORKFLOW_CODES.COMPLETED]
+              : SHIPPING_WORKFLOW_LABELS[SHIPPING_WORKFLOW_CODES.PICKED_UP],
+            pickedUpAt: useNonHanjinShippingMethods ? null : manualPickedUpAt,
+            completedAt: useNonHanjinShippingMethods ? manualDeliveredAt : null,
             trackingStatusCode: manualStatusCode,
             trackingStatusText: manualStatusText,
             source: "hanjin-tracking-manual-pickup",
+            manualDeliveryMethods: useNonHanjinShippingMethods
+              ? nonHanjinShippingMethods
+              : [],
+            manualDeliveryMethodsUpdatedAt: now,
             updatedAt: now,
           });
           requestSaveJobs.push(requestDoc.save());
@@ -978,6 +1065,12 @@ export async function manualHanjinPickupCompleted(req, res) {
           mailboxAddress,
           shippingPackageId: shippingPackageId || null,
           success: processedRequestIds.length > 0,
+          reason:
+            processedRequestIds.length > 0
+              ? null
+              : deliveryInfoCreateFailedCount > 0
+                ? "delivery_info_create_failed"
+                : "unknown",
           requestCount: group.length,
           processedCount: processedRequestIds.length,
           requestIds: processedRequestIds,

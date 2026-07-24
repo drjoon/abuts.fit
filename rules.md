@@ -149,6 +149,26 @@
 - `web/backend/models/`
 - `web/backend/modules/requests/`
 
+### 1.0.4 수동 집하 '한진택배 외 발송 방식' SSOT (2026-07-24)
+
+- 수동 집하 모달의 "한진택배 외 다른 방식으로 발송"은 체크된 방식만 저장합니다.
+  - 기본 항목은 `방문 전달`이며, 추가/삭제/수정 가능합니다.
+- 저장 SSOT는 `Request.shippingWorkflow.manualDeliveryMethods` 입니다.
+  - 배열은 중복/공백 제거 후 저장합니다.
+  - `useNonHanjinShippingMethods=true` 인 경우 최소 1개 이상 방식이 필요합니다.
+- 한진 외 발송 선택 시 운송장번호 없이도 처리 가능해야 하며,
+  추적관리 흐름은 `accepted/picked_up`을 거치지 않고 `completed(배송완료)`로 바로 반영합니다.
+- 추적관리/상세 화면은 `shippingWorkflow.manualDeliveryMethods`를 표시해,
+  한진 외 발송 이력을 확인할 수 있어야 합니다.
+
+관련 파일:
+- `web/frontend/src/pages/manufacturer/worksheet/custom_abutment/shipping/components/MailboxGrid.tsx`
+- `web/frontend/src/pages/manufacturer/worksheet/custom_abutment/tracking/TrackingPage.tsx`
+- `web/frontend/src/pages/manufacturer/worksheet/custom_abutment/shipping/components/MailboxContentsModal.tsx`
+- `web/frontend/src/types/request.ts`
+- `web/backend/controllers/requests/shipping.controller.js`
+- `web/backend/models/request.model.js`
+
 ### 1.1 보안 정보 관리
 
 **보안 정보(비밀번호, API 키, DB URI 등)는 절대 하드코딩하지 않습니다.**

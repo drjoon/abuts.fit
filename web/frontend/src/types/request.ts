@@ -283,6 +283,11 @@ export interface RequestBase {
   };
   paymentStatus?: "결제전" | "결제완료" | "결제취소" | string;
 
+  // related files:
+  // - web/backend/models/request.model.js
+  // - web/backend/controllers/requests/shipping.controller.js
+  // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/tracking/TrackingPage.tsx
+  // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/shipping/components/MailboxContentsModal.tsx
   shippingWorkflow?: {
     code?:
       | "none"
@@ -302,6 +307,8 @@ export interface RequestBase {
     canceledAt?: string | null;
     trackingStatusCode?: string | null;
     trackingStatusText?: string | null;
+    manualDeliveryMethods?: string[] | null;
+    manualDeliveryMethodsUpdatedAt?: string | null;
     updatedAt?: string | null;
     source?: string | null;
   };
