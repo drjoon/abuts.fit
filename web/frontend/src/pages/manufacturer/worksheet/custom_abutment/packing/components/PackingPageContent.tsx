@@ -384,6 +384,61 @@ export const PackingPageContent = ({
     [queryClient, toast, token],
   );
 
+  const handleCloneSampleForProduction = useCallback(
+    async (req: ManufacturerRequest) => {
+      if (!req?._id) return;
+      try {
+        // 세척.패킹 등 CAM 이후 단계에서는 허용 시작 공정 한계(의뢰/CAM/가공)에 맞춰
+        // 가공 단계 샘플로 복사한다.
+        // (의뢰/CAM 단계 카드는 해당 단계 그대로 생성)
+        const rawStage = String(req.manufacturerStage || "").trim();
+        const lowerStage = rawStage.toLowerCase();
+        const startStage =
+          rawStage === "의뢰" || lowerStage === "request"
+            ? "의뢰"
+            : rawStage === "CAM" || lowerStage === "cam"
+              ? "CAM"
+              : "가공";
+
+        const res = await fetch(`/api/requests/remake-clone`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ requestIds: [req._id], startStage }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || data?.success === false) {
+          throw new Error(data?.message || "샘플 복사에 실패했습니다.");
+        }
+
+        const clonedRequestId =
+          data?.data?.created?.[0]?.clonedRequestId || data?.data?.requestId || "-";
+
+        toast({
+          title: "샘플 복사 완료",
+          description: `크레딧 차감 없이 ${startStage} 공정 샘플을 생성했습니다. (새 의뢰ID: ${clonedRequestId})`,
+        });
+
+        void queryClient.invalidateQueries({
+          queryKey: ["worksheet-assigned-summary"],
+        });
+        void queryClient.refetchQueries({
+          queryKey: ["worksheet-assigned-summary"],
+          type: "active",
+        });
+      } catch (e: any) {
+        toast({
+          title: "샘플 복사 실패",
+          description: e?.message || "네트워크 오류",
+          variant: "destructive",
+        });
+      }
+    },
+    [queryClient, toast, token],
+  );
+
   const handleCardDelete = useCallback(
     async (req: ManufacturerRequest) => {
       if (!req?._id) return;
@@ -1432,6 +1487,7 @@ export const PackingPageContent = ({
               onOpenPreview={handleOpenPreview}
               onDeleteCam={() => {}}
               onDeleteNc={handleDeleteNc}
+              onCloneSample={handleCloneSampleForProduction}
               onSaveToRnd={handleSaveToRnd}
               onRollback={handleCardRollback}
               onApprove={handleCardApprove}

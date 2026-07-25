@@ -35,6 +35,7 @@ type WorksheetCardGridProps = {
   onOpenPreview: (req: ManufacturerRequest) => void;
   onDeleteCam: (req: ManufacturerRequest) => void;
   onDeleteNc: (req: ManufacturerRequest) => void;
+  onCloneSample?: (req: ManufacturerRequest) => void;
   onSaveToRnd?: (req: ManufacturerRequest) => void;
   onRollback?: (req: ManufacturerRequest) => void;
   onApprove?: (req: ManufacturerRequest) => void;
@@ -73,6 +74,7 @@ export const WorksheetCardGrid = ({
   onOpenPreview,
   onDeleteCam,
   onDeleteNc,
+  onCloneSample,
   onSaveToRnd,
   onRollback,
   onApprove,
@@ -503,6 +505,12 @@ export const WorksheetCardGrid = ({
           Boolean(isSampleRequest) ||
           hasRealtimeProgress ||
           Boolean(
+            onCloneSample &&
+              (tabStage === "packing" ||
+                tabStage === "request" ||
+                tabStage === "cam"),
+          ) ||
+          Boolean(
             onSaveToRnd &&
               (tabStage === "packing" ||
                 tabStage === "request" ||
@@ -665,6 +673,25 @@ export const WorksheetCardGrid = ({
                 >
                   {isUnmachinableSample ? "가공불가" : "가공불가 확인요망"}
                 </Badge>
+              )}
+              {onCloneSample &&
+                (tabStage === "packing" ||
+                  tabStage === "request" ||
+                  tabStage === "cam") && (
+                <button
+                  type="button"
+                  className="h-7 px-2 inline-flex items-center justify-center gap-1 rounded-md border bg-white/90 text-blue-700 shadow-sm transition hover:bg-blue-50"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    onCloneSample(request);
+                  }}
+                  aria-label="샘플 복사"
+                  title="크레딧 차감 없는 생산용 샘플 복사"
+                >
+                  <Copy className="h-3.5 w-3.5" />
+                  <span className="text-[11px] font-semibold">샘플 복사</span>
+                </button>
               )}
               {onSaveToRnd &&
                 (tabStage === "packing" ||

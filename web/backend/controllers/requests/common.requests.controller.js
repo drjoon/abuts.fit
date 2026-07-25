@@ -2825,8 +2825,10 @@ function buildClonedCaseInfos(sourceCaseInfos, startStage, now = new Date()) {
     },
   };
 
-  // 시작 공정 이전 산출물은 유지하고, 이후 공정 산출물은 초기화한다.
-  // - 의뢰 시작: CAM/NC 모두 제거
+  // 시작 공정 복사 정책 (생산 샘플 복사 공통):
+  // - 의뢰 시작: CAM(filled STL)은 유지, NC는 제거
+  //   -> 의뢰자 과금/결제 상태와 무관한 가공 입력 데이터는 복사하고,
+  //      NC 산출물은 공정 재생성을 위해 비운다.
   // - CAM 시작: CAM은 유지, NC는 제거 (재생성 가능)
   // - 가공 시작: CAM/NC 모두 유지
   if (startStage === "가공") {
@@ -2847,7 +2849,7 @@ function buildClonedCaseInfos(sourceCaseInfos, startStage, now = new Date()) {
 
   return {
     ...base,
-    camFile: null,
+    camFile: sourceCaseInfos?.camFile || null,
     ncFile: null,
   };
 }

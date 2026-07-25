@@ -950,6 +950,63 @@ export const RequestPage = ({
     [queryClient, toast, token],
   );
 
+  const handleCloneSampleForProduction = useCallback(
+    async (req: ManufacturerRequest) => {
+      if (!req?._id) return;
+      try {
+        // 생산용 샘플은 R&D 보관(done) 경로가 아니라 작업 복사본(rnd.doneAt=null)으로 생성한다.
+        // 현재 단계에 맞춰 시작 공정을 고정한다.
+        // - 의뢰 탭: 의뢰로 생성
+        // - CAM 탭: CAM으로 생성
+        // - 그 외 단계: 가공으로 생성(허용 시작 공정 제한)
+        const rawStage = String(req.manufacturerStage || "").trim();
+        const lowerStage = rawStage.toLowerCase();
+        const startStage =
+          rawStage === "의뢰" || lowerStage === "request"
+            ? "의뢰"
+            : rawStage === "CAM" || lowerStage === "cam"
+              ? "CAM"
+              : "가공";
+
+        const res = await fetch(`/api/requests/remake-clone`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ requestIds: [req._id], startStage }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || data?.success === false) {
+          throw new Error(data?.message || "샘플 복사에 실패했습니다.");
+        }
+
+        const clonedRequestId =
+          data?.data?.created?.[0]?.clonedRequestId || data?.data?.requestId || "-";
+
+        toast({
+          title: "샘플 복사 완료",
+          description: `크레딧 차감 없이 ${startStage} 공정 샘플을 생성했습니다. (새 의뢰ID: ${clonedRequestId})`,
+        });
+
+        void queryClient.invalidateQueries({
+          queryKey: ["worksheet-assigned-summary"],
+        });
+        void queryClient.refetchQueries({
+          queryKey: ["worksheet-assigned-summary"],
+          type: "active",
+        });
+      } catch (e: any) {
+        toast({
+          title: "샘플 복사 실패",
+          description: e?.message || "네트워크 오류",
+          variant: "destructive",
+        });
+      }
+    },
+    [queryClient, toast, token],
+  );
+
   // R&D 샘플 삭제 핸들러 (제조사/관리자만 가능)
   const handleCardDelete = useCallback(
     async (req: ManufacturerRequest) => {
@@ -2065,6 +2122,11 @@ export const RequestPage = ({
                   onOpenPreview={handleOpenPreview}
                   onDeleteCam={handleDeleteCam}
                   onDeleteNc={handleDeleteNc}
+                  onCloneSample={
+                    tabStage === "request" || tabStage === "cam"
+                      ? handleCloneSampleForProduction
+                      : undefined
+                  }
                   onSaveToRnd={
                     tabStage === "request" || tabStage === "cam"
                       ? handleSaveToRnd
