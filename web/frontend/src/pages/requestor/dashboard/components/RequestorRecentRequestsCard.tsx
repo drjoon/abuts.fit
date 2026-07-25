@@ -73,7 +73,9 @@ type RecentRequestCardItem = {
   _id?: string;
   id?: string;
   requestId?: string;
+  source?: string;
   rnd?: {
+    doneAt?: string | null;
     unmachinableAt?: string | null;
     unmachinablePotentialAt?: string | null;
     unmachinableConfirmedAt?: string | null;
@@ -139,6 +141,12 @@ const parseUnmachinableReasonLines = (reasonRaw: string): string[] => {
     .split(/\s*\/\s*|\n+/)
     .map((line) => String(line || "").trim())
     .filter(Boolean);
+};
+
+const isManufacturerSampleRequest = (item: RecentRequestCardItem | null) => {
+  const source = String(item?.source || "").trim();
+  const priceRule = String(item?.price?.rule || "").trim();
+  return source === "manufacturer_sample" || priceRule === "manufacturer_sample";
 };
 
 const renderStageBadge = (item: RecentRequestCardItem | null) => {
@@ -234,10 +242,17 @@ export const RequestorRecentRequestsCard = ({
     [teethPresets],
   );
 
+  const visibleItems = useMemo(
+    () => items.filter((it) => !isManufacturerSampleRequest(it)),
+    [items],
+  );
+
   const selectedSummary = useMemo(() => {
     if (!selectedRequestId) return null;
-    return items.find((it) => (it._id || it.id) === selectedRequestId) || null;
-  }, [items, selectedRequestId]);
+    return (
+      visibleItems.find((it) => (it._id || it.id) === selectedRequestId) || null
+    );
+  }, [visibleItems, selectedRequestId]);
 
   const handleCancelRequest = async (requestId: string) => {
     if (!requestId) return;
@@ -566,7 +581,7 @@ export const RequestorRecentRequestsCard = ({
       </CardHeader>
       <CardContent className="flex-1 flex flex-col justify-between pt-2">
         <div className="space-y-3 max-h-[550px] overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-transparent">
-          {items.map((item) => {
+          {visibleItems.map((item) => {
             const rawRequestId = String(item.requestId || "").trim();
             const stableKey = item._id || item.id || rawRequestId || "";
             const displayId = rawRequestId || String(item.id || item._id || "");

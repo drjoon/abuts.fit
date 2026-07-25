@@ -803,6 +803,10 @@ export async function getMyDashboardSummary(req, res) {
           Request.find({
             ...requestFilter,
             manufacturerStage: { $ne: "취소" },
+            $and: [
+              { source: { $ne: "manufacturer_sample" } },
+              { "price.rule": { $ne: "manufacturer_sample" } },
+            ],
           })
             .select({
               _id: 1,
@@ -818,6 +822,7 @@ export async function getMyDashboardSummary(req, res) {
               originalShipping: 1,
               deliveryInfoRef: 1,
               price: 1,
+              source: 1,
               rnd: 1,
             })
             .sort({ createdAt: -1 })
@@ -944,6 +949,7 @@ export async function getMyDashboardSummary(req, res) {
             requestor: r.requestor || null,
             deliveryInfoRef: r.deliveryInfoRef || null,
             price: r.price || null,
+            source: r.source || null,
             rnd: r.rnd || null,
             createdAt: r.createdAt,
           };
