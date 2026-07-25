@@ -15,6 +15,7 @@ import {
 } from "./business.address.util.js";
 import { findBusinessByAnchors } from "./business.find.util.js";
 import { updateMyBusiness } from "./business.update.controller.js";
+import { resolveRequestorPricingBaseDate } from "../requests/utils.js";
 export { updateMyBusiness };
 
 export async function checkBusinessNumberDuplicate(req, res) {
@@ -275,6 +276,7 @@ export async function getMyBusiness(req, res) {
           businessVerified: false,
           metadata: {},
           payoutAccount: {},
+          pricingBaseDate: null,
         },
       });
     }
@@ -322,6 +324,7 @@ export async function getMyBusiness(req, res) {
           businessVerified: false,
           metadata: {},
           payoutAccount: {},
+          pricingBaseDate: null,
         },
       });
     }
@@ -354,6 +357,15 @@ export async function getMyBusiness(req, res) {
     // AI 파싱 후 사용자 확인/검증을 거친 데이터는 metadata에 저장
     const metadata = anchor?.metadata || {};
 
+    // related files:
+    // - web/backend/controllers/requests/utils.js
+    // - web/frontend/src/pages/requestor/settings/SettingsPage.tsx
+    // 신규 기공소 90일 고정가와 동일 기준일(가입 승인일 우선)을 노출한다.
+    const pricingBaseDate = await resolveRequestorPricingBaseDate({
+      requestorId: req.user._id,
+      requestorOrgId: anchor._id,
+    });
+
     const responseData = {
       success: true,
       data: {
@@ -366,6 +378,7 @@ export async function getMyBusiness(req, res) {
         businessLicense: anchor?.businessLicense || null,
         payoutAccount: anchor?.payoutAccount || {},
         shippingPolicy: anchor?.shippingPolicy || null,
+        pricingBaseDate: pricingBaseDate || null,
         requestSettings: {
           anodizingEnabled:
             typeof anchor?.requestSettings?.anodizingEnabled === "boolean"

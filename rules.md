@@ -2852,3 +2852,24 @@ PRC 파일 경로 SSOT는 아래를 사용합니다.
 - 의뢰자 확인(읽음) 시: `request:rnd-unmachinable-confirmed`
 - 두 이벤트 모두 5개 role(`requestor`, `manufacturer`, `admin`, `salesman`, `devops`)에 전파합니다.
 - 이벤트 발행 전후로 대시보드 스냅샷/캐시 무효화 트리거를 수행해 stale 카운트를 방지합니다.
+
+---
+
+## 21. 의뢰자 설정 > 사업자 가입일시/경과일/D-day 표시 정책 (2026-07-25)
+
+- `설정 > 사업자` 탭의 `가입일시`, `가입 후 경과일`, `런칭 이벤트 종료까지 D-xx일`은
+  가격 정책과 동일한 기준일 SSOT를 사용합니다.
+- 기준일 SSOT는 `resolveRequestorPricingBaseDate`이며, 우선순위는 다음과 같습니다.
+  1. `BusinessAnchor.verification.verifiedAt` (가입 승인일)
+  2. `owners[*].approvedAt`(없으면 `createdAt`)의 최솟값
+  3. `primaryContactUserId.approvedAt`(없으면 `createdAt`)
+  4. 마지막 fallback `BusinessAnchor.createdAt`
+- `GET /api/businesses/me` 응답에 `pricingBaseDate`를 포함해 프론트가 직접 동일 기준일을 표시하도록 합니다.
+- 프론트의 D-day는 `90 - 경과일`로 계산하며, 0 이하일 때는 `런칭 이벤트 종료`로 표시합니다.
+
+관련 파일:
+- `web/backend/controllers/requests/utils.js`
+- `web/backend/controllers/businesses/business.controller.js`
+- `web/frontend/src/pages/requestor/settings/SettingsPage.tsx`
+- `web/backend/controllers/requests/creation.from-draft.controller.js`
+- `web/frontend/src/pages/requestor/new_request/hooks/useNewRequestSubmitV2.ts`

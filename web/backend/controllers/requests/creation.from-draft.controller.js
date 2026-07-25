@@ -997,14 +997,20 @@ export async function createRequestsFromDraft(req, res) {
             ? totalShippingFee - availableForShipping
             : 0;
 
+        // related files:
+        // - web/frontend/src/pages/requestor/new_request/hooks/useNewRequestSubmitV2.ts
+        // - web/backend/controllers/requests/utils.js
+        // 크레딧 부족 안내는 제출 건수(requestCount)를 함께 내려 프론트 토스트와 동일 문맥을 유지한다.
         if (machiningShortfall > 0 || shippingShortfall > 0) {
           let message = "";
           const details = [];
 
+          const requestCount = preparedCasesForCreate.length;
+
           if (machiningShortfall > 0 && shippingShortfall > 0) {
             message = "의뢰비와 배송비 크레딧이 모두 부족합니다.";
             details.push(
-              `의뢰비 필요: ${totalSpendSupply.toLocaleString()}원 (보유: ${availableForMachining.toLocaleString()}원)`,
+              `의뢰비 필요: ${totalSpendSupply.toLocaleString()}원 (${requestCount}건 합계, 보유: ${availableForMachining.toLocaleString()}원)`,
             );
             details.push(
               `배송비 필요: ${totalShippingFee.toLocaleString()}원 (보유: ${availableForShipping.toLocaleString()}원)`,
@@ -1012,7 +1018,7 @@ export async function createRequestsFromDraft(req, res) {
           } else if (machiningShortfall > 0) {
             message = "의뢰비 크레딧이 부족합니다.";
             details.push(
-              `필요: ${totalSpendSupply.toLocaleString()}원, 보유: ${availableForMachining.toLocaleString()}원`,
+              `필요: ${totalSpendSupply.toLocaleString()}원 (${requestCount}건 합계), 보유: ${availableForMachining.toLocaleString()}원`,
             );
           } else {
             message = "배송비 크레딧이 부족합니다.";
@@ -1042,6 +1048,7 @@ export async function createRequestsFromDraft(req, res) {
               feePerBox: shippingFeePerBox,
             },
             reason: "insufficient_credit",
+            requestCount,
           };
           throw err;
         }

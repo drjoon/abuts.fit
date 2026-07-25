@@ -607,16 +607,23 @@ export const useNewRequestSubmitV2 = ({
         });
 
         // 402 크레딧 부족 에러 처리
+        // related files:
+        // - web/backend/controllers/requests/creation.from-draft.controller.js
+        // 크레딧 부족 토스트는 서버 payload.requestCount를 노출해 사용자가 현재 제출 건수를 즉시 확인할 수 있게 한다.
         if (res.status === 402) {
           const payload = errData?.data;
           const machiningFee = payload?.machiningFee;
           const shippingFee = payload?.shippingFee;
+          const requestCount = Number(payload?.requestCount || 0);
 
           let description = errData?.message || "크레딧이 부족합니다.";
 
           // 상세 정보가 있으면 추가 안내
           if (machiningFee || shippingFee) {
             const details = [];
+            if (requestCount > 0) {
+              details.push(`현재 제출 건수: ${requestCount}건`);
+            }
             if (machiningFee?.shortfall > 0) {
               details.push(
                 `의뢰비 부족: ${machiningFee.shortfall.toLocaleString()}원`,

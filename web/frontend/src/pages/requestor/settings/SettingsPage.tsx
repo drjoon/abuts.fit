@@ -25,6 +25,12 @@ import { RequestorSecurity } from "./Security";
 import { Shield } from "lucide-react";
 import { useToast } from "@/shared/hooks/use-toast";
 import { resolveBusinessType } from "@/shared/utils/resolveBusinessType";
+import { formatKstDateTimeToKo, toKstYmd } from "@/shared/date/kst";
+
+// related files:
+// - web/backend/controllers/businesses/business.controller.js
+// - web/backend/controllers/requests/utils.js
+// 가입일시/경과일/D-day는 신규 기공소 90일 고정가와 동일 기준일(pricingBaseDate)을 사용한다.
 
 type TabKey =
   | "account"
@@ -45,6 +51,7 @@ export const RequestorSettingsPage = () => {
   >(token ? "unknown" : "none");
   const [canManageStaff, setCanManageStaff] = useState(false);
   const [loadingMembership, setLoadingMembership] = useState(Boolean(token));
+  const [pricingBaseDate, setPricingBaseDate] = useState<string | null>(null);
 
   const mockHeaders = useMemo(() => {
     return {} as Record<string, string>;
@@ -59,6 +66,7 @@ export const RequestorSettingsPage = () => {
       if (!token) {
         setMembership("none");
         setCanManageStaff(false);
+        setPricingBaseDate(null);
         setLoadingMembership(false);
         return;
       }
@@ -75,6 +83,7 @@ export const RequestorSettingsPage = () => {
         if (!res.ok) {
           setMembership("none");
           setCanManageStaff(false);
+          setPricingBaseDate(null);
           return;
         }
         const body: any = res.data || {};
@@ -83,9 +92,13 @@ export const RequestorSettingsPage = () => {
           "owner" | "member" | "pending" | "none";
         setMembership(next);
         setCanManageStaff(next === "owner");
+        setPricingBaseDate(
+          data?.pricingBaseDate ? String(data.pricingBaseDate) : null,
+        );
       } catch {
         setMembership("none");
         setCanManageStaff(false);
+        setPricingBaseDate(null);
       } finally {
         setLoadingMembership(false);
       }
@@ -93,6 +106,24 @@ export const RequestorSettingsPage = () => {
 
     void load();
   }, [businessType, token]);
+
+  const pricingElapsedDays = useMemo(() => {
+    if (!pricingBaseDate) return null;
+    const startYmd = toKstYmd(pricingBaseDate);
+    const todayYmd = toKstYmd(new Date());
+    if (!startYmd || !todayYmd) return null;
+
+    const start = new Date(`${startYmd}T00:00:00+09:00`);
+    const today = new Date(`${todayYmd}T00:00:00+09:00`);
+    const diffMs = today.getTime() - start.getTime();
+    if (!Number.isFinite(diffMs)) return null;
+    return Math.max(0, Math.floor(diffMs / (1000 * 60 * 60 * 24)));
+  }, [pricingBaseDate]);
+
+  const launchEventRemainingDays = useMemo(() => {
+    if (pricingElapsedDays == null) return null;
+    return Math.max(0, 90 - pricingElapsedDays);
+  }, [pricingElapsedDays]);
 
   const tabs: SettingsTabDef[] = useMemo(() => {
     const base: SettingsTabDef[] = [
@@ -106,7 +137,44 @@ export const RequestorSettingsPage = () => {
         key: "business",
         label: "사업자",
         icon: Building2,
-        content: <BusinessTab userData={user} />,
+        content: (
+          <div className="space-y-3">
+            <div className="rounded-lg border border-slate-200 bg-white px-4 py-3">
+              <div className="grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
+                <div>
+                  <p className="text-xs text-slate-500">가입일시</p>
+                  <p className="mt-0.5 font-medium text-slate-900">
+                    {pricingBaseDate
+                      ? formatKstDateTimeToKo(pricingBaseDate)
+                      : "-"}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500">가입 후 경과일</p>
+                  <div className="mt-1 flex flex-wrap items-center gap-2">
+                    <p className="font-medium text-slate-900">
+                      {pricingElapsedDays == null ? "-" : `${pricingElapsedDays}일`}
+                    </p>
+                    {launchEventRemainingDays != null && (
+                      <span
+                        className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${
+                          launchEventRemainingDays > 0
+                            ? "bg-blue-50 text-blue-700 ring-1 ring-blue-200"
+                            : "bg-slate-100 text-slate-600 ring-1 ring-slate-200"
+                        }`}
+                      >
+                        {launchEventRemainingDays > 0
+                          ? `런칭 이벤트 종료까지 D-${launchEventRemainingDays}일`
+                          : "런칭 이벤트 종료"}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+            <BusinessTab userData={user} />
+          </div>
+        ),
       },
       {
         key: "staff",
@@ -144,7 +212,7 @@ export const RequestorSettingsPage = () => {
     );
 
     return base;
-  }, [user]);
+  }, [launchEventRemainingDays, pricingBaseDate, pricingElapsedDays, user]);
 
   const tabFromUrl =
     (searchParams.get("tab") as TabKey | null) || (tabs[0]?.key as TabKey);

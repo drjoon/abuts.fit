@@ -912,6 +912,11 @@ export async function ensureFinishedLotNumberForPacking(requestDoc) {
   await ensureLotNumberForMachining(requestDoc);
 }
 
+// related files:
+// - web/backend/controllers/businesses/business.controller.js
+// - web/backend/controllers/requests/creation.from-draft.controller.js
+// - web/frontend/src/pages/requestor/settings/SettingsPage.tsx
+// 신규 기공소 90일 고정가 기준일 SSOT: 가입 승인일(verifiedAt) 우선
 export async function resolveRequestorPricingBaseDate({
   requestorId,
   requestorOrgId,
@@ -925,19 +930,21 @@ export async function resolveRequestorPricingBaseDate({
         primaryContactUserId: 1,
         owners: 1,
         createdAt: 1,
+        "verification.verifiedAt": 1,
       })
       .lean();
 
-    // 우선순위 1) 사업자 생성일
-    if (org?.createdAt) {
-      return org.createdAt;
+    // 우선순위 1) 사업자 검증(승인) 시각
+    const verifiedAt = org?.verification?.verifiedAt || null;
+    if (verifiedAt) {
+      return verifiedAt;
     }
 
     const ownerIds = Array.isArray(org?.owners)
       ? org.owners.map((id) => String(id || "").trim()).filter(Boolean)
       : [];
 
-    // 우선순위 2) owners 중 가장 이른 사용자 날짜
+    // 우선순위 2) owners 중 가장 이른 승인 시각(없으면 생성 시각)
     const validOwnerIds = ownerIds.filter((id) => Types.ObjectId.isValid(id));
     if (validOwnerIds.length > 0) {
       const owners = await User.find({
@@ -958,7 +965,7 @@ export async function resolveRequestorPricingBaseDate({
       }
     }
 
-    // 우선순위 3) primaryContactUserId 날짜
+    // 우선순위 3) primaryContactUserId 승인/생성 시각
     const primaryContactId = String(org?.primaryContactUserId || "").trim();
     if (primaryContactId && Types.ObjectId.isValid(primaryContactId)) {
       const primaryUser = await User.findById(
@@ -969,6 +976,11 @@ export async function resolveRequestorPricingBaseDate({
       if (primaryUser?.approvedAt || primaryUser?.createdAt) {
         return primaryUser.approvedAt || primaryUser.createdAt || null;
       }
+    }
+
+    // 우선순위 4) 위 승인 시각을 찾지 못한 경우에만 사업자 생성일 fallback
+    if (org?.createdAt) {
+      return org.createdAt;
     }
   }
 
