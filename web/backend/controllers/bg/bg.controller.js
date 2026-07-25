@@ -29,6 +29,21 @@ const BG_STORAGE_BASE =
 
 const BRIDGE_SHARED_SECRET = process.env.BRIDGE_SHARED_SECRET || "";
 
+// related files (request category SSOT):
+// - web/backend/models/request.model.js
+// - web/backend/controllers/requests/common.requests.controller.js
+const REQUEST_CATEGORY = {
+  RND_SAMPLE: "rnd_sample",
+  COPIED_SAMPLE: "copied_sample",
+};
+
+const isRndArchivedSampleRequest = (requestLike) =>
+  String(requestLike?.requestCategory || "").trim() === REQUEST_CATEGORY.RND_SAMPLE;
+
+const isCopiedSampleRequest = (requestLike) =>
+  String(requestLike?.requestCategory || "").trim() ===
+  REQUEST_CATEGORY.COPIED_SAMPLE;
+
 const normalizeRetentionGroove = (value) => {
   const rg = String(value || "")
     .trim()
@@ -514,9 +529,7 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
 
         // 재발 방지: R&D 보관 원본(doneAt 존재)은 BG 파일 콜백의 자동 매칭 대상으로 절대 사용하지 않는다.
         // CAM 재생성/NC 생성은 반드시 작업 복사본(doneAt=null)에서만 진행되어야 한다.
-        const isImmutableRndSample =
-          String(r?.source || "") === "manufacturer_sample" &&
-          Boolean(r?.rnd?.doneAt);
+        const isImmutableRndSample = isRndArchivedSampleRequest(r);
         if (isImmutableRndSample) continue;
 
         const storedNames = [
@@ -544,9 +557,7 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
         const actualCamComplete = r?.productionSchedule?.actualCamComplete;
         const hasNcFile = Boolean(ci?.ncFile?.s3Key || ci?.ncFile?.filePath);
         const stageLabel = String(r?.manufacturerStage || "").trim();
-        const isSampleWorkingCopy =
-          String(r?.source || "") === "manufacturer_sample" &&
-          !Boolean(r?.rnd?.doneAt);
+        const isSampleWorkingCopy = isCopiedSampleRequest(r);
         const isActiveCamWindow =
           requestReviewStatus === "APPROVED" &&
           actualCamStart &&
@@ -629,10 +640,7 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
 
   // 재발 방지: R&D 보관 원본(doneAt!=null)은 완료 샘플 보관본이며 작업 대상이 아니다.
   // BG 콜백이 잘못 매칭되더라도 원본을 변경하지 않도록 즉시 무시한다.
-  if (
-    String(request?.source || "") === "manufacturer_sample" &&
-    Boolean(request?.rnd?.doneAt)
-  ) {
+  if (isRndArchivedSampleRequest(request)) {
     console.warn("[BG-Callback] Ignored immutable R&D sample", {
       requestId: request?.requestId,
       requestMongoId: String(request?._id || ""),

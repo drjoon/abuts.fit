@@ -4,6 +4,7 @@ import {
   deriveStageForFilter,
   getDiameterBucketIndex,
   stageOrder,
+  isRndSampleRequest,
 } from "@/pages/manufacturer/worksheet/custom_abutment/utils/request";
 import { shouldShowRequestInIncludeCompleted } from "@/pages/manufacturer/worksheet/custom_abutment/utils/requestFiltering";
 import { type DiameterBucketKey } from "@/shared/ui/dashboard/WorksheetDiameterQueueBar";
@@ -395,8 +396,7 @@ export const usePackingWorksheetData = ({
 
   const filteredBase = useMemo(() => {
     const isDoneRndSample = (req: ManufacturerRequest) =>
-      String(req.source || "").trim() === "manufacturer_sample" &&
-      Boolean(req.rnd?.doneAt);
+      isRndSampleRequest(req);
     const isUnmachinable = (req: ManufacturerRequest) =>
       Boolean(req.rnd?.unmachinableAt);
 

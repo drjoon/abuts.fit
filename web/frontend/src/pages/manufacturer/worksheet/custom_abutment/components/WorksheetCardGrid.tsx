@@ -19,6 +19,8 @@ import {
   getDeadlineInfo,
   getDiameterBucketIndex,
   stageOrder,
+  isAnySampleRequest,
+  isRndSampleRequest,
 } from "../utils/request";
 
 // related files (screw lot tracking):
@@ -276,9 +278,8 @@ export const WorksheetCardGrid = ({
           requestStageOrder > currentStageOrder;
 
         const stageForRollback = deriveStageForFilter(request);
-        const isSampleRequest =
-          (request as any).source === "manufacturer_sample";
-        const isRndArchivedSample = isSampleRequest && Boolean(request.rnd?.doneAt);
+        const isSampleRequest = isAnySampleRequest(request);
+        const isRndArchivedSample = isRndSampleRequest(request);
         const requestObjectId = String(request?._id || "");
         const rndMemoDraft = rndMemoDrafts[requestObjectId] ?? "";
         const rndMemoSaved = String(request.rnd?.memo || "");
@@ -518,8 +519,8 @@ export const WorksheetCardGrid = ({
                 tabStage === "cam"),
           ) ||
           Boolean(onRollback && canRollback) ||
-          Boolean(onDelete && isSampleRequest) ||
-          Boolean(onDone && isSampleRequest && !request.rnd?.doneAt) ||
+          Boolean(onDelete && isRndArchivedSample) ||
+          Boolean(onDone && isSampleRequest && !isRndArchivedSample) ||
           Boolean(
             onRestoreUnmachinable &&
               tabStage === "unmachinable" &&
@@ -745,7 +746,7 @@ export const WorksheetCardGrid = ({
                   )}
                 </button>
               )}
-              {onDelete && isSampleRequest && (
+              {onDelete && isRndArchivedSample && (
                 <button
                   type="button"
                   className="h-7 w-7 inline-flex items-center justify-center rounded-md border bg-white/90 text-red-500 shadow-sm transition hover:bg-red-50"
@@ -760,7 +761,7 @@ export const WorksheetCardGrid = ({
                   <X className="h-4 w-4" />
                 </button>
               )}
-              {onDone && isSampleRequest && !request.rnd?.doneAt && (
+              {onDone && isSampleRequest && !isRndArchivedSample && (
                 <button
                   type="button"
                   className="h-7 w-7 inline-flex items-center justify-center rounded-md border bg-white/90 text-blue-600 shadow-sm transition hover:bg-blue-50"

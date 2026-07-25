@@ -2,6 +2,7 @@ import {
   type ManufacturerRequest,
   deriveStageForFilter,
   stageOrder,
+  isRndSampleRequest,
 } from "./request";
 
 function getKstTodayYmd(): string {
@@ -94,8 +95,7 @@ export function filterRequestsByStage(
   filterRequests?: (req: ManufacturerRequest) => boolean,
 ): ManufacturerRequest[] {
   const isDoneRndSample = (req: ManufacturerRequest) =>
-    String(req.source || "").trim() === "manufacturer_sample" &&
-    Boolean(req.rnd?.doneAt);
+    isRndSampleRequest(req);
   const isUnmachinable = (req: ManufacturerRequest) =>
     Boolean(req.rnd?.unmachinableAt);
 

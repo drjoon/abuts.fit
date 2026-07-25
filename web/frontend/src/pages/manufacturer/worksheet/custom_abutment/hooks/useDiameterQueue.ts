@@ -4,6 +4,7 @@ import { type WorksheetQueueItem } from "@/shared/ui/dashboard/WorksheetDiameter
 import {
   type ManufacturerRequest,
   getDiameterBucketIndex,
+  isAnySampleRequest,
 } from "@/pages/manufacturer/worksheet/custom_abutment/utils/request";
 
 export const useDiameterQueue = (filteredAndSorted: ManufacturerRequest[]) => {
@@ -18,10 +19,9 @@ export const useDiameterQueue = (filteredAndSorted: ManufacturerRequest[]) => {
     };
 
     for (const req of filteredAndSorted) {
-      // Exclude R&D sample requests (manufacturer copies) from the summary counts
-      // but keep them in the page's request list. The UI identifies these as
-      // `source === "manufacturer_sample"`.
-      const isSampleRequest = (req as any)?.source === "manufacturer_sample";
+      // Exclude sample requests from the summary counts
+      // (R&D 샘플 + 복사샘플). 카드 리스트에는 그대로 노출한다.
+      const isSampleRequest = isAnySampleRequest(req);
 
       const caseInfos = req.caseInfos || {};
       const bucketIndex = getDiameterBucketIndex(caseInfos.maxDiameter);

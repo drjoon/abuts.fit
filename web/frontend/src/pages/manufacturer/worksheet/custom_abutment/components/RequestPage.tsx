@@ -24,6 +24,8 @@ import {
   stageOrder,
   getDiameterBucketIndex,
   getReviewStageKeyByTab,
+  isAnySampleRequest,
+  isRndSampleRequest,
 } from "@/pages/manufacturer/worksheet/custom_abutment/utils/request";
 import {
   filterRequestsByStage,
@@ -287,7 +289,7 @@ export const RequestPage = ({
             url.searchParams.set("worksheetProfile", "shipping");
           }
           if (tabStage === "rnd") {
-            url.searchParams.set("source", "manufacturer_sample");
+            url.searchParams.set("requestCategory", "rnd_sample");
             url.searchParams.set("rndDone", "1");
             url.searchParams.set("rndUnmachinable", "0");
           } else if (tabStage === "unmachinable") {
@@ -727,9 +729,7 @@ export const RequestPage = ({
 
   const matchesCurrentPage = useCallback(
     (req: ManufacturerRequest) => {
-      const isManufacturerSample =
-        String(req.source || "").trim() === "manufacturer_sample";
-      const isDoneRndSample = isManufacturerSample && Boolean(req.rnd?.doneAt);
+      const isDoneRndSample = isRndSampleRequest(req);
       const isUnmachinable = Boolean((req as any)?.rnd?.unmachinableAt);
       if (tabStage === "rnd") {
         return isDoneRndSample && !isUnmachinable;
@@ -1011,7 +1011,7 @@ export const RequestPage = ({
   const handleCardDelete = useCallback(
     async (req: ManufacturerRequest) => {
       if (!req?._id) return;
-      const isSample = (req as any).source === "manufacturer_sample";
+      const isSample = isRndSampleRequest(req);
       if (!isSample) {
         toast({
           title: "삭제 불가",
@@ -1080,8 +1080,7 @@ export const RequestPage = ({
   const handleCardDone = useCallback(
     async (req: ManufacturerRequest) => {
       if (!req?._id) return;
-      const isSample =
-        String(req.source || "").trim() === "manufacturer_sample";
+      const isSample = isAnySampleRequest(req);
       if (!isSample) {
         toast({
           title: "Done 불가",
@@ -1104,6 +1103,7 @@ export const RequestPage = ({
               doneFromStage:
                 String(item.manufacturerStage || "").trim() || null,
             },
+            requestCategory: "rnd_sample",
           };
         }),
       );
@@ -1143,6 +1143,7 @@ export const RequestPage = ({
                 ...(item.rnd || {}),
                 doneAt: req?.rnd?.doneAt || null,
               },
+              requestCategory: req?.requestCategory || "copied_sample",
             };
           }),
         );

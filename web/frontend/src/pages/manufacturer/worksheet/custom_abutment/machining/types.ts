@@ -39,6 +39,7 @@ export type QueueItem = {
     value?: string;
   } | null;
   source?: string | null;
+  requestCategory?: "order" | "rnd_sample" | "copied_sample" | string | null;
 };
 
 export type QueueMap = Record<string, QueueItem[]>;
@@ -56,6 +57,7 @@ export type LastCompletedMachining = {
   requestId: string | null;
   requestMongoId?: string | null;
   displayLabel: string | null;
+  requestCategory?: "order" | "rnd_sample" | "copied_sample" | string | null;
   clinicName?: string;
   patientName?: string;
   tooth?: string;

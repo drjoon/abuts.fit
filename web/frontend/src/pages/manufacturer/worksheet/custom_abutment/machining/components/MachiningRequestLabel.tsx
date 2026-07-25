@@ -15,6 +15,7 @@ type Props = {
   implantBrand?: string | null;
   implantFamily?: string | null;
   isSample?: boolean | null;
+  isRndArchivedSample?: boolean | null;
   hideRequestId?: boolean;
 };
 
@@ -32,6 +33,7 @@ export const MachiningRequestLabel = ({
   implantBrand,
   implantFamily,
   isSample,
+  isRndArchivedSample,
   hideRequestId,
 }: Props) => {
   const businessName = String(business || "").trim();
@@ -88,8 +90,14 @@ export const MachiningRequestLabel = ({
     return (
       <div className="flex flex-wrap items-center gap-1 text-[11px] text-slate-500">
         {isSample ? (
-          <span className="inline-flex items-center rounded-full border border-purple-200 bg-purple-50 px-2 py-0.5 font-semibold text-purple-700">
-            R&D
+          <span
+            className={`inline-flex items-center rounded-full border px-2 py-0.5 font-semibold ${
+              isRndArchivedSample
+                ? "border-purple-200 bg-purple-50 text-purple-700"
+                : "border-blue-200 bg-blue-50 text-blue-700"
+            }`}
+          >
+            {isRndArchivedSample ? "R&D" : "샘플"}
           </span>
         ) : null}
         {implantParts.length ? (

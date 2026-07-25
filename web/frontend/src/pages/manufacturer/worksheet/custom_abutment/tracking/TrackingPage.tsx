@@ -20,6 +20,7 @@ import { usePeriodStore } from "@/store/usePeriodStore";
 import {
   deriveStageForFilter,
   type ManufacturerRequest,
+  isAnySampleRequest,
 } from "../utils/request";
 import { useWorksheetRealtimeStatus } from "../hooks/useWorksheetRealtimeStatus";
 import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
@@ -264,8 +265,8 @@ export const TrackingInquiryPage = () => {
   const userScrolledRef = useRef(false);
 
   const matchesCurrentPage = useCallback((req: ManufacturerRequest) => {
-    // 추적관리 화면은 원본(normal) 의뢰만 노출
-    if (String((req as any)?.source || "").trim() === "manufacturer_sample") {
+    // 추적관리 화면은 의뢰건(order)만 노출
+    if (isAnySampleRequest(req)) {
       return false;
     }
     if (req.rnd?.unmachinableAt) {
@@ -451,9 +452,7 @@ export const TrackingInquiryPage = () => {
       if (!remakeSourceRequest?._id || remakeSubmitting) return;
       try {
         setRemakeSubmitting(true);
-        const isSampleRequest =
-          String((remakeSourceRequest as any)?.source || "").trim() ===
-          "manufacturer_sample";
+        const isSampleRequest = isAnySampleRequest(remakeSourceRequest);
 
         const endpoint = isSampleRequest
           ? `/api/requests/${remakeSourceRequest._id}/clone-from-sample-to-request`
@@ -658,7 +657,7 @@ export const TrackingInquiryPage = () => {
     const out: ManufacturerRequest[] = [];
 
     for (const r of requests) {
-      if (String((r as any)?.source || "").trim() === "manufacturer_sample") {
+      if (isAnySampleRequest(r)) {
         continue;
       }
 
@@ -1624,9 +1623,7 @@ export const TrackingInquiryPage = () => {
                     const stage = String(r.manufacturerStage || "").trim();
                     const isDelivered = !!di.deliveredAt;
                     const isTrackingStage = stage === "추적관리";
-                    const isSampleRequest =
-                      String((r as any)?.source || "").trim() ===
-                      "manufacturer_sample";
+                    const isSampleRequest = isAnySampleRequest(r);
                     const canCloneAsSample =
                       !isSampleRequest && (isTrackingStage || isDelivered);
                     return (
@@ -2142,10 +2139,7 @@ export const TrackingInquiryPage = () => {
                                         const isDelivered = !!di.deliveredAt;
                                         const isTrackingStage =
                                           stage === "추적관리";
-                                        const isSampleRequest =
-                                          String(
-                                            (req as any)?.source || "",
-                                          ).trim() === "manufacturer_sample";
+                                        const isSampleRequest = isAnySampleRequest(req);
                                         const canCloneAsSample =
                                           !isSampleRequest &&
                                           (isTrackingStage || isDelivered);

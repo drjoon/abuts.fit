@@ -203,7 +203,9 @@ export async function getCompletedMachiningRecords(req, res) {
         .filter(Boolean);
       if (requestIds.length > 0) {
         const requests = await Request.find({ requestId: { $in: requestIds } })
-          .select("requestId caseInfos lotNumber productionSchedule source")
+          .select(
+            "requestId caseInfos lotNumber productionSchedule source requestCategory",
+          )
           .lean();
         for (const r of requests) {
           const rid = String(r?.requestId || "").trim();
@@ -228,6 +230,7 @@ export async function getCompletedMachiningRecords(req, res) {
             implantType: String(r?.caseInfos?.implantType || "").trim(),
             caseInfos: r?.caseInfos || null,
             source: String(r?.source || "").trim(),
+            requestCategory: String(r?.requestCategory || "").trim(),
           });
         }
       }
@@ -268,6 +271,7 @@ export async function getCompletedMachiningRecords(req, res) {
         implantType: reqInfo?.implantType || null,
         caseInfos: reqInfo?.caseInfos || null,
         source: reqInfo?.source || null,
+        requestCategory: reqInfo?.requestCategory || null,
       };
     });
 
@@ -550,7 +554,9 @@ export async function getLastCompletedMachiningMap(req, res) {
       }
       if (requestIds.length > 0) {
         const requests = await Request.find({ requestId: { $in: requestIds } })
-          .select("requestId caseInfos lotNumber productionSchedule source")
+          .select(
+            "requestId caseInfos lotNumber productionSchedule source requestCategory",
+          )
           .lean();
         for (const r of requests) {
           const rid = String(r?.requestId || "").trim();
@@ -568,6 +574,8 @@ export async function getLastCompletedMachiningMap(req, res) {
             requestMongoId: String(r?._id || "").trim(),
             rollbackCount,
             caseInfos: r?.caseInfos || null,
+            source: String(r?.source || "").trim(),
+            requestCategory: String(r?.requestCategory || "").trim(),
           });
         }
       }
@@ -614,6 +622,7 @@ export async function getLastCompletedMachiningMap(req, res) {
         lotNumber: lotNumber || { value: undefined },
         caseInfos,
         source: reqInfo?.source || null,
+        requestCategory: reqInfo?.requestCategory || null,
         completedAt,
         durationSeconds,
       };

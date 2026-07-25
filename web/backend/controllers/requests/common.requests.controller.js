@@ -180,6 +180,36 @@ const BRIDGE_PROCESS_BASE =
 const BRIDGE_BASE = process.env.BRIDGE_BASE;
 const BRIDGE_SHARED_SECRET = process.env.BRIDGE_SHARED_SECRET;
 
+// related files (request category SSOT):
+// - web/backend/models/request.model.js
+// - web/backend/controllers/requests/common.review.controller.js
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/utils/request.ts
+const REQUEST_CATEGORY = {
+  ORDER: "order",
+  RND_SAMPLE: "rnd_sample",
+  COPIED_SAMPLE: "copied_sample",
+};
+
+const resolveRequestCategory = (requestLike) => {
+  const raw = String(requestLike?.requestCategory || "").trim();
+  if (raw === REQUEST_CATEGORY.RND_SAMPLE) return REQUEST_CATEGORY.RND_SAMPLE;
+  if (raw === REQUEST_CATEGORY.COPIED_SAMPLE)
+    return REQUEST_CATEGORY.COPIED_SAMPLE;
+  return REQUEST_CATEGORY.ORDER;
+};
+
+const isAnySampleRequest = (requestLike) => {
+  const category = resolveRequestCategory(requestLike);
+  return (
+    category === REQUEST_CATEGORY.RND_SAMPLE ||
+    category === REQUEST_CATEGORY.COPIED_SAMPLE
+  );
+};
+
+const isRndSampleRequest = (requestLike) => {
+  return resolveRequestCategory(requestLike) === REQUEST_CATEGORY.RND_SAMPLE;
+};
+
 const DEFAULT_SELF_INSPECTION_INSTRUMENT_OPTIONS = [
   "현미경(AD-T-07)",
   "비전(AD-T-19)",
@@ -1040,14 +1070,17 @@ export async function getAllRequests(req, res) {
     if (req.query.source) {
       filter.source = String(req.query.source || "").trim();
     }
+    if (req.query.requestCategory) {
+      filter.requestCategory = String(req.query.requestCategory || "").trim();
+    }
     if (req.query.rndDone !== undefined) {
       const rndDoneRaw = String(req.query.rndDone || "")
         .trim()
         .toLowerCase();
       if (rndDoneRaw === "1" || rndDoneRaw === "true") {
-        filter["rnd.doneAt"] = { $ne: null };
+        filter.requestCategory = REQUEST_CATEGORY.RND_SAMPLE;
       } else if (rndDoneRaw === "0" || rndDoneRaw === "false") {
-        filter["rnd.doneAt"] = null;
+        filter.requestCategory = { $ne: REQUEST_CATEGORY.RND_SAMPLE };
       }
     }
     if (req.query.rndUnmachinable !== undefined) {
@@ -1088,10 +1121,7 @@ export async function getAllRequests(req, res) {
     // 원본(normal) 의뢰의 배송/추적 이력만 보이도록 고정한다.
     if (view === "worksheet" && worksheetProfile === "tracking") {
       const trackingSampleGuard = {
-        $and: [
-          { source: { $ne: "manufacturer_sample" } },
-          { "price.rule": { $ne: "manufacturer_sample" } },
-        ],
+        requestCategory: REQUEST_CATEGORY.ORDER,
       };
 
       if (filter && Array.isArray(filter.$and)) {
@@ -1140,6 +1170,7 @@ export async function getAllRequests(req, res) {
       "businessAnchorId",
       "referenceIds",
       "source",
+      "requestCategory",
       "rnd.doneAt",
       "rnd.doneFromStage",
       "rnd.unmachinablePotentialAt",
@@ -1194,6 +1225,7 @@ export async function getAllRequests(req, res) {
       "businessAnchorId",
       "referenceIds",
       "source",
+      "requestCategory",
       "rnd.doneAt",
       "rnd.doneFromStage",
       "rnd.unmachinablePotentialAt",
@@ -1248,6 +1280,7 @@ export async function getAllRequests(req, res) {
       "businessAnchorId",
       "referenceIds",
       "source",
+      "requestCategory",
       "rnd.doneAt",
       "rnd.doneFromStage",
       "rnd.unmachinablePotentialAt",
@@ -1541,8 +1574,7 @@ export async function getMyRequests(req, res) {
     // (헥스 이중 가공 복사본 포함)
     filter.$and = [
       ...(Array.isArray(filter.$and) ? filter.$and : []),
-      { source: { $ne: "manufacturer_sample" } },
-      { "price.rule": { $ne: "manufacturer_sample" } },
+      { requestCategory: REQUEST_CATEGORY.ORDER },
     ];
 
     if (req.query.manufacturerStage) {
@@ -1876,7 +1908,7 @@ export const updateRndDoneStatus = asyncHandler(async (req, res) => {
     });
   }
 
-  if (String(request.source || "").trim() !== "manufacturer_sample") {
+  if (!isAnySampleRequest(request)) {
     return res.status(400).json({
       success: false,
       message: "R&D 샘플 의뢰만 Done 처리할 수 있습니다.",
@@ -1906,6 +1938,9 @@ export const updateRndDoneStatus = asyncHandler(async (req, res) => {
       ? currentStage || null
       : String(request.rnd?.doneFromStage || "").trim() || null,
   };
+  request.requestCategory = done
+    ? REQUEST_CATEGORY.RND_SAMPLE
+    : REQUEST_CATEGORY.COPIED_SAMPLE;
 
   let restoredStage = null;
   if (!done) {
@@ -1924,6 +1959,7 @@ export const updateRndDoneStatus = asyncHandler(async (req, res) => {
     data: {
       requestId: request.requestId,
       doneAt: request.rnd?.doneAt || null,
+      requestCategory: request.requestCategory,
       restoredStage,
     },
   });
@@ -2424,7 +2460,7 @@ export const updateRndMemo = asyncHandler(async (req, res) => {
     });
   }
 
-  if (String(request.source || "").trim() !== "manufacturer_sample") {
+  if (!isRndSampleRequest(request)) {
     return res.status(400).json({
       success: false,
       message: "R&D 샘플 의뢰만 메모를 저장할 수 있습니다.",
@@ -2658,7 +2694,7 @@ export async function deleteRequest(req, res) {
     // 권한 검증: 관리자이거나 같은 기공소(조직) 의뢰자, 또는
     // R&D 샘플의 경우 같은 제조사 조직(임직원 포함)만 삭제 가능
     const isRequestor = await canAccessRequestAsRequestor(req, request);
-    const isSampleRequest = request.source === "manufacturer_sample";
+    const isSampleRequest = isAnySampleRequest(request);
 
     let isSampleManufacturerOrgMember = false;
     if (isSampleRequest && req.user.role === "manufacturer") {
@@ -2688,7 +2724,7 @@ export async function deleteRequest(req, res) {
     if (isSampleRequest && (isAdmin || isSampleManufacturerOrgMember)) {
       await Request.findByIdAndDelete(request._id);
 
-      console.log("[deleteRequest] R&D 샘플 완전 삭제", {
+      console.log("[deleteRequest] 샘플 의뢰 완전 삭제", {
         requestId: request.requestId,
         deletedBy: req.user._id,
       });
@@ -2699,12 +2735,13 @@ export async function deleteRequest(req, res) {
         delta: -1,
         requestId: request.requestId,
         source: "manufacturer_sample",
+        requestCategory: resolveRequestCategory(request),
         action: "deleted",
       });
 
       res.status(200).json({
         success: true,
-        message: "R&D 샘플이 완전히 삭제되었습니다.",
+        message: "샘플 의뢰가 완전히 삭제되었습니다.",
       });
       return;
     }
@@ -2948,6 +2985,7 @@ export async function cloneAsSample(req, res) {
         manufacturerStage: stage || "추적관리",
         // 출처 표시: 내부 샘플
         source: "manufacturer_sample",
+        requestCategory: REQUEST_CATEGORY.RND_SAMPLE,
         // R&D 탭 즉시 표시를 위한 done 상태
         rnd: {
           doneAt: new Date(),
@@ -3047,6 +3085,7 @@ export async function cloneAsSample(req, res) {
         delta: 1,
         requestId: newRequest.requestId,
         source: "manufacturer_sample",
+        requestCategory: REQUEST_CATEGORY.RND_SAMPLE,
         originalRequestId: request.requestId,
       });
 
@@ -3058,6 +3097,7 @@ export async function cloneAsSample(req, res) {
           originalRequestId: request.requestId,
           originalLotNumber: originalLotValue,
           source: "manufacturer_sample",
+          requestCategory: newRequest.requestCategory,
         },
       });
     });
@@ -3100,7 +3140,7 @@ export async function cloneFromSampleToRequest(req, res) {
         throw new ApiError(404, "의뢰를 찾을 수 없습니다.");
       }
 
-      if (String(request.source || "").trim() !== "manufacturer_sample") {
+      if (!isRndSampleRequest(request)) {
         throw new ApiError(400, "R&D 샘플 의뢰만 복사할 수 있습니다.");
       }
 
@@ -3133,6 +3173,7 @@ export async function cloneFromSampleToRequest(req, res) {
         caManufacturer: req.user._id,
         manufacturerStage: startStage,
         source: "manufacturer_sample",
+        requestCategory: REQUEST_CATEGORY.COPIED_SAMPLE,
         rnd: {
           doneAt: null,
           doneBy: null,
@@ -3223,6 +3264,7 @@ export async function cloneFromSampleToRequest(req, res) {
         delta: 1,
         requestId: clonedRequest.requestId,
         source: "manufacturer_sample",
+        requestCategory: REQUEST_CATEGORY.COPIED_SAMPLE,
         originalRequestId: request.requestId,
       });
 
@@ -3233,6 +3275,7 @@ export async function cloneFromSampleToRequest(req, res) {
           requestId: clonedRequest.requestId,
           originalRequestId: request.requestId,
           source: clonedRequest.source,
+          requestCategory: clonedRequest.requestCategory,
           manufacturerStage: clonedRequest.manufacturerStage,
           startStage,
         },
@@ -3327,6 +3370,7 @@ export async function cloneRequestsForRecall(req, res) {
           caManufacturer: req.user._id,
           manufacturerStage: startStage,
           source: "manufacturer_sample",
+          requestCategory: REQUEST_CATEGORY.COPIED_SAMPLE,
           rnd: {
             doneAt: null,
             doneBy: null,
@@ -3420,6 +3464,7 @@ export async function cloneRequestsForRecall(req, res) {
             delta: 1,
             requestId: clonedRequest.requestId,
             source: "manufacturer_sample",
+            requestCategory: REQUEST_CATEGORY.COPIED_SAMPLE,
             originalRequestId: sourceRequest.requestId,
           },
         );
@@ -3427,6 +3472,7 @@ export async function cloneRequestsForRecall(req, res) {
         created.push({
           sourceRequestId: sourceRequest.requestId,
           clonedRequestId: clonedRequest.requestId,
+          requestCategory: clonedRequest.requestCategory,
           manufacturerStage: clonedRequest.manufacturerStage,
         });
       } catch (error) {

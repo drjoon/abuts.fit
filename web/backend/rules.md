@@ -37,9 +37,25 @@
   반대 헥스 모드의 내부 복사본(`source=manufacturer_sample`, `price.rule=manufacturer_sample`)을 생성해
   별도 lot/NC를 처리합니다.
   - 구현: `controllers/requests/common.review.controller.js`
-- `source=manufacturer_sample` + `rnd.doneAt!=null`(R&D 보관 원본)은 BG 자동 업데이트 대상에서 제외합니다.
-- 요청자 목록(`getMyRequests`)에서는 `manufacturer_sample` 계열 의뢰를 제외해 의뢰자에게 노출하지 않습니다.
+- `requestCategory="rnd_sample"`(R&D 보관 원본)은 BG 자동 업데이트 대상에서 제외합니다.
+- 요청자 목록(`getMyRequests`)에서는 `requestCategory!="order"` 의뢰를 제외해 의뢰자에게 노출하지 않습니다.
   - 구현: `controllers/requests/common.requests.controller.js`
+
+- 제조사 워크시트 샘플 분류 SSOT는 `Request.requestCategory`입니다.
+  - 값: `order`, `rnd_sample`, `copied_sample`
+  - 샘플 관련 API/이벤트는 `source` 추정 대신 `requestCategory`를 반환/필터에 사용합니다.
+  - 기존 데이터는 `npm --prefix web/backend run db:migrate-request-category`로 백필합니다.
+  - 관련 파일:
+    - `models/request.model.js`
+    - `controllers/requests/common.requests.controller.js`
+    - `controllers/requests/common.review.controller.js`
+    - `controllers/requests/mailbox.utils.js`
+    - `controllers/bg/bg.controller.js`
+    - `controllers/cnc/production.js`
+    - `controllers/cnc/machiningBridge.js`
+    - `services/requestDashboardStats.service.js`
+    - `scripts/db/migrate-request-category.js`
+    - `package.json`
 - R&D 샘플(`source=manufacturer_sample` 또는 `price.rule=manufacturer_sample`)은 배송 비대상입니다.
   - 우편함 할당 금지 (필요 시 `mailboxAddress=null`로 정리)
   - `포장.발송`/`추적관리` 단계 진입 금지

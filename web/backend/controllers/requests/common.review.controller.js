@@ -1156,6 +1156,7 @@ export async function updateReviewStatusByStage(req, res) {
               caManufacturer: req.user?._id || request.caManufacturer || null,
               manufacturerStage: "의뢰",
               source: "manufacturer_sample",
+              requestCategory: "copied_sample",
               lotNumber: {
                 material: String(request?.lotNumber?.material || "").trim() || null,
                 value: null,
@@ -1217,6 +1218,7 @@ export async function updateReviewStatusByStage(req, res) {
                 delta: 1,
                 requestId: clonedRequest.requestId,
                 source: "manufacturer_sample",
+                requestCategory: "copied_sample",
                 originalRequestId: request.requestId,
               },
             );

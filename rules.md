@@ -2734,7 +2734,7 @@ source: {
 
 **정책 요약**:
 
-- R&D 샘플(`source === "manufacturer_sample"`)은 운영 통계(집계, 대시보드 숫자, 리포트 등)와 비즈니스 집계에서 항상 제외합니다.
+- R&D 샘플(`source="manufacturer_sample"`)은 운영 통계(집계, 대시보드 숫자, 리포트 등)와 비즈니스 집계에서 항상 제외합니다.
 - 단, 워크시트 카드와 리스트(제조사/관리자 UI의 카드 형태)는 **표시**됩니다 — 즉, 작업자가 실제로 작업할 수 있도록 카드로는 보이고, 총계/집계 숫자에는 포함되지 않습니다.
 
 **제외 대상(예시)**:
@@ -2771,6 +2771,46 @@ source: {
 
 - 기존 구현: 샘플은 카드 렌더링(워크시트)에서는 보여지며, 주요 통계/aggregate 엔드포인트에서 제외하도록 백엔드 코드가 업데이트되었습니다.
 - 필요 시 특정 통계 API에서 샘플을 포함해야 하면 `includeSamples=1` 같은 옵션을 추가하여 예외를 허용하세요.
+
+### 18.9 의뢰 분류 SSOT: `Request.requestCategory` (2026-07-25)
+
+- 제조사 워크시트/가공보드에서 `의뢰건`, `R&D샘플`, `복사샘플` 구분은 **`Request.requestCategory` 단일 필드**를 사용합니다.
+- 허용 값:
+  - `order`: 일반 의뢰건
+  - `rnd_sample`: R&D 보관 샘플
+  - `copied_sample`: 생산/재가공용 복사 샘플
+- 샘플 판단(`source + rnd.doneAt` 조합 추정)은 신규 코드에서 사용하지 않습니다.
+- 쓰기 이벤트 기준:
+  - `clone-as-sample` 생성 시 `requestCategory="rnd_sample"`
+  - `clone-from-sample-to-request`, `remake/recall clone`, 헥스 이중 가공 자동 복사 시 `requestCategory="copied_sample"`
+  - `PATCH /api/requests/:id/rnd-done`에서 `done=true`면 `rnd_sample`, `done=false`면 `copied_sample`으로 갱신
+- 조회/UI 기준:
+  - `R&D` 탭/뱃지: `requestCategory="rnd_sample"`
+  - `샘플` 뱃지: `requestCategory="copied_sample"`
+  - 추적관리/배송/우편함 점유(실배송 대상): `requestCategory="order"`만 포함
+
+관련 파일:
+- `web/backend/models/request.model.js`
+- `web/backend/controllers/requests/common.requests.controller.js`
+- `web/backend/controllers/requests/common.review.controller.js`
+- `web/backend/controllers/requests/mailbox.utils.js`
+- `web/backend/controllers/bg/bg.controller.js`
+- `web/backend/controllers/cnc/production.js`
+- `web/backend/controllers/cnc/machiningBridge.js`
+- `web/backend/services/requestDashboardStats.service.js`
+- `web/backend/scripts/db/migrate-request-category.js`
+- `web/backend/package.json`
+- `web/frontend/src/types/request.ts
+- `web/frontend/src/pages/manufacturer/worksheet/custom_abutment/utils/request.ts`
+- `web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx`
+- `web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/WorksheetCardGrid.tsx`
+- `web/frontend/src/pages/manufacturer/worksheet/custom_abutment/packing/components/PackingPageContent.tsx`
+- `web/frontend/src/pages/manufacturer/worksheet/custom_abutment/packing/hooks/usePackingWorksheetData.ts`
+- `web/frontend/src/pages/manufacturer/worksheet/custom_abutment/tracking/TrackingPage.tsx`
+- `web/frontend/src/pages/manufacturer/worksheet/custom_abutment/hooks/useDiameterQueue.ts`
+- `web/frontend/src/pages/manufacturer/worksheet/custom_abutment/utils/requestFiltering.ts`
+- `web/frontend/src/pages/manufacturer/worksheet/custom_abutment/machining/utils/label.ts`
+- `web/frontend/src/pages/manufacturer/equipment/cnc/components/CompletedMachiningRecordsModal.tsx`
 
 ---
 

@@ -35,6 +35,23 @@
   null(미확정)인 의뢰는 `PreviewModal` 승인 시 보정/무보정 동시 가공 여부를 확인하고,
   승인 요청 바디(`processBothHexVariants`)로 백엔드 복사 생성 분기를 전달합니다.
   - 관련 파일: `src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx`, `src/pages/manufacturer/worksheet/custom_abutment/hooks/useRequestFileHandlers.ts`
+
+- 제조사 워크시트 샘플 구분 SSOT는 `Request.requestCategory`를 사용합니다.
+  - 값: `order`, `rnd_sample`, `copied_sample`
+  - 프론트는 `source+rnd.doneAt` 조합 추정 대신 `utils/request.ts`의 `isAnySampleRequest`, `isRndSampleRequest`를 사용합니다.
+  - 관련 파일:
+    - `src/types/request.ts`
+    - `src/pages/manufacturer/worksheet/custom_abutment/utils/request.ts`
+    - `src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx`
+    - `src/pages/manufacturer/worksheet/custom_abutment/components/WorksheetCardGrid.tsx`
+    - `src/pages/manufacturer/worksheet/custom_abutment/packing/components/PackingPageContent.tsx`
+    - `src/pages/manufacturer/worksheet/custom_abutment/packing/hooks/usePackingWorksheetData.ts`
+    - `src/pages/manufacturer/worksheet/custom_abutment/tracking/TrackingPage.tsx`
+    - `src/pages/manufacturer/worksheet/custom_abutment/hooks/useDiameterQueue.ts`
+    - `src/pages/manufacturer/worksheet/custom_abutment/utils/requestFiltering.ts`
+    - `src/pages/manufacturer/worksheet/custom_abutment/machining/utils/label.ts`
+    - `src/pages/manufacturer/equipment/cnc/components/CompletedMachiningRecordsModal.tsx`
+
 - API 호출은 `src/shared/api/apiClient.ts`의 `apiFetch`를 우선 사용합니다.
 - 서버 상태는 TanStack Query, 전역 UI 상태는 `src/store`를 사용합니다.
 - 파일 드롭은 개별 구현보다 `@/features/requests/components/PageFileDropZone` 재사용을 우선합니다.

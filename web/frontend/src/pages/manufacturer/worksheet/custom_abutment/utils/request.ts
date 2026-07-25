@@ -49,6 +49,40 @@ export type ManufacturerRequest = RequestBase & {
 export type ReviewStageKey =
   "request" | "cam" | "machining" | "packing" | "shipping" | "tracking";
 
+// related files (request category SSOT):
+// - web/backend/models/request.model.js
+// - web/backend/controllers/requests/common.requests.controller.js
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/WorksheetCardGrid.tsx
+export const REQUEST_CATEGORY = {
+  ORDER: "order",
+  RND_SAMPLE: "rnd_sample",
+  COPIED_SAMPLE: "copied_sample",
+} as const;
+
+export const resolveRequestCategory = (req?: ManufacturerRequest | null) => {
+  const raw = String(req?.requestCategory || "").trim();
+  if (raw === REQUEST_CATEGORY.RND_SAMPLE) return REQUEST_CATEGORY.RND_SAMPLE;
+  if (raw === REQUEST_CATEGORY.COPIED_SAMPLE)
+    return REQUEST_CATEGORY.COPIED_SAMPLE;
+  return REQUEST_CATEGORY.ORDER;
+};
+
+export const isAnySampleRequest = (req?: ManufacturerRequest | null) => {
+  const category = resolveRequestCategory(req);
+  return (
+    category === REQUEST_CATEGORY.RND_SAMPLE ||
+    category === REQUEST_CATEGORY.COPIED_SAMPLE
+  );
+};
+
+export const isRndSampleRequest = (req?: ManufacturerRequest | null) => {
+  return resolveRequestCategory(req) === REQUEST_CATEGORY.RND_SAMPLE;
+};
+
+export const isCopiedSampleRequest = (req?: ManufacturerRequest | null) => {
+  return resolveRequestCategory(req) === REQUEST_CATEGORY.COPIED_SAMPLE;
+};
+
 export interface DeadlineInfo {
   remainingMs: number;
   remainingBusinessDays: number;

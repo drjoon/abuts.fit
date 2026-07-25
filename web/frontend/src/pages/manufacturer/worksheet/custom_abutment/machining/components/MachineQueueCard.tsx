@@ -223,6 +223,9 @@ export const MachineQueueCard = ({
     : machineStatus?.currentProgram
       ? String(machineStatus.currentProgram)
       : "없음";
+  const nowPlayingAnodizingOff =
+    (currentSlot as { caseInfos?: { anodizingEnabled?: boolean } } | null)
+      ?.caseInfos?.anodizingEnabled === false;
 
   const nextUpLabel = nextSlot
     ? formatMachiningLabel(nextSlot)
@@ -787,8 +790,13 @@ export const MachineQueueCard = ({
             <div className="flex items-center justify-between gap-3">
               <div className="min-w-0 flex-1">
                 <div className="flex items-center justify-between gap-2 text-[11px] font-semibold text-slate-500">
-                  <div className="min-w-0">
-                    {MACHINING_SECTION_LABELS.nowPlaying}
+                  <div className="min-w-0 flex items-center gap-2">
+                    <span>{MACHINING_SECTION_LABELS.nowPlaying}</span>
+                    {nowPlayingAnodizingOff ? (
+                      <span className="inline-flex items-center rounded-full border border-rose-200 bg-rose-50 px-2 py-0.3 text-[10px] font-extrabold text-rose-700">
+                        아노 X
+                      </span>
+                    ) : null}
                     {elapsedLabel ? (
                       <span className="ml-2 text-blue-600 font-extrabold">
                         {elapsedLabel}

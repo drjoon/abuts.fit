@@ -248,8 +248,7 @@ export async function getAssignedLikeDashboardSummary({
     ]),
     Request.countDocuments({
       ...dateFilter,
-      source: "manufacturer_sample",
-      "rnd.doneAt": { $ne: null },
+      requestCategory: "rnd_sample",
       "rnd.unmachinableAt": null,
       ...rndCountFilter,
     }),

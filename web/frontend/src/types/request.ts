@@ -307,6 +307,8 @@ export interface RequestBase {
 
   shippingPackageId?: string;
   source?: "normal" | "manufacturer_sample" | string;
+  // 의뢰 분류 SSOT (backend Request.requestCategory)
+  requestCategory?: "order" | "rnd_sample" | "copied_sample" | string;
   rnd?: {
     doneAt?: string | null;
     unmachinableAt?: string | null;

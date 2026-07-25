@@ -1,5 +1,14 @@
 const UNKNOWN_ANCHOR_KEY = "__UNKNOWN_BUSINESS_ANCHOR__";
 
+// related files (request category SSOT):
+// - web/backend/models/request.model.js
+// - web/backend/controllers/requests/common.requests.controller.js
+const REQUEST_CATEGORY = {
+  ORDER: "order",
+  RND_SAMPLE: "rnd_sample",
+  COPIED_SAMPLE: "copied_sample",
+};
+
 const normalizeMailboxAddress = (raw) =>
   String(raw || "")
     .trim()
@@ -7,10 +16,10 @@ const normalizeMailboxAddress = (raw) =>
 
 export const isManufacturerSampleRequest = (requestLike) => {
   if (!requestLike || typeof requestLike !== "object") return false;
-  const source = String(requestLike?.source || "").trim();
-  const priceRule = String(requestLike?.price?.rule || "").trim();
+  const category = String(requestLike?.requestCategory || "").trim();
   return (
-    source === "manufacturer_sample" || priceRule === "manufacturer_sample"
+    category === REQUEST_CATEGORY.RND_SAMPLE ||
+    category === REQUEST_CATEGORY.COPIED_SAMPLE
   );
 };
 
@@ -73,9 +82,7 @@ export async function allocateVirtualMailboxAddress(
   const activeRequestsRaw = await Request.find({
     manufacturerStage: { $in: ["세척.패킹", "포장.발송"] },
     mailboxAddress: { $ne: null },
-    "rnd.doneAt": null,
-    source: { $ne: "manufacturer_sample" },
-    "price.rule": { $ne: "manufacturer_sample" },
+    requestCategory: REQUEST_CATEGORY.ORDER,
   })
     .select("_id mailboxAddress businessAnchorId requestor")
     .populate("requestor", "businessAnchorId")
@@ -158,9 +165,7 @@ export async function ensureMailboxAddressForBusiness({
 
   const mailboxOccupants = await Request.find({
     manufacturerStage: { $in: ["세척.패킹", "포장.발송"] },
-    "rnd.doneAt": null,
-    source: { $ne: "manufacturer_sample" },
-    "price.rule": { $ne: "manufacturer_sample" },
+    requestCategory: REQUEST_CATEGORY.ORDER,
     $expr: {
       $eq: [
         {

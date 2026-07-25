@@ -488,6 +488,7 @@ export function useWorksheetRealtimeStatus({
           // R&D 샘플 복사/삭제 등으로 인한 워크시트 카운트 변경 시 상단 메뉴 숫자 갱신
           const stage = String(payload?.stage || "").trim();
           const source = String(payload?.source || "").trim();
+          const requestCategory = String(payload?.requestCategory || "").trim();
           const delta = Number(payload?.delta || 0);
           const action = String(payload?.action || "").trim();
           // 현재 열린 워크시트 탭의 목록도 즉시 재조회 (R&D 탭 신규 샘플 즉시 반영)
@@ -495,7 +496,11 @@ export function useWorksheetRealtimeStatus({
             void fetchRequests(true);
           }
           // 샘플 복사/삭제 토스트 알림
-          if (source === "manufacturer_sample") {
+          if (
+            source === "manufacturer_sample" ||
+            requestCategory === "rnd_sample" ||
+            requestCategory === "copied_sample"
+          ) {
             if (delta < 0 || action === "deleted") {
               toast({
                 title: "R&D 샘플 삭제됨",

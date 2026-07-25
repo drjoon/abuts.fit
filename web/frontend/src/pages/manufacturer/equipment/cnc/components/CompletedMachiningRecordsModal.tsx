@@ -34,6 +34,7 @@ type CompletedMachiningItem = {
   implantType?: string | null;
   caseInfos?: Record<string, any> | null;
   source?: string | null;
+  requestCategory?: "order" | "rnd_sample" | "copied_sample" | string | null;
 };
 
 export type CompletedMachiningRecordsModalProps = {
@@ -339,9 +340,15 @@ export const CompletedMachiningRecordsModal = ({
                           requestId={row.rid}
                           lotShortCode={row.lotRaw.slice(-3).toUpperCase()}
                           caseInfos={(items[index] as any)?.caseInfos}
-                          isSample={
-                            String((items[index] as any)?.source || "") ===
-                            "manufacturer_sample"
+                          isSample={(() => {
+                            const category = String(
+                              (items[index] as any)?.requestCategory || "",
+                            ).trim();
+                            return category === "rnd_sample" || category === "copied_sample";
+                          })()}
+                          isRndArchivedSample={
+                            String((items[index] as any)?.requestCategory || "").trim() ===
+                            "rnd_sample"
                           }
                           hideRequestId
                           className="text-[15px]"

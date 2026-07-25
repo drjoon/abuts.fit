@@ -42,6 +42,7 @@ type LabelExtra = {
   implantBrand?: string | null;
   implantFamily?: string | null;
   isSample?: boolean | null;
+  isRndArchivedSample?: boolean | null;
 };
 
 const toNumber = (value: unknown) => {
@@ -53,7 +54,11 @@ export const buildLabelExtraProps = (slot?: QueueItem | null): LabelExtra => {
   if (!slot) return {};
   const ci = (slot as any)?.caseInfos || {};
   const schedule = (slot as any)?.productionSchedule || {};
-  const source = String((slot as any)?.source || ci?.source || "").trim();
+  const requestCategory = String((slot as any)?.requestCategory || "").trim();
+  const isSample =
+    requestCategory === "rnd_sample" || requestCategory === "copied_sample";
+  const isRndArchivedSample = requestCategory === "rnd_sample";
+
   return {
     camDiameter:
       toNumber((slot as any)?.diameter) ??
@@ -64,6 +69,7 @@ export const buildLabelExtraProps = (slot?: QueueItem | null): LabelExtra => {
     implantManufacturer: ci?.implantManufacturer ?? null,
     implantBrand: ci?.implantBrand ?? null,
     implantFamily: ci?.implantFamily ?? null,
-    isSample: source === "manufacturer_sample",
+    isSample,
+    isRndArchivedSample,
   };
 };

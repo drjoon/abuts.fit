@@ -1,6 +1,17 @@
 import mongoose from "mongoose";
 import crypto from "crypto";
 
+// related files (request category SSOT):
+// - web/backend/controllers/requests/common.requests.controller.js
+// - web/backend/controllers/requests/common.review.controller.js
+// - web/backend/controllers/bg/bg.controller.js
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/utils/request.ts
+export const REQUEST_CATEGORY_VALUES = [
+  "order",
+  "rnd_sample",
+  "copied_sample",
+];
+
 const requestSchema = new mongoose.Schema(
   {
     requestId: {
@@ -394,6 +405,16 @@ const requestSchema = new mongoose.Schema(
       type: String,
       enum: ["normal", "manufacturer_sample"],
       default: "normal",
+      index: true,
+    },
+    // 의뢰 분류 SSOT
+    // - order: 일반 의뢰건
+    // - rnd_sample: R&D 보관 샘플
+    // - copied_sample: 생산/재가공용 복사 샘플
+    requestCategory: {
+      type: String,
+      enum: REQUEST_CATEGORY_VALUES,
+      default: "order",
       index: true,
     },
     rnd: {
@@ -885,6 +906,28 @@ requestSchema.index({
 requestSchema.index({
   businessAnchorId: 1,
   manufacturerStage: 1,
+});
+
+requestSchema.index({ requestCategory: 1, manufacturerStage: 1, createdAt: -1 });
+
+// requestCategory SSOT 보호
+// - source / rnd.doneAt 변경 이벤트가 발생할 때만 requestCategory를 동기화한다.
+// - read 경로에서의 추정/보정은 하지 않는다.
+requestSchema.pre("save", function (next) {
+  const categoryRaw = String(this.requestCategory || "").trim();
+  const sourceRaw = String(this.source || "").trim();
+
+  if (!categoryRaw) {
+    this.requestCategory = "order";
+  }
+
+  if (sourceRaw === "manufacturer_sample") {
+    this.requestCategory = this.rnd?.doneAt ? "rnd_sample" : "copied_sample";
+  } else if (sourceRaw === "normal" && this.requestCategory !== "order") {
+    this.requestCategory = "order";
+  }
+
+  next();
 });
 
 // 의뢰 ID 자동 생성 (YYYYMMDD-XXXXXXXX)

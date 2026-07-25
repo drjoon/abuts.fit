@@ -17,6 +17,8 @@ import { WorksheetLoading } from "@/shared/ui/WorksheetLoading";
 import {
   type ManufacturerRequest,
   deriveStageForFilter,
+  isAnySampleRequest,
+  isRndSampleRequest,
 } from "@/pages/manufacturer/worksheet/custom_abutment/utils/request";
 import { shouldShowRequestInIncludeCompleted } from "@/pages/manufacturer/worksheet/custom_abutment/utils/requestFiltering";
 import { WorksheetCardGrid } from "../../components/WorksheetCardGrid";
@@ -210,9 +212,7 @@ export const PackingPageContent = ({
 
   const matchesCurrentPage = useCallback(
     (req: ManufacturerRequest) => {
-      const isDoneRndSample =
-        String(req.source || "").trim() === "manufacturer_sample" &&
-        Boolean(req.rnd?.doneAt);
+      const isDoneRndSample = isRndSampleRequest(req);
       const isUnmachinable = Boolean(req.rnd?.unmachinableAt);
       if (isDoneRndSample || isUnmachinable) return false;
       if (showCompleted) {
@@ -442,8 +442,7 @@ export const PackingPageContent = ({
   const handleCardDelete = useCallback(
     async (req: ManufacturerRequest) => {
       if (!req?._id) return;
-      const isSample =
-        String(req.source || "").trim() === "manufacturer_sample";
+      const isSample = isRndSampleRequest(req);
       if (!isSample) {
         toast({
           title: "삭제 불가",
@@ -511,8 +510,7 @@ export const PackingPageContent = ({
   const handleCardDone = useCallback(
     async (req: ManufacturerRequest) => {
       if (!req?._id) return;
-      const isSample =
-        String(req.source || "").trim() === "manufacturer_sample";
+      const isSample = isAnySampleRequest(req);
       if (!isSample) {
         toast({
           title: "Done 불가",
@@ -532,6 +530,7 @@ export const PackingPageContent = ({
               ...(item.rnd || {}),
               doneAt: optimisticDoneAt,
             },
+            requestCategory: "rnd_sample",
           };
         }),
       );
@@ -572,6 +571,7 @@ export const PackingPageContent = ({
                 ...(item.rnd || {}),
                 doneAt: req?.rnd?.doneAt || null,
               },
+              requestCategory: req?.requestCategory || "copied_sample",
             };
           }),
         );
@@ -901,9 +901,7 @@ export const PackingPageContent = ({
       const latestList = Array.isArray(refreshed) ? refreshed : requests;
       const latestFilteredAndSorted = latestList
         .filter((req) => {
-          const isDoneRndSample =
-            String(req.source || "").trim() === "manufacturer_sample" &&
-            Boolean(req.rnd?.doneAt);
+          const isDoneRndSample = isRndSampleRequest(req);
           const isUnmachinable = Boolean(req.rnd?.unmachinableAt);
           if (isDoneRndSample || isUnmachinable) return false;
           if (showCompleted) {
