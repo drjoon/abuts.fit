@@ -271,30 +271,75 @@ export const useNewRequestSubmitV2 = ({
 
       // 1. 클라이언트 사이드 중복 체크 (동기)
       if (files.length > 1 && caseInfosMap) {
-        const uniqueCombinations = new Set();
-        const duplicates = [];
+        const firstByCombo = new Map<string, File>();
+        const localDuplicates: {
+          caseId: string;
+          fileName: string;
+          stageOrder: number;
+          existingRequest: null;
+          existingRequestId: string;
+          duplicateType: "INTRA_SUBMISSION";
+          combo: {
+            clinicName: string;
+            patientName: string;
+            tooth: string;
+          };
+          firstFileName: string;
+        }[] = [];
 
         for (const file of files) {
           const fileKey = toNormalizedFileKey(file);
           const info = caseInfosMap[fileKey];
-          if (info) {
-            const combo = `${info.clinicName}|${info.patientName}|${info.tooth}`;
-            if (uniqueCombinations.has(combo)) {
-              duplicates.push(`${info.patientName}(${info.tooth})`);
-            }
-            uniqueCombinations.add(combo);
+          if (!info) continue;
+
+          const clinicName = String(info.clinicName || "").trim();
+          const patientName = String(info.patientName || "").trim();
+          const tooth = String(info.tooth || "").trim();
+          if (!clinicName || !patientName || !tooth) continue;
+
+          const combo = `${clinicName}|${patientName}|${tooth}`;
+          const first = firstByCombo.get(combo);
+          if (!first) {
+            firstByCombo.set(combo, file);
+            continue;
           }
+
+          localDuplicates.push({
+            caseId: String((file as File & { _draftCaseInfoId?: string })?._draftCaseInfoId || fileKey).trim(),
+            fileName: file.name,
+            stageOrder: 0,
+            existingRequest: null,
+            existingRequestId: "",
+            duplicateType: "INTRA_SUBMISSION",
+            combo: {
+              clinicName,
+              patientName,
+              tooth,
+            },
+            firstFileName: first.name,
+          });
         }
 
-        if (duplicates.length > 0) {
-          toast({
-            title: "의뢰 제출 중 오류",
-            description: `제출한 의뢰 목록에 동일한 치과/환자/치아 조합이 중복되었습니다: ${duplicates.join(
-              ", ",
-            )}. 중복 항목을 제거하거나 수정한 후 다시 제출해주세요.`,
-            variant: "destructive",
-            duration: 5000,
+        if (localDuplicates.length > 0) {
+          onDuplicateDetected?.({
+            mode: "active",
+            duplicates: localDuplicates,
+            remakeQuota: null,
           });
+
+          if (!onDuplicateDetected) {
+            const labels = localDuplicates.map(
+              (d) => `${d.combo.patientName}(${d.combo.tooth})`,
+            );
+            toast({
+              title: "의뢰 제출 중 오류",
+              description: `제출한 의뢰 목록에 동일한 치과/환자/치아 조합이 중복되었습니다: ${labels.join(
+                ", ",
+              )}.`,
+              variant: "destructive",
+              duration: 5000,
+            });
+          }
           return;
         }
       }

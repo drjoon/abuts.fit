@@ -2193,13 +2193,6 @@ export const RequestPage = ({
         onSaveManufacturerHexRotation={handleSaveManufacturerHexRotation}
         onOpenNextRequest={handleOpenNextRequest}
         setSearchParams={setSearchParams}
-        setConfirmTitle={pageState.setConfirmTitle}
-        setConfirmDescription={pageState.setConfirmDescription}
-        setConfirmAction={pageState.setConfirmAction}
-        setConfirmCancelAction={pageState.setConfirmCancelAction}
-        setConfirmLabel={pageState.setConfirmLabel}
-        setCancelLabel={pageState.setCancelLabel}
-        setConfirmOpen={pageState.setConfirmOpen}
         // onOpenNextRequest는 제거됨: 승인 후 다음 의뢰 자동 열기 방지
         // 승인 시 모달이 닫히고 작업자가 직접 다음 의뢰를 선택한다.
       />

@@ -250,6 +250,11 @@ export const NewRequestPage = () => {
     return id;
   };
 
+  const hasExistingRequestDuplicate = useMemo(
+    () => duplicateList.some((dup) => Boolean(resolveExistingRequestId(dup))),
+    [duplicateList],
+  );
+
   const applyDuplicateChoice = async (choice: {
     strategy: "skip" | "replace" | "remake";
     caseId: string;
@@ -302,10 +307,14 @@ export const NewRequestPage = () => {
       const next = (duplicateResolutions || []).filter(
         (r) => r.caseId !== choice.caseId,
       );
-      next.push({
-        ...choice,
-        existingRequestId: safeExistingRequestId,
-      });
+      const shouldPersistResolution =
+        Boolean(safeExistingRequestId) || choice.strategy !== "skip";
+      if (shouldPersistResolution) {
+        next.push({
+          ...choice,
+          existingRequestId: safeExistingRequestId,
+        });
+      }
       return next;
     })();
 
@@ -344,11 +353,39 @@ export const NewRequestPage = () => {
         description: "선택한 방식으로 의뢰를 접수하고 있어요.",
         duration: 4000,
       });
-      await handleSubmitWithDuplicateResolutions(finalResolutions as any);
+      if (finalResolutions.length > 0) {
+        await handleSubmitWithDuplicateResolutions(finalResolutions as any);
+      } else {
+        await handleSubmit();
+      }
     }
   };
 
   const renderDuplicateActions = (dup: any) => {
+    const existingRequestId = resolveExistingRequestId(dup);
+
+    if (!existingRequestId) {
+      return (
+        <div className="flex gap-2 pointer-events-auto">
+          <button
+            type="button"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              void applyDuplicateChoice({
+                strategy: "skip",
+                caseId: dup.caseId,
+                existingRequestId: "",
+              });
+            }}
+            className="flex-1 rounded bg-blue-600 px-3 py-1.5 text-[11px] font-semibold text-white hover:bg-blue-700"
+          >
+            이 중복 항목 제외
+          </button>
+        </div>
+      );
+    }
+
     const stageOrder = Number(dup?.stageOrder ?? 0);
     const isCancelableStage =
       typeof dup?.isCancelableStage === "boolean"
@@ -372,7 +409,7 @@ export const NewRequestPage = () => {
             void applyDuplicateChoice({
               strategy: primaryStrategy,
               caseId: dup.caseId,
-              existingRequestId: resolveExistingRequestId(dup),
+              existingRequestId,
             });
           }}
           className="flex-1 rounded bg-blue-600 px-3 py-1.5 text-[11px] font-semibold text-white hover:bg-blue-700"
@@ -387,7 +424,7 @@ export const NewRequestPage = () => {
             void applyDuplicateChoice({
               strategy: "skip",
               caseId: dup.caseId,
-              existingRequestId: resolveExistingRequestId(dup),
+              existingRequestId,
             });
           }}
           className="flex-1 rounded border border-gray-300 bg-white px-3 py-1.5 text-[11px] font-semibold text-gray-700 hover:bg-gray-50"
@@ -676,15 +713,18 @@ export const NewRequestPage = () => {
             setDuplicatePromptFromSubmit(false);
           }}
           title={
-            duplicatePrompt?.mode === "tracking"
-              ? "추적관리 의뢰가 이미 있습니다"
-              : "진행 중인 의뢰가 이미 있습니다"
+            hasExistingRequestDuplicate
+              ? duplicatePrompt?.mode === "tracking"
+                ? "추적관리 의뢰가 이미 있습니다"
+                : "진행 중인 의뢰가 이미 있습니다"
+              : "제출 목록 내 중복 항목이 있습니다"
           }
           description={
             <div className="space-y-3">
               <div className="text-sm text-gray-700">
-                동일한 치과/환자/치아 정보로 이미 의뢰가 존재합니다. 항목별로
-                선택해주세요.
+                {hasExistingRequestDuplicate
+                  ? "동일한 치과/환자/치아 정보로 이미 의뢰가 존재합니다. 항목별로 선택해주세요."
+                  : "제출하려는 파일들끼리 동일한 치과/환자/치아 조합이 중복되었습니다. 항목별로 제외 여부를 선택해주세요."}
               </div>
               {duplicatePrompt?.remakeQuota && (
                 <div className="rounded border border-blue-200 bg-blue-50 px-2.5 py-2 text-[11px] text-blue-800">
@@ -726,31 +766,46 @@ export const NewRequestPage = () => {
                     </div>
                     <div className="rounded border border-gray-200 bg-white p-2">
                       <div className="flex flex-col gap-0.5 text-[11px]">
-                        <span className="truncate">
-                          기존 의뢰: {existingClinic || "-"} /
-                          {existingPatient || "-"} / {existingTooth || "-"}
-                        </span>
-                        <span className="truncate">
-                          상태: {String(existing?.manufacturerStage || "")}
-                        </span>
-                        {existing?.requestId && (
-                          <span className="truncate">
-                            의뢰번호: {String(existing.requestId || "")}
-                          </span>
-                        )}
-                        {existing?.price?.amount != null && (
-                          <span className="truncate">
-                            금액(공급가):{" "}
-                            {Number(
-                              existing?.price?.amount || 0,
-                            ).toLocaleString()}
-                            원
-                          </span>
-                        )}
-                        {existing?.createdAt && (
-                          <span className="truncate">
-                            접수일: {String(existing.createdAt).slice(0, 10)}
-                          </span>
+                        {resolveExistingRequestId(dup) ? (
+                          <>
+                            <span className="truncate">
+                              기존 의뢰: {existingClinic || "-"} /
+                              {existingPatient || "-"} / {existingTooth || "-"}
+                            </span>
+                            <span className="truncate">
+                              상태: {String(existing?.manufacturerStage || "")}
+                            </span>
+                            {existing?.requestId && (
+                              <span className="truncate">
+                                의뢰번호: {String(existing.requestId || "")}
+                              </span>
+                            )}
+                            {existing?.price?.amount != null && (
+                              <span className="truncate">
+                                금액(공급가):{" "}
+                                {Number(
+                                  existing?.price?.amount || 0,
+                                ).toLocaleString()}
+                                원
+                              </span>
+                            )}
+                            {existing?.createdAt && (
+                              <span className="truncate">
+                                접수일: {String(existing.createdAt).slice(0, 10)}
+                              </span>
+                            )}
+                          </>
+                        ) : (
+                          <>
+                            <span className="truncate">
+                              중복 조합: {newClinic || "-"} / {newPatient || "-"} / {newTooth || "-"}
+                            </span>
+                            {dup?.firstFileName && (
+                              <span className="truncate text-gray-500">
+                                먼저 포함된 파일: {String(dup.firstFileName)}
+                              </span>
+                            )}
+                          </>
                         )}
                       </div>
                     </div>

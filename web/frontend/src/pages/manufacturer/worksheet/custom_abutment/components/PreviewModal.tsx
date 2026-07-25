@@ -1,4 +1,4 @@
-import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { DialogClose } from "@radix-ui/react-dialog";
 import { RefreshCw } from "lucide-react";
 import {
@@ -366,25 +366,6 @@ type PreviewModalProps = {
     nextInit: ((prev: URLSearchParams) => URLSearchParams) | URLSearchParams,
     navigateOpts?: { replace?: boolean },
   ) => void;
-  setConfirmTitle: (title: string) => void;
-  setConfirmDescription: (desc: ReactNode) => void;
-  setConfirmAction: (
-    action:
-      | ((() => void | Promise<void>) | null)
-      | ((
-          prev: (() => void | Promise<void>) | null,
-        ) => (() => void | Promise<void>) | null),
-  ) => void;
-  setConfirmCancelAction: (
-    action:
-      | ((() => void | Promise<void>) | null)
-      | ((
-          prev: (() => void | Promise<void>) | null,
-        ) => (() => void | Promise<void>) | null),
-  ) => void;
-  setConfirmLabel: (label: string) => void;
-  setCancelLabel: (label: string) => void;
-  setConfirmOpen: (open: boolean) => void;
 };
 
 export const PreviewModal = ({
@@ -418,14 +399,8 @@ export const PreviewModal = ({
   onSaveManufacturerHexRotation,
   onOpenNextRequest,
   setSearchParams,
-  setConfirmTitle,
-  setConfirmDescription,
-  setConfirmAction,
-  setConfirmCancelAction,
-  setConfirmLabel,
-  setCancelLabel,
-  setConfirmOpen,
 }: PreviewModalProps) => {
+
   const { token } = useAuthStore();
   const { toast } = useToast();
   const [regenerating, setRegenerating] = useState(false);
@@ -686,19 +661,7 @@ export const PreviewModal = ({
     currentReviewStageKey === "tracking";
 
   const isRequestStage = currentReviewStageKey === "request";
-  const requestorDefaultHexRotationRaw =
-    (activeReq as any)?.business?.requestSettings?.defaultManufacturerHexRotation ??
-    (activeReq as any)?.businessAnchorId?.requestSettings
-      ?.defaultManufacturerHexRotation ??
-    (activeReq as any)?.business?.metadata?.hexRotationAngle ??
-    (activeReq as any)?.business?.metadata?.defaultManufacturerHexRotation ??
-    (activeReq as any)?.business?.metadata?.manufacturerHexRotation ??
-    null;
-  const requestorDefaultHexRotation = normalizeManufacturerHexRotationMode(
-    requestorDefaultHexRotationRaw,
-  );
-  const shouldAskDualHexMachiningOnApprove =
-    isRequestStage && requestorDefaultHexRotation === null;
+
   const isNcStage = currentReviewStageKey === "machining";
   const isImageStage =
     currentReviewStageKey === "packing" ||
@@ -1808,7 +1771,7 @@ export const PreviewModal = ({
                   e.stopPropagation();
                   if (approveBusy || !canApprove || isNcGenerating) return;
 
-                  const runApprove = async (processBothHexVariants?: boolean) => {
+                  const runApprove = async () => {
                     if (approving) return;
                     setApproving(true);
                     try {
@@ -1821,7 +1784,6 @@ export const PreviewModal = ({
                         stageOverride: currentReviewStageKey,
                         keepPreviewOpen: false,
                         forceReprocess: true,
-                        processBothHexVariants,
                       });
 
                       // CAM 단계 승인 시 NC 파일 bridge-store 동기화 (비동기, 실패 무시)
@@ -1852,32 +1814,6 @@ export const PreviewModal = ({
                   };
 
                   try {
-                    const resetConfirmUiState = () => {
-                      setConfirmLabel("확인");
-                      setCancelLabel("취소");
-                      setConfirmCancelAction(null);
-                    };
-
-                    if (shouldAskDualHexMachiningOnApprove) {
-                      setConfirmTitle("헥스 회전 미확정");
-                      setConfirmDescription(
-                        "헥스가 30도 돌아가 있을 가능성이 있어 첫 의뢰에서는 30도 회전한 제품도 함께 동봉하는 것을 권장합니다. 보정/무보정 모두 가공할까요?",
-                      );
-                      setConfirmLabel("모두 가공");
-                      setCancelLabel("1개만 가공");
-                      setConfirmAction(() => async () => {
-                        resetConfirmUiState();
-                        await runApprove(true);
-                      });
-                      setConfirmCancelAction(() => async () => {
-                        resetConfirmUiState();
-                        await runApprove(false);
-                      });
-                      setConfirmOpen(true);
-                      return;
-                    }
-
-                    resetConfirmUiState();
                     await runApprove();
                   } catch (err) {
                     console.error("Review status update failed:", err);

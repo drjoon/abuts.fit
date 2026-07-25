@@ -2376,13 +2376,6 @@ export const TrackingInquiryPage = () => {
         onRefreshPreview={handleOpenPreview}
         onOpenNextRequest={handleOpenNextPreviewRequest}
         setSearchParams={setSearchParams}
-        setConfirmTitle={setConfirmTitle}
-        setConfirmDescription={setConfirmDescription}
-        setConfirmAction={setConfirmAction}
-        setConfirmCancelAction={setConfirmCancelAction}
-        setConfirmLabel={setConfirmLabel}
-        setCancelLabel={setCancelLabel}
-        setConfirmOpen={setConfirmOpen}
       />
 
       <RemakeStartQuickModal
