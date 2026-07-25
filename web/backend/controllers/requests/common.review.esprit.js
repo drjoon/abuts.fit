@@ -165,9 +165,16 @@ export async function triggerEspritForNc({
       status: resp?.status,
       text,
     });
-    const err = new Error(
-      `Esprit 트리거 실패 (${resp?.status ?? "unknown"}): ${text}`.trim(),
-    );
+
+    const status = Number(resp?.status || 0);
+    const message =
+      status === 403
+        ? "Esprit 서버에서 요청 IP를 차단했습니다. ESPRIT_ALLOW_IPS 설정을 확인해주세요."
+        : status === 401
+          ? "Esprit 서버 인증에 실패했습니다. ESPRIT_SHARED_SECRET 설정을 확인해주세요."
+          : `Esprit 트리거 실패 (${resp?.status ?? "unknown"}): ${text}`.trim();
+
+    const err = new Error(message);
     err.statusCode = 503;
     throw err;
   } else {

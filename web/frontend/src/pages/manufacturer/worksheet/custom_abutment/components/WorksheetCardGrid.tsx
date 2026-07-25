@@ -278,6 +278,7 @@ export const WorksheetCardGrid = ({
         const stageForRollback = deriveStageForFilter(request);
         const isSampleRequest =
           (request as any).source === "manufacturer_sample";
+        const isRndArchivedSample = isSampleRequest && Boolean(request.rnd?.doneAt);
         const requestObjectId = String(request?._id || "");
         const rndMemoDraft = rndMemoDrafts[requestObjectId] ?? "";
         const rndMemoSaved = String(request.rnd?.memo || "");
@@ -589,7 +590,9 @@ export const WorksheetCardGrid = ({
               isSelected
                 ? "border-blue-500 bg-blue-50/40"
                 : isSampleRequest
-                  ? "border-purple-300 bg-purple-50/40"
+                  ? isRndArchivedSample
+                    ? "border-purple-300 bg-purple-50/40"
+                    : "border-blue-300 bg-blue-50/40"
                   : tabStage === "packing" && isPrinted
                     ? "border-slate-300 bg-slate-50/60 opacity-75"
                     : hasInsufficientShippingCredit
@@ -637,9 +640,13 @@ export const WorksheetCardGrid = ({
               {isSampleRequest && (
                 <Badge
                   variant="outline"
-                  className="border-purple-300 bg-purple-50 text-purple-700 text-[11px] px-2 py-0.5 font-semibold h-7 flex items-center"
+                  className={`text-[11px] px-2 py-0.5 font-semibold h-7 flex items-center ${
+                    isRndArchivedSample
+                      ? "border-purple-300 bg-purple-50 text-purple-700"
+                      : "border-blue-300 bg-blue-50 text-blue-700"
+                  }`}
                 >
-                  R&D
+                  {isRndArchivedSample ? "R&D" : "샘플"}
                 </Badge>
               )}
             </div>

@@ -848,7 +848,9 @@ export async function updateReviewStatusByStage(req, res) {
 
       // idempotency: 의뢰 단계 승인(APPROVED)이 이미 접수된 건은
       // 동일 승인 재호출을 no-op으로 처리하여 큐 재등록/재실행을 막는다.
+      // 단, forceReprocess=true 이면 no-op을 우회하고 재처리를 허용한다.
       if (
+        !forceReprocessFlag &&
         status === "APPROVED" &&
         effectiveStage === "request" &&
         currentRequestReviewStatus === "APPROVED" &&

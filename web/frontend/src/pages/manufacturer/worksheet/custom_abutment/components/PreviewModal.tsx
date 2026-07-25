@@ -608,6 +608,29 @@ export const PreviewModal = ({
     }
   };
 
+  const postJsonWithTimeout = async (
+    url: string,
+    options: {
+      headers: Record<string, string>;
+      body?: string;
+      timeoutMs?: number;
+    },
+  ) => {
+    const controller = new AbortController();
+    const timeoutMs = Number(options.timeoutMs || 15000);
+    const timeoutRef = window.setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      return await fetch(url, {
+        method: "POST",
+        headers: options.headers,
+        body: options.body,
+        signal: controller.signal,
+      });
+    } finally {
+      window.clearTimeout(timeoutRef);
+    }
+  };
+
   const finishLinePoints = ((guidedFinishLineOverridePoints ??
     previewFiles.finishLinePoints ??
     activeReq?.caseInfos?.finishLine?.points ??
@@ -868,15 +891,15 @@ export const PreviewModal = ({
         return;
       }
 
-      const res = await fetch(
-        `/api/requests/by-request/${encodeURIComponent(requestId)}/nc-file/regenerate`,
+      const res = await postJsonWithTimeout(
+        `/api/requests/by-request/${encodeURIComponent(requestId)}/nc-file/regenerate-2phase`,
         {
-          method: "POST",
           headers: {
             Authorization: `Bearer ${token}`,
             "Content-Type": "application/json",
           },
           body: JSON.stringify({}),
+          timeoutMs: 20000,
         },
       );
       const body: any = await res.json().catch(() => ({}));
@@ -908,9 +931,12 @@ export const PreviewModal = ({
       // 요청 성공 시 모달 닫기
       onOpenChange(false);
     } catch (err: any) {
+      const isAbort = String(err?.name || "") === "AbortError";
       toast({
         title: "NC 재생성 실패",
-        description: err?.message || "NC 재생성 요청에 실패했습니다.",
+        description: isAbort
+          ? "재생성 요청 시간이 초과되었습니다. 잠시 후 다시 시도해주세요."
+          : err?.message || "NC 재생성 요청에 실패했습니다.",
         variant: "destructive",
       });
     } finally {
@@ -951,14 +977,14 @@ export const PreviewModal = ({
           return;
         }
 
-        const res = await fetch(
-          `/api/requests/by-request/${encodeURIComponent(requestId)}/nc-file/regenerate`,
+        const res = await postJsonWithTimeout(
+          `/api/requests/by-request/${encodeURIComponent(requestId)}/nc-file/regenerate-2phase`,
           {
-            method: "POST",
             headers: {
               Authorization: `Bearer ${token}`,
               "Content-Type": "application/json",
             },
+            timeoutMs: 20000,
           },
         );
         const body: any = await res.json().catch(() => ({}));
@@ -990,9 +1016,12 @@ export const PreviewModal = ({
         // NC 재생성 성공 시 모달 닫기
         onOpenChange(false);
       } catch (err: any) {
+        const isAbort = String(err?.name || "") === "AbortError";
         toast({
           title: "재생성 실패",
-          description: err?.message || "재생성 요청에 실패했습니다.",
+          description: isAbort
+            ? "재생성 요청 시간이 초과되었습니다. 잠시 후 다시 시도해주세요."
+            : err?.message || "재생성 요청에 실패했습니다.",
           variant: "destructive",
         });
       } finally {
