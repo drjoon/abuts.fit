@@ -1666,15 +1666,13 @@ export const PreviewModal = ({
                   onValueChange={(value) => {
                     const next: ManufacturerHexRotationMode =
                       value === "무보정" ? "무보정" : "보정";
-                    if (shouldAskDualHexMachiningOnApprove) return;
                     void handleSaveManufacturerHexRotation(next);
                   }}
                   disabled={
                     hexRotationSaving ||
                     approveBusy ||
                     !onSaveManufacturerHexRotation ||
-                    !isRequestStage ||
-                    shouldAskDualHexMachiningOnApprove
+                    !isRequestStage
                   }
                 >
                   <SelectTrigger className="h-7 min-w-[108px] rounded-md border border-slate-200 bg-slate-50 px-2 text-[12px] font-semibold text-slate-700 shadow-sm focus:ring-1 focus:ring-blue-200 disabled:opacity-60">

@@ -324,9 +324,24 @@ export const registerFinishLine = asyncHandler(async (req, res) => {
     ...safeFinishLineCore,
     updatedAt: now,
   };
-  request.caseInfos = request.caseInfos || {};
-  request.caseInfos.finishLine = safeFinishLine;
-  await request.save();
+
+  // related files:
+  // - web/backend/controllers/requests/common.requests.controller.js
+  // - web/backend/models/request.model.js
+  // 레거시 문서의 다른 필드 enum 불일치로 전체 save() 검증이 깨지지 않도록
+  // finishLine 등록은 변경 경로만 $set으로 저장한다.
+  const updatedRequest = await Request.findByIdAndUpdate(
+    request._id,
+    {
+      $set: {
+        "caseInfos.finishLine": safeFinishLine,
+      },
+    },
+    {
+      new: true,
+      runValidators: false,
+    },
+  );
 
   // Note: Rhino-server가 STL 처리 시 자동으로 finish line과 메타데이터를 계산하여 등록함
   // 별도로 트리거할 필요 없음
@@ -336,7 +351,10 @@ export const registerFinishLine = asyncHandler(async (req, res) => {
     .json(
       new ApiResponse(
         200,
-        { updated: true, requestId: request.requestId },
+        {
+          updated: true,
+          requestId: updatedRequest?.requestId || request.requestId,
+        },
         "Finish line saved",
       ),
     );
@@ -1844,40 +1862,48 @@ export const registerStlMetadata = asyncHandler(async (req, res) => {
     throw new ApiError(404, "Request not found");
   }
 
-  // caseInfos에 메타데이터 저장
-  request.caseInfos = request.caseInfos || {};
-  request.caseInfos.maxDiameter = maxDiameter;
-  request.caseInfos.connectionDiameter = connectionDiameter;
-  request.caseInfos.totalLength = totalLength;
-  request.caseInfos.stlMetadataUpdatedAt = metadataUpdatedAt;
-  request.caseInfos.l1 = l1;
-  request.caseInfos.taperAngle = taperAngle;
-  request.caseInfos.tiltAxisVector = tiltAxisVector;
-  request.caseInfos.frontPoint = frontPoint;
+  const metadataSetPayload = {
+    "caseInfos.maxDiameter": maxDiameter,
+    "caseInfos.connectionDiameter": connectionDiameter,
+    "caseInfos.totalLength": totalLength,
+    "caseInfos.stlMetadataUpdatedAt": metadataUpdatedAt,
+    "caseInfos.l1": l1,
+    "caseInfos.taperAngle": taperAngle,
+    "caseInfos.tiltAxisVector": tiltAxisVector,
+    "caseInfos.frontPoint": frontPoint,
+    // 에러가 없으면 기존 에러 제거
+    "caseInfos.coordinateError": coordinateError || null,
+  };
 
   if (hexRotation && typeof hexRotation === "object") {
-    request.caseInfos.hexRotation = hexRotation;
+    metadataSetPayload["caseInfos.hexRotation"] = hexRotation;
   }
 
   // taperGuide는 필요시 별도 필드로 저장 (선택적)
   if (taperGuide) {
-    request.caseInfos.taperGuide = taperGuide;
+    metadataSetPayload["caseInfos.taperGuide"] = taperGuide;
   }
 
-  // 좌표계 에러가 있으면 저장
+  // related files:
+  // - web/backend/controllers/requests/common.requests.controller.js
+  // - web/backend/models/request.model.js
+  // 레거시 문서 enum 불일치가 있어도 STL 메타 등록은 실패하지 않도록
+  // 전체 save() 대신 변경 경로만 $set 업데이트를 사용한다.
+  const updatedRequest = await Request.findByIdAndUpdate(
+    request._id,
+    { $set: metadataSetPayload },
+    { new: true, runValidators: false },
+  );
+
   if (coordinateError) {
-    request.caseInfos.coordinateError = coordinateError;
     console.log(
-      `[registerStlMetadata] ⚠️  COORDINATE ERROR for requestId=${request.requestId}: ${coordinateError}`,
+      `[registerStlMetadata] ⚠️  COORDINATE ERROR for requestId=${updatedRequest?.requestId || request.requestId}: ${coordinateError}`,
     );
-  } else {
-    // 에러가 없으면 기존 에러 제거
-    request.caseInfos.coordinateError = null;
   }
 
-  await request.save();
-
-  const normalizedUpdatedRequest = await normalizeRequestForResponse(request);
+  const normalizedUpdatedRequest = updatedRequest
+    ? await normalizeRequestForResponse(updatedRequest)
+    : null;
   const eventMetadata = {
     maxDiameter,
     connectionDiameter,
@@ -1887,10 +1913,10 @@ export const registerStlMetadata = asyncHandler(async (req, res) => {
     taperAngle,
     tiltAxisVector,
     frontPoint,
-    taperGuide: request.caseInfos?.taperGuide,
-    hexRotation: request.caseInfos?.hexRotation,
+    taperGuide: updatedRequest?.caseInfos?.taperGuide,
+    hexRotation: updatedRequest?.caseInfos?.hexRotation,
     // finishline 높이 메타데이터는 max_z/min_z SSOT로만 전달
-    finishLine: request.caseInfos?.finishLine || null,
+    finishLine: updatedRequest?.caseInfos?.finishLine || null,
   };
 
   try {
@@ -1899,21 +1925,22 @@ export const registerStlMetadata = asyncHandler(async (req, res) => {
       "request:stl-metadata-updated",
       {
         source: "register-stl-metadata",
-        requestId: request.requestId,
-        requestMongoId: String(request._id || "").trim() || null,
+        requestId: updatedRequest?.requestId || request.requestId,
+        requestMongoId:
+          String(updatedRequest?._id || request._id || "").trim() || null,
         metadata: eventMetadata,
         request: normalizedUpdatedRequest,
       },
     );
   } catch (eventError) {
     console.warn(
-      `[registerStlMetadata] failed to emit metadata update event for requestId=${request.requestId}:`,
+      `[registerStlMetadata] failed to emit metadata update event for requestId=${updatedRequest?.requestId || request.requestId}:`,
       eventError?.message || eventError,
     );
   }
 
   console.log(
-    `[registerStlMetadata] requestId=${request.requestId} ` +
+    `[registerStlMetadata] requestId=${updatedRequest?.requestId || request.requestId} ` +
       `maxDiameter=${maxDiameter?.toFixed(2)}mm ` +
       `connectionDiameter=${connectionDiameter?.toFixed(2)}mm ` +
       `totalLength=${totalLength?.toFixed(2)}mm ` +
@@ -1926,7 +1953,7 @@ export const registerStlMetadata = asyncHandler(async (req, res) => {
     new ApiResponse(
       200,
       {
-        requestId: request.requestId,
+        requestId: updatedRequest?.requestId || request.requestId,
         metadata: {
           maxDiameter,
           connectionDiameter,
@@ -1936,8 +1963,8 @@ export const registerStlMetadata = asyncHandler(async (req, res) => {
           taperAngle,
           tiltAxisVector,
           frontPoint,
-          hexRotation: request.caseInfos?.hexRotation,
-          finishLine: request.caseInfos?.finishLine || null,
+          hexRotation: updatedRequest?.caseInfos?.hexRotation,
+          finishLine: updatedRequest?.caseInfos?.finishLine || null,
         },
       },
       "STL metadata registered",
