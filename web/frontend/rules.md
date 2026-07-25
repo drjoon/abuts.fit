@@ -36,6 +36,16 @@
   승인 요청 바디(`processBothHexVariants`)로 백엔드 복사 생성 분기를 전달합니다.
   - 관련 파일: `src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx`, `src/pages/manufacturer/worksheet/custom_abutment/hooks/useRequestFileHandlers.ts`
 
+- 헥스 회전 라벨 표시는 canonical 값을 직접 노출하지 않고 아래로 고정합니다.
+  - `보정` → `STL형상대로`
+  - `무보정` → `원본좌표계대로`
+  - 라벨 매핑 함수는 fallback 기본값을 두지 않고 명시 분기 + default error를 사용합니다.
+  - 관련 파일:
+    - `src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx`
+    - `src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx`
+    - `src/features/requests/components/RequestDetailDialog.tsx`
+    - `src/pages/requestor/dashboard/components/RequestorRecentRequestsCard.tsx`
+
 - 제조사 워크시트 샘플 구분 SSOT는 `Request.requestCategory`를 사용합니다.
   - 값: `order`, `rnd_sample`, `copied_sample`
   - 프론트는 `source+rnd.doneAt` 조합 추정 대신 `utils/request.ts`의 `isAnySampleRequest`, `isRndSampleRequest`를 사용합니다.

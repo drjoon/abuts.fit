@@ -53,10 +53,16 @@ const normalizeRetentionGroove = (value) => {
   return "deep";
 };
 
+// related files (manufacturer hex rotation mode validation):
+// - web/backend/controllers/requests/common.requests.controller.js
+// - bg/pc1/esprit-addin/StlFileProcessor.cs
 const parseManufacturerHexRotationModeOrNull = (value) => {
   const v = String(value || "").trim();
-  if (v === "무보정") return "무보정";
   if (v === "보정") return "보정";
+  if (v === "무보정") return "무보정";
+  // legacy "헥스회전각" 호환: 0=보정, 30=무보정
+  if (v === "0") return "보정";
+  if (v === "30") return "무보정";
   return null;
 };
 
@@ -1306,11 +1312,18 @@ export const getRequestMeta = asyncHandler(async (req, res) => {
   const manufacturerHexRotationRaw = String(
     request?.rnd?.manufacturerHexRotation || "",
   ).trim();
-  const manufacturerHexRotationFromRequest = parseManufacturerHexRotationModeOrNull(
+  const manufacturerHexRotationMode = parseManufacturerHexRotationModeOrNull(
     manufacturerHexRotationRaw,
   );
-  const manufacturerHexRotationMode =
-    manufacturerHexRotationFromRequest || "보정";
+  if (!manufacturerHexRotationMode) {
+    return res.status(500).json(
+      new ApiResponse(
+        500,
+        { ok: false },
+        `유효하지 않은 manufacturerHexRotation 값입니다. requestId=${request.requestId}, value='${manufacturerHexRotationRaw}'`,
+      ),
+    );
+  }
   const normalizedFinishLine = normalizeFinishLineWithZExtrema(ci?.finishLine);
   const finishLinePoints = Array.isArray(normalizedFinishLine?.points)
     ? normalizedFinishLine.points

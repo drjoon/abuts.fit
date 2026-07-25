@@ -329,22 +329,41 @@ const normalizeReasonOptions = (optionsRaw, max = 100) => {
   return unique;
 };
 
+// related files (manufacturer hex rotation mode validation):
+// - web/backend/controllers/bg/bg.controller.js
+// - bg/pc1/esprit-addin/StlFileProcessor.cs
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx
 const normalizeHexRotationValue = (value) => {
   const v = String(value || "").trim();
+  if (v === "보정") return "보정";
   if (v === "무보정") return "무보정";
-  return "보정";
+  if (v === "0") return "보정";
+  if (v === "30") return "무보정";
+  throw new Error(
+    `유효하지 않은 헥스 회전 모드입니다. '보정' | '무보정'만 허용됩니다. 입력값='${v}'`,
+  );
 };
 
 const parseManufacturerHexRotationMode = (value) => {
   const v = String(value || "").trim();
   // Rhino align 정책: 제조사 모드는 보정/무보정 2가지만 사용한다.
-  if (v === "무보정") return "무보정";
   if (v === "보정") return "보정";
+  if (v === "무보정") return "무보정";
+  // legacy "헥스회전각" 호환: 0=보정, 30=무보정
+  if (v === "0") return "보정";
+  if (v === "30") return "무보정";
   return null;
 };
 
 const normalizeManufacturerHexRotationMode = (value) => {
-  return parseManufacturerHexRotationMode(value) || "보정";
+  const parsed = parseManufacturerHexRotationMode(value);
+  if (!parsed) {
+    const raw = String(value || "").trim();
+    throw new Error(
+      `유효하지 않은 manufacturerHexRotation 값입니다. '보정' | '무보정'만 허용됩니다. 입력값='${raw}'`,
+    );
+  }
+  return parsed;
 };
 
 const resolveFinalHexRotationValue = ({
@@ -353,8 +372,16 @@ const resolveFinalHexRotationValue = ({
   const mode = normalizeManufacturerHexRotationMode(manufacturerHexRotation);
   // finalHexRotation은 canonical 모드 문자열만 사용한다.
   // 매핑 고정: 보정=보정, 무보정=무보정
-  if (mode === "무보정") return "무보정";
-  return "보정";
+  switch (mode) {
+    case "보정":
+      return "보정";
+    case "무보정":
+      return "무보정";
+    default:
+      throw new Error(
+        `지원하지 않는 manufacturerHexRotation 모드입니다. mode='${String(mode)}'`,
+      );
+  }
 };
 
 const normalizeLegacyManufacturerHexRotationOnRequest = (requestDoc) => {
@@ -2554,9 +2581,19 @@ export const updateRndHexRotation = asyncHandler(async (req, res) => {
     });
   }
 
-  const requestorHexRotation = normalizeHexRotationValue(
-    request?.caseInfos?.requestorHexRotation,
-  );
+  let requestorHexRotation;
+  try {
+    requestorHexRotation = normalizeHexRotationValue(
+      request?.caseInfos?.requestorHexRotation,
+    );
+  } catch (hexModeError) {
+    return res.status(409).json({
+      success: false,
+      message:
+        hexModeError?.message ||
+        "의뢰 데이터의 requestorHexRotation 값이 유효하지 않습니다.",
+    });
+  }
   const finalHexRotation = resolveFinalHexRotationValue({
     manufacturerHexRotation,
   });

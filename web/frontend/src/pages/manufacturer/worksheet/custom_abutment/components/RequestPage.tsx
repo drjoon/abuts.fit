@@ -1421,8 +1421,20 @@ export const RequestPage = ({
         raw: unknown,
       ): "보정" | "무보정" => {
         const v = String(raw || "").trim();
-        if (v === "무보정") return "무보정";
-        return "보정";
+        switch (v) {
+          case "보정":
+            return "보정";
+          case "무보정":
+            return "무보정";
+          case "0":
+            return "보정";
+          case "30":
+            return "무보정";
+          default:
+            throw new Error(
+              `지원하지 않는 제조사 헥스 회전 모드입니다. value='${v}'`,
+            );
+        }
       };
       const toFinalHexRotation = (
         mode: "보정" | "무보정",
@@ -1430,13 +1442,35 @@ export const RequestPage = ({
         if (mode === "무보정") return "무보정";
         return "보정";
       };
+      const toHexRotationLabel = (mode: "보정" | "무보정") => {
+        switch (mode) {
+          case "보정":
+            return "STL형상대로";
+          case "무보정":
+            return "원본좌표계대로";
+          default:
+            throw new Error(`지원하지 않는 헥스 회전 모드: ${String(mode)}`);
+        }
+      };
 
       const nextValue: "보정" | "무보정" =
         value === "무보정" ? "무보정" : "보정";
 
-      const prevManufacturer = normalizeManufacturerHexMode(
-        (req as any)?.rnd?.manufacturerHexRotation,
-      );
+      let prevManufacturer: "보정" | "무보정";
+      try {
+        prevManufacturer = normalizeManufacturerHexMode(
+          (req as any)?.rnd?.manufacturerHexRotation,
+        );
+      } catch (hexModeError: any) {
+        toast({
+          title: "헥스 회전 저장 실패",
+          description:
+            hexModeError?.message ||
+            "현재 의뢰의 제조사 헥스 회전 모드가 유효하지 않습니다.",
+          variant: "destructive",
+        });
+        return;
+      }
       const prevFinal: "보정" | "무보정" =
         String((req as any)?.caseInfos?.finalHexRotation || "").trim() === "무보정"
           ? "무보정"
@@ -1517,7 +1551,7 @@ export const RequestPage = ({
 
         toast({
           title: "헥스 회전 저장 완료",
-          description: `제조사 기준 ${savedManufacturer}으로 저장되었습니다.`,
+          description: `제조사 기준 ${toHexRotationLabel(savedManufacturer)}로 저장되었습니다.`,
         });
       } catch (e: any) {
         pageState.setRequests((prev) =>

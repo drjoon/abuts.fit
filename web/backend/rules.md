@@ -37,6 +37,14 @@
   반대 헥스 모드의 내부 복사본(`source=manufacturer_sample`, `price.rule=manufacturer_sample`)을 생성해
   별도 lot/NC를 처리합니다.
   - 구현: `controllers/requests/common.review.controller.js`
+
+- 제조사 헥스 회전 모드(`manufacturerHexRotation`)는 백엔드에서 fallback 기본값으로 보정하지 않습니다.
+  - 허용값: canonical `보정`/`무보정` (+ 레거시 입력 `0`/`30` 정규화)
+  - 미지원/빈값은 request-meta 응답 및 저장 로직에서 즉시 오류로 처리합니다.
+  - 관련 파일:
+    - `controllers/requests/common.requests.controller.js`
+    - `controllers/requests/common.review.controller.js`
+    - `controllers/bg/bg.controller.js`
 - `requestCategory="rnd_sample"`(R&D 보관 원본)은 BG 자동 업데이트 대상에서 제외합니다.
 - 요청자 목록(`getMyRequests`)에서는 `requestCategory!="order"` 의뢰를 제외해 의뢰자에게 노출하지 않습니다.
   - 구현: `controllers/requests/common.requests.controller.js`

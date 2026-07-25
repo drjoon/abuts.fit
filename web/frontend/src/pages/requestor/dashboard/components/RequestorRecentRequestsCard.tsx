@@ -38,6 +38,8 @@ const EDITABLE_STATUSES = new Set(["의뢰", "CAM"]);
 const STAGE_BADGE_BASE =
   "text-[10px] h-4 px-1.5 whitespace-nowrap leading-none flex items-center justify-center";
 
+
+
 const STAGE_BADGE_STYLES: Record<
   string,
   {
@@ -589,18 +591,7 @@ export const RequestorRecentRequestsCard = ({
               item.price?.rule === "remake_monthly_free_3";
             const retentionGrooveLabel =
               item.caseInfos?.retentionGroove === "deep" ? "있음" : "없음";
-            const requestorHexRotationLabel =
-              String(item.caseInfos?.requestorHexRotation || "").trim() ===
-              "무보정"
-                ? "무보정"
-                : "보정";
-            const finalHexRaw = String(item.caseInfos?.finalHexRotation || "").trim();
-            const finalHexRotationLabel =
-              finalHexRaw === "무보정"
-                ? "무보정"
-                : finalHexRaw === "보정"
-                  ? "보정"
-                  : requestorHexRotationLabel;
+
             const isUnmachinable = isUnmachinableRequest(item);
             const isUnmachinableConfirmed = Boolean(
               item?.rnd?.unmachinableConfirmedAt,
@@ -703,7 +694,6 @@ export const RequestorRecentRequestsCard = ({
                       {formatImplantDisplay(item.caseInfos)}
                     </span>
                     <span className="ml-1">유지홈 {retentionGrooveLabel}</span>
-                    <span className="ml-1">헥스 {finalHexRotationLabel}</span>
                   </div>
                   {isUnmachinable && (
                     <div className="text-[11px] text-yellow-800 mt-1 truncate flex items-center gap-2">
@@ -781,21 +771,7 @@ export const RequestorRecentRequestsCard = ({
                   ? "있음"
                   : "없음"}
               </span>
-              <span className="ml-1">
-                헥스{" "}
-                {(() => {
-                  const finalHexRaw = String(
-                    cancelTarget?.caseInfos?.finalHexRotation || "",
-                  ).trim();
-                  if (finalHexRaw === "무보정") return "무보정";
-                  if (finalHexRaw === "보정") return "보정";
-                  return String(
-                    cancelTarget?.caseInfos?.requestorHexRotation || "",
-                  ).trim() === "무보정"
-                    ? "무보정"
-                    : "보정";
-                })()}
-              </span>
+
             </div>
           </div>
         }

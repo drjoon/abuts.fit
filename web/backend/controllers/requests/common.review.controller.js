@@ -672,8 +672,18 @@ export async function deleteStageFile(req, res) {
   }
 }
 
+// related files (manufacturer hex rotation mode validation):
+// - web/backend/controllers/requests/common.requests.controller.js
+// - web/backend/controllers/bg/bg.controller.js
 const normalizeFinalHexRotation = (value) => {
-  return String(value || "").trim() === "무보정" ? "무보정" : "보정";
+  const v = String(value || "").trim();
+  if (v === "보정") return "보정";
+  if (v === "무보정") return "무보정";
+  if (v === "0") return "보정";
+  if (v === "30") return "무보정";
+  throw new Error(
+    `유효하지 않은 헥스 회전 모드입니다. '보정' | '무보정'만 허용됩니다. 입력값='${v}'`,
+  );
 };
 
 const normalizeRequestorDefaultManufacturerHexRotationOrNull = (value) => {
@@ -688,7 +698,15 @@ const normalizeRequestorDefaultManufacturerHexRotationOrNull = (value) => {
 };
 
 const resolveOppositeFinalHexRotation = (value) => {
-  return normalizeFinalHexRotation(value) === "무보정" ? "보정" : "무보정";
+  const mode = normalizeFinalHexRotation(value);
+  switch (mode) {
+    case "보정":
+      return "무보정";
+    case "무보정":
+      return "보정";
+    default:
+      throw new Error(`지원하지 않는 헥스 회전 모드입니다. mode='${String(mode)}'`);
+  }
 };
 
 const buildCaseInfosForDualHexClone = ({ sourceCaseInfos, now, oppositeHex }) => {
@@ -1125,11 +1143,28 @@ export async function updateReviewStatusByStage(req, res) {
             requestorDefaultManufacturerHexRotation === null;
 
           if (shouldCreateDualHexVariant) {
-            const originalHex = normalizeFinalHexRotation(
+            const originalHexSource =
               request?.caseInfos?.finalHexRotation ||
-                request?.caseInfos?.requestorHexRotation ||
-                "보정",
-            );
+              request?.caseInfos?.requestorHexRotation;
+            if (!String(originalHexSource || "").trim()) {
+              return res.status(409).json({
+                success: false,
+                message:
+                  "헥스 회전 모드가 비어 있어 보정/무보정 동시 가공 복사본을 생성할 수 없습니다.",
+              });
+            }
+
+            let originalHex;
+            try {
+              originalHex = normalizeFinalHexRotation(originalHexSource);
+            } catch (hexModeError) {
+              return res.status(409).json({
+                success: false,
+                message:
+                  hexModeError?.message ||
+                  "헥스 회전 모드가 유효하지 않아 보정/무보정 동시 가공 복사본을 생성할 수 없습니다.",
+              });
+            }
             const oppositeHex = resolveOppositeFinalHexRotation(originalHex);
             const now = new Date();
 

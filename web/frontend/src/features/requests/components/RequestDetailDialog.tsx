@@ -95,6 +95,8 @@ const formatTimestamp = (value?: string) => {
   }
 };
 
+
+
 export const getStatusBadge = (status: string, manufacturerStage?: string) => {
   if (manufacturerStage) {
     switch (manufacturerStage) {
@@ -158,17 +160,7 @@ export const RequestDetailDialog = ({
   const connectionDiameter = caseInfos.connectionDiameter;
   const retentionGrooveLabel =
     caseInfos.retentionGroove === "deep" ? "있음" : "없음";
-  const requestorHexRotationLabel =
-    String(caseInfos.requestorHexRotation || "").trim() === "무보정"
-      ? "무보정"
-      : "보정";
-  const finalHexRaw = String(caseInfos.finalHexRotation || "").trim();
-  const finalHexRotationLabel =
-    finalHexRaw === "무보정"
-      ? "무보정"
-      : finalHexRaw === "보정"
-        ? "보정"
-        : requestorHexRotationLabel;
+
 
   const estimatedShipYmd =
     request?.timeline?.estimatedShipYmd ||
@@ -378,18 +370,7 @@ export const RequestDetailDialog = ({
                   {retentionGrooveLabel}
                 </span>
               </div>
-              <div className="grid grid-cols-[110px_1fr] gap-2">
-                <span className="text-slate-600">헥스 회전(의뢰)</span>
-                <span className="font-medium text-right">
-                  {requestorHexRotationLabel}
-                </span>
-              </div>
-              <div className="grid grid-cols-[110px_1fr] gap-2">
-                <span className="text-slate-600">헥스 회전(최종)</span>
-                <span className="font-medium text-right">
-                  {finalHexRotationLabel}
-                </span>
-              </div>
+
             </div>
           </div>
         </DialogDescription>

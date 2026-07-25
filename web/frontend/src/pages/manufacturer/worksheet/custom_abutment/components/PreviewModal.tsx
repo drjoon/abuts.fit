@@ -64,6 +64,19 @@ const normalizeManufacturerHexRotationMode = (
   return null;
 };
 
+const toManufacturerHexRotationLabel = (
+  mode: ManufacturerHexRotationMode,
+): string => {
+  switch (mode) {
+    case "보정":
+      return "STL형상대로";
+    case "무보정":
+      return "원본좌표계대로";
+    default:
+      throw new Error(`지원하지 않는 헥스 회전 모드: ${String(mode)}`);
+  }
+};
+
 const UNMACHINABLE_REASON_PRESETS = [
   "얇은 부위 찢어지고 휘어짐",
   "이머전스 프로파일 낮아서 커프 부위 툴 진입 불가",
@@ -1712,15 +1725,15 @@ export const PreviewModal = ({
                     !isRequestStage
                   }
                 >
-                  <SelectTrigger className="h-7 min-w-[108px] rounded-md border border-slate-200 bg-slate-50 px-2 text-[12px] font-semibold text-slate-700 shadow-sm focus:ring-1 focus:ring-blue-200 disabled:opacity-60">
-                    <SelectValue placeholder="보정" />
+                  <SelectTrigger className="h-7 min-w-[168px] rounded-md border border-slate-200 bg-slate-50 px-2 text-[12px] font-semibold text-slate-700 shadow-sm focus:ring-1 focus:ring-blue-200 disabled:opacity-60">
+                    <SelectValue placeholder={toManufacturerHexRotationLabel("보정")} />
                   </SelectTrigger>
-                  <SelectContent align="end" className="min-w-[108px]">
+                  <SelectContent align="end" className="min-w-[168px]">
                     <SelectItem value="보정" className="text-[12px] font-medium">
-                      보정
+                      {toManufacturerHexRotationLabel("보정")}
                     </SelectItem>
                     <SelectItem value="무보정" className="text-[12px] font-medium">
-                      무보정
+                      {toManufacturerHexRotationLabel("무보정")}
                     </SelectItem>
 
                   </SelectContent>
