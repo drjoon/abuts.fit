@@ -56,6 +56,10 @@ import { useMailboxManagement } from "@/pages/manufacturer/worksheet/custom_abut
 import { useRequestCardHandlers } from "@/pages/manufacturer/worksheet/custom_abutment/hooks/useRequestCardHandlers";
 import { useCardActions } from "@/pages/manufacturer/worksheet/custom_abutment/hooks/useCardActions";
 import { useRequestFiltering } from "@/pages/manufacturer/worksheet/custom_abutment/hooks/useRequestFiltering";
+// related files:
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/WorksheetCardGrid.tsx
+// - web/frontend/src/pages/requestor/dashboard/RequestorDashboardPage.tsx
 // useRequestNavigation 제거: 승인 후 다음 의뢰 자동 열기 방지 정책에 따라 미사용
 import { usePackingSelection } from "@/pages/manufacturer/worksheet/custom_abutment/hooks/usePackingSelection";
 import { useMailboxSync } from "@/pages/manufacturer/worksheet/custom_abutment/hooks/useMailboxSync";
@@ -1163,7 +1167,7 @@ export const RequestPage = ({
       if (!req?._id) return;
       const reason = String(reasonRaw || "").slice(0, 500).trim();
       if (!reason) {
-        throw new Error("가공불가 사유를 입력해주세요.");
+        throw new Error("불완전가공 사유를 입력해주세요.");
       }
 
       const requestMongoId = String(req._id || "").trim();
@@ -1199,12 +1203,12 @@ export const RequestPage = ({
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok || data?.success === false) {
-          throw new Error(data?.message || "가공불가 처리에 실패했습니다.");
+          throw new Error(data?.message || "불완전가공 처리에 실패했습니다.");
         }
 
         toast({
-          title: "가공불가 처리 완료",
-          description: `의뢰 ${req.requestId}가 가공불가 탭으로 이동되었습니다.`,
+          title: "불완전가공 처리 완료",
+          description: `의뢰 ${req.requestId}가 불완전가공 탭으로 이동되었습니다.`,
         });
 
         // 현재 탭 목록에서 해당 의뢰만 즉시 제거해 잔상(이전 탭 잔류)을 방지한다.
@@ -1241,7 +1245,7 @@ export const RequestPage = ({
         );
 
         toast({
-          title: "가공불가 처리 실패",
+          title: "불완전가공 처리 실패",
           description: e?.message || "네트워크 오류",
           variant: "destructive",
         });
@@ -1289,14 +1293,14 @@ export const RequestPage = ({
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok || data?.success === false) {
-          throw new Error(data?.message || "가공불가 복귀에 실패했습니다.");
+          throw new Error(data?.message || "불완전가공 복귀에 실패했습니다.");
         }
 
         const restoreStageLabel =
           String(prevFromStage || req.manufacturerStage || "").trim() || "원래";
 
         toast({
-          title: "가공불가 복귀 완료",
+          title: "불완전가공 복귀 완료",
           description: `의뢰 ${req.requestId}가 ${restoreStageLabel} 공정으로 복귀되었습니다.`,
         });
 
@@ -1324,7 +1328,7 @@ export const RequestPage = ({
         );
 
         toast({
-          title: "가공불가 복귀 실패",
+          title: "불완전가공 복귀 실패",
           description: e?.message || "네트워크 오류",
           variant: "destructive",
         });

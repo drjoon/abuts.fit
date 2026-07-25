@@ -1,3 +1,6 @@
+// related files:
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/machining/components/MachiningRequestLabel.tsx
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/machining/MachiningQueueBoard.tsx
 import type { QueueItem } from "../types";
 
 const normalizeLotPart = (raw: string) =>
@@ -43,6 +46,7 @@ type LabelExtra = {
   implantFamily?: string | null;
   isSample?: boolean | null;
   isRndArchivedSample?: boolean | null;
+  isCopiedSample?: boolean | null;
 };
 
 const toNumber = (value: unknown) => {
@@ -55,9 +59,16 @@ export const buildLabelExtraProps = (slot?: QueueItem | null): LabelExtra => {
   const ci = (slot as any)?.caseInfos || {};
   const schedule = (slot as any)?.productionSchedule || {};
   const requestCategory = String((slot as any)?.requestCategory || "").trim();
-  const isSample =
-    requestCategory === "rnd_sample" || requestCategory === "copied_sample";
+  const source = String((slot as any)?.source || "").trim();
+  const priceRule = String((slot as any)?.price?.rule || "").trim();
+
   const isRndArchivedSample = requestCategory === "rnd_sample";
+  const isCopiedSample = requestCategory === "copied_sample";
+  const isSample =
+    isRndArchivedSample ||
+    isCopiedSample ||
+    source === "manufacturer_sample" ||
+    priceRule === "manufacturer_sample";
 
   return {
     camDiameter:
@@ -71,5 +82,6 @@ export const buildLabelExtraProps = (slot?: QueueItem | null): LabelExtra => {
     implantFamily: ci?.implantFamily ?? null,
     isSample,
     isRndArchivedSample,
+    isCopiedSample,
   };
 };

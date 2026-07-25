@@ -40,6 +40,14 @@
 - `requestCategory="rnd_sample"`(R&D 보관 원본)은 BG 자동 업데이트 대상에서 제외합니다.
 - 요청자 목록(`getMyRequests`)에서는 `requestCategory!="order"` 의뢰를 제외해 의뢰자에게 노출하지 않습니다.
   - 구현: `controllers/requests/common.requests.controller.js`
+- 불완전가공 `continue` 처리 SSOT:
+  - `PATCH /api/requests/:id/rnd-unmachinable/continue`는 불완전가공 상태를 해제하면서
+    `rnd.requestorContinueAt/by/message`를 함께 기록합니다.
+  - 제조사가 다시 불완전가공 판정할 때(`PATCH /api/requests/:id/rnd-unmachinable`)는
+    위 `requestorContinue*` 필드를 초기화합니다.
+  - 관련 파일:
+    - `controllers/requests/common.requests.controller.js`
+    - `models/request.model.js`
 
 - 제조사 워크시트 샘플 분류 SSOT는 `Request.requestCategory`입니다.
   - 값: `order`, `rnd_sample`, `copied_sample`

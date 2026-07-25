@@ -33,6 +33,8 @@ import { resolveImplantConnectionSpec } from "@/utils/implantConnectionSpec";
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/packing/components/PackingPageContent.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/WorksheetCardGrid.tsx
 // - web/backend/controllers/requests/common.requests.controller.js
+// - web/frontend/src/pages/requestor/dashboard/RequestorDashboardPage.tsx
+
 
 
 type PreviewFiles = {
@@ -669,6 +671,31 @@ export const PreviewModal = ({
     Number.isFinite(finishLineMinZ) && Number(finishLineMinZ) < 1;
   const isUnmachinable = Boolean((activeReq as any)?.rnd?.unmachinableAt);
   const shouldShowUnmachinableWarning = isFinishLineMinZRisky && !isUnmachinable;
+  const requestorContinueAt = String(
+    (activeReq as any)?.rnd?.requestorContinueAt || "",
+  ).trim();
+  const requestorContinueMessage = String(
+    (activeReq as any)?.rnd?.requestorContinueMessage || "",
+  ).trim();
+  const hasRequestorContinueDecision = Boolean(requestorContinueAt);
+  const requestorContinueAtLabel = hasRequestorContinueDecision
+    ? new Date(requestorContinueAt).toLocaleString("ko-KR")
+    : "";
+  const requestorContinueAtMs = Date.parse(requestorContinueAt);
+  const unmachinableEventAtMs = Date.parse(
+    String(
+      (activeReq as any)?.rnd?.unmachinableAt ||
+        (activeReq as any)?.rnd?.unmachinablePotentialAt ||
+        "",
+    ).trim(),
+  );
+  const showLatestContinueBadge =
+    hasRequestorContinueDecision &&
+    (!Number.isFinite(unmachinableEventAtMs) ||
+      (Number.isFinite(requestorContinueAtMs) &&
+        requestorContinueAtMs >= unmachinableEventAtMs));
+  const shouldShowUnmachinableBadge =
+    (shouldShowUnmachinableWarning || isUnmachinable) && !showLatestContinueBadge;
 
 
   const currentReviewStageKey = getReviewStageKeyByTab({
@@ -1372,7 +1399,7 @@ export const PreviewModal = ({
     if (!normalizedReasons.length) {
       toast({
         title: "사유 선택 필요",
-        description: "가공불가 사유를 1개 이상 선택해주세요.",
+        description: "불완전가공 사유를 1개 이상 선택해주세요.",
         variant: "destructive",
       });
       return;
@@ -1571,7 +1598,7 @@ export const PreviewModal = ({
         hideClose
         className={`w-[92vw] max-w-5xl h-[85vh] overflow-hidden ${
           shouldShowUnmachinableWarning || isUnmachinable
-            ? "border-red-300 ring-2 ring-red-200"
+            ? "border-yellow-300 ring-2 ring-yellow-200"
             : ""
         }`}
       >
@@ -1607,20 +1634,29 @@ export const PreviewModal = ({
                       유지홈 {retentionGrooveLabel}
                     </Badge>
                   )}
-                  {(shouldShowUnmachinableWarning || isUnmachinable) && (
+                  {shouldShowUnmachinableBadge && (
                     <Badge
                       variant="outline"
                       className={`text-[11px] px-2 py-0.5 font-semibold leading-[1.1] border ${
                         isUnmachinable
-                          ? "border-red-300 bg-red-50 text-red-700"
-                          : "border-red-200 bg-red-50 text-red-600"
+                          ? "border-yellow-300 bg-yellow-50 text-yellow-700"
+                          : "border-yellow-200 bg-yellow-50 text-yellow-700"
                       }`}
                     >
-                      {isUnmachinable ? "가공불가" : "가공불가 확인요망"}
+                      {isUnmachinable ? "불완전가공" : "불완전가공 확인요망"}
+                    </Badge>
+                  )}
+                  {showLatestContinueBadge && (
+                    <Badge
+                      variant="outline"
+                      className="text-[11px] px-2 py-0.5 font-semibold leading-[1.1] border border-blue-200 bg-blue-50 text-blue-700"
+                      title={requestorContinueMessage || "의뢰자가 계속 가공 진행을 요청했습니다."}
+                    >
+                      불완전가공 진행
                     </Badge>
                   )}
                 </div>
-              ) : retentionGrooveLabel || isUnmachinable ? (
+              ) : retentionGrooveLabel || isUnmachinable || showLatestContinueBadge ? (
                 <div className="flex flex-wrap items-center gap-1.5">
                   {retentionGrooveLabel && (
                     <Badge
@@ -1630,16 +1666,25 @@ export const PreviewModal = ({
                       유지홈 {retentionGrooveLabel}
                     </Badge>
                   )}
-                  {(shouldShowUnmachinableWarning || isUnmachinable) && (
+                  {shouldShowUnmachinableBadge && (
                     <Badge
                       variant="outline"
                       className={`text-[11px] px-2 py-0.5 font-semibold leading-[1.1] border ${
                         isUnmachinable
-                          ? "border-red-300 bg-red-50 text-red-700"
-                          : "border-red-200 bg-red-50 text-red-600"
+                          ? "border-yellow-300 bg-yellow-50 text-yellow-700"
+                          : "border-yellow-200 bg-yellow-50 text-yellow-700"
                       }`}
                     >
-                      {isUnmachinable ? "가공불가" : "가공불가 확인요망"}
+                      {isUnmachinable ? "불완전가공" : "불완전가공 확인요망"}
+                    </Badge>
+                  )}
+                  {showLatestContinueBadge && (
+                    <Badge
+                      variant="outline"
+                      className="text-[11px] px-2 py-0.5 font-semibold leading-[1.1] border border-blue-200 bg-blue-50 text-blue-700"
+                      title={requestorContinueMessage || "의뢰자가 계속 가공 진행을 요청했습니다."}
+                    >
+                      불완전가공 진행
                     </Badge>
                   )}
                 </div>
@@ -1696,7 +1741,7 @@ export const PreviewModal = ({
                       void handleRestoreUnmachinable();
                     }}
                   >
-                    {unmachinableSaving ? "복귀 중..." : "가공불가 복귀"}
+                    {unmachinableSaving ? "복귀 중..." : "불완전가공 복귀"}
                   </button>
                 ) : (
                   <button
@@ -1704,7 +1749,7 @@ export const PreviewModal = ({
                     className={`h-8 rounded-md border px-2 text-[12px] font-semibold transition ${
                       unmachinableSaving || approveBusy
                         ? "border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed"
-                        : "border-red-200 bg-red-50 text-red-700 hover:bg-red-100"
+                        : "border-yellow-200 bg-yellow-50 text-yellow-700 hover:bg-yellow-100"
                     }`}
                     disabled={unmachinableSaving || approveBusy}
                     onClick={(e) => {
@@ -1714,7 +1759,7 @@ export const PreviewModal = ({
                       setUnmachinableEditorOpen(true);
                     }}
                   >
-                    가공불가
+                    불완전가공
                   </button>
                 )}
               {!isRequestStage && (
@@ -1917,10 +1962,10 @@ export const PreviewModal = ({
           </div>
 
           {unmachinableEditorOpen && (
-            <div className="shrink-0 rounded-lg border border-red-200 bg-red-50/70 p-2 space-y-2 max-h-[34vh] overflow-y-auto">
-              <div className="text-xs font-semibold text-red-700">가공불가 사유 입력</div>
+            <div className="shrink-0 rounded-lg border border-yellow-200 bg-yellow-50/70 p-2 space-y-2 max-h-[34vh] overflow-y-auto">
+              <div className="text-xs font-semibold text-yellow-700">불완전가공 사유 입력</div>
 
-              <div className="space-y-1.5 rounded-md border border-red-200 bg-white/80 p-1.5">
+              <div className="space-y-1.5 rounded-md border border-yellow-200 bg-white/80 p-1.5">
                 {customReasonLibrary.map((reason, idx) => {
                   const selected = selectedReasonValues.includes(reason);
                   return (
@@ -2049,7 +2094,7 @@ export const PreviewModal = ({
                 </div>
               </div>
 
-              <div className="rounded-md border border-red-200 bg-white px-2 py-2">
+              <div className="rounded-md border border-yellow-200 bg-white px-2 py-2">
                 <div className="text-[11px] font-semibold text-slate-700 mb-1">
                   선택된 사유 ({selectedReasonValues.length})
                 </div>
@@ -2059,7 +2104,7 @@ export const PreviewModal = ({
                       <Badge
                         key={`selected-reason-${reason}`}
                         variant="outline"
-                        className="text-[11px] border-red-200 bg-red-50 text-red-700"
+                        className="text-[11px] border-yellow-200 bg-yellow-50 text-yellow-700"
                       >
                         {reason}
                       </Badge>
@@ -2083,7 +2128,7 @@ export const PreviewModal = ({
                 <Button
                   type="button"
                   size="sm"
-                  className="bg-red-600 hover:bg-red-700"
+                  className="bg-yellow-600 hover:bg-yellow-700"
                   disabled={unmachinableSaving}
                   onClick={() => void handleSubmitUnmachinable()}
                 >

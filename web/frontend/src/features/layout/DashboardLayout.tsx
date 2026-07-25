@@ -7,6 +7,10 @@ import { PeriodFilter } from "@/shared/ui/PeriodFilter";
 import { apiFetch } from "@/shared/api/apiClient";
 import { toKstYmd } from "@/shared/date/kst";
 import { useToast } from "@/shared/hooks/use-toast";
+
+// related files:
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
+// - web/frontend/src/pages/manufacturer/dashboard/ManufacturerDashboardPage.tsx
 import { ToastAction } from "@/components/ui/toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -1129,7 +1133,7 @@ export const DashboardLayout = () => {
                                   )
                                 }
                               >
-                                <span>가공불가</span>
+                                <span>불완전가공</span>
                                 <span className="tabular-nums opacity-70">
                                   {wsSummary.unmachinableCount ?? 0}
                                 </span>

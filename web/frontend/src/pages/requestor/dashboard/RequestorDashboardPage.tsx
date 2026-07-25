@@ -3,7 +3,7 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useInView } from "react-intersection-observer";
 import { useLocation, useOutletContext } from "react-router-dom";
 import { apiFetch } from "@/shared/api/apiClient";
@@ -22,7 +22,7 @@ import {
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { PeriodFilterValue } from "@/shared/ui/PeriodFilter";
 import {
   RequestorEditRequestDialog,
@@ -58,9 +58,16 @@ import {
   RequestDetailDialog,
   type RequestDetailDialogRequest,
 } from "@/features/requests/components/RequestDetailDialog";
+import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
 import { getNormalizedStage, getNormalizedStageLabel } from "@/utils/stage";
 import { onAppEvent } from "@/shared/realtime/socket";
 import { useSystemSettings } from "@/hooks/useSystemSettings";
+
+// related files:
+// - web/frontend/src/pages/requestor/dashboard/components/RequestorRecentRequestsCard.tsx
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
+
 
 type DashboardOutletContext = {
   creditBalance: number | null;
@@ -110,11 +117,17 @@ export const RequestorDashboardPage = () => {
 
   const [unmachinableAlertModalOpen, setUnmachinableAlertModalOpen] =
     useState(false);
-  const [selectedUnmachinableIds, setSelectedUnmachinableIds] = useState<
-    Set<string>
-  >(new Set());
-  const [confirmingUnmachinableSelection, setConfirmingUnmachinableSelection] =
+  const [selectedUnmachinableContinueIds, setSelectedUnmachinableContinueIds] =
+    useState<Set<string>>(new Set());
+  const [approvingUnmachinableSelection, setApprovingUnmachinableSelection] =
     useState(false);
+  const [unmachinableCancelConfirmOpen, setUnmachinableCancelConfirmOpen] =
+    useState(false);
+  const [pendingCancelUnmachinableIds, setPendingCancelUnmachinableIds] =
+    useState<string[]>([]);
+  const [focusedUnmachinableRequestId, setFocusedUnmachinableRequestId] =
+    useState<string | null>(null);
+  const promptedUnmachinableFingerprintRef = useRef<string>("");
 
   const summaryQueryKey = useMemo(
     () => [
@@ -134,8 +147,17 @@ export const RequestorDashboardPage = () => {
     "세척.패킹": ["packing"],
     "포장.발송": ["shipping"],
     추적관리: ["tracking"],
-    // 상세 공정 코드(가공불가)는 별도 분기 처리
-    가공불가: null,
+    // 상세 공정 코드(불완전가공)는 별도 분기 처리
+    불완전가공: null,
+  };
+
+  const stageRawAliasByLabel: Record<string, string[]> = {
+    "의뢰/취소": ["의뢰", "request", "취소", "cancel"],
+    CAM: ["cam"],
+    가공: ["가공", "생산", "production", "machining"],
+    "세척.패킹": ["세척.패킹", "세척.포장", "cleaning", "packing"],
+    "포장.발송": ["포장.발송", "발송", "delivery", "shipping"],
+    추적관리: ["추적관리", "tracking"],
   };
 
   const getNormalizedStageOrNull = (requestLike: any): string | null => {
@@ -145,6 +167,11 @@ export const RequestorDashboardPage = () => {
     try {
       return getNormalizedStage(requestLike);
     } catch {
+      const raw = String(requestLike?.manufacturerStage || "").trim();
+      // legacy stage 보정: 상단 요약 카드와 세부 모달의 stage 매칭 불일치 방지
+      if (["production", "생산"].includes(raw)) return "machining";
+      if (["cleaning", "세척.포장"].includes(raw)) return "packing";
+      if (["delivery", "발송"].includes(raw)) return "shipping";
       return null;
     }
   };
@@ -168,26 +195,49 @@ export const RequestorDashboardPage = () => {
   const getUnmachinableReason = (requestLike: any): string =>
     String(requestLike?.rnd?.unmachinableReason || "").trim();
 
-  const filterAbutmentRequest = (r: any) => {
+  const isSampleRequest = (requestLike: any): boolean => {
+    const requestCategory = String(requestLike?.requestCategory || "").trim();
+    const source = String(requestLike?.source || "").trim();
+    const priceRule = String(requestLike?.price?.rule || "").trim();
+    return (
+      requestCategory === "rnd_sample" ||
+      requestCategory === "copied_sample" ||
+      source === "manufacturer_sample" ||
+      priceRule === "manufacturer_sample"
+    );
+  };
+
+  const filterDashboardRequest = (r: any) => {
     if (!r) return false;
-    const ci = r.caseInfos || {};
-    const implantBrand = String(ci.implantBrand).trim();
-    return Boolean(implantBrand);
+    return !isSampleRequest(r);
   };
 
   const getModalItems = (all: any[], label: string) => {
     const group = stageGroupByLabel[label];
-    const base = (all || []).filter(filterAbutmentRequest);
+    const base = (all || []).filter(filterDashboardRequest);
 
-    // 가공불가는 stage(manufacturerStage)가 아니라 rnd 상세 상태로 분류한다.
-    if (label === "가공불가") {
-      return base.filter((r) => Boolean(r?.rnd?.unmachinableAt));
+    // 불완전가공은 stage(manufacturerStage)가 아니라 rnd 상세 상태로 분류한다.
+    if (label === "불완전가공") {
+      return base.filter((r) => {
+        if (Boolean(r?.rnd?.unmachinableAt)) return true;
+        const rawStage = String(r?.manufacturerStage || "")
+          .trim()
+          .toLowerCase();
+        return rawStage === "불완전가공";
+      });
     }
 
     if (!group) return base;
     return base.filter((r) => {
       const normalized = getNormalizedStageOrNull(r);
-      return normalized ? group.includes(normalized) : false;
+      if (normalized && group.includes(normalized)) return true;
+
+      // API별 stage 문자열 편차(가공/생산, 세척.포장, delivery 등) 보정
+      const rawStage = String(r?.manufacturerStage || "")
+        .trim()
+        .toLowerCase();
+      const aliases = stageRawAliasByLabel[label] || [];
+      return aliases.some((alias) => alias.toLowerCase() === rawStage);
     });
   };
 
@@ -234,6 +284,22 @@ export const RequestorDashboardPage = () => {
     const all = infiniteData?.pages.flatMap((page) => page.requests) || [];
     return getModalItems(all, statsModalLabel);
   }, [infiniteData, statsModalLabel]);
+
+  useEffect(() => {
+    // 첫 페이지에 해당 stage 항목이 없더라도, 다음 페이지에 있을 수 있어 자동 추가 로드한다.
+    if (!statsModalOpen) return;
+    if (loadingMyRequestsForModal) return;
+    if (modalItems.length > 0) return;
+    if (!hasNextPage || isFetchingNextPage) return;
+    void fetchNextPage();
+  }, [
+    statsModalOpen,
+    loadingMyRequestsForModal,
+    modalItems.length,
+    hasNextPage,
+    isFetchingNextPage,
+    fetchNextPage,
+  ]);
 
   const [insufficientCredit, setInsufficientCredit] = useState(false);
   const [insufficientShippingCredit, setInsufficientShippingCredit] =
@@ -305,11 +371,11 @@ export const RequestorDashboardPage = () => {
           token,
         });
         if (!res.ok) {
-          throw new Error("가공불가 목록 조회에 실패했습니다.");
+          throw new Error("불완전가공 목록 조회에 실패했습니다.");
         }
         return res.data;
       },
-      enabled: Boolean(token) && unmachinableAlertModalOpen,
+      enabled: Boolean(token),
       retry: false,
     });
 
@@ -491,7 +557,19 @@ export const RequestorDashboardPage = () => {
     const requests = Array.isArray(summaryResponse.data.recentRequests)
       ? summaryResponse.data.recentRequests
       : [];
-    return requests.filter((r: any) => !isCanceledRequest(r));
+    return requests.filter(
+      (r: any) => !isCanceledRequest(r) && !isUnmachinableRequest(r),
+    );
+  }, [summaryResponse]);
+
+  const unmachinableRecentRequests = useMemo(() => {
+    if (!summaryResponse?.success) return [];
+    const requests = Array.isArray(summaryResponse.data.recentRequests)
+      ? summaryResponse.data.recentRequests
+      : [];
+    return requests.filter(
+      (r: any) => !isCanceledRequest(r) && isUnmachinableRequest(r),
+    );
   }, [summaryResponse]);
 
   // 상단 alert 배지는 "미확인(읽지 않음)" 판정 건수를 사용한다.
@@ -501,7 +579,7 @@ export const RequestorDashboardPage = () => {
     return recentRequests.filter((r) => isUnmachinableRequest(r)).length;
   }, [recentRequests, summaryResponse]);
 
-  // 상단 통계카드(가공불가)는 기록용 누적(확인 포함) 건수를 사용한다.
+  // 상단 통계카드(불완전가공)는 기록용 누적(확인 포함) 건수를 사용한다.
   const unmachinableRecordedCount = useMemo(() => {
     const stats = summaryResponse?.data?.stats || {};
     const fromJudgedTotal = Number(stats?.unmachinableJudgedTotalCount);
@@ -656,30 +734,6 @@ export const RequestorDashboardPage = () => {
     }
   };
 
-  // 의뢰자 가공불가 확인(읽음) 처리
-  const confirmUnmachinableRequest = async (requestId: string) => {
-    if (!token || !requestId) return;
-    try {
-      const res = await apiFetch<any>({
-        path: `/api/requests/${requestId}/rnd-unmachinable/confirm`,
-        method: "PATCH",
-        token,
-      });
-      if (!res.ok) {
-        throw new Error(res.data?.message || "가공불가 확인 처리에 실패했습니다.");
-      }
-      refreshDashboard();
-    } catch (error) {
-      console.error("가공불가 확인 처리 실패", error);
-      toast({
-        title: "가공불가 확인 처리 실패",
-        description: "잠시 후 다시 시도해주세요.",
-        variant: "destructive",
-        duration: 2500,
-      });
-    }
-  };
-
   const unmachinableOverviewItems = useMemo(() => {
     const rows = Array.isArray(unmachinableOverviewResponse?.data?.items)
       ? unmachinableOverviewResponse?.data?.items
@@ -687,20 +741,85 @@ export const RequestorDashboardPage = () => {
     return rows.filter((row: any) => Boolean(row?.rnd?.unmachinableAt));
   }, [unmachinableOverviewResponse]);
 
-  const selectableUnmachinableIds = useMemo(() => {
-    return unmachinableOverviewItems
-      .filter((row: any) => !row?.rnd?.unmachinableConfirmedAt)
+  const resolvedModalItems = useMemo(() => {
+    const pagedItems = infiniteData?.pages.flatMap((page) => page.requests) || [];
+    const summaryRecentItems = Array.isArray(summaryResponse?.data?.recentRequests)
+      ? summaryResponse?.data?.recentRequests
+      : [];
+    const unmachinableSeedItems =
+      statsModalLabel === "불완전가공" ? unmachinableOverviewItems : [];
+
+    const merged = [...pagedItems, ...summaryRecentItems, ...unmachinableSeedItems];
+    const deduped = new Map<string, any>();
+    for (const item of merged) {
+      const key = String(item?._id || item?.id || item?.requestId || "").trim();
+      if (!key) continue;
+      if (!deduped.has(key)) deduped.set(key, item);
+      else deduped.set(key, { ...item, ...deduped.get(key) });
+    }
+
+    return getModalItems(Array.from(deduped.values()), statsModalLabel);
+  }, [
+    infiniteData,
+    summaryResponse,
+    statsModalLabel,
+    unmachinableOverviewItems,
+  ]);
+
+  const pendingUnmachinableItems = useMemo(() => {
+    return unmachinableOverviewItems.filter(
+      (row: any) => !row?.rnd?.unmachinableConfirmedAt,
+    );
+  }, [unmachinableOverviewItems]);
+
+  const pendingUnmachinableIds = useMemo(() => {
+    return pendingUnmachinableItems
       .map((row: any) => String(row?._id || "").trim())
       .filter(Boolean);
-  }, [unmachinableOverviewItems]);
+  }, [pendingUnmachinableItems]);
+
+  const activePendingUnmachinableItems = useMemo(() => {
+    if (!focusedUnmachinableRequestId) return pendingUnmachinableItems;
+    return pendingUnmachinableItems.filter(
+      (row: any) => String(row?._id || "").trim() === focusedUnmachinableRequestId,
+    );
+  }, [focusedUnmachinableRequestId, pendingUnmachinableItems]);
+
+  const activePendingUnmachinableIds = useMemo(() => {
+    return activePendingUnmachinableItems
+      .map((row: any) => String(row?._id || "").trim())
+      .filter(Boolean);
+  }, [activePendingUnmachinableItems]);
+
+  const pendingUnmachinableFingerprint = useMemo(
+    () => pendingUnmachinableIds.join(","),
+    [pendingUnmachinableIds],
+  );
+
+  useEffect(() => {
+    if (!pendingUnmachinableIds.length) return;
+    const nextFingerprint = pendingUnmachinableFingerprint;
+    if (!nextFingerprint) return;
+    if (promptedUnmachinableFingerprintRef.current === nextFingerprint) return;
+
+    promptedUnmachinableFingerprintRef.current = nextFingerprint;
+    setFocusedUnmachinableRequestId(null);
+    setSelectedUnmachinableContinueIds(new Set(pendingUnmachinableIds));
+    setPendingCancelUnmachinableIds([]);
+    setUnmachinableAlertModalOpen(true);
+  }, [pendingUnmachinableFingerprint, pendingUnmachinableIds]);
 
   useEffect(() => {
     if (!unmachinableAlertModalOpen) return;
-    setSelectedUnmachinableIds(new Set(selectableUnmachinableIds));
-  }, [unmachinableAlertModalOpen, selectableUnmachinableIds]);
+    setSelectedUnmachinableContinueIds(new Set(activePendingUnmachinableIds));
+    setPendingCancelUnmachinableIds([]);
+  }, [unmachinableAlertModalOpen, activePendingUnmachinableIds]);
 
-  const toggleUnmachinableSelection = (requestId: string, checked: boolean) => {
-    setSelectedUnmachinableIds((prev) => {
+  const toggleUnmachinableContinueSelection = (
+    requestId: string,
+    checked: boolean,
+  ) => {
+    setSelectedUnmachinableContinueIds((prev) => {
       const next = new Set(prev);
       if (checked) next.add(requestId);
       else next.delete(requestId);
@@ -708,61 +827,194 @@ export const RequestorDashboardPage = () => {
     });
   };
 
-  const toggleSelectAllUnmachinable = (checked: boolean) => {
-    if (checked) {
-      setSelectedUnmachinableIds(new Set(selectableUnmachinableIds));
-      return;
+  const markUnmachinableAsContinue = async (targetIds: string[]) => {
+    if (!token) return 0;
+    let successCount = 0;
+    for (const requestId of targetIds) {
+      const res = await apiFetch<any>({
+        path: `/api/requests/${requestId}/rnd-unmachinable/continue`,
+        method: "PATCH",
+        token,
+      });
+      if (res.ok) successCount += 1;
     }
-    setSelectedUnmachinableIds(new Set());
+    return successCount;
   };
 
-  const confirmSelectedUnmachinableRequests = async () => {
-    if (!token) return;
-    const targetIds = Array.from(selectedUnmachinableIds.values()).filter(Boolean);
-    if (!targetIds.length) {
-      toast({
-        title: "선택된 의뢰가 없습니다",
-        description: "확인 처리할 가공불가 의뢰를 선택해주세요.",
-        duration: 1800,
+  const cancelUnmachinableRequests = async (targetIds: string[]) => {
+    if (!token) return 0;
+    let canceledCount = 0;
+
+    for (const requestId of targetIds) {
+      const res = await apiFetch<any>({
+        path: `/api/requests/${requestId}/status`,
+        method: "PATCH",
+        token,
+        headers: {
+          "Content-Type": "application/json",
+        },
+        jsonBody: { manufacturerStage: "취소" },
       });
-      return;
+
+      if (res.ok) {
+        canceledCount += 1;
+      }
     }
 
-    setConfirmingUnmachinableSelection(true);
+    return canceledCount;
+  };
+
+  const handleOpenUnmachinableDecisionModal = (requestId: string) => {
+    const normalized = String(requestId || "").trim();
+    if (!normalized) return;
+    setFocusedUnmachinableRequestId(normalized);
+    setPendingCancelUnmachinableIds([]);
+    setUnmachinableAlertModalOpen(true);
+  };
+
+  const focusedUnmachinableItem = useMemo(() => {
+    const targetId = String(focusedUnmachinableRequestId || "").trim();
+    if (!targetId) return null;
+
+    const fromOverview = (unmachinableOverviewItems || []).find(
+      (row: any) => String(row?._id || row?.id || "").trim() === targetId,
+    );
+    if (fromOverview) return fromOverview;
+
+    const fromRecent = (unmachinableRecentRequests || []).find(
+      (row: any) => String(row?._id || row?.id || "").trim() === targetId,
+    );
+    return fromRecent || null;
+  }, [focusedUnmachinableRequestId, unmachinableOverviewItems, unmachinableRecentRequests]);
+
+  const activeUnmachinableDecisionItem = useMemo(() => {
+    if (focusedUnmachinableItem) return focusedUnmachinableItem;
+    return pendingUnmachinableItems[0] || null;
+  }, [focusedUnmachinableItem, pendingUnmachinableItems]);
+
+  const handleContinueSingleUnmachinableRequest = async (
+    requestId: string,
+  ): Promise<boolean> => {
+    const normalized = String(requestId || "").trim();
+    if (!token || !normalized) return false;
+    setApprovingUnmachinableSelection(true);
     try {
-      let successCount = 0;
-      for (const requestId of targetIds) {
-        const res = await apiFetch<any>({
-          path: `/api/requests/${requestId}/rnd-unmachinable/confirm`,
-          method: "PATCH",
-          token,
+      const successCount = await markUnmachinableAsContinue([normalized]);
+      if (successCount <= 0) {
+        toast({
+          title: "불완전가공 진행 전환 실패",
+          description: "처리된 의뢰가 없습니다. 잠시 후 다시 시도해주세요.",
+          variant: "destructive",
+          duration: 2500,
         });
-        if (res.ok) successCount += 1;
+        return false;
       }
 
       toast({
-        title: "가공불가 확인 처리 완료",
-        description: `${successCount}건을 확인 처리했습니다.`,
+        title: "가공 계속 진행",
+        description: `${successCount}건이 계속 진행으로 처리되었습니다.`,
+        duration: 2000,
+      });
+      refreshDashboard();
+      return true;
+    } catch (error) {
+      console.error("불완전가공 진행 전환 실패", error);
+      toast({
+        title: "불완전가공 진행 전환 실패",
+        description: "잠시 후 다시 시도해주세요.",
+        variant: "destructive",
+        duration: 2500,
+      });
+      return false;
+    } finally {
+      setApprovingUnmachinableSelection(false);
+    }
+  };
+
+  const handleApproveUnmachinableSelections = async () => {
+    if (!token) return;
+
+    const allPendingIds = [...activePendingUnmachinableIds];
+    if (!allPendingIds.length) {
+      toast({
+        title: "처리할 의뢰가 없습니다",
+        duration: 1800,
+      });
+      setUnmachinableAlertModalOpen(false);
+      return;
+    }
+
+    const continueIds = allPendingIds.filter((id) =>
+      selectedUnmachinableContinueIds.has(id),
+    );
+    const cancelIds = allPendingIds.filter(
+      (id) => !selectedUnmachinableContinueIds.has(id),
+    );
+
+    if (cancelIds.length > 0) {
+      setPendingCancelUnmachinableIds(cancelIds);
+      setUnmachinableCancelConfirmOpen(true);
+      return;
+    }
+
+    setApprovingUnmachinableSelection(true);
+    try {
+      const successCount = await markUnmachinableAsContinue(continueIds);
+      toast({
+        title: "가공 계속 진행",
+        description: `${successCount}건이 계속 진행으로 처리되었습니다.`,
         duration: 2000,
       });
       setUnmachinableAlertModalOpen(false);
       refreshDashboard();
     } catch (error) {
-      console.error("가공불가 선택 확인 처리 실패", error);
+      console.error("불완전가공 승인 처리 실패", error);
       toast({
-        title: "가공불가 확인 처리 실패",
+        title: "불완전가공 승인 처리 실패",
         description: "잠시 후 다시 시도해주세요.",
         variant: "destructive",
         duration: 2500,
       });
     } finally {
-      setConfirmingUnmachinableSelection(false);
+      setApprovingUnmachinableSelection(false);
     }
   };
 
-  const allSelectableChecked =
-    selectableUnmachinableIds.length > 0 &&
-    selectableUnmachinableIds.every((id) => selectedUnmachinableIds.has(id));
+  const handleConfirmCancelUnmachinableRequests = async () => {
+    if (!token) return;
+
+    const cancelIds = [...pendingCancelUnmachinableIds].filter(Boolean);
+    if (!cancelIds.length) {
+      setUnmachinableCancelConfirmOpen(false);
+      return;
+    }
+
+    setApprovingUnmachinableSelection(true);
+    try {
+      const canceledCount = await cancelUnmachinableRequests(cancelIds);
+
+      toast({
+        title: "의뢰건 자체를 취소합니다",
+        description: `${canceledCount}건이 취소 처리되었습니다.`,
+        duration: 2200,
+      });
+
+      setUnmachinableCancelConfirmOpen(false);
+      setPendingCancelUnmachinableIds([]);
+      setUnmachinableAlertModalOpen(false);
+      refreshDashboard();
+    } catch (error) {
+      console.error("불완전가공 취소 처리 실패", error);
+      toast({
+        title: "불완전가공 취소 처리 실패",
+        description: "잠시 후 다시 시도해주세요.",
+        variant: "destructive",
+        duration: 2500,
+      });
+    } finally {
+      setApprovingUnmachinableSelection(false);
+    }
+  };
 
   if (isInitialLoading) {
     return <DashboardShellSkeleton showMain />;
@@ -779,7 +1031,7 @@ export const RequestorDashboardPage = () => {
         { label: "세척.패킹", value: "0", icon: Boxes },
         { label: "포장.발송", value: "0건/0박스", icon: Package },
         { label: "추적관리", value: "0건/0박스", icon: CheckCircle },
-        { label: "가공불가", value: "0", icon: AlertTriangle },
+        { label: "불완전가공", value: "0", icon: AlertTriangle },
       ];
     }
 
@@ -828,7 +1080,7 @@ export const RequestorDashboardPage = () => {
         icon: CheckCircle,
       },
       {
-        label: "가공불가",
+        label: "불완전가공",
         value: String(unmachinableRecordedCount),
         change: "+0%",
         icon: AlertTriangle,
@@ -916,11 +1168,14 @@ export const RequestorDashboardPage = () => {
             {unmachinableAlertCount > 0 && (
               <button
                 type="button"
-                onClick={() => setUnmachinableAlertModalOpen(true)}
-                className="inline-flex h-8 items-center rounded-md border border-red-300 bg-red-50 px-3 text-sm font-semibold text-red-700 ring-2 ring-red-200 hover:bg-red-100"
-                title="가공불가 의뢰 목록을 확인합니다"
+                onClick={() => {
+                  setFocusedUnmachinableRequestId(null);
+                  setUnmachinableAlertModalOpen(true);
+                }}
+                className="inline-flex h-8 items-center rounded-md border border-yellow-300 bg-yellow-50 px-3 text-sm font-semibold text-yellow-700 ring-2 ring-yellow-200 hover:bg-yellow-100"
+                title="불완전가공 의뢰 목록을 확인합니다"
               >
-                가공불가 의뢰 {unmachinableAlertCount}건 발생
+                불완전가공 의뢰 {unmachinableAlertCount}건 발생
               </button>
             )}
           </div>
@@ -949,45 +1204,103 @@ export const RequestorDashboardPage = () => {
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">
-              <RequestorRecentRequestsCard
-                items={recentRequests}
-                onRefresh={() => {
-                  refetchSummary();
-                  refetchBulk();
-                }}
-                onEdit={openEditDialogFromRequest}
-                onCancel={cancelRequest}
-                onConfirmUnmachinable={confirmUnmachinableRequest}
-              />
+              <div className="lg:row-span-2 h-full">
+                <RequestorRecentRequestsCard
+                  items={recentRequests}
+                  onRefresh={() => {
+                    refetchSummary();
+                    refetchBulk();
+                  }}
+                  onEdit={openEditDialogFromRequest}
+                  onCancel={cancelRequest}
+                />
+              </div>
 
-              <RequestorRiskSummaryCard
-                riskSummary={riskSummary}
-                onItemClick={(item) => {
-                  setSelectedRiskSummaryItem(item);
-                  setRiskSummaryDetailLoading(true);
-                  apiFetch<any>({
-                    path: `/api/requests/${item.id}`,
-                    method: "GET",
-                    token,
-                  })
-                    .then((res) => {
-                      if (!res.ok) {
-                        throw new Error("의뢰 상세 조회에 실패했습니다.");
-                      }
-                      if (!res.data?.success) {
-                        throw new Error("의뢰 상세 데이터가 없습니다.");
-                      }
-                      setRiskSummaryDetail(res.data.data || null);
+              <div className="space-y-6 h-full">
+                <Card className="app-glass-card app-glass-card--lg">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-base font-semibold">불완전가공</CardTitle>
+                  </CardHeader>
+                  <CardContent className="pt-2">
+                    {unmachinableRecentRequests.length === 0 ? (
+                      <div className="text-sm text-muted-foreground">표시할 불완전가공 의뢰가 없습니다.</div>
+                    ) : (
+                      <div className="space-y-2 max-h-[260px] overflow-auto pr-1 pb-1">
+                        {unmachinableRecentRequests.map((item: any) => {
+                          const requestMongoId = String(item?._id || item?.id || "").trim();
+                          const requestId = String(item?.requestId || "-").trim() || "-";
+                          const ci = item?.caseInfos || {};
+                          const title =
+                            String(item?.title || "").trim() ||
+                            [ci?.patientName, ci?.tooth].filter(Boolean).join(" ") ||
+                            requestId;
+                          const reason = String(item?.rnd?.unmachinableReason || "").trim();
+                          const confirmed = Boolean(item?.rnd?.unmachinableConfirmedAt);
+                          return (
+                            <button
+                              key={requestMongoId || requestId}
+                              type="button"
+                              className="w-full text-left rounded-md border border-yellow-300 bg-yellow-50/50 px-3 py-2 hover:bg-yellow-100/50"
+                              onClick={() => {
+                                handleOpenUnmachinableDecisionModal(requestMongoId);
+                              }}
+                            >
+                              <div className="min-w-0 flex-1 space-y-1">
+                                <div className="flex items-center gap-2">
+                                  <div className="text-sm font-medium truncate">{title}</div>
+                                  <Badge
+                                    variant="outline"
+                                    className="text-[10px] border-yellow-300 text-yellow-700"
+                                  >
+                                    {confirmed ? "확인됨" : "미확인"}
+                                  </Badge>
+                                </div>
+                                <div className="text-xs text-muted-foreground truncate">
+                                  의뢰번호: {requestId}
+                                </div>
+                                <div className="text-xs text-yellow-800 truncate">
+                                  불완전가공 사유: {reason || "미등록"}
+                                </div>
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+
+                <RequestorRiskSummaryCard
+                  riskSummary={riskSummary}
+                  disableInnerScroll
+                  maxVisibleItems={1}
+                  onItemClick={(item) => {
+                    setSelectedRiskSummaryItem(item);
+                    setRiskSummaryDetailLoading(true);
+                    apiFetch<any>({
+                      path: `/api/requests/${item.id}`,
+                      method: "GET",
+                      token,
                     })
-                    .catch((error) => {
-                      console.error("의뢰 상세 조회 실패", error);
-                      setRiskSummaryDetail(null);
-                    })
-                    .finally(() => {
-                      setRiskSummaryDetailLoading(false);
-                    });
-                }}
-              />
+                      .then((res) => {
+                        if (!res.ok) {
+                          throw new Error("의뢰 상세 조회에 실패했습니다.");
+                        }
+                        if (!res.data?.success) {
+                          throw new Error("의뢰 상세 데이터가 없습니다.");
+                        }
+                        setRiskSummaryDetail(res.data.data || null);
+                      })
+                      .catch((error) => {
+                        console.error("의뢰 상세 조회 실패", error);
+                        setRiskSummaryDetail(null);
+                      })
+                      .finally(() => {
+                        setRiskSummaryDetailLoading(false);
+                      });
+                  }}
+                />
+              </div>
             </div>
           </div>
         }
@@ -1098,122 +1411,111 @@ export const RequestorDashboardPage = () => {
         onOpenChange={(open) => {
           setUnmachinableAlertModalOpen(open);
           if (!open) {
-            // 취소/닫기는 읽음 처리 없이 선택 상태만 초기화
-            setSelectedUnmachinableIds(new Set());
+            setPendingCancelUnmachinableIds([]);
+            setFocusedUnmachinableRequestId(null);
           }
         }}
       >
         <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle>가공불가 의뢰 목록</DialogTitle>
+            <DialogTitle>불완전가공 안내</DialogTitle>
             <DialogDescription>
-              확인할 의뢰를 체크한 뒤 [선택 확인 처리]를 누르면 읽음 처리됩니다.
-              [취소/닫기] 시에는 읽음 처리되지 않습니다.
+              제조사에서 불완전가공으로 판정한 의뢰입니다. 사유를 읽고 진행 방식을 선택해주세요.
             </DialogDescription>
           </DialogHeader>
 
           {loadingUnmachinableOverview ? (
             <div className="text-sm text-muted-foreground">불러오는 중...</div>
-          ) : unmachinableOverviewItems.length === 0 ? (
-            <div className="text-sm text-muted-foreground">표시할 가공불가 의뢰가 없습니다.</div>
+          ) : !activeUnmachinableDecisionItem ? (
+            <div className="text-sm text-muted-foreground">표시할 불완전가공 의뢰가 없습니다.</div>
           ) : (
             <div className="space-y-3">
-              <div className="flex items-center gap-2 rounded-md border px-3 py-2">
-                <Checkbox
-                  checked={allSelectableChecked}
-                  onCheckedChange={(checked) =>
-                    toggleSelectAllUnmachinable(Boolean(checked))
-                  }
-                />
-                <span className="text-sm">
-                  전체 선택 ({selectedUnmachinableIds.size}/{selectableUnmachinableIds.length})
-                </span>
-              </div>
+              {(() => {
+                const item = activeUnmachinableDecisionItem as any;
+                const requestMongoId = String(item?._id || item?.id || "").trim();
+                const requestId = String(item?.requestId || "-").trim() || "-";
+                const ci = item?.caseInfos || {};
+                const title =
+                  String(item?.title || "").trim() ||
+                  [ci?.patientName, ci?.tooth].filter(Boolean).join(" ") ||
+                  requestId;
+                const reason = String(item?.rnd?.unmachinableReason || "").trim();
 
-              <div className="space-y-2 max-h-[45vh] overflow-auto pr-1">
-                {unmachinableOverviewItems.map((item: any) => {
-                  const requestMongoId = String(item?._id || "").trim();
-                  const requestId = String(item?.requestId || "-").trim() || "-";
-                  const ci = item?.caseInfos || {};
-                  const title =
-                    String(item?.title || "").trim() ||
-                    [ci?.patientName, ci?.tooth].filter(Boolean).join(" ") ||
-                    requestId;
-                  const reason = String(item?.rnd?.unmachinableReason || "").trim();
-                  const confirmed = Boolean(item?.rnd?.unmachinableConfirmedAt);
-                  const checked = selectedUnmachinableIds.has(requestMongoId);
-
-                  return (
-                    <div
-                      key={requestMongoId || requestId}
-                      className={`rounded-md border px-3 py-2 ${
-                        confirmed
-                          ? "border-slate-200 bg-slate-50"
-                          : "border-red-300 bg-red-50/40"
-                      }`}
-                    >
-                      <div className="flex items-start gap-3">
-                        <Checkbox
-                          checked={confirmed ? true : checked}
-                          disabled={confirmed}
-                          onCheckedChange={(next) =>
-                            toggleUnmachinableSelection(
-                              requestMongoId,
-                              Boolean(next),
-                            )
-                          }
-                        />
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2">
-                            <div className="text-sm font-medium truncate">{title}</div>
-                            <Badge
-                              variant={confirmed ? "outline" : "destructive"}
-                              className="text-[10px]"
-                            >
-                              {confirmed ? "확인됨" : "미확인"}
-                            </Badge>
-                          </div>
-                          <div className="text-xs text-muted-foreground truncate">
-                            의뢰번호: {requestId}
-                          </div>
-                          <div className="text-xs text-red-700 truncate mt-1">
-                            가공불가 사유: {reason || "미등록"}
-                          </div>
-                        </div>
+                return (
+                  <div className="rounded-md border border-yellow-300 bg-yellow-50/60 px-3 py-3">
+                    <div className="min-w-0 flex-1 space-y-1">
+                      <div className="flex items-center gap-2">
+                        <div className="text-sm font-medium truncate">{title}</div>
+                        <Badge
+                          variant="outline"
+                          className="text-[10px] border-yellow-300 text-yellow-700"
+                        >
+                          불완전가공
+                        </Badge>
+                      </div>
+                      <div className="text-xs text-muted-foreground truncate">
+                        의뢰번호: {requestId}
+                      </div>
+                      <div className="text-xs text-yellow-800 mt-1 break-words">
+                        불완전가공 사유: {reason || "미등록"}
+                      </div>
+                      <div className="text-xs text-slate-700 mt-2">
+                        해당 의뢰건을 취소할지, 그대로 진행할지 선택해주세요.
                       </div>
                     </div>
-                  );
-                })}
-              </div>
 
-              <div className="flex items-center justify-end gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setUnmachinableAlertModalOpen(false)}
-                  disabled={confirmingUnmachinableSelection}
-                >
-                  취소
-                </Button>
-                <Button
-                  type="button"
-                  onClick={() => {
-                    void confirmSelectedUnmachinableRequests();
-                  }}
-                  disabled={
-                    confirmingUnmachinableSelection ||
-                    selectedUnmachinableIds.size === 0
-                  }
-                >
-                  {confirmingUnmachinableSelection
-                    ? "처리 중..."
-                    : "선택 확인 처리"}
-                </Button>
-              </div>
+                    <div className="mt-3 flex items-center justify-end gap-2">
+
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="border-red-300 text-red-700 hover:bg-red-500"
+                        onClick={() => {
+                          setPendingCancelUnmachinableIds([requestMongoId]);
+                          setUnmachinableCancelConfirmOpen(true);
+                        }}
+                        disabled={approvingUnmachinableSelection}
+                      >
+                        의뢰 취소
+                      </Button>
+                      <Button
+                        type="button"
+                        onClick={async () => {
+                          const continued =
+                            await handleContinueSingleUnmachinableRequest(
+                              requestMongoId,
+                            );
+                          if (continued) {
+                            setUnmachinableAlertModalOpen(false);
+                          }
+                        }}
+                        disabled={approvingUnmachinableSelection}
+                      >
+                        의뢰 계속 진행
+                      </Button>
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           )}
         </DialogContent>
       </Dialog>
+
+      <ConfirmDialog
+        open={unmachinableCancelConfirmOpen}
+        title="의뢰건 자체를 취소합니다"
+        description="해당 불완전가공 의뢰건을 취소 처리합니다. 계속할까요?"
+        confirmLabel="취소 진행"
+        cancelLabel="닫기"
+        onCancel={() => {
+          setUnmachinableCancelConfirmOpen(false);
+          setPendingCancelUnmachinableIds([]);
+        }}
+        onConfirm={async () => {
+          await handleConfirmCancelUnmachinableRequests();
+        }}
+      />
 
       <RequestDetailDialog
         open={Boolean(selectedRiskSummaryItem)}
@@ -1256,13 +1558,17 @@ export const RequestorDashboardPage = () => {
 
           {loadingMyRequestsForModal ? (
             <div className="text-sm text-muted-foreground">불러오는 중...</div>
-          ) : modalItems.length === 0 ? (
-            <div className="text-sm text-muted-foreground">
-              표시할 내역이 없습니다.
-            </div>
+          ) : resolvedModalItems.length === 0 ? (
+            hasNextPage || isFetchingNextPage ? (
+              <div className="text-sm text-muted-foreground">세부 내역 검색 중...</div>
+            ) : (
+              <div className="text-sm text-muted-foreground">
+                표시할 내역이 없습니다.
+              </div>
+            )
           ) : (
             <div className="space-y-2 max-h-[60vh] overflow-auto pr-1">
-              {modalItems.map((r: any) => {
+              {resolvedModalItems.map((r: any) => {
                 const ci = r?.caseInfos || {};
                 const title =
                   String(r?.title || "").trim() ||
@@ -1276,7 +1582,7 @@ export const RequestorDashboardPage = () => {
                     type="button"
                     className={`w-full text-left rounded-md border px-3 py-2 hover:bg-gray-50 ${
                       isUnmachinable
-                        ? "border-red-300 ring-2 ring-red-200 bg-red-50/40"
+                        ? "border-yellow-300 ring-2 ring-yellow-200 bg-yellow-50/40"
                         : "border-gray-200 bg-white"
                     }`}
                     onClick={() => {
@@ -1287,8 +1593,8 @@ export const RequestorDashboardPage = () => {
                     <div className="text-sm font-semibold text-gray-900 truncate flex items-center gap-2">
                       <span className="truncate">{title}</span>
                       {isUnmachinable && (
-                        <Badge variant="destructive" className="text-[10px] h-5">
-                          가공불가
+                        <Badge variant="outline" className="text-[10px] h-5 border-yellow-300 text-yellow-700 bg-yellow-50">
+                          불완전가공
                         </Badge>
                       )}
                     </div>
@@ -1297,8 +1603,8 @@ export const RequestorDashboardPage = () => {
                     </div>
 
                     {isUnmachinable && (
-                      <div className="text-[11px] text-red-700 truncate mt-1">
-                        가공불가 사유: {unmachinableReason || "미등록"}
+                      <div className="text-[11px] text-yellow-800 truncate mt-1">
+                        불완전가공 사유: {unmachinableReason || "미등록"}
                       </div>
                     )}
                   </button>

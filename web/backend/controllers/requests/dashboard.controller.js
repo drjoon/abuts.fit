@@ -1,3 +1,6 @@
+// related files:
+// - web/frontend/src/pages/requestor/dashboard/RequestorDashboardPage.tsx
+// - web/backend/services/requestorDashboardSummarySnapshot.service.js
 import Request from "../../models/request.model.js";
 import User from "../../models/user.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
@@ -799,6 +802,7 @@ export async function getMyDashboardSummary(req, res) {
           unmachinablePendingConfirmCountRaw,
           unmachinableJudgedTotalCountRaw,
           unmachinableConfirmedCountRaw,
+          inProductionNonSampleCountRaw,
         ] = await Promise.all([
           Request.find({
             ...requestFilter,
@@ -854,6 +858,18 @@ export async function getMyDashboardSummary(req, res) {
             ...dateFilter,
             "rnd.unmachinableAt": { $ne: null },
             "rnd.unmachinableConfirmedAt": { $ne: null },
+          }),
+          // 가공 카운트는 주문 의뢰만 집계한다.
+          // copied_sample / rnd_sample / manufacturer_sample(source/price.rule)는 제외한다.
+          Request.countDocuments({
+            ...requestFilter,
+            ...dateFilter,
+            manufacturerStage: { $in: ["machining", "가공"] },
+            $and: [
+              { source: { $ne: "manufacturer_sample" } },
+              { "price.rule": { $ne: "manufacturer_sample" } },
+              { requestCategory: { $nin: ["rnd_sample", "copied_sample"] } },
+            ],
           }),
         ]);
 
@@ -974,6 +990,10 @@ export async function getMyDashboardSummary(req, res) {
             0,
         );
 
+        const resolvedInProductionCount = Number(
+          inProductionNonSampleCountRaw ?? snapshotStats?.inProduction ?? 0,
+        );
+
         const responseData = {
           stats: {
             ...(snapshotStats || {
@@ -999,6 +1019,8 @@ export async function getMyDashboardSummary(req, res) {
               doneOrCanceled: 0,
               doneOrCanceledChange: "+0%",
             }),
+            // 가공 카운트는 샘플 제외 실시간 집계값으로 교정
+            inProduction: resolvedInProductionCount,
             // 상단 alert(미확인) 카운트
             unmachinableCount: resolvedUnmachinablePendingConfirmCount,
             // 상세 카운트(카드/모달/역할별 화면 공통)

@@ -220,6 +220,71 @@
 - `web/backend/controllers/requests/common.review.controller.js`
 - `web/backend/controllers/requests/common.requests.controller.js`
 
+### 1.0.6 불완전가공 용어/컬러 및 의뢰자 승인 모달 정책 (2026-07-25)
+
+- 사용자 노출 용어는 `가공불가` 대신 **`불완전가공`**으로 통일합니다.
+  - 단, API/DB/내부 필드명(`unmachinable`, `rnd-unmachinable`)은 기존 SSOT를 유지합니다.
+- 불완전가공 상태 강조 색상은 **red 계열이 아닌 yellow 계열**을 기본으로 사용합니다.
+- 의뢰자 대시보드 진입 시 `미확인(unmachinableConfirmedAt 없음)` 불완전가공 의뢰가 있으면 안내 모달을 자동 노출합니다.
+- 안내 모달 UX는 아래를 고정합니다.
+  1. 불완전가공 사유 표시
+  2. 체크박스 문구: `불완전 가공되더라도 제품 받기를 원합니다` (기본 체크)
+  3. 버튼: `다음에 하기`, `승인`
+  4. 체크 상태로 승인 시: 확인 처리 + 토스트 `가공 계속 진행`
+  5. 체크 해제 상태로 승인 시: 공통 `ConfirmDialog`로 `의뢰건 자체를 취소합니다` 확인 후 취소 처리
+- 대시보드 배치 정책:
+  - 불완전가공 의뢰는 `최근 의뢰` 카드에서 분리하고,
+  - 우측 컬럼의 `지연 위험 요약` 아래 전용 `불완전가공` 카드에 모아 표시합니다.
+- 불완전가공 의뢰는 의뢰자 확인 후에도 카드에서 제거하지 않습니다.
+  - 사용자는 전용 카드에서 언제든 `가공 시작으로 변경` 액션을 다시 실행할 수 있어야 합니다.
+- 최근 의뢰 카드의 불완전가공 항목 클릭으로 `의뢰 상세`를 띄우지 않습니다.
+  - 불완전가공 관련 클릭/버튼은 의뢰자 선택 모달(진행/취소 확인) 흐름으로 연결합니다.
+- 의뢰자 대시보드 `가공` 집계/세부 내역은 샘플 의뢰를 제외합니다.
+  - 제외 기준: `requestCategory in [rnd_sample, copied_sample]` 또는 `source/price.rule = manufacturer_sample`
+  - 상단 카드 값과 세부 모달 필터 기준을 동일하게 유지합니다.
+- 제조사 가공 보드 라벨에는 샘플 유형을 구분해 표시합니다.
+  - `R&D 샘플`은 `R&D`, `복사 샘플`은 `복사샘플` 배지를 사용합니다.
+
+관련 파일:
+- `web/frontend/src/pages/requestor/dashboard/RequestorDashboardPage.tsx`
+- `web/frontend/src/pages/requestor/dashboard/components/RequestorRecentRequestsCard.tsx`
+- `web/frontend/src/features/requests/components/RequestDetailDialog.tsx`
+- `web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx`
+- `web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/WorksheetCardGrid.tsx`
+- `web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx`
+- `web/frontend/src/pages/manufacturer/worksheet/custom_abutment/packing/components/PackingPageContent.tsx`
+- `web/frontend/src/pages/manufacturer/worksheet/custom_abutment/packing/hooks/usePackingWorksheetData.ts`
+- `web/frontend/src/pages/manufacturer/worksheet/custom_abutment/machining/MachiningQueueBoard.tsx`
+- `web/frontend/src/pages/manufacturer/worksheet/custom_abutment/machining/components/MachiningRequestLabel.tsx`
+- `web/frontend/src/pages/manufacturer/worksheet/custom_abutment/machining/utils/label.ts`
+- `web/frontend/src/shared/ui/dashboard/RequestorRiskSummaryCard.tsx`
+- `web/frontend/src/features/layout/DashboardLayout.tsx`
+- `web/frontend/src/pages/manufacturer/dashboard/ManufacturerDashboardPage.tsx`
+- `web/frontend/src/pages/admin/dashboard/AdminDashboardPage.tsx`
+- `web/frontend/src/pages/salesman/SalesmanDashboardPage.tsx`
+- `web/frontend/src/pages/devops/DevopsDashboardPage.tsx`
+- `web/backend/controllers/requests/dashboard.controller.js`
+
+### 1.0.7 불완전가공 의뢰자 "계속 진행" 의사 전달 SSOT (2026-07-25)
+
+- 의뢰자가 불완전가공 안내 모달에서 `의뢰 계속 진행`을 선택하면, 단순 읽음 처리로 끝내지 않고 **제조사 작업 화면에 의뢰자 진행 의사**가 보이도록 이력을 남깁니다.
+- 저장 SSOT는 `Request.rnd` 하위 필드를 사용합니다.
+  - `requestorContinueAt`
+  - `requestorContinueBy`
+  - `requestorContinueMessage`
+- `continue` 처리 시(`PATCH /api/requests/:id/rnd-unmachinable/continue`):
+  - 불완전가공 상태(`unmachinable*`)는 해제하여 정상 공정으로 복귀시킵니다.
+  - 동시에 위 `requestorContinue*` 필드를 기록해 제조사 측에서 "문제 가능성 인지 후 진행 요청"을 확인할 수 있어야 합니다.
+- 제조사가 다시 불완전가공을 판정하면(`PATCH /api/requests/:id/rnd-unmachinable`), 과거 `requestorContinue*` 이력은 초기화합니다.
+- 제조사 워크시트 카드/프리뷰에는 의뢰자 진행 요청 배지/안내를 표시해, 이슈가 있더라도 가공 지속 의사결정을 명확히 전달합니다.
+
+관련 파일:
+- `web/backend/models/request.model.js`
+- `web/backend/controllers/requests/common.requests.controller.js`
+- `web/frontend/src/types/request.ts`
+- `web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/WorksheetCardGrid.tsx`
+- `web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx`
+
 ### 1.1 보안 정보 관리
 
 **보안 정보(비밀번호, API 키, DB URI 등)는 절대 하드코딩하지 않습니다.**

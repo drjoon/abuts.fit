@@ -28,6 +28,11 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 
+// related files:
+// - web/frontend/src/pages/requestor/dashboard/RequestorDashboardPage.tsx
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/WorksheetCardGrid.tsx
+
 const EDITABLE_STATUSES = new Set(["의뢰", "CAM"]);
 
 const STAGE_BADGE_BASE =
@@ -168,7 +173,6 @@ type Props = {
   onRefresh: () => void;
   onEdit: (item: RecentRequestCardItem) => void;
   onCancel: (id: string) => void;
-  onConfirmUnmachinable?: (id: string) => Promise<void> | void;
 };
 
 export const RequestorRecentRequestsCard = ({
@@ -176,7 +180,6 @@ export const RequestorRecentRequestsCard = ({
   onRefresh,
   onEdit,
   onCancel,
-  onConfirmUnmachinable,
 }: Props) => {
   const { token, user } = useAuthStore();
   const { toast } = useToast();
@@ -259,13 +262,7 @@ export const RequestorRecentRequestsCard = ({
     await Promise.resolve(onCancel(requestId));
   };
 
-  // 가공불가 배지 클릭 시, 상세 보기 이전에 읽음(확인) 처리한다.
-  // 채팅 읽음 UX와 동일하게 한 번 확인되면 서버에 확인 시각이 기록된다.
-  const handleConfirmUnmachinable = async (requestId: string) => {
-    if (!requestId) return;
-    if (!onConfirmUnmachinable) return;
-    await Promise.resolve(onConfirmUnmachinable(requestId));
-  };
+  // 불완전가공 배지는 안내용으로만 사용한다.
 
   const resolveCurrentCaseInfos = useCallback((): EditableCaseInfos => {
     const fromDetail = detail?.caseInfos;
@@ -573,14 +570,14 @@ export const RequestorRecentRequestsCard = ({
 
   return (
     <Card
-      className="app-glass-card app-glass-card--lg cursor-pointer"
+      className="app-glass-card app-glass-card--lg cursor-pointer h-full flex flex-col"
       onClick={onRefresh}
     >
       <CardHeader className="pb-2 flex flex-row items-center justify-between gap-3">
         <CardTitle className="text-base font-semibold">최근 의뢰</CardTitle>
       </CardHeader>
-      <CardContent className="flex-1 flex flex-col justify-between pt-2">
-        <div className="space-y-3 max-h-[550px] overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-transparent">
+      <CardContent className="flex-1 flex flex-col justify-between pt-2 overflow-visible">
+        <div className="space-y-3 max-h-[550px] overflow-y-auto pr-1 pl-0.5 pb-1 scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-transparent">
           {visibleItems.map((item) => {
             const rawRequestId = String(item.requestId || "").trim();
             const stableKey = item._id || item.id || rawRequestId || "";
@@ -617,7 +614,7 @@ export const RequestorRecentRequestsCard = ({
                 key={stableKey || displayId}
                 className={`flex items-center justify-between p-3 border rounded-lg ${
                   isUnmachinable
-                    ? "border-red-300 ring-2 ring-red-200 bg-red-50/40"
+                    ? "border-yellow-300 ring-2 ring-yellow-200 bg-yellow-50/40"
                     : "border-border"
                 }`}
                 onClick={(e) => {
@@ -632,19 +629,15 @@ export const RequestorRecentRequestsCard = ({
                   <div className="absolute top-2 right-2 z-10">
                     <button
                       type="button"
-                      className="inline-flex h-6 min-w-[62px] items-center justify-center rounded-full px-2 text-[11px] font-bold shadow-sm transition-colors bg-red-500 text-white hover:bg-red-600"
+                      className="inline-flex h-6 min-w-[72px] items-center justify-center rounded-full px-2 text-[11px] font-bold shadow-sm transition-colors bg-yellow-500 text-white hover:bg-yellow-600"
                       onClick={(e) => {
                         e.stopPropagation();
-                        const reqId = String(item?._id || item?.id || "").trim();
-                        if (reqId) {
-                          void handleConfirmUnmachinable(reqId);
-                        }
                         setUnmachinableTarget(item);
                         setUnmachinableInfoOpen(true);
                       }}
-                      aria-label="가공 불가 사유 보기"
+                      aria-label="불완전가공 사유 보기"
                     >
-                      가공 불가
+                      불완전가공
                     </button>
                   </div>
                 ) : (
@@ -713,8 +706,8 @@ export const RequestorRecentRequestsCard = ({
                     <span className="ml-1">헥스 {finalHexRotationLabel}</span>
                   </div>
                   {isUnmachinable && (
-                    <div className="text-[11px] text-red-700 mt-1 truncate flex items-center gap-2">
-                      <span>가공불가 사유: {unmachinableReason || "미등록"}</span>
+                    <div className="text-[11px] text-yellow-800 mt-1 truncate flex items-center gap-2">
+                      <span>불완전가공 사유: {unmachinableReason || "미등록"}</span>
                       {isUnmachinableConfirmed && (
                         <Badge variant="outline" className="text-[10px] h-4 px-1.5">
                           확인됨
@@ -827,29 +820,29 @@ export const RequestorRecentRequestsCard = ({
           if (!next) setUnmachinableTarget(null);
         }}
       >
-        <DialogContent className="sm:max-w-md border-red-300 ring-2 ring-red-200">
+        <DialogContent className="sm:max-w-md border-yellow-300 ring-2 ring-yellow-200">
           <DialogHeader>
-            <DialogTitle className="text-red-700">가공 불가 안내</DialogTitle>
+            <DialogTitle className="text-yellow-700">불완전가공 안내</DialogTitle>
             <DialogDescription>
-              해당 의뢰는 제조사에서 가공 불가 판정을 받았습니다.
+              해당 의뢰는 제조사에서 불완전가공 판정을 받았습니다.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
-            <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2">
-              <div className="text-xs font-semibold text-red-700 mb-1">상세 사유</div>
+            <div className="rounded-md border border-yellow-200 bg-yellow-50 px-3 py-2">
+              <div className="text-xs font-semibold text-yellow-700 mb-1">상세 사유</div>
               {(() => {
                 const reasonLines = parseUnmachinableReasonLines(
                   getUnmachinableReason(unmachinableTarget),
                 );
                 if (!reasonLines.length) {
                   return (
-                    <div className="text-sm text-red-800">
-                      가공 불가 사유가 등록되지 않았습니다.
+                    <div className="text-sm text-yellow-800">
+                      불완전가공 사유가 등록되지 않았습니다.
                     </div>
                   );
                 }
                 return (
-                  <div className="text-sm text-red-800 space-y-0.5">
+                  <div className="text-sm text-yellow-800 space-y-0.5">
                     {reasonLines.map((line, idx) => (
                       <div key={`unmachinable-reason-line-${idx}`}>{line}</div>
                     ))}

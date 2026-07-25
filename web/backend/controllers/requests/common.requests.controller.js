@@ -1178,6 +1178,9 @@ export async function getAllRequests(req, res) {
       "rnd.unmachinableConfirmedAt",
       "rnd.unmachinableFromStage",
       "rnd.unmachinableReason",
+      "rnd.requestorContinueAt",
+      "rnd.requestorContinueBy",
+      "rnd.requestorContinueMessage",
       "rnd.memo",
       "rnd.memoUpdatedAt",
       "rnd.memoUpdatedBy",
@@ -1233,6 +1236,9 @@ export async function getAllRequests(req, res) {
       "rnd.unmachinableConfirmedAt",
       "rnd.unmachinableFromStage",
       "rnd.unmachinableReason",
+      "rnd.requestorContinueAt",
+      "rnd.requestorContinueBy",
+      "rnd.requestorContinueMessage",
       "rnd.memo",
       "rnd.memoUpdatedAt",
       "rnd.memoUpdatedBy",
@@ -1288,6 +1294,9 @@ export async function getAllRequests(req, res) {
       "rnd.unmachinableConfirmedAt",
       "rnd.unmachinableFromStage",
       "rnd.unmachinableReason",
+      "rnd.requestorContinueAt",
+      "rnd.requestorContinueBy",
+      "rnd.requestorContinueMessage",
       "rnd.memo",
       "rnd.memoUpdatedAt",
       "rnd.memoUpdatedBy",
@@ -1326,6 +1335,9 @@ export async function getAllRequests(req, res) {
       "rnd.unmachinableAt",
       "rnd.unmachinableConfirmedAt",
       "rnd.unmachinableReason",
+      "rnd.requestorContinueAt",
+      "rnd.requestorContinueBy",
+      "rnd.requestorContinueMessage",
       "rnd.manufacturerHexRotation",
       "caseInfos.requestorHexRotation",
       "caseInfos.finalHexRotation",
@@ -2029,6 +2041,10 @@ export const updateRndUnmachinableStatus = asyncHandler(async (req, res) => {
       ? currentStage || null
       : String(request.rnd?.unmachinableFromStage || "").trim() || null,
     unmachinableReason: unmachinable ? reason : "",
+    // 재판정 시 과거 의뢰자 "계속 진행" 이력은 초기화한다.
+    requestorContinueAt: null,
+    requestorContinueBy: null,
+    requestorContinueMessage: "",
   };
 
   await request.save();
@@ -2074,6 +2090,11 @@ export const updateRndUnmachinableStatus = asyncHandler(async (req, res) => {
           unmachinableReason: String(request.rnd?.unmachinableReason || ""),
           unmachinableFromStage:
             String(request.rnd?.unmachinableFromStage || "") || null,
+          requestorContinueAt: request.rnd?.requestorContinueAt || null,
+          requestorContinueBy: request.rnd?.requestorContinueBy || null,
+          requestorContinueMessage: String(
+            request.rnd?.requestorContinueMessage || "",
+          ),
         },
       },
     },
@@ -2091,6 +2112,135 @@ export const updateRndUnmachinableStatus = asyncHandler(async (req, res) => {
     },
   });
 });
+
+// related files:
+// - web/frontend/src/pages/requestor/dashboard/RequestorDashboardPage.tsx
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/WorksheetCardGrid.tsx
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx
+export const continueRndUnmachinableByRequestor = asyncHandler(
+  async (req, res) => {
+    const { id } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: "유효하지 않은 의뢰 ID입니다.",
+      });
+    }
+
+    const request = await Request.findById(id);
+    if (!request) {
+      return res.status(404).json({
+        success: false,
+        message: "의뢰를 찾을 수 없습니다.",
+      });
+    }
+
+    const isRequestor = await canAccessRequestAsRequestor(req, request);
+    const isAdmin = req.user.role === "admin";
+    if (!isRequestor && !isAdmin) {
+      return res.status(403).json({
+        success: false,
+        message: "이 의뢰를 진행 처리할 권한이 없습니다.",
+      });
+    }
+
+    if (!request?.rnd?.unmachinableAt) {
+      return res.status(400).json({
+        success: false,
+        message: "불완전가공 판정 의뢰만 진행 처리할 수 있습니다.",
+      });
+    }
+
+    const now = new Date();
+    const previousReason = String(request.rnd?.unmachinableReason || "").trim();
+    const requestedMessageRaw = String(
+      req.body?.requestorContinueMessage || req.body?.message || "",
+    )
+      .slice(0, 500)
+      .trim();
+    const requestorContinueMessage = requestedMessageRaw
+      ? requestedMessageRaw
+      : previousReason
+        ? `의뢰자 요청: 문제 가능성을 인지하고 계속 가공 진행 요청 (불완전가공 사유: ${previousReason})`
+        : "의뢰자 요청: 문제 가능성을 인지하고 계속 가공 진행 요청";
+
+    request.rnd = {
+      ...(request.rnd || {}),
+      // 의뢰자 진행 선택 시 불완전가공 상태를 해제해 제조사 워크시트/대시보드에서 즉시 제외한다.
+      unmachinablePotentialAt: null,
+      unmachinablePotentialBy: null,
+      unmachinableAt: null,
+      unmachinableBy: null,
+      unmachinableConfirmedAt: request.rnd?.unmachinableConfirmedAt || now,
+      unmachinableConfirmedBy: request.rnd?.unmachinableConfirmedBy || req.user._id,
+      unmachinableReason: "",
+      requestorContinueAt: now,
+      requestorContinueBy: req.user._id,
+      requestorContinueMessage,
+    };
+    await request.save();
+
+    const requestorBusinessAnchorId = String(request.businessAnchorId || "").trim();
+    if (requestorBusinessAnchorId) {
+      try {
+        await triggerDashboardSummaryRefreshForAnchorId(
+          requestorBusinessAnchorId,
+          "rnd-unmachinable-continued",
+        );
+      } catch (refreshError) {
+        console.warn("[rnd-unmachinable-continue] dashboard refresh trigger failed", {
+          requestId: request.requestId,
+          error: refreshError?.message,
+        });
+      }
+    }
+
+    emitAppEventToRoles(
+      UNMACHINABLE_EVENT_ROLES,
+      "request:rnd-unmachinable-updated",
+      {
+        requestId: request.requestId,
+        requestMongoId: String(request._id || "").trim() || null,
+        requestorBusinessAnchorId: requestorBusinessAnchorId || null,
+        unmachinable: false,
+        detailCode: resolveUnmachinableDetailCode(request),
+        reason: "",
+        request: {
+          _id: request._id,
+          requestId: request.requestId,
+          manufacturerStage: request.manufacturerStage,
+          businessAnchorId: request.businessAnchorId,
+          requestorBusinessAnchorId: requestorBusinessAnchorId || null,
+          rnd: {
+            ...(request.rnd || {}),
+            unmachinablePotentialAt: request.rnd?.unmachinablePotentialAt || null,
+            unmachinableAt: request.rnd?.unmachinableAt || null,
+            unmachinableConfirmedAt: request.rnd?.unmachinableConfirmedAt || null,
+            unmachinableReason: String(request.rnd?.unmachinableReason || ""),
+            unmachinableFromStage:
+              String(request.rnd?.unmachinableFromStage || "") || null,
+            requestorContinueAt: request.rnd?.requestorContinueAt || null,
+            requestorContinueBy: request.rnd?.requestorContinueBy || null,
+            requestorContinueMessage: String(
+              request.rnd?.requestorContinueMessage || "",
+            ),
+          },
+        },
+      },
+    );
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        requestId: request.requestId,
+        continuedAt: now,
+        detailCode: resolveUnmachinableDetailCode(request),
+        unmachinableAt: request.rnd?.unmachinableAt || null,
+      },
+    });
+  },
+);
 
 export const confirmRndUnmachinableByRequestor = asyncHandler(
   async (req, res) => {
@@ -2177,6 +2327,11 @@ export const confirmRndUnmachinableByRequestor = asyncHandler(
             unmachinableReason: String(request.rnd?.unmachinableReason || ""),
             unmachinableFromStage:
               String(request.rnd?.unmachinableFromStage || "") || null,
+            requestorContinueAt: request.rnd?.requestorContinueAt || null,
+            requestorContinueBy: request.rnd?.requestorContinueBy || null,
+            requestorContinueMessage: String(
+              request.rnd?.requestorContinueMessage || "",
+            ),
           },
         },
       },

@@ -1,4 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+
+// related files:
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/packing/components/PackingPageContent.tsx
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx
+// - web/frontend/src/pages/requestor/dashboard/RequestorDashboardPage.tsx
 import {
   type ManufacturerRequest,
   deriveStageForFilter,
@@ -121,7 +126,7 @@ export const usePackingWorksheetData = ({
           url.searchParams.set("includeTotal", append ? "0" : "1");
           // R&D Done 샘플은 packing 목록에서 제외 (R&D 탭 전용)
           url.searchParams.set("rndDone", "0");
-          // 가공불가 건은 unmachinable 탭 전용
+          // 불완전가공 건은 unmachinable 탭 전용
           url.searchParams.set("rndUnmachinable", "0");
           if (stageFilterForTab.length === 1) {
             url.searchParams.set("manufacturerStage", stageFilterForTab[0]);

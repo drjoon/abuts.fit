@@ -8,6 +8,10 @@
  */
 
 import { useState } from "react";
+
+// related files:
+// - web/frontend/src/pages/salesman/SalesmanDashboardPage.tsx
+// - web/frontend/src/pages/admin/dashboard/AdminDashboardPage.tsx
 import { useQuery } from "@tanstack/react-query";
 import { useAuthStore } from "@/store/useAuthStore";
 import { apiFetch } from "@/shared/api/apiClient";
@@ -47,7 +51,7 @@ export const DevopsDashboardPage = () => {
         method: "GET",
         token,
       });
-      if (!res.ok) throw new Error("가공불가 현황 조회에 실패했습니다.");
+      if (!res.ok) throw new Error("불완전가공 현황 조회에 실패했습니다.");
       return res.data;
     },
     retry: false,
@@ -98,7 +102,7 @@ export const DevopsDashboardPage = () => {
         topSection={
           <Card className="app-glass-card app-glass-card--lg">
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium">가공불가 단계 현황</CardTitle>
+              <CardTitle className="text-sm font-medium">불완전가공 단계 현황</CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
               <div className="grid grid-cols-3 gap-2 text-xs">
@@ -133,7 +137,7 @@ export const DevopsDashboardPage = () => {
                 })}
                 {unmachinableItems.length === 0 && (
                   <div className="text-xs text-muted-foreground">
-                    표시할 가공불가 의뢰가 없습니다.
+                    표시할 불완전가공 의뢰가 없습니다.
                   </div>
                 )}
               </div>

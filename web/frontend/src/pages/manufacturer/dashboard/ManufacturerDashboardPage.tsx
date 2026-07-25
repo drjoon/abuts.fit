@@ -1,4 +1,8 @@
 import type { PeriodFilterValue } from "@/shared/ui/PeriodFilter";
+
+// related files:
+// - web/frontend/src/features/layout/DashboardLayout.tsx
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -182,7 +186,7 @@ export const ManufacturerDashboardPage = () => {
     },
     {
       key: "unmachinable",
-      label: "가공불가",
+      label: "불완전가공",
       value: `${unmachinablePendingConfirmCount}/${unmachinableConfirmedCount}`,
       icon: AlertTriangle,
       hint: `판정·미확인 / 의뢰자 확인 (${unmachinablePotentialCount} 가능성)`,

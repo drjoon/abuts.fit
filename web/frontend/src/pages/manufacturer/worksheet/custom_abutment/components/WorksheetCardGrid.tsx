@@ -298,6 +298,27 @@ export const WorksheetCardGrid = ({
           }
           return "";
         })();
+        const requestorContinueAt = String(
+          request.rnd?.requestorContinueAt || "",
+        ).trim();
+        const requestorContinueMessage = String(
+          request.rnd?.requestorContinueMessage || "",
+        ).trim();
+        const hasRequestorContinueDecision = Boolean(requestorContinueAt);
+        const requestorContinueAtMs = Date.parse(requestorContinueAt);
+        const unmachinableEventAtMs = Date.parse(
+          String(
+            request.rnd?.unmachinableAt || request.rnd?.unmachinablePotentialAt || "",
+          ).trim(),
+        );
+        const showLatestContinueBadge =
+          hasRequestorContinueDecision &&
+          (!Number.isFinite(unmachinableEventAtMs) ||
+            (Number.isFinite(requestorContinueAtMs) &&
+              requestorContinueAtMs >= unmachinableEventAtMs));
+        const shouldShowTopUnmachinableBadge =
+          (isFinishLineMinZRisky || isUnmachinableSample) &&
+          !showLatestContinueBadge;
 
         const shouldShowFullLot =
           !isSampleRequest &&
@@ -609,7 +630,7 @@ export const WorksheetCardGrid = ({
                               : "border-slate-200"
             } ${
               isFinishLineMinZRisky || isUnmachinableSample
-                ? "border-red-300 ring-2 ring-red-200"
+                ? "border-yellow-300 ring-2 ring-yellow-200"
                 : ""
             } ${onToggleSelected ? "cursor-pointer" : ""}`}
             role={onToggleSelected ? "button" : undefined}
@@ -670,16 +691,25 @@ export const WorksheetCardGrid = ({
               </div>
             )}
             <div className="absolute right-2 top-2 z-20 flex items-center gap-1">
-              {(isFinishLineMinZRisky || isUnmachinableSample) && (
+              {shouldShowTopUnmachinableBadge && (
                 <Badge
                   variant="outline"
                   className={`h-7 text-[11px] px-2 py-0.5 font-semibold leading-[1.1] border flex items-center ${
                     isUnmachinableSample
-                      ? "border-red-300 bg-red-50 text-red-700"
-                      : "border-red-200 bg-red-50 text-red-600"
+                      ? "border-yellow-300 bg-yellow-50 text-yellow-700"
+                      : "border-yellow-200 bg-yellow-50 text-yellow-700"
                   }`}
                 >
-                  {isUnmachinableSample ? "가공불가" : "가공불가 확인요망"}
+                  {isUnmachinableSample ? "불완전가공" : "불완전가공 확인요망"}
+                </Badge>
+              )}
+              {showLatestContinueBadge && (
+                <Badge
+                  variant="outline"
+                  className="h-7 text-[11px] px-2 py-0.5 font-semibold leading-[1.1] border border-blue-200 bg-blue-50 text-blue-700 flex items-center"
+                  title={requestorContinueMessage || "의뢰자가 계속 가공 진행을 요청했습니다."}
+                >
+                  불완전가공 진행요청
                 </Badge>
               )}
               {onCloneSample &&
@@ -787,8 +817,8 @@ export const WorksheetCardGrid = ({
                       e.stopPropagation();
                       onRestoreUnmachinable(request);
                     }}
-                    aria-label="가공불가 복귀"
-                    title="가공불가 복귀"
+                    aria-label="불완전가공 복귀"
+                    title="불완전가공 복귀"
                   >
                     <ArrowLeft className="h-3.5 w-3.5" />
                     <span className="text-[11px] font-semibold">복귀</span>
@@ -1018,6 +1048,8 @@ export const WorksheetCardGrid = ({
                     </div>
                   </div>
                 )}
+
+
               </div>
 
               {tabStage === "rnd" && isSampleRequest && onSaveRndMemo && (

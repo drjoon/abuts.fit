@@ -52,6 +52,15 @@
     - `src/pages/manufacturer/worksheet/custom_abutment/machining/utils/label.ts`
     - `src/pages/manufacturer/equipment/cnc/components/CompletedMachiningRecordsModal.tsx`
 
+- 불완전가공 의뢰자 `계속 진행` 이력 표시 정책:
+  - 제조사 워크시트 카드/프리뷰는 `rnd.requestorContinueAt/by/message`를 표시해
+    의뢰자가 문제 가능성을 인지하고 진행 요청했는지 즉시 확인할 수 있어야 합니다.
+  - 화면 표시는 배지 + 요약 문구(요청 시각 포함)로 통일합니다.
+  - 관련 파일:
+    - `src/types/request.ts`
+    - `src/pages/manufacturer/worksheet/custom_abutment/components/WorksheetCardGrid.tsx`
+    - `src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx`
+
 - API 호출은 `src/shared/api/apiClient.ts`의 `apiFetch`를 우선 사용합니다.
 - 서버 상태는 TanStack Query, 전역 UI 상태는 `src/store`를 사용합니다.
 - 파일 드롭은 개별 구현보다 `@/features/requests/components/PageFileDropZone` 재사용을 우선합니다.

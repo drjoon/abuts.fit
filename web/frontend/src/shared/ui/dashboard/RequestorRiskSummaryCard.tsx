@@ -1,3 +1,6 @@
+// related files:
+// - web/frontend/src/pages/requestor/dashboard/RequestorDashboardPage.tsx
+// - web/frontend/src/pages/requestor/dashboard/components/RequestorRecentRequestsCard.tsx
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -32,12 +35,16 @@ type Props = {
   riskSummary?: RiskSummary | null;
   loading?: boolean;
   onItemClick?: (item: RiskSummaryItem) => void;
+  disableInnerScroll?: boolean;
+  maxVisibleItems?: number;
 };
 
 export const RequestorRiskSummaryCard = ({
   riskSummary,
   loading,
   onItemClick,
+  disableInnerScroll = false,
+  maxVisibleItems,
 }: Props) => {
   if (loading) {
     return (
@@ -56,6 +63,12 @@ export const RequestorRiskSummaryCard = ({
   }
 
   const summary = riskSummary || {};
+  const visibleItems = Array.isArray(summary.items)
+    ? typeof maxVisibleItems === "number"
+      ? summary.items.slice(0, Math.max(0, maxVisibleItems))
+      : summary.items
+    : [];
+
   const normalizeYmd = (value?: string | null) => {
     const normalized = String(value || "").trim();
     return normalized || null;
@@ -131,21 +144,33 @@ export const RequestorRiskSummaryCard = ({
   };
 
   return (
-    <Card className="app-glass-card app-glass-card--lg h-full min-h-[360px]">
+    <Card
+      className={`app-glass-card app-glass-card--lg ${
+        disableInnerScroll ? "" : "h-full min-h-[360px]"
+      }`}
+    >
       <CardHeader className="pb-3">
         <CardTitle className="text-base font-semibold">
           지연 위험 요약
         </CardTitle>
       </CardHeader>
-      <CardContent className="flex-1 min-h-0 flex flex-col space-y-3">
+      <CardContent
+        className={`flex flex-col space-y-3 ${
+          disableInnerScroll ? "" : "flex-1 min-h-0"
+        }`}
+      >
         <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
           <span>지연 가능 의뢰: {summary.warningCount ?? 0}건</span>
           <span>지연 확정 의뢰: {summary.delayedCount ?? 0}건</span>
           <span>정시 발송 비율: {summary.onTimeRate ?? 0}%</span>
         </div>
-        <div className="space-y-2 flex-1 min-h-0 overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-transparent">
-          {summary.items && summary.items.length > 0 ? (
-            summary.items.map((item) => {
+        <div
+          className={`space-y-2 pr-1 scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-transparent ${
+            disableInnerScroll ? "" : "flex-1 min-h-0 overflow-y-auto"
+          }`}
+        >
+          {visibleItems.length > 0 ? (
+            visibleItems.map((item) => {
               const originalYmd =
                 normalizeYmd(item.originalEstimatedShipYmd) ||
                 normalizeYmd(item.dueDate);
@@ -226,7 +251,7 @@ export const RequestorRiskSummaryCard = ({
               );
             })
           ) : (
-            <div className="flex h-32 items-center justify-center text-xs text-muted-foreground border border-dashed rounded-lg">
+            <div className="flex h-20 items-center justify-center text-xs text-muted-foreground border border-dashed rounded-lg">
               지연 위험 내역이 없습니다.
             </div>
           )}

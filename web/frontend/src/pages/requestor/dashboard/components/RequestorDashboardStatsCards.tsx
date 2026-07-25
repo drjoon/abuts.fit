@@ -27,13 +27,13 @@ export const RequestorDashboardStatsCards = ({
             key={`skeleton-${index}`}
             className="app-glass-card app-glass-card--lg"
           >
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 px-3 pt-3 pb-1.5">
               <Skeleton className="h-4 w-20" />
               <Skeleton className="h-4 w-4 rounded-full" />
             </CardHeader>
-            <CardContent>
+            <CardContent className="px-3 pb-3 pt-1.5">
               <Skeleton className="h-7 w-16" />
-              <Skeleton className="mt-2 h-3 w-24" />
+              <Skeleton className="mt-1.5 h-3 w-24" />
             </CardContent>
           </Card>
         ))}
@@ -51,18 +51,18 @@ export const RequestorDashboardStatsCards = ({
             className="app-glass-card app-glass-card--lg"
             onClick={() => onCardClick?.(stat)}
           >
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm sm:text-md font-medium text-foreground">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 px-3 pt-3 pb-1.5">
+              <CardTitle className="text-sm sm:text-md font-medium leading-tight text-foreground">
                 {stat.label}
               </CardTitle>
               <Icon className="h-4 w-4 text-slate-600 flex-shrink-0" />
             </CardHeader>
-            <CardContent>
-              <div className="w-full flex items-center justify-center text-lg sm:text-xl md:text-2xl font-bold text-foreground whitespace-nowrap tracking-tight tabular-nums">
+            <CardContent className="px-3 pb-3 pt-1.5">
+              <div className="w-full flex items-center justify-center text-lg sm:text-xl md:text-2xl font-bold leading-none text-foreground whitespace-nowrap tracking-tight tabular-nums">
                 {stat.value}
               </div>
               {stat.change && (
-                <p className="text-xs text-slate-600 leading-tight whitespace-normal break-keep min-h-[2.1em] text-center">
+                <p className="text-[11px] text-slate-600 leading-tight whitespace-normal break-keep min-h-[2em] text-center mt-1">
                   <span
                     className={
                       String(stat.change).includes("-")

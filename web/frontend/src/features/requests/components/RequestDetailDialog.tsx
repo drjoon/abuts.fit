@@ -1,4 +1,8 @@
 import { type ReactNode } from "react";
+
+// related files:
+// - web/frontend/src/pages/requestor/dashboard/RequestorDashboardPage.tsx
+// - web/frontend/src/pages/requestor/dashboard/components/RequestorRecentRequestsCard.tsx
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -198,7 +202,7 @@ export const RequestDetailDialog = ({
     >
       <DialogContent
         className={`w-[min(94vw,620px)] max-w-[620px] max-h-[92vh] ${
-          isUnmachinable ? "border-red-300 ring-2 ring-red-200" : ""
+          isUnmachinable ? "border-yellow-300 ring-2 ring-yellow-200" : ""
         }`}
       >
         <DialogHeader>
@@ -219,7 +223,11 @@ export const RequestDetailDialog = ({
                   request.manufacturerStage || "-",
                   request.manufacturerStage,
                 )}
-              {isUnmachinable && <Badge variant="destructive">가공불가</Badge>}
+              {isUnmachinable && (
+                <Badge variant="outline" className="border-yellow-300 bg-yellow-50 text-yellow-700">
+                  불완전가공
+                </Badge>
+              )}
               {extraBadge}
             </div>
           </div>
@@ -227,10 +235,10 @@ export const RequestDetailDialog = ({
         <DialogDescription asChild>
           <div className="space-y-4 text-sm text-foreground">
             {isUnmachinable && (
-              <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 space-y-1">
-                <div className="text-xs font-semibold text-red-700">가공불가 판정</div>
-                <div className="text-sm text-red-800">
-                  {unmachinableReason || "가공불가 사유가 등록되지 않았습니다."}
+              <div className="rounded-md border border-yellow-200 bg-yellow-50 px-3 py-2 space-y-1">
+                <div className="text-xs font-semibold text-yellow-700">불완전가공 판정</div>
+                <div className="text-sm text-yellow-800">
+                  {unmachinableReason || "불완전가공 사유가 등록되지 않았습니다."}
                 </div>
               </div>
             )}

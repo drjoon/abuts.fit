@@ -1,3 +1,6 @@
+// related files:
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/machining/utils/label.ts
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/machining/MachiningQueueBoard.tsx
 // import { generateModelNumber } from "@/utils/modelNumber";
 import React from "react";
 
@@ -16,6 +19,7 @@ type Props = {
   implantFamily?: string | null;
   isSample?: boolean | null;
   isRndArchivedSample?: boolean | null;
+  isCopiedSample?: boolean | null;
   hideRequestId?: boolean;
 };
 
@@ -34,6 +38,7 @@ export const MachiningRequestLabel = ({
   implantFamily,
   isSample,
   isRndArchivedSample,
+  isCopiedSample,
   hideRequestId,
 }: Props) => {
   const businessName = String(business || "").trim();
@@ -97,7 +102,11 @@ export const MachiningRequestLabel = ({
                 : "border-blue-200 bg-blue-50 text-blue-700"
             }`}
           >
-            {isRndArchivedSample ? "R&D" : "샘플"}
+            {isRndArchivedSample
+              ? "R&D"
+              : isCopiedSample
+                ? "복사샘플"
+                : "샘플"}
           </span>
         ) : null}
         {implantParts.length ? (

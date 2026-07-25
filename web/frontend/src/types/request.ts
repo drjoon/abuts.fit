@@ -314,6 +314,19 @@ export interface RequestBase {
     unmachinableAt?: string | null;
     unmachinableFromStage?: string | null;
     unmachinableReason?: string | null;
+    // related files:
+    // - web/backend/controllers/requests/common.requests.controller.js
+    // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/WorksheetCardGrid.tsx
+    // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx
+    requestorContinueAt?: string | null;
+    requestorContinueBy?:
+      | string
+      | {
+          _id?: string;
+          name?: string;
+        }
+      | null;
+    requestorContinueMessage?: string | null;
     memo?: string | null;
     // canonical: "보정" | "무보정"
     // legacy "0"|"30"은 하위호환 입력/표시용으로만 사용

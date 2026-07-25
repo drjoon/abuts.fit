@@ -474,6 +474,20 @@ const requestSchema = new mongoose.Schema(
         type: String,
         default: "",
       },
+      // 의뢰자가 불완전가공 상태에서 "계속 진행"을 선택한 이력
+      requestorContinueAt: {
+        type: Date,
+        default: null,
+      },
+      requestorContinueBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+        default: null,
+      },
+      requestorContinueMessage: {
+        type: String,
+        default: "",
+      },
       memo: {
         type: String,
         default: "",

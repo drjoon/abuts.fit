@@ -183,16 +183,15 @@ type PricingSsotHealth = {
 type UnmachinableDetailCode = "potential" | "judged" | "confirmed" | "none";
 
 const UNMACHINABLE_DETAIL_LABEL: Record<UnmachinableDetailCode, string> = {
-  potential: "가공불가 가능성 있음",
-  judged: "제조사 가공불가 판정",
-  confirmed: "의뢰자 가공불가 확인",
+  potential: "불완전가공 가능성 있음",
+  judged: "제조사 불완전가공 판정",
+  confirmed: "의뢰자 불완전가공 확인",
   none: "-",
 };
 
 const UNMACHINABLE_DETAIL_BADGE_VARIANT = (
   code: UnmachinableDetailCode,
-): "outline" | "secondary" | "destructive" => {
-  if (code === "judged") return "destructive";
+): "outline" | "secondary" => {
   if (code === "confirmed") return "secondary";
   return "outline";
 };
@@ -830,7 +829,7 @@ export const AdminDashboardPage = () => {
 
             <Card className="app-glass-card app-glass-card--lg">
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium">가공불가 의뢰 현황</CardTitle>
+                <CardTitle className="text-sm font-medium">불완전가공 의뢰 현황</CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
                 <div className="grid grid-cols-3 gap-2">
@@ -840,9 +839,9 @@ export const AdminDashboardPage = () => {
                       {Number(unmachinableSummary?.potentialCount || 0).toLocaleString()}
                     </div>
                   </div>
-                  <div className="rounded-md border px-2 py-2 border-red-200 bg-red-50/60">
+                  <div className="rounded-md border px-2 py-2 border-yellow-200 bg-yellow-50/60">
                     <div className="text-[11px] text-muted-foreground">판정</div>
-                    <div className="text-lg font-semibold text-red-700">
+                    <div className="text-lg font-semibold text-yellow-700">
                       {Number(unmachinableSummary?.judgedCount || 0).toLocaleString()}
                     </div>
                   </div>
@@ -881,7 +880,11 @@ export const AdminDashboardPage = () => {
                           <div className="text-xs font-medium truncate">{title}</div>
                           <Badge
                             variant={UNMACHINABLE_DETAIL_BADGE_VARIANT(code)}
-                            className="text-[10px]"
+                            className={`text-[10px] ${
+                              code === "judged" || code === "potential"
+                                ? "border-yellow-300 bg-yellow-50 text-yellow-700"
+                                : ""
+                            }`}
                           >
                             {UNMACHINABLE_DETAIL_LABEL[code] || UNMACHINABLE_DETAIL_LABEL.none}
                           </Badge>
@@ -895,7 +898,7 @@ export const AdminDashboardPage = () => {
 
                   {Number((unmachinableSummary?.items || []).length || 0) === 0 && (
                     <div className="text-xs text-muted-foreground py-2 text-center">
-                      표시할 가공불가 의뢰가 없습니다.
+                      표시할 불완전가공 의뢰가 없습니다.
                     </div>
                   )}
                 </div>
@@ -1317,7 +1320,7 @@ export const AdminDashboardPage = () => {
           <div className="h-full min-h-0 flex flex-col gap-2">
             <div className="text-sm text-gray-700">
               품질 만족도/재주문 의향 확인을 위해 우선 연락이 필요한 의뢰자 목록입니다.
-              (기준: 첫 완료, 장기 미완료, 휴면, 취소율, 가공불가 등)
+              (기준: 첫 완료, 장기 미완료, 휴면, 취소율, 불완전가공 등)
             </div>
 
             <div className="flex flex-wrap items-center justify-between gap-2">

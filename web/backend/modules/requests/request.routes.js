@@ -367,6 +367,14 @@ router.patch(
   requestController.confirmAllRndUnmachinableByRequestor,
 );
 
+// 의뢰자/관리자: 불완전가공 단건 계속 진행 처리(불완전가공 해제)
+router.patch(
+  "/:id/rnd-unmachinable/continue",
+  authenticate,
+  authorize(["requestor", "admin"], { subRoles: ["owner", "staff"] }),
+  requestController.continueRndUnmachinableByRequestor,
+);
+
 // 의뢰자/관리자: 단건 가공불가 판정 읽음(확인) 처리
 router.patch(
   "/:id/rnd-unmachinable/confirm",
