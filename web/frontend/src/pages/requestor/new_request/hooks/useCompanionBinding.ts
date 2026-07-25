@@ -114,6 +114,11 @@ export function useCompanionBinding({
   }, [companionFiles]);
 
   const missingCompanionStems = useMemo(() => {
+    if (designSoftwareMode === "custom") {
+      // 직접 입력(custom) 소프트웨어는 구성정보를 필수로 요구하지 않는다.
+      return [] as string[];
+    }
+
     const stlFiles = (files || []).filter((f) =>
       String(f?.name || "").toLowerCase().endsWith(".stl"),
     );
@@ -154,6 +159,7 @@ export function useCompanionBinding({
     getCompanionFileKey,
     manualCompanionLinksByStlKey,
     toNormalizedFileKey,
+    designSoftwareMode,
   ]);
 
   const linkCompanionToStl = useCallback(
@@ -801,11 +807,21 @@ export function useCompanionBinding({
       return;
     }
 
+    if (designSoftwareMode === "custom") {
+      setCompanionPromptOpen(false);
+      return;
+    }
+
     if (suppressCompanionPrompt) return;
     if (missingCompanionStems.length > 0) {
       setCompanionPromptOpen(true);
     }
-  }, [files.length, missingCompanionStems.length, suppressCompanionPrompt]);
+  }, [
+    files.length,
+    missingCompanionStems.length,
+    suppressCompanionPrompt,
+    designSoftwareMode,
+  ]);
 
   useEffect(() => {
     if (!registerCompanionFileHandler) return;

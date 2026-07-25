@@ -8,6 +8,13 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import type { RequestDesignSoftwareMode } from "./newRequestDetailsUtils";
+
+// related files:
+// - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
+// - web/frontend/src/pages/requestor/new_request/components/NewRequestAttachmentsPanel.tsx
+// - web/frontend/src/pages/requestor/new_request/components/newRequestDetailsUtils.ts
+// - web/frontend/src/pages/requestor/new_request/hooks/useCompanionBinding.ts
 
 type ToastFn = (props: {
   title?: React.ReactNode;
@@ -27,6 +34,7 @@ type Props = {
   ) => void;
   onConfirmReplace: (stlFileKey: string, companionFileKey: string) => void;
   toast: ToastFn;
+  designSoftwareMode: RequestDesignSoftwareMode | null;
 };
 
 export function NewRequestCompanionDialogs({
@@ -38,7 +46,14 @@ export function NewRequestCompanionDialogs({
   setPendingCompanionReplace,
   onConfirmReplace,
   toast,
+  designSoftwareMode,
 }: Props) {
+  const guidance =
+    designSoftwareMode === "3Shape"
+      ? "STL과 함께 .xml 구성정보 파일을 올려주세요."
+      : designSoftwareMode === "ExoCAD"
+        ? "STL과 함께 .constructionInfo 파일을 올려주세요."
+        : "직접 입력으로 설정되어 있어 구성정보 파일은 필수가 아닙니다. 필요할 때만 추가해 주세요.";
   return (
     <>
       <AlertDialog
@@ -51,10 +66,7 @@ export function NewRequestCompanionDialogs({
           <AlertDialogHeader>
             <AlertDialogTitle>구성정보 파일도 함께 올릴까요?</AlertDialogTitle>
             <AlertDialogDescription>
-              지금은 STL만 첨부되었어요.
-              <br />
-              <strong>xml(3Shape)</strong> 또는 <strong>constructionInfo (ExoCAD)</strong>
-              파일을 함께 올려주세요.
+              {guidance}
               <br />
               없으면 이번에는 구성정보 없이 진행할 수 있어요.
             </AlertDialogDescription>
@@ -70,7 +82,11 @@ export function NewRequestCompanionDialogs({
                 setCompanionPromptOpen(false);
               }}
             >
-              구성정보 파일 업로드
+              {designSoftwareMode === "ExoCAD"
+                ? ".constructionInfo 파일 업로드"
+                : designSoftwareMode === "3Shape"
+                  ? ".xml 파일 업로드"
+                  : "구성정보 파일 업로드(선택)"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

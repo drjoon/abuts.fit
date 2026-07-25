@@ -1,4 +1,9 @@
 
+// related files:
+// - web/backend/controllers/admin/admin.dashboard.controller.js
+// - web/backend/models/businessAnchor.model.js
+// - web/frontend/src/features/settings/tabs/RequestTab.tsx
+// - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { usePeriodStore } from "@/store/usePeriodStore";
@@ -69,6 +74,7 @@ type HappyCallReason = {
 type HappyCallItem = {
   businessAnchorId: string;
   businessName: string;
+  designSoftware?: string;
   companyName?: string;
   representativeName?: string;
   phoneNumber?: string;
@@ -1422,6 +1428,12 @@ export const AdminDashboardPage = () => {
                     const companyName = String(item.companyName || "").trim();
                     const showCompanyName =
                       Boolean(companyName) && companyName !== businessName;
+                    const designSoftware = String(item.designSoftware || "").trim();
+                    const isCustomDesignSoftware = Boolean(
+                      designSoftware &&
+                        designSoftware !== "3Shape" &&
+                        designSoftware !== "ExoCAD",
+                    );
 
                     const memoEntries = Array.isArray(happyCallNotesByAnchor[anchorId])
                       ? happyCallNotesByAnchor[anchorId]
@@ -1445,8 +1457,15 @@ export const AdminDashboardPage = () => {
                         <div className="flex h-full flex-col gap-2">
                           <div className="flex items-start justify-between gap-2">
                             <div className="min-w-0">
-                              <div className="text-sm font-semibold truncate text-gray-900">
-                                {item.businessName || "-"}
+                              <div className="flex items-center gap-1.5 min-w-0">
+                                <div className="text-sm font-semibold truncate text-gray-900">
+                                  {item.businessName || "-"}
+                                </div>
+                                {isCustomDesignSoftware ? (
+                                  <Badge variant="secondary" className="text-[10px] shrink-0">
+                                    custom 소프트웨어
+                                  </Badge>
+                                ) : null}
                               </div>
                               {showCompanyName && (
                                 <div className="text-xs text-gray-500 truncate">

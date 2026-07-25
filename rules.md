@@ -1084,8 +1084,10 @@
   - `3Shape`: `.xml`만 허용
   - `ExoCAD`: `.constructionInfo`만 허용
   - `직접 입력(custom)`: 기존 호환(`.xml`, `.constructionInfo`) 허용
+- `3Shape` 선택 시 구성정보 파일은 `.xml` 확장자 기준으로 허용합니다.
+  - 파일명 패턴(`ImplantDirectionPosition_*`)은 강제하지 않습니다.
 - 첨부패널의 파일 input `accept`와 미연결 안내 문구는 위 설정값과 일치해야 합니다.
-- 구성정보 확장자 검증은 `NewRequestPage`와 `useCompanionBinding`에서 각각 따로 추정하지 말고, 공통 유틸 기준(`newRequestDetailsUtils`)으로 통일합니다.
+- 구성정보 확장자/패턴 검증은 `NewRequestPage`와 `useCompanionBinding`에서 각각 따로 추정하지 말고, 공통 유틸 기준(`newRequestDetailsUtils`)으로 통일합니다.
 
 관련 파일:
 - `web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx`
@@ -1093,6 +1095,18 @@
 - `web/frontend/src/pages/requestor/new_request/components/NewRequestAttachmentsPanel.tsx`
 - `web/frontend/src/pages/requestor/new_request/components/newRequestDetailsUtils.ts`
 - `web/frontend/src/pages/requestor/new_request/hooks/useCompanionBinding.ts`
+
+### 6.1.4 관리자 해피콜 대상 - 직접입력(custom) 우선 소통 대상 포함 (2026-07-25)
+
+- 관리자 대시보드 `이번 주 해피콜 의뢰자` 대상에는 `BusinessAnchor.requestSettings.designSoftware`가
+  표준 선택(`3Shape`, `ExoCAD`)이 아닌 **직접 입력(custom)** 인 의뢰자를 포함합니다.
+- 구현은 해피콜 reason 코드 `custom_design_software`를 추가해 기존 대상 집계/필터 체계에 통합합니다.
+- 해당 사유는 해피콜 reason 필터와 대상 카드 목록에 동일하게 노출되어야 합니다.
+
+관련 파일:
+- `web/backend/controllers/admin/admin.dashboard.controller.js`
+- `web/frontend/src/pages/admin/dashboard/AdminDashboardPage.tsx`
+- `web/backend/models/businessAnchor.model.js`
 
 ### 4.4 가상 우편함
 

@@ -528,6 +528,7 @@ export function NewRequestDetailsSection({
       <NewRequestCompanionDialogs
         companionPromptOpen={companion.companionPromptOpen}
         setCompanionPromptOpen={companion.setCompanionPromptOpen}
+        designSoftwareMode={designSoftwareMode}
         onBypassMissingCompanion={companion.handleBypassMissingCompanion}
         onUploadCompanion={() => {
           const stlFiles = files.filter((f) =>

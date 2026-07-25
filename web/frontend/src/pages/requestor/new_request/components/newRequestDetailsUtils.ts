@@ -62,7 +62,7 @@ export const getCompanionHintByDesignSoftware = (
   designSoftware: RequestDesignSoftwareMode | null,
 ) => {
   if (designSoftware === "3Shape") {
-    return "3Shape 선택: STL과 함께 ImplantDirectionPosition_*.xml 파일을 업로드해 주세요.";
+    return "3Shape 선택: STL과 함께 .xml 구성정보 파일을 업로드해 주세요.";
   }
   if (designSoftware === "ExoCAD") {
     return "ExoCAD 선택: 케이스당 1개의 .constructionInfo 파일을 업로드해 주세요.";

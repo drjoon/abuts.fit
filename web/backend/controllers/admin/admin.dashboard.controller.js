@@ -1,3 +1,8 @@
+// related files:
+// - web/backend/models/businessAnchor.model.js
+// - web/frontend/src/features/settings/tabs/RequestTab.tsx
+// - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
+// - web/frontend/src/pages/admin/dashboard/AdminDashboardPage.tsx
 import User from "../../models/user.model.js";
 import Request from "../../models/request.model.js";
 import File from "../../models/file.model.js";
@@ -63,6 +68,12 @@ const HAPPY_CALL_REASON_META = {
     description:
       "초기 사용 가이드/샘플 안내 등 온보딩 지원이 필요한 상태입니다.",
     severity: "low",
+  },
+  custom_design_software: {
+    label: "디자인 소프트웨어 직접 입력(custom) 사용",
+    description:
+      "설정값이 표준 선택(3Shape/ExoCAD) 외 직접 입력입니다. 더 정확한 제품을 위해 작업 방식/파일 구성 안내 해피콜이 필요합니다.",
+    severity: "medium",
   },
 };
 
@@ -196,6 +207,7 @@ export async function getDashboardStats(req, res) {
           name: 1,
           businessNumberNormalized: 1,
           metadata: 1,
+          requestSettings: 1,
           createdAt: 1,
           status: 1,
         })
@@ -546,6 +558,10 @@ export async function getDashboardStats(req, res) {
       );
 
       const memoEntries = happyCallMemoEntryMap.get(anchorId) || [];
+      const designSoftware = String(anchor?.requestSettings?.designSoftware || "").trim();
+      const isCustomDesignSoftware = Boolean(
+        designSoftware && designSoftware !== "3Shape" && designSoftware !== "ExoCAD",
+      );
 
       const baseItem = {
         businessAnchorId: anchorId,
@@ -577,6 +593,7 @@ export async function getDashboardStats(req, res) {
           recent14UnmachinableJudged,
         },
         reasons: [],
+        designSoftware,
         memoEntries,
       };
 
@@ -634,6 +651,10 @@ export async function getDashboardStats(req, res) {
 
       if (anchorCreatedAt && anchorCreatedAt <= fourteenDaysAgo && totalRequestsByAnchor === 0) {
         reasons.push({ code: "new_signup_no_first_request_14d" });
+      }
+
+      if (isCustomDesignSoftware) {
+        reasons.push({ code: "custom_design_software" });
       }
 
       if (!reasons.length) {
