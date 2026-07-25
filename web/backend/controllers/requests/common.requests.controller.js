@@ -210,6 +210,19 @@ const isRndSampleRequest = (requestLike) => {
   return resolveRequestCategory(requestLike) === REQUEST_CATEGORY.RND_SAMPLE;
 };
 
+const buildNonSampleRequestGuard = () => ({
+  $and: [
+    // 레거시 문서(requestCategory 미기재)도 일반 의뢰건으로 포함하되,
+    // source 기준 샘플은 항상 제외한다.
+    { source: { $ne: "manufacturer_sample" } },
+    {
+      requestCategory: {
+        $nin: [REQUEST_CATEGORY.RND_SAMPLE, REQUEST_CATEGORY.COPIED_SAMPLE],
+      },
+    },
+  ],
+});
+
 const DEFAULT_SELF_INSPECTION_INSTRUMENT_OPTIONS = [
   "현미경(AD-T-07)",
   "비전(AD-T-19)",
@@ -1077,10 +1090,52 @@ export async function getAllRequests(req, res) {
       const rndDoneRaw = String(req.query.rndDone || "")
         .trim()
         .toLowerCase();
+
+      // 레거시 문서(requestCategory 누락) 호환:
+      // source=manufacturer_sample && rnd.doneAt!=null 인 문서는 requestCategory가 비어 있어도
+      // R&D done 샘플로 간주한다.
+      const legacyAwareRndDoneGuard = {
+        $or: [
+          { requestCategory: REQUEST_CATEGORY.RND_SAMPLE },
+          {
+            $and: [
+              { source: "manufacturer_sample" },
+              { "rnd.doneAt": { $ne: null } },
+            ],
+          },
+        ],
+      };
+
+      const appendFilterGuard = (baseFilter, guard) => {
+        if (baseFilter && Array.isArray(baseFilter.$and)) {
+          return {
+            ...baseFilter,
+            $and: [...baseFilter.$and, guard],
+          };
+        }
+        if (!baseFilter || Object.keys(baseFilter).length === 0) {
+          return guard;
+        }
+        return {
+          $and: [baseFilter, guard],
+        };
+      };
+
       if (rndDoneRaw === "1" || rndDoneRaw === "true") {
-        filter.requestCategory = REQUEST_CATEGORY.RND_SAMPLE;
+        filter = appendFilterGuard(filter, legacyAwareRndDoneGuard);
       } else if (rndDoneRaw === "0" || rndDoneRaw === "false") {
-        filter.requestCategory = { $ne: REQUEST_CATEGORY.RND_SAMPLE };
+        const legacyAwareRndNotDoneGuard = {
+          $and: [
+            { requestCategory: { $ne: REQUEST_CATEGORY.RND_SAMPLE } },
+            {
+              $or: [
+                { source: { $ne: "manufacturer_sample" } },
+                { "rnd.doneAt": null },
+              ],
+            },
+          ],
+        };
+        filter = appendFilterGuard(filter, legacyAwareRndNotDoneGuard);
       }
     }
     if (req.query.rndUnmachinable !== undefined) {
@@ -1117,12 +1172,10 @@ export async function getAllRequests(req, res) {
       };
     }
 
-    // 추적관리 워크시트에서는 R&D 샘플(source=manufacturer_sample)을 완전히 제외한다.
-    // 원본(normal) 의뢰의 배송/추적 이력만 보이도록 고정한다.
+    // 추적관리 워크시트에서는 샘플 의뢰를 완전히 제외한다.
+    // (레거시 requestCategory 미기재 문서는 일반 의뢰건으로 유지)
     if (view === "worksheet" && worksheetProfile === "tracking") {
-      const trackingSampleGuard = {
-        requestCategory: REQUEST_CATEGORY.ORDER,
-      };
+      const trackingSampleGuard = buildNonSampleRequestGuard();
 
       if (filter && Array.isArray(filter.$and)) {
         filter = {
@@ -1586,7 +1639,7 @@ export async function getMyRequests(req, res) {
     // (헥스 이중 가공 복사본 포함)
     filter.$and = [
       ...(Array.isArray(filter.$and) ? filter.$and : []),
-      { requestCategory: REQUEST_CATEGORY.ORDER },
+      buildNonSampleRequestGuard(),
     ];
 
     if (req.query.manufacturerStage) {
