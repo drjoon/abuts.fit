@@ -935,10 +935,9 @@ export const PackingPageContent = ({
           return text.includes(normalizedSearch);
         })
         .sort((a, b) => {
-          const aScore = a.shippingPriority?.score ?? 0;
-          const bScore = b.shippingPriority?.score ?? 0;
-          if (aScore !== bScore) return bScore - aScore;
-          return new Date(a.createdAt) < new Date(b.createdAt) ? 1 : -1;
+          const aTime = new Date(a.createdAt || 0).getTime();
+          const bTime = new Date(b.createdAt || 0).getTime();
+          return bTime - aTime;
         });
 
       let nextReq: ManufacturerRequest | undefined;

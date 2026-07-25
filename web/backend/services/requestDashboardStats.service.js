@@ -192,7 +192,7 @@ export async function getAssignedLikeDashboardSummary({
     },
   ]);
 
-  const [shippingBoxesAgg, trackingBoxesAgg, rndCount] = await Promise.all([
+  const [shippingBoxesAgg, trackingBoxesAgg, rndCountAgg] = await Promise.all([
     Request.aggregate([
       {
         $match: {
@@ -246,12 +246,27 @@ export async function getAssignedLikeDashboardSummary({
       { $group: { _id: "$shippingPackageId" } },
       { $count: "count" },
     ]),
-    Request.countDocuments({
-      ...dateFilter,
-      requestCategory: "rnd_sample",
-      "rnd.unmachinableAt": null,
-      ...rndCountFilter,
-    }),
+    Request.aggregate([
+      {
+        $match: {
+          ...match,
+          ...rndCountFilter,
+        },
+      },
+      {
+        $addFields: {
+          normalizedStage: buildDashboardNormalizedStageExpr(),
+        },
+      },
+      {
+        $match: {
+          normalizedStage: "rnd",
+        },
+      },
+      {
+        $count: "count",
+      },
+    ]),
   ]);
 
   return {
@@ -273,7 +288,7 @@ export async function getAssignedLikeDashboardSummary({
     packingCount: Number(statsResult?.packingCount ?? 0) || 0,
     shippingCount: Number(statsResult?.shippingCount ?? 0) || 0,
     shippingBoxes: Number(shippingBoxesAgg?.[0]?.count ?? 0) || 0,
-    rndCount: Number(rndCount ?? 0) || 0,
+    rndCount: Number(rndCountAgg?.[0]?.count ?? 0) || 0,
   };
 }
 

@@ -31,6 +31,7 @@ import {
   RemakeStartQuickModal,
   type RemakeQuickStartStage,
 } from "../components/RemakeStartQuickModal";
+import { WorksheetStageSearchInput } from "../components/WorksheetStageSearchInput";
 
 type InquiryTab = "process" | "shipping" | "udi";
 
@@ -1570,15 +1571,11 @@ export const TrackingInquiryPage = () => {
             </div>
           </div>
 
-          <div className="mt-3">
-            <input
-              type="text"
-              value={localSearch}
-              onChange={(e) => setLocalSearch(e.target.value)}
-              placeholder="검색: 의뢰자명 · 치과명 · 환자명 · 치아번호 · 날짜 · 요일 · 로트번호 · 의뢰번호"
-              className="h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 placeholder:text-slate-400 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-slate-300"
-            />
-          </div>
+          <WorksheetStageSearchInput
+            className="mt-3"
+            value={localSearch}
+            onChange={setLocalSearch}
+          />
 
           <TabsContent
             value="process"

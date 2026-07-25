@@ -1,6 +1,9 @@
 import { Suspense, lazy } from "react";
 import { useLocation } from "react-router-dom";
-import { deriveStageForFilter } from "@/pages/manufacturer/worksheet/custom_abutment/utils/request";
+import {
+  deriveStageForFilter,
+  isRndSampleRequest,
+} from "@/pages/manufacturer/worksheet/custom_abutment/utils/request";
 
 const RequestPage = lazy(() =>
   import("./custom_abutment/components/RequestPage").then((m) => ({
@@ -66,9 +69,7 @@ export const ManufacturerWorksheetPage = () => {
             <RequestPage
               showQueueBar={true}
               filterRequests={(req) =>
-                String(req.source || "").trim() === "manufacturer_sample" &&
-                Boolean(req.rnd?.doneAt) &&
-                req.rnd?.unmachinableAt == null
+                isRndSampleRequest(req) && req.rnd?.unmachinableAt == null
               }
             />
           );

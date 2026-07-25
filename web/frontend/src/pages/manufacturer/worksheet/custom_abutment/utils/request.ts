@@ -69,14 +69,22 @@ export const resolveRequestCategory = (req?: ManufacturerRequest | null) => {
 
 export const isAnySampleRequest = (req?: ManufacturerRequest | null) => {
   const category = resolveRequestCategory(req);
+  const source = String(req?.source || "").trim();
   return (
     category === REQUEST_CATEGORY.RND_SAMPLE ||
-    category === REQUEST_CATEGORY.COPIED_SAMPLE
+    category === REQUEST_CATEGORY.COPIED_SAMPLE ||
+    source === "manufacturer_sample"
   );
 };
 
 export const isRndSampleRequest = (req?: ManufacturerRequest | null) => {
-  return resolveRequestCategory(req) === REQUEST_CATEGORY.RND_SAMPLE;
+  const category = resolveRequestCategory(req);
+  if (category === REQUEST_CATEGORY.RND_SAMPLE) return true;
+
+  // 레거시 호환: requestCategory가 비어 있어도
+  // source=manufacturer_sample && rnd.doneAt!=null 이면 R&D Done 샘플로 본다.
+  const source = String(req?.source || "").trim();
+  return source === "manufacturer_sample" && Boolean(req?.rnd?.doneAt);
 };
 
 export const isCopiedSampleRequest = (req?: ManufacturerRequest | null) => {

@@ -69,6 +69,7 @@ import {
   RemakeStartQuickModal,
   type RemakeQuickStartStage,
 } from "./RemakeStartQuickModal";
+import { WorksheetStageSearchInput } from "./WorksheetStageSearchInput";
 
 const MAILBOX_DETAILS_CACHE_TTL_MS = 60 * 60 * 1000;
 const MAILBOX_DETAILS_STORAGE_PREFIX = "ca:shipping:mailbox-details:";
@@ -293,7 +294,6 @@ export const RequestPage = ({
             url.searchParams.set("worksheetProfile", "shipping");
           }
           if (tabStage === "rnd") {
-            url.searchParams.set("requestCategory", "rnd_sample");
             url.searchParams.set("rndDone", "1");
             url.searchParams.set("rndUnmachinable", "0");
           } else if (tabStage === "unmachinable") {
@@ -1695,9 +1695,8 @@ export const RequestPage = ({
   }, [tabStage, showCompleted]);
 
   const effectiveWorksheetSearch = useMemo(() => {
-    if (tabStage !== "rnd") return worksheetSearch;
     return `${String(worksheetSearch || "").trim()} ${String(localSearch || "").trim()}`.trim();
-  }, [localSearch, tabStage, worksheetSearch]);
+  }, [localSearch, worksheetSearch]);
 
   const { filteredBase, filteredAndSorted, getFilteredAndSortedRequests } =
     useRequestFiltering(
@@ -2036,17 +2035,11 @@ export const RequestPage = ({
           />
         )}
 
-        {tabStage === "rnd" && (
-          <div className="mt-3">
-            <input
-              type="text"
-              value={localSearch}
-              onChange={(e) => setLocalSearch(e.target.value)}
-              placeholder="검색: 의뢰자명 · 치과명 · 환자명 · 치아번호 · 날짜 · 요일 · 로트번호 · 의뢰번호"
-              className="h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 placeholder:text-slate-400 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-slate-300"
-            />
-          </div>
-        )}
+        <WorksheetStageSearchInput
+          className="mt-3"
+          value={localSearch}
+          onChange={setLocalSearch}
+        />
 
         <div
           className={`space-y-4 ${tabStage === "shipping" ? "mt-0" : "mt-6"}`}
@@ -2056,7 +2049,7 @@ export const RequestPage = ({
               // CAM 승인 후 가공 큐 우선순위/자동시작 정책은 백엔드 SSOT로 관리한다.
               // - 아노다이징 ON 우선
               // - 아노다이징 OFF는 큐 마지막 + "아노 X 가공" 수동 시작
-              <MachiningQueueBoard searchQuery={worksheetSearch} />
+              <MachiningQueueBoard searchQuery={effectiveWorksheetSearch} />
             ) : tabStage === "shipping" ? (
               <div className="w-full">
                 <MailboxGrid
