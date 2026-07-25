@@ -1351,31 +1351,26 @@ export const RequestPage = ({
   const [bulkCamRegenerating, setBulkCamRegenerating] = useState(false);
 
   const handleSaveManufacturerHexRotation = useCallback(
-    async (req: ManufacturerRequest, value: "보정" | "무보정" | "구성정보") => {
+    async (req: ManufacturerRequest, value: "보정" | "무보정") => {
       if (!req?._id) return;
       const requestMongoId = String(req._id || "").trim();
 
       const normalizeManufacturerHexMode = (
         raw: unknown,
-      ): "보정" | "무보정" | "구성정보" => {
+      ): "보정" | "무보정" => {
         const v = String(raw || "").trim();
-        if (v === "구성정보") return "구성정보";
         if (v === "무보정") return "무보정";
         return "보정";
       };
       const toFinalHexRotation = (
-        mode: "보정" | "무보정" | "구성정보",
+        mode: "보정" | "무보정",
       ): "보정" | "무보정" => {
         if (mode === "무보정") return "무보정";
         return "보정";
       };
 
-      const nextValue: "보정" | "무보정" | "구성정보" =
-        value === "무보정"
-          ? "무보정"
-          : value === "구성정보"
-            ? "구성정보"
-            : "보정";
+      const nextValue: "보정" | "무보정" =
+        value === "무보정" ? "무보정" : "보정";
 
       const prevManufacturer = normalizeManufacturerHexMode(
         (req as any)?.rnd?.manufacturerHexRotation,

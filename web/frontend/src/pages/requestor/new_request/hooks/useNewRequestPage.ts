@@ -35,12 +35,10 @@ const normalizeRequestorHexRotation = (
  */
 export const useNewRequestPage = (
   existingRequestId?: string,
-  options?: { companionFiles?: File[] },
 ) => {
   const { user, token } = useAuthStore();
   const navigate = useNavigate();
   const { toast } = useToast();
-  const companionFiles = options?.companionFiles || [];
   const navigateWithDashboardRefresh = useCallback(
     (path: string) => {
       if (path === "/dashboard") {
@@ -1031,7 +1029,6 @@ export const useNewRequestPage = (
     caseInfosMap,
     patchDraftImmediately,
     onDuplicateDetected: handleServerDuplicateDetected,
-    companionFiles,
   });
 
   const handleSubmit = useCallback(async () => {

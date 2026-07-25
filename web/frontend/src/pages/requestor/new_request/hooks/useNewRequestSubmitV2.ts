@@ -26,7 +26,6 @@ type UseNewRequestSubmitV2Params = {
   token: string | null;
   navigate: (path: string) => void;
   files: File[];
-  companionFiles?: File[];
   setFiles: (v: File[]) => void;
   clinicPresets: ClinicPreset[];
   selectedClinicId: string | null;
@@ -58,7 +57,6 @@ export const useNewRequestSubmitV2 = ({
   token,
   navigate,
   files,
-  companionFiles = [],
   setFiles,
   clinicPresets,
   selectedClinicId,
@@ -95,50 +93,8 @@ export const useNewRequestSubmitV2 = ({
       .join("|");
   };
 
-  const buildUploadFingerprint = (stlFiles: File[], cadCompanionFiles: File[]) => {
-    return [
-      buildFilesFingerprint(stlFiles),
-      buildFilesFingerprint(cadCompanionFiles),
-    ].join("||");
-  };
-
-
-
-  const buildStemKeys = (stemRaw: string) => {
-    const stem = String(stemRaw || "").trim().toLowerCase();
-    const keys = new Set<string>();
-    if (!stem) return keys;
-    keys.add(stem);
-    const tokens = stem.split(/[-_\s]+/).filter(Boolean);
-    if (tokens[0]) keys.add(tokens[0]);
-    if (tokens[0] && tokens[1]) keys.add(`${tokens[0]}-${tokens[1]}`);
-    return keys;
-  };
-
-  const extractTrailingIndex = (valueRaw: string) => {
-    const value = String(valueRaw || "").trim().toLowerCase();
-    const match = value.match(/(?:^|[-_\s])(\d{1,4})$/);
-    return match?.[1] || "";
-  };
-
-  const isStemMatch = (aRaw: string, bRaw: string) => {
-    const a = String(aRaw || "").trim().toLowerCase();
-    const b = String(bRaw || "").trim().toLowerCase();
-    if (!a || !b) return false;
-    if (a === b) return true;
-    if (a.startsWith(b) || b.startsWith(a)) return true;
-
-    const aKeys = buildStemKeys(a);
-    const bKeys = buildStemKeys(b);
-    for (const key of aKeys) {
-      if (bKeys.has(key)) return true;
-    }
-
-    const aIndex = extractTrailingIndex(a);
-    const bIndex = extractTrailingIndex(b);
-    if (aIndex && bIndex && aIndex === bIndex) return true;
-
-    return false;
+  const buildUploadFingerprint = (stlFiles: File[]) => {
+    return buildFilesFingerprint(stlFiles);
   };
 
   const redirectToProfileIfNeeded = async () => false;
@@ -354,13 +310,7 @@ export const useNewRequestSubmitV2 = ({
         }
       }
 
-      const normalizedCompanionFiles = Array.isArray(companionFiles)
-        ? companionFiles
-        : [];
-      const uploadFingerprint = buildUploadFingerprint(
-        files,
-        normalizedCompanionFiles,
-      );
+      const uploadFingerprint = buildUploadFingerprint(files);
       const canReusePreparedDraft =
         Array.isArray(duplicateResolutions) &&
         duplicateResolutions.length > 0 &&
@@ -373,20 +323,16 @@ export const useNewRequestSubmitV2 = ({
           {
             draftId,
             filesCount: files.length,
-            companionCount: normalizedCompanionFiles.length,
+            companionCount: 0,
           },
         );
       } else {
         let creditShortfallMsg: string | null = null;
         let tempFiles: TempUploadedFile[] = [];
-        let companionTempFiles: TempUploadedFile[] = [];
         try {
-          const [uploadResult, companionUploadResult] = await Promise.all([
+          const [uploadResult] = await Promise.all([
             files.length > 0
               ? uploadFilesWithToast(files)
-              : Promise.resolve([] as TempUploadedFile[]),
-            normalizedCompanionFiles.length > 0
-              ? uploadFilesWithToast(normalizedCompanionFiles)
               : Promise.resolve([] as TempUploadedFile[]),
             (async () => {
               try {
@@ -458,7 +404,6 @@ export const useNewRequestSubmitV2 = ({
           ]);
 
           tempFiles = uploadResult ?? [];
-          companionTempFiles = companionUploadResult ?? [];
         } catch {
           // S3 업로드 실패 - toast는 uploadFilesWithToast에서 이미 처리됨
           return;
@@ -485,16 +430,7 @@ export const useNewRequestSubmitV2 = ({
             }
           };
 
-          const companionByKey = new Map<string, TempUploadedFile>();
-          const companionFileByNameSize = new Map<string, File>();
-          normalizedCompanionFiles.forEach((file, i) => {
-            const uploaded = companionTempFiles[i];
-            if (uploaded?.key) {
-              companionByKey.set(toNormalizedFileKey(file), uploaded);
-            }
-            const nameSizeKey = `${toNfcName(file.name)}:${file.size}`;
-            companionFileByNameSize.set(nameSizeKey, file);
-          });
+
 
           const caseInfosPayload = files
             .map((file, i) => {
@@ -504,43 +440,7 @@ export const useNewRequestSubmitV2 = ({
                 filteredMap[fileKey] ||
                 {}) as Partial<CaseInfos>;
 
-              const explicitCompanionMetas = Array.isArray(ci?.cadCompanionFiles)
-                ? ci.cadCompanionFiles
-                    .map((item) => ({
-                      originalName: toNfcName(String(item?.originalName || "")),
-                      size: Number(item?.size || 0),
-                    }))
-                    .filter((item) => item.originalName && Number.isFinite(item.size))
-                : [];
 
-              const explicitlyLinkedCompanions = explicitCompanionMetas
-                .map((item) =>
-                  companionFileByNameSize.get(`${item.originalName}:${item.size}`),
-                )
-                .filter((item): item is File => Boolean(item));
-
-              // 정책: 제출 시 STL-구성정보 매칭은 명시 연결(cadCompanionFiles)만 사용한다.
-              // stem 기반 추정 매칭은 잘못된 연결을 만들 수 있으므로 저장 경로에서는 금지한다.
-              const companionCandidates = explicitlyLinkedCompanions;
-
-              const cadCompanionFiles = companionCandidates
-                .map((companion) => {
-                  const uploaded = companionByKey.get(toNormalizedFileKey(companion));
-                  if (!uploaded?.key) return null;
-                  return {
-                    originalName: uploaded.originalName,
-                    size: uploaded.size,
-                    mimetype: uploaded.mimetype,
-                    s3Key: uploaded.key,
-                  };
-                })
-                .filter((item): item is {
-                  originalName: string;
-                  size: number;
-                  mimetype: string;
-                  s3Key: string;
-                } => Boolean(item))
-                .filter((item, idx, arr) => arr.findIndex((x) => x.s3Key === item.s3Key) === idx);
 
               return {
                 clinicName: ci.clinicName,
@@ -559,7 +459,6 @@ export const useNewRequestSubmitV2 = ({
                 requestorHexRotation: ci.requestorHexRotation,
                 shippingMode: ci.shippingMode,
                 requestedShipDate: ci.requestedShipDate,
-                cadCompanionFiles,
                 file: tf?.key
                   ? {
                       originalName: tf.originalName,

@@ -314,25 +314,7 @@ const requestSchema = new mongoose.Schema(
           default: Date.now,
         },
       },
-      // STL과 함께 업로드된 CAD 구성 보조파일 메타정보
-      cadCompanionFiles: {
-        type: [
-          {
-            originalName: String,
-            fileType: String,
-            fileSize: Number,
-            filePath: String,
-            s3Key: String,
-            s3Url: String,
-            uploadedAt: {
-              type: Date,
-              default: Date.now,
-            },
-            _id: false,
-          },
-        ],
-        default: [],
-      },
+
       camFile: {
         fileName: String,
         fileType: String,
@@ -487,10 +469,13 @@ const requestSchema = new mongoose.Schema(
       // 제조사 헥스 회전/좌표계 전처리 선택값 (canonical)
       // - "보정"(legacy 0도)
       // - "무보정"(legacy 30도)
-      // - "구성정보"(ExoCAD/3Shape 좌표 구성파일 기반 전처리)
+      // related files:
+      // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx
+      // - web/backend/controllers/bg/bg.controller.js
+      // Rhino align 기능이 구성정보 전처리를 대체하므로 개별 구성정보 파일 기반 모드는 사용하지 않는다.
       manufacturerHexRotation: {
         type: String,
-        enum: ["보정", "무보정", "구성정보"],
+        enum: ["보정", "무보정"],
         default: null,
       },
       manufacturerHexRotationUpdatedAt: {

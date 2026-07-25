@@ -172,15 +172,7 @@ export interface RequestCaseInfos {
     s3Key?: string;
     s3Url?: string;
   };
-  cadCompanionFiles?: {
-    originalName?: string;
-    fileType?: string;
-    fileSize?: number;
-    filePath?: string;
-    s3Key?: string;
-    s3Url?: string;
-    uploadedAt?: string;
-  }[];
+
   camFile?: {
     fileName?: string;
     originalName?: string;
@@ -321,9 +313,9 @@ export interface RequestBase {
     unmachinableFromStage?: string | null;
     unmachinableReason?: string | null;
     memo?: string | null;
-    // canonical: "보정" | "무보정" | "구성정보"
+    // canonical: "보정" | "무보정"
     // legacy "0"|"30"은 하위호환 입력/표시용으로만 사용
-    manufacturerHexRotation?: "보정" | "무보정" | "구성정보" | null;
+    manufacturerHexRotation?: "보정" | "무보정" | null;
     manufacturerHexRotationUpdatedAt?: string | null;
     manufacturerHexRotationUpdatedBy?: string | null;
     memoUpdatedAt?: string | null;

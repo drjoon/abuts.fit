@@ -60,6 +60,10 @@ export async function cloneRequestToDraft(req, res) {
 
     const normalizedCi = await normalizeCaseInfosImplantFields(ci);
 
+    // related files:
+    // - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
+    // - web/backend/controllers/requests/draftRequest.controller.js
+    // Rhino align 정책에 따라 clone-to-draft에서도 구성정보 파일 메타는 복제하지 않는다.
     const draftCaseInfo = {
       file: file.s3Key
         ? {
@@ -69,16 +73,6 @@ export async function cloneRequestToDraft(req, res) {
             s3Key: file.s3Key,
           }
         : undefined,
-      cadCompanionFiles: Array.isArray(ci?.cadCompanionFiles)
-        ? ci.cadCompanionFiles
-            .map((f) => ({
-              originalName: String(f?.originalName || "").trim(),
-              size: Number(f?.fileSize || 0),
-              mimetype: String(f?.fileType || "").trim(),
-              s3Key: String(f?.s3Key || "").trim(),
-            }))
-            .filter((f) => f.originalName && f.s3Key)
-        : [],
       clinicName: ci.clinicName,
       patientName: ci.patientName,
       tooth: ci.tooth,

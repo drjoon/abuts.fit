@@ -8,14 +8,12 @@ import React, {
 import { useParams, useNavigate } from "react-router-dom";
 import { useNewRequestPage } from "./hooks/useNewRequestPage";
 import { useToast } from "@/shared/hooks/use-toast";
-import { useAuthStore } from "@/store/useAuthStore";
-import { request } from "@/shared/api/apiClient";
+
 import { usePresetStorage } from "./hooks/usePresetStorage";
 import { useBulkShippingPolicy } from "./hooks/useBulkShippingPolicy";
 import { useFileVerification } from "./hooks/useFileVerification";
 import { parseFilenameWithRules } from "@/shared/filename/parseFilenameWithRules";
 import { clearLocalDraft } from "./utils/localDraftStorage";
-import { saveFile as saveFileToIndexedDb, getFile as getFileFromIndexedDb } from "./utils/fileIndexedDB";
 import { MultiActionDialog } from "@/features/support/components/MultiActionDialog";
 import { PageFileDropZone } from "@/features/requests/components/PageFileDropZone";
 import { NewRequestDetailsSection } from "./components/NewRequestDetailsSection";
@@ -31,19 +29,14 @@ import {
 } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { Label } from "@/components/ui/label";
+
 import { StlPreviewViewer } from "@/features/requests/components/StlPreviewViewer";
-import {
-  isCompanionAllowedByDesignSoftware,
-  type RequestDesignSoftwareMode,
-} from "./components/newRequestDetailsUtils";
+
 
 // related files:
 // - web/frontend/src/pages/requestor/new_request/components/NewRequestDetailsSection.tsx
 // - web/frontend/src/pages/requestor/new_request/components/NewRequestAttachmentsPanel.tsx
-// - web/frontend/src/pages/requestor/new_request/hooks/useCompanionBinding.ts
+// Rhino의 align 기능이 구성정보를 대체하므로, 개별 구성정보 파일 업로드/매칭은 사용하지 않는다.
 
 
 /**
@@ -56,34 +49,12 @@ export const NewRequestPage = () => {
   const { id: existingRequestId } = useParams<{ id?: string }>();
   const navigate = useNavigate();
 
-  const { token } = useAuthStore();
   const { toast } = useToast();
 
   const [isFillHoleProcessing, setIsFillHoleProcessing] = useState(false);
   const [filledStlFiles, setFilledStlFiles] = useState<Record<string, File>>(
     {},
   );
-  const [companionFilesForSubmit, setCompanionFilesForSubmit] = useState<File[]>([]);
-  const [checkedDesignSoftware, setCheckedDesignSoftware] = useState(false);
-  const [designSoftwareModalOpen, setDesignSoftwareModalOpen] = useState(false);
-  const [designSoftwareSaving, setDesignSoftwareSaving] = useState(false);
-  const [designSoftwareChoice, setDesignSoftwareChoice] = useState<RequestDesignSoftwareMode>(
-    "3Shape",
-  );
-  const [customDesignSoftware, setCustomDesignSoftware] = useState("");
-
-  const COMPANION_STORAGE_KEY = "abutsfit:new-request-companions:v1";
-  const toCompanionMetaKey = (file: File) => {
-    const safeName = (() => {
-      try {
-        return String(file.name || "").normalize("NFC");
-      } catch {
-        return String(file.name || "");
-      }
-    })();
-    return `${safeName}:${file.size}:${file.lastModified}`;
-  };
-  const toCompanionIdbKey = (metaKey: string) => `companion:${metaKey}`;
 
   const normalizeKeyPart = (s: string) => {
     try {
@@ -137,9 +108,7 @@ export const NewRequestPage = () => {
     setDuplicateResolutions,
     handleSubmitWithDuplicateResolutions,
     draftStatus,
-  } = useNewRequestPage(existingRequestId, {
-    companionFiles: companionFilesForSubmit,
-  });
+  } = useNewRequestPage(existingRequestId);
 
   const {
     fileVerificationStatus,
@@ -150,85 +119,7 @@ export const NewRequestPage = () => {
     highlightStep,
   } = useFileVerification({ files });
 
-  useEffect(() => {
-    if (!token || checkedDesignSoftware) return;
 
-    void (async () => {
-      try {
-        const res = await request<RequestSettingsApiResponse>({
-          path: "/api/businesses/me/request-settings",
-          method: "GET",
-          token,
-        });
-
-        if (!res.ok) {
-          setCheckedDesignSoftware(true);
-          return;
-        }
-
-        const body = res.data || {};
-        const data = body?.data || body;
-        const designSoftware = String(data?.designSoftware || "").trim();
-
-        if (!designSoftware) {
-          setDesignSoftwareChoice("3Shape");
-          setCustomDesignSoftware("");
-          setDesignSoftwareModalOpen(true);
-        } else if (designSoftware === "3Shape" || designSoftware === "ExoCAD") {
-          setDesignSoftwareChoice(designSoftware);
-          setCustomDesignSoftware("");
-        } else {
-          setDesignSoftwareChoice("custom");
-          setCustomDesignSoftware(designSoftware);
-        }
-      } finally {
-        setCheckedDesignSoftware(true);
-      }
-    })();
-  }, [checkedDesignSoftware, token]);
-
-  const handleSaveDesignSoftware = useCallback(async () => {
-    if (!token) return;
-
-    const value =
-      designSoftwareChoice === "custom"
-        ? String(customDesignSoftware || "").trim()
-        : designSoftwareChoice;
-
-    if (!value) {
-      toast({
-        title: "입력값이 필요합니다",
-        description: "직접 입력을 선택한 경우 소프트웨어 이름을 입력해주세요.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    setDesignSoftwareSaving(true);
-    try {
-      const res = await request<RequestSettingsApiResponse>({
-        path: "/api/businesses/me/request-settings",
-        method: "PUT",
-        token,
-        jsonBody: { designSoftware: value },
-      });
-
-      if (!res.ok) {
-        const body = res.data || {};
-        toast({
-          title: "저장 실패",
-          description:
-            String(body?.message || "디자인 소프트웨어 저장 중 오류가 발생했습니다."),
-          variant: "destructive",
-        });
-        return;
-      }
-
-      setDesignSoftwareModalOpen(false);
-    } finally {
-      setDesignSoftwareSaving(false);
-    }
-  }, [customDesignSoftware, designSoftwareChoice, toast, token]);
 
   // 파일 삭제는 rawHandleRemoveFile이 처리하고,
   // fileVerificationStatus cleanup은 useFileVerification의 effect가 자동으로 처리
@@ -292,12 +183,6 @@ export const NewRequestPage = () => {
     setImplantBrand("");
     setImplantFamily("");
     setImplantType("");
-    setCompanionFilesForSubmit([]);
-    try {
-      window.localStorage.removeItem(COMPANION_STORAGE_KEY);
-    } catch {
-      // noop
-    }
 
     const fileInput = document.getElementById(
       "file-input",
@@ -518,10 +403,6 @@ export const NewRequestPage = () => {
 
   const [focusUnverifiedTick, setFocusUnverifiedTick] = useState(0);
 
-  const isCadCompanionFile = (fileName: string) => {
-    return isCompanionAllowedByDesignSoftware(fileName, designSoftwareChoice);
-  };
-
   type StlSelectionCandidate = {
     id: string;
     file: File;
@@ -529,7 +410,6 @@ export const NewRequestPage = () => {
 
   type ClassifiedUploadBatch = {
     stlCandidates: StlSelectionCandidate[];
-    companionFilesToHandle: File[];
     rejectedFiles: { name: string; reason: string }[];
     ignoredFiles: { name: string; reason: string }[];
   };
@@ -547,13 +427,7 @@ export const NewRequestPage = () => {
     webkitGetAsEntry?: () => WebkitFileSystemEntry | null;
   };
 
-  type RequestSettingsApiResponse = {
-    message?: string;
-    designSoftware?: string | null;
-    data?: {
-      designSoftware?: string | null;
-    };
-  };
+
 
   const [fileReviewOpen, setFileReviewOpen] = useState(false);
   const [reviewBatch, setReviewBatch] = useState<ClassifiedUploadBatch | null>(null);
@@ -566,54 +440,7 @@ export const NewRequestPage = () => {
     return lower.slice(dot);
   };
 
-  const companionFileHandlerRef = useRef<
-    (files: File[], options?: { targetStlFileKey?: string }) => void
-  >(() => {});
 
-  useEffect(() => {
-    void (async () => {
-      try {
-        const raw = window.localStorage.getItem(COMPANION_STORAGE_KEY);
-        if (!raw) return;
-        const keys = JSON.parse(raw) as string[];
-        if (!Array.isArray(keys) || keys.length === 0) return;
-
-        const restored: File[] = [];
-        for (const metaKey of keys) {
-          const file = await getFileFromIndexedDb(toCompanionIdbKey(String(metaKey)));
-          if (file) restored.push(file);
-        }
-
-        if (restored.length > 0) {
-          setCompanionFilesForSubmit((prev) => {
-            const map = new Map<string, File>();
-            for (const file of [...prev, ...restored]) {
-              const key = toCompanionMetaKey(file);
-              if (!map.has(key)) map.set(key, file);
-            }
-            return [...map.values()];
-          });
-        }
-      } catch (e) {
-        console.warn("[NewRequestPage] failed to restore companion files", e);
-      }
-    })();
-  }, []);
-
-  useEffect(() => {
-    void (async () => {
-      try {
-        const keys = companionFilesForSubmit.map((f) => toCompanionMetaKey(f));
-        window.localStorage.setItem(COMPANION_STORAGE_KEY, JSON.stringify(keys));
-        for (const file of companionFilesForSubmit) {
-          const key = toCompanionMetaKey(file);
-          await saveFileToIndexedDb(toCompanionIdbKey(key), file);
-        }
-      } catch (e) {
-        console.warn("[NewRequestPage] failed to persist companion files", e);
-      }
-    })();
-  }, [companionFilesForSubmit]);
 
   const dedupeFiles = (input: File[]) => {
     const map = new Map<string, File>();
@@ -626,7 +453,6 @@ export const NewRequestPage = () => {
 
   const classifyIncomingFiles = (selectedFiles: File[]): ClassifiedUploadBatch => {
     const stlCandidates: StlSelectionCandidate[] = [];
-    const companionFilesToHandle: File[] = [];
     const rejectedFiles: { name: string; reason: string }[] = [];
     const ignoredFiles: { name: string; reason: string }[] = [];
 
@@ -636,13 +462,8 @@ export const NewRequestPage = () => {
       if (ext === ".pts") {
         ignoredFiles.push({
           name: file.name,
-          reason: "PTS 파일은 현재 업로드 대상에서 자동 제외됩니다.",
+          reason: "PTS 파일은 업로드 대상에서 제외됩니다.",
         });
-        return;
-      }
-
-      if (isCadCompanionFile(file.name)) {
-        companionFilesToHandle.push(file);
         return;
       }
 
@@ -653,14 +474,12 @@ export const NewRequestPage = () => {
 
       rejectedFiles.push({
         name: file.name,
-        reason:
-          "필요한 파일만 받습니다. STL과 구성정보 파일만 업로드할 수 있어요.",
+        reason: "STL 파일만 업로드할 수 있어요.",
       });
     });
 
     return {
       stlCandidates,
-      companionFilesToHandle,
       rejectedFiles,
       ignoredFiles,
     };
@@ -690,23 +509,7 @@ export const NewRequestPage = () => {
             .filter((item) => selection?.[item.id])
             .map((item) => item.file);
 
-    if (batch.companionFilesToHandle.length > 0) {
-      const forcedTargetStlFileKey =
-        stlFiles.length === 1 ? toNormalizedFileKey(stlFiles[0]) : undefined;
 
-      companionFileHandlerRef.current(batch.companionFilesToHandle, {
-        targetStlFileKey: forcedTargetStlFileKey,
-      });
-
-      setCompanionFilesForSubmit((prev) => {
-        const map = new Map<string, File>();
-        for (const file of [...prev, ...batch.companionFilesToHandle]) {
-          const key = `${file.name}:${file.size}:${file.lastModified}`;
-          if (!map.has(key)) map.set(key, file);
-        }
-        return [...map.values()];
-      });
-    }
 
     if (stlFiles.length > 0) {
       setFileVerificationStatus((prev) => {
@@ -734,16 +537,7 @@ export const NewRequestPage = () => {
       });
     }
 
-    if (stlFiles.length === 0 && batch.companionFilesToHandle.length > 0) {
-      toast({
-        title: "STL 파일도 올려주세요",
-        description: "구성정보 파일은 등록됐어요. 같은 폴더의 STL 파일을 추가해 주세요.",
-        duration: 3200,
-      });
-      return;
-    }
-
-    if (stlFiles.length === 0 && batch.companionFilesToHandle.length === 0) {
+    if (stlFiles.length === 0) {
       toast({
         title: "업로드할 파일이 없습니다",
         description: "선택된 파일 중 업로드 가능한 파일이 없었습니다.",
@@ -969,85 +763,7 @@ export const NewRequestPage = () => {
           actions={[]}
         />
 
-        <Dialog
-          open={designSoftwareModalOpen}
-          onOpenChange={(open) => {
-            if (designSoftwareSaving) return;
-            setDesignSoftwareModalOpen(open);
-          }}
-        >
-          <DialogContent className="sm:max-w-[480px]">
-            <DialogHeader>
-              <DialogTitle>사용하시는 디자인 소프트웨어를 선택해 주세요</DialogTitle>
-              <DialogDescription>
-                저장 후에는 설정 &gt; 의뢰에서 수정할 수 있어요.
-              </DialogDescription>
-            </DialogHeader>
 
-            <div className="space-y-4">
-              <RadioGroup
-                value={designSoftwareChoice}
-                onValueChange={(value) => {
-                  if (value === "3Shape" || value === "ExoCAD" || value === "custom") {
-                    setDesignSoftwareChoice(value);
-                  }
-                }}
-                className="space-y-2"
-              >
-                <div className="flex items-center gap-2">
-                  <RadioGroupItem value="3Shape" id="new-request-design-software-3shape" />
-                  <Label htmlFor="new-request-design-software-3shape">3Shape</Label>
-                </div>
-                <div className="flex items-center gap-2">
-                  <RadioGroupItem value="ExoCAD" id="new-request-design-software-exocad" />
-                  <Label htmlFor="new-request-design-software-exocad">ExoCAD</Label>
-                </div>
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2">
-                    <RadioGroupItem value="custom" id="new-request-design-software-custom" />
-                    <Label htmlFor="new-request-design-software-custom">직접 입력</Label>
-                  </div>
-                  {designSoftwareChoice === "custom" ? (
-                    <Input
-                      value={customDesignSoftware}
-                      onChange={(e) => setCustomDesignSoftware(e.target.value)}
-                      placeholder="사용 중인 디자인 소프트웨어를 입력해주세요"
-                      maxLength={120}
-                    />
-                  ) : null}
-                </div>
-              </RadioGroup>
-
-              {designSoftwareChoice === "3Shape" ? (
-                <p className="rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-900">
-                  STL 파일 업로드할 때 `ImplantDirectionPosition_0.xml`와 같은 정보 파일을 함께 올려주세요.
-                  <br />
-                  STL 파일과 동일 폴더에 들어있고, 파일 갯수는 STL 파일 갯수와 같아요.
-                </p>
-              ) : null}
-
-              {designSoftwareChoice === "ExoCAD" ? (
-                <p className="rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-900">
-                  ExoCAD는 케이스당 1개의 구성정보 파일이 필요합니다. 예:
-                  `2026-05-22_00002-002-홍**.constructionInfo` (환자명은 마스킹 처리)
-                </p>
-              ) : null}
-            </div>
-
-            <DialogFooter>
-              <Button
-                variant="outline"
-                disabled={designSoftwareSaving}
-                onClick={() => setDesignSoftwareModalOpen(false)}
-              >
-                다음에 하기
-              </Button>
-              <Button disabled={designSoftwareSaving} onClick={() => void handleSaveDesignSoftware()}>
-                저장
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
 
         <Dialog open={fileReviewOpen} onOpenChange={setFileReviewOpen}>
           <DialogContent className="sm:max-w-[980px]">
@@ -1209,26 +925,8 @@ export const NewRequestPage = () => {
                 })();
               }}
               onFilesSelected={handleIncomingFiles}
-              registerCompanionFileHandler={(handler) => {
-                companionFileHandlerRef.current = handler;
-              }}
-              onCompanionFilesAccepted={(filesAccepted) => {
-                setCompanionFilesForSubmit((prev) => {
-                  const map = new Map<string, File>();
-                  for (const file of [...prev, ...filesAccepted]) {
-                    const key = `${file.name}:${file.size}:${file.lastModified}`;
-                    if (!map.has(key)) map.set(key, file);
-                  }
-                  return [...map.values()];
-                });
-              }}
-              onCompanionFilesChange={(nextFiles) => {
-                setCompanionFilesForSubmit(nextFiles);
-              }}
-              initialCompanionFiles={companionFilesForSubmit}
               weeklyBatchDays={weeklyBatchDays}
               onCancelAll={handleCancelAll}
-              designSoftwareMode={designSoftwareChoice}
               onDuplicateDetected={({ file, duplicate }) => {
                 const fileWithDraftCaseId = file as File & {
                   _draftCaseInfoId?: string;

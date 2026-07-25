@@ -20,6 +20,11 @@ export interface FileMetadata {
   addedAt: number;
 }
 
+// related files:
+// - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
+// - web/frontend/src/pages/requestor/new_request/hooks/useNewRequestSubmitV2.ts
+// Rhino align 정책으로 구성정보 파일은 저장하지 않으므로,
+// 로컬 Draft SSOT도 STL 케이스 메타만 보관한다.
 export interface CaseInfos {
   clinicName: string;
   patientName: string;
@@ -34,12 +39,6 @@ export interface CaseInfos {
   shippingMode?: string;
   requestedShipDate?: string;
   workType?: string;
-  cadCompanionFiles?: {
-    originalName?: string;
-    size?: number;
-    mimetype?: string;
-    s3Key?: string;
-  }[];
   requestorHexRotation?: "보정" | "무보정";
 }
 

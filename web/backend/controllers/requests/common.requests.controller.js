@@ -294,8 +294,7 @@ const normalizeHexRotationValue = (value) => {
 
 const parseManufacturerHexRotationMode = (value) => {
   const v = String(value || "").trim();
-  // canonical
-  if (v === "구성정보") return "구성정보";
+  // Rhino align 정책: 제조사 모드는 보정/무보정 2가지만 사용한다.
   if (v === "무보정") return "무보정";
   if (v === "보정") return "보정";
   return null;
@@ -310,9 +309,29 @@ const resolveFinalHexRotationValue = ({
 }) => {
   const mode = normalizeManufacturerHexRotationMode(manufacturerHexRotation);
   // finalHexRotation은 canonical 모드 문자열만 사용한다.
-  // 매핑 고정: 보정=보정, 무보정=무보정, 구성정보=보정
+  // 매핑 고정: 보정=보정, 무보정=무보정
   if (mode === "무보정") return "무보정";
   return "보정";
+};
+
+const normalizeLegacyManufacturerHexRotationOnRequest = (requestDoc) => {
+  if (!requestDoc) return false;
+  const raw = String(requestDoc?.rnd?.manufacturerHexRotation || "").trim();
+  if (!raw) return false;
+  const parsed = parseManufacturerHexRotationMode(raw);
+  if (parsed) return false;
+
+  // related files:
+  // - web/backend/models/request.model.js
+  // - web/backend/controllers/requests/creation.from-draft.controller.js
+  // Rhino align 정책으로 구성정보 모드는 제거되었으므로,
+  // 레거시 값(예: "구성정보")이 남아 있으면 저장 직전에 canonical 값으로 강제 정규화한다.
+  requestDoc.set("rnd.manufacturerHexRotation", "보정");
+  requestDoc.set(
+    "caseInfos.finalHexRotation",
+    resolveFinalHexRotationValue({ manufacturerHexRotation: "보정" }),
+  );
+  return true;
 };
 
 /**
@@ -1141,7 +1160,6 @@ export async function getAllRequests(req, res) {
       "caseInfos.file",
       "caseInfos.camFile",
       "caseInfos.ncFile",
-      "caseInfos.cadCompanionFiles",
       "caseInfos.stageFiles",
       "caseInfos.reviewByStage",
       "caseInfos.rollbackCounts",
@@ -1192,7 +1210,6 @@ export async function getAllRequests(req, res) {
       "caseInfos.tooth",
       "caseInfos.requestorHexRotation",
       "caseInfos.finalHexRotation",
-      "caseInfos.cadCompanionFiles",
       "caseInfos.connectionDiameter",
       "caseInfos.maxDiameter",
       "caseInfos.totalLength",
@@ -1250,7 +1267,6 @@ export async function getAllRequests(req, res) {
       "caseInfos.connectionDiameter",
       "caseInfos.requestorHexRotation",
       "caseInfos.finalHexRotation",
-      "caseInfos.cadCompanionFiles",
       "caseInfos.implantManufacturer",
       "caseInfos.implantBrand",
       "caseInfos.implantFamily",
@@ -2247,7 +2263,7 @@ export const updateRndHexRotation = asyncHandler(async (req, res) => {
     return res.status(400).json({
       success: false,
       message:
-        "유효하지 않은 manufacturerHexRotation 값입니다. '보정' | '무보정' | '구성정보'를 사용하세요.",
+        "유효하지 않은 manufacturerHexRotation 값입니다. '보정' | '무보정'만 사용할 수 있습니다.",
     });
   }
 
@@ -2313,11 +2329,7 @@ export const updateRndHexRotation = asyncHandler(async (req, res) => {
   request.set("caseInfos.finalHexRotation", finalHexRotation);
 
   // 의뢰자 사업자 디폴트 헥스 회전값은 보정/무보정만 저장한다.
-  // 구성정보는 파일 첨부 여부에 따라 선택되는 작업 모드이므로, 사업자 기본값으로 승격하면 안 된다.
-  if (
-    Types.ObjectId.isValid(requestorBusinessAnchorId) &&
-    manufacturerHexRotation !== "구성정보"
-  ) {
+  if (Types.ObjectId.isValid(requestorBusinessAnchorId)) {
     await BusinessAnchor.updateOne(
       { _id: new Types.ObjectId(requestorBusinessAnchorId) },
       {
@@ -2559,7 +2571,18 @@ export async function updateRequestStatus(req, res) {
 
     // 신속배송(express) 모드 제거됨
 
+    const legacyHexNormalized = normalizeLegacyManufacturerHexRotationOnRequest(
+      request,
+    );
+
     await request.save();
+
+    if (legacyHexNormalized) {
+      console.info("[updateManufacturerStage] normalized legacy manufacturer hex mode", {
+        requestId: request.requestId,
+        requestMongoId: String(request._id || ""),
+      });
+    }
 
     console.log("[updateManufacturerStage] Stage updated", {
       requestId: request.requestId,

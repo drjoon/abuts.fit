@@ -25,17 +25,13 @@ const normalizeRequestorHexRotation = (value, fallback = "보정") => {
   return String(fallback || "").trim() === "무보정" ? "무보정" : "보정";
 };
 
-const normalizeCadCompanionFiles = (value) => {
-  const list = Array.isArray(value) ? value : [];
-  return list
-    .map((item) => ({
-      originalName: String(item?.originalName || "").trim(),
-      size: Number(item?.size || 0),
-      mimetype: String(item?.mimetype || "").trim(),
-      s3Key: String(item?.s3Key || "").trim(),
-    }))
-    .filter((item) => item.originalName && item.s3Key);
-};
+// related files:
+// - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
+// - web/frontend/src/pages/requestor/new_request/components/NewRequestAttachmentsPanel.tsx
+// Rhino align 기능으로 구성정보 업로드 경로를 대체했으므로,
+// Draft caseInfos에는 STL 기반 필드만 저장한다.
+
+
 
 const resolveDefaultRequestorHexRotation = async (req) => {
   const anchorId = String(req?.user?.businessAnchorId || "").trim();
@@ -71,7 +67,6 @@ async function buildNormalizedDraftCaseInfos(
           ci?.requestorHexRotation,
           opts?.defaultRequestorHexRotation,
         ),
-        cadCompanionFiles: normalizeCadCompanionFiles(ci?.cadCompanionFiles),
       };
     }),
   );
@@ -127,7 +122,6 @@ export const createDraft = asyncHandler(async (req, res) => {
             ci?.requestorHexRotation,
             defaultRequestorHexRotation,
           ),
-          cadCompanionFiles: normalizeCadCompanionFiles(ci?.cadCompanionFiles),
         };
       }),
     ),
@@ -250,8 +244,6 @@ export const updateDraft = asyncHandler(async (req, res) => {
           _id: incoming._id || prev?._id || undefined,
           ...incoming,
           file: incoming.file || prev?.file || undefined,
-          cadCompanionFiles:
-            incoming.cadCompanionFiles || prev?.cadCompanionFiles || [],
           workType: (incoming.workType || prev?.workType || "abutment").trim(),
         };
       });
@@ -268,7 +260,6 @@ export const updateDraft = asyncHandler(async (req, res) => {
               ci?.requestorHexRotation,
               defaultRequestorHexRotation,
             ),
-            cadCompanionFiles: normalizeCadCompanionFiles(ci?.cadCompanionFiles),
           };
         }),
       );
@@ -327,7 +318,6 @@ export const addFileToDraft = asyncHandler(async (req, res) => {
     // legacy shallow 입력은 none으로 처리.
     retentionGroove,
     requestorHexRotation,
-    cadCompanionFiles,
     shippingMode,
     requestedShipDate,
   } = req.body || {};
@@ -395,7 +385,6 @@ export const addFileToDraft = asyncHandler(async (req, res) => {
       requestorHexRotation,
       defaultRequestorHexRotation,
     ),
-    cadCompanionFiles: normalizeCadCompanionFiles(cadCompanionFiles),
     shippingMode: "normal", // 항상 묶음 배송
     requestedShipDate,
   });
@@ -467,7 +456,6 @@ export const addFilesToDraftBulk = asyncHandler(async (req, res) => {
         // 유지홈(retentionGroove) — bulk 파일 추가 시에도 보존 (rules.md §7.4.1)
         retentionGroove,
         requestorHexRotation,
-        cadCompanionFiles,
         shippingMode,
         requestedShipDate,
       } = raw || {};
@@ -518,7 +506,6 @@ export const addFilesToDraftBulk = asyncHandler(async (req, res) => {
           requestorHexRotation,
           defaultRequestorHexRotation,
         ),
-        cadCompanionFiles: normalizeCadCompanionFiles(cadCompanionFiles),
         shippingMode: "normal", // 항상 묶음 배송
         requestedShipDate,
       };

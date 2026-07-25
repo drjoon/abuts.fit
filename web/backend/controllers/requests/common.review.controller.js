@@ -679,7 +679,8 @@ const normalizeFinalHexRotation = (value) => {
 const normalizeRequestorDefaultManufacturerHexRotationOrNull = (value) => {
   const v = String(value || "").trim();
   if (!v) return null;
-  if (v === "보정" || v === "무보정" || v === "구성정보") return v;
+  // Rhino align 정책: 제조사 default 모드는 보정/무보정만 허용.
+  if (v === "보정" || v === "무보정") return v;
   // legacy "헥스회전각" 호환: 0=보정, 30=무보정
   if (v === "0") return "보정";
   if (v === "30") return "무보정";

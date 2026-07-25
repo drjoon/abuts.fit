@@ -44,14 +44,18 @@ type PreviewFiles = {
   finishLineSource?: "caseInfos" | "file" | null;
 };
 
-type ManufacturerHexRotationMode = "보정" | "무보정" | "구성정보";
+// related files (hex rotation policy):
+// - web/backend/controllers/requests/common.requests.controller.js
+// - web/backend/controllers/bg/bg.controller.js
+// Rhino의 align 기능이 구성정보를 대체하므로, 개별 구성정보 파일 모드는 사용하지 않는다.
+type ManufacturerHexRotationMode = "보정" | "무보정";
 
 const normalizeManufacturerHexRotationMode = (
   value: unknown,
 ): ManufacturerHexRotationMode | null => {
   const raw = String(value || "").trim();
   // canonical 우선
-  if (raw === "보정" || raw === "무보정" || raw === "구성정보") return raw;
+  if (raw === "보정" || raw === "무보정") return raw;
   // legacy "헥스회전각" 호환: 0=보정, 30=무보정
   if (raw === "0") return "보정";
   if (raw === "30") return "무보정";
@@ -566,16 +570,7 @@ export const PreviewModal = ({
     const manufacturerHex = normalizeManufacturerHexRotationMode(
       (req as any)?.rnd?.manufacturerHexRotation,
     );
-    const hasCadCompanionFiles =
-      Array.isArray((req as any)?.caseInfos?.cadCompanionFiles) &&
-      (req as any).caseInfos.cadCompanionFiles.length > 0;
-    const hasManualManufacturerPick = Boolean(
-      (req as any)?.rnd?.manufacturerHexRotationUpdatedAt,
-    );
-    const effectiveHex =
-      hasCadCompanionFiles && !hasManualManufacturerPick
-        ? "구성정보"
-        : manufacturerHex || requestorHex;
+    const effectiveHex = manufacturerHex || requestorHex;
     setManufacturerHexRotationDraft(effectiveHex);
 
     if (tokens.length) {
@@ -1576,22 +1571,7 @@ export const PreviewModal = ({
     packMaterial ? `재질: ${packMaterial}` : "",
   ].filter(Boolean);
 
-  const overlayCadCompanionNames = Array.isArray(overlayCaseInfos?.cadCompanionFiles)
-    ? (overlayCaseInfos.cadCompanionFiles as Array<Record<string, unknown>>)
-        .map((file) => {
-          const nameCandidate =
-            String(file?.originalName || file?.filePath || file?.s3Key || "").trim();
-          return nameCandidate.split("/").pop() || "";
-        })
-        .filter(Boolean)
-    : [];
-  const primaryCadCompanionName = overlayCadCompanionNames[0] || "";
-  const hasCadCompanionFiles = overlayCadCompanionNames.length > 0;
-  const cadCompanionSummaryLabel = primaryCadCompanionName
-    ? overlayCadCompanionNames.length > 1
-      ? `${primaryCadCompanionName} 외 ${overlayCadCompanionNames.length - 1}개`
-      : primaryCadCompanionName
-    : "";
+
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -1677,19 +1657,6 @@ export const PreviewModal = ({
             </div>
 
             <div className="flex shrink-0 items-center gap-2">
-              {cadCompanionSummaryLabel ? (
-                <div
-                  className="inline-flex h-8 max-w-[260px] items-center rounded-md border border-sky-200 bg-sky-50 px-2 text-[12px] font-medium text-sky-700"
-                  title={overlayCadCompanionNames.join("\n")}
-                >
-                  <span className="mr-1 shrink-0 text-sky-600">구성정보</span>
-                  <span className="truncate">{cadCompanionSummaryLabel}</span>
-                </div>
-              ) : manufacturerHexRotationDraft === "구성정보" ? (
-                <div className="inline-flex h-8 max-w-[220px] items-center rounded-md border border-amber-200 bg-amber-50 px-2 text-[12px] font-medium text-amber-700">
-                  구성정보 파일 없음
-                </div>
-              ) : null}
               <div className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-1.5 py-1">
                 <span className="mr-2 whitespace-nowrap text-[11px] font-semibold text-slate-500">
                   헥스 회전
@@ -1698,12 +1665,7 @@ export const PreviewModal = ({
                   value={manufacturerHexRotationDraft}
                   onValueChange={(value) => {
                     const next: ManufacturerHexRotationMode =
-                      value === "무보정"
-                        ? "무보정"
-                        : value === "구성정보"
-                          ? "구성정보"
-                          : "보정";
-                    if (next === "구성정보" && !hasCadCompanionFiles) return;
+                      value === "무보정" ? "무보정" : "보정";
                     if (shouldAskDualHexMachiningOnApprove) return;
                     void handleSaveManufacturerHexRotation(next);
                   }}
@@ -1725,13 +1687,7 @@ export const PreviewModal = ({
                     <SelectItem value="무보정" className="text-[12px] font-medium">
                       무보정
                     </SelectItem>
-                    <SelectItem
-                      value="구성정보"
-                      className="text-[12px] font-medium"
-                      disabled={!hasCadCompanionFiles}
-                    >
-                      구성정보
-                    </SelectItem>
+
                   </SelectContent>
                 </Select>
               </div>
@@ -1968,14 +1924,6 @@ export const PreviewModal = ({
             <div className="flex flex-wrap items-center gap-2 text-[13px] text-slate-600">
               {displayConnectionDiameter != null && (
                 <span>커넥션 직경 {displayConnectionDiameter.toFixed(2)}</span>
-              )}
-              {primaryCadCompanionName && (
-                <>
-                  <span>•</span>
-                  <span className="max-w-[360px] truncate" title={primaryCadCompanionName}>
-                    구성정보: {primaryCadCompanionName}
-                  </span>
-                </>
               )}
               {displayConnectionDiameter != null && (maxDiameter != null || maxLength != null || !!overlayImplantLine) && (
                 <span>•</span>

@@ -2,16 +2,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CaseInfos, Connection } from "../hooks/newRequestTypes";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useLeadTimeForecast } from "../hooks/useLeadTimeForecast";
-import { useCompanionBinding } from "../hooks/useCompanionBinding";
 import { NewRequestAttachmentsPanel } from "./NewRequestAttachmentsPanel";
 import { NewRequestDetailDialog } from "./NewRequestDetailDialog";
-import { NewRequestCompanionDialogs } from "./NewRequestCompanionDialogs";
-import type { RequestDesignSoftwareMode } from "./newRequestDetailsUtils";
 
 // related files:
 // - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
 // - web/frontend/src/pages/requestor/new_request/components/NewRequestAttachmentsPanel.tsx
-// - web/frontend/src/pages/requestor/new_request/hooks/useCompanionBinding.ts
+// Rhino의 align 기능이 구성정보를 대체하므로, 신규의뢰에서 개별 구성정보 파일은 사용하지 않는다.
 
 type ToastFn = (props: {
   title?: React.ReactNode;
@@ -77,15 +74,8 @@ type Props = {
   onDragLeave: (e: React.DragEvent<HTMLDivElement>) => void;
   onDrop: (e: React.DragEvent<HTMLDivElement>) => void;
   onFilesSelected: (files: File[]) => void;
-  registerCompanionFileHandler?: (
-    handler: (files: File[], options?: { targetStlFileKey?: string }) => void,
-  ) => void;
-  onCompanionFilesAccepted?: (files: File[]) => void;
-  onCompanionFilesChange?: (files: File[]) => void;
-  initialCompanionFiles?: File[];
   weeklyBatchDays?: string[];
   onCancelAll: () => void;
-  designSoftwareMode: RequestDesignSoftwareMode | null;
 };
 
 export function NewRequestDetailsSection({
@@ -134,18 +124,13 @@ export function NewRequestDetailsSection({
   onDragLeave,
   onDrop,
   onFilesSelected,
-  registerCompanionFileHandler,
-  onCompanionFilesAccepted,
-  onCompanionFilesChange,
-  initialCompanionFiles = [],
   weeklyBatchDays = [],
   onCancelAll,
-  designSoftwareMode,
 }: Props) {
   const { token } = useAuthStore();
   const listContainerRef = useRef<HTMLDivElement | null>(null);
   const uploadInputRef = useRef<HTMLInputElement | null>(null);
-  const companionInputRef = useRef<HTMLInputElement | null>(null);
+
 
   const [detailIndex, setDetailIndex] = useState<number | null>(null);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
@@ -174,19 +159,7 @@ export function NewRequestDetailsSection({
       toNormalizedFileKey,
     });
 
-  const companion = useCompanionBinding({
-    files,
-    designSoftwareMode,
-    initialCompanionFiles,
-    caseInfosMap,
-    updateCaseInfos,
-    toNormalizedFileKey,
-    toast,
-    onFilesSelected,
-    onCompanionFilesAccepted,
-    onCompanionFilesChange,
-    registerCompanionFileHandler,
-  });
+
 
   useEffect(() => {
     if (files.length > 0 && (selectedPreviewIndex === null || selectedPreviewIndex >= files.length)) {
@@ -432,9 +405,8 @@ export function NewRequestDetailsSection({
   );
 
   const handleClearAll = useCallback(() => {
-    companion.clearCompanionStateForCancelAll();
     onCancelAll();
-  }, [companion, onCancelAll]);
+  }, [onCancelAll]);
 
   return (
     <div className="app-glass-card app-glass-card--lg relative flex flex-col border-2 border-gray-300 p-2.5 md:p-3.5 flex-1 min-h-0 h-full max-h-[500px]">
@@ -461,25 +433,6 @@ export function NewRequestDetailsSection({
             onKeyboardNavigation={handleKeyboardNavigation}
             listContainerRef={listContainerRef}
             uploadInputRef={uploadInputRef}
-            companionInputRef={companionInputRef}
-            companionFiles={companion.companionFiles}
-            standaloneCompanionFiles={companion.standaloneCompanionFiles}
-            cardDragOverKey={companion.cardDragOverKey}
-            setCardDragOverKey={companion.setCardDragOverKey}
-            cardLinkDrag={companion.cardLinkDrag}
-            setCardLinkDrag={companion.setCardLinkDrag}
-            getCompanionFileKey={companion.getCompanionFileKey}
-            getEffectiveCompanionsForStl={companion.getEffectiveCompanionsForStl}
-            setPendingCompanionTargetStlKey={companion.setPendingCompanionTargetStlKey}
-            setPendingCompanionCardForStlUpload={
-              companion.setPendingCompanionCardForStlUpload
-            }
-            handleRemoveCompanionFile={companion.handleRemoveCompanionFile}
-            handleMainInputFiles={companion.handleMainInputFiles}
-            handleCompanionInputFiles={companion.handleCompanionInputFiles}
-            handleCardDrop={companion.handleCardDrop}
-            detachDraggingCompanion={companion.detachDraggingCompanion}
-            designSoftwareMode={designSoftwareMode}
           />
         </div>
       </div>
@@ -525,39 +478,7 @@ export function NewRequestDetailsSection({
         toast={toast}
       />
 
-      <NewRequestCompanionDialogs
-        companionPromptOpen={companion.companionPromptOpen}
-        setCompanionPromptOpen={companion.setCompanionPromptOpen}
-        designSoftwareMode={designSoftwareMode}
-        onBypassMissingCompanion={companion.handleBypassMissingCompanion}
-        onUploadCompanion={() => {
-          const stlFiles = files.filter((f) =>
-            String(f?.name || "").toLowerCase().endsWith(".stl"),
-          );
 
-          const selectedFile =
-            selectedPreviewIndex !== null ? files[selectedPreviewIndex] : null;
-
-          const targetStlFile =
-            selectedFile &&
-            String(selectedFile?.name || "").toLowerCase().endsWith(".stl")
-              ? selectedFile
-              : stlFiles.length === 1
-                ? stlFiles[0]
-                : null;
-
-          companion.setPendingCompanionTargetStlKey(
-            targetStlFile ? toNormalizedFileKey(targetStlFile) : null,
-          );
-          companionInputRef.current?.click();
-        }}
-        pendingCompanionReplace={companion.pendingCompanionReplace}
-        setPendingCompanionReplace={companion.setPendingCompanionReplace}
-        onConfirmReplace={(stlFileKey, companionFileKey) => {
-          companion.linkCompanionToStl(stlFileKey, companionFileKey, { replace: true });
-        }}
-        toast={toast}
-      />
     </div>
   );
 }

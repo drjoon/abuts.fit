@@ -66,12 +66,7 @@ export type CaseInfos = {
     tag?: string;
   };
   retentionGroove?: "none" | "shallow" | "deep";
-  cadCompanionFiles?: {
-    originalName?: string;
-    size?: number;
-    mimetype?: string;
-    s3Key?: string;
-  }[];
+
   // 헥스 회전 모드값 SSOT
   requestorHexRotation?: "보정" | "무보정";
 };

@@ -2,23 +2,6 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Check, Calendar, X } from "lucide-react";
 import type { CaseInfos } from "../hooks/newRequestTypes";
-import {
-  getCompanionAcceptByDesignSoftware,
-  getCompanionHintByDesignSoftware,
-  type RequestDesignSoftwareMode,
-} from "./newRequestDetailsUtils";
-
-// related files:
-// - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
-// - web/frontend/src/pages/requestor/new_request/components/NewRequestDetailsSection.tsx
-// - web/frontend/src/pages/requestor/new_request/hooks/useCompanionBinding.ts
-
-type CardLinkDrag = {
-  kind: "stl" | "companion";
-  stlFileKey?: string;
-  companionFileKey?: string;
-  sourceStlFileKey?: string;
-} | null;
 
 type Props = {
   files: File[];
@@ -33,7 +16,6 @@ type Props = {
   handleRemoveFile: (index: number) => void;
   openDetailModal: (index: number) => void;
   handleClearAll: () => void;
-  onFilesSelected: (files: File[]) => void;
   isDragOver: boolean;
   onDragOver: (e: React.DragEvent<HTMLDivElement>) => void;
   onDragLeave: (e: React.DragEvent<HTMLDivElement>) => void;
@@ -41,38 +23,12 @@ type Props = {
   onKeyboardNavigation: (e: React.KeyboardEvent<HTMLDivElement>) => void;
   listContainerRef: React.RefObject<HTMLDivElement | null>;
   uploadInputRef: React.RefObject<HTMLInputElement | null>;
-  companionInputRef: React.RefObject<HTMLInputElement | null>;
-  companionFiles: File[];
-  standaloneCompanionFiles: File[];
-  cardDragOverKey: string | null;
-  setCardDragOverKey: React.Dispatch<React.SetStateAction<string | null>>;
-  cardLinkDrag: CardLinkDrag;
-  setCardLinkDrag: (drag: CardLinkDrag) => void;
-  getCompanionFileKey: (file: File) => string;
-  getEffectiveCompanionsForStl: (file: File) => File[];
-  setPendingCompanionTargetStlKey: (key: string | null) => void;
-  setPendingCompanionCardForStlUpload: (key: string | null) => void;
-  handleRemoveCompanionFile: (file: File) => void;
-  handleMainInputFiles: (selected: File[]) => void;
-  handleCompanionInputFiles: (selected: File[]) => void;
-  handleCardDrop: (
-    event: React.DragEvent<HTMLDivElement>,
-    dropKey: string,
-    options?: {
-      selectIndex?: number;
-      targetStlFileKey?: string;
-      targetCompanionFileKey?: string;
-    },
-    onSelectIndex?: (index: number) => void,
-  ) => void;
-  detachDraggingCompanion: () => boolean;
-  designSoftwareMode: RequestDesignSoftwareMode | null;
+  onFilesSelected: (files: File[]) => void;
 };
 
 export function NewRequestAttachmentsPanel({
   files,
   selectedPreviewIndex,
-  setSelectedPreviewIndex,
   fileVerificationStatus,
   highlightUnverifiedArrows,
   caseInfosMap,
@@ -89,28 +45,9 @@ export function NewRequestAttachmentsPanel({
   onKeyboardNavigation,
   listContainerRef,
   uploadInputRef,
-  companionInputRef,
-  companionFiles,
-  standaloneCompanionFiles,
-  cardDragOverKey,
-  setCardDragOverKey,
-  cardLinkDrag,
-  setCardLinkDrag,
-  getCompanionFileKey,
-  getEffectiveCompanionsForStl,
-  setPendingCompanionTargetStlKey,
-  setPendingCompanionCardForStlUpload,
-  handleRemoveCompanionFile,
-  handleMainInputFiles,
-  handleCompanionInputFiles,
-  handleCardDrop,
-  detachDraggingCompanion,
-  designSoftwareMode,
+  onFilesSelected,
 }: Props) {
-  const companionAccept = getCompanionAcceptByDesignSoftware(designSoftwareMode);
-  const companionHint = getCompanionHintByDesignSoftware(designSoftwareMode);
-  const hasActiveSession = files.length > 0;
-  const hasAnyAttachment = hasActiveSession || companionFiles.length > 0;
+  const hasAnyAttachment = files.length > 0;
 
   return (
     <>
@@ -122,26 +59,11 @@ export function NewRequestAttachmentsPanel({
         onChange={(e) => {
           const fileList = e.currentTarget.files;
           if (fileList) {
-            handleMainInputFiles(Array.from(fileList));
+            onFilesSelected(Array.from(fileList));
           }
           e.currentTarget.value = "";
         }}
-        accept={`.stl,${companionAccept}`}
-      />
-
-      <input
-        ref={companionInputRef}
-        type="file"
-        multiple
-        className="hidden"
-        onChange={(e) => {
-          const fileList = e.currentTarget.files;
-          if (fileList) {
-            handleCompanionInputFiles(Array.from(fileList));
-          }
-          e.currentTarget.value = "";
-        }}
-        accept={companionAccept}
+        accept=".stl"
       />
 
       <div className="flex justify-end gap-2 px-2 pb-1">
@@ -150,7 +72,7 @@ export function NewRequestAttachmentsPanel({
           variant="outline"
           size="sm"
           onClick={handleClearAll}
-          disabled={!files.length && companionFiles.length === 0}
+          disabled={!files.length}
         >
           전체 삭제
         </Button>
@@ -163,17 +85,6 @@ export function NewRequestAttachmentsPanel({
         role="listbox"
         aria-label="첨부 파일 목록"
         onKeyDown={onKeyboardNavigation}
-        onDragOver={(e) => {
-          if (cardLinkDrag) {
-            e.preventDefault();
-          }
-        }}
-        onDrop={(e) => {
-          if (detachDraggingCompanion()) {
-            e.preventDefault();
-            e.stopPropagation();
-          }
-        }}
       >
         <div
           className={`shrink-0 w-full border-2 border-dashed rounded-2xl text-center transition-colors flex flex-col items-center justify-center gap-1.5 cursor-pointer ${hasAnyAttachment ? "p-3 md:p-4" : "p-5 md:p-6 max-w-[420px] mx-auto"} ${
@@ -181,125 +92,20 @@ export function NewRequestAttachmentsPanel({
               ? "border-primary bg-primary/5"
               : "border-gray-300 hover:border-primary/50 bg-white"
           }`}
-          onDragOver={(e) => {
-            if (cardLinkDrag) {
-              e.preventDefault();
-              e.stopPropagation();
-              return;
-            }
-            onDragOver(e);
-          }}
-          onDragLeave={(e) => {
-            if (cardLinkDrag) {
-              e.preventDefault();
-              e.stopPropagation();
-              return;
-            }
-            onDragLeave(e);
-          }}
-          onDrop={(e) => {
-            if (detachDraggingCompanion()) {
-              e.preventDefault();
-              e.stopPropagation();
-              return;
-            }
-            onDrop(e);
-          }}
+          onDragOver={onDragOver}
+          onDragLeave={onDragLeave}
+          onDrop={onDrop}
           onClick={() => uploadInputRef.current?.click()}
         >
           <p className="text-xs md:text-sm text-muted-foreground">
-            여기를 클릭하거나 파일을 드래그해 추가하세요.
+            여기를 클릭하거나 STL 파일을 드래그해 추가하세요.
           </p>
           <p className="text-xs md:text-sm text-muted-foreground">
             파일명에서 AI로 치과/환자/치아번호를 자동 인식합니다.
           </p>
         </div>
 
-        {standaloneCompanionFiles.map((companion) => {
-          const companionKey = getCompanionFileKey(companion);
-
-          return (
-            <div
-              key={companionKey}
-              draggable
-              onDragStart={(event) => {
-                event.stopPropagation();
-                setCardLinkDrag({
-                  kind: "companion",
-                  companionFileKey: companionKey,
-                });
-              }}
-              onDragEnd={() => {
-                setCardLinkDrag(null);
-                setCardDragOverKey(null);
-              }}
-              onDragOver={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                setCardDragOverKey(companionKey);
-              }}
-              onDragLeave={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                setCardDragOverKey((prev) => (prev === companionKey ? null : prev));
-              }}
-              onDrop={(event) =>
-                handleCardDrop(
-                  event,
-                  companionKey,
-                  { targetCompanionFileKey: companionKey },
-                  (i) => setSelectedPreviewIndex(i),
-                )
-              }
-              className={`relative shrink-0 app-glass-card w-full px-4 py-3.5 rounded-xl border border-gray-200 bg-white text-gray-900 ${cardDragOverKey === companionKey ? "ring-2 ring-blue-300 ring-offset-2 ring-offset-white border-blue-300 bg-blue-50/40" : ""}`}
-            >
-              <div className="relative z-10 flex flex-col gap-1.5">
-                <div className="flex items-center justify-between gap-3">
-                  <div
-                    className="truncate flex-1 text-[11px] text-slate-500"
-                    title="STL 파일을 추가해 의뢰를 계속해주세요. (카드 드롭 가능)"
-                  >
-                    STL 파일을 추가해 의뢰를 계속해주세요. (카드 드롭 가능)
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      className="h-7 px-2 text-xs"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        setPendingCompanionCardForStlUpload(companionKey);
-                        uploadInputRef.current?.click();
-                      }}
-                    >
-                      stl 추가
-                    </Button>
-                    <button
-                      type="button"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        handleRemoveCompanionFile(companion);
-                      }}
-                      className="p-1 text-slate-400 hover:text-red-500"
-                      aria-label="구성정보 삭제"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
-                  </div>
-                </div>
-                <div className="flex items-center gap-1.5 text-xs text-sky-700 min-w-0">
-                  <Badge className="bg-sky-600 hover:bg-sky-600">구성정보</Badge>
-                  <span className="truncate" title={companion.name}>
-                    {companion.name}
-                  </span>
-                </div>
-              </div>
-            </div>
-          );
-        })}
-
-        {hasActiveSession &&
+        {hasAnyAttachment &&
           files.map((file, index) => {
             const filename = file.name;
             const fileKey = toNormalizedFileKey(file);
@@ -329,67 +135,17 @@ export function NewRequestAttachmentsPanel({
               ? getEstimatedShipForDiameter(diameter)
               : null;
 
-            const effectiveCompanions = getEffectiveCompanionsForStl(file);
-            const primaryCompanion = effectiveCompanions[0] || null;
-
             return (
               <div
                 key={`${fileKey}-${index}`}
-                draggable
-                onDragStart={(event) => {
-                  event.stopPropagation();
-                  setCardLinkDrag({ kind: "stl", stlFileKey: fileKey });
-                }}
-                onDragEnd={() => {
-                  setCardLinkDrag(null);
-                  setCardDragOverKey(null);
-                }}
                 onClick={() => openDetailModal(index)}
-                onDragOver={(event) => {
-                  event.preventDefault();
-                  event.stopPropagation();
-                  setCardDragOverKey(fileKey);
-                }}
-                onDragLeave={(event) => {
-                  event.preventDefault();
-                  event.stopPropagation();
-                  setCardDragOverKey((prev) => (prev === fileKey ? null : prev));
-                }}
-                onDrop={(event) =>
-                  handleCardDrop(
-                    event,
-                    fileKey,
-                    {
-                      selectIndex: index,
-                      targetStlFileKey: fileKey,
-                    },
-                    (i) => setSelectedPreviewIndex(i),
-                  )
-                }
                 data-file-index={index}
-                className={`relative shrink-0 app-glass-card w-full px-4 py-3.5 rounded-xl cursor-pointer transition-all ${baseClasses} ${stateClasses} ${ringClasses} ${cardDragOverKey === fileKey ? "ring-2 ring-blue-300 ring-offset-2 ring-offset-white border-blue-300 bg-blue-50/40" : ""} hover:border-gray-400`}
+                className={`relative shrink-0 app-glass-card w-full px-4 py-3.5 rounded-xl cursor-pointer transition-all ${baseClasses} ${stateClasses} ${ringClasses} hover:border-gray-400`}
               >
                 <div className="relative z-10 flex flex-col gap-1.5">
                   <div className="flex items-center justify-between gap-3">
                     <div className="truncate flex-1">{filename}</div>
                     <div className="flex items-center gap-1">
-                      {!primaryCompanion && (
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          className="h-7 px-2 text-xs"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            setSelectedPreviewIndex(index);
-                            setPendingCompanionTargetStlKey(fileKey);
-                            companionInputRef.current?.click();
-                          }}
-                        >
-                          구성정보 추가
-                        </Button>
-                      )}
-
                       {isVerified && (
                         <Check className="w-4 h-4 text-primary" aria-label="확인됨" />
                       )}
@@ -406,56 +162,6 @@ export function NewRequestAttachmentsPanel({
                         <X className="w-4 h-4" />
                       </button>
                     </div>
-                  </div>
-
-                  <div className="flex items-center justify-between gap-2 text-xs">
-                    <div className="min-w-0 flex items-center gap-1.5 text-sky-700">
-                      <Badge className="bg-sky-600 hover:bg-sky-600">구성정보</Badge>
-                      {primaryCompanion ? (
-                        <span
-                          className="truncate cursor-grab active:cursor-grabbing"
-                          title={`${primaryCompanion.name} (드래그해서 분리/결합)`}
-                          draggable
-                          onDragStart={(event) => {
-                            event.stopPropagation();
-                            setCardLinkDrag({
-                              kind: "companion",
-                              companionFileKey: getCompanionFileKey(primaryCompanion),
-                              sourceStlFileKey: fileKey,
-                            });
-                          }}
-                          onDragEnd={() => {
-                            setCardLinkDrag(null);
-                            setCardDragOverKey(null);
-                          }}
-                        >
-                          {primaryCompanion.name}
-                        </span>
-                      ) : (
-                        <span className="truncate text-slate-500" title={companionHint}>
-                          {companionHint}
-                        </span>
-                      )}
-                      {effectiveCompanions.length > 1 && (
-                        <span className="text-slate-500">
-                          +{effectiveCompanions.length - 1}개
-                        </span>
-                      )}
-                    </div>
-
-                    {primaryCompanion && (
-                      <button
-                        type="button"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          handleRemoveCompanionFile(primaryCompanion);
-                        }}
-                        className="p-1 text-slate-400 hover:text-red-500"
-                        aria-label="구성정보 삭제"
-                      >
-                        <X className="w-3.5 h-3.5" />
-                      </button>
-                    )}
                   </div>
 
                   {estimatedShip && (

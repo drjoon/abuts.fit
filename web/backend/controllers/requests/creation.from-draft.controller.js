@@ -53,8 +53,6 @@ const normalizeRequestorHexRotation = (value, fallback = "보정") => {
 
 const normalizeManufacturerHexRotationModeOrNull = (value) => {
   const v = String(value || "").trim();
-  // canonical
-  if (v === "구성정보") return "구성정보";
   if (v === "무보정") return "무보정";
   if (v === "보정") return "보정";
   return null;
@@ -65,28 +63,9 @@ const resolveFinalHexRotationValue = ({
 }) => {
   const mode = normalizeManufacturerHexRotationModeOrNull(manufacturerHexRotation);
   // finalHexRotation은 canonical 모드 문자열만 사용한다.
-  // 매핑 고정: 보정=보정, 무보정=무보정, 구성정보=보정
+  // 매핑 고정: 보정=보정, 무보정=무보정
   if (mode === "무보정") return "무보정";
   return "보정";
-};
-
-const normalizeCadCompanionFiles = (value) => {
-  const list = Array.isArray(value) ? value : [];
-  return list
-    .map((item) => ({
-      originalName: String(item?.originalName || "").trim(),
-      size: Number(item?.size || 0),
-      mimetype: String(item?.mimetype || "").trim(),
-      s3Key: String(item?.s3Key || "").trim(),
-    }))
-    .filter((item) => item.originalName && item.s3Key)
-    .map((item) => ({
-      originalName: item.originalName,
-      fileType: item.mimetype || undefined,
-      fileSize: Number.isFinite(item.size) ? item.size : undefined,
-      filePath: undefined,
-      s3Key: item.s3Key,
-    }));
 };
 
 const buildRequestIdPrefix = () => {
@@ -431,10 +410,6 @@ export async function createRequestsFromDraft(req, res) {
           ci?.requestorHexRotation,
         );
 
-        const cadCompanionFiles = normalizeCadCompanionFiles(
-          ci?.cadCompanionFiles,
-        );
-
         const caseInfosWithFile = ci?.file
           ? {
               ...normalizedCi,
@@ -448,7 +423,6 @@ export async function createRequestsFromDraft(req, res) {
               requestorHexRotation: requestorHexRotationValue,
               finalHexRotation: requestorHexRotationValue,
               newSystemRequest,
-              cadCompanionFiles,
               file: {
                 originalName: ci.file.originalName,
                 fileType: ci.file.mimetype,
@@ -469,7 +443,6 @@ export async function createRequestsFromDraft(req, res) {
               requestorHexRotation: requestorHexRotationValue,
               finalHexRotation: requestorHexRotationValue,
               newSystemRequest,
-              cadCompanionFiles,
             };
 
         return {
@@ -1097,16 +1070,13 @@ export async function createRequestsFromDraft(req, res) {
             requestorDefaultHexRotation,
           );
 
-          const hasCadCompanionFiles =
-            Array.isArray(item.caseInfosWithFile?.cadCompanionFiles) &&
-            item.caseInfosWithFile.cadCompanionFiles.length > 0;
-
-          // 건별 기본 제조사 헥스 회전 모드 우선순위
-          // 1) CAD 구성정보가 있으면 "구성정보" 기본 선택
-          // 2) 없으면 사업자 defaultManufacturerHexRotation(보정/무보정) 사용
-          const resolvedManufacturerHexRotation = hasCadCompanionFiles
-            ? "구성정보"
-            : requestorDefaultManufacturerHexRotation || undefined;
+          // related files:
+          // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx
+          // - web/backend/controllers/bg/bg.controller.js
+          // Rhino align 기능이 구성정보 기반 전처리를 대체하므로,
+          // 제조사 헥스 회전 모드는 보정/무보정만 사용한다.
+          const resolvedManufacturerHexRotation =
+            requestorDefaultManufacturerHexRotation || undefined;
 
           const resolvedFinalHexRotation = resolveFinalHexRotationValue({
             manufacturerHexRotation: resolvedManufacturerHexRotation,
@@ -1253,7 +1223,6 @@ export async function createRequestsFromDraft(req, res) {
               defaultRequestorHexRotation: requestorDefaultHexRotation,
               defaultManufacturerHexRotation:
                 requestorDefaultManufacturerHexRotation,
-              hasCadCompanionFiles,
               draftRequestorHexRotation: String(
                 item.caseInfosWithFile?.requestorHexRotation || "",
               ),

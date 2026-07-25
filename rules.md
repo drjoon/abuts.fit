@@ -61,6 +61,29 @@
 
 **이 원칙을 위반하면 데이터 불일치, 버그, 혼란이 발생합니다.**
 
+### 1.0.0 구성정보 레거시 발견 시 즉시 삭제 (2026-07-25)
+
+- `구성정보`, `cadCompanionFiles`, `cadConstruction`, `constructionInfo` 관련 레거시 코드/타입/주석/분기문을 발견하면 즉시 삭제합니다.
+- 정책 문구는 아래로 고정합니다.
+  - **라이노의 align 기능이 구성정보를 대체할 수 있으므로 개별 구성정보 파일을 이용하지 않는다.**
+- 신규 코드에서 구성정보 fallback/임시 호환 분기를 추가하지 않습니다.
+- 레거시 데이터가 저장 경로 검증을 깨뜨리면, 저장 직전 canonical 값(`보정`/`무보정`)으로 정규화 후 저장합니다.
+
+관련 파일:
+- `web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx`
+- `web/frontend/src/pages/requestor/new_request/components/NewRequestAttachmentsPanel.tsx`
+- `web/frontend/src/pages/requestor/new_request/components/NewRequestDetailsSection.tsx`
+- `web/frontend/src/pages/requestor/new_request/components/newRequestDetailsUtils.ts`
+- `web/frontend/src/pages/requestor/new_request/utils/localDraftStorage.ts`
+- `web/backend/controllers/requests/draftRequest.controller.js`
+- `web/backend/controllers/requests/creation.draft.controller.js`
+- `web/backend/controllers/requests/creation.from-draft.controller.js`
+- `web/backend/controllers/requests/common.requests.controller.js`
+- `web/backend/controllers/bg/bg.controller.js`
+- `web/backend/models/request.model.js`
+- `web/backend/models/draftRequest.model.js`
+- `web/backend/models/businessAnchor.model.js`
+
 ### 1.0.1 가격/리퍼럴 주문 집계 SSOT (2026-07-09)
 
 - 가격 정책의 최근 30일 주문 수(`selfBusinessOrders30d`, `groupTotalOrders30d`)는 **Request 컬렉션 원본 집계만 SSOT**로 사용합니다.
@@ -983,118 +1006,75 @@
   - 사전 체크는 의뢰 생성 가능 여부만 판단하는 용도
   - 의뢰 생성 후 ~ 차감 전 사이에 크레딧이 부족해질 수 있으므로, 차감 시점에도 잔액 체크 필요
 
-### 4.3.4 제조사 헥스 회전(PreviewModal) → DB 저장 → Esprit 모드 정책 (2026-07-23)
+### 4.3.4 제조사 헥스 회전(PreviewModal) → DB 저장 → Esprit 모드 정책 (2026-07-25 개정)
 
-검색 키워드: `rnd-hex-rotation`, `manufacturerHexRotation`, `hexRotation.appliedDeg`, `request-meta`, `보정`, `무보정`, `구성정보`, `constructionInfo`, `.pts`, `.cln`, `.3shapeOrder`
+검색 키워드: `rnd-hex-rotation`, `manufacturerHexRotation`, `hexRotation.appliedDeg`, `request-meta`, `보정`, `무보정`
 
 - 제조사 워크시트 PreviewModal의 `헥스 회전` 선택값은 반드시 백엔드 API를 통해 DB에 저장한다.
   - API: `PATCH /api/requests/:id/rnd-hex-rotation`
   - 저장 필드(SSOT):
     - `Request.rnd.manufacturerHexRotation`
     - `Request.caseInfos.finalHexRotation` (표시/조회용 최종값)
-- `manufacturerHexRotation`의 canonical 모드는 **`보정` / `무보정` / `구성정보`** 이다.
-  - 레거시 입력값 `"0"`/`"30"`은 하위호환으로만 허용하고, add-in에서 canonical 모드로 정규화한다.
-  - `구성정보`는 CAD별 좌표 구성파일 기반 전처리 모드다.
-    - ExoCAD: `.constructionInfo` (선택: `.dentalProject`)
-    - 3Shape: `.pts` (대체: `.cln`, `.3shapeOrder`)
+- `manufacturerHexRotation` canonical 모드는 **`보정` / `무보정` 2개만 허용**한다.
+  - 레거시 입력값 `"0"`/`"30"`은 하위호환 정규화로만 처리한다.
 - Esprit 적용 정책 SSOT:
-  1. `보정`: 기본 W축 `+30` 적용 후, `hexRotation.appliedDeg`를 **Esprit 부호계로 반전하여** 추가 적용
+  1. `보정`: 기본 W축 `+30` 적용 후 `hexRotation.appliedDeg`를 Esprit 부호계로 반전해 추가 적용
      - 식: `totalW = 30 + (-appliedDeg)`
-  2. `무보정`: **회전 완전 미적용** (기본 `+30`도 미적용, telemetry도 무시)
-  3. `구성정보`: CAD 좌표 구성파일(ExoCAD/3Shape) 기반 전처리 경로를 사용한다. `finalHexRotation`은 canonical 값(`보정`/`무보정`)만 사용하며, `구성정보` 선택 시 `보정`으로 저장한다.
-- 건별 기본 선택 우선순위(신규의뢰 생성/제조사 미선택 상태 포함):
-  1. `caseInfos.cadCompanionFiles`가 있으면 해당 건의 기본 제조사 모드는 `구성정보`다.
-  2. 구성정보가 없으면 `BusinessAnchor.requestSettings.defaultManufacturerHexRotation`(보정/무보정)을 사용한다.
-  3. 제조사가 PreviewModal에서 직접 변경하면 그 값을 우선한다(`rnd.manufacturerHexRotationUpdatedAt` 기록).
-- 사업자 디폴트 업데이트 정책(필수):
-  - `PATCH /api/requests/:id/rnd-hex-rotation`에서 `보정`/`무보정`을 선택한 경우에만
-    `BusinessAnchor.requestSettings.defaultManufacturerHexRotation`을 갱신한다.
-  - `구성정보` 선택은 건별 처리 모드이므로 **사업자 디폴트로 저장하지 않는다.**
+  2. `무보정`: 회전 미적용 (기본 `+30`도 미적용)
+- **라이노의 align 기능이 구성정보를 대체할 수 있으므로 개별 구성정보 파일을 이용하지 않는다.**
 - Rhino telemetry 의미 SSOT:
-  - `request-meta.caseInfos.hexRotation.appliedDeg`는 Rhino가 실제 mesh에 적용하지 않은 **가상 보정량(-phase_mod)** 이다.
-- `request-meta` 응답은 add-in이 파일명 추론/폴백 없이 SSOT를 직접 쓰도록 아래를 포함해야 한다.
-  - `caseInfos.manufacturerHexRotation`
-  - `caseInfos.cadConstruction` (`modeEnabled`, `source`, `detectedFiles`, `expectedCompanionFiles`)
-  - `caseInfos.hexRotation.appliedDeg` (및 관련 telemetry)
+  - `request-meta.caseInfos.hexRotation.appliedDeg`는 Rhino가 실제 mesh에 적용하지 않은 가상 보정량(`-phase_mod`)이다.
 
 관련 파일:
 - `web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx`
 - `web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx`
 - `web/backend/modules/requests/request.routes.js`
 - `web/backend/controllers/requests/common.requests.controller.js`
+- `web/backend/controllers/requests/common.review.controller.js`
 - `web/backend/controllers/requests/creation.from-draft.controller.js`
-- `web/backend/controllers/businesses/business.controller.js`
 - `web/backend/controllers/bg/bg.controller.js`
 - `web/backend/models/request.model.js`
 - `web/backend/models/businessAnchor.model.js`
 - `web/frontend/src/types/request.ts`
-- `bg/pc1/esprit-addin/Helpers/BackendApiClient.cs`
-- `bg/pc1/esprit-addin/StlFileProcessor.cs`
-- `bg/pc1/rhino-server/compute/scripts/align_stl_coordinate.py`
 
-관련 폴더:
-- `web/frontend/src/pages/manufacturer/worksheet/custom_abutment/`
-- `web/backend/controllers/requests/`
-- `web/backend/controllers/businesses/`
-- `web/backend/controllers/bg/`
-- `bg/pc1/esprit-addin/`
+### 4.3.5 신규의뢰 STL 업로드 정책 (2026-07-25 개정)
 
-### 4.3.5 신규의뢰 CAD 구성파일(ExoCAD/3Shape) 업로드/저장 정책 (2026-07-23)
-
-- 신규의뢰 파일 입력 UI는 STL/구성파일 버튼을 분리하지 않고 단일 `파일 추가`로 받는다.
-- 드롭/선택된 파일은 **업로드 전에** 확장자/파일크기/파일명으로 1차 분류한다.
-  - 허용 대상: 어벗 STL + CAD 구성파일 (`.constructionInfo`, `.dentalProject`, `.cln`, `.3shapeOrder`, `ImplantDirectionPosition*.xml`)
-  - `.pts`는 현재 업로드 대상에서 제외(자동 생략)한다.
-  - STL의 업로드 추천/비추천은 파일 크기만으로 자동 판정하지 않는다.
-  - 파일명만으로 분류가 어려운 STL은 작은 STL 미리보기(썸네일) 목록에서 사용자가 직접 선택한다.
-  - 크라운/브릿지로 분류된 STL은 기본 제외
-  - 애매한 STL은 즉시 업로드하지 않고 사용자 확인 다이얼로그에서 선택하게 한다(추천 후보 강조)
-- 폴더 드롭을 지원하며, 폴더 내부 파일을 재귀 수집 후 동일 분류 규칙을 적용한다.
-- 구성파일이 없어도 의뢰 진행은 허용한다.
-  - 안내 문구는 "안 올려도 작업은 가능하나, 올리면 정확도가 높아진다" 원칙을 명시한다.
-  - 사용자는 `없이 진행`을 선택할 수 있어야 한다.
-- 구성파일은 제출 시 S3에 업로드하고, STL case 단위로 매칭(stem 유사도 + trailing index 매칭)해 Draft/Request에 메타데이터를 저장한다.
-  - Draft 저장 필드(SSOT): `DraftRequest.caseInfos[].cadCompanionFiles[]`
-  - Request 저장 필드(SSOT): `Request.caseInfos.cadCompanionFiles[]`
-  - 각 항목 필드: `originalName`, `size/fileSize`, `mimetype/fileType`, `s3Key` (선택: `filePath`)
-- `request-meta`는 저장된 `cadCompanionFiles`를 함께 내려주며, `cadConstruction.detectedFiles` 계산에도 해당 파일명을 포함한다.
-
-관련 파일:
-- `web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx`
-- `web/frontend/src/pages/requestor/new_request/components/NewRequestDetailsSection.tsx`
-- `web/frontend/src/pages/requestor/new_request/hooks/useNewRequestPage.ts`
-- `web/frontend/src/pages/requestor/new_request/hooks/useNewRequestSubmitV2.ts`
-- `web/frontend/src/pages/requestor/new_request/hooks/newRequestTypes.ts`
-- `web/frontend/src/pages/requestor/new_request/utils/localDraftStorage.ts`
-- `web/backend/models/draftRequest.model.js`
-- `web/backend/models/request.model.js`
-- `web/backend/controllers/requests/draftRequest.controller.js`
-- `web/backend/controllers/requests/creation.draft.controller.js`
-- `web/backend/controllers/requests/creation.from-draft.controller.js`
-- `web/backend/controllers/bg/bg.controller.js`
-
-### 4.3.6 신규의뢰 첨부패널 디자인 소프트웨어별 업로드 분기 (2026-07-25)
-
-- 신규의뢰 첨부패널의 STL/구성정보 업로드는 **의뢰 설정의 `requestSettings.designSoftware`** 값을 기준으로 동작합니다.
-- 적용 경로는 모두 동일해야 합니다.
-  - 페이지 전체 드롭존(`PageFileDropZone`)
-  - 첨부패널 `파일 추가`(open)
-  - 카드 간 드래그/드롭
-- 소프트웨어별 구성정보 허용 규칙:
-  - `3Shape`: `.xml`만 허용
-  - `ExoCAD`: `.constructionInfo`만 허용
-  - `직접 입력(custom)`: 기존 호환(`.xml`, `.constructionInfo`) 허용
-- `3Shape` 선택 시 구성정보 파일은 `.xml` 확장자 기준으로 허용합니다.
-  - 파일명 패턴(`ImplantDirectionPosition_*`)은 강제하지 않습니다.
-- 첨부패널의 파일 input `accept`와 미연결 안내 문구는 위 설정값과 일치해야 합니다.
-- 구성정보 확장자/패턴 검증은 `NewRequestPage`와 `useCompanionBinding`에서 각각 따로 추정하지 말고, 공통 유틸 기준(`newRequestDetailsUtils`)으로 통일합니다.
+- 신규의뢰 첨부는 `파일 추가` 단일 동작으로 처리하며, **STL 파일만 업로드/보관**한다.
+- 페이지 드롭존/첨부패널 버튼/카드 드롭은 모두 동일하게 STL-only 정책을 적용한다.
+- Draft/Request 저장 시 CAD 구성 보조파일(`cadCompanionFiles`) 메타데이터를 저장하지 않는다.
+- 의뢰 제출(`POST /api/requests/from-draft`) 경로에서 구성정보 파일 업로드/매핑/분기 로직을 사용하지 않는다.
+- **라이노의 align 기능이 구성정보를 대체할 수 있으므로 개별 구성정보 파일을 이용하지 않는다.**
 
 관련 파일:
 - `web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx`
 - `web/frontend/src/pages/requestor/new_request/components/NewRequestDetailsSection.tsx`
 - `web/frontend/src/pages/requestor/new_request/components/NewRequestAttachmentsPanel.tsx`
 - `web/frontend/src/pages/requestor/new_request/components/newRequestDetailsUtils.ts`
-- `web/frontend/src/pages/requestor/new_request/hooks/useCompanionBinding.ts`
+- `web/frontend/src/pages/requestor/new_request/hooks/useNewRequestPage.ts`
+- `web/frontend/src/pages/requestor/new_request/hooks/useNewRequestSubmitV2.ts`
+- `web/frontend/src/pages/requestor/new_request/hooks/newRequestTypes.ts`
+- `web/backend/controllers/requests/draftRequest.controller.js`
+- `web/backend/controllers/requests/creation.draft.controller.js`
+- `web/backend/controllers/requests/creation.from-draft.controller.js`
+- `web/backend/models/draftRequest.model.js`
+- `web/backend/models/request.model.js`
+
+### 4.3.6 신규의뢰 구성정보/디자인소프트웨어 분기 제거 (2026-07-25)
+
+- 신규의뢰 첨부 플로우에서 구성정보 파일 확장자 분기, 소프트웨어별 허용 규칙, 구성정보 연결 다이얼로그를 사용하지 않는다.
+- `useCompanionBinding`, `NewRequestCompanionDialogs`는 제거 대상으로 유지하며 재도입하지 않는다.
+- 정책 문구 고정: **라이노의 align 기능이 구성정보를 대체할 수 있으므로 개별 구성정보 파일을 이용하지 않는다.**
+- **추가 강제 규칙:** 앞으로 코드에서 구성정보 관련 레거시(`cadCompanionFiles`, `cadConstruction`, `constructionInfo`, 구성정보 전용 분기/다이얼로그/업로드 로직)가 발견되면, 호환 목적으로 남기지 말고 즉시 삭제한다.
+
+관련 파일:
+- `web/frontend/src/pages/requestor/new_request/components/NewRequestAttachmentsPanel.tsx`
+- `web/frontend/src/pages/requestor/new_request/components/newRequestDetailsUtils.ts`
+- `web/frontend/src/pages/requestor/new_request/hooks/useLeadTimeForecast.ts`
+- `web/backend/controllers/requests/creation.from-draft.controller.js`
+- `web/backend/controllers/requests/draftRequest.controller.js`
+- `web/backend/controllers/requests/creation.draft.controller.js`
+- `web/backend/models/request.model.js`
+- `web/backend/models/draftRequest.model.js`
 
 ### 6.1.4 관리자 해피콜 대상 - 직접입력(custom) 우선 소통 대상 포함 (2026-07-25)
 
