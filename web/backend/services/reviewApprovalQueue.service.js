@@ -168,6 +168,16 @@ export async function enqueueApproval({
       prevStatus: resetDoc.status,
       queueId: String(resetDoc._id),
     });
+
+    // 기존 항목을 재사용한 경우에도 즉시 폴링 한 번 트리거하여
+    // 재실행 버튼 직후 지연 체감을 줄인다.
+    void processNextItem().catch((err) =>
+      console.error(
+        "[ReviewApprovalQueue] immediate processNextItem error (re-queue)",
+        err,
+      ),
+    );
+
     return { alreadyQueued: false, queueId: String(resetDoc._id) };
   }
 
@@ -369,7 +379,7 @@ async function executeTask(item) {
         requestId,
       });
     }
-    await triggerEspritForNc({ request });
+    await triggerEspritForNc({ request, force: forceReprocess });
   } else if (taskType === "CAM_STAGE_APPROVED") {
     // CAM 단계 승인 → 장비 배정 + CNC 자동 가공 트리거
     await runCamApproveTask({ requestMongoId, requestId, payload });
