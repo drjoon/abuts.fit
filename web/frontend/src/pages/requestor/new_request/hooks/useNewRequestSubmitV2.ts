@@ -206,6 +206,7 @@ export const useNewRequestSubmitV2 = ({
             requestorHexRotation: base.requestorHexRotation,
             shippingMode: base.shippingMode,
             requestedShipDate: base.requestedShipDate,
+            designSoftware: base.designSoftware,
           };
 
           Object.keys(payload.caseInfos).forEach((k) => {
@@ -504,6 +505,7 @@ export const useNewRequestSubmitV2 = ({
                 requestorHexRotation: ci.requestorHexRotation,
                 shippingMode: ci.shippingMode,
                 requestedShipDate: ci.requestedShipDate,
+                designSoftware: ci.designSoftware,
                 file: tf?.key
                   ? {
                       originalName: tf.originalName,

@@ -9,6 +9,8 @@ import { useParams, useNavigate } from "react-router-dom";
 import { useNewRequestPage } from "./hooks/useNewRequestPage";
 import { useToast } from "@/shared/hooks/use-toast";
 
+
+
 import { usePresetStorage } from "./hooks/usePresetStorage";
 import { useBulkShippingPolicy } from "./hooks/useBulkShippingPolicy";
 import { useFileVerification } from "./hooks/useFileVerification";
@@ -29,6 +31,9 @@ import {
 } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 
 import { StlPreviewViewer } from "@/features/requests/components/StlPreviewViewer";
 
@@ -51,22 +56,34 @@ export const NewRequestPage = () => {
 
   const { toast } = useToast();
 
+  const [designSoftwareModalOpen, setDesignSoftwareModalOpen] = useState(false);
+  const [designSoftwareMode, setDesignSoftwareMode] = useState<
+    "3Shape" | "ExoCAD" | "custom"
+  >("3Shape");
+  const [customDesignSoftware, setCustomDesignSoftware] = useState("");
+  const designSoftwareCanEdit = true;
+  const [designSoftwareSaving, setDesignSoftwareSaving] = useState(false);
+  const [designSoftwareValue, setDesignSoftwareValue] = useState("");
+
   const [isFillHoleProcessing, setIsFillHoleProcessing] = useState(false);
   const [filledStlFiles, setFilledStlFiles] = useState<Record<string, File>>(
     {},
   );
 
-  const normalizeKeyPart = (s: string) => {
+  const normalizeKeyPart = useCallback((s: string) => {
     try {
       return String(s || "").normalize("NFC");
     } catch {
       return String(s || "");
     }
-  };
+  }, []);
 
-  const toNormalizedFileKey = (f: File) => {
-    return `${normalizeKeyPart(f.name)}:${f.size}`;
-  };
+  const toNormalizedFileKey = useCallback(
+    (f: File) => {
+      return `${normalizeKeyPart(f.name)}:${f.size}`;
+    },
+    [normalizeKeyPart],
+  );
 
   const {
     user,
@@ -119,7 +136,79 @@ export const NewRequestPage = () => {
     highlightStep,
   } = useFileVerification({ files });
 
+  // BusinessAnchor 전역 설정과 분리: 신규의뢰에서는 의뢰건(caseInfos) 기준으로만 관리한다.
 
+  const handleSaveDesignSoftware = useCallback(async () => {
+    const designSoftware =
+      designSoftwareMode === "custom"
+        ? String(customDesignSoftware || "").trim()
+        : designSoftwareMode;
+
+    if (!designSoftware) {
+      toast({
+        title: "입력값이 필요합니다",
+        description: "직접 입력을 선택한 경우 소프트웨어 이름을 입력해주세요.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setDesignSoftwareSaving(true);
+    try {
+      // 신규 업로드에 사용할 기본값만 저장한다.
+      // 이미 존재하는 의뢰 카드(caseInfos)는 덮어쓰지 않는다.
+      setDesignSoftwareValue(designSoftware);
+      updateCaseInfos("__default__", { designSoftware });
+      setDesignSoftwareModalOpen(false);
+      toast({
+        title: "저장 완료",
+        description: "디자인 소프트웨어 설정이 저장되었습니다.",
+      });
+    } finally {
+      setDesignSoftwareSaving(false);
+    }
+  }, [customDesignSoftware, designSoftwareMode, toast, updateCaseInfos]);
+
+  useEffect(() => {
+    const current = String(designSoftwareValue || "").trim();
+    if (current) return;
+
+    const fromDefault = String(
+      caseInfosMap?.__default__?.designSoftware || "",
+    ).trim();
+    if (fromDefault) {
+      setDesignSoftwareValue(fromDefault);
+      return;
+    }
+
+    for (const file of files) {
+      const fileKey = toNormalizedFileKey(file);
+      const fromFile = String(caseInfosMap?.[fileKey]?.designSoftware || "").trim();
+      if (fromFile) {
+        setDesignSoftwareValue(fromFile);
+        return;
+      }
+    }
+  }, [caseInfosMap, designSoftwareValue, files, toNormalizedFileKey]);
+
+
+
+  const handleOpenDesignSoftwareModal = useCallback(() => {
+    const current = String(designSoftwareValue || "").trim();
+
+    if (current === "3Shape" || current === "ExoCAD") {
+      setDesignSoftwareMode(current);
+      setCustomDesignSoftware("");
+    } else if (current) {
+      setDesignSoftwareMode("custom");
+      setCustomDesignSoftware(current);
+    } else {
+      setDesignSoftwareMode("3Shape");
+      setCustomDesignSoftware("");
+    }
+
+    setDesignSoftwareModalOpen(true);
+  }, [designSoftwareValue]);
 
   // 파일 삭제는 rawHandleRemoveFile이 처리하고,
   // fileVerificationStatus cleanup은 useFileVerification의 effect가 자동으로 처리
@@ -556,6 +645,22 @@ export const NewRequestPage = () => {
         }
         return next;
       });
+
+      // 업로드 시점의 기본 소프트웨어를 "신규 파일"에만 주입한다.
+      // 기존 카드 값은 절대 덮어쓰지 않는다.
+      const currentSoftware = String(designSoftwareValue || "").trim();
+      if (currentSoftware) {
+        for (const file of stlFiles) {
+          const fileKey = toNormalizedFileKey(file);
+          const existingSoftware = String(
+            caseInfosMap?.[fileKey]?.designSoftware || "",
+          ).trim();
+          if (!existingSoftware) {
+            updateCaseInfos(fileKey, { designSoftware: currentSoftware });
+          }
+        }
+      }
+
       void onUpload(stlFiles);
     }
 
@@ -602,6 +707,23 @@ export const NewRequestPage = () => {
     }
 
     applyClassifiedBatch(batch);
+  };
+
+  const checkDesignSoftwareOnDrop = useCallback(() => {
+    if (user?.role !== "requestor") return;
+    if (!designSoftwareCanEdit) return;
+
+    const current = String(designSoftwareValue || "").trim();
+    if (current) return;
+
+    setDesignSoftwareMode("3Shape");
+    setCustomDesignSoftware("");
+    setDesignSoftwareModalOpen(true);
+  }, [designSoftwareCanEdit, designSoftwareValue, user?.role]);
+
+  const handleIncomingDroppedFiles = (selectedFiles: File[]) => {
+    checkDesignSoftwareOnDrop();
+    handleIncomingFiles(selectedFiles);
   };
 
   const readAllEntries = async (reader: {
@@ -700,7 +822,7 @@ export const NewRequestPage = () => {
 
   return (
     <PageFileDropZone
-      onFiles={handleIncomingFiles}
+      onFiles={handleIncomingDroppedFiles}
       activeClassName="ring-2 ring-primary/30"
       className="bg-gradient-subtle p-4 flex flex-col h-full min-h-0 overflow-hidden"
     >
@@ -921,6 +1043,95 @@ export const NewRequestPage = () => {
           </DialogContent>
         </Dialog>
 
+        <Dialog
+          open={designSoftwareModalOpen}
+          onOpenChange={(next) => {
+            // 의뢰자 기본 설정은 저장 전까지 강제 노출한다.
+            if (!designSoftwareCanEdit) {
+              setDesignSoftwareModalOpen(next);
+              return;
+            }
+            if (next) setDesignSoftwareModalOpen(true);
+          }}
+        >
+          <DialogContent
+            hideClose
+            className="sm:max-w-md"
+            onInteractOutside={(e) => {
+              if (designSoftwareCanEdit) e.preventDefault();
+            }}
+            onEscapeKeyDown={(e) => {
+              if (designSoftwareCanEdit) e.preventDefault();
+            }}
+          >
+            <DialogHeader>
+              <DialogTitle>디자인 소프트웨어 설정</DialogTitle>
+              <DialogDescription>
+                신규 의뢰 진행 전에 사용 중인 디자인 소프트웨어를 먼저 설정해주세요.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-4">
+              <RadioGroup
+                value={designSoftwareMode}
+                onValueChange={(value) => {
+                  if (
+                    value === "3Shape" ||
+                    value === "ExoCAD" ||
+                    value === "custom"
+                  ) {
+                    setDesignSoftwareMode(value);
+                  }
+                }}
+                className="space-y-2"
+              >
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="3Shape" id="gate-design-3shape" />
+                  <Label htmlFor="gate-design-3shape">3Shape</Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="ExoCAD" id="gate-design-exocad" />
+                  <Label htmlFor="gate-design-exocad">ExoCAD</Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="custom" id="gate-design-custom" />
+                  <Label htmlFor="gate-design-custom">직접 입력</Label>
+                </div>
+              </RadioGroup>
+
+              {designSoftwareMode === "custom" && (
+                <Input
+                  value={customDesignSoftware}
+                  onChange={(e) => setCustomDesignSoftware(e.target.value)}
+                  placeholder="사용 중인 디자인 소프트웨어를 입력해주세요"
+                  maxLength={120}
+                  autoFocus
+                />
+              )}
+            </div>
+
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setDesignSoftwareModalOpen(false)}
+                disabled={designSoftwareSaving}
+              >
+                다음에 설정
+              </Button>
+              <Button
+                type="button"
+                onClick={() => {
+                  void handleSaveDesignSoftware();
+                }}
+                disabled={designSoftwareSaving}
+              >
+                {designSoftwareSaving ? "저장 중..." : "저장"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 items-stretch flex-1 min-h-0 h-full">
           <div className="flex flex-col gap-2.5 flex-1 min-h-0 h-full">
             <NewRequestDetailsSection
@@ -976,12 +1187,14 @@ export const NewRequestPage = () => {
                     droppedItems,
                     droppedDirectFiles,
                   );
-                  handleIncomingFiles(dropped);
+                  handleIncomingDroppedFiles(dropped);
                 })();
               }}
-              onFilesSelected={handleIncomingFiles}
+              onFilesSelected={handleIncomingDroppedFiles}
               weeklyBatchDays={weeklyBatchDays}
               onCancelAll={handleCancelAll}
+              designSoftwareLabel={String(designSoftwareValue || "").trim()}
+              onOpenDesignSoftwareModal={handleOpenDesignSoftwareModal}
               onDuplicateDetected={({ file, duplicate }) => {
                 const fileWithDraftCaseId = file as File & {
                   _draftCaseInfoId?: string;

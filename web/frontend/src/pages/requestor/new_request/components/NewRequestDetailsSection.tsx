@@ -76,6 +76,8 @@ type Props = {
   onFilesSelected: (files: File[]) => void;
   weeklyBatchDays?: string[];
   onCancelAll: () => void;
+  designSoftwareLabel?: string;
+  onOpenDesignSoftwareModal?: () => void;
 };
 
 export function NewRequestDetailsSection({
@@ -126,6 +128,8 @@ export function NewRequestDetailsSection({
   onFilesSelected,
   weeklyBatchDays = [],
   onCancelAll,
+  designSoftwareLabel,
+  onOpenDesignSoftwareModal,
 }: Props) {
   const { token } = useAuthStore();
   const listContainerRef = useRef<HTMLDivElement | null>(null);
@@ -425,6 +429,8 @@ export function NewRequestDetailsSection({
             handleRemoveFile={handleRemoveFile}
             openDetailModal={openDetailModal}
             handleClearAll={handleClearAll}
+            designSoftwareLabel={designSoftwareLabel}
+            onOpenDesignSoftwareModal={onOpenDesignSoftwareModal}
             onFilesSelected={onFilesSelected}
             isDragOver={isDragOver}
             onDragOver={onDragOver}

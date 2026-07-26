@@ -24,6 +24,8 @@ type Props = {
   listContainerRef: React.RefObject<HTMLDivElement | null>;
   uploadInputRef: React.RefObject<HTMLInputElement | null>;
   onFilesSelected: (files: File[]) => void;
+  designSoftwareLabel?: string;
+  onOpenDesignSoftwareModal?: () => void;
 };
 
 export function NewRequestAttachmentsPanel({
@@ -46,6 +48,8 @@ export function NewRequestAttachmentsPanel({
   listContainerRef,
   uploadInputRef,
   onFilesSelected,
+  designSoftwareLabel,
+  onOpenDesignSoftwareModal,
 }: Props) {
   const hasAnyAttachment = files.length > 0;
 
@@ -66,7 +70,18 @@ export function NewRequestAttachmentsPanel({
         accept=".stl"
       />
 
-      <div className="flex justify-end gap-2 px-2 pb-1">
+      <div className="flex items-center justify-between gap-2 px-2 pb-1">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => onOpenDesignSoftwareModal?.()}
+        >
+          {designSoftwareLabel
+            ? `${designSoftwareLabel}`
+            : "디자인 소프트웨어 설정"}
+        </Button>
+
         <Button
           type="button"
           variant="outline"
@@ -134,6 +149,9 @@ export function NewRequestAttachmentsPanel({
             const estimatedShip = getEstimatedShipForDiameter
               ? getEstimatedShipForDiameter(diameter)
               : null;
+            const designSoftware = String(
+              fileInfo?.designSoftware || designSoftwareLabel || "",
+            ).trim();
 
             return (
               <div
@@ -164,10 +182,25 @@ export function NewRequestAttachmentsPanel({
                     </div>
                   </div>
 
-                  {estimatedShip && (
-                    <div className="flex items-center gap-1.5 text-xs text-slate-500">
-                      <Calendar className="w-3 h-3" />
-                      <span>예상 발송: {estimatedShip}</span>
+                  {(estimatedShip || designSoftware) && (
+                    <div className="flex items-center justify-between gap-2">
+                      {estimatedShip ? (
+                        <div className="flex items-center gap-1.5 text-xs text-slate-500">
+                          <Calendar className="w-3 h-3" />
+                          <span>예상 발송: {estimatedShip}</span>
+                        </div>
+                      ) : (
+                        <div />
+                      )}
+
+                      {designSoftware && (
+                        <Badge
+                          variant="secondary"
+                          className="text-[10px] font-medium px-1.5 py-0.5"
+                        >
+                          {designSoftware}
+                        </Badge>
+                      )}
                     </div>
                   )}
                 </div>

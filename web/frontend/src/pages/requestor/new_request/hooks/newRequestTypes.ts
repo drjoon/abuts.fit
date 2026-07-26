@@ -56,6 +56,7 @@ export type CaseInfos = {
   workType?: string; // "abutment" | "crown" | "prosthesis"
   shippingMode?: "normal" | "express";
   requestedShipDate?: string; // ISO date string or YYYY-MM-DD
+  designSoftware?: string;
   newSystemRequest?: {
     requested: boolean;
     manufacturer?: string;
