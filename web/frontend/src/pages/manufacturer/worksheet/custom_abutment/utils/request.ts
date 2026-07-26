@@ -16,6 +16,9 @@ export type ManufacturerRequest = RequestBase & {
     shippingPolicy?: {
       weeklyBatchDays?: string[];
     };
+    requestSettings?: {
+      designSoftware?: string | null;
+    } | null;
   } | null;
   deliveryInfoRef?: unknown;
   wasPickedUp?: boolean;

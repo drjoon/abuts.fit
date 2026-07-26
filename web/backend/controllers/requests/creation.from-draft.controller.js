@@ -51,6 +51,15 @@ const normalizeRequestorHexRotation = (value, fallback = "보정") => {
   return String(fallback || "").trim() === "무보정" ? "무보정" : "보정";
 };
 
+const resolveRequestorHexRotationByDesignSoftware = (designSoftwareRaw) => {
+  const designSoftware = String(designSoftwareRaw || "").trim();
+  // 정책 SSOT:
+  // - ExoCAD => 헥스30도회전(= canonical "무보정")
+  // - 3Shape 및 기타(custom 포함) => STL모델대로(= canonical "보정")
+  if (designSoftware === "ExoCAD") return "무보정";
+  return "보정";
+};
+
 const normalizeManufacturerHexRotationModeOrNull = (value) => {
   const v = String(value || "").trim();
   if (v === "무보정") return "무보정";
@@ -826,6 +835,7 @@ export async function createRequestsFromDraft(req, res) {
               "requestSettings.anodizingEnabled": 1,
               "requestSettings.defaultRequestorHexRotation": 1,
               "requestSettings.defaultManufacturerHexRotation": 1,
+              "requestSettings.designSoftware": 1,
             })
             .lean()
         : Promise.resolve(null),
@@ -854,6 +864,10 @@ export async function createRequestsFromDraft(req, res) {
       shippingOrg?.requestSettings?.defaultRequestorHexRotation,
       "보정",
     );
+    const requestorHexRotationFromDesignSoftware =
+      resolveRequestorHexRotationByDesignSoftware(
+        shippingOrg?.requestSettings?.designSoftware,
+      );
     const requestorDefaultManufacturerHexRotation =
       normalizeManufacturerHexRotationModeOrNull(
         shippingOrg?.requestSettings?.defaultManufacturerHexRotation,
@@ -1072,10 +1086,8 @@ export async function createRequestsFromDraft(req, res) {
           const requestedShipDate = item.requestedShipDate || undefined;
           const requestId = requestIds[index];
 
-          const resolvedRequestorHexRotation = normalizeRequestorHexRotation(
-            item.caseInfosWithFile?.requestorHexRotation,
-            requestorDefaultHexRotation,
-          );
+          const resolvedRequestorHexRotation =
+            requestorHexRotationFromDesignSoftware;
 
           // related files:
           // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx
@@ -1228,6 +1240,11 @@ export async function createRequestsFromDraft(req, res) {
               draftCaseId: item.caseId,
               businessAnchorId: shippingOrgId || null,
               defaultRequestorHexRotation: requestorDefaultHexRotation,
+              designSoftware:
+                String(shippingOrg?.requestSettings?.designSoftware || "") ||
+                null,
+              requestorHexRotationFromDesignSoftware:
+                requestorHexRotationFromDesignSoftware,
               defaultManufacturerHexRotation:
                 requestorDefaultManufacturerHexRotation,
               draftRequestorHexRotation: String(

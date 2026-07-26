@@ -1527,7 +1527,13 @@ export async function getAllRequests(req, res) {
               $in: requestorAnchorIds.map((id) => new Types.ObjectId(id)),
             },
           })
-            .select({ _id: 1, name: 1, metadata: 1, shippingPolicy: 1 })
+            .select({
+              _id: 1,
+              name: 1,
+              metadata: 1,
+              shippingPolicy: 1,
+              "requestSettings.designSoftware": 1,
+            })
             .lean()
         : [];
 
@@ -1566,6 +1572,11 @@ export async function getAllRequests(req, res) {
           typeof requestorOrgDoc.shippingPolicy === "object"
             ? requestorOrgDoc.shippingPolicy
             : undefined;
+        const requestSettingsRaw =
+          requestorOrgDoc.requestSettings &&
+          typeof requestorOrgDoc.requestSettings === "object"
+            ? requestorOrgDoc.requestSettings
+            : undefined;
         const weeklyBatchDaysRaw = Array.isArray(
           shippingPolicyRaw?.weeklyBatchDays,
         )
@@ -1582,6 +1593,11 @@ export async function getAllRequests(req, res) {
           name: orgName || companyName || undefined,
           metadata,
           shippingPolicy,
+          requestSettings: {
+            designSoftware: String(
+              requestSettingsRaw?.designSoftware || "",
+            ).trim() || null,
+          },
         };
         item.requestorBusinessAnchor = item.business;
       }

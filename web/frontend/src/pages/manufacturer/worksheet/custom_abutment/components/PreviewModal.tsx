@@ -1500,6 +1500,14 @@ export const PreviewModal = ({
     return rg === "deep" ? "있음" : "없음";
   })();
 
+  // related files (designSoftware → requestorHexRotation submit policy):
+  // - web/backend/controllers/requests/creation.from-draft.controller.js
+  // - web/frontend/src/pages/requestor/new_request/hooks/useNewRequestPage.ts
+  // - web/frontend/src/pages/requestor/dashboard/RequestorDashboardPage.tsx
+  const requestorDesignSoftwareLabel =
+    String(activeReq?.business?.requestSettings?.designSoftware || "").trim() ||
+    "-";
+
   const overlayCaseInfos = (activeReq?.caseInfos || {}) as Record<string, any>;
   const overlayFlat = (activeReq || {}) as Record<string, any>;
   const overlaySpec = (overlayFlat?.spec || {}) as Record<string, any>;
@@ -1715,6 +1723,11 @@ export const PreviewModal = ({
             </div>
 
             <div className="flex shrink-0 items-center gap-2">
+              <div className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-1.5 py-1">
+                <span className="whitespace-nowrap text-[12px] font-semibold text-slate-700">
+                  {requestorDesignSoftwareLabel}
+                </span>
+              </div>
               <div className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-1.5 py-1">
                 <span className="mr-2 whitespace-nowrap text-[11px] font-semibold text-slate-500">
                   헥스 회전

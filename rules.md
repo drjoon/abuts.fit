@@ -1087,6 +1087,10 @@
 - 프론트 표시 라벨 SSOT:
   - `보정` 표시: `STL모델대로`
   - `무보정` 표시: `헥스30도회전`
+- 의뢰 제출 시(`POST /api/requests/from-draft`) `Request.caseInfos.requestorHexRotation`은
+  의뢰자 사업자 설정(`BusinessAnchor.requestSettings.designSoftware`)을 기준으로 강제 지정한다.
+  - `ExoCAD` => `무보정`(UI: `헥스30도회전`)
+  - `3Shape` 및 기타(custom 포함) => `보정`(UI: `STL모델대로`)
 - Esprit 적용 정책 SSOT:
   1. `보정`: 기본 W축 `+30` 적용 후 `hexRotation.appliedDeg`를 Esprit 부호계로 반전해 추가 적용
      - 식: `totalW = 30 + (-appliedDeg)`

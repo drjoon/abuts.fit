@@ -42,6 +42,12 @@
   - 허용값: canonical `보정`/`무보정` (UI 라벨: `STL모델대로`/`헥스30도회전`)
   - 하위호환 입력: 레거시 `0`/`30` 정규화 허용
   - 미지원/빈값은 request-meta 응답 및 저장 로직에서 즉시 오류로 처리합니다.
+- 의뢰 제출(`POST /api/requests/from-draft`)의 `caseInfos.requestorHexRotation`은
+  `BusinessAnchor.requestSettings.designSoftware` 기준으로 강제 지정합니다.
+  - `ExoCAD` => `무보정`
+  - `3Shape` 및 기타(custom 포함) => `보정`
+- 워크시트 응답(`GET /api/requests/all?view=worksheet`)의 `item.business`에는
+  `requestSettings.designSoftware`를 포함해 PreviewModal이 DB 필드 기준으로 표시하도록 유지합니다.
   - 관련 파일:
     - `controllers/requests/common.requests.controller.js`
     - `controllers/requests/common.review.controller.js`
