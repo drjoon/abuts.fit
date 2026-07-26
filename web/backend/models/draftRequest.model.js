@@ -76,6 +76,15 @@ const draftCaseSchema = new mongoose.Schema(
           enum: ["none", "shallow", "deep"],
           default: "deep",
         },
+        // related files:
+        // - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
+        // - web/backend/controllers/requests/creation.from-draft.controller.js
+        // 의뢰건 디자인 소프트웨어(신규의뢰 카드 단위 SSOT)
+        designSoftware: {
+          type: String,
+          trim: true,
+          maxlength: 120,
+        },
         // 의뢰자 헥스 회전 선택값(canonical)
         requestorHexRotation: {
           type: String,

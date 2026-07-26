@@ -84,7 +84,24 @@
 - `web/backend/models/draftRequest.model.js`
 - `web/backend/models/businessAnchor.model.js`
 
-### 1.0.1 가격/리퍼럴 주문 집계 SSOT (2026-07-09)
+### 1.0.1 의뢰건 디자인소프트웨어 SSOT (2026-07-27)
+
+- `designSoftware`의 SSOT는 **BusinessAnchor 전역 설정이 아니라 Request/Draft의 `caseInfos.designSoftware`** 입니다.
+- BusinessAnchor `requestSettings.designSoftware`는 **신규 의뢰 첨부 시 기본값 제안**에만 사용합니다.
+- 의뢰가 생성된 뒤 조회/상세/제조사 프리뷰는 항상 `caseInfos.designSoftware`를 표시해야 합니다.
+- 제조사 헥스 회전 UI 초기값은 `caseInfos.manufacturerHexRotation` 우선, 없으면 `caseInfos.designSoftware` 정책 매핑을 사용합니다.
+- `caseInfos.designSoftware`가 비어있으면 헥스 회전 기본값은 비워 둡니다(제조사 수동 선택 가능).
+
+관련 파일:
+- `web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx`
+- `web/frontend/src/pages/requestor/new_request/components/NewRequestAttachmentsPanel.tsx`
+- `web/frontend/src/features/requests/components/RequestDetailDialog.tsx`
+- `web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx`
+- `web/backend/models/draftRequest.model.js`
+- `web/backend/models/request.model.js`
+- `web/backend/controllers/requests/common.requests.controller.js`
+
+### 1.0.2 가격/리퍼럴 주문 집계 SSOT (2026-07-09)
 
 - 가격 정책의 최근 30일 주문 수(`selfBusinessOrders30d`, `groupTotalOrders30d`)는 **Request 컬렉션 원본 집계만 SSOT**로 사용합니다.
 - `PricingReferralDailyOrderBucket`, `ShippingPackage`는 운영/성능 보조 데이터이며, 가격 정책 주문 수량의 기준 원본으로 사용하지 않습니다.

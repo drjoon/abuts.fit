@@ -128,6 +128,20 @@ const requestSchema = new mongoose.Schema(
         enum: ["none", "shallow", "deep"],
         default: "deep",
       },
+      // related files:
+      // - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
+      // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx
+      // 의뢰건 디자인 소프트웨어(신규의뢰 카드 단위 SSOT)
+      designSoftware: {
+        type: String,
+        trim: true,
+        maxlength: 120,
+      },
+      // 제조사 오버라이드 헥스 회전(canonical)
+      manufacturerHexRotation: {
+        type: String,
+        enum: ["보정", "무보정"],
+      },
       // 의뢰자 헥스 회전 선택값
       requestorHexRotation: {
         type: String,

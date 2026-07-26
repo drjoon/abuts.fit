@@ -1,15 +1,9 @@
-import React, {
-  useEffect,
-  useMemo,
-  useState,
-  useRef,
-  useCallback,
-} from "react";
+import React, { useEffect, useMemo, useState, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useNewRequestPage } from "./hooks/useNewRequestPage";
 import { useToast } from "@/shared/hooks/use-toast";
-
-
+import { useAuthStore } from "@/store/useAuthStore";
+import { apiFetch } from "@/shared/api/apiClient";
 
 import { usePresetStorage } from "./hooks/usePresetStorage";
 import { useBulkShippingPolicy } from "./hooks/useBulkShippingPolicy";
@@ -55,6 +49,7 @@ export const NewRequestPage = () => {
   const navigate = useNavigate();
 
   const { toast } = useToast();
+  const { token } = useAuthStore();
 
   const [designSoftwareModalOpen, setDesignSoftwareModalOpen] = useState(false);
   const [designSoftwareMode, setDesignSoftwareMode] = useState<
@@ -136,7 +131,64 @@ export const NewRequestPage = () => {
     highlightStep,
   } = useFileVerification({ files });
 
-  // BusinessAnchor 전역 설정과 분리: 신규의뢰에서는 의뢰건(caseInfos) 기준으로만 관리한다.
+
+
+  // BusinessAnchor 디자인소프트웨어를 "신규 의뢰 기본값"으로만 사용한다.
+  // 단, Draft에 이미 저장된 기본값(__default__.designSoftware)이 있으면 그것을 우선한다.
+  useEffect(() => {
+    if (!token) return;
+    if (user?.role !== "requestor") return;
+
+    let cancelled = false;
+
+    const loadBusinessDesignSoftware = async () => {
+      try {
+        const res = await apiFetch<any>({
+          path: "/api/businesses/me/request-settings",
+          method: "GET",
+          token,
+        });
+        if (!res.ok || cancelled) return;
+
+        const body: any = res.data || {};
+        const data = body?.data || body;
+        const businessDefault = String(data?.designSoftware || "").trim();
+        if (!businessDefault || cancelled) return;
+
+        const draftDefault = String(
+          caseInfosMap?.__default__?.designSoftware || "",
+        ).trim();
+
+        // Draft 기본값이 있으면 BusinessAnchor 기본값으로 덮어쓰지 않는다.
+        if (draftDefault) {
+          setDesignSoftwareValue(draftDefault);
+          return;
+        }
+
+        setDesignSoftwareValue(businessDefault);
+        updateCaseInfos("__default__", { designSoftware: businessDefault });
+      } catch {
+        // ignore
+      }
+    };
+
+    void loadBusinessDesignSoftware();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [caseInfosMap, token, updateCaseInfos, user?.role]);
+
+  // Draft/로컬 복원으로 __default__.designSoftware가 늦게 들어오면
+  // UI 표시값(designSoftwareValue)을 해당 값으로 동기화한다.
+  useEffect(() => {
+    const draftDefault = String(
+      caseInfosMap?.__default__?.designSoftware || "",
+    ).trim();
+    if (!draftDefault) return;
+    if (draftDefault === String(designSoftwareValue || "").trim()) return;
+    setDesignSoftwareValue(draftDefault);
+  }, [caseInfosMap, designSoftwareValue]);
 
   const handleSaveDesignSoftware = useCallback(async () => {
     const designSoftware =
@@ -169,32 +221,12 @@ export const NewRequestPage = () => {
     }
   }, [customDesignSoftware, designSoftwareMode, toast, updateCaseInfos]);
 
-  useEffect(() => {
-    const current = String(designSoftwareValue || "").trim();
-    if (current) return;
-
-    const fromDefault = String(
-      caseInfosMap?.__default__?.designSoftware || "",
-    ).trim();
-    if (fromDefault) {
-      setDesignSoftwareValue(fromDefault);
-      return;
-    }
-
-    for (const file of files) {
-      const fileKey = toNormalizedFileKey(file);
-      const fromFile = String(caseInfosMap?.[fileKey]?.designSoftware || "").trim();
-      if (fromFile) {
-        setDesignSoftwareValue(fromFile);
-        return;
-      }
-    }
-  }, [caseInfosMap, designSoftwareValue, files, toNormalizedFileKey]);
-
 
 
   const handleOpenDesignSoftwareModal = useCallback(() => {
-    const current = String(designSoftwareValue || "").trim();
+    const current = String(
+      designSoftwareValue || caseInfosMap?.__default__?.designSoftware || "",
+    ).trim();
 
     if (current === "3Shape" || current === "ExoCAD") {
       setDesignSoftwareMode(current);
@@ -208,7 +240,7 @@ export const NewRequestPage = () => {
     }
 
     setDesignSoftwareModalOpen(true);
-  }, [designSoftwareValue]);
+  }, [caseInfosMap, designSoftwareValue]);
 
   // 파일 삭제는 rawHandleRemoveFile이 처리하고,
   // fileVerificationStatus cleanup은 useFileVerification의 effect가 자동으로 처리
@@ -648,7 +680,9 @@ export const NewRequestPage = () => {
 
       // 업로드 시점의 기본 소프트웨어를 "신규 파일"에만 주입한다.
       // 기존 카드 값은 절대 덮어쓰지 않는다.
-      const currentSoftware = String(designSoftwareValue || "").trim();
+      const currentSoftware = String(
+        designSoftwareValue || caseInfosMap?.__default__?.designSoftware || "",
+      ).trim();
       if (currentSoftware) {
         for (const file of stlFiles) {
           const fileKey = toNormalizedFileKey(file);
@@ -713,13 +747,15 @@ export const NewRequestPage = () => {
     if (user?.role !== "requestor") return;
     if (!designSoftwareCanEdit) return;
 
-    const current = String(designSoftwareValue || "").trim();
+    const current = String(
+      designSoftwareValue || caseInfosMap?.__default__?.designSoftware || "",
+    ).trim();
     if (current) return;
 
     setDesignSoftwareMode("3Shape");
     setCustomDesignSoftware("");
     setDesignSoftwareModalOpen(true);
-  }, [designSoftwareCanEdit, designSoftwareValue, user?.role]);
+  }, [caseInfosMap, designSoftwareCanEdit, designSoftwareValue, user?.role]);
 
   const handleIncomingDroppedFiles = (selectedFiles: File[]) => {
     checkDesignSoftwareOnDrop();
@@ -1117,7 +1153,7 @@ export const NewRequestPage = () => {
                 onClick={() => setDesignSoftwareModalOpen(false)}
                 disabled={designSoftwareSaving}
               >
-                다음에 설정
+                취소
               </Button>
               <Button
                 type="button"

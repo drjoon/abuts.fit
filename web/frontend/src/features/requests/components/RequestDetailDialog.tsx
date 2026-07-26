@@ -24,6 +24,7 @@ export type RequestDetailDialogCaseInfos = {
   implantBrand?: string;
   implantFamily?: string;
   implantType?: string;
+  designSoftware?: string;
   maxDiameter?: number | null;
   connectionDiameter?: number | null;
   retentionGroove?: "none" | "shallow" | "deep";
@@ -346,6 +347,12 @@ export const RequestDetailDialog = ({
                 <span className="text-slate-600">임플란트</span>
                 <span className="font-medium text-right whitespace-pre">
                   {implantDisplay}
+                </span>
+              </div>
+              <div className="grid grid-cols-[110px_1fr] gap-2">
+                <span className="text-slate-600">디자인 소프트웨어</span>
+                <span className="font-medium text-right">
+                  {String(caseInfos.designSoftware || "").trim() || "-"}
                 </span>
               </div>
               <div className="grid grid-cols-[110px_1fr] gap-2">

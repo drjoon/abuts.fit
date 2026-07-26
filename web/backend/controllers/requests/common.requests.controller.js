@@ -1279,6 +1279,8 @@ export async function getAllRequests(req, res) {
       "caseInfos.clinicName",
       "caseInfos.patientName",
       "caseInfos.tooth",
+      "caseInfos.designSoftware",
+      "caseInfos.manufacturerHexRotation",
       "caseInfos.anodizingEnabled",
       "caseInfos.requestorHexRotation",
       "caseInfos.finalHexRotation",
@@ -1337,6 +1339,8 @@ export async function getAllRequests(req, res) {
       "caseInfos.clinicName",
       "caseInfos.patientName",
       "caseInfos.tooth",
+      "caseInfos.designSoftware",
+      "caseInfos.manufacturerHexRotation",
       "caseInfos.requestorHexRotation",
       "caseInfos.finalHexRotation",
       "caseInfos.connectionDiameter",
@@ -1396,6 +1400,8 @@ export async function getAllRequests(req, res) {
       "caseInfos.clinicName",
       "caseInfos.patientName",
       "caseInfos.tooth",
+      "caseInfos.designSoftware",
+      "caseInfos.manufacturerHexRotation",
       "caseInfos.anodizingEnabled",
       "caseInfos.connectionDiameter",
       "caseInfos.requestorHexRotation",
@@ -1430,6 +1436,8 @@ export async function getAllRequests(req, res) {
       "rnd.requestorContinueBy",
       "rnd.requestorContinueMessage",
       "rnd.manufacturerHexRotation",
+      "caseInfos.designSoftware",
+      "caseInfos.manufacturerHexRotation",
       "caseInfos.requestorHexRotation",
       "caseInfos.finalHexRotation",
       "requestor",
@@ -2694,7 +2702,11 @@ export const updateRndHexRotation = asyncHandler(async (req, res) => {
     "rnd.manufacturerHexRotationUpdatedBy",
     req.user?._id || null,
   );
+  // related files:
+  // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx
+  // - web/backend/models/request.model.js
   request.set("caseInfos.requestorHexRotation", requestorHexRotation);
+  request.set("caseInfos.manufacturerHexRotation", manufacturerHexRotation);
   request.set("caseInfos.finalHexRotation", finalHexRotation);
 
   // 의뢰자 사업자 디폴트 헥스 회전값은 보정/무보정만 저장한다.
@@ -2745,6 +2757,7 @@ export const updateRndHexRotation = asyncHandler(async (req, res) => {
         requestorBusinessAnchorId: requestorBusinessAnchorId || null,
         caseInfos: {
           requestorHexRotation,
+          manufacturerHexRotation,
           finalHexRotation,
         },
         rnd: {

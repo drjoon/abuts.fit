@@ -52,6 +52,7 @@ type PreviewFiles = {
 // Rhino의 align 기능이 구성정보를 대체하므로, 개별 구성정보 파일 모드는 사용하지 않는다.
 type ManufacturerHexRotationCanonicalMode = "보정" | "무보정";
 type ManufacturerHexRotationMode = "STL모델대로" | "헥스30도회전";
+type ManufacturerHexRotationDraftMode = ManufacturerHexRotationMode | "";
 
 const normalizeManufacturerHexRotationCanonicalMode = (
   value: unknown,
@@ -79,6 +80,18 @@ const toManufacturerHexRotationLabel = (
     default:
       throw new Error(`지원하지 않는 헥스 회전 모드: ${String(mode)}`);
   }
+};
+
+const resolveRequestorHexRotationByDesignSoftware = (
+  designSoftwareRaw: unknown,
+): ManufacturerHexRotationCanonicalMode | null => {
+  const designSoftware = String(designSoftwareRaw || "").trim();
+  if (!designSoftware) return null;
+  // 정책 SSOT:
+  // - ExoCAD => 헥스30도회전(= canonical "무보정")
+  // - 3Shape 및 기타(custom 포함) => STL모델대로(= canonical "보정")
+  if (designSoftware === "ExoCAD") return "무보정";
+  return "보정";
 };
 
 const UNMACHINABLE_REASON_PRESETS = [
@@ -446,7 +459,7 @@ export const PreviewModal = ({
   const [hexRotationSaving, setHexRotationSaving] = useState(false);
   const [approving, setApproving] = useState(false);
   const [manufacturerHexRotationDraft, setManufacturerHexRotationDraft] =
-    useState<ManufacturerHexRotationMode>("STL모델대로");
+    useState<ManufacturerHexRotationDraftMode>("");
   const req = previewFiles.request as ManufacturerRequest | null;
   const lastStableReqRef = useRef<ManufacturerRequest | null>(null);
 
@@ -557,18 +570,29 @@ export const PreviewModal = ({
     setSelectedReasonValues(tokens);
     setUnmachinableReasonDraft("");
 
-    const requestorHexCanonical: ManufacturerHexRotationCanonicalMode =
-      String((req as any)?.caseInfos?.requestorHexRotation || "").trim() ===
-      "무보정"
-        ? "무보정"
-        : "보정";
+    const requestorHexCanonical = resolveRequestorHexRotationByDesignSoftware(
+      (req as any)?.caseInfos?.designSoftware,
+    );
     const manufacturerHexCanonical = normalizeManufacturerHexRotationCanonicalMode(
-      (req as any)?.rnd?.manufacturerHexRotation,
+      (req as any)?.caseInfos?.manufacturerHexRotation,
     );
-    const effectiveHexCanonical = manufacturerHexCanonical || requestorHexCanonical;
-    setManufacturerHexRotationDraft(
-      toManufacturerHexRotationLabel(effectiveHexCanonical),
-    );
+
+    if (manufacturerHexCanonical) {
+      setManufacturerHexRotationDraft(
+        toManufacturerHexRotationLabel(manufacturerHexCanonical),
+      );
+      return;
+    }
+
+    if (requestorHexCanonical) {
+      setManufacturerHexRotationDraft(
+        toManufacturerHexRotationLabel(requestorHexCanonical),
+      );
+      return;
+    }
+
+    // 의뢰건에 designSoftware가 없으면 헥스 회전 기본값을 비워 둔다.
+    setManufacturerHexRotationDraft("");
 
     if (tokens.length) {
       setReasonLibraryWithSync((prev) => {
@@ -1500,13 +1524,10 @@ export const PreviewModal = ({
     return rg === "deep" ? "있음" : "없음";
   })();
 
-  // related files (designSoftware → requestorHexRotation submit policy):
-  // - web/backend/controllers/requests/creation.from-draft.controller.js
-  // - web/frontend/src/pages/requestor/new_request/hooks/useNewRequestPage.ts
-  // - web/frontend/src/pages/requestor/dashboard/RequestorDashboardPage.tsx
+  // 헤더 디자인소프트웨어 표시는 BusinessAnchor 전역값이 아닌
+  // 의뢰건(caseInfos)에 저장된 값을 사용한다.
   const requestorDesignSoftwareLabel =
-    String(activeReq?.business?.requestSettings?.designSoftware || "").trim() ||
-    "-";
+    String((activeReq as any)?.caseInfos?.designSoftware || "").trim() || "-";
 
   const overlayCaseInfos = (activeReq?.caseInfos || {}) as Record<string, any>;
   const overlayFlat = (activeReq || {}) as Record<string, any>;
@@ -1733,7 +1754,7 @@ export const PreviewModal = ({
                   헥스 회전
                 </span>
                 <Select
-                  value={manufacturerHexRotationDraft}
+                  value={manufacturerHexRotationDraft || undefined}
                   onValueChange={(value) => {
                     const next: ManufacturerHexRotationMode =
                       value === "헥스30도회전"
@@ -1749,7 +1770,7 @@ export const PreviewModal = ({
                   }
                 >
                   <SelectTrigger className="h-7 min-w-[168px] rounded-md border border-slate-200 bg-slate-50 px-2 text-[12px] font-semibold text-slate-700 shadow-sm focus:ring-1 focus:ring-blue-200 disabled:opacity-60">
-                    <SelectValue placeholder={toManufacturerHexRotationLabel("보정")} />
+                    <SelectValue placeholder="선택" />
                   </SelectTrigger>
                   <SelectContent align="end" className="min-w-[168px]">
                     <SelectItem value="STL모델대로" className="text-[12px] font-medium">

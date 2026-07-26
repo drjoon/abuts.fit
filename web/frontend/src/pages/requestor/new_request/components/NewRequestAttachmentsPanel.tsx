@@ -149,9 +149,7 @@ export function NewRequestAttachmentsPanel({
             const estimatedShip = getEstimatedShipForDiameter
               ? getEstimatedShipForDiameter(diameter)
               : null;
-            const designSoftware = String(
-              fileInfo?.designSoftware || designSoftwareLabel || "",
-            ).trim();
+            const designSoftware = String(fileInfo?.designSoftware || "").trim();
 
             return (
               <div
