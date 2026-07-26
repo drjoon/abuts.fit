@@ -1,6 +1,15 @@
 import Request from "../models/request.model.js";
 import ShippingPackage from "../models/shippingPackage.model.js";
 
+function buildHasMeaningfulValueExpr(fieldPath) {
+  return {
+    $and: [
+      { $ne: [{ $ifNull: [fieldPath, null] }, null] },
+      { $ne: [{ $ifNull: [fieldPath, ""] }, ""] },
+    ],
+  };
+}
+
 export function buildDashboardNormalizedStageExpr() {
   return {
     $let: {
@@ -11,9 +20,7 @@ export function buildDashboardNormalizedStageExpr() {
         $switch: {
           branches: [
             {
-              case: {
-                $ne: [{ $ifNull: ["$rnd.unmachinableAt", null] }, null],
-              },
+              case: buildHasMeaningfulValueExpr("$rnd.unmachinableAt"),
               then: "unmachinable",
             },
             {
@@ -114,7 +121,16 @@ export async function getAssignedLikeDashboardSummary({
         },
         unmachinableCount: {
           $sum: {
-            $cond: [{ $eq: ["$normalizedStage", "unmachinable"] }, 1, 0],
+            $cond: [
+              {
+                $and: [
+                  { $eq: ["$normalizedStage", "unmachinable"] },
+                  { $ne: ["$manufacturerStage", "취소"] },
+                ],
+              },
+              1,
+              0,
+            ],
           },
         },
         unmachinablePotentialCount: {
@@ -122,13 +138,10 @@ export async function getAssignedLikeDashboardSummary({
             $cond: [
               {
                 $and: [
+                  buildHasMeaningfulValueExpr("$rnd.unmachinablePotentialAt"),
                   {
-                    $ne: [
-                      { $ifNull: ["$rnd.unmachinablePotentialAt", null] },
-                      null,
-                    ],
+                    $not: [buildHasMeaningfulValueExpr("$rnd.unmachinableAt")],
                   },
-                  { $eq: [{ $ifNull: ["$rnd.unmachinableAt", null] }, null] },
                 ],
               },
               1,
@@ -141,11 +154,12 @@ export async function getAssignedLikeDashboardSummary({
             $cond: [
               {
                 $and: [
-                  { $ne: [{ $ifNull: ["$rnd.unmachinableAt", null] }, null] },
+                  buildHasMeaningfulValueExpr("$rnd.unmachinableAt"),
                   {
-                    $eq: [
-                      { $ifNull: ["$rnd.unmachinableConfirmedAt", null] },
-                      null,
+                    $not: [
+                      buildHasMeaningfulValueExpr(
+                        "$rnd.unmachinableConfirmedAt",
+                      ),
                     ],
                   },
                 ],
@@ -158,12 +172,7 @@ export async function getAssignedLikeDashboardSummary({
         unmachinableConfirmedCount: {
           $sum: {
             $cond: [
-              {
-                $ne: [
-                  { $ifNull: ["$rnd.unmachinableConfirmedAt", null] },
-                  null,
-                ],
-              },
+              buildHasMeaningfulValueExpr("$rnd.unmachinableConfirmedAt"),
               1,
               0,
             ],

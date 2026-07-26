@@ -1181,12 +1181,12 @@ export async function getAllRequests(req, res) {
         .trim()
         .toLowerCase();
       if (rndUnmachinableRaw === "1" || rndUnmachinableRaw === "true") {
-        filter["rnd.unmachinableAt"] = { $ne: null };
+        filter["rnd.unmachinableAt"] = { $nin: [null, ""] };
       } else if (
         rndUnmachinableRaw === "0" ||
         rndUnmachinableRaw === "false"
       ) {
-        filter["rnd.unmachinableAt"] = null;
+        filter["rnd.unmachinableAt"] = { $in: [null, ""] };
       }
     }
     if (req.query.implantType) filter.implantType = req.query.implantType;
