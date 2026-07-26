@@ -37,8 +37,8 @@
   - 관련 파일: `src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx`, `src/pages/manufacturer/worksheet/custom_abutment/hooks/useRequestFileHandlers.ts`
 
 - 헥스 회전 라벨 표시는 canonical 값을 직접 노출하지 않고 아래로 고정합니다.
-  - `보정` → `STL형상대로`
-  - `무보정` → `원본좌표계대로`
+  - `보정` → `STL모델대로`
+  - `무보정` → `헥스30도회전`
   - 라벨 매핑 함수는 fallback 기본값을 두지 않고 명시 분기 + default error를 사용합니다.
   - 관련 파일:
     - `src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx`

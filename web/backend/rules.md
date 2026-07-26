@@ -39,7 +39,8 @@
   - 구현: `controllers/requests/common.review.controller.js`
 
 - 제조사 헥스 회전 모드(`manufacturerHexRotation`)는 백엔드에서 fallback 기본값으로 보정하지 않습니다.
-  - 허용값: canonical `보정`/`무보정` (+ 레거시 입력 `0`/`30` 정규화)
+  - 허용값: canonical `보정`/`무보정` (UI 라벨: `STL모델대로`/`헥스30도회전`)
+  - 하위호환 입력: 레거시 `0`/`30` 정규화 허용
   - 미지원/빈값은 request-meta 응답 및 저장 로직에서 즉시 오류로 처리합니다.
   - 관련 파일:
     - `controllers/requests/common.requests.controller.js`

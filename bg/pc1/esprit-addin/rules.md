@@ -225,12 +225,13 @@
 검색 키워드: `manufacturerHexRotation`, `hexRotation.appliedDeg`, `request-meta`, `보정`, `무보정`, `DefaultWAxisRotationDegrees`
 
 - `request-meta.caseInfos.manufacturerHexRotation`의 canonical 모드는 `보정`/`무보정`이다.
+  - UI 라벨은 각각 `STL모델대로`/`헥스30도회전`으로 노출한다.
   - 레거시 `"0"`/`"30"`은 하위호환 입력으로만 허용하고, add-in에서 canonical로 정규화한다.
   - **default fallback으로 `보정`을 주입하지 않는다.** 빈값/미지원값은 즉시 예외 처리한다.
 - 모드별 적용 SSOT:
   - `보정`: `Rotate90Degrees` 후 `+30` 기본 회전 + `hexRotation.appliedDeg`를 **Esprit 부호계로 반전한 값** 추가 회전
     - 식: `totalW = 30 + (-appliedDeg)`
-  - `무보정`: `Rotate90Degrees` 후 W축 회전 완전 미적용
+  - `무보정`(UI: `헥스30도회전`): `Rotate90Degrees` 후 W축 `+30`만 적용(telemetry 미적용)
 - `hexRotation.appliedDeg` 의미 SSOT:
   - Rhino가 실제 STL에는 적용하지 않은 **가상 보정량(-phase_mod)**
   - add-in은 `보정` 모드에서만 이 값을 반영하며, **Esprit 적용 시 부호 반전**을 수행한다.

@@ -1412,10 +1412,14 @@ export const RequestPage = ({
   const [, setHexRotationSavingMap] = useState<Record<string, boolean>>({});
   const [bulkCamRegenerating, setBulkCamRegenerating] = useState(false);
 
+  // related files (manufacturer hex rotation label/canonical mapping):
+  // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx
+  // - web/backend/controllers/requests/common.requests.controller.js
+  // - bg/pc1/esprit-addin/StlFileProcessor.cs
   const handleSaveManufacturerHexRotation = useCallback(
     async (
       req: ManufacturerRequest,
-      value: "STL형상대로" | "원본좌표계대로",
+      value: "STL모델대로" | "헥스30도회전",
     ) => {
       if (!req?._id) return;
       const requestMongoId = String(req._id || "").trim();
@@ -1425,11 +1429,11 @@ export const RequestPage = ({
       ): "보정" | "무보정" | null => {
         const v = String(raw || "").trim();
         switch (v) {
-          case "STL형상대로":
+          case "STL모델대로":
           case "보정":
           case "0":
             return "보정";
-          case "원본좌표계대로":
+          case "헥스30도회전":
           case "무보정":
           case "30":
             return "무보정";
@@ -1444,10 +1448,10 @@ export const RequestPage = ({
         return "보정";
       };
       const toHexRotationLabel = (mode: "보정" | "무보정") =>
-        mode === "무보정" ? "원본좌표계대로" : "STL형상대로";
+        mode === "무보정" ? "헥스30도회전" : "STL모델대로";
 
       const nextValue: "보정" | "무보정" =
-        value === "원본좌표계대로" ? "무보정" : "보정";
+        value === "헥스30도회전" ? "무보정" : "보정";
 
       const prevManufacturer =
         normalizeManufacturerHexMode((req as any)?.rnd?.manufacturerHexRotation) ||

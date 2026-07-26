@@ -51,15 +51,15 @@ type PreviewFiles = {
 // - web/backend/controllers/bg/bg.controller.js
 // Rhino의 align 기능이 구성정보를 대체하므로, 개별 구성정보 파일 모드는 사용하지 않는다.
 type ManufacturerHexRotationCanonicalMode = "보정" | "무보정";
-type ManufacturerHexRotationMode = "STL형상대로" | "원본좌표계대로";
+type ManufacturerHexRotationMode = "STL모델대로" | "헥스30도회전";
 
 const normalizeManufacturerHexRotationCanonicalMode = (
   value: unknown,
 ): ManufacturerHexRotationCanonicalMode | null => {
   const raw = String(value || "").trim();
-  // 최신 프론트 값 우선
-  if (raw === "STL형상대로") return "보정";
-  if (raw === "원본좌표계대로") return "무보정";
+  // 프론트 라벨(현행)
+  if (raw === "STL모델대로") return "보정";
+  if (raw === "헥스30도회전") return "무보정";
   // canonical(백엔드/DB) 값
   if (raw === "보정" || raw === "무보정") return raw;
   // legacy "헥스회전각" 호환: 0=보정, 30=무보정
@@ -73,9 +73,9 @@ const toManufacturerHexRotationLabel = (
 ): ManufacturerHexRotationMode => {
   switch (mode) {
     case "보정":
-      return "STL형상대로";
+      return "STL모델대로";
     case "무보정":
-      return "원본좌표계대로";
+      return "헥스30도회전";
     default:
       throw new Error(`지원하지 않는 헥스 회전 모드: ${String(mode)}`);
   }
@@ -446,7 +446,7 @@ export const PreviewModal = ({
   const [hexRotationSaving, setHexRotationSaving] = useState(false);
   const [approving, setApproving] = useState(false);
   const [manufacturerHexRotationDraft, setManufacturerHexRotationDraft] =
-    useState<ManufacturerHexRotationMode>("STL형상대로");
+    useState<ManufacturerHexRotationMode>("STL모델대로");
   const req = previewFiles.request as ManufacturerRequest | null;
   const lastStableReqRef = useRef<ManufacturerRequest | null>(null);
 
@@ -1723,9 +1723,9 @@ export const PreviewModal = ({
                   value={manufacturerHexRotationDraft}
                   onValueChange={(value) => {
                     const next: ManufacturerHexRotationMode =
-                      value === "원본좌표계대로"
-                        ? "원본좌표계대로"
-                        : "STL형상대로";
+                      value === "헥스30도회전"
+                        ? "헥스30도회전"
+                        : "STL모델대로";
                     void handleSaveManufacturerHexRotation(next);
                   }}
                   disabled={
@@ -1739,10 +1739,10 @@ export const PreviewModal = ({
                     <SelectValue placeholder={toManufacturerHexRotationLabel("보정")} />
                   </SelectTrigger>
                   <SelectContent align="end" className="min-w-[168px]">
-                    <SelectItem value="STL형상대로" className="text-[12px] font-medium">
+                    <SelectItem value="STL모델대로" className="text-[12px] font-medium">
                       {toManufacturerHexRotationLabel("보정")}
                     </SelectItem>
-                    <SelectItem value="원본좌표계대로" className="text-[12px] font-medium">
+                    <SelectItem value="헥스30도회전" className="text-[12px] font-medium">
                       {toManufacturerHexRotationLabel("무보정")}
                     </SelectItem>
 

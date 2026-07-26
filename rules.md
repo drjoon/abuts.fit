@@ -1085,12 +1085,12 @@
   - **default fallback으로 임의 보정값을 주입하지 않는다.**
     - 프론트 라벨 매핑, 백엔드 최종값 계산, Esprit 모드 분기 모두 명시 분기(`보정`/`무보정`)만 허용하고, 미지원 값은 즉시 에러 처리한다.
 - 프론트 표시 라벨 SSOT:
-  - `보정` 표시: `STL형상대로`
-  - `무보정` 표시: `원본좌표계대로`
+  - `보정` 표시: `STL모델대로`
+  - `무보정` 표시: `헥스30도회전`
 - Esprit 적용 정책 SSOT:
   1. `보정`: 기본 W축 `+30` 적용 후 `hexRotation.appliedDeg`를 Esprit 부호계로 반전해 추가 적용
      - 식: `totalW = 30 + (-appliedDeg)`
-  2. `무보정`: 회전 미적용 (기본 `+30`도 미적용)
+  2. `무보정`(UI: `헥스30도회전`): 기본 W축 `+30`만 적용 (telemetry 미적용)
 - **라이노의 align 기능이 구성정보를 대체할 수 있으므로 개별 구성정보 파일을 이용하지 않는다.**
 - Rhino telemetry 의미 SSOT:
   - `request-meta.caseInfos.hexRotation.appliedDeg`는 Rhino가 실제 mesh에 적용하지 않은 가상 보정량(`-phase_mod`)이다.

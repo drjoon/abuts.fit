@@ -60,6 +60,9 @@ const parseManufacturerHexRotationModeOrNull = (value) => {
   const v = String(value || "").trim();
   if (v === "보정") return "보정";
   if (v === "무보정") return "무보정";
+  // 프론트 라벨(현행): 무보정은 "헥스30도회전"으로 표기한다.
+  if (v === "STL모델대로") return "보정";
+  if (v === "헥스30도회전") return "무보정";
   // legacy "헥스회전각" 호환: 0=보정, 30=무보정
   if (v === "0") return "보정";
   if (v === "30") return "무보정";
@@ -1396,7 +1399,7 @@ export const getRequestMeta = asyncHandler(async (req, res) => {
           faceHolePrcFileName: resolvedPrcFiles.faceHolePrcFileName,
           connectionPrcFileName: resolvedPrcFiles.connectionPrcFileName,
           // 제조사 수동 좌표계 전처리 모드(canonical: "보정"|"무보정").
-          // 보정 모드에서 add-in이 appliedDeg를 Esprit 부호계로 반전 해석해 +30에 합산한다.
+          // 보정: +30 + (-appliedDeg), 무보정(UI: 헥스30도회전): +30(telemetry 미적용)
           manufacturerHexRotation: manufacturerHexRotationMode,
           // Rhino 정렬 telemetry(헥스 회전각).
           // Esprit가 보정(legacy 0) 모드에서 appliedDeg를 부호 반전 해석해 +30에 합산할 때 사용한다.

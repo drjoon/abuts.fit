@@ -346,9 +346,12 @@ const normalizeHexRotationValue = (value) => {
 
 const parseManufacturerHexRotationMode = (value) => {
   const v = String(value || "").trim();
-  // Rhino align 정책: 제조사 모드는 보정/무보정 2가지만 사용한다.
+  // Rhino align 정책: 제조사 모드 canonical은 보정/무보정 2가지만 사용한다.
   if (v === "보정") return "보정";
   if (v === "무보정") return "무보정";
+  // 프론트 라벨(현행): 무보정은 "헥스30도회전"으로 표기한다.
+  if (v === "STL모델대로") return "보정";
+  if (v === "헥스30도회전") return "무보정";
   // legacy "헥스회전각" 호환: 0=보정, 30=무보정
   if (v === "0") return "보정";
   if (v === "30") return "무보정";
@@ -360,7 +363,7 @@ const normalizeManufacturerHexRotationMode = (value) => {
   if (!parsed) {
     const raw = String(value || "").trim();
     throw new Error(
-      `유효하지 않은 manufacturerHexRotation 값입니다. '보정' | '무보정'만 허용됩니다. 입력값='${raw}'`,
+      `유효하지 않은 manufacturerHexRotation 값입니다. canonical '보정' | '무보정'만 허용됩니다. (UI 라벨: 'STL모델대로' | '헥스30도회전') 입력값='${raw}'`,
     );
   }
   return parsed;
@@ -2534,7 +2537,7 @@ export const updateRndHexRotation = asyncHandler(async (req, res) => {
     return res.status(400).json({
       success: false,
       message:
-        "유효하지 않은 manufacturerHexRotation 값입니다. '보정' | '무보정'만 사용할 수 있습니다.",
+        "유효하지 않은 manufacturerHexRotation 값입니다. canonical '보정' | '무보정'만 사용할 수 있습니다. (UI 라벨: 'STL모델대로' | '헥스30도회전')",
     });
   }
 
