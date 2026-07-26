@@ -5,6 +5,7 @@ import CncMachine from "../../models/cncMachine.model.js";
 import Connection from "../../models/connection.model.js";
 import SystemSettings from "../../models/systemSettings.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
+import ReviewApprovalQueue from "../../models/reviewApprovalQueue.model.js";
 import {
   applyStatusMapping,
   ensureLotNumberForMachining,
@@ -784,6 +785,7 @@ export async function updateReviewStatusByStage(req, res) {
       stageOverride,
       forceReprocess,
       processBothHexVariants,
+      approvalTriggerSource,
     } = req.body || {};
 
     if (!Types.ObjectId.isValid(id)) {
@@ -1431,7 +1433,7 @@ export async function updateReviewStatusByStage(req, res) {
     });
 
     if (isDuplicateRequestApprovalNoop) {
-      const responseData = {
+      let responseData = {
         _id: String(resultRequest?._id || ""),
         requestId: String(resultRequest?.requestId || ""),
         manufacturerStage:
@@ -1444,6 +1446,158 @@ export async function updateReviewStatusByStage(req, res) {
         productionSchedule: resultRequest?.productionSchedule || null,
       };
 
+      let retryEnqueued = false;
+      let retryQueueId = null;
+      let retryErrorMessage = null;
+      let lastQueueErrorMessage = null;
+      let lastQueueErrorCode = null;
+      let lastQueueErrorStatus = null;
+      let reusedExistingNc = false;
+
+      try {
+        const requestMongoId = String(resultRequest?._id || "").trim();
+        const requestId = String(resultRequest?.requestId || "").trim();
+        const hasNcFile = Boolean(resultRequest?.caseInfos?.ncFile?.s3Key);
+        const hasCamCompletionHistory = Boolean(
+          resultRequest?.productionSchedule?.actualCamComplete,
+        );
+
+        const triggerSource = String(approvalTriggerSource || "").trim();
+
+        if (
+          (hasNcFile || hasCamCompletionHistory) &&
+          requestMongoId &&
+          triggerSource === "worksheet-tab"
+        ) {
+          const requestForReuse = await Request.findById(requestMongoId);
+          if (
+            requestForReuse &&
+            String(requestForReuse?.manufacturerStage || "").trim() === "의뢰" &&
+            String(requestForReuse?.caseInfos?.reviewByStage?.request?.status || "")
+              .trim()
+              .toUpperCase() === "APPROVED"
+          ) {
+            applyStatusMapping(requestForReuse, "CAM");
+            requestForReuse.productionSchedule = requestForReuse.productionSchedule || {};
+            if (!requestForReuse.productionSchedule.actualCamComplete) {
+              requestForReuse.productionSchedule.actualCamComplete = new Date();
+            }
+            await requestForReuse.save();
+            resultRequest = requestForReuse;
+            reusedExistingNc = true;
+            acceptedMessage =
+              "기존 NC 작업 이력을 재사용하여 CAM 단계로 이동했습니다. BG 재생성은 실행하지 않았습니다.";
+          }
+        }
+
+        if (!(hasNcFile || hasCamCompletionHistory) && requestMongoId) {
+          const uniqueKey = `REQUEST_STAGE_APPROVED:${requestMongoId}`;
+          const latestQueueItem = await ReviewApprovalQueue.findOne({ uniqueKey })
+            .sort({ createdAt: -1 })
+            .lean();
+
+          const queueStatus = String(latestQueueItem?.status || "").trim();
+          const queueAttemptCount = Number(latestQueueItem?.attemptCount || 0);
+          const queueErrorMessage = String(
+            latestQueueItem?.error?.message || "",
+          ).trim();
+          const queueErrorCode = String(latestQueueItem?.error?.code || "").trim();
+          const queueErrorStatusFromCode = Number.parseInt(queueErrorCode, 10);
+          const queueErrorStatusFromMessage =
+            /(^|\s|\()403(\)|\s|$)/.test(queueErrorMessage) ? 403 : null;
+          const resolvedQueueErrorStatus = Number.isFinite(queueErrorStatusFromCode)
+            ? queueErrorStatusFromCode
+            : queueErrorStatusFromMessage;
+          const isLocked =
+            !!latestQueueItem?.lockedBy &&
+            latestQueueItem?.lockedUntil &&
+            new Date(latestQueueItem.lockedUntil).getTime() > Date.now();
+
+          lastQueueErrorMessage = queueErrorMessage || null;
+          lastQueueErrorCode = queueErrorCode || null;
+          lastQueueErrorStatus = resolvedQueueErrorStatus || null;
+
+          const isRecentQueueFailure =
+            (queueStatus === "FAILED" && !!queueErrorMessage) ||
+            (queueStatus === "PENDING" &&
+              queueAttemptCount > 0 &&
+              !!queueErrorMessage &&
+              !isLocked);
+
+          if (isRecentQueueFailure) {
+            if (latestQueueItem?._id && queueStatus === "PENDING") {
+              await ReviewApprovalQueue.updateOne(
+                { _id: latestQueueItem._id, status: "PENDING" },
+                {
+                  $set: {
+                    status: "FAILED",
+                    failedAt: new Date(),
+                    lockedBy: null,
+                    lockedUntil: null,
+                  },
+                },
+              );
+            }
+
+            const enqueueResult = await enqueueApproval({
+              taskType: "REQUEST_STAGE_APPROVED",
+              request: resultRequest.toObject
+                ? resultRequest.toObject()
+                : JSON.parse(JSON.stringify(resultRequest)),
+              actorUserId: req?.user?._id ? String(req.user._id) : null,
+              forceReprocess: true,
+            });
+            retryEnqueued = !enqueueResult?.alreadyQueued;
+            retryQueueId = String(enqueueResult?.queueId || "").trim() || null;
+
+            if (retryEnqueued) {
+              acceptedMessage =
+                "이전 CAM 생성 실패가 감지되어 Esprit 재시도 큐에 다시 등록했습니다.";
+              console.log("[REVIEW] duplicate noop -> re-enqueued request stage", {
+                requestId,
+                requestMongoId,
+                retryQueueId,
+                queueStatus,
+                queueAttemptCount,
+                queueErrorCode,
+                queueErrorMessage,
+              });
+            }
+          }
+        }
+      } catch (requeueError) {
+        retryErrorMessage =
+          requeueError?.message || "중복 승인 재시도 큐 등록 처리 중 오류";
+        console.error("[REVIEW] duplicate noop re-enqueue failed", {
+          requestId: resultRequest?.requestId,
+          requestMongoId: String(resultRequest?._id || ""),
+          message: retryErrorMessage,
+        });
+      }
+
+      if (reusedExistingNc && resultRequest) {
+        responseData = {
+          _id: String(resultRequest?._id || ""),
+          requestId: String(resultRequest?.requestId || ""),
+          manufacturerStage:
+            String(resultRequest?.manufacturerStage || "").trim() || null,
+          caseInfos: {
+            reviewByStage: resultRequest?.caseInfos?.reviewByStage || {},
+          },
+          mailboxAddress: resultRequest?.mailboxAddress || null,
+          assignedMachine: resultRequest?.assignedMachine || null,
+          productionSchedule: resultRequest?.productionSchedule || null,
+        };
+
+        emitWorksheetStageChanged(resultRequest, {
+          reviewStage: "request",
+          reviewStatus: "APPROVED",
+          fromStage: "의뢰",
+          toStage: "CAM",
+          source: "review-status-noop-nc-reuse",
+        });
+      }
+
       return res.status(200).json({
         success: true,
         data: responseData,
@@ -1451,6 +1605,13 @@ export async function updateReviewStatusByStage(req, res) {
         meta: {
           noop: true,
           reason: "already-approved-request-stage",
+          retryEnqueued,
+          retryQueueId,
+          retryErrorMessage,
+          lastQueueErrorMessage,
+          lastQueueErrorCode,
+          lastQueueErrorStatus,
+          reusedExistingNc,
         },
       });
     }

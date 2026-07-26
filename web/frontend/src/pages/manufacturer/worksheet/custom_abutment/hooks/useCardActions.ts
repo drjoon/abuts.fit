@@ -101,9 +101,9 @@ export const useCardActions = (
         req,
         status: "APPROVED",
         stageOverride: stageKey,
-        // request 단계 카드는 재승인(재실행) 니즈가 자주 발생하므로
-        // noop idempotency를 우회해 Esprit 재트리거가 가능하도록 강제 재실행 플래그를 전달한다.
-        forceReprocess: stageKey === "request",
+        // 작업 탭 승인(request)은 기존 NC 재사용 우선(재생성 강제 안 함)
+        forceReprocess: false,
+        approvalTriggerSource: "worksheet-tab",
       });
     },
     [tabStage, isCamStage, isMachiningStage, handleUpdateReviewStatus, realtimeBaseRef],

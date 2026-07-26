@@ -501,6 +501,7 @@ export const useRequestFileHandlers = ({
       keepPreviewOpen?: boolean;
       forceReprocess?: boolean;
       processBothHexVariants?: boolean;
+      approvalTriggerSource?: "preview-modal" | "worksheet-tab" | "unknown";
     }) => {
       if (!token) return;
       setReviewSaving(true);
@@ -534,15 +535,21 @@ export const useRequestFileHandlers = ({
               stage: stageKey,
               status: params.status,
               reason: params.reason || "",
-              forceReprocess: params.forceReprocess === true,
+              forceReprocess:
+                params.status === "APPROVED" &&
+                stageKey === "request" &&
+                params.approvalTriggerSource === "preview-modal"
+                  ? true
+                  : params.forceReprocess === true,
               processBothHexVariants: params.processBothHexVariants === true,
+              approvalTriggerSource: params.approvalTriggerSource || "unknown",
             }),
           },
         );
 
         if (!res.ok) {
           let message = "검토 상태 변경에 실패했습니다.";
-          let statusCode = res.status;
+          const statusCode = res.status;
           let errorPayload: any = null;
           try {
             const ct = res.headers.get("content-type") || "";
@@ -565,28 +572,134 @@ export const useRequestFileHandlers = ({
           throw err;
         }
 
+        let body: {
+          message?: string;
+          data?: ManufacturerRequest;
+          meta?: {
+            noop?: boolean;
+            reason?: string;
+            retryEnqueued?: boolean;
+            retryErrorMessage?: string;
+            lastQueueErrorMessage?: string;
+            lastQueueErrorCode?: string;
+            lastQueueErrorStatus?: number | string;
+            reusedExistingNc?: boolean;
+          };
+        } | null = null;
+        try {
+          const ct = res.headers.get("content-type") || "";
+          if (ct.includes("application/json")) {
+            body = await res.json().catch(() => null);
+          }
+        } catch {
+          // ignore
+        }
+
+        if (body?.data) {
+          applySingleRequestPatch(body.data);
+        }
+
         if (!optimisticallyPatched && !setRequests) {
           await fetchRequests();
         }
 
-        let successTitle = "검토 상태 변경 완료";
-        let successDescription =
-          params.status === "APPROVED"
-            ? stageKey === "request" ||
-              stageKey === "cam" ||
-              stageKey === "machining"
-              ? "작업 명령이 접수되었습니다. 처리 완료 후 상태가 자동으로 업데이트됩니다."
-              : "승인되었습니다."
-            : params.status === "REJECTED"
-              ? "반려되었습니다."
-              : "미승인 상태로 변경되었습니다.";
+        const isAlreadyApprovedNoop =
+          body?.meta?.noop === true &&
+          body?.meta?.reason === "already-approved-request-stage";
+        const triggerSource = params.approvalTriggerSource || "unknown";
 
-        // 성공 시에만 안내 토스트 표시
-        toast({
-          title: successTitle,
-          description: successDescription,
-          duration: 3000, // 성공 토스트는 3초 후 자동 소멸
-        });
+        const responseMessage = String(body?.message || "").trim();
+        const lastQueueErrorMessage = String(
+          body?.meta?.lastQueueErrorMessage || "",
+        ).trim();
+        const lastQueueErrorCode = String(
+          body?.meta?.lastQueueErrorCode || "",
+        ).trim();
+        const lastQueueErrorStatus = Number(body?.meta?.lastQueueErrorStatus || 0);
+        const retryEnqueued = body?.meta?.retryEnqueued === true;
+        const retryErrorMessage = String(body?.meta?.retryErrorMessage || "").trim();
+
+        const queueErrorHint = `${lastQueueErrorCode} ${lastQueueErrorMessage}`.toLowerCase();
+        const isEsprit403 =
+          lastQueueErrorStatus === 403 ||
+          lastQueueErrorCode === "403" ||
+          queueErrorHint.includes(" 403") ||
+          queueErrorHint.startsWith("403") ||
+          queueErrorHint.includes("allowlist") ||
+          queueErrorHint.includes("forbidden") ||
+          queueErrorHint.includes("차단");
+
+        if (isAlreadyApprovedNoop) {
+          if (retryEnqueued) {
+            toast({
+              title: isEsprit403
+                ? "Esprit 재시도 등록됨 (이전 403 실패 감지)"
+                : "Esprit 재시도 큐 등록 완료",
+              description: isEsprit403
+                ? "이전 실패 원인: Esprit 서버 IP 차단(403). 재시도는 등록되었지만 ESPRIT_ALLOW_IPS 확인이 필요합니다."
+                : responseMessage ||
+                  "이전 실패가 감지되어 CAM 생성 재시도 큐에 등록했습니다.",
+              variant: isEsprit403 ? "destructive" : undefined,
+              duration: 6000,
+            });
+          } else if (isEsprit403) {
+            toast({
+              title: "Esprit 호출 실패 (403)",
+              description:
+                lastQueueErrorMessage ||
+                "Esprit 서버 IP가 차단되었습니다. ESPRIT_ALLOW_IPS를 확인해주세요.",
+              variant: "destructive",
+              duration: 7000,
+            });
+          } else if (retryErrorMessage) {
+            toast({
+              title: "재시도 큐 등록 실패",
+              description: retryErrorMessage,
+              variant: "destructive",
+              duration: 6000,
+            });
+          } else {
+            const isRequestApproveFromTab =
+              params.status === "APPROVED" &&
+              stageKey === "request" &&
+              triggerSource === "worksheet-tab";
+            const reusedExistingNc = body?.meta?.reusedExistingNc === true;
+            toast({
+              title: isRequestApproveFromTab
+                ? reusedExistingNc
+                  ? "작업 탭 승인: 기존 NC 재사용으로 CAM 이동"
+                  : "작업 탭 승인: 기존 이력 우선 처리"
+                : "중복 승인 요청",
+              description: isRequestApproveFromTab
+                ? reusedExistingNc
+                  ? "기존 NC 작업을 재사용해 BG 재생성 없이 CAM 단계로 이동했습니다."
+                  : "작업 탭 승인에서는 기존 작업 재사용 가능 시 CAM으로 넘기고, 재사용 불가 시 BG 재처리를 진행합니다."
+                : responseMessage || "이미 승인 접수된 건입니다.",
+              duration: 5000,
+            });
+          }
+        } else {
+          const successTitle = "검토 상태 변경 완료";
+          const successDescription =
+            params.status === "APPROVED"
+              ? stageKey === "request"
+                ? triggerSource === "preview-modal"
+                  ? "프리뷰모달 승인으로 Esprit BG 재실행을 요청했습니다. 처리 완료 후 상태가 자동으로 업데이트됩니다."
+                  : "작업 탭 승인으로 처리했습니다. 기존 작업 이력이 재사용 가능하면 CAM으로 넘기고, 불가하면 BG를 재처리합니다."
+                : stageKey === "cam" || stageKey === "machining"
+                  ? "작업 명령이 접수되었습니다. 처리 완료 후 상태가 자동으로 업데이트됩니다."
+                  : "승인되었습니다."
+              : params.status === "REJECTED"
+                ? "반려되었습니다."
+                : "미승인 상태로 변경되었습니다.";
+
+          // 성공 시에만 안내 토스트 표시
+          toast({
+            title: successTitle,
+            description: successDescription,
+            duration: 3000, // 성공 토스트는 3초 후 자동 소멸
+          });
+        }
 
         if (params.status === "APPROVED") {
           // 자동 탭 이동을 막기 위해 stage 변경을 하지 않는다.

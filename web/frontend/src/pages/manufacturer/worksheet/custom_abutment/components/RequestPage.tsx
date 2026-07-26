@@ -1413,27 +1413,28 @@ export const RequestPage = ({
   const [bulkCamRegenerating, setBulkCamRegenerating] = useState(false);
 
   const handleSaveManufacturerHexRotation = useCallback(
-    async (req: ManufacturerRequest, value: "보정" | "무보정") => {
+    async (
+      req: ManufacturerRequest,
+      value: "STL형상대로" | "원본좌표계대로",
+    ) => {
       if (!req?._id) return;
       const requestMongoId = String(req._id || "").trim();
 
       const normalizeManufacturerHexMode = (
         raw: unknown,
-      ): "보정" | "무보정" => {
+      ): "보정" | "무보정" | null => {
         const v = String(raw || "").trim();
         switch (v) {
+          case "STL형상대로":
           case "보정":
-            return "보정";
-          case "무보정":
-            return "무보정";
           case "0":
             return "보정";
+          case "원본좌표계대로":
+          case "무보정":
           case "30":
             return "무보정";
           default:
-            throw new Error(
-              `지원하지 않는 제조사 헥스 회전 모드입니다. value='${v}'`,
-            );
+            return null;
         }
       };
       const toFinalHexRotation = (
@@ -1442,35 +1443,17 @@ export const RequestPage = ({
         if (mode === "무보정") return "무보정";
         return "보정";
       };
-      const toHexRotationLabel = (mode: "보정" | "무보정") => {
-        switch (mode) {
-          case "보정":
-            return "STL형상대로";
-          case "무보정":
-            return "원본좌표계대로";
-          default:
-            throw new Error(`지원하지 않는 헥스 회전 모드: ${String(mode)}`);
-        }
-      };
+      const toHexRotationLabel = (mode: "보정" | "무보정") =>
+        mode === "무보정" ? "원본좌표계대로" : "STL형상대로";
 
       const nextValue: "보정" | "무보정" =
-        value === "무보정" ? "무보정" : "보정";
+        value === "원본좌표계대로" ? "무보정" : "보정";
 
-      let prevManufacturer: "보정" | "무보정";
-      try {
-        prevManufacturer = normalizeManufacturerHexMode(
-          (req as any)?.rnd?.manufacturerHexRotation,
-        );
-      } catch (hexModeError: any) {
-        toast({
-          title: "헥스 회전 저장 실패",
-          description:
-            hexModeError?.message ||
-            "현재 의뢰의 제조사 헥스 회전 모드가 유효하지 않습니다.",
-          variant: "destructive",
-        });
-        return;
-      }
+      const prevManufacturer =
+        normalizeManufacturerHexMode((req as any)?.rnd?.manufacturerHexRotation) ||
+        normalizeManufacturerHexMode((req as any)?.caseInfos?.finalHexRotation) ||
+        normalizeManufacturerHexMode((req as any)?.caseInfos?.requestorHexRotation) ||
+        "보정";
       const prevFinal: "보정" | "무보정" =
         String((req as any)?.caseInfos?.finalHexRotation || "").trim() === "무보정"
           ? "무보정"
@@ -1515,9 +1498,9 @@ export const RequestPage = ({
           throw new Error(data?.message || "헥스 회전 저장에 실패했습니다.");
         }
 
-        const savedManufacturer = normalizeManufacturerHexMode(
-          data?.data?.manufacturerHexRotation,
-        );
+        const savedManufacturer =
+          normalizeManufacturerHexMode(data?.data?.manufacturerHexRotation) ||
+          nextValue;
         const savedFinal: "보정" | "무보정" =
           String(data?.data?.finalHexRotation || "").trim() === "무보정"
             ? "무보정"

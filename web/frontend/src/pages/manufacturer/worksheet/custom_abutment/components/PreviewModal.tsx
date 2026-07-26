@@ -50,13 +50,17 @@ type PreviewFiles = {
 // - web/backend/controllers/requests/common.requests.controller.js
 // - web/backend/controllers/bg/bg.controller.js
 // Rhino의 align 기능이 구성정보를 대체하므로, 개별 구성정보 파일 모드는 사용하지 않는다.
-type ManufacturerHexRotationMode = "보정" | "무보정";
+type ManufacturerHexRotationCanonicalMode = "보정" | "무보정";
+type ManufacturerHexRotationMode = "STL형상대로" | "원본좌표계대로";
 
-const normalizeManufacturerHexRotationMode = (
+const normalizeManufacturerHexRotationCanonicalMode = (
   value: unknown,
-): ManufacturerHexRotationMode | null => {
+): ManufacturerHexRotationCanonicalMode | null => {
   const raw = String(value || "").trim();
-  // canonical 우선
+  // 최신 프론트 값 우선
+  if (raw === "STL형상대로") return "보정";
+  if (raw === "원본좌표계대로") return "무보정";
+  // canonical(백엔드/DB) 값
   if (raw === "보정" || raw === "무보정") return raw;
   // legacy "헥스회전각" 호환: 0=보정, 30=무보정
   if (raw === "0") return "보정";
@@ -65,8 +69,8 @@ const normalizeManufacturerHexRotationMode = (
 };
 
 const toManufacturerHexRotationLabel = (
-  mode: ManufacturerHexRotationMode,
-): string => {
+  mode: ManufacturerHexRotationCanonicalMode,
+): ManufacturerHexRotationMode => {
   switch (mode) {
     case "보정":
       return "STL형상대로";
@@ -333,6 +337,7 @@ type PreviewModalProps = {
     keepPreviewOpen?: boolean;
     forceReprocess?: boolean;
     processBothHexVariants?: boolean;
+    approvalTriggerSource?: "preview-modal" | "worksheet-tab" | "unknown";
   }) => Promise<void>;
   onDeleteCam: (
     req: ManufacturerRequest,
@@ -441,7 +446,7 @@ export const PreviewModal = ({
   const [hexRotationSaving, setHexRotationSaving] = useState(false);
   const [approving, setApproving] = useState(false);
   const [manufacturerHexRotationDraft, setManufacturerHexRotationDraft] =
-    useState<ManufacturerHexRotationMode>("보정");
+    useState<ManufacturerHexRotationMode>("STL형상대로");
   const req = previewFiles.request as ManufacturerRequest | null;
   const lastStableReqRef = useRef<ManufacturerRequest | null>(null);
 
@@ -552,16 +557,18 @@ export const PreviewModal = ({
     setSelectedReasonValues(tokens);
     setUnmachinableReasonDraft("");
 
-    const requestorHex =
+    const requestorHexCanonical: ManufacturerHexRotationCanonicalMode =
       String((req as any)?.caseInfos?.requestorHexRotation || "").trim() ===
       "무보정"
         ? "무보정"
         : "보정";
-    const manufacturerHex = normalizeManufacturerHexRotationMode(
+    const manufacturerHexCanonical = normalizeManufacturerHexRotationCanonicalMode(
       (req as any)?.rnd?.manufacturerHexRotation,
     );
-    const effectiveHex = manufacturerHex || requestorHex;
-    setManufacturerHexRotationDraft(effectiveHex);
+    const effectiveHexCanonical = manufacturerHexCanonical || requestorHexCanonical;
+    setManufacturerHexRotationDraft(
+      toManufacturerHexRotationLabel(effectiveHexCanonical),
+    );
 
     if (tokens.length) {
       setReasonLibraryWithSync((prev) => {
@@ -835,6 +842,7 @@ export const PreviewModal = ({
               req: activeReq,
               status: "APPROVED",
               stageOverride: "packing",
+              approvalTriggerSource: "preview-modal",
             });
             setSearchParams((prev) => {
               const next = new URLSearchParams(prev);
@@ -1715,7 +1723,9 @@ export const PreviewModal = ({
                   value={manufacturerHexRotationDraft}
                   onValueChange={(value) => {
                     const next: ManufacturerHexRotationMode =
-                      value === "무보정" ? "무보정" : "보정";
+                      value === "원본좌표계대로"
+                        ? "원본좌표계대로"
+                        : "STL형상대로";
                     void handleSaveManufacturerHexRotation(next);
                   }}
                   disabled={
@@ -1729,10 +1739,10 @@ export const PreviewModal = ({
                     <SelectValue placeholder={toManufacturerHexRotationLabel("보정")} />
                   </SelectTrigger>
                   <SelectContent align="end" className="min-w-[168px]">
-                    <SelectItem value="보정" className="text-[12px] font-medium">
+                    <SelectItem value="STL형상대로" className="text-[12px] font-medium">
                       {toManufacturerHexRotationLabel("보정")}
                     </SelectItem>
-                    <SelectItem value="무보정" className="text-[12px] font-medium">
+                    <SelectItem value="원본좌표계대로" className="text-[12px] font-medium">
                       {toManufacturerHexRotationLabel("무보정")}
                     </SelectItem>
 
@@ -1870,7 +1880,9 @@ export const PreviewModal = ({
                         status: "APPROVED",
                         stageOverride: currentReviewStageKey,
                         keepPreviewOpen: false,
-                        forceReprocess: true,
+                        // 프리뷰모달에서 의뢰 단계(의뢰→CAM) 승인 시에는 항상 BG(Esprit) 재실행
+                        forceReprocess: currentReviewStageKey === "request",
+                        approvalTriggerSource: "preview-modal",
                       });
 
                       // CAM 단계 승인 시 NC 파일 bridge-store 동기화 (비동기, 실패 무시)

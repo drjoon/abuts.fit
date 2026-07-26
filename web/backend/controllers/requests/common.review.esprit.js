@@ -52,7 +52,14 @@ export async function triggerEspritForNc({
     ? `3-nc/${String(request.requestId).trim()}/${camNcName || `${String(request.requestId).trim()}.nc`}`
     : String(camFileName).replace(/\.stl$/i, ".nc");
   const controller = new AbortController();
-  const timeoutMs = Number(process.env.BG_TRIGGER_TIMEOUT_MS || 2500);
+  // Esprit HTTP 서버는 요청 수신 시 런타임 상태 전송(backend callback)을 먼저 수행한 뒤
+  // 응답을 반환할 수 있어 2.5초 기본값으로는 간헐적 abort가 발생한다.
+  // abort가 나면 ReviewApprovalQueue가 재시도하면서 체감 지연(수십 초)로 보일 수 있으므로,
+  // 기본 타임아웃을 충분히 늘리고(12초) 환경변수값도 하한/상한으로 안전하게 클램프한다.
+  const configuredTimeoutMs = Number(process.env.BG_TRIGGER_TIMEOUT_MS || 12000);
+  const timeoutMs = Number.isFinite(configuredTimeoutMs)
+    ? Math.min(30000, Math.max(3000, Math.floor(configuredTimeoutMs)))
+    : 12000;
   const timeoutRef = setTimeout(() => controller.abort(), timeoutMs);
   const espritUrl = `${ESPRIT_BASE.replace(/\/+$/, "")}/`;
   console.log("[ESPRIT] prepare trigger", {
@@ -140,6 +147,7 @@ export async function triggerEspritForNc({
       url: espritUrl,
       headers: Object.keys(headers),
       hasXEspritSecret: !!headers["X-Esprit-Secret"],
+      timeoutMs,
     });
     resp = await fetch(espritUrl, {
       method: "POST",
@@ -148,11 +156,23 @@ export async function triggerEspritForNc({
       signal: controller.signal,
     });
   } catch (error) {
+    const isAbort =
+      String(error?.name || "").trim() === "AbortError" ||
+      /abort/i.test(String(error?.message || ""));
     const err = new Error(
-      "Esprit 서버에 연결할 수 없습니다. Esprit 서버(8001)를 실행한 후 다시 시도해주세요.",
+      isAbort
+        ? `Esprit 트리거 응답 대기시간(${timeoutMs}ms)을 초과했습니다. Esprit 서버 상태/네트워크를 확인해주세요.`
+        : "Esprit 서버에 연결할 수 없습니다. Esprit 서버(8001)를 실행한 후 다시 시도해주세요.",
     );
     err.statusCode = 503;
     err.cause = error;
+    console.warn("[ESPRIT] trigger request error", {
+      requestId: request?.requestId,
+      isAbort,
+      timeoutMs,
+      errorName: error?.name,
+      errorMessage: error?.message,
+    });
     throw err;
   } finally {
     clearTimeout(timeoutRef);
