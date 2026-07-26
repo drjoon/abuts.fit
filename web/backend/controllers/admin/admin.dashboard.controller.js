@@ -198,6 +198,7 @@ export async function getDashboardStats(req, res) {
           createdAt: 1,
           caseInfos: 1,
           rnd: 1,
+          businessAnchorId: 1,
         })
         .lean(),
       getLatestPricingSsotHealthSnapshot(),
@@ -242,6 +243,13 @@ export async function getDashboardStats(req, res) {
       ),
     };
 
+    const requestorAnchorById = new Map(
+      (Array.isArray(requestorAnchors) ? requestorAnchors : []).map((a) => [
+        String(a?._id || "").trim(),
+        a || {},
+      ]),
+    );
+
     const unmachinableSummary = {
       potentialCount: Number(assignedLikeSummary?.unmachinablePotentialCount || 0),
       judgedCount: Number(
@@ -263,9 +271,19 @@ export async function getDashboardStats(req, res) {
                 ? "potential"
                 : "none";
 
+          const businessAnchorId = String(r?.businessAnchorId || "").trim();
+          const anchor = requestorAnchorById.get(businessAnchorId) || {};
+
           return {
             _id: r._id,
             requestId: r.requestId,
+            businessAnchorId,
+            businessName: String(anchor?.name || "").trim() || "",
+            companyName: String(anchor?.metadata?.companyName || "").trim() || "",
+            representativeName:
+              String(anchor?.metadata?.representativeName || "").trim() || "",
+            phoneNumber: String(anchor?.metadata?.phoneNumber || "").trim() || "",
+            email: String(anchor?.metadata?.email || "").trim() || "",
             title: r.title || "",
             manufacturerStage: r.manufacturerStage,
             createdAt: r.createdAt || null,

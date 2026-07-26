@@ -15,8 +15,6 @@ import { MultiActionDialog } from "@/features/support/components/MultiActionDial
 import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { DashboardShell } from "@/shared/ui/dashboard/DashboardShell";
-import { RequestorRiskSummaryCard } from "@/shared/ui/dashboard/RequestorRiskSummaryCard";
-import { PeriodFilter } from "@/shared/ui/PeriodFilter";
 import { useAdminCommBadges } from "@/shared/hooks/useAdminCommBadges";
 import {
   Users,
@@ -182,6 +180,28 @@ type PricingSsotHealth = {
 
 type UnmachinableDetailCode = "potential" | "judged" | "confirmed" | "none";
 
+type UnmachinableSummaryItem = {
+  _id?: string;
+  requestId?: string;
+  businessAnchorId?: string;
+  businessName?: string;
+  companyName?: string;
+  representativeName?: string;
+  phoneNumber?: string;
+  email?: string;
+  title?: string;
+  manufacturerStage?: string;
+  createdAt?: string | null;
+  caseInfos?: Record<string, unknown>;
+  rnd?: {
+    unmachinablePotentialAt?: string | null;
+    unmachinableAt?: string | null;
+    unmachinableConfirmedAt?: string | null;
+    unmachinableReason?: string;
+  };
+  unmachinableDetailCode?: UnmachinableDetailCode;
+};
+
 const UNMACHINABLE_DETAIL_LABEL: Record<UnmachinableDetailCode, string> = {
   potential: "불완전가공 가능성 있음",
   judged: "제조사 불완전가공 판정",
@@ -267,6 +287,7 @@ export const AdminDashboardPage = () => {
   const { period, setPeriod } = usePeriodStore();
   const { counts: commBadgeCounts } = useAdminCommBadges();
   const [happyCallDialogOpen, setHappyCallDialogOpen] = useState(false);
+  const [riskSummaryDialogOpen, setRiskSummaryDialogOpen] = useState(false);
   const [happyCallDialogTab, setHappyCallDialogTab] = useState<"targets" | "completed">("targets");
   const [happyCallReasonFilter, setHappyCallReasonFilter] = useState<string>("all");
   const [phoneConfirm, setPhoneConfirm] = useState<{
@@ -306,6 +327,13 @@ export const AdminDashboardPage = () => {
     Record<string, HappyCallMemoEntry[]>
   >({});
   const [happyCallDetailItem, setHappyCallDetailItem] = useState<HappyCallBusinessDetail | null>(null);
+  const [unmachinableDetailDialog, setUnmachinableDetailDialog] = useState<{
+    open: boolean;
+    item: UnmachinableSummaryItem | null;
+  }>({
+    open: false,
+    item: null,
+  });
 
   const openHappyCallBusinessDetail = (
     source: Partial<HappyCallBusinessDetail> | null | undefined,
@@ -571,6 +599,21 @@ export const AdminDashboardPage = () => {
     ? (adminDashboardResponse.data?.happyCallSummary ?? null)
     : null;
 
+  const inProgressRequestCount =
+    Number(adminDashboardResponse?.data?.requestStats?.byStatus?.["의뢰"] || 0) +
+    Number(adminDashboardResponse?.data?.requestStats?.byStatus?.["CAM"] || 0) +
+    Number(adminDashboardResponse?.data?.requestStats?.byStatus?.["가공"] || 0) +
+    Number(adminDashboardResponse?.data?.requestStats?.byStatus?.["세척.패킹"] || 0) +
+    Number(adminDashboardResponse?.data?.requestStats?.byStatus?.["포장.발송"] || 0) +
+    Number(adminDashboardResponse?.data?.requestStats?.byStatus?.["추적관리"] || 0);
+
+  const riskWarningCount = Number(riskSummary?.warningCount || 0);
+  const riskDelayedCount = Number(riskSummary?.delayedCount || 0);
+  const riskOnTimeRate = Number(riskSummary?.onTimeRate || 0);
+  const riskSummaryItems = Array.isArray(riskSummary?.items)
+    ? riskSummary.items
+    : [];
+
   const totalRequestorBusinessCount = Number(
     adminDashboardResponse?.data?.userStats?.requestorBusinessCount ?? 0,
   );
@@ -823,125 +866,61 @@ export const AdminDashboardPage = () => {
         subtitle="시스템 관리 대시보드입니다."
         headerRight={undefined}
         statsGridClassName="flex flex-col gap-3"
-        topSection={
-          <div className="grid grid-cols-1 gap-3 items-stretch xl:grid-cols-2">
-            <RequestorRiskSummaryCard riskSummary={riskSummary} />
-
-            <Card className="app-glass-card app-glass-card--lg">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium">불완전가공 의뢰 현황</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="grid grid-cols-3 gap-2">
-                  <div className="rounded-md border px-2 py-2">
-                    <div className="text-[11px] text-muted-foreground">가능성</div>
-                    <div className="text-lg font-semibold">
-                      {Number(unmachinableSummary?.potentialCount || 0).toLocaleString()}
-                    </div>
-                  </div>
-                  <div className="rounded-md border px-2 py-2 border-yellow-200 bg-yellow-50/60">
-                    <div className="text-[11px] text-muted-foreground">판정</div>
-                    <div className="text-lg font-semibold text-yellow-700">
-                      {Number(unmachinableSummary?.judgedCount || 0).toLocaleString()}
-                    </div>
-                  </div>
-                  <div className="rounded-md border px-2 py-2 border-blue-200 bg-blue-50/60">
-                    <div className="text-[11px] text-muted-foreground">확인</div>
-                    <div className="text-lg font-semibold text-blue-700">
-                      {Number(unmachinableSummary?.confirmedCount || 0).toLocaleString()}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="space-y-1.5 max-h-40 overflow-auto pr-1">
-                  {(Array.isArray(unmachinableSummary?.items)
-                    ? unmachinableSummary.items
-                    : []
-                  ).map((rawItem, idx) => {
-                    const item = rawItem as Record<string, unknown>;
-                    const code = String(
-                      item?.unmachinableDetailCode || "none",
-                    ) as UnmachinableDetailCode;
-                    const caseInfos =
-                      (item?.caseInfos as Record<string, unknown> | undefined) || {};
-                    const clinic = String(caseInfos?.clinicName || "").trim();
-                    const patient = String(caseInfos?.patientName || "").trim();
-                    const title =
-                      String(item?.title || "").trim() ||
-                      [clinic, patient].filter(Boolean).join(" ") ||
-                      String(item?.requestId || "");
-                    const key = String(item?._id || item?.requestId || `unmach-${idx}`);
-                    return (
-                      <div
-                        key={key}
-                        className="rounded-md border px-2 py-1.5"
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="text-xs font-medium truncate">{title}</div>
-                          <Badge
-                            variant={UNMACHINABLE_DETAIL_BADGE_VARIANT(code)}
-                            className={`text-[10px] ${
-                              code === "judged" || code === "potential"
-                                ? "border-yellow-300 bg-yellow-50 text-yellow-700"
-                                : ""
-                            }`}
-                          >
-                            {UNMACHINABLE_DETAIL_LABEL[code] || UNMACHINABLE_DETAIL_LABEL.none}
-                          </Badge>
-                        </div>
-                        <div className="text-[11px] text-muted-foreground truncate">
-                          의뢰번호: {String(item?.requestId || "-")} · 상태: {String(item?.manufacturerStage || "-")}
-                        </div>
-                      </div>
-                    );
-                  })}
-
-                  {Number((unmachinableSummary?.items || []).length || 0) === 0 && (
-                    <div className="text-xs text-muted-foreground py-2 text-center">
-                      표시할 불완전가공 의뢰가 없습니다.
-                    </div>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        }
+        topSection={undefined}
         stats={
           <>
-            <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
-              {/* 카드1: 전체 사용자 / 전체 완료 주문 */}
+            <div className="grid grid-cols-1 gap-3 lg:grid-cols-4">
+              {/* 카드1: 진행 / 완료 / 취소 */}
               <Card className="app-glass-card app-glass-card--lg">
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">
-                    사용자 / 주문
-                  </CardTitle>
-                  <Users className="h-4 w-4 text-muted-foreground" />
+                  <CardTitle className="text-sm font-medium">진행 / 완료 / 취소</CardTitle>
+                  <FileText className="h-4 w-4 text-muted-foreground" />
                 </CardHeader>
-                <CardContent className="space-y-1">
-                  <div className="flex items-end justify-between gap-2">
-                    <div className="text-xs text-muted-foreground">
-                      의뢰자 사업자
+                <CardContent className="space-y-3">
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
+                    <div className="text-xs text-muted-foreground">진행</div>
+                    <div className="text-right text-lg font-bold">{inProgressRequestCount.toLocaleString()}</div>
+                    <div className="text-xs text-muted-foreground">취소</div>
+                    <div className="text-right text-lg font-bold text-muted-foreground">
+                      {Number(adminDashboardResponse?.data?.requestStats?.byStatus?.["취소"] || 0).toLocaleString()}
                     </div>
-                    <div className="text-lg sm:text-xl md:text-2xl font-bold">
-                      {(
-                        adminDashboardResponse?.data?.userStats
-                          ?.requestorBusinessCount ?? 0
-                      ).toLocaleString()}
-                      개
+                    <div className="text-xs text-muted-foreground">완료(유료)</div>
+                    <div className="text-right text-base font-semibold">
+                      {Number(completionSummary?.paid || 0).toLocaleString()}건
                     </div>
-                  </div>
-                  <div className="flex items-end justify-between gap-2">
-                    <div className="text-xs text-muted-foreground">
-                      전체 완료 주문
-                    </div>
-                    <div className="text-lg font-semibold">
-                      {Number(completionSummary?.total || 0).toLocaleString()}건
+                    <div className="text-xs text-muted-foreground">완료(무료)</div>
+                    <div className="text-right text-base font-semibold text-muted-foreground">
+                      {Number(completionSummary?.free || 0).toLocaleString()}건
                     </div>
                   </div>
                 </CardContent>
               </Card>
 
-              {/* 카드X: 이번 주 해피콜 의뢰자 */}
+              {/* 카드2: 지연 위험 요약 */}
+              <Card className="app-glass-card app-glass-card--lg">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">지연 위험 요약</CardTitle>
+                  <AlertCircle className="h-4 w-4 text-muted-foreground" />
+                </CardHeader>
+                <CardContent>
+                  <button
+                    type="button"
+                    className="w-full rounded-md border px-3 py-2 text-left hover:bg-slate-50 transition"
+                    onClick={() => setRiskSummaryDialogOpen(true)}
+                  >
+                    <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+                      <span>지연 가능 의뢰: {riskWarningCount.toLocaleString()}건</span>
+                      <span>지연 확정 의뢰: {riskDelayedCount.toLocaleString()}건</span>
+                      <span>정시 발송 비율: {riskOnTimeRate.toLocaleString()}%</span>
+                    </div>
+                    <div className="mt-1 text-[11px] text-muted-foreground">
+                      클릭하면 지연 위험 상세 내역을 확인할 수 있습니다.
+                    </div>
+                  </button>
+                </CardContent>
+              </Card>
+
+              {/* 카드3: 이번 주 해피콜 의뢰자 */}
               <Card className="app-glass-card app-glass-card--lg">
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                   <CardTitle className="text-sm font-medium">
@@ -965,218 +944,17 @@ export const AdminDashboardPage = () => {
                         {Number(happyCallSummary?.totalRequestorCount || 0).toLocaleString()}개
                       </div>
                     </div>
-                    <div className="mt-1 text-xs text-muted-foreground">
-                      전체 {totalRequestorBusinessCount.toLocaleString()}개 중
-                    </div>
-                    <div className="mt-1 text-[11px] text-muted-foreground">
-                      클릭하면 해피콜 대상 목록을 확인할 수 있습니다.
+                    <div className="mt-2 flex items-end justify-between gap-2">
+                      <div className="text-xs text-muted-foreground">전체 의뢰자 사업자</div>
+                      <div className="text-lg sm:text-xl font-bold">
+                        {(adminDashboardResponse?.data?.userStats?.requestorBusinessCount ?? 0).toLocaleString()}개
+                      </div>
                     </div>
                   </button>
                 </CardContent>
               </Card>
 
-              {/* 카드2: 진행/완료/취소 - 유료/무료 분리 */}
-              <Card className="app-glass-card app-glass-card--lg">
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">
-                    진행 / 완료 / 취소
-                  </CardTitle>
-                  <FileText className="h-4 w-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="flex items-end justify-between gap-2 mr-6">
-                      <div className="text-xs text-muted-foreground">진행</div>
-                      <div className="text-2xl font-bold">
-                        {(
-                          Number(
-                            adminDashboardResponse?.data?.requestStats
-                              ?.byStatus?.["의뢰"] || 0,
-                          ) +
-                          Number(
-                            adminDashboardResponse?.data?.requestStats
-                              ?.byStatus?.["CAM"] || 0,
-                          ) +
-                          Number(
-                            adminDashboardResponse?.data?.requestStats
-                              ?.byStatus?.["가공"] || 0,
-                          ) +
-                          Number(
-                            adminDashboardResponse?.data?.requestStats
-                              ?.byStatus?.["세척.패킹"] || 0,
-                          ) +
-                          Number(
-                            adminDashboardResponse?.data?.requestStats
-                              ?.byStatus?.["포장.발송"] || 0,
-                          ) +
-                          Number(
-                            adminDashboardResponse?.data?.requestStats
-                              ?.byStatus?.["추적관리"] || 0,
-                          )
-                        ).toLocaleString()}
-                      </div>
-                    </div>
-                    <div className="flex items-end justify-between gap-2 ml-6">
-                      <div className="text-xs text-muted-foreground">취소</div>
-                      <div className="text-2xl font-bold text-muted-foreground">
-                        {Number(
-                          adminDashboardResponse?.data?.requestStats
-                            ?.byStatus?.["취소"] || 0,
-                        ).toLocaleString()}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="flex items-end justify-between gap-2 mr-6">
-                      <div className="text-xs text-muted-foreground">
-                        완료(유료)
-                      </div>
-                      <div className="text-lg font-semibold">
-                        {Number(completionSummary?.paid || 0).toLocaleString()}건
-                      </div>
-                    </div>
-                    <div className="flex items-end justify-between gap-2 ml-6">
-                      <div className="text-xs text-muted-foreground">
-                        완료(무료)
-                      </div>
-                      <div className="text-lg font-semibold text-muted-foreground">
-                        {Number(completionSummary?.free || 0).toLocaleString()}건
-                      </div>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-
-            <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-              {/* 카드4: 거래금액 / 평균 단가 / 배송비 */}
-              <Card className="app-glass-card app-glass-card--lg">
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">
-                    거래금액 / 평균 단가 / 배송비
-                  </CardTitle>
-                  <DollarSign className="h-4 w-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  <div className="grid grid-cols-3 gap-3">
-                    <div className="space-y-1">
-                      <div className="text-xs text-muted-foreground">
-                        유료 주문액
-                      </div>
-                      <div className="text-xl font-bold">
-                        ₩{(pricingSummary?.totalRevenue ?? 0).toLocaleString()}
-                      </div>
-                    </div>
-                    <div className="space-y-1">
-                      <div className="text-xs text-muted-foreground">
-                        평균 단가
-                      </div>
-                      <div className="text-xl font-bold">
-                        ₩{(pricingSummary?.avgUnitPrice ?? 0).toLocaleString()}
-                      </div>
-                    </div>
-                    <div className="space-y-1">
-                      <div className="text-xs text-muted-foreground">
-                        전체 배송비
-                      </div>
-                      <div className="text-xl font-bold">
-                        ₩
-                        {(
-                          pricingSummary?.totalShippingFeeSupply ?? 0
-                        ).toLocaleString()}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-3 gap-3">
-                    <div className="space-y-1">
-                      <div className="text-xs text-muted-foreground">
-                        무료 주문액
-                      </div>
-                      <div className="text-sm font-semibold text-muted-foreground">
-                        ₩
-                        {(
-                          pricingSummary?.totalBonusRevenue ?? 0
-                        ).toLocaleString()}
-                      </div>
-                    </div>
-                    <div className="space-y-1">
-                      <div className="text-xs text-muted-foreground">
-                        평균 무료 단가
-                      </div>
-                      <div className="text-sm font-semibold text-muted-foreground">
-                        ₩
-                        {(
-                          pricingSummary?.avgBonusUnitPrice ?? 0
-                        ).toLocaleString()}
-                      </div>
-                    </div>
-                    <div className="space-y-1">
-                      <div className="text-xs text-muted-foreground">
-                        평균 배송비
-                      </div>
-                      <div className="text-sm font-semibold">
-                        ₩
-                        {(
-                          pricingSummary?.avgShippingFeeSupply ?? 0
-                        ).toLocaleString()}
-                      </div>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* 카드5: 미처리 통신 */}
-              <Card className="app-glass-card app-glass-card--lg">
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">
-                    미처리 통신
-                  </CardTitle>
-                  <MessageSquare className="h-4 w-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  <div className="grid grid-cols-4 gap-3">
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                        <MessageCircle className="h-3 w-3" />
-                        채팅
-                      </div>
-                      <div className="text-xl font-bold">
-                        {commBadgeCounts.chat.toLocaleString()}
-                      </div>
-                    </div>
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                        <MessageSquare className="h-3 w-3" />
-                        메시지
-                      </div>
-                      <div className="text-xl font-bold">
-                        {commBadgeCounts.request.toLocaleString()}
-                      </div>
-                    </div>
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                        <Mail className="h-3 w-3" />
-                        메일
-                      </div>
-                      <div className="text-xl font-bold">
-                        {commBadgeCounts.mail.toLocaleString()}
-                      </div>
-                    </div>
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                        <HelpCircle className="h-3 w-3" />
-                        문의
-                      </div>
-                      <div className="text-xl font-bold">
-                        {commBadgeCounts.inquiry.toLocaleString()}
-                      </div>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* 카드6: 가격/리퍼럴 SSOT 점검 */}
+              {/* 카드4: 가격/리퍼럴 SSOT 점검 */}
               <Card className="app-glass-card app-glass-card--lg">
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                   <CardTitle className="text-sm font-medium">
@@ -1255,9 +1033,6 @@ export const AdminDashboardPage = () => {
                                   type="button"
                                   className="w-full flex items-center justify-between text-xs hover:bg-yellow-50 rounded px-1 py-0.5"
                                   onClick={() => {
-                                    // 우선순위:
-                                    // 1) 대표 요청이 있으면 요청 모니터링으로 이동(해당 요청 focus)
-                                    // 2) 요청이 없으면 사업자 페이지로 이동(해당 anchor focus)
                                     if (latestRequestMongoId) {
                                       const qs = new URLSearchParams();
                                       if (latestRequestMongoId) {
@@ -1300,9 +1075,407 @@ export const AdminDashboardPage = () => {
                 </CardContent>
               </Card>
             </div>
+
+            <div className="grid grid-cols-1 gap-3 lg:grid-cols-2 items-stretch">
+              <div className="flex h-full flex-col gap-3">
+                {/* 카드5: 미처리 통신 */}
+                <Card className="app-glass-card app-glass-card--lg h-full">
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-sm font-medium">
+                      미처리 통신
+                    </CardTitle>
+                    <MessageSquare className="h-4 w-4 text-muted-foreground" />
+                  </CardHeader>
+                  <CardContent className="space-y-2">
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-0.5">
+                        <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                          <MessageCircle className="h-3 w-3" />
+                          채팅
+                        </div>
+                        <div className="text-lg font-bold">
+                          {commBadgeCounts.chat.toLocaleString()}
+                        </div>
+                      </div>
+                      <div className="space-y-0.5">
+                        <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                          <MessageSquare className="h-3 w-3" />
+                          메시지
+                        </div>
+                        <div className="text-lg font-bold">
+                          {commBadgeCounts.request.toLocaleString()}
+                        </div>
+                      </div>
+                      <div className="space-y-0.5">
+                        <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                          <Mail className="h-3 w-3" />
+                          메일
+                        </div>
+                        <div className="text-lg font-bold">
+                          {commBadgeCounts.mail.toLocaleString()}
+                        </div>
+                      </div>
+                      <div className="space-y-0.5">
+                        <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                          <HelpCircle className="h-3 w-3" />
+                          문의
+                        </div>
+                        <div className="text-lg font-bold">
+                          {commBadgeCounts.inquiry.toLocaleString()}
+                        </div>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* 카드7: 거래금액 / 평균 단가 / 배송비 */}
+                <Card className="app-glass-card app-glass-card--lg h-full">
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-sm font-medium">
+                      거래금액 / 평균 단가 / 배송비
+                    </CardTitle>
+                    <DollarSign className="h-4 w-4 text-muted-foreground" />
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <div className="grid grid-cols-3 gap-3">
+                      <div className="space-y-1">
+                        <div className="text-xs text-muted-foreground">
+                          유료 주문액
+                        </div>
+                        <div className="text-xl font-bold">
+                          ₩{(pricingSummary?.totalRevenue ?? 0).toLocaleString()}
+                        </div>
+                      </div>
+                      <div className="space-y-1">
+                        <div className="text-xs text-muted-foreground">
+                          평균 단가
+                        </div>
+                        <div className="text-xl font-bold">
+                          ₩{(pricingSummary?.avgUnitPrice ?? 0).toLocaleString()}
+                        </div>
+                      </div>
+                      <div className="space-y-1">
+                        <div className="text-xs text-muted-foreground">
+                          전체 배송비
+                        </div>
+                        <div className="text-xl font-bold">
+                          ₩
+                          {(
+                            pricingSummary?.totalShippingFeeSupply ?? 0
+                          ).toLocaleString()}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-3 gap-3">
+                      <div className="space-y-1">
+                        <div className="text-xs text-muted-foreground">
+                          무료 주문액
+                        </div>
+                        <div className="text-sm font-semibold text-muted-foreground">
+                          ₩
+                          {(
+                            pricingSummary?.totalBonusRevenue ?? 0
+                          ).toLocaleString()}
+                        </div>
+                      </div>
+                      <div className="space-y-1">
+                        <div className="text-xs text-muted-foreground">
+                          평균 무료 단가
+                        </div>
+                        <div className="text-sm font-semibold text-muted-foreground">
+                          ₩
+                          {(
+                            pricingSummary?.avgBonusUnitPrice ?? 0
+                          ).toLocaleString()}
+                        </div>
+                      </div>
+                      <div className="space-y-1">
+                        <div className="text-xs text-muted-foreground">
+                          평균 배송비
+                        </div>
+                        <div className="text-sm font-semibold">
+                          ₩
+                          {(
+                            pricingSummary?.avgShippingFeeSupply ?? 0
+                          ).toLocaleString()}
+                        </div>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* 카드6: 불완전가공 의뢰 현황 */}
+              <Card className="app-glass-card app-glass-card--lg h-full">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium">불완전가공 의뢰 현황</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div className="grid grid-cols-3 gap-2">
+                    <div className="rounded-md border px-2 py-2">
+                      <div className="text-[11px] text-muted-foreground">가능성</div>
+                      <div className="text-lg font-semibold">
+                        {Number(unmachinableSummary?.potentialCount || 0).toLocaleString()}
+                      </div>
+                    </div>
+                    <div className="rounded-md border px-2 py-2 border-yellow-200 bg-yellow-50/60">
+                      <div className="text-[11px] text-muted-foreground">판정</div>
+                      <div className="text-lg font-semibold text-yellow-700">
+                        {Number(unmachinableSummary?.judgedCount || 0).toLocaleString()}
+                      </div>
+                    </div>
+                    <div className="rounded-md border px-2 py-2 border-blue-200 bg-blue-50/60">
+                      <div className="text-[11px] text-muted-foreground">확인</div>
+                      <div className="text-lg font-semibold text-blue-700">
+                        {Number(unmachinableSummary?.confirmedCount || 0).toLocaleString()}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5 max-h-[14.5rem] overflow-auto pr-1">
+                    {(Array.isArray(unmachinableSummary?.items)
+                      ? unmachinableSummary.items
+                      : []
+                    ).map((rawItem, idx) => {
+                      const item = rawItem as Record<string, unknown>;
+                      const code = String(
+                        item?.unmachinableDetailCode || "none",
+                      ) as UnmachinableDetailCode;
+                      const caseInfos =
+                        (item?.caseInfos as Record<string, unknown> | undefined) || {};
+                      const clinic = String(caseInfos?.clinicName || "").trim();
+                      const patient = String(caseInfos?.patientName || "").trim();
+                      const title =
+                        String(item?.title || "").trim() ||
+                        [clinic, patient].filter(Boolean).join(" ") ||
+                        String(item?.requestId || "");
+                      const key = String(item?._id || item?.requestId || `unmach-${idx}`);
+                      return (
+                        <button
+                          key={key}
+                          type="button"
+                          className="w-full rounded-md border px-2 py-1.5 text-left hover:bg-slate-50 transition"
+                          onClick={() => {
+                            setUnmachinableDetailDialog({
+                              open: true,
+                              item: rawItem as UnmachinableSummaryItem,
+                            });
+                          }}
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="text-xs font-medium truncate">{title}</div>
+                            <Badge
+                              variant={UNMACHINABLE_DETAIL_BADGE_VARIANT(code)}
+                              className={`text-[10px] ${
+                                code === "judged" || code === "potential"
+                                  ? "border-yellow-300 bg-yellow-50 text-yellow-700"
+                                  : ""
+                              }`}
+                            >
+                              {UNMACHINABLE_DETAIL_LABEL[code] || UNMACHINABLE_DETAIL_LABEL.none}
+                            </Badge>
+                          </div>
+                          <div className="text-[11px] text-muted-foreground truncate">
+                            의뢰번호: {String(item?.requestId || "-")} · 상태: {String(item?.manufacturerStage || "-")}
+                          </div>
+                          {String(item?.businessName || "").trim() && (
+                            <div className="text-[11px] text-muted-foreground truncate">
+                              의뢰자: {String(item?.businessName || "-")}
+                            </div>
+                          )}
+                        </button>
+                      );
+                    })}
+
+                    {Number((unmachinableSummary?.items || []).length || 0) === 0 && (
+                      <div className="text-xs text-muted-foreground py-2 text-center">
+                        표시할 불완전가공 의뢰가 없습니다.
+                      </div>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
           </>
         }
         mainLeft={undefined}
+      />
+
+      <MultiActionDialog
+        open={unmachinableDetailDialog.open}
+        onClose={() => {
+          setUnmachinableDetailDialog({ open: false, item: null });
+        }}
+        title="불완전가공 의뢰 상세"
+        description={
+          (() => {
+            const item = unmachinableDetailDialog.item;
+            const code = String(
+              item?.unmachinableDetailCode || "none",
+            ) as UnmachinableDetailCode;
+            const phone = String(item?.phoneNumber || "").trim();
+            const businessName =
+              String(item?.businessName || item?.companyName || "").trim() || "의뢰자";
+            const caseInfos =
+              (item?.caseInfos as Record<string, unknown> | undefined) || {};
+            const clinic = String(caseInfos?.clinicName || "").trim();
+            const patient = String(caseInfos?.patientName || "").trim();
+            const tooth = String(caseInfos?.tooth || "").trim();
+            const reason = String(item?.rnd?.unmachinableReason || "").trim();
+
+            return (
+              <div className="space-y-3 text-sm text-gray-700">
+                <div className="rounded-md border bg-slate-50 px-3 py-2 space-y-1.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="text-sm font-semibold text-gray-900 truncate">
+                      {String(item?.title || item?.requestId || "-")}
+                    </div>
+                    <Badge
+                      variant={UNMACHINABLE_DETAIL_BADGE_VARIANT(code)}
+                      className={`text-[10px] ${
+                        code === "judged" || code === "potential"
+                          ? "border-yellow-300 bg-yellow-50 text-yellow-700"
+                          : ""
+                      }`}
+                    >
+                      {UNMACHINABLE_DETAIL_LABEL[code] || UNMACHINABLE_DETAIL_LABEL.none}
+                    </Badge>
+                  </div>
+                  <div className="text-xs text-slate-600">의뢰번호: {String(item?.requestId || "-")}</div>
+                  <div className="text-xs text-slate-600">상태: {String(item?.manufacturerStage || "-")}</div>
+                  <div className="text-xs text-slate-600">
+                    케이스: {[clinic, patient, tooth ? `#${tooth}` : ""]
+                      .filter(Boolean)
+                      .join(" ") || "-"}
+                  </div>
+                </div>
+
+                <div className="rounded-md border px-3 py-2 space-y-1.5">
+                  <div className="text-xs text-slate-500">의뢰자</div>
+                  <div className="text-sm font-semibold text-gray-900">{businessName}</div>
+                  {String(item?.representativeName || "").trim() && (
+                    <div className="text-xs text-slate-600">
+                      대표자: {String(item?.representativeName || "-")}
+                    </div>
+                  )}
+                  <div className="text-xs text-slate-600">연락처: {phone || "-"}</div>
+                  {String(item?.email || "").trim() && (
+                    <div className="text-xs text-slate-600">이메일: {String(item?.email || "-")}</div>
+                  )}
+                </div>
+
+                <div className="rounded-md border px-3 py-2">
+                  <div className="text-xs font-medium text-slate-700 mb-1">불완전가공 사유</div>
+                  <div className="text-xs text-slate-600 whitespace-pre-wrap break-words">
+                    {reason || "등록된 사유가 없습니다."}
+                  </div>
+                </div>
+              </div>
+            );
+          })()
+        }
+        actions={[
+          {
+            label: "닫기",
+            variant: "secondary",
+            onClick: () => {
+              setUnmachinableDetailDialog({ open: false, item: null });
+            },
+          },
+          {
+            label: "문자",
+            variant: "primary",
+            disabled: !String(unmachinableDetailDialog.item?.phoneNumber || "").trim(),
+            onClick: () => {
+              const phone = String(unmachinableDetailDialog.item?.phoneNumber || "").replace(/\s+/g, "");
+              if (!phone) return;
+              window.location.href = `sms:${phone}`;
+            },
+          },
+          {
+            label: "전화",
+            variant: "primary",
+            disabled: !String(unmachinableDetailDialog.item?.phoneNumber || "").trim(),
+            onClick: () => {
+              const phone = String(unmachinableDetailDialog.item?.phoneNumber || "").trim();
+              const businessName =
+                String(
+                  unmachinableDetailDialog.item?.businessName ||
+                    unmachinableDetailDialog.item?.companyName ||
+                    "",
+                ).trim() || "의뢰자";
+              if (!phone) return;
+              setUnmachinableDetailDialog({ open: false, item: null });
+              setPhoneConfirm({
+                open: true,
+                phone,
+                businessName,
+              });
+            },
+          },
+        ]}
+      />
+
+      <MultiActionDialog
+        open={riskSummaryDialogOpen}
+        onClose={() => {
+          setRiskSummaryDialogOpen(false);
+        }}
+        title="지연 위험 상세"
+        panelClassName="!w-[92vw] !max-w-[1100px]"
+        description={
+          <div className="space-y-3 text-sm text-gray-700">
+            <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+              <span>지연 가능 의뢰: {riskWarningCount.toLocaleString()}건</span>
+              <span>지연 확정 의뢰: {riskDelayedCount.toLocaleString()}건</span>
+              <span>정시 발송 비율: {riskOnTimeRate.toLocaleString()}%</span>
+            </div>
+
+            <div className="max-h-[60vh] overflow-auto pr-1 space-y-2">
+              {riskSummaryItems.length > 0 ? (
+                riskSummaryItems.map((item: Record<string, unknown>, idx: number) => {
+                  const key = String(item?.id || `risk-${idx}`);
+                  return (
+                    <div key={key} className="rounded-md border px-3 py-2 bg-white">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="text-sm font-semibold truncate">
+                          {String(item?.title || item?.id || "-")}
+                        </div>
+                        <Badge
+                          variant={item?.riskLevel === "danger" ? "destructive" : "outline"}
+                          className="text-[10px]"
+                        >
+                          {item?.riskLevel === "danger" ? "지연확정" : "지연가능"}
+                        </Badge>
+                      </div>
+                      <div className="mt-1 text-xs text-muted-foreground truncate">
+                        의뢰번호: {String(item?.id || "-")} · 상태: {String(item?.manufacturerStage || "-")}
+                      </div>
+                      {String(item?.message || "").trim() && (
+                        <div className="mt-1 text-xs text-slate-600 whitespace-pre-wrap break-words">
+                          {String(item?.message || "")}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })
+              ) : (
+                <div className="text-xs text-muted-foreground py-8 text-center border border-dashed rounded-md">
+                  지연 위험 내역이 없습니다.
+                </div>
+              )}
+            </div>
+          </div>
+        }
+        actions={[
+          {
+            label: "닫기",
+            variant: "secondary",
+            onClick: () => {
+              setRiskSummaryDialogOpen(false);
+            },
+          },
+        ]}
       />
 
       <MultiActionDialog
