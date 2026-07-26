@@ -298,6 +298,7 @@ export async function getUnmachinableOverview(req, res) {
     const filter = {
       ...dateFilter,
       source: { $ne: "manufacturer_sample" },
+      manufacturerStage: { $ne: "취소" },
       $or: [
         { "rnd.unmachinablePotentialAt": { $ne: null } },
         { "rnd.unmachinableAt": { $ne: null } },
@@ -843,6 +844,7 @@ export async function getMyDashboardSummary(req, res) {
           Request.countDocuments({
             ...requestFilter,
             ...dateFilter,
+            manufacturerStage: { $ne: "취소" },
             "rnd.unmachinableAt": { $ne: null },
             "rnd.unmachinableConfirmedAt": null,
           }),
@@ -850,12 +852,14 @@ export async function getMyDashboardSummary(req, res) {
           Request.countDocuments({
             ...requestFilter,
             ...dateFilter,
+            manufacturerStage: { $ne: "취소" },
             "rnd.unmachinableAt": { $ne: null },
           }),
           // 확인 완료 건수
           Request.countDocuments({
             ...requestFilter,
             ...dateFilter,
+            manufacturerStage: { $ne: "취소" },
             "rnd.unmachinableAt": { $ne: null },
             "rnd.unmachinableConfirmedAt": { $ne: null },
           }),

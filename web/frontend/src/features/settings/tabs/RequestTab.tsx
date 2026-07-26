@@ -264,7 +264,7 @@ export const RequestTab = () => {
           <div className="space-y-1">
             <Label className="text-base font-medium">디자인 소프트웨어</Label>
             <p className="text-sm text-muted-foreground">
-              신규 의뢰 시 기본 안내 문구와 함께 사용됩니다.
+              헥스 회전에 대한 중요한 설정입니다. 반드시 설정해주세요.
             </p>
           </div>
 

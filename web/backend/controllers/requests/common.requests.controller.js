@@ -44,6 +44,7 @@ import {
 import { emitAppEventToRoles } from "../../socket.js";
 import { buildMonitoringStageStatsFromGroupedRows } from "../../services/requestStageStats.service.js";
 import { buildCreatedAtFilterFromQuery } from "../../utils/dateRange.js";
+import { ensureRequestCreditRefundOnRollbackToCam } from "./common.review.helpers.js";
 
 const ESPRIT_BASE =
   process.env.ESPRIT_ADDIN_BASE_URL ||
@@ -2151,7 +2152,41 @@ export const updateRndUnmachinableStatus = asyncHandler(async (req, res) => {
   }
 
   const currentStage = String(request.manufacturerStage || "").trim();
+  const currentStageLower = currentStage.toLowerCase();
   const now = new Date();
+  const wasUnmachinable = Boolean(request?.rnd?.unmachinableAt);
+  const requestorBusinessAnchorId = String(request.businessAnchorId || "").trim();
+
+  // 불완전가공 신규 판정 시, 가공 이후 단계에 있던 의뢰는 CAM으로 롤백하고
+  // 기존 의뢰비 SPEND를 환불한다. (불완전가공은 의뢰비 소비 대상에서 제외)
+  const isPostCamStage =
+    currentStage === "가공" ||
+    currentStage === "세척.패킹" ||
+    currentStage === "포장.발송" ||
+    currentStage === "추적관리" ||
+    currentStage === "생산" ||
+    currentStage === "세척.포장" ||
+    currentStage === "발송" ||
+    currentStageLower === "machining" ||
+    currentStageLower === "production" ||
+    currentStageLower === "packing" ||
+    currentStageLower === "shipping" ||
+    currentStageLower === "tracking";
+
+  if (
+    unmachinable &&
+    !wasUnmachinable &&
+    isPostCamStage &&
+    requestorBusinessAnchorId
+  ) {
+    await ensureRequestCreditRefundOnRollbackToCam({
+      request,
+      businessAnchorId: requestorBusinessAnchorId,
+      actorUserId: req.user?._id || null,
+    });
+    bumpRollbackCount(request, "cam");
+    applyStatusMapping(request, "CAM");
+  }
 
   // 정책: 제조사/관리자의 "가공불가" 액션은
   // 가능성(potential) + 판정(judged)을 동시에 기록한다.
@@ -2183,8 +2218,6 @@ export const updateRndUnmachinableStatus = asyncHandler(async (req, res) => {
   };
 
   await request.save();
-
-  const requestorBusinessAnchorId = String(request.businessAnchorId || "").trim();
 
   // 대시보드 스냅샷/캐시도 즉시 무효화하여 읽음 카운트가 지연되지 않게 한다.
   if (requestorBusinessAnchorId) {
@@ -2873,16 +2906,21 @@ export async function updateRequestStatus(req, res) {
       });
     }
 
-    // 취소는 의뢰/CAM 단계에서만 가능
+    // 취소는 기본적으로 의뢰/CAM 단계에서만 가능.
+    // 단, 제조사에서 불완전가공 판정을 내린 의뢰(rnd.unmachinableAt 존재)는
+    // 의뢰자 판단으로 취소를 허용한다.
     if (manufacturerStage === "취소") {
       const currentStage = String(request.manufacturerStage || "").trim();
       const allowedCancelStages = ["의뢰", "CAM"];
-      const isStageAllowed = allowedCancelStages.includes(currentStage);
+      const isUnmachinable = Boolean(request?.rnd?.unmachinableAt);
+      const isStageAllowed =
+        allowedCancelStages.includes(currentStage) || isUnmachinable;
 
       console.log("[updateManufacturerStage] Cancel validation", {
         requestId: request.requestId,
         currentStage,
         allowedCancelStages,
+        isUnmachinable,
         isStageAllowed,
       });
 
@@ -2890,7 +2928,7 @@ export async function updateRequestStatus(req, res) {
         return res.status(400).json({
           success: false,
           message:
-            "의뢰 또는 CAM 단계에서만 취소할 수 있습니다. 가공 단계부터는 취소가 불가능합니다.",
+            "의뢰 또는 CAM 단계에서만 취소할 수 있습니다. 단, 불완전가공 판정 의뢰는 취소 가능합니다.",
         });
       }
     }
