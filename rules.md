@@ -2890,6 +2890,22 @@ source: {
 - `web/frontend/src/pages/manufacturer/worksheet/custom_abutment/machining/utils/label.ts`
 - `web/frontend/src/pages/manufacturer/equipment/cnc/components/CompletedMachiningRecordsModal.tsx`
 
+### 18.10 R&D 샘플 복사 판별/의뢰탭 시각 규칙 (2026-07-26)
+
+- `clone-from-sample-to-request`의 원본 검증은 `requestCategory`만 보지 않고, 레거시 문서(`requestCategory` 누락)도 아래 조건이면 `R&D 샘플`로 인정합니다.
+  - `source = "manufacturer_sample"`
+  - `rnd.doneAt != null`
+- 제조사 워크시트 `의뢰` 탭에서 샘플 카드는 작업 맥락상 `R&D` 시각 정책(보라색 카드/배지)을 적용합니다.
+  - 즉, `의뢰` 탭의 샘플 카드는 `복사샘플`이어도 파란 샘플 카드가 아니라 보라색 R&D 카드로 렌더링합니다.
+- PreviewModal의 디자인 소프트웨어 표시는 `business.requestSettings.designSoftware`를 SSOT로 사용합니다.
+  - 값이 비어 있으면 임의 fallback 문자열을 주입하지 않고, 미설정 상태로 노출/가이딩합니다.
+
+관련 파일:
+- `web/backend/controllers/requests/common.requests.controller.js`
+- `web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/WorksheetCardGrid.tsx`
+- `web/frontend/src/pages/manufacturer/worksheet/custom_abutment/utils/request.ts`
+- `web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx`
+
 ---
 
 ## 19. 임플란트 프론트 규격/PRC 매핑 운영 정책 (2026-06-14)
@@ -2991,3 +3007,21 @@ PRC 파일 경로 SSOT는 아래를 사용합니다.
 - `web/frontend/src/pages/requestor/settings/SettingsPage.tsx`
 - `web/backend/controllers/requests/creation.from-draft.controller.js`
 - `web/frontend/src/pages/requestor/new_request/hooks/useNewRequestSubmitV2.ts`
+
+### 21.1 의뢰자 designSoftware 전역 강제 설정 모달 정책 (2026-07-26)
+
+- 의뢰자(`requestor`)가 `designSoftware`를 아직 설정하지 않은 상태라면, `신규의뢰` 페이지뿐 아니라 `/dashboard` 하위 상위 페이지 진입 시에도 설정 모달을 강제 노출합니다.
+- 모달 노출 조건 SSOT는 `GET /api/businesses/me/request-settings` 응답을 사용합니다.
+  - `designSoftware`가 비어 있고
+  - `canEdit=true`(대표자 수정 권한)
+  - 위 조건을 만족하면 즉시 모달 오픈
+- 저장 전에는 모달을 닫지 못하게 유지합니다.
+  - 외부 클릭/ESC/X 닫기 차단
+  - `PUT /api/businesses/me/request-settings` 저장 성공 시에만 닫힘
+- 한 번 저장된 뒤에는 같은 세션에서 재차 모달을 띄우지 않습니다.
+  - 서버에 값이 저장되면 이후 진입 시 미노출이 기본 동작입니다.
+
+관련 파일:
+- `web/frontend/src/features/layout/DashboardLayout.tsx`
+- `web/backend/controllers/businesses/business.controller.js`
+- `web/backend/models/businessAnchor.model.js`

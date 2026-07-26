@@ -207,7 +207,14 @@ const isAnySampleRequest = (requestLike) => {
 };
 
 const isRndSampleRequest = (requestLike) => {
-  return resolveRequestCategory(requestLike) === REQUEST_CATEGORY.RND_SAMPLE;
+  if (resolveRequestCategory(requestLike) === REQUEST_CATEGORY.RND_SAMPLE) {
+    return true;
+  }
+
+  // 레거시 문서(requestCategory 누락) 호환:
+  // source=manufacturer_sample && rnd.doneAt!=null 이면 R&D 샘플로 간주한다.
+  const sourceRaw = String(requestLike?.source || "").trim();
+  return sourceRaw === "manufacturer_sample" && requestLike?.rnd?.doneAt != null;
 };
 
 const buildNonSampleRequestGuard = () => ({
@@ -1448,7 +1455,7 @@ export async function getAllRequests(req, res) {
           ? "name business businessAnchorId address addressText zipCode"
           : view === "worksheet" && worksheetProfile === "tracking"
             ? "name business businessAnchorId"
-            : "name business";
+            : "name business businessAnchorId";
 
       query = query
         .select(selectedProjection)
@@ -1510,12 +1517,26 @@ export async function getAllRequests(req, res) {
         new Set(
           requests
             .map((item) => {
-              const raw = item?.businessAnchorId;
-              if (!raw) return "";
-              if (typeof raw === "object" && raw?._id) {
-                return String(raw._id || "").trim();
-              }
-              return String(raw || "").trim();
+              const rawRequestAnchor = item?.businessAnchorId;
+              const requestAnchorId =
+                rawRequestAnchor &&
+                typeof rawRequestAnchor === "object" &&
+                rawRequestAnchor?._id
+                  ? String(rawRequestAnchor._id || "").trim()
+                  : String(rawRequestAnchor || "").trim();
+              if (Types.ObjectId.isValid(requestAnchorId)) return requestAnchorId;
+
+              const rawRequestorAnchor =
+                item?.requestor && typeof item.requestor === "object"
+                  ? item.requestor.businessAnchorId
+                  : null;
+              const requestorAnchorId =
+                rawRequestorAnchor &&
+                typeof rawRequestorAnchor === "object" &&
+                rawRequestorAnchor?._id
+                  ? String(rawRequestorAnchor._id || "").trim()
+                  : String(rawRequestorAnchor || "").trim();
+              return requestorAnchorId;
             })
             .filter((id) => Types.ObjectId.isValid(id)),
         ),
@@ -1543,11 +1564,26 @@ export async function getAllRequests(req, res) {
 
       for (const item of requests) {
         const raw = item?.businessAnchorId;
-        const anchorId =
+        const anchorIdFromRequest =
           raw && typeof raw === "object" && raw?._id
             ? String(raw._id || "").trim()
             : String(raw || "").trim();
-        if (!anchorId) continue;
+
+        const rawRequestorAnchor =
+          item?.requestor && typeof item.requestor === "object"
+            ? item.requestor.businessAnchorId
+            : null;
+        const anchorIdFromRequestor =
+          rawRequestorAnchor &&
+          typeof rawRequestorAnchor === "object" &&
+          rawRequestorAnchor?._id
+            ? String(rawRequestorAnchor._id || "").trim()
+            : String(rawRequestorAnchor || "").trim();
+
+        const anchorId = Types.ObjectId.isValid(anchorIdFromRequest)
+          ? anchorIdFromRequest
+          : anchorIdFromRequestor;
+        if (!Types.ObjectId.isValid(anchorId)) continue;
 
         const requestorOrgDoc = businessMap.get(anchorId);
         if (!requestorOrgDoc) continue;

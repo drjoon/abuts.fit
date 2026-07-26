@@ -17,6 +17,16 @@ import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -243,6 +253,18 @@ export const DashboardLayout = () => {
   const [pendingBusinessName, setPendingBusinessName] = useState<string | null>(
     null,
   );
+  const [designSoftwareModalOpen, setDesignSoftwareModalOpen] = useState(false);
+  const [designSoftwareMode, setDesignSoftwareMode] = useState<
+    "3Shape" | "ExoCAD" | "custom"
+  >("3Shape");
+  const [customDesignSoftware, setCustomDesignSoftware] = useState("");
+  const [designSoftwareCanEdit, setDesignSoftwareCanEdit] = useState(false);
+  const [designSoftwareSaving, setDesignSoftwareSaving] = useState(false);
+  const checkedDesignSoftwareScopeRef = useRef("");
+
+  const requestorBusinessAnchorId = String(
+    (user as any)?.businessAnchorId || "",
+  ).trim();
 
   const isWizardRoute = location.pathname.startsWith("/dashboard/wizard");
   const onboardingCompleted = Boolean(
@@ -327,6 +349,63 @@ export const DashboardLayout = () => {
       })
       .catch(() => {});
   }, [token, user, isWizardRoute, onboardingCompleted]);
+
+  useEffect(() => {
+    if (!token || !user?.id) return;
+    if (isWizardRoute) return;
+    if (!onboardingCompleted) return;
+    if (user.role !== "requestor") return;
+    if (!requestorBusinessAnchorId) return;
+
+    const scopeKey = `${String(user.id)}:${requestorBusinessAnchorId}`;
+    if (checkedDesignSoftwareScopeRef.current === scopeKey) return;
+    checkedDesignSoftwareScopeRef.current = scopeKey;
+
+    let cancelled = false;
+
+    const loadRequestSettings = async () => {
+      try {
+        const res = await apiFetch<any>({
+          path: "/api/businesses/me/request-settings",
+          method: "GET",
+          token,
+        });
+        if (!res.ok || cancelled) return;
+
+        const body: any = res.data || {};
+        const data = body?.data || body;
+        const designSoftware = String(data?.designSoftware || "").trim();
+        const canEdit = Boolean(data?.canEdit);
+
+        if (cancelled) return;
+        setDesignSoftwareCanEdit(canEdit);
+
+        if (!designSoftware && canEdit) {
+          setDesignSoftwareMode("3Shape");
+          setCustomDesignSoftware("");
+          setDesignSoftwareModalOpen(true);
+          return;
+        }
+
+        setDesignSoftwareModalOpen(false);
+      } catch {
+        // ignore
+      }
+    };
+
+    void loadRequestSettings();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    token,
+    user?.id,
+    user?.role,
+    isWizardRoute,
+    onboardingCompleted,
+    requestorBusinessAnchorId,
+  ]);
 
   const refreshSidebarProfile = useCallback(async () => {
     if (!token) return;
@@ -649,6 +728,59 @@ export const DashboardLayout = () => {
     logout();
     navigate("/");
   };
+
+  const handleSaveDesignSoftware = useCallback(async () => {
+    if (!token) return;
+
+    const designSoftware =
+      designSoftwareMode === "custom"
+        ? String(customDesignSoftware || "").trim()
+        : designSoftwareMode;
+
+    if (!designSoftware) {
+      toast({
+        title: "입력값이 필요합니다",
+        description: "직접 입력을 선택한 경우 소프트웨어 이름을 입력해주세요.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setDesignSoftwareSaving(true);
+    try {
+      const res = await apiFetch<any>({
+        path: "/api/businesses/me/request-settings",
+        method: "PUT",
+        token,
+        jsonBody: { designSoftware },
+      });
+
+      if (!res.ok) {
+        const body: any = res.data || {};
+        toast({
+          title: "저장에 실패했습니다",
+          description:
+            String(body?.message || "디자인 소프트웨어 저장 중 오류가 발생했습니다."),
+          variant: "destructive",
+        });
+        return;
+      }
+
+      setDesignSoftwareModalOpen(false);
+      toast({
+        title: "저장 완료",
+        description: "디자인 소프트웨어 설정이 저장되었습니다.",
+      });
+    } catch {
+      toast({
+        title: "저장에 실패했습니다",
+        description: "디자인 소프트웨어 저장 중 오류가 발생했습니다.",
+        variant: "destructive",
+      });
+    } finally {
+      setDesignSoftwareSaving(false);
+    }
+  }, [customDesignSoftware, designSoftwareMode, toast, token]);
 
   const getInitials = (name: string) => {
     return name
@@ -1190,6 +1322,86 @@ export const DashboardLayout = () => {
                       />
                     </div>
                   </main>
+
+                  <Dialog
+                    open={designSoftwareModalOpen}
+                    onOpenChange={(next) => {
+                      // 의뢰자 기본 설정은 저장 전까지 강제 노출한다.
+                      if (!designSoftwareCanEdit) {
+                        setDesignSoftwareModalOpen(next);
+                        return;
+                      }
+                      if (next) setDesignSoftwareModalOpen(true);
+                    }}
+                  >
+                    <DialogContent
+                      hideClose
+                      className="sm:max-w-md"
+                      onInteractOutside={(e) => {
+                        if (designSoftwareCanEdit) e.preventDefault();
+                      }}
+                      onEscapeKeyDown={(e) => {
+                        if (designSoftwareCanEdit) e.preventDefault();
+                      }}
+                    >
+                      <DialogHeader>
+                        <DialogTitle>디자인 소프트웨어 설정</DialogTitle>
+                        <DialogDescription>
+                          신규 의뢰 진행 전에 사용 중인 디자인 소프트웨어를 먼저 설정해주세요.
+                        </DialogDescription>
+                      </DialogHeader>
+
+                      <div className="space-y-4">
+                        <RadioGroup
+                          value={designSoftwareMode}
+                          onValueChange={(value) => {
+                            if (
+                              value === "3Shape" ||
+                              value === "ExoCAD" ||
+                              value === "custom"
+                            ) {
+                              setDesignSoftwareMode(value);
+                            }
+                          }}
+                          className="space-y-2"
+                        >
+                          <div className="flex items-center space-x-2">
+                            <RadioGroupItem value="3Shape" id="gate-design-3shape" />
+                            <Label htmlFor="gate-design-3shape">3Shape</Label>
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            <RadioGroupItem value="ExoCAD" id="gate-design-exocad" />
+                            <Label htmlFor="gate-design-exocad">ExoCAD</Label>
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            <RadioGroupItem value="custom" id="gate-design-custom" />
+                            <Label htmlFor="gate-design-custom">직접 입력</Label>
+                          </div>
+                        </RadioGroup>
+
+                        {designSoftwareMode === "custom" && (
+                          <Input
+                            value={customDesignSoftware}
+                            onChange={(e) => setCustomDesignSoftware(e.target.value)}
+                            placeholder="사용 중인 디자인 소프트웨어를 입력해주세요"
+                            maxLength={120}
+                            autoFocus
+                          />
+                        )}
+                      </div>
+
+                      <DialogFooter>
+                        <Button
+                          onClick={() => {
+                            void handleSaveDesignSoftware();
+                          }}
+                          disabled={designSoftwareSaving}
+                        >
+                          {designSoftwareSaving ? "저장 중..." : "저장"}
+                        </Button>
+                      </DialogFooter>
+                    </DialogContent>
+                  </Dialog>
                 </div>
               </div>
             </div>
