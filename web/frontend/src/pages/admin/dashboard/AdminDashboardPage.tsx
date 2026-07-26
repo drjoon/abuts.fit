@@ -28,6 +28,7 @@ import {
   HelpCircle,
   PhoneCall,
   RotateCcw,
+  Code2,
 } from "lucide-react";
 
 type PricingSummary = {
@@ -334,6 +335,11 @@ export const AdminDashboardPage = () => {
     open: false,
     item: null,
   });
+  const [designSoftwareStatsDialogOpen, setDesignSoftwareStatsDialogOpen] =
+    useState(false);
+  const [designSoftwareStatsFilter, setDesignSoftwareStatsFilter] = useState<
+    "all" | "3shape" | "exocad" | "other"
+  >("all");
 
   const openHappyCallBusinessDetail = (
     source: Partial<HappyCallBusinessDetail> | null | undefined,
@@ -670,6 +676,95 @@ export const AdminDashboardPage = () => {
                 )
               : false,
           );
+
+  const designSoftwareBusinesses = (() => {
+    const map = new Map<string, HappyCallItem>();
+    for (const item of allRequestorItems) {
+      const anchorId = String(item?.businessAnchorId || "").trim();
+      if (!anchorId) continue;
+      if (!map.has(anchorId)) {
+        map.set(anchorId, item);
+      }
+    }
+    return [...map.values()];
+  })();
+
+  const classifyDesignSoftware = (rawValue?: string | null) => {
+    const normalized = String(rawValue || "").trim().toLowerCase();
+    if (normalized === "3shape") return "3shape" as const;
+    if (normalized === "exocad") return "exocad" as const;
+    return "other" as const;
+  };
+
+  const getDesignSoftwareToneClasses = (
+    category: "3shape" | "exocad" | "other",
+  ) => {
+    if (category === "3shape") {
+      return {
+        panel: "bg-blue-50/60",
+        bar: "bg-blue-500",
+        count: "text-blue-700",
+        item: "border-blue-200 bg-blue-50/60 hover:bg-blue-100/60",
+        badge: "border-blue-200 bg-blue-100 text-blue-700",
+      };
+    }
+
+    if (category === "exocad") {
+      return {
+        panel: "bg-emerald-50/60",
+        bar: "bg-emerald-500",
+        count: "text-emerald-700",
+        item: "border-emerald-200 bg-emerald-50/60 hover:bg-emerald-100/60",
+        badge: "border-emerald-200 bg-emerald-100 text-emerald-700",
+      };
+    }
+
+    return {
+      panel: "bg-violet-50/60",
+      bar: "bg-violet-500",
+      count: "text-violet-700",
+      item: "border-violet-200 bg-violet-50/60 hover:bg-violet-100/60",
+      badge: "border-violet-200 bg-violet-100 text-violet-700",
+    };
+  };
+
+  const designSoftwareStats = designSoftwareBusinesses.reduce(
+    (acc, item) => {
+      const key = classifyDesignSoftware(item.designSoftware);
+      acc[key] += 1;
+      return acc;
+    },
+    { "3shape": 0, exocad: 0, other: 0 } as Record<
+      "3shape" | "exocad" | "other",
+      number
+    >,
+  );
+
+  const filteredDesignSoftwareBusinesses = designSoftwareBusinesses.filter(
+    (item) => {
+      if (designSoftwareStatsFilter === "all") return true;
+      const category = classifyDesignSoftware(item.designSoftware);
+      return category === designSoftwareStatsFilter;
+    },
+  );
+
+  const designSoftwareTotalCount =
+    Number(designSoftwareStats["3shape"] || 0) +
+    Number(designSoftwareStats.exocad || 0) +
+    Number(designSoftwareStats.other || 0);
+
+  const designSoftwareMaxCount = Math.max(
+    1,
+    Number(designSoftwareStats["3shape"] || 0),
+    Number(designSoftwareStats.exocad || 0),
+    Number(designSoftwareStats.other || 0),
+  );
+
+  const designSoftwareStatRows = [
+    { key: "3shape" as const, label: "3Shape", count: Number(designSoftwareStats["3shape"] || 0) },
+    { key: "exocad" as const, label: "ExoCAD", count: Number(designSoftwareStats.exocad || 0) },
+    { key: "other" as const, label: "기타", count: Number(designSoftwareStats.other || 0) },
+  ];
 
   const handleCompleteHappyCall = async (
     item: HappyCallItem,
@@ -1078,58 +1173,109 @@ export const AdminDashboardPage = () => {
 
             <div className="grid grid-cols-1 gap-3 lg:grid-cols-2 items-stretch">
               <div className="flex h-full flex-col gap-3">
-                {/* 카드5: 미처리 통신 */}
-                <Card className="app-glass-card app-glass-card--lg h-full">
-                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className="text-sm font-medium">
-                      미처리 통신
-                    </CardTitle>
-                    <MessageSquare className="h-4 w-4 text-muted-foreground" />
-                  </CardHeader>
-                  <CardContent className="space-y-2">
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="space-y-0.5">
-                        <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                          <MessageCircle className="h-3 w-3" />
-                          채팅
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                  {/* 카드5: 미처리 통신 */}
+                  <Card className="app-glass-card app-glass-card--lg h-full">
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                      <CardTitle className="text-sm font-medium">
+                        미처리 통신
+                      </CardTitle>
+                      <MessageSquare className="h-4 w-4 text-muted-foreground" />
+                    </CardHeader>
+                    <CardContent className="space-y-2">
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-0.5">
+                          <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                            <MessageCircle className="h-3 w-3" />
+                            채팅
+                          </div>
+                          <div className="text-lg font-bold">
+                            {commBadgeCounts.chat.toLocaleString()}
+                          </div>
                         </div>
-                        <div className="text-lg font-bold">
-                          {commBadgeCounts.chat.toLocaleString()}
+                        <div className="space-y-0.5">
+                          <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                            <MessageSquare className="h-3 w-3" />
+                            메시지
+                          </div>
+                          <div className="text-lg font-bold">
+                            {commBadgeCounts.request.toLocaleString()}
+                          </div>
+                        </div>
+                        <div className="space-y-0.5">
+                          <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                            <Mail className="h-3 w-3" />
+                            메일
+                          </div>
+                          <div className="text-lg font-bold">
+                            {commBadgeCounts.mail.toLocaleString()}
+                          </div>
+                        </div>
+                        <div className="space-y-0.5">
+                          <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                            <HelpCircle className="h-3 w-3" />
+                            문의
+                          </div>
+                          <div className="text-lg font-bold">
+                            {commBadgeCounts.inquiry.toLocaleString()}
+                          </div>
                         </div>
                       </div>
-                      <div className="space-y-0.5">
-                        <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                          <MessageSquare className="h-3 w-3" />
-                          메시지
+                    </CardContent>
+                  </Card>
+
+                  {/* 카드5-2: 디자인 소프트웨어 통계 */}
+                  <Card className="app-glass-card app-glass-card--lg h-full">
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                      <CardTitle className="text-sm font-medium">
+                        디자인 소프트웨어 통계
+                      </CardTitle>
+                      <Code2 className="h-4 w-4 text-muted-foreground" />
+                    </CardHeader>
+                    <CardContent>
+                      <button
+                        type="button"
+                        className="w-full rounded-md border px-3 py-2 text-left hover:bg-slate-50 transition"
+                        onClick={() => {
+                          setDesignSoftwareStatsFilter("all");
+                          setDesignSoftwareStatsDialogOpen(true);
+                        }}
+                      >
+                        <div className="space-y-2">
+                          {designSoftwareStatRows.map((row) => {
+                            const ratio = Math.max(
+                              0,
+                              Math.min(1, row.count / designSoftwareMaxCount),
+                            );
+                            const tone = getDesignSoftwareToneClasses(row.key);
+                            return (
+                              <div key={row.key} className={`space-y-1 rounded-md px-2 py-1 ${tone.panel}`}>
+                                <div className="flex items-center justify-between text-[11px]">
+                                  <span className="text-muted-foreground">{row.label}</span>
+                                  <span className={`font-semibold ${tone.count}`}>
+                                    {row.count.toLocaleString()}개
+                                  </span>
+                                </div>
+                                <div className="h-2 w-full rounded bg-white/80 overflow-hidden">
+                                  <div
+                                    className={`h-full rounded ${tone.bar}`}
+                                    style={{ width: `${ratio * 100}%` }}
+                                  />
+                                </div>
+                              </div>
+                            );
+                          })}
                         </div>
-                        <div className="text-lg font-bold">
-                          {commBadgeCounts.request.toLocaleString()}
+                        <div className="mt-2 text-[11px] text-muted-foreground">
+                          총 {designSoftwareTotalCount.toLocaleString()}개 사업자 · 클릭하면 세부 내역
                         </div>
-                      </div>
-                      <div className="space-y-0.5">
-                        <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                          <Mail className="h-3 w-3" />
-                          메일
-                        </div>
-                        <div className="text-lg font-bold">
-                          {commBadgeCounts.mail.toLocaleString()}
-                        </div>
-                      </div>
-                      <div className="space-y-0.5">
-                        <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                          <HelpCircle className="h-3 w-3" />
-                          문의
-                        </div>
-                        <div className="text-lg font-bold">
-                          {commBadgeCounts.inquiry.toLocaleString()}
-                        </div>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
+                      </button>
+                    </CardContent>
+                  </Card>
+                </div>
 
                 {/* 카드7: 거래금액 / 평균 단가 / 배송비 */}
-                <Card className="app-glass-card app-glass-card--lg h-full">
+                <Card className="app-glass-card app-glass-card--lg">
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                     <CardTitle className="text-sm font-medium">
                       거래금액 / 평균 단가 / 배송비
@@ -1206,11 +1352,11 @@ export const AdminDashboardPage = () => {
               </div>
 
               {/* 카드6: 불완전가공 의뢰 현황 */}
-              <Card className="app-glass-card app-glass-card--lg h-full">
+              <Card className="app-glass-card app-glass-card--lg h-full flex flex-col">
                 <CardHeader className="pb-2">
                   <CardTitle className="text-sm font-medium">불완전가공 의뢰 현황</CardTitle>
                 </CardHeader>
-                <CardContent className="space-y-3">
+                <CardContent className="flex flex-1 min-h-0 flex-col space-y-3">
                   <div className="grid grid-cols-3 gap-2">
                     <div className="rounded-md border px-2 py-2">
                       <div className="text-[11px] text-muted-foreground">가능성</div>
@@ -1232,7 +1378,7 @@ export const AdminDashboardPage = () => {
                     </div>
                   </div>
 
-                  <div className="space-y-1.5 max-h-[14.5rem] overflow-auto pr-1">
+                  <div className="flex-1 min-h-0 space-y-1.5 overflow-auto pr-1">
                     {(Array.isArray(unmachinableSummary?.items)
                       ? unmachinableSummary.items
                       : []
@@ -1299,6 +1445,116 @@ export const AdminDashboardPage = () => {
           </>
         }
         mainLeft={undefined}
+      />
+
+      <MultiActionDialog
+        open={designSoftwareStatsDialogOpen}
+        onClose={() => {
+          setDesignSoftwareStatsDialogOpen(false);
+          setDesignSoftwareStatsFilter("all");
+        }}
+        title="디자인 소프트웨어 통계"
+        panelClassName="!w-[94vw] !max-w-[1200px]"
+        description={
+          <div className="space-y-3 text-sm text-gray-700">
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => setDesignSoftwareStatsFilter("all")}
+                className={`inline-flex items-center rounded-md border px-2.5 py-1 text-xs font-semibold transition ${
+                  designSoftwareStatsFilter === "all"
+                    ? "border-blue-300 bg-blue-50 text-blue-700"
+                    : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                }`}
+              >
+                전체 ({designSoftwareBusinesses.length.toLocaleString()})
+              </button>
+              <button
+                type="button"
+                onClick={() => setDesignSoftwareStatsFilter("3shape")}
+                className={`inline-flex items-center rounded-md border px-2.5 py-1 text-xs font-semibold transition ${
+                  designSoftwareStatsFilter === "3shape"
+                    ? "border-blue-300 bg-blue-50 text-blue-700"
+                    : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                }`}
+              >
+                3Shape ({Number(designSoftwareStats["3shape"] || 0).toLocaleString()})
+              </button>
+              <button
+                type="button"
+                onClick={() => setDesignSoftwareStatsFilter("exocad")}
+                className={`inline-flex items-center rounded-md border px-2.5 py-1 text-xs font-semibold transition ${
+                  designSoftwareStatsFilter === "exocad"
+                    ? "border-blue-300 bg-blue-50 text-blue-700"
+                    : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                }`}
+              >
+                ExoCAD ({Number(designSoftwareStats.exocad || 0).toLocaleString()})
+              </button>
+              <button
+                type="button"
+                onClick={() => setDesignSoftwareStatsFilter("other")}
+                className={`inline-flex items-center rounded-md border px-2.5 py-1 text-xs font-semibold transition ${
+                  designSoftwareStatsFilter === "other"
+                    ? "border-blue-300 bg-blue-50 text-blue-700"
+                    : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                }`}
+              >
+                기타 ({Number(designSoftwareStats.other || 0).toLocaleString()})
+              </button>
+            </div>
+
+            <div className="max-h-[58vh] overflow-auto pr-1">
+              <div className="grid grid-cols-1 gap-2 md:grid-cols-2 lg:grid-cols-3">
+                {filteredDesignSoftwareBusinesses.length > 0 ? (
+                  filteredDesignSoftwareBusinesses.map((item, idx) => {
+                    const anchorId = String(item?.businessAnchorId || "").trim();
+                    const businessName =
+                      String(item?.businessName || item?.companyName || "").trim() ||
+                      anchorId ||
+                      `사업자 ${idx + 1}`;
+                    const software = String(item?.designSoftware || "").trim() || "미설정";
+                    const softwareCategory = classifyDesignSoftware(item?.designSoftware);
+                    const tone = getDesignSoftwareToneClasses(softwareCategory);
+
+                    return (
+                      <button
+                        key={anchorId || `${businessName}-${idx}`}
+                        type="button"
+                        className={`w-full rounded-md border px-3 py-2 text-left transition ${tone.item}`}
+                        onClick={() => openHappyCallBusinessDetail(item)}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="text-sm font-medium truncate">{businessName}</div>
+                          <Badge variant="outline" className={`text-[10px] ${tone.badge}`}>
+                            {software}
+                          </Badge>
+                        </div>
+                        <div className="mt-1 text-[11px] text-muted-foreground truncate">
+                          대표자: {String(item?.representativeName || "-")} · 연락처: {String(item?.phoneNumber || "-")}
+                        </div>
+                      </button>
+                    );
+                  })
+                ) : (
+                  <div className="col-span-full text-xs text-muted-foreground py-8 text-center border border-dashed rounded-md">
+                    조건에 맞는 사업자가 없습니다.
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        }
+        actions={[
+          {
+            label: "닫기",
+            variant: "secondary",
+            onClick: () => {
+              setDesignSoftwareStatsDialogOpen(false);
+              setDesignSoftwareStatsFilter("all");
+            },
+          },
+        ]}
       />
 
       <MultiActionDialog
