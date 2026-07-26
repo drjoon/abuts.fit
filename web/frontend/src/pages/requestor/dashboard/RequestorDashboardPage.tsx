@@ -125,9 +125,21 @@ export const RequestorDashboardPage = () => {
     useState(false);
   const [pendingCancelUnmachinableIds, setPendingCancelUnmachinableIds] =
     useState<string[]>([]);
+  const pendingCancelUnmachinableIdsRef = useRef<string[]>([]);
   const [focusedUnmachinableRequestId, setFocusedUnmachinableRequestId] =
     useState<string | null>(null);
   const promptedUnmachinableFingerprintRef = useRef<string>("");
+
+  const setPendingCancelIds = (ids: string[]) => {
+    const normalized = ids.map((id) => String(id || "").trim()).filter(Boolean);
+    pendingCancelUnmachinableIdsRef.current = normalized;
+    setPendingCancelUnmachinableIds(normalized);
+  };
+
+  const clearPendingCancelIds = () => {
+    pendingCancelUnmachinableIdsRef.current = [];
+    setPendingCancelUnmachinableIds([]);
+  };
 
   const summaryQueryKey = useMemo(
     () => [
@@ -137,6 +149,11 @@ export const RequestorDashboardPage = () => {
       String((user as any)?.businessAnchorId || ""),
     ],
     [period, user],
+  );
+
+  const unmachinableOverviewQueryKey = useMemo(
+    () => ["requestor-unmachinable-overview", period],
+    [period],
   );
 
   const stageGroupByLabel: Record<string, string[] | null> = {
@@ -363,7 +380,7 @@ export const RequestorDashboardPage = () => {
 
   const { data: unmachinableOverviewResponse, isLoading: loadingUnmachinableOverview } =
     useQuery({
-      queryKey: ["requestor-unmachinable-overview", period],
+      queryKey: unmachinableOverviewQueryKey,
       queryFn: async () => {
         const res = await apiFetch<any>({
           path: `/api/requests/unmachinable-overview?period=${period}&limit=100`,
@@ -449,6 +466,9 @@ export const RequestorDashboardPage = () => {
     void queryClient.invalidateQueries({
       queryKey: ["requestor-my-requests"],
     });
+    void queryClient.invalidateQueries({
+      queryKey: ["requestor-unmachinable-overview"],
+    });
     void refetchSummary();
     void refetchBulk();
   }, [queryClient, refetchBulk, refetchSummary]);
@@ -486,6 +506,9 @@ export const RequestorDashboardPage = () => {
         void queryClient.invalidateQueries({
           queryKey: summaryQueryKey,
         });
+        void queryClient.invalidateQueries({
+          queryKey: ["requestor-unmachinable-overview"],
+        });
 
         // 배송 관련 공정 변경 시 bulk shipping도 무효화
         if (
@@ -512,6 +535,9 @@ export const RequestorDashboardPage = () => {
         });
         void queryClient.invalidateQueries({
           queryKey: ["requestor-bulk-shipping"],
+        });
+        void queryClient.invalidateQueries({
+          queryKey: ["requestor-unmachinable-overview"],
         });
       }
     });
@@ -738,7 +764,11 @@ export const RequestorDashboardPage = () => {
     const rows = Array.isArray(unmachinableOverviewResponse?.data?.items)
       ? unmachinableOverviewResponse?.data?.items
       : [];
-    return rows.filter((row: any) => Boolean(row?.rnd?.unmachinableAt));
+    return rows.filter((row: any) => {
+      if (!row?.rnd?.unmachinableAt) return false;
+      const stage = String(row?.manufacturerStage || "").trim();
+      return stage !== "취소" && stage.toLowerCase() !== "cancel";
+    });
   }, [unmachinableOverviewResponse]);
 
   const resolvedModalItems = useMemo(() => {
@@ -805,14 +835,13 @@ export const RequestorDashboardPage = () => {
     promptedUnmachinableFingerprintRef.current = nextFingerprint;
     setFocusedUnmachinableRequestId(null);
     setSelectedUnmachinableContinueIds(new Set(pendingUnmachinableIds));
-    setPendingCancelUnmachinableIds([]);
+    clearPendingCancelIds();
     setUnmachinableAlertModalOpen(true);
   }, [pendingUnmachinableFingerprint, pendingUnmachinableIds]);
 
   useEffect(() => {
     if (!unmachinableAlertModalOpen) return;
     setSelectedUnmachinableContinueIds(new Set(activePendingUnmachinableIds));
-    setPendingCancelUnmachinableIds([]);
   }, [unmachinableAlertModalOpen, activePendingUnmachinableIds]);
 
   const toggleUnmachinableContinueSelection = (
@@ -842,10 +871,25 @@ export const RequestorDashboardPage = () => {
   };
 
   const cancelUnmachinableRequests = async (targetIds: string[]) => {
-    if (!token) return 0;
+    if (!token) {
+      console.warn("[UNMACHINABLE_CANCEL] missing token");
+      return 0;
+    }
+
+    const normalizedIds = targetIds
+      .map((id) => String(id || "").trim())
+      .filter(Boolean);
+
+    console.log("[UNMACHINABLE_CANCEL] start", {
+      total: normalizedIds.length,
+      targetIds: normalizedIds,
+    });
+
     let canceledCount = 0;
 
-    for (const requestId of targetIds) {
+    for (const requestId of normalizedIds) {
+      console.log("[UNMACHINABLE_CANCEL] request", { requestId });
+
       const res = await apiFetch<any>({
         path: `/api/requests/${requestId}/status`,
         method: "PATCH",
@@ -856,10 +900,29 @@ export const RequestorDashboardPage = () => {
         jsonBody: { manufacturerStage: "취소" },
       });
 
+      let serverBody: any = null;
+      try {
+        serverBody = res.data;
+      } catch {
+        serverBody = null;
+      }
+
+      console.log("[UNMACHINABLE_CANCEL] response", {
+        requestId,
+        ok: res.ok,
+        status: res.raw?.status,
+        body: serverBody,
+      });
+
       if (res.ok) {
         canceledCount += 1;
       }
     }
+
+    console.log("[UNMACHINABLE_CANCEL] done", {
+      total: normalizedIds.length,
+      canceledCount,
+    });
 
     return canceledCount;
   };
@@ -868,7 +931,7 @@ export const RequestorDashboardPage = () => {
     const normalized = String(requestId || "").trim();
     if (!normalized) return;
     setFocusedUnmachinableRequestId(normalized);
-    setPendingCancelUnmachinableIds([]);
+    clearPendingCancelIds();
     setUnmachinableAlertModalOpen(true);
   };
 
@@ -952,7 +1015,7 @@ export const RequestorDashboardPage = () => {
     );
 
     if (cancelIds.length > 0) {
-      setPendingCancelUnmachinableIds(cancelIds);
+      setPendingCancelIds(cancelIds);
       setUnmachinableCancelConfirmOpen(true);
       return;
     }
@@ -981,10 +1044,28 @@ export const RequestorDashboardPage = () => {
   };
 
   const handleConfirmCancelUnmachinableRequests = async () => {
-    if (!token) return;
+    if (!token) {
+      console.warn("[UNMACHINABLE_CANCEL] confirm blocked: missing token");
+      return;
+    }
 
-    const cancelIds = [...pendingCancelUnmachinableIds].filter(Boolean);
+    const stateCancelIds = [...pendingCancelUnmachinableIds]
+      .map((id) => String(id || "").trim())
+      .filter(Boolean);
+    const refCancelIds = [...pendingCancelUnmachinableIdsRef.current]
+      .map((id) => String(id || "").trim())
+      .filter(Boolean);
+    const cancelIds = stateCancelIds.length > 0 ? stateCancelIds : refCancelIds;
+
+    console.log("[UNMACHINABLE_CANCEL] confirm clicked", {
+      pendingCancelUnmachinableIds,
+      refPendingCancelUnmachinableIds: pendingCancelUnmachinableIdsRef.current,
+      normalizedCancelIds: cancelIds,
+      confirmOpen: unmachinableCancelConfirmOpen,
+    });
+
     if (!cancelIds.length) {
+      console.warn("[UNMACHINABLE_CANCEL] no ids to cancel");
       setUnmachinableCancelConfirmOpen(false);
       return;
     }
@@ -993,6 +1074,22 @@ export const RequestorDashboardPage = () => {
     try {
       const canceledCount = await cancelUnmachinableRequests(cancelIds);
 
+      console.log("[UNMACHINABLE_CANCEL] confirm result", {
+        cancelIds,
+        canceledCount,
+      });
+
+      if (canceledCount <= 0) {
+        toast({
+          title: "불완전가공 취소 처리 실패",
+          description:
+            "취소 처리된 의뢰가 없습니다. 잠시 후 다시 시도해주세요.",
+          variant: "destructive",
+          duration: 2500,
+        });
+        return;
+      }
+
       toast({
         title: "의뢰건 자체를 취소합니다",
         description: `${canceledCount}건이 취소 처리되었습니다.`,
@@ -1000,11 +1097,11 @@ export const RequestorDashboardPage = () => {
       });
 
       setUnmachinableCancelConfirmOpen(false);
-      setPendingCancelUnmachinableIds([]);
+      clearPendingCancelIds();
       setUnmachinableAlertModalOpen(false);
       refreshDashboard();
     } catch (error) {
-      console.error("불완전가공 취소 처리 실패", error);
+      console.error("[UNMACHINABLE_CANCEL] confirm failed", error);
       toast({
         title: "불완전가공 취소 처리 실패",
         description: "잠시 후 다시 시도해주세요.",
@@ -1411,7 +1508,6 @@ export const RequestorDashboardPage = () => {
         onOpenChange={(open) => {
           setUnmachinableAlertModalOpen(open);
           if (!open) {
-            setPendingCancelUnmachinableIds([]);
             setFocusedUnmachinableRequestId(null);
           }
         }}
@@ -1471,7 +1567,11 @@ export const RequestorDashboardPage = () => {
                         variant="outline"
                         className="border-red-300 text-red-700 hover:bg-red-500"
                         onClick={() => {
-                          setPendingCancelUnmachinableIds([requestMongoId]);
+                          console.log("[UNMACHINABLE_CANCEL] open confirm", {
+                            requestMongoId,
+                            requestId,
+                          });
+                          setPendingCancelIds([requestMongoId]);
                           setUnmachinableCancelConfirmOpen(true);
                         }}
                         disabled={approvingUnmachinableSelection}
@@ -1510,9 +1610,10 @@ export const RequestorDashboardPage = () => {
         cancelLabel="닫기"
         onCancel={() => {
           setUnmachinableCancelConfirmOpen(false);
-          setPendingCancelUnmachinableIds([]);
+          clearPendingCancelIds();
         }}
         onConfirm={async () => {
+          console.log("[UNMACHINABLE_CANCEL] confirm dialog onConfirm");
           await handleConfirmCancelUnmachinableRequests();
         }}
       />
