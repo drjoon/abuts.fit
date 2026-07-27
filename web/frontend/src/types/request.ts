@@ -56,8 +56,8 @@ export interface RequestCaseInfos {
   connectionDiameter?: number;
   workType?: string;
   anodizingEnabled?: boolean;
-  requestorHexRotation?: "보정" | "무보정";
-  finalHexRotation?: "보정" | "무보정";
+  requestorHexRotation?: "STL모델대로" | "헥스30도회전";
+  finalHexRotation?: "STL모델대로" | "헥스30도회전";
   finishLine?: {
     version?: number;
     sectionCount?: number;
@@ -328,9 +328,9 @@ export interface RequestBase {
       | null;
     requestorContinueMessage?: string | null;
     memo?: string | null;
-    // canonical: "보정" | "무보정"
+    // canonical: "STL모델대로" | "헥스30도회전" | "헥스X도회전(total)"
     // legacy "0"|"30"은 하위호환 입력/표시용으로만 사용
-    manufacturerHexRotation?: "보정" | "무보정" | null;
+    manufacturerHexRotation?: string | null;
     manufacturerHexRotationUpdatedAt?: string | null;
     manufacturerHexRotationUpdatedBy?: string | null;
     memoUpdatedAt?: string | null;

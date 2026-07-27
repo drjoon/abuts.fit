@@ -1,5 +1,13 @@
 import mongoose from "mongoose";
 
+const MANUFACTURER_HEX_ROTATION_REGEX = /^헥스\s*[+-]?\d+(?:\.\d+)?\s*도회전$/;
+const isCanonicalManufacturerHexRotation = (value) => {
+  if (typeof value !== "string") return false;
+  const v = value.trim();
+  if (v === "STL모델대로" || v === "헥스30도회전") return true;
+  return MANUFACTURER_HEX_ROTATION_REGEX.test(v);
+};
+
 const businessAnchorSchema = new mongoose.Schema(
   {
     businessNumberNormalized: {
@@ -134,23 +142,19 @@ const businessAnchorSchema = new mongoose.Schema(
       // 의뢰자(사업체) 단위 기본 헥스 회전값 (신규 의뢰 기본값)
       defaultRequestorHexRotation: {
         type: String,
-        default: "보정",
+        default: "STL모델대로",
       },
       // 제조사 워크시트(PreviewModal)에서 설정하는 의뢰자(사업체) 단위 기본 좌표계 전처리 모드
-      // - canonical: "STL모델대로" | "헥스30도회전" | "헥스10도회전"
-      // - legacy 매핑(주석): 0 => STL모델대로, 30 => 헥스30도회전
-      // - legacy 저장값("보정" | "무보정")도 하위호환으로 허용
+      // - canonical: "STL모델대로" | "헥스30도회전" | "헥스X도회전(total)"
       // - 저장 주체: 제조사
       // - 적용 대상: 해당 businessAnchorId의 이후 신규 의뢰
       defaultManufacturerHexRotation: {
         type: String,
-        enum: [
-          "STL모델대로",
-          "헥스30도회전",
-          "헥스10도회전",
-          "보정",
-          "무보정",
-        ],
+        validate: {
+          validator: (v) => v == null || isCanonicalManufacturerHexRotation(v),
+          message:
+            "defaultManufacturerHexRotation은 'STL모델대로' | '헥스30도회전' | '헥스X도회전(total)' 형식이어야 합니다.",
+        },
         default: null,
       },
       updatedAt: {

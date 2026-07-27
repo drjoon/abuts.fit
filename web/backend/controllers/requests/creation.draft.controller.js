@@ -17,8 +17,8 @@ const normalizeRetentionGroove = (value) => {
 
 const normalizeRequestorHexRotation = (value) => {
   const v = String(value || "").trim();
-  if (v === "무보정") return "무보정";
-  return "보정";
+  if (v === "헥스30도회전" || v === "30") return "헥스30도회전";
+  return "STL모델대로";
 };
 
 /**

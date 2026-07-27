@@ -343,7 +343,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
         {
             try
             {
-                if (!TryResolveHexRotationTargets(manufacturerHexRotation, out double firstDeg, out double secondToSixthDeg, out string modeLabel))
+                if (!TryResolveHexRotationTargets(manufacturerHexRotation, out double minorDeg, out double totalDeg, out string modeLabel))
                 {
                     AppLogger.Log($"NcFileGenerator: 헥스 회전 NC 후처리 생략 - mode='{manufacturerHexRotation ?? ""}'");
                     return;
@@ -366,6 +366,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
                 int replacedWithinTarget = 0;
                 for (int i = 0; i < lines.Count; i++)
                 {
+                    int currentLineIndex = i;
                     lines[i] = targetRegex.Replace(lines[i], m =>
                     {
                         if (matchedWithinTarget >= 6)
@@ -373,7 +374,28 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
                             return m.Value;
                         }
 
-                        double targetDeg = matchedWithinTarget == 0 ? firstDeg : secondToSixthDeg;
+                        int ordinal = matchedWithinTarget + 1;
+                        string toolCode = FindNearestToolCodeNearLine(lines, currentLineIndex, 10);
+                        if (string.IsNullOrWhiteSpace(toolCode))
+                        {
+                            throw new InvalidOperationException($"헥스 회전 NC 후처리 실패: C0 계열 #{ordinal} (line {currentLineIndex + 1}) 상방 10줄 내 공구번호(Txxxx)를 찾지 못했습니다.");
+                        }
+
+                        double targetDeg;
+                        if (string.Equals(toolCode, "T4848", StringComparison.OrdinalIgnoreCase))
+                        {
+                            targetDeg = minorDeg;
+                        }
+                        else if (string.Equals(toolCode, "T0909", StringComparison.OrdinalIgnoreCase) ||
+                                 string.Equals(toolCode, "T0606", StringComparison.OrdinalIgnoreCase))
+                        {
+                            targetDeg = totalDeg;
+                        }
+                        else
+                        {
+                            throw new InvalidOperationException($"헥스 회전 NC 후처리 실패: C0 계열 #{ordinal} (line {currentLineIndex + 1}) 근접 공구번호 '{toolCode}'는 지원하지 않습니다. 허용 공구: T4848, T0909, T0606");
+                        }
+
                         matchedWithinTarget++;
                         replacedWithinTarget++;
                         return "C" + FormatRotationNumber(targetDeg);
@@ -387,7 +409,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
                 }
 
                 File.WriteAllLines(ncFilePath, lines);
-                AppLogger.Log($"NcFileGenerator: 헥스 회전 NC 후처리 완료 - mode={modeLabel}, first=C{FormatRotationNumber(firstDeg)}, 2~6=C{FormatRotationNumber(secondToSixthDeg)}, replaced={replacedWithinTarget}");
+                AppLogger.Log($"NcFileGenerator: 헥스 회전 NC 후처리 완료 - mode={modeLabel}, T4848=C{FormatRotationNumber(minorDeg)}, T0909/T0606=C{FormatRotationNumber(totalDeg)}, replaced={replacedWithinTarget}");
 
                 if (matchedWithinTarget < 6)
                 {
@@ -397,13 +419,55 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
             catch (Exception ex)
             {
                 AppLogger.Log($"NcFileGenerator: 헥스 회전 NC 후처리 실패 - {ex.GetType().Name}:{ex.Message}");
+                throw;
             }
         }
 
-        private static bool TryResolveHexRotationTargets(string manufacturerHexRotation, out double firstDeg, out double secondToSixthDeg, out string modeLabel)
+        private static string FindNearestToolCodeNearLine(List<string> lines, int lineIndex, int maxLookbackLines)
         {
-            firstDeg = 0.0;
-            secondToSixthDeg = 0.0;
+            if (lines == null || lines.Count == 0 || lineIndex < 0)
+            {
+                return null;
+            }
+
+            int start = Math.Max(0, lineIndex - Math.Max(0, maxLookbackLines));
+            var toolRegex = new Regex(@"\bT\s*(\d{2,6})\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+            for (int i = lineIndex; i >= start; i--)
+            {
+                string line = lines[i] ?? string.Empty;
+                Match match = toolRegex.Match(line);
+                if (!match.Success)
+                {
+                    continue;
+                }
+
+                string digits = match.Groups[1].Value;
+                if (string.IsNullOrWhiteSpace(digits))
+                {
+                    continue;
+                }
+
+                string normalizedDigits = digits.Length >= 4
+                    ? digits.Substring(digits.Length - 4)
+                    : digits.PadLeft(4, '0');
+                return "T" + normalizedDigits;
+            }
+
+            return null;
+        }
+
+        // 헥스 모드 라벨을 NC 치환각으로 해석한다.
+        // - minorDeg: T4848에 적용되는 각도
+        // - totalDeg: T0909/T0606에 적용되는 각도 (= 30 + minorDeg)
+        // 전달 SSOT:
+        // - "헥스X도회전"의 X는 totalDeg 기준 (예: minor 10도 선택 시 라벨은 "헥스40도회전")
+        // 하위호환:
+        // - legacy minor 라벨(예: 헥스10도회전)도 허용하며 X<30이면 total=30+X로 보정
+        private static bool TryResolveHexRotationTargets(string manufacturerHexRotation, out double minorDeg, out double totalDeg, out string modeLabel)
+        {
+            minorDeg = 0.0;
+            totalDeg = 0.0;
             modeLabel = "STL모델대로";
 
             string mode = string.IsNullOrWhiteSpace(manufacturerHexRotation)
@@ -412,18 +476,17 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
 
             if (string.IsNullOrWhiteSpace(mode) ||
                 string.Equals(mode, "STL모델대로", StringComparison.Ordinal) ||
-                string.Equals(mode, "보정", StringComparison.Ordinal) ||
                 string.Equals(mode, "0", StringComparison.Ordinal))
             {
                 return false;
             }
 
             if (string.Equals(mode, "헥스30도회전", StringComparison.Ordinal) ||
-                string.Equals(mode, "무보정", StringComparison.Ordinal) ||
                 string.Equals(mode, "30", StringComparison.Ordinal))
             {
-                firstDeg = 0.0;
-                secondToSixthDeg = 30.0;
+                // 고정 모드: minor=0, total=30
+                minorDeg = 0.0;
+                totalDeg = 30.0;
                 modeLabel = "헥스30도회전";
                 return true;
             }
@@ -436,9 +499,27 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
                     return false;
                 }
 
-                firstDeg = xDeg;
-                secondToSixthDeg = 30.0 + xDeg;
-                modeLabel = $"헥스{xDeg.ToString("0.###############", CultureInfo.InvariantCulture)}도회전";
+                // 확장 모드 SSOT:
+                // - 백엔드 전달값 X는 totalDeg(=30+minorDeg) 기준이다.
+                //   예) 프론트 minor=10 선택 시 backend label='헥스40도회전'
+                // - 공구별 적용값:
+                //   T4848  => minorDeg = totalDeg - 30
+                //   T0909/T0606 => totalDeg 그대로
+                // 하위호환: legacy 데이터가 '헥스10도회전'(minor)일 수 있으므로 X<30이면
+                //          minor로 간주해 total=30+X로 보정한다.
+                double parsedX = xDeg;
+                if (parsedX < 30.0)
+                {
+                    minorDeg = parsedX;
+                    totalDeg = 30.0 + parsedX;
+                }
+                else
+                {
+                    totalDeg = parsedX;
+                    minorDeg = parsedX - 30.0;
+                }
+
+                modeLabel = $"헥스{totalDeg.ToString("0.###############", CultureInfo.InvariantCulture)}도회전";
                 return true;
             }
 

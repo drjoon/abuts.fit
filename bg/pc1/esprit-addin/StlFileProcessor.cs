@@ -31,14 +31,13 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
     {
         private const string StlImportLayerName = "AbutsStlImport";
         private const double DefaultWAxisRotationDegrees = 30.0;
-        private const double Hex30RotationExtraDegrees = 30.0;
         // 제조사 수동 헥스 회전 canonical 모드값
-        // - "보정"   : 기본 +30도 + Rhino telemetry 보정량(Esprit 적용 시 부호 반전)
-        // - "무보정" : "보정" 결과에서 모델 전체를 추가 +30도 회전  // UI 라벨: "헥스30도회전"
-        //              => totalW = (30 + (-appliedDeg)) + 30
+        // - "STL모델대로" / "헥스30도회전" 모두 STL 실회전은 동일하게 적용한다.
+        //   => totalW = 30 + (-appliedDeg)
+        // - 두 모드(및 헥스X 확장)의 차이는 NC C축 후처리에서 분기한다.
         // 하위호환: 백엔드가 레거시 "0"/"30"을 보내도 내부에서 canonical 모드로 정규화한다.
-        private const string ManufacturerHexModeCorrected = "보정";
-        private const string ManufacturerHexModeUncorrected = "무보정";
+        private const string ManufacturerHexModeCorrected = "STL모델대로";
+        private const string ManufacturerHexModeUncorrected = "헥스30도회전";
 
 
         private const double CompositeFinishToleranceThresholdZMm = 15.0;
@@ -107,13 +106,13 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
         private string _backendImplantLabel;
         private double[][] _backendFinishLinePoints;
         // request-meta(caseInfos.manufacturerHexRotation) 제조사 헥스 회전 모드값
-        // - canonical: "보정" | "무보정" (UI: "STL모델대로" | "헥스30도회전")
-        // - legacy 입력("0"|"30")은 NormalizeManufacturerHexRotationMode에서 canonical로 변환
+        // - canonical: "STL모델대로" | "헥스30도회전" | "헥스X도회전(total)"
+        // - 하위호환: "0"|"30", legacy minor 라벨("헥스10도회전") 허용
         private string _backendManufacturerHexRotation;
         // request-meta(caseInfos.hexRotation.appliedDeg)
         // Rhino가 실제 mesh에는 적용하지 않고 전달하는 "가상 보정량" telemetry.
         // 주의: Rhino와 Esprit의 회전 부호 기준이 달라, Esprit 적용 시 부호를 반전해 사용한다.
-        // canonical "보정"과 "무보정(헥스30도회전)" 모두 STL모델대로 기준 회전에 반영한다.
+        // canonical "STL모델대로"/"헥스30도회전" 모두 STL모델대로 기준 회전에 반영한다.
         private double? _backendHexRotationAppliedDeg;
         // 유지홈(retentionGroove) 옵션 캐시 — request-meta 수신 직후 저장.
         // 이후 Finish_Front(legacy A env 경로)의 StepIncrement 런타임 오버라이드에 사용.
@@ -262,8 +261,8 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                             ? null
                             : requestMeta.retentionGroove.Trim();
                         // 제조사 헥스 회전 모드값 캐시
-                        // - canonical: "보정" | "무보정" (UI: "STL모델대로" | "헥스30도회전")
-                        // - legacy("0"/"30")는 NormalizeManufacturerHexRotationMode에서 canonical 모드로 변환한다.
+                        // - canonical: "STL모델대로" | "헥스30도회전" | "헥스X도회전(total)"
+                        // - legacy("0"/"30", minor 라벨)은 NormalizeManufacturerHexRotationMode에서 정규화한다.
                         // - 빈값/미지원값은 default로 대체하지 않고 예외로 처리한다.
                         _backendManufacturerHexRotation = string.IsNullOrWhiteSpace(requestMeta.manufacturerHexRotation)
                             ? null
@@ -271,7 +270,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
 
                         // Rhino 정렬 telemetry(헥스 회전각) 캐시
                         // - caseInfos.hexRotation.appliedDeg
-                        // - canonical "보정" 모드에서만 +30 기본 회전에 추가 적용
+                        // - canonical "STL모델대로" 모드에서만 +30 기본 회전에 추가 적용
                         double? appliedHex = requestMeta.hexRotation?.appliedDeg;
                         if (appliedHex.HasValue && !double.IsNaN(appliedHex.Value) && !double.IsInfinity(appliedHex.Value))
                         {
@@ -598,7 +597,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             [DataMember] public string faceHolePrcFileName { get; set; }
             [DataMember] public string connectionPrcFileName { get; set; }
             // 제조사 수동 헥스 회전 모드값
-            // - canonical: "보정" | "무보정"
+            // - canonical: "STL모델대로" | "헥스30도회전" | "헥스X도회전(total)"
             // - legacy: "0" | "30" (하위호환 입력)
             [DataMember] public string manufacturerHexRotation { get; set; }
             // 유지홈(retentionGroove) — Finish_Front(legacy A env 경로) StepIncrement
@@ -859,20 +858,12 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
             {
                 return ManufacturerHexModeUncorrected;
             }
-
-            // 프론트 라벨(현행) 하위호환
-            if (string.Equals(mode, "STL모델대로", StringComparison.Ordinal))
-            {
-                return ManufacturerHexModeCorrected;
-            }
-            if (string.Equals(mode, "헥스30도회전", StringComparison.Ordinal))
-            {
-                return ManufacturerHexModeUncorrected;
-            }
             if (Regex.IsMatch(mode, @"^\s*헥스\s*[+-]?\d+(?:\.\d+)?\s*도회전\s*$", RegexOptions.CultureInvariant))
             {
-                // 신규 모드: "헥스X도회전"은 STL 회전 기준은 "STL모델대로(보정)"를 따르고,
-                // NC 후처리에서 C축 각도(C0)를 X/30+X로 치환한다.
+                // 확장 모드: "헥스X도회전" 라벨(X=totalDeg)은 STL 회전 기준을 "STL모델대로(보정)"와 동일하게 따르고,
+                // NC 후처리에서 공구번호 기준으로 C축을 치환한다.
+                // - T4848: minorDeg = totalDeg - 30
+                // - T0909/T0606: totalDeg
                 return ManufacturerHexModeCorrected;
             }
 
@@ -888,7 +879,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
 
             if (string.IsNullOrWhiteSpace(mode))
             {
-                throw new InvalidOperationException("manufacturerHexRotation 값이 비어 있습니다. request-meta.caseInfos.manufacturerHexRotation은 '보정' 또는 '무보정'이어야 합니다.");
+                throw new InvalidOperationException("manufacturerHexRotation 값이 비어 있습니다. request-meta.caseInfos.manufacturerHexRotation은 'STL모델대로' 또는 '헥스30도회전'이어야 합니다.");
             }
 
             throw new InvalidOperationException($"지원하지 않는 manufacturerHexRotation 값입니다. value='{mode}'");

@@ -21,8 +21,10 @@ const NEW_REQUEST_HEX_ROTATION_STORAGE_KEY_PREFIX =
 
 const normalizeRequestorHexRotation = (
   value: unknown,
-): "보정" | "무보정" => {
-  return String(value || "").trim() === "무보정" ? "무보정" : "보정";
+): "STL모델대로" | "헥스30도회전" => {
+  const raw = String(value || "").trim();
+  if (raw === "헥스30도회전" || raw === "30") return "헥스30도회전";
+  return "STL모델대로";
 };
 
 /**
@@ -99,17 +101,17 @@ export const useNewRequestPage = (
   }, [businessAnchorId]);
 
   const [defaultRequestorHexRotation, setDefaultRequestorHexRotation] =
-    useState<"보정" | "무보정">("보정");
+    useState<"STL모델대로" | "헥스30도회전">("STL모델대로");
 
   const businessType = useMemo(() => {
     return resolveBusinessType(user?.role, "requestor");
   }, [user?.role]);
 
   useEffect(() => {
-    const readLocalDefault = (): "보정" | "무보정" | null => {
+    const readLocalDefault = (): "STL모델대로" | "헥스30도회전" | null => {
       try {
         const raw = localStorage.getItem(requestorHexRotationStorageKey);
-        if (raw !== "보정" && raw !== "무보정") return null;
+        if (raw !== "STL모델대로" && raw !== "헥스30도회전") return null;
         return raw;
       } catch {
         return null;
@@ -164,7 +166,7 @@ export const useNewRequestPage = (
   }, [token, businessAnchorId, requestorHexRotationStorageKey]);
 
   const persistRequestorHexRotationDefault = useCallback(
-    async (value: "보정" | "무보정") => {
+    async (value: "STL모델대로" | "헥스30도회전") => {
       const next = normalizeRequestorHexRotation(value);
       setDefaultRequestorHexRotation(next);
 

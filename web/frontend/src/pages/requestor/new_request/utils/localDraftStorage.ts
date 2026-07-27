@@ -39,7 +39,7 @@ export interface CaseInfos {
   shippingMode?: string;
   requestedShipDate?: string;
   workType?: string;
-  requestorHexRotation?: "보정" | "무보정";
+  requestorHexRotation?: "STL모델대로" | "헥스30도회전";
 }
 
 export interface DuplicateResolution {

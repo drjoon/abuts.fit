@@ -44,11 +44,13 @@ const normalizeRetentionGroove = (value) => {
   return "deep";
 };
 
-const normalizeRequestorHexRotation = (value, fallback = "보정") => {
+const normalizeRequestorHexRotation = (value, fallback = "STL모델대로") => {
   const v = String(value || "").trim();
-  if (v === "무보정") return "무보정";
-  if (v === "보정") return "보정";
-  return String(fallback || "").trim() === "무보정" ? "무보정" : "보정";
+  if (v === "헥스30도회전" || v === "30") return "헥스30도회전";
+  if (v === "STL모델대로" || v === "0") return "STL모델대로";
+  return String(fallback || "").trim() === "헥스30도회전"
+    ? "헥스30도회전"
+    : "STL모델대로";
 };
 
 // related files:
@@ -63,23 +65,27 @@ const normalizeDesignSoftware = (value) => {
 const resolveRequestorHexRotationByDesignSoftware = (designSoftwareRaw) => {
   const designSoftware = String(designSoftwareRaw || "").trim();
   // 정책 SSOT:
-  // - ExoCAD => 헥스30도회전(= canonical "무보정")
-  // - 3Shape 및 기타(custom 포함) => STL모델대로(= canonical "보정")
-  if (designSoftware === "ExoCAD") return "무보정";
-  return "보정";
+  // - ExoCAD => 헥스30도회전
+  // - 3Shape 및 기타(custom 포함) => STL모델대로
+  if (designSoftware === "ExoCAD") return "헥스30도회전";
+  return "STL모델대로";
 };
 
 const normalizeManufacturerHexRotationModeOrNull = (value) => {
   const v = String(value || "").trim();
   if (!v) return null;
-  if (v === "무보정" || v === "헥스30도회전") return "헥스30도회전";
-  if (v === "보정" || v === "STL모델대로") return "STL모델대로";
-  if (v === "헥스10도회전") return "헥스10도회전";
+  if (v === "헥스30도회전") return "헥스30도회전";
+  if (v === "STL모델대로") return "STL모델대로";
+
+  // "헥스X도회전" 전달 SSOT: X는 totalDeg(=30+minorDeg)
+  // 하위호환: legacy minor(예: 헥스10도회전)는 X<30일 때 +30 보정
   const matched = v.match(/^헥스\s*([+-]?\d+(?:\.\d+)?)\s*도회전$/);
   if (!matched) return null;
-  const degree = Number(matched[1]);
-  if (!Number.isFinite(degree)) return null;
-  return `헥스${String(degree)}도회전`;
+  const parsedX = Number(matched[1]);
+  if (!Number.isFinite(parsedX)) return null;
+  const totalDeg = parsedX < 30 ? 30 + parsedX : parsedX;
+  if (totalDeg === 30) return "헥스30도회전";
+  return `헥스${String(totalDeg)}도회전`;
 };
 
 const resolveFinalHexRotationValue = ({
@@ -90,7 +96,7 @@ const resolveFinalHexRotationValue = ({
   // 매핑 고정:
   // - STL모델대로 => STL모델대로
   // - 헥스30도회전 => 헥스30도회전
-  // - 헥스X도회전 => 헥스X도회전
+  // - 헥스X도회전(total) => 헥스X도회전(total)
   if (
     mode === "STL모델대로" ||
     mode === "헥스30도회전" ||
@@ -891,7 +897,7 @@ export async function createRequestsFromDraft(req, res) {
         : true;
     const requestorDefaultHexRotation = normalizeRequestorHexRotation(
       shippingOrg?.requestSettings?.defaultRequestorHexRotation,
-      "보정",
+      "STL모델대로",
     );
     const requestorDefaultManufacturerHexRotation =
       normalizeManufacturerHexRotationModeOrNull(

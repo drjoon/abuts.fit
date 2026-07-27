@@ -678,10 +678,10 @@ export async function deleteStageFile(req, res) {
 // - web/backend/controllers/bg/bg.controller.js
 const normalizeFinalHexRotation = (value) => {
   const v = String(value || "").trim();
-  if (v === "보정" || v === "STL모델대로" || v === "0") return "보정";
-  if (v === "무보정" || v === "헥스30도회전" || v === "30") return "무보정";
+  if (v === "STL모델대로" || v === "0") return "STL모델대로";
+  if (v === "헥스30도회전" || v === "30") return "헥스30도회전";
   throw new Error(
-    `유효하지 않은 헥스 회전 모드입니다. 'STL모델대로' | '헥스30도회전'만 허용됩니다. (legacy: '보정' | '무보정') 입력값='${v}'`,
+    `유효하지 않은 헥스 회전 모드입니다. 'STL모델대로' | '헥스30도회전'만 허용됩니다. 입력값='${v}'`,
   );
 };
 
@@ -689,27 +689,33 @@ const normalizeRequestorDefaultManufacturerHexRotationOrNull = (value) => {
   const v = String(value || "").trim();
   if (!v) return null;
   // Rhino align 정책: 제조사 default 모드는 STL모델대로/헥스30도회전(및 헥스X도회전) 허용.
-  if (v === "보정" || v === "STL모델대로") return "보정";
-  if (v === "무보정" || v === "헥스30도회전") return "무보정";
-  if (v === "헥스10도회전") return "헥스10도회전";
+  if (v === "STL모델대로") return "STL모델대로";
+  if (v === "헥스30도회전") return "헥스30도회전";
+
+  // "헥스X도회전" 전달 SSOT: X는 totalDeg(=30+minorDeg)
+  // 하위호환: legacy minor(예: 헥스10도회전)는 X<30일 때 +30 보정
   const matched = v.match(/^헥스\s*([+-]?\d+(?:\.\d+)?)\s*도회전$/);
   if (matched) {
-    const degree = Number(matched[1]);
-    if (Number.isFinite(degree)) return `헥스${String(degree)}도회전`;
+    const parsedX = Number(matched[1]);
+    if (Number.isFinite(parsedX)) {
+      const totalDeg = parsedX < 30 ? 30 + parsedX : parsedX;
+      if (totalDeg === 30) return "헥스30도회전";
+      return `헥스${String(totalDeg)}도회전`;
+    }
   }
   // legacy "헥스회전각" 호환: 0=STL모델대로, 30=헥스30도회전
-  if (v === "0") return "보정";
-  if (v === "30") return "무보정";
+  if (v === "0") return "STL모델대로";
+  if (v === "30") return "헥스30도회전";
   return null;
 };
 
 const resolveOppositeFinalHexRotation = (value) => {
   const mode = normalizeFinalHexRotation(value);
   switch (mode) {
-    case "보정":
-      return "무보정";
-    case "무보정":
-      return "보정";
+    case "STL모델대로":
+      return "헥스30도회전";
+    case "헥스30도회전":
+      return "STL모델대로";
     default:
       throw new Error(`지원하지 않는 헥스 회전 모드입니다. mode='${String(mode)}'`);
   }

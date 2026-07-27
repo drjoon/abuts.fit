@@ -592,8 +592,8 @@ function getAnchorMembership(anchor, user) {
 
 function normalizeRequestorHexRotation(value) {
   const v = String(value || "").trim();
-  if (v === "무보정") return "무보정";
-  return "보정";
+  if (v === "헥스30도회전" || v === "30") return "헥스30도회전";
+  return "STL모델대로";
 }
 
 // related files:
@@ -641,7 +641,7 @@ export async function getMyRequestSettings(req, res) {
           anodizingEnabled: true,
           designSoftware: null,
           requestorDesignSoftware,
-          defaultRequestorHexRotation: "보정",
+          defaultRequestorHexRotation: "STL모델대로",
           updatedAt: null,
         },
       });
@@ -748,11 +748,11 @@ export async function updateMyRequestSettings(req, res) {
     let defaultRequestorHexRotation;
     if (hasDefaultRequestorHexRotation) {
       const raw = String(req.body?.defaultRequestorHexRotation || "").trim();
-      if (raw !== "보정" && raw !== "무보정") {
+      if (raw !== "STL모델대로" && raw !== "헥스30도회전") {
         return res.status(400).json({
           success: false,
           message:
-            "유효하지 않은 의뢰 설정입니다. defaultRequestorHexRotation은 '보정' 또는 '무보정'이어야 합니다.",
+            "유효하지 않은 의뢰 설정입니다. defaultRequestorHexRotation은 'STL모델대로' 또는 '헥스30도회전'이어야 합니다.",
         });
       }
       defaultRequestorHexRotation = raw;

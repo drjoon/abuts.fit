@@ -52,12 +52,13 @@ type PreviewFiles = {
 // - web/backend/controllers/bg/bg.controller.js
 // - bg/pc1/esprit-addin/Helpers/NcFileGenerator.cs
 // Rhino의 align 기능이 구성정보를 대체하므로, 개별 구성정보 파일 모드는 사용하지 않는다.
-// 확장 규칙: 헥스 회전 라벨은 "STL모델대로" | "헥스30도회전" | "헥스X도회전" 패턴으로 정규화한다.
-type ManufacturerHexRotationCanonicalMode = "보정" | "무보정";
-type ManufacturerHexRotationMode =
-  | "STL모델대로"
-  | "헥스30도회전"
-  | "헥스10도회전";
+// 확장 규칙(표시/저장 분리):
+// - 프론트 표시(UI)는 minor 라벨("헥스10도회전")을 사용한다.
+// - 백엔드/Esprit 전달 canonical은 total 라벨("헥스40도회전" = 30 + 10)을 사용한다.
+// - 따라서 백엔드에서 내려온 "헥스X도회전"은 X>30이면 표시 시 X-30으로 변환한다.
+type ManufacturerHexRotationCanonicalMode = "STL모델대로" | "헥스30도회전";
+type HexXRotationLabel = `헥스${number}도회전`;
+type ManufacturerHexRotationMode = "STL모델대로" | "헥스30도회전" | HexXRotationLabel;
 type ManufacturerHexRotationDraftMode = ManufacturerHexRotationMode | "";
 
 const normalizeManufacturerHexRotationMode = (
@@ -65,34 +66,31 @@ const normalizeManufacturerHexRotationMode = (
 ): ManufacturerHexRotationMode | null => {
   const raw = String(value || "").trim();
   if (!raw) return null;
-  if (
-    raw === "STL모델대로" ||
-    raw === "헥스30도회전" ||
-    raw === "헥스10도회전"
-  ) {
-    return raw;
-  }
-  // legacy canonical(백엔드/DB) 값 호환
-  if (raw === "보정" || raw === "0") return "STL모델대로";
-  if (raw === "무보정" || raw === "30") return "헥스30도회전";
+  if (raw === "STL모델대로") return "STL모델대로";
+  if (raw === "헥스30도회전") return "헥스30도회전";
+
+  // legacy numeric(백엔드/DB) 값 호환
+  if (raw === "0") return "STL모델대로";
+  if (raw === "30") return "헥스30도회전";
 
   const matched = raw.match(/^헥스\s*([+-]?\d+(?:\.\d+)?)\s*도회전$/);
-  if (matched) {
-    const degree = Number(matched[1]);
-    if (Number.isFinite(degree)) {
-      return `헥스${String(degree)}도회전` as ManufacturerHexRotationMode;
-    }
-  }
-  return null;
+  if (!matched) return null;
+  const parsedX = Number(matched[1]);
+  if (!Number.isFinite(parsedX)) return null;
+  if (parsedX === 30) return "헥스30도회전";
+
+  // 백엔드 total(예: 40) -> UI minor(예: 10) 표시 변환
+  const uiMinorDeg = parsedX > 30 ? parsedX - 30 : parsedX;
+  return `헥스${String(uiMinorDeg)}도회전` as ManufacturerHexRotationMode;
 };
 
 const toManufacturerHexRotationLabel = (
   mode: ManufacturerHexRotationCanonicalMode,
-): Exclude<ManufacturerHexRotationMode, "헥스10도회전"> => {
+): "STL모델대로" | "헥스30도회전" => {
   switch (mode) {
-    case "보정":
+    case "STL모델대로":
       return "STL모델대로";
-    case "무보정":
+    case "헥스30도회전":
       return "헥스30도회전";
     default:
       throw new Error(`지원하지 않는 헥스 회전 모드: ${String(mode)}`);
@@ -105,10 +103,10 @@ const resolveRequestorHexRotationByDesignSoftware = (
   const designSoftware = String(designSoftwareRaw || "").trim();
   if (!designSoftware) return null;
   // 정책 SSOT:
-  // - ExoCAD => 헥스30도회전(= canonical "무보정")
-  // - 3Shape 및 기타(custom 포함) => STL모델대로(= canonical "보정")
-  if (designSoftware === "ExoCAD") return "무보정";
-  return "보정";
+  // - ExoCAD => 헥스30도회전
+  // - 3Shape 및 기타(custom 포함) => STL모델대로
+  if (designSoftware === "ExoCAD") return "헥스30도회전";
+  return "STL모델대로";
 };
 
 const UNMACHINABLE_REASON_PRESETS = [
@@ -1787,10 +1785,10 @@ export const PreviewModal = ({
                   </SelectTrigger>
                   <SelectContent align="end" className="min-w-[168px]">
                     <SelectItem value="STL모델대로" className="text-[12px] font-medium">
-                      {toManufacturerHexRotationLabel("보정")}
+                      {toManufacturerHexRotationLabel("STL모델대로")}
                     </SelectItem>
                     <SelectItem value="헥스30도회전" className="text-[12px] font-medium">
-                      {toManufacturerHexRotationLabel("무보정")}
+                      {toManufacturerHexRotationLabel("헥스30도회전")}
                     </SelectItem>
                     <SelectItem value="헥스10도회전" className="text-[12px] font-medium">
                       헥스10도회전
@@ -1944,12 +1942,11 @@ export const PreviewModal = ({
                           }
 
                           let nextHexMode: ManufacturerHexRotationMode | null = null;
-                          if (
-                            manufacturerHexRotationDraft === "STL모델대로" ||
-                            manufacturerHexRotationDraft === "헥스30도회전" ||
-                            manufacturerHexRotationDraft === "헥스10도회전"
-                          ) {
-                            nextHexMode = manufacturerHexRotationDraft;
+                          const normalizedDraft = normalizeManufacturerHexRotationMode(
+                            manufacturerHexRotationDraft,
+                          );
+                          if (normalizedDraft) {
+                            nextHexMode = normalizedDraft;
                           } else {
                             const byDesignSoftware =
                               resolveRequestorHexRotationByDesignSoftware(
@@ -1969,7 +1966,7 @@ export const PreviewModal = ({
                             toast({
                               title: "승인 불가",
                               description:
-                                "헥스 회전값이 비어 있습니다. 'STL모델대로', '헥스30도회전', '헥스10도회전' 중 하나를 선택해 주세요.",
+                                "헥스 회전값이 비어 있습니다. 'STL모델대로', '헥스30도회전', '헥스X도회전' 중 하나를 선택해 주세요.",
                               variant: "destructive",
                             });
                             return;

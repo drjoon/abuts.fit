@@ -69,7 +69,7 @@ export type CaseInfos = {
   retentionGroove?: "none" | "shallow" | "deep";
 
   // 헥스 회전 모드값 SSOT
-  requestorHexRotation?: "보정" | "무보정";
+  requestorHexRotation?: "STL모델대로" | "헥스30도회전";
 };
 
 export type DraftFileMeta = {

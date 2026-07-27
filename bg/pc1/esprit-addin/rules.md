@@ -220,26 +220,29 @@
 - `boundaryKey/prc/angle(0,180)`
 - 생성 결과: `BackRoughStyle 종료(created=...)`
 
-### 4.13 제조사 헥스 회전 모드 정책 (2026-07-26)
+### 4.13 제조사 헥스 회전 모드 정책 (2026-07-28 개정)
 
-검색 키워드: `manufacturerHexRotation`, `hexRotation.appliedDeg`, `request-meta`, `보정`, `무보정`, `DefaultWAxisRotationDegrees`
+검색 키워드: `manufacturerHexRotation`, `hexRotation.appliedDeg`, `request-meta`, `헥스40도회전`, `minorDeg`, `totalDeg`
 
-- `request-meta.caseInfos.manufacturerHexRotation`의 canonical 모드는 `보정`/`무보정`이다.
-  - UI 라벨은 각각 `STL모델대로`/`헥스30도회전`으로 노출한다.
-  - 레거시 `"0"`/`"30"`은 하위호환 입력으로만 허용하고, add-in에서 canonical로 정규화한다.
-  - **default fallback으로 `보정`을 주입하지 않는다.** 빈값/미지원값은 즉시 예외 처리한다.
-- 모드별 적용 SSOT:
-  - `보정`: `Rotate90Degrees` 후 `+30` 기본 회전 + `hexRotation.appliedDeg`를 **Esprit 부호계로 반전한 값** 추가 회전
-    - 식: `totalW = 30 + (-appliedDeg)`
-  - `무보정`(UI: `헥스30도회전`): `Rotate90Degrees` 후 W축 `+30`만 적용(telemetry 미적용)
-- `hexRotation.appliedDeg` 의미 SSOT:
-  - Rhino가 실제 STL에는 적용하지 않은 **가상 보정량(-phase_mod)**
-  - add-in은 `보정` 모드에서만 이 값을 반영하며, **Esprit 적용 시 부호 반전**을 수행한다.
+- `request-meta.caseInfos.manufacturerHexRotation` canonical은 `STL모델대로` / `헥스30도회전` / `헥스X도회전(total)`.
+  - 전달 SSOT: `헥스X도회전`의 X는 **totalDeg(=30+minorDeg)**.
+  - 예) 프론트 minor 10도 선택(`헥스10도회전`) → 백엔드/Esprit 전달값 `헥스40도회전`.
+  - 레거시 `"0"`/`"30"`, `헥스10도회전`(minor)은 하위호환으로 정규화 허용.
+  - **default fallback 주입 금지**: 빈값/미지원값은 즉시 예외 처리.
+- STL 회전 SSOT:
+  - `STL모델대로` / `헥스30도회전` 모두 동일하게
+    `Rotate90Degrees` 후 `+30 + (-hexRotation.appliedDeg)` 적용.
+- NC C축 후처리 SSOT(공구 기반):
+  - `T4848`  → `minorDeg` 적용 (`minorDeg = totalDeg - 30`)
+  - `T0909`, `T0606` → `totalDeg` 적용
+  - 공구번호 미검출/미지원은 즉시 예외 발생(백엔드 실패 콜백 경유 → 프론트 토스트)
 - 구현 위치:
-  - `StlFileProcessor.Process` (모드별 회전 분기 + 미지원 모드 예외)
-  - `StlFileProcessor.NormalizeManufacturerHexRotationMode` (canonical/legacy 정규화 + invalid 예외)
-  - `StlFileProcessor.ResolveManufacturerAdditionalHexRotationDegrees` (telemetry 적용량 계산)
-  - `Helpers/BackendApiClient.RequestMetaCaseInfos.hexRotation` (payload 바인딩)
+  - `Helpers/NcFileGenerator.cs`
+    - `TryResolveHexRotationTargets` (total→minor 계산)
+    - `FindNearestToolCodeNearLine` (상방 10줄 공구 탐색)
+    - `ApplyManufacturerHexRotationToNc` (공구별 C축 치환)
+  - `StlFileProcessor.Process` (request-meta 전달/에러 전파)
+  - `Helpers/BackendApiClient.RequestMetaCaseInfos` (request-meta 바인딩)
 
 ## 5. 정리 원칙
 
@@ -248,4 +251,5 @@
 - 코드 리팩터링/수정 시 주석을 꼼꼼히 작성합니다.
 - 기본 원칙(명시): **"다시 찾을 때 헷갈리지않게 코드에 항상 꼼꼼하게 주석을 기록한다"**.
 - `rules.md`에 없는 구현/운영 규칙이 나오면 본 파일에 즉시 추가합니다.
+- 헥스 회전 관련 코드에서 `보정`/`무보정` 문자열이 발견되면 즉시 `STL모델대로`/`헥스30도회전`으로 치환하고, 발견 위치를 규칙 문서에 기록합니다.
 - 기존 rules와 충돌 가능성이 있는 요청이 들어오면, 먼저 사용자 확인(컨펌)을 받은 뒤 진행합니다.

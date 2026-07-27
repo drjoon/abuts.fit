@@ -39,8 +39,10 @@
   - 구현: `controllers/requests/common.review.controller.js`
 
 - 제조사 헥스 회전 모드(`manufacturerHexRotation`)는 백엔드에서 fallback 기본값으로 보정하지 않습니다.
-  - 허용값: canonical `STL모델대로`/`헥스30도회전`/`헥스10도회전`(및 `헥스X도회전` 라벨 패턴)
-  - 하위호환 입력: 레거시 `보정`/`무보정`, `0`/`30` 정규화 허용
+  - 허용값: canonical `STL모델대로` / `헥스30도회전` / `헥스X도회전(total)`
+  - 전달 SSOT: `헥스X도회전`의 X는 `totalDeg(=30+minorDeg)`
+    - 예) 프론트 minor `헥스10도회전` 저장 요청 → canonical `헥스40도회전`
+  - 하위호환 입력: 레거시 `0`/`30`, 기존 minor 저장값(`헥스10도회전`)은 정규화 허용
   - 미지원/빈값은 request-meta 응답 및 저장 로직에서 즉시 오류로 처리합니다.
 - 의뢰 제출(`POST /api/requests/from-draft`)의 `caseInfos.requestorHexRotation`은
   케이스별 `caseInfos.designSoftware`를 기준으로 계산합니다.
@@ -105,6 +107,9 @@
 - 분리 tracking 병합 보정 스크립트:
   - `web/backend/scripts/db/merge-tracking-number-by-request-ids.mjs`
   - dry-run 기본, `--yes`일 때만 반영
+
+- 헥스 회전 문자열 SSOT: 신규/수정 코드에서 `보정`/`무보정` 사용 금지.
+  - 발견 시 즉시 `STL모델대로`/`헥스30도회전`로 치환하고 변경 내역을 rules에 기록합니다.
 
 ## 3. 정리 원칙
 

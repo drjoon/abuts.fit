@@ -358,7 +358,9 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
             [DataMember] public string faceHolePrcFileName { get; set; }
             [DataMember] public string connectionPrcFileName { get; set; }
             // 제조사 수동 헥스 회전 모드값
-            // - canonical: "보정" | "무보정"
+            // - canonical: "STL모델대로" | "헥스30도회전" | "헥스X도회전"
+            // - "헥스X도회전"의 X는 totalDeg(= 30 + minorDeg) 기준으로 전달된다.
+            //   예) minor 10도 선택 시 canonical 라벨: "헥스40도회전"
             // - legacy 입력("0"|"30")은 add-in에서 canonical로 정규화해 처리
             [DataMember(Name = "manufacturerHexRotation")] public string manufacturerHexRotation { get; set; }
             // 유지홈 옵션 ("none"|"deep", legacy "shallow" 허용) —
@@ -379,8 +381,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
 
             // Rhino 정렬 telemetry(헥스 회전각)
             // - appliedDeg 의미 SSOT: Rhino가 실제 mesh에는 적용하지 않은 "가상 보정량(-phase_mod)"
-            // - add-in은 "보정" 모드에서만 appliedDeg를 +30 기본 회전에 추가 적용한다.
-            // - "무보정" 모드에서는 +30/telemetry 모두 적용하지 않는다.
+            // - add-in은 STL 기준 회전 정책에서 appliedDeg를 Esprit 부호계로 해석해 사용한다.
             [DataMember(Name = "hexRotation")] public RequestMetaHexRotation hexRotation { get; set; }
 
             [DataMember] public RequestMetaFinishLine finishLine { get; set; }

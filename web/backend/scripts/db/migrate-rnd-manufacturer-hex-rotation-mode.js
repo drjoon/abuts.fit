@@ -2,14 +2,14 @@ import "../../bootstrap/env.js";
 import { connectDb, disconnectDb } from "./_mongo.js";
 import Request from "../../models/request.model.js";
 
-// canonical: "보정" | "무보정"
+// canonical: "STL모델대로" | "헥스30도회전"
 // legacy mapping (for migration):
-// - "0"  => "보정"
-// - "30" => "무보정"
+// - "0"  => "STL모델대로"
+// - "30" => "헥스30도회전"
 
 const LEGACY_TO_CANONICAL = {
-  "0": "보정",
-  "30": "무보정",
+  "0": "STL모델대로",
+  "30": "헥스30도회전",
 };
 
 async function migrateRndManufacturerHexRotationMode() {
@@ -59,11 +59,11 @@ async function migrateRndManufacturerHexRotationMode() {
     const afterLegacy30 = await Request.countDocuments({
       "rnd.manufacturerHexRotation": "30",
     });
-    const canonicalCorrected = await Request.countDocuments({
-      "rnd.manufacturerHexRotation": "보정",
+    const canonicalStl = await Request.countDocuments({
+      "rnd.manufacturerHexRotation": "STL모델대로",
     });
-    const canonicalUncorrected = await Request.countDocuments({
-      "rnd.manufacturerHexRotation": "무보정",
+    const canonicalHex30 = await Request.countDocuments({
+      "rnd.manufacturerHexRotation": "헥스30도회전",
     });
 
     console.log("[db] migrate-rnd-manufacturer-hex-rotation-mode: done", {
@@ -71,8 +71,8 @@ async function migrateRndManufacturerHexRotationMode() {
       updatedFromLegacy30: result30.modifiedCount,
       remainingLegacy0: afterLegacy0,
       remainingLegacy30: afterLegacy30,
-      canonicalCorrected,
-      canonicalUncorrected,
+      canonicalStl,
+      canonicalHex30,
     });
   } finally {
     await disconnectDb();

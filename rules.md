@@ -67,7 +67,7 @@
 - 정책 문구는 아래로 고정합니다.
   - **라이노의 align 기능이 구성정보를 대체할 수 있으므로 개별 구성정보 파일을 이용하지 않는다.**
 - 신규 코드에서 구성정보 fallback/임시 호환 분기를 추가하지 않습니다.
-- 레거시 데이터가 저장 경로 검증을 깨뜨리면, 저장 직전 canonical 값(`보정`/`무보정`)으로 정규화 후 저장합니다.
+- 레거시 데이터가 저장 경로 검증을 깨뜨리면, 저장 직전 canonical 값(`STL모델대로`/`헥스30도회전`)으로 정규화 후 저장합니다.
 
 관련 파일:
 - `web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx`
@@ -1129,32 +1129,39 @@
   - 사전 체크는 의뢰 생성 가능 여부만 판단하는 용도
   - 의뢰 생성 후 ~ 차감 전 사이에 크레딧이 부족해질 수 있으므로, 차감 시점에도 잔액 체크 필요
 
-### 4.3.4 제조사 헥스 회전(PreviewModal) → DB 저장 → Esprit 모드 정책 (2026-07-26 개정)
+### 4.3.4 제조사 헥스 회전(PreviewModal) → DB 저장 → Esprit 모드 정책 (2026-07-28 개정)
 
-검색 키워드: `rnd-hex-rotation`, `manufacturerHexRotation`, `hexRotation.appliedDeg`, `request-meta`, `STL모델대로`, `헥스30도회전`, `헥스10도회전`
+검색 키워드: `rnd-hex-rotation`, `manufacturerHexRotation`, `hexRotation.appliedDeg`, `request-meta`, `헥스40도회전`, `minorDeg`, `totalDeg`
 
 - 제조사 워크시트 PreviewModal의 `헥스 회전` 선택값은 반드시 백엔드 API를 통해 DB에 저장한다.
   - API: `PATCH /api/requests/:id/rnd-hex-rotation`
   - 저장 필드(SSOT):
     - `Request.rnd.manufacturerHexRotation`
     - `Request.caseInfos.finalHexRotation` (표시/조회용 최종값)
-- `manufacturerHexRotation` canonical 모드는 **`STL모델대로` / `헥스30도회전` / `헥스10도회전`**을 사용한다.
-  - `헥스X도회전` 라벨 입력(예: `헥스10도회전`)은 정규식으로 정규화해 허용한다.
-  - 레거시 입력값 `"보정"`/`"무보정"`, `"0"`/`"30"`은 하위호환 정규화로만 처리한다.
+- 헥스 라벨 SSOT(표시/전달 분리):
+  - UI 표시는 `헥스X도회전(minor)` 사용 (예: `헥스10도회전`)
+  - 백엔드/Esprit 전달 canonical은 `헥스X도회전(total)` 사용 (예: `헥스40도회전`)
+    - 식: `totalDeg = 30 + minorDeg`
+  - 서버에서 내려온 total 라벨은 프론트에서 minor 라벨로 역변환해 표시한다.
+  - 레거시 입력값 `"0"`/`"30"`, 과거 minor 저장값(`헥스10도회전`)은 하위호환 정규화로 처리한다.
   - **default fallback으로 임의 값을 주입하지 않는다.**
-    - 프론트 라벨 매핑, 백엔드 최종값 계산, Esprit 모드 분기 모두 명시 분기만 허용하고, 미지원 값은 즉시 에러 처리한다.
 - 의뢰 제출 시(`POST /api/requests/from-draft`) `Request.caseInfos.requestorHexRotation`은
   의뢰자 사업자 설정(`BusinessAnchor.requestSettings.designSoftware`)을 기준으로 강제 지정한다.
   - `ExoCAD` => `헥스30도회전`
   - `3Shape` 및 기타(custom 포함) => `STL모델대로`
 - Esprit 적용 정책 SSOT:
-  1. `STL모델대로`: 기본 W축 `+30` 적용 후 `hexRotation.appliedDeg`를 Esprit 부호계로 반전해 추가 적용
-     - 식: `totalW = 30 + (-appliedDeg)`
-  2. `헥스30도회전`: 기본 W축 `+30`만 적용 (telemetry 미적용)
-  3. `헥스X도회전`(예: `헥스10도회전`): STL 회전은 `STL모델대로` 기준을 따르고, NC 후처리에서 C축 각도를 X 규칙으로 치환한다.
+  1. `STL모델대로`/`헥스30도회전` 모두 STL 실회전은 동일
+     - `totalW = 30 + (-appliedDeg)`
+  2. NC 후처리 공구별 C축 적용
+     - `T4848`   => `minorDeg = totalDeg - 30`
+     - `T0909`, `T0606` => `totalDeg`
+     - 공구 미검출/미지원은 즉시 예외(백엔드 실패 경유 → 프론트 토스트)
 - **라이노의 align 기능이 구성정보를 대체할 수 있으므로 개별 구성정보 파일을 이용하지 않는다.**
 - Rhino telemetry 의미 SSOT:
   - `request-meta.caseInfos.hexRotation.appliedDeg`는 Rhino가 실제 mesh에 적용하지 않은 가상 회전 보정량(`-phase_mod`)이다.
+- 헥스 회전 문자열 정책:
+  - 코드/문서에서 `보정`/`무보정` 신규 사용 금지.
+  - 발견 시 즉시 `STL모델대로`/`헥스30도회전`로 치환하고 해당 수정 내용을 `rules.md`에 기록한다.
 
 관련 파일:
 - `web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx`

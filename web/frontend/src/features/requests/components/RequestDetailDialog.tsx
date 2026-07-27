@@ -28,8 +28,8 @@ export type RequestDetailDialogCaseInfos = {
   maxDiameter?: number | null;
   connectionDiameter?: number | null;
   retentionGroove?: "none" | "shallow" | "deep";
-  requestorHexRotation?: "보정" | "무보정";
-  finalHexRotation?: "보정" | "무보정";
+  requestorHexRotation?: "STL모델대로" | "헥스30도회전";
+  finalHexRotation?: "STL모델대로" | "헥스30도회전";
 };
 
 export type RequestDetailDialogRequest = {

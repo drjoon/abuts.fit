@@ -88,7 +88,7 @@ const draftCaseSchema = new mongoose.Schema(
         // 의뢰자 헥스 회전 선택값(canonical)
         requestorHexRotation: {
           type: String,
-          default: "보정",
+          default: "STL모델대로",
         },
         // 배송 요청 정보 (묶음 배송만 사용)
         requestedShipDate: Date,

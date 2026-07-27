@@ -2,14 +2,14 @@ import "../../bootstrap/env.js";
 import { connectDb, disconnectDb } from "./_mongo.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 
-// canonical: "보정" | "무보정"
+// canonical: "STL모델대로" | "헥스30도회전"
 // legacy mapping (for migration):
-// - "0"  => "보정"
-// - "30" => "무보정"
+// - "0"  => "STL모델대로"
+// - "30" => "헥스30도회전"
 
 const LEGACY_TO_CANONICAL = {
-  "0": "보정",
-  "30": "무보정",
+  "0": "STL모델대로",
+  "30": "헥스30도회전",
 };
 
 async function migrateBusinessAnchorDefaultManufacturerHexRotationMode() {
@@ -68,11 +68,11 @@ async function migrateBusinessAnchorDefaultManufacturerHexRotationMode() {
     const afterLegacy30 = await BusinessAnchor.countDocuments({
       "requestSettings.defaultManufacturerHexRotation": "30",
     });
-    const canonicalCorrected = await BusinessAnchor.countDocuments({
-      "requestSettings.defaultManufacturerHexRotation": "보정",
+    const canonicalStl = await BusinessAnchor.countDocuments({
+      "requestSettings.defaultManufacturerHexRotation": "STL모델대로",
     });
-    const canonicalUncorrected = await BusinessAnchor.countDocuments({
-      "requestSettings.defaultManufacturerHexRotation": "무보정",
+    const canonicalHex30 = await BusinessAnchor.countDocuments({
+      "requestSettings.defaultManufacturerHexRotation": "헥스30도회전",
     });
 
     console.log(
@@ -82,8 +82,8 @@ async function migrateBusinessAnchorDefaultManufacturerHexRotationMode() {
         updatedFromLegacy30: result30.modifiedCount,
         remainingLegacy0: afterLegacy0,
         remainingLegacy30: afterLegacy30,
-        canonicalCorrected,
-        canonicalUncorrected,
+        canonicalStl,
+        canonicalHex30,
       },
     );
   } finally {
