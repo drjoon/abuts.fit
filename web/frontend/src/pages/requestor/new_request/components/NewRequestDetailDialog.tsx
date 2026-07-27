@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { StlPreviewViewer } from "@/features/requests/components/StlPreviewViewer";
 import {
   AlertDialog,
@@ -23,10 +23,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { CircleHelp } from "lucide-react";
 import type { CaseInfos, Connection } from "../hooks/newRequestTypes";
 import { NewRequestPatientImplantFields } from "./NewRequestPatientImplantFields";
@@ -135,6 +135,11 @@ export function NewRequestDetailDialog({
   const [newSystemBrand, setNewSystemBrand] = useState("");
   const [newSystemFamily, setNewSystemFamily] = useState("");
   const [confirmNewSystemOpen, setConfirmNewSystemOpen] = useState(false);
+  const [retentionGuideOpen, setRetentionGuideOpen] = useState(false);
+  const [retentionGuidePinned, setRetentionGuidePinned] = useState(false);
+  const retentionGuideCloseTimerRef = useRef<number | null>(null);
+  const retentionGuideClickedRef = useRef(false);
+
   const [pendingNewSystem, setPendingNewSystem] = useState<{
     manufacturer: string;
     brand: string;
@@ -184,6 +189,50 @@ export function NewRequestDetailDialog({
       setNewSystemFamily(persistedNewSystemRequest.family || "");
     }
   }, [persistedNewSystemRequest]);
+
+  useEffect(() => {
+    return () => {
+      if (retentionGuideCloseTimerRef.current !== null) {
+        window.clearTimeout(retentionGuideCloseTimerRef.current);
+      }
+    };
+  }, []);
+
+  const handleRetentionGuideOpenChange = useCallback((nextOpen: boolean) => {
+    setRetentionGuideOpen(nextOpen);
+
+    if (!nextOpen) {
+      setRetentionGuidePinned(false);
+    } else if (retentionGuideClickedRef.current) {
+      setRetentionGuidePinned(true);
+    }
+
+    retentionGuideClickedRef.current = false;
+  }, []);
+
+  const openRetentionGuide = useCallback(() => {
+    if (retentionGuideCloseTimerRef.current !== null) {
+      window.clearTimeout(retentionGuideCloseTimerRef.current);
+      retentionGuideCloseTimerRef.current = null;
+    }
+    setRetentionGuideOpen(true);
+  }, []);
+
+  const closeRetentionGuideWithDelay = useCallback(
+    (delayMs = 120) => {
+      if (retentionGuidePinned) {
+        return;
+      }
+      if (retentionGuideCloseTimerRef.current !== null) {
+        window.clearTimeout(retentionGuideCloseTimerRef.current);
+      }
+      retentionGuideCloseTimerRef.current = window.setTimeout(() => {
+        setRetentionGuideOpen(false);
+        retentionGuideCloseTimerRef.current = null;
+      }, delayMs);
+    },
+    [retentionGuidePinned],
+  );
 
   const showImplantSelect = true;
 
@@ -253,70 +302,106 @@ export function NewRequestDetailDialog({
                     handleAddOrSelectClinic={handleAddOrSelectClinic}
                   />
 
-                  <div className="flex flex-row items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2.5">
-                    <div className="flex items-center gap-1.5">
+                  <div className="rounded-lg border border-slate-200 bg-white px-3 py-2.5">
+                    <div className="flex flex-row items-center justify-between">
                       <div className="text-sm font-semibold text-slate-600">유지홈</div>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <button
-                            type="button"
-                            className="inline-flex items-center justify-center text-slate-400 hover:text-blue-600 transition-colors"
-                            aria-label="유지홈 옵션 가이드"
-                          >
-                            <CircleHelp className="h-4 w-4" />
-                          </button>
-                        </TooltipTrigger>
-                        <TooltipContent
-                          side="bottom"
-                          align="center"
-                          alignOffset={-220}
-                          collisionPadding={20}
-                          className="w-[700px] max-w-[calc(100vw-3rem)] p-4"
+
+                      <RadioGroup
+                        value={detailCaseInfos?.retentionGroove === "deep" ? "deep" : "none"}
+                        onValueChange={(value) =>
+                          setDetailCaseInfos({ retentionGroove: value as "none" | "deep" })
+                        }
+                        className="flex items-center gap-10"
+                        disabled={!detailFile}
+                      >
+                        <div className="flex items-center space-x-2">
+                          <RadioGroupItem value="none" id="rg-none" className="border-slate-300 text-blue-600" />
+                          <Label htmlFor="rg-none" className="text-sm text-slate-700 cursor-pointer">
+                            없음
+                          </Label>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <RadioGroupItem value="deep" id="rg-deep" className="border-slate-300 text-blue-600" />
+                          <Label htmlFor="rg-deep" className="text-sm text-slate-700 cursor-pointer">
+                            있음
+                          </Label>
+                        </div>
+                      </RadioGroup>
+                    </div>
+
+                    <Popover open={retentionGuideOpen} onOpenChange={handleRetentionGuideOpenChange}>
+                      <PopoverTrigger asChild>
+                        <button
+                          type="button"
+                          className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-blue-700 hover:text-blue-800 transition-colors"
+                          aria-label="유지홈 선택 안내"
+                          disabled={!detailFile}
+                          onMouseEnter={openRetentionGuide}
+                          onMouseLeave={() => closeRetentionGuideWithDelay()}
+                          onClick={(e) => {
+                            retentionGuideClickedRef.current = true;
+                            if (retentionGuideOpen && !retentionGuidePinned) {
+                              e.preventDefault();
+                              setRetentionGuidePinned(true);
+                              setRetentionGuideOpen(true);
+                            }
+                          }}
                         >
-                          <div className="mb-2 text-xs font-semibold text-slate-600">유지홈 옵션 예시</div>
-                          <div className="grid grid-cols-2 gap-4">
+                          <CircleHelp className="h-3.5 w-3.5" />
+                          유지구 디자인하지 마시고, 의뢰시 '유지홈 있음'을 선택해주세요.
+                        </button>
+                      </PopoverTrigger>
+                      <PopoverContent
+                        side="bottom"
+                        align="center"
+                        alignOffset={-180}
+                        collisionPadding={20}
+                        className="w-[980px] max-w-[calc(100vw-3rem)] p-4"
+                        onMouseEnter={openRetentionGuide}
+                        onMouseLeave={() => closeRetentionGuideWithDelay(80)}
+                      >
+                        <div className="mb-2 text-xs font-semibold text-slate-600">유지구/유지홈 안내</div>
+                        <p className="mb-3 text-xs leading-relaxed text-slate-600">
+                          유지구 디자인은 생산이 어렵습니다. 유지력 증강을 위해 <span className="font-semibold text-blue-700">유지홈 있음</span>을 선택해 주세요.
+                        </p>
+
+                        <div className="grid grid-cols-1 lg:grid-cols-[1fr_1.5fr] gap-4">
+                          <div className="rounded-md border border-slate-200 bg-white p-2.5">
+                            <img
+                              src="/images/new-request/Retention_Groove.png"
+                              alt="유지구 디자인 예시"
+                              className="h-52 w-full rounded-md border border-slate-200 bg-slate-50 p-1 object-contain object-center"
+                            />
+                            <span className="mt-1.5 block text-center text-xs font-medium text-slate-600">
+                              유지구 디자인 (생산 어려움)
+                            </span>
+                          </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             <div className="rounded-md border border-slate-200 bg-white p-2.5">
                               <img
                                 src="/images/new-request/retention-groove-none.jpeg"
                                 alt="유지홈 없음"
-                                className="h-52 w-full rounded-md border border-slate-200 bg-slate-50 p-1 object-cover object-top"
+                                className="h-52 w-full rounded-md border border-slate-200 bg-slate-50 p-1 object-cover object-center"
                               />
-                              <span className="mt-1.5 block text-center text-xs font-medium text-slate-600">없음</span>
+                              <span className="mt-1.5 block text-center text-xs font-medium text-slate-600">
+                                유지홈 없음 (유지력 기본)
+                              </span>
                             </div>
                             <div className="rounded-md border border-slate-200 bg-white p-2.5">
                               <img
                                 src="/images/new-request/retention-groove-exist.jpeg"
                                 alt="유지홈 있음"
-                                className="h-52 w-full rounded-md border border-slate-200 bg-slate-50 p-1 object-cover object-top"
+                                className="h-52 w-full rounded-md border border-slate-200 bg-slate-50 p-1 object-cover object-center"
                               />
-                              <span className="mt-1.5 block text-center text-xs font-medium text-slate-600">있음</span>
+                              <span className="mt-1.5 block text-center text-xs font-medium text-slate-600">
+                                유지홈 있음 (유지력 증강)
+                              </span>
                             </div>
                           </div>
-                        </TooltipContent>
-                      </Tooltip>
-                    </div>
-
-                    <RadioGroup
-                      value={detailCaseInfos?.retentionGroove === "deep" ? "deep" : "none"}
-                      onValueChange={(value) =>
-                        setDetailCaseInfos({ retentionGroove: value as "none" | "deep" })
-                      }
-                      className="flex items-center gap-10"
-                      disabled={!detailFile}
-                    >
-                      <div className="flex items-center space-x-2">
-                        <RadioGroupItem value="none" id="rg-none" className="border-slate-300 text-blue-600" />
-                        <Label htmlFor="rg-none" className="text-sm text-slate-700 cursor-pointer">
-                          없음
-                        </Label>
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        <RadioGroupItem value="deep" id="rg-deep" className="border-slate-300 text-blue-600" />
-                        <Label htmlFor="rg-deep" className="text-sm text-slate-700 cursor-pointer">
-                          있음
-                        </Label>
-                      </div>
-                    </RadioGroup>
+                        </div>
+                      </PopoverContent>
+                    </Popover>
                   </div>
 
                   <div className="flex flex-col gap-2 rounded-lg border border-blue-100 bg-blue-50/60 px-3 py-2">
