@@ -363,8 +363,9 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 // 제조사 헥스 회전 정책 SSOT
                 // - 보정(STL모델대로): 기본 +30도 + Rhino telemetry(appliedDeg)를 Esprit 부호계로 반전 적용
                 //   => totalW = 30 + (-appliedDeg)
-                // - 무보정(헥스30도회전): STL 모델 회전 없음 (0도 유지)
-                //   => totalW = 0
+                // - 무보정(헥스30도회전): STL 회전은 보정(STL모델대로)와 동일 적용
+                //   => totalW = 30 + (-appliedDeg)
+                //   (차이는 NC 후처리에서 C0를 C30 계열로 치환)
                 // default fallback 금지: 허용 모드 외 값은 즉시 예외 처리한다.
                 if (string.Equals(hexMode, ManufacturerHexModeCorrected, StringComparison.Ordinal))
                 {
@@ -379,8 +380,14 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject
                 }
                 else if (string.Equals(hexMode, ManufacturerHexModeUncorrected, StringComparison.Ordinal))
                 {
-                    effectiveWAxisRotationDeg = 0.0;
-                    AppLogger.Log($"StlFileProcessor: 제조사 헥스 회전 무보정(헥스30도회전) 모드 적용 - STL 회전 생략(total=0.0000도), raw='{_backendManufacturerHexRotation ?? ""}'");
+                    double telemetryHexRotationDegrees = ResolveManufacturerAdditionalHexRotationDegrees(hexMode);
+                    RotateByWAxisDegrees(document, DefaultWAxisRotationDegrees);
+                    if (Math.Abs(telemetryHexRotationDegrees) > 0.0001)
+                    {
+                        RotateByWAxisDegrees(document, telemetryHexRotationDegrees);
+                    }
+                    effectiveWAxisRotationDeg = DefaultWAxisRotationDegrees + telemetryHexRotationDegrees;
+                    AppLogger.Log($"StlFileProcessor: 제조사 헥스 회전 무보정(헥스30도회전) 모드 적용 - stlModelBase={DefaultWAxisRotationDegrees:F1}도, hexTelemetry={telemetryHexRotationDegrees:F4}도, total={effectiveWAxisRotationDeg:F4}도 (raw='{_backendManufacturerHexRotation ?? ""}')");
                 }
                 else
                 {
