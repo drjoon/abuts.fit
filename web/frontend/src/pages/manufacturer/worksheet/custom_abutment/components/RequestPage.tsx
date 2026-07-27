@@ -963,30 +963,56 @@ export const RequestPage = ({
       if (!req?._id) return;
       try {
         // 생산용 샘플은 R&D 보관(done) 경로가 아니라 작업 복사본(rnd.doneAt=null)으로 생성한다.
-        // 현재 단계에 맞춰 시작 공정을 고정한다.
+        // 탭 기준으로 시작 공정을 고정한다.
         // - 의뢰 탭: 의뢰로 생성
         // - CAM 탭: CAM으로 생성
         // - 그 외 단계: 가공으로 생성(허용 시작 공정 제한)
-        const rawStage = String(req.manufacturerStage || "").trim();
-        const lowerStage = rawStage.toLowerCase();
         const startStage =
-          rawStage === "의뢰" || lowerStage === "request"
-            ? "의뢰"
-            : rawStage === "CAM" || lowerStage === "cam"
-              ? "CAM"
-              : "가공";
+          tabStage === "request" ? "의뢰" : tabStage === "cam" ? "CAM" : "가공";
 
-        const res = await fetch(`/api/requests/remake-clone`, {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ requestIds: [req._id], startStage }),
-        });
+        const sourceIsRndSample = isRndSampleRequest(req);
+
+        let res: Response;
+        if (sourceIsRndSample) {
+          // R&D 보관 샘플 원본은 전용 엔드포인트로 작업 복사본(copied_sample) 생성
+          res = await fetch(
+            `/api/requests/${encodeURIComponent(String(req._id))}/clone-from-sample-to-request`,
+            {
+              method: "POST",
+              headers: {
+                Authorization: `Bearer ${token}`,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({ startStage }),
+            },
+          );
+        } else {
+          // 일반 의뢰/복사샘플은 재제작 복사 엔드포인트 사용
+          res = await fetch(`/api/requests/remake-clone`, {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${token}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ requestIds: [req._id], startStage }),
+          });
+        }
+
         const data = await res.json().catch(() => ({}));
         if (!res.ok || data?.success === false) {
           throw new Error(data?.message || "샘플 복사에 실패했습니다.");
+        }
+
+        const createdCategory = String(
+          sourceIsRndSample
+            ? data?.data?.requestCategory || ""
+            : data?.data?.created?.[0]?.requestCategory || "",
+        ).trim();
+
+        if (createdCategory !== "copied_sample") {
+          throw new Error(
+            `복사 결과가 copied_sample이 아닙니다. (현재: ${createdCategory || "미응답"})`,
+          );
         }
 
         const clonedRequestId =
@@ -994,7 +1020,7 @@ export const RequestPage = ({
 
         toast({
           title: "샘플 복사 완료",
-          description: `크레딧 차감 없이 ${startStage} 공정 샘플을 생성했습니다. (새 의뢰ID: ${clonedRequestId})`,
+          description: `복사샘플(copied_sample)을 ${startStage} 공정으로 생성했습니다. (새 의뢰ID: ${clonedRequestId})`,
         });
 
         void queryClient.invalidateQueries({
@@ -1004,6 +1030,7 @@ export const RequestPage = ({
           queryKey: ["worksheet-assigned-summary"],
           type: "active",
         });
+        void reloadRequests();
       } catch (e: any) {
         toast({
           title: "샘플 복사 실패",
@@ -1012,7 +1039,7 @@ export const RequestPage = ({
         });
       }
     },
-    [queryClient, toast, token],
+    [queryClient, reloadRequests, tabStage, toast, token],
   );
 
   // 샘플 의뢰 삭제 핸들러 (제조사/관리자만 가능)

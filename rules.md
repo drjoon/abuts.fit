@@ -2953,8 +2953,9 @@ source: {
 - `clone-from-sample-to-request`의 원본 검증은 `requestCategory`만 보지 않고, 레거시 문서(`requestCategory` 누락)도 아래 조건이면 `R&D 샘플`로 인정합니다.
   - `source = "manufacturer_sample"`
   - `rnd.doneAt != null`
-- 제조사 워크시트 `의뢰` 탭에서 샘플 카드는 작업 맥락상 `R&D` 시각 정책(보라색 카드/배지)을 적용합니다.
-  - 즉, `의뢰` 탭의 샘플 카드는 `복사샘플`이어도 파란 샘플 카드가 아니라 보라색 R&D 카드로 렌더링합니다.
+- 제조사 워크시트 샘플 카드의 시각/배지 라벨은 `requestCategory`를 SSOT로 사용합니다.
+  - `rnd_sample`만 `R&D`(보라색)로 렌더링합니다.
+  - `copied_sample`은 탭과 무관하게 `샘플`(파란색)로 렌더링합니다.
 - PreviewModal의 디자인 소프트웨어 표시는 `business.requestSettings.designSoftware`를 SSOT로 사용합니다.
   - 값이 비어 있으면 임의 fallback 문자열을 주입하지 않고, 미설정 상태로 노출/가이딩합니다.
 
@@ -2963,6 +2964,25 @@ source: {
 - `web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/WorksheetCardGrid.tsx`
 - `web/frontend/src/pages/manufacturer/worksheet/custom_abutment/utils/request.ts`
 - `web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx`
+
+### 18.11 워크시트 "샘플 복사" 카테고리 고정 정책 (2026-07-27)
+
+- 제조사 워크시트 카드의 **`샘플 복사` 버튼 결과는 항상 `copied_sample`** 이어야 합니다.
+- **일반 의뢰(`order`)를 샘플 복사할 때 `rnd_sample` 생성은 금지**합니다.
+- 버튼/엔드포인트 역할을 아래처럼 고정합니다.
+  - `샘플 복사` 버튼: 작업용 복사본 생성(`rnd.doneAt=null`, `requestCategory=copied_sample`)
+  - `R&D 저장` 버튼: 보관용 샘플 생성(`rnd.doneAt!=null`, `requestCategory=rnd_sample`)
+- 엔드포인트 선택 규칙:
+  - 원본이 `R&D 샘플`이면 `POST /api/requests/:id/clone-from-sample-to-request`
+  - 그 외(일반 의뢰/복사샘플)는 `POST /api/requests/remake-clone`
+- 프론트엔드는 샘플 복사 API 응답의 `requestCategory`가 `copied_sample`인지 검증하고, 아니면 실패로 처리합니다.
+
+관련 파일:
+- `web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx`
+- `web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/WorksheetCardGrid.tsx`
+- `web/frontend/src/pages/manufacturer/worksheet/custom_abutment/utils/request.ts`
+- `web/backend/controllers/requests/common.requests.controller.js`
+- `web/backend/modules/requests/request.routes.js`
 
 ---
 

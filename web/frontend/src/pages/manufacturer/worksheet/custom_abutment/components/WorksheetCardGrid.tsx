@@ -279,8 +279,7 @@ export const WorksheetCardGrid = ({
         const stageForRollback = deriveStageForFilter(request);
         const isSampleRequest = isAnySampleRequest(request);
         const isRndArchivedSample = isRndSampleRequest(request);
-        const isRndVisualSample =
-          isRndArchivedSample || (isSampleRequest && tabStage === "request");
+        const isRndVisualSample = isRndArchivedSample;
         const requestObjectId = String(request?._id || "");
         const rndMemoDraft = rndMemoDrafts[requestObjectId] ?? "";
         const rndMemoSaved = String(request.rnd?.memo || "");

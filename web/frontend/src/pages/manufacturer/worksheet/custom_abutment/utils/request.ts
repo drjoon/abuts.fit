@@ -81,15 +81,15 @@ export const isAnySampleRequest = (req?: ManufacturerRequest | null) => {
 };
 
 export const isRndSampleRequest = (req?: ManufacturerRequest | null) => {
+  const rawCategory = String(req?.requestCategory || "").trim();
+
+  // SSOT: requestCategory가 있으면 해당 값을 최우선으로 따른다.
+  if (rawCategory === REQUEST_CATEGORY.RND_SAMPLE) return true;
+  if (rawCategory === REQUEST_CATEGORY.COPIED_SAMPLE) return false;
+
+  // 레거시 호환: requestCategory 누락 문서만 source+rnd.doneAt 조합으로 판단
   const doneAt = Boolean(req?.rnd?.doneAt);
   if (!doneAt) return false;
-
-  const category = resolveRequestCategory(req);
-  if (category === REQUEST_CATEGORY.RND_SAMPLE) return true;
-  if (category === REQUEST_CATEGORY.COPIED_SAMPLE) return true;
-
-  // 레거시 호환: requestCategory가 비어 있어도
-  // source=manufacturer_sample && rnd.doneAt!=null 이면 R&D Done 샘플로 본다.
   const source = String(req?.source || "").trim();
   return source === "manufacturer_sample";
 };
