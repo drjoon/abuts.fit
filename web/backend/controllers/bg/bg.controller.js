@@ -877,20 +877,35 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
           });
         updateData["productionSchedule.actualCamComplete"] = now;
 
-        // 비동기 CAM 플로우: 의뢰 승인 시점에는 CAM으로 stage를 올리지 않고,
-        // Esprit(NC 생성) 완료 콜백 시점에만 CAM 단계로 전환한다.
-        try {
-          const cloned = {
-            manufacturerStage: request?.manufacturerStage,
-          };
-          applyStatusMapping(cloned, "CAM");
-          updateData["manufacturerStage"] = cloned.manufacturerStage;
-        } catch {
-          updateData["manufacturerStage"] = "CAM";
+        // 승인(의뢰 -> CAM) 경로에서 생성된 NC일 때만 단계를 CAM으로 승격한다.
+        // 의뢰 단계의 "재생성"(강제 재처리)로 생성된 NC는 단계를 자동 전환하지 않는다.
+        const requestReviewStatus = String(
+          request?.caseInfos?.reviewByStage?.request?.status || "",
+        )
+          .trim()
+          .toUpperCase();
+        const shouldPromoteToCam = requestReviewStatus === "APPROVED";
+
+        if (shouldPromoteToCam) {
+          // 비동기 CAM 플로우: 의뢰 승인 시점에는 CAM으로 stage를 올리지 않고,
+          // Esprit(NC 생성) 완료 콜백 시점에만 CAM 단계로 전환한다.
+          try {
+            const cloned = {
+              manufacturerStage: request?.manufacturerStage,
+            };
+            applyStatusMapping(cloned, "CAM");
+            updateData["manufacturerStage"] = cloned.manufacturerStage;
+          } catch {
+            updateData["manufacturerStage"] = "CAM";
+          }
+          updateData["caseInfos.reviewByStage.request.status"] = "APPROVED";
+          updateData["caseInfos.reviewByStage.request.reason"] = "";
+          updateData["caseInfos.reviewByStage.request.updatedAt"] = now;
+        } else {
+          console.log(
+            `[BG-Callback] sourceStep=3-nc request=${request?.requestId || "-"} preserve request stage (review status: ${requestReviewStatus || "EMPTY"})`,
+          );
         }
-        updateData["caseInfos.reviewByStage.request.status"] = "APPROVED";
-        updateData["caseInfos.reviewByStage.request.reason"] = "";
-        updateData["caseInfos.reviewByStage.request.updatedAt"] = now;
         break;
       }
 
