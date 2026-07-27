@@ -5,7 +5,6 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   ArrowLeft,
   ArrowRight,
-  Check,
   Copy,
   FlaskConical,
   X,
@@ -793,21 +792,7 @@ export const WorksheetCardGrid = ({
                   <X className="h-4 w-4" />
                 </button>
               )}
-              {onDone && isSampleRequest && !isRndArchivedSample && (
-                <button
-                  type="button"
-                  className="h-7 w-7 inline-flex items-center justify-center rounded-md border bg-white/90 text-blue-600 shadow-sm transition hover:bg-blue-50"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    onDone(request);
-                  }}
-                  aria-label="완료"
-                  title="R&D 보관 완료"
-                >
-                  <Check className="h-4 w-4" />
-                </button>
-              )}
+
               {onRestoreUnmachinable &&
                 tabStage === "unmachinable" &&
                 isUnmachinableSample && (

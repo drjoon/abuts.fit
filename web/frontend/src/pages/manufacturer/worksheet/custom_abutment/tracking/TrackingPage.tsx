@@ -266,10 +266,7 @@ export const TrackingInquiryPage = () => {
   const userScrolledRef = useRef(false);
 
   const matchesCurrentPage = useCallback((req: ManufacturerRequest) => {
-    // 추적관리 화면은 의뢰건(order)만 노출
-    if (isAnySampleRequest(req)) {
-      return false;
-    }
+    // 샘플도 일반 의뢰와 동일하게 추적관리 대상에 포함한다.
     if (req.rnd?.unmachinableAt) {
       return false;
     }
@@ -658,10 +655,7 @@ export const TrackingInquiryPage = () => {
     const out: ManufacturerRequest[] = [];
 
     for (const r of requests) {
-      if (isAnySampleRequest(r)) {
-        continue;
-      }
-
+      // 샘플 포함 전체 공정 동일 처리: 추적관리 필터에서 샘플을 별도 제외하지 않는다.
       const stage = String(r.manufacturerStage || "").trim();
 
       // 추적관리 단계는 '완료' 성격이므로, 완료포함 토글과 무관하게 항상 표시

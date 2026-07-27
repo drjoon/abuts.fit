@@ -1210,24 +1210,8 @@ export async function getAllRequests(req, res) {
       };
     }
 
-    // 추적관리 워크시트에서는 샘플 의뢰를 완전히 제외한다.
-    // (레거시 requestCategory 미기재 문서는 일반 의뢰건으로 유지)
-    if (view === "worksheet" && worksheetProfile === "tracking") {
-      const trackingSampleGuard = buildNonSampleRequestGuard();
-
-      if (filter && Array.isArray(filter.$and)) {
-        filter = {
-          ...filter,
-          $and: [...filter.$and, trackingSampleGuard],
-        };
-      } else if (!filter || Object.keys(filter).length === 0) {
-        filter = trackingSampleGuard;
-      } else {
-        filter = {
-          $and: [filter, trackingSampleGuard],
-        };
-      }
-    }
+    // 추적관리 워크시트도 샘플 의뢰를 일반 의뢰와 동일하게 노출한다.
+    // (샘플 완료 보관 여부는 rndDone 필터로 제어)
 
     // 레거시 MOCK_DEV_TOKEN 분기 제거됨
 

@@ -1300,22 +1300,11 @@ export async function updateReviewStatusByStage(req, res) {
               }
             }
           } else if (effectiveStage === "packing") {
-            // R&D 샘플은 발송/추적 대상이 아니다.
-            // SSOT: source=manufacturer_sample(또는 price.rule=manufacturer_sample)는
-            // 세척.패킹 이후 포장.발송/추적관리로 진입시키지 않는다.
-            if (isManufacturerSampleRequest(request)) {
-              request.mailboxAddress = null;
-            } else {
-              applyStatusMapping(request, "포장.발송");
-            }
+            // 샘플 의뢰도 일반 의뢰와 동일하게 포장.발송 단계로 진행한다.
+            // (차이는 크레딧 미차감 정책뿐)
+            applyStatusMapping(request, "포장.발송");
           } else if (effectiveStage === "shipping") {
-            if (isManufacturerSampleRequest(request)) {
-              const err = new Error(
-                "R&D 샘플은 발송/추적 대상이 아니므로 추적관리로 진행할 수 없습니다.",
-              );
-              err.statusCode = 400;
-              throw err;
-            }
+            // 샘플 의뢰도 일반 의뢰와 동일하게 추적관리 단계로 진행한다.
             applyStatusMapping(request, "추적관리");
           }
         }
@@ -1340,42 +1329,40 @@ export async function updateReviewStatusByStage(req, res) {
         if (effectiveStage === "packing") {
           await ensureFinishedLotNumberForPacking(request);
           updateCurrentEstimatedShipYmdOnPackingEnter(request);
-          if (isManufacturerSampleRequest(request)) {
-            request.mailboxAddress = null;
-          } else {
-            try {
-              const requestorBusinessAnchorId = resolvedBusinessAnchorId;
-              console.log(
-                `[PACKING_APPROVAL] 의뢰 ${request.requestId} 우편함 점검/할당 시작 - 사업자 anchor ID: ${requestorBusinessAnchorId}`,
-              );
-              const nextMailboxAddress = await ensureMailboxAddressForBusiness({
-                requestMongoId: request._id,
-                requestorOrgId: requestorBusinessAnchorId,
-                currentMailboxAddress: request.mailboxAddress,
-              });
-              if (nextMailboxAddress) {
-                request.mailboxAddress = nextMailboxAddress;
-              }
-              console.log(
-                `[PACKING_APPROVAL] 의뢰 ${request.requestId} 우편함 점검/할당 완료: ${request.mailboxAddress}`,
-              );
-            } catch (err) {
-              console.error("[MAILBOX_ALLOCATION_ERROR]", err);
+          try {
+            const requestorBusinessAnchorId = resolvedBusinessAnchorId;
+            console.log(
+              `[PACKING_APPROVAL] 의뢰 ${request.requestId} 우편함 점검/할당 시작 - 사업자 anchor ID: ${requestorBusinessAnchorId}`,
+            );
+            const nextMailboxAddress = await ensureMailboxAddressForBusiness({
+              requestMongoId: request._id,
+              requestorOrgId: requestorBusinessAnchorId,
+              currentMailboxAddress: request.mailboxAddress,
+            });
+            if (nextMailboxAddress) {
+              request.mailboxAddress = nextMailboxAddress;
             }
-
-            // 스크류 로트 추적 스냅샷 자동 귀속
-            // - 현재 전역 설정(A~E) 기준으로 의뢰에 고정 저장
-            // - 이후 전역 로트가 변경되어도 기존 의뢰 스냅샷은 유지
-            try {
-              await autoAssignPackingScrewLotIfPossible({
-                request,
-                actorUser: req.user,
-              });
-            } catch (err) {
-              console.error("[SCREW_LOT_AUTO_ASSIGN_ERROR]", err);
-            }
+            console.log(
+              `[PACKING_APPROVAL] 의뢰 ${request.requestId} 우편함 점검/할당 완료: ${request.mailboxAddress}`,
+            );
+          } catch (err) {
+            console.error("[MAILBOX_ALLOCATION_ERROR]", err);
           }
-          if (resolvedBusinessAnchorId) {
+
+          // 스크류 로트 추적 스냅샷 자동 귀속
+          // - 현재 전역 설정(A~E) 기준으로 의뢰에 고정 저장
+          // - 이후 전역 로트가 변경되어도 기존 의뢰 스냅샷은 유지
+          try {
+            await autoAssignPackingScrewLotIfPossible({
+              request,
+              actorUser: req.user,
+            });
+          } catch (err) {
+            console.error("[SCREW_LOT_AUTO_ASSIGN_ERROR]", err);
+          }
+
+          // 샘플 의뢰는 전체 공정 진행은 동일하게 허용하되, 배송비 크레딧은 차감하지 않는다.
+          if (resolvedBusinessAnchorId && !isManufacturerSampleRequest(request)) {
             await ensureShippingFeeSpendOnPackingApprove({
               request,
               businessAnchorId: resolvedBusinessAnchorId,
@@ -1385,7 +1372,11 @@ export async function updateReviewStatusByStage(req, res) {
           }
         }
 
-        if (effectiveStage === "shipping" && resolvedBusinessAnchorId) {
+        if (
+          effectiveStage === "shipping" &&
+          resolvedBusinessAnchorId &&
+          !isManufacturerSampleRequest(request)
+        ) {
           // 운영 중 과거 누락이 있더라도 shipping 승인 시점에 배송비 소비를 보강한다.
           await ensureShippingFeeSpendOnPackingApprove({
             request,

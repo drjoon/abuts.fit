@@ -81,13 +81,17 @@ export const isAnySampleRequest = (req?: ManufacturerRequest | null) => {
 };
 
 export const isRndSampleRequest = (req?: ManufacturerRequest | null) => {
+  const doneAt = Boolean(req?.rnd?.doneAt);
+  if (!doneAt) return false;
+
   const category = resolveRequestCategory(req);
   if (category === REQUEST_CATEGORY.RND_SAMPLE) return true;
+  if (category === REQUEST_CATEGORY.COPIED_SAMPLE) return true;
 
   // 레거시 호환: requestCategory가 비어 있어도
   // source=manufacturer_sample && rnd.doneAt!=null 이면 R&D Done 샘플로 본다.
   const source = String(req?.source || "").trim();
-  return source === "manufacturer_sample" && Boolean(req?.rnd?.doneAt);
+  return source === "manufacturer_sample";
 };
 
 export const isCopiedSampleRequest = (req?: ManufacturerRequest | null) => {

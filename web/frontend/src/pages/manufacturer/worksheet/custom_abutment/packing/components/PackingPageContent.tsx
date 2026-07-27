@@ -217,9 +217,9 @@ export const PackingPageContent = ({
 
   const matchesCurrentPage = useCallback(
     (req: ManufacturerRequest) => {
-      const isDoneRndSample = isRndSampleRequest(req);
       const isUnmachinable = Boolean(req.rnd?.unmachinableAt);
-      if (isDoneRndSample || isUnmachinable) return false;
+      // 샘플도 일반 의뢰와 동일하게 패킹 공정을 진행한다.
+      if (isUnmachinable) return false;
       if (showCompleted) {
         return shouldShowRequestInIncludeCompleted(req, currentStageOrder);
       }
@@ -906,9 +906,9 @@ export const PackingPageContent = ({
       const latestList = Array.isArray(refreshed) ? refreshed : requests;
       const latestFilteredAndSorted = latestList
         .filter((req) => {
-          const isDoneRndSample = isRndSampleRequest(req);
           const isUnmachinable = Boolean(req.rnd?.unmachinableAt);
-          if (isDoneRndSample || isUnmachinable) return false;
+          // next 미리보기 순서에서도 샘플을 일반 의뢰와 동일하게 포함한다.
+          if (isUnmachinable) return false;
           if (showCompleted) {
             return shouldShowRequestInIncludeCompleted(req, currentStageOrder);
           }

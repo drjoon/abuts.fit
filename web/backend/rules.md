@@ -80,9 +80,10 @@
     - `services/requestDashboardStats.service.js`
     - `scripts/db/migrate-request-category.js`
     - `package.json`
-- R&D 샘플(`source=manufacturer_sample` 또는 `price.rule=manufacturer_sample`)은 배송 비대상입니다.
-  - 우편함 할당 금지 (필요 시 `mailboxAddress=null`로 정리)
-  - `포장.발송`/`추적관리` 단계 진입 금지
+- 제조사 샘플(`source=manufacturer_sample`, `requestCategory=rnd_sample|copied_sample`)은
+  일반 의뢰와 동일하게 `포장.발송`/`추적관리` 공정을 진행합니다.
+  - 차이는 크레딧 정책만 유지합니다(샘플은 의뢰비/배송비 미차감).
+  - 관련 구현: `controllers/requests/common.review.controller.js`, `controllers/requests/common.requests.controller.js`
 - 우편함/배송 무결성 정책(포장.발송):
   - 우편함 재사용/배정은 **BusinessAnchor 단일 점유**를 반드시 보장합니다.
   - `businessAnchorId`가 비어 있는 점유 의뢰는 `UNKNOWN`으로 취급하여 재사용 대상에서 제외합니다.

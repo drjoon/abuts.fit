@@ -118,7 +118,31 @@
 - `web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx`
 - `web/frontend/src/pages/requestor/new_request/components/NewRequestAttachmentsPanel.tsx`
 
-### 1.0.2 가격/리퍼럴 주문 집계 SSOT (2026-07-09)
+### 1.0.2 제조사 샘플(R&D/복사) 공정 처리/크레딧 정책 SSOT (2026-07-27)
+
+- 제조사 샘플(`requestCategory=rnd_sample|copied_sample`, `source=manufacturer_sample`)은 **일반 의뢰와 동일한 전체 공정**으로 처리합니다.
+  - 의뢰 → CAM → 가공 → 세척.패킹 → 포장.발송 → 추적관리
+- 샘플/일반 의뢰의 차이는 **크레딧 정책만** 둡니다.
+  - 샘플은 의뢰비/배송비 크레딧을 차감하지 않습니다.
+  - 일반 의뢰는 기존 차감/환불 정책을 유지합니다.
+- 추적관리/배송 화면에서 샘플을 별도 배제하지 않습니다.
+  - 다만 `rnd.unmachinableAt`은 불완전가공 전용 탭 정책을 유지합니다.
+  - R&D 보관 완료 여부(`rnd.doneAt`)는 R&D 탭 정책으로만 제어합니다.
+- 카드 상단 액션 정책:
+  - R&D/복사 샘플 카드 상단의 `체크(완료)` 버튼은 제거합니다.
+
+관련 파일:
+- `web/backend/controllers/requests/common.review.controller.js`
+- `web/backend/controllers/requests/common.requests.controller.js`
+- `web/frontend/src/pages/manufacturer/worksheet/custom_abutment/utils/request.ts`
+- `web/frontend/src/pages/manufacturer/worksheet/custom_abutment/utils/requestFiltering.ts`
+- `web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx`
+- `web/frontend/src/pages/manufacturer/worksheet/custom_abutment/packing/hooks/usePackingWorksheetData.ts`
+- `web/frontend/src/pages/manufacturer/worksheet/custom_abutment/packing/components/PackingPageContent.tsx`
+- `web/frontend/src/pages/manufacturer/worksheet/custom_abutment/tracking/TrackingPage.tsx`
+- `web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/WorksheetCardGrid.tsx`
+
+### 1.0.3 가격/리퍼럴 주문 집계 SSOT (2026-07-09)
 
 - 가격 정책의 최근 30일 주문 수(`selfBusinessOrders30d`, `groupTotalOrders30d`)는 **Request 컬렉션 원본 집계만 SSOT**로 사용합니다.
 - `PricingReferralDailyOrderBucket`, `ShippingPackage`는 운영/성능 보조 데이터이며, 가격 정책 주문 수량의 기준 원본으로 사용하지 않습니다.

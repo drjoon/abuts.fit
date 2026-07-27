@@ -299,7 +299,9 @@ export const RequestPage = ({
           } else if (tabStage === "unmachinable") {
             url.searchParams.set("rndUnmachinable", "1");
           } else {
-            url.searchParams.set("rndDone", "0");
+            // 샘플 의뢰도 일반 공정 탭에서 함께 처리한다.
+            // R&D 보관 완료(doneAt) 여부는 클라이언트 단계 필터/탭 정책으로 제어하고,
+            // 서버 쿼리에서는 불완전가공 제외만 강제한다.
             url.searchParams.set("rndUnmachinable", "0");
           }
           url.searchParams.set("includeTotal", append ? "0" : "1");
@@ -741,7 +743,9 @@ export const RequestPage = ({
       if (tabStage === "unmachinable") {
         return isUnmachinable;
       }
-      if (isDoneRndSample || isUnmachinable) {
+      // 샘플(R&D/복사)도 일반 의뢰와 동일하게 현재 탭에 노출한다.
+      // 단, 불완전가공 탭 전용 건만 제외한다.
+      if (isUnmachinable) {
         return false;
       }
 

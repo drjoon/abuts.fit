@@ -133,7 +133,7 @@ export function filterRequestsByStage(
 
     return requests.filter((req) => {
       if (!passExternalFilter(req)) return false;
-      if (isDoneRndSample(req)) return false;
+      // 샘플도 일반 의뢰와 동일한 완료포함 필터를 적용한다.
       if (isUnmachinable(req)) return false;
       if (tabStage === "shipping" && isPrePickupShippingVisible(req))
         return true;
@@ -143,7 +143,7 @@ export function filterRequestsByStage(
 
   return requests.filter((req) => {
     if (!passExternalFilter(req)) return false;
-    if (isDoneRndSample(req)) return false;
+    // 샘플(R&D/복사)도 일반 공정 흐름과 동일하게 노출한다.
     if (isUnmachinable(req)) return false;
 
     const stage = deriveStageForFilter(req);
