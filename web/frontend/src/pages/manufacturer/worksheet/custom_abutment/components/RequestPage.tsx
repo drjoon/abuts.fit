@@ -299,9 +299,9 @@ export const RequestPage = ({
           } else if (tabStage === "unmachinable") {
             url.searchParams.set("rndUnmachinable", "1");
           } else {
-            // 샘플 의뢰도 일반 공정 탭에서 함께 처리한다.
-            // R&D 보관 완료(doneAt) 여부는 클라이언트 단계 필터/탭 정책으로 제어하고,
-            // 서버 쿼리에서는 불완전가공 제외만 강제한다.
+            // 일반 공정 탭은 작업용 샘플(doneAt=null)만 처리한다.
+            // R&D 보관 샘플(doneAt!=null)은 R&D 탭 전용.
+            url.searchParams.set("rndDone", "0");
             url.searchParams.set("rndUnmachinable", "0");
           }
           url.searchParams.set("includeTotal", append ? "0" : "1");
@@ -743,9 +743,9 @@ export const RequestPage = ({
       if (tabStage === "unmachinable") {
         return isUnmachinable;
       }
-      // 샘플(R&D/복사)도 일반 의뢰와 동일하게 현재 탭에 노출한다.
-      // 단, 불완전가공 탭 전용 건만 제외한다.
-      if (isUnmachinable) {
+      // 일반 공정 탭은 작업용 샘플(doneAt=null)만 처리하고,
+      // R&D 보관 샘플(doneAt!=null)은 제외한다.
+      if (isDoneRndSample || isUnmachinable) {
         return false;
       }
 
@@ -1015,15 +1015,15 @@ export const RequestPage = ({
     [queryClient, toast, token],
   );
 
-  // R&D 샘플 삭제 핸들러 (제조사/관리자만 가능)
+  // 샘플 의뢰 삭제 핸들러 (제조사/관리자만 가능)
   const handleCardDelete = useCallback(
     async (req: ManufacturerRequest) => {
       if (!req?._id) return;
-      const isSample = isRndSampleRequest(req);
+      const isSample = isAnySampleRequest(req);
       if (!isSample) {
         toast({
           title: "삭제 불가",
-          description: "R&D 샘플만 삭제할 수 있습니다.",
+          description: "샘플 의뢰만 삭제할 수 있습니다.",
           variant: "destructive",
         });
         return;

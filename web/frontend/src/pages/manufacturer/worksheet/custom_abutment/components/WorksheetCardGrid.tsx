@@ -541,7 +541,7 @@ export const WorksheetCardGrid = ({
                 tabStage === "cam"),
           ) ||
           Boolean(onRollback && canRollback) ||
-          Boolean(onDelete && isRndArchivedSample) ||
+          Boolean(onDelete && isSampleRequest) ||
           Boolean(onDone && isSampleRequest && !isRndArchivedSample) ||
           Boolean(
             onRestoreUnmachinable &&
@@ -777,7 +777,7 @@ export const WorksheetCardGrid = ({
                   )}
                 </button>
               )}
-              {onDelete && isRndArchivedSample && (
+              {onDelete && isSampleRequest && (
                 <button
                   type="button"
                   className="h-7 w-7 inline-flex items-center justify-center rounded-md border bg-white/90 text-red-500 shadow-sm transition hover:bg-red-50"
@@ -787,7 +787,7 @@ export const WorksheetCardGrid = ({
                     onDelete(request);
                   }}
                   aria-label="삭제"
-                  title="R&D 샘플 삭제"
+                  title="샘플 삭제"
                 >
                   <X className="h-4 w-4" />
                 </button>

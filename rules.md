@@ -120,14 +120,14 @@
 
 ### 1.0.2 제조사 샘플(R&D/복사) 공정 처리/크레딧 정책 SSOT (2026-07-27)
 
-- 제조사 샘플(`requestCategory=rnd_sample|copied_sample`, `source=manufacturer_sample`)은 **일반 의뢰와 동일한 전체 공정**으로 처리합니다.
+- 제조사 샘플(`requestCategory=rnd_sample|copied_sample`, `source=manufacturer_sample`)은 **작업용 상태(`rnd.doneAt=null`)일 때** 일반 의뢰와 동일한 전체 공정으로 처리합니다.
   - 의뢰 → CAM → 가공 → 세척.패킹 → 포장.발송 → 추적관리
 - 샘플/일반 의뢰의 차이는 **크레딧 정책만** 둡니다.
   - 샘플은 의뢰비/배송비 크레딧을 차감하지 않습니다.
   - 일반 의뢰는 기존 차감/환불 정책을 유지합니다.
-- 추적관리/배송 화면에서 샘플을 별도 배제하지 않습니다.
-  - 다만 `rnd.unmachinableAt`은 불완전가공 전용 탭 정책을 유지합니다.
-  - R&D 보관 완료 여부(`rnd.doneAt`)는 R&D 탭 정책으로만 제어합니다.
+- 추적관리/배송/세척.패킹 등 일반 공정 탭은 **작업용 샘플(`rnd.doneAt=null`)만 포함**합니다.
+  - R&D 보관 샘플(`rnd.doneAt!=null`)은 R&D 탭 전용입니다.
+  - `rnd.unmachinableAt`은 불완전가공 전용 탭 정책을 유지합니다.
 - 카드 상단 액션 정책:
   - R&D/복사 샘플 카드 상단의 `체크(완료)` 버튼은 제거합니다.
 

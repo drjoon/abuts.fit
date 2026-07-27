@@ -49,7 +49,8 @@
 
 - 제조사 워크시트 샘플 구분 SSOT는 `Request.requestCategory`를 사용합니다.
   - 값: `order`, `rnd_sample`, `copied_sample`
-  - 샘플(R&D/복사)도 일반 의뢰와 동일한 공정 탭 흐름(의뢰~추적관리)으로 처리합니다.
+  - 작업용 샘플(`rnd.doneAt=null`)은 일반 의뢰와 동일한 공정 탭 흐름(의뢰~추적관리)으로 처리합니다.
+  - R&D 보관 샘플(`rnd.doneAt!=null`)은 R&D 탭 전용으로 분리합니다.
   - 차이는 크레딧 정책만 유지합니다(샘플 미차감).
   - 프론트는 `source+rnd.doneAt` 조합 추정 대신 `utils/request.ts`의 `isAnySampleRequest`, `isRndSampleRequest`를 사용합니다.
   - 관련 파일:

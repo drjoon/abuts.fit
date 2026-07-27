@@ -217,9 +217,10 @@ export const PackingPageContent = ({
 
   const matchesCurrentPage = useCallback(
     (req: ManufacturerRequest) => {
+      const isDoneRndSample = isRndSampleRequest(req);
       const isUnmachinable = Boolean(req.rnd?.unmachinableAt);
-      // 샘플도 일반 의뢰와 동일하게 패킹 공정을 진행한다.
-      if (isUnmachinable) return false;
+      // 패킹 탭은 작업용 샘플(doneAt=null)만 노출한다.
+      if (isDoneRndSample || isUnmachinable) return false;
       if (showCompleted) {
         return shouldShowRequestInIncludeCompleted(req, currentStageOrder);
       }
@@ -447,11 +448,11 @@ export const PackingPageContent = ({
   const handleCardDelete = useCallback(
     async (req: ManufacturerRequest) => {
       if (!req?._id) return;
-      const isSample = isRndSampleRequest(req);
+      const isSample = isAnySampleRequest(req);
       if (!isSample) {
         toast({
           title: "삭제 불가",
-          description: "R&D 샘플만 삭제할 수 있습니다.",
+          description: "샘플 의뢰만 삭제할 수 있습니다.",
           variant: "destructive",
         });
         return;
@@ -906,9 +907,10 @@ export const PackingPageContent = ({
       const latestList = Array.isArray(refreshed) ? refreshed : requests;
       const latestFilteredAndSorted = latestList
         .filter((req) => {
+          const isDoneRndSample = isRndSampleRequest(req);
           const isUnmachinable = Boolean(req.rnd?.unmachinableAt);
-          // next 미리보기 순서에서도 샘플을 일반 의뢰와 동일하게 포함한다.
-          if (isUnmachinable) return false;
+          // next 미리보기도 패킹 탭 노출 기준(doneAt=null)과 동일하게 맞춘다.
+          if (isDoneRndSample || isUnmachinable) return false;
           if (showCompleted) {
             return shouldShowRequestInIncludeCompleted(req, currentStageOrder);
           }

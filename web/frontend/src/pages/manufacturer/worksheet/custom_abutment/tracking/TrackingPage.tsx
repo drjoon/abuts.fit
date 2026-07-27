@@ -21,6 +21,7 @@ import {
   deriveStageForFilter,
   type ManufacturerRequest,
   isAnySampleRequest,
+  isRndSampleRequest,
 } from "../utils/request";
 import { useWorksheetRealtimeStatus } from "../hooks/useWorksheetRealtimeStatus";
 import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
@@ -266,7 +267,10 @@ export const TrackingInquiryPage = () => {
   const userScrolledRef = useRef(false);
 
   const matchesCurrentPage = useCallback((req: ManufacturerRequest) => {
-    // 샘플도 일반 의뢰와 동일하게 추적관리 대상에 포함한다.
+    // 추적관리 탭은 작업용 샘플(doneAt=null)만 처리한다.
+    if (isRndSampleRequest(req)) {
+      return false;
+    }
     if (req.rnd?.unmachinableAt) {
       return false;
     }
@@ -305,6 +309,7 @@ export const TrackingInquiryPage = () => {
       url.searchParams.set("worksheetProfile", "tracking");
       url.searchParams.set("includeTotal", "0");
       url.searchParams.set("includeDelivery", "1");
+      url.searchParams.set("rndDone", "0");
       url.searchParams.set("rndUnmachinable", "0");
       // backend tracking worksheet 캐시 키 분기용(발송 방식 SSOT를 shippingWorkflow.manualDeliveryMethods로 통일)
       url.searchParams.set("trackingProjectionV", "5");
@@ -655,7 +660,10 @@ export const TrackingInquiryPage = () => {
     const out: ManufacturerRequest[] = [];
 
     for (const r of requests) {
-      // 샘플 포함 전체 공정 동일 처리: 추적관리 필터에서 샘플을 별도 제외하지 않는다.
+      if (isRndSampleRequest(r)) {
+        continue;
+      }
+
       const stage = String(r.manufacturerStage || "").trim();
 
       // 추적관리 단계는 '완료' 성격이므로, 완료포함 토글과 무관하게 항상 표시
