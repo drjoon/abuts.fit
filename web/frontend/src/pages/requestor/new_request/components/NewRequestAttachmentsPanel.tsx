@@ -3,6 +3,10 @@ import { Button } from "@/components/ui/button";
 import { Check, Calendar, X } from "lucide-react";
 import type { CaseInfos } from "../hooks/newRequestTypes";
 
+// related files:
+// - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
+// - web/frontend/src/features/settings/tabs/RequestTab.tsx
+
 type Props = {
   files: File[];
   selectedPreviewIndex: number | null;

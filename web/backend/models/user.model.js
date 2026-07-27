@@ -138,6 +138,23 @@ const userSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+    requestSettings: {
+      // related files:
+      // - web/backend/controllers/businesses/business.controller.js
+      // - web/backend/controllers/requests/creation.from-draft.controller.js
+      // - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
+      // 의뢰자(계정) 단위 디자인 소프트웨어 기본값 SSOT
+      designSoftware: {
+        type: String,
+        default: null,
+        trim: true,
+        maxlength: 120,
+      },
+      updatedAt: {
+        type: Date,
+        default: null,
+      },
+    },
     preferences: {
       language: {
         type: String,

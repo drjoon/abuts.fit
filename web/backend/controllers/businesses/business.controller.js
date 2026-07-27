@@ -591,6 +591,7 @@ function normalizeRequestorHexRotation(value) {
 
 // related files:
 // - web/backend/models/businessAnchor.model.js
+// - web/backend/models/user.model.js
 // - web/frontend/src/features/settings/tabs/RequestTab.tsx
 // - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
 function normalizeDesignSoftware(value) {
@@ -609,10 +610,17 @@ export async function getMyRequestSettings(req, res) {
     const { businessType } = roleCheck;
 
     const freshUser = await User.findById(req.user._id)
-      .select({ businessAnchorId: 1 })
+      .select({
+        businessAnchorId: 1,
+        "requestSettings.designSoftware": 1,
+      })
       .lean();
     const businessAnchorId =
       freshUser?.businessAnchorId || req.user.businessAnchorId || null;
+
+    const requestorDesignSoftware = normalizeDesignSoftware(
+      freshUser?.requestSettings?.designSoftware,
+    );
 
     if (!businessAnchorId) {
       return res.status(200).json({
@@ -621,8 +629,10 @@ export async function getMyRequestSettings(req, res) {
           scope: "business",
           membership: "none",
           canEdit: false,
+          canEditDesignSoftware: false,
           anodizingEnabled: true,
           designSoftware: null,
+          requestorDesignSoftware,
           defaultRequestorHexRotation: "보정",
           updatedAt: null,
         },
@@ -642,6 +652,9 @@ export async function getMyRequestSettings(req, res) {
       .lean();
 
     const membership = getAnchorMembership(anchor, req.user._id);
+    const businessDesignSoftware = normalizeDesignSoftware(
+      anchor?.requestSettings?.designSoftware,
+    );
 
     return res.status(200).json({
       success: true,
@@ -649,13 +662,14 @@ export async function getMyRequestSettings(req, res) {
         scope: "business",
         membership,
         canEdit: membership === "owner",
+        canEditDesignSoftware: membership === "owner" || membership === "member",
         anodizingEnabled:
           typeof anchor?.requestSettings?.anodizingEnabled === "boolean"
             ? anchor.requestSettings.anodizingEnabled
             : true,
-        designSoftware: normalizeDesignSoftware(
-          anchor?.requestSettings?.designSoftware,
-        ),
+        // 하위 호환: designSoftware는 사업체 공통 기본값을 유지한다.
+        designSoftware: businessDesignSoftware,
+        requestorDesignSoftware,
         defaultRequestorHexRotation: normalizeRequestorHexRotation(
           anchor?.requestSettings?.defaultRequestorHexRotation,
         ),
@@ -693,16 +707,21 @@ export async function updateMyRequestSettings(req, res) {
       req.body || {},
       "designSoftware",
     );
+    const hasRequestorDesignSoftware = Object.prototype.hasOwnProperty.call(
+      req.body || {},
+      "requestorDesignSoftware",
+    );
 
     if (
       !hasAnodizingEnabled &&
       !hasDefaultRequestorHexRotation &&
-      !hasDesignSoftware
+      !hasDesignSoftware &&
+      !hasRequestorDesignSoftware
     ) {
       return res.status(400).json({
         success: false,
         message:
-          "유효하지 않은 의뢰 설정입니다. anodizingEnabled, defaultRequestorHexRotation 또는 designSoftware가 필요합니다.",
+          "유효하지 않은 의뢰 설정입니다. anodizingEnabled, defaultRequestorHexRotation, designSoftware 또는 requestorDesignSoftware가 필요합니다.",
       });
     }
 
@@ -748,78 +767,204 @@ export async function updateMyRequestSettings(req, res) {
       designSoftware = raw;
     }
 
+    let requestorDesignSoftware;
+    if (hasRequestorDesignSoftware) {
+      if (String(req.user?.role || "") !== "requestor") {
+        return res.status(403).json({
+          success: false,
+          message: "의뢰자 계정만 개인 디자인 소프트웨어를 저장할 수 있습니다.",
+        });
+      }
+
+      const raw = String(req.body?.requestorDesignSoftware || "").trim();
+      if (!raw) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "유효하지 않은 의뢰 설정입니다. requestorDesignSoftware는 비어 있을 수 없습니다.",
+        });
+      }
+      if (raw.length > 120) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "유효하지 않은 의뢰 설정입니다. requestorDesignSoftware는 120자 이하여야 합니다.",
+        });
+      }
+      requestorDesignSoftware = raw;
+    }
+
     const freshUser = await User.findById(req.user._id)
-      .select({ businessAnchorId: 1 })
+      .select({
+        businessAnchorId: 1,
+        "requestSettings.designSoftware": 1,
+      })
       .lean();
     const businessAnchorId =
       freshUser?.businessAnchorId || req.user.businessAnchorId || null;
 
-    if (!businessAnchorId) {
+    const needsOwnerPermission =
+      hasAnodizingEnabled || hasDefaultRequestorHexRotation;
+    const needsBusinessDesignSoftwarePermission = hasDesignSoftware;
+
+    let anchor = null;
+    let membership = "none";
+
+    if (businessAnchorId) {
+      anchor = await BusinessAnchor.findOne({
+        _id: businessAnchorId,
+        businessType,
+      })
+        .select({
+          primaryContactUserId: 1,
+          owners: 1,
+          members: 1,
+          requestSettings: 1,
+        })
+        .lean();
+
+      membership = getAnchorMembership(anchor, req.user._id);
+    }
+
+    if ((needsOwnerPermission || needsBusinessDesignSoftwarePermission) && !businessAnchorId) {
       return res.status(404).json({
         success: false,
         message: "소속된 기공소를 찾을 수 없습니다.",
       });
     }
 
-    const anchor = await BusinessAnchor.findOne({
-      _id: businessAnchorId,
-      businessType,
-    })
-      .select({ primaryContactUserId: 1, owners: 1, members: 1 })
-      .lean();
-
-    const membership = getAnchorMembership(anchor, req.user._id);
-    if (membership !== "owner") {
+    if (needsOwnerPermission && membership !== "owner") {
       return res.status(403).json({
         success: false,
         message: "대표자 계정만 기공소 의뢰 설정을 변경할 수 있습니다.",
       });
     }
 
-    const setPayload = {
-      "requestSettings.updatedAt": new Date(),
-    };
-
-    if (hasAnodizingEnabled) {
-      setPayload["requestSettings.anodizingEnabled"] = anodizingEnabled;
-    }
-    if (hasDefaultRequestorHexRotation) {
-      setPayload["requestSettings.defaultRequestorHexRotation"] =
-        defaultRequestorHexRotation;
-    }
-    if (hasDesignSoftware) {
-      setPayload["requestSettings.designSoftware"] = designSoftware;
+    if (
+      needsBusinessDesignSoftwarePermission &&
+      membership !== "owner" &&
+      membership !== "member"
+    ) {
+      return res.status(403).json({
+        success: false,
+        message:
+          "사업자 구성원(대표/직원)만 기공소 디자인 소프트웨어를 변경할 수 있습니다.",
+      });
     }
 
-    const updated = await BusinessAnchor.findByIdAndUpdate(
-      businessAnchorId,
-      {
-        $set: setPayload,
-      },
-      {
-        new: true,
-        runValidators: true,
-      },
-    ).select({ requestSettings: 1 });
+    const now = new Date();
+    let updatedAnchor = null;
+    let propagatedRequestorDesignSoftwareCount = 0;
+    if (needsOwnerPermission || needsBusinessDesignSoftwarePermission) {
+      const setPayload = {
+        "requestSettings.updatedAt": now,
+      };
 
-    invalidateMyBusinessCache(businessAnchorId);
+      if (hasAnodizingEnabled) {
+        setPayload["requestSettings.anodizingEnabled"] = anodizingEnabled;
+      }
+      if (hasDefaultRequestorHexRotation) {
+        setPayload["requestSettings.defaultRequestorHexRotation"] =
+          defaultRequestorHexRotation;
+      }
+      if (hasDesignSoftware) {
+        setPayload["requestSettings.designSoftware"] = designSoftware;
+      }
+
+      updatedAnchor = await BusinessAnchor.findByIdAndUpdate(
+        businessAnchorId,
+        {
+          $set: setPayload,
+        },
+        {
+          new: true,
+          runValidators: true,
+        },
+      ).select({ requestSettings: 1 });
+
+      // BusinessAnchor 공통 기본값 변경 시, 개인 설정이 비어 있는 의뢰자 계정에만 기본값 주입
+      if (hasDesignSoftware && designSoftware) {
+        const propagateResult = await User.updateMany(
+          {
+            businessAnchorId,
+            role: "requestor",
+            $or: [
+              { "requestSettings.designSoftware": { $exists: false } },
+              { "requestSettings.designSoftware": null },
+              { "requestSettings.designSoftware": "" },
+            ],
+          },
+          {
+            $set: {
+              "requestSettings.designSoftware": designSoftware,
+              "requestSettings.updatedAt": now,
+            },
+          },
+        );
+        propagatedRequestorDesignSoftwareCount = Number(
+          propagateResult?.modifiedCount || 0,
+        );
+      }
+
+      invalidateMyBusinessCache(businessAnchorId);
+    }
+
+    let updatedRequestorDesignSoftware = normalizeDesignSoftware(
+      freshUser?.requestSettings?.designSoftware,
+    );
+
+    if (hasRequestorDesignSoftware) {
+      const updatedUser = await User.findByIdAndUpdate(
+        req.user._id,
+        {
+          $set: {
+            "requestSettings.designSoftware": requestorDesignSoftware,
+            "requestSettings.updatedAt": now,
+          },
+        },
+        {
+          new: true,
+          runValidators: true,
+        },
+      ).select({ requestSettings: 1 });
+
+      if (!updatedUser) {
+        return res.status(404).json({
+          success: false,
+          message: "사용자를 찾을 수 없습니다.",
+        });
+      }
+
+      updatedRequestorDesignSoftware = normalizeDesignSoftware(
+        updatedUser?.requestSettings?.designSoftware,
+      );
+    }
+
+    const requestSettingsSource = updatedAnchor?.requestSettings || anchor?.requestSettings;
+    const businessDesignSoftware = normalizeDesignSoftware(
+      requestSettingsSource?.designSoftware,
+    );
 
     return res.status(200).json({
       success: true,
-      message: "기공소 의뢰 설정이 성공적으로 수정되었습니다.",
+      message: "의뢰 설정이 성공적으로 수정되었습니다.",
       data: {
         scope: "business",
+        membership,
+        canEdit: membership === "owner",
+        canEditDesignSoftware: membership === "owner" || membership === "member",
         anodizingEnabled:
-          typeof updated?.requestSettings?.anodizingEnabled === "boolean"
-            ? updated.requestSettings.anodizingEnabled
+          typeof requestSettingsSource?.anodizingEnabled === "boolean"
+            ? requestSettingsSource.anodizingEnabled
             : true,
-        designSoftware: normalizeDesignSoftware(
-          updated?.requestSettings?.designSoftware,
-        ),
+        // 하위 호환: designSoftware는 사업체 공통 기본값을 유지한다.
+        designSoftware: businessDesignSoftware,
+        requestorDesignSoftware: updatedRequestorDesignSoftware,
         defaultRequestorHexRotation: normalizeRequestorHexRotation(
-          updated?.requestSettings?.defaultRequestorHexRotation,
+          requestSettingsSource?.defaultRequestorHexRotation,
         ),
-        updatedAt: updated?.requestSettings?.updatedAt || null,
+        updatedAt: requestSettingsSource?.updatedAt || null,
+        propagatedRequestorDesignSoftwareCount,
       },
     });
   } catch (error) {

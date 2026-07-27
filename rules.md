@@ -101,6 +101,23 @@
 - `web/backend/models/request.model.js`
 - `web/backend/controllers/requests/common.requests.controller.js`
 
+### 1.0.2 디자인소프트웨어 기본값 계층 (BusinessAnchor → Requestor → 의뢰건) (2026-07-27)
+
+- BusinessAnchor `requestSettings.designSoftware`는 **사업체 공통 기본값**으로만 관리한다.
+- User(Requestor) `requestSettings.designSoftware`를 신설하고, 비어 있을 때만 BusinessAnchor 값을 기본값으로 적용한다.
+- 신규 의뢰 화면의 기본 설정 저장은 **requestorDesignSoftware**(계정별 설정)로 저장한다.
+- 신규 의뢰 화면은 `requestorDesignSoftware`만 기본값으로 사용하며, 개인값이 비어 있을 때 `BusinessAnchor.requestSettings.designSoftware`를 개인값으로 주입 저장한다.
+- 의뢰 생성 시 `caseInfos.designSoftware`가 비어 있으면 에러를 반환한다(케이스별 소프트웨어 명시 강제).
+- RequestTab의 `designSoftware`(BusinessAnchor 공통값)는 대표/직원 계정이 수정 가능하다.
+
+관련 파일:
+- `web/backend/models/user.model.js`
+- `web/backend/controllers/businesses/business.controller.js`
+- `web/backend/controllers/requests/creation.from-draft.controller.js`
+- `web/frontend/src/features/settings/tabs/RequestTab.tsx`
+- `web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx`
+- `web/frontend/src/pages/requestor/new_request/components/NewRequestAttachmentsPanel.tsx`
+
 ### 1.0.2 가격/리퍼럴 주문 집계 SSOT (2026-07-09)
 
 - 가격 정책의 최근 30일 주문 수(`selfBusinessOrders30d`, `groupTotalOrders30d`)는 **Request 컬렉션 원본 집계만 SSOT**로 사용합니다.

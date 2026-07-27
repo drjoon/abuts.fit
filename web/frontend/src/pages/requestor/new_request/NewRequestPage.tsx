@@ -35,6 +35,9 @@ import { StlPreviewViewer } from "@/features/requests/components/StlPreviewViewe
 // related files:
 // - web/frontend/src/pages/requestor/new_request/components/NewRequestDetailsSection.tsx
 // - web/frontend/src/pages/requestor/new_request/components/NewRequestAttachmentsPanel.tsx
+// - web/frontend/src/features/settings/tabs/RequestTab.tsx
+// - web/backend/controllers/businesses/business.controller.js
+// - web/backend/models/user.model.js
 // Rhino의 align 기능이 구성정보를 대체하므로, 개별 구성정보 파일 업로드/매칭은 사용하지 않는다.
 
 
@@ -133,7 +136,8 @@ export const NewRequestPage = () => {
 
 
 
-  // BusinessAnchor 디자인소프트웨어를 "신규 의뢰 기본값"으로만 사용한다.
+  // Requestor(계정) 디자인소프트웨어만 신규 의뢰 기본값으로 사용한다.
+  // requestor 값이 비어 있으면 business 공통값을 requestor 값으로 주입한 뒤 사용한다.
   // 단, Draft에 이미 저장된 기본값(__default__.designSoftware)이 있으면 그것을 우선한다.
   useEffect(() => {
     if (!token) return;
@@ -141,7 +145,7 @@ export const NewRequestPage = () => {
 
     let cancelled = false;
 
-    const loadBusinessDesignSoftware = async () => {
+    const loadRequestorDesignSoftware = async () => {
       try {
         const res = await apiFetch<any>({
           path: "/api/businesses/me/request-settings",
@@ -152,32 +156,66 @@ export const NewRequestPage = () => {
 
         const body: any = res.data || {};
         const data = body?.data || body;
+
+        let requestorDefault = String(data?.requestorDesignSoftware || "").trim();
         const businessDefault = String(data?.designSoftware || "").trim();
-        if (!businessDefault || cancelled) return;
+
+        if (!requestorDefault && businessDefault) {
+          const syncRes = await apiFetch<any>({
+            path: "/api/businesses/me/request-settings",
+            method: "PUT",
+            token,
+            jsonBody: { requestorDesignSoftware: businessDefault },
+          });
+
+          if (syncRes.ok) {
+            requestorDefault = businessDefault;
+          } else {
+            const syncBody: any = syncRes.data || {};
+            const syncMessage = String(
+              syncBody?.message || "의뢰자 기본 소프트웨어 자동 주입에 실패했습니다.",
+            );
+            toast({
+              title: "설정 동기화 실패",
+              description: syncMessage,
+              variant: "destructive",
+            });
+            return;
+          }
+        }
+
+        if (!requestorDefault) {
+          toast({
+            title: "디자인 소프트웨어 설정 필요",
+            description: "의뢰자 계정의 디자인 소프트웨어를 먼저 설정해주세요.",
+            variant: "destructive",
+          });
+          return;
+        }
 
         const draftDefault = String(
           caseInfosMap?.__default__?.designSoftware || "",
         ).trim();
 
-        // Draft 기본값이 있으면 BusinessAnchor 기본값으로 덮어쓰지 않는다.
+        // Draft 기본값이 있으면 서버 기본값으로 덮어쓰지 않는다.
         if (draftDefault) {
           setDesignSoftwareValue(draftDefault);
           return;
         }
 
-        setDesignSoftwareValue(businessDefault);
-        updateCaseInfos("__default__", { designSoftware: businessDefault });
+        setDesignSoftwareValue(requestorDefault);
+        updateCaseInfos("__default__", { designSoftware: requestorDefault });
       } catch {
         // ignore
       }
     };
 
-    void loadBusinessDesignSoftware();
+    void loadRequestorDesignSoftware();
 
     return () => {
       cancelled = true;
     };
-  }, [caseInfosMap, token, updateCaseInfos, user?.role]);
+  }, [caseInfosMap, token, toast, updateCaseInfos, user?.role]);
 
   // Draft/로컬 복원으로 __default__.designSoftware가 늦게 들어오면
   // UI 표시값(designSoftwareValue)을 해당 값으로 동기화한다.
@@ -205,8 +243,37 @@ export const NewRequestPage = () => {
       return;
     }
 
+    if (!token) {
+      toast({
+        title: "로그인이 필요합니다",
+        description: "디자인 소프트웨어 설정을 저장하려면 로그인해주세요.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setDesignSoftwareSaving(true);
     try {
+      const res = await apiFetch<any>({
+        path: "/api/businesses/me/request-settings",
+        method: "PUT",
+        token,
+        jsonBody: { requestorDesignSoftware: designSoftware },
+      });
+
+      if (!res.ok) {
+        const body: any = res.data || {};
+        const message = String(
+          body?.message || "디자인 소프트웨어 설정 저장에 실패했습니다.",
+        );
+        toast({
+          title: "저장 실패",
+          description: message,
+          variant: "destructive",
+        });
+        return;
+      }
+
       // 신규 업로드에 사용할 기본값만 저장한다.
       // 이미 존재하는 의뢰 카드(caseInfos)는 덮어쓰지 않는다.
       setDesignSoftwareValue(designSoftware);
@@ -214,12 +281,12 @@ export const NewRequestPage = () => {
       setDesignSoftwareModalOpen(false);
       toast({
         title: "저장 완료",
-        description: "디자인 소프트웨어 설정이 저장되었습니다.",
+        description: "의뢰자 기본 디자인 소프트웨어가 저장되었습니다.",
       });
     } finally {
       setDesignSoftwareSaving(false);
     }
-  }, [customDesignSoftware, designSoftwareMode, toast, updateCaseInfos]);
+  }, [customDesignSoftware, designSoftwareMode, toast, token, updateCaseInfos]);
 
 
 

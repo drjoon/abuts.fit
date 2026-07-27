@@ -51,6 +51,15 @@ const normalizeRequestorHexRotation = (value, fallback = "보정") => {
   return String(fallback || "").trim() === "무보정" ? "무보정" : "보정";
 };
 
+// related files:
+// - web/backend/models/user.model.js
+// - web/backend/controllers/businesses/business.controller.js
+// - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
+const normalizeDesignSoftware = (value) => {
+  const v = String(value || "").trim();
+  return v || "";
+};
+
 const resolveRequestorHexRotationByDesignSoftware = (designSoftwareRaw) => {
   const designSoftware = String(designSoftwareRaw || "").trim();
   // 정책 SSOT:
@@ -322,9 +331,12 @@ export async function createRequestsFromDraft(req, res) {
         const shippingMode = "normal"; // Only bulk shipping supported
         const requestedShipDate = ci?.requestedShipDate || undefined;
 
+        const designSoftwareValue = normalizeDesignSoftware(ci?.designSoftware);
+
         const missing = [];
         if (!clinicName) missing.push("치과이름");
         if (!patientName) missing.push("환자이름");
+        if (!designSoftwareValue) missing.push("디자인 소프트웨어");
 
         // 신규 임플란트 의뢰(newSystemRequest)가 아닌 경우 임플란트 필드 검증
         // strict=false로 normalization 후 여기서 명시적으로 체크
@@ -827,29 +839,30 @@ export async function createRequestsFromDraft(req, res) {
     const createdYmd = toKstYmd(requestedAtForPrefetch) || getTodayYmdInKst();
     const shippingOrgId = String(businessAnchorId || "");
     const [systemSettings, shippingOrg, estimatedShipYmd] = await Promise.all([
-      SystemSettings.findOne().lean(),
-      shippingOrgId && Types.ObjectId.isValid(shippingOrgId)
-        ? BusinessAnchor.findById(shippingOrgId)
-            .select({
-              "shippingPolicy.weeklyBatchDays": 1,
-              "requestSettings.anodizingEnabled": 1,
-              "requestSettings.defaultRequestorHexRotation": 1,
-              "requestSettings.defaultManufacturerHexRotation": 1,
-              "requestSettings.designSoftware": 1,
-            })
-            .lean()
-        : Promise.resolve(null),
-      (async () => {
-        const resolvedLeadDays = resolveLeadDaysWithSameDayCutoff({
-          leadDays: 1,
-          requestedAt: requestedAtForPrefetch,
-        });
-        return addKoreanBusinessDays({
-          startYmd: createdYmd,
-          days: resolvedLeadDays,
-        });
-      })(),
-    ]);
+        SystemSettings.findOne().lean(),
+        shippingOrgId && Types.ObjectId.isValid(shippingOrgId)
+          ? BusinessAnchor.findById(shippingOrgId)
+              .select({
+                "shippingPolicy.weeklyBatchDays": 1,
+                "requestSettings.anodizingEnabled": 1,
+                "requestSettings.defaultRequestorHexRotation": 1,
+                "requestSettings.defaultManufacturerHexRotation": 1,
+                "requestSettings.designSoftware": 1,
+              })
+              .lean()
+          : Promise.resolve(null),
+
+        (async () => {
+          const resolvedLeadDays = resolveLeadDaysWithSameDayCutoff({
+            leadDays: 1,
+            requestedAt: requestedAtForPrefetch,
+          });
+          return addKoreanBusinessDays({
+            startYmd: createdYmd,
+            days: resolvedLeadDays,
+          });
+        })(),
+      ]);
     const shippingFeePerBox = 3500;
     const weeklyBatchDays = Array.isArray(
       shippingOrg?.shippingPolicy?.weeklyBatchDays,
@@ -864,10 +877,6 @@ export async function createRequestsFromDraft(req, res) {
       shippingOrg?.requestSettings?.defaultRequestorHexRotation,
       "보정",
     );
-    const requestorHexRotationFromDesignSoftware =
-      resolveRequestorHexRotationByDesignSoftware(
-        shippingOrg?.requestSettings?.designSoftware,
-      );
     const requestorDefaultManufacturerHexRotation =
       normalizeManufacturerHexRotationModeOrNull(
         shippingOrg?.requestSettings?.defaultManufacturerHexRotation,
@@ -1086,8 +1095,19 @@ export async function createRequestsFromDraft(req, res) {
           const requestedShipDate = item.requestedShipDate || undefined;
           const requestId = requestIds[index];
 
+          const resolvedDesignSoftware = normalizeDesignSoftware(
+            item.caseInfosWithFile?.designSoftware,
+          );
+          if (!resolvedDesignSoftware) {
+            const err = new Error(
+              "케이스별 디자인 소프트웨어가 비어 있습니다. 파일 카드에서 디자인 소프트웨어를 먼저 설정해주세요.",
+            );
+            err.statusCode = 400;
+            throw err;
+          }
+
           const resolvedRequestorHexRotation =
-            requestorHexRotationFromDesignSoftware;
+            resolveRequestorHexRotationByDesignSoftware(resolvedDesignSoftware);
 
           // related files:
           // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx
@@ -1113,6 +1133,7 @@ export async function createRequestsFromDraft(req, res) {
             requestedShipDate,
             caseInfos: {
               ...(item.caseInfosWithFile || {}),
+              designSoftware: resolvedDesignSoftware || undefined,
               anodizingEnabled: requestorAnodizingEnabled,
               requestorHexRotation: resolvedRequestorHexRotation,
               finalHexRotation: resolvedFinalHexRotation,
@@ -1240,11 +1261,7 @@ export async function createRequestsFromDraft(req, res) {
               draftCaseId: item.caseId,
               businessAnchorId: shippingOrgId || null,
               defaultRequestorHexRotation: requestorDefaultHexRotation,
-              designSoftware:
-                String(shippingOrg?.requestSettings?.designSoftware || "") ||
-                null,
-              requestorHexRotationFromDesignSoftware:
-                requestorHexRotationFromDesignSoftware,
+              resolvedDesignSoftware: resolvedDesignSoftware || null,
               defaultManufacturerHexRotation:
                 requestorDefaultManufacturerHexRotation,
               draftRequestorHexRotation: String(

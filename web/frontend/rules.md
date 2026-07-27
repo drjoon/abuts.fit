@@ -39,7 +39,7 @@
 - 헥스 회전 라벨 표시는 canonical 값을 직접 노출하지 않고 아래로 고정합니다.
   - `보정` → `STL모델대로`
   - `무보정` → `헥스30도회전`
-  - 제조사 PreviewModal 상단에서 `헥스 회전` 왼쪽에 해당 의뢰 사업자의 DB 필드 `BusinessAnchor.requestSettings.designSoftware`를 함께 표시합니다.
+  - 디자인 소프트웨어 표시는 BusinessAnchor 전역값이 아니라 의뢰건 `caseInfos.designSoftware`를 우선 표시합니다.
   - 라벨 매핑 함수는 fallback 기본값을 두지 않고 명시 분기 + default error를 사용합니다.
   - 관련 파일:
     - `src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx`
