@@ -62,6 +62,8 @@ export const NewRequestPage = () => {
   const designSoftwareCanEdit = true;
   const [designSoftwareSaving, setDesignSoftwareSaving] = useState(false);
   const [designSoftwareValue, setDesignSoftwareValue] = useState("");
+  const [needsBusinessDesignSoftwareBootstrap, setNeedsBusinessDesignSoftwareBootstrap] =
+    useState(false);
 
   const [isFillHoleProcessing, setIsFillHoleProcessing] = useState(false);
   const [filledStlFiles, setFilledStlFiles] = useState<Record<string, File>>(
@@ -136,9 +138,9 @@ export const NewRequestPage = () => {
 
 
 
-  // Requestor(계정) 디자인소프트웨어만 신규 의뢰 기본값으로 사용한다.
-  // requestor 값이 비어 있으면 business 공통값을 requestor 값으로 주입한 뒤 사용한다.
-  // 단, Draft에 이미 저장된 기본값(__default__.designSoftware)이 있으면 그것을 우선한다.
+  // Requestor(계정) 디자인소프트웨어를 신규 의뢰 기본값으로 사용한다.
+  // 단, 사업체/계정 requestSettings가 하나라도 비어 있으면 신규의뢰 진입 시 자동 생성(보정)한다.
+  // 우선순위: Draft 기본값(__default__.designSoftware) > requestor > business
   useEffect(() => {
     if (!token) return;
     if (user?.role !== "requestor") return;
@@ -158,29 +160,57 @@ export const NewRequestPage = () => {
         const data = body?.data || body;
 
         let requestorDefault = String(data?.requestorDesignSoftware || "").trim();
-        const businessDefault = String(data?.designSoftware || "").trim();
+        let businessDefault = String(data?.designSoftware || "").trim();
+        const draftDefault = String(
+          caseInfosMap?.__default__?.designSoftware || "",
+        ).trim();
 
-        if (!requestorDefault && businessDefault) {
-          const syncRes = await apiFetch<any>({
-            path: "/api/businesses/me/request-settings",
-            method: "PUT",
-            token,
-            jsonBody: { requestorDesignSoftware: businessDefault },
-          });
+        const missingRequestorSettings = !requestorDefault;
+        const missingBusinessSettings = !businessDefault;
+        setNeedsBusinessDesignSoftwareBootstrap(missingBusinessSettings);
 
-          if (syncRes.ok) {
-            requestorDefault = businessDefault;
-          } else {
-            const syncBody: any = syncRes.data || {};
-            const syncMessage = String(
-              syncBody?.message || "의뢰자 기본 소프트웨어 자동 주입에 실패했습니다.",
-            );
-            toast({
-              title: "설정 동기화 실패",
-              description: syncMessage,
-              variant: "destructive",
+        // 사업체/계정 requestSettings 중 하나라도 비어 있으면 자동 생성(보정)
+        if (missingRequestorSettings || missingBusinessSettings) {
+          const bootstrapDefault =
+            draftDefault || requestorDefault || businessDefault;
+
+          if (bootstrapDefault) {
+            const syncPayload: Record<string, string> = {};
+            if (missingRequestorSettings) {
+              syncPayload.requestorDesignSoftware = bootstrapDefault;
+            }
+            if (missingBusinessSettings) {
+              syncPayload.designSoftware = bootstrapDefault;
+            }
+
+            const syncRes = await apiFetch<any>({
+              path: "/api/businesses/me/request-settings",
+              method: "PUT",
+              token,
+              jsonBody: syncPayload,
             });
-            return;
+
+            if (syncRes.ok) {
+              if (missingRequestorSettings) {
+                requestorDefault = bootstrapDefault;
+              }
+              if (missingBusinessSettings) {
+                businessDefault = bootstrapDefault;
+                setNeedsBusinessDesignSoftwareBootstrap(false);
+              }
+            } else {
+              const syncBody: any = syncRes.data || {};
+              const syncMessage = String(
+                syncBody?.message ||
+                  "사업체/의뢰자 기본 소프트웨어 자동 주입에 실패했습니다.",
+              );
+              toast({
+                title: "설정 동기화 실패",
+                description: syncMessage,
+                variant: "destructive",
+              });
+              return;
+            }
           }
         }
 
@@ -192,10 +222,6 @@ export const NewRequestPage = () => {
           });
           return;
         }
-
-        const draftDefault = String(
-          caseInfosMap?.__default__?.designSoftware || "",
-        ).trim();
 
         // Draft 기본값이 있으면 서버 기본값으로 덮어쓰지 않는다.
         if (draftDefault) {
@@ -254,11 +280,18 @@ export const NewRequestPage = () => {
 
     setDesignSoftwareSaving(true);
     try {
+      const savePayload: Record<string, string> = {
+        requestorDesignSoftware: designSoftware,
+      };
+      if (needsBusinessDesignSoftwareBootstrap) {
+        savePayload.designSoftware = designSoftware;
+      }
+
       const res = await apiFetch<any>({
         path: "/api/businesses/me/request-settings",
         method: "PUT",
         token,
-        jsonBody: { requestorDesignSoftware: designSoftware },
+        jsonBody: savePayload,
       });
 
       if (!res.ok) {
@@ -279,14 +312,24 @@ export const NewRequestPage = () => {
       setDesignSoftwareValue(designSoftware);
       updateCaseInfos("__default__", { designSoftware });
       setDesignSoftwareModalOpen(false);
+      if (needsBusinessDesignSoftwareBootstrap) {
+        setNeedsBusinessDesignSoftwareBootstrap(false);
+      }
       toast({
         title: "저장 완료",
-        description: "의뢰자 기본 디자인 소프트웨어가 저장되었습니다.",
+        description: "의뢰 기본 디자인 소프트웨어가 저장되었습니다.",
       });
     } finally {
       setDesignSoftwareSaving(false);
     }
-  }, [customDesignSoftware, designSoftwareMode, toast, token, updateCaseInfos]);
+  }, [
+    customDesignSoftware,
+    designSoftwareMode,
+    needsBusinessDesignSoftwareBootstrap,
+    toast,
+    token,
+    updateCaseInfos,
+  ]);
 
 
 

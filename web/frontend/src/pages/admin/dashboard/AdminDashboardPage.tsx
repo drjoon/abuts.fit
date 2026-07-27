@@ -362,6 +362,7 @@ export const AdminDashboardPage = () => {
   const { data: riskSummaryResponse } = useQuery({
     queryKey: ["admin-dashboard-risk-summary", period],
     enabled: Boolean(token) && user?.role === "admin",
+    staleTime: 60 * 1000,
     queryFn: async () => {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 8000);
@@ -392,6 +393,7 @@ export const AdminDashboardPage = () => {
   const { data: adminDashboardResponse, refetch: refetchAdminDashboard } = useQuery({
     queryKey: ["admin-dashboard-page", period],
     enabled: Boolean(token) && user?.role === "admin",
+    staleTime: 60 * 1000,
     queryFn: async () => {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 8000);
