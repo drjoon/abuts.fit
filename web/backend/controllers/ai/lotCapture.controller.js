@@ -12,10 +12,7 @@ import {
   ensureFinishedLotNumberForPacking,
   normalizeRequestForResponse,
 } from "../../controllers/requests/utils.js";
-import {
-  allocateVirtualMailboxAddress,
-  isManufacturerSampleRequest,
-} from "../requests/mailbox.utils.js";
+import { allocateVirtualMailboxAddress } from "../requests/mailbox.utils.js";
 import sharp from "sharp";
 
 let _apiKey = null;
@@ -56,7 +53,7 @@ async function findPackingRequestBySuffix(recognizedSuffix) {
 
   const candidates = await Request.find({
     status: { $ne: "취소" },
-    manufacturerStage: "세척.패킹",
+    manufacturerStage: { $in: ["세척.패킹", "세척.포장"] },
   })
     .populate("businessAnchorId", "name metadata")
     .populate("requestor", "businessAnchorId")
@@ -367,10 +364,9 @@ export const handlePackingCapture = asyncHandler(async (req, res) => {
     request.businessAnchorId = request.requestor.businessAnchorId;
   }
 
-  // R&D 샘플은 발송하지 않으므로 우편함을 배정하지 않는다.
-  if (isManufacturerSampleRequest(request)) {
-    request.mailboxAddress = null;
-  } else if (!request.mailboxAddress) {
+  // 샘플(복사/R&D)도 일반 의뢰와 동일하게 세척.패킹 인식 후
+  // 우편함 배정 및 포장.발송 단계 전환을 수행한다.
+  if (!request.mailboxAddress) {
     try {
       request.mailboxAddress =
         await allocateVirtualMailboxAddress(effectiveAnchorIdStr);
@@ -382,10 +378,7 @@ export const handlePackingCapture = asyncHandler(async (req, res) => {
       });
     }
   }
-  // R&D 샘플은 포장.발송/추적관리로 보내지 않는다.
-  if (!isManufacturerSampleRequest(request)) {
-    applyStatusMapping(request, "발송");
-  }
+  applyStatusMapping(request, "발송");
 
   console.log("[lot-capture] before save - businessAnchorId state", {
     requestId: request.requestId,
@@ -421,6 +414,8 @@ export const handlePackingCapture = asyncHandler(async (req, res) => {
     },
   });
 
+  const movedToStage = String(normalizedRequest?.manufacturerStage || "").trim() || "포장.발송";
+
   emitAppEventGlobal("packing:capture-processed", {
     source: "bg-lot-capture",
     capturedBy: capturedByFrontend ? "frontend" : "worker",
@@ -428,7 +423,7 @@ export const handlePackingCapture = asyncHandler(async (req, res) => {
     requestMongoId: String(request._id || ""),
     recognizedSuffix: finalRecognizedSuffix || null,
     recognized: recognized || null,
-    movedToStage: "포장.발송",
+    movedToStage,
     request: normalizedRequest,
     packingFile: {
       fileName: request.caseInfos?.stageFiles?.packing?.fileName || name,
@@ -451,7 +446,7 @@ export const handlePackingCapture = asyncHandler(async (req, res) => {
     requestId: request.requestId,
     requestMongoId: String(request._id || ""),
     fromStage: "세척.패킹",
-    toStage: String(normalizedRequest?.manufacturerStage || "포장.발송").trim(),
+    toStage: movedToStage,
     reviewStage: "packing",
     reviewStatus: "APPROVED",
     request: normalizedRequest,
