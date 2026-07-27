@@ -356,7 +356,11 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
                 }
 
                 var lines = new List<string>(File.ReadAllLines(ncFilePath));
-                var targetRegex = new Regex(@"C0(?:\.0+)?(?![0-9.])", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+                // C축 0도 표기 허용 범위:
+                // - C0, C0.0, C00.000
+                // - C+0, C-0, C +0.0, C 0.0
+                // (C10, C30 등은 매칭 제외)
+                var targetRegex = new Regex(@"C\s*[+-]?0+(?:\.0+)?(?![0-9.])", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
                 int matchedWithinTarget = 0;
                 int replacedWithinTarget = 0;
