@@ -58,14 +58,23 @@ const normalizeRetentionGroove = (value) => {
 // - bg/pc1/esprit-addin/StlFileProcessor.cs
 const parseManufacturerHexRotationModeOrNull = (value) => {
   const v = String(value || "").trim();
-  if (v === "보정") return "보정";
-  if (v === "무보정") return "무보정";
-  // 프론트 라벨(현행): 무보정은 "헥스30도회전"으로 표기한다.
-  if (v === "STL모델대로") return "보정";
-  if (v === "헥스30도회전") return "무보정";
-  // legacy "헥스회전각" 호환: 0=보정, 30=무보정
-  if (v === "0") return "보정";
-  if (v === "30") return "무보정";
+  if (v === "보정") return "STL모델대로";
+  if (v === "무보정") return "헥스30도회전";
+  if (v === "헥스10도회전") return "헥스10도회전";
+  // 프론트 라벨(현행)
+  if (v === "STL모델대로") return "STL모델대로";
+  if (v === "헥스30도회전") return "헥스30도회전";
+  // "헥스X도회전" 라벨 입력 허용 (예: 헥스10도회전)
+  const xModeMatched = v.match(/^헥스\s*([+-]?\d+(?:\.\d+)?)\s*도회전$/);
+  if (xModeMatched) {
+    const degree = Number(xModeMatched[1]);
+    if (Number.isFinite(degree)) {
+      return `헥스${String(degree)}도회전`;
+    }
+  }
+  // legacy "헥스회전각" 호환: 0=STL모델대로, 30=헥스30도회전
+  if (v === "0") return "STL모델대로";
+  if (v === "30") return "헥스30도회전";
   return null;
 };
 
@@ -1325,7 +1334,7 @@ export const getRequestMeta = asyncHandler(async (req, res) => {
 
   const ci = request.caseInfos || {};
   // 제조사 수동 좌표계 전처리 모드는 request-meta에서 canonical 값으로 전달한다.
-  // canonical: "보정" | "무보정"
+  // canonical: "STL모델대로" | "헥스30도회전" | "헥스10도회전"
   // Rhino align 기능으로 구성정보 전처리를 대체하므로, 개별 구성정보 파일 기반 모드는 사용하지 않는다.
   const manufacturerHexRotationRaw = String(
     request?.rnd?.manufacturerHexRotation || "",
@@ -1413,8 +1422,8 @@ export const getRequestMeta = asyncHandler(async (req, res) => {
           // NC 재생성 경로(request-meta 직접 조회)에서도 PRC 파일명이 필요하므로 여기서 보장.
           faceHolePrcFileName: resolvedPrcFiles.faceHolePrcFileName,
           connectionPrcFileName: resolvedPrcFiles.connectionPrcFileName,
-          // 제조사 수동 좌표계 전처리 모드(canonical: "보정"|"무보정").
-          // 보정: +30 + (-appliedDeg), 무보정(UI: 헥스30도회전): +30(telemetry 미적용)
+          // 제조사 수동 좌표계 전처리 모드(canonical: "STL모델대로"|"헥스30도회전"|"헥스10도회전").
+          // STL모델대로: +30 + (-appliedDeg), 헥스30도회전: +30(telemetry 미적용)
           manufacturerHexRotation: manufacturerHexRotationMode,
           // Rhino 정렬 telemetry(헥스 회전각).
           // Esprit가 보정(legacy 0) 모드에서 appliedDeg를 부호 반전 해석해 +30에 합산할 때 사용한다.

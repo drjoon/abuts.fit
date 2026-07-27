@@ -348,21 +348,34 @@ const normalizeHexRotationValue = (value) => {
   if (v === "0") return "보정";
   if (v === "30") return "무보정";
   throw new Error(
-    `유효하지 않은 헥스 회전 모드입니다. '보정' | '무보정'만 허용됩니다. 입력값='${v}'`,
+    `유효하지 않은 헥스 회전 모드입니다. 'STL모델대로' | '헥스30도회전'만 허용됩니다. (legacy: '보정' | '무보정') 입력값='${v}'`,
   );
+};
+
+// 헥스 회전 확장 포인트:
+// - 신규 라벨은 "헥스X도회전" 패턴으로 이 함수에서만 정규화한다.
+// - 관련 파일: PreviewModal.tsx / RequestPage.tsx / bg.controller.js / NcFileGenerator.cs
+const parseHexXRotationLabel = (value) => {
+  const raw = String(value || "").trim();
+  if (!raw) return null;
+  const matched = raw.match(/^헥스\s*([+-]?\d+(?:\.\d+)?)\s*도회전$/);
+  if (!matched) return null;
+  const degree = Number(matched[1]);
+  if (!Number.isFinite(degree)) return null;
+  return `헥스${String(degree)}도회전`;
 };
 
 const parseManufacturerHexRotationMode = (value) => {
   const v = String(value || "").trim();
-  // Rhino align 정책: 제조사 모드 canonical은 보정/무보정 2가지만 사용한다.
-  if (v === "보정") return "보정";
-  if (v === "무보정") return "무보정";
-  // 프론트 라벨(현행): 무보정은 "헥스30도회전"으로 표기한다.
-  if (v === "STL모델대로") return "보정";
-  if (v === "헥스30도회전") return "무보정";
-  // legacy "헥스회전각" 호환: 0=보정, 30=무보정
-  if (v === "0") return "보정";
-  if (v === "30") return "무보정";
+  if (v === "보정" || v === "STL모델대로") return "STL모델대로";
+  if (v === "무보정" || v === "헥스30도회전") return "헥스30도회전";
+  if (v === "헥스10도회전") return "헥스10도회전";
+  // "헥스X도회전"(예: 헥스10도회전) 라벨 입력 허용
+  const hexXLabel = parseHexXRotationLabel(v);
+  if (hexXLabel) return hexXLabel;
+  // legacy "헥스회전각" 호환: 0=STL모델대로, 30=헥스30도회전
+  if (v === "0") return "STL모델대로";
+  if (v === "30") return "헥스30도회전";
   return null;
 };
 
@@ -371,7 +384,7 @@ const normalizeManufacturerHexRotationMode = (value) => {
   if (!parsed) {
     const raw = String(value || "").trim();
     throw new Error(
-      `유효하지 않은 manufacturerHexRotation 값입니다. canonical '보정' | '무보정'만 허용됩니다. (UI 라벨: 'STL모델대로' | '헥스30도회전') 입력값='${raw}'`,
+      `유효하지 않은 manufacturerHexRotation 값입니다. canonical 'STL모델대로' | '헥스30도회전' | '헥스10도회전'만 허용됩니다. (legacy: '보정' | '무보정') 입력값='${raw}'`,
     );
   }
   return parsed;
@@ -382,17 +395,20 @@ const resolveFinalHexRotationValue = ({
 }) => {
   const mode = normalizeManufacturerHexRotationMode(manufacturerHexRotation);
   // finalHexRotation은 canonical 모드 문자열만 사용한다.
-  // 매핑 고정: 보정=보정, 무보정=무보정
-  switch (mode) {
-    case "보정":
-      return "보정";
-    case "무보정":
-      return "무보정";
-    default:
-      throw new Error(
-        `지원하지 않는 manufacturerHexRotation 모드입니다. mode='${String(mode)}'`,
-      );
+  // 매핑:
+  // - STL모델대로 => STL모델대로
+  // - 헥스30도회전 => 헥스30도회전
+  // - 헥스X도회전 => 헥스X도회전
+  if (
+    mode === "STL모델대로" ||
+    mode === "헥스30도회전" ||
+    parseHexXRotationLabel(mode)
+  ) {
+    return mode;
   }
+  throw new Error(
+    `지원하지 않는 manufacturerHexRotation 모드입니다. mode='${String(mode)}'`,
+  );
 };
 
 const normalizeLegacyManufacturerHexRotationOnRequest = (requestDoc) => {
@@ -407,10 +423,10 @@ const normalizeLegacyManufacturerHexRotationOnRequest = (requestDoc) => {
   // - web/backend/controllers/requests/creation.from-draft.controller.js
   // Rhino align 정책으로 구성정보 모드는 제거되었으므로,
   // 레거시 값(예: "구성정보")이 남아 있으면 저장 직전에 canonical 값으로 강제 정규화한다.
-  requestDoc.set("rnd.manufacturerHexRotation", "보정");
+  requestDoc.set("rnd.manufacturerHexRotation", "STL모델대로");
   requestDoc.set(
     "caseInfos.finalHexRotation",
-    resolveFinalHexRotationValue({ manufacturerHexRotation: "보정" }),
+    resolveFinalHexRotationValue({ manufacturerHexRotation: "STL모델대로" }),
   );
   return true;
 };
@@ -2614,7 +2630,7 @@ export const updateRndHexRotation = asyncHandler(async (req, res) => {
     return res.status(400).json({
       success: false,
       message:
-        "유효하지 않은 manufacturerHexRotation 값입니다. canonical '보정' | '무보정'만 사용할 수 있습니다. (UI 라벨: 'STL모델대로' | '헥스30도회전')",
+        "유효하지 않은 manufacturerHexRotation 값입니다. canonical 'STL모델대로' | '헥스30도회전' | '헥스10도회전'만 사용할 수 있습니다. (legacy: '보정' | '무보정')",
     });
   }
 
@@ -2693,7 +2709,7 @@ export const updateRndHexRotation = asyncHandler(async (req, res) => {
   request.set("caseInfos.manufacturerHexRotation", manufacturerHexRotation);
   request.set("caseInfos.finalHexRotation", finalHexRotation);
 
-  // 의뢰자 사업자 디폴트 헥스 회전값은 보정/무보정만 저장한다.
+  // 의뢰자 사업자 디폴트 헥스 회전값은 canonical 모드(STL모델대로/헥스30도회전/헥스10도회전)를 저장한다.
   if (Types.ObjectId.isValid(requestorBusinessAnchorId)) {
     await BusinessAnchor.updateOne(
       { _id: new Types.ObjectId(requestorBusinessAnchorId) },

@@ -678,21 +678,26 @@ export async function deleteStageFile(req, res) {
 // - web/backend/controllers/bg/bg.controller.js
 const normalizeFinalHexRotation = (value) => {
   const v = String(value || "").trim();
-  if (v === "보정") return "보정";
-  if (v === "무보정") return "무보정";
-  if (v === "0") return "보정";
-  if (v === "30") return "무보정";
+  if (v === "보정" || v === "STL모델대로" || v === "0") return "보정";
+  if (v === "무보정" || v === "헥스30도회전" || v === "30") return "무보정";
   throw new Error(
-    `유효하지 않은 헥스 회전 모드입니다. '보정' | '무보정'만 허용됩니다. 입력값='${v}'`,
+    `유효하지 않은 헥스 회전 모드입니다. 'STL모델대로' | '헥스30도회전'만 허용됩니다. (legacy: '보정' | '무보정') 입력값='${v}'`,
   );
 };
 
 const normalizeRequestorDefaultManufacturerHexRotationOrNull = (value) => {
   const v = String(value || "").trim();
   if (!v) return null;
-  // Rhino align 정책: 제조사 default 모드는 보정/무보정만 허용.
-  if (v === "보정" || v === "무보정") return v;
-  // legacy "헥스회전각" 호환: 0=보정, 30=무보정
+  // Rhino align 정책: 제조사 default 모드는 STL모델대로/헥스30도회전(및 헥스X도회전) 허용.
+  if (v === "보정" || v === "STL모델대로") return "보정";
+  if (v === "무보정" || v === "헥스30도회전") return "무보정";
+  if (v === "헥스10도회전") return "헥스10도회전";
+  const matched = v.match(/^헥스\s*([+-]?\d+(?:\.\d+)?)\s*도회전$/);
+  if (matched) {
+    const degree = Number(matched[1]);
+    if (Number.isFinite(degree)) return `헥스${String(degree)}도회전`;
+  }
+  // legacy "헥스회전각" 호환: 0=STL모델대로, 30=헥스30도회전
   if (v === "0") return "보정";
   if (v === "30") return "무보정";
   return null;
@@ -1107,7 +1112,7 @@ export async function updateReviewStatusByStage(req, res) {
           // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/hooks/useRequestFileHandlers.ts
           // - web/backend/controllers/requests/common.requests.controller.js
           // 정책: 의뢰 단계 승인 시 헥스 회전값이 아직 미확정(null)이고
-          // 작업자가 "보정/무보정 둘 다 가공"을 선택하면 반대 헥스 모드의 내부 복사본을 추가 생성한다.
+          // 작업자가 "STL모델대로/헥스30도회전 둘 다 가공"을 선택하면 반대 헥스 모드의 내부 복사본을 추가 생성한다.
           // 복사본은 제조사 전용(sample)으로 처리되어 크레딧 소모 없이 별도 lot/NC를 생성한다.
           const requestorBusinessAnchorIdRaw =
             request.businessAnchorId || request?.requestor?.businessAnchorId || null;
@@ -1152,7 +1157,7 @@ export async function updateReviewStatusByStage(req, res) {
               return res.status(409).json({
                 success: false,
                 message:
-                  "헥스 회전 모드가 비어 있어 보정/무보정 동시 가공 복사본을 생성할 수 없습니다.",
+                  "헥스 회전 모드가 비어 있어 STL모델대로/헥스30도회전 동시 가공 복사본을 생성할 수 없습니다.",
               });
             }
 
@@ -1164,7 +1169,7 @@ export async function updateReviewStatusByStage(req, res) {
                 success: false,
                 message:
                   hexModeError?.message ||
-                  "헥스 회전 모드가 유효하지 않아 보정/무보정 동시 가공 복사본을 생성할 수 없습니다.",
+                  "헥스 회전 모드가 유효하지 않아 STL모델대로/헥스30도회전 동시 가공 복사본을 생성할 수 없습니다.",
               });
             }
             const oppositeHex = resolveOppositeFinalHexRotation(originalHex);
@@ -1260,7 +1265,7 @@ export async function updateReviewStatusByStage(req, res) {
               },
             );
 
-            acceptedMessage = `${acceptedMessage} (헥스 보정/무보정 2건 가공용 복사본이 함께 생성되었습니다.)`;
+            acceptedMessage = `${acceptedMessage} (헥스 STL모델대로/헥스30도회전 2건 가공용 복사본이 함께 생성되었습니다.)`;
           }
         } else {
           // CAM, machining 등 이후 단계는 필요 시 단계별로 비동기 처리 여부를 나눠서 관리한다.

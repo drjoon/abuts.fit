@@ -1423,47 +1423,59 @@ export const RequestPage = ({
   const handleSaveManufacturerHexRotation = useCallback(
     async (
       req: ManufacturerRequest,
-      value: "STL모델대로" | "헥스30도회전",
+      value: "STL모델대로" | "헥스30도회전" | "헥스10도회전",
     ) => {
       if (!req?._id) return;
       const requestMongoId = String(req._id || "").trim();
 
       const normalizeManufacturerHexMode = (
         raw: unknown,
-      ): "보정" | "무보정" | null => {
+      ): "STL모델대로" | "헥스30도회전" | "헥스10도회전" | null => {
         const v = String(raw || "").trim();
         switch (v) {
           case "STL모델대로":
           case "보정":
           case "0":
-            return "보정";
+            return "STL모델대로";
           case "헥스30도회전":
           case "무보정":
           case "30":
-            return "무보정";
-          default:
-            return null;
+            return "헥스30도회전";
+          case "헥스10도회전":
+            return "헥스10도회전";
+          default: {
+            const matched = v.match(/^헥스\s*([+-]?\d+(?:\.\d+)?)\s*도회전$/);
+            if (!matched) return null;
+            const degree = Number(matched[1]);
+            if (!Number.isFinite(degree)) return null;
+            return `헥스${String(degree)}도회전` as
+              | "STL모델대로"
+              | "헥스30도회전"
+              | "헥스10도회전";
+          }
         }
       };
       const toFinalHexRotation = (
-        mode: "보정" | "무보정",
+        mode: "STL모델대로" | "헥스30도회전" | "헥스10도회전",
       ): "보정" | "무보정" => {
-        if (mode === "무보정") return "무보정";
+        if (mode === "헥스30도회전") return "무보정";
         return "보정";
       };
-      const toHexRotationLabel = (mode: "보정" | "무보정") =>
-        mode === "무보정" ? "헥스30도회전" : "STL모델대로";
+      const toHexRotationLabel = (
+        mode: "STL모델대로" | "헥스30도회전" | "헥스10도회전",
+      ) => mode;
 
-      const nextValue: "보정" | "무보정" =
-        value === "헥스30도회전" ? "무보정" : "보정";
+      const nextValue: "STL모델대로" | "헥스30도회전" | "헥스10도회전" =
+        value;
 
       const prevManufacturer =
         normalizeManufacturerHexMode((req as any)?.rnd?.manufacturerHexRotation) ||
         normalizeManufacturerHexMode((req as any)?.caseInfos?.finalHexRotation) ||
         normalizeManufacturerHexMode((req as any)?.caseInfos?.requestorHexRotation) ||
-        "보정";
+        "STL모델대로";
+      const prevFinalRaw = String((req as any)?.caseInfos?.finalHexRotation || "").trim();
       const prevFinal: "보정" | "무보정" =
-        String((req as any)?.caseInfos?.finalHexRotation || "").trim() === "무보정"
+        prevFinalRaw === "무보정" || prevFinalRaw === "헥스30도회전"
           ? "무보정"
           : "보정";
       const prevUpdatedAt = (req as any)?.rnd?.manufacturerHexRotationUpdatedAt || null;
@@ -1482,7 +1494,7 @@ export const RequestPage = ({
             },
             rnd: {
               ...(item.rnd || {}),
-              manufacturerHexRotation: nextValue,
+              manufacturerHexRotation: nextValue as any,
               manufacturerHexRotationUpdatedAt: new Date().toISOString(),
             },
           };
@@ -1509,8 +1521,9 @@ export const RequestPage = ({
         const savedManufacturer =
           normalizeManufacturerHexMode(data?.data?.manufacturerHexRotation) ||
           nextValue;
+        const savedFinalRaw = String(data?.data?.finalHexRotation || "").trim();
         const savedFinal: "보정" | "무보정" =
-          String(data?.data?.finalHexRotation || "").trim() === "무보정"
+          savedFinalRaw === "무보정" || savedFinalRaw === "헥스30도회전"
             ? "무보정"
             : "보정";
 
@@ -1530,7 +1543,7 @@ export const RequestPage = ({
               },
               rnd: {
                 ...(item.rnd || {}),
-                manufacturerHexRotation: savedManufacturer,
+                manufacturerHexRotation: savedManufacturer as any,
                 manufacturerHexRotationUpdatedAt:
                   data?.data?.manufacturerHexRotationUpdatedAt || null,
                 manufacturerHexRotationUpdatedBy:
@@ -1556,7 +1569,7 @@ export const RequestPage = ({
               },
               rnd: {
                 ...(item.rnd || {}),
-                manufacturerHexRotation: prevManufacturer,
+                manufacturerHexRotation: prevManufacturer as any,
                 manufacturerHexRotationUpdatedAt: prevUpdatedAt,
                 manufacturerHexRotationUpdatedBy: prevUpdatedBy,
               },

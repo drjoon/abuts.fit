@@ -138,9 +138,17 @@ const requestSchema = new mongoose.Schema(
         maxlength: 120,
       },
       // 제조사 오버라이드 헥스 회전(canonical)
+      // - "STL모델대로" | "헥스30도회전" | "헥스10도회전"
+      // - legacy 값("보정" | "무보정")도 하위호환으로 허용
       manufacturerHexRotation: {
         type: String,
-        enum: ["보정", "무보정"],
+        enum: [
+          "STL모델대로",
+          "헥스30도회전",
+          "헥스10도회전",
+          "보정",
+          "무보정",
+        ],
       },
       // 의뢰자 헥스 회전 선택값
       requestorHexRotation: {
@@ -516,15 +524,22 @@ const requestSchema = new mongoose.Schema(
         default: null,
       },
       // 제조사 헥스 회전/좌표계 전처리 선택값 (canonical)
-      // - "보정"(legacy 0도)
-      // - "무보정"(legacy 30도)
+      // - "STL모델대로"(legacy 0도, legacy 저장값: "보정")
+      // - "헥스30도회전"(legacy 30도, legacy 저장값: "무보정")
+      // - "헥스10도회전"(NC 후처리 C축 각도 커스텀)
       // related files:
       // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx
       // - web/backend/controllers/bg/bg.controller.js
       // Rhino align 기능이 구성정보 전처리를 대체하므로 개별 구성정보 파일 기반 모드는 사용하지 않는다.
       manufacturerHexRotation: {
         type: String,
-        enum: ["보정", "무보정"],
+        enum: [
+          "STL모델대로",
+          "헥스30도회전",
+          "헥스10도회전",
+          "보정",
+          "무보정",
+        ],
         default: null,
       },
       manufacturerHexRotationUpdatedAt: {

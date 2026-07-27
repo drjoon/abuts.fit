@@ -71,9 +71,15 @@ const resolveRequestorHexRotationByDesignSoftware = (designSoftwareRaw) => {
 
 const normalizeManufacturerHexRotationModeOrNull = (value) => {
   const v = String(value || "").trim();
-  if (v === "무보정") return "무보정";
-  if (v === "보정") return "보정";
-  return null;
+  if (!v) return null;
+  if (v === "무보정" || v === "헥스30도회전") return "헥스30도회전";
+  if (v === "보정" || v === "STL모델대로") return "STL모델대로";
+  if (v === "헥스10도회전") return "헥스10도회전";
+  const matched = v.match(/^헥스\s*([+-]?\d+(?:\.\d+)?)\s*도회전$/);
+  if (!matched) return null;
+  const degree = Number(matched[1]);
+  if (!Number.isFinite(degree)) return null;
+  return `헥스${String(degree)}도회전`;
 };
 
 const resolveFinalHexRotationValue = ({
@@ -81,9 +87,19 @@ const resolveFinalHexRotationValue = ({
 }) => {
   const mode = normalizeManufacturerHexRotationModeOrNull(manufacturerHexRotation);
   // finalHexRotation은 canonical 모드 문자열만 사용한다.
-  // 매핑 고정: 보정=보정, 무보정=무보정
-  if (mode === "무보정") return "무보정";
-  return "보정";
+  // 매핑 고정:
+  // - STL모델대로 => STL모델대로
+  // - 헥스30도회전 => 헥스30도회전
+  // - 헥스X도회전 => 헥스X도회전
+  if (
+    mode === "STL모델대로" ||
+    mode === "헥스30도회전" ||
+    mode === "헥스10도회전"
+  ) {
+    return mode;
+  }
+  if (mode && /^헥스\s*[+-]?\d+(?:\.\d+)?\s*도회전$/.test(mode)) return mode;
+  return "STL모델대로";
 };
 
 const buildRequestIdPrefix = () => {
@@ -1113,7 +1129,7 @@ export async function createRequestsFromDraft(req, res) {
           // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx
           // - web/backend/controllers/bg/bg.controller.js
           // Rhino align 기능이 구성정보 기반 전처리를 대체하므로,
-          // 제조사 헥스 회전 모드는 보정/무보정만 사용한다.
+          // 제조사 헥스 회전 모드는 STL모델대로/헥스30도회전(및 헥스X도회전 확장)을 사용한다.
           const resolvedManufacturerHexRotation =
             requestorDefaultManufacturerHexRotation || undefined;
 

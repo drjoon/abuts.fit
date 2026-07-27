@@ -32,15 +32,16 @@
   - 타입: `src/types/request.ts`
 
 - 의뢰자 BusinessAnchor의 기본 헥스 회전값(`requestSettings.defaultManufacturerHexRotation`, 레거시 `hexRotationAngle` 포함)이
-  null(미확정)인 의뢰는 `PreviewModal` 승인 시 보정/무보정 동시 가공 여부를 확인하고,
+  null(미확정)인 의뢰는 `PreviewModal` 승인 시 STL모델대로/헥스30도회전 동시 가공 여부를 확인하고,
   승인 요청 바디(`processBothHexVariants`)로 백엔드 복사 생성 분기를 전달합니다.
   - 관련 파일: `src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx`, `src/pages/manufacturer/worksheet/custom_abutment/hooks/useRequestFileHandlers.ts`
 
-- 헥스 회전 라벨 표시는 canonical 값을 직접 노출하지 않고 아래로 고정합니다.
-  - `보정` → `STL모델대로`
-  - `무보정` → `헥스30도회전`
+- 헥스 회전 표시는 아래 라벨을 canonical로 사용합니다.
+  - `STL모델대로`
+  - `헥스30도회전`
+  - `헥스10도회전` (및 `헥스X도회전` 확장)
   - 디자인 소프트웨어 표시는 BusinessAnchor 전역값이 아니라 의뢰건 `caseInfos.designSoftware`를 우선 표시합니다.
-  - 라벨 매핑 함수는 fallback 기본값을 두지 않고 명시 분기 + default error를 사용합니다.
+  - 라벨 매핑/정규화 함수는 fallback 기본값을 두지 않고 명시 분기 + default error를 사용합니다.
   - 관련 파일:
     - `src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx`
     - `src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx`

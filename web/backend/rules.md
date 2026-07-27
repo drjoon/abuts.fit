@@ -39,14 +39,14 @@
   - 구현: `controllers/requests/common.review.controller.js`
 
 - 제조사 헥스 회전 모드(`manufacturerHexRotation`)는 백엔드에서 fallback 기본값으로 보정하지 않습니다.
-  - 허용값: canonical `보정`/`무보정` (UI 라벨: `STL모델대로`/`헥스30도회전`)
-  - 하위호환 입력: 레거시 `0`/`30` 정규화 허용
+  - 허용값: canonical `STL모델대로`/`헥스30도회전`/`헥스10도회전`(및 `헥스X도회전` 라벨 패턴)
+  - 하위호환 입력: 레거시 `보정`/`무보정`, `0`/`30` 정규화 허용
   - 미지원/빈값은 request-meta 응답 및 저장 로직에서 즉시 오류로 처리합니다.
 - 의뢰 제출(`POST /api/requests/from-draft`)의 `caseInfos.requestorHexRotation`은
   케이스별 `caseInfos.designSoftware`를 기준으로 계산합니다.
   - 케이스 디자인 소프트웨어가 비어 있으면 요청을 실패(400) 처리합니다.
-  - `ExoCAD` => `무보정`
-  - `3Shape` 및 기타(custom 포함) => `보정`
+  - `ExoCAD` => `헥스30도회전`
+  - `3Shape` 및 기타(custom 포함) => `STL모델대로`
 - 워크시트 응답(`GET /api/requests/all?view=worksheet`)의 `item.business`에는
   `requestSettings.designSoftware`를 포함할 수 있으나, 제조사/의뢰자 UI의 실제 표시는 `caseInfos.designSoftware`를 SSOT로 사용합니다.
   - 관련 파일:

@@ -137,13 +137,20 @@ const businessAnchorSchema = new mongoose.Schema(
         default: "보정",
       },
       // 제조사 워크시트(PreviewModal)에서 설정하는 의뢰자(사업체) 단위 기본 좌표계 전처리 모드
-      // - canonical: "보정" | "무보정"
-      // - legacy 매핑(주석): 0 => 보정, 30 => 무보정
+      // - canonical: "STL모델대로" | "헥스30도회전" | "헥스10도회전"
+      // - legacy 매핑(주석): 0 => STL모델대로, 30 => 헥스30도회전
+      // - legacy 저장값("보정" | "무보정")도 하위호환으로 허용
       // - 저장 주체: 제조사
       // - 적용 대상: 해당 businessAnchorId의 이후 신규 의뢰
       defaultManufacturerHexRotation: {
         type: String,
-        enum: ["보정", "무보정"],
+        enum: [
+          "STL모델대로",
+          "헥스30도회전",
+          "헥스10도회전",
+          "보정",
+          "무보정",
+        ],
         default: null,
       },
       updatedAt: {

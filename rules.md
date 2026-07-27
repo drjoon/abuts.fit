@@ -260,7 +260,7 @@
 
 - 헥스 회전 설정 UI는 **의뢰 단계에서만** 변경 가능하며, CAM/가공/이후 단계에서는 고정(읽기 전용)으로 취급합니다.
 - 의뢰자 사업자(`BusinessAnchor.requestSettings.defaultManufacturerHexRotation`) 기본값이 `null`인 상태에서는,
-  제조사 의뢰 프리뷰 승인 시 **보정/무보정 2개 동시 가공 여부를 반드시 확인**합니다.
+  제조사 의뢰 프리뷰 승인 시 **STL모델대로/헥스30도회전 2개 동시 가공 여부를 반드시 확인**합니다.
   - 확인(Yes): 반대 헥스 모드 복사본을 자동 생성하여 함께 가공
   - 취소(No): 현재 건 1개만 가공
 - 위 자동 복사본 정책:
@@ -269,7 +269,7 @@
   - 제조사 워크시트에는 노출(진행 대상)
   - 복사본은 **새 lotNumber**를 즉시 부여하고, `REQUEST_STAGE_APPROVED` 큐를 별도로 등록하여 **NC도 별도 생성**
   - 복사본 헥스 모드는 원본 `finalHexRotation`의 반대값으로 고정
-- 관리자용 null→보정/무보정 확정 UI/플로우는 별도 세션에서 구현하며,
+- 관리자용 null→STL모델대로/헥스30도회전 확정 UI/플로우는 별도 세션에서 구현하며,
   그 전까지 제조사 작업 플로우는 null 상태를 유지한 채 승인 시점 선택으로 운영합니다.
 
 관련 파일:
@@ -1131,31 +1131,30 @@
 
 ### 4.3.4 제조사 헥스 회전(PreviewModal) → DB 저장 → Esprit 모드 정책 (2026-07-26 개정)
 
-검색 키워드: `rnd-hex-rotation`, `manufacturerHexRotation`, `hexRotation.appliedDeg`, `request-meta`, `보정`, `무보정`
+검색 키워드: `rnd-hex-rotation`, `manufacturerHexRotation`, `hexRotation.appliedDeg`, `request-meta`, `STL모델대로`, `헥스30도회전`, `헥스10도회전`
 
 - 제조사 워크시트 PreviewModal의 `헥스 회전` 선택값은 반드시 백엔드 API를 통해 DB에 저장한다.
   - API: `PATCH /api/requests/:id/rnd-hex-rotation`
   - 저장 필드(SSOT):
     - `Request.rnd.manufacturerHexRotation`
     - `Request.caseInfos.finalHexRotation` (표시/조회용 최종값)
-- `manufacturerHexRotation` canonical 모드는 **`보정` / `무보정` 2개만 허용**한다.
-  - 레거시 입력값 `"0"`/`"30"`은 하위호환 정규화로만 처리한다.
-  - **default fallback으로 임의 보정값을 주입하지 않는다.**
-    - 프론트 라벨 매핑, 백엔드 최종값 계산, Esprit 모드 분기 모두 명시 분기(`보정`/`무보정`)만 허용하고, 미지원 값은 즉시 에러 처리한다.
-- 프론트 표시 라벨 SSOT:
-  - `보정` 표시: `STL모델대로`
-  - `무보정` 표시: `헥스30도회전`
+- `manufacturerHexRotation` canonical 모드는 **`STL모델대로` / `헥스30도회전` / `헥스10도회전`**을 사용한다.
+  - `헥스X도회전` 라벨 입력(예: `헥스10도회전`)은 정규식으로 정규화해 허용한다.
+  - 레거시 입력값 `"보정"`/`"무보정"`, `"0"`/`"30"`은 하위호환 정규화로만 처리한다.
+  - **default fallback으로 임의 값을 주입하지 않는다.**
+    - 프론트 라벨 매핑, 백엔드 최종값 계산, Esprit 모드 분기 모두 명시 분기만 허용하고, 미지원 값은 즉시 에러 처리한다.
 - 의뢰 제출 시(`POST /api/requests/from-draft`) `Request.caseInfos.requestorHexRotation`은
   의뢰자 사업자 설정(`BusinessAnchor.requestSettings.designSoftware`)을 기준으로 강제 지정한다.
-  - `ExoCAD` => `무보정`(UI: `헥스30도회전`)
-  - `3Shape` 및 기타(custom 포함) => `보정`(UI: `STL모델대로`)
+  - `ExoCAD` => `헥스30도회전`
+  - `3Shape` 및 기타(custom 포함) => `STL모델대로`
 - Esprit 적용 정책 SSOT:
-  1. `보정`: 기본 W축 `+30` 적용 후 `hexRotation.appliedDeg`를 Esprit 부호계로 반전해 추가 적용
+  1. `STL모델대로`: 기본 W축 `+30` 적용 후 `hexRotation.appliedDeg`를 Esprit 부호계로 반전해 추가 적용
      - 식: `totalW = 30 + (-appliedDeg)`
-  2. `무보정`(UI: `헥스30도회전`): 기본 W축 `+30`만 적용 (telemetry 미적용)
+  2. `헥스30도회전`: 기본 W축 `+30`만 적용 (telemetry 미적용)
+  3. `헥스X도회전`(예: `헥스10도회전`): STL 회전은 `STL모델대로` 기준을 따르고, NC 후처리에서 C축 각도를 X 규칙으로 치환한다.
 - **라이노의 align 기능이 구성정보를 대체할 수 있으므로 개별 구성정보 파일을 이용하지 않는다.**
 - Rhino telemetry 의미 SSOT:
-  - `request-meta.caseInfos.hexRotation.appliedDeg`는 Rhino가 실제 mesh에 적용하지 않은 가상 보정량(`-phase_mod`)이다.
+  - `request-meta.caseInfos.hexRotation.appliedDeg`는 Rhino가 실제 mesh에 적용하지 않은 가상 회전 보정량(`-phase_mod`)이다.
 
 관련 파일:
 - `web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx`
@@ -1172,6 +1171,7 @@
 - `web/frontend/src/types/request.ts`
 - `bg/pc1/esprit-addin/StlFileProcessor.cs`
 - `bg/pc1/esprit-addin/Helpers/BackendApiClient.cs`
+- `bg/pc1/esprit-addin/Helpers/NcFileGenerator.cs`
 
 ### 4.3.5 신규의뢰 STL 업로드 정책 (2026-07-25 개정)
 
