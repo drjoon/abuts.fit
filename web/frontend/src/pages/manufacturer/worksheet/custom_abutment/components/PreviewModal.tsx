@@ -1906,6 +1906,62 @@ export const PreviewModal = ({
                     if (approving) return;
                     setApproving(true);
                     try {
+                      // 의뢰 단계 승인(의뢰→CAM) 전, rnd.manufacturerHexRotation 누락 시
+                      // 현재 선택된 "헥스 회전" 값(라벨: STL모델대로/헥스30도회전)으로 선저장한다.
+                      // request-meta는 rnd.manufacturerHexRotation을 필수로 사용하므로,
+                      // 누락 상태에서 승인되면 BG(Esprit) 재실행이 실패할 수 있다.
+                      if (currentReviewStageKey === "request") {
+                        const hasRndManufacturerHex =
+                          !!normalizeManufacturerHexRotationCanonicalMode(
+                            activeReq?.rnd?.manufacturerHexRotation,
+                          );
+
+                        if (!hasRndManufacturerHex) {
+                          if (!onSaveManufacturerHexRotation) {
+                            toast({
+                              title: "승인 불가",
+                              description:
+                                "헥스 회전 저장 핸들러가 없어 승인할 수 없습니다.",
+                              variant: "destructive",
+                            });
+                            return;
+                          }
+
+                          let nextHexMode: ManufacturerHexRotationMode | null = null;
+                          if (
+                            manufacturerHexRotationDraft === "STL모델대로" ||
+                            manufacturerHexRotationDraft === "헥스30도회전"
+                          ) {
+                            nextHexMode = manufacturerHexRotationDraft;
+                          } else {
+                            const byDesignSoftware =
+                              resolveRequestorHexRotationByDesignSoftware(
+                                (
+                                  activeReq?.caseInfos as
+                                    | { designSoftware?: unknown }
+                                    | undefined
+                                )?.designSoftware,
+                              );
+                            if (byDesignSoftware) {
+                              nextHexMode =
+                                toManufacturerHexRotationLabel(byDesignSoftware);
+                            }
+                          }
+
+                          if (!nextHexMode) {
+                            toast({
+                              title: "승인 불가",
+                              description:
+                                "헥스 회전값이 비어 있습니다. 'STL모델대로' 또는 '헥스30도회전'을 선택해 주세요.",
+                              variant: "destructive",
+                            });
+                            return;
+                          }
+
+                          await onSaveManufacturerHexRotation(activeReq, nextHexMode);
+                        }
+                      }
+
                       // 승인 처리: keepPreviewOpen=false → 승인 후 모달이 즉시 닫힌다.
                       // BG 앱 트리거(Esprit 등)는 백엔드 ReviewApprovalQueue에서 직렬로 처리된다.
                       // 다음 의뢰는 자동으로 열리지 않는다(연속 승인으로 인한 충돌 방지).
