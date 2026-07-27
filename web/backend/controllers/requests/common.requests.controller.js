@@ -3142,7 +3142,7 @@ export async function deleteRequest(req, res) {
   }
 }
 
-const CLONE_START_STAGE_VALUES = ["의뢰", "CAM", "가공"];
+const CLONE_START_STAGE_VALUES = ["의뢰", "CAM", "가공", "세척.패킹"];
 
 function parseCloneStartStage(
   value,
@@ -3161,16 +3161,23 @@ function parseCloneStartStage(
 }
 
 function buildReviewByStageForStartStage(startStage, now = new Date()) {
+  const isFromRequest = startStage === "의뢰";
+  const isFromMachining = startStage === "가공";
+  const isFromPacking = startStage === "세척.패킹";
+
   return {
     request: {
-      status: startStage === "의뢰" ? "PENDING" : "APPROVED",
+      status: isFromRequest ? "PENDING" : "APPROVED",
       updatedAt: now,
     },
     cam: {
-      status: startStage === "가공" ? "APPROVED" : "PENDING",
-      updatedAt: startStage === "가공" ? now : null,
+      status: isFromMachining || isFromPacking ? "APPROVED" : "PENDING",
+      updatedAt: isFromMachining || isFromPacking ? now : null,
     },
-    machining: { status: "PENDING", updatedAt: null },
+    machining: {
+      status: isFromPacking ? "APPROVED" : "PENDING",
+      updatedAt: isFromPacking ? now : null,
+    },
     packing: { status: "PENDING", updatedAt: null },
     shipping: { status: "PENDING", updatedAt: null },
     tracking: { status: "PENDING", updatedAt: null },
@@ -3202,8 +3209,8 @@ function buildClonedCaseInfos(sourceCaseInfos, startStage, now = new Date()) {
   //   -> 의뢰자 과금/결제 상태와 무관한 가공 입력 데이터는 복사하고,
   //      NC 산출물은 공정 재생성을 위해 비운다.
   // - CAM 시작: CAM은 유지, NC는 제거 (재생성 가능)
-  // - 가공 시작: CAM/NC 모두 유지
-  if (startStage === "가공") {
+  // - 가공/세척.패킹 시작: CAM/NC 모두 유지
+  if (startStage === "가공" || startStage === "세척.패킹") {
     return {
       ...base,
       camFile: sourceCaseInfos?.camFile || null,
@@ -3358,8 +3365,12 @@ export async function cloneAsSample(req, res) {
           code: "none",
           label: "미처리",
         },
-        // 로트번호는 복사본에 저장하지 않음 (원본 불변 + 중복 인덱스/크레딧 영향 방지)
-        // 원본 로트번호/재질은 상태 이력(note)으로만 남김
+        // 로트번호는 원본 재사용 금지(복사본 전용 번호 사용)
+        // 재질 정보는 원본 재질을 초기값으로 가져오고, value는 새로 발급한다.
+        lotNumber: {
+          material: String(lotMaterial || "").trim() || null,
+          value: null,
+        },
         // 생산 스케줄 새로 계산
         productionSchedule: {
           assignedMachine: null,
@@ -3400,6 +3411,9 @@ export async function cloneAsSample(req, res) {
           },
         ],
       });
+
+      // 정책: R&D 샘플도 복사 샘플과 동일하게 원본과 다른 별도 로트번호를 즉시 발급한다.
+      await ensureLotNumberForMachining(newRequest);
 
       // 인덱스 우회를 위해 직접 저장 (pre-save 훅은 requestId 자동 생성)
       await newRequest.save({ session });
@@ -3580,10 +3594,14 @@ export async function cloneFromSampleToRequest(req, res) {
         ],
       });
 
-      // 정책: 복사 시작 공정이 CAM/가공이면 "CAM 진입"으로 간주하여 새 lotNumber를 즉시 발급한다.
+      // 정책: 복사 시작 공정이 CAM/가공/세척.패킹이면 즉시 새 lotNumber를 발급한다.
       // - 원본/기존 샘플 lot 재사용 금지 (중복 및 귀속 혼선 방지)
       // - 의뢰 시작(의뢰 탭) 복사본은 승인 시점에 기존 흐름대로 lot 부여
-      if (startStage === "CAM" || startStage === "가공") {
+      if (
+        startStage === "CAM" ||
+        startStage === "가공" ||
+        startStage === "세척.패킹"
+      ) {
         await ensureLotNumberForMachining(clonedRequest);
       }
 
@@ -3778,9 +3796,14 @@ export async function cloneRequestsForRecall(req, res) {
           ],
         });
 
-        // 정책: 추적관리/리콜 재제작 복사에서도 시작 공정이 CAM/가공이면 즉시 새 lotNumber를 발급한다.
-        // 복사본이 곧바로 CAM/가공 큐에 진입하므로, lot 누락 상태로 내려가면 안 된다.
-        if (startStage === "CAM" || startStage === "가공") {
+        // 정책: 추적관리/리콜 재제작 복사에서도 시작 공정이 CAM/가공/세척.패킹이면
+        // 즉시 새 lotNumber를 발급한다.
+        // 복사본이 곧바로 CAM/가공/세척.패킹 큐에 진입하므로, lot 누락 상태로 내려가면 안 된다.
+        if (
+          startStage === "CAM" ||
+          startStage === "가공" ||
+          startStage === "세척.패킹"
+        ) {
           await ensureLotNumberForMachining(clonedRequest);
         }
 
