@@ -26,7 +26,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
             System.IO.Directory.CreateDirectory(_outputFolder);
             _postProcessorFile = postProcessorFile ?? "Acro_dent_XE.asc";
         }
-        public string GenerateNcFile(Document document, string stlPath, double frontPointX, double stockDiameter, string serialCode, double? stlBoundingTopZ = null, string connectionPrcPath = null)
+        public string GenerateNcFile(Document document, string stlPath, double frontPointX, double stockDiameter, string serialCode, double? stlBoundingTopZ = null, string connectionPrcPath = null, string manufacturerHexRotation = null)
         {
             if (document == null)
             {
@@ -82,6 +82,7 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
             string serialForNc = NormalizeSerialCode(serialCode);
             AppLogger.Log($"NcFileGenerator: Serial 각인 코드 적용 - Raw:'{serialCode ?? string.Empty}' => Use:'{serialForNc}'");
             UpdateSerialBlocks(executedNcPath, serialForNc, connectionPrcPath);
+            ApplyManufacturerHexRotationToNc(executedNcPath, manufacturerHexRotation);
             return executedNcPath;
         }
         private string BuildNcFilePath(string stlPath)
@@ -338,6 +339,119 @@ namespace Abuts.EspritAddIns.ESPRIT2025AddinProject.Helpers
                 AppLogger.Log($"NcFileGenerator: Serial 블록 갱신 실패 - {ex.GetType().Name}:{ex.Message}");
             }
         }
+        private void ApplyManufacturerHexRotationToNc(string ncFilePath, string manufacturerHexRotation)
+        {
+            try
+            {
+                if (!TryResolveHexRotationTargets(manufacturerHexRotation, out double firstDeg, out double secondToSixthDeg, out string modeLabel))
+                {
+                    AppLogger.Log($"NcFileGenerator: 헥스 회전 NC 후처리 생략 - mode='{manufacturerHexRotation ?? ""}'");
+                    return;
+                }
+
+                if (!File.Exists(ncFilePath))
+                {
+                    AppLogger.Log($"NcFileGenerator: 헥스 회전 NC 후처리 실패 - 파일 없음 ({ncFilePath})");
+                    return;
+                }
+
+                var lines = new List<string>(File.ReadAllLines(ncFilePath));
+                var targetRegex = new Regex(@"C0(?:\.0+)?(?![0-9.])", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+                int matchedWithinTarget = 0;
+                int replacedWithinTarget = 0;
+                for (int i = 0; i < lines.Count; i++)
+                {
+                    lines[i] = targetRegex.Replace(lines[i], m =>
+                    {
+                        if (matchedWithinTarget >= 6)
+                        {
+                            return m.Value;
+                        }
+
+                        double targetDeg = matchedWithinTarget == 0 ? firstDeg : secondToSixthDeg;
+                        matchedWithinTarget++;
+                        replacedWithinTarget++;
+                        return "C" + FormatRotationNumber(targetDeg);
+                    });
+                }
+
+                if (replacedWithinTarget == 0)
+                {
+                    AppLogger.Log($"NcFileGenerator: 헥스 회전 NC 후처리 대상(C0) 없음 - mode={modeLabel}");
+                    return;
+                }
+
+                File.WriteAllLines(ncFilePath, lines);
+                AppLogger.Log($"NcFileGenerator: 헥스 회전 NC 후처리 완료 - mode={modeLabel}, first=C{FormatRotationNumber(firstDeg)}, 2~6=C{FormatRotationNumber(secondToSixthDeg)}, replaced={replacedWithinTarget}");
+
+                if (matchedWithinTarget < 6)
+                {
+                    AppLogger.Log($"NcFileGenerator: ⚠️ 헥스 회전 NC 후처리 - C0 매칭 수 부족 (expected=6, actual={matchedWithinTarget})");
+                }
+            }
+            catch (Exception ex)
+            {
+                AppLogger.Log($"NcFileGenerator: 헥스 회전 NC 후처리 실패 - {ex.GetType().Name}:{ex.Message}");
+            }
+        }
+
+        private static bool TryResolveHexRotationTargets(string manufacturerHexRotation, out double firstDeg, out double secondToSixthDeg, out string modeLabel)
+        {
+            firstDeg = 0.0;
+            secondToSixthDeg = 0.0;
+            modeLabel = "STL모델대로";
+
+            string mode = string.IsNullOrWhiteSpace(manufacturerHexRotation)
+                ? string.Empty
+                : manufacturerHexRotation.Trim();
+
+            if (string.IsNullOrWhiteSpace(mode) ||
+                string.Equals(mode, "STL모델대로", StringComparison.Ordinal) ||
+                string.Equals(mode, "보정", StringComparison.Ordinal) ||
+                string.Equals(mode, "0", StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            if (string.Equals(mode, "헥스30도회전", StringComparison.Ordinal) ||
+                string.Equals(mode, "무보정", StringComparison.Ordinal) ||
+                string.Equals(mode, "30", StringComparison.Ordinal))
+            {
+                firstDeg = 0.0;
+                secondToSixthDeg = 30.0;
+                modeLabel = "헥스30도회전";
+                return true;
+            }
+
+            Match xModeMatch = Regex.Match(mode, @"^\s*헥스\s*([+-]?\d+(?:\.\d+)?)\s*도회전\s*$", RegexOptions.CultureInvariant);
+            if (xModeMatch.Success)
+            {
+                if (!double.TryParse(xModeMatch.Groups[1].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out double xDeg))
+                {
+                    return false;
+                }
+
+                firstDeg = xDeg;
+                secondToSixthDeg = 30.0 + xDeg;
+                modeLabel = $"헥스{xDeg.ToString("0.###############", CultureInfo.InvariantCulture)}도회전";
+                return true;
+            }
+
+            return false;
+        }
+
+        private static string FormatRotationNumber(double value)
+        {
+            if (Math.Abs(value) < 0.0000000001)
+            {
+                return "0";
+            }
+
+            string text = value.ToString("0.###############", CultureInfo.InvariantCulture);
+            return text == "-0" ? "0" : text;
+        }
+
         private static bool ReplaceSerialBlock(List<string> lines, string marker, List<string> newBlock, int occurrenceIndex = 0)
         {
             if (occurrenceIndex < 0)
