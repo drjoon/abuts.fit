@@ -400,17 +400,13 @@ export const NewRequestPage = () => {
   } = usePresetStorage("clinic-names");
 
   const handleCancelAll = async () => {
+    const preservedDesignSoftware = String(
+      designSoftwareValue || caseInfosMap?.__default__?.designSoftware || "",
+    ).trim();
+
     await resetDraft();
     handleCancel();
     clearLocalDraft();
-    try {
-      window.localStorage.removeItem("abutsfit:new-request-draft-id:v1");
-      Object.keys(window.localStorage)
-        .filter((key) => key.startsWith("abutsfit:new-request-draft-meta:v1:"))
-        .forEach((key) => window.localStorage.removeItem(key));
-    } catch {
-      // noop
-    }
     setFileVerificationStatus({});
     setCaseInfos({
       clinicName: "",
@@ -431,12 +427,33 @@ export const NewRequestPage = () => {
     setImplantFamily("");
     setImplantType("");
 
+    if (preservedDesignSoftware) {
+      updateCaseInfos("__default__", { designSoftware: preservedDesignSoftware });
+      setDesignSoftwareValue(preservedDesignSoftware);
+      if (
+        preservedDesignSoftware === "3Shape" ||
+        preservedDesignSoftware === "ExoCAD"
+      ) {
+        setDesignSoftwareMode(preservedDesignSoftware);
+        setCustomDesignSoftware("");
+      } else {
+        setDesignSoftwareMode("custom");
+        setCustomDesignSoftware(preservedDesignSoftware);
+      }
+    }
+
     const fileInput = document.getElementById(
       "file-input",
     ) as HTMLInputElement | null;
     if (fileInput) {
       fileInput.value = "";
     }
+
+    toast({
+      title: "전체 삭제 완료",
+      description: "첨부/입력이 초기화되었습니다.",
+      duration: 2500,
+    });
   };
 
   const duplicateList = useMemo(
