@@ -19,7 +19,7 @@ import {
   invalidateBridgeFlagsCache,
 } from "./shared.js";
 import {
-  allocateVirtualMailboxAddress,
+  ensureMailboxAddressForBusiness,
   isManufacturerSampleRequest,
 } from "../requests/mailbox.utils.js";
 import { appendMachiningJobStats } from "./tooling.js";
@@ -1732,10 +1732,16 @@ export async function recordMachiningCompleteForBridge(req, res) {
         // R&D 샘플은 배송 비대상이므로 우편함을 배정하지 않는다.
         if (isManufacturerSampleRequest(request)) {
           request.mailboxAddress = null;
-        } else if (!request.mailboxAddress) {
+        } else {
           try {
-            request.mailboxAddress =
-              await allocateVirtualMailboxAddress(effectiveAnchorIdStr);
+            const nextMailboxAddress = await ensureMailboxAddressForBusiness({
+              requestMongoId: request._id,
+              requestorOrgId: effectiveAnchorIdStr,
+              currentMailboxAddress: request.mailboxAddress,
+            });
+            if (nextMailboxAddress) {
+              request.mailboxAddress = nextMailboxAddress;
+            }
           } catch (err) {
             console.error("[MAILBOX_ALLOCATION_ERROR]", {
               requestId,

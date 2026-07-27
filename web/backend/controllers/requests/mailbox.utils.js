@@ -46,6 +46,32 @@ const resolveOccupantAnchorKey = (requestDocLike) => {
   return UNKNOWN_ANCHOR_KEY;
 };
 
+const findReusableMailboxAddressForBusiness = ({
+  activeRequests = [],
+  requestorOrgId,
+}) => {
+  const requestorOrgIdStr = String(requestorOrgId || "").trim();
+  if (!requestorOrgIdStr) return "";
+
+  const orgSetByAddress = new Map();
+  for (const r of activeRequests) {
+    const address = normalizeMailboxAddress(r?.mailboxAddress);
+    if (!address) continue;
+    const orgKey = resolveOccupantAnchorKey(r);
+    if (!orgSetByAddress.has(address)) {
+      orgSetByAddress.set(address, new Set());
+    }
+    orgSetByAddress.get(address).add(orgKey);
+  }
+
+  return (
+    Array.from(orgSetByAddress.entries())
+      .filter(([_, orgSet]) => orgSet.size === 1 && orgSet.has(requestorOrgIdStr))
+      .map(([address]) => address)
+      .sort()[0] || ""
+  );
+};
+
 export async function allocateVirtualMailboxAddress(
   requestorOrgId,
   options = {},
@@ -96,30 +122,12 @@ export async function allocateVirtualMailboxAddress(
 
   // 같은 의뢰자가 이미 할당받은 우편함이 있는지 확인
   // 단, "다른 의뢰자와 섞인 우편함"은 재사용하지 않는다.
-  if (requestorOrgId) {
-    const requestorOrgIdStr = requestorOrgId.toString();
-
-    const orgSetByAddress = new Map();
-    for (const r of activeRequests) {
-      const address = normalizeMailboxAddress(r?.mailboxAddress);
-      if (!address) continue;
-      const orgKey = resolveOccupantAnchorKey(r);
-      if (!orgSetByAddress.has(address)) {
-        orgSetByAddress.set(address, new Set());
-      }
-      orgSetByAddress.get(address).add(orgKey);
-    }
-
-    const reusableAddress = Array.from(orgSetByAddress.entries())
-      .filter(
-        ([_, orgSet]) => orgSet.size === 1 && orgSet.has(requestorOrgIdStr),
-      )
-      .map(([address]) => address)
-      .sort()[0];
-
-    if (reusableAddress) {
-      return reusableAddress;
-    }
+  const reusableAddress = findReusableMailboxAddressForBusiness({
+    activeRequests,
+    requestorOrgId,
+  });
+  if (reusableAddress) {
+    return reusableAddress;
   }
 
   // 사용 중인 우편함 주소 목록
@@ -155,6 +163,28 @@ export async function ensureMailboxAddressForBusiness({
 
   if (!requestorOrgIdStr) {
     return currentMailboxAddressStr || null;
+  }
+
+  const activeRequests = await Request.find({
+    manufacturerStage: { $in: ["세척.패킹", "포장.발송"] },
+    mailboxAddress: { $ne: null },
+    requestCategory: REQUEST_CATEGORY.ORDER,
+    ...(requestMongoId ? { _id: { $ne: requestMongoId } } : {}),
+  })
+    .select("_id mailboxAddress businessAnchorId requestor")
+    .populate("requestor", "businessAnchorId")
+    .lean();
+
+  const reusableAddress = findReusableMailboxAddressForBusiness({
+    activeRequests,
+    requestorOrgId: requestorOrgIdStr,
+  });
+
+  // 핵심 정책: 같은 businessAnchor의 활성 의뢰가 이미 쓰는 우편함이 있으면
+  // 현재 의뢰의 mailboxAddress가 달라도 그 주소로 수렴시킨다.
+  // (세척.패킹 -> 포장.발송 전환 중 기존 서로 다른 주소를 유지해 박스가 분할되는 현상 방지)
+  if (reusableAddress) {
+    return reusableAddress;
   }
 
   if (!currentMailboxAddressStr) {

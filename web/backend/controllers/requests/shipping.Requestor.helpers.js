@@ -139,25 +139,82 @@ export async function ensureShippingPackageForPickup({
   const shipDateYmd = getTodayYmdInKst();
   const mailboxAddress = mailboxAddresses[0];
 
-  let pkg = await ShippingPackage.findOneAndUpdate(
-    { businessAnchorId, shipDateYmd, mailboxAddress },
-    {
-      $setOnInsert: {
-        businessAnchorId,
-        shipDateYmd,
-        mailboxAddress,
-        createdBy: actorUserId || null,
-      },
-      $addToSet: {
-        requestIds: { $each: list.map((request) => request._id) },
-      },
-    },
-    {
-      new: true,
-      upsert: true,
-      setDefaultsOnInsert: true,
-    },
+  const existingPackageIds = Array.from(
+    new Set(
+      list
+        .map((request) => String(request?.shippingPackageId || "").trim())
+        .filter(Boolean),
+    ),
   );
+
+  let pkg = null;
+
+  if (existingPackageIds.length > 0) {
+    const existingPkgs = await ShippingPackage.find({
+      _id: { $in: existingPackageIds },
+    })
+      .sort({ createdAt: 1 })
+      .lean();
+    const canonicalPkg = Array.isArray(existingPkgs) ? existingPkgs[0] : null;
+    if (canonicalPkg?._id) {
+      await ShippingPackage.updateOne(
+        { _id: canonicalPkg._id },
+        {
+          $addToSet: {
+            requestIds: { $each: list.map((request) => request._id) },
+          },
+        },
+      );
+      pkg = await ShippingPackage.findById(canonicalPkg._id);
+    }
+  }
+
+  if (!pkg?._id) {
+    const pendingCarrier = await Request.findOne({
+      businessAnchorId,
+      manufacturerStage: { $in: ["세척.패킹", "포장.발송"] },
+      shippingPackageId: { $ne: null },
+      requestCategory: "order",
+    })
+      .sort({ createdAt: 1 })
+      .select({ shippingPackageId: 1 })
+      .lean();
+
+    const pendingPackageId = String(pendingCarrier?.shippingPackageId || "").trim();
+    if (pendingPackageId) {
+      await ShippingPackage.updateOne(
+        { _id: pendingPackageId },
+        {
+          $addToSet: {
+            requestIds: { $each: list.map((request) => request._id) },
+          },
+        },
+      );
+      pkg = await ShippingPackage.findById(pendingPackageId);
+    }
+  }
+
+  if (!pkg?._id) {
+    pkg = await ShippingPackage.findOneAndUpdate(
+      { businessAnchorId, shipDateYmd, mailboxAddress },
+      {
+        $setOnInsert: {
+          businessAnchorId,
+          shipDateYmd,
+          mailboxAddress,
+          createdBy: actorUserId || null,
+        },
+        $addToSet: {
+          requestIds: { $each: list.map((request) => request._id) },
+        },
+      },
+      {
+        new: true,
+        upsert: true,
+        setDefaultsOnInsert: true,
+      },
+    );
+  }
 
   if (!pkg?._id) {
     throw new Error("발송 박스 생성에 실패했습니다.");

@@ -5,6 +5,7 @@ import ManufacturerCreditLedger from "../../models/manufacturerCreditLedger.mode
 import AdminCreditLedger from "../../models/adminCreditLedger.model.js";
 import DeliveryInfo from "../../models/deliveryInfo.model.js";
 import ShippingPackage from "../../models/shippingPackage.model.js";
+import Request from "../../models/request.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 import User from "../../models/user.model.js";
 import {
@@ -454,8 +455,45 @@ export async function ensureShippingFeeSpendOnPackingApprove({
   let retryCount = 0;
   const maxRetries = 3;
 
+  // 정책: 같은 businessAnchor의 '발송 대기중(세척.패킹/포장.발송)' 건은
+  // 날짜와 무관하게 하나의 패키지/배송비 단위로 묶는다.
+  const pendingPackageCarrier = await Request.findOne(
+    {
+      businessAnchorId,
+      manufacturerStage: { $in: ["세척.패킹", "포장.발송"] },
+      shippingPackageId: { $ne: null },
+      requestCategory: "order",
+    },
+    { shippingPackageId: 1, mailboxAddress: 1 },
+    { session },
+  )
+    .sort({ createdAt: 1 })
+    .lean();
+
+  const pendingPackageId = String(
+    pendingPackageCarrier?.shippingPackageId || "",
+  ).trim();
+
+  if (pendingPackageId) {
+    await ShippingPackage.updateOne(
+      { _id: pendingPackageId },
+      { $addToSet: { requestIds: request._id } },
+      { session },
+    );
+    pkg = await ShippingPackage.findById(pendingPackageId, null, {
+      session,
+    });
+
+    const canonicalMailbox = String(
+      pkg?.mailboxAddress || pendingPackageCarrier?.mailboxAddress || "",
+    ).trim();
+    if (canonicalMailbox && canonicalMailbox !== mailboxAddress) {
+      request.mailboxAddress = canonicalMailbox;
+    }
+  }
+
   // 중복 패키지 생성 방지: unique index 위반 시 재시도
-  while (retryCount < maxRetries) {
+  while (!pkg?._id && retryCount < maxRetries) {
     try {
       pkg = await ShippingPackage.findOneAndUpdate(
         { businessAnchorId, shipDateYmd, mailboxAddress },

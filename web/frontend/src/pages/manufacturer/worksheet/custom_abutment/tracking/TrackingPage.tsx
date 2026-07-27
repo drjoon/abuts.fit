@@ -1119,18 +1119,37 @@ export const TrackingInquiryPage = () => {
 
       const ownerKey = ownerAnchorId || `request:${fallbackRequestId}`;
 
+      const manualDeliveryMethods = getManualDeliveryMethodsFromRequest(r);
+      const hasManualDeliveryMethod = manualDeliveryMethods.length > 0;
+      const manualBatchTimestamp = String(
+        (di as any)?.tracking?.lastSyncedAt ||
+          (r as any)?.shippingWorkflow?.manualDeliveryMethodsUpdatedAt ||
+          (r as any)?.shippingWorkflow?.updatedAt ||
+          "",
+      ).trim();
+      const manualMethodKey = hasManualDeliveryMethod
+        ? manualDeliveryMethods.join("|")
+        : "";
+      const manualBatchKey =
+        hasManualDeliveryMethod && manualBatchTimestamp
+          ? `manual:${ownerKey}:${manualMethodKey}:${manualBatchTimestamp}`
+          : "";
+
       // 카드 그룹핑 SSOT 우선순위
       // 1) trackingNumber: 실제 배송 단위를 가장 잘 대표 (중복 shippingPackageId가 있어도 하나로 묶어야 함)
       // 2) shippingPackageId: trackingNumber가 없을 때만 사용
-      // 3) mailboxAddress + dayKey
-      // 4) fallback request 단위
+      // 3) manualBatchKey: 방문/수동 전달(송장 없음)에서 같은 처리 배치를 우선 묶음
+      // 4) mailboxAddress + dayKey
+      // 5) fallback request 단위
       const boxKey = trackingNumber
         ? `tn:${ownerKey}:${trackingNumber}`
         : shippingPackageId
           ? `sp:${ownerKey}:${shippingPackageId}`
-          : mailboxAddress && dayKey
-            ? `mb:${ownerKey}:${mailboxAddress}:${dayKey}`
-            : `request:${fallbackRequestId}`;
+          : manualBatchKey
+            ? manualBatchKey
+            : mailboxAddress && dayKey
+              ? `mb:${ownerKey}:${mailboxAddress}:${dayKey}`
+              : `request:${fallbackRequestId}`;
       if (!boxMap.has(boxKey)) {
         boxMap.set(boxKey, []);
       }

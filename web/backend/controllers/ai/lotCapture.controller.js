@@ -12,7 +12,7 @@ import {
   ensureFinishedLotNumberForPacking,
   normalizeRequestForResponse,
 } from "../../controllers/requests/utils.js";
-import { allocateVirtualMailboxAddress } from "../requests/mailbox.utils.js";
+import { ensureMailboxAddressForBusiness } from "../requests/mailbox.utils.js";
 import sharp from "sharp";
 
 let _apiKey = null;
@@ -366,17 +366,21 @@ export const handlePackingCapture = asyncHandler(async (req, res) => {
 
   // 샘플(복사/R&D)도 일반 의뢰와 동일하게 세척.패킹 인식 후
   // 우편함 배정 및 포장.발송 단계 전환을 수행한다.
-  if (!request.mailboxAddress) {
-    try {
-      request.mailboxAddress =
-        await allocateVirtualMailboxAddress(effectiveAnchorIdStr);
-    } catch (err) {
-      console.error("[lot-capture] mailbox allocation failed", {
-        requestId: request.requestId,
-        requestMongoId: String(request._id || ""),
-        message: err?.message || String(err),
-      });
+  try {
+    const nextMailboxAddress = await ensureMailboxAddressForBusiness({
+      requestMongoId: request._id,
+      requestorOrgId: effectiveAnchorIdStr,
+      currentMailboxAddress: request.mailboxAddress,
+    });
+    if (nextMailboxAddress) {
+      request.mailboxAddress = nextMailboxAddress;
     }
+  } catch (err) {
+    console.error("[lot-capture] mailbox allocation failed", {
+      requestId: request.requestId,
+      requestMongoId: String(request._id || ""),
+      message: err?.message || String(err),
+    });
   }
   applyStatusMapping(request, "발송");
 
