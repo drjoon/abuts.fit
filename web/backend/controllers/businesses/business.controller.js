@@ -564,10 +564,12 @@ export async function clearMyBusinessLicense(req, res) {
   }
 }
 
-function getAnchorMembership(anchor, userId) {
+function getAnchorMembership(anchor, user) {
   if (!anchor) return "none";
 
-  const meId = String(userId || "");
+  const meId = String(user?._id || user || "");
+  const subRole = String(user?.subRole || "").trim();
+
   const primaryContactId = String(anchor.primaryContactUserId || "");
   const isOwner =
     Array.isArray(anchor.owners) &&
@@ -579,6 +581,11 @@ function getAnchorMembership(anchor, userId) {
     Array.isArray(anchor.members) &&
     anchor.members.some((memberId) => String(memberId) === meId);
   if (isMember) return "member";
+
+  // 레거시/불완전 anchor 데이터(primaryContact/owners/members 누락) 보호:
+  // subRole을 권한 판정의 최종 폴백으로 사용한다.
+  if (subRole === "owner") return "owner";
+  if (subRole === "staff") return "member";
 
   return "none";
 }
@@ -612,6 +619,7 @@ export async function getMyRequestSettings(req, res) {
     const freshUser = await User.findById(req.user._id)
       .select({
         businessAnchorId: 1,
+        subRole: 1,
         "requestSettings.designSoftware": 1,
       })
       .lean();
@@ -651,7 +659,10 @@ export async function getMyRequestSettings(req, res) {
       })
       .lean();
 
-    const membership = getAnchorMembership(anchor, req.user._id);
+    const membership = getAnchorMembership(anchor, {
+      _id: req.user._id,
+      subRole: freshUser?.subRole || req.user?.subRole,
+    });
     const businessDesignSoftware = normalizeDesignSoftware(
       anchor?.requestSettings?.designSoftware,
     );
@@ -797,6 +808,7 @@ export async function updateMyRequestSettings(req, res) {
     const freshUser = await User.findById(req.user._id)
       .select({
         businessAnchorId: 1,
+        subRole: 1,
         "requestSettings.designSoftware": 1,
       })
       .lean();
@@ -823,7 +835,10 @@ export async function updateMyRequestSettings(req, res) {
         })
         .lean();
 
-      membership = getAnchorMembership(anchor, req.user._id);
+      membership = getAnchorMembership(anchor, {
+        _id: req.user._id,
+        subRole: freshUser?.subRole || req.user?.subRole,
+      });
     }
 
     if ((needsOwnerPermission || needsBusinessDesignSoftwarePermission) && !businessAnchorId) {

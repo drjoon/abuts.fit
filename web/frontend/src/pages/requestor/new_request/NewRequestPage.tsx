@@ -60,6 +60,8 @@ export const NewRequestPage = () => {
   >("3Shape");
   const [customDesignSoftware, setCustomDesignSoftware] = useState("");
   const designSoftwareCanEdit = true;
+  const [canEditBusinessDesignSoftware, setCanEditBusinessDesignSoftware] =
+    useState(false);
   const [designSoftwareSaving, setDesignSoftwareSaving] = useState(false);
   const [designSoftwareValue, setDesignSoftwareValue] = useState("");
   const [needsBusinessDesignSoftwareBootstrap, setNeedsBusinessDesignSoftwareBootstrap] =
@@ -165,9 +167,17 @@ export const NewRequestPage = () => {
           caseInfosMap?.__default__?.designSoftware || "",
         ).trim();
 
+        const canEditBusinessDesign =
+          typeof data?.canEditDesignSoftware === "boolean"
+            ? data.canEditDesignSoftware
+            : false;
+        setCanEditBusinessDesignSoftware(canEditBusinessDesign);
+
         const missingRequestorSettings = !requestorDefault;
         const missingBusinessSettings = !businessDefault;
-        setNeedsBusinessDesignSoftwareBootstrap(missingBusinessSettings);
+        setNeedsBusinessDesignSoftwareBootstrap(
+          missingBusinessSettings && canEditBusinessDesign,
+        );
 
         // 사업체/계정 requestSettings 중 하나라도 비어 있으면 자동 생성(보정)
         if (missingRequestorSettings || missingBusinessSettings) {
@@ -179,37 +189,39 @@ export const NewRequestPage = () => {
             if (missingRequestorSettings) {
               syncPayload.requestorDesignSoftware = bootstrapDefault;
             }
-            if (missingBusinessSettings) {
+            if (missingBusinessSettings && canEditBusinessDesign) {
               syncPayload.designSoftware = bootstrapDefault;
             }
 
-            const syncRes = await apiFetch<any>({
-              path: "/api/businesses/me/request-settings",
-              method: "PUT",
-              token,
-              jsonBody: syncPayload,
-            });
-
-            if (syncRes.ok) {
-              if (missingRequestorSettings) {
-                requestorDefault = bootstrapDefault;
-              }
-              if (missingBusinessSettings) {
-                businessDefault = bootstrapDefault;
-                setNeedsBusinessDesignSoftwareBootstrap(false);
-              }
-            } else {
-              const syncBody: any = syncRes.data || {};
-              const syncMessage = String(
-                syncBody?.message ||
-                  "사업체/의뢰자 기본 소프트웨어 자동 주입에 실패했습니다.",
-              );
-              toast({
-                title: "설정 동기화 실패",
-                description: syncMessage,
-                variant: "destructive",
+            if (Object.keys(syncPayload).length > 0) {
+              const syncRes = await apiFetch<any>({
+                path: "/api/businesses/me/request-settings",
+                method: "PUT",
+                token,
+                jsonBody: syncPayload,
               });
-              return;
+
+              if (syncRes.ok) {
+                if (missingRequestorSettings) {
+                  requestorDefault = bootstrapDefault;
+                }
+                if (missingBusinessSettings) {
+                  businessDefault = bootstrapDefault;
+                  setNeedsBusinessDesignSoftwareBootstrap(false);
+                }
+              } else {
+                const syncBody: any = syncRes.data || {};
+                const syncMessage = String(
+                  syncBody?.message ||
+                    "사업체/의뢰자 기본 소프트웨어 자동 주입에 실패했습니다.",
+                );
+                toast({
+                  title: "설정 동기화 실패",
+                  description: syncMessage,
+                  variant: "destructive",
+                });
+                return;
+              }
             }
           }
         }
@@ -283,7 +295,10 @@ export const NewRequestPage = () => {
       const savePayload: Record<string, string> = {
         requestorDesignSoftware: designSoftware,
       };
-      if (needsBusinessDesignSoftwareBootstrap) {
+      if (
+        needsBusinessDesignSoftwareBootstrap &&
+        canEditBusinessDesignSoftware
+      ) {
         savePayload.designSoftware = designSoftware;
       }
 
@@ -323,6 +338,7 @@ export const NewRequestPage = () => {
       setDesignSoftwareSaving(false);
     }
   }, [
+    canEditBusinessDesignSoftware,
     customDesignSoftware,
     designSoftwareMode,
     needsBusinessDesignSoftwareBootstrap,
