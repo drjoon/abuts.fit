@@ -108,6 +108,8 @@ export const MachineQueueCard = ({
   onRollbackNextUp,
   onRollbackCompleted,
   onApproveFromRollback,
+  materialNeedsReplacement,
+  materialAlertTooltip,
 }: MachineQueueCardProps) => {
   const machiningQueueAll = (Array.isArray(queue) ? queue : []).filter((q) =>
     isMachiningStatus(q),
@@ -525,7 +527,8 @@ export const MachineQueueCard = ({
             <MaterialDiameterChip
               label={materialDiameterLabel || "-"}
               variant="circle"
-              title="소재 설정"
+              tone={materialNeedsReplacement ? "danger" : "default"}
+              title={materialNeedsReplacement ? (materialAlertTooltip || "소재 교체 필요") : "소재 설정"}
               onClick={(e) => {
                 e.stopPropagation();
                 onOpenMaterial?.();

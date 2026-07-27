@@ -901,6 +901,42 @@ export const useMachiningBoard = ({
     const offTick = onCncMachiningTick((data: any) => {
       const mid = String(data?.machineId || "").trim();
       if (!mid) return;
+
+      const phase = String(data?.phase || "")
+        .trim()
+        .toUpperCase();
+      if (phase === "ALARM") {
+        const rid = data?.requestId != null ? String(data.requestId).trim() : "";
+        let alarmText = String(data?.message || "").trim();
+        if (alarmText) {
+          try {
+            const parsed = JSON.parse(alarmText);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              const summary = parsed
+                .slice(0, 3)
+                .map(
+                  (alarm: any) =>
+                    alarm?.displayText ||
+                    alarm?.message ||
+                    `type=${String(alarm?.type ?? "")}, no=${String(alarm?.no ?? "")}`,
+                )
+                .join(" / ");
+              if (summary) alarmText = summary;
+            }
+          } catch {
+            // message가 JSON 문자열이 아닐 수 있음
+          }
+        }
+
+        upsertMachiningAlert({
+          machineId: mid,
+          requestId: rid || null,
+          errorCode: null,
+          message: "ALARM",
+          alarmText: alarmText || "CNC 알람 감지",
+        });
+      }
+
       const sec =
         typeof data?.elapsedSeconds === "number" && data.elapsedSeconds >= 0
           ? Math.floor(data.elapsedSeconds)

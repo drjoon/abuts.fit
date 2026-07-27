@@ -92,6 +92,18 @@ const buildToolSummaryTooltip = (summary: any) => {
   return `교체 임박 ${head}${suffix}`;
 };
 
+const isMaterialExhaustedAlarmText = (value: unknown) => {
+  const text = String(value || "").trim();
+  if (!text) return false;
+  const upper = text.toUpperCase();
+  if (upper.includes("CNC_ALARM_MATERIAL_EXHAUST")) return true;
+  if (/TYPE\s*=\s*15\s*,\s*NO\s*=\s*1051/.test(upper)) return true;
+  return (
+    text.includes("소재") &&
+    (text.includes("교체") || text.includes("소진") || text.includes("부족"))
+  );
+};
+
 export const MachiningQueueBoard = ({
   searchQuery,
 }: {
@@ -530,6 +542,25 @@ export const MachiningQueueBoard = ({
   const unassignedRest = unassignedQueue.slice(1);
   const hasUnassigned = unassignedQueue.length > 0;
 
+  const materialAlertByMachine = useMemo(() => {
+    const map: Record<string, boolean> = {};
+    for (const alert of machiningAlerts || []) {
+      const mid = String((alert as any)?.machineId || "").trim();
+      if (!mid) continue;
+      const code = String((alert as any)?.errorCode || "").trim();
+      const msg = String((alert as any)?.message || "").trim();
+      const text = String((alert as any)?.alarmText || "").trim();
+      if (
+        isMaterialExhaustedAlarmText(code) ||
+        isMaterialExhaustedAlarmText(msg) ||
+        isMaterialExhaustedAlarmText(text)
+      ) {
+        map[mid] = true;
+      }
+    }
+    return map;
+  }, [machiningAlerts]);
+
   const getLotShortCode = useCallback((slot?: QueueItem | null) => {
     return String(slot?.lotNumber?.value || "")
       .trim()
@@ -832,6 +863,8 @@ export const MachiningQueueBoard = ({
               toolHealth={toolHealth}
               tempTooltip={tempTooltip}
               toolTooltip={toolTooltip}
+              materialNeedsReplacement={materialAlertByMachine[m.uid] === true}
+              materialAlertTooltip="소재 교체 필요"
             />
           );
         })}

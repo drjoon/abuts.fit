@@ -120,4 +120,6 @@ export type MachineQueueCardProps = {
   onRollbackNextUp?: (requestId: string, machineId: string) => void;
   onRollbackCompleted?: (requestId: string, machineId: string) => void;
   onApproveFromRollback?: (requestId: string) => void;
+  materialNeedsReplacement?: boolean;
+  materialAlertTooltip?: string;
 };

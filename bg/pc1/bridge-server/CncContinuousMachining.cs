@@ -848,47 +848,77 @@ if (!Config.MockCncMachining)
 {
 if (TryGetMachineAlarms(machineId, out var alarmList, out var alarmErr))
 {
-if (alarmList != null && alarmList.Count > 0)
-{
-var jobId = state.CurrentJob?.id;
-var shouldSend = true;
-lock (StateLock)
-{
-if (!string.IsNullOrEmpty(jobId) && string.Equals(state.LastMachiningFailJobId, jobId, StringComparison.OrdinalIgnoreCase))
-{
-shouldSend = false;
-}
-}
-if (shouldSend)
-{
-lock (StateLock)
-{
-state.LastMachiningFailJobId = jobId;
-}
-_ = Task.Run(() => NotifyMachiningTick(state.CurrentJob, machineId, "ALARM", Newtonsoft.Json.JsonConvert.SerializeObject(alarmList)));
-_ = Task.Run(() => NotifyMachiningFailed(state.CurrentJob, machineId, "alarm", alarmList, "CNC_ALARM_DETECTED"));
-}
-// CNC 알람 코드 참고:
-// - 알람 501 (type=4, no=501): X축 overflow - 제한 범위를 넘는 X축 공구 이동 좌표
-//   공구가 X축 제한 범위를 벗어나는 좌표로 이동하려고 할 때 발생
-//   NC 프로그램의 X축 좌표값 검토 필요
-Console.WriteLine("[CncMachining] machining failed by alarm machine={0} alarms={1}", machineId, Newtonsoft.Json.JsonConvert.SerializeObject(alarmList));
-var failedJob = state.CurrentJob;
-lock (StateLock)
-{
-state.PendingConsumeJobId = failedJob?.id;
-state.ConsumeFailCount = 0;
-state.NextConsumeAttemptUtc = DateTime.MinValue;
-state.IsRunning = false;
-state.AwaitingStart = false;
-state.CurrentJob = null;
-state.SawBusy = false;
-state.MockCompletionDueUtc = DateTime.MinValue;
-state.HadAlarmSinceIdleUtc = DateTime.UtcNow;
-}
-_ = CncJobQueue.TryRemove(machineId, failedJob?.id);
-return;
-}
+				if (alarmList != null && alarmList.Count > 0)
+				{
+					var alarmJson = Newtonsoft.Json.JsonConvert.SerializeObject(alarmList);
+					var materialExhausted = HasMaterialExhaustedAlarm(alarmList);
+					if (materialExhausted)
+					{
+						var completedJob = state.CurrentJob;
+						var completedAt = DateTime.UtcNow;
+						Console.WriteLine("[CncMachining] material exhausted alarm detected; treat as completed machine={0} jobId={1} alarms={2}", machineId, completedJob?.id, alarmJson);
+						_ = Task.Run(() => NotifyMachiningTick(completedJob, machineId, "ALARM", alarmJson));
+						lock (StateLock)
+						{
+							state.PendingConsumeJobId = completedJob?.id;
+							state.ConsumeFailCount = 0;
+							state.NextConsumeAttemptUtc = DateTime.MinValue;
+							state.IsRunning = false;
+							state.AwaitingStart = false;
+							state.SawBusy = false;
+							state.MockCompletionDueUtc = DateTime.MinValue;
+							state.LastCompletedAtUtc = completedAt;
+							state.LastCompletedRequestId = NormalizeRequestId(completedJob?.requestId, completedJob?.fileName, completedJob?.originalFileName);
+							state.LastCompletedFileKey = BuildJobIdentityKey(completedJob?.fileName, completedJob?.originalFileName, completedJob?.bridgePath);
+							state.LastCompletedRequestAtUtc = completedAt;
+							state.CurrentJob = null;
+						}
+						Console.WriteLine("[CncMachining] job completed by material alarm machine={0} jobId={1} completedAt={2:o}",
+							machineId, completedJob?.id, completedAt);
+						_ = Task.Run(() => NotifyMachiningCompleted(completedJob, machineId));
+						_ = CncJobQueue.TryRemove(machineId, completedJob?.id);
+						return;
+					}
+
+					var jobId = state.CurrentJob?.id;
+					var shouldSend = true;
+					lock (StateLock)
+					{
+						if (!string.IsNullOrEmpty(jobId) && string.Equals(state.LastMachiningFailJobId, jobId, StringComparison.OrdinalIgnoreCase))
+						{
+							shouldSend = false;
+						}
+					}
+					if (shouldSend)
+					{
+						lock (StateLock)
+						{
+							state.LastMachiningFailJobId = jobId;
+						}
+						_ = Task.Run(() => NotifyMachiningTick(state.CurrentJob, machineId, "ALARM", alarmJson));
+						_ = Task.Run(() => NotifyMachiningFailed(state.CurrentJob, machineId, "alarm", alarmList, "CNC_ALARM_DETECTED"));
+					}
+					// CNC 알람 코드 참고:
+					// - 알람 501 (type=4, no=501): X축 overflow - 제한 범위를 넘는 X축 공구 이동 좌표
+					//   공구가 X축 제한 범위를 벗어나는 좌표로 이동하려고 할 때 발생
+					//   NC 프로그램의 X축 좌표값 검토 필요
+					Console.WriteLine("[CncMachining] machining failed by alarm machine={0} alarms={1}", machineId, alarmJson);
+					var failedJob = state.CurrentJob;
+					lock (StateLock)
+					{
+						state.PendingConsumeJobId = failedJob?.id;
+						state.ConsumeFailCount = 0;
+						state.NextConsumeAttemptUtc = DateTime.MinValue;
+						state.IsRunning = false;
+						state.AwaitingStart = false;
+						state.CurrentJob = null;
+						state.SawBusy = false;
+						state.MockCompletionDueUtc = DateTime.MinValue;
+						state.HadAlarmSinceIdleUtc = DateTime.UtcNow;
+					}
+					_ = CncJobQueue.TryRemove(machineId, failedJob?.id);
+					return;
+				}
 }
 else
 {
@@ -1623,6 +1653,51 @@ catch (Exception ex)
 Console.WriteLine("[CncMachining] ShouldAutoStartByBackendFlags error machine={0} err={1}", machineId, ex.Message);
 return false;
 }
+}
+private static bool HasMaterialExhaustedAlarm(List<object> alarms)
+{
+    try
+    {
+        if (alarms == null || alarms.Count == 0) return false;
+        foreach (var alarm in alarms)
+        {
+            if (alarm == null) continue;
+            short type = 0;
+            short no = 0;
+            string text = string.Empty;
+            try
+            {
+                var jo = alarm as JObject ?? JObject.FromObject(alarm);
+                type = jo.Value<short?>("type") ?? 0;
+                no = jo.Value<short?>("no") ?? 0;
+                text = string.Concat(
+                    jo.Value<string>("message") ?? string.Empty,
+                    " ",
+                    jo.Value<string>("displayText") ?? string.Empty
+                );
+            }
+            catch
+            {
+                text = alarm.ToString() ?? string.Empty;
+            }
+
+            if (type == 15 && no == 1051) return true;
+            if (!string.IsNullOrWhiteSpace(text))
+            {
+                var upper = text.ToUpperInvariant();
+                if (upper.Contains("TYPE=15") && upper.Contains("NO=1051")) return true;
+                if (text.IndexOf("소재", StringComparison.OrdinalIgnoreCase) >= 0 &&
+                    (text.IndexOf("교체", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                     text.IndexOf("소진", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                     text.IndexOf("부족", StringComparison.OrdinalIgnoreCase) >= 0))
+                {
+                    return true;
+                }
+            }
+        }
+    }
+    catch { }
+    return false;
 }
 private static bool TryGetMachineAlarms(string machineId, out List<object> alarms, out string error)
 {
