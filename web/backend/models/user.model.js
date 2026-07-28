@@ -27,14 +27,10 @@ const userSchema = new mongoose.Schema(
     },
     role: {
       type: String,
-      enum: ["requestor", "manufacturer", "admin", "salesman", "devops"],
+      enum: ["requestor", "manufacturer", "admin", "salesman", "devops", "practice"],
       default: "requestor",
     },
-    isPracticeAccount: {
-      type: Boolean,
-      default: false,
-      index: true,
-    },
+
     practiceProfile: {
       clinicName: { type: String, default: "", trim: true },
       staffName: { type: String, default: "", trim: true },

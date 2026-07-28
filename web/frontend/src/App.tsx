@@ -19,7 +19,7 @@ import { useSocket } from "@/shared/hooks/useSocket";
 
 // related files:
 // - web/frontend/src/pages/practice/PracticeDropzonePage.tsx
-// - web/frontend/src/pages/practice/PracticeDashboardPage.tsx
+// - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
 // - web/frontend/src/features/dashboard/DashboardHome.tsx
 
 const Index = lazy(() => import("./pages/public/Index"));
@@ -164,9 +164,9 @@ const PracticeDropzonePage = lazy(() =>
     default: m.PracticeDropzonePage,
   })),
 );
-const PracticeDashboardPage = lazy(() =>
-  import("./pages/practice/PracticeDashboardPage").then((m) => ({
-    default: m.PracticeDashboardPage,
+const PracticeFileTransferPage = lazy(() =>
+  import("./pages/practice/PracticeFileTransferPage").then((m) => ({
+    default: m.PracticeFileTransferPage,
   })),
 );
 const PracticeSettingsPage = lazy(() =>
@@ -222,7 +222,7 @@ const PracticeAccountProtectedRoute = ({
   if (!user) {
     return <Navigate to="/dashboard" replace />;
   }
-  if (user.isPracticeAccount || user.role === "practice") {
+  if (user.role === "practice") {
     return <>{children}</>;
   }
 
@@ -256,7 +256,7 @@ const PaymentsRoute = () => {
 const InquiriesRoute = () => {
   const { user } = useAuthStore();
   if (!user) return <Navigate to="/dashboard" replace />;
-  if (user.isPracticeAccount || user.role === "practice") {
+  if (user.role === "practice") {
     return <Navigate to="/practice/inquiries" replace />;
   }
   if (user.role === "admin") return <AdminInquiriesPage />;
@@ -266,7 +266,7 @@ const InquiriesRoute = () => {
 const SettingsRoute = () => {
   const { user } = useAuthStore();
   if (!user) return <Navigate to="/dashboard" replace />;
-  if (user.isPracticeAccount || user.role === "practice") {
+  if (user.role === "practice") {
     return <Navigate to="/practice/settings" replace />;
   }
   return <SettingsPage />;
@@ -294,8 +294,8 @@ const PracticeDashboardRoute = () => {
   const { user } = useAuthStore();
 
   if (!user) return <Navigate to="/dashboard" replace />;
-  if (user.isPracticeAccount || user.role === "practice") {
-    return <PracticeDashboardPage />;
+  if (user.role === "practice") {
+    return <PracticeFileTransferPage />;
   }
 
   return <Navigate to="/dashboard" replace />;
@@ -305,7 +305,7 @@ const PracticeInquiriesRoute = () => {
   const { user } = useAuthStore();
 
   if (!user) return <Navigate to="/dashboard" replace />;
-  if (user.isPracticeAccount || user.role === "practice") {
+  if (user.role === "practice") {
     return <InquiriesPage />;
   }
 
@@ -316,7 +316,7 @@ const PracticeSettingsRoute = () => {
   const { user } = useAuthStore();
 
   if (!user) return <Navigate to="/dashboard" replace />;
-  if (user.isPracticeAccount || user.role === "practice") {
+  if (user.role === "practice") {
     return <PracticeSettingsPage />;
   }
 

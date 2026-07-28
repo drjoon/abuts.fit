@@ -110,7 +110,9 @@
   - 모달 추가 입력 없이 치과정보 1행(치과명/접속비밀번호/담당직원명/전화) + 주소 입력으로 진행합니다.
   - 접속 비밀번호 정책은 서버 SSOT를 따릅니다: 10자 이상 + 특수문자 포함 + `$` 금지.
   - 가입 성공 시 현재 화면의 STL/의뢰 입력을 이어서 **Draft 생성 → temp 업로드 → from-draft 제출**까지 같은 페이지에서 처리합니다.
-- 백엔드 `register`의 role 허용치와 일치하도록 practice 드롭존 가입 role은 현재 `requestor`로 등록합니다.
+- practice 드롭존 가입 계정은 `User.role = "practice"`로 등록합니다.
+  - practice 인증 조회(`login/find/change`)는 `role = "practice"`만 조회합니다.
+  - 기존 샘플 practice(`role=requestor`, `email=practice.*`) 계정은 삭제 대상으로 간주합니다.
   - `signupChannel=practice_dropzone` 가입은 이메일 인증 없이 가입 가능하도록 처리합니다.
 - 가입 성공 직후에는 `PUT /api/businesses/me`로 치과 정보를 사업자 정보에 반영합니다.
 - 치과 로그인은 일반 이메일 로그인과 별도로 `POST /api/auth/practice/login`을 사용합니다.
@@ -721,12 +723,13 @@
 
 **User 역할 구조:**
 
-- `role`: 사용자의 주요 역할 (requestor | manufacturer | admin | salesman | devops)
+- `role`: 사용자의 주요 역할 (requestor | manufacturer | admin | salesman | devops | practice)
   - `requestor`: 의뢰 생성/조회
   - `manufacturer`: 제조 공정 처리 (CA 제조사, 즉 CAM/가공을 담당하는 회사)
   - `admin`: 운영/지원/관리
   - `salesman`: 영업/소개/사업자 연결 관리
   - `devops`: 플랫폼 개발/운영(메이븐 주식회사, 단독 사업자 기본값)
+  - `practice`: 치과병의원 전용 파일전송/문의/설정 계정
 
 - `subRole`: 사업자 내 역할 (owner | staff | null)
   - `owner`: 사업자 대표 (사업자 등록 완료 시 자동 설정)
@@ -739,7 +742,7 @@
 - 회원가입 직후에는 `subRole = null` (사업자 미가입)
 - 사업자 등록 완료 시 `subRole = "owner"` 자동 설정
 - 직원으로 승인될 때 `subRole = "staff"` 자동 설정
-- 모든 role (requestor, manufacturer, admin, salesman, devops)에서 `subRole`을 동일하게 사용합니다
+- 모든 role (requestor, manufacturer, admin, salesman, devops, practice)에서 `subRole`을 동일하게 사용합니다
 
 **레거시 필드 제거 (2026-03-31):**
 
@@ -822,7 +825,7 @@
 
 - `BusinessAnchor`는 **모든 사업자 데이터의 단일 SSOT**입니다 (법적 식별, 정산, 소개, 멤버십 통합).
 - **`Business` 컬렉션은 완전히 제거되었습니다.** 모든 사업자 관련 데이터는 `BusinessAnchor`에서 관리합니다.
-- `BusinessAnchor.businessType`은 `requestor`, `salesman`, `manufacturer`, `devops`, `admin`을 지원합니다.
+- `BusinessAnchor.businessType`은 `requestor`, `salesman`, `manufacturer`, `devops`, `admin`, `practice`를 지원합니다.
 - `BusinessAnchor`의 natural key는 **정규화된 사업자등록번호(`businessNumberNormalized`)** 이고, DB PK는 Mongo `ObjectId`를 유지합니다.
 
 #### BusinessAnchor 필드 구조
@@ -846,6 +849,17 @@
 - 크레딧 조회/집계/러닝밸런스 계산은 **항상 `businessAnchorId` 기준**으로 수행합니다.
 - 백엔드 크레딧 관련 컨트롤러의 쿼리/집계는 `businessAnchorId`만 사용합니다.
 - 프론트 관리자 크레딧 페이지와 관련 모달은 조직 선택/표시/실시간 동기화 시 **`businessAnchorId`만** 사용합니다.
+
+#### 2.3.2.1 businessType `practice` 추가 정책 (2026-07-29)
+
+- `businessType` 허용값에 `practice`를 추가합니다.
+- 프론트/백엔드 공통 businessType 해석 유틸의 허용 목록(`BUSINESS_ALLOWED_ROLES`)에도 `practice`를 포함해야 합니다.
+- 스키마 enum SSOT 동기화 대상:
+  - `web/backend/models/businessAnchor.model.js`
+  - `web/backend/models/businessRegistrationInquiry.model.js`
+- 비즈니스 타입 해석 유틸 동기화 대상:
+  - `web/backend/controllers/businesses/businessRole.util.js`
+  - `web/frontend/src/shared/utils/resolveBusinessType.ts`
 
 #### 역할별 잔액 표시 규칙
 

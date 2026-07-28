@@ -1,0 +1,440 @@
+import { useEffect, useMemo, useRef, useState } from "react";
+import { apiFetch } from "@/shared/api/apiClient";
+import { useToast } from "@/shared/hooks/use-toast";
+import {
+  saveFile as saveFileToIndexedDb,
+  deleteFile as deleteFileFromIndexedDb,
+} from "@/shared/storage/fileIndexedDB";
+
+export const PRACTICE_ACCEPTED_HINT = "STL만 업로드 가능";
+
+export type SearchBusinessResult = {
+  _id: string;
+  name: string;
+  representativeName?: string;
+  businessNumber?: string;
+  address?: string;
+  businessType?: string;
+};
+
+type ClassifiedUploadBatch = {
+  stlFiles: File[];
+  rejectedFiles: { name: string; reason: string }[];
+  ignoredFiles: { name: string; reason: string }[];
+};
+
+type PracticeFileCacheMeta = {
+  key: string;
+  size: number;
+  addedAt: number;
+};
+
+type Options = {
+  fileCacheMetaKey?: string;
+  fileCacheMaxTotalBytes?: number;
+};
+
+const DEFAULT_FILE_CACHE_META_KEY = "practice_dropzone_file_cache_meta_v1";
+const DEFAULT_FILE_CACHE_MAX_TOTAL_BYTES = 300 * 1024 * 1024;
+const PRACTICE_RECENT_LABS_STORAGE_KEY = "practice_recent_labs_v2";
+const PRACTICE_RECENT_LABS_MAX = 8;
+
+const toPracticeFileKey = (file: File) =>
+  `${file.name}:${file.size}:${file.lastModified}`;
+
+const readPracticeFileCacheMeta = (metaKey: string): PracticeFileCacheMeta[] => {
+  try {
+    const raw = localStorage.getItem(metaKey);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .map((item) => ({
+        key: String(item?.key || ""),
+        size: Number(item?.size || 0),
+        addedAt: Number(item?.addedAt || 0),
+      }))
+      .filter((row) => row.key && Number.isFinite(row.size) && Number.isFinite(row.addedAt));
+  } catch {
+    return [];
+  }
+};
+
+const writePracticeFileCacheMeta = (metaKey: string, rows: PracticeFileCacheMeta[]) => {
+  try {
+    localStorage.setItem(metaKey, JSON.stringify(rows));
+  } catch {
+    // ignore
+  }
+};
+
+const readRecentLabs = (): SearchBusinessResult[] => {
+  try {
+    const raw = localStorage.getItem(PRACTICE_RECENT_LABS_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .map((item) => {
+        if (!item || typeof item !== "object") return null;
+        const id = String((item as { _id?: unknown })._id || "").trim();
+        const name = String((item as { name?: unknown }).name || "").trim();
+        if (!name) return null;
+        const businessType = String(
+          (item as { businessType?: unknown }).businessType || "requestor",
+        ).trim();
+        if (businessType && businessType !== "requestor") return null;
+
+        return {
+          _id: id || `recent:${name}`,
+          name,
+          representativeName: String(
+            (item as { representativeName?: unknown }).representativeName || "",
+          ).trim() || undefined,
+          businessNumber: String(
+            (item as { businessNumber?: unknown }).businessNumber || "",
+          ).trim() || undefined,
+          address: String((item as { address?: unknown }).address || "").trim() || undefined,
+          businessType: "requestor",
+        } as SearchBusinessResult;
+      })
+      .filter((row): row is SearchBusinessResult => Boolean(row));
+  } catch {
+    return [];
+  }
+};
+
+const writeRecentLabs = (rows: SearchBusinessResult[]) => {
+  try {
+    localStorage.setItem(PRACTICE_RECENT_LABS_STORAGE_KEY, JSON.stringify(rows));
+  } catch {
+    // ignore
+  }
+};
+
+export const getBusinessLabel = (b: {
+  name: string;
+  businessNumber?: string;
+}) => {
+  const name = String(b?.name || "").trim();
+  const bn = String(b?.businessNumber || "").trim();
+  return bn ? `${name} (${bn})` : name;
+};
+
+export const usePracticeTransferStep1 = (options?: Options) => {
+  const { toast } = useToast();
+  const fileCacheMetaKey =
+    options?.fileCacheMetaKey?.trim() || DEFAULT_FILE_CACHE_META_KEY;
+  const fileCacheMaxTotalBytes =
+    options?.fileCacheMaxTotalBytes ?? DEFAULT_FILE_CACHE_MAX_TOTAL_BYTES;
+
+  const [files, setFiles] = useState<File[]>([]);
+  const [selectedLab, setSelectedLab] = useState<SearchBusinessResult | null>(null);
+  const [requestMemo, setRequestMemo] = useState("");
+  const [labSearch, setLabSearch] = useState("");
+  const [labSearchResults, setLabSearchResults] = useState<SearchBusinessResult[]>([]);
+  const [labOpen, setLabOpen] = useState(false);
+  const [labSearching, setLabSearching] = useState(false);
+  const [recentLabs, setRecentLabs] = useState<SearchBusinessResult[]>([]);
+  const [recentLabsInitialized, setRecentLabsInitialized] = useState(false);
+  const didBootstrapRecentLabs = useRef(false);
+
+  const totalSizeMb = useMemo(() => {
+    const bytes = files.reduce((sum, file) => sum + file.size, 0);
+    return (bytes / (1024 * 1024)).toFixed(1);
+  }, [files]);
+
+  const dedupeFiles = (input: File[]) => {
+    const map = new Map<string, File>();
+    for (const file of input) {
+      const key = `${file.name}:${file.size}:${file.lastModified}`;
+      if (!map.has(key)) map.set(key, file);
+    }
+    return [...map.values()];
+  };
+
+  const getFileExtLower = (name: string) => {
+    const lower = String(name || "").trim().toLowerCase();
+    const dot = lower.lastIndexOf(".");
+    if (dot < 0) return "";
+    return lower.slice(dot);
+  };
+
+  const classifyIncomingFiles = (selectedFiles: File[]): ClassifiedUploadBatch => {
+    const stlFiles: File[] = [];
+    const rejectedFiles: { name: string; reason: string }[] = [];
+    const ignoredFiles: { name: string; reason: string }[] = [];
+
+    selectedFiles.forEach((file) => {
+      const ext = getFileExtLower(file.name);
+
+      if (ext === ".pts") {
+        ignoredFiles.push({
+          name: file.name,
+          reason: "PTS 파일은 업로드 대상에서 제외됩니다.",
+        });
+        return;
+      }
+
+      if (ext === ".stl") {
+        stlFiles.push(file);
+        return;
+      }
+
+      rejectedFiles.push({
+        name: file.name,
+        reason: "STL 파일만 업로드할 수 있어요.",
+      });
+    });
+
+    return { stlFiles, rejectedFiles, ignoredFiles };
+  };
+
+  const persistFilesToIndexedDb = async (targetFiles: File[]) => {
+    const unique = dedupeFiles(targetFiles);
+
+    for (const file of unique) {
+      const key = toPracticeFileKey(file);
+      await saveFileToIndexedDb(key, file);
+    }
+
+    const currentMeta = readPracticeFileCacheMeta(fileCacheMetaKey);
+    const byKey = new Map(currentMeta.map((row) => [row.key, row]));
+    const now = Date.now();
+
+    for (const file of unique) {
+      const key = toPracticeFileKey(file);
+      byKey.set(key, {
+        key,
+        size: file.size,
+        addedAt: now,
+      });
+    }
+
+    const merged = [...byKey.values()];
+    merged.sort((a, b) => a.addedAt - b.addedAt);
+
+    let total = merged.reduce((sum, row) => sum + row.size, 0);
+    const removedKeys: string[] = [];
+
+    while (total > fileCacheMaxTotalBytes && merged.length > 0) {
+      const oldest = merged.shift();
+      if (!oldest) break;
+      total -= oldest.size;
+      removedKeys.push(oldest.key);
+    }
+
+    for (const key of removedKeys) {
+      await deleteFileFromIndexedDb(key).catch(() => {
+        // ignore
+      });
+    }
+
+    writePracticeFileCacheMeta(fileCacheMetaKey, merged);
+
+    if (removedKeys.length > 0) {
+      toast({
+        title: "파일 캐시 정리됨",
+        description: "저장 용량 제한으로 오래된 파일 캐시가 자동 삭제되었습니다.",
+        duration: 3500,
+      });
+    }
+
+    return removedKeys;
+  };
+
+  const applyClassifiedBatch = (batch: ClassifiedUploadBatch) => {
+    if (batch.stlFiles.length > 0) {
+      setFiles((prev) => dedupeFiles([...prev, ...batch.stlFiles]));
+    }
+
+    if (batch.rejectedFiles.length > 0) {
+      toast({
+        title: "일부 파일이 제외되었습니다",
+        description: batch.rejectedFiles[0].reason,
+        variant: "destructive",
+        duration: 3200,
+      });
+    } else if (batch.ignoredFiles.length > 0) {
+      toast({
+        title: "일부 파일은 자동 제외되었어요",
+        description: batch.ignoredFiles[0].reason,
+        duration: 2500,
+      });
+    }
+
+    if (batch.stlFiles.length === 0) {
+      toast({
+        title: "업로드할 파일이 없습니다",
+        description: "선택된 파일 중 업로드 가능한 STL이 없었습니다.",
+        variant: "destructive",
+        duration: 2800,
+      });
+    }
+  };
+
+  const handleIncomingFiles = (selectedFiles: File[]) => {
+    const normalized = dedupeFiles(selectedFiles || []);
+    if (!normalized.length) return;
+
+    const batch = classifyIncomingFiles(normalized);
+    applyClassifiedBatch(batch);
+
+    if (batch.stlFiles.length > 0) {
+      void persistFilesToIndexedDb(batch.stlFiles).then((removedKeys) => {
+        if (!Array.isArray(removedKeys) || removedKeys.length === 0) return;
+        setFiles((prev) =>
+          prev.filter((file) => !removedKeys.includes(toPracticeFileKey(file))),
+        );
+      });
+    }
+  };
+
+  const removeFile = (idx: number) => {
+    setFiles((prev) => {
+      const target = prev[idx] || null;
+      const next = prev.filter((_, i) => i !== idx);
+      if (target) {
+        const key = toPracticeFileKey(target);
+        void deleteFileFromIndexedDb(key);
+        const meta = readPracticeFileCacheMeta(fileCacheMetaKey).filter(
+          (row) => row.key !== key,
+        );
+        writePracticeFileCacheMeta(fileCacheMetaKey, meta);
+      }
+      return next;
+    });
+  };
+
+  const clearAllFiles = async () => {
+    const keys = files.map((file) => toPracticeFileKey(file));
+    if (keys.length === 0) return;
+
+    await Promise.all(
+      keys.map((key) =>
+        deleteFileFromIndexedDb(key).catch(() => {
+          // ignore
+        }),
+      ),
+    );
+
+    const remainingMeta = readPracticeFileCacheMeta(fileCacheMetaKey).filter(
+      (row) => !keys.includes(row.key),
+    );
+    writePracticeFileCacheMeta(fileCacheMetaKey, remainingMeta);
+    setFiles([]);
+  };
+
+  const rememberLab = (lab: SearchBusinessResult | null) => {
+    if (!lab || !String(lab.name || "").trim()) return;
+
+    const normalizedLab: SearchBusinessResult = {
+      _id: String(lab._id || `recent:${lab.name}`).trim(),
+      name: String(lab.name || "").trim(),
+      representativeName: String(lab.representativeName || "").trim() || undefined,
+      businessNumber: String(lab.businessNumber || "").trim() || undefined,
+      address: String(lab.address || "").trim() || undefined,
+      businessType: "requestor",
+    };
+
+    setRecentLabs((prev) => {
+      const deduped = prev.filter((row) => {
+        const sameId = row._id && normalizedLab._id && row._id === normalizedLab._id;
+        const sameNameAndBn =
+          row.name === normalizedLab.name &&
+          String(row.businessNumber || "") === String(normalizedLab.businessNumber || "");
+        return !(sameId || sameNameAndBn);
+      });
+      const next = [normalizedLab, ...deduped].slice(0, PRACTICE_RECENT_LABS_MAX);
+      writeRecentLabs(next);
+      return next;
+    });
+  };
+
+  useEffect(() => {
+    if (didBootstrapRecentLabs.current) return;
+    didBootstrapRecentLabs.current = true;
+
+    const loaded = readRecentLabs();
+    setRecentLabs(loaded);
+    setSelectedLab((prev) => prev ?? loaded[0] ?? null);
+    setRecentLabsInitialized(true);
+  }, [setSelectedLab]);
+
+  useEffect(() => {
+    const q = labSearch.trim();
+    if (!q) {
+      setLabSearchResults([]);
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      setLabSearching(true);
+      try {
+        const res = await apiFetch<unknown>({
+          path: `/api/businesses/search-public?q=${encodeURIComponent(q)}&businessType=${encodeURIComponent("requestor")}`,
+          method: "GET",
+        });
+        if (!res.ok) {
+          setLabSearchResults([]);
+          return;
+        }
+        const body = res.data;
+        const data =
+          body && typeof body === "object" && "data" in (body as Record<string, unknown>)
+            ? (body as { data?: unknown }).data
+            : body;
+        const next = Array.isArray(data)
+          ? data
+              .filter(
+                (item): item is SearchBusinessResult =>
+                  Boolean(
+                    item &&
+                      typeof item === "object" &&
+                      typeof (item as { _id?: unknown })._id === "string" &&
+                      typeof (item as { name?: unknown }).name === "string",
+                  ),
+              )
+              .filter((item) => {
+                const businessType = String(item.businessType || "").trim();
+                if (businessType !== "requestor") return false;
+
+                const bn = String(item.businessNumber || "").trim().toLowerCase();
+                if (bn.startsWith("practice-")) return false;
+
+                return true;
+              })
+          : [];
+        setLabSearchResults(next);
+      } catch {
+        setLabSearchResults([]);
+      } finally {
+        setLabSearching(false);
+      }
+    }, 250);
+
+    return () => clearTimeout(timer);
+  }, [labSearch]);
+
+  return {
+    files,
+    setFiles,
+    totalSizeMb,
+    selectedLab,
+    setSelectedLab,
+    requestMemo,
+    setRequestMemo,
+    labSearch,
+    setLabSearch,
+    labSearchResults,
+    labOpen,
+    setLabOpen,
+    labSearching,
+    recentLabs,
+    recentLabsInitialized,
+    rememberLab,
+    handleIncomingFiles,
+    removeFile,
+    clearAllFiles,
+  };
+};

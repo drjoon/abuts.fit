@@ -11,7 +11,7 @@ import { useToast } from "@/shared/hooks/use-toast";
 // related files:
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
 // - web/frontend/src/pages/manufacturer/dashboard/ManufacturerDashboardPage.tsx
-// - web/frontend/src/pages/practice/PracticeDashboardPage.tsx
+// - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
 // - web/frontend/src/pages/practice/PracticeDropzonePage.tsx
 import { ToastAction } from "@/components/ui/toast";
 import { Button } from "@/components/ui/button";
@@ -88,7 +88,7 @@ const sidebarItems = {
     { icon: Settings, label: "설정", href: "/dashboard/settings" },
   ],
   practice: [
-    { icon: LayoutDashboard, label: "대시보드", href: "/practice/dashboard" },
+    { icon: LayoutDashboard, label: "파일전송", href: "/practice/dashboard" },
     { icon: MessageSquare, label: "문의", href: "/practice/inquiries" },
     { icon: Settings, label: "설정", href: "/practice/settings" },
   ],
@@ -258,7 +258,7 @@ export const DashboardLayout = () => {
   );
 
   const isWizardRoute = location.pathname.startsWith("/dashboard/wizard");
-  const isPracticeUser = Boolean(user?.isPracticeAccount || user?.role === "practice");
+  const isPracticeUser = Boolean(user?.role === "practice");
   const onboardingCompleted = Boolean(
     user?.onboardingWizardCompleted || user?.businessVerified,
   );

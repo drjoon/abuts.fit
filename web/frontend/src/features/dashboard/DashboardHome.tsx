@@ -3,11 +3,11 @@ import { RequestorDashboardPage } from "@/pages/requestor/dashboard/RequestorDas
 import { AdminDashboardPage } from "@/pages/admin/dashboard/AdminDashboardPage";
 import { SalesmanDashboardPage } from "@/pages/salesman/SalesmanDashboardPage";
 import { DevopsDashboardPage } from "@/pages/devops/DevopsDashboardPage";
-import { PracticeDashboardPage } from "@/pages/practice/PracticeDashboardPage";
+import { PracticeFileTransferPage } from "@/pages/practice/PracticeFileTransferPage";
 import { Navigate } from "react-router-dom";
 
 // related files:
-// - web/frontend/src/pages/practice/PracticeDashboardPage.tsx
+// - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 
 export const DashboardHome = () => {
@@ -15,8 +15,8 @@ export const DashboardHome = () => {
 
   if (!user) return null;
 
-  if (user.isPracticeAccount || user.role === "practice") {
-    return <PracticeDashboardPage />;
+  if (user.role === "practice") {
+    return <PracticeFileTransferPage />;
   }
 
   if (user.role === "requestor") {

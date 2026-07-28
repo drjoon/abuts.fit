@@ -14,7 +14,7 @@ const businessRegistrationInquirySchema = new mongoose.Schema(
     },
     businessType: {
       type: String,
-      enum: ["requestor", "salesman", "manufacturer", "devops", "admin"],
+      enum: ["requestor", "salesman", "manufacturer", "devops", "admin", "practice"],
       default: null,
     },
     userSnapshot: {

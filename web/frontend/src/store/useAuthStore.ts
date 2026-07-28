@@ -27,7 +27,6 @@ export interface User {
   businessAnchorId?: string | null;
   businessVerified?: boolean;
   onboardingWizardCompleted?: boolean;
-  isPracticeAccount?: boolean;
   practiceProfile?: {
     clinicName?: string;
     staffName?: string;
@@ -68,7 +67,6 @@ const normalizeApiUser = (u: unknown): User | null => {
     businessAnchorId: row.businessAnchorId ? String(row.businessAnchorId) : null,
     businessVerified: Boolean(row.businessVerified),
     onboardingWizardCompleted: Boolean(row.onboardingWizardCompleted),
-    isPracticeAccount: Boolean(row.isPracticeAccount),
     practiceProfile:
       row.practiceProfile && typeof row.practiceProfile === "object"
         ? {
@@ -310,7 +308,6 @@ export const useAuthStore = create<AuthState>((set, get) => {
             : null,
           businessVerified: Boolean(u.businessVerified),
           onboardingWizardCompleted: Boolean(u.onboardingWizardCompleted),
-          isPracticeAccount: Boolean(u.isPracticeAccount),
           practiceProfile:
             u.practiceProfile &&
             typeof u.practiceProfile === "object" &&

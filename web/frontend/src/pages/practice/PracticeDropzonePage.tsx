@@ -60,6 +60,7 @@ import {
   CommandInput,
   CommandItem,
   CommandList,
+  CommandSeparator,
 } from "@/components/ui/command";
 import { cn } from "@/shared/ui/cn";
 import {
@@ -68,12 +69,15 @@ import {
 } from "@/shared/components/business/settings/business/validations";
 import { COMPANY_PHONE } from "@/shared/lib/contactInfo";
 import {
-  saveFile as saveFileToIndexedDb,
   getFile as getFileFromIndexedDb,
   deleteFile as deleteFileFromIndexedDb,
-} from "@/pages/requestor/new_request/utils/fileIndexedDB";
-
-const ACCEPTED_HINT = "STL만 업로드 가능";
+} from "@/shared/storage/fileIndexedDB";
+import {
+  PRACTICE_ACCEPTED_HINT,
+  getBusinessLabel,
+  type SearchBusinessResult,
+  usePracticeTransferStep1,
+} from "@/pages/practice/hooks/usePracticeTransferStep1";
 const PRACTICE_DRAFT_STORAGE_KEY = "practice_dropzone_draft_v2";
 const PRACTICE_FILE_CACHE_META_KEY = "practice_dropzone_file_cache_meta_v1";
 const PRACTICE_SESSION_META_KEY = "practice_dropzone_session_meta_v1";
@@ -83,19 +87,7 @@ const PRACTICE_FILE_CACHE_MAX_TOTAL_BYTES = 300 * 1024 * 1024; // 300MB
 
 const WIZARD_STEPS = ["파일드롭 & 의뢰정보", "치과정보"] as const;
 
-type SearchBusinessResult = {
-  _id: string;
-  name: string;
-  representativeName?: string;
-  businessNumber?: string;
-  address?: string;
-};
 
-type ClassifiedUploadBatch = {
-  stlFiles: File[];
-  rejectedFiles: { name: string; reason: string }[];
-  ignoredFiles: { name: string; reason: string }[];
-};
 
 type PracticeDropzoneDraft = {
   step: 0 | 1;
@@ -161,14 +153,7 @@ const asRegisterPayload = (value: unknown): RegisterResponsePayload => {
   return value as RegisterResponsePayload;
 };
 
-const getBusinessLabel = (b: {
-  name: string;
-  businessNumber?: string;
-}) => {
-  const name = String(b?.name || "").trim();
-  const bn = String(b?.businessNumber || "").trim();
-  return bn ? `${name} (${bn})` : name;
-};
+
 
 const HANGUL_BASE = 0xac00;
 const HANGUL_END = 0xd7a3;
@@ -367,14 +352,29 @@ export const PracticeDropzonePage = () => {
   const [step, setStep] = useState<0 | 1>(0);
   const [draftHydrated, setDraftHydrated] = useState(false);
 
-  const [files, setFiles] = useState<File[]>([]);
-
-  const [selectedLab, setSelectedLab] = useState<SearchBusinessResult | null>(null);
-  const [requestMemo, setRequestMemo] = useState("");
-  const [labSearch, setLabSearch] = useState("");
-  const [labSearchResults, setLabSearchResults] = useState<SearchBusinessResult[]>([]);
-  const [labOpen, setLabOpen] = useState(false);
-  const [labSearching, setLabSearching] = useState(false);
+  const {
+    files,
+    setFiles,
+    totalSizeMb,
+    selectedLab,
+    setSelectedLab,
+    requestMemo,
+    setRequestMemo,
+    labSearch,
+    setLabSearch,
+    labSearchResults,
+    labOpen,
+    setLabOpen,
+    labSearching,
+    recentLabs,
+    recentLabsInitialized,
+    rememberLab,
+    handleIncomingFiles,
+    removeFile,
+  } = usePracticeTransferStep1({
+    fileCacheMetaKey: PRACTICE_FILE_CACHE_META_KEY,
+    fileCacheMaxTotalBytes: PRACTICE_FILE_CACHE_MAX_TOTAL_BYTES,
+  });
 
   const [practiceName, setPracticeName] = useState("");
   const [accessPassword, setAccessPassword] = useState("");
@@ -397,11 +397,6 @@ export const PracticeDropzonePage = () => {
   const [recoverNewPassword, setRecoverNewPassword] = useState("");
   const [authSubmitting, setAuthSubmitting] = useState(false);
   const [showGuestChat, setShowGuestChat] = useState(false);
-
-  const totalSizeMb = useMemo(() => {
-    const bytes = files.reduce((sum, file) => sum + file.size, 0);
-    return (bytes / (1024 * 1024)).toFixed(1);
-  }, [files]);
 
   const isPhoneValid = isValidPhoneNumber(phone);
 
@@ -446,210 +441,7 @@ export const PracticeDropzonePage = () => {
           ? canSubmitSignup
           : false;
 
-  const persistFilesToIndexedDb = async (targetFiles: File[]) => {
-    const unique = dedupeFiles(targetFiles);
 
-    for (const file of unique) {
-      const key = toPracticeFileKey(file);
-      await saveFileToIndexedDb(key, file);
-    }
-
-    const currentMeta = readPracticeFileCacheMeta();
-    const byKey = new Map(currentMeta.map((row) => [row.key, row]));
-    const now = Date.now();
-
-    for (const file of unique) {
-      const key = toPracticeFileKey(file);
-      byKey.set(key, {
-        key,
-        size: file.size,
-        addedAt: now,
-      });
-    }
-
-    const merged = [...byKey.values()];
-    merged.sort((a, b) => a.addedAt - b.addedAt);
-
-    let total = merged.reduce((sum, row) => sum + row.size, 0);
-    const removedKeys: string[] = [];
-
-    while (total > PRACTICE_FILE_CACHE_MAX_TOTAL_BYTES && merged.length > 0) {
-      const oldest = merged.shift();
-      if (!oldest) break;
-      total -= oldest.size;
-      removedKeys.push(oldest.key);
-    }
-
-    for (const key of removedKeys) {
-      await deleteFileFromIndexedDb(key).catch(() => {
-        // ignore
-      });
-    }
-
-    writePracticeFileCacheMeta(merged);
-
-    if (removedKeys.length > 0) {
-      toast({
-        title: "파일 캐시 정리됨",
-        description: "저장 용량 제한으로 오래된 파일 캐시가 자동 삭제되었습니다.",
-        duration: 3500,
-      });
-    }
-
-    return removedKeys;
-  };
-
-  const dedupeFiles = (input: File[]) => {
-    const map = new Map<string, File>();
-    for (const file of input) {
-      const key = `${file.name}:${file.size}:${file.lastModified}`;
-      if (!map.has(key)) map.set(key, file);
-    }
-    return [...map.values()];
-  };
-
-  const getFileExtLower = (name: string) => {
-    const lower = String(name || "").trim().toLowerCase();
-    const dot = lower.lastIndexOf(".");
-    if (dot < 0) return "";
-    return lower.slice(dot);
-  };
-
-  const classifyIncomingFiles = (selectedFiles: File[]): ClassifiedUploadBatch => {
-    const stlFiles: File[] = [];
-    const rejectedFiles: { name: string; reason: string }[] = [];
-    const ignoredFiles: { name: string; reason: string }[] = [];
-
-    selectedFiles.forEach((file) => {
-      const ext = getFileExtLower(file.name);
-
-      if (ext === ".pts") {
-        ignoredFiles.push({
-          name: file.name,
-          reason: "PTS 파일은 업로드 대상에서 제외됩니다.",
-        });
-        return;
-      }
-
-      if (ext === ".stl") {
-        stlFiles.push(file);
-        return;
-      }
-
-      rejectedFiles.push({
-        name: file.name,
-        reason: "STL 파일만 업로드할 수 있어요.",
-      });
-    });
-
-    return { stlFiles, rejectedFiles, ignoredFiles };
-  };
-
-  const applyClassifiedBatch = (batch: ClassifiedUploadBatch) => {
-    if (batch.stlFiles.length > 0) {
-      setFiles((prev) => dedupeFiles([...prev, ...batch.stlFiles]));
-    }
-
-    if (batch.rejectedFiles.length > 0) {
-      toast({
-        title: "일부 파일이 제외되었습니다",
-        description: batch.rejectedFiles[0].reason,
-        variant: "destructive",
-        duration: 3200,
-      });
-    } else if (batch.ignoredFiles.length > 0) {
-      toast({
-        title: "일부 파일은 자동 제외되었어요",
-        description: batch.ignoredFiles[0].reason,
-        duration: 2500,
-      });
-    }
-
-    if (batch.stlFiles.length === 0) {
-      toast({
-        title: "업로드할 파일이 없습니다",
-        description: "선택된 파일 중 업로드 가능한 STL이 없었습니다.",
-        variant: "destructive",
-        duration: 2800,
-      });
-    }
-  };
-
-  const handleIncomingFiles = (selectedFiles: File[]) => {
-    const normalized = dedupeFiles(selectedFiles || []);
-    if (!normalized.length) return;
-
-    const batch = classifyIncomingFiles(normalized);
-    applyClassifiedBatch(batch);
-
-    if (batch.stlFiles.length > 0) {
-      void persistFilesToIndexedDb(batch.stlFiles).then((removedKeys) => {
-        if (!Array.isArray(removedKeys) || removedKeys.length === 0) return;
-        setFiles((prev) =>
-          prev.filter((file) => !removedKeys.includes(toPracticeFileKey(file))),
-        );
-      });
-    }
-  };
-
-  const removeFile = (idx: number) => {
-    setFiles((prev) => {
-      const target = prev[idx] || null;
-      const next = prev.filter((_, i) => i !== idx);
-      if (target) {
-        const key = toPracticeFileKey(target);
-        void deleteFileFromIndexedDb(key);
-        const meta = readPracticeFileCacheMeta().filter((row) => row.key !== key);
-        writePracticeFileCacheMeta(meta);
-      }
-      return next;
-    });
-  };
-
-  useEffect(() => {
-    const q = labSearch.trim();
-    if (!q) {
-      setLabSearchResults([]);
-      return;
-    }
-
-    const timer = setTimeout(async () => {
-      setLabSearching(true);
-      try {
-        const res = await apiFetch<unknown>({
-          path: `/api/businesses/search-public?q=${encodeURIComponent(q)}&businessType=${encodeURIComponent("all")}`,
-          method: "GET",
-        });
-        if (!res.ok) {
-          setLabSearchResults([]);
-          return;
-        }
-        const body = res.data;
-        const data =
-          body && typeof body === "object" && "data" in (body as Record<string, unknown>)
-            ? (body as { data?: unknown }).data
-            : body;
-        const next = Array.isArray(data)
-          ? data.filter(
-              (item): item is SearchBusinessResult =>
-                Boolean(
-                  item &&
-                    typeof item === "object" &&
-                    typeof (item as { _id?: unknown })._id === "string" &&
-                    typeof (item as { name?: unknown }).name === "string",
-                ),
-            )
-          : [];
-        setLabSearchResults(next);
-      } catch {
-        setLabSearchResults([]);
-      } finally {
-        setLabSearching(false);
-      }
-    }, 250);
-
-    return () => clearTimeout(timer);
-  }, [labSearch]);
 
   useEffect(() => {
     let cancelled = false;
@@ -718,7 +510,7 @@ export const PracticeDropzonePage = () => {
     return () => {
       cancelled = true;
     };
-  }, [toast]);
+  }, [setFiles, setRequestMemo, setSelectedLab, toast]);
 
   useEffect(() => {
     if (!draftHydrated) return;
@@ -739,7 +531,7 @@ export const PracticeDropzonePage = () => {
       name: labName,
       businessNumber: labBusinessNumber,
     });
-  }, [draftHydrated, searchParamsKey]);
+  }, [draftHydrated, searchParamsKey, setSelectedLab]);
 
   useEffect(() => {
     if (!draftHydrated) return;
@@ -787,13 +579,12 @@ export const PracticeDropzonePage = () => {
     const hadExpiredSession =
       Boolean(sessionMeta?.issuedAt) && !hasValidSessionMeta;
 
-    const isPracticeAuthed =
-      hasValidSessionMeta &&
+    const isPracticeLoggedIn =
       Boolean(authToken) &&
-      Boolean(authUser?.isPracticeAccount) &&
-      (sessionMeta?.userId ? sessionMeta.userId === String(authUser?.id || "") : true);
+      authUser?.role === "practice" &&
+      Boolean(authUser?.id);
 
-    if (isPracticeAuthed) {
+    if (isPracticeLoggedIn) {
       const pp = authUser?.practiceProfile || null;
       setPracticeName(String(pp?.clinicName || authUser?.companyName || practiceName || ""));
       setStaffName(String(pp?.staffName || authUser?.name || staffName || ""));
@@ -801,6 +592,10 @@ export const PracticeDropzonePage = () => {
       setAddress(String(pp?.address || address || ""));
       setAddressDetail(String(pp?.addressDetail || addressDetail || ""));
       setZipCode(String(pp?.zipCode || zipCode || ""));
+      writePracticeSessionMeta({
+        issuedAt: now,
+        userId: String(authUser?.id || ""),
+      });
       setSignupCompleted(true);
       setAuthMode("session");
       return;
@@ -896,9 +691,11 @@ export const PracticeDropzonePage = () => {
       throw new Error("업로드 준비 데이터가 올바르지 않습니다.");
     }
 
-    for (let i = 0; i < presigned.length; i += 1) {
-      await uploadToPresignedUrl(presigned[i].uploadUrl, inputFiles[i]);
-    }
+    await Promise.all(
+      presigned.map((item, index) =>
+        uploadToPresignedUrl(item.uploadUrl, inputFiles[index]),
+      ),
+    );
 
     return presigned.map((item) => item.file);
   };
@@ -1001,6 +798,7 @@ export const PracticeDropzonePage = () => {
       writePracticeFileCacheMeta(nextMeta);
 
       setRequestSubmitted(true);
+      rememberLab(selectedLab);
       setFiles([]);
 
       try {
@@ -1390,7 +1188,7 @@ export const PracticeDropzonePage = () => {
                       <UploadCloud className="h-6 w-6" />
                     </div>
                     <p className="text-lg font-semibold">파일을 드래그 & 드롭하세요</p>
-                    <p className="text-sm text-muted-foreground mt-1">{ACCEPTED_HINT}</p>
+                    <p className="text-sm text-muted-foreground mt-1">{PRACTICE_ACCEPTED_HINT}</p>
                     <p className="mt-2 text-md text-muted-foreground">또는 아래 버튼으로 파일 선택</p>
                     <div className="mt-4">
                       <input
@@ -1477,7 +1275,7 @@ export const PracticeDropzonePage = () => {
                             <span className="truncate">
                               {selectedLab
                                 ? getBusinessLabel(selectedLab)
-                                : "의뢰자 사업자를 검색해서 선택하세요"}
+                                : "기공소를 검색해서 선택하세요"}
                             </span>
                             <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                           </Button>
@@ -1485,58 +1283,123 @@ export const PracticeDropzonePage = () => {
                         <PopoverContent className="w-[420px] p-0" align="start">
                           <Command>
                             <CommandInput
-                              placeholder="사업자명/대표자명/사업자번호/주소 검색..."
+                              placeholder="기공소 검색 (사업자명/대표자명/사업자번호/주소)"
                               value={labSearch}
                               onValueChange={(v) => {
                                 setLabSearch(v);
-                                setSelectedLab(null);
                               }}
                             />
                             <CommandList>
-                              <CommandEmpty>
-                                {labSearching ? "검색 중..." : "검색 결과가 없습니다."}
-                              </CommandEmpty>
-                              <CommandGroup>
-                                {labSearchResults.map((b) => {
-                                  const selected = selectedLab?._id === b._id;
-                                  const rep = String(b.representativeName || "").trim();
-                                  const bn = String(b.businessNumber || "").trim();
-                                  const addr = String(b.address || "").trim();
-                                  const meta = [
-                                    rep ? `대표: ${rep}` : "",
-                                    bn ? `사업자: ${bn}` : "",
-                                    addr ? addr : "",
-                                  ]
-                                    .filter(Boolean)
-                                    .join(" · ");
-                                  const searchValue = [b.name, rep, bn, addr]
-                                    .filter(Boolean)
-                                    .join(" ");
+                              {!recentLabsInitialized ? (
+                                <div className="px-3 py-2 text-sm text-muted-foreground">불러오는 중...</div>
+                              ) : null}
 
-                                  return (
-                                    <CommandItem
-                                      key={b._id}
-                                      value={searchValue}
-                                      onSelect={() => {
-                                        setSelectedLab(b);
-                                        setLabOpen(false);
-                                      }}
-                                    >
-                                      <Check
-                                        className={cn(
-                                          "mr-2 h-4 w-4",
-                                          selected ? "opacity-100" : "opacity-0",
-                                        )}
-                                      />
-                                      <div className="min-w-0">
-                                        <div className="truncate text-base font-medium">{getBusinessLabel(b)}</div>
-                                        {meta ? (
-                                          <div className="truncate text-sm text-muted-foreground">{meta}</div>
-                                        ) : null}
-                                      </div>
-                                    </CommandItem>
-                                  );
-                                })}
+                              {recentLabs.length > 0 ? (
+                                <CommandGroup heading="최근 전송한 기공소">
+                                  {recentLabs.map((b) => {
+                                    const selected = selectedLab?._id === b._id;
+                                    const rep = String(b.representativeName || "").trim();
+                                    const bn = String(b.businessNumber || "").trim();
+                                    const addr = String(b.address || "").trim();
+                                    const meta = [
+                                      rep ? `대표: ${rep}` : "",
+                                      bn ? `사업자: ${bn}` : "",
+                                      addr || "",
+                                    ]
+                                      .filter(Boolean)
+                                      .join(" · ");
+                                    const searchValue = [b.name, rep, bn, addr]
+                                      .filter(Boolean)
+                                      .join(" ");
+
+                                    return (
+                                      <CommandItem
+                                        key={`recent-${b._id}`}
+                                        value={searchValue}
+                                        onSelect={() => {
+                                          setSelectedLab(b);
+                                          setLabOpen(false);
+                                        }}
+                                      >
+                                        <Check
+                                          className={cn(
+                                            "mr-2 h-4 w-4",
+                                            selected ? "opacity-100" : "opacity-0",
+                                          )}
+                                        />
+                                        <div className="min-w-0">
+                                          <div className="truncate text-base font-medium">{getBusinessLabel(b)}</div>
+                                          {meta ? (
+                                            <div className="truncate text-sm text-muted-foreground">{meta}</div>
+                                          ) : null}
+                                        </div>
+                                      </CommandItem>
+                                    );
+                                  })}
+                                </CommandGroup>
+                              ) : (
+                                <div className="px-3 py-2 text-sm text-muted-foreground">
+                                  최근 전송한 기공소가 없습니다.
+                                </div>
+                              )}
+
+                              <CommandSeparator />
+
+                              <CommandGroup heading="기공소 검색">
+                                {labSearching ? (
+                                  <div className="px-3 py-2 text-sm text-muted-foreground">검색 중...</div>
+                                ) : labSearch.trim() ? (
+                                  labSearchResults.length > 0 ? (
+                                    labSearchResults.map((b) => {
+                                      const selected = selectedLab?._id === b._id;
+                                      const rep = String(b.representativeName || "").trim();
+                                      const bn = String(b.businessNumber || "").trim();
+                                      const addr = String(b.address || "").trim();
+                                      const meta = [
+                                        rep ? `대표: ${rep}` : "",
+                                        bn ? `사업자: ${bn}` : "",
+                                        addr || "",
+                                      ]
+                                        .filter(Boolean)
+                                        .join(" · ");
+                                      const searchValue = [b.name, rep, bn, addr]
+                                        .filter(Boolean)
+                                        .join(" ");
+
+                                      return (
+                                        <CommandItem
+                                          key={b._id}
+                                          value={searchValue}
+                                          onSelect={() => {
+                                            setSelectedLab(b);
+                                            setLabOpen(false);
+                                          }}
+                                        >
+                                          <Check
+                                            className={cn(
+                                              "mr-2 h-4 w-4",
+                                              selected ? "opacity-100" : "opacity-0",
+                                            )}
+                                          />
+                                          <div className="min-w-0">
+                                            <div className="truncate text-base font-medium">{getBusinessLabel(b)}</div>
+                                            {meta ? (
+                                              <div className="truncate text-sm text-muted-foreground">{meta}</div>
+                                            ) : null}
+                                          </div>
+                                        </CommandItem>
+                                      );
+                                    })
+                                  ) : (
+                                    <div className="px-3 py-2 text-sm text-muted-foreground">
+                                      검색 결과가 없습니다.
+                                    </div>
+                                  )
+                                ) : (
+                                  <div className="px-3 py-2 text-sm text-muted-foreground">
+                                    검색어를 입력하면 기공소를 찾을 수 있습니다.
+                                  </div>
+                                )}
                               </CommandGroup>
                             </CommandList>
                           </Command>

@@ -467,17 +467,48 @@ export async function searchBusinesses(req, res) {
     const searchQuery =
       andClauses.length === 1 ? andClauses[0] : { $and: andClauses };
     const anchors = await BusinessAnchor.find(searchQuery)
-      .select({ name: 1, metadata: 1, businessNumberNormalized: 1 })
+      .select({
+        name: 1,
+        metadata: 1,
+        businessNumberNormalized: 1,
+        businessType: 1,
+        primaryContactUserId: 1,
+      })
       .limit(20)
       .lean();
 
-    const data = (anchors || []).map((a) => ({
-      _id: a._id,
-      name: a.name,
-      representativeName: a?.metadata?.representativeName || "",
-      businessNumber: a?.businessNumberNormalized || "",
-      address: a?.metadata?.address || "",
-    }));
+    const ownerIds = (anchors || [])
+      .map((a) => String(a?.primaryContactUserId || ""))
+      .filter(Boolean);
+
+    const owners = ownerIds.length
+      ? await User.find({ _id: { $in: ownerIds } })
+          .select({ _id: 1, role: 1 })
+          .lean()
+      : [];
+    const ownerPracticeMap = new Map(
+      (owners || []).map((u) => [String(u?._id || ""), String(u?.role || "") === "practice"]),
+    );
+
+    const data = (anchors || [])
+      .filter((a) => {
+        const bn = String(a?.businessNumberNormalized || "").trim().toLowerCase();
+        if (bn.startsWith("practice-")) return false;
+
+        const ownerId = String(a?.primaryContactUserId || "");
+        const isPracticeOwner = ownerPracticeMap.get(ownerId) === true;
+        if (isPracticeOwner) return false;
+
+        return true;
+      })
+      .map((a) => ({
+        _id: a._id,
+        name: a.name,
+        representativeName: a?.metadata?.representativeName || "",
+        businessNumber: a?.businessNumberNormalized || "",
+        address: a?.metadata?.address || "",
+        businessType: a?.businessType || a?.metadata?.businessType || "",
+      }));
 
     return res.json({ success: true, data });
   } catch (error) {

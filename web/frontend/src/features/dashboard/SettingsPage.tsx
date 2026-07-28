@@ -25,7 +25,7 @@ export const SettingsPage = () => {
     return <DevopsSettingsPage />;
   }
 
-  if (user?.isPracticeAccount || user?.role === "practice") {
+  if (user?.role === "practice") {
     return <PracticeSettingsPage />;
   }
 

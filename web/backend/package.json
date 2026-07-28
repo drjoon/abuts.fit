@@ -28,7 +28,8 @@
     "db:migrate-request-category": "cross-env ENV_FILE=local.env node scripts/db/migrate-request-category.js",
     "db:check-pricing-ssot": "cross-env ENV_FILE=local.env node scripts/db/check-pricing-ssot-consistency.js --strict",
     "db:check-pricing-ssot:ci": "node scripts/db/check-pricing-ssot-consistency.js --strict --no-write",
-    "worker:monthly-referral-snapshot": "cross-env ENV_FILE=local.env node jobs/dailyReferralSnapshotWorker.js",
+    "db:delete-legacy-practice-requestor": "cross-env ENV_FILE=local.env node scripts/db/delete-legacy-practice-requestor.js",
+    "worker:monthly-referral-snapshot": "cross-env ENV_FILE=local.env node jobs/dailyReferralSnapshotWorker.js", 
     "worker:daily-admin-salesman-credits-overview-snapshot": "cross-env ENV_FILE=local.env node jobs/dailyAdminSalesmanCreditsOverviewSnapshotWorker.js"
   },
   "keywords": [

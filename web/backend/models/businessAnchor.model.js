@@ -19,7 +19,7 @@ const businessAnchorSchema = new mongoose.Schema(
     },
     businessType: {
       type: String,
-      enum: ["requestor", "salesman", "manufacturer", "devops", "admin"],
+      enum: ["requestor", "salesman", "manufacturer", "devops", "admin", "practice"],
       default: "requestor",
       index: true,
     },

@@ -18,7 +18,7 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { User, Bell, Shield, Camera, RefreshCcw } from "lucide-react";
 import { NotificationsTab } from "@/features/settings/tabs/NotificationsTab";
-import { RequestorSecurity } from "@/pages/requestor/settings/Security";
+import { RequestorSecurity as PracticeSecurity } from "@/pages/requestor/settings/Security";
 
 type TabKey = "account" | "notifications" | "security";
 
@@ -413,7 +413,7 @@ export const PracticeSettingsPage = () => {
           </TabsContent>
 
           <TabsContent value="security">
-            <RequestorSecurity />
+            <PracticeSecurity />
           </TabsContent>
         </Tabs>
       </div>

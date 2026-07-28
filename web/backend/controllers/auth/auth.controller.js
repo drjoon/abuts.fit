@@ -138,7 +138,7 @@ async function resolveReferrerTargets({
   const normalizedSignupRole = String(signupRole || "").trim();
 
   if (!resolvedReferralCode && !resolvedReferralEmail) {
-    if (normalizedSignupRole === "requestor") {
+    if (normalizedSignupRole === "requestor" || normalizedSignupRole === "practice") {
       return resolveDefaultDevopsReferrer();
     }
     return {
@@ -740,7 +740,8 @@ async function register(req, res) {
       normalizedRole !== "manufacturer" &&
       normalizedRole !== "admin" &&
       normalizedRole !== "salesman" &&
-      normalizedRole !== "devops"
+      normalizedRole !== "devops" &&
+      normalizedRole !== "practice"
     ) {
       return res.status(400).json({
         success: false,
@@ -1061,9 +1062,8 @@ async function practiceLogin(req, res) {
     }
 
     const candidates = await User.find({
-      role: "requestor",
+      role: "practice",
       business: normalizedClinicName,
-      $or: [{ isPracticeAccount: true }, { email: { $regex: /^practice[.+]/i } }],
     }).select("+password");
 
     if (!Array.isArray(candidates) || candidates.length === 0) {
@@ -1181,7 +1181,7 @@ async function practiceRegister(req, res) {
       referredByEmail: "",
       referredByReferralCode: "",
       socialToken: "",
-      signupRole: "requestor",
+      signupRole: "practice",
     });
 
     let normalizedEmail = "";
@@ -1206,7 +1206,7 @@ async function practiceRegister(req, res) {
       name: staffName || clinicName,
       email: normalizedEmail,
       password,
-      role: "requestor",
+      role: "practice",
       subRole: "owner",
       referralCode,
       referredByAnchorId: referredByAnchorId || null,
@@ -1216,7 +1216,6 @@ async function practiceRegister(req, res) {
       isVerified: true,
       business: clinicName,
       phoneNumber: phone,
-      isPracticeAccount: true,
       practiceProfile: {
         clinicName,
         staffName,
@@ -1237,7 +1236,7 @@ async function practiceRegister(req, res) {
 
     const businessAnchor = await BusinessAnchor.create({
       businessNumberNormalized: createPracticeAnchorBusinessNumber(),
-      businessType: "requestor",
+      businessType: "practice",
       name: clinicName,
       status: "active",
       primaryContactUserId: user._id,
@@ -1320,8 +1319,7 @@ async function practiceFindPassword(req, res) {
     }
 
     const candidates = await User.find({
-      role: "requestor",
-      isPracticeAccount: true,
+      role: "practice",
       business: clinicName,
       name: staffName,
       active: true,
@@ -1394,8 +1392,7 @@ async function practiceChangePassword(req, res) {
     }
 
     const candidates = await User.find({
-      role: "requestor",
-      isPracticeAccount: true,
+      role: "practice",
       business: clinicName,
       name: staffName,
       active: true,
