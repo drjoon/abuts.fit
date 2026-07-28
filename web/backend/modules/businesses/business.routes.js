@@ -5,6 +5,9 @@ import * as leadTimeController from "../../controllers/businesses/leadTime.contr
 
 const router = Router();
 
+// 공개 검색(치과 드롭존 등 비로그인 화면에서 사용)
+router.get("/search-public", businessController.searchBusinesses);
+
 router.use(authenticate);
 
 // 조회는 모두 가능

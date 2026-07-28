@@ -11,6 +11,8 @@ import { useToast } from "@/shared/hooks/use-toast";
 // related files:
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
 // - web/frontend/src/pages/manufacturer/dashboard/ManufacturerDashboardPage.tsx
+// - web/frontend/src/pages/practice/PracticeDashboardPage.tsx
+// - web/frontend/src/pages/practice/PracticeDropzonePage.tsx
 import { ToastAction } from "@/components/ui/toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -57,6 +59,7 @@ import {
   Boxes,
   Package,
   CheckCircle,
+
 } from "lucide-react";
 import { AbutsLogo } from "@/components/branding/AbutsLogo";
 import { onAppEvent } from "@/shared/realtime/socket";
@@ -83,6 +86,11 @@ const sidebarItems = {
     { icon: LayoutDashboard, label: "대시보드", href: "/dashboard" },
     { icon: Share2, label: "소개", href: "/dashboard/referral-groups" },
     { icon: Settings, label: "설정", href: "/dashboard/settings" },
+  ],
+  practice: [
+    { icon: LayoutDashboard, label: "대시보드", href: "/practice/dashboard" },
+    { icon: MessageSquare, label: "문의", href: "/practice/inquiries" },
+    { icon: Settings, label: "설정", href: "/practice/settings" },
   ],
   manufacturer: [
     { icon: ClipboardList, label: "작업", href: "/dashboard/worksheet" },
@@ -195,6 +203,8 @@ const getRoleLabel = (role: string) => {
       return "개발운영사";
     case "manufacturer":
       return "제조사";
+    case "practice":
+      return "치과병의원";
     case "admin":
       return "어벗츠.핏";
     default:
@@ -212,6 +222,8 @@ const getRoleBadgeVariant = (role: string) => {
       return "secondary";
     case "manufacturer":
       return "secondary";
+    case "practice":
+      return "default";
     case "admin":
       return "destructive";
     default:
@@ -246,10 +258,12 @@ export const DashboardLayout = () => {
   );
 
   const isWizardRoute = location.pathname.startsWith("/dashboard/wizard");
+  const isPracticeUser = Boolean(user?.isPracticeAccount || user?.role === "practice");
   const onboardingCompleted = Boolean(
     user?.onboardingWizardCompleted || user?.businessVerified,
   );
   const shouldForceOnboarding =
+    !isPracticeUser &&
     user?.role !== undefined &&
     ["requestor", "salesman", "manufacturer", "admin", "devops"].includes(
       user?.role,
@@ -308,6 +322,7 @@ export const DashboardLayout = () => {
     if (!token || !user || !user.id) return;
     if (isWizardRoute) return;
     if (!onboardingCompleted) return;
+    if (isPracticeUser) return;
     if (user.role !== "requestor" && user.role !== "manufacturer") return;
     if (user.businessVerified) return;
 
@@ -327,7 +342,7 @@ export const DashboardLayout = () => {
         }
       })
       .catch(() => {});
-  }, [token, user, isWizardRoute, onboardingCompleted]);
+  }, [token, user, isPracticeUser, isWizardRoute, onboardingCompleted]);
 
 
 
@@ -366,7 +381,7 @@ export const DashboardLayout = () => {
   const fetchCreditBalance = useCallback(async () => {
     if (!token) return;
     if (!user) return;
-    if (user.role !== "requestor") {
+    if (isPracticeUser || user.role !== "requestor") {
       setCreditBalance(null);
       setPaidCredit(null);
       setBonusRequestCredit(null);
@@ -409,7 +424,7 @@ export const DashboardLayout = () => {
     } finally {
       setLoadingCreditBalance(false);
     }
-  }, [token, user]);
+  }, [isPracticeUser, token, user]);
 
   useEffect(() => {
     fetchCreditBalance();
@@ -429,7 +444,7 @@ export const DashboardLayout = () => {
   useEffect(() => {
     if (!token) return;
     if (!user) return;
-    if (user.role !== "requestor") return;
+    if (isPracticeUser || user.role !== "requestor") return;
     if (!(user as any).businessAnchorId) return;
 
     const unsubscribe = onAppEvent((evt) => {
@@ -453,24 +468,24 @@ export const DashboardLayout = () => {
     return () => {
       unsubscribe?.();
     };
-  }, [fetchCreditBalance, token, user]);
+  }, [fetchCreditBalance, isPracticeUser, token, user]);
 
   const isMockUser = Boolean((user as any)?.mockUserId);
 
   useEffect(() => {
     if (!user) return;
-    if (user.role !== "requestor") return;
+    if (isPracticeUser || user.role !== "requestor") return;
     if ((user as any).approvedAt) return;
     if (isMockUser) return;
     if (location.pathname.startsWith("/dashboard")) {
       navigate("/signup?mode=social_complete", { replace: true });
     }
-  }, [isMockUser, location.pathname, navigate, user]);
+  }, [isMockUser, isPracticeUser, location.pathname, navigate, user]);
 
   useEffect(() => {
     if (!token) return;
     if (!user) return;
-    if (user.role !== "requestor") return;
+    if (isPracticeUser || user.role !== "requestor") return;
     if (!(user as any).businessAnchorId) return;
 
     // 크레딧 안내는 신규 의뢰 흐름에서만 노출한다.
@@ -591,14 +606,18 @@ export const DashboardLayout = () => {
     return () => {
       cancelled = true;
     };
-  }, [location.pathname, location.search, navigate, toast, token, user]);
+  }, [isPracticeUser, location.pathname, location.search, navigate, toast, token, user]);
 
-  const baseMenuItems = (sidebarItems[user.role as keyof typeof sidebarItems] ||
+  const effectiveSidebarRole = isPracticeUser
+    ? "practice"
+    : (user.role as keyof typeof sidebarItems);
+  const baseMenuItems = (sidebarItems[effectiveSidebarRole] ||
     []) as unknown as SidebarItem[];
   const menuItems = (() => {
     return baseMenuItems;
   })();
 
+  const displayRole = isPracticeUser ? "practice" : user.role;
   const adminMenuSections = user.role === "admin" ? adminSidebarSections : null;
 
   const { getBadgeForHref, clearBadgeForPath } = useAdminCommBadges();
@@ -907,10 +926,10 @@ export const DashboardLayout = () => {
                       {user.email}
                     </p>
                     <Badge
-                      variant={getRoleBadgeVariant(user.role)}
+                      variant={getRoleBadgeVariant(displayRole)}
                       className="w-fit mt-1"
                     >
-                      {getRoleLabel(user.role)}
+                      {getRoleLabel(displayRole)}
                     </Badge>
                   </div>
                 </DropdownMenuLabel>

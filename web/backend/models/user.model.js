@@ -15,7 +15,7 @@ const userSchema = new mongoose.Schema(
       lowercase: true,
       trim: true,
       match: [
-        /^\w+([\.-]?\w+)*@\w+([\.-]?\w+)*(\.\w{2,3})+$/,
+        /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/,
         "유효한 이메일 주소를 입력해주세요.",
       ],
     },
@@ -29,6 +29,21 @@ const userSchema = new mongoose.Schema(
       type: String,
       enum: ["requestor", "manufacturer", "admin", "salesman", "devops"],
       default: "requestor",
+    },
+    isPracticeAccount: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+    practiceProfile: {
+      clinicName: { type: String, default: "", trim: true },
+      staffName: { type: String, default: "", trim: true },
+      phone: { type: String, default: "", trim: true },
+      address: { type: String, default: "", trim: true },
+      addressDetail: { type: String, default: "", trim: true },
+      zipCode: { type: String, default: "", trim: true },
+      createdAt: { type: Date, default: null },
+      updatedAt: { type: Date, default: null },
     },
     subRole: {
       type: String,

@@ -17,6 +17,11 @@ import { Suspense, lazy, useEffect } from "react";
 import { loadRulesFromBackend } from "@/shared/filename/filenameRules";
 import { useSocket } from "@/shared/hooks/useSocket";
 
+// related files:
+// - web/frontend/src/pages/practice/PracticeDropzonePage.tsx
+// - web/frontend/src/pages/practice/PracticeDashboardPage.tsx
+// - web/frontend/src/features/dashboard/DashboardHome.tsx
+
 const Index = lazy(() => import("./pages/public/Index"));
 const ManualPage = lazy(() => import("./pages/public/ManualPage"));
 const LoginPage = lazy(() =>
@@ -154,6 +159,21 @@ const RefundPolicyPage = lazy(() =>
     default: m.RefundPolicyPage,
   })),
 );
+const PracticeDropzonePage = lazy(() =>
+  import("./pages/practice/PracticeDropzonePage").then((m) => ({
+    default: m.PracticeDropzonePage,
+  })),
+);
+const PracticeDashboardPage = lazy(() =>
+  import("./pages/practice/PracticeDashboardPage").then((m) => ({
+    default: m.PracticeDashboardPage,
+  })),
+);
+const PracticeSettingsPage = lazy(() =>
+  import("./pages/practice/PracticeSettingsPage").then((m) => ({
+    default: m.PracticeSettingsPage,
+  })),
+);
 const NotFound = lazy(() => import("./pages/public/NotFound"));
 
 const queryClient = new QueryClient();
@@ -169,7 +189,14 @@ const RoleProtectedRoute = ({
   roles,
   children,
 }: {
-  roles: ("requestor" | "manufacturer" | "admin" | "salesman" | "devops")[];
+  roles: (
+    | "requestor"
+    | "manufacturer"
+    | "admin"
+    | "salesman"
+    | "devops"
+    | "practice"
+  )[];
   children: React.ReactNode;
 }) => {
   const { isAuthenticated, user } = useAuthStore();
@@ -180,6 +207,26 @@ const RoleProtectedRoute = ({
     return <Navigate to="/dashboard" replace />;
   }
   return <>{children}</>;
+};
+
+const PracticeAccountProtectedRoute = ({
+  children,
+}: {
+  children: React.ReactNode;
+}) => {
+  const { isAuthenticated, user } = useAuthStore();
+
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />;
+  }
+  if (!user) {
+    return <Navigate to="/dashboard" replace />;
+  }
+  if (user.isPracticeAccount || user.role === "practice") {
+    return <>{children}</>;
+  }
+
+  return <Navigate to="/dashboard" replace />;
 };
 
 const ReferralGroupsRoute = () => {
@@ -209,8 +256,20 @@ const PaymentsRoute = () => {
 const InquiriesRoute = () => {
   const { user } = useAuthStore();
   if (!user) return <Navigate to="/dashboard" replace />;
+  if (user.isPracticeAccount || user.role === "practice") {
+    return <Navigate to="/practice/inquiries" replace />;
+  }
   if (user.role === "admin") return <AdminInquiriesPage />;
   return <InquiriesPage />;
+};
+
+const SettingsRoute = () => {
+  const { user } = useAuthStore();
+  if (!user) return <Navigate to="/dashboard" replace />;
+  if (user.isPracticeAccount || user.role === "practice") {
+    return <Navigate to="/practice/settings" replace />;
+  }
+  return <SettingsPage />;
 };
 
 const SignupEntryRoute = () => {
@@ -229,6 +288,39 @@ const SignupEntryRoute = () => {
       replace
     />
   );
+};
+
+const PracticeDashboardRoute = () => {
+  const { user } = useAuthStore();
+
+  if (!user) return <Navigate to="/dashboard" replace />;
+  if (user.isPracticeAccount || user.role === "practice") {
+    return <PracticeDashboardPage />;
+  }
+
+  return <Navigate to="/dashboard" replace />;
+};
+
+const PracticeInquiriesRoute = () => {
+  const { user } = useAuthStore();
+
+  if (!user) return <Navigate to="/dashboard" replace />;
+  if (user.isPracticeAccount || user.role === "practice") {
+    return <InquiriesPage />;
+  }
+
+  return <Navigate to="/dashboard" replace />;
+};
+
+const PracticeSettingsRoute = () => {
+  const { user } = useAuthStore();
+
+  if (!user) return <Navigate to="/dashboard" replace />;
+  if (user.isPracticeAccount || user.role === "practice") {
+    return <PracticeSettingsPage />;
+  }
+
+  return <Navigate to="/dashboard" replace />;
 };
 
 const ReferRoute = () => {
@@ -296,6 +388,44 @@ const App = () => {
                 <Route path="/business" element={<BusinessPage />} />
                 <Route path="/credits" element={<CreditsPage />} />
                 <Route path="/refund-policy" element={<RefundPolicyPage />} />
+                <Route
+                  path="/practice"
+                  element={<Navigate to="/practice/dropzone" replace />}
+                />
+                <Route
+                  path="/practice/dropzone"
+                  element={<PracticeDropzonePage />}
+                />
+                <Route
+                  path="/practice/dashboard"
+                  element={
+                    <ProtectedRoute>
+                      <DashboardLayout />
+                    </ProtectedRoute>
+                  }
+                >
+                  <Route index element={<PracticeDashboardRoute />} />
+                </Route>
+                <Route
+                  path="/practice/inquiries"
+                  element={
+                    <ProtectedRoute>
+                      <DashboardLayout />
+                    </ProtectedRoute>
+                  }
+                >
+                  <Route index element={<PracticeInquiriesRoute />} />
+                </Route>
+                <Route
+                  path="/practice/settings"
+                  element={
+                    <ProtectedRoute>
+                      <DashboardLayout />
+                    </ProtectedRoute>
+                  }
+                >
+                  <Route index element={<PracticeSettingsRoute />} />
+                </Route>
                 <Route
                   path="/dashboard"
                   element={
@@ -407,7 +537,7 @@ const App = () => {
                     path="inquiries"
                     element={
                       <RoleProtectedRoute
-                        roles={["admin", "requestor", "salesman"]}
+                        roles={["admin", "requestor", "salesman", "practice"]}
                       >
                         <InquiriesRoute />
                       </RoleProtectedRoute>
@@ -497,7 +627,15 @@ const App = () => {
                       </RoleProtectedRoute>
                     }
                   />
-                  <Route path="settings" element={<SettingsPage />} />
+                  <Route
+                    path="practice/dropzone"
+                    element={
+                      <PracticeAccountProtectedRoute>
+                        <PracticeDropzonePage />
+                      </PracticeAccountProtectedRoute>
+                    }
+                  />
+                  <Route path="settings" element={<SettingsRoute />} />
                   <Route
                     path="settings/devops"
                     element={

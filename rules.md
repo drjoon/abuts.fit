@@ -101,6 +101,30 @@
 - `web/backend/models/request.model.js`
 - `web/backend/controllers/requests/common.requests.controller.js`
 
+### 1.0.1.1 practice 공개 드롭존 가입/캐시 정책 (2026-07-28)
+
+- `/practice/dropzone`는 비로그인 상태에서도 **입력 진행 데이터(draft)를 localStorage에 캐시**해야 합니다.
+  - 저장 대상: 단계(step), 선택 기공소, 의뢰 메모, 치과정보(치과명/담당직원명/전화/주소/상세주소/우편번호)
+  - 파일(`File`)은 브라우저 보안 정책상 localStorage 저장 대상이 아니므로, UI에 재선택 안내를 표시합니다.
+- `회원가입 후 의뢰계속하기`는 페이지 이탈(`/signup`) 방식이 아니라, **치과정보 화면 입력값으로 즉시 가입/제출**합니다.
+  - 모달 추가 입력 없이 치과정보 1행(치과명/접속비밀번호/담당직원명/전화) + 주소 입력으로 진행합니다.
+  - 접속 비밀번호 정책은 서버 SSOT를 따릅니다: 10자 이상 + 특수문자 포함 + `$` 금지.
+  - 가입 성공 시 현재 화면의 STL/의뢰 입력을 이어서 **Draft 생성 → temp 업로드 → from-draft 제출**까지 같은 페이지에서 처리합니다.
+- 백엔드 `register`의 role 허용치와 일치하도록 practice 드롭존 가입 role은 현재 `requestor`로 등록합니다.
+  - `signupChannel=practice_dropzone` 가입은 이메일 인증 없이 가입 가능하도록 처리합니다.
+- 가입 성공 직후에는 `PUT /api/businesses/me`로 치과 정보를 사업자 정보에 반영합니다.
+- 치과 로그인은 일반 이메일 로그인과 별도로 `POST /api/auth/practice/login`을 사용합니다.
+  - 입력: 치과명 + 비밀번호
+  - 동일 치과명이 여러 계정에 존재하면 비밀번호가 일치하는 계정을 선택해 로그인합니다.
+
+관련 파일:
+- `web/frontend/src/pages/practice/PracticeDropzonePage.tsx`
+- `web/frontend/src/shared/components/business/settings/business/BusinessAddressFields.tsx`
+- `web/frontend/src/features/auth/LoginPage.tsx`
+- `web/frontend/src/store/useAuthStore.ts`
+- `web/backend/controllers/auth/auth.controller.js`
+- `web/backend/modules/auth/auth.routes.js`
+
 ### 1.0.2 디자인소프트웨어 기본값 계층 (BusinessAnchor → Requestor → 의뢰건) (2026-07-27)
 
 - BusinessAnchor `requestSettings.designSoftware`는 **사업체 공통 기본값**으로만 관리한다.
@@ -1627,8 +1651,31 @@
   - `pages/requestor/` — 의뢰자 전용
   - `pages/admin/` — 관리자 전용
   - `pages/manufacturer/` — 제조사 전용
+  - `pages/practice/` — 치과병의원 전용
 - 하나의 파일 안에서 `isDevops`, `isSalesman` 등의 플래그로 여러 역할 UI를 혼용하지 않습니다.
   - 역할별로 별도 파일을 만들고, 공통 로직만 `shared/` 또는 `features/`로 추출합니다.
+
+#### 5.6.1 Practice(치과병의원) 공개 드롭존 + 대시보드 초기 정책 (2026-07-28)
+
+- 치과병의원 역할은 `pages/practice/` 하위에서만 구현합니다.
+- 공개 진입점은 `/practice/dropzone`이며, **비회원 접근 허용**을 기본으로 합니다.
+- 대시보드 진입점은 `/dashboard`(role=`practice`)이며, 의뢰 전송 버튼은 `/dashboard/practice/dropzone` 또는 `/practice/dropzone`으로 연결합니다.
+- 초기 단계에서는 단일 페이지 중심 UX를 우선하고, 실제 업로드 저장/회원가입 이어쓰기 API는 후속 단계에서 연결합니다.
+- 드롭존/업로드 목록 분류 기준은 `NewRequestPage`의 STL 분류 정책(`.stl` 허용, `.pts` 자동 제외, 나머지 확장자 제외)을 우선 재사용합니다.
+- 치과병의원 입력 주소는 설정-사업자와 동일한 공통 주소 컴포넌트(`BusinessAddressFields`)를 사용해 UX를 통일합니다.
+
+관련 파일:
+- `web/frontend/src/pages/practice/PracticeDropzonePage.tsx`
+- `web/frontend/src/pages/practice/PracticeDashboardPage.tsx`
+- `web/frontend/src/pages/public/Index.tsx`
+- `web/frontend/src/features/dashboard/DashboardHome.tsx`
+- `web/frontend/src/features/layout/DashboardLayout.tsx`
+- `web/frontend/src/store/useAuthStore.ts`
+- `web/frontend/src/App.tsx`
+- `web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx`
+- `web/frontend/src/shared/components/business/settings/business/BusinessAddressFields.tsx`
+- `web/frontend/src/shared/components/business/settings/business/BusinessForm.tsx`
+- `web/frontend/src/shared/components/business/settings/business/BusinessSearchSection.tsx`
 
 #### 공통 코드 위치
 

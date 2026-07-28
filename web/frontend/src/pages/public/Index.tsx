@@ -17,21 +17,23 @@ import {
   Layers,
   CheckCircle,
   Send,
+  UploadCloud,
+  Building2,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useAuthStore } from "@/store/useAuthStore";
 import { PublicPageLayout } from "./components/PublicPageLayout";
+
+// related files:
+// - web/frontend/src/pages/practice/PracticeDropzonePage.tsx
+// - web/frontend/src/App.tsx
 
 const Index = () => {
   const [showGuestChat, setShowGuestChat] = useState(false);
   const navigate = useNavigate();
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
 
-  const stats = [
-    { label: "월간 케이스", value: "1,500+" },
-    { label: "평균 처리 시간", value: "24h 이내" },
-    { label: "동기화 성공률", value: "98.7%" },
-  ];
+
 
   const features = [
     {
@@ -113,28 +115,43 @@ const Index = () => {
         </div>
 
         <div className="lg:w-1/2">
-          <Card className="border-white/15 bg-white/90 text-slate-900 shadow-[0_25px_65px_rgba(7,7,19,0.35)] backdrop-blur-2xl">
-            <CardHeader>
-              <CardTitle className="text-xl">abuts.fit Snapshot</CardTitle>
-              <CardDescription className="text-sm text-slate-500">
-                제조 파트너들이 매일 확인하는 핵심 지표
+          <Card className="border-blue-200 bg-gradient-to-br from-white to-blue-50 text-slate-900 shadow-[0_18px_45px_rgba(6,8,20,0.35)] backdrop-blur-2xl">
+            <CardHeader className="space-y-3">
+              <div className="inline-flex w-fit items-center gap-2 rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.28em] text-blue-700">
+                practice
+                <span className="h-1.5 w-1.5 rounded-full bg-blue-500" />
+                guest open
+              </div>
+              <CardTitle className="text-xl md:text-2xl">
+                치과에서 기공소로 구강스캔 파일 전송
+              </CardTitle>
+              <CardDescription className="text-sm text-slate-600">
+                비회원도 바로 접근해서 파일 드롭·의뢰 메모 입력을 시작할 수 있습니다.
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-                {stats.map((stat) => (
-                  <div
-                    key={stat.label}
-                    className="rounded-2xl border border-slate-200/60 bg-white/80 p-4 text-center"
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex items-center gap-2 text-sm text-slate-600">
+                  <Building2 className="h-4 w-4 text-blue-600" />
+                  <span>치과 전용 빠른 전송</span>
+                </div>
+                <div className="flex items-center gap-2 justify-end">
+                  <Button
+                    variant="outline"
+                    onClick={() =>
+                      navigate(isAuthenticated ? "/dashboard" : "/login")
+                    }
                   >
-                    <p className="text-3xl font-semibold text-slate-900">
-                      {stat.value}
-                    </p>
-                    <p className="text-xs uppercase tracking-[0.4em] text-slate-500">
-                      {stat.label}
-                    </p>
-                  </div>
-                ))}
+                    로그인
+                  </Button>
+                  <Button
+                    className="bg-blue-600 text-white hover:bg-blue-700"
+                    onClick={() => navigate("/practice/dropzone")}
+                  >
+                    <UploadCloud className="mr-2 h-4 w-4" />
+                    전송 시작하기
+                  </Button>
+                </div>
               </div>
             </CardContent>
           </Card>

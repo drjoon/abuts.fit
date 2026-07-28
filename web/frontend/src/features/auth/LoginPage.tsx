@@ -10,7 +10,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { useAuthStore } from "@/store/useAuthStore";
 import { Link, useNavigate } from "react-router-dom";
-import { Mail, Lock, Eye, EyeOff } from "lucide-react";
+import { Mail, Lock, Eye, EyeOff, Building2 } from "lucide-react";
 import { useToast } from "@/shared/hooks/use-toast";
 
 type DevAccount = {
@@ -45,7 +45,7 @@ const parseDevAccounts = (rawValue: string | undefined): DevAccount[] => {
 const DEV_ACCOUNTS = parseDevAccounts(import.meta.env.VITE_DEV_LOGIN_ACCOUNTS);
 
 export const LoginPage = () => {
-  const [email, setEmail] = useState("");
+  const [emailOrClinicName, setEmailOrClinicName] = useState("");
   const [password, setPassword] = useState("");
   const [step, setStep] = useState<"email" | "password">("email");
   const [showPassword, setShowPassword] = useState(false);
@@ -54,9 +54,10 @@ export const LoginPage = () => {
   const [devModalOpen, setDevModalOpen] = useState(false);
   const columnRef = useRef<HTMLDivElement>(null);
   const passwordInputRef = useRef<HTMLInputElement | null>(null);
-  const { login } = useAuthStore();
+  const { login, practiceLogin } = useAuthStore();
   const navigate = useNavigate();
   const { toast } = useToast();
+  const isEmailCredential = String(emailOrClinicName || "").trim().includes("@");
 
   useLayoutEffect(() => {
     const measure = () => {
@@ -67,7 +68,7 @@ export const LoginPage = () => {
     measure();
     window.addEventListener("resize", measure);
     return () => window.removeEventListener("resize", measure);
-  }, [step, email, password]);
+  }, [step, emailOrClinicName, password]);
 
   useEffect(() => {
     if (step !== "password") return;
@@ -90,7 +91,11 @@ export const LoginPage = () => {
     setIsLoading(true);
 
     try {
-      const result = await login(email, password);
+      const credential = String(emailOrClinicName || "").trim();
+
+      const result = isEmailCredential
+        ? await login(credential, password)
+        : await practiceLogin(credential, password);
       if (result.success) {
         navigate("/dashboard", { replace: true });
       } else {
@@ -112,7 +117,8 @@ export const LoginPage = () => {
   };
 
   const handleDevLogin = async (account: DevAccount) => {
-    setEmail(account.email);
+
+    setEmailOrClinicName(account.email);
     setPassword(account.password);
     setStep("password");
     setIsLoading(true);
@@ -237,19 +243,25 @@ export const LoginPage = () => {
                   </div>
                 </div>
 
-                <form onSubmit={handleSubmit} className="space-y-4 pt-6">
+
+
+                <form onSubmit={handleSubmit} className="space-y-4 pt-4">
                   <div className="grid gap-4 md:grid-cols-[1fr,auto] md:items-stretch">
                     <div ref={columnRef} className="space-y-3">
                       <div className="space-y-2">
                         {/* <Label htmlFor="email">이메일</Label> */}
                         <div className="relative">
-                          <Mail className="absolute left-3 top-3 h-4 w-4 text-white/50" />
+                          {isEmailCredential ? (
+                            <Mail className="absolute left-3 top-3 h-4 w-4 text-white/50" />
+                          ) : (
+                            <Building2 className="absolute left-3 top-3 h-4 w-4 text-white/50" />
+                          )}
                           <Input
                             id="email"
-                            type="email"
-                            placeholder="이메일을 입력하세요"
-                            value={email}
-                            onChange={(e) => setEmail(e.target.value)}
+                            type="text"
+                            placeholder="이메일 또는 치과명을 입력하세요"
+                            value={emailOrClinicName}
+                            onChange={(e) => setEmailOrClinicName(e.target.value)}
                             className="pl-10 border-white/10 bg-white/5 text-white placeholder:text-white/40"
                             autoComplete="username"
                             required
@@ -328,14 +340,18 @@ export const LoginPage = () => {
                           setStep("email");
                         }}
                       >
-                        이메일 변경
+                        입력값 변경
                       </button>
-                      <Link
-                        to="/forgot-password"
-                        className="text-emerald-300 hover:text-emerald-200"
-                      >
-                        비밀번호를 잊으셨나요?
-                      </Link>
+                      {isEmailCredential ? (
+                        <Link
+                          to="/forgot-password"
+                          className="text-emerald-300 hover:text-emerald-200"
+                        >
+                          비밀번호를 잊으셨나요?
+                        </Link>
+                      ) : (
+                        <span className="text-white/50">치과 로그인 비밀번호를 사용하세요</span>
+                      )}
                     </div>
                   )}
                 </form>

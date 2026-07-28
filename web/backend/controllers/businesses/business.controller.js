@@ -412,7 +412,9 @@ export async function getMyBusiness(req, res) {
 export async function searchBusinesses(req, res) {
   try {
     const userRole = String(req.user?.role || "").trim();
-    if (!BUSINESS_ALLOWED_ROLE_SET.has(userRole) && userRole !== "admin") {
+    const isAnonymous = !userRole;
+
+    if (!isAnonymous && !BUSINESS_ALLOWED_ROLE_SET.has(userRole) && userRole !== "admin") {
       return res.status(403).json({
         success: false,
         message: "이 작업을 수행할 권한이 없습니다.",
@@ -423,16 +425,20 @@ export async function searchBusinesses(req, res) {
     const requestedType = BUSINESS_ALLOWED_ROLE_SET.has(rawType)
       ? rawType
       : null;
-    const businessType =
-      rawType === "all"
+
+    const businessType = isAnonymous
+      ? rawType === "all"
+        ? null
+        : requestedType
+      : rawType === "all"
         ? null
         : requestedType || resolveBusinessType(req.user, null);
 
-    // admin 타입 anchor는 일반 사용자 검색에서 제외
+    // admin 타입 anchor는 일반 사용자/비로그인 검색에서 제외
     if (businessType === "admin" && userRole !== "admin") {
       return res.json({ success: true, data: [] });
     }
-    // businessType이 없을 때 non-admin 사용자는 admin anchor를 검색 결과에서 제외
+    // businessType이 없을 때 non-admin(비로그인 포함)은 admin anchor를 검색 결과에서 제외
     const typeFilter = buildBusinessTypeQuery(businessType);
     const adminExcludeFilter =
       !businessType && userRole !== "admin"

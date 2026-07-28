@@ -10,7 +10,8 @@ export type UserRole =
   | "manufacturer"
   | "admin"
   | "salesman"
-  | "devops";
+  | "devops"
+  | "practice";
 
 export interface User {
   id: string;
@@ -26,6 +27,16 @@ export interface User {
   businessAnchorId?: string | null;
   businessVerified?: boolean;
   onboardingWizardCompleted?: boolean;
+  isPracticeAccount?: boolean;
+  practiceProfile?: {
+    clinicName?: string;
+    staffName?: string;
+    phone?: string;
+    address?: string;
+    addressDetail?: string;
+    zipCode?: string;
+    updatedAt?: string | null;
+  } | null;
   salesmanPayoutAccount?: {
     bankName: string;
     accountNumber: string;
@@ -34,27 +45,58 @@ export interface User {
   };
 }
 
-const normalizeApiUser = (u: any): User | null => {
+const normalizeApiUser = (u: unknown): User | null => {
   if (!u || typeof u !== "object" || Array.isArray(u)) return null;
-  const id = String(u._id || u.id || "");
+  const row = u as Record<string, unknown>;
+  const id = String(row._id || row.id || "");
   if (!id) return null;
-  const pa = u.salesmanPayoutAccount || {};
+  const pa =
+    row.salesmanPayoutAccount && typeof row.salesmanPayoutAccount === "object"
+      ? (row.salesmanPayoutAccount as Record<string, unknown>)
+      : {};
   return {
     id,
-    name: String(u.name || ""),
-    email: String(u.email || ""),
-    role: u.role as UserRole,
-    subRole: u.subRole ? String(u.subRole) : null,
+    name: String(row.name || ""),
+    email: String(row.email || ""),
+    role: row.role as UserRole,
+    subRole: row.subRole ? String(row.subRole) : null,
     profileImage:
-      typeof u.profileImage === "string" ? u.profileImage : undefined,
-    companyName: String(u.business || u.companyName || ""),
-    referralCode: String(u.referralCode || ""),
-    approvedAt: u.approvedAt ? String(u.approvedAt) : null,
-    businessAnchorId: u.businessAnchorId ? String(u.businessAnchorId) : null,
-    businessVerified: Boolean(u.businessVerified),
-    onboardingWizardCompleted: Boolean(u.onboardingWizardCompleted),
+      typeof row.profileImage === "string" ? row.profileImage : undefined,
+    companyName: String(row.business || row.companyName || ""),
+    referralCode: String(row.referralCode || ""),
+    approvedAt: row.approvedAt ? String(row.approvedAt) : null,
+    businessAnchorId: row.businessAnchorId ? String(row.businessAnchorId) : null,
+    businessVerified: Boolean(row.businessVerified),
+    onboardingWizardCompleted: Boolean(row.onboardingWizardCompleted),
+    isPracticeAccount: Boolean(row.isPracticeAccount),
+    practiceProfile:
+      row.practiceProfile && typeof row.practiceProfile === "object"
+        ? {
+            clinicName: String(
+              (row.practiceProfile as Record<string, unknown>)?.clinicName || "",
+            ),
+            staffName: String(
+              (row.practiceProfile as Record<string, unknown>)?.staffName || "",
+            ),
+            phone: String(
+              (row.practiceProfile as Record<string, unknown>)?.phone || "",
+            ),
+            address: String(
+              (row.practiceProfile as Record<string, unknown>)?.address || "",
+            ),
+            addressDetail: String(
+              (row.practiceProfile as Record<string, unknown>)?.addressDetail || "",
+            ),
+            zipCode: String(
+              (row.practiceProfile as Record<string, unknown>)?.zipCode || "",
+            ),
+            updatedAt: (row.practiceProfile as Record<string, unknown>)?.updatedAt
+              ? String((row.practiceProfile as Record<string, unknown>).updatedAt)
+              : null,
+          }
+        : null,
     salesmanPayoutAccount:
-      u.role === "salesman" || u.role === "devops"
+      row.role === "salesman" || row.role === "devops"
         ? {
             bankName: String(pa?.bankName || ""),
             accountNumber: String(pa?.accountNumber || ""),
@@ -72,6 +114,10 @@ interface AuthState {
   refreshToken: string | null;
   login: (
     email: string,
+    password: string,
+  ) => Promise<{ success: boolean; message?: string }>;
+  practiceLogin: (
+    clinicName: string,
     password: string,
   ) => Promise<{ success: boolean; message?: string }>;
   loginWithToken: (
@@ -116,7 +162,9 @@ export const useAuthStore = create<AuthState>((set, get) => {
           body: JSON.stringify({ email, password }),
         });
 
-        const json: any = await res.json().catch(() => null);
+        const json = (await res.json().catch(() => null)) as
+          | { success?: boolean; message?: string; data?: unknown }
+          | null;
         if (!res.ok || !json?.success) {
           const message = String(
             json?.message || "로그인에 실패했습니다. 다시 시도해주세요.",
@@ -124,12 +172,78 @@ export const useAuthStore = create<AuthState>((set, get) => {
           return { success: false, message };
         }
 
-        const data = json?.data || {};
-        const token = String(data?.token || "");
-        const refreshToken = data?.refreshToken
-          ? String(data.refreshToken)
-          : null;
-        const normalizedUser = normalizeApiUser(data?.user);
+        const data =
+          json?.data && typeof json.data === "object"
+            ? (json.data as Record<string, unknown>)
+            : {};
+        const token = String(data.token || "");
+        const refreshToken = data.refreshToken ? String(data.refreshToken) : null;
+        const normalizedUser = normalizeApiUser(data.user);
+        if (!token || !normalizedUser) {
+          return {
+            success: false,
+            message: "로그인 처리에 필요한 정보가 누락되었습니다.",
+          };
+        }
+
+        try {
+          localStorage.setItem(AUTH_TOKEN_KEY, token);
+          if (refreshToken)
+            localStorage.setItem(AUTH_REFRESH_TOKEN_KEY, refreshToken);
+          localStorage.setItem(AUTH_USER_KEY, JSON.stringify(normalizedUser));
+        } catch {
+          return {
+            success: false,
+            message:
+              "로그인 정보를 저장하지 못했습니다. 브라우저 설정을 확인해주세요.",
+          };
+        }
+
+        set({
+          user: normalizedUser,
+          isAuthenticated: true,
+          token,
+          refreshToken,
+        });
+
+        return { success: true };
+      } catch {
+        return {
+          success: false,
+          message: "로그인 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
+        };
+      }
+    },
+    // related files:
+    // - web/frontend/src/features/auth/LoginPage.tsx
+    // - web/backend/controllers/auth/auth.controller.js
+    practiceLogin: async (clinicName: string, password: string) => {
+      try {
+        const res = await fetch("/api/auth/practice/login", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ clinicName, password }),
+        });
+
+        const json = (await res.json().catch(() => null)) as
+          | { success?: boolean; message?: string; data?: unknown }
+          | null;
+        if (!res.ok || !json?.success) {
+          const message = String(
+            json?.message || "로그인에 실패했습니다. 다시 시도해주세요.",
+          );
+          return { success: false, message };
+        }
+
+        const data =
+          json?.data && typeof json.data === "object"
+            ? (json.data as Record<string, unknown>)
+            : {};
+        const token = String(data.token || "");
+        const refreshToken = data.refreshToken ? String(data.refreshToken) : null;
+        const normalizedUser = normalizeApiUser(data.user);
         if (!token || !normalizedUser) {
           return {
             success: false,
@@ -167,15 +281,17 @@ export const useAuthStore = create<AuthState>((set, get) => {
     },
     loginWithToken: async (token: string, refreshToken?: string | null) => {
       try {
-        const res = await request<any>({
+        const res = await request<unknown>({
           path: "/api/auth/me",
           method: "GET",
           token,
         });
-        const json: any = res.data;
+        const json = (res.data || null) as
+          | { success?: boolean; data?: unknown }
+          | null;
         if (!res.ok || !json?.success || !json?.data) return false;
 
-        const u = json.data;
+        const u = json.data as Record<string, unknown>;
         if (!u || typeof u !== "object" || Array.isArray(u)) return false;
         if (!u._id && !u.id) return false;
         const normalizedUser: User = {
@@ -194,6 +310,35 @@ export const useAuthStore = create<AuthState>((set, get) => {
             : null,
           businessVerified: Boolean(u.businessVerified),
           onboardingWizardCompleted: Boolean(u.onboardingWizardCompleted),
+          isPracticeAccount: Boolean(u.isPracticeAccount),
+          practiceProfile:
+            u.practiceProfile &&
+            typeof u.practiceProfile === "object" &&
+            !Array.isArray(u.practiceProfile)
+              ? {
+                  clinicName: String(
+                    (u.practiceProfile as Record<string, unknown>)?.clinicName || "",
+                  ),
+                  staffName: String(
+                    (u.practiceProfile as Record<string, unknown>)?.staffName || "",
+                  ),
+                  phone: String(
+                    (u.practiceProfile as Record<string, unknown>)?.phone || "",
+                  ),
+                  address: String(
+                    (u.practiceProfile as Record<string, unknown>)?.address || "",
+                  ),
+                  addressDetail: String(
+                    (u.practiceProfile as Record<string, unknown>)?.addressDetail || "",
+                  ),
+                  zipCode: String(
+                    (u.practiceProfile as Record<string, unknown>)?.zipCode || "",
+                  ),
+                  updatedAt: (u.practiceProfile as Record<string, unknown>)?.updatedAt
+                    ? String((u.practiceProfile as Record<string, unknown>).updatedAt)
+                    : null,
+                }
+              : null,
         };
 
         try {

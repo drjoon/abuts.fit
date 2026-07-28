@@ -4,6 +4,7 @@ import { ManufacturerSettingsPage } from "@/pages/manufacturer/settings/Settings
 import { RequestorSettingsPage } from "@/pages/requestor/settings/SettingsPage";
 import { SalesmanSettingsPage } from "@/pages/salesman/SalesmanSettingsPage";
 import { DevopsSettingsPage } from "@/pages/devops/DevopsSettingsPage";
+import { PracticeSettingsPage } from "@/pages/practice/PracticeSettingsPage";
 
 export const SettingsPage = () => {
   const { user } = useAuthStore();
@@ -22,6 +23,10 @@ export const SettingsPage = () => {
 
   if (user?.role === "devops") {
     return <DevopsSettingsPage />;
+  }
+
+  if (user?.isPracticeAccount || user?.role === "practice") {
+    return <PracticeSettingsPage />;
   }
 
   if (user?.role === "requestor") {

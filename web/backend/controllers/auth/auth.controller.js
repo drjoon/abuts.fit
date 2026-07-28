@@ -229,6 +229,163 @@ const isStrongPassword = (password) => {
   return true;
 };
 
+const HANGUL_BASE = 0xac00;
+const HANGUL_END = 0xd7a3;
+const CHOSEONG = [
+  "g",
+  "kk",
+  "n",
+  "d",
+  "tt",
+  "r",
+  "m",
+  "b",
+  "pp",
+  "s",
+  "ss",
+  "",
+  "j",
+  "jj",
+  "ch",
+  "k",
+  "t",
+  "p",
+  "h",
+];
+const JUNGSEONG = [
+  "a",
+  "ae",
+  "ya",
+  "yae",
+  "eo",
+  "e",
+  "yeo",
+  "ye",
+  "o",
+  "wa",
+  "wae",
+  "oe",
+  "yo",
+  "u",
+  "wo",
+  "we",
+  "wi",
+  "yu",
+  "eu",
+  "ui",
+  "i",
+];
+const JONGSEONG = [
+  "",
+  "k",
+  "k",
+  "ks",
+  "n",
+  "nj",
+  "nh",
+  "t",
+  "l",
+  "lk",
+  "lm",
+  "lb",
+  "ls",
+  "lt",
+  "lp",
+  "lh",
+  "m",
+  "p",
+  "ps",
+  "t",
+  "t",
+  "ng",
+  "t",
+  "t",
+  "k",
+  "t",
+  "p",
+  "h",
+];
+
+const romanizeHangulSyllable = (ch) => {
+  const code = ch.charCodeAt(0);
+  if (code < HANGUL_BASE || code > HANGUL_END) return "";
+
+  const sIndex = code - HANGUL_BASE;
+  const cho = Math.floor(sIndex / (21 * 28));
+  const jung = Math.floor((sIndex % (21 * 28)) / 28);
+  const jong = sIndex % 28;
+
+  return `${CHOSEONG[cho]}${JUNGSEONG[jung]}${JONGSEONG[jong]}`;
+};
+
+const toAsciiSlug = (value = "") => {
+  const raw = String(value || "").trim().toLowerCase();
+  if (!raw) return "";
+
+  let out = "";
+  for (const ch of raw) {
+    const code = ch.charCodeAt(0);
+    if (code >= 0xac00 && code <= 0xd7a3) {
+      out += romanizeHangulSyllable(ch);
+      continue;
+    }
+    if ((code >= 97 && code <= 122) || (code >= 48 && code <= 57)) {
+      out += ch;
+      continue;
+    }
+    if (ch === " " || ch === "-" || ch === "_") {
+      out += "-";
+      continue;
+    }
+  }
+
+  return out
+    .replace(/-+/g, "-")
+    .replace(/^-+/, "")
+    .replace(/-+$/, "");
+};
+
+const createPracticePseudoEmail = (seed = "practice") => {
+  const base = toAsciiSlug(seed).slice(0, 32);
+  const suffix = `${Date.now()}${crypto.randomInt(1000, 9999)}`;
+  return `practice.${base || "clinic"}-${suffix}@abuts.fit`;
+};
+
+const createPracticeAnchorBusinessNumber = () => {
+  return `practice-${Date.now()}-${crypto.randomInt(1000, 9999)}`;
+};
+
+const normalizeDigits = (value) => String(value || "").replace(/\D/g, "");
+
+const sendLoginSuccessResponse = async ({
+  user,
+  res,
+  successMessage = "로그인 성공",
+}) => {
+  user.lastLogin = Date.now();
+  if (!user.referralCode) {
+    const len = String(user.role || "") === "salesman" ? 4 : 5;
+    user.referralCode = await ensureUniqueReferralCode(len);
+  }
+  await user.save();
+
+  const token = generateToken({ userId: user._id, role: user.role });
+  const refreshToken = generateRefreshToken(user._id);
+
+  const userWithoutPassword = { ...user.toObject() };
+  delete userWithoutPassword.password;
+
+  res.status(200).json({
+    success: true,
+    message: successMessage,
+    data: {
+      user: userWithoutPassword,
+      token,
+      refreshToken,
+    },
+  });
+};
+
 async function getBusinessCreditBalanceBreakdown(businessAnchorId) {
   const normalizedBusinessAnchorId = String(businessAnchorId || "").trim();
   if (!Types.ObjectId.isValid(normalizedBusinessAnchorId)) {
@@ -515,13 +672,22 @@ async function register(req, res) {
       socialProvider,
       socialProviderUserId,
       socialToken,
+      signupChannel,
+      clinicName,
     } = req.body;
 
     const normalizedRole = String(role || "requestor").trim();
+    const isPracticeSignup =
+      String(signupChannel || "").trim() === "practice_dropzone";
 
-    const normalizedEmail = String(email || "")
+    const normalizedEmailInput = String(email || "")
       .trim()
       .toLowerCase();
+    const normalizedEmail =
+      normalizedEmailInput ||
+      (isPracticeSignup
+        ? createPracticePseudoEmail(clinicName || name || "practice")
+        : "");
 
     // 필수 필드 검증
     if (!name || !normalizedEmail || (!password && !socialProvider)) {
@@ -583,7 +749,8 @@ async function register(req, res) {
     }
 
     // 모든 역할 이메일 인증 통일 (소셜 로그인 제외)
-    if (!socialProvider) {
+    // 단, practice 공개 드롭존 signupChannel은 치과명+비밀번호 가입 UX를 위해 이메일 인증을 생략한다.
+    if (!socialProvider && !isPracticeSignup) {
       const ok = await assertSignupVerifications({
         email: normalizedEmail,
       });
@@ -624,7 +791,7 @@ async function register(req, res) {
     await user.save();
 
     // 모든 역할 이메일 인증 consume 처리 통일 (소셜 로그인 제외)
-    if (!socialProvider) {
+    if (!socialProvider && !isPracticeSignup) {
       try {
         await consumeSignupVerifications({
           email: normalizedEmail,
@@ -841,30 +1008,10 @@ async function login(req, res) {
       });
     }
 
-    // 마지막 로그인 시간 업데이트 + 리퍼럴 코드 보장
-    user.lastLogin = Date.now();
-    if (!user.referralCode) {
-      const len = String(user.role || "") === "salesman" ? 4 : 5;
-      user.referralCode = await ensureUniqueReferralCode(len);
-    }
-    await user.save();
-
-    // 토큰 생성
-    const token = generateToken({ userId: user._id, role: user.role });
-    const refreshToken = generateRefreshToken(user._id);
-
-    // 비밀번호 제외한 사용자 정보
-    const userWithoutPassword = { ...user.toObject() };
-    delete userWithoutPassword.password;
-
-    res.status(200).json({
-      success: true,
-      message: "로그인 성공",
-      data: {
-        user: userWithoutPassword,
-        token,
-        refreshToken,
-      },
+    await sendLoginSuccessResponse({
+      user,
+      res,
+      successMessage: "로그인 성공",
     });
     await logSecurityEvent({
       userId: user._id,
@@ -885,6 +1032,408 @@ async function login(req, res) {
     res.status(500).json({
       success: false,
       message: "로그인 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
+/**
+ * 치과명 기반 로그인
+ * @route POST /api/auth/practice/login
+ *
+ * related files:
+ * - web/frontend/src/features/auth/LoginPage.tsx
+ * - web/frontend/src/store/useAuthStore.ts
+ * - web/frontend/src/pages/practice/PracticeDropzonePage.tsx
+ */
+async function practiceLogin(req, res) {
+  try {
+    const { clinicName, password } = req.body || {};
+    const clientIp =
+      req.headers["x-forwarded-for"]?.split(",")[0]?.trim() || req.ip || "";
+
+    const normalizedClinicName = String(clinicName || "").trim();
+    if (!normalizedClinicName || !String(password || "").trim()) {
+      return res.status(400).json({
+        success: false,
+        message: "치과명과 비밀번호를 입력해주세요.",
+      });
+    }
+
+    const candidates = await User.find({
+      role: "requestor",
+      business: normalizedClinicName,
+      $or: [{ isPracticeAccount: true }, { email: { $regex: /^practice[.+]/i } }],
+    }).select("+password");
+
+    if (!Array.isArray(candidates) || candidates.length === 0) {
+      await logSecurityEvent({
+        action: "PRACTICE_LOGIN_FAILED_USER_NOT_FOUND",
+        severity: "medium",
+        status: "failed",
+        details: { clinicName: normalizedClinicName },
+        ipAddress: clientIp,
+      });
+      return res.status(401).json({
+        success: false,
+        message: "치과명 또는 비밀번호가 올바르지 않습니다.",
+      });
+    }
+
+    let matchedUser = null;
+    for (const candidate of candidates) {
+      const isPasswordValid = await candidate.comparePassword(password);
+      if (isPasswordValid) {
+        matchedUser = candidate;
+        break;
+      }
+    }
+
+    if (!matchedUser) {
+      await logSecurityEvent({
+        action: "PRACTICE_LOGIN_FAILED_BAD_PASSWORD",
+        severity: "medium",
+        status: "failed",
+        details: { clinicName: normalizedClinicName },
+        ipAddress: clientIp,
+      });
+      return res.status(401).json({
+        success: false,
+        message: "치과명 또는 비밀번호가 올바르지 않습니다.",
+      });
+    }
+
+    if (!matchedUser.active || !matchedUser.approvedAt) {
+      await logSecurityEvent({
+        userId: matchedUser._id,
+        action: "PRACTICE_LOGIN_FAILED_INACTIVE_USER",
+        severity: "low",
+        status: "blocked",
+        details: { clinicName: normalizedClinicName },
+        ipAddress: clientIp,
+      });
+      return res.status(401).json({
+        success: false,
+        message: "승인 대기 중인 계정입니다. 관리자 승인이 필요합니다.",
+      });
+    }
+
+    await sendLoginSuccessResponse({
+      user: matchedUser,
+      res,
+      successMessage: "치과 로그인 성공",
+    });
+
+    await logSecurityEvent({
+      userId: matchedUser._id,
+      action: "LOGIN_SUCCESS",
+      severity: "info",
+      status: "success",
+      details: { clinicName: normalizedClinicName, loginType: "practice" },
+      ipAddress: clientIp,
+    });
+  } catch (error) {
+    await logSecurityEvent({
+      action: "PRACTICE_LOGIN_FAILED_ERROR",
+      severity: "high",
+      status: "failed",
+      details: { clinicName: req.body?.clinicName, error: error.message },
+      ipAddress: req.ip || "",
+    });
+    res.status(500).json({
+      success: false,
+      message: "로그인 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
+/**
+ * practice 간소 가입
+ * @route POST /api/auth/practice/register
+ */
+async function practiceRegister(req, res) {
+  try {
+    const clinicName = String(req.body?.clinicName || "").trim();
+    const staffName = String(req.body?.staffName || "").trim();
+    const password = String(req.body?.password || "");
+    const phone = String(req.body?.phone || "").trim();
+    const address = String(req.body?.address || "").trim();
+    const addressDetail = String(req.body?.addressDetail || "").trim();
+    const zipCode = String(req.body?.zipCode || "").trim();
+
+    if (!clinicName || !password || !staffName || !phone || !address || !zipCode) {
+      return res.status(400).json({
+        success: false,
+        message: "치과명, 담당직원명, 비밀번호, 전화번호, 주소, 우편번호는 필수입니다.",
+      });
+    }
+
+    if (!isStrongPassword(password)) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "비밀번호는 10자 이상이며 특수문자(!@#%^&* 등)를 포함해야 합니다. $는 사용할 수 없습니다.",
+      });
+    }
+
+    const { referredByAnchorId } = await resolveReferrerTargets({
+      referredByEmail: "",
+      referredByReferralCode: "",
+      socialToken: "",
+      signupRole: "requestor",
+    });
+
+    let normalizedEmail = "";
+    let existingByEmail = null;
+    for (let i = 0; i < 5; i += 1) {
+      normalizedEmail = createPracticePseudoEmail(clinicName || staffName || "practice");
+      existingByEmail = await User.findOne({ email: normalizedEmail })
+        .select({ _id: 1 })
+        .lean();
+      if (!existingByEmail) break;
+    }
+    if (existingByEmail || !normalizedEmail) {
+      return res.status(500).json({
+        success: false,
+        message: "가입용 계정 생성에 실패했습니다. 잠시 후 다시 시도해주세요.",
+      });
+    }
+
+    const referralCode = await ensureUniqueReferralCode(5);
+
+    const user = new User({
+      name: staffName || clinicName,
+      email: normalizedEmail,
+      password,
+      role: "requestor",
+      subRole: "owner",
+      referralCode,
+      referredByAnchorId: referredByAnchorId || null,
+      onboardingWizardCompleted: false,
+      approvedAt: new Date(),
+      active: true,
+      isVerified: true,
+      business: clinicName,
+      phoneNumber: phone,
+      isPracticeAccount: true,
+      practiceProfile: {
+        clinicName,
+        staffName,
+        phone,
+        address,
+        addressDetail,
+        zipCode,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+      address: {
+        street: address,
+        zipCode,
+        country: "KR",
+      },
+    });
+    await user.save();
+
+    const businessAnchor = await BusinessAnchor.create({
+      businessNumberNormalized: createPracticeAnchorBusinessNumber(),
+      businessType: "requestor",
+      name: clinicName,
+      status: "active",
+      primaryContactUserId: user._id,
+      referredByAnchorId: referredByAnchorId || null,
+      defaultReferralAnchorId: referredByAnchorId || null,
+      metadata: {
+        companyName: clinicName,
+        representativeName: staffName,
+        address,
+        addressDetail,
+        zipCode,
+        phoneNumber: phone,
+        email: "",
+        businessItem: "",
+        businessType: "",
+        startDate: "",
+        businessNumber: "",
+      },
+      verification: {
+        verified: false,
+        verifiedAt: null,
+        verifiedBy: null,
+      },
+      shippingPolicy: {
+        weeklyBatchDays: ["mon", "wed", "fri"],
+        updatedAt: new Date(),
+      },
+      owners: [user._id],
+      members: [],
+    });
+
+    user.businessAnchorId = businessAnchor._id;
+    user.business = clinicName;
+    user.subRole = "owner";
+    await user.save();
+
+    const freshUser = await User.findById(user._id).select("-password");
+    const userWithoutPassword = {
+      ...(freshUser ? freshUser.toObject() : user.toObject()),
+    };
+    delete userWithoutPassword.password;
+
+    const token = generateToken({ userId: user._id, role: user.role });
+    const refreshToken = generateRefreshToken(user._id);
+
+    return res.status(201).json({
+      success: true,
+      message: "회원가입이 완료되었습니다.",
+      data: {
+        user: userWithoutPassword,
+        token,
+        refreshToken,
+      },
+    });
+  } catch (error) {
+    console.error("[practiceRegister] failed", error);
+    return res.status(500).json({
+      success: false,
+      message: "practice 가입 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
+/**
+ * practice 비밀번호 찾기(본인확인)
+ * @route POST /api/auth/practice/password/find
+ */
+async function practiceFindPassword(req, res) {
+  try {
+    const clinicName = String(req.body?.clinicName || "").trim();
+    const staffName = String(req.body?.staffName || "").trim();
+    const phone = normalizeDigits(req.body?.phone || "");
+
+    if (!clinicName || !staffName || !phone) {
+      return res.status(400).json({
+        success: false,
+        message: "치과명, 담당직원명, 전화번호를 입력해주세요.",
+      });
+    }
+
+    const candidates = await User.find({
+      role: "requestor",
+      isPracticeAccount: true,
+      business: clinicName,
+      name: staffName,
+      active: true,
+    })
+      .select({ _id: 1, phoneNumber: 1, business: 1, name: 1, practiceProfile: 1 })
+      .lean();
+
+    const matched = (candidates || []).filter((u) => {
+      const p1 = normalizeDigits(u?.phoneNumber || "");
+      const p2 = normalizeDigits(u?.practiceProfile?.phone || "");
+      return phone && (phone === p1 || phone === p2);
+    });
+
+    if (!matched.length) {
+      return res.status(404).json({
+        success: false,
+        message: "입력한 정보와 일치하는 계정을 찾을 수 없습니다.",
+      });
+    }
+
+    if (matched.length > 1) {
+      return res.status(409).json({
+        success: false,
+        message:
+          "동일 정보로 여러 계정이 확인되었습니다. 관리자에게 비밀번호 변경을 요청해주세요.",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "계정이 확인되었습니다. 새 비밀번호를 설정해주세요.",
+      data: {
+        clinicName,
+        staffName,
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "비밀번호 찾기 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
+/**
+ * practice 비밀번호 변경(본인확인 기반)
+ * @route POST /api/auth/practice/password/change
+ */
+async function practiceChangePassword(req, res) {
+  try {
+    const clinicName = String(req.body?.clinicName || "").trim();
+    const staffName = String(req.body?.staffName || "").trim();
+    const phone = normalizeDigits(req.body?.phone || "");
+    const newPassword = String(req.body?.newPassword || "");
+
+    if (!clinicName || !staffName || !phone || !newPassword) {
+      return res.status(400).json({
+        success: false,
+        message: "치과명, 담당직원명, 전화번호, 새 비밀번호를 입력해주세요.",
+      });
+    }
+
+    if (!isStrongPassword(newPassword)) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "비밀번호는 10자 이상이며 특수문자(!@#%^&* 등)를 포함해야 합니다. $는 사용할 수 없습니다.",
+      });
+    }
+
+    const candidates = await User.find({
+      role: "requestor",
+      isPracticeAccount: true,
+      business: clinicName,
+      name: staffName,
+      active: true,
+    }).select("+password");
+
+    const matched = (candidates || []).filter((u) => {
+      const p1 = normalizeDigits(u?.phoneNumber || "");
+      const p2 = normalizeDigits(u?.practiceProfile?.phone || "");
+      return phone && (phone === p1 || phone === p2);
+    });
+
+    if (!matched.length) {
+      return res.status(404).json({
+        success: false,
+        message: "입력한 정보와 일치하는 계정을 찾을 수 없습니다.",
+      });
+    }
+
+    if (matched.length > 1) {
+      return res.status(409).json({
+        success: false,
+        message:
+          "동일 정보로 여러 계정이 확인되었습니다. 관리자에게 비밀번호 변경을 요청해주세요.",
+      });
+    }
+
+    const user = matched[0];
+    user.password = newPassword;
+    await user.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "비밀번호가 변경되었습니다. 새 비밀번호로 로그인해주세요.",
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "비밀번호 변경 중 오류가 발생했습니다.",
       error: error.message,
     });
   }
@@ -1337,6 +1886,10 @@ export default {
   register,
   validateReferral,
   login,
+  practiceLogin,
+  practiceRegister,
+  practiceFindPassword,
+  practiceChangePassword,
   refreshToken,
   getCurrentUser,
   changePassword,

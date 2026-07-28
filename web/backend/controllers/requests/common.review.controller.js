@@ -1005,6 +1005,9 @@ export async function updateReviewStatusByStage(req, res) {
         const isNewSystemFree =
           request?.caseInfos?.newSystemRequest?.requested &&
           request?.caseInfos?.newSystemRequest?.free;
+        const isPracticeDropzoneRequest =
+          String(request?.caseInfos?.newSystemRequest?.tag || "").trim() ===
+          "practice_dropzone";
 
         // businessAnchorId 보정: 값이 비어 있을 때만 requestor anchor로 채운다.
         if (!request.businessAnchorId && resolvedBusinessAnchorId) {
@@ -1353,6 +1356,7 @@ export async function updateReviewStatusByStage(req, res) {
           ) &&
           resolvedBusinessAnchorId &&
           !isNewSystemFree &&
+          !isPracticeDropzoneRequest &&
           !isManufacturerSampleRequest(request);
 
         if (shouldEnsureRequestSpend) {
@@ -1399,8 +1403,12 @@ export async function updateReviewStatusByStage(req, res) {
             console.error("[SCREW_LOT_AUTO_ASSIGN_ERROR]", err);
           }
 
-          // 샘플 의뢰는 전체 공정 진행은 동일하게 허용하되, 배송비 크레딧은 차감하지 않는다.
-          if (resolvedBusinessAnchorId && !isManufacturerSampleRequest(request)) {
+          // 샘플/치과 드롭존 의뢰는 전체 공정 진행은 동일하게 허용하되, 배송비 크레딧은 차감하지 않는다.
+          if (
+            resolvedBusinessAnchorId &&
+            !isManufacturerSampleRequest(request) &&
+            !isPracticeDropzoneRequest
+          ) {
             await ensureShippingFeeSpendOnPackingApprove({
               request,
               businessAnchorId: resolvedBusinessAnchorId,
@@ -1413,7 +1421,8 @@ export async function updateReviewStatusByStage(req, res) {
         if (
           effectiveStage === "shipping" &&
           resolvedBusinessAnchorId &&
-          !isManufacturerSampleRequest(request)
+          !isManufacturerSampleRequest(request) &&
+          !isPracticeDropzoneRequest
         ) {
           // 운영 중 과거 누락이 있더라도 shipping 승인 시점에 배송비 소비를 보강한다.
           await ensureShippingFeeSpendOnPackingApprove({
