@@ -90,6 +90,9 @@ export const usePackingCapture = ({
 
   const handlePackingImageDrop = useCallback(
     async (imageFiles: File[]) => {
+      // 프리뷰 모달이 열려 있을 때는 카드 기반 LOT 인식 캡처를 비활성화한다.
+      // 모달 업로드는 해당 의뢰에 직접 파일 저장 + 승인 처리(포장.발송 이동) 경로를 사용한다.
+      if (previewOpenRef.current) return;
       if (!token || imageFiles.length === 0) return;
       setOcrProcessing(true);
       setOcrStage("upload");
@@ -184,17 +187,7 @@ export const usePackingCapture = ({
         setOcrStage("idle");
       }
     },
-    [
-      extractLotSuffix3,
-      handleOpenPreview,
-      previewFiles.request,
-      previewOpen,
-      setRequests,
-      toast,
-      token,
-      uploadToS3,
-      resizeImageFile,
-    ],
+    [extractLotSuffix3, toast, token, uploadToS3, resizeImageFile],
   );
 
   const handlePageDrop = useCallback(
@@ -202,6 +195,10 @@ export const usePackingCapture = ({
       e.preventDefault();
       e.stopPropagation();
       setIsDraggingOver(false);
+
+      // 프리뷰 모달 오픈 중에는 페이지 전역 drop(LOT 인식)을 막는다.
+      if (previewOpenRef.current) return;
+
       const files = Array.from(e.dataTransfer.files || []);
       if (!files.length) return;
       const imageFiles = files.filter((file) => {
@@ -221,6 +218,10 @@ export const usePackingCapture = ({
   const handlePageDragOver = useCallback((e: DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     e.stopPropagation();
+    if (previewOpenRef.current) {
+      setIsDraggingOver(false);
+      return;
+    }
     setIsDraggingOver(true);
   }, []);
 

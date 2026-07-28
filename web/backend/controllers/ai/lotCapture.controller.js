@@ -47,6 +47,54 @@ function extractLotSuffix3(value) {
   return match ? match[0] : "";
 }
 
+function parseManufacturerHexRotationModeOrNull(value) {
+  const v = String(value || "").trim();
+  if (!v) return null;
+  if (v === "STL모델대로") return "STL모델대로";
+  if (v === "헥스30도회전") return "헥스30도회전";
+
+  const matched = v.match(/^헥스\s*([+-]?\d+(?:\.\d+)?)\s*도회전$/);
+  if (matched) {
+    const parsedX = Number(matched[1]);
+    if (Number.isFinite(parsedX)) {
+      const totalDeg = parsedX < 30 ? 30 + parsedX : parsedX;
+      if (totalDeg === 30) return "헥스30도회전";
+      return `헥스${String(totalDeg)}도회전`;
+    }
+  }
+
+  if (v === "0") return "STL모델대로";
+  if (v === "30") return "헥스30도회전";
+  return null;
+}
+
+function normalizeLegacyManufacturerHexRotationOnRequest(requestDoc) {
+  if (!requestDoc) return false;
+
+  const caseRaw = String(requestDoc?.caseInfos?.manufacturerHexRotation || "").trim();
+  const rndRaw = String(requestDoc?.rnd?.manufacturerHexRotation || "").trim();
+  const caseParsed = parseManufacturerHexRotationModeOrNull(caseRaw);
+  const rndParsed = parseManufacturerHexRotationModeOrNull(rndRaw);
+
+  if ((!caseRaw || caseParsed) && (!rndRaw || rndParsed)) {
+    return false;
+  }
+
+  const fallback = caseParsed || rndParsed || "STL모델대로";
+
+  requestDoc.caseInfos = requestDoc.caseInfos || {};
+  requestDoc.rnd = requestDoc.rnd || {};
+
+  if (caseRaw && !caseParsed) {
+    requestDoc.caseInfos.manufacturerHexRotation = fallback;
+  }
+  if (rndRaw && !rndParsed) {
+    requestDoc.rnd.manufacturerHexRotation = fallback;
+  }
+
+  return true;
+}
+
 async function findPackingRequestBySuffix(recognizedSuffix) {
   const suffix = extractLotSuffix3(recognizedSuffix);
   if (!suffix) return null;
@@ -383,6 +431,19 @@ export const handlePackingCapture = asyncHandler(async (req, res) => {
     });
   }
   applyStatusMapping(request, "발송");
+
+  const legacyHexRotationNormalized =
+    normalizeLegacyManufacturerHexRotationOnRequest(request);
+  if (legacyHexRotationNormalized) {
+    console.warn("[lot-capture] normalized legacy manufacturerHexRotation", {
+      requestId: request.requestId,
+      requestMongoId: String(request._id || ""),
+      caseInfosManufacturerHexRotation:
+        String(request?.caseInfos?.manufacturerHexRotation || "").trim() || null,
+      rndManufacturerHexRotation:
+        String(request?.rnd?.manufacturerHexRotation || "").trim() || null,
+    });
+  }
 
   console.log("[lot-capture] before save - businessAnchorId state", {
     requestId: request.requestId,

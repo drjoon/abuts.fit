@@ -874,10 +874,13 @@ export const PreviewModal = ({
 
         if (key === "packing") {
           try {
+            // 세척.패킹 프리뷰 모달 업로드는 LOT 인식 캡처 경로를 사용하지 않고,
+            // 해당 의뢰 파일 저장 후 즉시 승인(포장.발송 이동)으로 처리한다.
             await onUpdateReviewStatus({
               req: activeReq,
               status: "APPROVED",
               stageOverride: "packing",
+              keepPreviewOpen: false,
               approvalTriggerSource: "preview-modal",
             });
             setSearchParams((prev) => {

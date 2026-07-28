@@ -709,6 +709,33 @@ const normalizeRequestorDefaultManufacturerHexRotationOrNull = (value) => {
   return null;
 };
 
+const normalizeLegacyManufacturerHexRotationOnRequest = (requestDoc) => {
+  if (!requestDoc) return false;
+
+  const caseRaw = String(requestDoc?.caseInfos?.manufacturerHexRotation || "").trim();
+  const rndRaw = String(requestDoc?.rnd?.manufacturerHexRotation || "").trim();
+  const caseParsed = normalizeRequestorDefaultManufacturerHexRotationOrNull(caseRaw);
+  const rndParsed = normalizeRequestorDefaultManufacturerHexRotationOrNull(rndRaw);
+
+  if ((!caseRaw || caseParsed) && (!rndRaw || rndParsed)) {
+    return false;
+  }
+
+  const fallback = caseParsed || rndParsed || "STL모델대로";
+
+  requestDoc.caseInfos = requestDoc.caseInfos || {};
+  requestDoc.rnd = requestDoc.rnd || {};
+
+  if (caseRaw && !caseParsed) {
+    requestDoc.caseInfos.manufacturerHexRotation = fallback;
+  }
+  if (rndRaw && !rndParsed) {
+    requestDoc.rnd.manufacturerHexRotation = fallback;
+  }
+
+  return true;
+};
+
 const resolveOppositeFinalHexRotation = (value) => {
   const mode = normalizeFinalHexRotation(value);
   switch (mode) {
@@ -1921,6 +1948,19 @@ export async function saveStageFile(req, res) {
       updatedBy: req.user?._id,
       reason: "",
     };
+
+    const legacyHexRotationNormalized =
+      normalizeLegacyManufacturerHexRotationOnRequest(request);
+    if (legacyHexRotationNormalized) {
+      console.warn("[saveStageFile] normalized legacy manufacturerHexRotation", {
+        requestId: request.requestId,
+        requestMongoId: String(request._id || ""),
+        caseInfosManufacturerHexRotation:
+          String(request?.caseInfos?.manufacturerHexRotation || "").trim() || null,
+        rndManufacturerHexRotation:
+          String(request?.rnd?.manufacturerHexRotation || "").trim() || null,
+      });
+    }
 
     await request.save();
 
