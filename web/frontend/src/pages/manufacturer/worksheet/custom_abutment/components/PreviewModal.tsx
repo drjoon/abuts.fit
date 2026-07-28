@@ -52,10 +52,9 @@ type PreviewFiles = {
 // - web/backend/controllers/bg/bg.controller.js
 // - bg/pc1/esprit-addin/Helpers/NcFileGenerator.cs
 // Rhino의 align 기능이 구성정보를 대체하므로, 개별 구성정보 파일 모드는 사용하지 않는다.
-// 확장 규칙(표시/저장 분리):
-// - 프론트 표시(UI)는 minor 라벨("헥스10도회전")을 사용한다.
-// - 백엔드/Esprit 전달 canonical은 total 라벨("헥스40도회전" = 30 + 10)을 사용한다.
-// - 따라서 백엔드에서 내려온 "헥스X도회전"은 X>30이면 표시 시 X-30으로 변환한다.
+// 확장 규칙(표시/저장 통일):
+// - 프론트 표시(UI)와 백엔드/Esprit 전달값 모두 total 라벨("헥스40도회전" = 30 + 10)을 사용한다.
+// - legacy minor 라벨(예: 헥스10도회전)은 하위호환으로만 허용하고 total(헥스40도회전)로 정규화한다.
 type ManufacturerHexRotationCanonicalMode = "STL모델대로" | "헥스30도회전";
 type HexXRotationLabel = `헥스${number}도회전`;
 type ManufacturerHexRotationMode = "STL모델대로" | "헥스30도회전" | HexXRotationLabel;
@@ -79,9 +78,9 @@ const normalizeManufacturerHexRotationMode = (
   if (!Number.isFinite(parsedX)) return null;
   if (parsedX === 30) return "헥스30도회전";
 
-  // 백엔드 total(예: 40) -> UI minor(예: 10) 표시 변환
-  const uiMinorDeg = parsedX > 30 ? parsedX - 30 : parsedX;
-  return `헥스${String(uiMinorDeg)}도회전` as ManufacturerHexRotationMode;
+  // 전달/표시 SSOT: total 라벨 사용
+  const totalDeg = parsedX < 30 ? parsedX + 30 : parsedX;
+  return `헥스${String(totalDeg)}도회전` as ManufacturerHexRotationMode;
 };
 
 const toManufacturerHexRotationLabel = (
@@ -1790,8 +1789,8 @@ export const PreviewModal = ({
                     <SelectItem value="헥스30도회전" className="text-[12px] font-medium">
                       {toManufacturerHexRotationLabel("헥스30도회전")}
                     </SelectItem>
-                    <SelectItem value="헥스10도회전" className="text-[12px] font-medium">
-                      헥스10도회전
+                    <SelectItem value="헥스40도회전" className="text-[12px] font-medium">
+                      헥스40도회전
                     </SelectItem>
 
                   </SelectContent>

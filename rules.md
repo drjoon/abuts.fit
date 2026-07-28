@@ -1138,12 +1138,10 @@
   - 저장 필드(SSOT):
     - `Request.rnd.manufacturerHexRotation`
     - `Request.caseInfos.finalHexRotation` (표시/조회용 최종값)
-- 헥스 라벨 SSOT(표시/전달 분리):
-  - UI 표시는 `헥스X도회전(minor)` 사용 (예: `헥스10도회전`)
-  - 백엔드/Esprit 전달 canonical은 `헥스X도회전(total)` 사용 (예: `헥스40도회전`)
-    - 식: `totalDeg = 30 + minorDeg`
-  - 서버에서 내려온 total 라벨은 프론트에서 minor 라벨로 역변환해 표시한다.
-  - 레거시 입력값 `"0"`/`"30"`, 과거 minor 저장값(`헥스10도회전`)은 하위호환 정규화로 처리한다.
+- 헥스 라벨 SSOT(표시/전달 통일):
+  - UI 표시와 백엔드/Esprit 전달 canonical 모두 `헥스X도회전(total)` 사용 (예: `헥스40도회전`)
+  - 레거시 minor 입력(예: `헥스10도회전`)은 하위호환으로 `헥스40도회전`으로 정규화한다.
+  - 레거시 입력값 `"0"`/`"30"`은 하위호환 정규화로 처리한다.
   - **default fallback으로 임의 값을 주입하지 않는다.**
 - 의뢰 제출 시(`POST /api/requests/from-draft`) `Request.caseInfos.requestorHexRotation`은
   의뢰자 사업자 설정(`BusinessAnchor.requestSettings.designSoftware`)을 기준으로 강제 지정한다.

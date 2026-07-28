@@ -100,7 +100,7 @@ const resolveFinalHexRotationValue = ({
   if (
     mode === "STL모델대로" ||
     mode === "헥스30도회전" ||
-    mode === "헥스10도회전"
+    /^헥스\s*[+-]?\d+(?:\.\d+)?\s*도회전$/.test(mode)
   ) {
     return mode;
   }

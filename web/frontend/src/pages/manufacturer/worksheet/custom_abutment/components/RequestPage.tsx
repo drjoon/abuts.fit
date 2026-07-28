@@ -1475,9 +1475,9 @@ export const RequestPage = ({
         if (!Number.isFinite(parsedX)) return null;
         if (parsedX === 30) return "헥스30도회전";
 
-        // 백엔드 total(예: 40) -> 프론트 표시 minor(예: 10)
-        const uiMinorDeg = parsedX > 30 ? parsedX - 30 : parsedX;
-        return `헥스${String(uiMinorDeg)}도회전` as HexRotationUiMode;
+        // 전달/표시 SSOT: total 라벨 사용
+        const totalDeg = parsedX < 30 ? parsedX + 30 : parsedX;
+        return `헥스${String(totalDeg)}도회전` as HexRotationUiMode;
       };
 
       const toBackendManufacturerHexRotation = (
@@ -1497,8 +1497,8 @@ export const RequestPage = ({
           return mode;
         }
 
-        // 전달 SSOT: X는 totalDeg(=30+minorDeg)
-        const totalDeg = 30 + uiMinorDeg;
+        // 전달/표시 SSOT: X는 totalDeg. legacy minor(X<30)만 +30 보정.
+        const totalDeg = uiMinorDeg < 30 ? uiMinorDeg + 30 : uiMinorDeg;
         return `헥스${String(totalDeg)}도회전` as `헥스${number}도회전`;
       };
 
@@ -1540,7 +1540,7 @@ export const RequestPage = ({
             },
             rnd: {
               ...(item.rnd || {}),
-              // UI에는 minor 라벨 유지(예: 헥스10도회전)
+              // UI/서버 모두 total 라벨 유지(예: 헥스40도회전)
               manufacturerHexRotation: nextValue as any,
               manufacturerHexRotationUpdatedAt: new Date().toISOString(),
             },

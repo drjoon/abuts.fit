@@ -36,14 +36,12 @@
   승인 요청 바디(`processBothHexVariants`)로 백엔드 복사 생성 분기를 전달합니다.
   - 관련 파일: `src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx`, `src/pages/manufacturer/worksheet/custom_abutment/hooks/useRequestFileHandlers.ts`
 
-- 헥스 회전 라벨은 **표시(UI)와 전달(canonical)** 을 분리합니다.
+- 헥스 회전 라벨은 **표시(UI)와 전달(canonical)을 total 기준으로 통일**합니다.
   - 코드에서 `보정`/`무보정` 문자열 사용 금지(레거시).
   - 발견 시 즉시 `STL모델대로`/`헥스30도회전`로 치환하고 rules에 기록합니다.
-  - UI 표시는 `STL모델대로` / `헥스30도회전` / `헥스X도회전(minor)`
-    - 예) UI 선택: `헥스10도회전`
-  - 백엔드 전달 canonical은 `헥스X도회전(total)`
-    - 예) 전송값: `헥스40도회전` (= 30 + 10)
-  - 서버에서 내려온 total 라벨(`헥스40도회전`)은 UI에서 minor 라벨(`헥스10도회전`)로 역변환해 표시합니다.
+  - UI/백엔드 모두 `STL모델대로` / `헥스30도회전` / `헥스X도회전(total)` 사용
+    - 예) `헥스40도회전`
+  - legacy minor 라벨(`헥스10도회전`)은 입력 호환만 제공하고, 화면/저장은 total 라벨로 정규화합니다.
   - 디자인 소프트웨어 표시는 BusinessAnchor 전역값이 아니라 의뢰건 `caseInfos.designSoftware`를 우선 표시합니다.
   - 라벨 매핑/정규화 함수는 fallback 기본값을 두지 않고 명시 분기 + default error를 사용합니다.
   - 관련 파일:
