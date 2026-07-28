@@ -46,10 +46,11 @@ export type MailboxRefreshOptions = {
   invalidateMailboxDetailsCache?: boolean;
 };
 
-type ManualPickupAlternateMethodItem = {
+type ManualPickupMode = "none" | "hanjin" | "alternate";
+
+type ManualPickupReasonOption = {
   id: string;
   label: string;
-  selected: boolean;
 };
 
 type MailboxGridProps = {
@@ -113,21 +114,25 @@ export const MailboxGrid = ({
   const [manualPickupDialogOpen, setManualPickupDialogOpen] = useState(false);
   const [manualPickupTrackingByAddress, setManualPickupTrackingByAddress] =
     useState<Record<string, string>>({});
+  const [manualPickupModeByAddress, setManualPickupModeByAddress] = useState<
+    Record<string, ManualPickupMode>
+  >({});
   // related files:
   // - web/backend/controllers/requests/shipping.controller.js
   // - web/backend/models/request.model.js
   // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/tracking/TrackingPage.tsx
   // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/shipping/components/MailboxContentsModal.tsx
-  const [manualPickupUseAlternateShipping, setManualPickupUseAlternateShipping] =
+  const [manualPickupReasonOptions, setManualPickupReasonOptions] = useState<
+    ManualPickupReasonOption[]
+  >([
+    { id: "manual-pickup-reason-default", label: "방문 전달" },
+  ]);
+  const [manualPickupReasonOptionDraft, setManualPickupReasonOptionDraft] =
+    useState("");
+  const [manualPickupReasonManagerOpen, setManualPickupReasonManagerOpen] =
     useState(false);
-  const [manualPickupAlternateMethods, setManualPickupAlternateMethods] =
-    useState<ManualPickupAlternateMethodItem[]>(() => [
-      {
-        id: "manual-delivery-method-default",
-        label: "방문 전달",
-        selected: true,
-      },
-    ]);
+  const [manualPickupAlternateReasonIdByAddress, setManualPickupAlternateReasonIdByAddress] =
+    useState<Record<string, string>>({});
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const touchStartXRef = useRef<number>(0);
   const shelfRefs = useRef<Record<string, HTMLDivElement | null>>({});
@@ -581,15 +586,9 @@ export const MailboxGrid = ({
     }
   };
 
-  const buildManualPickupAlternateMethod = (
-    label = "",
-    selected = true,
-  ): ManualPickupAlternateMethodItem => ({
-    id: `manual-delivery-method-${Date.now()}-${Math.random()
-      .toString(36)
-      .slice(2, 8)}`,
-    label: String(label || ""),
-    selected,
+  const createManualPickupReasonOption = (label = ""): ManualPickupReasonOption => ({
+    id: `manual-pickup-reason-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    label: String(label || "").trim(),
   });
 
   const openManualPickupDialog = () => {
@@ -607,123 +606,194 @@ export const MailboxGrid = ({
     const initialTrackingByAddress = Object.fromEntries(
       mailboxCandidates.map((address) => [address, ""]),
     ) as Record<string, string>;
+    const initialModeByAddress = Object.fromEntries(
+      mailboxCandidates.map((address) => [address, "hanjin"]),
+    ) as Record<string, ManualPickupMode>;
+    const fallbackReasonId =
+      manualPickupReasonOptions[0]?.id || "manual-pickup-reason-default";
+    const initialAlternateReasonByAddress = Object.fromEntries(
+      mailboxCandidates.map((address) => [address, fallbackReasonId]),
+    ) as Record<string, string>;
+
     setManualPickupTrackingByAddress(initialTrackingByAddress);
-    setManualPickupUseAlternateShipping(false);
-    setManualPickupAlternateMethods([
-      buildManualPickupAlternateMethod("방문 전달", true),
-    ]);
+    setManualPickupModeByAddress(initialModeByAddress);
+    setManualPickupAlternateReasonIdByAddress(initialAlternateReasonByAddress);
+    setManualPickupReasonManagerOpen(false);
     setManualPickupDialogOpen(true);
   };
 
   const handleManualPickupComplete = async () => {
-    const selectedEntries = occupiedAddresses
-      .map((address) => {
-        const normalizedAddress = String(address || "").trim();
-        const trackingNumber = String(
-          manualPickupTrackingByAddress?.[normalizedAddress] || "",
-        ).trim();
-        return [normalizedAddress, trackingNumber] as const;
-      })
-      .filter(([mailboxAddress, trackingNumber]) =>
-        Boolean(mailboxAddress && trackingNumber),
-      );
-
-    const manualOtherModeMailboxAddresses = occupiedAddresses
+    const mailboxCandidates = occupiedAddresses
       .map((address) => String(address || "").trim())
       .filter(Boolean);
 
-    if (!manualPickupUseAlternateShipping && !selectedEntries.length) {
-      toast({
-        title: "수동 집하 입력 필요",
-        description: "우편함별 운송장번호를 최소 1개 이상 입력해주세요.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    if (manualPickupUseAlternateShipping && !manualOtherModeMailboxAddresses.length) {
-      toast({
-        title: "수동 발송 대상 없음",
-        description: "수동 발송 완료로 반영할 우편함이 없습니다.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    const mailboxAddresses = manualPickupUseAlternateShipping
-      ? manualOtherModeMailboxAddresses
-      : selectedEntries.map(([mailboxAddress]) =>
-          String(mailboxAddress || "").trim(),
-        );
-    const trackingNumberByMailbox = Object.fromEntries(selectedEntries);
-
-    const normalizedAlternateMethods = manualPickupAlternateMethods
-      .filter((item) => item.selected)
-      .map((item) => String(item.label || "").trim())
-      .filter(Boolean);
-
-    if (
-      manualPickupUseAlternateShipping &&
-      normalizedAlternateMethods.length === 0
-    ) {
-      toast({
-        title: "발송 방식 입력 필요",
-        description: "한진택배 외 발송 방식을 최소 1개 이상 입력해주세요.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    // 우편함 요약에서 유효한 shippingPackageId만 전송한다.
-    const targetMailboxSet = new Set(mailboxAddresses);
-    const shippingPackageIds = Array.from(
-      new Set(
-        Array.from(mailboxSummaryMap.entries())
-          .filter(([mailboxAddress]) => targetMailboxSet.has(mailboxAddress))
-          .flatMap(([, summary]) => summary.shippingPackageIds || [])
-          .map((value) => String(value || "").trim())
-          .filter((value) => /^[a-f\d]{24}$/i.test(value)),
-      ),
+    const hanjinTargets = mailboxCandidates.filter(
+      (address) => manualPickupModeByAddress?.[address] === "hanjin",
     );
+    const alternateTargets = mailboxCandidates.filter(
+      (address) => manualPickupModeByAddress?.[address] === "alternate",
+    );
+
+    if (!hanjinTargets.length && !alternateTargets.length) {
+      toast({
+        title: "반영 대상 없음",
+        description: "최소 1개 우편함의 반영 방식을 선택해주세요.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const missingTracking = hanjinTargets.filter((address) => {
+      const tracking = String(manualPickupTrackingByAddress?.[address] || "").trim();
+      return !tracking;
+    });
+    if (missingTracking.length > 0) {
+      toast({
+        title: "운송장번호 입력 필요",
+        description: `한진 집하완료 대상 우편함의 운송장번호를 입력해주세요. (${missingTracking.join(", ")})`,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const reasonMap = new Map(
+      manualPickupReasonOptions
+        .map((item) => [String(item.id || "").trim(), String(item.label || "").trim()] as const)
+        .filter(([id, label]) => Boolean(id && label)),
+    );
+
+    const missingAlternateReasons = alternateTargets.filter((address) => {
+      const reasonId = String(
+        manualPickupAlternateReasonIdByAddress?.[address] || "",
+      ).trim();
+      const reason = reasonMap.get(reasonId) || "";
+      return !reason;
+    });
+    if (missingAlternateReasons.length > 0) {
+      toast({
+        title: "수동 발송 사유 입력 필요",
+        description: `한진 외 발송 대상 우편함의 사유를 입력해주세요. (${missingAlternateReasons.join(", ")})`,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const buildShippingPackageIds = (mailboxAddresses: string[]) => {
+      const targetMailboxSet = new Set(mailboxAddresses);
+      return Array.from(
+        new Set(
+          Array.from(mailboxSummaryMap.entries())
+            .filter(([mailboxAddress]) => targetMailboxSet.has(mailboxAddress))
+            .flatMap(([, summary]) => summary.shippingPackageIds || [])
+            .map((value) => String(value || "").trim())
+            .filter((value) => /^[a-f\d]{24}$/i.test(value)),
+        ),
+      );
+    };
+
+    const parseSucceededMailboxes = (
+      responseData: any,
+      fallbackAddresses: string[],
+    ): string[] => {
+      const results = Array.isArray(responseData?.data?.results)
+        ? responseData.data.results
+        : [];
+      const okMailboxes = results
+        .filter((item: any) => Boolean(item?.success && item?.mailboxAddress))
+        .map((item: any) => String(item.mailboxAddress || "").trim())
+        .filter(Boolean);
+      return okMailboxes.length ? okMailboxes : fallbackAddresses;
+    };
 
     setIsRequestingPickup(true);
     setActiveHeaderAction("manual");
     try {
-      const response = await request<any>({
-        path: "/api/requests/shipping/hanjin/manual-pickup-complete",
-        method: "POST",
-        jsonBody: {
-          mailboxAddresses,
-          shippingPackageIds,
-          trackingNumberByMailbox,
-          trackingStatusCode: "11",
-          trackingStatusText: "집하완료",
-          useNonHanjinShippingMethods: manualPickupUseAlternateShipping,
-          nonHanjinShippingMethods: manualPickupUseAlternateShipping
-            ? normalizedAlternateMethods
-            : [],
-        },
-      });
-      const body = response.data as any;
-      if (!response.ok || !body?.success) {
-        throw new Error(body?.message || "수동 집하 처리에 실패했습니다.");
+      const succeededHanjin: string[] = [];
+      const succeededAlternate: string[] = [];
+
+      if (hanjinTargets.length > 0) {
+        const trackingNumberByMailbox = Object.fromEntries(
+          hanjinTargets.map((address) => [
+            address,
+            String(manualPickupTrackingByAddress?.[address] || "").trim(),
+          ]),
+        );
+
+        const response = await request<any>({
+          path: "/api/requests/shipping/hanjin/manual-pickup-complete",
+          method: "POST",
+          jsonBody: {
+            mailboxAddresses: hanjinTargets,
+            shippingPackageIds: buildShippingPackageIds(hanjinTargets),
+            trackingNumberByMailbox,
+            trackingStatusCode: "11",
+            trackingStatusText: "집하완료",
+            useNonHanjinShippingMethods: false,
+            nonHanjinShippingMethods: [],
+          },
+        });
+        const body = response.data as any;
+        if (!response.ok || !body?.success) {
+          throw new Error(body?.message || "한진 수동 집하 처리에 실패했습니다.");
+        }
+        succeededHanjin.push(...parseSucceededMailboxes(body, hanjinTargets));
       }
 
-      applyWorkflowOverrideForMailboxes(mailboxAddresses, {
-        code: manualPickupUseAlternateShipping ? "completed" : "picked_up",
-        label: manualPickupUseAlternateShipping ? "배송완료" : "집하완료",
-      });
+      for (const mailboxAddress of alternateTargets) {
+        const reasonId = String(
+          manualPickupAlternateReasonIdByAddress?.[mailboxAddress] || "",
+        ).trim();
+        const reason = String(reasonMap.get(reasonId) || "").trim();
 
-      if (onRefresh) {
+        const response = await request<any>({
+          path: "/api/requests/shipping/hanjin/manual-pickup-complete",
+          method: "POST",
+          jsonBody: {
+            mailboxAddresses: [mailboxAddress],
+            shippingPackageIds: buildShippingPackageIds([mailboxAddress]),
+            trackingNumberByMailbox: {},
+            trackingStatusCode: "11",
+            trackingStatusText: "집하완료",
+            useNonHanjinShippingMethods: true,
+            nonHanjinShippingMethods: [reason],
+          },
+        });
+        const body = response.data as any;
+        if (!response.ok || !body?.success) {
+          throw new Error(
+            body?.message || `${mailboxAddress} 수동 발송 반영에 실패했습니다.`,
+          );
+        }
+        const succeeded = parseSucceededMailboxes(body, [mailboxAddress]);
+        succeededAlternate.push(...succeeded);
+      }
+
+      const uniqueSucceededHanjin = Array.from(new Set(succeededHanjin));
+      const uniqueSucceededAlternate = Array.from(new Set(succeededAlternate));
+
+      if (uniqueSucceededHanjin.length > 0) {
+        applyWorkflowOverrideForMailboxes(uniqueSucceededHanjin, {
+          code: "picked_up",
+          label: "집하완료",
+        });
+      }
+      if (uniqueSucceededAlternate.length > 0) {
+        applyWorkflowOverrideForMailboxes(uniqueSucceededAlternate, {
+          code: "completed",
+          label: "배송완료",
+        });
+      }
+
+      if (onRefresh && (uniqueSucceededHanjin.length > 0 || uniqueSucceededAlternate.length > 0)) {
         await onRefresh({ invalidateMailboxDetailsCache: true });
       }
 
       setManualPickupDialogOpen(false);
       toast({
-        title: manualPickupUseAlternateShipping ? "수동 배송 완료" : "수동 집하 완료",
-        description: manualPickupUseAlternateShipping
-          ? `${mailboxAddresses.length}개 우편함을 수동 배송완료로 반영했습니다. (기타 발송 방식 ${normalizedAlternateMethods.length}개 저장)`
-          : `${mailboxAddresses.length}개 우편함을 수동 집하 완료로 반영했습니다.`,
+        title: "수동 집하 반영 완료",
+        description:
+          `한진 집하완료 ${uniqueSucceededHanjin.length}개, ` +
+          `한진 외 배송완료 ${uniqueSucceededAlternate.length}개 우편함을 반영했습니다.`,
       });
     } catch (error) {
       toast({
@@ -1708,122 +1778,210 @@ export const MailboxGrid = ({
 
             <div className="px-6 py-4 space-y-4">
               <div className="text-xs text-slate-500">
-                기본은 우편함별 운송장번호 입력이 필요합니다. 한진택배 외 발송을
-                선택하면 운송장번호 없이 배송완료로 반영됩니다.
+                우편함별로 반영 방식을 선택하세요. <br />
+                - 반영 안 함: 이번 수동 집하에서 제외 (예: 자동집하 예정) <br />
+                - 한진 집하완료: 운송장번호 입력 후 집하완료 처리 <br />
+                - 한진 외 배송완료: 사유 입력 후 배송완료 처리
               </div>
-              <div className="max-h-[300px] overflow-auto space-y-2 pr-1">
+
+              <div className="max-h-[420px] overflow-auto space-y-3 pr-1">
                 {occupiedAddresses.map((addr) => {
                   const count = Number(
                     mailboxSummaryMap.get(addr)?.requestCount || 0,
                   );
+                  const mode = manualPickupModeByAddress?.[addr] || "hanjin";
                   return (
                     <div
                       key={addr}
-                      className="grid grid-cols-[88px_1fr] items-center gap-2"
+                      className="rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-2"
                     >
-                      <div className="text-xs font-semibold text-slate-700">
-                        {addr} ({count}건)
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="text-sm font-semibold text-slate-700">
+                          {addr} ({count}건)
+                        </div>
+                        <div className="relative">
+                          <select
+                            value={mode}
+                            onChange={(e) => {
+                              const value = String(e.target.value || "hanjin") as ManualPickupMode;
+                              setManualPickupModeByAddress((prev) => ({
+                                ...prev,
+                                [addr]: value,
+                              }));
+                            }}
+                            className="h-9 min-w-[132px] appearance-none rounded-lg border border-slate-300 bg-white pl-2.5 pr-8 text-xs"
+                          >
+                            <option value="none">반영 안 함</option>
+                            <option value="hanjin">한진 집하완료</option>
+                            <option value="alternate">한진 외 배송완료</option>
+                          </select>
+                          <span className="pointer-events-none absolute inset-y-0 right-2.5 flex items-center text-slate-400 text-[10px]">
+                            ▾
+                          </span>
+                        </div>
                       </div>
-                      <input
-                        value={manualPickupTrackingByAddress?.[addr] || ""}
-                        onChange={(e) => {
-                          const value = e.target.value;
-                          setManualPickupTrackingByAddress((prev) => ({
-                            ...prev,
-                            [addr]: value,
-                          }));
-                        }}
-                        placeholder="운송장번호 입력"
-                        className="w-full h-10 rounded-lg border border-slate-300 px-3 text-sm"
-                      />
+
+                      {mode === "hanjin" && (
+                        <input
+                          value={manualPickupTrackingByAddress?.[addr] || ""}
+                          onChange={(e) => {
+                            const value = e.target.value;
+                            setManualPickupTrackingByAddress((prev) => ({
+                              ...prev,
+                              [addr]: value,
+                            }));
+                          }}
+                          placeholder="운송장번호 입력"
+                          className="w-full h-10 rounded-lg border border-slate-300 px-3 text-sm bg-white"
+                        />
+                      )}
+
+                      {mode === "alternate" && (
+                        <div className="relative">
+                          <select
+                            value={
+                              manualPickupAlternateReasonIdByAddress?.[addr] ||
+                              manualPickupReasonOptions[0]?.id ||
+                              ""
+                            }
+                            onChange={(e) => {
+                              const value = String(e.target.value || "");
+                              setManualPickupAlternateReasonIdByAddress((prev) => ({
+                                ...prev,
+                                [addr]: value,
+                              }));
+                            }}
+                            className="w-full h-10 appearance-none rounded-xl border border-blue-200 bg-gradient-to-b from-white to-blue-50 pl-3 pr-9 text-sm text-slate-700 shadow-sm outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+                          >
+                            {manualPickupReasonOptions.map((reason) => (
+                              <option key={reason.id} value={reason.id}>
+                                {reason.label}
+                              </option>
+                            ))}
+                          </select>
+                          <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-blue-400 text-xs">
+                            ▾
+                          </span>
+                        </div>
+                      )}
                     </div>
                   );
                 })}
               </div>
 
-              <div className="border-t border-slate-100 pt-3">
-                <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer select-none">
-                  <input
-                    type="checkbox"
-                    checked={manualPickupUseAlternateShipping}
-                    onChange={(e) => {
-                      const nextChecked = e.target.checked;
-                      setManualPickupUseAlternateShipping(nextChecked);
-                      if (nextChecked && manualPickupAlternateMethods.length === 0) {
-                        setManualPickupAlternateMethods([
-                          buildManualPickupAlternateMethod("방문 전달", true),
-                        ]);
-                      }
-                    }}
-                    className="h-4 w-4 rounded border-slate-300 text-blue-500"
-                  />
-                  한진택배 외 다른 방식으로 발송
-                </label>
+              <div className="rounded-lg border border-slate-200 bg-white">
+                <button
+                  type="button"
+                  className="w-full flex items-center justify-between px-3 py-2.5 text-left"
+                  onClick={() =>
+                    setManualPickupReasonManagerOpen((prev) => !prev)
+                  }
+                >
+                  <div className="text-xs font-semibold text-slate-600">
+                    한진 외 발송 사유 관리
+                  </div>
+                  <span className="text-slate-400 text-xs">
+                    {manualPickupReasonManagerOpen ? "▴" : "▾"}
+                  </span>
+                </button>
 
-                {manualPickupUseAlternateShipping && (
-                  <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-2">
-                    <div className="flex items-center justify-between">
-                      <div className="text-xs text-slate-500">
-                        체크된 방식만 저장됩니다. (예: 방문 전달, 퀵서비스)
+                {manualPickupReasonManagerOpen && (
+                  <div className="px-3 pb-3 space-y-2 border-t border-slate-100">
+                    <div className="flex items-center justify-between gap-2 pt-2">
+                      <div className="text-[11px] text-slate-500">
+                        사유를 추가/수정/삭제하면 우편함 선택에 즉시 반영됩니다.
                       </div>
                       <button
                         type="button"
-                        className="px-2.5 py-1 rounded-md text-xs text-blue-600 hover:bg-blue-50 border border-blue-200"
+                        className="px-2.5 py-1.5 rounded-md text-xs text-blue-600 hover:bg-blue-50 border border-blue-200"
                         onClick={() => {
-                          setManualPickupAlternateMethods((prev) => [
+                          const nextLabel = String(
+                            manualPickupReasonOptionDraft || "",
+                          ).trim();
+                          if (!nextLabel) return;
+                          const exists = manualPickupReasonOptions.some(
+                            (item) =>
+                              String(item.label || "").trim() === nextLabel,
+                          );
+                          if (exists) {
+                            toast({
+                              title: "이미 존재하는 사유",
+                              description:
+                                "같은 이름의 수동집하 사유가 이미 있습니다.",
+                            });
+                            return;
+                          }
+                          const created = createManualPickupReasonOption(nextLabel);
+                          setManualPickupReasonOptions((prev) => [
                             ...prev,
-                            buildManualPickupAlternateMethod("", true),
+                            created,
                           ]);
+                          setManualPickupReasonOptionDraft("");
                         }}
                       >
-                        + 방식 추가
+                        + 사유 추가
                       </button>
                     </div>
 
-                    <div className="max-h-[180px] overflow-auto space-y-2 pr-1">
-                      {manualPickupAlternateMethods.map((method) => (
+                    <div className="grid grid-cols-[1fr_auto] gap-2">
+                      <input
+                        value={manualPickupReasonOptionDraft}
+                        onChange={(e) =>
+                          setManualPickupReasonOptionDraft(e.target.value)
+                        }
+                        placeholder="새 사유 입력 (예: 동봉 전달, 퀵서비스)"
+                        className="h-9 rounded-lg border border-slate-300 px-3 text-sm"
+                      />
+                    </div>
+
+                    <div className="max-h-[140px] overflow-auto space-y-2 pr-1">
+                      {manualPickupReasonOptions.map((reason) => (
                         <div
-                          key={method.id}
-                          className="grid grid-cols-[auto_1fr_auto] gap-2 items-center"
+                          key={reason.id}
+                          className="grid grid-cols-[1fr_auto] items-center gap-2"
                         >
                           <input
-                            type="checkbox"
-                            checked={Boolean(method.selected)}
+                            value={reason.label}
                             onChange={(e) => {
-                              const checked = e.target.checked;
-                              setManualPickupAlternateMethods((prev) =>
+                              const nextLabel = String(e.target.value || "");
+                              setManualPickupReasonOptions((prev) =>
                                 prev.map((item) =>
-                                  item.id === method.id
-                                    ? { ...item, selected: checked }
+                                  item.id === reason.id
+                                    ? { ...item, label: nextLabel }
                                     : item,
                                 ),
                               );
                             }}
-                            className="h-4 w-4 rounded border-slate-300 text-blue-500"
-                            title="해당 방식 선택"
-                          />
-                          <input
-                            value={method.label}
-                            onChange={(e) => {
-                              const value = e.target.value;
-                              setManualPickupAlternateMethods((prev) =>
-                                prev.map((item) =>
-                                  item.id === method.id
-                                    ? { ...item, label: value }
-                                    : item,
-                                ),
-                              );
-                            }}
-                            placeholder="발송 방식 입력"
-                            className="w-full h-9 rounded-lg border border-slate-300 px-3 text-sm bg-white"
+                            className="h-9 rounded-lg border border-slate-300 px-3 text-sm bg-white"
                           />
                           <button
                             type="button"
                             className="px-2.5 py-1.5 rounded-md text-xs text-rose-600 hover:bg-rose-50 border border-rose-200"
                             onClick={() => {
-                              setManualPickupAlternateMethods((prev) =>
-                                prev.filter((item) => item.id !== method.id),
+                              if (manualPickupReasonOptions.length <= 1) {
+                                toast({
+                                  title: "최소 1개 사유 필요",
+                                  description:
+                                    "수동집하 사유는 최소 1개를 유지해야 합니다.",
+                                });
+                                return;
+                              }
+
+                              const nextOptions = manualPickupReasonOptions.filter(
+                                (item) => item.id !== reason.id,
                               );
+                              const fallbackReasonId = nextOptions[0]?.id || "";
+                              setManualPickupReasonOptions(nextOptions);
+                              setManualPickupAlternateReasonIdByAddress((prev) => {
+                                const next: Record<string, string> = {};
+                                for (const [address, selectedReasonId] of Object.entries(prev)) {
+                                  next[address] =
+                                    selectedReasonId === reason.id
+                                      ? fallbackReasonId
+                                      : selectedReasonId;
+                                }
+                                return next;
+                              });
                             }}
                           >
                             삭제

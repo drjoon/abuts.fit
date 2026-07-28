@@ -7,7 +7,7 @@ import {
   applyStatusMapping,
 } from "../controllers/requests/utils.js";
 import {
-  allocateVirtualMailboxAddress,
+  ensureMailboxAddressForBusiness,
   isManufacturerSampleRequest,
 } from "../controllers/requests/mailbox.utils.js";
 import { resolveMongoUri } from "../utils/mongoUri.js";
@@ -81,17 +81,24 @@ async function progressStages() {
     const productionToPackaging = await Request.find({
       manufacturerStage: "가공",
       "timeline.estimatedShipYmd": { $exists: true, $lte: oneDayFromNow },
-    });
+    }).populate("requestor", "businessAnchorId");
 
     for (const req of productionToPackaging) {
       applyStatusMapping(req, "세척.패킹");
       if (isManufacturerSampleRequest(req)) {
         req.mailboxAddress = null;
-      } else if (!req.mailboxAddress) {
+      } else {
         try {
-          const requestorOrgId = req.businessAnchorId;
-          req.mailboxAddress =
-            await allocateVirtualMailboxAddress(requestorOrgId);
+          const requestorOrgId =
+            req.businessAnchorId || req.requestor?.businessAnchorId || null;
+          const nextMailboxAddress = await ensureMailboxAddressForBusiness({
+            requestMongoId: req._id,
+            requestorOrgId,
+            currentMailboxAddress: req.mailboxAddress,
+          });
+          if (nextMailboxAddress) {
+            req.mailboxAddress = nextMailboxAddress;
+          }
         } catch (error) {
           console.error("[STAGE_WORKER] mailbox allocation failed", {
             requestId: req.requestId,

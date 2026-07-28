@@ -156,10 +156,24 @@ export async function ensureMailboxAddressForBusiness({
 }) {
   const { default: Request } = await import("../../models/request.model.js");
 
-  const requestorOrgIdStr = String(requestorOrgId || "").trim();
+  let requestorOrgIdStr = String(requestorOrgId || "").trim();
   const currentMailboxAddressStr = normalizeMailboxAddress(
     currentMailboxAddress,
   );
+
+  if (!requestorOrgIdStr && requestMongoId) {
+    const requestRow = await Request.findById(requestMongoId)
+      .select("businessAnchorId requestor")
+      .populate("requestor", "businessAnchorId")
+      .lean();
+
+    const directAnchorId = String(requestRow?.businessAnchorId || "").trim();
+    const requestorAnchorId = String(
+      requestRow?.requestor?.businessAnchorId || "",
+    ).trim();
+
+    requestorOrgIdStr = directAnchorId || requestorAnchorId;
+  }
 
   if (!requestorOrgIdStr) {
     return currentMailboxAddressStr || null;
