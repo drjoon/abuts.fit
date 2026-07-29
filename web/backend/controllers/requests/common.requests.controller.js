@@ -3018,6 +3018,159 @@ export async function updateRequestStatus(req, res) {
   }
 }
 
+// related files:
+// - web/backend/modules/requests/request.routes.js
+// - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
+// practice 전용 배치 취소(삭제) 엔드포인트
+// SSOT: POST /api/requests/practice/cancel-batch
+export async function cancelPracticeRequestsBatch(req, res) {
+  try {
+    const requestIds = Array.isArray(req.body?.requestIds)
+      ? req.body.requestIds.map((v) => String(v || "").trim()).filter(Boolean)
+      : [];
+    const requestMongoIds = Array.isArray(req.body?.requestMongoIds)
+      ? req.body.requestMongoIds.map((v) => String(v || "").trim()).filter(Boolean)
+      : [];
+
+    if (requestIds.length === 0 && requestMongoIds.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "requestIds 또는 requestMongoIds가 필요합니다.",
+      });
+    }
+
+    const validMongoIds = requestMongoIds.filter((id) => Types.ObjectId.isValid(id));
+    const requestFilterOr = [];
+
+    if (validMongoIds.length > 0) {
+      requestFilterOr.push({
+        _id: { $in: validMongoIds.map((id) => new Types.ObjectId(id)) },
+      });
+    }
+    if (requestIds.length > 0) {
+      requestFilterOr.push({ requestId: { $in: requestIds } });
+    }
+
+    if (requestFilterOr.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "유효한 요청 식별자가 없습니다.",
+      });
+    }
+
+    const requests = await Request.find({ $or: requestFilterOr }).populate(
+      "requestor",
+      "businessAnchorId",
+    );
+
+    const foundByMongoId = new Set(requests.map((row) => String(row?._id || "").trim()));
+    const foundByRequestId = new Set(
+      requests.map((row) => String(row?.requestId || "").trim()).filter(Boolean),
+    );
+
+    const failedIds = [];
+    const failedReasons = [];
+    const pushFail = (id, reason) => {
+      const normalizedId = String(id || "").trim();
+      if (!normalizedId) return;
+      failedIds.push(normalizedId);
+      failedReasons.push({ id: normalizedId, reason: String(reason || "처리에 실패했습니다.") });
+    };
+
+    for (const id of requestMongoIds) {
+      if (!Types.ObjectId.isValid(id) || !foundByMongoId.has(id)) {
+        pushFail(id, "의뢰를 찾을 수 없습니다.");
+      }
+    }
+    for (const id of requestIds) {
+      if (!foundByRequestId.has(id)) {
+        pushFail(id, "의뢰를 찾을 수 없습니다.");
+      }
+    }
+
+    let successCount = 0;
+    const currentRole = String(req.user?.role || "").trim();
+    const currentBusinessAnchorId = String(req.user?.businessAnchorId || "").trim();
+
+    for (const request of requests) {
+      const requestMongoId = String(request?._id || "").trim();
+      const requestId = String(request?.requestId || "").trim() || requestMongoId;
+
+      try {
+        const nsrTag = String(request?.caseInfos?.newSystemRequest?.tag || "").trim();
+        const isPracticeRouteTag =
+          nsrTag === "practice_dropzone" || nsrTag === "practice_file_transfer";
+
+        if (!isPracticeRouteTag) {
+          pushFail(requestId, "practice 전송 의뢰만 삭제(취소)할 수 있습니다.");
+          continue;
+        }
+
+        if (currentRole !== "admin") {
+          const ownerAnchorId = String(
+            request?.businessAnchorId || request?.requestor?.businessAnchorId || "",
+          ).trim();
+
+          if (!currentBusinessAnchorId || !ownerAnchorId || ownerAnchorId !== currentBusinessAnchorId) {
+            pushFail(requestId, "이 의뢰를 삭제(취소)할 권한이 없습니다.");
+            continue;
+          }
+        }
+
+        const stageStatus = String(request?.manufacturerStage || "").trim();
+        const deletableStages = ["의뢰", "CAM"];
+        if (!deletableStages.includes(stageStatus)) {
+          pushFail(requestId, "삭제 가능한 단계(의뢰/CAM)가 아닙니다.");
+          continue;
+        }
+
+        await ensureRequestCancelRefund({
+          request,
+          actorUserId: req.user?._id || null,
+        });
+
+        applyStatusMapping(request, "취소");
+        await request.save();
+
+        const anchorId = String(
+          request?.businessAnchorId || request?.requestor?.businessAnchorId || "",
+        ).trim();
+        if (anchorId) {
+          triggerDashboardSummaryRefreshForAnchorId(
+            anchorId,
+            `practice-request-canceled:${requestId}`,
+          ).catch(() => {
+            // ignore
+          });
+          triggerPricingSnapshotForBusinessAnchorId(
+            anchorId,
+            `practice-request-canceled:${requestId}`,
+          );
+        }
+
+        successCount += 1;
+      } catch (error) {
+        pushFail(requestId || requestMongoId, error?.message || "삭제(취소)에 실패했습니다.");
+      }
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        successCount,
+        failedIds: Array.from(new Set(failedIds)),
+        failedReasons,
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "practice 전송 의뢰 삭제(취소) 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
 export async function deleteRequest(req, res) {
   try {
     const requestId = req.params.id;

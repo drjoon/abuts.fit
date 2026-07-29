@@ -190,6 +190,26 @@
 - `web/backend/models/chat.model.js`
 - `web/backend/models/request.model.js`
 
+### 1.0.1.4 practice 삭제/채팅 전용 라우트 SSOT (2026-07-29)
+
+- practice 최근 전송 내역의 삭제(취소)는 **전용 배치 라우트**만 사용한다.
+  - SSOT: `POST /api/requests/practice/cancel-batch`
+  - payload: `requestIds: string[]`, `requestMongoIds: string[]`
+  - 처리 대상은 practice 태그 의뢰(`practice_dropzone|practice_file_transfer`)로 제한한다.
+  - 단계 제한은 `의뢰`, `CAM`만 허용한다.
+- practice 카드 삭제 컨펌 모달의 식별값 표시는 `transferId`가 `"-"`일 때 `requestId`로 fallback 한다.
+- practice 채팅방 진입은 **전용 라우트**를 사용한다.
+  - SSOT: `GET /api/chats/practice/request-room/:requestId`
+  - practice 전용 라우트는 practice 태그 의뢰만 허용한다.
+  - 라우팅 해석은 `caseInfos.practiceRouting` 우선(치과→기공소), 기존 `newSystemRequest.manufacturer`는 non-practice 경로에서만 사용한다.
+
+관련 파일:
+- `web/frontend/src/pages/practice/PracticeFileTransferPage.tsx`
+- `web/backend/modules/requests/request.routes.js`
+- `web/backend/controllers/requests/common.requests.controller.js`
+- `web/backend/modules/chat/chat.routes.js`
+- `web/backend/controllers/chats/chat.controller.js`
+
 ### 1.0.2 디자인소프트웨어 기본값 계층 (BusinessAnchor → Requestor → 의뢰건) (2026-07-27)
 
 - BusinessAnchor `requestSettings.designSoftware`는 **사업체 공통 기본값**으로만 관리한다.

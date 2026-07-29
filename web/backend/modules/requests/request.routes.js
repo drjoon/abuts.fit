@@ -383,6 +383,14 @@ router.patch(
   requestController.confirmRndUnmachinableByRequestor,
 );
 
+// practice(치과) 전송 의뢰 배치 취소(삭제)
+router.post(
+  "/practice/cancel-batch",
+  authenticate,
+  authorize(["practice", "admin"], { subRoles: ["owner", "staff"] }),
+  requestController.cancelPracticeRequestsBatch,
+);
+
 // 의뢰 상세 조회 (권한 검증은 컨트롤러에서 처리)
 router.get("/:id", authenticate, requestController.getRequestById);
 

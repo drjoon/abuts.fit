@@ -421,6 +421,18 @@ export async function getOrCreateRequestChatRoom(req, res) {
     const nsrTag = String(targetRequest?.caseInfos?.newSystemRequest?.tag || "").trim();
     const isPracticeRouteTag =
       nsrTag === "practice_dropzone" || nsrTag === "practice_file_transfer";
+    const isPracticeOnlyRoute = String(req.originalUrl || "").includes(
+      "/api/chats/practice/request-room/",
+    );
+
+    if (isPracticeOnlyRoute && !isPracticeRouteTag) {
+      return res.status(403).json({
+        success: false,
+        message: "practice 전용 채팅 라우트에서는 practice 의뢰만 접근할 수 있습니다.",
+      });
+    }
+
+    const usePracticeRouting = isPracticeOnlyRoute || isPracticeRouteTag;
 
     // related files:
     // - web/backend/models/request.model.js
@@ -449,13 +461,13 @@ export async function getOrCreateRequestChatRoom(req, res) {
 
     let manufacturerId = currentManufacturerId;
 
-    if (!manufacturerId && isPracticeRouteTag && labAnchorIdFromPracticeRouting) {
+    if (!manufacturerId && usePracticeRouting && labAnchorIdFromPracticeRouting) {
       manufacturerId = await resolveManufacturerUserIdByAnchor(
         labAnchorIdFromPracticeRouting,
       );
     }
 
-    if (!manufacturerId && !isPracticeRouteTag && legacyManufacturerRaw) {
+    if (!manufacturerId && !usePracticeRouting && legacyManufacturerRaw) {
       // 기존 루트 보존: 의뢰자(기공소)->제조사 경로는 manufacturer 필드를 우선 사용
       if (Types.ObjectId.isValid(legacyManufacturerRaw)) {
         manufacturerId = await resolveManufacturerUserIdByAnchor(

@@ -15,8 +15,15 @@ router.get("/support-room", chatController.getSupportRoom);
 // 모든 채팅방 조회 (Admin 전용)
 router.get("/rooms/all", authorize(["admin"]), chatController.getAllChatRooms);
 
-// 의뢰(request) 기준 채팅방 조회/생성
+// 의뢰(request) 기준 채팅방 조회/생성 (기존 루트)
 router.get("/request-room/:requestId", chatController.getOrCreateRequestChatRoom);
+
+// practice(치과) 전용 의뢰 채팅방 조회/생성 (치과->기공소 루트)
+router.get(
+  "/practice/request-room/:requestId",
+  authorize(["practice", "admin"], { subRoles: ["owner", "staff"] }),
+  chatController.getOrCreateRequestChatRoom,
+);
 
 // 채팅방 생성 또는 기존 채팅방 조회
 router.post("/rooms", chatController.createOrGetChatRoom);

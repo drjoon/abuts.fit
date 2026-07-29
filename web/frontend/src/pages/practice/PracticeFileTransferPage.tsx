@@ -81,7 +81,8 @@ import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
 import { onNotification } from "@/shared/realtime/socket";
 
 type RecentRequestItem = {
-  id: string;
+  id: string; // requestId(표시/검색/채팅매핑용)
+  requestMongoId: string; // 삭제 API 호출용
   createdAt: string;
   requestDate: string;
   patientName: string;
@@ -98,6 +99,7 @@ type RecentRequestItem = {
 type RecentTransferItem = {
   id: string;
   transferId: string;
+  deleteTargetLabel: string;
   createdAt: string;
   createdAtTs: number;
   requestDate: string;
@@ -106,6 +108,7 @@ type RecentTransferItem = {
   fileCount: number;
   patientCount: number;
   requestIds: string[];
+  requestMongoIds: string[];
   fileNames: string[];
   transferMemo: string;
   unreadCount: number;
@@ -327,8 +330,12 @@ export const PracticeFileTransferPage = () => {
               : {};
 
           const patientName = String(ci.patientName || "").trim() || "-";
+          const requestId = String(r.requestId || r._id || "").trim();
+          const requestMongoId = String(r._id || "").trim();
+
           return {
-            id: String(r.requestId || r._id || "").trim(),
+            id: requestId,
+            requestMongoId,
             createdAt: toDateLabel(createdAtRaw),
             requestDate: toDayLabel(createdAtRaw),
             patientName,
@@ -423,6 +430,7 @@ export const PracticeFileTransferPage = () => {
         _statuses: Set<string>;
         _patients: Set<string>;
         _requestIds: Set<string>;
+        _requestMongoIds: Set<string>;
         _fileNames: Set<string>;
       }
     >();
@@ -439,12 +447,15 @@ export const PracticeFileTransferPage = () => {
         if (patientKey) initialPatients.add(patientKey);
 
         const requestIds = new Set<string>([req.id]);
+        const requestMongoIds = new Set<string>();
+        if (req.requestMongoId) requestMongoIds.add(req.requestMongoId);
         const fileNames = new Set<string>();
         if (req.fileName) fileNames.add(req.fileName);
         const unreadCount = Number(unreadByRequestId.get(req.id) || 0);
         byKey.set(key, {
           id: req.id,
           transferId: req.transferId || "-",
+          deleteTargetLabel: req.transferId || req.id,
           createdAt: req.createdAt,
           createdAtTs: req.createdAtTs,
           requestDate: req.requestDate,
@@ -453,6 +464,7 @@ export const PracticeFileTransferPage = () => {
           fileCount: 1,
           patientCount: Math.max(1, initialPatients.size),
           requestIds: [req.id],
+          requestMongoIds: req.requestMongoId ? [req.requestMongoId] : [],
           fileNames: req.fileName ? [req.fileName] : [],
           transferMemo: req.transferMemo,
           unreadCount,
@@ -473,6 +485,7 @@ export const PracticeFileTransferPage = () => {
           _statuses: new Set([req.status]),
           _patients: initialPatients,
           _requestIds: requestIds,
+          _requestMongoIds: requestMongoIds,
           _fileNames: fileNames,
         });
         continue;
@@ -486,6 +499,10 @@ export const PracticeFileTransferPage = () => {
       existing._statuses.add(req.status);
       existing._requestIds.add(req.id);
       existing.requestIds = Array.from(existing._requestIds);
+      if (req.requestMongoId) {
+        existing._requestMongoIds.add(req.requestMongoId);
+      }
+      existing.requestMongoIds = Array.from(existing._requestMongoIds);
       if (req.fileName) {
         existing._fileNames.add(req.fileName);
       }
@@ -506,6 +523,9 @@ export const PracticeFileTransferPage = () => {
       );
 
       existing.searchBlob = `${existing.searchBlob} ${[req.patientName, req.toothNumbers.join(" "), req.id, req.transferMemo, req.fileName].join(" ")}`.toLowerCase();
+      if (!existing.transferId || existing.transferId === "-") {
+        existing.deleteTargetLabel = req.id;
+      }
 
       const statusSet = existing._statuses;
       if (statusSet.size === 1) {
@@ -520,7 +540,13 @@ export const PracticeFileTransferPage = () => {
     }
 
     return [...byKey.values()]
-      .map(({ _statuses: _s, _patients: _p, _requestIds: _r, _fileNames: _f, ...row }) => row)
+      .map(({ _statuses: _s, _patients: _p, _requestIds: _r, _requestMongoIds: _rm, _fileNames: _f, ...row }) => ({
+        ...row,
+        deleteTargetLabel:
+          row.transferId && row.transferId !== "-"
+            ? row.transferId
+            : row.id,
+      }))
       .sort((a, b) => Number(b.createdAtTs || 0) - Number(a.createdAtTs || 0));
   }, [filteredRecentRequests, chatRooms]);
 
@@ -581,7 +607,7 @@ export const PracticeFileTransferPage = () => {
     setChatLoading(true);
     try {
       const res = await apiFetch<unknown>({
-        path: `/api/chats/request-room/${encodeURIComponent(primaryRequestId)}`,
+        path: `/api/chats/practice/request-room/${encodeURIComponent(primaryRequestId)}`,
         method: "GET",
         token: authToken,
       });
@@ -661,8 +687,11 @@ export const PracticeFileTransferPage = () => {
     const requestIds = Array.isArray(target?.requestIds)
       ? target!.requestIds.map((id) => String(id || "").trim()).filter(Boolean)
       : [];
+    const requestMongoIds = Array.isArray(target?.requestMongoIds)
+      ? target!.requestMongoIds.map((id) => String(id || "").trim()).filter(Boolean)
+      : [];
 
-    if (!target || requestIds.length === 0) {
+    if (!target || requestIds.length === 0 || requestMongoIds.length === 0) {
       toast({
         title: "삭제할 의뢰가 없습니다",
         variant: "destructive",
@@ -677,19 +706,34 @@ export const PracticeFileTransferPage = () => {
     const failedIds: string[] = [];
 
     try {
-      for (const requestId of requestIds) {
-        const res = await apiFetch<unknown>({
-          path: `/api/requests/${encodeURIComponent(requestId)}`,
-          method: "DELETE",
-          token: authToken,
-        });
+      // related files:
+      // - web/backend/modules/requests/request.routes.js
+      // - web/backend/controllers/requests/common.requests.controller.js
+      // practice 전용 배치 취소 라우트 사용 (치과->기공소 루트)
+      const res = await apiFetch<unknown>({
+        path: "/api/requests/practice/cancel-batch",
+        method: "POST",
+        token: authToken,
+        jsonBody: {
+          requestIds,
+          requestMongoIds,
+        },
+      });
 
-        if (res.ok) {
-          successCount += 1;
-        } else {
-          failedIds.push(requestId);
-        }
+      if (!res.ok) {
+        const body = asApiMessagePayload(res.data);
+        throw new Error(String(body?.message || "전송 의뢰 내역 삭제(취소)에 실패했습니다."));
       }
+
+      const body =
+        res.data && typeof res.data === "object"
+          ? (res.data as { data?: { successCount?: number; failedIds?: string[] } })
+          : {};
+      const data = body.data || {};
+      successCount = Number(data.successCount || 0);
+      failedIds.push(
+        ...((Array.isArray(data.failedIds) ? data.failedIds : []).map((v) => String(v || "").trim())),
+      );
 
       if (successCount > 0) {
         const deletedSet = new Set(requestIds);
@@ -712,6 +756,15 @@ export const PracticeFileTransferPage = () => {
 
       await loadRecentRequests();
       void reloadChatRooms();
+    } catch (error) {
+      toast({
+        title: "삭제 실패",
+        description:
+          error instanceof Error
+            ? error.message
+            : "전송 의뢰 내역 삭제 중 오류가 발생했습니다.",
+        variant: "destructive",
+      });
     } finally {
       setDeletingTransfer(false);
       setDeleteConfirmOpen(false);
@@ -1007,7 +1060,7 @@ export const PracticeFileTransferPage = () => {
                 </div>
 
                 <div className="rounded-xl border bg-background p-4">
-                  <p className="text-base font-semibold">의뢰 정ㄹ</p>
+                  <p className="text-base font-semibold">의뢰 접수</p>
 
                   <div className="mt-3 space-y-2">
                     <Label className="text-sm">기공소 선택</Label>
@@ -1399,7 +1452,9 @@ export const PracticeFileTransferPage = () => {
           description={
             <div className="space-y-1">
               <div className="text-sm text-muted-foreground">
-                삭제 대상: {deleteTargetTransfer?.transferId || deleteTargetTransfer?.id || "-"}
+                삭제 대상: {deleteTargetTransfer?.transferId && deleteTargetTransfer.transferId !== "-"
+                  ? deleteTargetTransfer.transferId
+                  : deleteTargetTransfer?.id || "-"}
               </div>
               <div className="text-sm text-muted-foreground">
                 포함 의뢰 {deleteTargetTransfer?.requestIds?.length || 0}건을 삭제(취소) 처리합니다.
