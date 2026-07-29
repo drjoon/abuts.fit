@@ -720,7 +720,7 @@ export const PracticeDropzonePage = () => {
           },
           newSystemRequest: {
             requested: true,
-            manufacturer: "",
+            manufacturer: String(selectedLab?._id || "").trim(),
             brand: "",
             family: "",
             message: `[기공소: ${String(selectedLab?.name || "")}] ${transferMemo}\n[전송ID: ${transferId}]`,

@@ -150,19 +150,27 @@
 ### 1.0.1.3 practice 최근 전송카드 상세/채팅 UX SSOT (2026-07-29)
 
 - `/practice/dashboard` 최근 전송 내역 카드는 클릭 시 **의뢰 상세 + 채팅 모달**을 연다.
-  - 상단: 전송ID, 전송시각, 기공소, 파일수, 환자수, 의뢰번호 목록, 의뢰 메모
+  - 상단: 2열×3행 요약 레이아웃(전송ID/전송시각/기공소/파일수/파일명/의뢰메모)
   - 하단: 해당 의뢰와 연결된 기공소 채팅창
+- practice 최근 전송 목록/모달의 파일 집계 라벨은 `파일 N개`를 사용하고, 환자 라벨은 표시하지 않는다.
+- 모달의 상세 식별값은 `의뢰번호` 대신 `파일명` 목록을 우선 표시한다.
 - 전송카드의 안읽은 메시지 배지는 **배치에 포함된 requestId들의 unreadCount 합**으로 계산한다.
   - 데이터 소스 SSOT: `GET /api/chats/rooms`의 `relatedRequestId.requestId`, `unreadCount`
 - 의뢰-채팅방 연결 SSOT:
   - `GET /api/chats/request-room/:requestId`로 request 기반 채팅방을 조회/생성한다.
-  - 참여자는 해당 `Request.requestor`와 `Request.caManufacturer`를 기준으로 구성한다.
+  - 참여자는 해당 `Request.requestor`와 제조사 BusinessAnchor 기준 사용자로 구성한다.
+  - `Request.caManufacturer`가 비어있으면 다음 순서로 제조사 사용자를 결정한다.
+    1) `caseInfos.newSystemRequest.manufacturer`(기공소 BusinessAnchorId)
+    2) 메시지의 `[기공소: ...]` 이름으로 제조사 BusinessAnchor 조회
+  - 최초 해석된 제조사 사용자는 `Request.caManufacturer`에 저장해 이후 채팅 연결 SSOT로 고정한다.
+- practice 제출 시 `caseInfos.newSystemRequest.manufacturer`에 선택한 기공소의 BusinessAnchorId를 저장한다.
 - 메시지 읽음 처리 SSOT:
   - 모달에서 메시지 조회(`GET /api/chats/rooms/:roomId/messages`) 시 읽음 업데이트를 트리거한다.
   - 모달 진입/발송 후 rooms를 갱신해 카드 배지 상태를 최신화한다.
 
 관련 파일:
 - `web/frontend/src/pages/practice/PracticeFileTransferPage.tsx`
+- `web/frontend/src/pages/practice/PracticeDropzonePage.tsx`
 - `web/frontend/src/shared/hooks/useChatRooms.ts`
 - `web/frontend/src/shared/hooks/useChatMessages.ts`
 - `web/backend/modules/chat/chat.routes.js`

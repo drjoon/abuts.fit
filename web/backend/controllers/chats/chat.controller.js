@@ -3,6 +3,7 @@ import ChatRoom from "../../models/chatRoom.model.js";
 import Chat from "../../models/chat.model.js";
 import User from "../../models/user.model.js";
 import Request from "../../models/request.model.js";
+import BusinessAnchor from "../../models/businessAnchor.model.js";
 
 const __chatPerfCache = new Map();
 const __chatInFlight = new Map();
@@ -318,6 +319,8 @@ export async function getOrCreateRequestChatRoom(req, res) {
         requestId: 1,
         requestor: 1,
         caManufacturer: 1,
+        "caseInfos.newSystemRequest.manufacturer": 1,
+        "caseInfos.newSystemRequest.message": 1,
       })
       .lean();
 
@@ -329,12 +332,128 @@ export async function getOrCreateRequestChatRoom(req, res) {
     }
 
     const requestorId = String(targetRequest.requestor || "").trim();
-    const manufacturerId = String(targetRequest.caManufacturer || "").trim();
+    const currentManufacturerId = String(targetRequest.caManufacturer || "").trim();
+
+    const messageRaw = String(
+      targetRequest?.caseInfos?.newSystemRequest?.message || "",
+    ).trim();
+    const labNameFromMessage = String(
+      (messageRaw.match(/\[\s*기공소\s*:\s*([^\]]+)\]/i) || [])[1] || "",
+    ).trim();
+
+    const explicitManufacturerAnchorRaw = String(
+      targetRequest?.caseInfos?.newSystemRequest?.manufacturer || "",
+    ).trim();
+
+    const resolveManufacturerUserIdByAnchor = async (anchorId) => {
+      if (!anchorId || !Types.ObjectId.isValid(anchorId)) return "";
+
+      const anchor = await BusinessAnchor.findById(anchorId)
+        .select({ primaryContactUserId: 1, owners: 1, members: 1, businessType: 1 })
+        .lean();
+      if (!anchor || anchor.businessType !== "manufacturer") return "";
+
+      const primaryId = String(anchor.primaryContactUserId || "").trim();
+      if (primaryId && Types.ObjectId.isValid(primaryId)) {
+        const primaryUser = await User.findOne({
+          _id: new Types.ObjectId(primaryId),
+          role: "manufacturer",
+          active: true,
+        })
+          .select({ _id: 1 })
+          .lean();
+        if (primaryUser?._id) return String(primaryUser._id);
+      }
+
+      const ownerIds = Array.isArray(anchor.owners)
+        ? anchor.owners
+            .map((id) => String(id || "").trim())
+            .filter((id) => Types.ObjectId.isValid(id))
+        : [];
+      if (ownerIds.length > 0) {
+        const ownerUser = await User.findOne({
+          _id: { $in: ownerIds.map((id) => new Types.ObjectId(id)) },
+          role: "manufacturer",
+          active: true,
+        })
+          .select({ _id: 1 })
+          .lean();
+        if (ownerUser?._id) return String(ownerUser._id);
+      }
+
+      const memberIds = Array.isArray(anchor.members)
+        ? anchor.members
+            .map((id) => String(id || "").trim())
+            .filter((id) => Types.ObjectId.isValid(id))
+        : [];
+      if (memberIds.length > 0) {
+        const memberUser = await User.findOne({
+          _id: { $in: memberIds.map((id) => new Types.ObjectId(id)) },
+          role: "manufacturer",
+          active: true,
+        })
+          .select({ _id: 1 })
+          .lean();
+        if (memberUser?._id) return String(memberUser._id);
+      }
+
+      const anyUser = await User.findOne({
+        businessAnchorId: new Types.ObjectId(anchorId),
+        role: "manufacturer",
+        active: true,
+      })
+        .select({ _id: 1 })
+        .lean();
+      return String(anyUser?._id || "").trim();
+    };
+
+    let manufacturerId = currentManufacturerId;
+    if (!manufacturerId && explicitManufacturerAnchorRaw) {
+      if (Types.ObjectId.isValid(explicitManufacturerAnchorRaw)) {
+        manufacturerId = await resolveManufacturerUserIdByAnchor(
+          explicitManufacturerAnchorRaw,
+        );
+      } else {
+        const explicitAnchorByName = await BusinessAnchor.findOne({
+          businessType: "manufacturer",
+          name: explicitManufacturerAnchorRaw,
+        })
+          .select({ _id: 1 })
+          .lean();
+        const explicitAnchorId = String(explicitAnchorByName?._id || "").trim();
+        if (explicitAnchorId) {
+          manufacturerId = await resolveManufacturerUserIdByAnchor(explicitAnchorId);
+        }
+      }
+    }
+
+    if (!manufacturerId && labNameFromMessage) {
+      const labAnchor = await BusinessAnchor.findOne({
+        businessType: "manufacturer",
+        name: labNameFromMessage,
+      })
+        .select({ _id: 1 })
+        .lean();
+
+      const labAnchorId = String(labAnchor?._id || "").trim();
+      if (labAnchorId) {
+        manufacturerId = await resolveManufacturerUserIdByAnchor(labAnchorId);
+      }
+    }
 
     if (!requestorId || !manufacturerId) {
       return res.status(409).json({
         success: false,
-        message: "아직 연결 가능한 기공소 담당자가 지정되지 않았습니다.",
+        message: "아직 연결 가능한 기공소가 지정되지 않았습니다.",
+      });
+    }
+
+    if (!currentManufacturerId && manufacturerId) {
+      await Request.updateOne(
+        { _id: targetRequest._id, caManufacturer: null },
+        { $set: { caManufacturer: new Types.ObjectId(manufacturerId) } },
+      ).catch(() => {
+        // ignore
       });
     }
 

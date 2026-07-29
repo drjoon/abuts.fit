@@ -90,6 +90,7 @@ type RecentRequestItem = {
   createdAtTs: number;
   transferId: string;
   transferMemo: string;
+  fileName: string;
 };
 
 type RecentTransferItem = {
@@ -103,6 +104,7 @@ type RecentTransferItem = {
   fileCount: number;
   patientCount: number;
   requestIds: string[];
+  fileNames: string[];
   transferMemo: string;
   unreadCount: number;
   searchBlob: string;
@@ -126,13 +128,13 @@ const extractTransferMemoFromMessage = (message: string) => {
 
   return raw
     .split(/\r?\n/)
-    .map((line) => String(line || "").trim())
-    .filter(
-      (line) =>
-        Boolean(line) &&
-        !/^\[\s*기공소\s*:/i.test(line) &&
-        !/^\[\s*전송ID\s*:/i.test(line),
+    .map((line) =>
+      String(line || "")
+        .replace(/\[\s*기공소\s*:[^\]]*\]/gi, "")
+        .replace(/\[\s*전송ID\s*:[^\]]*\]/gi, "")
+        .trim(),
     )
+    .filter(Boolean)
     .join("\n")
     .trim();
 };
@@ -313,6 +315,10 @@ export const PracticeFileTransferPage = () => {
           const toothRaw = String(ci.tooth || "").trim();
           const createdAtRaw = String(r.createdAt || "");
           const transferMemo = extractTransferMemoFromMessage(message);
+          const fileObj =
+            ci.file && typeof ci.file === "object"
+              ? (ci.file as Record<string, unknown>)
+              : {};
 
           const patientName = String(ci.patientName || "").trim() || "-";
           return {
@@ -327,6 +333,7 @@ export const PracticeFileTransferPage = () => {
             createdAtTs: new Date(createdAtRaw).getTime(),
             transferId: extractTransferIdFromMessage(message),
             transferMemo,
+            fileName: String(fileObj.originalName || fileObj.name || "").trim(),
           };
         })
         .filter((item) => Boolean(item.id))
@@ -387,6 +394,7 @@ export const PracticeFileTransferPage = () => {
         request.toothNumbers.join(" "),
         request.targetLab,
         request.status,
+        request.fileName,
       ]
         .join(" ")
         .toLowerCase();
@@ -409,6 +417,7 @@ export const PracticeFileTransferPage = () => {
         _statuses: Set<string>;
         _patients: Set<string>;
         _requestIds: Set<string>;
+        _fileNames: Set<string>;
       }
     >();
 
@@ -424,6 +433,8 @@ export const PracticeFileTransferPage = () => {
         if (patientKey) initialPatients.add(patientKey);
 
         const requestIds = new Set<string>([req.id]);
+        const fileNames = new Set<string>();
+        if (req.fileName) fileNames.add(req.fileName);
         const unreadCount = Number(unreadByRequestId.get(req.id) || 0);
         byKey.set(key, {
           id: req.id,
@@ -436,6 +447,7 @@ export const PracticeFileTransferPage = () => {
           fileCount: 1,
           patientCount: Math.max(1, initialPatients.size),
           requestIds: [req.id],
+          fileNames: req.fileName ? [req.fileName] : [],
           transferMemo: req.transferMemo,
           unreadCount,
           searchBlob: [
@@ -448,12 +460,14 @@ export const PracticeFileTransferPage = () => {
             req.status,
             req.transferMemo,
             req.transferId,
+            req.fileName,
           ]
             .join(" ")
             .toLowerCase(),
           _statuses: new Set([req.status]),
           _patients: initialPatients,
           _requestIds: requestIds,
+          _fileNames: fileNames,
         });
         continue;
       }
@@ -466,6 +480,10 @@ export const PracticeFileTransferPage = () => {
       existing._statuses.add(req.status);
       existing._requestIds.add(req.id);
       existing.requestIds = Array.from(existing._requestIds);
+      if (req.fileName) {
+        existing._fileNames.add(req.fileName);
+      }
+      existing.fileNames = Array.from(existing._fileNames);
 
       if (!existing.transferMemo && req.transferMemo) {
         existing.transferMemo = req.transferMemo;
@@ -481,7 +499,7 @@ export const PracticeFileTransferPage = () => {
         0,
       );
 
-      existing.searchBlob = `${existing.searchBlob} ${[req.patientName, req.toothNumbers.join(" "), req.id, req.transferMemo].join(" ")}`.toLowerCase();
+      existing.searchBlob = `${existing.searchBlob} ${[req.patientName, req.toothNumbers.join(" "), req.id, req.transferMemo, req.fileName].join(" ")}`.toLowerCase();
 
       const statusSet = existing._statuses;
       if (statusSet.size === 1) {
@@ -496,7 +514,7 @@ export const PracticeFileTransferPage = () => {
     }
 
     return [...byKey.values()]
-      .map(({ _statuses: _s, _patients: _p, _requestIds: _r, ...row }) => row)
+      .map(({ _statuses: _s, _patients: _p, _requestIds: _r, _fileNames: _f, ...row }) => row)
       .sort((a, b) => Number(b.createdAtTs || 0) - Number(a.createdAtTs || 0));
   }, [filteredRecentRequests, chatRooms]);
 
@@ -713,7 +731,7 @@ export const PracticeFileTransferPage = () => {
           },
           newSystemRequest: {
             requested: true,
-            manufacturer: "",
+            manufacturer: String(selectedLab?._id || "").trim(),
             brand: "",
             family: "",
             message: `[기공소: ${String(selectedLab?.name || "")}] ${transferMemo}\n[전송ID: ${transferId}]`,
@@ -1073,7 +1091,7 @@ export const PracticeFileTransferPage = () => {
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
                   type="text"
-                  placeholder="의뢰일/환자명/치아번호/기공소/의뢰번호 검색"
+                  placeholder="의뢰일/치아번호/기공소/파일명/전송ID 검색"
                   className="h-9 pl-9"
                   value={requestSearchTerm}
                   onChange={(event) => setRequestSearchTerm(event.target.value)}
@@ -1108,7 +1126,7 @@ export const PracticeFileTransferPage = () => {
                       {transfer.createdAt} · {transfer.targetLab}
                     </p>
                     <p className="text-xs text-muted-foreground truncate">
-                      파일 {transfer.fileCount}개 · 환자 {transfer.patientCount}명
+                      파일 {transfer.fileCount}개
                     </p>
                   </div>
                   <div className="shrink-0 flex items-center gap-2">
@@ -1136,29 +1154,37 @@ export const PracticeFileTransferPage = () => {
             </DialogHeader>
 
             <div className="px-5 py-4 space-y-4">
-              <div className="rounded-lg border bg-muted/20 p-3 text-sm space-y-1.5">
-                <p>
-                  <span className="text-muted-foreground">전송ID:</span>{" "}
-                  <span className="font-medium">{selectedTransfer?.transferId && selectedTransfer.transferId !== "-" ? selectedTransfer.transferId : selectedTransfer?.id || "-"}</span>
-                </p>
-                <p>
-                  <span className="text-muted-foreground">전송시각:</span> {selectedTransfer?.createdAt || "-"}
-                </p>
-                <p>
-                  <span className="text-muted-foreground">기공소:</span> {selectedTransfer?.targetLab || "-"}
-                </p>
-                <p>
-                  <span className="text-muted-foreground">파일/환자:</span>{" "}
-                  파일 {selectedTransfer?.fileCount || 0}개 · 환자 {selectedTransfer?.patientCount || 0}명
-                </p>
-                <p>
-                  <span className="text-muted-foreground">의뢰번호:</span>{" "}
-                  {selectedTransfer?.requestIds?.join(", ") || "-"}
-                </p>
-                <p className="whitespace-pre-wrap break-words">
-                  <span className="text-muted-foreground">의뢰 메모:</span>{" "}
-                  {selectedTransfer?.transferMemo || "-"}
-                </p>
+              <div className="rounded-lg border bg-muted/20 p-3 text-sm grid grid-cols-2 gap-3">
+                <div>
+                  <p className="text-muted-foreground">전송ID</p>
+                  <p className="font-medium break-words">{selectedTransfer?.transferId && selectedTransfer.transferId !== "-" ? selectedTransfer.transferId : selectedTransfer?.id || "-"}</p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground">전송시각</p>
+                  <p className="font-medium">{selectedTransfer?.createdAt || "-"}</p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground">기공소</p>
+                  <p className="font-medium break-words">{selectedTransfer?.targetLab || "-"}</p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground">파일</p>
+                  <p className="font-medium">파일 {selectedTransfer?.fileCount || 0}개</p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground">파일명</p>
+                  <p className="font-medium whitespace-pre-wrap break-words">
+                    {selectedTransfer?.fileNames?.length
+                      ? selectedTransfer.fileNames.join("\n")
+                      : "-"}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground">의뢰 메모</p>
+                  <p className="font-medium whitespace-pre-wrap break-words">
+                    {selectedTransfer?.transferMemo || "-"}
+                  </p>
+                </div>
               </div>
 
               <div className="rounded-lg border h-[24rem] flex flex-col">
