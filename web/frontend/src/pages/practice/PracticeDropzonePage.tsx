@@ -1721,7 +1721,7 @@ export const PracticeDropzonePage = () => {
                       className="h-9 min-w-[120px]"
                       onClick={() => setAuthMode("signup")}
                     >
-                      새로 가입
+                      회원가입
                     </Button>
                     <Button
                       type="button"
@@ -1729,7 +1729,7 @@ export const PracticeDropzonePage = () => {
                       className="h-9 min-w-[120px]"
                       onClick={() => setAuthMode("recover")}
                     >
-                      비번 찾기
+                      비번찾기
                     </Button>
                   </div>
                 )}
@@ -1827,7 +1827,7 @@ export const PracticeDropzonePage = () => {
                               ? "비밀번호 찾기/변경에서 진행"
                               : signupCompleted
                                 ? "의뢰 제출하기"
-                                : "회원가입 후 의뢰계속하기"}
+                                : "회원가입 후 계속하기"}
                 <ArrowRight className="ml-2 h-4 w-4" />
               </Button>
             )}
