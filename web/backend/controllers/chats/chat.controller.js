@@ -830,6 +830,62 @@ export async function getOrCreatePracticeTransferChatRoom(req, res) {
     const practiceUserId = String(transferDoc?.practiceUserId || "").trim();
     const targetLabAnchorId = String(transferDoc?.targetLabAnchorId || "").trim();
 
+    // Fast path: 이미 연결된 room이 있으면 상대 user 해석 로직을 건너뛰고 즉시 반환
+    const existingRoomMeta = await ChatRoom.findOne({
+      relatedPracticeTransferId: transferDoc._id,
+      isArchived: false,
+    })
+      .select({ _id: 1, participants: 1 })
+      .lean();
+
+    if (existingRoomMeta?._id) {
+      const participantIds = Array.isArray(existingRoomMeta.participants)
+        ? existingRoomMeta.participants.map((id) => String(id || "").trim()).filter(Boolean)
+        : [];
+
+      const canAccessExisting =
+        req.user?.role === "admin" || participantIds.includes(currentUserId);
+
+      if (!canAccessExisting) {
+        return res.status(403).json({
+          success: false,
+          message: "이 전송 채팅방에 접근할 권한이 없습니다.",
+        });
+      }
+
+      const room = await ChatRoom.findById(existingRoomMeta._id)
+        .populate("participants", "name role business")
+        .populate("relatedPracticeTransferId", "transferId")
+        .lean();
+
+      const [unreadCount, lastMessage] = await Promise.all([
+        Chat.countDocuments({
+          roomId: existingRoomMeta._id,
+          isDeleted: false,
+          sender: { $ne: req.user._id },
+          "readBy.userId": { $ne: req.user._id },
+        }),
+        Chat.findOne({ roomId: existingRoomMeta._id, isDeleted: false })
+          .sort({ createdAt: -1 })
+          .select({ _id: 1, content: 1, createdAt: 1, sender: 1 })
+          .populate("sender", "name role")
+          .lean(),
+      ]);
+
+      const payload = {
+        ...(room || {}),
+        unreadCount: unreadCount || 0,
+        lastMessage: lastMessage || null,
+      };
+
+      setChatPerfCacheValue(responseCacheKey, payload, 5000);
+
+      return res.status(200).json({
+        success: true,
+        data: payload,
+      });
+    }
+
     let counterpartUserId = "";
     if (targetLabAnchorId && Types.ObjectId.isValid(targetLabAnchorId)) {
       const counterpartCacheKey = `practice-lab-user:${targetLabAnchorId}`;

@@ -665,6 +665,16 @@ export const PracticeFileTransferPage = () => {
       return;
     }
 
+    const cachedRoom = chatRooms.find(
+      (room) => String(room.relatedPracticeTransferId?.transferId || "").trim() === transferId,
+    );
+    if (cachedRoom?._id) {
+      if (resolveSeq !== chatRoomResolveSeqRef.current) return;
+      setActiveChatRoom(cachedRoom);
+      setChatError("");
+      return;
+    }
+
     setChatLoading(true);
     try {
       const res = await apiFetch<unknown>({

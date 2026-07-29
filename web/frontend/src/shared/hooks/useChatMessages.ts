@@ -17,10 +17,12 @@ interface UseChatMessagesOptions {
   autoFetch?: boolean;
 }
 
+const CHAT_PAGE_LIMIT = 30;
+
 const INITIAL_PAGINATION = {
   total: 0,
   page: 1,
-  limit: 50,
+  limit: CHAT_PAGE_LIMIT,
   pages: 0,
 };
 
@@ -58,7 +60,7 @@ export const useChatMessages = (options: UseChatMessagesOptions = {}) => {
             pagination: typeof pagination;
           };
         }>({
-          path: `/api/chats/rooms/${normalizedRoomId}/messages?page=${page}&limit=50`,
+          path: `/api/chats/rooms/${normalizedRoomId}/messages?page=${page}&limit=${CHAT_PAGE_LIMIT}`,
           method: "GET",
           token,
         });

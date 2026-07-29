@@ -520,6 +520,16 @@ export default function RequestorPracticePage() {
       setChatMessages([]);
       void markTransferRead(transfer);
 
+      const transferId = String(transfer.transferId || "").trim();
+      const cachedRoom = rooms.find(
+        (room) => String(room.relatedPracticeTransferId?.transferId || "").trim() === transferId,
+      );
+      if (cachedRoom?._id) {
+        if (resolveSeq !== chatRoomResolveSeqRef.current) return;
+        setActiveChatRoom(cachedRoom);
+        return;
+      }
+
       try {
         const res = await apiFetch<unknown>({
           path: `/api/chats/practice/transfer-room/${encodeURIComponent(transfer.transferId)}`,
@@ -549,7 +559,7 @@ export default function RequestorPracticePage() {
         setChatError("치과 채팅방 조회 중 오류가 발생했습니다.");
       }
     },
-    [markTransferRead, setChatMessages, token],
+    [markTransferRead, rooms, setChatMessages, token],
   );
 
   const handleDownload = useCallback(
