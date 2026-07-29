@@ -13,6 +13,8 @@ import { useToast } from "@/shared/hooks/use-toast";
 // - web/frontend/src/pages/manufacturer/dashboard/ManufacturerDashboardPage.tsx
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
 // - web/frontend/src/pages/practice/PracticeDropzonePage.tsx
+// - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
+// - web/backend/modules/practiceTransfers/practiceTransfer.routes.js
 import { ToastAction } from "@/components/ui/toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -71,6 +73,7 @@ const sidebarItems = {
   requestor: [
     { icon: LayoutDashboard, label: "대시보드", href: "/dashboard" },
     { icon: FileText, label: "신규의뢰", href: "/dashboard/new-request" },
+    { icon: Building2, label: "치과", href: "/dashboard/practice-transfers" },
     { icon: Share2, label: "소개", href: "/dashboard/referral-groups" },
     { icon: MessageSquare, label: "문의", href: "/dashboard/inquiries" },
     { icon: Settings, label: "설정", href: "/dashboard/settings" },
@@ -256,6 +259,8 @@ export const DashboardLayout = () => {
   const [pendingBusinessName, setPendingBusinessName] = useState<string | null>(
     null,
   );
+  const [requestorPracticeUnreadCount, setRequestorPracticeUnreadCount] =
+    useState(0);
 
   const isWizardRoute = location.pathname.startsWith("/dashboard/wizard");
   const isPracticeUser = Boolean(user?.role === "practice");
@@ -378,6 +383,42 @@ export const DashboardLayout = () => {
     };
   }, [refreshSidebarProfile]);
 
+  const fetchRequestorPracticeUnreadCount = useCallback(async () => {
+    if (!token || !user) {
+      setRequestorPracticeUnreadCount(0);
+      return;
+    }
+    if (isPracticeUser || user.role !== "requestor") {
+      setRequestorPracticeUnreadCount(0);
+      return;
+    }
+
+    try {
+      const res = await apiFetch<unknown>({
+        path: "/api/practice/transfers/received-unread-count",
+        method: "GET",
+        token,
+      });
+      if (!res.ok) {
+        setRequestorPracticeUnreadCount(0);
+        return;
+      }
+
+      const body =
+        res.data && typeof res.data === "object"
+          ? (res.data as Record<string, unknown>)
+          : {};
+      const data =
+        body.data && typeof body.data === "object"
+          ? (body.data as Record<string, unknown>)
+          : body;
+      const nextCount = Math.max(0, Number(data.unreadCount || 0));
+      setRequestorPracticeUnreadCount(nextCount);
+    } catch {
+      setRequestorPracticeUnreadCount(0);
+    }
+  }, [isPracticeUser, token, user]);
+
   const fetchCreditBalance = useCallback(async () => {
     if (!token) return;
     if (!user) return;
@@ -429,6 +470,46 @@ export const DashboardLayout = () => {
   useEffect(() => {
     fetchCreditBalance();
   }, [fetchCreditBalance]);
+
+  useEffect(() => {
+    void fetchRequestorPracticeUnreadCount();
+  }, [fetchRequestorPracticeUnreadCount]);
+
+  useEffect(() => {
+    if (!token || !user || isPracticeUser || user.role !== "requestor") return;
+
+    const tick = () => {
+      void fetchRequestorPracticeUnreadCount();
+    };
+
+    const timer = window.setInterval(tick, 30000);
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, [fetchRequestorPracticeUnreadCount, isPracticeUser, token, user]);
+
+  useEffect(() => {
+    const onUnreadUpdated = (evt: Event) => {
+      const custom = evt as CustomEvent<{ unreadCount?: unknown }>;
+      const maybeCount = Number(custom.detail?.unreadCount);
+      if (Number.isFinite(maybeCount) && maybeCount >= 0) {
+        setRequestorPracticeUnreadCount(maybeCount);
+        return;
+      }
+      void fetchRequestorPracticeUnreadCount();
+    };
+
+    window.addEventListener(
+      "abuts:practice-transfers:unread-updated",
+      onUnreadUpdated,
+    );
+    return () => {
+      window.removeEventListener(
+        "abuts:practice-transfers:unread-updated",
+        onUnreadUpdated,
+      );
+    };
+  }, [fetchRequestorPracticeUnreadCount]);
 
   useEffect(() => {
     const onCreditsUpdated = () => {
@@ -630,6 +711,17 @@ export const DashboardLayout = () => {
     return menuItems;
   })();
 
+  const getSidebarBadgeCount = useCallback(
+    (href: string) => {
+      const adminCommBadge = Number(getBadgeForHref(href) || 0);
+      if (href === "/dashboard/practice-transfers" && user.role === "requestor") {
+        return adminCommBadge + Math.max(0, Number(requestorPracticeUnreadCount || 0));
+      }
+      return adminCommBadge;
+    },
+    [getBadgeForHref, requestorPracticeUnreadCount, user.role],
+  );
+
   const isManufacturer = user.role === "manufacturer";
   const isEquipmentRoute =
     location.pathname.startsWith("/dashboard/cnc") ||
@@ -816,7 +908,7 @@ export const DashboardLayout = () => {
                               )}
                               {!isCollapsed &&
                                 (() => {
-                                  const badgeCount = getBadgeForHref(item.href);
+                                  const badgeCount = getSidebarBadgeCount(item.href);
                                   return badgeCount > 0 ? (
                                     <Badge
                                       variant="destructive"
@@ -868,8 +960,20 @@ export const DashboardLayout = () => {
                           }`}
                         />
                         {!isCollapsed && (
-                          <span className="truncate">{item.label}</span>
+                          <span className="truncate flex-1">{item.label}</span>
                         )}
+                        {!isCollapsed &&
+                          (() => {
+                            const badgeCount = getSidebarBadgeCount(item.href);
+                            return badgeCount > 0 ? (
+                              <Badge
+                                variant="destructive"
+                                className="ml-auto h-5 min-w-[1.25rem] flex items-center justify-center px-1 text-[10px] font-semibold leading-none flex-shrink-0"
+                              >
+                                {badgeCount > 99 ? "99+" : badgeCount}
+                              </Badge>
+                            ) : null;
+                          })()}
                       </Button>
                     </li>
                   );

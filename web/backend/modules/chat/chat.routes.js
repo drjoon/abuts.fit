@@ -1,3 +1,8 @@
+// related files:
+// - web/backend/controllers/chats/chat.controller.js
+// - web/backend/controllers/practiceTransfers/practiceTransfer.controller.js
+// - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
+// - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 import express from "express";
 const router = express.Router();
 import chatController from "../../controllers/chats/chat.controller.js";
@@ -31,7 +36,7 @@ router.get(
 // practice 전송(PracticeTransfer) 전용 채팅방 조회/생성
 router.get(
   "/practice/transfer-room/:transferId",
-  authorize(["practice", "admin"], { subRoles: ["owner", "staff"] }),
+  authorize(["practice", "requestor", "admin"]),
   chatController.getOrCreatePracticeTransferChatRoom,
 );
 

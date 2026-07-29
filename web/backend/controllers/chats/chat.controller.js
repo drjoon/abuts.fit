@@ -49,6 +49,28 @@ const withChatInFlight = async (key, factory) => {
   return promise;
 };
 
+const invalidateChatPerfCacheByPrefix = (prefix) => {
+  const p = String(prefix || "").trim();
+  if (!p) return;
+
+  for (const key of __chatPerfCache.keys()) {
+    if (String(key).startsWith(p)) {
+      __chatPerfCache.delete(key);
+    }
+  }
+};
+
+const invalidateChatPerfForUsers = (userIds) => {
+  const ids = (Array.isArray(userIds) ? userIds : [])
+    .map((id) => String(id || "").trim())
+    .filter(Boolean);
+
+  ids.forEach((id) => {
+    __chatPerfCache.delete(`rooms:${id}`);
+    invalidateChatPerfCacheByPrefix(`practice-transfer-room:${id}:`);
+  });
+};
+
 const extractLabNameFromPracticeMessage = (message) => {
   const raw = String(message || "").trim();
   const matched = raw.match(/\[\s*기공소\s*:\s*([^\]]+)\]/i);
@@ -208,6 +230,15 @@ const resolvePracticeLabAnchorIdByName = async (name) => {
 export async function getMyChatRooms(req, res) {
   try {
     const userId = req.user._id;
+    const cacheKey = `rooms:${String(userId || "")}`;
+    const cached = getChatPerfCacheValue(cacheKey);
+    if (cached) {
+      return res.status(200).json({
+        success: true,
+        data: cached,
+        cached: true,
+      });
+    }
 
     const rooms = await ChatRoom.find({
       participants: userId,
@@ -298,6 +329,8 @@ export async function getMyChatRooms(req, res) {
         lastMessage: stat.lastMessage,
       };
     });
+
+    setChatPerfCacheValue(cacheKey, roomsWithUnread, 3000);
 
     res.status(200).json({
       success: true,
@@ -710,6 +743,13 @@ export async function getOrCreatePracticeTransferChatRoom(req, res) {
       return res.status(400).json({ success: false, message: "transferId가 필요합니다." });
     }
 
+    const currentUserId = String(req.user?._id || "").trim();
+    const responseCacheKey = `practice-transfer-room:${currentUserId}:${rawTransferId}`;
+    const cached = getChatPerfCacheValue(responseCacheKey);
+    if (cached) {
+      return res.status(200).json({ success: true, data: cached, cached: true });
+    }
+
     const transferFilter = Types.ObjectId.isValid(rawTransferId)
       ? {
           $or: [
@@ -739,19 +779,57 @@ export async function getOrCreatePracticeTransferChatRoom(req, res) {
     }
 
     const practiceUserId = String(transferDoc?.practiceUserId || "").trim();
-    let counterpartUserId = "";
-
     const targetLabAnchorId = String(transferDoc?.targetLabAnchorId || "").trim();
+
+    let counterpartUserId = "";
     if (targetLabAnchorId && Types.ObjectId.isValid(targetLabAnchorId)) {
-      counterpartUserId = await resolvePracticeLabUserIdByAnchor(targetLabAnchorId);
+      const counterpartCacheKey = `practice-lab-user:${targetLabAnchorId}`;
+      const cachedCounterpart = getChatPerfCacheValue(counterpartCacheKey);
+      if (cachedCounterpart) {
+        counterpartUserId = String(cachedCounterpart || "").trim();
+      } else {
+        counterpartUserId = await withChatInFlight(counterpartCacheKey, async () => {
+          const resolved = await resolvePracticeLabUserIdByAnchor(targetLabAnchorId);
+          if (resolved) {
+            setChatPerfCacheValue(counterpartCacheKey, resolved, 3 * 60 * 1000);
+          }
+          return resolved;
+        });
+      }
     }
 
     if (!counterpartUserId) {
-      const fallbackAnchorId = await resolvePracticeLabAnchorIdByName(
-        String(transferDoc?.targetLabName || "").trim(),
-      );
+      const targetLabName = String(transferDoc?.targetLabName || "").trim();
+      const fallbackAnchorCacheKey = `practice-lab-anchor-name:${targetLabName}`;
+      const cachedFallbackAnchor = getChatPerfCacheValue(fallbackAnchorCacheKey);
+      let fallbackAnchorId = cachedFallbackAnchor
+        ? String(cachedFallbackAnchor || "").trim()
+        : "";
+
+      if (!fallbackAnchorId && targetLabName) {
+        fallbackAnchorId = await withChatInFlight(fallbackAnchorCacheKey, async () => {
+          const resolved = await resolvePracticeLabAnchorIdByName(targetLabName);
+          if (resolved) {
+            setChatPerfCacheValue(fallbackAnchorCacheKey, resolved, 3 * 60 * 1000);
+          }
+          return resolved;
+        });
+      }
+
       if (fallbackAnchorId) {
-        counterpartUserId = await resolvePracticeLabUserIdByAnchor(fallbackAnchorId);
+        const counterpartCacheKey = `practice-lab-user:${fallbackAnchorId}`;
+        const cachedCounterpart = getChatPerfCacheValue(counterpartCacheKey);
+        if (cachedCounterpart) {
+          counterpartUserId = String(cachedCounterpart || "").trim();
+        } else {
+          counterpartUserId = await withChatInFlight(counterpartCacheKey, async () => {
+            const resolved = await resolvePracticeLabUserIdByAnchor(fallbackAnchorId);
+            if (resolved) {
+              setChatPerfCacheValue(counterpartCacheKey, resolved, 3 * 60 * 1000);
+            }
+            return resolved;
+          });
+        }
       }
     }
 
@@ -762,7 +840,6 @@ export async function getOrCreatePracticeTransferChatRoom(req, res) {
       });
     }
 
-    const currentUserId = String(req.user?._id || "").trim();
     const canAccess =
       req.user?.role === "admin" ||
       currentUserId === practiceUserId ||
@@ -779,24 +856,14 @@ export async function getOrCreatePracticeTransferChatRoom(req, res) {
       (id) => new Types.ObjectId(id),
     );
 
-    let room = await ChatRoom.findOne({
+    let roomMeta = await ChatRoom.findOne({
       relatedPracticeTransferId: transferDoc._id,
       isArchived: false,
     })
-      .populate("participants", "name email role business")
-      .populate("relatedPracticeTransferId", "transferId");
+      .select({ _id: 1 })
+      .lean();
 
-    if (!room) {
-      room = await ChatRoom.findOne({
-        participants: { $all: participantObjectIds, $size: participantObjectIds.length },
-        relatedPracticeTransferId: transferDoc._id,
-        isArchived: false,
-      })
-        .populate("participants", "name email role business")
-        .populate("relatedPracticeTransferId", "transferId");
-    }
-
-    if (!room) {
+    if (!roomMeta) {
       const created = await ChatRoom.create({
         participants: participantObjectIds,
         roomType: "direct",
@@ -804,32 +871,40 @@ export async function getOrCreatePracticeTransferChatRoom(req, res) {
         relatedPracticeTransferId: transferDoc._id,
         status: "active",
       });
-
-      room = await ChatRoom.findById(created._id)
-        .populate("participants", "name email role business")
-        .populate("relatedPracticeTransferId", "transferId");
+      roomMeta = { _id: created._id };
+      invalidateChatPerfForUsers([practiceUserId, counterpartUserId]);
     }
+
+    const room = await ChatRoom.findById(roomMeta._id)
+      .populate("participants", "name role business")
+      .populate("relatedPracticeTransferId", "transferId")
+      .lean();
 
     const [unreadCount, lastMessage] = await Promise.all([
       Chat.countDocuments({
-        roomId: room._id,
+        roomId: roomMeta._id,
         isDeleted: false,
         sender: { $ne: req.user._id },
         "readBy.userId": { $ne: req.user._id },
       }),
-      Chat.findOne({ roomId: room._id, isDeleted: false })
+      Chat.findOne({ roomId: roomMeta._id, isDeleted: false })
         .sort({ createdAt: -1 })
+        .select({ _id: 1, content: 1, createdAt: 1, sender: 1 })
         .populate("sender", "name role")
         .lean(),
     ]);
 
+    const payload = {
+      ...(room || {}),
+      unreadCount: unreadCount || 0,
+      lastMessage: lastMessage || null,
+    };
+
+    setChatPerfCacheValue(responseCacheKey, payload, 5000);
+
     return res.status(200).json({
       success: true,
-      data: {
-        ...room.toObject(),
-        unreadCount: unreadCount || 0,
-        lastMessage: lastMessage || null,
-      },
+      data: payload,
     });
   } catch (error) {
     return res.status(500).json({
@@ -969,17 +1044,33 @@ export async function getChatMessages(req, res) {
       });
     }
 
-    const fetchedMessages = await Chat.find({ roomId, isDeleted: false })
-      .populate("sender", "name email role")
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(limit + 1)
-      .lean();
+    const cacheKey = `room-messages:${String(roomId)}:u:${String(userId)}:p:${page}:l:${limit}`;
+    const cachedMessages = page === 1 ? getChatPerfCacheValue(cacheKey) : null;
 
-    const hasMore = fetchedMessages.length > limit;
-    const messages = hasMore
-      ? fetchedMessages.slice(0, limit)
-      : fetchedMessages;
+    const loaded = cachedMessages
+      ? cachedMessages
+      : await Chat.find({ roomId, isDeleted: false })
+          .select({
+            _id: 1,
+            roomId: 1,
+            sender: 1,
+            content: 1,
+            attachments: 1,
+            createdAt: 1,
+            updatedAt: 1,
+          })
+          .populate("sender", "name role")
+          .sort({ createdAt: -1 })
+          .skip(skip)
+          .limit(limit + 1)
+          .lean();
+
+    const hasMore = loaded.length > limit;
+    const messages = hasMore ? loaded.slice(0, limit) : loaded;
+
+    if (!cachedMessages && page === 1) {
+      setChatPerfCacheValue(cacheKey, loaded, 1500);
+    }
 
     setImmediate(async () => {
       try {
@@ -998,6 +1089,8 @@ export async function getChatMessages(req, res) {
             },
           },
         );
+
+        __chatPerfCache.delete(`rooms:${String(userId)}`);
       } catch (error) {
         console.error("Error updating chat read state:", error);
       }
@@ -1105,8 +1198,23 @@ export async function sendChatMessage(req, res) {
     await newMessage.save();
 
     const populatedMessage = await Chat.findById(newMessage._id)
-      .populate("sender", "name email role")
+      .select({
+        _id: 1,
+        roomId: 1,
+        sender: 1,
+        content: 1,
+        attachments: 1,
+        createdAt: 1,
+        updatedAt: 1,
+      })
+      .populate("sender", "name role")
       .lean();
+
+    const participantIds = Array.isArray(room.participants)
+      ? room.participants.map((id) => String(id || "").trim()).filter(Boolean)
+      : [];
+    invalidateChatPerfForUsers(participantIds);
+    invalidateChatPerfCacheByPrefix(`room-messages:${String(roomId)}:`);
 
     res.status(201).json({
       success: true,

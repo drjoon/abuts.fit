@@ -89,6 +89,9 @@
     - `src/pages/manufacturer/worksheet/custom_abutment/components/WorksheetCardGrid.tsx`
     - `src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx`
 
+- practice 전송 상태 표준(치과/의뢰자 공통): `발송완료 | 취소 | 수신전 | 수신완료`
+  - practice 페이지 상태 정규화 기준: `src/pages/practice/PracticeFileTransferPage.tsx`의 `toStatusLabel`
+  - 의뢰자 치과 페이지 읽음 배지 기준: `src/pages/requestor/practice/RequestorPracticePage.tsx` (`isRead` → `수신전/수신완료`)
 - API 호출은 `src/shared/api/apiClient.ts`의 `apiFetch`를 우선 사용합니다.
 - 서버 상태는 TanStack Query, 전역 UI 상태는 `src/store`를 사용합니다.
 - 파일 드롭은 개별 구현보다 `@/features/requests/components/PageFileDropZone` 재사용을 우선합니다.

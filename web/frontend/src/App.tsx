@@ -20,6 +20,7 @@ import { useSocket } from "@/shared/hooks/useSocket";
 // related files:
 // - web/frontend/src/pages/practice/PracticeDropzonePage.tsx
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
+// - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // - web/frontend/src/features/dashboard/DashboardHome.tsx
 
 const Index = lazy(() => import("./pages/public/Index"));
@@ -52,6 +53,9 @@ const DashboardHome = lazy(() =>
 );
 const NewRequestPage = lazy(
   () => import("./pages/requestor/new_request/NewRequestPage"),
+);
+const RequestorPracticePage = lazy(
+  () => import("./pages/requestor/practice/RequestorPracticePage"),
 );
 const ManufacturerWorksheetPage = lazy(() =>
   import("./pages/manufacturer/worksheet/WorksheetPage").then((m) => ({
@@ -448,6 +452,14 @@ const App = () => {
                     element={
                       <RoleProtectedRoute roles={["requestor"]}>
                         <NewRequestPage />
+                      </RoleProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="practice-transfers"
+                    element={
+                      <RoleProtectedRoute roles={["requestor"]}>
+                        <RequestorPracticePage />
                       </RoleProtectedRoute>
                     }
                   />

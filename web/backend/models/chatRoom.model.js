@@ -1,7 +1,8 @@
 // related files:
-// - web/backend/rules.md
-// - web/backend/app.js
-// - web/backend/server.js
+// - web/backend/controllers/chats/chat.controller.js
+// - web/backend/modules/chat/chat.routes.js
+// - web/backend/models/chat.model.js
+// - web/frontend/src/shared/hooks/useChatRooms.ts
 import mongoose from "mongoose";
 
 const chatRoomSchema = new mongoose.Schema(
@@ -55,7 +56,10 @@ const chatRoomSchema = new mongoose.Schema(
 chatRoomSchema.index({ participants: 1 });
 
 // 특정 사용자가 참여한 채팅방 조회를 위한 인덱스
-chatRoomSchema.index({ participants: 1, lastMessageAt: -1 });
+chatRoomSchema.index({ participants: 1, isArchived: 1, lastMessageAt: -1 });
+
+// practice 전송 기준 채팅방 조회 최적화
+chatRoomSchema.index({ relatedPracticeTransferId: 1, isArchived: 1 });
 
 const ChatRoom = mongoose.model("ChatRoom", chatRoomSchema);
 

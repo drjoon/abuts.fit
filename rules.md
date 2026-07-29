@@ -140,8 +140,9 @@
 - 앱/라우팅
   - `web/frontend/src/App.tsx`
   - `web/frontend/src/features/layout/DashboardLayout.tsx`
-- 의뢰자 신규의뢰
+- 의뢰자 신규의뢰/치과
   - `web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx`
+  - `web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx`
 - 제조사 워크시트
   - `web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx`
 - practice

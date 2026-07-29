@@ -60,6 +60,9 @@
     - `controllers/requests/common.review.controller.js`
     - `controllers/bg/bg.controller.js`
 - `requestCategory="rnd_sample"`(R&D 보관 원본)은 BG 자동 업데이트 대상에서 제외합니다.
+- practice 전송 상태 표준(치과/의뢰자 공통)은 `발송완료 | 취소 | 수신전 | 수신완료`를 사용합니다.
+  - 수신 판정 SSOT: `PracticeTransfer.requestorReadAt`
+  - 가상 의뢰 행 매핑 기준: `controllers/practiceTransfers/practiceTransfer.controller.js#toVirtualRequestRows`
 - 요청자 목록(`getMyRequests`)에서는 `requestCategory!="order"` 의뢰를 제외해 의뢰자에게 노출하지 않습니다.
   - 구현: `controllers/requests/common.requests.controller.js`
 - 불완전가공 `continue` 처리 SSOT:

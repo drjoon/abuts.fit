@@ -1,7 +1,7 @@
 // related files:
-// - web/backend/rules.md
-// - web/backend/app.js
-// - web/backend/server.js
+// - web/backend/controllers/practiceTransfers/practiceTransfer.controller.js
+// - web/backend/modules/practiceTransfers/practiceTransfer.routes.js
+// - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 import mongoose from "mongoose";
 
 const practiceTransferFileSchema = new mongoose.Schema(
@@ -68,6 +68,17 @@ const practiceTransferSchema = new mongoose.Schema(
     files: {
       type: [practiceTransferFileSchema],
       default: [],
+    },
+    // requestor(수신 기공소) 확인 상태 SSOT
+    requestorReadAt: {
+      type: Date,
+      default: null,
+      index: true,
+    },
+    requestorReadBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
     },
     canceledAt: {
       type: Date,

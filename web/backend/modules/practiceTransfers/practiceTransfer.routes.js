@@ -1,9 +1,16 @@
+// related files:
+// - web/backend/controllers/practiceTransfers/practiceTransfer.controller.js
+// - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
+// - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 import express from "express";
 import { authenticate, authorize } from "../../middlewares/auth.middleware.js";
 import {
   cancelPracticeTransfersBatch,
   createPracticeTransfer,
   getMyPracticeTransfers,
+  getReceivedPracticeTransfers,
+  getReceivedPracticeTransferUnreadCount,
+  markReceivedPracticeTransferRead,
 } from "../../controllers/practiceTransfers/practiceTransfer.controller.js";
 
 const router = express.Router();
@@ -24,6 +31,27 @@ router.get(
   authenticate,
   authorize(["practice", "admin"], { subRoles: ["owner", "staff"] }),
   getMyPracticeTransfers,
+);
+
+router.get(
+  "/received",
+  authenticate,
+  authorize(["requestor", "admin"]),
+  getReceivedPracticeTransfers,
+);
+
+router.get(
+  "/received-unread-count",
+  authenticate,
+  authorize(["requestor", "admin"]),
+  getReceivedPracticeTransferUnreadCount,
+);
+
+router.post(
+  "/:transferId/mark-read",
+  authenticate,
+  authorize(["requestor", "admin"]),
+  markReceivedPracticeTransferRead,
 );
 
 router.post(

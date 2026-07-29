@@ -201,9 +201,20 @@ const toDayLabel = (value: unknown) => {
 const toStatusLabel = (manufacturerStage: unknown) => {
   const raw = String(manufacturerStage || "").trim();
   if (!raw) return "수신전";
-  if (raw.includes("배송완료") || raw.includes("전달완료")) return "전달완료";
+
+  // 정확값 우선
+  if (raw === "취소") return "취소";
+  if (raw === "발송완료") return "발송완료";
+  if (raw === "수신전") return "수신전";
+  if (raw === "수신완료") return "수신완료";
+
+  // 레거시/과거 데이터 호환
+  if (raw === "확인전") return "수신전";
+  if (raw === "확인") return "수신완료";
+  if (raw.includes("전달완료") || raw.includes("배송완료")) return "수신완료";
   if (raw.includes("의뢰") || raw.includes("접수") || raw.includes("대기")) return "수신전";
-  return raw;
+
+  return "발송완료";
 };
 
 const formatChatTs = (value: unknown) => {
@@ -544,10 +555,12 @@ export const PracticeFileTransferPage = () => {
         existing.status = [...statusSet][0] || existing.status;
       } else if (statusSet.has("수신전")) {
         existing.status = "수신전";
-      } else if (statusSet.has("전달완료")) {
-        existing.status = "검토중";
+      } else if (statusSet.has("수신완료")) {
+        existing.status = "수신완료";
+      } else if (statusSet.has("취소")) {
+        existing.status = "취소";
       } else {
-        existing.status = "검토중";
+        existing.status = "발송완료";
       }
     }
 
@@ -566,7 +579,7 @@ export const PracticeFileTransferPage = () => {
     return groupedTransfers.reduce(
       (acc, request) => {
         const status = String(request.status || "").trim();
-        if (status === "전달완료") {
+        if (status === "수신완료") {
           acc.delivered += 1;
         } else if (status === "수신전") {
           acc.waiting += 1;
@@ -637,7 +650,6 @@ export const PracticeFileTransferPage = () => {
 
       setActiveChatRoom(payload);
       setChatError("");
-      void reloadChatRooms();
     } catch (error) {
       setChatError(
         error instanceof Error
@@ -1322,7 +1334,7 @@ export const PracticeFileTransferPage = () => {
               </div>
 
               <div className="flex flex-wrap gap-2">
-                <Badge variant="outline">발송 {statusCounts.sent}건</Badge>
+                <Badge variant="outline">발송완료 {statusCounts.sent}건</Badge>
                 <Badge variant="outline">수신전 {statusCounts.waiting}건</Badge>
                 <Badge variant="outline">수신완료 {statusCounts.delivered}건</Badge>
               </div>
@@ -1432,7 +1444,7 @@ export const PracticeFileTransferPage = () => {
                   </p>
                 </div>
                 <div>
-                  <p className="text-muted-foreground">파일명 ({selectedTransfer?.fileCount || 0}개)</p>
+                  <p className="text-muted-foreground">파일 ({selectedTransfer?.fileCount || 0}개)</p>
                   <p className="font-medium whitespace-pre-wrap break-words max-h-24 overflow-y-auto pr-1">
                     {selectedTransfer?.fileNames?.length
                       ? selectedTransfer.fileNames.join("\n")
@@ -1469,6 +1481,7 @@ export const PracticeFileTransferPage = () => {
                     {chatMessages.map((message) => {
                       const senderId = String(message.sender?._id || "").trim();
                       const isMine = myIdCandidates.has(senderId);
+                      const senderName = String(message.sender?.name || "알 수 없음").trim();
                       return (
                         <div
                           key={message._id}
@@ -1477,6 +1490,7 @@ export const PracticeFileTransferPage = () => {
                           <div
                             className={`max-w-[80%] rounded-lg px-3 py-2 text-xs ${isMine ? "bg-primary text-primary-foreground" : "bg-muted"}`}
                           >
+                            <p className="opacity-80 mb-1 font-medium">{senderName}</p>
                             <p className="opacity-70 mb-1">{formatChatTs(message.createdAt)}</p>
                             <p className="whitespace-pre-wrap break-words">{message.content}</p>
                             {Array.isArray(message.attachments) && message.attachments.length > 0 ? (

@@ -1,7 +1,8 @@
 // related files:
-// - web/backend/rules.md
-// - web/backend/app.js
-// - web/backend/server.js
+// - web/backend/modules/files/file.routes.js
+// - web/backend/models/file.model.js
+// - web/backend/models/practiceTransfer.model.js
+// - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 import mongoose, { Types } from "mongoose";
 import path from "path";
 import fs from "fs/promises";
@@ -9,6 +10,7 @@ import File from "../../models/file.model.js";
 import Request from "../../models/request.model.js";
 import ChatRoom from "../../models/chatRoom.model.js";
 import Chat from "../../models/chat.model.js";
+import PracticeTransfer from "../../models/practiceTransfer.model.js";
 import s3Utils from "../../utils/s3.utils.js";
 import { asyncHandler } from "../../utils/asyncHandler.js";
 import { ApiResponse } from "../../utils/ApiResponse.js";
@@ -622,6 +624,43 @@ export const getS3DownloadUrl = asyncHandler(async (req, res) => {
         .json(
           new ApiResponse(200, { url: signedUrl }, "Download URL generated"),
         );
+    }
+  }
+
+  // PracticeTransfer 파일 접근 허용
+  // - practice 전송자(작성자)
+  // - 전송 대상 의뢰자(동일 businessAnchor)
+  const practiceTransfer = await PracticeTransfer.findOne({
+    "files.file.s3Key": key,
+  })
+    .select({
+      practiceUserId: 1,
+      practiceBusinessAnchorId: 1,
+      targetLabAnchorId: 1,
+    })
+    .lean();
+
+  if (practiceTransfer) {
+    const currentUserId = String(req.user?._id || "").trim();
+    const currentAnchorId = String(req.user?.businessAnchorId || "").trim();
+
+    const isPracticeOwner =
+      currentUserId &&
+      currentUserId === String(practiceTransfer?.practiceUserId || "").trim();
+
+    const isTargetLabMember =
+      !!currentAnchorId &&
+      currentAnchorId === String(practiceTransfer?.targetLabAnchorId || "").trim();
+
+    const isPracticeBusinessMember =
+      !!currentAnchorId &&
+      currentAnchorId === String(practiceTransfer?.practiceBusinessAnchorId || "").trim();
+
+    if (isPracticeOwner || isTargetLabMember || isPracticeBusinessMember) {
+      const signedUrl = await s3Utils.getDownloadSignedUrl(key);
+      return res
+        .status(200)
+        .json(new ApiResponse(200, { url: signedUrl }, "Download URL generated"));
     }
   }
 
