@@ -1533,8 +1533,8 @@ export const PracticeFileTransferPage = () => {
               </DialogTitle>
             </DialogHeader>
 
-            <div className="px-5 py-4 flex-1 min-h-0 overflow-hidden">
-              <div className="grid h-full min-h-0 grid-cols-1 gap-4 lg:grid-cols-2">
+            <div className="px-5 py-4 flex-1 min-h-0 overflow-y-auto">
+              <div className="grid min-h-0 grid-cols-1 gap-4 lg:grid-cols-2">
                 <div className="rounded-lg border bg-muted/20 p-3 text-sm min-h-0 overflow-y-auto space-y-4">
                   <div className="grid grid-cols-2 gap-3">
                     <div>
@@ -1599,7 +1599,7 @@ export const PracticeFileTransferPage = () => {
                     기공소와의 소통
                   </div>
 
-                  <ScrollArea className="flex-1 px-3 py-3">
+                  <ScrollArea className="min-h-0 flex-1 px-3 py-3">
                     <div className="space-y-2">
                       {chatLoading || chatMessagesLoading ? (
                         <div className="text-center text-xs text-muted-foreground py-4">
