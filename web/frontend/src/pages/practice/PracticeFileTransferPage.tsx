@@ -1525,7 +1525,7 @@ export const PracticeFileTransferPage = () => {
         </div>
 
         <Dialog open={transferDialogOpen} onOpenChange={(open) => (open ? setTransferDialogOpen(true) : handleCloseTransferDialog())}>
-          <DialogContent className="w-[95vw] max-w-6xl p-0 overflow-hidden max-h-[86vh] flex flex-col">
+          <DialogContent className="w-[95vw] max-w-6xl h-[86vh] p-0 overflow-hidden flex flex-col">
             <DialogHeader className="px-5 pt-5 pb-3 border-b shrink-0">
               <DialogTitle className="flex items-center gap-2 text-base">
                 <MessageSquare className="h-4 w-4 text-blue-600" />
@@ -1533,8 +1533,8 @@ export const PracticeFileTransferPage = () => {
               </DialogTitle>
             </DialogHeader>
 
-            <div className="px-5 py-4 flex-1 min-h-0 overflow-y-auto">
-              <div className="grid min-h-0 grid-cols-1 gap-4 lg:grid-cols-2">
+            <div className="px-5 py-4 flex-1 min-h-0 overflow-hidden">
+              <div className="grid h-full min-h-0 grid-cols-1 gap-4 lg:grid-cols-2">
                 <div className="rounded-lg border bg-muted/20 p-3 text-sm min-h-0 overflow-y-auto space-y-4">
                   <div className="grid grid-cols-2 gap-3">
                     <div>
@@ -1675,7 +1675,7 @@ export const PracticeFileTransferPage = () => {
                     </div>
                   </ScrollArea>
 
-                  <div className="border-t px-3 pt-3 pb-4 sm:px-4 sm:pt-4 sm:pb-6 space-y-2">
+                  <div className="shrink-0 border-t bg-background px-3 pt-3 pb-4 sm:px-4 sm:pt-4 sm:pb-6 space-y-2">
                     {chatAttachedFiles.length > 0 ? (
                       <div className="flex flex-wrap gap-2 max-h-20 overflow-y-auto pr-1">
                         {chatAttachedFiles.map((file, idx) => (

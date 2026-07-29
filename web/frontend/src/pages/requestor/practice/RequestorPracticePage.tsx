@@ -792,7 +792,7 @@ export default function RequestorPracticePage() {
           }
         }}
       >
-        <DialogContent className="w-[95vw] max-w-6xl p-0 overflow-hidden max-h-[86vh] flex flex-col">
+        <DialogContent className="w-[95vw] max-w-6xl h-[86vh] p-0 overflow-hidden flex flex-col">
           <DialogHeader className="px-5 pt-5 pb-3 border-b shrink-0">
             <DialogTitle className="flex items-center gap-2 text-base">
               <MessageSquare className="h-4 w-4 text-blue-600" />
@@ -801,8 +801,8 @@ export default function RequestorPracticePage() {
           </DialogHeader>
 
           {!selectedTransfer ? null : (
-            <div className="px-5 py-4 flex-1 min-h-0 overflow-y-auto">
-              <div className="grid min-h-0 grid-cols-1 gap-4 lg:grid-cols-2">
+            <div className="px-5 py-4 flex-1 min-h-0 overflow-hidden">
+              <div className="grid h-full min-h-0 grid-cols-1 gap-4 lg:grid-cols-2">
                 <div className="rounded-lg border bg-muted/20 p-3 text-sm min-h-0 overflow-y-auto space-y-4">
                   <div className="grid grid-cols-2 gap-3">
                     <div>
@@ -865,7 +865,7 @@ export default function RequestorPracticePage() {
                 <div className="rounded-lg border min-h-0 flex flex-col overflow-hidden">
                   <div className="px-3 py-2 border-b text-sm text-muted-foreground">치과와의 소통</div>
 
-                  <div className="flex-1 px-3 py-3 overflow-y-auto">
+                  <div className="min-h-0 flex-1 px-3 py-3 overflow-y-auto">
                     <div className="space-y-2">
                       {chatLoading ? (
                         <div className="text-center text-xs text-muted-foreground py-4">메시지를 불러오는 중...</div>
@@ -922,7 +922,7 @@ export default function RequestorPracticePage() {
                     </div>
                   </div>
 
-                  <div className="border-t px-3 pt-3 pb-4 space-y-2">
+                  <div className="shrink-0 border-t bg-background px-3 pt-3 pb-4 space-y-2">
                     {chatAttachedFiles.length > 0 ? (
                       <div className="flex flex-wrap gap-2 max-h-20 overflow-y-auto pr-1">
                         {chatAttachedFiles.map((file, idx) => (
