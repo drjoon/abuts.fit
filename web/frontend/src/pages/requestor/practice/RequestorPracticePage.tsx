@@ -121,7 +121,13 @@ export default function RequestorPracticePage() {
   const realtimeReloadTimerRef = useRef<number | null>(null);
   const chatRoomResolveSeqRef = useRef(0);
 
-  const { messages, loading: chatLoading, sendMessage, setMessages: setChatMessages } = useChatMessages({
+  const {
+    messages,
+    loading: chatLoading,
+    sendMessage,
+    prefetchMessages,
+    setMessages: setChatMessages,
+  } = useChatMessages({
     roomId: activeChatRoom?._id,
     autoFetch: dialogOpen,
   });
@@ -525,6 +531,7 @@ export default function RequestorPracticePage() {
         (room) => String(room.relatedPracticeTransferId?.transferId || "").trim() === transferId,
       );
       if (cachedRoom?._id) {
+        void prefetchMessages(cachedRoom._id);
         if (resolveSeq !== chatRoomResolveSeqRef.current) return;
         setActiveChatRoom(cachedRoom);
         return;
@@ -552,6 +559,9 @@ export default function RequestorPracticePage() {
           body.data && typeof body.data === "object"
             ? (body.data as ChatRoom)
             : null;
+        if (room?._id) {
+          void prefetchMessages(room._id);
+        }
         if (resolveSeq !== chatRoomResolveSeqRef.current) return;
         setActiveChatRoom(room);
       } catch {
@@ -559,7 +569,7 @@ export default function RequestorPracticePage() {
         setChatError("치과 채팅방 조회 중 오류가 발생했습니다.");
       }
     },
-    [markTransferRead, rooms, setChatMessages, token],
+    [markTransferRead, prefetchMessages, rooms, setChatMessages, token],
   );
 
   const handleDownload = useCallback(

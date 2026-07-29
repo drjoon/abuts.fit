@@ -304,6 +304,7 @@ export const PracticeFileTransferPage = () => {
     loading: chatMessagesLoading,
     error: chatMessagesError,
     sendMessage,
+    prefetchMessages,
     setMessages: setChatMessages,
   } = useChatMessages({ roomId: activeChatRoom?._id, autoFetch: transferDialogOpen });
 
@@ -669,6 +670,7 @@ export const PracticeFileTransferPage = () => {
       (room) => String(room.relatedPracticeTransferId?.transferId || "").trim() === transferId,
     );
     if (cachedRoom?._id) {
+      void prefetchMessages(cachedRoom._id);
       if (resolveSeq !== chatRoomResolveSeqRef.current) return;
       setActiveChatRoom(cachedRoom);
       setChatError("");
@@ -693,6 +695,9 @@ export const PracticeFileTransferPage = () => {
         throw new Error("채팅방 정보가 올바르지 않습니다.");
       }
 
+      if (payload?._id) {
+        void prefetchMessages(payload._id);
+      }
       if (resolveSeq !== chatRoomResolveSeqRef.current) return;
       setActiveChatRoom(payload);
       setChatError("");
