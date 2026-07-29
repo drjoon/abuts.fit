@@ -853,11 +853,8 @@ export default function RequestorPracticePage() {
           <div className="space-y-4">
             <Card>
         <CardHeader className="space-y-3">
-          <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
             <CardTitle className="text-xl">치과 전송 내역</CardTitle>
-            <Button variant="outline" onClick={() => void loadFirstPage()} disabled={loading || loadingMore}>
-              새로고침
-            </Button>
           </div>
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div className="relative w-full md:max-w-md">
