@@ -1241,7 +1241,7 @@ export const PracticeFileTransferPage = () => {
                         아직 추가된 파일이 없습니다.
                       </div>
                     ) : (
-                      <div className="mt-3 max-h-[18.5rem] overflow-y-auto pr-1">
+                      <div className="mt-3 max-h-[15.5rem] overflow-y-auto pr-1">
                         <div className="grid grid-cols-1 gap-2 auto-rows-[4.25rem]">
                           {files.map((file, index) => (
                             <div
@@ -1434,10 +1434,11 @@ export const PracticeFileTransferPage = () => {
                     </Label>
                     <Textarea
                       id="practice-file-transfer-request-memo"
+                      rows={8}
                       value={requestMemo}
                       onChange={(e) => setRequestMemo(e.target.value)}
                       placeholder="예: #36 커스텀 어버트먼트, 마진 라인 메모..."
-                      className="min-h-36 text-base"
+                      className="h-[13rem] resize-none text-base"
                     />
                   </div>
                 </div>
@@ -1580,7 +1581,7 @@ export const PracticeFileTransferPage = () => {
 
                   <div>
                     <p className="text-muted-foreground">의뢰 메모</p>
-                    <p className="mt-1 font-medium whitespace-pre-wrap break-words max-h-24 overflow-y-auto pr-1">
+                    <p className="mt-1 font-medium whitespace-pre-wrap break-words max-h-48 overflow-y-auto pr-1">
                       {selectedTransfer?.transferMemo || "-"}
                     </p>
                   </div>
@@ -1599,7 +1600,7 @@ export const PracticeFileTransferPage = () => {
                       </Button>
                     </div>
                     {selectedTransfer?.files?.length ? (
-                      <div className="mt-2 max-h-56 overflow-y-auto pr-1 space-y-1">
+                      <div className="mt-2 max-h-40 overflow-y-auto pr-1 space-y-1">
                         {selectedTransfer.files.map((file, idx) => (
                           <button
                             key={`${file.s3Key}:${idx}`}

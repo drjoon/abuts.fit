@@ -1087,7 +1087,7 @@ export default function RequestorPracticePage() {
 
                   <div>
                     <p className="text-muted-foreground">의뢰 메모</p>
-                    <p className="mt-1 font-medium whitespace-pre-wrap break-words max-h-24 overflow-y-auto pr-1">
+                    <p className="mt-1 font-medium whitespace-pre-wrap break-words max-h-48 overflow-y-auto pr-1">
                       {selectedTransfer.transferMemo || "-"}
                     </p>
                   </div>
@@ -1105,7 +1105,7 @@ export default function RequestorPracticePage() {
                         전체 다운로드
                       </Button>
                     </div>
-                    <div className="mt-2 max-h-56 overflow-y-auto pr-1 space-y-1">
+                    <div className="mt-2 max-h-40 overflow-y-auto pr-1 space-y-1">
                       {selectedTransfer.files.length ? (
                         selectedTransfer.files.map((file) => (
                           <button

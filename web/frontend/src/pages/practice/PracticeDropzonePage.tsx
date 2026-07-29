@@ -1251,7 +1251,7 @@ export const PracticeDropzonePage = () => {
                           아직 추가된 파일이 없습니다.
                         </div>
                       ) : (
-                        <div className="max-h-[13rem] overflow-y-auto pr-1">
+                        <div className="max-h-[10rem] overflow-y-auto pr-1">
                           <div className="grid grid-cols-1 gap-2 auto-rows-[4rem]">
                             {files.map((file, index) => (
                               <div
@@ -1438,10 +1438,11 @@ export const PracticeDropzonePage = () => {
                       <Label htmlFor="requestMemo" className="text-sm">의뢰 메모</Label>
                       <Textarea
                         id="requestMemo"
+                        rows={8}
                         value={requestMemo}
                         onChange={(e) => setRequestMemo(e.target.value)}
                         placeholder="예: #36 커스텀 어버트먼트, 마진 라인 메모..."
-                        className="min-h-[220px] flex-1 text-base"
+                        className="h-[13rem] resize-none text-base"
                       />
                     </div>
                   </div>
