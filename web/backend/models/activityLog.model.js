@@ -5,7 +5,8 @@ const activityLogSchema = new Schema(
     userId: {
       type: Schema.Types.ObjectId,
       ref: "User",
-      required: true,
+      required: false,
+      default: null,
       index: true,
     },
     action: {
@@ -20,6 +21,10 @@ const activityLogSchema = new Schema(
         "LOGIN_FAILED_BAD_PASSWORD",
         "LOGIN_FAILED_INACTIVE_USER",
         "LOGIN_FAILED_ERROR",
+        "PRACTICE_LOGIN_FAILED_USER_NOT_FOUND",
+        "PRACTICE_LOGIN_FAILED_BAD_PASSWORD",
+        "PRACTICE_LOGIN_FAILED_INACTIVE_USER",
+        "PRACTICE_LOGIN_FAILED_ERROR",
         "AUTH_FAILURE",
         "CHANGE_PASSWORD_SUCCESS",
         "RESET_PASSWORD_SUCCESS",

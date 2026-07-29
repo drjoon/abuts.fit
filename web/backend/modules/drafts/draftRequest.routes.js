@@ -13,7 +13,7 @@ import {
 const router = express.Router();
 
 router.use(authenticate);
-router.use(authorize(["requestor", "admin"]));
+router.use(authorize(["requestor", "practice", "admin"]));
 
 // 새 드래프트 생성
 router.post("/", createDraft);

@@ -18,8 +18,8 @@
  * - web/frontend/src/App.tsx
  */
 
-import { useEffect, useMemo, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import {
   UploadCloud,
   Trash2,
@@ -32,7 +32,6 @@ import {
 import { Button } from "@/components/ui/button";
 import {
   Card,
-  CardContent,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
@@ -337,6 +336,7 @@ const clearPracticeSessionMeta = () => {
 
 export const PracticeDropzonePage = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const [searchParams] = useSearchParams();
   const searchParamsKey = searchParams.toString();
   const { toast } = useToast();
@@ -371,6 +371,7 @@ export const PracticeDropzonePage = () => {
     rememberLab,
     handleIncomingFiles,
     removeFile,
+    clearAllFiles,
   } = usePracticeTransferStep1({
     fileCacheMetaKey: PRACTICE_FILE_CACHE_META_KEY,
     fileCacheMaxTotalBytes: PRACTICE_FILE_CACHE_MAX_TOTAL_BYTES,
@@ -397,6 +398,7 @@ export const PracticeDropzonePage = () => {
   const [recoverNewPassword, setRecoverNewPassword] = useState("");
   const [authSubmitting, setAuthSubmitting] = useState(false);
   const [showGuestChat, setShowGuestChat] = useState(false);
+  const consumedPrefillLocationKeyRef = useRef<string | null>(null);
 
   const isPhoneValid = isValidPhoneNumber(phone);
 
@@ -532,6 +534,27 @@ export const PracticeDropzonePage = () => {
       businessNumber: labBusinessNumber,
     });
   }, [draftHydrated, searchParamsKey, setSelectedLab]);
+
+  useEffect(() => {
+    if (!draftHydrated) return;
+    if (consumedPrefillLocationKeyRef.current === location.key) return;
+
+    const state =
+      location.state && typeof location.state === "object"
+        ? (location.state as { prefilledFiles?: unknown })
+        : null;
+
+    const incomingFiles = Array.isArray(state?.prefilledFiles)
+      ? state.prefilledFiles.filter((item): item is File => item instanceof File)
+      : [];
+
+    consumedPrefillLocationKeyRef.current = location.key;
+
+    if (incomingFiles.length === 0) return;
+
+    handleIncomingFiles(incomingFiles);
+    setStep(0);
+  }, [draftHydrated, handleIncomingFiles, location.key, location.state]);
 
   useEffect(() => {
     if (!draftHydrated) return;
@@ -1116,22 +1139,19 @@ export const PracticeDropzonePage = () => {
     <PageFileDropZone
       onFiles={handleIncomingFiles}
       activeClassName="ring-2 ring-primary/30"
-      className="bg-gradient-subtle p-5 md:p-6 flex flex-col h-full min-h-0 overflow-hidden"
+      className="bg-gradient-subtle p-3 md:p-4 flex flex-col h-full min-h-0 overflow-hidden"
     >
-      <div className="mx-auto flex h-full min-h-0 w-full max-w-6xl flex-col gap-5">
+      <div className="mx-auto flex h-full min-h-0 w-full max-w-4xl flex-col gap-2.5">
         <Card className="border-blue-100 bg-gradient-to-br from-white to-blue-50/70 shadow-sm">
-          <CardHeader className="px-6 py-5">
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-              <div className="space-y-2">
-                <Badge className="w-fit bg-blue-600 text-white hover:bg-blue-600 text-sm px-3 py-1">
-                  Practice Wizard
-                </Badge>
+          <CardHeader className="px-6 py-2.5">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <div className="flex min-h-[52px] items-center">
                 <CardTitle className="text-2xl md:text-3xl font-bold tracking-tight">
-                  치과에서 기공소로 구강스캔 파일 전송
+                  구강스캔 파일 전송
                 </CardTitle>
               </div>
 
-              <div className="w-full rounded-xl border bg-white/80 px-3 py-3 lg:w-[420px]">
+              <div className="w-full rounded-xl border bg-white/80 px-3 py-2 lg:w-[420px]">
                 <ol className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4">
                   {WIZARD_STEPS.map((label, idx) => {
                     const isActive = step === idx;
@@ -1178,87 +1198,99 @@ export const PracticeDropzonePage = () => {
           </CardHeader>
         </Card>
 
-        <Card className="flex min-h-0 flex-1 flex-col shadow-sm">
-          <CardContent className="flex min-h-0 flex-1 flex-col px-6 py-6">
+        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto pt-3 pb-2">
             {step === 0 && (
-              <div className="flex min-h-0 flex-1 flex-col gap-4">
-                <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 lg:grid-cols-3">
-                  <div className="rounded-xl border border-dashed border-slate-300 p-6 text-center">
-                    <div className="mx-auto mb-2 w-fit rounded-full bg-blue-50 p-3 text-blue-600">
-                      <UploadCloud className="h-6 w-6" />
-                    </div>
-                    <p className="text-lg font-semibold">파일을 드래그 & 드롭하세요</p>
-                    <p className="text-sm text-muted-foreground mt-1">{PRACTICE_ACCEPTED_HINT}</p>
-                    <p className="mt-2 text-md text-muted-foreground">또는 아래 버튼으로 파일 선택</p>
-                    <div className="mt-4">
-                      <input
-                        id="practice-scan-file-input"
-                        type="file"
-                        className="hidden"
-                        multiple
-                        onChange={(e) => {
-                          const nextFiles = Array.from(e.target.files || []);
-                          if (nextFiles.length) handleIncomingFiles(nextFiles);
-                          e.currentTarget.value = "";
-                        }}
-                      />
-                      <Button
-                        type="button"
-                        variant="outline"
-                        className="h-11 px-6 text-base"
-                        onClick={() => {
-                          const input = document.getElementById(
-                            "practice-scan-file-input",
-                          ) as HTMLInputElement | null;
-                          input?.click();
-                        }}
-                      >
-                        파일 선택
-                      </Button>
-                    </div>
-                  </div>
-
-                  <div className="rounded-lg border p-4 flex min-h-0 flex-1 flex-col">
-                    <div className="mb-3 text-sm text-muted-foreground">
-                      총 {files.length}개 파일 · 약 {totalSizeMb}MB
-                    </div>
-                    {files.length === 0 ? (
-                      <div className="rounded-md border border-dashed p-5 text-center text-sm text-muted-foreground">
-                        아직 추가된 파일이 없습니다.
+              <div className="flex min-h-0 flex-1 flex-col gap-3">
+                <div className="grid min-h-0 flex-1 grid-cols-1 items-stretch gap-3 lg:grid-cols-2">
+                  <div className="flex min-h-0 h-full flex-col gap-3">
+                    <div className="rounded-xl border border-dashed border-slate-300 px-5 pt-3 pb-3 text-center">
+                      <div className="mx-auto mb-2 w-fit rounded-full bg-blue-50 p-3 text-blue-600">
+                        <UploadCloud className="h-6 w-6" />
                       </div>
-                    ) : (
-                      <div className="max-h-[23.5rem] overflow-auto pr-1">
-                        <div className="grid grid-cols-1 gap-2 auto-rows-[4.25rem]">
-                          {files.map((file, index) => (
-                            <div
-                              key={`${file.name}:${file.size}:${file.lastModified}:${index}`}
-                              className="flex h-[4.25rem] items-center justify-between rounded-md border px-2.5 py-2"
-                            >
-                              <div className="min-w-0">
-                                <p className="truncate text-base font-medium">{file.name}</p>
-                                <p className="text-sm text-muted-foreground">
-                                  {(file.size / (1024 * 1024)).toFixed(2)}MB
-                                </p>
-                              </div>
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="icon"
-                                className="h-9 w-9"
-                                onClick={() => removeFile(index)}
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
-                            </div>
-                          ))}
+                      <p className="text-lg font-semibold">파일을 드래그 & 드롭하세요</p>
+                      <p className="text-sm text-muted-foreground mt-1">{PRACTICE_ACCEPTED_HINT}</p>
+                      <div className="mt-3">
+                        <input
+                          id="practice-scan-file-input"
+                          type="file"
+                          className="hidden"
+                          multiple
+                          onChange={(e) => {
+                            const nextFiles = Array.from(e.target.files || []);
+                            if (nextFiles.length) handleIncomingFiles(nextFiles);
+                            e.currentTarget.value = "";
+                          }}
+                        />
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className=" px-6 text-base"
+                          onClick={() => {
+                            const input = document.getElementById(
+                              "practice-scan-file-input",
+                            ) as HTMLInputElement | null;
+                            input?.click();
+                          }}
+                        >
+                          파일 선택
+                        </Button>
+                      </div>
+                    </div>
+
+                    <div className="w-full rounded-lg border p-4 flex min-h-0 flex-1 flex-col">
+                      <div className="mb-3 flex items-center justify-between gap-2">
+                        <div className="text-sm text-muted-foreground">
+                          총 {files.length}개 파일 · 약 {totalSizeMb}MB
                         </div>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="h-8"
+                          onClick={() => void clearAllFiles()}
+                          disabled={files.length === 0}
+                        >
+                          전체삭제
+                        </Button>
                       </div>
-                    )}
+                      {files.length === 0 ? (
+                        <div className="rounded-md border border-dashed p-5 text-center text-sm text-muted-foreground">
+                          아직 추가된 파일이 없습니다.
+                        </div>
+                      ) : (
+                        <div className="max-h-[13rem] overflow-y-auto pr-1">
+                          <div className="grid grid-cols-1 gap-2 auto-rows-[4rem]">
+                            {files.map((file, index) => (
+                              <div
+                                key={`${file.name}:${file.size}:${file.lastModified}:${index}`}
+                                className="flex h-[4rem] items-center justify-between rounded-md border px-2.5 py-2"
+                              >
+                                <div className="min-w-0">
+                                  <p className="truncate text-base font-medium">{file.name}</p>
+                                  <p className="text-sm text-muted-foreground">
+                                    {(file.size / (1024 * 1024)).toFixed(2)}MB
+                                  </p>
+                                </div>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-9 w-9"
+                                  onClick={() => removeFile(index)}
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   </div>
 
-                  <div className="rounded-lg border p-4 flex min-h-0 flex-col gap-4">
+                  <div className="rounded-lg border p-4 flex h-full min-h-0 flex-col gap-3">
                     <div>
-                      <h3 className="text-lg font-semibold">기공소 정보 & 의뢰 메모</h3>
+                      <h3 className="text-lg font-semibold">의뢰 내용</h3>
                     </div>
 
                     <div className="space-y-2">
@@ -1407,14 +1439,14 @@ export const PracticeDropzonePage = () => {
                       </Popover>
                     </div>
 
-                    <div className="space-y-2">
+                    <div className="flex min-h-0 flex-1 flex-col gap-2">
                       <Label htmlFor="requestMemo" className="text-sm">의뢰 메모</Label>
                       <Textarea
                         id="requestMemo"
                         value={requestMemo}
                         onChange={(e) => setRequestMemo(e.target.value)}
                         placeholder="예: #36 커스텀 어버트먼트, 마진 라인 메모..."
-                        className="min-h-36 text-base"
+                        className="min-h-[220px] flex-1 text-base"
                       />
                     </div>
                   </div>
@@ -1708,8 +1740,7 @@ export const PracticeDropzonePage = () => {
                 )}
               </form>
             )}
-          </CardContent>
-        </Card>
+        </div>
 
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <Button

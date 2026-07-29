@@ -221,7 +221,7 @@ export async function logAuthFailure(req, reason, user = null) {
     req.headers["x-forwarded-for"]?.split(",")[0]?.trim() || req.ip || "";
   await logSecurityEvent({
     userId: user?._id || user?.id || null,
-    action: "auth_failure",
+    action: "AUTH_FAILURE",
     severity: "warning",
     status: "blocked",
     ipAddress: clientIp,

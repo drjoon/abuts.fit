@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type DragEvent } from "react";
 import { GuestChatModal } from "@/features/support/components/GuestChatModal";
 import { Button } from "@/components/ui/button";
 import {
@@ -30,9 +30,33 @@ import { PublicPageLayout } from "./components/PublicPageLayout";
 
 const Index = () => {
   const [showGuestChat, setShowGuestChat] = useState(false);
+  const [isQuickDropOver, setIsQuickDropOver] = useState(false);
   const navigate = useNavigate();
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
 
+  const moveToPracticeDropzoneWithFiles = (files: File[]) => {
+    const nextFiles = Array.from(files || []);
+    if (!nextFiles.length) {
+      navigate("/practice/dropzone");
+      return;
+    }
+
+    navigate("/practice/dropzone", {
+      state: {
+        prefilledFiles: nextFiles,
+        source: "public-index-quick-drop",
+      },
+    });
+  };
+
+  const handleQuickDrop = (event: DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setIsQuickDropOver(false);
+
+    const dropped = Array.from(event.dataTransfer.files || []);
+    moveToPracticeDropzoneWithFiles(dropped);
+  };
 
 
   const features = [
@@ -117,41 +141,55 @@ const Index = () => {
         <div className="lg:w-1/2">
           <Card className="border-blue-200 bg-gradient-to-br from-white to-blue-50 text-slate-900 shadow-[0_18px_45px_rgba(6,8,20,0.35)] backdrop-blur-2xl">
             <CardHeader className="space-y-3">
-              <div className="inline-flex w-fit items-center gap-2 rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.28em] text-blue-700">
-                practice
-                <span className="h-1.5 w-1.5 rounded-full bg-blue-500" />
-                guest open
-              </div>
               <CardTitle className="text-xl md:text-2xl">
-                치과에서 기공소로 구강스캔 파일 전송
+                치과에서 기공소로 파일 전송
               </CardTitle>
-              <CardDescription className="text-sm text-slate-600">
-                비회원도 바로 접근해서 파일 드롭·의뢰 메모 입력을 시작할 수 있습니다.
-              </CardDescription>
             </CardHeader>
-            <CardContent>
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <div className="flex items-center gap-2 text-sm text-slate-600">
-                  <Building2 className="h-4 w-4 text-blue-600" />
-                  <span>치과 전용 빠른 전송</span>
+            <CardContent className="">
+              <input
+                id="public-practice-quick-drop-input"
+                type="file"
+                multiple
+                accept=".stl"
+                className="hidden"
+                onChange={(e) => {
+                  const selected = Array.from(e.currentTarget.files || []);
+                  moveToPracticeDropzoneWithFiles(selected);
+                  e.currentTarget.value = "";
+                }}
+              />
+
+              <div
+                onDragOver={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  setIsQuickDropOver(true);
+                }}
+                onDragLeave={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  setIsQuickDropOver(false);
+                }}
+                onDrop={handleQuickDrop}
+                onClick={() => {
+                  const input = document.getElementById(
+                    "public-practice-quick-drop-input",
+                  ) as HTMLInputElement | null;
+                  input?.click();
+                }}
+                className={`cursor-pointer rounded-xl border-2 border-dashed p-7 text-center transition-colors ${
+                  isQuickDropOver
+                    ? "border-blue-500 bg-blue-50"
+                    : "border-blue-200 bg-white hover:border-blue-400"
+                }`}
+              >
+                <div className="mx-auto mb-2 w-fit rounded-full bg-blue-100 p-3 text-blue-700">
+                  <UploadCloud className="h-5 w-5" />
                 </div>
-                <div className="flex items-center gap-2 justify-end">
-                  <Button
-                    variant="outline"
-                    onClick={() =>
-                      navigate(isAuthenticated ? "/dashboard" : "/login")
-                    }
-                  >
-                    로그인
-                  </Button>
-                  <Button
-                    className="bg-blue-600 text-white hover:bg-blue-700"
-                    onClick={() => navigate("/practice/dropzone")}
-                  >
-                    <UploadCloud className="mr-2 h-4 w-4" />
-                    전송 시작하기
-                  </Button>
-                </div>
+                <p className="text-base font-semibold">여기에 STL 파일을 드롭하세요</p>
+                <p className="mt-1 text-sm text-slate-600">
+                  비회원도 드롭 가능
+                </p>
               </div>
             </CardContent>
           </Card>
