@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Outlet, useNavigate, useLocation } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useAuthStore } from "@/store/useAuthStore";
@@ -68,6 +68,7 @@ import { onAppEvent } from "@/shared/realtime/socket";
 import { useAdminCommBadges } from "@/shared/hooks/useAdminCommBadges";
 import { loadBusinessMeCached } from "@/shared/components/business/settings/business/businessMeCache";
 import { resolveBusinessType } from "@/shared/utils/resolveBusinessType";
+import { useChatRooms } from "@/shared/hooks/useChatRooms";
 
 const sidebarItems = {
   requestor: [
@@ -261,6 +262,7 @@ export const DashboardLayout = () => {
   );
   const [requestorPracticeUnreadCount, setRequestorPracticeUnreadCount] =
     useState(0);
+  const { rooms: chatRooms } = useChatRooms();
 
   const isWizardRoute = location.pathname.startsWith("/dashboard/wizard");
   const isPracticeUser = Boolean(user?.role === "practice");
@@ -711,15 +713,31 @@ export const DashboardLayout = () => {
     return menuItems;
   })();
 
+  const requestorPracticeChatUnreadCount = useMemo(() => {
+    if (user.role !== "requestor") return 0;
+    return chatRooms.reduce((sum, room) => {
+      const transferId = String(room.relatedPracticeTransferId?.transferId || "").trim();
+      if (!transferId) return sum;
+      return sum + Math.max(0, Number(room.unreadCount || 0));
+    }, 0);
+  }, [chatRooms, user.role]);
+
   const getSidebarBadgeCount = useCallback(
     (href: string) => {
       const adminCommBadge = Number(getBadgeForHref(href) || 0);
       if (href === "/dashboard/practice-transfers" && user.role === "requestor") {
-        return adminCommBadge + Math.max(0, Number(requestorPracticeUnreadCount || 0));
+        const transferUnread = Math.max(0, Number(requestorPracticeUnreadCount || 0));
+        const chatUnread = Math.max(0, Number(requestorPracticeChatUnreadCount || 0));
+        return adminCommBadge + transferUnread + chatUnread;
       }
       return adminCommBadge;
     },
-    [getBadgeForHref, requestorPracticeUnreadCount, user.role],
+    [
+      getBadgeForHref,
+      requestorPracticeChatUnreadCount,
+      requestorPracticeUnreadCount,
+      user.role,
+    ],
   );
 
   const isManufacturer = user.role === "manufacturer";
