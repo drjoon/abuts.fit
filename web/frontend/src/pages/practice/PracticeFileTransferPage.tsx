@@ -77,6 +77,8 @@ import {
 } from "@/pages/practice/hooks/usePracticeTransferStep1";
 import { useChatRooms, type ChatRoom } from "@/shared/hooks/useChatRooms";
 import { useChatMessages } from "@/shared/hooks/useChatMessages";
+import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
+import { onNotification } from "@/shared/realtime/socket";
 
 type RecentRequestItem = {
   id: string;
@@ -227,7 +229,11 @@ export const PracticeFileTransferPage = () => {
   const [chatError, setChatError] = useState("");
   const [chatDraft, setChatDraft] = useState("");
   const [chatSending, setChatSending] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [deleteTargetTransfer, setDeleteTargetTransfer] = useState<RecentTransferItem | null>(null);
+  const [deletingTransfer, setDeletingTransfer] = useState(false);
   const chatBottomRef = useRef<HTMLDivElement | null>(null);
+  const chatRoomsReloadTimerRef = useRef<number | null>(null);
   const {
     files,
     totalSizeMb,
@@ -630,6 +636,89 @@ export const PracticeFileTransferPage = () => {
     }
   };
 
+  const handleAskDeleteTransfer = (transfer: RecentTransferItem) => {
+    setDeleteTargetTransfer(transfer);
+    setDeleteConfirmOpen(true);
+  };
+
+  const handleCancelDeleteTransfer = () => {
+    if (deletingTransfer) return;
+    setDeleteConfirmOpen(false);
+    setDeleteTargetTransfer(null);
+  };
+
+  const handleConfirmDeleteTransfer = async () => {
+    if (deletingTransfer) return;
+    if (!authToken) {
+      toast({
+        title: "로그인이 필요합니다",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const target = deleteTargetTransfer;
+    const requestIds = Array.isArray(target?.requestIds)
+      ? target!.requestIds.map((id) => String(id || "").trim()).filter(Boolean)
+      : [];
+
+    if (!target || requestIds.length === 0) {
+      toast({
+        title: "삭제할 의뢰가 없습니다",
+        variant: "destructive",
+      });
+      setDeleteConfirmOpen(false);
+      setDeleteTargetTransfer(null);
+      return;
+    }
+
+    setDeletingTransfer(true);
+    let successCount = 0;
+    const failedIds: string[] = [];
+
+    try {
+      for (const requestId of requestIds) {
+        const res = await apiFetch<unknown>({
+          path: `/api/requests/${encodeURIComponent(requestId)}`,
+          method: "DELETE",
+          token: authToken,
+        });
+
+        if (res.ok) {
+          successCount += 1;
+        } else {
+          failedIds.push(requestId);
+        }
+      }
+
+      if (successCount > 0) {
+        const deletedSet = new Set(requestIds);
+        setRecentRequests((prev) => prev.filter((row) => !deletedSet.has(row.id)));
+
+        toast({
+          title: "의뢰 내역 삭제 완료",
+          description:
+            failedIds.length > 0
+              ? `${successCount}건 삭제, ${failedIds.length}건은 단계/권한 제한으로 삭제되지 않았습니다.`
+              : `${successCount}건 삭제되었습니다.`,
+        });
+      } else {
+        toast({
+          title: "삭제 실패",
+          description: "삭제 가능한 단계(의뢰/CAM)인지 확인해주세요.",
+          variant: "destructive",
+        });
+      }
+
+      await loadRecentRequests();
+      void reloadChatRooms();
+    } finally {
+      setDeletingTransfer(false);
+      setDeleteConfirmOpen(false);
+      setDeleteTargetTransfer(null);
+    }
+  };
+
   useEffect(() => {
     if (!transferDialogOpen || !activeChatRoom?._id) return;
     const raf = window.requestAnimationFrame(() => {
@@ -645,6 +734,30 @@ export const PracticeFileTransferPage = () => {
     }, 400);
     return () => window.clearTimeout(id);
   }, [transferDialogOpen, activeChatRoom?._id, chatMessagesLoading, reloadChatRooms]);
+
+  useEffect(() => {
+    if (!authToken) return;
+
+    const unsubscribe = onNotification((payload) => {
+      const type = String(payload?.type || "").trim();
+      if (type !== "new-message") return;
+
+      if (chatRoomsReloadTimerRef.current) {
+        window.clearTimeout(chatRoomsReloadTimerRef.current);
+      }
+      chatRoomsReloadTimerRef.current = window.setTimeout(() => {
+        void reloadChatRooms();
+      }, 200);
+    });
+
+    return () => {
+      unsubscribe?.();
+      if (chatRoomsReloadTimerRef.current) {
+        window.clearTimeout(chatRoomsReloadTimerRef.current);
+        chatRoomsReloadTimerRef.current = null;
+      }
+    };
+  }, [authToken, reloadChatRooms]);
 
   const handleSubmitPracticeRequest = async () => {
     if (requestSubmitting) return;
@@ -815,7 +928,6 @@ export const PracticeFileTransferPage = () => {
                   <div className="rounded-xl border border-dashed bg-background p-4 text-center">
                     <p className="text-base font-semibold">파일을 드래그 & 드롭하세요</p>
                     <p className="mt-1 text-sm text-muted-foreground">{PRACTICE_ACCEPTED_HINT}</p>
-                    <p className="text-sm text-muted-foreground">또는 아래 버튼으로 파일 선택</p>
                     <div className="mt-3">
                       <input
                         id="practice-file-transfer-input"
@@ -895,7 +1007,7 @@ export const PracticeFileTransferPage = () => {
                 </div>
 
                 <div className="rounded-xl border bg-background p-4">
-                  <p className="text-base font-semibold">기공소 정보 & 의뢰 메모</p>
+                  <p className="text-base font-semibold">의뢰 정ㄹ</p>
 
                   <div className="mt-3 space-y-2">
                     <Label className="text-sm">기공소 선택</Label>
@@ -1073,7 +1185,7 @@ export const PracticeFileTransferPage = () => {
                   onClick={() => void handleSubmitPracticeRequest()}
                   disabled={requestSubmitting}
                 >
-                  {requestSubmitting ? "의뢰 보내는 중..." : "의뢰 보내기"}
+                  {requestSubmitting ? "파일 보내는 중..." : "파일 보내기"}
                 </Button>
               </div>
             </CardContent>
@@ -1139,12 +1251,27 @@ export const PracticeFileTransferPage = () => {
                     </p>
                   </div>
                   <div className="shrink-0 flex items-center gap-2">
-                    {transfer.unreadCount > 0 ? (
-                      <Badge className="bg-red-600 text-white hover:bg-red-600">
-                        안읽음 {transfer.unreadCount > 99 ? "99+" : transfer.unreadCount}
-                      </Badge>
-                    ) : null}
                     <Badge variant="outline" className="whitespace-nowrap">{transfer.status}</Badge>
+                    <div className="relative">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          void handleAskDeleteTransfer(transfer);
+                        }}
+                        aria-label="의뢰 내역 삭제"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                      {transfer.unreadCount > 0 ? (
+                        <span className="absolute -top-1 -right-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-semibold text-white leading-none">
+                          {transfer.unreadCount > 99 ? "99+" : transfer.unreadCount}
+                        </span>
+                      ) : null}
+                    </div>
                   </div>
                 </button>
               ))
@@ -1265,6 +1392,25 @@ export const PracticeFileTransferPage = () => {
             </div>
           </DialogContent>
         </Dialog>
+
+        <ConfirmDialog
+          open={deleteConfirmOpen}
+          title="이 전송 의뢰 내역을 삭제할까요?"
+          description={
+            <div className="space-y-1">
+              <div className="text-sm text-muted-foreground">
+                삭제 대상: {deleteTargetTransfer?.transferId || deleteTargetTransfer?.id || "-"}
+              </div>
+              <div className="text-sm text-muted-foreground">
+                포함 의뢰 {deleteTargetTransfer?.requestIds?.length || 0}건을 삭제(취소) 처리합니다.
+              </div>
+            </div>
+          }
+          confirmLabel={deletingTransfer ? "삭제 중..." : "삭제"}
+          cancelLabel="취소"
+          onConfirm={handleConfirmDeleteTransfer}
+          onCancel={handleCancelDeleteTransfer}
+        />
       </div>
     </PageFileDropZone>
   );
