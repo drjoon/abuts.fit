@@ -467,6 +467,7 @@ export const PreviewModal = ({
   const [guidedFinishLinePoints, setGuidedFinishLinePoints] = useState<number[][]>(
     [],
   );
+  const screwLotAutoAssignAttemptedRef = useRef<Set<string>>(new Set());
   const [guidedFinishLineSubmitting, setGuidedFinishLineSubmitting] = useState(false);
   const [guidedFinishLineOverridePoints, setGuidedFinishLineOverridePoints] =
     useState<number[][] | null>(null);
@@ -640,6 +641,95 @@ export const PreviewModal = ({
   } = useStlMetadata(requestId);
 
   const activeReq = req || lastStableReqRef.current;
+
+  useEffect(() => {
+    if (!open || !token || stage !== "packing" || !activeReq) return;
+
+    const requestMongoId = String(activeReq?._id || "").trim();
+    if (!requestMongoId) return;
+
+    const trackedLotNumber = String(
+      activeReq?.screwTracking?.lotNumber || "",
+    ).trim();
+    if (trackedLotNumber) return;
+
+    const overlayCaseInfos = (activeReq?.caseInfos || {}) as Record<string, unknown>;
+    const overlayFlat = (activeReq || {}) as Record<string, unknown>;
+    const overlaySpec =
+      ((overlayFlat.spec as Record<string, unknown> | undefined) || {}) as Record<
+        string,
+        unknown
+      >;
+
+    const resolvedSpec = resolveImplantConnectionSpec({
+      implantManufacturer: String(
+        overlayCaseInfos.implantManufacturer ||
+          overlaySpec.implantCompany ||
+          overlayFlat.implantManufacturer ||
+          "",
+      ).trim(),
+      implantBrand: String(
+        overlayCaseInfos.implantBrand ||
+          overlaySpec.implantBrand ||
+          overlaySpec.implantProduct ||
+          overlayFlat.implantBrand ||
+          "",
+      ).trim(),
+      implantFamily: String(
+        overlayCaseInfos.implantFamily ||
+          overlaySpec.implantFamily ||
+          overlayFlat.implantFamily ||
+          "",
+      ).trim(),
+      implantType: String(
+        overlayCaseInfos.implantType ||
+          overlaySpec.implantType ||
+          overlayFlat.implantType ||
+          "",
+      ).trim(),
+      connectionDiameter: activeReq?.caseInfos?.connectionDiameter,
+    });
+
+    const trackedScrewType = String(activeReq?.screwTracking?.screwType || "").trim();
+    const fallbackScrewType = String(
+      trackedScrewType || resolvedSpec?.screwType || "",
+    )
+      .trim()
+      .toUpperCase();
+
+    if (!fallbackScrewType || fallbackScrewType === "-") return;
+
+    const attemptKey = `${requestMongoId}:${fallbackScrewType}`;
+    if (screwLotAutoAssignAttemptedRef.current.has(attemptKey)) return;
+    screwLotAutoAssignAttemptedRef.current.add(attemptKey);
+
+    void (async () => {
+      try {
+        const res = await fetch(`/api/requests/${requestMongoId}/packing/screw-lot`, {
+          method: "PATCH",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            screwType: fallbackScrewType,
+          }),
+        });
+
+        const json = await res.json().catch(() => null);
+        if (!res.ok || !json?.success) {
+          return;
+        }
+
+        if (onRefreshPreview) {
+          await onRefreshPreview(activeReq, { forceRefresh: true });
+        }
+      } catch {
+        // 자동 보정 실패는 사용자 액션을 막지 않는다.
+      }
+    })();
+  }, [activeReq, onRefreshPreview, open, stage, token]);
+
   if (!activeReq && !open) return null;
 
   const handleRecalculateMetadata = async () => {

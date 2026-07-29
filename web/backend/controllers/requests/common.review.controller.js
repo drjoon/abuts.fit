@@ -1368,6 +1368,28 @@ export async function updateReviewStatusByStage(req, res) {
           });
         }
 
+        const hasTrackedScrewLot = Boolean(
+          normalizePackingScrewLot(request?.screwTracking?.lotNumber),
+        );
+        const shouldAutoAssignScrewLot =
+          (effectiveStage === "machining" || effectiveStage === "packing") &&
+          !hasTrackedScrewLot;
+
+        // 스크류 로트 추적 스냅샷 자동 귀속
+        // - machining 승인(세척.패킹 진입) 시점이 1순위
+        // - 운영 중 누락 건 보강을 위해 packing 승인 시점에도 미설정일 때만 재시도
+        // - 이후 전역 로트가 변경되어도 기존 의뢰 스냅샷은 유지
+        if (shouldAutoAssignScrewLot) {
+          try {
+            await autoAssignPackingScrewLotIfPossible({
+              request,
+              actorUser: req.user,
+            });
+          } catch (err) {
+            console.error("[SCREW_LOT_AUTO_ASSIGN_ERROR]", err);
+          }
+        }
+
         if (effectiveStage === "packing") {
           await ensureFinishedLotNumberForPacking(request);
           updateCurrentEstimatedShipYmdOnPackingEnter(request);
@@ -1389,18 +1411,6 @@ export async function updateReviewStatusByStage(req, res) {
             );
           } catch (err) {
             console.error("[MAILBOX_ALLOCATION_ERROR]", err);
-          }
-
-          // 스크류 로트 추적 스냅샷 자동 귀속
-          // - 현재 전역 설정(A~E) 기준으로 의뢰에 고정 저장
-          // - 이후 전역 로트가 변경되어도 기존 의뢰 스냅샷은 유지
-          try {
-            await autoAssignPackingScrewLotIfPossible({
-              request,
-              actorUser: req.user,
-            });
-          } catch (err) {
-            console.error("[SCREW_LOT_AUTO_ASSIGN_ERROR]", err);
           }
 
           // 샘플/치과 드롭존 의뢰는 전체 공정 진행은 동일하게 허용하되, 배송비 크레딧은 차감하지 않는다.
