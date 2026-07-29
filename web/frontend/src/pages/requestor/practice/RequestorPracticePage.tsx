@@ -792,7 +792,7 @@ export default function RequestorPracticePage() {
           }
         }}
       >
-        <DialogContent className="max-w-3xl p-0 overflow-hidden max-h-[86vh] flex flex-col">
+        <DialogContent className="w-[95vw] max-w-6xl p-0 overflow-hidden max-h-[86vh] flex flex-col">
           <DialogHeader className="px-5 pt-5 pb-3 border-b shrink-0">
             <DialogTitle className="flex items-center gap-2 text-base">
               <MessageSquare className="h-4 w-4 text-blue-600" />
@@ -801,200 +801,206 @@ export default function RequestorPracticePage() {
           </DialogHeader>
 
           {!selectedTransfer ? null : (
-            <div className="px-5 py-4 space-y-4 flex-1 min-h-0 overflow-hidden">
-              <div className="rounded-lg border bg-muted/20 p-3 text-sm grid grid-cols-2 gap-3 max-h-[13rem] overflow-y-auto">
-                <div>
-                  <p className="text-muted-foreground">전송ID</p>
-                  <p className="font-medium break-words">{selectedTransfer.transferId || "-"}</p>
-                </div>
-                <div>
-                  <p className="text-muted-foreground">전송시각</p>
-                  <p className="font-medium">{formatDateTime(selectedTransfer.createdAt)}</p>
-                </div>
-                <div>
-                  <p className="text-muted-foreground">치과</p>
-                  <p className="font-medium break-words">{selectedTransfer.practice.businessName || "-"}</p>
-                </div>
-                <div>
-                  <p className="text-muted-foreground">담당자</p>
-                  <p className="font-medium break-words">{selectedTransfer.practice.userName || "-"}</p>
-                </div>
-                <div className="col-span-2">
-                  <p className="text-muted-foreground">의뢰 메모</p>
-                  <p className="font-medium whitespace-pre-wrap break-words max-h-20 overflow-y-auto pr-1">
-                    {selectedTransfer.transferMemo || "-"}
-                  </p>
-                </div>
-                <div className="col-span-2">
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="text-muted-foreground">전송 파일 ({selectedTransfer.files.length}개)</p>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => void handleDownloadAllFiles()}
-                      disabled={!selectedTransfer.files.length}
-                    >
-                      전체 다운로드
-                    </Button>
-                  </div>
-                  <div className="mt-1 max-h-28 overflow-y-auto pr-1 space-y-1">
-                    {selectedTransfer.files.length ? (
-                      selectedTransfer.files.map((file) => (
-                        <button
-                          key={file.id}
-                          type="button"
-                          onClick={() => void handleDownload(file)}
-                          className="block w-full text-left rounded border px-2 py-1 text-xs hover:bg-muted/50"
-                        >
-                          {file.originalName} · {formatBytes(file.size)}
-                        </button>
-                      ))
-                    ) : (
-                      <p className="font-medium">-</p>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              <div className="rounded-lg border h-[24rem] max-h-[24rem] min-h-0 flex flex-col overflow-hidden">
-                <div className="px-3 py-2 border-b text-sm text-muted-foreground">치과와의 소통</div>
-
-                <div className="flex-1 px-3 py-3 overflow-y-auto">
-                  <div className="space-y-2">
-                    {chatLoading ? (
-                      <div className="text-center text-xs text-muted-foreground py-4">메시지를 불러오는 중...</div>
-                    ) : null}
-                    {!chatLoading && chatError ? (
-                      <div className="text-center text-xs text-destructive py-4">{chatError}</div>
-                    ) : null}
-                    {!chatLoading && !chatError && messages.length === 0 ? (
-                      <div className="text-center text-xs text-muted-foreground py-4">아직 메시지가 없습니다.</div>
-                    ) : null}
-
-                    {messages.map((m) => {
-                      const isMine = String(m.sender?._id || "") === String(user?.id || "");
-                      return (
-                        <div key={m._id} className={`flex ${isMine ? "justify-end" : "justify-start"}`}>
-                          <div
-                            className={`max-w-[80%] rounded-lg px-3 py-2 text-xs ${
-                              isMine ? "bg-primary text-primary-foreground" : "bg-muted"
-                            }`}
-                          >
-                            <p className="opacity-80 mb-1 font-medium">{m.sender?.name || "-"}</p>
-                            <p className="opacity-70 mb-1">{formatDateTime(m.createdAt)}</p>
-                            <p className="whitespace-pre-wrap break-words">{m.content}</p>
-                            {Array.isArray(m.attachments) && m.attachments.length > 0 ? (
-                              <div className="mt-2 space-y-1">
-                                {m.attachments.map((file, idx) => {
-                                  const fileName = String(file?.fileName || "첨부파일").trim();
-                                  const fileSize = formatBytes(Number(file?.fileSize || 0));
-                                  return (
-                                    <button
-                                      key={`${m._id}:file:${idx}`}
-                                      type="button"
-                                      onClick={() =>
-                                        void handleDownloadChatAttachment({
-                                          fileName,
-                                          fileSize: Number(file?.fileSize || 0),
-                                          s3Key: String(file?.s3Key || "").trim(),
-                                          s3Url: String(file?.s3Url || "").trim(),
-                                        })
-                                      }
-                                      className="block w-full rounded border border-current/20 px-2 py-1 text-[11px] text-left hover:underline"
-                                    >
-                                      {fileName} · {fileSize}
-                                    </button>
-                                  );
-                                })}
-                              </div>
-                            ) : null}
-                          </div>
-                        </div>
-                      );
-                    })}
-                    <div ref={chatBottomRef} />
-                  </div>
-                </div>
-
-                <div className="border-t px-3 pt-3 pb-4 space-y-2">
-                  {chatAttachedFiles.length > 0 ? (
-                    <div className="flex flex-wrap gap-2 max-h-20 overflow-y-auto pr-1">
-                      {chatAttachedFiles.map((file, idx) => (
-                        <span
-                          key={`${file.name}:${file.size}:${file.lastModified}:${idx}`}
-                          className="inline-flex max-w-full items-center gap-1.5 rounded border px-2 py-1 text-xs"
-                        >
-                          <span className="truncate max-w-[14rem]">{file.name}</span>
-                          <span className="text-muted-foreground">{formatBytes(file.size)}</span>
-                          <button
-                            type="button"
-                            className="opacity-70 hover:opacity-100"
-                            onClick={() => handleRemoveAttachedChatFile(idx)}
-                            aria-label="첨부파일 제거"
-                          >
-                            <X className="h-3 w-3" />
-                          </button>
-                        </span>
-                      ))}
-                    </div>
-                  ) : null}
-
-                  <Textarea
-                    value={chatDraft}
-                    onChange={(e) => setChatDraft(e.target.value)}
-                    placeholder="치과에 전달할 내용을 입력하세요"
-                    rows={3}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" && !e.shiftKey) {
-                        e.preventDefault();
-                        void handleSendChat();
-                      }
-                    }}
-                    disabled={chatSending || !activeChatRoom?._id}
-                  />
-
-                  <div className="flex items-center justify-between">
+            <div className="px-5 py-4 flex-1 min-h-0 overflow-hidden">
+              <div className="grid h-full min-h-0 grid-cols-1 gap-4 lg:grid-cols-2">
+                <div className="rounded-lg border bg-muted/20 p-3 text-sm min-h-0 overflow-y-auto space-y-4">
+                  <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <input
-                        id="requestor-practice-chat-attachment-input"
-                        type="file"
-                        className="hidden"
-                        multiple
-                        onChange={(e) => {
-                          handleAttachChatFiles(e.target.files);
-                          e.currentTarget.value = "";
-                        }}
-                      />
+                      <p className="text-muted-foreground">전송ID</p>
+                      <p className="font-medium break-words">{selectedTransfer.transferId || "-"}</p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground">전송시각</p>
+                      <p className="font-medium">{formatDateTime(selectedTransfer.createdAt)}</p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground">치과</p>
+                      <p className="font-medium break-words">{selectedTransfer.practice.businessName || "-"}</p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground">담당자</p>
+                      <p className="font-medium break-words">{selectedTransfer.practice.userName || "-"}</p>
+                    </div>
+                  </div>
+
+                  <div>
+                    <p className="text-muted-foreground">의뢰 메모</p>
+                    <p className="mt-1 font-medium whitespace-pre-wrap break-words max-h-24 overflow-y-auto pr-1">
+                      {selectedTransfer.transferMemo || "-"}
+                    </p>
+                  </div>
+
+                  <div>
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-muted-foreground">전송 파일 ({selectedTransfer.files.length}개)</p>
                       <Button
                         type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="h-9 w-9"
-                        onClick={() => {
-                          const input = document.getElementById(
-                            "requestor-practice-chat-attachment-input",
-                          ) as HTMLInputElement | null;
-                          input?.click();
-                        }}
-                        disabled={chatSending || !activeChatRoom?._id}
-                        aria-label="파일 첨부"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => void handleDownloadAllFiles()}
+                        disabled={!selectedTransfer.files.length}
                       >
-                        <Paperclip className="h-4 w-4" />
+                        전체 다운로드
                       </Button>
                     </div>
+                    <div className="mt-2 max-h-56 overflow-y-auto pr-1 space-y-1">
+                      {selectedTransfer.files.length ? (
+                        selectedTransfer.files.map((file) => (
+                          <button
+                            key={file.id}
+                            type="button"
+                            onClick={() => void handleDownload(file)}
+                            className="block w-full text-left rounded border px-2 py-1 text-xs hover:bg-muted/50"
+                          >
+                            {file.originalName} · {formatBytes(file.size)}
+                          </button>
+                        ))
+                      ) : (
+                        <p className="font-medium">-</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
 
-                    <Button
-                      onClick={() => void handleSendChat()}
-                      disabled={
-                        chatSending ||
-                        !activeChatRoom?._id ||
-                        (!chatDraft.trim() && chatAttachedFiles.length === 0)
-                      }
-                    >
-                      <Send className="mr-1 h-4 w-4" />
-                      전송
-                    </Button>
+                <div className="rounded-lg border min-h-0 flex flex-col overflow-hidden">
+                  <div className="px-3 py-2 border-b text-sm text-muted-foreground">치과와의 소통</div>
+
+                  <div className="flex-1 px-3 py-3 overflow-y-auto">
+                    <div className="space-y-2">
+                      {chatLoading ? (
+                        <div className="text-center text-xs text-muted-foreground py-4">메시지를 불러오는 중...</div>
+                      ) : null}
+                      {!chatLoading && chatError ? (
+                        <div className="text-center text-xs text-destructive py-4">{chatError}</div>
+                      ) : null}
+                      {!chatLoading && !chatError && messages.length === 0 ? (
+                        <div className="text-center text-xs text-muted-foreground py-4">아직 메시지가 없습니다.</div>
+                      ) : null}
+
+                      {messages.map((m) => {
+                        const isMine = String(m.sender?._id || "") === String(user?.id || "");
+                        return (
+                          <div key={m._id} className={`flex ${isMine ? "justify-end" : "justify-start"}`}>
+                            <div
+                              className={`max-w-[80%] rounded-lg px-3 py-2 text-xs ${
+                                isMine ? "bg-primary text-primary-foreground" : "bg-muted"
+                              }`}
+                            >
+                              <p className="opacity-80 mb-1 font-medium">{m.sender?.name || "-"}</p>
+                              <p className="opacity-70 mb-1">{formatDateTime(m.createdAt)}</p>
+                              <p className="whitespace-pre-wrap break-words">{m.content}</p>
+                              {Array.isArray(m.attachments) && m.attachments.length > 0 ? (
+                                <div className="mt-2 space-y-1">
+                                  {m.attachments.map((file, idx) => {
+                                    const fileName = String(file?.fileName || "첨부파일").trim();
+                                    const fileSize = formatBytes(Number(file?.fileSize || 0));
+                                    return (
+                                      <button
+                                        key={`${m._id}:file:${idx}`}
+                                        type="button"
+                                        onClick={() =>
+                                          void handleDownloadChatAttachment({
+                                            fileName,
+                                            fileSize: Number(file?.fileSize || 0),
+                                            s3Key: String(file?.s3Key || "").trim(),
+                                            s3Url: String(file?.s3Url || "").trim(),
+                                          })
+                                        }
+                                        className="block w-full rounded border border-current/20 px-2 py-1 text-[11px] text-left hover:underline"
+                                      >
+                                        {fileName} · {fileSize}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              ) : null}
+                            </div>
+                          </div>
+                        );
+                      })}
+                      <div ref={chatBottomRef} />
+                    </div>
+                  </div>
+
+                  <div className="border-t px-3 pt-3 pb-4 space-y-2">
+                    {chatAttachedFiles.length > 0 ? (
+                      <div className="flex flex-wrap gap-2 max-h-20 overflow-y-auto pr-1">
+                        {chatAttachedFiles.map((file, idx) => (
+                          <span
+                            key={`${file.name}:${file.size}:${file.lastModified}:${idx}`}
+                            className="inline-flex max-w-full items-center gap-1.5 rounded border px-2 py-1 text-xs"
+                          >
+                            <span className="truncate max-w-[14rem]">{file.name}</span>
+                            <span className="text-muted-foreground">{formatBytes(file.size)}</span>
+                            <button
+                              type="button"
+                              className="opacity-70 hover:opacity-100"
+                              onClick={() => handleRemoveAttachedChatFile(idx)}
+                              aria-label="첨부파일 제거"
+                            >
+                              <X className="h-3 w-3" />
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                    ) : null}
+
+                    <Textarea
+                      value={chatDraft}
+                      onChange={(e) => setChatDraft(e.target.value)}
+                      placeholder="치과에 전달할 내용을 입력하세요"
+                      rows={3}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && !e.shiftKey) {
+                          e.preventDefault();
+                          void handleSendChat();
+                        }
+                      }}
+                      disabled={chatSending || !activeChatRoom?._id}
+                    />
+
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <input
+                          id="requestor-practice-chat-attachment-input"
+                          type="file"
+                          className="hidden"
+                          multiple
+                          onChange={(e) => {
+                            handleAttachChatFiles(e.target.files);
+                            e.currentTarget.value = "";
+                          }}
+                        />
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="h-9 w-9"
+                          onClick={() => {
+                            const input = document.getElementById(
+                              "requestor-practice-chat-attachment-input",
+                            ) as HTMLInputElement | null;
+                            input?.click();
+                          }}
+                          disabled={chatSending || !activeChatRoom?._id}
+                          aria-label="파일 첨부"
+                        >
+                          <Paperclip className="h-4 w-4" />
+                        </Button>
+                      </div>
+
+                      <Button
+                        onClick={() => void handleSendChat()}
+                        disabled={
+                          chatSending ||
+                          !activeChatRoom?._id ||
+                          (!chatDraft.trim() && chatAttachedFiles.length === 0)
+                        }
+                      >
+                        <Send className="mr-1 h-4 w-4" />
+                        전송
+                      </Button>
+                    </div>
                   </div>
                 </div>
               </div>
