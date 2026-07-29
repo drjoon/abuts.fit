@@ -1,5 +1,6 @@
 import { Types } from "mongoose";
 import PracticeTransfer from "../../models/practiceTransfer.model.js";
+import User from "../../models/user.model.js";
 import { emitAppEventToUser } from "../../socket.js";
 
 // related files:
@@ -10,6 +11,8 @@ import { emitAppEventToUser } from "../../socket.js";
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/backend/modules/practiceTransfers/practiceTransfer.routes.js
 // - web/backend/models/practiceTransfer.model.js
+// - web/backend/models/user.model.js
+// - web/backend/socket.js
 const PRACTICE_TAGS = ["practice_dropzone", "practice_file_transfer"];
 const PRACTICE_ALLOWED_MODEL_EXTENSIONS = new Set([".stl", ".ply", ".obj"]);
 
@@ -78,6 +81,9 @@ const toVirtualRequestRows = (transferDoc) => {
       file: {
         originalName: String(item?.file?.originalName || "").trim(),
         name: String(item?.file?.originalName || "").trim(),
+        s3Key: String(item?.file?.s3Key || "").trim(),
+        size: Number(item?.file?.size || 0),
+        mimetype: String(item?.file?.mimetype || "application/octet-stream").trim(),
       },
       newSystemRequest: {
         tag: String(transferDoc?.tag || "practice_file_transfer").trim(),
@@ -117,6 +123,43 @@ const buildTransferIdFilter = (rawTransferId) => {
     };
   }
   return { transferId: value };
+};
+
+const resolveRequestorUserIdsByAnchor = async (anchorId) => {
+  const raw = String(anchorId || "").trim();
+  if (!raw || !Types.ObjectId.isValid(raw)) return [];
+
+  const users = await User.find({
+    businessAnchorId: new Types.ObjectId(raw),
+    role: "requestor",
+    active: true,
+  })
+    .select({ _id: 1 })
+    .lean();
+
+  return users
+    .map((u) => String(u?._id || "").trim())
+    .filter(Boolean);
+};
+
+const emitPracticeTransferEventToRequestorUsers = async ({
+  targetLabAnchorId,
+  type,
+  payload,
+}) => {
+  try {
+    const eventType = String(type || "").trim();
+    if (!eventType) return;
+
+    const userIds = await resolveRequestorUserIdsByAnchor(targetLabAnchorId);
+    if (!userIds.length) return;
+
+    userIds.forEach((userId) => {
+      emitAppEventToUser(userId, eventType, payload);
+    });
+  } catch {
+    // 실시간 이벤트 실패가 본 API 성공/실패를 좌우하지 않도록 무시
+  }
 };
 
 export async function createPracticeTransfer(req, res) {
@@ -205,11 +248,33 @@ export async function createPracticeTransfer(req, res) {
       files,
     });
 
-    emitAppEventToUser(req.user?._id, "practice:transfer-created", {
+    const targetLabAnchorIdText = String(targetLabAnchorId || "").trim();
+    const unreadCountForRequestor = targetLabAnchorIdText
+      ? await PracticeTransfer.countDocuments({
+          targetLabAnchorId: new Types.ObjectId(targetLabAnchorIdText),
+          status: { $ne: "canceled" },
+          requestorReadAt: null,
+        })
+      : 0;
+
+    const realtimePayload = {
       source: "createPracticeTransfer",
       transferId,
       transferMongoId: String(transferDoc?._id || ""),
+      targetLabAnchorId: targetLabAnchorIdText || null,
+      practiceUserId: String(req.user?._id || ""),
+      status: "active",
       count: files.length,
+      unreadCount: unreadCountForRequestor,
+      createdAt: transferDoc?.createdAt || new Date(),
+    };
+
+    emitAppEventToUser(req.user?._id, "practice:transfer-created", realtimePayload);
+
+    await emitPracticeTransferEventToRequestorUsers({
+      targetLabAnchorId,
+      type: "practice:transfer-created",
+      payload: realtimePayload,
     });
 
     return res.status(201).json({
@@ -458,6 +523,27 @@ export async function markReceivedPracticeTransferRead(req, res) {
       requestorReadAt: null,
     });
 
+    const realtimePayload = {
+      action: "read",
+      transferId: String(doc.transferId || "").trim(),
+      transferMongoId: String(doc._id || "").trim(),
+      targetLabAnchorId: String(doc.targetLabAnchorId || "").trim() || null,
+      practiceUserId: String(doc.practiceUserId || "").trim() || null,
+      requestorReadAt: doc.requestorReadAt,
+      unreadCount,
+      status: String(doc.status || "active").trim(),
+      updatedAt: doc.updatedAt || new Date(),
+    };
+
+    emitAppEventToUser(req.user?._id, "practice:transfer-updated", realtimePayload);
+    emitAppEventToUser(doc.practiceUserId, "practice:transfer-updated", realtimePayload);
+
+    await emitPracticeTransferEventToRequestorUsers({
+      targetLabAnchorId: doc.targetLabAnchorId,
+      type: "practice:transfer-updated",
+      payload: realtimePayload,
+    });
+
     return res.status(200).json({
       success: true,
       data: {
@@ -520,6 +606,7 @@ export async function cancelPracticeTransfersBatch(req, res) {
 
     let successCount = 0;
     const failedIds = [];
+    const affectedByAnchor = new Map();
 
     for (const doc of docs) {
       try {
@@ -528,9 +615,53 @@ export async function cancelPracticeTransfersBatch(req, res) {
         doc.canceledBy = req.user?._id || null;
         await doc.save();
         successCount += 1;
+
+        const targetLabAnchorId = String(doc.targetLabAnchorId || "").trim();
+        const transferId = String(doc.transferId || "").trim();
+        const transferMongoId = String(doc._id || "").trim();
+
+        if (targetLabAnchorId) {
+          const prev = affectedByAnchor.get(targetLabAnchorId) || [];
+          prev.push({ transferId, transferMongoId });
+          affectedByAnchor.set(targetLabAnchorId, prev);
+        }
+
+        const realtimePayload = {
+          action: "canceled",
+          transferId,
+          transferMongoId,
+          targetLabAnchorId: targetLabAnchorId || null,
+          practiceUserId: String(doc.practiceUserId || "").trim() || null,
+          unreadCount: null,
+          status: "canceled",
+          updatedAt: doc.updatedAt || new Date(),
+        };
+
+        emitAppEventToUser(doc.practiceUserId, "practice:transfer-updated", realtimePayload);
       } catch {
         failedIds.push(String(doc?.transferId || doc?._id || ""));
       }
+    }
+
+    for (const [targetLabAnchorId, affected] of affectedByAnchor.entries()) {
+      const unreadCount = await PracticeTransfer.countDocuments({
+        targetLabAnchorId: new Types.ObjectId(targetLabAnchorId),
+        status: { $ne: "canceled" },
+        requestorReadAt: null,
+      });
+
+      await emitPracticeTransferEventToRequestorUsers({
+        targetLabAnchorId,
+        type: "practice:transfer-updated",
+        payload: {
+          action: "canceled",
+          targetLabAnchorId,
+          affectedTransfers: affected,
+          unreadCount,
+          status: "canceled",
+          updatedAt: new Date(),
+        },
+      });
     }
 
     return res.status(200).json({

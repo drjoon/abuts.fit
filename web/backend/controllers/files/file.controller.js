@@ -3,6 +3,7 @@
 // - web/backend/models/file.model.js
 // - web/backend/models/practiceTransfer.model.js
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
+// - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
 import mongoose, { Types } from "mongoose";
 import path from "path";
 import fs from "fs/promises";
@@ -584,28 +585,16 @@ export const getFileDownloadUrl = asyncHandler(async (req, res) => {
     .json(new ApiResponse(200, { url: signedUrl }, "Download URL generated"));
 });
 
-// S3 키 기반 다운로드 URL 생성 (관리자, 업로더, 조직 소유자)
-export const getS3DownloadUrl = asyncHandler(async (req, res) => {
-  const key = String(req.params.key || "").trim();
-  if (!key) {
-    throw new ApiError(400, "Invalid S3 key");
-  }
-
+const canUserAccessS3Key = async (req, key) => {
   // Admin always allowed
   if (req.user?.role === "admin") {
-    const signedUrl = await s3Utils.getDownloadSignedUrl(key);
-    return res
-      .status(200)
-      .json(new ApiResponse(200, { url: signedUrl }, "Download URL generated"));
+    return true;
   }
 
   // Check if file exists in DB and user is uploader
   const file = await File.findOne({ key }).populate("uploadedBy", "_id");
   if (file && file.uploadedBy?._id.toString() === req.user._id.toString()) {
-    const signedUrl = await s3Utils.getDownloadSignedUrl(key);
-    return res
-      .status(200)
-      .json(new ApiResponse(200, { url: signedUrl }, "Download URL generated"));
+    return true;
   }
 
   // Check if user is organization owner and file belongs to their organization
@@ -618,12 +607,7 @@ export const getS3DownloadUrl = asyncHandler(async (req, res) => {
     );
 
     if (org?.businessLicense?.s3Key === key) {
-      const signedUrl = await s3Utils.getDownloadSignedUrl(key);
-      return res
-        .status(200)
-        .json(
-          new ApiResponse(200, { url: signedUrl }, "Download URL generated"),
-        );
+      return true;
     }
   }
 
@@ -657,12 +641,105 @@ export const getS3DownloadUrl = asyncHandler(async (req, res) => {
       currentAnchorId === String(practiceTransfer?.practiceBusinessAnchorId || "").trim();
 
     if (isPracticeOwner || isTargetLabMember || isPracticeBusinessMember) {
-      const signedUrl = await s3Utils.getDownloadSignedUrl(key);
-      return res
-        .status(200)
-        .json(new ApiResponse(200, { url: signedUrl }, "Download URL generated"));
+      return true;
     }
   }
 
-  throw new ApiError(403, "Forbidden");
+  // 채팅 첨부파일 접근 허용
+  // - 첨부가 포함된 채팅방 참여자라면 다운로드 허용
+  const chatMsg = await Chat.findOne({
+    isDeleted: false,
+    "attachments.s3Key": key,
+  })
+    .select({ roomId: 1 })
+    .lean();
+
+  if (chatMsg?.roomId) {
+    const room = await ChatRoom.findById(chatMsg.roomId)
+      .select({ participants: 1 })
+      .lean();
+
+    const myUserId = String(req.user?._id || "").trim();
+    const isParticipant = Array.isArray(room?.participants)
+      ? room.participants.some((p) => String(p || "").trim() === myUserId)
+      : false;
+
+    if (isParticipant) return true;
+  }
+
+  return false;
+};
+
+// S3 키 기반 다운로드 URL 생성 (관리자, 업로더, 조직 소유자)
+export const getS3DownloadUrl = asyncHandler(async (req, res) => {
+  const key = String(req.params.key || "").trim();
+  if (!key) {
+    throw new ApiError(400, "Invalid S3 key");
+  }
+
+  const allowed = await canUserAccessS3Key(req, key);
+  if (!allowed) {
+    throw new ApiError(403, "Forbidden");
+  }
+
+  const signedUrl = await s3Utils.getDownloadSignedUrl(key);
+  return res
+    .status(200)
+    .json(new ApiResponse(200, { url: signedUrl }, "Download URL generated"));
+});
+
+// related files:
+// - web/backend/modules/files/file.routes.js
+// - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
+// - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
+// 인증된 사용자가 동일 오리진에서 첨부를 직접 내려받도록 프록시 다운로드 제공
+export const downloadS3FileProxy = asyncHandler(async (req, res) => {
+  const key = String(req.query?.key || "").trim();
+  if (!key) {
+    throw new ApiError(400, "Invalid S3 key");
+  }
+
+  const allowed = await canUserAccessS3Key(req, key);
+  if (!allowed) {
+    throw new ApiError(403, "Forbidden");
+  }
+
+  const rawName = String(req.query?.fileName || "").trim();
+  const fallbackName = String(key.split("/").pop() || "download").trim() || "download";
+  const targetName = normalizeOriginalName(rawName || fallbackName).replace(/[\\/:*?"<>|]/g, "_");
+
+  const { body, contentType, contentLength, eTag, lastModified } =
+    await s3Utils.getObjectStreamFromS3(key);
+  if (!body) {
+    throw new ApiError(404, "S3 파일을 찾을 수 없습니다.");
+  }
+
+  res.setHeader("Content-Type", contentType || "application/octet-stream");
+  res.setHeader(
+    "Content-Disposition",
+    `attachment; filename*=UTF-8''${encodeURIComponent(targetName)}`,
+  );
+  if (Number.isFinite(contentLength) && contentLength > 0) {
+    res.setHeader("Content-Length", String(Math.floor(contentLength)));
+  }
+  if (eTag) {
+    res.setHeader("ETag", eTag);
+  }
+  if (lastModified) {
+    res.setHeader("Last-Modified", new Date(lastModified).toUTCString());
+  }
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+  res.setHeader("Pragma", "no-cache");
+  res.setHeader("Expires", "0");
+
+  body.on?.("error", () => {
+    if (!res.headersSent) {
+      res.status(500).end();
+      return;
+    }
+    res.end();
+  });
+
+  body.pipe(res);
+  return;
 });

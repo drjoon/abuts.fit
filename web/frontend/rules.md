@@ -92,6 +92,22 @@
 - practice 전송 상태 표준(치과/의뢰자 공통): `발송완료 | 취소 | 수신전 | 수신완료`
   - practice 페이지 상태 정규화 기준: `src/pages/practice/PracticeFileTransferPage.tsx`의 `toStatusLabel`
   - 의뢰자 치과 페이지 읽음 배지 기준: `src/pages/requestor/practice/RequestorPracticePage.tsx` (`isRead` → `수신전/수신완료`)
+
+- practice↔requestor 실시간(웹소켓 app-event) 구현 메모:
+  - 소켓 공용 레이어: `src/shared/realtime/socket.ts`
+  - 채팅방 목록 실시간 동기화: `src/shared/hooks/useChatRooms.ts`
+  - 채팅 메시지 실시간 동기화: `src/shared/hooks/useChatMessages.ts`
+  - 페이지 반영 지점:
+    - `src/pages/practice/PracticeFileTransferPage.tsx`
+    - `src/pages/requestor/practice/RequestorPracticePage.tsx`
+
+- practice 채팅/전송 파일 다운로드 정책:
+  - S3 원본 URL 직접 오픈 대신 동일 오리진 프록시(`GET /api/files/s3/download`)를 사용합니다.
+  - 프론트 fetch는 `cache: "no-store"` + `_ts` 쿼리로 재검증(304) 지연을 줄입니다.
+  - 다중(전체) 다운로드는 순차 루프 대신 `Promise.all(...)` 병렬 처리로 체감 속도를 우선합니다.
+  - 적용 파일:
+    - `src/pages/practice/PracticeFileTransferPage.tsx`
+    - `src/pages/requestor/practice/RequestorPracticePage.tsx`
 - API 호출은 `src/shared/api/apiClient.ts`의 `apiFetch`를 우선 사용합니다.
 - 서버 상태는 TanStack Query, 전역 UI 상태는 `src/store`를 사용합니다.
 - 파일 드롭은 개별 구현보다 `@/features/requests/components/PageFileDropZone` 재사용을 우선합니다.

@@ -1,9 +1,11 @@
 // related files:
 // - web/backend/modules/chat/chat.routes.js
 // - web/backend/modules/practiceTransfers/practiceTransfer.routes.js
+// - web/backend/socket.js
 // - web/frontend/src/shared/hooks/useChatRooms.ts
 // - web/frontend/src/shared/hooks/useChatMessages.ts
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
+// - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 import { Types } from "mongoose";
 import ChatRoom from "../../models/chatRoom.model.js";
 import Chat from "../../models/chat.model.js";
@@ -11,6 +13,7 @@ import User from "../../models/user.model.js";
 import Request from "../../models/request.model.js";
 import PracticeTransfer from "../../models/practiceTransfer.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
+import { emitAppEventToUser, emitToUser } from "../../socket.js";
 
 const __chatPerfCache = new Map();
 const __chatInFlight = new Map();
@@ -68,6 +71,52 @@ const invalidateChatPerfForUsers = (userIds) => {
   ids.forEach((id) => {
     __chatPerfCache.delete(`rooms:${id}`);
     invalidateChatPerfCacheByPrefix(`practice-transfer-room:${id}:`);
+  });
+};
+
+const emitChatMessageCreated = ({ participantIds, senderId, roomId, message, relatedPracticeTransferId }) => {
+  const ids = (Array.isArray(participantIds) ? participantIds : [])
+    .map((id) => String(id || "").trim())
+    .filter(Boolean);
+  if (!ids.length) return;
+
+  const normalizedSenderId = String(senderId || "").trim();
+  const payload = {
+    roomId: String(roomId || "").trim(),
+    senderId: normalizedSenderId,
+    relatedPracticeTransferId: String(relatedPracticeTransferId || "").trim() || null,
+    message: message || null,
+    timestamp: new Date().toISOString(),
+  };
+
+  ids.forEach((participantId) => {
+    emitAppEventToUser(participantId, "chat:message-created", payload);
+
+    if (participantId !== normalizedSenderId) {
+      emitToUser(participantId, "notification", {
+        type: "new-message",
+        roomId: payload.roomId,
+        message: payload.message,
+        timestamp: new Date(),
+      });
+    }
+  });
+};
+
+const emitChatRoomRead = ({ participantIds, roomId, readerUserId, readAt }) => {
+  const ids = (Array.isArray(participantIds) ? participantIds : [])
+    .map((id) => String(id || "").trim())
+    .filter(Boolean);
+  if (!ids.length) return;
+
+  const payload = {
+    roomId: String(roomId || "").trim(),
+    userId: String(readerUserId || "").trim(),
+    readAt: readAt || new Date().toISOString(),
+  };
+
+  ids.forEach((participantId) => {
+    emitAppEventToUser(participantId, "chat:room-read", payload);
   });
 };
 
@@ -1074,7 +1123,8 @@ export async function getChatMessages(req, res) {
 
     setImmediate(async () => {
       try {
-        await Chat.updateMany(
+        const readAt = new Date();
+        const updated = await Chat.updateMany(
           {
             roomId,
             sender: { $ne: userId },
@@ -1084,13 +1134,29 @@ export async function getChatMessages(req, res) {
             $addToSet: {
               readBy: {
                 userId,
-                readAt: new Date(),
+                readAt,
               },
             },
           },
         );
 
-        __chatPerfCache.delete(`rooms:${String(userId)}`);
+        const participantIds = Array.isArray(room.participants)
+          ? room.participants.map((p) => String(p || "").trim()).filter(Boolean)
+          : [];
+
+        invalidateChatPerfForUsers(participantIds);
+
+        const modifiedCount = Number(
+          updated?.modifiedCount ?? updated?.nModified ?? 0,
+        );
+        if (modifiedCount > 0) {
+          emitChatRoomRead({
+            participantIds,
+            roomId,
+            readerUserId: userId,
+            readAt: readAt.toISOString(),
+          });
+        }
       } catch (error) {
         console.error("Error updating chat read state:", error);
       }
@@ -1197,6 +1263,12 @@ export async function sendChatMessage(req, res) {
 
     await newMessage.save();
 
+    const now = new Date();
+    await ChatRoom.updateOne(
+      { _id: roomId },
+      { $set: { lastMessageAt: now } },
+    );
+
     const populatedMessage = await Chat.findById(newMessage._id)
       .select({
         _id: 1,
@@ -1213,8 +1285,17 @@ export async function sendChatMessage(req, res) {
     const participantIds = Array.isArray(room.participants)
       ? room.participants.map((id) => String(id || "").trim()).filter(Boolean)
       : [];
+
     invalidateChatPerfForUsers(participantIds);
     invalidateChatPerfCacheByPrefix(`room-messages:${String(roomId)}:`);
+
+    emitChatMessageCreated({
+      participantIds,
+      senderId: userId,
+      roomId,
+      message: populatedMessage,
+      relatedPracticeTransferId: room.relatedPracticeTransferId,
+    });
 
     res.status(201).json({
       success: true,

@@ -169,6 +169,34 @@ export const getObjectBufferFromS3 = async (key) => {
   return buffer;
 };
 
+export const getObjectStreamFromS3 = async (key) => {
+  const guardKey = `s3-getObject:${key}`;
+  const { blocked, count } = shouldBlockExternalCall(guardKey);
+  if (blocked) {
+    console.error("[S3] getObjectStreamFromS3: rate guard blocked", {
+      key,
+      count,
+    });
+    throw new Error(
+      "S3 파일 조회가 짧은 시간에 과도하게 호출되어 잠시 차단되었습니다. 잠시 후 다시 시도해주세요.",
+    );
+  }
+
+  const command = new GetObjectCommand({
+    Bucket: process.env.AWS_S3_BUCKET_NAME || "abuts-fit",
+    Key: key,
+  });
+
+  const resp = await getS3Client().send(command);
+  return {
+    body: resp?.Body || null,
+    contentType: String(resp?.ContentType || "application/octet-stream"),
+    contentLength: Number(resp?.ContentLength || 0),
+    eTag: String(resp?.ETag || "").trim(),
+    lastModified: resp?.LastModified || null,
+  };
+};
+
 export const objectExistsInS3 = async (key) => {
   const guardKey = `s3-headObject:${key}`;
   const { blocked, count } = shouldBlockExternalCall(guardKey);
@@ -337,6 +365,7 @@ export default {
   s3Upload,
   uploadFileToS3,
   getObjectBufferFromS3,
+  getObjectStreamFromS3,
   objectExistsInS3,
   deleteFileFromS3,
   getDownloadSignedUrl,

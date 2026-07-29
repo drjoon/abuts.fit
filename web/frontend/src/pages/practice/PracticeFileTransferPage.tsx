@@ -15,7 +15,10 @@
  * - web/backend/controllers/chats/chat.controller.js
  * - web/backend/modules/practiceTransfers/practiceTransfer.routes.js
  * - web/backend/controllers/practiceTransfers/practiceTransfer.controller.js
+ * - web/backend/modules/files/file.routes.js
+ * - web/backend/controllers/files/file.controller.js
  * - web/frontend/src/pages/practice/hooks/usePracticeTransferStep1.ts
+ * - web/frontend/src/shared/realtime/socket.ts
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -29,6 +32,7 @@ import {
   Check,
   MessageSquare,
   Paperclip,
+  Download,
   Send,
   X,
 } from "lucide-react";
@@ -83,7 +87,7 @@ import {
 import { useChatRooms, type ChatRoom } from "@/shared/hooks/useChatRooms";
 import { useChatMessages } from "@/shared/hooks/useChatMessages";
 import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
-import { onAppEvent, onNotification } from "@/shared/realtime/socket";
+import { onAppEvent } from "@/shared/realtime/socket";
 
 type RecentRequestItem = {
   id: string; // 전송 내 파일 row 식별자(표시/그룹/optimistic 삭제용)
@@ -99,6 +103,14 @@ type RecentRequestItem = {
   transferId: string;
   transferMemo: string;
   fileName: string;
+  fileS3Key: string;
+  fileSize: number;
+};
+
+type TransferFileItem = {
+  fileName: string;
+  s3Key: string;
+  size: number;
 };
 
 type RecentTransferItem = {
@@ -115,6 +127,7 @@ type RecentTransferItem = {
   requestIds: string[];
   transferMongoIds: string[];
   fileNames: string[];
+  files: TransferFileItem[];
   transferMemo: string;
   unreadCount: number;
   searchBlob: string;
@@ -261,8 +274,7 @@ export const PracticeFileTransferPage = () => {
   const [deleteTargetTransfer, setDeleteTargetTransfer] = useState<RecentTransferItem | null>(null);
   const [deletingTransfer, setDeletingTransfer] = useState(false);
   const chatBottomRef = useRef<HTMLDivElement | null>(null);
-  const chatRoomsReloadTimerRef = useRef<number | null>(null);
-  const recentRequestsReloadTimerRef = useRef<number | null>(null);
+  const realtimeReloadTimerRef = useRef<number | null>(null);
   const {
     files,
     totalSizeMb,
@@ -284,7 +296,7 @@ export const PracticeFileTransferPage = () => {
     rememberLab,
   } = usePracticeTransferStep1();
   const { uploadFilesWithToast } = useUploadWithProgressToast({ token: authToken });
-  const { rooms: chatRooms, fetchRooms: reloadChatRooms } = useChatRooms();
+  const { rooms: chatRooms } = useChatRooms();
 
   const {
     messages: chatMessages,
@@ -373,6 +385,8 @@ export const PracticeFileTransferPage = () => {
             transferId: extractTransferIdFromMessage(message),
             transferMemo,
             fileName: String(fileObj.originalName || fileObj.name || "").trim(),
+            fileS3Key: String(fileObj.s3Key || "").trim(),
+            fileSize: Number(fileObj.size || 0),
           };
         })
         .filter((item) => Boolean(item.id) && String(item.status || "").trim() !== "취소")
@@ -457,7 +471,7 @@ export const PracticeFileTransferPage = () => {
         _patients: Set<string>;
         _requestIds: Set<string>;
         _transferMongoIds: Set<string>;
-        _fileNames: Set<string>;
+        _files: Map<string, TransferFileItem>;
       }
     >();
 
@@ -475,8 +489,14 @@ export const PracticeFileTransferPage = () => {
         const requestIds = new Set<string>([req.id]);
         const transferMongoIds = new Set<string>();
         if (req.requestMongoId) transferMongoIds.add(req.requestMongoId);
-        const fileNames = new Set<string>();
-        if (req.fileName) fileNames.add(req.fileName);
+        const files = new Map<string, TransferFileItem>();
+        if (req.fileName && req.fileS3Key) {
+          files.set(req.fileS3Key, {
+            fileName: req.fileName,
+            s3Key: req.fileS3Key,
+            size: Number(req.fileSize || 0),
+          });
+        }
         const unreadCount = Number(unreadByTransferId.get(req.transferId) || 0);
         byKey.set(key, {
           id: req.id,
@@ -492,6 +512,9 @@ export const PracticeFileTransferPage = () => {
           requestIds: [req.id],
           transferMongoIds: req.requestMongoId ? [req.requestMongoId] : [],
           fileNames: req.fileName ? [req.fileName] : [],
+          files: req.fileName && req.fileS3Key
+            ? [{ fileName: req.fileName, s3Key: req.fileS3Key, size: Number(req.fileSize || 0) }]
+            : [],
           transferMemo: req.transferMemo,
           unreadCount,
           searchBlob: [
@@ -512,7 +535,7 @@ export const PracticeFileTransferPage = () => {
           _patients: initialPatients,
           _requestIds: requestIds,
           _transferMongoIds: transferMongoIds,
-          _fileNames: fileNames,
+          _files: files,
         });
         continue;
       }
@@ -529,10 +552,15 @@ export const PracticeFileTransferPage = () => {
         existing._transferMongoIds.add(req.requestMongoId);
       }
       existing.transferMongoIds = Array.from(existing._transferMongoIds);
-      if (req.fileName) {
-        existing._fileNames.add(req.fileName);
+      if (req.fileName && req.fileS3Key) {
+        existing._files.set(req.fileS3Key, {
+          fileName: req.fileName,
+          s3Key: req.fileS3Key,
+          size: Number(req.fileSize || 0),
+        });
       }
-      existing.fileNames = Array.from(existing._fileNames);
+      existing.files = Array.from(existing._files.values());
+      existing.fileNames = existing.files.map((f) => f.fileName).filter(Boolean);
 
       if (!existing.transferMemo && req.transferMemo) {
         existing.transferMemo = req.transferMemo;
@@ -565,8 +593,10 @@ export const PracticeFileTransferPage = () => {
     }
 
     return [...byKey.values()]
-      .map(({ _statuses: _s, _patients: _p, _requestIds: _r, _transferMongoIds: _tm, _fileNames: _f, ...row }) => ({
+      .map(({ _statuses: _s, _patients: _p, _requestIds: _r, _transferMongoIds: _tm, _files: _f, ...row }) => ({
         ...row,
+        files: Array.isArray(row.files) ? row.files : [],
+        fileNames: Array.isArray(row.fileNames) ? row.fileNames : [],
         deleteTargetLabel:
           row.transferId && row.transferId !== "-"
             ? row.transferId
@@ -668,7 +698,6 @@ export const PracticeFileTransferPage = () => {
     setChatDraft("");
     setChatAttachedFiles([]);
     setChatError("");
-    void reloadChatRooms();
   };
 
   const handleSendChatMessage = async () => {
@@ -707,12 +736,120 @@ export const PracticeFileTransferPage = () => {
       if (sent) {
         setChatDraft("");
         setChatAttachedFiles([]);
-        void reloadChatRooms();
       }
     } finally {
       setChatSending(false);
     }
   };
+
+  const handleDownloadTransferFile = useCallback(
+    async (file: TransferFileItem) => {
+      if (!authToken) return;
+      const fileName = String(file?.fileName || "첨부파일").trim() || "첨부파일";
+      const s3Key = String(file?.s3Key || "").trim();
+      if (!s3Key) {
+        toast({
+          title: "다운로드 실패",
+          description: "파일 키를 확인할 수 없습니다.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      try {
+        const downloadPath = `/api/files/s3/download?key=${encodeURIComponent(s3Key)}&fileName=${encodeURIComponent(fileName)}&_ts=${Date.now()}`;
+        const resp = await fetch(downloadPath, {
+          method: "GET",
+          cache: "no-store",
+          headers: {
+            Authorization: `Bearer ${authToken}`,
+          },
+        });
+
+        if (!resp.ok) {
+          throw new Error("전송 파일 다운로드 응답이 올바르지 않습니다.");
+        }
+
+        const blob = await resp.blob();
+        const objectUrl = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = objectUrl;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(objectUrl);
+      } catch {
+        toast({
+          title: "다운로드 실패",
+          description: "전송 파일 다운로드 중 오류가 발생했습니다.",
+          variant: "destructive",
+        });
+      }
+    },
+    [authToken, toast],
+  );
+
+  const handleDownloadAllTransferFiles = useCallback(async () => {
+    const files = Array.isArray(selectedTransfer?.files) ? selectedTransfer.files : [];
+    if (!files.length) return;
+
+    await Promise.all(files.map((file) => handleDownloadTransferFile(file)));
+  }, [handleDownloadTransferFile, selectedTransfer]);
+
+  const handleDownloadChatAttachment = useCallback(
+    async (attachment: {
+      fileName?: string;
+      fileSize?: number;
+      s3Key?: string;
+      s3Url?: string;
+    }) => {
+      if (!authToken) return;
+
+      const rawName = String(attachment?.fileName || "첨부파일").trim() || "첨부파일";
+      const s3Key = String(attachment?.s3Key || "").trim();
+      if (!s3Key) {
+        toast({
+          title: "다운로드 실패",
+          description: "첨부파일 키를 확인할 수 없습니다.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      try {
+        const downloadPath = `/api/files/s3/download?key=${encodeURIComponent(s3Key)}&fileName=${encodeURIComponent(rawName)}&_ts=${Date.now()}`;
+        const resp = await fetch(downloadPath, {
+          method: "GET",
+          cache: "no-store",
+          headers: {
+            Authorization: `Bearer ${authToken}`,
+          },
+        });
+
+        if (!resp.ok) {
+          throw new Error("첨부파일 다운로드 응답이 올바르지 않습니다.");
+        }
+
+        const blob = await resp.blob();
+        const objectUrl = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = objectUrl;
+        a.download = rawName;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(objectUrl);
+      } catch {
+        toast({
+          title: "다운로드 실패",
+          description: "첨부파일 다운로드 중 오류가 발생했습니다.",
+          variant: "destructive",
+        });
+      }
+    },
+    [authToken, toast],
+  );
 
   const handleAttachChatFiles = (inputFiles: FileList | null) => {
     const nextFiles = Array.from(inputFiles || []);
@@ -835,7 +972,6 @@ export const PracticeFileTransferPage = () => {
         }
       }
 
-      void reloadChatRooms();
     } catch (error) {
       // 통신/서버 오류 시 optimistic 변경 롤백
       setRecentRequests(previousRecentRequests);
@@ -861,54 +997,28 @@ export const PracticeFileTransferPage = () => {
   }, [transferDialogOpen, activeChatRoom?._id, chatMessages.length, chatMessagesLoading]);
 
   useEffect(() => {
-    if (!transferDialogOpen || !activeChatRoom?._id || chatMessagesLoading) return;
-    const id = window.setTimeout(() => {
-      void reloadChatRooms();
-    }, 400);
-    return () => window.clearTimeout(id);
-  }, [transferDialogOpen, activeChatRoom?._id, chatMessagesLoading, reloadChatRooms]);
-
-  useEffect(() => {
     if (!authToken) return;
-
-    const unsubscribeNotification = onNotification((payload) => {
-      const type = String(payload?.type || "").trim();
-      if (type !== "new-message") return;
-
-      if (chatRoomsReloadTimerRef.current) {
-        window.clearTimeout(chatRoomsReloadTimerRef.current);
-      }
-      chatRoomsReloadTimerRef.current = window.setTimeout(() => {
-        void reloadChatRooms();
-      }, 200);
-    });
 
     const unsubscribeAppEvent = onAppEvent((evt) => {
       const type = String(evt?.type || "").trim();
-      if (type !== "practice:transfer-created") return;
+      if (type !== "practice:transfer-created" && type !== "practice:transfer-updated") return;
 
-      if (recentRequestsReloadTimerRef.current) {
-        window.clearTimeout(recentRequestsReloadTimerRef.current);
+      if (realtimeReloadTimerRef.current) {
+        window.clearTimeout(realtimeReloadTimerRef.current);
       }
-      recentRequestsReloadTimerRef.current = window.setTimeout(() => {
+      realtimeReloadTimerRef.current = window.setTimeout(() => {
         void loadRecentRequests();
-      }, 200);
+      }, 160);
     });
 
     return () => {
-      unsubscribeNotification?.();
       unsubscribeAppEvent?.();
-
-      if (chatRoomsReloadTimerRef.current) {
-        window.clearTimeout(chatRoomsReloadTimerRef.current);
-        chatRoomsReloadTimerRef.current = null;
-      }
-      if (recentRequestsReloadTimerRef.current) {
-        window.clearTimeout(recentRequestsReloadTimerRef.current);
-        recentRequestsReloadTimerRef.current = null;
+      if (realtimeReloadTimerRef.current) {
+        window.clearTimeout(realtimeReloadTimerRef.current);
+        realtimeReloadTimerRef.current = null;
       }
     };
-  }, [authToken, loadRecentRequests, reloadChatRooms]);
+  }, [authToken, loadRecentRequests]);
 
   const handleSubmitPracticeRequest = async () => {
     if (requestSubmitting) return;
@@ -1443,13 +1553,35 @@ export const PracticeFileTransferPage = () => {
                     {selectedTransfer?.transferMemo || "-"}
                   </p>
                 </div>
-                <div>
-                  <p className="text-muted-foreground">파일 ({selectedTransfer?.fileCount || 0}개)</p>
-                  <p className="font-medium whitespace-pre-wrap break-words max-h-24 overflow-y-auto pr-1">
-                    {selectedTransfer?.fileNames?.length
-                      ? selectedTransfer.fileNames.join("\n")
-                      : "-"}
-                  </p>
+                <div className="col-span-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-muted-foreground">파일 ({selectedTransfer?.fileCount || 0}개)</p>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => void handleDownloadAllTransferFiles()}
+                      disabled={!selectedTransfer?.files?.length}
+                    >
+                      전체 다운로드
+                    </Button>
+                  </div>
+                  {selectedTransfer?.files?.length ? (
+                    <div className="mt-1 max-h-32 overflow-y-auto pr-1 space-y-1">
+                      {selectedTransfer.files.map((file, idx) => (
+                        <button
+                          key={`${file.s3Key}:${idx}`}
+                          type="button"
+                          onClick={() => void handleDownloadTransferFile(file)}
+                          className="block w-full text-left rounded border px-2 py-1 text-xs hover:bg-muted/50"
+                        >
+                          {file.fileName} · {formatFileSize(Number(file.size || 0))}
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="font-medium">-</p>
+                  )}
                 </div>
               </div>
 
@@ -1498,17 +1630,23 @@ export const PracticeFileTransferPage = () => {
                                 {message.attachments.map((file, idx) => {
                                   const fileName = String(file?.fileName || "첨부파일").trim();
                                   const fileSize = formatFileSize(Number(file?.fileSize || 0));
-                                  const href = String(file?.s3Url || "").trim();
-                                  return href ? (
-                                    <a
+                                  const s3Key = String(file?.s3Key || "").trim();
+                                  return s3Key ? (
+                                    <button
                                       key={`${message._id}:file:${idx}`}
-                                      href={href}
-                                      target="_blank"
-                                      rel="noreferrer"
-                                      className="block rounded border border-current/20 px-2 py-1 text-[11px] underline-offset-2 hover:underline"
+                                      type="button"
+                                      onClick={() =>
+                                        void handleDownloadChatAttachment({
+                                          fileName,
+                                          fileSize: Number(file?.fileSize || 0),
+                                          s3Key,
+                                          s3Url: String(file?.s3Url || "").trim(),
+                                        })
+                                      }
+                                      className="block w-full rounded border border-current/20 px-2 py-1 text-[11px] text-left underline-offset-2 hover:underline"
                                     >
                                       {fileName} · {fileSize}
-                                    </a>
+                                    </button>
                                   ) : (
                                     <div
                                       key={`${message._id}:file:${idx}`}

@@ -1,19 +1,22 @@
 // related files:
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
+// - web/frontend/src/shared/realtime/socket.ts
 // - web/backend/modules/practiceTransfers/practiceTransfer.routes.js
 // - web/backend/controllers/practiceTransfers/practiceTransfer.controller.js
 // - web/backend/models/practiceTransfer.model.js
 // - web/backend/modules/chat/chat.routes.js
 // - web/backend/controllers/chats/chat.controller.js
 // - web/backend/modules/files/file.routes.js
+// - web/backend/controllers/files/file.controller.js
+// - web/frontend/src/shared/hooks/useUploadWithProgressToast.ts
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { ScrollArea } from "@/components/ui/scroll-area";
+
 import { Textarea } from "@/components/ui/textarea";
 import { PeriodFilter } from "@/shared/ui/PeriodFilter";
 import { usePeriodStore } from "@/store/usePeriodStore";
@@ -22,7 +25,10 @@ import { useToast } from "@/shared/hooks/use-toast";
 import { apiFetch } from "@/shared/api/apiClient";
 import { useChatMessages } from "@/shared/hooks/useChatMessages";
 import { useChatRooms, type ChatRoom } from "@/shared/hooks/useChatRooms";
-import { Building2, Download, MessageSquare, Search, Send } from "lucide-react";
+import { onAppEvent } from "@/shared/realtime/socket";
+import { useUploadWithProgressToast } from "@/shared/hooks/useUploadWithProgressToast";
+import { type TempUploadedFile } from "@/shared/hooks/useS3TempUpload";
+import { Building2, Download, MessageSquare, Paperclip, Search, Send, X } from "lucide-react";
 
 type ReceivedPracticeFile = {
   id: string;
@@ -93,6 +99,7 @@ export default function RequestorPracticePage() {
   const { period, setPeriod } = usePeriodStore();
   const { toast } = useToast();
   const { rooms } = useChatRooms();
+  const { uploadFilesWithToast } = useUploadWithProgressToast({ token });
 
   const [transfers, setTransfers] = useState<ReceivedPracticeTransfer[]>([]);
   const [loading, setLoading] = useState(false);
@@ -107,9 +114,11 @@ export default function RequestorPracticePage() {
   const [activeChatRoom, setActiveChatRoom] = useState<ChatRoom | null>(null);
   const [chatError, setChatError] = useState("");
   const [chatDraft, setChatDraft] = useState("");
+  const [chatAttachedFiles, setChatAttachedFiles] = useState<File[]>([]);
   const [chatSending, setChatSending] = useState(false);
   const chatBottomRef = useRef<HTMLDivElement | null>(null);
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
+  const realtimeReloadTimerRef = useRef<number | null>(null);
 
   const { messages, loading: chatLoading, sendMessage } = useChatMessages({
     roomId: activeChatRoom?._id,
@@ -305,6 +314,85 @@ export default function RequestorPracticePage() {
   }, [loadFirstPage, token]);
 
   useEffect(() => {
+    if (!token) return;
+
+    const unsubscribe = onAppEvent((evt) => {
+      const type = String(evt?.type || "").trim();
+      if (type !== "practice:transfer-created" && type !== "practice:transfer-updated") return;
+
+      const payload =
+        evt?.data && typeof evt.data === "object"
+          ? (evt.data as Record<string, unknown>)
+          : {};
+
+      const transferId = String(payload.transferId || "").trim();
+      const action = String(payload.action || "").trim();
+      const unreadCount = Number(payload.unreadCount || 0);
+      const status = String(payload.status || "").trim();
+      const requestorReadAt = payload.requestorReadAt
+        ? String(payload.requestorReadAt)
+        : null;
+
+      if (type === "practice:transfer-updated" && transferId) {
+        setTransfers((prev) =>
+          prev.map((row) => {
+            if (row.transferId !== transferId) return row;
+            return {
+              ...row,
+              status: status || row.status,
+              isRead:
+                action === "read"
+                  ? true
+                  : row.isRead,
+              requestorReadAt:
+                action === "read"
+                  ? requestorReadAt || row.requestorReadAt
+                  : row.requestorReadAt,
+            };
+          }),
+        );
+
+        setSelectedTransfer((prev) => {
+          if (!prev || prev.transferId !== transferId) return prev;
+          return {
+            ...prev,
+            status: status || prev.status,
+            isRead: action === "read" ? true : prev.isRead,
+            requestorReadAt:
+              action === "read" ? requestorReadAt || prev.requestorReadAt : prev.requestorReadAt,
+          };
+        });
+      }
+
+      if (Number.isFinite(unreadCount) && unreadCount >= 0) {
+        emitUnreadBadgeRefresh(unreadCount);
+      }
+
+      const shouldReload =
+        type === "practice:transfer-created" ||
+        action === "canceled" ||
+        !transferId;
+
+      if (shouldReload) {
+        if (realtimeReloadTimerRef.current) {
+          window.clearTimeout(realtimeReloadTimerRef.current);
+        }
+        realtimeReloadTimerRef.current = window.setTimeout(() => {
+          void loadFirstPage();
+        }, 140);
+      }
+    });
+
+    return () => {
+      unsubscribe?.();
+      if (realtimeReloadTimerRef.current) {
+        window.clearTimeout(realtimeReloadTimerRef.current);
+        realtimeReloadTimerRef.current = null;
+      }
+    };
+  }, [emitUnreadBadgeRefresh, loadFirstPage, token]);
+
+  useEffect(() => {
     if (!dialogOpen) return;
     chatBottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [dialogOpen, messages]);
@@ -425,6 +513,7 @@ export default function RequestorPracticePage() {
       setSelectedTransfer(transfer);
       setDialogOpen(true);
       setChatError("");
+      setChatAttachedFiles([]);
       setActiveChatRoom(null);
       void markTransferRead(transfer);
 
@@ -462,41 +551,28 @@ export default function RequestorPracticePage() {
       if (!token || !file.s3Key) return;
 
       try {
-        const res = await apiFetch<unknown>({
-          path: `/api/files/s3/${encodeURIComponent(file.s3Key)}/download-url`,
+        const downloadPath = `/api/files/s3/download?key=${encodeURIComponent(file.s3Key)}&fileName=${encodeURIComponent(file.originalName || "download")}&_ts=${Date.now()}`;
+        const resp = await fetch(downloadPath, {
           method: "GET",
-          token,
+          cache: "no-store",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
         });
 
-        if (!res.ok) {
-          const body = res.data && typeof res.data === "object" ? (res.data as Record<string, unknown>) : {};
-          toast({
-            title: "다운로드 실패",
-            description: String(body.message || "다운로드 링크를 생성할 수 없습니다."),
-            variant: "destructive",
-          });
-          return;
+        if (!resp.ok) {
+          throw new Error("다운로드 응답이 올바르지 않습니다.");
         }
 
-        const body =
-          res.data && typeof res.data === "object"
-            ? (res.data as Record<string, unknown>)
-            : {};
-        const data =
-          body.data && typeof body.data === "object"
-            ? (body.data as Record<string, unknown>)
-            : {};
-        const url = String(data.url || body.url || "").trim();
-        if (!url) {
-          toast({
-            title: "다운로드 실패",
-            description: "다운로드 링크를 생성할 수 없습니다.",
-            variant: "destructive",
-          });
-          return;
-        }
-
-        window.open(url, "_blank", "noopener,noreferrer");
+        const blob = await resp.blob();
+        const objectUrl = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = objectUrl;
+        a.download = String(file.originalName || "download").trim() || "download";
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(objectUrl);
       } catch {
         toast({
           title: "다운로드 실패",
@@ -509,27 +585,123 @@ export default function RequestorPracticePage() {
   );
 
   const handleDownloadAllFiles = useCallback(async () => {
-    if (!selectedTransfer) return;
-    for (const file of selectedTransfer.files) {
-      await handleDownload(file);
-      await new Promise((resolve) => window.setTimeout(resolve, 120));
-    }
+    const files = Array.isArray(selectedTransfer?.files) ? selectedTransfer.files : [];
+    if (!files.length) return;
+
+    await Promise.all(files.map((file) => handleDownload(file)));
   }, [handleDownload, selectedTransfer]);
+
+  const handleDownloadChatAttachment = useCallback(
+    async (attachment: {
+      fileName?: string;
+      fileSize?: number;
+      s3Key?: string;
+      s3Url?: string;
+    }) => {
+      if (!token) return;
+
+      const rawName = String(attachment?.fileName || "첨부파일").trim() || "첨부파일";
+      const s3Key = String(attachment?.s3Key || "").trim();
+      if (!s3Key) {
+        toast({
+          title: "다운로드 실패",
+          description: "첨부파일 키를 확인할 수 없습니다.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      try {
+        const downloadPath = `/api/files/s3/download?key=${encodeURIComponent(s3Key)}&fileName=${encodeURIComponent(rawName)}&_ts=${Date.now()}`;
+        const resp = await fetch(downloadPath, {
+          method: "GET",
+          cache: "no-store",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        if (!resp.ok) {
+          throw new Error("첨부파일 다운로드 응답이 올바르지 않습니다.");
+        }
+
+        const blob = await resp.blob();
+        const objectUrl = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = objectUrl;
+        a.download = rawName;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(objectUrl);
+      } catch {
+        toast({
+          title: "다운로드 실패",
+          description: "첨부파일 다운로드 중 오류가 발생했습니다.",
+          variant: "destructive",
+        });
+      }
+    },
+    [toast, token],
+  );
+
+  const handleAttachChatFiles = useCallback((inputFiles: FileList | null) => {
+    const nextFiles = Array.from(inputFiles || []);
+    if (!nextFiles.length) return;
+
+    setChatAttachedFiles((prev) => {
+      const map = new Map<string, File>();
+      for (const f of [...prev, ...nextFiles]) {
+        const key = `${f.name}:${f.size}:${f.lastModified}`;
+        if (!map.has(key)) map.set(key, f);
+      }
+      return [...map.values()];
+    });
+  }, []);
+
+  const handleRemoveAttachedChatFile = useCallback((idx: number) => {
+    setChatAttachedFiles((prev) => prev.filter((_, i) => i !== idx));
+  }, []);
 
   const handleSendChat = useCallback(async () => {
     const text = chatDraft.trim();
-    if (!text || !activeChatRoom?._id || chatSending) return;
+    const files = [...chatAttachedFiles];
+    if ((!text && files.length === 0) || !activeChatRoom?._id || chatSending) return;
 
     setChatSending(true);
     try {
-      const sent = await sendMessage(text);
+      let attachments: Array<{
+        fileId?: string;
+        fileName: string;
+        fileType: string;
+        fileSize: number;
+        s3Key: string;
+        s3Url: string;
+      }> = [];
+
+      if (files.length > 0) {
+        const uploadedFiles: TempUploadedFile[] = await uploadFilesWithToast(files);
+        attachments = uploadedFiles
+          .map((f) => ({
+            fileId: String(f._id || "").trim() || undefined,
+            fileName: String(f.originalName || "").trim(),
+            fileType: String(f.mimetype || f.fileType || "application/octet-stream").trim(),
+            fileSize: Number(f.size || 0),
+            s3Key: String(f.key || "").trim(),
+            s3Url: String(f.location || "").trim(),
+          }))
+          .filter((row) => row.fileName && row.s3Key);
+      }
+
+      const sent = await sendMessage(text, attachments);
       if (sent) {
         setChatDraft("");
+        setChatAttachedFiles([]);
       }
     } finally {
       setChatSending(false);
     }
-  }, [activeChatRoom?._id, chatDraft, chatSending, sendMessage]);
+  }, [activeChatRoom?._id, chatAttachedFiles, chatDraft, chatSending, sendMessage, uploadFilesWithToast]);
 
   return (
     <div className="space-y-4">
@@ -615,23 +787,47 @@ export default function RequestorPracticePage() {
             setSelectedTransfer(null);
             setActiveChatRoom(null);
             setChatDraft("");
+            setChatAttachedFiles([]);
             setChatError("");
           }
         }}
       >
-        <DialogContent className="max-h-[90vh] max-w-4xl overflow-hidden">
-          <DialogHeader>
-            <DialogTitle>
-              {selectedTransfer?.transferId || "치과 전송"} · {selectedTransfer?.practice.businessName || "-"}
+        <DialogContent className="max-w-3xl p-0 overflow-hidden max-h-[86vh] flex flex-col">
+          <DialogHeader className="px-5 pt-5 pb-3 border-b shrink-0">
+            <DialogTitle className="flex items-center gap-2 text-base">
+              <MessageSquare className="h-4 w-4 text-blue-600" />
+              의뢰 상세 · 치과 채팅
             </DialogTitle>
           </DialogHeader>
 
           {!selectedTransfer ? null : (
-            <div className="grid gap-4 md:grid-cols-2">
-              <Card>
-                <CardHeader>
+            <div className="px-5 py-4 space-y-4 flex-1 min-h-0 overflow-hidden">
+              <div className="rounded-lg border bg-muted/20 p-3 text-sm grid grid-cols-2 gap-3 max-h-[13rem] overflow-y-auto">
+                <div>
+                  <p className="text-muted-foreground">전송ID</p>
+                  <p className="font-medium break-words">{selectedTransfer.transferId || "-"}</p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground">전송시각</p>
+                  <p className="font-medium">{formatDateTime(selectedTransfer.createdAt)}</p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground">치과</p>
+                  <p className="font-medium break-words">{selectedTransfer.practice.businessName || "-"}</p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground">담당자</p>
+                  <p className="font-medium break-words">{selectedTransfer.practice.userName || "-"}</p>
+                </div>
+                <div className="col-span-2">
+                  <p className="text-muted-foreground">의뢰 메모</p>
+                  <p className="font-medium whitespace-pre-wrap break-words max-h-20 overflow-y-auto pr-1">
+                    {selectedTransfer.transferMemo || "-"}
+                  </p>
+                </div>
+                <div className="col-span-2">
                   <div className="flex items-center justify-between gap-2">
-                    <CardTitle className="text-base">전송 파일</CardTitle>
+                    <p className="text-muted-foreground">전송 파일 ({selectedTransfer.files.length}개)</p>
                     <Button
                       type="button"
                       variant="outline"
@@ -639,100 +835,169 @@ export default function RequestorPracticePage() {
                       onClick={() => void handleDownloadAllFiles()}
                       disabled={!selectedTransfer.files.length}
                     >
-                      <Download className="mr-1 h-4 w-4" />
                       전체 다운로드
                     </Button>
                   </div>
-                </CardHeader>
-                <CardContent className="space-y-2">
-                  <div className="text-xs text-muted-foreground">
-                    전송일시: {formatDateTime(selectedTransfer.createdAt)}
-                  </div>
-                  {selectedTransfer.transferMemo ? (
-                    <div className="text-sm whitespace-pre-wrap rounded-md border bg-muted/30 p-2">
-                      {selectedTransfer.transferMemo}
-                    </div>
-                  ) : null}
-
-                  <ScrollArea className="h-[300px] rounded-md border p-2">
-                    <div className="space-y-2">
-                      {selectedTransfer.files.map((file) => (
-                        <div
+                  <div className="mt-1 max-h-28 overflow-y-auto pr-1 space-y-1">
+                    {selectedTransfer.files.length ? (
+                      selectedTransfer.files.map((file) => (
+                        <button
                           key={file.id}
-                          className="flex items-center justify-between gap-3 rounded-md border p-2"
+                          type="button"
+                          onClick={() => void handleDownload(file)}
+                          className="block w-full text-left rounded border px-2 py-1 text-xs hover:bg-muted/50"
                         >
-                          <div className="min-w-0">
-                            <div className="truncate text-sm font-medium">{file.originalName}</div>
-                            <div className="text-xs text-muted-foreground">
-                              환자: {file.patientName || "-"} · 치아: {file.tooth || "-"} · {formatBytes(file.size)}
-                            </div>
-                          </div>
-                          <Button variant="outline" size="sm" onClick={() => void handleDownload(file)}>
-                            <Download className="mr-1 h-4 w-4" />
-                            다운로드
-                          </Button>
-                        </div>
-                      ))}
-                    </div>
-                  </ScrollArea>
-                </CardContent>
-              </Card>
+                          {file.originalName} · {formatBytes(file.size)}
+                        </button>
+                      ))
+                    ) : (
+                      <p className="font-medium">-</p>
+                    )}
+                  </div>
+                </div>
+              </div>
 
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-base flex items-center gap-2">
-                    <MessageSquare className="h-4 w-4" />
-                    치과 소통
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-2">
-                  {chatError ? <div className="text-sm text-destructive">{chatError}</div> : null}
-                  {!chatError && !activeChatRoom ? (
-                    <div className="text-sm text-muted-foreground">채팅방을 불러오는 중입니다...</div>
-                  ) : null}
+              <div className="rounded-lg border h-[24rem] max-h-[24rem] min-h-0 flex flex-col overflow-hidden">
+                <div className="px-3 py-2 border-b text-sm text-muted-foreground">치과와의 소통</div>
 
-                  <ScrollArea className="h-[260px] rounded-md border p-2">
-                    <div className="space-y-2">
-                      {chatLoading ? (
-                        <div className="text-xs text-muted-foreground">메시지를 불러오는 중...</div>
-                      ) : null}
-                      {messages.map((m) => {
-                        const isMine = String(m.sender?._id || "") === String(user?.id || "");
-                        return (
+                <div className="flex-1 px-3 py-3 overflow-y-auto">
+                  <div className="space-y-2">
+                    {chatLoading ? (
+                      <div className="text-center text-xs text-muted-foreground py-4">메시지를 불러오는 중...</div>
+                    ) : null}
+                    {!chatLoading && chatError ? (
+                      <div className="text-center text-xs text-destructive py-4">{chatError}</div>
+                    ) : null}
+                    {!chatLoading && !chatError && messages.length === 0 ? (
+                      <div className="text-center text-xs text-muted-foreground py-4">아직 메시지가 없습니다.</div>
+                    ) : null}
+
+                    {messages.map((m) => {
+                      const isMine = String(m.sender?._id || "") === String(user?.id || "");
+                      return (
+                        <div key={m._id} className={`flex ${isMine ? "justify-end" : "justify-start"}`}>
                           <div
-                            key={m._id}
-                            className={`max-w-[90%] rounded-md px-3 py-2 text-sm ${
-                              isMine
-                                ? "ml-auto bg-primary text-primary-foreground"
-                                : "mr-auto bg-muted text-foreground"
+                            className={`max-w-[80%] rounded-lg px-3 py-2 text-xs ${
+                              isMine ? "bg-primary text-primary-foreground" : "bg-muted"
                             }`}
                           >
-                            <div className="mb-1 text-[11px] opacity-70">{m.sender?.name || "-"}</div>
-                            <div className="whitespace-pre-wrap break-words">{m.content}</div>
-                            <div className="mt-1 text-[10px] opacity-70">{formatDateTime(m.createdAt)}</div>
+                            <p className="opacity-80 mb-1 font-medium">{m.sender?.name || "-"}</p>
+                            <p className="opacity-70 mb-1">{formatDateTime(m.createdAt)}</p>
+                            <p className="whitespace-pre-wrap break-words">{m.content}</p>
+                            {Array.isArray(m.attachments) && m.attachments.length > 0 ? (
+                              <div className="mt-2 space-y-1">
+                                {m.attachments.map((file, idx) => {
+                                  const fileName = String(file?.fileName || "첨부파일").trim();
+                                  const fileSize = formatBytes(Number(file?.fileSize || 0));
+                                  return (
+                                    <button
+                                      key={`${m._id}:file:${idx}`}
+                                      type="button"
+                                      onClick={() =>
+                                        void handleDownloadChatAttachment({
+                                          fileName,
+                                          fileSize: Number(file?.fileSize || 0),
+                                          s3Key: String(file?.s3Key || "").trim(),
+                                          s3Url: String(file?.s3Url || "").trim(),
+                                        })
+                                      }
+                                      className="block w-full rounded border border-current/20 px-2 py-1 text-[11px] text-left hover:underline"
+                                    >
+                                      {fileName} · {fileSize}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            ) : null}
                           </div>
-                        );
-                      })}
-                      <div ref={chatBottomRef} />
-                    </div>
-                  </ScrollArea>
+                        </div>
+                      );
+                    })}
+                    <div ref={chatBottomRef} />
+                  </div>
+                </div>
 
-                  <div className="space-y-2">
-                    <Textarea
-                      value={chatDraft}
-                      onChange={(e) => setChatDraft(e.target.value)}
-                      placeholder="치과에 전달할 내용을 입력하세요"
-                      rows={3}
-                    />
-                    <div className="flex justify-end">
-                      <Button onClick={() => void handleSendChat()} disabled={!chatDraft.trim() || chatSending}>
-                        <Send className="mr-1 h-4 w-4" />
-                        전송
+                <div className="border-t px-3 pt-3 pb-4 space-y-2">
+                  {chatAttachedFiles.length > 0 ? (
+                    <div className="flex flex-wrap gap-2 max-h-20 overflow-y-auto pr-1">
+                      {chatAttachedFiles.map((file, idx) => (
+                        <span
+                          key={`${file.name}:${file.size}:${file.lastModified}:${idx}`}
+                          className="inline-flex max-w-full items-center gap-1.5 rounded border px-2 py-1 text-xs"
+                        >
+                          <span className="truncate max-w-[14rem]">{file.name}</span>
+                          <span className="text-muted-foreground">{formatBytes(file.size)}</span>
+                          <button
+                            type="button"
+                            className="opacity-70 hover:opacity-100"
+                            onClick={() => handleRemoveAttachedChatFile(idx)}
+                            aria-label="첨부파일 제거"
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  ) : null}
+
+                  <Textarea
+                    value={chatDraft}
+                    onChange={(e) => setChatDraft(e.target.value)}
+                    placeholder="치과에 전달할 내용을 입력하세요"
+                    rows={3}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault();
+                        void handleSendChat();
+                      }
+                    }}
+                    disabled={chatSending || !activeChatRoom?._id}
+                  />
+
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <input
+                        id="requestor-practice-chat-attachment-input"
+                        type="file"
+                        className="hidden"
+                        multiple
+                        onChange={(e) => {
+                          handleAttachChatFiles(e.target.files);
+                          e.currentTarget.value = "";
+                        }}
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-9 w-9"
+                        onClick={() => {
+                          const input = document.getElementById(
+                            "requestor-practice-chat-attachment-input",
+                          ) as HTMLInputElement | null;
+                          input?.click();
+                        }}
+                        disabled={chatSending || !activeChatRoom?._id}
+                        aria-label="파일 첨부"
+                      >
+                        <Paperclip className="h-4 w-4" />
                       </Button>
                     </div>
+
+                    <Button
+                      onClick={() => void handleSendChat()}
+                      disabled={
+                        chatSending ||
+                        !activeChatRoom?._id ||
+                        (!chatDraft.trim() && chatAttachedFiles.length === 0)
+                      }
+                    >
+                      <Send className="mr-1 h-4 w-4" />
+                      전송
+                    </Button>
                   </div>
-                </CardContent>
-              </Card>
+                </div>
+              </div>
             </div>
           )}
         </DialogContent>

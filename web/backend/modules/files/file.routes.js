@@ -2,6 +2,8 @@
 // - web/backend/rules.md
 // - web/backend/app.js
 // - web/backend/server.js
+// - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
+// - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
 import { Router } from "express";
 import { authenticate, authorize } from "../../middlewares/auth.middleware.js";
 import { upload } from "../../middlewares/upload.middleware.js";
@@ -53,6 +55,13 @@ router.get(
   "/s3/:key/download-url",
   authenticate,
   fileController.getS3DownloadUrl,
+);
+
+// S3 파일 프록시 다운로드 (동일 오리진, 첨부파일 직접 저장)
+router.get(
+  "/s3/download",
+  authenticate,
+  fileController.downloadS3FileProxy,
 );
 
 // 파일 상세 조회

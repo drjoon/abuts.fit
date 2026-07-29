@@ -1,7 +1,8 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { apiFetch } from "@/shared/api/apiClient";
 import { useToast } from "@/shared/hooks/use-toast";
 import { useAuthStore } from "@/store/useAuthStore";
+import { onAppEvent } from "@/shared/realtime/socket";
 
 export interface ChatRoomParticipant {
   _id: string;
@@ -39,6 +40,8 @@ export interface ChatMessage {
 
 // related files:
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
+// - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
+// - web/frontend/src/shared/realtime/socket.ts
 // - web/backend/models/chatRoom.model.js
 // - web/backend/controllers/chats/chat.controller.js
 export interface ChatRoom {
@@ -64,11 +67,20 @@ export interface ChatRoom {
 }
 
 export const useChatRooms = () => {
-  const { token } = useAuthStore();
+  const { token, user } = useAuthStore();
   const { toast } = useToast();
   const [rooms, setRooms] = useState<ChatRoom[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const fallbackReloadTimerRef = useRef<number | null>(null);
+  const roomsRef = useRef<ChatRoom[]>([]);
+
+  const myIdCandidates = useMemo(() => {
+    const ids = [user?.id, (user as { _id?: string } | null)?._id]
+      .map((v) => String(v || "").trim())
+      .filter(Boolean);
+    return new Set(ids);
+  }, [user]);
 
   const fetchRooms = useCallback(async () => {
     if (!token) return;
@@ -150,6 +162,89 @@ export const useChatRooms = () => {
   useEffect(() => {
     void fetchRooms();
   }, [fetchRooms]);
+
+  useEffect(() => {
+    roomsRef.current = rooms;
+  }, [rooms]);
+
+  useEffect(() => {
+    if (!token) return;
+
+    const scheduleFallbackReload = () => {
+      if (fallbackReloadTimerRef.current) {
+        window.clearTimeout(fallbackReloadTimerRef.current);
+      }
+      fallbackReloadTimerRef.current = window.setTimeout(() => {
+        void fetchRooms();
+      }, 160);
+    };
+
+    const unsubscribe = onAppEvent((evt) => {
+      const type = String(evt?.type || "").trim();
+      const payload =
+        evt?.data && typeof evt.data === "object"
+          ? (evt.data as Record<string, unknown>)
+          : {};
+
+      if (type === "chat:message-created") {
+        const roomId = String(payload.roomId || "").trim();
+        if (!roomId) return;
+
+        const message =
+          payload.message && typeof payload.message === "object"
+            ? (payload.message as ChatMessage)
+            : null;
+        const senderId = String(payload.senderId || message?.sender?._id || "").trim();
+        const isMine = senderId ? myIdCandidates.has(senderId) : false;
+
+        const roomExists = roomsRef.current.some(
+          (room) => String(room._id || "") === roomId,
+        );
+
+        setRooms((prev) =>
+          prev.map((room) => {
+            if (String(room._id || "") !== roomId) return room;
+
+            const prevUnread = Math.max(0, Number(room.unreadCount || 0));
+            return {
+              ...room,
+              unreadCount: isMine ? prevUnread : prevUnread + 1,
+              lastMessage: message || room.lastMessage,
+              lastMessageAt: String(message?.createdAt || room.lastMessageAt || ""),
+            };
+          }),
+        );
+
+        if (!roomExists) {
+          scheduleFallbackReload();
+        }
+        return;
+      }
+
+      if (type === "chat:room-read") {
+        const roomId = String(payload.roomId || "").trim();
+        const readerUserId = String(payload.userId || "").trim();
+        if (!roomId || !readerUserId) return;
+        if (!myIdCandidates.has(readerUserId)) return;
+
+        setRooms((prev) =>
+          prev.map((room) =>
+            String(room._id || "") === roomId
+              ? { ...room, unreadCount: 0 }
+              : room,
+          ),
+        );
+      }
+    });
+
+    return () => {
+      unsubscribe?.();
+      if (fallbackReloadTimerRef.current) {
+        window.clearTimeout(fallbackReloadTimerRef.current);
+        fallbackReloadTimerRef.current = null;
+      }
+    };
+  }, [fetchRooms, myIdCandidates, token]);
 
   return {
     rooms,

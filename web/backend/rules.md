@@ -63,6 +63,20 @@
 - practice 전송 상태 표준(치과/의뢰자 공통)은 `발송완료 | 취소 | 수신전 | 수신완료`를 사용합니다.
   - 수신 판정 SSOT: `PracticeTransfer.requestorReadAt`
   - 가상 의뢰 행 매핑 기준: `controllers/practiceTransfers/practiceTransfer.controller.js#toVirtualRequestRows`
+
+- practice 채팅/전송 첨부 다운로드 정책:
+  - 다운로드 SSOT 엔드포인트: `GET /api/files/s3/download?key=...&fileName=...`
+  - S3 파일은 signed-url 리다이렉트가 아니라 서버 프록시 스트리밍(`pipe`)으로 응답합니다.
+  - 권한 판정은 다음 중 하나를 만족해야 합니다:
+    - 관리자
+    - 업로더 본인
+    - 사업자 라이선스 파일 소유 조직 구성원
+    - PracticeTransfer 연관 파일의 작성자/대상 기공소/동일 치과 businessAnchor 구성원
+    - Chat 첨부파일의 경우 해당 채팅방 참여자
+  - 관련 파일:
+    - `controllers/files/file.controller.js`
+    - `modules/files/file.routes.js`
+    - `utils/s3.utils.js`
 - 요청자 목록(`getMyRequests`)에서는 `requestCategory!="order"` 의뢰를 제외해 의뢰자에게 노출하지 않습니다.
   - 구현: `controllers/requests/common.requests.controller.js`
 - 불완전가공 `continue` 처리 SSOT:

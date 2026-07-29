@@ -2,12 +2,14 @@
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
+// - web/frontend/src/shared/realtime/socket.ts
 // - web/backend/modules/chat/chat.routes.js
 // - web/backend/controllers/chats/chat.controller.js
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { apiFetch } from "@/shared/api/apiClient";
 import { useToast } from "@/shared/hooks/use-toast";
 import { useAuthStore } from "@/store/useAuthStore";
+import { onAppEvent } from "@/shared/realtime/socket";
 import { ChatMessage } from "./useChatRooms";
 
 interface UseChatMessagesOptions {
@@ -17,7 +19,7 @@ interface UseChatMessagesOptions {
 
 export const useChatMessages = (options: UseChatMessagesOptions = {}) => {
   const { roomId, autoFetch = true } = options;
-  const { token } = useAuthStore();
+  const { token, user } = useAuthStore();
   const { toast } = useToast();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [loading, setLoading] = useState(false);
@@ -28,6 +30,13 @@ export const useChatMessages = (options: UseChatMessagesOptions = {}) => {
     limit: 50,
     pages: 0,
   });
+
+  const myIdCandidates = useMemo(() => {
+    const ids = [user?.id, (user as { _id?: string } | null)?._id]
+      .map((v) => String(v || "").trim())
+      .filter(Boolean);
+    return new Set(ids);
+  }, [user]);
 
   const fetchMessages = useCallback(
     async (page = 1) => {
@@ -109,7 +118,12 @@ export const useChatMessages = (options: UseChatMessagesOptions = {}) => {
         });
 
         if (res.ok && res.data?.success) {
-          setMessages((prev) => [...prev, res.data!.data]);
+          setMessages((prev) => {
+            const next = res.data!.data;
+            if (!next?._id) return prev;
+            if (prev.some((m) => String(m._id) === String(next._id))) return prev;
+            return [...prev, next];
+          });
           return res.data.data;
         } else {
           throw new Error(res.data?.message || "메시지 전송에 실패했습니다.");
@@ -132,6 +146,45 @@ export const useChatMessages = (options: UseChatMessagesOptions = {}) => {
       void fetchMessages();
     }
   }, [autoFetch, roomId, fetchMessages]);
+
+  useEffect(() => {
+    if (!roomId) return;
+
+    const unsubscribe = onAppEvent((evt) => {
+      const type = String(evt?.type || "").trim();
+      if (type !== "chat:message-created") return;
+
+      const payload =
+        evt?.data && typeof evt.data === "object"
+          ? (evt.data as Record<string, unknown>)
+          : {};
+      const eventRoomId = String(payload.roomId || "").trim();
+      if (!eventRoomId || eventRoomId !== String(roomId || "").trim()) return;
+
+      const messageRaw =
+        payload.message && typeof payload.message === "object"
+          ? (payload.message as ChatMessage)
+          : null;
+      if (!messageRaw?._id) return;
+
+      const senderId = String(messageRaw.sender?._id || payload.senderId || "").trim();
+      const isMine = senderId ? myIdCandidates.has(senderId) : false;
+
+      setMessages((prev) => {
+        if (prev.some((m) => String(m._id) === String(messageRaw._id))) return prev;
+        const next = [...prev, messageRaw];
+        return next;
+      });
+
+      if (!isMine) {
+        setPagination((prev) => ({ ...prev, total: Math.max(0, Number(prev.total || 0) + 1) }));
+      }
+    });
+
+    return () => {
+      unsubscribe?.();
+    };
+  }, [myIdCandidates, roomId]);
 
   return {
     messages,
