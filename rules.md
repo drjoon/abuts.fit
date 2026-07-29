@@ -150,6 +150,8 @@
   - `web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx`
 - 제조사 워크시트
   - `web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx`
+  - `web/frontend/src/pages/manufacturer/worksheet/custom_abutment/packing/components/PackingPageContent.tsx`
+  - `web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/WorksheetStageSearchInput.tsx`
 - practice
   - `web/frontend/src/pages/practice/PracticeDropzonePage.tsx`
   - `web/frontend/src/pages/practice/PracticeFileTransferPage.tsx`

@@ -41,10 +41,12 @@ import {
 } from "../utils/packLabelRenderer";
 import { savePackingLabelsAsZip } from "../utils/packLabelZip";
 import { resolveImplantConnectionSpec } from "@/utils/implantConnectionSpec";
+import { WorksheetStageSearchInput } from "../../components/WorksheetStageSearchInput";
 
 // related files:
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/WorksheetStageSearchInput.tsx
 // - web/frontend/src/pages/requestor/dashboard/RequestorDashboardPage.tsx
 import { Plus, Settings, Trash2 } from "lucide-react";
 import {
@@ -114,6 +116,7 @@ export const PackingPageContent = ({
   >([]);
   const didInitPackingSelectionRef = useRef(false);
   const [captureHistory, setCaptureHistory] = useState<CaptureResult[]>([]);
+  const [localSearch, setLocalSearch] = useState("");
   const [screwLotSettingsOpen, setScrewLotSettingsOpen] = useState(false);
   const [screwLotItems, setScrewLotItems] = useState<ScrewLotSettingItem[]>([]);
   const [screwLotLoading, setScrewLotLoading] = useState(false);
@@ -130,6 +133,12 @@ export const PackingPageContent = ({
       return utf8Text;
     }
   }, []);
+
+  const effectiveWorksheetSearch = useMemo(
+    () =>
+      `${String(worksheetSearch || "").trim()} ${String(localSearch || "").trim()}`.trim(),
+    [localSearch, worksheetSearch],
+  );
 
   const {
     requests,
@@ -151,7 +160,7 @@ export const PackingPageContent = ({
     token,
     userRole: user?.role,
     showCompleted,
-    worksheetSearch,
+    worksheetSearch: effectiveWorksheetSearch,
     toast,
   });
 
@@ -932,7 +941,7 @@ export const PackingPageContent = ({
             (caseInfos.implantFamily || "") +
             (caseInfos.implantType || "")
           ).toLowerCase();
-          const normalizedSearch = worksheetSearch.trim().toLowerCase();
+          const normalizedSearch = effectiveWorksheetSearch.trim().toLowerCase();
           if (!normalizedSearch) return true;
           return text.includes(normalizedSearch);
         })
@@ -966,7 +975,7 @@ export const PackingPageContent = ({
       setPreviewOpen,
       currentStageOrder,
       showCompleted,
-      worksheetSearch,
+      effectiveWorksheetSearch,
     ],
   );
 
@@ -1322,6 +1331,12 @@ export const PackingPageContent = ({
             counts={diameterQueueForPacking.counts}
           />
         )}
+
+        <WorksheetStageSearchInput
+          className="mt-3"
+          value={localSearch}
+          onChange={setLocalSearch}
+        />
 
         {isLoading && <WorksheetLoading />}
 

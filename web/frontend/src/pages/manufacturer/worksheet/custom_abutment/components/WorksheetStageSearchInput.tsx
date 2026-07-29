@@ -1,9 +1,7 @@
 // related files:
-// - web/frontend/rules.md
-// - web/frontend/src/App.tsx
-// - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
-// - web/backend/controllers/requests/common.review.controller.js
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/packing/components/PackingPageContent.tsx
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/tracking/TrackingPage.tsx
 type WorksheetStageSearchInputProps = {
   value: string;
   onChange: (value: string) => void;
@@ -21,13 +19,13 @@ export const WorksheetStageSearchInput = ({
   className = "",
 }: WorksheetStageSearchInputProps) => {
   return (
-    <div className={className || undefined}>
+    <div className={`w-full md:max-w-md ${className}`.trim()}>
       <input
         type="text"
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        className="h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 placeholder:text-slate-400 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-slate-300"
+        className="ml-2 h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 placeholder:text-slate-400 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-slate-300"
       />
     </div>
   );
