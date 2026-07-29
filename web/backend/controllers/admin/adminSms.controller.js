@@ -1,3 +1,7 @@
+// related files:
+// - web/backend/rules.md
+// - web/backend/app.js
+// - web/backend/server.js
 import AdminSmsLog from "../../models/adminSmsLog.model.js";
 import {
   sendNotificationViaQueue,

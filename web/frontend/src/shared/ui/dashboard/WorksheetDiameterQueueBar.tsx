@@ -1,3 +1,7 @@
+// related files:
+// - web/frontend/rules.md
+// - web/frontend/src/App.tsx
+// - web/frontend/src/features/layout/DashboardLayout.tsx
 import type { ReactNode } from "react";
 
 export type DiameterBucketKey = "6" | "8" | "10" | "12";

@@ -1,3 +1,7 @@
+// related files:
+// - web/frontend/rules.md
+// - web/frontend/src/App.tsx
+// - web/frontend/src/features/layout/DashboardLayout.tsx
 export const MACHINING_SECTION_LABELS = {
   complete: "Complete",
   nowPlaying: "Now Playing",

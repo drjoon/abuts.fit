@@ -1,3 +1,8 @@
+// related files:
+// - web/backend/modules/requests/request.routes.js
+// - web/backend/controllers/requests/creation.from-draft.controller.js
+// - web/backend/controllers/requests/common.review.controller.js
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
 import mongoose, { Types } from "mongoose";
 import path from "path";
 import { createHash } from "crypto";

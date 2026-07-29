@@ -1,3 +1,7 @@
+// related files:
+// - web/backend/rules.md
+// - web/backend/app.js
+// - web/backend/server.js
 import { Router } from "express";
 import supportController from "../../controllers/support/support.controller.js";
 import { authenticate } from "../../middlewares/auth.middleware.js";

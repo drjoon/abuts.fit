@@ -1,3 +1,9 @@
+// related files:
+// - web/frontend/rules.md
+// - web/frontend/src/App.tsx
+// - web/frontend/src/features/layout/DashboardLayout.tsx
+// - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
+// - web/backend/controllers/requests/creation.from-draft.controller.js
 import { Button } from "@/components/ui/button";
 import { Truck } from "lucide-react";
 import type { CaseInfos } from "../hooks/newRequestTypes";

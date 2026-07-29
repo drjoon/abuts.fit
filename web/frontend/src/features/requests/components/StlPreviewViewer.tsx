@@ -1,3 +1,7 @@
+// related files:
+// - web/frontend/rules.md
+// - web/frontend/src/App.tsx
+// - web/frontend/src/features/layout/DashboardLayout.tsx
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";

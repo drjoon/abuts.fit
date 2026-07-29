@@ -1,3 +1,7 @@
+// related files:
+// - web/frontend/rules.md
+// - web/frontend/src/App.tsx
+// - web/frontend/src/features/layout/DashboardLayout.tsx
 import { ReactNode } from "react";
 import { Navigation } from "@/features/layout/Navigation";
 import { Footer } from "@/features/landing/Footer";

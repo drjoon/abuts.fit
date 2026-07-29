@@ -1,3 +1,7 @@
+// related files:
+// - bg/pc1/esprit-addin/rules.md
+// - bg/pc1/esprit-addin/StlFileProcessor.cs
+// - web/backend/controllers/requests/common.review.controller.js
 using Abuts.EspritAddIns.ESPRIT2025AddinProject;
 using Esprit;
 using EspritConstants;

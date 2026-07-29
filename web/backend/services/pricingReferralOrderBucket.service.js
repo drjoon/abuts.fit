@@ -1,3 +1,7 @@
+// related files:
+// - web/backend/rules.md
+// - web/backend/app.js
+// - web/backend/server.js
 import { Types } from "mongoose";
 import ShippingPackage from "../models/shippingPackage.model.js";
 import PricingReferralDailyOrderBucket from "../models/pricingReferralDailyOrderBucket.model.js";

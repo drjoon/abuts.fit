@@ -1,3 +1,7 @@
+// related files:
+// - web/backend/rules.md
+// - web/backend/app.js
+// - web/backend/server.js
 class ApiError extends Error {
   constructor(
     statusCode,

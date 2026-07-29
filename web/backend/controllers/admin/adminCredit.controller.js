@@ -1,3 +1,7 @@
+// related files:
+// - web/backend/rules.md
+// - web/backend/app.js
+// - web/backend/server.js
 import CreditLedger from "../../models/creditLedger.model.js";
 import ManufacturerCreditLedger from "../../models/manufacturerCreditLedger.model.js";
 import AdminCreditLedger from "../../models/adminCreditLedger.model.js";

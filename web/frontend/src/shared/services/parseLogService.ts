@@ -1,3 +1,7 @@
+// related files:
+// - web/frontend/rules.md
+// - web/frontend/src/App.tsx
+// - web/frontend/src/features/layout/DashboardLayout.tsx
 /**
  * ParseLog API 클라이언트
  * 백엔드의 파싱 로그 API와 통신

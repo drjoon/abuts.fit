@@ -1,3 +1,10 @@
+// related files:
+// - web/backend/rules.md
+// - web/backend/app.js
+// - web/backend/server.js
+// - web/backend/modules/requests/request.routes.js
+// - web/backend/controllers/requests/common.review.controller.js
+// - web/backend/controllers/requests/common.requests.controller.js
 import { emitBgRuntimeStatus } from "../bg/bgRuntimeEvents.js";
 
 const PACK_PRINT_SERVER_BASE = String(

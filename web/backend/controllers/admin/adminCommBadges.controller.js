@@ -1,3 +1,7 @@
+// related files:
+// - web/backend/rules.md
+// - web/backend/app.js
+// - web/backend/server.js
 import Request from "../../models/request.model.js";
 import BusinessRegistrationInquiry from "../../models/businessRegistrationInquiry.model.js";
 import Mail from "../../models/mail.model.js";

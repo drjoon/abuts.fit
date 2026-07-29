@@ -1,3 +1,7 @@
+// related files:
+// - web/backend/rules.md
+// - web/backend/app.js
+// - web/backend/server.js
 /**
  * ParseLog 컨트롤러 (ESM 스타일)
  * 파일명 파싱 로그 저장, 조회, 분석

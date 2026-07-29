@@ -1,3 +1,7 @@
+// related files:
+// - web/backend/rules.md
+// - web/backend/app.js
+// - web/backend/server.js
 /**
  * 관리자용 SSOT 일치성 점검 스크립트
  *

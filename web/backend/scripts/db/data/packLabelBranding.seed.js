@@ -1,3 +1,7 @@
+// related files:
+// - web/backend/rules.md
+// - web/backend/app.js
+// - web/backend/server.js
 // SSOT: DB SystemSettings.packLabelBranding
 // EBS 환경변수 한글 인코딩 버그로 인해 환경변수 대신 DB에서 관리합니다.
 // 이 파일의 값을 수정한 뒤 `npm run db:seed-branding`을 실행하면 DB에 반영됩니다.

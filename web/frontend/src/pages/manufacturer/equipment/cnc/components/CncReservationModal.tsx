@@ -1,3 +1,7 @@
+// related files:
+// - web/frontend/rules.md
+// - web/frontend/src/App.tsx
+// - web/frontend/src/features/layout/DashboardLayout.tsx
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { Machine } from "@/pages/manufacturer/equipment/cnc/types";

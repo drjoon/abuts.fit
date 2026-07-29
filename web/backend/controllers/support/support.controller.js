@@ -1,3 +1,7 @@
+// related files:
+// - web/backend/rules.md
+// - web/backend/app.js
+// - web/backend/server.js
 import { randomBytes } from "crypto";
 import { uploadFileToS3 } from "../../utils/s3.utils.js";
 import BusinessRegistrationInquiry from "../../models/businessRegistrationInquiry.model.js";

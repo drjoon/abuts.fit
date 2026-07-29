@@ -1,3 +1,7 @@
+// related files:
+// - web/backend/rules.md
+// - web/backend/app.js
+// - web/backend/server.js
 import { Types } from "mongoose";
 import ManufacturerPayment from "../../models/manufacturerPayment.model.js";
 import ManufacturerCreditLedger from "../../models/manufacturerCreditLedger.model.js";

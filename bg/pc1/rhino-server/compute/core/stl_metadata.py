@@ -1,3 +1,8 @@
+# related files:
+# - bg/pc1/rhino-server/rules.md
+# - bg/pc1/rhino-server/compute/scripts/process_abutment_stl.py
+# - bg/pc1/rhino-server/compute/scripts/align_stl_coordinate.py
+# - web/backend/controllers/bg/bg.controller.js
 """
 STL 메타데이터 계산 모듈
 Node.js Three.js 기반 계산 서비스를 호출하여 STL 메타데이터를 계산하고 백엔드에 등록

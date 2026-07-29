@@ -1,3 +1,7 @@
+// related files:
+// - web/frontend/rules.md
+// - web/frontend/src/App.tsx
+// - web/frontend/src/features/layout/DashboardLayout.tsx
 const GRADIENTS: Array<[string, string]> = [
   ["#dbeafe", "#2563eb"],
   ["#fce7f3", "#db2777"],

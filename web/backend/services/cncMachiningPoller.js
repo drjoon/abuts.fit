@@ -1,3 +1,7 @@
+// related files:
+// - web/backend/rules.md
+// - web/backend/app.js
+// - web/backend/server.js
 import { getIO } from "../socket.js";
 
 // 활성 폴링 작업 추적

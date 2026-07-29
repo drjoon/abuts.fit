@@ -1,3 +1,6 @@
+// related files:
+// - bg/pc2/lot-server/rules.md
+// - web/backend/controllers/ai/lotCapture.controller.js
 import chokidar from "chokidar";
 import dotenv from "dotenv";
 import sharp from "sharp";

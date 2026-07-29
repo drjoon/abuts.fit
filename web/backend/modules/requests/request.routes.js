@@ -1,3 +1,8 @@
+// related files:
+// - web/backend/controllers/requests/creation.from-draft.controller.js
+// - web/backend/controllers/requests/common.review.controller.js
+// - web/backend/controllers/requests/common.requests.controller.js
+// - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
 import express from "express";
 const router = express.Router();
 import requestController from "../../controllers/requests/request.controller.js";

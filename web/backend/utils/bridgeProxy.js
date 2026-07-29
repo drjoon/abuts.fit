@@ -1,3 +1,7 @@
+// related files:
+// - web/backend/rules.md
+// - web/backend/app.js
+// - web/backend/server.js
 import "../bootstrap/env.js";
 
 const BRIDGE_BASE = process.env.BRIDGE_BASE;

@@ -1,3 +1,7 @@
+// related files:
+// - web/backend/rules.md
+// - web/backend/app.js
+// - web/backend/server.js
 import CncMachine from "../../models/cncMachine.model.js";
 import { buildToolingSummary } from "../../controllers/cnc/tooling.js";
 

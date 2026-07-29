@@ -1,3 +1,7 @@
+// related files:
+// - web/backend/rules.md
+// - web/backend/app.js
+// - web/backend/server.js
 import mongoose from "mongoose";
 import ChargeOrder from "../models/chargeOrder.model.js";
 import BankTransaction from "../models/bankTransaction.model.js";

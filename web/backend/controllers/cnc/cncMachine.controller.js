@@ -1,3 +1,10 @@
+// related files:
+// - web/backend/rules.md
+// - web/backend/app.js
+// - web/backend/server.js
+// - web/backend/controllers/cnc/machiningBridge.js
+// - web/backend/controllers/cnc/production.js
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/machining/MachiningQueueBoard.tsx
 import {
   applyBridgeQueueBatchForMachine,
   clearBridgeQueueForMachine,

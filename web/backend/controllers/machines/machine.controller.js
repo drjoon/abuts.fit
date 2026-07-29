@@ -1,3 +1,7 @@
+// related files:
+// - web/backend/rules.md
+// - web/backend/app.js
+// - web/backend/server.js
 import "../../bootstrap/env.js";
 
 // 브리지 서비스 기본 URL 및 Hi-Link CNC 엔드포인트

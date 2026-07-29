@@ -1,3 +1,7 @@
+// related files:
+// - web/frontend/rules.md
+// - web/frontend/src/App.tsx
+// - web/frontend/src/features/layout/DashboardLayout.tsx
 // SSOT: BusinessMetadata 사용 (백엔드 metadata 필드와 동일)
 // extracted 레거시 완전 제거 (2026-03-31)
 export type BusinessMetadata = {

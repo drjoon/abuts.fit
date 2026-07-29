@@ -1,3 +1,8 @@
+// related files:
+// - bg/pc3/wbls-server/rules.md
+// - bg/pc3/wbls-server/app.js
+// - web/backend/controllers/requests/shipping.Hanjin.controller.js
+// - web/backend/controllers/requests/shipping.Hanjin.helpers.js
 const fs = require("fs");
 const path = require("path");
 

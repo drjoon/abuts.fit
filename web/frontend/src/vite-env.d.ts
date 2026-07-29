@@ -1,4 +1,8 @@
 /// <reference types="vite/client" />
+// related files:
+// - web/frontend/rules.md
+// - web/frontend/src/App.tsx
+// - web/frontend/src/features/layout/DashboardLayout.tsx
 
 interface ImportMetaEnv {
   readonly VITE_DEV_LOGIN_ACCOUNTS?: string;

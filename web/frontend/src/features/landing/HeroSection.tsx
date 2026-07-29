@@ -1,3 +1,7 @@
+// related files:
+// - web/frontend/rules.md
+// - web/frontend/src/App.tsx
+// - web/frontend/src/features/layout/DashboardLayout.tsx
 import { Button } from "@/components/ui/button";
 import { ArrowRight, Users, Zap, Shield } from "lucide-react";
 import { useNavigate } from "react-router-dom";

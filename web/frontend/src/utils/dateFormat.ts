@@ -1,3 +1,7 @@
+// related files:
+// - web/frontend/rules.md
+// - web/frontend/src/App.tsx
+// - web/frontend/src/features/layout/DashboardLayout.tsx
 /**
  * 날짜를 "YYYY-MM-DD (요일)" 형식으로 포맷
  * @param value 날짜 문자열 (ISO 8601 또는 YYYY-MM-DD 형식)

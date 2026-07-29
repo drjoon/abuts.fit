@@ -1,3 +1,9 @@
+// related files:
+// - web/frontend/rules.md
+// - web/frontend/src/App.tsx
+// - web/frontend/src/features/layout/DashboardLayout.tsx
+// - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
+// - web/backend/controllers/requests/creation.from-draft.controller.js
 /**
  * ===== 신규 의뢰 제출 표준 훅 (SSOT) =====
  * Draft 기반 워크플로우: POST /api/requests/from-draft 사용

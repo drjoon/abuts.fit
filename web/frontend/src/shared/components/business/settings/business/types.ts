@@ -1,3 +1,7 @@
+// related files:
+// - web/frontend/rules.md
+// - web/frontend/src/App.tsx
+// - web/frontend/src/features/layout/DashboardLayout.tsx
 // SSOT: metadata 사용 (extracted 레거시 제거)
 export type {
   BusinessMetadata,

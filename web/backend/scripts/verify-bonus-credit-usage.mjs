@@ -1,4 +1,8 @@
 #!/usr/bin/env node
+// related files:
+// - web/backend/rules.md
+// - web/backend/app.js
+// - web/backend/server.js
 /**
  * 무료 크레딧 사용액 검증 스크립트
  *

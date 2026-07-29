@@ -1,4 +1,8 @@
 #!/usr/bin/env node
+// related files:
+// - web/backend/rules.md
+// - web/backend/app.js
+// - web/backend/server.js
 /**
  * 스크린샷 3 화면값과 DB 집계 차이 분석
  */

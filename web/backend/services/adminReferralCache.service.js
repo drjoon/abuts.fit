@@ -1,3 +1,7 @@
+// related files:
+// - web/backend/rules.md
+// - web/backend/app.js
+// - web/backend/server.js
 const ADMIN_REFERRAL_CACHE_TTL_MS = 5 * 60 * 1000; // 5분 (성능 최적화)
 
 const __adminReferralCache = new Map();

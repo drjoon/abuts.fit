@@ -1,3 +1,7 @@
+// related files:
+// - web/backend/rules.md
+// - web/backend/app.js
+// - web/backend/server.js
 import axios from "axios";
 import { extname } from "path";
 import { randomBytes } from "crypto";

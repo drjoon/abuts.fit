@@ -1,3 +1,7 @@
+// related files:
+// - web/backend/rules.md
+// - web/backend/app.js
+// - web/backend/server.js
 /**
  * 역할 기반 권한 검증 미들웨어
  */

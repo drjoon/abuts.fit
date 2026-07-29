@@ -1,3 +1,7 @@
+// related files:
+// - web/backend/rules.md
+// - web/backend/app.js
+// - web/backend/server.js
 /**
  * 간단한 메모리 기반 캐시 유틸리티
  * Redis 대신 사용 (프로덕션에서는 Redis 권장)

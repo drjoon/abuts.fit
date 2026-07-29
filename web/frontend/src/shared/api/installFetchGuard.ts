@@ -1,3 +1,7 @@
+// related files:
+// - web/frontend/rules.md
+// - web/frontend/src/App.tsx
+// - web/frontend/src/features/layout/DashboardLayout.tsx
 import { toast } from "@/shared/hooks/use-toast";
 
 const WINDOW_MS = 1000; // 1초

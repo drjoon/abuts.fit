@@ -1,3 +1,10 @@
+// related files:
+// - web/backend/rules.md
+// - web/backend/app.js
+// - web/backend/server.js
+// - web/backend/modules/requests/request.routes.js
+// - web/backend/controllers/requests/common.review.controller.js
+// - web/backend/controllers/requests/common.requests.controller.js
 /**
  * 임플란트 정보(manufacturer/brand/family/type)를 기반으로
  * Esprit CAM 공정에 필요한 PRC 파일명을 자동 결정

@@ -1,3 +1,7 @@
+// related files:
+// - web/backend/rules.md
+// - web/backend/app.js
+// - web/backend/server.js
 function parseAllowlist() {
   return (process.env.BRIDGE_ALLOWLIST_IPS || "")
     .split(",")

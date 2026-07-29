@@ -1,3 +1,8 @@
+// related files:
+// - web/backend/rules.md
+// - web/backend/app.js
+// - web/backend/server.js
+// - bg/pc2/lot-server/src/index.js
 import Request from "../../models/request.model.js";
 import s3Utils, { getObjectBufferFromS3 } from "../../utils/s3.utils.js";
 import { shouldBlockExternalCall } from "../../utils/rateGuard.js";

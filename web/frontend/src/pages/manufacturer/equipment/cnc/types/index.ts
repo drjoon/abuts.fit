@@ -1,3 +1,7 @@
+// related files:
+// - web/frontend/rules.md
+// - web/frontend/src/App.tsx
+// - web/frontend/src/features/layout/DashboardLayout.tsx
 export interface Machine {
   uid: string; // 장비 식별자(Hi-Link UID와 통합)
   name: string; // 표시용 장비 이름

@@ -1,3 +1,7 @@
+// related files:
+// - web/backend/rules.md
+// - web/backend/app.js
+// - web/backend/server.js
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 
 export async function resolveOwnedBusiness(req, businessType) {

@@ -1,3 +1,7 @@
+// related files:
+// - bg/pc1/esprit-addin/rules.md
+// - bg/pc1/esprit-addin/DentalAddinDecomp/DentalAddin/MainModuleComposite.cs
+// - web/backend/controllers/requests/common.review.controller.js
 using System;
 using System.Collections;
 using System.Collections.Generic;

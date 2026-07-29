@@ -2,6 +2,10 @@
 
 루트 `rules.md`가 최종 기준입니다.
 
+- 루트 축약본에서 제거된 상세 정책/히스토리 보존본: `.archive/rules.legacy-2026-07-29.md`
+- 로컬 전체 상세 미러(공통 참조): `rules.legacy-full.md`
+- esprit 상세 정책은 이 문서 + 공통 미러 + 소스 상단 `related files` 주석으로 보존합니다.
+
 이 문서는 `bg/pc1/esprit-addin` 폴더의 로컬 메모만 남깁니다.
 
 ## 1. 구현 메모

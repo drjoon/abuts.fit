@@ -1,3 +1,7 @@
+// related files:
+// - web/backend/rules.md
+// - web/backend/app.js
+// - web/backend/server.js
 export function normalizeBusinessNumber(value) {
   const digits = String(value || "").replace(/\D/g, "").trim();
   return digits || "";

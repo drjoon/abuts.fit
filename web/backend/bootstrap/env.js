@@ -1,3 +1,7 @@
+// related files:
+// - web/backend/rules.md
+// - web/backend/app.js
+// - web/backend/server.js
 import { existsSync, readFileSync } from "fs";
 import { dirname, isAbsolute, resolve } from "path";
 import { fileURLToPath } from "url";

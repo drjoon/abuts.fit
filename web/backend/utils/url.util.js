@@ -1,3 +1,7 @@
+// related files:
+// - web/backend/rules.md
+// - web/backend/app.js
+// - web/backend/server.js
 export function getFrontendBaseUrl(req) {
   const configured = String(
     process.env.FRONTEND_PUBLIC_URL ||

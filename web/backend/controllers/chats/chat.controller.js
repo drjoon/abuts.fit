@@ -1,3 +1,9 @@
+// related files:
+// - web/backend/modules/chat/chat.routes.js
+// - web/backend/modules/practiceTransfers/practiceTransfer.routes.js
+// - web/frontend/src/shared/hooks/useChatRooms.ts
+// - web/frontend/src/shared/hooks/useChatMessages.ts
+// - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
 import { Types } from "mongoose";
 import ChatRoom from "../../models/chatRoom.model.js";
 import Chat from "../../models/chat.model.js";

@@ -1,3 +1,7 @@
+// related files:
+// - web/frontend/rules.md
+// - web/frontend/src/App.tsx
+// - web/frontend/src/features/layout/DashboardLayout.tsx
 import { generateModelNumber } from "@/utils/modelNumber";
 import React, { useEffect, useRef, useState } from "react";
 import { X, Pause, Play, Cylinder, Plus, Minus } from "lucide-react";

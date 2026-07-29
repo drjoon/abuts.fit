@@ -1,3 +1,8 @@
+// related files:
+// - bg/pc1/rhino-server/rules.md
+// - bg/pc1/rhino-server/compute/scripts/process_abutment_stl.py
+// - bg/pc1/rhino-server/compute/scripts/align_stl_coordinate.py
+// - web/backend/controllers/bg/bg.controller.js
 /**
  * STL 메타데이터 계산 서비스
  * Three.js를 사용하여 STL 파일의 메타데이터(직경, 길이, 각도 등)를 계산

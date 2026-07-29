@@ -1,3 +1,7 @@
+// related files:
+// - web/frontend/rules.md
+// - web/frontend/src/App.tsx
+// - web/frontend/src/features/layout/DashboardLayout.tsx
 // 문의 페이지는 requestor, salesman, admin 역할에서만 사용됩니다.
 // manufacturer(제조사)와 devops(개발운영사)는 문의 페이지가 불필요하며,
 // 사이드메뉴 및 라우트 접근에서 제외되어 있습니다.

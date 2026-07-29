@@ -1,3 +1,7 @@
+// related files:
+// - web/backend/rules.md
+// - web/backend/app.js
+// - web/backend/server.js
 /**
  * 특정 계정의 비밀번호를 .essential-accounts.json 에 기록된 값으로 강제 재설정한다.
  *

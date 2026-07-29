@@ -1,3 +1,10 @@
+// related files:
+// - web/frontend/rules.md
+// - web/frontend/src/App.tsx
+// - web/frontend/src/features/layout/DashboardLayout.tsx
+// - web/frontend/src/pages/practice/PracticeDropzonePage.tsx
+// - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
+// - web/backend/modules/practiceTransfers/practiceTransfer.routes.js
 import { useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useAuthStore } from "@/store/useAuthStore";

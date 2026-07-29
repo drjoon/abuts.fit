@@ -1,4 +1,8 @@
 #!/usr/bin/env node
+// related files:
+// - web/backend/rules.md
+// - web/backend/app.js
+// - web/backend/server.js
 /**
  * 2026-06-04 중복 배송비 결제 정리 스크립트
  *

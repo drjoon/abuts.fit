@@ -1,3 +1,7 @@
+// related files:
+// - web/frontend/rules.md
+// - web/frontend/src/App.tsx
+// - web/frontend/src/features/layout/DashboardLayout.tsx
 /**
  * STL 파일명에서 치과이름, 환자이름, 치아번호를 추출하는 유틸리티
  *

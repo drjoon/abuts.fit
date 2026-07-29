@@ -1,3 +1,7 @@
+// related files:
+// - web/backend/rules.md
+// - web/backend/app.js
+// - web/backend/server.js
 import File from "../../models/file.model.js";
 
 export async function getAllFiles(req, res) {

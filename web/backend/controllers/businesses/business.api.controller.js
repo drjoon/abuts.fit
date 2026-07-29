@@ -1,3 +1,7 @@
+// related files:
+// - web/backend/rules.md
+// - web/backend/app.js
+// - web/backend/server.js
 import * as businessController from "./business.controller.js";
 import * as memberController from "./business.member.controller.js";
 import * as ownerController from "./business.owner.controller.js";

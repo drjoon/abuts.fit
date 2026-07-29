@@ -1,3 +1,7 @@
+// related files:
+// - web/backend/rules.md
+// - web/backend/app.js
+// - web/backend/server.js
 import { Types } from "mongoose";
 import Request from "../../models/request.model.js";
 import CncMachine from "../../models/cncMachine.model.js";

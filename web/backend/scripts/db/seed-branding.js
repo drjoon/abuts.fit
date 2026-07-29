@@ -1,3 +1,7 @@
+// related files:
+// - web/backend/rules.md
+// - web/backend/app.js
+// - web/backend/server.js
 import { connectDb, disconnectDb } from "./_mongo.js";
 import SystemSettings from "../../models/systemSettings.model.js";
 import { PACK_LABEL_BRANDING_SEED } from "./data/packLabelBranding.seed.js";

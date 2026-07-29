@@ -1,3 +1,7 @@
+// related files:
+// - web/backend/rules.md
+// - web/backend/app.js
+// - web/backend/server.js
 const MAX_RECENT = 300;
 const WINDOW_MS = 10000; // 10초
 const MAX_REPEAT = 12; // 동일 요청은 10초 내 12회까지 허용

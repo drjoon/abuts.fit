@@ -1,3 +1,7 @@
+// related files:
+// - web/backend/rules.md
+// - web/backend/app.js
+// - web/backend/server.js
 // 간단한 인메모리 Rate Guard
 // key(예: service + 세부 식별자)별로 짧은 시간 내 과도 호출을 감지해 차단한다.
 

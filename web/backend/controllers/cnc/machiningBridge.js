@@ -1,3 +1,8 @@
+// related files:
+// - web/backend/controllers/requests/common.review.controller.js
+// - web/backend/controllers/cnc/production.js
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/machining/MachiningQueueBoard.tsx
+// - web/frontend/src/pages/manufacturer/equipment/cnc/hooks/useManUpload.ts
 import Request from "../../models/request.model.js";
 import CncEvent from "../../models/cncEvent.model.js";
 import CncMachine from "../../models/cncMachine.model.js";

@@ -1,3 +1,7 @@
+// related files:
+// - web/backend/rules.md
+// - web/backend/app.js
+// - web/backend/server.js
 import "../../bootstrap/env.js";
 import fs from "fs/promises";
 import path from "path";

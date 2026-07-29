@@ -1,3 +1,8 @@
+// related files:
+// - web/backend/app.js
+// - web/backend/services/reviewApprovalQueue.service.js
+// - web/backend/controllers/requests/shipping.TrackingPoller.js
+// - web/backend/controllers/cnc/machiningBridge.js
 import { createServer } from "http";
 import "./bootstrap/env.js";
 import app, { dbReady } from "./app.js";

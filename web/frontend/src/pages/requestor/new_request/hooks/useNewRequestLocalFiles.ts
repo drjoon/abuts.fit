@@ -1,3 +1,9 @@
+// related files:
+// - web/frontend/rules.md
+// - web/frontend/src/App.tsx
+// - web/frontend/src/features/layout/DashboardLayout.tsx
+// - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
+// - web/backend/controllers/requests/creation.from-draft.controller.js
 import { useCallback } from "react";
 import { saveFile } from "../utils/fileIndexedDB";
 import { getFileKey } from "../utils/localDraftStorage";

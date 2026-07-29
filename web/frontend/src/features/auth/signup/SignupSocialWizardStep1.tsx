@@ -1,3 +1,7 @@
+// related files:
+// - web/frontend/rules.md
+// - web/frontend/src/App.tsx
+// - web/frontend/src/features/layout/DashboardLayout.tsx
 import type React from "react";
 import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";

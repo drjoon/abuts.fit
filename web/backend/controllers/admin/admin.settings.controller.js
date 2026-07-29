@@ -1,3 +1,7 @@
+// related files:
+// - web/backend/rules.md
+// - web/backend/app.js
+// - web/backend/server.js
 import SystemSettings from "../../models/systemSettings.model.js";
 import {
   DEFAULT_DELIVERY_ETA_LEAD_DAYS,

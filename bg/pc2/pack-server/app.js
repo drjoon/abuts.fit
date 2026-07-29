@@ -1,3 +1,7 @@
+// related files:
+// - bg/pc2/pack-server/rules.md
+// - web/backend/controllers/requests/packingPrint.controller.js
+// - web/backend/utils/packPrint.utils.js
 const http = require("http");
 const os = require("os");
 const path = require("path");

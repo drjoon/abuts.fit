@@ -1,3 +1,7 @@
+// related files:
+// - web/backend/rules.md
+// - web/backend/app.js
+// - web/backend/server.js
 import mongoose, { Types } from "mongoose";
 import crypto from "crypto";
 import SystemSettings from "../../models/systemSettings.model.js";

@@ -1,3 +1,7 @@
+// related files:
+// - web/backend/rules.md
+// - web/backend/app.js
+// - web/backend/server.js
 import popbill from "popbill";
 
 const LinkID = process.env.POPBILL_LINK_ID;

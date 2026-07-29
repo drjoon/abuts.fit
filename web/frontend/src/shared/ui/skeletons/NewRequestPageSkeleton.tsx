@@ -1,3 +1,7 @@
+// related files:
+// - web/frontend/rules.md
+// - web/frontend/src/App.tsx
+// - web/frontend/src/features/layout/DashboardLayout.tsx
 import { Skeleton } from "@/components/ui/skeleton";
 
 const repeat = (count: number) => Array.from({ length: count }, (_, i) => i);

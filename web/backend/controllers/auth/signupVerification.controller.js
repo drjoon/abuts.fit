@@ -1,3 +1,7 @@
+// related files:
+// - web/backend/rules.md
+// - web/backend/app.js
+// - web/backend/server.js
 import crypto from "crypto";
 import SignupVerification from "../../models/signupVerification.model.js";
 import User from "../../models/user.model.js";

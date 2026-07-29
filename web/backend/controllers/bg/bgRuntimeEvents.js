@@ -1,3 +1,7 @@
+// related files:
+// - web/backend/rules.md
+// - web/backend/app.js
+// - web/backend/server.js
 import { emitAppEventToRoles } from "../../socket.js";
 
 const BG_RUNTIME_EVENT_TYPE = "bg:runtime-status";

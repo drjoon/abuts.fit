@@ -2,6 +2,10 @@
 
 루트 `rules.md`가 최종 기준입니다.
 
+- 루트 축약본에서 제거된 상세 정책/히스토리 보존본: `.archive/rules.legacy-2026-07-29.md`
+- 로컬 전체 상세 미러(누락 방지): `rules.legacy-full.md`
+- backend 도메인 상세는 이 문서 + `rules.legacy-full.md` + 코드 상단 `related files` 주석을 함께 SSOT로 유지합니다.
+
 - 강제 준수: 루트 `rules.md`의 **[최상단 강제 규칙] 대규모 파일 수정 시 문서/주석 동시 갱신**을 항상 적용합니다.
   - 특히 5개 이상 파일을 탐색/수정한 작업은
     - 관련 rules 문서에 폴더/파일/변경내용 업데이트

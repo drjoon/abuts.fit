@@ -1,3 +1,7 @@
+// related files:
+// - web/frontend/rules.md
+// - web/frontend/src/App.tsx
+// - web/frontend/src/features/layout/DashboardLayout.tsx
 const KST_TZ = "Asia/Seoul";
 
 export function toKstYmd(input?: string | number | Date | null): string | null {

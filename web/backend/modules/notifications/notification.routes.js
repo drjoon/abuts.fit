@@ -1,3 +1,7 @@
+// related files:
+// - web/backend/rules.md
+// - web/backend/app.js
+// - web/backend/server.js
 import express from "express";
 const router = express.Router();
 import notificationController from "../../controllers/notifications/notification.controller.js";

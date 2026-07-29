@@ -1,3 +1,7 @@
+// related files:
+// - web/frontend/rules.md
+// - web/frontend/src/App.tsx
+// - web/frontend/src/features/layout/DashboardLayout.tsx
 import React from "react";
 import { Machine } from "@/pages/manufacturer/equipment/cnc/types";
 import { MachineCard } from "@/pages/manufacturer/equipment/cnc/components/MachineCard";

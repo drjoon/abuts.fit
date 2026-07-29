@@ -1,3 +1,7 @@
+// related files:
+// - web/backend/rules.md
+// - web/backend/app.js
+// - web/backend/server.js
 function normalizeBusinessNumberDigits(input) {
   const digits = String(input || "").replace(/\D/g, "");
   if (digits.length !== 10) return "";

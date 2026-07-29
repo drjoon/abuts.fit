@@ -1,3 +1,7 @@
+// related files:
+// - web/frontend/rules.md
+// - web/frontend/src/App.tsx
+// - web/frontend/src/features/layout/DashboardLayout.tsx
 /**
  * 영업자(salesman)와 개발운영사(devops)가 공통으로 사용하는
  * /api/salesman/dashboard 데이터 훅 + 타입 + 포매터.

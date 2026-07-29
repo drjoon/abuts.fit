@@ -1,3 +1,7 @@
+// related files:
+// - web/frontend/rules.md
+// - web/frontend/src/App.tsx
+// - web/frontend/src/features/layout/DashboardLayout.tsx
 /**
  * STL 메타데이터 조회 및 재계산 훅
  * 백엔드 DB 캐시를 우선 사용하고, 필요시 재계산 트리거

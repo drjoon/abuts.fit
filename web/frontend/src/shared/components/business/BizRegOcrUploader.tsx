@@ -1,3 +1,7 @@
+// related files:
+// - web/frontend/rules.md
+// - web/frontend/src/App.tsx
+// - web/frontend/src/features/layout/DashboardLayout.tsx
 import { useRef, useState, useCallback } from "react";
 import { Upload, X, ShieldCheck, ShieldX, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";

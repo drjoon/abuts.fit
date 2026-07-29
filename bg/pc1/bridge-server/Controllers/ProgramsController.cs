@@ -1,3 +1,7 @@
+// related files:
+// - bg/pc1/bridge-server/rules.md
+// - web/backend/controllers/cnc/machiningBridge.js
+// - web/backend/controllers/cnc/production.js
 using System;
 using System.Collections.Generic;
 using System.IO;

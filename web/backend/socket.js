@@ -1,3 +1,7 @@
+// related files:
+// - web/backend/rules.md
+// - web/backend/app.js
+// - web/backend/server.js
 import { Server } from "socket.io";
 import jwt from "jsonwebtoken";
 import User from "./models/user.model.js";

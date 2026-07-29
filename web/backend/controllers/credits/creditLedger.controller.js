@@ -1,3 +1,7 @@
+// related files:
+// - web/backend/rules.md
+// - web/backend/app.js
+// - web/backend/server.js
 import mongoose from "mongoose";
 import BonusGrant from "../../models/bonusGrant.model.js";
 import CreditLedger from "../../models/creditLedger.model.js";

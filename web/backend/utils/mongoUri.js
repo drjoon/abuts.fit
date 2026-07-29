@@ -1,3 +1,7 @@
+// related files:
+// - web/backend/rules.md
+// - web/backend/app.js
+// - web/backend/server.js
 export function resolveMongoUri() {
   const isProd = process.env.NODE_ENV === "production";
 

@@ -1,3 +1,7 @@
+// related files:
+// - web/frontend/rules.md
+// - web/frontend/src/App.tsx
+// - web/frontend/src/features/layout/DashboardLayout.tsx
 /**
  * 파일 다운로드 URL 캐시 관리 유틸리티
  * localStorage를 사용하여 임시 다운로드 URL을 캐싱

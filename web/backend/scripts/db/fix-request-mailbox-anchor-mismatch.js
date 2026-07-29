@@ -1,3 +1,7 @@
+// related files:
+// - web/backend/rules.md
+// - web/backend/app.js
+// - web/backend/server.js
 import mongoose from "mongoose";
 import { connectDb, disconnectDb } from "./_mongo.js";
 import Request from "../../models/request.model.js";

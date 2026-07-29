@@ -1,3 +1,7 @@
+// related files:
+// - web/backend/rules.md
+// - web/backend/app.js
+// - web/backend/server.js
 function getSecrets(envKeys) {
   return envKeys
     .map((key) => String(process.env[key] || "").trim())

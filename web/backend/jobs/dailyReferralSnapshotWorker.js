@@ -1,3 +1,7 @@
+// related files:
+// - web/backend/rules.md
+// - web/backend/app.js
+// - web/backend/server.js
 /**
  * 매일 KST 00:00에 실행되는 리퍼럴 그룹 스냅샷 재계산 워커.
  *

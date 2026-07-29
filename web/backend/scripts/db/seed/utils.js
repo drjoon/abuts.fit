@@ -1,3 +1,7 @@
+// related files:
+// - web/backend/rules.md
+// - web/backend/app.js
+// - web/backend/server.js
 import crypto from "crypto";
 import mongoose from "mongoose";
 import User from "../../../models/user.model.js";

@@ -1,3 +1,7 @@
+// related files:
+// - web/backend/rules.md
+// - web/backend/app.js
+// - web/backend/server.js
 /**
  * 캐시 워밍 유틸리티
  * 서버 시작 시 자주 사용되는 데이터를 미리 캐싱

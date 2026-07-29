@@ -1,3 +1,7 @@
+// related files:
+// - web/backend/rules.md
+// - web/backend/app.js
+// - web/backend/server.js
 // BANK_WEBHOOK은 큐/워커를 거치지 않고 웹 백엔드에서 바로 처리
 // EasyFin(팝빌) 등 은행 웹훅으로 전달된 거래를 즉시 저장/업서트한다.
 import {

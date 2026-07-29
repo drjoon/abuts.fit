@@ -1,3 +1,9 @@
+// related files:
+// - web/backend/server.js
+// - web/backend/modules/requests/request.routes.js
+// - web/backend/modules/chat/chat.routes.js
+// - web/backend/modules/practiceTransfers/practiceTransfer.routes.js
+// - web/frontend/src/App.tsx
 import express, { json, urlencoded, static as staticMiddleware } from "express";
 import "./bootstrap/env.js";
 import rateLimit from "express-rate-limit";

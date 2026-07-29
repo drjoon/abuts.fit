@@ -1,3 +1,7 @@
+// related files:
+// - web/backend/rules.md
+// - web/backend/app.js
+// - web/backend/server.js
 import mongoose from "mongoose";
 
 const jobLockSchema = new mongoose.Schema(

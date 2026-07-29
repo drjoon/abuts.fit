@@ -1,3 +1,7 @@
+// related files:
+// - web/backend/rules.md
+// - web/backend/app.js
+// - web/backend/server.js
 /**
  * 프론트엔드 packLabelRenderer.ts와 동일한 로직으로 Canvas 기반 라벨 생성
  * 600 DPI 기준으로 80x65mm = 1890x1535 dots

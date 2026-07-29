@@ -1,4 +1,8 @@
 #!/usr/bin/env node
+// related files:
+// - web/backend/rules.md
+// - web/backend/app.js
+// - web/backend/server.js
 import mongoose from "mongoose";
 import dotenv from "dotenv";
 import path from "path";

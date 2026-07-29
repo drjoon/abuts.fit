@@ -1,3 +1,7 @@
+// related files:
+// - web/backend/rules.md
+// - web/backend/app.js
+// - web/backend/server.js
 /**
  * 매일 KST 00:00에 실행되는 관리자용 '영업자 크레딧 overview' 스냅샷 워커.
  *

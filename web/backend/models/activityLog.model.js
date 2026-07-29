@@ -1,3 +1,7 @@
+// related files:
+// - web/backend/rules.md
+// - web/backend/app.js
+// - web/backend/server.js
 import { Schema, model } from "mongoose";
 
 const activityLogSchema = new Schema(

@@ -1,3 +1,8 @@
+// related files:
+// - web/backend/modules/requests/request.routes.js
+// - web/backend/controllers/requests/common.review.controller.js
+// - web/backend/controllers/requests/common.requests.controller.js
+// - web/frontend/src/features/layout/DashboardLayout.tsx
 import {
   useMemo,
   useEffect,

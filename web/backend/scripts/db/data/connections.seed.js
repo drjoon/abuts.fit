@@ -1,3 +1,7 @@
+// related files:
+// - web/backend/rules.md
+// - web/backend/app.js
+// - web/backend/server.js
 /**
  * 임플란트 Connection seed (표 SSOT, 2026-06-15)
  *

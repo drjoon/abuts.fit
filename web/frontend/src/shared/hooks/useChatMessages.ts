@@ -1,3 +1,9 @@
+// related files:
+// - web/frontend/rules.md
+// - web/frontend/src/App.tsx
+// - web/frontend/src/features/layout/DashboardLayout.tsx
+// - web/backend/modules/chat/chat.routes.js
+// - web/backend/controllers/chats/chat.controller.js
 import { useState, useEffect, useCallback } from "react";
 import { apiFetch } from "@/shared/api/apiClient";
 import { useToast } from "@/shared/hooks/use-toast";

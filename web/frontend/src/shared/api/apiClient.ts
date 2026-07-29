@@ -1,3 +1,7 @@
+// related files:
+// - web/frontend/rules.md
+// - web/frontend/src/App.tsx
+// - web/frontend/src/features/layout/DashboardLayout.tsx
 // NOTE: Legacy mock header injection removed. Standard Authorization handling only.
 
 const IN_FLIGHT = new Map<string, Promise<ApiResponse<any>>>();

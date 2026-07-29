@@ -1,3 +1,8 @@
+// related files:
+// - web/backend/modules/requests/request.routes.js
+// - web/backend/controllers/requests/common.requests.controller.js
+// - web/backend/controllers/cnc/machiningBridge.js
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
 import mongoose, { Types } from "mongoose";
 import Request from "../../models/request.model.js";
 import Machine from "../../models/machine.model.js";

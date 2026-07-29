@@ -1,3 +1,7 @@
+// related files:
+// - web/backend/rules.md
+// - web/backend/app.js
+// - web/backend/server.js
 /**
  * ParseLog 모델
  * 파일명 파싱 결과 vs 사용자 최종 입력값 로그 (ESM 스타일)

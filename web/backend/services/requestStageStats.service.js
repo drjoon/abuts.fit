@@ -1,3 +1,7 @@
+// related files:
+// - web/backend/rules.md
+// - web/backend/app.js
+// - web/backend/server.js
 const MONITORING_STAGE_KEYS = [
   "의뢰",
   "CAM",

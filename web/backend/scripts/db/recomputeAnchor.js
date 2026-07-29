@@ -1,3 +1,7 @@
+// related files:
+// - web/backend/rules.md
+// - web/backend/app.js
+// - web/backend/server.js
 // scripts/recomputeAnchor.js
 // Usage:
 //   MONGODB_URI="mongodb://..." node scripts/recomputeAnchor.js <anchorId_or_name>

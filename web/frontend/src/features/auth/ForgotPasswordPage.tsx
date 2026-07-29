@@ -1,3 +1,7 @@
+// related files:
+// - web/frontend/rules.md
+// - web/frontend/src/App.tsx
+// - web/frontend/src/features/layout/DashboardLayout.tsx
 import { useState } from "react";
 import { Mail } from "lucide-react";
 import { useNavigate } from "react-router-dom";

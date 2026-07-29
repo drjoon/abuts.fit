@@ -1,3 +1,7 @@
+// related files:
+// - web/backend/rules.md
+// - web/backend/app.js
+// - web/backend/server.js
 import { Types } from "mongoose";
 import BusinessAnchor from "../models/businessAnchor.model.js";
 import Request from "../models/request.model.js";

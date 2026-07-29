@@ -1,3 +1,8 @@
+// related files:
+// - web/backend/modules/requests/request.routes.js
+// - web/backend/controllers/requests/common.requests.controller.js
+// - web/backend/controllers/requests/common.review.controller.js
+// - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
 import mongoose, { Types } from "mongoose";
 import crypto from "crypto";
 import Request from "../../models/request.model.js";

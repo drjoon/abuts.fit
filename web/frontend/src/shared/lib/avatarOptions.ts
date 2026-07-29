@@ -1,3 +1,7 @@
+// related files:
+// - web/frontend/rules.md
+// - web/frontend/src/App.tsx
+// - web/frontend/src/features/layout/DashboardLayout.tsx
 const sanitizeSeedBase = (seed: string) =>
   seed.replace(/[^a-z0-9-_]/gi, "").toLowerCase() || "user";
 

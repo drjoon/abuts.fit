@@ -1,3 +1,7 @@
+// related files:
+// - web/frontend/rules.md
+// - web/frontend/src/App.tsx
+// - web/frontend/src/features/layout/DashboardLayout.tsx
 export const COMPANY_PHONE = "1588-3948";
 
 export const COMPANY_ADDRESS = "경상남도 거제시 거제중앙로29길 6, 3층(고현동)";

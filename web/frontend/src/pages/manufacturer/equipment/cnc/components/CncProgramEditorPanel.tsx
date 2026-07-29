@@ -1,3 +1,7 @@
+// related files:
+// - web/frontend/rules.md
+// - web/frontend/src/App.tsx
+// - web/frontend/src/features/layout/DashboardLayout.tsx
 import React from "react";
 import Editor, { DiffEditor } from "@monaco-editor/react";
 import { RotateCcw, Save, X } from "lucide-react";

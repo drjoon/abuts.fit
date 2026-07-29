@@ -1,3 +1,9 @@
+// related files:
+// - web/frontend/rules.md
+// - web/frontend/src/App.tsx
+// - web/frontend/src/features/layout/DashboardLayout.tsx
+// - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
+// - web/backend/controllers/requests/creation.from-draft.controller.js
 /**
  * 호환용 로컬 파일 스토리지 유틸리티 (V2 -> V3 브릿지)
  * 기존 V2 훅(useNewRequestFilesV2)에서 import하는 모듈을 최소 구현하여

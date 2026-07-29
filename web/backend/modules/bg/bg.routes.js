@@ -1,3 +1,7 @@
+// related files:
+// - web/backend/rules.md
+// - web/backend/app.js
+// - web/backend/server.js
 import { Router } from "express";
 import * as bgController from "../../controllers/bg/bg.controller.js";
 import { handlePackingCapture } from "../../controllers/ai/lotCapture.controller.js";

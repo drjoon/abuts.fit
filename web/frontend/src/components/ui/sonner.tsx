@@ -1,3 +1,7 @@
+// related files:
+// - web/frontend/rules.md
+// - web/frontend/src/App.tsx
+// - web/frontend/src/features/layout/DashboardLayout.tsx
 import { useTheme } from "next-themes"
 import { Toaster as Sonner, toast } from "sonner"
 

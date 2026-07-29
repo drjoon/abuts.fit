@@ -1,3 +1,7 @@
+// related files:
+// - web/backend/rules.md
+// - web/backend/app.js
+// - web/backend/server.js
 /**
  * FilenameRule 컨트롤러 (ESM 스타일)
  * 파일명 파싱 룰 테이블 관리

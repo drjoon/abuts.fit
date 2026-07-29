@@ -1,3 +1,7 @@
+// related files:
+// - web/backend/rules.md
+// - web/backend/app.js
+// - web/backend/server.js
 import { Router } from "express";
 const router = Router();
 import * as userController from "../../controllers/users/user.controller.js";
