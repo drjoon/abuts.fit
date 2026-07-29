@@ -1165,7 +1165,7 @@ export async function getChatMessages(req, res) {
             updatedAt: 1,
           })
           .populate("sender", "name role")
-          .sort({ createdAt: -1 })
+          .sort({ createdAt: -1, _id: -1 })
           .skip(skip)
           .limit(limit + 1)
           .lean();

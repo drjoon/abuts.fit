@@ -45,6 +45,20 @@ const INITIAL_PAGINATION: ChatPagination = {
 const makeCacheKey = (roomId: string, userCacheId: string) =>
   `chat-messages:${String(userCacheId || "anon").trim()}:${String(roomId || "").trim()}:p1:l${CHAT_PAGE_LIMIT}`;
 
+const getMessageSortTime = (message: ChatMessage) => {
+  const ts = new Date(String(message?.createdAt || "")).getTime();
+  return Number.isFinite(ts) ? ts : 0;
+};
+
+const sortMessagesChronologically = (rows: ChatMessage[]) => {
+  const list = Array.isArray(rows) ? [...rows] : [];
+  return list.sort((a, b) => {
+    const tDiff = getMessageSortTime(a) - getMessageSortTime(b);
+    if (tDiff !== 0) return tDiff;
+    return String(a?._id || "").localeCompare(String(b?._id || ""));
+  });
+};
+
 const readCachedMessages = (roomId: string, userCacheId: string) => {
   const cacheKey = makeCacheKey(roomId, userCacheId);
   const hit = CHAT_MESSAGES_CACHE.get(cacheKey);
@@ -60,7 +74,7 @@ const writeCachedMessages = (
 ) => {
   const cacheKey = makeCacheKey(roomId, userCacheId);
   CHAT_MESSAGES_CACHE.set(cacheKey, {
-    messages: Array.isArray(messages) ? messages : [],
+    messages: sortMessagesChronologically(messages),
     pagination: pagination || INITIAL_PAGINATION,
     cachedAt: Date.now(),
   });
@@ -135,7 +149,7 @@ export const useChatMessages = (options: UseChatMessagesOptions = {}) => {
           throw new Error("메시지 조회에 실패했습니다.");
         }
 
-        const nextMessages = res.data.data.messages || [];
+        const nextMessages = sortMessagesChronologically(res.data.data.messages || []);
         const nextPagination = res.data.data.pagination || INITIAL_PAGINATION;
 
         writeCachedMessages(normalizedRoomId, userCacheId, nextMessages, nextPagination);
@@ -292,7 +306,7 @@ export const useChatMessages = (options: UseChatMessagesOptions = {}) => {
 
     const cached = readCachedMessages(normalizedRoomId, userCacheId);
     if (cached) {
-      setMessages(cached.messages || []);
+      setMessages(sortMessagesChronologically(cached.messages || []));
       setPagination(cached.pagination || INITIAL_PAGINATION);
 
       // SWR: 캐시를 즉시 보여주고, 백그라운드에서 최신화
@@ -335,7 +349,7 @@ export const useChatMessages = (options: UseChatMessagesOptions = {}) => {
 
       setMessages((prev) => {
         if (prev.some((m) => String(m._id) === String(messageRaw._id))) return prev;
-        const next = [...prev, messageRaw];
+        const next = sortMessagesChronologically([...prev, messageRaw]);
         writeCachedMessages(String(roomId || "").trim(), userCacheId, next, pagination);
         return next;
       });
