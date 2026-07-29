@@ -156,7 +156,7 @@ const Index = () => {
                 id="public-practice-quick-drop-input"
                 type="file"
                 multiple
-                accept=".stl"
+                accept=".stl,.ply,.obj"
                 className="hidden"
                 onChange={(e) => {
                   const selected = Array.from(e.currentTarget.files || []);
@@ -192,7 +192,7 @@ const Index = () => {
                 <div className="mx-auto mb-2 w-fit rounded-full bg-blue-100 p-3 text-blue-700">
                   <UploadCloud className="h-5 w-5" />
                 </div>
-                <p className="text-base font-semibold">여기에 STL 파일을 드롭하세요</p>
+                <p className="text-base font-semibold">여기에 STL, PLY, OBJ 파일을 드롭하세요</p>
                 <p className="mt-1 text-sm text-slate-600">
                   비회원도 드롭 가능
                 </p>
