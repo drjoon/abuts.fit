@@ -1141,7 +1141,7 @@ export const PracticeFileTransferPage = () => {
       });
       if (!submitRes.ok) {
         const body = asApiMessagePayload(submitRes.data);
-        throw new Error(String(body?.message || "전송 제출에 실패했습니다."));
+        throw new Error(String(body?.message || "기공소 전송에 실패했습니다."));
       }
 
       rememberLab(selectedLab);
@@ -1149,13 +1149,13 @@ export const PracticeFileTransferPage = () => {
       setRequestMemo("");
 
       toast({
-        title: "전송 제출 완료",
-        description: "전송이 정상 접수되었습니다.",
+        title: "기공소 전송 완료",
+        description: "기공소로 정상 전송되었습니다.",
       });
       navigate("/practice/dashboard");
     } catch (error) {
       toast({
-        title: "전송 제출 실패",
+        title: "기공소 전송 실패",
         description:
           error instanceof Error ? error.message : "잠시 후 다시 시도해주세요.",
         variant: "destructive",
@@ -1183,8 +1183,8 @@ export const PracticeFileTransferPage = () => {
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-                <div className="space-y-3">
-                  <div className="rounded-xl border border-dashed bg-background p-4 text-center">
+                <div className="flex h-full min-h-0 flex-col gap-3">
+                  <div className="rounded-xl border border-dashed bg-background p-4 text-center flex flex-1 flex-col items-center justify-center">
                     <p className="text-base font-semibold">파일을 드래그 & 드롭하세요</p>
                     <p className="mt-1 text-sm text-muted-foreground">{PRACTICE_ACCEPTED_HINT}</p>
                     <div className="mt-3">
@@ -1215,7 +1215,7 @@ export const PracticeFileTransferPage = () => {
                     </div>
                   </div>
 
-                  <div className="rounded-xl border bg-background p-4">
+                  <div className="rounded-xl border bg-background p-4 flex flex-1 min-h-0 flex-col">
                     <div className="flex items-center justify-between gap-2">
                       <p className="text-base font-semibold">
                         총 {files.length}개 파일 · 약 {totalSizeMb}MB
@@ -1232,11 +1232,11 @@ export const PracticeFileTransferPage = () => {
                       </Button>
                     </div>
                     {files.length === 0 ? (
-                      <div className="mt-3 rounded-lg border border-dashed px-4 py-8 text-center text-sm text-muted-foreground">
+                      <div className="mt-3 flex flex-1 items-center justify-center rounded-lg border border-dashed px-4 py-8 text-center text-sm text-muted-foreground">
                         아직 추가된 파일이 없습니다.
                       </div>
                     ) : (
-                      <div className="mt-3 max-h-[15.5rem] overflow-y-auto pr-1">
+                      <div className="mt-3 min-h-0 flex-1 overflow-y-auto pr-1">
                         <div className="grid grid-cols-1 gap-2 auto-rows-[4.25rem]">
                           {files.map((file, index) => (
                             <div
@@ -1446,7 +1446,7 @@ export const PracticeFileTransferPage = () => {
                   onClick={() => void handleSubmitPracticeRequest()}
                   disabled={requestSubmitting}
                 >
-                  {requestSubmitting ? "파일 보내는 중..." : "파일 보내기"}
+                  {requestSubmitting ? "기공소로 전송 중..." : "기공소로 전송"}
                 </Button>
               </div>
             </CardContent>
