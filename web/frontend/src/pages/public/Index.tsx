@@ -142,7 +142,13 @@ const Index = () => {
           <Card className="border-blue-200 bg-gradient-to-br from-white to-blue-50 text-slate-900 shadow-[0_18px_45px_rgba(6,8,20,0.35)] backdrop-blur-2xl">
             <CardHeader className="space-y-3">
               <CardTitle className="text-xl md:text-2xl">
-                치과에서 기공소로 파일 전송
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="inline-flex items-center gap-1 rounded-full bg-blue-100 px-2.5 py-1 text-xs font-semibold text-blue-700">
+                    <Send className="h-3.5 w-3.5" />
+                    간편한 전송
+                  </span>
+                  <span>치과에서 기공소로 파일 전송</span>
+                </div>
               </CardTitle>
             </CardHeader>
             <CardContent className="">

@@ -52,6 +52,12 @@ import {
 import { cn } from "@/shared/ui/cn";
 import { PeriodFilter } from "@/shared/ui/PeriodFilter";
 import { usePeriodStore } from "@/store/usePeriodStore";
+import { useToast } from "@/shared/hooks/use-toast";
+import { apiFetch } from "@/shared/api/apiClient";
+import { parseFilenameWithRules } from "@/shared/filename/parseFilenameWithRules";
+import { useUploadWithProgressToast } from "@/shared/hooks/useUploadWithProgressToast";
+import { type TempUploadedFile } from "@/shared/hooks/useS3TempUpload";
+import { useAuthStore } from "@/store/useAuthStore";
 import {
   PRACTICE_ACCEPTED_HINT,
   getBusinessLabel,
@@ -61,7 +67,11 @@ import {
 export const PracticeFileTransferPage = () => {
   const navigate = useNavigate();
   const { period, setPeriod } = usePeriodStore();
+  const { toast } = useToast();
+  const authToken = useAuthStore((s) => s.token);
+  const authUser = useAuthStore((s) => s.user);
   const [requestSearchTerm, setRequestSearchTerm] = useState("");
+  const [requestSubmitting, setRequestSubmitting] = useState(false);
   const {
     files,
     totalSizeMb,
@@ -80,7 +90,9 @@ export const PracticeFileTransferPage = () => {
     handleIncomingFiles,
     removeFile,
     clearAllFiles,
+    rememberLab,
   } = usePracticeTransferStep1();
+  const { uploadFilesWithToast } = useUploadWithProgressToast({ token: authToken });
 
   const recentRequests = useMemo(
     () => [
@@ -152,6 +164,155 @@ export const PracticeFileTransferPage = () => {
       { sent: 0, waiting: 0, delivered: 0 },
     );
   }, [filteredRecentRequests]);
+
+  const extractDataFromResponse = <T,>(raw: unknown): T | null => {
+    if (!raw || typeof raw !== "object") return null;
+    const payload = raw as { data?: unknown };
+    if (payload.data === undefined) return raw as T;
+    return payload.data as T;
+  };
+
+  const asApiMessagePayload = (value: unknown) => {
+    if (!value || typeof value !== "object") return {} as { message?: string };
+    return value as { message?: string };
+  };
+
+  const handleSubmitPracticeRequest = async () => {
+    if (requestSubmitting) return;
+
+    if (!authToken) {
+      toast({
+        title: "로그인이 필요합니다",
+        description: "다시 로그인 후 시도해주세요.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!files.length) {
+      toast({
+        title: "파일이 필요합니다",
+        description: "최소 1개 STL 파일을 업로드해주세요.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!selectedLab?._id) {
+      toast({
+        title: "기공소를 선택해주세요",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!String(requestMemo || "").trim()) {
+      toast({
+        title: "의뢰 메모를 입력해주세요",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setRequestSubmitting(true);
+    try {
+      const createDraftRes = await apiFetch<unknown>({
+        path: "/api/requests/drafts",
+        method: "POST",
+        token: authToken,
+        jsonBody: { caseInfos: [] },
+      });
+      if (!createDraftRes.ok) {
+        throw new Error("드래프트 생성에 실패했습니다.");
+      }
+
+      const createdDraft = extractDataFromResponse<{ _id?: string }>(
+        createDraftRes.data,
+      );
+      const draftId = String(createdDraft?._id || "").trim();
+      if (!draftId) throw new Error("draftId를 받지 못했습니다.");
+
+      const uploadedTempFiles: TempUploadedFile[] = await uploadFilesWithToast(files);
+
+      const clinicName = String(
+        (authUser as { business?: string } | null)?.business || authUser?.name || "",
+      ).trim();
+      const caseInfosPayload = files.map((file, index) => {
+        const tempFile = uploadedTempFiles[index];
+        const parsed = parseFilenameWithRules(file.name);
+        const dotIndex = file.name.lastIndexOf(".");
+        const baseName = dotIndex > 0 ? file.name.slice(0, dotIndex) : file.name;
+        const fallbackPatientName = String(baseName || `케이스 ${index + 1}`).trim();
+        const patientName = String(parsed.patientName || fallbackPatientName).trim();
+        const tooth = String(parsed.tooth || "").trim();
+
+        return {
+          clinicName,
+          patientName,
+          tooth,
+          workType: "abutment",
+          designSoftware: "3Shape",
+          file: {
+            originalName: tempFile.originalName,
+            size: tempFile.size,
+            mimetype: tempFile.mimetype,
+            s3Key: tempFile.key,
+          },
+          newSystemRequest: {
+            requested: true,
+            manufacturer: "",
+            brand: "",
+            family: "",
+            message: `[기공소: ${String(selectedLab?.name || "")}] ${String(requestMemo || "").trim()}`,
+            free: true,
+            tag: "practice_file_transfer",
+          },
+        };
+      });
+
+      const patchDraftRes = await apiFetch<unknown>({
+        path: `/api/requests/drafts/${encodeURIComponent(draftId)}`,
+        method: "PATCH",
+        token: authToken,
+        jsonBody: { caseInfos: caseInfosPayload },
+      });
+      if (!patchDraftRes.ok) {
+        const body = asApiMessagePayload(patchDraftRes.data);
+        throw new Error(String(body?.message || "드래프트 저장에 실패했습니다."));
+      }
+
+      const submitRes = await apiFetch<unknown>({
+        path: "/api/requests/from-draft",
+        method: "POST",
+        token: authToken,
+        jsonBody: { draftId },
+      });
+      if (!submitRes.ok) {
+        const body = asApiMessagePayload(submitRes.data);
+        throw new Error(String(body?.message || "의뢰 제출에 실패했습니다."));
+      }
+
+      rememberLab(selectedLab);
+      await clearAllFiles();
+      setRequestMemo("");
+
+      toast({
+        title: "의뢰 제출 완료",
+        description: "의뢰가 정상 접수되었습니다.",
+      });
+      navigate("/practice/dashboard");
+    } catch (error) {
+      toast({
+        title: "의뢰 제출 실패",
+        description:
+          error instanceof Error ? error.message : "잠시 후 다시 시도해주세요.",
+        variant: "destructive",
+        duration: 5000,
+      });
+    } finally {
+      setRequestSubmitting(false);
+    }
+  };
 
   return (
     <PageFileDropZone
@@ -429,9 +590,10 @@ export const PracticeFileTransferPage = () => {
                 <Button
                   type="button"
                   className="bg-blue-600 text-white hover:bg-blue-700"
-                  onClick={() => navigate("/practice/dropzone")}
+                  onClick={() => void handleSubmitPracticeRequest()}
+                  disabled={requestSubmitting}
                 >
-                  파일 전송
+                  {requestSubmitting ? "의뢰 보내는 중..." : "의뢰 보내기"}
                 </Button>
               </div>
             </CardContent>

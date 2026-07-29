@@ -47,6 +47,8 @@ import { useToast } from "@/shared/hooks/use-toast";
 import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { parseFilenameWithRules } from "@/shared/filename/parseFilenameWithRules";
+import { useUploadWithProgressToast } from "@/shared/hooks/useUploadWithProgressToast";
+import { type TempUploadedFile } from "@/shared/hooks/useS3TempUpload";
 import {
   Popover,
   PopoverContent,
@@ -81,7 +83,6 @@ const PRACTICE_DRAFT_STORAGE_KEY = "practice_dropzone_draft_v2";
 const PRACTICE_FILE_CACHE_META_KEY = "practice_dropzone_file_cache_meta_v1";
 const PRACTICE_SESSION_META_KEY = "practice_dropzone_session_meta_v1";
 const PRACTICE_SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 1개월
-const PRACTICE_S3_UPLOAD_TIMEOUT_MS = 60 * 1000;
 const PRACTICE_FILE_CACHE_MAX_TOTAL_BYTES = 300 * 1024 * 1024; // 300MB
 
 const WIZARD_STEPS = ["파일드롭 & 의뢰정보", "치과정보"] as const;
@@ -122,18 +123,7 @@ type RegisterResponsePayload = {
   };
 };
 
-type TempUploadedFile = {
-  _id?: string;
-  originalName: string;
-  mimetype: string;
-  size: number;
-  key?: string;
-};
 
-type TempPresignItem = {
-  uploadUrl: string;
-  file: TempUploadedFile;
-};
 
 type PracticeAuthMode = "checking" | "session" | "login" | "signup" | "recover";
 
@@ -352,6 +342,10 @@ export const PracticeDropzonePage = () => {
   const [step, setStep] = useState<0 | 1>(0);
   const [draftHydrated, setDraftHydrated] = useState(false);
 
+  const fileCacheMetaKey = PRACTICE_FILE_CACHE_META_KEY;
+  const fileCacheMaxTotalBytes = PRACTICE_FILE_CACHE_MAX_TOTAL_BYTES;
+  const { uploadFilesWithToast } = useUploadWithProgressToast({ token: authToken });
+
   const {
     files,
     setFiles,
@@ -373,8 +367,8 @@ export const PracticeDropzonePage = () => {
     removeFile,
     clearAllFiles,
   } = usePracticeTransferStep1({
-    fileCacheMetaKey: PRACTICE_FILE_CACHE_META_KEY,
-    fileCacheMaxTotalBytes: PRACTICE_FILE_CACHE_MAX_TOTAL_BYTES,
+    fileCacheMetaKey,
+    fileCacheMaxTotalBytes,
   });
 
   const [practiceName, setPracticeName] = useState("");
@@ -663,65 +657,7 @@ export const PracticeDropzonePage = () => {
     return payload.data as T;
   };
 
-  const uploadToPresignedUrl = (uploadUrl: string, file: File): Promise<void> => {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      xhr.open("PUT", uploadUrl);
-      xhr.timeout = PRACTICE_S3_UPLOAD_TIMEOUT_MS;
-      xhr.setRequestHeader("Content-Type", file.type || "application/octet-stream");
-      xhr.onload = () => {
-        if (xhr.status >= 200 && xhr.status < 300) {
-          resolve();
-          return;
-        }
-        reject(new Error(`S3 업로드에 실패했습니다. (${xhr.status})`));
-      };
-      xhr.onerror = () => reject(new Error("S3 업로드 중 오류가 발생했습니다."));
-      xhr.onabort = () => reject(new Error("S3 업로드가 중단되었습니다."));
-      xhr.ontimeout = () =>
-        reject(
-          new Error(
-            `S3 업로드 시간이 초과되었습니다 (${Math.floor(PRACTICE_S3_UPLOAD_TIMEOUT_MS / 1000)}초).`,
-          ),
-        );
-      xhr.send(file);
-    });
-  };
 
-  const uploadFilesToTempStorage = async (
-    inputFiles: File[],
-    token: string,
-  ): Promise<TempUploadedFile[]> => {
-    const presignRes = await apiFetch<unknown>({
-      path: "/api/files/temp/presign",
-      method: "POST",
-      token,
-      jsonBody: {
-        files: inputFiles.map((file) => ({
-          originalName: file.name,
-          mimetype: file.type || "application/octet-stream",
-          size: file.size,
-        })),
-      },
-    });
-
-    if (!presignRes.ok) {
-      throw new Error("업로드 URL 생성에 실패했습니다.");
-    }
-
-    const presigned = extractDataFromResponse<TempPresignItem[]>(presignRes.data);
-    if (!Array.isArray(presigned) || presigned.length !== inputFiles.length) {
-      throw new Error("업로드 준비 데이터가 올바르지 않습니다.");
-    }
-
-    await Promise.all(
-      presigned.map((item, index) =>
-        uploadToPresignedUrl(item.uploadUrl, inputFiles[index]),
-      ),
-    );
-
-    return presigned.map((item) => item.file);
-  };
 
   const submitPracticeRequest = async (token: string) => {
     if (!files.length) {
@@ -751,8 +687,7 @@ export const PracticeDropzonePage = () => {
       const draftId = String(createdDraft?._id || "").trim();
       if (!draftId) throw new Error("draftId를 받지 못했습니다.");
 
-      toast({ title: "파일 업로드 중", description: "잠시만 기다려주세요." });
-      const uploadedTempFiles = await uploadFilesToTempStorage(files, token);
+      const uploadedTempFiles = await uploadFilesWithToast(files);
 
       const caseInfosPayload = files.map((file, index) => {
         const tempFile = uploadedTempFiles[index];

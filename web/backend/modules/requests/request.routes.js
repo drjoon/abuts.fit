@@ -19,11 +19,11 @@ router.post(
 
 // ===== 신규 의뢰 생성 =====
 // SSOT: POST /api/requests/from-draft (Draft 기반 워크플로우)
-// Draft에서 의뢰 생성 (의뢰자만 가능)
+// Draft에서 의뢰 생성 (의뢰자/치과(practice) 가능)
 router.post(
   "/from-draft",
   authenticate,
-  authorize(["requestor", "admin"], { subRoles: ["owner", "staff"] }),
+  authorize(["requestor", "practice", "admin"], { subRoles: ["owner", "staff"] }),
   requestController.createRequestsFromDraft,
 );
 
