@@ -16,6 +16,7 @@
  * - web/backend/modules/practiceTransfers/practiceTransfer.routes.js
  * - web/frontend/src/pages/public/Index.tsx
  * - web/frontend/src/App.tsx
+ * - web/frontend/src/pages/practice/hooks/usePracticeTransferStep1.ts
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -669,7 +670,7 @@ export const PracticeDropzonePage = () => {
     if (!files.length) {
       toast({
         title: "파일이 필요합니다",
-        description: "최소 1개 STL 파일을 업로드해주세요.",
+        description: "최소 1개 STL, PLY, OBJ 파일을 업로드해주세요.",
         variant: "destructive",
       });
       return false;
@@ -1144,6 +1145,7 @@ export const PracticeDropzonePage = () => {
                         <input
                           id="practice-scan-file-input"
                           type="file"
+                          accept=".stl,.ply,.obj"
                           className="hidden"
                           multiple
                           onChange={(e) => {
@@ -1708,7 +1710,7 @@ export const PracticeDropzonePage = () => {
                   if (step === 0 && !canGoStep2) {
                     toast({
                       title: "입력 확인",
-                      description: "STL 파일, 기공소 선택, 의뢰 메모를 모두 입력해주세요.",
+                      description: "STL, PLY, OBJ 파일, 기공소 선택, 의뢰 메모를 모두 입력해주세요.",
                       variant: "destructive",
                     });
                     return;

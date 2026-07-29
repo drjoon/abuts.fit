@@ -2,7 +2,23 @@ import { Types } from "mongoose";
 import PracticeTransfer from "../../models/practiceTransfer.model.js";
 import { emitAppEventToUser } from "../../socket.js";
 
+// related files:
+// - web/frontend/src/pages/practice/hooks/usePracticeTransferStep1.ts
+// - web/frontend/src/pages/practice/PracticeDropzonePage.tsx
+// - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
+// - web/backend/models/practiceTransfer.model.js
 const PRACTICE_TAGS = ["practice_dropzone", "practice_file_transfer"];
+const PRACTICE_ALLOWED_MODEL_EXTENSIONS = new Set([".stl", ".ply", ".obj"]);
+
+const getLowerExt = (filename) => {
+  const raw = String(filename || "").trim().toLowerCase();
+  const idx = raw.lastIndexOf(".");
+  if (idx < 0) return "";
+  return raw.slice(idx);
+};
+
+const isAllowedPracticeModelFile = (filename) =>
+  PRACTICE_ALLOWED_MODEL_EXTENSIONS.has(getLowerExt(filename));
 
 const extractTransferIdFromMessage = (message) => {
   const raw = String(message || "").trim();
@@ -117,6 +133,7 @@ export async function createPracticeTransfer(req, res) {
         const originalName = String(file?.originalName || file?.name || "").trim();
         const s3Key = String(file?.s3Key || file?.key || "").trim();
         if (!originalName || !s3Key) return null;
+        if (!isAllowedPracticeModelFile(originalName)) return null;
 
         return {
           patientName: String(ci?.patientName || "").trim(),
@@ -134,7 +151,7 @@ export async function createPracticeTransfer(req, res) {
     if (files.length === 0) {
       return res.status(400).json({
         success: false,
-        message: "저장할 STL 파일이 없습니다.",
+        message: "저장할 STL, PLY, OBJ 파일이 없습니다.",
       });
     }
 

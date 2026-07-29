@@ -15,6 +15,7 @@
  * - web/backend/controllers/chats/chat.controller.js
  * - web/backend/modules/practiceTransfers/practiceTransfer.routes.js
  * - web/backend/controllers/practiceTransfers/practiceTransfer.controller.js
+ * - web/frontend/src/pages/practice/hooks/usePracticeTransferStep1.ts
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -912,7 +913,7 @@ export const PracticeFileTransferPage = () => {
     if (!files.length) {
       toast({
         title: "파일이 필요합니다",
-        description: "최소 1개 STL 파일을 업로드해주세요.",
+        description: "최소 1개 STL, PLY, OBJ 파일을 업로드해주세요.",
         variant: "destructive",
       });
       return;
@@ -1049,6 +1050,7 @@ export const PracticeFileTransferPage = () => {
                       <input
                         id="practice-file-transfer-input"
                         type="file"
+                        accept=".stl,.ply,.obj"
                         className="hidden"
                         multiple
                         onChange={(e) => {

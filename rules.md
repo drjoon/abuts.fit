@@ -1822,21 +1822,23 @@
 - 공개 진입점은 `/practice/dropzone`이며, **비회원 접근 허용**을 기본으로 합니다.
 - 대시보드 진입점은 `/dashboard`(role=`practice`)이며, 의뢰 전송 버튼은 `/dashboard/practice/dropzone` 또는 `/practice/dropzone`으로 연결합니다.
 - 초기 단계에서는 단일 페이지 중심 UX를 우선하고, 실제 업로드 저장/회원가입 이어쓰기 API는 후속 단계에서 연결합니다.
-- 드롭존/업로드 목록 분류 기준은 `NewRequestPage`의 STL 분류 정책(`.stl` 허용, `.pts` 자동 제외, 나머지 확장자 제외)을 우선 재사용합니다.
+- practice 드롭존/업로드 목록 분류는 `STL/PLY/OBJ` 허용, `.pts` 자동 제외, 그 외 확장자 제외 정책을 사용합니다.
 - 치과병의원 입력 주소는 설정-사업자와 동일한 공통 주소 컴포넌트(`BusinessAddressFields`)를 사용해 UX를 통일합니다.
 
 관련 파일:
 - `web/frontend/src/pages/practice/PracticeDropzonePage.tsx`
+- `web/frontend/src/pages/practice/PracticeFileTransferPage.tsx`
 - `web/frontend/src/pages/practice/PracticeDashboardPage.tsx`
 - `web/frontend/src/pages/public/Index.tsx`
 - `web/frontend/src/features/dashboard/DashboardHome.tsx`
 - `web/frontend/src/features/layout/DashboardLayout.tsx`
 - `web/frontend/src/store/useAuthStore.ts`
 - `web/frontend/src/App.tsx`
-- `web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx`
+- `web/frontend/src/pages/practice/hooks/usePracticeTransferStep1.ts`
 - `web/frontend/src/shared/components/business/settings/business/BusinessAddressFields.tsx`
 - `web/frontend/src/shared/components/business/settings/business/BusinessForm.tsx`
 - `web/frontend/src/shared/components/business/settings/business/BusinessSearchSection.tsx`
+- `web/backend/controllers/practiceTransfers/practiceTransfer.controller.js`
 
 #### 공통 코드 위치
 

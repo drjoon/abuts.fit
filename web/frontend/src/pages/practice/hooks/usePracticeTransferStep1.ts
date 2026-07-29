@@ -6,7 +6,10 @@ import {
   deleteFile as deleteFileFromIndexedDb,
 } from "@/shared/storage/fileIndexedDB";
 
-export const PRACTICE_ACCEPTED_HINT = "STL만 업로드 가능";
+// related files:
+// - web/frontend/src/pages/practice/PracticeDropzonePage.tsx
+// - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
+export const PRACTICE_ACCEPTED_HINT = "STL, PLY, OBJ 업로드 가능";
 
 export type SearchBusinessResult = {
   _id: string;
@@ -18,7 +21,7 @@ export type SearchBusinessResult = {
 };
 
 type ClassifiedUploadBatch = {
-  stlFiles: File[];
+  modelFiles: File[];
   rejectedFiles: { name: string; reason: string }[];
   ignoredFiles: { name: string; reason: string }[];
 };
@@ -161,7 +164,7 @@ export const usePracticeTransferStep1 = (options?: Options) => {
   };
 
   const classifyIncomingFiles = (selectedFiles: File[]): ClassifiedUploadBatch => {
-    const stlFiles: File[] = [];
+    const modelFiles: File[] = [];
     const rejectedFiles: { name: string; reason: string }[] = [];
     const ignoredFiles: { name: string; reason: string }[] = [];
 
@@ -176,18 +179,18 @@ export const usePracticeTransferStep1 = (options?: Options) => {
         return;
       }
 
-      if (ext === ".stl") {
-        stlFiles.push(file);
+      if (ext === ".stl" || ext === ".ply" || ext === ".obj") {
+        modelFiles.push(file);
         return;
       }
 
       rejectedFiles.push({
         name: file.name,
-        reason: "STL 파일만 업로드할 수 있어요.",
+        reason: "STL, PLY, OBJ 파일만 업로드할 수 있어요.",
       });
     });
 
-    return { stlFiles, rejectedFiles, ignoredFiles };
+    return { modelFiles, rejectedFiles, ignoredFiles };
   };
 
   const persistFilesToIndexedDb = async (targetFiles: File[]) => {
@@ -247,8 +250,8 @@ export const usePracticeTransferStep1 = (options?: Options) => {
     batch: ClassifiedUploadBatch,
     options?: { suppressEmptyUploadToast?: boolean },
   ) => {
-    if (batch.stlFiles.length > 0) {
-      setFiles((prev) => [...prev, ...batch.stlFiles]);
+    if (batch.modelFiles.length > 0) {
+      setFiles((prev) => [...prev, ...batch.modelFiles]);
     }
 
     if (batch.rejectedFiles.length > 0) {
@@ -266,10 +269,10 @@ export const usePracticeTransferStep1 = (options?: Options) => {
       });
     }
 
-    if (batch.stlFiles.length === 0 && !options?.suppressEmptyUploadToast) {
+    if (batch.modelFiles.length === 0 && !options?.suppressEmptyUploadToast) {
       toast({
         title: "업로드할 파일이 없습니다",
-        description: "선택된 파일 중 업로드 가능한 STL이 없었습니다.",
+        description: "선택된 파일 중 업로드 가능한 STL, PLY, OBJ가 없었습니다.",
         variant: "destructive",
         duration: 2800,
       });
@@ -281,29 +284,29 @@ export const usePracticeTransferStep1 = (options?: Options) => {
     if (!incoming.length) return;
 
     const rawBatch = classifyIncomingFiles(incoming);
-    const uniqueIncomingStl = dedupeFiles(rawBatch.stlFiles);
+    const uniqueIncomingModelFiles = dedupeFiles(rawBatch.modelFiles);
     const duplicateWithinIncomingCount =
-      rawBatch.stlFiles.length - uniqueIncomingStl.length;
+      rawBatch.modelFiles.length - uniqueIncomingModelFiles.length;
 
     const existingFileKeys = new Set(files.map((file) => toPracticeFileKey(file)));
-    const dedupedStlFiles = uniqueIncomingStl.filter(
+    const dedupedModelFiles = uniqueIncomingModelFiles.filter(
       (file) => !existingFileKeys.has(toPracticeFileKey(file)),
     );
     const duplicateAgainstExistingCount =
-      uniqueIncomingStl.length - dedupedStlFiles.length;
+      uniqueIncomingModelFiles.length - dedupedModelFiles.length;
 
     const duplicateExcludedCount =
       duplicateWithinIncomingCount + duplicateAgainstExistingCount;
 
     const batch: ClassifiedUploadBatch = {
       ...rawBatch,
-      stlFiles: dedupedStlFiles,
+      modelFiles: dedupedModelFiles,
     };
 
     applyClassifiedBatch(batch, {
       suppressEmptyUploadToast:
         duplicateExcludedCount > 0 &&
-        batch.stlFiles.length === 0 &&
+        batch.modelFiles.length === 0 &&
         batch.rejectedFiles.length === 0 &&
         batch.ignoredFiles.length === 0,
     });
@@ -316,8 +319,8 @@ export const usePracticeTransferStep1 = (options?: Options) => {
       });
     }
 
-    if (batch.stlFiles.length > 0) {
-      void persistFilesToIndexedDb(batch.stlFiles).then((removedKeys) => {
+    if (batch.modelFiles.length > 0) {
+      void persistFilesToIndexedDb(batch.modelFiles).then((removedKeys) => {
         if (!Array.isArray(removedKeys) || removedKeys.length === 0) return;
         setFiles((prev) =>
           prev.filter((file) => !removedKeys.includes(toPracticeFileKey(file))),
