@@ -1513,7 +1513,7 @@ export const PracticeFileTransferPage = () => {
                     <p className="text-xs text-muted-foreground truncate">
                       파일 {transfer.fileCount}개
                       {String(transfer.transferMemo || "").trim()
-                        ? ` · ${String(transfer.transferMemo || "").replace(/\s+/g, " ").trim()}`
+                        ? ` · 메모: ${String(transfer.transferMemo || "").replace(/\s+/g, " ").trim()}`
                         : ""}
                     </p>
                   </div>

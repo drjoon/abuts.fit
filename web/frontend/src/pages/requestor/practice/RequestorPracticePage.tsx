@@ -931,10 +931,12 @@ export default function RequestorPracticePage() {
                     {user?.companyName ? ` → ${user.companyName}` : ""}
                   </div>
 
-                  <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                    <span>파일 {transfer.fileCount}개</span>
-                    {transfer.transferMemo ? <span>메모: {transfer.transferMemo}</span> : null}
-                  </div>
+                  <p className="mt-2 text-xs text-muted-foreground truncate">
+                    파일 {transfer.fileCount}개
+                    {String(transfer.transferMemo || "").trim()
+                      ? ` · 메모: ${String(transfer.transferMemo || "").replace(/\s+/g, " ").trim()}`
+                      : ""}
+                  </p>
                 </button>
               );
             })}
