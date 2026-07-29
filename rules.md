@@ -155,6 +155,7 @@
 - practice
   - `web/frontend/src/pages/practice/PracticeDropzonePage.tsx`
   - `web/frontend/src/pages/practice/PracticeFileTransferPage.tsx`
+  - `web/frontend/src/shared/components/PracticeTransferDetailChatDialog.tsx`
 
 ### 4.2 Backend
 
