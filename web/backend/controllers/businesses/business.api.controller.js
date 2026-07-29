@@ -9,6 +9,7 @@ import * as ownerController from "./business.owner.controller.js";
 export const {
   getMyBusiness,
   searchBusinesses,
+  getBusinessPublicById,
   updateMyBusiness,
   clearMyBusinessLicense,
   checkBusinessNumberDuplicate,
@@ -39,6 +40,7 @@ export const {
 export default {
   getMyBusiness,
   searchBusinesses,
+  getBusinessPublicById,
   updateMyBusiness,
   clearMyBusinessLicense,
   checkBusinessNumberDuplicate,

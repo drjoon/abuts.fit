@@ -16,7 +16,8 @@
  * - web/backend/modules/practiceTransfers/practiceTransfer.routes.js
  * - web/frontend/src/pages/public/Index.tsx
  * - web/frontend/src/App.tsx
- * - web/frontend/src/pages/practice/hooks/usePracticeTransferStep1.ts
+ // - web/frontend/src/pages/practice/hooks/usePracticeTransferStep1.ts
+ // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -521,19 +522,78 @@ export const PracticeDropzonePage = () => {
     if (!searchParamsKey) return;
 
     const qp = new URLSearchParams(searchParamsKey);
-    const labId = String(qp.get("labId") || "").trim();
-    const labName = String(qp.get("labName") || "").trim();
-    const labBusinessNumber = String(qp.get("labBn") || "").trim();
+    const labId = String(qp.get("labId") || qp.get("l") || "").trim();
+    const labName = String(qp.get("labName") || qp.get("n") || "").trim();
+    const labBusinessNumber = String(qp.get("labBn") || qp.get("b") || "").trim();
 
     if (!labId && !labName) return;
 
-    if (!labName) return;
+    if (labName) {
+      setSelectedLab({
+        _id: labId || `prefilled:${labName}`,
+        name: labName,
+        businessNumber: labBusinessNumber,
+      });
+      return;
+    }
 
-    setSelectedLab({
-      _id: labId || `prefilled:${labName}`,
-      name: labName,
-      businessNumber: labBusinessNumber,
-    });
+    if (!labId) return;
+
+    let cancelled = false;
+
+    const resolveLabById = async () => {
+      try {
+        const res = await apiFetch<unknown>({
+          path: `/api/businesses/public/${encodeURIComponent(labId)}?businessType=${encodeURIComponent("requestor")}`,
+          method: "GET",
+        });
+
+        if (!res.ok) {
+          if (!cancelled) {
+            setSelectedLab({
+              _id: labId,
+              name: "",
+              businessNumber: labBusinessNumber,
+            });
+          }
+          return;
+        }
+
+        const body = res.data;
+        const data =
+          body && typeof body === "object" && "data" in (body as Record<string, unknown>)
+            ? (body as { data?: unknown }).data
+            : body;
+
+        const item = data && typeof data === "object" ? (data as Record<string, unknown>) : null;
+        const resolvedName = String(item?.name || "").trim();
+        const resolvedBusinessNumber = String(item?.businessNumber || "").trim();
+
+        if (cancelled) return;
+
+        setSelectedLab({
+          _id: String(item?._id || labId).trim() || labId,
+          name: resolvedName,
+          businessNumber: resolvedBusinessNumber || labBusinessNumber,
+          representativeName: String(item?.representativeName || "").trim() || undefined,
+          address: String(item?.address || "").trim() || undefined,
+          businessType: String(item?.businessType || "requestor").trim() || "requestor",
+        });
+      } catch {
+        if (cancelled) return;
+        setSelectedLab({
+          _id: labId,
+          name: "",
+          businessNumber: labBusinessNumber,
+        });
+      }
+    };
+
+    void resolveLabById();
+
+    return () => {
+      cancelled = true;
+    };
   }, [draftHydrated, searchParamsKey, setSelectedLab]);
 
   useEffect(() => {
@@ -1239,7 +1299,9 @@ export const PracticeDropzonePage = () => {
                           >
                             <span className="truncate">
                               {selectedLab
-                                ? getBusinessLabel(selectedLab)
+                                ? String(selectedLab.name || "").trim()
+                                  ? getBusinessLabel(selectedLab)
+                                  : "링크로 지정된 기공소"
                                 : "기공소를 검색해서 선택하세요"}
                             </span>
                             <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />

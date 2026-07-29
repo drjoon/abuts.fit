@@ -11,6 +11,7 @@ const router = Router();
 
 // 공개 검색(치과 드롭존 등 비로그인 화면에서 사용)
 router.get("/search-public", businessController.searchBusinesses);
+router.get("/public/:id", businessController.getBusinessPublicById);
 
 router.use(authenticate);
 

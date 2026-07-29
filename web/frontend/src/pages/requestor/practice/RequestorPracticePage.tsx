@@ -3,6 +3,7 @@
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/shared/realtime/socket.ts
 // - web/frontend/src/pages/requestor/referralGroups/RequestorReferralPage.tsx
+// - web/frontend/src/pages/practice/PracticeDropzonePage.tsx
 // - web/backend/modules/practiceTransfers/practiceTransfer.routes.js
 // - web/backend/controllers/practiceTransfers/practiceTransfer.controller.js
 // - web/backend/models/practiceTransfer.model.js
@@ -734,12 +735,10 @@ export default function RequestorPracticePage() {
     }
   }, [activeChatRoom?._id, chatAttachedFiles, chatDraft, chatSending, sendMessage, uploadFilesWithToast]);
 
-  const labName = String(user?.companyName || "").trim();
   const labId = String(user?.businessAnchorId || "").trim();
   const practiceLinkQuery = new URLSearchParams();
-  if (labId) practiceLinkQuery.set("labId", labId);
-  if (labName) practiceLinkQuery.set("labName", labName);
-  const practiceDropzoneLink = `${window.location.origin}/practice/dropzone${
+  if (labId) practiceLinkQuery.set("l", labId);
+  const practiceDropzoneLink = `${window.location.origin}/p${
     practiceLinkQuery.toString() ? `?${practiceLinkQuery.toString()}` : ""
   }`;
 
@@ -763,7 +762,7 @@ export default function RequestorPracticePage() {
   };
 
   const handleCopyPracticeMessage = async () => {
-    const message = `안녕하세요. 아래 링크로 스캔 파일을 전송해 주세요.\n${practiceDropzoneLink}`;
+    const message = `안녕하세요 🙂 아래 링크에서 구강 스캔 파일을 보내주세요.\n링크를 열면 기공소가 자동 선택됩니다.\n${practiceDropzoneLink}`;
     try {
       await navigator.clipboard.writeText(message);
       setPracticeMessageCopied(true);
@@ -783,7 +782,7 @@ export default function RequestorPracticePage() {
   };
 
   const handleShareToKakao = async () => {
-    const shareText = `안녕하세요. 아래 링크로 스캔 파일을 전송해 주세요.\n${practiceDropzoneLink}`;
+    const shareText = `안녕하세요 🙂 아래 링크에서 구강 스캔 파일을 보내주세요.\n링크를 열면 기공소가 자동 선택됩니다.\n${practiceDropzoneLink}`;
 
     if (navigator.share) {
       try {
@@ -825,7 +824,7 @@ export default function RequestorPracticePage() {
   return (
     <div className="flex flex-col h-full min-h-0">
       <div className="border-b border-gray-200 bg-white">
-        <div className="flex gap-8 px-4 sm:px-6">
+        <div className="flex gap-6 px-4 sm:px-6 overflow-x-auto whitespace-nowrap">
           <button
             onClick={() => setActiveTab("history")}
             className={`py-4 px-1 font-medium text-sm border-b-2 transition-colors ${
@@ -844,15 +843,15 @@ export default function RequestorPracticePage() {
                 : "border-transparent text-gray-600 hover:text-gray-900"
             }`}
           >
-            치과에 파일전송 링크 보내기
+            치과 초대 링크 공유
           </button>
         </div>
       </div>
 
-      <div className="flex-1 min-h-0 overflow-y-auto p-3">
+      <div className="flex-1 min-h-0 overflow-y-auto p-4 sm:p-6">
         {activeTab === "history" && (
           <div className="space-y-4">
-      <Card>
+            <Card>
         <CardHeader className="space-y-3">
           <div className="flex items-center justify-between gap-3">
             <CardTitle className="text-xl">치과 전송 내역</CardTitle>
@@ -928,25 +927,25 @@ export default function RequestorPracticePage() {
             </div>
           ) : null}
         </CardContent>
-      </Card>
+            </Card>
           </div>
         )}
 
         {activeTab === "send-link" && (
-          <div className="flex items-start justify-center min-h-full p-3">
+          <div className="flex items-start justify-center min-h-full">
             <Card className="w-full border-slate-200">
               <CardHeader className="space-y-2 px-8 pt-8 pb-4">
-                <CardTitle className="text-2xl">치과 파일전송 링크</CardTitle>
+                <CardTitle className="text-2xl">치과 전송 초대 링크</CardTitle>
                 <CardDescription>
-                  치과에서 접속하면 Step1에 내 기공소가 미리 선택되는 전용 링크입니다.
+                  치과에 이 링크를 보내면 파일 전송 화면이 바로 열리고, 내 기공소가 자동 선택됩니다.
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4 px-8 pb-8">
                 <div className="space-y-2">
                   <label className="text-xs font-semibold text-slate-700 uppercase tracking-wide">
-                    전용 링크
+                    공유 링크
                   </label>
-                  <div className="rounded-lg bg-slate-50 border border-slate-200 p-4 flex items-center justify-between gap-4">
+                  <div className="rounded-lg bg-slate-50 border border-slate-200 p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                     <p className="text-sm font-mono text-slate-700 break-all leading-relaxed">
                       {practiceDropzoneLink}
                     </p>
@@ -954,7 +953,7 @@ export default function RequestorPracticePage() {
                       onClick={() => void handleCopyPracticeDropzoneLink()}
                       variant="default"
                       size="sm"
-                      className="px-4 text-xs h-8 gap-1.5 shrink-0"
+                      className="px-4 text-xs h-8 gap-1.5 shrink-0 w-full sm:w-auto"
                     >
                       {practiceLinkCopied ? (
                         <>
@@ -964,7 +963,7 @@ export default function RequestorPracticePage() {
                       ) : (
                         <>
                           <Link2 className="w-4 h-4" />
-                          링크 복사
+                          복사하기
                         </>
                       )}
                     </Button>
@@ -973,42 +972,44 @@ export default function RequestorPracticePage() {
 
                 <div className="space-y-2">
                   <label className="text-xs font-semibold text-slate-700 uppercase tracking-wide">
-                    전송 안내 문구
+                    카카오톡 안내 문구
                   </label>
-                  <div className="rounded-lg bg-slate-50 border border-slate-200 p-4 text-sm text-slate-700 whitespace-pre-line">
-                    안녕하세요. 아래 링크로 스캔 파일을 전송해 주세요.
-                    {`\n${practiceDropzoneLink}`}
-                  </div>
-                  <div className="flex flex-wrap items-center justify-end gap-2">
-                    <Button
-                      type="button"
-                      variant="default"
-                      size="sm"
-                      className="h-8 gap-1.5"
-                      onClick={() => void handleShareToKakao()}
-                    >
-                      <MessageCircle className="w-4 h-4" />
-                      카카오톡으로 공유
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="h-8 gap-1.5"
-                      onClick={() => void handleCopyPracticeMessage()}
-                    >
-                      {practiceMessageCopied ? (
-                        <>
-                          <Copy className="w-4 h-4" />
-                          복사됨
-                        </>
-                      ) : (
-                        <>
-                          <Send className="w-4 h-4" />
-                          문구 복사
-                        </>
-                      )}
-                    </Button>
+                  <div className="rounded-lg bg-slate-50 border border-slate-200 p-4 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+                    <p className="text-sm text-slate-700 whitespace-pre-line break-all">
+                      안녕하세요 🙂 아래 링크에서 구강 스캔 파일을 보내주세요.
+                      {`\n링크를 열면 기공소가 자동 선택됩니다.\n${practiceDropzoneLink}`}
+                    </p>
+                    <div className="shrink-0 w-full sm:w-auto flex flex-col gap-2">
+                      <Button
+                        type="button"
+                        variant="default"
+                        size="sm"
+                        className="h-8 gap-1.5 w-full sm:w-auto"
+                        onClick={() => void handleShareToKakao()}
+                      >
+                        <MessageCircle className="w-4 h-4" />
+                        카카오톡 공유
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-8 gap-1.5 w-full sm:w-auto"
+                        onClick={() => void handleCopyPracticeMessage()}
+                      >
+                        {practiceMessageCopied ? (
+                          <>
+                            <Copy className="w-4 h-4" />
+                            복사됨
+                          </>
+                        ) : (
+                          <>
+                            <Send className="w-4 h-4" />
+                            문구 복사하기
+                          </>
+                        )}
+                      </Button>
+                    </div>
                   </div>
                 </div>
               </CardContent>

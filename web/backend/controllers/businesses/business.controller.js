@@ -2,6 +2,9 @@
 // - web/backend/rules.md
 // - web/backend/app.js
 // - web/backend/server.js
+// - web/backend/modules/businesses/business.routes.js
+// - web/frontend/src/pages/practice/PracticeDropzonePage.tsx
+import { Types } from "mongoose";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 import User from "../../models/user.model.js";
 import s3Utils from "../../utils/s3.utils.js";
@@ -519,6 +522,110 @@ export async function searchBusinesses(req, res) {
     return res.status(500).json({
       success: false,
       message: "사업자 검색 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
+export async function getBusinessPublicById(req, res) {
+  try {
+    const userRole = String(req.user?.role || "").trim();
+    const isAnonymous = !userRole;
+
+    if (!isAnonymous && !BUSINESS_ALLOWED_ROLE_SET.has(userRole) && userRole !== "admin") {
+      return res.status(403).json({
+        success: false,
+        message: "이 작업을 수행할 권한이 없습니다.",
+      });
+    }
+
+    const businessId = String(req.params?.id || "").trim();
+    if (!Types.ObjectId.isValid(businessId)) {
+      return res.status(400).json({
+        success: false,
+        message: "유효하지 않은 사업자 ID입니다.",
+      });
+    }
+
+    const rawType = String(req.query?.businessType || "").trim();
+    const requestedType = BUSINESS_ALLOWED_ROLE_SET.has(rawType)
+      ? rawType
+      : null;
+
+    const requestedBusinessType = isAnonymous
+      ? rawType === "all"
+        ? null
+        : requestedType
+      : rawType === "all"
+        ? null
+        : requestedType || resolveBusinessType(req.user, null);
+
+    const anchor = await BusinessAnchor.findById(businessId)
+      .select({
+        name: 1,
+        metadata: 1,
+        businessNumberNormalized: 1,
+        businessType: 1,
+        primaryContactUserId: 1,
+      })
+      .lean();
+
+    if (!anchor) {
+      return res.status(404).json({
+        success: false,
+        message: "사업자를 찾을 수 없습니다.",
+      });
+    }
+
+    const anchorType = String(anchor.businessType || "").trim();
+    if (requestedBusinessType && anchorType !== requestedBusinessType) {
+      return res.status(404).json({
+        success: false,
+        message: "사업자를 찾을 수 없습니다.",
+      });
+    }
+
+    if (!requestedBusinessType && userRole !== "admin" && anchorType === "admin") {
+      return res.status(404).json({
+        success: false,
+        message: "사업자를 찾을 수 없습니다.",
+      });
+    }
+
+    const bn = String(anchor.businessNumberNormalized || "").trim().toLowerCase();
+    if (bn.startsWith("practice-")) {
+      return res.status(404).json({
+        success: false,
+        message: "사업자를 찾을 수 없습니다.",
+      });
+    }
+
+    const ownerId = String(anchor.primaryContactUserId || "").trim();
+    if (ownerId && Types.ObjectId.isValid(ownerId)) {
+      const owner = await User.findById(ownerId).select({ role: 1 }).lean();
+      if (String(owner?.role || "").trim() === "practice") {
+        return res.status(404).json({
+          success: false,
+          message: "사업자를 찾을 수 없습니다.",
+        });
+      }
+    }
+
+    return res.json({
+      success: true,
+      data: {
+        _id: anchor._id,
+        name: String(anchor.name || "").trim(),
+        representativeName: String(anchor?.metadata?.representativeName || "").trim(),
+        businessNumber: String(anchor.businessNumberNormalized || "").trim(),
+        address: String(anchor?.metadata?.address || "").trim(),
+        businessType: anchorType,
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "사업자 조회 중 오류가 발생했습니다.",
       error: error.message,
     });
   }

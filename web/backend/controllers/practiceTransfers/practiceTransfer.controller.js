@@ -1,6 +1,7 @@
 import { Types } from "mongoose";
 import PracticeTransfer from "../../models/practiceTransfer.model.js";
 import User from "../../models/user.model.js";
+import BusinessAnchor from "../../models/businessAnchor.model.js";
 import { emitAppEventToUser } from "../../socket.js";
 
 // related files:
@@ -12,6 +13,7 @@ import { emitAppEventToUser } from "../../socket.js";
 // - web/backend/modules/practiceTransfers/practiceTransfer.routes.js
 // - web/backend/models/practiceTransfer.model.js
 // - web/backend/models/user.model.js
+// - web/backend/models/businessAnchor.model.js
 // - web/backend/socket.js
 const PRACTICE_TAGS = ["practice_dropzone", "practice_file_transfer"];
 const PRACTICE_ALLOWED_MODEL_EXTENSIONS = new Set([".stl", ".ply", ".obj"]);
@@ -192,7 +194,7 @@ export async function createPracticeTransfer(req, res) {
       extractTransferIdFromMessage(message) ||
       `PTX-${Date.now().toString(36).toUpperCase()}`;
 
-    const targetLabName =
+    let targetLabName =
       String(req.body?.targetLabName || "").trim() ||
       String(practiceRouting?.targetLabName || "").trim() ||
       extractLabNameFromMessage(message);
@@ -204,6 +206,13 @@ export async function createPracticeTransfer(req, res) {
     const targetLabAnchorId = Types.ObjectId.isValid(rawAnchorId)
       ? new Types.ObjectId(rawAnchorId)
       : null;
+
+    if (!targetLabName && targetLabAnchorId) {
+      const anchor = await BusinessAnchor.findById(targetLabAnchorId)
+        .select({ name: 1 })
+        .lean();
+      targetLabName = String(anchor?.name || "").trim();
+    }
 
     const transferMemo =
       String(req.body?.transferMemo || "").trim() || extractTransferMemoFromMessage(message);

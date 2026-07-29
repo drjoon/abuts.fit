@@ -400,6 +400,7 @@ const App = () => {
                   path="/practice/dropzone"
                   element={<PracticeDropzonePage />}
                 />
+                <Route path="/p" element={<PracticeDropzonePage />} />
                 <Route
                   path="/practice/dashboard"
                   element={
