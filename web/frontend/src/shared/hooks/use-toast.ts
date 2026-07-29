@@ -6,7 +6,7 @@ import * as React from "react";
 
 import type { ToastActionElement, ToastProps } from "@/components/ui/toast";
 
-// 동시에 여러 토스트를 쌓되, 5초 내 자동 종료되도록 설정
+// 동시에 여러 토스트를 쌓되, 기본 4초 내 자동 종료되도록 설정
 const TOAST_LIMIT = 5;
 const TOAST_REMOVE_DELAY = 5500; // 닫힘 후 제거까지 약간의 여유
 const DUPLICATE_SUPPRESS_INTERVAL = 5000;
@@ -179,7 +179,7 @@ function toast({ ...props }: Toast) {
 
   const hasDescription = !!descriptionText.trim();
   const descBytes = hasDescription ? getByteLength(descriptionText) : 0;
-  const duration = props.duration ?? 3000; // 기본 5초 유지
+  const duration = props.duration ?? 4000; // 공통 기본값 4초
 
   const id = genId();
 

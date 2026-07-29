@@ -1037,7 +1037,32 @@ export const PracticeFileTransferPage = () => {
     setChatAttachedFiles((prev) => prev.filter((_, i) => i !== idx));
   };
 
-  const handleRemoveCombinedFile = (target: {
+  const syncDraftFilesToServer = async (nextDraftFiles: DraftTransferFileItem[]) => {
+    if (!authToken) return;
+
+    if (nextDraftFiles.length === 0) {
+      await apiFetch<unknown>({
+        path: "/api/practice/transfers/draft",
+        method: "DELETE",
+        token: authToken,
+      });
+      return;
+    }
+
+    await apiFetch<unknown>({
+      path: "/api/practice/transfers/draft",
+      method: "POST",
+      token: authToken,
+      jsonBody: {
+        targetLabAnchorId: String(selectedLab?._id || "").trim() || null,
+        targetLabName: String(selectedLab?.name || "").trim(),
+        transferMemo: String(requestMemo || "").trim(),
+        files: nextDraftFiles.map((row) => ({ fileId: row.fileId })),
+      },
+    });
+  };
+
+  const handleRemoveCombinedFile = async (target: {
     kind: "local" | "draft";
     localIndex?: number;
     draftIndex?: number;
@@ -1048,16 +1073,39 @@ export const PracticeFileTransferPage = () => {
     }
 
     if (target.kind === "draft" && Number.isFinite(Number(target.draftIndex))) {
-      setDraftFiles((prev) => prev.filter((_, idx) => idx !== Number(target.draftIndex)));
-      setTempSaveDirty(true);
+      const removeIndex = Number(target.draftIndex);
+      const prevDraftFiles = [...draftFiles];
+      const nextDraftFiles = prevDraftFiles.filter((_, idx) => idx !== removeIndex);
+      setDraftFiles(nextDraftFiles);
+
+      try {
+        await syncDraftFilesToServer(nextDraftFiles);
+      } catch {
+        setDraftFiles(prevDraftFiles);
+        toast({
+          title: "파일 삭제 실패",
+          description: "임시저장 파일 반영 중 오류가 발생했습니다.",
+          variant: "destructive",
+        });
+      }
     }
   };
 
   const handleClearAllTransferFiles = async () => {
     await clearAllFiles();
     if (draftFiles.length > 0) {
+      const prevDraftFiles = [...draftFiles];
       setDraftFiles([]);
-      setTempSaveDirty(true);
+      try {
+        await syncDraftFilesToServer([]);
+      } catch {
+        setDraftFiles(prevDraftFiles);
+        toast({
+          title: "전체삭제 실패",
+          description: "임시저장 파일 반영 중 오류가 발생했습니다.",
+          variant: "destructive",
+        });
+      }
     }
   };
 
@@ -1295,7 +1343,7 @@ export const PracticeFileTransferPage = () => {
       }
       toast({
         title: "임시저장 완료",
-        description: "다른 PC에서도 이어서 전송할 수 있도록 서버에 임시저장했습니다.",
+        description: "서버에 임시저장했습니다. 다른 PC에서도 이어서 전송할 수 있습니다.",
       });
     } catch (error) {
       toast({
@@ -1465,7 +1513,11 @@ export const PracticeFileTransferPage = () => {
     }
   };
 
-  const canTempSave = !requestSubmitting && !tempSaving && tempSaveDirty;
+  const canTempSave =
+    !requestSubmitting &&
+    !tempSaving &&
+    tempSaveDirty &&
+    combinedDisplayFiles.length > 0;
 
   return (
     <PageFileDropZone
