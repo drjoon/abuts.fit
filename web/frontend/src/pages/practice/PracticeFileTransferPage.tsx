@@ -275,6 +275,7 @@ export const PracticeFileTransferPage = () => {
   const [deletingTransfer, setDeletingTransfer] = useState(false);
   const chatBottomRef = useRef<HTMLDivElement | null>(null);
   const realtimeReloadTimerRef = useRef<number | null>(null);
+  const chatRoomResolveSeqRef = useRef(0);
   const {
     files,
     totalSizeMb,
@@ -303,6 +304,7 @@ export const PracticeFileTransferPage = () => {
     loading: chatMessagesLoading,
     error: chatMessagesError,
     sendMessage,
+    setMessages: setChatMessages,
   } = useChatMessages({ roomId: activeChatRoom?._id, autoFetch: transferDialogOpen });
 
   const loadRecentRequests = useCallback(async () => {
@@ -642,11 +644,14 @@ export const PracticeFileTransferPage = () => {
   }, [authUser]);
 
   const handleOpenTransferDialog = async (transfer: RecentTransferItem) => {
+    const resolveSeq = ++chatRoomResolveSeqRef.current;
+
     setSelectedTransfer(transfer);
     setTransferDialogOpen(true);
     setChatDraft("");
     setChatAttachedFiles([]);
     setActiveChatRoom(null);
+    setChatMessages([]);
     setChatError("");
 
     if (!authToken) {
@@ -678,23 +683,29 @@ export const PracticeFileTransferPage = () => {
         throw new Error("채팅방 정보가 올바르지 않습니다.");
       }
 
+      if (resolveSeq !== chatRoomResolveSeqRef.current) return;
       setActiveChatRoom(payload);
       setChatError("");
     } catch (error) {
+      if (resolveSeq !== chatRoomResolveSeqRef.current) return;
       setChatError(
         error instanceof Error
           ? error.message
           : "채팅방을 불러오는 중 오류가 발생했습니다.",
       );
     } finally {
-      setChatLoading(false);
+      if (resolveSeq === chatRoomResolveSeqRef.current) {
+        setChatLoading(false);
+      }
     }
   };
 
   const handleCloseTransferDialog = () => {
+    chatRoomResolveSeqRef.current += 1;
     setTransferDialogOpen(false);
     setSelectedTransfer(null);
     setActiveChatRoom(null);
+    setChatMessages([]);
     setChatDraft("");
     setChatAttachedFiles([]);
     setChatError("");
@@ -1535,7 +1546,7 @@ export const PracticeFileTransferPage = () => {
 
             <div className="px-5 py-4 flex-1 min-h-0 overflow-hidden">
               <div className="grid h-full min-h-0 grid-cols-1 gap-4 lg:grid-cols-2">
-                <div className="rounded-lg border bg-muted/20 p-3 text-sm min-h-0 overflow-y-auto space-y-4">
+                <div className="rounded-lg border bg-muted/20 p-3 text-[15px] min-h-0 overflow-y-auto space-y-4">
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <p className="text-muted-foreground">전송ID</p>
@@ -1582,7 +1593,7 @@ export const PracticeFileTransferPage = () => {
                             key={`${file.s3Key}:${idx}`}
                             type="button"
                             onClick={() => void handleDownloadTransferFile(file)}
-                            className="block w-full text-left rounded border px-2 py-1 text-xs hover:bg-muted/50"
+                            className="block w-full text-left rounded border px-2 py-1 text-sm hover:bg-muted/50"
                           >
                             {file.fileName} · {formatFileSize(Number(file.size || 0))}
                           </button>
@@ -1602,19 +1613,19 @@ export const PracticeFileTransferPage = () => {
                   <ScrollArea className="min-h-0 flex-1 px-3 py-3">
                     <div className="space-y-2">
                       {chatLoading || chatMessagesLoading ? (
-                        <div className="text-center text-xs text-muted-foreground py-4">
+                        <div className="text-center text-sm text-muted-foreground py-4">
                           채팅을 불러오는 중입니다...
                         </div>
                       ) : null}
 
                       {!chatLoading && !chatMessagesLoading && (chatError || chatMessagesError) ? (
-                        <div className="text-center text-xs text-destructive py-4">
+                        <div className="text-center text-sm text-destructive py-4">
                           {chatError || chatMessagesError}
                         </div>
                       ) : null}
 
                       {!chatLoading && !chatMessagesLoading && !chatError && !chatMessagesError && chatMessages.length === 0 ? (
-                        <div className="text-center text-xs text-muted-foreground py-4">
+                        <div className="text-center text-sm text-muted-foreground py-4">
                           아직 메시지가 없습니다.
                         </div>
                       ) : null}
@@ -1629,7 +1640,7 @@ export const PracticeFileTransferPage = () => {
                             className={`flex ${isMine ? "justify-end" : "justify-start"}`}
                           >
                             <div
-                              className={`max-w-[80%] rounded-lg px-3 py-2 text-xs ${isMine ? "bg-primary text-primary-foreground" : "bg-muted"}`}
+                              className={`max-w-[80%] rounded-lg px-3 py-2 text-sm ${isMine ? "bg-primary text-primary-foreground" : "bg-muted"}`}
                             >
                               <p className="opacity-80 mb-1 font-medium">{senderName}</p>
                               <p className="opacity-70 mb-1">{formatChatTs(message.createdAt)}</p>
@@ -1652,14 +1663,14 @@ export const PracticeFileTransferPage = () => {
                                             s3Url: String(file?.s3Url || "").trim(),
                                           })
                                         }
-                                        className="block w-full rounded border border-current/20 px-2 py-1 text-[11px] text-left underline-offset-2 hover:underline"
+                                        className="block w-full rounded border border-current/20 px-2 py-1 text-xs text-left underline-offset-2 hover:underline"
                                       >
                                         {fileName} · {fileSize}
                                       </button>
                                     ) : (
                                       <div
                                         key={`${message._id}:file:${idx}`}
-                                        className="rounded border border-current/20 px-2 py-1 text-[11px]"
+                                        className="rounded border border-current/20 px-2 py-1 text-xs"
                                       >
                                         {fileName} · {fileSize}
                                       </div>

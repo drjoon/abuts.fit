@@ -119,8 +119,9 @@ export default function RequestorPracticePage() {
   const chatBottomRef = useRef<HTMLDivElement | null>(null);
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
   const realtimeReloadTimerRef = useRef<number | null>(null);
+  const chatRoomResolveSeqRef = useRef(0);
 
-  const { messages, loading: chatLoading, sendMessage } = useChatMessages({
+  const { messages, loading: chatLoading, sendMessage, setMessages: setChatMessages } = useChatMessages({
     roomId: activeChatRoom?._id,
     autoFetch: dialogOpen,
   });
@@ -509,12 +510,14 @@ export default function RequestorPracticePage() {
   const openTransferDialog = useCallback(
     async (transfer: ReceivedPracticeTransfer) => {
       if (!token) return;
+      const resolveSeq = ++chatRoomResolveSeqRef.current;
 
       setSelectedTransfer(transfer);
       setDialogOpen(true);
       setChatError("");
       setChatAttachedFiles([]);
       setActiveChatRoom(null);
+      setChatMessages([]);
       void markTransferRead(transfer);
 
       try {
@@ -525,6 +528,7 @@ export default function RequestorPracticePage() {
         });
 
         if (!res.ok) {
+          if (resolveSeq !== chatRoomResolveSeqRef.current) return;
           const body = res.data && typeof res.data === "object" ? (res.data as Record<string, unknown>) : {};
           setChatError(String(body.message || "치과 채팅방을 열 수 없습니다."));
           return;
@@ -538,12 +542,14 @@ export default function RequestorPracticePage() {
           body.data && typeof body.data === "object"
             ? (body.data as ChatRoom)
             : null;
+        if (resolveSeq !== chatRoomResolveSeqRef.current) return;
         setActiveChatRoom(room);
       } catch {
+        if (resolveSeq !== chatRoomResolveSeqRef.current) return;
         setChatError("치과 채팅방 조회 중 오류가 발생했습니다.");
       }
     },
-    [markTransferRead, token],
+    [markTransferRead, setChatMessages, token],
   );
 
   const handleDownload = useCallback(
@@ -784,8 +790,10 @@ export default function RequestorPracticePage() {
         onOpenChange={(open) => {
           setDialogOpen(open);
           if (!open) {
+            chatRoomResolveSeqRef.current += 1;
             setSelectedTransfer(null);
             setActiveChatRoom(null);
+            setChatMessages([]);
             setChatDraft("");
             setChatAttachedFiles([]);
             setChatError("");
@@ -803,7 +811,7 @@ export default function RequestorPracticePage() {
           {!selectedTransfer ? null : (
             <div className="px-5 py-4 flex-1 min-h-0 overflow-hidden">
               <div className="grid h-full min-h-0 grid-cols-1 gap-4 lg:grid-cols-2">
-                <div className="rounded-lg border bg-muted/20 p-3 text-sm min-h-0 overflow-y-auto space-y-4">
+                <div className="rounded-lg border bg-muted/20 p-3 text-[15px] min-h-0 overflow-y-auto space-y-4">
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <p className="text-muted-foreground">전송ID</p>
@@ -850,7 +858,7 @@ export default function RequestorPracticePage() {
                             key={file.id}
                             type="button"
                             onClick={() => void handleDownload(file)}
-                            className="block w-full text-left rounded border px-2 py-1 text-xs hover:bg-muted/50"
+                            className="block w-full text-left rounded border px-2 py-1 text-sm hover:bg-muted/50"
                           >
                             {file.originalName} · {formatBytes(file.size)}
                           </button>
@@ -868,13 +876,13 @@ export default function RequestorPracticePage() {
                   <div className="min-h-0 flex-1 px-3 py-3 overflow-y-auto">
                     <div className="space-y-2">
                       {chatLoading ? (
-                        <div className="text-center text-xs text-muted-foreground py-4">메시지를 불러오는 중...</div>
+                        <div className="text-center text-sm text-muted-foreground py-4">메시지를 불러오는 중...</div>
                       ) : null}
                       {!chatLoading && chatError ? (
-                        <div className="text-center text-xs text-destructive py-4">{chatError}</div>
+                        <div className="text-center text-sm text-destructive py-4">{chatError}</div>
                       ) : null}
                       {!chatLoading && !chatError && messages.length === 0 ? (
-                        <div className="text-center text-xs text-muted-foreground py-4">아직 메시지가 없습니다.</div>
+                        <div className="text-center text-sm text-muted-foreground py-4">아직 메시지가 없습니다.</div>
                       ) : null}
 
                       {messages.map((m) => {
@@ -882,7 +890,7 @@ export default function RequestorPracticePage() {
                         return (
                           <div key={m._id} className={`flex ${isMine ? "justify-end" : "justify-start"}`}>
                             <div
-                              className={`max-w-[80%] rounded-lg px-3 py-2 text-xs ${
+                              className={`max-w-[80%] rounded-lg px-3 py-2 text-sm ${
                                 isMine ? "bg-primary text-primary-foreground" : "bg-muted"
                               }`}
                             >
@@ -906,7 +914,7 @@ export default function RequestorPracticePage() {
                                             s3Url: String(file?.s3Url || "").trim(),
                                           })
                                         }
-                                        className="block w-full rounded border border-current/20 px-2 py-1 text-[11px] text-left hover:underline"
+                                        className="block w-full rounded border border-current/20 px-2 py-1 text-xs text-left hover:underline"
                                       >
                                         {fileName} · {fileSize}
                                       </button>

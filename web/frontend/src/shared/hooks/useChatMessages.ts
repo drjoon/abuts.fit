@@ -5,7 +5,7 @@
 // - web/frontend/src/shared/realtime/socket.ts
 // - web/backend/modules/chat/chat.routes.js
 // - web/backend/controllers/chats/chat.controller.js
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { apiFetch } from "@/shared/api/apiClient";
 import { useToast } from "@/shared/hooks/use-toast";
 import { useAuthStore } from "@/store/useAuthStore";
@@ -17,6 +17,13 @@ interface UseChatMessagesOptions {
   autoFetch?: boolean;
 }
 
+const INITIAL_PAGINATION = {
+  total: 0,
+  page: 1,
+  limit: 50,
+  pages: 0,
+};
+
 export const useChatMessages = (options: UseChatMessagesOptions = {}) => {
   const { roomId, autoFetch = true } = options;
   const { token, user } = useAuthStore();
@@ -24,12 +31,8 @@ export const useChatMessages = (options: UseChatMessagesOptions = {}) => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [pagination, setPagination] = useState({
-    total: 0,
-    page: 1,
-    limit: 50,
-    pages: 0,
-  });
+  const [pagination, setPagination] = useState(INITIAL_PAGINATION);
+  const fetchSequenceRef = useRef(0);
 
   const myIdCandidates = useMemo(() => {
     const ids = [user?.id, (user as { _id?: string } | null)?._id]
@@ -40,8 +43,10 @@ export const useChatMessages = (options: UseChatMessagesOptions = {}) => {
 
   const fetchMessages = useCallback(
     async (page = 1) => {
-      if (!roomId) return;
+      const normalizedRoomId = String(roomId || "").trim();
+      if (!normalizedRoomId) return;
 
+      const currentSequence = ++fetchSequenceRef.current;
       setLoading(true);
       setError(null);
 
@@ -53,18 +58,21 @@ export const useChatMessages = (options: UseChatMessagesOptions = {}) => {
             pagination: typeof pagination;
           };
         }>({
-          path: `/api/chats/rooms/${roomId}/messages?page=${page}&limit=50`,
+          path: `/api/chats/rooms/${normalizedRoomId}/messages?page=${page}&limit=50`,
           method: "GET",
           token,
         });
 
+        if (currentSequence !== fetchSequenceRef.current) return;
+
         if (res.ok && res.data?.success) {
           setMessages(res.data.data.messages || []);
-          setPagination(res.data.data.pagination);
+          setPagination(res.data.data.pagination || INITIAL_PAGINATION);
         } else {
           throw new Error("메시지 조회에 실패했습니다.");
         }
       } catch (e: unknown) {
+        if (currentSequence !== fetchSequenceRef.current) return;
         const errorMsg =
           e instanceof Error
             ? e.message
@@ -76,7 +84,9 @@ export const useChatMessages = (options: UseChatMessagesOptions = {}) => {
           variant: "destructive",
         });
       } finally {
-        setLoading(false);
+        if (currentSequence === fetchSequenceRef.current) {
+          setLoading(false);
+        }
       }
     },
     [roomId, toast, token]
@@ -142,9 +152,17 @@ export const useChatMessages = (options: UseChatMessagesOptions = {}) => {
   );
 
   useEffect(() => {
-    if (autoFetch && roomId) {
-      void fetchMessages();
-    }
+    const normalizedRoomId = String(roomId || "").trim();
+
+    // room 전환 시 이전 대화 잔상을 즉시 제거하고, 이전 fetch 응답은 무시
+    fetchSequenceRef.current += 1;
+    setMessages([]);
+    setError(null);
+    setPagination(INITIAL_PAGINATION);
+    setLoading(false);
+
+    if (!normalizedRoomId || !autoFetch) return;
+    void fetchMessages();
   }, [autoFetch, roomId, fetchMessages]);
 
   useEffect(() => {
