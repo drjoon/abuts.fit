@@ -95,11 +95,17 @@
 
 - practice↔requestor 실시간(웹소켓 app-event) 구현 메모:
   - 소켓 공용 레이어: `src/shared/realtime/socket.ts`
+    - `onNotification`, `onNewMessage`, CNC 이벤트 리스너 포함 모든 소켓 이벤트 구독은 공통 구독 레이어(`subscribeSocketEvent`)를 통해 지연 초기화/재연결 시에도 유실 없이 동작해야 합니다.
+  - app-event 디바운스 재조회 공통 훅: `src/shared/realtime/useAppEventDebouncedReload.ts`
   - 채팅방 목록 실시간 동기화: `src/shared/hooks/useChatRooms.ts`
   - 채팅 메시지 실시간 동기화: `src/shared/hooks/useChatMessages.ts`
   - 페이지 반영 지점:
     - `src/pages/practice/PracticeFileTransferPage.tsx`
     - `src/pages/requestor/practice/RequestorPracticePage.tsx`
+
+- 문의(admin/support) 실시간 반영 메모:
+  - 관리자 문의 페이지는 `support:inquiry-created`, `support:inquiry-updated`, `comm:badge-update(key=inquiry)` app-event를 수신해 목록을 디바운스 재조회합니다.
+  - 구현 파일: `src/pages/admin/support/AdminBusinessRegistrationInquiryPage.tsx`
 
 - practice 채팅/전송 파일 다운로드 정책:
   - S3 원본 URL 직접 오픈 대신 동일 오리진 프록시(`GET /api/files/s3/download`)를 사용합니다.

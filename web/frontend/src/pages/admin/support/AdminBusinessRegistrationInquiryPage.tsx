@@ -2,7 +2,10 @@
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
-import { useEffect, useMemo, useState } from "react";
+// - web/frontend/src/shared/realtime/socket.ts
+// - web/frontend/src/shared/realtime/useAppEventDebouncedReload.ts
+// - web/backend/controllers/support/support.controller.js
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   BusinessRegistrationInquiry,
   fetchBusinessRegistrationInquiries,
@@ -37,6 +40,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { useAppEventDebouncedReload } from "@/shared/realtime/useAppEventDebouncedReload";
 
 const formatDate = (value?: string | null) => {
   if (!value) return "-";
@@ -67,6 +71,11 @@ const typeLabelMap: Record<string, string> = {
   other: "기타",
   business_registration: "사업자등록",
   user_registration: "사용자등록",
+};
+
+const toErrorMessage = (error: unknown, fallback: string) => {
+  if (error instanceof Error && error.message) return error.message;
+  return fallback;
 };
 
 export const AdminBusinessRegistrationInquiryPage = () => {
@@ -107,36 +116,55 @@ export const AdminBusinessRegistrationInquiryPage = () => {
     });
   }, [items, searchQuery]);
 
+  const loadInquiries = useCallback(async () => {
+    setLoading(true);
+    try {
+      const data = await fetchBusinessRegistrationInquiries({
+        status: statusFilter === "all" ? undefined : statusFilter,
+        type: typeFilter === "all" ? undefined : typeFilter,
+        limit: 200,
+      });
+      setItems(data);
+      setSelectedId((prev) => {
+        if (prev && data.some((item) => item._id === prev)) return prev;
+        return data[0]?._id ?? null;
+      });
+    } catch (error: unknown) {
+      toast({
+        title: "문의 목록 로딩 실패",
+        description: toErrorMessage(error, "문의 목록을 불러오지 못했습니다."),
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  }, [statusFilter, typeFilter, toast]);
+
   useEffect(() => {
-    let mounted = true;
-    const load = async () => {
-      setLoading(true);
-      try {
-        const data = await fetchBusinessRegistrationInquiries({
-          status: statusFilter === "all" ? undefined : statusFilter,
-          type: typeFilter === "all" ? undefined : typeFilter,
-          limit: 200,
-        });
-        if (!mounted) return;
-        setItems(data);
-        if (!data.some((item) => item._id === selectedId)) {
-          setSelectedId(data[0]?._id ?? null);
-        }
-      } catch (error: any) {
-        toast({
-          title: "문의 목록 로딩 실패",
-          description: error.message,
-          variant: "destructive",
-        });
-      } finally {
-        if (mounted) setLoading(false);
+    void loadInquiries();
+  }, [loadInquiries]);
+
+  useAppEventDebouncedReload({
+    eventTypes: [
+      "support:inquiry-created",
+      "support:inquiry-updated",
+      "comm:badge-update",
+    ],
+    delayMs: 180,
+    shouldHandle: (evt) => {
+      const type = String(evt?.type || "").trim();
+      if (type === "support:inquiry-created" || type === "support:inquiry-updated") {
+        return true;
       }
-    };
-    void load();
-    return () => {
-      mounted = false;
-    };
-  }, [selectedId, statusFilter, typeFilter, toast]);
+      if (type !== "comm:badge-update") return false;
+      const payload =
+        evt?.data && typeof evt.data === "object"
+          ? (evt.data as Record<string, unknown>)
+          : {};
+      return String(payload.key || "").trim() === "inquiry";
+    },
+    onMatch: loadInquiries,
+  });
 
   useEffect(() => {
     setAdminNote(selected?.adminNote || "");
@@ -185,10 +213,10 @@ export const AdminBusinessRegistrationInquiryPage = () => {
       toast({
         title: `선택된 문의를 ${statusLabelMap[bulkStatus]}로 변경했습니다.`,
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       toast({
         title: "일괄 처리 실패",
-        description: error.message,
+        description: toErrorMessage(error, "문의 일괄 처리에 실패했습니다."),
         variant: "destructive",
       });
     } finally {
@@ -227,8 +255,10 @@ export const AdminBusinessRegistrationInquiryPage = () => {
         rows.map((row) =>
           header
             .map(
-              (key) =>
-                `"${String((row as any)[key] || "").replace(/"/g, '""')}"`,
+              (key) => {
+                const safeRow = row as Record<string, unknown>;
+                return `"${String(safeRow[key] || "").replace(/"/g, '""')}"`;
+              },
             )
             .join(","),
         ),
@@ -255,10 +285,10 @@ export const AdminBusinessRegistrationInquiryPage = () => {
         prev.map((item) => (item._id === updated._id ? updated : item)),
       );
       toast({ title: "문의가 업데이트되었습니다." });
-    } catch (error: any) {
+    } catch (error: unknown) {
       toast({
         title: "문의 업데이트 실패",
-        description: error.message,
+        description: toErrorMessage(error, "문의 상태 업데이트에 실패했습니다."),
         variant: "destructive",
       });
     } finally {

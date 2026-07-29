@@ -2,6 +2,8 @@
 // - web/backend/rules.md
 // - web/backend/app.js
 // - web/backend/server.js
+// - web/frontend/src/pages/admin/support/AdminBusinessRegistrationInquiryPage.tsx
+// - web/frontend/src/features/support/InquiriesPage.tsx
 import { randomBytes } from "crypto";
 import { uploadFileToS3 } from "../../utils/s3.utils.js";
 import BusinessRegistrationInquiry from "../../models/businessRegistrationInquiry.model.js";
@@ -14,6 +16,24 @@ const buildUserSnapshot = (user) => ({
   role: String(user?.role || ""),
   business: String(user?.business || ""),
 });
+
+const buildInquiryRealtimePayload = (inquiry, action) => {
+  if (!inquiry) return null;
+  return {
+    action: String(action || "").trim() || null,
+    inquiryId: String(inquiry._id || "").trim() || null,
+    status: String(inquiry.status || "").trim() || "open",
+    type: String(inquiry.type || "").trim() || "general",
+    subject: String(inquiry.subject || "").trim() || null,
+    createdAt: inquiry.createdAt || null,
+    updatedAt: inquiry.updatedAt || null,
+    userId: inquiry.user ? String(inquiry.user).trim() : null,
+    businessAnchorId: inquiry.businessAnchorId
+      ? String(inquiry.businessAnchorId).trim()
+      : null,
+    businessType: inquiry.businessType ? String(inquiry.businessType).trim() : null,
+  };
+};
 
 /**
  * 게스트 문의 접수 후 S3에 JSON으로 저장
@@ -116,6 +136,11 @@ export async function createInquiry(req, res) {
       delta: 1,
     });
 
+    emitAppEventToRoles(["admin"], "support:inquiry-created", {
+      inquiry: buildInquiryRealtimePayload(inquiry, "created"),
+      unreadCountDelta: 1,
+    });
+
     return res.status(201).json({
       success: true,
       message: "문의가 접수되었습니다.",
@@ -198,6 +223,16 @@ export async function createBusinessRegistrationInquiry(req, res) {
       },
     });
 
+    emitAppEventToRoles(["admin"], "comm:badge-update", {
+      key: "inquiry",
+      delta: 1,
+    });
+
+    emitAppEventToRoles(["admin"], "support:inquiry-created", {
+      inquiry: buildInquiryRealtimePayload(inquiry, "created"),
+      unreadCountDelta: 1,
+    });
+
     return res.status(201).json({
       success: true,
       message: "문의가 접수되었습니다.",
@@ -276,12 +311,26 @@ export async function adminResolveBusinessRegistrationInquiry(req, res) {
   try {
     const { status, adminNote } = req.body || {};
     const nextStatus = status === "resolved" ? "resolved" : "open";
+
+    const prevInquiry = await BusinessRegistrationInquiry.findById(req.params.id)
+      .select("status")
+      .lean();
+    if (!prevInquiry) {
+      return res.status(404).json({
+        success: false,
+        message: "문의 내역을 찾을 수 없습니다.",
+      });
+    }
+
+    const prevStatus = String(prevInquiry.status || "open").trim() || "open";
+
     const update = {
       status: nextStatus,
       adminNote: String(adminNote || "").trim(),
       resolvedAt: nextStatus === "resolved" ? new Date() : null,
       resolvedBy: nextStatus === "resolved" ? req.user?._id : null,
     };
+
     const inquiry = await BusinessRegistrationInquiry.findByIdAndUpdate(
       req.params.id,
       { $set: update },
@@ -289,12 +338,35 @@ export async function adminResolveBusinessRegistrationInquiry(req, res) {
     )
       .populate("user", "name email role business")
       .lean();
+
     if (!inquiry) {
       return res.status(404).json({
         success: false,
         message: "문의 내역을 찾을 수 없습니다.",
       });
     }
+
+    if (prevStatus !== nextStatus) {
+      const delta =
+        prevStatus === "open" && nextStatus === "resolved"
+          ? -1
+          : prevStatus === "resolved" && nextStatus === "open"
+            ? 1
+            : 0;
+      if (delta !== 0) {
+        emitAppEventToRoles(["admin"], "comm:badge-update", {
+          key: "inquiry",
+          delta,
+        });
+      }
+    }
+
+    emitAppEventToRoles(["admin"], "support:inquiry-updated", {
+      inquiry: buildInquiryRealtimePayload(inquiry, "updated"),
+      previousStatus: prevStatus,
+      nextStatus,
+    });
+
     return res.json({ success: true, data: inquiry });
   } catch (error) {
     return res.status(500).json({

@@ -19,6 +19,7 @@
  * - web/backend/controllers/files/file.controller.js
  * - web/frontend/src/pages/practice/hooks/usePracticeTransferStep1.ts
  * - web/frontend/src/shared/realtime/socket.ts
+ * - web/frontend/src/shared/realtime/useAppEventDebouncedReload.ts
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -87,7 +88,7 @@ import {
 import { useChatRooms, type ChatRoom } from "@/shared/hooks/useChatRooms";
 import { useChatMessages } from "@/shared/hooks/useChatMessages";
 import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
-import { onAppEvent } from "@/shared/realtime/socket";
+import { useAppEventDebouncedReload } from "@/shared/realtime/useAppEventDebouncedReload";
 
 type RecentRequestItem = {
   id: string; // 전송 내 파일 row 식별자(표시/그룹/optimistic 삭제용)
@@ -275,7 +276,6 @@ export const PracticeFileTransferPage = () => {
   const [deleteTargetTransfer, setDeleteTargetTransfer] = useState<RecentTransferItem | null>(null);
   const [deletingTransfer, setDeletingTransfer] = useState(false);
   const chatBottomRef = useRef<HTMLDivElement | null>(null);
-  const realtimeReloadTimerRef = useRef<number | null>(null);
   const chatRoomResolveSeqRef = useRef(0);
   const {
     files,
@@ -1037,29 +1037,12 @@ export const PracticeFileTransferPage = () => {
     return () => window.cancelAnimationFrame(raf);
   }, [transferDialogOpen, activeChatRoom?._id, chatMessages.length, chatMessagesLoading]);
 
-  useEffect(() => {
-    if (!authToken) return;
-
-    const unsubscribeAppEvent = onAppEvent((evt) => {
-      const type = String(evt?.type || "").trim();
-      if (type !== "practice:transfer-created" && type !== "practice:transfer-updated") return;
-
-      if (realtimeReloadTimerRef.current) {
-        window.clearTimeout(realtimeReloadTimerRef.current);
-      }
-      realtimeReloadTimerRef.current = window.setTimeout(() => {
-        void loadRecentRequests();
-      }, 160);
-    });
-
-    return () => {
-      unsubscribeAppEvent?.();
-      if (realtimeReloadTimerRef.current) {
-        window.clearTimeout(realtimeReloadTimerRef.current);
-        realtimeReloadTimerRef.current = null;
-      }
-    };
-  }, [authToken, loadRecentRequests]);
+  useAppEventDebouncedReload({
+    enabled: Boolean(authToken),
+    eventTypes: ["practice:transfer-created", "practice:transfer-updated"],
+    delayMs: 160,
+    onMatch: loadRecentRequests,
+  });
 
   const handleSubmitPracticeRequest = async () => {
     if (requestSubmitting) return;

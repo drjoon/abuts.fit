@@ -64,6 +64,15 @@
   - 수신 판정 SSOT: `PracticeTransfer.requestorReadAt`
   - 가상 의뢰 행 매핑 기준: `controllers/practiceTransfers/practiceTransfer.controller.js#toVirtualRequestRows`
 
+- 문의 실시간 이벤트 SSOT:
+  - 문의 생성 시(admin 대상)
+    - `comm:badge-update` (`key=inquiry`, `delta=+1`)
+    - `support:inquiry-created`
+  - 문의 상태 변경 시(admin 대상)
+    - 상태 전이(`open↔resolved`)에 맞춘 `comm:badge-update` 증감
+    - `support:inquiry-updated`
+  - 구현 파일: `controllers/support/support.controller.js`
+
 - practice 채팅/전송 첨부 다운로드 정책:
   - 다운로드 SSOT 엔드포인트: `GET /api/files/s3/download?key=...&fileName=...`
   - S3 파일은 signed-url 리다이렉트가 아니라 서버 프록시 스트리밍(`pipe`)으로 응답합니다.

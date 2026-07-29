@@ -142,6 +142,9 @@
 - 앱/라우팅
   - `web/frontend/src/App.tsx`
   - `web/frontend/src/features/layout/DashboardLayout.tsx`
+- 실시간(웹소켓) 공통
+  - `web/frontend/src/shared/realtime/socket.ts`
+  - `web/frontend/src/shared/realtime/useAppEventDebouncedReload.ts`
 - 의뢰자 신규의뢰/치과
   - `web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx`
   - `web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx`
