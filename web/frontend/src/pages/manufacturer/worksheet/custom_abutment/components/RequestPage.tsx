@@ -546,6 +546,10 @@ export const RequestPage = ({
     await fetchRequests();
   });
 
+  // related files:
+  // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/shipping/components/MailboxGrid.tsx
+  // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/shipping/components/MailboxContentsModal.tsx
+  // - web/backend/controllers/requests/shipping.controller.js
   const handleOpenMailboxDetails = useCallback(
     async (address: string) => {
       const mailboxAddress = String(address || "").trim();
@@ -604,13 +608,12 @@ export const RequestPage = ({
         Boolean(cachedEntry) &&
         now - Number(cachedEntry?.fetchedAt || 0) <
           MAILBOX_DETAILS_CACHE_TTL_MS;
-      const hasUsableFreshCache =
-        hasFreshCache &&
-        !(
-          expectedRequestCount > 0 &&
-          Array.isArray(cachedEntry?.requests) &&
-          cachedEntry!.requests.length === 0
-        );
+      const cachedRequestCount = Array.isArray(cachedEntry?.requests)
+        ? cachedEntry!.requests.length
+        : 0;
+      const hasCountMismatchWithSummary =
+        Boolean(cachedEntry) && cachedRequestCount !== expectedRequestCount;
+      const hasUsableFreshCache = hasFreshCache && !hasCountMismatchWithSummary;
 
       const requestsFromCurrentPage = pageState.requests.filter((req) => {
         const reqMailboxAddress = String(req.mailboxAddress || "")

@@ -1784,17 +1784,18 @@ export const MailboxGrid = ({
                 - 한진 외 배송완료: 사유 입력 후 배송완료 처리
               </div>
 
-              <div className="max-h-[420px] overflow-auto space-y-3 pr-1">
-                {occupiedAddresses.map((addr) => {
-                  const count = Number(
-                    mailboxSummaryMap.get(addr)?.requestCount || 0,
-                  );
-                  const mode = manualPickupModeByAddress?.[addr] || "hanjin";
-                  return (
-                    <div
-                      key={addr}
-                      className="rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-2"
-                    >
+              <div className="max-h-[250px] overflow-y-auto pr-1">
+                <div className="grid grid-cols-2 gap-3">
+                  {occupiedAddresses.map((addr) => {
+                    const count = Number(
+                      mailboxSummaryMap.get(addr)?.requestCount || 0,
+                    );
+                    const mode = manualPickupModeByAddress?.[addr] || "hanjin";
+                    return (
+                      <div
+                        key={addr}
+                        className="rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-2"
+                      >
                       <div className="flex items-center justify-between gap-3">
                         <div className="text-sm font-semibold text-slate-700">
                           {addr} ({count}건)
@@ -1867,6 +1868,7 @@ export const MailboxGrid = ({
                     </div>
                   );
                 })}
+                </div>
               </div>
 
               <div className="rounded-lg border border-slate-200 bg-white">

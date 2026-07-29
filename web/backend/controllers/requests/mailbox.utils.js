@@ -1,4 +1,5 @@
 const UNKNOWN_ANCHOR_KEY = "__UNKNOWN_BUSINESS_ANCHOR__";
+const ACTIVE_MAILBOX_STAGES = ["세척.패킹", "포장.발송", "추적관리"];
 
 // related files (request category SSOT):
 // - web/backend/models/request.model.js
@@ -46,6 +47,36 @@ const resolveOccupantAnchorKey = (requestDocLike) => {
   return UNKNOWN_ANCHOR_KEY;
 };
 
+// related files:
+// - web/backend/controllers/cnc/machiningBridge.js
+// - web/backend/controllers/requests/common.review.controller.js
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/shipping/components/MailboxGrid.tsx
+const buildMailboxOccupancyByAddress = (activeRequests = []) => {
+  const occupancyByAddress = new Map();
+
+  for (const r of activeRequests) {
+    const address = normalizeMailboxAddress(r?.mailboxAddress);
+    if (!address) continue;
+
+    if (!occupancyByAddress.has(address)) {
+      occupancyByAddress.set(address, {
+        concreteOrgKeys: new Set(),
+        unknownCount: 0,
+      });
+    }
+
+    const row = occupancyByAddress.get(address);
+    const orgKey = resolveOccupantAnchorKey(r);
+    if (orgKey && orgKey !== UNKNOWN_ANCHOR_KEY) {
+      row.concreteOrgKeys.add(orgKey);
+    } else {
+      row.unknownCount += 1;
+    }
+  }
+
+  return occupancyByAddress;
+};
+
 const findReusableMailboxAddressForBusiness = ({
   activeRequests = [],
   requestorOrgId,
@@ -53,20 +84,16 @@ const findReusableMailboxAddressForBusiness = ({
   const requestorOrgIdStr = String(requestorOrgId || "").trim();
   if (!requestorOrgIdStr) return "";
 
-  const orgSetByAddress = new Map();
-  for (const r of activeRequests) {
-    const address = normalizeMailboxAddress(r?.mailboxAddress);
-    if (!address) continue;
-    const orgKey = resolveOccupantAnchorKey(r);
-    if (!orgSetByAddress.has(address)) {
-      orgSetByAddress.set(address, new Set());
-    }
-    orgSetByAddress.get(address).add(orgKey);
-  }
+  const occupancyByAddress = buildMailboxOccupancyByAddress(activeRequests);
 
   return (
-    Array.from(orgSetByAddress.entries())
-      .filter(([_, orgSet]) => orgSet.size === 1 && orgSet.has(requestorOrgIdStr))
+    Array.from(occupancyByAddress.entries())
+      // UNKNOWN 점유는 혼입 판정에서 제외한다.
+      // (같은 업체 박스에 anchor 누락 레코드가 섞여 있어도 재사용이 가능해야
+      //  가공→세척.패킹 전환 시 불필요한 신규 박스 생성을 막을 수 있다.)
+      .filter(([_, row]) =>
+        row.concreteOrgKeys.size === 1 && row.concreteOrgKeys.has(requestorOrgIdStr),
+      )
       .map(([address]) => address)
       .sort()[0] || ""
   );
@@ -102,11 +129,11 @@ export async function allocateVirtualMailboxAddress(
     options?.excludeRequestMongoId || "",
   ).trim();
 
-  // 현재 '세척.패킹' 및 '포장.발송' 단계 중
+  // 현재 '세척.패킹'/'포장.발송'/'추적관리' 단계 중
   // 실제 포장.발송 대상(=R&D 샘플 제외) 의뢰의 우편함만 점유로 본다.
   // SSOT: source/price.rule 이 manufacturer_sample 이면 배송 비대상.
   const activeRequestsRaw = await Request.find({
-    manufacturerStage: { $in: ["세척.패킹", "포장.발송"] },
+    manufacturerStage: { $in: ACTIVE_MAILBOX_STAGES },
     mailboxAddress: { $ne: null },
     requestCategory: REQUEST_CATEGORY.ORDER,
   })
@@ -132,9 +159,7 @@ export async function allocateVirtualMailboxAddress(
 
   // 사용 중인 우편함 주소 목록
   const usedAddresses = new Set(
-    activeRequests
-      .map((r) => normalizeMailboxAddress(r?.mailboxAddress))
-      .filter(Boolean),
+    Array.from(buildMailboxOccupancyByAddress(activeRequests).keys()).filter(Boolean),
   );
 
   // 사용 중이지 않은 첫 번째 주소 찾기
@@ -180,7 +205,7 @@ export async function ensureMailboxAddressForBusiness({
   }
 
   const activeRequests = await Request.find({
-    manufacturerStage: { $in: ["세척.패킹", "포장.발송"] },
+    manufacturerStage: { $in: ACTIVE_MAILBOX_STAGES },
     mailboxAddress: { $ne: null },
     requestCategory: REQUEST_CATEGORY.ORDER,
     ...(requestMongoId ? { _id: { $ne: requestMongoId } } : {}),
@@ -208,7 +233,7 @@ export async function ensureMailboxAddressForBusiness({
   }
 
   const mailboxOccupants = await Request.find({
-    manufacturerStage: { $in: ["세척.패킹", "포장.발송"] },
+    manufacturerStage: { $in: ACTIVE_MAILBOX_STAGES },
     requestCategory: REQUEST_CATEGORY.ORDER,
     $expr: {
       $eq: [
@@ -230,6 +255,8 @@ export async function ensureMailboxAddressForBusiness({
 
   const hasDifferentBusinessOccupant = mailboxOccupants.some((row) => {
     const occupantBusinessAnchorKey = resolveOccupantAnchorKey(row);
+    if (!occupantBusinessAnchorKey) return false;
+    if (occupantBusinessAnchorKey === UNKNOWN_ANCHOR_KEY) return false;
     return occupantBusinessAnchorKey !== requestorOrgIdStr;
   });
 

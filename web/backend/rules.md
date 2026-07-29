@@ -89,7 +89,10 @@
   - 관련 구현: `controllers/requests/common.review.controller.js`, `controllers/requests/common.requests.controller.js`
 - 우편함/배송 무결성 정책(포장.발송):
   - 우편함 재사용/배정은 **BusinessAnchor 단일 점유**를 반드시 보장합니다.
-  - `businessAnchorId`가 비어 있는 점유 의뢰는 `UNKNOWN`으로 취급하여 재사용 대상에서 제외합니다.
+  - `businessAnchorId`가 비어 있는 점유 의뢰는 `UNKNOWN`으로 취급하되,
+    같은 주소의 재사용 판정에서 `UNKNOWN`은 혼입 판정에서 제외합니다.
+    (anchor 누락 데이터 때문에 동일 업체 박스가 분할 생성되는 현상 방지)
+  - 우편함 점유(active) 단계는 `세척.패킹`, `포장.발송`, `추적관리`를 공통으로 사용합니다.
   - 택배/배송 그룹핑 및 병합 기준에서 `trackingNumber`를 `shippingPackageId`보다 우선 SSOT로 사용합니다.
   - 수동 집하(`POST /api/requests/shipping/hanjin/manual-pickup-complete`)는 우편함 단위 집하를 강제합니다.
     - packageId 매칭 건 + 미할당(shippingPackageId 없음) 건을 함께 처리합니다.

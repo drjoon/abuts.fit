@@ -147,7 +147,24 @@
 - `web/frontend/src/pages/practice/PracticeFileTransferPage.tsx`
 - `web/backend/models/request.model.js`
 
-### 1.0.1.3 practice 최근 전송카드 상세/채팅 UX SSOT (2026-07-29)
+### 1.0.1.3 우편함 배정 재사용/점유 판정 SSOT (2026-07-29)
+
+- 가공→세척.패킹, 세척.패킹→포장.발송 전환에서 우편함 배정은 `mailbox.utils`를 단일 SSOT로 사용합니다.
+- 같은 BusinessAnchor 우편함 재사용 판정 시, anchor 누락 레코드(`UNKNOWN`)는 **혼입 판정에서 제외**합니다.
+  - 이유: 같은 업체 박스에 일부 누락 데이터가 섞였다는 이유만으로 신규 우편함을 생성하면 박스가 불필요하게 분할됩니다.
+- 우편함 점유(active) 단계는 `세척.패킹`, `포장.발송`, `추적관리`를 동일하게 취급합니다.
+  - 이유: 추적관리 단계 진행 중에도 실제 물리 박스 점유가 유지되는 동안 재배정 분할을 방지하기 위함입니다.
+- 포장.발송 우편함 상세 모달 캐시 SSOT:
+  - `mailbox summary.requestCount`와 모달 상세 캐시 건수(`mailbox-details localStorage/in-memory`)가 다르면 캐시를 fresh로 보지 않고 즉시 재조회합니다.
+  - 이유: 우편함 병합/재배정 직후 모달이 구 캐시(예: 1건)를 보여주는 불일치를 방지하기 위함입니다.
+
+관련 파일:
+- `web/backend/controllers/requests/mailbox.utils.js`
+- `web/backend/controllers/cnc/machiningBridge.js`
+- `web/backend/controllers/requests/common.review.controller.js`
+- `web/frontend/src/pages/manufacturer/worksheet/custom_abutment/shipping/components/MailboxGrid.tsx`
+
+### 1.0.1.4 practice 최근 전송카드 상세/채팅 UX SSOT (2026-07-29)
 
 - `/practice/dashboard` 최근 전송 내역 카드는 클릭 시 **의뢰 상세 + 채팅 모달**을 연다.
   - 상단: 2열×3행 요약 레이아웃(전송ID/전송시각/기공소/파일수/파일명/의뢰메모)
