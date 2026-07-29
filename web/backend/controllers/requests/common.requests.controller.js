@@ -3068,98 +3068,136 @@ export async function cancelPracticeRequestsBatch(req, res) {
       requests.map((row) => String(row?.requestId || "").trim()).filter(Boolean),
     );
 
-    const failedIds = [];
-    const failedReasons = [];
-    const pushFail = (id, reason) => {
+    const precheckFailed = [];
+    const pushPrecheckFail = (id, reason) => {
       const normalizedId = String(id || "").trim();
       if (!normalizedId) return;
-      failedIds.push(normalizedId);
-      failedReasons.push({ id: normalizedId, reason: String(reason || "처리에 실패했습니다.") });
+      precheckFailed.push({
+        id: normalizedId,
+        reason: String(reason || "처리에 실패했습니다."),
+      });
     };
 
     for (const id of requestMongoIds) {
       if (!Types.ObjectId.isValid(id) || !foundByMongoId.has(id)) {
-        pushFail(id, "의뢰를 찾을 수 없습니다.");
+        pushPrecheckFail(id, "의뢰를 찾을 수 없습니다.");
       }
     }
     for (const id of requestIds) {
       if (!foundByRequestId.has(id)) {
-        pushFail(id, "의뢰를 찾을 수 없습니다.");
+        pushPrecheckFail(id, "의뢰를 찾을 수 없습니다.");
       }
     }
 
-    let successCount = 0;
     const currentRole = String(req.user?.role || "").trim();
     const currentBusinessAnchorId = String(req.user?.businessAnchorId || "").trim();
+    const deletableStages = ["의뢰", "CAM"];
+
+    const cancellableRequests = [];
+    const validationFailed = [...precheckFailed];
 
     for (const request of requests) {
       const requestMongoId = String(request?._id || "").trim();
       const requestId = String(request?.requestId || "").trim() || requestMongoId;
+      const nsrTag = String(request?.caseInfos?.newSystemRequest?.tag || "").trim();
+      const isPracticeRouteTag =
+        nsrTag === "practice_dropzone" || nsrTag === "practice_file_transfer";
 
-      try {
-        const nsrTag = String(request?.caseInfos?.newSystemRequest?.tag || "").trim();
-        const isPracticeRouteTag =
-          nsrTag === "practice_dropzone" || nsrTag === "practice_file_transfer";
-
-        if (!isPracticeRouteTag) {
-          pushFail(requestId, "practice 전송 의뢰만 삭제(취소)할 수 있습니다.");
-          continue;
-        }
-
-        if (currentRole !== "admin") {
-          const ownerAnchorId = String(
-            request?.businessAnchorId || request?.requestor?.businessAnchorId || "",
-          ).trim();
-
-          if (!currentBusinessAnchorId || !ownerAnchorId || ownerAnchorId !== currentBusinessAnchorId) {
-            pushFail(requestId, "이 의뢰를 삭제(취소)할 권한이 없습니다.");
-            continue;
-          }
-        }
-
-        const stageStatus = String(request?.manufacturerStage || "").trim();
-        const deletableStages = ["의뢰", "CAM"];
-        if (!deletableStages.includes(stageStatus)) {
-          pushFail(requestId, "삭제 가능한 단계(의뢰/CAM)가 아닙니다.");
-          continue;
-        }
-
-        await ensureRequestCancelRefund({
-          request,
-          actorUserId: req.user?._id || null,
+      if (!isPracticeRouteTag) {
+        validationFailed.push({
+          id: requestId,
+          reason: "practice 전송 의뢰만 삭제(취소)할 수 있습니다.",
         });
+        continue;
+      }
 
-        applyStatusMapping(request, "취소");
-        await request.save();
-
-        const anchorId = String(
+      if (currentRole !== "admin") {
+        const ownerAnchorId = String(
           request?.businessAnchorId || request?.requestor?.businessAnchorId || "",
         ).trim();
-        if (anchorId) {
-          triggerDashboardSummaryRefreshForAnchorId(
-            anchorId,
-            `practice-request-canceled:${requestId}`,
-          ).catch(() => {
-            // ignore
-          });
-          triggerPricingSnapshotForBusinessAnchorId(
-            anchorId,
-            `practice-request-canceled:${requestId}`,
-          );
-        }
 
-        successCount += 1;
-      } catch (error) {
-        pushFail(requestId || requestMongoId, error?.message || "삭제(취소)에 실패했습니다.");
+        if (
+          !currentBusinessAnchorId ||
+          !ownerAnchorId ||
+          ownerAnchorId !== currentBusinessAnchorId
+        ) {
+          validationFailed.push({
+            id: requestId,
+            reason: "이 의뢰를 삭제(취소)할 권한이 없습니다.",
+          });
+          continue;
+        }
       }
+
+      const stageStatus = String(request?.manufacturerStage || "").trim();
+      if (!deletableStages.includes(stageStatus)) {
+        validationFailed.push({
+          id: requestId,
+          reason: "삭제 가능한 단계(의뢰/CAM)가 아닙니다.",
+        });
+        continue;
+      }
+
+      cancellableRequests.push({ request, requestId });
     }
+
+    // 배치 취소 처리 병렬화: 직렬 처리 대비 응답 지연 감소
+    const settleResults = await Promise.all(
+      cancellableRequests.map(async ({ request, requestId }) => {
+        try {
+          await ensureRequestCancelRefund({
+            request,
+            actorUserId: req.user?._id || null,
+          });
+
+          applyStatusMapping(request, "취소");
+          await request.save();
+
+          const anchorId = String(
+            request?.businessAnchorId || request?.requestor?.businessAnchorId || "",
+          ).trim();
+          if (anchorId) {
+            triggerDashboardSummaryRefreshForAnchorId(
+              anchorId,
+              `practice-request-canceled:${requestId}`,
+            ).catch(() => {
+              // ignore
+            });
+            triggerPricingSnapshotForBusinessAnchorId(
+              anchorId,
+              `practice-request-canceled:${requestId}`,
+            );
+          }
+
+          return { ok: true, id: requestId };
+        } catch (error) {
+          return {
+            ok: false,
+            id: requestId,
+            reason: error?.message || "삭제(취소)에 실패했습니다.",
+          };
+        }
+      }),
+    );
+
+    const processFailed = settleResults
+      .filter((row) => !row.ok)
+      .map((row) => ({ id: String(row.id || ""), reason: String(row.reason || "처리에 실패했습니다.") }));
+    const successCount = settleResults.filter((row) => row.ok).length;
+
+    const mergedFailedReasons = [...validationFailed, ...processFailed].filter(
+      (row) => String(row.id || "").trim().length > 0,
+    );
+    const failedIds = Array.from(
+      new Set(mergedFailedReasons.map((row) => String(row.id || "").trim()).filter(Boolean)),
+    );
 
     return res.status(200).json({
       success: true,
       data: {
         successCount,
-        failedIds: Array.from(new Set(failedIds)),
-        failedReasons,
+        failedIds,
+        failedReasons: mergedFailedReasons,
       },
     });
   } catch (error) {

@@ -25,6 +25,7 @@ import { resolveLeadDaysWithSameDayCutoff } from "./production.utils.js";
 import { checkCreditLock } from "../../utils/creditLock.util.js";
 import { triggerDashboardSummaryRefreshForAnchorId } from "../../services/requestSnapshotTriggers.service.js";
 import { recomputeBulkShippingSnapshotForBusinessAnchorId } from "../../services/bulkShippingSnapshot.service.js";
+import { emitAppEventToUser } from "../../socket.js";
 import {
   buildStandardStlFileName,
   getBusinessCreditBalanceBreakdown,
@@ -301,12 +302,11 @@ export async function createRequestsFromDraft(req, res) {
     const draftCaseInfos = Array.isArray(draft.caseInfos)
       ? draft.caseInfos
       : [];
-    const isPracticeDropzoneDraft =
+    const isPracticeRoutingDraft =
+      req.user?.role === "practice" &&
       draftCaseInfos.length > 0 &&
-      draftCaseInfos.every(
-        (ci) =>
-          String(ci?.newSystemRequest?.tag || "").trim() ===
-          "practice_dropzone",
+      draftCaseInfos.every((ci) =>
+        isPracticeRoutingTag(ci?.newSystemRequest?.tag),
       );
 
     if (req.user?.role === "requestor") {
@@ -317,7 +317,7 @@ export async function createRequestsFromDraft(req, res) {
             "사업자 소속 정보가 필요합니다. 설정 > 사업자에서 소속을 먼저 확인해주세요.",
         });
       }
-      if (lockStatus.isLocked && !isPracticeDropzoneDraft) {
+      if (lockStatus.isLocked && !isPracticeRoutingDraft) {
         return res.status(403).json({
           success: false,
           message: `크레딧 사용이 제한되었습니다. 사유: ${lockStatus.reason}`,
@@ -590,7 +590,16 @@ export async function createRequestsFromDraft(req, res) {
     });
     const requestFilter = await buildRequestorOrgScopeFilter(req);
     const duplicates = [];
+    const skipCaseIds = new Set();
+    const autoSkippedDuplicateCaseIds = new Set();
     let remakeQuota = null;
+
+    const isPracticeRoutingPayload =
+      req.user?.role === "practice" &&
+      preparedCases.length > 0 &&
+      preparedCases.every((c) =>
+        isPracticeRoutingTag(c?.caseInfosWithFile?.newSystemRequest?.tag),
+      );
 
     if (enableDuplicateRequestCheck) {
       const keyTuplesRaw = preparedCases
@@ -615,25 +624,37 @@ export async function createRequestsFromDraft(req, res) {
       }
 
       if (duplicateInPayload.length > 0) {
-        return res.status(400).json({
-          success: false,
-          code: "DUPLICATE_IN_PAYLOAD",
-          message:
-            "제출한 의뢰 목록에 동일한 치과/환자/치아 조합이 중복되었습니다. 중복 항목을 제거하고 다시 제출해주세요.",
-          data: {
-            duplicates: duplicateInPayload.map((d) => ({
-              caseId: d.caseId,
-              clinicName: d.clinicName,
-              patientName: d.patientName,
-              tooth: d.tooth,
-            })),
-          },
-        });
+        if (isPracticeRoutingPayload) {
+          duplicateInPayload.forEach((d) => {
+            const caseId = String(d.caseId || "").trim();
+            if (!caseId) return;
+            skipCaseIds.add(caseId);
+            autoSkippedDuplicateCaseIds.add(caseId);
+          });
+        } else {
+          return res.status(400).json({
+            success: false,
+            code: "DUPLICATE_IN_PAYLOAD",
+            message:
+              "제출한 의뢰 목록에 동일한 치과/환자/치아 조합이 중복되었습니다. 중복 항목을 제거하고 다시 제출해주세요.",
+            data: {
+              duplicates: duplicateInPayload.map((d) => ({
+                caseId: d.caseId,
+                clinicName: d.clinicName,
+                patientName: d.patientName,
+                tooth: d.tooth,
+              })),
+            },
+          });
+        }
       }
 
       const keyTuples = Array.from(tupleByKey.values());
 
-      if (keyTuples.length > 0) {
+      // practice 전송 SSOT:
+      // - 같은 전송(payload) 내부 중복만 처리
+      // - 과거 전송건(DB)과의 중복 비교는 하지 않는다.
+      if (!isPracticeRoutingPayload && keyTuples.length > 0) {
         console.log("[createRequestsFromDraft] duplicate lookup start", {
           t: Date.now() - startTime,
           tuples: keyTuples.length,
@@ -710,30 +731,38 @@ export async function createRequestsFromDraft(req, res) {
         });
       }
       if (duplicates.length > 0 && !duplicateResolutions) {
-        remakeQuota = await getMonthlyRemakeQuota({
-          scopeFilter: requestFilter,
-        });
-        const first = duplicates[0];
-        const st = String(first?.existingRequest?.manufacturerStage || "");
-        const mode = st === "추적관리" ? "tracking" : "active";
-        return res.status(409).json({
-          success: false,
-          code: "DUPLICATE_REQUEST",
-          message:
-            st === "추적관리"
-              ? "동일한 정보의 의뢰가 이미 완료되어 있습니다. 재의뢰(리메이크)로 접수할까요?"
-              : "동일한 정보의 의뢰가 이미 진행 중입니다. 중복 의뢰 처리 방법을 선택해주세요.",
-          data: {
-            mode,
-            duplicates,
-            remakeQuota,
-          },
-        });
+        if (isPracticeRoutingPayload) {
+          duplicates.forEach((d) => {
+            const caseId = String(d.caseId || "").trim();
+            if (!caseId) return;
+            skipCaseIds.add(caseId);
+            autoSkippedDuplicateCaseIds.add(caseId);
+          });
+        } else {
+          remakeQuota = await getMonthlyRemakeQuota({
+            scopeFilter: requestFilter,
+          });
+          const first = duplicates[0];
+          const st = String(first?.existingRequest?.manufacturerStage || "");
+          const mode = st === "추적관리" ? "tracking" : "active";
+          return res.status(409).json({
+            success: false,
+            code: "DUPLICATE_REQUEST",
+            message:
+              st === "추적관리"
+                ? "동일한 정보의 의뢰가 이미 완료되어 있습니다. 재의뢰(리메이크)로 접수할까요?"
+                : "동일한 정보의 의뢰가 이미 진행 중입니다. 중복 의뢰 처리 방법을 선택해주세요.",
+            data: {
+              mode,
+              duplicates,
+              remakeQuota,
+            },
+          });
+        }
       }
     }
 
     const resolutionsByCaseId = new Map();
-    const skipCaseIds = new Set();
 
     if (duplicates.length > 0 && duplicateResolutions) {
       const duplicatesByCaseId = new Map(
@@ -860,20 +889,23 @@ export async function createRequestsFromDraft(req, res) {
       (c) => !skipCaseIds.has(String(c.caseId)),
     );
 
-    const isPracticeDropzoneSubmission =
+    const isPracticeRoutingSubmission =
+      req.user?.role === "practice" &&
       preparedCasesForCreate.length > 0 &&
-      preparedCasesForCreate.every(
-        (c) =>
-          String(c?.caseInfosWithFile?.newSystemRequest?.tag || "").trim() ===
-          "practice_dropzone",
+      preparedCasesForCreate.every((c) =>
+        isPracticeRoutingTag(c?.caseInfosWithFile?.newSystemRequest?.tag),
       );
 
     if (preparedCasesForCreate.length === 0) {
       return res.status(200).json({
         success: true,
-        message:
-          "모든 중복 건이 기존 유지로 선택되어 신규 의뢰를 생성하지 않았습니다.",
+        message: isPracticeRoutingPayload
+          ? "중복된 항목을 제외한 신규 의뢰가 없어 전송하지 않았습니다."
+          : "모든 중복 건이 기존 유지로 선택되어 신규 의뢰를 생성하지 않았습니다.",
         data: [],
+        ...(autoSkippedDuplicateCaseIds.size > 0 && {
+          skippedDuplicateCount: autoSkippedDuplicateCaseIds.size,
+        }),
       });
     }
 
@@ -957,7 +989,7 @@ export async function createRequestsFromDraft(req, res) {
       );
     const shipDate = estimatedShipYmd || createdYmd;
     const boxCount = 1;
-    const totalShippingFee = isPracticeDropzoneSubmission
+    const totalShippingFee = isPracticeRoutingSubmission
       ? 0
       : boxCount * shippingFeePerBox;
     console.log("[createRequestsFromDraft] pre-fetch done", {
@@ -965,7 +997,7 @@ export async function createRequestsFromDraft(req, res) {
       shippingFeePerBox,
       weeklyBatchDays,
       shipDate,
-      isPracticeDropzoneSubmission,
+      isPracticeRoutingSubmission,
       totalShippingFee,
     });
 
@@ -1064,7 +1096,7 @@ export async function createRequestsFromDraft(req, res) {
           }
         }
 
-        if (!isPracticeDropzoneSubmission) {
+        if (!isPracticeRoutingSubmission) {
           const {
             balance,
             paidCredit,
@@ -1457,17 +1489,52 @@ export async function createRequestsFromDraft(req, res) {
       session.endSession();
     }
 
+    if (isPracticeRoutingSubmission && createdRequests.length > 0) {
+      // related files:
+      // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
+      // - web/frontend/src/shared/realtime/socket.ts
+      // practice 제출 완료 시 최근 전송 내역 실시간 갱신 트리거
+      emitAppEventToUser(req.user?._id, "practice:transfer-created", {
+        source: "createRequestsFromDraft",
+        requestIds: createdRequests
+          .map((row) => String(row?.requestId || "").trim())
+          .filter(Boolean),
+        requestMongoIds: createdRequests
+          .map((row) => String(row?._id || "").trim())
+          .filter(Boolean),
+        count: createdRequests.length,
+      });
+    }
+
     console.log("[createRequestsFromDraft] response", {
       t: Date.now() - startTime,
       created: createdRequests.length,
+      isPracticeRoutingSubmission,
     });
+    const warningParts = [];
+    if (missingFieldsByFile.length > 0) {
+      warningParts.push(
+        `${missingFieldsByFile.length}개 파일은 필수 정보 누락으로 제외되었습니다.`,
+      );
+    }
+    if (autoSkippedDuplicateCaseIds.size > 0) {
+      warningParts.push(
+        `${autoSkippedDuplicateCaseIds.size}개 파일은 중복 의뢰로 자동 제외되었습니다.`,
+      );
+    }
+
     return res.status(201).json({
       success: true,
       message: `${createdRequests.length}건의 의뢰가 Draft에서 생성되었습니다.`,
       data: createdRequests,
+      ...(warningParts.length > 0 && {
+        warning: warningParts.join(" "),
+      }),
       ...(missingFieldsByFile.length > 0 && {
-        warning: `${missingFieldsByFile.length}개 파일은 필수 정보 누락으로 제외되었습니다.`,
         missingFiles: missingFieldsByFile,
+      }),
+      ...(autoSkippedDuplicateCaseIds.size > 0 && {
+        skippedDuplicateCount: autoSkippedDuplicateCaseIds.size,
       }),
     });
   } catch (error) {

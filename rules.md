@@ -210,6 +210,22 @@
 - `web/backend/modules/chat/chat.routes.js`
 - `web/backend/controllers/chats/chat.controller.js`
 
+### 1.0.1.5 practice 의뢰 상세 채팅 파일첨부/상대 라우팅 SSOT (2026-07-29)
+
+- `/practice/dashboard` 의뢰 상세 · 기공소 채팅은 텍스트뿐 아니라 **파일 첨부 메시지**를 지원한다.
+  - 첨부만 있는 메시지도 전송 가능하며, 본문은 백엔드에서 `[파일 첨부]`로 정규화한다.
+  - 첨부 payload는 `fileName`, `fileType`, `fileSize`, `s3Key`, `s3Url`을 사용한다.
+- practice 전용 채팅방 해석은 `caseInfos.practiceRouting`을 우선 사용하며, 상대 사용자는 **기공소(requestor) 사용자 우선**으로 찾는다.
+  - `targetLabAnchorId` 기준 사용자 해석 실패 시 `targetLabName`/메시지 `[기공소: ...]` 이름으로 anchor를 재조회한다.
+  - 이 경로에서 기존 manufacturer 전용 해석만 사용하지 않는다.
+- 목적: 치과→기공소 채팅방 연결 실패(`아직 연결 가능한 기공소가 지정되지 않았습니다.`)를 줄이고, 전송 후 후속 커뮤니케이션을 모달 내에서 완료 가능하게 한다.
+
+관련 파일:
+- `web/frontend/src/pages/practice/PracticeFileTransferPage.tsx`
+- `web/frontend/src/shared/hooks/useChatMessages.ts`
+- `web/backend/controllers/chats/chat.controller.js`
+- `web/backend/models/chat.model.js`
+
 ### 1.0.2 디자인소프트웨어 기본값 계층 (BusinessAnchor → Requestor → 의뢰건) (2026-07-27)
 
 - BusinessAnchor `requestSettings.designSoftware`는 **사업체 공통 기본값**으로만 관리한다.

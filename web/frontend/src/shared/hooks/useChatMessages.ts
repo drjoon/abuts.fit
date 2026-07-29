@@ -49,9 +49,11 @@ export const useChatMessages = (options: UseChatMessagesOptions = {}) => {
         } else {
           throw new Error("메시지 조회에 실패했습니다.");
         }
-      } catch (e: any) {
+      } catch (e: unknown) {
         const errorMsg =
-          e?.message || "메시지를 불러오는 중 오류가 발생했습니다.";
+          e instanceof Error
+            ? e.message
+            : "메시지를 불러오는 중 오류가 발생했습니다.";
         setError(errorMsg);
         toast({
           title: "오류",
@@ -62,7 +64,7 @@ export const useChatMessages = (options: UseChatMessagesOptions = {}) => {
         setLoading(false);
       }
     },
-    [roomId, toast]
+    [roomId, toast, token]
   );
 
   const sendMessage = useCallback(
@@ -77,7 +79,13 @@ export const useChatMessages = (options: UseChatMessagesOptions = {}) => {
         s3Url: string;
       }>
     ) => {
-      if (!token || !roomId || !content.trim()) return null;
+      const normalizedContent = String(content || "").trim();
+      const normalizedAttachments = Array.isArray(attachments)
+        ? attachments.filter((row) => String(row?.fileName || "").trim())
+        : [];
+
+      if (!token || !roomId) return null;
+      if (!normalizedContent && normalizedAttachments.length === 0) return null;
 
       try {
         const res = await apiFetch<{
@@ -89,8 +97,8 @@ export const useChatMessages = (options: UseChatMessagesOptions = {}) => {
           method: "POST",
           token,
           jsonBody: {
-            content: content.trim(),
-            attachments: attachments || [],
+            content: normalizedContent,
+            attachments: normalizedAttachments,
           },
         });
 
@@ -100,10 +108,11 @@ export const useChatMessages = (options: UseChatMessagesOptions = {}) => {
         } else {
           throw new Error(res.data?.message || "메시지 전송에 실패했습니다.");
         }
-      } catch (e: any) {
+      } catch (e: unknown) {
         toast({
           title: "전송 실패",
-          description: e?.message || "메시지 전송 중 오류가 발생했습니다.",
+          description:
+            e instanceof Error ? e.message : "메시지 전송 중 오류가 발생했습니다.",
           variant: "destructive",
         });
         return null;

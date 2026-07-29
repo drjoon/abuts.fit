@@ -123,6 +123,77 @@ const resolveManufacturerAnchorIdByName = async (name) => {
   return String(anchor?._id || "").trim();
 };
 
+const resolvePracticeLabUserIdByAnchor = async (anchorId) => {
+  if (!anchorId || !Types.ObjectId.isValid(anchorId)) return "";
+
+  const anchor = await BusinessAnchor.findById(anchorId)
+    .select({ primaryContactUserId: 1, owners: 1, members: 1 })
+    .lean();
+  if (!anchor) return "";
+
+  const toValidUserIds = (rows) =>
+    (Array.isArray(rows) ? rows : [])
+      .map((id) => String(id || "").trim())
+      .filter((id) => Types.ObjectId.isValid(id));
+
+  const orderedIds = [
+    String(anchor.primaryContactUserId || "").trim(),
+    ...toValidUserIds(anchor.owners),
+    ...toValidUserIds(anchor.members),
+  ].filter((id, idx, arr) => id && Types.ObjectId.isValid(id) && arr.indexOf(id) === idx);
+
+  if (orderedIds.length > 0) {
+    const preferred = await User.findOne({
+      _id: { $in: orderedIds.map((id) => new Types.ObjectId(id)) },
+      role: "requestor",
+      active: true,
+    })
+      .select({ _id: 1 })
+      .lean();
+    if (preferred?._id) return String(preferred._id);
+
+    const fallback = await User.findOne({
+      _id: { $in: orderedIds.map((id) => new Types.ObjectId(id)) },
+      active: true,
+    })
+      .select({ _id: 1 })
+      .lean();
+    if (fallback?._id) return String(fallback._id);
+  }
+
+  const anchorUser = await User.findOne({
+    businessAnchorId: new Types.ObjectId(anchorId),
+    role: "requestor",
+    active: true,
+  })
+    .select({ _id: 1 })
+    .lean();
+  if (anchorUser?._id) return String(anchorUser._id);
+
+  const anyAnchorUser = await User.findOne({
+    businessAnchorId: new Types.ObjectId(anchorId),
+    active: true,
+  })
+    .select({ _id: 1 })
+    .lean();
+
+  return String(anyAnchorUser?._id || "").trim();
+};
+
+const resolvePracticeLabAnchorIdByName = async (name) => {
+  const n = String(name || "").trim();
+  if (!n) return "";
+
+  const requestorAnchor = await BusinessAnchor.findOne({
+    businessType: "requestor",
+    name: n,
+  })
+    .select({ _id: 1 })
+    .lean();
+
+  return String(requestorAnchor?._id || "").trim();
+};
+
 /**
  * 내 채팅방 목록 조회
  * @route GET /api/chats/rooms
@@ -459,18 +530,34 @@ export async function getOrCreateRequestChatRoom(req, res) {
     ).trim();
     const labNameFromMessage = extractLabNameFromPracticeMessage(messageRaw);
 
-    let manufacturerId = currentManufacturerId;
+    let counterpartUserId = "";
 
-    if (!manufacturerId && usePracticeRouting && labAnchorIdFromPracticeRouting) {
-      manufacturerId = await resolveManufacturerUserIdByAnchor(
-        labAnchorIdFromPracticeRouting,
-      );
+    if (usePracticeRouting) {
+      // practice(치과->기공소): requestor 사용자만 상대 후보로 인정
+      if (currentManufacturerId && Types.ObjectId.isValid(currentManufacturerId)) {
+        const existingCounterpart = await User.findOne({
+          _id: new Types.ObjectId(currentManufacturerId),
+          role: "requestor",
+          active: true,
+        })
+          .select({ _id: 1 })
+          .lean();
+        counterpartUserId = String(existingCounterpart?._id || "").trim();
+      }
+
+      if (!counterpartUserId && labAnchorIdFromPracticeRouting) {
+        counterpartUserId = await resolvePracticeLabUserIdByAnchor(
+          labAnchorIdFromPracticeRouting,
+        );
+      }
+    } else {
+      counterpartUserId = currentManufacturerId;
     }
 
-    if (!manufacturerId && !usePracticeRouting && legacyManufacturerRaw) {
+    if (!counterpartUserId && !usePracticeRouting && legacyManufacturerRaw) {
       // 기존 루트 보존: 의뢰자(기공소)->제조사 경로는 manufacturer 필드를 우선 사용
       if (Types.ObjectId.isValid(legacyManufacturerRaw)) {
-        manufacturerId = await resolveManufacturerUserIdByAnchor(
+        counterpartUserId = await resolveManufacturerUserIdByAnchor(
           legacyManufacturerRaw,
         );
       } else {
@@ -478,32 +565,41 @@ export async function getOrCreateRequestChatRoom(req, res) {
           legacyManufacturerRaw,
         );
         if (legacyAnchorId) {
-          manufacturerId = await resolveManufacturerUserIdByAnchor(legacyAnchorId);
+          counterpartUserId = await resolveManufacturerUserIdByAnchor(legacyAnchorId);
         }
       }
     }
 
-    if (!manufacturerId) {
-      const anchorIdFromName =
-        (await resolveManufacturerAnchorIdByName(labNameFromPracticeRouting)) ||
-        (await resolveManufacturerAnchorIdByName(labNameFromMessage));
-      if (anchorIdFromName) {
-        manufacturerId = await resolveManufacturerUserIdByAnchor(anchorIdFromName);
+    if (!counterpartUserId) {
+      if (usePracticeRouting) {
+        const anchorIdFromName =
+          (await resolvePracticeLabAnchorIdByName(labNameFromPracticeRouting)) ||
+          (await resolvePracticeLabAnchorIdByName(labNameFromMessage));
+        if (anchorIdFromName) {
+          counterpartUserId = await resolvePracticeLabUserIdByAnchor(anchorIdFromName);
+        }
+      } else {
+        const anchorIdFromName =
+          (await resolveManufacturerAnchorIdByName(labNameFromPracticeRouting)) ||
+          (await resolveManufacturerAnchorIdByName(labNameFromMessage));
+        if (anchorIdFromName) {
+          counterpartUserId = await resolveManufacturerUserIdByAnchor(anchorIdFromName);
+        }
       }
     }
 
-    if (!requestorId || !manufacturerId) {
+    if (!requestorId || !counterpartUserId) {
       return res.status(409).json({
         success: false,
         message: "아직 연결 가능한 기공소가 지정되지 않았습니다.",
       });
     }
 
-    // 이후 채팅 접근/권한 판별의 SSOT를 위해 caManufacturer를 고정 저장한다.
-    if (!currentManufacturerId && manufacturerId) {
+    // 기존 데이터 호환: caManufacturer가 비어 있으면 상대 사용자 id를 고정 저장한다.
+    if (!currentManufacturerId && counterpartUserId) {
       await Request.updateOne(
         { _id: targetRequest._id, caManufacturer: null },
-        { $set: { caManufacturer: new Types.ObjectId(manufacturerId) } },
+        { $set: { caManufacturer: new Types.ObjectId(counterpartUserId) } },
       ).catch(() => {
         // ignore
       });
@@ -512,7 +608,7 @@ export async function getOrCreateRequestChatRoom(req, res) {
     const canAccess =
       req.user?.role === "admin" ||
       currentUserId === requestorId ||
-      currentUserId === manufacturerId;
+      currentUserId === counterpartUserId;
 
     if (!canAccess) {
       return res.status(403).json({
@@ -521,7 +617,7 @@ export async function getOrCreateRequestChatRoom(req, res) {
       });
     }
 
-    const participantObjectIds = [requestorId, manufacturerId].map(
+    const participantObjectIds = [requestorId, counterpartUserId].map(
       (id) => new Types.ObjectId(id),
     );
 
@@ -785,11 +881,25 @@ export async function sendChatMessage(req, res) {
     const userId = req.user._id;
     const userRole = req.user.role;
 
-    // 메시지 내용 유효성 검사
-    if (!content || !content.trim()) {
+    const normalizedContent = String(content || "").trim();
+    const normalizedAttachments = Array.isArray(attachments)
+      ? attachments
+          .map((row) => ({
+            fileId: row?.fileId || null,
+            fileName: String(row?.fileName || "").trim(),
+            fileType: String(row?.fileType || "application/octet-stream").trim(),
+            fileSize: Number(row?.fileSize || 0),
+            s3Key: String(row?.s3Key || "").trim(),
+            s3Url: String(row?.s3Url || "").trim(),
+          }))
+          .filter((row) => row.fileName && row.s3Key)
+      : [];
+
+    // 텍스트 또는 첨부 중 하나는 필수
+    if (!normalizedContent && normalizedAttachments.length === 0) {
       return res.status(400).json({
         success: false,
-        message: "메시지 내용은 필수입니다.",
+        message: "메시지 내용 또는 첨부 파일이 필요합니다.",
       });
     }
 
@@ -833,8 +943,8 @@ export async function sendChatMessage(req, res) {
     const newMessage = new Chat({
       roomId,
       sender: userId,
-      content: content.trim(),
-      attachments: attachments || [],
+      content: normalizedContent || "[파일 첨부]",
+      attachments: normalizedAttachments,
       readBy: [{ userId, readAt: new Date() }],
     });
 

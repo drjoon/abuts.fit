@@ -243,9 +243,12 @@ export const usePracticeTransferStep1 = (options?: Options) => {
     return removedKeys;
   };
 
-  const applyClassifiedBatch = (batch: ClassifiedUploadBatch) => {
+  const applyClassifiedBatch = (
+    batch: ClassifiedUploadBatch,
+    options?: { suppressEmptyUploadToast?: boolean },
+  ) => {
     if (batch.stlFiles.length > 0) {
-      setFiles((prev) => dedupeFiles([...prev, ...batch.stlFiles]));
+      setFiles((prev) => [...prev, ...batch.stlFiles]);
     }
 
     if (batch.rejectedFiles.length > 0) {
@@ -263,7 +266,7 @@ export const usePracticeTransferStep1 = (options?: Options) => {
       });
     }
 
-    if (batch.stlFiles.length === 0) {
+    if (batch.stlFiles.length === 0 && !options?.suppressEmptyUploadToast) {
       toast({
         title: "업로드할 파일이 없습니다",
         description: "선택된 파일 중 업로드 가능한 STL이 없었습니다.",
@@ -274,11 +277,44 @@ export const usePracticeTransferStep1 = (options?: Options) => {
   };
 
   const handleIncomingFiles = (selectedFiles: File[]) => {
-    const normalized = dedupeFiles(selectedFiles || []);
-    if (!normalized.length) return;
+    const incoming = Array.from(selectedFiles || []);
+    if (!incoming.length) return;
 
-    const batch = classifyIncomingFiles(normalized);
-    applyClassifiedBatch(batch);
+    const rawBatch = classifyIncomingFiles(incoming);
+    const uniqueIncomingStl = dedupeFiles(rawBatch.stlFiles);
+    const duplicateWithinIncomingCount =
+      rawBatch.stlFiles.length - uniqueIncomingStl.length;
+
+    const existingFileKeys = new Set(files.map((file) => toPracticeFileKey(file)));
+    const dedupedStlFiles = uniqueIncomingStl.filter(
+      (file) => !existingFileKeys.has(toPracticeFileKey(file)),
+    );
+    const duplicateAgainstExistingCount =
+      uniqueIncomingStl.length - dedupedStlFiles.length;
+
+    const duplicateExcludedCount =
+      duplicateWithinIncomingCount + duplicateAgainstExistingCount;
+
+    const batch: ClassifiedUploadBatch = {
+      ...rawBatch,
+      stlFiles: dedupedStlFiles,
+    };
+
+    applyClassifiedBatch(batch, {
+      suppressEmptyUploadToast:
+        duplicateExcludedCount > 0 &&
+        batch.stlFiles.length === 0 &&
+        batch.rejectedFiles.length === 0 &&
+        batch.ignoredFiles.length === 0,
+    });
+
+    if (duplicateExcludedCount > 0) {
+      toast({
+        title: "중복 파일 제외",
+        description: `중복 ${duplicateExcludedCount}건 제외`,
+        duration: 2200,
+      });
+    }
 
     if (batch.stlFiles.length > 0) {
       void persistFilesToIndexedDb(batch.stlFiles).then((removedKeys) => {
