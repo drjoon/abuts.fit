@@ -2,6 +2,7 @@
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/shared/realtime/socket.ts
+// - web/frontend/src/pages/requestor/referralGroups/RequestorReferralPage.tsx
 // - web/backend/modules/practiceTransfers/practiceTransfer.routes.js
 // - web/backend/controllers/practiceTransfers/practiceTransfer.controller.js
 // - web/backend/models/practiceTransfer.model.js
@@ -13,7 +14,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 
@@ -28,7 +29,7 @@ import { useChatRooms, type ChatRoom } from "@/shared/hooks/useChatRooms";
 import { onAppEvent } from "@/shared/realtime/socket";
 import { useUploadWithProgressToast } from "@/shared/hooks/useUploadWithProgressToast";
 import { type TempUploadedFile } from "@/shared/hooks/useS3TempUpload";
-import { Building2, Download, MessageSquare, Paperclip, Search, Send, X } from "lucide-react";
+import { Building2, Copy, Download, Link2, MessageCircle, MessageSquare, Paperclip, Search, Send, X } from "lucide-react";
 
 type ReceivedPracticeFile = {
   id: string;
@@ -109,6 +110,9 @@ export default function RequestorPracticePage() {
   const [page, setPage] = useState(1);
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
+  const [activeTab, setActiveTab] = useState<"history" | "send-link">("history");
+  const [practiceLinkCopied, setPracticeLinkCopied] = useState(false);
+  const [practiceMessageCopied, setPracticeMessageCopied] = useState(false);
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedTransfer, setSelectedTransfer] = useState<ReceivedPracticeTransfer | null>(null);
@@ -730,8 +734,124 @@ export default function RequestorPracticePage() {
     }
   }, [activeChatRoom?._id, chatAttachedFiles, chatDraft, chatSending, sendMessage, uploadFilesWithToast]);
 
+  const labName = String(user?.companyName || "").trim();
+  const labId = String(user?.businessAnchorId || "").trim();
+  const practiceLinkQuery = new URLSearchParams();
+  if (labId) practiceLinkQuery.set("labId", labId);
+  if (labName) practiceLinkQuery.set("labName", labName);
+  const practiceDropzoneLink = `${window.location.origin}/practice/dropzone${
+    practiceLinkQuery.toString() ? `?${practiceLinkQuery.toString()}` : ""
+  }`;
+
+  const handleCopyPracticeDropzoneLink = async () => {
+    try {
+      await navigator.clipboard.writeText(practiceDropzoneLink);
+      setPracticeLinkCopied(true);
+      setTimeout(() => setPracticeLinkCopied(false), 2000);
+      toast({
+        title: "복사 완료",
+        description: "치과 파일전송 링크가 복사되었습니다.",
+        duration: 2000,
+      });
+    } catch {
+      toast({
+        title: "복사 실패",
+        description: "브라우저 권한을 확인해주세요.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleCopyPracticeMessage = async () => {
+    const message = `안녕하세요. 아래 링크로 스캔 파일을 전송해 주세요.\n${practiceDropzoneLink}`;
+    try {
+      await navigator.clipboard.writeText(message);
+      setPracticeMessageCopied(true);
+      setTimeout(() => setPracticeMessageCopied(false), 2000);
+      toast({
+        title: "복사 완료",
+        description: "전송 안내 문구가 복사되었습니다.",
+        duration: 2000,
+      });
+    } catch {
+      toast({
+        title: "복사 실패",
+        description: "브라우저 권한을 확인해주세요.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleShareToKakao = async () => {
+    const shareText = `안녕하세요. 아래 링크로 스캔 파일을 전송해 주세요.\n${practiceDropzoneLink}`;
+
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: "치과 파일전송 링크",
+          text: shareText,
+          url: practiceDropzoneLink,
+        });
+        toast({
+          title: "공유 창이 열렸습니다",
+          description: "카카오톡을 선택해 전송해주세요.",
+          duration: 2000,
+        });
+        return;
+      } catch (error) {
+        const err = error as { name?: string } | null;
+        if (err?.name === "AbortError") {
+          return;
+        }
+      }
+    }
+
+    try {
+      await navigator.clipboard.writeText(shareText);
+      toast({
+        title: "문구 복사 완료",
+        description: "카카오톡 대화창에 붙여넣어 전송해주세요.",
+        duration: 2500,
+      });
+    } catch {
+      toast({
+        title: "공유 실패",
+        description: "브라우저 공유를 지원하지 않습니다. 링크 복사 버튼을 이용해주세요.",
+        variant: "destructive",
+      });
+    }
+  };
+
   return (
-    <div className="space-y-4">
+    <div className="flex flex-col h-full min-h-0">
+      <div className="border-b border-gray-200 bg-white">
+        <div className="flex gap-8 px-4 sm:px-6">
+          <button
+            onClick={() => setActiveTab("history")}
+            className={`py-4 px-1 font-medium text-sm border-b-2 transition-colors ${
+              activeTab === "history"
+                ? "border-blue-600 text-blue-600"
+                : "border-transparent text-gray-600 hover:text-gray-900"
+            }`}
+          >
+            치과 전송 내역
+          </button>
+          <button
+            onClick={() => setActiveTab("send-link")}
+            className={`py-4 px-1 font-medium text-sm border-b-2 transition-colors ${
+              activeTab === "send-link"
+                ? "border-blue-600 text-blue-600"
+                : "border-transparent text-gray-600 hover:text-gray-900"
+            }`}
+          >
+            치과에 파일전송 링크 보내기
+          </button>
+        </div>
+      </div>
+
+      <div className="flex-1 min-h-0 overflow-y-auto p-3">
+        {activeTab === "history" && (
+          <div className="space-y-4">
       <Card>
         <CardHeader className="space-y-3">
           <div className="flex items-center justify-between gap-3">
@@ -778,6 +898,11 @@ export default function RequestorPracticePage() {
                       <Badge variant={transfer.isRead ? "secondary" : "destructive"}>
                         {transfer.isRead ? "수신완료" : "수신전"}
                       </Badge>
+                      {chatUnreadCount > 0 ? (
+                        <Badge variant="destructive" className="h-5 min-w-5 justify-center px-1 text-[11px] leading-none">
+                          {chatUnreadCount > 99 ? "99+" : chatUnreadCount}
+                        </Badge>
+                      ) : null}
                     </div>
                     <span className="text-xs text-muted-foreground">{formatDateTime(transfer.createdAt)}</span>
                   </div>
@@ -790,7 +915,6 @@ export default function RequestorPracticePage() {
 
                   <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                     <span>파일 {transfer.fileCount}개</span>
-                    {chatUnreadCount > 0 ? <span>채팅 미확인 {chatUnreadCount}</span> : null}
                     {transfer.transferMemo ? <span>메모: {transfer.transferMemo}</span> : null}
                   </div>
                 </button>
@@ -805,6 +929,93 @@ export default function RequestorPracticePage() {
           ) : null}
         </CardContent>
       </Card>
+          </div>
+        )}
+
+        {activeTab === "send-link" && (
+          <div className="flex items-start justify-center min-h-full p-3">
+            <Card className="w-full border-slate-200">
+              <CardHeader className="space-y-2 px-8 pt-8 pb-4">
+                <CardTitle className="text-2xl">치과 파일전송 링크</CardTitle>
+                <CardDescription>
+                  치과에서 접속하면 Step1에 내 기공소가 미리 선택되는 전용 링크입니다.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4 px-8 pb-8">
+                <div className="space-y-2">
+                  <label className="text-xs font-semibold text-slate-700 uppercase tracking-wide">
+                    전용 링크
+                  </label>
+                  <div className="rounded-lg bg-slate-50 border border-slate-200 p-4 flex items-center justify-between gap-4">
+                    <p className="text-sm font-mono text-slate-700 break-all leading-relaxed">
+                      {practiceDropzoneLink}
+                    </p>
+                    <Button
+                      onClick={() => void handleCopyPracticeDropzoneLink()}
+                      variant="default"
+                      size="sm"
+                      className="px-4 text-xs h-8 gap-1.5 shrink-0"
+                    >
+                      {practiceLinkCopied ? (
+                        <>
+                          <Copy className="w-4 h-4" />
+                          복사됨
+                        </>
+                      ) : (
+                        <>
+                          <Link2 className="w-4 h-4" />
+                          링크 복사
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-xs font-semibold text-slate-700 uppercase tracking-wide">
+                    전송 안내 문구
+                  </label>
+                  <div className="rounded-lg bg-slate-50 border border-slate-200 p-4 text-sm text-slate-700 whitespace-pre-line">
+                    안녕하세요. 아래 링크로 스캔 파일을 전송해 주세요.
+                    {`\n${practiceDropzoneLink}`}
+                  </div>
+                  <div className="flex flex-wrap items-center justify-end gap-2">
+                    <Button
+                      type="button"
+                      variant="default"
+                      size="sm"
+                      className="h-8 gap-1.5"
+                      onClick={() => void handleShareToKakao()}
+                    >
+                      <MessageCircle className="w-4 h-4" />
+                      카카오톡으로 공유
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-8 gap-1.5"
+                      onClick={() => void handleCopyPracticeMessage()}
+                    >
+                      {practiceMessageCopied ? (
+                        <>
+                          <Copy className="w-4 h-4" />
+                          복사됨
+                        </>
+                      ) : (
+                        <>
+                          <Send className="w-4 h-4" />
+                          문구 복사
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+      </div>
 
       <Dialog
         open={dialogOpen}
