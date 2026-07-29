@@ -64,6 +64,16 @@
   - 수신 판정 SSOT: `PracticeTransfer.requestorReadAt`
   - 가상 의뢰 행 매핑 기준: `controllers/practiceTransfers/practiceTransfer.controller.js#toVirtualRequestRows`
 
+- practice 파일전송 임시저장(다른 PC 이어쓰기) SSOT:
+  - 저장 모델: `models/practiceTransferDraft.model.js`
+  - API: `GET/POST/DELETE /api/practice/transfers/draft`
+  - draft `files`는 `File` 컬렉션의 temp 업로드 파일 소유권(`uploadedBy`) 검증 후 저장합니다.
+  - practice 전송 생성 성공 후 draft 정리는 프론트에서 `DELETE /draft` 호출로 수행합니다.
+  - 관련 파일:
+    - `modules/practiceTransfers/practiceTransfer.routes.js`
+    - `controllers/practiceTransfers/practiceTransfer.controller.js`
+    - `models/file.model.js`
+
 - 문의 실시간 이벤트 SSOT:
   - 문의 생성 시(admin 대상)
     - `comm:badge-update` (`key=inquiry`, `delta=+1`)

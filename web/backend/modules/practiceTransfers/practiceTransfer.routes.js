@@ -6,11 +6,14 @@ import express from "express";
 import { authenticate, authorize } from "../../middlewares/auth.middleware.js";
 import {
   cancelPracticeTransfersBatch,
+  clearMyPracticeTransferDraft,
   createPracticeTransfer,
+  getMyPracticeTransferDraft,
   getMyPracticeTransfers,
   getReceivedPracticeTransfers,
   getReceivedPracticeTransferUnreadCount,
   markReceivedPracticeTransferRead,
+  upsertPracticeTransferDraft,
 } from "../../controllers/practiceTransfers/practiceTransfer.controller.js";
 
 const router = express.Router();
@@ -31,6 +34,27 @@ router.get(
   authenticate,
   authorize(["practice", "admin"], { subRoles: ["owner", "staff"] }),
   getMyPracticeTransfers,
+);
+
+router.get(
+  "/draft",
+  authenticate,
+  authorize(["practice", "admin"], { subRoles: ["owner", "staff"] }),
+  getMyPracticeTransferDraft,
+);
+
+router.post(
+  "/draft",
+  authenticate,
+  authorize(["practice", "admin"], { subRoles: ["owner", "staff"] }),
+  upsertPracticeTransferDraft,
+);
+
+router.delete(
+  "/draft",
+  authenticate,
+  authorize(["practice", "admin"], { subRoles: ["owner", "staff"] }),
+  clearMyPracticeTransferDraft,
 );
 
 router.get(

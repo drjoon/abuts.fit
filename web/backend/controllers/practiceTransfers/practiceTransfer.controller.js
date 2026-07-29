@@ -1,5 +1,7 @@
 import { Types } from "mongoose";
 import PracticeTransfer from "../../models/practiceTransfer.model.js";
+import PracticeTransferDraft from "../../models/practiceTransferDraft.model.js";
+import File from "../../models/file.model.js";
 import User from "../../models/user.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 import { emitAppEventToUser } from "../../socket.js";
@@ -12,6 +14,8 @@ import { emitAppEventToUser } from "../../socket.js";
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/backend/modules/practiceTransfers/practiceTransfer.routes.js
 // - web/backend/models/practiceTransfer.model.js
+// - web/backend/models/practiceTransferDraft.model.js
+// - web/backend/models/file.model.js
 // - web/backend/models/user.model.js
 // - web/backend/models/businessAnchor.model.js
 // - web/backend/socket.js
@@ -127,6 +131,30 @@ const buildTransferIdFilter = (rawTransferId) => {
   return { transferId: value };
 };
 
+const toDraftResponse = (doc) => {
+  if (!doc) return null;
+  const files = Array.isArray(doc.files) ? doc.files : [];
+
+  return {
+    _id: String(doc._id || ""),
+    targetLabAnchorId: String(doc.targetLabAnchorId || "").trim() || null,
+    targetLabName: String(doc.targetLabName || "").trim(),
+    transferMemo: String(doc.transferMemo || "").trim(),
+    files: files
+      .map((row) => ({
+        fileId: String(row?.fileId || "").trim(),
+        originalName: String(row?.originalName || "").trim(),
+        mimetype: String(row?.mimetype || "application/octet-stream").trim(),
+        size: Number(row?.size || 0),
+        s3Key: String(row?.s3Key || "").trim(),
+        location: String(row?.location || "").trim(),
+      }))
+      .filter((row) => row.fileId && row.originalName && row.s3Key),
+    updatedAt: doc.updatedAt || null,
+    createdAt: doc.createdAt || null,
+  };
+};
+
 const resolveRequestorUserIdsByAnchor = async (anchorId) => {
   const raw = String(anchorId || "").trim();
   if (!raw || !Types.ObjectId.isValid(raw)) return [];
@@ -163,6 +191,164 @@ const emitPracticeTransferEventToRequestorUsers = async ({
     // 실시간 이벤트 실패가 본 API 성공/실패를 좌우하지 않도록 무시
   }
 };
+
+export async function getMyPracticeTransferDraft(req, res) {
+  try {
+    const role = String(req.user?.role || "").trim();
+    if (role !== "practice" && role !== "admin") {
+      return res.status(403).json({ success: false, message: "권한이 없습니다." });
+    }
+
+    const doc = await PracticeTransferDraft.findOne({
+      practiceUserId: req.user?._id,
+    }).lean();
+
+    return res.status(200).json({
+      success: true,
+      data: toDraftResponse(doc),
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "practice 전송 임시저장 조회 중 오류가 발생했습니다.",
+      error: error?.message,
+    });
+  }
+}
+
+export async function upsertPracticeTransferDraft(req, res) {
+  try {
+    const role = String(req.user?.role || "").trim();
+    if (role !== "practice" && role !== "admin") {
+      return res.status(403).json({ success: false, message: "권한이 없습니다." });
+    }
+
+    const targetLabName = String(req.body?.targetLabName || "").trim();
+    const transferMemo = String(req.body?.transferMemo || "").trim();
+    const rawAnchorId = String(req.body?.targetLabAnchorId || "").trim();
+    const targetLabAnchorId = Types.ObjectId.isValid(rawAnchorId)
+      ? new Types.ObjectId(rawAnchorId)
+      : null;
+
+    const incomingFiles = Array.isArray(req.body?.files) ? req.body.files : [];
+    if (incomingFiles.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "임시저장할 파일이 없습니다.",
+      });
+    }
+
+    const uniqueFileIds = [
+      ...new Set(
+        incomingFiles
+          .map((row) => String(row?.fileId || row?._id || "").trim())
+          .filter((id) => Types.ObjectId.isValid(id)),
+      ),
+    ];
+
+    if (uniqueFileIds.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "유효한 임시 파일 ID가 없습니다.",
+      });
+    }
+
+    const ownedFiles = await File.find({
+      _id: { $in: uniqueFileIds.map((id) => new Types.ObjectId(id)) },
+      uploadedBy: req.user?._id,
+    })
+      .select({
+        _id: 1,
+        originalName: 1,
+        mimetype: 1,
+        size: 1,
+        key: 1,
+        location: 1,
+      })
+      .lean();
+
+    const ownedById = new Map(
+      ownedFiles.map((row) => [String(row?._id || "").trim(), row]),
+    );
+
+    const normalizedDraftFiles = uniqueFileIds
+      .map((id) => {
+        const row = ownedById.get(id);
+        if (!row) return null;
+        return {
+          fileId: row._id,
+          originalName: String(row.originalName || "").trim(),
+          mimetype: String(row.mimetype || "application/octet-stream").trim(),
+          size: Number(row.size || 0),
+          s3Key: String(row.key || "").trim(),
+          location: String(row.location || "").trim(),
+        };
+      })
+      .filter((row) => Boolean(row?.originalName) && Boolean(row?.s3Key));
+
+    if (normalizedDraftFiles.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "사용 가능한 임시 파일을 찾지 못했습니다.",
+      });
+    }
+
+    const doc = await PracticeTransferDraft.findOneAndUpdate(
+      { practiceUserId: req.user?._id },
+      {
+        $set: {
+          practiceUserId: req.user?._id,
+          practiceBusinessAnchorId: req.user?.businessAnchorId || null,
+          targetLabAnchorId,
+          targetLabName,
+          transferMemo,
+          files: normalizedDraftFiles,
+        },
+      },
+      {
+        upsert: true,
+        new: true,
+        setDefaultsOnInsert: true,
+      },
+    ).lean();
+
+    return res.status(200).json({
+      success: true,
+      message: "practice 전송 임시저장을 갱신했습니다.",
+      data: toDraftResponse(doc),
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "practice 전송 임시저장 중 오류가 발생했습니다.",
+      error: error?.message,
+    });
+  }
+}
+
+export async function clearMyPracticeTransferDraft(req, res) {
+  try {
+    const role = String(req.user?.role || "").trim();
+    if (role !== "practice" && role !== "admin") {
+      return res.status(403).json({ success: false, message: "권한이 없습니다." });
+    }
+
+    await PracticeTransferDraft.deleteOne({
+      practiceUserId: req.user?._id,
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "practice 전송 임시저장을 삭제했습니다.",
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "practice 전송 임시저장 삭제 중 오류가 발생했습니다.",
+      error: error?.message,
+    });
+  }
+}
 
 export async function createPracticeTransfer(req, res) {
   try {

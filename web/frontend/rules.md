@@ -93,6 +93,14 @@
   - practice 페이지 상태 정규화 기준: `src/pages/practice/PracticeFileTransferPage.tsx`의 `toStatusLabel`
   - 의뢰자 치과 페이지 읽음 배지 기준: `src/pages/requestor/practice/RequestorPracticePage.tsx` (`isRead` → `수신전/수신완료`)
 
+- practice 파일전송 임시저장(다른 PC 이어쓰기) 정책:
+  - 임시저장 SSOT API: `GET/POST/DELETE /api/practice/transfers/draft`
+  - 프론트는 로컬스토리지 단독 보관이 아니라 서버 draft를 우선 사용합니다.
+  - 임시저장 파일은 `File`(temp upload) 참조를 기준으로 유지하며, 전송 성공 시 draft를 삭제합니다.
+  - 관련 파일:
+    - `src/pages/practice/PracticeFileTransferPage.tsx`
+    - `src/shared/hooks/useS3TempUpload.ts`
+
 - practice↔requestor 실시간(웹소켓 app-event) 구현 메모:
   - 소켓 공용 레이어: `src/shared/realtime/socket.ts`
     - `onNotification`, `onNewMessage`, CNC 이벤트 리스너 포함 모든 소켓 이벤트 구독은 공통 구독 레이어(`subscribeSocketEvent`)를 통해 지연 초기화/재연결 시에도 유실 없이 동작해야 합니다.

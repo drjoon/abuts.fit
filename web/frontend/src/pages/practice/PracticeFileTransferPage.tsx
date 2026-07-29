@@ -15,6 +15,7 @@
  * - web/backend/controllers/chats/chat.controller.js
  * - web/backend/modules/practiceTransfers/practiceTransfer.routes.js
  * - web/backend/controllers/practiceTransfers/practiceTransfer.controller.js
+ * - web/backend/models/practiceTransferDraft.model.js
  * - web/backend/modules/files/file.routes.js
  * - web/backend/controllers/files/file.controller.js
  * - web/frontend/src/pages/practice/hooks/usePracticeTransferStep1.ts
@@ -80,6 +81,12 @@ import { useChatMessages } from "@/shared/hooks/useChatMessages";
 import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
 import { useAppEventDebouncedReload } from "@/shared/realtime/useAppEventDebouncedReload";
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
   PracticeTransferDetailChatDialog,
   type PracticeTransferDialogFileItem,
   type PracticeTransferDialogSummaryItem,
@@ -107,6 +114,25 @@ type TransferFileItem = {
   fileName: string;
   s3Key: string;
   size: number;
+};
+
+type DraftTransferFileItem = {
+  fileId: string;
+  originalName: string;
+  mimetype: string;
+  size: number;
+  s3Key: string;
+  location?: string;
+};
+
+type PracticeTransferDraftPayload = {
+  _id: string;
+  targetLabAnchorId: string | null;
+  targetLabName: string;
+  transferMemo: string;
+  files: DraftTransferFileItem[];
+  updatedAt?: string | null;
+  createdAt?: string | null;
 };
 
 type RecentTransferItem = {
@@ -248,6 +274,11 @@ const formatFileSize = (bytes: number) => {
   return `${(n / (1024 * 1024)).toFixed(2)}MB`;
 };
 
+const PRACTICE_TRANSFER_TEMP_DRAFT_KEY = "practice_file_transfer_temp_draft_v1";
+
+const toDraftFileKey = (file: { originalName: string; size: number; s3Key: string }) =>
+  `${String(file.originalName || "").trim()}:${Number(file.size || 0)}:${String(file.s3Key || "").trim()}`;
+
 export const PracticeFileTransferPage = () => {
   const navigate = useNavigate();
   const { period, setPeriod } = usePeriodStore();
@@ -256,6 +287,9 @@ export const PracticeFileTransferPage = () => {
   const authUser = useAuthStore((s) => s.user);
   const [requestSearchTerm, setRequestSearchTerm] = useState("");
   const [requestSubmitting, setRequestSubmitting] = useState(false);
+  const [tempSaving, setTempSaving] = useState(false);
+  const [tempSaveDirty, setTempSaveDirty] = useState(false);
+  const [draftFiles, setDraftFiles] = useState<DraftTransferFileItem[]>([]);
   const [recentRequests, setRecentRequests] = useState<RecentRequestItem[]>([]);
   const [recentRequestsLoading, setRecentRequestsLoading] = useState(false);
   const [recentRequestsError, setRecentRequestsError] = useState("");
@@ -272,9 +306,9 @@ export const PracticeFileTransferPage = () => {
   const [deletingTransfer, setDeletingTransfer] = useState(false);
   const chatBottomRef = useRef<HTMLDivElement | null>(null);
   const chatRoomResolveSeqRef = useRef(0);
+  const prevFileCountRef = useRef(0);
   const {
     files,
-    totalSizeMb,
     selectedLab,
     setSelectedLab,
     requestMemo,
@@ -303,6 +337,100 @@ export const PracticeFileTransferPage = () => {
     prefetchMessages,
     setMessages: setChatMessages,
   } = useChatMessages({ roomId: activeChatRoom?._id, autoFetch: transferDialogOpen });
+
+  const combinedFilesSizeMb = useMemo(() => {
+    const localBytes = files.reduce((sum, file) => sum + Number(file.size || 0), 0);
+    const draftBytes = draftFiles.reduce((sum, file) => sum + Number(file.size || 0), 0);
+    return ((localBytes + draftBytes) / (1024 * 1024)).toFixed(1);
+  }, [files, draftFiles]);
+
+  const combinedDisplayFiles = useMemo(
+    () => [
+      ...files.map((file, index) => ({
+        kind: "local" as const,
+        key: `${file.name}:${file.size}:${file.lastModified}:${index}`,
+        name: String(file.name || "").trim(),
+        size: Number(file.size || 0),
+        localIndex: index,
+      })),
+      ...draftFiles.map((file, index) => ({
+        kind: "draft" as const,
+        key: `${file.fileId}:${file.s3Key}:${index}`,
+        name: String(file.originalName || "").trim(),
+        size: Number(file.size || 0),
+        draftIndex: index,
+      })),
+    ],
+    [files, draftFiles],
+  );
+
+  const loadPracticeTransferDraft = useCallback(async () => {
+    if (!authToken) {
+      setDraftFiles([]);
+      return;
+    }
+
+    try {
+      const res = await apiFetch<unknown>({
+        path: "/api/practice/transfers/draft",
+        method: "GET",
+        token: authToken,
+      });
+      if (!res.ok) return;
+
+      const body =
+        res.data && typeof res.data === "object"
+          ? (res.data as { data?: unknown })
+          : {};
+      const payload =
+        body.data && typeof body.data === "object"
+          ? (body.data as PracticeTransferDraftPayload)
+          : null;
+
+      if (!payload) {
+        setDraftFiles([]);
+        return;
+      }
+
+      const restoredFiles = Array.isArray(payload.files)
+        ? payload.files
+            .map((row) => ({
+              fileId: String(row?.fileId || "").trim(),
+              originalName: String(row?.originalName || "").trim(),
+              mimetype: String(row?.mimetype || "application/octet-stream").trim(),
+              size: Number(row?.size || 0),
+              s3Key: String(row?.s3Key || "").trim(),
+              location: String(row?.location || "").trim(),
+            }))
+            .filter((row) => row.fileId && row.originalName && row.s3Key)
+        : [];
+
+      setDraftFiles(restoredFiles);
+
+      const restoredAnchorId = String(payload.targetLabAnchorId || "").trim();
+      const restoredLabName = String(payload.targetLabName || "").trim();
+      if (restoredAnchorId && restoredLabName) {
+        setSelectedLab((prev) => {
+          if (prev?._id === restoredAnchorId && String(prev.name || "").trim() === restoredLabName) {
+            return prev;
+          }
+          return {
+            _id: restoredAnchorId,
+            name: restoredLabName,
+            businessType: "requestor",
+          };
+        });
+      }
+
+      if (String(payload.transferMemo || "").trim()) {
+        setRequestMemo(String(payload.transferMemo || ""));
+      }
+
+      setTempSaveDirty(false);
+    } catch {
+      // ignore (초안 불러오기 실패는 사용자 흐름 중단 금지)
+    }
+  }, [authToken, setRequestMemo, setSelectedLab]);
 
   const loadRecentRequests = useCallback(async () => {
     if (!authToken) {
@@ -403,6 +531,10 @@ export const PracticeFileTransferPage = () => {
   useEffect(() => {
     void loadRecentRequests();
   }, [loadRecentRequests]);
+
+  useEffect(() => {
+    void loadPracticeTransferDraft();
+  }, [loadPracticeTransferDraft]);
 
   const filteredRecentRequests = useMemo(() => {
     const query = requestSearchTerm.trim().toLowerCase();
@@ -905,6 +1037,30 @@ export const PracticeFileTransferPage = () => {
     setChatAttachedFiles((prev) => prev.filter((_, i) => i !== idx));
   };
 
+  const handleRemoveCombinedFile = (target: {
+    kind: "local" | "draft";
+    localIndex?: number;
+    draftIndex?: number;
+  }) => {
+    if (target.kind === "local" && Number.isFinite(Number(target.localIndex))) {
+      removeFile(Number(target.localIndex));
+      return;
+    }
+
+    if (target.kind === "draft" && Number.isFinite(Number(target.draftIndex))) {
+      setDraftFiles((prev) => prev.filter((_, idx) => idx !== Number(target.draftIndex)));
+      setTempSaveDirty(true);
+    }
+  };
+
+  const handleClearAllTransferFiles = async () => {
+    await clearAllFiles();
+    if (draftFiles.length > 0) {
+      setDraftFiles([]);
+      setTempSaveDirty(true);
+    }
+  };
+
   const handleAskDeleteTransfer = (transfer: RecentTransferItem) => {
     setDeleteTargetTransfer(transfer);
     setDeleteConfirmOpen(true);
@@ -1039,6 +1195,119 @@ export const PracticeFileTransferPage = () => {
     onMatch: loadRecentRequests,
   });
 
+  useEffect(() => {
+    const prevCount = prevFileCountRef.current;
+    const nextCount = files.length;
+    if (nextCount > prevCount) {
+      setTempSaveDirty(true);
+    }
+    prevFileCountRef.current = nextCount;
+  }, [files]);
+
+  const handleTempSaveDraft = async () => {
+    if (tempSaving) return;
+    if (!authToken) {
+      toast({
+        title: "로그인이 필요합니다",
+        description: "다시 로그인 후 시도해주세요.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (files.length === 0 && draftFiles.length === 0) return;
+
+    setTempSaving(true);
+    try {
+      const uploadedTempFiles: TempUploadedFile[] = files.length
+        ? await uploadFilesWithToast(files)
+        : [];
+
+      const mergedDraftFiles = [
+        ...draftFiles,
+        ...uploadedTempFiles.map((f) => ({
+          fileId: String(f._id || "").trim(),
+          originalName: String(f.originalName || "").trim(),
+          mimetype: String(f.mimetype || f.fileType || "application/octet-stream").trim(),
+          size: Number(f.size || 0),
+          s3Key: String(f.key || "").trim(),
+          location: String(f.location || "").trim(),
+        })),
+      ].filter((row) => row.fileId && row.originalName && row.s3Key);
+
+      const dedupedDraftFiles = Array.from(
+        new Map(mergedDraftFiles.map((row) => [toDraftFileKey(row), row])).values(),
+      );
+
+      const res = await apiFetch<unknown>({
+        path: "/api/practice/transfers/draft",
+        method: "POST",
+        token: authToken,
+        jsonBody: {
+          targetLabAnchorId: String(selectedLab?._id || "").trim() || null,
+          targetLabName: String(selectedLab?.name || "").trim(),
+          transferMemo: String(requestMemo || "").trim(),
+          files: dedupedDraftFiles.map((row) => ({
+            fileId: row.fileId,
+          })),
+        },
+      });
+
+      if (!res.ok) {
+        const body = asApiMessagePayload(res.data);
+        throw new Error(String(body?.message || "임시저장에 실패했습니다."));
+      }
+
+      const body =
+        res.data && typeof res.data === "object"
+          ? (res.data as { data?: unknown })
+          : {};
+      const payload =
+        body.data && typeof body.data === "object"
+          ? (body.data as PracticeTransferDraftPayload)
+          : null;
+
+      const nextDraftFiles = Array.isArray(payload?.files)
+        ? payload.files
+            .map((row) => ({
+              fileId: String(row?.fileId || "").trim(),
+              originalName: String(row?.originalName || "").trim(),
+              mimetype: String(row?.mimetype || "application/octet-stream").trim(),
+              size: Number(row?.size || 0),
+              s3Key: String(row?.s3Key || "").trim(),
+              location: String(row?.location || "").trim(),
+            }))
+            .filter((row) => row.fileId && row.originalName && row.s3Key)
+        : dedupedDraftFiles;
+
+      setDraftFiles(nextDraftFiles);
+      if (files.length > 0) {
+        await clearAllFiles();
+      }
+      setTempSaveDirty(false);
+      try {
+        localStorage.setItem(
+          PRACTICE_TRANSFER_TEMP_DRAFT_KEY,
+          JSON.stringify({ savedAt: Date.now(), source: "server" }),
+        );
+      } catch {
+        // ignore
+      }
+      toast({
+        title: "임시저장 완료",
+        description: "다른 PC에서도 이어서 전송할 수 있도록 서버에 임시저장했습니다.",
+      });
+    } catch (error) {
+      toast({
+        title: "임시저장 실패",
+        description: error instanceof Error ? error.message : "임시저장 중 오류가 발생했습니다.",
+        variant: "destructive",
+      });
+    } finally {
+      setTempSaving(false);
+    }
+  };
+
   const handleSubmitPracticeRequest = async () => {
     if (requestSubmitting) return;
 
@@ -1051,7 +1320,7 @@ export const PracticeFileTransferPage = () => {
       return;
     }
 
-    if (!files.length) {
+    if (files.length + draftFiles.length === 0) {
       toast({
         title: "파일이 필요합니다",
         description: "최소 1개 STL, PLY, OBJ 파일을 업로드해주세요.",
@@ -1078,18 +1347,36 @@ export const PracticeFileTransferPage = () => {
 
     setRequestSubmitting(true);
     try {
-      const uploadedTempFiles: TempUploadedFile[] = await uploadFilesWithToast(files);
+      const uploadedTempFiles: TempUploadedFile[] = files.length
+        ? await uploadFilesWithToast(files)
+        : [];
+
+      const localTempFiles = uploadedTempFiles
+        .map((f) => ({
+          fileId: String(f._id || "").trim(),
+          originalName: String(f.originalName || "").trim(),
+          mimetype: String(f.mimetype || f.fileType || "application/octet-stream").trim(),
+          size: Number(f.size || 0),
+          s3Key: String(f.key || "").trim(),
+          location: String(f.location || "").trim(),
+        }))
+        .filter((row) => row.originalName && row.s3Key);
+
+      const transferFiles = [...draftFiles, ...localTempFiles];
+      if (transferFiles.length === 0) {
+        throw new Error("전송할 파일이 없습니다.");
+      }
 
       const clinicName = String(
         (authUser as { business?: string } | null)?.business || authUser?.name || "",
       ).trim();
       const transferId = makeTransferId();
       const transferMemo = String(requestMemo || "").trim();
-      const caseInfosPayload = files.map((file, index) => {
-        const tempFile = uploadedTempFiles[index];
-        const parsed = parseFilenameWithRules(file.name);
-        const dotIndex = file.name.lastIndexOf(".");
-        const baseName = dotIndex > 0 ? file.name.slice(0, dotIndex) : file.name;
+      const caseInfosPayload = transferFiles.map((tempFile, index) => {
+        const originalName = String(tempFile.originalName || "").trim();
+        const parsed = parseFilenameWithRules(originalName);
+        const dotIndex = originalName.lastIndexOf(".");
+        const baseName = dotIndex > 0 ? originalName.slice(0, dotIndex) : originalName;
         const fallbackPatientName = String(baseName || `케이스 ${index + 1}`).trim();
         const patientName = String(parsed.patientName || fallbackPatientName).trim();
         const tooth = String(parsed.tooth || "").trim();
@@ -1101,10 +1388,10 @@ export const PracticeFileTransferPage = () => {
           workType: "abutment",
           designSoftware: "3Shape",
           file: {
-            originalName: tempFile.originalName,
-            size: tempFile.size,
-            mimetype: tempFile.mimetype,
-            s3Key: tempFile.key,
+            originalName,
+            size: Number(tempFile.size || 0),
+            mimetype: String(tempFile.mimetype || "application/octet-stream").trim(),
+            s3Key: String(tempFile.s3Key || "").trim(),
           },
           newSystemRequest: {
             requested: true,
@@ -1146,7 +1433,19 @@ export const PracticeFileTransferPage = () => {
 
       rememberLab(selectedLab);
       await clearAllFiles();
+      setDraftFiles([]);
       setRequestMemo("");
+      setTempSaveDirty(true);
+
+      try {
+        await apiFetch<unknown>({
+          path: "/api/practice/transfers/draft",
+          method: "DELETE",
+          token: authToken,
+        });
+      } catch {
+        // ignore (전송 성공을 임시저장 삭제 실패로 롤백하지 않음)
+      }
 
       toast({
         title: "기공소 전송 완료",
@@ -1165,6 +1464,8 @@ export const PracticeFileTransferPage = () => {
       setRequestSubmitting(false);
     }
   };
+
+  const canTempSave = !requestSubmitting && !tempSaving && tempSaveDirty;
 
   return (
     <PageFileDropZone
@@ -1218,35 +1519,36 @@ export const PracticeFileTransferPage = () => {
                   <div className="rounded-xl border bg-background p-4 flex flex-1 min-h-0 flex-col">
                     <div className="flex items-center justify-between gap-2">
                       <p className="text-base font-semibold">
-                        총 {files.length}개 파일 · 약 {totalSizeMb}MB
+                        총 {combinedDisplayFiles.length}개 파일 · 약 {combinedFilesSizeMb}MB
                       </p>
                       <Button
                         type="button"
                         variant="outline"
                         size="sm"
                         className="h-8"
-                        onClick={() => void clearAllFiles()}
-                        disabled={files.length === 0}
+                        onClick={() => void handleClearAllTransferFiles()}
+                        disabled={combinedDisplayFiles.length === 0}
                       >
                         전체삭제
                       </Button>
                     </div>
-                    {files.length === 0 ? (
+                    {combinedDisplayFiles.length === 0 ? (
                       <div className="mt-3 flex flex-1 items-center justify-center rounded-lg border border-dashed px-4 py-8 text-center text-sm text-muted-foreground">
                         아직 추가된 파일이 없습니다.
                       </div>
                     ) : (
                       <div className="mt-3 min-h-0 flex-1 overflow-y-auto pr-1">
                         <div className="grid grid-cols-1 gap-2 auto-rows-[4.25rem]">
-                          {files.map((file, index) => (
+                          {combinedDisplayFiles.map((file) => (
                             <div
-                              key={`${file.name}:${file.size}:${file.lastModified}:${index}`}
+                              key={file.key}
                               className="flex h-[4.25rem] items-center justify-between rounded-md border px-2.5 py-2"
                             >
                               <div className="min-w-0">
                                 <p className="truncate text-base font-medium">{file.name}</p>
                                 <p className="text-sm text-muted-foreground">
                                   {(file.size / (1024 * 1024)).toFixed(2)}MB
+                                  {file.kind === "draft" ? " · 임시저장됨" : ""}
                                 </p>
                               </div>
                               <Button
@@ -1254,7 +1556,13 @@ export const PracticeFileTransferPage = () => {
                                 variant="ghost"
                                 size="icon"
                                 className="h-9 w-9"
-                                onClick={() => removeFile(index)}
+                                onClick={() =>
+                                  handleRemoveCombinedFile({
+                                    kind: file.kind,
+                                    localIndex: file.kind === "local" ? file.localIndex : undefined,
+                                    draftIndex: file.kind === "draft" ? file.draftIndex : undefined,
+                                  })
+                                }
                               >
                                 <Trash2 className="h-4 w-4" />
                               </Button>
@@ -1439,7 +1747,28 @@ export const PracticeFileTransferPage = () => {
                 </div>
               </div>
 
-              <div className="flex items-center justify-end">
+              <div className="flex items-center justify-between gap-2">
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="bg-white hover:bg-slate-400"
+                          onClick={handleTempSaveDraft}
+                          disabled={!canTempSave}
+                        >
+                          {tempSaving ? "임시저장 중..." : "업로드 후 임시저장"}
+                        </Button>
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent side="top" className="max-w-xs text-xs">
+                      파일/의뢰 메모를 서버에 임시 저장해 다른 PC에서도 이어서 전송할 때 사용합니다.
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+
                 <Button
                   type="button"
                   className="bg-blue-600 text-white hover:bg-blue-700"
