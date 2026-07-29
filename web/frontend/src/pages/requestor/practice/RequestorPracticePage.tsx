@@ -477,6 +477,28 @@ export default function RequestorPracticePage() {
     });
   }, [period, search, transfers]);
 
+  const sortedFilteredTransfers = useMemo(() => {
+    const latestChatTsByTransferId = new Map<string, number>();
+    for (const room of rooms) {
+      const transferId = String(room.relatedPracticeTransferId?.transferId || "").trim();
+      if (!transferId) continue;
+      const lastTs = new Date(String(room.lastMessageAt || "")).getTime();
+      if (Number.isFinite(lastTs) && lastTs > 0) {
+        latestChatTsByTransferId.set(transferId, lastTs);
+      }
+    }
+
+    return [...filteredTransfers].sort((a, b) => {
+      const aChatTs = Number(latestChatTsByTransferId.get(a.transferId) || 0);
+      const bChatTs = Number(latestChatTsByTransferId.get(b.transferId) || 0);
+      const aCreatedTs = new Date(a.createdAt).getTime();
+      const bCreatedTs = new Date(b.createdAt).getTime();
+      const aSortTs = aChatTs > 0 ? aChatTs : Number(aCreatedTs || 0);
+      const bSortTs = bChatTs > 0 ? bChatTs : Number(bCreatedTs || 0);
+      return bSortTs - aSortTs;
+    });
+  }, [filteredTransfers, rooms]);
+
   const markTransferRead = useCallback(
     async (transfer: ReceivedPracticeTransfer) => {
       if (!token || transfer.isRead) return;
@@ -872,12 +894,12 @@ export default function RequestorPracticePage() {
         <CardContent>
           {error ? <div className="text-sm text-destructive">{error}</div> : null}
           {!error && loading ? <div className="text-sm text-muted-foreground">불러오는 중...</div> : null}
-          {!error && !loading && filteredTransfers.length === 0 ? (
+          {!error && !loading && sortedFilteredTransfers.length === 0 ? (
             <div className="text-sm text-muted-foreground">표시할 치과 전송 내역이 없습니다.</div>
           ) : null}
 
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-            {filteredTransfers.map((transfer) => {
+            {sortedFilteredTransfers.map((transfer) => {
               const chatUnreadCount = unreadByTransferId.get(transfer.transferId) || 0;
               return (
                 <button

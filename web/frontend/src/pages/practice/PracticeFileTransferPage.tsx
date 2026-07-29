@@ -445,6 +445,7 @@ export const PracticeFileTransferPage = () => {
     return periodFiltered.filter((request) => {
       const searchableText = [
         request.id,
+        request.transferId,
         request.createdAt,
         request.requestDate,
         request.patientName,
@@ -452,6 +453,7 @@ export const PracticeFileTransferPage = () => {
         request.targetLab,
         request.status,
         request.fileName,
+        request.transferMemo,
       ]
         .join(" ")
         .toLowerCase();
@@ -462,10 +464,16 @@ export const PracticeFileTransferPage = () => {
 
   const groupedTransfers = useMemo(() => {
     const unreadByTransferId = new Map<string, number>();
+    const latestChatTsByTransferId = new Map<string, number>();
     for (const room of chatRooms) {
       const transferId = String(room.relatedPracticeTransferId?.transferId || "").trim();
       if (!transferId) continue;
       unreadByTransferId.set(transferId, Number(room.unreadCount || 0));
+
+      const lastTs = new Date(String(room.lastMessageAt || "")).getTime();
+      if (Number.isFinite(lastTs) && lastTs > 0) {
+        latestChatTsByTransferId.set(transferId, lastTs);
+      }
     }
 
     const byKey = new Map<
@@ -606,7 +614,13 @@ export const PracticeFileTransferPage = () => {
             ? row.transferId
             : row.id,
       }))
-      .sort((a, b) => Number(b.createdAtTs || 0) - Number(a.createdAtTs || 0));
+      .sort((a, b) => {
+        const aChatTs = Number(latestChatTsByTransferId.get(a.transferId) || 0);
+        const bChatTs = Number(latestChatTsByTransferId.get(b.transferId) || 0);
+        const aSortTs = aChatTs > 0 ? aChatTs : Number(a.createdAtTs || 0);
+        const bSortTs = bChatTs > 0 ? bChatTs : Number(b.createdAtTs || 0);
+        return bSortTs - aSortTs;
+      });
   }, [filteredRecentRequests, chatRooms]);
 
   const statusCounts = useMemo(() => {
@@ -1476,14 +1490,13 @@ export const PracticeFileTransferPage = () => {
                 <Badge variant="outline">수신완료 {statusCounts.delivered}건</Badge>
               </div>
 
-              <div className="relative">
+              <div className="relative w-full md:max-w-md">
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
-                  type="text"
-                  placeholder="의뢰일/치아번호/기공소/파일명/전송ID 검색"
-                  className="h-9 pl-9"
                   value={requestSearchTerm}
-                  onChange={(event) => setRequestSearchTerm(event.target.value)}
+                  onChange={(e) => setRequestSearchTerm(e.target.value)}
+                  className="pl-9"
+                  placeholder="전송ID, 치과명, 파일명, 환자명 검색"
                 />
               </div>
             </CardDescription>
