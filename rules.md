@@ -159,14 +159,20 @@
 - 의뢰-채팅방 연결 SSOT:
   - `GET /api/chats/request-room/:requestId`로 request 기반 채팅방을 조회/생성한다.
   - 참여자는 해당 `Request.requestor`와 제조사 BusinessAnchor 기준 사용자로 구성한다.
-  - `Request.caManufacturer`가 비어있으면 다음 순서로 제조사 사용자를 결정한다.
-    1) `caseInfos.practiceRouting.targetLabAnchorId`(치과→기공소 라우팅 루트)
-    2) `caseInfos.practiceRouting.targetLabName`
-    3) 메시지의 `[기공소: ...]` 이름
+  - `Request.caManufacturer`가 비어있으면 **태그별 라우팅 분기**로 제조사 사용자를 결정한다.
+    - practice 태그(`practice_dropzone|practice_file_transfer`):
+      1) `caseInfos.practiceRouting.targetLabAnchorId`(치과→기공소 전용 루트)
+      2) `caseInfos.practiceRouting.targetLabName`
+      3) 메시지의 `[기공소: ...]` 이름
+    - 기존 의뢰자(기공소→제조사) 루트:
+      1) `caseInfos.newSystemRequest.manufacturer`
+      2) 메시지/이름 fallback
   - 최초 해석된 제조사 사용자는 `Request.caManufacturer`에 저장해 이후 채팅 연결 SSOT로 고정한다.
 - practice 제출 라우팅 SSOT:
   - `caseInfos.newSystemRequest.manufacturer`는 **기공소→제조사 루트**이며, practice(치과→기공소) 라우팅에 사용하지 않는다.
   - practice 라우팅은 `caseInfos.practiceRouting.{targetLabAnchorId,targetLabName}`를 사용한다.
+- Draft→Request 승격 시 practice 라우팅 필드는 **practice 태그에서만** 승격한다.
+  - 기존 루트(`newSystemRequest.manufacturer`) 데이터/흐름은 그대로 유지한다.
 - 메시지 읽음 처리 SSOT:
   - 모달에서 메시지 조회(`GET /api/chats/rooms/:roomId/messages`) 시 읽음 업데이트를 트리거한다.
   - 모달 진입/발송 후 rooms를 갱신해 카드 배지 상태를 최신화한다.

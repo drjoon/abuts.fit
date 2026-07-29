@@ -58,6 +58,11 @@ const normalizeRequestorHexRotation = (value, fallback = "STL모델대로") => {
 // - web/backend/models/request.model.js
 // - web/backend/controllers/chats/chat.controller.js
 // practice 전송 라우팅 SSOT (치과 -> 기공소)
+const isPracticeRoutingTag = (tag) => {
+  const t = String(tag || "").trim();
+  return t === "practice_dropzone" || t === "practice_file_transfer";
+};
+
 const normalizePracticeRouting = (value) => {
   const src = value && typeof value === "object" ? value : {};
   const targetLabAnchorIdRaw = String(src?.targetLabAnchorId || "").trim();
@@ -462,7 +467,12 @@ export async function createRequestsFromDraft(req, res) {
           return undefined;
         })();
 
-        const practiceRouting = normalizePracticeRouting(ci?.practiceRouting);
+        // practice 라우팅은 practice 태그에서만 승격한다.
+        // 기존 의뢰자(기공소)->제조사 루트(newSystemRequest.manufacturer)는 그대로 유지한다.
+        const nsrTag = String(ci?.newSystemRequest?.tag || "").trim();
+        const practiceRouting = isPracticeRoutingTag(nsrTag)
+          ? normalizePracticeRouting(ci?.practiceRouting)
+          : undefined;
 
         if (newSystemRequest) {
           computedPrice = {

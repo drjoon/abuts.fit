@@ -402,6 +402,8 @@ export async function getOrCreateRequestChatRoom(req, res) {
         caManufacturer: 1,
         "caseInfos.practiceRouting.targetLabAnchorId": 1,
         "caseInfos.practiceRouting.targetLabName": 1,
+        "caseInfos.newSystemRequest.tag": 1,
+        "caseInfos.newSystemRequest.manufacturer": 1,
         "caseInfos.newSystemRequest.message": 1,
       })
       .lean();
@@ -416,13 +418,27 @@ export async function getOrCreateRequestChatRoom(req, res) {
     const requestorId = String(targetRequest.requestor || "").trim();
     const currentManufacturerId = String(targetRequest.caManufacturer || "").trim();
 
+    const nsrTag = String(targetRequest?.caseInfos?.newSystemRequest?.tag || "").trim();
+    const isPracticeRouteTag =
+      nsrTag === "practice_dropzone" || nsrTag === "practice_file_transfer";
+
     // related files:
     // - web/backend/models/request.model.js
     // - web/frontend/src/pages/practice/PracticeDropzonePage.tsx
     // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
-    // practice 라우팅 SSOT: caseInfos.practiceRouting.targetLabAnchorId
+    // - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
+    // 분리 원칙:
+    // - practice(치과->기공소): caseInfos.practiceRouting.* 사용
+    // - 기존 의뢰자(기공소->제조사): caseInfos.newSystemRequest.manufacturer 사용
     const labAnchorIdFromPracticeRouting = String(
       targetRequest?.caseInfos?.practiceRouting?.targetLabAnchorId || "",
+    ).trim();
+    const labNameFromPracticeRouting = String(
+      targetRequest?.caseInfos?.practiceRouting?.targetLabName || "",
+    ).trim();
+
+    const legacyManufacturerRaw = String(
+      targetRequest?.caseInfos?.newSystemRequest?.manufacturer || "",
     ).trim();
 
     // 레거시/운영 데이터 대응: 메시지의 [기공소: ...] 텍스트로 anchor를 역조회
@@ -430,15 +446,29 @@ export async function getOrCreateRequestChatRoom(req, res) {
       targetRequest?.caseInfos?.newSystemRequest?.message || "",
     ).trim();
     const labNameFromMessage = extractLabNameFromPracticeMessage(messageRaw);
-    const labNameFromPracticeRouting = String(
-      targetRequest?.caseInfos?.practiceRouting?.targetLabName || "",
-    ).trim();
 
     let manufacturerId = currentManufacturerId;
-    if (!manufacturerId && labAnchorIdFromPracticeRouting) {
+
+    if (!manufacturerId && isPracticeRouteTag && labAnchorIdFromPracticeRouting) {
       manufacturerId = await resolveManufacturerUserIdByAnchor(
         labAnchorIdFromPracticeRouting,
       );
+    }
+
+    if (!manufacturerId && !isPracticeRouteTag && legacyManufacturerRaw) {
+      // 기존 루트 보존: 의뢰자(기공소)->제조사 경로는 manufacturer 필드를 우선 사용
+      if (Types.ObjectId.isValid(legacyManufacturerRaw)) {
+        manufacturerId = await resolveManufacturerUserIdByAnchor(
+          legacyManufacturerRaw,
+        );
+      } else {
+        const legacyAnchorId = await resolveManufacturerAnchorIdByName(
+          legacyManufacturerRaw,
+        );
+        if (legacyAnchorId) {
+          manufacturerId = await resolveManufacturerUserIdByAnchor(legacyAnchorId);
+        }
+      }
     }
 
     if (!manufacturerId) {
