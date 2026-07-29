@@ -54,6 +54,29 @@ const normalizeRequestorHexRotation = (value, fallback = "STL모델대로") => {
 };
 
 // related files:
+// - web/backend/models/draftRequest.model.js
+// - web/backend/models/request.model.js
+// - web/backend/controllers/chats/chat.controller.js
+// practice 전송 라우팅 SSOT (치과 -> 기공소)
+const normalizePracticeRouting = (value) => {
+  const src = value && typeof value === "object" ? value : {};
+  const targetLabAnchorIdRaw = String(src?.targetLabAnchorId || "").trim();
+  const targetLabName = String(src?.targetLabName || "").trim();
+
+  const targetLabAnchorId =
+    targetLabAnchorIdRaw && Types.ObjectId.isValid(targetLabAnchorIdRaw)
+      ? targetLabAnchorIdRaw
+      : "";
+
+  if (!targetLabAnchorId && !targetLabName) return undefined;
+
+  return {
+    targetLabAnchorId: targetLabAnchorId || null,
+    targetLabName,
+  };
+};
+
+// related files:
 // - web/backend/models/user.model.js
 // - web/backend/controllers/businesses/business.controller.js
 // - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
@@ -439,6 +462,8 @@ export async function createRequestsFromDraft(req, res) {
           return undefined;
         })();
 
+        const practiceRouting = normalizePracticeRouting(ci?.practiceRouting);
+
         if (newSystemRequest) {
           computedPrice = {
             ...(computedPrice || {}),
@@ -473,6 +498,7 @@ export async function createRequestsFromDraft(req, res) {
               requestorHexRotation: requestorHexRotationValue,
               finalHexRotation: requestorHexRotationValue,
               newSystemRequest,
+              practiceRouting,
               file: {
                 originalName: ci.file.originalName,
                 fileType: ci.file.mimetype,
@@ -493,6 +519,7 @@ export async function createRequestsFromDraft(req, res) {
               requestorHexRotation: requestorHexRotationValue,
               finalHexRotation: requestorHexRotationValue,
               newSystemRequest,
+              practiceRouting,
             };
 
         return {

@@ -65,6 +65,24 @@ const draftCaseSchema = new mongoose.Schema(
           free: { type: Boolean, default: false },
           tag: String,
         },
+        // related files:
+        // - web/frontend/src/pages/practice/PracticeDropzonePage.tsx
+        // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
+        // - web/backend/controllers/chats/chat.controller.js
+        // practice 전송 라우팅 SSOT (치과 -> 기공소)
+        // 주의: newSystemRequest.manufacturer(기공소 -> 제조사 루트)와 절대 혼용하지 않는다.
+        practiceRouting: {
+          targetLabAnchorId: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "BusinessAnchor",
+            default: null,
+          },
+          targetLabName: {
+            type: String,
+            default: "",
+            trim: true,
+          },
+        },
         workType: {
           type: String,
           enum: ["abutment", "crown"],

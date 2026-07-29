@@ -720,12 +720,21 @@ export const PracticeDropzonePage = () => {
           },
           newSystemRequest: {
             requested: true,
-            manufacturer: String(selectedLab?._id || "").trim(),
+            manufacturer: "",
             brand: "",
             family: "",
             message: `[기공소: ${String(selectedLab?.name || "")}] ${transferMemo}\n[전송ID: ${transferId}]`,
             free: true,
             tag: "practice_dropzone",
+          },
+          // related files:
+          // - web/backend/models/draftRequest.model.js
+          // - web/backend/models/request.model.js
+          // - web/backend/controllers/chats/chat.controller.js
+          // practice 전용 라우팅 필드(치과 -> 기공소)
+          practiceRouting: {
+            targetLabAnchorId: String(selectedLab?._id || "").trim() || null,
+            targetLabName: String(selectedLab?.name || "").trim(),
           },
         };
       });

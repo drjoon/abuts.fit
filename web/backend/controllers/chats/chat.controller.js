@@ -42,6 +42,87 @@ const withChatInFlight = async (key, factory) => {
   return promise;
 };
 
+const extractLabNameFromPracticeMessage = (message) => {
+  const raw = String(message || "").trim();
+  const matched = raw.match(/\[\s*기공소\s*:\s*([^\]]+)\]/i);
+  return String(matched?.[1] || "").trim();
+};
+
+const resolveManufacturerUserIdByAnchor = async (anchorId) => {
+  if (!anchorId || !Types.ObjectId.isValid(anchorId)) return "";
+
+  const anchor = await BusinessAnchor.findById(anchorId)
+    .select({ primaryContactUserId: 1, owners: 1, members: 1, businessType: 1 })
+    .lean();
+  if (!anchor || anchor.businessType !== "manufacturer") return "";
+
+  const primaryId = String(anchor.primaryContactUserId || "").trim();
+  if (primaryId && Types.ObjectId.isValid(primaryId)) {
+    const primaryUser = await User.findOne({
+      _id: new Types.ObjectId(primaryId),
+      role: "manufacturer",
+      active: true,
+    })
+      .select({ _id: 1 })
+      .lean();
+    if (primaryUser?._id) return String(primaryUser._id);
+  }
+
+  const ownerIds = Array.isArray(anchor.owners)
+    ? anchor.owners
+        .map((id) => String(id || "").trim())
+        .filter((id) => Types.ObjectId.isValid(id))
+    : [];
+  if (ownerIds.length > 0) {
+    const ownerUser = await User.findOne({
+      _id: { $in: ownerIds.map((id) => new Types.ObjectId(id)) },
+      role: "manufacturer",
+      active: true,
+    })
+      .select({ _id: 1 })
+      .lean();
+    if (ownerUser?._id) return String(ownerUser._id);
+  }
+
+  const memberIds = Array.isArray(anchor.members)
+    ? anchor.members
+        .map((id) => String(id || "").trim())
+        .filter((id) => Types.ObjectId.isValid(id))
+    : [];
+  if (memberIds.length > 0) {
+    const memberUser = await User.findOne({
+      _id: { $in: memberIds.map((id) => new Types.ObjectId(id)) },
+      role: "manufacturer",
+      active: true,
+    })
+      .select({ _id: 1 })
+      .lean();
+    if (memberUser?._id) return String(memberUser._id);
+  }
+
+  const anyUser = await User.findOne({
+    businessAnchorId: new Types.ObjectId(anchorId),
+    role: "manufacturer",
+    active: true,
+  })
+    .select({ _id: 1 })
+    .lean();
+
+  return String(anyUser?._id || "").trim();
+};
+
+const resolveManufacturerAnchorIdByName = async (name) => {
+  const n = String(name || "").trim();
+  if (!n) return "";
+  const anchor = await BusinessAnchor.findOne({
+    businessType: "manufacturer",
+    name: n,
+  })
+    .select({ _id: 1 })
+    .lean();
+  return String(anchor?._id || "").trim();
+};
+
 /**
  * 내 채팅방 목록 조회
  * @route GET /api/chats/rooms
@@ -319,7 +400,8 @@ export async function getOrCreateRequestChatRoom(req, res) {
         requestId: 1,
         requestor: 1,
         caManufacturer: 1,
-        "caseInfos.newSystemRequest.manufacturer": 1,
+        "caseInfos.practiceRouting.targetLabAnchorId": 1,
+        "caseInfos.practiceRouting.targetLabName": 1,
         "caseInfos.newSystemRequest.message": 1,
       })
       .lean();
@@ -334,110 +416,37 @@ export async function getOrCreateRequestChatRoom(req, res) {
     const requestorId = String(targetRequest.requestor || "").trim();
     const currentManufacturerId = String(targetRequest.caManufacturer || "").trim();
 
+    // related files:
+    // - web/backend/models/request.model.js
+    // - web/frontend/src/pages/practice/PracticeDropzonePage.tsx
+    // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
+    // practice 라우팅 SSOT: caseInfos.practiceRouting.targetLabAnchorId
+    const labAnchorIdFromPracticeRouting = String(
+      targetRequest?.caseInfos?.practiceRouting?.targetLabAnchorId || "",
+    ).trim();
+
+    // 레거시/운영 데이터 대응: 메시지의 [기공소: ...] 텍스트로 anchor를 역조회
     const messageRaw = String(
       targetRequest?.caseInfos?.newSystemRequest?.message || "",
     ).trim();
-    const labNameFromMessage = String(
-      (messageRaw.match(/\[\s*기공소\s*:\s*([^\]]+)\]/i) || [])[1] || "",
+    const labNameFromMessage = extractLabNameFromPracticeMessage(messageRaw);
+    const labNameFromPracticeRouting = String(
+      targetRequest?.caseInfos?.practiceRouting?.targetLabName || "",
     ).trim();
-
-    const explicitManufacturerAnchorRaw = String(
-      targetRequest?.caseInfos?.newSystemRequest?.manufacturer || "",
-    ).trim();
-
-    const resolveManufacturerUserIdByAnchor = async (anchorId) => {
-      if (!anchorId || !Types.ObjectId.isValid(anchorId)) return "";
-
-      const anchor = await BusinessAnchor.findById(anchorId)
-        .select({ primaryContactUserId: 1, owners: 1, members: 1, businessType: 1 })
-        .lean();
-      if (!anchor || anchor.businessType !== "manufacturer") return "";
-
-      const primaryId = String(anchor.primaryContactUserId || "").trim();
-      if (primaryId && Types.ObjectId.isValid(primaryId)) {
-        const primaryUser = await User.findOne({
-          _id: new Types.ObjectId(primaryId),
-          role: "manufacturer",
-          active: true,
-        })
-          .select({ _id: 1 })
-          .lean();
-        if (primaryUser?._id) return String(primaryUser._id);
-      }
-
-      const ownerIds = Array.isArray(anchor.owners)
-        ? anchor.owners
-            .map((id) => String(id || "").trim())
-            .filter((id) => Types.ObjectId.isValid(id))
-        : [];
-      if (ownerIds.length > 0) {
-        const ownerUser = await User.findOne({
-          _id: { $in: ownerIds.map((id) => new Types.ObjectId(id)) },
-          role: "manufacturer",
-          active: true,
-        })
-          .select({ _id: 1 })
-          .lean();
-        if (ownerUser?._id) return String(ownerUser._id);
-      }
-
-      const memberIds = Array.isArray(anchor.members)
-        ? anchor.members
-            .map((id) => String(id || "").trim())
-            .filter((id) => Types.ObjectId.isValid(id))
-        : [];
-      if (memberIds.length > 0) {
-        const memberUser = await User.findOne({
-          _id: { $in: memberIds.map((id) => new Types.ObjectId(id)) },
-          role: "manufacturer",
-          active: true,
-        })
-          .select({ _id: 1 })
-          .lean();
-        if (memberUser?._id) return String(memberUser._id);
-      }
-
-      const anyUser = await User.findOne({
-        businessAnchorId: new Types.ObjectId(anchorId),
-        role: "manufacturer",
-        active: true,
-      })
-        .select({ _id: 1 })
-        .lean();
-      return String(anyUser?._id || "").trim();
-    };
 
     let manufacturerId = currentManufacturerId;
-    if (!manufacturerId && explicitManufacturerAnchorRaw) {
-      if (Types.ObjectId.isValid(explicitManufacturerAnchorRaw)) {
-        manufacturerId = await resolveManufacturerUserIdByAnchor(
-          explicitManufacturerAnchorRaw,
-        );
-      } else {
-        const explicitAnchorByName = await BusinessAnchor.findOne({
-          businessType: "manufacturer",
-          name: explicitManufacturerAnchorRaw,
-        })
-          .select({ _id: 1 })
-          .lean();
-        const explicitAnchorId = String(explicitAnchorByName?._id || "").trim();
-        if (explicitAnchorId) {
-          manufacturerId = await resolveManufacturerUserIdByAnchor(explicitAnchorId);
-        }
-      }
+    if (!manufacturerId && labAnchorIdFromPracticeRouting) {
+      manufacturerId = await resolveManufacturerUserIdByAnchor(
+        labAnchorIdFromPracticeRouting,
+      );
     }
 
-    if (!manufacturerId && labNameFromMessage) {
-      const labAnchor = await BusinessAnchor.findOne({
-        businessType: "manufacturer",
-        name: labNameFromMessage,
-      })
-        .select({ _id: 1 })
-        .lean();
-
-      const labAnchorId = String(labAnchor?._id || "").trim();
-      if (labAnchorId) {
-        manufacturerId = await resolveManufacturerUserIdByAnchor(labAnchorId);
+    if (!manufacturerId) {
+      const anchorIdFromName =
+        (await resolveManufacturerAnchorIdByName(labNameFromPracticeRouting)) ||
+        (await resolveManufacturerAnchorIdByName(labNameFromMessage));
+      if (anchorIdFromName) {
+        manufacturerId = await resolveManufacturerUserIdByAnchor(anchorIdFromName);
       }
     }
 
@@ -448,6 +457,7 @@ export async function getOrCreateRequestChatRoom(req, res) {
       });
     }
 
+    // 이후 채팅 접근/권한 판별의 SSOT를 위해 caManufacturer를 고정 저장한다.
     if (!currentManufacturerId && manufacturerId) {
       await Request.updateOne(
         { _id: targetRequest._id, caManufacturer: null },

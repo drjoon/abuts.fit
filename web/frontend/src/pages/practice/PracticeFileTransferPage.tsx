@@ -731,12 +731,21 @@ export const PracticeFileTransferPage = () => {
           },
           newSystemRequest: {
             requested: true,
-            manufacturer: String(selectedLab?._id || "").trim(),
+            manufacturer: "",
             brand: "",
             family: "",
             message: `[기공소: ${String(selectedLab?.name || "")}] ${transferMemo}\n[전송ID: ${transferId}]`,
             free: true,
             tag: "practice_file_transfer",
+          },
+          // related files:
+          // - web/backend/models/draftRequest.model.js
+          // - web/backend/models/request.model.js
+          // - web/backend/controllers/chats/chat.controller.js
+          // practice 전용 라우팅 필드(치과 -> 기공소)
+          practiceRouting: {
+            targetLabAnchorId: String(selectedLab?._id || "").trim() || null,
+            targetLabName: String(selectedLab?.name || "").trim(),
           },
         };
       });
@@ -1168,21 +1177,17 @@ export const PracticeFileTransferPage = () => {
                   <p className="font-medium break-words">{selectedTransfer?.targetLab || "-"}</p>
                 </div>
                 <div>
-                  <p className="text-muted-foreground">파일</p>
-                  <p className="font-medium">파일 {selectedTransfer?.fileCount || 0}개</p>
+                  <p className="text-muted-foreground">의뢰 메모</p>
+                  <p className="font-medium whitespace-pre-wrap break-words">
+                    {selectedTransfer?.transferMemo || "-"}
+                  </p>
                 </div>
                 <div>
-                  <p className="text-muted-foreground">파일명</p>
+                  <p className="text-muted-foreground">파일명 ({selectedTransfer?.fileCount || 0}개)</p>
                   <p className="font-medium whitespace-pre-wrap break-words">
                     {selectedTransfer?.fileNames?.length
                       ? selectedTransfer.fileNames.join("\n")
                       : "-"}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-muted-foreground">의뢰 메모</p>
-                  <p className="font-medium whitespace-pre-wrap break-words">
-                    {selectedTransfer?.transferMemo || "-"}
                   </p>
                 </div>
               </div>
