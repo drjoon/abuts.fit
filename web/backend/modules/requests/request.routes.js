@@ -57,11 +57,11 @@ router.get(
   requestController.getAllRequests,
 );
 
-// 내 의뢰 목록 조회 (의뢰자용)
+// 내 의뢰 목록 조회 (의뢰자/practice용)
 router.get(
   "/my",
   authenticate,
-  authorize(["requestor", "admin"], { subRoles: ["owner", "staff"] }),
+  authorize(["requestor", "practice", "admin"], { subRoles: ["owner", "staff"] }),
   requestController.getMyRequests,
 );
 

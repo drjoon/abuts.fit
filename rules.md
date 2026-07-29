@@ -127,6 +127,26 @@
 - `web/backend/controllers/auth/auth.controller.js`
 - `web/backend/modules/auth/auth.routes.js`
 
+### 1.0.1.2 practice 최근 전송 내역 표시 단위 SSOT (2026-07-29)
+
+- 치과(practice) 전송 UX에서 **최근 전송 내역 1행은 파일 1개가 아니라 전송 1회(배치) 1건**으로 본다.
+- 한 번의 전송 액션에서 여러 STL 파일이 생성되더라도, 같은 전송 배치에 속한 의뢰들은 최근 전송 내역에서 묶어서 표시한다.
+- 전송 배치 식별 SSOT:
+  - 제출 시 `caseInfos.newSystemRequest.message`에 전송ID를 포함한다.
+  - 형식: `...[전송ID: PTX-XXXX-XXXXXX]`
+- practice 전송 메시지 규칙:
+  - `PracticeDropzonePage`, `PracticeFileTransferPage` 모두 동일 형식 사용
+  - 기존 기공소 문구(`[기공소: ...]`)는 유지하고, 전송ID 라인을 추가한다.
+- 최근 전송 내역 그룹핑 규칙:
+  - 1순위: 전송ID 일치
+  - 2순위(레거시 데이터 호환): 전송ID가 없는 과거 건은 `생성시각(분 단위)+기공소` 기준으로 묶음
+- 상태 카운트(발송/전달대기/전달완료)도 파일 수가 아니라 **전송 건수 기준**으로 집계한다.
+
+관련 파일:
+- `web/frontend/src/pages/practice/PracticeDropzonePage.tsx`
+- `web/frontend/src/pages/practice/PracticeFileTransferPage.tsx`
+- `web/backend/models/request.model.js`
+
 ### 1.0.2 디자인소프트웨어 기본값 계층 (BusinessAnchor → Requestor → 의뢰건) (2026-07-27)
 
 - BusinessAnchor `requestSettings.designSoftware`는 **사업체 공통 기본값**으로만 관리한다.

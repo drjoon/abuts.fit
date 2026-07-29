@@ -12,7 +12,7 @@
  * - web/frontend/src/features/layout/DashboardLayout.tsx
  */
 
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   UploadCloud,
@@ -64,6 +64,99 @@ import {
   usePracticeTransferStep1,
 } from "@/pages/practice/hooks/usePracticeTransferStep1";
 
+type RecentRequestItem = {
+  id: string;
+  createdAt: string;
+  requestDate: string;
+  patientName: string;
+  patientKey: string;
+  toothNumbers: string[];
+  targetLab: string;
+  status: string;
+  createdAtTs: number;
+  transferId: string;
+};
+
+type RecentTransferItem = {
+  id: string;
+  createdAt: string;
+  requestDate: string;
+  targetLab: string;
+  status: string;
+  fileCount: number;
+  patientCount: number;
+  searchBlob: string;
+};
+
+const extractLabNameFromMessage = (message: string) => {
+  const raw = String(message || "").trim();
+  const matched = raw.match(/\[\s*기공소\s*:\s*([^\]]+)\]/);
+  return String(matched?.[1] || "").trim();
+};
+
+const extractTransferIdFromMessage = (message: string) => {
+  const raw = String(message || "").trim();
+  const matched = raw.match(/\[\s*전송ID\s*:\s*([^\]]+)\]/i);
+  return String(matched?.[1] || "").trim();
+};
+
+const makeTransferId = () => {
+  const t = Date.now().toString(36).toUpperCase();
+  const r = Math.random().toString(36).slice(2, 8).toUpperCase();
+  return `PTX-${t}-${r}`;
+};
+
+const normalizePatientNameKey = (value: string) => {
+  const raw = String(value || "").trim();
+  if (!raw || raw === "-") return "";
+
+  let normalized = raw;
+  try {
+    normalized = normalized.normalize("NFC");
+  } catch {
+    // ignore
+  }
+
+  // 파일명 fallback으로 들어온 환자명 끝 치아 suffix(_47_0, -36-1 등) 제거
+  const stripped = normalized
+    .replace(/\.(stl|ply|obj)$/i, "")
+    .replace(/[_\-\s]*#?\d{1,2}(?:[_\-\s]\d+)?$/, "")
+    .trim();
+
+  return (stripped || normalized).toLowerCase();
+};
+
+const toDateLabel = (value: unknown) => {
+  const d = new Date(String(value || ""));
+  if (Number.isNaN(d.getTime())) return "-";
+  return d.toLocaleString("ko-KR", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+};
+
+const toDayLabel = (value: unknown) => {
+  const d = new Date(String(value || ""));
+  if (Number.isNaN(d.getTime())) return "-";
+  return d.toLocaleDateString("ko-KR", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+};
+
+const toStatusLabel = (manufacturerStage: unknown) => {
+  const raw = String(manufacturerStage || "").trim();
+  if (!raw) return "접수대기";
+  if (raw.includes("배송완료") || raw.includes("전달완료")) return "전달완료";
+  if (raw.includes("의뢰") || raw.includes("접수") || raw.includes("대기")) return "접수대기";
+  return raw;
+};
+
 export const PracticeFileTransferPage = () => {
   const navigate = useNavigate();
   const { period, setPeriod } = usePeriodStore();
@@ -72,6 +165,9 @@ export const PracticeFileTransferPage = () => {
   const authUser = useAuthStore((s) => s.user);
   const [requestSearchTerm, setRequestSearchTerm] = useState("");
   const [requestSubmitting, setRequestSubmitting] = useState(false);
+  const [recentRequests, setRecentRequests] = useState<RecentRequestItem[]>([]);
+  const [recentRequestsLoading, setRecentRequestsLoading] = useState(false);
+  const [recentRequestsError, setRecentRequestsError] = useState("");
   const {
     files,
     totalSizeMb,
@@ -94,44 +190,127 @@ export const PracticeFileTransferPage = () => {
   } = usePracticeTransferStep1();
   const { uploadFilesWithToast } = useUploadWithProgressToast({ token: authToken });
 
-  const recentRequests = useMemo(
-    () => [
-      {
-        id: "PR-2026-0012",
-        createdAt: "2026-07-27 15:10",
-        requestDate: "2026-07-27",
-        patientName: "김민준",
-        toothNumbers: ["#36", "#37"],
-        targetLab: "한빛기공소",
-        status: "전달완료",
-      },
-      {
-        id: "PR-2026-0011",
-        createdAt: "2026-07-26 11:48",
-        requestDate: "2026-07-26",
-        patientName: "박서윤",
-        toothNumbers: ["#11"],
-        targetLab: "미래기공소",
-        status: "검토중",
-      },
-      {
-        id: "PR-2026-0010",
-        createdAt: "2026-07-25 17:22",
-        requestDate: "2026-07-25",
-        patientName: "이도현",
-        toothNumbers: ["#46", "#47"],
-        targetLab: "서울정밀기공",
-        status: "접수대기",
-      },
-    ],
-    [],
-  );
+  const loadRecentRequests = useCallback(async () => {
+    if (!authToken) {
+      setRecentRequests([]);
+      setRecentRequestsError("로그인이 필요합니다.");
+      return;
+    }
+
+    setRecentRequestsLoading(true);
+    setRecentRequestsError("");
+    try {
+      const res = await apiFetch<unknown>({
+        path: "/api/requests/my?page=1&limit=100",
+        method: "GET",
+        token: authToken,
+      });
+
+      if (!res.ok) {
+        const body =
+          res.data && typeof res.data === "object"
+            ? (res.data as { message?: string })
+            : {};
+        setRecentRequests([]);
+        setRecentRequestsError(
+          String(body.message || "최근 전송 내역을 불러올 권한이 없습니다."),
+        );
+        return;
+      }
+
+      const body = res.data;
+      const data =
+        body && typeof body === "object" && "data" in (body as Record<string, unknown>)
+          ? (body as { data?: unknown }).data
+          : body;
+      const list =
+        data &&
+        typeof data === "object" &&
+        Array.isArray((data as { requests?: unknown }).requests)
+          ? ((data as { requests: unknown[] }).requests ?? [])
+          : [];
+
+      const mapped: RecentRequestItem[] = list
+        .map((raw) => {
+          const r = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+          const ci =
+            r.caseInfos && typeof r.caseInfos === "object"
+              ? (r.caseInfos as Record<string, unknown>)
+              : {};
+          const newSystemRequest =
+            ci.newSystemRequest && typeof ci.newSystemRequest === "object"
+              ? (ci.newSystemRequest as Record<string, unknown>)
+              : {};
+
+          const message = String(newSystemRequest.message || r.description || "").trim();
+          const targetLab = extractLabNameFromMessage(message);
+          const toothRaw = String(ci.tooth || "").trim();
+          const createdAtRaw = String(r.createdAt || "");
+
+          const patientName = String(ci.patientName || "").trim() || "-";
+          return {
+            id: String(r.requestId || r._id || "").trim(),
+            createdAt: toDateLabel(createdAtRaw),
+            requestDate: toDayLabel(createdAtRaw),
+            patientName,
+            patientKey: normalizePatientNameKey(patientName),
+            toothNumbers: toothRaw ? [toothRaw] : [],
+            targetLab: targetLab || "-",
+            status: toStatusLabel(r.manufacturerStage),
+            createdAtTs: new Date(createdAtRaw).getTime(),
+            transferId: extractTransferIdFromMessage(message),
+          };
+        })
+        .filter((item) => Boolean(item.id))
+        .sort((a, b) => (b.createdAtTs || 0) - (a.createdAtTs || 0));
+
+      setRecentRequests(mapped);
+    } catch {
+      setRecentRequests([]);
+      setRecentRequestsError("최근 전송 내역 조회 중 오류가 발생했습니다.");
+    } finally {
+      setRecentRequestsLoading(false);
+    }
+  }, [authToken]);
+
+  useEffect(() => {
+    void loadRecentRequests();
+  }, [loadRecentRequests]);
 
   const filteredRecentRequests = useMemo(() => {
     const query = requestSearchTerm.trim().toLowerCase();
-    if (!query) return recentRequests;
 
-    return recentRequests.filter((request) => {
+    const periodFiltered = recentRequests.filter((request) => {
+      if (!request.requestDate || request.requestDate === "-") return false;
+
+      const createdTs = Number(request.createdAtTs || 0);
+      if (!Number.isFinite(createdTs) || createdTs <= 0) return true;
+      const created = new Date(createdTs);
+
+      const now = new Date();
+      const dayMs = 24 * 60 * 60 * 1000;
+      const diffDays = (now.getTime() - createdTs) / dayMs;
+
+      if (period === "7d") return diffDays <= 7;
+      if (period === "30d") return diffDays <= 30;
+      if (period === "90d") return diffDays <= 90;
+
+      const y = now.getFullYear();
+      const m = now.getMonth();
+      const startThisMonth = new Date(y, m, 1, 0, 0, 0, 0);
+      const startNextMonth = new Date(y, m + 1, 1, 0, 0, 0, 0);
+      const startLastMonth = new Date(y, m - 1, 1, 0, 0, 0, 0);
+
+      if (period === "thisMonth") {
+        return created >= startThisMonth && created < startNextMonth;
+      }
+
+      return created >= startLastMonth && created < startThisMonth;
+    });
+
+    if (!query) return periodFiltered;
+
+    return periodFiltered.filter((request) => {
       const searchableText = [
         request.id,
         request.createdAt,
@@ -146,10 +325,64 @@ export const PracticeFileTransferPage = () => {
 
       return searchableText.includes(query);
     });
-  }, [recentRequests, requestSearchTerm]);
+  }, [recentRequests, requestSearchTerm, period]);
+
+  const groupedTransfers = useMemo(() => {
+    const byKey = new Map<string, RecentTransferItem & { _statuses: Set<string>; _patients: Set<string> }>();
+
+    for (const req of filteredRecentRequests) {
+      const minuteBucket = Math.floor(Number(req.createdAtTs || 0) / (60 * 1000));
+      const fallbackKey = `${minuteBucket}|${String(req.targetLab || "-")}`;
+      const key = req.transferId || fallbackKey;
+
+      const patientKey = String(req.patientKey || "").trim();
+      const existing = byKey.get(key);
+      if (!existing) {
+        const initialPatients = new Set<string>();
+        if (patientKey) initialPatients.add(patientKey);
+
+        byKey.set(key, {
+          id: req.id,
+          createdAt: req.createdAt,
+          requestDate: req.requestDate,
+          targetLab: req.targetLab,
+          status: req.status,
+          fileCount: 1,
+          patientCount: Math.max(1, initialPatients.size),
+          searchBlob: [req.id, req.createdAt, req.requestDate, req.patientName, req.toothNumbers.join(" "), req.targetLab, req.status]
+            .join(" ")
+            .toLowerCase(),
+          _statuses: new Set([req.status]),
+          _patients: initialPatients,
+        });
+        continue;
+      }
+
+      existing.fileCount += 1;
+      if (patientKey) {
+        existing._patients.add(patientKey);
+      }
+      existing.patientCount = Math.max(1, existing._patients.size);
+      existing._statuses.add(req.status);
+      existing.searchBlob = `${existing.searchBlob} ${[req.patientName, req.toothNumbers.join(" "), req.id].join(" ")}`.toLowerCase();
+
+      const statusSet = existing._statuses;
+      if (statusSet.size === 1) {
+        existing.status = [...statusSet][0] || existing.status;
+      } else if (statusSet.has("접수대기")) {
+        existing.status = "접수대기";
+      } else if (statusSet.has("전달완료")) {
+        existing.status = "검토중";
+      } else {
+        existing.status = "검토중";
+      }
+    }
+
+    return [...byKey.values()].map(({ _statuses: _s, _patients: _p, ...row }) => row);
+  }, [filteredRecentRequests]);
 
   const statusCounts = useMemo(() => {
-    return filteredRecentRequests.reduce(
+    return groupedTransfers.reduce(
       (acc, request) => {
         const status = String(request.status || "").trim();
         if (status === "전달완료") {
@@ -163,7 +396,7 @@ export const PracticeFileTransferPage = () => {
       },
       { sent: 0, waiting: 0, delivered: 0 },
     );
-  }, [filteredRecentRequests]);
+  }, [groupedTransfers]);
 
   const extractDataFromResponse = <T,>(raw: unknown): T | null => {
     if (!raw || typeof raw !== "object") return null;
@@ -237,6 +470,8 @@ export const PracticeFileTransferPage = () => {
       const clinicName = String(
         (authUser as { business?: string } | null)?.business || authUser?.name || "",
       ).trim();
+      const transferId = makeTransferId();
+      const transferMemo = String(requestMemo || "").trim();
       const caseInfosPayload = files.map((file, index) => {
         const tempFile = uploadedTempFiles[index];
         const parsed = parseFilenameWithRules(file.name);
@@ -263,7 +498,7 @@ export const PracticeFileTransferPage = () => {
             manufacturer: "",
             brand: "",
             family: "",
-            message: `[기공소: ${String(selectedLab?.name || "")}] ${String(requestMemo || "").trim()}`,
+            message: `[기공소: ${String(selectedLab?.name || "")}] ${transferMemo}\n[전송ID: ${transferId}]`,
             free: true,
             tag: "practice_file_transfer",
           },
@@ -629,26 +864,34 @@ export const PracticeFileTransferPage = () => {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-2">
-            {filteredRecentRequests.length === 0 ? (
+            {recentRequestsLoading ? (
+              <div className="rounded-lg border border-dashed px-3 py-8 text-center text-sm text-muted-foreground">
+                최근 전송 내역을 불러오는 중입니다...
+              </div>
+            ) : recentRequestsError ? (
+              <div className="rounded-lg border border-dashed px-3 py-8 text-center text-sm text-destructive">
+                {recentRequestsError}
+              </div>
+            ) : groupedTransfers.length === 0 ? (
               <div className="rounded-lg border border-dashed px-3 py-8 text-center text-sm text-muted-foreground">
                 검색 조건에 맞는 의뢰 내역이 없습니다.
               </div>
             ) : (
-              filteredRecentRequests.map((request) => (
+              groupedTransfers.map((transfer) => (
                 <div
-                  key={request.id}
+                  key={`${transfer.id}:${transfer.createdAt}`}
                   className="rounded-lg border px-3 py-2 text-sm flex items-center justify-between gap-3"
                 >
                   <div className="min-w-0">
-                    <p className="font-medium truncate">{request.id}</p>
+                    <p className="font-medium truncate">{transfer.id}</p>
                     <p className="text-xs text-muted-foreground truncate">
-                      {request.createdAt} · {request.targetLab}
+                      {transfer.createdAt} · {transfer.targetLab}
                     </p>
                     <p className="text-xs text-muted-foreground truncate">
-                      {request.patientName} · {request.toothNumbers.join(", ")}
+                      파일 {transfer.fileCount}개 · 환자 {transfer.patientCount}명
                     </p>
                   </div>
-                  <Badge variant="outline">{request.status}</Badge>
+                  <Badge variant="outline" className="shrink-0 whitespace-nowrap">{transfer.status}</Badge>
                 </div>
               ))
             )}

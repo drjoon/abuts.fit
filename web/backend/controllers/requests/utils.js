@@ -263,7 +263,8 @@ export function getManufacturerOrgId(req) {
 }
 
 export function buildRequestorOrgFilter(req) {
-  if (req?.user?.role !== "requestor") return {};
+  const role = String(req?.user?.role || "").trim();
+  if (role !== "requestor" && role !== "practice") return {};
   const orgId = getRequestorOrgId(req);
   if (orgId && Types.ObjectId.isValid(orgId)) {
     return { businessAnchorId: new Types.ObjectId(orgId) };
@@ -272,7 +273,8 @@ export function buildRequestorOrgFilter(req) {
 }
 
 export async function buildRequestorOrgScopeFilter(req) {
-  if (req?.user?.role !== "requestor") return {};
+  const role = String(req?.user?.role || "").trim();
+  if (role !== "requestor" && role !== "practice") return {};
 
   if (req?._requestorOrgScopeFilter) {
     return req._requestorOrgScopeFilter;

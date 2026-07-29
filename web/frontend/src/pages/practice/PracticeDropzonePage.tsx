@@ -266,6 +266,12 @@ const makePracticeSignupEmail = (practiceName: string) => {
   return `practice.${safeName || "clinic"}-${nonce}@abuts.fit`;
 };
 
+const makeTransferId = () => {
+  const t = Date.now().toString(36).toUpperCase();
+  const r = Math.random().toString(36).slice(2, 8).toUpperCase();
+  return `PTX-${t}-${r}`;
+};
+
 const toPracticeFileKey = (file: File) => `${file.name}:${file.size}:${file.lastModified}`;
 
 const readPracticeFileCacheMeta = (): PracticeFileCacheMeta[] => {
@@ -688,6 +694,8 @@ export const PracticeDropzonePage = () => {
       if (!draftId) throw new Error("draftId를 받지 못했습니다.");
 
       const uploadedTempFiles = await uploadFilesWithToast(files);
+      const transferId = makeTransferId();
+      const transferMemo = String(requestMemo || "").trim();
 
       const caseInfosPayload = files.map((file, index) => {
         const tempFile = uploadedTempFiles[index];
@@ -715,7 +723,7 @@ export const PracticeDropzonePage = () => {
             manufacturer: "",
             brand: "",
             family: "",
-            message: `[기공소: ${String(selectedLab?.name || "")}] ${String(requestMemo || "").trim()}`,
+            message: `[기공소: ${String(selectedLab?.name || "")}] ${transferMemo}\n[전송ID: ${transferId}]`,
             free: true,
             tag: "practice_dropzone",
           },
@@ -1410,7 +1418,7 @@ export const PracticeDropzonePage = () => {
 
                 {authMode === "login" && (
                   <div className="grid grid-cols-1 gap-3 lg:grid-cols-4">
-                    <div className="space-y-2">
+                    <div className="space-y-2 space-x-2">
                       <Label htmlFor="practice-login-name" className="text-sm">치과명</Label>
                       <Input
                         id="practice-login-name"
