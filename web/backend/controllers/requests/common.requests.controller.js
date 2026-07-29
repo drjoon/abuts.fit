@@ -1220,11 +1220,24 @@ export async function getAllRequests(req, res) {
     // buildManufacturerOrgScopeFilter가 조직 멤버 기반 필터를 생성
     if (role === "manufacturer") {
       const manufacturerOrgScope = await buildManufacturerOrgScopeFilter(req);
+
+      // related files:
+      // - web/backend/controllers/requests/creation.from-draft.controller.js
+      // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
+      // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
+      // practice(치과->기공소) 전송건은 제조사 워크시트 루트에서 제외한다.
+      const excludePracticeRouteGuard = {
+        "caseInfos.newSystemRequest.tag": {
+          $nin: ["practice_dropzone", "practice_file_transfer"],
+        },
+      };
+
       filter = {
         $and: [
           filter,
           { manufacturerStage: { $ne: "취소" } },
           manufacturerOrgScope,
+          excludePracticeRouteGuard,
         ],
       };
     }

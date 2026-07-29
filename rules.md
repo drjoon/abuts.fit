@@ -226,6 +226,20 @@
 - `web/backend/controllers/chats/chat.controller.js`
 - `web/backend/models/chat.model.js`
 
+### 1.0.1.6 practice 전송건 제조사 워크시트 노출 금지 SSOT (2026-07-29)
+
+- 치과→기공소(practice) 전송건(`practice_dropzone`, `practice_file_transfer`)은 **제조사 워크시트 조회 루트**에서 제외한다.
+  - 적용 대상: 제조사가 사용하는 `GET /api/requests/all?view=worksheet...`
+  - 필터 SSOT: `caseInfos.newSystemRequest.tag NOT IN ["practice_dropzone", "practice_file_transfer"]`
+- 목적: practice 라우팅 의뢰가 레거시 기공소→제조사 동선으로 섞여 제조사 작업 카드에 표시되는 오염을 방지한다.
+- practice 전송건의 소통/삭제/조회는 practice 전용 라우트 정책(`1.0.1.4`, `1.0.1.5`)을 따른다.
+
+관련 파일:
+- `web/backend/controllers/requests/common.requests.controller.js`
+- `web/backend/controllers/requests/creation.from-draft.controller.js`
+- `web/frontend/src/pages/practice/PracticeFileTransferPage.tsx`
+- `web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx`
+
 ### 1.0.2 디자인소프트웨어 기본값 계층 (BusinessAnchor → Requestor → 의뢰건) (2026-07-27)
 
 - BusinessAnchor `requestSettings.designSoftware`는 **사업체 공통 기본값**으로만 관리한다.
