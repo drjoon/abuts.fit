@@ -2,7 +2,8 @@
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
-import { useEffect, useRef } from "react";
+// - web/frontend/src/shared/realtime/socket.ts
+import { useEffect } from "react";
 import { useAuthStore } from "@/store/useAuthStore";
 import {
   initializeSocket,
@@ -14,34 +15,24 @@ import {
 
 export const useSocket = () => {
   const { token } = useAuthStore();
-  const socketInitialized = useRef(false);
 
   useEffect(() => {
-    if (token && !socketInitialized.current) {
-      const socket = initializeSocket(token);
-      socketInitialized.current = true;
+    const normalizedToken = String(token || "").trim();
 
-      // 알림 수신
-      const unsubscribe = onNotification((notification: SocketNotification) => {
-        if (notification.type === "new-message") return;
-      });
-
-      return () => {
-        unsubscribe();
-      };
-    }
-
-    // 토큰이 사라지면 즉시 소켓을 끊어 connect_error를 방지한다.
-    if (!token && socketInitialized.current) {
+    if (!normalizedToken) {
       disconnectSocket();
-      socketInitialized.current = false;
+      return;
     }
+
+    initializeSocket(normalizedToken);
+
+    // 알림 수신(토큰 변경/재연결 시에도 공통 구독 레이어가 자동 재바인딩)
+    const unsubscribe = onNotification((notification: SocketNotification) => {
+      if (notification.type === "new-message") return;
+    });
 
     return () => {
-      if (socketInitialized.current && !token) {
-        disconnectSocket();
-        socketInitialized.current = false;
-      }
+      unsubscribe();
     };
   }, [token]);
 

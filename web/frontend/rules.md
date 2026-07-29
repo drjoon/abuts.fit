@@ -96,6 +96,9 @@
 - practice↔requestor 실시간(웹소켓 app-event) 구현 메모:
   - 소켓 공용 레이어: `src/shared/realtime/socket.ts`
     - `onNotification`, `onNewMessage`, CNC 이벤트 리스너 포함 모든 소켓 이벤트 구독은 공통 구독 레이어(`subscribeSocketEvent`)를 통해 지연 초기화/재연결 시에도 유실 없이 동작해야 합니다.
+    - 인증 토큰이 변경되면 기존 소켓을 재사용하지 않고 연결을 재초기화해 권한/구독 컨텍스트를 최신화합니다.
+  - 소켓 부트스트랩 훅: `src/shared/hooks/useSocket.ts`
+    - 토큰 존재 시 매 렌더 주기에서 안전하게 `initializeSocket`을 호출하고, 토큰이 비면 즉시 `disconnectSocket`으로 정리합니다.
   - app-event 디바운스 재조회 공통 훅: `src/shared/realtime/useAppEventDebouncedReload.ts`
   - 채팅방 목록 실시간 동기화: `src/shared/hooks/useChatRooms.ts`
   - 채팅 메시지 실시간 동기화: `src/shared/hooks/useChatMessages.ts`

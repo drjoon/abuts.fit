@@ -6,6 +6,7 @@
 import { io, Socket } from "socket.io-client";
 
 let socket: Socket | null = null;
+let socketAuthToken: string | null = null;
 const appEventSubscribers = new Set<(evt: AppEventMessage) => void>();
 const socketEventSubscribers = new Map<string, Set<(payload: unknown) => void>>();
 const socketEventForwarders = new Map<string, (payload: unknown) => void>();
@@ -130,8 +131,18 @@ export function onAppEvent(callback: (evt: AppEventMessage) => void) {
 }
 
 export function initializeSocket(token: string): Socket {
+  const nextToken = String(token || "").trim();
+  if (!nextToken) {
+    throw new Error("Socket token is required");
+  }
+
   if (socket) {
-    return socket;
+    if (socketAuthToken === nextToken) {
+      return socket;
+    }
+
+    // 로그인 사용자/토큰이 바뀐 경우 기존 소켓 인증 컨텍스트를 폐기하고 재연결한다.
+    disconnectSocket();
   }
 
   const envSocketUrl = (import.meta.env.VITE_SOCKET_URL as string) || "";
@@ -151,7 +162,7 @@ export function initializeSocket(token: string): Socket {
   console.log("[socket] connecting to", serverUrl);
 
   socket = io(serverUrl, {
-    auth: { token },
+    auth: { token: nextToken },
     transports: ["websocket", "polling"],
     reconnection: true,
     reconnectionDelay: 1000,
@@ -175,6 +186,7 @@ export function initializeSocket(token: string): Socket {
   });
 
   bindSharedSocketListeners(socket);
+  socketAuthToken = nextToken;
 
   return socket;
 }
@@ -193,6 +205,7 @@ export function disconnectSocket() {
 
   socket.disconnect();
   socket = null;
+  socketAuthToken = null;
 }
 
 export function joinRoom(roomId: string) {
