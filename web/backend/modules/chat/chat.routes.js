@@ -25,6 +25,16 @@ router.get(
   chatController.getOrCreateRequestChatRoom,
 );
 
+// related files:
+// - web/backend/controllers/practiceTransfers/practiceTransfer.controller.js
+// - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
+// practice 전송(PracticeTransfer) 전용 채팅방 조회/생성
+router.get(
+  "/practice/transfer-room/:transferId",
+  authorize(["practice", "admin"], { subRoles: ["owner", "staff"] }),
+  chatController.getOrCreatePracticeTransferChatRoom,
+);
+
 // 채팅방 생성 또는 기존 채팅방 조회
 router.post("/rooms", chatController.createOrGetChatRoom);
 

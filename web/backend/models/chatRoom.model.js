@@ -23,6 +23,11 @@ const chatRoomSchema = new mongoose.Schema(
       ref: "Request",
       default: null,
     },
+    relatedPracticeTransferId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "PracticeTransfer",
+      default: null,
+    },
     lastMessageAt: {
       type: Date,
       default: Date.now,

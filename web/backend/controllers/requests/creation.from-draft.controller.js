@@ -299,6 +299,18 @@ export async function createRequestsFromDraft(req, res) {
       });
     }
 
+    // related files:
+    // - web/backend/models/practiceTransfer.model.js
+    // - web/backend/controllers/practiceTransfers/practiceTransfer.controller.js
+    // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
+    // practice 제출은 Request 컬렉션 경유 금지 (PracticeTransfer SSOT)
+    if (req.user?.role === "practice") {
+      return res.status(403).json({
+        success: false,
+        message: "practice 제출은 /api/practice/transfers 경로만 사용할 수 있습니다.",
+      });
+    }
+
     const draftCaseInfos = Array.isArray(draft.caseInfos)
       ? draft.caseInfos
       : [];

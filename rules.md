@@ -2,7 +2,7 @@
 
 ## [최상단 강제 규칙] 대규모 파일 수정 시 문서/주석 동시 갱신 (항상 실행)
 
-- 적용 조건: 한 작업에서 **5개 이상 파일을 탐색/수정**한 경우
+- 적용 조건: 한 작업에서 **3개 이상 파일을 탐색/수정**한 경우
 - 필수 조치:
   1. `rules.md`(루트)와 필요 시 하위 `web/frontend/rules.md`, `web/backend/rules.md`에
      - 관련 **폴더명/파일명**
@@ -228,16 +228,33 @@
 
 ### 1.0.1.6 practice 전송건 제조사 워크시트 노출 금지 SSOT (2026-07-29)
 
-- 치과→기공소(practice) 전송건(`practice_dropzone`, `practice_file_transfer`)은 **제조사 워크시트 조회 루트**에서 제외한다.
+- `role === "practice"` 제출은 **Request 컬렉션 경유 금지**이며, 반드시 practice 전용 API/컬렉션을 사용한다.
+  - 생성 SSOT: `POST /api/practice/transfers`
+  - 조회 SSOT: `GET /api/practice/transfers/my`
+  - 취소 SSOT: `POST /api/practice/transfers/cancel-batch`
+  - 저장 SSOT: `PracticeTransfer` 컬렉션(메타데이터), STL 원본은 기존 temp 업로드 후 `s3Key` 저장
+- `POST /api/requests/from-draft`는 practice 제출 경로로 사용하지 않는다.
+  - 라우트 권한에서 practice를 제외하고, 컨트롤러에서도 practice role 요청을 차단한다.
+- 치과→기공소(practice) 전송 태그(`practice_dropzone`, `practice_file_transfer`)는 **제조사 워크시트 조회 루트**에서 강제 제외한다.
   - 적용 대상: 제조사가 사용하는 `GET /api/requests/all?view=worksheet...`
   - 필터 SSOT: `caseInfos.newSystemRequest.tag NOT IN ["practice_dropzone", "practice_file_transfer"]`
-- 목적: practice 라우팅 의뢰가 레거시 기공소→제조사 동선으로 섞여 제조사 작업 카드에 표시되는 오염을 방지한다.
-- practice 전송건의 소통/삭제/조회는 practice 전용 라우트 정책(`1.0.1.4`, `1.0.1.5`)을 따른다.
+- practice 전송건 채팅은 `Request` 기준이 아니라 `PracticeTransfer` 기준으로 연결한다.
+  - 채팅 SSOT: `GET /api/chats/practice/transfer-room/:transferId`
 
 관련 파일:
-- `web/backend/controllers/requests/common.requests.controller.js`
+- `web/backend/models/practiceTransfer.model.js`
+- `web/backend/modules/practiceTransfers/practiceTransfer.routes.js`
+- `web/backend/controllers/practiceTransfers/practiceTransfer.controller.js`
+- `web/backend/app.js`
+- `web/backend/modules/requests/request.routes.js`
 - `web/backend/controllers/requests/creation.from-draft.controller.js`
+- `web/backend/controllers/requests/common.requests.controller.js`
+- `web/backend/models/chatRoom.model.js`
+- `web/backend/modules/chat/chat.routes.js`
+- `web/backend/controllers/chats/chat.controller.js`
+- `web/frontend/src/pages/practice/PracticeDropzonePage.tsx`
 - `web/frontend/src/pages/practice/PracticeFileTransferPage.tsx`
+- `web/frontend/src/shared/hooks/useChatRooms.ts`
 - `web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx`
 
 ### 1.0.2 디자인소프트웨어 기본값 계층 (BusinessAnchor → Requestor → 의뢰건) (2026-07-27)

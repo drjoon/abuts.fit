@@ -12,8 +12,8 @@
  * - web/frontend/src/store/useAuthStore.ts
  * - web/frontend/src/shared/filename/parseFilenameWithRules.ts
  * - web/backend/controllers/auth/auth.controller.js
- * - web/backend/controllers/requests/creation.from-draft.controller.js
- * - web/backend/modules/drafts/draftRequest.routes.js
+ * - web/backend/controllers/practiceTransfers/practiceTransfer.controller.js
+ * - web/backend/modules/practiceTransfers/practiceTransfer.routes.js
  * - web/frontend/src/pages/public/Index.tsx
  * - web/frontend/src/App.tsx
  */
@@ -677,22 +677,6 @@ export const PracticeDropzonePage = () => {
 
     setRequestSubmitting(true);
     try {
-      const createDraftRes = await apiFetch<unknown>({
-        path: "/api/requests/drafts",
-        method: "POST",
-        token,
-        jsonBody: { caseInfos: [] },
-      });
-      if (!createDraftRes.ok) {
-        throw new Error("드래프트 생성에 실패했습니다.");
-      }
-
-      const createdDraft = extractDataFromResponse<{ _id?: string }>(
-        createDraftRes.data,
-      );
-      const draftId = String(createdDraft?._id || "").trim();
-      if (!draftId) throw new Error("draftId를 받지 못했습니다.");
-
       const uploadedTempFiles = await uploadFilesWithToast(files);
       const transferId = makeTransferId();
       const transferMemo = String(requestMemo || "").trim();
@@ -728,10 +712,10 @@ export const PracticeDropzonePage = () => {
             tag: "practice_dropzone",
           },
           // related files:
-          // - web/backend/models/draftRequest.model.js
-          // - web/backend/models/request.model.js
-          // - web/backend/controllers/chats/chat.controller.js
-          // practice 전용 라우팅 필드(치과 -> 기공소)
+          // - web/backend/models/practiceTransfer.model.js
+          // - web/backend/controllers/practiceTransfers/practiceTransfer.controller.js
+          // - web/backend/modules/practiceTransfers/practiceTransfer.routes.js
+          // practice 제출은 PracticeTransfer SSOT로 저장 (Request 컬렉션 경유 금지)
           practiceRouting: {
             targetLabAnchorId: String(selectedLab?._id || "").trim() || null,
             targetLabName: String(selectedLab?.name || "").trim(),
@@ -739,26 +723,21 @@ export const PracticeDropzonePage = () => {
         };
       });
 
-      const patchDraftRes = await apiFetch<unknown>({
-        path: `/api/requests/drafts/${encodeURIComponent(draftId)}`,
-        method: "PATCH",
-        token,
-        jsonBody: { caseInfos: caseInfosPayload },
-      });
-      if (!patchDraftRes.ok) {
-        const body = asApiMessagePayload(patchDraftRes.data);
-        throw new Error(String(body?.message || "드래프트 저장에 실패했습니다."));
-      }
-
       const submitRes = await apiFetch<unknown>({
-        path: "/api/requests/from-draft",
+        path: "/api/practice/transfers",
         method: "POST",
         token,
-        jsonBody: { draftId },
+        jsonBody: {
+          transferId,
+          targetLabAnchorId: String(selectedLab?._id || "").trim() || null,
+          targetLabName: String(selectedLab?.name || "").trim(),
+          transferMemo,
+          caseInfos: caseInfosPayload,
+        },
       });
       if (!submitRes.ok) {
         const body = asApiMessagePayload(submitRes.data);
-        throw new Error(String(body?.message || "의뢰 제출에 실패했습니다."));
+        throw new Error(String(body?.message || "전송 제출에 실패했습니다."));
       }
 
       const uploadedFileKeys = files.map((file) => toPracticeFileKey(file));

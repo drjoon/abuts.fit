@@ -223,6 +223,7 @@ import salesmanRoutes from "./modules/salesman/salesman.routes.js";
 import snapshotRoutes from "./modules/snapshots/snapshot.routes.js";
 import referralGroupsRoutes from "./modules/referralGroups/referralGroups.routes.js";
 import systemRoutes from "./modules/system/system.routes.js";
+import practiceTransferRoutes from "./modules/practiceTransfers/practiceTransfer.routes.js";
 
 // 라우트 설정
 app.use("/api/system", systemRoutes);
@@ -248,6 +249,7 @@ app.use("/api/implant-presets", implantPresetRoutes);
 app.use("/api/credits", creditRoutes);
 app.use("/api/webhooks", webhookRoutes);
 app.use("/api/chats", chatRoutes);
+app.use("/api/practice/transfers", practiceTransferRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/manufacturer", manufacturerRoutes);
 app.use("/api/cnc-machines", cncMachineRoutes);

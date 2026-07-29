@@ -19,11 +19,14 @@ router.post(
 
 // ===== 신규 의뢰 생성 =====
 // SSOT: POST /api/requests/from-draft (Draft 기반 워크플로우)
-// Draft에서 의뢰 생성 (의뢰자/치과(practice) 가능)
+// related files:
+// - web/backend/controllers/requests/creation.from-draft.controller.js
+// - web/backend/controllers/practiceTransfers/practiceTransfer.controller.js
+// Draft에서 의뢰 생성 (의뢰자 전용; practice는 /api/practice/transfers SSOT)
 router.post(
   "/from-draft",
   authenticate,
-  authorize(["requestor", "practice", "admin"], { subRoles: ["owner", "staff"] }),
+  authorize(["requestor", "admin"], { subRoles: ["owner", "staff"] }),
   requestController.createRequestsFromDraft,
 );
 

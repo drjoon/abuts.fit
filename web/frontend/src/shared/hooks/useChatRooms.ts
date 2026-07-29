@@ -37,6 +37,10 @@ export interface ChatMessage {
   updatedAt: string;
 }
 
+// related files:
+// - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
+// - web/backend/models/chatRoom.model.js
+// - web/backend/controllers/chats/chat.controller.js
 export interface ChatRoom {
   _id: string;
   participants: ChatRoomParticipant[];
@@ -46,6 +50,10 @@ export interface ChatRoom {
     _id: string;
     requestId: string;
     title: string;
+  };
+  relatedPracticeTransferId?: {
+    _id: string;
+    transferId: string;
   };
   lastMessageAt: string;
   status: "active" | "suspended" | "monitored";
@@ -80,9 +88,11 @@ export const useChatRooms = () => {
       } else {
         throw new Error("채팅방 목록 조회에 실패했습니다.");
       }
-    } catch (e: any) {
+    } catch (e: unknown) {
       const errorMsg =
-        e?.message || "채팅방 목록을 불러오는 중 오류가 발생했습니다.";
+        e instanceof Error
+          ? e.message
+          : "채팅방 목록을 불러오는 중 오류가 발생했습니다.";
       setError(errorMsg);
       toast({
         title: "오류",
@@ -124,10 +134,11 @@ export const useChatRooms = () => {
         } else {
           throw new Error(res.data?.message || "채팅방 생성에 실패했습니다.");
         }
-      } catch (e: any) {
+      } catch (e: unknown) {
         toast({
           title: "오류",
-          description: e?.message || "채팅방 생성 중 오류가 발생했습니다.",
+          description:
+            e instanceof Error ? e.message : "채팅방 생성 중 오류가 발생했습니다.",
           variant: "destructive",
         });
         return null;

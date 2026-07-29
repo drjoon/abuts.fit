@@ -13,6 +13,8 @@
  * - web/frontend/src/shared/hooks/useChatMessages.ts
  * - web/backend/modules/chat/chat.routes.js
  * - web/backend/controllers/chats/chat.controller.js
+ * - web/backend/modules/practiceTransfers/practiceTransfer.routes.js
+ * - web/backend/controllers/practiceTransfers/practiceTransfer.controller.js
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -83,8 +85,8 @@ import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
 import { onAppEvent, onNotification } from "@/shared/realtime/socket";
 
 type RecentRequestItem = {
-  id: string; // requestId(표시/검색/채팅매핑용)
-  requestMongoId: string; // 삭제 API 호출용
+  id: string; // 전송 내 파일 row 식별자(표시/그룹/optimistic 삭제용)
+  requestMongoId: string; // PracticeTransfer _id (삭제 API 호출용)
   createdAt: string;
   requestDate: string;
   patientName: string;
@@ -110,7 +112,7 @@ type RecentTransferItem = {
   fileCount: number;
   patientCount: number;
   requestIds: string[];
-  requestMongoIds: string[];
+  transferMongoIds: string[];
   fileNames: string[];
   transferMemo: string;
   unreadCount: number;
@@ -290,7 +292,7 @@ export const PracticeFileTransferPage = () => {
     setRecentRequestsError("");
     try {
       const res = await apiFetch<unknown>({
-        path: "/api/requests/my?page=1&limit=100",
+        path: "/api/practice/transfers/my?page=1&limit=100",
         method: "GET",
         token: authToken,
       });
@@ -343,7 +345,7 @@ export const PracticeFileTransferPage = () => {
 
           const patientName = String(ci.patientName || "").trim() || "-";
           const requestId = String(r.requestId || r._id || "").trim();
-          const requestMongoId = String(r._id || "").trim();
+          const requestMongoId = String(r.practiceTransferId || r._id || "").trim();
 
           return {
             id: requestId,
@@ -429,11 +431,11 @@ export const PracticeFileTransferPage = () => {
   }, [recentRequests, requestSearchTerm, period]);
 
   const groupedTransfers = useMemo(() => {
-    const unreadByRequestId = new Map<string, number>();
+    const unreadByTransferId = new Map<string, number>();
     for (const room of chatRooms) {
-      const rid = String(room.relatedRequestId?.requestId || "").trim();
-      if (!rid) continue;
-      unreadByRequestId.set(rid, Number(room.unreadCount || 0));
+      const transferId = String(room.relatedPracticeTransferId?.transferId || "").trim();
+      if (!transferId) continue;
+      unreadByTransferId.set(transferId, Number(room.unreadCount || 0));
     }
 
     const byKey = new Map<
@@ -442,7 +444,7 @@ export const PracticeFileTransferPage = () => {
         _statuses: Set<string>;
         _patients: Set<string>;
         _requestIds: Set<string>;
-        _requestMongoIds: Set<string>;
+        _transferMongoIds: Set<string>;
         _fileNames: Set<string>;
       }
     >();
@@ -459,11 +461,11 @@ export const PracticeFileTransferPage = () => {
         if (patientKey) initialPatients.add(patientKey);
 
         const requestIds = new Set<string>([req.id]);
-        const requestMongoIds = new Set<string>();
-        if (req.requestMongoId) requestMongoIds.add(req.requestMongoId);
+        const transferMongoIds = new Set<string>();
+        if (req.requestMongoId) transferMongoIds.add(req.requestMongoId);
         const fileNames = new Set<string>();
         if (req.fileName) fileNames.add(req.fileName);
-        const unreadCount = Number(unreadByRequestId.get(req.id) || 0);
+        const unreadCount = Number(unreadByTransferId.get(req.transferId) || 0);
         byKey.set(key, {
           id: req.id,
           transferId: req.transferId || "-",
@@ -476,7 +478,7 @@ export const PracticeFileTransferPage = () => {
           fileCount: 1,
           patientCount: Math.max(1, initialPatients.size),
           requestIds: [req.id],
-          requestMongoIds: req.requestMongoId ? [req.requestMongoId] : [],
+          transferMongoIds: req.requestMongoId ? [req.requestMongoId] : [],
           fileNames: req.fileName ? [req.fileName] : [],
           transferMemo: req.transferMemo,
           unreadCount,
@@ -497,7 +499,7 @@ export const PracticeFileTransferPage = () => {
           _statuses: new Set([req.status]),
           _patients: initialPatients,
           _requestIds: requestIds,
-          _requestMongoIds: requestMongoIds,
+          _transferMongoIds: transferMongoIds,
           _fileNames: fileNames,
         });
         continue;
@@ -512,9 +514,9 @@ export const PracticeFileTransferPage = () => {
       existing._requestIds.add(req.id);
       existing.requestIds = Array.from(existing._requestIds);
       if (req.requestMongoId) {
-        existing._requestMongoIds.add(req.requestMongoId);
+        existing._transferMongoIds.add(req.requestMongoId);
       }
-      existing.requestMongoIds = Array.from(existing._requestMongoIds);
+      existing.transferMongoIds = Array.from(existing._transferMongoIds);
       if (req.fileName) {
         existing._fileNames.add(req.fileName);
       }
@@ -529,10 +531,7 @@ export const PracticeFileTransferPage = () => {
         existing.requestDate = req.requestDate;
       }
 
-      existing.unreadCount = existing.requestIds.reduce(
-        (acc, id) => acc + Number(unreadByRequestId.get(id) || 0),
-        0,
-      );
+      existing.unreadCount = Number(unreadByTransferId.get(existing.transferId) || 0);
 
       existing.searchBlob = `${existing.searchBlob} ${[req.patientName, req.toothNumbers.join(" "), req.id, req.transferMemo, req.fileName].join(" ")}`.toLowerCase();
       if (!existing.transferId || existing.transferId === "-") {
@@ -552,7 +551,7 @@ export const PracticeFileTransferPage = () => {
     }
 
     return [...byKey.values()]
-      .map(({ _statuses: _s, _patients: _p, _requestIds: _r, _requestMongoIds: _rm, _fileNames: _f, ...row }) => ({
+      .map(({ _statuses: _s, _patients: _p, _requestIds: _r, _transferMongoIds: _tm, _fileNames: _f, ...row }) => ({
         ...row,
         deleteTargetLabel:
           row.transferId && row.transferId !== "-"
@@ -611,16 +610,16 @@ export const PracticeFileTransferPage = () => {
       return;
     }
 
-    const primaryRequestId = String(transfer.requestIds?.[0] || "").trim();
-    if (!primaryRequestId) {
-      setChatError("의뢰 ID를 확인할 수 없어 채팅방을 열 수 없습니다.");
+    const transferId = String(transfer.transferId || "").trim();
+    if (!transferId || transferId === "-") {
+      setChatError("전송 ID를 확인할 수 없어 채팅방을 열 수 없습니다.");
       return;
     }
 
     setChatLoading(true);
     try {
       const res = await apiFetch<unknown>({
-        path: `/api/chats/practice/request-room/${encodeURIComponent(primaryRequestId)}`,
+        path: `/api/chats/practice/transfer-room/${encodeURIComponent(transferId)}`,
         method: "GET",
         token: authToken,
       });
@@ -745,13 +744,14 @@ export const PracticeFileTransferPage = () => {
     const requestIds = Array.isArray(target?.requestIds)
       ? target!.requestIds.map((id) => String(id || "").trim()).filter(Boolean)
       : [];
-    const requestMongoIds = Array.isArray(target?.requestMongoIds)
-      ? target!.requestMongoIds.map((id) => String(id || "").trim()).filter(Boolean)
+    const transferIds = target?.transferId && target.transferId !== "-" ? [target.transferId] : [];
+    const transferMongoIds = Array.isArray(target?.transferMongoIds)
+      ? target!.transferMongoIds.map((id) => String(id || "").trim()).filter(Boolean)
       : [];
 
-    if (!target || requestIds.length === 0 || requestMongoIds.length === 0) {
+    if (!target || (transferIds.length === 0 && transferMongoIds.length === 0)) {
       toast({
-        title: "삭제할 의뢰가 없습니다",
+        title: "삭제할 전송건이 없습니다",
         variant: "destructive",
       });
       setDeleteConfirmOpen(false);
@@ -771,16 +771,16 @@ export const PracticeFileTransferPage = () => {
 
     try {
       // related files:
-      // - web/backend/modules/requests/request.routes.js
-      // - web/backend/controllers/requests/common.requests.controller.js
-      // practice 전용 배치 취소 라우트 사용 (치과->기공소 루트)
+      // - web/backend/modules/practiceTransfers/practiceTransfer.routes.js
+      // - web/backend/controllers/practiceTransfers/practiceTransfer.controller.js
+      // practice 전용 배치 취소 라우트 사용 (PracticeTransfer SSOT)
       const res = await apiFetch<unknown>({
-        path: "/api/requests/practice/cancel-batch",
+        path: "/api/practice/transfers/cancel-batch",
         method: "POST",
         token: authToken,
         jsonBody: {
-          requestIds,
-          requestMongoIds,
+          transferIds,
+          transferMongoIds,
         },
       });
 
@@ -936,22 +936,6 @@ export const PracticeFileTransferPage = () => {
 
     setRequestSubmitting(true);
     try {
-      const createDraftRes = await apiFetch<unknown>({
-        path: "/api/requests/drafts",
-        method: "POST",
-        token: authToken,
-        jsonBody: { caseInfos: [] },
-      });
-      if (!createDraftRes.ok) {
-        throw new Error("드래프트 생성에 실패했습니다.");
-      }
-
-      const createdDraft = extractDataFromResponse<{ _id?: string }>(
-        createDraftRes.data,
-      );
-      const draftId = String(createdDraft?._id || "").trim();
-      if (!draftId) throw new Error("draftId를 받지 못했습니다.");
-
       const uploadedTempFiles: TempUploadedFile[] = await uploadFilesWithToast(files);
 
       const clinicName = String(
@@ -990,10 +974,10 @@ export const PracticeFileTransferPage = () => {
             tag: "practice_file_transfer",
           },
           // related files:
-          // - web/backend/models/draftRequest.model.js
-          // - web/backend/models/request.model.js
-          // - web/backend/controllers/chats/chat.controller.js
-          // practice 전용 라우팅 필드(치과 -> 기공소)
+          // - web/backend/models/practiceTransfer.model.js
+          // - web/backend/controllers/practiceTransfers/practiceTransfer.controller.js
+          // - web/backend/modules/practiceTransfers/practiceTransfer.routes.js
+          // practice 제출은 PracticeTransfer SSOT로 저장 (Request 컬렉션 경유 금지)
           practiceRouting: {
             targetLabAnchorId: String(selectedLab?._id || "").trim() || null,
             targetLabName: String(selectedLab?.name || "").trim(),
@@ -1001,26 +985,21 @@ export const PracticeFileTransferPage = () => {
         };
       });
 
-      const patchDraftRes = await apiFetch<unknown>({
-        path: `/api/requests/drafts/${encodeURIComponent(draftId)}`,
-        method: "PATCH",
-        token: authToken,
-        jsonBody: { caseInfos: caseInfosPayload },
-      });
-      if (!patchDraftRes.ok) {
-        const body = asApiMessagePayload(patchDraftRes.data);
-        throw new Error(String(body?.message || "드래프트 저장에 실패했습니다."));
-      }
-
       const submitRes = await apiFetch<unknown>({
-        path: "/api/requests/from-draft",
+        path: "/api/practice/transfers",
         method: "POST",
         token: authToken,
-        jsonBody: { draftId },
+        jsonBody: {
+          transferId,
+          targetLabAnchorId: String(selectedLab?._id || "").trim() || null,
+          targetLabName: String(selectedLab?.name || "").trim(),
+          transferMemo,
+          caseInfos: caseInfosPayload,
+        },
       });
       if (!submitRes.ok) {
         const body = asApiMessagePayload(submitRes.data);
-        throw new Error(String(body?.message || "의뢰 제출에 실패했습니다."));
+        throw new Error(String(body?.message || "전송 제출에 실패했습니다."));
       }
 
       rememberLab(selectedLab);
@@ -1028,13 +1007,13 @@ export const PracticeFileTransferPage = () => {
       setRequestMemo("");
 
       toast({
-        title: "의뢰 제출 완료",
-        description: "의뢰가 정상 접수되었습니다.",
+        title: "전송 제출 완료",
+        description: "전송이 정상 접수되었습니다.",
       });
       navigate("/practice/dashboard");
     } catch (error) {
       toast({
-        title: "의뢰 제출 실패",
+        title: "전송 제출 실패",
         description:
           error instanceof Error ? error.message : "잠시 후 다시 시도해주세요.",
         variant: "destructive",
@@ -1422,16 +1401,16 @@ export const PracticeFileTransferPage = () => {
         </div>
 
         <Dialog open={transferDialogOpen} onOpenChange={(open) => (open ? setTransferDialogOpen(true) : handleCloseTransferDialog())}>
-          <DialogContent className="max-w-3xl p-0 overflow-hidden">
-            <DialogHeader className="px-5 pt-5 pb-3 border-b">
+          <DialogContent className="max-w-3xl p-0 overflow-hidden max-h-[86vh] flex flex-col">
+            <DialogHeader className="px-5 pt-5 pb-3 border-b shrink-0">
               <DialogTitle className="flex items-center gap-2 text-base">
                 <MessageSquare className="h-4 w-4 text-blue-600" />
                 의뢰 상세 · 기공소 채팅
               </DialogTitle>
             </DialogHeader>
 
-            <div className="px-5 py-4 space-y-4">
-              <div className="rounded-lg border bg-muted/20 p-3 text-sm grid grid-cols-2 gap-3">
+            <div className="px-5 py-4 space-y-4 flex-1 min-h-0 overflow-hidden">
+              <div className="rounded-lg border bg-muted/20 p-3 text-sm grid grid-cols-2 gap-3 max-h-[13rem] overflow-y-auto">
                 <div>
                   <p className="text-muted-foreground">전송ID</p>
                   <p className="font-medium break-words">{selectedTransfer?.transferId && selectedTransfer.transferId !== "-" ? selectedTransfer.transferId : selectedTransfer?.id || "-"}</p>
@@ -1446,13 +1425,13 @@ export const PracticeFileTransferPage = () => {
                 </div>
                 <div>
                   <p className="text-muted-foreground">의뢰 메모</p>
-                  <p className="font-medium whitespace-pre-wrap break-words">
+                  <p className="font-medium whitespace-pre-wrap break-words max-h-20 overflow-y-auto pr-1">
                     {selectedTransfer?.transferMemo || "-"}
                   </p>
                 </div>
                 <div>
                   <p className="text-muted-foreground">파일명 ({selectedTransfer?.fileCount || 0}개)</p>
-                  <p className="font-medium whitespace-pre-wrap break-words">
+                  <p className="font-medium whitespace-pre-wrap break-words max-h-24 overflow-y-auto pr-1">
                     {selectedTransfer?.fileNames?.length
                       ? selectedTransfer.fileNames.join("\n")
                       : "-"}
@@ -1460,7 +1439,7 @@ export const PracticeFileTransferPage = () => {
                 </div>
               </div>
 
-              <div className="rounded-lg border h-[24rem] flex flex-col">
+              <div className="rounded-lg border h-[24rem] max-h-[24rem] min-h-0 flex flex-col overflow-hidden">
                 <div className="px-3 py-2 border-b text-sm text-muted-foreground">
                   기공소와의 소통
                 </div>
@@ -1533,72 +1512,78 @@ export const PracticeFileTransferPage = () => {
                   </div>
                 </ScrollArea>
 
-                <div className="border-t p-3 space-y-2">
+                <div className="border-t px-3 pt-3 pb-4 sm:px-4 sm:pt-4 sm:pb-6 space-y-2">
                   {chatAttachedFiles.length > 0 ? (
-                    <div className="flex flex-wrap gap-1.5">
+                    <div className="flex flex-wrap gap-2 max-h-20 overflow-y-auto pr-1">
                       {chatAttachedFiles.map((file, idx) => (
                         <span
                           key={`${file.name}:${file.size}:${file.lastModified}:${idx}`}
-                          className="inline-flex max-w-full items-center gap-1 rounded-md border px-2 py-1 text-[11px]"
+                          className="inline-flex max-w-full items-center gap-1.5 rounded border px-2 py-1 text-xs"
                         >
-                          <span className="truncate max-w-[16rem]">{file.name}</span>
+                          <span className="truncate max-w-[14rem] sm:max-w-[18rem]">{file.name}</span>
                           <span className="text-muted-foreground">{formatFileSize(file.size)}</span>
                           <button
                             type="button"
-                            className="text-muted-foreground hover:text-destructive"
+                            className="opacity-70 hover:opacity-100"
                             onClick={() => handleRemoveAttachedChatFile(idx)}
                             aria-label="첨부파일 제거"
                           >
-                            <X className="h-3.5 w-3.5" />
+                            <X className="h-3 w-3" />
                           </button>
                         </span>
                       ))}
                     </div>
                   ) : null}
 
-                  <div className="flex items-end gap-2">
-                    <input
-                      id="practice-transfer-chat-attachment-input"
-                      type="file"
-                      className="hidden"
-                      multiple
-                      onChange={(e) => {
-                        handleAttachChatFiles(e.target.files);
-                        e.currentTarget.value = "";
-                      }}
-                    />
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="icon"
-                      onClick={() => {
-                        const input = document.getElementById(
-                          "practice-transfer-chat-attachment-input",
-                        ) as HTMLInputElement | null;
-                        input?.click();
-                      }}
-                      disabled={chatLoading || chatSending || !activeChatRoom?._id}
-                      aria-label="파일 첨부"
-                    >
-                      <Paperclip className="h-4 w-4" />
-                    </Button>
+                  <Textarea
+                    value={chatDraft}
+                    onChange={(e) => setChatDraft(e.target.value)}
+                    placeholder="문의 내용을 입력하세요"
+                    className="resize-none flex-1"
+                    rows={3}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault();
+                        void handleSendChatMessage();
+                      }
+                    }}
+                    disabled={chatLoading || chatSending || !activeChatRoom?._id}
+                  />
 
-                    <Textarea
-                      value={chatDraft}
-                      onChange={(e) => setChatDraft(e.target.value)}
-                      placeholder="기공소에 전달할 내용을 입력하세요"
-                      className="min-h-16 text-sm"
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" && !e.shiftKey) {
-                          e.preventDefault();
-                          void handleSendChatMessage();
-                        }
-                      }}
-                      disabled={chatLoading || chatSending || !activeChatRoom?._id}
-                    />
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1">
+                      <input
+                        id="practice-transfer-chat-attachment-input"
+                        type="file"
+                        className="hidden"
+                        multiple
+                        onChange={(e) => {
+                          handleAttachChatFiles(e.target.files);
+                          e.currentTarget.value = "";
+                        }}
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-9 w-9"
+                        onClick={() => {
+                          const input = document.getElementById(
+                            "practice-transfer-chat-attachment-input",
+                          ) as HTMLInputElement | null;
+                          input?.click();
+                        }}
+                        disabled={chatLoading || chatSending || !activeChatRoom?._id}
+                        aria-label="파일 첨부"
+                      >
+                        <Paperclip className="h-4 w-4" />
+                      </Button>
+                    </div>
+
                     <Button
                       type="button"
                       size="icon"
+                      className="h-9 w-9"
                       onClick={() => void handleSendChatMessage()}
                       disabled={
                         chatLoading ||
@@ -1627,7 +1612,7 @@ export const PracticeFileTransferPage = () => {
                   : deleteTargetTransfer?.id || "-"}
               </div>
               <div className="text-sm text-muted-foreground">
-                첨부된 파일 {deleteTargetTransfer?.requestIds?.length || 0}개를 삭제합니다.
+                첨부된 파일 {deleteTargetTransfer?.fileCount || 0}개를 삭제합니다.
               </div>
             </div>
           }

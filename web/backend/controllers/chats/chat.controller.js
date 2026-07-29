@@ -3,6 +3,7 @@ import ChatRoom from "../../models/chatRoom.model.js";
 import Chat from "../../models/chat.model.js";
 import User from "../../models/user.model.js";
 import Request from "../../models/request.model.js";
+import PracticeTransfer from "../../models/practiceTransfer.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 
 const __chatPerfCache = new Map();
@@ -208,6 +209,7 @@ export async function getMyChatRooms(req, res) {
     })
       .populate("participants", "name email role business")
       .populate("relatedRequestId", "requestId title")
+      .populate("relatedPracticeTransferId", "transferId")
       .sort({ lastMessageAt: -1 })
       .lean();
 
@@ -687,6 +689,152 @@ export async function getOrCreateRequestChatRoom(req, res) {
 }
 
 /**
+ * practice 전송(PracticeTransfer) 기준 채팅방 조회/생성
+ * related files:
+ * - web/backend/models/practiceTransfer.model.js
+ * - web/backend/models/chatRoom.model.js
+ * - web/backend/modules/chat/chat.routes.js
+ * - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
+ * @route GET /api/chats/practice/transfer-room/:transferId
+ */
+export async function getOrCreatePracticeTransferChatRoom(req, res) {
+  try {
+    const rawTransferId = String(req.params?.transferId || "").trim();
+    if (!rawTransferId) {
+      return res.status(400).json({ success: false, message: "transferId가 필요합니다." });
+    }
+
+    const transferFilter = Types.ObjectId.isValid(rawTransferId)
+      ? {
+          $or: [
+            { transferId: rawTransferId },
+            { _id: new Types.ObjectId(rawTransferId) },
+          ],
+        }
+      : { transferId: rawTransferId };
+
+    const transferDoc = await PracticeTransfer.findOne(transferFilter)
+      .select({
+        _id: 1,
+        transferId: 1,
+        practiceUserId: 1,
+        targetLabAnchorId: 1,
+        targetLabName: 1,
+        status: 1,
+      })
+      .lean();
+
+    if (!transferDoc) {
+      return res.status(404).json({ success: false, message: "전송 내역을 찾을 수 없습니다." });
+    }
+
+    if (String(transferDoc?.status || "") === "canceled") {
+      return res.status(409).json({ success: false, message: "취소된 전송 내역입니다." });
+    }
+
+    const practiceUserId = String(transferDoc?.practiceUserId || "").trim();
+    let counterpartUserId = "";
+
+    const targetLabAnchorId = String(transferDoc?.targetLabAnchorId || "").trim();
+    if (targetLabAnchorId && Types.ObjectId.isValid(targetLabAnchorId)) {
+      counterpartUserId = await resolvePracticeLabUserIdByAnchor(targetLabAnchorId);
+    }
+
+    if (!counterpartUserId) {
+      const fallbackAnchorId = await resolvePracticeLabAnchorIdByName(
+        String(transferDoc?.targetLabName || "").trim(),
+      );
+      if (fallbackAnchorId) {
+        counterpartUserId = await resolvePracticeLabUserIdByAnchor(fallbackAnchorId);
+      }
+    }
+
+    if (!practiceUserId || !counterpartUserId) {
+      return res.status(409).json({
+        success: false,
+        message: "아직 연결 가능한 기공소가 지정되지 않았습니다.",
+      });
+    }
+
+    const currentUserId = String(req.user?._id || "").trim();
+    const canAccess =
+      req.user?.role === "admin" ||
+      currentUserId === practiceUserId ||
+      currentUserId === counterpartUserId;
+
+    if (!canAccess) {
+      return res.status(403).json({
+        success: false,
+        message: "이 전송 채팅방에 접근할 권한이 없습니다.",
+      });
+    }
+
+    const participantObjectIds = [practiceUserId, counterpartUserId].map(
+      (id) => new Types.ObjectId(id),
+    );
+
+    let room = await ChatRoom.findOne({
+      relatedPracticeTransferId: transferDoc._id,
+      isArchived: false,
+    })
+      .populate("participants", "name email role business")
+      .populate("relatedPracticeTransferId", "transferId");
+
+    if (!room) {
+      room = await ChatRoom.findOne({
+        participants: { $all: participantObjectIds, $size: participantObjectIds.length },
+        relatedPracticeTransferId: transferDoc._id,
+        isArchived: false,
+      })
+        .populate("participants", "name email role business")
+        .populate("relatedPracticeTransferId", "transferId");
+    }
+
+    if (!room) {
+      const created = await ChatRoom.create({
+        participants: participantObjectIds,
+        roomType: "direct",
+        title: `전송 ${String(transferDoc.transferId || "")} 소통`,
+        relatedPracticeTransferId: transferDoc._id,
+        status: "active",
+      });
+
+      room = await ChatRoom.findById(created._id)
+        .populate("participants", "name email role business")
+        .populate("relatedPracticeTransferId", "transferId");
+    }
+
+    const [unreadCount, lastMessage] = await Promise.all([
+      Chat.countDocuments({
+        roomId: room._id,
+        isDeleted: false,
+        sender: { $ne: req.user._id },
+        "readBy.userId": { $ne: req.user._id },
+      }),
+      Chat.findOne({ roomId: room._id, isDeleted: false })
+        .sort({ createdAt: -1 })
+        .populate("sender", "name role")
+        .lean(),
+    ]);
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        ...room.toObject(),
+        unreadCount: unreadCount || 0,
+        lastMessage: lastMessage || null,
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "practice 전송 채팅방 조회/생성 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
+/**
  * 채팅방 생성 또는 기존 채팅방 조회
  * @route POST /api/chats/rooms
  */
@@ -1137,6 +1285,7 @@ export default {
   getMyChatRooms,
   getSupportRoom,
   getOrCreateRequestChatRoom,
+  getOrCreatePracticeTransferChatRoom,
   createOrGetChatRoom,
   getChatMessages,
   sendChatMessage,
