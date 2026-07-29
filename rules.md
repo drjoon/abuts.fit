@@ -147,6 +147,30 @@
 - `web/frontend/src/pages/practice/PracticeFileTransferPage.tsx`
 - `web/backend/models/request.model.js`
 
+### 1.0.1.3 practice 최근 전송카드 상세/채팅 UX SSOT (2026-07-29)
+
+- `/practice/dashboard` 최근 전송 내역 카드는 클릭 시 **의뢰 상세 + 채팅 모달**을 연다.
+  - 상단: 전송ID, 전송시각, 기공소, 파일수, 환자수, 의뢰번호 목록, 의뢰 메모
+  - 하단: 해당 의뢰와 연결된 기공소 채팅창
+- 전송카드의 안읽은 메시지 배지는 **배치에 포함된 requestId들의 unreadCount 합**으로 계산한다.
+  - 데이터 소스 SSOT: `GET /api/chats/rooms`의 `relatedRequestId.requestId`, `unreadCount`
+- 의뢰-채팅방 연결 SSOT:
+  - `GET /api/chats/request-room/:requestId`로 request 기반 채팅방을 조회/생성한다.
+  - 참여자는 해당 `Request.requestor`와 `Request.caManufacturer`를 기준으로 구성한다.
+- 메시지 읽음 처리 SSOT:
+  - 모달에서 메시지 조회(`GET /api/chats/rooms/:roomId/messages`) 시 읽음 업데이트를 트리거한다.
+  - 모달 진입/발송 후 rooms를 갱신해 카드 배지 상태를 최신화한다.
+
+관련 파일:
+- `web/frontend/src/pages/practice/PracticeFileTransferPage.tsx`
+- `web/frontend/src/shared/hooks/useChatRooms.ts`
+- `web/frontend/src/shared/hooks/useChatMessages.ts`
+- `web/backend/modules/chat/chat.routes.js`
+- `web/backend/controllers/chats/chat.controller.js`
+- `web/backend/models/chatRoom.model.js`
+- `web/backend/models/chat.model.js`
+- `web/backend/models/request.model.js`
+
 ### 1.0.2 디자인소프트웨어 기본값 계층 (BusinessAnchor → Requestor → 의뢰건) (2026-07-27)
 
 - BusinessAnchor `requestSettings.designSoftware`는 **사업체 공통 기본값**으로만 관리한다.

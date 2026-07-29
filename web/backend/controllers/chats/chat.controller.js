@@ -2,6 +2,7 @@ import { Types } from "mongoose";
 import ChatRoom from "../../models/chatRoom.model.js";
 import Chat from "../../models/chat.model.js";
 import User from "../../models/user.model.js";
+import Request from "../../models/request.model.js";
 
 const __chatPerfCache = new Map();
 const __chatInFlight = new Map();
@@ -277,6 +278,142 @@ export async function getSupportRoom(req, res) {
         error?.statusCode && error?.message
           ? error.message
           : "지원 채팅방 생성/조회 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
+/**
+ * 의뢰(request) 기준 채팅방 조회/생성
+ * related files:
+ * - web/backend/modules/chat/chat.routes.js
+ * - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
+ * @route GET /api/chats/request-room/:requestId
+ */
+export async function getOrCreateRequestChatRoom(req, res) {
+  try {
+    const rawRequestId = String(req.params?.requestId || "").trim();
+    const currentUserId = String(req.user?._id || "").trim();
+
+    if (!rawRequestId) {
+      return res.status(400).json({
+        success: false,
+        message: "requestId가 필요합니다.",
+      });
+    }
+
+    const requestFilter =
+      Types.ObjectId.isValid(rawRequestId)
+        ? {
+            $or: [
+              { requestId: rawRequestId },
+              { _id: new Types.ObjectId(rawRequestId) },
+            ],
+          }
+        : { requestId: rawRequestId };
+
+    const targetRequest = await Request.findOne(requestFilter)
+      .select({
+        _id: 1,
+        requestId: 1,
+        requestor: 1,
+        caManufacturer: 1,
+      })
+      .lean();
+
+    if (!targetRequest) {
+      return res.status(404).json({
+        success: false,
+        message: "의뢰를 찾을 수 없습니다.",
+      });
+    }
+
+    const requestorId = String(targetRequest.requestor || "").trim();
+    const manufacturerId = String(targetRequest.caManufacturer || "").trim();
+
+    if (!requestorId || !manufacturerId) {
+      return res.status(409).json({
+        success: false,
+        message: "아직 연결 가능한 기공소 담당자가 지정되지 않았습니다.",
+      });
+    }
+
+    const canAccess =
+      req.user?.role === "admin" ||
+      currentUserId === requestorId ||
+      currentUserId === manufacturerId;
+
+    if (!canAccess) {
+      return res.status(403).json({
+        success: false,
+        message: "이 의뢰 채팅방에 접근할 권한이 없습니다.",
+      });
+    }
+
+    const participantObjectIds = [requestorId, manufacturerId].map(
+      (id) => new Types.ObjectId(id),
+    );
+
+    let room = await ChatRoom.findOne({
+      relatedRequestId: targetRequest._id,
+      isArchived: false,
+    })
+      .populate("participants", "name email role business")
+      .populate("relatedRequestId", "requestId title");
+
+    if (!room) {
+      room = await ChatRoom.findOne({
+        participants: {
+          $all: participantObjectIds,
+          $size: participantObjectIds.length,
+        },
+        relatedRequestId: targetRequest._id,
+        isArchived: false,
+      })
+        .populate("participants", "name email role business")
+        .populate("relatedRequestId", "requestId title");
+    }
+
+    if (!room) {
+      const title = `의뢰 ${String(targetRequest.requestId || "").trim() || ""} 소통`;
+      const created = await ChatRoom.create({
+        participants: participantObjectIds,
+        roomType: "direct",
+        title,
+        relatedRequestId: targetRequest._id,
+        status: "active",
+      });
+
+      room = await ChatRoom.findById(created._id)
+        .populate("participants", "name email role business")
+        .populate("relatedRequestId", "requestId title");
+    }
+
+    const [unreadCount, lastMessage] = await Promise.all([
+      Chat.countDocuments({
+        roomId: room._id,
+        isDeleted: false,
+        sender: { $ne: req.user._id },
+        "readBy.userId": { $ne: req.user._id },
+      }),
+      Chat.findOne({ roomId: room._id, isDeleted: false })
+        .sort({ createdAt: -1 })
+        .populate("sender", "name role")
+        .lean(),
+    ]);
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        ...room.toObject(),
+        unreadCount: unreadCount || 0,
+        lastMessage: lastMessage || null,
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "의뢰 채팅방 조회/생성 중 오류가 발생했습니다.",
       error: error.message,
     });
   }
@@ -718,6 +855,7 @@ export async function searchUsers(req, res) {
 export default {
   getMyChatRooms,
   getSupportRoom,
+  getOrCreateRequestChatRoom,
   createOrGetChatRoom,
   getChatMessages,
   sendChatMessage,

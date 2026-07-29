@@ -5,14 +5,17 @@
  * - 제출 후 바로 도달하는 홈 화면 제공
  * - 상단: 기간필터 + 요약(좌 2x2) + 최근 의뢰(우)
  * - 하단: 스캔 전송 섹션이 남은 영역을 채움
+ * - 최근 전송 카드 클릭 시 의뢰 정보 + 기공소 채팅 모달 제공
  *
  * related files:
  * - web/frontend/src/pages/practice/PracticeDropzonePage.tsx
- * - web/frontend/src/features/dashboard/DashboardHome.tsx
- * - web/frontend/src/features/layout/DashboardLayout.tsx
+ * - web/frontend/src/shared/hooks/useChatRooms.ts
+ * - web/frontend/src/shared/hooks/useChatMessages.ts
+ * - web/backend/modules/chat/chat.routes.js
+ * - web/backend/controllers/chats/chat.controller.js
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   UploadCloud,
@@ -21,6 +24,8 @@ import {
   Trash2,
   ChevronsUpDown,
   Check,
+  MessageSquare,
+  Send,
 } from "lucide-react";
 import {
   Card,
@@ -34,6 +39,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { PageFileDropZone } from "@/features/requests/components/PageFileDropZone";
 import {
   Popover,
@@ -63,6 +75,8 @@ import {
   getBusinessLabel,
   usePracticeTransferStep1,
 } from "@/pages/practice/hooks/usePracticeTransferStep1";
+import { useChatRooms, type ChatRoom } from "@/shared/hooks/useChatRooms";
+import { useChatMessages } from "@/shared/hooks/useChatMessages";
 
 type RecentRequestItem = {
   id: string;
@@ -75,16 +89,22 @@ type RecentRequestItem = {
   status: string;
   createdAtTs: number;
   transferId: string;
+  transferMemo: string;
 };
 
 type RecentTransferItem = {
   id: string;
+  transferId: string;
   createdAt: string;
+  createdAtTs: number;
   requestDate: string;
   targetLab: string;
   status: string;
   fileCount: number;
   patientCount: number;
+  requestIds: string[];
+  transferMemo: string;
+  unreadCount: number;
   searchBlob: string;
 };
 
@@ -98,6 +118,23 @@ const extractTransferIdFromMessage = (message: string) => {
   const raw = String(message || "").trim();
   const matched = raw.match(/\[\s*전송ID\s*:\s*([^\]]+)\]/i);
   return String(matched?.[1] || "").trim();
+};
+
+const extractTransferMemoFromMessage = (message: string) => {
+  const raw = String(message || "").trim();
+  if (!raw) return "";
+
+  return raw
+    .split(/\r?\n/)
+    .map((line) => String(line || "").trim())
+    .filter(
+      (line) =>
+        Boolean(line) &&
+        !/^\[\s*기공소\s*:/i.test(line) &&
+        !/^\[\s*전송ID\s*:/i.test(line),
+    )
+    .join("\n")
+    .trim();
 };
 
 const makeTransferId = () => {
@@ -157,6 +194,19 @@ const toStatusLabel = (manufacturerStage: unknown) => {
   return raw;
 };
 
+const formatChatTs = (value: unknown) => {
+  const d = new Date(String(value || ""));
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleString("ko-KR", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+};
+
 export const PracticeFileTransferPage = () => {
   const navigate = useNavigate();
   const { period, setPeriod } = usePeriodStore();
@@ -168,6 +218,14 @@ export const PracticeFileTransferPage = () => {
   const [recentRequests, setRecentRequests] = useState<RecentRequestItem[]>([]);
   const [recentRequestsLoading, setRecentRequestsLoading] = useState(false);
   const [recentRequestsError, setRecentRequestsError] = useState("");
+  const [selectedTransfer, setSelectedTransfer] = useState<RecentTransferItem | null>(null);
+  const [transferDialogOpen, setTransferDialogOpen] = useState(false);
+  const [activeChatRoom, setActiveChatRoom] = useState<ChatRoom | null>(null);
+  const [chatLoading, setChatLoading] = useState(false);
+  const [chatError, setChatError] = useState("");
+  const [chatDraft, setChatDraft] = useState("");
+  const [chatSending, setChatSending] = useState(false);
+  const chatBottomRef = useRef<HTMLDivElement | null>(null);
   const {
     files,
     totalSizeMb,
@@ -189,6 +247,14 @@ export const PracticeFileTransferPage = () => {
     rememberLab,
   } = usePracticeTransferStep1();
   const { uploadFilesWithToast } = useUploadWithProgressToast({ token: authToken });
+  const { rooms: chatRooms, fetchRooms: reloadChatRooms } = useChatRooms();
+
+  const {
+    messages: chatMessages,
+    loading: chatMessagesLoading,
+    error: chatMessagesError,
+    sendMessage,
+  } = useChatMessages({ roomId: activeChatRoom?._id, autoFetch: transferDialogOpen });
 
   const loadRecentRequests = useCallback(async () => {
     if (!authToken) {
@@ -246,6 +312,7 @@ export const PracticeFileTransferPage = () => {
           const targetLab = extractLabNameFromMessage(message);
           const toothRaw = String(ci.tooth || "").trim();
           const createdAtRaw = String(r.createdAt || "");
+          const transferMemo = extractTransferMemoFromMessage(message);
 
           const patientName = String(ci.patientName || "").trim() || "-";
           return {
@@ -259,6 +326,7 @@ export const PracticeFileTransferPage = () => {
             status: toStatusLabel(r.manufacturerStage),
             createdAtTs: new Date(createdAtRaw).getTime(),
             transferId: extractTransferIdFromMessage(message),
+            transferMemo,
           };
         })
         .filter((item) => Boolean(item.id))
@@ -328,7 +396,21 @@ export const PracticeFileTransferPage = () => {
   }, [recentRequests, requestSearchTerm, period]);
 
   const groupedTransfers = useMemo(() => {
-    const byKey = new Map<string, RecentTransferItem & { _statuses: Set<string>; _patients: Set<string> }>();
+    const unreadByRequestId = new Map<string, number>();
+    for (const room of chatRooms) {
+      const rid = String(room.relatedRequestId?.requestId || "").trim();
+      if (!rid) continue;
+      unreadByRequestId.set(rid, Number(room.unreadCount || 0));
+    }
+
+    const byKey = new Map<
+      string,
+      RecentTransferItem & {
+        _statuses: Set<string>;
+        _patients: Set<string>;
+        _requestIds: Set<string>;
+      }
+    >();
 
     for (const req of filteredRecentRequests) {
       const minuteBucket = Math.floor(Number(req.createdAtTs || 0) / (60 * 1000));
@@ -341,19 +423,37 @@ export const PracticeFileTransferPage = () => {
         const initialPatients = new Set<string>();
         if (patientKey) initialPatients.add(patientKey);
 
+        const requestIds = new Set<string>([req.id]);
+        const unreadCount = Number(unreadByRequestId.get(req.id) || 0);
         byKey.set(key, {
           id: req.id,
+          transferId: req.transferId || "-",
           createdAt: req.createdAt,
+          createdAtTs: req.createdAtTs,
           requestDate: req.requestDate,
           targetLab: req.targetLab,
           status: req.status,
           fileCount: 1,
           patientCount: Math.max(1, initialPatients.size),
-          searchBlob: [req.id, req.createdAt, req.requestDate, req.patientName, req.toothNumbers.join(" "), req.targetLab, req.status]
+          requestIds: [req.id],
+          transferMemo: req.transferMemo,
+          unreadCount,
+          searchBlob: [
+            req.id,
+            req.createdAt,
+            req.requestDate,
+            req.patientName,
+            req.toothNumbers.join(" "),
+            req.targetLab,
+            req.status,
+            req.transferMemo,
+            req.transferId,
+          ]
             .join(" ")
             .toLowerCase(),
           _statuses: new Set([req.status]),
           _patients: initialPatients,
+          _requestIds: requestIds,
         });
         continue;
       }
@@ -364,7 +464,24 @@ export const PracticeFileTransferPage = () => {
       }
       existing.patientCount = Math.max(1, existing._patients.size);
       existing._statuses.add(req.status);
-      existing.searchBlob = `${existing.searchBlob} ${[req.patientName, req.toothNumbers.join(" "), req.id].join(" ")}`.toLowerCase();
+      existing._requestIds.add(req.id);
+      existing.requestIds = Array.from(existing._requestIds);
+
+      if (!existing.transferMemo && req.transferMemo) {
+        existing.transferMemo = req.transferMemo;
+      }
+      if (req.createdAtTs > existing.createdAtTs) {
+        existing.createdAtTs = req.createdAtTs;
+        existing.createdAt = req.createdAt;
+        existing.requestDate = req.requestDate;
+      }
+
+      existing.unreadCount = existing.requestIds.reduce(
+        (acc, id) => acc + Number(unreadByRequestId.get(id) || 0),
+        0,
+      );
+
+      existing.searchBlob = `${existing.searchBlob} ${[req.patientName, req.toothNumbers.join(" "), req.id, req.transferMemo].join(" ")}`.toLowerCase();
 
       const statusSet = existing._statuses;
       if (statusSet.size === 1) {
@@ -378,8 +495,10 @@ export const PracticeFileTransferPage = () => {
       }
     }
 
-    return [...byKey.values()].map(({ _statuses: _s, _patients: _p, ...row }) => row);
-  }, [filteredRecentRequests]);
+    return [...byKey.values()]
+      .map(({ _statuses: _s, _patients: _p, _requestIds: _r, ...row }) => row)
+      .sort((a, b) => Number(b.createdAtTs || 0) - Number(a.createdAtTs || 0));
+  }, [filteredRecentRequests, chatRooms]);
 
   const statusCounts = useMemo(() => {
     return groupedTransfers.reduce(
@@ -409,6 +528,105 @@ export const PracticeFileTransferPage = () => {
     if (!value || typeof value !== "object") return {} as { message?: string };
     return value as { message?: string };
   };
+
+  const myIdCandidates = useMemo(() => {
+    const ids = [authUser?.id, (authUser as { _id?: string } | null)?._id]
+      .map((v) => String(v || "").trim())
+      .filter(Boolean);
+    return new Set(ids);
+  }, [authUser]);
+
+  const handleOpenTransferDialog = async (transfer: RecentTransferItem) => {
+    setSelectedTransfer(transfer);
+    setTransferDialogOpen(true);
+    setChatDraft("");
+    setActiveChatRoom(null);
+    setChatError("");
+
+    if (!authToken) {
+      setChatError("로그인이 필요합니다.");
+      return;
+    }
+
+    const primaryRequestId = String(transfer.requestIds?.[0] || "").trim();
+    if (!primaryRequestId) {
+      setChatError("의뢰 ID를 확인할 수 없어 채팅방을 열 수 없습니다.");
+      return;
+    }
+
+    setChatLoading(true);
+    try {
+      const res = await apiFetch<unknown>({
+        path: `/api/chats/request-room/${encodeURIComponent(primaryRequestId)}`,
+        method: "GET",
+        token: authToken,
+      });
+
+      if (!res.ok) {
+        const body = asApiMessagePayload(res.data);
+        throw new Error(String(body?.message || "채팅방을 불러오지 못했습니다."));
+      }
+
+      const payload = extractDataFromResponse<ChatRoom>(res.data);
+      if (!payload?._id) {
+        throw new Error("채팅방 정보가 올바르지 않습니다.");
+      }
+
+      setActiveChatRoom(payload);
+      setChatError("");
+      void reloadChatRooms();
+    } catch (error) {
+      setChatError(
+        error instanceof Error
+          ? error.message
+          : "채팅방을 불러오는 중 오류가 발생했습니다.",
+      );
+    } finally {
+      setChatLoading(false);
+    }
+  };
+
+  const handleCloseTransferDialog = () => {
+    setTransferDialogOpen(false);
+    setSelectedTransfer(null);
+    setActiveChatRoom(null);
+    setChatDraft("");
+    setChatError("");
+    void reloadChatRooms();
+  };
+
+  const handleSendChatMessage = async () => {
+    if (!activeChatRoom?._id || chatSending) return;
+    const content = String(chatDraft || "").trim();
+    if (!content) return;
+
+    setChatSending(true);
+    try {
+      const sent = await sendMessage(content);
+      if (sent) {
+        setChatDraft("");
+        void reloadChatRooms();
+      }
+    } finally {
+      setChatSending(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!transferDialogOpen || !activeChatRoom?._id) return;
+    const raf = window.requestAnimationFrame(() => {
+      chatBottomRef.current?.scrollIntoView({ block: "end" });
+    });
+    return () => window.cancelAnimationFrame(raf);
+  }, [transferDialogOpen, activeChatRoom?._id, chatMessages.length, chatMessagesLoading]);
+
+  useEffect(() => {
+    if (!transferDialogOpen || !activeChatRoom?._id || chatMessagesLoading) return;
+    const id = window.setTimeout(() => {
+      void reloadChatRooms();
+    }, 400);
+    return () => window.clearTimeout(id);
+  }, [transferDialogOpen, activeChatRoom?._id, chatMessagesLoading, reloadChatRooms]);
 
   const handleSubmitPracticeRequest = async () => {
     if (requestSubmitting) return;
@@ -878,12 +1096,14 @@ export const PracticeFileTransferPage = () => {
               </div>
             ) : (
               groupedTransfers.map((transfer) => (
-                <div
+                <button
                   key={`${transfer.id}:${transfer.createdAt}`}
-                  className="rounded-lg border px-3 py-2 text-sm flex items-center justify-between gap-3"
+                  type="button"
+                  className="w-full rounded-lg border px-3 py-2 text-sm flex items-center justify-between gap-3 text-left hover:bg-muted/40"
+                  onClick={() => void handleOpenTransferDialog(transfer)}
                 >
                   <div className="min-w-0">
-                    <p className="font-medium truncate">{transfer.id}</p>
+                    <p className="font-medium truncate">{transfer.transferId !== "-" ? transfer.transferId : transfer.id}</p>
                     <p className="text-xs text-muted-foreground truncate">
                       {transfer.createdAt} · {transfer.targetLab}
                     </p>
@@ -891,13 +1111,129 @@ export const PracticeFileTransferPage = () => {
                       파일 {transfer.fileCount}개 · 환자 {transfer.patientCount}명
                     </p>
                   </div>
-                  <Badge variant="outline" className="shrink-0 whitespace-nowrap">{transfer.status}</Badge>
-                </div>
+                  <div className="shrink-0 flex items-center gap-2">
+                    {transfer.unreadCount > 0 ? (
+                      <Badge className="bg-red-600 text-white hover:bg-red-600">
+                        안읽음 {transfer.unreadCount > 99 ? "99+" : transfer.unreadCount}
+                      </Badge>
+                    ) : null}
+                    <Badge variant="outline" className="whitespace-nowrap">{transfer.status}</Badge>
+                  </div>
+                </button>
               ))
             )}
           </CardContent>
         </Card>
         </div>
+
+        <Dialog open={transferDialogOpen} onOpenChange={(open) => (open ? setTransferDialogOpen(true) : handleCloseTransferDialog())}>
+          <DialogContent className="max-w-3xl p-0 overflow-hidden">
+            <DialogHeader className="px-5 pt-5 pb-3 border-b">
+              <DialogTitle className="flex items-center gap-2 text-base">
+                <MessageSquare className="h-4 w-4 text-blue-600" />
+                의뢰 상세 · 기공소 채팅
+              </DialogTitle>
+            </DialogHeader>
+
+            <div className="px-5 py-4 space-y-4">
+              <div className="rounded-lg border bg-muted/20 p-3 text-sm space-y-1.5">
+                <p>
+                  <span className="text-muted-foreground">전송ID:</span>{" "}
+                  <span className="font-medium">{selectedTransfer?.transferId && selectedTransfer.transferId !== "-" ? selectedTransfer.transferId : selectedTransfer?.id || "-"}</span>
+                </p>
+                <p>
+                  <span className="text-muted-foreground">전송시각:</span> {selectedTransfer?.createdAt || "-"}
+                </p>
+                <p>
+                  <span className="text-muted-foreground">기공소:</span> {selectedTransfer?.targetLab || "-"}
+                </p>
+                <p>
+                  <span className="text-muted-foreground">파일/환자:</span>{" "}
+                  파일 {selectedTransfer?.fileCount || 0}개 · 환자 {selectedTransfer?.patientCount || 0}명
+                </p>
+                <p>
+                  <span className="text-muted-foreground">의뢰번호:</span>{" "}
+                  {selectedTransfer?.requestIds?.join(", ") || "-"}
+                </p>
+                <p className="whitespace-pre-wrap break-words">
+                  <span className="text-muted-foreground">의뢰 메모:</span>{" "}
+                  {selectedTransfer?.transferMemo || "-"}
+                </p>
+              </div>
+
+              <div className="rounded-lg border h-[24rem] flex flex-col">
+                <div className="px-3 py-2 border-b text-sm text-muted-foreground">
+                  기공소와의 소통
+                </div>
+
+                <ScrollArea className="flex-1 px-3 py-3">
+                  <div className="space-y-2">
+                    {chatLoading || chatMessagesLoading ? (
+                      <div className="text-center text-xs text-muted-foreground py-4">
+                        채팅을 불러오는 중입니다...
+                      </div>
+                    ) : null}
+
+                    {!chatLoading && !chatMessagesLoading && (chatError || chatMessagesError) ? (
+                      <div className="text-center text-xs text-destructive py-4">
+                        {chatError || chatMessagesError}
+                      </div>
+                    ) : null}
+
+                    {!chatLoading && !chatMessagesLoading && !chatError && !chatMessagesError && chatMessages.length === 0 ? (
+                      <div className="text-center text-xs text-muted-foreground py-4">
+                        아직 메시지가 없습니다.
+                      </div>
+                    ) : null}
+
+                    {chatMessages.map((message) => {
+                      const senderId = String(message.sender?._id || "").trim();
+                      const isMine = myIdCandidates.has(senderId);
+                      return (
+                        <div
+                          key={message._id}
+                          className={`flex ${isMine ? "justify-end" : "justify-start"}`}
+                        >
+                          <div
+                            className={`max-w-[80%] rounded-lg px-3 py-2 text-xs ${isMine ? "bg-primary text-primary-foreground" : "bg-muted"}`}
+                          >
+                            <p className="opacity-70 mb-1">{formatChatTs(message.createdAt)}</p>
+                            <p className="whitespace-pre-wrap break-words">{message.content}</p>
+                          </div>
+                        </div>
+                      );
+                    })}
+                    <div ref={chatBottomRef} />
+                  </div>
+                </ScrollArea>
+
+                <div className="border-t p-3 flex items-end gap-2">
+                  <Textarea
+                    value={chatDraft}
+                    onChange={(e) => setChatDraft(e.target.value)}
+                    placeholder="기공소에 전달할 내용을 입력하세요"
+                    className="min-h-16 text-sm"
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault();
+                        void handleSendChatMessage();
+                      }
+                    }}
+                    disabled={chatLoading || !activeChatRoom?._id}
+                  />
+                  <Button
+                    type="button"
+                    size="icon"
+                    onClick={() => void handleSendChatMessage()}
+                    disabled={chatLoading || chatSending || !activeChatRoom?._id || !String(chatDraft || "").trim()}
+                  >
+                    <Send className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
     </PageFileDropZone>
   );

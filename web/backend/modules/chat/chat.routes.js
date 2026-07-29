@@ -15,6 +15,9 @@ router.get("/support-room", chatController.getSupportRoom);
 // 모든 채팅방 조회 (Admin 전용)
 router.get("/rooms/all", authorize(["admin"]), chatController.getAllChatRooms);
 
+// 의뢰(request) 기준 채팅방 조회/생성
+router.get("/request-room/:requestId", chatController.getOrCreateRequestChatRoom);
+
 // 채팅방 생성 또는 기존 채팅방 조회
 router.post("/rooms", chatController.createOrGetChatRoom);
 
