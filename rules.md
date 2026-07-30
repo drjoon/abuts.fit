@@ -194,6 +194,7 @@
   - `web/backend/modules/practiceTransfers/practiceTransfer.routes.js`
   - `web/backend/controllers/practiceTransfers/practiceTransfer.controller.js`
   - `web/backend/controllers/practiceTransfers/practiceTransferSettings.controller.js`
+  - `web/backend/models/businessAnchor.model.js`
 - 관리자 사용자 권한
   - `web/backend/controllers/admin/admin.users.controller.js`
 

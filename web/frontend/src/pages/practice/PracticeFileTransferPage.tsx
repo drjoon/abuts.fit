@@ -42,6 +42,7 @@ import {
   Send,
   Plus,
   Settings,
+  X,
 } from "lucide-react";
 import {
   Card,
@@ -50,6 +51,7 @@ import {
   CardTitle,
   CardDescription,
 } from "@/components/ui/card";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -344,6 +346,7 @@ type ParsedPracticeTransferMemoMeta = {
 type PracticeTransferSettingsPayload = {
   arrivalDefaultDays?: number;
   prosthesisTypes?: string[];
+  promoNoticeDismissedAt?: string | null;
   updatedAt?: string | null;
 };
 
@@ -700,8 +703,10 @@ const formatFileSize = (bytes: number) => {
   return `${(n / (1024 * 1024)).toFixed(2)}MB`;
 };
 
-const PRACTICE_TRANSFER_TEMP_DRAFT_KEY = "practice_file_transfer_temp_draft_v1";
-const PRACTICE_TRANSFER_FORM_LOCAL_KEY = "practice_file_transfer_form_local_v1";
+const PRACTICE_TRANSFER_TEMP_DRAFT_KEY = "practice_transfer_temp_draft_v1";
+const PRACTICE_TRANSFER_FORM_LOCAL_KEY = "practice_transfer_form_local_v1";
+const PRACTICE_TRANSFER_PROMO_TITLE = "어벗츠 커스텀어벗 서비스를 이용하지 않더라도 이용 가능!";
+const PRACTICE_TRANSFER_PROMO_DESC = "치과-기공소간 구강스캔 파일 전송 및 기공 의뢰 관리 기능을 무료로 사용하세요";
 
 const toDraftFileKey = (file: { originalName: string; size: number; s3Key: string }) =>
   `${String(file.originalName || "").trim()}:${Number(file.size || 0)}:${String(file.s3Key || "").trim()}`;
@@ -717,6 +722,8 @@ export const PracticeFileTransferPage = () => {
   const [tempSaving, setTempSaving] = useState(false);
   const [inviteLinkCopied, setInviteLinkCopied] = useState(false);
   const [inviteMessageCopied, setInviteMessageCopied] = useState(false);
+  const [promoNoticeVisible, setPromoNoticeVisible] = useState(true);
+  const [promoNoticeSaving, setPromoNoticeSaving] = useState(false);
   const [tempSaveDirty, setTempSaveDirty] = useState(false);
   const [draftFiles, setDraftFiles] = useState<DraftTransferFileItem[]>([]);
   const [recentRequests, setRecentRequests] = useState<RecentRequestItem[]>([]);
@@ -938,11 +945,13 @@ export const PracticeFileTransferPage = () => {
     const nextProsthesisTypes = normalizeProsthesisTypes(
       Array.isArray(payload.prosthesisTypes) ? payload.prosthesisTypes : [...PRESET_PROSTHESIS_TYPES],
     );
+    const promoDismissed = String(payload.promoNoticeDismissedAt || "").trim().length > 0;
 
     setArrivalDefaultDays(nextArrivalDefaultDays);
     setArrivalDefaultDaysDraft(nextArrivalDefaultDays);
     setProsthesisTypeCatalog(nextProsthesisTypes);
     setProsthesisTypeCatalogDraft(nextProsthesisTypes);
+    setPromoNoticeVisible(!promoDismissed);
     setToothWorks((prev) =>
       prev.map((row) => ({
         toothNumber: row.toothNumber,
@@ -956,19 +965,33 @@ export const PracticeFileTransferPage = () => {
   }, []);
 
   const savePracticeTransferSettingsToServer = useCallback(
-    async (params: { arrivalDefaultDays: number; prosthesisTypes: string[] }) => {
+    async (params: Partial<PracticeTransferSettingsPayload>) => {
       if (!authToken) return false;
-      const normalizedDays = normalizeArrivalDefaultDays(params.arrivalDefaultDays);
-      const normalizedTypes = normalizeProsthesisTypes(params.prosthesisTypes);
+
+      const hasArrivalDefaultDays = typeof params.arrivalDefaultDays === "number";
+      const hasProsthesisTypes = Array.isArray(params.prosthesisTypes);
+      const hasPromoNoticeDismissedAt = Object.prototype.hasOwnProperty.call(
+        params,
+        "promoNoticeDismissedAt",
+      );
+
+      const jsonBody: Record<string, unknown> = {};
+      if (hasArrivalDefaultDays) {
+        jsonBody.arrivalDefaultDays = normalizeArrivalDefaultDays(Number(params.arrivalDefaultDays));
+      }
+      if (hasProsthesisTypes) {
+        jsonBody.prosthesisTypes = normalizeProsthesisTypes(params.prosthesisTypes || []);
+      }
+      if (hasPromoNoticeDismissedAt) {
+        jsonBody.promoNoticeDismissedAt = params.promoNoticeDismissedAt || null;
+      }
+      if (Object.keys(jsonBody).length === 0) return true;
 
       const res = await apiFetch<unknown>({
         path: "/api/practice/transfers/settings",
         method: "POST",
         token: authToken,
-        jsonBody: {
-          arrivalDefaultDays: normalizedDays,
-          prosthesisTypes: normalizedTypes,
-        },
+        jsonBody,
       });
 
       if (!res.ok) {
@@ -991,8 +1014,15 @@ export const PracticeFileTransferPage = () => {
         localStorage.setItem(
           PRACTICE_TRANSFER_SETTINGS_LOCAL_KEY,
           JSON.stringify({
-            arrivalDefaultDays: normalizedDays,
-            prosthesisTypes: normalizedTypes,
+            arrivalDefaultDays: normalizeArrivalDefaultDays(
+              Number(payload?.arrivalDefaultDays ?? DEFAULT_ARRIVAL_OFFSET_DAYS),
+            ),
+            prosthesisTypes: normalizeProsthesisTypes(
+              Array.isArray(payload?.prosthesisTypes)
+                ? payload?.prosthesisTypes
+                : [...PRESET_PROSTHESIS_TYPES],
+            ),
+            promoNoticeDismissedAt: payload?.promoNoticeDismissedAt || null,
             savedAt: Date.now(),
           }),
         );
@@ -1121,6 +1151,7 @@ export const PracticeFileTransferPage = () => {
                 ? payload?.prosthesisTypes
                 : [...PRESET_PROSTHESIS_TYPES],
             ),
+            promoNoticeDismissedAt: payload?.promoNoticeDismissedAt || null,
             savedAt: Date.now(),
           }),
         );
@@ -2489,6 +2520,31 @@ export const PracticeFileTransferPage = () => {
     }
   };
 
+  const handleDismissPromoNotice = async () => {
+    if (promoNoticeSaving) return;
+    if (!authToken) {
+      setPromoNoticeVisible(false);
+      return;
+    }
+
+    setPromoNoticeSaving(true);
+    try {
+      const ok = await savePracticeTransferSettingsToServer({
+        promoNoticeDismissedAt: new Date().toISOString(),
+      });
+      if (!ok) throw new Error("안내 배너 저장에 실패했습니다.");
+      setPromoNoticeVisible(false);
+    } catch (error) {
+      toast({
+        title: "안내 숨김 실패",
+        description: error instanceof Error ? error.message : "잠시 후 다시 시도해주세요.",
+        variant: "destructive",
+      });
+    } finally {
+      setPromoNoticeSaving(false);
+    }
+  };
+
   return (
     <PageFileDropZone
       onFiles={handleIncomingFiles}
@@ -2496,6 +2552,21 @@ export const PracticeFileTransferPage = () => {
       className="h-full min-h-0"
     >
       <div className="h-full min-h-0 p-3 space-y-3">
+        {promoNoticeVisible ? (
+          <Alert className="border-blue-200 bg-blue-50 text-blue-900">
+            <button
+              type="button"
+              onClick={() => void handleDismissPromoNotice()}
+              disabled={promoNoticeSaving}
+              className="absolute right-3 top-3 rounded p-1 text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-60"
+              aria-label="안내 닫기"
+            >
+              <X className="h-4 w-4" />
+            </button>
+            <AlertTitle>{PRACTICE_TRANSFER_PROMO_TITLE}</AlertTitle>
+            <AlertDescription>{PRACTICE_TRANSFER_PROMO_DESC}</AlertDescription>
+          </Alert>
+        ) : null}
         <div className="grid grid-cols-1 gap-3 xl:grid-cols-3">
           <Card className="xl:col-span-2">
             <CardHeader>

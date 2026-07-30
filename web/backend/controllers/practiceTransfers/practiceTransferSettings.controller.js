@@ -5,6 +5,7 @@ import BusinessAnchor from "../../models/businessAnchor.model.js";
 // - web/backend/modules/practiceTransfers/practiceTransfer.routes.js
 // - web/backend/models/businessAnchor.model.js
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
+// - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 const DEFAULT_ARRIVAL_DEFAULT_DAYS = 7;
 const DEFAULT_PROSTHESIS_TYPES = [
   "크라운",
@@ -41,9 +42,14 @@ const toSettingsResponse = (anchor) => {
       ? anchor.practiceTransferSettings
       : {};
 
+  const promoNoticeDismissedAt = settings?.promoNoticeDismissedAt
+    ? new Date(settings.promoNoticeDismissedAt).toISOString()
+    : null;
+
   return {
     arrivalDefaultDays: normalizeArrivalDefaultDays(settings?.arrivalDefaultDays),
     prosthesisTypes: normalizeProsthesisTypes(settings?.prosthesisTypes),
+    promoNoticeDismissedAt,
     updatedAt: settings?.updatedAt || null,
   };
 };
@@ -51,7 +57,7 @@ const toSettingsResponse = (anchor) => {
 export async function getPracticeTransferSettings(req, res) {
   try {
     const role = String(req.user?.role || "").trim();
-    if (role !== "practice" && role !== "admin") {
+    if (role !== "practice" && role !== "requestor" && role !== "admin") {
       return res.status(403).json({ success: false, message: "권한이 없습니다." });
     }
 
@@ -90,7 +96,7 @@ export async function getPracticeTransferSettings(req, res) {
 export async function upsertPracticeTransferSettings(req, res) {
   try {
     const role = String(req.user?.role || "").trim();
-    if (role !== "practice" && role !== "admin") {
+    if (role !== "practice" && role !== "requestor" && role !== "admin") {
       return res.status(403).json({ success: false, message: "권한이 없습니다." });
     }
 
@@ -102,19 +108,36 @@ export async function upsertPracticeTransferSettings(req, res) {
       });
     }
 
-    const arrivalDefaultDays = normalizeArrivalDefaultDays(req.body?.arrivalDefaultDays);
-    const prosthesisTypes = normalizeProsthesisTypes(req.body?.prosthesisTypes);
+    const body = req.body && typeof req.body === "object" ? req.body : {};
+    const hasArrivalDefaultDays = Object.prototype.hasOwnProperty.call(body, "arrivalDefaultDays");
+    const hasProsthesisTypes = Object.prototype.hasOwnProperty.call(body, "prosthesisTypes");
+    const hasPromoNoticeDismissedAt = Object.prototype.hasOwnProperty.call(body, "promoNoticeDismissedAt");
+
+    const setPatch = {
+      "practiceTransferSettings.updatedAt": new Date(),
+    };
+
+    if (hasArrivalDefaultDays) {
+      setPatch["practiceTransferSettings.arrivalDefaultDays"] = normalizeArrivalDefaultDays(body.arrivalDefaultDays);
+    }
+    if (hasProsthesisTypes) {
+      setPatch["practiceTransferSettings.prosthesisTypes"] = normalizeProsthesisTypes(body.prosthesisTypes);
+    }
+    if (hasPromoNoticeDismissedAt) {
+      const raw = body.promoNoticeDismissedAt;
+      if (!raw) {
+        setPatch["practiceTransferSettings.promoNoticeDismissedAt"] = null;
+      } else {
+        const parsed = new Date(raw);
+        setPatch["practiceTransferSettings.promoNoticeDismissedAt"] =
+          Number.isNaN(parsed.getTime()) ? new Date() : parsed;
+      }
+    }
 
     const anchor = await BusinessAnchor.findByIdAndUpdate(
       new Types.ObjectId(anchorId),
       {
-        $set: {
-          practiceTransferSettings: {
-            arrivalDefaultDays,
-            prosthesisTypes,
-            updatedAt: new Date(),
-          },
-        },
+        $set: setPatch,
       },
       {
         new: true,

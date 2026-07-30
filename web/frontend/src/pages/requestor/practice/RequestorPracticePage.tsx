@@ -7,6 +7,7 @@
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
 // - web/backend/modules/practiceTransfers/practiceTransfer.routes.js
 // - web/backend/controllers/practiceTransfers/practiceTransfer.controller.js
+// - web/backend/controllers/practiceTransfers/practiceTransferSettings.controller.js
 // - web/backend/models/practiceTransfer.model.js
 // - web/backend/modules/chat/chat.routes.js
 // - web/backend/controllers/chats/chat.controller.js
@@ -15,6 +16,7 @@
 // - web/frontend/src/shared/hooks/useUploadWithProgressToast.ts
 // - web/frontend/src/shared/components/PracticeTransferDetailChatDialog.tsx
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -29,7 +31,7 @@ import { useChatRooms, type ChatRoom } from "@/shared/hooks/useChatRooms";
 import { onAppEvent } from "@/shared/realtime/socket";
 import { useUploadWithProgressToast } from "@/shared/hooks/useUploadWithProgressToast";
 import { type TempUploadedFile } from "@/shared/hooks/useS3TempUpload";
-import { Building2, Copy, Download, Link2, Search, Send } from "lucide-react";
+import { Building2, Copy, Download, Link2, Search, Send, X } from "lucide-react";
 import {
   PracticeTransferDetailChatDialog,
   type PracticeTransferDialogFileItem,
@@ -80,7 +82,13 @@ type ReceivedTransfersResponse = {
   };
 };
 
+type PracticeTransferSettingsPayload = {
+  promoNoticeDismissedAt?: string | null;
+};
+
 const PAGE_SIZE = 10; // 2열 x 5행
+const PRACTICE_TRANSFER_PROMO_TITLE = "어벗츠 커스텀어벗 서비스를 이용하지 않더라도 이용 가능!";
+const PRACTICE_TRANSFER_PROMO_DESC = "치과-기공소간 구강스캔 파일 전송 및 기공 의뢰 관리 기능을 무료로 사용하세요";
 
 const formatDateTime = (value: unknown) => {
   const d = new Date(String(value || ""));
@@ -274,6 +282,8 @@ export default function RequestorPracticePage() {
   const [search, setSearch] = useState("");
   const [practiceLinkCopied, setPracticeLinkCopied] = useState(false);
   const [practiceMessageCopied, setPracticeMessageCopied] = useState(false);
+  const [promoNoticeVisible, setPromoNoticeVisible] = useState(true);
+  const [promoNoticeSaving, setPromoNoticeSaving] = useState(false);
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedTransfer, setSelectedTransfer] = useState<ReceivedPracticeTransfer | null>(null);
@@ -322,6 +332,58 @@ export default function RequestorPracticePage() {
       }),
     );
   }, []);
+
+  const loadPromoNoticeSettings = useCallback(async () => {
+    if (!token) return;
+    try {
+      const res = await apiFetch<unknown>({
+        path: "/api/practice/transfers/settings",
+        method: "GET",
+        token,
+      });
+      if (!res.ok) return;
+
+      const body =
+        res.data && typeof res.data === "object"
+          ? (res.data as { data?: unknown })
+          : {};
+      const payload =
+        body.data && typeof body.data === "object"
+          ? (body.data as PracticeTransferSettingsPayload)
+          : null;
+
+      const dismissed = String(payload?.promoNoticeDismissedAt || "").trim().length > 0;
+      setPromoNoticeVisible(!dismissed);
+    } catch {
+      // ignore
+    }
+  }, [token]);
+
+  const handleDismissPromoNotice = useCallback(async () => {
+    if (!token || promoNoticeSaving) return;
+    setPromoNoticeSaving(true);
+    try {
+      const res = await apiFetch<unknown>({
+        path: "/api/practice/transfers/settings",
+        method: "POST",
+        token,
+        jsonBody: { promoNoticeDismissedAt: new Date().toISOString() },
+      });
+      if (!res.ok) {
+        const body = res.data && typeof res.data === "object" ? (res.data as Record<string, unknown>) : {};
+        throw new Error(String(body.message || "안내 저장에 실패했습니다."));
+      }
+      setPromoNoticeVisible(false);
+    } catch (error) {
+      toast({
+        title: "안내 숨김 실패",
+        description: error instanceof Error ? error.message : "잠시 후 다시 시도해주세요.",
+        variant: "destructive",
+      });
+    } finally {
+      setPromoNoticeSaving(false);
+    }
+  }, [promoNoticeSaving, toast, token]);
 
   const parseTransfersBody = useCallback((raw: unknown): ReceivedTransfersResponse => {
     const body = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
@@ -493,6 +555,11 @@ export default function RequestorPracticePage() {
     }
     void loadFirstPage();
   }, [loadFirstPage, token]);
+
+  useEffect(() => {
+    if (!token) return;
+    void loadPromoNoticeSettings();
+  }, [loadPromoNoticeSettings, token]);
 
   useEffect(() => {
     if (!token) return;
@@ -1061,7 +1128,22 @@ export default function RequestorPracticePage() {
 
   return (
     <div className="flex flex-col h-full min-h-0">
-      <div className="flex-1 min-h-0 overflow-y-auto p-4 sm:p-6">
+      <div className="flex-1 min-h-0 overflow-y-auto p-4 sm:p-6 space-y-4">
+        {promoNoticeVisible ? (
+          <Alert className="border-blue-200 bg-blue-50 text-blue-900">
+            <button
+              type="button"
+              onClick={() => void handleDismissPromoNotice()}
+              disabled={promoNoticeSaving}
+              className="absolute right-3 top-3 rounded p-1 text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-60"
+              aria-label="안내 닫기"
+            >
+              <X className="h-4 w-4" />
+            </button>
+            <AlertTitle>{PRACTICE_TRANSFER_PROMO_TITLE}</AlertTitle>
+            <AlertDescription>{PRACTICE_TRANSFER_PROMO_DESC}</AlertDescription>
+          </Alert>
+        ) : null}
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
           <Card className="xl:col-span-2">
             <CardHeader className="space-y-3">
@@ -1166,7 +1248,7 @@ export default function RequestorPracticePage() {
             <CardHeader>
               <CardTitle className="text-base">치과 초대 링크</CardTitle>
               <CardDescription>
-                치과에 이 링크를 보내면 파일 전송 화면이 바로 열리고, 우리 기공소가 자동 선택됩니다.
+                치과에 이 링크를 보내면 파일 전송 화면이 바로 열리고, 우 기공소가 자동 선택됩니다.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">

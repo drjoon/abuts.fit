@@ -4,6 +4,7 @@
 // - web/backend/server.js
 // - web/backend/controllers/practiceTransfers/practiceTransferSettings.controller.js
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
+// - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 import mongoose from "mongoose";
 
 const MANUFACTURER_HEX_ROTATION_REGEX = /^헥스\s*[+-]?\d+(?:\.\d+)?\s*도회전$/;
@@ -172,6 +173,7 @@ const businessAnchorSchema = new mongoose.Schema(
       // related files:
       // - web/backend/controllers/practiceTransfers/practiceTransferSettings.controller.js
       // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
+      // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
       arrivalDefaultDays: {
         type: Number,
         default: 7,
@@ -181,6 +183,10 @@ const businessAnchorSchema = new mongoose.Schema(
       prosthesisTypes: {
         type: [String],
         default: ["크라운", "브리지", "커스텀어벗+크라운", "커스텀어벗+브리지"],
+      },
+      promoNoticeDismissedAt: {
+        type: Date,
+        default: null,
       },
       updatedAt: {
         type: Date,

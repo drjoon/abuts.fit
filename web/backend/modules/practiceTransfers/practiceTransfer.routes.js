@@ -44,14 +44,14 @@ router.get(
 router.get(
   "/settings",
   authenticate,
-  authorize(["practice", "admin"], { subRoles: ["owner", "staff"] }),
+  authorize(["practice", "requestor", "admin"]),
   getPracticeTransferSettings,
 );
 
 router.post(
   "/settings",
   authenticate,
-  authorize(["practice", "admin"], { subRoles: ["owner", "staff"] }),
+  authorize(["practice", "requestor", "admin"]),
   upsertPracticeTransferSettings,
 );
 
