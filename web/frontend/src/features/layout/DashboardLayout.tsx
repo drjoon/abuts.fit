@@ -14,6 +14,7 @@ import { useToast } from "@/shared/hooks/use-toast";
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
 // - web/frontend/src/pages/practice/PracticeDropzonePage.tsx
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
+// - web/frontend/src/shared/realtime/useAppEventDebouncedReload.ts
 // - web/backend/modules/practiceTransfers/practiceTransfer.routes.js
 import { ToastAction } from "@/components/ui/toast";
 import { Button } from "@/components/ui/button";
@@ -65,6 +66,7 @@ import {
 } from "lucide-react";
 import { AbutsLogo } from "@/components/branding/AbutsLogo";
 import { onAppEvent } from "@/shared/realtime/socket";
+import { useAppEventDebouncedReload } from "@/shared/realtime/useAppEventDebouncedReload";
 import { useAdminCommBadges } from "@/shared/hooks/useAdminCommBadges";
 import { loadBusinessMeCached } from "@/shared/components/business/settings/business/businessMeCache";
 import { resolveBusinessType } from "@/shared/utils/resolveBusinessType";
@@ -752,7 +754,7 @@ export const DashboardLayout = () => {
   const worksheetStage = worksheetParams.get("stage") || "request";
 
   // Worksheet summary data for header bar
-  const { data: worksheetSummaryResponse } = useQuery({
+  const { data: worksheetSummaryResponse, refetch: refetchWorksheetSummary } = useQuery({
     queryKey: ["worksheet-assigned-summary", period],
     enabled: Boolean(token) && isManufacturer && isWorksheetRoute,
     queryFn: async () => {
@@ -768,14 +770,31 @@ export const DashboardLayout = () => {
     },
     retry: false,
     staleTime: Infinity,
+    refetchInterval:
+      Boolean(token) && isManufacturer && isWorksheetRoute ? 5000 : false,
+    refetchIntervalInBackground: false,
     refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
-    refetchOnMount: false,
+    refetchOnReconnect: true,
+    refetchOnMount: true,
   });
 
   const wsSummary = worksheetSummaryResponse?.success
     ? worksheetSummaryResponse.data
     : {};
+
+  useAppEventDebouncedReload({
+    enabled: Boolean(token) && isManufacturer && isWorksheetRoute,
+    eventTypes: [
+      "request:stage-changed",
+      "request:delivery-updated",
+      "request:delivery-updated-batch",
+      "worksheet:count-update",
+    ],
+    delayMs: 120,
+    onMatch: async () => {
+      await refetchWorksheetSummary();
+    },
+  });
 
   const handleLogout = () => {
     logout();

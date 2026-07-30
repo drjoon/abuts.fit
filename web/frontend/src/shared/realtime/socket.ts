@@ -166,7 +166,7 @@ export function initializeSocket(token: string): Socket {
     transports: ["websocket", "polling"],
     reconnection: true,
     reconnectionDelay: 1000,
-    reconnectionAttempts: 5,
+    reconnectionDelayMax: 5000,
   });
 
   socket.on("connect", () => {

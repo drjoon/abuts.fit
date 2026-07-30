@@ -3,6 +3,7 @@
 // - web/backend/controllers/requests/common.requests.controller.js
 // - web/backend/controllers/requests/mailbox.utils.js
 // - web/backend/controllers/cnc/machiningBridge.js
+// - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
 import mongoose, { Types } from "mongoose";
 import Request from "../../models/request.model.js";
@@ -503,6 +504,9 @@ export async function deleteStageFile(req, res) {
         tracking: "포장.발송",
       };
       const prevStage = prevStageMap[stage];
+      const previousManufacturerStage = String(
+        request?.manufacturerStage || "",
+      ).trim();
       if (prevStage) {
         applyStatusMapping(request, prevStage);
       }
@@ -577,6 +581,14 @@ export async function deleteStageFile(req, res) {
       }
       await request.save();
 
+      emitWorksheetStageChanged(request, {
+        reviewStage: stage,
+        reviewStatus: "PENDING",
+        fromStage: previousManufacturerStage || null,
+        toStage: String(request?.manufacturerStage || "").trim() || null,
+        source: "stage-file-rollback-only",
+      });
+
       // 롤백 시 캐시 무효화 (rules.md 섹션 6.1)
       const businessAnchorId = String(
         request?.businessAnchorId || request?.requestor?.businessAnchorId || "",
@@ -611,6 +623,10 @@ export async function deleteStageFile(req, res) {
       });
     }
 
+    const previousManufacturerStage = String(
+      request?.manufacturerStage || "",
+    ).trim();
+
     delete request.caseInfos.stageFiles[stage];
     bumpRollbackCount(request, stage);
     if (stage === "machining") {
@@ -638,6 +654,14 @@ export async function deleteStageFile(req, res) {
     revertManufacturerStageByReviewStage(request, stage);
 
     await request.save();
+
+    emitWorksheetStageChanged(request, {
+      reviewStage: stage,
+      reviewStatus: "PENDING",
+      fromStage: previousManufacturerStage || null,
+      toStage: String(request?.manufacturerStage || "").trim() || null,
+      source: "stage-file-rollback-with-delete",
+    });
 
     // 롤백 시 캐시 무효화 (rules.md 섹션 6.1)
     const businessAnchorId = String(
