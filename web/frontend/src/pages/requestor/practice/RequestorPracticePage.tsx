@@ -32,6 +32,7 @@ import { onAppEvent } from "@/shared/realtime/socket";
 import { useUploadWithProgressToast } from "@/shared/hooks/useUploadWithProgressToast";
 import { type TempUploadedFile } from "@/shared/hooks/useS3TempUpload";
 import { Building2, Copy, Download, Link2, Search, Send, X } from "lucide-react";
+import { cn } from "@/shared/ui/cn";
 import {
   PracticeTransferDetailChatDialog,
   type PracticeTransferDialogFileItem,
@@ -70,6 +71,8 @@ type ReceivedPracticeTransfer = {
   updatedAt: string;
   isRead: boolean;
   requestorReadAt: string | null;
+  isDownloaded: boolean;
+  requestorDownloadedAt: string | null;
   practice: {
     businessName: string;
     userName: string;
@@ -134,6 +137,25 @@ const parsePracticeTransferMemoMeta = (rawMemo: string) => {
   };
 };
 
+const getTransferDisplayStatus = (transfer: {
+  status?: string;
+  isRead?: boolean;
+  isDownloaded?: boolean;
+  requestorDownloadedAt?: string | null;
+}) => {
+  const rawStatus = String(transfer.status || "").trim().toLowerCase();
+  if (
+    Boolean(transfer.isDownloaded) ||
+    Boolean(String(transfer.requestorDownloadedAt || "").trim()) ||
+    rawStatus === "downloaded" ||
+    rawStatus === "다운로드완료"
+  ) {
+    return "다운로드완료" as const;
+  }
+
+  return transfer.isRead ? ("수신완료" as const) : ("발송완료" as const);
+};
+
 export default function RequestorPracticePage() {
   const token = useAuthStore((s) => s.token);
   const user = useAuthStore((s) => s.user);
@@ -149,6 +171,7 @@ export default function RequestorPracticePage() {
   const [page, setPage] = useState(1);
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"all" | "발송완료" | "수신완료" | "다운로드완료">("all");
   const [practiceLinkCopied, setPracticeLinkCopied] = useState(false);
   const [practiceMessageCopied, setPracticeMessageCopied] = useState(false);
   const [promoNoticeVisible, setPromoNoticeVisible] = useState(true);
@@ -309,6 +332,10 @@ export default function RequestorPracticePage() {
           .filter((f) => f.originalName && f.s3Key);
 
         const parsedMemo = parsePracticeTransferMemoMeta(String(r.transferMemo || ""));
+        const requestorDownloadedAt = r.requestorDownloadedAt
+          ? String(r.requestorDownloadedAt)
+          : null;
+        const rawStatus = String(r.status || "").trim().toLowerCase();
 
         return {
           _id: String(r._id || "").trim(),
@@ -325,6 +352,12 @@ export default function RequestorPracticePage() {
           updatedAt: String(r.updatedAt || "").trim(),
           isRead: Boolean(r.isRead),
           requestorReadAt: r.requestorReadAt ? String(r.requestorReadAt) : null,
+          isDownloaded:
+            Boolean(r.isDownloaded) ||
+            Boolean(requestorDownloadedAt) ||
+            rawStatus === "downloaded" ||
+            rawStatus === "다운로드완료",
+          requestorDownloadedAt,
           practice: {
             businessName: String(practiceRaw.businessName || "").trim(),
             userName: String(practiceRaw.userName || "").trim(),
@@ -461,6 +494,9 @@ export default function RequestorPracticePage() {
       const requestorReadAt = payload.requestorReadAt
         ? String(payload.requestorReadAt)
         : null;
+      const requestorDownloadedAt = payload.requestorDownloadedAt
+        ? String(payload.requestorDownloadedAt)
+        : null;
 
       if (type === "practice:transfer-updated" && transferId) {
         if (isRemovedEvent) {
@@ -478,13 +514,21 @@ export default function RequestorPracticePage() {
                 ...row,
                 status: status || row.status,
                 isRead:
-                  action === "read"
+                  action === "read" || action === "downloaded"
                     ? true
                     : row.isRead,
                 requestorReadAt:
-                  action === "read"
+                  action === "read" || action === "downloaded"
                     ? requestorReadAt || row.requestorReadAt
                     : row.requestorReadAt,
+                isDownloaded:
+                  action === "downloaded"
+                    ? true
+                    : row.isDownloaded,
+                requestorDownloadedAt:
+                  action === "downloaded"
+                    ? requestorDownloadedAt || row.requestorDownloadedAt
+                    : row.requestorDownloadedAt,
               };
             }),
           );
@@ -494,9 +538,16 @@ export default function RequestorPracticePage() {
             return {
               ...prev,
               status: status || prev.status,
-              isRead: action === "read" ? true : prev.isRead,
+              isRead: action === "read" || action === "downloaded" ? true : prev.isRead,
               requestorReadAt:
-                action === "read" ? requestorReadAt || prev.requestorReadAt : prev.requestorReadAt,
+                action === "read" || action === "downloaded"
+                  ? requestorReadAt || prev.requestorReadAt
+                  : prev.requestorReadAt,
+              isDownloaded: action === "downloaded" ? true : prev.isDownloaded,
+              requestorDownloadedAt:
+                action === "downloaded"
+                  ? requestorDownloadedAt || prev.requestorDownloadedAt
+                  : prev.requestorDownloadedAt,
             };
           });
         }
@@ -553,7 +604,7 @@ export default function RequestorPracticePage() {
     return () => observer.disconnect();
   }, [fetchTransferPage, hasMore, loading, loadingMore, page]);
 
-  const filteredTransfers = useMemo(() => {
+  const baseFilteredTransfers = useMemo(() => {
     const query = search.trim().toLowerCase();
     const now = new Date();
 
@@ -592,6 +643,7 @@ export default function RequestorPracticePage() {
         .map((f) => `${f.originalName} ${f.patientName} ${f.tooth}`)
         .join(" ")
         .toLowerCase();
+      const statusLabel = getTransferDisplayStatus(t);
       const blob = [
         t.transferId,
         t.practice.businessName,
@@ -601,8 +653,7 @@ export default function RequestorPracticePage() {
         t.arrivalDate,
         t.prosthesisTypes.join(" "),
         t.toothWorksSummary,
-        String(t.status || "") === "canceled" ? "취소" : "발송완료",
-        t.isRead ? "수신완료" : "수신전",
+        statusLabel,
         fileText,
       ]
         .join(" ")
@@ -610,6 +661,24 @@ export default function RequestorPracticePage() {
       return blob.includes(query);
     });
   }, [period, search, transfers]);
+
+  const statusCounts = useMemo(() => {
+    return baseFilteredTransfers.reduce(
+      (acc, transfer) => {
+        const status = getTransferDisplayStatus(transfer);
+        if (status === "다운로드완료") acc.downloaded += 1;
+        else if (status === "수신완료") acc.read += 1;
+        else acc.sent += 1;
+        return acc;
+      },
+      { sent: 0, read: 0, downloaded: 0 },
+    );
+  }, [baseFilteredTransfers]);
+
+  const filteredTransfers = useMemo(() => {
+    if (statusFilter === "all") return baseFilteredTransfers;
+    return baseFilteredTransfers.filter((transfer) => getTransferDisplayStatus(transfer) === statusFilter);
+  }, [baseFilteredTransfers, statusFilter]);
 
   const sortedFilteredTransfers = useMemo(() => {
     const latestChatTsByTransferId = new Map<string, number>();
@@ -749,6 +818,64 @@ export default function RequestorPracticePage() {
     [emitUnreadBadgeRefresh, token],
   );
 
+  const markTransferDownloaded = useCallback(
+    async (transfer: ReceivedPracticeTransfer) => {
+      if (!token) return;
+      if (transfer.isDownloaded || transfer.requestorDownloadedAt) return;
+
+      try {
+        const res = await apiFetch<unknown>({
+          path: `/api/practice/transfers/${encodeURIComponent(transfer.transferId)}/mark-downloaded`,
+          method: "POST",
+          token,
+        });
+
+        if (!res.ok) return;
+
+        const body = res.data && typeof res.data === "object" ? (res.data as Record<string, unknown>) : {};
+        const data =
+          body.data && typeof body.data === "object"
+            ? (body.data as Record<string, unknown>)
+            : body;
+        const readAt = data.requestorReadAt ? String(data.requestorReadAt) : transfer.requestorReadAt || new Date().toISOString();
+        const downloadedAt = data.requestorDownloadedAt
+          ? String(data.requestorDownloadedAt)
+          : transfer.requestorDownloadedAt || new Date().toISOString();
+        const unreadCount = Number(data.unreadCount || 0);
+
+        setTransfers((prev) =>
+          prev.map((row) =>
+            row._id === transfer._id || row.transferId === transfer.transferId
+              ? {
+                  ...row,
+                  isRead: true,
+                  requestorReadAt: readAt,
+                  isDownloaded: true,
+                  requestorDownloadedAt: downloadedAt,
+                }
+              : row,
+          ),
+        );
+        setSelectedTransfer((prev) =>
+          prev && (prev._id === transfer._id || prev.transferId === transfer.transferId)
+            ? {
+                ...prev,
+                isRead: true,
+                requestorReadAt: readAt,
+                isDownloaded: true,
+                requestorDownloadedAt: downloadedAt,
+              }
+            : prev,
+        );
+
+        emitUnreadBadgeRefresh(unreadCount);
+      } catch {
+        // ignore
+      }
+    },
+    [emitUnreadBadgeRefresh, token],
+  );
+
   const openTransferDialog = useCallback(
     async (transfer: ReceivedPracticeTransfer) => {
       if (!token) return;
@@ -835,6 +962,10 @@ export default function RequestorPracticePage() {
         a.click();
         a.remove();
         URL.revokeObjectURL(objectUrl);
+
+        if (selectedTransfer) {
+          void markTransferDownloaded(selectedTransfer);
+        }
       } catch {
         toast({
           title: "다운로드 실패",
@@ -843,7 +974,7 @@ export default function RequestorPracticePage() {
         });
       }
     },
-    [toast, token],
+    [markTransferDownloaded, selectedTransfer, toast, token],
   );
 
   const handleDownloadAllFiles = useCallback(async () => {
@@ -1037,24 +1168,93 @@ export default function RequestorPracticePage() {
               <div className="flex items-center gap-3">
                 <CardTitle className="text-xl">치과 전송 내역</CardTitle>
               </div>
-              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                <div className="relative w-full md:max-w-md">
-                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                  <Input
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                    className="pl-9"
-                    placeholder="전송ID, 치과명, 파일명, 환자명 검색"
-                  />
+              <div className="space-y-3">
+                <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                  <div className="relative w-full md:max-w-md">
+                    <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                      value={search}
+                      onChange={(e) => setSearch(e.target.value)}
+                      className="pl-9"
+                      placeholder="전송ID, 치과명, 파일명, 환자명 검색"
+                    />
+                  </div>
+                  <PeriodFilter value={period} onChange={setPeriod} className="shrink-0" />
                 </div>
-                <PeriodFilter value={period} onChange={setPeriod} className="shrink-0" />
+
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    className="rounded-full"
+                    onClick={() =>
+                      setStatusFilter((prev) => (prev === "발송완료" ? "all" : "발송완료"))
+                    }
+                    aria-pressed={statusFilter === "발송완료"}
+                  >
+                    <Badge
+                      variant="outline"
+                      className={cn(
+                        "cursor-pointer",
+                        statusFilter === "발송완료"
+                          ? "border-blue-300 bg-blue-50 text-blue-700"
+                          : "hover:bg-muted/40",
+                      )}
+                    >
+                      발송완료 {statusCounts.sent}건
+                    </Badge>
+                  </button>
+
+                  <button
+                    type="button"
+                    className="rounded-full"
+                    onClick={() => setStatusFilter((prev) => (prev === "수신완료" ? "all" : "수신완료"))}
+                    aria-pressed={statusFilter === "수신완료"}
+                  >
+                    <Badge
+                      variant="outline"
+                      className={cn(
+                        "cursor-pointer",
+                        statusFilter === "수신완료"
+                          ? "border-blue-300 bg-blue-50 text-blue-700"
+                          : "hover:bg-muted/40",
+                      )}
+                    >
+                      수신완료 {statusCounts.read}건
+                    </Badge>
+                  </button>
+
+                  <button
+                    type="button"
+                    className="rounded-full"
+                    onClick={() =>
+                      setStatusFilter((prev) => (prev === "다운로드완료" ? "all" : "다운로드완료"))
+                    }
+                    aria-pressed={statusFilter === "다운로드완료"}
+                  >
+                    <Badge
+                      variant="outline"
+                      className={cn(
+                        "cursor-pointer",
+                        statusFilter === "다운로드완료"
+                          ? "border-blue-300 bg-blue-50 text-blue-700"
+                          : "hover:bg-muted/40",
+                      )}
+                    >
+                      다운로드완료 {statusCounts.downloaded}건
+                    </Badge>
+                  </button>
+                </div>
               </div>
             </CardHeader>
             <CardContent>
               {error ? <div className="text-sm text-destructive">{error}</div> : null}
               {!error && loading ? <div className="text-sm text-muted-foreground">불러오는 중...</div> : null}
               {!error && !loading && sortedFilteredTransfers.length === 0 ? (
-                <div className="text-sm text-muted-foreground">표시할 치과 전송 내역이 없습니다.</div>
+                <div className="text-sm text-muted-foreground">
+                  {statusFilter === "all"
+                    ? "표시할 치과 전송 내역이 없습니다."
+                    : `${statusFilter} 상태의 치과 전송 내역이 없습니다.`}
+                </div>
               ) : null}
 
               <div
@@ -1090,12 +1290,22 @@ export default function RequestorPracticePage() {
                             <span className="text-xs text-muted-foreground">
                               {formatDateTime(transfer.createdAt)}
                             </span>
-                            <Badge
-                              variant={transfer.isRead ? "secondary" : "destructive"}
-                              className="shrink-0 whitespace-nowrap"
-                            >
-                              {transfer.isRead ? "수신완료" : "수신전"}
-                            </Badge>
+                            {(() => {
+                              const displayStatus = getTransferDisplayStatus(transfer);
+                              return (
+                                <Badge
+                                  variant={displayStatus === "발송완료" ? "destructive" : "secondary"}
+                                  className={cn(
+                                    "shrink-0 whitespace-nowrap",
+                                    displayStatus === "다운로드완료"
+                                      ? "bg-emerald-100 text-emerald-800 hover:bg-emerald-100"
+                                      : "",
+                                  )}
+                                >
+                                  {displayStatus}
+                                </Badge>
+                              );
+                            })()}
                           </div>
                         </div>
 

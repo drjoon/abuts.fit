@@ -92,8 +92,9 @@
     - `controllers/requests/common.review.controller.js`
     - `controllers/bg/bg.controller.js`
 - `requestCategory="rnd_sample"`(R&D 보관 원본)은 BG 자동 업데이트 대상에서 제외합니다.
-- practice 전송 상태 표준(치과/의뢰자 공통)은 `발송완료 | 취소 | 수신전 | 수신완료`를 사용합니다.
-  - 수신 판정 SSOT: `PracticeTransfer.requestorReadAt`
+- practice 전송 상태 표준(치과/의뢰자 공통)은 `발송완료 | 취소 | 수신완료 | 다운로드완료`를 사용합니다.
+  - 읽음 판정 SSOT: `PracticeTransfer.requestorReadAt`
+  - 다운로드완료 판정 SSOT: `PracticeTransfer.requestorDownloadedAt`
   - 가상 의뢰 행 매핑 기준: `controllers/practiceTransfers/practiceTransfer.controller.js#toVirtualRequestRows`
 
 - 관리자 사용자 role 변경/생성 API는 `practice`를 유효 role로 허용해야 합니다.

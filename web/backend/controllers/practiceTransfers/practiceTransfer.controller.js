@@ -70,9 +70,11 @@ const toVirtualRequestRows = (transferDoc) => {
   const manufacturerStage =
     transferDoc?.status === "canceled"
       ? "취소"
-      : transferDoc?.requestorReadAt
-        ? "수신완료"
-        : "수신전";
+      : transferDoc?.requestorDownloadedAt
+        ? "다운로드완료"
+        : transferDoc?.requestorReadAt
+          ? "수신완료"
+          : "발송완료";
 
   return files.map((item, idx) => ({
     _id: `${String(transferDoc._id)}:${idx + 1}`,
@@ -603,6 +605,8 @@ export async function getReceivedPracticeTransfers(req, res) {
         updatedAt: doc?.updatedAt || null,
         isRead: Boolean(doc?.requestorReadAt),
         requestorReadAt: doc?.requestorReadAt || null,
+        isDownloaded: Boolean(doc?.requestorDownloadedAt),
+        requestorDownloadedAt: doc?.requestorDownloadedAt || null,
         practice: {
           businessName: String(practiceBusiness?.name || "").trim(),
           userName: String(practiceUser?.name || "").trim(),
@@ -744,6 +748,7 @@ export async function markReceivedPracticeTransferRead(req, res) {
       data: {
         transferId: String(doc.transferId || "").trim(),
         requestorReadAt: doc.requestorReadAt,
+        requestorDownloadedAt: doc.requestorDownloadedAt || null,
         unreadCount,
       },
     });
@@ -751,6 +756,94 @@ export async function markReceivedPracticeTransferRead(req, res) {
     return res.status(500).json({
       success: false,
       message: "치과 전송 확인 처리 중 오류가 발생했습니다.",
+      error: error?.message,
+    });
+  }
+}
+
+export async function markReceivedPracticeTransferDownloaded(req, res) {
+  try {
+    const role = String(req.user?.role || "").trim();
+    if (role !== "requestor" && role !== "admin") {
+      return res.status(403).json({ success: false, message: "권한이 없습니다." });
+    }
+
+    const transferIdFilter = buildTransferIdFilter(req.params?.transferId);
+    if (!transferIdFilter) {
+      return res.status(400).json({
+        success: false,
+        message: "transferId가 필요합니다.",
+      });
+    }
+
+    const { scope } = buildReceivedScope(req);
+    if (scope === null) {
+      return res.status(404).json({ success: false, message: "전송 내역을 찾을 수 없습니다." });
+    }
+
+    const doc = await PracticeTransfer.findOne({
+      ...scope,
+      ...transferIdFilter,
+    });
+
+    if (!doc) {
+      return res.status(404).json({ success: false, message: "전송 내역을 찾을 수 없습니다." });
+    }
+
+    const now = new Date();
+    if (!doc.requestorReadAt) {
+      doc.requestorReadAt = now;
+      doc.requestorReadBy = req.user?._id || null;
+    }
+    if (!doc.requestorDownloadedAt) {
+      doc.requestorDownloadedAt = now;
+      doc.requestorDownloadedBy = req.user?._id || null;
+      await doc.save();
+    } else if (!doc.requestorReadAt) {
+      await doc.save();
+    }
+
+    const unreadCount = await PracticeTransfer.countDocuments({
+      ...scope,
+      status: { $ne: "canceled" },
+      requestorReadAt: null,
+    });
+
+    const realtimePayload = {
+      action: "downloaded",
+      transferId: String(doc.transferId || "").trim(),
+      transferMongoId: String(doc._id || "").trim(),
+      targetLabAnchorId: String(doc.targetLabAnchorId || "").trim() || null,
+      practiceUserId: String(doc.practiceUserId || "").trim() || null,
+      requestorReadAt: doc.requestorReadAt,
+      requestorDownloadedAt: doc.requestorDownloadedAt,
+      unreadCount,
+      status: String(doc.status || "active").trim(),
+      updatedAt: doc.updatedAt || new Date(),
+    };
+
+    emitAppEventToUser(req.user?._id, "practice:transfer-updated", realtimePayload);
+    emitAppEventToUser(doc.practiceUserId, "practice:transfer-updated", realtimePayload);
+
+    await emitPracticeTransferEventToRequestorUsers({
+      targetLabAnchorId: doc.targetLabAnchorId,
+      type: "practice:transfer-updated",
+      payload: realtimePayload,
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        transferId: String(doc.transferId || "").trim(),
+        requestorReadAt: doc.requestorReadAt,
+        requestorDownloadedAt: doc.requestorDownloadedAt,
+        unreadCount,
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "치과 전송 다운로드 완료 처리 중 오류가 발생했습니다.",
       error: error?.message,
     });
   }

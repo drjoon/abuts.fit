@@ -143,9 +143,9 @@
     - `src/pages/manufacturer/worksheet/custom_abutment/components/WorksheetCardGrid.tsx`
     - `src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx`
 
-- practice 전송 상태 표준(치과/의뢰자 공통): `발송완료 | 취소 | 수신전 | 수신완료`
+- practice 전송 상태 표준(치과/의뢰자 공통): `발송완료 | 취소 | 수신완료 | 다운로드완료`
   - practice 페이지 상태 정규화 기준: `src/pages/practice/PracticeFileTransferPage.tsx`의 `toStatusLabel`
-  - 의뢰자 치과 페이지 읽음 배지 기준: `src/pages/requestor/practice/RequestorPracticePage.tsx` (`isRead` → `수신전/수신완료`)
+  - 의뢰자 치과 페이지 상태 배지 기준: `src/pages/requestor/practice/RequestorPracticePage.tsx` (`isRead/requestorReadAt`, `isDownloaded/requestorDownloadedAt`)
 
 - 치과(practice) 가입 절차 SSOT
   - 일반 회원가입(`src/features/auth/SignupPage.tsx`)에서 `practice` 역할은 `src/pages/practice/PracticeDropzonePage.tsx`와 동일한 최소 항목(`clinicName`, `staffName`, `phone`, `address`, `addressDetail`, `zipCode`, `password`)으로 가입합니다.

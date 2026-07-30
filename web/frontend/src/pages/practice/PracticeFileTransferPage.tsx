@@ -364,6 +364,9 @@ const normalizeProsthesisTypes = (items: string[]) => {
   return withPontic.length ? withPontic : [...PRESET_PROSTHESIS_TYPES];
 };
 
+const resolveDefaultProsthesisType = (types: string[]) =>
+  types.includes("크라운") ? "크라운" : types[0] || "크라운";
+
 const getAdjacentTeeth = (toothNumber: string) => {
   const raw = String(toothNumber || "").trim();
   if (!/^[1-4][1-8]$/.test(raw)) return [] as string[];
@@ -639,19 +642,21 @@ const toDayLabel = (value: unknown) => {
 
 const toStatusLabel = (manufacturerStage: unknown) => {
   const raw = String(manufacturerStage || "").trim();
-  if (!raw) return "수신전";
+  const lowered = raw.toLowerCase();
+  if (!raw) return "발송완료";
 
   // 정확값 우선
   if (raw === "취소") return "취소";
   if (raw === "발송완료") return "발송완료";
-  if (raw === "수신전") return "수신전";
   if (raw === "수신완료") return "수신완료";
+  if (raw === "다운로드완료") return "다운로드완료";
 
   // 레거시/과거 데이터 호환
-  if (raw === "확인전") return "수신전";
+  if (raw === "수신전" || raw === "확인전") return "발송완료";
   if (raw === "확인") return "수신완료";
+  if (lowered === "downloaded") return "다운로드완료";
   if (raw.includes("전달완료") || raw.includes("배송완료")) return "수신완료";
-  if (raw.includes("의뢰") || raw.includes("접수") || raw.includes("대기")) return "수신전";
+  if (raw.includes("의뢰") || raw.includes("접수") || raw.includes("대기")) return "발송완료";
 
   return "발송완료";
 };
@@ -726,7 +731,7 @@ export const PracticeFileTransferPage = () => {
   const authToken = useAuthStore((s) => s.token);
   const authUser = useAuthStore((s) => s.user);
   const [requestSearchTerm, setRequestSearchTerm] = useState("");
-  const [recentStatusFilter, setRecentStatusFilter] = useState<"all" | "발송완료" | "수신전" | "수신완료">("all");
+  const [recentStatusFilter, setRecentStatusFilter] = useState<"all" | "발송완료" | "수신완료" | "다운로드완료">("all");
   const [requestSubmitting, setRequestSubmitting] = useState(false);
   const [tempSaving, setTempSaving] = useState(false);
   const [inviteLinkCopied, setInviteLinkCopied] = useState(false);
@@ -1012,7 +1017,7 @@ export const PracticeFileTransferPage = () => {
         toothNumber: row.toothNumber,
         prosthesisType: nextProsthesisTypes.some((type) => type === row.prosthesisType)
           ? row.prosthesisType
-          : nextProsthesisTypes[0] || "크라운",
+          : resolveDefaultProsthesisType(nextProsthesisTypes),
         customAbutment: Boolean(row.customAbutment),
         bridgeLinkedTeeth: Array.isArray(row.bridgeLinkedTeeth) ? row.bridgeLinkedTeeth : [],
       })),
@@ -1672,10 +1677,12 @@ export const PracticeFileTransferPage = () => {
       const statusSet = existing._statuses;
       if (statusSet.size === 1) {
         existing.status = [...statusSet][0] || existing.status;
-      } else if (statusSet.has("수신전")) {
-        existing.status = "수신전";
+      } else if (statusSet.has("발송완료")) {
+        existing.status = "발송완료";
       } else if (statusSet.has("수신완료")) {
         existing.status = "수신완료";
+      } else if (statusSet.has("다운로드완료")) {
+        existing.status = "다운로드완료";
       } else if (statusSet.has("취소")) {
         existing.status = "취소";
       } else {
@@ -1706,16 +1713,16 @@ export const PracticeFileTransferPage = () => {
     return groupedTransfers.reduce(
       (acc, request) => {
         const status = String(request.status || "").trim();
-        if (status === "수신완료") {
-          acc.delivered += 1;
-        } else if (status === "수신전") {
-          acc.waiting += 1;
+        if (status === "다운로드완료") {
+          acc.downloaded += 1;
+        } else if (status === "수신완료") {
+          acc.read += 1;
         } else {
           acc.sent += 1;
         }
         return acc;
       },
-      { sent: 0, waiting: 0, delivered: 0 },
+      { sent: 0, read: 0, downloaded: 0 },
     );
   }, [groupedTransfers]);
 
@@ -2550,7 +2557,7 @@ export const PracticeFileTransferPage = () => {
     setToothWorks([
       {
         toothNumber: "",
-        prosthesisType: normalizedProsthesisTypes[0],
+        prosthesisType: resolveDefaultProsthesisType(normalizedProsthesisTypes),
         customAbutment: false,
         bridgeLinkedTeeth: [],
       },
@@ -2562,7 +2569,7 @@ export const PracticeFileTransferPage = () => {
       ...prev,
       {
         toothNumber: "",
-        prosthesisType: normalizedProsthesisTypes[0] || "크라운",
+        prosthesisType: resolveDefaultProsthesisType(normalizedProsthesisTypes),
         customAbutment: false,
         bridgeLinkedTeeth: [],
       },
@@ -2609,7 +2616,7 @@ export const PracticeFileTransferPage = () => {
           toothNumber: row.toothNumber,
           prosthesisType: nextTypes.some((type) => type === row.prosthesisType)
             ? row.prosthesisType
-            : nextTypes[0] || "크라운",
+            : resolveDefaultProsthesisType(nextTypes),
           customAbutment: Boolean(row.customAbutment),
           bridgeLinkedTeeth: Array.isArray(row.bridgeLinkedTeeth) ? row.bridgeLinkedTeeth : [],
         })),
@@ -2914,26 +2921,6 @@ export const PracticeFileTransferPage = () => {
                       type="button"
                       className="rounded-full"
                       onClick={() =>
-                        setRecentStatusFilter((prev) => (prev === "수신전" ? "all" : "수신전"))
-                      }
-                      aria-pressed={recentStatusFilter === "수신전"}
-                    >
-                      <Badge
-                        variant="outline"
-                        className={cn(
-                          "cursor-pointer",
-                          recentStatusFilter === "수신전"
-                            ? "border-blue-300 bg-blue-50 text-blue-700"
-                            : "hover:bg-muted/40",
-                        )}
-                      >
-                        수신전 {statusCounts.waiting}건
-                      </Badge>
-                    </button>
-                    <button
-                      type="button"
-                      className="rounded-full"
-                      onClick={() =>
                         setRecentStatusFilter((prev) => (prev === "수신완료" ? "all" : "수신완료"))
                       }
                       aria-pressed={recentStatusFilter === "수신완료"}
@@ -2947,7 +2934,27 @@ export const PracticeFileTransferPage = () => {
                             : "hover:bg-muted/40",
                         )}
                       >
-                        수신완료 {statusCounts.delivered}건
+                        수신완료 {statusCounts.read}건
+                      </Badge>
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded-full"
+                      onClick={() =>
+                        setRecentStatusFilter((prev) => (prev === "다운로드완료" ? "all" : "다운로드완료"))
+                      }
+                      aria-pressed={recentStatusFilter === "다운로드완료"}
+                    >
+                      <Badge
+                        variant="outline"
+                        className={cn(
+                          "cursor-pointer",
+                          recentStatusFilter === "다운로드완료"
+                            ? "border-blue-300 bg-blue-50 text-blue-700"
+                            : "hover:bg-muted/40",
+                        )}
+                      >
+                        다운로드완료 {statusCounts.downloaded}건
                       </Badge>
                     </button>
                   </div>

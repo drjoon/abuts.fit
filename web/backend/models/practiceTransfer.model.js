@@ -80,6 +80,17 @@ const practiceTransferSchema = new mongoose.Schema(
       ref: "User",
       default: null,
     },
+    // requestor(수신 기공소) 다운로드 상태 SSOT
+    requestorDownloadedAt: {
+      type: Date,
+      default: null,
+      index: true,
+    },
+    requestorDownloadedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
     canceledAt: {
       type: Date,
       default: null,

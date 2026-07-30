@@ -359,6 +359,9 @@ const normalizeProsthesisTypes = (items: string[]) => {
   return deduped;
 };
 
+const resolveDefaultProsthesisType = (types: string[]) =>
+  types.includes("크라운") ? "크라운" : types[0] || "크라운";
+
 const getAdjacentTeeth = (toothNumber: string) => {
   const raw = String(toothNumber || "").trim();
   if (!/^[1-4][1-8]$/.test(raw)) return [] as string[];
@@ -585,7 +588,7 @@ export const PracticeDropzonePage = () => {
   const [toothWorks, setToothWorks] = useState<ToothWorkSelection[]>([
     {
       toothNumber: "",
-      prosthesisType: PRESET_PROSTHESIS_TYPES[0],
+      prosthesisType: "크라운",
       customAbutment: false,
       bridgeLinkedTeeth: [],
     },
@@ -805,7 +808,7 @@ export const PracticeDropzonePage = () => {
         ...row,
         prosthesisType: normalizedProsthesisTypes.includes(row.prosthesisType)
           ? row.prosthesisType
-          : normalizedProsthesisTypes[0] || "",
+          : resolveDefaultProsthesisType(normalizedProsthesisTypes),
       })),
     );
   }, [normalizedProsthesisTypes]);
@@ -815,7 +818,7 @@ export const PracticeDropzonePage = () => {
       ...prev,
       {
         toothNumber: "",
-        prosthesisType: normalizedProsthesisTypes[0] || "크라운",
+        prosthesisType: resolveDefaultProsthesisType(normalizedProsthesisTypes),
         customAbutment: false,
         bridgeLinkedTeeth: [],
       },
@@ -910,7 +913,7 @@ export const PracticeDropzonePage = () => {
         setToothWorks(
           restoredToothWorks.length > 0
             ? restoredToothWorks
-            : [{ toothNumber: "", prosthesisType: restoredProsthesisTypes[0] || "크라운", customAbutment: false, bridgeLinkedTeeth: [] }],
+            : [{ toothNumber: "", prosthesisType: resolveDefaultProsthesisType(restoredProsthesisTypes), customAbutment: false, bridgeLinkedTeeth: [] }],
         );
         setPatientName(String(parsed.patientName || ""));
         setPracticeName(String(parsed.practiceName || ""));
@@ -1291,7 +1294,7 @@ export const PracticeDropzonePage = () => {
       setToothWorks([
         {
           toothNumber: "",
-          prosthesisType: normalizedProsthesisTypes[0] || PRESET_PROSTHESIS_TYPES[0],
+          prosthesisType: resolveDefaultProsthesisType(normalizedProsthesisTypes),
           customAbutment: false,
           bridgeLinkedTeeth: [],
         },

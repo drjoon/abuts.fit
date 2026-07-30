@@ -14,6 +14,7 @@ import {
   getReceivedPracticeTransfers,
   getReceivedPracticeTransferUnreadCount,
   markReceivedPracticeTransferRead,
+  markReceivedPracticeTransferDownloaded,
   upsertPracticeTransferDraft,
 } from "../../controllers/practiceTransfers/practiceTransfer.controller.js";
 import {
@@ -95,6 +96,13 @@ router.post(
   authenticate,
   authorize(["requestor", "admin"]),
   markReceivedPracticeTransferRead,
+);
+
+router.post(
+  "/:transferId/mark-downloaded",
+  authenticate,
+  authorize(["requestor", "admin"]),
+  markReceivedPracticeTransferDownloaded,
 );
 
 router.post(

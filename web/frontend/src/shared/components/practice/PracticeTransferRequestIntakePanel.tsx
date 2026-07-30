@@ -116,6 +116,9 @@ export const PracticeTransferRequestIntakePanel = ({
   toothOnesOptions,
 }: Props) => {
   const orderedToothWorkRows = useOrderedToothWorkRows(toothWorks);
+  const defaultProsthesisType = normalizedProsthesisTypes.includes("크라운")
+    ? "크라운"
+    : normalizedProsthesisTypes[0] || "크라운";
 
   return (
     <div className="rounded-xl border bg-background p-4 flex h-full min-h-0 flex-col gap-3">
@@ -348,7 +351,7 @@ export const PracticeTransferRequestIntakePanel = ({
                     setToothWorks([
                       {
                         toothNumber: "",
-                        prosthesisType: normalizedProsthesisTypes[0] || "크라운",
+                        prosthesisType: defaultProsthesisType,
                         customAbutment: false,
                         bridgeLinkedTeeth: [],
                       },
@@ -555,7 +558,7 @@ export const PracticeTransferRequestIntakePanel = ({
                       setToothWorks((prev) => {
                         const next = prev.filter((_, i) => i !== originalIndex);
                         if (next.length > 0) return next;
-                        return [{ toothNumber: "", prosthesisType: normalizedProsthesisTypes[0] || "크라운", customAbutment: false, bridgeLinkedTeeth: [] }];
+                        return [{ toothNumber: "", prosthesisType: defaultProsthesisType, customAbutment: false, bridgeLinkedTeeth: [] }];
                       })
                     }
                   >
@@ -655,7 +658,7 @@ export const PracticeTransferRequestIntakePanel = ({
                 ...prev,
                 {
                   toothNumber: "",
-                  prosthesisType: normalizedProsthesisTypes[0] || "크라운",
+                  prosthesisType: defaultProsthesisType,
                   customAbutment: false,
                   bridgeLinkedTeeth: [],
                 },
