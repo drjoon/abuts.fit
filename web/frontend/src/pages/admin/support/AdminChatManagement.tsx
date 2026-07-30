@@ -1,6 +1,8 @@
 // related files:
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
+// - web/frontend/src/pages/admin/dashboard/AdminDashboardPage.tsx
+// - web/backend/controllers/chats/chat.controller.js
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -67,6 +69,11 @@ const formatTime = (iso?: string) => {
   const mi = String(d.getMinutes()).padStart(2, "0");
   return `${yyyy}-${mm}-${dd} ${hh}:${mi}`;
 };
+
+const CHAT_LIST_VISIBLE_COUNT = 6;
+const CHAT_LIST_ROW_HEIGHT_PX = 64;
+const CHAT_LIST_ROW_GAP_PX = 8;
+const CHAT_LIST_CONTAINER_PADDING_PX = 16;
 
 const getConversationTargetTitle = (room: ChatRoom) => {
   const targets = (room.participants || [])
@@ -155,8 +162,10 @@ export const AdminChatManagement = () => {
 
   const filteredChats = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    return rooms.filter((room) => {
+
+    const matches = rooms.filter((room) => {
       if (!q) return true;
+
       const title =
         room.relatedRequestId?.title || room.title || room.roomType || "";
       const requestId = room.relatedRequestId?.requestId || "";
@@ -167,6 +176,12 @@ export const AdminChatManagement = () => {
       return `${title} ${requestId} ${participantsText}`
         .toLowerCase()
         .includes(q);
+    });
+
+    return matches.sort((a, b) => {
+      const aTime = new Date(String(a.lastMessageAt || "")).getTime() || 0;
+      const bTime = new Date(String(b.lastMessageAt || "")).getTime() || 0;
+      return bTime - aTime;
     });
   }, [rooms, searchQuery]);
 
@@ -182,6 +197,18 @@ export const AdminChatManagement = () => {
     });
     return () => window.cancelAnimationFrame(raf);
   }, [activeChat?._id, messagesLoading, activeMessages?.length]);
+
+  useEffect(() => {
+    if (filteredChats.length === 0) {
+      setSelectedChatId(null);
+      return;
+    }
+    const hasCurrent =
+      !!selectedChatId && filteredChats.some((chat) => chat._id === selectedChatId);
+    if (!hasCurrent) {
+      setSelectedChatId(filteredChats[0]?._id || null);
+    }
+  }, [filteredChats, selectedChatId]);
 
   useEffect(() => {
     const loadPicks = async () => {
@@ -419,7 +446,16 @@ export const AdminChatManagement = () => {
               )}
             </CardHeader>
             <CardContent className="p-0 flex-1 min-h-0">
-              <ScrollArea className="h-full">
+              <ScrollArea
+                className="h-full"
+                style={{
+                  maxHeight: `${
+                    CHAT_LIST_VISIBLE_COUNT * CHAT_LIST_ROW_HEIGHT_PX +
+                    (CHAT_LIST_VISIBLE_COUNT - 1) * CHAT_LIST_ROW_GAP_PX +
+                    CHAT_LIST_CONTAINER_PADDING_PX
+                  }px`,
+                }}
+              >
                 <div className="p-2 space-y-2">
                   {roomsLoading && (
                     <div className="text-sm text-muted-foreground p-2">
@@ -445,7 +481,7 @@ export const AdminChatManagement = () => {
                           type="button"
                           onClick={() => setSelectedChatId(chat._id)}
                           className={cn(
-                            "w-full text-left rounded-lg border px-3 py-2 transition-colors",
+                            "w-full h-16 text-left rounded-lg border px-3 py-2 transition-colors",
                             isSelected
                               ? "bg-primary text-primary-foreground border-primary"
                               : "hover:bg-muted",
@@ -469,7 +505,12 @@ export const AdminChatManagement = () => {
                                 </div>
                               )}
                             </div>
-                            <div className="shrink-0">
+                            <div className="shrink-0 flex items-center gap-1.5">
+                              {Number(chat.unreadCount || 0) > 0 && (
+                                <Badge className="bg-blue-100 text-blue-700 border-blue-200">
+                                  미확인 {Number(chat.unreadCount || 0).toLocaleString()}
+                                </Badge>
+                              )}
                               {getStatusBadge(chat.status)}
                             </div>
                           </div>

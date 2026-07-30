@@ -171,6 +171,9 @@
 - 관리자 사용자/사업자
   - `web/frontend/src/pages/admin/users/AdminUserManagement.tsx`
   - `web/frontend/src/pages/admin/businesses/AdminBusinessPage.tsx`
+- 관리자 대시보드/소통
+  - `web/frontend/src/pages/admin/dashboard/AdminDashboardPage.tsx`
+  - `web/frontend/src/pages/admin/support/AdminChatManagement.tsx`
 
 ### 4.2 Backend
 

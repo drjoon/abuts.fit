@@ -2,6 +2,7 @@
 // - web/backend/modules/chat/chat.routes.js
 // - web/backend/modules/practiceTransfers/practiceTransfer.routes.js
 // - web/backend/socket.js
+// - web/frontend/src/pages/admin/support/AdminChatManagement.tsx
 // - web/frontend/src/shared/hooks/useChatRooms.ts
 // - web/frontend/src/shared/hooks/useChatMessages.ts
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
@@ -843,8 +844,7 @@ export async function getOrCreatePracticeTransferChatRoom(req, res) {
         ? existingRoomMeta.participants.map((id) => String(id || "").trim()).filter(Boolean)
         : [];
 
-      const canAccessExisting =
-        req.user?.role === "admin" || participantIds.includes(currentUserId);
+      const canAccessExisting = participantIds.includes(currentUserId);
 
       if (!canAccessExisting) {
         return res.status(403).json({
@@ -946,7 +946,6 @@ export async function getOrCreatePracticeTransferChatRoom(req, res) {
     }
 
     const canAccess =
-      req.user?.role === "admin" ||
       currentUserId === practiceUserId ||
       currentUserId === counterpartUserId;
 
@@ -1129,7 +1128,7 @@ export async function getChatMessages(req, res) {
 
     // 채팅방 존재 및 참여자 확인
     const room = await ChatRoom.findById(roomId)
-      .select({ participants: 1 })
+      .select({ participants: 1, relatedPracticeTransferId: 1 })
       .lean();
     if (!room) {
       return res.status(404).json({
@@ -1142,7 +1141,10 @@ export async function getChatMessages(req, res) {
       (p) => p.toString() === userId.toString(),
     );
 
-    if (!isParticipant && req.user.role !== "admin") {
+    const isPracticeTransferRoom = !!room.relatedPracticeTransferId;
+    const canAdminOverride = req.user.role === "admin" && !isPracticeTransferRoom;
+
+    if (!isParticipant && !canAdminOverride) {
       return res.status(403).json({
         success: false,
         message: "이 채팅방에 접근할 권한이 없습니다.",
@@ -1281,7 +1283,8 @@ export async function sendChatMessage(req, res) {
     }
 
     // 채팅방 존재 및 참여자 확인
-    const room = await ChatRoom.findById(roomId);
+    const room = await ChatRoom.findById(roomId)
+      .select({ participants: 1, status: 1, relatedPracticeTransferId: 1 });
     if (!room) {
       return res.status(404).json({
         success: false,
@@ -1293,7 +1296,10 @@ export async function sendChatMessage(req, res) {
       (p) => p.toString() === userId.toString(),
     );
 
-    if (!isParticipant && userRole !== "admin") {
+    const isPracticeTransferRoom = !!room.relatedPracticeTransferId;
+    const canAdminOverride = userRole === "admin" && !isPracticeTransferRoom;
+
+    if (!isParticipant && !canAdminOverride) {
       return res.status(403).json({
         success: false,
         message: "이 채팅방에 메시지를 보낼 권한이 없습니다.",
@@ -1383,6 +1389,23 @@ export async function updateChatRoomStatus(req, res) {
       });
     }
 
+    const existingRoom = await ChatRoom.findById(roomId)
+      .select({ _id: 1, relatedPracticeTransferId: 1 });
+
+    if (!existingRoom) {
+      return res.status(404).json({
+        success: false,
+        message: "채팅방을 찾을 수 없습니다.",
+      });
+    }
+
+    if (existingRoom.relatedPracticeTransferId) {
+      return res.status(403).json({
+        success: false,
+        message: "practice 전송 채팅방 상태는 관리자에서 변경할 수 없습니다.",
+      });
+    }
+
     const room = await ChatRoom.findByIdAndUpdate(
       roomId,
       { status },
@@ -1390,13 +1413,6 @@ export async function updateChatRoomStatus(req, res) {
     )
       .populate("participants", "name email role business")
       .populate("relatedRequestId", "requestId title");
-
-    if (!room) {
-      return res.status(404).json({
-        success: false,
-        message: "채팅방을 찾을 수 없습니다.",
-      });
-    }
 
     res.status(200).json({
       success: true,
@@ -1422,8 +1438,9 @@ export async function getAllChatRooms(req, res) {
     const limit = parseInt(req.query.limit) || 20;
     const skip = (page - 1) * limit;
     const status = req.query.status;
+    const viewerUserId = req.user?._id;
 
-    const filter = { isArchived: false };
+    const filter = { isArchived: false, relatedPracticeTransferId: null };
     if (status) {
       filter.status = status;
     }
@@ -1441,19 +1458,27 @@ export async function getAllChatRooms(req, res) {
     // 각 채팅방의 미읽음 메시지 및 마지막 메시지 조회
     const roomsWithDetails = await Promise.all(
       rooms.map(async (room) => {
-        const totalMessages = await Chat.countDocuments({
-          roomId: room._id,
-          isDeleted: false,
-        });
-
-        const lastMessage = await Chat.findOne({ roomId: room._id })
-          .sort({ createdAt: -1 })
-          .populate("sender", "name role")
-          .lean();
+        const [totalMessages, unreadCount, lastMessage] = await Promise.all([
+          Chat.countDocuments({
+            roomId: room._id,
+            isDeleted: false,
+          }),
+          Chat.countDocuments({
+            roomId: room._id,
+            isDeleted: false,
+            sender: { $ne: viewerUserId },
+            "readBy.userId": { $ne: viewerUserId },
+          }),
+          Chat.findOne({ roomId: room._id })
+            .sort({ createdAt: -1 })
+            .populate("sender", "name role")
+            .lean(),
+        ]);
 
         return {
           ...room,
           totalMessages,
+          unreadCount,
           lastMessage,
         };
       }),

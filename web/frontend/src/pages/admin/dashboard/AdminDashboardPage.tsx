@@ -2,6 +2,7 @@
 // related files:
 // - web/backend/controllers/admin/admin.dashboard.controller.js
 // - web/backend/models/businessAnchor.model.js
+// - web/frontend/src/pages/admin/support/AdminChatManagement.tsx
 // - web/frontend/src/features/settings/tabs/RequestTab.tsx
 // - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
 import { useEffect, useState } from "react";
@@ -1191,9 +1192,14 @@ export const AdminDashboardPage = () => {
                             <MessageCircle className="h-3 w-3" />
                             채팅
                           </div>
-                          <div className="text-lg font-bold">
+                          <button
+                            type="button"
+                            className="text-lg font-bold text-blue-600 hover:text-blue-700 hover:underline focus:outline-none"
+                            onClick={() => navigate("/dashboard/chat-management?unread=1")}
+                            aria-label="미확인 채팅 페이지로 이동"
+                          >
                             {commBadgeCounts.chat.toLocaleString()}
-                          </div>
+                          </button>
                         </div>
                         <div className="space-y-0.5">
                           <div className="flex items-center gap-1 text-xs text-muted-foreground">
