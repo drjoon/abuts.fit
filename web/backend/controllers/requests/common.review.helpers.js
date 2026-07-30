@@ -23,6 +23,46 @@ import {
 import { emitCreditBalanceUpdatedToBusiness } from "../../utils/creditRealtime.js";
 
 const SHIPPING_FEE_SUPPLY = 3500;
+const CREDIT_SPEND_LOCK_COLLECTION = "creditspendlocks";
+const CREDIT_SPEND_LOCK_TTL_MS = 15_000;
+const CREDIT_SPEND_LOCK_WAIT_MS = 4_000;
+const CREDIT_SPEND_LOCK_RETRY_MS = 120;
+
+let creditSpendLockIndexReadyPromise = null;
+
+function isShippingRefType(refType) {
+  return refType === "SHIPPING_PACKAGE" || refType === "SHIPPING_FEE";
+}
+
+function resolveLedgerSplit(absAmount, spentPaidAmount, spentBonusAmount) {
+  const abs = Math.max(0, Number(absAmount) || 0);
+  const paidRaw = Number(spentPaidAmount);
+  const bonusRaw = Number(spentBonusAmount);
+
+  const hasPaid = Number.isFinite(paidRaw);
+  const hasBonus = Number.isFinite(bonusRaw);
+  if (!hasPaid && !hasBonus) return null;
+
+  let paid = Math.max(0, hasPaid ? paidRaw : 0);
+  let bonus = Math.max(0, hasBonus ? bonusRaw : 0);
+
+  const splitSum = paid + bonus;
+  if (splitSum <= 0) return null;
+
+  if (splitSum > abs) {
+    let overflow = splitSum - abs;
+    const reducePaid = Math.min(paid, overflow);
+    paid -= reducePaid;
+    overflow -= reducePaid;
+    if (overflow > 0) {
+      bonus = Math.max(0, bonus - overflow);
+    }
+  } else if (splitSum < abs) {
+    paid += abs - splitSum;
+  }
+
+  return { paid, bonus };
+}
 
 async function getBusinessCreditBalance({ businessAnchorId, session }) {
   if (!businessAnchorId) {
@@ -36,7 +76,13 @@ async function getBusinessCreditBalance({ businessAnchorId, session }) {
 
   const rows = await CreditLedger.find({ businessAnchorId })
     .sort({ createdAt: 1, _id: 1 })
-    .select({ type: 1, amount: 1, refType: 1 })
+    .select({
+      type: 1,
+      amount: 1,
+      refType: 1,
+      spentPaidAmount: 1,
+      spentBonusAmount: 1,
+    })
     .session(session || null)
     .lean();
 
@@ -63,17 +109,33 @@ async function getBusinessCreditBalance({ businessAnchorId, session }) {
       }
       continue;
     }
-    if (type === "REFUND") {
-      paid += absAmount;
-      continue;
-    }
     if (type === "ADJUST") {
       paid += amount;
       continue;
     }
+
     if (type === "SPEND") {
+      const split = resolveLedgerSplit(
+        absAmount,
+        row?.spentPaidAmount,
+        row?.spentBonusAmount,
+      );
+
+      if (split) {
+        if (isShippingRefType(refType)) {
+          const fromBonusShipping = Math.min(bonusShipping, split.bonus);
+          bonusShipping -= fromBonusShipping;
+          paid -= split.paid + Math.max(0, split.bonus - fromBonusShipping);
+        } else {
+          const fromBonusRequest = Math.min(bonusRequest, split.bonus);
+          bonusRequest -= fromBonusRequest;
+          paid -= split.paid + Math.max(0, split.bonus - fromBonusRequest);
+        }
+        continue;
+      }
+
       let spend = absAmount;
-      if (refType === "SHIPPING_PACKAGE" || refType === "SHIPPING_FEE") {
+      if (isShippingRefType(refType)) {
         const fromBonusShipping = Math.min(bonusShipping, spend);
         bonusShipping -= fromBonusShipping;
         spend -= fromBonusShipping;
@@ -83,6 +145,26 @@ async function getBusinessCreditBalance({ businessAnchorId, session }) {
         spend -= fromBonusRequest;
       }
       paid -= spend;
+      continue;
+    }
+
+    if (type === "REFUND") {
+      const split = resolveLedgerSplit(
+        absAmount,
+        row?.spentPaidAmount,
+        row?.spentBonusAmount,
+      );
+
+      if (split) {
+        if (isShippingRefType(refType)) {
+          bonusShipping += split.bonus;
+        } else {
+          bonusRequest += split.bonus;
+        }
+        paid += split.paid;
+      } else {
+        paid += absAmount;
+      }
     }
   }
 
@@ -95,6 +177,111 @@ async function getBusinessCreditBalance({ businessAnchorId, session }) {
     bonusRequestCredit,
     bonusShippingCredit,
   };
+}
+
+function getCreditSpendLockCollection() {
+  return CreditLedger.collection.conn.db.collection(CREDIT_SPEND_LOCK_COLLECTION);
+}
+
+async function ensureCreditSpendLockIndexes() {
+  if (creditSpendLockIndexReadyPromise) {
+    await creditSpendLockIndexReadyPromise;
+    return;
+  }
+
+  const collection = getCreditSpendLockCollection();
+  creditSpendLockIndexReadyPromise = Promise.all([
+    collection.createIndex({ businessAnchorId: 1 }, { unique: true }),
+    collection.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
+  ]);
+
+  try {
+    await creditSpendLockIndexReadyPromise;
+  } catch (error) {
+    creditSpendLockIndexReadyPromise = null;
+    throw error;
+  }
+}
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function withBusinessCreditSpendLock({ businessAnchorId, runner }) {
+  const normalizedBusinessAnchorId = String(businessAnchorId || "").trim();
+  if (!normalizedBusinessAnchorId || !Types.ObjectId.isValid(normalizedBusinessAnchorId)) {
+    return runner();
+  }
+
+  await ensureCreditSpendLockIndexes();
+
+  const collection = getCreditSpendLockCollection();
+  const anchorObjectId = new Types.ObjectId(normalizedBusinessAnchorId);
+  const ownerToken = `${normalizedBusinessAnchorId}:${Date.now()}:${Math.random()
+    .toString(36)
+    .slice(2, 10)}`;
+  const deadlineAt = Date.now() + CREDIT_SPEND_LOCK_WAIT_MS;
+  let acquired = false;
+
+  while (!acquired) {
+    const now = new Date();
+    const expiresAt = new Date(now.getTime() + CREDIT_SPEND_LOCK_TTL_MS);
+
+    try {
+      const result = await collection.findOneAndUpdate(
+        {
+          businessAnchorId: anchorObjectId,
+          $or: [{ expiresAt: { $lte: now } }, { ownerToken }],
+        },
+        {
+          $setOnInsert: {
+            businessAnchorId: anchorObjectId,
+            createdAt: now,
+          },
+          $set: {
+            ownerToken,
+            expiresAt,
+            updatedAt: now,
+          },
+        },
+        {
+          upsert: true,
+          returnDocument: "after",
+        },
+      );
+
+      const lockDoc = result?.value || null;
+      if (lockDoc?.ownerToken === ownerToken) {
+        acquired = true;
+        break;
+      }
+    } catch (error) {
+      if (Number(error?.code || 0) !== 11000) {
+        throw error;
+      }
+    }
+
+    if (Date.now() >= deadlineAt) {
+      const lockError = new Error(
+        "동일 사업자의 크레딧 처리 중입니다. 잠시 후 다시 시도해주세요.",
+      );
+      lockError.statusCode = 409;
+      lockError.payload = {
+        reason: "credit_spend_lock_timeout",
+        businessAnchorId: normalizedBusinessAnchorId,
+      };
+      throw lockError;
+    }
+
+    await sleep(CREDIT_SPEND_LOCK_RETRY_MS);
+  }
+
+  try {
+    return await runner();
+  } finally {
+    if (!acquired) return;
+    await collection
+      .deleteOne({ businessAnchorId: anchorObjectId, ownerToken })
+      .catch(() => {});
+  }
 }
 
 // Revert manufacturer stage based on review stage
@@ -151,10 +338,13 @@ export async function ensureRequestCreditSpendOnMachiningEnter({
 }) {
   if (!request || !businessAnchorId) return;
 
-  const cycle = Number(request?.caseInfos?.rollbackCounts?.cam || 0);
-  const uniqueKey = `request:${String(request._id)}:machining_spend:${cycle}`;
+  await withBusinessCreditSpendLock({
+    businessAnchorId,
+    runner: async () => {
+      const requestIdStr = String(request?._id || "").trim();
+      const uniqueKey = `request:${requestIdStr}:machining_spend`;
 
-  const computedPrice = await computePriceForRequest({
+      const computedPrice = await computePriceForRequest({
     requestorId: request?.requestor,
     requestorOrgId: businessAnchorId,
     clinicName: request?.caseInfos?.clinicName || "",
@@ -163,132 +353,119 @@ export async function ensureRequestCreditSpendOnMachiningEnter({
     currentRequestId: request?._id,
   });
 
-  const existingKeys = [
-    uniqueKey,
-    `request:${String(request._id)}:machining_spend`,
-  ];
+      const spendRows = await CreditLedger.find({
+        type: "SPEND",
+        refType: "REQUEST",
+        refId: request._id,
+      })
+        .select({
+          _id: 1,
+          uniqueKey: 1,
+          amount: 1,
+          hasFreeRequest: 1,
+          spentPaidAmount: 1,
+          spentBonusAmount: 1,
+          createdAt: 1,
+        })
+        .sort({ createdAt: 1, _id: 1 })
+        .session(session || null)
+        .lean();
 
-  const existingSpend = await CreditLedger.findOne({
-    type: "SPEND",
-    refType: "REQUEST",
-    refId: request._id,
-    uniqueKey: { $in: existingKeys },
-  })
-    .select({
-      _id: 1,
-      uniqueKey: 1,
-      amount: 1,
-      hasFreeRequest: 1,
-      spentPaidAmount: 1,
-      spentBonusAmount: 1,
-    })
-    .session(session || null)
-    .lean();
+      const existingNegativeSpend = spendRows.find(
+        (row) => Number(row?.amount || 0) < 0,
+      );
+      const existingFreeMarker = spendRows.find(
+        (row) =>
+          Number(row?.amount || 0) === 0 && row?.hasFreeRequest === true,
+      );
 
-  const resolvedAmount = Number(computedPrice?.amount || 0);
+      const resolvedAmount = Number(computedPrice?.amount || 0);
 
-  if (!Number.isFinite(resolvedAmount) || resolvedAmount <= 0) {
-    request.price = {
-      ...(request.price || {}),
-      ...(computedPrice && typeof computedPrice === "object"
-        ? computedPrice
-        : {}),
-      amount: 0,
-    };
-
-    const freeMarkerResult = await CreditLedger.updateOne(
-      { uniqueKey },
-      {
-        $setOnInsert: {
-          businessAnchorId,
-          userId: actorUserId || null,
-          type: "SPEND",
+      if (!Number.isFinite(resolvedAmount) || resolvedAmount <= 0) {
+        request.price = {
+          ...(request.price || {}),
+          ...(computedPrice && typeof computedPrice === "object"
+            ? computedPrice
+            : {}),
           amount: 0,
-          refType: "REQUEST",
-          refId: request._id,
-          uniqueKey,
-          spentPaidAmount: 0,
-          spentBonusAmount: 0,
-          hasFreeRequest: true,
-        },
-      },
-      { upsert: true, session },
-    );
+        };
 
-    if (freeMarkerResult?.upsertedCount) {
-      console.log("[CREDIT_SPEND] free request marker inserted", {
-        requestId: request?.requestId,
-        requestMongoId: String(request?._id || ""),
-        uniqueKey,
+        const freeMarkerResult = await CreditLedger.updateOne(
+          { uniqueKey },
+          {
+            $setOnInsert: {
+              businessAnchorId,
+              userId: actorUserId || null,
+              type: "SPEND",
+              amount: 0,
+              refType: "REQUEST",
+              refId: request._id,
+              uniqueKey,
+              spentPaidAmount: 0,
+              spentBonusAmount: 0,
+              hasFreeRequest: true,
+            },
+          },
+          { upsert: true, session },
+        );
+
+        if (freeMarkerResult?.upsertedCount) {
+          console.log("[CREDIT_SPEND] free request marker inserted", {
+            requestId: request?.requestId,
+            requestMongoId: String(request?._id || ""),
+            uniqueKey,
+          });
+        } else {
+          console.log("[CREDIT_SPEND] skip existing free request marker", {
+            requestId: request?.requestId,
+            requestMongoId: String(request?._id || ""),
+            uniqueKey,
+          });
+        }
+
+        return;
+      }
+
+      const { paidCredit, bonusRequestCredit } = await getBusinessCreditBalance({
+        businessAnchorId,
+        session,
       });
-    } else {
-      console.log("[CREDIT_SPEND] skip existing free request marker", {
-        requestId: request?.requestId,
-        requestMongoId: String(request?._id || ""),
-        uniqueKey,
-      });
-    }
 
-    return;
-  }
+      // 요청 단위 과금 SSOT: 동일 요청은 SPEND 1회만 유지한다.
+      // (cycle 증가/중복 승인으로 인한 중복 차감 방지)
+      if (existingNegativeSpend?._id) {
+        console.log("[CREDIT_SPEND] skip existing machining spend for request", {
+          requestId: request?.requestId,
+          requestMongoId: String(request?._id || ""),
+          existingUniqueKey: existingNegativeSpend.uniqueKey,
+          currentUniqueKey: uniqueKey,
+        });
+        return;
+      }
+      const availableForMachining = paidCredit + bonusRequestCredit;
+      if (availableForMachining < resolvedAmount) {
+        const err = new Error("의뢰자 잔액 부족으로 가공 진입 불가");
+        err.statusCode = 402;
+        err.payload = {
+          reason: "insufficient_credit_for_machining",
+          paidCredit,
+          bonusRequestCredit,
+          availableForMachining,
+          required: resolvedAmount,
+          requestId: request?._id ? String(request._id) : null,
+        };
+        throw err;
+      }
 
-  const { paidCredit, bonusRequestCredit } = await getBusinessCreditBalance({
-    businessAnchorId,
-    session,
-  });
+      // 의뢰비는 의뢰 크레딧(유료+무료 의뢰)에서만 결제 가능
+      const fromBonusRequest = Math.min(bonusRequestCredit, resolvedAmount);
+      const fromPaid = resolvedAmount - fromBonusRequest;
 
-  // 과거 버그로 amount=0 free-marker가 먼저 저장된 경우,
-  // 실제 과금 대상(resolvedAmount>0)이면 해당 row를 정상 과금 row로 보정한다.
-  if (existingSpend?._id) {
-    const existingAmount = Number(existingSpend.amount || 0);
-    if (existingAmount < 0) {
-      console.log("[CREDIT_SPEND] skip existing machining spend for request", {
-        requestId: request?.requestId,
-        requestMongoId: String(request?._id || ""),
-        existingUniqueKey: existingSpend.uniqueKey,
-        currentUniqueKey: uniqueKey,
-      });
-      return;
-    }
-  }
-  const availableForMachining = paidCredit + bonusRequestCredit;
-  if (availableForMachining < resolvedAmount) {
-    const err = new Error("의뢰자 잔액 부족으로 가공 진입 불가");
-    err.statusCode = 402;
-    err.payload = {
-      reason: "insufficient_credit_for_machining",
-      paidCredit,
-      bonusRequestCredit,
-      availableForMachining,
-      required: resolvedAmount,
-      requestId: request?._id ? String(request._id) : null,
-    };
-    throw err;
-  }
+      let wasInsertedOrCorrected = false;
 
-  // 의뢰비는 의뢰 크레딧(유료+무료 의뢰)에서만 결제 가능
-  const fromBonusRequest = Math.min(bonusRequestCredit, resolvedAmount);
-  const fromPaid = resolvedAmount - fromBonusRequest;
-
-  let wasInsertedOrCorrected = false;
-
-  if (existingSpend?._id) {
-    const existingAmount = Number(existingSpend.amount || 0);
-    const isLegacyFreeMarker =
-      existingAmount === 0 && existingSpend.hasFreeRequest === true;
-
-    if (!isLegacyFreeMarker) {
-      console.log("[CREDIT_SPEND] skip duplicate machining spend upsert", {
-        requestId: request?.requestId,
-        requestMongoId: String(request?._id || ""),
-        uniqueKey,
-        existingUniqueKey: existingSpend.uniqueKey,
-      });
-      return;
-    }
-
-    const corrected = await CreditLedger.updateOne(
-      { _id: existingSpend._id, amount: 0, hasFreeRequest: true },
+      if (existingFreeMarker?._id) {
+        const corrected = await CreditLedger.updateOne(
+          { _id: existingFreeMarker._id, amount: 0, hasFreeRequest: true },
       {
         $set: {
           userId: actorUserId || null,
@@ -301,89 +478,91 @@ export async function ensureRequestCreditSpendOnMachiningEnter({
       { session },
     );
 
-    if (Number(corrected?.modifiedCount || 0) > 0) {
-      wasInsertedOrCorrected = true;
-      console.log("[CREDIT_SPEND] corrected legacy free marker to paid spend", {
-        requestId: request?.requestId,
-        requestMongoId: String(request?._id || ""),
-        uniqueKey: existingSpend.uniqueKey,
+        if (Number(corrected?.modifiedCount || 0) > 0) {
+          wasInsertedOrCorrected = true;
+          console.log("[CREDIT_SPEND] corrected legacy free marker to paid spend", {
+            requestId: request?.requestId,
+            requestMongoId: String(request?._id || ""),
+            uniqueKey: existingFreeMarker.uniqueKey,
+            amount: resolvedAmount,
+          });
+        } else {
+          console.log("[CREDIT_SPEND] skip duplicate machining spend correction", {
+            requestId: request?.requestId,
+            requestMongoId: String(request?._id || ""),
+            uniqueKey,
+          });
+          return;
+        }
+      } else {
+        const result = await CreditLedger.updateOne(
+          { uniqueKey },
+          {
+            $setOnInsert: {
+              businessAnchorId,
+              userId: actorUserId || null,
+              type: "SPEND",
+              amount: -resolvedAmount,
+              refType: "REQUEST",
+              refId: request._id,
+              uniqueKey,
+              spentPaidAmount: fromPaid,
+              spentBonusAmount: fromBonusRequest,
+            },
+          },
+          { upsert: true, session },
+        );
+
+        if (!result?.upsertedCount) {
+          console.log("[CREDIT_SPEND] skip duplicate machining spend upsert", {
+            requestId: request?.requestId,
+            requestMongoId: String(request?._id || ""),
+            uniqueKey,
+          });
+          return;
+        }
+
+        wasInsertedOrCorrected = true;
+      }
+
+      if (!wasInsertedOrCorrected) return;
+
+      request.price = {
+        ...(request.price || {}),
+        ...(computedPrice && typeof computedPrice === "object"
+          ? computedPrice
+          : {}),
         amount: resolvedAmount,
-      });
-    } else {
-      console.log("[CREDIT_SPEND] skip duplicate machining spend correction", {
+      };
+
+      console.log("[CREDIT_SPEND] machining spend inserted", {
         requestId: request?.requestId,
         requestMongoId: String(request?._id || ""),
-        uniqueKey,
+        amount: resolvedAmount,
+        businessAnchorId: String(businessAnchorId),
       });
-      return;
-    }
-  } else {
-    const result = await CreditLedger.updateOne(
-      { uniqueKey },
-      {
-        $setOnInsert: {
+
+      await emitCreditBalanceUpdatedToBusiness({
+        businessAnchorId,
+        balanceDelta: -resolvedAmount,
+        reason: "machining_spend",
+        refId: request._id,
+      });
+
+      // 수수료 분배 처리
+      // rules.md 6.9.1: 분배 대상은 유료의뢰비(유료 결제분)만 허용.
+      // 무료 크레딧 사용분(fromBonusRequest)은 분배 대상에서 제외한다.
+      if (fromPaid > 0) {
+        await distributeCommissionOnRequestSpend({
+          request,
+          spendAmount: fromPaid,
           businessAnchorId,
-          userId: actorUserId || null,
-          type: "SPEND",
-          amount: -resolvedAmount,
-          refType: "REQUEST",
-          refId: request._id,
-          uniqueKey,
-          spentPaidAmount: fromPaid,
-          spentBonusAmount: fromBonusRequest,
-        },
-      },
-      { upsert: true, session },
-    );
-
-    if (!result?.upsertedCount) {
-      console.log("[CREDIT_SPEND] skip duplicate machining spend upsert", {
-        requestId: request?.requestId,
-        requestMongoId: String(request?._id || ""),
-        uniqueKey,
-      });
-      return;
-    }
-
-    wasInsertedOrCorrected = true;
-  }
-
-  if (!wasInsertedOrCorrected) return;
-
-  request.price = {
-    ...(request.price || {}),
-    ...(computedPrice && typeof computedPrice === "object"
-      ? computedPrice
-      : {}),
-    amount: resolvedAmount,
-  };
-
-  console.log("[CREDIT_SPEND] machining spend inserted", {
-    requestId: request?.requestId,
-    requestMongoId: String(request?._id || ""),
-    amount: resolvedAmount,
-    businessAnchorId: String(businessAnchorId),
+          actorUserId,
+          session,
+        });
+      }
+    },
   });
-
-  await emitCreditBalanceUpdatedToBusiness({
-    businessAnchorId,
-    balanceDelta: -resolvedAmount,
-    reason: "machining_spend",
-    refId: request._id,
-  });
-
-  // 수수료 분배 처리
-  // rules.md 6.9.1: 분배 대상은 유료의뢰비(유료 결제분)만 허용.
-  // 무료 크레딧 사용분(fromBonusRequest)은 분배 대상에서 제외한다.
-  if (fromPaid > 0) {
-    await distributeCommissionOnRequestSpend({
-      request,
-      spendAmount: fromPaid,
-      businessAnchorId,
-      actorUserId,
-      session,
-    });
-  }
 }
 
 export async function ensureRequestCreditRefundOnRollbackToCam({
@@ -394,49 +573,90 @@ export async function ensureRequestCreditRefundOnRollbackToCam({
 }) {
   if (!request?._id || !businessAnchorId) return;
 
-  const cycle = Number(request?.caseInfos?.rollbackCounts?.cam || 0);
-  const spendKeys = [
-    `request:${String(request._id)}:machining_spend:${cycle}`,
-    `request:${String(request._id)}:machining_spend`,
-  ];
-  const spendRow = await CreditLedger.findOne({
-    uniqueKey: { $in: spendKeys },
-    type: "SPEND",
-    refType: "REQUEST",
-    refId: request._id,
-  })
-    .select({ amount: 1, uniqueKey: 1 })
-    .session(session || null)
-    .lean();
-  if (!spendRow?.uniqueKey) return;
-
-  const refundAmount = Math.abs(Number(spendRow.amount || 0));
-  if (!Number.isFinite(refundAmount) || refundAmount <= 0) return;
-
-  const refundKey = `request:${String(request._id)}:machining_refund:${cycle}`;
-  const result = await CreditLedger.updateOne(
-    { uniqueKey: refundKey },
-    {
-      $setOnInsert: {
-        businessAnchorId,
-        userId: actorUserId || null,
-        type: "REFUND",
-        amount: refundAmount,
+  await withBusinessCreditSpendLock({
+    businessAnchorId,
+    runner: async () => {
+      const spendRows = await CreditLedger.find({
+        type: "SPEND",
         refType: "REQUEST",
         refId: request._id,
-        uniqueKey: refundKey,
-      },
+      })
+        .select({
+          amount: 1,
+          uniqueKey: 1,
+          spentPaidAmount: 1,
+          spentBonusAmount: 1,
+          createdAt: 1,
+        })
+        .sort({ createdAt: 1, _id: 1 })
+        .session(session || null)
+        .lean();
+
+      const paidSpendRows = spendRows.filter(
+        (row) => Number(row?.amount || 0) < 0,
+      );
+      if (!paidSpendRows.length) return;
+
+      const refundRows = await CreditLedger.find({
+        type: "REFUND",
+        refType: "REQUEST",
+        refId: request._id,
+      })
+        .select({ amount: 1 })
+        .session(session || null)
+        .lean();
+
+      const spendTotal = paidSpendRows.reduce(
+        (acc, row) => acc + Math.abs(Number(row?.amount || 0)),
+        0,
+      );
+      const refundTotal = refundRows.reduce(
+        (acc, row) => acc + Math.abs(Number(row?.amount || 0)),
+        0,
+      );
+      const outstanding = Math.max(0, Math.round(spendTotal - refundTotal));
+      if (outstanding <= 0) return;
+
+      const latestSpendRow = paidSpendRows[paidSpendRows.length - 1] || null;
+      if (!latestSpendRow?.uniqueKey) return;
+
+      const refundAmount = outstanding;
+      const split = resolveLedgerSplit(
+        refundAmount,
+        latestSpendRow?.spentPaidAmount,
+        latestSpendRow?.spentBonusAmount,
+      );
+      const refundSpentPaidAmount = split ? split.paid : null;
+      const refundSpentBonusAmount = split ? split.bonus : null;
+
+      const refundKey = `request:${String(request._id)}:machining_refund`;
+      const result = await CreditLedger.updateOne(
+        { uniqueKey: refundKey },
+        {
+          $setOnInsert: {
+            businessAnchorId,
+            userId: actorUserId || null,
+            type: "REFUND",
+            amount: refundAmount,
+            refType: "REQUEST",
+            refId: request._id,
+            uniqueKey: refundKey,
+            spentPaidAmount: refundSpentPaidAmount,
+            spentBonusAmount: refundSpentBonusAmount,
+          },
+        },
+        { upsert: true, session },
+      );
+
+      if (!result?.upsertedCount) return;
+
+      await emitCreditBalanceUpdatedToBusiness({
+        businessAnchorId,
+        balanceDelta: refundAmount,
+        reason: "machining_refund",
+        refId: request?._id,
+      });
     },
-    { upsert: true, session },
-  );
-
-  if (!result?.upsertedCount) return;
-
-  await emitCreditBalanceUpdatedToBusiness({
-    businessAnchorId,
-    balanceDelta: refundAmount,
-    reason: "machining_refund",
-    refId: request?._id,
   });
 }
 
@@ -448,7 +668,10 @@ export async function ensureShippingFeeSpendOnPackingApprove({
 }) {
   if (!request?._id || !businessAnchorId) return;
 
-  const mailboxAddress = String(request?.mailboxAddress || "").trim();
+  await withBusinessCreditSpendLock({
+    businessAnchorId,
+    runner: async () => {
+      const mailboxAddress = String(request?.mailboxAddress || "").trim();
   if (!mailboxAddress) {
     const err = new Error(
       "우편함 정보가 없어 포장.발송 단계로 이동할 수 없습니다.",
@@ -681,6 +904,8 @@ export async function ensureShippingFeeSpendOnPackingApprove({
     reason: "shipping_fee_spend",
     refId: pkg._id,
   });
+    },
+  });
 }
 
 export async function ensureShippingFeeRefundOnShippingRollback({
@@ -696,7 +921,10 @@ export async function ensureShippingFeeRefundOnShippingRollback({
     request.businessAnchorId || request.requestor?.businessAnchorId;
   if (!businessAnchorId) return;
 
-  const spendKeys = [
+  await withBusinessCreditSpendLock({
+    businessAnchorId,
+    runner: async () => {
+      const spendKeys = [
     `shippingPackage:${String(request.shippingPackageId)}:shipping_fee`,
     // 레거시: cycle 포함 키도 조회 (이전 데이터 호환)
     ...[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 14, 18, 24].map(
@@ -710,7 +938,12 @@ export async function ensureShippingFeeRefundOnShippingRollback({
     refType: "SHIPPING_PACKAGE",
     refId: shippingPackageId,
   })
-    .select({ amount: 1, uniqueKey: 1 })
+    .select({
+      amount: 1,
+      uniqueKey: 1,
+      spentPaidAmount: 1,
+      spentBonusAmount: 1,
+    })
     .session(session || null)
     .lean();
 
@@ -745,6 +978,14 @@ export async function ensureShippingFeeRefundOnShippingRollback({
   const refundAmount = Math.abs(Number(spendRow.amount || 0));
   if (!Number.isFinite(refundAmount) || refundAmount <= 0) return;
 
+  const split = resolveLedgerSplit(
+    refundAmount,
+    spendRow?.spentPaidAmount,
+    spendRow?.spentBonusAmount,
+  );
+  const refundSpentPaidAmount = split ? split.paid : null;
+  const refundSpentBonusAmount = split ? split.bonus : null;
+
   const cycle = Number(request?.caseInfos?.rollbackCounts?.shipping || 0);
   const refundKey = `shippingPackage:${String(shippingPackageId)}:shipping_fee_refund:${cycle}`;
   const result = await CreditLedger.updateOne(
@@ -758,6 +999,8 @@ export async function ensureShippingFeeRefundOnShippingRollback({
         refType: "SHIPPING_PACKAGE",
         refId: shippingPackageId,
         uniqueKey: refundKey,
+        spentPaidAmount: refundSpentPaidAmount,
+        spentBonusAmount: refundSpentBonusAmount,
       },
     },
     { upsert: true, session },
@@ -770,6 +1013,8 @@ export async function ensureShippingFeeRefundOnShippingRollback({
     balanceDelta: refundAmount,
     reason: "shipping_fee_refund",
     refId: shippingPackageId,
+  });
+    },
   });
 }
 

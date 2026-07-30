@@ -2,12 +2,14 @@
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
+import { useMemo, useState } from "react";
 import { usePeriodStore } from "@/store/usePeriodStore";
 import { PeriodFilter } from "@/shared/ui/PeriodFilter";
 import { useNavigate } from "react-router-dom";
 import { Wrench } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { CreditLedgerModal } from "@/shared/components/CreditLedgerModal";
 import { SalesmanLedgerModal } from "@/shared/components/SalesmanLedgerModal";
 import { RequestorCreditTab } from "./components/RequestorCreditTab";
@@ -19,6 +21,63 @@ export default function AdminCreditPage() {
   const state = useAdminCreditPage();
   const { setPeriod } = usePeriodStore();
   const navigate = useNavigate();
+  const [searchQuery, setSearchQuery] = useState("");
+
+  const normalizedSearch = searchQuery.trim().toLowerCase();
+
+  const filteredBusinesses = useMemo(() => {
+    if (!normalizedSearch) return state.businesses;
+    return state.businesses.filter((business) => {
+      const haystack = [
+        business._id,
+        business.name,
+        business.companyName,
+        business.businessNumber,
+        business.representativeName,
+        business.ownerName,
+        business.ownerEmail,
+      ]
+        .map((value) => String(value || ""))
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(normalizedSearch);
+    });
+  }, [state.businesses, normalizedSearch]);
+
+  const filteredAllRequestorBusinesses = useMemo(() => {
+    if (!normalizedSearch) return state.allRequestorBusinesses;
+    return state.allRequestorBusinesses.filter((business) => {
+      const haystack = [
+        business._id,
+        business.name,
+        business.companyName,
+        business.businessNumber,
+        business.representativeName,
+        business.ownerName,
+        business.ownerEmail,
+      ]
+        .map((value) => String(value || ""))
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(normalizedSearch);
+    });
+  }, [state.allRequestorBusinesses, normalizedSearch]);
+
+  const filteredSalesmen = useMemo(() => {
+    if (!normalizedSearch) return state.salesmen;
+    return state.salesmen.filter((salesman) => {
+      const haystack = [
+        salesman.salesmanId,
+        salesman.name,
+        salesman.email,
+        salesman.referralCode,
+      ]
+        .map((value) => String(value || ""))
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(normalizedSearch);
+    });
+  }, [state.salesmen, normalizedSearch]);
 
   return (
     <div className="space-y-6 p-6 overflow-hidden">
@@ -26,7 +85,7 @@ export default function AdminCreditPage() {
         value={state.creditTab}
         onValueChange={(v) => state.setCreditTab(v as "requestor" | "salesman")}
       >
-        <div className="flex items-center justify-between gap-4">
+        <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <TabsList className="h-12">
               <TabsTrigger value="requestor" className="px-6 text-base">
@@ -38,6 +97,20 @@ export default function AdminCreditPage() {
             </TabsList>
             <PeriodFilter value={state.period} onChange={setPeriod} />
           </div>
+
+          <div className="w-full sm:w-[320px] lg:w-[420px]">
+            <Input
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder={
+                state.creditTab === "requestor"
+                  ? "사업자명 / 사업자번호 / 대표자 / anchor ID 검색"
+                  : "영업자명 / 이메일 / 추천코드 검색"
+              }
+              className="h-10"
+            />
+          </div>
+
           <Button
             type="button"
             variant="outline"
@@ -55,8 +128,8 @@ export default function AdminCreditPage() {
             orgSortKey={state.orgSortKey}
             setOrgSortKey={state.setOrgSortKey}
             loadingOrgs={state.loadingOrgs}
-            allRequestorBusinesses={state.allRequestorBusinesses}
-            businesses={state.businesses}
+            allRequestorBusinesses={filteredAllRequestorBusinesses}
+            businesses={filteredBusinesses}
             orgScrollRef={state.orgScrollRef}
             orgSentinelRef={state.orgSentinelRef}
             onOpenOrgLedger={(business) => {
@@ -159,7 +232,7 @@ export default function AdminCreditPage() {
           salesmanSortKey={state.salesmanSortKey}
           setSalesmanSortKey={state.setSalesmanSortKey}
           loadingSalesmen={state.loadingSalesmen}
-          salesmen={state.salesmen}
+          salesmen={filteredSalesmen}
           salesmanScrollRef={state.salesmanScrollRef}
           salesmanSentinelRef={state.salesmanSentinelRef}
           onOpenLedger={(row) => {

@@ -2,7 +2,9 @@
 // - web/backend/modules/requests/request.routes.js
 // - web/backend/controllers/requests/creation.from-draft.controller.js
 // - web/backend/controllers/requests/common.review.controller.js
+// - web/backend/controllers/requests/common.review.helpers.js
 // - web/backend/models/systemSettings.model.js
+// - web/backend/models/creditLedger.model.js
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/shipping/components/MailboxGrid.tsx
 import mongoose, { Types } from "mongoose";
@@ -493,7 +495,7 @@ async function ensureRequestCancelRefund({ request, actorUserId }) {
     refType: "REQUEST",
     refId: request._id,
   })
-    .select({ amount: 1 })
+    .select({ amount: 1, spentPaidAmount: 1, spentBonusAmount: 1 })
     .lean();
 
   const refundRows = await CreditLedger.find({
@@ -502,22 +504,104 @@ async function ensureRequestCancelRefund({ request, actorUserId }) {
     refType: "REQUEST",
     refId: request._id,
   })
-    .select({ amount: 1 })
+    .select({ amount: 1, spentPaidAmount: 1, spentBonusAmount: 1 })
     .lean();
 
-  const totalSpendAbs = Math.abs(
-    (spendRows || []).reduce((acc, row) => {
-      const amount = Number(row?.amount || 0);
-      return acc + (Number.isFinite(amount) ? amount : 0);
-    }, 0),
-  );
-  const totalRefund = (refundRows || []).reduce((acc, row) => {
-    const amount = Number(row?.amount || 0);
-    return acc + (Number.isFinite(amount) ? amount : 0);
-  }, 0);
+  let totalSpentAbs = 0;
+  let totalSpentPaid = 0;
+  let totalSpentBonus = 0;
+  for (const row of spendRows || []) {
+    const amount = Math.abs(Number(row?.amount || 0));
+    if (!Number.isFinite(amount) || amount <= 0) continue;
 
-  const refundAmount = Math.max(0, totalSpendAbs - totalRefund);
+    const paidRaw = Number(row?.spentPaidAmount);
+    const bonusRaw = Number(row?.spentBonusAmount);
+    const hasPaid = Number.isFinite(paidRaw);
+    const hasBonus = Number.isFinite(bonusRaw);
+
+    let paid = Math.max(0, hasPaid ? paidRaw : 0);
+    let bonus = Math.max(0, hasBonus ? bonusRaw : 0);
+    const splitSum = paid + bonus;
+
+    if (splitSum > 0) {
+      if (splitSum > amount) {
+        let overflow = splitSum - amount;
+        const reducePaid = Math.min(paid, overflow);
+        paid -= reducePaid;
+        overflow -= reducePaid;
+        if (overflow > 0) bonus = Math.max(0, bonus - overflow);
+      } else if (splitSum < amount) {
+        paid += amount - splitSum;
+      }
+    } else {
+      paid = amount;
+      bonus = 0;
+    }
+
+    totalSpentAbs += amount;
+    totalSpentPaid += paid;
+    totalSpentBonus += bonus;
+  }
+
+  let totalRefundAbs = 0;
+  let totalRefundPaid = 0;
+  let totalRefundBonus = 0;
+  for (const row of refundRows || []) {
+    const amount = Math.abs(Number(row?.amount || 0));
+    if (!Number.isFinite(amount) || amount <= 0) continue;
+
+    const paidRaw = Number(row?.spentPaidAmount);
+    const bonusRaw = Number(row?.spentBonusAmount);
+    const hasPaid = Number.isFinite(paidRaw);
+    const hasBonus = Number.isFinite(bonusRaw);
+
+    let paid = Math.max(0, hasPaid ? paidRaw : 0);
+    let bonus = Math.max(0, hasBonus ? bonusRaw : 0);
+    const splitSum = paid + bonus;
+
+    if (splitSum > 0) {
+      if (splitSum > amount) {
+        let overflow = splitSum - amount;
+        const reducePaid = Math.min(paid, overflow);
+        paid -= reducePaid;
+        overflow -= reducePaid;
+        if (overflow > 0) bonus = Math.max(0, bonus - overflow);
+      } else if (splitSum < amount) {
+        paid += amount - splitSum;
+      }
+    } else {
+      paid = amount;
+      bonus = 0;
+    }
+
+    totalRefundAbs += amount;
+    totalRefundPaid += paid;
+    totalRefundBonus += bonus;
+  }
+
+  const refundAmount = Math.max(0, totalSpentAbs - totalRefundAbs);
   if (!Number.isFinite(refundAmount) || refundAmount <= 0) return;
+
+  const refundSpentPaidAmount = Math.max(0, totalSpentPaid - totalRefundPaid);
+  const refundSpentBonusAmount = Math.max(
+    0,
+    totalSpentBonus - totalRefundBonus,
+  );
+
+  let normalizedRefundPaid = refundSpentPaidAmount;
+  let normalizedRefundBonus = refundSpentBonusAmount;
+  const refundSplitSum = normalizedRefundPaid + normalizedRefundBonus;
+  if (refundSplitSum > refundAmount) {
+    let overflow = refundSplitSum - refundAmount;
+    const reducePaid = Math.min(normalizedRefundPaid, overflow);
+    normalizedRefundPaid -= reducePaid;
+    overflow -= reducePaid;
+    if (overflow > 0) {
+      normalizedRefundBonus = Math.max(0, normalizedRefundBonus - overflow);
+    }
+  } else if (refundSplitSum < refundAmount) {
+    normalizedRefundPaid += refundAmount - refundSplitSum;
+  }
 
   const uniqueKey = `request:${String(request._id)}:cancel_refund`;
   const result = await CreditLedger.updateOne(
@@ -531,6 +615,8 @@ async function ensureRequestCancelRefund({ request, actorUserId }) {
         refType: "REQUEST",
         refId: request._id,
         uniqueKey,
+        spentPaidAmount: normalizedRefundPaid,
+        spentBonusAmount: normalizedRefundBonus,
       },
     },
     { upsert: true },

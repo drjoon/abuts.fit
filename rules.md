@@ -93,6 +93,9 @@
 ### 2.3 크레딧/정산
 
 - 크레딧/배송/정산 귀속 키는 사용자 개인이 아니라 `businessAnchorId`
+- 크레딧 원장(`CreditLedger`)은 **과소/과다 차감 없이 항상 정확한 합계**를 보장해야 함
+  - 중복 소비/중복 환불/누락 소비 금지
+  - 승인 재시도·동시 처리 상황에서도 idempotent(중복 반영 없음)하게 처리
 - 이벤트 기반 캐시 갱신 우선, 조회 시 대규모 재계산 지양
 
 ### 2.4 practice(치과) 전송
@@ -185,6 +188,7 @@
   - `web/backend/modules/requests/request.routes.js`
   - `web/backend/controllers/requests/creation.from-draft.controller.js`
   - `web/backend/controllers/requests/common.review.controller.js`
+  - `web/backend/controllers/requests/common.review.helpers.js`
   - `web/backend/controllers/requests/common.requests.controller.js`
   - `web/backend/controllers/requests/mailbox.utils.js`
   - `web/backend/controllers/requests/shipping.controller.js`
