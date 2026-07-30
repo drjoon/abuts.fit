@@ -1,6 +1,7 @@
 // related files:
 // - web/backend/modules/requests/request.routes.js
 // - web/backend/controllers/requests/common.requests.controller.js
+// - web/backend/controllers/requests/mailbox.utils.js
 // - web/backend/controllers/cnc/machiningBridge.js
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
 import mongoose, { Types } from "mongoose";
@@ -1337,6 +1338,7 @@ export async function updateReviewStatusByStage(req, res) {
                     requestMongoId: request._id,
                     requestorOrgId: requestorBusinessAnchorId,
                     currentMailboxAddress: request.mailboxAddress,
+                    session,
                   });
                 if (nextMailboxAddress) {
                   request.mailboxAddress = nextMailboxAddress;
@@ -1407,6 +1409,7 @@ export async function updateReviewStatusByStage(req, res) {
               requestMongoId: request._id,
               requestorOrgId: requestorBusinessAnchorId,
               currentMailboxAddress: request.mailboxAddress,
+              session,
             });
             if (nextMailboxAddress) {
               request.mailboxAddress = nextMailboxAddress;

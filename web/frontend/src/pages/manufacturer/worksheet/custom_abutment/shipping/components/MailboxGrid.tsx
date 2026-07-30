@@ -4,6 +4,8 @@
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
 // - web/backend/controllers/requests/common.review.controller.js
+// - web/backend/controllers/requests/common.requests.controller.js
+// - web/backend/modules/requests/request.routes.js
 import { useMemo, useState, useRef, useEffect, useCallback } from "react";
 import { RefreshCw } from "lucide-react";
 import { useToast } from "@/shared/hooks/use-toast";
@@ -58,6 +60,27 @@ type ManualPickupReasonOption = {
   id: string;
   label: string;
 };
+
+const DEFAULT_MANUAL_PICKUP_REASON_LABELS = ["방문 전달"];
+
+const normalizeManualPickupReasonLabels = (raw: unknown): string[] => {
+  const source = Array.isArray(raw) ? raw : [];
+  const deduped: string[] = [];
+  for (const item of source) {
+    const label = String(item || "").slice(0, 120).trim();
+    if (!label) continue;
+    if (deduped.includes(label)) continue;
+    deduped.push(label);
+    if (deduped.length >= 100) break;
+  }
+  return deduped.length ? deduped : [...DEFAULT_MANUAL_PICKUP_REASON_LABELS];
+};
+
+const toManualPickupReasonOptions = (labelsRaw: unknown): ManualPickupReasonOption[] =>
+  normalizeManualPickupReasonLabels(labelsRaw).map((label, idx) => ({
+    id: `manual-pickup-reason-${idx + 1}`,
+    label,
+  }));
 
 type MailboxGridProps = {
   mailboxSummaries: MailboxSummaryItem[];
@@ -124,15 +147,16 @@ export const MailboxGrid = ({
     Record<string, ManualPickupMode>
   >({});
   // related files:
+  // - web/backend/controllers/requests/common.requests.controller.js
+  // - web/backend/modules/requests/request.routes.js
   // - web/backend/controllers/requests/shipping.controller.js
-  // - web/backend/models/request.model.js
+  // - web/backend/models/systemSettings.model.js
   // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/tracking/TrackingPage.tsx
-  // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/shipping/components/MailboxContentsModal.tsx
   const [manualPickupReasonOptions, setManualPickupReasonOptions] = useState<
     ManualPickupReasonOption[]
-  >([
-    { id: "manual-pickup-reason-default", label: "방문 전달" },
-  ]);
+  >(() => toManualPickupReasonOptions(DEFAULT_MANUAL_PICKUP_REASON_LABELS));
+  const [isSavingManualPickupReasons, setIsSavingManualPickupReasons] =
+    useState(false);
   const [manualPickupReasonOptionDraft, setManualPickupReasonOptionDraft] =
     useState("");
   const [manualPickupReasonManagerOpen, setManualPickupReasonManagerOpen] =
@@ -592,12 +616,122 @@ export const MailboxGrid = ({
     }
   };
 
-  const createManualPickupReasonOption = (label = ""): ManualPickupReasonOption => ({
-    id: `manual-pickup-reason-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-    label: String(label || "").trim(),
-  });
+  const applyManualPickupReasonOptions = useCallback(
+    (labelsRaw: unknown) => {
+      const nextLabels = normalizeManualPickupReasonLabels(labelsRaw);
+      const usedIds = new Set<string>();
+      const nextOptions: ManualPickupReasonOption[] = nextLabels.map(
+        (label, idx) => {
+          const byLabel = manualPickupReasonOptions.find(
+            (item) => item.label === label && !usedIds.has(item.id),
+          );
+          const byIndex = manualPickupReasonOptions[idx];
+          const id =
+            byLabel?.id ||
+            (byIndex && !usedIds.has(byIndex.id) ? byIndex.id : "") ||
+            `manual-pickup-reason-${Date.now()}-${idx}`;
+          usedIds.add(id);
+          return { id, label };
+        },
+      );
 
-  const openManualPickupDialog = () => {
+      const fallbackReasonId = nextOptions[0]?.id || "manual-pickup-reason-1";
+
+      setManualPickupReasonOptions(nextOptions);
+      setManualPickupAlternateReasonIdByAddress((prev) => {
+        const next: Record<string, string> = {};
+        for (const [address, selectedReasonId] of Object.entries(prev)) {
+          const selectedExists = nextOptions.some(
+            (item) => item.id === selectedReasonId,
+          );
+          next[address] = selectedExists ? selectedReasonId : fallbackReasonId;
+        }
+        return next;
+      });
+
+      return nextOptions;
+    },
+    [
+      manualPickupReasonOptions,
+      setManualPickupReasonOptions,
+      setManualPickupAlternateReasonIdByAddress,
+    ],
+  );
+
+  const fetchManualPickupReasonOptions = useCallback(
+    async ({ silent = false }: { silent?: boolean } = {}) => {
+      try {
+        const response = await request<any>({
+          path: "/api/requests/shipping/manual-pickup-reasons",
+          method: "GET",
+        });
+        const body = response.data as any;
+        if (!response.ok || !body?.success) {
+          throw new Error(body?.message || "수동 집하 사유 목록 조회 실패");
+        }
+
+        const labels = Array.isArray(body?.data?.options)
+          ? body.data.options
+          : body?.data;
+        return applyManualPickupReasonOptions(labels);
+      } catch (error) {
+        if (!silent) {
+          toast({
+            title: "사유 목록 불러오기 실패",
+            description:
+              error instanceof Error
+                ? error.message
+                : "수동 집하 사유 목록을 불러오지 못했습니다.",
+            variant: "destructive",
+          });
+        }
+        return manualPickupReasonOptions;
+      }
+    },
+    [applyManualPickupReasonOptions, manualPickupReasonOptions, toast],
+  );
+
+  const saveManualPickupReasonOptions = useCallback(
+    async (nextOptions: ManualPickupReasonOption[]) => {
+      const labels = normalizeManualPickupReasonLabels(
+        nextOptions.map((item) => item.label),
+      );
+
+      setIsSavingManualPickupReasons(true);
+      try {
+        const response = await request<any>({
+          path: "/api/requests/shipping/manual-pickup-reasons",
+          method: "PUT",
+          jsonBody: { options: labels },
+        });
+        const body = response.data as any;
+        if (!response.ok || !body?.success) {
+          throw new Error(body?.message || "수동 집하 사유 목록 저장 실패");
+        }
+
+        const savedLabels = Array.isArray(body?.data?.options)
+          ? body.data.options
+          : labels;
+        applyManualPickupReasonOptions(savedLabels);
+        return true;
+      } catch (error) {
+        toast({
+          title: "사유 목록 저장 실패",
+          description:
+            error instanceof Error
+              ? error.message
+              : "수동 집하 사유 목록 저장에 실패했습니다.",
+          variant: "destructive",
+        });
+        return false;
+      } finally {
+        setIsSavingManualPickupReasons(false);
+      }
+    },
+    [applyManualPickupReasonOptions, toast],
+  );
+
+  const openManualPickupDialog = async () => {
     const mailboxCandidates = occupiedAddresses
       .map((address) => String(address || "").trim())
       .filter(Boolean);
@@ -609,14 +743,16 @@ export const MailboxGrid = ({
       return;
     }
 
+    const latestOptions = await fetchManualPickupReasonOptions({ silent: true });
+    const fallbackReasonId =
+      latestOptions[0]?.id || manualPickupReasonOptions[0]?.id || "manual-pickup-reason-1";
+
     const initialTrackingByAddress = Object.fromEntries(
       mailboxCandidates.map((address) => [address, ""]),
     ) as Record<string, string>;
     const initialModeByAddress = Object.fromEntries(
       mailboxCandidates.map((address) => [address, "hanjin"]),
     ) as Record<string, ManualPickupMode>;
-    const fallbackReasonId =
-      manualPickupReasonOptions[0]?.id || "manual-pickup-reason-default";
     const initialAlternateReasonByAddress = Object.fromEntries(
       mailboxCandidates.map((address) => [address, fallbackReasonId]),
     ) as Record<string, string>;
@@ -1425,7 +1561,7 @@ export const MailboxGrid = ({
       disabled: !hasAnyOccupiedMailbox,
       variant: "white" as const,
       onClick: () => {
-        openManualPickupDialog();
+        void openManualPickupDialog();
       },
     },
     {
@@ -1897,15 +2033,18 @@ export const MailboxGrid = ({
                   <div className="px-3 pb-3 space-y-2 border-t border-slate-100">
                     <div className="flex items-center justify-between gap-2 pt-2">
                       <div className="text-[11px] text-slate-500">
-                        사유를 추가/수정/삭제하면 우편함 선택에 즉시 반영됩니다.
+                        사유를 추가/수정/삭제하면 서버에 저장되어 모든 작업자에게 즉시 공유됩니다.
                       </div>
                       <button
                         type="button"
-                        className="px-2.5 py-1.5 rounded-md text-xs text-blue-600 hover:bg-blue-50 border border-blue-200"
+                        disabled={isSavingManualPickupReasons}
+                        className="px-2.5 py-1.5 rounded-md text-xs text-blue-600 hover:bg-blue-50 border border-blue-200 disabled:opacity-50"
                         onClick={() => {
                           const nextLabel = String(
                             manualPickupReasonOptionDraft || "",
-                          ).trim();
+                          )
+                            .slice(0, 120)
+                            .trim();
                           if (!nextLabel) return;
                           const exists = manualPickupReasonOptions.some(
                             (item) =>
@@ -1919,15 +2058,18 @@ export const MailboxGrid = ({
                             });
                             return;
                           }
-                          const created = createManualPickupReasonOption(nextLabel);
-                          setManualPickupReasonOptions((prev) => [
-                            ...prev,
-                            created,
-                          ]);
+
+                          const created: ManualPickupReasonOption = {
+                            id: `manual-pickup-reason-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+                            label: nextLabel,
+                          };
+                          const nextOptions = [...manualPickupReasonOptions, created];
+                          setManualPickupReasonOptions(nextOptions);
                           setManualPickupReasonOptionDraft("");
+                          void saveManualPickupReasonOptions(nextOptions);
                         }}
                       >
-                        + 사유 추가
+                        {isSavingManualPickupReasons ? "저장 중..." : "+ 사유 추가"}
                       </button>
                     </div>
 
@@ -1935,7 +2077,9 @@ export const MailboxGrid = ({
                       <input
                         value={manualPickupReasonOptionDraft}
                         onChange={(e) =>
-                          setManualPickupReasonOptionDraft(e.target.value)
+                          setManualPickupReasonOptionDraft(
+                            String(e.target.value || "").slice(0, 120),
+                          )
                         }
                         placeholder="새 사유 입력 (예: 동봉 전달, 퀵서비스)"
                         className="h-9 rounded-lg border border-slate-300 px-3 text-sm"
@@ -1951,7 +2095,10 @@ export const MailboxGrid = ({
                           <input
                             value={reason.label}
                             onChange={(e) => {
-                              const nextLabel = String(e.target.value || "");
+                              const nextLabel = String(e.target.value || "").slice(
+                                0,
+                                120,
+                              );
                               setManualPickupReasonOptions((prev) =>
                                 prev.map((item) =>
                                   item.id === reason.id
@@ -1960,11 +2107,25 @@ export const MailboxGrid = ({
                                 ),
                               );
                             }}
+                            onBlur={(e) => {
+                              const blurLabel = String(
+                                e.currentTarget.value || "",
+                              ).slice(0, 120);
+                              const nextOptions = manualPickupReasonOptions.map(
+                                (item) =>
+                                  item.id === reason.id
+                                    ? { ...item, label: blurLabel }
+                                    : item,
+                              );
+                              setManualPickupReasonOptions(nextOptions);
+                              void saveManualPickupReasonOptions(nextOptions);
+                            }}
                             className="h-9 rounded-lg border border-slate-300 px-3 text-sm bg-white"
                           />
                           <button
                             type="button"
-                            className="px-2.5 py-1.5 rounded-md text-xs text-rose-600 hover:bg-rose-50 border border-rose-200"
+                            disabled={isSavingManualPickupReasons}
+                            className="px-2.5 py-1.5 rounded-md text-xs text-rose-600 hover:bg-rose-50 border border-rose-200 disabled:opacity-50"
                             onClick={() => {
                               if (manualPickupReasonOptions.length <= 1) {
                                 toast({
@@ -1990,6 +2151,7 @@ export const MailboxGrid = ({
                                 }
                                 return next;
                               });
+                              void saveManualPickupReasonOptions(nextOptions);
                             }}
                           >
                             삭제

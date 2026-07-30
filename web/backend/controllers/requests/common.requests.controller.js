@@ -2,7 +2,9 @@
 // - web/backend/modules/requests/request.routes.js
 // - web/backend/controllers/requests/creation.from-draft.controller.js
 // - web/backend/controllers/requests/common.review.controller.js
+// - web/backend/models/systemSettings.model.js
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/shipping/components/MailboxGrid.tsx
 import mongoose, { Types } from "mongoose";
 import path from "path";
 import { createHash } from "crypto";
@@ -243,6 +245,7 @@ const DEFAULT_SELF_INSPECTION_INSTRUMENT_OPTIONS = [
 ];
 
 const DEFAULT_RND_UNMACHINABLE_REASON_OPTIONS = [];
+const DEFAULT_MANUAL_PICKUP_REASON_OPTIONS = ["방문 전달"];
 
 // related files (screw lot tracking):
 // - web/backend/models/systemSettings.model.js
@@ -783,6 +786,75 @@ export async function saveRndUnmachinableReasonOptions(req, res) {
     return res.status(500).json({
       success: false,
       message: "가공불가 사유 목록 저장 실패",
+    });
+  }
+}
+
+export async function getManualPickupReasonOptions(req, res) {
+  try {
+    if (req.user.role !== "manufacturer" && req.user.role !== "admin") {
+      return res
+        .status(403)
+        .json({ success: false, message: "권한이 없습니다." });
+    }
+
+    const settings = await SystemSettings.findOne({ key: "global" })
+      .select({ manualPickupReasonOptions: 1 })
+      .lean();
+
+    const options = normalizeReasonOptions(
+      settings?.manualPickupReasonOptions || DEFAULT_MANUAL_PICKUP_REASON_OPTIONS,
+    );
+
+    return res.json({ success: true, data: { options } });
+  } catch (e) {
+    return res.status(500).json({
+      success: false,
+      message: "수동 집하 사유 목록 조회 실패",
+    });
+  }
+}
+
+export async function saveManualPickupReasonOptions(req, res) {
+  try {
+    if (req.user.role !== "manufacturer" && req.user.role !== "admin") {
+      return res
+        .status(403)
+        .json({ success: false, message: "권한이 없습니다." });
+    }
+
+    const normalized = normalizeReasonOptions(req.body?.options || []);
+    const options = normalized.length
+      ? normalized
+      : DEFAULT_MANUAL_PICKUP_REASON_OPTIONS;
+
+    const updated = await SystemSettings.findOneAndUpdate(
+      { key: "global" },
+      {
+        $set: {
+          manualPickupReasonOptions: options,
+        },
+      },
+      {
+        upsert: true,
+        new: true,
+        setDefaultsOnInsert: true,
+        select: { manualPickupReasonOptions: 1 },
+      },
+    ).lean();
+
+    return res.json({
+      success: true,
+      data: {
+        options: normalizeReasonOptions(
+          updated?.manualPickupReasonOptions || options,
+        ),
+      },
+    });
+  } catch (e) {
+    return res.status(500).json({
+      success: false,
+      message: "수동 집하 사유 목록 저장 실패",
     });
   }
 }

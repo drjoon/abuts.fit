@@ -142,6 +142,11 @@
     같은 주소의 재사용 판정에서 `UNKNOWN`은 혼입 판정에서 제외합니다.
     (anchor 누락 데이터 때문에 동일 업체 박스가 분할 생성되는 현상 방지)
   - 우편함 점유(active) 단계는 `세척.패킹`, `포장.발송`, `추적관리`를 공통으로 사용합니다.
+  - `review-status` 배치 승인 트랜잭션에서 우편함 할당 쿼리는 반드시 같은 `session`으로 읽어
+    동일 BusinessAnchor의 직전 배정 주소를 같은 트랜잭션 내에서도 재사용해야 합니다.
+    (가공→세척.패킹 대량 승인 시 의뢰건별 우편함 분할 생성 방지)
+  - BusinessAnchor 비교는 문자열 단순 캐스팅 대신 `_id/id`까지 포함해 정규화한 값으로 판정합니다.
+    (`[object Object]` 형태 오인식으로 인한 재사용 실패 방지)
   - 택배/배송 그룹핑 및 병합 기준에서 `trackingNumber`를 `shippingPackageId`보다 우선 SSOT로 사용합니다.
   - 수동 집하(`POST /api/requests/shipping/hanjin/manual-pickup-complete`)는 우편함 단위 집하를 강제합니다.
     - packageId 매칭 건 + 미할당(shippingPackageId 없음) 건을 함께 처리합니다.
@@ -149,6 +154,8 @@
     - 수동 집하 입력은 우편함별 운송장번호를 허용합니다. (`trackingNumberByMailbox`)
     - `한진택배 외 발송` 선택 시 `nonHanjinShippingMethods`를 받아
       `Request.shippingWorkflow.manualDeliveryMethods`에 저장합니다.
+    - 한진 외 발송 사유 목록 마스터는 시스템 전역 설정(`SystemSettings.manualPickupReasonOptions`)으로 관리합니다.
+      - API: `GET/PUT /api/requests/shipping/manual-pickup-reasons`
     - `DeliveryInfo.carrier`는 한진 외일 때 항상 `"한진 외"`로 저장합니다.
     - `useNonHanjinShippingMethods=true`이면 발송 방식 1개 이상을 강제합니다.
     - 한진 외 발송은 운송장번호 없이 허용하며, 워크플로우는 `completed(배송완료)`로 즉시 반영합니다.

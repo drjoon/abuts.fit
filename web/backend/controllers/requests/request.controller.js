@@ -47,6 +47,8 @@ export const {
   getRequestSummaryByRequestId,
   getRndUnmachinableReasonOptions,
   saveRndUnmachinableReasonOptions,
+  getManualPickupReasonOptions,
+  saveManualPickupReasonOptions,
   getPackingScrewLotSettings,
   savePackingScrewLotSettings,
   assignPackingScrewLotToRequest,

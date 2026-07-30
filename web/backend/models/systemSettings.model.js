@@ -2,6 +2,8 @@
 // - web/backend/rules.md
 // - web/backend/app.js
 // - web/backend/server.js
+// - web/backend/controllers/requests/common.requests.controller.js
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/shipping/components/MailboxGrid.tsx
 import mongoose from "mongoose";
 
 const systemSettingsSchema = new mongoose.Schema(
@@ -84,6 +86,10 @@ const systemSettingsSchema = new mongoose.Schema(
     rndUnmachinableReasonOptions: {
       type: [String],
       default: [],
+    },
+    manualPickupReasonOptions: {
+      type: [String],
+      default: ["방문 전달"],
     },
     // related files (screw lot tracking):
     // - web/backend/controllers/requests/common.requests.controller.js

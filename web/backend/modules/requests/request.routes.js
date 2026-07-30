@@ -2,6 +2,7 @@
 // - web/backend/controllers/requests/creation.from-draft.controller.js
 // - web/backend/controllers/requests/common.review.controller.js
 // - web/backend/controllers/requests/common.requests.controller.js
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/shipping/components/MailboxGrid.tsx
 // - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
 import express from "express";
 const router = express.Router();
@@ -335,6 +336,21 @@ router.put(
   authenticate,
   authorize(["manufacturer", "admin"]),
   requestController.saveRndUnmachinableReasonOptions,
+);
+
+// 제조사/관리자: 포장.발송 수동 집하(한진 외) 사유 옵션 목록 조회/저장
+router.get(
+  "/shipping/manual-pickup-reasons",
+  authenticate,
+  authorize(["manufacturer", "admin"]),
+  requestController.getManualPickupReasonOptions,
+);
+
+router.put(
+  "/shipping/manual-pickup-reasons",
+  authenticate,
+  authorize(["manufacturer", "admin"]),
+  requestController.saveManualPickupReasonOptions,
 );
 
 // 제조사/관리자: 세척.패킹 스크류 로트번호(A~E) 전역 설정

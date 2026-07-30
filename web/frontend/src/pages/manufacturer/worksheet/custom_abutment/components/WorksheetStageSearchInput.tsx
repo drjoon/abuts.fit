@@ -19,7 +19,7 @@ export const WorksheetStageSearchInput = ({
   className = "",
 }: WorksheetStageSearchInputProps) => {
   return (
-    <div className={`w-full md:max-w-md ${className}`.trim()}>
+    <div className={`w-full md:max-w-[560px] lg:max-w-[640px] ${className}`.trim()}>
       <input
         type="text"
         value={value}

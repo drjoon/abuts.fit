@@ -15,6 +15,30 @@ const normalizeMailboxAddress = (raw) =>
     .trim()
     .toUpperCase();
 
+const normalizeBusinessAnchorId = (raw, depth = 0) => {
+  if (raw == null) return "";
+  if (depth > 2) return "";
+
+  if (typeof raw === "string" || typeof raw === "number") {
+    return String(raw).trim();
+  }
+
+  if (typeof raw === "object") {
+    const stringified = String(raw || "").trim();
+    if (stringified && stringified !== "[object Object]") {
+      return stringified;
+    }
+
+    const nestedCandidates = [raw?._id, raw?.id, raw?.businessAnchorId];
+    for (const candidate of nestedCandidates) {
+      const normalized = normalizeBusinessAnchorId(candidate, depth + 1);
+      if (normalized) return normalized;
+    }
+  }
+
+  return "";
+};
+
 export const isManufacturerSampleRequest = (requestLike) => {
   if (!requestLike || typeof requestLike !== "object") return false;
   const category = String(requestLike?.requestCategory || "").trim();
@@ -36,12 +60,12 @@ export const isManufacturerSampleRequest = (requestLike) => {
  *   "실제 점유자는 있는데 anchor만 비어있는" 우편함을 재사용하는 사고를 막을 수 있다.
  */
 const resolveOccupantAnchorKey = (requestDocLike) => {
-  const direct = String(requestDocLike?.businessAnchorId || "").trim();
+  const direct = normalizeBusinessAnchorId(requestDocLike?.businessAnchorId);
   if (direct) return direct;
 
-  const fromRequestor = String(
-    requestDocLike?.requestor?.businessAnchorId || "",
-  ).trim();
+  const fromRequestor = normalizeBusinessAnchorId(
+    requestDocLike?.requestor?.businessAnchorId,
+  );
   if (fromRequestor) return fromRequestor;
 
   return UNKNOWN_ANCHOR_KEY;
@@ -49,7 +73,9 @@ const resolveOccupantAnchorKey = (requestDocLike) => {
 
 // related files:
 // - web/backend/controllers/cnc/machiningBridge.js
+// - web/backend/controllers/ai/lotCapture.controller.js
 // - web/backend/controllers/requests/common.review.controller.js
+// - web/backend/jobs/stageProgressionWorker.js
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/shipping/components/MailboxGrid.tsx
 const buildMailboxOccupancyByAddress = (activeRequests = []) => {
   const occupancyByAddress = new Map();
@@ -128,11 +154,12 @@ export async function allocateVirtualMailboxAddress(
   const excludeRequestMongoId = String(
     options?.excludeRequestMongoId || "",
   ).trim();
+  const session = options?.session || null;
 
   // 현재 '세척.패킹'/'포장.발송'/'추적관리' 단계 중
   // 실제 포장.발송 대상(=R&D 샘플 제외) 의뢰의 우편함만 점유로 본다.
   // SSOT: source/price.rule 이 manufacturer_sample 이면 배송 비대상.
-  const activeRequestsRaw = await Request.find({
+  let activeRequestsQuery = Request.find({
     manufacturerStage: { $in: ACTIVE_MAILBOX_STAGES },
     mailboxAddress: { $ne: null },
     requestCategory: REQUEST_CATEGORY.ORDER,
@@ -140,6 +167,12 @@ export async function allocateVirtualMailboxAddress(
     .select("_id mailboxAddress businessAnchorId requestor")
     .populate("requestor", "businessAnchorId")
     .lean();
+
+  if (session) {
+    activeRequestsQuery = activeRequestsQuery.session(session);
+  }
+
+  const activeRequestsRaw = await activeRequestsQuery;
 
   const activeRequests = excludeRequestMongoId
     ? activeRequestsRaw.filter(
@@ -178,24 +211,31 @@ export async function ensureMailboxAddressForBusiness({
   requestMongoId,
   requestorOrgId,
   currentMailboxAddress,
+  session = null,
 }) {
   const { default: Request } = await import("../../models/request.model.js");
 
-  let requestorOrgIdStr = String(requestorOrgId || "").trim();
+  let requestorOrgIdStr = normalizeBusinessAnchorId(requestorOrgId);
   const currentMailboxAddressStr = normalizeMailboxAddress(
     currentMailboxAddress,
   );
 
   if (!requestorOrgIdStr && requestMongoId) {
-    const requestRow = await Request.findById(requestMongoId)
+    let requestRowQuery = Request.findById(requestMongoId)
       .select("businessAnchorId requestor")
       .populate("requestor", "businessAnchorId")
       .lean();
 
-    const directAnchorId = String(requestRow?.businessAnchorId || "").trim();
-    const requestorAnchorId = String(
-      requestRow?.requestor?.businessAnchorId || "",
-    ).trim();
+    if (session) {
+      requestRowQuery = requestRowQuery.session(session);
+    }
+
+    const requestRow = await requestRowQuery;
+
+    const directAnchorId = normalizeBusinessAnchorId(requestRow?.businessAnchorId);
+    const requestorAnchorId = normalizeBusinessAnchorId(
+      requestRow?.requestor?.businessAnchorId,
+    );
 
     requestorOrgIdStr = directAnchorId || requestorAnchorId;
   }
@@ -204,7 +244,7 @@ export async function ensureMailboxAddressForBusiness({
     return currentMailboxAddressStr || null;
   }
 
-  const activeRequests = await Request.find({
+  let activeRequestsQuery = Request.find({
     manufacturerStage: { $in: ACTIVE_MAILBOX_STAGES },
     mailboxAddress: { $ne: null },
     requestCategory: REQUEST_CATEGORY.ORDER,
@@ -213,6 +253,12 @@ export async function ensureMailboxAddressForBusiness({
     .select("_id mailboxAddress businessAnchorId requestor")
     .populate("requestor", "businessAnchorId")
     .lean();
+
+  if (session) {
+    activeRequestsQuery = activeRequestsQuery.session(session);
+  }
+
+  const activeRequests = await activeRequestsQuery;
 
   const reusableAddress = findReusableMailboxAddressForBusiness({
     activeRequests,
@@ -229,10 +275,11 @@ export async function ensureMailboxAddressForBusiness({
   if (!currentMailboxAddressStr) {
     return allocateVirtualMailboxAddress(requestorOrgIdStr, {
       excludeRequestMongoId: requestMongoId,
+      session,
     });
   }
 
-  const mailboxOccupants = await Request.find({
+  let mailboxOccupantsQuery = Request.find({
     manufacturerStage: { $in: ACTIVE_MAILBOX_STAGES },
     requestCategory: REQUEST_CATEGORY.ORDER,
     $expr: {
@@ -253,6 +300,12 @@ export async function ensureMailboxAddressForBusiness({
     .populate("requestor", "businessAnchorId")
     .lean();
 
+  if (session) {
+    mailboxOccupantsQuery = mailboxOccupantsQuery.session(session);
+  }
+
+  const mailboxOccupants = await mailboxOccupantsQuery;
+
   const hasDifferentBusinessOccupant = mailboxOccupants.some((row) => {
     const occupantBusinessAnchorKey = resolveOccupantAnchorKey(row);
     if (!occupantBusinessAnchorKey) return false;
@@ -266,5 +319,6 @@ export async function ensureMailboxAddressForBusiness({
 
   return allocateVirtualMailboxAddress(requestorOrgIdStr, {
     excludeRequestMongoId: requestMongoId,
+    session,
   });
 }

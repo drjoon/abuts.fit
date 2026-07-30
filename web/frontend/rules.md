@@ -31,10 +31,16 @@
 
 - 수동 집하(포장.발송)에서 한진 외 발송 방식은 `shippingWorkflow.manualDeliveryMethods`를 표시/관리합니다.
   - 추적관리 발송 방식은 `manualDeliveryMethods` 대표 1개만 표시합니다(다중 폴백 금지).
+  - 한진 외 발송 사유 목록(추가/수정/삭제)은 로컬 state가 아니라 서버 전역 설정 SSOT를 사용합니다.
+    - 조회/저장 API: `GET/PUT /api/requests/shipping/manual-pickup-reasons`
   - 입력 UI: `src/pages/manufacturer/worksheet/custom_abutment/shipping/components/MailboxGrid.tsx`
   - 추적 표시: `src/pages/manufacturer/worksheet/custom_abutment/tracking/TrackingPage.tsx`
   - 우편함 상세 표시: `src/pages/manufacturer/worksheet/custom_abutment/shipping/components/MailboxContentsModal.tsx`
   - 타입: `src/types/request.ts`
+
+- 제조사 워크시트 상단 검색 인풋 SSOT는 `WorksheetStageSearchInput` 단일 컴포넌트입니다.
+  - 공정 탭(의뢰/CAM/가공/세척.패킹/포장.발송/추적관리)의 검색 폭 정책은 개별 페이지에서 재정의하지 않고
+    `src/pages/manufacturer/worksheet/custom_abutment/components/WorksheetStageSearchInput.tsx`에서 공통으로 관리합니다.
 
 - 포장.발송 우편함 상세 모달 캐시 일관성:
   - `RequestPage`에서 우편함 상세 모달 오픈 시, 요약(`mailboxSummaries.requestCount`)과 캐시 건수가 다르면 캐시를 사용하지 않고 `/api/requests/shipping/mailbox-requests`를 재조회합니다.
