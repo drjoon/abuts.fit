@@ -282,8 +282,10 @@ export default function RequestorPracticePage() {
   const [chatDraft, setChatDraft] = useState("");
   const [chatAttachedFiles, setChatAttachedFiles] = useState<File[]>([]);
   const [chatSending, setChatSending] = useState(false);
+  const [transferCardsMaxHeightPx, setTransferCardsMaxHeightPx] = useState<number | null>(null);
   const chatBottomRef = useRef<HTMLDivElement | null>(null);
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
+  const transferCardsGridRef = useRef<HTMLDivElement | null>(null);
   const realtimeReloadTimerRef = useRef<number | null>(null);
   const chatRoomResolveSeqRef = useRef(0);
 
@@ -685,6 +687,72 @@ export default function RequestorPracticePage() {
     return sections.join("\n\n").trim();
   }, [selectedTransfer]);
 
+  const recalculateTransferCardsMaxHeight = useCallback(() => {
+    const grid = transferCardsGridRef.current;
+    if (!grid) {
+      setTransferCardsMaxHeightPx(null);
+      return;
+    }
+
+    const cardEls = Array.from(grid.querySelectorAll<HTMLElement>("[data-transfer-card='true']"));
+    if (cardEls.length === 0) {
+      setTransferCardsMaxHeightPx(null);
+      return;
+    }
+
+    const gridStyle = window.getComputedStyle(grid);
+    const rowGap = Number.parseFloat(gridStyle.rowGap || "0") || 0;
+    const templateColumns = String(gridStyle.gridTemplateColumns || "");
+    const repeatMatch = templateColumns.match(/repeat\((\d+),/);
+    const columnCount = repeatMatch
+      ? Number(repeatMatch[1] || 1)
+      : templateColumns
+          .split(" ")
+          .map((token) => token.trim())
+          .filter(Boolean).length || 1;
+
+    const targetRows = columnCount >= 2 ? 3 : 6;
+
+    const rowMaxHeightByTop = new Map<number, number>();
+    for (const card of cardEls) {
+      const top = card.offsetTop;
+      const h = card.offsetHeight;
+      const prev = rowMaxHeightByTop.get(top) || 0;
+      if (h > prev) rowMaxHeightByTop.set(top, h);
+    }
+
+    const rowTops = [...rowMaxHeightByTop.keys()].sort((a, b) => a - b);
+    const visibleRowCount = Math.min(targetRows, rowTops.length);
+    const visibleRowsHeight = rowTops
+      .slice(0, visibleRowCount)
+      .reduce((sum, top) => sum + Number(rowMaxHeightByTop.get(top) || 0), 0);
+    const totalGapHeight = Math.max(0, visibleRowCount - 1) * rowGap;
+
+    setTransferCardsMaxHeightPx(Math.ceil(visibleRowsHeight + totalGapHeight));
+  }, []);
+
+  useEffect(() => {
+    recalculateTransferCardsMaxHeight();
+
+    const grid = transferCardsGridRef.current;
+    if (!grid || typeof ResizeObserver === "undefined") return;
+
+    const observer = new ResizeObserver(() => {
+      recalculateTransferCardsMaxHeight();
+    });
+
+    observer.observe(grid);
+    for (const child of Array.from(grid.children)) {
+      observer.observe(child);
+    }
+
+    window.addEventListener("resize", recalculateTransferCardsMaxHeight);
+    return () => {
+      window.removeEventListener("resize", recalculateTransferCardsMaxHeight);
+      observer.disconnect();
+    };
+  }, [recalculateTransferCardsMaxHeight, sortedFilteredTransfers]);
+
   const markTransferRead = useCallback(
     async (transfer: ReceivedPracticeTransfer) => {
       if (!token || transfer.isRead) return;
@@ -1020,64 +1088,70 @@ export default function RequestorPracticePage() {
                 <div className="text-sm text-muted-foreground">표시할 치과 전송 내역이 없습니다.</div>
               ) : null}
 
-              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                {sortedFilteredTransfers.map((transfer) => {
-                  const chatUnreadCount = unreadByTransferId.get(transfer.transferId) || 0;
-                  const toothWorksPreview = formatToothWorksSummary(transfer.toothWorksSummary);
-                  return (
-                    <button
-                      key={transfer._id || transfer.transferId}
-                      type="button"
-                      onClick={() => void openTransferDialog(transfer)}
-                      className="w-full rounded-lg border p-4 text-left transition hover:border-primary/40 hover:bg-muted/20"
-                    >
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <div className="flex items-center gap-2">
-                          <Building2 className="h-4 w-4 text-muted-foreground" />
-                          <span className="font-semibold">{transfer.transferId}</span>
-                          {chatUnreadCount > 0 ? (
+              <div
+                className="overflow-y-auto pr-1"
+                style={transferCardsMaxHeightPx ? { maxHeight: `${transferCardsMaxHeightPx}px` } : undefined}
+              >
+                <div ref={transferCardsGridRef} className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                  {sortedFilteredTransfers.map((transfer) => {
+                    const chatUnreadCount = unreadByTransferId.get(transfer.transferId) || 0;
+                    const toothWorksPreview = formatToothWorksSummary(transfer.toothWorksSummary);
+                    return (
+                      <button
+                        key={transfer._id || transfer.transferId}
+                        type="button"
+                        onClick={() => void openTransferDialog(transfer)}
+                        className="w-full rounded-lg border p-4 text-left transition hover:border-primary/40 hover:bg-muted/20"
+                        data-transfer-card="true"
+                      >
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <Building2 className="h-4 w-4 text-muted-foreground" />
+                            <span className="font-semibold">{transfer.transferId}</span>
+                            {chatUnreadCount > 0 ? (
+                              <Badge
+                                variant="destructive"
+                                className="h-5 min-w-5 justify-center px-1 text-[11px] leading-none"
+                              >
+                                {chatUnreadCount > 99 ? "99+" : chatUnreadCount}
+                              </Badge>
+                            ) : null}
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs text-muted-foreground">
+                              {formatDateTime(transfer.createdAt)}
+                            </span>
                             <Badge
-                              variant="destructive"
-                              className="h-5 min-w-5 justify-center px-1 text-[11px] leading-none"
+                              variant={transfer.isRead ? "secondary" : "destructive"}
+                              className="shrink-0 whitespace-nowrap"
                             >
-                              {chatUnreadCount > 99 ? "99+" : chatUnreadCount}
+                              {transfer.isRead ? "수신완료" : "수신전"}
                             </Badge>
-                          ) : null}
+                          </div>
                         </div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs text-muted-foreground">
-                            {formatDateTime(transfer.createdAt)}
-                          </span>
-                          <Badge
-                            variant={transfer.isRead ? "secondary" : "destructive"}
-                            className="shrink-0 whitespace-nowrap"
-                          >
-                            {transfer.isRead ? "수신완료" : "수신전"}
-                          </Badge>
+
+                        <div className="mt-2 text-sm text-muted-foreground">
+                          치과: {transfer.practice.businessName || "-"}
+                          {transfer.practice.userName ? ` · 담당자 ${transfer.practice.userName}` : ""}
                         </div>
-                      </div>
 
-                      <div className="mt-2 text-sm text-muted-foreground">
-                        치과: {transfer.practice.businessName || "-"}
-                        {transfer.practice.userName ? ` · 담당자 ${transfer.practice.userName}` : ""}
-                      </div>
-
-                      <p className="mt-2 text-xs text-muted-foreground truncate">
-                        파일 {transfer.fileCount}개
-                        {transfer.orderDate ? ` · 주문 ${transfer.orderDate}` : ""}
-                        {transfer.arrivalDate ? ` · 도착 ${transfer.arrivalDate}` : ""}
-                        {toothWorksPreview
-                          ? ` · 치아별 ${toothWorksPreview}`
-                          : transfer.prosthesisTypes.length
-                            ? ` · 형태 ${transfer.prosthesisTypes.join(", ")}`
+                        <p className="mt-2 text-xs text-muted-foreground truncate">
+                          파일 {transfer.fileCount}개
+                          {transfer.orderDate ? ` · 주문 ${transfer.orderDate}` : ""}
+                          {transfer.arrivalDate ? ` · 도착 ${transfer.arrivalDate}` : ""}
+                          {toothWorksPreview
+                            ? ` · 치아별 ${toothWorksPreview}`
+                            : transfer.prosthesisTypes.length
+                              ? ` · 형태 ${transfer.prosthesisTypes.join(", ")}`
+                              : ""}
+                          {String(transfer.transferMemo || "").trim()
+                            ? ` · 메모: ${String(transfer.transferMemo || "").replace(/\s+/g, " ").trim()}`
                             : ""}
-                        {String(transfer.transferMemo || "").trim()
-                          ? ` · 메모: ${String(transfer.transferMemo || "").replace(/\s+/g, " ").trim()}`
-                          : ""}
-                      </p>
-                    </button>
-                  );
-                })}
+                        </p>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
 
               {!error && hasMore ? (

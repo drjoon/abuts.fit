@@ -3259,56 +3259,58 @@ export const PracticeFileTransferPage = () => {
                     검색 조건에 맞는 의뢰 내역이 없습니다.
                   </div>
                 ) : (
-                  groupedTransfers.map((transfer) => {
-                    const targetLabText = String(transfer.targetLab || "-")
-                      .replace(/\s*→.*$/g, "")
-                      .trim() || "-";
-                    return (
-                    <button
-                      key={`${transfer.id}:${transfer.createdAt}`}
-                      type="button"
-                      className="w-full rounded-lg border px-3 py-2 text-sm flex items-center justify-between gap-3 text-left hover:bg-muted/40"
-                      onClick={() => void handleOpenTransferDialog(transfer)}
-                    >
-                      <div className="min-w-0">
-                        <p className="font-medium truncate">{transfer.transferId !== "-" ? transfer.transferId : transfer.id}</p>
-                        <div className="mt-0.5 flex items-center gap-2">
-                          <p className="text-xs text-muted-foreground truncate">{transfer.createdAt}</p>
-                          <Badge variant="outline" className="whitespace-nowrap">{transfer.status}</Badge>
-                        </div>
-                        <p className="text-xs text-muted-foreground truncate">{targetLabText}</p>
-                        <p className="text-xs text-muted-foreground truncate">
-                          파일 {transfer.fileCount}개
-                          {String(transfer.transferMemo || "").trim()
-                            ? ` · 메모: ${String(transfer.transferMemo || "").replace(/\s+/g, " ").trim()}`
-                            : ""}
-                        </p>
-                      </div>
-                      <div className="shrink-0 flex items-center gap-2">
-                        <div className="relative">
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              void handleAskDeleteTransfer(transfer);
-                            }}
-                            aria-label="의뢰 내역 삭제"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                          {transfer.unreadCount > 0 ? (
-                            <span className="absolute -top-1 -right-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-semibold text-white leading-none">
-                              {transfer.unreadCount > 99 ? "99+" : transfer.unreadCount}
-                            </span>
-                          ) : null}
-                        </div>
-                      </div>
-                    </button>
-                    );
-                  })
+                  <div className="max-h-[19rem] space-y-2 overflow-y-auto pr-1">
+                    {groupedTransfers.map((transfer) => {
+                      const targetLabText = String(transfer.targetLab || "-")
+                        .replace(/\s*→.*$/g, "")
+                        .trim() || "-";
+                      return (
+                        <button
+                          key={`${transfer.id}:${transfer.createdAt}`}
+                          type="button"
+                          className="w-full rounded-lg border px-3 py-2 text-sm flex items-center justify-between gap-3 text-left hover:bg-muted/40"
+                          onClick={() => void handleOpenTransferDialog(transfer)}
+                        >
+                          <div className="min-w-0">
+                            <p className="font-medium truncate">{transfer.transferId !== "-" ? transfer.transferId : transfer.id}</p>
+                            <div className="mt-0.5 flex items-center gap-2">
+                              <p className="text-xs text-muted-foreground truncate">{transfer.createdAt}</p>
+                              <Badge variant="outline" className="whitespace-nowrap">{transfer.status}</Badge>
+                            </div>
+                            <p className="text-xs text-muted-foreground truncate">{targetLabText}</p>
+                            <p className="text-xs text-muted-foreground truncate">
+                              파일 {transfer.fileCount}개
+                              {String(transfer.transferMemo || "").trim()
+                                ? ` · 메모: ${String(transfer.transferMemo || "").replace(/\s+/g, " ").trim()}`
+                                : ""}
+                            </p>
+                          </div>
+                          <div className="shrink-0 flex items-center gap-2">
+                            <div className="relative">
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  void handleAskDeleteTransfer(transfer);
+                                }}
+                                aria-label="의뢰 내역 삭제"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                              {transfer.unreadCount > 0 ? (
+                                <span className="absolute -top-1 -right-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-semibold text-white leading-none">
+                                  {transfer.unreadCount > 99 ? "99+" : transfer.unreadCount}
+                                </span>
+                              ) : null}
+                            </div>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
                 )}
               </CardContent>
             </Card>
