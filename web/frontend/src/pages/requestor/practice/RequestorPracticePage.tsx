@@ -4,6 +4,7 @@
 // - web/frontend/src/shared/realtime/socket.ts
 // - web/frontend/src/pages/requestor/referralGroups/RequestorReferralPage.tsx
 // - web/frontend/src/pages/practice/PracticeDropzonePage.tsx
+// - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
 // - web/backend/modules/practiceTransfers/practiceTransfer.routes.js
 // - web/backend/controllers/practiceTransfers/practiceTransfer.controller.js
 // - web/backend/models/practiceTransfer.model.js
@@ -50,6 +51,10 @@ type ReceivedPracticeTransfer = {
   transferId: string;
   targetLabName: string;
   transferMemo: string;
+  orderDate: string;
+  arrivalDate: string;
+  prosthesisTypes: string[];
+  toothWorksSummary: string;
   status: string;
   createdAt: string;
   updatedAt: string;
@@ -97,6 +102,159 @@ const formatBytes = (bytes: number) => {
   if (n < 1024) return `${n}B`;
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)}KB`;
   return `${(n / (1024 * 1024)).toFixed(2)}MB`;
+};
+
+type ParsedToothWorkSummaryItem = {
+  toothNumber: string;
+  prosthesisType: string;
+  customAbutment: boolean;
+  bridgeLinkedTeeth: string[];
+};
+
+const parseToothWorksSummary = (value: string): ParsedToothWorkSummaryItem[] =>
+  String(value || "")
+    .split("|")
+    .map((chunk) => String(chunk || "").trim())
+    .filter(Boolean)
+    .map((chunk) => {
+      const [toothRaw, ...rest] = chunk.split("=");
+      const toothNumber = String(toothRaw || "").trim();
+      const rhs = String(rest.join("=") || "").trim();
+      if (!rhs) {
+        return {
+          toothNumber,
+          prosthesisType: "",
+          customAbutment: false,
+          bridgeLinkedTeeth: [] as string[],
+        };
+      }
+
+      const linkedMatch = rhs.match(/\(([^)]+)\)\s*$/);
+      const linkedRaw = linkedMatch ? linkedMatch[1] : "";
+      let withoutLinked = linkedMatch ? rhs.replace(/\(([^)]+)\)\s*$/, "").trim() : rhs;
+
+      let customAbutment = false;
+      if (withoutLinked.startsWith("커스텀어벗+")) {
+        customAbutment = true;
+        withoutLinked = withoutLinked.replace("커스텀어벗+", "").trim();
+      }
+      if (withoutLinked.includes("+커스텀어벗")) {
+        customAbutment = true;
+        withoutLinked = withoutLinked.replace("+커스텀어벗", "").trim();
+      }
+
+      const prosthesisType = withoutLinked;
+      const bridgeLinkedTeeth = linkedRaw
+        ? linkedRaw
+            .split("-")
+            .map((v) => String(v || "").trim())
+            .filter((v) => v && v !== toothNumber)
+        : [];
+
+      return {
+        toothNumber,
+        prosthesisType,
+        customAbutment,
+        bridgeLinkedTeeth,
+      };
+    })
+    .filter((row) => row.toothNumber && row.prosthesisType);
+
+const formatToothWorksSummary = (raw: string, options?: { multiline?: boolean }) => {
+  const rows = parseToothWorksSummary(raw);
+  if (!rows.length) return "";
+
+  const formattedRows = rows.map((row) => {
+    const details: string[] = [];
+
+    for (const token of String(row.prosthesisType || "")
+      .split("+")
+      .map((v) => v.trim())
+      .filter(Boolean)) {
+      details.push(token);
+    }
+
+    if (row.customAbutment) {
+      details.push("커스텀어벗");
+    }
+
+    if (row.bridgeLinkedTeeth.length > 0) {
+      details.push(`연결 ${[row.toothNumber, ...row.bridgeLinkedTeeth].join("-")}`);
+    }
+
+    return `${row.toothNumber}번: ${details.join(" · ")}`;
+  });
+
+  return options?.multiline ? formattedRows.join("\n") : formattedRows.join(" / ");
+};
+
+const parsePracticeTransferMemoMeta = (rawMemo: string) => {
+  const source = String(rawMemo || "").trim();
+  const lines = source.split(/\r?\n/);
+  const memoLines: string[] = [];
+  let orderDate = "";
+  let arrivalDate = "";
+  let prosthesisTypes: string[] = [];
+  let toothWorksSummary = "";
+
+  for (const line of lines) {
+    const trimmed = String(line || "").trim();
+    if (!trimmed) {
+      memoLines.push("");
+      continue;
+    }
+
+    const orderMatch = trimmed.match(/^\[\s*주문일\s*:\s*([0-9]{4}-[0-9]{2}-[0-9]{2})\s*\]$/);
+    if (orderMatch) {
+      orderDate = orderMatch[1];
+      continue;
+    }
+
+    const arrivalMatch = trimmed.match(/^\[\s*도착일\s*:\s*([0-9]{4}-[0-9]{2}-[0-9]{2})\s*\]$/);
+    if (arrivalMatch) {
+      arrivalDate = arrivalMatch[1];
+      continue;
+    }
+
+    const defaultDaysMatch = trimmed.match(/^\[\s*도착기본일수\s*:\s*\d{1,3}\s*\]$/);
+    if (defaultDaysMatch) {
+      continue;
+    }
+
+    const prosthesisCatalogMatch = trimmed.match(/^\[\s*보철물형태목록\s*:\s*(.+)\]$/);
+    if (prosthesisCatalogMatch) {
+      prosthesisTypes = String(prosthesisCatalogMatch[1] || "")
+        .split(",")
+        .map((item) => item.trim())
+        .filter(Boolean);
+      continue;
+    }
+
+    const legacyProsthesisMatch = trimmed.match(/^\[\s*보철물형태\s*:\s*(.+)\]$/);
+    if (legacyProsthesisMatch) {
+      prosthesisTypes = String(legacyProsthesisMatch[1] || "")
+        .split(",")
+        .map((item) => item.trim())
+        .filter(Boolean);
+      continue;
+    }
+
+    const toothWorksMatch = trimmed.match(/^\[\s*치아보철\s*:\s*(.+)\]$/);
+    if (toothWorksMatch) {
+      toothWorksSummary = String(toothWorksMatch[1] || "").trim();
+      continue;
+    }
+
+    memoLines.push(line);
+  }
+
+  return {
+    orderDate,
+    arrivalDate,
+    prosthesisTypes,
+    toothWorksSummary,
+    memo: memoLines.join("\n").replace(/^\s+|\s+$/g, ""),
+  };
 };
 
 export default function RequestorPracticePage() {
@@ -217,11 +375,17 @@ export default function RequestorPracticePage() {
           })
           .filter((f) => f.originalName && f.s3Key);
 
+        const parsedMemo = parsePracticeTransferMemoMeta(String(r.transferMemo || ""));
+
         return {
           _id: String(r._id || "").trim(),
           transferId: String(r.transferId || "").trim(),
           targetLabName: String(r.targetLabName || "").trim(),
-          transferMemo: String(r.transferMemo || "").trim(),
+          transferMemo: parsedMemo.memo,
+          orderDate: parsedMemo.orderDate,
+          arrivalDate: parsedMemo.arrivalDate,
+          prosthesisTypes: parsedMemo.prosthesisTypes,
+          toothWorksSummary: parsedMemo.toothWorksSummary,
           status: String(r.status || "active").trim(),
           createdAt: String(r.createdAt || "").trim(),
           updatedAt: String(r.updatedAt || "").trim(),
@@ -469,6 +633,10 @@ export default function RequestorPracticePage() {
         t.practice.businessName,
         t.practice.userName,
         t.transferMemo,
+        t.orderDate,
+        t.arrivalDate,
+        t.prosthesisTypes.join(" "),
+        t.toothWorksSummary,
         String(t.status || "") === "canceled" ? "취소" : "발송완료",
         t.isRead ? "수신완료" : "수신전",
         fileText,
@@ -500,6 +668,22 @@ export default function RequestorPracticePage() {
       return bSortTs - aSortTs;
     });
   }, [filteredTransfers, rooms]);
+
+  const selectedTransferDisplayMemo = useMemo(() => {
+    const plainMemo = String(selectedTransfer?.transferMemo || "").trim();
+    const formattedToothWorks = formatToothWorksSummary(
+      String(selectedTransfer?.toothWorksSummary || ""),
+      { multiline: true },
+    );
+
+    const sections: string[] = [];
+    if (plainMemo) sections.push(plainMemo);
+    if (formattedToothWorks) {
+      sections.push(`치아보철\n${formattedToothWorks}`);
+    }
+
+    return sections.join("\n\n").trim();
+  }, [selectedTransfer]);
 
   const markTransferRead = useCallback(
     async (transfer: ReceivedPracticeTransfer) => {
@@ -839,6 +1023,7 @@ export default function RequestorPracticePage() {
               <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                 {sortedFilteredTransfers.map((transfer) => {
                   const chatUnreadCount = unreadByTransferId.get(transfer.transferId) || 0;
+                  const toothWorksPreview = formatToothWorksSummary(transfer.toothWorksSummary);
                   return (
                     <button
                       key={transfer._id || transfer.transferId}
@@ -879,6 +1064,13 @@ export default function RequestorPracticePage() {
 
                       <p className="mt-2 text-xs text-muted-foreground truncate">
                         파일 {transfer.fileCount}개
+                        {transfer.orderDate ? ` · 주문 ${transfer.orderDate}` : ""}
+                        {transfer.arrivalDate ? ` · 도착 ${transfer.arrivalDate}` : ""}
+                        {toothWorksPreview
+                          ? ` · 치아별 ${toothWorksPreview}`
+                          : transfer.prosthesisTypes.length
+                            ? ` · 형태 ${transfer.prosthesisTypes.join(", ")}`
+                            : ""}
                         {String(transfer.transferMemo || "").trim()
                           ? ` · 메모: ${String(transfer.transferMemo || "").replace(/\s+/g, " ").trim()}`
                           : ""}
@@ -980,8 +1172,10 @@ export default function RequestorPracticePage() {
           },
           { label: "치과", value: selectedTransfer?.practice.businessName || "-" },
           { label: "담당자", value: selectedTransfer?.practice.userName || "-" },
+          { label: "주문일", value: selectedTransfer?.orderDate || "-" },
+          { label: "도착일", value: selectedTransfer?.arrivalDate || "-" },
         ] satisfies PracticeTransferDialogSummaryItem[]}
-        memo={selectedTransfer?.transferMemo || ""}
+        memo={selectedTransferDisplayMemo}
         filesLabel="전송 파일"
         files={
           (selectedTransfer?.files || []).map((file) => ({

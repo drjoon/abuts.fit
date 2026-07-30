@@ -15,13 +15,16 @@
  * - web/backend/controllers/chats/chat.controller.js
  * - web/backend/modules/practiceTransfers/practiceTransfer.routes.js
  * - web/backend/controllers/practiceTransfers/practiceTransfer.controller.js
+ * - web/backend/controllers/practiceTransfers/practiceTransferSettings.controller.js
  * - web/backend/models/practiceTransferDraft.model.js
+ * - web/backend/models/businessAnchor.model.js
  * - web/backend/modules/files/file.routes.js
  * - web/backend/controllers/files/file.controller.js
  * - web/frontend/src/pages/practice/hooks/usePracticeTransferStep1.ts
  * - web/frontend/src/shared/realtime/socket.ts
  * - web/frontend/src/shared/realtime/useAppEventDebouncedReload.ts
  * - web/frontend/src/shared/components/PracticeTransferDetailChatDialog.tsx
+ * - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -37,6 +40,8 @@ import {
   Copy,
   Link2,
   Send,
+  Plus,
+  Settings,
 } from "lucide-react";
 import {
   Card,
@@ -94,6 +99,22 @@ import {
   type PracticeTransferDialogFileItem,
   type PracticeTransferDialogSummaryItem,
 } from "@/shared/components/PracticeTransferDetailChatDialog";
+import { PracticeDateInputField } from "@/shared/components/practice/PracticeDateInputField";
+import { PracticeTransferMiddleGrid } from "@/shared/components/practice/PracticeTransferMiddleGrid";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 type RecentRequestItem = {
   id: string; // 전송 내 파일 row 식별자(표시/그룹/optimistic 삭제용)
@@ -133,6 +154,10 @@ type PracticeTransferDraftPayload = {
   targetLabAnchorId: string | null;
   targetLabName: string;
   transferMemo: string;
+  orderDate?: string;
+  arrivalDate?: string;
+  arrivalDefaultDays?: number;
+  prosthesisTypes?: string[];
   files: DraftTransferFileItem[];
   updatedAt?: string | null;
   createdAt?: string | null;
@@ -170,11 +195,82 @@ const extractTransferIdFromMessage = (message: string) => {
   return String(matched?.[1] || "").trim();
 };
 
+const formatToothWorksForDisplay = (rows: ToothWorkSelection[], options?: { multiline?: boolean }) => {
+  const normalizedRows = normalizeToothWorks(rows);
+  if (!normalizedRows.length) return "";
+
+  const formattedRows = normalizedRows.map((row) => {
+    const details = [row.prosthesisType];
+    if (row.customAbutment) details.push("커스텀어벗");
+    if (row.prosthesisType === "브리지" && row.bridgeLinkedTeeth.length > 0) {
+      details.push(`연결 ${[row.toothNumber, ...row.bridgeLinkedTeeth].join("-")}`);
+    }
+    return `${row.toothNumber}번: ${details.join(" · ")}`;
+  });
+
+  return options?.multiline ? formattedRows.join("\n") : formattedRows.join(" / ");
+};
+
+const parseLegacyToothWorksSummary = (value: string): ToothWorkSelection[] => {
+  const serialized = String(value || "")
+    .split(/\s*[,|]\s*/)
+    .map((chunk) => String(chunk || "").trim())
+    .filter(Boolean)
+    .map((chunk) => {
+      const match = chunk.match(/^([1-4][1-8])\s*[:=]\s*(.+)$/);
+      if (!match) return "";
+      return `${match[1]}=${String(match[2] || "").trim()}`;
+    })
+    .filter(Boolean)
+    .join(" | ");
+
+  if (!serialized) return [];
+  return parseToothWorks(serialized);
+};
+
+const formatTransferMemoForDisplay = (rawMemo: string) => {
+  const memo = String(rawMemo || "").trim();
+  if (!memo) return "";
+
+  // 이미 줄바꿈 형태면 그대로 사용
+  if (memo.includes("\n")) return memo;
+
+  // 레거시 한 줄 요약(`주문일 ... · 도착일 ... · 치아별 ...`)만 키워드 단위로 분리
+  // 치아별 상세 내부의 `· 커스텀어벗`까지 분리되지 않도록 lookahead 키워드로 제한한다.
+  const compactParts = memo
+    .split(/\s*·\s*(?=(?:주문일|도착일|치아별|형태|보철물\s*형태)\b)/)
+    .map((part) => String(part || "").trim())
+    .filter(Boolean);
+
+  if (compactParts.length <= 1) return memo;
+
+  const sections: string[] = [];
+  for (const part of compactParts) {
+    const toothPart = part.match(/^치아별\s*(.+)$/);
+    if (toothPart) {
+      const parsed = parseLegacyToothWorksSummary(toothPart[1]);
+      const toothText = formatToothWorksForDisplay(parsed, { multiline: true }) || toothPart[1];
+      sections.push(`치아보철\n${toothText}`);
+      continue;
+    }
+
+    const prosthesisPart = part.match(/^(?:형태|보철물\s*형태)\s*(.+)$/);
+    if (prosthesisPart) {
+      sections.push(`보철물 형태\n${prosthesisPart[1]}`);
+      continue;
+    }
+
+    sections.push(part);
+  }
+
+  return sections.join("\n\n").trim();
+};
+
 const extractTransferMemoFromMessage = (message: string) => {
   const raw = String(message || "").trim();
   if (!raw) return "";
 
-  return raw
+  const stripped = raw
     .split(/\r?\n/)
     .map((line) =>
       String(line || "")
@@ -185,12 +281,339 @@ const extractTransferMemoFromMessage = (message: string) => {
     .filter(Boolean)
     .join("\n")
     .trim();
+
+  const parsed = parsePracticeTransferMemoMeta(stripped);
+  if (String(parsed.memo || "").trim()) {
+    const freeMemo = String(parsed.memo || "").trim();
+    const toothSummary = formatToothWorksForDisplay(parsed.toothWorks, { multiline: true });
+    if (!toothSummary) return formatTransferMemoForDisplay(freeMemo);
+    return formatTransferMemoForDisplay(`${freeMemo}\n\n치아보철\n${toothSummary}`);
+  }
+
+  const hasKnownMeta = /\[\s*(주문일|도착일|도착기본일수|보철물형태목록|보철물형태|치아보철)\s*:/i.test(
+    stripped,
+  );
+  if (!hasKnownMeta) return formatTransferMemoForDisplay(stripped);
+
+  const summarySections: string[] = [];
+  const dateSummaryParts: string[] = [];
+  if (parsed.orderDate) dateSummaryParts.push(`주문일 ${parsed.orderDate}`);
+  if (parsed.arrivalDate) dateSummaryParts.push(`도착일 ${parsed.arrivalDate}`);
+  if (dateSummaryParts.length > 0) {
+    summarySections.push(dateSummaryParts.join(" · "));
+  }
+
+  const toothSummary = formatToothWorksForDisplay(parsed.toothWorks, { multiline: true });
+  if (toothSummary) {
+    summarySections.push(`치아보철\n${toothSummary}`);
+  } else if (parsed.prosthesisTypes.length > 0) {
+    summarySections.push(`보철물 형태\n${parsed.prosthesisTypes.join(", ")}`);
+  }
+
+  return formatTransferMemoForDisplay(summarySections.join("\n\n").trim());
 };
 
 const makeTransferId = () => {
   const t = Date.now().toString(36).toUpperCase();
   const r = Math.random().toString(36).slice(2, 8).toUpperCase();
   return `PTX-${t}-${r}`;
+};
+
+const DEFAULT_ARRIVAL_OFFSET_DAYS = 7;
+const PRESET_PROSTHESIS_TYPES = ["크라운", "브리지", "인레이"] as const;
+const PRACTICE_TRANSFER_SETTINGS_LOCAL_KEY = "practice_transfer_settings_v1";
+const TOOTH_TENS_OPTIONS = ["1", "2", "3", "4"] as const;
+const TOOTH_ONES_OPTIONS = ["1", "2", "3", "4", "5", "6", "7", "8"] as const;
+
+type ToothWorkSelection = {
+  toothNumber: string;
+  prosthesisType: string;
+  customAbutment: boolean;
+  bridgeLinkedTeeth: string[];
+};
+
+type ParsedPracticeTransferMemoMeta = {
+  orderDate: string;
+  arrivalDate: string;
+  arrivalDefaultDays: number;
+  prosthesisTypes: string[];
+  toothWorks: ToothWorkSelection[];
+  memo: string;
+};
+
+type PracticeTransferSettingsPayload = {
+  arrivalDefaultDays?: number;
+  prosthesisTypes?: string[];
+  updatedAt?: string | null;
+};
+
+type PracticeTransferLocalFormDraft = {
+  orderDate?: string;
+  arrivalDate?: string;
+  requestMemo?: string;
+  selectedLab?: {
+    _id?: string;
+    name?: string;
+    businessNumber?: string;
+    representativeName?: string;
+    address?: string;
+    businessType?: string;
+  } | null;
+  toothWorks?: ToothWorkSelection[];
+  updatedAt?: number;
+};
+
+const toKstDateInputValue = (date = new Date()) => {
+  const fmt = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+  return fmt.format(date);
+};
+
+const addDaysToDateInput = (dateInput: string, days: number) => {
+  const base = String(dateInput || "").trim();
+  if (!base) return "";
+  const d = new Date(`${base}T00:00:00+09:00`);
+  if (Number.isNaN(d.getTime())) return "";
+  d.setDate(d.getDate() + Number(days || 0));
+  return toKstDateInputValue(d);
+};
+
+const normalizeArrivalDefaultDays = (value: number) => {
+  if (!Number.isFinite(Number(value))) return DEFAULT_ARRIVAL_OFFSET_DAYS;
+  return Math.max(0, Math.min(365, Math.floor(Number(value))));
+};
+
+const normalizeProsthesisTypes = (items: string[]) => {
+  const canonical = items
+    .map((item) => String(item || "").trim())
+    .filter(Boolean)
+    .map((item) => {
+      if (item === "커스텀어벗+크라운") return "크라운";
+      if (item === "커스텀어벗+브리지") return "브리지";
+      return item;
+    });
+
+  const deduped = Array.from(
+    new Map(canonical.map((item) => [item.toLowerCase(), item])).values(),
+  );
+
+  const filtered = deduped.filter(
+    (item) => item === "크라운" || item === "브리지" || item === "인레이",
+  );
+  return filtered.length ? filtered : [...PRESET_PROSTHESIS_TYPES];
+};
+
+const getAdjacentTeeth = (toothNumber: string) => {
+  const raw = String(toothNumber || "").trim();
+  if (!/^[1-4][1-8]$/.test(raw)) return [] as string[];
+  const tens = raw.slice(0, 1);
+  const ones = Number(raw.slice(1, 2));
+  const out: string[] = [];
+  if (ones - 1 >= 1) out.push(`${tens}${ones - 1}`);
+  if (ones + 1 <= 8) out.push(`${tens}${ones + 1}`);
+  return out;
+};
+
+const toToothSortNumber = (toothNumber: string) => {
+  const raw = String(toothNumber || "").trim();
+  if (!/^[1-4][1-8]$/.test(raw)) return Number.MAX_SAFE_INTEGER;
+  return Number(raw);
+};
+
+const normalizeToothWorks = (items: ToothWorkSelection[]) =>
+  items
+    .map((row) => {
+      const toothNumber = String(row?.toothNumber || "").trim();
+      const prosthesisType = String(row?.prosthesisType || "").trim();
+      const isCrownOrBridge = prosthesisType === "크라운" || prosthesisType === "브리지";
+      const customAbutment = isCrownOrBridge ? Boolean(row?.customAbutment) : false;
+      const adjacent = getAdjacentTeeth(toothNumber);
+      const bridgeLinkedTeeth =
+        prosthesisType === "브리지" && Array.isArray(row?.bridgeLinkedTeeth)
+          ? row.bridgeLinkedTeeth
+              .map((v) => String(v || "").trim())
+              .filter((v) => adjacent.includes(v))
+          : [];
+
+      return {
+        toothNumber,
+        prosthesisType,
+        customAbutment,
+        bridgeLinkedTeeth,
+      };
+    })
+    .filter((row) => /^[1-4][1-8]$/.test(row.toothNumber) && row.prosthesisType);
+
+const serializeToothWorks = (rows: ToothWorkSelection[]) =>
+  normalizeToothWorks(rows)
+    .map((row) => {
+      const linked =
+        row.prosthesisType === "브리지" && row.bridgeLinkedTeeth.length > 0
+          ? `(${[row.toothNumber, ...row.bridgeLinkedTeeth].join("-")})`
+          : "";
+      const custom =
+        (row.prosthesisType === "크라운" || row.prosthesisType === "브리지") && row.customAbutment
+          ? "+커스텀어벗"
+          : "";
+      return `${row.toothNumber}=${row.prosthesisType}${custom}${linked}`;
+    })
+    .join(" | ");
+
+const parseToothWorks = (value: string) =>
+  String(value || "")
+    .split("|")
+    .map((chunk) => String(chunk || "").trim())
+    .filter(Boolean)
+    .map((chunk) => {
+      const [toothRaw, ...rest] = chunk.split("=");
+      const toothNumber = String(toothRaw || "").trim();
+      const rhs = String(rest.join("=") || "").trim();
+      if (!rhs) {
+        return {
+          toothNumber,
+          prosthesisType: "",
+          customAbutment: false,
+          bridgeLinkedTeeth: [] as string[],
+        };
+      }
+
+      const linkedMatch = rhs.match(/\(([^)]+)\)\s*$/);
+      const linkedRaw = linkedMatch ? linkedMatch[1] : "";
+      let withoutLinked = linkedMatch ? rhs.replace(/\(([^)]+)\)\s*$/, "").trim() : rhs;
+
+      let customAbutment = false;
+      if (withoutLinked.startsWith("커스텀어벗+")) {
+        customAbutment = true;
+        withoutLinked = withoutLinked.replace("커스텀어벗+", "").trim();
+      }
+      if (withoutLinked.includes("+커스텀어벗")) {
+        customAbutment = true;
+        withoutLinked = withoutLinked.replace("+커스텀어벗", "").trim();
+      }
+      const prosthesisType = withoutLinked;
+      const bridgeLinkedTeeth = linkedRaw
+        ? linkedRaw
+            .split("-")
+            .map((v) => String(v || "").trim())
+            .filter((v) => v && v !== toothNumber)
+        : [];
+
+      return {
+        toothNumber,
+        prosthesisType,
+        customAbutment,
+        bridgeLinkedTeeth,
+      };
+    })
+    .filter((row) => row.toothNumber && row.prosthesisType);
+
+const parsePracticeTransferMemoMeta = (rawMemo: string): ParsedPracticeTransferMemoMeta => {
+  const source = String(rawMemo || "").trim();
+  const defaultOrderDate = toKstDateInputValue(new Date());
+  const defaults: ParsedPracticeTransferMemoMeta = {
+    orderDate: defaultOrderDate,
+    arrivalDate: addDaysToDateInput(defaultOrderDate, DEFAULT_ARRIVAL_OFFSET_DAYS),
+    arrivalDefaultDays: DEFAULT_ARRIVAL_OFFSET_DAYS,
+    prosthesisTypes: [...PRESET_PROSTHESIS_TYPES],
+    toothWorks: [],
+    memo: source,
+  };
+  if (!source) return defaults;
+
+  const lines = source.split(/\r?\n/);
+  const memoLines: string[] = [];
+  let orderDate = defaults.orderDate;
+  let arrivalDate = defaults.arrivalDate;
+  let arrivalDefaultDays = defaults.arrivalDefaultDays;
+  let prosthesisTypes = defaults.prosthesisTypes;
+  let toothWorks: ToothWorkSelection[] = [];
+
+  for (const line of lines) {
+    const trimmed = String(line || "").trim();
+    if (!trimmed) {
+      memoLines.push("");
+      continue;
+    }
+
+    const orderMatch = trimmed.match(/^\[\s*주문일\s*:\s*([0-9]{4}-[0-9]{2}-[0-9]{2})\s*\]$/);
+    if (orderMatch) {
+      orderDate = orderMatch[1];
+      continue;
+    }
+
+    const arrivalMatch = trimmed.match(/^\[\s*도착일\s*:\s*([0-9]{4}-[0-9]{2}-[0-9]{2})\s*\]$/);
+    if (arrivalMatch) {
+      arrivalDate = arrivalMatch[1];
+      continue;
+    }
+
+    const defaultDaysMatch = trimmed.match(/^\[\s*도착기본일수\s*:\s*(\d{1,3})\s*\]$/);
+    if (defaultDaysMatch) {
+      arrivalDefaultDays = normalizeArrivalDefaultDays(Number(defaultDaysMatch[1] || 0));
+      continue;
+    }
+
+    const prosthesisCatalogMatch = trimmed.match(/^\[\s*보철물형태목록\s*:\s*(.+)\]$/);
+    if (prosthesisCatalogMatch) {
+      prosthesisTypes = normalizeProsthesisTypes(
+        String(prosthesisCatalogMatch[1] || "")
+          .split(",")
+          .map((item) => item.trim()),
+      );
+      continue;
+    }
+
+    const legacyProsthesisMatch = trimmed.match(/^\[\s*보철물형태\s*:\s*(.+)\]$/);
+    if (legacyProsthesisMatch) {
+      prosthesisTypes = normalizeProsthesisTypes(
+        String(legacyProsthesisMatch[1] || "")
+          .split(",")
+          .map((item) => item.trim()),
+      );
+      continue;
+    }
+
+    const toothWorksMatch = trimmed.match(/^\[\s*치아보철\s*:\s*(.+)\]$/);
+    if (toothWorksMatch) {
+      toothWorks = parseToothWorks(toothWorksMatch[1]);
+      continue;
+    }
+
+    memoLines.push(line);
+  }
+
+  const memo = memoLines.join("\n").replace(/^\s+|\s+$/g, "");
+  return {
+    orderDate,
+    arrivalDate: arrivalDate || addDaysToDateInput(orderDate, arrivalDefaultDays),
+    arrivalDefaultDays,
+    prosthesisTypes: normalizeProsthesisTypes(prosthesisTypes),
+    toothWorks: normalizeToothWorks(toothWorks),
+    memo,
+  };
+};
+
+const buildPracticeTransferMemo = (params: {
+  memo: string;
+  orderDate: string;
+  arrivalDate: string;
+  arrivalDefaultDays: number;
+  prosthesisTypes: string[];
+  toothWorks: ToothWorkSelection[];
+}) => {
+  const lines = [
+    `[주문일: ${String(params.orderDate || "").trim()}]`,
+    `[도착일: ${String(params.arrivalDate || "").trim()}]`,
+    `[도착기본일수: ${normalizeArrivalDefaultDays(params.arrivalDefaultDays)}]`,
+    `[보철물형태목록: ${normalizeProsthesisTypes(params.prosthesisTypes).join(", ")}]`,
+    `[치아보철: ${serializeToothWorks(params.toothWorks)}]`,
+  ];
+  const memo = String(params.memo || "").trim();
+  return memo ? `${lines.join("\n")}\n${memo}` : lines.join("\n");
 };
 
 const normalizePatientNameKey = (value: string) => {
@@ -278,6 +701,7 @@ const formatFileSize = (bytes: number) => {
 };
 
 const PRACTICE_TRANSFER_TEMP_DRAFT_KEY = "practice_file_transfer_temp_draft_v1";
+const PRACTICE_TRANSFER_FORM_LOCAL_KEY = "practice_file_transfer_form_local_v1";
 
 const toDraftFileKey = (file: { originalName: string; size: number; s3Key: string }) =>
   `${String(file.originalName || "").trim()}:${Number(file.size || 0)}:${String(file.s3Key || "").trim()}`;
@@ -331,6 +755,141 @@ export const PracticeFileTransferPage = () => {
     clearAllFiles,
     rememberLab,
   } = usePracticeTransferStep1();
+  const todayDate = useMemo(() => toKstDateInputValue(new Date()), []);
+  const [orderDate, setOrderDate] = useState(todayDate);
+  const [arrivalDefaultDays, setArrivalDefaultDays] = useState(DEFAULT_ARRIVAL_OFFSET_DAYS);
+  const [arrivalDate, setArrivalDate] = useState(
+    addDaysToDateInput(todayDate, DEFAULT_ARRIVAL_OFFSET_DAYS),
+  );
+
+  const [arrivalSettingsDialogOpen, setArrivalSettingsDialogOpen] = useState(false);
+  const [arrivalDefaultDaysDraft, setArrivalDefaultDaysDraft] = useState(DEFAULT_ARRIVAL_OFFSET_DAYS);
+  const [savingArrivalSettings, setSavingArrivalSettings] = useState(false);
+
+  const [prosthesisTypeSettingsDialogOpen, setProsthesisTypeSettingsDialogOpen] = useState(false);
+  const [prosthesisTypeInput, setProsthesisTypeInput] = useState("");
+  const [prosthesisTypeCatalog, setProsthesisTypeCatalog] = useState<string[]>([...PRESET_PROSTHESIS_TYPES]);
+  const [prosthesisTypeCatalogDraft, setProsthesisTypeCatalogDraft] = useState<string[]>([
+    ...PRESET_PROSTHESIS_TYPES,
+  ]);
+  const [savingProsthesisTypeSettings, setSavingProsthesisTypeSettings] = useState(false);
+
+  const [toothWorks, setToothWorks] = useState<ToothWorkSelection[]>([]);
+
+  const normalizedProsthesisTypes = useMemo(
+    () => normalizeProsthesisTypes(prosthesisTypeCatalog),
+    [prosthesisTypeCatalog],
+  );
+  const normalizedToothWorks = useMemo(() => normalizeToothWorks(toothWorks), [toothWorks]);
+
+  const orderedToothWorkRows = useMemo(() => {
+    if (toothWorks.length === 0) return [] as Array<{
+      row: ToothWorkSelection;
+      originalIndex: number;
+      linkPrev: boolean;
+      linkNext: boolean;
+    }>;
+
+    const rows = toothWorks.map((row, idx) => ({ row, idx }));
+    const bridgeIndices = rows
+      .filter(
+        ({ row }) =>
+          row.prosthesisType === "브리지" &&
+          /^[1-4][1-8]$/.test(String(row.toothNumber || "").trim()),
+      )
+      .map(({ idx }) => idx);
+
+    const byTooth = new Map<string, number>();
+    for (const { row, idx } of rows) {
+      const tooth = String(row.toothNumber || "").trim();
+      if (!/^[1-4][1-8]$/.test(tooth)) continue;
+      if (!byTooth.has(tooth)) byTooth.set(tooth, idx);
+    }
+
+    const bridgeSet = new Set(bridgeIndices);
+    const adjacency = new Map<number, Set<number>>();
+    bridgeIndices.forEach((idx) => adjacency.set(idx, new Set<number>()));
+
+    for (const idx of bridgeIndices) {
+      const row = rows[idx].row;
+      const links = Array.isArray(row.bridgeLinkedTeeth) ? row.bridgeLinkedTeeth : [];
+      for (const linked of links) {
+        const linkedIdx = byTooth.get(String(linked || "").trim());
+        if (linkedIdx == null) continue;
+        if (!bridgeSet.has(linkedIdx)) continue;
+        adjacency.get(idx)?.add(linkedIdx);
+        adjacency.get(linkedIdx)?.add(idx);
+      }
+    }
+
+    const componentKeyByIdx = new Map<number, string>();
+    const visited = new Set<number>();
+
+    for (const seed of bridgeIndices) {
+      if (visited.has(seed)) continue;
+      const stack = [seed];
+      const component: number[] = [];
+      visited.add(seed);
+
+      while (stack.length > 0) {
+        const cur = stack.pop() as number;
+        component.push(cur);
+        const nexts = adjacency.get(cur) || new Set<number>();
+        for (const n of nexts) {
+          if (visited.has(n)) continue;
+          visited.add(n);
+          stack.push(n);
+        }
+      }
+
+      component.sort(
+        (a, b) =>
+          toToothSortNumber(rows[a].row.toothNumber) - toToothSortNumber(rows[b].row.toothNumber),
+      );
+      const key = component.map((idx) => rows[idx].row.toothNumber).join("-");
+      component.forEach((idx) => componentKeyByIdx.set(idx, key));
+    }
+
+    const emitted = new Set<number>();
+    const orderedIndices: number[] = [];
+
+    for (let i = 0; i < rows.length; i += 1) {
+      if (emitted.has(i)) continue;
+      const key = componentKeyByIdx.get(i);
+      if (!key) {
+        orderedIndices.push(i);
+        emitted.add(i);
+        continue;
+      }
+
+      const componentIndices = bridgeIndices
+        .filter((idx) => componentKeyByIdx.get(idx) === key)
+        .sort(
+          (a, b) =>
+            toToothSortNumber(rows[a].row.toothNumber) - toToothSortNumber(rows[b].row.toothNumber),
+        );
+
+      componentIndices.forEach((idx) => {
+        if (emitted.has(idx)) return;
+        orderedIndices.push(idx);
+        emitted.add(idx);
+      });
+    }
+
+    return orderedIndices.map((originalIndex, orderedIndex, arr) => {
+      const row = rows[originalIndex].row;
+      const key = componentKeyByIdx.get(originalIndex) || "";
+      const prevIdx = orderedIndex > 0 ? arr[orderedIndex - 1] : -1;
+      const nextIdx = orderedIndex < arr.length - 1 ? arr[orderedIndex + 1] : -1;
+      const linkPrev =
+        key.length > 0 && prevIdx >= 0 && componentKeyByIdx.get(prevIdx) === key;
+      const linkNext =
+        key.length > 0 && nextIdx >= 0 && componentKeyByIdx.get(nextIdx) === key;
+
+      return { row, originalIndex, linkPrev, linkNext };
+    });
+  }, [toothWorks]);
+
   const { uploadFilesWithToast } = useUploadWithProgressToast({ token: authToken });
   const { rooms: chatRooms } = useChatRooms();
 
@@ -369,6 +928,81 @@ export const PracticeFileTransferPage = () => {
       })),
     ],
     [files, draftFiles],
+  );
+
+  const applyPracticeTransferSettings = useCallback((payload: PracticeTransferSettingsPayload | null) => {
+    if (!payload || typeof payload !== "object") return;
+    const nextArrivalDefaultDays = normalizeArrivalDefaultDays(
+      Number(payload.arrivalDefaultDays ?? DEFAULT_ARRIVAL_OFFSET_DAYS),
+    );
+    const nextProsthesisTypes = normalizeProsthesisTypes(
+      Array.isArray(payload.prosthesisTypes) ? payload.prosthesisTypes : [...PRESET_PROSTHESIS_TYPES],
+    );
+
+    setArrivalDefaultDays(nextArrivalDefaultDays);
+    setArrivalDefaultDaysDraft(nextArrivalDefaultDays);
+    setProsthesisTypeCatalog(nextProsthesisTypes);
+    setProsthesisTypeCatalogDraft(nextProsthesisTypes);
+    setToothWorks((prev) =>
+      prev.map((row) => ({
+        toothNumber: row.toothNumber,
+        prosthesisType: nextProsthesisTypes.some((type) => type === row.prosthesisType)
+          ? row.prosthesisType
+          : nextProsthesisTypes[0] || "크라운",
+        customAbutment: Boolean(row.customAbutment),
+        bridgeLinkedTeeth: Array.isArray(row.bridgeLinkedTeeth) ? row.bridgeLinkedTeeth : [],
+      })),
+    );
+  }, []);
+
+  const savePracticeTransferSettingsToServer = useCallback(
+    async (params: { arrivalDefaultDays: number; prosthesisTypes: string[] }) => {
+      if (!authToken) return false;
+      const normalizedDays = normalizeArrivalDefaultDays(params.arrivalDefaultDays);
+      const normalizedTypes = normalizeProsthesisTypes(params.prosthesisTypes);
+
+      const res = await apiFetch<unknown>({
+        path: "/api/practice/transfers/settings",
+        method: "POST",
+        token: authToken,
+        jsonBody: {
+          arrivalDefaultDays: normalizedDays,
+          prosthesisTypes: normalizedTypes,
+        },
+      });
+
+      if (!res.ok) {
+        const body = asApiMessagePayload(res.data);
+        throw new Error(String(body?.message || "전송 설정 저장에 실패했습니다."));
+      }
+
+      const body =
+        res.data && typeof res.data === "object"
+          ? (res.data as { data?: unknown })
+          : {};
+      const payload =
+        body.data && typeof body.data === "object"
+          ? (body.data as PracticeTransferSettingsPayload)
+          : null;
+
+      applyPracticeTransferSettings(payload);
+
+      try {
+        localStorage.setItem(
+          PRACTICE_TRANSFER_SETTINGS_LOCAL_KEY,
+          JSON.stringify({
+            arrivalDefaultDays: normalizedDays,
+            prosthesisTypes: normalizedTypes,
+            savedAt: Date.now(),
+          }),
+        );
+      } catch {
+        // ignore
+      }
+
+      return true;
+    },
+    [applyPracticeTransferSettings, authToken],
   );
 
   const loadPracticeTransferDraft = useCallback(async () => {
@@ -429,15 +1063,74 @@ export const PracticeFileTransferPage = () => {
         });
       }
 
-      if (String(payload.transferMemo || "").trim()) {
-        setRequestMemo(String(payload.transferMemo || ""));
-      }
+      const parsedMemo = parsePracticeTransferMemoMeta(String(payload.transferMemo || ""));
+      const normalizedDays = normalizeArrivalDefaultDays(parsedMemo.arrivalDefaultDays);
+      const normalizedTypes = normalizeProsthesisTypes(parsedMemo.prosthesisTypes);
+
+      setRequestMemo(parsedMemo.memo);
+      setOrderDate(parsedMemo.orderDate || todayDate);
+      setArrivalDefaultDays(normalizedDays);
+      setArrivalDefaultDaysDraft(normalizedDays);
+      setArrivalDate(
+        parsedMemo.arrivalDate ||
+          addDaysToDateInput(parsedMemo.orderDate || todayDate, normalizedDays),
+      );
+      setProsthesisTypeCatalog(normalizedTypes);
+      setProsthesisTypeCatalogDraft(normalizedTypes);
+      setToothWorks(
+        normalizeToothWorks(parsedMemo.toothWorks).length
+          ? normalizeToothWorks(parsedMemo.toothWorks)
+          : normalizedTypes.length
+            ? [{ toothNumber: "", prosthesisType: normalizedTypes[0], customAbutment: false, bridgeLinkedTeeth: [] }]
+            : [],
+      );
 
       setTempSaveDirty(false);
     } catch {
       // ignore (초안 불러오기 실패는 사용자 흐름 중단 금지)
     }
-  }, [authToken, setRequestMemo, setSelectedLab]);
+  }, [authToken, setRequestMemo, setSelectedLab, todayDate]);
+
+  const loadPracticeTransferSettingsFromServer = useCallback(async () => {
+    if (!authToken) return;
+    try {
+      const res = await apiFetch<unknown>({
+        path: "/api/practice/transfers/settings",
+        method: "GET",
+        token: authToken,
+      });
+      if (!res.ok) return;
+
+      const body =
+        res.data && typeof res.data === "object"
+          ? (res.data as { data?: unknown })
+          : {};
+      const payload =
+        body.data && typeof body.data === "object"
+          ? (body.data as PracticeTransferSettingsPayload)
+          : null;
+
+      applyPracticeTransferSettings(payload);
+      try {
+        localStorage.setItem(
+          PRACTICE_TRANSFER_SETTINGS_LOCAL_KEY,
+          JSON.stringify({
+            arrivalDefaultDays: normalizeArrivalDefaultDays(Number(payload?.arrivalDefaultDays ?? DEFAULT_ARRIVAL_OFFSET_DAYS)),
+            prosthesisTypes: normalizeProsthesisTypes(
+              Array.isArray(payload?.prosthesisTypes)
+                ? payload?.prosthesisTypes
+                : [...PRESET_PROSTHESIS_TYPES],
+            ),
+            savedAt: Date.now(),
+          }),
+        );
+      } catch {
+        // ignore
+      }
+    } catch {
+      // ignore
+    }
+  }, [applyPracticeTransferSettings, authToken]);
 
   const loadRecentRequests = useCallback(async () => {
     if (!authToken) {
@@ -536,8 +1229,90 @@ export const PracticeFileTransferPage = () => {
   }, [authToken]);
 
   useEffect(() => {
+    try {
+      const raw = localStorage.getItem(PRACTICE_TRANSFER_SETTINGS_LOCAL_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as PracticeTransferSettingsPayload;
+      applyPracticeTransferSettings(parsed);
+    } catch {
+      // ignore
+    }
+  }, [applyPracticeTransferSettings]);
+
+  useEffect(() => {
+    void loadPracticeTransferSettingsFromServer();
+  }, [loadPracticeTransferSettingsFromServer]);
+
+  useEffect(() => {
     void loadRecentRequests();
   }, [loadRecentRequests]);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(PRACTICE_TRANSFER_FORM_LOCAL_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as PracticeTransferLocalFormDraft;
+
+      const restoredOrderDate = String(parsed.orderDate || "").trim();
+      const restoredArrivalDate = String(parsed.arrivalDate || "").trim();
+      const restoredMemo = String(parsed.requestMemo || "");
+
+      if (restoredOrderDate) setOrderDate(restoredOrderDate);
+      if (restoredArrivalDate) setArrivalDate(restoredArrivalDate);
+      setRequestMemo(restoredMemo);
+
+      const lab = parsed.selectedLab;
+      if (lab && typeof lab === "object") {
+        const id = String(lab._id || "").trim();
+        const name = String(lab.name || "").trim();
+        if (id && name) {
+          setSelectedLab({
+            _id: id,
+            name,
+            businessNumber: String(lab.businessNumber || "").trim(),
+            representativeName: String(lab.representativeName || "").trim(),
+            address: String(lab.address || "").trim(),
+            businessType: String(lab.businessType || "requestor").trim(),
+          });
+        }
+      }
+
+      if (Array.isArray(parsed.toothWorks)) {
+        const normalized = normalizeToothWorks(parsed.toothWorks);
+        if (normalized.length > 0) {
+          setToothWorks(normalized);
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }, [setRequestMemo, setSelectedLab]);
+
+  useEffect(() => {
+    const payload: PracticeTransferLocalFormDraft = {
+      orderDate,
+      arrivalDate,
+      requestMemo,
+      selectedLab: selectedLab
+        ? {
+            _id: String(selectedLab._id || "").trim(),
+            name: String(selectedLab.name || "").trim(),
+            businessNumber: String(selectedLab.businessNumber || "").trim(),
+            representativeName: String(selectedLab.representativeName || "").trim(),
+            address: String(selectedLab.address || "").trim(),
+            businessType: String(selectedLab.businessType || "requestor").trim(),
+          }
+        : null,
+      toothWorks,
+      updatedAt: Date.now(),
+    };
+
+    try {
+      localStorage.setItem(PRACTICE_TRANSFER_FORM_LOCAL_KEY, JSON.stringify(payload));
+    } catch {
+      // ignore
+    }
+  }, [arrivalDate, orderDate, requestMemo, selectedLab, toothWorks]);
 
   useEffect(() => {
     void loadPracticeTransferDraft();
@@ -792,6 +1567,11 @@ export const PracticeFileTransferPage = () => {
       .filter(Boolean);
     return new Set(ids);
   }, [authUser]);
+
+  const selectedTransferDisplayMemo = useMemo(
+    () => formatTransferMemoForDisplay(String(selectedTransfer?.transferMemo || "")),
+    [selectedTransfer?.transferMemo],
+  );
 
   const handleOpenTransferDialog = async (transfer: RecentTransferItem) => {
     const resolveSeq = ++chatRoomResolveSeqRef.current;
@@ -1294,6 +2074,15 @@ export const PracticeFileTransferPage = () => {
         new Map(mergedDraftFiles.map((row) => [toDraftFileKey(row), row])).values(),
       );
 
+      const transferMemo = buildPracticeTransferMemo({
+        memo: requestMemo,
+        orderDate,
+        arrivalDate,
+        arrivalDefaultDays,
+        prosthesisTypes: normalizedProsthesisTypes,
+        toothWorks: normalizedToothWorks,
+      });
+
       const res = await apiFetch<unknown>({
         path: "/api/practice/transfers/draft",
         method: "POST",
@@ -1301,7 +2090,7 @@ export const PracticeFileTransferPage = () => {
         jsonBody: {
           targetLabAnchorId: String(selectedLab?._id || "").trim() || null,
           targetLabName: String(selectedLab?.name || "").trim(),
-          transferMemo: String(requestMemo || "").trim(),
+          transferMemo,
           files: dedupedDraftFiles.map((row) => ({
             fileId: row.fileId,
           })),
@@ -1392,9 +2181,49 @@ export const PracticeFileTransferPage = () => {
       return;
     }
 
-    if (!String(requestMemo || "").trim()) {
+    if (!orderDate || !arrivalDate) {
       toast({
-        title: "의뢰 메모를 입력해주세요",
+        title: "날짜를 확인해주세요",
+        description: "주문일과 도착일을 모두 선택해주세요.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (arrivalDate < orderDate) {
+      toast({
+        title: "도착일을 확인해주세요",
+        description: "도착일은 주문일보다 빠를 수 없습니다.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (normalizedProsthesisTypes.length === 0) {
+      toast({
+        title: "보철물 형태를 선택해주세요",
+        description: "최소 1개 보철물 형태가 필요합니다.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (normalizedToothWorks.length === 0) {
+      toast({
+        title: "치아별 보철물 형태를 입력해주세요",
+        description: "치아번호와 보철물 형태를 최소 1개 이상 지정해주세요.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const hasBridgeWithoutLinkedTooth = normalizedToothWorks.some(
+      (row) => row.prosthesisType === "브리지" && row.bridgeLinkedTeeth.length === 0,
+    );
+    if (hasBridgeWithoutLinkedTooth) {
+      toast({
+        title: "브리지 연결 치아를 선택해주세요",
+        description: "브리지 형태는 인접 치아를 최소 1개 연결해야 합니다.",
         variant: "destructive",
       });
       return;
@@ -1426,7 +2255,14 @@ export const PracticeFileTransferPage = () => {
         (authUser as { business?: string } | null)?.business || authUser?.name || "",
       ).trim();
       const transferId = makeTransferId();
-      const transferMemo = String(requestMemo || "").trim();
+      const transferMemo = buildPracticeTransferMemo({
+        memo: requestMemo,
+        orderDate,
+        arrivalDate,
+        arrivalDefaultDays,
+        prosthesisTypes: normalizedProsthesisTypes,
+        toothWorks: normalizedToothWorks,
+      });
       const caseInfosPayload = transferFiles.map((tempFile, index) => {
         const originalName = String(tempFile.originalName || "").trim();
         const parsed = parseFilenameWithRules(originalName);
@@ -1526,6 +2362,94 @@ export const PracticeFileTransferPage = () => {
     tempSaveDirty &&
     combinedDisplayFiles.length > 0;
 
+  useEffect(() => {
+    if (!orderDate) return;
+    setArrivalDate(addDaysToDateInput(orderDate, arrivalDefaultDays));
+  }, [orderDate, arrivalDefaultDays]);
+
+  useEffect(() => {
+    if (toothWorks.length > 0) return;
+    if (normalizedProsthesisTypes.length === 0) return;
+    setToothWorks([
+      {
+        toothNumber: "",
+        prosthesisType: normalizedProsthesisTypes[0],
+        customAbutment: false,
+        bridgeLinkedTeeth: [],
+      },
+    ]);
+  }, [normalizedProsthesisTypes, toothWorks.length]);
+
+  const handleAddToothWorkRow = () => {
+    setToothWorks((prev) => [
+      ...prev,
+      {
+        toothNumber: "",
+        prosthesisType: normalizedProsthesisTypes[0] || "크라운",
+        customAbutment: false,
+        bridgeLinkedTeeth: [],
+      },
+    ]);
+  };
+
+  const handleSaveArrivalSettings = async () => {
+    if (savingArrivalSettings) return;
+    setSavingArrivalSettings(true);
+    try {
+      const nextDays = normalizeArrivalDefaultDays(arrivalDefaultDaysDraft);
+      const ok = await savePracticeTransferSettingsToServer({
+        arrivalDefaultDays: nextDays,
+        prosthesisTypes: normalizedProsthesisTypes,
+      });
+      if (!ok) throw new Error("설정 저장에 실패했습니다.");
+      setArrivalDate(addDaysToDateInput(orderDate, nextDays));
+      setArrivalSettingsDialogOpen(false);
+      toast({ title: "도착 기본일 설정 저장", description: `기본값을 +${nextDays}일로 저장했습니다.` });
+    } catch (error) {
+      toast({
+        title: "설정 저장 실패",
+        description: error instanceof Error ? error.message : "잠시 후 다시 시도해주세요.",
+        variant: "destructive",
+      });
+    } finally {
+      setSavingArrivalSettings(false);
+    }
+  };
+
+  const handleSaveProsthesisTypeSettings = async () => {
+    if (savingProsthesisTypeSettings) return;
+    setSavingProsthesisTypeSettings(true);
+    try {
+      const nextTypes = normalizeProsthesisTypes(prosthesisTypeCatalogDraft);
+      const ok = await savePracticeTransferSettingsToServer({
+        arrivalDefaultDays,
+        prosthesisTypes: nextTypes,
+      });
+      if (!ok) throw new Error("설정 저장에 실패했습니다.");
+
+      setToothWorks((prev) =>
+        prev.map((row) => ({
+          toothNumber: row.toothNumber,
+          prosthesisType: nextTypes.some((type) => type === row.prosthesisType)
+            ? row.prosthesisType
+            : nextTypes[0] || "크라운",
+          customAbutment: Boolean(row.customAbutment),
+          bridgeLinkedTeeth: Array.isArray(row.bridgeLinkedTeeth) ? row.bridgeLinkedTeeth : [],
+        })),
+      );
+      setProsthesisTypeSettingsDialogOpen(false);
+      toast({ title: "보철물 형태 설정 저장", description: "형태 목록을 저장했습니다." });
+    } catch (error) {
+      toast({
+        title: "설정 저장 실패",
+        description: error instanceof Error ? error.message : "잠시 후 다시 시도해주세요.",
+        variant: "destructive",
+      });
+    } finally {
+      setSavingProsthesisTypeSettings(false);
+    }
+  };
+
   const handleCopyPracticeDropzoneLink = async () => {
     try {
       await navigator.clipboard.writeText(requestorSignupLink);
@@ -1581,7 +2505,7 @@ export const PracticeFileTransferPage = () => {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+              <PracticeTransferMiddleGrid>
                 <div className="flex h-full min-h-0 flex-col gap-3">
                   <div className="rounded-xl border border-dashed bg-background p-4 text-center flex flex-1 flex-col items-center justify-center">
                     <p className="text-base font-semibold">파일을 드래그 & 드롭하세요</p>
@@ -1829,21 +2753,375 @@ export const PracticeFileTransferPage = () => {
                     </Popover>
                   </div>
 
+                  <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <PracticeDateInputField
+                      id="practice-file-transfer-order-date"
+                      label="주문일"
+                      value={orderDate}
+                      onChange={setOrderDate}
+                      labelClassName="text-sm"
+                    />
+
+                    <PracticeDateInputField
+                      id="practice-file-transfer-arrival-date"
+                      label="도착일"
+                      value={arrivalDate}
+                      min={orderDate || undefined}
+                      onChange={setArrivalDate}
+                      labelClassName="text-sm"
+                      labelAction={
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                className="h-7 w-7"
+                                onClick={() => {
+                                  setArrivalDefaultDaysDraft(arrivalDefaultDays);
+                                  setArrivalSettingsDialogOpen(true);
+                                }}
+                              >
+                                <Settings className="h-3.5 w-3.5" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent side="top" className="text-xs">
+                              도착 기본(+일) 설정
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                      }
+                    />
+                  </div>
+
+                  <div className="mt-3 space-y-2">
+                    <div className="flex items-center gap-1">
+                      <Label className="text-sm">보철물 형태</Label>
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7"
+                              onClick={() => {
+                                setProsthesisTypeCatalogDraft(normalizedProsthesisTypes);
+                                setProsthesisTypeSettingsDialogOpen(true);
+                              }}
+                            >
+                              <Settings className="h-3.5 w-3.5" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent side="top" className="text-xs">
+                            보철물 형태 항목 편집
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      {orderedToothWorkRows.map(({ row, originalIndex, linkPrev, linkNext }) => {
+                        const adjacentTeeth = getAdjacentTeeth(row.toothNumber);
+                        const linkedTeeth = Array.isArray(row.bridgeLinkedTeeth)
+                          ? row.bridgeLinkedTeeth.filter((t) => adjacentTeeth.includes(t))
+                          : [];
+                        const isBridge = row.prosthesisType === "브리지";
+                        const canSelectCustomAbutment =
+                          row.prosthesisType === "크라운" || row.prosthesisType === "브리지";
+
+                        return (
+                          <div key={`${originalIndex}:${row.toothNumber}:${row.prosthesisType}`} className="relative pl-4">
+                            {linkPrev ? <span className="absolute left-[7px] -top-2 h-2 w-[2px] bg-blue-500" /> : null}
+                            {linkNext ? <span className="absolute left-[7px] -bottom-2 h-2 w-[2px] bg-blue-500" /> : null}
+                            {linkPrev || linkNext ? (
+                              <span className="absolute left-[7px] top-0 bottom-0 w-[2px] bg-blue-400" />
+                            ) : null}
+                            <span
+                              className={cn(
+                                "absolute left-[3px] top-1/2 h-3 w-3 -translate-y-1/2 rounded-full border",
+                                linkPrev || linkNext
+                                  ? "border-blue-600 bg-blue-500"
+                                  : "border-slate-300 bg-slate-300",
+                              )}
+                            />
+
+                            <div className="space-y-1 rounded-md border px-2 py-1.5">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <div className="grid grid-cols-2 gap-1">
+                                <Select
+                                  value={/^[1-4]/.test(row.toothNumber) ? row.toothNumber.slice(0, 1) : "__empty__"}
+                                  onValueChange={(value) => {
+                                    setToothWorks((prev) => {
+                                      const next = [...prev];
+                                      const ones = /^[1-8]$/.test(next[originalIndex]?.toothNumber?.slice(1, 2) || "")
+                                        ? next[originalIndex].toothNumber.slice(1, 2)
+                                        : "";
+                                      const tens = value === "__empty__" ? "" : value;
+                                      const toothNumber = `${tens}${ones}`;
+                                      const adj = getAdjacentTeeth(toothNumber);
+                                      next[originalIndex] = {
+                                        ...next[originalIndex],
+                                        toothNumber,
+                                        bridgeLinkedTeeth: Array.isArray(next[originalIndex].bridgeLinkedTeeth)
+                                          ? next[originalIndex].bridgeLinkedTeeth.filter((v) => adj.includes(v))
+                                          : [],
+                                      };
+                                      return next;
+                                    });
+                                  }}
+                                >
+                                  <SelectTrigger className="h-8 w-[44px] px-2 text-sm">
+                                    <SelectValue placeholder="1" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="__empty__">-</SelectItem>
+                                    {TOOTH_TENS_OPTIONS.map((digit) => (
+                                      <SelectItem key={`tooth-tens-${digit}`} value={digit}>
+                                        {digit}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+
+                                <Select
+                                  value={/^[1-8]$/.test(row.toothNumber.slice(1, 2)) ? row.toothNumber.slice(1, 2) : "__empty__"}
+                                  onValueChange={(value) => {
+                                    setToothWorks((prev) => {
+                                      const next = [...prev];
+                                      const tens = /^[1-4]$/.test(next[originalIndex]?.toothNumber?.slice(0, 1) || "")
+                                        ? next[originalIndex].toothNumber.slice(0, 1)
+                                        : "";
+                                      const ones = value === "__empty__" ? "" : value;
+                                      const toothNumber = `${tens}${ones}`;
+                                      const adj = getAdjacentTeeth(toothNumber);
+                                      next[originalIndex] = {
+                                        ...next[originalIndex],
+                                        toothNumber,
+                                        bridgeLinkedTeeth: Array.isArray(next[originalIndex].bridgeLinkedTeeth)
+                                          ? next[originalIndex].bridgeLinkedTeeth.filter((v) => adj.includes(v))
+                                          : [],
+                                      };
+                                      return next;
+                                    });
+                                  }}
+                                >
+                                  <SelectTrigger className="h-8 w-[44px] px-2 text-sm">
+                                    <SelectValue placeholder="1" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="__empty__">-</SelectItem>
+                                    {TOOTH_ONES_OPTIONS.map((digit) => (
+                                      <SelectItem key={`tooth-ones-${digit}`} value={digit}>
+                                        {digit}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              </div>
+
+                              <Select
+                                value={row.prosthesisType || "__empty__"}
+                                onValueChange={(value) => {
+                                  setToothWorks((prev) => {
+                                    const next = [...prev];
+                                    const prosthesisType = value === "__empty__" ? "" : value;
+                                    const prevType = String(next[originalIndex]?.prosthesisType || "");
+                                    const currentTooth = String(next[originalIndex]?.toothNumber || "").trim();
+
+                                    next[originalIndex] = {
+                                      ...next[originalIndex],
+                                      prosthesisType,
+                                      customAbutment:
+                                        prosthesisType === "크라운" || prosthesisType === "브리지"
+                                          ? Boolean(next[originalIndex].customAbutment)
+                                          : false,
+                                      bridgeLinkedTeeth:
+                                        prosthesisType === "브리지"
+                                          ? Array.isArray(next[originalIndex].bridgeLinkedTeeth)
+                                            ? next[originalIndex].bridgeLinkedTeeth
+                                            : []
+                                          : [],
+                                    };
+
+                                    const bridgeToNonBridge =
+                                      prevType === "브리지" &&
+                                      prosthesisType !== "브리지" &&
+                                      /^[1-4][1-8]$/.test(currentTooth);
+
+                                    if (bridgeToNonBridge) {
+                                      for (let i = 0; i < next.length; i += 1) {
+                                        if (i === originalIndex) continue;
+                                        const links = Array.isArray(next[i].bridgeLinkedTeeth)
+                                          ? next[i].bridgeLinkedTeeth
+                                          : [];
+                                        if (!links.includes(currentTooth)) continue;
+                                        next[i] = {
+                                          ...next[i],
+                                          bridgeLinkedTeeth: links.filter((v) => v !== currentTooth),
+                                        };
+                                      }
+                                    }
+
+                                    return next;
+                                  });
+                                }}
+                              >
+                                <SelectTrigger className="h-8 w-[76px] px-2 text-sm">
+                                  <SelectValue placeholder="형태" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="__empty__">형태 선택</SelectItem>
+                                  {normalizedProsthesisTypes.map((type) => (
+                                    <SelectItem key={`ptype-${type}`} value={type}>
+                                      {type}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+
+                              {canSelectCustomAbutment ? (
+                                <label className="inline-flex items-center gap-1 text-xs whitespace-nowrap">
+                                  <input
+                                    type="checkbox"
+                                    className="h-3.5 w-3.5"
+                                    checked={Boolean(row.customAbutment)}
+                                    onChange={(e) => {
+                                      const checked = Boolean(e.target.checked);
+                                      setToothWorks((prev) => {
+                                        const next = [...prev];
+                                        next[originalIndex] = {
+                                          ...next[originalIndex],
+                                          customAbutment: checked,
+                                        };
+                                        return next;
+                                      });
+                                    }}
+                                  />
+                                  <span>커스텀어벗</span>
+                                </label>
+                              ) : null}
+
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8"
+                                onClick={() =>
+                                  setToothWorks((prev) => {
+                                    const next = prev.filter((_, i) => i !== originalIndex);
+                                    if (next.length > 0) return next;
+                                    return [{ toothNumber: "", prosthesisType: normalizedProsthesisTypes[0] || "크라운", customAbutment: false, bridgeLinkedTeeth: [] }];
+                                  })
+                                }
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
+
+                            {isBridge ? (
+                              <div className="flex items-center gap-2 text-xs">
+                                {adjacentTeeth.map((adjTooth) => (
+                                  <label key={`adj-${originalIndex}-${adjTooth}`} className="inline-flex items-center gap-1">
+                                      <input
+                                        type="checkbox"
+                                        className="h-4 w-4"
+                                        checked={linkedTeeth.includes(adjTooth)}
+                                        onChange={(e) => {
+                                          const checked = Boolean(e.target.checked);
+                                          setToothWorks((prev) => {
+                                            const next = [...prev];
+                                            const currentTooth = String(next[originalIndex]?.toothNumber || "").trim();
+                                            const currentLinks = Array.isArray(next[originalIndex].bridgeLinkedTeeth)
+                                              ? next[originalIndex].bridgeLinkedTeeth
+                                              : [];
+
+                                            next[originalIndex] = {
+                                              ...next[originalIndex],
+                                              bridgeLinkedTeeth: checked
+                                                ? Array.from(new Set([...currentLinks, adjTooth]))
+                                                : currentLinks.filter((v) => v !== adjTooth),
+                                            };
+
+                                            const pairedIdx = next.findIndex(
+                                              (row, rowIdx) => rowIdx !== originalIndex && row.toothNumber === adjTooth,
+                                            );
+
+                                            if (checked) {
+                                              if (pairedIdx >= 0) {
+                                                const paired = next[pairedIdx];
+                                                const pairedLinks = Array.isArray(paired.bridgeLinkedTeeth)
+                                                  ? paired.bridgeLinkedTeeth
+                                                  : [];
+                                                next[pairedIdx] = {
+                                                  ...paired,
+                                                  prosthesisType: "브리지",
+                                                  bridgeLinkedTeeth: currentTooth
+                                                    ? Array.from(new Set([...pairedLinks, currentTooth]))
+                                                    : pairedLinks,
+                                                };
+                                              } else {
+                                                next.push({
+                                                  toothNumber: adjTooth,
+                                                  prosthesisType: "브리지",
+                                                  customAbutment: false,
+                                                  bridgeLinkedTeeth: currentTooth ? [currentTooth] : [],
+                                                });
+                                              }
+                                            } else if (pairedIdx >= 0 && currentTooth) {
+                                              const paired = next[pairedIdx];
+                                              const pairedLinks = Array.isArray(paired.bridgeLinkedTeeth)
+                                                ? paired.bridgeLinkedTeeth
+                                                : [];
+                                              next[pairedIdx] = {
+                                                ...paired,
+                                                bridgeLinkedTeeth: pairedLinks.filter((v) => v !== currentTooth),
+                                              };
+                                            }
+
+                                            return next;
+                                          });
+                                        }}
+                                      />
+                                      <span>{adjTooth}</span>
+                                    </label>
+                                  ))}
+                                </div>
+                              ) : null}
+                            </div>
+                          </div>
+                        );
+                      })}
+
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-8"
+                        onClick={handleAddToothWorkRow}
+                      >
+                        <Plus className="mr-1 h-3.5 w-3.5" />
+                        치아 추가
+                      </Button>
+                    </div>
+                  </div>
+
                   <div className="mt-3 flex min-h-0 flex-1 flex-col space-y-2">
                     <Label htmlFor="practice-file-transfer-request-memo" className="text-sm">
                       의뢰 메모
                     </Label>
                     <Textarea
                       id="practice-file-transfer-request-memo"
-                      rows={8}
+                      rows={6}
                       value={requestMemo}
                       onChange={(e) => setRequestMemo(e.target.value)}
-                      placeholder="예: #36 커스텀 어버트먼트, 마진 라인 메모..."
+                      placeholder="요청사항을 입력하세요"
                       className="min-h-0 flex-1 resize-none text-base"
                     />
                   </div>
                 </div>
-              </div>
+              </PracticeTransferMiddleGrid>
 
               <div className="flex items-center justify-between gap-2">
                 <TooltipProvider>
@@ -2054,7 +3332,7 @@ export const PracticeFileTransferPage = () => {
             { label: "기공소", value: selectedTransfer?.targetLab || "-" },
             { label: "파일 수", value: `${selectedTransfer?.fileCount || 0}개` },
           ] satisfies PracticeTransferDialogSummaryItem[]}
-          memo={selectedTransfer?.transferMemo || ""}
+          memo={selectedTransferDisplayMemo}
           filesLabel="파일"
           files={
             (selectedTransfer?.files || []).map((file, idx) => ({
@@ -2097,6 +3375,146 @@ export const PracticeFileTransferPage = () => {
             (!String(chatDraft || "").trim() && chatAttachedFiles.length === 0)
           }
         />
+
+        <Dialog
+          open={arrivalSettingsDialogOpen}
+          onOpenChange={(open) => {
+            setArrivalSettingsDialogOpen(open);
+            if (open) {
+              setArrivalDefaultDaysDraft(arrivalDefaultDays);
+            }
+          }}
+        >
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>소요일 설정</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-2">
+              <Input
+                id="practice-arrival-default-days-dialog"
+                type="number"
+                min={0}
+                max={365}
+                value={arrivalDefaultDaysDraft}
+                onChange={(e) => setArrivalDefaultDaysDraft(normalizeArrivalDefaultDays(Number(e.target.value || 0)))}
+              />
+              <p className="text-xs text-muted-foreground">
+                주문일 기준으로 도착일이 자동 계산됩니다.
+              </p>
+            </div>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setArrivalSettingsDialogOpen(false)}
+              >
+                취소
+              </Button>
+              <Button
+                type="button"
+                onClick={() => void handleSaveArrivalSettings()}
+                disabled={savingArrivalSettings}
+              >
+                {savingArrivalSettings ? "저장 중..." : "저장"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog
+          open={prosthesisTypeSettingsDialogOpen}
+          onOpenChange={(open) => {
+            setProsthesisTypeSettingsDialogOpen(open);
+            if (open) {
+              setProsthesisTypeCatalogDraft(normalizedProsthesisTypes);
+            }
+          }}
+        >
+          <DialogContent className="sm:max-w-lg">
+            <DialogHeader>
+              <DialogTitle>보철물 형태 항목 설정</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-2">
+              {prosthesisTypeCatalogDraft.map((item, index) => (
+                <div key={`${item}:${index}`} className="flex items-center gap-1.5">
+                  <Input
+                    value={item}
+                    onChange={(e) =>
+                      setProsthesisTypeCatalogDraft((prev) => {
+                        const next = [...prev];
+                        next[index] = e.target.value;
+                        return next;
+                      })
+                    }
+                    className="h-9 text-sm"
+                  />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-9 w-9"
+                    onClick={() =>
+                      setProsthesisTypeCatalogDraft((prev) => {
+                        const next = prev.filter((_, i) => i !== index);
+                        return next.length ? next : [...PRESET_PROSTHESIS_TYPES];
+                      })
+                    }
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+              ))}
+
+              <div className="flex items-center gap-1.5">
+                <Input
+                  value={prosthesisTypeInput}
+                  onChange={(e) => setProsthesisTypeInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key !== "Enter") return;
+                    e.preventDefault();
+                    const trimmed = String(prosthesisTypeInput || "").trim();
+                    if (!trimmed) return;
+                    setProsthesisTypeCatalogDraft((prev) => [...prev, trimmed]);
+                    setProsthesisTypeInput("");
+                  }}
+                  placeholder="형태 추가"
+                  className="h-9 text-sm"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-9"
+                  onClick={() => {
+                    const trimmed = String(prosthesisTypeInput || "").trim();
+                    if (!trimmed) return;
+                    setProsthesisTypeCatalogDraft((prev) => [...prev, trimmed]);
+                    setProsthesisTypeInput("");
+                  }}
+                >
+                  <Plus className="mr-1 h-3.5 w-3.5" />
+                  추가
+                </Button>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setProsthesisTypeSettingsDialogOpen(false)}
+              >
+                취소
+              </Button>
+              <Button
+                type="button"
+                onClick={() => void handleSaveProsthesisTypeSettings()}
+                disabled={savingProsthesisTypeSettings}
+              >
+                {savingProsthesisTypeSettings ? "저장 중..." : "저장"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         <ConfirmDialog
           open={deleteConfirmOpen}
