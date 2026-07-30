@@ -344,13 +344,22 @@ const isBridgeLikeProsthesisType = (prosthesisType: string) =>
 const isCustomAbutmentSupportedProsthesisType = (prosthesisType: string) =>
   prosthesisType === "크라운" || prosthesisType === "브리지";
 
+const sanitizeProsthesisTypeLabel = (value: string) => {
+  const trimmed = String(value || "").trim();
+  if (!trimmed) return "";
+
+  const compact = trimmed.replace(/\s+/g, "");
+  if (/^커스텀어벗\+?크라운$/i.test(compact)) return "크라운";
+  if (/^커스텀어벗\+?브리지$/i.test(compact)) return "브리지";
+  if (/^커스텀어벗$/i.test(compact)) return "";
+  return trimmed;
+};
+
 const normalizeProsthesisTypes = (items: string[]) => {
   const canonical = items
-    .map((item) => String(item || "").trim())
+    .map((item) => sanitizeProsthesisTypeLabel(String(item || "")))
     .filter(Boolean)
     .map((item) => {
-      if (item === "커스텀어벗+크라운") return "크라운";
-      if (item === "커스텀어벗+브리지") return "브리지";
       if (/^pontic$/i.test(item)) return "Pontic";
       return item;
     });
@@ -2576,6 +2585,36 @@ export const PracticeFileTransferPage = () => {
     ]);
   };
 
+  const handleClearRequestIntakeCache = () => {
+    try {
+      localStorage.removeItem(PRACTICE_TRANSFER_FORM_LOCAL_KEY);
+    } catch {
+      // ignore
+    }
+
+    setLabOpen(false);
+    setLabSearch("");
+    setSelectedLab(null);
+    setPatientName("");
+    setRequestMemo("");
+    setOrderDate(todayDate);
+    setArrivalDate(addDaysToDateInput(todayDate, arrivalDefaultDays));
+    setToothWorks([
+      {
+        toothNumber: "",
+        prosthesisType: resolveDefaultProsthesisType(normalizedProsthesisTypes),
+        customAbutment: false,
+        bridgeLinkedTeeth: [],
+      },
+    ]);
+    setTempSaveDirty(true);
+
+    toast({
+      title: "의뢰 접수 캐시 삭제",
+      description: "의뢰 접수 카드의 임시 입력값을 초기화했습니다.",
+    });
+  };
+
   const handleSaveArrivalSettings = async () => {
     if (savingArrivalSettings) return;
     setSavingArrivalSettings(true);
@@ -2788,6 +2827,7 @@ export const PracticeFileTransferPage = () => {
                   showBridgeConnections
                   toothTensOptions={TOOTH_TENS_OPTIONS}
                   toothOnesOptions={TOOTH_ONES_OPTIONS}
+                  onClearAll={handleClearRequestIntakeCache}
                 />
               </PracticeTransferMiddleGrid>
 
@@ -3229,7 +3269,9 @@ export const PracticeFileTransferPage = () => {
                     e.preventDefault();
                     const trimmed = String(prosthesisTypeInput || "").trim();
                     if (!trimmed) return;
-                    setProsthesisTypeCatalogDraft((prev) => [...prev, trimmed]);
+                    setProsthesisTypeCatalogDraft((prev) =>
+                      normalizeProsthesisTypes([...prev, trimmed]),
+                    );
                     setProsthesisTypeInput("");
                   }}
                   placeholder="형태 추가"
@@ -3243,7 +3285,9 @@ export const PracticeFileTransferPage = () => {
                   onClick={() => {
                     const trimmed = String(prosthesisTypeInput || "").trim();
                     if (!trimmed) return;
-                    setProsthesisTypeCatalogDraft((prev) => [...prev, trimmed]);
+                    setProsthesisTypeCatalogDraft((prev) =>
+                      normalizeProsthesisTypes([...prev, trimmed]),
+                    );
                     setProsthesisTypeInput("");
                   }}
                 >

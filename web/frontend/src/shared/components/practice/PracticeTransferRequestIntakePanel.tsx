@@ -79,6 +79,7 @@ type Props = {
   showBridgeConnections?: boolean;
   toothTensOptions: readonly string[];
   toothOnesOptions: readonly string[];
+  onClearAll?: () => void;
 };
 
 export const PracticeTransferRequestIntakePanel = ({
@@ -114,6 +115,7 @@ export const PracticeTransferRequestIntakePanel = ({
   showBridgeConnections = false,
   toothTensOptions,
   toothOnesOptions,
+  onClearAll,
 }: Props) => {
   const orderedToothWorkRows = useOrderedToothWorkRows(toothWorks);
   const defaultProsthesisType = normalizedProsthesisTypes.includes("크라운")
@@ -122,8 +124,19 @@ export const PracticeTransferRequestIntakePanel = ({
 
   return (
     <div className="rounded-xl border bg-background p-4 flex h-full min-h-0 flex-col gap-3">
-      <div>
+      <div className="flex items-center justify-between gap-2">
         <h3 className="text-base font-semibold">의뢰 접수</h3>
+        {onClearAll ? (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-8"
+            onClick={onClearAll}
+          >
+            전체삭제
+          </Button>
+        ) : null}
       </div>
 
       <div className="space-y-2">

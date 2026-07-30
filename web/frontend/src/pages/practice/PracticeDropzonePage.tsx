@@ -342,11 +342,22 @@ const addDaysToDateInput = (dateInput: string, days: number) => {
 
 const normalizeArrivalDefaultDays = (value: number) => Math.max(0, Math.floor(Number(value || 0)));
 
+const sanitizeProsthesisTypeLabel = (value: string) => {
+  const trimmed = String(value || "").trim();
+  if (!trimmed) return "";
+
+  const compact = trimmed.replace(/\s+/g, "");
+  if (/^커스텀어벗\+?크라운$/i.test(compact)) return "크라운";
+  if (/^커스텀어벗\+?브리지$/i.test(compact)) return "브리지";
+  if (/^커스텀어벗$/i.test(compact)) return "";
+  return trimmed;
+};
+
 const normalizeProsthesisTypes = (items: string[]) => {
   const deduped = Array.from(
     new Map(
       items
-        .map((item) => String(item || "").trim())
+        .map((item) => sanitizeProsthesisTypeLabel(String(item || "")))
         .filter(Boolean)
         .map((item) => {
           if (/^pontic$/i.test(item)) return ["pontic", "Pontic"] as const;
@@ -823,6 +834,35 @@ export const PracticeDropzonePage = () => {
         bridgeLinkedTeeth: [],
       },
     ]);
+  };
+
+  const handleClearRequestIntakeCache = () => {
+    try {
+      localStorage.removeItem(PRACTICE_DRAFT_STORAGE_KEY);
+    } catch {
+      // ignore
+    }
+
+    setLabOpen(false);
+    setLabSearch("");
+    setSelectedLab(null);
+    setPatientName("");
+    setRequestMemo("");
+    setOrderDate(todayDate);
+    setArrivalDate(addDaysToDateInput(todayDate, arrivalDefaultDays));
+    setToothWorks([
+      {
+        toothNumber: "",
+        prosthesisType: resolveDefaultProsthesisType(normalizedProsthesisTypes),
+        customAbutment: false,
+        bridgeLinkedTeeth: [],
+      },
+    ]);
+
+    toast({
+      title: "의뢰 접수 캐시 삭제",
+      description: "의뢰 접수 카드의 임시 입력값을 초기화했습니다.",
+    });
   };
 
   const handleSaveArrivalSettings = () => {
@@ -1690,6 +1730,7 @@ export const PracticeDropzonePage = () => {
                     showBridgeConnections={false}
                     toothTensOptions={TOOTH_TENS_OPTIONS}
                     toothOnesOptions={TOOTH_ONES_OPTIONS}
+                    onClearAll={handleClearRequestIntakeCache}
                   />
                 </PracticeTransferMiddleGrid>
               </div>
@@ -2061,7 +2102,9 @@ export const PracticeDropzonePage = () => {
                         e.preventDefault();
                         const trimmed = String(prosthesisTypeInput || "").trim();
                         if (!trimmed) return;
-                        setProsthesisTypeCatalogDraft((prev) => [...prev, trimmed]);
+                        setProsthesisTypeCatalogDraft((prev) =>
+                          normalizeProsthesisTypes([...prev, trimmed]),
+                        );
                         setProsthesisTypeInput("");
                       }}
                       placeholder="형태 추가"
@@ -2075,7 +2118,9 @@ export const PracticeDropzonePage = () => {
                       onClick={() => {
                         const trimmed = String(prosthesisTypeInput || "").trim();
                         if (!trimmed) return;
-                        setProsthesisTypeCatalogDraft((prev) => [...prev, trimmed]);
+                        setProsthesisTypeCatalogDraft((prev) =>
+                          normalizeProsthesisTypes([...prev, trimmed]),
+                        );
                         setProsthesisTypeInput("");
                       }}
                     >
