@@ -1077,15 +1077,14 @@ export const PracticeFileTransferPage = () => {
 
       const serverUpdatedAt = new Date(String(payload.updatedAt || "")).getTime();
       const hasValidServerUpdatedAt = Number.isFinite(serverUpdatedAt) && serverUpdatedAt > 0;
-      const shouldKeepLocalForm =
-        localFormUpdatedAtRef.current > 0 &&
-        (!hasValidServerUpdatedAt || localFormUpdatedAtRef.current >= serverUpdatedAt);
+      const shouldKeepLocalForm = localFormUpdatedAtRef.current > 0;
 
       if (import.meta.env.DEV) {
         console.info("[practice-transfer] loadDraft compare", {
           localUpdatedAt: localFormUpdatedAtRef.current,
           serverUpdatedAt: hasValidServerUpdatedAt ? serverUpdatedAt : null,
           shouldKeepLocalForm,
+          reason: shouldKeepLocalForm ? "prefer-local-form" : "use-server-draft",
         });
       }
 
@@ -1451,6 +1450,12 @@ export const PracticeFileTransferPage = () => {
           arrivalDefaultDays,
           prosthesisTypes: normalizedProsthesisTypes,
           toothWorksCount: toothWorks.length,
+          firstToothWork: toothWorks[0]
+            ? {
+                toothNumber: String(toothWorks[0].toothNumber || ""),
+                prosthesisType: String(toothWorks[0].prosthesisType || ""),
+              }
+            : null,
         });
       }
     } catch {
