@@ -336,6 +336,32 @@ export const PracticeTransferRequestIntakePanel = ({
                 보철물 형태 항목 편집
               </TooltipContent>
             </Tooltip>
+
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                  onClick={() =>
+                    setToothWorks([
+                      {
+                        toothNumber: "",
+                        prosthesisType: normalizedProsthesisTypes[0] || "크라운",
+                        customAbutment: false,
+                        bridgeLinkedTeeth: [],
+                      },
+                    ])
+                  }
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="top" className="text-xs">
+                설정된 치아 전체 삭제
+              </TooltipContent>
+            </Tooltip>
           </TooltipProvider>
         </div>
 
