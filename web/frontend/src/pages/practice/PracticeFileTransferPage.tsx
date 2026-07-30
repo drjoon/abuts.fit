@@ -24,6 +24,9 @@
  * - web/frontend/src/shared/realtime/socket.ts
  * - web/frontend/src/shared/realtime/useAppEventDebouncedReload.ts
  * - web/frontend/src/shared/components/PracticeTransferDetailChatDialog.tsx
+ * - web/frontend/src/shared/components/practice/PracticeTransferFilePane.tsx
+ * - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
+ * - web/frontend/src/shared/practice/usePracticeToothWorkEditor.ts
  * - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
  * - web/frontend/src/shared/practice/toothWorkDraft.ts
  */
@@ -102,8 +105,9 @@ import {
   type PracticeTransferDialogFileItem,
   type PracticeTransferDialogSummaryItem,
 } from "@/shared/components/PracticeTransferDetailChatDialog";
-import { PracticeDateInputField } from "@/shared/components/practice/PracticeDateInputField";
 import { PracticeTransferMiddleGrid } from "@/shared/components/practice/PracticeTransferMiddleGrid";
+import { PracticeTransferFilePane } from "@/shared/components/practice/PracticeTransferFilePane";
+import { PracticeTransferRequestIntakePanel } from "@/shared/components/practice/PracticeTransferRequestIntakePanel";
 import { restoreToothWorksFromDraft } from "@/shared/practice/toothWorkDraft";
 import {
   Dialog,
@@ -119,6 +123,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  buildPracticeTransferMemo as buildPracticeTransferMemoShared,
+  extractTransferMemoFromMessage as extractTransferMemoFromMessageShared,
+  formatTransferMemoForDisplay as formatTransferMemoForDisplayShared,
+} from "@/shared/practice/transferMemo";
 
 type RecentRequestItem = {
   id: string; // 전송 내 파일 row 식별자(표시/그룹/optimistic 삭제용)
@@ -200,14 +209,19 @@ const extractTransferIdFromMessage = (message: string) => {
 };
 
 const formatToothWorksForDisplay = (rows: ToothWorkSelection[], options?: { multiline?: boolean }) => {
-  const normalizedRows = normalizeToothWorks(rows);
+  const normalizedRows = normalizeToothWorks(rows)
+    .slice()
+    .sort((a, b) => toToothMemoSortNumber(a.toothNumber) - toToothMemoSortNumber(b.toothNumber));
   if (!normalizedRows.length) return "";
 
   const formattedRows = normalizedRows.map((row) => {
     const details = [row.prosthesisType];
     if (row.customAbutment) details.push("커스텀어벗");
     if (isBridgeLikeProsthesisType(row.prosthesisType) && row.bridgeLinkedTeeth.length > 0) {
-      details.push(`연결 ${[row.toothNumber, ...row.bridgeLinkedTeeth].join("-")}`);
+      const orderedLinks = [...row.bridgeLinkedTeeth].sort(
+        (a, b) => toToothMemoSortNumber(a) - toToothMemoSortNumber(b),
+      );
+      details.push(`연결 ${[row.toothNumber, ...orderedLinks].join("-")}`);
     }
     return `${row.toothNumber}번: ${details.join(" · ")}`;
   });
@@ -232,90 +246,11 @@ const parseLegacyToothWorksSummary = (value: string): ToothWorkSelection[] => {
   return parseToothWorks(serialized);
 };
 
-const formatTransferMemoForDisplay = (rawMemo: string) => {
-  const memo = String(rawMemo || "").trim();
-  if (!memo) return "";
+const formatTransferMemoForDisplay = (rawMemo: string) =>
+  formatTransferMemoForDisplayShared(rawMemo);
 
-  // 이미 줄바꿈 형태면 그대로 사용
-  if (memo.includes("\n")) return memo;
-
-  // 레거시 한 줄 요약(`주문일 ... · 도착일 ... · 치아별 ...`)만 키워드 단위로 분리
-  // 치아별 상세 내부의 `· 커스텀어벗`까지 분리되지 않도록 lookahead 키워드로 제한한다.
-  const compactParts = memo
-    .split(/\s*·\s*(?=(?:주문일|도착일|치아별|형태|보철물\s*형태)\b)/)
-    .map((part) => String(part || "").trim())
-    .filter(Boolean);
-
-  if (compactParts.length <= 1) return memo;
-
-  const sections: string[] = [];
-  for (const part of compactParts) {
-    const toothPart = part.match(/^치아별\s*(.+)$/);
-    if (toothPart) {
-      const parsed = parseLegacyToothWorksSummary(toothPart[1]);
-      const toothText = formatToothWorksForDisplay(parsed, { multiline: true }) || toothPart[1];
-      sections.push(`치아보철\n${toothText}`);
-      continue;
-    }
-
-    const prosthesisPart = part.match(/^(?:형태|보철물\s*형태)\s*(.+)$/);
-    if (prosthesisPart) {
-      sections.push(`보철물 형태\n${prosthesisPart[1]}`);
-      continue;
-    }
-
-    sections.push(part);
-  }
-
-  return sections.join("\n\n").trim();
-};
-
-const extractTransferMemoFromMessage = (message: string) => {
-  const raw = String(message || "").trim();
-  if (!raw) return "";
-
-  const stripped = raw
-    .split(/\r?\n/)
-    .map((line) =>
-      String(line || "")
-        .replace(/\[\s*기공소\s*:[^\]]*\]/gi, "")
-        .replace(/\[\s*전송ID\s*:[^\]]*\]/gi, "")
-        .trim(),
-    )
-    .filter(Boolean)
-    .join("\n")
-    .trim();
-
-  const parsed = parsePracticeTransferMemoMeta(stripped);
-  if (String(parsed.memo || "").trim()) {
-    const freeMemo = String(parsed.memo || "").trim();
-    const toothSummary = formatToothWorksForDisplay(parsed.toothWorks, { multiline: true });
-    if (!toothSummary) return formatTransferMemoForDisplay(freeMemo);
-    return formatTransferMemoForDisplay(`${freeMemo}\n\n치아보철\n${toothSummary}`);
-  }
-
-  const hasKnownMeta = /\[\s*(주문일|도착일|도착기본일수|보철물형태목록|보철물형태|치아보철)\s*:/i.test(
-    stripped,
-  );
-  if (!hasKnownMeta) return formatTransferMemoForDisplay(stripped);
-
-  const summarySections: string[] = [];
-  const dateSummaryParts: string[] = [];
-  if (parsed.orderDate) dateSummaryParts.push(`주문일 ${parsed.orderDate}`);
-  if (parsed.arrivalDate) dateSummaryParts.push(`도착일 ${parsed.arrivalDate}`);
-  if (dateSummaryParts.length > 0) {
-    summarySections.push(dateSummaryParts.join(" · "));
-  }
-
-  const toothSummary = formatToothWorksForDisplay(parsed.toothWorks, { multiline: true });
-  if (toothSummary) {
-    summarySections.push(`치아보철\n${toothSummary}`);
-  } else if (parsed.prosthesisTypes.length > 0) {
-    summarySections.push(`보철물 형태\n${parsed.prosthesisTypes.join(", ")}`);
-  }
-
-  return formatTransferMemoForDisplay(summarySections.join("\n\n").trim());
-};
+const extractTransferMemoFromMessage = (message: string) =>
+  extractTransferMemoFromMessageShared(message);
 
 const makeTransferId = () => {
   const t = Date.now().toString(36).toUpperCase();
@@ -358,6 +293,7 @@ type PracticeTransferLocalFormDraft = {
   arrivalDefaultDays?: number;
   prosthesisTypes?: string[];
   requestMemo?: string;
+  patientName?: string;
   selectedLab?: {
     _id?: string;
     name?: string;
@@ -423,18 +359,43 @@ const normalizeProsthesisTypes = (items: string[]) => {
 const getAdjacentTeeth = (toothNumber: string) => {
   const raw = String(toothNumber || "").trim();
   if (!/^[1-4][1-8]$/.test(raw)) return [] as string[];
-  const tens = raw.slice(0, 1);
-  const ones = Number(raw.slice(1, 2));
+  const tens = Number(raw[0]);
+  const ones = Number(raw[1]);
   const out: string[] = [];
-  if (ones - 1 >= 1) out.push(`${tens}${ones - 1}`);
-  if (ones + 1 <= 8) out.push(`${tens}${ones + 1}`);
-  return out;
+
+  // 같은 사분면 내 인접 치아
+  if (ones > 1) out.push(`${tens}${ones - 1}`);
+  if (ones < 8) out.push(`${tens}${ones + 1}`);
+
+  // 정중선 연결: 11 ↔ 21, 31 ↔ 41
+  if (ones === 1) {
+    if (tens === 1) out.push("21");
+    if (tens === 2) out.push("11");
+    if (tens === 3) out.push("41");
+    if (tens === 4) out.push("31");
+  }
+
+  return Array.from(new Set(out));
 };
 
 const toToothSortNumber = (toothNumber: string) => {
   const raw = String(toothNumber || "").trim();
   if (!/^[1-4][1-8]$/.test(raw)) return Number.MAX_SAFE_INTEGER;
   return Number(raw);
+};
+
+const toToothMemoSortNumber = (toothNumber: string) => {
+  const raw = String(toothNumber || "").trim();
+  if (!/^[1-4][1-8]$/.test(raw)) return Number.MAX_SAFE_INTEGER;
+  const tens = Number(raw[0]);
+  const ones = Number(raw[1]);
+
+  if (tens === 1) return 9 - ones; // 18..11 (상악 우측 -> 정중선)
+  if (tens === 2) return 8 + ones; // 21..28 (정중선 -> 상악 좌측)
+  if (tens === 4) return 16 + (9 - ones); // 48..41 (하악 우측 -> 정중선)
+  if (tens === 3) return 24 + ones; // 31..38 (정중선 -> 하악 좌측)
+
+  return Number.MAX_SAFE_INTEGER;
 };
 
 const normalizeToothWorks = (items: ToothWorkSelection[]) =>
@@ -464,10 +425,15 @@ const normalizeToothWorks = (items: ToothWorkSelection[]) =>
 
 const serializeToothWorks = (rows: ToothWorkSelection[]) =>
   normalizeToothWorks(rows)
+    .slice()
+    .sort((a, b) => toToothMemoSortNumber(a.toothNumber) - toToothMemoSortNumber(b.toothNumber))
     .map((row) => {
+      const orderedLinks = [...row.bridgeLinkedTeeth].sort(
+        (a, b) => toToothMemoSortNumber(a) - toToothMemoSortNumber(b),
+      );
       const linked =
-        isBridgeLikeProsthesisType(row.prosthesisType) && row.bridgeLinkedTeeth.length > 0
-          ? `(${[row.toothNumber, ...row.bridgeLinkedTeeth].join("-")})`
+        isBridgeLikeProsthesisType(row.prosthesisType) && orderedLinks.length > 0
+          ? `(${[row.toothNumber, ...orderedLinks].join("-")})`
           : "";
       const custom =
         isCustomAbutmentSupportedProsthesisType(row.prosthesisType) && row.customAbutment
@@ -618,17 +584,7 @@ const buildPracticeTransferMemo = (params: {
   arrivalDefaultDays: number;
   prosthesisTypes: string[];
   toothWorks: ToothWorkSelection[];
-}) => {
-  const lines = [
-    `[주문일: ${String(params.orderDate || "").trim()}]`,
-    `[도착일: ${String(params.arrivalDate || "").trim()}]`,
-    `[도착기본일수: ${normalizeArrivalDefaultDays(params.arrivalDefaultDays)}]`,
-    `[보철물형태목록: ${normalizeProsthesisTypes(params.prosthesisTypes).join(", ")}]`,
-    `[치아보철: ${serializeToothWorks(params.toothWorks)}]`,
-  ];
-  const memo = String(params.memo || "").trim();
-  return memo ? `${lines.join("\n")}\n${memo}` : lines.join("\n");
-};
+}) => buildPracticeTransferMemoShared(params);
 
 const normalizePatientNameKey = (value: string) => {
   const raw = String(value || "").trim();
@@ -729,6 +685,7 @@ export const PracticeFileTransferPage = () => {
   const authToken = useAuthStore((s) => s.token);
   const authUser = useAuthStore((s) => s.user);
   const [requestSearchTerm, setRequestSearchTerm] = useState("");
+  const [recentStatusFilter, setRecentStatusFilter] = useState<"all" | "발송완료" | "수신전" | "수신완료">("all");
   const [requestSubmitting, setRequestSubmitting] = useState(false);
   const [tempSaving, setTempSaving] = useState(false);
   const [inviteLinkCopied, setInviteLinkCopied] = useState(false);
@@ -796,12 +753,24 @@ export const PracticeFileTransferPage = () => {
   const [savingProsthesisTypeSettings, setSavingProsthesisTypeSettings] = useState(false);
 
   const [toothWorks, setToothWorks] = useState<ToothWorkSelection[]>([]);
+  const [patientName, setPatientName] = useState("");
 
   const normalizedProsthesisTypes = useMemo(
     () => normalizeProsthesisTypes(prosthesisTypeCatalog),
     [prosthesisTypeCatalog],
   );
   const normalizedToothWorks = useMemo(() => normalizeToothWorks(toothWorks), [toothWorks]);
+  const normalizedPatientName = useMemo(() => String(patientName || "").trim(), [patientName]);
+  const autoClinicName = useMemo(() => {
+    const profileClinic = String(authUser?.practiceProfile?.clinicName || "").trim();
+    if (profileClinic) return profileClinic;
+    return String(
+      (authUser as { business?: string } | null)?.business ||
+        authUser?.companyName ||
+        authUser?.name ||
+        "",
+    ).trim();
+  }, [authUser]);
 
   const orderedToothWorkRows = useMemo(() => {
     if (toothWorks.length === 0) return [] as Array<{
@@ -812,12 +781,8 @@ export const PracticeFileTransferPage = () => {
     }>;
 
     const rows = toothWorks.map((row, idx) => ({ row, idx }));
-    const bridgeIndices = rows
-      .filter(
-        ({ row }) =>
-          isBridgeLikeProsthesisType(String(row.prosthesisType || "").trim()) &&
-          /^[1-4][1-8]$/.test(String(row.toothNumber || "").trim()),
-      )
+    const toothIndices = rows
+      .filter(({ row }) => /^[1-4][1-8]$/.test(String(row.toothNumber || "").trim()))
       .map(({ idx }) => idx);
 
     const byTooth = new Map<string, number>();
@@ -827,17 +792,17 @@ export const PracticeFileTransferPage = () => {
       if (!byTooth.has(tooth)) byTooth.set(tooth, idx);
     }
 
-    const bridgeSet = new Set(bridgeIndices);
+    const toothSet = new Set(toothIndices);
     const adjacency = new Map<number, Set<number>>();
-    bridgeIndices.forEach((idx) => adjacency.set(idx, new Set<number>()));
+    toothIndices.forEach((idx) => adjacency.set(idx, new Set<number>()));
 
-    for (const idx of bridgeIndices) {
+    for (const idx of toothIndices) {
       const row = rows[idx].row;
       const links = Array.isArray(row.bridgeLinkedTeeth) ? row.bridgeLinkedTeeth : [];
       for (const linked of links) {
         const linkedIdx = byTooth.get(String(linked || "").trim());
         if (linkedIdx == null) continue;
-        if (!bridgeSet.has(linkedIdx)) continue;
+        if (!toothSet.has(linkedIdx)) continue;
         adjacency.get(idx)?.add(linkedIdx);
         adjacency.get(linkedIdx)?.add(idx);
       }
@@ -846,7 +811,7 @@ export const PracticeFileTransferPage = () => {
     const componentKeyByIdx = new Map<number, string>();
     const visited = new Set<number>();
 
-    for (const seed of bridgeIndices) {
+    for (const seed of toothIndices) {
       if (visited.has(seed)) continue;
       const stack = [seed];
       const component: number[] = [];
@@ -883,14 +848,48 @@ export const PracticeFileTransferPage = () => {
         continue;
       }
 
-      const componentIndices = bridgeIndices
-        .filter((idx) => componentKeyByIdx.get(idx) === key)
-        .sort(
-          (a, b) =>
-            toToothSortNumber(rows[a].row.toothNumber) - toToothSortNumber(rows[b].row.toothNumber),
-        );
+      const componentIndices = toothIndices.filter((idx) => componentKeyByIdx.get(idx) === key);
+      const componentSet = new Set(componentIndices);
+      const sortedByTooth = [...componentIndices].sort(
+        (a, b) =>
+          toToothSortNumber(rows[a].row.toothNumber) - toToothSortNumber(rows[b].row.toothNumber),
+      );
+      const endpoints = sortedByTooth.filter((idx) => {
+        const degree = [...(adjacency.get(idx) || new Set<number>())].filter((n) => componentSet.has(n))
+          .length;
+        return degree <= 1;
+      });
+      const start = endpoints[0] ?? sortedByTooth[0];
 
-      componentIndices.forEach((idx) => {
+      const orderedComponent: number[] = [];
+      const componentVisited = new Set<number>();
+      let current = start;
+      let prev = -1;
+
+      while (current >= 0 && !componentVisited.has(current)) {
+        orderedComponent.push(current);
+        componentVisited.add(current);
+
+        const nextCandidates = [...(adjacency.get(current) || new Set<number>())]
+          .filter((n) => componentSet.has(n) && !componentVisited.has(n))
+          .sort(
+            (a, b) =>
+              toToothSortNumber(rows[a].row.toothNumber) - toToothSortNumber(rows[b].row.toothNumber),
+          );
+
+        if (nextCandidates.length === 0) break;
+        const preferred = nextCandidates.find((n) => n !== prev);
+        const nextIdx = preferred ?? nextCandidates[0];
+        prev = current;
+        current = nextIdx;
+      }
+
+      if (orderedComponent.length < componentIndices.length) {
+        const remains = sortedByTooth.filter((idx) => !componentVisited.has(idx));
+        orderedComponent.push(...remains);
+      }
+
+      orderedComponent.forEach((idx) => {
         if (emitted.has(idx)) return;
         orderedIndices.push(idx);
         emitted.add(idx);
@@ -1276,7 +1275,7 @@ export const PracticeFileTransferPage = () => {
         localFormUpdatedAtRef.current = Date.now();
       }
 
-      const restoredOrderDate = String(parsed.orderDate || "").trim();
+      const restoredOrderDate = todayDate;
       const restoredArrivalDate = String(parsed.arrivalDate || "").trim();
       const restoredArrivalDefaultDays = normalizeArrivalDefaultDays(
         Number(parsed.arrivalDefaultDays ?? DEFAULT_ARRIVAL_OFFSET_DAYS),
@@ -1287,6 +1286,7 @@ export const PracticeFileTransferPage = () => {
           : [...PRESET_PROSTHESIS_TYPES],
       );
       const restoredMemo = String(parsed.requestMemo || "");
+      const restoredPatientName = String(parsed.patientName || "");
 
       if (import.meta.env.DEV) {
         console.info("[practice-transfer] restore local form", {
@@ -1299,16 +1299,17 @@ export const PracticeFileTransferPage = () => {
         });
       }
 
-      if (restoredOrderDate || restoredArrivalDate) {
+      if (restoredArrivalDate) {
         skipNextArrivalAutoSyncRef.current = true;
       }
-      if (restoredOrderDate) setOrderDate(restoredOrderDate);
+      setOrderDate(restoredOrderDate);
       if (restoredArrivalDate) setArrivalDate(restoredArrivalDate);
       setArrivalDefaultDays(restoredArrivalDefaultDays);
       setArrivalDefaultDaysDraft(restoredArrivalDefaultDays);
       setProsthesisTypeCatalog(restoredProsthesisTypes);
       setProsthesisTypeCatalogDraft(restoredProsthesisTypes);
       setRequestMemo(restoredMemo);
+      setPatientName(restoredPatientName);
 
       const lab = parsed.selectedLab;
       if (lab && typeof lab === "object") {
@@ -1352,7 +1353,7 @@ export const PracticeFileTransferPage = () => {
     } finally {
       setLocalFormHydrated(true);
     }
-  }, [setRequestMemo, setSelectedLab]);
+  }, [setRequestMemo, setSelectedLab, todayDate]);
 
   useEffect(() => {
     if (!localFormHydrated) return;
@@ -1365,6 +1366,7 @@ export const PracticeFileTransferPage = () => {
       arrivalDefaultDays,
       prosthesisTypes: normalizedProsthesisTypes,
       requestMemo,
+      patientName,
       selectedLab: selectedLab
         ? {
             _id: String(selectedLab._id || "").trim(),
@@ -1408,6 +1410,7 @@ export const PracticeFileTransferPage = () => {
     normalizedProsthesisTypes,
     orderDate,
     requestMemo,
+    patientName,
     selectedLab,
     toothWorks,
   ]);
@@ -1646,6 +1649,11 @@ export const PracticeFileTransferPage = () => {
       { sent: 0, waiting: 0, delivered: 0 },
     );
   }, [groupedTransfers]);
+
+  const filteredGroupedTransfers = useMemo(() => {
+    if (recentStatusFilter === "all") return groupedTransfers;
+    return groupedTransfers.filter((transfer) => String(transfer.status || "").trim() === recentStatusFilter);
+  }, [groupedTransfers, recentStatusFilter]);
 
   const extractDataFromResponse = <T,>(raw: unknown): T | null => {
     if (!raw || typeof raw !== "object") return null;
@@ -2262,18 +2270,10 @@ export const PracticeFileTransferPage = () => {
       return;
     }
 
-    if (files.length + draftFiles.length === 0) {
+    if (missingRequiredFields.length > 0) {
       toast({
-        title: "파일이 필요합니다",
-        description: "최소 1개 STL, PLY, OBJ 파일을 업로드해주세요.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    if (!selectedLab?._id) {
-      toast({
-        title: "기공소를 선택해주세요",
+        title: "필수 입력 항목을 확인해주세요",
+        description: `미입력 항목: ${missingRequiredFields.join(", ")}`,
         variant: "destructive",
       });
       return;
@@ -2297,23 +2297,7 @@ export const PracticeFileTransferPage = () => {
       return;
     }
 
-    if (normalizedProsthesisTypes.length === 0) {
-      toast({
-        title: "보철물 형태를 선택해주세요",
-        description: "최소 1개 보철물 형태가 필요합니다.",
-        variant: "destructive",
-      });
-      return;
-    }
 
-    if (normalizedToothWorks.length === 0) {
-      toast({
-        title: "치아별 보철물 형태를 입력해주세요",
-        description: "치아번호와 보철물 형태를 최소 1개 이상 지정해주세요.",
-        variant: "destructive",
-      });
-      return;
-    }
 
     const hasBridgeLikeWithoutLinkedTooth = normalizedToothWorks.some(
       (row) => isBridgeLikeProsthesisType(row.prosthesisType) && row.bridgeLinkedTeeth.length === 0,
@@ -2349,9 +2333,7 @@ export const PracticeFileTransferPage = () => {
         throw new Error("전송할 파일이 없습니다.");
       }
 
-      const clinicName = String(
-        (authUser as { business?: string } | null)?.business || authUser?.name || "",
-      ).trim();
+      const clinicName = autoClinicName;
       const transferId = makeTransferId();
       const transferMemo = buildPracticeTransferMemo({
         memo: requestMemo,
@@ -2361,18 +2343,14 @@ export const PracticeFileTransferPage = () => {
         prosthesisTypes: normalizedProsthesisTypes,
         toothWorks: normalizedToothWorks,
       });
-      const caseInfosPayload = transferFiles.map((tempFile, index) => {
+      const caseInfosPayload = transferFiles.map((tempFile) => {
         const originalName = String(tempFile.originalName || "").trim();
         const parsed = parseFilenameWithRules(originalName);
-        const dotIndex = originalName.lastIndexOf(".");
-        const baseName = dotIndex > 0 ? originalName.slice(0, dotIndex) : originalName;
-        const fallbackPatientName = String(baseName || `케이스 ${index + 1}`).trim();
-        const patientName = String(parsed.patientName || fallbackPatientName).trim();
         const tooth = String(parsed.tooth || "").trim();
 
         return {
           clinicName,
-          patientName,
+          patientName: normalizedPatientName,
           tooth,
           workType: "abutment",
           designSoftware: "3Shape",
@@ -2459,6 +2437,17 @@ export const PracticeFileTransferPage = () => {
     !tempSaving &&
     tempSaveDirty &&
     combinedDisplayFiles.length > 0;
+
+  const missingRequiredFields = useMemo(() => {
+    const missing: string[] = [];
+    if (combinedDisplayFiles.length === 0) missing.push("첨부 파일");
+    if (!String(selectedLab?._id || "").trim()) missing.push("기공소");
+    if (!normalizedPatientName) missing.push("환자명");
+    if (normalizedToothWorks.length === 0) missing.push("보철물 형태");
+    return missing;
+  }, [combinedDisplayFiles.length, selectedLab?._id, normalizedPatientName, normalizedToothWorks.length]);
+
+  const hasRequiredSubmitFields = missingRequiredFields.length === 0;
 
   useEffect(() => {
     if (!orderDate) return;
@@ -2639,8 +2628,8 @@ export const PracticeFileTransferPage = () => {
             <AlertDescription className="text-[1.3125rem] leading-snug">{PRACTICE_TRANSFER_PROMO_DESC}</AlertDescription>
           </Alert>
         ) : null}
-        <div className="grid grid-cols-1 gap-3 xl:grid-cols-3">
-          <Card className="xl:col-span-2">
+        <div className="grid grid-cols-1 gap-3 xl:grid-cols-10">
+          <Card className="xl:col-span-7">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base">
                 <UploadCloud className="h-4 w-4 text-blue-600" />
@@ -2649,628 +2638,65 @@ export const PracticeFileTransferPage = () => {
             </CardHeader>
             <CardContent className="space-y-4">
               <PracticeTransferMiddleGrid>
-                <div className="flex h-full min-h-0 flex-col gap-3">
-                  <div className="rounded-xl border border-dashed bg-background p-4 text-center flex flex-1 flex-col items-center justify-center">
-                    <p className="text-base font-semibold">파일을 드래그 & 드롭하세요</p>
-                    <p className="mt-1 text-sm text-muted-foreground">{PRACTICE_ACCEPTED_HINT}</p>
-                    <div className="mt-3">
-                      <input
-                        id="practice-file-transfer-input"
-                        type="file"
-                        accept=".stl,.ply,.obj"
-                        className="hidden"
-                        multiple
-                        onChange={(e) => {
-                          const nextFiles = Array.from(e.target.files || []);
-                          if (nextFiles.length) handleIncomingFiles(nextFiles);
-                          e.currentTarget.value = "";
-                        }}
-                      />
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={() => {
-                          const input = document.getElementById(
-                            "practice-file-transfer-input",
-                          ) as HTMLInputElement | null;
-                          input?.click();
-                        }}
-                      >
-                        파일 선택
-                      </Button>
-                    </div>
-                  </div>
+                <PracticeTransferFilePane
+                  acceptedHint={PRACTICE_ACCEPTED_HINT}
+                  fileInputId="practice-file-transfer-input"
+                  files={combinedDisplayFiles.map((file) => ({
+                    key: file.key,
+                    name: file.name,
+                    size: file.size,
+                    metaSuffix: file.kind === "draft" ? "임시저장됨" : undefined,
+                  }))}
+                  totalSizeMb={combinedFilesSizeMb}
+                  onPickFiles={handleIncomingFiles}
+                  onRemoveFile={(key) => {
+                    const target = combinedDisplayFiles.find((file) => file.key === key);
+                    if (!target) return;
+                    void handleRemoveCombinedFile({
+                      kind: target.kind,
+                      localIndex: target.kind === "local" ? target.localIndex : undefined,
+                      draftIndex: target.kind === "draft" ? target.draftIndex : undefined,
+                    });
+                  }}
+                  onClearAllFiles={() => {
+                    void handleClearAllTransferFiles();
+                  }}
+                />
 
-                  <div className="rounded-xl border bg-background p-4 flex flex-1 min-h-[22rem] flex-col">
-                    <div className="flex items-center justify-between gap-2">
-                      <p className="text-base font-semibold">
-                        총 {combinedDisplayFiles.length}개 파일 · 약 {combinedFilesSizeMb}MB
-                      </p>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="h-8"
-                        onClick={() => void handleClearAllTransferFiles()}
-                        disabled={combinedDisplayFiles.length === 0}
-                      >
-                        전체삭제
-                      </Button>
-                    </div>
-                    {combinedDisplayFiles.length === 0 ? (
-                      <div className="mt-3 flex flex-1 items-center justify-center rounded-lg border border-dashed px-4 py-8 text-center text-sm text-muted-foreground">
-                        아직 추가된 파일이 없습니다.
-                      </div>
-                    ) : (
-                      <div className="mt-3 min-h-0 flex-1 overflow-y-auto pr-1">
-                        <div className="grid grid-cols-1 gap-2 auto-rows-[4.25rem]">
-                          {combinedDisplayFiles.map((file) => (
-                            <div
-                              key={file.key}
-                              className="flex h-[4.25rem] items-center justify-between rounded-md border px-2.5 py-2"
-                            >
-                              <div className="min-w-0">
-                                <p className="truncate text-base font-medium">{file.name}</p>
-                                <p className="text-sm text-muted-foreground">
-                                  {(file.size / (1024 * 1024)).toFixed(2)}MB
-                                  {file.kind === "draft" ? " · 임시저장됨" : ""}
-                                </p>
-                              </div>
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="icon"
-                                className="h-9 w-9"
-                                onClick={() =>
-                                  handleRemoveCombinedFile({
-                                    kind: file.kind,
-                                    localIndex: file.kind === "local" ? file.localIndex : undefined,
-                                    draftIndex: file.kind === "draft" ? file.draftIndex : undefined,
-                                  })
-                                }
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                <div className="rounded-xl border bg-background p-4 flex h-full min-h-0 flex-col">
-                  <p className="text-base font-semibold">의뢰 접수</p>
-
-                  <div className="mt-3 space-y-2">
-                    <Label className="text-sm">기공소 선택</Label>
-                    <Popover open={labOpen} onOpenChange={setLabOpen}>
-                      <PopoverTrigger asChild>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          role="combobox"
-                          aria-expanded={labOpen}
-                          className="h-11 w-full justify-between text-base"
-                        >
-                          <span className="truncate">
-                            {selectedLab
-                              ? getBusinessLabel(selectedLab)
-                              : "기공소를 검색해서 선택하세요"}
-                          </span>
-                          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                        </Button>
-                      </PopoverTrigger>
-                      <PopoverContent className="w-[420px] p-0" align="start">
-                        <Command>
-                          <CommandInput
-                            placeholder="기공소 검색 (사업자명/대표자명/사업자번호/주소)"
-                            value={labSearch}
-                            onValueChange={(v) => {
-                              setLabSearch(v);
-                            }}
-                          />
-                          <CommandList>
-                            {!recentLabsInitialized ? (
-                              <div className="px-3 py-2 text-sm text-muted-foreground">불러오는 중...</div>
-                            ) : null}
-
-                            {recentLabs.length > 0 ? (
-                              <CommandGroup heading="최근 전송한 기공소">
-                                {recentLabs.map((b) => {
-                                  const selected = selectedLab?._id === b._id;
-                                  const rep = String(b.representativeName || "").trim();
-                                  const bn = String(b.businessNumber || "").trim();
-                                  const addr = String(b.address || "").trim();
-                                  const meta = [
-                                    rep ? `대표: ${rep}` : "",
-                                    bn ? `사업자: ${bn}` : "",
-                                    addr || "",
-                                  ]
-                                    .filter(Boolean)
-                                    .join(" · ");
-                                  const searchValue = [b.name, rep, bn, addr]
-                                    .filter(Boolean)
-                                    .join(" ");
-
-                                  return (
-                                    <CommandItem
-                                      key={`recent-${b._id}`}
-                                      value={searchValue}
-                                      onSelect={() => {
-                                        setSelectedLab(b);
-                                        setLabOpen(false);
-                                      }}
-                                    >
-                                      <Check
-                                        className={cn(
-                                          "mr-2 h-4 w-4",
-                                          selected ? "opacity-100" : "opacity-0",
-                                        )}
-                                      />
-                                      <div className="min-w-0">
-                                        <div className="truncate text-base font-medium">
-                                          {getBusinessLabel(b)}
-                                        </div>
-                                        {meta ? (
-                                          <div className="truncate text-sm text-muted-foreground">
-                                            {meta}
-                                          </div>
-                                        ) : null}
-                                      </div>
-                                    </CommandItem>
-                                  );
-                                })}
-                              </CommandGroup>
-                            ) : (
-                              <div className="px-3 py-2 text-sm text-muted-foreground">
-                                최근 전송한 기공소가 없습니다.
-                              </div>
-                            )}
-
-                            <CommandSeparator />
-
-                            <CommandGroup heading="기공소 검색">
-                              {labSearching ? (
-                                <div className="px-3 py-2 text-sm text-muted-foreground">검색 중...</div>
-                              ) : labSearch.trim() ? (
-                                labSearchResults.length > 0 ? (
-                                  labSearchResults.map((b) => {
-                                    const selected = selectedLab?._id === b._id;
-                                    const rep = String(b.representativeName || "").trim();
-                                    const bn = String(b.businessNumber || "").trim();
-                                    const addr = String(b.address || "").trim();
-                                    const meta = [
-                                      rep ? `대표: ${rep}` : "",
-                                      bn ? `사업자: ${bn}` : "",
-                                      addr || "",
-                                    ]
-                                      .filter(Boolean)
-                                      .join(" · ");
-                                    const searchValue = [b.name, rep, bn, addr]
-                                      .filter(Boolean)
-                                      .join(" ");
-
-                                    return (
-                                      <CommandItem
-                                        key={b._id}
-                                        value={searchValue}
-                                        onSelect={() => {
-                                          setSelectedLab(b);
-                                          setLabOpen(false);
-                                        }}
-                                      >
-                                        <Check
-                                          className={cn(
-                                            "mr-2 h-4 w-4",
-                                            selected ? "opacity-100" : "opacity-0",
-                                          )}
-                                        />
-                                        <div className="min-w-0">
-                                          <div className="truncate text-base font-medium">
-                                            {getBusinessLabel(b)}
-                                          </div>
-                                          {meta ? (
-                                            <div className="truncate text-sm text-muted-foreground">
-                                              {meta}
-                                            </div>
-                                          ) : null}
-                                        </div>
-                                      </CommandItem>
-                                    );
-                                  })
-                                ) : (
-                                  <div className="px-3 py-2 text-sm text-muted-foreground">
-                                    검색 결과가 없습니다.
-                                  </div>
-                                )
-                              ) : (
-                                <div className="px-3 py-2 text-sm text-muted-foreground">
-                                  검색어를 입력하면 기공소를 찾을 수 있습니다.
-                                </div>
-                              )}
-                            </CommandGroup>
-                          </CommandList>
-                        </Command>
-                      </PopoverContent>
-                    </Popover>
-                  </div>
-
-                  <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    <PracticeDateInputField
-                      id="practice-file-transfer-order-date"
-                      label="주문일"
-                      value={orderDate}
-                      onChange={setOrderDate}
-                      labelClassName="text-sm"
-                    />
-
-                    <PracticeDateInputField
-                      id="practice-file-transfer-arrival-date"
-                      label="도착일"
-                      value={arrivalDate}
-                      min={orderDate || undefined}
-                      onChange={setArrivalDate}
-                      labelClassName="text-sm"
-                      labelAction={
-                        <TooltipProvider>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="icon"
-                                className="h-7 w-7"
-                                onClick={() => {
-                                  setArrivalDefaultDaysDraft(arrivalDefaultDays);
-                                  setArrivalSettingsDialogOpen(true);
-                                }}
-                              >
-                                <Settings className="h-3.5 w-3.5" />
-                              </Button>
-                            </TooltipTrigger>
-                            <TooltipContent side="top" className="text-xs">
-                              도착 기본(+일) 설정
-                            </TooltipContent>
-                          </Tooltip>
-                        </TooltipProvider>
-                      }
-                    />
-                  </div>
-
-                  <div className="mt-3 space-y-2">
-                    <div className="flex items-center gap-1">
-                      <Label className="text-sm">보철물 형태</Label>
-                      <TooltipProvider>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              className="h-7 w-7"
-                              onClick={() => {
-                                setProsthesisTypeCatalogDraft(normalizedProsthesisTypes);
-                                setProsthesisTypeSettingsDialogOpen(true);
-                              }}
-                            >
-                              <Settings className="h-3.5 w-3.5" />
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent side="top" className="text-xs">
-                            보철물 형태 항목 편집
-                          </TooltipContent>
-                        </Tooltip>
-                      </TooltipProvider>
-                    </div>
-
-                    <div className="space-y-1.5">
-                      {orderedToothWorkRows.map(({ row, originalIndex, linkPrev, linkNext }) => {
-                        const adjacentTeeth = getAdjacentTeeth(row.toothNumber);
-                        const linkedTeeth = Array.isArray(row.bridgeLinkedTeeth)
-                          ? row.bridgeLinkedTeeth.filter((t) => adjacentTeeth.includes(t))
-                          : [];
-                        const isBridgeLike = isBridgeLikeProsthesisType(row.prosthesisType);
-                        const canSelectCustomAbutment = isCustomAbutmentSupportedProsthesisType(
-                          row.prosthesisType,
-                        );
-
-                        return (
-                          <div key={`${originalIndex}:${row.toothNumber}:${row.prosthesisType}`} className="relative pl-4">
-                            {linkPrev ? <span className="absolute left-[7px] -top-2 h-2 w-[2px] bg-blue-500" /> : null}
-                            {linkNext ? <span className="absolute left-[7px] -bottom-2 h-2 w-[2px] bg-blue-500" /> : null}
-                            {linkPrev || linkNext ? (
-                              <span className="absolute left-[7px] top-0 bottom-0 w-[2px] bg-blue-400" />
-                            ) : null}
-                            <span
-                              className={cn(
-                                "absolute left-[3px] top-1/2 h-3 w-3 -translate-y-1/2 rounded-full border",
-                                linkPrev || linkNext
-                                  ? "border-blue-600 bg-blue-500"
-                                  : "border-slate-300 bg-slate-300",
-                              )}
-                            />
-
-                            <div className="space-y-1 rounded-md border px-2 py-1.5">
-                              <div className="flex items-center gap-1.5 flex-wrap">
-                                <div className="grid grid-cols-2 gap-1">
-                                <Select
-                                  value={/^[1-4]/.test(row.toothNumber) ? row.toothNumber.slice(0, 1) : "__empty__"}
-                                  onValueChange={(value) => {
-                                    setToothWorks((prev) => {
-                                      const next = [...prev];
-                                      const ones = /^[1-8]$/.test(next[originalIndex]?.toothNumber?.slice(1, 2) || "")
-                                        ? next[originalIndex].toothNumber.slice(1, 2)
-                                        : "";
-                                      const tens = value === "__empty__" ? "" : value;
-                                      const toothNumber = `${tens}${ones}`;
-                                      const adj = getAdjacentTeeth(toothNumber);
-                                      next[originalIndex] = {
-                                        ...next[originalIndex],
-                                        toothNumber,
-                                        bridgeLinkedTeeth: Array.isArray(next[originalIndex].bridgeLinkedTeeth)
-                                          ? next[originalIndex].bridgeLinkedTeeth.filter((v) => adj.includes(v))
-                                          : [],
-                                      };
-                                      return next;
-                                    });
-                                  }}
-                                >
-                                  <SelectTrigger className="h-8 w-[44px] px-2 text-sm">
-                                    <SelectValue placeholder="1" />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    <SelectItem value="__empty__">-</SelectItem>
-                                    {TOOTH_TENS_OPTIONS.map((digit) => (
-                                      <SelectItem key={`tooth-tens-${digit}`} value={digit}>
-                                        {digit}
-                                      </SelectItem>
-                                    ))}
-                                  </SelectContent>
-                                </Select>
-
-                                <Select
-                                  value={/^[1-8]$/.test(row.toothNumber.slice(1, 2)) ? row.toothNumber.slice(1, 2) : "__empty__"}
-                                  onValueChange={(value) => {
-                                    setToothWorks((prev) => {
-                                      const next = [...prev];
-                                      const tens = /^[1-4]$/.test(next[originalIndex]?.toothNumber?.slice(0, 1) || "")
-                                        ? next[originalIndex].toothNumber.slice(0, 1)
-                                        : "";
-                                      const ones = value === "__empty__" ? "" : value;
-                                      const toothNumber = `${tens}${ones}`;
-                                      const adj = getAdjacentTeeth(toothNumber);
-                                      next[originalIndex] = {
-                                        ...next[originalIndex],
-                                        toothNumber,
-                                        bridgeLinkedTeeth: Array.isArray(next[originalIndex].bridgeLinkedTeeth)
-                                          ? next[originalIndex].bridgeLinkedTeeth.filter((v) => adj.includes(v))
-                                          : [],
-                                      };
-                                      return next;
-                                    });
-                                  }}
-                                >
-                                  <SelectTrigger className="h-8 w-[44px] px-2 text-sm">
-                                    <SelectValue placeholder="1" />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    <SelectItem value="__empty__">-</SelectItem>
-                                    {TOOTH_ONES_OPTIONS.map((digit) => (
-                                      <SelectItem key={`tooth-ones-${digit}`} value={digit}>
-                                        {digit}
-                                      </SelectItem>
-                                    ))}
-                                  </SelectContent>
-                                </Select>
-                              </div>
-
-                              <Select
-                                value={row.prosthesisType || "__empty__"}
-                                onValueChange={(value) => {
-                                  setToothWorks((prev) => {
-                                    const next = [...prev];
-                                    const prosthesisType = value === "__empty__" ? "" : value;
-                                    const prevType = String(next[originalIndex]?.prosthesisType || "");
-                                    const currentTooth = String(next[originalIndex]?.toothNumber || "").trim();
-
-                                    next[originalIndex] = {
-                                      ...next[originalIndex],
-                                      prosthesisType,
-                                      customAbutment: isCustomAbutmentSupportedProsthesisType(prosthesisType)
-                                        ? Boolean(next[originalIndex].customAbutment)
-                                        : false,
-                                      bridgeLinkedTeeth: isBridgeLikeProsthesisType(prosthesisType)
-                                        ? Array.isArray(next[originalIndex].bridgeLinkedTeeth)
-                                          ? next[originalIndex].bridgeLinkedTeeth
-                                          : []
-                                        : [],
-                                    };
-
-                                    const bridgeLikeToNonBridgeLike =
-                                      isBridgeLikeProsthesisType(prevType) &&
-                                      !isBridgeLikeProsthesisType(prosthesisType) &&
-                                      /^[1-4][1-8]$/.test(currentTooth);
-
-                                    if (bridgeLikeToNonBridgeLike) {
-                                      for (let i = 0; i < next.length; i += 1) {
-                                        if (i === originalIndex) continue;
-                                        const links = Array.isArray(next[i].bridgeLinkedTeeth)
-                                          ? next[i].bridgeLinkedTeeth
-                                          : [];
-                                        if (!links.includes(currentTooth)) continue;
-                                        next[i] = {
-                                          ...next[i],
-                                          bridgeLinkedTeeth: links.filter((v) => v !== currentTooth),
-                                        };
-                                      }
-                                    }
-
-                                    return next;
-                                  });
-                                }}
-                              >
-                                <SelectTrigger className="h-8 w-[76px] px-2 text-sm">
-                                  <SelectValue placeholder="형태" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  <SelectItem value="__empty__">형태 선택</SelectItem>
-                                  {normalizedProsthesisTypes.map((type) => (
-                                    <SelectItem key={`ptype-${type}`} value={type}>
-                                      {type}
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-
-                              {canSelectCustomAbutment ? (
-                                <label className="inline-flex items-center gap-1 text-xs whitespace-nowrap">
-                                  <input
-                                    type="checkbox"
-                                    className="h-3.5 w-3.5"
-                                    checked={Boolean(row.customAbutment)}
-                                    onChange={(e) => {
-                                      const checked = Boolean(e.target.checked);
-                                      setToothWorks((prev) => {
-                                        const next = [...prev];
-                                        next[originalIndex] = {
-                                          ...next[originalIndex],
-                                          customAbutment: checked,
-                                        };
-                                        return next;
-                                      });
-                                    }}
-                                  />
-                                  <span>커스텀어벗</span>
-                                </label>
-                              ) : null}
-
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="icon"
-                                className="h-8 w-8"
-                                onClick={() =>
-                                  setToothWorks((prev) => {
-                                    const next = prev.filter((_, i) => i !== originalIndex);
-                                    if (next.length > 0) return next;
-                                    return [{ toothNumber: "", prosthesisType: normalizedProsthesisTypes[0] || "크라운", customAbutment: false, bridgeLinkedTeeth: [] }];
-                                  })
-                                }
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
-                            </div>
-
-                            {isBridgeLike ? (
-                              <div className="flex items-center gap-2 text-xs">
-                                {adjacentTeeth.map((adjTooth) => (
-                                  <label key={`adj-${originalIndex}-${adjTooth}`} className="inline-flex items-center gap-1">
-                                      <input
-                                        type="checkbox"
-                                        className="h-4 w-4"
-                                        checked={linkedTeeth.includes(adjTooth)}
-                                        onChange={(e) => {
-                                          const checked = Boolean(e.target.checked);
-                                          setToothWorks((prev) => {
-                                            const next = [...prev];
-                                            const currentTooth = String(next[originalIndex]?.toothNumber || "").trim();
-                                            const currentLinks = Array.isArray(next[originalIndex].bridgeLinkedTeeth)
-                                              ? next[originalIndex].bridgeLinkedTeeth
-                                              : [];
-
-                                            next[originalIndex] = {
-                                              ...next[originalIndex],
-                                              bridgeLinkedTeeth: checked
-                                                ? Array.from(new Set([...currentLinks, adjTooth]))
-                                                : currentLinks.filter((v) => v !== adjTooth),
-                                            };
-
-                                            const pairedIdx = next.findIndex(
-                                              (row, rowIdx) => rowIdx !== originalIndex && row.toothNumber === adjTooth,
-                                            );
-
-                                            if (checked) {
-                                              if (pairedIdx >= 0) {
-                                                const paired = next[pairedIdx];
-                                                const pairedLinks = Array.isArray(paired.bridgeLinkedTeeth)
-                                                  ? paired.bridgeLinkedTeeth
-                                                  : [];
-                                                const pairedType = isBridgeLikeProsthesisType(row.prosthesisType)
-                                                  ? row.prosthesisType
-                                                  : "브리지";
-                                                next[pairedIdx] = {
-                                                  ...paired,
-                                                  prosthesisType: pairedType,
-                                                  customAbutment: isCustomAbutmentSupportedProsthesisType(pairedType)
-                                                    ? Boolean(paired.customAbutment)
-                                                    : false,
-                                                  bridgeLinkedTeeth: currentTooth
-                                                    ? Array.from(new Set([...pairedLinks, currentTooth]))
-                                                    : pairedLinks,
-                                                };
-                                              } else {
-                                                next.push({
-                                                  toothNumber: adjTooth,
-                                                  prosthesisType: isBridgeLikeProsthesisType(row.prosthesisType)
-                                                    ? row.prosthesisType
-                                                    : "브리지",
-                                                  customAbutment: false,
-                                                  bridgeLinkedTeeth: currentTooth ? [currentTooth] : [],
-                                                });
-                                              }
-                                            } else if (pairedIdx >= 0 && currentTooth) {
-                                              const paired = next[pairedIdx];
-                                              const pairedLinks = Array.isArray(paired.bridgeLinkedTeeth)
-                                                ? paired.bridgeLinkedTeeth
-                                                : [];
-                                              next[pairedIdx] = {
-                                                ...paired,
-                                                bridgeLinkedTeeth: pairedLinks.filter((v) => v !== currentTooth),
-                                              };
-                                            }
-
-                                            return next;
-                                          });
-                                        }}
-                                      />
-                                      <span>{adjTooth}</span>
-                                    </label>
-                                  ))}
-                                </div>
-                              ) : null}
-                            </div>
-                          </div>
-                        );
-                      })}
-
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="h-8"
-                        onClick={handleAddToothWorkRow}
-                      >
-                        <Plus className="mr-1 h-3.5 w-3.5" />
-                        치아 추가
-                      </Button>
-                    </div>
-                  </div>
-
-                  <div className="mt-3 flex min-h-0 flex-1 flex-col space-y-2">
-                    <Label htmlFor="practice-file-transfer-request-memo" className="text-sm">
-                      의뢰 메모
-                    </Label>
-                    <Textarea
-                      id="practice-file-transfer-request-memo"
-                      rows={6}
-                      value={requestMemo}
-                      onChange={(e) => setRequestMemo(e.target.value)}
-                      placeholder="요청사항을 입력하세요"
-                      className="min-h-0 flex-1 resize-none text-base"
-                    />
-                  </div>
-                </div>
+                <PracticeTransferRequestIntakePanel
+                  selectedLab={selectedLab}
+                  setSelectedLab={setSelectedLab}
+                  labOpen={labOpen}
+                  setLabOpen={setLabOpen}
+                  labSearch={labSearch}
+                  setLabSearch={setLabSearch}
+                  labSearchResults={labSearchResults}
+                  labSearching={labSearching}
+                  recentLabs={recentLabs}
+                  recentLabsInitialized={recentLabsInitialized}
+                  autoClinicName={autoClinicName}
+                  patientName={patientName}
+                  setPatientName={setPatientName}
+                  orderDate={orderDate}
+                  setOrderDate={setOrderDate}
+                  arrivalDate={arrivalDate}
+                  setArrivalDate={setArrivalDate}
+                  arrivalDefaultDays={arrivalDefaultDays}
+                  setArrivalDefaultDaysDraft={setArrivalDefaultDaysDraft}
+                  setArrivalSettingsDialogOpen={setArrivalSettingsDialogOpen}
+                  normalizedProsthesisTypes={normalizedProsthesisTypes}
+                  setProsthesisTypeCatalogDraft={setProsthesisTypeCatalogDraft}
+                  setProsthesisTypeSettingsDialogOpen={setProsthesisTypeSettingsDialogOpen}
+                  toothWorks={toothWorks}
+                  setToothWorks={setToothWorks}
+                  requestMemo={requestMemo}
+                  setRequestMemo={setRequestMemo}
+                  memoInputId="practice-file-transfer-request-memo"
+                  prosthesisTypeSelectWidthClassName="w-[76px]"
+                  showBridgeConnections
+                  toothTensOptions={TOOTH_TENS_OPTIONS}
+                  toothOnesOptions={TOOTH_ONES_OPTIONS}
+                />
               </PracticeTransferMiddleGrid>
 
               <div className="flex items-center justify-between gap-2">
@@ -3299,7 +2725,7 @@ export const PracticeFileTransferPage = () => {
                   type="button"
                   className="bg-blue-600 text-white hover:bg-blue-700"
                   onClick={() => void handleSubmitPracticeRequest()}
-                  disabled={requestSubmitting}
+                  disabled={requestSubmitting || !hasRequiredSubmitFields}
                 >
                   {requestSubmitting ? "기공소로 전송 중..." : "기공소로 전송"}
                 </Button>
@@ -3307,7 +2733,7 @@ export const PracticeFileTransferPage = () => {
             </CardContent>
           </Card>
 
-          <div className="space-y-3">
+          <div className="space-y-3 xl:col-span-3">
             <Card>
               <CardHeader>
                 <CardTitle className="text-base">기공소 초대 링크</CardTitle>
@@ -3379,9 +2805,66 @@ export const PracticeFileTransferPage = () => {
                   </div>
 
                   <div className="flex flex-wrap gap-2">
-                    <Badge variant="outline">발송완료 {statusCounts.sent}건</Badge>
-                    <Badge variant="outline">수신전 {statusCounts.waiting}건</Badge>
-                    <Badge variant="outline">수신완료 {statusCounts.delivered}건</Badge>
+                    <button
+                      type="button"
+                      className="rounded-full"
+                      onClick={() =>
+                        setRecentStatusFilter((prev) => (prev === "발송완료" ? "all" : "발송완료"))
+                      }
+                      aria-pressed={recentStatusFilter === "발송완료"}
+                    >
+                      <Badge
+                        variant="outline"
+                        className={cn(
+                          "cursor-pointer",
+                          recentStatusFilter === "발송완료"
+                            ? "border-blue-300 bg-blue-50 text-blue-700"
+                            : "hover:bg-muted/40",
+                        )}
+                      >
+                        발송완료 {statusCounts.sent}건
+                      </Badge>
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded-full"
+                      onClick={() =>
+                        setRecentStatusFilter((prev) => (prev === "수신전" ? "all" : "수신전"))
+                      }
+                      aria-pressed={recentStatusFilter === "수신전"}
+                    >
+                      <Badge
+                        variant="outline"
+                        className={cn(
+                          "cursor-pointer",
+                          recentStatusFilter === "수신전"
+                            ? "border-blue-300 bg-blue-50 text-blue-700"
+                            : "hover:bg-muted/40",
+                        )}
+                      >
+                        수신전 {statusCounts.waiting}건
+                      </Badge>
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded-full"
+                      onClick={() =>
+                        setRecentStatusFilter((prev) => (prev === "수신완료" ? "all" : "수신완료"))
+                      }
+                      aria-pressed={recentStatusFilter === "수신완료"}
+                    >
+                      <Badge
+                        variant="outline"
+                        className={cn(
+                          "cursor-pointer",
+                          recentStatusFilter === "수신완료"
+                            ? "border-blue-300 bg-blue-50 text-blue-700"
+                            : "hover:bg-muted/40",
+                        )}
+                      >
+                        수신완료 {statusCounts.delivered}건
+                      </Badge>
+                    </button>
                   </div>
 
                   <div className="relative w-full md:max-w-md">
@@ -3404,13 +2887,15 @@ export const PracticeFileTransferPage = () => {
                   <div className="rounded-lg border border-dashed px-3 py-8 text-center text-sm text-destructive">
                     {recentRequestsError}
                   </div>
-                ) : groupedTransfers.length === 0 ? (
+                ) : filteredGroupedTransfers.length === 0 ? (
                   <div className="rounded-lg border border-dashed px-3 py-8 text-center text-sm text-muted-foreground">
-                    검색 조건에 맞는 의뢰 내역이 없습니다.
+                    {recentStatusFilter === "all"
+                      ? "검색 조건에 맞는 의뢰 내역이 없습니다."
+                      : `${recentStatusFilter} 상태의 의뢰 내역이 없습니다.`}
                   </div>
                 ) : (
                   <div className="max-h-[19rem] space-y-2 overflow-y-auto pr-1">
-                    {groupedTransfers.map((transfer) => {
+                    {filteredGroupedTransfers.map((transfer) => {
                       const targetLabText =
                         String(transfer.targetLab || "-")
                           .replace(/\s*→.*$/g, "")

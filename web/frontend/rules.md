@@ -14,6 +14,42 @@
 
 이 문서는 `web/frontend` 폴더에서만 필요한 **구현 메모**만 남깁니다.
 
+## 0. Frontend 중요 진입 파일 지도 (로컬)
+
+- 앱/라우팅
+  - `src/App.tsx`
+  - `src/features/layout/DashboardLayout.tsx`
+- 공용 타입(역할 SSOT)
+  - `src/shared/types/role.ts`
+- 실시간(웹소켓) 공통
+  - `src/shared/realtime/socket.ts`
+  - `src/shared/realtime/useAppEventDebouncedReload.ts`
+- 의뢰자 신규의뢰/치과
+  - `src/pages/requestor/new_request/NewRequestPage.tsx`
+  - `src/pages/requestor/practice/RequestorPracticePage.tsx`
+- 제조사 워크시트
+  - `src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx`
+  - `src/pages/manufacturer/worksheet/custom_abutment/packing/components/PackingPageContent.tsx`
+  - `src/pages/manufacturer/worksheet/custom_abutment/components/WorksheetStageSearchInput.tsx`
+- practice
+  - `src/pages/practice/PracticeDropzonePage.tsx`
+  - `src/pages/practice/PracticeFileTransferPage.tsx`
+  - `src/shared/components/practice/PracticeTransferFilePane.tsx`
+  - `src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx`
+  - `src/shared/practice/usePracticeToothWorkEditor.ts`
+  - `src/shared/practice/toothWorkDraft.ts`
+  - `src/shared/components/PracticeTransferDetailChatDialog.tsx`
+- 관리자 사용자/사업자
+  - `src/pages/admin/users/AdminUserManagement.tsx`
+  - `src/pages/admin/businesses/AdminBusinessPage.tsx`
+- 관리자 크레딧
+  - `src/pages/admin/credits/AdminCreditPage.tsx`
+  - `src/pages/admin/credits/components/RequestorCreditTab.tsx`
+  - `src/pages/admin/credits/components/RequestorOrganizationsTab.tsx`
+- 관리자 대시보드/소통
+  - `src/pages/admin/dashboard/AdminDashboardPage.tsx`
+  - `src/pages/admin/support/AdminChatManagement.tsx`
+
 ## 1. 구조
 
 - React + TypeScript + Vite + Tailwind 기준으로 작성합니다.

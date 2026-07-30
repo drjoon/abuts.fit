@@ -37,6 +37,13 @@ import {
   type PracticeTransferDialogFileItem,
   type PracticeTransferDialogSummaryItem,
 } from "@/shared/components/PracticeTransferDetailChatDialog";
+import {
+  formatPracticeTransferMemoDetail,
+  formatToothWorksForDisplay,
+  parsePracticeTransferMemoMeta as parsePracticeTransferMemoMetaShared,
+  parseToothWorks,
+  serializeToothWorks,
+} from "@/shared/practice/transferMemo";
 
 type ReceivedPracticeFile = {
   id: string;
@@ -53,6 +60,7 @@ type ReceivedPracticeTransfer = {
   transferId: string;
   targetLabName: string;
   transferMemo: string;
+  rawTransferMemo: string;
   orderDate: string;
   arrivalDate: string;
   prosthesisTypes: string[];
@@ -112,156 +120,17 @@ const formatBytes = (bytes: number) => {
   return `${(n / (1024 * 1024)).toFixed(2)}MB`;
 };
 
-type ParsedToothWorkSummaryItem = {
-  toothNumber: string;
-  prosthesisType: string;
-  customAbutment: boolean;
-  bridgeLinkedTeeth: string[];
-};
-
-const parseToothWorksSummary = (value: string): ParsedToothWorkSummaryItem[] =>
-  String(value || "")
-    .split("|")
-    .map((chunk) => String(chunk || "").trim())
-    .filter(Boolean)
-    .map((chunk) => {
-      const [toothRaw, ...rest] = chunk.split("=");
-      const toothNumber = String(toothRaw || "").trim();
-      const rhs = String(rest.join("=") || "").trim();
-      if (!rhs) {
-        return {
-          toothNumber,
-          prosthesisType: "",
-          customAbutment: false,
-          bridgeLinkedTeeth: [] as string[],
-        };
-      }
-
-      const linkedMatch = rhs.match(/\(([^)]+)\)\s*$/);
-      const linkedRaw = linkedMatch ? linkedMatch[1] : "";
-      let withoutLinked = linkedMatch ? rhs.replace(/\(([^)]+)\)\s*$/, "").trim() : rhs;
-
-      let customAbutment = false;
-      if (withoutLinked.startsWith("커스텀어벗+")) {
-        customAbutment = true;
-        withoutLinked = withoutLinked.replace("커스텀어벗+", "").trim();
-      }
-      if (withoutLinked.includes("+커스텀어벗")) {
-        customAbutment = true;
-        withoutLinked = withoutLinked.replace("+커스텀어벗", "").trim();
-      }
-
-      const prosthesisType = withoutLinked;
-      const bridgeLinkedTeeth = linkedRaw
-        ? linkedRaw
-            .split("-")
-            .map((v) => String(v || "").trim())
-            .filter((v) => v && v !== toothNumber)
-        : [];
-
-      return {
-        toothNumber,
-        prosthesisType,
-        customAbutment,
-        bridgeLinkedTeeth,
-      };
-    })
-    .filter((row) => row.toothNumber && row.prosthesisType);
-
-const formatToothWorksSummary = (raw: string, options?: { multiline?: boolean }) => {
-  const rows = parseToothWorksSummary(raw);
-  if (!rows.length) return "";
-
-  const formattedRows = rows.map((row) => {
-    const details: string[] = [];
-
-    for (const token of String(row.prosthesisType || "")
-      .split("+")
-      .map((v) => v.trim())
-      .filter(Boolean)) {
-      details.push(token);
-    }
-
-    if (row.customAbutment) {
-      details.push("커스텀어벗");
-    }
-
-    if (row.bridgeLinkedTeeth.length > 0) {
-      details.push(`연결 ${[row.toothNumber, ...row.bridgeLinkedTeeth].join("-")}`);
-    }
-
-    return `${row.toothNumber}번: ${details.join(" · ")}`;
-  });
-
-  return options?.multiline ? formattedRows.join("\n") : formattedRows.join(" / ");
-};
+const formatToothWorksSummary = (raw: string, options?: { multiline?: boolean }) =>
+  formatToothWorksForDisplay(parseToothWorks(raw), options);
 
 const parsePracticeTransferMemoMeta = (rawMemo: string) => {
-  const source = String(rawMemo || "").trim();
-  const lines = source.split(/\r?\n/);
-  const memoLines: string[] = [];
-  let orderDate = "";
-  let arrivalDate = "";
-  let prosthesisTypes: string[] = [];
-  let toothWorksSummary = "";
-
-  for (const line of lines) {
-    const trimmed = String(line || "").trim();
-    if (!trimmed) {
-      memoLines.push("");
-      continue;
-    }
-
-    const orderMatch = trimmed.match(/^\[\s*주문일\s*:\s*([0-9]{4}-[0-9]{2}-[0-9]{2})\s*\]$/);
-    if (orderMatch) {
-      orderDate = orderMatch[1];
-      continue;
-    }
-
-    const arrivalMatch = trimmed.match(/^\[\s*도착일\s*:\s*([0-9]{4}-[0-9]{2}-[0-9]{2})\s*\]$/);
-    if (arrivalMatch) {
-      arrivalDate = arrivalMatch[1];
-      continue;
-    }
-
-    const defaultDaysMatch = trimmed.match(/^\[\s*도착기본일수\s*:\s*\d{1,3}\s*\]$/);
-    if (defaultDaysMatch) {
-      continue;
-    }
-
-    const prosthesisCatalogMatch = trimmed.match(/^\[\s*보철물형태목록\s*:\s*(.+)\]$/);
-    if (prosthesisCatalogMatch) {
-      prosthesisTypes = String(prosthesisCatalogMatch[1] || "")
-        .split(",")
-        .map((item) => item.trim())
-        .filter(Boolean);
-      continue;
-    }
-
-    const legacyProsthesisMatch = trimmed.match(/^\[\s*보철물형태\s*:\s*(.+)\]$/);
-    if (legacyProsthesisMatch) {
-      prosthesisTypes = String(legacyProsthesisMatch[1] || "")
-        .split(",")
-        .map((item) => item.trim())
-        .filter(Boolean);
-      continue;
-    }
-
-    const toothWorksMatch = trimmed.match(/^\[\s*치아보철\s*:\s*(.+)\]$/);
-    if (toothWorksMatch) {
-      toothWorksSummary = String(toothWorksMatch[1] || "").trim();
-      continue;
-    }
-
-    memoLines.push(line);
-  }
-
+  const parsed = parsePracticeTransferMemoMetaShared(rawMemo);
   return {
-    orderDate,
-    arrivalDate,
-    prosthesisTypes,
-    toothWorksSummary,
-    memo: memoLines.join("\n").replace(/^\s+|\s+$/g, ""),
+    orderDate: parsed.orderDate,
+    arrivalDate: parsed.arrivalDate,
+    prosthesisTypes: parsed.prosthesisTypes,
+    toothWorksSummary: serializeToothWorks(parsed.toothWorks),
+    memo: parsed.memo,
   };
 };
 
@@ -446,6 +315,7 @@ export default function RequestorPracticePage() {
           transferId: String(r.transferId || "").trim(),
           targetLabName: String(r.targetLabName || "").trim(),
           transferMemo: parsedMemo.memo,
+          rawTransferMemo: String(r.transferMemo || "").trim(),
           orderDate: parsedMemo.orderDate,
           arrivalDate: parsedMemo.arrivalDate,
           prosthesisTypes: parsedMemo.prosthesisTypes,
@@ -738,21 +608,10 @@ export default function RequestorPracticePage() {
     });
   }, [filteredTransfers, rooms]);
 
-  const selectedTransferDisplayMemo = useMemo(() => {
-    const plainMemo = String(selectedTransfer?.transferMemo || "").trim();
-    const formattedToothWorks = formatToothWorksSummary(
-      String(selectedTransfer?.toothWorksSummary || ""),
-      { multiline: true },
-    );
-
-    const sections: string[] = [];
-    if (plainMemo) sections.push(plainMemo);
-    if (formattedToothWorks) {
-      sections.push(`치아보철\n${formattedToothWorks}`);
-    }
-
-    return sections.join("\n\n").trim();
-  }, [selectedTransfer]);
+  const selectedTransferDisplayMemo = useMemo(
+    () => formatPracticeTransferMemoDetail(String(selectedTransfer?.rawTransferMemo || "")),
+    [selectedTransfer?.rawTransferMemo],
+  );
 
   const recalculateTransferCardsMaxHeight = useCallback(() => {
     const grid = transferCardsGridRef.current;

@@ -14,6 +14,33 @@
 
 이 문서는 `web/backend` 폴더에서만 필요한 **구현 메모**만 남깁니다.
 
+## 0. Backend 중요 진입 파일 지도 (로컬)
+
+- 서버 엔트리
+  - `app.js`
+  - `server.js`
+- 의뢰/공정
+  - `modules/requests/request.routes.js`
+  - `controllers/requests/creation.from-draft.controller.js`
+  - `controllers/requests/common.review.controller.js`
+  - `controllers/requests/common.review.helpers.js`
+  - `controllers/requests/common.requests.controller.js`
+  - `controllers/requests/mailbox.utils.js`
+  - `controllers/requests/shipping.controller.js`
+  - `controllers/admin/admin.dashboard.controller.js`
+- CNC/브리지
+  - `controllers/cnc/machiningBridge.js`
+- 채팅
+  - `modules/chat/chat.routes.js`
+  - `controllers/chats/chat.controller.js`
+- practice 전송
+  - `modules/practiceTransfers/practiceTransfer.routes.js`
+  - `controllers/practiceTransfers/practiceTransfer.controller.js`
+  - `controllers/practiceTransfers/practiceTransferSettings.controller.js`
+  - `models/businessAnchor.model.js`
+- 관리자 사용자 권한
+  - `controllers/admin/admin.users.controller.js`
+
 ## 1. 구조
 
 - 런타임: Node.js + Express + MongoDB

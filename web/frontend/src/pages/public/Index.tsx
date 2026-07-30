@@ -142,12 +142,24 @@ const Index = () => {
           <Card className="border-blue-200 bg-gradient-to-br from-white to-blue-50 text-slate-900 shadow-[0_18px_45px_rgba(6,8,20,0.35)] backdrop-blur-2xl">
             <CardHeader className="space-y-3">
               <CardTitle className="text-xl md:text-2xl">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="inline-flex items-center gap-1 rounded-full bg-blue-100 px-2.5 py-1 text-xs font-semibold text-blue-700">
-                    <Send className="h-3.5 w-3.5" />
-                    간편한 전송
-                  </span>
-                  <span>치과에서 기공소로 파일 전송</span>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="inline-flex items-center gap-1 rounded-full bg-blue-100 px-2.5 py-1 text-xs font-semibold text-blue-700">
+                      <Send className="h-3.5 w-3.5" />
+                      간편한 전송
+                    </span>
+                    <span>치과에서 기공소로 파일 전송</span>
+                  </div>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="h-8 border-blue-300 text-blue-700 hover:bg-blue-500"
+                    onClick={() => navigate("/practice/dropzone")}
+                  >
+                    바로 이동
+                    <ArrowRight className="ml-1 h-3.5 w-3.5" />
+                  </Button>
                 </div>
               </CardTitle>
             </CardHeader>

@@ -151,72 +151,28 @@
 
 ### 4.1 Frontend
 
-- 앱/라우팅
+- 루트에는 전역 진입점만 유지합니다.
   - `web/frontend/src/App.tsx`
   - `web/frontend/src/features/layout/DashboardLayout.tsx`
-- 공용 타입(역할 SSOT)
   - `web/frontend/src/shared/types/role.ts`
-- 실시간(웹소켓) 공통
-  - `web/frontend/src/shared/realtime/socket.ts`
-  - `web/frontend/src/shared/realtime/useAppEventDebouncedReload.ts`
-- 의뢰자 신규의뢰/치과
-  - `web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx`
-  - `web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx`
-- 제조사 워크시트
-  - `web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx`
-  - `web/frontend/src/pages/manufacturer/worksheet/custom_abutment/packing/components/PackingPageContent.tsx`
-  - `web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/WorksheetStageSearchInput.tsx`
-- practice
-  - `web/frontend/src/pages/practice/PracticeDropzonePage.tsx`
-  - `web/frontend/src/pages/practice/PracticeFileTransferPage.tsx`
-  - `web/frontend/src/shared/practice/toothWorkDraft.ts`
-  - `web/frontend/src/shared/components/PracticeTransferDetailChatDialog.tsx`
-  - `web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx`
-- 관리자 사용자/사업자
-  - `web/frontend/src/pages/admin/users/AdminUserManagement.tsx`
-  - `web/frontend/src/pages/admin/businesses/AdminBusinessPage.tsx`
-- 관리자 크레딧
-  - `web/frontend/src/pages/admin/credits/AdminCreditPage.tsx`
-  - `web/frontend/src/pages/admin/credits/components/RequestorCreditTab.tsx`
-  - `web/frontend/src/pages/admin/credits/components/RequestorOrganizationsTab.tsx`
-- 관리자 대시보드/소통
-  - `web/frontend/src/pages/admin/dashboard/AdminDashboardPage.tsx`
-  - `web/frontend/src/pages/admin/support/AdminChatManagement.tsx`
+- 프론트 상세 진입 파일 지도는 `web/frontend/rules.md`를 참조합니다.
 
 ### 4.2 Backend
 
-- 서버 엔트리
+- 루트에는 전역 진입점만 유지합니다.
   - `web/backend/app.js`
   - `web/backend/server.js`
-- 의뢰/공정
-  - `web/backend/modules/requests/request.routes.js`
-  - `web/backend/controllers/requests/creation.from-draft.controller.js`
-  - `web/backend/controllers/requests/common.review.controller.js`
-  - `web/backend/controllers/requests/common.review.helpers.js`
-  - `web/backend/controllers/requests/common.requests.controller.js`
-  - `web/backend/controllers/requests/mailbox.utils.js`
-  - `web/backend/controllers/requests/shipping.controller.js`
-  - `web/backend/controllers/admin/admin.dashboard.controller.js`
-- CNC/브리지
-  - `web/backend/controllers/cnc/machiningBridge.js`
-- 채팅
-  - `web/backend/modules/chat/chat.routes.js`
-  - `web/backend/controllers/chats/chat.controller.js`
-- practice 전송
-  - `web/backend/modules/practiceTransfers/practiceTransfer.routes.js`
-  - `web/backend/controllers/practiceTransfers/practiceTransfer.controller.js`
-  - `web/backend/controllers/practiceTransfers/practiceTransferSettings.controller.js`
-  - `web/backend/models/businessAnchor.model.js`
-- 관리자 사용자 권한
-  - `web/backend/controllers/admin/admin.users.controller.js`
+- 백엔드 상세 진입 파일 지도는 `web/backend/rules.md`를 참조합니다.
 
 ### 4.3 Background
 
-- Rhino: `bg/pc1/rhino-server/compute/scripts/process_abutment_stl.py`
-- Esprit: `bg/pc1/esprit-addin/DentalAddin/MainModuleComposite.cs`
-- Bridge: `bg/pc1/bridge-server/`
-- LOT: `bg/pc2/lot-server/`
-- WBL: `bg/pc3/wbls-server/app.js`
+- BG 상세 진입 파일 지도는 각 프로그램 로컬 `rules.md`를 참조합니다.
+  - `bg/pc1/rhino-server/rules.md`
+  - `bg/pc1/esprit-addin/rules.md`
+  - `bg/pc1/bridge-server/rules.md`
+  - `bg/pc2/lot-server/rules.md`
+  - `bg/pc2/pack-server/rules.md`
+  - `bg/pc3/wbls-server/rules.md`
 
 ### 4.4 단위 프로그램 로컬 rules 위치
 
