@@ -34,6 +34,9 @@ import {
   ChevronsUpDown,
   Check,
   Download,
+  Copy,
+  Link2,
+  Send,
 } from "lucide-react";
 import {
   Card,
@@ -288,6 +291,8 @@ export const PracticeFileTransferPage = () => {
   const [requestSearchTerm, setRequestSearchTerm] = useState("");
   const [requestSubmitting, setRequestSubmitting] = useState(false);
   const [tempSaving, setTempSaving] = useState(false);
+  const [inviteLinkCopied, setInviteLinkCopied] = useState(false);
+  const [inviteMessageCopied, setInviteMessageCopied] = useState(false);
   const [tempSaveDirty, setTempSaveDirty] = useState(false);
   const [draftFiles, setDraftFiles] = useState<DraftTransferFileItem[]>([]);
   const [recentRequests, setRecentRequests] = useState<RecentRequestItem[]>([]);
@@ -343,6 +348,8 @@ export const PracticeFileTransferPage = () => {
     const draftBytes = draftFiles.reduce((sum, file) => sum + Number(file.size || 0), 0);
     return ((localBytes + draftBytes) / (1024 * 1024)).toFixed(1);
   }, [files, draftFiles]);
+
+  const requestorSignupLink = `${typeof window !== "undefined" ? window.location.origin : ""}/signup`;
 
   const combinedDisplayFiles = useMemo(
     () => [
@@ -1519,6 +1526,45 @@ export const PracticeFileTransferPage = () => {
     tempSaveDirty &&
     combinedDisplayFiles.length > 0;
 
+  const handleCopyPracticeDropzoneLink = async () => {
+    try {
+      await navigator.clipboard.writeText(requestorSignupLink);
+      setInviteLinkCopied(true);
+      setTimeout(() => setInviteLinkCopied(false), 2000);
+      toast({
+        title: "복사 완료",
+        description: "기공소 초대 링크가 복사되었습니다.",
+        duration: 2000,
+      });
+    } catch {
+      toast({
+        title: "복사 실패",
+        description: "브라우저 권한을 확인하고 다시 시도해주세요.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleCopyPracticeInviteMessage = async () => {
+    const message = `안녕하세요 🙂 기공소에서 어벗츠 회원가입을 해주시면 치과에서 파일과 의뢰서를 더 쉽고 빠르게 보낼 수 있습니다.\n아래 링크에서 가입 부탁드립니다.\n${requestorSignupLink}`;
+    try {
+      await navigator.clipboard.writeText(message);
+      setInviteMessageCopied(true);
+      setTimeout(() => setInviteMessageCopied(false), 2000);
+      toast({
+        title: "복사 완료",
+        description: "전송 안내 문구가 복사되었습니다.",
+        duration: 2000,
+      });
+    } catch {
+      toast({
+        title: "복사 실패",
+        description: "브라우저 권한을 확인하고 다시 시도해주세요.",
+        variant: "destructive",
+      });
+    }
+  };
+
   return (
     <PageFileDropZone
       onFiles={handleIncomingFiles}
@@ -1568,7 +1614,7 @@ export const PracticeFileTransferPage = () => {
                     </div>
                   </div>
 
-                  <div className="rounded-xl border bg-background p-4 flex flex-1 min-h-0 flex-col">
+                  <div className="rounded-xl border bg-background p-4 flex flex-1 min-h-[22rem] flex-col">
                     <div className="flex items-center justify-between gap-2">
                       <p className="text-base font-semibold">
                         총 {combinedDisplayFiles.length}개 파일 · 약 {combinedFilesSizeMb}MB
@@ -1793,7 +1839,7 @@ export const PracticeFileTransferPage = () => {
                       value={requestMemo}
                       onChange={(e) => setRequestMemo(e.target.value)}
                       placeholder="예: #36 커스텀 어버트먼트, 마진 라인 메모..."
-                      className="h-[13rem] resize-none text-base"
+                      className="h-[18rem] resize-none text-base"
                     />
                   </div>
                 </div>
@@ -1833,95 +1879,156 @@ export const PracticeFileTransferPage = () => {
             </CardContent>
           </Card>
 
-          <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-base">
-              <ClipboardList className="h-4 w-4 text-blue-600" />
-              최근 전송 내역
-            </CardTitle>
-            <CardDescription className="space-y-2">
-              <div className="flex items-center justify-start">
-                <PeriodFilter value={period} onChange={setPeriod} />
-              </div>
-
-              <div className="flex flex-wrap gap-2">
-                <Badge variant="outline">발송완료 {statusCounts.sent}건</Badge>
-                <Badge variant="outline">수신전 {statusCounts.waiting}건</Badge>
-                <Badge variant="outline">수신완료 {statusCounts.delivered}건</Badge>
-              </div>
-
-              <div className="relative w-full md:max-w-md">
-                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  value={requestSearchTerm}
-                  onChange={(e) => setRequestSearchTerm(e.target.value)}
-                  className="pl-9"
-                  placeholder="전송ID, 치과명, 파일명, 환자명 검색"
-                />
-              </div>
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {recentRequestsLoading ? (
-              <div className="rounded-lg border border-dashed px-3 py-8 text-center text-sm text-muted-foreground">
-                최근 전송 내역을 불러오는 중입니다...
-              </div>
-            ) : recentRequestsError ? (
-              <div className="rounded-lg border border-dashed px-3 py-8 text-center text-sm text-destructive">
-                {recentRequestsError}
-              </div>
-            ) : groupedTransfers.length === 0 ? (
-              <div className="rounded-lg border border-dashed px-3 py-8 text-center text-sm text-muted-foreground">
-                검색 조건에 맞는 의뢰 내역이 없습니다.
-              </div>
-            ) : (
-              groupedTransfers.map((transfer) => (
-                <button
-                  key={`${transfer.id}:${transfer.createdAt}`}
-                  type="button"
-                  className="w-full rounded-lg border px-3 py-2 text-sm flex items-center justify-between gap-3 text-left hover:bg-muted/40"
-                  onClick={() => void handleOpenTransferDialog(transfer)}
-                >
-                  <div className="min-w-0">
-                    <p className="font-medium truncate">{transfer.transferId !== "-" ? transfer.transferId : transfer.id}</p>
-                    <p className="text-xs text-muted-foreground truncate">
-                      {transfer.createdAt} · {transfer.targetLab}
-                    </p>
-                    <p className="text-xs text-muted-foreground truncate">
-                      파일 {transfer.fileCount}개
-                      {String(transfer.transferMemo || "").trim()
-                        ? ` · 메모: ${String(transfer.transferMemo || "").replace(/\s+/g, " ").trim()}`
-                        : ""}
+          <div className="space-y-3">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">기공소 초대 링크</CardTitle>
+                <CardDescription>
+                  기공소가 어벗츠에 회원가입하면 치과에서 파일 및 의뢰서를 더 쉽게 보낼 수 있습니다.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="rounded-lg border bg-muted/30 p-3 space-y-3">
+                  <div className="rounded-md border bg-background p-2.5">
+                    <p className="text-xs font-mono break-all text-muted-foreground">
+                      {requestorSignupLink}
                     </p>
                   </div>
-                  <div className="shrink-0 flex items-center gap-2">
-                    <Badge variant="outline" className="whitespace-nowrap">{transfer.status}</Badge>
-                    <div className="relative">
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          void handleAskDeleteTransfer(transfer);
-                        }}
-                        aria-label="의뢰 내역 삭제"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                      {transfer.unreadCount > 0 ? (
-                        <span className="absolute -top-1 -right-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-semibold text-white leading-none">
-                          {transfer.unreadCount > 99 ? "99+" : transfer.unreadCount}
-                        </span>
-                      ) : null}
-                    </div>
+
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => void handleCopyPracticeDropzoneLink()}
+                      className="h-8 gap-1.5"
+                    >
+                      {inviteLinkCopied ? (
+                        <>
+                          <Copy className="h-4 w-4" />
+                          복사됨
+                        </>
+                      ) : (
+                        <>
+                          <Link2 className="h-4 w-4" />
+                          링크 복사
+                        </>
+                      )}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => void handleCopyPracticeInviteMessage()}
+                      className="h-8 gap-1.5"
+                    >
+                      {inviteMessageCopied ? (
+                        <>
+                          <Copy className="h-4 w-4" />
+                          복사됨
+                        </>
+                      ) : (
+                        <>
+                          <Send className="h-4 w-4" />
+                          안내문구 복사
+                        </>
+                      )}
+                    </Button>
                   </div>
-                </button>
-              ))
-            )}
-          </CardContent>
-        </Card>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <ClipboardList className="h-4 w-4 text-blue-600" />
+                  최근 전송 내역
+                </CardTitle>
+                <CardDescription className="space-y-2">
+                  <div className="flex items-center justify-start">
+                    <PeriodFilter value={period} onChange={setPeriod} />
+                  </div>
+
+                  <div className="flex flex-wrap gap-2">
+                    <Badge variant="outline">발송완료 {statusCounts.sent}건</Badge>
+                    <Badge variant="outline">수신전 {statusCounts.waiting}건</Badge>
+                    <Badge variant="outline">수신완료 {statusCounts.delivered}건</Badge>
+                  </div>
+
+                  <div className="relative w-full md:max-w-md">
+                    <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                      value={requestSearchTerm}
+                      onChange={(e) => setRequestSearchTerm(e.target.value)}
+                      className="pl-9"
+                      placeholder="전송ID, 치과명, 파일명, 환자명 검색"
+                    />
+                  </div>
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                {recentRequestsLoading ? (
+                  <div className="rounded-lg border border-dashed px-3 py-8 text-center text-sm text-muted-foreground">
+                    최근 전송 내역을 불러오는 중입니다...
+                  </div>
+                ) : recentRequestsError ? (
+                  <div className="rounded-lg border border-dashed px-3 py-8 text-center text-sm text-destructive">
+                    {recentRequestsError}
+                  </div>
+                ) : groupedTransfers.length === 0 ? (
+                  <div className="rounded-lg border border-dashed px-3 py-8 text-center text-sm text-muted-foreground">
+                    검색 조건에 맞는 의뢰 내역이 없습니다.
+                  </div>
+                ) : (
+                  groupedTransfers.map((transfer) => (
+                    <button
+                      key={`${transfer.id}:${transfer.createdAt}`}
+                      type="button"
+                      className="w-full rounded-lg border px-3 py-2 text-sm flex items-center justify-between gap-3 text-left hover:bg-muted/40"
+                      onClick={() => void handleOpenTransferDialog(transfer)}
+                    >
+                      <div className="min-w-0">
+                        <p className="font-medium truncate">{transfer.transferId !== "-" ? transfer.transferId : transfer.id}</p>
+                        <p className="text-xs text-muted-foreground truncate">
+                          {transfer.createdAt} · {transfer.targetLab}
+                        </p>
+                        <p className="text-xs text-muted-foreground truncate">
+                          파일 {transfer.fileCount}개
+                          {String(transfer.transferMemo || "").trim()
+                            ? ` · 메모: ${String(transfer.transferMemo || "").replace(/\s+/g, " ").trim()}`
+                            : ""}
+                        </p>
+                      </div>
+                      <div className="shrink-0 flex items-center gap-2">
+                        <Badge variant="outline" className="whitespace-nowrap">{transfer.status}</Badge>
+                        <div className="relative">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              void handleAskDeleteTransfer(transfer);
+                            }}
+                            aria-label="의뢰 내역 삭제"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                          {transfer.unreadCount > 0 ? (
+                            <span className="absolute -top-1 -right-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-semibold text-white leading-none">
+                              {transfer.unreadCount > 99 ? "99+" : transfer.unreadCount}
+                            </span>
+                          ) : null}
+                        </div>
+                      </div>
+                    </button>
+                  ))
+                )}
+              </CardContent>
+            </Card>
+          </div>
         </div>
 
         <PracticeTransferDetailChatDialog
