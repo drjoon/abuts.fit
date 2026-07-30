@@ -1672,7 +1672,7 @@ export const PracticeFileTransferPage = () => {
                   </div>
                 </div>
 
-                <div className="rounded-xl border bg-background p-4">
+                <div className="rounded-xl border bg-background p-4 flex h-full min-h-0 flex-col">
                   <p className="text-base font-semibold">의뢰 접수</p>
 
                   <div className="mt-3 space-y-2">
@@ -1829,7 +1829,7 @@ export const PracticeFileTransferPage = () => {
                     </Popover>
                   </div>
 
-                  <div className="mt-3 space-y-2">
+                  <div className="mt-3 flex min-h-0 flex-1 flex-col space-y-2">
                     <Label htmlFor="practice-file-transfer-request-memo" className="text-sm">
                       의뢰 메모
                     </Label>
@@ -1839,7 +1839,7 @@ export const PracticeFileTransferPage = () => {
                       value={requestMemo}
                       onChange={(e) => setRequestMemo(e.target.value)}
                       placeholder="예: #36 커스텀 어버트먼트, 마진 라인 메모..."
-                      className="h-[18rem] resize-none text-base"
+                      className="min-h-0 flex-1 resize-none text-base"
                     />
                   </div>
                 </div>
