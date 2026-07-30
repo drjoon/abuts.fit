@@ -2,6 +2,7 @@
 // related files:
 // - web/backend/controllers/admin/admin.dashboard.controller.js
 // - web/backend/models/businessAnchor.model.js
+// - web/backend/models/practiceTransfer.model.js
 // - web/frontend/src/pages/admin/support/AdminChatManagement.tsx
 // - web/frontend/src/features/settings/tabs/RequestTab.tsx
 // - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
@@ -30,6 +31,7 @@ import {
   PhoneCall,
   RotateCcw,
   Code2,
+  UploadCloud,
 } from "lucide-react";
 
 type PricingSummary = {
@@ -177,6 +179,36 @@ type PricingSsotHealth = {
     gap?: number;
     latestRequestMongoId?: string;
     latestRequestId?: string;
+  }>;
+};
+
+type PracticeTransferStats = {
+  totalTransfers?: number;
+  totalFiles?: number;
+  totalPractices?: number;
+  totalLabs?: number;
+  unreadTransfers?: number;
+  activeTransfers?: number;
+  canceledTransfers?: number;
+  topPractices?: Array<{
+    practiceAnchorId?: string;
+    practiceName?: string;
+    transferCount?: number;
+    fileCount?: number;
+  }>;
+  topLabs?: Array<{
+    labAnchorId?: string;
+    labName?: string;
+    transferCount?: number;
+    fileCount?: number;
+  }>;
+  recentTransfers?: Array<{
+    transferId?: string;
+    practiceName?: string;
+    labName?: string;
+    status?: string;
+    fileCount?: number;
+    createdAt?: string;
   }>;
 };
 
@@ -337,6 +369,8 @@ export const AdminDashboardPage = () => {
     item: null,
   });
   const [designSoftwareStatsDialogOpen, setDesignSoftwareStatsDialogOpen] =
+    useState(false);
+  const [practiceTransferStatsDialogOpen, setPracticeTransferStatsDialogOpen] =
     useState(false);
   const [designSoftwareStatsFilter, setDesignSoftwareStatsFilter] = useState<
     "all" | "3shape" | "exocad" | "other"
@@ -769,6 +803,26 @@ export const AdminDashboardPage = () => {
     { key: "other" as const, label: "기타", count: Number(designSoftwareStats.other || 0) },
   ];
 
+  const practiceTransferStats =
+    ((adminDashboardResponse?.data as { practiceTransferStats?: PracticeTransferStats } | undefined)
+      ?.practiceTransferStats as PracticeTransferStats | undefined) || {};
+  const practiceTransferTotal = Number(practiceTransferStats?.totalTransfers || 0);
+  const practiceTransferTotalFiles = Number(practiceTransferStats?.totalFiles || 0);
+  const practiceTransferTotalPractices = Number(practiceTransferStats?.totalPractices || 0);
+  const practiceTransferTotalLabs = Number(practiceTransferStats?.totalLabs || 0);
+  const practiceTransferUnread = Number(practiceTransferStats?.unreadTransfers || 0);
+  const practiceTransferActive = Number(practiceTransferStats?.activeTransfers || 0);
+  const practiceTransferCanceled = Number(practiceTransferStats?.canceledTransfers || 0);
+  const practiceTransferTopPractices = Array.isArray(practiceTransferStats?.topPractices)
+    ? practiceTransferStats.topPractices
+    : [];
+  const practiceTransferTopLabs = Array.isArray(practiceTransferStats?.topLabs)
+    ? practiceTransferStats.topLabs
+    : [];
+  const practiceTransferRecentTransfers = Array.isArray(practiceTransferStats?.recentTransfers)
+    ? practiceTransferStats.recentTransfers
+    : [];
+
   const handleCompleteHappyCall = async (
     item: HappyCallItem,
     noteRaw?: string,
@@ -994,31 +1048,7 @@ export const AdminDashboardPage = () => {
                 </CardContent>
               </Card>
 
-              {/* 카드2: 지연 위험 요약 */}
-              <Card className="app-glass-card app-glass-card--lg">
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">지연 위험 요약</CardTitle>
-                  <AlertCircle className="h-4 w-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent>
-                  <button
-                    type="button"
-                    className="w-full rounded-md border px-3 py-2 text-left hover:bg-slate-50 transition"
-                    onClick={() => setRiskSummaryDialogOpen(true)}
-                  >
-                    <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-                      <span>지연 가능 의뢰: {riskWarningCount.toLocaleString()}건</span>
-                      <span>지연 확정 의뢰: {riskDelayedCount.toLocaleString()}건</span>
-                      <span>정시 발송 비율: {riskOnTimeRate.toLocaleString()}%</span>
-                    </div>
-                    <div className="mt-1 text-[11px] text-muted-foreground">
-                      클릭하면 지연 위험 상세 내역을 확인할 수 있습니다.
-                    </div>
-                  </button>
-                </CardContent>
-              </Card>
-
-              {/* 카드3: 이번 주 해피콜 의뢰자 */}
+              {/* 카드2: 이번 주 해피콜 의뢰자 */}
               <Card className="app-glass-card app-glass-card--lg">
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                   <CardTitle className="text-sm font-medium">
@@ -1052,124 +1082,43 @@ export const AdminDashboardPage = () => {
                 </CardContent>
               </Card>
 
-              {/* 카드4: 가격/리퍼럴 SSOT 점검 */}
-              <Card className="app-glass-card app-glass-card--lg">
+              {/* 카드3: 치과 의뢰(파일) 전송 통계 */}
+              <Card className="app-glass-card app-glass-card--lg lg:col-span-2">
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">
-                    가격 SSOT 점검
-                  </CardTitle>
-                  <CheckCircle
-                    className={`h-4 w-4 ${
-                      pricingSsotOk ? "text-green-500" : "text-yellow-500"
-                    }`}
-                  />
+                  <CardTitle className="text-sm font-medium">치과 의뢰(파일) 전송 통계</CardTitle>
+                  <UploadCloud className="h-4 w-4 text-muted-foreground" />
                 </CardHeader>
-                <CardContent className="space-y-2">
-                  <div className="flex items-end justify-between gap-2">
-                    <div className="text-xs text-muted-foreground">
-                      점검 상태
-                    </div>
-                    <div
-                      className={`text-lg font-bold ${
-                        pricingSsotOk ? "text-green-600" : "text-yellow-600"
-                      }`}
-                    >
-                      {pricingSsotOk ? "정상" : "불일치"}
-                    </div>
-                  </div>
-                  <div className="flex items-end justify-between gap-2">
-                    <div className="text-xs text-muted-foreground">
-                      불일치 건수
-                    </div>
-                    <div className="text-lg font-semibold">
-                      {pricingSsotMismatchCount.toLocaleString()}건
-                    </div>
-                  </div>
-                  <div className="flex items-end justify-between gap-2">
-                    <div className="text-xs text-muted-foreground">
-                      점검 기준 스냅샷 수
-                    </div>
-                    <div className="text-sm font-semibold">
-                      {Number(
-                        pricingSsotHealth?.checkedSnapshotCount || 0,
-                      ).toLocaleString()}
-                      건
-                    </div>
-                  </div>
-                  <div className="text-xs text-muted-foreground">
-                    마지막 점검: {pricingSsotCheckedAtLabel}
-                  </div>
-                  {pricingSsotMismatchCount > 0 &&
-                    (pricingSsotHealth?.topMismatches || []).length > 0 && (
-                      <div className="border-t pt-2">
-                        <div className="text-xs text-muted-foreground mb-1">
-                          상위 불일치
-                        </div>
-                        <div className="space-y-1">
-                          {(pricingSsotHealth?.topMismatches || [])
-                            .slice(0, 3)
-                            .map((m) => {
-                              const key = String(
-                                m.businessAnchorId ||
-                                  m.latestRequestMongoId ||
-                                  m.name ||
-                                  "",
-                              );
-                              const latestRequestMongoId = String(
-                                m.latestRequestMongoId || "",
-                              ).trim();
-                              const latestRequestId = String(
-                                m.latestRequestId || "",
-                              ).trim();
-                              const businessAnchorId = String(
-                                m.businessAnchorId || "",
-                              ).trim();
-
-                              return (
-                                <button
-                                  key={key}
-                                  type="button"
-                                  className="w-full flex items-center justify-between text-xs hover:bg-yellow-50 rounded px-1 py-0.5"
-                                  onClick={() => {
-                                    if (latestRequestMongoId) {
-                                      const qs = new URLSearchParams();
-                                      if (latestRequestMongoId) {
-                                        qs.set(
-                                          "focusRequestMongoId",
-                                          latestRequestMongoId,
-                                        );
-                                      }
-                                      if (latestRequestId) {
-                                        qs.set("q", latestRequestId);
-                                      }
-                                      navigate(
-                                        `/dashboard/monitoring?${qs.toString()}`,
-                                      );
-                                      return;
-                                    }
-
-                                    if (businessAnchorId) {
-                                      const qs = new URLSearchParams();
-                                      qs.set("focusAnchorId", businessAnchorId);
-                                      qs.set("q", businessAnchorId);
-                                      navigate(
-                                        `/dashboard/businesses?${qs.toString()}`,
-                                      );
-                                    }
-                                  }}
-                                >
-                                  <span className="truncate mr-2 text-left">
-                                    {m.name || m.businessAnchorId || "-"}
-                                  </span>
-                                  <span className="font-semibold text-yellow-700 shrink-0">
-                                    gap {Number(m.gap || 0).toLocaleString()}
-                                  </span>
-                                </button>
-                              );
-                            })}
-                        </div>
+                <CardContent className="space-y-3">
+                  <button
+                    type="button"
+                    className="w-full rounded-md border px-3 py-2 text-left hover:bg-slate-50 transition"
+                    onClick={() => setPracticeTransferStatsDialogOpen(true)}
+                  >
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                      <div className="rounded-md border px-2 py-2">
+                        <div className="text-[11px] text-muted-foreground">전송</div>
+                        <div className="text-lg font-semibold">{practiceTransferTotal.toLocaleString()}건</div>
                       </div>
-                    )}
+                      <div className="rounded-md border px-2 py-2">
+                        <div className="text-[11px] text-muted-foreground">파일</div>
+                        <div className="text-lg font-semibold">{practiceTransferTotalFiles.toLocaleString()}개</div>
+                      </div>
+                      <div className="rounded-md border px-2 py-2 border-blue-200 bg-blue-50/60">
+                        <div className="text-[11px] text-muted-foreground">치과</div>
+                        <div className="text-lg font-semibold text-blue-700">{practiceTransferTotalPractices.toLocaleString()}곳</div>
+                      </div>
+                      <div className="rounded-md border px-2 py-2 border-emerald-200 bg-emerald-50/60">
+                        <div className="text-[11px] text-muted-foreground">기공소</div>
+                        <div className="text-lg font-semibold text-emerald-700">{practiceTransferTotalLabs.toLocaleString()}곳</div>
+                      </div>
+                    </div>
+                    <div className="mt-2 text-[11px] text-muted-foreground">
+                      수신대기 {practiceTransferUnread.toLocaleString()}건 · 활성 {practiceTransferActive.toLocaleString()}건 · 취소 {practiceTransferCanceled.toLocaleString()}건
+                    </div>
+                    <div className="mt-1 text-[11px] text-muted-foreground">
+                      클릭하면 세부 내용을 확인할 수 있습니다.
+                    </div>
+                  </button>
                 </CardContent>
               </Card>
             </div>
@@ -1357,6 +1306,153 @@ export const AdminDashboardPage = () => {
                     </div>
                   </CardContent>
                 </Card>
+
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                  {/* 카드8: 지연 위험 요약 */}
+                  <Card className="app-glass-card app-glass-card--lg">
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                      <CardTitle className="text-sm font-medium">지연 위험 요약</CardTitle>
+                      <AlertCircle className="h-4 w-4 text-muted-foreground" />
+                    </CardHeader>
+                    <CardContent>
+                      <button
+                        type="button"
+                        className="w-full rounded-md border px-3 py-2 text-left hover:bg-slate-50 transition"
+                        onClick={() => setRiskSummaryDialogOpen(true)}
+                      >
+                        <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+                          <span>지연 가능 의뢰: {riskWarningCount.toLocaleString()}건</span>
+                          <span>지연 확정 의뢰: {riskDelayedCount.toLocaleString()}건</span>
+                          <span>정시 발송 비율: {riskOnTimeRate.toLocaleString()}%</span>
+                        </div>
+                        <div className="mt-1 text-[11px] text-muted-foreground">
+                          클릭하면 지연 위험 상세 내역을 확인할 수 있습니다.
+                        </div>
+                      </button>
+                    </CardContent>
+                  </Card>
+
+                  {/* 카드9: 가격 SSOT 점검 */}
+                  <Card className="app-glass-card app-glass-card--lg">
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                      <CardTitle className="text-sm font-medium">
+                        가격 SSOT 점검
+                      </CardTitle>
+                      <CheckCircle
+                        className={`h-4 w-4 ${
+                          pricingSsotOk ? "text-green-500" : "text-yellow-500"
+                        }`}
+                      />
+                    </CardHeader>
+                    <CardContent className="space-y-2">
+                      <div className="flex items-end justify-between gap-2">
+                        <div className="text-xs text-muted-foreground">
+                          점검 상태
+                        </div>
+                        <div
+                          className={`text-lg font-bold ${
+                            pricingSsotOk ? "text-green-600" : "text-yellow-600"
+                          }`}
+                        >
+                          {pricingSsotOk ? "정상" : "불일치"}
+                        </div>
+                      </div>
+                      <div className="flex items-end justify-between gap-2">
+                        <div className="text-xs text-muted-foreground">
+                          불일치 건수
+                        </div>
+                        <div className="text-lg font-semibold">
+                          {pricingSsotMismatchCount.toLocaleString()}건
+                        </div>
+                      </div>
+                      <div className="flex items-end justify-between gap-2">
+                        <div className="text-xs text-muted-foreground">
+                          점검 기준 스냅샷 수
+                        </div>
+                        <div className="text-sm font-semibold">
+                          {Number(
+                            pricingSsotHealth?.checkedSnapshotCount || 0,
+                          ).toLocaleString()}
+                          건
+                        </div>
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        마지막 점검: {pricingSsotCheckedAtLabel}
+                      </div>
+                      {pricingSsotMismatchCount > 0 &&
+                        (pricingSsotHealth?.topMismatches || []).length > 0 && (
+                          <div className="border-t pt-2">
+                            <div className="text-xs text-muted-foreground mb-1">
+                              상위 불일치
+                            </div>
+                            <div className="space-y-1">
+                              {(pricingSsotHealth?.topMismatches || [])
+                                .slice(0, 3)
+                                .map((m) => {
+                                  const key = String(
+                                    m.businessAnchorId ||
+                                      m.latestRequestMongoId ||
+                                      m.name ||
+                                      "",
+                                  );
+                                  const latestRequestMongoId = String(
+                                    m.latestRequestMongoId || "",
+                                  ).trim();
+                                  const latestRequestId = String(
+                                    m.latestRequestId || "",
+                                  ).trim();
+                                  const businessAnchorId = String(
+                                    m.businessAnchorId || "",
+                                  ).trim();
+
+                                  return (
+                                    <button
+                                      key={key}
+                                      type="button"
+                                      className="w-full flex items-center justify-between text-xs hover:bg-yellow-50 rounded px-1 py-0.5"
+                                      onClick={() => {
+                                        if (latestRequestMongoId) {
+                                          const qs = new URLSearchParams();
+                                          if (latestRequestMongoId) {
+                                            qs.set(
+                                              "focusRequestMongoId",
+                                              latestRequestMongoId,
+                                            );
+                                          }
+                                          if (latestRequestId) {
+                                            qs.set("q", latestRequestId);
+                                          }
+                                          navigate(
+                                            `/dashboard/monitoring?${qs.toString()}`,
+                                          );
+                                          return;
+                                        }
+
+                                        if (businessAnchorId) {
+                                          const qs = new URLSearchParams();
+                                          qs.set("focusAnchorId", businessAnchorId);
+                                          qs.set("q", businessAnchorId);
+                                          navigate(
+                                            `/dashboard/businesses?${qs.toString()}`,
+                                          );
+                                        }
+                                      }}
+                                    >
+                                      <span className="truncate mr-2 text-left">
+                                        {m.name || m.businessAnchorId || "-"}
+                                      </span>
+                                      <span className="font-semibold text-yellow-700 shrink-0">
+                                        gap {Number(m.gap || 0).toLocaleString()}
+                                      </span>
+                                    </button>
+                                  );
+                                })}
+                            </div>
+                          </div>
+                        )}
+                    </CardContent>
+                  </Card>
+                </div>
               </div>
 
               {/* 카드6: 불완전가공 의뢰 현황 */}
@@ -1560,6 +1656,127 @@ export const AdminDashboardPage = () => {
             onClick: () => {
               setDesignSoftwareStatsDialogOpen(false);
               setDesignSoftwareStatsFilter("all");
+            },
+          },
+        ]}
+      />
+
+      <MultiActionDialog
+        open={practiceTransferStatsDialogOpen}
+        onClose={() => {
+          setPracticeTransferStatsDialogOpen(false);
+        }}
+        title="치과 의뢰(파일) 전송 통계 상세"
+        panelClassName="!w-[94vw] !max-w-[1200px]"
+        description={
+          <div className="space-y-3 text-sm text-gray-700">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+              <div className="rounded-md border px-2 py-2">
+                <div className="text-[11px] text-muted-foreground">전송</div>
+                <div className="text-lg font-semibold">{practiceTransferTotal.toLocaleString()}건</div>
+              </div>
+              <div className="rounded-md border px-2 py-2">
+                <div className="text-[11px] text-muted-foreground">파일</div>
+                <div className="text-lg font-semibold">{practiceTransferTotalFiles.toLocaleString()}개</div>
+              </div>
+              <div className="rounded-md border px-2 py-2 border-blue-200 bg-blue-50/60">
+                <div className="text-[11px] text-muted-foreground">치과</div>
+                <div className="text-lg font-semibold text-blue-700">{practiceTransferTotalPractices.toLocaleString()}곳</div>
+              </div>
+              <div className="rounded-md border px-2 py-2 border-emerald-200 bg-emerald-50/60">
+                <div className="text-[11px] text-muted-foreground">기공소</div>
+                <div className="text-lg font-semibold text-emerald-700">{practiceTransferTotalLabs.toLocaleString()}곳</div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+              <div className="rounded-md border p-2.5 space-y-2">
+                <div className="text-xs font-semibold text-slate-700">치과별 전송 상위</div>
+                <div className="max-h-[220px] overflow-auto pr-1 space-y-1">
+                  {practiceTransferTopPractices.length > 0 ? (
+                    practiceTransferTopPractices.map((row, idx) => {
+                      const name = String(row?.practiceName || "").trim() || "-";
+                      return (
+                        <div key={`${String(row?.practiceAnchorId || "")}-${idx}`} className="rounded-md border px-2 py-1.5 bg-white">
+                          <div className="text-xs font-medium truncate">{name}</div>
+                          <div className="text-[11px] text-muted-foreground">
+                            전송 {Number(row?.transferCount || 0).toLocaleString()}건 · 파일 {Number(row?.fileCount || 0).toLocaleString()}개
+                          </div>
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <div className="text-xs text-muted-foreground py-4 text-center border border-dashed rounded-md">
+                      데이터가 없습니다.
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="rounded-md border p-2.5 space-y-2">
+                <div className="text-xs font-semibold text-slate-700">기공소별 수신 상위</div>
+                <div className="max-h-[220px] overflow-auto pr-1 space-y-1">
+                  {practiceTransferTopLabs.length > 0 ? (
+                    practiceTransferTopLabs.map((row, idx) => {
+                      const name = String(row?.labName || "").trim() || "-";
+                      return (
+                        <div key={`${String(row?.labAnchorId || "")}-${idx}`} className="rounded-md border px-2 py-1.5 bg-white">
+                          <div className="text-xs font-medium truncate">{name}</div>
+                          <div className="text-[11px] text-muted-foreground">
+                            전송 {Number(row?.transferCount || 0).toLocaleString()}건 · 파일 {Number(row?.fileCount || 0).toLocaleString()}개
+                          </div>
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <div className="text-xs text-muted-foreground py-4 text-center border border-dashed rounded-md">
+                      데이터가 없습니다.
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-md border p-2.5 space-y-2">
+              <div className="text-xs font-semibold text-slate-700">최근 전송 내역</div>
+              <div className="max-h-[240px] overflow-auto pr-1 space-y-1">
+                {practiceTransferRecentTransfers.length > 0 ? (
+                  practiceTransferRecentTransfers.map((row, idx) => {
+                    const transferId = String(row?.transferId || "-").trim() || "-";
+                    const practiceName = String(row?.practiceName || "-").trim() || "-";
+                    const labName = String(row?.labName || "-").trim() || "-";
+                    return (
+                      <div key={`${transferId}-${idx}`} className="rounded-md border px-2.5 py-1.5 bg-white">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="text-xs font-medium truncate">{transferId}</div>
+                          <Badge variant={String(row?.status || "") === "canceled" ? "secondary" : "outline"} className="text-[10px]">
+                            {String(row?.status || "-")}
+                          </Badge>
+                        </div>
+                        <div className="text-[11px] text-muted-foreground truncate">
+                          치과: {practiceName} · 기공소: {labName}
+                        </div>
+                        <div className="text-[11px] text-muted-foreground">
+                          파일 {Number(row?.fileCount || 0).toLocaleString()}개 · {toDateTimeLabel(String(row?.createdAt || ""))}
+                        </div>
+                      </div>
+                    );
+                  })
+                ) : (
+                  <div className="text-xs text-muted-foreground py-4 text-center border border-dashed rounded-md">
+                    데이터가 없습니다.
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        }
+        actions={[
+          {
+            label: "닫기",
+            variant: "secondary",
+            onClick: () => {
+              setPracticeTransferStatsDialogOpen(false);
             },
           },
         ]}

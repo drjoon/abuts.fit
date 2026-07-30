@@ -1,11 +1,13 @@
 // related files:
 // - web/backend/models/businessAnchor.model.js
+// - web/backend/models/practiceTransfer.model.js
 // - web/frontend/src/features/settings/tabs/RequestTab.tsx
 // - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
 // - web/frontend/src/pages/admin/dashboard/AdminDashboardPage.tsx
 import User from "../../models/user.model.js";
 import Request from "../../models/request.model.js";
 import File from "../../models/file.model.js";
+import PracticeTransfer from "../../models/practiceTransfer.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 import AdminHappyCallCompletion from "../../models/adminHappyCallCompletion.model.js";
 import AdminHappyCallMemoDraft from "../../models/adminHappyCallMemoDraft.model.js";
@@ -172,6 +174,10 @@ export async function getDashboardStats(req, res) {
       unmachinableRows,
       latestPricingSsotHealth,
       requestorAnchors,
+      practiceTransferStatsRaw,
+      practiceTransferTopPracticesRaw,
+      practiceTransferTopLabsRaw,
+      practiceTransferRecentRaw,
     ] = await Promise.all([
       User.aggregate([{ $group: { _id: "$role", count: { $sum: 1 } } }]),
       User.countDocuments({ role: "requestor" }),
@@ -213,6 +219,283 @@ export async function getDashboardStats(req, res) {
           status: 1,
         })
         .lean(),
+      PracticeTransfer.aggregate([
+        {
+          $match: {
+            createdAt: { $gte: start, $lte: end },
+          },
+        },
+        {
+          $project: {
+            status: 1,
+            fileCount: { $size: { $ifNull: ["$files", []] } },
+            unreadFlag: {
+              $cond: [{ $eq: ["$requestorReadAt", null] }, 1, 0],
+            },
+            practiceKey: {
+              $cond: [
+                { $ifNull: ["$practiceBusinessAnchorId", false] },
+                { $toString: "$practiceBusinessAnchorId" },
+                null,
+              ],
+            },
+            labKey: {
+              $let: {
+                vars: {
+                  targetLabNameTrimmed: {
+                    $trim: {
+                      input: { $ifNull: ["$targetLabName", ""] },
+                    },
+                  },
+                },
+                in: {
+                  $cond: [
+                    { $ifNull: ["$targetLabAnchorId", false] },
+                    { $concat: ["a:", { $toString: "$targetLabAnchorId" }] },
+                    {
+                      $cond: [
+                        { $gt: [{ $strLenCP: "$$targetLabNameTrimmed" }, 0] },
+                        { $concat: ["n:", "$$targetLabNameTrimmed"] },
+                        null,
+                      ],
+                    },
+                  ],
+                },
+              },
+            },
+          },
+        },
+        {
+          $group: {
+            _id: null,
+            totalTransfers: { $sum: 1 },
+            activeTransfers: {
+              $sum: { $cond: [{ $eq: ["$status", "active"] }, 1, 0] },
+            },
+            canceledTransfers: {
+              $sum: { $cond: [{ $eq: ["$status", "canceled"] }, 1, 0] },
+            },
+            totalFiles: { $sum: "$fileCount" },
+            unreadTransfers: { $sum: "$unreadFlag" },
+            practiceKeys: { $addToSet: "$practiceKey" },
+            labKeys: { $addToSet: "$labKey" },
+          },
+        },
+      ]),
+      PracticeTransfer.aggregate([
+        {
+          $match: {
+            createdAt: { $gte: start, $lte: end },
+          },
+        },
+        {
+          $project: {
+            practiceBusinessAnchorId: 1,
+            fileCount: { $size: { $ifNull: ["$files", []] } },
+          },
+        },
+        {
+          $match: {
+            practiceBusinessAnchorId: { $ne: null },
+          },
+        },
+        {
+          $group: {
+            _id: "$practiceBusinessAnchorId",
+            transferCount: { $sum: 1 },
+            fileCount: { $sum: "$fileCount" },
+          },
+        },
+        { $sort: { transferCount: -1, fileCount: -1 } },
+        { $limit: 20 },
+        {
+          $lookup: {
+            from: "businessanchors",
+            localField: "_id",
+            foreignField: "_id",
+            as: "practiceAnchor",
+          },
+        },
+        {
+          $project: {
+            _id: 0,
+            practiceAnchorId: { $toString: "$_id" },
+            practiceName: {
+              $let: {
+                vars: {
+                  nm: {
+                    $trim: {
+                      input: {
+                        $ifNull: [{ $arrayElemAt: ["$practiceAnchor.name", 0] }, ""],
+                      },
+                    },
+                  },
+                },
+                in: {
+                  $cond: [{ $gt: [{ $strLenCP: "$$nm" }, 0] }, "$$nm", "-"]
+                },
+              },
+            },
+            transferCount: 1,
+            fileCount: 1,
+          },
+        },
+      ]),
+      PracticeTransfer.aggregate([
+        {
+          $match: {
+            createdAt: { $gte: start, $lte: end },
+          },
+        },
+        {
+          $project: {
+            targetLabAnchorId: 1,
+            targetLabName: { $trim: { input: { $ifNull: ["$targetLabName", ""] } } },
+            fileCount: { $size: { $ifNull: ["$files", []] } },
+          },
+        },
+        {
+          $addFields: {
+            labKey: {
+              $cond: [
+                { $ifNull: ["$targetLabAnchorId", false] },
+                { $concat: ["a:", { $toString: "$targetLabAnchorId" }] },
+                {
+                  $cond: [
+                    { $gt: [{ $strLenCP: "$targetLabName" }, 0] },
+                    { $concat: ["n:", "$targetLabName"] },
+                    null,
+                  ],
+                },
+              ],
+            },
+          },
+        },
+        {
+          $match: {
+            labKey: { $ne: null },
+          },
+        },
+        {
+          $group: {
+            _id: "$labKey",
+            targetLabAnchorId: { $first: "$targetLabAnchorId" },
+            targetLabName: { $first: "$targetLabName" },
+            transferCount: { $sum: 1 },
+            fileCount: { $sum: "$fileCount" },
+          },
+        },
+        { $sort: { transferCount: -1, fileCount: -1 } },
+        { $limit: 20 },
+        {
+          $lookup: {
+            from: "businessanchors",
+            localField: "targetLabAnchorId",
+            foreignField: "_id",
+            as: "labAnchor",
+          },
+        },
+        {
+          $project: {
+            _id: 0,
+            labKey: "$_id",
+            labAnchorId: {
+              $cond: [
+                { $ifNull: ["$targetLabAnchorId", false] },
+                { $toString: "$targetLabAnchorId" },
+                "",
+              ],
+            },
+            labName: {
+              $let: {
+                vars: {
+                  anchorName: {
+                    $trim: {
+                      input: {
+                        $ifNull: [{ $arrayElemAt: ["$labAnchor.name", 0] }, ""],
+                      },
+                    },
+                  },
+                },
+                in: {
+                  $cond: [
+                    { $gt: [{ $strLenCP: "$$anchorName" }, 0] },
+                    "$$anchorName",
+                    {
+                      $cond: [
+                        { $gt: [{ $strLenCP: "$targetLabName" }, 0] },
+                        "$targetLabName",
+                        "-",
+                      ],
+                    },
+                  ],
+                },
+              },
+            },
+            transferCount: 1,
+            fileCount: 1,
+          },
+        },
+      ]),
+      PracticeTransfer.aggregate([
+        {
+          $match: {
+            createdAt: { $gte: start, $lte: end },
+          },
+        },
+        {
+          $project: {
+            transferId: 1,
+            status: 1,
+            createdAt: 1,
+            targetLabName: { $trim: { input: { $ifNull: ["$targetLabName", ""] } } },
+            practiceBusinessAnchorId: 1,
+            fileCount: { $size: { $ifNull: ["$files", []] } },
+          },
+        },
+        { $sort: { createdAt: -1 } },
+        { $limit: 30 },
+        {
+          $lookup: {
+            from: "businessanchors",
+            localField: "practiceBusinessAnchorId",
+            foreignField: "_id",
+            as: "practiceAnchor",
+          },
+        },
+        {
+          $project: {
+            _id: 0,
+            transferId: 1,
+            status: 1,
+            createdAt: 1,
+            fileCount: 1,
+            practiceName: {
+              $let: {
+                vars: {
+                  nm: {
+                    $trim: {
+                      input: {
+                        $ifNull: [{ $arrayElemAt: ["$practiceAnchor.name", 0] }, ""],
+                      },
+                    },
+                  },
+                },
+                in: {
+                  $cond: [{ $gt: [{ $strLenCP: "$$nm" }, 0] }, "$$nm", "-"]
+                },
+              },
+            },
+            labName: {
+              $cond: [
+                { $gt: [{ $strLenCP: "$targetLabName" }, 0] },
+                "$targetLabName",
+                "-",
+              ],
+            },
+          },
+        },
+      ]),
     ]);
 
     const userStatsByRole = {};
@@ -790,6 +1073,22 @@ export async function getDashboardStats(req, res) {
       File.aggregate([{ $group: { _id: null, totalSize: { $sum: "$size" } } }]),
     ]);
 
+    const practiceTransferStatsBase =
+      Array.isArray(practiceTransferStatsRaw) && practiceTransferStatsRaw[0]
+        ? practiceTransferStatsRaw[0]
+        : {};
+
+    const practiceKeys = Array.isArray(practiceTransferStatsBase?.practiceKeys)
+      ? practiceTransferStatsBase.practiceKeys
+          .map((v) => String(v || "").trim())
+          .filter(Boolean)
+      : [];
+    const labKeys = Array.isArray(practiceTransferStatsBase?.labKeys)
+      ? practiceTransferStatsBase.labKeys
+          .map((v) => String(v || "").trim())
+          .filter(Boolean)
+      : [];
+
     const dashboardData = {
       users: {
         total: totalUsers,
@@ -812,6 +1111,24 @@ export async function getDashboardStats(req, res) {
         total: totalFiles,
         totalSize: totalFileSize.length > 0 ? totalFileSize[0].totalSize : 0,
       },
+      practiceTransfers: {
+        totalTransfers: Number(practiceTransferStatsBase?.totalTransfers || 0),
+        totalFiles: Number(practiceTransferStatsBase?.totalFiles || 0),
+        totalPractices: practiceKeys.length,
+        totalLabs: labKeys.length,
+        unreadTransfers: Number(practiceTransferStatsBase?.unreadTransfers || 0),
+        activeTransfers: Number(practiceTransferStatsBase?.activeTransfers || 0),
+        canceledTransfers: Number(practiceTransferStatsBase?.canceledTransfers || 0),
+        topPractices: Array.isArray(practiceTransferTopPracticesRaw)
+          ? practiceTransferTopPracticesRaw
+          : [],
+        topLabs: Array.isArray(practiceTransferTopLabsRaw)
+          ? practiceTransferTopLabsRaw
+          : [],
+        recentTransfers: Array.isArray(practiceTransferRecentRaw)
+          ? practiceTransferRecentRaw
+          : [],
+      },
     };
 
     res.status(200).json({
@@ -826,6 +1143,7 @@ export async function getDashboardStats(req, res) {
         pricingSsotHealth,
         unmachinableSummary,
         happyCallSummary,
+        practiceTransferStats: dashboardData.practiceTransfers,
       },
     });
   } catch (error) {
