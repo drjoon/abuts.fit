@@ -592,11 +592,12 @@ export const AdminDashboardPage = () => {
     ? (adminDashboardResponse.data?.unmachinableSummary ?? null)
     : null;
 
+  const unmachinableItems = Array.isArray(unmachinableSummary?.items)
+    ? unmachinableSummary.items
+    : [];
+
   const unmachinableRequestIdSet = new Set(
-    (Array.isArray(unmachinableSummary?.items)
-      ? unmachinableSummary.items
-      : []
-    )
+    unmachinableItems
       .map((item: any) => String(item?.requestId || "").trim())
       .filter(Boolean),
   );
@@ -642,13 +643,25 @@ export const AdminDashboardPage = () => {
     ? (adminDashboardResponse.data?.happyCallSummary ?? null)
     : null;
 
-  const inProgressRequestCount =
-    Number(adminDashboardResponse?.data?.requestStats?.byStatus?.["의뢰"] || 0) +
-    Number(adminDashboardResponse?.data?.requestStats?.byStatus?.["CAM"] || 0) +
-    Number(adminDashboardResponse?.data?.requestStats?.byStatus?.["가공"] || 0) +
-    Number(adminDashboardResponse?.data?.requestStats?.byStatus?.["세척.패킹"] || 0) +
-    Number(adminDashboardResponse?.data?.requestStats?.byStatus?.["포장.발송"] || 0) +
-    Number(adminDashboardResponse?.data?.requestStats?.byStatus?.["추적관리"] || 0);
+  const inProgressStageList = ["의뢰", "CAM", "가공", "세척.패킹", "포장.발송"] as const;
+  const inProgressBaseRequestCount = inProgressStageList.reduce(
+    (acc, stage) => acc + Number(adminDashboardResponse?.data?.requestStats?.byStatus?.[stage] || 0),
+    0,
+  );
+  const unmachinableInProgressRequestCount = new Set(
+    unmachinableItems
+      .filter((item: any) =>
+        inProgressStageList.includes(
+          String(item?.manufacturerStage || "").trim() as (typeof inProgressStageList)[number],
+        ),
+      )
+      .map((item: any) => String(item?.requestId || "").trim())
+      .filter(Boolean),
+  ).size;
+  const inProgressRequestCount = Math.max(
+    0,
+    inProgressBaseRequestCount - unmachinableInProgressRequestCount,
+  );
 
   const riskWarningCount = Number(riskSummary?.warningCount || 0);
   const riskDelayedCount = Number(riskSummary?.delayedCount || 0);
@@ -1059,7 +1072,7 @@ export const AdminDashboardPage = () => {
                 <CardContent>
                   <button
                     type="button"
-                    className="w-full rounded-md border px-3 py-3 text-left hover:bg-slate-50 transition"
+                    className="w-full px-1 py-2 text-left hover:bg-slate-50/70 transition rounded-sm"
                     onClick={() => {
                       setHappyCallReasonFilter("all");
                       setHappyCallDialogTab("targets");
@@ -1083,7 +1096,7 @@ export const AdminDashboardPage = () => {
               </Card>
 
               {/* 카드3: 치과 의뢰(파일) 전송 통계 */}
-              <Card className="app-glass-card app-glass-card--lg lg:col-span-2">
+              <Card className="app-glass-card app-glass-card--lg">
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                   <CardTitle className="text-sm font-medium">치과 의뢰(파일) 전송 통계</CardTitle>
                   <UploadCloud className="h-4 w-4 text-muted-foreground" />
@@ -1091,34 +1104,99 @@ export const AdminDashboardPage = () => {
                 <CardContent className="space-y-3">
                   <button
                     type="button"
-                    className="w-full rounded-md border px-3 py-2 text-left hover:bg-slate-50 transition"
+                    className="w-full px-1 py-1 text-left hover:bg-slate-50/70 transition rounded-sm"
                     onClick={() => setPracticeTransferStatsDialogOpen(true)}
                   >
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                      <div className="rounded-md border px-2 py-2">
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-x-4 gap-y-2">
+                      <div>
                         <div className="text-[11px] text-muted-foreground">전송</div>
                         <div className="text-lg font-semibold">{practiceTransferTotal.toLocaleString()}건</div>
                       </div>
-                      <div className="rounded-md border px-2 py-2">
+                      <div>
                         <div className="text-[11px] text-muted-foreground">파일</div>
                         <div className="text-lg font-semibold">{practiceTransferTotalFiles.toLocaleString()}개</div>
                       </div>
-                      <div className="rounded-md border px-2 py-2 border-blue-200 bg-blue-50/60">
+                      <div>
                         <div className="text-[11px] text-muted-foreground">치과</div>
                         <div className="text-lg font-semibold text-blue-700">{practiceTransferTotalPractices.toLocaleString()}곳</div>
                       </div>
-                      <div className="rounded-md border px-2 py-2 border-emerald-200 bg-emerald-50/60">
+                      <div>
                         <div className="text-[11px] text-muted-foreground">기공소</div>
                         <div className="text-lg font-semibold text-emerald-700">{practiceTransferTotalLabs.toLocaleString()}곳</div>
                       </div>
                     </div>
-                    <div className="mt-2 text-[11px] text-muted-foreground">
-                      수신대기 {practiceTransferUnread.toLocaleString()}건 · 활성 {practiceTransferActive.toLocaleString()}건 · 취소 {practiceTransferCanceled.toLocaleString()}건
-                    </div>
-                    <div className="mt-1 text-[11px] text-muted-foreground">
-                      클릭하면 세부 내용을 확인할 수 있습니다.
-                    </div>
                   </button>
+                </CardContent>
+              </Card>
+
+              {/* 카드5: 미처리 통신 */}
+              <Card className="app-glass-card app-glass-card--lg h-full">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">
+                    미처리 통신
+                  </CardTitle>
+                  <MessageSquare className="h-4 w-4 text-muted-foreground" />
+                </CardHeader>
+                <CardContent className="space-y-2">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-0.5">
+                      <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                        <MessageCircle className="h-3 w-3" />
+                        채팅
+                      </div>
+                      <button
+                        type="button"
+                        className={`text-lg font-bold focus:outline-none ${
+                          commBadgeCounts.chat > 0
+                            ? "text-blue-600 hover:text-blue-700 hover:underline"
+                            : "text-slate-900 hover:underline"
+                        }`}
+                        onClick={() => navigate("/dashboard/chat-management?unread=1")}
+                        aria-label="미확인 채팅 페이지로 이동"
+                      >
+                        {commBadgeCounts.chat.toLocaleString()}
+                      </button>
+                    </div>
+                    <div className="space-y-0.5">
+                      <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                        <MessageSquare className="h-3 w-3" />
+                        메시지
+                      </div>
+                      <div
+                        className={`text-lg font-bold ${
+                          commBadgeCounts.request > 0 ? "text-blue-600" : "text-slate-900"
+                        }`}
+                      >
+                        {commBadgeCounts.request.toLocaleString()}
+                      </div>
+                    </div>
+                    <div className="space-y-0.5">
+                      <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                        <Mail className="h-3 w-3" />
+                        메일
+                      </div>
+                      <div
+                        className={`text-lg font-bold ${
+                          commBadgeCounts.mail > 0 ? "text-blue-600" : "text-slate-900"
+                        }`}
+                      >
+                        {commBadgeCounts.mail.toLocaleString()}
+                      </div>
+                    </div>
+                    <div className="space-y-0.5">
+                      <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                        <HelpCircle className="h-3 w-3" />
+                        문의
+                      </div>
+                      <div
+                        className={`text-lg font-bold ${
+                          commBadgeCounts.inquiry > 0 ? "text-blue-600" : "text-slate-900"
+                        }`}
+                      >
+                        {commBadgeCounts.inquiry.toLocaleString()}
+                      </div>
+                    </div>
+                  </div>
                 </CardContent>
               </Card>
             </div>
@@ -1126,58 +1204,27 @@ export const AdminDashboardPage = () => {
             <div className="grid grid-cols-1 gap-3 lg:grid-cols-2 items-stretch">
               <div className="flex h-full flex-col gap-3">
                 <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                  {/* 카드5: 미처리 통신 */}
+                  {/* 카드8: 지연 위험 요약 */}
                   <Card className="app-glass-card app-glass-card--lg h-full">
                     <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                      <CardTitle className="text-sm font-medium">
-                        미처리 통신
-                      </CardTitle>
-                      <MessageSquare className="h-4 w-4 text-muted-foreground" />
+                      <CardTitle className="text-sm font-medium">지연 위험 요약</CardTitle>
+                      <AlertCircle className="h-4 w-4 text-muted-foreground" />
                     </CardHeader>
-                    <CardContent className="space-y-2">
-                      <div className="grid grid-cols-2 gap-3">
-                        <div className="space-y-0.5">
-                          <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                            <MessageCircle className="h-3 w-3" />
-                            채팅
-                          </div>
-                          <button
-                            type="button"
-                            className="text-lg font-bold text-blue-600 hover:text-blue-700 hover:underline focus:outline-none"
-                            onClick={() => navigate("/dashboard/chat-management?unread=1")}
-                            aria-label="미확인 채팅 페이지로 이동"
-                          >
-                            {commBadgeCounts.chat.toLocaleString()}
-                          </button>
+                    <CardContent>
+                      <button
+                        type="button"
+                        className="w-full px-1 py-1 text-left hover:bg-slate-50/70 transition rounded-sm"
+                        onClick={() => setRiskSummaryDialogOpen(true)}
+                      >
+                        <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+                          <span>지연 가능 의뢰: {riskWarningCount.toLocaleString()}건</span>
+                          <span>지연 확정 의뢰: {riskDelayedCount.toLocaleString()}건</span>
+                          <span>정시 발송 비율: {riskOnTimeRate.toLocaleString()}%</span>
                         </div>
-                        <div className="space-y-0.5">
-                          <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                            <MessageSquare className="h-3 w-3" />
-                            메시지
-                          </div>
-                          <div className="text-lg font-bold">
-                            {commBadgeCounts.request.toLocaleString()}
-                          </div>
+                        <div className="mt-1 text-[11px] text-muted-foreground">
+                          클릭하면 지연 위험 상세 내역을 확인할 수 있습니다.
                         </div>
-                        <div className="space-y-0.5">
-                          <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                            <Mail className="h-3 w-3" />
-                            메일
-                          </div>
-                          <div className="text-lg font-bold">
-                            {commBadgeCounts.mail.toLocaleString()}
-                          </div>
-                        </div>
-                        <div className="space-y-0.5">
-                          <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                            <HelpCircle className="h-3 w-3" />
-                            문의
-                          </div>
-                          <div className="text-lg font-bold">
-                            {commBadgeCounts.inquiry.toLocaleString()}
-                          </div>
-                        </div>
-                      </div>
+                      </button>
                     </CardContent>
                   </Card>
 
@@ -1192,7 +1239,7 @@ export const AdminDashboardPage = () => {
                     <CardContent>
                       <button
                         type="button"
-                        className="w-full rounded-md border px-3 py-2 text-left hover:bg-slate-50 transition"
+                        className="w-full px-1 py-1 text-left hover:bg-slate-50/70 transition rounded-sm"
                         onClick={() => {
                           setDesignSoftwareStatsFilter("all");
                           setDesignSoftwareStatsDialogOpen(true);
@@ -1206,14 +1253,14 @@ export const AdminDashboardPage = () => {
                             );
                             const tone = getDesignSoftwareToneClasses(row.key);
                             return (
-                              <div key={row.key} className={`space-y-1 rounded-md px-2 py-1 ${tone.panel}`}>
+                              <div key={row.key} className="space-y-1 py-0.5">
                                 <div className="flex items-center justify-between text-[11px]">
                                   <span className="text-muted-foreground">{row.label}</span>
                                   <span className={`font-semibold ${tone.count}`}>
                                     {row.count.toLocaleString()}개
                                   </span>
                                 </div>
-                                <div className="h-2 w-full rounded bg-white/80 overflow-hidden">
+                                <div className="h-2 w-full rounded bg-slate-100 overflow-hidden">
                                   <div
                                     className={`h-full rounded ${tone.bar}`}
                                     style={{ width: `${ratio * 100}%` }}
@@ -1224,7 +1271,7 @@ export const AdminDashboardPage = () => {
                           })}
                         </div>
                         <div className="mt-2 text-[11px] text-muted-foreground">
-                          총 {designSoftwareTotalCount.toLocaleString()}개 사업자 · 클릭하면 세부 내역
+                          총 {designSoftwareTotalCount.toLocaleString()}개 사업자
                         </div>
                       </button>
                     </CardContent>
@@ -1307,30 +1354,8 @@ export const AdminDashboardPage = () => {
                   </CardContent>
                 </Card>
 
-                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                  {/* 카드8: 지연 위험 요약 */}
-                  <Card className="app-glass-card app-glass-card--lg">
-                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                      <CardTitle className="text-sm font-medium">지연 위험 요약</CardTitle>
-                      <AlertCircle className="h-4 w-4 text-muted-foreground" />
-                    </CardHeader>
-                    <CardContent>
-                      <button
-                        type="button"
-                        className="w-full rounded-md border px-3 py-2 text-left hover:bg-slate-50 transition"
-                        onClick={() => setRiskSummaryDialogOpen(true)}
-                      >
-                        <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-                          <span>지연 가능 의뢰: {riskWarningCount.toLocaleString()}건</span>
-                          <span>지연 확정 의뢰: {riskDelayedCount.toLocaleString()}건</span>
-                          <span>정시 발송 비율: {riskOnTimeRate.toLocaleString()}%</span>
-                        </div>
-                        <div className="mt-1 text-[11px] text-muted-foreground">
-                          클릭하면 지연 위험 상세 내역을 확인할 수 있습니다.
-                        </div>
-                      </button>
-                    </CardContent>
-                  </Card>
+                <div className="grid grid-cols-1 gap-3">
+
 
                   {/* 카드9: 가격 SSOT 점검 */}
                   <Card className="app-glass-card app-glass-card--lg">
@@ -1482,11 +1507,14 @@ export const AdminDashboardPage = () => {
                     </div>
                   </div>
 
-                  <div className="flex-1 min-h-0 space-y-1.5 overflow-auto pr-1">
-                    {(Array.isArray(unmachinableSummary?.items)
-                      ? unmachinableSummary.items
-                      : []
-                    ).map((rawItem, idx) => {
+                  <div
+                    className={`flex-1 min-h-0 space-y-1.5 pr-1 ${
+                      unmachinableItems.length >= 8
+                        ? "max-h-[420px] overflow-y-auto"
+                        : "overflow-visible"
+                    }`}
+                  >
+                    {unmachinableItems.map((rawItem, idx) => {
                       const item = rawItem as Record<string, unknown>;
                       const code = String(
                         item?.unmachinableDetailCode || "none",
@@ -1537,7 +1565,7 @@ export const AdminDashboardPage = () => {
                       );
                     })}
 
-                    {Number((unmachinableSummary?.items || []).length || 0) === 0 && (
+                    {unmachinableItems.length === 0 && (
                       <div className="text-xs text-muted-foreground py-2 text-center">
                         표시할 불완전가공 의뢰가 없습니다.
                       </div>
