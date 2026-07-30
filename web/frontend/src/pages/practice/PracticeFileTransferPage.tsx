@@ -2485,6 +2485,7 @@ export const PracticeFileTransferPage = () => {
   }, [orderDate, arrivalDefaultDays]);
 
   useEffect(() => {
+    if (!localFormHydrated) return;
     if (toothWorks.length > 0) return;
     if (normalizedProsthesisTypes.length === 0) return;
     setToothWorks([
@@ -2495,7 +2496,7 @@ export const PracticeFileTransferPage = () => {
         bridgeLinkedTeeth: [],
       },
     ]);
-  }, [normalizedProsthesisTypes, toothWorks.length]);
+  }, [localFormHydrated, normalizedProsthesisTypes, toothWorks.length]);
 
   const handleAddToothWorkRow = () => {
     setToothWorks((prev) => [
