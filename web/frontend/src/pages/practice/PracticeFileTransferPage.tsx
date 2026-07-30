@@ -749,6 +749,7 @@ export const PracticeFileTransferPage = () => {
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [deleteTargetTransfer, setDeleteTargetTransfer] = useState<RecentTransferItem | null>(null);
   const [deletingTransfer, setDeletingTransfer] = useState(false);
+  const [localFormHydrated, setLocalFormHydrated] = useState(false);
   const chatBottomRef = useRef<HTMLDivElement | null>(null);
   const chatRoomResolveSeqRef = useRef(0);
   const prevFileCountRef = useRef(0);
@@ -1079,6 +1080,14 @@ export const PracticeFileTransferPage = () => {
         localFormUpdatedAtRef.current > 0 &&
         (!hasValidServerUpdatedAt || localFormUpdatedAtRef.current >= serverUpdatedAt);
 
+      if (import.meta.env.DEV) {
+        console.info("[practice-transfer] loadDraft compare", {
+          localUpdatedAt: localFormUpdatedAtRef.current,
+          serverUpdatedAt: hasValidServerUpdatedAt ? serverUpdatedAt : null,
+          shouldKeepLocalForm,
+        });
+      }
+
       const restoredFiles = Array.isArray(payload.files)
         ? payload.files
             .map((row) => ({
@@ -1322,6 +1331,17 @@ export const PracticeFileTransferPage = () => {
       );
       const restoredMemo = String(parsed.requestMemo || "");
 
+      if (import.meta.env.DEV) {
+        console.info("[practice-transfer] restore local form", {
+          localUpdatedAt: localFormUpdatedAtRef.current,
+          restoredOrderDate,
+          restoredArrivalDate,
+          restoredArrivalDefaultDays,
+          restoredProsthesisTypes,
+          restoredToothWorksCount: Array.isArray(parsed.toothWorks) ? parsed.toothWorks.length : 0,
+        });
+      }
+
       if (restoredOrderDate) setOrderDate(restoredOrderDate);
       if (restoredArrivalDate) setArrivalDate(restoredArrivalDate);
       setArrivalDefaultDays(restoredArrivalDefaultDays);
@@ -1363,10 +1383,14 @@ export const PracticeFileTransferPage = () => {
       }
     } catch {
       // ignore
+    } finally {
+      setLocalFormHydrated(true);
     }
   }, [setRequestMemo, setSelectedLab]);
 
   useEffect(() => {
+    if (!localFormHydrated) return;
+
     const updatedAt = Date.now();
 
     const payload: PracticeTransferLocalFormDraft = {
@@ -1391,12 +1415,24 @@ export const PracticeFileTransferPage = () => {
 
     try {
       localStorage.setItem(PRACTICE_TRANSFER_FORM_LOCAL_KEY, JSON.stringify(payload));
+      localFormUpdatedAtRef.current = updatedAt;
+      if (import.meta.env.DEV) {
+        console.info("[practice-transfer] save local form", {
+          updatedAt,
+          orderDate,
+          arrivalDate,
+          arrivalDefaultDays,
+          prosthesisTypes: normalizedProsthesisTypes,
+          toothWorksCount: toothWorks.length,
+        });
+      }
     } catch {
       // ignore
     }
   }, [
     arrivalDate,
     arrivalDefaultDays,
+    localFormHydrated,
     normalizedProsthesisTypes,
     orderDate,
     requestMemo,
