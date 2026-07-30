@@ -57,7 +57,7 @@ export const PeriodFilter = ({
           type="button"
           onClick={() => onChange(k)}
           className={cn(
-            "rounded-md px-2.5 py-1 text-[11px] transition-colors",
+            "whitespace-nowrap rounded-md px-2.5 py-1 text-[11px] transition-colors",
             value === k
               ? "bg-primary text-primary-foreground"
               : "bg-background text-muted-foreground hover:bg-muted",
