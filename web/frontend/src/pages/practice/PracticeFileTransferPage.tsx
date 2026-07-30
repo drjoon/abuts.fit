@@ -25,6 +25,7 @@
  * - web/frontend/src/shared/realtime/useAppEventDebouncedReload.ts
  * - web/frontend/src/shared/components/PracticeTransferDetailChatDialog.tsx
  * - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
+ * - web/frontend/src/shared/practice/toothWorkDraft.ts
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -103,6 +104,7 @@ import {
 } from "@/shared/components/PracticeTransferDetailChatDialog";
 import { PracticeDateInputField } from "@/shared/components/practice/PracticeDateInputField";
 import { PracticeTransferMiddleGrid } from "@/shared/components/practice/PracticeTransferMiddleGrid";
+import { restoreToothWorksFromDraft } from "@/shared/practice/toothWorkDraft";
 import {
   Dialog,
   DialogContent,
@@ -1325,29 +1327,12 @@ export const PracticeFileTransferPage = () => {
       }
 
       if (Array.isArray(parsed.toothWorks)) {
-        const restoredRows = parsed.toothWorks.map((row) => {
-          const toothNumber = String(row?.toothNumber || "").trim();
-          const prosthesisTypeRaw = String(row?.prosthesisType || "").trim();
-          const prosthesisType = restoredProsthesisTypes.some((type) => type === prosthesisTypeRaw)
-            ? prosthesisTypeRaw
-            : restoredProsthesisTypes[0] || "크라운";
-          const customAbutment = isCustomAbutmentSupportedProsthesisType(prosthesisType)
-            ? Boolean(row?.customAbutment)
-            : false;
-          const adjacent = getAdjacentTeeth(toothNumber);
-          const bridgeLinkedTeeth =
-            isBridgeLikeProsthesisType(prosthesisType) && Array.isArray(row?.bridgeLinkedTeeth)
-              ? row.bridgeLinkedTeeth
-                  .map((v) => String(v || "").trim())
-                  .filter((v) => adjacent.includes(v))
-              : [];
-
-          return {
-            toothNumber,
-            prosthesisType,
-            customAbutment,
-            bridgeLinkedTeeth,
-          };
+        const restoredRows = restoreToothWorksFromDraft(parsed.toothWorks, {
+          prosthesisTypes: restoredProsthesisTypes,
+          isCustomAbutmentSupportedProsthesisType,
+          isBridgeLikeProsthesisType,
+          getAdjacentTeeth,
+          fallbackProsthesisType: "크라운",
         });
 
         if (import.meta.env.DEV) {

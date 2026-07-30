@@ -166,6 +166,7 @@
 - practice
   - `web/frontend/src/pages/practice/PracticeDropzonePage.tsx`
   - `web/frontend/src/pages/practice/PracticeFileTransferPage.tsx`
+  - `web/frontend/src/shared/practice/toothWorkDraft.ts`
   - `web/frontend/src/shared/components/PracticeTransferDetailChatDialog.tsx`
   - `web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx`
 - 관리자 사용자/사업자

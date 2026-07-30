@@ -17,6 +17,7 @@
  * - web/frontend/src/pages/public/Index.tsx
  * - web/frontend/src/App.tsx
  * - web/frontend/src/pages/practice/hooks/usePracticeTransferStep1.ts
+ * - web/frontend/src/shared/practice/toothWorkDraft.ts
  * - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
  * - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
  */
@@ -104,6 +105,7 @@ import {
 } from "@/pages/practice/hooks/usePracticeTransferStep1";
 import { PracticeDateInputField } from "@/shared/components/practice/PracticeDateInputField";
 import { PracticeTransferMiddleGrid } from "@/shared/components/practice/PracticeTransferMiddleGrid";
+import { restoreToothWorksFromDraft } from "@/shared/practice/toothWorkDraft";
 const PRACTICE_DRAFT_STORAGE_KEY = "practice_dropzone_draft_v2";
 const PRACTICE_FILE_CACHE_META_KEY = "practice_dropzone_file_cache_meta_v1";
 const PRACTICE_SESSION_META_KEY = "practice_dropzone_session_meta_v1";
@@ -716,7 +718,13 @@ export const PracticeDropzonePage = () => {
         setProsthesisTypes(restoredProsthesisTypes);
         const restoredToothWorks =
           Array.isArray(parsed.toothWorks) && parsed.toothWorks.length > 0
-            ? normalizeToothWorks(parsed.toothWorks as ToothWorkSelection[])
+            ? restoreToothWorksFromDraft(parsed.toothWorks, {
+                prosthesisTypes: restoredProsthesisTypes,
+                isCustomAbutmentSupportedProsthesisType,
+                isBridgeLikeProsthesisType,
+                getAdjacentTeeth,
+                fallbackProsthesisType: "크라운",
+              })
             : [];
         setToothWorks(
           restoredToothWorks.length > 0
@@ -887,7 +895,7 @@ export const PracticeDropzonePage = () => {
       arrivalDate,
       arrivalDefaultDays,
       prosthesisTypes: normalizedProsthesisTypes,
-      toothWorks: normalizeToothWorks(toothWorks),
+      toothWorks,
       practiceName,
       accessPassword,
       staffName,
