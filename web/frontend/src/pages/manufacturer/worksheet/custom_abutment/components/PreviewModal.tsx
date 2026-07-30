@@ -3,7 +3,8 @@
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
-// - web/backend/controllers/requests/common.review.controller.js
+// - web/backend/controllers/requests/common.requests.controller.js
+// - web/backend/modules/requests/request.routes.js
 import { useCallback, useEffect, useRef, useState } from "react";
 import { DialogClose } from "@radix-ui/react-dialog";
 import { RefreshCw } from "lucide-react";
@@ -414,6 +415,10 @@ type PreviewModalProps = {
     req: ManufacturerRequest,
     value: ManufacturerHexRotationMode,
   ) => Promise<void>;
+  onSaveAnodizingEnabledOverride?: (
+    req: ManufacturerRequest,
+    value: boolean,
+  ) => Promise<void>;
   onOpenNextRequest?: (currentReqId: string) => Promise<void>;
   setSearchParams: (
     nextInit: ((prev: URLSearchParams) => URLSearchParams) | URLSearchParams,
@@ -450,6 +455,7 @@ export const PreviewModal = ({
   onMarkUnmachinable,
   onRestoreUnmachinable,
   onSaveManufacturerHexRotation,
+  onSaveAnodizingEnabledOverride,
   onOpenNextRequest,
   setSearchParams,
 }: PreviewModalProps) => {
@@ -478,9 +484,11 @@ export const PreviewModal = ({
   const [guidedFinishLineOverridePoints, setGuidedFinishLineOverridePoints] =
     useState<number[][] | null>(null);
   const [hexRotationSaving, setHexRotationSaving] = useState(false);
+  const [anodizingSaving, setAnodizingSaving] = useState(false);
   const [approving, setApproving] = useState(false);
   const [manufacturerHexRotationDraft, setManufacturerHexRotationDraft] =
     useState<ManufacturerHexRotationDraftMode>("");
+  const [anodizingEnabledDraft, setAnodizingEnabledDraft] = useState<boolean>(true);
   const req = previewFiles.request as ManufacturerRequest | null;
   const lastStableReqRef = useRef<ManufacturerRequest | null>(null);
 
@@ -590,6 +598,17 @@ export const PreviewModal = ({
     const tokens = parseUnmachinableReasonTokens(existingReason);
     setSelectedReasonValues(tokens);
     setUnmachinableReasonDraft("");
+
+    const caseAnodizing = (req as any)?.caseInfos?.anodizingEnabled;
+    const businessDefaultAnodizing = (req as any)?.business?.requestSettings
+      ?.anodizingEnabled;
+    if (typeof caseAnodizing === "boolean") {
+      setAnodizingEnabledDraft(caseAnodizing);
+    } else if (typeof businessDefaultAnodizing === "boolean") {
+      setAnodizingEnabledDraft(businessDefaultAnodizing);
+    } else {
+      setAnodizingEnabledDraft(true);
+    }
 
     const requestorHexCanonical = resolveRequestorHexRotationByDesignSoftware(
       (req as any)?.caseInfos?.designSoftware,
@@ -1610,6 +1629,28 @@ export const PreviewModal = ({
     }
   };
 
+  const handleToggleAnodizingEnabled = async (checked: boolean) => {
+    if (
+      !onSaveAnodizingEnabledOverride ||
+      anodizingSaving ||
+      approveBusy ||
+      !(currentReviewStageKey === "request" || currentReviewStageKey === "cam")
+    ) {
+      return;
+    }
+
+    const prev = anodizingEnabledDraft;
+    setAnodizingEnabledDraft(checked);
+    setAnodizingSaving(true);
+    try {
+      await onSaveAnodizingEnabledOverride(activeReq, checked);
+    } catch {
+      setAnodizingEnabledDraft(prev);
+    } finally {
+      setAnodizingSaving(false);
+    }
+  };
+
   const pickInputId = `right-upload-${activeReq?._id || "pending"}`;
 
   const realtimeBadge = String(activeReq?.realtimeProgress?.badge || "").trim();
@@ -1639,6 +1680,14 @@ export const PreviewModal = ({
   // 의뢰건(caseInfos)에 저장된 값을 사용한다.
   const requestorDesignSoftwareLabel =
     String((activeReq as any)?.caseInfos?.designSoftware || "").trim() || "-";
+  const currentCaseAnodizing = (activeReq as any)?.caseInfos?.anodizingEnabled;
+  const currentBusinessDefaultAnodizing =
+    (activeReq as any)?.business?.requestSettings?.anodizingEnabled;
+  const isAnodizingFromBusinessDefault =
+    typeof currentCaseAnodizing !== "boolean" &&
+    typeof currentBusinessDefaultAnodizing === "boolean";
+  const canOverrideAnodizing =
+    currentReviewStageKey === "request" || currentReviewStageKey === "cam";
 
   const overlayCaseInfos = (activeReq?.caseInfos || {}) as Record<string, any>;
   const overlayFlat = (activeReq || {}) as Record<string, any>;
@@ -1855,6 +1904,37 @@ export const PreviewModal = ({
             </div>
 
             <div className="flex shrink-0 items-center gap-2">
+              <label
+                className={`inline-flex items-center gap-1.5 rounded-md border px-1.5 py-1 text-[11px] font-semibold ${
+                  canOverrideAnodizing && !approveBusy && !anodizingSaving
+                    ? "border-slate-200 bg-white text-slate-700"
+                    : "border-slate-200 bg-slate-100 text-slate-400"
+                }`}
+                title={
+                  isAnodizingFromBusinessDefault
+                    ? "의뢰값이 없어 의뢰자 사업자 기본값을 사용 중입니다."
+                    : "의뢰 caseInfos 값을 사용 중입니다."
+                }
+              >
+                <input
+                  type="checkbox"
+                  className="h-3.5 w-3.5 rounded border-slate-300"
+                  checked={Boolean(anodizingEnabledDraft)}
+                  disabled={
+                    !canOverrideAnodizing ||
+                    approveBusy ||
+                    anodizingSaving ||
+                    !onSaveAnodizingEnabledOverride
+                  }
+                  onChange={(e) => {
+                    void handleToggleAnodizingEnabled(Boolean(e.target.checked));
+                  }}
+                />
+                <span className="whitespace-nowrap">아노다이징</span>
+                <span className="text-[10px] font-semibold text-slate-500">
+                  {anodizingEnabledDraft ? "O" : "X"}
+                </span>
+              </label>
               <div className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-1.5 py-1">
                 <span className="whitespace-nowrap text-[12px] font-semibold text-slate-700">
                   {requestorDesignSoftwareLabel}
@@ -1878,10 +1958,10 @@ export const PreviewModal = ({
                     !isRequestStage
                   }
                 >
-                  <SelectTrigger className="h-7 min-w-[168px] rounded-md border border-slate-200 bg-slate-50 px-2 text-[12px] font-semibold text-slate-700 shadow-sm focus:ring-1 focus:ring-blue-200 disabled:opacity-60">
+                  <SelectTrigger className="h-7 min-w-[112px] rounded-md border border-slate-200 bg-slate-50 px-2 text-[12px] font-semibold text-slate-700 shadow-sm focus:ring-1 focus:ring-blue-200 disabled:opacity-60">
                     <SelectValue placeholder="선택" />
                   </SelectTrigger>
-                  <SelectContent align="end" className="min-w-[168px]">
+                  <SelectContent align="end" className="min-w-[112px]">
                     <SelectItem value="STL모델대로" className="text-[12px] font-medium">
                       {toManufacturerHexRotationLabel("STL모델대로")}
                     </SelectItem>

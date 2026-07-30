@@ -1656,6 +1656,7 @@ export async function getAllRequests(req, res) {
               metadata: 1,
               shippingPolicy: 1,
               "requestSettings.designSoftware": 1,
+              "requestSettings.anodizingEnabled": 1,
             })
             .lean()
         : [];
@@ -1735,6 +1736,10 @@ export async function getAllRequests(req, res) {
             designSoftware: String(
               requestSettingsRaw?.designSoftware || "",
             ).trim() || null,
+            anodizingEnabled:
+              typeof requestSettingsRaw?.anodizingEnabled === "boolean"
+                ? requestSettingsRaw.anodizingEnabled
+                : null,
           },
         };
         item.requestorBusinessAnchor = item.business;
@@ -2711,6 +2716,111 @@ export const confirmAllRndUnmachinableByRequestor = asyncHandler(
     });
   },
 );
+
+export const updateRequestAnodizingOverride = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const hasAnodizingEnabled = Object.prototype.hasOwnProperty.call(
+    req.body || {},
+    "anodizingEnabled",
+  );
+  const anodizingEnabled = req.body?.anodizingEnabled;
+
+  if (!hasAnodizingEnabled || typeof anodizingEnabled !== "boolean") {
+    return res.status(400).json({
+      success: false,
+      message: "anodizingEnabled(boolean) 값이 필요합니다.",
+    });
+  }
+
+  if (!mongoose.Types.ObjectId.isValid(id)) {
+    return res.status(400).json({
+      success: false,
+      message: "유효하지 않은 의뢰 ID입니다.",
+    });
+  }
+
+  const request = await Request.findById(id);
+  if (!request) {
+    return res.status(404).json({
+      success: false,
+      message: "의뢰를 찾을 수 없습니다.",
+    });
+  }
+
+  if (req.user.role === "manufacturer") {
+    const orgScope = await buildManufacturerOrgScopeFilter(req);
+    const allowed = await Request.exists({
+      _id: request._id,
+      ...orgScope,
+    });
+    if (!allowed) {
+      return res.status(403).json({
+        success: false,
+        message: "이 의뢰를 변경할 권한이 없습니다.",
+      });
+    }
+  }
+
+  // 정책: 제조사 아노다이징 override는 의뢰/CAM 단계에서만 허용한다.
+  const currentManufacturerStage = String(request?.manufacturerStage || "").trim();
+  const editableStages = new Set(["의뢰", "CAM", "request", "cam"]);
+  if (!editableStages.has(currentManufacturerStage)) {
+    return res.status(409).json({
+      success: false,
+      message:
+        "아노다이징 여부 override는 의뢰/CAM 단계에서만 변경할 수 있습니다.",
+    });
+  }
+
+  request.set("caseInfos.anodizingEnabled", anodizingEnabled);
+  await request.save();
+
+  const requestorBusinessAnchorId = String(request.businessAnchorId || "").trim();
+  if (requestorBusinessAnchorId) {
+    try {
+      await triggerDashboardSummaryRefreshForAnchorId(
+        requestorBusinessAnchorId,
+        "request-anodizing-updated",
+      );
+    } catch (refreshError) {
+      console.warn("[request-anodizing] dashboard refresh trigger failed", {
+        requestId: request.requestId,
+        error: refreshError?.message,
+      });
+    }
+  }
+
+  emitAppEventToRoles(
+    REQUEST_HEX_ROTATION_EVENT_ROLES,
+    "request:anodizing-updated",
+    {
+      requestId: request.requestId,
+      requestMongoId: String(request._id || "").trim() || null,
+      requestorBusinessAnchorId: requestorBusinessAnchorId || null,
+      anodizingEnabled,
+      request: {
+        _id: request._id,
+        requestId: request.requestId,
+        manufacturerStage: request.manufacturerStage,
+        businessAnchorId: request.businessAnchorId,
+        requestorBusinessAnchorId: requestorBusinessAnchorId || null,
+        caseInfos: {
+          ...(request.caseInfos || {}),
+          anodizingEnabled,
+        },
+      },
+    },
+  );
+
+  return res.status(200).json({
+    success: true,
+    data: {
+      requestId: request.requestId,
+      manufacturerStage: request.manufacturerStage,
+      anodizingEnabled,
+    },
+  });
+});
 
 export const updateRndHexRotation = asyncHandler(async (req, res) => {
   const { id } = req.params;

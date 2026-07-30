@@ -44,6 +44,11 @@
 
 - 제조사 헥스 회전 모드(`manufacturerHexRotation`)는 백엔드에서 fallback 기본값으로 보정하지 않습니다.
   - 허용값: canonical `STL모델대로` / `헥스30도회전` / `헥스X도회전(total)`
+- 제조사 아노다이징 override는 `caseInfos.anodizingEnabled` SSOT로 저장합니다.
+  - endpoint: `PATCH /api/requests/:id/anodizing-override`
+  - 변경 가능 단계: `의뢰`, `CAM` (그 외 단계는 409)
+  - 제조사 워크시트 응답의 `item.business.requestSettings.anodizingEnabled`를 함께 제공해
+    프론트가 `caseInfos` 미설정 시 사업자 기본값으로 표시할 수 있어야 합니다.
   - 전달 SSOT: `헥스X도회전`의 X는 `totalDeg(=30+minorDeg)`
     - 예) canonical `헥스40도회전`
   - 하위호환 입력: 레거시 `0`/`30`, 기존 minor 저장값(`헥스10도회전`)은 `헥스40도회전`으로 정규화 허용

@@ -24,6 +24,7 @@ export type ManufacturerRequest = RequestBase & {
     };
     requestSettings?: {
       designSoftware?: string | null;
+      anodizingEnabled?: boolean | null;
     } | null;
   } | null;
   deliveryInfoRef?: unknown;

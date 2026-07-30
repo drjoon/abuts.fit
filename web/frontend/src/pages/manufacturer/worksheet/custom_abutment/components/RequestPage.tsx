@@ -1449,6 +1449,9 @@ export const RequestPage = ({
     {},
   );
   const [, setHexRotationSavingMap] = useState<Record<string, boolean>>({});
+  const [anodizingSavingMap, setAnodizingSavingMap] = useState<
+    Record<string, boolean>
+  >({});
   const [bulkCamRegenerating, setBulkCamRegenerating] = useState(false);
 
   // related files (manufacturer hex rotation label/canonical mapping):
@@ -1646,6 +1649,103 @@ export const RequestPage = ({
       }
     },
     [pageState, toast, token],
+  );
+
+  const handleSaveAnodizingEnabledOverride = useCallback(
+    async (req: ManufacturerRequest, nextValue: boolean) => {
+      if (!req?._id) return;
+      const requestMongoId = String(req._id || "").trim();
+      if (!requestMongoId) return;
+
+      const stageLabel = String(req.manufacturerStage || "").trim();
+      if (!["의뢰", "CAM"].includes(stageLabel)) {
+        toast({
+          title: "변경 불가",
+          description: "아노다이징 여부는 의뢰/CAM 단계에서만 변경할 수 있습니다.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      if (anodizingSavingMap[requestMongoId]) return;
+
+      const prevValue =
+        typeof req.caseInfos?.anodizingEnabled === "boolean"
+          ? req.caseInfos.anodizingEnabled
+          : null;
+
+      setAnodizingSavingMap((prev) => ({ ...prev, [requestMongoId]: true }));
+      pageState.setRequests((prev) =>
+        prev.map((item) => {
+          if (String(item?._id || "").trim() !== requestMongoId) return item;
+          return {
+            ...item,
+            caseInfos: {
+              ...(item.caseInfos || {}),
+              anodizingEnabled: nextValue,
+            },
+          };
+        }),
+      );
+
+      try {
+        const res = await fetch(`/api/requests/${req._id}/anodizing-override`, {
+          method: "PATCH",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ anodizingEnabled: nextValue }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || data?.success === false) {
+          throw new Error(data?.message || "아노다이징 여부 저장에 실패했습니다.");
+        }
+
+        const savedValue =
+          typeof data?.data?.anodizingEnabled === "boolean"
+            ? Boolean(data.data.anodizingEnabled)
+            : nextValue;
+
+        pageState.setRequests((prev) =>
+          prev.map((item) => {
+            if (String(item?._id || "").trim() !== requestMongoId) return item;
+            return {
+              ...item,
+              caseInfos: {
+                ...(item.caseInfos || {}),
+                anodizingEnabled: savedValue,
+              },
+            };
+          }),
+        );
+      } catch (e: any) {
+        pageState.setRequests((prev) =>
+          prev.map((item) => {
+            if (String(item?._id || "").trim() !== requestMongoId) return item;
+            const nextCaseInfos = { ...(item.caseInfos || {}) };
+            if (typeof prevValue === "boolean") {
+              nextCaseInfos.anodizingEnabled = prevValue;
+            } else {
+              delete nextCaseInfos.anodizingEnabled;
+            }
+            return {
+              ...item,
+              caseInfos: nextCaseInfos,
+            };
+          }),
+        );
+        toast({
+          title: "아노다이징 저장 실패",
+          description: e?.message || "네트워크 오류",
+          variant: "destructive",
+        });
+        throw e;
+      } finally {
+        setAnodizingSavingMap((prev) => ({ ...prev, [requestMongoId]: false }));
+      }
+    },
+    [anodizingSavingMap, pageState, toast, token],
   );
 
   const handleSaveRndMemo = useCallback(
@@ -2346,6 +2446,7 @@ export const RequestPage = ({
         onMarkUnmachinable={handleMarkUnmachinable}
         onRestoreUnmachinable={handleRestoreUnmachinable}
         onSaveManufacturerHexRotation={handleSaveManufacturerHexRotation}
+        onSaveAnodizingEnabledOverride={handleSaveAnodizingEnabledOverride}
         onOpenNextRequest={handleOpenNextRequest}
         setSearchParams={setSearchParams}
         // onOpenNextRequest는 제거됨: 승인 후 다음 의뢰 자동 열기 방지

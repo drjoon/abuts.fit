@@ -3,6 +3,7 @@
 // - web/backend/controllers/requests/common.review.controller.js
 // - web/backend/controllers/requests/common.requests.controller.js
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/shipping/components/MailboxGrid.tsx
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx
 // - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
 import express from "express";
 const router = express.Router();
@@ -455,6 +456,13 @@ router.patch(
   authenticate,
   authorize(["manufacturer", "admin"]),
   requestController.updateRndHexRotation,
+);
+
+router.patch(
+  "/:id/anodizing-override",
+  authenticate,
+  authorize(["manufacturer", "admin"]),
+  requestController.updateRequestAnodizingOverride,
 );
 
 router.patch(

@@ -166,6 +166,10 @@ export const MailboxGrid = ({
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const touchStartXRef = useRef<number>(0);
   const shelfRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const manualPickupReasonOptionsRef = useRef<ManualPickupReasonOption[]>([]);
+  const manualPickupReasonAutosaveTimerRef = useRef<ReturnType<
+    typeof setTimeout
+  > | null>(null);
   const {
     printerProfile,
     setPrinterProfile,
@@ -730,6 +734,29 @@ export const MailboxGrid = ({
     },
     [applyManualPickupReasonOptions, toast],
   );
+
+  const cancelManualPickupReasonAutosave = useCallback(() => {
+    if (!manualPickupReasonAutosaveTimerRef.current) return;
+    clearTimeout(manualPickupReasonAutosaveTimerRef.current);
+    manualPickupReasonAutosaveTimerRef.current = null;
+  }, []);
+
+  const scheduleManualPickupReasonAutosave = useCallback(() => {
+    cancelManualPickupReasonAutosave();
+    manualPickupReasonAutosaveTimerRef.current = setTimeout(() => {
+      void saveManualPickupReasonOptions(manualPickupReasonOptionsRef.current);
+    }, 500);
+  }, [cancelManualPickupReasonAutosave, saveManualPickupReasonOptions]);
+
+  useEffect(() => {
+    manualPickupReasonOptionsRef.current = manualPickupReasonOptions;
+  }, [manualPickupReasonOptions]);
+
+  useEffect(() => {
+    return () => {
+      cancelManualPickupReasonAutosave();
+    };
+  }, [cancelManualPickupReasonAutosave]);
 
   const openManualPickupDialog = async () => {
     const mailboxCandidates = occupiedAddresses
@@ -2066,6 +2093,7 @@ export const MailboxGrid = ({
                           const nextOptions = [...manualPickupReasonOptions, created];
                           setManualPickupReasonOptions(nextOptions);
                           setManualPickupReasonOptionDraft("");
+                          cancelManualPickupReasonAutosave();
                           void saveManualPickupReasonOptions(nextOptions);
                         }}
                       >
@@ -2099,26 +2127,16 @@ export const MailboxGrid = ({
                                 0,
                                 120,
                               );
-                              setManualPickupReasonOptions((prev) =>
-                                prev.map((item) =>
+                              setManualPickupReasonOptions((prev) => {
+                                const nextOptions = prev.map((item) =>
                                   item.id === reason.id
                                     ? { ...item, label: nextLabel }
                                     : item,
-                                ),
-                              );
-                            }}
-                            onBlur={(e) => {
-                              const blurLabel = String(
-                                e.currentTarget.value || "",
-                              ).slice(0, 120);
-                              const nextOptions = manualPickupReasonOptions.map(
-                                (item) =>
-                                  item.id === reason.id
-                                    ? { ...item, label: blurLabel }
-                                    : item,
-                              );
-                              setManualPickupReasonOptions(nextOptions);
-                              void saveManualPickupReasonOptions(nextOptions);
+                                );
+                                manualPickupReasonOptionsRef.current = nextOptions;
+                                return nextOptions;
+                              });
+                              scheduleManualPickupReasonAutosave();
                             }}
                             className="h-9 rounded-lg border border-slate-300 px-3 text-sm bg-white"
                           />
@@ -2151,6 +2169,7 @@ export const MailboxGrid = ({
                                 }
                                 return next;
                               });
+                              cancelManualPickupReasonAutosave();
                               void saveManualPickupReasonOptions(nextOptions);
                             }}
                           >

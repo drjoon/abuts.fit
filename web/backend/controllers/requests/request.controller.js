@@ -30,6 +30,7 @@ export const {
   updateRndDoneStatus,
   updateRndUnmachinableStatus,
   updateRndHexRotation,
+  updateRequestAnodizingOverride,
   continueRndUnmachinableByRequestor,
   confirmRndUnmachinableByRequestor,
   confirmAllRndUnmachinableByRequestor,

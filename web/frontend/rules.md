@@ -54,6 +54,12 @@
   승인 요청 바디(`processBothHexVariants`)로 백엔드 복사 생성 분기를 전달합니다.
   - 관련 파일: `src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx`, `src/pages/manufacturer/worksheet/custom_abutment/hooks/useRequestFileHandlers.ts`
 
+- `PreviewModal` 상단 아노다이징 체크박스 표시/override 정책:
+  - 표시 우선순위는 `caseInfos.anodizingEnabled` → `business.requestSettings.anodizingEnabled` 입니다.
+  - 제조사 override 저장은 의뢰/CAM 단계에서만 허용합니다.
+  - 저장 API: `PATCH /api/requests/:id/anodizing-override`
+  - 관련 파일: `src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx`, `src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx`
+
 - 헥스 회전 라벨은 **표시(UI)와 전달(canonical)을 total 기준으로 통일**합니다.
   - 코드에서 `보정`/`무보정` 문자열 사용 금지(레거시).
   - 발견 시 즉시 `STL모델대로`/`헥스30도회전`로 치환하고 rules에 기록합니다.
