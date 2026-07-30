@@ -204,7 +204,7 @@ const formatToothWorksForDisplay = (rows: ToothWorkSelection[], options?: { mult
   const formattedRows = normalizedRows.map((row) => {
     const details = [row.prosthesisType];
     if (row.customAbutment) details.push("커스텀어벗");
-    if (row.prosthesisType === "브리지" && row.bridgeLinkedTeeth.length > 0) {
+    if (isBridgeLikeProsthesisType(row.prosthesisType) && row.bridgeLinkedTeeth.length > 0) {
       details.push(`연결 ${[row.toothNumber, ...row.bridgeLinkedTeeth].join("-")}`);
     }
     return `${row.toothNumber}번: ${details.join(" · ")}`;
@@ -322,7 +322,7 @@ const makeTransferId = () => {
 };
 
 const DEFAULT_ARRIVAL_OFFSET_DAYS = 7;
-const PRESET_PROSTHESIS_TYPES = ["크라운", "브리지", "인레이"] as const;
+const PRESET_PROSTHESIS_TYPES = ["크라운", "브리지", "Pontic", "인레이"] as const;
 const PRACTICE_TRANSFER_SETTINGS_LOCAL_KEY = "practice_transfer_settings_v1";
 const TOOTH_TENS_OPTIONS = ["1", "2", "3", "4"] as const;
 const TOOTH_ONES_OPTIONS = ["1", "2", "3", "4", "5", "6", "7", "8"] as const;
@@ -390,6 +390,12 @@ const normalizeArrivalDefaultDays = (value: number) => {
   return Math.max(0, Math.min(365, Math.floor(Number(value))));
 };
 
+const isBridgeLikeProsthesisType = (prosthesisType: string) =>
+  prosthesisType === "브리지" || prosthesisType === "Pontic";
+
+const isCustomAbutmentSupportedProsthesisType = (prosthesisType: string) =>
+  prosthesisType === "크라운" || prosthesisType === "브리지";
+
 const normalizeProsthesisTypes = (items: string[]) => {
   const canonical = items
     .map((item) => String(item || "").trim())
@@ -397,6 +403,7 @@ const normalizeProsthesisTypes = (items: string[]) => {
     .map((item) => {
       if (item === "커스텀어벗+크라운") return "크라운";
       if (item === "커스텀어벗+브리지") return "브리지";
+      if (/^pontic$/i.test(item)) return "Pontic";
       return item;
     });
 
@@ -405,9 +412,11 @@ const normalizeProsthesisTypes = (items: string[]) => {
   );
 
   const filtered = deduped.filter(
-    (item) => item === "크라운" || item === "브리지" || item === "인레이",
+    (item) => item === "크라운" || item === "브리지" || item === "Pontic" || item === "인레이",
   );
-  return filtered.length ? filtered : [...PRESET_PROSTHESIS_TYPES];
+  const withPontic = [...filtered];
+  if (!withPontic.some((item) => /^pontic$/i.test(item))) withPontic.push("Pontic");
+  return withPontic.length ? withPontic : [...PRESET_PROSTHESIS_TYPES];
 };
 
 const getAdjacentTeeth = (toothNumber: string) => {
@@ -432,11 +441,12 @@ const normalizeToothWorks = (items: ToothWorkSelection[]) =>
     .map((row) => {
       const toothNumber = String(row?.toothNumber || "").trim();
       const prosthesisType = String(row?.prosthesisType || "").trim();
-      const isCrownOrBridge = prosthesisType === "크라운" || prosthesisType === "브리지";
-      const customAbutment = isCrownOrBridge ? Boolean(row?.customAbutment) : false;
+      const customAbutment = isCustomAbutmentSupportedProsthesisType(prosthesisType)
+        ? Boolean(row?.customAbutment)
+        : false;
       const adjacent = getAdjacentTeeth(toothNumber);
       const bridgeLinkedTeeth =
-        prosthesisType === "브리지" && Array.isArray(row?.bridgeLinkedTeeth)
+        isBridgeLikeProsthesisType(prosthesisType) && Array.isArray(row?.bridgeLinkedTeeth)
           ? row.bridgeLinkedTeeth
               .map((v) => String(v || "").trim())
               .filter((v) => adjacent.includes(v))
@@ -455,11 +465,11 @@ const serializeToothWorks = (rows: ToothWorkSelection[]) =>
   normalizeToothWorks(rows)
     .map((row) => {
       const linked =
-        row.prosthesisType === "브리지" && row.bridgeLinkedTeeth.length > 0
+        isBridgeLikeProsthesisType(row.prosthesisType) && row.bridgeLinkedTeeth.length > 0
           ? `(${[row.toothNumber, ...row.bridgeLinkedTeeth].join("-")})`
           : "";
       const custom =
-        (row.prosthesisType === "크라운" || row.prosthesisType === "브리지") && row.customAbutment
+        isCustomAbutmentSupportedProsthesisType(row.prosthesisType) && row.customAbutment
           ? "+커스텀어벗"
           : "";
       return `${row.toothNumber}=${row.prosthesisType}${custom}${linked}`;
@@ -801,7 +811,7 @@ export const PracticeFileTransferPage = () => {
     const bridgeIndices = rows
       .filter(
         ({ row }) =>
-          row.prosthesisType === "브리지" &&
+          isBridgeLikeProsthesisType(String(row.prosthesisType || "").trim()) &&
           /^[1-4][1-8]$/.test(String(row.toothNumber || "").trim()),
       )
       .map(({ idx }) => idx);
@@ -2248,13 +2258,13 @@ export const PracticeFileTransferPage = () => {
       return;
     }
 
-    const hasBridgeWithoutLinkedTooth = normalizedToothWorks.some(
-      (row) => row.prosthesisType === "브리지" && row.bridgeLinkedTeeth.length === 0,
+    const hasBridgeLikeWithoutLinkedTooth = normalizedToothWorks.some(
+      (row) => isBridgeLikeProsthesisType(row.prosthesisType) && row.bridgeLinkedTeeth.length === 0,
     );
-    if (hasBridgeWithoutLinkedTooth) {
+    if (hasBridgeLikeWithoutLinkedTooth) {
       toast({
-        title: "브리지 연결 치아를 선택해주세요",
-        description: "브리지 형태는 인접 치아를 최소 1개 연결해야 합니다.",
+        title: "브리지/Pontic 연결 치아를 선택해주세요",
+        description: "브리지 또는 Pontic 형태는 인접 치아를 최소 1개 연결해야 합니다.",
         variant: "destructive",
       });
       return;
@@ -2563,8 +2573,8 @@ export const PracticeFileTransferPage = () => {
             >
               <X className="h-4 w-4" />
             </button>
-            <AlertTitle>{PRACTICE_TRANSFER_PROMO_TITLE}</AlertTitle>
-            <AlertDescription>{PRACTICE_TRANSFER_PROMO_DESC}</AlertDescription>
+            <AlertTitle className="text-[1.3125rem] leading-snug">{PRACTICE_TRANSFER_PROMO_TITLE}</AlertTitle>
+            <AlertDescription className="text-[1.3125rem] leading-snug">{PRACTICE_TRANSFER_PROMO_DESC}</AlertDescription>
           </Alert>
         ) : null}
         <div className="grid grid-cols-1 gap-3 xl:grid-cols-3">
@@ -2898,9 +2908,10 @@ export const PracticeFileTransferPage = () => {
                         const linkedTeeth = Array.isArray(row.bridgeLinkedTeeth)
                           ? row.bridgeLinkedTeeth.filter((t) => adjacentTeeth.includes(t))
                           : [];
-                        const isBridge = row.prosthesisType === "브리지";
-                        const canSelectCustomAbutment =
-                          row.prosthesisType === "크라운" || row.prosthesisType === "브리지";
+                        const isBridgeLike = isBridgeLikeProsthesisType(row.prosthesisType);
+                        const canSelectCustomAbutment = isCustomAbutmentSupportedProsthesisType(
+                          row.prosthesisType,
+                        );
 
                         return (
                           <div key={`${originalIndex}:${row.toothNumber}:${row.prosthesisType}`} className="relative pl-4">
@@ -3004,24 +3015,22 @@ export const PracticeFileTransferPage = () => {
                                     next[originalIndex] = {
                                       ...next[originalIndex],
                                       prosthesisType,
-                                      customAbutment:
-                                        prosthesisType === "크라운" || prosthesisType === "브리지"
-                                          ? Boolean(next[originalIndex].customAbutment)
-                                          : false,
-                                      bridgeLinkedTeeth:
-                                        prosthesisType === "브리지"
-                                          ? Array.isArray(next[originalIndex].bridgeLinkedTeeth)
-                                            ? next[originalIndex].bridgeLinkedTeeth
-                                            : []
-                                          : [],
+                                      customAbutment: isCustomAbutmentSupportedProsthesisType(prosthesisType)
+                                        ? Boolean(next[originalIndex].customAbutment)
+                                        : false,
+                                      bridgeLinkedTeeth: isBridgeLikeProsthesisType(prosthesisType)
+                                        ? Array.isArray(next[originalIndex].bridgeLinkedTeeth)
+                                          ? next[originalIndex].bridgeLinkedTeeth
+                                          : []
+                                        : [],
                                     };
 
-                                    const bridgeToNonBridge =
-                                      prevType === "브리지" &&
-                                      prosthesisType !== "브리지" &&
+                                    const bridgeLikeToNonBridgeLike =
+                                      isBridgeLikeProsthesisType(prevType) &&
+                                      !isBridgeLikeProsthesisType(prosthesisType) &&
                                       /^[1-4][1-8]$/.test(currentTooth);
 
-                                    if (bridgeToNonBridge) {
+                                    if (bridgeLikeToNonBridgeLike) {
                                       for (let i = 0; i < next.length; i += 1) {
                                         if (i === originalIndex) continue;
                                         const links = Array.isArray(next[i].bridgeLinkedTeeth)
@@ -3091,7 +3100,7 @@ export const PracticeFileTransferPage = () => {
                               </Button>
                             </div>
 
-                            {isBridge ? (
+                            {isBridgeLike ? (
                               <div className="flex items-center gap-2 text-xs">
                                 {adjacentTeeth.map((adjTooth) => (
                                   <label key={`adj-${originalIndex}-${adjTooth}`} className="inline-flex items-center gap-1">
@@ -3125,9 +3134,15 @@ export const PracticeFileTransferPage = () => {
                                                 const pairedLinks = Array.isArray(paired.bridgeLinkedTeeth)
                                                   ? paired.bridgeLinkedTeeth
                                                   : [];
+                                                const pairedType = isBridgeLikeProsthesisType(row.prosthesisType)
+                                                  ? row.prosthesisType
+                                                  : "브리지";
                                                 next[pairedIdx] = {
                                                   ...paired,
-                                                  prosthesisType: "브리지",
+                                                  prosthesisType: pairedType,
+                                                  customAbutment: isCustomAbutmentSupportedProsthesisType(pairedType)
+                                                    ? Boolean(paired.customAbutment)
+                                                    : false,
                                                   bridgeLinkedTeeth: currentTooth
                                                     ? Array.from(new Set([...pairedLinks, currentTooth]))
                                                     : pairedLinks,
@@ -3135,7 +3150,9 @@ export const PracticeFileTransferPage = () => {
                                               } else {
                                                 next.push({
                                                   toothNumber: adjTooth,
-                                                  prosthesisType: "브리지",
+                                                  prosthesisType: isBridgeLikeProsthesisType(row.prosthesisType)
+                                                    ? row.prosthesisType
+                                                    : "브리지",
                                                   customAbutment: false,
                                                   bridgeLinkedTeeth: currentTooth ? [currentTooth] : [],
                                                 });

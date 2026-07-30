@@ -303,7 +303,7 @@ const makeTransferId = () => {
 };
 
 const DEFAULT_ARRIVAL_OFFSET_DAYS = 7;
-const PRESET_PROSTHESIS_TYPES = ["크라운", "브리지", "인레이"] as const;
+const PRESET_PROSTHESIS_TYPES = ["크라운", "브리지", "Pontic", "인레이"] as const;
 const TOOTH_TENS_OPTIONS = ["1", "2", "3", "4"] as const;
 const TOOTH_ONES_OPTIONS = ["1", "2", "3", "4", "5", "6", "7", "8"] as const;
 
@@ -335,15 +335,22 @@ const addDaysToDateInput = (dateInput: string, days: number) => {
 
 const normalizeArrivalDefaultDays = (value: number) => Math.max(0, Math.floor(Number(value || 0)));
 
-const normalizeProsthesisTypes = (items: string[]) =>
-  Array.from(
+const normalizeProsthesisTypes = (items: string[]) => {
+  const deduped = Array.from(
     new Map(
       items
         .map((item) => String(item || "").trim())
         .filter(Boolean)
-        .map((item) => [item.toLowerCase(), item]),
+        .map((item) => {
+          if (/^pontic$/i.test(item)) return ["pontic", "Pontic"] as const;
+          return [item.toLowerCase(), item] as const;
+        }),
     ).values(),
   );
+
+  if (!deduped.some((item) => /^pontic$/i.test(item))) deduped.push("Pontic");
+  return deduped;
+};
 
 const getAdjacentTeeth = (toothNumber: string) => {
   const raw = String(toothNumber || "").trim();
@@ -356,16 +363,23 @@ const getAdjacentTeeth = (toothNumber: string) => {
   return out;
 };
 
+const isBridgeLikeProsthesisType = (prosthesisType: string) =>
+  prosthesisType === "브리지" || prosthesisType === "Pontic";
+
+const isCustomAbutmentSupportedProsthesisType = (prosthesisType: string) =>
+  prosthesisType === "크라운" || prosthesisType === "브리지";
+
 const normalizeToothWorks = (items: ToothWorkSelection[]) =>
   items
     .map((row) => {
       const toothNumber = String(row?.toothNumber || "").trim();
       const prosthesisType = String(row?.prosthesisType || "").trim();
-      const isCrownOrBridge = prosthesisType === "크라운" || prosthesisType === "브리지";
-      const customAbutment = isCrownOrBridge ? Boolean(row?.customAbutment) : false;
+      const customAbutment = isCustomAbutmentSupportedProsthesisType(prosthesisType)
+        ? Boolean(row?.customAbutment)
+        : false;
       const adjacent = getAdjacentTeeth(toothNumber);
       const bridgeLinkedTeeth =
-        prosthesisType === "브리지" && Array.isArray(row?.bridgeLinkedTeeth)
+        isBridgeLikeProsthesisType(prosthesisType) && Array.isArray(row?.bridgeLinkedTeeth)
           ? row.bridgeLinkedTeeth
               .map((v) => String(v || "").trim())
               .filter((v) => adjacent.includes(v))
@@ -384,11 +398,11 @@ const serializeToothWorks = (rows: ToothWorkSelection[]) =>
   normalizeToothWorks(rows)
     .map((row) => {
       const linked =
-        row.prosthesisType === "브리지" && row.bridgeLinkedTeeth.length > 0
+        isBridgeLikeProsthesisType(row.prosthesisType) && row.bridgeLinkedTeeth.length > 0
           ? `(${[row.toothNumber, ...row.bridgeLinkedTeeth].join("-")})`
           : "";
       const custom =
-        (row.prosthesisType === "크라운" || row.prosthesisType === "브리지") && row.customAbutment
+        isCustomAbutmentSupportedProsthesisType(row.prosthesisType) && row.customAbutment
           ? "+커스텀어벗"
           : "";
       return `${row.toothNumber}=${row.prosthesisType}${custom}${linked}`;
@@ -1797,9 +1811,10 @@ export const PracticeDropzonePage = () => {
                           const linkedTeeth = Array.isArray(row.bridgeLinkedTeeth)
                             ? row.bridgeLinkedTeeth.filter((t) => adjacentTeeth.includes(t))
                             : [];
-                          const isBridge = row.prosthesisType === "브리지";
-                          const canSelectCustomAbutment =
-                            row.prosthesisType === "크라운" || row.prosthesisType === "브리지";
+                          const isBridgeLike = isBridgeLikeProsthesisType(row.prosthesisType);
+                          const canSelectCustomAbutment = isCustomAbutmentSupportedProsthesisType(
+                            row.prosthesisType,
+                          );
 
                           return (
                             <div key={`${originalIndex}:${row.toothNumber}:${row.prosthesisType}`} className="space-y-1 rounded-md border px-2 py-1.5">
@@ -1885,16 +1900,14 @@ export const PracticeDropzonePage = () => {
                                       next[originalIndex] = {
                                         ...next[originalIndex],
                                         prosthesisType,
-                                        customAbutment:
-                                          prosthesisType === "크라운" || prosthesisType === "브리지"
-                                            ? Boolean(next[originalIndex].customAbutment)
-                                            : false,
-                                        bridgeLinkedTeeth:
-                                          prosthesisType === "브리지"
-                                            ? Array.isArray(next[originalIndex].bridgeLinkedTeeth)
-                                              ? next[originalIndex].bridgeLinkedTeeth
-                                              : []
-                                            : [],
+                                        customAbutment: isCustomAbutmentSupportedProsthesisType(prosthesisType)
+                                          ? Boolean(next[originalIndex].customAbutment)
+                                          : false,
+                                        bridgeLinkedTeeth: isBridgeLikeProsthesisType(prosthesisType)
+                                          ? Array.isArray(next[originalIndex].bridgeLinkedTeeth)
+                                            ? next[originalIndex].bridgeLinkedTeeth
+                                            : []
+                                          : [],
                                       };
                                       return next;
                                     });
@@ -1952,7 +1965,7 @@ export const PracticeDropzonePage = () => {
                                 </Button>
                               </div>
 
-                              {isBridge ? (
+                              {isBridgeLike ? (
                                 <div className="flex items-center gap-2 text-xs">
                                   {adjacentTeeth.map((adjTooth) => (
                                     <label key={`adj-${originalIndex}-${adjTooth}`} className="inline-flex items-center gap-1">

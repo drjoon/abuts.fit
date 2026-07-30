@@ -1140,8 +1140,8 @@ export default function RequestorPracticePage() {
             >
               <X className="h-4 w-4" />
             </button>
-            <AlertTitle>{PRACTICE_TRANSFER_PROMO_TITLE}</AlertTitle>
-            <AlertDescription>{PRACTICE_TRANSFER_PROMO_DESC}</AlertDescription>
+            <AlertTitle className="text-[1.3125rem] leading-snug">{PRACTICE_TRANSFER_PROMO_TITLE}</AlertTitle>
+            <AlertDescription className="text-[1.3125rem] leading-snug">{PRACTICE_TRANSFER_PROMO_DESC}</AlertDescription>
           </Alert>
         ) : null}
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
