@@ -1,5 +1,6 @@
 // related files:
 // - web/frontend/rules.md
+// - web/frontend/src/shared/types/role.ts
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/backend/modules/chat/chat.routes.js
@@ -8,8 +9,9 @@ import { useEffect, useState } from "react";
 import { useToast } from "@/shared/hooks/use-toast";
 import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
+import type { AppUserRole } from "@/shared/types/role";
 
-export type ChatSenderRole = "requestor" | "manufacturer" | "admin";
+export type ChatSenderRole = AppUserRole;
 
 export interface ChatMessage {
   id: string;
@@ -78,10 +80,16 @@ export const useRequestChat = ({
     const baseSenderName =
       currentUserName ||
       (baseSenderRole === "requestor"
-        ? "의뢰자"
-        : baseSenderRole === "manufacturer"
-        ? "제작사"
-        : "어벗츠.핏");
+        ? "기공소"
+        : baseSenderRole === "practice"
+          ? "치과"
+          : baseSenderRole === "manufacturer"
+            ? "제작사"
+            : baseSenderRole === "salesman"
+              ? "영업자"
+              : baseSenderRole === "devops"
+                ? "개발운영사"
+                : "어벗츠.핏");
 
     if (requestId) {
       toast({

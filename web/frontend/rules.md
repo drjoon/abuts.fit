@@ -20,6 +20,7 @@
 - 공통 UI는 `src/components/ui`에 둡니다.
 - 도메인 기능은 `src/features`, 페이지는 `src/pages`, 공유 유틸은 `src/shared`를 우선 사용합니다.
 - 페이지 폴더끼리 직접 import하지 않습니다.
+- 앱 전역 role 타입 SSOT는 `src/shared/types/role.ts`를 사용합니다. (로컬 컴포넌트에서 role union 재정의 금지)
 
 ## 2. 구현 메모
 
@@ -93,6 +94,14 @@
   - practice 페이지 상태 정규화 기준: `src/pages/practice/PracticeFileTransferPage.tsx`의 `toStatusLabel`
   - 의뢰자 치과 페이지 읽음 배지 기준: `src/pages/requestor/practice/RequestorPracticePage.tsx` (`isRead` → `수신전/수신완료`)
 
+- 치과(practice) 가입 절차 SSOT
+  - 일반 회원가입(`src/features/auth/SignupPage.tsx`)에서 `practice` 역할은 `src/pages/practice/PracticeDropzonePage.tsx`와 동일한 최소 항목(`clinicName`, `staffName`, `phone`, `address`, `addressDetail`, `zipCode`, `password`)으로 가입합니다.
+  - API는 일반 `/api/auth/register`가 아니라 `POST /api/auth/practice/register`를 사용합니다.
+  - 치과 역할은 소개코드 단계/이메일 인증 단계를 거치지 않고 치과 정보 입력 후 가입 완료로 진행합니다.
+  - UI는 전용 스텝 컴포넌트(`src/features/auth/signup/SignupWizardPracticeAccountStep.tsx`)에서 2열 입력(치과명/담당자명, 전화번호/접속 비밀번호) + 공통 주소 컴포넌트(`BusinessAddressFields`)를 사용하며, 비밀번호 확인 필드는 두지 않습니다.
+  - 관리자 사용자/사업자 화면(`src/pages/admin/users/AdminUserManagement.tsx`, `src/pages/admin/businesses/AdminBusinessPage.tsx`)에서는 `practice`를 별도 역할(`치과`)로 표시/필터링해야 합니다.
+  - 정책 고정: practice는 전송 전용 role이므로 크레딧/정산/추천(리퍼럴) UI(탭/카드/집계) 범위로 확장하지 않습니다.
+
 - practice 파일전송 임시저장(다른 PC 이어쓰기) 정책:
   - 임시저장 SSOT API: `GET/POST/DELETE /api/practice/transfers/draft`
   - 프론트는 로컬스토리지 단독 보관이 아니라 서버 draft를 우선 사용합니다.
@@ -110,9 +119,11 @@
   - app-event 디바운스 재조회 공통 훅: `src/shared/realtime/useAppEventDebouncedReload.ts`
   - 채팅방 목록 실시간 동기화: `src/shared/hooks/useChatRooms.ts`
   - 채팅 메시지 실시간 동기화: `src/shared/hooks/useChatMessages.ts`
+  - 채팅 role 라벨/뱃지 표시에서는 `practice`를 fallback("사용자")로 처리하지 말고 명시적으로 `치과`로 매핑합니다.
   - 페이지 반영 지점:
     - `src/pages/practice/PracticeFileTransferPage.tsx`
     - `src/pages/requestor/practice/RequestorPracticePage.tsx`
+    - `src/features/chat/components/*`
 
 - 문의(admin/support) 실시간 반영 메모:
   - 관리자 문의 페이지는 `support:inquiry-created`, `support:inquiry-updated`, `comm:badge-update(key=inquiry)` app-event를 수신해 목록을 디바운스 재조회합니다.

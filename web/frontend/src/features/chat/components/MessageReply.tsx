@@ -35,6 +35,8 @@ export function MessageReply({
         return "bg-blue-100 text-blue-700";
       case "requestor":
         return "bg-green-100 text-green-700";
+      case "practice":
+        return "bg-indigo-100 text-indigo-700";
       default:
         return "bg-gray-100 text-gray-700";
     }
@@ -47,7 +49,9 @@ export function MessageReply({
       case "manufacturer":
         return "제조사";
       case "requestor":
-        return "의뢰자";
+        return "기공소";
+      case "practice":
+        return "치과";
       default:
         return role;
     }

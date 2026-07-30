@@ -8,6 +8,7 @@
  * related files:
  * - web/frontend/src/shared/components/business/settings/business/BusinessForm.tsx
  * - web/frontend/src/pages/practice/PracticeDropzonePage.tsx
+ * - web/frontend/src/features/auth/signup/SignupWizardPracticeAccountStep.tsx
  */
 
 import {
@@ -69,6 +70,8 @@ type BusinessAddressFieldsProps = {
   onZipCodeKeyDown?: KeyboardEventHandler<HTMLInputElement>;
   onAddressSelected?: () => void;
   rowLayout?: "default" | "address-detail-zip";
+  openMode?: "embed" | "popup";
+  inputClassName?: string;
 };
 
 export const BusinessAddressFields = ({
@@ -95,6 +98,8 @@ export const BusinessAddressFields = ({
   onZipCodeKeyDown,
   onAddressSelected,
   rowLayout = "default",
+  openMode = "embed",
+  inputClassName,
 }: BusinessAddressFieldsProps) => {
   const { toast } = useToast();
   const [addressPromptActive, setAddressPromptActive] = useState(false);
@@ -117,6 +122,30 @@ export const BusinessAddressFields = ({
         if (!window.daum?.Postcode) {
           await loadPostcodeScript();
         }
+
+        const onComplete = (data: {
+          roadAddress?: string;
+          jibunAddress?: string;
+          address?: string;
+          zonecode?: string;
+        }) => {
+          const nextAddress =
+            data.roadAddress || data.jibunAddress || data.address || "";
+          const nextZipCode = String(data.zonecode || "").trim();
+
+          if (nextAddress) onChangeAddress(nextAddress);
+          if (nextZipCode) onChangeZipCode(nextZipCode);
+          onAddressSelected?.();
+        };
+
+        if (openMode === "popup") {
+          const popup = new window.daum.Postcode({
+            oncomplete: onComplete,
+          }) as { open?: () => void };
+          popup.open?.();
+          return;
+        }
+
         setAddressPromptActive(true);
       } catch {
         if (!silent) {
@@ -128,7 +157,7 @@ export const BusinessAddressFields = ({
         }
       }
     },
-    [toast],
+    [onAddressSelected, onChangeAddress, onChangeZipCode, openMode, toast],
   );
 
   useEffect(() => {
@@ -210,6 +239,7 @@ export const BusinessAddressFields = ({
             ref={addressInputRef}
             className={cn(
               "md:col-span-2",
+              inputClassName,
               addressError && "border-destructive focus-visible:ring-destructive",
             )}
             value={address}
@@ -225,7 +255,7 @@ export const BusinessAddressFields = ({
           <Input
             id="addressDetail"
             ref={addressDetailInputRef}
-            className="md:col-span-2"
+            className={cn("md:col-span-2", inputClassName)}
             value={addressDetail}
             placeholder="주소2 (동, 호수 등 상세주소)"
             onChange={(e) => onChangeAddressDetail(e.target.value)}
@@ -237,6 +267,7 @@ export const BusinessAddressFields = ({
             id="zipCode"
             ref={zipCodeInputRef}
             className={cn(
+              inputClassName,
               zipCodeError && "border-destructive focus-visible:ring-destructive",
             )}
             value={zipCode}
@@ -255,6 +286,7 @@ export const BusinessAddressFields = ({
               ref={addressInputRef}
               className={cn(
                 "md:col-span-2",
+                inputClassName,
                 addressError && "border-destructive focus-visible:ring-destructive",
               )}
               value={address}
@@ -271,6 +303,7 @@ export const BusinessAddressFields = ({
               id="zipCode"
               ref={zipCodeInputRef}
               className={cn(
+                inputClassName,
                 zipCodeError && "border-destructive focus-visible:ring-destructive",
               )}
               value={zipCode}
@@ -285,6 +318,7 @@ export const BusinessAddressFields = ({
           <Input
             id="addressDetail"
             ref={addressDetailInputRef}
+            className={cn(inputClassName)}
             value={addressDetail}
             placeholder="주소2 (동, 호수 등 상세주소)"
             onChange={(e) => onChangeAddressDetail(e.target.value)}

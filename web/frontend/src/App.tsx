@@ -12,12 +12,14 @@ import {
   useLocation,
 } from "react-router-dom";
 import { useAuthStore } from "@/store/useAuthStore";
+import type { AppUserRole } from "@/shared/types/role";
 import { NewChatWidget } from "@/features/chat/components/NewChatWidget";
 import { Suspense, lazy, useEffect } from "react";
 import { loadRulesFromBackend } from "@/shared/filename/filenameRules";
 import { useSocket } from "@/shared/hooks/useSocket";
 
 // related files:
+// - web/frontend/src/shared/types/role.ts
 // - web/frontend/src/pages/practice/PracticeDropzonePage.tsx
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
@@ -193,14 +195,7 @@ const RoleProtectedRoute = ({
   roles,
   children,
 }: {
-  roles: (
-    | "requestor"
-    | "manufacturer"
-    | "admin"
-    | "salesman"
-    | "devops"
-    | "practice"
-  )[];
+  roles: AppUserRole[];
   children: React.ReactNode;
 }) => {
   const { isAuthenticated, user } = useAuthStore();

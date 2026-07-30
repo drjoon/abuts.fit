@@ -1,5 +1,6 @@
 // related files:
 // - web/backend/rules.md
+// - web/frontend/src/pages/admin/users/AdminUserManagement.tsx
 // - web/backend/app.js
 // - web/backend/server.js
 import { Types } from "mongoose";
@@ -143,6 +144,7 @@ export async function createUser(req, res) {
 
     const validRoles = [
       "requestor",
+      "practice",
       "manufacturer",
       "admin",
       "salesman",
@@ -428,7 +430,14 @@ export async function changeUserRole(req, res) {
         .status(400)
         .json({ success: false, message: "유효하지 않은 사용자 ID입니다." });
     }
-    const validRoles = ["requestor", "manufacturer", "admin", "salesman"];
+    const validRoles = [
+      "requestor",
+      "practice",
+      "manufacturer",
+      "admin",
+      "salesman",
+      "devops",
+    ];
     if (!validRoles.includes(role)) {
       return res
         .status(400)

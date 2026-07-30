@@ -1,16 +1,18 @@
 // related files:
 // - web/frontend/rules.md
+// - web/frontend/src/shared/types/role.ts
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 import { useState, useCallback } from "react";
 import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
+import type { AppUserRole } from "@/shared/types/role";
 
 export interface SearchUser {
   _id: string;
   name: string;
   email: string;
-  role: "requestor" | "manufacturer" | "admin";
+  role: AppUserRole;
   organization?: string;
 }
 

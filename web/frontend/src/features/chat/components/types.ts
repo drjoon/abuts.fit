@@ -1,11 +1,16 @@
 // related files:
 // - web/frontend/rules.md
+// - web/frontend/src/shared/types/role.ts
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
+import type { AppUserRole } from "@/shared/types/role";
+
+export type ChatUserRole = AppUserRole;
+
 export interface User {
   id: string;
   name: string;
-  role: 'requestor' | 'manufacturer' | 'admin';
+  role: ChatUserRole;
   avatar?: string;
   isOnline: boolean;
   lastSeen?: Date;
@@ -15,7 +20,7 @@ export interface Message {
   id: string;
   senderId: string;
   senderName: string;
-  senderRole: 'requestor' | 'manufacturer' | 'admin';
+  senderRole: ChatUserRole;
   content: string;
   timestamp: Date;
   attachments?: string[];
@@ -36,7 +41,7 @@ export interface ChatRoom {
 export interface Friend {
   id: string;
   name: string;
-  role: 'requestor' | 'manufacturer' | 'admin';
+  role: ChatUserRole;
   avatar?: string;
   isOnline: boolean;
   statusMessage?: string;

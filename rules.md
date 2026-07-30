@@ -35,6 +35,13 @@
 - 경로는 저장소 루트 기준 상대경로
 - “해당 파일이 직접 연결되는 파일”만 기록 (과도한 나열 금지)
 
+### 0.4 애매한 정책은 보류 후 사용자 컨펌 (강제)
+
+- 요구사항/정책이 애매하면 임의 확장/임의 축소 금지
+- fallback, 추정값, 임시 하드코딩으로 진행하지 않음
+- 판단 보류 상태를 명시하고 사용자에게 확인 질문 후 진행
+- 특히 권한(role), 과금/정산, 추천(리퍼럴) 범위는 컨펌 없이 변경 금지
+
 ---
 
 ## 1) 절대 원칙 (변경 금지)
@@ -90,6 +97,7 @@
 
 ### 2.4 practice(치과) 전송
 
+- practice는 **의뢰 파일 전송 전용 경량 role**로 취급
 - practice 제출은 Request 생성 경유 금지
 - SSOT API:
   - 생성: `POST /api/practice/transfers`
@@ -97,6 +105,7 @@
   - 취소: `POST /api/practice/transfers/cancel-batch`
 - 저장 SSOT: `PracticeTransfer`
 - 제조사 워크시트 조회에서 practice 태그 의뢰 제외
+- 정책 고정: practice는 크레딧/정산/추천(리퍼럴) 기능/집계/보상 범위에 포함하지 않음
 
 ### 2.5 채팅
 
@@ -142,6 +151,8 @@
 - 앱/라우팅
   - `web/frontend/src/App.tsx`
   - `web/frontend/src/features/layout/DashboardLayout.tsx`
+- 공용 타입(역할 SSOT)
+  - `web/frontend/src/shared/types/role.ts`
 - 실시간(웹소켓) 공통
   - `web/frontend/src/shared/realtime/socket.ts`
   - `web/frontend/src/shared/realtime/useAppEventDebouncedReload.ts`
@@ -156,6 +167,9 @@
   - `web/frontend/src/pages/practice/PracticeDropzonePage.tsx`
   - `web/frontend/src/pages/practice/PracticeFileTransferPage.tsx`
   - `web/frontend/src/shared/components/PracticeTransferDetailChatDialog.tsx`
+- 관리자 사용자/사업자
+  - `web/frontend/src/pages/admin/users/AdminUserManagement.tsx`
+  - `web/frontend/src/pages/admin/businesses/AdminBusinessPage.tsx`
 
 ### 4.2 Backend
 
@@ -175,6 +189,8 @@
 - practice 전송
   - `web/backend/modules/practiceTransfers/practiceTransfer.routes.js`
   - `web/backend/controllers/practiceTransfers/practiceTransfer.controller.js`
+- 관리자 사용자 권한
+  - `web/backend/controllers/admin/admin.users.controller.js`
 
 ### 4.3 Background
 

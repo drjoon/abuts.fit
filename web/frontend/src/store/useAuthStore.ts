@@ -1,21 +1,17 @@
 // related files:
 // - web/frontend/rules.md
+// - web/frontend/src/shared/types/role.ts
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 import { create } from "zustand";
 import { request } from "@/shared/api/apiClient";
+import type { AppUserRole } from "@/shared/types/role";
 
 const AUTH_TOKEN_KEY = "abuts_auth_token";
 const AUTH_REFRESH_TOKEN_KEY = "abuts_auth_refresh_token";
 const AUTH_USER_KEY = "abuts_auth_user";
 
-export type UserRole =
-  | "requestor"
-  | "manufacturer"
-  | "admin"
-  | "salesman"
-  | "devops"
-  | "practice";
+export type UserRole = AppUserRole;
 
 export interface User {
   id: string;

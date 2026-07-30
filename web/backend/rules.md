@@ -64,6 +64,15 @@
   - 수신 판정 SSOT: `PracticeTransfer.requestorReadAt`
   - 가상 의뢰 행 매핑 기준: `controllers/practiceTransfers/practiceTransfer.controller.js#toVirtualRequestRows`
 
+- 관리자 사용자 role 변경/생성 API는 `practice`를 유효 role로 허용해야 합니다.
+  - 적용 파일: `controllers/admin/admin.users.controller.js`
+  - `validRoles` 기준은 루트 규칙(사업자 타입 허용값)과 동기화합니다.
+
+- practice 역할 범위(정책 고정):
+  - practice는 파일 전송 전용 경량 role이며, 크레딧/정산/추천(리퍼럴) 도메인에는 포함하지 않습니다.
+  - 따라서 `adminCredit`, `admin.dashboard`, `admin.referral`의 requestor 중심 집계를 practice로 임의 확장하지 않습니다.
+  - 위 범위를 바꾸려면 사전 정책 컨펌을 받고 별도 변경으로 진행합니다.
+
 - practice 파일전송 임시저장(다른 PC 이어쓰기) SSOT:
   - 저장 모델: `models/practiceTransferDraft.model.js`
   - API: `GET/POST/DELETE /api/practice/transfers/draft`

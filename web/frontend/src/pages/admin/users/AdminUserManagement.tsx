@@ -1,5 +1,6 @@
 // related files:
 // - web/frontend/rules.md
+// - web/backend/controllers/admin/admin.users.controller.js
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -63,10 +64,28 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 
+const normalizeRole = (rawRole?: string) => {
+  const normalized = String(rawRole || "")
+    .trim()
+    .toLowerCase();
+
+  if (!normalized) return "";
+  if (normalized === "requester") return "requestor";
+  if (normalized.startsWith("practice")) return "practice";
+  if (normalized.startsWith("requestor")) return "requestor";
+  if (normalized.startsWith("manufacturer")) return "manufacturer";
+  if (normalized.startsWith("salesman")) return "salesman";
+  if (normalized.startsWith("devops")) return "devops";
+  if (normalized.startsWith("admin")) return "admin";
+  return normalized;
+};
+
 const getRoleLabel = (role: string) => {
-  switch (role) {
+  switch (normalizeRole(role)) {
     case "requestor":
       return "의뢰자";
+    case "practice":
+      return "치과";
     case "manufacturer":
       return "제조사";
     case "admin":
@@ -81,9 +100,11 @@ const getRoleLabel = (role: string) => {
 };
 
 const getRoleBadgeVariant = (role: string) => {
-  switch (role) {
+  switch (normalizeRole(role)) {
     case "requestor":
       return "default";
+    case "practice":
+      return "secondary";
     case "salesman":
       return "secondary";
     case "devops":
@@ -98,8 +119,9 @@ const getRoleBadgeVariant = (role: string) => {
 };
 
 const getRequestorSalesmanSwapRole = (role: string) => {
-  if (role === "requestor") return "salesman";
-  if (role === "salesman") return "requestor";
+  const normalized = normalizeRole(role);
+  if (normalized === "requestor") return "salesman";
+  if (normalized === "salesman") return "requestor";
   return null;
 };
 
@@ -578,7 +600,8 @@ export const AdminUserManagement = () => {
       ].join(" ");
 
       const matchesSearch = !q || hay.includes(q);
-      const matchesRole = selectedRole === "all" || user.role === selectedRole;
+      const matchesRole =
+        selectedRole === "all" || normalizeRole(user.role) === selectedRole;
       const matchesStatus =
         selectedStatus === "all" || user.status === selectedStatus;
 
@@ -673,14 +696,23 @@ export const AdminUserManagement = () => {
 
   const totalUsers = totalCount || sourceUsers.length;
   const totalRequestor = sourceUsers.filter(
-    (u) => u.role === "requestor",
+    (u) => normalizeRole(u.role) === "requestor",
   ).length;
-  const totalSalesman = sourceUsers.filter((u) => u.role === "salesman").length;
-  const totalDevops = sourceUsers.filter((u) => u.role === "devops").length;
+  const totalPractice = sourceUsers.filter(
+    (u) => normalizeRole(u.role) === "practice",
+  ).length;
+  const totalSalesman = sourceUsers.filter(
+    (u) => normalizeRole(u.role) === "salesman",
+  ).length;
+  const totalDevops = sourceUsers.filter(
+    (u) => normalizeRole(u.role) === "devops",
+  ).length;
   const totalManufacturer = sourceUsers.filter(
-    (u) => u.role === "manufacturer",
+    (u) => normalizeRole(u.role) === "manufacturer",
   ).length;
-  const totalAdmin = sourceUsers.filter((u) => u.role === "admin").length;
+  const totalAdmin = sourceUsers.filter(
+    (u) => normalizeRole(u.role) === "admin",
+  ).length;
   const totalPending = sourceUsers.filter((u) => u.status === "pending").length;
   const unresolvedUsers = sourceUsers.filter((u) => u.unresolvedBusiness);
 
@@ -688,7 +720,7 @@ export const AdminUserManagement = () => {
     <div className="flex flex-col h-full min-h-0 bg-gradient-subtle p-6">
       <div className="max-w-7xl w-full mx-auto space-y-6 flex-1 min-h-0 overflow-y-auto">
         {/* Stats Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-7 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-8 gap-4">
           <Card>
             <CardContent className="p-4">
               <div className="flex items-center gap-3">
@@ -714,6 +746,21 @@ export const AdminUserManagement = () => {
                   <p className="text-sm text-muted-foreground">의뢰자</p>
                   <p className="text-2xl font-bold">
                     {totalRequestor.toLocaleString()}
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-violet-100 rounded-lg">
+                  <Building2 className="h-4 w-4 text-violet-700" />
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">치과</p>
+                  <p className="text-2xl font-bold">
+                    {totalPractice.toLocaleString()}
                   </p>
                 </div>
               </div>
@@ -858,6 +905,13 @@ export const AdminUserManagement = () => {
               size="sm"
             >
               의뢰자
+            </Button>
+            <Button
+              variant={selectedRole === "practice" ? "default" : "outline"}
+              onClick={() => setSelectedRole("practice")}
+              size="sm"
+            >
+              치과
             </Button>
             <Button
               variant={selectedRole === "salesman" ? "default" : "outline"}
@@ -1392,6 +1446,7 @@ export const AdminUserManagement = () => {
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="requestor">의뢰자</SelectItem>
+                          <SelectItem value="practice">치과</SelectItem>
                           <SelectItem value="salesman">영업자</SelectItem>
                           <SelectItem value="devops">개발운영사</SelectItem>
                           <SelectItem value="manufacturer">제조사</SelectItem>
