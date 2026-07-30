@@ -1,7 +1,8 @@
 // related files:
 // - web/frontend/rules.md
-// - web/frontend/src/App.tsx
-// - web/frontend/src/features/layout/DashboardLayout.tsx
+// - web/frontend/src/pages/admin/credits/components/RequestorCreditTab.tsx
+// - web/frontend/src/pages/admin/credits/adminCredit.types.ts
+// - web/frontend/src/components/ui/card.tsx
 import type { RefObject } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { TabsContent } from "@/components/ui/tabs";
@@ -75,7 +76,7 @@ export function RequestorOrganizationsTab({
                   의뢰자가 없습니다.
                 </div>
               ) : (
-                <div className="grid gap-4 md:grid-cols-2">
+                <div className="grid gap-3 md:grid-cols-2">
                   {[...requestorBusinesses]
                     .sort((a, b) => {
                       if (orgSortKey === "paidBalance") {
@@ -132,115 +133,81 @@ export function RequestorOrganizationsTab({
                           className="border-muted cursor-pointer"
                           onClick={() => onOpenLedger(business)}
                         >
-                          <CardHeader className="pb-3">
-                            <CardTitle className="text-base">
+                          <CardHeader className="space-y-1 px-4 pb-2 pt-4">
+                            <CardTitle className="text-base leading-5">
                               {business.name}
                             </CardTitle>
-                            <div className="space-y-1 text-sm text-muted-foreground">
-                              <div>{business.companyName || "-"}</div>
-                              <div className="font-mono text-xs">
-                                {business.businessNumber || "-"}
-                              </div>
-                              <div className="font-mono text-[11px] text-muted-foreground">
-                                anchor: {business.businessAnchorId || "-"}
-                              </div>
-                              <div className="text-xs">
-                                {business.ownerName || "-"} ·{" "}
-                                {business.ownerEmail || "-"}
-                              </div>
+                            <div className="text-xs text-muted-foreground">
+                              {business.ownerName || "-"} · {business.ownerEmail || "-"}
                             </div>
                           </CardHeader>
-                          <CardContent className="space-y-4 text-sm">
-                            <div>
-                              <div className="text-xs font-semibold text-muted-foreground mb-2">
-                                잔여 크레딧
+                          <CardContent className="space-y-2 px-4 pb-4 pt-0 text-sm">
+                            <div className="grid grid-cols-[56px_minmax(0,1fr)] items-center gap-2 rounded-md border border-muted/60 px-2 py-1.5">
+                              <div className="text-xs font-semibold text-muted-foreground">
+                                잔여
                               </div>
-                              <div className="grid grid-cols-3 gap-2">
-                                <div>
-                                  <div className="text-[11px] text-muted-foreground">
-                                    유료
-                                  </div>
-                                  <div className="font-semibold">
-                                    {paidCredit.toLocaleString()}원
-                                  </div>
+                              <div className="grid grid-cols-3 grid-rows-2 gap-x-2 gap-y-0.5">
+                                <div className="text-[10px] text-muted-foreground">유료</div>
+                                <div className="text-[10px] text-muted-foreground">
+                                  무료·의뢰
                                 </div>
-                                <div>
-                                  <div className="text-[11px] text-muted-foreground">
-                                    무료·의뢰
-                                  </div>
-                                  <div className="font-semibold">
-                                    {bonusRequestCredit.toLocaleString()}원
-                                  </div>
+                                <div className="text-[10px] text-muted-foreground">
+                                  무료·배송
                                 </div>
-                                <div>
-                                  <div className="text-[11px] text-muted-foreground">
-                                    무료·배송
-                                  </div>
-                                  <div className="font-semibold">
-                                    {bonusShippingCredit.toLocaleString()}원
-                                  </div>
+                                <div className="text-xs font-semibold">
+                                  {paidCredit.toLocaleString()}원
+                                </div>
+                                <div className="text-xs font-semibold">
+                                  {bonusRequestCredit.toLocaleString()}원
+                                </div>
+                                <div className="text-xs font-semibold">
+                                  {bonusShippingCredit.toLocaleString()}원
                                 </div>
                               </div>
                             </div>
-                            <div>
-                              <div className="text-xs font-semibold text-muted-foreground mb-2">
-                                충전 크레딧
+                            <div className="grid grid-cols-[56px_minmax(0,1fr)] items-center gap-2 rounded-md border border-muted/60 px-2 py-1.5">
+                              <div className="text-xs font-semibold text-muted-foreground">
+                                충전
                               </div>
-                              <div className="grid grid-cols-3 gap-2">
-                                <div>
-                                  <div className="text-[11px] text-muted-foreground">
-                                    유료
-                                  </div>
-                                  <div className="font-medium">
-                                    {chargedPaid.toLocaleString()}원
-                                  </div>
+                              <div className="grid grid-cols-3 grid-rows-2 gap-x-2 gap-y-0.5">
+                                <div className="text-[10px] text-muted-foreground">유료</div>
+                                <div className="text-[10px] text-muted-foreground">
+                                  무료·의뢰
                                 </div>
-                                <div>
-                                  <div className="text-[11px] text-muted-foreground">
-                                    무료·의뢰
-                                  </div>
-                                  <div className="font-medium">
-                                    {chargedBonusRequest.toLocaleString()}원
-                                  </div>
+                                <div className="text-[10px] text-muted-foreground">
+                                  무료·배송
                                 </div>
-                                <div>
-                                  <div className="text-[11px] text-muted-foreground">
-                                    무료·배송
-                                  </div>
-                                  <div className="font-medium">
-                                    {chargedBonusShipping.toLocaleString()}원
-                                  </div>
+                                <div className="text-xs font-medium">
+                                  {chargedPaid.toLocaleString()}원
+                                </div>
+                                <div className="text-xs font-medium">
+                                  {chargedBonusRequest.toLocaleString()}원
+                                </div>
+                                <div className="text-xs font-medium">
+                                  {chargedBonusShipping.toLocaleString()}원
                                 </div>
                               </div>
                             </div>
-                            <div>
-                              <div className="text-xs font-semibold text-muted-foreground mb-2">
-                                사용 크레딧
+                            <div className="grid grid-cols-[56px_minmax(0,1fr)] items-center gap-2 rounded-md border border-muted/60 px-2 py-1.5">
+                              <div className="text-xs font-semibold text-muted-foreground">
+                                사용
                               </div>
-                              <div className="grid grid-cols-3 gap-2">
-                                <div>
-                                  <div className="text-[11px] text-muted-foreground">
-                                    유료
-                                  </div>
-                                  <div className="font-medium">
-                                    {spentPaid.toLocaleString()}원
-                                  </div>
+                              <div className="grid grid-cols-3 grid-rows-2 gap-x-2 gap-y-0.5">
+                                <div className="text-[10px] text-muted-foreground">유료</div>
+                                <div className="text-[10px] text-muted-foreground">
+                                  무료·의뢰
                                 </div>
-                                <div>
-                                  <div className="text-[11px] text-muted-foreground">
-                                    무료·의뢰
-                                  </div>
-                                  <div className="font-medium">
-                                    {spentBonusRequest.toLocaleString()}원
-                                  </div>
+                                <div className="text-[10px] text-muted-foreground">
+                                  무료·배송
                                 </div>
-                                <div>
-                                  <div className="text-[11px] text-muted-foreground">
-                                    무료·배송
-                                  </div>
-                                  <div className="font-medium">
-                                    {spentBonusShipping.toLocaleString()}원
-                                  </div>
+                                <div className="text-xs font-medium">
+                                  {spentPaid.toLocaleString()}원
+                                </div>
+                                <div className="text-xs font-medium">
+                                  {spentBonusRequest.toLocaleString()}원
+                                </div>
+                                <div className="text-xs font-medium">
+                                  {spentBonusShipping.toLocaleString()}원
                                 </div>
                               </div>
                             </div>

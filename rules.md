@@ -175,6 +175,10 @@
 - 관리자 사용자/사업자
   - `web/frontend/src/pages/admin/users/AdminUserManagement.tsx`
   - `web/frontend/src/pages/admin/businesses/AdminBusinessPage.tsx`
+- 관리자 크레딧
+  - `web/frontend/src/pages/admin/credits/AdminCreditPage.tsx`
+  - `web/frontend/src/pages/admin/credits/components/RequestorCreditTab.tsx`
+  - `web/frontend/src/pages/admin/credits/components/RequestorOrganizationsTab.tsx`
 - 관리자 대시보드/소통
   - `web/frontend/src/pages/admin/dashboard/AdminDashboardPage.tsx`
   - `web/frontend/src/pages/admin/support/AdminChatManagement.tsx`

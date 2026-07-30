@@ -1,9 +1,11 @@
 // related files:
 // - web/frontend/rules.md
-// - web/frontend/src/App.tsx
-// - web/frontend/src/features/layout/DashboardLayout.tsx
+// - web/frontend/src/pages/admin/credits/AdminCreditPage.tsx
+// - web/frontend/src/pages/admin/credits/components/RequestorOrganizationsTab.tsx
+// - web/frontend/src/components/ui/input.tsx
 import type { RefObject } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AutoMatchVerificationTab } from "./AutoMatchVerificationTab";
 import { RequestorFreeCreditTab } from "./RequestorFreeCreditTab";
@@ -22,6 +24,8 @@ import type {
 type RequestorCreditTabProps = {
   loadingStats: boolean;
   stats: CreditStats | null;
+  searchQuery: string;
+  setSearchQuery: (value: string) => void;
   orgSortKey: "paidBalance" | "bonusBalance" | "spentPaid" | "name";
   setOrgSortKey: (
     value: "paidBalance" | "bonusBalance" | "spentPaid" | "name",
@@ -257,13 +261,23 @@ export function RequestorCreditTab(props: RequestorCreditTabProps) {
       </div>
 
       <Tabs defaultValue="organizations" className="space-y-4">
-        <TabsList>
-          <TabsTrigger value="organizations">사업자별 크레딧</TabsTrigger>
-          <TabsTrigger value="free-credit">무료 크레딧</TabsTrigger>
-          <TabsTrigger value="verification">자동 매칭 검증</TabsTrigger>
-          <TabsTrigger value="orders">충전 주문</TabsTrigger>
-          <TabsTrigger value="transactions">입금 내역</TabsTrigger>
-        </TabsList>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <TabsList>
+            <TabsTrigger value="organizations">사업자별 크레딧</TabsTrigger>
+            <TabsTrigger value="free-credit">무료 크레딧</TabsTrigger>
+            <TabsTrigger value="verification">자동 매칭 검증</TabsTrigger>
+            <TabsTrigger value="orders">충전 주문</TabsTrigger>
+            <TabsTrigger value="transactions">입금 내역</TabsTrigger>
+          </TabsList>
+          <div className="w-full md:w-[360px]">
+            <Input
+              value={props.searchQuery}
+              onChange={(e) => props.setSearchQuery(e.target.value)}
+              placeholder="사업자명 / 사업자번호 / 대표자 / anchor ID 검색"
+              className="h-10"
+            />
+          </div>
+        </div>
 
         <RequestorOrganizationsTab
           orgSortKey={props.orgSortKey}

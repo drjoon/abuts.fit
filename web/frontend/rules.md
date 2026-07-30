@@ -42,6 +42,11 @@
   - 공정 탭(의뢰/CAM/가공/세척.패킹/포장.발송/추적관리)의 검색 폭 정책은 개별 페이지에서 재정의하지 않고
     `src/pages/manufacturer/worksheet/custom_abutment/components/WorksheetStageSearchInput.tsx`에서 공통으로 관리합니다.
 
+- 기본 공용 검색 입력 컴포넌트는 `src/components/ui/input.tsx` (`@/components/ui/input`)입니다.
+  - 관리자 크레딧 페이지 검색 UI 배치 기준 파일:
+    - `src/pages/admin/credits/AdminCreditPage.tsx`
+    - `src/pages/admin/credits/components/RequestorCreditTab.tsx`
+
 - 포장.발송 우편함 상세 모달 캐시 일관성:
   - `RequestPage`에서 우편함 상세 모달 오픈 시, 요약(`mailboxSummaries.requestCount`)과 캐시 건수가 다르면 캐시를 사용하지 않고 `/api/requests/shipping/mailbox-requests`를 재조회합니다.
   - 관련 파일:

@@ -1,7 +1,8 @@
 // related files:
 // - web/frontend/rules.md
-// - web/frontend/src/App.tsx
-// - web/frontend/src/features/layout/DashboardLayout.tsx
+// - web/frontend/src/pages/admin/credits/components/RequestorCreditTab.tsx
+// - web/frontend/src/pages/admin/credits/components/SalesmanCreditTab.tsx
+// - web/frontend/src/pages/admin/credits/hooks/useAdminCreditPage.ts
 import { useMemo, useState } from "react";
 import { usePeriodStore } from "@/store/usePeriodStore";
 import { PeriodFilter } from "@/shared/ui/PeriodFilter";
@@ -98,18 +99,16 @@ export default function AdminCreditPage() {
             <PeriodFilter value={state.period} onChange={setPeriod} />
           </div>
 
-          <div className="w-full sm:w-[320px] lg:w-[420px]">
-            <Input
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder={
-                state.creditTab === "requestor"
-                  ? "사업자명 / 사업자번호 / 대표자 / anchor ID 검색"
-                  : "영업자명 / 이메일 / 추천코드 검색"
-              }
-              className="h-10"
-            />
-          </div>
+          {state.creditTab === "salesman" ? (
+            <div className="w-full sm:w-[320px] lg:w-[420px]">
+              <Input
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="영업자명 / 이메일 / 추천코드 검색"
+                className="h-10"
+              />
+            </div>
+          ) : null}
 
           <Button
             type="button"
@@ -125,6 +124,8 @@ export default function AdminCreditPage() {
           <RequestorCreditTab
             loadingStats={state.loadingStats}
             stats={state.stats}
+            searchQuery={searchQuery}
+            setSearchQuery={setSearchQuery}
             orgSortKey={state.orgSortKey}
             setOrgSortKey={state.setOrgSortKey}
             loadingOrgs={state.loadingOrgs}
