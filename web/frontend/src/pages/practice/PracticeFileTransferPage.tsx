@@ -1367,18 +1367,41 @@ export const PracticeFileTransferPage = () => {
       }
 
       if (Array.isArray(parsed.toothWorks)) {
-        const normalized = normalizeToothWorks(parsed.toothWorks);
-        if (normalized.length > 0) {
-          setToothWorks(
-            normalized.map((row) => ({
-              toothNumber: row.toothNumber,
-              prosthesisType: restoredProsthesisTypes.some((type) => type === row.prosthesisType)
-                ? row.prosthesisType
-                : restoredProsthesisTypes[0] || "크라운",
-              customAbutment: row.customAbutment,
-              bridgeLinkedTeeth: row.bridgeLinkedTeeth,
-            })),
-          );
+        const restoredRows = parsed.toothWorks.map((row) => {
+          const toothNumber = String(row?.toothNumber || "").trim();
+          const prosthesisTypeRaw = String(row?.prosthesisType || "").trim();
+          const prosthesisType = restoredProsthesisTypes.some((type) => type === prosthesisTypeRaw)
+            ? prosthesisTypeRaw
+            : restoredProsthesisTypes[0] || "크라운";
+          const customAbutment = isCustomAbutmentSupportedProsthesisType(prosthesisType)
+            ? Boolean(row?.customAbutment)
+            : false;
+          const adjacent = getAdjacentTeeth(toothNumber);
+          const bridgeLinkedTeeth =
+            isBridgeLikeProsthesisType(prosthesisType) && Array.isArray(row?.bridgeLinkedTeeth)
+              ? row.bridgeLinkedTeeth
+                  .map((v) => String(v || "").trim())
+                  .filter((v) => adjacent.includes(v))
+              : [];
+
+          return {
+            toothNumber,
+            prosthesisType,
+            customAbutment,
+            bridgeLinkedTeeth,
+          };
+        });
+
+        if (import.meta.env.DEV) {
+          console.info("[practice-transfer] restore toothWorks from local", {
+            rawCount: parsed.toothWorks.length,
+            restoredCount: restoredRows.length,
+            firstRow: restoredRows[0] || null,
+          });
+        }
+
+        if (restoredRows.length > 0) {
+          setToothWorks(restoredRows);
         }
       }
     } catch {
