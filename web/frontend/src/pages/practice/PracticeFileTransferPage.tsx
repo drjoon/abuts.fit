@@ -127,6 +127,8 @@ import {
   buildPracticeTransferMemo as buildPracticeTransferMemoShared,
   extractTransferMemoFromMessage as extractTransferMemoFromMessageShared,
   formatTransferMemoForDisplay as formatTransferMemoForDisplayShared,
+  parsePracticeTransferMemoMeta as parsePracticeTransferMemoMetaShared,
+  stripPracticeTransferMessageEnvelope,
 } from "@/shared/practice/transferMemo";
 
 type RecentRequestItem = {
@@ -141,6 +143,8 @@ type RecentRequestItem = {
   status: string;
   createdAtTs: number;
   transferId: string;
+  orderDate: string;
+  arrivalDate: string;
   transferMemo: string;
   fileName: string;
   fileS3Key: string;
@@ -184,6 +188,8 @@ type RecentTransferItem = {
   createdAtTs: number;
   requestDate: string;
   targetLab: string;
+  orderDate: string;
+  arrivalDate: string;
   status: string;
   fileCount: number;
   patientCount: number;
@@ -250,7 +256,7 @@ const formatTransferMemoForDisplay = (rawMemo: string) =>
   formatTransferMemoForDisplayShared(rawMemo);
 
 const extractTransferMemoFromMessage = (message: string) =>
-  extractTransferMemoFromMessageShared(message);
+  extractTransferMemoFromMessageShared(message, { includeDateSummary: false });
 
 const makeTransferId = () => {
   const t = Date.now().toString(36).toUpperCase();
@@ -1204,7 +1210,11 @@ export const PracticeFileTransferPage = () => {
           const targetLab = extractLabNameFromMessage(message);
           const toothRaw = String(ci.tooth || "").trim();
           const createdAtRaw = String(r.createdAt || "");
+          const strippedTransferMemo = stripPracticeTransferMessageEnvelope(message);
+          const parsedMemo = parsePracticeTransferMemoMetaShared(strippedTransferMemo);
           const transferMemo = extractTransferMemoFromMessage(message);
+          const orderDate = String(r.orderDate || parsedMemo.orderDate || "").trim();
+          const arrivalDate = String(r.arrivalDate || parsedMemo.arrivalDate || "").trim();
           const fileObj =
             ci.file && typeof ci.file === "object"
               ? (ci.file as Record<string, unknown>)
@@ -1226,6 +1236,8 @@ export const PracticeFileTransferPage = () => {
             status: toStatusLabel(r.manufacturerStage),
             createdAtTs: new Date(createdAtRaw).getTime(),
             transferId: extractTransferIdFromMessage(message),
+            orderDate,
+            arrivalDate,
             transferMemo,
             fileName: String(fileObj.originalName || fileObj.name || "").trim(),
             fileS3Key: String(fileObj.s3Key || "").trim(),
@@ -1461,6 +1473,8 @@ export const PracticeFileTransferPage = () => {
         request.patientName,
         request.toothNumbers.join(" "),
         request.targetLab,
+        request.orderDate,
+        request.arrivalDate,
         request.status,
         request.fileName,
         request.transferMemo,
@@ -1528,6 +1542,8 @@ export const PracticeFileTransferPage = () => {
           createdAtTs: req.createdAtTs,
           requestDate: req.requestDate,
           targetLab: req.targetLab,
+          orderDate: req.orderDate,
+          arrivalDate: req.arrivalDate,
           status: req.status,
           fileCount: 1,
           patientCount: Math.max(1, initialPatients.size),
@@ -1546,6 +1562,8 @@ export const PracticeFileTransferPage = () => {
             req.patientName,
             req.toothNumbers.join(" "),
             req.targetLab,
+            req.orderDate,
+            req.arrivalDate,
             req.status,
             req.transferMemo,
             req.transferId,
@@ -1587,6 +1605,12 @@ export const PracticeFileTransferPage = () => {
       if (!existing.transferMemo && req.transferMemo) {
         existing.transferMemo = req.transferMemo;
       }
+      if (!existing.orderDate && req.orderDate) {
+        existing.orderDate = req.orderDate;
+      }
+      if (!existing.arrivalDate && req.arrivalDate) {
+        existing.arrivalDate = req.arrivalDate;
+      }
       if (req.createdAtTs > existing.createdAtTs) {
         existing.createdAtTs = req.createdAtTs;
         existing.createdAt = req.createdAt;
@@ -1595,7 +1619,15 @@ export const PracticeFileTransferPage = () => {
 
       existing.unreadCount = Number(unreadByTransferId.get(existing.transferId) || 0);
 
-      existing.searchBlob = `${existing.searchBlob} ${[req.patientName, req.toothNumbers.join(" "), req.id, req.transferMemo, req.fileName].join(" ")}`.toLowerCase();
+      existing.searchBlob = `${existing.searchBlob} ${[
+        req.patientName,
+        req.toothNumbers.join(" "),
+        req.id,
+        req.orderDate,
+        req.arrivalDate,
+        req.transferMemo,
+        req.fileName,
+      ].join(" ")}`.toLowerCase();
       if (!existing.transferId || existing.transferId === "-") {
         existing.deleteTargetLabel = req.id;
       }
@@ -1949,6 +1981,9 @@ export const PracticeFileTransferPage = () => {
       jsonBody: {
         targetLabAnchorId: String(selectedLab?._id || "").trim() || null,
         targetLabName: String(selectedLab?.name || "").trim(),
+        orderDate,
+        arrivalDate,
+        arrivalDefaultDays,
         transferMemo: String(requestMemo || "").trim(),
         files: nextDraftFiles.map((row) => ({ fileId: row.fileId })),
       },
@@ -2196,6 +2231,9 @@ export const PracticeFileTransferPage = () => {
         jsonBody: {
           targetLabAnchorId: String(selectedLab?._id || "").trim() || null,
           targetLabName: String(selectedLab?.name || "").trim(),
+          orderDate,
+          arrivalDate,
+          arrivalDefaultDays,
           transferMemo,
           files: dedupedDraftFiles.map((row) => ({
             fileId: row.fileId,
@@ -2389,6 +2427,9 @@ export const PracticeFileTransferPage = () => {
           transferId,
           targetLabAnchorId: String(selectedLab?._id || "").trim() || null,
           targetLabName: String(selectedLab?.name || "").trim(),
+          orderDate,
+          arrivalDate,
+          arrivalDefaultDays,
           transferMemo,
           caseInfos: caseInfosPayload,
         },
@@ -2929,6 +2970,8 @@ export const PracticeFileTransferPage = () => {
                               <p className="truncate text-xs text-muted-foreground">{targetLabText}</p>
                               <p className="truncate text-xs text-muted-foreground">
                                 파일 {transfer.fileCount}개
+                                {transfer.orderDate ? ` · 주문 ${transfer.orderDate}` : ""}
+                                {transfer.arrivalDate ? ` · 도착 ${transfer.arrivalDate}` : ""}
                                 {String(transfer.transferMemo || "").trim()
                                   ? ` · 메모: ${String(transfer.transferMemo || "")
                                       .replace(/\s+/g, " ")
@@ -2989,6 +3032,8 @@ export const PracticeFileTransferPage = () => {
             },
             { label: "전송시각", value: selectedTransfer?.createdAt || "-" },
             { label: "기공소", value: selectedTransfer?.targetLab || "-" },
+            { label: "주문일", value: selectedTransfer?.orderDate || "-" },
+            { label: "도착일", value: selectedTransfer?.arrivalDate || "-" },
             { label: "파일 수", value: `${selectedTransfer?.fileCount || 0}개` },
           ] satisfies PracticeTransferDialogSummaryItem[]}
           memo={selectedTransferDisplayMemo}

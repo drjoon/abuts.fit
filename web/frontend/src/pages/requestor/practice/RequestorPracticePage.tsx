@@ -316,8 +316,8 @@ export default function RequestorPracticePage() {
           targetLabName: String(r.targetLabName || "").trim(),
           transferMemo: parsedMemo.memo,
           rawTransferMemo: String(r.transferMemo || "").trim(),
-          orderDate: parsedMemo.orderDate,
-          arrivalDate: parsedMemo.arrivalDate,
+          orderDate: String(r.orderDate || parsedMemo.orderDate || "").trim(),
+          arrivalDate: String(r.arrivalDate || parsedMemo.arrivalDate || "").trim(),
           prosthesisTypes: parsedMemo.prosthesisTypes,
           toothWorksSummary: parsedMemo.toothWorksSummary,
           status: String(r.status || "active").trim(),
@@ -444,42 +444,62 @@ export default function RequestorPracticePage() {
           : {};
 
       const transferId = String(payload.transferId || "").trim();
-      const action = String(payload.action || "").trim();
+      const action = String(payload.action || "").trim().toLowerCase();
       const unreadCount = Number(payload.unreadCount || 0);
       const status = String(payload.status || "").trim();
+      const statusLower = status.toLowerCase();
+      const isRemovedEvent =
+        action === "canceled" ||
+        action === "cancelled" ||
+        action === "deleted" ||
+        action === "removed" ||
+        statusLower === "canceled" ||
+        statusLower === "cancelled" ||
+        statusLower === "deleted" ||
+        statusLower === "removed" ||
+        status === "취소";
       const requestorReadAt = payload.requestorReadAt
         ? String(payload.requestorReadAt)
         : null;
 
       if (type === "practice:transfer-updated" && transferId) {
-        setTransfers((prev) =>
-          prev.map((row) => {
-            if (row.transferId !== transferId) return row;
-            return {
-              ...row,
-              status: status || row.status,
-              isRead:
-                action === "read"
-                  ? true
-                  : row.isRead,
-              requestorReadAt:
-                action === "read"
-                  ? requestorReadAt || row.requestorReadAt
-                  : row.requestorReadAt,
-            };
-          }),
-        );
+        if (isRemovedEvent) {
+          setTransfers((prev) => prev.filter((row) => row.transferId !== transferId));
+          setSelectedTransfer((prev) => {
+            if (!prev || prev.transferId !== transferId) return prev;
+            return null;
+          });
+          setDialogOpen(false);
+        } else {
+          setTransfers((prev) =>
+            prev.map((row) => {
+              if (row.transferId !== transferId) return row;
+              return {
+                ...row,
+                status: status || row.status,
+                isRead:
+                  action === "read"
+                    ? true
+                    : row.isRead,
+                requestorReadAt:
+                  action === "read"
+                    ? requestorReadAt || row.requestorReadAt
+                    : row.requestorReadAt,
+              };
+            }),
+          );
 
-        setSelectedTransfer((prev) => {
-          if (!prev || prev.transferId !== transferId) return prev;
-          return {
-            ...prev,
-            status: status || prev.status,
-            isRead: action === "read" ? true : prev.isRead,
-            requestorReadAt:
-              action === "read" ? requestorReadAt || prev.requestorReadAt : prev.requestorReadAt,
-          };
-        });
+          setSelectedTransfer((prev) => {
+            if (!prev || prev.transferId !== transferId) return prev;
+            return {
+              ...prev,
+              status: status || prev.status,
+              isRead: action === "read" ? true : prev.isRead,
+              requestorReadAt:
+                action === "read" ? requestorReadAt || prev.requestorReadAt : prev.requestorReadAt,
+            };
+          });
+        }
       }
 
       if (Number.isFinite(unreadCount) && unreadCount >= 0) {
@@ -488,7 +508,7 @@ export default function RequestorPracticePage() {
 
       const shouldReload =
         type === "practice:transfer-created" ||
-        action === "canceled" ||
+        isRemovedEvent ||
         !transferId;
 
       if (shouldReload) {
@@ -538,6 +558,11 @@ export default function RequestorPracticePage() {
     const now = new Date();
 
     const periodFiltered = transfers.filter((t) => {
+      const rawStatus = String(t.status || "").trim().toLowerCase();
+      if (["canceled", "cancelled", "deleted", "removed", "취소"].includes(rawStatus)) {
+        return false;
+      }
+
       const ts = new Date(t.createdAt).getTime();
       if (!Number.isFinite(ts) || ts <= 0) return true;
       const created = new Date(ts);
@@ -609,7 +634,10 @@ export default function RequestorPracticePage() {
   }, [filteredTransfers, rooms]);
 
   const selectedTransferDisplayMemo = useMemo(
-    () => formatPracticeTransferMemoDetail(String(selectedTransfer?.rawTransferMemo || "")),
+    () =>
+      formatPracticeTransferMemoDetail(String(selectedTransfer?.rawTransferMemo || ""), {
+        includeDateSummary: false,
+      }),
     [selectedTransfer?.rawTransferMemo],
   );
 

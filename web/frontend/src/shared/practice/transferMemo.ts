@@ -336,7 +336,10 @@ export const buildPracticeTransferMemo = (params: {
   return memo ? `${lines.join("\n")}\n${memo}` : lines.join("\n");
 };
 
-export const formatPracticeTransferMemoDetail = (rawMemo: string) => {
+export const formatPracticeTransferMemoDetail = (
+  rawMemo: string,
+  options?: { includeDateSummary?: boolean },
+) => {
   const source = String(rawMemo || "").trim();
   if (!source) return "";
 
@@ -347,11 +350,15 @@ export const formatPracticeTransferMemoDetail = (rawMemo: string) => {
 
   const parsed = parsePracticeTransferMemoMeta(source);
   const summarySections: string[] = [];
-  const dateSummaryParts: string[] = [];
-  if (parsed.orderDate) dateSummaryParts.push(`주문일 ${parsed.orderDate}`);
-  if (parsed.arrivalDate) dateSummaryParts.push(`도착일 ${parsed.arrivalDate}`);
-  if (dateSummaryParts.length > 0) {
-    summarySections.push(dateSummaryParts.join(" · "));
+  const includeDateSummary = options?.includeDateSummary !== false;
+
+  if (includeDateSummary) {
+    const dateSummaryParts: string[] = [];
+    if (parsed.orderDate) dateSummaryParts.push(`주문일 ${parsed.orderDate}`);
+    if (parsed.arrivalDate) dateSummaryParts.push(`도착일 ${parsed.arrivalDate}`);
+    if (dateSummaryParts.length > 0) {
+      summarySections.push(dateSummaryParts.join(" · "));
+    }
   }
 
   const toothSummary = formatToothWorksForDisplay(parsed.toothWorks, { multiline: true });
@@ -367,11 +374,11 @@ export const formatPracticeTransferMemoDetail = (rawMemo: string) => {
   return formatTransferMemoForDisplay(summarySections.join("\n\n").trim());
 };
 
-export const extractTransferMemoFromMessage = (message: string) => {
+export const stripPracticeTransferMessageEnvelope = (message: string) => {
   const raw = String(message || "").trim();
   if (!raw) return "";
 
-  const stripped = raw
+  return raw
     .split(/\r?\n/)
     .map((line) =>
       String(line || "")
@@ -382,6 +389,12 @@ export const extractTransferMemoFromMessage = (message: string) => {
     .filter(Boolean)
     .join("\n")
     .trim();
+};
 
-  return formatPracticeTransferMemoDetail(stripped);
+export const extractTransferMemoFromMessage = (
+  message: string,
+  options?: { includeDateSummary?: boolean },
+) => {
+  const stripped = stripPracticeTransferMessageEnvelope(message);
+  return formatPracticeTransferMemoDetail(stripped, options);
 };
