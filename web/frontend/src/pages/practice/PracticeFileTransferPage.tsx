@@ -353,6 +353,8 @@ type PracticeTransferSettingsPayload = {
 type PracticeTransferLocalFormDraft = {
   orderDate?: string;
   arrivalDate?: string;
+  arrivalDefaultDays?: number;
+  prosthesisTypes?: string[];
   requestMemo?: string;
   selectedLab?: {
     _id?: string;
@@ -1296,10 +1298,22 @@ export const PracticeFileTransferPage = () => {
 
       const restoredOrderDate = String(parsed.orderDate || "").trim();
       const restoredArrivalDate = String(parsed.arrivalDate || "").trim();
+      const restoredArrivalDefaultDays = normalizeArrivalDefaultDays(
+        Number(parsed.arrivalDefaultDays ?? DEFAULT_ARRIVAL_OFFSET_DAYS),
+      );
+      const restoredProsthesisTypes = normalizeProsthesisTypes(
+        Array.isArray(parsed.prosthesisTypes)
+          ? parsed.prosthesisTypes
+          : [...PRESET_PROSTHESIS_TYPES],
+      );
       const restoredMemo = String(parsed.requestMemo || "");
 
       if (restoredOrderDate) setOrderDate(restoredOrderDate);
       if (restoredArrivalDate) setArrivalDate(restoredArrivalDate);
+      setArrivalDefaultDays(restoredArrivalDefaultDays);
+      setArrivalDefaultDaysDraft(restoredArrivalDefaultDays);
+      setProsthesisTypeCatalog(restoredProsthesisTypes);
+      setProsthesisTypeCatalogDraft(restoredProsthesisTypes);
       setRequestMemo(restoredMemo);
 
       const lab = parsed.selectedLab;
@@ -1321,7 +1335,16 @@ export const PracticeFileTransferPage = () => {
       if (Array.isArray(parsed.toothWorks)) {
         const normalized = normalizeToothWorks(parsed.toothWorks);
         if (normalized.length > 0) {
-          setToothWorks(normalized);
+          setToothWorks(
+            normalized.map((row) => ({
+              toothNumber: row.toothNumber,
+              prosthesisType: restoredProsthesisTypes.some((type) => type === row.prosthesisType)
+                ? row.prosthesisType
+                : restoredProsthesisTypes[0] || "크라운",
+              customAbutment: row.customAbutment,
+              bridgeLinkedTeeth: row.bridgeLinkedTeeth,
+            })),
+          );
         }
       }
     } catch {
@@ -1333,6 +1356,8 @@ export const PracticeFileTransferPage = () => {
     const payload: PracticeTransferLocalFormDraft = {
       orderDate,
       arrivalDate,
+      arrivalDefaultDays,
+      prosthesisTypes: normalizedProsthesisTypes,
       requestMemo,
       selectedLab: selectedLab
         ? {
@@ -1353,7 +1378,15 @@ export const PracticeFileTransferPage = () => {
     } catch {
       // ignore
     }
-  }, [arrivalDate, orderDate, requestMemo, selectedLab, toothWorks]);
+  }, [
+    arrivalDate,
+    arrivalDefaultDays,
+    normalizedProsthesisTypes,
+    orderDate,
+    requestMemo,
+    selectedLab,
+    toothWorks,
+  ]);
 
   useEffect(() => {
     void loadPracticeTransferDraft();
