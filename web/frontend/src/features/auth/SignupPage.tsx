@@ -1342,16 +1342,16 @@ export const SignupPage = () => {
                       )}
                       {signupRole === "requestor" && (
                         <p className="text-sm text-white/70">
-                          커스텀 어벗먼트를 주문하는 기공소 혹은 치과
+                          직접 디자인한 커스텀어벗을 어벗츠에 가공 주문하는 기공소 혹은 치과
                         </p>
                       )}
                       {signupRole === "practice" && (
                         <div className="space-y-1 text-center">
                           <p className="text-sm text-white/70">
-                            치과로 가입시 <span className="font-semibold text-white">"기공의뢰"</span>만 가능
+                            <span className=" text-white">치과로 가입시 어벗츠 커스텀어벗 가공 주문 불가</span>
                           </p>
-                          <p className="text-sm font-semibold text-amber-300">
-                            커스텀 어벗먼트를 주문할 경우 <span className="font-bold text-white">"기공소"</span>로 가입해야 합니다
+                          <p className="text-sm  text-amber-300">
+                            어벗츠 커스텀어벗 제작 서비스를 이용하려면 <span className="font-bold text-white">의뢰자</span>로 가입
                           </p>
                         </div>
                       )}
