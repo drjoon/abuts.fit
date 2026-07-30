@@ -3388,7 +3388,7 @@ export const PracticeFileTransferPage = () => {
                   <ClipboardList className="h-4 w-4 text-blue-600" />
                   최근 전송 내역
                 </CardTitle>
-                <CardDescription className="space-y-2">
+                <div className="space-y-2 text-sm text-muted-foreground">
                   <div className="flex items-center justify-start">
                     <PeriodFilter value={period} onChange={setPeriod} />
                   </div>
@@ -3408,7 +3408,7 @@ export const PracticeFileTransferPage = () => {
                       placeholder="전송ID, 치과명, 파일명, 환자명 검색"
                     />
                   </div>
-                </CardDescription>
+                </div>
               </CardHeader>
               <CardContent className="space-y-2">
                 {recentRequestsLoading ? (
@@ -3426,32 +3426,48 @@ export const PracticeFileTransferPage = () => {
                 ) : (
                   <div className="max-h-[19rem] space-y-2 overflow-y-auto pr-1">
                     {groupedTransfers.map((transfer) => {
-                      const targetLabText = String(transfer.targetLab || "-")
-                        .replace(/\s*→.*$/g, "")
-                        .trim() || "-";
+                      const targetLabText =
+                        String(transfer.targetLab || "-")
+                          .replace(/\s*→.*$/g, "")
+                          .trim() || "-";
+
                       return (
-                        <button
+                        <div
                           key={`${transfer.id}:${transfer.createdAt}`}
-                          type="button"
-                          className="w-full rounded-lg border px-3 py-2 text-sm flex items-center justify-between gap-3 text-left hover:bg-muted/40"
+                          role="button"
+                          tabIndex={0}
+                          className="w-full cursor-pointer rounded-lg border px-3 py-2 text-left text-sm hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                           onClick={() => void handleOpenTransferDialog(transfer)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              void handleOpenTransferDialog(transfer);
+                            }
+                          }}
                         >
-                          <div className="min-w-0">
-                            <p className="font-medium truncate">{transfer.transferId !== "-" ? transfer.transferId : transfer.id}</p>
-                            <div className="mt-0.5 flex items-center gap-2">
-                              <p className="text-xs text-muted-foreground truncate">{transfer.createdAt}</p>
-                              <Badge variant="outline" className="whitespace-nowrap">{transfer.status}</Badge>
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="min-w-0">
+                              <p className="truncate font-medium">
+                                {transfer.transferId !== "-" ? transfer.transferId : transfer.id}
+                              </p>
+                              <div className="mt-0.5 flex items-center gap-2">
+                                <p className="truncate text-xs text-muted-foreground">{transfer.createdAt}</p>
+                                <Badge variant="outline" className="whitespace-nowrap">
+                                  {transfer.status}
+                                </Badge>
+                              </div>
+                              <p className="truncate text-xs text-muted-foreground">{targetLabText}</p>
+                              <p className="truncate text-xs text-muted-foreground">
+                                파일 {transfer.fileCount}개
+                                {String(transfer.transferMemo || "").trim()
+                                  ? ` · 메모: ${String(transfer.transferMemo || "")
+                                      .replace(/\s+/g, " ")
+                                      .trim()}`
+                                  : ""}
+                              </p>
                             </div>
-                            <p className="text-xs text-muted-foreground truncate">{targetLabText}</p>
-                            <p className="text-xs text-muted-foreground truncate">
-                              파일 {transfer.fileCount}개
-                              {String(transfer.transferMemo || "").trim()
-                                ? ` · 메모: ${String(transfer.transferMemo || "").replace(/\s+/g, " ").trim()}`
-                                : ""}
-                            </p>
-                          </div>
-                          <div className="shrink-0 flex items-center gap-2">
-                            <div className="relative">
+
+                            <div className="relative shrink-0">
                               <Button
                                 type="button"
                                 variant="ghost"
@@ -3466,13 +3482,13 @@ export const PracticeFileTransferPage = () => {
                                 <Trash2 className="h-4 w-4" />
                               </Button>
                               {transfer.unreadCount > 0 ? (
-                                <span className="absolute -top-1 -right-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-semibold text-white leading-none">
+                                <span className="absolute -right-1 -top-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-semibold leading-none text-white">
                                   {transfer.unreadCount > 99 ? "99+" : transfer.unreadCount}
                                 </span>
                               ) : null}
                             </div>
                           </div>
-                        </button>
+                        </div>
                       );
                     })}
                   </div>
