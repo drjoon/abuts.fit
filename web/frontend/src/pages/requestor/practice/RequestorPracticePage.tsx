@@ -1248,7 +1248,7 @@ export default function RequestorPracticePage() {
             <CardHeader>
               <CardTitle className="text-base">치과 초대 링크</CardTitle>
               <CardDescription>
-                치과에 이 링크를 보내면 파일 전송 화면이 바로 열리고, 우 기공소가 자동 선택됩니다.
+                치과에 이 링크를 보내면 파일 전송 화면이 바로 열리고, 우리 기공소가 자동 선택됩니다.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
