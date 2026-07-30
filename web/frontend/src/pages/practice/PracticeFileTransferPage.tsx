@@ -413,10 +413,7 @@ const normalizeProsthesisTypes = (items: string[]) => {
     new Map(canonical.map((item) => [item.toLowerCase(), item])).values(),
   );
 
-  const filtered = deduped.filter(
-    (item) => item === "크라운" || item === "브리지" || item === "Pontic" || item === "인레이",
-  );
-  const withPontic = [...filtered];
+  const withPontic = [...deduped];
   if (!withPontic.some((item) => /^pontic$/i.test(item))) withPontic.push("Pontic");
   return withPontic.length ? withPontic : [...PRESET_PROSTHESIS_TYPES];
 };
