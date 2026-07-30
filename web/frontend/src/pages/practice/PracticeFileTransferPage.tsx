@@ -754,6 +754,7 @@ export const PracticeFileTransferPage = () => {
   const chatRoomResolveSeqRef = useRef(0);
   const prevFileCountRef = useRef(0);
   const localFormUpdatedAtRef = useRef(0);
+  const skipNextArrivalAutoSyncRef = useRef(false);
   const {
     files,
     selectedLab,
@@ -1342,6 +1343,9 @@ export const PracticeFileTransferPage = () => {
         });
       }
 
+      if (restoredOrderDate || restoredArrivalDate) {
+        skipNextArrivalAutoSyncRef.current = true;
+      }
       if (restoredOrderDate) setOrderDate(restoredOrderDate);
       if (restoredArrivalDate) setArrivalDate(restoredArrivalDate);
       setArrivalDefaultDays(restoredArrivalDefaultDays);
@@ -2513,6 +2517,10 @@ export const PracticeFileTransferPage = () => {
 
   useEffect(() => {
     if (!orderDate) return;
+    if (skipNextArrivalAutoSyncRef.current) {
+      skipNextArrivalAutoSyncRef.current = false;
+      return;
+    }
     setArrivalDate(addDaysToDateInput(orderDate, arrivalDefaultDays));
   }, [orderDate, arrivalDefaultDays]);
 
