@@ -755,6 +755,7 @@ export const PracticeFileTransferPage = () => {
   const chatBottomRef = useRef<HTMLDivElement | null>(null);
   const chatRoomResolveSeqRef = useRef(0);
   const prevFileCountRef = useRef(0);
+  const localFormUpdatedAtRef = useRef(0);
   const {
     files,
     selectedLab,
@@ -1075,6 +1076,12 @@ export const PracticeFileTransferPage = () => {
         return;
       }
 
+      const serverUpdatedAt = new Date(String(payload.updatedAt || "")).getTime();
+      const hasValidServerUpdatedAt = Number.isFinite(serverUpdatedAt) && serverUpdatedAt > 0;
+      const shouldKeepLocalForm =
+        localFormUpdatedAtRef.current > 0 &&
+        (!hasValidServerUpdatedAt || localFormUpdatedAtRef.current >= serverUpdatedAt);
+
       const restoredFiles = Array.isArray(payload.files)
         ? payload.files
             .map((row) => ({
@@ -1090,42 +1097,44 @@ export const PracticeFileTransferPage = () => {
 
       setDraftFiles(restoredFiles);
 
-      const restoredAnchorId = String(payload.targetLabAnchorId || "").trim();
-      const restoredLabName = String(payload.targetLabName || "").trim();
-      if (restoredAnchorId && restoredLabName) {
-        setSelectedLab((prev) => {
-          if (prev?._id === restoredAnchorId && String(prev.name || "").trim() === restoredLabName) {
-            return prev;
-          }
-          return {
-            _id: restoredAnchorId,
-            name: restoredLabName,
-            businessType: "requestor",
-          };
-        });
+      if (!shouldKeepLocalForm) {
+        const restoredAnchorId = String(payload.targetLabAnchorId || "").trim();
+        const restoredLabName = String(payload.targetLabName || "").trim();
+        if (restoredAnchorId && restoredLabName) {
+          setSelectedLab((prev) => {
+            if (prev?._id === restoredAnchorId && String(prev.name || "").trim() === restoredLabName) {
+              return prev;
+            }
+            return {
+              _id: restoredAnchorId,
+              name: restoredLabName,
+              businessType: "requestor",
+            };
+          });
+        }
+
+        const parsedMemo = parsePracticeTransferMemoMeta(String(payload.transferMemo || ""));
+        const normalizedDays = normalizeArrivalDefaultDays(parsedMemo.arrivalDefaultDays);
+        const normalizedTypes = normalizeProsthesisTypes(parsedMemo.prosthesisTypes);
+
+        setRequestMemo(parsedMemo.memo);
+        setOrderDate(parsedMemo.orderDate || todayDate);
+        setArrivalDefaultDays(normalizedDays);
+        setArrivalDefaultDaysDraft(normalizedDays);
+        setArrivalDate(
+          parsedMemo.arrivalDate ||
+            addDaysToDateInput(parsedMemo.orderDate || todayDate, normalizedDays),
+        );
+        setProsthesisTypeCatalog(normalizedTypes);
+        setProsthesisTypeCatalogDraft(normalizedTypes);
+        setToothWorks(
+          normalizeToothWorks(parsedMemo.toothWorks).length
+            ? normalizeToothWorks(parsedMemo.toothWorks)
+            : normalizedTypes.length
+              ? [{ toothNumber: "", prosthesisType: normalizedTypes[0], customAbutment: false, bridgeLinkedTeeth: [] }]
+              : [],
+        );
       }
-
-      const parsedMemo = parsePracticeTransferMemoMeta(String(payload.transferMemo || ""));
-      const normalizedDays = normalizeArrivalDefaultDays(parsedMemo.arrivalDefaultDays);
-      const normalizedTypes = normalizeProsthesisTypes(parsedMemo.prosthesisTypes);
-
-      setRequestMemo(parsedMemo.memo);
-      setOrderDate(parsedMemo.orderDate || todayDate);
-      setArrivalDefaultDays(normalizedDays);
-      setArrivalDefaultDaysDraft(normalizedDays);
-      setArrivalDate(
-        parsedMemo.arrivalDate ||
-          addDaysToDateInput(parsedMemo.orderDate || todayDate, normalizedDays),
-      );
-      setProsthesisTypeCatalog(normalizedTypes);
-      setProsthesisTypeCatalogDraft(normalizedTypes);
-      setToothWorks(
-        normalizeToothWorks(parsedMemo.toothWorks).length
-          ? normalizeToothWorks(parsedMemo.toothWorks)
-          : normalizedTypes.length
-            ? [{ toothNumber: "", prosthesisType: normalizedTypes[0], customAbutment: false, bridgeLinkedTeeth: [] }]
-            : [],
-      );
 
       setTempSaveDirty(false);
     } catch {
@@ -1152,7 +1161,9 @@ export const PracticeFileTransferPage = () => {
           ? (body.data as PracticeTransferSettingsPayload)
           : null;
 
-      applyPracticeTransferSettings(payload);
+      if (localFormUpdatedAtRef.current <= 0) {
+        applyPracticeTransferSettings(payload);
+      }
       try {
         localStorage.setItem(
           PRACTICE_TRANSFER_SETTINGS_LOCAL_KEY,
@@ -1295,6 +1306,12 @@ export const PracticeFileTransferPage = () => {
       const raw = localStorage.getItem(PRACTICE_TRANSFER_FORM_LOCAL_KEY);
       if (!raw) return;
       const parsed = JSON.parse(raw) as PracticeTransferLocalFormDraft;
+      const localUpdatedAt = Number(parsed.updatedAt || 0);
+      if (Number.isFinite(localUpdatedAt) && localUpdatedAt > 0) {
+        localFormUpdatedAtRef.current = localUpdatedAt;
+      } else {
+        localFormUpdatedAtRef.current = Date.now();
+      }
 
       const restoredOrderDate = String(parsed.orderDate || "").trim();
       const restoredArrivalDate = String(parsed.arrivalDate || "").trim();
@@ -1353,6 +1370,8 @@ export const PracticeFileTransferPage = () => {
   }, [setRequestMemo, setSelectedLab]);
 
   useEffect(() => {
+    const updatedAt = Date.now();
+
     const payload: PracticeTransferLocalFormDraft = {
       orderDate,
       arrivalDate,
@@ -1370,7 +1389,7 @@ export const PracticeFileTransferPage = () => {
           }
         : null,
       toothWorks,
-      updatedAt: Date.now(),
+      updatedAt,
     };
 
     try {
