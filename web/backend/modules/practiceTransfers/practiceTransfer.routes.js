@@ -1,5 +1,6 @@
 // related files:
 // - web/backend/controllers/practiceTransfers/practiceTransfer.controller.js
+// - web/backend/controllers/practiceTransfers/practiceTransferSettings.controller.js
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 import express from "express";
@@ -15,6 +16,10 @@ import {
   markReceivedPracticeTransferRead,
   upsertPracticeTransferDraft,
 } from "../../controllers/practiceTransfers/practiceTransfer.controller.js";
+import {
+  getPracticeTransferSettings,
+  upsertPracticeTransferSettings,
+} from "../../controllers/practiceTransfers/practiceTransferSettings.controller.js";
 
 const router = express.Router();
 
@@ -34,6 +39,20 @@ router.get(
   authenticate,
   authorize(["practice", "admin"], { subRoles: ["owner", "staff"] }),
   getMyPracticeTransfers,
+);
+
+router.get(
+  "/settings",
+  authenticate,
+  authorize(["practice", "admin"], { subRoles: ["owner", "staff"] }),
+  getPracticeTransferSettings,
+);
+
+router.post(
+  "/settings",
+  authenticate,
+  authorize(["practice", "admin"], { subRoles: ["owner", "staff"] }),
+  upsertPracticeTransferSettings,
 );
 
 router.get(

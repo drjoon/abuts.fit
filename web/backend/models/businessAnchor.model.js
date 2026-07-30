@@ -2,6 +2,8 @@
 // - web/backend/rules.md
 // - web/backend/app.js
 // - web/backend/server.js
+// - web/backend/controllers/practiceTransfers/practiceTransferSettings.controller.js
+// - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
 import mongoose from "mongoose";
 
 const MANUFACTURER_HEX_ROTATION_REGEX = /^헥스\s*[+-]?\d+(?:\.\d+)?\s*도회전$/;
@@ -160,6 +162,25 @@ const businessAnchorSchema = new mongoose.Schema(
             "defaultManufacturerHexRotation은 'STL모델대로' | '헥스30도회전' | '헥스X도회전(total)' 형식이어야 합니다.",
         },
         default: null,
+      },
+      updatedAt: {
+        type: Date,
+        default: null,
+      },
+    },
+    practiceTransferSettings: {
+      // related files:
+      // - web/backend/controllers/practiceTransfers/practiceTransferSettings.controller.js
+      // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
+      arrivalDefaultDays: {
+        type: Number,
+        default: 7,
+        min: 0,
+        max: 365,
+      },
+      prosthesisTypes: {
+        type: [String],
+        default: ["크라운", "브리지", "커스텀어벗+크라운", "커스텀어벗+브리지"],
       },
       updatedAt: {
         type: Date,

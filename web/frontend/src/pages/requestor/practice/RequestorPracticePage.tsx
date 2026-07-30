@@ -1035,13 +1035,6 @@ export default function RequestorPracticePage() {
                         <div className="flex items-center gap-2">
                           <Building2 className="h-4 w-4 text-muted-foreground" />
                           <span className="font-semibold">{transfer.transferId}</span>
-
-                          <Badge
-                            variant={transfer.isRead ? "secondary" : "destructive"}
-                            className="shrink-0 whitespace-nowrap"
-                          >
-                            {transfer.isRead ? "수신완료" : "수신전"}
-                          </Badge>
                           {chatUnreadCount > 0 ? (
                             <Badge
                               variant="destructive"
@@ -1051,15 +1044,22 @@ export default function RequestorPracticePage() {
                             </Badge>
                           ) : null}
                         </div>
-                        <span className="text-xs text-muted-foreground">
-                          {formatDateTime(transfer.createdAt)}
-                        </span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-muted-foreground">
+                            {formatDateTime(transfer.createdAt)}
+                          </span>
+                          <Badge
+                            variant={transfer.isRead ? "secondary" : "destructive"}
+                            className="shrink-0 whitespace-nowrap"
+                          >
+                            {transfer.isRead ? "수신완료" : "수신전"}
+                          </Badge>
+                        </div>
                       </div>
 
                       <div className="mt-2 text-sm text-muted-foreground">
                         치과: {transfer.practice.businessName || "-"}
                         {transfer.practice.userName ? ` · 담당자 ${transfer.practice.userName}` : ""}
-                        {user?.companyName ? ` → ${user.companyName}` : ""}
                       </div>
 
                       <p className="mt-2 text-xs text-muted-foreground truncate">

@@ -3259,7 +3259,11 @@ export const PracticeFileTransferPage = () => {
                     검색 조건에 맞는 의뢰 내역이 없습니다.
                   </div>
                 ) : (
-                  groupedTransfers.map((transfer) => (
+                  groupedTransfers.map((transfer) => {
+                    const targetLabText = String(transfer.targetLab || "-")
+                      .replace(/\s*→.*$/g, "")
+                      .trim() || "-";
+                    return (
                     <button
                       key={`${transfer.id}:${transfer.createdAt}`}
                       type="button"
@@ -3268,9 +3272,11 @@ export const PracticeFileTransferPage = () => {
                     >
                       <div className="min-w-0">
                         <p className="font-medium truncate">{transfer.transferId !== "-" ? transfer.transferId : transfer.id}</p>
-                        <p className="text-xs text-muted-foreground truncate">
-                          {transfer.createdAt} · {transfer.targetLab}
-                        </p>
+                        <div className="mt-0.5 flex items-center gap-2">
+                          <p className="text-xs text-muted-foreground truncate">{transfer.createdAt}</p>
+                          <Badge variant="outline" className="whitespace-nowrap">{transfer.status}</Badge>
+                        </div>
+                        <p className="text-xs text-muted-foreground truncate">{targetLabText}</p>
                         <p className="text-xs text-muted-foreground truncate">
                           파일 {transfer.fileCount}개
                           {String(transfer.transferMemo || "").trim()
@@ -3279,7 +3285,6 @@ export const PracticeFileTransferPage = () => {
                         </p>
                       </div>
                       <div className="shrink-0 flex items-center gap-2">
-                        <Badge variant="outline" className="whitespace-nowrap">{transfer.status}</Badge>
                         <div className="relative">
                           <Button
                             type="button"
@@ -3302,7 +3307,8 @@ export const PracticeFileTransferPage = () => {
                         </div>
                       </div>
                     </button>
-                  ))
+                    );
+                  })
                 )}
               </CardContent>
             </Card>

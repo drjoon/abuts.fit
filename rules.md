@@ -167,6 +167,7 @@
   - `web/frontend/src/pages/practice/PracticeDropzonePage.tsx`
   - `web/frontend/src/pages/practice/PracticeFileTransferPage.tsx`
   - `web/frontend/src/shared/components/PracticeTransferDetailChatDialog.tsx`
+  - `web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx`
 - 관리자 사용자/사업자
   - `web/frontend/src/pages/admin/users/AdminUserManagement.tsx`
   - `web/frontend/src/pages/admin/businesses/AdminBusinessPage.tsx`
@@ -189,6 +190,7 @@
 - practice 전송
   - `web/backend/modules/practiceTransfers/practiceTransfer.routes.js`
   - `web/backend/controllers/practiceTransfers/practiceTransfer.controller.js`
+  - `web/backend/controllers/practiceTransfers/practiceTransferSettings.controller.js`
 - 관리자 사용자 권한
   - `web/backend/controllers/admin/admin.users.controller.js`
 
