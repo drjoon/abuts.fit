@@ -1075,19 +1075,6 @@ export const PracticeFileTransferPage = () => {
         return;
       }
 
-      const serverUpdatedAt = new Date(String(payload.updatedAt || "")).getTime();
-      const hasValidServerUpdatedAt = Number.isFinite(serverUpdatedAt) && serverUpdatedAt > 0;
-      const shouldKeepLocalForm = localFormUpdatedAtRef.current > 0;
-
-      if (import.meta.env.DEV) {
-        console.info("[practice-transfer] loadDraft compare", {
-          localUpdatedAt: localFormUpdatedAtRef.current,
-          serverUpdatedAt: hasValidServerUpdatedAt ? serverUpdatedAt : null,
-          shouldKeepLocalForm,
-          reason: shouldKeepLocalForm ? "prefer-local-form" : "use-server-draft",
-        });
-      }
-
       const restoredFiles = Array.isArray(payload.files)
         ? payload.files
             .map((row) => ({
@@ -1103,50 +1090,18 @@ export const PracticeFileTransferPage = () => {
 
       setDraftFiles(restoredFiles);
 
-      if (!shouldKeepLocalForm) {
-        const restoredAnchorId = String(payload.targetLabAnchorId || "").trim();
-        const restoredLabName = String(payload.targetLabName || "").trim();
-        if (restoredAnchorId && restoredLabName) {
-          setSelectedLab((prev) => {
-            if (prev?._id === restoredAnchorId && String(prev.name || "").trim() === restoredLabName) {
-              return prev;
-            }
-            return {
-              _id: restoredAnchorId,
-              name: restoredLabName,
-              businessType: "requestor",
-            };
-          });
-        }
-
-        const parsedMemo = parsePracticeTransferMemoMeta(String(payload.transferMemo || ""));
-        const normalizedDays = normalizeArrivalDefaultDays(parsedMemo.arrivalDefaultDays);
-        const normalizedTypes = normalizeProsthesisTypes(parsedMemo.prosthesisTypes);
-
-        setRequestMemo(parsedMemo.memo);
-        setOrderDate(parsedMemo.orderDate || todayDate);
-        setArrivalDefaultDays(normalizedDays);
-        setArrivalDefaultDaysDraft(normalizedDays);
-        setArrivalDate(
-          parsedMemo.arrivalDate ||
-            addDaysToDateInput(parsedMemo.orderDate || todayDate, normalizedDays),
-        );
-        setProsthesisTypeCatalog(normalizedTypes);
-        setProsthesisTypeCatalogDraft(normalizedTypes);
-        setToothWorks(
-          normalizeToothWorks(parsedMemo.toothWorks).length
-            ? normalizeToothWorks(parsedMemo.toothWorks)
-            : normalizedTypes.length
-              ? [{ toothNumber: "", prosthesisType: normalizedTypes[0], customAbutment: false, bridgeLinkedTeeth: [] }]
-              : [],
-        );
+      if (import.meta.env.DEV) {
+        console.info("[practice-transfer] loadDraft files-only", {
+          restoredFilesCount: restoredFiles.length,
+          localFormUpdatedAt: localFormUpdatedAtRef.current,
+        });
       }
 
       setTempSaveDirty(false);
     } catch {
       // ignore (초안 불러오기 실패는 사용자 흐름 중단 금지)
     }
-  }, [authToken, setRequestMemo, setSelectedLab, todayDate]);
+  }, [authToken]);
 
   const loadPracticeTransferSettingsFromServer = useCallback(async () => {
     if (!authToken) return;
