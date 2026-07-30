@@ -33,6 +33,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+
 import {
   UploadCloud,
   ClipboardList,
@@ -109,6 +110,7 @@ import { PracticeTransferMiddleGrid } from "@/shared/components/practice/Practic
 import { PracticeTransferFilePane } from "@/shared/components/practice/PracticeTransferFilePane";
 import { PracticeTransferRequestIntakePanel } from "@/shared/components/practice/PracticeTransferRequestIntakePanel";
 import { restoreToothWorksFromDraft } from "@/shared/practice/toothWorkDraft";
+import { deleteFile as deleteFileFromIndexedDb } from "@/shared/storage/fileIndexedDB";
 import {
   Dialog,
   DialogContent,
@@ -678,8 +680,41 @@ const formatFileSize = (bytes: number) => {
 
 const PRACTICE_TRANSFER_TEMP_DRAFT_KEY = "practice_transfer_temp_draft_v1";
 const PRACTICE_TRANSFER_FORM_LOCAL_KEY = "practice_transfer_form_local_v1";
+const PRACTICE_FILE_CACHE_META_KEY = "practice_dropzone_file_cache_meta_v1";
 const PRACTICE_TRANSFER_PROMO_TITLE = "어벗츠 커스텀어벗 서비스를 이용하지 않더라도 이용 가능!";
 const PRACTICE_TRANSFER_PROMO_DESC = "치과-기공소간 구강스캔 파일 전송 및 기공 의뢰 관리 기능을 무료로 사용하세요";
+
+const clearPracticeFileTransferCaches = async () => {
+  let keys: string[] = [];
+  try {
+    const raw = localStorage.getItem(PRACTICE_FILE_CACHE_META_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    if (Array.isArray(parsed)) {
+      keys = parsed
+        .map((row) => String((row as { key?: unknown })?.key || "").trim())
+        .filter(Boolean);
+    }
+  } catch {
+    // ignore
+  }
+
+  const uniqueKeys = Array.from(new Set(keys));
+  await Promise.all(
+    uniqueKeys.map((key) =>
+      deleteFileFromIndexedDb(key).catch(() => {
+        // ignore
+      }),
+    ),
+  );
+
+  try {
+    localStorage.removeItem(PRACTICE_FILE_CACHE_META_KEY);
+    localStorage.removeItem(PRACTICE_TRANSFER_TEMP_DRAFT_KEY);
+    localStorage.removeItem(PRACTICE_TRANSFER_FORM_LOCAL_KEY);
+  } catch {
+    // ignore
+  }
+};
 
 const toDraftFileKey = (file: { originalName: string; size: number; s3Key: string }) =>
   `${String(file.originalName || "").trim()}:${Number(file.size || 0)}:${String(file.s3Key || "").trim()}`;
@@ -720,6 +755,7 @@ export const PracticeFileTransferPage = () => {
   const prevFileCountRef = useRef(0);
   const localFormUpdatedAtRef = useRef(0);
   const skipNextArrivalAutoSyncRef = useRef(false);
+  const suppressLocalFormPersistRef = useRef(false);
   const {
     files,
     selectedLab,
@@ -1369,6 +1405,7 @@ export const PracticeFileTransferPage = () => {
 
   useEffect(() => {
     if (!localFormHydrated) return;
+    if (suppressLocalFormPersistRef.current) return;
 
     const updatedAt = Date.now();
 
@@ -2439,10 +2476,15 @@ export const PracticeFileTransferPage = () => {
         throw new Error(String(body?.message || "기공소 전송에 실패했습니다."));
       }
 
+      suppressLocalFormPersistRef.current = true;
+
       rememberLab(selectedLab);
       await clearAllFiles();
       setDraftFiles([]);
+      setSelectedLab(null);
+      setPatientName("");
       setRequestMemo("");
+      setToothWorks([]);
       setTempSaveDirty(true);
 
       try {
@@ -2454,6 +2496,8 @@ export const PracticeFileTransferPage = () => {
       } catch {
         // ignore (전송 성공을 임시저장 삭제 실패로 롤백하지 않음)
       }
+
+      await clearPracticeFileTransferCaches();
 
       toast({
         title: "기공소 전송 완료",

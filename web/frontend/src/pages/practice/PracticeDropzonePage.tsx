@@ -500,6 +500,27 @@ const clearPracticeSessionMeta = () => {
   }
 };
 
+const clearPracticeDropzoneCaches = async () => {
+  const cached = readPracticeFileCacheMeta();
+  const keys = Array.from(new Set(cached.map((row) => String(row.key || "").trim()).filter(Boolean)));
+
+  await Promise.all(
+    keys.map((key) =>
+      deleteFileFromIndexedDb(key).catch(() => {
+        // ignore
+      }),
+    ),
+  );
+
+  writePracticeFileCacheMeta([]);
+
+  try {
+    localStorage.removeItem(PRACTICE_DRAFT_STORAGE_KEY);
+  } catch {
+    // ignore
+  }
+};
+
 export const PracticeDropzonePage = () => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -593,6 +614,7 @@ export const PracticeDropzonePage = () => {
   const [authSubmitting, setAuthSubmitting] = useState(false);
   const [showGuestChat, setShowGuestChat] = useState(false);
   const consumedPrefillLocationKeyRef = useRef<string | null>(null);
+  const suppressDraftPersistRef = useRef(false);
 
   const isPhoneValid = isValidPhoneNumber(phone);
 
@@ -1046,6 +1068,8 @@ export const PracticeDropzonePage = () => {
 
   useEffect(() => {
     if (!draftHydrated) return;
+    if (suppressDraftPersistRef.current) return;
+
     const payload: PracticeDropzoneDraft = {
       step,
       selectedLab,
@@ -1255,26 +1279,23 @@ export const PracticeDropzonePage = () => {
         throw new Error(String(body?.message || "전송 제출에 실패했습니다."));
       }
 
-      const uploadedFileKeys = files.map((file) => toPracticeFileKey(file));
-      for (const key of uploadedFileKeys) {
-        await deleteFileFromIndexedDb(key).catch(() => {
-          // ignore
-        });
-      }
-      const nextMeta = readPracticeFileCacheMeta().filter(
-        (row) => !uploadedFileKeys.includes(row.key),
-      );
-      writePracticeFileCacheMeta(nextMeta);
+      suppressDraftPersistRef.current = true;
+      await clearPracticeDropzoneCaches();
 
       setRequestSubmitted(true);
       rememberLab(selectedLab);
       setFiles([]);
-
-      try {
-        localStorage.removeItem(PRACTICE_DRAFT_STORAGE_KEY);
-      } catch {
-        // ignore
-      }
+      setSelectedLab(null);
+      setPatientName("");
+      setRequestMemo("");
+      setToothWorks([
+        {
+          toothNumber: "",
+          prosthesisType: normalizedProsthesisTypes[0] || PRESET_PROSTHESIS_TYPES[0],
+          customAbutment: false,
+          bridgeLinkedTeeth: [],
+        },
+      ]);
 
       toast({
         title: "의뢰 제출 완료",
