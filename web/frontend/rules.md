@@ -96,6 +96,14 @@
     - `src/pages/manufacturer/worksheet/custom_abutment/shipping/components/MailboxGrid.tsx`
     - `src/pages/manufacturer/worksheet/custom_abutment/shipping/components/MailboxContentsModal.tsx`
 
+- 세척.패킹/포장.발송 stage 이미지 삭제 후 프리뷰 상태 동기화:
+  - 프리뷰 모달의 stage 이미지 삭제 버튼은 `preserveStage` 모드로 호출해 **현재 공정을 유지**하고, 파일/파일명만 즉시 리셋합니다.
+  - stage 파일 삭제 성공 시 `previewStageUrl`/`previewStageName`을 즉시 비워, 모달에 깨진 이미지/이전 파일명이 잔존하지 않도록 합니다.
+  - 관련 파일:
+    - `src/pages/manufacturer/worksheet/custom_abutment/hooks/useRequestFileHandlers.ts`
+    - `src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx`
+    - `src/pages/manufacturer/worksheet/custom_abutment/packing/components/PackingPageContent.tsx`
+
 - 의뢰자 BusinessAnchor의 기본 헥스 회전값(`requestSettings.defaultManufacturerHexRotation`, 레거시 `hexRotationAngle` 포함)이
   null(미확정)인 의뢰는 `PreviewModal` 승인 시 STL모델대로/헥스30도회전 동시 가공 여부를 확인하고,
   승인 요청 바디(`processBothHexVariants`)로 백엔드 복사 생성 분기를 전달합니다.

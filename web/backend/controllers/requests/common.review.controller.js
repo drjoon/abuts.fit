@@ -21,6 +21,7 @@ import {
   bumpRollbackCount,
   ensureReviewByStageDefaults,
   normalizeRequestForResponse,
+  buildManufacturerOrgScopeFilter,
 } from "./utils.js";
 import {
   ensureMailboxAddressForBusiness,
@@ -439,6 +440,11 @@ export async function deleteStageFile(req, res) {
       String(req.query.rollbackOnly || "")
         .trim()
         .toLowerCase() === "true";
+    const preserveStage =
+      String(req.query.preserveStage || "").trim() === "1" ||
+      String(req.query.preserveStage || "")
+        .trim()
+        .toLowerCase() === "true";
     const allowed = ["machining", "packing", "shipping", "tracking"];
 
     if (!Types.ObjectId.isValid(id)) {
@@ -620,6 +626,40 @@ export async function deleteStageFile(req, res) {
       return res.status(404).json({
         success: false,
         message: "삭제할 파일이 없습니다.",
+      });
+    }
+
+    if (preserveStage && !rollbackOnly) {
+      delete request.caseInfos.stageFiles[stage];
+      request.caseInfos.reviewByStage[stage] = {
+        ...request.caseInfos.reviewByStage[stage],
+        status: "PENDING",
+        updatedAt: new Date(),
+        updatedBy: req.user?._id,
+        reason: "",
+      };
+
+      await request.save();
+
+      runStageFileCleanupInBackground({
+        requestId: request.requestId || request._id,
+        stage,
+        s3Key,
+      });
+
+      return res.status(200).json({
+        success: true,
+        data: {
+          _id: String(request._id),
+          requestId: String(request.requestId || ""),
+          manufacturerStage:
+            String(request.manufacturerStage || "").trim() || null,
+          mailboxAddress: request.mailboxAddress || null,
+          caseInfos: {
+            stageFiles: request.caseInfos.stageFiles || {},
+            reviewByStage: request.caseInfos.reviewByStage || {},
+          },
+        },
       });
     }
 
@@ -924,6 +964,11 @@ export async function updateReviewStatusByStage(req, res) {
       }
 
       await assertAndClaimManufacturerRequestAccess({ req, request });
+
+      const mailboxAllocationScopeFilter =
+        String(req?.user?.role || "").trim() === "manufacturer"
+          ? await buildManufacturerOrgScopeFilter(req)
+          : {};
 
       previousManufacturerStage =
         String(request.manufacturerStage || "").trim() || null;
@@ -1349,25 +1394,9 @@ export async function updateReviewStatusByStage(req, res) {
               );
             }
             applyStatusMapping(request, "세척.패킹");
-            if (isManufacturerSampleRequest(request)) {
-              request.mailboxAddress = null;
-            } else {
-              try {
-                const requestorBusinessAnchorId = resolvedBusinessAnchorId;
-                const nextMailboxAddress =
-                  await ensureMailboxAddressForBusiness({
-                    requestMongoId: request._id,
-                    requestorOrgId: requestorBusinessAnchorId,
-                    currentMailboxAddress: request.mailboxAddress,
-                    session,
-                  });
-                if (nextMailboxAddress) {
-                  request.mailboxAddress = nextMailboxAddress;
-                }
-              } catch (err) {
-                console.error("[MAILBOX_ALLOCATION_ERROR]", err);
-              }
-            }
+            // 우편함 배정은 포장.발송 진입 승인 시점에만 수행한다.
+            // 세척.패킹 진입 단계에서는 우편함을 선배정하지 않는다.
+            request.mailboxAddress = null;
           } else if (effectiveStage === "packing") {
             // 샘플 의뢰도 일반 의뢰와 동일하게 포장.발송 단계로 진행한다.
             // (차이는 크레딧 미차감 정책뿐)
@@ -1405,6 +1434,9 @@ export async function updateReviewStatusByStage(req, res) {
         if (effectiveStage === "packing") {
           await ensureFinishedLotNumberForPacking(request);
           updateCurrentEstimatedShipYmdOnPackingEnter(request);
+          // 포장.발송 진입 승인마다 기존값을 신뢰하지 않고
+          // 동일 업체의 "다른 활성 점유"를 재조회해 우편함을 재결정한다.
+          request.mailboxAddress = null;
           try {
             const requestorBusinessAnchorId = resolvedBusinessAnchorId;
             console.log(
@@ -1415,6 +1447,7 @@ export async function updateReviewStatusByStage(req, res) {
               requestorOrgId: requestorBusinessAnchorId,
               currentMailboxAddress: request.mailboxAddress,
               session,
+              scopeFilter: mailboxAllocationScopeFilter,
             });
             if (nextMailboxAddress) {
               request.mailboxAddress = nextMailboxAddress;

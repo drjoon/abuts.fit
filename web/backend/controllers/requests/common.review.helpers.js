@@ -30,7 +30,6 @@ import { emitCreditBalanceUpdatedToBusiness } from "../../utils/creditRealtime.j
 
 const SHIPPING_FEE_SUPPLY = 3500;
 
-// Revert manufacturer stage based on review stage
 export function revertManufacturerStageByReviewStage(request, stage) {
   const prevStageMap = {
     machining: "CAM",
@@ -75,7 +74,6 @@ export function updateCurrentEstimatedShipYmdOnPackingEnter(request) {
   timeline.estimatedShipYmd = nextEstimatedShipYmd;
 }
 
-// Ensure request credit spend on machining enter
 export async function ensureRequestCreditSpendOnMachiningEnter({
   request,
   businessAnchorId,
@@ -149,9 +147,7 @@ export async function ensureRequestCreditSpendOnMachiningEnter({
     refId: request._id,
   });
 
-  // 수수료 분배 처리
-  // rules.md 6.9.1: 분배 대상은 유료의뢰비(유료 결제분)만 허용.
-  // 무료 크레딧 사용분은 분배 대상에서 제외한다.
+  // 수수료는 유료 결제분(fromPaid)에 대해서만 분배한다.
   if (fromPaid > 0) {
     await distributeCommissionOnRequestSpend({
       request,
@@ -210,14 +206,14 @@ export async function ensureShippingFeeSpendOnPackingApprove({
   let retryCount = 0;
   const maxRetries = 3;
 
-  // 정책: 같은 businessAnchor의 '발송 대기중(세척.패킹/포장.발송)' 건은
-  // 날짜와 무관하게 하나의 패키지/배송비 단위로 묶는다.
+  // 다른 발송 대기 의뢰가 점유한 패키지만 재사용한다(자기 과거 패키지는 제외).
   const pendingPackageCarrier = await Request.findOne(
     {
       businessAnchorId,
       manufacturerStage: { $in: ["세척.패킹", "포장.발송"] },
       shippingPackageId: { $ne: null },
       requestCategory: "order",
+      _id: { $ne: request._id },
     },
     { shippingPackageId: 1, mailboxAddress: 1 },
     { session },
@@ -244,6 +240,22 @@ export async function ensureShippingFeeSpendOnPackingApprove({
     ).trim();
     if (canonicalMailbox && canonicalMailbox !== mailboxAddress) {
       request.mailboxAddress = canonicalMailbox;
+    }
+  }
+
+  // 다른 활성 패키지가 없으면 자기 과거 패키지를 현재 mailbox로 동기화해 재사용한다.
+  if (!pkg?._id) {
+    const selfPackageId = String(request?.shippingPackageId || "").trim();
+    if (selfPackageId) {
+      await ShippingPackage.updateOne(
+        { _id: selfPackageId },
+        {
+          $set: { mailboxAddress },
+          $addToSet: { requestIds: request._id },
+        },
+        { session },
+      );
+      pkg = await ShippingPackage.findById(selfPackageId, null, { session });
     }
   }
 
@@ -475,7 +487,6 @@ export async function hasRequestShippingOrCompletionHistory({
   return hasTrackingNumber || hasDeliveryTimestamps || hasTrackingEvents;
 }
 
-// Ensure delivery info shippedAt timestamp
 export async function ensureDeliveryInfoShippedAtNow({ request, session }) {
   if (!request) return;
 
@@ -509,7 +520,6 @@ export async function ensureDeliveryInfoShippedAtNow({ request, session }) {
   }
 }
 
-// 수수료 분배 함수
 export async function distributeCommissionOnRequestSpend({
   request,
   spendAmount,
@@ -763,7 +773,6 @@ export async function distributeCommissionOnRequestSpend({
   }
 }
 
-// Build auth headers for Bridge server
 export function withBridgeHeaders(extra = {}) {
   const BRIDGE_SHARED_SECRET = process.env.BRIDGE_SHARED_SECRET;
   const base = {};
@@ -773,7 +782,6 @@ export function withBridgeHeaders(extra = {}) {
   return { ...base, ...extra };
 }
 
-// Build auth headers for Esprit server
 export function withEspritHeaders(extra = {}) {
   const ESPRIT_SHARED_SECRET = process.env.ESPRIT_SHARED_SECRET;
   const base = {};

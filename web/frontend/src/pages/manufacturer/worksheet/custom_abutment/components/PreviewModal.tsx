@@ -386,6 +386,7 @@ type PreviewModalProps = {
     stage: "machining" | "packing" | "shipping" | "tracking";
     rollbackOnly?: boolean;
     navigate?: boolean;
+    preserveStage?: boolean;
   }) => Promise<void>;
   onUploadCam: (req: ManufacturerRequest, files: File[]) => Promise<void>;
   onUploadNc: (req: ManufacturerRequest, files: File[]) => Promise<void>;
@@ -1405,6 +1406,8 @@ export const PreviewModal = ({
           | "packing"
           | "shipping"
           | "tracking",
+        preserveStage: true,
+        navigate: false,
       });
       return;
     }

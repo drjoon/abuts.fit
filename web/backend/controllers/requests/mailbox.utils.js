@@ -1,5 +1,6 @@
 const UNKNOWN_ANCHOR_KEY = "__UNKNOWN_BUSINESS_ANCHOR__";
-const ACTIVE_MAILBOX_STAGES = ["세척.패킹", "포장.발송", "추적관리"];
+const ACTIVE_MAILBOX_OCCUPY_STAGES = ["세척.패킹", "포장.발송"];
+const TRACKING_ACTIVE_EXCLUDED_CODES = ["picked_up", "completed", "canceled"];
 
 // related files (request category SSOT):
 // - web/backend/models/request.model.js
@@ -14,6 +15,8 @@ const normalizeMailboxAddress = (raw) =>
   String(raw || "")
     .trim()
     .toUpperCase();
+
+
 
 const normalizeBusinessAnchorId = (raw, depth = 0) => {
   if (raw == null) return "";
@@ -75,6 +78,7 @@ const resolveOccupantAnchorKey = (requestDocLike) => {
 // - web/backend/controllers/cnc/machiningBridge.js
 // - web/backend/controllers/ai/lotCapture.controller.js
 // - web/backend/controllers/requests/common.review.controller.js
+// - web/backend/controllers/requests/shipping.controller.js
 // - web/backend/jobs/stageProgressionWorker.js
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/shipping/components/MailboxGrid.tsx
 const buildMailboxOccupancyByAddress = (activeRequests = []) => {
@@ -125,6 +129,82 @@ const findReusableMailboxAddressForBusiness = ({
   );
 };
 
+const normalizeScopeFilter = (raw) => {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  return raw;
+};
+
+const getTrackingStatusCode = (requestDocLike) => {
+  const fromWorkflow = String(
+    requestDocLike?.shippingWorkflow?.trackingStatusCode || "",
+  ).trim();
+  if (fromWorkflow) return fromWorkflow;
+  return String(
+    requestDocLike?.deliveryInfoRef?.tracking?.lastStatusCode || "",
+  ).trim();
+};
+
+const isTrackingMailboxOccupyingRequest = (requestDocLike) => {
+  const workflowCode = String(requestDocLike?.shippingWorkflow?.code || "")
+    .trim()
+    .toLowerCase();
+  if (TRACKING_ACTIVE_EXCLUDED_CODES.includes(workflowCode)) return false;
+
+  const deliveryInfo =
+    requestDocLike?.deliveryInfoRef &&
+    typeof requestDocLike.deliveryInfoRef === "object"
+      ? requestDocLike.deliveryInfoRef
+      : null;
+  if (!deliveryInfo) return false;
+
+  const trackingStatusCode = Number(getTrackingStatusCode(requestDocLike));
+  const isCanceled =
+    String(deliveryInfo?.tracking?.lastStatusText || "").trim() === "예약취소";
+  const hasPickupReservation = Boolean(
+    deliveryInfo?.trackingNumber ||
+      deliveryInfo?.shippedAt ||
+      deliveryInfo?.tracking?.lastStatusText,
+  );
+
+  return (
+    hasPickupReservation &&
+    !deliveryInfo?.deliveredAt &&
+    !isCanceled &&
+    (!Number.isFinite(trackingStatusCode) || trackingStatusCode < 11)
+  );
+};
+
+const isMailboxOccupancyCandidate = (requestDocLike) => {
+  const stage = String(requestDocLike?.manufacturerStage || "").trim();
+  if (ACTIVE_MAILBOX_OCCUPY_STAGES.includes(stage)) return true;
+  if (stage !== "추적관리") return false;
+  return isTrackingMailboxOccupyingRequest(requestDocLike);
+};
+
+const buildActiveMailboxOccupancyFilter = ({
+  requestCategory,
+  scopeFilter = {},
+  excludeRequestMongoId = "",
+}) => {
+  const base = {
+    ...normalizeScopeFilter(scopeFilter),
+    mailboxAddress: { $ne: null },
+    requestCategory,
+    manufacturerStage: {
+      $in: [...ACTIVE_MAILBOX_OCCUPY_STAGES, "추적관리"],
+    },
+  };
+
+  if (excludeRequestMongoId) {
+    return {
+      ...base,
+      _id: { $ne: excludeRequestMongoId },
+    };
+  }
+
+  return base;
+};
+
 export async function allocateVirtualMailboxAddress(
   requestorOrgId,
   options = {},
@@ -155,17 +235,25 @@ export async function allocateVirtualMailboxAddress(
     options?.excludeRequestMongoId || "",
   ).trim();
   const session = options?.session || null;
+  const scopeFilter = normalizeScopeFilter(options?.scopeFilter);
 
-  // 현재 '세척.패킹'/'포장.발송'/'추적관리' 단계 중
-  // 실제 포장.발송 대상(=R&D 샘플 제외) 의뢰의 우편함만 점유로 본다.
-  // SSOT: source/price.rule 이 manufacturer_sample 이면 배송 비대상.
-  let activeRequestsQuery = Request.find({
-    manufacturerStage: { $in: ACTIVE_MAILBOX_STAGES },
-    mailboxAddress: { $ne: null },
-    requestCategory: REQUEST_CATEGORY.ORDER,
-  })
-    .select("_id mailboxAddress businessAnchorId requestor")
+  // 현재 점유(active)는 세척.패킹/포장.발송 + 집하 전 추적관리만 포함한다.
+  // - 집하 이후(picked_up/completed/canceled, trackingStatusCode>=11)는 점유에서 제외
+  // - 제조사 조직 스코프를 받은 경우 해당 범위 내에서만 점유를 계산
+  let activeRequestsQuery = Request.find(
+    buildActiveMailboxOccupancyFilter({
+      requestCategory: REQUEST_CATEGORY.ORDER,
+      scopeFilter,
+    }),
+  )
+    .select(
+      "_id mailboxAddress businessAnchorId requestor deliveryInfoRef shippingWorkflow.code shippingWorkflow.trackingStatusCode",
+    )
     .populate("requestor", "businessAnchorId")
+    .populate(
+      "deliveryInfoRef",
+      "trackingNumber shippedAt deliveredAt tracking.lastStatusCode tracking.lastStatusText",
+    )
     .lean();
 
   if (session) {
@@ -174,11 +262,12 @@ export async function allocateVirtualMailboxAddress(
 
   const activeRequestsRaw = await activeRequestsQuery;
 
-  const activeRequests = excludeRequestMongoId
+  const activeRequests = (excludeRequestMongoId
     ? activeRequestsRaw.filter(
         (row) => String(row?._id || "").trim() !== excludeRequestMongoId,
       )
-    : activeRequestsRaw;
+    : activeRequestsRaw
+  ).filter((row) => isMailboxOccupancyCandidate(row));
 
   // 같은 의뢰자가 이미 할당받은 우편함이 있는지 확인
   // 단, "다른 의뢰자와 섞인 우편함"은 재사용하지 않는다.
@@ -212,6 +301,7 @@ export async function ensureMailboxAddressForBusiness({
   requestorOrgId,
   currentMailboxAddress,
   session = null,
+  scopeFilter = {},
 }) {
   const { default: Request } = await import("../../models/request.model.js");
 
@@ -244,21 +334,35 @@ export async function ensureMailboxAddressForBusiness({
     return currentMailboxAddressStr || null;
   }
 
-  let activeRequestsQuery = Request.find({
-    manufacturerStage: { $in: ACTIVE_MAILBOX_STAGES },
-    mailboxAddress: { $ne: null },
-    requestCategory: REQUEST_CATEGORY.ORDER,
-    ...(requestMongoId ? { _id: { $ne: requestMongoId } } : {}),
-  })
-    .select("_id mailboxAddress businessAnchorId requestor")
+  const normalizedScopeFilter = normalizeScopeFilter(scopeFilter);
+
+  let activeRequestsQuery = Request.find(
+    buildActiveMailboxOccupancyFilter({
+      requestCategory: REQUEST_CATEGORY.ORDER,
+      scopeFilter: normalizedScopeFilter,
+      excludeRequestMongoId: requestMongoId
+        ? String(requestMongoId || "").trim()
+        : "",
+    }),
+  )
+    .select(
+      "_id mailboxAddress businessAnchorId requestor deliveryInfoRef shippingWorkflow.code shippingWorkflow.trackingStatusCode",
+    )
     .populate("requestor", "businessAnchorId")
+    .populate(
+      "deliveryInfoRef",
+      "trackingNumber shippedAt deliveredAt tracking.lastStatusCode tracking.lastStatusText",
+    )
     .lean();
 
   if (session) {
     activeRequestsQuery = activeRequestsQuery.session(session);
   }
 
-  const activeRequests = await activeRequestsQuery;
+  const activeRequestsRaw = await activeRequestsQuery;
+  const activeRequests = activeRequestsRaw.filter((row) =>
+    isMailboxOccupancyCandidate(row),
+  );
 
   const reusableAddress = findReusableMailboxAddressForBusiness({
     activeRequests,
@@ -272,53 +376,13 @@ export async function ensureMailboxAddressForBusiness({
     return reusableAddress;
   }
 
-  if (!currentMailboxAddressStr) {
-    return allocateVirtualMailboxAddress(requestorOrgIdStr, {
-      excludeRequestMongoId: requestMongoId,
-      session,
-    });
-  }
-
-  let mailboxOccupantsQuery = Request.find({
-    manufacturerStage: { $in: ACTIVE_MAILBOX_STAGES },
-    requestCategory: REQUEST_CATEGORY.ORDER,
-    $expr: {
-      $eq: [
-        {
-          $toUpper: {
-            $trim: {
-              input: { $ifNull: ["$mailboxAddress", ""] },
-            },
-          },
-        },
-        currentMailboxAddressStr,
-      ],
-    },
-    ...(requestMongoId ? { _id: { $ne: requestMongoId } } : {}),
-  })
-    .select("requestId businessAnchorId requestor manufacturerStage")
-    .populate("requestor", "businessAnchorId")
-    .lean();
-
-  if (session) {
-    mailboxOccupantsQuery = mailboxOccupantsQuery.session(session);
-  }
-
-  const mailboxOccupants = await mailboxOccupantsQuery;
-
-  const hasDifferentBusinessOccupant = mailboxOccupants.some((row) => {
-    const occupantBusinessAnchorKey = resolveOccupantAnchorKey(row);
-    if (!occupantBusinessAnchorKey) return false;
-    if (occupantBusinessAnchorKey === UNKNOWN_ANCHOR_KEY) return false;
-    return occupantBusinessAnchorKey !== requestorOrgIdStr;
-  });
-
-  if (!hasDifferentBusinessOccupant) {
-    return currentMailboxAddressStr;
-  }
-
+  // 중요: 현재 의뢰에 남아 있는 mailboxAddress는 재사용 근거가 아니다.
+  // - 롤백/재승인 시 과거 주소가 남아 있으면 빈칸 우선 원칙(첫 번째 빈칸)을 위반하게 된다.
+  // - 동일 businessAnchor의 다른 활성 점유가 있을 때만 reusableAddress로 수렴한다.
+  // 따라서 reusableAddress가 없으면 현재값 존재 여부와 무관하게 첫 번째 빈칸을 새로 할당한다.
   return allocateVirtualMailboxAddress(requestorOrgIdStr, {
     excludeRequestMongoId: requestMongoId,
     session,
+    scopeFilter: normalizedScopeFilter,
   });
 }

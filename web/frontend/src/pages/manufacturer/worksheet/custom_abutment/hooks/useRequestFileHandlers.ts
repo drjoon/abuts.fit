@@ -3,6 +3,8 @@
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/packing/components/PackingPageContent.tsx
 // - web/backend/controllers/requests/common.review.controller.js
 import { useCallback, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -1377,12 +1379,14 @@ export const useRequestFileHandlers = ({
       stage: "machining" | "packing" | "shipping" | "tracking";
       rollbackOnly?: boolean;
       navigate?: boolean;
+      preserveStage?: boolean;
     }) => {
       if (!token) return;
       if (!params.req?._id) return;
 
       const rollbackOnly = !!params.rollbackOnly;
       const navigate = params.navigate !== false;
+      const preserveStage = !!params.preserveStage;
 
       setUploading((prev) => ({ ...prev, [params.req._id as string]: true }));
       const updatedRequest = patchDeleteStageFileLocally(
@@ -1401,7 +1405,7 @@ export const useRequestFileHandlers = ({
             params.req._id
           }/stage-file?stage=${encodeURIComponent(params.stage)}${
             rollbackOnly ? "&rollbackOnly=1" : ""
-          }`,
+          }${preserveStage ? "&preserveStage=1" : ""}`,
           {
             method: "DELETE",
             headers: {
@@ -1419,9 +1423,66 @@ export const useRequestFileHandlers = ({
           body?.data && typeof body.data === "object"
             ? (body.data as ManufacturerRequest)
             : null;
-        if (updatedFromServer) {
-          applySingleRequestPatch(updatedFromServer);
+
+        const mergedRequest = updatedFromServer
+          ? ({
+              ...updatedRequest,
+              ...updatedFromServer,
+              caseInfos: {
+                ...(updatedRequest.caseInfos || {}),
+                ...(updatedFromServer.caseInfos || {}),
+              },
+            } as ManufacturerRequest)
+          : null;
+
+        if (mergedRequest) {
+          applySingleRequestPatch(mergedRequest);
         }
+
+        setPreviewFiles((prev) => {
+          const prevState =
+            prev && typeof prev === "object"
+              ? (prev as Record<string, unknown>)
+              : null;
+          if (!prevState) return prev;
+
+          const prevReq = (prevState.request || null) as ManufacturerRequest | null;
+          if (!prevReq) return prev;
+
+          const prevMongoId = String(prevReq?._id || "").trim();
+          const targetMongoId = String(params.req?._id || "").trim();
+          if (!prevMongoId || !targetMongoId || prevMongoId !== targetMongoId) {
+            return prev;
+          }
+
+          const baseRequest = mergedRequest
+            ? {
+                ...prevReq,
+                ...mergedRequest,
+                caseInfos: {
+                  ...(prevReq.caseInfos || {}),
+                  ...(mergedRequest.caseInfos || {}),
+                },
+              }
+            : updatedRequest;
+
+          const nextRequest = { ...baseRequest } as ManufacturerRequest;
+          if (!rollbackOnly) {
+            const nextStageFiles = {
+              ...(nextRequest.caseInfos?.stageFiles || {}),
+            } as Record<string, unknown>;
+            delete nextStageFiles[params.stage];
+            nextRequest.caseInfos = {
+              ...(nextRequest.caseInfos || {}),
+              stageFiles: nextStageFiles,
+            };
+          }
+
+          return {
+            ...prevState,
+            request: nextRequest,
+          };
+        });
 
         void queryClient.invalidateQueries({
           queryKey: ["worksheet-assigned-summary"],
@@ -1443,11 +1504,13 @@ export const useRequestFileHandlers = ({
               },
         );
 
+        if (!rollbackOnly) {
+          // stage 이미지 삭제 후에는 프리뷰 URL/파일명을 즉시 비운다.
+          setPreviewStageUrl("");
+          setPreviewStageName("");
+        }
+
         if (navigate) {
-          if (params.stage === "machining" && !rollbackOnly) {
-            setPreviewStageUrl("");
-            setPreviewStageName("");
-          }
           setPreviewOpen(false);
           setPreviewFiles({});
         }

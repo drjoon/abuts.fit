@@ -152,6 +152,10 @@
     - `controllers/requests/common.requests.controller.js`
     - `models/request.model.js`
 
+- 제조사 워크시트 stage 파일 삭제 정책:
+  - `DELETE /api/requests/:id/stage-file?preserveStage=1`은 공정 롤백 없이 stage 파일/파일메타만 삭제하고 해당 review status를 `PENDING`으로 갱신합니다.
+  - 기본 삭제(`preserveStage` 미지정)는 기존 롤백 동작을 유지합니다.
+
 - 제조사 워크시트 샘플 분류 SSOT는 `Request.requestCategory`입니다.
   - 값: `order`, `rnd_sample`, `copied_sample`
   - 샘플 관련 API/이벤트는 `source` 추정 대신 `requestCategory`를 반환/필터에 사용합니다.
@@ -199,9 +203,16 @@
     같은 주소의 재사용 판정에서 `UNKNOWN`은 혼입 판정에서 제외합니다.
     (anchor 누락 데이터 때문에 동일 업체 박스가 분할 생성되는 현상 방지)
   - 우편함 점유(active) 단계는 `세척.패킹`, `포장.발송`, `추적관리`를 공통으로 사용합니다.
-  - `review-status` 배치 승인 트랜잭션에서 우편함 할당 쿼리는 반드시 같은 `session`으로 읽어
+    - 단, `추적관리` 중 `picked_up|completed|canceled` 또는 `trackingStatusCode>=11`(집하완료 이후) 건은 점유에서 제외합니다.
+  - 우편함 배정 시점 SSOT: `세척.패킹` 진입 시 선배정하지 않고, `포장.발송` 진입 승인 시점에만 배정합니다.
+  - 포장.발송 진입 승인마다 동일 `businessAnchorId`의 다른 활성 점유를 매번 재조회해 우편함을 재결정합니다.
+  - 배송비/패키지 보정 시에도 "현재 의뢰 자신의 과거 shippingPackageId"는 우편함 재결정 근거로 쓰지 않습니다.
+    - 다른 활성 의뢰가 점유한 패키지만 재사용하고, 자기 과거 패키지는 현재 배정 우편함으로 동기화해 재사용합니다.
+  - 롤백/재승인 시 의뢰 문서에 남아있는 기존 `mailboxAddress`는 재사용 근거로 쓰지 않습니다.
+    - 같은 `businessAnchorId`의 "다른 활성 의뢰"가 점유 중이면 그 주소로 수렴
+    - 아니면 현재값이 있어도 무시하고 첫 번째 빈칸을 재할당
+  - `review-status` 승인 트랜잭션에서 우편함 할당 쿼리는 반드시 같은 `session`으로 읽어
     동일 BusinessAnchor의 직전 배정 주소를 같은 트랜잭션 내에서도 재사용해야 합니다.
-    (가공→세척.패킹 대량 승인 시 의뢰건별 우편함 분할 생성 방지)
   - BusinessAnchor 비교는 문자열 단순 캐스팅 대신 `_id/id`까지 포함해 정규화한 값으로 판정합니다.
     (`[object Object]` 형태 오인식으로 인한 재사용 실패 방지)
   - 택배/배송 그룹핑 및 병합 기준에서 `trackingNumber`를 `shippingPackageId`보다 우선 SSOT로 사용합니다.
