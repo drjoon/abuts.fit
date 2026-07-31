@@ -26,6 +26,7 @@
     "db:migrate-rnd-manufacturer-hex-rotation-mode": "cross-env ENV_FILE=local.env node scripts/db/migrate-rnd-manufacturer-hex-rotation-mode.js",
     "db:migrate-business-anchor-default-manufacturer-hex-rotation-mode": "cross-env ENV_FILE=local.env node scripts/db/migrate-business-anchor-default-manufacturer-hex-rotation-mode.js",
     "db:migrate-request-category": "cross-env ENV_FILE=local.env node scripts/db/migrate-request-category.js",
+    "db:backfill-business-credit-balances": "cross-env ENV_FILE=local.env node scripts/db/backfill-business-credit-balances.js --yes",
     "db:check-pricing-ssot": "cross-env ENV_FILE=local.env node scripts/db/check-pricing-ssot-consistency.js --strict",
     "db:check-pricing-ssot:ci": "node scripts/db/check-pricing-ssot-consistency.js --strict --no-write",
     "db:delete-legacy-practice-requestor": "cross-env ENV_FILE=local.env node scripts/db/delete-legacy-practice-requestor.js",

@@ -1,5 +1,6 @@
 // related files:
 // - web/backend/modules/requests/request.routes.js
+// - web/backend/controllers/requests/common.review.helpers.js
 // - web/backend/controllers/requests/common.requests.controller.js
 // - web/backend/controllers/requests/mailbox.utils.js
 // - web/backend/controllers/cnc/machiningBridge.js
@@ -1382,9 +1383,7 @@ export async function updateReviewStatusByStage(req, res) {
         }
 
         const shouldEnsureRequestSpend =
-          ["cam", "machining", "packing", "shipping"].includes(
-            String(effectiveStage || ""),
-          ) &&
+          String(effectiveStage || "") === "cam" &&
           resolvedBusinessAnchorId &&
           !isNewSystemFree &&
           !isPracticeDropzoneRequest &&

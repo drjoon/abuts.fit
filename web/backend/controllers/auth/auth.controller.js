@@ -1,5 +1,6 @@
 // related files:
 // - web/backend/rules.md
+// - web/backend/services/creditBalance.service.js
 // - web/backend/controllers/requests/common.review.helpers.js
 // - web/backend/controllers/credits/credit.controller.js
 // - web/backend/models/creditLedger.model.js
@@ -24,6 +25,7 @@ import {
   logAuthFailure,
 } from "../../controllers/admin/admin.shared.controller.js";
 import { triggerPricingSnapshotForUserDoc } from "../../services/requestSnapshotTriggers.service.js";
+import { getBusinessCreditBalanceSnapshot } from "../../services/creditBalance.service.js";
 import { sendEmail } from "../../utils/email.util.js";
 import { getFrontendBaseUrl } from "../../utils/url.util.js";
 
@@ -391,40 +393,6 @@ const sendLoginSuccessResponse = async ({
   });
 };
 
-function isShippingRefType(refType) {
-  return refType === "SHIPPING_PACKAGE" || refType === "SHIPPING_FEE";
-}
-
-function resolveLedgerSplit(absAmount, spentPaidAmount, spentBonusAmount) {
-  const abs = Math.max(0, Number(absAmount) || 0);
-  const paidRaw = Number(spentPaidAmount);
-  const bonusRaw = Number(spentBonusAmount);
-
-  const hasPaid = Number.isFinite(paidRaw);
-  const hasBonus = Number.isFinite(bonusRaw);
-  if (!hasPaid && !hasBonus) return null;
-
-  let paid = Math.max(0, hasPaid ? paidRaw : 0);
-  let bonus = Math.max(0, hasBonus ? bonusRaw : 0);
-
-  const splitSum = paid + bonus;
-  if (splitSum <= 0) return null;
-
-  if (splitSum > abs) {
-    let overflow = splitSum - abs;
-    const reducePaid = Math.min(paid, overflow);
-    paid -= reducePaid;
-    overflow -= reducePaid;
-    if (overflow > 0) {
-      bonus = Math.max(0, bonus - overflow);
-    }
-  } else if (splitSum < abs) {
-    paid += abs - splitSum;
-  }
-
-  return { paid, bonus };
-}
-
 async function getBusinessCreditBalanceBreakdown(businessAnchorId) {
   const normalizedBusinessAnchorId = String(businessAnchorId || "").trim();
   if (!Types.ObjectId.isValid(normalizedBusinessAnchorId)) {
@@ -436,111 +404,16 @@ async function getBusinessCreditBalanceBreakdown(businessAnchorId) {
     };
   }
 
-  const rows = await CreditLedger.find({
-    businessAnchorId: new Types.ObjectId(normalizedBusinessAnchorId),
-  })
-    .sort({ createdAt: 1, _id: 1 })
-    .select({
-      type: 1,
-      amount: 1,
-      refType: 1,
-      spentPaidAmount: 1,
-      spentBonusAmount: 1,
-    })
-    .lean();
+  const snapshot = await getBusinessCreditBalanceSnapshot({
+    businessAnchorId: normalizedBusinessAnchorId,
+    upsertIfMissing: true,
+  });
 
-  let paid = 0;
-  let bonusRequest = 0;
-  let bonusShipping = 0;
-
-  for (const r of rows) {
-    const type = String(r?.type || "");
-    const amount = Number(r?.amount || 0);
-    const refType = String(r?.refType || "");
-
-    if (!Number.isFinite(amount)) continue;
-
-    const absAmount = Math.abs(amount);
-
-    if (type === "CHARGE") {
-      paid += absAmount;
-      continue;
-    }
-    if (type === "BONUS") {
-      if (refType === "FREE_SHIPPING_CREDIT") {
-        bonusShipping += absAmount;
-      } else {
-        bonusRequest += absAmount;
-      }
-      continue;
-    }
-    if (type === "ADJUST") {
-      paid += amount;
-      continue;
-    }
-
-    if (type === "SPEND") {
-      const split = resolveLedgerSplit(
-        absAmount,
-        r?.spentPaidAmount,
-        r?.spentBonusAmount,
-      );
-
-      if (split) {
-        if (isShippingRefType(refType)) {
-          const fromBonusShipping = Math.min(bonusShipping, split.bonus);
-          bonusShipping -= fromBonusShipping;
-          paid -= split.paid + Math.max(0, split.bonus - fromBonusShipping);
-        } else {
-          const fromBonusRequest = Math.min(bonusRequest, split.bonus);
-          bonusRequest -= fromBonusRequest;
-          paid -= split.paid + Math.max(0, split.bonus - fromBonusRequest);
-        }
-        continue;
-      }
-
-      let spend = absAmount;
-      if (isShippingRefType(refType)) {
-        const fromBonusShipping = Math.min(bonusShipping, spend);
-        bonusShipping -= fromBonusShipping;
-        spend -= fromBonusShipping;
-      } else {
-        const fromBonusRequest = Math.min(bonusRequest, spend);
-        bonusRequest -= fromBonusRequest;
-        spend -= fromBonusRequest;
-      }
-      paid -= spend;
-      continue;
-    }
-
-    if (type === "REFUND") {
-      const split = resolveLedgerSplit(
-        absAmount,
-        r?.spentPaidAmount,
-        r?.spentBonusAmount,
-      );
-
-      if (split) {
-        if (isShippingRefType(refType)) {
-          bonusShipping += split.bonus;
-        } else {
-          bonusRequest += split.bonus;
-        }
-        paid += split.paid;
-      } else {
-        paid += absAmount;
-      }
-    }
-  }
-
-  const paidCredit = Math.max(0, Math.round(paid));
-  const bonusRequestCredit = Math.max(0, Math.round(bonusRequest));
-  const bonusShippingCredit = Math.max(0, Math.round(bonusShipping));
   return {
-    balance: paidCredit + bonusRequestCredit + bonusShippingCredit,
-    paidCredit,
-    bonusRequestCredit,
-    bonusShippingCredit,
+    balance: Number(snapshot?.balance || 0),
+    paidCredit: Number(snapshot?.paidCredit || 0),
+    bonusRequestCredit: Number(snapshot?.bonusRequestCredit || 0),
+    bonusShippingCredit: Number(snapshot?.bonusShippingCredit || 0),
   };
 }
 

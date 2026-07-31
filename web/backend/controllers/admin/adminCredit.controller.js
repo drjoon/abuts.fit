@@ -1,7 +1,7 @@
 // related files:
 // - web/backend/rules.md
-// - web/backend/app.js
-// - web/backend/server.js
+// - web/backend/models/businessCreditBalance.model.js
+// - web/backend/services/creditBalance.service.js
 import CreditLedger from "../../models/creditLedger.model.js";
 import ManufacturerCreditLedger from "../../models/manufacturerCreditLedger.model.js";
 import AdminCreditLedger from "../../models/adminCreditLedger.model.js";
@@ -10,7 +10,9 @@ import ChargeOrder from "../../models/chargeOrder.model.js";
 import BankTransaction from "../../models/bankTransaction.model.js";
 import DeliveryInfo from "../../models/deliveryInfo.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
+import BusinessCreditBalance from "../../models/businessCreditBalance.model.js";
 import ShippingPackage from "../../models/shippingPackage.model.js";
+import { getBusinessCreditBalanceSnapshot } from "../../services/creditBalance.service.js";
 import User from "../../models/user.model.js";
 import SalesmanLedger from "../../models/salesmanLedger.model.js";
 import Request from "../../models/request.model.js";
@@ -1667,10 +1669,44 @@ export async function adminGetBusinessCredits(req, res) {
       .filter(Boolean)
       .map((id) => new Types.ObjectId(String(id)));
 
-    // CreditLedger 집계: 무료 크레딧을 의뢰용과 배송비용으로 분리
-    // - bonusRequestCredit: 의뢰 결제만 가능 (배송비 결제 불가)
-    // - bonusShippingCredit: 배송비 결제만 가능 (의뢰 결제 불가)
-    // - paidCredit: 의뢰 + 배송비 모두 가능
+    const ssotBalanceRows = orgAnchorIds.length
+      ? await BusinessCreditBalance.find({
+          businessAnchorId: { $in: orgAnchorIds },
+        })
+          .select({
+            businessAnchorId: 1,
+            paidCredit: 1,
+            bonusRequestCredit: 1,
+            bonusShippingCredit: 1,
+          })
+          .lean()
+      : [];
+
+    const ssotBalanceMap = new Map(
+      (ssotBalanceRows || []).map((row) => {
+        const anchorId = String(row?.businessAnchorId || "").trim();
+        const paidCredit = Math.max(0, Math.round(Number(row?.paidCredit || 0)));
+        const bonusRequestCredit = Math.max(
+          0,
+          Math.round(Number(row?.bonusRequestCredit || 0)),
+        );
+        const bonusShippingCredit = Math.max(
+          0,
+          Math.round(Number(row?.bonusShippingCredit || 0)),
+        );
+        return [
+          anchorId,
+          {
+            paidCredit,
+            bonusRequestCredit,
+            bonusShippingCredit,
+            balance: paidCredit + bonusRequestCredit + bonusShippingCredit,
+          },
+        ];
+      }),
+    );
+
+    // CreditLedger 집계: 소비/충전 통계용으로 유지
     const ledgerData = orgAnchorIds.length
       ? await CreditLedger.aggregate([
           { $match: { businessAnchorId: { $in: orgAnchorIds } } },
@@ -1960,14 +1996,24 @@ export async function adminGetBusinessCredits(req, res) {
         chargedBonusShipping - spentBonusShipping,
       );
 
-      balanceMap[String(item._id)] = {
-        balance: Math.max(
-          0,
-          paidCredit + bonusRequestCredit + bonusShippingCredit,
-        ),
-        paidCredit: Math.max(0, paidCredit),
-        bonusRequestCredit: Math.max(0, bonusRequestCredit),
-        bonusShippingCredit: Math.max(0, bonusShippingCredit),
+      const anchorId = String(item._id || "").trim();
+      const ssot = ssotBalanceMap.get(anchorId) || null;
+      const resolvedPaidCredit = ssot ? ssot.paidCredit : Math.max(0, paidCredit);
+      const resolvedBonusRequestCredit = ssot
+        ? ssot.bonusRequestCredit
+        : Math.max(0, bonusRequestCredit);
+      const resolvedBonusShippingCredit = ssot
+        ? ssot.bonusShippingCredit
+        : Math.max(0, bonusShippingCredit);
+
+      balanceMap[anchorId] = {
+        balance:
+          resolvedPaidCredit +
+          resolvedBonusRequestCredit +
+          resolvedBonusShippingCredit,
+        paidCredit: resolvedPaidCredit,
+        bonusRequestCredit: resolvedBonusRequestCredit,
+        bonusShippingCredit: resolvedBonusShippingCredit,
         spentAmount: Math.max(0, Math.round(spentTotal)),
         chargedPaidAmount: Math.max(0, Math.round(chargedPaid)),
         chargedBonusRequestAmount: Math.max(0, Math.round(chargedBonusRequest)),
@@ -1989,11 +2035,12 @@ export async function adminGetBusinessCredits(req, res) {
 
     const result = orgs.map((org) => {
       const anchorId = String(org?._id || "");
+      const ssotBalance = ssotBalanceMap.get(anchorId) || null;
       const balanceInfo = balanceMap[anchorId] || {
-        balance: 0,
-        paidCredit: 0,
-        bonusRequestCredit: 0,
-        bonusShippingCredit: 0,
+        balance: Number(ssotBalance?.balance || 0),
+        paidCredit: Number(ssotBalance?.paidCredit || 0),
+        bonusRequestCredit: Number(ssotBalance?.bonusRequestCredit || 0),
+        bonusShippingCredit: Number(ssotBalance?.bonusShippingCredit || 0),
         spentAmount: 0,
         chargedPaidAmount: 0,
         chargedBonusRequestAmount: 0,
@@ -2079,13 +2126,18 @@ export async function adminGetBusinessCreditDetail(req, res) {
       });
     }
 
-    const businessAnchorId = org?.businessAnchorId;
+    const businessAnchorId = org?._id;
     if (!businessAnchorId) {
       return res.status(400).json({
         success: false,
-        message: "해당 사업자에 businessAnchorId가 없습니다.",
+        message: "해당 사업자의 anchor ID가 없습니다.",
       });
     }
+
+    const balanceSnapshot = await getBusinessCreditBalanceSnapshot({
+      businessAnchorId,
+      upsertIfMissing: true,
+    });
 
     const ledgers = await CreditLedger.find({ businessAnchorId })
       .sort({ createdAt: -1 })
@@ -2148,10 +2200,10 @@ export async function adminGetBusinessCreditDetail(req, res) {
       success: true,
       data: {
         business: org,
-        balance: Math.max(0, paid + bonusRequest + bonusShipping),
-        paidCredit: Math.max(0, paid),
-        bonusRequestCredit: Math.max(0, bonusRequest),
-        bonusShippingCredit: Math.max(0, bonusShipping),
+        balance: Number(balanceSnapshot?.balance || 0),
+        paidCredit: Number(balanceSnapshot?.paidCredit || 0),
+        bonusRequestCredit: Number(balanceSnapshot?.bonusRequestCredit || 0),
+        bonusShippingCredit: Number(balanceSnapshot?.bonusShippingCredit || 0),
         spentAmount: Math.max(0, spent),
         history: history.reverse(),
       },
