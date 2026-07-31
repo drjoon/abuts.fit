@@ -409,7 +409,7 @@ export function NewRequestDetailDialog({
                 className="h-44 w-full rounded-md border border-slate-200 bg-slate-50 p-1 object-cover object-center"
               />
               <span className="mt-2 block text-center text-base font-semibold text-slate-700">
-                둥근 유지구 (생산 가능, 적합 좋음)
+                직경 2mm 이상의 둥근 유지구 <br/>(생산 가능, 적합 좋음)
               </span>
             </div>
 
@@ -420,7 +420,7 @@ export function NewRequestDetailDialog({
                 className="h-44 w-full rounded-md border border-slate-200 bg-slate-50 p-1 object-cover object-center"
               />
               <span className="mt-2 block text-center text-base font-semibold text-slate-700">
-                각진 유지구 (생산 불가능)
+                직경 작거나 각진 유지구 <br/>(생산 불가능)
               </span>
             </div>
 
@@ -431,7 +431,7 @@ export function NewRequestDetailDialog({
                 className="h-44 w-full rounded-md border border-slate-200 bg-slate-50 p-1 object-cover object-center"
               />
               <span className="mt-2 block text-center text-base font-semibold text-slate-700">
-                유지홈 없음 (기본)
+                유지홈 없음 <br/>(기본)
               </span>
             </div>
 
@@ -442,7 +442,7 @@ export function NewRequestDetailDialog({
                 className="h-44 w-full rounded-md border border-slate-200 bg-slate-50 p-1 object-cover object-center"
               />
               <span className="mt-2 block text-center text-base font-semibold text-slate-700">
-                유지홈 있음 (유지력 증강)
+                유지홈 있음 <br/>(유지력 증가)
               </span>
             </div>
             </div>
