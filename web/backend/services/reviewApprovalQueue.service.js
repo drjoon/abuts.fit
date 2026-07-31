@@ -1,7 +1,8 @@
 // related files:
 // - web/backend/rules.md
-// - web/backend/app.js
-// - web/backend/server.js
+// - web/backend/controllers/cnc/machiningBridge.js
+// - web/backend/socket.js
+// - web/frontend/src/shared/hooks/useSocket.ts
 /**
  * reviewApprovalQueue.service.js
  *
@@ -472,6 +473,28 @@ async function placeRequestAtPolicyQueuePosition({
  *   - 장비 배정이 안 된 경우 배정
  *   - 자동 가공 트리거
  */
+function toBridgeFailureMessage(err) {
+  const defaultMessage =
+    "브리지 서버에서 자동 가공 시작에 실패했습니다. 장비 상태를 확인해 주세요.";
+
+  const raw = String(err?.meta?.txt || "").trim();
+  if (!raw) return defaultMessage;
+
+  try {
+    const parsed = JSON.parse(raw);
+    const direct =
+      String(parsed?.message || "").trim() ||
+      String(parsed?.error || "").trim() ||
+      String(parsed?.detail || "").trim();
+    if (direct) return direct;
+  } catch {
+    // ignore json parse error
+  }
+
+  const normalized = raw.replace(/\s+/g, " ").trim();
+  return normalized || defaultMessage;
+}
+
 async function runCamApproveTask({ requestMongoId, requestId }) {
   const request = await Request.findById(requestMongoId);
   if (!request) {
@@ -584,15 +607,28 @@ async function runCamApproveTask({ requestMongoId, requestId }) {
       machineId: selectedMachineId,
     });
   } catch (err) {
-    // 자동 가공 트리거 실패는 치명적이지 않으므로 경고만 남김
+    const message = toBridgeFailureMessage(err);
+
+    // 자동 가공 트리거 실패는 승인 자체를 롤백하진 않되,
+    // 작업자가 즉시 인지할 수 있도록 소켓 이벤트를 발행한다.
     console.warn(
       "[ReviewApprovalQueue] CAM task: auto machining trigger failed",
       {
         requestId,
         machineId: selectedMachineId,
         error: err?.message || String(err),
+        bridgeStatus: err?.meta?.status || null,
       },
     );
+
+    emitAppEventToRoles(["manufacturer", "admin"], "request:async-action-failed", {
+      requestId: requestId ? String(requestId) : null,
+      requestMongoId: requestMongoId ? String(requestMongoId) : null,
+      action: "cam-auto-machining-trigger",
+      stage: "machining",
+      machineId: selectedMachineId,
+      message,
+    });
   }
 }
 
