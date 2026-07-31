@@ -567,15 +567,26 @@ export const useNewRequestPage = (
       const clinicName = selectedClinic?.name || "";
 
       // 현재 선택된 파일의 clinicName + 치과별 유지홈 디폴트 적용
+      // - 치과 디폴트가 있으면 해당 값을 우선 적용
+      // - 의뢰자가 아직 유지홈을 한 번도 고르지 않았다면 기본값을 "none(없음)"으로 고정
+      // - 이미 고른 값이 있으면 기존값을 유지
       if (currentFileKey && updateCaseInfos) {
         const updates: any = { clinicName };
         if (selectedClinic?.defaultRetentionGroove) {
           updates.retentionGroove = selectedClinic.defaultRetentionGroove;
+        } else if (!currentCaseInfos?.retentionGroove) {
+          updates.retentionGroove = "none";
         }
         updateCaseInfos(currentFileKey, updates);
       }
     },
-    [rawHandleSelectClinic, rawClinicPresets, currentFileKey, updateCaseInfos],
+    [
+      rawHandleSelectClinic,
+      rawClinicPresets,
+      currentFileKey,
+      updateCaseInfos,
+      currentCaseInfos?.retentionGroove,
+    ],
   );
 
   const handleAddOrSelectClinic = useCallback(
@@ -601,8 +612,11 @@ export const useNewRequestPage = (
           updates.implantType = favorite.type;
         }
         // 치과별 유지홈 디폴트가 있으면 자동 적용 (favorite 임플란트와 동일 패턴).
+        // 디폴트가 없고 의뢰자가 아직 유지홈을 고른 적이 없으면 "none(없음)"을 기본으로 사용.
         if (selectedClinic?.defaultRetentionGroove) {
           updates.retentionGroove = selectedClinic.defaultRetentionGroove;
+        } else if (!currentCaseInfos?.retentionGroove) {
+          updates.retentionGroove = "none";
         }
 
         // updateCaseInfos 호출 (로컬 상태 + 디바운스된 PATCH)
@@ -614,6 +628,7 @@ export const useNewRequestPage = (
       rawClinicPresets,
       currentFileKey,
       updateCaseInfos,
+      currentCaseInfos?.retentionGroove,
     ],
   );
 
