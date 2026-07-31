@@ -24,9 +24,10 @@ import { emitCreditBalanceUpdatedToBusiness } from "../../utils/creditRealtime.j
 
 const SHIPPING_FEE_SUPPLY = 3500;
 const CREDIT_SPEND_LOCK_COLLECTION = "creditspendlocks";
-const CREDIT_SPEND_LOCK_TTL_MS = 15_000;
-const CREDIT_SPEND_LOCK_WAIT_MS = 4_000;
-const CREDIT_SPEND_LOCK_RETRY_MS = 120;
+
+const CREDIT_SPEND_LOCK_TTL_MS = Number(process.env.CREDIT_SPEND_LOCK_TTL_MS || 15_000);
+const CREDIT_SPEND_LOCK_WAIT_MS = Number(process.env.CREDIT_SPEND_LOCK_WAIT_MS || 4_000);
+const CREDIT_SPEND_LOCK_RETRY_MS = Number(process.env.CREDIT_SPEND_LOCK_RETRY_MS || 120);
 
 let creditSpendLockIndexReadyPromise = null;
 
@@ -74,6 +75,193 @@ async function getBusinessCreditBalance({ businessAnchorId, session }) {
     };
   }
 
+  // Fast-path: split 필드가 모두 채워진 최신 원장에서는 순차 재생 없이 집계만으로 잔액 계산 가능.
+  // 레거시(split 누락) 데이터가 있으면 기존 순차 재생(fallback) 경로로 처리한다.
+  const summaryRows = await CreditLedger.aggregate([
+    {
+      $match: {
+        businessAnchorId,
+      },
+    },
+    {
+      $group: {
+        _id: null,
+        chargedPaid: {
+          $sum: {
+            $cond: [{ $eq: ["$type", "CHARGE"] }, { $abs: "$amount" }, 0],
+          },
+        },
+        chargedBonusRequest: {
+          $sum: {
+            $cond: [
+              {
+                $and: [
+                  { $eq: ["$type", "BONUS"] },
+                  { $ne: ["$refType", "FREE_SHIPPING_CREDIT"] },
+                ],
+              },
+              { $abs: "$amount" },
+              0,
+            ],
+          },
+        },
+        chargedBonusShipping: {
+          $sum: {
+            $cond: [
+              {
+                $and: [
+                  { $eq: ["$type", "BONUS"] },
+                  { $eq: ["$refType", "FREE_SHIPPING_CREDIT"] },
+                ],
+              },
+              { $abs: "$amount" },
+              0,
+            ],
+          },
+        },
+        adjustSum: {
+          $sum: {
+            $cond: [{ $eq: ["$type", "ADJUST"] }, "$amount", 0],
+          },
+        },
+        spentPaid: {
+          $sum: {
+            $cond: [
+              { $eq: ["$type", "SPEND"] },
+              { $ifNull: ["$spentPaidAmount", 0] },
+              0,
+            ],
+          },
+        },
+        spentBonusRequest: {
+          $sum: {
+            $cond: [
+              {
+                $and: [
+                  { $eq: ["$type", "SPEND"] },
+                  {
+                    $not: [
+                      { $in: ["$refType", ["SHIPPING_PACKAGE", "SHIPPING_FEE"]] },
+                    ],
+                  },
+                ],
+              },
+              { $ifNull: ["$spentBonusAmount", 0] },
+              0,
+            ],
+          },
+        },
+        spentBonusShipping: {
+          $sum: {
+            $cond: [
+              {
+                $and: [
+                  { $eq: ["$type", "SPEND"] },
+                  { $in: ["$refType", ["SHIPPING_PACKAGE", "SHIPPING_FEE"]] },
+                ],
+              },
+              { $ifNull: ["$spentBonusAmount", 0] },
+              0,
+            ],
+          },
+        },
+        refundedPaid: {
+          $sum: {
+            $cond: [
+              { $eq: ["$type", "REFUND"] },
+              { $ifNull: ["$spentPaidAmount", 0] },
+              0,
+            ],
+          },
+        },
+        refundedBonusRequest: {
+          $sum: {
+            $cond: [
+              {
+                $and: [
+                  { $eq: ["$type", "REFUND"] },
+                  {
+                    $not: [
+                      { $in: ["$refType", ["SHIPPING_PACKAGE", "SHIPPING_FEE"]] },
+                    ],
+                  },
+                ],
+              },
+              { $ifNull: ["$spentBonusAmount", 0] },
+              0,
+            ],
+          },
+        },
+        refundedBonusShipping: {
+          $sum: {
+            $cond: [
+              {
+                $and: [
+                  { $eq: ["$type", "REFUND"] },
+                  { $in: ["$refType", ["SHIPPING_PACKAGE", "SHIPPING_FEE"]] },
+                ],
+              },
+              { $ifNull: ["$spentBonusAmount", 0] },
+              0,
+            ],
+          },
+        },
+        legacySplitMissingCount: {
+          $sum: {
+            $cond: [
+              {
+                $and: [
+                  { $in: ["$type", ["SPEND", "REFUND"]] },
+                  {
+                    $or: [
+                      { $eq: ["$spentPaidAmount", null] },
+                      { $eq: ["$spentBonusAmount", null] },
+                    ],
+                  },
+                ],
+              },
+              1,
+              0,
+            ],
+          },
+        },
+      },
+    },
+  ]).session(session || null);
+
+  const summary = summaryRows?.[0] || null;
+  const legacySplitMissingCount = Number(summary?.legacySplitMissingCount || 0);
+
+  if (summary && legacySplitMissingCount === 0) {
+    const paid =
+      Number(summary.chargedPaid || 0) +
+      Number(summary.adjustSum || 0) -
+      Number(summary.spentPaid || 0) +
+      Number(summary.refundedPaid || 0);
+
+    const bonusRequest =
+      Number(summary.chargedBonusRequest || 0) -
+      Number(summary.spentBonusRequest || 0) +
+      Number(summary.refundedBonusRequest || 0);
+
+    const bonusShipping =
+      Number(summary.chargedBonusShipping || 0) -
+      Number(summary.spentBonusShipping || 0) +
+      Number(summary.refundedBonusShipping || 0);
+
+    const paidCredit = Math.max(0, Math.round(paid));
+    const bonusRequestCredit = Math.max(0, Math.round(bonusRequest));
+    const bonusShippingCredit = Math.max(0, Math.round(bonusShipping));
+
+    return {
+      balance: paidCredit + bonusRequestCredit + bonusShippingCredit,
+      paidCredit,
+      bonusRequestCredit,
+      bonusShippingCredit,
+    };
+  }
+
+  // Fallback: 레거시 split 누락 데이터가 있으면 기존 순차 재생으로 정확도 우선.
   const rows = await CreditLedger.find({ businessAnchorId })
     .sort({ createdAt: 1, _id: 1 })
     .select({
@@ -248,7 +436,10 @@ async function withBusinessCreditSpendLock({ businessAnchorId, runner }) {
         },
       );
 
-      const lockDoc = result?.value || null;
+      const lockDoc =
+        result && typeof result === "object" && "value" in result
+          ? result.value
+          : result;
       if (lockDoc?.ownerToken === ownerToken) {
         acquired = true;
         break;
@@ -277,7 +468,8 @@ async function withBusinessCreditSpendLock({ businessAnchorId, runner }) {
   try {
     return await runner();
   } finally {
-    if (!acquired) return;
+    // 드라이버 반환 형태 차이 등으로 acquired 플래그가 비정상일 수 있으므로,
+    // ownerToken 기준 정리는 항상 시도한다.
     await collection
       .deleteOne({ businessAnchorId: anchorObjectId, ownerToken })
       .catch(() => {});
