@@ -46,7 +46,7 @@ import {
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
 // - web/frontend/src/shared/practice/usePracticeToothWorkEditor.ts
 
-type Props = {
+export type PracticeTransferRequestIntakePanelProps = {
   selectedLab: SearchBusinessResult | null;
   setSelectedLab: (value: SearchBusinessResult | null) => void;
   labOpen: boolean;
@@ -116,7 +116,7 @@ export const PracticeTransferRequestIntakePanel = ({
   toothTensOptions,
   toothOnesOptions,
   onClearAll,
-}: Props) => {
+}: PracticeTransferRequestIntakePanelProps) => {
   const orderedToothWorkRows = useOrderedToothWorkRows(toothWorks);
   const defaultProsthesisType = normalizedProsthesisTypes.includes("크라운")
     ? "크라운"

@@ -106,9 +106,7 @@ import {
   type SearchBusinessResult,
   usePracticeTransferStep1,
 } from "@/pages/practice/hooks/usePracticeTransferStep1";
-import { PracticeTransferMiddleGrid } from "@/shared/components/practice/PracticeTransferMiddleGrid";
-import { PracticeTransferFilePane } from "@/shared/components/practice/PracticeTransferFilePane";
-import { PracticeTransferRequestIntakePanel } from "@/shared/components/practice/PracticeTransferRequestIntakePanel";
+import { PracticeTransferIntakeSection } from "@/shared/components/practice/PracticeTransferIntakeSection";
 import { restoreToothWorksFromDraft } from "@/shared/practice/toothWorkDraft";
 import { buildPracticeTransferMemo as buildPracticeTransferMemoShared } from "@/shared/practice/transferMemo";
 const PRACTICE_DRAFT_STORAGE_KEY = "practice_dropzone_draft_v2";
@@ -1673,66 +1671,65 @@ export const PracticeDropzonePage = () => {
         <div className="flex min-h-0 flex-1 flex-col overflow-y-auto pt-3 pb-2">
             {step === 0 && (
               <div className="flex min-h-0 flex-1 flex-col gap-3">
-                <PracticeTransferMiddleGrid>
-                  <PracticeTransferFilePane
-                    acceptedHint={PRACTICE_ACCEPTED_HINT}
-                    fileInputId="practice-scan-file-input"
-                    files={files.map((file, index) => ({
+                <PracticeTransferIntakeSection
+                  filePaneProps={{
+                    acceptedHint: PRACTICE_ACCEPTED_HINT,
+                    fileInputId: "practice-scan-file-input",
+                    files: files.map((file, index) => ({
                       key: `${file.name}:${file.size}:${file.lastModified}:${index}`,
                       name: file.name,
                       size: file.size,
-                    }))}
-                    totalSizeMb={totalSizeMb}
-                    listViewportClassName="max-h-[17.5rem]"
-                    onPickFiles={handleIncomingFiles}
-                    onRemoveFile={(key) => {
+                    })),
+                    totalSizeMb,
+                    listViewportClassName: "max-h-[17.5rem]",
+                    onPickFiles: handleIncomingFiles,
+                    onRemoveFile: (key) => {
                       const idx = files.findIndex(
                         (file, fileIdx) =>
                           `${file.name}:${file.size}:${file.lastModified}:${fileIdx}` === key,
                       );
                       if (idx >= 0) removeFile(idx);
-                    }}
-                    onClearAllFiles={() => {
+                    },
+                    onClearAllFiles: () => {
                       void clearAllFiles();
-                    }}
-                  />
-
-                  <PracticeTransferRequestIntakePanel
-                    selectedLab={selectedLab}
-                    setSelectedLab={setSelectedLab}
-                    labOpen={labOpen}
-                    setLabOpen={setLabOpen}
-                    labSearch={labSearch}
-                    setLabSearch={setLabSearch}
-                    labSearchResults={labSearchResults}
-                    labSearching={labSearching}
-                    recentLabs={recentLabs}
-                    recentLabsInitialized={recentLabsInitialized}
-                    autoClinicName={autoClinicName}
-                    patientName={patientName}
-                    setPatientName={setPatientName}
-                    orderDate={orderDate}
-                    setOrderDate={setOrderDate}
-                    arrivalDate={arrivalDate}
-                    setArrivalDate={setArrivalDate}
-                    arrivalDefaultDays={arrivalDefaultDays}
-                    setArrivalDefaultDaysDraft={setArrivalDefaultDaysDraft}
-                    setArrivalSettingsDialogOpen={setArrivalSettingsDialogOpen}
-                    normalizedProsthesisTypes={normalizedProsthesisTypes}
-                    setProsthesisTypeCatalogDraft={setProsthesisTypeCatalogDraft}
-                    setProsthesisTypeSettingsDialogOpen={setProsthesisTypeSettingsDialogOpen}
-                    toothWorks={toothWorks}
-                    setToothWorks={setToothWorks}
-                    requestMemo={requestMemo}
-                    setRequestMemo={setRequestMemo}
-                    memoInputId="practice-request-memo"
-                    prosthesisTypeSelectWidthClassName="w-[110px]"
-                    showBridgeConnections={false}
-                    toothTensOptions={TOOTH_TENS_OPTIONS}
-                    toothOnesOptions={TOOTH_ONES_OPTIONS}
-                    onClearAll={handleClearRequestIntakeCache}
-                  />
-                </PracticeTransferMiddleGrid>
+                    },
+                  }}
+                  requestIntakeProps={{
+                    selectedLab,
+                    setSelectedLab,
+                    labOpen,
+                    setLabOpen,
+                    labSearch,
+                    setLabSearch,
+                    labSearchResults,
+                    labSearching,
+                    recentLabs,
+                    recentLabsInitialized,
+                    autoClinicName,
+                    patientName,
+                    setPatientName,
+                    orderDate,
+                    setOrderDate,
+                    arrivalDate,
+                    setArrivalDate,
+                    arrivalDefaultDays,
+                    setArrivalDefaultDaysDraft,
+                    setArrivalSettingsDialogOpen,
+                    normalizedProsthesisTypes,
+                    setProsthesisTypeCatalogDraft,
+                    setProsthesisTypeSettingsDialogOpen,
+                    toothWorks,
+                    setToothWorks,
+                    requestMemo,
+                    setRequestMemo,
+                    memoInputId: "practice-request-memo",
+                    prosthesisTypeSelectWidthClassName: "w-[110px]",
+                    showBridgeConnections: false,
+                    toothTensOptions: TOOTH_TENS_OPTIONS,
+                    toothOnesOptions: TOOTH_ONES_OPTIONS,
+                    onClearAll: handleClearRequestIntakeCache,
+                  }}
+                />
               </div>
             )}
 

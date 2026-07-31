@@ -6,17 +6,17 @@ import { Button } from "@/components/ui/button";
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
 
-type FileDisplayItem = {
+export type PracticeTransferFileDisplayItem = {
   key: string;
   name: string;
   size: number;
   metaSuffix?: string;
 };
 
-type Props = {
+export type PracticeTransferFilePaneProps = {
   acceptedHint: string;
   fileInputId: string;
-  files: FileDisplayItem[];
+  files: PracticeTransferFileDisplayItem[];
   totalSizeMb: string;
   onPickFiles: (files: File[]) => void;
   onRemoveFile: (key: string) => void;
@@ -33,7 +33,7 @@ export const PracticeTransferFilePane = ({
   onRemoveFile,
   onClearAllFiles,
   listViewportClassName = "max-h-[10rem]",
-}: Props) => {
+}: PracticeTransferFilePaneProps) => {
   return (
     <div className="flex min-h-0 h-full flex-col gap-3">
       <div className="rounded-xl border border-dashed bg-background p-4 text-center flex flex-1 flex-col items-center justify-center">

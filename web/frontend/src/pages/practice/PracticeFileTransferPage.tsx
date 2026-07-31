@@ -106,9 +106,7 @@ import {
   type PracticeTransferDialogFileItem,
   type PracticeTransferDialogSummaryItem,
 } from "@/shared/components/PracticeTransferDetailChatDialog";
-import { PracticeTransferMiddleGrid } from "@/shared/components/practice/PracticeTransferMiddleGrid";
-import { PracticeTransferFilePane } from "@/shared/components/practice/PracticeTransferFilePane";
-import { PracticeTransferRequestIntakePanel } from "@/shared/components/practice/PracticeTransferRequestIntakePanel";
+import { PracticeTransferIntakeSection } from "@/shared/components/practice/PracticeTransferIntakeSection";
 import { restoreToothWorksFromDraft } from "@/shared/practice/toothWorkDraft";
 import { deleteFile as deleteFileFromIndexedDb } from "@/shared/storage/fileIndexedDB";
 import {
@@ -2768,19 +2766,19 @@ export const PracticeFileTransferPage = () => {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              <PracticeTransferMiddleGrid>
-                <PracticeTransferFilePane
-                  acceptedHint={PRACTICE_ACCEPTED_HINT}
-                  fileInputId="practice-file-transfer-input"
-                  files={combinedDisplayFiles.map((file) => ({
+              <PracticeTransferIntakeSection
+                filePaneProps={{
+                  acceptedHint: PRACTICE_ACCEPTED_HINT,
+                  fileInputId: "practice-file-transfer-input",
+                  files: combinedDisplayFiles.map((file) => ({
                     key: file.key,
                     name: file.name,
                     size: file.size,
                     metaSuffix: file.kind === "draft" ? "임시저장됨" : undefined,
-                  }))}
-                  totalSizeMb={combinedFilesSizeMb}
-                  onPickFiles={handleIncomingFiles}
-                  onRemoveFile={(key) => {
+                  })),
+                  totalSizeMb: combinedFilesSizeMb,
+                  onPickFiles: handleIncomingFiles,
+                  onRemoveFile: (key) => {
                     const target = combinedDisplayFiles.find((file) => file.key === key);
                     if (!target) return;
                     void handleRemoveCombinedFile({
@@ -2788,48 +2786,47 @@ export const PracticeFileTransferPage = () => {
                       localIndex: target.kind === "local" ? target.localIndex : undefined,
                       draftIndex: target.kind === "draft" ? target.draftIndex : undefined,
                     });
-                  }}
-                  onClearAllFiles={() => {
+                  },
+                  onClearAllFiles: () => {
                     void handleClearAllTransferFiles();
-                  }}
-                />
-
-                <PracticeTransferRequestIntakePanel
-                  selectedLab={selectedLab}
-                  setSelectedLab={setSelectedLab}
-                  labOpen={labOpen}
-                  setLabOpen={setLabOpen}
-                  labSearch={labSearch}
-                  setLabSearch={setLabSearch}
-                  labSearchResults={labSearchResults}
-                  labSearching={labSearching}
-                  recentLabs={recentLabs}
-                  recentLabsInitialized={recentLabsInitialized}
-                  autoClinicName={autoClinicName}
-                  patientName={patientName}
-                  setPatientName={setPatientName}
-                  orderDate={orderDate}
-                  setOrderDate={setOrderDate}
-                  arrivalDate={arrivalDate}
-                  setArrivalDate={setArrivalDate}
-                  arrivalDefaultDays={arrivalDefaultDays}
-                  setArrivalDefaultDaysDraft={setArrivalDefaultDaysDraft}
-                  setArrivalSettingsDialogOpen={setArrivalSettingsDialogOpen}
-                  normalizedProsthesisTypes={normalizedProsthesisTypes}
-                  setProsthesisTypeCatalogDraft={setProsthesisTypeCatalogDraft}
-                  setProsthesisTypeSettingsDialogOpen={setProsthesisTypeSettingsDialogOpen}
-                  toothWorks={toothWorks}
-                  setToothWorks={setToothWorks}
-                  requestMemo={requestMemo}
-                  setRequestMemo={setRequestMemo}
-                  memoInputId="practice-file-transfer-request-memo"
-                  prosthesisTypeSelectWidthClassName="w-[76px]"
-                  showBridgeConnections
-                  toothTensOptions={TOOTH_TENS_OPTIONS}
-                  toothOnesOptions={TOOTH_ONES_OPTIONS}
-                  onClearAll={handleClearRequestIntakeCache}
-                />
-              </PracticeTransferMiddleGrid>
+                  },
+                }}
+                requestIntakeProps={{
+                  selectedLab,
+                  setSelectedLab,
+                  labOpen,
+                  setLabOpen,
+                  labSearch,
+                  setLabSearch,
+                  labSearchResults,
+                  labSearching,
+                  recentLabs,
+                  recentLabsInitialized,
+                  autoClinicName,
+                  patientName,
+                  setPatientName,
+                  orderDate,
+                  setOrderDate,
+                  arrivalDate,
+                  setArrivalDate,
+                  arrivalDefaultDays,
+                  setArrivalDefaultDaysDraft,
+                  setArrivalSettingsDialogOpen,
+                  normalizedProsthesisTypes,
+                  setProsthesisTypeCatalogDraft,
+                  setProsthesisTypeSettingsDialogOpen,
+                  toothWorks,
+                  setToothWorks,
+                  requestMemo,
+                  setRequestMemo,
+                  memoInputId: "practice-file-transfer-request-memo",
+                  prosthesisTypeSelectWidthClassName: "w-[76px]",
+                  showBridgeConnections: true,
+                  toothTensOptions: TOOTH_TENS_OPTIONS,
+                  toothOnesOptions: TOOTH_ONES_OPTIONS,
+                  onClearAll: handleClearRequestIntakeCache,
+                }}
+              />
 
               <div className="flex items-center justify-between gap-2">
                 <TooltipProvider>
