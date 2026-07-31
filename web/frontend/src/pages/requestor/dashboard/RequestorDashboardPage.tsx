@@ -62,11 +62,16 @@ import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
 import { getNormalizedStage, getNormalizedStageLabel } from "@/utils/stage";
 import { onAppEvent } from "@/shared/realtime/socket";
 import { useSystemSettings } from "@/hooks/useSystemSettings";
+import { StlPreviewViewer } from "@/features/requests/components/StlPreviewViewer";
+import { resolveImplantConnectionSpec } from "@/utils/implantConnectionSpec";
+import { getFileBlob, setFileBlob } from "@/shared/files/stlIndexedDb";
 
 // related files:
 // - web/frontend/src/pages/requestor/dashboard/components/RequestorRecentRequestsCard.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx
-// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
+// - web/frontend/src/features/requests/components/StlPreviewViewer.tsx
+// - web/frontend/src/shared/files/stlIndexedDb.ts
+// - web/backend/controllers/requests/dashboard.controller.js
 
 
 type DashboardOutletContext = {
@@ -211,6 +216,20 @@ export const RequestorDashboardPage = () => {
 
   const getUnmachinableReason = (requestLike: any): string =>
     String(requestLike?.rnd?.unmachinableReason || "").trim();
+
+  const splitUnmachinableReasons = (rawReason: unknown): string[] => {
+    const text = String(rawReason || "").trim();
+    if (!text) return [];
+
+    return Array.from(
+      new Set(
+        text
+          .split(/\s*\/\s*|\r?\n|\s*·\s*|\s*•\s*|\s*\|\s*/)
+          .map((item) => String(item || "").trim())
+          .filter(Boolean),
+      ),
+    );
+  };
 
   const isSampleRequest = (requestLike: any): boolean => {
     const requestCategory = String(requestLike?.requestCategory || "").trim();
@@ -955,6 +974,123 @@ export const RequestorDashboardPage = () => {
     return pendingUnmachinableItems[0] || null;
   }, [focusedUnmachinableItem, pendingUnmachinableItems]);
 
+  const [unmachinablePreviewFile, setUnmachinablePreviewFile] =
+    useState<File | null>(null);
+  const [unmachinablePreviewLoading, setUnmachinablePreviewLoading] =
+    useState(false);
+  const [unmachinablePreviewError, setUnmachinablePreviewError] = useState<string | null>(
+    null,
+  );
+  const [unmachinableDetailRequest, setUnmachinableDetailRequest] = useState<any | null>(
+    null,
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    const requestMongoId = String(
+      activeUnmachinableDecisionItem?._id || activeUnmachinableDecisionItem?.id || "",
+    ).trim();
+
+    if (!unmachinableAlertModalOpen || !token || !requestMongoId) {
+      setUnmachinablePreviewFile(null);
+      setUnmachinablePreviewLoading(false);
+      setUnmachinablePreviewError(null);
+      setUnmachinableDetailRequest(null);
+      return;
+    }
+
+    setUnmachinablePreviewFile(null);
+    setUnmachinablePreviewLoading(true);
+    setUnmachinablePreviewError(null);
+
+    const load = async () => {
+      try {
+        const requestNo = String(
+          activeUnmachinableDecisionItem?.requestId || requestMongoId,
+        ).trim();
+        const fileName = `${requestNo || requestMongoId}-original.stl`;
+        const cacheKey = `stl:requestor-unmachinable:${requestMongoId}:original-file-url`;
+
+        const detailPromise = apiFetch<any>({
+          path: `/api/requests/${requestMongoId}`,
+          method: "GET",
+          token,
+        });
+
+        const cached = await getFileBlob(cacheKey);
+        if (cached && !cancelled) {
+          setUnmachinablePreviewFile(
+            new File([cached], fileName, { type: cached.type || "model/stl" }),
+          );
+          setUnmachinablePreviewLoading(false);
+
+          const detailRes = await detailPromise;
+          if (!cancelled && detailRes.ok && detailRes.data?.success) {
+            setUnmachinableDetailRequest(detailRes.data?.data || null);
+          }
+          return;
+        }
+
+        const detailRes = await detailPromise;
+        if (!cancelled && detailRes.ok && detailRes.data?.success) {
+          setUnmachinableDetailRequest(detailRes.data?.data || null);
+        }
+
+        const originalFileRes = await fetch(
+          `/api/requests/${encodeURIComponent(requestMongoId)}/original-file-url`,
+          {
+            method: "GET",
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+            cache: "no-store",
+          },
+        );
+        const originalFileBody: any = await originalFileRes.json().catch(() => ({}));
+        const signedUrl = String(originalFileBody?.data?.url || "").trim();
+
+        if (!originalFileRes.ok || !signedUrl) {
+          if (cancelled) return;
+          setUnmachinablePreviewError("STL 파일을 찾을 수 없습니다.");
+          setUnmachinablePreviewLoading(false);
+          return;
+        }
+
+        const fileRes = await fetch(signedUrl, { method: "GET" });
+        if (!fileRes.ok) {
+          if (cancelled) return;
+          setUnmachinablePreviewError("STL 파일을 불러오지 못했습니다.");
+          setUnmachinablePreviewLoading(false);
+          return;
+        }
+
+        const blob = await fileRes.blob();
+        if (cancelled) return;
+
+        try {
+          await setFileBlob(cacheKey, blob);
+        } catch {
+          // ignore cache write errors
+        }
+
+        setUnmachinablePreviewFile(
+          new File([blob], fileName, { type: blob.type || "model/stl" }),
+        );
+        setUnmachinablePreviewLoading(false);
+      } catch (error) {
+        if (cancelled) return;
+        console.error("불완전가공 STL 로드 실패", error);
+        setUnmachinablePreviewError("STL 파일을 불러오지 못했습니다.");
+        setUnmachinablePreviewLoading(false);
+      }
+    };
+
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeUnmachinableDecisionItem, token, unmachinableAlertModalOpen]);
+
   const handleContinueSingleUnmachinableRequest = async (
     requestId: string,
   ): Promise<boolean> => {
@@ -1512,12 +1648,9 @@ export const RequestorDashboardPage = () => {
           }
         }}
       >
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="w-[92vw] max-w-4xl h-[64vh] overflow-hidden flex flex-col">
           <DialogHeader>
             <DialogTitle>불완전가공 안내</DialogTitle>
-            <DialogDescription>
-              제조사에서 불완전가공으로 판정한 의뢰입니다. 사유를 읽고 진행 방식을 선택해주세요.
-            </DialogDescription>
           </DialogHeader>
 
           {loadingUnmachinableOverview ? (
@@ -1525,48 +1658,133 @@ export const RequestorDashboardPage = () => {
           ) : !activeUnmachinableDecisionItem ? (
             <div className="text-sm text-muted-foreground">표시할 불완전가공 의뢰가 없습니다.</div>
           ) : (
-            <div className="space-y-3">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 flex-1 min-h-0 overflow-hidden">
+                {unmachinablePreviewLoading ? (
+                  <div className="flex-1 min-h-0 rounded-md border border-dashed border-slate-300 flex items-center justify-center text-base text-slate-500">
+                    원본 STL 불러오는 중...
+                  </div>
+                ) : unmachinablePreviewFile ? (
+                  <div className="flex-1 min-h-0 rounded-md border border-slate-200 overflow-hidden">
+                    <StlPreviewViewer
+                      file={unmachinablePreviewFile}
+                      showOverlay={false}
+                    />
+                  </div>
+                ) : (
+                  <div className="flex-1 min-h-0 rounded-md border border-dashed border-slate-300 flex items-center justify-center text-base text-slate-500">
+                    {unmachinablePreviewError || "원본 STL 파일이 없습니다."}
+                  </div>
+                )}
+
               {(() => {
                 const item = activeUnmachinableDecisionItem as any;
+                const detail = (unmachinableDetailRequest as any) || item;
                 const requestMongoId = String(item?._id || item?.id || "").trim();
-                const requestId = String(item?.requestId || "-").trim() || "-";
-                const ci = item?.caseInfos || {};
+                const canDecide = Boolean(requestMongoId);
+                const requestId = String(detail?.requestId || item?.requestId || "-").trim() || "-";
+                const ci = detail?.caseInfos || item?.caseInfos || {};
                 const title =
-                  String(item?.title || "").trim() ||
+                  String(detail?.title || item?.title || "").trim() ||
                   [ci?.patientName, ci?.tooth].filter(Boolean).join(" ") ||
                   requestId;
-                const reason = String(item?.rnd?.unmachinableReason || "").trim();
+                const reason = String(detail?.rnd?.unmachinableReason || item?.rnd?.unmachinableReason || "").trim();
+                const reasonItems = splitUnmachinableReasons(reason);
+
+                const implantManufacturer =
+                  String(ci?.implantManufacturer || detail?.implantManufacturer || "").trim() || "-";
+                const implantBrand =
+                  String(ci?.implantBrand || detail?.implantBrand || "").trim() || "-";
+                const implantFamily =
+                  String(ci?.implantFamily || detail?.implantFamily || "").trim() || "-";
+                const implantType =
+                  String(ci?.implantType || detail?.implantType || "").trim() || "-";
+                const clinicName =
+                  String(ci?.clinicName || detail?.clinicName || "").trim() || "-";
+                const patientName =
+                  String(ci?.patientName || detail?.patientName || "").trim() || "-";
+                const tooth = String(ci?.tooth || detail?.tooth || "").trim() || "-";
+
+                const resolvedSpec = resolveImplantConnectionSpec({
+                  implantManufacturer,
+                  implantBrand,
+                  implantFamily,
+                  implantType,
+                  connectionDiameter: ci?.connectionDiameter,
+                });
+
+                const connectionDiameterText =
+                  typeof resolvedSpec.connectionDiameter === "number" &&
+                  Number.isFinite(resolvedSpec.connectionDiameter)
+                    ? resolvedSpec.connectionDiameter.toFixed(2)
+                    : "-";
 
                 return (
-                  <div className="rounded-md border border-yellow-300 bg-yellow-50/60 px-3 py-3">
-                    <div className="min-w-0 flex-1 space-y-1">
-                      <div className="flex items-center gap-2">
-                        <div className="text-sm font-medium truncate">{title}</div>
-                        <Badge
-                          variant="outline"
-                          className="text-[10px] border-yellow-300 text-yellow-700"
-                        >
-                          불완전가공
-                        </Badge>
-                      </div>
-                      <div className="text-xs text-muted-foreground truncate">
-                        의뢰번호: {requestId}
-                      </div>
-                      <div className="text-xs text-yellow-800 mt-1 break-words">
-                        불완전가공 사유: {reason || "미등록"}
-                      </div>
-                      <div className="text-xs text-slate-700 mt-2">
-                        해당 의뢰건을 취소할지, 그대로 진행할지 선택해주세요.
+                  <div className="rounded-lg border border-yellow-300 bg-yellow-50/60 p-3.5 flex flex-col min-h-0 overflow-hidden">
+                    <div className="space-y-2.5 overflow-auto pr-1">
+                      <div className="text-sm text-slate-600">의뢰번호: {requestId}</div>
+
+
+                      <div className="rounded-md border border-slate-200 bg-white px-3 py-2.5 space-y-2 text-sm leading-6 text-slate-800">
+                        <div>
+                          <span className="font-semibold">치과:</span> {clinicName}
+                        </div>
+                        <div>
+                          <span className="font-semibold">환자:</span> {patientName}
+                        </div>
+                        <div>
+                          <span className="font-semibold">치아번호:</span> {tooth}
+                        </div>
+                        <div className="break-words">
+                          <span className="font-semibold">임플란트:</span> {implantManufacturer} / {implantBrand} / {implantFamily} / {implantType}
+                        </div>
+                        <div>
+                          <span className="font-semibold">커넥션 직경:</span> {connectionDiameterText}
+                        </div>
                       </div>
                     </div>
 
-                    <div className="mt-3 flex items-center justify-end gap-2">
+                    <div className="mt-4 space-y-1">
+                        <div className="text-sm font-semibold text-yellow-900">불완전가공 사유</div>
+                        {reasonItems.length > 0 ? (
+                          <div className="space-y-0.5">
+                            {reasonItems.map((reasonItem, idx) => (
+                              <div
+                                key={`unmachinable-reason-${idx}`}
+                                className="text-[15px] leading-6 text-yellow-900 break-words font-medium"
+                              >
+                                • {reasonItem}
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="text-[15px] leading-6 text-yellow-900 break-words font-medium">
+                            • 미등록
+                          </div>
+                        )}
+                      </div>
 
+                    <div className="mt-auto pt-4">
+                      <div className="text-sm text-right leading-6 text-slate-800">
+                        해당 의뢰건을 취소할지, 그대로 진행할지 선택해주세요.
+                      </div>
+
+                      <div className="mt-3.5 flex items-center justify-end gap-2">
                       <Button
                         type="button"
                         variant="outline"
-                        className="border-red-300 text-red-700 hover:bg-red-500"
                         onClick={() => {
+                          setUnmachinableAlertModalOpen(false);
+                        }}
+                        disabled={approvingUnmachinableSelection}
+                      >
+                        나중에 결정
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="border-red-400 text-red-400 hover:bg-red-500"
+                        onClick={() => {
+                          if (!canDecide) return;
                           console.log("[UNMACHINABLE_CANCEL] open confirm", {
                             requestMongoId,
                             requestId,
@@ -1574,25 +1792,25 @@ export const RequestorDashboardPage = () => {
                           setPendingCancelIds([requestMongoId]);
                           setUnmachinableCancelConfirmOpen(true);
                         }}
-                        disabled={approvingUnmachinableSelection}
+                        disabled={approvingUnmachinableSelection || !canDecide}
                       >
                         의뢰 취소
                       </Button>
                       <Button
                         type="button"
                         onClick={async () => {
+                          if (!canDecide) return;
                           const continued =
-                            await handleContinueSingleUnmachinableRequest(
-                              requestMongoId,
-                            );
+                            await handleContinueSingleUnmachinableRequest(requestMongoId);
                           if (continued) {
                             setUnmachinableAlertModalOpen(false);
                           }
                         }}
-                        disabled={approvingUnmachinableSelection}
+                        disabled={approvingUnmachinableSelection || !canDecide}
                       >
                         의뢰 계속 진행
                       </Button>
+                      </div>
                     </div>
                   </div>
                 );

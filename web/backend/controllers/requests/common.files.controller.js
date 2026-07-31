@@ -5,6 +5,7 @@
 // - web/backend/modules/requests/request.routes.js
 // - web/backend/controllers/requests/common.review.controller.js
 // - web/backend/controllers/requests/common.requests.controller.js
+// - web/frontend/src/pages/requestor/dashboard/RequestorDashboardPage.tsx
 import { Types } from "mongoose";
 import Request from "../../models/request.model.js";
 import { ApiError } from "../../utils/ApiError.js";
@@ -34,6 +35,7 @@ export async function getOriginalFileUrl(req, res) {
     const request = await Request.findById(id)
       .select({
         requestId: 1,
+        businessAnchorId: 1,
         caseInfos: 1,
       })
       .lean();
@@ -43,8 +45,18 @@ export async function getOriginalFileUrl(req, res) {
         .json({ success: false, message: "의뢰를 찾을 수 없습니다." });
     }
 
-    // 제조사 또는 관리자만 접근
-    if (req.user.role !== "manufacturer" && req.user.role !== "admin") {
+    // 제조사/관리자는 전체 접근 가능,
+    // 의뢰자는 본인 사업자 소속 의뢰건에 한해 접근 가능
+    const role = String(req.user?.role || "").trim();
+    if (role === "requestor") {
+      const myAnchorId = String(req.user?.businessAnchorId || "").trim();
+      const ownerAnchorId = String(request?.businessAnchorId || "").trim();
+      if (!myAnchorId || !ownerAnchorId || myAnchorId !== ownerAnchorId) {
+        return res
+          .status(403)
+          .json({ success: false, message: "다운로드 권한이 없습니다." });
+      }
+    } else if (role !== "manufacturer" && role !== "admin") {
       return res
         .status(403)
         .json({ success: false, message: "다운로드 권한이 없습니다." });

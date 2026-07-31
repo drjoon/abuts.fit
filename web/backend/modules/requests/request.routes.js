@@ -5,6 +5,7 @@
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/shipping/components/MailboxGrid.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx
 // - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
+// - web/frontend/src/pages/requestor/dashboard/RequestorDashboardPage.tsx
 import express from "express";
 const router = express.Router();
 import requestController from "../../controllers/requests/request.controller.js";
@@ -538,11 +539,13 @@ router.post(
   requestController.saveSelfInspectionByRequestId,
 );
 
-// 제조사/관리자: 원본 STL 다운로드 URL
+// 의뢰자/제조사/관리자: 원본 STL 다운로드 URL
 router.get(
   "/:id/original-file-url",
   authenticate,
-  authorize(["manufacturer", "admin"]),
+  authorize(["requestor", "manufacturer", "admin"], {
+    subRoles: ["owner", "staff"],
+  }),
   requestController.getOriginalFileUrl,
 );
 
