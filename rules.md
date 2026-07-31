@@ -88,7 +88,10 @@
 - 신규 의뢰 표준: `POST /api/requests/from-draft`
 - 공정 SSOT: `Request.manufacturerStage`
   - `의뢰 → CAM → 가공 → 세척.패킹 → 포장.발송 → 추적관리`
-- 승인/롤백 외 경로에서 과금/환불 로직 추가 금지
+- 요청 과금/환불 시점 정책:
+  - 의뢰비 과금은 CNC 가공 시작 콜백(`sourceStep=cnc`, success)에서 수행
+  - CNC 가공 실패 콜백(`sourceStep=cnc`, failed)에서는 즉시 환불
+  - 그 외 임의 경로에서 과금/환불 로직 추가 금지
 
 ### 2.3 크레딧/정산
 

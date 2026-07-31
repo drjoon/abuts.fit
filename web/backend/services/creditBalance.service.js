@@ -3,6 +3,7 @@
 // - web/backend/models/businessCreditBalance.model.js
 // - web/backend/models/creditLedger.model.js
 // - web/backend/controllers/requests/common.review.helpers.js
+// - web/backend/controllers/bg/bg.controller.js
 import { Types } from "mongoose";
 import CreditLedger from "../models/creditLedger.model.js";
 import BusinessCreditBalance from "../models/businessCreditBalance.model.js";
@@ -284,7 +285,7 @@ export async function spendRequestCreditAtomic({
   if (!anchorObjectId) return { didSpend: false };
 
   const requestIdStr = String(request?._id || "").trim();
-  const uniqueKey = `request:${requestIdStr}:machining_spend`;
+  const spendKeyPrefix = `request:${requestIdStr}:machining_spend`;
 
   const spendRows = await CreditLedger.find({
     type: "SPEND",
@@ -302,17 +303,39 @@ export async function spendRequestCreditAtomic({
     .session(session || null)
     .lean();
 
-  const existingNegativeSpend = spendRows.find(
-    (row) => Number(row?.amount || 0) < 0,
+  const paidSpendRows = spendRows.filter((row) => Number(row?.amount || 0) < 0);
+  const refundRows = await CreditLedger.find({
+    type: "REFUND",
+    refType: "REQUEST",
+    refId: request._id,
+  })
+    .select({ amount: 1 })
+    .session(session || null)
+    .lean();
+
+  const spendTotal = paidSpendRows.reduce(
+    (acc, row) => acc + Math.abs(Number(row?.amount || 0)),
+    0,
   );
-  if (existingNegativeSpend?._id) {
+  const refundTotal = refundRows.reduce(
+    (acc, row) => acc + Math.abs(Number(row?.amount || 0)),
+    0,
+  );
+  const outstanding = Math.max(0, Math.round(spendTotal - refundTotal));
+
+  const latestNegativeSpend = paidSpendRows[paidSpendRows.length - 1] || null;
+  if (outstanding > 0 && latestNegativeSpend?._id) {
     return {
       didSpend: false,
       reason: "already_spent",
-      existingUniqueKey: existingNegativeSpend.uniqueKey,
-      uniqueKey,
+      existingUniqueKey: latestNegativeSpend.uniqueKey,
+      uniqueKey: String(latestNegativeSpend.uniqueKey || spendKeyPrefix),
     };
   }
+
+  const spendAttempt = Math.max(1, paidSpendRows.length + 1);
+  const uniqueKey =
+    spendAttempt <= 1 ? spendKeyPrefix : `${spendKeyPrefix}:${spendAttempt}`;
 
   const existingFreeMarker = spendRows.find(
     (row) => Number(row?.amount || 0) === 0 && row?.hasFreeRequest === true,
@@ -712,7 +735,10 @@ export async function refundRequestCreditAtomic({
   const refundSpentPaidAmount = split ? split.paid : null;
   const refundSpentBonusAmount = split ? split.bonus : null;
 
-  const refundKey = `request:${String(request._id)}:machining_refund`;
+  const refundKeyPrefix = `request:${String(request._id)}:machining_refund`;
+  const refundAttempt = Math.max(1, (refundRows || []).length + 1);
+  const refundKey =
+    refundAttempt <= 1 ? refundKeyPrefix : `${refundKeyPrefix}:${refundAttempt}`;
   let inserted = false;
   try {
     const result = await CreditLedger.updateOne(

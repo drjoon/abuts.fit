@@ -46,6 +46,7 @@
   - `src/pages/admin/credits/AdminCreditPage.tsx`
   - `src/pages/admin/credits/components/RequestorCreditTab.tsx`
   - `src/pages/admin/credits/components/RequestorOrganizationsTab.tsx`
+  - `src/shared/components/CreditLedgerModal.tsx`
 - 관리자 대시보드/소통
   - `src/pages/admin/dashboard/AdminDashboardPage.tsx`
   - `src/pages/admin/support/AdminChatManagement.tsx`
@@ -82,6 +83,11 @@
   - 관리자 크레딧 페이지 검색 UI 배치 기준 파일:
     - `src/pages/admin/credits/AdminCreditPage.tsx`
     - `src/pages/admin/credits/components/RequestorCreditTab.tsx`
+
+- 관리자 크레딧 원장 모달(`src/shared/components/CreditLedgerModal.tsx`) 표시 정책:
+  - 모달 상단 잔액 요약은 `/api/admin/credits/businesses/:id/ledger`의 `currentBalanceSnapshot`(SSOT) 값을 사용합니다.
+  - 테이블 `balanceAfter`는 현재 총잔액이 아니라 “행 시점 잔액”으로 표기합니다.
+  - BONUS 행 거래내역 문구는 `bonusReason`이 있으면 이를 우선 표시합니다.
 
 - 포장.발송 우편함 상세 모달 캐시 일관성:
   - `RequestPage`에서 우편함 상세 모달 오픈 시, 요약(`mailboxSummaries.requestCount`)과 캐시 건수가 다르면 캐시를 사용하지 않고 `/api/requests/shipping/mailbox-requests`를 재조회합니다.

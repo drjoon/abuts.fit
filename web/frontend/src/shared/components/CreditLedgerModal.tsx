@@ -1,6 +1,7 @@
 // related files:
 // - web/frontend/rules.md
-// - web/frontend/src/App.tsx
+// - web/frontend/src/pages/admin/credits/AdminCreditPage.tsx
+// - web/backend/controllers/admin/adminCredit.controller.js
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 import { useEffect, useRef, useState } from "react";
 import {
@@ -83,6 +84,14 @@ type CreditLedgerItem = {
     maxDiameter?: number | null;
     connectionDiameter?: number | null;
   } | null;
+};
+
+type CreditBalanceSnapshot = {
+  balance: number;
+  paidCredit: number;
+  bonusRequestCredit: number;
+  bonusShippingCredit: number;
+  updatedAt?: string | null;
 };
 
 export type CreditLedgerModalProps = {
@@ -233,11 +242,13 @@ const renderTransactionDetail = ({
     );
   }
 
-  if (refType === "WELCOME_BONUS") {
-    const reason = (item.bonusReason || "가입 축하 크레딧").trim();
+  if (item.type === "BONUS") {
+    const reason = String(item.bonusReason || "").trim();
     return (
       <>
-        <span className="text-[11px] text-slate-700">{reason}</span>
+        <span className="text-[11px] text-slate-700">
+          {reason || refTypeLabel(refType)}
+        </span>
         <span className="pt-1 font-mono text-xs font-semibold text-slate-900">
           {shortCode}
         </span>
@@ -280,6 +291,8 @@ export const CreditLedgerModal = ({
   const [page, setPage] = useState(1);
   const [selectedDetail, setSelectedDetail] =
     useState<RequestDetailDialogRequest | null>(null);
+  const [currentBalanceSnapshot, setCurrentBalanceSnapshot] =
+    useState<CreditBalanceSnapshot | null>(null);
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
@@ -329,6 +342,7 @@ export const CreditLedgerModal = ({
           total: number;
           page: number;
           pageSize: number;
+          currentBalanceSnapshot?: CreditBalanceSnapshot;
         };
         message?: string;
       }>({
@@ -338,14 +352,19 @@ export const CreditLedgerModal = ({
       });
 
       if (!res.ok || !res.data?.success) {
-        throw new Error(
-          (res.data as any)?.message || "크레딧 내역 조회에 실패했습니다.",
-        );
+        const message =
+          res.data && typeof res.data === "object" && "message" in res.data
+            ? String((res.data as { message?: string }).message || "")
+            : "";
+        throw new Error(message || "크레딧 내역 조회에 실패했습니다.");
       }
 
       const data = res.data.data;
       const fetched = Array.isArray(data?.items) ? data.items : [];
       const total = Number(data?.total ?? 0);
+      if (reset) {
+        setCurrentBalanceSnapshot(data?.currentBalanceSnapshot || null);
+      }
       setItems((prev) => {
         const next = reset ? fetched : [...prev, ...fetched];
         const more = next.length < total;
@@ -353,13 +372,17 @@ export const CreditLedgerModal = ({
         hasMoreRef.current = more;
         return next;
       });
-    } catch (e: any) {
-      if (reset) setItems([]);
+    } catch (e: unknown) {
+      if (reset) {
+        setItems([]);
+        setCurrentBalanceSnapshot(null);
+      }
       setHasMore(false);
       hasMoreRef.current = false;
       toast({
         title: "크레딧 내역 조회 실패",
-        description: e?.message || "다시 시도해주세요.",
+        description:
+          e instanceof Error ? e.message : "다시 시도해주세요.",
         variant: "destructive",
         duration: 3000,
       });
@@ -465,6 +488,42 @@ export const CreditLedgerModal = ({
           </DialogHeader>
 
           <div className="flex flex-col gap-3 min-h-0 flex-1">
+            {currentBalanceSnapshot ? (
+              <div className="rounded-md border bg-muted/30 px-3 py-2">
+                <div className="grid grid-cols-1 gap-1 text-xs sm:grid-cols-2 lg:grid-cols-4">
+                  <div className="tabular-nums">
+                    <span className="text-muted-foreground">현재 잔액</span>{" "}
+                    <span className="font-semibold text-slate-900">
+                      {Number(currentBalanceSnapshot.balance || 0).toLocaleString()}원
+                    </span>
+                  </div>
+                  <div className="tabular-nums">
+                    <span className="text-muted-foreground">유료</span>{" "}
+                    <span className="font-semibold text-slate-900">
+                      {Number(currentBalanceSnapshot.paidCredit || 0).toLocaleString()}원
+                    </span>
+                  </div>
+                  <div className="tabular-nums">
+                    <span className="text-muted-foreground">무료·의뢰</span>{" "}
+                    <span className="font-semibold text-slate-900">
+                      {Number(
+                        currentBalanceSnapshot.bonusRequestCredit || 0,
+                      ).toLocaleString()}
+                      원
+                    </span>
+                  </div>
+                  <div className="tabular-nums">
+                    <span className="text-muted-foreground">무료·배송</span>{" "}
+                    <span className="font-semibold text-slate-900">
+                      {Number(
+                        currentBalanceSnapshot.bonusShippingCredit || 0,
+                      ).toLocaleString()}
+                      원
+                    </span>
+                  </div>
+                </div>
+              </div>
+            ) : null}
             <div className="flex flex-col gap-2">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="flex flex-wrap items-center gap-2 py-0.5">
@@ -473,7 +532,9 @@ export const CreditLedgerModal = ({
                   <div className="w-[140px]">
                     <Select
                       value={type}
-                      onValueChange={(v) => setType(v as any)}
+                      onValueChange={(v) =>
+                        setType(v as CreditLedgerType | "all")
+                      }
                     >
                       <SelectTrigger className="h-9">
                         <SelectValue placeholder="전체" />
@@ -534,7 +595,7 @@ export const CreditLedgerModal = ({
                     <TableHead className="w-[150px]">일시</TableHead>
                     <TableHead className="w-[80px]">유형</TableHead>
                     <TableHead className="w-[110px] text-right">금액</TableHead>
-                    <TableHead className="w-[110px] text-right">잔액</TableHead>
+                    <TableHead className="w-[120px] text-right">행 시점 잔액</TableHead>
                     <TableHead>거래내역</TableHead>
                   </TableRow>
                 </TableHeader>

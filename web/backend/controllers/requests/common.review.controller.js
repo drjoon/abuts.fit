@@ -32,7 +32,6 @@ import { resolvePrcFileNames } from "./prcMapping.utils.js";
 import { emitAppEventToRoles } from "../../socket.js";
 import {
   revertManufacturerStageByReviewStage,
-  ensureRequestCreditSpendOnMachiningEnter,
   ensureRequestCreditRefundOnRollbackToCam,
   ensureShippingFeeSpendOnPackingApprove,
   ensureShippingFeeRefundOnShippingRollback,
@@ -1033,9 +1032,6 @@ export async function updateReviewStatusByStage(req, res) {
           return new Types.ObjectId(requestorBusinessAnchorIdStr);
         })();
 
-        const isNewSystemFree =
-          request?.caseInfos?.newSystemRequest?.requested &&
-          request?.caseInfos?.newSystemRequest?.free;
         const isPracticeDropzoneRequest =
           String(request?.caseInfos?.newSystemRequest?.tag || "").trim() ===
           "practice_dropzone";
@@ -1382,21 +1378,7 @@ export async function updateReviewStatusByStage(req, res) {
           }
         }
 
-        const shouldEnsureRequestSpend =
-          String(effectiveStage || "") === "cam" &&
-          resolvedBusinessAnchorId &&
-          !isNewSystemFree &&
-          !isPracticeDropzoneRequest &&
-          !isManufacturerSampleRequest(request);
 
-        if (shouldEnsureRequestSpend) {
-          await ensureRequestCreditSpendOnMachiningEnter({
-            request,
-            businessAnchorId: resolvedBusinessAnchorId,
-            actorUserId: req.user?._id || null,
-            session,
-          });
-        }
 
         const hasTrackedScrewLot = Boolean(
           normalizePackingScrewLot(request?.screwTracking?.lotNumber),

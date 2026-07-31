@@ -40,6 +40,9 @@
   - `models/businessAnchor.model.js`
 - 관리자 사용자 권한
   - `controllers/admin/admin.users.controller.js`
+- 관리자 크레딧
+  - `controllers/admin/adminCredit.controller.js`
+  - `modules/admin/admin.routes.js`
 
 ## 1. 구조
 
@@ -175,17 +178,21 @@
     (환불을 일괄 유료로 적립하면 안 됨)
   - 잔액 계산은 SPEND/REFUND의 분해 필드가 있으면 이를 우선 사용하고,
     레거시 데이터(분해값 없음)에만 refType 기반 fallback을 적용합니다.
-  - 같은 `businessAnchorId`에서 동시 승인으로 잔액이 음수로 내려가지 않도록,
-    리뷰 승인/롤백의 크레딧 소비·환불은 `BusinessCreditBalance` 단일 문서의 원자 갱신으로 처리합니다.
-  - 요청 과금(`refType=REQUEST`)은 요청 단위 1회 소비를 SSOT로 유지하고,
-    cycle 증가/중복 승인으로 추가 차감이 생기지 않도록 차단합니다.
-  - 요청 과금은 CAM 승인 시점에만 수행합니다. (machining/packing/shipping 승인에서는 요청 과금 재진입 금지)
+  - 같은 `businessAnchorId`에서 동시 처리로 잔액이 음수로 내려가지 않도록,
+    크레딧 소비·환불은 `BusinessCreditBalance` 단일 문서의 원자 갱신으로 처리합니다.
+  - 요청 과금(`refType=REQUEST`)은 **CNC 가공 시작 콜백(`sourceStep=cnc`, success)** 시점에 수행합니다.
+  - 가공 실패 콜백(`sourceStep=cnc`, failed)에서는 요청 과금을 즉시 환불합니다.
+  - 요청 과금/환불은 재시도·중복 콜백에서도 idempotent 하게 동작해야 하며,
+    이전 시도 환불 완료 후 재가공 시작 시 재차감이 가능해야 합니다.
   - `BusinessCreditBalance`를 `businessAnchorId`별 잔액 SSOT로 사용하며,
-    CAM 요청 과금/요청 환불/배송비 과금/배송비 환불은 `creditBalance.service`의 원자 갱신으로 처리합니다.
+    요청 과금/요청 환불/배송비 과금/배송비 환불은 `creditBalance.service`의 원자 갱신으로 처리합니다.
   - 의뢰자/인증/관리자 크레딧 조회는 `BusinessCreditBalance`를 우선 조회하고,
     문서가 없는 앵커만 ledger 기반 백필로 생성해 읽습니다.
+  - 관리자 원장 API(`GET /api/admin/credits/businesses/:id/ledger`)는
+    응답 `currentBalanceSnapshot`을 `BusinessCreditBalance` SSOT로 제공합니다.
+    원장 행 `balanceAfter`는 “행 시점 잔액(러닝밸런스)”으로 해석합니다.
   - 백필 스크립트: `scripts/db/backfill-business-credit-balances.js`
-  - 관련 구현: `models/businessCreditBalance.model.js`, `services/creditBalance.service.js`, `controllers/requests/common.review.helpers.js`, `controllers/requests/common.review.controller.js`, `controllers/requests/common.requests.controller.js`, `controllers/credits/credit.controller.js`, `controllers/auth/auth.controller.js`
+  - 관련 구현: `models/businessCreditBalance.model.js`, `services/creditBalance.service.js`, `controllers/requests/common.review.helpers.js`, `controllers/requests/common.review.controller.js`, `controllers/bg/bg.controller.js`, `controllers/requests/common.requests.controller.js`, `controllers/credits/credit.controller.js`, `controllers/auth/auth.controller.js`
 - 우편함/배송 무결성 정책(포장.발송):
   - 우편함 재사용/배정은 **BusinessAnchor 단일 점유**를 반드시 보장합니다.
   - `businessAnchorId`가 비어 있는 점유 의뢰는 `UNKNOWN`으로 취급하되,

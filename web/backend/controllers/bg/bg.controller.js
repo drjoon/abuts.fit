@@ -1,7 +1,10 @@
 // related files:
 // - web/backend/rules.md
+// - web/backend/controllers/requests/common.review.helpers.js
+// - web/backend/services/creditBalance.service.js
 // - web/backend/app.js
 // - web/backend/server.js
+import { Types } from "mongoose";
 import s3Utils from "../../utils/s3.utils.js";
 import { asyncHandler } from "../../utils/asyncHandler.js";
 import { ApiResponse } from "../../utils/ApiResponse.js";
@@ -19,6 +22,10 @@ import {
   applyStatusMapping,
   normalizeRequestForResponse,
 } from "../requests/utils.js";
+import {
+  ensureRequestCreditSpendOnMachiningEnter,
+  ensureRequestCreditRefundOnRollbackToCam,
+} from "../requests/common.review.helpers.js";
 import { normalizeImplantFields } from "../../utils/implantCanonical.js";
 import { emitBgRuntimeStatus } from "./bgRuntimeEvents.js";
 import { emitAppEventToRoles } from "../../socket.js";
@@ -1049,6 +1056,60 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
     { $set: updateData },
     { new: true },
   );
+
+  const stepRaw = String(sourceStep || "").trim().toLowerCase();
+  const statusRaw = String(status || "").trim().toLowerCase();
+  const isCncStep = stepRaw === "cnc";
+  const isCncSuccess = isCncStep && statusRaw === "success";
+  const isCncFailed = isCncStep && statusRaw !== "success";
+
+  const targetRequest = updatedRequest || request;
+  const businessAnchorIdRaw = String(targetRequest?.businessAnchorId || "").trim();
+  const businessAnchorId = Types.ObjectId.isValid(businessAnchorIdRaw)
+    ? new Types.ObjectId(businessAnchorIdRaw)
+    : null;
+
+  const isPracticeDropzoneRequest =
+    String(targetRequest?.caseInfos?.newSystemRequest?.tag || "").trim() ===
+    "practice_dropzone";
+
+  if (businessAnchorId && !isPracticeDropzoneRequest) {
+    if (isCncSuccess) {
+      try {
+        await ensureRequestCreditSpendOnMachiningEnter({
+          request: targetRequest,
+          businessAnchorId,
+          actorUserId: null,
+          session: null,
+        });
+        if (updatedRequest?.isModified?.()) {
+          await updatedRequest.save();
+        }
+      } catch (creditSpendErr) {
+        console.error("[BG-Callback] machining-start credit spend failed:", {
+          requestId: targetRequest?.requestId,
+          requestMongoId: String(targetRequest?._id || ""),
+          message: creditSpendErr?.message || String(creditSpendErr || ""),
+        });
+      }
+    } else if (isCncFailed) {
+      try {
+        await ensureRequestCreditRefundOnRollbackToCam({
+          request: targetRequest,
+          businessAnchorId,
+          actorUserId: null,
+          session: null,
+        });
+      } catch (creditRefundErr) {
+        console.error("[BG-Callback] machining-failed credit refund failed:", {
+          requestId: targetRequest?.requestId,
+          requestMongoId: String(targetRequest?._id || ""),
+          message: creditRefundErr?.message || String(creditRefundErr || ""),
+        });
+      }
+    }
+  }
+
   const normalizedUpdatedRequest = updatedRequest
     ? await normalizeRequestForResponse(updatedRequest)
     : null;

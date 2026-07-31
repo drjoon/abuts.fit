@@ -1,7 +1,9 @@
 // related files:
 // - web/backend/rules.md
+// - web/backend/modules/admin/admin.routes.js
 // - web/backend/models/businessCreditBalance.model.js
 // - web/backend/services/creditBalance.service.js
+// - web/frontend/src/shared/components/CreditLedgerModal.tsx
 import CreditLedger from "../../models/creditLedger.model.js";
 import ManufacturerCreditLedger from "../../models/manufacturerCreditLedger.model.js";
 import AdminCreditLedger from "../../models/adminCreditLedger.model.js";
@@ -392,12 +394,21 @@ export async function adminGetBusinessLedger(req, res) {
       }
     }
 
-    // running balance: 전체 잔액 계산 (필터 무관)
-    const allLedgerRows = await CreditLedger.aggregate([
-      { $match: { businessAnchorId } },
-      { $group: { _id: null, total: { $sum: "$amount" } } },
-    ]);
-    let totalBalance = Number(allLedgerRows[0]?.total || 0);
+    const balanceSnapshot = await getBusinessCreditBalanceSnapshot({
+      businessAnchorId,
+      upsertIfMissing: true,
+    });
+
+    const currentBalanceSnapshot = {
+      balance: Number(balanceSnapshot?.balance || 0),
+      paidCredit: Number(balanceSnapshot?.paidCredit || 0),
+      bonusRequestCredit: Number(balanceSnapshot?.bonusRequestCredit || 0),
+      bonusShippingCredit: Number(balanceSnapshot?.bonusShippingCredit || 0),
+      updatedAt: balanceSnapshot?.updatedAt || null,
+    };
+
+    // running balance: 현재 SSOT 잔액을 기준으로 페이지 상단부터 역산
+    let totalBalance = Number(currentBalanceSnapshot.balance || 0);
 
     const skippedRows =
       (page - 1) * pageSize > 0
@@ -463,10 +474,9 @@ export async function adminGetBusinessLedger(req, res) {
       ),
     );
 
-    const welcomeBonusGrantIds = Array.from(
+    const bonusGrantIds = Array.from(
       new Set(
         (items || [])
-          .filter((it) => String(it?.refType || "") === "WELCOME_BONUS")
           .map((it) => parseBonusGrantIdFromUniqueKey(it?.uniqueKey))
           .filter((id) => Types.ObjectId.isValid(id)),
       ),
@@ -550,29 +560,32 @@ export async function adminGetBusinessLedger(req, res) {
       }
     }
 
-    const welcomeBonusReasonByGrantId = new Map();
-    if (welcomeBonusGrantIds.length > 0) {
+    const bonusReasonByGrantId = new Map();
+    if (bonusGrantIds.length > 0) {
       const grants = await BonusGrant.find({
-        _id: { $in: welcomeBonusGrantIds.map((id) => new Types.ObjectId(id)) },
+        _id: { $in: bonusGrantIds.map((id) => new Types.ObjectId(id)) },
       })
-        .select({ _id: 1, source: 1, overrideReason: 1, businessNumber: 1 })
+        .select({ _id: 1, type: 1, source: 1, overrideReason: 1 })
         .lean();
 
       for (const grant of grants || []) {
         if (!grant?._id) continue;
-        const source = String(grant.source || "");
+        const source = String(grant.source || "").trim();
+        const grantType = String(grant.type || "").trim();
         const overrideReason = String(grant.overrideReason || "").trim();
-        const businessNumber = String(grant.businessNumber || "").trim();
+
         let reason = "가입 축하 크레딧";
-        if (source === "admin" && overrideReason) {
-          reason = `관리자 지급 · ${overrideReason}`;
-        } else if (source === "migrated") {
-          reason = "시드/마이그레이션 가입 축하 크레딧";
+        if (grantType === "FREE_SHIPPING_CREDIT") {
+          reason = "가입 축하 배송비 보너스";
         }
-        if (businessNumber) {
-          reason = `${reason} · 사업자번호 ${businessNumber}`;
+        if (source === "migrated") {
+          reason = "시드/마이그레이션 지급";
         }
-        welcomeBonusReasonByGrantId.set(String(grant._id), reason);
+        if (source === "admin") {
+          reason = overrideReason || "관리자 지급";
+        }
+
+        bonusReasonByGrantId.set(String(grant._id), reason);
       }
     }
 
@@ -606,13 +619,11 @@ export async function adminGetBusinessLedger(req, res) {
         };
       }
 
-      if (refType === "WELCOME_BONUS") {
-        const grantId = parseBonusGrantIdFromUniqueKey(it?.uniqueKey);
+      const grantId = parseBonusGrantIdFromUniqueKey(it?.uniqueKey);
+      if (grantId) {
         return {
           ...it,
-          bonusReason: grantId
-            ? welcomeBonusReasonByGrantId.get(grantId) || ""
-            : "",
+          bonusReason: bonusReasonByGrantId.get(grantId) || "",
         };
       }
 
@@ -621,7 +632,13 @@ export async function adminGetBusinessLedger(req, res) {
 
     return res.json({
       success: true,
-      data: { items: enrichedItems, total, page, pageSize },
+      data: {
+        items: enrichedItems,
+        total,
+        page,
+        pageSize,
+        currentBalanceSnapshot,
+      },
     });
   } catch (error) {
     console.error("adminGetBusinessLedger error:", error);
