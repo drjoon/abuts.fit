@@ -337,7 +337,7 @@ export async function listMyCreditLedger(req, res) {
       refType: String(row?.refType || ""),
       refId: row?.refId ? String(row.refId) : "",
       uniqueKey: String(row?.uniqueKey || ""),
-      createdAt: row?.createdAt || row?.occurredAt || new Date(),
+      createdAt: row?.occurredAt || row?.createdAt || new Date(),
       balanceAfter,
     };
   });
@@ -536,6 +536,12 @@ export async function listMyCreditLedger(req, res) {
       total,
       page,
       pageSize,
+      currentBalanceSnapshot: {
+        paidCredit: Number(balanceSnapshot?.paidCredit || 0),
+        freeRequestCredit: Number(balanceSnapshot?.freeRequestCredit || 0),
+        freeShippingCredit: Number(balanceSnapshot?.freeShippingCredit || 0),
+        balance: Number(balanceSnapshot?.balance || 0),
+      },
     },
   });
 }
