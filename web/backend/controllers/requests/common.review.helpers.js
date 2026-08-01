@@ -91,6 +91,16 @@ export async function ensureRequestCreditSpendOnMachiningEnter({
       ...(request.price || {}),
       amount: 0,
     };
+
+    // 샘플 의뢰(rnd/copied)는 무료 의뢰로 강제 처리한다.
+    // 잔액 차감/수수료 분배 없이 free-marker만 idempotent하게 남긴다.
+    await spendRequestCreditAtomic({
+      request,
+      businessAnchorId,
+      actorUserId,
+      session,
+      computedPrice: { amount: 0 },
+    });
     return;
   }
 
@@ -610,33 +620,27 @@ export async function distributeCommissionOnRequestSpend({
       ? configuredRates
       : WITHOUT_SALESMAN_RATES;
 
-    const manufacturerBaseAmount = Math.round(
+    const plannedManufacturerBaseAmount = Math.round(
       spendAmount * Number(effectiveRates.manufacturerRate || 0),
     );
-    const devopsBaseAmount = Math.round(
+    const plannedDevopsBaseAmount = Math.round(
       spendAmount * Number(effectiveRates.devopsRate || 0),
     );
-    const salesmanBaseAmount = hasSalesmanReferrer
+    const plannedSalesmanBaseAmount = hasSalesmanReferrer
       ? Math.round(spendAmount * Number(effectiveRates.salesmanRate || 0))
       : 0;
-    const adminBaseAmount = Math.max(
+    const plannedAdminBaseAmount = Math.max(
       spendAmount -
-        manufacturerBaseAmount -
-        devopsBaseAmount -
-        salesmanBaseAmount,
+        plannedManufacturerBaseAmount -
+        plannedDevopsBaseAmount -
+        plannedSalesmanBaseAmount,
       0,
     );
 
-    const manufacturerPayoutAmount = withVat(manufacturerBaseAmount);
-    const devopsPayoutAmount = withVat(devopsBaseAmount);
-    const salesmanPayoutAmount = withVat(salesmanBaseAmount);
-    const adminPayoutAmount = withVat(adminBaseAmount);
-
-    const manufacturerVatAmount =
-      manufacturerPayoutAmount - manufacturerBaseAmount;
-    const devopsVatAmount = devopsPayoutAmount - devopsBaseAmount;
-    const salesmanVatAmount = salesmanPayoutAmount - salesmanBaseAmount;
-    const adminVatAmount = adminPayoutAmount - adminBaseAmount;
+    let assignedManufacturerBaseAmount = 0;
+    let assignedDevopsBaseAmount = 0;
+    let assignedSalesmanBaseAmount = 0;
+    let unassignedToAdminBaseAmount = 0;
 
     const caManufacturerRaw = request?.caManufacturer
       ? String(request.caManufacturer)
@@ -645,39 +649,49 @@ export async function distributeCommissionOnRequestSpend({
       ? new Types.ObjectId(caManufacturerRaw)
       : null;
 
-    if (caManufacturerId) {
-      const manufacturerUser = await User.findById(caManufacturerId)
-        .select({ _id: 1, business: 1, name: 1 })
-        .session(session || null)
-        .lean();
+    const manufacturerUser = caManufacturerId
+      ? await User.findById(caManufacturerId)
+          .select({ _id: 1, business: 1, name: 1 })
+          .session(session || null)
+          .lean()
+      : null;
 
-      if (manufacturerUser && manufacturerPayoutAmount > 0) {
-        const manufacturerUniqueKey = `request:${String(request._id)}:manufacturer_commission`;
-        await ManufacturerCreditLedger.updateOne(
-          { uniqueKey: manufacturerUniqueKey },
-          {
-            $setOnInsert: {
-              manufacturerOrganization: String(
-                manufacturerUser.business || manufacturerUser.name || "",
-              ).trim(),
-              manufacturerId: manufacturerUser._id,
-              type: "EARN",
-              amount: manufacturerPayoutAmount,
-              amountExcludingVat: manufacturerBaseAmount,
-              vatAmount: manufacturerVatAmount,
-              amountIncludingVat: manufacturerPayoutAmount,
-              refType: "REQUEST",
-              refId: request._id,
-              uniqueKey: manufacturerUniqueKey,
-              occurredAt: new Date(),
-            },
+    if (manufacturerUser && plannedManufacturerBaseAmount > 0) {
+      const manufacturerPayoutAmount = withVat(plannedManufacturerBaseAmount);
+      const manufacturerVatAmount =
+        manufacturerPayoutAmount - plannedManufacturerBaseAmount;
+
+      const manufacturerUniqueKey = `request:${String(request._id)}:manufacturer_commission`;
+      await ManufacturerCreditLedger.updateOne(
+        { uniqueKey: manufacturerUniqueKey },
+        {
+          $setOnInsert: {
+            manufacturerOrganization: String(
+              manufacturerUser.business || manufacturerUser.name || "",
+            ).trim(),
+            manufacturerId: manufacturerUser._id,
+            type: "EARN",
+            amount: manufacturerPayoutAmount,
+            amountExcludingVat: plannedManufacturerBaseAmount,
+            vatAmount: manufacturerVatAmount,
+            amountIncludingVat: manufacturerPayoutAmount,
+            refType: "REQUEST",
+            refId: request._id,
+            uniqueKey: manufacturerUniqueKey,
+            occurredAt: new Date(),
           },
-          { upsert: true, session },
-        );
-      }
+        },
+        { upsert: true, session },
+      );
+      assignedManufacturerBaseAmount = plannedManufacturerBaseAmount;
+    } else {
+      unassignedToAdminBaseAmount += plannedManufacturerBaseAmount;
     }
 
-    if (devopsRecipientUserId && devopsPayoutAmount > 0) {
+    if (devopsRecipientUserId && plannedDevopsBaseAmount > 0) {
+      const devopsPayoutAmount = withVat(plannedDevopsBaseAmount);
+      const devopsVatAmount = devopsPayoutAmount - plannedDevopsBaseAmount;
+
       const devopsUniqueKey = `request:${String(request._id)}:devops_commission`;
       await SalesmanLedger.updateOne(
         { uniqueKey: devopsUniqueKey },
@@ -686,7 +700,7 @@ export async function distributeCommissionOnRequestSpend({
             salesmanId: devopsRecipientUserId,
             type: "EARN",
             amount: devopsPayoutAmount,
-            amountExcludingVat: devopsBaseAmount,
+            amountExcludingVat: plannedDevopsBaseAmount,
             vatAmount: devopsVatAmount,
             amountIncludingVat: devopsPayoutAmount,
             refType: "REQUEST",
@@ -696,13 +710,19 @@ export async function distributeCommissionOnRequestSpend({
         },
         { upsert: true, session },
       );
+      assignedDevopsBaseAmount = plannedDevopsBaseAmount;
+    } else {
+      unassignedToAdminBaseAmount += plannedDevopsBaseAmount;
     }
 
     if (
       hasSalesmanReferrer &&
       referrerInfo?.primaryContactUserId &&
-      salesmanPayoutAmount > 0
+      plannedSalesmanBaseAmount > 0
     ) {
+      const salesmanPayoutAmount = withVat(plannedSalesmanBaseAmount);
+      const salesmanVatAmount = salesmanPayoutAmount - plannedSalesmanBaseAmount;
+
       const salesmanUniqueKey = `request:${String(request._id)}:salesman_commission`;
       await SalesmanLedger.updateOne(
         { uniqueKey: salesmanUniqueKey },
@@ -711,7 +731,7 @@ export async function distributeCommissionOnRequestSpend({
             salesmanId: referrerInfo.primaryContactUserId,
             type: "EARN",
             amount: salesmanPayoutAmount,
-            amountExcludingVat: salesmanBaseAmount,
+            amountExcludingVat: plannedSalesmanBaseAmount,
             vatAmount: salesmanVatAmount,
             amountIncludingVat: salesmanPayoutAmount,
             refType: "REQUEST",
@@ -721,7 +741,32 @@ export async function distributeCommissionOnRequestSpend({
         },
         { upsert: true, session },
       );
+      assignedSalesmanBaseAmount = plannedSalesmanBaseAmount;
+    } else {
+      unassignedToAdminBaseAmount += plannedSalesmanBaseAmount;
     }
+
+    let assignedAdminBaseAmount = plannedAdminBaseAmount + unassignedToAdminBaseAmount;
+    const assignedBaseTotalBeforeAdmin =
+      assignedManufacturerBaseAmount +
+      assignedDevopsBaseAmount +
+      assignedSalesmanBaseAmount +
+      assignedAdminBaseAmount;
+    const baseGap = spendAmount - assignedBaseTotalBeforeAdmin;
+    if (baseGap !== 0) {
+      assignedAdminBaseAmount += baseGap;
+    }
+
+    if (assignedAdminBaseAmount < 0) {
+      const err = new Error(
+        `[COMMISSION] invalid admin base allocation: ${assignedAdminBaseAmount}`,
+      );
+      err.statusCode = 500;
+      throw err;
+    }
+
+    const adminPayoutAmount = withVat(assignedAdminBaseAmount);
+    const adminVatAmount = adminPayoutAmount - assignedAdminBaseAmount;
 
     if (adminPayoutAmount > 0) {
       const adminUser = await User.findOne({ role: "admin", active: true })
@@ -737,7 +782,7 @@ export async function distributeCommissionOnRequestSpend({
               adminUserId: adminUser._id,
               type: "EARN",
               amount: adminPayoutAmount,
-              amountExcludingVat: adminBaseAmount,
+              amountExcludingVat: assignedAdminBaseAmount,
               vatAmount: adminVatAmount,
               amountIncludingVat: adminPayoutAmount,
               refType: "REQUEST",
@@ -751,22 +796,38 @@ export async function distributeCommissionOnRequestSpend({
       }
     }
 
+    const assignedBaseTotal =
+      assignedManufacturerBaseAmount +
+      assignedDevopsBaseAmount +
+      assignedSalesmanBaseAmount +
+      assignedAdminBaseAmount;
+
+    if (Math.abs(assignedBaseTotal - spendAmount) > 1) {
+      console.error("[COMMISSION] invariant mismatch", {
+        requestId: request?.requestId,
+        spendAmount,
+        assignedBaseTotal,
+      });
+    }
+
     console.log("[COMMISSION] commission distribution summary", {
       requestId: request?.requestId,
       spendAmount,
       hasSalesmanReferrer,
-      base: {
-        manufacturer: manufacturerBaseAmount,
-        devops: devopsBaseAmount,
-        salesman: salesmanBaseAmount,
-        admin: adminBaseAmount,
+      plannedBase: {
+        manufacturer: plannedManufacturerBaseAmount,
+        devops: plannedDevopsBaseAmount,
+        salesman: plannedSalesmanBaseAmount,
+        admin: plannedAdminBaseAmount,
       },
-      payoutWithVat: {
-        manufacturer: manufacturerPayoutAmount,
-        devops: devopsPayoutAmount,
-        salesman: salesmanPayoutAmount,
-        admin: adminPayoutAmount,
+      assignedBase: {
+        manufacturer: assignedManufacturerBaseAmount,
+        devops: assignedDevopsBaseAmount,
+        salesman: assignedSalesmanBaseAmount,
+        admin: assignedAdminBaseAmount,
       },
+      unassignedToAdminBaseAmount,
+      assignedBaseTotal,
     });
   } catch (error) {
     console.error("[COMMISSION] distribute commission error:", error);

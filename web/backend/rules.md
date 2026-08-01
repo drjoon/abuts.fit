@@ -193,25 +193,47 @@
   - 차이는 크레딧 정책만 유지합니다(샘플은 의뢰비/배송비 미차감).
   - 관련 구현: `controllers/requests/common.review.controller.js`, `controllers/requests/common.requests.controller.js`
 - 크레딧 버킷(유료/무료) 무결성 SSOT:
-  - `CreditLedger.SPEND`는 `spentPaidAmount`/`spentBonusAmount`를 저장해야 합니다.
+  - `CreditLedger.SPEND`는 `spentPaidAmount`/`spentFreeAmount`를 저장해야 합니다.
   - `CreditLedger.REFUND`는 원본 SPEND의 버킷 분해값을 그대로 복원해 저장해야 합니다.
     (환불을 일괄 유료로 적립하면 안 됨)
+  - 무료 크레딧 지급 기록 SSOT는 `CHARGE + creditKind(FREE_REQUEST|FREE_SHIPPING)`입니다.
+  - 정산 보존식(의뢰 단위) SSOT:
+    - `의뢰자 순소비(의뢰 SPEND-REFUND)` = `어벗츠/제조사/개발운영사/영업자 수익합`
+    - 비교 기준 금액은 VAT 제외 공급가(`amountExcludingVat`)를 우선 사용합니다.
+    - 특정 수익 주체(제조사/개발운영/영업자) 미지정·비활성 등으로 귀속 불가한 몫은 관리자 귀속으로 재배정해 보존식을 깨지 않도록 합니다.
   - 잔액 계산은 SPEND/REFUND의 분해 필드가 있으면 이를 우선 사용하고,
     레거시 데이터(분해값 없음)에만 refType 기반 fallback을 적용합니다.
   - 같은 `businessAnchorId`에서 동시 처리로 잔액이 음수로 내려가지 않도록,
     크레딧 소비·환불은 `BusinessCreditBalance` 단일 문서의 원자 갱신으로 처리합니다.
-  - 요청 과금(`refType=REQUEST`)은 **CNC 가공 시작 콜백(`sourceStep=cnc`, success)** 시점에 수행합니다.
-  - 가공 실패 콜백(`sourceStep=cnc`, failed)에서는 요청 과금을 즉시 환불합니다.
-  - 요청 과금/환불은 재시도·중복 콜백에서도 idempotent 하게 동작해야 하며,
+  - 의뢰 과금(`refType=REQUEST`)은 **CNC 가공 시작 콜백(`sourceStep=cnc`, success)** 시점에 수행합니다.
+  - 가공 실패 콜백(`sourceStep=cnc`, failed)에서는 의뢰 과금을 즉시 환불합니다.
+  - 의뢰 과금/환불은 재시도·중복 콜백에서도 idempotent 하게 동작해야 하며,
     이전 시도 환불 완료 후 재가공 시작 시 재차감이 가능해야 합니다.
   - `BusinessCreditBalance`를 `businessAnchorId`별 잔액 SSOT로 사용하며,
-    요청 과금/요청 환불/배송비 과금/배송비 환불은 `creditBalance.service`의 원자 갱신으로 처리합니다.
+    의뢰 과금/의뢰 환불/배송비 과금/배송비 환불은 `creditBalance.service`의 원자 갱신으로 처리합니다.
   - 의뢰자/인증/관리자 크레딧 조회는 `BusinessCreditBalance`를 우선 조회하고,
     문서가 없는 앵커만 ledger 기반 백필로 생성해 읽습니다.
   - 관리자 원장 API(`GET /api/admin/credits/businesses/:id/ledger`)는
     응답 `currentBalanceSnapshot`을 `BusinessCreditBalance` SSOT로 제공합니다.
     원장 행 `balanceAfter`는 “행 시점 잔액(러닝밸런스)”으로 해석합니다.
-  - 백필 스크립트: `scripts/db/backfill-business-credit-balances.js`
+  - 백필/보정 스크립트:
+    - `scripts/db/backfill-business-credit-balances.js`
+    - `scripts/db/migrate-bonus-to-charge-creditkind.js`
+    - `scripts/db/migrate-spent-bonus-to-spent-free.js`
+    - `scripts/db/fix-spent-paid-pollution-test-only.js`
+  - 이번 수정에서 확인한 주요 소스 위치(찾기용):
+    - `models/creditLedger.model.js`
+    - `services/creditBalance.service.js`
+    - `controllers/admin/adminBonusGrant.controller.js`
+    - `controllers/businesses/business.bonus.util.js`
+    - `controllers/admin/adminCredit.controller.js`
+    - `controllers/manufacturers/manufacturer.controller.js`
+    - `controllers/admin/admin.dashboard.controller.js`
+    - `controllers/requests/common.requests.controller.js`
+    - `controllers/credits/creditLedger.controller.js`
+    - `scripts/db/migrate-bonus-to-charge-creditkind.js`
+    - `scripts/db/migrate-spent-bonus-to-spent-free.js`
+    - `scripts/db/fix-spent-paid-pollution-test-only.js`
   - 관련 구현: `models/businessCreditBalance.model.js`, `services/creditBalance.service.js`, `controllers/requests/common.review.helpers.js`, `controllers/requests/common.review.controller.js`, `controllers/bg/bg.controller.js`, `controllers/requests/common.requests.controller.js`, `controllers/credits/credit.controller.js`, `controllers/auth/auth.controller.js`
 - 우편함/배송 무결성 정책(포장.발송):
   - 우편함 재사용/배정은 **BusinessAnchor 단일 점유**를 반드시 보장합니다.

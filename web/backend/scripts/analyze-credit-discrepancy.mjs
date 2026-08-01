@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 // related files:
 // - web/backend/rules.md
-// - web/backend/app.js
-// - web/backend/server.js
+// - web/backend/models/creditLedger.model.js
+// - web/backend/services/creditBalance.service.js
+// - web/backend/controllers/admin/adminCredit.controller.js
 /**
  * 스크린샷 3 화면값과 DB 집계 차이 분석
  */
@@ -156,9 +157,9 @@ async function analyzeDiscrepancy() {
     for (const row of requestSpends) {
       const amount = Math.abs(row.amount || 0);
       totalRequestAmount += amount;
-      const bonusAmount = row.spentBonusAmount || 0;
+      const bonusAmount = row.spentFreeAmount || 0;
       const paidAmount = row.spentPaidAmount || 0;
-      console.log(`  - ${row._id}: ${amount.toLocaleString()}원 | spentBonus: ${bonusAmount.toLocaleString()} | spentPaid: ${paidAmount.toLocaleString()} | uniqueKey: ${row.uniqueKey}`);
+      console.log(`  - ${row._id}: ${amount.toLocaleString()}원 | spentFree: ${bonusAmount.toLocaleString()} | spentPaid: ${paidAmount.toLocaleString()} | uniqueKey: ${row.uniqueKey}`);
     }
     console.log(`  총액: ${totalRequestAmount.toLocaleString()}원`);
   }
@@ -172,7 +173,7 @@ async function analyzeDiscrepancy() {
       $group: {
         _id: null,
         totalSpent: { $sum: { $abs: "$amount" } },
-        totalBonusSpent: { $sum: { $ifNull: ["$spentBonusAmount", 0] } },
+        totalBonusSpent: { $sum: { $ifNull: ["$spentFreeAmount", 0] } },
         requestBonusSpent: {
           $sum: {
             $cond: [
@@ -183,7 +184,7 @@ async function analyzeDiscrepancy() {
                   { $eq: ["$refType", ""] },
                 ],
               },
-              { $ifNull: ["$spentBonusAmount", 0] },
+              { $ifNull: ["$spentFreeAmount", 0] },
               0,
             ],
           },
@@ -192,7 +193,7 @@ async function analyzeDiscrepancy() {
           $sum: {
             $cond: [
               { $in: ["$refType", ["SHIPPING_PACKAGE", "SHIPPING_FEE"]] },
-              { $ifNull: ["$spentBonusAmount", 0] },
+              { $ifNull: ["$spentFreeAmount", 0] },
               0,
             ],
           },
@@ -213,7 +214,7 @@ async function analyzeDiscrepancy() {
 
     if (agg.totalBonusSpent === 0) {
       console.log("⚠️ Aggregation 결과가 0입니다!");
-      console.log("   → spentBonusAmount 필드가 없는 레거시 데이터 때문");
+      console.log("   → spentFreeAmount 필드가 없는 레거시 데이터 때문");
       console.log("   → 집계 로직이 잔액 기반으로 동작해야 함\n");
     }
   }

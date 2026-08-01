@@ -495,7 +495,7 @@ async function ensureRequestCancelRefund({ request, actorUserId }) {
     refType: "REQUEST",
     refId: request._id,
   })
-    .select({ amount: 1, spentPaidAmount: 1, spentBonusAmount: 1 })
+    .select({ amount: 1, spentPaidAmount: 1, spentFreeAmount: 1 })
     .lean();
 
   const refundRows = await CreditLedger.find({
@@ -504,18 +504,18 @@ async function ensureRequestCancelRefund({ request, actorUserId }) {
     refType: "REQUEST",
     refId: request._id,
   })
-    .select({ amount: 1, spentPaidAmount: 1, spentBonusAmount: 1 })
+    .select({ amount: 1, spentPaidAmount: 1, spentFreeAmount: 1 })
     .lean();
 
   let totalSpentAbs = 0;
   let totalSpentPaid = 0;
-  let totalSpentBonus = 0;
+  let totalSpentFree = 0;
   for (const row of spendRows || []) {
     const amount = Math.abs(Number(row?.amount || 0));
     if (!Number.isFinite(amount) || amount <= 0) continue;
 
     const paidRaw = Number(row?.spentPaidAmount);
-    const bonusRaw = Number(row?.spentBonusAmount);
+    const bonusRaw = Number(row?.spentFreeAmount);
     const hasPaid = Number.isFinite(paidRaw);
     const hasBonus = Number.isFinite(bonusRaw);
 
@@ -540,7 +540,7 @@ async function ensureRequestCancelRefund({ request, actorUserId }) {
 
     totalSpentAbs += amount;
     totalSpentPaid += paid;
-    totalSpentBonus += bonus;
+    totalSpentFree += bonus;
   }
 
   let totalRefundAbs = 0;
@@ -551,7 +551,7 @@ async function ensureRequestCancelRefund({ request, actorUserId }) {
     if (!Number.isFinite(amount) || amount <= 0) continue;
 
     const paidRaw = Number(row?.spentPaidAmount);
-    const bonusRaw = Number(row?.spentBonusAmount);
+    const bonusRaw = Number(row?.spentFreeAmount);
     const hasPaid = Number.isFinite(paidRaw);
     const hasBonus = Number.isFinite(bonusRaw);
 
@@ -583,13 +583,13 @@ async function ensureRequestCancelRefund({ request, actorUserId }) {
   if (!Number.isFinite(refundAmount) || refundAmount <= 0) return;
 
   const refundSpentPaidAmount = Math.max(0, totalSpentPaid - totalRefundPaid);
-  const refundSpentBonusAmount = Math.max(
+  const refundSpentFreeAmount = Math.max(
     0,
-    totalSpentBonus - totalRefundBonus,
+    totalSpentFree - totalRefundBonus,
   );
 
   let normalizedRefundPaid = refundSpentPaidAmount;
-  let normalizedRefundBonus = refundSpentBonusAmount;
+  let normalizedRefundBonus = refundSpentFreeAmount;
   const refundSplitSum = normalizedRefundPaid + normalizedRefundBonus;
   if (refundSplitSum > refundAmount) {
     let overflow = refundSplitSum - refundAmount;
@@ -616,7 +616,7 @@ async function ensureRequestCancelRefund({ request, actorUserId }) {
         refId: request._id,
         uniqueKey,
         spentPaidAmount: normalizedRefundPaid,
-        spentBonusAmount: normalizedRefundBonus,
+        spentFreeAmount: normalizedRefundBonus,
       },
     },
     { upsert: true },

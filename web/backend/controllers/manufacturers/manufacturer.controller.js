@@ -1,7 +1,8 @@
 // related files:
 // - web/backend/rules.md
-// - web/backend/app.js
-// - web/backend/server.js
+// - web/backend/modules/manufacturers/manufacturer.routes.js
+// - web/backend/services/creditBalance.service.js
+// - web/frontend/src/pages/manufacturer/payments/PaymentsPage.tsx
 import { Types } from "mongoose";
 import ManufacturerPayment from "../../models/manufacturerPayment.model.js";
 import ManufacturerCreditLedger from "../../models/manufacturerCreditLedger.model.js";
@@ -141,7 +142,7 @@ export async function getManufacturerCreditLedger(req, res) {
         refType: "REQUEST",
         $or: [
           {
-            spentBonusAmount: { $gt: 0 },
+            spentFreeAmount: { $gt: 0 },
             $or: [{ spentPaidAmount: { $lte: 0 } }, { spentPaidAmount: null }],
           },
           { hasFreeRequest: true },
@@ -339,7 +340,7 @@ export async function getManufacturerCreditLedger(req, res) {
                 $project: {
                   _id: 0,
                   spentPaidAmount: 1,
-                  spentBonusAmount: 1,
+                  spentFreeAmount: 1,
                 },
               },
             ],
@@ -363,7 +364,7 @@ export async function getManufacturerCreditLedger(req, res) {
       } else {
         shippingPipeline.push({
           $match: {
-            "shippingSpend.spentBonusAmount": { $gt: 0 },
+            "shippingSpend.spentFreeAmount": { $gt: 0 },
             $or: [
               { "shippingSpend.spentPaidAmount": { $lte: 0 } },
               { "shippingSpend.spentPaidAmount": null },
@@ -1197,13 +1198,7 @@ export async function getManufacturerCreditDailySummary(req, res) {
     const freeMatch = {
       type: "SPEND",
       refType: "REQUEST",
-      $or: [
-        {
-          spentBonusAmount: { $gt: 0 },
-          $or: [{ spentPaidAmount: { $lte: 0 } }, { spentPaidAmount: null }],
-        },
-        { hasFreeRequest: true },
-      ],
+      $or: [{ spentFreeAmount: { $gt: 0 } }, { hasFreeRequest: true }],
     };
 
     if (typeof fromYmd === "string" && fromYmd.trim()) {
@@ -1233,6 +1228,13 @@ export async function getManufacturerCreditDailySummary(req, res) {
       {
         $match: {
           "requestDoc.caManufacturer": { $in: manufacturerMemberObjectIds },
+          $or: [
+            { spentFreeAmount: { $gt: 0 } },
+            {
+              hasFreeRequest: true,
+              "requestDoc.requestCategory": { $in: ["rnd_sample", "copied_sample"] },
+            },
+          ],
         },
       },
       {
@@ -1247,55 +1249,9 @@ export async function getManufacturerCreditDailySummary(req, res) {
             },
           },
           earnRequestFreeCount: { $sum: 1 },
-        },
-      },
-      {
-        $project: {
-          _id: 0,
-          ymd: "$_id.ymd",
-          earnRequestFreeCount: 1,
-        },
-      },
-    ]);
-
-    const freeRuleRequestMatch = {
-      caManufacturer: { $in: manufacturerMemberObjectIds },
-      "price.rule": "remake_monthly_free_3",
-      manufacturerStage: { $ne: "취소" },
-    };
-    if (typeof fromYmd === "string" && fromYmd.trim()) {
-      const from = new Date(`${fromYmd.trim()}T00:00:00.000+09:00`);
-      if (!Number.isNaN(from.getTime())) {
-        freeRuleRequestMatch.createdAt = {
-          ...(freeRuleRequestMatch.createdAt || {}),
-          $gte: from,
-        };
-      }
-    }
-    if (typeof toYmd === "string" && toYmd.trim()) {
-      const to = new Date(`${toYmd.trim()}T23:59:59.999+09:00`);
-      if (!Number.isNaN(to.getTime())) {
-        freeRuleRequestMatch.createdAt = {
-          ...(freeRuleRequestMatch.createdAt || {}),
-          $lte: to,
-        };
-      }
-    }
-
-    const freeRuleRows = await Request.aggregate([
-      { $match: freeRuleRequestMatch },
-      {
-        $group: {
-          _id: {
-            ymd: {
-              $dateToString: {
-                format: "%Y-%m-%d",
-                date: "$createdAt",
-                timezone: "Asia/Seoul",
-              },
-            },
+          earnRequestFreeAmount: {
+            $sum: { $ifNull: ["$spentFreeAmount", 0] },
           },
-          earnRequestFreeCount: { $sum: 1 },
         },
       },
       {
@@ -1303,29 +1259,10 @@ export async function getManufacturerCreditDailySummary(req, res) {
           _id: 0,
           ymd: "$_id.ymd",
           earnRequestFreeCount: 1,
+          earnRequestFreeAmount: 1,
         },
       },
     ]);
-
-    const freeCountMap = new Map();
-    for (const row of freeRows || []) {
-      freeCountMap.set(
-        String(row?.ymd || ""),
-        Number(row?.earnRequestFreeCount || 0),
-      );
-    }
-    for (const row of freeRuleRows || []) {
-      const ymd = String(row?.ymd || "");
-      freeCountMap.set(
-        ymd,
-        Number(freeCountMap.get(ymd) || 0) +
-          Number(row?.earnRequestFreeCount || 0),
-      );
-    }
-
-    const mergedFreeRows = Array.from(freeCountMap.entries()).map(
-      ([ymd, count]) => ({ ymd, earnRequestFreeCount: count }),
-    );
 
     const shippingRequestMatch = {
       manufacturerStage: { $ne: "취소" },
@@ -1461,6 +1398,8 @@ export async function getManufacturerCreditDailySummary(req, res) {
                 _id: 0,
                 amount: 1,
                 spentPaidAmount: 1,
+                spentFreeAmount: 1,
+                businessAnchorId: 1,
               },
             },
           ],
@@ -1486,148 +1425,214 @@ export async function getManufacturerCreditDailySummary(req, res) {
       });
     }
 
-    shippingPackagePipeline.push(
+    shippingPackagePipeline.push({
+      $project: {
+        _id: 0,
+        ymd: "$settlementYmd",
+        spendAmount: { $abs: { $ifNull: ["$shippingSpend.amount", 0] } },
+        spentPaidAmount: { $ifNull: ["$shippingSpend.spentPaidAmount", 0] },
+        spentFreeAmount: { $ifNull: ["$shippingSpend.spentFreeAmount", 0] },
+        businessAnchorId: "$shippingSpend.businessAnchorId",
+      },
+    });
+
+    const shippingSpendRows = await Request.aggregate(shippingPackagePipeline);
+
+    const requestPaidMatch = {
+      type: "SPEND",
+      refType: "REQUEST",
+      spentPaidAmount: { $gt: 0 },
+    };
+
+    if (typeof fromYmd === "string" && fromYmd.trim()) {
+      const from = new Date(`${fromYmd.trim()}T00:00:00.000+09:00`);
+      if (!Number.isNaN(from.getTime())) {
+        requestPaidMatch.createdAt = {
+          ...(requestPaidMatch.createdAt || {}),
+          $gte: from,
+        };
+      }
+    }
+    if (typeof toYmd === "string" && toYmd.trim()) {
+      const to = new Date(`${toYmd.trim()}T23:59:59.999+09:00`);
+      if (!Number.isNaN(to.getTime())) {
+        requestPaidMatch.createdAt = {
+          ...(requestPaidMatch.createdAt || {}),
+          $lte: to,
+        };
+      }
+    }
+
+    const requestPaidRows = await CreditLedger.aggregate([
+      { $match: requestPaidMatch },
+      {
+        $lookup: {
+          from: Request.collection.name,
+          localField: "refId",
+          foreignField: "_id",
+          as: "requestDoc",
+        },
+      },
+      { $unwind: "$requestDoc" },
+      {
+        $match: {
+          "requestDoc.caManufacturer": { $in: manufacturerMemberObjectIds },
+        },
+      },
       {
         $group: {
-          _id: "$settlementYmd",
-          earnShippingAmount: {
-            $sum: {
-              $cond: [
-                { $gt: ["$shippingSpend.spentPaidAmount", 0] },
-                { $abs: { $ifNull: ["$shippingSpend.amount", 0] } },
-                0,
-              ],
+          _id: {
+            ymd: {
+              $dateToString: {
+                format: "%Y-%m-%d",
+                date: "$createdAt",
+                timezone: "Asia/Seoul",
+              },
             },
           },
-          earnShippingCount: { $sum: 1 },
-          earnShippingPaidAmount: {
-            $sum: {
-              $cond: [
-                { $gt: ["$shippingSpend.spentPaidAmount", 0] },
-                { $abs: { $ifNull: ["$shippingSpend.amount", 0] } },
-                0,
-              ],
-            },
-          },
-          earnShippingPaidCount: {
-            $sum: {
-              $cond: [{ $gt: ["$shippingSpend.spentPaidAmount", 0] }, 1, 0],
-            },
-          },
-          earnShippingFreeAmount: { $sum: 0 },
-          earnShippingFreeCount: {
-            $sum: {
-              $cond: [{ $gt: ["$shippingSpend.spentPaidAmount", 0] }, 0, 1],
-            },
+          earnRequestPaidCount: { $sum: 1 },
+          earnRequestPaidAmount: {
+            $sum: { $ifNull: ["$spentPaidAmount", 0] },
           },
         },
       },
       {
         $project: {
           _id: 0,
-          ymd: "$_id",
-          earnShippingAmount: 1,
-          earnShippingCount: 1,
-          earnShippingPaidAmount: 1,
-          earnShippingPaidCount: 1,
-          earnShippingFreeAmount: 1,
-          earnShippingFreeCount: 1,
+          ymd: "$_id.ymd",
+          earnRequestPaidCount: 1,
+          earnRequestPaidAmount: 1,
         },
       },
-    );
+    ]);
 
-    const shippingClassRows = await Request.aggregate(shippingPackagePipeline);
+    const requestPaidByYmd = new Map();
+    for (const row of requestPaidRows || []) {
+      const ymd = String(row?.ymd || "");
+      if (!ymd) continue;
+      requestPaidByYmd.set(ymd, {
+        amount: Number(row?.earnRequestPaidAmount || 0),
+        count: Number(row?.earnRequestPaidCount || 0),
+      });
+    }
+
+    const requestFreeByYmd = new Map();
+    for (const row of freeRows || []) {
+      const ymd = String(row?.ymd || "");
+      if (!ymd) continue;
+      requestFreeByYmd.set(ymd, {
+        amount: Number(row?.earnRequestFreeAmount || 0),
+        count: Number(row?.earnRequestFreeCount || 0),
+      });
+    }
+
+    const shippingByYmd = new Map();
+    for (const row of shippingSpendRows || []) {
+      const ymd = String(row?.ymd || "");
+      if (!ymd) continue;
+
+      const paidAmount = Math.max(0, Number(row?.spentPaidAmount || 0));
+      const freeAmount = Math.max(0, Number(row?.spentFreeAmount || 0));
+
+      const existing = shippingByYmd.get(ymd) || {
+        paidAmount: 0,
+        paidCount: 0,
+        freeAmount: 0,
+        freeCount: 0,
+      };
+
+      if (paidAmount > 0) {
+        existing.paidAmount += paidAmount;
+        existing.paidCount += 1;
+      }
+      if (freeAmount > 0) {
+        existing.freeAmount += freeAmount;
+        existing.freeCount += 1;
+      }
+      shippingByYmd.set(ymd, existing);
+    }
+
+    const makeEmptyRow = (ymd) => ({
+      ymd,
+      earnRequestAmount: 0,
+      earnRequestCount: 0,
+      earnShippingAmount: 0,
+      earnShippingCount: 0,
+      refundAmount: 0,
+      payoutAmount: 0,
+      adjustAmount: 0,
+      netAmount: 0,
+      earnRequestPaidAmount: 0,
+      earnRequestPaidCount: 0,
+      earnRequestFreeAmount: 0,
+      earnRequestFreeCount: 0,
+      earnShippingPaidAmount: 0,
+      earnShippingPaidCount: 0,
+      earnShippingFreeAmount: 0,
+      earnShippingFreeCount: 0,
+    });
+
+    const recomputeNetAmount = (targetRow) => {
+      targetRow.netAmount =
+        Number(targetRow.earnRequestAmount || 0) +
+        Number(targetRow.earnShippingAmount || 0) +
+        Number(targetRow.refundAmount || 0) +
+        Number(targetRow.payoutAmount || 0) +
+        Number(targetRow.adjustAmount || 0);
+      return targetRow;
+    };
 
     const rowMap = new Map();
 
     for (const row of rows || []) {
       const ymd = String(row?.ymd || "");
-      rowMap.set(ymd, {
+      const requestPaid = requestPaidByYmd.get(ymd) || { amount: 0, count: 0 };
+      const normalized = {
+        ...makeEmptyRow(ymd),
         ...row,
-        earnRequestPaidAmount: Number(row?.earnRequestAmount || 0),
-        earnRequestPaidCount: Number(row?.earnRequestCount || 0),
-        earnRequestFreeAmount: 0,
-        earnRequestFreeCount: 0,
-        earnShippingPaidAmount: Number(row?.earnShippingAmount || 0),
-        earnShippingPaidCount: Number(row?.earnShippingCount || 0),
-        earnShippingFreeAmount: 0,
-        earnShippingFreeCount: 0,
-      });
-    }
-
-    for (const free of mergedFreeRows || []) {
-      const ymd = String(free?.ymd || "");
-      const existing = rowMap.get(ymd) || {
-        ymd,
-        earnRequestAmount: 0,
-        earnRequestCount: 0,
+        // 화면/정산 SSOT: 의뢰 금액/건수는 paid 분해값만 반영
+        earnRequestAmount: Number(requestPaid.amount || 0),
+        earnRequestCount: Number(requestPaid.count || 0),
+        earnRequestPaidAmount: Number(requestPaid.amount || 0),
+        earnRequestPaidCount: Number(requestPaid.count || 0),
+        // 화면/정산 SSOT: 배송 금액/건수는 shipping spend의 paid/free 분해에서만 반영
         earnShippingAmount: 0,
         earnShippingCount: 0,
-        refundAmount: 0,
-        payoutAmount: 0,
-        adjustAmount: 0,
-        netAmount: 0,
-        earnRequestPaidAmount: 0,
-        earnRequestPaidCount: 0,
-        earnRequestFreeAmount: 0,
-        earnRequestFreeCount: 0,
         earnShippingPaidAmount: 0,
         earnShippingPaidCount: 0,
         earnShippingFreeAmount: 0,
         earnShippingFreeCount: 0,
       };
-
-      existing.earnRequestFreeCount = Number(free?.earnRequestFreeCount || 0);
-      rowMap.set(ymd, existing);
+      rowMap.set(ymd, recomputeNetAmount(normalized));
     }
 
-    for (const shipping of shippingClassRows || []) {
-      const ymd = String(shipping?.ymd || "");
-      const existing = rowMap.get(ymd) || {
-        ymd,
-        earnRequestAmount: 0,
-        earnRequestCount: 0,
-        earnShippingAmount: 0,
-        earnShippingCount: 0,
-        refundAmount: 0,
-        payoutAmount: 0,
-        adjustAmount: 0,
-        netAmount: 0,
-        earnRequestPaidAmount: 0,
-        earnRequestPaidCount: 0,
-        earnRequestFreeAmount: 0,
-        earnRequestFreeCount: 0,
-        earnShippingPaidAmount: 0,
-        earnShippingPaidCount: 0,
-        earnShippingFreeAmount: 0,
-        earnShippingFreeCount: 0,
-      };
+    for (const [ymd, paid] of requestPaidByYmd.entries()) {
+      const existing = rowMap.get(ymd) || makeEmptyRow(ymd);
+      existing.earnRequestAmount = Number(paid?.amount || 0);
+      existing.earnRequestCount = Number(paid?.count || 0);
+      existing.earnRequestPaidAmount = Number(paid?.amount || 0);
+      existing.earnRequestPaidCount = Number(paid?.count || 0);
+      rowMap.set(ymd, recomputeNetAmount(existing));
+    }
 
-      const shippingAmountFromSpend = Number(shipping?.earnShippingAmount || 0);
-      const shippingCountFromSpend = Number(shipping?.earnShippingCount || 0);
+    for (const [ymd, free] of requestFreeByYmd.entries()) {
+      const existing = rowMap.get(ymd) || makeEmptyRow(ymd);
+      existing.earnRequestFreeAmount = Number(free?.amount || 0);
+      existing.earnRequestFreeCount = Number(free?.count || 0);
+      rowMap.set(ymd, recomputeNetAmount(existing));
+    }
 
-      existing.earnShippingAmount = shippingAmountFromSpend;
-      existing.earnShippingCount = shippingCountFromSpend;
+    for (const [ymd, shipping] of shippingByYmd.entries()) {
+      const existing = rowMap.get(ymd) || makeEmptyRow(ymd);
 
-      existing.earnShippingPaidAmount = Number(
-        shipping?.earnShippingPaidAmount || 0,
-      );
-      existing.earnShippingPaidCount = Number(
-        shipping?.earnShippingPaidCount || 0,
-      );
-      existing.earnShippingFreeAmount = Number(
-        shipping?.earnShippingFreeAmount || 0,
-      );
-      existing.earnShippingFreeCount = Number(
-        shipping?.earnShippingFreeCount || 0,
-      );
-      existing.netAmount =
-        Number(existing.earnRequestAmount || 0) +
-        Number(existing.earnShippingAmount || 0) +
-        Number(existing.refundAmount || 0) +
-        Number(existing.payoutAmount || 0) +
-        Number(existing.adjustAmount || 0);
-      rowMap.set(ymd, existing);
+      // 화면/정산 SSOT: 배송 금액/건수는 paid 분해값만 반영
+      existing.earnShippingAmount = Number(shipping?.paidAmount || 0);
+      existing.earnShippingCount = Number(shipping?.paidCount || 0);
+      existing.earnShippingPaidAmount = Number(shipping?.paidAmount || 0);
+      existing.earnShippingPaidCount = Number(shipping?.paidCount || 0);
+      existing.earnShippingFreeAmount = Number(shipping?.freeAmount || 0);
+      existing.earnShippingFreeCount = Number(shipping?.freeCount || 0);
+      rowMap.set(ymd, recomputeNetAmount(existing));
     }
 
     const parseKstYmd = (ymd) => {
@@ -1709,14 +1714,9 @@ export async function getManufacturerCreditDailySummary(req, res) {
           requestFreeRowsFromCreditLedger: Array.isArray(freeRows)
             ? freeRows.length
             : 0,
-          requestFreeRowsFromPriceRule: Array.isArray(freeRuleRows)
-            ? freeRuleRows.length
-            : 0,
-          mergedFreeRows: Array.isArray(mergedFreeRows)
-            ? mergedFreeRows.length
-            : 0,
-          shippingClassRows: Array.isArray(shippingClassRows)
-            ? shippingClassRows.length
+          requestFreeYmdKeys: requestFreeByYmd.size,
+          shippingSpendRows: Array.isArray(shippingSpendRows)
+            ? shippingSpendRows.length
             : 0,
           finalMergedRows: Array.isArray(mergedRows) ? mergedRows.length : 0,
         },

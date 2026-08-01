@@ -1,7 +1,8 @@
 // related files:
 // - web/frontend/rules.md
-// - web/frontend/src/App.tsx
-// - web/frontend/src/features/layout/DashboardLayout.tsx
+// - web/backend/controllers/manufacturers/manufacturer.controller.js
+// - web/backend/modules/manufacturers/manufacturer.routes.js
+// - web/frontend/src/shared/date/kst.ts
 import { useEffect, useRef, useState } from "react";
 import { apiFetch } from "@/shared/api/apiClient";
 import { toKstYmd } from "@/shared/date/kst";
@@ -64,6 +65,10 @@ type ManufacturerDailySnapshotRow = {
   netAmount: number;
 };
 
+type SnapshotValidationResult =
+  | { valid: true }
+  | { valid: false; reason: string };
+
 const PAGE_SIZE = 50;
 
 const formatDate = (iso: string) => {
@@ -100,6 +105,108 @@ const periodToDays = (period: PeriodFilterValue): number | null => {
   return null;
 };
 
+const validateSnapshotRow = (
+  r: ManufacturerDailySnapshotRow,
+): SnapshotValidationResult => {
+  const paidAmountRaw = r.earnRequestPaidAmount;
+  const paidCountRaw = r.earnRequestPaidCount;
+  const freeAmountRaw = r.earnRequestFreeAmount;
+  const freeCountRaw = r.earnRequestFreeCount;
+  const shippingPaidAmountRaw = r.earnShippingPaidAmount;
+  const shippingPaidCountRaw = r.earnShippingPaidCount;
+  const shippingFreeAmountRaw = r.earnShippingFreeAmount;
+  const shippingFreeCountRaw = r.earnShippingFreeCount;
+
+  if (
+    paidAmountRaw === undefined ||
+    paidCountRaw === undefined ||
+    freeAmountRaw === undefined ||
+    freeCountRaw === undefined ||
+    shippingPaidAmountRaw === undefined ||
+    shippingPaidCountRaw === undefined ||
+    shippingFreeAmountRaw === undefined ||
+    shippingFreeCountRaw === undefined
+  ) {
+    return { valid: false, reason: "필수 정산 분해 필드 누락" };
+  }
+
+  const paidAmount = Number(paidAmountRaw || 0);
+  const paidCount = Number(paidCountRaw || 0);
+  const freeAmount = Number(freeAmountRaw || 0);
+  const freeCount = Number(freeCountRaw || 0);
+  const requestTotalAmount = Number(r.earnRequestAmount || 0);
+  const requestTotalCount = Number(r.earnRequestCount || 0);
+
+  const shippingPaidAmount = Number(shippingPaidAmountRaw || 0);
+  const shippingPaidCount = Number(shippingPaidCountRaw || 0);
+  const shippingFreeAmount = Number(shippingFreeAmountRaw || 0);
+  const shippingFreeCount = Number(shippingFreeCountRaw || 0);
+  const shippingTotalAmount = Number(r.earnShippingAmount || 0);
+  const shippingTotalCount = Number(r.earnShippingCount || 0);
+
+  const refundAmount = Number(r.refundAmount || 0);
+  const payoutAmount = Number(r.payoutAmount || 0);
+  const adjustAmount = Number(r.adjustAmount || 0);
+  const netAmount = Number(r.netAmount || 0);
+
+  const numericValues = [
+    paidAmount,
+    paidCount,
+    freeAmount,
+    freeCount,
+    requestTotalAmount,
+    requestTotalCount,
+    shippingPaidAmount,
+    shippingPaidCount,
+    shippingFreeAmount,
+    shippingFreeCount,
+    shippingTotalAmount,
+    shippingTotalCount,
+    refundAmount,
+    payoutAmount,
+    adjustAmount,
+    netAmount,
+  ];
+  if (numericValues.some((v) => !Number.isFinite(v))) {
+    return { valid: false, reason: "비정상 숫자 필드 존재" };
+  }
+
+  if (
+    paidAmount < 0 ||
+    paidCount < 0 ||
+    freeCount < 0 ||
+    freeAmount < 0 ||
+    shippingPaidAmount < 0 ||
+    shippingPaidCount < 0 ||
+    shippingFreeAmount < 0 ||
+    shippingFreeCount < 0
+  ) {
+    return { valid: false, reason: "음수 분해값 존재" };
+  }
+
+  // 정책: 화면 총액/총건수는 paid 분해값만 반영한다.
+  if (requestTotalAmount !== paidAmount) {
+    return { valid: false, reason: "의뢰 총금액이 paid 분해값과 불일치" };
+  }
+  if (requestTotalCount !== paidCount) {
+    return { valid: false, reason: "의뢰 총건수가 paid 분해값과 불일치" };
+  }
+  if (shippingTotalAmount !== shippingPaidAmount) {
+    return { valid: false, reason: "배송 총금액이 paid 분해값과 불일치" };
+  }
+  if (shippingTotalCount !== shippingPaidCount) {
+    return { valid: false, reason: "배송 총건수가 paid 분해값과 불일치" };
+  }
+
+  const expectedNet =
+    requestTotalAmount + shippingTotalAmount + refundAmount + payoutAmount + adjustAmount;
+  if (expectedNet !== netAmount) {
+    return { valid: false, reason: "순액 계산값 불일치" };
+  }
+
+  return { valid: true };
+};
+
 export const ManufacturerPaymentPage = () => {
   const { token, user } = useAuthStore();
   const { toast } = useToast();
@@ -124,6 +231,7 @@ export const ManufacturerPaymentPage = () => {
   const [snapItems, setSnapItems] = useState<ManufacturerDailySnapshotRow[]>(
     [],
   );
+  const [snapshotAnomalyMessage, setSnapshotAnomalyMessage] = useState("");
   const anyLoading = loading || snapLoading;
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -220,6 +328,28 @@ export const ManufacturerPaymentPage = () => {
       )
         ? res.data.data
         : [];
+
+      const invalidRows = fetched
+        .map((row) => ({ row, validation: validateSnapshotRow(row) }))
+        .filter((it) => !it.validation.valid);
+
+      if (invalidRows.length > 0) {
+        const first = invalidRows[0];
+        let reason = "원인 불명";
+        if ("reason" in first.validation) {
+          reason = first.validation.reason;
+        }
+        const msg = `정산 데이터 이상 ${invalidRows.length}건 (${first.row.ymd}: ${reason})`;
+        setSnapshotAnomalyMessage(msg);
+        toast({
+          title: "정산 데이터 이상 감지",
+          description: msg,
+          variant: "destructive",
+        });
+      } else {
+        setSnapshotAnomalyMessage("");
+      }
+
       setSnapItems(fetched);
     } catch (err: any) {
       toast({
@@ -414,6 +544,11 @@ export const ManufacturerPaymentPage = () => {
             </div>
 
             <TabsContent value="snapshot" className="mt-0">
+              {snapshotAnomalyMessage ? (
+                <div className="mb-2 rounded-md border border-rose-300 bg-rose-50 px-3 py-2 text-xs text-rose-700">
+                  {snapshotAnomalyMessage}
+                </div>
+              ) : null}
               <div className="overflow-x-auto rounded-md border">
                 <Table>
                   <TableHeader>
@@ -439,19 +574,16 @@ export const ManufacturerPaymentPage = () => {
                   </TableHeader>
                   <TableBody>
                     {snapItems.map((r) => {
-                      const paidAmount = Number(
-                        r.earnRequestPaidAmount ?? r.earnRequestAmount ?? 0,
-                      );
-                      const paidCount = Number(
-                        r.earnRequestPaidCount ?? r.earnRequestCount ?? 0,
-                      );
+                      const paidAmount = Number(r.earnRequestPaidAmount ?? 0);
+                      const paidCount = Number(r.earnRequestPaidCount ?? 0);
+                      const freeAmount = Number(r.earnRequestFreeAmount ?? 0);
                       const freeCount = Number(r.earnRequestFreeCount ?? 0);
 
                       const shippingPaidAmount = Number(
-                        r.earnShippingPaidAmount ?? r.earnShippingAmount ?? 0,
+                        r.earnShippingPaidAmount ?? 0,
                       );
                       const shippingPaidCount = Number(
-                        r.earnShippingPaidCount ?? r.earnShippingCount ?? 0,
+                        r.earnShippingPaidCount ?? 0,
                       );
                       const shippingFreeAmount = Number(
                         r.earnShippingFreeAmount ?? 0,
@@ -461,7 +593,7 @@ export const ManufacturerPaymentPage = () => {
                       );
 
                       let typeText = "전체";
-                      let requestText = `유료 ₩${paidAmount.toLocaleString()} (${paidCount}) / 무료 ₩0 (${freeCount})`;
+                      let requestText = `유료 ₩${paidAmount.toLocaleString()} (${paidCount}) / 무료 ₩${freeAmount.toLocaleString()} (${freeCount})`;
                       let shippingText = `유료 ₩${shippingPaidAmount.toLocaleString()} (${shippingPaidCount}) / 무료 ₩${shippingFreeAmount.toLocaleString()} (${shippingFreeCount})`;
                       let refundText =
                         Number(r.refundAmount || 0) !== 0
@@ -481,7 +613,7 @@ export const ManufacturerPaymentPage = () => {
 
                       if (requestSettlementFilter === "free") {
                         typeText = "무료";
-                        requestText = `₩0 (${freeCount})`;
+                        requestText = `₩${freeAmount.toLocaleString()} (${freeCount})`;
                         shippingText = `₩${shippingFreeAmount.toLocaleString()} (${shippingFreeCount})`;
                         refundText = "-";
                         payoutText = "-";

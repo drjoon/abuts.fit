@@ -1,11 +1,11 @@
 
 // related files:
 // - web/backend/controllers/admin/admin.dashboard.controller.js
-// - web/backend/models/businessAnchor.model.js
-// - web/backend/models/practiceTransfer.model.js
-// - web/frontend/src/pages/admin/support/AdminChatManagement.tsx
-// - web/frontend/src/features/settings/tabs/RequestTab.tsx
-// - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
+// - web/backend/models/creditLedger.model.js
+// - web/backend/models/manufacturerCreditLedger.model.js
+// - web/backend/services/creditBalance.service.js
+// - web/frontend/src/pages/manufacturer/payments/PaymentsPage.tsx
+// - web/backend/rules.md
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { usePeriodStore } from "@/store/usePeriodStore";
@@ -1355,9 +1355,39 @@ export const AdminDashboardPage = () => {
                 </Card>
 
                 <div className="grid grid-cols-1 gap-3">
+                  {/* 카드9: 시스템 알림 */}
+                  <Card className="app-glass-card app-glass-card--lg">
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                      <CardTitle className="text-sm font-medium">시스템 알림</CardTitle>
+                      <AlertCircle className="h-4 w-4 text-muted-foreground" />
+                    </CardHeader>
+                    <CardContent className="space-y-2">
+                      {data.systemAlerts.length === 0 ? (
+                        <div className="text-xs text-muted-foreground">현재 이상 알림이 없습니다.</div>
+                      ) : (
+                        data.systemAlerts.map((alert) => (
+                          <div
+                            key={alert.id}
+                            className="rounded border bg-amber-50/60 px-2 py-1.5"
+                          >
+                            <div className="flex items-start gap-2">
+                              <div className="mt-0.5">{getAlertIcon(alert.type)}</div>
+                              <div className="min-w-0">
+                                <div className="text-xs font-medium break-words">
+                                  {alert.message}
+                                </div>
+                                <div className="text-[11px] text-muted-foreground mt-0.5">
+                                  {toDateTimeLabel(alert.date)}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </CardContent>
+                  </Card>
 
-
-                  {/* 카드9: 가격 SSOT 점검 */}
+                  {/* 카드10: 가격 SSOT 점검 */}
                   <Card className="app-glass-card app-glass-card--lg">
                     <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                       <CardTitle className="text-sm font-medium">

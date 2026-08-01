@@ -1,7 +1,8 @@
 // related files:
 // - web/backend/rules.md
-// - web/backend/app.js
-// - web/backend/server.js
+// - web/backend/modules/credits/creditLedger.routes.js
+// - web/backend/models/creditLedger.model.js
+// - web/backend/services/creditBalance.service.js
 import mongoose from "mongoose";
 import BonusGrant from "../../models/bonusGrant.model.js";
 import CreditLedger from "../../models/creditLedger.model.js";
@@ -210,7 +211,7 @@ export async function listMyCreditLedger(req, res) {
         type: 1,
         amount: 1,
         spentPaidAmount: 1,
-        spentBonusAmount: 1,
+        spentFreeAmount: 1,
         refType: 1,
         refId: 1,
         uniqueKey: 1,

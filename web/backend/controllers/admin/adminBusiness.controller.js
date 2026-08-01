@@ -1,7 +1,9 @@
 // related files:
 // - web/backend/rules.md
-// - web/backend/app.js
-// - web/backend/server.js
+// - web/backend/modules/admin/admin.routes.js
+// - web/backend/models/creditLedger.model.js
+// - web/backend/models/businessCreditBalance.model.js
+// - web/backend/services/creditBalance.service.js
 import { Types } from "mongoose";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 import User from "../../models/user.model.js";
@@ -261,7 +263,7 @@ async function reconcileOneAnchor(anchor, { execute }) {
             userId: item.userId || null,
             amount: item.amount,
             spentPaidAmount: null,
-            spentBonusAmount: null,
+            spentFreeAmount: null,
             hasFreeRequest: false,
           },
         },
@@ -282,7 +284,7 @@ async function reconcileOneAnchor(anchor, { execute }) {
             refId: new Types.ObjectId(item.requestMongoId),
             uniqueKey: item.uniqueKey,
             spentPaidAmount: null,
-            spentBonusAmount: null,
+            spentFreeAmount: null,
             hasFreeRequest: false,
             createdAt: item.createdAt,
           },
@@ -307,7 +309,7 @@ async function reconcileOneAnchor(anchor, { execute }) {
             refId: new Types.ObjectId(item.packageMongoId),
             uniqueKey: item.uniqueKey,
             spentPaidAmount: null,
-            spentBonusAmount: null,
+            spentFreeAmount: null,
             createdAt: item.createdAt,
           },
         },

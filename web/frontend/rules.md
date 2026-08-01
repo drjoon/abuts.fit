@@ -50,6 +50,8 @@
 - 관리자 대시보드/소통
   - `src/pages/admin/dashboard/AdminDashboardPage.tsx`
   - `src/pages/admin/support/AdminChatManagement.tsx`
+- 제조사 정산
+  - `src/pages/manufacturer/payments/PaymentsPage.tsx`
 
 ## 1. 구조
 
@@ -203,6 +205,11 @@
   - 적용 파일:
     - `src/pages/practice/PracticeFileTransferPage.tsx`
     - `src/pages/requestor/practice/RequestorPracticePage.tsx`
+- 제조사 정산(`src/pages/manufacturer/payments/PaymentsPage.tsx`) 표시 정책:
+  - paid/free 분해값 표시는 fallback 없이 `earnRequestPaid*`, `earnRequestFree*`, `earnShippingPaid*`, `earnShippingFree*`를 SSOT로 사용합니다.
+  - 분해 필드 누락/합계 불일치 시 행을 화면에서 제외하고 오류 토스트/배너로 예외를 노출합니다.
+  - 운영자 확인은 관리자 대시보드의 `systemAlerts` 경고를 통해 추적합니다.
+
 - API 호출은 `src/shared/api/apiClient.ts`의 `apiFetch`를 우선 사용합니다.
 - 서버 상태는 TanStack Query, 전역 UI 상태는 `src/store`를 사용합니다.
 - 파일 드롭은 개별 구현보다 `@/features/requests/components/PageFileDropZone` 재사용을 우선합니다.

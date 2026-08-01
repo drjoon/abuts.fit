@@ -1,7 +1,9 @@
 // related files:
 // - web/backend/rules.md
-// - web/backend/app.js
-// - web/backend/server.js
+// - web/backend/models/bonusGrant.model.js
+// - web/backend/models/creditLedger.model.js
+// - web/backend/controllers/admin/adminBonusGrant.controller.js
+// - web/backend/services/creditBalance.service.js
 import BonusGrant from "../../models/bonusGrant.model.js";
 import CreditLedger from "../../models/creditLedger.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
@@ -21,6 +23,7 @@ async function upsertBonusLedger({
   amount,
   refType,
   refId,
+  memo = "",
 }) {
   const uniqueKey = `bonus_grant:${String(refId)}`;
   const result = await CreditLedger.updateOne(
@@ -29,8 +32,13 @@ async function upsertBonusLedger({
       $setOnInsert: {
         businessAnchorId: businessAnchorId || null,
         userId: userId || null,
-        type: "BONUS",
+        type: "CHARGE",
+        creditKind:
+          String(refType || "") === "FREE_SHIPPING_CREDIT"
+            ? "FREE_SHIPPING"
+            : "FREE_REQUEST",
         amount,
+        memo: String(memo || "").trim(),
         refType,
         refId: businessAnchorId,
         uniqueKey,
@@ -136,6 +144,7 @@ export async function grantWelcomeBonusIfEligible({
     amount,
     refType: "WELCOME_BONUS",
     refId: grant._id,
+    memo: "가입 보너스",
   });
   if (!ledgerId) return null;
 
@@ -194,6 +203,7 @@ export async function grantFreeShippingCreditIfEligible({
     amount,
     refType: "FREE_SHIPPING_CREDIT",
     refId: grant._id,
+    memo: "가입 보너스",
   });
   if (!ledgerId) return amount;
 

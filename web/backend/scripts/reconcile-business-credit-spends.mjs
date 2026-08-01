@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 // related files:
 // - web/backend/rules.md
-// - web/backend/app.js
-// - web/backend/server.js
+// - web/backend/models/creditLedger.model.js
+// - web/backend/models/businessCreditBalance.model.js
+// - web/backend/services/creditBalance.service.js
 import mongoose, { Types } from "mongoose";
 import dotenv from "dotenv";
 import path from "path";
@@ -295,7 +296,7 @@ async function reconcileAnchor(anchor, { execute }) {
             userId: item.userId || null,
             amount: item.amount,
             spentPaidAmount: null,
-            spentBonusAmount: null,
+            spentFreeAmount: null,
             hasFreeRequest: false,
           },
         },
@@ -316,7 +317,7 @@ async function reconcileAnchor(anchor, { execute }) {
             refId: new Types.ObjectId(item.requestMongoId),
             uniqueKey: item.uniqueKey,
             spentPaidAmount: null,
-            spentBonusAmount: null,
+            spentFreeAmount: null,
             hasFreeRequest: false,
             createdAt: item.createdAt,
           },
@@ -341,7 +342,7 @@ async function reconcileAnchor(anchor, { execute }) {
             refId: new Types.ObjectId(item.packageMongoId),
             uniqueKey: item.uniqueKey,
             spentPaidAmount: null,
-            spentBonusAmount: null,
+            spentFreeAmount: null,
             createdAt: item.createdAt,
           },
         },

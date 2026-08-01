@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 // related files:
 // - web/backend/rules.md
-// - web/backend/app.js
-// - web/backend/server.js
+// - web/backend/models/creditLedger.model.js
+// - web/backend/services/creditBalance.service.js
+// - web/backend/scripts/db/fix-spent-paid-pollution-test-only.js
 import mongoose from "mongoose";
 import dotenv from "dotenv";
 import path from "path";
@@ -52,7 +53,7 @@ async function main() {
         refType: 1,
         refId: 1,
         spentPaidAmount: 1,
-        spentBonusAmount: 1,
+        spentFreeAmount: 1,
         uniqueKey: 1,
         createdAt: 1,
       })
@@ -267,7 +268,7 @@ async function main() {
 
         const expectedPaid = spend;
         const storedPaid = Number(row?.spentPaidAmount);
-        const storedBonus = Number(row?.spentBonusAmount);
+        const storedBonus = Number(row?.spentFreeAmount);
 
         const mismatch =
           !Number.isFinite(storedPaid) ||
@@ -283,7 +284,7 @@ async function main() {
               update: {
                 $set: {
                   spentPaidAmount: expectedPaid,
-                  spentBonusAmount: expectedBonus,
+                  spentFreeAmount: expectedBonus,
                 },
               },
             },

@@ -1,7 +1,9 @@
 // related files:
 // - web/backend/rules.md
-// - web/backend/app.js
-// - web/backend/server.js
+// - web/backend/modules/admin/admin.routes.js
+// - web/backend/models/bonusGrant.model.js
+// - web/backend/models/creditLedger.model.js
+// - web/backend/services/creditBalance.service.js
 import { Types } from "mongoose";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 import BonusGrant from "../../models/bonusGrant.model.js";
@@ -151,9 +153,11 @@ export async function adminOverrideWelcomeBonus(req, res) {
           businessId,
           businessAnchorId,
           userId,
-          type: "BONUS",
+          type: "CHARGE",
+          creditKind: "FREE_REQUEST",
           amount,
-          refType: "WELCOME_BONUS",
+          memo: reason,
+          refType: "FREE_REQUEST_CREDIT",
           refId: businessAnchorId || businessId,
           uniqueKey,
         },
@@ -367,6 +371,11 @@ export async function adminCancelBonusGrant(req, res) {
       });
     }
 
+    const cancelCreditKind =
+      String(grant?.type || "") === "FREE_SHIPPING_CREDIT"
+        ? "FREE_SHIPPING"
+        : "FREE_REQUEST";
+
     const uniqueKey = `bonus_grant_cancel:${String(grant._id)}`;
     const result = await CreditLedger.updateOne(
       { uniqueKey },
@@ -376,8 +385,10 @@ export async function adminCancelBonusGrant(req, res) {
           businessAnchorId,
           userId: grant.userId || null,
           type: "ADJUST",
+          creditKind: cancelCreditKind,
           amount: -amount,
-          refType: "WELCOME_BONUS_CANCEL",
+          memo: cancelReason,
+          refType: "FREE_CREDIT_CANCEL",
           refId: grant._id,
           uniqueKey,
         },
@@ -536,8 +547,10 @@ export async function adminGrantFreeShippingCredit(req, res) {
           businessId,
           businessAnchorId,
           userId,
-          type: "BONUS",
+          type: "CHARGE",
+          creditKind: "FREE_SHIPPING",
           amount,
+          memo: reason,
           refType: "FREE_SHIPPING_CREDIT",
           refId: businessAnchorId || businessId,
           uniqueKey,

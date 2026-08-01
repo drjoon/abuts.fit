@@ -9,6 +9,10 @@ import Request from "../../models/request.model.js";
 import File from "../../models/file.model.js";
 import PracticeTransfer from "../../models/practiceTransfer.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
+import CreditLedger from "../../models/creditLedger.model.js";
+import ManufacturerCreditLedger from "../../models/manufacturerCreditLedger.model.js";
+import SalesmanLedger from "../../models/salesmanLedger.model.js";
+import AdminCreditLedger from "../../models/adminCreditLedger.model.js";
 import AdminHappyCallCompletion from "../../models/adminHappyCallCompletion.model.js";
 import AdminHappyCallMemoDraft from "../../models/adminHappyCallMemoDraft.model.js";
 import {
@@ -126,6 +130,166 @@ const getCurrentKstWeekRangeUtc = () => {
     endUtc: new Date(kstWeekEnd.getTime() - 9 * 60 * 60 * 1000),
   };
 };
+
+async function buildCreditRevenueFlowMismatchSummary({ since }) {
+  const spendRows = await CreditLedger.aggregate([
+    {
+      $match: {
+        type: { $in: ["SPEND", "REFUND"] },
+        refType: "REQUEST",
+        createdAt: { $gte: since },
+        refId: { $ne: null },
+      },
+    },
+    {
+      $group: {
+        _id: "$refId",
+        spendAbs: {
+          $sum: {
+            $cond: [{ $eq: ["$type", "SPEND"] }, { $abs: "$amount" }, 0],
+          },
+        },
+        refundAbs: {
+          $sum: {
+            $cond: [{ $eq: ["$type", "REFUND"] }, { $abs: "$amount" }, 0],
+          },
+        },
+      },
+    },
+    {
+      $project: {
+        _id: 1,
+        netConsumed: { $max: [0, { $subtract: ["$spendAbs", "$refundAbs"] }] },
+      },
+    },
+    { $match: { netConsumed: { $gt: 0 } } },
+  ]);
+
+  if (!spendRows.length) {
+    return {
+      checkedRequestCount: 0,
+      mismatchCount: 0,
+      totalNetConsumed: 0,
+      totalEarnBase: 0,
+      topMismatches: [],
+    };
+  }
+
+  const requestIds = spendRows.map((r) => r._id).filter(Boolean);
+
+  const [manufacturerRows, salesmanRows, adminRows] = await Promise.all([
+    ManufacturerCreditLedger.aggregate([
+      {
+        $match: {
+          type: "EARN",
+          refType: "REQUEST",
+          refId: { $in: requestIds },
+        },
+      },
+      {
+        $group: {
+          _id: "$refId",
+          earnBase: {
+            $sum: { $ifNull: ["$amountExcludingVat", "$amount"] },
+          },
+        },
+      },
+    ]),
+    SalesmanLedger.aggregate([
+      {
+        $match: {
+          type: "EARN",
+          refType: "REQUEST",
+          refId: { $in: requestIds },
+        },
+      },
+      {
+        $group: {
+          _id: "$refId",
+          earnBase: {
+            $sum: { $ifNull: ["$amountExcludingVat", "$amount"] },
+          },
+        },
+      },
+    ]),
+    AdminCreditLedger.aggregate([
+      {
+        $match: {
+          type: "EARN",
+          refType: "REQUEST",
+          refId: { $in: requestIds },
+        },
+      },
+      {
+        $group: {
+          _id: "$refId",
+          earnBase: {
+            $sum: { $ifNull: ["$amountExcludingVat", "$amount"] },
+          },
+        },
+      },
+    ]),
+  ]);
+
+  const earnMap = new Map();
+  const addEarn = (rows) => {
+    for (const row of rows || []) {
+      const key = String(row?._id || "");
+      if (!key) continue;
+      earnMap.set(key, Number(earnMap.get(key) || 0) + Number(row?.earnBase || 0));
+    }
+  };
+  addEarn(manufacturerRows);
+  addEarn(salesmanRows);
+  addEarn(adminRows);
+
+  const mismatches = [];
+  let totalNetConsumed = 0;
+  let totalEarnBase = 0;
+
+  for (const row of spendRows) {
+    const requestId = String(row?._id || "");
+    const netConsumed = Number(row?.netConsumed || 0);
+    const earnBase = Number(earnMap.get(requestId) || 0);
+    const gap = Math.round(netConsumed - earnBase);
+
+    totalNetConsumed += netConsumed;
+    totalEarnBase += earnBase;
+
+    if (Math.abs(gap) > 1) {
+      mismatches.push({ requestId, netConsumed, earnBase, gap });
+    }
+  }
+
+  mismatches.sort((a, b) => Math.abs(b.gap) - Math.abs(a.gap));
+  const top = mismatches.slice(0, 5);
+  const topIds = top.map((it) => it.requestId).filter(Boolean);
+
+  const requestDocs = topIds.length
+    ? await Request.find({ _id: { $in: topIds } })
+        .select({ _id: 1, requestId: 1 })
+        .lean()
+    : [];
+  const requestNoById = new Map(
+    (requestDocs || []).map((d) => [String(d?._id || ""), String(d?.requestId || "")]),
+  );
+
+  const topMismatches = top.map((it) => ({
+    requestMongoId: it.requestId,
+    requestId: requestNoById.get(it.requestId) || null,
+    netConsumed: it.netConsumed,
+    earnBase: it.earnBase,
+    gap: it.gap,
+  }));
+
+  return {
+    checkedRequestCount: spendRows.length,
+    mismatchCount: mismatches.length,
+    totalNetConsumed: Math.round(totalNetConsumed),
+    totalEarnBase: Math.round(totalEarnBase),
+    topMismatches,
+  };
+}
 
 export async function getDashboardStats(req, res) {
   try {
@@ -1062,6 +1226,24 @@ export async function getDashboardStats(req, res) {
       });
     }
 
+    // 크레딧 소비 ↔ 수익 귀속 합계 무결성 점검 (의뢰 단위)
+    // SSOT: 의뢰자 순소비(netConsumed) == (어벗츠+제조사+개발운영사+영업자) 수익합(exVAT)
+    const flowSummary = await buildCreditRevenueFlowMismatchSummary({
+      since: thirtyDaysAgo,
+    });
+    if (Number(flowSummary.mismatchCount || 0) > 0) {
+      const top = (flowSummary.topMismatches || [])[0] || null;
+      const sampleText = top
+        ? `예: ${top.requestId || top.requestMongoId} (gap=${Number(top.gap || 0).toLocaleString()}원)`
+        : "";
+      systemAlerts.push({
+        id: "credit-flow:mismatch",
+        type: "warning",
+        message: `최근 30일 의뢰 크레딧 소비/수익 귀속 불일치 ${flowSummary.mismatchCount}건. ${sampleText}`.trim(),
+        date: new Date().toISOString(),
+      });
+    }
+
     // 최근 요청 및 파일 통계를 병렬로 조회
     const [recentRequests, totalFiles, totalFileSize] = await Promise.all([
       Request.find({ source: { $ne: "manufacturer_sample" } })
@@ -1144,6 +1326,7 @@ export async function getDashboardStats(req, res) {
         unmachinableSummary,
         happyCallSummary,
         practiceTransferStats: dashboardData.practiceTransfers,
+        creditFlowHealth: flowSummary,
       },
     });
   } catch (error) {

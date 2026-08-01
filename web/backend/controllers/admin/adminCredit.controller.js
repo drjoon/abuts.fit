@@ -431,7 +431,7 @@ export async function adminGetBusinessLedger(req, res) {
           type: 1,
           amount: 1,
           spentPaidAmount: 1,
-          spentBonusAmount: 1,
+          spentFreeAmount: 1,
           refType: 1,
           refId: 1,
           uniqueKey: 1,
@@ -784,11 +784,20 @@ export async function adminGetCreditStats(req, res) {
         {
           $group: {
             _id: null,
-            // 유료 크레딧 충전 (CHARGE만 - adminGetBusinessCredits와 동일한 방식)
+            // 유료 크레딧 충전 (무료 creditKind 제외)
             chargedPaid: {
               $sum: {
                 $cond: [
-                  { $eq: ["$type", "CHARGE"] },
+                  {
+                    $and: [
+                      { $eq: ["$type", "CHARGE"] },
+                      {
+                        $not: {
+                          $in: ["$creditKind", ["FREE_REQUEST", "FREE_SHIPPING"]],
+                        },
+                      },
+                    ],
+                  },
                   { $max: [{ $abs: "$amount" }, 0] },
                   0,
                 ],
@@ -825,9 +834,19 @@ export async function adminGetCreditStats(req, res) {
               $sum: {
                 $cond: [
                   {
-                    $and: [
-                      { $eq: ["$type", "BONUS"] },
-                      { $ne: ["$refType", "FREE_SHIPPING_CREDIT"] },
+                    $or: [
+                      {
+                        $and: [
+                          { $eq: ["$type", "BONUS"] },
+                          { $ne: ["$refType", "FREE_SHIPPING_CREDIT"] },
+                        ],
+                      },
+                      {
+                        $and: [
+                          { $eq: ["$type", "CHARGE"] },
+                          { $eq: ["$creditKind", "FREE_REQUEST"] },
+                        ],
+                      },
                     ],
                   },
                   { $max: ["$amount", 0] },
@@ -839,9 +858,19 @@ export async function adminGetCreditStats(req, res) {
               $sum: {
                 $cond: [
                   {
-                    $and: [
-                      { $eq: ["$type", "BONUS"] },
-                      { $eq: ["$refType", "FREE_SHIPPING_CREDIT"] },
+                    $or: [
+                      {
+                        $and: [
+                          { $eq: ["$type", "BONUS"] },
+                          { $eq: ["$refType", "FREE_SHIPPING_CREDIT"] },
+                        ],
+                      },
+                      {
+                        $and: [
+                          { $eq: ["$type", "CHARGE"] },
+                          { $eq: ["$creditKind", "FREE_SHIPPING"] },
+                        ],
+                      },
                     ],
                   },
                   { $max: ["$amount", 0] },
@@ -911,7 +940,7 @@ export async function adminGetCreditStats(req, res) {
               },
             },
             // refType이 null/undefined/빈 문자열인 레거시 데이터는 REQUEST로 간주
-            spentBonusRequestSum: {
+            spentFreeRequestSum: {
               $sum: {
                 $cond: [
                   {
@@ -931,12 +960,12 @@ export async function adminGetCreditStats(req, res) {
                       },
                     ],
                   },
-                  { $ifNull: ["$spentBonusAmount", 0] },
+                  { $ifNull: ["$spentFreeAmount", 0] },
                   0,
                 ],
               },
             },
-            spentBonusShippingSum: {
+            spentFreeShippingSum: {
               $sum: {
                 $cond: [
                   {
@@ -945,7 +974,7 @@ export async function adminGetCreditStats(req, res) {
                       { $eq: ["$refType", "SHIPPING_PACKAGE"] },
                     ],
                   },
-                  { $ifNull: ["$spentBonusAmount", 0] },
+                  { $ifNull: ["$spentFreeAmount", 0] },
                   0,
                 ],
               },
@@ -957,35 +986,35 @@ export async function adminGetCreditStats(req, res) {
 
     const summary = creditSummary[0] || {};
     const totalSpentPaidAmount = Number(summary.spentPaidSum || 0);
-    const totalSpentBonusRequestAmount = Number(
-      summary.spentBonusRequestSum || 0,
+    const totalSpentFreeRequestAmount = Number(
+      summary.spentFreeRequestSum || 0,
     );
-    const totalSpentBonusShippingAmount = Number(
-      summary.spentBonusShippingSum || 0,
+    const totalSpentFreeShippingAmount = Number(
+      summary.spentFreeShippingSum || 0,
     );
     const refundSum = Number(summary.refundSum || 0);
     const refundShippingSum = Number(summary.refundShippingSum || 0);
     const refundRequestSum = refundSum - refundShippingSum;
     const spentTotal = Math.max(0, Number(summary.spentTotal || 0) - refundSum);
 
-    const spentBonusTotal =
-      totalSpentBonusRequestAmount + totalSpentBonusShippingAmount;
+    const spentFreeTotal =
+      totalSpentFreeRequestAmount + totalSpentFreeShippingAmount;
     let netSpentPaidAmount = 0;
-    let resolvedSpentBonusRequestAmount = 0;
-    let resolvedSpentBonusShippingAmount = 0;
+    let resolvedSpentFreeRequestAmount = 0;
+    let resolvedSpentFreeShippingAmount = 0;
 
     if (
-      Math.round(totalSpentPaidAmount + spentBonusTotal) ===
+      Math.round(totalSpentPaidAmount + spentFreeTotal) ===
       Math.round(spentTotal)
     ) {
       netSpentPaidAmount = Math.max(0, totalSpentPaidAmount);
-      resolvedSpentBonusRequestAmount = Math.max(
+      resolvedSpentFreeRequestAmount = Math.max(
         0,
-        totalSpentBonusRequestAmount,
+        totalSpentFreeRequestAmount,
       );
-      resolvedSpentBonusShippingAmount = Math.max(
+      resolvedSpentFreeShippingAmount = Math.max(
         0,
-        totalSpentBonusShippingAmount,
+        totalSpentFreeShippingAmount,
       );
     } else {
       const spentByRequest = Math.max(
@@ -1007,14 +1036,14 @@ export async function adminGetCreditStats(req, res) {
       const paidFromRequest = spentByRequest - bonusRequestUsed;
 
       netSpentPaidAmount = Math.max(0, paidFromRequest + paidFromShipping);
-      resolvedSpentBonusRequestAmount = Math.max(0, bonusRequestUsed);
-      resolvedSpentBonusShippingAmount = Math.max(0, bonusShippingUsed);
+      resolvedSpentFreeRequestAmount = Math.max(0, bonusRequestUsed);
+      resolvedSpentFreeShippingAmount = Math.max(0, bonusShippingUsed);
     }
 
     const totalSpent =
       netSpentPaidAmount +
-      resolvedSpentBonusRequestAmount +
-      resolvedSpentBonusShippingAmount;
+      resolvedSpentFreeRequestAmount +
+      resolvedSpentFreeShippingAmount;
 
     const chargedPaid = Number(summary.chargedPaid || 0);
     const chargedBonusRequest = Number(summary.chargedBonusRequest || 0);
@@ -1032,11 +1061,11 @@ export async function adminGetCreditStats(req, res) {
     );
     const totalBonusRequestCredit = Math.max(
       0,
-      chargedBonusRequest - resolvedSpentBonusRequestAmount,
+      chargedBonusRequest - resolvedSpentFreeRequestAmount,
     );
     const totalBonusShippingCredit = Math.max(
       0,
-      chargedBonusShipping - resolvedSpentBonusShippingAmount,
+      chargedBonusShipping - resolvedSpentFreeShippingAmount,
     );
 
     return res.json({
@@ -1055,13 +1084,13 @@ export async function adminGetCreditStats(req, res) {
         totalBonusRequest: Math.max(0, Math.round(totalBonusRequest)),
         totalBonusShipping: Math.max(0, Math.round(totalBonusShipping)),
         totalSpentPaidAmount: Math.max(0, Math.round(netSpentPaidAmount)),
-        totalSpentBonusRequestAmount: Math.max(
+        totalSpentFreeRequestAmount: Math.max(
           0,
-          Math.round(resolvedSpentBonusRequestAmount),
+          Math.round(resolvedSpentFreeRequestAmount),
         ),
-        totalSpentBonusShippingAmount: Math.max(
+        totalSpentFreeShippingAmount: Math.max(
           0,
-          Math.round(resolvedSpentBonusShippingAmount),
+          Math.round(resolvedSpentFreeShippingAmount),
         ),
         totalPaidCredit: Math.max(0, Math.round(totalPaidCredit)),
         totalBonusRequestCredit: Math.max(
@@ -1730,11 +1759,20 @@ export async function adminGetBusinessCredits(req, res) {
           {
             $group: {
               _id: "$businessAnchorId",
-              // 유료 크레딧 충전 (CHARGE만 - REFUND는 별도 집계)
+              // 유료 크레딧 충전 (무료 creditKind 제외)
               chargedPaid: {
                 $sum: {
                   $cond: [
-                    { $eq: ["$type", "CHARGE"] },
+                    {
+                      $and: [
+                        { $eq: ["$type", "CHARGE"] },
+                        {
+                          $not: {
+                            $in: ["$creditKind", ["FREE_REQUEST", "FREE_SHIPPING"]],
+                          },
+                        },
+                      ],
+                    },
                     { $max: [{ $abs: "$amount" }, 0] },
                     0,
                   ],
@@ -1771,15 +1809,24 @@ export async function adminGetBusinessCredits(req, res) {
                   ],
                 },
               },
-              // 무료 의뢰 크레딧 충전 (BONUS이지만 FREE_SHIPPING_CREDIT 아님)
-              // BONUS는 양수여야 하므로 음수면 0으로 처리
+              // 무료 의뢰 크레딧 충전 (신규: CHARGE+FREE_REQUEST, 레거시: BONUS)
               chargedBonusRequest: {
                 $sum: {
                   $cond: [
                     {
-                      $and: [
-                        { $eq: ["$type", "BONUS"] },
-                        { $ne: ["$refType", "FREE_SHIPPING_CREDIT"] },
+                      $or: [
+                        {
+                          $and: [
+                            { $eq: ["$type", "BONUS"] },
+                            { $ne: ["$refType", "FREE_SHIPPING_CREDIT"] },
+                          ],
+                        },
+                        {
+                          $and: [
+                            { $eq: ["$type", "CHARGE"] },
+                            { $eq: ["$creditKind", "FREE_REQUEST"] },
+                          ],
+                        },
                       ],
                     },
                     { $max: ["$amount", 0] },
@@ -1787,15 +1834,24 @@ export async function adminGetBusinessCredits(req, res) {
                   ],
                 },
               },
-              // 무료 배송비 크레딧 충전 (BONUS + FREE_SHIPPING_CREDIT)
-              // BONUS는 양수여야 하므로 음수면 0으로 처리
+              // 무료 배송비 크레딧 충전 (신규: CHARGE+FREE_SHIPPING, 레거시: BONUS)
               chargedBonusShipping: {
                 $sum: {
                   $cond: [
                     {
-                      $and: [
-                        { $eq: ["$type", "BONUS"] },
-                        { $eq: ["$refType", "FREE_SHIPPING_CREDIT"] },
+                      $or: [
+                        {
+                          $and: [
+                            { $eq: ["$type", "BONUS"] },
+                            { $eq: ["$refType", "FREE_SHIPPING_CREDIT"] },
+                          ],
+                        },
+                        {
+                          $and: [
+                            { $eq: ["$type", "CHARGE"] },
+                            { $eq: ["$creditKind", "FREE_SHIPPING"] },
+                          ],
+                        },
                       ],
                     },
                     { $max: ["$amount", 0] },
@@ -1813,7 +1869,7 @@ export async function adminGetBusinessCredits(req, res) {
                   $cond: [{ $eq: ["$type", "SPEND"] }, { $abs: "$amount" }, 0],
                 },
               },
-              // fallback용: refType별 SPEND 총액 (spentBonusAmount 미저장 레거시 대응)
+              // fallback용: refType별 SPEND 총액 (spentFreeAmount 미저장 레거시 대응)
               // refType이 null/undefined/빈 문자열인 레거시 데이터는 REQUEST로 간주
               spentByRequestSum: {
                 $sum: {
@@ -1893,7 +1949,7 @@ export async function adminGetBusinessCredits(req, res) {
               },
               // 무료 의뢰 크레딧 소비 (배송비가 아닌 의뢰 결제에 사용된 무료 크레딧)
               // refType이 null/undefined/빈 문자열인 레거시 데이터는 REQUEST로 간주
-              spentBonusRequestSum: {
+              spentFreeRequestSum: {
                 $sum: {
                   $cond: [
                     {
@@ -1913,13 +1969,13 @@ export async function adminGetBusinessCredits(req, res) {
                         },
                       ],
                     },
-                    { $ifNull: ["$spentBonusAmount", 0] },
+                    { $ifNull: ["$spentFreeAmount", 0] },
                     0,
                   ],
                 },
               },
               // 무료 배송비 크레딧 소비 (배송비 결제에 사용된 무료 크레딧)
-              spentBonusShippingSum: {
+              spentFreeShippingSum: {
                 $sum: {
                   $cond: [
                     {
@@ -1928,7 +1984,7 @@ export async function adminGetBusinessCredits(req, res) {
                         { $eq: ["$refType", "SHIPPING_PACKAGE"] },
                       ],
                     },
-                    { $ifNull: ["$spentBonusAmount", 0] },
+                    { $ifNull: ["$spentFreeAmount", 0] },
                     0,
                   ],
                 },
@@ -1951,21 +2007,21 @@ export async function adminGetBusinessCredits(req, res) {
       const refundRequestSum = refundSum - refundShippingSum;
       const spentTotal = Math.max(0, Number(item.spentTotal || 0) - refundSum);
       const spentPaidRaw = Number(item.spentPaidSum || 0);
-      const spentBonusRequestRaw = Number(item.spentBonusRequestSum || 0);
-      const spentBonusShippingRaw = Number(item.spentBonusShippingSum || 0);
+      const spentFreeRequestRaw = Number(item.spentFreeRequestSum || 0);
+      const spentFreeShippingRaw = Number(item.spentFreeShippingSum || 0);
 
-      // CreditLedger에 spentPaidAmount/spentBonusAmount가 저장되어 있으면 그 값 사용
+      // CreditLedger에 spentPaidAmount/spentFreeAmount가 저장되어 있으면 그 값 사용
       // 저장된 값이 없거나 합계가 맞지 않으면 fallback 로직 사용
-      const spentBonusTotal = spentBonusRequestRaw + spentBonusShippingRaw;
-      let spentPaid, spentBonusRequest, spentBonusShipping;
+      const spentFreeTotal = spentFreeRequestRaw + spentFreeShippingRaw;
+      let spentPaid, spentFreeRequest, spentFreeShipping;
 
       if (
-        Math.round(spentPaidRaw + spentBonusTotal) === Math.round(spentTotal)
+        Math.round(spentPaidRaw + spentFreeTotal) === Math.round(spentTotal)
       ) {
         // 저장된 값이 신뢰 가능한 경우 그대로 사용
         spentPaid = spentPaidRaw;
-        spentBonusRequest = spentBonusRequestRaw;
-        spentBonusShipping = spentBonusShippingRaw;
+        spentFreeRequest = spentFreeRequestRaw;
+        spentFreeShipping = spentFreeShippingRaw;
       } else {
         // fallback: refType 기반 분리 계산
         // 의뢰(REQUEST) SPEND → bonusRequest 우선 차감
@@ -1996,8 +2052,8 @@ export async function adminGetBusinessCredits(req, res) {
         const bonusRequestUsed = Math.min(chargedBonusRequest, spentByRequest);
         const paidFromRequest = spentByRequest - bonusRequestUsed;
 
-        spentBonusShipping = bonusShippingUsed;
-        spentBonusRequest = bonusRequestUsed;
+        spentFreeShipping = bonusShippingUsed;
+        spentFreeRequest = bonusRequestUsed;
         spentPaid = paidFromRequest + paidFromShipping;
       }
 
@@ -2007,10 +2063,10 @@ export async function adminGetBusinessCredits(req, res) {
       // - bonusShippingCredit: 무료 배송비 크레딧 잔액 (배송비만 사용 가능)
       const paidCredit = Math.round(chargedPaid + adjustSum - spentPaid);
       const bonusRequestCredit = Math.round(
-        chargedBonusRequest - spentBonusRequest,
+        chargedBonusRequest - spentFreeRequest,
       );
       const bonusShippingCredit = Math.round(
-        chargedBonusShipping - spentBonusShipping,
+        chargedBonusShipping - spentFreeShipping,
       );
 
       const anchorId = String(item._id || "").trim();
@@ -2045,8 +2101,8 @@ export async function adminGetBusinessCredits(req, res) {
             Math.max(0, Math.round(chargedPaid + adjustSum)),
           ),
         ),
-        spentBonusRequestAmount: Math.max(0, Math.round(spentBonusRequest)),
-        spentBonusShippingAmount: Math.max(0, Math.round(spentBonusShipping)),
+        spentFreeRequestAmount: Math.max(0, Math.round(spentFreeRequest)),
+        spentFreeShippingAmount: Math.max(0, Math.round(spentFreeShipping)),
       };
     });
 
@@ -2063,8 +2119,8 @@ export async function adminGetBusinessCredits(req, res) {
         chargedBonusRequestAmount: 0,
         chargedBonusShippingAmount: 0,
         spentPaidAmount: 0,
-        spentBonusRequestAmount: 0,
-        spentBonusShippingAmount: 0,
+        spentFreeRequestAmount: 0,
+        spentFreeShippingAmount: 0,
       };
 
       const ownerInfo =

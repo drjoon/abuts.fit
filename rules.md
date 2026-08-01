@@ -88,7 +88,7 @@
 - 신규 의뢰 표준: `POST /api/requests/from-draft`
 - 공정 SSOT: `Request.manufacturerStage`
   - `의뢰 → CAM → 가공 → 세척.패킹 → 포장.발송 → 추적관리`
-- 요청 과금/환불 시점 정책:
+- 의뢰 과금/환불 시점 정책:
   - 의뢰비 과금은 CNC 가공 시작 콜백(`sourceStep=cnc`, success)에서 수행
   - CNC 가공 실패 콜백(`sourceStep=cnc`, failed)에서는 즉시 환불
   - 그 외 임의 경로에서 과금/환불 로직 추가 금지
@@ -96,9 +96,14 @@
 ### 2.3 크레딧/정산
 
 - 크레딧/배송/정산 귀속 키는 사용자 개인이 아니라 `businessAnchorId`
+- 크레딧 버킷 분해 필드 SSOT는 `spentPaidAmount`/`spentFreeAmount`
+- 무료 크레딧 지급 기록은 `CHARGE + creditKind(FREE_REQUEST|FREE_SHIPPING)`를 SSOT로 사용
 - 크레딧 원장(`CreditLedger`)은 **과소/과다 차감 없이 항상 정확한 합계**를 보장해야 함
   - 중복 소비/중복 환불/누락 소비 금지
   - 승인 재시도·동시 처리 상황에서도 idempotent(중복 반영 없음)하게 처리
+- 정산 보존식 SSOT(의뢰 단위):
+  - `의뢰자 순소비(의뢰 SPEND-REFUND)` = `어벗츠/제조사/개발운영사/영업자 수익합`
+  - 회계 기준 합계 비교는 VAT 제외 공급가(`amountExcludingVat`)를 우선 사용
 - 이벤트 기반 캐시 갱신 우선, 조회 시 대규모 재계산 지양
 
 ### 2.4 practice(치과) 전송

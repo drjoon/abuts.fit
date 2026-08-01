@@ -2,6 +2,7 @@
 // - web/backend/rules.md
 // - web/backend/models/businessCreditBalance.model.js
 // - web/backend/models/creditLedger.model.js
+// - web/backend/controllers/admin/adminBonusGrant.controller.js
 // - web/backend/controllers/requests/common.review.helpers.js
 // - web/backend/controllers/bg/bg.controller.js
 import { Types } from "mongoose";
@@ -12,10 +13,18 @@ function isShippingRefType(refType) {
   return refType === "SHIPPING_PACKAGE" || refType === "SHIPPING_FEE";
 }
 
-function resolveLedgerSplit(absAmount, spentPaidAmount, spentBonusAmount) {
+function normalizeCreditKind(input) {
+  const s = String(input || "").trim().toUpperCase();
+  if (s === "PAID" || s === "FREE_REQUEST" || s === "FREE_SHIPPING") {
+    return s;
+  }
+  return null;
+}
+
+function resolveLedgerSplit(absAmount, spentPaidAmount, spentFreeAmount) {
   const abs = Math.max(0, Number(absAmount) || 0);
   const paidRaw = Number(spentPaidAmount);
-  const bonusRaw = Number(spentBonusAmount);
+  const bonusRaw = Number(spentFreeAmount);
 
   const hasPaid = Number.isFinite(paidRaw);
   const hasBonus = Number.isFinite(bonusRaw);
@@ -68,8 +77,9 @@ export async function computeBusinessCreditBalanceFromLedger({
       type: 1,
       amount: 1,
       refType: 1,
+      creditKind: 1,
       spentPaidAmount: 1,
-      spentBonusAmount: 1,
+      spentFreeAmount: 1,
     })
     .session(session || null)
     .lean();
@@ -85,11 +95,20 @@ export async function computeBusinessCreditBalanceFromLedger({
     if (!Number.isFinite(amount)) continue;
 
     const absAmount = Math.abs(amount);
+    const creditKind = normalizeCreditKind(row?.creditKind);
+
     if (type === "CHARGE") {
-      paid += absAmount;
+      if (creditKind === "FREE_SHIPPING") {
+        bonusShipping += absAmount;
+      } else if (creditKind === "FREE_REQUEST") {
+        bonusRequest += absAmount;
+      } else {
+        paid += absAmount;
+      }
       continue;
     }
     if (type === "BONUS") {
+      // 레거시 하위호환: 기존 BONUS는 무료 크레딧 충전으로 간주
       if (refType === "FREE_SHIPPING_CREDIT") {
         bonusShipping += absAmount;
       } else {
@@ -98,7 +117,13 @@ export async function computeBusinessCreditBalanceFromLedger({
       continue;
     }
     if (type === "ADJUST") {
-      paid += amount;
+      if (creditKind === "FREE_SHIPPING") {
+        bonusShipping += amount;
+      } else if (creditKind === "FREE_REQUEST") {
+        bonusRequest += amount;
+      } else {
+        paid += amount;
+      }
       continue;
     }
 
@@ -106,7 +131,7 @@ export async function computeBusinessCreditBalanceFromLedger({
       const split = resolveLedgerSplit(
         absAmount,
         row?.spentPaidAmount,
-        row?.spentBonusAmount,
+        row?.spentFreeAmount,
       );
 
       if (split) {
@@ -140,7 +165,7 @@ export async function computeBusinessCreditBalanceFromLedger({
       const split = resolveLedgerSplit(
         absAmount,
         row?.spentPaidAmount,
-        row?.spentBonusAmount,
+        row?.spentFreeAmount,
       );
 
       if (split) {
@@ -355,7 +380,7 @@ export async function spendRequestCreditAtomic({
           refId: request._id,
           uniqueKey,
           spentPaidAmount: 0,
-          spentBonusAmount: 0,
+          spentFreeAmount: 0,
           hasFreeRequest: true,
         },
       },
@@ -403,7 +428,7 @@ export async function spendRequestCreditAtomic({
           userId: actorUserId || null,
           amount: -resolvedAmount,
           spentPaidAmount: fromPaid,
-          spentBonusAmount: fromBonusRequest,
+          spentFreeAmount: fromBonusRequest,
           hasFreeRequest: false,
         },
       },
@@ -453,7 +478,7 @@ export async function spendRequestCreditAtomic({
             refId: request._id,
             uniqueKey,
             spentPaidAmount: fromPaid,
-            spentBonusAmount: fromBonusRequest,
+            spentFreeAmount: fromBonusRequest,
           },
         },
         { upsert: true, session },
@@ -612,7 +637,7 @@ export async function spendShippingCreditAtomic({
           refId: packageObjectId,
           uniqueKey,
           spentPaidAmount: fromPaid,
-          spentBonusAmount: fromBonusShipping,
+          spentFreeAmount: fromBonusShipping,
         },
       },
       { upsert: true, session },
@@ -693,7 +718,7 @@ export async function refundRequestCreditAtomic({
       amount: 1,
       uniqueKey: 1,
       spentPaidAmount: 1,
-      spentBonusAmount: 1,
+      spentFreeAmount: 1,
       createdAt: 1,
     })
     .sort({ createdAt: 1, _id: 1 })
@@ -730,10 +755,10 @@ export async function refundRequestCreditAtomic({
   const split = resolveLedgerSplit(
     refundAmount,
     latestSpendRow?.spentPaidAmount,
-    latestSpendRow?.spentBonusAmount,
+    latestSpendRow?.spentFreeAmount,
   );
   const refundSpentPaidAmount = split ? split.paid : null;
-  const refundSpentBonusAmount = split ? split.bonus : null;
+  const refundSpentFreeAmount = split ? split.bonus : null;
 
   const refundKeyPrefix = `request:${String(request._id)}:machining_refund`;
   const refundAttempt = Math.max(1, (refundRows || []).length + 1);
@@ -753,7 +778,7 @@ export async function refundRequestCreditAtomic({
           refId: request._id,
           uniqueKey: refundKey,
           spentPaidAmount: refundSpentPaidAmount,
-          spentBonusAmount: refundSpentBonusAmount,
+          spentFreeAmount: refundSpentFreeAmount,
         },
       },
       { upsert: true, session },
@@ -767,7 +792,7 @@ export async function refundRequestCreditAtomic({
   if (!inserted) return { didRefund: false, reason: "already_refunded", refundKey };
 
   const incPaid = Number(refundSpentPaidAmount || 0);
-  const incBonusRequest = Number(refundSpentBonusAmount || 0);
+  const incBonusRequest = Number(refundSpentFreeAmount || 0);
   const incFallback = !split ? refundAmount : 0;
 
   await BusinessCreditBalance.updateOne(
@@ -823,7 +848,7 @@ export async function refundShippingCreditAtomic({
       amount: 1,
       uniqueKey: 1,
       spentPaidAmount: 1,
-      spentBonusAmount: 1,
+      spentFreeAmount: 1,
     })
     .session(session || null)
     .lean();
@@ -838,10 +863,10 @@ export async function refundShippingCreditAtomic({
   const split = resolveLedgerSplit(
     refundAmount,
     spendRow?.spentPaidAmount,
-    spendRow?.spentBonusAmount,
+    spendRow?.spentFreeAmount,
   );
   const refundSpentPaidAmount = split ? split.paid : null;
-  const refundSpentBonusAmount = split ? split.bonus : null;
+  const refundSpentFreeAmount = split ? split.bonus : null;
 
   const cycleNo = Math.max(0, Number(cycle || 0));
   const refundKey = `shippingPackage:${String(packageObjectId)}:shipping_fee_refund:${cycleNo}`;
@@ -860,7 +885,7 @@ export async function refundShippingCreditAtomic({
           refId: packageObjectId,
           uniqueKey: refundKey,
           spentPaidAmount: refundSpentPaidAmount,
-          spentBonusAmount: refundSpentBonusAmount,
+          spentFreeAmount: refundSpentFreeAmount,
         },
       },
       { upsert: true, session },
@@ -874,7 +899,7 @@ export async function refundShippingCreditAtomic({
   if (!inserted) return { didRefund: false, reason: "already_refunded", refundKey };
 
   const incPaid = Number(refundSpentPaidAmount || 0);
-  const incBonusShipping = Number(refundSpentBonusAmount || 0);
+  const incBonusShipping = Number(refundSpentFreeAmount || 0);
   const incFallback = !split ? refundAmount : 0;
 
   await BusinessCreditBalance.updateOne(
