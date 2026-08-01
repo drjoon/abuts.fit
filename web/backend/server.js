@@ -78,7 +78,7 @@ dbReady
     // 작업자 연속 승인 시 BG 앱(rhino, esprit, bridge, lot, pack, wbls) 과부하 방지
     startReviewApprovalWorker();
 
-    // 한진 배송조회 자동 동기화 워커 시작 (기본 10분 주기)
+    // 한진 배송조회 자동 동기화 워커 시작 (기본 1시간 주기)
     startHanjinTrackingAutoSyncWorker({ runImmediate: true });
   })
   .catch((err) => {

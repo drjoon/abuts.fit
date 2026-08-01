@@ -18,7 +18,7 @@ import {
 
 const POLL_INTERVAL_MS = 10 * 60 * 1000;
 const GLOBAL_POLL_INTERVAL_MS = Number(
-  process.env.HANJIN_TRACKING_AUTO_SYNC_INTERVAL_MS || 10 * 60 * 1000,
+  process.env.HANJIN_TRACKING_AUTO_SYNC_INTERVAL_MS || 60 * 60 * 1000,
 );
 const TRACKING_BATCH_SIZE = Number(
   process.env.HANJIN_TRACKING_SYNC_BATCH_SIZE || 100,
@@ -29,6 +29,15 @@ const TRACKING_BATCH_DELAY_MS = Number(
 const activeTimers = new Map();
 let globalTimer = null;
 let globalSyncRunning = false;
+let globalAutoSyncBlockedReason = null;
+let globalAutoSyncNextRetryAt = null;
+
+const KST_TIME_ZONE = "Asia/Seoul";
+const HOUR_MS = 60 * 60 * 1000;
+const DAY_MS = 24 * HOUR_MS;
+const WEEKDAY_RETRY_INTERVAL_MS = Number(
+  process.env.HANJIN_TRACKING_AUTO_SYNC_RETRY_WEEKDAY_MS || HOUR_MS,
+);
 
 const resolveIntervalMs = (value, fallbackMs) => {
   const parsed = Number(value);
@@ -40,6 +49,65 @@ const waitMs = (ms = 0) =>
   new Promise((resolve) => {
     setTimeout(resolve, Math.max(0, Number(ms) || 0));
   });
+
+const getKstDateParts = (date = new Date()) => {
+  const formatter = new Intl.DateTimeFormat("en-CA", {
+    timeZone: KST_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+    weekday: "short",
+  });
+  const parts = formatter.formatToParts(date);
+  const map = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return {
+    year: Number(map.year),
+    month: Number(map.month),
+    day: Number(map.day),
+    hour: Number(map.hour),
+    minute: Number(map.minute),
+    second: Number(map.second),
+    weekday: String(map.weekday || "").trim(),
+  };
+};
+
+const isKstWeekend = (date = new Date()) => {
+  const { weekday } = getKstDateParts(date);
+  return weekday === "Sat" || weekday === "Sun";
+};
+
+const msUntilNextKstWeekdayStart = (date = new Date()) => {
+  const { year, month, day, weekday } = getKstDateParts(date);
+  const daysUntilMonday = weekday === "Sat" ? 2 : 1;
+  const kstStartOfTodayUtcMs = Date.UTC(year, month - 1, day, -9, 0, 0, 0);
+  const nextMonday08UtcMs =
+    kstStartOfTodayUtcMs + daysUntilMonday * DAY_MS + 8 * HOUR_MS;
+  return Math.max(HOUR_MS, nextMonday08UtcMs - date.getTime());
+};
+
+const isHanjinApiKeyDeniedError = (error) => {
+  const status = Number(error?.status || error?.response?.status || 0);
+  const message = String(error?.data?.message || error?.message || "").trim();
+  return status === 403 && /InvalidApiKeyForGivenResource/i.test(message);
+};
+
+const resolveBlockedRetryDelayMs = () => {
+  if (isKstWeekend(new Date())) {
+    return msUntilNextKstWeekdayStart(new Date());
+  }
+  const parsed = Number(WEEKDAY_RETRY_INTERVAL_MS);
+  if (!Number.isFinite(parsed) || parsed < HOUR_MS) return HOUR_MS;
+  return parsed;
+};
+
+const clearAutoSyncBlocked = () => {
+  globalAutoSyncBlockedReason = null;
+  globalAutoSyncNextRetryAt = null;
+};
 
 const buildKey = ({ requestIds = [], trackingNumbers = [] }) => {
   const ids = Array.isArray(requestIds)
@@ -192,6 +260,7 @@ export const runHanjinTrackingAutoSyncOnce = async ({
       actorUserId: null,
       source,
     });
+    clearAutoSyncBlocked();
     return {
       skipped: false,
       reason: null,
@@ -199,6 +268,16 @@ export const runHanjinTrackingAutoSyncOnce = async ({
       syncedCount: Array.isArray(synced) ? synced.length : 0,
       synced,
     };
+  } catch (error) {
+    if (isHanjinApiKeyDeniedError(error)) {
+      globalAutoSyncBlockedReason = "invalid_api_key_for_resource";
+      return {
+        skipped: true,
+        reason: globalAutoSyncBlockedReason,
+        syncedCount: 0,
+      };
+    }
+    throw error;
   } finally {
     globalSyncRunning = false;
   }
@@ -209,10 +288,24 @@ const scheduleGlobalTrackingSync = () => {
     clearTimeout(globalTimer);
     globalTimer = null;
   }
-  const intervalMs = resolveIntervalMs(
+
+  const normalIntervalMs = resolveIntervalMs(
     GLOBAL_POLL_INTERVAL_MS,
     POLL_INTERVAL_MS,
   );
+  const blockedMode = Boolean(globalAutoSyncBlockedReason);
+  const delayMs = blockedMode ? resolveBlockedRetryDelayMs() : normalIntervalMs;
+  globalAutoSyncNextRetryAt = Date.now() + delayMs;
+
+  if (blockedMode) {
+    console.warn("[hanjinTrackingAutoSync] blocked mode active; retry scheduled", {
+      reason: globalAutoSyncBlockedReason,
+      retryInMs: delayMs,
+      retryAt: new Date(globalAutoSyncNextRetryAt).toISOString(),
+      schedule: "weekday-hourly-weekend-skip",
+    });
+  }
+
   globalTimer = setTimeout(async () => {
     try {
       await runHanjinTrackingAutoSyncOnce();
@@ -221,7 +314,7 @@ const scheduleGlobalTrackingSync = () => {
     } finally {
       scheduleGlobalTrackingSync();
     }
-  }, intervalMs);
+  }, delayMs);
   if (typeof globalTimer?.unref === "function") {
     globalTimer.unref();
   }
@@ -355,5 +448,9 @@ export const getHanjinTrackingPollStatus = () => ({
     intervalMs: resolveIntervalMs(GLOBAL_POLL_INTERVAL_MS, POLL_INTERVAL_MS),
     running: globalSyncRunning,
     scheduled: Boolean(globalTimer),
+    blockedReason: globalAutoSyncBlockedReason,
+    nextRetryAt: globalAutoSyncNextRetryAt
+      ? new Date(globalAutoSyncNextRetryAt).toISOString()
+      : null,
   },
 });
