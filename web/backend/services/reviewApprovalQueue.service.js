@@ -1,5 +1,8 @@
 // related files:
 // - web/backend/rules.md
+// - web/backend/models/reviewApprovalQueue.model.js
+// - web/backend/models/jobLock.model.js
+// - web/backend/utils/distributedJobLock.js
 // - web/backend/controllers/cnc/machiningBridge.js
 // - web/backend/socket.js
 // - web/frontend/src/shared/hooks/useSocket.ts
@@ -32,6 +35,7 @@ import { emitAppEventToRoles } from "../socket.js";
 import { triggerEspritForNc } from "../controllers/requests/common.review.esprit.js";
 import { chooseMachineForCamMachining } from "../controllers/requests/common.review.machine.js";
 import { triggerNextAutoMachiningAfterComplete } from "../controllers/cnc/machiningBridge.js";
+import { runWithJobLock } from "../utils/distributedJobLock.js";
 
 // 워커 폴링 간격 (ms). 환경변수로 조정 가능.
 const WORKER_POLL_INTERVAL_MS = Number(
@@ -45,6 +49,15 @@ const LOCK_TIMEOUT_MS = Number(
 
 // 워커 인스턴스 고유 ID (다중 인스턴스 잠금 식별용)
 const WORKER_ID = `worker-${process.pid}-${Date.now()}`;
+const WORKER_CLUSTER_LOCK_NAME =
+  process.env.REVIEW_APPROVAL_QUEUE_CLUSTER_LOCK_NAME ||
+  "worker:review-approval-queue";
+const WORKER_CLUSTER_LOCK_LEASE_MS = Number(
+  process.env.REVIEW_APPROVAL_QUEUE_CLUSTER_LOCK_LEASE_MS || 120000,
+);
+const WORKER_CLUSTER_LOCK_HEARTBEAT_MS = Number(
+  process.env.REVIEW_APPROVAL_QUEUE_CLUSTER_LOCK_HEARTBEAT_MS || 30000,
+);
 
 // 워커가 이미 실행 중인지 여부 (중복 실행 방지)
 let _workerRunning = false;
@@ -752,10 +765,23 @@ export function startReviewApprovalWorker() {
 
     _workerTickRunning = true;
     try {
-      // 큐가 빌 때까지 연속 처리
-      let processed = await processNextItem();
-      while (processed) {
-        processed = await processNextItem();
+      const lockRun = await runWithJobLock({
+        name: WORKER_CLUSTER_LOCK_NAME,
+        ownerId: WORKER_ID,
+        leaseMs: WORKER_CLUSTER_LOCK_LEASE_MS,
+        heartbeatMs: WORKER_CLUSTER_LOCK_HEARTBEAT_MS,
+        onLockMiss: () => {},
+        task: async () => {
+          // 큐가 빌 때까지 연속 처리
+          let processed = await processNextItem();
+          while (processed) {
+            processed = await processNextItem();
+          }
+        },
+      });
+
+      if (!lockRun?.acquired) {
+        return;
       }
     } catch (err) {
       if (isTransientMongoConnectivityError(err)) {

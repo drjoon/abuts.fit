@@ -1,5 +1,7 @@
 // related files:
 // - web/backend/rules.md
+// - web/backend/models/jobLock.model.js
+// - web/backend/utils/distributedJobLock.js
 // - web/backend/app.js
 // - web/backend/server.js
 // - web/backend/modules/requests/request.routes.js
@@ -15,6 +17,7 @@ import {
   resolveTrackingSyncTargets,
   HANJIN_CLIENT_ID,
 } from "./shipping.Tracking.helpers.js";
+import { runWithJobLock } from "../../utils/distributedJobLock.js";
 
 const POLL_INTERVAL_MS = 10 * 60 * 1000;
 const GLOBAL_POLL_INTERVAL_MS = Number(
@@ -31,6 +34,17 @@ let globalTimer = null;
 let globalSyncRunning = false;
 let globalAutoSyncBlockedReason = null;
 let globalAutoSyncNextRetryAt = null;
+
+const HANJIN_AUTOSYNC_LOCK_NAME =
+  process.env.HANJIN_TRACKING_AUTO_SYNC_LOCK_NAME ||
+  "worker:hanjin-tracking-auto-sync";
+const HANJIN_AUTOSYNC_OWNER_ID = `hanjin-auto-sync-${process.pid}-${Date.now()}`;
+const HANJIN_AUTOSYNC_LOCK_LEASE_MS = Number(
+  process.env.HANJIN_TRACKING_AUTO_SYNC_LOCK_LEASE_MS || 10 * 60 * 1000,
+);
+const HANJIN_AUTOSYNC_LOCK_HEARTBEAT_MS = Number(
+  process.env.HANJIN_TRACKING_AUTO_SYNC_LOCK_HEARTBEAT_MS || 60 * 1000,
+);
 
 const KST_TIME_ZONE = "Asia/Seoul";
 const HOUR_MS = 60 * 60 * 1000;
@@ -249,25 +263,45 @@ export const runHanjinTrackingAutoSyncOnce = async ({
 
   globalSyncRunning = true;
   try {
-    const allTargets = await resolveTrackingSyncTargets({});
-    const targets = allTargets.filter(isAutoSyncTarget);
-    if (!targets.length) {
-      return { skipped: false, reason: "no_targets", syncedCount: 0 };
+    const lockRun = await runWithJobLock({
+      name: HANJIN_AUTOSYNC_LOCK_NAME,
+      ownerId: HANJIN_AUTOSYNC_OWNER_ID,
+      leaseMs: HANJIN_AUTOSYNC_LOCK_LEASE_MS,
+      heartbeatMs: HANJIN_AUTOSYNC_LOCK_HEARTBEAT_MS,
+      task: async () => {
+        const allTargets = await resolveTrackingSyncTargets({});
+        const targets = allTargets.filter(isAutoSyncTarget);
+        if (!targets.length) {
+          return { skipped: false, reason: "no_targets", syncedCount: 0 };
+        }
+
+        const synced = await syncTrackingForTargets({
+          targets,
+          actorUserId: null,
+          source,
+        });
+        clearAutoSyncBlocked();
+        return {
+          skipped: false,
+          reason: null,
+          totalTargets: targets.length,
+          syncedCount: Array.isArray(synced) ? synced.length : 0,
+          synced,
+        };
+      },
+    });
+
+    if (!lockRun?.acquired) {
+      return { skipped: true, reason: "lock_not_acquired", syncedCount: 0 };
     }
 
-    const synced = await syncTrackingForTargets({
-      targets,
-      actorUserId: null,
-      source,
-    });
-    clearAutoSyncBlocked();
-    return {
-      skipped: false,
-      reason: null,
-      totalTargets: targets.length,
-      syncedCount: Array.isArray(synced) ? synced.length : 0,
-      synced,
-    };
+    return (
+      lockRun?.result || {
+        skipped: false,
+        reason: null,
+        syncedCount: 0,
+      }
+    );
   } catch (error) {
     if (isHanjinApiKeyDeniedError(error)) {
       globalAutoSyncBlockedReason = "invalid_api_key_for_resource";

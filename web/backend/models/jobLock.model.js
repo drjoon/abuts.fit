@@ -1,7 +1,9 @@
 // related files:
 // - web/backend/rules.md
-// - web/backend/app.js
-// - web/backend/server.js
+// - web/backend/utils/distributedJobLock.js
+// - web/backend/services/reviewApprovalQueue.service.js
+// - web/backend/controllers/requests/shipping.TrackingPoller.js
+// - web/backend/jobs/dummyCncWorker.js
 import mongoose from "mongoose";
 
 const jobLockSchema = new mongoose.Schema(
@@ -39,6 +41,7 @@ const jobLockSchema = new mongoose.Schema(
 jobLockSchema.index({ name: 1 }, { unique: true });
 jobLockSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
 
-const JobLock = mongoose.model("JobLock", jobLockSchema);
+const JobLock =
+  mongoose.models.JobLock || mongoose.model("JobLock", jobLockSchema);
 
 export default JobLock;

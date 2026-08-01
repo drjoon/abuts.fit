@@ -59,6 +59,9 @@
   - NAT 인스턴스는 현재 단일 구성(비이중화)이므로 재부팅/장애 여부를 집중 모니터링합니다.
   - 장기적으로 CloudWatch 알람 + NAT ASG(최소=최대=1) 자동 복구 구성을 권장합니다.
   - 안정화 이후에는 기존 `abutsfit` 단일 인스턴스 환경을 종료하고, Atlas Network Access는 NAT IP만 남기고 기존 EIP를 제거합니다.
+  - 멀티 인스턴스 백엔드에서는 워커 중복 실행 방지를 위해 Mongo 기반 분산락 SSOT를 사용합니다.
+    - 공통 락 유틸: `utils/distributedJobLock.js`
+    - 적용 워커: `services/reviewApprovalQueue.service.js`, `controllers/requests/shipping.TrackingPoller.js`, `jobs/dummyCncWorker.js`
 
 - 스크류 로트 추적(세척.패킹)은 루트 `rules.md` 섹션 **1.0.3**을 따릅니다.
 - 한진 배송조회 자동동기화 장애 우회 정책:

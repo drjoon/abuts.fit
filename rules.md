@@ -165,6 +165,7 @@
 - 루트에는 전역 진입점만 유지합니다.
   - `web/backend/app.js`
   - `web/backend/server.js`
+  - `web/backend/utils/distributedJobLock.js` (멀티 인스턴스 워커 락 SSOT)
 - 백엔드 상세 진입 파일 지도는 `web/backend/rules.md`를 참조합니다.
 
 ### 4.3 Background

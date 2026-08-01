@@ -1,5 +1,7 @@
 // related files:
 // - web/backend/rules.md
+// - web/backend/models/jobLock.model.js
+// - web/backend/utils/distributedJobLock.js
 // - web/backend/app.js
 // - web/backend/server.js
 import "../bootstrap/env.js";
@@ -10,11 +12,21 @@ import {
   isKoreanBusinessDay,
 } from "../utils/krBusinessDays.js";
 import { resolveMongoUri } from "../utils/mongoUri.js";
+import { runWithJobLock } from "../utils/distributedJobLock.js";
 
 const KST_TZ = "Asia/Seoul";
 const BRIDGE_BASE = process.env.BRIDGE_BASE;
 const BRIDGE_SHARED_SECRET = process.env.BRIDGE_SHARED_SECRET || "dev-secret";
 const INTERVAL_MS = 60 * 1000;
+const DUMMY_WORKER_LOCK_NAME =
+  process.env.DUMMY_CNC_WORKER_LOCK_NAME || "worker:dummy-cnc-scheduler";
+const DUMMY_WORKER_OWNER_ID = `dummy-cnc-${process.pid}-${Date.now()}`;
+const DUMMY_WORKER_LOCK_LEASE_MS = Number(
+  process.env.DUMMY_CNC_WORKER_LOCK_LEASE_MS || 90 * 1000,
+);
+const DUMMY_WORKER_LOCK_HEARTBEAT_MS = Number(
+  process.env.DUMMY_CNC_WORKER_LOCK_HEARTBEAT_MS || 30 * 1000,
+);
 
 let timerHandle = null;
 let running = false;
@@ -210,7 +222,19 @@ async function loop() {
   }
   running = true;
   try {
-    await runDummySchedulesOnce();
+    const lockRun = await runWithJobLock({
+      name: DUMMY_WORKER_LOCK_NAME,
+      ownerId: DUMMY_WORKER_OWNER_ID,
+      leaseMs: DUMMY_WORKER_LOCK_LEASE_MS,
+      heartbeatMs: DUMMY_WORKER_LOCK_HEARTBEAT_MS,
+      task: async () => {
+        await runDummySchedulesOnce();
+      },
+    });
+
+    if (!lockRun?.acquired) {
+      return;
+    }
   } catch (err) {
     console.error("dummyCncWorker: loop error", err);
   } finally {
