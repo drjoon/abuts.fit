@@ -36,11 +36,6 @@ if [ ! -L "$TARGET/shared" ]; then
   echo "[postdeploy] linked $TARGET/shared -> ../shared"
 fi
 
-echo "[postdeploy] Restarting service (dependencies already installed in predeploy)..."
-
-if command -v systemctl >/dev/null 2>&1; then
-  systemctl reset-failed web.service || true
-  systemctl restart web.service || true
-fi
+echo "[postdeploy] Skip manual restart. EB deploy lifecycle manages web process restart."
 
 exit 0

@@ -35,9 +35,4 @@ if [ ! -L "$TARGET/shared" ]; then
   echo "[confighooks-postdeploy] linked $TARGET/shared -> ../shared"
 fi
 
-echo "[confighooks-postdeploy] Restarting service (dependencies already installed in predeploy)..."
-
-if command -v systemctl >/dev/null 2>&1; then
-  systemctl reset-failed web.service || true
-  systemctl restart web.service || true
-fi
+echo "[confighooks-postdeploy] Skip manual restart. EB config-deploy lifecycle manages web process restart."

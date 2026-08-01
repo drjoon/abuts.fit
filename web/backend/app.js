@@ -276,6 +276,11 @@ const hasFrontendDist =
   shouldServeFrontendDist && existsSync(FRONTEND_DIST_PATH);
 const hasFrontendIndex = hasFrontendDist && existsSync(FRONTEND_INDEX_PATH);
 
+// ALB/EB health check endpoint (must be lightweight and always 200 when process is alive)
+app.get("/healthz", (req, res) => {
+  res.status(200).json({ ok: true, service: "web", ts: new Date().toISOString() });
+});
+
 app.get("/", (req, res) => {
   if (hasFrontendIndex) {
     return res.sendFile(FRONTEND_INDEX_PATH);
