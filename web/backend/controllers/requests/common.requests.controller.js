@@ -4,7 +4,8 @@
 // - web/backend/controllers/requests/common.review.controller.js
 // - web/backend/controllers/requests/common.review.helpers.js
 // - web/backend/models/systemSettings.model.js
-// - web/backend/models/creditLedger.model.js
+// - web/backend/models/ledgerJournal.model.js
+// - web/backend/models/ledgerLine.model.js
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/shipping/components/MailboxGrid.tsx
 import mongoose, { Types } from "mongoose";
@@ -14,8 +15,6 @@ import Request from "../../models/request.model.js";
 import Connection from "../../models/connection.model.js";
 import CncMachine from "../../models/cncMachine.model.js";
 import Machine from "../../models/machine.model.js";
-import CreditLedger from "../../models/creditLedger.model.js";
-import ManufacturerCreditLedger from "../../models/manufacturerCreditLedger.model.js";
 import ShippingPackage from "../../models/shippingPackage.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 import DeliveryInfo from "../../models/deliveryInfo.model.js";
@@ -53,7 +52,7 @@ import {
 import { emitAppEventToRoles } from "../../socket.js";
 import { buildMonitoringStageStatsFromGroupedRows } from "../../services/requestStageStats.service.js";
 import { buildCreatedAtFilterFromQuery } from "../../utils/dateRange.js";
-import { ensureRequestCreditRefundOnRollbackToCam } from "./common.review.helpers.js";
+import { ensureRequestCreditRollbackDeleteOnRollbackToCam } from "./common.review.helpers.js";
 
 const ESPRIT_BASE =
   process.env.ESPRIT_ADDIN_BASE_URL ||
@@ -482,154 +481,44 @@ function withBridgeHeaders(extra = {}) {
   return { ...base, ...extra };
 }
 
-async function ensureRequestCancelRefund({ request, actorUserId }) {
+async function ensureRequestCancelRollbackDelete({ request, actorUserId, session }) {
   if (!request?._id) return;
+
+  const currentStage = String(request?.manufacturerStage || "").trim();
+  const currentStageLower = currentStage.toLowerCase();
+  const isPostCamStageForCancel =
+    currentStage === "가공" ||
+    currentStage === "세척.패킹" ||
+    currentStage === "포장.발송" ||
+    currentStage === "추적관리" ||
+    currentStage === "생산" ||
+    currentStage === "세척.포장" ||
+    currentStage === "발송" ||
+    currentStageLower === "machining" ||
+    currentStageLower === "production" ||
+    currentStageLower === "packing" ||
+    currentStageLower === "shipping" ||
+    currentStageLower === "tracking";
+
+  // 중요 정책:
+  // - CAM 이전 취소(의뢰/CAM)만 차감 미발생 영역이다.
+  // - 불완전가공 포함, 가공 이후 단계 취소는 기존 REQUEST_SPEND_COMMIT 차감을 유지한다.
+  // 따라서 취소 경로에서의 소비 삭제는 CAM 복귀 롤백 타이밍과 혼동하지 않도록
+  // post-CAM 단계에서는 수행하지 않는다.
+  if (isPostCamStageForCancel) return;
 
   const businessAnchorId =
     request.businessAnchorId || request.requestor?.businessAnchorId;
   if (!businessAnchorId) return;
 
-  const spendRows = await CreditLedger.find({
+  // SSOT 정책: 취소 시 REFUND를 추가하지 않고, 기존 소비 커밋을 삭제형 롤백으로 정리한다.
+  // 단, 이 삭제 정리는 CAM 이전 취소 경로에서만 허용한다.
+  await ensureRequestCreditRollbackDeleteOnRollbackToCam({
+    request,
     businessAnchorId,
-    type: "SPEND",
-    refType: "REQUEST",
-    refId: request._id,
-  })
-    .select({ amount: 1, spentPaidAmount: 1, spentFreeAmount: 1 })
-    .lean();
-
-  const refundRows = await CreditLedger.find({
-    businessAnchorId,
-    type: "REFUND",
-    refType: "REQUEST",
-    refId: request._id,
-  })
-    .select({ amount: 1, spentPaidAmount: 1, spentFreeAmount: 1 })
-    .lean();
-
-  let totalSpentAbs = 0;
-  let totalSpentPaid = 0;
-  let totalSpentFree = 0;
-  for (const row of spendRows || []) {
-    const amount = Math.abs(Number(row?.amount || 0));
-    if (!Number.isFinite(amount) || amount <= 0) continue;
-
-    const paidRaw = Number(row?.spentPaidAmount);
-    const bonusRaw = Number(row?.spentFreeAmount);
-    const hasPaid = Number.isFinite(paidRaw);
-    const hasBonus = Number.isFinite(bonusRaw);
-
-    let paid = Math.max(0, hasPaid ? paidRaw : 0);
-    let bonus = Math.max(0, hasBonus ? bonusRaw : 0);
-    const splitSum = paid + bonus;
-
-    if (splitSum > 0) {
-      if (splitSum > amount) {
-        let overflow = splitSum - amount;
-        const reducePaid = Math.min(paid, overflow);
-        paid -= reducePaid;
-        overflow -= reducePaid;
-        if (overflow > 0) bonus = Math.max(0, bonus - overflow);
-      } else if (splitSum < amount) {
-        paid += amount - splitSum;
-      }
-    } else {
-      paid = amount;
-      bonus = 0;
-    }
-
-    totalSpentAbs += amount;
-    totalSpentPaid += paid;
-    totalSpentFree += bonus;
-  }
-
-  let totalRefundAbs = 0;
-  let totalRefundPaid = 0;
-  let totalRefundBonus = 0;
-  for (const row of refundRows || []) {
-    const amount = Math.abs(Number(row?.amount || 0));
-    if (!Number.isFinite(amount) || amount <= 0) continue;
-
-    const paidRaw = Number(row?.spentPaidAmount);
-    const bonusRaw = Number(row?.spentFreeAmount);
-    const hasPaid = Number.isFinite(paidRaw);
-    const hasBonus = Number.isFinite(bonusRaw);
-
-    let paid = Math.max(0, hasPaid ? paidRaw : 0);
-    let bonus = Math.max(0, hasBonus ? bonusRaw : 0);
-    const splitSum = paid + bonus;
-
-    if (splitSum > 0) {
-      if (splitSum > amount) {
-        let overflow = splitSum - amount;
-        const reducePaid = Math.min(paid, overflow);
-        paid -= reducePaid;
-        overflow -= reducePaid;
-        if (overflow > 0) bonus = Math.max(0, bonus - overflow);
-      } else if (splitSum < amount) {
-        paid += amount - splitSum;
-      }
-    } else {
-      paid = amount;
-      bonus = 0;
-    }
-
-    totalRefundAbs += amount;
-    totalRefundPaid += paid;
-    totalRefundBonus += bonus;
-  }
-
-  const refundAmount = Math.max(0, totalSpentAbs - totalRefundAbs);
-  if (!Number.isFinite(refundAmount) || refundAmount <= 0) return;
-
-  const refundSpentPaidAmount = Math.max(0, totalSpentPaid - totalRefundPaid);
-  const refundSpentFreeAmount = Math.max(
-    0,
-    totalSpentFree - totalRefundBonus,
-  );
-
-  let normalizedRefundPaid = refundSpentPaidAmount;
-  let normalizedRefundBonus = refundSpentFreeAmount;
-  const refundSplitSum = normalizedRefundPaid + normalizedRefundBonus;
-  if (refundSplitSum > refundAmount) {
-    let overflow = refundSplitSum - refundAmount;
-    const reducePaid = Math.min(normalizedRefundPaid, overflow);
-    normalizedRefundPaid -= reducePaid;
-    overflow -= reducePaid;
-    if (overflow > 0) {
-      normalizedRefundBonus = Math.max(0, normalizedRefundBonus - overflow);
-    }
-  } else if (refundSplitSum < refundAmount) {
-    normalizedRefundPaid += refundAmount - refundSplitSum;
-  }
-
-  const uniqueKey = `request:${String(request._id)}:cancel_refund`;
-  const result = await CreditLedger.updateOne(
-    { uniqueKey },
-    {
-      $setOnInsert: {
-        businessAnchorId,
-        userId: actorUserId || null,
-        type: "REFUND",
-        amount: refundAmount,
-        refType: "REQUEST",
-        refId: request._id,
-        uniqueKey,
-        spentPaidAmount: normalizedRefundPaid,
-        spentFreeAmount: normalizedRefundBonus,
-      },
-    },
-    { upsert: true },
-  );
-
-  if (result?.upsertedCount) {
-    await emitCreditBalanceUpdatedToBusiness({
-      businessAnchorId,
-      balanceDelta: refundAmount,
-      reason: "request_cancel_refund",
-      refId: request._id,
-    });
-  }
+    actorUserId,
+    session: session || null,
+  });
 }
 
 async function ensureDeliveryInfoShippedAtNow({ request, session }) {
@@ -2319,15 +2208,13 @@ export const updateRndUnmachinableStatus = asyncHandler(async (req, res) => {
     });
   }
 
-  const request = await Request.findById(id);
+  let request = await Request.findById(id);
   if (!request) {
     return res.status(404).json({
       success: false,
       message: "의뢰를 찾을 수 없습니다.",
     });
   }
-
-
 
   if (req.user.role === "manufacturer") {
     const orgScope = await buildManufacturerOrgScopeFilter(req);
@@ -2343,73 +2230,80 @@ export const updateRndUnmachinableStatus = asyncHandler(async (req, res) => {
     }
   }
 
-  const currentStage = String(request.manufacturerStage || "").trim();
-  const currentStageLower = currentStage.toLowerCase();
-  const now = new Date();
-  const wasUnmachinable = Boolean(request?.rnd?.unmachinableAt);
-  const requestorBusinessAnchorId = String(request.businessAnchorId || "").trim();
+  const session = await mongoose.startSession();
+  try {
+    await session.withTransaction(async () => {
+      const requestInTx = await Request.findById(id).session(session);
+      if (!requestInTx) {
+        throw new ApiError(404, "의뢰를 찾을 수 없습니다.");
+      }
 
-  // 불완전가공 신규 판정 시, 가공 이후 단계에 있던 의뢰는 CAM으로 롤백하고
-  // 기존 의뢰비 SPEND를 환불한다. (불완전가공은 의뢰비 소비 대상에서 제외)
-  const isPostCamStage =
-    currentStage === "가공" ||
-    currentStage === "세척.패킹" ||
-    currentStage === "포장.발송" ||
-    currentStage === "추적관리" ||
-    currentStage === "생산" ||
-    currentStage === "세척.포장" ||
-    currentStage === "발송" ||
-    currentStageLower === "machining" ||
-    currentStageLower === "production" ||
-    currentStageLower === "packing" ||
-    currentStageLower === "shipping" ||
-    currentStageLower === "tracking";
+      const currentStage = String(requestInTx.manufacturerStage || "").trim();
+      const currentStageLower = currentStage.toLowerCase();
+      const now = new Date();
+      const wasUnmachinable = Boolean(requestInTx?.rnd?.unmachinableAt);
 
-  if (
-    unmachinable &&
-    !wasUnmachinable &&
-    isPostCamStage &&
-    requestorBusinessAnchorId
-  ) {
-    await ensureRequestCreditRefundOnRollbackToCam({
-      request,
-      businessAnchorId: requestorBusinessAnchorId,
-      actorUserId: req.user?._id || null,
+      // 불완전가공(RnD unmachinable) 신규 판정 시, 가공 이후 단계 의뢰는 CAM으로 복귀한다.
+      // 중요 정책:
+      // - 불완전가공은 샘플이 아니다(유상 order 흐름의 품질 판정).
+      // - 이미 CAM 승인으로 발생한 REQUEST_SPEND_COMMIT 차감은 유지한다.
+      // - 즉, 이 경로에서는 크레딧/정산 장부를 수정(삭제/환불)하지 않는다.
+      const isPostCamStage =
+        currentStage === "가공" ||
+        currentStage === "세척.패킹" ||
+        currentStage === "포장.발송" ||
+        currentStage === "추적관리" ||
+        currentStage === "생산" ||
+        currentStage === "세척.포장" ||
+        currentStage === "발송" ||
+        currentStageLower === "machining" ||
+        currentStageLower === "production" ||
+        currentStageLower === "packing" ||
+        currentStageLower === "shipping" ||
+        currentStageLower === "tracking";
+
+      if (unmachinable && !wasUnmachinable && isPostCamStage) {
+        bumpRollbackCount(requestInTx, "cam");
+        applyStatusMapping(requestInTx, "CAM");
+      }
+
+      // 정책: 제조사/관리자의 "가공불가" 액션은
+      // 가능성(potential) + 판정(judged)을 동시에 기록한다.
+      // 판정 해제 시 confirmed(의뢰자 확인)도 함께 초기화한다.
+      requestInTx.rnd = {
+        ...(requestInTx.rnd || {}),
+        unmachinablePotentialAt: unmachinable
+          ? requestInTx.rnd?.unmachinablePotentialAt || now
+          : null,
+        unmachinablePotentialBy: unmachinable
+          ? requestInTx.rnd?.unmachinablePotentialBy || req.user._id
+          : null,
+        unmachinableAt: unmachinable ? now : null,
+        unmachinableBy: unmachinable ? req.user._id : null,
+        unmachinableConfirmedAt: unmachinable
+          ? requestInTx.rnd?.unmachinableConfirmedAt || null
+          : null,
+        unmachinableConfirmedBy: unmachinable
+          ? requestInTx.rnd?.unmachinableConfirmedBy || null
+          : null,
+        unmachinableFromStage: unmachinable
+          ? currentStage || null
+          : String(requestInTx.rnd?.unmachinableFromStage || "").trim() || null,
+        unmachinableReason: unmachinable ? reason : "",
+        // 재판정 시 과거 의뢰자 "계속 진행" 이력은 초기화한다.
+        requestorContinueAt: null,
+        requestorContinueBy: null,
+        requestorContinueMessage: "",
+      };
+
+      await requestInTx.save({ session });
+      request = requestInTx;
     });
-    bumpRollbackCount(request, "cam");
-    applyStatusMapping(request, "CAM");
+  } finally {
+    session.endSession();
   }
 
-  // 정책: 제조사/관리자의 "가공불가" 액션은
-  // 가능성(potential) + 판정(judged)을 동시에 기록한다.
-  // 판정 해제 시 confirmed(의뢰자 확인)도 함께 초기화한다.
-  request.rnd = {
-    ...(request.rnd || {}),
-    unmachinablePotentialAt: unmachinable
-      ? request.rnd?.unmachinablePotentialAt || now
-      : null,
-    unmachinablePotentialBy: unmachinable
-      ? request.rnd?.unmachinablePotentialBy || req.user._id
-      : null,
-    unmachinableAt: unmachinable ? now : null,
-    unmachinableBy: unmachinable ? req.user._id : null,
-    unmachinableConfirmedAt: unmachinable
-      ? request.rnd?.unmachinableConfirmedAt || null
-      : null,
-    unmachinableConfirmedBy: unmachinable
-      ? request.rnd?.unmachinableConfirmedBy || null
-      : null,
-    unmachinableFromStage: unmachinable
-      ? currentStage || null
-      : String(request.rnd?.unmachinableFromStage || "").trim() || null,
-    unmachinableReason: unmachinable ? reason : "",
-    // 재판정 시 과거 의뢰자 "계속 진행" 이력은 초기화한다.
-    requestorContinueAt: null,
-    requestorContinueBy: null,
-    requestorContinueMessage: "",
-  };
-
-  await request.save();
+  const requestorBusinessAnchorId = String(request.businessAnchorId || "").trim();
 
   // 대시보드 스냅샷/캐시도 즉시 무효화하여 읽음 카운트가 지연되지 않게 한다.
   if (requestorBusinessAnchorId) {
@@ -3177,7 +3071,7 @@ export async function updateRequestStatus(req, res) {
     }
 
     // 의뢰 조회
-    const request = await Request.findById(requestId).populate(
+    let request = await Request.findById(requestId).populate(
       "requestor",
       "businessAnchorId",
     );
@@ -3237,21 +3131,30 @@ export async function updateRequestStatus(req, res) {
 
     // 의뢰 상태 변경
     if (manufacturerStage === "취소") {
-      await ensureRequestCancelRefund({
-        request,
-        actorUserId: req.user?._id || null,
-      });
+      const session = await mongoose.startSession();
+      try {
+        await session.withTransaction(async () => {
+          await ensureRequestCancelRollbackDelete({
+            request,
+            actorUserId: req.user?._id || null,
+            session,
+          });
+          applyStatusMapping(request, manufacturerStage);
+          await request.save({ session });
+        });
+      } finally {
+        session.endSession();
+      }
+    } else {
+      applyStatusMapping(request, manufacturerStage);
+      await request.save();
     }
-
-    applyStatusMapping(request, manufacturerStage);
 
     // 신속배송(express) 모드 제거됨
 
     const legacyHexNormalized = normalizeLegacyManufacturerHexRotationOnRequest(
       request,
     );
-
-    await request.save();
 
     if (legacyHexNormalized) {
       console.info("[updateManufacturerStage] normalized legacy manufacturer hex mode", {
@@ -3304,196 +3207,7 @@ export async function updateRequestStatus(req, res) {
   }
 }
 
-// related files:
-// - web/backend/modules/requests/request.routes.js
-// - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
-// practice 전용 배치 취소(삭제) 엔드포인트
-// SSOT: POST /api/requests/practice/cancel-batch
-export async function cancelPracticeRequestsBatch(req, res) {
-  try {
-    const requestIds = Array.isArray(req.body?.requestIds)
-      ? req.body.requestIds.map((v) => String(v || "").trim()).filter(Boolean)
-      : [];
-    const requestMongoIds = Array.isArray(req.body?.requestMongoIds)
-      ? req.body.requestMongoIds.map((v) => String(v || "").trim()).filter(Boolean)
-      : [];
 
-    if (requestIds.length === 0 && requestMongoIds.length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: "requestIds 또는 requestMongoIds가 필요합니다.",
-      });
-    }
-
-    const validMongoIds = requestMongoIds.filter((id) => Types.ObjectId.isValid(id));
-    const requestFilterOr = [];
-
-    if (validMongoIds.length > 0) {
-      requestFilterOr.push({
-        _id: { $in: validMongoIds.map((id) => new Types.ObjectId(id)) },
-      });
-    }
-    if (requestIds.length > 0) {
-      requestFilterOr.push({ requestId: { $in: requestIds } });
-    }
-
-    if (requestFilterOr.length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: "유효한 요청 식별자가 없습니다.",
-      });
-    }
-
-    const requests = await Request.find({ $or: requestFilterOr }).populate(
-      "requestor",
-      "businessAnchorId",
-    );
-
-    const foundByMongoId = new Set(requests.map((row) => String(row?._id || "").trim()));
-    const foundByRequestId = new Set(
-      requests.map((row) => String(row?.requestId || "").trim()).filter(Boolean),
-    );
-
-    const precheckFailed = [];
-    const pushPrecheckFail = (id, reason) => {
-      const normalizedId = String(id || "").trim();
-      if (!normalizedId) return;
-      precheckFailed.push({
-        id: normalizedId,
-        reason: String(reason || "처리에 실패했습니다."),
-      });
-    };
-
-    for (const id of requestMongoIds) {
-      if (!Types.ObjectId.isValid(id) || !foundByMongoId.has(id)) {
-        pushPrecheckFail(id, "의뢰를 찾을 수 없습니다.");
-      }
-    }
-    for (const id of requestIds) {
-      if (!foundByRequestId.has(id)) {
-        pushPrecheckFail(id, "의뢰를 찾을 수 없습니다.");
-      }
-    }
-
-    const currentRole = String(req.user?.role || "").trim();
-    const currentBusinessAnchorId = String(req.user?.businessAnchorId || "").trim();
-    const deletableStages = ["의뢰", "CAM"];
-
-    const cancellableRequests = [];
-    const validationFailed = [...precheckFailed];
-
-    for (const request of requests) {
-      const requestMongoId = String(request?._id || "").trim();
-      const requestId = String(request?.requestId || "").trim() || requestMongoId;
-      const nsrTag = String(request?.caseInfos?.newSystemRequest?.tag || "").trim();
-      const isPracticeRouteTag =
-        nsrTag === "practice_dropzone" || nsrTag === "practice_file_transfer";
-
-      if (!isPracticeRouteTag) {
-        validationFailed.push({
-          id: requestId,
-          reason: "practice 전송 의뢰만 삭제(취소)할 수 있습니다.",
-        });
-        continue;
-      }
-
-      if (currentRole !== "admin") {
-        const ownerAnchorId = String(
-          request?.businessAnchorId || request?.requestor?.businessAnchorId || "",
-        ).trim();
-
-        if (
-          !currentBusinessAnchorId ||
-          !ownerAnchorId ||
-          ownerAnchorId !== currentBusinessAnchorId
-        ) {
-          validationFailed.push({
-            id: requestId,
-            reason: "이 의뢰를 삭제(취소)할 권한이 없습니다.",
-          });
-          continue;
-        }
-      }
-
-      const stageStatus = String(request?.manufacturerStage || "").trim();
-      if (!deletableStages.includes(stageStatus)) {
-        validationFailed.push({
-          id: requestId,
-          reason: "삭제 가능한 단계(의뢰/CAM)가 아닙니다.",
-        });
-        continue;
-      }
-
-      cancellableRequests.push({ request, requestId });
-    }
-
-    // 배치 취소 처리 병렬화: 직렬 처리 대비 응답 지연 감소
-    const settleResults = await Promise.all(
-      cancellableRequests.map(async ({ request, requestId }) => {
-        try {
-          await ensureRequestCancelRefund({
-            request,
-            actorUserId: req.user?._id || null,
-          });
-
-          applyStatusMapping(request, "취소");
-          await request.save();
-
-          const anchorId = String(
-            request?.businessAnchorId || request?.requestor?.businessAnchorId || "",
-          ).trim();
-          if (anchorId) {
-            triggerDashboardSummaryRefreshForAnchorId(
-              anchorId,
-              `practice-request-canceled:${requestId}`,
-            ).catch(() => {
-              // ignore
-            });
-            triggerPricingSnapshotForBusinessAnchorId(
-              anchorId,
-              `practice-request-canceled:${requestId}`,
-            );
-          }
-
-          return { ok: true, id: requestId };
-        } catch (error) {
-          return {
-            ok: false,
-            id: requestId,
-            reason: error?.message || "삭제(취소)에 실패했습니다.",
-          };
-        }
-      }),
-    );
-
-    const processFailed = settleResults
-      .filter((row) => !row.ok)
-      .map((row) => ({ id: String(row.id || ""), reason: String(row.reason || "처리에 실패했습니다.") }));
-    const successCount = settleResults.filter((row) => row.ok).length;
-
-    const mergedFailedReasons = [...validationFailed, ...processFailed].filter(
-      (row) => String(row.id || "").trim().length > 0,
-    );
-    const failedIds = Array.from(
-      new Set(mergedFailedReasons.map((row) => String(row.id || "").trim()).filter(Boolean)),
-    );
-
-    return res.status(200).json({
-      success: true,
-      data: {
-        successCount,
-        failedIds,
-        failedReasons: mergedFailedReasons,
-      },
-    });
-  } catch (error) {
-    return res.status(500).json({
-      success: false,
-      message: "practice 전송 의뢰 삭제(취소) 중 오류가 발생했습니다.",
-      error: error.message,
-    });
-  }
-}
 
 export async function deleteRequest(req, res) {
   try {
@@ -3589,13 +3303,21 @@ export async function deleteRequest(req, res) {
     }
 
     // 의뢰 취소 처리 (상태를 '취소'로 변경)
-    await ensureRequestCancelRefund({
-      request,
-      actorUserId: req.user?._id || null,
-    });
+    const session = await mongoose.startSession();
+    try {
+      await session.withTransaction(async () => {
+        await ensureRequestCancelRollbackDelete({
+          request,
+          actorUserId: req.user?._id || null,
+          session,
+        });
 
-    applyStatusMapping(request, "취소");
-    await request.save();
+        applyStatusMapping(request, "취소");
+        await request.save({ session });
+      });
+    } finally {
+      session.endSession();
+    }
 
     console.log("[deleteRequest] Request deleted/canceled", {
       requestId: request.requestId,

@@ -49,16 +49,21 @@ router.post(
   requestController.createRequestsBulk,
 );
 
-// 모든 의뢰 목록 조회 (테스트 코드와 일치시키기 위해 기본 경로 추가)
-router.get("/", authenticate, (req, res) => {
-  const { role } = req.user;
-  if (role === "admin") {
-    return requestController.getAllRequests(req, res);
-  }
+// 모든 의뢰 목록 조회 (요청자 의뢰 도메인 전용)
+// practice(치과)는 Request 도메인이 아니라 PracticeTransfer 도메인(/api/practice/transfers)만 사용한다.
+router.get(
+  "/",
+  authenticate,
+  authorize(["requestor", "admin"], { subRoles: ["owner", "staff"] }),
+  (req, res) => {
+    const { role } = req.user;
+    if (role === "admin") {
+      return requestController.getAllRequests(req, res);
+    }
 
-  // 그 외 역할(의뢰자 등)은 자신의 의뢰만 조회
-  return requestController.getMyRequests(req, res);
-});
+    return requestController.getMyRequests(req, res);
+  },
+);
 
 // 모든 의뢰 목록 조회 (제조사/관리자)
 router.get(
@@ -68,11 +73,12 @@ router.get(
   requestController.getAllRequests,
 );
 
-// 내 의뢰 목록 조회 (의뢰자/practice용)
+// 내 의뢰 목록 조회 (의뢰자 전용)
+// practice(치과)는 /api/practice/transfers/*를 사용하며 Request 조회 경로를 사용하지 않는다.
 router.get(
   "/my",
   authenticate,
-  authorize(["requestor", "practice", "admin"], { subRoles: ["owner", "staff"] }),
+  authorize(["requestor", "admin"], { subRoles: ["owner", "staff"] }),
   requestController.getMyRequests,
 );
 
@@ -409,13 +415,7 @@ router.patch(
   requestController.confirmRndUnmachinableByRequestor,
 );
 
-// practice(치과) 전송 의뢰 배치 취소(삭제)
-router.post(
-  "/practice/cancel-batch",
-  authenticate,
-  authorize(["practice", "admin"], { subRoles: ["owner", "staff"] }),
-  requestController.cancelPracticeRequestsBatch,
-);
+
 
 // 의뢰 상세 조회 (권한 검증은 컨트롤러에서 처리)
 router.get("/:id", authenticate, requestController.getRequestById);

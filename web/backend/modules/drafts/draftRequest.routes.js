@@ -17,7 +17,9 @@ import {
 const router = express.Router();
 
 router.use(authenticate);
-router.use(authorize(["requestor", "practice", "admin"]));
+// Request Draft는 기공소 의뢰(Request) 전용이다.
+// practice(치과)는 /api/practice/transfers(/draft)만 사용한다.
+router.use(authorize(["requestor", "admin"]));
 
 // 새 드래프트 생성
 router.post("/", createDraft);

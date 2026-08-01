@@ -22,8 +22,10 @@ const systemSettingsSchema = new mongoose.Schema(
     creditSettings: {
       minCreditForRequest: { type: Number, default: 10000 },
       shippingFee: { type: Number, default: 3500 },
-      defaultWelcomeBonusCredit: { type: Number, default: 30000 },
-      defaultFreeShippingCredit: { type: Number, default: 7000 },
+      defaultRequestFreeCredit: { type: Number, default: 30000 },
+      defaultShippingFreeCredit: { type: Number, default: 7000 },
+      defaultWelcomeBonusCredit: { type: Number, default: 30000 }, // legacy 호환 (앱 안정화 후 삭제 예정)
+      defaultFreeShippingCredit: { type: Number, default: 7000 }, // legacy 호환 (앱 안정화 후 삭제 예정)
     },
     // 한진 송하인 정보: EBS 환경변수 한글 인코딩 버그로 인해 DB에서 관리
     // (환경변수로 읽으면 한글이 "??"로 깨짐 → rules.md 섹션 6.7.0 참고)

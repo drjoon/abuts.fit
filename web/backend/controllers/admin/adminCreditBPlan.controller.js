@@ -1,12 +1,16 @@
 // related files:
 // - web/backend/rules.md
+// - web/backend/models/businessCreditBalance.model.js
+// - web/backend/models/ledgerJournal.model.js
+// - web/backend/models/ledgerLine.model.js
+// - web/backend/services/generalLedger.service.js
 // - web/backend/app.js
 // - web/backend/server.js
 import mongoose from "mongoose";
 import ChargeOrder from "../../models/chargeOrder.model.js";
 import BankTransaction from "../../models/bankTransaction.model.js";
-import CreditLedger from "../../models/creditLedger.model.js";
 import TaxInvoiceDraft from "../../models/taxInvoiceDraft.model.js";
+import BusinessCreditBalance from "../../models/businessCreditBalance.model.js";
 import AdminAuditLog from "../../models/adminAuditLog.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 import ActivityLog from "../../models/activityLog.model.js";
@@ -15,6 +19,7 @@ import {
   upsertBankTransaction,
   autoMatchBankTransactionsOnce,
 } from "../../utils/creditBPlanMatching.js";
+import { postGeneralLedgerJournal } from "../../services/generalLedger.service.js";
 
 async function writeAuditLog({ req, action, refType, refId, details }) {
   const actorUserId = req.user?._id;
@@ -466,29 +471,65 @@ export async function adminManualMatch(req, res) {
         { session },
       );
 
-      const uniqueKey = `bplan:bankTx:${String(tx._id)}:charge`;
-      const creditLedgerResult = await CreditLedger.updateOne(
-        { uniqueKey },
-        {
-          $setOnInsert: {
-            businessAnchorId: order.businessAnchorId || null,
-            userId: order.userId,
-            type: "CHARGE",
-            amount: Number(order.supplyAmount),
+      const idempotencyKey = `gl:bplan:bankTx:${String(tx._id)}:charge`;
+      const chargeAmount = Math.max(0, Math.round(Number(order.supplyAmount || 0)));
+      if (chargeAmount <= 0) {
+        throw new Error("유효하지 않은 충전 금액입니다.");
+      }
+
+      const glResult = await postGeneralLedgerJournal({
+        idempotencyKey,
+        eventType: "CHARGE_PAID",
+        businessAnchorId: order.businessAnchorId,
+        refType: "CHARGE_ORDER",
+        refId: order._id,
+        occurredAt: new Date(),
+        createdBy: req.user?._id || null,
+        meta: {
+          chargeOrderId: String(order._id),
+          bankTransactionId: String(tx._id),
+          depositCode: String(order.depositCode || "").trim() || null,
+          source: "admin_bplan_manual_match",
+        },
+        lines: [
+          {
+            accountCode: "REQ_PAID_CREDIT",
+            ownerRole: "requestor",
+            ownerId: order.businessAnchorId,
+            amount: chargeAmount,
+            amountExcludingVat: chargeAmount,
+            vatAmount: 0,
+            amountIncludingVat: chargeAmount,
+            creditKind: "PAID",
             refType: "CHARGE_ORDER",
             refId: order._id,
-            uniqueKey,
           },
-        },
-        { upsert: true, session },
-      );
+        ],
+        session,
+      });
 
-      if (creditLedgerResult?.upsertedCount) {
+      if (glResult?.posted) {
+        await BusinessCreditBalance.updateOne(
+          { businessAnchorId: order.businessAnchorId },
+          {
+            $inc: {
+              paidCredit: chargeAmount,
+              version: 1,
+            },
+            $setOnInsert: {
+              businessAnchorId: order.businessAnchorId,
+              bonusRequestCredit: 0,
+              bonusShippingCredit: 0,
+            },
+          },
+          { upsert: true, session },
+        );
+
         await emitCreditBalanceUpdatedToBusiness({
           businessAnchorId: order.businessAnchorId,
-          balanceDelta: Number(order.supplyAmount),
+          balanceDelta: chargeAmount,
           reason: "bplan_admin_charge",
-          refId: order._id,
+          refId: glResult?.journalId || order._id,
         });
       }
 

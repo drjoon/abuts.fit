@@ -879,6 +879,14 @@ export async function cancelPracticeTransfersBatch(req, res) {
       filterOr.push({ _id: { $in: validMongoIds.map((id) => new Types.ObjectId(id)) } });
     }
 
+    // 모든 식별자가 무효하면 빈 $or 쿼리를 만들지 말고 요청 자체를 거절한다.
+    if (filterOr.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "유효한 transferIds 또는 transferMongoIds가 필요합니다.",
+      });
+    }
+
     const baseScope =
       role === "admin"
         ? {}
@@ -895,6 +903,28 @@ export async function cancelPracticeTransfersBatch(req, res) {
     let successCount = 0;
     const failedIds = [];
     const affectedByAnchor = new Map();
+
+    // 요청했지만 scope/status 조건에서 찾지 못한 ID는 실패 목록에 반환한다.
+    const foundTransferIdSet = new Set(
+      docs.map((doc) => String(doc?.transferId || "").trim()).filter(Boolean),
+    );
+    const foundTransferMongoIdSet = new Set(
+      docs.map((doc) => String(doc?._id || "").trim()).filter(Boolean),
+    );
+    for (const transferId of transferIds) {
+      if (!foundTransferIdSet.has(transferId)) {
+        failedIds.push(transferId);
+      }
+    }
+    for (const transferMongoId of transferMongoIds) {
+      if (!Types.ObjectId.isValid(transferMongoId)) {
+        failedIds.push(transferMongoId);
+        continue;
+      }
+      if (!foundTransferMongoIdSet.has(transferMongoId)) {
+        failedIds.push(transferMongoId);
+      }
+    }
 
     for (const doc of docs) {
       try {
@@ -956,7 +986,7 @@ export async function cancelPracticeTransfersBatch(req, res) {
       success: true,
       data: {
         successCount,
-        failedIds,
+        failedIds: Array.from(new Set(failedIds.filter(Boolean))),
       },
     });
   } catch (error) {

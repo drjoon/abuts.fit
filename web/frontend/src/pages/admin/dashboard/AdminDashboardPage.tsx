@@ -1,8 +1,8 @@
 
 // related files:
 // - web/backend/controllers/admin/admin.dashboard.controller.js
-// - web/backend/models/creditLedger.model.js
-// - web/backend/models/manufacturerCreditLedger.model.js
+// - web/backend/models/ledgerJournal.model.js
+// - web/backend/models/ledgerLine.model.js
 // - web/backend/services/creditBalance.service.js
 // - web/frontend/src/pages/manufacturer/payments/PaymentsPage.tsx
 // - web/backend/rules.md

@@ -1,14 +1,17 @@
 // related files:
 // - web/backend/rules.md
 // - web/backend/modules/credits/creditLedger.routes.js
-// - web/backend/models/creditLedger.model.js
+// - web/backend/models/ledgerJournal.model.js
+// - web/backend/models/ledgerLine.model.js
 // - web/backend/services/creditBalance.service.js
 import mongoose from "mongoose";
-import BonusGrant from "../../models/bonusGrant.model.js";
-import CreditLedger from "../../models/creditLedger.model.js";
+import FreeCreditGrant from "../../models/freeCreditGrant.model.js";
 import DeliveryInfo from "../../models/deliveryInfo.model.js";
 import Request from "../../models/request.model.js";
 import ShippingPackage from "../../models/shippingPackage.model.js";
+import LedgerLine from "../../models/ledgerLine.model.js";
+import LedgerJournal from "../../models/ledgerJournal.model.js";
+import { getBusinessCreditBalanceSnapshot } from "../../services/creditBalance.service.js";
 
 function normalizeNumber(value) {
   const num = Number(value);
@@ -77,9 +80,10 @@ function safeRegex(query) {
   return new RegExp(escaped, "i");
 }
 
-function parseBonusGrantIdFromUniqueKey(uniqueKey) {
-  const raw = String(uniqueKey || "").trim();
-  const m = raw.match(/^bonus_grant:(.+)$/);
+function parseFreeCreditGrantIdFromUniqueKey(uniqueKey) {
+  const raw = String(uniqueKey || "").trim().replace(/^gl:/, "");
+  // legacy 호환 (앱 안정화 후 삭제 예정): bonus_grant prefix 병행 파싱
+  const m = raw.match(/^(?:bonus_grant|free_credit_grant):([a-f0-9]{24})$/i);
   return m ? m[1] : "";
 }
 
@@ -93,144 +97,254 @@ export async function listMyCreditLedger(req, res) {
     });
   }
 
-  const typeRaw = String(req.query.type || "")
-    .trim()
-    .toUpperCase();
+  const anchorObjectId = new mongoose.Types.ObjectId(String(businessAnchorId));
+
+  const typeRaw = String(req.query.type || "").trim().toUpperCase();
   const periodRaw = String(req.query.period || "").trim();
   const qRaw = String(req.query.q || "").trim();
 
   const page = Math.max(1, Number(req.query.page || 1) || 1);
-  const pageSize = Math.min(
-    200,
-    Math.max(1, Number(req.query.pageSize || 50) || 50),
-  );
+  const pageSize = Math.min(200, Math.max(1, Number(req.query.pageSize || 50) || 50));
 
-  const match = {
-    businessAnchorId: new mongoose.Types.ObjectId(String(businessAnchorId)),
-  };
+  const balanceSnapshot = await getBusinessCreditBalanceSnapshot({
+    businessAnchorId: anchorObjectId,
+    upsertIfMissing: true,
+  });
+  const currentBalance = Number(balanceSnapshot?.balance || 0);
 
-  if (
-    typeRaw &&
-    typeRaw !== "ALL" &&
-    ["CHARGE", "BONUS", "SPEND", "REFUND", "ADJUST"].includes(typeRaw)
-  ) {
-    match.type = typeRaw;
-  }
-
-  const createdAt = {};
-
+  const occurredAt = {};
   const sinceFromPeriod = parsePeriod(periodRaw);
-  if (sinceFromPeriod) {
-    createdAt.$gte = sinceFromPeriod;
-  }
+  if (sinceFromPeriod) occurredAt.$gte = sinceFromPeriod;
 
   const fromRaw = String(req.query.from || "").trim();
   const toRaw = String(req.query.to || "").trim();
 
   if (fromRaw) {
     const from = new Date(fromRaw);
-    if (!Number.isNaN(from.getTime())) {
-      createdAt.$gte = from;
-    }
+    if (!Number.isNaN(from.getTime())) occurredAt.$gte = from;
   }
-
   if (toRaw) {
     const to = new Date(toRaw);
-    if (!Number.isNaN(to.getTime())) {
-      createdAt.$lte = to;
+    if (!Number.isNaN(to.getTime())) occurredAt.$lte = to;
+  }
+
+  let requestIdSearchObjectId = null;
+  const looksLikeRequestId = /^\d{8}-\d{6}$/.test(qRaw);
+  if (looksLikeRequestId) {
+    const requestDoc = await Request.findOne({ requestId: qRaw }).select({ _id: 1 }).lean();
+    if (requestDoc?._id) {
+      requestIdSearchObjectId = new mongoose.Types.ObjectId(String(requestDoc._id));
     }
   }
 
-  if (Object.keys(createdAt).length) {
-    match.createdAt = createdAt;
+  const match = {
+    ownerRole: "requestor",
+    ownerId: anchorObjectId,
+    accountCode: {
+      $in: ["REQ_PAID_CREDIT", "REQ_FREE_REQUEST_CREDIT", "REQ_FREE_SHIPPING_CREDIT"],
+    },
+  };
+
+  if (Object.keys(occurredAt).length) {
+    match.occurredAt = occurredAt;
+  }
+
+  const pipeline = [
+    { $match: match },
+    {
+      $lookup: {
+        from: LedgerJournal.collection.name,
+        localField: "journalId",
+        foreignField: "journalId",
+        as: "journalDoc",
+      },
+    },
+    {
+      $unwind: {
+        path: "$journalDoc",
+        preserveNullAndEmptyArrays: true,
+      },
+    },
+    {
+      $addFields: {
+        eventType: { $ifNull: ["$journalDoc.eventType", ""] },
+        amountBase: { $ifNull: ["$amountExcludingVat", "$amount"] },
+        uniqueKey: {
+          $concat: [
+            "gl:",
+            {
+              $ifNull: [
+                "$journalDoc.meta.spendUniqueKey",
+                { $ifNull: ["$journalDoc.idempotencyKey", "$journalId"] },
+              ],
+            },
+          ],
+        },
+        requestIdMeta: { $ifNull: ["$journalDoc.meta.requestId", ""] },
+      },
+    },
+    {
+      $group: {
+        _id: "$journalId",
+        occurredAt: { $max: "$occurredAt" },
+        createdAt: { $max: "$createdAt" },
+        eventType: { $first: "$eventType" },
+        refType: { $first: "$refType" },
+        refId: { $first: "$refId" },
+        uniqueKey: { $first: "$uniqueKey" },
+        amount: { $sum: "$amountBase" },
+        spentPaidAmount: {
+          $sum: {
+            $cond: [
+              {
+                $and: [
+                  { $in: ["$eventType", ["REQUEST_SPEND_COMMIT", "SHIPPING_SPEND_COMMIT"]] },
+                  { $eq: ["$accountCode", "REQ_PAID_CREDIT"] },
+                  { $lt: ["$amountBase", 0] },
+                ],
+              },
+              { $abs: "$amountBase" },
+              0,
+            ],
+          },
+        },
+        spentFreeAmount: {
+          $sum: {
+            $cond: [
+              {
+                $and: [
+                  { $in: ["$eventType", ["REQUEST_SPEND_COMMIT", "SHIPPING_SPEND_COMMIT"]] },
+                  {
+                    $in: [
+                      "$accountCode",
+                      ["REQ_FREE_REQUEST_CREDIT", "REQ_FREE_SHIPPING_CREDIT"],
+                    ],
+                  },
+                  { $lt: ["$amountBase", 0] },
+                ],
+              },
+              { $abs: "$amountBase" },
+              0,
+            ],
+          },
+        },
+      },
+    },
+    {
+      $addFields: {
+        type: {
+          $switch: {
+            branches: [
+              { case: { $eq: ["$eventType", "CHARGE_PAID"] }, then: "CHARGE_PAID" },
+              {
+                case: { $eq: ["$eventType", "CHARGE_FREE_REQUEST"] },
+                then: "CHARGE_FREE_REQUEST",
+              },
+              {
+                case: { $eq: ["$eventType", "CHARGE_FREE_SHIPPING"] },
+                then: "CHARGE_FREE_SHIPPING",
+              },
+              {
+                case: {
+                  $and: [
+                    {
+                      $in: [
+                        "$eventType",
+                        ["REQUEST_SPEND_COMMIT", "SHIPPING_SPEND_COMMIT"],
+                      ],
+                    },
+                    { $gt: ["$spentPaidAmount", 0] },
+                  ],
+                },
+                then: "SPEND_PAID",
+              },
+              {
+                case: { $eq: ["$eventType", "REQUEST_SPEND_COMMIT"] },
+                then: "SPEND_FREE_REQUEST",
+              },
+              {
+                case: { $eq: ["$eventType", "SHIPPING_SPEND_COMMIT"] },
+                then: "SPEND_FREE_SHIPPING",
+              },
+              { case: { $eq: ["$eventType", "ADJUST"] }, then: "ADJUST" },
+            ],
+            default: "ADJUST",
+          },
+        },
+      },
+    },
+  ];
+
+  if (
+    typeRaw &&
+    typeRaw !== "ALL" &&
+    [
+      "CHARGE_PAID",
+      "CHARGE_FREE_REQUEST",
+      "CHARGE_FREE_SHIPPING",
+      "SPEND_PAID",
+      "SPEND_FREE_REQUEST",
+      "SPEND_FREE_SHIPPING",
+      "ADJUST",
+      "REFUND",
+    ].includes(typeRaw)
+  ) {
+    if (typeRaw === "REFUND") {
+      return res.json({ success: true, data: { items: [], total: 0, page, pageSize } });
+    }
+    pipeline.push({ $match: { type: typeRaw } });
   }
 
   if (qRaw) {
     const rx = safeRegex(qRaw);
     const ors = [];
     if (rx) {
-      ors.push({ uniqueKey: rx });
-      ors.push({ refType: rx });
+      ors.push({ uniqueKey: rx }, { refType: rx }, { requestIdMeta: rx });
     }
-
     if (mongoose.Types.ObjectId.isValid(qRaw)) {
       ors.push({ refId: new mongoose.Types.ObjectId(qRaw) });
     }
-
-    const looksLikeRequestId = /^\d{8}-\d{6}$/.test(qRaw);
-    if (looksLikeRequestId) {
-      const requestDoc = await Request.findOne({ requestId: qRaw })
-        .select({ _id: 1 })
-        .lean();
-      if (requestDoc?._id) {
-        ors.push({
-          refId: new mongoose.Types.ObjectId(String(requestDoc._id)),
-        });
-      }
+    if (requestIdSearchObjectId) {
+      ors.push({ refId: requestIdSearchObjectId });
     }
-
     if (ors.length) {
-      match.$or = ors;
+      pipeline.push({ $match: { $or: ors } });
     }
   }
 
-  // running balance: 전체 잔액 계산 (필터 무관)
-  const balanceMatchQuery = {
-    businessAnchorId: new mongoose.Types.ObjectId(String(businessAnchorId)),
-  };
+  pipeline.push({ $sort: { occurredAt: -1, _id: -1 } });
 
-  const allLedgerRows = await CreditLedger.aggregate([
-    { $match: balanceMatchQuery },
-    { $group: { _id: "$type", total: { $sum: "$amount" } } },
-  ]);
-  let totalBalance = 0;
-  for (const r of allLedgerRows) {
-    totalBalance += Number(r.total || 0);
-  }
+  const allRows = await LedgerLine.aggregate(pipeline);
+  const total = Array.isArray(allRows) ? allRows.length : 0;
+  const startIdx = (page - 1) * pageSize;
+  const endIdx = startIdx + pageSize;
 
-  const skippedRows =
-    (page - 1) * pageSize > 0
-      ? await CreditLedger.find(match)
-          .sort({ createdAt: -1, _id: -1 })
-          .limit((page - 1) * pageSize)
-          .select({ type: 1, amount: 1 })
-          .lean()
-      : [];
   let skippedSum = 0;
-  for (const r of skippedRows) {
-    skippedSum += Number(r.amount || 0);
+  for (const row of allRows.slice(0, startIdx)) {
+    skippedSum += Number(row?.amount || 0);
   }
 
-  const [total, rawItems] = await Promise.all([
-    CreditLedger.countDocuments(match),
-    CreditLedger.find(match)
-      .sort({ createdAt: -1, _id: -1 })
-      .skip((page - 1) * pageSize)
-      .limit(pageSize)
-      .select({
-        type: 1,
-        amount: 1,
-        spentPaidAmount: 1,
-        spentFreeAmount: 1,
-        refType: 1,
-        refId: 1,
-        uniqueKey: 1,
-        userId: 1,
-        createdAt: 1,
-      })
-      .lean(),
-  ]);
-
-  let runningBalance = totalBalance - skippedSum;
-  const items = (Array.isArray(rawItems) ? rawItems : []).map((r) => {
+  let runningBalance = currentBalance - skippedSum;
+  const items = allRows.slice(startIdx, endIdx).map((row) => {
     const balanceAfter = runningBalance;
-    runningBalance -= Number(r.amount || 0);
-    return { ...r, balanceAfter };
+    runningBalance -= Number(row?.amount || 0);
+    return {
+      _id: String(row?._id || ""),
+      type: String(row?.type || "ADJUST"),
+      amount: Number(row?.amount || 0),
+      spentPaidAmount: Number(row?.spentPaidAmount || 0),
+      spentFreeAmount: Number(row?.spentFreeAmount || 0),
+      refType: String(row?.refType || ""),
+      refId: row?.refId ? String(row.refId) : "",
+      uniqueKey: String(row?.uniqueKey || ""),
+      createdAt: row?.createdAt || row?.occurredAt || new Date(),
+      balanceAfter,
+    };
   });
 
   const requestRefIds = Array.from(
     new Set(
-      (items || [])
+      items
         .filter(
           (it) =>
             String(it?.refType || "") === "REQUEST" &&
@@ -243,7 +357,7 @@ export async function listMyCreditLedger(req, res) {
 
   const shippingPackageRefIds = Array.from(
     new Set(
-      (items || [])
+      items
         .filter(
           (it) =>
             String(it?.refType || "") === "SHIPPING_PACKAGE" &&
@@ -254,11 +368,10 @@ export async function listMyCreditLedger(req, res) {
     ),
   );
 
-  const welcomeBonusGrantIds = Array.from(
+  const freeCreditGrantIds = Array.from(
     new Set(
-      (items || [])
-        .filter((it) => String(it?.refType || "") === "WELCOME_BONUS")
-        .map((it) => parseBonusGrantIdFromUniqueKey(it?.uniqueKey))
+      items
+        .map((it) => parseFreeCreditGrantIdFromUniqueKey(it?.uniqueKey))
         .filter((id) => mongoose.Types.ObjectId.isValid(id)),
     ),
   );
@@ -315,9 +428,7 @@ export async function listMyCreditLedger(req, res) {
     if (requestIdSet.size > 0) {
       const deliveryInfos = await DeliveryInfo.find({
         request: {
-          $in: Array.from(requestIdSet).map(
-            (id) => new mongoose.Types.ObjectId(id),
-          ),
+          $in: Array.from(requestIdSet).map((id) => new mongoose.Types.ObjectId(id)),
         },
       })
         .select({ request: 1, trackingNumber: 1 })
@@ -337,10 +448,7 @@ export async function listMyCreditLedger(req, res) {
       const trackingNumbers = Array.from(
         new Set(
           (pkg?.requestIds || [])
-            .map(
-              (requestId) =>
-                deliveryInfoByRequestId.get(String(requestId)) || "",
-            )
+            .map((requestId) => deliveryInfoByRequestId.get(String(requestId)) || "")
             .filter(Boolean),
         ),
       );
@@ -348,20 +456,14 @@ export async function listMyCreditLedger(req, res) {
     }
   }
 
-  const welcomeBonusReasonByGrantId = new Map();
-  if (welcomeBonusGrantIds.length > 0) {
-    const grants = await BonusGrant.find({
+  const freeReasonByGrantId = new Map();
+  if (freeCreditGrantIds.length > 0) {
+    const grants = await FreeCreditGrant.find({
       _id: {
-        $in: welcomeBonusGrantIds.map((id) => new mongoose.Types.ObjectId(id)),
+        $in: freeCreditGrantIds.map((id) => new mongoose.Types.ObjectId(id)),
       },
     })
-      .select({
-        _id: 1,
-        type: 1,
-        source: 1,
-        overrideReason: 1,
-        businessNumber: 1,
-      })
+      .select({ _id: 1, type: 1, source: 1, overrideReason: 1, businessNumber: 1 })
       .lean();
 
     for (const grant of grants || []) {
@@ -369,27 +471,29 @@ export async function listMyCreditLedger(req, res) {
       const source = String(grant.source || "");
       const overrideReason = String(grant.overrideReason || "").trim();
       const businessNumber = String(grant.businessNumber || "").trim();
-      let reason = "가입 축하 크레딧";
+      const grantType = String(grant.type || "").trim().toUpperCase();
+      let reason = "환영 무료 의뢰크레딧";
+      if (grantType === "FREE_SHIPPING_CREDIT" || grantType === "SHIPPING_FREE_CREDIT") {
+        reason = "환영 무료 배송크레딧";
+      }
       if (source === "admin" && overrideReason) {
         reason = `관리자 지급 · ${overrideReason}`;
       } else if (source === "migrated") {
-        reason = "시드/마이그레이션 가입 축하 크레딧";
+        reason = `시드/마이그레이션 ${reason}`;
       }
       if (businessNumber) {
         reason = `${reason} · 사업자번호 ${businessNumber}`;
       }
-      welcomeBonusReasonByGrantId.set(String(grant._id), reason);
+      freeReasonByGrantId.set(String(grant._id), reason);
     }
   }
 
-  const enrichedItems = (items || []).map((it) => {
+  const enrichedItems = items.map((it) => {
     const refType = String(it?.refType || "");
     if (refType === "REQUEST") {
       const refId = it?.refId ? String(it.refId) : "";
       const refRequestId = refId ? refRequestIdById.get(refId) || "" : "";
-      const requestSummary = refId
-        ? refRequestSummaryById.get(refId) || null
-        : null;
+      const requestSummary = refId ? refRequestSummaryById.get(refId) || null : null;
       return {
         ...it,
         refRequestId,
@@ -413,18 +517,17 @@ export async function listMyCreditLedger(req, res) {
       };
     }
 
-    if (refType === "WELCOME_BONUS") {
-      const grantId = parseBonusGrantIdFromUniqueKey(it?.uniqueKey);
+    const grantId = parseFreeCreditGrantIdFromUniqueKey(it?.uniqueKey);
+    if (grantId) {
+      const freeReason = freeReasonByGrantId.get(grantId) || "";
       return {
         ...it,
-        bonusReason: grantId
-          ? welcomeBonusReasonByGrantId.get(grantId) || ""
-          : "",
+        freeReason,
+        bonusReason: freeReason, // legacy 호환 (앱 안정화 후 삭제 예정)
       };
     }
 
-    const refId = it?.refId ? String(it.refId) : "";
-    return { ...it, refId };
+    return it;
   });
 
   return res.json({

@@ -1,7 +1,7 @@
 // related files:
 // - web/backend/rules.md
 // - web/backend/modules/admin/admin.routes.js
-// - web/backend/models/creditLedger.model.js
+// - web/backend/models/ledgerJournal.model.js
 // - web/backend/models/businessCreditBalance.model.js
 // - web/backend/services/creditBalance.service.js
 import { Types } from "mongoose";
@@ -9,11 +9,12 @@ import BusinessAnchor from "../../models/businessAnchor.model.js";
 import User from "../../models/user.model.js";
 import Request from "../../models/request.model.js";
 import ShippingPackage from "../../models/shippingPackage.model.js";
-import CreditLedger from "../../models/creditLedger.model.js";
-import BonusGrant from "../../models/bonusGrant.model.js";
+import LedgerJournal from "../../models/ledgerJournal.model.js";
+
 import ChargeOrder from "../../models/chargeOrder.model.js";
 import AdminAuditLog from "../../models/adminAuditLog.model.js";
 import { emitReferralMembershipChanged } from "../../services/requestSnapshotTriggers.service.js";
+import { upsertBusinessCreditBalanceFromLedger } from "../../services/creditBalance.service.js";
 
 const DEFAULT_SHIPPING_FEE = 3500;
 const REQUEST_SPEND_ELIGIBLE_STAGES = new Set([
@@ -106,6 +107,7 @@ async function reconcileOneAnchor(anchor, { execute }) {
       _id: 1,
       requestId: 1,
       requestor: 1,
+      requestCategory: 1,
       manufacturerStage: 1,
       shippingPackageId: 1,
       createdAt: 1,
@@ -116,103 +118,43 @@ async function reconcileOneAnchor(anchor, { execute }) {
     })
     .lean();
 
-  const requestIds = requests.map((r) => r._id).filter(Boolean);
   const packageIds = requests
     .map((r) => r.shippingPackageId)
     .filter(Boolean)
     .map((id) => String(id));
 
-  const [requestSpendRows, shippingSpendRows, packages] = await Promise.all([
-    requestIds.length
-      ? CreditLedger.find({
-          businessAnchorId: anchorId,
-          type: "SPEND",
-          refType: "REQUEST",
-          refId: { $in: requestIds },
-        })
-          .sort({ createdAt: 1, _id: 1 })
-          .select({ _id: 1, refId: 1, amount: 1, hasFreeRequest: 1, uniqueKey: 1 })
-          .lean()
-      : [],
-    packageIds.length
-      ? CreditLedger.find({
-          businessAnchorId: anchorId,
-          type: "SPEND",
-          refType: { $in: ["SHIPPING_PACKAGE", "SHIPPING_FEE"] },
-          refId: { $in: packageIds },
-        })
-          .sort({ createdAt: 1, _id: 1 })
-          .select({ _id: 1, refId: 1, amount: 1, uniqueKey: 1 })
-          .lean()
-      : [],
-    packageIds.length
-      ? ShippingPackage.find({ _id: { $in: packageIds } })
-          .select({ _id: 1, shippingFeeSupply: 1, createdAt: 1 })
-          .lean()
-      : [],
-  ]);
-
-  const requestSpendsByRefId = new Map();
-  for (const row of requestSpendRows) {
-    const key = String(row?.refId || "");
-    if (!key) continue;
-    const arr = requestSpendsByRefId.get(key) || [];
-    arr.push(row);
-    requestSpendsByRefId.set(key, arr);
-  }
-
-  const shippingSpendsByPkgId = new Map();
-  for (const row of shippingSpendRows) {
-    const key = String(row?.refId || "");
-    if (!key) continue;
-    const arr = shippingSpendsByPkgId.get(key) || [];
-    arr.push(row);
-    shippingSpendsByPkgId.set(key, arr);
-  }
+  const packages = packageIds.length
+    ? await ShippingPackage.find({ _id: { $in: packageIds } })
+        .select({ _id: 1, shippingFeeSupply: 1, createdAt: 1 })
+        .lean()
+    : [];
 
   const packageById = new Map((packages || []).map((p) => [String(p._id), p]));
 
-  const requestSpendCorrections = [];
-  const requestSpendInsertions = [];
-  const shippingSpendInsertions = [];
+  const missingRequestCommitCandidates = [];
+  const missingShippingCommitCandidates = [];
 
   for (const reqDoc of requests) {
     const reqId = String(reqDoc?._id || "");
     if (!reqId) continue;
 
+    const requestCategory = String(reqDoc?.requestCategory || "").trim();
+    const isSampleRequest =
+      requestCategory === "rnd_sample" || requestCategory === "copied_sample";
+    if (isSampleRequest) continue;
+
     if (shouldBackfillRequestSpend(reqDoc)) {
       const expectedRequestSpend = Number(reqDoc?.price?.amount || 0);
       const freeByPolicy = isFreeByPolicy(reqDoc);
-      const reqSpendRows = requestSpendsByRefId.get(reqId) || [];
-      const hasNegativeSpend = reqSpendRows.some(
-        (row) => Number(row?.amount || 0) < 0,
-      );
-
-      if (!freeByPolicy && expectedRequestSpend > 0 && !hasNegativeSpend) {
-        const freeMarkerRow = reqSpendRows.find(
-          (row) => Number(row?.amount || 0) === 0 && row?.hasFreeRequest === true,
-        );
-
-        if (freeMarkerRow?._id) {
-          requestSpendCorrections.push({
-            ledgerId: String(freeMarkerRow._id),
-            requestMongoId: reqId,
-            requestId: reqDoc?.requestId || null,
-            uniqueKey: String(freeMarkerRow?.uniqueKey || ""),
-            amount: -expectedRequestSpend,
-            userId: reqDoc?.requestor || null,
-          });
-        } else {
-          const cycle = Number(reqDoc?.caseInfos?.rollbackCounts?.cam || 0);
-          requestSpendInsertions.push({
-            requestMongoId: reqId,
-            requestId: reqDoc?.requestId || null,
-            uniqueKey: `request:${reqId}:machining_spend:${cycle}`,
-            amount: -expectedRequestSpend,
-            createdAt: reqDoc?.updatedAt || reqDoc?.createdAt || new Date(),
-            userId: reqDoc?.requestor || null,
-          });
-        }
+      if (!freeByPolicy && expectedRequestSpend > 0) {
+        missingRequestCommitCandidates.push({
+          requestMongoId: reqId,
+          requestId: reqDoc?.requestId || null,
+          uniqueKey: `request:${reqId}:machining_spend`,
+          amount: -expectedRequestSpend,
+          createdAt: reqDoc?.updatedAt || reqDoc?.createdAt || new Date(),
+          userId: reqDoc?.requestor || null,
+        });
       }
     }
 
@@ -226,111 +168,59 @@ async function reconcileOneAnchor(anchor, { execute }) {
     const pkg = packageById.get(shippingPackageId);
     if (!pkg?._id) continue;
 
-    const hasShippingSpend = (shippingSpendsByPkgId.get(shippingPackageId) || [])
-      .some((row) => Number(row?.amount || 0) < 0);
+    const fee = Number(pkg?.shippingFeeSupply || DEFAULT_SHIPPING_FEE);
+    if (!Number.isFinite(fee) || fee <= 0) continue;
 
-    if (!hasShippingSpend) {
-      const fee = Number(pkg?.shippingFeeSupply || DEFAULT_SHIPPING_FEE);
-      if (!Number.isFinite(fee) || fee <= 0) continue;
-
-      shippingSpendInsertions.push({
-        packageMongoId: shippingPackageId,
-        requestMongoId: reqId,
-        requestId: reqDoc?.requestId || null,
-        uniqueKey: `shippingPackage:${shippingPackageId}:shipping_fee`,
-        amount: -fee,
-        createdAt:
-          reqDoc?.updatedAt || reqDoc?.createdAt || pkg?.createdAt || new Date(),
-        userId: reqDoc?.requestor || null,
-      });
-    }
+    missingShippingCommitCandidates.push({
+      packageMongoId: shippingPackageId,
+      requestMongoId: reqId,
+      requestId: reqDoc?.requestId || null,
+      uniqueKey: `shippingPackage:${shippingPackageId}:shipping_fee`,
+      amount: -fee,
+      createdAt:
+        reqDoc?.updatedAt || reqDoc?.createdAt || pkg?.createdAt || new Date(),
+      userId: reqDoc?.requestor || null,
+    });
   }
 
-  let correctedCount = 0;
-  let insertedRequestSpendCount = 0;
-  let insertedShippingSpendCount = 0;
+  const idempotencyKeys = [
+    ...missingRequestCommitCandidates.map((item) => `gl:${item.uniqueKey}`),
+    ...missingShippingCommitCandidates.map((item) => `gl:${item.uniqueKey}`),
+  ];
 
+  const postedJournals = idempotencyKeys.length
+    ? await LedgerJournal.find({
+        idempotencyKey: { $in: idempotencyKeys },
+        eventType: { $in: ["REQUEST_SPEND_COMMIT", "SHIPPING_SPEND_COMMIT"] },
+      })
+        .select({ idempotencyKey: 1, eventType: 1 })
+        .lean()
+    : [];
+
+  const postedSet = new Set(
+    (postedJournals || []).map((row) => String(row?.idempotencyKey || "")),
+  );
+
+  const missingRequestCommitJournals = missingRequestCommitCandidates.filter(
+    (item) => !postedSet.has(`gl:${item.uniqueKey}`),
+  );
+  const missingShippingCommitJournals = missingShippingCommitCandidates.filter(
+    (item) => !postedSet.has(`gl:${item.uniqueKey}`),
+  );
+
+  let snapshotResynced = 0;
   if (execute) {
-    for (const item of requestSpendCorrections) {
-      const res = await CreditLedger.updateOne(
-        {
-          _id: new Types.ObjectId(item.ledgerId),
-          amount: 0,
-          hasFreeRequest: true,
-        },
-        {
-          $set: {
-            userId: item.userId || null,
-            amount: item.amount,
-            spentPaidAmount: null,
-            spentFreeAmount: null,
-            hasFreeRequest: false,
-          },
-        },
-      );
-      if (Number(res?.modifiedCount || 0) > 0) correctedCount += 1;
-    }
-
-    for (const item of requestSpendInsertions) {
-      const upsertRes = await CreditLedger.updateOne(
-        { uniqueKey: item.uniqueKey },
-        {
-          $setOnInsert: {
-            businessAnchorId: anchorId,
-            userId: item.userId || null,
-            type: "SPEND",
-            amount: item.amount,
-            refType: "REQUEST",
-            refId: new Types.ObjectId(item.requestMongoId),
-            uniqueKey: item.uniqueKey,
-            spentPaidAmount: null,
-            spentFreeAmount: null,
-            hasFreeRequest: false,
-            createdAt: item.createdAt,
-          },
-        },
-        { upsert: true },
-      );
-      if (Number(upsertRes?.upsertedCount || 0) > 0) {
-        insertedRequestSpendCount += 1;
-      }
-    }
-
-    for (const item of shippingSpendInsertions) {
-      const upsertRes = await CreditLedger.updateOne(
-        { uniqueKey: item.uniqueKey },
-        {
-          $setOnInsert: {
-            businessAnchorId: anchorId,
-            userId: item.userId || null,
-            type: "SPEND",
-            amount: item.amount,
-            refType: "SHIPPING_PACKAGE",
-            refId: new Types.ObjectId(item.packageMongoId),
-            uniqueKey: item.uniqueKey,
-            spentPaidAmount: null,
-            spentFreeAmount: null,
-            createdAt: item.createdAt,
-          },
-        },
-        { upsert: true },
-      );
-      if (Number(upsertRes?.upsertedCount || 0) > 0) {
-        insertedShippingSpendCount += 1;
-      }
-    }
+    await upsertBusinessCreditBalanceFromLedger({ businessAnchorId: anchorId });
+    snapshotResynced = 1;
   }
 
   return {
     anchorId: String(anchor._id),
     anchorName: String(anchor.name || ""),
     requestsChecked: requests.length,
-    requestSpendCorrections,
-    requestSpendInsertions,
-    shippingSpendInsertions,
-    correctedCount,
-    insertedRequestSpendCount,
-    insertedShippingSpendCount,
+    missingRequestCommitJournals,
+    missingShippingCommitJournals,
+    snapshotResynced,
   };
 }
 
@@ -343,27 +233,21 @@ async function runCreditReconcile({ scope, anchorId, businessName, execute }) {
       targetAnchors: 0,
       requestsChecked: 0,
       target: {
-        requestSpendCorrections: 0,
-        requestSpendInsertions: 0,
-        shippingSpendInsertions: 0,
+        missingRequestCommitJournals: 0,
+        missingShippingCommitJournals: 0,
+        totalMissingCommitJournals: 0,
       },
       applied: {
-        correctedCount: 0,
-        insertedRequestSpendCount: 0,
-        insertedShippingSpendCount: 0,
+        snapshotResyncedAnchors: 0,
       },
       changedAnchors: [],
     };
   }
 
   let requestsChecked = 0;
-  let targetRequestSpendCorrections = 0;
-  let targetRequestSpendInsertions = 0;
-  let targetShippingSpendInsertions = 0;
-
-  let appliedCorrectedCount = 0;
-  let appliedInsertedRequestSpendCount = 0;
-  let appliedInsertedShippingSpendCount = 0;
+  let targetMissingRequestCommitJournals = 0;
+  let targetMissingShippingCommitJournals = 0;
+  let appliedSnapshotResyncedAnchors = 0;
 
   const changedAnchors = [];
 
@@ -371,27 +255,25 @@ async function runCreditReconcile({ scope, anchorId, businessName, execute }) {
     const result = await reconcileOneAnchor(anchor, { execute });
 
     requestsChecked += result.requestsChecked;
-    targetRequestSpendCorrections += result.requestSpendCorrections.length;
-    targetRequestSpendInsertions += result.requestSpendInsertions.length;
-    targetShippingSpendInsertions += result.shippingSpendInsertions.length;
 
-    appliedCorrectedCount += result.correctedCount;
-    appliedInsertedRequestSpendCount += result.insertedRequestSpendCount;
-    appliedInsertedShippingSpendCount += result.insertedShippingSpendCount;
+    const missingRequestCount =
+      result.missingRequestCommitJournals.length;
+    const missingShippingCount =
+      result.missingShippingCommitJournals.length;
 
-    const targetCount =
-      result.requestSpendCorrections.length +
-      result.requestSpendInsertions.length +
-      result.shippingSpendInsertions.length;
+    targetMissingRequestCommitJournals += missingRequestCount;
+    targetMissingShippingCommitJournals += missingShippingCount;
+    appliedSnapshotResyncedAnchors += Number(result.snapshotResynced || 0);
+
+    const targetCount = missingRequestCount + missingShippingCount;
 
     if (targetCount > 0) {
       changedAnchors.push({
         anchorId: result.anchorId,
         anchorName: result.anchorName,
         targetCount,
-        requestSpendCorrections: result.requestSpendCorrections.length,
-        requestSpendInsertions: result.requestSpendInsertions.length,
-        shippingSpendInsertions: result.shippingSpendInsertions.length,
+        missingRequestCommitJournals: missingRequestCount,
+        missingShippingCommitJournals: missingShippingCount,
       });
     }
   }
@@ -402,14 +284,13 @@ async function runCreditReconcile({ scope, anchorId, businessName, execute }) {
     targetAnchors: anchors.length,
     requestsChecked,
     target: {
-      requestSpendCorrections: targetRequestSpendCorrections,
-      requestSpendInsertions: targetRequestSpendInsertions,
-      shippingSpendInsertions: targetShippingSpendInsertions,
+      missingRequestCommitJournals: targetMissingRequestCommitJournals,
+      missingShippingCommitJournals: targetMissingShippingCommitJournals,
+      totalMissingCommitJournals:
+        targetMissingRequestCommitJournals + targetMissingShippingCommitJournals,
     },
     applied: {
-      correctedCount: appliedCorrectedCount,
-      insertedRequestSpendCount: appliedInsertedRequestSpendCount,
-      insertedShippingSpendCount: appliedInsertedShippingSpendCount,
+      snapshotResyncedAnchors: appliedSnapshotResyncedAnchors,
     },
     changedAnchors,
   };
@@ -675,8 +556,11 @@ export async function adminExecuteCreditReconcile(req, res) {
 
     return res.status(200).json({
       success: true,
-      message: "누락 보정이 완료되었습니다.",
-      data,
+      message: "점검 및 스냅샷 재동기화가 완료되었습니다.",
+      data: {
+        ...data,
+        note: "SSOT 정책상 이 API는 General Ledger 누락 여부 점검 및 잔액 스냅샷 재동기화만 수행합니다. 누락 커밋 이벤트를 직접 생성하지 않습니다.",
+      },
     });
   } catch (error) {
     console.error("[adminBusiness] adminExecuteCreditReconcile error:", error);

@@ -5,7 +5,7 @@
 import { Types } from "mongoose";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 import User from "../../models/user.model.js";
-import CreditLedger from "../../models/creditLedger.model.js";
+import LedgerLine from "../../models/ledgerLine.model.js";
 import { verifyBusinessNumber } from "../../services/hometax.service.js";
 import {
   assertBusinessRole,
@@ -24,9 +24,9 @@ import {
 import { normalizeBusinessAddressFields } from "./business.address.util.js";
 import { findBusinessByAnchors } from "./business.find.util.js";
 import {
-  grantWelcomeBonusIfEligible,
-  grantFreeShippingCreditIfEligible,
-} from "./business.bonus.util.js";
+  grantRequestFreeCreditIfEligible,
+  grantShippingFreeCreditIfEligible,
+} from "./business.freeCredit.util.js";
 import { emitReferralMembershipChanged } from "../../services/requestSnapshotTriggers.service.js";
 import { invalidateMyBusinessCache } from "./business.controller.js";
 
@@ -539,8 +539,16 @@ export async function updateMyBusiness(req, res) {
 
     if (!hasBusinessAnchor && attachToBusinessAnchor) {
       const priorLedgerCount = originalBusinessAnchorId
-        ? await CreditLedger.countDocuments({
-            businessAnchorId: originalBusinessAnchorId,
+        ? await LedgerLine.countDocuments({
+            ownerRole: "requestor",
+            ownerId: originalBusinessAnchorId,
+            accountCode: {
+              $in: [
+                "REQ_PAID_CREDIT",
+                "REQ_FREE_REQUEST_CREDIT",
+                "REQ_FREE_SHIPPING_CREDIT",
+              ],
+            },
           })
         : 0;
       console.error("[BUSINESS_ANCHOR_ATTACH_SWITCH]", {
@@ -658,8 +666,16 @@ export async function updateMyBusiness(req, res) {
         const createdAnchorId = created._id;
 
         const priorLedgerCount = originalBusinessAnchorId
-          ? await CreditLedger.countDocuments({
-              businessAnchorId: originalBusinessAnchorId,
+          ? await LedgerLine.countDocuments({
+              ownerRole: "requestor",
+              ownerId: originalBusinessAnchorId,
+              accountCode: {
+                $in: [
+                  "REQ_PAID_CREDIT",
+                  "REQ_FREE_REQUEST_CREDIT",
+                  "REQ_FREE_SHIPPING_CREDIT",
+                ],
+              },
             })
           : 0;
         console.error("[BUSINESS_ANCHOR_CREATED_AND_ATTACHED]", {
@@ -677,13 +693,14 @@ export async function updateMyBusiness(req, res) {
           "business-anchor-linked",
         );
 
-        const welcomeBonusAmount = await grantWelcomeBonusIfEligible({
-          businessAnchorId: created._id,
-          userId: req.user._id,
-          userRole: req.user.role,
-        });
+        const requestFreeCreditAmount =
+          await grantRequestFreeCreditIfEligible({
+            businessAnchorId: created._id,
+            userId: req.user._id,
+            userRole: req.user.role,
+          });
         const freeShippingCreditAmount =
-          await grantFreeShippingCreditIfEligible({
+          await grantShippingFreeCreditIfEligible({
             businessAnchorId: created._id,
             userId: req.user._id,
             userRole: req.user.role,
@@ -697,10 +714,12 @@ export async function updateMyBusiness(req, res) {
             businessName: created.name,
             verification:
               created.status === "verified" ? { verified: true } : null,
-            welcomeBonusGranted: !!welcomeBonusAmount,
-            welcomeBonusAmount: Number(welcomeBonusAmount || 0),
+            requestFreeCreditGranted: !!requestFreeCreditAmount,
+            requestFreeCreditAmount: Number(requestFreeCreditAmount || 0),
             freeShippingCreditGranted: !!freeShippingCreditAmount,
             freeShippingCreditAmount: Number(freeShippingCreditAmount || 0),
+            welcomeBonusGranted: !!requestFreeCreditAmount, // legacy 호환 (앱 안정화 후 삭제 예정)
+            welcomeBonusAmount: Number(requestFreeCreditAmount || 0), // legacy 호환 (앱 안정화 후 삭제 예정)
           },
         });
       } catch (e) {
@@ -803,12 +822,12 @@ export async function updateMyBusiness(req, res) {
 
     // 성능 최적화: bonus grant 함수들을 병렬 실행
     const [granted, freeShippingGranted] = await Promise.all([
-      grantWelcomeBonusIfEligible({
+      grantRequestFreeCreditIfEligible({
         businessAnchorId: businessAnchor._id,
         userId: req.user._id,
         userRole: req.user.role,
       }),
-      grantFreeShippingCreditIfEligible({
+      grantShippingFreeCreditIfEligible({
         businessAnchorId: businessAnchor._id,
         userId: req.user._id,
         userRole: req.user.role,
@@ -822,10 +841,12 @@ export async function updateMyBusiness(req, res) {
       success: true,
       data: {
         updated: true,
-        welcomeBonusGranted: Boolean(granted),
-        welcomeBonusAmount: granted || 0,
+        requestFreeCreditGranted: Boolean(granted),
+        requestFreeCreditAmount: granted || 0,
         freeShippingCreditGranted: Boolean(freeShippingGranted),
         freeShippingCreditAmount: freeShippingGranted || 0,
+        welcomeBonusGranted: Boolean(granted), // legacy 호환 (앱 안정화 후 삭제 예정)
+        welcomeBonusAmount: granted || 0, // legacy 호환 (앱 안정화 후 삭제 예정)
         verification: verificationResult
           ? {
               verified: !!verificationResult.verified,

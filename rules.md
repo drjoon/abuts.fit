@@ -42,6 +42,12 @@
 - 판단 보류 상태를 명시하고 사용자에게 확인 질문 후 진행
 - 특히 권한(role), 과금/정산, 추천(리퍼럴) 범위는 컨펌 없이 변경 금지
 
+### 0.5 작업 우선순위 원칙 (강제)
+
+- 여러 작업을 동시에 진행할 때는 **중요도 순서**로 처리한다.
+- 결제/크레딧/정산/권한/데이터무결성 같은 고위험 변경을 먼저 처리한다.
+- 단순 반복 작업(예: 이름 교체, 문구 통일, 포맷 정리)은 핵심 로직 안정화 후에 처리한다.
+
 ---
 
 ## 1) 절대 원칙 (변경 금지)
@@ -88,22 +94,42 @@
 - 신규 의뢰 표준: `POST /api/requests/from-draft`
 - 공정 SSOT: `Request.manufacturerStage`
   - `의뢰 → CAM → 가공 → 세척.패킹 → 포장.발송 → 추적관리`
-- 의뢰 과금/환불 시점 정책:
-  - 의뢰비 과금은 CNC 가공 시작 콜백(`sourceStep=cnc`, success)에서 수행
-  - CNC 가공 실패 콜백(`sourceStep=cnc`, failed)에서는 즉시 환불
-  - 그 외 임의 경로에서 과금/환불 로직 추가 금지
+- 크레딧 이벤트 발생 시점 SSOT:
+  - `REQUEST_SPEND_COMMIT`: **CAM 승인(가공 진입)** 시 기록
+  - `SHIPPING_SPEND_COMMIT`: **세척.패킹 승인(포장.발송 진입)** 시 기록
+  - `REQUEST` 차감 삭제: **가공 롤백(CAM 복귀)** 시 대응 COMMIT 이벤트/라인 **물리 삭제**
+  - `SHIPPING` 차감 삭제: **포장.발송 롤백(세척.패킹 복귀)** 시 대응 COMMIT 이벤트/라인 **물리 삭제**
+  - BG 콜백은 파일 처리 결과 동기화 이벤트이며 승인/롤백 트랜지션이 아니므로,
+    BG 콜백에서 크레딧/정산 장부 갱신을 수행하지 않음
+- 샘플 정책(강제): `requestCategory in (rnd_sample, copied_sample)`는 크레딧/정산 무관 작업
+  - 샘플은 장부에 **무기록(무자료/무상)** 처리
+- 제조사 직접 NC 가공 정책(강제): `requestId`/`request._id` 등 의뢰 식별 메타가 없는 수동 NC 작업은
+  크레딧/정산 대상이 아니며 장부에 **무기록(무자료/무상)** 처리
+- 불완전가공(RnD unmachinable) 정책(강제):
+  - 불완전가공은 샘플이 아니며, CAM 승인으로 이미 발생한 크레딧 차감은 유지한다.
+  - 불완전가공 판정으로 CAM 복귀가 발생해도 장부 삭제/환불을 수행하지 않는다.
+  - CAM 이전 취소(의뢰/CAM 단계 취소)만 차감 미발생 상태로 처리한다.
 
 ### 2.3 크레딧/정산
 
-- 크레딧/배송/정산 귀속 키는 사용자 개인이 아니라 `businessAnchorId`
-- 크레딧 버킷 분해 필드 SSOT는 `spentPaidAmount`/`spentFreeAmount`
-- 무료 크레딧 지급 기록은 `CHARGE + creditKind(FREE_REQUEST|FREE_SHIPPING)`를 SSOT로 사용
-- 크레딧 원장(`CreditLedger`)은 **과소/과다 차감 없이 항상 정확한 합계**를 보장해야 함
-  - 중복 소비/중복 환불/누락 소비 금지
-  - 승인 재시도·동시 처리 상황에서도 idempotent(중복 반영 없음)하게 처리
+- 단일 SSOT 장부: `LedgerJournal` + `LedgerLine`(논리적으로 하나의 General Ledger)
+- 기존 분리 원장(`CreditLedger`, `ManufacturerCreditLedger`, `SalesmanLedger`, `AdminCreditLedger`)은
+  **레거시로 간주하며 단계적 이관 후 삭제**한다. 이관 중 이중기록(dual-write) 금지.
+- 필수 이벤트 타입 SSOT(저장형):
+  - `REQUEST_SPEND_COMMIT`, `SHIPPING_SPEND_COMMIT`
+  - `CHARGE_PAID`, `CHARGE_FREE_REQUEST`, `CHARGE_FREE_SHIPPING`, `ADJUST`, `SETTLEMENT_PAYOUT`
+- 수익 계정 SSOT:
+  - `REV_MANUFACTURER`, `REV_DEVOPS`, `REV_SALESMAN`, `REV_ADMIN`
+  - 유료/무료 모두 수익 라인을 기록하되, 정산 지급은 유료만 대상
+  - 무료 수익은 지급 0원으로 정산완료 상태만 표시 가능
+- 롤백 원칙:
+  - 롤백은 REFUND 추가가 아니라 원본 커밋 이벤트 및 대응 라인의 **물리 삭제**
+- 조회/표시 타입 원칙:
+  - 충전은 `CHARGE_PAID` / `CHARGE_FREE_REQUEST` / `CHARGE_FREE_SHIPPING`으로 분리 표기 (`CHARGE` 단일표시 금지)
+  - 소비는 `SPEND_PAID` / `SPEND_FREE_REQUEST` / `SPEND_FREE_SHIPPING`으로 분리 표기 (`SPEND` 단일표시 금지)
 - 정산 보존식 SSOT(의뢰 단위):
-  - `의뢰자 순소비(의뢰 SPEND-REFUND)` = `어벗츠/제조사/개발운영사/영업자 수익합`
-  - 회계 기준 합계 비교는 VAT 제외 공급가(`amountExcludingVat`)를 우선 사용
+  - `의뢰자 순소비(현존 COMMIT 이벤트 기준)` = `어벗츠/제조사/개발운영사/영업자 수익합`
+  - 합계 비교는 VAT 제외 공급가(`amountExcludingVat`) 우선
 - 이벤트 기반 캐시 갱신 우선, 조회 시 대규모 재계산 지양
 
 ### 2.4 practice(치과) 전송
@@ -117,6 +143,8 @@
 - 저장 SSOT: `PracticeTransfer`
 - 제조사 워크시트 조회에서 practice 태그 의뢰 제외
 - 정책 고정: practice는 크레딧/정산/추천(리퍼럴) 기능/집계/보상 범위에 포함하지 않음
+- 강제 분리: practice 클라이언트/서버는 `Request` 도메인 API(`/api/requests/*`)를 사용하지 않는다.
+  - 레거시 혼입 경로(예: `/api/requests/practice/*`, practice의 Request draft 접근)는 제거 대상으로 관리한다.
 
 ### 2.5 채팅
 

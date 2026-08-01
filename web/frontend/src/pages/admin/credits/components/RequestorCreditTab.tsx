@@ -14,7 +14,7 @@ import { RequestorOrganizationsTab } from "./RequestorOrganizationsTab";
 import { RequestorTransactionsTab } from "./RequestorTransactionsTab";
 import type {
   BankTransaction,
-  BonusGrantHistoryRow,
+  FreeCreditGrantHistoryRow,
   BusinessCredit,
   ChargeOrder,
   CreditStats,
@@ -36,12 +36,12 @@ type RequestorCreditTabProps = {
   orgScrollRef: RefObject<HTMLDivElement | null>;
   orgSentinelRef: RefObject<HTMLDivElement | null>;
   onOpenOrgLedger: (business: BusinessCredit) => void;
-  selectedBonusBusinessAnchorId: string;
-  setSelectedBonusBusinessAnchorId: (value: string) => void;
-  bonusGrantSearch: string;
-  setBonusGrantSearch: (value: string) => void;
-  loadBonusGrantHistory: () => void | Promise<void>;
-  loadingBonusGrantRows: boolean;
+  selectedFreeCreditBusinessAnchorId: string;
+  setSelectedFreeCreditBusinessAnchorId: (value: string) => void;
+  freeCreditGrantSearch: string;
+  setFreeCreditGrantSearch: (value: string) => void;
+  loadFreeCreditGrantHistory: () => void | Promise<void>;
+  loadingFreeCreditGrantRows: boolean;
   freeCreditMenu:
     | "grant"
     | "grant-cancel"
@@ -60,32 +60,32 @@ type RequestorCreditTabProps = {
   setGrantCreditType: (value: "general" | "shipping") => void;
   selectedShippingCreditBusinessAnchorId: string;
   setSelectedShippingCreditBusinessAnchorId: (value: string) => void;
-  selectedBonusAmount: FreeCreditAmount;
-  setSelectedBonusAmount: (value: FreeCreditAmount) => void;
+  selectedFreeCreditAmount: FreeCreditAmount;
+  setSelectedFreeCreditAmount: (value: FreeCreditAmount) => void;
   selectedShippingCreditAmount: number;
   setSelectedShippingCreditAmount: (value: number) => void;
-  bonusReason: string;
-  setBonusReason: (value: string) => void;
+  freeCreditReason: string;
+  setFreeCreditReason: (value: string) => void;
   shippingCreditReason: string;
   setShippingCreditReason: (value: string) => void;
   handleGrantFreeCredit: () => void | Promise<void>;
   handleGrantShippingCredit: () => void | Promise<void>;
-  grantingBonus: boolean;
+  grantingFreeCredit: boolean;
   grantingShippingCredit: boolean;
-  selectedBonusBusiness: BusinessCredit | null;
+  selectedFreeCreditBusiness: BusinessCredit | null;
   selectedShippingCreditBusiness: BusinessCredit | null;
   cancelStartDate: string;
   setCancelStartDate: (value: string) => void;
   cancelEndDate: string;
   setCancelEndDate: (value: string) => void;
   setCancelSkip: (value: number) => void;
-  setBonusGrantRows: (
+  setFreeCreditGrantRows: (
     value:
-      | BonusGrantHistoryRow[]
-      | ((prev: BonusGrantHistoryRow[]) => BonusGrantHistoryRow[]),
+      | FreeCreditGrantHistoryRow[]
+      | ((prev: FreeCreditGrantHistoryRow[]) => FreeCreditGrantHistoryRow[]),
   ) => void;
   setCancelHasMore: (value: boolean) => void;
-  filteredBonusGrantRows: BonusGrantHistoryRow[];
+  filteredFreeCreditGrantRows: FreeCreditGrantHistoryRow[];
   selectedCancelGrantId: string;
   setSelectedCancelGrantId: (value: string) => void;
   cancelHasMore: boolean;
@@ -94,7 +94,7 @@ type RequestorCreditTabProps = {
   setCancelGrantReason: (value: string) => void;
   handleCancelFreeCredit: () => void | Promise<void>;
   cancelingGrant: boolean;
-  bonusGrantRows: BonusGrantHistoryRow[];
+  freeCreditGrantRows: FreeCreditGrantHistoryRow[];
   filteredFreeCreditUsageRows: BusinessCredit[];
   orderStatusFilter: string;
   setOrderStatusFilter: (value: string) => void;
@@ -149,6 +149,32 @@ export function RequestorCreditTab(props: RequestorCreditTabProps) {
     return String(business.businessType || "").trim() === "requestor";
   });
 
+  const totalChargedPaid = Number(props.stats?.totalCharged || 0);
+  const totalChargedFreeRequest = Number(
+    props.stats?.totalFreeRequest ?? props.stats?.totalBonusRequest ?? 0,
+  );
+  const totalChargedFreeShipping = Number(
+    props.stats?.totalFreeShipping ?? props.stats?.totalBonusShipping ?? 0,
+  );
+  const totalPaidCredit = Number(props.stats?.totalPaidCredit || 0);
+  const totalFreeRequestCredit = Number(
+    props.stats?.totalFreeRequestCredit ?? props.stats?.totalBonusRequestCredit ?? 0,
+  );
+  const totalFreeShippingCredit = Number(
+    props.stats?.totalFreeShippingCredit ?? props.stats?.totalBonusShippingCredit ?? 0,
+  );
+  const totalSpentPaid = Number(props.stats?.totalSpentPaidAmount || 0);
+  const totalSpentFreeRequest = Number(
+    props.stats?.totalSpentFreeRequestAmount ??
+      props.stats?.totalSpentBonusRequestAmount ??
+      0,
+  );
+  const totalSpentFreeShipping = Number(
+    props.stats?.totalSpentFreeShippingAmount ??
+      props.stats?.totalSpentBonusShippingAmount ??
+      0,
+  );
+
   return (
     <>
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
@@ -173,20 +199,19 @@ export function RequestorCreditTab(props: RequestorCreditTabProps) {
               {props.loadingStats
                 ? "..."
                 : `${(
-                    Number(props.stats?.totalCharged || 0) +
-                    Number(props.stats?.totalBonus || 0)
+                    totalChargedPaid +
+                    totalChargedFreeRequest +
+                    totalChargedFreeShipping
                   ).toLocaleString()}원`}
             </div>
             <div className="text-xs text-muted-foreground">
-              유료 {(props.stats?.totalCharged || 0).toLocaleString()}원
+              유료 {totalChargedPaid.toLocaleString()}원
             </div>
             <div className="text-xs text-muted-foreground">
-              무료(의뢰){" "}
-              {(props.stats?.totalBonusRequest || 0).toLocaleString()}원
+              무료(의뢰) {totalChargedFreeRequest.toLocaleString()}원
             </div>
             <div className="text-xs text-muted-foreground">
-              무료(배송){" "}
-              {(props.stats?.totalBonusShipping || 0).toLocaleString()}원
+              무료(배송) {totalChargedFreeShipping.toLocaleString()}원
             </div>
           </CardContent>
         </Card>
@@ -199,21 +224,19 @@ export function RequestorCreditTab(props: RequestorCreditTabProps) {
               {props.loadingStats
                 ? "..."
                 : `${(
-                    (props.stats?.totalPaidCredit || 0) +
-                    (props.stats?.totalBonusRequestCredit || 0) +
-                    (props.stats?.totalBonusShippingCredit || 0)
+                    totalPaidCredit +
+                    totalFreeRequestCredit +
+                    totalFreeShippingCredit
                   ).toLocaleString()}원`}
             </div>
             <div className="text-xs text-muted-foreground">
-              유료 {(props.stats?.totalPaidCredit || 0).toLocaleString()}원
+              유료 {totalPaidCredit.toLocaleString()}원
             </div>
             <div className="text-xs text-muted-foreground">
-              무료(의뢰){" "}
-              {(props.stats?.totalBonusRequestCredit || 0).toLocaleString()}원
+              무료(의뢰) {totalFreeRequestCredit.toLocaleString()}원
             </div>
             <div className="text-xs text-muted-foreground">
-              무료(배송){" "}
-              {(props.stats?.totalBonusShippingCredit || 0).toLocaleString()}원
+              무료(배송) {totalFreeShippingCredit.toLocaleString()}원
             </div>
           </CardContent>
         </Card>
@@ -228,21 +251,13 @@ export function RequestorCreditTab(props: RequestorCreditTabProps) {
                 : `${(props.stats?.totalSpent || 0).toLocaleString()}원`}
             </div>
             <div className="text-xs text-muted-foreground">
-              유료 {(props.stats?.totalSpentPaidAmount || 0).toLocaleString()}원
+              유료 {totalSpentPaid.toLocaleString()}원
             </div>
             <div className="text-xs text-muted-foreground">
-              무료(의뢰){" "}
-              {(
-                props.stats?.totalSpentBonusRequestAmount || 0
-              ).toLocaleString()}
-              원
+              무료(의뢰) {totalSpentFreeRequest.toLocaleString()}원
             </div>
             <div className="text-xs text-muted-foreground">
-              무료(배송){" "}
-              {(
-                props.stats?.totalSpentBonusShippingAmount || 0
-              ).toLocaleString()}
-              원
+              무료(배송) {totalSpentFreeShipping.toLocaleString()}원
             </div>
           </CardContent>
         </Card>
@@ -291,14 +306,14 @@ export function RequestorCreditTab(props: RequestorCreditTabProps) {
 
         <RequestorFreeCreditTab
           businesses={requestorBusinesses}
-          selectedBonusBusinessAnchorId={props.selectedBonusBusinessAnchorId}
-          setSelectedBonusBusinessAnchorId={
-            props.setSelectedBonusBusinessAnchorId
+          selectedFreeCreditBusinessAnchorId={props.selectedFreeCreditBusinessAnchorId}
+          setSelectedFreeCreditBusinessAnchorId={
+            props.setSelectedFreeCreditBusinessAnchorId
           }
-          bonusGrantSearch={props.bonusGrantSearch}
-          setBonusGrantSearch={props.setBonusGrantSearch}
-          loadBonusGrantHistory={props.loadBonusGrantHistory}
-          loadingBonusGrantRows={props.loadingBonusGrantRows}
+          freeCreditGrantSearch={props.freeCreditGrantSearch}
+          setFreeCreditGrantSearch={props.setFreeCreditGrantSearch}
+          loadFreeCreditGrantHistory={props.loadFreeCreditGrantHistory}
+          loadingFreeCreditGrantRows={props.loadingFreeCreditGrantRows}
           freeCreditMenu={props.freeCreditMenu}
           setFreeCreditMenu={props.setFreeCreditMenu}
           grantCreditType={props.grantCreditType}
@@ -309,30 +324,30 @@ export function RequestorCreditTab(props: RequestorCreditTabProps) {
           setSelectedShippingCreditBusinessAnchorId={
             props.setSelectedShippingCreditBusinessAnchorId
           }
-          selectedBonusAmount={props.selectedBonusAmount}
-          setSelectedBonusAmount={props.setSelectedBonusAmount}
+          selectedFreeCreditAmount={props.selectedFreeCreditAmount}
+          setSelectedFreeCreditAmount={props.setSelectedFreeCreditAmount}
           selectedShippingCreditAmount={props.selectedShippingCreditAmount}
           setSelectedShippingCreditAmount={
             props.setSelectedShippingCreditAmount
           }
-          bonusReason={props.bonusReason}
-          setBonusReason={props.setBonusReason}
+          freeCreditReason={props.freeCreditReason}
+          setFreeCreditReason={props.setFreeCreditReason}
           shippingCreditReason={props.shippingCreditReason}
           setShippingCreditReason={props.setShippingCreditReason}
           handleGrantFreeCredit={props.handleGrantFreeCredit}
           handleGrantShippingCredit={props.handleGrantShippingCredit}
-          grantingBonus={props.grantingBonus}
+          grantingFreeCredit={props.grantingFreeCredit}
           grantingShippingCredit={props.grantingShippingCredit}
-          selectedBonusBusiness={props.selectedBonusBusiness}
+          selectedFreeCreditBusiness={props.selectedFreeCreditBusiness}
           selectedShippingCreditBusiness={props.selectedShippingCreditBusiness}
           cancelStartDate={props.cancelStartDate}
           setCancelStartDate={props.setCancelStartDate}
           cancelEndDate={props.cancelEndDate}
           setCancelEndDate={props.setCancelEndDate}
           setCancelSkip={props.setCancelSkip}
-          setBonusGrantRows={props.setBonusGrantRows}
+          setFreeCreditGrantRows={props.setFreeCreditGrantRows}
           setCancelHasMore={props.setCancelHasMore}
-          filteredBonusGrantRows={props.filteredBonusGrantRows}
+          filteredFreeCreditGrantRows={props.filteredFreeCreditGrantRows}
           selectedCancelGrantId={props.selectedCancelGrantId}
           setSelectedCancelGrantId={props.setSelectedCancelGrantId}
           cancelHasMore={props.cancelHasMore}
@@ -341,7 +356,7 @@ export function RequestorCreditTab(props: RequestorCreditTabProps) {
           setCancelGrantReason={props.setCancelGrantReason}
           handleCancelFreeCredit={props.handleCancelFreeCredit}
           cancelingGrant={props.cancelingGrant}
-          bonusGrantRows={props.bonusGrantRows}
+          freeCreditGrantRows={props.freeCreditGrantRows}
           filteredFreeCreditUsageRows={props.filteredFreeCreditUsageRows}
         />
 

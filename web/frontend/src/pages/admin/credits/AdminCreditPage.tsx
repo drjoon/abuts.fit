@@ -137,14 +137,14 @@ export default function AdminCreditPage() {
               state.setOrgLedgerBusiness(business);
               state.setOrgLedgerOpen(true);
             }}
-            selectedBonusBusinessAnchorId={state.selectedBonusBusinessAnchorId}
-            setSelectedBonusBusinessAnchorId={
-              state.setSelectedBonusBusinessAnchorId
+            selectedFreeCreditBusinessAnchorId={state.selectedFreeCreditBusinessAnchorId}
+            setSelectedFreeCreditBusinessAnchorId={
+              state.setSelectedFreeCreditBusinessAnchorId
             }
-            bonusGrantSearch={state.bonusGrantSearch}
-            setBonusGrantSearch={state.setBonusGrantSearch}
-            loadBonusGrantHistory={state.loadBonusGrantHistory}
-            loadingBonusGrantRows={state.loadingBonusGrantRows}
+            freeCreditGrantSearch={state.freeCreditGrantSearch}
+            setFreeCreditGrantSearch={state.setFreeCreditGrantSearch}
+            loadFreeCreditGrantHistory={state.loadFreeCreditGrantHistory}
+            loadingFreeCreditGrantRows={state.loadingFreeCreditGrantRows}
             freeCreditMenu={state.freeCreditMenu}
             setFreeCreditMenu={state.setFreeCreditMenu}
             grantCreditType={state.grantCreditType}
@@ -155,21 +155,21 @@ export default function AdminCreditPage() {
             setSelectedShippingCreditBusinessAnchorId={
               state.setSelectedShippingCreditBusinessAnchorId
             }
-            selectedBonusAmount={state.selectedBonusAmount}
-            setSelectedBonusAmount={state.setSelectedBonusAmount}
+            selectedFreeCreditAmount={state.selectedFreeCreditAmount}
+            setSelectedFreeCreditAmount={state.setSelectedFreeCreditAmount}
             selectedShippingCreditAmount={state.selectedShippingCreditAmount}
             setSelectedShippingCreditAmount={
               state.setSelectedShippingCreditAmount
             }
-            bonusReason={state.bonusReason}
-            setBonusReason={state.setBonusReason}
+            freeCreditReason={state.freeCreditReason}
+            setFreeCreditReason={state.setFreeCreditReason}
             shippingCreditReason={state.shippingCreditReason}
             setShippingCreditReason={state.setShippingCreditReason}
             handleGrantFreeCredit={state.handleGrantFreeCredit}
             handleGrantShippingCredit={state.handleGrantShippingCredit}
-            grantingBonus={state.grantingBonus}
+            grantingFreeCredit={state.grantingFreeCredit}
             grantingShippingCredit={state.grantingShippingCredit}
-            selectedBonusBusiness={state.selectedBonusBusiness}
+            selectedFreeCreditBusiness={state.selectedFreeCreditBusiness}
             selectedShippingCreditBusiness={
               state.selectedShippingCreditBusiness
             }
@@ -178,9 +178,9 @@ export default function AdminCreditPage() {
             cancelEndDate={state.cancelEndDate}
             setCancelEndDate={state.setCancelEndDate}
             setCancelSkip={state.setCancelSkip}
-            setBonusGrantRows={state.setBonusGrantRows}
+            setFreeCreditGrantRows={state.setFreeCreditGrantRows}
             setCancelHasMore={state.setCancelHasMore}
-            filteredBonusGrantRows={state.filteredBonusGrantRows}
+            filteredFreeCreditGrantRows={state.filteredFreeCreditGrantRows}
             selectedCancelGrantId={state.selectedCancelGrantId}
             setSelectedCancelGrantId={state.setSelectedCancelGrantId}
             cancelHasMore={state.cancelHasMore}
@@ -189,7 +189,7 @@ export default function AdminCreditPage() {
             setCancelGrantReason={state.setCancelGrantReason}
             handleCancelFreeCredit={state.handleCancelFreeCredit}
             cancelingGrant={state.cancelingGrant}
-            bonusGrantRows={state.bonusGrantRows}
+            freeCreditGrantRows={state.freeCreditGrantRows}
             filteredFreeCreditUsageRows={state.filteredFreeCreditUsageRows}
             orderStatusFilter={state.orderStatusFilter}
             setOrderStatusFilter={state.setOrderStatusFilter}

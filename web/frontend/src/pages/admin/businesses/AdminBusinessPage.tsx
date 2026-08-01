@@ -87,22 +87,19 @@ type ReconcileSummary = {
   targetAnchors: number;
   requestsChecked: number;
   target: {
-    requestSpendCorrections: number;
-    requestSpendInsertions: number;
-    shippingSpendInsertions: number;
+    missingRequestCommitJournals: number;
+    missingShippingCommitJournals: number;
+    totalMissingCommitJournals: number;
   };
   applied: {
-    correctedCount: number;
-    insertedRequestSpendCount: number;
-    insertedShippingSpendCount: number;
+    snapshotResyncedAnchors: number;
   };
   changedAnchors: Array<{
     anchorId: string;
     anchorName: string;
     targetCount: number;
-    requestSpendCorrections: number;
-    requestSpendInsertions: number;
-    shippingSpendInsertions: number;
+    missingRequestCommitJournals: number;
+    missingShippingCommitJournals: number;
   }>;
 };
 
@@ -192,32 +189,36 @@ const getBusinessTypeBadgeClass = (type?: string) => {
 };
 
 const getCreditBreakdown = (business?: BusinessCredit | null) => {
-  const paidCredit = Number(
-    business?.paidCredit ?? business?.paidBalance ?? 0,
+  const paidCredit = Number(business?.paidCredit ?? business?.paidBalance ?? 0);
+  const freeRequestCredit = Number(
+    business?.freeRequestCredit ?? business?.bonusRequestCredit ?? 0,
   );
-  const bonusRequestCredit = Number(business?.bonusRequestCredit ?? 0);
-  const bonusShippingCredit = Number(business?.bonusShippingCredit ?? 0);
+  const freeShippingCredit = Number(
+    business?.freeShippingCredit ?? business?.bonusShippingCredit ?? 0,
+  );
   const totalBalance = Number(
-    business?.balance ??
-      paidCredit + bonusRequestCredit + bonusShippingCredit,
+    business?.balance ?? paidCredit + freeRequestCredit + freeShippingCredit,
   );
 
   const spentPaid = Number(business?.spentPaidAmount ?? 0);
-  const spentBonusRequest = Number(business?.spentBonusRequestAmount ?? 0);
-  const spentBonusShipping = Number(business?.spentBonusShippingAmount ?? 0);
+  const spentFreeRequest = Number(
+    business?.spentFreeRequestAmount ?? business?.spentBonusRequestAmount ?? 0,
+  );
+  const spentFreeShipping = Number(
+    business?.spentFreeShippingAmount ?? business?.spentBonusShippingAmount ?? 0,
+  );
   const totalSpent = Number(
-    business?.spentAmount ??
-      spentPaid + spentBonusRequest + spentBonusShipping,
+    business?.spentAmount ?? spentPaid + spentFreeRequest + spentFreeShipping,
   );
 
   return {
     paidCredit,
-    bonusRequestCredit,
-    bonusShippingCredit,
+    freeRequestCredit,
+    freeShippingCredit,
     totalBalance,
     spentPaid,
-    spentBonusRequest,
-    spentBonusShipping,
+    spentFreeRequest,
+    spentFreeShipping,
     totalSpent,
   };
 };
@@ -468,7 +469,7 @@ export default function AdminBusinessPage() {
 
 
 
-  const businesses = data?.items || [];
+  const businesses = useMemo(() => data?.items || [], [data?.items]);
 
   const filteredBusinesses = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -753,8 +754,8 @@ export default function AdminBusinessPage() {
                         </div>
                         <div className="mt-2 space-y-1 text-xs text-muted-foreground">
                           <div>유료: {formatMoney(credit.spentPaid)}원</div>
-                          <div>무료(의뢰): {formatMoney(credit.spentBonusRequest)}원</div>
-                          <div>무료(배송): {formatMoney(credit.spentBonusShipping)}원</div>
+                          <div>무료(의뢰): {formatMoney(credit.spentFreeRequest)}원</div>
+                          <div>무료(배송): {formatMoney(credit.spentFreeShipping)}원</div>
                         </div>
                       </div>
                       <div className="rounded-lg border p-3">
@@ -766,8 +767,8 @@ export default function AdminBusinessPage() {
                         </div>
                         <div className="mt-2 space-y-1 text-xs text-muted-foreground">
                           <div>유료: {formatMoney(credit.paidCredit)}원</div>
-                          <div>무료(의뢰): {formatMoney(credit.bonusRequestCredit)}원</div>
-                          <div>무료(배송): {formatMoney(credit.bonusShippingCredit)}원</div>
+                          <div>무료(의뢰): {formatMoney(credit.freeRequestCredit)}원</div>
+                          <div>무료(배송): {formatMoney(credit.freeShippingCredit)}원</div>
                         </div>
                       </div>
                     </CardContent>
@@ -831,24 +832,24 @@ export default function AdminBusinessPage() {
               </div>
 
               <div className="rounded-lg border p-3">
-                <div className="text-sm font-medium">누락 후보</div>
+                <div className="text-sm font-medium">누락 커밋 저널 후보</div>
                 <div className="mt-2 grid gap-2 text-sm sm:grid-cols-3">
                   <div className="rounded bg-muted/40 p-2">
-                    의뢰 업데이트 후보
+                    의뢰 소비 커밋 누락
                     <div className="font-semibold">
-                      {reconcileDialog.summary.target.requestSpendCorrections.toLocaleString()}건
+                      {reconcileDialog.summary.target.missingRequestCommitJournals.toLocaleString()}건
                     </div>
                   </div>
                   <div className="rounded bg-muted/40 p-2">
-                    의뢰 삽입 후보
+                    배송 소비 커밋 누락
                     <div className="font-semibold">
-                      {reconcileDialog.summary.target.requestSpendInsertions.toLocaleString()}건
+                      {reconcileDialog.summary.target.missingShippingCommitJournals.toLocaleString()}건
                     </div>
                   </div>
                   <div className="rounded bg-muted/40 p-2">
-                    배송 삽입 후보
+                    총 누락 커밋 저널
                     <div className="font-semibold">
-                      {reconcileDialog.summary.target.shippingSpendInsertions.toLocaleString()}건
+                      {reconcileDialog.summary.target.totalMissingCommitJournals.toLocaleString()}건
                     </div>
                   </div>
                 </div>
@@ -1032,13 +1033,13 @@ export default function AdminBusinessPage() {
                   <div className="rounded border bg-muted/30 p-2">
                     <div className="text-[11px] text-muted-foreground">무료 소비 (의뢰)</div>
                     <div className="mt-0.5 font-semibold">
-                      {formatMoney(detailCredit.spentBonusRequest)}원
+                      {formatMoney(detailCredit.spentFreeRequest)}원
                     </div>
                   </div>
                   <div className="rounded border bg-muted/30 p-2">
                     <div className="text-[11px] text-muted-foreground">무료 소비 (배송)</div>
                     <div className="mt-0.5 font-semibold">
-                      {formatMoney(detailCredit.spentBonusShipping)}원
+                      {formatMoney(detailCredit.spentFreeShipping)}원
                     </div>
                   </div>
                 </div>
@@ -1059,13 +1060,13 @@ export default function AdminBusinessPage() {
                   <div className="rounded border bg-muted/30 p-2">
                     <div className="text-[11px] text-muted-foreground">무료 잔액 (의뢰)</div>
                     <div className="mt-0.5 font-semibold">
-                      {formatMoney(detailCredit.bonusRequestCredit)}원
+                      {formatMoney(detailCredit.freeRequestCredit)}원
                     </div>
                   </div>
                   <div className="rounded border bg-muted/30 p-2">
                     <div className="text-[11px] text-muted-foreground">무료 잔액 (배송)</div>
                     <div className="mt-0.5 font-semibold">
-                      {formatMoney(detailCredit.bonusShippingCredit)}원
+                      {formatMoney(detailCredit.freeShippingCredit)}원
                     </div>
                   </div>
                 </div>

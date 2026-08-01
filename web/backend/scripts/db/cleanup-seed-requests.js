@@ -4,7 +4,8 @@
 // - web/backend/server.js
 import { connectDb, disconnectDb } from "./_mongo.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
-import CreditLedger from "../../models/creditLedger.model.js";
+import LedgerJournal from "../../models/ledgerJournal.model.js";
+import LedgerLine from "../../models/ledgerLine.model.js";
 import Request from "../../models/request.model.js";
 
 // Usage:
@@ -51,17 +52,17 @@ async function run() {
 
     const since = daysAgoDate(lookbackDays);
 
-    // 1) CreditLedger: refType에 SEED가 포함된 항목 또는 uniqueKey에 seed가 포함된 항목을 우선 탐지
-    const ledgerMatch = {
+    // 1) General Ledger: seed 관련 키/유형 또는 최근 생성된 journal 탐지
+    const journalMatch = {
       businessAnchorId: anchorId,
       $or: [
         { refType: { $regex: "SEED", $options: "i" } },
-        { uniqueKey: { $regex: "seed", $options: "i" } },
+        { idempotencyKey: { $regex: "seed", $options: "i" } },
         { createdAt: { $gte: since } },
       ],
     };
 
-    const ledgers = await CreditLedger.find(ledgerMatch).lean();
+    const journals = await LedgerJournal.find(journalMatch).lean();
 
     // 2) Request: businessAnchorId가 대상이고 생성일이 lookback window에 포함된 문서
     const requestMatch = {
@@ -70,11 +71,11 @@ async function run() {
     };
     const requests = await Request.find(requestMatch).select({ _id: 1, requestId: 1, createdAt: 1, "caseInfos.clinicName": 1 }).lean();
 
-    console.log(`[cleanup] matched credit ledger count: ${ledgers.length}`);
-    if (ledgers.length > 0) {
-      console.log("[cleanup] sample ledgers (up to 10):");
-      ledgers.slice(0, 10).forEach((l) => {
-        console.log(`  - _id: ${l._id}, type:${l.type}, amount:${l.amount}, refType:${l.refType}, uniqueKey:${l.uniqueKey}, createdAt:${l.createdAt}`);
+    console.log(`[cleanup] matched ledger journal count: ${journals.length}`);
+    if (journals.length > 0) {
+      console.log("[cleanup] sample journals (up to 10):");
+      journals.slice(0, 10).forEach((j) => {
+        console.log(`  - _id:${j._id}, journalId:${j.journalId}, eventType:${j.eventType}, refType:${j.refType}, idempotencyKey:${j.idempotencyKey}, createdAt:${j.createdAt}`);
       });
     }
 
@@ -100,7 +101,20 @@ async function run() {
         session.startTransaction();
       }
 
-      const ledgerDeleteResult = await CreditLedger.deleteMany(ledgerMatch).session(session || undefined);
+      const journalIds = (journals || [])
+        .map((j) => String(j?.journalId || "").trim())
+        .filter(Boolean);
+
+      let lineDeleteResult = { deletedCount: 0 };
+      let journalDeleteResult = { deletedCount: 0 };
+      if (journalIds.length > 0) {
+        lineDeleteResult = await LedgerLine.deleteMany({
+          journalId: { $in: journalIds },
+        }).session(session || undefined);
+        journalDeleteResult = await LedgerJournal.deleteMany({
+          journalId: { $in: journalIds },
+        }).session(session || undefined);
+      }
       const requestDeleteResult = await Request.deleteMany(requestMatch).session(session || undefined);
 
       if (session) {
@@ -108,7 +122,8 @@ async function run() {
         await session.endSession();
       }
 
-      console.log(`[cleanup] deleted credit ledgers: ${ledgerDeleteResult.deletedCount || 0}`);
+      console.log(`[cleanup] deleted ledger lines: ${lineDeleteResult.deletedCount || 0}`);
+      console.log(`[cleanup] deleted ledger journals: ${journalDeleteResult.deletedCount || 0}`);
       console.log(`[cleanup] deleted requests: ${requestDeleteResult.deletedCount || 0}`);
     } catch (err) {
       if (session) {

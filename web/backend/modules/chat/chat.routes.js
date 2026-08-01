@@ -20,15 +20,15 @@ router.get("/support-room", chatController.getSupportRoom);
 // 모든 채팅방 조회 (Admin 전용)
 router.get("/rooms/all", authorize(["admin"]), chatController.getAllChatRooms);
 
-// 의뢰(request) 기준 채팅방 조회/생성 (기존 루트)
-router.get("/request-room/:requestId", chatController.getOrCreateRequestChatRoom);
-
-// practice(치과) 전용 의뢰 채팅방 조회/생성 (치과->기공소 루트)
+// 의뢰(request) 기준 채팅방 조회/생성 (기공소 의뢰 도메인 전용, non-practice)
 router.get(
-  "/practice/request-room/:requestId",
-  authorize(["practice", "admin"], { subRoles: ["owner", "staff"] }),
+  "/request-room/:requestId",
+  authorize(["requestor", "manufacturer", "admin"]),
   chatController.getOrCreateRequestChatRoom,
 );
+
+// legacy 제거: practice의 request-room 경로는 사용하지 않는다.
+// practice 채팅은 transfer-room(/api/chats/practice/transfer-room/:transferId)만 SSOT로 사용한다.
 
 // related files:
 // - web/backend/controllers/practiceTransfers/practiceTransfer.controller.js

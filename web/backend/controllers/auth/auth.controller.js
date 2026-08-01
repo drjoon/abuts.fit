@@ -3,11 +3,13 @@
 // - web/backend/services/creditBalance.service.js
 // - web/backend/controllers/requests/common.review.helpers.js
 // - web/backend/controllers/credits/credit.controller.js
-// - web/backend/models/creditLedger.model.js
+// - web/backend/models/businessCreditBalance.model.js
+// - web/backend/models/ledgerJournal.model.js
+// - web/backend/models/ledgerLine.model.js
 import User from "../../models/user.model.js";
 import SignupVerification from "../../models/signupVerification.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
-import CreditLedger from "../../models/creditLedger.model.js";
+import BusinessCreditBalance from "../../models/businessCreditBalance.model.js";
 import {
   generateToken,
   generateRefreshToken,
@@ -26,6 +28,7 @@ import {
 } from "../../controllers/admin/admin.shared.controller.js";
 import { triggerPricingSnapshotForUserDoc } from "../../services/requestSnapshotTriggers.service.js";
 import { getBusinessCreditBalanceSnapshot } from "../../services/creditBalance.service.js";
+import { postGeneralLedgerJournal } from "../../services/generalLedger.service.js";
 import { sendEmail } from "../../utils/email.util.js";
 import { getFrontendBaseUrl } from "../../utils/url.util.js";
 
@@ -1782,24 +1785,59 @@ async function withdraw(req, res) {
           });
         }
 
-        const uniqueKey = `account_withdraw_refund:${String(
+        const idempotencyKey = `gl:account_withdraw_refund:${String(
           businessAnchorId,
         )}:${String(userId)}`;
-        await CreditLedger.updateOne(
-          { uniqueKey },
-          {
-            $setOnInsert: {
-              businessAnchorId,
-              userId,
-              type: "ADJUST",
-              amount: -paidBalance,
-              refType: "ACCOUNT_WITHDRAW",
-              refId: userId,
-              uniqueKey,
+
+        const glResult = await postGeneralLedgerJournal({
+          idempotencyKey,
+          eventType: "ADJUST",
+          businessAnchorId,
+          refType: "ACCOUNT_WITHDRAW",
+          refId: userId,
+          createdBy: userId,
+          meta: {
+            reason: "account_withdraw_refund",
+            refundReceiveAccount: {
+              bank,
+              accountNumber,
+              holderName,
             },
           },
-          { upsert: true },
-        );
+          lines: [
+            {
+              accountCode: "REQ_PAID_CREDIT",
+              ownerRole: "requestor",
+              ownerId: businessAnchorId,
+              amount: -paidBalance,
+              amountExcludingVat: -paidBalance,
+              vatAmount: 0,
+              amountIncludingVat: -paidBalance,
+              creditKind: "PAID",
+              refType: "ACCOUNT_WITHDRAW",
+              refId: userId,
+            },
+          ],
+        });
+
+        if (glResult?.posted) {
+          await BusinessCreditBalance.updateOne(
+            { businessAnchorId },
+            {
+              $inc: {
+                paidCredit: -paidBalance,
+                version: 1,
+              },
+              $setOnInsert: {
+                businessAnchorId,
+                paidCredit: 0,
+                bonusRequestCredit: 0,
+                bonusShippingCredit: 0,
+              },
+            },
+            { upsert: true },
+          );
+        }
       }
     }
 

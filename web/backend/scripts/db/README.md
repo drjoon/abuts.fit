@@ -41,46 +41,8 @@ npm run db:seed-account -- r=20 s=10
 npm run db:implant-preset
 ```
 
-- **SPEND/REFUND 분해 필드명 변경 (`spentBonusAmount` → `spentFreeAmount`)**
-
-```bash
-# dry-run
-npm run db:migrate-spent-free-field
-
-# 실제 반영
-npm run db:migrate-spent-free-field -- --yes
-```
-
-- 모든 `CreditLedger` 문서에서 `spentBonusAmount`를 `spentFreeAmount`로 이관하고 기존 필드를 제거합니다.
-
-- **레거시 BONUS → CHARGE+creditKind 마이그레이션**
-
-```bash
-# dry-run
-npm run db:migrate-bonus-to-charge-creditkind
-
-# 실제 반영
-npm run db:migrate-bonus-to-charge-creditkind -- --yes
-```
-
-- BONUS 행을 `CHARGE`로 변환하고 `creditKind`를 채웁니다.
-  - `refType=FREE_SHIPPING_CREDIT` → `creditKind=FREE_SHIPPING`
-  - 그 외 BONUS → `creditKind=FREE_REQUEST`
-- `uniqueKey=bonus_grant:<id>`와 연결된 `BonusGrant.overrideReason`이 있으면 `CreditLedger.memo`로 이관합니다.
-
-- **spentPaidAmount 오염 보정 (테스트 DB 전용)**
-
-```bash
-# dry-run
-npm run db:fix-spent-paid-pollution:test
-
-# 실제 반영
-npm run db:fix-spent-paid-pollution:test -- --yes
-```
-
-- 이 스크립트는 `NODE_ENV=test` + `MONGODB_URI_TEST` DB 이름에 `test`가 포함된 경우에만 동작합니다.
-- 대상: `SPEND/REFUND`인데 `spentPaidAmount>0`인 행 중, 해당 사업자에 유료 공급(`CHARGE`/양수 `ADJUST`) 이력이 0인 데이터.
-- 보정: `spentPaidAmount=0`, `spentFreeAmount=abs(amount)`로 정규화.
+- 레거시 `CreditLedger` 기반 마이그레이션/보정 스크립트는 SSOT General Ledger 전환으로 삭제되었습니다.
+- 현재는 `LedgerJournal` + `LedgerLine` 기준 스크립트만 유지합니다.
 
 - **payoutRates 마이그레이션 (legacy -> 최신 필드)**
 

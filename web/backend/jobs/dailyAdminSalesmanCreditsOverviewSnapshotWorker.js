@@ -19,8 +19,9 @@ import "../bootstrap/env.js";
 import mongoose, { Types } from "mongoose";
 import User from "../models/user.model.js";
 import BusinessAnchor from "../models/businessAnchor.model.js";
-import SalesmanLedger from "../models/salesmanLedger.model.js";
 import Request from "../models/request.model.js";
+import LedgerLine from "../models/ledgerLine.model.js";
+import LedgerJournal from "../models/ledgerJournal.model.js";
 import AdminSalesmanCreditsOverviewSnapshot from "../models/adminSalesmanCreditsOverviewSnapshot.model.js";
 import {
   getTodayYmdInKst,
@@ -90,11 +91,12 @@ async function computeAndUpsertSnapshot({ ymd, range }) {
     role: { $in: REFERRAL_LEADER_ROLES },
     active: true,
   })
-    .select({ _id: 1 })
+    .select({ _id: 1, role: 1, businessAnchorId: 1 })
     .lean();
   const salesmanObjectIds = (salesmen || []).map((s) => s?._id).filter(Boolean);
 
   const salesmenCount = salesmanObjectIds.length;
+  const salesmanUsers = salesmen;
 
   if (salesmenCount === 0) {
     await AdminSalesmanCreditsOverviewSnapshot.updateOne(
@@ -129,21 +131,74 @@ async function computeAndUpsertSnapshot({ ymd, range }) {
     return;
   }
 
-  // 기간 기준 지갑 합산
-  const ledgerPeriodRows = await SalesmanLedger.aggregate([
-    {
-      $match: {
-        salesmanId: { $in: salesmanObjectIds },
-        createdAt: { $gte: rangeStartUtc, $lte: rangeEndUtc },
-      },
-    },
-    {
-      $group: {
-        _id: "$type",
-        total: { $sum: "$amount" },
-      },
-    },
-  ]);
+  // 기간 기준 지갑 합산 (SSOT GL)
+  const roleAnchorPairs = (salesmanUsers || [])
+    .map((u) => ({
+      role: String(u?.role || "").trim(),
+      anchorId: String(u?.businessAnchorId || "").trim(),
+    }))
+    .filter(
+      (it) =>
+        (it.role === "salesman" || it.role === "devops") &&
+        Types.ObjectId.isValid(it.anchorId),
+    );
+
+  const matchOr = roleAnchorPairs.map((it) => ({
+    ownerRole: it.role,
+    ownerId: new Types.ObjectId(it.anchorId),
+    accountCode: it.role === "devops" ? "REV_DEVOPS" : "REV_SALESMAN",
+  }));
+
+  const ledgerPeriodRows = matchOr.length
+    ? await LedgerLine.aggregate([
+        {
+          $match: {
+            $or: matchOr,
+            occurredAt: { $gte: rangeStartUtc, $lte: rangeEndUtc },
+          },
+        },
+        {
+          $lookup: {
+            from: LedgerJournal.collection.name,
+            localField: "journalId",
+            foreignField: "journalId",
+            as: "journalDoc",
+          },
+        },
+        {
+          $unwind: {
+            path: "$journalDoc",
+            preserveNullAndEmptyArrays: true,
+          },
+        },
+        {
+          $addFields: {
+            type: {
+              $switch: {
+                branches: [
+                  {
+                    case: { $eq: ["$journalDoc.eventType", "SETTLEMENT_PAYOUT"] },
+                    then: "PAYOUT",
+                  },
+                  {
+                    case: { $eq: ["$journalDoc.eventType", "ADJUST"] },
+                    then: "ADJUST",
+                  },
+                ],
+                default: "EARN",
+              },
+            },
+            amountBase: { $ifNull: ["$amountExcludingVat", "$amount"] },
+          },
+        },
+        {
+          $group: {
+            _id: "$type",
+            total: { $sum: "$amountBase" },
+          },
+        },
+      ])
+    : [];
 
   let earnedAmount = 0;
   let paidOutAmount = 0;
@@ -160,9 +215,6 @@ async function computeAndUpsertSnapshot({ ymd, range }) {
   );
 
   // 영업자들의 businessAnchorId 및 role 조회
-  const salesmanUsers = await User.find({ _id: { $in: salesmanObjectIds } })
-    .select({ businessAnchorId: 1, role: 1 })
-    .lean();
   const salesmanBusinessAnchorIds = salesmanUsers
     .map((s) => s?.businessAnchorId)
     .filter((id) => id && Types.ObjectId.isValid(String(id)));

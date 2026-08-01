@@ -2,12 +2,13 @@
 // - web/backend/rules.md
 // - web/backend/modules/admin/admin.routes.js
 // - web/backend/models/businessCreditBalance.model.js
+// - web/backend/models/ledgerJournal.model.js
+// - web/backend/models/ledgerLine.model.js
+// - web/backend/controllers/salesman/salesman.controller.js
 // - web/backend/services/creditBalance.service.js
 // - web/frontend/src/shared/components/CreditLedgerModal.tsx
-import CreditLedger from "../../models/creditLedger.model.js";
-import ManufacturerCreditLedger from "../../models/manufacturerCreditLedger.model.js";
-import AdminCreditLedger from "../../models/adminCreditLedger.model.js";
-import BonusGrant from "../../models/bonusGrant.model.js";
+// - web/frontend/src/shared/components/SalesmanLedgerModal.tsx
+import FreeCreditGrant from "../../models/freeCreditGrant.model.js";
 import ChargeOrder from "../../models/chargeOrder.model.js";
 import BankTransaction from "../../models/bankTransaction.model.js";
 import DeliveryInfo from "../../models/deliveryInfo.model.js";
@@ -16,8 +17,10 @@ import BusinessCreditBalance from "../../models/businessCreditBalance.model.js";
 import ShippingPackage from "../../models/shippingPackage.model.js";
 import { getBusinessCreditBalanceSnapshot } from "../../services/creditBalance.service.js";
 import User from "../../models/user.model.js";
-import SalesmanLedger from "../../models/salesmanLedger.model.js";
 import Request from "../../models/request.model.js";
+import LedgerLine from "../../models/ledgerLine.model.js";
+import LedgerJournal from "../../models/ledgerJournal.model.js";
+import { postGeneralLedgerJournal } from "../../services/generalLedger.service.js";
 import { Types } from "mongoose";
 import {
   getLast30DaysRangeUtc,
@@ -78,9 +81,10 @@ function buildRequestSummary(doc) {
   };
 }
 
-function parseBonusGrantIdFromUniqueKey(uniqueKey) {
-  const raw = String(uniqueKey || "").trim();
-  const m = raw.match(/^bonus_grant:(.+)$/);
+function parseFreeCreditGrantIdFromUniqueKey(uniqueKey) {
+  const raw = String(uniqueKey || "").trim().replace(/^gl:/, "");
+  // legacy 호환 (앱 안정화 후 삭제 예정): bonus_grant prefix 병행 파싱
+  const m = raw.match(/^(?:bonus_grant|free_credit_grant):([a-f0-9]{24})$/i);
   return m ? m[1] : "";
 }
 
@@ -150,21 +154,76 @@ function getPeriodRangeUtcFromPeriodKey(periodKey) {
 async function computeSalesmanOverviewSnapshot({ range, salesmanIds }) {
   const commissionRate = 0.1;
 
-  const ledgerPeriodRows = await SalesmanLedger.aggregate([
-    {
-      $match: {
-        salesmanId: { $in: salesmanIds },
-        createdAt: { $gte: range.start, $lte: range.end },
-      },
-    },
-    ...buildPaidRequestEligibleLedgerStages(),
-    {
-      $group: {
-        _id: "$type",
-        total: { $sum: "$amount" },
-      },
-    },
-  ]);
+  const targetUsers = await User.find({ _id: { $in: salesmanIds } })
+    .select({ _id: 1, role: 1, businessAnchorId: 1 })
+    .lean();
+
+  const roleAnchorPairs = (targetUsers || [])
+    .map((u) => ({
+      role: String(u?.role || "").trim(),
+      anchorId: String(u?.businessAnchorId || "").trim(),
+    }))
+    .filter(
+      (it) =>
+        (it.role === "salesman" || it.role === "devops") &&
+        Types.ObjectId.isValid(it.anchorId),
+    );
+
+  const matchOr = roleAnchorPairs.map((it) => ({
+    ownerRole: it.role,
+    ownerId: new Types.ObjectId(it.anchorId),
+    accountCode: it.role === "devops" ? "REV_DEVOPS" : "REV_SALESMAN",
+  }));
+
+  const ledgerPeriodRows = matchOr.length
+    ? await LedgerLine.aggregate([
+        {
+          $match: {
+            $or: matchOr,
+            occurredAt: { $gte: range.start, $lte: range.end },
+          },
+        },
+        {
+          $lookup: {
+            from: LedgerJournal.collection.name,
+            localField: "journalId",
+            foreignField: "journalId",
+            as: "journalDoc",
+          },
+        },
+        {
+          $unwind: {
+            path: "$journalDoc",
+            preserveNullAndEmptyArrays: true,
+          },
+        },
+        {
+          $addFields: {
+            type: {
+              $switch: {
+                branches: [
+                  {
+                    case: { $eq: ["$journalDoc.eventType", "SETTLEMENT_PAYOUT"] },
+                    then: "PAYOUT",
+                  },
+                  {
+                    case: { $eq: ["$journalDoc.eventType", "ADJUST"] },
+                    then: "ADJUST",
+                  },
+                ],
+                default: "EARN",
+              },
+            },
+          },
+        },
+        {
+          $group: {
+            _id: "$type",
+            total: { $sum: { $ifNull: ["$amountExcludingVat", "$amount"] } },
+          },
+        },
+      ])
+    : [];
 
   let earnedAmount = 0;
   let paidOutAmount = 0;
@@ -176,9 +235,11 @@ async function computeSalesmanOverviewSnapshot({ range, salesmanIds }) {
     else if (type === "PAYOUT") paidOutAmount += total;
     else if (type === "ADJUST") adjustedAmount += total;
   }
+
   const balanceAmount = normalizeNumber(
     earnedAmount - paidOutAmount + adjustedAmount,
   );
+
   const { directOrgIdsBySalesmanId, revenueByOrgId } =
     await buildSalesmanReferralAggregation({
       salesmanIds,
@@ -335,27 +396,37 @@ export async function adminGetBusinessLedger(req, res) {
       Math.max(1, Number(req.query.pageSize || 50) || 50),
     );
 
-    if (!businessAnchorId) {
-      return res.status(400).json({
-        success: false,
-        message: "해당 사업자에 businessAnchorId가 없습니다.",
-      });
-    }
+    const balanceSnapshot = await getBusinessCreditBalanceSnapshot({
+      businessAnchorId,
+      upsertIfMissing: true,
+    });
 
-    const match = { businessAnchorId };
+    const currentBalanceSnapshot = {
+      balance: Number(balanceSnapshot?.balance || 0),
+      paidCredit: Number(balanceSnapshot?.paidCredit || 0),
+      freeRequestCredit: Number(balanceSnapshot?.bonusRequestCredit || 0),
+      freeShippingCredit: Number(balanceSnapshot?.bonusShippingCredit || 0),
+      bonusRequestCredit: Number(balanceSnapshot?.bonusRequestCredit || 0), // legacy 호환 (앱 안정화 후 삭제 예정)
+      bonusShippingCredit: Number(balanceSnapshot?.bonusShippingCredit || 0), // legacy 호환 (앱 안정화 후 삭제 예정)
+      updatedAt: balanceSnapshot?.updatedAt || null,
+    };
 
-    if (
-      typeRaw &&
-      typeRaw !== "ALL" &&
-      ["CHARGE", "BONUS", "SPEND", "REFUND", "ADJUST"].includes(typeRaw)
-    ) {
-      match.type = typeRaw;
-    }
+    const match = {
+      ownerRole: "requestor",
+      ownerId: businessAnchorId,
+      accountCode: {
+        $in: [
+          "REQ_PAID_CREDIT",
+          "REQ_FREE_REQUEST_CREDIT",
+          "REQ_FREE_SHIPPING_CREDIT",
+        ],
+      },
+    };
 
-    const createdAt = {};
+    const occurredAt = {};
     const sinceFromPeriod = parsePeriod(periodRaw);
     if (sinceFromPeriod) {
-      createdAt.$gte = sinceFromPeriod;
+      occurredAt.$gte = sinceFromPeriod;
     }
 
     const fromRaw = String(req.query.from || "").trim();
@@ -363,20 +434,185 @@ export async function adminGetBusinessLedger(req, res) {
 
     if (fromRaw) {
       const from = new Date(fromRaw);
-      if (!Number.isNaN(from.getTime())) {
-        createdAt.$gte = from;
-      }
+      if (!Number.isNaN(from.getTime())) occurredAt.$gte = from;
     }
-
     if (toRaw) {
       const to = new Date(toRaw);
-      if (!Number.isNaN(to.getTime())) {
-        createdAt.$lte = to;
-      }
+      if (!Number.isNaN(to.getTime())) occurredAt.$lte = to;
     }
 
-    if (Object.keys(createdAt).length) {
-      match.createdAt = createdAt;
+    if (Object.keys(occurredAt).length) {
+      match.occurredAt = occurredAt;
+    }
+
+    const pipeline = [
+      { $match: match },
+      {
+        $lookup: {
+          from: LedgerJournal.collection.name,
+          localField: "journalId",
+          foreignField: "journalId",
+          as: "journalDoc",
+        },
+      },
+      {
+        $unwind: {
+          path: "$journalDoc",
+          preserveNullAndEmptyArrays: true,
+        },
+      },
+      {
+        $addFields: {
+          eventType: { $ifNull: ["$journalDoc.eventType", ""] },
+          amountBase: { $ifNull: ["$amountExcludingVat", "$amount"] },
+          mergedUniqueKey: {
+            $concat: [
+              "gl:",
+              {
+                $ifNull: [
+                  "$journalDoc.meta.spendUniqueKey",
+                  { $ifNull: ["$journalDoc.idempotencyKey", "$journalId"] },
+                ],
+              },
+            ],
+          },
+        },
+      },
+      {
+        $group: {
+          _id: "$journalId",
+          occurredAt: { $max: "$occurredAt" },
+          createdAt: { $max: "$createdAt" },
+          eventType: { $first: "$eventType" },
+          refType: { $first: "$refType" },
+          refId: { $first: "$refId" },
+          uniqueKey: { $first: "$mergedUniqueKey" },
+          amount: { $sum: "$amountBase" },
+          spentPaidAmount: {
+            $sum: {
+              $cond: [
+                {
+                  $and: [
+                    {
+                      $in: [
+                        "$eventType",
+                        ["REQUEST_SPEND_COMMIT", "SHIPPING_SPEND_COMMIT"],
+                      ],
+                    },
+                    { $eq: ["$accountCode", "REQ_PAID_CREDIT"] },
+                    { $lt: ["$amountBase", 0] },
+                  ],
+                },
+                { $abs: "$amountBase" },
+                0,
+              ],
+            },
+          },
+          spentFreeAmount: {
+            $sum: {
+              $cond: [
+                {
+                  $and: [
+                    {
+                      $in: [
+                        "$eventType",
+                        ["REQUEST_SPEND_COMMIT", "SHIPPING_SPEND_COMMIT"],
+                      ],
+                    },
+                    {
+                      $in: [
+                        "$accountCode",
+                        ["REQ_FREE_REQUEST_CREDIT", "REQ_FREE_SHIPPING_CREDIT"],
+                      ],
+                    },
+                    { $lt: ["$amountBase", 0] },
+                  ],
+                },
+                { $abs: "$amountBase" },
+                0,
+              ],
+            },
+          },
+        },
+      },
+      {
+        $addFields: {
+          type: {
+            $switch: {
+              branches: [
+                {
+                  case: { $eq: ["$eventType", "CHARGE_PAID"] },
+                  then: "CHARGE_PAID",
+                },
+                {
+                  case: { $eq: ["$eventType", "CHARGE_FREE_REQUEST"] },
+                  then: "CHARGE_FREE_REQUEST",
+                },
+                {
+                  case: { $eq: ["$eventType", "CHARGE_FREE_SHIPPING"] },
+                  then: "CHARGE_FREE_SHIPPING",
+                },
+                {
+                  case: {
+                    $and: [
+                      {
+                        $in: [
+                          "$eventType",
+                          ["REQUEST_SPEND_COMMIT", "SHIPPING_SPEND_COMMIT"],
+                        ],
+                      },
+                      { $gt: ["$spentPaidAmount", 0] },
+                    ],
+                  },
+                  then: "SPEND_PAID",
+                },
+                {
+                  case: { $eq: ["$eventType", "REQUEST_SPEND_COMMIT"] },
+                  then: "SPEND_FREE_REQUEST",
+                },
+                {
+                  case: { $eq: ["$eventType", "SHIPPING_SPEND_COMMIT"] },
+                  then: "SPEND_FREE_SHIPPING",
+                },
+                {
+                  case: { $eq: ["$eventType", "ADJUST"] },
+                  then: "ADJUST",
+                },
+              ],
+              default: "ADJUST",
+            },
+          },
+        },
+      },
+    ];
+
+    if (
+      typeRaw &&
+      typeRaw !== "ALL" &&
+      [
+        "CHARGE_PAID",
+        "CHARGE_FREE_REQUEST",
+        "CHARGE_FREE_SHIPPING",
+        "SPEND_PAID",
+        "SPEND_FREE_REQUEST",
+        "SPEND_FREE_SHIPPING",
+        "ADJUST",
+        "REFUND",
+      ].includes(typeRaw)
+    ) {
+      if (typeRaw === "REFUND") {
+        return res.json({
+          success: true,
+          data: {
+            items: [],
+            total: 0,
+            page,
+            pageSize,
+            currentBalanceSnapshot,
+          },
+        });
+      }
+      pipeline.push({ $match: { type: typeRaw } });
     }
 
     if (qRaw) {
@@ -390,62 +626,40 @@ export async function adminGetBusinessLedger(req, res) {
         ors.push({ refId: new Types.ObjectId(qRaw) });
       }
       if (ors.length) {
-        match.$or = ors;
+        pipeline.push({ $match: { $or: ors } });
       }
     }
 
-    const balanceSnapshot = await getBusinessCreditBalanceSnapshot({
-      businessAnchorId,
-      upsertIfMissing: true,
-    });
+    pipeline.push({ $sort: { occurredAt: -1, _id: -1 } });
 
-    const currentBalanceSnapshot = {
-      balance: Number(balanceSnapshot?.balance || 0),
-      paidCredit: Number(balanceSnapshot?.paidCredit || 0),
-      bonusRequestCredit: Number(balanceSnapshot?.bonusRequestCredit || 0),
-      bonusShippingCredit: Number(balanceSnapshot?.bonusShippingCredit || 0),
-      updatedAt: balanceSnapshot?.updatedAt || null,
-    };
+    const allRows = await LedgerLine.aggregate(pipeline);
+    const total = Array.isArray(allRows) ? allRows.length : 0;
+    const startIdx = (page - 1) * pageSize;
+    const endIdx = startIdx + pageSize;
 
-    // running balance: 현재 SSOT 잔액을 기준으로 페이지 상단부터 역산
-    let totalBalance = Number(currentBalanceSnapshot.balance || 0);
-
-    const skippedRows =
-      (page - 1) * pageSize > 0
-        ? await CreditLedger.find(match)
-            .sort({ createdAt: -1, _id: -1 })
-            .limit((page - 1) * pageSize)
-            .select({ amount: 1 })
-            .lean()
-        : [];
+    let runningBalance = Number(currentBalanceSnapshot.balance || 0);
     let skippedSum = 0;
-    for (const r of skippedRows) skippedSum += Number(r.amount || 0);
+    for (const r of allRows.slice(0, startIdx)) {
+      skippedSum += Number(r?.amount || 0);
+    }
+    runningBalance -= skippedSum;
 
-    const [total, rawItems] = await Promise.all([
-      CreditLedger.countDocuments(match),
-      CreditLedger.find(match)
-        .sort({ createdAt: -1, _id: -1 })
-        .skip((page - 1) * pageSize)
-        .limit(pageSize)
-        .select({
-          type: 1,
-          amount: 1,
-          spentPaidAmount: 1,
-          spentFreeAmount: 1,
-          refType: 1,
-          refId: 1,
-          uniqueKey: 1,
-          userId: 1,
-          createdAt: 1,
-        })
-        .lean(),
-    ]);
-
-    let runningBalance = totalBalance - skippedSum;
-    const items = (Array.isArray(rawItems) ? rawItems : []).map((r) => {
+    const items = allRows.slice(startIdx, endIdx).map((r) => {
       const balanceAfter = runningBalance;
-      runningBalance -= Number(r.amount || 0);
-      return { ...r, balanceAfter };
+      runningBalance -= Number(r?.amount || 0);
+      return {
+        _id: String(r?._id || ""),
+        type: String(r?.type || "ADJUST"),
+        amount: Number(r?.amount || 0),
+        spentPaidAmount: Number(r?.spentPaidAmount || 0),
+        spentFreeAmount: Number(r?.spentFreeAmount || 0),
+        refType: String(r?.refType || ""),
+        refId: r?.refId ? String(r.refId) : null,
+        uniqueKey: String(r?.uniqueKey || ""),
+        createdAt: r?.createdAt || r?.occurredAt || new Date(),
+        occurredAt: r?.occurredAt || null,
+        balanceAfter,
+      };
     });
 
     const requestRefIds = Array.from(
@@ -474,10 +688,10 @@ export async function adminGetBusinessLedger(req, res) {
       ),
     );
 
-    const bonusGrantIds = Array.from(
+    const freeCreditGrantIds = Array.from(
       new Set(
         (items || [])
-          .map((it) => parseBonusGrantIdFromUniqueKey(it?.uniqueKey))
+          .map((it) => parseFreeCreditGrantIdFromUniqueKey(it?.uniqueKey))
           .filter((id) => Types.ObjectId.isValid(id)),
       ),
     );
@@ -553,17 +767,14 @@ export async function adminGetBusinessLedger(req, res) {
               .filter(Boolean),
           ),
         );
-        shippingTrackingNumbersByPackageId.set(
-          String(pkg._id),
-          trackingNumbers,
-        );
+        shippingTrackingNumbersByPackageId.set(String(pkg._id), trackingNumbers);
       }
     }
 
-    const bonusReasonByGrantId = new Map();
-    if (bonusGrantIds.length > 0) {
-      const grants = await BonusGrant.find({
-        _id: { $in: bonusGrantIds.map((id) => new Types.ObjectId(id)) },
+    const freeReasonByGrantId = new Map();
+    if (freeCreditGrantIds.length > 0) {
+      const grants = await FreeCreditGrant.find({
+        _id: { $in: freeCreditGrantIds.map((id) => new Types.ObjectId(id)) },
       })
         .select({ _id: 1, type: 1, source: 1, overrideReason: 1 })
         .lean();
@@ -571,12 +782,12 @@ export async function adminGetBusinessLedger(req, res) {
       for (const grant of grants || []) {
         if (!grant?._id) continue;
         const source = String(grant.source || "").trim();
-        const grantType = String(grant.type || "").trim();
+        const grantType = String(grant.type || "").trim().toUpperCase();
         const overrideReason = String(grant.overrideReason || "").trim();
 
-        let reason = "가입 축하 크레딧";
-        if (grantType === "FREE_SHIPPING_CREDIT") {
-          reason = "가입 축하 배송비 보너스";
+        let reason = "환영 무료 의뢰크레딧";
+        if (grantType === "FREE_SHIPPING_CREDIT" || grantType === "SHIPPING_FREE_CREDIT") {
+          reason = "환영 무료 배송크레딧";
         }
         if (source === "migrated") {
           reason = "시드/마이그레이션 지급";
@@ -585,7 +796,7 @@ export async function adminGetBusinessLedger(req, res) {
           reason = overrideReason || "관리자 지급";
         }
 
-        bonusReasonByGrantId.set(String(grant._id), reason);
+        freeReasonByGrantId.set(String(grant._id), reason);
       }
     }
 
@@ -619,11 +830,13 @@ export async function adminGetBusinessLedger(req, res) {
         };
       }
 
-      const grantId = parseBonusGrantIdFromUniqueKey(it?.uniqueKey);
+      const grantId = parseFreeCreditGrantIdFromUniqueKey(it?.uniqueKey);
       if (grantId) {
+        const freeReason = freeReasonByGrantId.get(grantId) || "";
         return {
           ...it,
-          bonusReason: bonusReasonByGrantId.get(grantId) || "",
+          freeReason,
+          bonusReason: freeReason, // legacy 호환 (앱 안정화 후 삭제 예정)
         };
       }
 
@@ -676,7 +889,7 @@ export async function adminCreateSalesmanPayout(req, res) {
     }
 
     const salesman = await User.findById(salesmanId)
-      .select({ _id: 1, role: 1, active: 1 })
+      .select({ _id: 1, role: 1, active: 1, businessAnchorId: 1 })
       .lean();
     if (!salesman || String(salesman.role || "") !== "salesman") {
       return res.status(404).json({
@@ -685,9 +898,62 @@ export async function adminCreateSalesmanPayout(req, res) {
       });
     }
 
-    const ledgerRows = await SalesmanLedger.aggregate([
-      { $match: { salesmanId } },
-      { $group: { _id: "$type", total: { $sum: "$amount" } } },
+    const ownerAnchorIdRaw = String(salesman?.businessAnchorId || "").trim();
+    if (!ownerAnchorIdRaw || !Types.ObjectId.isValid(ownerAnchorIdRaw)) {
+      return res.status(400).json({
+        success: false,
+        message: "영업자 사업체 정보가 없습니다.",
+      });
+    }
+    const ownerAnchorId = new Types.ObjectId(ownerAnchorIdRaw);
+
+    const ledgerRows = await LedgerLine.aggregate([
+      {
+        $match: {
+          ownerRole: "salesman",
+          ownerId: ownerAnchorId,
+          accountCode: "REV_SALESMAN",
+        },
+      },
+      {
+        $lookup: {
+          from: LedgerJournal.collection.name,
+          localField: "journalId",
+          foreignField: "journalId",
+          as: "journalDoc",
+        },
+      },
+      {
+        $unwind: {
+          path: "$journalDoc",
+          preserveNullAndEmptyArrays: true,
+        },
+      },
+      {
+        $addFields: {
+          type: {
+            $switch: {
+              branches: [
+                {
+                  case: { $eq: ["$journalDoc.eventType", "SETTLEMENT_PAYOUT"] },
+                  then: "PAYOUT",
+                },
+                {
+                  case: { $eq: ["$journalDoc.eventType", "ADJUST"] },
+                  then: "ADJUST",
+                },
+              ],
+              default: "EARN",
+            },
+          },
+        },
+      },
+      {
+        $group: {
+          _id: "$type",
+          total: { $sum: { $ifNull: ["$amountExcludingVat", "$amount"] } },
+        },
+      },
     ]);
 
     let earn = 0;
@@ -709,24 +975,52 @@ export async function adminCreateSalesmanPayout(req, res) {
     }
 
     const now = new Date();
-    const uniqueKey = `admin:salesman:payout:${String(salesmanId)}:${now.getTime()}`;
-    const created = await SalesmanLedger.create({
-      salesmanId,
-      type: "PAYOUT",
-      amount,
+    const requestIdempotencyKey = String(req.body?.idempotencyKey || "").trim();
+    const idempotencyKey =
+      requestIdempotencyKey ||
+      `gl:settlement_payout:salesman:${String(ownerAnchorId)}:${String(amount)}:${now.getTime()}`;
+
+    const posted = await postGeneralLedgerJournal({
+      idempotencyKey,
+      eventType: "SETTLEMENT_PAYOUT",
+      businessAnchorId: ownerAnchorId,
       refType: "ADMIN_PAYOUT",
       refId: null,
-      uniqueKey,
+      occurredAt: now,
+      createdBy: req.user?._id || null,
+      meta: {
+        payoutTargetRole: "salesman",
+        payoutTargetUserId: String(salesmanId),
+        payoutAmount: amount,
+      },
+      lines: [
+        {
+          accountCode: "REV_SALESMAN",
+          ownerRole: "salesman",
+          ownerId: ownerAnchorId,
+          amount,
+          amountExcludingVat: amount,
+          vatAmount: 0,
+          amountIncludingVat: amount,
+          refType: "ADMIN_PAYOUT",
+          refId: null,
+          meta: {
+            payoutTargetRole: "salesman",
+            payoutTargetUserId: String(salesmanId),
+          },
+        },
+      ],
     });
 
     return res.status(200).json({
       success: true,
       data: {
-        _id: created?._id,
+        _id: posted?.journalId || null,
         salesmanId: String(salesmanId),
         amount,
         type: "PAYOUT",
-        createdAt: created?.createdAt,
+        createdAt: now,
+        idempotent: Boolean(posted?.idempotent),
       },
     });
   } catch (error) {
@@ -744,7 +1038,6 @@ export async function adminGetCreditStats(req, res) {
       businessType: "requestor",
     });
 
-    // requestor 타입 BusinessAnchor ID 목록 조회 (의뢰자 전용 집계 필터)
     const requestorAnchorIds = await BusinessAnchor.distinct("_id", {
       businessType: "requestor",
     });
@@ -756,6 +1049,8 @@ export async function adminGetCreditStats(req, res) {
       matchedChargeOrders,
       newBankTransactions,
       matchedBankTransactions,
+      glRows,
+      balanceRows,
     ] = await Promise.all([
       ChargeOrder.countDocuments({
         businessAnchorId: { $in: requestorAnchorIds },
@@ -771,302 +1066,195 @@ export async function adminGetCreditStats(req, res) {
       }),
       BankTransaction.countDocuments({ status: "NEW" }),
       BankTransaction.countDocuments({ status: "MATCHED" }),
-    ]);
-
-    // 의뢰자 CreditLedger만 집계
-    const [creditSummary] = await Promise.all([
-      CreditLedger.aggregate([
-        {
-          $match: {
-            businessAnchorId: { $in: requestorAnchorIds },
-          },
-        },
-        {
-          $group: {
-            _id: null,
-            // 유료 크레딧 충전 (무료 creditKind 제외)
-            chargedPaid: {
-              $sum: {
-                $cond: [
-                  {
-                    $and: [
-                      { $eq: ["$type", "CHARGE"] },
-                      {
-                        $not: {
-                          $in: ["$creditKind", ["FREE_REQUEST", "FREE_SHIPPING"]],
-                        },
-                      },
-                    ],
-                  },
-                  { $max: [{ $abs: "$amount" }, 0] },
-                  0,
-                ],
+      requestorAnchorIds.length
+        ? LedgerLine.aggregate([
+            {
+              $match: {
+                ownerRole: "requestor",
+                ownerId: { $in: requestorAnchorIds },
+                accountCode: {
+                  $in: [
+                    "REQ_PAID_CREDIT",
+                    "REQ_FREE_REQUEST_CREDIT",
+                    "REQ_FREE_SHIPPING_CREDIT",
+                  ],
+                },
               },
             },
-            // REFUND: 소비된 금액을 돌려주는 것이므로 잔액 계산 시 spentPaidSum에서 차감
-            refundSum: {
-              $sum: {
-                $cond: [
-                  { $eq: ["$type", "REFUND"] },
-                  { $max: [{ $abs: "$amount" }, 0] },
-                  0,
-                ],
+            {
+              $lookup: {
+                from: LedgerJournal.collection.name,
+                localField: "journalId",
+                foreignField: "journalId",
+                as: "journalDoc",
               },
             },
-            // 배송비 환불 분리 집계 (fallback 계산용)
-            refundShippingSum: {
-              $sum: {
-                $cond: [
-                  {
-                    $and: [
-                      { $eq: ["$type", "REFUND"] },
-                      {
-                        $in: ["$refType", ["SHIPPING_PACKAGE", "SHIPPING_FEE"]],
-                      },
-                    ],
-                  },
-                  { $max: [{ $abs: "$amount" }, 0] },
-                  0,
-                ],
+            {
+              $unwind: {
+                path: "$journalDoc",
+                preserveNullAndEmptyArrays: true,
               },
             },
-            chargedBonusRequest: {
-              $sum: {
-                $cond: [
-                  {
-                    $or: [
+            {
+              $addFields: {
+                eventType: { $ifNull: ["$journalDoc.eventType", ""] },
+                baseAmount: { $ifNull: ["$amountExcludingVat", "$amount"] },
+              },
+            },
+            {
+              $group: {
+                _id: null,
+                chargedPaid: {
+                  $sum: {
+                    $cond: [
                       {
                         $and: [
-                          { $eq: ["$type", "BONUS"] },
-                          { $ne: ["$refType", "FREE_SHIPPING_CREDIT"] },
+                          { $eq: ["$eventType", "CHARGE_PAID"] },
+                          { $eq: ["$accountCode", "REQ_PAID_CREDIT"] },
+                          { $gt: ["$baseAmount", 0] },
                         ],
                       },
-                      {
-                        $and: [
-                          { $eq: ["$type", "CHARGE"] },
-                          { $eq: ["$creditKind", "FREE_REQUEST"] },
-                        ],
-                      },
+                      "$baseAmount",
+                      0,
                     ],
                   },
-                  { $max: ["$amount", 0] },
-                  0,
-                ],
-              },
-            },
-            chargedBonusShipping: {
-              $sum: {
-                $cond: [
-                  {
-                    $or: [
+                },
+                chargedBonusRequest: {
+                  $sum: {
+                    $cond: [
                       {
                         $and: [
-                          { $eq: ["$type", "BONUS"] },
-                          { $eq: ["$refType", "FREE_SHIPPING_CREDIT"] },
+                          { $eq: ["$eventType", "CHARGE_FREE_REQUEST"] },
+                          { $eq: ["$accountCode", "REQ_FREE_REQUEST_CREDIT"] },
+                          { $gt: ["$baseAmount", 0] },
                         ],
                       },
-                      {
-                        $and: [
-                          { $eq: ["$type", "CHARGE"] },
-                          { $eq: ["$creditKind", "FREE_SHIPPING"] },
-                        ],
-                      },
+                      "$baseAmount",
+                      0,
                     ],
                   },
-                  { $max: ["$amount", 0] },
-                  0,
-                ],
-              },
-            },
-            adjustSum: {
-              $sum: {
-                $cond: [{ $eq: ["$type", "ADJUST"] }, "$amount", 0],
-              },
-            },
-            spentTotal: {
-              $sum: {
-                $cond: [{ $eq: ["$type", "SPEND"] }, { $abs: "$amount" }, 0],
-              },
-            },
-            // refType이 null/undefined/빈 문자열인 레거시 데이터는 REQUEST로 간주
-            spentByRequestSum: {
-              $sum: {
-                $cond: [
-                  {
-                    $and: [
-                      { $eq: ["$type", "SPEND"] },
+                },
+                chargedBonusShipping: {
+                  $sum: {
+                    $cond: [
                       {
-                        $or: [
+                        $and: [
+                          { $eq: ["$eventType", "CHARGE_FREE_SHIPPING"] },
+                          { $eq: ["$accountCode", "REQ_FREE_SHIPPING_CREDIT"] },
+                          { $gt: ["$baseAmount", 0] },
+                        ],
+                      },
+                      "$baseAmount",
+                      0,
+                    ],
+                  },
+                },
+                spentPaid: {
+                  $sum: {
+                    $cond: [
+                      {
+                        $and: [
                           {
-                            $eq: [
-                              { $ifNull: ["$refType", "REQUEST"] },
-                              "REQUEST",
+                            $in: [
+                              "$eventType",
+                              ["REQUEST_SPEND_COMMIT", "SHIPPING_SPEND_COMMIT"],
                             ],
                           },
-                          { $eq: ["$refType", null] },
-                          { $eq: ["$refType", ""] },
+                          { $eq: ["$accountCode", "REQ_PAID_CREDIT"] },
+                          { $lt: ["$baseAmount", 0] },
                         ],
                       },
+                      { $abs: "$baseAmount" },
+                      0,
                     ],
                   },
-                  { $abs: "$amount" },
-                  0,
-                ],
-              },
-            },
-            spentByShippingSum: {
-              $sum: {
-                $cond: [
-                  {
-                    $and: [
-                      { $eq: ["$type", "SPEND"] },
+                },
+                spentFreeRequest: {
+                  $sum: {
+                    $cond: [
                       {
-                        $in: ["$refType", ["SHIPPING_PACKAGE", "SHIPPING_FEE"]],
-                      },
-                    ],
-                  },
-                  { $abs: "$amount" },
-                  0,
-                ],
-              },
-            },
-            spentPaidSum: {
-              $sum: {
-                $cond: [
-                  { $eq: ["$type", "SPEND"] },
-                  { $ifNull: ["$spentPaidAmount", 0] },
-                  0,
-                ],
-              },
-            },
-            // refType이 null/undefined/빈 문자열인 레거시 데이터는 REQUEST로 간주
-            spentFreeRequestSum: {
-              $sum: {
-                $cond: [
-                  {
-                    $and: [
-                      { $eq: ["$type", "SPEND"] },
-                      {
-                        $or: [
+                        $and: [
                           {
-                            $eq: [
-                              { $ifNull: ["$refType", "REQUEST"] },
-                              "REQUEST",
+                            $in: [
+                              "$eventType",
+                              ["REQUEST_SPEND_COMMIT", "SHIPPING_SPEND_COMMIT"],
                             ],
                           },
-                          { $eq: ["$refType", null] },
-                          { $eq: ["$refType", ""] },
+                          { $eq: ["$accountCode", "REQ_FREE_REQUEST_CREDIT"] },
+                          { $lt: ["$baseAmount", 0] },
                         ],
                       },
+                      { $abs: "$baseAmount" },
+                      0,
                     ],
                   },
-                  { $ifNull: ["$spentFreeAmount", 0] },
-                  0,
-                ],
-              },
-            },
-            spentFreeShippingSum: {
-              $sum: {
-                $cond: [
-                  {
-                    $and: [
-                      { $eq: ["$type", "SPEND"] },
-                      { $eq: ["$refType", "SHIPPING_PACKAGE"] },
+                },
+                spentFreeShipping: {
+                  $sum: {
+                    $cond: [
+                      {
+                        $and: [
+                          {
+                            $in: [
+                              "$eventType",
+                              ["REQUEST_SPEND_COMMIT", "SHIPPING_SPEND_COMMIT"],
+                            ],
+                          },
+                          { $eq: ["$accountCode", "REQ_FREE_SHIPPING_CREDIT"] },
+                          { $lt: ["$baseAmount", 0] },
+                        ],
+                      },
+                      { $abs: "$baseAmount" },
+                      0,
                     ],
                   },
-                  { $ifNull: ["$spentFreeAmount", 0] },
-                  0,
-                ],
+                },
               },
             },
-          },
-        },
-      ]),
+          ])
+        : [],
+      requestorAnchorIds.length
+        ? BusinessCreditBalance.aggregate([
+            {
+              $match: {
+                businessAnchorId: { $in: requestorAnchorIds },
+              },
+            },
+            {
+              $group: {
+                _id: null,
+                paidCredit: { $sum: { $ifNull: ["$paidCredit", 0] } },
+                bonusRequestCredit: {
+                  $sum: { $ifNull: ["$bonusRequestCredit", 0] },
+                },
+                bonusShippingCredit: {
+                  $sum: { $ifNull: ["$bonusShippingCredit", 0] },
+                },
+              },
+            },
+          ])
+        : [],
     ]);
 
-    const summary = creditSummary[0] || {};
-    const totalSpentPaidAmount = Number(summary.spentPaidSum || 0);
-    const totalSpentFreeRequestAmount = Number(
-      summary.spentFreeRequestSum || 0,
-    );
-    const totalSpentFreeShippingAmount = Number(
-      summary.spentFreeShippingSum || 0,
-    );
-    const refundSum = Number(summary.refundSum || 0);
-    const refundShippingSum = Number(summary.refundShippingSum || 0);
-    const refundRequestSum = refundSum - refundShippingSum;
-    const spentTotal = Math.max(0, Number(summary.spentTotal || 0) - refundSum);
+    const summary = glRows?.[0] || {};
+    const balanceSummary = balanceRows?.[0] || {};
 
-    const spentFreeTotal =
-      totalSpentFreeRequestAmount + totalSpentFreeShippingAmount;
-    let netSpentPaidAmount = 0;
-    let resolvedSpentFreeRequestAmount = 0;
-    let resolvedSpentFreeShippingAmount = 0;
+    const totalCharged = Number(summary.chargedPaid || 0);
+    const totalFreeRequest = Number(summary.chargedBonusRequest || 0);
+    const totalFreeShipping = Number(summary.chargedBonusShipping || 0);
+    const totalFree = totalFreeRequest + totalFreeShipping;
 
-    if (
-      Math.round(totalSpentPaidAmount + spentFreeTotal) ===
-      Math.round(spentTotal)
-    ) {
-      netSpentPaidAmount = Math.max(0, totalSpentPaidAmount);
-      resolvedSpentFreeRequestAmount = Math.max(
-        0,
-        totalSpentFreeRequestAmount,
-      );
-      resolvedSpentFreeShippingAmount = Math.max(
-        0,
-        totalSpentFreeShippingAmount,
-      );
-    } else {
-      const spentByRequest = Math.max(
-        0,
-        Number(summary.spentByRequestSum || 0) - refundRequestSum,
-      );
-      const spentByShipping = Math.max(
-        0,
-        Number(summary.spentByShippingSum || 0) - refundShippingSum,
-      );
-
-      const chargedBonusRequest = Number(summary.chargedBonusRequest || 0);
-      const chargedBonusShipping = Number(summary.chargedBonusShipping || 0);
-
-      const bonusShippingUsed = Math.min(chargedBonusShipping, spentByShipping);
-      const paidFromShipping = spentByShipping - bonusShippingUsed;
-
-      const bonusRequestUsed = Math.min(chargedBonusRequest, spentByRequest);
-      const paidFromRequest = spentByRequest - bonusRequestUsed;
-
-      netSpentPaidAmount = Math.max(0, paidFromRequest + paidFromShipping);
-      resolvedSpentFreeRequestAmount = Math.max(0, bonusRequestUsed);
-      resolvedSpentFreeShippingAmount = Math.max(0, bonusShippingUsed);
-    }
-
+    const totalSpentPaidAmount = Number(summary.spentPaid || 0);
+    const totalSpentFreeRequestAmount = Number(summary.spentFreeRequest || 0);
+    const totalSpentFreeShippingAmount = Number(summary.spentFreeShipping || 0);
     const totalSpent =
-      netSpentPaidAmount +
-      resolvedSpentFreeRequestAmount +
-      resolvedSpentFreeShippingAmount;
+      totalSpentPaidAmount +
+      totalSpentFreeRequestAmount +
+      totalSpentFreeShippingAmount;
 
-    const chargedPaid = Number(summary.chargedPaid || 0);
-    const chargedBonusRequest = Number(summary.chargedBonusRequest || 0);
-    const chargedBonusShipping = Number(summary.chargedBonusShipping || 0);
-    const adjustSum = Number(summary.adjustSum || 0);
-
-    const totalCharged = chargedPaid;
-    const totalBonus = chargedBonusRequest + chargedBonusShipping;
-    const totalBonusRequest = chargedBonusRequest;
-    const totalBonusShipping = chargedBonusShipping;
-
-    const totalPaidCredit = Math.max(
-      0,
-      chargedPaid + adjustSum - netSpentPaidAmount,
-    );
-    const totalBonusRequestCredit = Math.max(
-      0,
-      chargedBonusRequest - resolvedSpentFreeRequestAmount,
-    );
-    const totalBonusShippingCredit = Math.max(
-      0,
-      chargedBonusShipping - resolvedSpentFreeShippingAmount,
-    );
+    const totalPaidCredit = Number(balanceSummary.paidCredit || 0);
+    const totalFreeRequestCredit = Number(balanceSummary.bonusRequestCredit || 0);
+    const totalFreeShippingCredit = Number(balanceSummary.bonusShippingCredit || 0);
 
     return res.json({
       success: true,
@@ -1080,27 +1268,32 @@ export async function adminGetCreditStats(req, res) {
         matchedBankTransactions,
         totalCharged: Math.max(0, Math.round(totalCharged)),
         totalSpent: Math.max(0, Math.round(totalSpent)),
-        totalBonus: Math.max(0, Math.round(totalBonus)),
-        totalBonusRequest: Math.max(0, Math.round(totalBonusRequest)),
-        totalBonusShipping: Math.max(0, Math.round(totalBonusShipping)),
-        totalSpentPaidAmount: Math.max(0, Math.round(netSpentPaidAmount)),
+        totalFree: Math.max(0, Math.round(totalFree)),
+        totalFreeRequest: Math.max(0, Math.round(totalFreeRequest)),
+        totalFreeShipping: Math.max(0, Math.round(totalFreeShipping)),
+        totalSpentPaidAmount: Math.max(0, Math.round(totalSpentPaidAmount)),
         totalSpentFreeRequestAmount: Math.max(
           0,
-          Math.round(resolvedSpentFreeRequestAmount),
+          Math.round(totalSpentFreeRequestAmount),
         ),
         totalSpentFreeShippingAmount: Math.max(
           0,
-          Math.round(resolvedSpentFreeShippingAmount),
+          Math.round(totalSpentFreeShippingAmount),
         ),
         totalPaidCredit: Math.max(0, Math.round(totalPaidCredit)),
-        totalBonusRequestCredit: Math.max(
+        totalFreeRequestCredit: Math.max(0, Math.round(totalFreeRequestCredit)),
+        totalFreeShippingCredit: Math.max(
           0,
-          Math.round(totalBonusRequestCredit),
+          Math.round(totalFreeShippingCredit),
         ),
+        totalBonus: Math.max(0, Math.round(totalFree)), // legacy 호환 (앱 안정화 후 삭제 예정)
+        totalBonusRequest: Math.max(0, Math.round(totalFreeRequest)), // legacy 호환 (앱 안정화 후 삭제 예정)
+        totalBonusShipping: Math.max(0, Math.round(totalFreeShipping)), // legacy 호환 (앱 안정화 후 삭제 예정)
+        totalBonusRequestCredit: Math.max(0, Math.round(totalFreeRequestCredit)), // legacy 호환 (앱 안정화 후 삭제 예정)
         totalBonusShippingCredit: Math.max(
           0,
-          Math.round(totalBonusShippingCredit),
-        ),
+          Math.round(totalFreeShippingCredit),
+        ), // legacy 호환 (앱 안정화 후 삭제 예정)
         ledgerByType: {},
       },
     });
@@ -1174,15 +1367,86 @@ export async function adminGetSalesmanCredits(req, res) {
       ),
     ).map((id) => new Types.ObjectId(id));
 
-    // 기간 필터 적용된 ledger 집계
-    const ledgerPeriodMatch = { salesmanId: { $in: salesmanIds } };
-    if (periodCutoff) ledgerPeriodMatch.createdAt = { $gte: periodCutoff };
-    if (periodEnd) {
-      ledgerPeriodMatch.createdAt = ledgerPeriodMatch.createdAt || {};
-      ledgerPeriodMatch.createdAt.$lte = periodEnd;
-    }
+    const roleAnchorPairs = salesmen
+      .map((u) => ({
+        role: String(u?.role || "").trim(),
+        anchorId: String(u?.businessAnchorId || "").trim(),
+      }))
+      .filter(
+        (it) =>
+          (it.role === "salesman" || it.role === "devops") &&
+          Types.ObjectId.isValid(it.anchorId),
+      );
 
-    // 병렬 실행: BusinessAnchor 조회 + 2개의 SalesmanLedger aggregate
+    const matchOr = roleAnchorPairs.map((it) => ({
+      ownerRole: it.role,
+      ownerId: new Types.ObjectId(it.anchorId),
+      accountCode: it.role === "devops" ? "REV_DEVOPS" : "REV_SALESMAN",
+    }));
+
+    const periodMatch = {};
+    if (periodCutoff) periodMatch.$gte = periodCutoff;
+    if (periodEnd) periodMatch.$lte = periodEnd;
+
+    const aggregateLedgerByRoleAnchor = async ({ withPeriod = false }) => {
+      if (!matchOr.length) return [];
+      const baseMatch = {
+        $or: matchOr,
+        ...(withPeriod && Object.keys(periodMatch).length
+          ? { occurredAt: periodMatch }
+          : {}),
+      };
+
+      return LedgerLine.aggregate([
+        { $match: baseMatch },
+        {
+          $lookup: {
+            from: LedgerJournal.collection.name,
+            localField: "journalId",
+            foreignField: "journalId",
+            as: "journalDoc",
+          },
+        },
+        {
+          $unwind: {
+            path: "$journalDoc",
+            preserveNullAndEmptyArrays: true,
+          },
+        },
+        {
+          $addFields: {
+            type: {
+              $switch: {
+                branches: [
+                  {
+                    case: { $eq: ["$journalDoc.eventType", "SETTLEMENT_PAYOUT"] },
+                    then: "PAYOUT",
+                  },
+                  {
+                    case: { $eq: ["$journalDoc.eventType", "ADJUST"] },
+                    then: "ADJUST",
+                  },
+                ],
+                default: "EARN",
+              },
+            },
+            ownerIdStr: { $toString: "$ownerId" },
+          },
+        },
+        {
+          $group: {
+            _id: {
+              ownerRole: "$ownerRole",
+              ownerId: "$ownerIdStr",
+              type: "$type",
+            },
+            total: { $sum: { $ifNull: ["$amountExcludingVat", "$amount"] } },
+          },
+        },
+      ]);
+    };
+
+    // 병렬 실행: BusinessAnchor 조회 + 전체/기간 GL 집계
     const [anchors, ledgerRows, ledgerRowsPeriod] = await Promise.all([
       businessAnchorIds.length
         ? BusinessAnchor.find({ _id: { $in: businessAnchorIds } })
@@ -1195,26 +1459,8 @@ export async function adminGetSalesmanCredits(req, res) {
             })
             .lean()
         : Promise.resolve([]),
-      SalesmanLedger.aggregate([
-        { $match: { salesmanId: { $in: salesmanIds } } },
-        ...buildPaidRequestEligibleLedgerStages(),
-        {
-          $group: {
-            _id: { salesmanId: "$salesmanId", type: "$type" },
-            total: { $sum: "$amount" },
-          },
-        },
-      ]),
-      SalesmanLedger.aggregate([
-        { $match: ledgerPeriodMatch },
-        ...buildPaidRequestEligibleLedgerStages(),
-        {
-          $group: {
-            _id: { salesmanId: "$salesmanId", type: "$type" },
-            total: { $sum: "$amount" },
-          },
-        },
-      ]),
+      aggregateLedgerByRoleAnchor({ withPeriod: false }),
+      aggregateLedgerByRoleAnchor({ withPeriod: true }),
     ]);
 
     const anchorById = new Map(
@@ -1222,30 +1468,30 @@ export async function adminGetSalesmanCredits(req, res) {
     );
 
     // 잔액(balance)은 항상 전체 기간 기준 (정산 전 잔액)
-    const ledgerBySalesmanId = new Map();
+    const ledgerByRoleAnchor = new Map();
     for (const r of ledgerRows) {
-      const sid = String(r?._id?.salesmanId || "");
+      const ownerRole = String(r?._id?.ownerRole || "");
+      const ownerId = String(r?._id?.ownerId || "");
       const type = String(r?._id?.type || "");
       const total = Number(r?.total || 0);
-      if (!sid) continue;
-      const prev = ledgerBySalesmanId.get(sid) || {
-        earn: 0,
-        payout: 0,
-        adjust: 0,
-      };
+      if (!ownerRole || !ownerId) continue;
+      const key = `${ownerRole}:${ownerId}`;
+      const prev = ledgerByRoleAnchor.get(key) || { earn: 0, payout: 0, adjust: 0 };
       if (type === "EARN") prev.earn += total;
       else if (type === "PAYOUT") prev.payout += total;
       else if (type === "ADJUST") prev.adjust += total;
-      ledgerBySalesmanId.set(sid, prev);
+      ledgerByRoleAnchor.set(key, prev);
     }
 
-    const ledgerPeriodBySalesmanId = new Map();
+    const ledgerPeriodByRoleAnchor = new Map();
     for (const r of ledgerRowsPeriod) {
-      const sid = String(r?._id?.salesmanId || "");
+      const ownerRole = String(r?._id?.ownerRole || "");
+      const ownerId = String(r?._id?.ownerId || "");
       const type = String(r?._id?.type || "");
       const total = Number(r?.total || 0);
-      if (!sid) continue;
-      const prev = ledgerPeriodBySalesmanId.get(sid) || {
+      if (!ownerRole || !ownerId) continue;
+      const key = `${ownerRole}:${ownerId}`;
+      const prev = ledgerPeriodByRoleAnchor.get(key) || {
         earn: 0,
         payout: 0,
         adjust: 0,
@@ -1253,7 +1499,7 @@ export async function adminGetSalesmanCredits(req, res) {
       if (type === "EARN") prev.earn += total;
       else if (type === "PAYOUT") prev.payout += total;
       else if (type === "ADJUST") prev.adjust += total;
-      ledgerPeriodBySalesmanId.set(sid, prev);
+      ledgerPeriodByRoleAnchor.set(key, prev);
     }
 
     const range =
@@ -1274,13 +1520,17 @@ export async function adminGetSalesmanCredits(req, res) {
 
     const items = salesmen.map((s) => {
       const sid = String(s._id);
-      const ledger = ledgerBySalesmanId.get(sid) || {
+      const ownerRole = String(s?.role || "") === "devops" ? "devops" : "salesman";
+      const ownerAnchorId = String(s?.businessAnchorId || "");
+      const ownerKey = `${ownerRole}:${ownerAnchorId}`;
+
+      const ledger = ledgerByRoleAnchor.get(ownerKey) || {
         earn: 0,
         payout: 0,
         adjust: 0,
       };
 
-      const ledgerPeriod = ledgerPeriodBySalesmanId.get(sid) || {
+      const ledgerPeriod = ledgerPeriodByRoleAnchor.get(ownerKey) || {
         earn: 0,
         payout: 0,
         adjust: 0,
@@ -1392,30 +1642,72 @@ export async function adminGetManufacturerSummary(req, res) {
     const periodKey = String(req.query.period || "30d").trim() || "30d";
     const range = getPeriodRangeUtcFromPeriodKey(periodKey);
 
+    const buildPipeline = ({ withPeriod = false }) => [
+      {
+        $match: {
+          ownerRole: "manufacturer",
+          accountCode: "REV_MANUFACTURER",
+          ...(withPeriod && range
+            ? { occurredAt: { $gte: range.start, $lte: range.end } }
+            : {}),
+        },
+      },
+      {
+        $lookup: {
+          from: LedgerJournal.collection.name,
+          localField: "journalId",
+          foreignField: "journalId",
+          as: "journalDoc",
+        },
+      },
+      {
+        $unwind: {
+          path: "$journalDoc",
+          preserveNullAndEmptyArrays: true,
+        },
+      },
+      {
+        $addFields: {
+          type: {
+            $switch: {
+              branches: [
+                {
+                  case: { $eq: ["$journalDoc.eventType", "SETTLEMENT_PAYOUT"] },
+                  then: "PAYOUT",
+                },
+                {
+                  case: { $eq: ["$journalDoc.eventType", "ADJUST"] },
+                  then: "ADJUST",
+                },
+              ],
+              default: "EARN",
+            },
+          },
+          ownerIdStr: { $toString: "$ownerId" },
+          amountBase: { $ifNull: ["$amountExcludingVat", "$amount"] },
+        },
+      },
+    ];
+
     const [anchorCount, periodLedgerRows, allLedgerRows] = await Promise.all([
       BusinessAnchor.countDocuments({ businessType: "manufacturer" }),
       range
-        ? ManufacturerCreditLedger.aggregate([
-            {
-              $match: {
-                occurredAt: { $gte: range.start, $lte: range.end },
-              },
-            },
-            ...buildPaidRequestEligibleLedgerStages(),
+        ? LedgerLine.aggregate([
+            ...buildPipeline({ withPeriod: true }),
             {
               $group: {
                 _id: "$type",
-                total: { $sum: "$amount" },
+                total: { $sum: "$amountBase" },
               },
             },
           ])
         : Promise.resolve([]),
-      ManufacturerCreditLedger.aggregate([
-        ...buildPaidRequestEligibleLedgerStages(),
+      LedgerLine.aggregate([
+        ...buildPipeline({ withPeriod: false }),
         {
           $group: {
-            _id: { org: "$manufacturerOrganization", type: "$type" },
-            total: { $sum: "$amount" },
+            _id: { ownerId: "$ownerIdStr", type: "$type" },
+            total: { $sum: "$amountBase" },
           },
         },
       ]),
@@ -1431,13 +1723,14 @@ export async function adminGetManufacturerSummary(req, res) {
       else if (type === "PAYOUT") periodPaidOutAmount += total;
       else if (type === "ADJUST") periodAdjustedAmount += total;
     }
+
     const periodBalanceAmount = normalizeNumber(
       periodEarnedAmount - periodPaidOutAmount + periodAdjustedAmount,
     );
 
     const balanceByOrg = new Map();
     for (const r of allLedgerRows || []) {
-      const org = String(r?._id?.org || "");
+      const org = String(r?._id?.ownerId || "");
       const type = String(r?._id?.type || "");
       const total = Number(r?.total || 0);
       if (!org) continue;
@@ -1447,6 +1740,7 @@ export async function adminGetManufacturerSummary(req, res) {
       else if (type === "ADJUST") prev.adjust += total;
       balanceByOrg.set(org, prev);
     }
+
     let totalBalanceAmount = 0;
     for (const v of balanceByOrg.values()) {
       totalBalanceAmount += Math.max(
@@ -1519,7 +1813,26 @@ export async function adminGetSalesmanLedger(req, res) {
         message: "영업자 ID가 올바르지 않습니다.",
       });
     }
-    const salesmanId = new Types.ObjectId(salesmanIdRaw);
+
+    const targetUser = await User.findById(salesmanIdRaw)
+      .select({ _id: 1, role: 1, businessAnchorId: 1 })
+      .lean();
+    if (!targetUser?._id) {
+      return res.status(404).json({
+        success: false,
+        message: "사용자를 찾을 수 없습니다.",
+      });
+    }
+
+    const ownerRole = targetUser.role === "devops" ? "devops" : "salesman";
+    const ownerAnchorIdRaw = String(targetUser?.businessAnchorId || "").trim();
+    if (!ownerAnchorIdRaw || !Types.ObjectId.isValid(ownerAnchorIdRaw)) {
+      return res.status(400).json({
+        success: false,
+        message: "사업자 정보가 없습니다.",
+      });
+    }
+    const ownerAnchorId = new Types.ObjectId(ownerAnchorIdRaw);
 
     const typeRaw = String(req.query.type || "")
       .trim()
@@ -1533,21 +1846,28 @@ export async function adminGetSalesmanLedger(req, res) {
       Math.max(1, Number(req.query.pageSize || 50) || 50),
     );
 
-    const match = { salesmanId };
+    const match = {
+      ownerRole,
+      ownerId: ownerAnchorId,
+      accountCode: ownerRole === "devops" ? "REV_DEVOPS" : "REV_SALESMAN",
+    };
 
     if (
       typeRaw &&
       typeRaw !== "ALL" &&
-      ["EARN", "PAYOUT", "ADJUST"].includes(typeRaw)
+      !["EARN", "ADJUST", "PAYOUT"].includes(typeRaw)
     ) {
-      match.type = typeRaw;
+      return res.json({
+        success: true,
+        data: { items: [], total: 0, page, pageSize },
+      });
     }
 
-    const createdAt = {};
+    const occurredAt = {};
 
     const sinceFromPeriod = parsePeriod(periodRaw);
     if (sinceFromPeriod) {
-      createdAt.$gte = sinceFromPeriod;
+      occurredAt.$gte = sinceFromPeriod;
     }
 
     const fromRaw = String(req.query.from || "").trim();
@@ -1556,93 +1876,125 @@ export async function adminGetSalesmanLedger(req, res) {
     if (fromRaw) {
       const from = new Date(fromRaw);
       if (!Number.isNaN(from.getTime())) {
-        createdAt.$gte = from;
+        occurredAt.$gte = from;
       }
     }
 
     if (toRaw) {
       const to = new Date(toRaw);
       if (!Number.isNaN(to.getTime())) {
-        createdAt.$lte = to;
+        occurredAt.$lte = to;
       }
     }
 
-    if (Object.keys(createdAt).length) {
-      match.createdAt = createdAt;
+    if (Object.keys(occurredAt).length) {
+      match.occurredAt = occurredAt;
+    }
+
+    const pipeline = [
+      { $match: match },
+      {
+        $lookup: {
+          from: LedgerJournal.collection.name,
+          localField: "journalId",
+          foreignField: "journalId",
+          as: "journalDoc",
+        },
+      },
+      {
+        $unwind: {
+          path: "$journalDoc",
+          preserveNullAndEmptyArrays: true,
+        },
+      },
+      {
+        $addFields: {
+          uniqueKey: {
+            $concat: [
+              "gl:",
+              { $ifNull: ["$journalDoc.meta.spendUniqueKey", "$journalId"] },
+            ],
+          },
+          type: {
+            $switch: {
+              branches: [
+                {
+                  case: { $eq: ["$journalDoc.eventType", "SETTLEMENT_PAYOUT"] },
+                  then: "PAYOUT",
+                },
+                {
+                  case: { $eq: ["$journalDoc.eventType", "ADJUST"] },
+                  then: "ADJUST",
+                },
+              ],
+              default: "EARN",
+            },
+          },
+          amountBase: { $ifNull: ["$amountExcludingVat", "$amount"] },
+        },
+      },
+    ];
+
+    if (typeRaw === "EARN" || typeRaw === "ADJUST" || typeRaw === "PAYOUT") {
+      pipeline.push({ $match: { type: typeRaw } });
     }
 
     if (qRaw) {
       const rx = safeRegex(qRaw);
-      const ors = [];
       if (rx) {
-        ors.push({ uniqueKey: rx });
-        ors.push({ refType: rx });
-      }
-      if (Types.ObjectId.isValid(qRaw)) {
-        ors.push({ refId: new Types.ObjectId(qRaw) });
-      }
-      if (ors.length) {
-        match.$or = ors;
+        pipeline.push({
+          $match: {
+            $or: [{ uniqueKey: rx }, { refType: rx }],
+          },
+        });
       }
     }
 
-    // running balance를 위해 전체 누적 잔액 계산 (필터 무관)
-    const allLedgerRows = await SalesmanLedger.aggregate([
-      { $match: { salesmanId } },
-      { $group: { _id: "$type", total: { $sum: "$amount" } } },
-    ]);
+    pipeline.push(
+      { $sort: { occurredAt: -1, _id: -1 } },
+      {
+        $project: {
+          _id: 1,
+          type: 1,
+          amount: "$amountBase",
+          amountExcludingVat: "$amountBase",
+          vatAmount: { $literal: 0 },
+          amountIncludingVat: "$amountBase",
+          refType: 1,
+          refId: 1,
+          uniqueKey: 1,
+          createdAt: "$occurredAt",
+          occurredAt: "$occurredAt",
+        },
+      },
+    );
+
+    const allRows = await LedgerLine.aggregate(pipeline);
+
     let totalBalance = 0;
-    for (const r of allLedgerRows) {
-      const t = String(r._id || "");
-      const v = Number(r.total || 0);
+    for (const r of allRows) {
+      const t = String(r?.type || "");
+      const v = Number(r?.amount || 0);
       if (t === "EARN" || t === "ADJUST") totalBalance += v;
       else if (t === "PAYOUT") totalBalance -= v;
     }
 
-    // 현재 페이지 이후(더 오래된) 항목들의 합산 잔액 계산
-    // sort: createdAt desc → 페이지1이 가장 최신
-    // skip된 항목들(더 최신)의 합을 전체잔액에서 빼면 현재 페이지 첫 항목 직후 잔액
-    const skippedRows =
-      (page - 1) * pageSize > 0
-        ? await SalesmanLedger.find(match)
-            .sort({ createdAt: -1, _id: -1 })
-            .limit((page - 1) * pageSize)
-            .select({ type: 1, amount: 1 })
-            .lean()
-        : [];
+    const total = Array.isArray(allRows) ? allRows.length : 0;
+    const startIdx = (page - 1) * pageSize;
+    const endIdx = startIdx + pageSize;
+
     let skippedSum = 0;
-    for (const r of skippedRows) {
-      const t = String(r.type || "");
-      const v = Number(r.amount || 0);
+    for (const r of allRows.slice(0, startIdx)) {
+      const t = String(r?.type || "");
+      const v = Number(r?.amount || 0);
       if (t === "EARN" || t === "ADJUST") skippedSum += v;
       else if (t === "PAYOUT") skippedSum -= v;
     }
 
-    const [total, rawItems] = await Promise.all([
-      SalesmanLedger.countDocuments(match),
-      SalesmanLedger.find(match)
-        .sort({ createdAt: -1, _id: -1 })
-        .skip((page - 1) * pageSize)
-        .limit(pageSize)
-        .select({
-          type: 1,
-          amount: 1,
-          amountExcludingVat: 1,
-          vatAmount: 1,
-          amountIncludingVat: 1,
-          refType: 1,
-          refId: 1,
-          uniqueKey: 1,
-          createdAt: 1,
-        })
-        .lean(),
-    ]);
-
-    // running balance: 각 행 이후의 잔액 (최신→과거 순)
     let runningBalance = totalBalance - skippedSum;
-    const items = (Array.isArray(rawItems) ? rawItems : []).map((r) => {
-      const v = Number(r.amount || 0);
-      const t = String(r.type || "");
+    const items = allRows.slice(startIdx, endIdx).map((r) => {
+      const v = Number(r?.amount || 0);
+      const t = String(r?.type || "");
       const balanceAfter = runningBalance;
       if (t === "EARN" || t === "ADJUST") runningBalance -= v;
       else if (t === "PAYOUT") runningBalance += v;
@@ -1732,11 +2084,11 @@ export async function adminGetBusinessCredits(req, res) {
       (ssotBalanceRows || []).map((row) => {
         const anchorId = String(row?.businessAnchorId || "").trim();
         const paidCredit = Math.max(0, Math.round(Number(row?.paidCredit || 0)));
-        const bonusRequestCredit = Math.max(
+        const freeRequestCredit = Math.max(
           0,
           Math.round(Number(row?.bonusRequestCredit || 0)),
         );
-        const bonusShippingCredit = Math.max(
+        const freeShippingCredit = Math.max(
           0,
           Math.round(Number(row?.bonusShippingCredit || 0)),
         );
@@ -1744,247 +2096,189 @@ export async function adminGetBusinessCredits(req, res) {
           anchorId,
           {
             paidCredit,
-            bonusRequestCredit,
-            bonusShippingCredit,
-            balance: paidCredit + bonusRequestCredit + bonusShippingCredit,
+            freeRequestCredit,
+            freeShippingCredit,
+            bonusRequestCredit: freeRequestCredit, // legacy 호환 (앱 안정화 후 삭제 예정)
+            bonusShippingCredit: freeShippingCredit, // legacy 호환 (앱 안정화 후 삭제 예정)
+            balance: paidCredit + freeRequestCredit + freeShippingCredit,
           },
         ];
       }),
     );
 
-    // CreditLedger 집계: 소비/충전 통계용으로 유지
     const ledgerData = orgAnchorIds.length
-      ? await CreditLedger.aggregate([
-          { $match: { businessAnchorId: { $in: orgAnchorIds } } },
+      ? await LedgerLine.aggregate([
+          {
+            $match: {
+              ownerRole: "requestor",
+              ownerId: { $in: orgAnchorIds },
+              accountCode: {
+                $in: [
+                  "REQ_PAID_CREDIT",
+                  "REQ_FREE_REQUEST_CREDIT",
+                  "REQ_FREE_SHIPPING_CREDIT",
+                ],
+              },
+            },
+          },
+          {
+            $lookup: {
+              from: LedgerJournal.collection.name,
+              localField: "journalId",
+              foreignField: "journalId",
+              as: "journalDoc",
+            },
+          },
+          {
+            $unwind: {
+              path: "$journalDoc",
+              preserveNullAndEmptyArrays: true,
+            },
+          },
+          {
+            $addFields: {
+              ownerIdStr: { $toString: "$ownerId" },
+              eventType: { $ifNull: ["$journalDoc.eventType", ""] },
+              baseAmount: { $ifNull: ["$amountExcludingVat", "$amount"] },
+            },
+          },
           {
             $group: {
-              _id: "$businessAnchorId",
-              // 유료 크레딧 충전 (무료 creditKind 제외)
+              _id: "$ownerIdStr",
               chargedPaid: {
                 $sum: {
                   $cond: [
                     {
                       $and: [
-                        { $eq: ["$type", "CHARGE"] },
-                        {
-                          $not: {
-                            $in: ["$creditKind", ["FREE_REQUEST", "FREE_SHIPPING"]],
-                          },
-                        },
+                        { $eq: ["$eventType", "CHARGE_PAID"] },
+                        { $eq: ["$accountCode", "REQ_PAID_CREDIT"] },
+                        { $gt: ["$baseAmount", 0] },
                       ],
                     },
-                    { $max: [{ $abs: "$amount" }, 0] },
+                    "$baseAmount",
                     0,
                   ],
                 },
               },
-              // REFUND: 이미 소비된 금액을 돌려주는 것 (배송비 환불 등)
-              // spentTotal에서 차감하여 순소비를 계산하는 데 사용
-              refundSum: {
-                $sum: {
-                  $cond: [
-                    { $eq: ["$type", "REFUND"] },
-                    { $max: [{ $abs: "$amount" }, 0] },
-                    0,
-                  ],
-                },
-              },
-              // 배송비 환불만 별도 집계 (refType 기반 fallback에서 spentByShipping 보정용)
-              refundShippingSum: {
-                $sum: {
-                  $cond: [
-                    {
-                      $and: [
-                        { $eq: ["$type", "REFUND"] },
-                        {
-                          $in: [
-                            "$refType",
-                            ["SHIPPING_PACKAGE", "SHIPPING_FEE"],
-                          ],
-                        },
-                      ],
-                    },
-                    { $max: [{ $abs: "$amount" }, 0] },
-                    0,
-                  ],
-                },
-              },
-              // 무료 의뢰 크레딧 충전 (신규: CHARGE+FREE_REQUEST, 레거시: BONUS)
               chargedBonusRequest: {
                 $sum: {
                   $cond: [
                     {
-                      $or: [
-                        {
-                          $and: [
-                            { $eq: ["$type", "BONUS"] },
-                            { $ne: ["$refType", "FREE_SHIPPING_CREDIT"] },
-                          ],
-                        },
-                        {
-                          $and: [
-                            { $eq: ["$type", "CHARGE"] },
-                            { $eq: ["$creditKind", "FREE_REQUEST"] },
-                          ],
-                        },
+                      $and: [
+                        { $eq: ["$eventType", "CHARGE_FREE_REQUEST"] },
+                        { $eq: ["$accountCode", "REQ_FREE_REQUEST_CREDIT"] },
+                        { $gt: ["$baseAmount", 0] },
                       ],
                     },
-                    { $max: ["$amount", 0] },
+                    "$baseAmount",
                     0,
                   ],
                 },
               },
-              // 무료 배송비 크레딧 충전 (신규: CHARGE+FREE_SHIPPING, 레거시: BONUS)
               chargedBonusShipping: {
                 $sum: {
                   $cond: [
                     {
-                      $or: [
-                        {
-                          $and: [
-                            { $eq: ["$type", "BONUS"] },
-                            { $eq: ["$refType", "FREE_SHIPPING_CREDIT"] },
-                          ],
-                        },
-                        {
-                          $and: [
-                            { $eq: ["$type", "CHARGE"] },
-                            { $eq: ["$creditKind", "FREE_SHIPPING"] },
-                          ],
-                        },
+                      $and: [
+                        { $eq: ["$eventType", "CHARGE_FREE_SHIPPING"] },
+                        { $eq: ["$accountCode", "REQ_FREE_SHIPPING_CREDIT"] },
+                        { $gt: ["$baseAmount", 0] },
                       ],
                     },
-                    { $max: ["$amount", 0] },
+                    "$baseAmount",
                     0,
                   ],
                 },
               },
-              adjustSum: {
-                $sum: {
-                  $cond: [{ $eq: ["$type", "ADJUST"] }, "$amount", 0],
-                },
-              },
-              spentTotal: {
-                $sum: {
-                  $cond: [{ $eq: ["$type", "SPEND"] }, { $abs: "$amount" }, 0],
-                },
-              },
-              // fallback용: refType별 SPEND 총액 (spentFreeAmount 미저장 레거시 대응)
-              // refType이 null/undefined/빈 문자열인 레거시 데이터는 REQUEST로 간주
-              spentByRequestSum: {
+              adjustPaidAmount: {
                 $sum: {
                   $cond: [
                     {
                       $and: [
-                        { $eq: ["$type", "SPEND"] },
-                        {
-                          $or: [
-                            {
-                              $eq: [
-                                { $ifNull: ["$refType", "REQUEST"] },
-                                "REQUEST",
-                              ],
-                            },
-                            { $eq: ["$refType", null] },
-                            { $eq: ["$refType", ""] },
-                          ],
-                        },
+                        { $eq: ["$eventType", "ADJUST"] },
+                        { $eq: ["$accountCode", "REQ_PAID_CREDIT"] },
                       ],
                     },
-                    { $abs: "$amount" },
+                    "$baseAmount",
                     0,
                   ],
                 },
               },
-              spentByShippingSum: {
+              spentAmount: {
                 $sum: {
                   $cond: [
                     {
                       $and: [
-                        { $eq: ["$type", "SPEND"] },
                         {
                           $in: [
-                            "$refType",
-                            ["SHIPPING_PACKAGE", "SHIPPING_FEE"],
+                            "$eventType",
+                            ["REQUEST_SPEND_COMMIT", "SHIPPING_SPEND_COMMIT"],
                           ],
                         },
-                        // hasFreeRequest=false인 패키지는 무료배송 크레딧 사용 불가
-                        { $ne: ["$hasFreeRequest", false] },
+                        { $lt: ["$baseAmount", 0] },
                       ],
                     },
-                    { $abs: "$amount" },
+                    { $abs: "$baseAmount" },
                     0,
                   ],
                 },
               },
-              // 무료 의뢰 없는 패키지의 배송비 (유료 크레딧에서만 차감 가능)
-              spentByShippingNoFreeSum: {
+              spentPaidAmount: {
                 $sum: {
                   $cond: [
                     {
                       $and: [
-                        { $eq: ["$type", "SPEND"] },
                         {
                           $in: [
-                            "$refType",
-                            ["SHIPPING_PACKAGE", "SHIPPING_FEE"],
+                            "$eventType",
+                            ["REQUEST_SPEND_COMMIT", "SHIPPING_SPEND_COMMIT"],
                           ],
                         },
-                        { $eq: ["$hasFreeRequest", false] },
+                        { $eq: ["$accountCode", "REQ_PAID_CREDIT"] },
+                        { $lt: ["$baseAmount", 0] },
                       ],
                     },
-                    { $abs: "$amount" },
+                    { $abs: "$baseAmount" },
                     0,
                   ],
                 },
               },
-              spentPaidSum: {
-                $sum: {
-                  $cond: [
-                    { $eq: ["$type", "SPEND"] },
-                    { $ifNull: ["$spentPaidAmount", 0] },
-                    0,
-                  ],
-                },
-              },
-              // 무료 의뢰 크레딧 소비 (배송비가 아닌 의뢰 결제에 사용된 무료 크레딧)
-              // refType이 null/undefined/빈 문자열인 레거시 데이터는 REQUEST로 간주
-              spentFreeRequestSum: {
+              spentFreeRequestAmount: {
                 $sum: {
                   $cond: [
                     {
                       $and: [
-                        { $eq: ["$type", "SPEND"] },
                         {
-                          $or: [
-                            {
-                              $eq: [
-                                { $ifNull: ["$refType", "REQUEST"] },
-                                "REQUEST",
-                              ],
-                            },
-                            { $eq: ["$refType", null] },
-                            { $eq: ["$refType", ""] },
+                          $in: [
+                            "$eventType",
+                            ["REQUEST_SPEND_COMMIT", "SHIPPING_SPEND_COMMIT"],
                           ],
                         },
+                        { $eq: ["$accountCode", "REQ_FREE_REQUEST_CREDIT"] },
+                        { $lt: ["$baseAmount", 0] },
                       ],
                     },
-                    { $ifNull: ["$spentFreeAmount", 0] },
+                    { $abs: "$baseAmount" },
                     0,
                   ],
                 },
               },
-              // 무료 배송비 크레딧 소비 (배송비 결제에 사용된 무료 크레딧)
-              spentFreeShippingSum: {
+              spentFreeShippingAmount: {
                 $sum: {
                   $cond: [
                     {
                       $and: [
-                        { $eq: ["$type", "SPEND"] },
-                        { $eq: ["$refType", "SHIPPING_PACKAGE"] },
+                        {
+                          $in: [
+                            "$eventType",
+                            ["REQUEST_SPEND_COMMIT", "SHIPPING_SPEND_COMMIT"],
+                          ],
+                        },
+                        { $eq: ["$accountCode", "REQ_FREE_SHIPPING_CREDIT"] },
+                        { $lt: ["$baseAmount", 0] },
                       ],
                     },
-                    { $ifNull: ["$spentFreeAmount", 0] },
+                    { $abs: "$baseAmount" },
                     0,
                   ],
                 },
@@ -1996,113 +2290,48 @@ export async function adminGetBusinessCredits(req, res) {
 
     const balanceMap = {};
     ledgerData.forEach((item) => {
-      const chargedPaid = Number(item.chargedPaid || 0);
-      const chargedBonusRequest = Number(item.chargedBonusRequest || 0);
-      const chargedBonusShipping = Number(item.chargedBonusShipping || 0);
-      const adjustSum = Number(item.adjustSum || 0);
-      // REFUND는 이미 소비된 금액을 돌려주는 것이므로 순소비에서 차감
-      // REFUND refType이 SHIPPING_PACKAGE이면 배송비 소비를 취소한 것
-      const refundSum = Number(item.refundSum || 0);
-      const refundShippingSum = Number(item.refundShippingSum || 0);
-      const refundRequestSum = refundSum - refundShippingSum;
-      const spentTotal = Math.max(0, Number(item.spentTotal || 0) - refundSum);
-      const spentPaidRaw = Number(item.spentPaidSum || 0);
-      const spentFreeRequestRaw = Number(item.spentFreeRequestSum || 0);
-      const spentFreeShippingRaw = Number(item.spentFreeShippingSum || 0);
+      const chargedPaid = Number(item?.chargedPaid || 0);
+      const chargedFreeRequest = Number(item?.chargedBonusRequest || 0);
+      const chargedFreeShipping = Number(item?.chargedBonusShipping || 0);
+      const spentAmount = Number(item?.spentAmount || 0);
+      const spentPaidAmount = Number(item?.spentPaidAmount || 0);
+      const spentFreeRequestAmount = Number(item?.spentFreeRequestAmount || 0);
+      const spentFreeShippingAmount = Number(item?.spentFreeShippingAmount || 0);
 
-      // CreditLedger에 spentPaidAmount/spentFreeAmount가 저장되어 있으면 그 값 사용
-      // 저장된 값이 없거나 합계가 맞지 않으면 fallback 로직 사용
-      const spentFreeTotal = spentFreeRequestRaw + spentFreeShippingRaw;
-      let spentPaid, spentFreeRequest, spentFreeShipping;
-
-      if (
-        Math.round(spentPaidRaw + spentFreeTotal) === Math.round(spentTotal)
-      ) {
-        // 저장된 값이 신뢰 가능한 경우 그대로 사용
-        spentPaid = spentPaidRaw;
-        spentFreeRequest = spentFreeRequestRaw;
-        spentFreeShipping = spentFreeShippingRaw;
-      } else {
-        // fallback: refType 기반 분리 계산
-        // 의뢰(REQUEST) SPEND → bonusRequest 우선 차감
-        // 배송(SHIPPING_PACKAGE/SHIPPING_FEE) SPEND → bonusShipping 우선 차감
-        // 각 refund는 해당 타입의 순소비에서 차감
-        const spentByRequest = Math.max(
-          0,
-          Number(item.spentByRequestSum || 0) - refundRequestSum,
-        );
-        // spentByShippingSum: 무료 의뢰 포함 패키지 배송비 (bonusShipping 차감 가능)
-        // spentByShippingNoFreeSum: 무료 의뢰 없는 패키지 배송비 (paid에서만 차감)
-        const spentByShipping = Math.max(
-          0,
-          Number(item.spentByShippingSum || 0) - refundShippingSum,
-        );
-        const spentByShippingNoFree = Math.max(
-          0,
-          Number(item.spentByShippingNoFreeSum || 0),
-        );
-
-        const bonusShippingUsed = Math.min(
-          chargedBonusShipping,
-          spentByShipping,
-        );
-        const paidFromShipping =
-          spentByShipping - bonusShippingUsed + spentByShippingNoFree;
-
-        const bonusRequestUsed = Math.min(chargedBonusRequest, spentByRequest);
-        const paidFromRequest = spentByRequest - bonusRequestUsed;
-
-        spentFreeShipping = bonusShippingUsed;
-        spentFreeRequest = bonusRequestUsed;
-        spentPaid = paidFromRequest + paidFromShipping;
-      }
-
-      // 최종 잔액 계산
-      // - paidCredit: 유료 크레딧 잔액 (의뢰 + 배송비 모두 사용 가능)
-      // - bonusRequestCredit: 무료 의뢰 크레딧 잔액 (의뢰만 사용 가능)
-      // - bonusShippingCredit: 무료 배송비 크레딧 잔액 (배송비만 사용 가능)
-      const paidCredit = Math.round(chargedPaid + adjustSum - spentPaid);
-      const bonusRequestCredit = Math.round(
-        chargedBonusRequest - spentFreeRequest,
-      );
-      const bonusShippingCredit = Math.round(
-        chargedBonusShipping - spentFreeShipping,
-      );
-
-      const anchorId = String(item._id || "").trim();
+      const anchorId = String(item?._id || "").trim();
       const ssot = ssotBalanceMap.get(anchorId) || null;
-      const resolvedPaidCredit = ssot ? ssot.paidCredit : Math.max(0, paidCredit);
-      const resolvedBonusRequestCredit = ssot
-        ? ssot.bonusRequestCredit
-        : Math.max(0, bonusRequestCredit);
-      const resolvedBonusShippingCredit = ssot
-        ? ssot.bonusShippingCredit
-        : Math.max(0, bonusShippingCredit);
+
+      const paidCredit = ssot
+        ? ssot.paidCredit
+        : Math.max(
+            0,
+            Math.round(
+              chargedPaid + Number(item?.adjustPaidAmount || 0) - spentPaidAmount,
+            ),
+          );
+      const freeRequestCredit = ssot
+        ? ssot.freeRequestCredit
+        : Math.max(0, Math.round(chargedFreeRequest - spentFreeRequestAmount));
+      const freeShippingCredit = ssot
+        ? ssot.freeShippingCredit
+        : Math.max(0, Math.round(chargedFreeShipping - spentFreeShippingAmount));
 
       balanceMap[anchorId] = {
-        balance:
-          resolvedPaidCredit +
-          resolvedBonusRequestCredit +
-          resolvedBonusShippingCredit,
-        paidCredit: resolvedPaidCredit,
-        bonusRequestCredit: resolvedBonusRequestCredit,
-        bonusShippingCredit: resolvedBonusShippingCredit,
-        spentAmount: Math.max(0, Math.round(spentTotal)),
+        balance: paidCredit + freeRequestCredit + freeShippingCredit,
+        paidCredit,
+        freeRequestCredit,
+        freeShippingCredit,
+        bonusRequestCredit: freeRequestCredit, // legacy 호환 (앱 안정화 후 삭제 예정)
+        bonusShippingCredit: freeShippingCredit, // legacy 호환 (앱 안정화 후 삭제 예정)
+        spentAmount: Math.max(0, Math.round(spentAmount)),
         chargedPaidAmount: Math.max(0, Math.round(chargedPaid)),
-        chargedBonusRequestAmount: Math.max(0, Math.round(chargedBonusRequest)),
-        chargedBonusShippingAmount: Math.max(
-          0,
-          Math.round(chargedBonusShipping),
-        ),
-        spentPaidAmount: Math.max(
-          0,
-          Math.min(
-            Math.round(spentPaid),
-            Math.max(0, Math.round(chargedPaid + adjustSum)),
-          ),
-        ),
-        spentFreeRequestAmount: Math.max(0, Math.round(spentFreeRequest)),
-        spentFreeShippingAmount: Math.max(0, Math.round(spentFreeShipping)),
+        chargedFreeRequestAmount: Math.max(0, Math.round(chargedFreeRequest)),
+        chargedFreeShippingAmount: Math.max(0, Math.round(chargedFreeShipping)),
+        chargedBonusRequestAmount: Math.max(0, Math.round(chargedFreeRequest)), // legacy 호환 (앱 안정화 후 삭제 예정)
+        chargedBonusShippingAmount: Math.max(0, Math.round(chargedFreeShipping)), // legacy 호환 (앱 안정화 후 삭제 예정)
+        spentPaidAmount: Math.max(0, Math.round(spentPaidAmount)),
+        spentFreeRequestAmount: Math.max(0, Math.round(spentFreeRequestAmount)),
+        spentFreeShippingAmount: Math.max(0, Math.round(spentFreeShippingAmount)),
       };
     });
 
@@ -2112,10 +2341,14 @@ export async function adminGetBusinessCredits(req, res) {
       const balanceInfo = balanceMap[anchorId] || {
         balance: Number(ssotBalance?.balance || 0),
         paidCredit: Number(ssotBalance?.paidCredit || 0),
-        bonusRequestCredit: Number(ssotBalance?.bonusRequestCredit || 0),
-        bonusShippingCredit: Number(ssotBalance?.bonusShippingCredit || 0),
+        freeRequestCredit: Number(ssotBalance?.freeRequestCredit || 0),
+        freeShippingCredit: Number(ssotBalance?.freeShippingCredit || 0),
+        bonusRequestCredit: Number(ssotBalance?.bonusRequestCredit || 0), // legacy 호환 (앱 안정화 후 삭제 예정)
+        bonusShippingCredit: Number(ssotBalance?.bonusShippingCredit || 0), // legacy 호환 (앱 안정화 후 삭제 예정)
         spentAmount: 0,
         chargedPaidAmount: 0,
+        chargedFreeRequestAmount: 0,
+        chargedFreeShippingAmount: 0,
         chargedBonusRequestAmount: 0,
         chargedBonusShippingAmount: 0,
         spentPaidAmount: 0,
@@ -2153,9 +2386,11 @@ export async function adminGetBusinessCredits(req, res) {
         startDate: org.metadata?.startDate || "",
         // 프론트엔드 호환: paidBalance, bonusBalance 필드 제공
         paidBalance: balanceInfo.paidCredit, // 유료 잔액
+        freeBalance:
+          balanceInfo.freeRequestCredit + balanceInfo.freeShippingCredit, // 무료 잔액 (의뢰용 + 배송비용)
         bonusBalance:
-          balanceInfo.bonusRequestCredit + balanceInfo.bonusShippingCredit, // 무료 잔액 (의뢰용 + 배송비용)
-        // 상세 정보: bonusRequestCredit, bonusShippingCredit 등 모든 필드 포함
+          balanceInfo.freeRequestCredit + balanceInfo.freeShippingCredit, // legacy 호환 (앱 안정화 후 삭제 예정)
+        // 상세 정보: freeRequestCredit, freeShippingCredit 등 모든 필드 포함
         ...balanceInfo,
       };
     });
@@ -2163,7 +2398,8 @@ export async function adminGetBusinessCredits(req, res) {
     const sortedResult = [...result].sort(
       (a, b) =>
         Number(b.paidCredit || 0) - Number(a.paidCredit || 0) ||
-        Number(b.bonusRequestCredit || 0) - Number(a.bonusRequestCredit || 0) ||
+        Number(b.freeRequestCredit || b.bonusRequestCredit || 0) -
+          Number(a.freeRequestCredit || a.bonusRequestCredit || 0) ||
         String(a.name || "").localeCompare(String(b.name || ""), "ko"),
     );
 
@@ -2212,10 +2448,183 @@ export async function adminGetBusinessCreditDetail(req, res) {
       upsertIfMissing: true,
     });
 
-    const ledgers = await CreditLedger.find({ businessAnchorId })
-      .sort({ createdAt: -1 })
-      .limit(100)
-      .lean();
+    const rows = await LedgerLine.aggregate([
+      {
+        $match: {
+          ownerRole: "requestor",
+          ownerId: new Types.ObjectId(String(businessAnchorId)),
+          accountCode: {
+            $in: [
+              "REQ_PAID_CREDIT",
+              "REQ_FREE_REQUEST_CREDIT",
+              "REQ_FREE_SHIPPING_CREDIT",
+            ],
+          },
+        },
+      },
+      {
+        $lookup: {
+          from: LedgerJournal.collection.name,
+          localField: "journalId",
+          foreignField: "journalId",
+          as: "journalDoc",
+        },
+      },
+      {
+        $unwind: {
+          path: "$journalDoc",
+          preserveNullAndEmptyArrays: true,
+        },
+      },
+      {
+        $addFields: {
+          eventType: { $ifNull: ["$journalDoc.eventType", ""] },
+          baseAmount: { $ifNull: ["$amountExcludingVat", "$amount"] },
+          mergedUniqueKey: {
+            $concat: [
+              "gl:",
+              {
+                $ifNull: [
+                  "$journalDoc.meta.spendUniqueKey",
+                  { $ifNull: ["$journalDoc.idempotencyKey", "$journalId"] },
+                ],
+              },
+            ],
+          },
+        },
+      },
+      {
+        $group: {
+          _id: "$journalId",
+          occurredAt: { $max: "$occurredAt" },
+          createdAt: { $max: "$createdAt" },
+          eventType: { $first: "$eventType" },
+          refType: { $first: "$refType" },
+          refId: { $first: "$refId" },
+          uniqueKey: { $first: "$mergedUniqueKey" },
+          amount: { $sum: "$baseAmount" },
+          deltaPaid: {
+            $sum: {
+              $cond: [{ $eq: ["$accountCode", "REQ_PAID_CREDIT"] }, "$baseAmount", 0],
+            },
+          },
+          deltaBonusRequest: {
+            $sum: {
+              $cond: [
+                { $eq: ["$accountCode", "REQ_FREE_REQUEST_CREDIT"] },
+                "$baseAmount",
+                0,
+              ],
+            },
+          },
+          deltaBonusShipping: {
+            $sum: {
+              $cond: [
+                { $eq: ["$accountCode", "REQ_FREE_SHIPPING_CREDIT"] },
+                "$baseAmount",
+                0,
+              ],
+            },
+          },
+          spentPaidAmount: {
+            $sum: {
+              $cond: [
+                {
+                  $and: [
+                    {
+                      $in: [
+                        "$eventType",
+                        ["REQUEST_SPEND_COMMIT", "SHIPPING_SPEND_COMMIT"],
+                      ],
+                    },
+                    { $eq: ["$accountCode", "REQ_PAID_CREDIT"] },
+                    { $lt: ["$baseAmount", 0] },
+                  ],
+                },
+                { $abs: "$baseAmount" },
+                0,
+              ],
+            },
+          },
+          spentFreeAmount: {
+            $sum: {
+              $cond: [
+                {
+                  $and: [
+                    {
+                      $in: [
+                        "$eventType",
+                        ["REQUEST_SPEND_COMMIT", "SHIPPING_SPEND_COMMIT"],
+                      ],
+                    },
+                    {
+                      $in: [
+                        "$accountCode",
+                        ["REQ_FREE_REQUEST_CREDIT", "REQ_FREE_SHIPPING_CREDIT"],
+                      ],
+                    },
+                    { $lt: ["$baseAmount", 0] },
+                  ],
+                },
+                { $abs: "$baseAmount" },
+                0,
+              ],
+            },
+          },
+        },
+      },
+      {
+        $addFields: {
+          type: {
+            $switch: {
+              branches: [
+                {
+                  case: { $eq: ["$eventType", "CHARGE_PAID"] },
+                  then: "CHARGE_PAID",
+                },
+                {
+                  case: { $eq: ["$eventType", "CHARGE_FREE_REQUEST"] },
+                  then: "CHARGE_FREE_REQUEST",
+                },
+                {
+                  case: { $eq: ["$eventType", "CHARGE_FREE_SHIPPING"] },
+                  then: "CHARGE_FREE_SHIPPING",
+                },
+                {
+                  case: {
+                    $and: [
+                      {
+                        $in: [
+                          "$eventType",
+                          ["REQUEST_SPEND_COMMIT", "SHIPPING_SPEND_COMMIT"],
+                        ],
+                      },
+                      { $gt: ["$spentPaidAmount", 0] },
+                    ],
+                  },
+                  then: "SPEND_PAID",
+                },
+                {
+                  case: { $eq: ["$eventType", "REQUEST_SPEND_COMMIT"] },
+                  then: "SPEND_FREE_REQUEST",
+                },
+                {
+                  case: { $eq: ["$eventType", "SHIPPING_SPEND_COMMIT"] },
+                  then: "SPEND_FREE_SHIPPING",
+                },
+                {
+                  case: { $eq: ["$eventType", "ADJUST"] },
+                  then: "ADJUST",
+                },
+              ],
+              default: "ADJUST",
+            },
+          },
+        },
+      },
+      { $sort: { occurredAt: 1, _id: 1 } },
+      { $limit: 100 },
+    ]);
 
     let paid = 0;
     let bonusRequest = 0;
@@ -2223,45 +2632,34 @@ export async function adminGetBusinessCreditDetail(req, res) {
     let spent = 0;
     const history = [];
 
-    for (const ledger of ledgers.reverse()) {
-      const type = ledger.type;
-      const amount = Number(ledger.amount || 0);
-      if (!Number.isFinite(amount)) continue;
-      const absAmount = Math.abs(amount);
+    for (const row of rows || []) {
+      const deltaPaid = Number(row?.deltaPaid || 0);
+      const deltaBonusRequest = Number(row?.deltaBonusRequest || 0);
+      const deltaBonusShipping = Number(row?.deltaBonusShipping || 0);
 
-      if (type === "CHARGE" || type === "REFUND") {
-        paid += absAmount;
-      } else if (type === "BONUS") {
-        if (String(ledger.refType || "") === "FREE_SHIPPING_CREDIT") {
-          bonusShipping += absAmount;
-        } else {
-          bonusRequest += absAmount;
-        }
-      } else if (type === "ADJUST") {
-        paid += amount;
-      } else if (type === "SPEND") {
-        let spend = absAmount;
-        spent += spend;
-        if (
-          String(ledger.refType || "") === "SHIPPING_PACKAGE" ||
-          String(ledger.refType || "") === "SHIPPING_FEE"
-        ) {
-          const canUseFreeShipping = ledger?.hasFreeRequest !== false;
-          if (canUseFreeShipping) {
-            const fromBonusShipping = Math.min(bonusShipping, spend);
-            bonusShipping -= fromBonusShipping;
-            spend -= fromBonusShipping;
-          }
-        } else {
-          const fromBonusRequest = Math.min(bonusRequest, spend);
-          bonusRequest -= fromBonusRequest;
-          spend -= fromBonusRequest;
-        }
-        paid -= spend;
+      paid += deltaPaid;
+      bonusRequest += deltaBonusRequest;
+      bonusShipping += deltaBonusShipping;
+
+      if (
+        String(row?.type || "") === "SPEND_PAID" ||
+        String(row?.type || "") === "SPEND_FREE_REQUEST" ||
+        String(row?.type || "") === "SPEND_FREE_SHIPPING"
+      ) {
+        spent += Math.max(0, Number(row?.spentPaidAmount || 0)) + Math.max(0, Number(row?.spentFreeAmount || 0));
       }
 
       history.push({
-        ...ledger,
+        _id: String(row?._id || ""),
+        type: String(row?.type || "ADJUST"),
+        amount: Number(row?.amount || 0),
+        spentPaidAmount: Number(row?.spentPaidAmount || 0),
+        spentFreeAmount: Number(row?.spentFreeAmount || 0),
+        refType: String(row?.refType || ""),
+        refId: row?.refId ? String(row.refId) : null,
+        uniqueKey: String(row?.uniqueKey || ""),
+        createdAt: row?.createdAt || row?.occurredAt || new Date(),
+        occurredAt: row?.occurredAt || null,
         balanceAfter: Math.max(0, paid + bonusRequest + bonusShipping),
         paidCreditAfter: Math.max(0, paid),
         bonusRequestCreditAfter: Math.max(0, bonusRequest),
@@ -2297,7 +2695,6 @@ export async function adminGetAdminCredits(req, res) {
     const startDateRaw = String(req.query.startDate || "").trim();
     const endDateRaw = String(req.query.endDate || "").trim();
 
-    // 관리자 사용자 목록 조회
     const total = await User.countDocuments({ role: "admin" });
 
     const admins = await User.find({ role: "admin" })
@@ -2307,95 +2704,125 @@ export async function adminGetAdminCredits(req, res) {
         email: 1,
         active: 1,
         createdAt: 1,
+        businessAnchorId: 1,
       })
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit)
       .lean();
 
-    const adminIds = admins.map((admin) => admin._id);
-
     const periodOccurredAt = {};
     if (startDateRaw) {
       const start = new Date(startDateRaw);
-      if (!Number.isNaN(start.getTime())) {
-        periodOccurredAt.$gte = start;
-      }
+      if (!Number.isNaN(start.getTime())) periodOccurredAt.$gte = start;
     }
     if (endDateRaw) {
       const end = new Date(endDateRaw);
-      if (!Number.isNaN(end.getTime())) {
-        periodOccurredAt.$lte = end;
-      }
+      if (!Number.isNaN(end.getTime())) periodOccurredAt.$lte = end;
     }
 
-    // 관리자별 레저 집계
-    const ledgerAggregations = await Promise.all(
-      adminIds.map(async (adminId) => {
-        const [allRows, periodRows] = await Promise.all([
-          AdminCreditLedger.aggregate([
-            { $match: { adminUserId: adminId } },
-            ...buildPaidRequestEligibleLedgerStages(),
-            {
-              $group: {
-                _id: "$type",
-                total: { $sum: "$amount" },
+    const adminAnchorIds = Array.from(
+      new Set(
+        admins
+          .map((a) => String(a?.businessAnchorId || ""))
+          .filter((id) => Types.ObjectId.isValid(id)),
+      ),
+    ).map((id) => new Types.ObjectId(id));
+
+    const aggregateAdminWallet = async ({ withPeriod = false }) => {
+      if (!adminAnchorIds.length) return [];
+      return LedgerLine.aggregate([
+        {
+          $match: {
+            ownerRole: "admin",
+            ownerId: { $in: adminAnchorIds },
+            accountCode: "REV_ADMIN",
+            ...(withPeriod && Object.keys(periodOccurredAt).length
+              ? { occurredAt: periodOccurredAt }
+              : {}),
+          },
+        },
+        {
+          $lookup: {
+            from: LedgerJournal.collection.name,
+            localField: "journalId",
+            foreignField: "journalId",
+            as: "journalDoc",
+          },
+        },
+        {
+          $unwind: {
+            path: "$journalDoc",
+            preserveNullAndEmptyArrays: true,
+          },
+        },
+        {
+          $addFields: {
+            ownerIdStr: { $toString: "$ownerId" },
+            type: {
+              $switch: {
+                branches: [
+                  {
+                    case: { $eq: ["$journalDoc.eventType", "SETTLEMENT_PAYOUT"] },
+                    then: "PAYOUT",
+                  },
+                  {
+                    case: { $eq: ["$journalDoc.eventType", "ADJUST"] },
+                    then: "ADJUST",
+                  },
+                ],
+                default: "EARN",
               },
             },
-          ]),
-          AdminCreditLedger.aggregate([
-            {
-              $match: {
-                adminUserId: adminId,
-                ...(Object.keys(periodOccurredAt).length
-                  ? { occurredAt: periodOccurredAt }
-                  : {}),
-              },
-            },
-            ...buildPaidRequestEligibleLedgerStages(),
-            {
-              $group: {
-                _id: "$type",
-                total: { $sum: "$amount" },
-              },
-            },
-          ]),
-        ]);
+          },
+        },
+        {
+          $group: {
+            _id: { ownerId: "$ownerIdStr", type: "$type" },
+            total: { $sum: { $ifNull: ["$amountExcludingVat", "$amount"] } },
+          },
+        },
+      ]);
+    };
 
-        return { allRows, periodRows };
-      }),
-    );
+    const [allRows, periodRows] = await Promise.all([
+      aggregateAdminWallet({ withPeriod: false }),
+      aggregateAdminWallet({ withPeriod: true }),
+    ]);
 
-    // 결과 조합
-    const results = admins.map((admin, index) => {
-      const ledgerRows = ledgerAggregations[index]?.allRows || [];
-      const periodRows = ledgerAggregations[index]?.periodRows || [];
-      let earnedAmount = 0;
-      let paidOutAmount = 0;
-      let adjustedAmount = 0;
-      let earnedAmountPeriod = 0;
-      let paidOutAmountPeriod = 0;
-      let adjustedAmountPeriod = 0;
+    const allMap = new Map();
+    for (const row of allRows || []) {
+      const ownerId = String(row?._id?.ownerId || "");
+      const type = String(row?._id?.type || "");
+      const totalAmount = Number(row?.total || 0);
+      if (!ownerId) continue;
+      const prev = allMap.get(ownerId) || { earn: 0, payout: 0, adjust: 0 };
+      if (type === "EARN") prev.earn += totalAmount;
+      else if (type === "PAYOUT") prev.payout += totalAmount;
+      else if (type === "ADJUST") prev.adjust += totalAmount;
+      allMap.set(ownerId, prev);
+    }
 
-      for (const row of ledgerRows) {
-        const type = String(row._id || "");
-        const total = Number(row.total || 0);
-        if (type === "EARN") earnedAmount += total;
-        else if (type === "PAYOUT") paidOutAmount += total;
-        else if (type === "ADJUST") adjustedAmount += total;
-      }
+    const periodMap = new Map();
+    for (const row of periodRows || []) {
+      const ownerId = String(row?._id?.ownerId || "");
+      const type = String(row?._id?.type || "");
+      const totalAmount = Number(row?.total || 0);
+      if (!ownerId) continue;
+      const prev = periodMap.get(ownerId) || { earn: 0, payout: 0, adjust: 0 };
+      if (type === "EARN") prev.earn += totalAmount;
+      else if (type === "PAYOUT") prev.payout += totalAmount;
+      else if (type === "ADJUST") prev.adjust += totalAmount;
+      periodMap.set(ownerId, prev);
+    }
 
-      for (const row of periodRows) {
-        const type = String(row._id || "");
-        const total = Number(row.total || 0);
-        if (type === "EARN") earnedAmountPeriod += total;
-        else if (type === "PAYOUT") paidOutAmountPeriod += total;
-        else if (type === "ADJUST") adjustedAmountPeriod += total;
-      }
+    const results = admins.map((admin) => {
+      const ownerId = String(admin?.businessAnchorId || "");
+      const all = allMap.get(ownerId) || { earn: 0, payout: 0, adjust: 0 };
+      const period = periodMap.get(ownerId) || { earn: 0, payout: 0, adjust: 0 };
 
-      const balanceAmount = earnedAmount - paidOutAmount + adjustedAmount;
-      const balanceAmountPeriod =
-        earnedAmountPeriod - paidOutAmountPeriod + adjustedAmountPeriod;
+      const balanceAmount = all.earn - all.payout + all.adjust;
+      const balanceAmountPeriod = period.earn - period.payout + period.adjust;
 
       return {
         adminUserId: admin._id,
@@ -2404,13 +2831,13 @@ export async function adminGetAdminCredits(req, res) {
         active: admin.active,
         createdAt: admin.createdAt,
         wallet: {
-          earnedAmount,
-          paidOutAmount,
-          adjustedAmount,
+          earnedAmount: all.earn,
+          paidOutAmount: all.payout,
+          adjustedAmount: all.adjust,
           balanceAmount,
-          earnedAmountPeriod,
-          paidOutAmountPeriod,
-          adjustedAmountPeriod,
+          earnedAmountPeriod: period.earn,
+          paidOutAmountPeriod: period.payout,
+          adjustedAmountPeriod: period.adjust,
           balanceAmountPeriod,
         },
       };
@@ -2443,7 +2870,24 @@ export async function adminGetAdminLedger(req, res) {
         message: "관리자 ID가 올바르지 않습니다.",
       });
     }
-    const adminUserId = new Types.ObjectId(adminIdRaw);
+
+    const adminUser = await User.findById(adminIdRaw)
+      .select({ _id: 1, role: 1, businessAnchorId: 1 })
+      .lean();
+    if (!adminUser?._id) {
+      return res.status(404).json({
+        success: false,
+        message: "관리자를 찾을 수 없습니다.",
+      });
+    }
+
+    const ownerAnchorIdRaw = String(adminUser?.businessAnchorId || "").trim();
+    if (!ownerAnchorIdRaw || !Types.ObjectId.isValid(ownerAnchorIdRaw)) {
+      return res.status(400).json({
+        success: false,
+        message: "관리자 사업체 정보가 없습니다.",
+      });
+    }
 
     const typeRaw = String(req.query.type || "")
       .trim()
@@ -2457,20 +2901,27 @@ export async function adminGetAdminLedger(req, res) {
       Math.max(1, Number(req.query.pageSize || 50) || 50),
     );
 
-    const match = { adminUserId };
-
     if (
       typeRaw &&
       typeRaw !== "ALL" &&
-      ["EARN", "PAYOUT", "ADJUST"].includes(typeRaw)
+      !["EARN", "ADJUST", "PAYOUT"].includes(typeRaw)
     ) {
-      match.type = typeRaw;
+      return res.json({
+        success: true,
+        data: { items: [], total: 0, page, pageSize },
+      });
     }
 
-    const createdAt = {};
+    const match = {
+      ownerRole: "admin",
+      ownerId: new Types.ObjectId(ownerAnchorIdRaw),
+      accountCode: "REV_ADMIN",
+    };
+
+    const occurredAt = {};
     const sinceFromPeriod = parsePeriod(periodRaw);
     if (sinceFromPeriod) {
-      createdAt.$gte = sinceFromPeriod;
+      occurredAt.$gte = sinceFromPeriod;
     }
 
     const fromRaw = String(req.query.from || "").trim();
@@ -2479,19 +2930,67 @@ export async function adminGetAdminLedger(req, res) {
     if (fromRaw) {
       const from = new Date(fromRaw);
       if (!Number.isNaN(from.getTime())) {
-        createdAt.$gte = from;
+        occurredAt.$gte = from;
       }
     }
 
     if (toRaw) {
       const to = new Date(toRaw);
       if (!Number.isNaN(to.getTime())) {
-        createdAt.$lte = to;
+        occurredAt.$lte = to;
       }
     }
 
-    if (Object.keys(createdAt).length) {
-      match.createdAt = createdAt;
+    if (Object.keys(occurredAt).length) {
+      match.occurredAt = occurredAt;
+    }
+
+    const pipeline = [
+      { $match: match },
+      {
+        $lookup: {
+          from: LedgerJournal.collection.name,
+          localField: "journalId",
+          foreignField: "journalId",
+          as: "journalDoc",
+        },
+      },
+      {
+        $unwind: {
+          path: "$journalDoc",
+          preserveNullAndEmptyArrays: true,
+        },
+      },
+      {
+        $addFields: {
+          uniqueKey: {
+            $concat: [
+              "gl:",
+              { $ifNull: ["$journalDoc.meta.spendUniqueKey", "$journalId"] },
+            ],
+          },
+          type: {
+            $switch: {
+              branches: [
+                {
+                  case: { $eq: ["$journalDoc.eventType", "SETTLEMENT_PAYOUT"] },
+                  then: "PAYOUT",
+                },
+                {
+                  case: { $eq: ["$journalDoc.eventType", "ADJUST"] },
+                  then: "ADJUST",
+                },
+              ],
+              default: "EARN",
+            },
+          },
+          amountBase: { $ifNull: ["$amountExcludingVat", "$amount"] },
+        },
+      },
+    ];
+
+    if (typeRaw === "EARN" || typeRaw === "ADJUST" || typeRaw === "PAYOUT") {
+      pipeline.push({ $match: { type: typeRaw } });
     }
 
     if (qRaw) {
@@ -2505,66 +3004,60 @@ export async function adminGetAdminLedger(req, res) {
         ors.push({ refId: new Types.ObjectId(qRaw) });
       }
       if (ors.length) {
-        match.$or = ors;
+        pipeline.push({
+          $match: {
+            $or: ors,
+          },
+        });
       }
     }
 
-    // running balance를 위해 전체 누적 잔액 계산 (필터 무관)
-    const allLedgerRows = await AdminCreditLedger.aggregate([
-      { $match: { adminUserId } },
-      { $group: { _id: "$type", total: { $sum: "$amount" } } },
-    ]);
+    pipeline.push(
+      { $sort: { occurredAt: -1, _id: -1 } },
+      {
+        $project: {
+          _id: 1,
+          journalId: 1,
+          type: 1,
+          amount: "$amountBase",
+          amountExcludingVat: "$amountBase",
+          vatAmount: { $literal: 0 },
+          amountIncludingVat: "$amountBase",
+          refType: 1,
+          refId: 1,
+          uniqueKey: 1,
+          createdAt: "$occurredAt",
+          occurredAt: "$occurredAt",
+        },
+      },
+    );
+
+    const allRows = await LedgerLine.aggregate(pipeline);
+
     let totalBalance = 0;
-    for (const r of allLedgerRows) {
-      const t = String(r._id || "");
-      const v = Number(r.total || 0);
+    for (const r of allRows) {
+      const t = String(r?.type || "");
+      const v = Number(r?.amount || 0);
       if (t === "EARN" || t === "ADJUST") totalBalance += v;
       else if (t === "PAYOUT") totalBalance -= v;
     }
 
-    // 현재 페이지 이후(더 오래된) 항목들의 합산 잔액 계산
-    const skippedRows =
-      (page - 1) * pageSize > 0
-        ? await AdminCreditLedger.find(match)
-            .sort({ occurredAt: -1, _id: -1 })
-            .limit((page - 1) * pageSize)
-            .select({ type: 1, amount: 1 })
-            .lean()
-        : [];
+    const total = Array.isArray(allRows) ? allRows.length : 0;
+    const startIdx = (page - 1) * pageSize;
+    const endIdx = startIdx + pageSize;
+
     let skippedSum = 0;
-    for (const r of skippedRows) {
-      const t = String(r.type || "");
-      const v = Number(r.amount || 0);
+    for (const r of allRows.slice(0, startIdx)) {
+      const t = String(r?.type || "");
+      const v = Number(r?.amount || 0);
       if (t === "EARN" || t === "ADJUST") skippedSum += v;
       else if (t === "PAYOUT") skippedSum -= v;
     }
 
-    const [total, rawItems] = await Promise.all([
-      AdminCreditLedger.countDocuments(match),
-      AdminCreditLedger.find(match)
-        .sort({ occurredAt: -1, _id: -1 })
-        .skip((page - 1) * pageSize)
-        .limit(pageSize)
-        .select({
-          type: 1,
-          amount: 1,
-          amountExcludingVat: 1,
-          vatAmount: 1,
-          amountIncludingVat: 1,
-          refType: 1,
-          refId: 1,
-          uniqueKey: 1,
-          occurredAt: 1,
-          createdAt: 1,
-        })
-        .lean(),
-    ]);
-
-    // running balance: 각 행 이후의 잔액 (최신→과거 순)
     let runningBalance = totalBalance - skippedSum;
-    const items = (Array.isArray(rawItems) ? rawItems : []).map((r) => {
-      const v = Number(r.amount || 0);
-      const t = String(r.type || "");
+    const items = allRows.slice(startIdx, endIdx).map((r) => {
+      const v = Number(r?.amount || 0);
+      const t = String(r?.type || "");
       const balanceAfter = runningBalance;
       if (t === "EARN" || t === "ADJUST") runningBalance -= v;
       else if (t === "PAYOUT") runningBalance += v;

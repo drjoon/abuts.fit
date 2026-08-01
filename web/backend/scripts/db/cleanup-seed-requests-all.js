@@ -4,7 +4,7 @@
 // - web/backend/server.js
 import { connectDb, disconnectDb } from "./_mongo.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
-import CreditLedger from "../../models/creditLedger.model.js";
+import LedgerJournal from "../../models/ledgerJournal.model.js";
 import Request from "../../models/request.model.js";
 
 // Usage:
@@ -34,23 +34,25 @@ async function run() {
     const anchors = await BusinessAnchor.find({}).select({ _id: 1, name: 1, "metadata.companyName": 1 }).lean();
     console.log(`[cleanup-all] found ${anchors.length} anchors`);
 
-    let totalLedgers = 0;
+    let totalJournals = 0;
     let totalRequests = 0;
 
     for (const anchor of anchors) {
       const anchorId = anchor._id;
       const name = anchor.name || anchor.metadata?.companyName || String(anchorId);
 
-      const ledgerMatch = {
+      const journalMatch = {
         businessAnchorId: anchorId,
         $or: [
           { refType: { $regex: "SEED", $options: "i" } },
-          { uniqueKey: { $regex: "seed", $options: "i" } },
+          { idempotencyKey: { $regex: "seed", $options: "i" } },
           { createdAt: { $gte: since } },
         ],
       };
 
-      const ledgers = await CreditLedger.find(ledgerMatch).select({ _id: 1, type: 1, amount: 1, refType: 1, uniqueKey: 1, createdAt: 1 }).lean();
+      const journals = await LedgerJournal.find(journalMatch)
+        .select({ _id: 1, journalId: 1, eventType: 1, refType: 1, idempotencyKey: 1, createdAt: 1 })
+        .lean();
 
       const requestMatch = {
         businessAnchorId: anchorId,
@@ -58,18 +60,18 @@ async function run() {
       };
       const requests = await Request.find(requestMatch).select({ _id: 1, requestId: 1, createdAt: 1, "caseInfos.clinicName": 1 }).lean();
 
-      if (ledgers.length === 0 && requests.length === 0) continue;
+      if (journals.length === 0 && requests.length === 0) continue;
 
-      totalLedgers += ledgers.length;
+      totalJournals += journals.length;
       totalRequests += requests.length;
 
       console.log(`\n[anchor] ${name} (${anchorId})`);
-      console.log(`  matched ledgers: ${ledgers.length}, matched requests: ${requests.length}`);
+      console.log(`  matched journals: ${journals.length}, matched requests: ${requests.length}`);
 
-      if (ledgers.length > 0) {
-        console.log("  sample ledgers:");
-        ledgers.slice(0, 5).forEach((l) => {
-          console.log(`    - _id:${l._id}, type:${l.type}, amount:${l.amount}, refType:${l.refType}, uniqueKey:${l.uniqueKey}, createdAt:${l.createdAt}`);
+      if (journals.length > 0) {
+        console.log("  sample journals:");
+        journals.slice(0, 5).forEach((j) => {
+          console.log(`    - _id:${j._id}, journalId:${j.journalId}, eventType:${j.eventType}, refType:${j.refType}, idempotencyKey:${j.idempotencyKey}, createdAt:${j.createdAt}`);
         });
       }
 
@@ -81,7 +83,7 @@ async function run() {
       }
     }
 
-    console.log(`\n[cleanup-all] total anchors with matches: TBD (counted above), total ledgers: ${totalLedgers}, total requests: ${totalRequests}`);
+    console.log(`\n[cleanup-all] total anchors with matches: TBD (counted above), total journals: ${totalJournals}, total requests: ${totalRequests}`);
     console.log("[cleanup-all] Note: This run was a preview only. No deletions executed.");
   } finally {
     await disconnectDb();

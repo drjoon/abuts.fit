@@ -86,10 +86,13 @@ export function RequestorOrganizationsTab({
                         );
                       }
                       if (orgSortKey === "bonusBalance") {
-                        return (
-                          Number(b.bonusBalance || 0) -
-                          Number(a.bonusBalance || 0)
+                        const bFreeBalance = Number(
+                          b.freeBalance ?? b.bonusBalance ?? 0,
                         );
+                        const aFreeBalance = Number(
+                          a.freeBalance ?? a.bonusBalance ?? 0,
+                        );
+                        return bFreeBalance - aFreeBalance;
                       }
                       if (orgSortKey === "spentPaid") {
                         return (
@@ -104,27 +107,33 @@ export function RequestorOrganizationsTab({
                     })
                     .map((business) => {
                       const paidCredit = Number(business.paidCredit || 0);
-                      const bonusRequestCredit = Number(
-                        business.bonusRequestCredit || 0,
+                      const freeRequestCredit = Number(
+                        business.freeRequestCredit ?? business.bonusRequestCredit ?? 0,
                       );
-                      const bonusShippingCredit = Number(
-                        business.bonusShippingCredit || 0,
+                      const freeShippingCredit = Number(
+                        business.freeShippingCredit ?? business.bonusShippingCredit ?? 0,
                       );
-                      const chargedPaid = Number(
-                        business.chargedPaidAmount || 0,
+                      const chargedPaid = Number(business.chargedPaidAmount || 0);
+                      const chargedFreeRequest = Number(
+                        business.chargedFreeRequestAmount ??
+                          business.chargedBonusRequestAmount ??
+                          0,
                       );
-                      const chargedBonusRequest = Number(
-                        business.chargedBonusRequestAmount || 0,
-                      );
-                      const chargedBonusShipping = Number(
-                        business.chargedBonusShippingAmount || 0,
+                      const chargedFreeShipping = Number(
+                        business.chargedFreeShippingAmount ??
+                          business.chargedBonusShippingAmount ??
+                          0,
                       );
                       const spentPaid = Number(business.spentPaidAmount || 0);
-                      const spentBonusRequest = Number(
-                        business.spentBonusRequestAmount || 0,
+                      const spentFreeRequest = Number(
+                        business.spentFreeRequestAmount ??
+                          business.spentBonusRequestAmount ??
+                          0,
                       );
-                      const spentBonusShipping = Number(
-                        business.spentBonusShippingAmount || 0,
+                      const spentFreeShipping = Number(
+                        business.spentFreeShippingAmount ??
+                          business.spentBonusShippingAmount ??
+                          0,
                       );
 
                       return (
@@ -158,10 +167,10 @@ export function RequestorOrganizationsTab({
                                   {paidCredit.toLocaleString()}원
                                 </div>
                                 <div className="text-xs font-semibold">
-                                  {bonusRequestCredit.toLocaleString()}원
+                                  {freeRequestCredit.toLocaleString()}원
                                 </div>
                                 <div className="text-xs font-semibold">
-                                  {bonusShippingCredit.toLocaleString()}원
+                                  {freeShippingCredit.toLocaleString()}원
                                 </div>
                               </div>
                             </div>
@@ -181,10 +190,10 @@ export function RequestorOrganizationsTab({
                                   {chargedPaid.toLocaleString()}원
                                 </div>
                                 <div className="text-xs font-medium">
-                                  {chargedBonusRequest.toLocaleString()}원
+                                  {chargedFreeRequest.toLocaleString()}원
                                 </div>
                                 <div className="text-xs font-medium">
-                                  {chargedBonusShipping.toLocaleString()}원
+                                  {chargedFreeShipping.toLocaleString()}원
                                 </div>
                               </div>
                             </div>
@@ -204,10 +213,10 @@ export function RequestorOrganizationsTab({
                                   {spentPaid.toLocaleString()}원
                                 </div>
                                 <div className="text-xs font-medium">
-                                  {spentBonusRequest.toLocaleString()}원
+                                  {spentFreeRequest.toLocaleString()}원
                                 </div>
                                 <div className="text-xs font-medium">
-                                  {spentBonusShipping.toLocaleString()}원
+                                  {spentFreeShipping.toLocaleString()}원
                                 </div>
                               </div>
                             </div>

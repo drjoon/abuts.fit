@@ -1557,7 +1557,7 @@ export const PracticeDropzonePage = () => {
       setAuthMode("session");
       toast({
         title: "회원가입 완료",
-        description: "이어서 현재 작성한 의뢰를 접수합니다.",
+        description: "이어서 현재 작성한 의뢰서를 전송합니다.",
       });
 
       await submitPracticeRequest(token);
@@ -1748,7 +1748,7 @@ export const PracticeDropzonePage = () => {
 
                 {authMode === "session" && (
                   <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-4 text-sm text-emerald-800">
-                    로그인 세션이 확인되었습니다. 치과정보 입력 없이 바로 의뢰를 제출할 수 있습니다.
+                    로그인 세션이 확인되었습니다. 치과정보 입력 없이 바로 의뢰서를 전송할 수 있습니다.
                   </div>
                 )}
 

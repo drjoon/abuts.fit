@@ -4,76 +4,13 @@
 // - web/backend/server.js
 import { connectDb, disconnectDb } from "./_mongo.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
-import CreditLedger from "../../models/creditLedger.model.js";
+import { upsertBusinessCreditBalanceFromLedger } from "../../services/creditBalance.service.js";
 import { emitCreditBalanceSnapshotToBusiness } from "../../utils/creditRealtime.js";
 
 // Usage:
 // node recompute-business-credit-snapshots.js
-// This computes current credit balances from CreditLedger for each BusinessAnchor
+// This recomputes BusinessCreditBalance from SSOT General Ledger for each requestor BusinessAnchor
 // and emits a realtime snapshot event "credit:balance-snapshot" to the business users.
-
-async function computeBusinessBalance(businessAnchorId) {
-  const rows = await CreditLedger.find({ businessAnchorId })
-    .sort({ createdAt: 1, _id: 1 })
-    .select({ type: 1, amount: 1, refType: 1 })
-    .lean();
-
-  let paid = 0;
-  let bonusRequest = 0;
-  let bonusShipping = 0;
-
-  for (const row of rows || []) {
-    const type = String(row?.type || "");
-    const amount = Number(row?.amount || 0);
-    const refType = String(row?.refType || "");
-    if (!Number.isFinite(amount)) continue;
-
-    const absAmount = Math.abs(amount);
-    if (type === "CHARGE") {
-      paid += absAmount;
-      continue;
-    }
-    if (type === "BONUS") {
-      if (refType === "FREE_SHIPPING_CREDIT") {
-        bonusShipping += absAmount;
-      } else {
-        bonusRequest += absAmount;
-      }
-      continue;
-    }
-    if (type === "REFUND") {
-      paid += absAmount;
-      continue;
-    }
-    if (type === "ADJUST") {
-      paid += amount;
-      continue;
-    }
-    if (type === "SPEND") {
-      let spend = absAmount;
-      if (refType === "SHIPPING_PACKAGE" || refType === "SHIPPING_FEE") {
-        const fromBonusShipping = Math.min(bonusShipping, spend);
-        bonusShipping -= fromBonusShipping;
-        spend -= fromBonusShipping;
-      } else {
-        const fromBonusRequest = Math.min(bonusRequest, spend);
-        bonusRequest -= fromBonusRequest;
-        spend -= fromBonusRequest;
-      }
-      paid -= spend;
-    }
-  }
-
-  const paidCredit = Math.max(0, Math.round(paid));
-  const bonusRequestCredit = Math.max(0, Math.round(bonusRequest));
-  const bonusShippingCredit = Math.max(0, Math.round(bonusShipping));
-  return {
-    balance: paidCredit + bonusRequestCredit + bonusShippingCredit,
-    paidCredit,
-    bonusRequestCredit,
-    bonusShippingCredit,
-  };
-}
 
 async function run() {
   await connectDb();
@@ -86,7 +23,9 @@ async function run() {
     for (const anchor of anchors) {
       const anchorId = anchor._id;
       const name = anchor.name || String(anchorId);
-      const result = await computeBusinessBalance(anchorId);
+      const result = await upsertBusinessCreditBalanceFromLedger({
+        businessAnchorId: anchorId,
+      });
       console.log(
         `[recompute-credit] ${name} (${anchorId}) -> balance:${result.balance} paid:${result.paidCredit} bonus:${result.bonusRequestCredit} freeShip:${result.bonusShippingCredit}`,
       );

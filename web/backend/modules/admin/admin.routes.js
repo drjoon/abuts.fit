@@ -73,7 +73,11 @@ import {
   adminListBonusGrants,
   adminOverrideWelcomeBonus,
   adminGrantFreeShippingCredit,
-} from "../../controllers/admin/adminBonusGrant.controller.js";
+  adminListFreeCreditGrants,
+  adminOverrideRequestFreeCredit,
+  adminOverrideWelcomeRequestCredit,
+  adminCancelFreeCreditGrant,
+} from "../../controllers/admin/adminFreeCreditGrant.controller.js";
 import {
   adminListMails,
   adminGetMail,
@@ -354,7 +358,31 @@ router.post(
   fixSubRole,
 );
 
-// 보너스 지급 내역 / 예외 지급
+// 무료 크레딧 지급 내역 / 예외 지급 (SSOT 표준 경로)
+router.get("/free-credit-grants", adminListFreeCreditGrants);
+router.post(
+  "/free-credit-grants/request-free-credit/override",
+  authorize(["admin"], { subRoles: ["owner", "staff"] }),
+  adminOverrideRequestFreeCredit,
+);
+// legacy 경로 호환 (앱 안정화 후 삭제 예정)
+router.post(
+  "/free-credit-grants/welcome-request-credit/override",
+  authorize(["admin"], { subRoles: ["owner", "staff"] }),
+  adminOverrideWelcomeRequestCredit,
+);
+router.post(
+  "/free-credit-grants/free-shipping-credit/grant",
+  authorize(["admin"], { subRoles: ["owner", "staff"] }),
+  adminGrantFreeShippingCredit,
+);
+router.post(
+  "/free-credit-grants/:id/cancel",
+  authorize(["admin"], { subRoles: ["owner"] }),
+  adminCancelFreeCreditGrant,
+);
+
+// 레거시 경로 호환 (앱 안정화 후 삭제 예정)
 router.get("/bonus-grants", adminListBonusGrants);
 router.post(
   "/bonus-grants/welcome-bonus/override",

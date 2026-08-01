@@ -6,10 +6,6 @@
 // - web/backend/controllers/requests/common.review.controller.js
 // - web/backend/controllers/requests/common.requests.controller.js
 import { Types } from "mongoose";
-import CreditLedger from "../../models/creditLedger.model.js";
-import SalesmanLedger from "../../models/salesmanLedger.model.js";
-import ManufacturerCreditLedger from "../../models/manufacturerCreditLedger.model.js";
-import AdminCreditLedger from "../../models/adminCreditLedger.model.js";
 import DeliveryInfo from "../../models/deliveryInfo.model.js";
 import ShippingPackage from "../../models/shippingPackage.model.js";
 import Request from "../../models/request.model.js";
@@ -23,12 +19,331 @@ import {
 import {
   spendRequestCreditAtomic,
   spendShippingCreditAtomic,
-  refundRequestCreditAtomic,
-  refundShippingCreditAtomic,
+  deleteRequestSpendAtomicOnRollback,
+  deleteShippingSpendAtomicOnRollback,
+  restoreRequestSpendDeductionAtomic,
+  restoreShippingSpendDeductionAtomic,
 } from "../../services/creditBalance.service.js";
+import { postGeneralLedgerJournal } from "../../services/generalLedger.service.js";
 import { emitCreditBalanceUpdatedToBusiness } from "../../utils/creditRealtime.js";
 
 const SHIPPING_FEE_SUPPLY = 3500;
+const VAT_RATE = 0.1;
+const WITH_SALESMAN_DEFAULT_RATES = {
+  manufacturerRate: 0.6,
+  devopsRate: 0.1,
+  salesmanRate: 0.1,
+  adminRate: 0.2,
+};
+const WITHOUT_SALESMAN_RATES = {
+  manufacturerRate: 0.65,
+  devopsRate: 0.1,
+  salesmanRate: 0,
+  adminRate: 0.25,
+};
+
+function withVat(amount) {
+  return Math.round(Number(amount || 0) * (1 + VAT_RATE));
+}
+
+async function resolveRoleOwnerAnchors({ request, businessAnchorId, session }) {
+  const requestorAnchor = await BusinessAnchor.findById(businessAnchorId)
+    .select({ _id: 1, businessType: 1, referredByAnchorId: 1 })
+    .session(session || null)
+    .lean();
+
+  const devopsAnchor = await BusinessAnchor.findOne({
+    businessType: "devops",
+    status: { $ne: "merged" },
+  })
+    .select({ _id: 1, payoutRates: 1, createdAt: 1 })
+    .sort({ createdAt: 1, _id: 1 })
+    .session(session || null)
+    .lean();
+
+  const adminAnchor = await BusinessAnchor.findOne({
+    businessType: "admin",
+    status: { $ne: "merged" },
+  })
+    .select({ _id: 1, createdAt: 1 })
+    .sort({ createdAt: 1, _id: 1 })
+    .session(session || null)
+    .lean();
+
+  const manufacturerUserIdRaw = String(request?.caManufacturer || "").trim();
+  const manufacturerUser = Types.ObjectId.isValid(manufacturerUserIdRaw)
+    ? await User.findById(manufacturerUserIdRaw)
+        .select({ _id: 1, businessAnchorId: 1 })
+        .session(session || null)
+        .lean()
+    : null;
+
+  const referredAnchor = requestorAnchor?.referredByAnchorId
+    ? await BusinessAnchor.findById(requestorAnchor.referredByAnchorId)
+        .select({ _id: 1, businessType: 1 })
+        .session(session || null)
+        .lean()
+    : null;
+
+  const hasSalesmanReferrer = referredAnchor?.businessType === "salesman";
+
+  return {
+    requestorAnchorId: requestorAnchor?._id || null,
+    manufacturerAnchorId: manufacturerUser?.businessAnchorId || null,
+    devopsAnchorId: devopsAnchor?._id || null,
+    salesmanAnchorId: hasSalesmanReferrer ? referredAnchor?._id || null : null,
+    adminAnchorId: adminAnchor?._id || null,
+    hasSalesmanReferrer,
+    configuredRates: {
+      manufacturerRate: Number(
+        devopsAnchor?.payoutRates?.manufacturerRate ??
+          WITH_SALESMAN_DEFAULT_RATES.manufacturerRate,
+      ),
+      devopsRate: Number(
+        devopsAnchor?.payoutRates?.devopsRate ??
+          WITH_SALESMAN_DEFAULT_RATES.devopsRate,
+      ),
+      salesmanRate: Number(
+        devopsAnchor?.payoutRates?.salesmanRate ??
+          WITH_SALESMAN_DEFAULT_RATES.salesmanRate,
+      ),
+      adminRate: Number(
+        devopsAnchor?.payoutRates?.adminRate ?? WITH_SALESMAN_DEFAULT_RATES.adminRate,
+      ),
+    },
+  };
+}
+
+function resolveRevenueBaseAllocation({ spendAmount, hasSalesmanReferrer, configuredRates }) {
+  const effectiveRates = hasSalesmanReferrer ? configuredRates : WITHOUT_SALESMAN_RATES;
+
+  const plannedManufacturerBaseAmount = Math.round(
+    spendAmount * Number(effectiveRates.manufacturerRate || 0),
+  );
+  const plannedDevopsBaseAmount = Math.round(
+    spendAmount * Number(effectiveRates.devopsRate || 0),
+  );
+  const plannedSalesmanBaseAmount = hasSalesmanReferrer
+    ? Math.round(spendAmount * Number(effectiveRates.salesmanRate || 0))
+    : 0;
+  const plannedAdminBaseAmount = Math.max(
+    spendAmount -
+      plannedManufacturerBaseAmount -
+      plannedDevopsBaseAmount -
+      plannedSalesmanBaseAmount,
+    0,
+  );
+
+  return {
+    manufacturer: plannedManufacturerBaseAmount,
+    devops: plannedDevopsBaseAmount,
+    salesman: plannedSalesmanBaseAmount,
+    admin: plannedAdminBaseAmount,
+  };
+}
+
+async function postSpendCommitGeneralLedger({
+  eventType,
+  spendUniqueKey,
+  request,
+  businessAnchorId,
+  actorUserId,
+  amount,
+  fromPaid,
+  fromFree,
+  freeAccountCode,
+  refType,
+  refId,
+  stageFrom,
+  stageTo,
+  session,
+}) {
+  const spendAmount = Math.max(0, Math.round(Number(amount || 0)));
+  if (spendAmount <= 0) return { posted: false, reason: "zero_amount" };
+
+  const paidAmount = Math.max(0, Math.round(Number(fromPaid || 0)));
+  const freeAmount = Math.max(0, Math.round(Number(fromFree || 0)));
+  if (paidAmount <= 0 && freeAmount <= 0) {
+    return { posted: false, reason: "zero_split" };
+  }
+
+  const owners = await resolveRoleOwnerAnchors({ request, businessAnchorId, session });
+  if (!owners.requestorAnchorId) {
+    return { posted: false, reason: "requestor_anchor_not_found" };
+  }
+
+  const lines = [];
+
+  if (paidAmount > 0) {
+    lines.push({
+      accountCode: "REQ_PAID_CREDIT",
+      ownerRole: "requestor",
+      ownerId: owners.requestorAnchorId,
+      amount: -paidAmount,
+      creditKind: "PAID",
+      refType,
+      refId,
+      meta: { spendUniqueKey },
+    });
+  }
+
+  if (freeAmount > 0) {
+    lines.push({
+      accountCode: freeAccountCode,
+      ownerRole: "requestor",
+      ownerId: owners.requestorAnchorId,
+      amount: -freeAmount,
+      creditKind:
+        freeAccountCode === "REQ_FREE_SHIPPING_CREDIT"
+          ? "FREE_SHIPPING"
+          : "FREE_REQUEST",
+      refType,
+      refId,
+      meta: { spendUniqueKey },
+    });
+  }
+
+  const planned = resolveRevenueBaseAllocation({
+    spendAmount,
+    hasSalesmanReferrer: owners.hasSalesmanReferrer,
+    configuredRates: owners.configuredRates,
+  });
+  const freeCreditKind =
+    freeAccountCode === "REQ_FREE_SHIPPING_CREDIT" ? "FREE_SHIPPING" : "FREE_REQUEST";
+
+  let assignManufacturer = owners.manufacturerAnchorId ? planned.manufacturer : 0;
+  let assignDevops = owners.devopsAnchorId ? planned.devops : 0;
+  let assignSalesman = owners.salesmanAnchorId ? planned.salesman : 0;
+  let adminBase =
+    planned.admin +
+    (planned.manufacturer - assignManufacturer) +
+    (planned.devops - assignDevops) +
+    (planned.salesman - assignSalesman);
+
+  const allocatedTotal = assignManufacturer + assignDevops + assignSalesman + adminBase;
+  const allocationGap = spendAmount - allocatedTotal;
+  if (allocationGap !== 0) {
+    adminBase += allocationGap;
+  }
+
+  const pushRevenueLinesByCreditKind = ({
+    accountCode,
+    ownerRole,
+    ownerId,
+    baseAmount,
+  }) => {
+    const base = Math.max(0, Math.round(Number(baseAmount || 0)));
+    if (!ownerId || base <= 0) return;
+
+    if (paidAmount > 0 && freeAmount > 0) {
+      const paidBase = Math.min(base, Math.round((base * paidAmount) / spendAmount));
+      const freeBase = Math.max(0, base - paidBase);
+
+      if (paidBase > 0) {
+        const amountIncludingVat = withVat(paidBase);
+        lines.push({
+          accountCode,
+          ownerRole,
+          ownerId,
+          amount: amountIncludingVat,
+          amountExcludingVat: paidBase,
+          vatAmount: amountIncludingVat - paidBase,
+          amountIncludingVat,
+          creditKind: "PAID",
+          refType,
+          refId,
+          meta: { spendUniqueKey },
+        });
+      }
+
+      if (freeBase > 0) {
+        const amountIncludingVat = withVat(freeBase);
+        lines.push({
+          accountCode,
+          ownerRole,
+          ownerId,
+          amount: amountIncludingVat,
+          amountExcludingVat: freeBase,
+          vatAmount: amountIncludingVat - freeBase,
+          amountIncludingVat,
+          creditKind: freeCreditKind,
+          refType,
+          refId,
+          meta: { spendUniqueKey },
+        });
+      }
+      return;
+    }
+
+    const creditKind = paidAmount > 0 ? "PAID" : freeCreditKind;
+    const amountIncludingVat = withVat(base);
+    lines.push({
+      accountCode,
+      ownerRole,
+      ownerId,
+      amount: amountIncludingVat,
+      amountExcludingVat: base,
+      vatAmount: amountIncludingVat - base,
+      amountIncludingVat,
+      creditKind,
+      refType,
+      refId,
+      meta: { spendUniqueKey },
+    });
+  };
+
+  pushRevenueLinesByCreditKind({
+    accountCode: "REV_MANUFACTURER",
+    ownerRole: "manufacturer",
+    ownerId: owners.manufacturerAnchorId,
+    baseAmount: assignManufacturer,
+  });
+
+  pushRevenueLinesByCreditKind({
+    accountCode: "REV_DEVOPS",
+    ownerRole: "devops",
+    ownerId: owners.devopsAnchorId,
+    baseAmount: assignDevops,
+  });
+
+  pushRevenueLinesByCreditKind({
+    accountCode: "REV_SALESMAN",
+    ownerRole: "salesman",
+    ownerId: owners.salesmanAnchorId,
+    baseAmount: assignSalesman,
+  });
+
+  pushRevenueLinesByCreditKind({
+    accountCode: "REV_ADMIN",
+    ownerRole: "admin",
+    ownerId: owners.adminAnchorId,
+    baseAmount: adminBase,
+  });
+
+  if (!lines.length) return { posted: false, reason: "empty_lines" };
+
+  return postGeneralLedgerJournal({
+    idempotencyKey: `gl:${String(spendUniqueKey || "").trim()}`,
+    eventType,
+    businessAnchorId,
+    refType,
+    refId,
+    stageFrom,
+    stageTo,
+    createdBy: actorUserId || null,
+    meta: {
+      spendUniqueKey,
+      requestId: request?.requestId || null,
+      requestMongoId: request?._id ? String(request._id) : null,
+      requestCategory: String(request?.requestCategory || "").trim() || null,
+      spendAmount,
+      paidAmount,
+      freeAmount,
+    },
+    lines,
+    session,
+  });
+}
 
 export function revertManufacturerStageByReviewStage(request, stage) {
   const prevStageMap = {
@@ -74,6 +389,7 @@ export function updateCurrentEstimatedShipYmdOnPackingEnter(request) {
   timeline.estimatedShipYmd = nextEstimatedShipYmd;
 }
 
+// 타이밍 SSOT: CAM 승인으로 가공 진입할 때만 호출되어야 한다.
 export async function ensureRequestCreditSpendOnMachiningEnter({
   request,
   businessAnchorId,
@@ -92,15 +408,8 @@ export async function ensureRequestCreditSpendOnMachiningEnter({
       amount: 0,
     };
 
-    // 샘플 의뢰(rnd/copied)는 무료 의뢰로 강제 처리한다.
-    // 잔액 차감/수수료 분배 없이 free-marker만 idempotent하게 남긴다.
-    await spendRequestCreditAtomic({
-      request,
-      businessAnchorId,
-      actorUserId,
-      session,
-      computedPrice: { amount: 0 },
-    });
+    // SSOT 정책: 샘플(rnd/copied)은 무자료/무상 처리한다.
+    // 어떤 크레딧 장부/정산 장부에도 기록하지 않는다.
     return;
   }
 
@@ -150,26 +459,51 @@ export async function ensureRequestCreditSpendOnMachiningEnter({
     businessAnchorId: String(businessAnchorId),
   });
 
+  const glPostResult = await postSpendCommitGeneralLedger({
+    eventType: "REQUEST_SPEND_COMMIT",
+    spendUniqueKey: spendResult.uniqueKey,
+    request,
+    businessAnchorId,
+    actorUserId,
+    amount: Number(spendResult.resolvedAmount || 0),
+    fromPaid: Number(spendResult.fromPaid || 0),
+    fromFree: Number(spendResult.fromBonusRequest || 0),
+    freeAccountCode: "REQ_FREE_REQUEST_CREDIT",
+    refType: "REQUEST",
+    refId: request._id,
+    stageFrom: "CAM",
+    stageTo: "가공",
+    session,
+  });
+
+  if (!glPostResult?.posted) {
+    if (glPostResult?.idempotent) {
+      await restoreRequestSpendDeductionAtomic({
+        businessAnchorId,
+        fromPaid: Number(spendResult.fromPaid || 0),
+        fromBonusRequest: Number(spendResult.fromBonusRequest || 0),
+        session,
+      });
+      console.log("[CREDIT_SPEND] compensated duplicate machining spend", {
+        requestId: request?.requestId,
+        requestMongoId: String(request?._id || ""),
+        uniqueKey: spendResult.uniqueKey,
+      });
+      return;
+    }
+    throw new Error("REQUEST_SPEND_COMMIT ledger posting failed");
+  }
+
   await emitCreditBalanceUpdatedToBusiness({
     businessAnchorId,
     balanceDelta: -spentAmount,
     reason: "machining_spend",
     refId: request._id,
   });
-
-  // 수수료는 유료 결제분(fromPaid)에 대해서만 분배한다.
-  if (fromPaid > 0) {
-    await distributeCommissionOnRequestSpend({
-      request,
-      spendAmount: fromPaid,
-      businessAnchorId,
-      actorUserId,
-      session,
-    });
-  }
 }
 
-export async function ensureRequestCreditRefundOnRollbackToCam({
+// 타이밍 SSOT: 가공 단계 롤백(CAM 복귀)에서만 호출되어야 한다.
+export async function ensureRequestCreditRollbackDeleteOnRollbackToCam({
   request,
   businessAnchorId,
   actorUserId,
@@ -177,23 +511,32 @@ export async function ensureRequestCreditRefundOnRollbackToCam({
 }) {
   if (!request?._id || !businessAnchorId) return;
 
-  const refundResult = await refundRequestCreditAtomic({
+  const rollbackResult = await deleteRequestSpendAtomicOnRollback({
     request,
     businessAnchorId,
-    actorUserId,
     session,
   });
 
-  if (!refundResult?.didRefund) return;
+  if (!rollbackResult?.didRollback) {
+    if (rollbackResult?.reason && rollbackResult.reason !== "no_spend") {
+      const err = new Error(
+        `machining rollback-delete failed: ${String(rollbackResult.reason)}`,
+      );
+      err.statusCode = 409;
+      throw err;
+    }
+    return;
+  }
 
   await emitCreditBalanceUpdatedToBusiness({
     businessAnchorId,
-    balanceDelta: Number(refundResult.refundAmount || 0),
-    reason: "machining_refund",
+    balanceDelta: Number(rollbackResult.rollbackAmount || 0),
+    reason: "machining_spend_rollback_delete",
     refId: request?._id,
   });
 }
 
+// 타이밍 SSOT: 세척.패킹 승인으로 포장.발송 진입할 때만 호출되어야 한다.
 export async function ensureShippingFeeSpendOnPackingApprove({
   request,
   businessAnchorId,
@@ -327,26 +670,17 @@ export async function ensureShippingFeeSpendOnPackingApprove({
 
   request.shippingPackageId = pkg._id;
 
-  const sameMailboxSpend = await CreditLedger.findOne({
-    businessAnchorId,
-    type: "SPEND",
-    refType: "SHIPPING_PACKAGE",
-    createdAt: {
-      $gte: new Date(Date.now() - 5 * 60 * 1000),
-    },
-  })
-    .select({ _id: 1, refId: 1, createdAt: 1 })
-    .session(session || null)
-    .lean();
-
-  if (
-    sameMailboxSpend?._id &&
-    String(sameMailboxSpend.refId) !== String(pkg._id)
-  ) {
-    console.log(
-      `[SHIPPING_FEE] Warning: Different package ${sameMailboxSpend.refId} charged recently for same business`,
-    );
+  const requestCategory = String(request?.requestCategory || "").trim();
+  const isSampleRequest =
+    requestCategory === "rnd_sample" || requestCategory === "copied_sample";
+  if (isSampleRequest) {
+    // SSOT 정책: 샘플(rnd/copied)은 무자료/무상 처리(배송 크레딧 차감/정산 기록 없음)
+    return;
   }
+
+  // LEGACY_REMOVED: 과거 분리 원장 기반 중복 경고 체크 제거
+  // - 실제 중복 방지는 spendShippingCreditAtomic의 uniqueKey/idempotency로 보장
+  // - 장부 SSOT는 General Ledger로 통합되며 레거시 원장 조회에 의존하지 않음
 
   const spendResult = await spendShippingCreditAtomic({
     businessAnchorId,
@@ -376,6 +710,41 @@ export async function ensureShippingFeeSpendOnPackingApprove({
     businessAnchorId: String(businessAnchorId),
   });
 
+  const glPostResult = await postSpendCommitGeneralLedger({
+    eventType: "SHIPPING_SPEND_COMMIT",
+    spendUniqueKey: spendResult.uniqueKey,
+    request,
+    businessAnchorId,
+    actorUserId,
+    amount: Number(spendResult.amount || 0),
+    fromPaid: Number(spendResult.fromPaid || 0),
+    fromFree: Number(spendResult.fromBonusShipping || 0),
+    freeAccountCode: "REQ_FREE_SHIPPING_CREDIT",
+    refType: "SHIPPING_PACKAGE",
+    refId: pkg._id,
+    stageFrom: "세척.패킹",
+    stageTo: "포장.발송",
+    session,
+  });
+
+  if (!glPostResult?.posted) {
+    if (glPostResult?.idempotent) {
+      await restoreShippingSpendDeductionAtomic({
+        businessAnchorId,
+        fromPaid: Number(spendResult.fromPaid || 0),
+        fromBonusShipping: Number(spendResult.fromBonusShipping || 0),
+        session,
+      });
+      console.log("[SHIPPING_FEE] compensated duplicate shipping spend", {
+        requestId: request?.requestId,
+        shippingPackageId: String(pkg._id),
+        uniqueKey: spendResult.uniqueKey,
+      });
+      return;
+    }
+    throw new Error("SHIPPING_SPEND_COMMIT ledger posting failed");
+  }
+
   await emitCreditBalanceUpdatedToBusiness({
     businessAnchorId,
     balanceDelta: -Number(spendResult.amount || SHIPPING_FEE_SUPPLY),
@@ -384,7 +753,8 @@ export async function ensureShippingFeeSpendOnPackingApprove({
   });
 }
 
-export async function ensureShippingFeeRefundOnShippingRollback({
+// 타이밍 SSOT: 포장.발송 롤백(세척.패킹 복귀)에서만 호출되어야 한다.
+export async function ensureShippingFeeRollbackDeleteOnShippingRollback({
   request,
   actorUserId,
   session,
@@ -422,21 +792,27 @@ export async function ensureShippingFeeRefundOnShippingRollback({
 
   request.shippingPackageId = null;
 
-  const cycle = Number(request?.caseInfos?.rollbackCounts?.shipping || 0);
-  const refundResult = await refundShippingCreditAtomic({
+  const rollbackResult = await deleteShippingSpendAtomicOnRollback({
     businessAnchorId,
     shippingPackageId,
-    actorUserId,
-    cycle,
     session,
   });
 
-  if (!refundResult?.didRefund) return;
+  if (!rollbackResult?.didRollback) {
+    if (rollbackResult?.reason && rollbackResult.reason !== "no_spend") {
+      const err = new Error(
+        `shipping rollback-delete failed: ${String(rollbackResult.reason)}`,
+      );
+      err.statusCode = 409;
+      throw err;
+    }
+    return;
+  }
 
   await emitCreditBalanceUpdatedToBusiness({
     businessAnchorId,
-    balanceDelta: Number(refundResult.refundAmount || 0),
-    reason: "shipping_fee_refund",
+    balanceDelta: Number(rollbackResult.rollbackAmount || 0),
+    reason: "shipping_fee_spend_rollback_delete",
     refId: shippingPackageId,
   });
 }
@@ -530,309 +906,8 @@ export async function ensureDeliveryInfoShippedAtNow({ request, session }) {
   }
 }
 
-export async function distributeCommissionOnRequestSpend({
-  request,
-  spendAmount,
-  businessAnchorId,
-  actorUserId,
-  session,
-}) {
-  if (!request?._id || !businessAnchorId || spendAmount <= 0) return;
-
-  const VAT_RATE = 0.1;
-  const WITH_SALESMAN_DEFAULT_RATES = {
-    manufacturerRate: 0.6,
-    devopsRate: 0.1,
-    salesmanRate: 0.1,
-    adminRate: 0.2,
-  };
-  const WITHOUT_SALESMAN_RATES = {
-    manufacturerRate: 0.65,
-    devopsRate: 0.1,
-    salesmanRate: 0,
-    adminRate: 0.25,
-  };
-
-  const withVat = (amount) => Math.round(Number(amount || 0) * (1 + VAT_RATE));
-
-  try {
-    const requestorAnchor = await BusinessAnchor.findById(businessAnchorId)
-      .select({ referredByAnchorId: 1, businessType: 1 })
-      .session(session || null)
-      .lean();
-
-    if (!requestorAnchor || requestorAnchor.businessType !== "requestor") {
-      return;
-    }
-
-    const referrerInfo = requestorAnchor.referredByAnchorId
-      ? await BusinessAnchor.findById(requestorAnchor.referredByAnchorId)
-          .select({ businessType: 1, primaryContactUserId: 1 })
-          .session(session || null)
-          .lean()
-      : null;
-
-    const hasSalesmanReferrer = referrerInfo?.businessType === "salesman";
-
-    const defaultDevopsAnchor = await BusinessAnchor.findOne({
-      businessType: "devops",
-      status: { $ne: "merged" },
-    })
-      .select({ _id: 1, primaryContactUserId: 1, payoutRates: 1, createdAt: 1 })
-      .sort({ createdAt: 1, _id: 1 })
-      .session(session || null)
-      .lean();
-
-    let devopsRecipientUserId =
-      defaultDevopsAnchor?.primaryContactUserId || null;
-    if (!devopsRecipientUserId && defaultDevopsAnchor?._id) {
-      const defaultDevopsUser = await User.findOne({
-        role: "devops",
-        active: true,
-        businessAnchorId: defaultDevopsAnchor._id,
-      })
-        .select({ _id: 1 })
-        .session(session || null)
-        .lean();
-      devopsRecipientUserId = defaultDevopsUser?._id || null;
-    }
-
-    const configuredRates = {
-      manufacturerRate: Number(
-        defaultDevopsAnchor?.payoutRates?.manufacturerRate ??
-          WITH_SALESMAN_DEFAULT_RATES.manufacturerRate,
-      ),
-      devopsRate: Number(
-        defaultDevopsAnchor?.payoutRates?.devopsRate ??
-          WITH_SALESMAN_DEFAULT_RATES.devopsRate,
-      ),
-      salesmanRate: Number(
-        defaultDevopsAnchor?.payoutRates?.salesmanRate ??
-          WITH_SALESMAN_DEFAULT_RATES.salesmanRate,
-      ),
-      adminRate: Number(
-        defaultDevopsAnchor?.payoutRates?.adminRate ??
-          WITH_SALESMAN_DEFAULT_RATES.adminRate,
-      ),
-    };
-
-    const effectiveRates = hasSalesmanReferrer
-      ? configuredRates
-      : WITHOUT_SALESMAN_RATES;
-
-    const plannedManufacturerBaseAmount = Math.round(
-      spendAmount * Number(effectiveRates.manufacturerRate || 0),
-    );
-    const plannedDevopsBaseAmount = Math.round(
-      spendAmount * Number(effectiveRates.devopsRate || 0),
-    );
-    const plannedSalesmanBaseAmount = hasSalesmanReferrer
-      ? Math.round(spendAmount * Number(effectiveRates.salesmanRate || 0))
-      : 0;
-    const plannedAdminBaseAmount = Math.max(
-      spendAmount -
-        plannedManufacturerBaseAmount -
-        plannedDevopsBaseAmount -
-        plannedSalesmanBaseAmount,
-      0,
-    );
-
-    let assignedManufacturerBaseAmount = 0;
-    let assignedDevopsBaseAmount = 0;
-    let assignedSalesmanBaseAmount = 0;
-    let unassignedToAdminBaseAmount = 0;
-
-    const caManufacturerRaw = request?.caManufacturer
-      ? String(request.caManufacturer)
-      : "";
-    const caManufacturerId = Types.ObjectId.isValid(caManufacturerRaw)
-      ? new Types.ObjectId(caManufacturerRaw)
-      : null;
-
-    const manufacturerUser = caManufacturerId
-      ? await User.findById(caManufacturerId)
-          .select({ _id: 1, business: 1, name: 1 })
-          .session(session || null)
-          .lean()
-      : null;
-
-    if (manufacturerUser && plannedManufacturerBaseAmount > 0) {
-      const manufacturerPayoutAmount = withVat(plannedManufacturerBaseAmount);
-      const manufacturerVatAmount =
-        manufacturerPayoutAmount - plannedManufacturerBaseAmount;
-
-      const manufacturerUniqueKey = `request:${String(request._id)}:manufacturer_commission`;
-      await ManufacturerCreditLedger.updateOne(
-        { uniqueKey: manufacturerUniqueKey },
-        {
-          $setOnInsert: {
-            manufacturerOrganization: String(
-              manufacturerUser.business || manufacturerUser.name || "",
-            ).trim(),
-            manufacturerId: manufacturerUser._id,
-            type: "EARN",
-            amount: manufacturerPayoutAmount,
-            amountExcludingVat: plannedManufacturerBaseAmount,
-            vatAmount: manufacturerVatAmount,
-            amountIncludingVat: manufacturerPayoutAmount,
-            refType: "REQUEST",
-            refId: request._id,
-            uniqueKey: manufacturerUniqueKey,
-            occurredAt: new Date(),
-          },
-        },
-        { upsert: true, session },
-      );
-      assignedManufacturerBaseAmount = plannedManufacturerBaseAmount;
-    } else {
-      unassignedToAdminBaseAmount += plannedManufacturerBaseAmount;
-    }
-
-    if (devopsRecipientUserId && plannedDevopsBaseAmount > 0) {
-      const devopsPayoutAmount = withVat(plannedDevopsBaseAmount);
-      const devopsVatAmount = devopsPayoutAmount - plannedDevopsBaseAmount;
-
-      const devopsUniqueKey = `request:${String(request._id)}:devops_commission`;
-      await SalesmanLedger.updateOne(
-        { uniqueKey: devopsUniqueKey },
-        {
-          $setOnInsert: {
-            salesmanId: devopsRecipientUserId,
-            type: "EARN",
-            amount: devopsPayoutAmount,
-            amountExcludingVat: plannedDevopsBaseAmount,
-            vatAmount: devopsVatAmount,
-            amountIncludingVat: devopsPayoutAmount,
-            refType: "REQUEST",
-            refId: request._id,
-            uniqueKey: devopsUniqueKey,
-          },
-        },
-        { upsert: true, session },
-      );
-      assignedDevopsBaseAmount = plannedDevopsBaseAmount;
-    } else {
-      unassignedToAdminBaseAmount += plannedDevopsBaseAmount;
-    }
-
-    if (
-      hasSalesmanReferrer &&
-      referrerInfo?.primaryContactUserId &&
-      plannedSalesmanBaseAmount > 0
-    ) {
-      const salesmanPayoutAmount = withVat(plannedSalesmanBaseAmount);
-      const salesmanVatAmount = salesmanPayoutAmount - plannedSalesmanBaseAmount;
-
-      const salesmanUniqueKey = `request:${String(request._id)}:salesman_commission`;
-      await SalesmanLedger.updateOne(
-        { uniqueKey: salesmanUniqueKey },
-        {
-          $setOnInsert: {
-            salesmanId: referrerInfo.primaryContactUserId,
-            type: "EARN",
-            amount: salesmanPayoutAmount,
-            amountExcludingVat: plannedSalesmanBaseAmount,
-            vatAmount: salesmanVatAmount,
-            amountIncludingVat: salesmanPayoutAmount,
-            refType: "REQUEST",
-            refId: request._id,
-            uniqueKey: salesmanUniqueKey,
-          },
-        },
-        { upsert: true, session },
-      );
-      assignedSalesmanBaseAmount = plannedSalesmanBaseAmount;
-    } else {
-      unassignedToAdminBaseAmount += plannedSalesmanBaseAmount;
-    }
-
-    let assignedAdminBaseAmount = plannedAdminBaseAmount + unassignedToAdminBaseAmount;
-    const assignedBaseTotalBeforeAdmin =
-      assignedManufacturerBaseAmount +
-      assignedDevopsBaseAmount +
-      assignedSalesmanBaseAmount +
-      assignedAdminBaseAmount;
-    const baseGap = spendAmount - assignedBaseTotalBeforeAdmin;
-    if (baseGap !== 0) {
-      assignedAdminBaseAmount += baseGap;
-    }
-
-    if (assignedAdminBaseAmount < 0) {
-      const err = new Error(
-        `[COMMISSION] invalid admin base allocation: ${assignedAdminBaseAmount}`,
-      );
-      err.statusCode = 500;
-      throw err;
-    }
-
-    const adminPayoutAmount = withVat(assignedAdminBaseAmount);
-    const adminVatAmount = adminPayoutAmount - assignedAdminBaseAmount;
-
-    if (adminPayoutAmount > 0) {
-      const adminUser = await User.findOne({ role: "admin", active: true })
-        .select({ _id: 1 })
-        .session(session || null)
-        .lean();
-      if (adminUser?._id) {
-        const adminUniqueKey = `request:${String(request._id)}:admin_commission`;
-        await AdminCreditLedger.updateOne(
-          { uniqueKey: adminUniqueKey },
-          {
-            $setOnInsert: {
-              adminUserId: adminUser._id,
-              type: "EARN",
-              amount: adminPayoutAmount,
-              amountExcludingVat: assignedAdminBaseAmount,
-              vatAmount: adminVatAmount,
-              amountIncludingVat: adminPayoutAmount,
-              refType: "REQUEST",
-              refId: request._id,
-              uniqueKey: adminUniqueKey,
-              occurredAt: new Date(),
-            },
-          },
-          { upsert: true, session },
-        );
-      }
-    }
-
-    const assignedBaseTotal =
-      assignedManufacturerBaseAmount +
-      assignedDevopsBaseAmount +
-      assignedSalesmanBaseAmount +
-      assignedAdminBaseAmount;
-
-    if (Math.abs(assignedBaseTotal - spendAmount) > 1) {
-      console.error("[COMMISSION] invariant mismatch", {
-        requestId: request?.requestId,
-        spendAmount,
-        assignedBaseTotal,
-      });
-    }
-
-    console.log("[COMMISSION] commission distribution summary", {
-      requestId: request?.requestId,
-      spendAmount,
-      hasSalesmanReferrer,
-      plannedBase: {
-        manufacturer: plannedManufacturerBaseAmount,
-        devops: plannedDevopsBaseAmount,
-        salesman: plannedSalesmanBaseAmount,
-        admin: plannedAdminBaseAmount,
-      },
-      assignedBase: {
-        manufacturer: assignedManufacturerBaseAmount,
-        devops: assignedDevopsBaseAmount,
-        salesman: assignedSalesmanBaseAmount,
-        admin: assignedAdminBaseAmount,
-      },
-      unassignedToAdminBaseAmount,
-      assignedBaseTotal,
-    });
-  } catch (error) {
-    console.error("[COMMISSION] distribute commission error:", error);
-  }
-}
+// LEGACY_REMOVED: 역할별 개별 수익 원장 기록 로직
+// 기록 로직은 단일 SSOT General Ledger로 통합되었다.
 
 export function withBridgeHeaders(extra = {}) {
   const BRIDGE_SHARED_SECRET = process.env.BRIDGE_SHARED_SECRET;

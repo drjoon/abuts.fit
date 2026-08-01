@@ -21,9 +21,21 @@ import { Button } from "@/components/ui/button";
 interface CreditSettings {
   minCreditForRequest: number;
   shippingFee: number;
-  defaultWelcomeBonusCredit: number;
-  defaultFreeShippingCredit: number;
+  defaultRequestFreeCredit: number;
+  defaultShippingFreeCredit: number;
+  defaultWelcomeBonusCredit?: number; // legacy 호환 (앱 안정화 후 삭제 예정)
+  defaultFreeShippingCredit?: number; // legacy 호환 (앱 안정화 후 삭제 예정)
 }
+
+type CreditSettingsApiResponse = {
+  success?: boolean;
+  data?: {
+    creditSettings?: Partial<CreditSettings> & {
+      defaultWelcomeBonusCredit?: number;
+      defaultFreeShippingCredit?: number;
+    };
+  };
+};
 
 export const AdminCreditSettingsTab = () => {
   const { token } = useAuthStore();
@@ -42,7 +54,7 @@ export const AdminCreditSettingsTab = () => {
   const fetchSettings = async () => {
     try {
       setLoading(true);
-      const res = await apiFetch<any>({
+      const res = await apiFetch<CreditSettingsApiResponse>({
         path: "/api/credits/settings",
         method: "GET",
         token,
@@ -61,14 +73,26 @@ export const AdminCreditSettingsTab = () => {
         shippingFee: Number(
           data.shippingFee ?? CREDIT_SETTINGS_DEFAULTS.shippingFee,
         ),
+        defaultRequestFreeCredit: Number(
+          data.defaultRequestFreeCredit ??
+            data.defaultWelcomeBonusCredit ??
+            CREDIT_SETTINGS_DEFAULTS.defaultRequestFreeCredit,
+        ),
+        defaultShippingFreeCredit: Number(
+          data.defaultShippingFreeCredit ??
+            data.defaultFreeShippingCredit ??
+            CREDIT_SETTINGS_DEFAULTS.defaultShippingFreeCredit,
+        ),
         defaultWelcomeBonusCredit: Number(
-          data.defaultWelcomeBonusCredit ??
-            CREDIT_SETTINGS_DEFAULTS.defaultWelcomeBonusCredit,
-        ),
+          data.defaultRequestFreeCredit ??
+            data.defaultWelcomeBonusCredit ??
+            CREDIT_SETTINGS_DEFAULTS.defaultRequestFreeCredit,
+        ), // legacy 호환 (앱 안정화 후 삭제 예정)
         defaultFreeShippingCredit: Number(
-          data.defaultFreeShippingCredit ??
-            CREDIT_SETTINGS_DEFAULTS.defaultFreeShippingCredit,
-        ),
+          data.defaultShippingFreeCredit ??
+            data.defaultFreeShippingCredit ??
+            CREDIT_SETTINGS_DEFAULTS.defaultShippingFreeCredit,
+        ), // legacy 호환 (앱 안정화 후 삭제 예정)
       };
 
       setSettings(normalized);
@@ -88,7 +112,7 @@ export const AdminCreditSettingsTab = () => {
   const handleSave = async () => {
     try {
       setLoading(true);
-      const res = await apiFetch<any>({
+      const res = await apiFetch<CreditSettingsApiResponse>({
         path: "/api/admin/settings/credits",
         method: "PATCH",
         token,
@@ -171,47 +195,43 @@ export const AdminCreditSettingsTab = () => {
 
       <Card>
         <CardHeader>
-          <CardTitle>가입 시 지급 무료 크레딧</CardTitle>
+          <CardTitle>환영 무료 크레딧 지급 설정</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-2">
-              <Label htmlFor="defaultWelcomeBonusCredit">
+              <Label htmlFor="defaultRequestFreeCredit">
                 의뢰비 무료 크레딧 (원)
               </Label>
               <Input
-                id="defaultWelcomeBonusCredit"
+                id="defaultRequestFreeCredit"
                 type="number"
                 min="0"
-                value={settings.defaultWelcomeBonusCredit}
+                value={settings.defaultRequestFreeCredit}
                 onChange={(e) =>
                   setSettings({
                     ...settings,
-                    defaultWelcomeBonusCredit: Math.max(
-                      0,
-                      Number(e.target.value),
-                    ),
+                    defaultRequestFreeCredit: Math.max(0, Number(e.target.value)),
+                    defaultWelcomeBonusCredit: Math.max(0, Number(e.target.value)), // legacy 호환 (앱 안정화 후 삭제 예정)
                   })
                 }
                 disabled={loading}
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="defaultFreeShippingCredit">
+              <Label htmlFor="defaultShippingFreeCredit">
                 배송비 무료 크레딧 (원)
               </Label>
               <Input
-                id="defaultFreeShippingCredit"
+                id="defaultShippingFreeCredit"
                 type="number"
                 min="0"
-                value={settings.defaultFreeShippingCredit}
+                value={settings.defaultShippingFreeCredit}
                 onChange={(e) =>
                   setSettings({
                     ...settings,
-                    defaultFreeShippingCredit: Math.max(
-                      0,
-                      Number(e.target.value),
-                    ),
+                    defaultShippingFreeCredit: Math.max(0, Number(e.target.value)),
+                    defaultFreeShippingCredit: Math.max(0, Number(e.target.value)), // legacy 호환 (앱 안정화 후 삭제 예정)
                   })
                 }
                 disabled={loading}

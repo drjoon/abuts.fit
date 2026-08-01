@@ -3,9 +3,12 @@
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 export type AdminCreditLedgerType =
-  | "CHARGE"
-  | "BONUS"
-  | "SPEND"
+  | "CHARGE_PAID"
+  | "CHARGE_FREE_REQUEST"
+  | "CHARGE_FREE_SHIPPING"
+  | "SPEND_PAID"
+  | "SPEND_FREE_REQUEST"
+  | "SPEND_FREE_SHIPPING"
   | "REFUND"
   | "ADJUST";
 
@@ -14,7 +17,8 @@ export type AdminLedgerItem = {
   type: AdminCreditLedgerType;
   amount: number;
   spentPaidAmount?: number | null;
-  spentBonusAmount?: number | null;
+  spentFreeAmount?: number | null;
+  spentBonusAmount?: number | null; // legacy 호환 (앱 안정화 후 삭제 예정)
   refType?: string;
   refId?: string | null;
   refRequestId?: string;
@@ -43,15 +47,22 @@ export type CreditStats = {
   matchedBankTransactions: number;
   totalCharged: number;
   totalSpent: number;
-  totalBonus: number;
-  totalBonusRequest?: number;
-  totalBonusShipping?: number;
+  totalFree?: number;
+  totalFreeRequest?: number;
+  totalFreeShipping?: number;
   totalSpentPaidAmount?: number;
-  totalSpentBonusRequestAmount?: number;
-  totalSpentBonusShippingAmount?: number;
+  totalSpentFreeRequestAmount?: number;
+  totalSpentFreeShippingAmount?: number;
   totalPaidCredit?: number;
-  totalBonusRequestCredit?: number;
-  totalBonusShippingCredit?: number;
+  totalFreeRequestCredit?: number;
+  totalFreeShippingCredit?: number;
+  totalBonus?: number; // legacy 호환 (앱 안정화 후 삭제 예정)
+  totalBonusRequest?: number; // legacy 호환 (앱 안정화 후 삭제 예정)
+  totalBonusShipping?: number; // legacy 호환 (앱 안정화 후 삭제 예정)
+  totalSpentBonusRequestAmount?: number; // legacy 호환 (앱 안정화 후 삭제 예정)
+  totalSpentBonusShippingAmount?: number; // legacy 호환 (앱 안정화 후 삭제 예정)
+  totalBonusRequestCredit?: number; // legacy 호환 (앱 안정화 후 삭제 예정)
+  totalBonusShippingCredit?: number; // legacy 호환 (앱 안정화 후 삭제 예정)
 };
 
 export type SalesmanCreditRow = {
@@ -127,19 +138,28 @@ export type BusinessCredit = {
   isFreeCreditEligible?: boolean;
   balance: number;
   paidBalance: number;
-  bonusBalance: number;
+  freeBalance?: number;
   paidCredit?: number;
-  bonusRequestCredit?: number;
-  bonusShippingCredit?: number;
+  freeRequestCredit?: number;
+  freeShippingCredit?: number;
   spentAmount?: number;
   chargedPaidAmount?: number;
-  chargedBonusAmount?: number;
-  chargedBonusRequestAmount?: number;
-  chargedBonusShippingAmount?: number;
+  chargedFreeAmount?: number;
+  chargedFreeRequestAmount?: number;
+  chargedFreeShippingAmount?: number;
   spentPaidAmount?: number;
-  spentBonusAmount?: number;
-  spentBonusRequestAmount?: number;
-  spentBonusShippingAmount?: number;
+  spentFreeAmount?: number;
+  spentFreeRequestAmount?: number;
+  spentFreeShippingAmount?: number;
+  bonusBalance: number; // legacy 호환 (앱 안정화 후 삭제 예정)
+  bonusRequestCredit?: number; // legacy 호환 (앱 안정화 후 삭제 예정)
+  bonusShippingCredit?: number; // legacy 호환 (앱 안정화 후 삭제 예정)
+  chargedBonusAmount?: number; // legacy 호환 (앱 안정화 후 삭제 예정)
+  chargedBonusRequestAmount?: number; // legacy 호환 (앱 안정화 후 삭제 예정)
+  chargedBonusShippingAmount?: number; // legacy 호환 (앱 안정화 후 삭제 예정)
+  spentBonusAmount?: number; // legacy 호환 (앱 안정화 후 삭제 예정)
+  spentBonusRequestAmount?: number; // legacy 호환 (앱 안정화 후 삭제 예정)
+  spentBonusShippingAmount?: number; // legacy 호환 (앱 안정화 후 삭제 예정)
 };
 
 export type ChargeOrder = {
@@ -173,7 +193,7 @@ export type BankTransaction = {
 
 export type FreeCreditAmount = 30000 | 50000 | 300000 | 500000;
 
-export type BonusGrantHistoryRow = {
+export type FreeCreditGrantHistoryRow = {
   _id: string;
   businessNumber: string;
   amount: number;
@@ -185,3 +205,6 @@ export type BonusGrantHistoryRow = {
   cancelReason?: string;
   hasSpent?: boolean;
 };
+
+// legacy 타입 호환 (앱 안정화 후 삭제 예정)
+export type BonusGrantHistoryRow = FreeCreditGrantHistoryRow;

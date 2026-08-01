@@ -5,7 +5,7 @@
 // - web/backend/modules/requests/request.routes.js
 // - web/backend/controllers/requests/common.review.controller.js
 // - web/backend/controllers/requests/common.requests.controller.js
-import CreditLedger from "../../models/creditLedger.model.js";
+import { getBusinessCreditBalanceSnapshot } from "../../services/creditBalance.service.js";
 
 // [정책] uploadToRhinoServer / uploadS3ToRhinoServer 제거
 // 백엔드가 rhino-server에 직접 STL을 전송하던 방식 삭제.
@@ -32,65 +32,17 @@ export async function getBusinessCreditBalanceBreakdown({
   businessAnchorId,
   session,
 }) {
-  const rows = await CreditLedger.find({ businessAnchorId })
-    .sort({ createdAt: 1, _id: 1 })
-    .select({ type: 1, amount: 1, refType: 1 })
-    .session(session || null)
-    .lean();
+  const snapshot = await getBusinessCreditBalanceSnapshot({
+    businessAnchorId,
+    session,
+    upsertIfMissing: true,
+  });
 
-  let paid = 0;
-  let bonusRequest = 0;
-  let bonusShipping = 0;
-
-  for (const r of rows) {
-    const type = String(r?.type || "");
-    const amount = Number(r?.amount || 0);
-    const refType = String(r?.refType || "");
-    if (!Number.isFinite(amount)) continue;
-
-    if (type === "CHARGE") {
-      paid += amount;
-      continue;
-    }
-    if (type === "BONUS") {
-      if (refType === "FREE_SHIPPING_CREDIT") {
-        bonusShipping += amount;
-      } else {
-        bonusRequest += amount;
-      }
-      continue;
-    }
-    if (type === "REFUND") {
-      paid += amount;
-      continue;
-    }
-    if (type === "ADJUST") {
-      paid += amount;
-      continue;
-    }
-    if (type === "SPEND") {
-      let spend = Math.abs(amount);
-      if (refType === "SHIPPING_PACKAGE" || refType === "SHIPPING_FEE") {
-        const fromBonusShipping = Math.min(bonusShipping, spend);
-        bonusShipping -= fromBonusShipping;
-        spend -= fromBonusShipping;
-      } else {
-        const fromBonusRequest = Math.min(bonusRequest, spend);
-        bonusRequest -= fromBonusRequest;
-        spend -= fromBonusRequest;
-      }
-      paid -= spend;
-    }
-  }
-
-  const paidCredit = Math.max(0, Math.round(paid));
-  const bonusRequestCredit = Math.max(0, Math.round(bonusRequest));
-  const bonusShippingCredit = Math.max(0, Math.round(bonusShipping));
   return {
-    balance: paidCredit + bonusRequestCredit + bonusShippingCredit,
-    paidCredit,
-    bonusRequestCredit,
-    bonusShippingCredit,
+    balance: Number(snapshot?.balance || 0),
+    paidCredit: Number(snapshot?.paidCredit || 0),
+    bonusRequestCredit: Number(snapshot?.bonusRequestCredit || 0),
+    bonusShippingCredit: Number(snapshot?.bonusShippingCredit || 0),
   };
 }
 

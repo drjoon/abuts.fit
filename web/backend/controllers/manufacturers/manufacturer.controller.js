@@ -1,17 +1,15 @@
 // related files:
 // - web/backend/rules.md
-// - web/backend/modules/manufacturers/manufacturer.routes.js
+// - web/backend/modules/manufacturer/manufacturer.routes.js
+// - web/backend/models/ledgerJournal.model.js
+// - web/backend/models/ledgerLine.model.js
 // - web/backend/services/creditBalance.service.js
 // - web/frontend/src/pages/manufacturer/payments/PaymentsPage.tsx
 import { Types } from "mongoose";
 import ManufacturerPayment from "../../models/manufacturerPayment.model.js";
-import ManufacturerCreditLedger from "../../models/manufacturerCreditLedger.model.js";
 import ManufacturerDailySettlementSnapshot from "../../models/manufacturerDailySettlementSnapshot.model.js";
-import CreditLedger from "../../models/creditLedger.model.js";
-import DeliveryInfo from "../../models/deliveryInfo.model.js";
-import Request from "../../models/request.model.js";
-import ShippingPackage from "../../models/shippingPackage.model.js";
-import BusinessAnchor from "../../models/businessAnchor.model.js";
+import LedgerLine from "../../models/ledgerLine.model.js";
+import LedgerJournal from "../../models/ledgerJournal.model.js";
 import { sendNotificationViaQueue } from "../../utils/notificationQueue.js";
 import User from "../../models/user.model.js";
 import {
@@ -28,39 +26,7 @@ function kstYmdToUtcRange(ymd) {
   return { start, end };
 }
 
-async function resolveManufacturerMemberObjectIds(user) {
-  const ids = new Set();
-  const myId = String(user?._id || "").trim();
-  if (myId && Types.ObjectId.isValid(myId)) ids.add(myId);
 
-  const anchorId = String(user?.businessAnchorId || "").trim();
-  if (!anchorId || !Types.ObjectId.isValid(anchorId)) {
-    return Array.from(ids).map((id) => new Types.ObjectId(id));
-  }
-
-  const anchor = await BusinessAnchor.findById(anchorId)
-    .select({ primaryContactUserId: 1, owners: 1, members: 1 })
-    .lean();
-
-  if (!anchor) {
-    return Array.from(ids).map((id) => new Types.ObjectId(id));
-  }
-
-  const primaryId = String(anchor.primaryContactUserId || "").trim();
-  if (primaryId && Types.ObjectId.isValid(primaryId)) ids.add(primaryId);
-
-  for (const ownerId of Array.isArray(anchor.owners) ? anchor.owners : []) {
-    const id = String(ownerId || "").trim();
-    if (id && Types.ObjectId.isValid(id)) ids.add(id);
-  }
-
-  for (const memberId of Array.isArray(anchor.members) ? anchor.members : []) {
-    const id = String(memberId || "").trim();
-    if (id && Types.ObjectId.isValid(id)) ids.add(id);
-  }
-
-  return Array.from(ids).map((id) => new Types.ObjectId(id));
-}
 
 export async function getManufacturerCreditLedger(req, res) {
   try {
@@ -73,15 +39,13 @@ export async function getManufacturerCreditLedger(req, res) {
     }
 
     const manufacturerOrganization = String(user.business || "").trim();
-    if (!manufacturerOrganization) {
+    const manufacturerAnchorIdRaw = String(user?.businessAnchorId || "").trim();
+    if (!manufacturerOrganization || !Types.ObjectId.isValid(manufacturerAnchorIdRaw)) {
       return res.status(400).json({
         success: false,
         message: "조직 정보가 필요합니다.",
       });
     }
-
-    const manufacturerMemberObjectIds =
-      await resolveManufacturerMemberObjectIds(user);
 
     const {
       page = 1,
@@ -92,6 +56,7 @@ export async function getManufacturerCreditLedger(req, res) {
       type,
       requestSettlement = "all",
     } = req.query;
+
     const p = Math.max(1, parseInt(page));
     const l = Math.min(200, Math.max(1, parseInt(limit)));
     const skip = (p - 1) * l;
@@ -101,342 +66,141 @@ export async function getManufacturerCreditLedger(req, res) {
         ? new RegExp(q.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i")
         : null;
 
-    if (requestSettlement === "paid" || requestSettlement === "free") {
-      const requestPaidQuery = {
-        manufacturerOrganization,
-        type: "EARN",
-        refType: "REQUEST",
-      };
-
-      if (typeof from === "string" && from.trim()) {
-        const d = new Date(from);
-        if (!Number.isNaN(d.getTime())) {
-          requestPaidQuery.occurredAt = {
-            ...(requestPaidQuery.occurredAt || {}),
-            $gte: d,
-          };
-        }
-      }
-      if (typeof to === "string" && to.trim()) {
-        const d = new Date(to);
-        if (!Number.isNaN(d.getTime())) {
-          requestPaidQuery.occurredAt = {
-            ...(requestPaidQuery.occurredAt || {}),
-            $lte: d,
-          };
-        }
-      }
-      if (rx) {
-        requestPaidQuery.$or = [{ uniqueKey: rx }, { refType: rx }];
-      }
-
-      const requestPaidRows =
-        requestSettlement === "paid"
-          ? await ManufacturerCreditLedger.find(requestPaidQuery)
-              .sort({ occurredAt: -1, createdAt: -1 })
-              .lean()
-          : [];
-
-      const requestFreeMatch = {
-        type: "SPEND",
-        refType: "REQUEST",
-        $or: [
-          {
-            spentFreeAmount: { $gt: 0 },
-            $or: [{ spentPaidAmount: { $lte: 0 } }, { spentPaidAmount: null }],
-          },
-          { hasFreeRequest: true },
-        ],
-      };
-
-      if (typeof from === "string" && from.trim()) {
-        const d = new Date(from);
-        if (!Number.isNaN(d.getTime())) {
-          requestFreeMatch.createdAt = {
-            ...(requestFreeMatch.createdAt || {}),
-            $gte: d,
-          };
-        }
-      }
-      if (typeof to === "string" && to.trim()) {
-        const d = new Date(to);
-        if (!Number.isNaN(d.getTime())) {
-          requestFreeMatch.createdAt = {
-            ...(requestFreeMatch.createdAt || {}),
-            $lte: d,
-          };
-        }
-      }
-
-      const requestFreePipeline = [
-        { $match: requestFreeMatch },
-        {
-          $lookup: {
-            from: Request.collection.name,
-            localField: "refId",
-            foreignField: "_id",
-            as: "requestDoc",
-          },
-        },
-        { $unwind: "$requestDoc" },
-        {
-          $match: {
-            "requestDoc.caManufacturer": { $in: manufacturerMemberObjectIds },
-          },
-        },
-      ];
-
-      if (rx) {
-        requestFreePipeline.push({
-          $match: {
-            $or: [
-              { uniqueKey: rx },
-              { "requestDoc.requestId": rx },
-              { "requestDoc.caseInfos.patientName": rx },
-            ],
-          },
-        });
-      }
-
-      const requestFreeRowsFromLedger =
-        requestSettlement === "free"
-          ? await CreditLedger.aggregate([
-              ...requestFreePipeline,
-              {
-                $project: {
-                  _id: { $concat: ["free-request:", { $toString: "$_id" }] },
-                  manufacturerOrganization: {
-                    $literal: manufacturerOrganization,
-                  },
-                  manufacturerId: { $literal: user._id },
-                  type: { $literal: "EARN" },
-                  amount: { $literal: 0 },
-                  refType: { $literal: "REQUEST_FREE" },
-                  refId: "$refId",
-                  uniqueKey: {
-                    $concat: [
-                      "request:",
-                      { $toString: "$refId" },
-                      ":manufacturer_commission_free",
-                    ],
-                  },
-                  occurredAt: "$createdAt",
-                  createdAt: "$createdAt",
-                },
-              },
-            ])
-          : [];
-
-      const requestFreeRuleQuery = {
-        caManufacturer: { $in: manufacturerMemberObjectIds },
-        "price.rule": "remake_monthly_free_3",
-        manufacturerStage: { $ne: "취소" },
-      };
-
-      if (typeof from === "string" && from.trim()) {
-        const d = new Date(from);
-        if (!Number.isNaN(d.getTime())) {
-          requestFreeRuleQuery.createdAt = {
-            ...(requestFreeRuleQuery.createdAt || {}),
-            $gte: d,
-          };
-        }
-      }
-      if (typeof to === "string" && to.trim()) {
-        const d = new Date(to);
-        if (!Number.isNaN(d.getTime())) {
-          requestFreeRuleQuery.createdAt = {
-            ...(requestFreeRuleQuery.createdAt || {}),
-            $lte: d,
-          };
-        }
-      }
-
-      if (rx) {
-        requestFreeRuleQuery.$or = [
-          { requestId: rx },
-          { "caseInfos.patientName": rx },
-        ];
-      }
-
-      const requestFreeRowsFromRule =
-        requestSettlement === "free"
-          ? await Request.find(requestFreeRuleQuery)
-              .select({ _id: 1, createdAt: 1 })
-              .sort({ createdAt: -1, _id: -1 })
-              .lean()
-          : [];
-
-      const requestFreeRowsMap = new Map();
-      for (const row of requestFreeRowsFromLedger || []) {
-        const key = String(row?.refId || row?._id || "");
-        if (!key) continue;
-        requestFreeRowsMap.set(key, row);
-      }
-      for (const reqRow of requestFreeRowsFromRule || []) {
-        const refId = String(reqRow?._id || "");
-        if (!refId || requestFreeRowsMap.has(refId)) continue;
-        requestFreeRowsMap.set(refId, {
-          _id: `free-request-rule:${refId}`,
-          manufacturerOrganization,
-          manufacturerId: user._id,
-          type: "EARN",
-          amount: 0,
-          refType: "REQUEST_FREE",
-          refId,
-          uniqueKey: `request:${refId}:manufacturer_commission_free`,
-          occurredAt: reqRow?.createdAt || new Date(),
-          createdAt: reqRow?.createdAt || new Date(),
-        });
-      }
-      const requestFreeRows = Array.from(requestFreeRowsMap.values());
-
-      const shippingMatch = {
-        manufacturerOrganization,
-        type: "EARN",
-        refType: "SHIPPING_PACKAGE",
-      };
-
-      if (typeof from === "string" && from.trim()) {
-        const d = new Date(from);
-        if (!Number.isNaN(d.getTime())) {
-          shippingMatch.occurredAt = {
-            ...(shippingMatch.occurredAt || {}),
-            $gte: d,
-          };
-        }
-      }
-      if (typeof to === "string" && to.trim()) {
-        const d = new Date(to);
-        if (!Number.isNaN(d.getTime())) {
-          shippingMatch.occurredAt = {
-            ...(shippingMatch.occurredAt || {}),
-            $lte: d,
-          };
-        }
-      }
-
-      const shippingPipeline = [
-        { $match: shippingMatch },
-        {
-          $lookup: {
-            from: CreditLedger.collection.name,
-            let: { shippingRefId: "$refId" },
-            pipeline: [
-              {
-                $match: {
-                  $expr: {
-                    $and: [
-                      { $eq: ["$refId", "$$shippingRefId"] },
-                      { $eq: ["$type", "SPEND"] },
-                      { $eq: ["$refType", "SHIPPING_PACKAGE"] },
-                    ],
-                  },
-                },
-              },
-              { $sort: { createdAt: -1 } },
-              { $limit: 1 },
-              {
-                $project: {
-                  _id: 0,
-                  spentPaidAmount: 1,
-                  spentFreeAmount: 1,
-                },
-              },
-            ],
-            as: "shippingSpend",
-          },
-        },
-        {
-          $unwind: {
-            path: "$shippingSpend",
-            preserveNullAndEmptyArrays: true,
-          },
-        },
-      ];
-
-      if (requestSettlement === "paid") {
-        shippingPipeline.push({
-          $match: {
-            "shippingSpend.spentPaidAmount": { $gt: 0 },
-          },
-        });
-      } else {
-        shippingPipeline.push({
-          $match: {
-            "shippingSpend.spentFreeAmount": { $gt: 0 },
-            $or: [
-              { "shippingSpend.spentPaidAmount": { $lte: 0 } },
-              { "shippingSpend.spentPaidAmount": null },
-            ],
-          },
-        });
-      }
-
-      if (rx) {
-        shippingPipeline.push({
-          $match: {
-            $or: [{ uniqueKey: rx }, { refType: rx }],
-          },
-        });
-      }
-
-      const shippingRows =
-        await ManufacturerCreditLedger.aggregate(shippingPipeline);
-
-      const rows = [
-        ...requestPaidRows,
-        ...requestFreeRows,
-        ...shippingRows,
-      ].sort(
-        (a, b) =>
-          new Date(String(b?.occurredAt || 0)).getTime() -
-          new Date(String(a?.occurredAt || 0)).getTime(),
-      );
-
-      const total = rows.length;
-      const pagedRows = rows.slice(skip, skip + l);
-
+    const normalizedType = String(type || "").trim().toUpperCase();
+    if (
+      normalizedType &&
+      normalizedType !== "ALL" &&
+      !["EARN", "ADJUST", "PAYOUT"].includes(normalizedType)
+    ) {
       return res.status(200).json({
         success: true,
-        data: pagedRows,
+        data: [],
         pagination: {
           page: p,
           limit: l,
-          total,
-          totalPages: Math.ceil(total / l),
+          total: 0,
+          totalPages: 0,
         },
       });
     }
 
-    const query = { manufacturerOrganization };
-    if (typeof type === "string" && type.trim()) {
-      query.type = type.trim();
-    }
+    const match = {
+      ownerRole: "manufacturer",
+      ownerId: new Types.ObjectId(manufacturerAnchorIdRaw),
+      accountCode: "REV_MANUFACTURER",
+    };
 
     if (typeof from === "string" && from.trim()) {
       const d = new Date(from);
       if (!Number.isNaN(d.getTime())) {
-        query.occurredAt = { ...(query.occurredAt || {}), $gte: d };
+        match.occurredAt = { ...(match.occurredAt || {}), $gte: d };
       }
     }
     if (typeof to === "string" && to.trim()) {
       const d = new Date(to);
       if (!Number.isNaN(d.getTime())) {
-        query.occurredAt = { ...(query.occurredAt || {}), $lte: d };
+        match.occurredAt = { ...(match.occurredAt || {}), $lte: d };
       }
     }
 
-    if (rx) {
-      query.$or = [{ uniqueKey: rx }, { refType: rx }];
+    if (requestSettlement === "paid") {
+      match.creditKind = "PAID";
+    } else if (requestSettlement === "free") {
+      match.creditKind = { $in: ["FREE_REQUEST", "FREE_SHIPPING"] };
     }
 
-    const rows = await ManufacturerCreditLedger.find(query)
-      .sort({ occurredAt: -1, createdAt: -1 })
-      .skip(skip)
-      .limit(l)
-      .lean();
-    const total = await ManufacturerCreditLedger.countDocuments(query);
+    const pipeline = [
+      { $match: match },
+      {
+        $lookup: {
+          from: LedgerJournal.collection.name,
+          localField: "journalId",
+          foreignField: "journalId",
+          as: "journalDoc",
+        },
+      },
+      {
+        $unwind: {
+          path: "$journalDoc",
+          preserveNullAndEmptyArrays: true,
+        },
+      },
+      {
+        $addFields: {
+          uniqueKey: {
+            $concat: [
+              "gl:",
+              { $ifNull: ["$journalDoc.meta.spendUniqueKey", "$journalId"] },
+            ],
+          },
+          type: {
+            $switch: {
+              branches: [
+                {
+                  case: { $eq: ["$journalDoc.eventType", "SETTLEMENT_PAYOUT"] },
+                  then: "PAYOUT",
+                },
+                {
+                  case: { $eq: ["$journalDoc.eventType", "ADJUST"] },
+                  then: "ADJUST",
+                },
+              ],
+              default: "EARN",
+            },
+          },
+          amountBase: { $ifNull: ["$amountExcludingVat", "$amount"] },
+          requestIdMeta: { $ifNull: ["$journalDoc.meta.requestId", ""] },
+        },
+      },
+    ];
+
+    if (normalizedType === "EARN" || normalizedType === "ADJUST" || normalizedType === "PAYOUT") {
+      pipeline.push({ $match: { type: normalizedType } });
+    }
+
+    if (rx) {
+      pipeline.push({
+        $match: {
+          $or: [{ uniqueKey: rx }, { refType: rx }, { requestIdMeta: rx }],
+        },
+      });
+    }
+
+    pipeline.push(
+      { $sort: { occurredAt: -1, _id: -1 } },
+      {
+        $facet: {
+          rows: [
+            { $skip: skip },
+            { $limit: l },
+            {
+              $project: {
+                _id: 1,
+                manufacturerOrganization: { $literal: manufacturerOrganization },
+                manufacturerId: user._id,
+                type: 1,
+                amount: "$amountBase",
+                amountExcludingVat: "$amountBase",
+                vatAmount: { $literal: 0 },
+                amountIncludingVat: "$amountBase",
+                refType: 1,
+                refId: 1,
+                uniqueKey: 1,
+                occurredAt: 1,
+                createdAt: 1,
+                creditKind: 1,
+                eventType: "$journalDoc.eventType",
+              },
+            },
+          ],
+          totalRows: [{ $count: "count" }],
+        },
+      },
+    );
+
+    const [result] = await LedgerLine.aggregate(pipeline);
+    const rows = Array.isArray(result?.rows) ? result.rows : [];
+    const total = Number(result?.totalRows?.[0]?.count || 0);
 
     return res.status(200).json({
       success: true,
@@ -528,7 +292,8 @@ export async function triggerManufacturerDailySettlementSnapshotRecalc(
     }
 
     const manufacturerOrganization = String(user.business || "").trim();
-    if (!manufacturerOrganization) {
+    const manufacturerAnchorIdRaw = String(user?.businessAnchorId || "").trim();
+    if (!manufacturerOrganization || !Types.ObjectId.isValid(manufacturerAnchorIdRaw)) {
       return res.status(400).json({
         success: false,
         message: "조직 정보가 필요합니다.",
@@ -545,9 +310,6 @@ export async function triggerManufacturerDailySettlementSnapshotRecalc(
         .json({ success: false, message: "날짜 계산 실패" });
     }
 
-    const manufacturerMemberObjectIds =
-      await resolveManufacturerMemberObjectIds(user);
-
     const utcRange = kstYmdToUtcRange(snapshotYmd);
     if (!utcRange) {
       return res
@@ -556,209 +318,102 @@ export async function triggerManufacturerDailySettlementSnapshotRecalc(
     }
 
     const { start, end } = utcRange;
-    const agg = await ManufacturerCreditLedger.aggregate([
+    const [summary] = await LedgerLine.aggregate([
       {
         $match: {
-          manufacturerOrganization,
+          ownerRole: "manufacturer",
+          ownerId: new Types.ObjectId(manufacturerAnchorIdRaw),
+          accountCode: "REV_MANUFACTURER",
           occurredAt: { $gte: start, $lte: end },
         },
       },
       {
-        $group: {
-          _id: { type: "$type", refType: "$refType" },
-          amount: { $sum: "$amount" },
-          count: { $sum: 1 },
-        },
-      },
-    ]);
-
-    const sums = {
-      earnRequestAmount: 0,
-      earnRequestCount: 0,
-      earnShippingAmount: 0,
-      earnShippingCount: 0,
-      refundAmount: 0,
-      payoutAmount: 0,
-      adjustAmount: 0,
-    };
-
-    for (const row of agg) {
-      const type = String(row?._id?.type || "");
-      const refType = String(row?._id?.refType || "");
-      const amount = Math.round(Number(row?.amount || 0));
-      const count = Math.round(Number(row?.count || 0));
-
-      if (type === "EARN" && refType === "REQUEST") {
-        sums.earnRequestAmount += amount;
-        sums.earnRequestCount += count;
-      } else if (type === "EARN" && refType === "SHIPPING_PACKAGE") {
-        sums.earnShippingAmount += amount;
-        sums.earnShippingCount += count;
-      } else if (type === "REFUND") {
-        sums.refundAmount += amount;
-      } else if (type === "PAYOUT") {
-        sums.payoutAmount += amount;
-      } else if (type === "ADJUST") {
-        sums.adjustAmount += amount;
-      }
-    }
-
-    // 배송비 정산 건수/금액은 집하일(pickedUpAt) 기준 SSOT로 재계산해 덮어쓴다.
-    // (ManufacturerCreditLedger.occurredAt 시점 집계와 일자 기준이 어긋나는 문제 방지)
-    const shippingRequestMatch = {
-      manufacturerStage: { $ne: "취소" },
-      shippingPackageId: { $exists: true, $ne: null },
-      $or: [
-        { caManufacturer: { $in: manufacturerMemberObjectIds } },
-        { caManufacturer: null },
-        { caManufacturer: { $exists: false } },
-      ],
-    };
-
-    const shippingPackageRows = await Request.aggregate([
-      { $match: shippingRequestMatch },
-      {
         $lookup: {
-          from: DeliveryInfo.collection.name,
-          localField: "deliveryInfoRef",
-          foreignField: "_id",
-          as: "deliveryDoc",
+          from: LedgerJournal.collection.name,
+          localField: "journalId",
+          foreignField: "journalId",
+          as: "journalDoc",
         },
       },
       {
         $unwind: {
-          path: "$deliveryDoc",
-          preserveNullAndEmptyArrays: true,
-        },
-      },
-      {
-        $lookup: {
-          from: ShippingPackage.collection.name,
-          localField: "shippingPackageId",
-          foreignField: "_id",
-          as: "packageDoc",
-        },
-      },
-      {
-        $unwind: {
-          path: "$packageDoc",
+          path: "$journalDoc",
           preserveNullAndEmptyArrays: true,
         },
       },
       {
         $addFields: {
-          settlementYmd: {
-            $switch: {
-              branches: [
-                {
-                  case: {
-                    $ne: [{ $ifNull: ["$deliveryDoc.pickedUpAt", null] }, null],
-                  },
-                  then: {
-                    $dateToString: {
-                      format: "%Y-%m-%d",
-                      date: "$deliveryDoc.pickedUpAt",
-                      timezone: "Asia/Seoul",
-                    },
-                  },
-                },
-                {
-                  case: {
-                    $ne: [{ $ifNull: ["$deliveryDoc.deliveredAt", null] }, null],
-                  },
-                  then: {
-                    $dateToString: {
-                      format: "%Y-%m-%d",
-                      date: "$deliveryDoc.deliveredAt",
-                      timezone: "Asia/Seoul",
-                    },
-                  },
-                },
-                {
-                  case: {
-                    $ne: [{ $ifNull: ["$deliveryDoc.shippedAt", null] }, null],
-                  },
-                  then: {
-                    $dateToString: {
-                      format: "%Y-%m-%d",
-                      date: "$deliveryDoc.shippedAt",
-                      timezone: "Asia/Seoul",
-                    },
-                  },
-                },
-                {
-                  case: {
-                    $regexMatch: {
-                      input: { $ifNull: ["$packageDoc.shipDateYmd", ""] },
-                      regex: "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
-                    },
-                  },
-                  then: "$packageDoc.shipDateYmd",
-                },
-              ],
-              default: {
-                $dateToString: {
-                  format: "%Y-%m-%d",
-                  date: "$createdAt",
-                  timezone: "Asia/Seoul",
-                },
-              },
-            },
-          },
-        },
-      },
-      { $match: { settlementYmd: snapshotYmd } },
-      {
-        $group: {
-          _id: "$shippingPackageId",
-        },
-      },
-      {
-        $lookup: {
-          from: CreditLedger.collection.name,
-          let: { shippingPackageId: "$_id" },
-          pipeline: [
-            {
-              $match: {
-                $expr: {
-                  $and: [
-                    { $eq: ["$refId", "$$shippingPackageId"] },
-                    { $eq: ["$type", "SPEND"] },
-                    { $in: ["$refType", ["SHIPPING_PACKAGE", "SHIPPING_FEE"]] },
-                  ],
-                },
-              },
-            },
-            { $sort: { createdAt: -1, _id: -1 } },
-            { $limit: 1 },
-            {
-              $project: {
-                _id: 0,
-                amount: 1,
-                spentPaidAmount: 1,
-              },
-            },
-          ],
-          as: "shippingSpend",
-        },
-      },
-      {
-        $unwind: {
-          path: "$shippingSpend",
-          preserveNullAndEmptyArrays: true,
+          baseAmount: { $ifNull: ["$amountExcludingVat", "$amount"] },
+          eventType: { $ifNull: ["$journalDoc.eventType", ""] },
         },
       },
       {
         $group: {
           _id: null,
-          earnShippingCount: { $sum: 1 },
-          earnShippingAmount: {
+          earnRequestPaidAmount: {
             $sum: {
               $cond: [
-                { $gt: ["$shippingSpend.spentPaidAmount", 0] },
-                { $abs: { $ifNull: ["$shippingSpend.amount", 0] } },
+                {
+                  $and: [
+                    { $eq: ["$eventType", "REQUEST_SPEND_COMMIT"] },
+                    { $eq: ["$creditKind", "PAID"] },
+                  ],
+                },
+                "$baseAmount",
                 0,
               ],
+            },
+          },
+          earnRequestPaidCount: {
+            $sum: {
+              $cond: [
+                {
+                  $and: [
+                    { $eq: ["$eventType", "REQUEST_SPEND_COMMIT"] },
+                    { $eq: ["$creditKind", "PAID"] },
+                  ],
+                },
+                1,
+                0,
+              ],
+            },
+          },
+          earnShippingPaidAmount: {
+            $sum: {
+              $cond: [
+                {
+                  $and: [
+                    { $eq: ["$eventType", "SHIPPING_SPEND_COMMIT"] },
+                    { $eq: ["$creditKind", "PAID"] },
+                  ],
+                },
+                "$baseAmount",
+                0,
+              ],
+            },
+          },
+          earnShippingPaidCount: {
+            $sum: {
+              $cond: [
+                {
+                  $and: [
+                    { $eq: ["$eventType", "SHIPPING_SPEND_COMMIT"] },
+                    { $eq: ["$creditKind", "PAID"] },
+                  ],
+                },
+                1,
+                0,
+              ],
+            },
+          },
+          payoutAmount: {
+            $sum: {
+              $cond: [{ $eq: ["$eventType", "SETTLEMENT_PAYOUT"] }, "$baseAmount", 0],
+            },
+          },
+          adjustAmount: {
+            $sum: {
+              $cond: [{ $eq: ["$eventType", "ADJUST"] }, "$baseAmount", 0],
             },
           },
         },
@@ -766,15 +421,26 @@ export async function triggerManufacturerDailySettlementSnapshotRecalc(
       {
         $project: {
           _id: 0,
-          earnShippingCount: 1,
-          earnShippingAmount: 1,
+          earnRequestAmount: "$earnRequestPaidAmount",
+          earnRequestCount: "$earnRequestPaidCount",
+          earnShippingAmount: "$earnShippingPaidAmount",
+          earnShippingCount: "$earnShippingPaidCount",
+          refundAmount: { $literal: 0 },
+          payoutAmount: "$payoutAmount",
+          adjustAmount: "$adjustAmount",
         },
       },
     ]);
 
-    const shippingSummary = shippingPackageRows?.[0] || {};
-    sums.earnShippingCount = Number(shippingSummary.earnShippingCount || 0);
-    sums.earnShippingAmount = Number(shippingSummary.earnShippingAmount || 0);
+    const sums = {
+      earnRequestAmount: Number(summary?.earnRequestAmount || 0),
+      earnRequestCount: Number(summary?.earnRequestCount || 0),
+      earnShippingAmount: Number(summary?.earnShippingAmount || 0),
+      earnShippingCount: Number(summary?.earnShippingCount || 0),
+      refundAmount: Number(summary?.refundAmount || 0),
+      payoutAmount: Number(summary?.payoutAmount || 0),
+      adjustAmount: Number(summary?.adjustAmount || 0),
+    };
 
     const netAmount =
       Math.round(Number(sums.earnRequestAmount || 0)) +
@@ -1052,16 +718,14 @@ export async function getManufacturerCreditDailySummary(req, res) {
       });
     }
 
-    const manufacturerOrganization = String(user.business || "").trim();
-    if (!manufacturerOrganization) {
+    const manufacturerAnchorIdRaw = String(user?.businessAnchorId || "").trim();
+    if (!manufacturerAnchorIdRaw || !Types.ObjectId.isValid(manufacturerAnchorIdRaw)) {
       return res.status(400).json({
         success: false,
-        message: "조직 정보가 필요합니다.",
+        message: "제조사 사업체 정보가 필요합니다.",
       });
     }
-
-    const manufacturerMemberObjectIds =
-      await resolveManufacturerMemberObjectIds(user);
+    const manufacturerAnchorId = new Types.ObjectId(manufacturerAnchorIdRaw);
 
     const { fromYmd, toYmd, limit = "60", debug } = req.query;
     const l = Math.min(366, Math.max(1, parseInt(limit)));
@@ -1071,54 +735,82 @@ export async function getManufacturerCreditDailySummary(req, res) {
         .trim()
         .toLowerCase() === "true";
 
-    const match = { manufacturerOrganization };
+    const occurredAtMatch = {};
     if (typeof fromYmd === "string" && fromYmd.trim()) {
       const from = new Date(`${fromYmd.trim()}T00:00:00.000+09:00`);
       if (!Number.isNaN(from.getTime())) {
-        match.occurredAt = { ...(match.occurredAt || {}), $gte: from };
+        occurredAtMatch.$gte = from;
       }
     }
     if (typeof toYmd === "string" && toYmd.trim()) {
       const to = new Date(`${toYmd.trim()}T23:59:59.999+09:00`);
       if (!Number.isNaN(to.getTime())) {
-        match.occurredAt = { ...(match.occurredAt || {}), $lte: to };
+        occurredAtMatch.$lte = to;
       }
     }
 
-    const rows = await ManufacturerCreditLedger.aggregate([
-      { $match: match },
+    const baseMatch = {
+      ownerRole: "manufacturer",
+      ownerId: manufacturerAnchorId,
+      accountCode: "REV_MANUFACTURER",
+      ...(Object.keys(occurredAtMatch).length > 0
+        ? { occurredAt: occurredAtMatch }
+        : {}),
+    };
+
+    const rows = await LedgerLine.aggregate([
+      { $match: baseMatch },
+      {
+        $lookup: {
+          from: LedgerJournal.collection.name,
+          localField: "journalId",
+          foreignField: "journalId",
+          as: "journalDoc",
+        },
+      },
+      {
+        $unwind: {
+          path: "$journalDoc",
+          preserveNullAndEmptyArrays: true,
+        },
+      },
+      {
+        $addFields: {
+          ymd: {
+            $dateToString: {
+              format: "%Y-%m-%d",
+              date: "$occurredAt",
+              timezone: "Asia/Seoul",
+            },
+          },
+          baseAmount: { $ifNull: ["$amountExcludingVat", "$amount"] },
+          eventType: { $ifNull: ["$journalDoc.eventType", ""] },
+        },
+      },
       {
         $group: {
-          _id: {
-            ymd: {
-              $dateToString: {
-                format: "%Y-%m-%d",
-                date: "$occurredAt",
-                timezone: "Asia/Seoul",
-              },
-            },
-          },
-          earnRequestAmount: {
+          _id: "$ymd",
+          earnRequestPaidAmount: {
             $sum: {
               $cond: [
                 {
                   $and: [
-                    { $eq: ["$type", "EARN"] },
-                    { $ne: ["$refType", "SHIPPING_PACKAGE"] },
+                    { $eq: ["$eventType", "REQUEST_SPEND_COMMIT"] },
+                    { $eq: ["$creditKind", "PAID"] },
                   ],
                 },
-                "$amount",
+                "$baseAmount",
                 0,
               ],
             },
           },
-          earnRequestCount: {
+          earnRequestPaidCount: {
             $sum: {
               $cond: [
                 {
                   $and: [
-                    { $eq: ["$type", "EARN"] },
-                    { $ne: ["$refType", "SHIPPING_PACKAGE"] },
+                    { $eq: ["$eventType", "REQUEST_SPEND_COMMIT"] },
+                    { $eq: ["$creditKind", "PAID"] },
                   ],
                 },
                 1,
@@ -1126,27 +818,27 @@ export async function getManufacturerCreditDailySummary(req, res) {
               ],
             },
           },
-          earnShippingAmount: {
+          earnRequestFreeAmount: {
             $sum: {
               $cond: [
                 {
                   $and: [
-                    { $eq: ["$type", "EARN"] },
-                    { $eq: ["$refType", "SHIPPING_PACKAGE"] },
+                    { $eq: ["$eventType", "REQUEST_SPEND_COMMIT"] },
+                    { $eq: ["$creditKind", "FREE_REQUEST"] },
                   ],
                 },
-                "$amount",
+                "$baseAmount",
                 0,
               ],
             },
           },
-          earnShippingCount: {
+          earnRequestFreeCount: {
             $sum: {
               $cond: [
                 {
                   $and: [
-                    { $eq: ["$type", "EARN"] },
-                    { $eq: ["$refType", "SHIPPING_PACKAGE"] },
+                    { $eq: ["$eventType", "REQUEST_SPEND_COMMIT"] },
+                    { $eq: ["$creditKind", "FREE_REQUEST"] },
                   ],
                 },
                 1,
@@ -1154,403 +846,91 @@ export async function getManufacturerCreditDailySummary(req, res) {
               ],
             },
           },
-          refundAmount: {
-            $sum: { $cond: [{ $eq: ["$type", "REFUND"] }, "$amount", 0] },
+          earnShippingPaidAmount: {
+            $sum: {
+              $cond: [
+                {
+                  $and: [
+                    { $eq: ["$eventType", "SHIPPING_SPEND_COMMIT"] },
+                    { $eq: ["$creditKind", "PAID"] },
+                  ],
+                },
+                "$baseAmount",
+                0,
+              ],
+            },
+          },
+          earnShippingPaidCount: {
+            $sum: {
+              $cond: [
+                {
+                  $and: [
+                    { $eq: ["$eventType", "SHIPPING_SPEND_COMMIT"] },
+                    { $eq: ["$creditKind", "PAID"] },
+                  ],
+                },
+                1,
+                0,
+              ],
+            },
+          },
+          earnShippingFreeAmount: {
+            $sum: {
+              $cond: [
+                {
+                  $and: [
+                    { $eq: ["$eventType", "SHIPPING_SPEND_COMMIT"] },
+                    { $eq: ["$creditKind", "FREE_SHIPPING"] },
+                  ],
+                },
+                "$baseAmount",
+                0,
+              ],
+            },
+          },
+          earnShippingFreeCount: {
+            $sum: {
+              $cond: [
+                {
+                  $and: [
+                    { $eq: ["$eventType", "SHIPPING_SPEND_COMMIT"] },
+                    { $eq: ["$creditKind", "FREE_SHIPPING"] },
+                  ],
+                },
+                1,
+                0,
+              ],
+            },
           },
           payoutAmount: {
-            $sum: { $cond: [{ $eq: ["$type", "PAYOUT"] }, "$amount", 0] },
+            $sum: {
+              $cond: [{ $eq: ["$eventType", "SETTLEMENT_PAYOUT"] }, "$baseAmount", 0],
+            },
           },
           adjustAmount: {
-            $sum: { $cond: [{ $eq: ["$type", "ADJUST"] }, "$amount", 0] },
-          },
-        },
-      },
-      {
-        $addFields: {
-          ymd: "$_id.ymd",
-          netAmount: {
-            $add: [
-              "$earnRequestAmount",
-              "$earnShippingAmount",
-              "$refundAmount",
-              "$payoutAmount",
-              "$adjustAmount",
-            ],
+            $sum: {
+              $cond: [{ $eq: ["$eventType", "ADJUST"] }, "$baseAmount", 0],
+            },
           },
         },
       },
       {
         $project: {
           _id: 0,
-          ymd: 1,
-          earnRequestAmount: 1,
-          earnRequestCount: 1,
-          earnShippingAmount: 1,
-          earnShippingCount: 1,
-          refundAmount: 1,
+          ymd: "$_id",
+          earnRequestPaidAmount: 1,
+          earnRequestPaidCount: 1,
+          earnRequestFreeAmount: 1,
+          earnRequestFreeCount: 1,
+          earnShippingPaidAmount: 1,
+          earnShippingPaidCount: 1,
+          earnShippingFreeAmount: 1,
+          earnShippingFreeCount: 1,
           payoutAmount: 1,
           adjustAmount: 1,
-          netAmount: 1,
         },
       },
     ]);
-
-    const freeMatch = {
-      type: "SPEND",
-      refType: "REQUEST",
-      $or: [{ spentFreeAmount: { $gt: 0 } }, { hasFreeRequest: true }],
-    };
-
-    if (typeof fromYmd === "string" && fromYmd.trim()) {
-      const from = new Date(`${fromYmd.trim()}T00:00:00.000+09:00`);
-      if (!Number.isNaN(from.getTime())) {
-        freeMatch.createdAt = { ...(freeMatch.createdAt || {}), $gte: from };
-      }
-    }
-    if (typeof toYmd === "string" && toYmd.trim()) {
-      const to = new Date(`${toYmd.trim()}T23:59:59.999+09:00`);
-      if (!Number.isNaN(to.getTime())) {
-        freeMatch.createdAt = { ...(freeMatch.createdAt || {}), $lte: to };
-      }
-    }
-
-    const freeRows = await CreditLedger.aggregate([
-      { $match: freeMatch },
-      {
-        $lookup: {
-          from: Request.collection.name,
-          localField: "refId",
-          foreignField: "_id",
-          as: "requestDoc",
-        },
-      },
-      { $unwind: "$requestDoc" },
-      {
-        $match: {
-          "requestDoc.caManufacturer": { $in: manufacturerMemberObjectIds },
-          $or: [
-            { spentFreeAmount: { $gt: 0 } },
-            {
-              hasFreeRequest: true,
-              "requestDoc.requestCategory": { $in: ["rnd_sample", "copied_sample"] },
-            },
-          ],
-        },
-      },
-      {
-        $group: {
-          _id: {
-            ymd: {
-              $dateToString: {
-                format: "%Y-%m-%d",
-                date: "$createdAt",
-                timezone: "Asia/Seoul",
-              },
-            },
-          },
-          earnRequestFreeCount: { $sum: 1 },
-          earnRequestFreeAmount: {
-            $sum: { $ifNull: ["$spentFreeAmount", 0] },
-          },
-        },
-      },
-      {
-        $project: {
-          _id: 0,
-          ymd: "$_id.ymd",
-          earnRequestFreeCount: 1,
-          earnRequestFreeAmount: 1,
-        },
-      },
-    ]);
-
-    const shippingRequestMatch = {
-      manufacturerStage: { $ne: "취소" },
-      shippingPackageId: { $exists: true, $ne: null },
-      $or: [
-        { caManufacturer: { $in: manufacturerMemberObjectIds } },
-        { caManufacturer: null },
-        { caManufacturer: { $exists: false } },
-      ],
-    };
-
-    const shippingPackagePipeline = [
-      { $match: shippingRequestMatch },
-      {
-        $lookup: {
-          from: DeliveryInfo.collection.name,
-          localField: "deliveryInfoRef",
-          foreignField: "_id",
-          as: "deliveryDoc",
-        },
-      },
-      {
-        $unwind: {
-          path: "$deliveryDoc",
-          preserveNullAndEmptyArrays: true,
-        },
-      },
-      {
-        $lookup: {
-          from: ShippingPackage.collection.name,
-          localField: "shippingPackageId",
-          foreignField: "_id",
-          as: "packageDoc",
-        },
-      },
-      {
-        $unwind: {
-          path: "$packageDoc",
-          preserveNullAndEmptyArrays: true,
-        },
-      },
-      {
-        $addFields: {
-          settlementYmd: {
-            $switch: {
-              branches: [
-                {
-                  // 배송비 정산일 SSOT: 집하일(pickedUpAt) 기준
-                  // deliveredAt가 나중에 들어와도 집하일로 집계되어야 중복/이월 집계가 발생하지 않는다.
-                  case: {
-                    $ne: [{ $ifNull: ["$deliveryDoc.pickedUpAt", null] }, null],
-                  },
-                  then: {
-                    $dateToString: {
-                      format: "%Y-%m-%d",
-                      date: "$deliveryDoc.pickedUpAt",
-                      timezone: "Asia/Seoul",
-                    },
-                  },
-                },
-                {
-                  // 레거시/예외 데이터 fallback: pickedUpAt 누락 시 deliveredAt 사용
-                  case: {
-                    $ne: [{ $ifNull: ["$deliveryDoc.deliveredAt", null] }, null],
-                  },
-                  then: {
-                    $dateToString: {
-                      format: "%Y-%m-%d",
-                      date: "$deliveryDoc.deliveredAt",
-                      timezone: "Asia/Seoul",
-                    },
-                  },
-                },
-                {
-                  case: {
-                    $ne: [{ $ifNull: ["$deliveryDoc.shippedAt", null] }, null],
-                  },
-                  then: {
-                    $dateToString: {
-                      format: "%Y-%m-%d",
-                      date: "$deliveryDoc.shippedAt",
-                      timezone: "Asia/Seoul",
-                    },
-                  },
-                },
-                {
-                  case: {
-                    $regexMatch: {
-                      input: { $ifNull: ["$packageDoc.shipDateYmd", ""] },
-                      regex: "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
-                    },
-                  },
-                  then: "$packageDoc.shipDateYmd",
-                },
-              ],
-              default: {
-                $dateToString: {
-                  format: "%Y-%m-%d",
-                  date: "$createdAt",
-                  timezone: "Asia/Seoul",
-                },
-              },
-            },
-          },
-        },
-      },
-      {
-        $group: {
-          _id: "$shippingPackageId",
-          settlementYmd: { $max: "$settlementYmd" },
-        },
-      },
-      {
-        $lookup: {
-          from: CreditLedger.collection.name,
-          let: { shippingPackageId: "$_id" },
-          pipeline: [
-            {
-              $match: {
-                $expr: {
-                  $and: [
-                    { $eq: ["$refId", "$$shippingPackageId"] },
-                    { $eq: ["$type", "SPEND"] },
-                    { $in: ["$refType", ["SHIPPING_PACKAGE", "SHIPPING_FEE"]] },
-                  ],
-                },
-              },
-            },
-            { $sort: { createdAt: -1, _id: -1 } },
-            { $limit: 1 },
-            {
-              $project: {
-                _id: 0,
-                amount: 1,
-                spentPaidAmount: 1,
-                spentFreeAmount: 1,
-                businessAnchorId: 1,
-              },
-            },
-          ],
-          as: "shippingSpend",
-        },
-      },
-      {
-        $unwind: {
-          path: "$shippingSpend",
-          preserveNullAndEmptyArrays: true,
-        },
-      },
-    ];
-
-    if (typeof fromYmd === "string" && fromYmd.trim()) {
-      shippingPackagePipeline.push({
-        $match: { settlementYmd: { $gte: fromYmd.trim() } },
-      });
-    }
-    if (typeof toYmd === "string" && toYmd.trim()) {
-      shippingPackagePipeline.push({
-        $match: { settlementYmd: { $lte: toYmd.trim() } },
-      });
-    }
-
-    shippingPackagePipeline.push({
-      $project: {
-        _id: 0,
-        ymd: "$settlementYmd",
-        spendAmount: { $abs: { $ifNull: ["$shippingSpend.amount", 0] } },
-        spentPaidAmount: { $ifNull: ["$shippingSpend.spentPaidAmount", 0] },
-        spentFreeAmount: { $ifNull: ["$shippingSpend.spentFreeAmount", 0] },
-        businessAnchorId: "$shippingSpend.businessAnchorId",
-      },
-    });
-
-    const shippingSpendRows = await Request.aggregate(shippingPackagePipeline);
-
-    const requestPaidMatch = {
-      type: "SPEND",
-      refType: "REQUEST",
-      spentPaidAmount: { $gt: 0 },
-    };
-
-    if (typeof fromYmd === "string" && fromYmd.trim()) {
-      const from = new Date(`${fromYmd.trim()}T00:00:00.000+09:00`);
-      if (!Number.isNaN(from.getTime())) {
-        requestPaidMatch.createdAt = {
-          ...(requestPaidMatch.createdAt || {}),
-          $gte: from,
-        };
-      }
-    }
-    if (typeof toYmd === "string" && toYmd.trim()) {
-      const to = new Date(`${toYmd.trim()}T23:59:59.999+09:00`);
-      if (!Number.isNaN(to.getTime())) {
-        requestPaidMatch.createdAt = {
-          ...(requestPaidMatch.createdAt || {}),
-          $lte: to,
-        };
-      }
-    }
-
-    const requestPaidRows = await CreditLedger.aggregate([
-      { $match: requestPaidMatch },
-      {
-        $lookup: {
-          from: Request.collection.name,
-          localField: "refId",
-          foreignField: "_id",
-          as: "requestDoc",
-        },
-      },
-      { $unwind: "$requestDoc" },
-      {
-        $match: {
-          "requestDoc.caManufacturer": { $in: manufacturerMemberObjectIds },
-        },
-      },
-      {
-        $group: {
-          _id: {
-            ymd: {
-              $dateToString: {
-                format: "%Y-%m-%d",
-                date: "$createdAt",
-                timezone: "Asia/Seoul",
-              },
-            },
-          },
-          earnRequestPaidCount: { $sum: 1 },
-          earnRequestPaidAmount: {
-            $sum: { $ifNull: ["$spentPaidAmount", 0] },
-          },
-        },
-      },
-      {
-        $project: {
-          _id: 0,
-          ymd: "$_id.ymd",
-          earnRequestPaidCount: 1,
-          earnRequestPaidAmount: 1,
-        },
-      },
-    ]);
-
-    const requestPaidByYmd = new Map();
-    for (const row of requestPaidRows || []) {
-      const ymd = String(row?.ymd || "");
-      if (!ymd) continue;
-      requestPaidByYmd.set(ymd, {
-        amount: Number(row?.earnRequestPaidAmount || 0),
-        count: Number(row?.earnRequestPaidCount || 0),
-      });
-    }
-
-    const requestFreeByYmd = new Map();
-    for (const row of freeRows || []) {
-      const ymd = String(row?.ymd || "");
-      if (!ymd) continue;
-      requestFreeByYmd.set(ymd, {
-        amount: Number(row?.earnRequestFreeAmount || 0),
-        count: Number(row?.earnRequestFreeCount || 0),
-      });
-    }
-
-    const shippingByYmd = new Map();
-    for (const row of shippingSpendRows || []) {
-      const ymd = String(row?.ymd || "");
-      if (!ymd) continue;
-
-      const paidAmount = Math.max(0, Number(row?.spentPaidAmount || 0));
-      const freeAmount = Math.max(0, Number(row?.spentFreeAmount || 0));
-
-      const existing = shippingByYmd.get(ymd) || {
-        paidAmount: 0,
-        paidCount: 0,
-        freeAmount: 0,
-        freeCount: 0,
-      };
-
-      if (paidAmount > 0) {
-        existing.paidAmount += paidAmount;
-        existing.paidCount += 1;
-      }
-      if (freeAmount > 0) {
-        existing.freeAmount += freeAmount;
-        existing.freeCount += 1;
-      }
-      shippingByYmd.set(ymd, existing);
-    }
 
     const makeEmptyRow = (ymd) => ({
       ymd,
@@ -1583,56 +963,22 @@ export async function getManufacturerCreditDailySummary(req, res) {
     };
 
     const rowMap = new Map();
-
     for (const row of rows || []) {
       const ymd = String(row?.ymd || "");
-      const requestPaid = requestPaidByYmd.get(ymd) || { amount: 0, count: 0 };
+      if (!ymd) continue;
+
       const normalized = {
         ...makeEmptyRow(ymd),
         ...row,
-        // 화면/정산 SSOT: 의뢰 금액/건수는 paid 분해값만 반영
-        earnRequestAmount: Number(requestPaid.amount || 0),
-        earnRequestCount: Number(requestPaid.count || 0),
-        earnRequestPaidAmount: Number(requestPaid.amount || 0),
-        earnRequestPaidCount: Number(requestPaid.count || 0),
-        // 화면/정산 SSOT: 배송 금액/건수는 shipping spend의 paid/free 분해에서만 반영
-        earnShippingAmount: 0,
-        earnShippingCount: 0,
-        earnShippingPaidAmount: 0,
-        earnShippingPaidCount: 0,
-        earnShippingFreeAmount: 0,
-        earnShippingFreeCount: 0,
       };
+
+      // 정책: 화면 총액/총건수는 paid 분해값만 반영
+      normalized.earnRequestAmount = Number(normalized.earnRequestPaidAmount || 0);
+      normalized.earnRequestCount = Number(normalized.earnRequestPaidCount || 0);
+      normalized.earnShippingAmount = Number(normalized.earnShippingPaidAmount || 0);
+      normalized.earnShippingCount = Number(normalized.earnShippingPaidCount || 0);
+
       rowMap.set(ymd, recomputeNetAmount(normalized));
-    }
-
-    for (const [ymd, paid] of requestPaidByYmd.entries()) {
-      const existing = rowMap.get(ymd) || makeEmptyRow(ymd);
-      existing.earnRequestAmount = Number(paid?.amount || 0);
-      existing.earnRequestCount = Number(paid?.count || 0);
-      existing.earnRequestPaidAmount = Number(paid?.amount || 0);
-      existing.earnRequestPaidCount = Number(paid?.count || 0);
-      rowMap.set(ymd, recomputeNetAmount(existing));
-    }
-
-    for (const [ymd, free] of requestFreeByYmd.entries()) {
-      const existing = rowMap.get(ymd) || makeEmptyRow(ymd);
-      existing.earnRequestFreeAmount = Number(free?.amount || 0);
-      existing.earnRequestFreeCount = Number(free?.count || 0);
-      rowMap.set(ymd, recomputeNetAmount(existing));
-    }
-
-    for (const [ymd, shipping] of shippingByYmd.entries()) {
-      const existing = rowMap.get(ymd) || makeEmptyRow(ymd);
-
-      // 화면/정산 SSOT: 배송 금액/건수는 paid 분해값만 반영
-      existing.earnShippingAmount = Number(shipping?.paidAmount || 0);
-      existing.earnShippingCount = Number(shipping?.paidCount || 0);
-      existing.earnShippingPaidAmount = Number(shipping?.paidAmount || 0);
-      existing.earnShippingPaidCount = Number(shipping?.paidCount || 0);
-      existing.earnShippingFreeAmount = Number(shipping?.freeAmount || 0);
-      existing.earnShippingFreeCount = Number(shipping?.freeCount || 0);
-      rowMap.set(ymd, recomputeNetAmount(existing));
     }
 
     const parseKstYmd = (ymd) => {
@@ -1646,9 +992,7 @@ export async function getManufacturerCreditDailySummary(req, res) {
       d.toLocaleDateString("en-CA", { timeZone: "Asia/Seoul" });
 
     const endYmd =
-      typeof toYmd === "string" && toYmd.trim()
-        ? toYmd.trim()
-        : getTodayYmdInKst();
+      typeof toYmd === "string" && toYmd.trim() ? toYmd.trim() : getTodayYmdInKst();
     const endDate = parseKstYmd(endYmd) || new Date();
 
     const startDateByFrom =
@@ -1662,32 +1006,12 @@ export async function getManufacturerCreditDailySummary(req, res) {
     const fromMs = Math.min(startDate.getTime(), endDate.getTime());
     const toMs = Math.max(startDate.getTime(), endDate.getTime());
 
-    const emptyRow = (ymd) => ({
-      ymd,
-      earnRequestAmount: 0,
-      earnRequestCount: 0,
-      earnShippingAmount: 0,
-      earnShippingCount: 0,
-      refundAmount: 0,
-      payoutAmount: 0,
-      adjustAmount: 0,
-      netAmount: 0,
-      earnRequestPaidAmount: 0,
-      earnRequestPaidCount: 0,
-      earnRequestFreeAmount: 0,
-      earnRequestFreeCount: 0,
-      earnShippingPaidAmount: 0,
-      earnShippingPaidCount: 0,
-      earnShippingFreeAmount: 0,
-      earnShippingFreeCount: 0,
-    });
-
     const mergedRows = [];
     for (let t = toMs; t >= fromMs; t -= 24 * 60 * 60 * 1000) {
       const ymd = formatKstYmd(new Date(t));
       const existing = rowMap.get(ymd);
       mergedRows.push(
-        existing ? { ...emptyRow(ymd), ...existing, ymd } : emptyRow(ymd),
+        existing ? { ...makeEmptyRow(ymd), ...existing, ymd } : makeEmptyRow(ymd),
       );
       if (mergedRows.length >= l) break;
     }
@@ -1701,23 +1025,16 @@ export async function getManufacturerCreditDailySummary(req, res) {
         earnShippingFreeCount: Number(r?.earnShippingFreeCount || 0),
       }));
 
-      console.log("[manufacturer/daily-summary][debug]", {
+      console.log("[manufacturer/daily-summary][debug][gl-ssot]", {
         userId: String(user?._id || ""),
-        manufacturerOrganization,
+        manufacturerAnchorId: manufacturerAnchorIdRaw,
         period: {
           fromYmd: fromYmd || null,
           toYmd: toYmd || null,
           limit: l,
         },
         sourceCounts: {
-          manufacturerLedgerRows: Array.isArray(rows) ? rows.length : 0,
-          requestFreeRowsFromCreditLedger: Array.isArray(freeRows)
-            ? freeRows.length
-            : 0,
-          requestFreeYmdKeys: requestFreeByYmd.size,
-          shippingSpendRows: Array.isArray(shippingSpendRows)
-            ? shippingSpendRows.length
-            : 0,
+          ledgerLineRows: Array.isArray(rows) ? rows.length : 0,
           finalMergedRows: Array.isArray(mergedRows) ? mergedRows.length : 0,
         },
         sampleRows,

@@ -1,55 +1,16 @@
 // related files:
 // - web/backend/rules.md
 // - web/backend/models/businessCreditBalance.model.js
-// - web/backend/models/creditLedger.model.js
-// - web/backend/controllers/admin/adminBonusGrant.controller.js
+// - web/backend/models/ledgerJournal.model.js
+// - web/backend/models/ledgerLine.model.js
+// - web/backend/controllers/admin/adminFreeCreditGrant.controller.js
 // - web/backend/controllers/requests/common.review.helpers.js
 // - web/backend/controllers/bg/bg.controller.js
 import { Types } from "mongoose";
-import CreditLedger from "../models/creditLedger.model.js";
 import BusinessCreditBalance from "../models/businessCreditBalance.model.js";
-
-function isShippingRefType(refType) {
-  return refType === "SHIPPING_PACKAGE" || refType === "SHIPPING_FEE";
-}
-
-function normalizeCreditKind(input) {
-  const s = String(input || "").trim().toUpperCase();
-  if (s === "PAID" || s === "FREE_REQUEST" || s === "FREE_SHIPPING") {
-    return s;
-  }
-  return null;
-}
-
-function resolveLedgerSplit(absAmount, spentPaidAmount, spentFreeAmount) {
-  const abs = Math.max(0, Number(absAmount) || 0);
-  const paidRaw = Number(spentPaidAmount);
-  const bonusRaw = Number(spentFreeAmount);
-
-  const hasPaid = Number.isFinite(paidRaw);
-  const hasBonus = Number.isFinite(bonusRaw);
-  if (!hasPaid && !hasBonus) return null;
-
-  let paid = Math.max(0, hasPaid ? paidRaw : 0);
-  let bonus = Math.max(0, hasBonus ? bonusRaw : 0);
-
-  const splitSum = paid + bonus;
-  if (splitSum <= 0) return null;
-
-  if (splitSum > abs) {
-    let overflow = splitSum - abs;
-    const reducePaid = Math.min(paid, overflow);
-    paid -= reducePaid;
-    overflow -= reducePaid;
-    if (overflow > 0) {
-      bonus = Math.max(0, bonus - overflow);
-    }
-  } else if (splitSum < abs) {
-    paid += abs - splitSum;
-  }
-
-  return { paid, bonus };
-}
+import LedgerLine from "../models/ledgerLine.model.js";
+import LedgerJournal from "../models/ledgerJournal.model.js";
+import { deleteGeneralLedgerCommitJournal } from "./generalLedger.service.js";
 
 function normalizeAnchorObjectId(businessAnchorId) {
   const raw = String(businessAnchorId || "").trim();
@@ -71,114 +32,40 @@ export async function computeBusinessCreditBalanceFromLedger({
     };
   }
 
-  const rows = await CreditLedger.find({ businessAnchorId: anchorObjectId })
-    .sort({ createdAt: 1, _id: 1 })
-    .select({
-      type: 1,
-      amount: 1,
-      refType: 1,
-      creditKind: 1,
-      spentPaidAmount: 1,
-      spentFreeAmount: 1,
-    })
-    .session(session || null)
-    .lean();
+  // 1) SSOT General Ledger 우선
+  const glRows = await LedgerLine.aggregate([
+    {
+      $match: {
+        ownerRole: "requestor",
+        ownerId: anchorObjectId,
+        accountCode: {
+          $in: [
+            "REQ_PAID_CREDIT",
+            "REQ_FREE_REQUEST_CREDIT",
+            "REQ_FREE_SHIPPING_CREDIT",
+          ],
+        },
+      },
+    },
+    {
+      $group: {
+        _id: "$accountCode",
+        total: { $sum: { $ifNull: ["$amountExcludingVat", "$amount"] } },
+      },
+    },
+  ]).session(session || null);
 
   let paid = 0;
   let bonusRequest = 0;
   let bonusShipping = 0;
 
-  for (const row of rows || []) {
-    const type = String(row?.type || "");
-    const amount = Number(row?.amount || 0);
-    const refType = String(row?.refType || "");
-    if (!Number.isFinite(amount)) continue;
-
-    const absAmount = Math.abs(amount);
-    const creditKind = normalizeCreditKind(row?.creditKind);
-
-    if (type === "CHARGE") {
-      if (creditKind === "FREE_SHIPPING") {
-        bonusShipping += absAmount;
-      } else if (creditKind === "FREE_REQUEST") {
-        bonusRequest += absAmount;
-      } else {
-        paid += absAmount;
-      }
-      continue;
-    }
-    if (type === "BONUS") {
-      // 레거시 하위호환: 기존 BONUS는 무료 크레딧 충전으로 간주
-      if (refType === "FREE_SHIPPING_CREDIT") {
-        bonusShipping += absAmount;
-      } else {
-        bonusRequest += absAmount;
-      }
-      continue;
-    }
-    if (type === "ADJUST") {
-      if (creditKind === "FREE_SHIPPING") {
-        bonusShipping += amount;
-      } else if (creditKind === "FREE_REQUEST") {
-        bonusRequest += amount;
-      } else {
-        paid += amount;
-      }
-      continue;
-    }
-
-    if (type === "SPEND") {
-      const split = resolveLedgerSplit(
-        absAmount,
-        row?.spentPaidAmount,
-        row?.spentFreeAmount,
-      );
-
-      if (split) {
-        if (isShippingRefType(refType)) {
-          const fromBonusShipping = Math.min(bonusShipping, split.bonus);
-          bonusShipping -= fromBonusShipping;
-          paid -= split.paid + Math.max(0, split.bonus - fromBonusShipping);
-        } else {
-          const fromBonusRequest = Math.min(bonusRequest, split.bonus);
-          bonusRequest -= fromBonusRequest;
-          paid -= split.paid + Math.max(0, split.bonus - fromBonusRequest);
-        }
-        continue;
-      }
-
-      let spend = absAmount;
-      if (isShippingRefType(refType)) {
-        const fromBonusShipping = Math.min(bonusShipping, spend);
-        bonusShipping -= fromBonusShipping;
-        spend -= fromBonusShipping;
-      } else {
-        const fromBonusRequest = Math.min(bonusRequest, spend);
-        bonusRequest -= fromBonusRequest;
-        spend -= fromBonusRequest;
-      }
-      paid -= spend;
-      continue;
-    }
-
-    if (type === "REFUND") {
-      const split = resolveLedgerSplit(
-        absAmount,
-        row?.spentPaidAmount,
-        row?.spentFreeAmount,
-      );
-
-      if (split) {
-        if (isShippingRefType(refType)) {
-          bonusShipping += split.bonus;
-        } else {
-          bonusRequest += split.bonus;
-        }
-        paid += split.paid;
-      } else {
-        paid += absAmount;
-      }
-    }
+  for (const row of glRows || []) {
+    const code = String(row?._id || "");
+    const total = Number(row?.total || 0);
+    if (!Number.isFinite(total)) continue;
+    if (code === "REQ_PAID_CREDIT") paid += total;
+    else if (code === "REQ_FREE_REQUEST_CREDIT") bonusRequest += total;
+    else if (code === "REQ_FREE_SHIPPING_CREDIT") bonusShipping += total;
   }
 
   const paidCredit = Math.max(0, Math.round(paid));
@@ -297,6 +184,86 @@ async function getOrCreateBalanceDoc({ businessAnchorId, session }) {
   return doc || null;
 }
 
+async function findCommitJournalBySpendKey({ spendUniqueKey, session }) {
+  const idempotencyKey = `gl:${String(spendUniqueKey || "").trim()}`;
+  if (!idempotencyKey || idempotencyKey === "gl:") return null;
+
+  const journal = await LedgerJournal.findOne({
+    idempotencyKey,
+    eventType: { $in: ["REQUEST_SPEND_COMMIT", "SHIPPING_SPEND_COMMIT"] },
+  })
+    .session(session || null)
+    .lean();
+
+  return journal || null;
+}
+
+async function computeSpendRestoreBreakdownByJournalId({ journalId, session }) {
+  const id = String(journalId || "").trim();
+  if (!id) {
+    return {
+      restorePaid: 0,
+      restoreBonusRequest: 0,
+      restoreBonusShipping: 0,
+      rollbackAmount: 0,
+    };
+  }
+
+  const rows = await LedgerLine.aggregate([
+    {
+      $match: {
+        journalId: id,
+        ownerRole: "requestor",
+        accountCode: {
+          $in: [
+            "REQ_PAID_CREDIT",
+            "REQ_FREE_REQUEST_CREDIT",
+            "REQ_FREE_SHIPPING_CREDIT",
+          ],
+        },
+      },
+    },
+    {
+      $project: {
+        accountCode: 1,
+        amountBase: { $ifNull: ["$amountExcludingVat", "$amount"] },
+      },
+    },
+    {
+      $group: {
+        _id: "$accountCode",
+        total: {
+          $sum: {
+            $cond: [{ $lt: ["$amountBase", 0] }, { $abs: "$amountBase" }, 0],
+          },
+        },
+      },
+    },
+  ]).session(session || null);
+
+  let restorePaid = 0;
+  let restoreBonusRequest = 0;
+  let restoreBonusShipping = 0;
+
+  for (const row of rows || []) {
+    const code = String(row?._id || "");
+    const total = Math.max(0, Number(row?.total || 0));
+    if (!Number.isFinite(total) || total <= 0) continue;
+    if (code === "REQ_PAID_CREDIT") restorePaid += total;
+    else if (code === "REQ_FREE_REQUEST_CREDIT") restoreBonusRequest += total;
+    else if (code === "REQ_FREE_SHIPPING_CREDIT") restoreBonusShipping += total;
+  }
+
+  const rollbackAmount = restorePaid + restoreBonusRequest + restoreBonusShipping;
+
+  return {
+    restorePaid: Math.round(restorePaid),
+    restoreBonusRequest: Math.round(restoreBonusRequest),
+    restoreBonusShipping: Math.round(restoreBonusShipping),
+    rollbackAmount: Math.round(rollbackAmount),
+  };
+}
+
 export async function spendRequestCreditAtomic({
   request,
   businessAnchorId,
@@ -310,82 +277,23 @@ export async function spendRequestCreditAtomic({
   if (!anchorObjectId) return { didSpend: false };
 
   const requestIdStr = String(request?._id || "").trim();
-  const spendKeyPrefix = `request:${requestIdStr}:machining_spend`;
+  const uniqueKey = `request:${requestIdStr}:machining_spend`;
 
-  const spendRows = await CreditLedger.find({
-    type: "SPEND",
-    refType: "REQUEST",
-    refId: request._id,
-  })
-    .select({
-      _id: 1,
-      uniqueKey: 1,
-      amount: 1,
-      hasFreeRequest: 1,
-      createdAt: 1,
-    })
-    .sort({ createdAt: 1, _id: 1 })
-    .session(session || null)
-    .lean();
-
-  const paidSpendRows = spendRows.filter((row) => Number(row?.amount || 0) < 0);
-  const refundRows = await CreditLedger.find({
-    type: "REFUND",
-    refType: "REQUEST",
-    refId: request._id,
-  })
-    .select({ amount: 1 })
-    .session(session || null)
-    .lean();
-
-  const spendTotal = paidSpendRows.reduce(
-    (acc, row) => acc + Math.abs(Number(row?.amount || 0)),
-    0,
-  );
-  const refundTotal = refundRows.reduce(
-    (acc, row) => acc + Math.abs(Number(row?.amount || 0)),
-    0,
-  );
-  const outstanding = Math.max(0, Math.round(spendTotal - refundTotal));
-
-  const latestNegativeSpend = paidSpendRows[paidSpendRows.length - 1] || null;
-  if (outstanding > 0 && latestNegativeSpend?._id) {
+  const existingJournal = await findCommitJournalBySpendKey({
+    spendUniqueKey: uniqueKey,
+    session,
+  });
+  if (existingJournal?.journalId) {
     return {
       didSpend: false,
       reason: "already_spent",
-      existingUniqueKey: latestNegativeSpend.uniqueKey,
-      uniqueKey: String(latestNegativeSpend.uniqueKey || spendKeyPrefix),
+      existingUniqueKey: uniqueKey,
+      uniqueKey,
     };
   }
 
-  const spendAttempt = Math.max(1, paidSpendRows.length + 1);
-  const uniqueKey =
-    spendAttempt <= 1 ? spendKeyPrefix : `${spendKeyPrefix}:${spendAttempt}`;
-
-  const existingFreeMarker = spendRows.find(
-    (row) => Number(row?.amount || 0) === 0 && row?.hasFreeRequest === true,
-  );
-
   const resolvedAmount = Number(computedPrice?.amount || 0);
   if (!Number.isFinite(resolvedAmount) || resolvedAmount <= 0) {
-    await CreditLedger.updateOne(
-      { uniqueKey },
-      {
-        $setOnInsert: {
-          businessAnchorId: anchorObjectId,
-          userId: actorUserId || null,
-          type: "SPEND",
-          amount: 0,
-          refType: "REQUEST",
-          refId: request._id,
-          uniqueKey,
-          spentPaidAmount: 0,
-          spentFreeAmount: 0,
-          hasFreeRequest: true,
-        },
-      },
-      { upsert: true, session },
-    );
     return { didSpend: false, reason: "free_request", uniqueKey };
   }
 
@@ -417,89 +325,6 @@ export async function spendRequestCreditAtomic({
 
   const fromBonusRequest = Math.min(bonusRequestCredit, resolvedAmount);
   const fromPaid = resolvedAmount - fromBonusRequest;
-
-  let didLedgerMutate = false;
-
-  if (existingFreeMarker?._id) {
-    const corrected = await CreditLedger.updateOne(
-      { _id: existingFreeMarker._id, amount: 0, hasFreeRequest: true },
-      {
-        $set: {
-          userId: actorUserId || null,
-          amount: -resolvedAmount,
-          spentPaidAmount: fromPaid,
-          spentFreeAmount: fromBonusRequest,
-          hasFreeRequest: false,
-        },
-      },
-      { session },
-    );
-
-    if (Number(corrected?.modifiedCount || 0) > 0) {
-      didLedgerMutate = true;
-    } else {
-      const spendAfter = await CreditLedger.findOne({
-        type: "SPEND",
-        refType: "REQUEST",
-        refId: request._id,
-        amount: { $lt: 0 },
-      })
-        .select({ _id: 1 })
-        .session(session || null)
-        .lean();
-      if (spendAfter?._id) {
-        return {
-          didSpend: false,
-          reason: "already_spent",
-          existingUniqueKey: existingFreeMarker.uniqueKey,
-          uniqueKey,
-        };
-      }
-
-      const err = new Error("요청 과금 free-marker 보정 경합 충돌");
-      err.statusCode = 409;
-      err.payload = {
-        reason: "request_spend_correction_conflict",
-        requestId: request?._id ? String(request._id) : null,
-      };
-      throw err;
-    }
-  } else {
-    try {
-      const inserted = await CreditLedger.updateOne(
-        { uniqueKey },
-        {
-          $setOnInsert: {
-            businessAnchorId: anchorObjectId,
-            userId: actorUserId || null,
-            type: "SPEND",
-            amount: -resolvedAmount,
-            refType: "REQUEST",
-            refId: request._id,
-            uniqueKey,
-            spentPaidAmount: fromPaid,
-            spentFreeAmount: fromBonusRequest,
-          },
-        },
-        { upsert: true, session },
-      );
-      didLedgerMutate = Number(inserted?.upsertedCount || 0) > 0;
-    } catch (error) {
-      if (Number(error?.code || 0) !== 11000) {
-        throw error;
-      }
-
-      return {
-        didSpend: false,
-        reason: "already_spent",
-        uniqueKey,
-      };
-    }
-  }
-
-  if (!didLedgerMutate) {
-    return { didSpend: false, reason: "already_spent", uniqueKey };
-  }
 
   const balanceUpdated = await BusinessCreditBalance.updateOne(
     {
@@ -570,28 +395,15 @@ export async function spendShippingCreditAtomic({
   }
 
   const uniqueKey = `shippingPackage:${String(packageObjectId)}:shipping_fee`;
-  const existingSpendKeys = [
-    uniqueKey,
-    ...[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 14, 18, 24].map(
-      (c) => `${uniqueKey}:${c}`,
-    ),
-  ];
-
-  const existingSpend = await CreditLedger.findOne({
-    uniqueKey: { $in: existingSpendKeys },
-    type: "SPEND",
-    refType: "SHIPPING_PACKAGE",
-    refId: packageObjectId,
-  })
-    .select({ _id: 1, uniqueKey: 1 })
-    .session(session || null)
-    .lean();
-
-  if (existingSpend?._id) {
+  const existingJournal = await findCommitJournalBySpendKey({
+    spendUniqueKey: uniqueKey,
+    session,
+  });
+  if (existingJournal?.journalId) {
     return {
       didSpend: false,
       reason: "already_spent",
-      existingUniqueKey: existingSpend.uniqueKey,
+      existingUniqueKey: uniqueKey,
       uniqueKey,
     };
   }
@@ -623,35 +435,6 @@ export async function spendShippingCreditAtomic({
 
   const fromBonusShipping = Math.min(bonusShippingCredit, amount);
   const fromPaid = amount - fromBonusShipping;
-
-  try {
-    const inserted = await CreditLedger.updateOne(
-      { uniqueKey },
-      {
-        $setOnInsert: {
-          businessAnchorId: anchorObjectId,
-          userId: actorUserId || null,
-          type: "SPEND",
-          amount: -amount,
-          refType: "SHIPPING_PACKAGE",
-          refId: packageObjectId,
-          uniqueKey,
-          spentPaidAmount: fromPaid,
-          spentFreeAmount: fromBonusShipping,
-        },
-      },
-      { upsert: true, session },
-    );
-
-    if (!Number(inserted?.upsertedCount || 0)) {
-      return { didSpend: false, reason: "already_spent", uniqueKey };
-    }
-  } catch (error) {
-    if (Number(error?.code || 0) !== 11000) {
-      throw error;
-    }
-    return { didSpend: false, reason: "already_spent", uniqueKey };
-  }
 
   const updated = await BusinessCreditBalance.updateOne(
     {
@@ -698,127 +481,73 @@ export async function spendShippingCreditAtomic({
   };
 }
 
-export async function refundRequestCreditAtomic({
+export async function deleteRequestSpendAtomicOnRollback({
   request,
   businessAnchorId,
-  actorUserId,
   session,
 }) {
-  if (!request?._id) return { didRefund: false, reason: "invalid_request" };
+  if (!request?._id) return { didRollback: false, reason: "invalid_request" };
 
   const anchorObjectId = normalizeAnchorObjectId(businessAnchorId);
-  if (!anchorObjectId) return { didRefund: false, reason: "invalid_anchor" };
+  if (!anchorObjectId) return { didRollback: false, reason: "invalid_anchor" };
 
-  const spendRows = await CreditLedger.find({
-    type: "SPEND",
-    refType: "REQUEST",
-    refId: request._id,
-  })
-    .select({
-      amount: 1,
-      uniqueKey: 1,
-      spentPaidAmount: 1,
-      spentFreeAmount: 1,
-      createdAt: 1,
-    })
-    .sort({ createdAt: 1, _id: 1 })
-    .session(session || null)
-    .lean();
+  const uniqueKey = `request:${String(request._id)}:machining_spend`;
+  const journal = await findCommitJournalBySpendKey({
+    spendUniqueKey: uniqueKey,
+    session,
+  });
 
-  const paidSpendRows = spendRows.filter((row) => Number(row?.amount || 0) < 0);
-  if (!paidSpendRows.length) return { didRefund: false, reason: "no_spend" };
-
-  const refundRows = await CreditLedger.find({
-    type: "REFUND",
-    refType: "REQUEST",
-    refId: request._id,
-  })
-    .select({ amount: 1 })
-    .session(session || null)
-    .lean();
-
-  const spendTotal = paidSpendRows.reduce(
-    (acc, row) => acc + Math.abs(Number(row?.amount || 0)),
-    0,
-  );
-  const refundTotal = refundRows.reduce(
-    (acc, row) => acc + Math.abs(Number(row?.amount || 0)),
-    0,
-  );
-  const outstanding = Math.max(0, Math.round(spendTotal - refundTotal));
-  if (outstanding <= 0) return { didRefund: false, reason: "already_refunded" };
-
-  const latestSpendRow = paidSpendRows[paidSpendRows.length - 1] || null;
-  if (!latestSpendRow?.uniqueKey) return { didRefund: false, reason: "no_spend_key" };
-
-  const refundAmount = outstanding;
-  const split = resolveLedgerSplit(
-    refundAmount,
-    latestSpendRow?.spentPaidAmount,
-    latestSpendRow?.spentFreeAmount,
-  );
-  const refundSpentPaidAmount = split ? split.paid : null;
-  const refundSpentFreeAmount = split ? split.bonus : null;
-
-  const refundKeyPrefix = `request:${String(request._id)}:machining_refund`;
-  const refundAttempt = Math.max(1, (refundRows || []).length + 1);
-  const refundKey =
-    refundAttempt <= 1 ? refundKeyPrefix : `${refundKeyPrefix}:${refundAttempt}`;
-  let inserted = false;
-  try {
-    const result = await CreditLedger.updateOne(
-      { uniqueKey: refundKey },
-      {
-        $setOnInsert: {
-          businessAnchorId: anchorObjectId,
-          userId: actorUserId || null,
-          type: "REFUND",
-          amount: refundAmount,
-          refType: "REQUEST",
-          refId: request._id,
-          uniqueKey: refundKey,
-          spentPaidAmount: refundSpentPaidAmount,
-          spentFreeAmount: refundSpentFreeAmount,
-        },
-      },
-      { upsert: true, session },
-    );
-    inserted = Number(result?.upsertedCount || 0) > 0;
-  } catch (error) {
-    if (Number(error?.code || 0) !== 11000) throw error;
-    inserted = false;
+  if (!journal?.journalId) {
+    return { didRollback: false, reason: "no_spend" };
   }
 
-  if (!inserted) return { didRefund: false, reason: "already_refunded", refundKey };
+  const { restorePaid, restoreBonusRequest, rollbackAmount } =
+    await computeSpendRestoreBreakdownByJournalId({
+      journalId: journal.journalId,
+      session,
+    });
 
-  const incPaid = Number(refundSpentPaidAmount || 0);
-  const incBonusRequest = Number(refundSpentFreeAmount || 0);
-  const incFallback = !split ? refundAmount : 0;
+  const deleteResult = await deleteGeneralLedgerCommitJournal({
+    journalId: journal.journalId,
+    expectedEventTypes: ["REQUEST_SPEND_COMMIT"],
+    session,
+  });
+
+  if (!deleteResult?.deleted) {
+    return {
+      didRollback: false,
+      reason: deleteResult?.reason || "journal_not_deleted",
+    };
+  }
 
   await BusinessCreditBalance.updateOne(
     { businessAnchorId: anchorObjectId },
     {
       $inc: {
-        paidCredit: incPaid + incFallback,
-        bonusRequestCredit: incBonusRequest,
+        paidCredit: Number(restorePaid || 0),
+        bonusRequestCredit: Number(restoreBonusRequest || 0),
         version: 1,
       },
+      $setOnInsert: {
+        businessAnchorId: anchorObjectId,
+        paidCredit: 0,
+        bonusRequestCredit: 0,
+        bonusShippingCredit: 0,
+      },
     },
-    { session },
+    { session, upsert: true },
   );
 
   return {
-    didRefund: true,
-    refundAmount,
-    refundKey,
+    didRollback: true,
+    rollbackAmount: Math.round(Number(rollbackAmount || 0)),
+    deletedSpendUniqueKeys: [uniqueKey],
   };
 }
 
-export async function refundShippingCreditAtomic({
+export async function deleteShippingSpendAtomicOnRollback({
   businessAnchorId,
   shippingPackageId,
-  actorUserId,
-  cycle,
   session,
 }) {
   const anchorObjectId = normalizeAnchorObjectId(businessAnchorId);
@@ -828,98 +557,134 @@ export async function refundShippingCreditAtomic({
     : null;
 
   if (!anchorObjectId || !packageObjectId) {
-    return { didRefund: false, reason: "invalid_input" };
+    return { didRollback: false, reason: "invalid_input" };
   }
 
-  const spendKeys = [
-    `shippingPackage:${String(packageObjectId)}:shipping_fee`,
-    ...[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 14, 18, 24].map(
-      (c) => `shippingPackage:${String(packageObjectId)}:shipping_fee:${c}`,
-    ),
-  ];
+  const uniqueKey = `shippingPackage:${String(packageObjectId)}:shipping_fee`;
+  const journal = await findCommitJournalBySpendKey({
+    spendUniqueKey: uniqueKey,
+    session,
+  });
 
-  const spendRow = await CreditLedger.findOne({
-    uniqueKey: { $in: spendKeys },
-    type: "SPEND",
-    refType: "SHIPPING_PACKAGE",
-    refId: packageObjectId,
-  })
-    .select({
-      amount: 1,
-      uniqueKey: 1,
-      spentPaidAmount: 1,
-      spentFreeAmount: 1,
-    })
-    .session(session || null)
-    .lean();
-
-  if (!spendRow?.uniqueKey) return { didRefund: false, reason: "no_spend" };
-
-  const refundAmount = Math.abs(Number(spendRow.amount || 0));
-  if (!Number.isFinite(refundAmount) || refundAmount <= 0) {
-    return { didRefund: false, reason: "invalid_refund_amount" };
+  if (!journal?.journalId) {
+    return { didRollback: false, reason: "no_spend" };
   }
 
-  const split = resolveLedgerSplit(
-    refundAmount,
-    spendRow?.spentPaidAmount,
-    spendRow?.spentFreeAmount,
-  );
-  const refundSpentPaidAmount = split ? split.paid : null;
-  const refundSpentFreeAmount = split ? split.bonus : null;
+  const { restorePaid, restoreBonusShipping, rollbackAmount } =
+    await computeSpendRestoreBreakdownByJournalId({
+      journalId: journal.journalId,
+      session,
+    });
 
-  const cycleNo = Math.max(0, Number(cycle || 0));
-  const refundKey = `shippingPackage:${String(packageObjectId)}:shipping_fee_refund:${cycleNo}`;
+  const deleteResult = await deleteGeneralLedgerCommitJournal({
+    journalId: journal.journalId,
+    expectedEventTypes: ["SHIPPING_SPEND_COMMIT"],
+    session,
+  });
 
-  let inserted = false;
-  try {
-    const result = await CreditLedger.updateOne(
-      { uniqueKey: refundKey },
-      {
-        $setOnInsert: {
-          businessAnchorId: anchorObjectId,
-          userId: actorUserId || null,
-          type: "REFUND",
-          amount: refundAmount,
-          refType: "SHIPPING_PACKAGE",
-          refId: packageObjectId,
-          uniqueKey: refundKey,
-          spentPaidAmount: refundSpentPaidAmount,
-          spentFreeAmount: refundSpentFreeAmount,
-        },
-      },
-      { upsert: true, session },
-    );
-    inserted = Number(result?.upsertedCount || 0) > 0;
-  } catch (error) {
-    if (Number(error?.code || 0) !== 11000) throw error;
-    inserted = false;
+  if (!deleteResult?.deleted) {
+    return {
+      didRollback: false,
+      reason: deleteResult?.reason || "journal_not_deleted",
+    };
   }
-
-  if (!inserted) return { didRefund: false, reason: "already_refunded", refundKey };
-
-  const incPaid = Number(refundSpentPaidAmount || 0);
-  const incBonusShipping = Number(refundSpentFreeAmount || 0);
-  const incFallback = !split ? refundAmount : 0;
 
   await BusinessCreditBalance.updateOne(
     { businessAnchorId: anchorObjectId },
     {
       $inc: {
-        paidCredit: incPaid + incFallback,
-        bonusShippingCredit: incBonusShipping,
+        paidCredit: Number(restorePaid || 0),
+        bonusShippingCredit: Number(restoreBonusShipping || 0),
         version: 1,
       },
+      $setOnInsert: {
+        businessAnchorId: anchorObjectId,
+        paidCredit: 0,
+        bonusRequestCredit: 0,
+        bonusShippingCredit: 0,
+      },
     },
-    { session },
+    { session, upsert: true },
   );
 
   return {
-    didRefund: true,
-    refundAmount,
-    refundKey,
+    didRollback: true,
+    rollbackAmount: Math.round(Number(rollbackAmount || 0)),
+    deletedSpendUniqueKeys: [uniqueKey],
   };
 }
+
+// 승인 경합으로 잔액만 선차감되고 GL 커밋이 idempotent 처리되는 경우를 보정한다.
+export async function restoreRequestSpendDeductionAtomic({
+  businessAnchorId,
+  fromPaid,
+  fromBonusRequest,
+  session,
+}) {
+  const anchorObjectId = normalizeAnchorObjectId(businessAnchorId);
+  if (!anchorObjectId) return { restored: false, reason: "invalid_anchor" };
+
+  const paid = Math.max(0, Number(fromPaid || 0));
+  const free = Math.max(0, Number(fromBonusRequest || 0));
+  if (!paid && !free) return { restored: false, reason: "zero_delta" };
+
+  await BusinessCreditBalance.updateOne(
+    { businessAnchorId: anchorObjectId },
+    {
+      $inc: {
+        paidCredit: paid,
+        bonusRequestCredit: free,
+        version: 1,
+      },
+      $setOnInsert: {
+        businessAnchorId: anchorObjectId,
+        paidCredit: 0,
+        bonusRequestCredit: 0,
+        bonusShippingCredit: 0,
+      },
+    },
+    { session, upsert: true },
+  );
+
+  return { restored: true, paid, free };
+}
+
+export async function restoreShippingSpendDeductionAtomic({
+  businessAnchorId,
+  fromPaid,
+  fromBonusShipping,
+  session,
+}) {
+  const anchorObjectId = normalizeAnchorObjectId(businessAnchorId);
+  if (!anchorObjectId) return { restored: false, reason: "invalid_anchor" };
+
+  const paid = Math.max(0, Number(fromPaid || 0));
+  const free = Math.max(0, Number(fromBonusShipping || 0));
+  if (!paid && !free) return { restored: false, reason: "zero_delta" };
+
+  await BusinessCreditBalance.updateOne(
+    { businessAnchorId: anchorObjectId },
+    {
+      $inc: {
+        paidCredit: paid,
+        bonusShippingCredit: free,
+        version: 1,
+      },
+      $setOnInsert: {
+        businessAnchorId: anchorObjectId,
+        paidCredit: 0,
+        bonusRequestCredit: 0,
+        bonusShippingCredit: 0,
+      },
+    },
+    { session, upsert: true },
+  );
+
+  return { restored: true, paid, free };
+}
+
+// LEGACY_REMOVED: REFUND 기반 롤백 함수(refundRequestCreditAtomic/refundShippingCreditAtomic)
+// 정책 변경에 따라 롤백은 소비 내역 물리 삭제(deleteRequestSpendAtomicOnRollback/deleteShippingSpendAtomicOnRollback)로 통일.
 
 export async function upsertBusinessCreditBalanceFromLedger({
   businessAnchorId,

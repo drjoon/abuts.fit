@@ -1,0 +1,96 @@
+// related files:
+// - web/backend/rules.md
+// - web/backend/models/ledgerLine.model.js
+// - web/backend/services/generalLedger.service.js
+import mongoose from "mongoose";
+
+export const LEDGER_JOURNAL_EVENT_TYPES = [
+  "REQUEST_SPEND_COMMIT",
+  "SHIPPING_SPEND_COMMIT",
+  "CHARGE_PAID",
+  "CHARGE_FREE_REQUEST",
+  "CHARGE_FREE_SHIPPING",
+  "ADJUST",
+  "SETTLEMENT_PAYOUT",
+];
+
+const ledgerJournalSchema = new mongoose.Schema(
+  {
+    journalId: {
+      type: String,
+      required: true,
+      unique: true,
+      index: true,
+      trim: true,
+    },
+    idempotencyKey: {
+      type: String,
+      required: true,
+      unique: true,
+      index: true,
+      trim: true,
+    },
+    eventType: {
+      type: String,
+      enum: LEDGER_JOURNAL_EVENT_TYPES,
+      required: true,
+      index: true,
+    },
+    businessAnchorId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "BusinessAnchor",
+      required: true,
+      index: true,
+    },
+    refType: {
+      type: String,
+      default: "",
+      index: true,
+      trim: true,
+    },
+    refId: {
+      type: mongoose.Schema.Types.ObjectId,
+      default: null,
+      index: true,
+    },
+    stageFrom: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+    stageTo: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+    occurredAt: {
+      type: Date,
+      required: true,
+      index: true,
+      default: Date.now,
+    },
+    createdBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+      index: true,
+    },
+    status: {
+      type: String,
+      enum: ["POSTED"],
+      default: "POSTED",
+      index: true,
+    },
+    meta: {
+      type: mongoose.Schema.Types.Mixed,
+      default: null,
+    },
+  },
+  { timestamps: true },
+);
+
+ledgerJournalSchema.index({ businessAnchorId: 1, occurredAt: -1, _id: -1 });
+ledgerJournalSchema.index({ eventType: 1, occurredAt: -1, _id: -1 });
+ledgerJournalSchema.index({ refType: 1, refId: 1, occurredAt: -1, _id: -1 });
+
+export default mongoose.model("LedgerJournal", ledgerJournalSchema);

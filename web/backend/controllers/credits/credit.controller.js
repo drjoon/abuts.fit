@@ -3,9 +3,12 @@
 // - web/backend/services/creditBalance.service.js
 // - web/backend/controllers/requests/common.review.helpers.js
 // - web/backend/controllers/auth/auth.controller.js
-// - web/backend/models/creditLedger.model.js
-import CreditLedger from "../../models/creditLedger.model.js";
+// - web/backend/models/ledgerJournal.model.js
+// - web/backend/models/ledgerLine.model.js
 import { getBusinessCreditBalanceSnapshot } from "../../services/creditBalance.service.js";
+import LedgerLine from "../../models/ledgerLine.model.js";
+import LedgerJournal from "../../models/ledgerJournal.model.js";
+import { Types } from "mongoose";
 import User from "../../models/user.model.js";
 import Request from "../../models/request.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
@@ -164,7 +167,6 @@ export async function getMyCreditSpendInsights(req, res) {
   }
 
   const scope = await getCreditScope(req);
-  const ledgerQuery = buildLedgerQuery(scope);
   console.error("[CREDIT_SPEND_INSIGHTS_SCOPE]", {
     userId: req.user?._id ? String(req.user._id) : null,
     userBusinessAnchorId: req.user?.businessAnchorId
@@ -188,20 +190,52 @@ export async function getMyCreditSpendInsights(req, res) {
   todayKst.setDate(todayKst.getDate() - WINDOW_DAYS);
   const since = todayKst;
 
-  const match = {
-    ...ledgerQuery,
-    type: "SPEND",
-    createdAt: { $gte: since },
-  };
+  const ownerId = new Types.ObjectId(String(scope.businessAnchorId));
 
-  const rows = await CreditLedger.aggregate([
+  const rows = await LedgerLine.aggregate([
     {
-      $match: match,
+      $match: {
+        ownerRole: "requestor",
+        ownerId,
+        accountCode: {
+          $in: [
+            "REQ_PAID_CREDIT",
+            "REQ_FREE_REQUEST_CREDIT",
+            "REQ_FREE_SHIPPING_CREDIT",
+          ],
+        },
+        occurredAt: { $gte: since },
+      },
+    },
+    {
+      $lookup: {
+        from: LedgerJournal.collection.name,
+        localField: "journalId",
+        foreignField: "journalId",
+        as: "journalDoc",
+      },
+    },
+    {
+      $unwind: {
+        path: "$journalDoc",
+        preserveNullAndEmptyArrays: true,
+      },
+    },
+    {
+      $match: {
+        "journalDoc.eventType": {
+          $in: ["REQUEST_SPEND_COMMIT", "SHIPPING_SPEND_COMMIT"],
+        },
+      },
     },
     {
       $group: {
         _id: null,
-        spentSupply: { $sum: { $abs: "$amount" } },
+        spentSupply: {
+          $sum: {
+            $cond: [{ $lt: ["$amount", 0] }, { $abs: "$amount" }, 0],
+          },
+        },
       },
     },
   ]);

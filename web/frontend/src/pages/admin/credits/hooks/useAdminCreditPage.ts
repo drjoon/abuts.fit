@@ -9,7 +9,7 @@ import { usePeriodStore, periodToRangeQuery } from "@/store/usePeriodStore";
 import { useAuthStore } from "@/store/useAuthStore";
 import type {
   BankTransaction,
-  BonusGrantHistoryRow,
+  FreeCreditGrantHistoryRow,
   BusinessCredit,
   ChargeOrder,
   CreditStats,
@@ -98,20 +98,20 @@ export function useAdminCreditPage() {
   const [allRequestorBusinesses, setAllRequestorBusinesses] = useState<
     BusinessCredit[]
   >([]);
-  const [selectedBonusBusinessAnchorId, setSelectedBonusBusinessAnchorId] =
+  const [selectedFreeCreditBusinessAnchorId, setSelectedFreeCreditBusinessAnchorId] =
     useState("");
-  const [selectedBonusAmount, setSelectedBonusAmount] =
+  const [selectedFreeCreditAmount, setSelectedFreeCreditAmount] =
     useState<FreeCreditAmount>(30000);
-  const [bonusReason, setBonusReason] = useState("");
-  const [grantingBonus, setGrantingBonus] = useState(false);
+  const [freeCreditReason, setFreeCreditReason] = useState("");
+  const [grantingFreeCredit, setGrantingFreeCredit] = useState(false);
   const [grantCreditType, setGrantCreditType] = useState<
     "general" | "shipping"
   >("general");
-  const [bonusGrantRows, setBonusGrantRows] = useState<BonusGrantHistoryRow[]>(
+  const [freeCreditGrantRows, setFreeCreditGrantRows] = useState<FreeCreditGrantHistoryRow[]>(
     [],
   );
-  const [loadingBonusGrantRows, setLoadingBonusGrantRows] = useState(false);
-  const [bonusGrantSearch, setBonusGrantSearch] = useState("");
+  const [loadingFreeCreditGrantRows, setLoadingFreeCreditGrantRows] = useState(false);
+  const [freeCreditGrantSearch, setFreeCreditGrantSearch] = useState("");
   const [freeCreditMenu, setFreeCreditMenu] = useState<
     | "grant"
     | "grant-cancel"
@@ -443,10 +443,10 @@ export function useAdminCreditPage() {
 
   const handleGrantFreeCredit = async () => {
     if (!token) return;
-    const businessAnchorId = String(selectedBonusBusinessAnchorId || "").trim();
+    const businessAnchorId = String(selectedFreeCreditBusinessAnchorId || "").trim();
     const freeCreditBusinessPool =
       allRequestorBusinesses.length > 0 ? allRequestorBusinesses : businesses;
-    const reason = String(bonusReason || "").trim();
+    const reason = String(freeCreditReason || "").trim();
     if (!businessAnchorId) {
       toast({
         title: "지급 대상 선택 필요",
@@ -484,16 +484,16 @@ export function useAdminCreditPage() {
       });
       return;
     }
-    setGrantingBonus(true);
+    setGrantingFreeCredit(true);
     try {
       const res = await request<ApiMessageResponse>({
-        path: "/api/admin/bonus-grants/welcome-bonus/override",
+        path: "/api/admin/free-credit-grants/request-free-credit/override",
         method: "POST",
         token,
         jsonBody: {
           businessAnchorId,
           businessNumber,
-          amount: selectedBonusAmount,
+          amount: selectedFreeCreditAmount,
           reason,
         },
       });
@@ -504,16 +504,16 @@ export function useAdminCreditPage() {
       }
       toast({
         title: "무료 크레딧 지급 완료",
-        description: `${selectedBonusAmount.toLocaleString()}원이 지급되었습니다.`,
+        description: `${selectedFreeCreditAmount.toLocaleString()}원이 지급되었습니다.`,
       });
-      setBonusReason("");
-      setSelectedBonusAmount(30000);
+      setFreeCreditReason("");
+      setSelectedFreeCreditAmount(30000);
       setOrgSkip(0);
       setOrgHasMore(true);
       await Promise.all([
         loadStats(),
         loadOrganizations({ reset: true }),
-        loadBonusGrantHistory(),
+        loadFreeCreditGrantHistory(),
       ]);
     } catch (error: unknown) {
       toast({
@@ -522,7 +522,7 @@ export function useAdminCreditPage() {
         variant: "destructive",
       });
     } finally {
-      setGrantingBonus(false);
+      setGrantingFreeCredit(false);
     }
   };
 
@@ -574,7 +574,7 @@ export function useAdminCreditPage() {
     setGrantingShippingCredit(true);
     try {
       const res = await request<ApiMessageResponse>({
-        path: "/api/admin/bonus-grants/free-shipping-credit/grant",
+        path: "/api/admin/free-credit-grants/free-shipping-credit/grant",
         method: "POST",
         token,
         jsonBody: {
@@ -613,16 +613,16 @@ export function useAdminCreditPage() {
     }
   };
 
-  const loadBonusGrantHistory = async () => {
+  const loadFreeCreditGrantHistory = async () => {
     if (!token) return;
-    setLoadingBonusGrantRows(true);
+    setLoadingFreeCreditGrantRows(true);
     try {
       const res = await request<{
         success: boolean;
-        data?: { rows: BonusGrantHistoryRow[] };
+        data?: { rows: FreeCreditGrantHistoryRow[] };
         message?: string;
       }>({
-        path: "/api/admin/bonus-grants?type=WELCOME_BONUS",
+        path: "/api/admin/free-credit-grants?type=REQUEST_FREE_CREDIT",
         method: "GET",
         token,
       });
@@ -631,18 +631,18 @@ export function useAdminCreditPage() {
           String(res.data?.message || "").trim() ||
             "무료 크레딧 지급 내역을 불러오는데 실패했습니다.",
         );
-      setBonusGrantRows(
+      setFreeCreditGrantRows(
         Array.isArray(res.data?.data?.rows) ? res.data.data.rows : [],
       );
     } catch (error: unknown) {
-      setBonusGrantRows([]);
+      setFreeCreditGrantRows([]);
       toast({
         title: "무료 크레딧 지급 내역 조회 실패",
         description: getErrorMessage(error, "다시 시도해주세요."),
         variant: "destructive",
       });
     } finally {
-      setLoadingBonusGrantRows(false);
+      setLoadingFreeCreditGrantRows(false);
     }
   };
 
@@ -666,7 +666,7 @@ export function useAdminCreditPage() {
       });
       return;
     }
-    const selectedGrant = bonusGrantRows.find((r) => String(r._id) === grantId);
+    const selectedGrant = freeCreditGrantRows.find((r) => String(r._id) === grantId);
     if (selectedGrant?.hasSpent)
       toast({
         title: "주의: 사용된 크레딧 취소",
@@ -677,7 +677,7 @@ export function useAdminCreditPage() {
     setCancelingGrant(true);
     try {
       const res = await request<ApiMessageResponse>({
-        path: `/api/admin/bonus-grants/${grantId}/cancel`,
+        path: `/api/admin/free-credit-grants/${grantId}/cancel`,
         method: "POST",
         token,
         jsonBody: { reason },
@@ -696,7 +696,7 @@ export function useAdminCreditPage() {
       await Promise.all([
         loadStats(),
         loadOrganizations({ reset: true }),
-        loadBonusGrantHistory(),
+        loadFreeCreditGrantHistory(),
       ]);
     } catch (error: unknown) {
       toast({
@@ -710,11 +710,11 @@ export function useAdminCreditPage() {
   };
 
   const loadMoreCancelGrants = async () => {
-    if (!token || !cancelHasMore || loadingBonusGrantRows) return;
-    setLoadingBonusGrantRows(true);
+    if (!token || !cancelHasMore || loadingFreeCreditGrantRows) return;
+    setLoadingFreeCreditGrantRows(true);
     try {
       const params = new URLSearchParams({
-        type: "WELCOME_BONUS",
+        type: "REQUEST_FREE_CREDIT",
         skip: String(cancelSkip + 20),
         limit: "20",
       });
@@ -722,10 +722,10 @@ export function useAdminCreditPage() {
       if (cancelEndDate) params.append("endDate", cancelEndDate);
       const res = await request<{
         success?: boolean;
-        data?: { rows?: BonusGrantHistoryRow[]; hasMore?: boolean };
+        data?: { rows?: FreeCreditGrantHistoryRow[]; hasMore?: boolean };
         message?: string;
       }>({
-        path: `/api/admin/bonus-grants?${params.toString()}`,
+        path: `/api/admin/free-credit-grants?${params.toString()}`,
         method: "GET",
         token,
       });
@@ -734,7 +734,7 @@ export function useAdminCreditPage() {
       const newRows = Array.isArray(res.data?.data?.rows)
         ? res.data.data.rows
         : [];
-      setBonusGrantRows((prev) => [...prev, ...newRows]);
+      setFreeCreditGrantRows((prev) => [...prev, ...newRows]);
       setCancelSkip((prev) => prev + 20);
       setCancelHasMore(res.data?.data?.hasMore ?? false);
     } catch (error: unknown) {
@@ -744,7 +744,7 @@ export function useAdminCreditPage() {
         variant: "default",
       });
     } finally {
-      setLoadingBonusGrantRows(false);
+      setLoadingFreeCreditGrantRows(false);
     }
   };
 
@@ -828,7 +828,7 @@ export function useAdminCreditPage() {
     loadChargeOrders(orderStatusFilter, { reset: true });
     loadBankTransactions(txStatusFilter, { reset: true });
     loadSalesmen({ reset: true });
-    loadBonusGrantHistory();
+    loadFreeCreditGrantHistory();
   }, [token]);
 
   useEffect(() => {
@@ -954,15 +954,15 @@ export function useAdminCreditPage() {
     };
   }, [salesmanOverview, salesmen]);
 
-  const selectedBonusBusiness = useMemo(() => {
+  const selectedFreeCreditBusiness = useMemo(() => {
     const pool =
       allRequestorBusinesses.length > 0 ? allRequestorBusinesses : businesses;
     return (
       pool.find(
-        (business) => String(business._id) === selectedBonusBusinessAnchorId,
+        (business) => String(business._id) === selectedFreeCreditBusinessAnchorId,
       ) || null
     );
-  }, [allRequestorBusinesses, businesses, selectedBonusBusinessAnchorId]);
+  }, [allRequestorBusinesses, businesses, selectedFreeCreditBusinessAnchorId]);
   const selectedShippingCreditBusiness = useMemo(() => {
     const pool =
       allRequestorBusinesses.length > 0 ? allRequestorBusinesses : businesses;
@@ -978,15 +978,15 @@ export function useAdminCreditPage() {
     selectedShippingCreditBusinessAnchorId,
   ]);
 
-  const filteredBonusGrantRows = useMemo(() => {
+  const filteredFreeCreditGrantRows = useMemo(() => {
     const selectedBusinessNumberDigits = normalizeDigits(
-      String(selectedBonusBusiness?.businessNumber || ""),
+      String(selectedFreeCreditBusiness?.businessNumber || ""),
     );
-    const search = String(bonusGrantSearch || "")
+    const search = String(freeCreditGrantSearch || "")
       .trim()
       .toLowerCase();
-    return bonusGrantRows.filter((row) => {
-      if (selectedBonusBusinessAnchorId) {
+    return freeCreditGrantRows.filter((row) => {
+      if (selectedFreeCreditBusinessAnchorId) {
         if (!selectedBusinessNumberDigits) return false;
         if (
           normalizeDigits(String(row.businessNumber || "")) !==
@@ -1007,31 +1007,35 @@ export function useAdminCreditPage() {
       return haystack.includes(search);
     });
   }, [
-    bonusGrantRows,
-    selectedBonusBusinessAnchorId,
-    selectedBonusBusiness,
-    bonusGrantSearch,
+    freeCreditGrantRows,
+    selectedFreeCreditBusinessAnchorId,
+    selectedFreeCreditBusiness,
+    freeCreditGrantSearch,
   ]);
 
   const filteredFreeCreditUsageRows = useMemo(() => {
-    const getSpentBonusTotal = (business: BusinessCredit) => {
-      const spentBonusRequest = Number(business.spentBonusRequestAmount || 0);
-      const spentBonusShipping = Number(business.spentBonusShippingAmount || 0);
-      const spentBonusCombined = spentBonusRequest + spentBonusShipping;
-      if (spentBonusCombined > 0) return spentBonusCombined;
-      return Number(business.spentBonusAmount || 0);
+    const getSpentFreeTotal = (business: BusinessCredit) => {
+      const spentFreeRequest = Number(
+        business.spentFreeRequestAmount ?? business.spentBonusRequestAmount ?? 0,
+      );
+      const spentFreeShipping = Number(
+        business.spentFreeShippingAmount ?? business.spentBonusShippingAmount ?? 0,
+      );
+      const spentFreeCombined = spentFreeRequest + spentFreeShipping;
+      if (spentFreeCombined > 0) return spentFreeCombined;
+      return Number(business.spentFreeAmount ?? business.spentBonusAmount ?? 0);
     };
 
     const pool =
       allRequestorBusinesses.length > 0 ? allRequestorBusinesses : businesses;
-    const search = String(bonusGrantSearch || "")
+    const search = String(freeCreditGrantSearch || "")
       .trim()
       .toLowerCase();
     return pool
       .filter((business) => {
         if (
-          selectedBonusBusinessAnchorId &&
-          String(business._id) !== selectedBonusBusinessAnchorId
+          selectedFreeCreditBusinessAnchorId &&
+          String(business._id) !== selectedFreeCreditBusinessAnchorId
         )
           return false;
         if (!search) return true;
@@ -1045,13 +1049,13 @@ export function useAdminCreditPage() {
           .toLowerCase();
         return haystack.includes(search);
       })
-      .filter((business) => getSpentBonusTotal(business) > 0)
-      .sort((a, b) => getSpentBonusTotal(b) - getSpentBonusTotal(a));
+      .filter((business) => getSpentFreeTotal(business) > 0)
+      .sort((a, b) => getSpentFreeTotal(b) - getSpentFreeTotal(a));
   }, [
     allRequestorBusinesses,
     businesses,
-    selectedBonusBusinessAnchorId,
-    bonusGrantSearch,
+    selectedFreeCreditBusinessAnchorId,
+    freeCreditGrantSearch,
   ]);
 
   return {
@@ -1107,20 +1111,20 @@ export function useAdminCreditPage() {
     setTxHasMore,
     txTab,
     setTxTab,
-    selectedBonusBusinessAnchorId,
-    setSelectedBonusBusinessAnchorId,
-    selectedBonusAmount,
-    setSelectedBonusAmount,
-    bonusReason,
-    setBonusReason,
-    grantingBonus,
+    selectedFreeCreditBusinessAnchorId,
+    setSelectedFreeCreditBusinessAnchorId,
+    selectedFreeCreditAmount,
+    setSelectedFreeCreditAmount,
+    freeCreditReason,
+    setFreeCreditReason,
+    grantingFreeCredit,
     grantCreditType,
     setGrantCreditType,
-    bonusGrantRows,
-    setBonusGrantRows,
-    loadingBonusGrantRows,
-    bonusGrantSearch,
-    setBonusGrantSearch,
+    freeCreditGrantRows,
+    setFreeCreditGrantRows,
+    loadingFreeCreditGrantRows,
+    freeCreditGrantSearch,
+    setFreeCreditGrantSearch,
     freeCreditMenu,
     setFreeCreditMenu,
     selectedShippingCreditBusinessAnchorId,
@@ -1177,15 +1181,15 @@ export function useAdminCreditPage() {
     handleManualMatch,
     handleGrantFreeCredit,
     handleGrantShippingCredit,
-    loadBonusGrantHistory,
+    loadFreeCreditGrantHistory,
     handleCancelFreeCredit,
     loadMoreCancelGrants,
     handleApprove,
     handleReject,
     salesmanSummary,
-    selectedBonusBusiness,
+    selectedFreeCreditBusiness,
     selectedShippingCreditBusiness,
-    filteredBonusGrantRows,
+    filteredFreeCreditGrantRows,
     filteredFreeCreditUsageRows,
   };
 }

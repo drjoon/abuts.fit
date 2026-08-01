@@ -4,12 +4,13 @@
 // - web/backend/server.js
 // - web/backend/controllers/cnc/machiningBridge.js
 // - web/backend/controllers/cnc/production.js
+// - web/backend/controllers/requests/common.review.helpers.js
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/machining/MachiningQueueBoard.tsx
+import mongoose from "mongoose";
 import CncMachine from "../../models/cncMachine.model.js";
 import Machine from "../../models/machine.model.js";
 import Request from "../../models/request.model.js";
-import ManufacturerCreditLedger from "../../models/manufacturerCreditLedger.model.js";
-import User from "../../models/user.model.js";
+import { ensureRequestCreditRollbackDeleteOnRollbackToCam } from "../requests/common.review.helpers.js";
 import {
   getPresignedGetUrl,
   getPresignedPutUrl,
@@ -429,93 +430,87 @@ export async function fetchBridgeQueueFromBridge(machineId) {
   return { ok: true, status: resp.status, error: null, jobs };
 }
 
+// Bridge/CNC 큐 정리 등 운영 경로에서 강제 CAM 복귀가 필요한 경우 사용한다.
+// SSOT 기준으로는 "가공 롤백(CAM 복귀)"와 동일 의미이며,
+// 의뢰 크레딧은 소비 COMMIT 삭제형 롤백으로만 정리한다.
 export async function rollbackRequestToCamByRequestId(requestId) {
   const rid = String(requestId || "").trim();
   if (!rid) return null;
 
-  const request = await Request.findOne({ requestId: rid });
-  if (!request) return null;
-
-  const stage = String(request.manufacturerStage || "").trim();
-  const rollbackStages = ["가공", "세척.패킹"];
-  if (!rollbackStages.includes(stage)) return request;
-
+  const session = await mongoose.startSession();
   try {
-    // 제조사 리펀드 (건당 6,500) - 조직 단위
-    try {
-      const manufacturerId = request?.manufacturer;
-      if (manufacturerId) {
-        const m = await User.findById(manufacturerId)
-          .select({ business: 1 })
-          .lean();
-        const manufacturerOrganization = String(m?.business || "").trim();
-        if (manufacturerOrganization) {
-          const refundKey = `request:${String(request._id)}:manufacturer_refund_request`;
-          await ManufacturerCreditLedger.updateOne(
-            { uniqueKey: refundKey },
-            {
-              $setOnInsert: {
-                manufacturerOrganization,
-                manufacturerId,
-                type: "REFUND",
-                amount: -6500,
-                refType: "REQUEST",
-                refId: request._id,
-                uniqueKey: refundKey,
-                occurredAt: new Date(),
-              },
-            },
-            { upsert: true },
-          );
-        }
+    let updatedRequest = null;
+    await session.withTransaction(async () => {
+      const request = await Request.findOne({ requestId: rid }).session(session);
+      if (!request) {
+        updatedRequest = null;
+        return;
       }
-    } catch (e) {
-      console.error(
-        "rollbackRequestToCamByRequestId manufacturer refund error:",
-        e,
-      );
-    }
+
+      const stage = String(request.manufacturerStage || "").trim();
+      const rollbackStages = ["가공", "세척.패킹"];
+      if (!rollbackStages.includes(stage)) {
+        updatedRequest = request;
+        return;
+      }
+
+      const businessAnchorId =
+        request.businessAnchorId || request.requestor?.businessAnchorId;
+      if (businessAnchorId) {
+        await ensureRequestCreditRollbackDeleteOnRollbackToCam({
+          request,
+          businessAnchorId,
+          actorUserId: null,
+          session,
+        });
+      }
+
+      request.caseInfos = request.caseInfos || {};
+      request.caseInfos.reviewByStage = request.caseInfos.reviewByStage || {};
+      request.caseInfos.rollbackCounts = request.caseInfos.rollbackCounts || {};
+      request.caseInfos.rollbackCounts.cam =
+        Number(request.caseInfos.rollbackCounts.cam || 0) + 1;
+
+      const now = new Date();
+
+      const camReview = request.caseInfos.reviewByStage.cam || {};
+      request.caseInfos.reviewByStage.cam = {
+        status: "PENDING",
+        updatedAt: now,
+        updatedBy: null,
+        reason: "",
+        ...camReview,
+      };
+
+      const machiningReview = request.caseInfos.reviewByStage.machining || {};
+      request.caseInfos.reviewByStage.machining = {
+        status: "PENDING",
+        updatedAt: now,
+        updatedBy: null,
+        reason: "",
+        ...machiningReview,
+      };
+
+      request.manufacturerStage = "CAM";
+
+      request.productionSchedule = request.productionSchedule || {};
+      request.productionSchedule.actualMachiningStart = null;
+      request.productionSchedule.actualMachiningComplete = null;
+      request.productionSchedule.assignedMachine = null;
+      request.productionSchedule.queuePosition = null;
+      request.assignedMachine = null;
+
+      await request.save({ session });
+      updatedRequest = request;
+    });
+
+    return updatedRequest;
   } catch (e) {
-    console.error("rollbackRequestToCamByRequestId credit refund error:", e);
+    console.error("rollbackRequestToCamByRequestId transaction error:", e);
+    return null;
+  } finally {
+    session.endSession();
   }
-
-  request.caseInfos = request.caseInfos || {};
-  request.caseInfos.reviewByStage = request.caseInfos.reviewByStage || {};
-  request.caseInfos.rollbackCounts = request.caseInfos.rollbackCounts || {};
-  request.caseInfos.rollbackCounts.cam =
-    Number(request.caseInfos.rollbackCounts.cam || 0) + 1;
-
-  const now = new Date();
-
-  const camReview = request.caseInfos.reviewByStage.cam || {};
-  request.caseInfos.reviewByStage.cam = {
-    status: "PENDING",
-    updatedAt: now,
-    updatedBy: null,
-    reason: "",
-    ...camReview,
-  };
-
-  const machiningReview = request.caseInfos.reviewByStage.machining || {};
-  request.caseInfos.reviewByStage.machining = {
-    status: "PENDING",
-    updatedAt: now,
-    updatedBy: null,
-    reason: "",
-    ...machiningReview,
-  };
-
-  request.manufacturerStage = "CAM";
-
-  request.productionSchedule = request.productionSchedule || {};
-  request.productionSchedule.actualMachiningStart = null;
-  request.productionSchedule.actualMachiningComplete = null;
-  request.productionSchedule.assignedMachine = null;
-  request.productionSchedule.queuePosition = null;
-  request.assignedMachine = null;
-
-  await request.save();
-  return request;
 }
 
 export async function getMachinesHandler(req, res) {

@@ -207,23 +207,22 @@
 - `web/backend/models/chat.model.js`
 - `web/backend/models/request.model.js`
 
-### 1.0.1.4 practice 삭제/채팅 전용 라우트 SSOT (2026-07-29)
+### 1.0.1.4 practice 삭제/채팅 전용 라우트 SSOT (2026-07-29, 최신 정책 반영)
 
-- practice 최근 전송 내역의 삭제(취소)는 **전용 배치 라우트**만 사용한다.
-  - SSOT: `POST /api/requests/practice/cancel-batch`
-  - payload: `requestIds: string[]`, `requestMongoIds: string[]`
-  - 처리 대상은 practice 태그 의뢰(`practice_dropzone|practice_file_transfer`)로 제한한다.
-  - 단계 제한은 `의뢰`, `CAM`만 허용한다.
-- practice 카드 삭제 컨펌 모달의 식별값 표시는 `transferId`가 `"-"`일 때 `requestId`로 fallback 한다.
-- practice 채팅방 진입은 **전용 라우트**를 사용한다.
-  - SSOT: `GET /api/chats/practice/request-room/:requestId`
-  - practice 전용 라우트는 practice 태그 의뢰만 허용한다.
+- practice 최근 전송 내역의 삭제(취소)는 **PracticeTransfer 전용 배치 라우트**만 사용한다.
+  - SSOT: `POST /api/practice/transfers/cancel-batch`
+  - payload: `transferIds: string[]`, `transferMongoIds: string[]`
+  - `Request` 도메인 경로(`/api/requests/practice/cancel-batch`)는 레거시이며 제거되었다.
+- practice 카드 삭제 컨펌 모달의 식별값 표시는 `transferId` 기준을 우선한다.
+- practice 채팅방 진입은 `transferId` 기반 라우트만 사용한다.
+  - SSOT: `GET /api/chats/practice/transfer-room/:transferId`
+  - 레거시 request-room 경로(`/api/chats/practice/request-room/:requestId`)는 제거되었다.
   - 라우팅 해석은 `caseInfos.practiceRouting` 우선(치과→기공소), 기존 `newSystemRequest.manufacturer`는 non-practice 경로에서만 사용한다.
 
 관련 파일:
 - `web/frontend/src/pages/practice/PracticeFileTransferPage.tsx`
-- `web/backend/modules/requests/request.routes.js`
-- `web/backend/controllers/requests/common.requests.controller.js`
+- `web/backend/modules/practiceTransfers/practiceTransfer.routes.js`
+- `web/backend/controllers/practiceTransfers/practiceTransfer.controller.js`
 - `web/backend/modules/chat/chat.routes.js`
 - `web/backend/controllers/chats/chat.controller.js`
 
@@ -1820,7 +1819,7 @@
 
 - 치과병의원 역할은 `pages/practice/` 하위에서만 구현합니다.
 - 공개 진입점은 `/practice/dropzone`이며, **비회원 접근 허용**을 기본으로 합니다.
-- 대시보드 진입점은 `/dashboard`(role=`practice`)이며, 의뢰 전송 버튼은 `/dashboard/practice/dropzone` 또는 `/practice/dropzone`으로 연결합니다.
+- 대시보드 진입점은 `/dashboard`(role=`practice`)이며, 의뢰서 전송 버튼은 `/dashboard/practice/dropzone` 또는 `/practice/dropzone`으로 연결합니다.
 - 초기 단계에서는 단일 페이지 중심 UX를 우선하고, 실제 업로드 저장/회원가입 이어쓰기 API는 후속 단계에서 연결합니다.
 - practice 드롭존/업로드 목록 분류는 `STL/PLY/OBJ` 허용, `.pts` 자동 제외, 그 외 확장자 제외 정책을 사용합니다.
 - 치과병의원 입력 주소는 설정-사업자와 동일한 공통 주소 컴포넌트(`BusinessAddressFields`)를 사용해 UX를 통일합니다.

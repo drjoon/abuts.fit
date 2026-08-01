@@ -22,10 +22,7 @@ import {
   applyStatusMapping,
   normalizeRequestForResponse,
 } from "../requests/utils.js";
-import {
-  ensureRequestCreditSpendOnMachiningEnter,
-  ensureRequestCreditRefundOnRollbackToCam,
-} from "../requests/common.review.helpers.js";
+
 import { normalizeImplantFields } from "../../utils/implantCanonical.js";
 import { emitBgRuntimeStatus } from "./bgRuntimeEvents.js";
 import { emitAppEventToRoles } from "../../socket.js";
@@ -1057,58 +1054,15 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
     { new: true },
   );
 
-  const stepRaw = String(sourceStep || "").trim().toLowerCase();
-  const statusRaw = String(status || "").trim().toLowerCase();
-  const isCncStep = stepRaw === "cnc";
-  const isCncSuccess = isCncStep && statusRaw === "success";
-  const isCncFailed = isCncStep && statusRaw !== "success";
-
   const targetRequest = updatedRequest || request;
-  const businessAnchorIdRaw = String(targetRequest?.businessAnchorId || "").trim();
-  const businessAnchorId = Types.ObjectId.isValid(businessAnchorIdRaw)
-    ? new Types.ObjectId(businessAnchorIdRaw)
-    : null;
 
-  const isPracticeDropzoneRequest =
-    String(targetRequest?.caseInfos?.newSystemRequest?.tag || "").trim() ===
-    "practice_dropzone";
-
-  if (businessAnchorId && !isPracticeDropzoneRequest) {
-    if (isCncSuccess) {
-      try {
-        await ensureRequestCreditSpendOnMachiningEnter({
-          request: targetRequest,
-          businessAnchorId,
-          actorUserId: null,
-          session: null,
-        });
-        if (updatedRequest?.isModified?.()) {
-          await updatedRequest.save();
-        }
-      } catch (creditSpendErr) {
-        console.error("[BG-Callback] machining-start credit spend failed:", {
-          requestId: targetRequest?.requestId,
-          requestMongoId: String(targetRequest?._id || ""),
-          message: creditSpendErr?.message || String(creditSpendErr || ""),
-        });
-      }
-    } else if (isCncFailed) {
-      try {
-        await ensureRequestCreditRefundOnRollbackToCam({
-          request: targetRequest,
-          businessAnchorId,
-          actorUserId: null,
-          session: null,
-        });
-      } catch (creditRefundErr) {
-        console.error("[BG-Callback] machining-failed credit refund failed:", {
-          requestId: targetRequest?.requestId,
-          requestMongoId: String(targetRequest?._id || ""),
-          message: creditRefundErr?.message || String(creditRefundErr || ""),
-        });
-      }
-    }
-  }
+  // SSOT 타이밍 정책:
+  // - 의뢰 크레딧 차감: CAM 승인(가공 진입)
+  // - 배송 크레딧 차감: 세척.패킹 승인(포장.발송 진입)
+  // - 의뢰 차감 삭제: 가공 롤백(CAM 복귀)
+  // - 배송 차감 삭제: 포장.발송 롤백(세척.패킹 복귀)
+  // BG 콜백은 파일 처리 결과 동기화 이벤트이며, 공정 승인/롤백 트랜지션이 아니다.
+  // 따라서 BG 콜백에서는 크레딧/정산 장부를 갱신하지 않는다.
 
   const normalizedUpdatedRequest = updatedRequest
     ? await normalizeRequestForResponse(updatedRequest)

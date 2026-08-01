@@ -30,9 +30,6 @@
     "db:check-pricing-ssot": "cross-env ENV_FILE=local.env node scripts/db/check-pricing-ssot-consistency.js --strict",
     "db:check-pricing-ssot:ci": "node scripts/db/check-pricing-ssot-consistency.js --strict --no-write",
     "db:delete-legacy-practice-requestor": "cross-env ENV_FILE=local.env node scripts/db/delete-legacy-practice-requestor.js",
-    "db:fix-spent-paid-pollution:test": "cross-env NODE_ENV=test ENV_FILE=local.env node scripts/db/fix-spent-paid-pollution-test-only.js",
-    "db:migrate-bonus-to-charge-creditkind": "cross-env ENV_FILE=local.env node scripts/db/migrate-bonus-to-charge-creditkind.js",
-    "db:migrate-spent-free-field": "cross-env ENV_FILE=local.env node scripts/db/migrate-spent-bonus-to-spent-free.js", 
     "worker:monthly-referral-snapshot": "cross-env ENV_FILE=local.env node jobs/dailyReferralSnapshotWorker.js", 
     "worker:daily-admin-salesman-credits-overview-snapshot": "cross-env ENV_FILE=local.env node jobs/dailyAdminSalesmanCreditsOverviewSnapshotWorker.js"
   },

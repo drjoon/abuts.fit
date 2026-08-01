@@ -583,18 +583,10 @@ export async function getOrCreateRequestChatRoom(req, res) {
     const nsrTag = String(targetRequest?.caseInfos?.newSystemRequest?.tag || "").trim();
     const isPracticeRouteTag =
       nsrTag === "practice_dropzone" || nsrTag === "practice_file_transfer";
-    const isPracticeOnlyRoute = String(req.originalUrl || "").includes(
-      "/api/chats/practice/request-room/",
-    );
 
-    if (isPracticeOnlyRoute && !isPracticeRouteTag) {
-      return res.status(403).json({
-        success: false,
-        message: "practice 전용 채팅 라우트에서는 practice 의뢰만 접근할 수 있습니다.",
-      });
-    }
-
-    const usePracticeRouting = isPracticeOnlyRoute || isPracticeRouteTag;
+    // practice의 request-room 라우트는 제거되었고, transfer-room이 SSOT다.
+    // 다만 레거시 Request 데이터 호환을 위해 practice 태그 의뢰는 practice routing 규칙을 유지한다.
+    const usePracticeRouting = isPracticeRouteTag;
 
     // related files:
     // - web/backend/models/request.model.js

@@ -1,11 +1,16 @@
 // related files:
 // - web/backend/rules.md
-// - web/backend/app.js
-// - web/backend/server.js
+// - web/backend/modules/salesman/salesman.routes.js
+// - web/backend/models/ledgerJournal.model.js
+// - web/backend/models/ledgerLine.model.js
+// - web/backend/controllers/admin/adminCredit.controller.js
+// - web/frontend/src/shared/components/CommissionLedgerInline.tsx
+// - web/frontend/src/shared/components/SalesmanLedgerModal.tsx
 import Request from "../../models/request.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 import User from "../../models/user.model.js";
-import SalesmanLedger from "../../models/salesmanLedger.model.js";
+import LedgerLine from "../../models/ledgerLine.model.js";
+import LedgerJournal from "../../models/ledgerJournal.model.js";
 import { Types } from "mongoose";
 import crypto from "crypto";
 
@@ -136,7 +141,15 @@ export async function getSalesmanLedger(req, res) {
       });
     }
 
-    const salesmanId = new Types.ObjectId(String(me._id));
+    const ownerRole = me.role === "devops" ? "devops" : "salesman";
+    const ownerAnchorIdRaw = String(me?.businessAnchorId || "").trim();
+    if (!ownerAnchorIdRaw || !Types.ObjectId.isValid(ownerAnchorIdRaw)) {
+      return res.status(400).json({
+        success: false,
+        message: "사업자 정보가 없습니다.",
+      });
+    }
+    const ownerAnchorId = new Types.ObjectId(ownerAnchorIdRaw);
 
     const typeRaw = String(req.query.type || "")
       .trim()
@@ -150,102 +163,150 @@ export async function getSalesmanLedger(req, res) {
       Math.max(1, Number(req.query.pageSize || 50) || 50),
     );
 
-    const match = { salesmanId };
+    // SSOT 정책: 역할 정산 원장은 LedgerLine(ownerRole/ownerId) 기준으로 조회한다.
+    // 레거시 분리 원장 조회/적재 경로는 제거되었다.
+    const match = {
+      ownerRole,
+      ownerId: ownerAnchorId,
+      accountCode: ownerRole === "devops" ? "REV_DEVOPS" : "REV_SALESMAN",
+    };
 
     if (
       typeRaw &&
       typeRaw !== "ALL" &&
-      ["EARN", "PAYOUT", "ADJUST"].includes(typeRaw)
+      !["EARN", "ADJUST", "PAYOUT"].includes(typeRaw)
     ) {
-      match.type = typeRaw;
+      return res.json({
+        success: true,
+        data: { items: [], total: 0, page, pageSize },
+      });
     }
 
-    const createdAt = {};
+    const occurredAt = {};
 
     const sinceFromPeriod = parseLedgerPeriod(periodRaw);
-    if (sinceFromPeriod) createdAt.$gte = sinceFromPeriod;
+    if (sinceFromPeriod) occurredAt.$gte = sinceFromPeriod;
 
     const fromRaw = String(req.query.from || "").trim();
     const toRaw = String(req.query.to || "").trim();
 
     if (fromRaw) {
       const from = new Date(fromRaw);
-      if (!Number.isNaN(from.getTime())) createdAt.$gte = from;
+      if (!Number.isNaN(from.getTime())) occurredAt.$gte = from;
     }
 
     if (toRaw) {
       const to = new Date(toRaw);
-      if (!Number.isNaN(to.getTime())) createdAt.$lte = to;
+      if (!Number.isNaN(to.getTime())) occurredAt.$lte = to;
     }
 
-    if (Object.keys(createdAt).length) match.createdAt = createdAt;
+    if (Object.keys(occurredAt).length) match.occurredAt = occurredAt;
+
+    const pipeline = [
+      { $match: match },
+      {
+        $lookup: {
+          from: LedgerJournal.collection.name,
+          localField: "journalId",
+          foreignField: "journalId",
+          as: "journalDoc",
+        },
+      },
+      {
+        $unwind: {
+          path: "$journalDoc",
+          preserveNullAndEmptyArrays: true,
+        },
+      },
+      {
+        $addFields: {
+          uniqueKey: {
+            $concat: [
+              "gl:",
+              { $ifNull: ["$journalDoc.meta.spendUniqueKey", "$journalId"] },
+            ],
+          },
+          type: {
+            $switch: {
+              branches: [
+                {
+                  case: { $eq: ["$journalDoc.eventType", "SETTLEMENT_PAYOUT"] },
+                  then: "PAYOUT",
+                },
+                {
+                  case: { $eq: ["$journalDoc.eventType", "ADJUST"] },
+                  then: "ADJUST",
+                },
+              ],
+              default: "EARN",
+            },
+          },
+          amountBase: { $ifNull: ["$amountExcludingVat", "$amount"] },
+        },
+      },
+    ];
+
+    if (typeRaw === "EARN" || typeRaw === "ADJUST" || typeRaw === "PAYOUT") {
+      pipeline.push({ $match: { type: typeRaw } });
+    }
 
     if (qRaw) {
       const rx = safeRegex(qRaw);
-      const ors = [];
       if (rx) {
-        ors.push({ uniqueKey: rx });
-        ors.push({ refType: rx });
+        pipeline.push({
+          $match: {
+            $or: [{ uniqueKey: rx }, { refType: rx }],
+          },
+        });
       }
-      if (Types.ObjectId.isValid(qRaw)) {
-        ors.push({ refId: new Types.ObjectId(qRaw) });
-      }
-      if (ors.length) match.$or = ors;
     }
 
-    // running balance를 위해 전체 누적 잔액 계산 (필터 무관)
-    const allLedgerRows = await SalesmanLedger.aggregate([
-      { $match: { salesmanId } },
-      { $group: { _id: "$type", total: { $sum: "$amount" } } },
-    ]);
+    pipeline.push(
+      { $sort: { occurredAt: -1, _id: -1 } },
+      {
+        $project: {
+          _id: 1,
+          type: 1,
+          amount: "$amountBase",
+          amountExcludingVat: "$amountBase",
+          vatAmount: { $literal: 0 },
+          amountIncludingVat: "$amountBase",
+          refType: 1,
+          refId: 1,
+          uniqueKey: 1,
+          createdAt: "$occurredAt",
+          occurredAt: "$occurredAt",
+        },
+      },
+    );
+
+    // running balance 계산: 전체 누적에서 페이지 이전 분량 차감
+    const allRows = await LedgerLine.aggregate(pipeline);
+
     let totalBalance = 0;
-    for (const r of allLedgerRows) {
-      const t = String(r._id || "");
-      const v = Number(r.total || 0);
+    for (const r of allRows) {
+      const t = String(r?.type || "");
+      const v = Number(r?.amount || 0);
       if (t === "EARN" || t === "ADJUST") totalBalance += v;
       else if (t === "PAYOUT") totalBalance -= v;
     }
 
-    const skippedRows =
-      (page - 1) * pageSize > 0
-        ? await SalesmanLedger.find(match)
-            .sort({ createdAt: -1, _id: -1 })
-            .limit((page - 1) * pageSize)
-            .select({ type: 1, amount: 1 })
-            .lean()
-        : [];
+    const total = Array.isArray(allRows) ? allRows.length : 0;
+    const startIdx = (page - 1) * pageSize;
+    const endIdx = startIdx + pageSize;
+
     let skippedSum = 0;
-    for (const r of skippedRows) {
-      const t = String(r.type || "");
-      const v = Number(r.amount || 0);
+    for (const r of allRows.slice(0, startIdx)) {
+      const t = String(r?.type || "");
+      const v = Number(r?.amount || 0);
       if (t === "EARN" || t === "ADJUST") skippedSum += v;
       else if (t === "PAYOUT") skippedSum -= v;
     }
 
-    const [total, rawItems] = await Promise.all([
-      SalesmanLedger.countDocuments(match),
-      SalesmanLedger.find(match)
-        .sort({ createdAt: -1, _id: -1 })
-        .skip((page - 1) * pageSize)
-        .limit(pageSize)
-        .select({
-          type: 1,
-          amount: 1,
-          amountExcludingVat: 1,
-          vatAmount: 1,
-          amountIncludingVat: 1,
-          refType: 1,
-          refId: 1,
-          uniqueKey: 1,
-          createdAt: 1,
-        })
-        .lean(),
-    ]);
-
     let runningBalance = totalBalance - skippedSum;
-    const items = (Array.isArray(rawItems) ? rawItems : []).map((r) => {
-      const v = Number(r.amount || 0);
-      const t = String(r.type || "");
+    const items = allRows.slice(startIdx, endIdx).map((r) => {
+      const v = Number(r?.amount || 0);
+      const t = String(r?.type || "");
       const balanceAfter = runningBalance;
       if (t === "EARN" || t === "ADJUST") runningBalance -= v;
       else if (t === "PAYOUT") runningBalance += v;

@@ -17,14 +17,15 @@
 import "../bootstrap/env.js";
 import mongoose, { Types } from "mongoose";
 import User from "../models/user.model.js";
+import BusinessAnchor from "../models/businessAnchor.model.js";
 import PricingReferralRolling30dAggregate from "../models/pricingReferralRolling30dAggregate.model.js";
 import ShippingPackage from "../models/shippingPackage.model.js";
 import PricingReferralDailyOrderBucket from "../models/pricingReferralDailyOrderBucket.model.js";
-import ManufacturerCreditLedger from "../models/manufacturerCreditLedger.model.js";
 import ManufacturerDailySettlementSnapshot from "../models/manufacturerDailySettlementSnapshot.model.js";
 import Request from "../models/request.model.js";
 import DeliveryInfo from "../models/deliveryInfo.model.js";
-import CreditLedger from "../models/creditLedger.model.js";
+import LedgerJournal from "../models/ledgerJournal.model.js";
+import LedgerLine from "../models/ledgerLine.model.js";
 import { recomputeBulkShippingSnapshotForBusinessAnchorId } from "../services/bulkShippingSnapshot.service.js";
 import { recomputeRequestorDashboardSummarySnapshotsForBusinessAnchorId } from "../services/requestorDashboardSummarySnapshot.service.js";
 import { recomputePricingReferralSnapshotForLeaderAnchorId } from "../services/pricingReferralSnapshot.service.js";
@@ -205,10 +206,68 @@ async function runDailySnapshot(ymd) {
     const utcRange = kstYmdToUtcRange(yesterdayYmd);
     if (utcRange) {
       const { start, end } = utcRange;
-      const agg = await ManufacturerCreditLedger.aggregate([
+      const agg = await LedgerLine.aggregate([
         {
           $match: {
+            ownerRole: "manufacturer",
+            accountCode: "REV_MANUFACTURER",
             occurredAt: { $gte: start, $lte: end },
+          },
+        },
+        {
+          $lookup: {
+            from: LedgerJournal.collection.name,
+            localField: "journalId",
+            foreignField: "journalId",
+            as: "journalDoc",
+          },
+        },
+        {
+          $unwind: {
+            path: "$journalDoc",
+            preserveNullAndEmptyArrays: true,
+          },
+        },
+        {
+          $lookup: {
+            from: BusinessAnchor.collection.name,
+            localField: "ownerId",
+            foreignField: "_id",
+            as: "ownerAnchor",
+          },
+        },
+        {
+          $unwind: {
+            path: "$ownerAnchor",
+            preserveNullAndEmptyArrays: true,
+          },
+        },
+        {
+          $addFields: {
+            manufacturerOrganization: {
+              $trim: { input: { $ifNull: ["$ownerAnchor.name", ""] } },
+            },
+            type: {
+              $switch: {
+                branches: [
+                  {
+                    case: { $eq: ["$journalDoc.eventType", "SETTLEMENT_PAYOUT"] },
+                    then: "PAYOUT",
+                  },
+                  {
+                    case: { $eq: ["$journalDoc.eventType", "ADJUST"] },
+                    then: "ADJUST",
+                  },
+                ],
+                default: "EARN",
+              },
+            },
+            amountBase: { $ifNull: ["$amountExcludingVat", "$amount"] },
+          },
+        },
+        {
+          $match: {
+            manufacturerOrganization: { $ne: "" },
           },
         },
         {
@@ -218,7 +277,7 @@ async function runDailySnapshot(ymd) {
               type: "$type",
               refType: "$refType",
             },
-            amount: { $sum: "$amount" },
+            amount: { $sum: "$amountBase" },
             count: { $sum: 1 },
           },
         },
@@ -399,7 +458,7 @@ async function runDailySnapshot(ymd) {
         },
         {
           $lookup: {
-            from: CreditLedger.collection.name,
+            from: LedgerLine.collection.name,
             let: { shippingPackageId: "$_id.shippingPackageId" },
             pipeline: [
               {
@@ -407,28 +466,29 @@ async function runDailySnapshot(ymd) {
                   $expr: {
                     $and: [
                       { $eq: ["$refId", "$$shippingPackageId"] },
-                      { $eq: ["$type", "SPEND"] },
-                      { $in: ["$refType", ["SHIPPING_PACKAGE", "SHIPPING_FEE"]] },
+                      { $eq: ["$ownerRole", "manufacturer"] },
+                      { $eq: ["$accountCode", "REV_MANUFACTURER"] },
+                      { $eq: ["$refType", "SHIPPING_PACKAGE"] },
+                      { $eq: ["$creditKind", "PAID"] },
                     ],
                   },
                 },
               },
-              { $sort: { createdAt: -1, _id: -1 } },
+              { $sort: { occurredAt: -1, _id: -1 } },
               { $limit: 1 },
               {
                 $project: {
                   _id: 0,
-                  amount: 1,
-                  spentPaidAmount: 1,
+                  amountBase: { $ifNull: ["$amountExcludingVat", "$amount"] },
                 },
               },
             ],
-            as: "shippingSpend",
+            as: "shippingRevenue",
           },
         },
         {
           $unwind: {
-            path: "$shippingSpend",
+            path: "$shippingRevenue",
             preserveNullAndEmptyArrays: true,
           },
         },
@@ -437,13 +497,7 @@ async function runDailySnapshot(ymd) {
             _id: "$manufacturerOrganization",
             earnShippingCount: { $sum: 1 },
             earnShippingAmount: {
-              $sum: {
-                $cond: [
-                  { $gt: ["$shippingSpend.spentPaidAmount", 0] },
-                  { $abs: { $ifNull: ["$shippingSpend.amount", 0] } },
-                  0,
-                ],
-              },
+              $sum: { $abs: { $ifNull: ["$shippingRevenue.amountBase", 0] } },
             },
           },
         },

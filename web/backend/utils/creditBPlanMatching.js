@@ -5,9 +5,10 @@
 import mongoose from "mongoose";
 import ChargeOrder from "../models/chargeOrder.model.js";
 import BankTransaction from "../models/bankTransaction.model.js";
-import CreditLedger from "../models/creditLedger.model.js";
 import TaxInvoiceDraft from "../models/taxInvoiceDraft.model.js";
 import BusinessAnchor from "../models/businessAnchor.model.js";
+import BusinessCreditBalance from "../models/businessCreditBalance.model.js";
+import { postGeneralLedgerJournal } from "../services/generalLedger.service.js";
 import { emitCreditBalanceUpdatedToBusiness } from "./creditRealtime.js";
 import { enqueueTaxInvoiceIssue } from "./queueClient.js";
 
@@ -163,6 +164,7 @@ export async function autoMatchBankTransactionsOnce({ limit = 200 } = {}) {
 async function matchTxWithOrder({ tx, order }) {
   const session = await mongoose.startSession();
   let autoCreatedDraftId = null;
+  let matchedChargeDelta = 0;
 
   try {
     const result = await session.withTransaction(async () => {
@@ -201,31 +203,60 @@ async function matchTxWithOrder({ tx, order }) {
         throw new Error("ChargeOrder update failed");
       }
 
-      // 크레딧 즉시 충전
-      const uniqueKey = `bplan:bankTx:${String(tx._id)}:charge`;
-      const creditLedgerResult = await CreditLedger.updateOne(
-        { uniqueKey },
-        {
-          $setOnInsert: {
-            businessAnchorId: order.businessAnchorId || null,
-            userId: order.userId,
-            type: "CHARGE",
-            amount: Number(order.supplyAmount),
-            refType: "CHARGE_ORDER",
-            refId: order._id,
-            uniqueKey,
-          },
-        },
-        { upsert: true, session },
+      // SSOT GL: CHARGE_PAID journal posting + snapshot increment
+      const normalizedSupplyAmount = Math.max(
+        0,
+        Math.round(Number(order.supplyAmount || 0)),
       );
-
-      if (creditLedgerResult?.upsertedCount) {
-        await emitCreditBalanceUpdatedToBusiness({
+      if (normalizedSupplyAmount > 0) {
+        const glResult = await postGeneralLedgerJournal({
+          idempotencyKey: `gl:bplan:bankTx:${String(tx._id)}:charge`,
+          eventType: "CHARGE_PAID",
           businessAnchorId: order.businessAnchorId,
-          balanceDelta: Number(order.supplyAmount),
-          reason: "bplan_auto_charge",
+          refType: "CHARGE_ORDER",
           refId: order._id,
+          createdBy: order.userId || null,
+          meta: {
+            chargeOrderId: String(order._id),
+            bankTransactionId: String(tx._id),
+            source: "bplan_auto_match",
+          },
+          lines: [
+            {
+              accountCode: "REQ_PAID_CREDIT",
+              ownerRole: "requestor",
+              ownerId: order.businessAnchorId,
+              amount: normalizedSupplyAmount,
+              amountExcludingVat: normalizedSupplyAmount,
+              vatAmount: 0,
+              amountIncludingVat: normalizedSupplyAmount,
+              creditKind: "PAID",
+              refType: "CHARGE_ORDER",
+              refId: order._id,
+            },
+          ],
+          session,
         });
+
+        if (glResult?.posted) {
+          matchedChargeDelta = normalizedSupplyAmount;
+          await BusinessCreditBalance.updateOne(
+            { businessAnchorId: order.businessAnchorId },
+            {
+              $inc: {
+                paidCredit: normalizedSupplyAmount,
+                version: 1,
+              },
+              $setOnInsert: {
+                businessAnchorId: order.businessAnchorId,
+                paidCredit: 0,
+                bonusRequestCredit: 0,
+                bonusShippingCredit: 0,
+              },
+            },
+            { upsert: true, session },
+          );
+        }
       }
 
       // 세금계산서 Draft 생성 (APPROVED 상태 → 자동발행 큐잉)
@@ -277,6 +308,16 @@ async function matchTxWithOrder({ tx, order }) {
 
       return true;
     });
+
+    // 트랜잭션 성공 후: 크레딧 변동 실시간 이벤트 발행
+    if (result && matchedChargeDelta > 0) {
+      await emitCreditBalanceUpdatedToBusiness({
+        businessAnchorId: order.businessAnchorId,
+        balanceDelta: matchedChargeDelta,
+        reason: "bplan_auto_charge",
+        refId: order._id,
+      });
+    }
 
     // 트랜잭션 성공 후: 새로 생성된 APPROVED 드래프트를 발행 큐에 자동 등록
     if (result && autoCreatedDraftId) {

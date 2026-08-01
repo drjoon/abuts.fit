@@ -1,19 +1,24 @@
 // related files:
 // - web/backend/rules.md
 // - web/backend/modules/admin/admin.routes.js
-// - web/backend/models/bonusGrant.model.js
-// - web/backend/models/creditLedger.model.js
-// - web/backend/services/creditBalance.service.js
+// - web/backend/models/freeCreditGrant.model.js
+// - web/backend/models/businessCreditBalance.model.js
+// - web/backend/models/ledgerJournal.model.js
+// - web/backend/models/ledgerLine.model.js
+// - web/backend/services/generalLedger.service.js
 import { Types } from "mongoose";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
-import BonusGrant from "../../models/bonusGrant.model.js";
-import CreditLedger from "../../models/creditLedger.model.js";
+import FreeCreditGrant from "../../models/freeCreditGrant.model.js";
+import BusinessCreditBalance from "../../models/businessCreditBalance.model.js";
+import LedgerLine from "../../models/ledgerLine.model.js";
+import LedgerJournal from "../../models/ledgerJournal.model.js";
 import User from "../../models/user.model.js";
 import { emitCreditBalanceUpdatedToBusiness } from "../../utils/creditRealtime.js";
 import {
   CREDIT_SETTINGS_SCHEMA_DEFAULTS,
   loadCreditSettingsDefaults,
 } from "../../utils/creditSettingsDefaults.js";
+import { postGeneralLedgerJournal } from "../../services/generalLedger.service.js";
 
 // 무료 크레딧 지급 가능 대상:
 // 1) BusinessAnchor.businessType === requestor
@@ -53,7 +58,27 @@ function formatBusinessNumber(digits10) {
   return `${digits.slice(0, 3)}-${digits.slice(3, 5)}-${digits.slice(5)}`;
 }
 
-export async function adminOverrideWelcomeBonus(req, res) {
+function normalizeFreeCreditGrantType(typeRaw) {
+  const t = String(typeRaw || "").trim().toUpperCase();
+  if (!t || t === "REQUEST_FREE_CREDIT" || t === "WELCOME_BONUS") {
+    return {
+      queryTypes: ["REQUEST_FREE_CREDIT", "WELCOME_BONUS"], // legacy 호환 (앱 안정화 후 삭제 예정): WELCOME_BONUS 병행 조회
+      canonicalType: "REQUEST_FREE_CREDIT",
+    };
+  }
+  if (t === "SHIPPING_FREE_CREDIT" || t === "FREE_SHIPPING_CREDIT") {
+    return {
+      queryTypes: ["SHIPPING_FREE_CREDIT", "FREE_SHIPPING_CREDIT"], // legacy 호환 (앱 안정화 후 삭제 예정): FREE_SHIPPING_CREDIT 병행 조회
+      canonicalType: "SHIPPING_FREE_CREDIT",
+    };
+  }
+  return {
+    queryTypes: [t],
+    canonicalType: t,
+  };
+}
+
+export async function adminOverrideRequestFreeCredit(req, res) {
   try {
     const businessNumberDigits = normalizeBusinessNumberDigits(
       req.body?.businessNumber,
@@ -78,8 +103,8 @@ export async function adminOverrideWelcomeBonus(req, res) {
     const amount =
       typeof amountRaw === "number" && !Number.isNaN(amountRaw)
         ? Math.max(0, Math.floor(amountRaw))
-        : Number(defaults.defaultWelcomeBonusCredit ?? 0) ||
-          CREDIT_SETTINGS_SCHEMA_DEFAULTS.defaultWelcomeBonusCredit;
+        : Number(defaults.defaultRequestFreeCredit ?? 0) ||
+          CREDIT_SETTINGS_SCHEMA_DEFAULTS.defaultRequestFreeCredit;
 
     let businessAnchorId = String(
       req.body?.businessAnchorId || req.body?.businessId || "",
@@ -133,11 +158,12 @@ export async function adminOverrideWelcomeBonus(req, res) {
     const userId =
       userIdRaw && Types.ObjectId.isValid(userIdRaw) ? userIdRaw : null;
 
-    const grant = await BonusGrant.create({
-      type: "WELCOME_BONUS",
+    const grant = await FreeCreditGrant.create({
+      type: "REQUEST_FREE_CREDIT",
       businessNumber: businessNumberDigits,
       amount,
       businessId: businessId,
+      businessAnchorId,
       userId,
       isOverride: true,
       source: "admin",
@@ -145,71 +171,98 @@ export async function adminOverrideWelcomeBonus(req, res) {
       grantedByUserId: req.user?._id || null,
     });
 
-    const uniqueKey = `bonus_grant:${String(grant._id)}`;
-    const result = await CreditLedger.updateOne(
-      { uniqueKey },
-      {
-        $setOnInsert: {
-          businessId,
-          businessAnchorId,
-          userId,
-          type: "CHARGE",
-          creditKind: "FREE_REQUEST",
-          amount,
-          memo: reason,
-          refType: "FREE_REQUEST_CREDIT",
-          refId: businessAnchorId || businessId,
-          uniqueKey,
-        },
-      },
-      { upsert: true },
-    );
-
-    if (!result?.upsertedCount) {
-      return res.status(409).json({
+    const normalizedAmount = Math.max(0, Math.round(Number(amount || 0)));
+    if (!normalizedAmount) {
+      return res.status(400).json({
         success: false,
-        message: "이미 처리된 지급 건입니다.",
+        message: "지급 금액이 올바르지 않습니다.",
       });
     }
 
-    const ledgerDoc = await CreditLedger.findOne({ uniqueKey })
-      .select({ _id: 1 })
-      .lean();
-
-    await BonusGrant.updateOne(
-      { _id: grant._id },
-      { $set: { creditLedgerId: ledgerDoc?._id || null } },
-    );
-
-    await emitCreditBalanceUpdatedToBusiness({
+    const glResult = await postGeneralLedgerJournal({
+      idempotencyKey: `gl:free_credit_grant:${String(grant._id)}`,
+      eventType: "CHARGE_FREE_REQUEST",
       businessAnchorId,
-      balanceDelta: amount,
-      reason: "admin_welcome_bonus",
-      refId: ledgerDoc?._id || grant._id,
+      refType: "FREE_REQUEST_CREDIT",
+      refId: grant._id,
+      createdBy: req.user?._id || null,
+      meta: {
+        freeCreditGrantId: String(grant._id),
+        bonusGrantId: String(grant._id), // legacy 호환 (앱 안정화 후 삭제 예정)
+        reason,
+        source: "admin_override",
+      },
+      lines: [
+        {
+          accountCode: "REQ_FREE_REQUEST_CREDIT",
+          ownerRole: "requestor",
+          ownerId: businessAnchorId,
+          amount: normalizedAmount,
+          amountExcludingVat: normalizedAmount,
+          vatAmount: 0,
+          amountIncludingVat: normalizedAmount,
+          creditKind: "FREE_REQUEST",
+          refType: "FREE_REQUEST_CREDIT",
+          refId: grant._id,
+        },
+      ],
     });
+
+    if (glResult?.posted) {
+      await BusinessCreditBalance.updateOne(
+        { businessAnchorId },
+        {
+          $inc: { bonusRequestCredit: normalizedAmount, version: 1 },
+          $setOnInsert: {
+            businessAnchorId,
+            paidCredit: 0,
+            bonusRequestCredit: 0,
+            bonusShippingCredit: 0,
+          },
+        },
+        { upsert: true },
+      );
+    }
+
+    if (glResult?.journalId) {
+      await FreeCreditGrant.updateOne(
+        { _id: grant._id },
+        { $set: { grantJournalId: String(glResult.journalId) } },
+      );
+    }
+
+    if (glResult?.posted) {
+      await emitCreditBalanceUpdatedToBusiness({
+        businessAnchorId,
+        balanceDelta: normalizedAmount,
+        reason: "admin_request_free_credit",
+        refId: glResult?.journalId || grant._id,
+      });
+    }
 
     return res.json({
       success: true,
       data: {
-        bonusGrantId: grant._id,
+        freeCreditGrantId: grant._id,
+        bonusGrantId: grant._id, // legacy 호환 (앱 안정화 후 삭제 예정)
         businessId,
         businessNumber: businessNumberDigits,
-        amount,
-        creditLedgerId: ledgerDoc?._id || null,
+        amount: normalizedAmount,
+        grantJournalId: glResult?.journalId || null,
       },
     });
   } catch (error) {
     return res.status(500).json({
       success: false,
-      message: "보너스 예외 지급 중 오류가 발생했습니다.",
+      message: "무료 의뢰크레딧 예외 지급 중 오류가 발생했습니다.",
       error: error.message,
     });
   }
 }
 
-export async function adminListBonusGrants(req, res) {
+export async function adminListFreeCreditGrants(req, res) {
   try {
-    const type = String(req.query?.type || "").trim() || "WELCOME_BONUS";
+    const typeInfo = normalizeFreeCreditGrantType(req.query?.type);
     const businessNumberDigits = normalizeBusinessNumberDigits(
       req.query?.businessNumber,
     );
@@ -226,7 +279,7 @@ export async function adminListBonusGrants(req, res) {
       ? new Date(String(req.query.endDate))
       : null;
 
-    const q = { type };
+    const q = { type: { $in: typeInfo.queryTypes } };
     if (businessNumberDigits) {
       q.businessNumber = businessNumberDigits;
     }
@@ -238,13 +291,13 @@ export async function adminListBonusGrants(req, res) {
       };
     }
 
-    const rows = await BonusGrant.find(q)
+    const rows = await FreeCreditGrant.find(q)
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit)
       .lean();
 
-    const total = await BonusGrant.countDocuments(q);
+    const total = await FreeCreditGrant.countDocuments(q);
     const businessIds = Array.from(
       new Set(
         (rows || [])
@@ -272,21 +325,56 @@ export async function adminListBonusGrants(req, res) {
       rows.map(async (row) => {
         const businessId = String(row?.businessId || "").trim();
         const businessAnchorId =
-          businessAnchorIdByBusinessId.get(businessId) || "";
-        const spentLedger =
+          String(row?.businessAnchorId || "").trim() ||
+          businessAnchorIdByBusinessId.get(businessId) ||
+          "";
+        const spentRows =
           businessAnchorId && Types.ObjectId.isValid(businessAnchorId)
-            ? await CreditLedger.findOne({
-                businessAnchorId: new Types.ObjectId(businessAnchorId),
-                type: "SPEND",
-                createdAt: { $gte: row.createdAt },
-              })
-                .select({ amount: 1 })
-                .lean()
-            : null;
+            ? await LedgerLine.aggregate([
+                {
+                  $match: {
+                    ownerRole: "requestor",
+                    ownerId: new Types.ObjectId(businessAnchorId),
+                    accountCode: {
+                      $in: [
+                        "REQ_PAID_CREDIT",
+                        "REQ_FREE_REQUEST_CREDIT",
+                        "REQ_FREE_SHIPPING_CREDIT",
+                      ],
+                    },
+                    occurredAt: { $gte: row.createdAt },
+                    amount: { $lt: 0 },
+                  },
+                },
+                {
+                  $lookup: {
+                    from: LedgerJournal.collection.name,
+                    localField: "journalId",
+                    foreignField: "journalId",
+                    as: "journalDoc",
+                  },
+                },
+                {
+                  $unwind: {
+                    path: "$journalDoc",
+                    preserveNullAndEmptyArrays: true,
+                  },
+                },
+                {
+                  $match: {
+                    "journalDoc.eventType": {
+                      $in: ["REQUEST_SPEND_COMMIT", "SHIPPING_SPEND_COMMIT"],
+                    },
+                  },
+                },
+                { $limit: 1 },
+                { $project: { _id: 1 } },
+              ])
+            : [];
 
         return {
           ...row,
-          hasSpent: !!spentLedger,
+          hasSpent: Array.isArray(spentRows) && spentRows.length > 0,
         };
       }),
     );
@@ -304,19 +392,19 @@ export async function adminListBonusGrants(req, res) {
   } catch (error) {
     return res.status(500).json({
       success: false,
-      message: "보너스 지급 내역 조회 중 오류가 발생했습니다.",
+      message: "무료크레딧 지급 내역 조회 중 오류가 발생했습니다.",
       error: error.message,
     });
   }
 }
 
-export async function adminCancelBonusGrant(req, res) {
+export async function adminCancelFreeCreditGrant(req, res) {
   try {
     const grantId = String(req.params?.id || "").trim();
     if (!Types.ObjectId.isValid(grantId)) {
       return res.status(400).json({
         success: false,
-        message: "유효하지 않은 bonusGrantId입니다.",
+        message: "유효하지 않은 freeCreditGrantId입니다.",
       });
     }
 
@@ -328,7 +416,7 @@ export async function adminCancelBonusGrant(req, res) {
       });
     }
 
-    const grant = await BonusGrant.findById(grantId).lean();
+    const grant = await FreeCreditGrant.findById(grantId).lean();
     if (!grant?._id) {
       return res.status(404).json({
         success: false,
@@ -344,8 +432,8 @@ export async function adminCancelBonusGrant(req, res) {
     }
 
     const businessId = String(grant.businessId || "").trim();
-    let businessAnchorId = null;
-    if (businessId && Types.ObjectId.isValid(businessId)) {
+    let businessAnchorId = String(grant.businessAnchorId || "").trim();
+    if (!businessAnchorId && businessId && Types.ObjectId.isValid(businessId)) {
       businessAnchorId = businessId;
     }
     if (!businessAnchorId) {
@@ -354,9 +442,9 @@ export async function adminCancelBonusGrant(req, res) {
       })
         .select({ _id: 1 })
         .lean();
-      businessAnchorId = businessByNumber?.businessAnchorId || null;
+      businessAnchorId = String(businessByNumber?._id || "").trim();
     }
-    if (!businessAnchorId) {
+    if (!businessAnchorId || !Types.ObjectId.isValid(businessAnchorId)) {
       return res.status(400).json({
         success: false,
         message: "지급 건의 businessAnchorId를 확인할 수 없습니다.",
@@ -372,74 +460,100 @@ export async function adminCancelBonusGrant(req, res) {
     }
 
     const cancelCreditKind =
-      String(grant?.type || "") === "FREE_SHIPPING_CREDIT"
+      ["FREE_SHIPPING_CREDIT", "SHIPPING_FREE_CREDIT"].includes(
+        String(grant?.type || "").trim().toUpperCase(),
+      )
         ? "FREE_SHIPPING"
         : "FREE_REQUEST";
 
-    const uniqueKey = `bonus_grant_cancel:${String(grant._id)}`;
-    const result = await CreditLedger.updateOne(
-      { uniqueKey },
-      {
-        $setOnInsert: {
-          businessId,
-          businessAnchorId,
-          userId: grant.userId || null,
-          type: "ADJUST",
-          creditKind: cancelCreditKind,
+    const glResult = await postGeneralLedgerJournal({
+      idempotencyKey: `gl:free_credit_grant_cancel:${String(grant._id)}`,
+      eventType: "ADJUST",
+      businessAnchorId,
+      refType: "FREE_CREDIT_CANCEL",
+      refId: grant._id,
+      createdBy: req.user?._id || null,
+      meta: {
+        freeCreditGrantId: String(grant._id),
+        bonusGrantId: String(grant._id), // legacy 호환 (앱 안정화 후 삭제 예정)
+        cancelReason,
+        source: "admin_free_credit_cancel",
+      },
+      lines: [
+        {
+          accountCode:
+            cancelCreditKind === "FREE_SHIPPING"
+              ? "REQ_FREE_SHIPPING_CREDIT"
+              : "REQ_FREE_REQUEST_CREDIT",
+          ownerRole: "requestor",
+          ownerId: businessAnchorId,
           amount: -amount,
-          memo: cancelReason,
+          amountExcludingVat: -amount,
+          vatAmount: 0,
+          amountIncludingVat: -amount,
+          creditKind: cancelCreditKind,
           refType: "FREE_CREDIT_CANCEL",
           refId: grant._id,
-          uniqueKey,
         },
-      },
-      { upsert: true },
-    );
+      ],
+    });
 
-    if (!result?.upsertedCount) {
-      return res.status(409).json({
-        success: false,
-        message: "이미 취소 처리된 지급 건입니다.",
-      });
+    if (glResult?.posted) {
+      const bonusField =
+        cancelCreditKind === "FREE_SHIPPING"
+          ? "bonusShippingCredit"
+          : "bonusRequestCredit";
+      await BusinessCreditBalance.updateOne(
+        { businessAnchorId },
+        {
+          $inc: { [bonusField]: -amount, version: 1 },
+          $setOnInsert: {
+            businessAnchorId,
+            paidCredit: 0,
+            bonusRequestCredit: 0,
+            bonusShippingCredit: 0,
+          },
+        },
+        { upsert: true },
+      );
     }
-
-    const cancelLedgerDoc = await CreditLedger.findOne({ uniqueKey })
-      .select({ _id: 1 })
-      .lean();
 
     const canceledAt = new Date();
 
-    await BonusGrant.updateOne(
+    await FreeCreditGrant.updateOne(
       { _id: grant._id },
       {
         $set: {
           canceledAt,
           canceledByUserId: req.user?._id || null,
           cancelReason,
-          cancelCreditLedgerId: cancelLedgerDoc?._id || null,
+          cancelJournalId: glResult?.journalId ? String(glResult.journalId) : null,
         },
       },
     );
 
-    await emitCreditBalanceUpdatedToBusiness({
-      businessAnchorId,
-      balanceDelta: -amount,
-      reason: "admin_welcome_bonus_cancel",
-      refId: cancelLedgerDoc?._id || grant._id,
-    });
+    if (glResult?.posted) {
+      await emitCreditBalanceUpdatedToBusiness({
+        businessAnchorId,
+        balanceDelta: -amount,
+        reason: "admin_request_free_credit_cancel",
+        refId: glResult?.journalId || grant._id,
+      });
+    }
 
     return res.json({
       success: true,
       data: {
-        bonusGrantId: grant._id,
-        cancelCreditLedgerId: cancelLedgerDoc?._id || null,
+        freeCreditGrantId: grant._id,
+        bonusGrantId: grant._id, // legacy 호환 (앱 안정화 후 삭제 예정)
+        cancelJournalId: glResult?.journalId || null,
         canceledAt,
       },
     });
   } catch (error) {
     return res.status(500).json({
       success: false,
-      message: "보너스 지급 취소 중 오류가 발생했습니다.",
+      message: "무료크레딧 지급 취소 중 오류가 발생했습니다.",
       error: error.message,
     });
   }
@@ -470,8 +584,8 @@ export async function adminGrantFreeShippingCredit(req, res) {
     const amount =
       typeof amountRaw === "number" && !Number.isNaN(amountRaw)
         ? Math.max(0, Math.floor(amountRaw))
-        : Number(defaults.defaultFreeShippingCredit ?? 0) ||
-          CREDIT_SETTINGS_SCHEMA_DEFAULTS.defaultFreeShippingCredit;
+        : Number(defaults.defaultShippingFreeCredit ?? 0) ||
+          CREDIT_SETTINGS_SCHEMA_DEFAULTS.defaultShippingFreeCredit;
 
     let businessAnchorId = String(
       req.body?.businessAnchorId || req.body?.businessId || "",
@@ -527,11 +641,12 @@ export async function adminGrantFreeShippingCredit(req, res) {
     const userId =
       userIdRaw && Types.ObjectId.isValid(userIdRaw) ? userIdRaw : null;
 
-    const grant = await BonusGrant.create({
-      type: "FREE_SHIPPING_CREDIT",
+    const grant = await FreeCreditGrant.create({
+      type: "SHIPPING_FREE_CREDIT",
       businessNumber: businessNumberDigits,
       amount,
       businessId: businessId,
+      businessAnchorId,
       userId,
       isOverride: true,
       source: "admin",
@@ -539,57 +654,84 @@ export async function adminGrantFreeShippingCredit(req, res) {
       grantedByUserId: req.user?._id || null,
     });
 
-    const uniqueKey = `bonus_grant:${String(grant._id)}`;
-    const result = await CreditLedger.updateOne(
-      { uniqueKey },
-      {
-        $setOnInsert: {
-          businessId,
-          businessAnchorId,
-          userId,
-          type: "CHARGE",
-          creditKind: "FREE_SHIPPING",
-          amount,
-          memo: reason,
-          refType: "FREE_SHIPPING_CREDIT",
-          refId: businessAnchorId || businessId,
-          uniqueKey,
-        },
-      },
-      { upsert: true },
-    );
-
-    if (!result?.upsertedCount) {
-      return res.status(409).json({
+    const normalizedAmount = Math.max(0, Math.round(Number(amount || 0)));
+    if (!normalizedAmount) {
+      return res.status(400).json({
         success: false,
-        message: "이미 처리된 지급 건입니다.",
+        message: "지급 금액이 올바르지 않습니다.",
       });
     }
 
-    const ledgerDoc = await CreditLedger.findOne({ uniqueKey })
-      .select({ _id: 1 })
-      .lean();
-
-    await BonusGrant.updateOne(
-      { _id: grant._id },
-      { $set: { creditLedgerId: ledgerDoc?._id || null } },
-    );
-
-    await emitCreditBalanceUpdatedToBusiness({
+    const glResult = await postGeneralLedgerJournal({
+      idempotencyKey: `gl:free_credit_grant:${String(grant._id)}`,
+      eventType: "CHARGE_FREE_SHIPPING",
       businessAnchorId,
-      balanceDelta: amount,
-      reason: "admin_free_shipping_credit",
-      refId: ledgerDoc?._id || grant._id,
+      refType: "FREE_SHIPPING_CREDIT",
+      refId: grant._id,
+      createdBy: req.user?._id || null,
+      meta: {
+        freeCreditGrantId: String(grant._id),
+        bonusGrantId: String(grant._id), // legacy 호환 (앱 안정화 후 삭제 예정)
+        reason,
+        source: "admin_override",
+      },
+      lines: [
+        {
+          accountCode: "REQ_FREE_SHIPPING_CREDIT",
+          ownerRole: "requestor",
+          ownerId: businessAnchorId,
+          amount: normalizedAmount,
+          amountExcludingVat: normalizedAmount,
+          vatAmount: 0,
+          amountIncludingVat: normalizedAmount,
+          creditKind: "FREE_SHIPPING",
+          refType: "FREE_SHIPPING_CREDIT",
+          refId: grant._id,
+        },
+      ],
     });
+
+    if (glResult?.posted) {
+      await BusinessCreditBalance.updateOne(
+        { businessAnchorId },
+        {
+          $inc: { bonusShippingCredit: normalizedAmount, version: 1 },
+          $setOnInsert: {
+            businessAnchorId,
+            paidCredit: 0,
+            bonusRequestCredit: 0,
+            bonusShippingCredit: 0,
+          },
+        },
+        { upsert: true },
+      );
+    }
+
+    if (glResult?.journalId) {
+      await FreeCreditGrant.updateOne(
+        { _id: grant._id },
+        { $set: { grantJournalId: String(glResult.journalId) } },
+      );
+    }
+
+    if (glResult?.posted) {
+      await emitCreditBalanceUpdatedToBusiness({
+        businessAnchorId,
+        balanceDelta: normalizedAmount,
+        reason: "admin_free_shipping_credit",
+        refId: glResult?.journalId || grant._id,
+      });
+    }
 
     return res.json({
       success: true,
       data: {
-        bonusGrantId: grant._id,
+        freeCreditGrantId: grant._id,
+        bonusGrantId: grant._id, // legacy 호환 (앱 안정화 후 삭제 예정)
         businessId,
         businessNumber: businessNumberDigits,
-        amount,
-        creditLedgerId: ledgerDoc?._id || null,
+        amount: normalizedAmount,
+        grantJournalId: glResult?.journalId || null,
       },
     });
   } catch (error) {
@@ -600,3 +742,9 @@ export async function adminGrantFreeShippingCredit(req, res) {
     });
   }
 }
+
+// legacy 함수명 호환 export (앱 안정화 후 삭제 예정)
+export const adminListBonusGrants = adminListFreeCreditGrants; // legacy 호환 (앱 안정화 후 삭제 예정)
+export const adminOverrideWelcomeRequestCredit = adminOverrideRequestFreeCredit; // legacy 호환 (앱 안정화 후 삭제 예정)
+export const adminOverrideWelcomeBonus = adminOverrideRequestFreeCredit; // legacy 호환 (앱 안정화 후 삭제 예정)
+export const adminCancelBonusGrant = adminCancelFreeCreditGrant; // legacy 호환 (앱 안정화 후 삭제 예정)

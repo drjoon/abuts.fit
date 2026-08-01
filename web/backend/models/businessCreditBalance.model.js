@@ -1,6 +1,7 @@
 // related files:
 // - web/backend/rules.md
-// - web/backend/models/creditLedger.model.js
+// - web/backend/models/ledgerJournal.model.js
+// - web/backend/models/ledgerLine.model.js
 // - web/backend/services/creditBalance.service.js
 import mongoose from "mongoose";
 

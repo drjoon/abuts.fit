@@ -87,9 +87,24 @@
     - `src/pages/admin/credits/components/RequestorCreditTab.tsx`
 
 - 관리자 크레딧 원장 모달(`src/shared/components/CreditLedgerModal.tsx`) 표시 정책:
-  - 모달 상단 잔액 요약은 `/api/admin/credits/businesses/:id/ledger`의 `currentBalanceSnapshot`(SSOT) 값을 사용합니다.
+  - 모달 상단 잔액 요약은 단일 SSOT 장부 API의 `currentBalanceSnapshot` 값을 사용합니다.
   - 테이블 `balanceAfter`는 현재 총잔액이 아니라 “행 시점 잔액”으로 표기합니다.
-  - BONUS 행 거래내역 문구는 `bonusReason`이 있으면 이를 우선 표시합니다.
+  - 레거시 `BONUS` 타입 문구/분기 사용 금지. 이벤트 타입/계정코드(`LedgerJournal.eventType`, `LedgerLine.accountCode`)를 기준으로 표시합니다.
+  - 표시 타입은 아래로 고정합니다.
+    - `CHARGE_PAID`, `CHARGE_FREE_REQUEST`, `CHARGE_FREE_SHIPPING`
+    - `SPEND_PAID`, `SPEND_FREE_REQUEST`, `SPEND_FREE_SHIPPING`
+    - `ADJUST` (`REFUND`는 정책상 신규 적재 금지, 조회 호환용)
+  - 유료/무료 수익은 모두 표시하되, 지급(PAYOUT) 대상은 유료만 구분 표기해야 합니다.
+
+- 단일 SSOT 장부 UI 필드 계약(초안):
+  - Journal: `journalId`, `eventType`, `businessAnchorId`, `refType`, `refId`, `stageFrom`, `stageTo`, `occurredAt`
+  - Line: `lineNo`, `accountCode`, `ownerRole`, `ownerId`, `amount`, `amountExcludingVat`, `vatAmount`, `amountIncludingVat`, `creditKind`
+  - 수익 계정코드: `REV_MANUFACTURER`, `REV_DEVOPS`, `REV_SALESMAN`, `REV_ADMIN`
+  - 워크시트/정산 저장 이벤트: `REQUEST_SPEND_COMMIT`, `SHIPPING_SPEND_COMMIT`, `SETTLEMENT_PAYOUT`
+  - 발생 타이밍: `REQUEST_SPEND_COMMIT`=CAM 승인(가공 진입), `SHIPPING_SPEND_COMMIT`=세척.패킹 승인(포장.발송 진입)
+  - 롤백은 별도 저널 이벤트를 만들지 않고 대응 COMMIT 이벤트 삭제로 처리하며,
+    UI에서는 "환불"이 아니라 "소비 내역 삭제"로 표기합니다.
+  - BG 콜백은 승인/롤백 트랜지션이 아니므로 크레딧 차감/삭제 트리거로 사용하지 않습니다.
 
 - 포장.발송 우편함 상세 모달 캐시 일관성:
   - `RequestPage`에서 우편함 상세 모달 오픈 시, 요약(`mailboxSummaries.requestCount`)과 캐시 건수가 다르면 캐시를 사용하지 않고 `/api/requests/shipping/mailbox-requests`를 재조회합니다.
@@ -135,7 +150,8 @@
   - 값: `order`, `rnd_sample`, `copied_sample`
   - 작업용 샘플(`rnd.doneAt=null`)은 일반 의뢰와 동일한 공정 탭 흐름(의뢰~추적관리)으로 처리합니다.
   - R&D 보관 샘플(`rnd.doneAt!=null`)은 R&D 탭 전용으로 분리합니다.
-  - 차이는 크레딧 정책만 유지합니다(샘플 미차감).
+  - 샘플(`rnd_sample`, `copied_sample`)은 크레딧/정산 장부에 **무기록(무자료/무상)** 처리합니다.
+  - `requestId`/의뢰 메타가 없는 제조사 직접 NC 수동 작업(장비 큐 전용)은 UI에서도 과금/정산과 분리된 무상 작업으로 취급합니다.
   - 프론트는 `source+rnd.doneAt` 조합 추정 대신 `utils/request.ts`의 `isAnySampleRequest`, `isRndSampleRequest`를 사용합니다.
   - 관련 파일:
     - `src/types/request.ts`
@@ -149,6 +165,25 @@
     - `src/pages/manufacturer/worksheet/custom_abutment/utils/requestFiltering.ts`
     - `src/pages/manufacturer/worksheet/custom_abutment/machining/utils/label.ts`
     - `src/pages/manufacturer/equipment/cnc/components/CompletedMachiningRecordsModal.tsx`
+
+- 제조사 워크시트 크레딧 승인/롤백 정책:
+  - CAM 승인으로 `가공` 진입 시 의뢰 크레딧 소비가 발생합니다.
+  - `가공`에서 CAM 롤백 시 소비된 의뢰 크레딧은 "환불" 행 추가가 아니라, 기존 소비 행 삭제로 복구됩니다.
+  - 세척.패킹 승인으로 `포장.발송` 진입 시 배송 크레딧 소비가 발생합니다.
+  - `포장.발송`에서 세척.패킹 롤백 시 소비된 배송 크레딧은 "환불" 행 추가가 아니라, 기존 소비 행 삭제로 복구됩니다.
+  - 불완전가공(RnD unmachinable) 판정은 샘플 처리나 크레딧 롤백 사유가 아닙니다.
+    - 불완전가공으로 CAM 복귀가 되더라도, 이미 CAM 승인 시점에 발생한 의뢰 크레딧 차감은 유지됩니다.
+    - 즉, UI 문구/배지는 불완전가공 상태 변경과 크레딧 삭제를 연결해 안내하면 안 됩니다.
+  - CAM 이전 취소(의뢰/CAM 단계)만 차감 미발생 상태로 간주합니다.
+  - 제조사 워크시트 UI는 위 정책을 기준으로 라벨/안내 문구를 구성합니다.
+  - 관련 파일:
+    - `src/pages/manufacturer/worksheet/WorksheetPage.tsx`
+    - `src/pages/manufacturer/worksheet/custom_abutment/cam/CamPage.tsx`
+    - `src/pages/manufacturer/worksheet/custom_abutment/machining/MachiningPage.tsx`
+    - `src/pages/manufacturer/worksheet/custom_abutment/packing/PackingPage.tsx`
+    - `src/pages/manufacturer/worksheet/custom_abutment/shipping/ShippingPage.tsx`
+    - `web/backend/controllers/requests/common.review.controller.js`
+    - `web/backend/controllers/requests/common.review.helpers.js`
 
 - 불완전가공 의뢰자 `계속 진행` 이력 표시 정책:
   - 제조사 워크시트 카드/프리뷰는 `rnd.requestorContinueAt/by/message`를 표시해
@@ -170,6 +205,9 @@
   - UI는 전용 스텝 컴포넌트(`src/features/auth/signup/SignupWizardPracticeAccountStep.tsx`)에서 2열 입력(치과명/담당자명, 전화번호/접속 비밀번호) + 공통 주소 컴포넌트(`BusinessAddressFields`)를 사용하며, 비밀번호 확인 필드는 두지 않습니다.
   - 관리자 사용자/사업자 화면(`src/pages/admin/users/AdminUserManagement.tsx`, `src/pages/admin/businesses/AdminBusinessPage.tsx`)에서는 `practice`를 별도 역할(`치과`)로 표시/필터링해야 합니다.
   - 정책 고정: practice는 전송 전용 role이므로 크레딧/정산/추천(리퍼럴) UI(탭/카드/집계) 범위로 확장하지 않습니다.
+  - 강제 분리: practice 화면/훅은 `Request` 도메인 API(`/api/requests/*`)를 호출하지 않고,
+    `PracticeTransfer` 도메인 API(`/api/practice/transfers/*`)만 사용합니다.
+  - 레거시 혼입 경로(예: `/api/requests/practice/*`, practice의 Request draft 연동)는 발견 즉시 제거/치환합니다.
 
 - practice 파일전송 임시저장(다른 PC 이어쓰기) 정책:
   - 임시저장 SSOT API: `GET/POST/DELETE /api/practice/transfers/draft`
@@ -178,6 +216,16 @@
   - 관련 파일:
     - `src/pages/practice/PracticeFileTransferPage.tsx`
     - `src/shared/hooks/useS3TempUpload.ts`
+
+- practice 전송 취소 API 계약(SSOT):
+  - endpoint: `POST /api/practice/transfers/cancel-batch`
+  - request body: `transferIds?: string[]`, `transferMongoIds?: string[]` (둘 중 하나 이상 필수)
+  - response: `data.successCount`, `data.failedIds`
+  - UI는 `failedIds`가 존재할 수 있음을 전제로 부분 성공 토스트/재동기화를 처리해야 합니다.
+
+- practice 채팅 라우팅 SSOT:
+  - practice 화면과 requestor 수신 화면은 모두 `transferId` 기반 채팅(`/api/chats/practice/transfer-room/:transferId`)만 사용합니다.
+  - legacy request 기반 practice 채팅 경로(`/api/chats/practice/request-room/:requestId`)는 사용 금지합니다.
 
 - practice↔requestor 실시간(웹소켓 app-event) 구현 메모:
   - 소켓 공용 레이어: `src/shared/realtime/socket.ts`
@@ -206,6 +254,7 @@
     - `src/pages/practice/PracticeFileTransferPage.tsx`
     - `src/pages/requestor/practice/RequestorPracticePage.tsx`
 - 제조사 정산(`src/pages/manufacturer/payments/PaymentsPage.tsx`) 표시 정책:
+  - 백엔드 `GET /api/manufacturer/credits/daily-summary`는 `LedgerLine` 집계 결과를 반환하며, 프론트는 해당 응답을 SSOT로 사용합니다.
   - paid/free 분해값 표시는 fallback 없이 `earnRequestPaid*`, `earnRequestFree*`, `earnShippingPaid*`, `earnShippingFree*`를 SSOT로 사용합니다.
   - 분해 필드 누락/합계 불일치 시 행을 화면에서 제외하고 오류 토스트/배너로 예외를 노출합니다.
   - 운영자 확인은 관리자 대시보드의 `systemAlerts` 경고를 통해 추적합니다.

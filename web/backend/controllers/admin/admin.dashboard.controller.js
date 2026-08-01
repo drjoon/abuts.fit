@@ -1,6 +1,8 @@
 // related files:
+// - web/backend/rules.md
 // - web/backend/models/businessAnchor.model.js
 // - web/backend/models/practiceTransfer.model.js
+// - web/backend/models/ledgerLine.model.js
 // - web/frontend/src/features/settings/tabs/RequestTab.tsx
 // - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
 // - web/frontend/src/pages/admin/dashboard/AdminDashboardPage.tsx
@@ -9,10 +11,7 @@ import Request from "../../models/request.model.js";
 import File from "../../models/file.model.js";
 import PracticeTransfer from "../../models/practiceTransfer.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
-import CreditLedger from "../../models/creditLedger.model.js";
-import ManufacturerCreditLedger from "../../models/manufacturerCreditLedger.model.js";
-import SalesmanLedger from "../../models/salesmanLedger.model.js";
-import AdminCreditLedger from "../../models/adminCreditLedger.model.js";
+import LedgerLine from "../../models/ledgerLine.model.js";
 import AdminHappyCallCompletion from "../../models/adminHappyCallCompletion.model.js";
 import AdminHappyCallMemoDraft from "../../models/adminHappyCallMemoDraft.model.js";
 import {
@@ -132,40 +131,56 @@ const getCurrentKstWeekRangeUtc = () => {
 };
 
 async function buildCreditRevenueFlowMismatchSummary({ since }) {
-  const spendRows = await CreditLedger.aggregate([
-    {
-      $match: {
-        type: { $in: ["SPEND", "REFUND"] },
-        refType: "REQUEST",
-        createdAt: { $gte: since },
-        refId: { $ne: null },
-      },
-    },
-    {
-      $group: {
-        _id: "$refId",
-        spendAbs: {
-          $sum: {
-            $cond: [{ $eq: ["$type", "SPEND"] }, { $abs: "$amount" }, 0],
-          },
-        },
-        refundAbs: {
-          $sum: {
-            $cond: [{ $eq: ["$type", "REFUND"] }, { $abs: "$amount" }, 0],
-          },
+  const [consumedRows, revenueRows] = await Promise.all([
+    LedgerLine.aggregate([
+      {
+        $match: {
+          occurredAt: { $gte: since },
+          refType: "REQUEST",
+          refId: { $ne: null },
+          accountCode: { $in: ["REQ_PAID_CREDIT", "REQ_FREE_REQUEST_CREDIT"] },
+          ownerRole: "requestor",
         },
       },
-    },
-    {
-      $project: {
-        _id: 1,
-        netConsumed: { $max: [0, { $subtract: ["$spendAbs", "$refundAbs"] }] },
+      {
+        $group: {
+          _id: "$refId",
+          netConsumed: {
+            $sum: {
+              $cond: [
+                { $lt: ["$amount", 0] },
+                { $multiply: ["$amount", -1] },
+                0,
+              ],
+            },
+          },
+        },
       },
-    },
-    { $match: { netConsumed: { $gt: 0 } } },
+      { $match: { netConsumed: { $gt: 0 } } },
+    ]),
+    LedgerLine.aggregate([
+      {
+        $match: {
+          occurredAt: { $gte: since },
+          refType: "REQUEST",
+          refId: { $ne: null },
+          accountCode: {
+            $in: ["REV_MANUFACTURER", "REV_DEVOPS", "REV_SALESMAN", "REV_ADMIN"],
+          },
+        },
+      },
+      {
+        $group: {
+          _id: "$refId",
+          earnBase: {
+            $sum: { $ifNull: ["$amountExcludingVat", "$amount"] },
+          },
+        },
+      },
+    ]),
   ]);
 
-  if (!spendRows.length) {
+  if (!consumedRows.length) {
     return {
       checkedRequestCount: 0,
       mismatchCount: 0,
@@ -175,115 +190,52 @@ async function buildCreditRevenueFlowMismatchSummary({ since }) {
     };
   }
 
-  const requestIds = spendRows.map((r) => r._id).filter(Boolean);
-
-  const [manufacturerRows, salesmanRows, adminRows] = await Promise.all([
-    ManufacturerCreditLedger.aggregate([
-      {
-        $match: {
-          type: "EARN",
-          refType: "REQUEST",
-          refId: { $in: requestIds },
-        },
-      },
-      {
-        $group: {
-          _id: "$refId",
-          earnBase: {
-            $sum: { $ifNull: ["$amountExcludingVat", "$amount"] },
-          },
-        },
-      },
-    ]),
-    SalesmanLedger.aggregate([
-      {
-        $match: {
-          type: "EARN",
-          refType: "REQUEST",
-          refId: { $in: requestIds },
-        },
-      },
-      {
-        $group: {
-          _id: "$refId",
-          earnBase: {
-            $sum: { $ifNull: ["$amountExcludingVat", "$amount"] },
-          },
-        },
-      },
-    ]),
-    AdminCreditLedger.aggregate([
-      {
-        $match: {
-          type: "EARN",
-          refType: "REQUEST",
-          refId: { $in: requestIds },
-        },
-      },
-      {
-        $group: {
-          _id: "$refId",
-          earnBase: {
-            $sum: { $ifNull: ["$amountExcludingVat", "$amount"] },
-          },
-        },
-      },
-    ]),
-  ]);
-
-  const earnMap = new Map();
-  const addEarn = (rows) => {
-    for (const row of rows || []) {
-      const key = String(row?._id || "");
-      if (!key) continue;
-      earnMap.set(key, Number(earnMap.get(key) || 0) + Number(row?.earnBase || 0));
-    }
-  };
-  addEarn(manufacturerRows);
-  addEarn(salesmanRows);
-  addEarn(adminRows);
+  const earnMap = new Map(
+    (revenueRows || []).map((row) => [String(row?._id || ""), Number(row?.earnBase || 0)]),
+  );
 
   const mismatches = [];
   let totalNetConsumed = 0;
   let totalEarnBase = 0;
 
-  for (const row of spendRows) {
-    const requestId = String(row?._id || "");
+  for (const row of consumedRows) {
+    const requestMongoId = String(row?._id || "");
     const netConsumed = Number(row?.netConsumed || 0);
-    const earnBase = Number(earnMap.get(requestId) || 0);
+    const earnBase = Number(earnMap.get(requestMongoId) || 0);
     const gap = Math.round(netConsumed - earnBase);
 
     totalNetConsumed += netConsumed;
     totalEarnBase += earnBase;
 
     if (Math.abs(gap) > 1) {
-      mismatches.push({ requestId, netConsumed, earnBase, gap });
+      mismatches.push({ requestMongoId, netConsumed, earnBase, gap });
     }
   }
 
   mismatches.sort((a, b) => Math.abs(b.gap) - Math.abs(a.gap));
   const top = mismatches.slice(0, 5);
-  const topIds = top.map((it) => it.requestId).filter(Boolean);
+  const topIds = top.map((it) => it.requestMongoId).filter(Boolean);
 
   const requestDocs = topIds.length
     ? await Request.find({ _id: { $in: topIds } })
         .select({ _id: 1, requestId: 1 })
         .lean()
     : [];
+
   const requestNoById = new Map(
     (requestDocs || []).map((d) => [String(d?._id || ""), String(d?.requestId || "")]),
   );
 
   const topMismatches = top.map((it) => ({
-    requestMongoId: it.requestId,
-    requestId: requestNoById.get(it.requestId) || null,
+    requestMongoId: it.requestMongoId,
+    requestId: requestNoById.get(it.requestMongoId) || null,
     netConsumed: it.netConsumed,
     earnBase: it.earnBase,
     gap: it.gap,
   }));
 
   return {
-    checkedRequestCount: spendRows.length,
+    checkedRequestCount: consumedRows.length,
     mismatchCount: mismatches.length,
     totalNetConsumed: Math.round(totalNetConsumed),
     totalEarnBase: Math.round(totalEarnBase),

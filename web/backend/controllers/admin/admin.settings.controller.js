@@ -10,26 +10,51 @@ import {
 const CREDIT_SETTINGS_DEFAULTS = (() => {
   const pickDefault = (path) =>
     Number(SystemSettings.schema.path(path)?.options?.default ?? 0) || 0;
+  const defaultRequestFreeCredit = pickDefault(
+    "creditSettings.defaultRequestFreeCredit",
+  );
+  const defaultShippingFreeCredit = pickDefault(
+    "creditSettings.defaultShippingFreeCredit",
+  );
   return {
     minCreditForRequest: pickDefault("creditSettings.minCreditForRequest"),
     shippingFee: pickDefault("creditSettings.shippingFee"),
-    defaultWelcomeBonusCredit: pickDefault(
-      "creditSettings.defaultWelcomeBonusCredit",
-    ),
-    defaultFreeShippingCredit: pickDefault(
-      "creditSettings.defaultFreeShippingCredit",
-    ),
+    defaultRequestFreeCredit,
+    defaultShippingFreeCredit,
+    defaultWelcomeBonusCredit: defaultRequestFreeCredit, // legacy 호환 (앱 안정화 후 삭제 예정)
+    defaultFreeShippingCredit: defaultShippingFreeCredit, // legacy 호환 (앱 안정화 후 삭제 예정)
   };
 })();
+
+function normalizeCreditSettings(raw = {}) {
+  const defaultRequestFreeCredit = Number(
+    raw.defaultRequestFreeCredit ??
+      raw.defaultWelcomeBonusCredit ??
+      CREDIT_SETTINGS_DEFAULTS.defaultRequestFreeCredit,
+  );
+  const defaultShippingFreeCredit = Number(
+    raw.defaultShippingFreeCredit ??
+      raw.defaultFreeShippingCredit ??
+      CREDIT_SETTINGS_DEFAULTS.defaultShippingFreeCredit,
+  );
+
+  return {
+    minCreditForRequest: Number(
+      raw.minCreditForRequest ?? CREDIT_SETTINGS_DEFAULTS.minCreditForRequest,
+    ),
+    shippingFee: Number(raw.shippingFee ?? CREDIT_SETTINGS_DEFAULTS.shippingFee),
+    defaultRequestFreeCredit,
+    defaultShippingFreeCredit,
+    defaultWelcomeBonusCredit: defaultRequestFreeCredit, // legacy 호환 (앱 안정화 후 삭제 예정)
+    defaultFreeShippingCredit: defaultShippingFreeCredit, // legacy 호환 (앱 안정화 후 삭제 예정)
+  };
+}
 
 export async function getSystemSettings(req, res) {
   try {
     const leadDays = await getDeliveryEtaLeadDays();
     const doc = await SystemSettings.findOne({ key: "global" }).lean();
-    const creditSettings = {
-      ...CREDIT_SETTINGS_DEFAULTS,
-      ...(doc?.creditSettings || {}),
-    };
+    const creditSettings = normalizeCreditSettings(doc?.creditSettings || {});
 
     const settings = {
       fileUpload: {
@@ -241,10 +266,7 @@ export async function getCreditSettings(req, res) {
       { new: true, upsert: true, setDefaultsOnInsert: true },
     ).lean();
 
-    const creditSettings = {
-      ...CREDIT_SETTINGS_DEFAULTS,
-      ...(doc?.creditSettings || {}),
-    };
+    const creditSettings = normalizeCreditSettings(doc?.creditSettings || {});
     res.status(200).json({
       success: true,
       data: {
@@ -264,10 +286,7 @@ export async function getPublicCreditSettings(req, res) {
   try {
     const doc = await SystemSettings.findOne({ key: "global" }).lean();
 
-    const creditSettings = {
-      ...CREDIT_SETTINGS_DEFAULTS,
-      ...(doc?.creditSettings || {}),
-    };
+    const creditSettings = normalizeCreditSettings(doc?.creditSettings || {});
     res.status(200).json({
       success: true,
       data: {
@@ -286,21 +305,34 @@ export async function getPublicCreditSettings(req, res) {
 export async function updateCreditSettings(req, res) {
   try {
     const payload = req.body && typeof req.body === "object" ? req.body : {};
-    const allowedKeys = [
-      "minCreditForRequest",
-      "shippingFee",
-      "defaultWelcomeBonusCredit",
-      "defaultFreeShippingCredit",
-    ];
+
+    const minCreditForRequest = Number(payload.minCreditForRequest);
+    const shippingFee = Number(payload.shippingFee);
+    const defaultRequestFreeCredit = Number(
+      payload.defaultRequestFreeCredit ?? payload.defaultWelcomeBonusCredit,
+    );
+    const defaultShippingFreeCredit = Number(
+      payload.defaultShippingFreeCredit ?? payload.defaultFreeShippingCredit,
+    );
 
     const sanitized = {};
-    allowedKeys.forEach((k) => {
-      if (payload[k] === undefined) return;
-      const num = Number(payload[k]);
-      if (!Number.isNaN(num) && num >= 0) {
-        sanitized[k] = num;
-      }
-    });
+    if (!Number.isNaN(minCreditForRequest) && minCreditForRequest >= 0) {
+      sanitized.minCreditForRequest = minCreditForRequest;
+    }
+    if (!Number.isNaN(shippingFee) && shippingFee >= 0) {
+      sanitized.shippingFee = shippingFee;
+    }
+    if (!Number.isNaN(defaultRequestFreeCredit) && defaultRequestFreeCredit >= 0) {
+      sanitized.defaultRequestFreeCredit = defaultRequestFreeCredit;
+      sanitized.defaultWelcomeBonusCredit = defaultRequestFreeCredit; // legacy 호환 (앱 안정화 후 삭제 예정)
+    }
+    if (
+      !Number.isNaN(defaultShippingFreeCredit) &&
+      defaultShippingFreeCredit >= 0
+    ) {
+      sanitized.defaultShippingFreeCredit = defaultShippingFreeCredit;
+      sanitized.defaultFreeShippingCredit = defaultShippingFreeCredit; // legacy 호환 (앱 안정화 후 삭제 예정)
+    }
 
     const doc = await SystemSettings.findOneAndUpdate(
       { key: "global" },
@@ -313,10 +345,7 @@ export async function updateCreditSettings(req, res) {
       { new: true, upsert: true, setDefaultsOnInsert: true },
     ).lean();
 
-    const creditSettings = {
-      ...CREDIT_SETTINGS_DEFAULTS,
-      ...(doc?.creditSettings || {}),
-    };
+    const creditSettings = normalizeCreditSettings(doc?.creditSettings || {});
     res.status(200).json({
       success: true,
       message: "크레딧 설정이 업데이트되었습니다.",

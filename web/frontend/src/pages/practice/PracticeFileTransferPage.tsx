@@ -2155,7 +2155,7 @@ export const PracticeFileTransferPage = () => {
 
       if (!res.ok) {
         const body = asApiMessagePayload(res.data);
-        throw new Error(String(body?.message || "전송 의뢰 내역 삭제(취소)에 실패했습니다."));
+        throw new Error(String(body?.message || "의뢰서 전송 내역 삭제(취소)에 실패했습니다."));
       }
 
       const body =
@@ -2172,16 +2172,16 @@ export const PracticeFileTransferPage = () => {
         // 전건 실패 시 optimistic 변경 롤백
         setRecentRequests(previousRecentRequests);
         toast({
-          title: "삭제 실패",
-          description: "삭제 가능한 단계(의뢰/CAM)인지 확인해주세요.",
+          title: "전송 내역 삭제 실패",
+          description: "삭제 권한 또는 대상 상태를 확인해주세요.",
           variant: "destructive",
         });
       } else {
         toast({
-          title: "의뢰 내역 삭제 완료",
+          title: "의뢰서 전송 내역 삭제 완료",
           description:
             failedIds.length > 0
-              ? `${successCount}건 삭제, ${failedIds.length}건은 단계/권한 제한으로 삭제되지 않았습니다.`
+              ? `${successCount}건 삭제, ${failedIds.length}건은 권한/상태 제한으로 삭제되지 않았습니다.`
               : `${successCount}건 삭제되었습니다.`,
         });
 
@@ -2199,7 +2199,7 @@ export const PracticeFileTransferPage = () => {
         description:
           error instanceof Error
             ? error.message
-            : "전송 의뢰 내역 삭제 중 오류가 발생했습니다.",
+            : "의뢰서 전송 내역 삭제 중 오류가 발생했습니다.",
         variant: "destructive",
       });
     } finally {
@@ -3019,8 +3019,8 @@ export const PracticeFileTransferPage = () => {
                 ) : filteredGroupedTransfers.length === 0 ? (
                   <div className="rounded-lg border border-dashed px-3 py-8 text-center text-sm text-muted-foreground">
                     {recentStatusFilter === "all"
-                      ? "검색 조건에 맞는 의뢰 내역이 없습니다."
-                      : `${recentStatusFilter} 상태의 의뢰 내역이 없습니다.`}
+                      ? "검색 조건에 맞는 의뢰서 전송 내역이 없습니다."
+                      : `${recentStatusFilter} 상태의 의뢰서 전송 내역이 없습니다.`}
                   </div>
                 ) : (
                   <div className="max-h-[19rem] space-y-2 overflow-y-auto pr-1">
@@ -3078,7 +3078,7 @@ export const PracticeFileTransferPage = () => {
                                   e.stopPropagation();
                                   void handleAskDeleteTransfer(transfer);
                                 }}
-                                aria-label="의뢰 내역 삭제"
+                                aria-label="의뢰서 전송 내역 삭제"
                               >
                                 <Trash2 className="h-4 w-4" />
                               </Button>
@@ -3108,7 +3108,7 @@ export const PracticeFileTransferPage = () => {
             }
             handleCloseTransferDialog();
           }}
-          title="의뢰 상세 · 기공소 채팅"
+          title="의뢰서 전송 상세 · 기공소 채팅"
           conversationTitle="기공소와의 소통"
           summaryItems={[
             {
@@ -3314,7 +3314,7 @@ export const PracticeFileTransferPage = () => {
 
         <ConfirmDialog
           open={deleteConfirmOpen}
-          title="이 전송 의뢰 내역을 삭제할까요?"
+          title="이 의뢰서 전송 내역을 삭제할까요?"
           description={
             <div className="space-y-1">
               <div className="text-sm text-muted-foreground">

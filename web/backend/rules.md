@@ -123,6 +123,9 @@
 - practice 역할 범위(정책 고정):
   - practice는 파일 전송 전용 경량 role이며, 크레딧/정산/추천(리퍼럴) 도메인에는 포함하지 않습니다.
   - 따라서 `adminCredit`, `admin.dashboard`, `admin.referral`의 requestor 중심 집계를 practice로 임의 확장하지 않습니다.
+  - 강제 분리: practice는 `Request` 도메인 API(`/api/requests/*`)를 사용하지 않고,
+    `PracticeTransfer` 도메인 API(`/api/practice/transfers/*`)만 사용합니다.
+  - 레거시 혼입 경로(`/api/requests/practice/*`, practice의 Request draft 접근)는 제거 대상으로 유지합니다.
   - 위 범위를 바꾸려면 사전 정책 컨펌을 받고 별도 변경으로 진행합니다.
 
 - practice 파일전송 임시저장(다른 PC 이어쓰기) SSOT:
@@ -135,6 +138,12 @@
     - `controllers/practiceTransfers/practiceTransfer.controller.js`
     - `models/file.model.js`
 
+- practice 취소 API 계약(SSOT):
+  - endpoint: `POST /api/practice/transfers/cancel-batch`
+  - request body: `transferIds?: string[]`, `transferMongoIds?: string[]` (둘 중 하나 이상 필수)
+  - response: `{ success: true, data: { successCount: number, failedIds: string[] } }`
+  - `failedIds`에는 무효 식별자/미존재/권한범위 밖/이미 취소된 대상이 포함될 수 있습니다.
+
 - 문의 실시간 이벤트 SSOT:
   - 문의 생성 시(admin 대상)
     - `comm:badge-update` (`key=inquiry`, `delta=+1`)
@@ -144,6 +153,9 @@
     - `support:inquiry-updated`
   - 구현 파일: `controllers/support/support.controller.js`
 
+- practice 채팅/전송 정책:
+  - practice 채팅방 연결은 `GET /api/chats/practice/transfer-room/:transferId`만 사용합니다.
+  - legacy request-room 경로(`/api/chats/practice/request-room/:requestId`)는 제거 대상이며 신규 코드에서 사용 금지합니다.
 - practice 채팅/전송 첨부 다운로드 정책:
   - 다운로드 SSOT 엔드포인트: `GET /api/files/s3/download?key=...&fileName=...`
   - S3 파일은 signed-url 리다이렉트가 아니라 서버 프록시 스트리밍(`pipe`)으로 응답합니다.
@@ -164,6 +176,7 @@
     `rnd.requestorContinueAt/by/message`를 함께 기록합니다.
   - 제조사가 다시 불완전가공 판정할 때(`PATCH /api/requests/:id/rnd-unmachinable`)는
     위 `requestorContinue*` 필드를 초기화합니다.
+  - 불완전가공 판정으로 CAM 복귀가 일어나도, 크레딧 차감 이력은 유지합니다(삭제/환불 금지).
   - 관련 파일:
     - `controllers/requests/common.requests.controller.js`
     - `models/request.model.js`
@@ -190,51 +203,82 @@
 - 제조사 샘플(`source=manufacturer_sample`, `requestCategory=rnd_sample|copied_sample`)은
   작업용 상태(`rnd.doneAt=null`)에서 일반 의뢰와 동일하게 `포장.발송`/`추적관리` 공정을 진행합니다.
   - R&D 보관 샘플(`rnd.doneAt!=null`)은 R&D 탭 운영 정책으로 분리합니다.
-  - 차이는 크레딧 정책만 유지합니다(샘플은 의뢰비/배송비 미차감).
+  - 샘플은 크레딧/정산 장부에 무기록(무자료/무상) 처리합니다.
   - 관련 구현: `controllers/requests/common.review.controller.js`, `controllers/requests/common.requests.controller.js`
-- 크레딧 버킷(유료/무료) 무결성 SSOT:
-  - `CreditLedger.SPEND`는 `spentPaidAmount`/`spentFreeAmount`를 저장해야 합니다.
-  - `CreditLedger.REFUND`는 원본 SPEND의 버킷 분해값을 그대로 복원해 저장해야 합니다.
-    (환불을 일괄 유료로 적립하면 안 됨)
-  - 무료 크레딧 지급 기록 SSOT는 `CHARGE + creditKind(FREE_REQUEST|FREE_SHIPPING)`입니다.
-  - 정산 보존식(의뢰 단위) SSOT:
-    - `의뢰자 순소비(의뢰 SPEND-REFUND)` = `어벗츠/제조사/개발운영사/영업자 수익합`
-    - 비교 기준 금액은 VAT 제외 공급가(`amountExcludingVat`)를 우선 사용합니다.
-    - 특정 수익 주체(제조사/개발운영/영업자) 미지정·비활성 등으로 귀속 불가한 몫은 관리자 귀속으로 재배정해 보존식을 깨지 않도록 합니다.
-  - 잔액 계산은 SPEND/REFUND의 분해 필드가 있으면 이를 우선 사용하고,
-    레거시 데이터(분해값 없음)에만 refType 기반 fallback을 적용합니다.
-  - 같은 `businessAnchorId`에서 동시 처리로 잔액이 음수로 내려가지 않도록,
-    크레딧 소비·환불은 `BusinessCreditBalance` 단일 문서의 원자 갱신으로 처리합니다.
-  - 의뢰 과금(`refType=REQUEST`)은 **CNC 가공 시작 콜백(`sourceStep=cnc`, success)** 시점에 수행합니다.
-  - 가공 실패 콜백(`sourceStep=cnc`, failed)에서는 의뢰 과금을 즉시 환불합니다.
-  - 의뢰 과금/환불은 재시도·중복 콜백에서도 idempotent 하게 동작해야 하며,
-    이전 시도 환불 완료 후 재가공 시작 시 재차감이 가능해야 합니다.
-  - `BusinessCreditBalance`를 `businessAnchorId`별 잔액 SSOT로 사용하며,
-    의뢰 과금/의뢰 환불/배송비 과금/배송비 환불은 `creditBalance.service`의 원자 갱신으로 처리합니다.
-  - 의뢰자/인증/관리자 크레딧 조회는 `BusinessCreditBalance`를 우선 조회하고,
-    문서가 없는 앵커만 ledger 기반 백필로 생성해 읽습니다.
-  - 관리자 원장 API(`GET /api/admin/credits/businesses/:id/ledger`)는
-    응답 `currentBalanceSnapshot`을 `BusinessCreditBalance` SSOT로 제공합니다.
-    원장 행 `balanceAfter`는 “행 시점 잔액(러닝밸런스)”으로 해석합니다.
-  - 백필/보정 스크립트:
-    - `scripts/db/backfill-business-credit-balances.js`
-    - `scripts/db/migrate-bonus-to-charge-creditkind.js`
-    - `scripts/db/migrate-spent-bonus-to-spent-free.js`
-    - `scripts/db/fix-spent-paid-pollution-test-only.js`
-  - 이번 수정에서 확인한 주요 소스 위치(찾기용):
-    - `models/creditLedger.model.js`
-    - `services/creditBalance.service.js`
-    - `controllers/admin/adminBonusGrant.controller.js`
-    - `controllers/businesses/business.bonus.util.js`
-    - `controllers/admin/adminCredit.controller.js`
-    - `controllers/manufacturers/manufacturer.controller.js`
-    - `controllers/admin/admin.dashboard.controller.js`
-    - `controllers/requests/common.requests.controller.js`
-    - `controllers/credits/creditLedger.controller.js`
-    - `scripts/db/migrate-bonus-to-charge-creditkind.js`
-    - `scripts/db/migrate-spent-bonus-to-spent-free.js`
-    - `scripts/db/fix-spent-paid-pollution-test-only.js`
-  - 관련 구현: `models/businessCreditBalance.model.js`, `services/creditBalance.service.js`, `controllers/requests/common.review.helpers.js`, `controllers/requests/common.review.controller.js`, `controllers/bg/bg.controller.js`, `controllers/requests/common.requests.controller.js`, `controllers/credits/credit.controller.js`, `controllers/auth/auth.controller.js`
+- 단일 SSOT 장부(General Ledger) 정책:
+  - 장부는 논리적으로 1개만 사용하며, 물리 구조는 `LedgerJournal`(헤더) + `LedgerLine`(라인) 2컬렉션으로 구성합니다.
+  - 제조사 정산 조회(`/api/manufacturer/credits/ledger`, `/api/manufacturer/credits/daily-summary`, `/api/manufacturer/credits/daily-snapshots/recalc`)는 `LedgerLine` 집계를 SSOT로 사용합니다.
+  - 레거시 분리 원장(`CreditLedger`, `ManufacturerCreditLedger`, `SalesmanLedger`, `AdminCreditLedger`)은
+    이관 완료 후 반드시 삭제합니다. 이관 기간에도 이중기록(dual-write) 금지.
+
+- LedgerJournal 스키마 초안(필수 필드):
+  - `journalId`(UUID, unique)
+  - `eventType`(저장형):
+    - `REQUEST_SPEND_COMMIT`
+    - `SHIPPING_SPEND_COMMIT`
+    - `CHARGE_PAID`, `CHARGE_FREE_REQUEST`, `CHARGE_FREE_SHIPPING`, `ADJUST`, `SETTLEMENT_PAYOUT`
+  - `businessAnchorId`(의뢰자 기준 키)
+  - `refType`, `refId` (`REQUEST`, `SHIPPING_PACKAGE`, `CHARGE_ORDER` 등)
+  - `stageFrom`, `stageTo` (워크시트 승인/롤백 전이 기록)
+  - `idempotencyKey`(unique)
+  - `occurredAt`, `createdAt`, `createdBy`
+  - `status` (`POSTED`만 허용; 롤백은 삭제 정책이므로 별도 VOID 상태 운용 금지)
+
+- LedgerLine 스키마 초안(필수 필드):
+  - `journalId`(FK), `lineNo`
+  - `accountCode`:
+    - 크레딧 버킷: `REQ_PAID_CREDIT`, `REQ_FREE_REQUEST_CREDIT`, `REQ_FREE_SHIPPING_CREDIT`
+    - 수익 귀속: `REV_MANUFACTURER`, `REV_DEVOPS`, `REV_SALESMAN`, `REV_ADMIN`
+  - `ownerRole` (`requestor|manufacturer|devops|salesman|admin`)
+  - `ownerId` (원칙적으로 BusinessAnchor 식별자)
+  - `amount`, `amountExcludingVat`, `vatAmount`, `amountIncludingVat`
+  - `creditKind` (`PAID|FREE_REQUEST|FREE_SHIPPING|null`)
+  - `meta` (requestId, shippingPackageId, settlementBatchId 등)
+
+- 승인/롤백 이벤트 정책(강제):
+  - `REQUEST_SPEND_COMMIT`: **CAM 승인(가공 진입)** 시 기록
+  - `SHIPPING_SPEND_COMMIT`: **세척.패킹 승인(포장.발송 진입)** 시 기록
+  - `REQUEST` 차감 삭제: **가공 롤백(CAM 복귀)** 시 대응 커밋 이벤트/라인 **물리 삭제**
+  - `SHIPPING` 차감 삭제: **포장.발송 롤백(세척.패킹 복귀)** 시 대응 커밋 이벤트/라인 **물리 삭제**
+  - 롤백에서 REFUND 이벤트/라인 추가 금지
+  - BG 콜백(예: CNC 처리 완료/실패 콜백)은 파일 상태 동기화 전용이며 승인/롤백 트랜지션이 아니므로,
+    크레딧/정산 이벤트를 적재하지 않음
+  - 불완전가공(RnD unmachinable) 판정은 크레딧 롤백 사유가 아님
+    - 이미 CAM 승인으로 발생한 `REQUEST_SPEND_COMMIT`은 유지
+    - 불완전가공으로 CAM 복귀가 일어나도 장부 삭제/환불 금지
+    - CAM 이전 취소(의뢰/CAM 단계)만 차감 미발생 상태
+  - 조회/표시 타입은 `CHARGE`/`SPEND` 단일값 금지
+    - 충전: `CHARGE_PAID` / `CHARGE_FREE_REQUEST` / `CHARGE_FREE_SHIPPING`
+    - 소비: `SPEND_PAID` / `SPEND_FREE_REQUEST` / `SPEND_FREE_SHIPPING`
+
+- 샘플 정책(강제):
+  - `requestCategory in (rnd_sample, copied_sample)`는 장부 무관 작업으로 간주
+  - 샘플은 크레딧 차감/수익 귀속/정산 이벤트를 **전혀 기록하지 않음**(무자료/무상)
+
+- 제조사 직접 NC 가공(비의뢰) 정책(강제):
+  - `requestId`/`request._id`/`businessAnchorId` 등 의뢰 과금 메타가 없는 NC 수동 작업(`manual_upload`, direct queue job 등)은
+    크레딧/정산 이벤트를 **전혀 기록하지 않음**(무자료/무상)
+  - 해당 작업은 생산/장비 운영 이벤트로만 취급하고 General Ledger 쓰기를 금지합니다.
+
+- 정산/지급 정책:
+  - 유료/무료 모두 `REV_*` 수익 라인은 기록해 확인 가능해야 합니다.
+  - 정산 지급(PAYOUT) 대상은 유료 수익만 허용합니다.
+  - 무료 수익은 지급금액 0으로 정산 완료 상태만 표시할 수 있습니다.
+
+- 관리자 credit-reconcile API 정책:
+  - `credit-reconcile/check`는 General Ledger 기준 누락 의심 건만 점검합니다.
+  - `credit-reconcile/execute`는 누락 이벤트를 직접 생성하지 않으며,
+    `BusinessCreditBalance` 스냅샷을 GL 기준으로 재동기화만 수행합니다.
+  - 레거시 `CreditLedger` 직접 보정/삽입 로직은 사용 금지합니다.
+
+- 보존식(의뢰 단위) SSOT:
+  - `의뢰자 순소비(현존 COMMIT 이벤트 기준)` = `REV_MANUFACTURER + REV_DEVOPS + REV_SALESMAN + REV_ADMIN`
+  - 합계 비교 기준은 VAT 제외 공급가(`amountExcludingVat`) 우선
+
+- 구현 강제사항:
+  - 승인/롤백/정산 이벤트는 모두 단일 저널 트랜잭션으로 처리
+  - `idempotencyKey` unique 인덱스로 중복기록 차단
+  - 파생 조회(제조사 정산/관리자 대시보드/의뢰자 잔액)는 단일 SSOT 장부 집계값만 사용
 - 우편함/배송 무결성 정책(포장.발송):
   - 우편함 재사용/배정은 **BusinessAnchor 단일 점유**를 반드시 보장합니다.
   - `businessAnchorId`가 비어 있는 점유 의뢰는 `UNKNOWN`으로 취급하되,

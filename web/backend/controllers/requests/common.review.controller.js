@@ -33,9 +33,10 @@ import { resolvePrcFileNames } from "./prcMapping.utils.js";
 import { emitAppEventToRoles } from "../../socket.js";
 import {
   revertManufacturerStageByReviewStage,
-  ensureRequestCreditRefundOnRollbackToCam,
+  ensureRequestCreditSpendOnMachiningEnter,
+  ensureRequestCreditRollbackDeleteOnRollbackToCam,
   ensureShippingFeeSpendOnPackingApprove,
-  ensureShippingFeeRefundOnShippingRollback,
+  ensureShippingFeeRollbackDeleteOnShippingRollback,
   ensureDeliveryInfoShippedAtNow,
   hasRequestShippingOrCompletionHistory,
   updateCurrentEstimatedShipYmdOnPackingEnter,
@@ -1414,7 +1415,22 @@ export async function updateReviewStatusByStage(req, res) {
           }
         }
 
-
+        // 크레딧 타이밍 SSOT:
+        // - 의뢰 크레딧 차감은 CAM 승인(가공 진입) 시점에만 수행
+        if (
+          status === "APPROVED" &&
+          effectiveStage === "cam" &&
+          resolvedBusinessAnchorId &&
+          !isManufacturerSampleRequest(request) &&
+          !isPracticeDropzoneRequest
+        ) {
+          await ensureRequestCreditSpendOnMachiningEnter({
+            request,
+            businessAnchorId: resolvedBusinessAnchorId,
+            actorUserId: req.user?._id || null,
+            session,
+          });
+        }
 
         const hasTrackedScrewLot = Boolean(
           normalizePackingScrewLot(request?.screwTracking?.lotNumber),
@@ -1481,20 +1497,7 @@ export async function updateReviewStatusByStage(req, res) {
           }
         }
 
-        if (
-          effectiveStage === "shipping" &&
-          resolvedBusinessAnchorId &&
-          !isManufacturerSampleRequest(request) &&
-          !isPracticeDropzoneRequest
-        ) {
-          // 운영 중 과거 누락이 있더라도 shipping 승인 시점에 배송비 소비를 보강한다.
-          await ensureShippingFeeSpendOnPackingApprove({
-            request,
-            businessAnchorId: resolvedBusinessAnchorId,
-            actorUserId: req.user?._id || null,
-            session,
-          });
-        }
+
 
         if (effectiveStage === "cam") {
           await ensureMachineCompatibilityOrThrow({
@@ -1509,8 +1512,10 @@ export async function updateReviewStatusByStage(req, res) {
           acceptedMessage = "가공 단계로 이동했습니다.";
         }
       } else if (status === "PENDING") {
+        // 크레딧 타이밍 SSOT:
+        // - 의뢰 차감 삭제는 가공 단계 롤백(CAM 복귀)에서만 수행
         if (effectiveStage === "machining" && resolvedBusinessAnchorId) {
-          await ensureRequestCreditRefundOnRollbackToCam({
+          await ensureRequestCreditRollbackDeleteOnRollbackToCam({
             request,
             businessAnchorId: resolvedBusinessAnchorId,
             actorUserId: req.user?._id || null,
@@ -1518,8 +1523,10 @@ export async function updateReviewStatusByStage(req, res) {
           });
           bumpRollbackCount(request, "cam");
         }
+        // 크레딧 타이밍 SSOT:
+        // - 배송 차감 삭제는 포장.발송 단계 롤백(세척.패킹 복귀)에서만 수행
         if (effectiveStage === "shipping") {
-          await ensureShippingFeeRefundOnShippingRollback({
+          await ensureShippingFeeRollbackDeleteOnShippingRollback({
             request,
             actorUserId: req.user?._id || null,
             session,

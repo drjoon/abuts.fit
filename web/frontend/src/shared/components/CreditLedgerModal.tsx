@@ -40,14 +40,23 @@ import {
   type RequestDetailDialogRequest,
 } from "@/features/requests/components/RequestDetailDialog";
 
-type CreditLedgerType = "CHARGE" | "BONUS" | "SPEND" | "REFUND" | "ADJUST";
+type CreditLedgerType =
+  | "CHARGE_PAID"
+  | "CHARGE_FREE_REQUEST"
+  | "CHARGE_FREE_SHIPPING"
+  | "SPEND_PAID"
+  | "SPEND_FREE_REQUEST"
+  | "SPEND_FREE_SHIPPING"
+  | "REFUND"
+  | "ADJUST";
 
 type CreditLedgerItem = {
   _id: string;
   type: CreditLedgerType;
   amount: number;
   spentPaidAmount?: number | null;
-  spentBonusAmount?: number | null;
+  spentFreeAmount?: number | null;
+  spentBonusAmount?: number | null; // legacy 호환 (앱 안정화 후 삭제 예정)
   refType?: string;
   refId?: string | null;
   refRequestId?: string;
@@ -58,7 +67,8 @@ type CreditLedgerItem = {
   tooth?: string;
   clinicName?: string;
   manufacturerStage?: string;
-  bonusReason?: string;
+  freeReason?: string;
+  bonusReason?: string; // legacy 호환 (앱 안정화 후 삭제 예정)
   trackingNumbers?: string[];
   lotNumber?: {
     value?: string;
@@ -89,8 +99,10 @@ type CreditLedgerItem = {
 type CreditBalanceSnapshot = {
   balance: number;
   paidCredit: number;
-  bonusRequestCredit: number;
-  bonusShippingCredit: number;
+  freeRequestCredit?: number;
+  freeShippingCredit?: number;
+  bonusRequestCredit?: number;
+  bonusShippingCredit?: number;
   updatedAt?: string | null;
 };
 
@@ -108,9 +120,12 @@ export type CreditLedgerModalProps = {
 const PAGE_SIZE = 50;
 
 const typeLabel = (t: CreditLedgerType) => {
-  if (t === "CHARGE") return "충전";
-  if (t === "BONUS") return "보너스";
-  if (t === "SPEND") return "사용";
+  if (t === "CHARGE_PAID") return "유료충전";
+  if (t === "CHARGE_FREE_REQUEST") return "무료충전(의뢰)";
+  if (t === "CHARGE_FREE_SHIPPING") return "무료충전(배송)";
+  if (t === "SPEND_PAID") return "사용(유료)";
+  if (t === "SPEND_FREE_REQUEST") return "사용(의뢰무료)";
+  if (t === "SPEND_FREE_SHIPPING") return "사용(배송무료)";
   if (t === "REFUND") return "환불";
   return "조정";
 };
@@ -138,8 +153,10 @@ const formatShortCode = (value: string) => {
 const REF_TYPE_LABELS: Record<string, string> = {
   SHIPPING_PACKAGE: "택배비",
   REQUEST: "의뢰",
-  WELCOME_BONUS: "가입 축하 보너스",
-  FREE_SHIPPING_CREDIT: "가입 축하 배송비 보너스",
+  FREE_REQUEST_CREDIT: "환영 무료 의뢰크레딧",
+  WELCOME_BONUS: "환영 무료 의뢰크레딧", // legacy 호환 (앱 안정화 후 삭제 예정)
+  FREE_SHIPPING_CREDIT: "환영 무료 배송크레딧",
+  SHIPPING_FREE_CREDIT: "환영 무료 배송크레딧",
   SEED_REQUESTOR_CHARGE: "시드 초기 충전",
 };
 
@@ -242,8 +259,11 @@ const renderTransactionDetail = ({
     );
   }
 
-  if (item.type === "BONUS") {
-    const reason = String(item.bonusReason || "").trim();
+  if (
+    item.type === "CHARGE_FREE_REQUEST" ||
+    item.type === "CHARGE_FREE_SHIPPING"
+  ) {
+    const reason = String(item.freeReason || item.bonusReason || "").trim();
     return (
       <>
         <span className="text-[11px] text-slate-700">
@@ -507,7 +527,9 @@ export const CreditLedgerModal = ({
                     <span className="text-muted-foreground">무료·의뢰</span>{" "}
                     <span className="font-semibold text-slate-900">
                       {Number(
-                        currentBalanceSnapshot.bonusRequestCredit || 0,
+                        currentBalanceSnapshot.freeRequestCredit ??
+                          currentBalanceSnapshot.bonusRequestCredit ??
+                          0,
                       ).toLocaleString()}
                       원
                     </span>
@@ -516,7 +538,9 @@ export const CreditLedgerModal = ({
                     <span className="text-muted-foreground">무료·배송</span>{" "}
                     <span className="font-semibold text-slate-900">
                       {Number(
-                        currentBalanceSnapshot.bonusShippingCredit || 0,
+                        currentBalanceSnapshot.freeShippingCredit ??
+                          currentBalanceSnapshot.bonusShippingCredit ??
+                          0,
                       ).toLocaleString()}
                       원
                     </span>
@@ -541,10 +565,21 @@ export const CreditLedgerModal = ({
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="all">전체</SelectItem>
-                        <SelectItem value="SPEND">사용</SelectItem>
-                        <SelectItem value="CHARGE">충전</SelectItem>
+                        <SelectItem value="SPEND_PAID">사용(유료)</SelectItem>
+                        <SelectItem value="SPEND_FREE_REQUEST">
+                          사용(의뢰무료)
+                        </SelectItem>
+                        <SelectItem value="SPEND_FREE_SHIPPING">
+                          사용(배송무료)
+                        </SelectItem>
+                        <SelectItem value="CHARGE_PAID">유료충전</SelectItem>
                         <SelectItem value="REFUND">환불</SelectItem>
-                        <SelectItem value="BONUS">보너스</SelectItem>
+                        <SelectItem value="CHARGE_FREE_REQUEST">
+                          무료충전(의뢰)
+                        </SelectItem>
+                        <SelectItem value="CHARGE_FREE_SHIPPING">
+                          무료충전(배송)
+                        </SelectItem>
                         <SelectItem value="ADJUST">조정</SelectItem>
                       </SelectContent>
                     </Select>
@@ -604,10 +639,14 @@ export const CreditLedgerModal = ({
                     const amount = Number(r.amount || 0);
                     const isMinus = amount < 0;
                     const spentPaid = Number(r.spentPaidAmount || 0);
-                    const spentBonus = Number(r.spentBonusAmount || 0);
+                    const spentFree = Number(
+                      r.spentFreeAmount ?? r.spentBonusAmount ?? 0,
+                    );
                     const showSplit =
-                      String(r.type) === "SPEND" &&
-                      (spentPaid > 0 || spentBonus > 0);
+                      (String(r.type) === "SPEND_PAID" ||
+                        String(r.type) === "SPEND_FREE_REQUEST" ||
+                        String(r.type) === "SPEND_FREE_SHIPPING") &&
+                      (spentPaid > 0 || spentFree > 0);
                     const safeRef = r.refRequestId
                       ? formatRequestIdSafe(
                           r.refRequestId,
@@ -635,9 +674,9 @@ export const CreditLedgerModal = ({
                                   유료 -{spentPaid.toLocaleString()}원
                                 </div>
                               )}
-                              {spentBonus > 0 && (
+                              {spentFree > 0 && (
                                 <div className="tabular-nums text-xs">
-                                  무료 -{spentBonus.toLocaleString()}원
+                                  무료 -{spentFree.toLocaleString()}원
                                 </div>
                               )}
                             </div>
