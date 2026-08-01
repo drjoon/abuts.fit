@@ -79,7 +79,9 @@ dbReady
     startReviewApprovalWorker();
 
     // 한진 배송조회 자동 동기화 워커 시작 (기본 1시간 주기)
-    startHanjinTrackingAutoSyncWorker({ runImmediate: true });
+    // 옵션 B: 부팅 직후 즉시 호출(runImmediate)은 비활성화하여
+    // 한진 인증/화이트리스트 이슈 시에도 startup 로그 소음을 줄임
+    startHanjinTrackingAutoSyncWorker({ runImmediate: false });
   })
   .catch((err) => {
     console.error("MongoDB 연결 실패(서버는 계속 실행):", err);

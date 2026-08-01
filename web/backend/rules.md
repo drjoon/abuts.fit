@@ -58,6 +58,7 @@
   - 한진 API가 `403/InvalidApiKeyForGivenResource`를 반환하면 앱 기동/런타임을 중단하지 않고 auto-sync만 blocked mode로 전환합니다.
   - blocked mode 재시도 주기: 평일 1시간 간격, 주말은 중지 후 월요일 08:00(KST)부터 재개합니다.
   - 성공 응답이 확인되면 blocked mode를 자동 해제하고 정상 주기로 복귀합니다.
+  - 서버 시작 시 `startHanjinTrackingAutoSyncWorker({ runImmediate: false })`를 사용해 부팅 직후 즉시 호출은 비활성화합니다.
   - 관련 구현: `controllers/requests/shipping.TrackingPoller.js`, `services/hanjin.service.js`, `server.js`
   - 전역 설정 저장 SSOT: `models/systemSettings.model.js` (`packingScrewLotSettings: [{type, lotNumber}]`)
   - 의뢰 스냅샷 SSOT: `models/request.model.js` (`screwTracking`)
