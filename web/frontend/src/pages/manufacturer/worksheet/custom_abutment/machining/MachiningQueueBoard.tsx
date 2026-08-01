@@ -1,7 +1,6 @@
 // related files:
-// - web/frontend/rules.md
-// - web/frontend/src/App.tsx
-// - web/frontend/src/features/layout/DashboardLayout.tsx
+// - web/frontend/src/pages/manufacturer/equipment/cnc/components/SelfInspectionReportModal.tsx
+// - web/frontend/src/pages/manufacturer/equipment/cnc/components/CompletedMachiningRecordsModal.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
 // - web/backend/controllers/requests/common.review.controller.js
 import { useAuthStore } from "@/store/useAuthStore";
@@ -98,6 +97,12 @@ const buildToolSummaryTooltip = (summary: any) => {
   return `교체 임박 ${head}${suffix}`;
 };
 
+const normalizeLotSearchKey = (value: unknown) =>
+  String(value || "")
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, "");
+
 const isMaterialExhaustedAlarmText = (value: unknown) => {
   const text = String(value || "").trim();
   if (!text) return false;
@@ -170,6 +175,29 @@ export const MachiningQueueBoard = ({
     }
     return 0;
   };
+
+  const findSelfInspectionByLotNumber = useCallback(
+    (lotNumberQuery: string) => {
+      const query = normalizeLotSearchKey(lotNumberQuery);
+      if (!query || siQueue.length === 0) return false;
+
+      const exactIdx = siQueue.findIndex(
+        (it) => normalizeLotSearchKey(it?.lotNumber) === query,
+      );
+      const partialIdx =
+        exactIdx >= 0
+          ? exactIdx
+          : siQueue.findIndex((it) =>
+              normalizeLotSearchKey(it?.lotNumber).includes(query),
+            );
+
+      if (partialIdx < 0) return false;
+      setSiIdx(partialIdx);
+      saveSiRequestId(siQueue, partialIdx);
+      return true;
+    },
+    [siQueue],
+  );
 
   const openSelfInspectionQueue = async () => {
     setSiFetching(true);
@@ -1007,6 +1035,7 @@ export const MachiningQueueBoard = ({
                 })
             : undefined
         }
+        onFindByLotNumber={findSelfInspectionByLotNumber}
       />
 
       <CompletedMachiningRecordsModal

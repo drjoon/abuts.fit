@@ -1,7 +1,7 @@
 // related files:
-// - web/frontend/rules.md
-// - web/frontend/src/App.tsx
-// - web/frontend/src/features/layout/DashboardLayout.tsx
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/machining/MachiningQueueBoard.tsx
+// - web/frontend/src/pages/manufacturer/equipment/cnc/components/CompletedMachiningRecordsModal.tsx
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/WorksheetStageSearchInput.tsx
 import { useEffect, useRef, useState } from "react";
 import {
   Dialog,
@@ -14,6 +14,7 @@ import { useStlMetadata } from "@/features/requests/hooks/useStlMetadata";
 import { useAuthStore } from "@/store/useAuthStore";
 import { formatKstDateTimeToKo } from "@/shared/date/kst";
 import { getFileBlob, setFileBlob } from "@/shared/files/stlIndexedDb";
+import { WorksheetStageSearchInput } from "@/pages/manufacturer/worksheet/custom_abutment/components/WorksheetStageSearchInput";
 
 type InspectionRow = {
   label: string;
@@ -57,6 +58,7 @@ type Props = {
   queueInfo?: { current: number; total: number };
   onPrev?: () => void;
   onNext?: () => void;
+  onFindByLotNumber?: (lotNumberQuery: string) => boolean;
 };
 
 type InspectionSpecPreset = {
@@ -414,6 +416,7 @@ export function SelfInspectionReportModal({
   queueInfo,
   onPrev,
   onNext,
+  onFindByLotNumber,
 }: Props) {
   const { token, user } = useAuthStore();
   const reportRef = useRef<HTMLDivElement | null>(null);
@@ -448,8 +451,23 @@ export function SelfInspectionReportModal({
   const [isExportingPng, setIsExportingPng] = useState(false);
   const [instrumentDraft, setInstrumentDraft] = useState("");
   const [savingInstruments, setSavingInstruments] = useState(false);
+  const [lotSearchQuery, setLotSearchQuery] = useState("");
+  const [lotSearchNoResult, setLotSearchNoResult] = useState(false);
 
   const requestId = item?.requestId ?? null;
+
+  const handleLotSearchChange = (nextQuery: string) => {
+    setLotSearchQuery(nextQuery);
+    setLotSearchNoResult(false);
+
+    if (!onFindByLotNumber) return;
+
+    const q = String(nextQuery || "").trim();
+    if (!q) return;
+
+    const found = onFindByLotNumber(q);
+    setLotSearchNoResult(!found);
+  };
   const lotShortCode = String(item?.lotNumber || "")
     .replace(/^CA(P)?/i, "")
     .slice(-3)
@@ -492,6 +510,12 @@ export function SelfInspectionReportModal({
     if (!open) return;
     setResolvedMongoId(String(item?.requestMongoId || "").trim() || null);
   }, [open, item]);
+
+  useEffect(() => {
+    if (!open) return;
+    setLotSearchQuery("");
+    setLotSearchNoResult(false);
+  }, [open]);
 
   // 장비 드롭다운 옵션 로드
   useEffect(() => {
@@ -1205,7 +1229,7 @@ export function SelfInspectionReportModal({
 
             {/* 측정장비 옵션 관리 */}
             <div className="mb-4">
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 w-full">
                 <button
                   type="button"
                   onClick={() => setShowInstrumentManager((prev) => !prev)}
@@ -1220,6 +1244,20 @@ export function SelfInspectionReportModal({
                 >
                   PNG 저장
                 </button>
+
+                <div className="ml-auto mr-2 w-full max-w-[160px]">
+                  <WorksheetStageSearchInput
+                    value={lotSearchQuery}
+                    onChange={handleLotSearchChange}
+                    placeholder="로트번호로 제품 검색"
+                    className="max-w-none"
+                  />
+                  {lotSearchNoResult && (
+                    <p className="mt-1 text-[11px] text-red-600">
+                      일치하는 로트번호 제품이 없습니다.
+                    </p>
+                  )}
+                </div>
               </div>
 
               {showInstrumentManager && (
