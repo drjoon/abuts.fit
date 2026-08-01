@@ -2,7 +2,7 @@
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { request } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
@@ -44,6 +44,16 @@ export type SalesmanLedgerModalProps = {
   title?: string;
   titleSuffix?: string;
   mode?: "admin" | "self";
+};
+
+type SalesmanLedgerListResponse = {
+  items?: LedgerItem[];
+};
+
+type ApiEnvelope<T> = {
+  success?: boolean;
+  message?: string;
+  data?: T;
 };
 
 const PAGE_SIZE = 50;
@@ -115,7 +125,7 @@ export const SalesmanLedgerModal = ({
     setQ("");
   };
 
-  const buildQs = (p: number) => {
+  const buildQs = useCallback((p: number) => {
     const qs = new URLSearchParams({
       page: String(p),
       pageSize: String(PAGE_SIZE),
@@ -126,9 +136,9 @@ export const SalesmanLedgerModal = ({
     if (to) qs.set("to", to);
     if (q.trim()) qs.set("q", q.trim());
     return qs.toString();
-  };
+  }, [period, type, from, to, q]);
 
-  const loadPage = async (p: number, reset = false) => {
+  const loadPage = useCallback(async (p: number, reset = false) => {
     if (!token) return;
     setLoading(true);
     try {
@@ -143,12 +153,12 @@ export const SalesmanLedgerModal = ({
         effectiveMode === "self"
           ? `/api/salesman/ledger?${buildQs(p)}`
           : `/api/admin/credits/salesmen/${salesmanId}/ledger?${buildQs(p)}`;
-      const res = await request<any>({
+      const res = await request<ApiEnvelope<SalesmanLedgerListResponse>>({
         path,
         method: "GET",
         token,
       });
-      if (!res.ok) throw new Error((res.data as any)?.message || "조회 실패");
+      if (!res.ok) throw new Error(res.data?.message || "조회 실패");
       const data = res.data?.data;
       const fetched: LedgerItem[] = Array.isArray(data?.items)
         ? data.items
@@ -156,16 +166,17 @@ export const SalesmanLedgerModal = ({
       setItems((prev) => (reset ? fetched : [...prev, ...fetched]));
       setHasMore(fetched.length >= PAGE_SIZE);
       setPage(p);
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "조회 실패";
       toast({
         title: "조회 실패",
-        description: err?.message,
+        description: message,
         variant: "destructive",
       });
     } finally {
       setLoading(false);
     }
-  };
+  }, [token, mode, salesmanId, toast, buildQs]);
 
   useEffect(() => {
     if (!open) return;
@@ -177,8 +188,8 @@ export const SalesmanLedgerModal = ({
     if (effectiveMode === "admin" && !salesmanId) return;
     setItems([]);
     setHasMore(true);
-    loadPage(1, true);
-  }, [open, salesmanId, mode, period, type, from, to, q]);
+    void loadPage(1, true);
+  }, [open, salesmanId, mode, period, type, from, to, q, loadPage]);
 
   useEffect(() => {
     const sentinel = sentinelRef.current;
@@ -187,14 +198,14 @@ export const SalesmanLedgerModal = ({
     const io = new IntersectionObserver(
       (entries) => {
         if (entries.some((e) => e.isIntersecting) && hasMore && !loading) {
-          loadPage(page + 1, false);
+          void loadPage(page + 1, false);
         }
       },
       { root, rootMargin: "200px", threshold: 0 },
     );
     io.observe(sentinel);
     return () => io.disconnect();
-  }, [hasMore, loading, page, salesmanId]);
+  }, [hasMore, loading, page, salesmanId, loadPage]);
 
   return (
     <Dialog
@@ -220,7 +231,12 @@ export const SalesmanLedgerModal = ({
                 <select
                   className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
                   value={type}
-                  onChange={(e) => setType(e.target.value as any)}
+                  onChange={(e) => {
+                    const next = e.target.value;
+                    if (next === "all" || next === "EARN" || next === "PAYOUT" || next === "ADJUST") {
+                      setType(next);
+                    }
+                  }}
                 >
                   <option value="all">전체</option>
                   <option value="EARN">적립</option>

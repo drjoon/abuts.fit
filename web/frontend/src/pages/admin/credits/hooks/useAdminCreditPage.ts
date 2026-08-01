@@ -80,7 +80,7 @@ export function useAdminCreditPage() {
     "balance" | "commission" | "revenue" | "name"
   >("balance");
   const [orgSortKey, setOrgSortKey] = useState<
-    "paidBalance" | "bonusBalance" | "spentPaid" | "name"
+    "paidBalance" | "freeBalance" | "spentPaid" | "name"
   >("paidBalance");
   const [chargeOrders, setChargeOrders] = useState<ChargeOrder[]>([]);
   const [loadingOrders, setLoadingOrders] = useState(false);
@@ -813,6 +813,7 @@ export function useAdminCreditPage() {
     }
   };
 
+  // 초기 로딩은 token 변화 시 1회 실행을 의도한다.
   useEffect(() => {
     loadStats();
     setOrgSkip(0);
@@ -829,16 +830,19 @@ export function useAdminCreditPage() {
     loadBankTransactions(txStatusFilter, { reset: true });
     loadSalesmen({ reset: true });
     loadFreeCreditGrantHistory();
-  }, [token]);
+  }, [token]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // period/token 변경 시 영업자 섹션만 재초기화한다.
   useEffect(() => {
     setSalesmen([]);
     setSalesmanSkip(0);
     setSalesmanHasMore(true);
     loadSalesmen({ reset: true });
     loadSalesmanOverview();
-  }, [period, token]);
+  }, [period, token]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // 무한스크롤 observer는 상태 플래그(ref/state) 기준으로 제어하며,
+  // 로더 함수는 의도적으로 deps에 고정하지 않는다.
   useEffect(() => {
     const sentinel = orgSentinelRef.current;
     const root = orgScrollRef.current;
@@ -856,7 +860,7 @@ export function useAdminCreditPage() {
     );
     io.observe(sentinel);
     return () => io.disconnect();
-  }, [orgHasMore, loadingOrgs, orgSkip, token]);
+  }, [orgHasMore, loadingOrgs, orgSkip, token]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const sentinel = salesmanSentinelRef.current;
@@ -875,7 +879,7 @@ export function useAdminCreditPage() {
     );
     io.observe(sentinel);
     return () => io.disconnect();
-  }, [salesmanHasMore, loadingSalesmen, salesmanSkip, token]);
+  }, [salesmanHasMore, loadingSalesmen, salesmanSkip, token]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const sentinel = orderSentinelRef.current;
@@ -894,7 +898,7 @@ export function useAdminCreditPage() {
     );
     io.observe(sentinel);
     return () => io.disconnect();
-  }, [orderHasMore, loadingOrders, orderSkip, orderStatusFilter, token]);
+  }, [orderHasMore, loadingOrders, orderSkip, orderStatusFilter, token]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const sentinel = txSentinelRef.current;
@@ -913,7 +917,7 @@ export function useAdminCreditPage() {
     );
     io.observe(sentinel);
     return () => io.disconnect();
-  }, [txHasMore, loadingTransactions, txSkip, txStatusFilter, token]);
+  }, [txHasMore, loadingTransactions, txSkip, txStatusFilter, token]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const salesmanSummary = useMemo(() => {
     const fallback = {
@@ -1015,15 +1019,12 @@ export function useAdminCreditPage() {
 
   const filteredFreeCreditUsageRows = useMemo(() => {
     const getSpentFreeTotal = (business: BusinessCredit) => {
-      const spentFreeRequest = Number(
-        business.spentFreeRequestAmount ?? business.spentBonusRequestAmount ?? 0,
-      );
-      const spentFreeShipping = Number(
-        business.spentFreeShippingAmount ?? business.spentBonusShippingAmount ?? 0,
-      );
-      const spentFreeCombined = spentFreeRequest + spentFreeShipping;
-      if (spentFreeCombined > 0) return spentFreeCombined;
-      return Number(business.spentFreeAmount ?? business.spentBonusAmount ?? 0);
+      const spentFreeAmount = Number(business.spentFreeAmount ?? 0);
+      if (spentFreeAmount > 0) return spentFreeAmount;
+
+      const spentFreeRequest = Number(business.spentFreeRequestAmount ?? 0);
+      const spentFreeShipping = Number(business.spentFreeShippingAmount ?? 0);
+      return spentFreeRequest + spentFreeShipping;
     };
 
     const pool =

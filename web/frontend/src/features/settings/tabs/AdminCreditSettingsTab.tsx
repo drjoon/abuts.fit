@@ -2,7 +2,7 @@
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
-import { useState, useEffect } from "react";
+import { useCallback, useState, useEffect } from "react";
 import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
@@ -23,17 +23,12 @@ interface CreditSettings {
   shippingFee: number;
   defaultRequestFreeCredit: number;
   defaultShippingFreeCredit: number;
-  defaultWelcomeBonusCredit?: number; // legacy 호환 (앱 안정화 후 삭제 예정)
-  defaultFreeShippingCredit?: number; // legacy 호환 (앱 안정화 후 삭제 예정)
 }
 
 type CreditSettingsApiResponse = {
   success?: boolean;
   data?: {
-    creditSettings?: Partial<CreditSettings> & {
-      defaultWelcomeBonusCredit?: number;
-      defaultFreeShippingCredit?: number;
-    };
+    creditSettings?: Partial<CreditSettings>;
   };
 };
 
@@ -47,11 +42,7 @@ export const AdminCreditSettingsTab = () => {
   const [originalSettings, setOriginalSettings] =
     useState<CreditSettings>(settings);
 
-  useEffect(() => {
-    fetchSettings();
-  }, []);
-
-  const fetchSettings = async () => {
+  const fetchSettings = useCallback(async () => {
     try {
       setLoading(true);
       const res = await apiFetch<CreditSettingsApiResponse>({
@@ -75,24 +66,12 @@ export const AdminCreditSettingsTab = () => {
         ),
         defaultRequestFreeCredit: Number(
           data.defaultRequestFreeCredit ??
-            data.defaultWelcomeBonusCredit ??
             CREDIT_SETTINGS_DEFAULTS.defaultRequestFreeCredit,
         ),
         defaultShippingFreeCredit: Number(
           data.defaultShippingFreeCredit ??
-            data.defaultFreeShippingCredit ??
             CREDIT_SETTINGS_DEFAULTS.defaultShippingFreeCredit,
         ),
-        defaultWelcomeBonusCredit: Number(
-          data.defaultRequestFreeCredit ??
-            data.defaultWelcomeBonusCredit ??
-            CREDIT_SETTINGS_DEFAULTS.defaultRequestFreeCredit,
-        ), // legacy 호환 (앱 안정화 후 삭제 예정)
-        defaultFreeShippingCredit: Number(
-          data.defaultShippingFreeCredit ??
-            data.defaultFreeShippingCredit ??
-            CREDIT_SETTINGS_DEFAULTS.defaultShippingFreeCredit,
-        ), // legacy 호환 (앱 안정화 후 삭제 예정)
       };
 
       setSettings(normalized);
@@ -107,7 +86,11 @@ export const AdminCreditSettingsTab = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [token, toast]);
+
+  useEffect(() => {
+    void fetchSettings();
+  }, [fetchSettings]);
 
   const handleSave = async () => {
     try {
@@ -212,7 +195,6 @@ export const AdminCreditSettingsTab = () => {
                   setSettings({
                     ...settings,
                     defaultRequestFreeCredit: Math.max(0, Number(e.target.value)),
-                    defaultWelcomeBonusCredit: Math.max(0, Number(e.target.value)), // legacy 호환 (앱 안정화 후 삭제 예정)
                   })
                 }
                 disabled={loading}
@@ -231,7 +213,6 @@ export const AdminCreditSettingsTab = () => {
                   setSettings({
                     ...settings,
                     defaultShippingFreeCredit: Math.max(0, Number(e.target.value)),
-                    defaultFreeShippingCredit: Math.max(0, Number(e.target.value)), // legacy 호환 (앱 안정화 후 삭제 예정)
                   })
                 }
                 disabled={loading}

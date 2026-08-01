@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 // related files:
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
@@ -398,18 +399,18 @@ export const useNewRequestSubmitV2 = ({
                   const creditResponse = await creditRes.json();
                   const creditData = creditResponse?.data || {};
                   const paidCredit = Number(creditData?.paidCredit || 0);
-                  const bonusRequestCredit = Number(
-                    creditData?.bonusRequestCredit || 0,
+                  const freeRequestCredit = Number(
+                    creditData?.freeRequestCredit ?? 0,
                   );
-                  const bonusShippingCredit = Number(
-                    creditData?.bonusShippingCredit || 0,
+                  const freeShippingCredit = Number(
+                    creditData?.freeShippingCredit ?? 0,
                   );
 
                   const estimatedMachiningFee = files.length * 10000;
                   const estimatedShippingFee = boxCount * 3500;
 
-                  const availableForMachining = paidCredit + bonusRequestCredit;
-                  const availableForShipping = paidCredit + bonusShippingCredit;
+                  const availableForMachining = paidCredit + freeRequestCredit;
+                  const availableForShipping = paidCredit + freeShippingCredit;
 
                   const machiningShortfall = Math.max(
                     0,

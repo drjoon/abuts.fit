@@ -24,6 +24,8 @@ export interface User {
   companyName?: string;
   referralCode?: string;
   approvedAt?: string | null;
+  createdAt?: string | null;
+  mockUserId?: string | null;
   businessAnchorId?: string | null;
   businessVerified?: boolean;
   onboardingWizardCompleted?: boolean;
@@ -64,6 +66,8 @@ const normalizeApiUser = (u: unknown): User | null => {
     companyName: String(row.business || row.companyName || ""),
     referralCode: String(row.referralCode || ""),
     approvedAt: row.approvedAt ? String(row.approvedAt) : null,
+    createdAt: row.createdAt ? String(row.createdAt) : null,
+    mockUserId: row.mockUserId ? String(row.mockUserId) : null,
     businessAnchorId: row.businessAnchorId ? String(row.businessAnchorId) : null,
     businessVerified: Boolean(row.businessVerified),
     onboardingWizardCompleted: Boolean(row.onboardingWizardCompleted),

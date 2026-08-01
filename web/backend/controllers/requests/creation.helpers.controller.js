@@ -41,8 +41,8 @@ export async function getBusinessCreditBalanceBreakdown({
   return {
     balance: Number(snapshot?.balance || 0),
     paidCredit: Number(snapshot?.paidCredit || 0),
-    bonusRequestCredit: Number(snapshot?.bonusRequestCredit || 0),
-    bonusShippingCredit: Number(snapshot?.bonusShippingCredit || 0),
+    freeRequestCredit: Number(snapshot?.freeRequestCredit || 0),
+    freeShippingCredit: Number(snapshot?.freeShippingCredit || 0),
   };
 }
 

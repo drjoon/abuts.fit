@@ -2,6 +2,7 @@
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { useEffect, useMemo, useState } from "react";
 import { request } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
@@ -143,7 +144,7 @@ export const CreditPaymentTab = ({ userData }: Props) => {
 
   const [balance, setBalance] = useState<number>(0);
   const [paidBalance, setPaidBalance] = useState<number>(0);
-  const [bonusBalance, setBonusBalance] = useState<number>(0);
+  const [freeBalance, setFreeBalance] = useState<number>(0);
   const [loadingBalance, setLoadingBalance] = useState(false);
 
   const [orders, setOrders] = useState<CreditOrderItem[]>([]);
@@ -315,17 +316,33 @@ export const CreditPaymentTab = ({ userData }: Props) => {
     if (!token) return;
     setLoadingBalance(true);
     try {
-      const res = await request<any>({
+      const res = await request<{
+        data?: {
+          balance?: number;
+          paidCredit?: number;
+          paidBalance?: number;
+          freeRequestCredit?: number;
+          freeShippingCredit?: number;
+        };
+        balance?: number;
+        paidCredit?: number;
+        paidBalance?: number;
+        freeRequestCredit?: number;
+        freeShippingCredit?: number;
+      }>({
         path: "/api/credits/balance",
         method: "GET",
         token,
       });
       if (!res.ok) throw new Error("balance fetch failed");
-      const body: any = res.data || {};
+      const body = res.data || {};
       const data = body.data || body;
+      const freeRequest = Number(data?.freeRequestCredit ?? 0);
+      const freeShipping = Number(data?.freeShippingCredit ?? 0);
+
       setBalance(Number(data?.balance || 0));
-      setPaidBalance(Number(data?.paidBalance || 0));
-      setBonusBalance(Number(data?.bonusBalance || 0));
+      setPaidBalance(Number(data?.paidCredit ?? data?.paidBalance ?? 0));
+      setFreeBalance(freeRequest + freeShipping);
     } catch {
       // ignore
     } finally {
@@ -576,7 +593,7 @@ export const CreditPaymentTab = ({ userData }: Props) => {
                 <div className="text-lg font-semibold">
                   {loadingBalance
                     ? "..."
-                    : `${bonusBalance.toLocaleString()}원`}
+                    : `${freeBalance.toLocaleString()}원`}
                 </div>
               </div>
             </div>

@@ -155,26 +155,20 @@ export function RequestorFreeCreditTab(props: RequestorFreeCreditTabProps) {
       ? selectedFreeCreditBusinessAnchorId
       : selectedShippingCreditBusinessAnchorId;
   const getSpentFreeTotal = (business: BusinessCredit) => {
-    const spentFreeRequest = Number(
-      business.spentFreeRequestAmount ?? business.spentBonusRequestAmount ?? 0,
-    );
-    const spentFreeShipping = Number(
-      business.spentFreeShippingAmount ?? business.spentBonusShippingAmount ?? 0,
-    );
-    const spentFreeCombined = spentFreeRequest + spentFreeShipping;
-    if (spentFreeCombined > 0) return spentFreeCombined;
-    return Number(business.spentFreeAmount ?? business.spentBonusAmount ?? 0);
+    const spentFreeAmount = Number(business.spentFreeAmount ?? 0);
+    if (spentFreeAmount > 0) return spentFreeAmount;
+
+    const spentFreeRequest = Number(business.spentFreeRequestAmount ?? 0);
+    const spentFreeShipping = Number(business.spentFreeShippingAmount ?? 0);
+    return spentFreeRequest + spentFreeShipping;
   };
   const getChargedFreeTotal = (business: BusinessCredit) => {
-    const chargedFreeRequest = Number(
-      business.chargedFreeRequestAmount ?? business.chargedBonusRequestAmount ?? 0,
-    );
-    const chargedFreeShipping = Number(
-      business.chargedFreeShippingAmount ?? business.chargedBonusShippingAmount ?? 0,
-    );
-    const chargedFreeCombined = chargedFreeRequest + chargedFreeShipping;
-    if (chargedFreeCombined > 0) return chargedFreeCombined;
-    return Number(business.chargedFreeAmount ?? business.chargedBonusAmount ?? 0);
+    const chargedFreeAmount = Number(business.chargedFreeAmount ?? 0);
+    if (chargedFreeAmount > 0) return chargedFreeAmount;
+
+    const chargedFreeRequest = Number(business.chargedFreeRequestAmount ?? 0);
+    const chargedFreeShipping = Number(business.chargedFreeShippingAmount ?? 0);
+    return chargedFreeRequest + chargedFreeShipping;
   };
 
   return (
@@ -783,7 +777,7 @@ export function RequestorFreeCreditTab(props: RequestorFreeCreditTabProps) {
                         {getSpentFreeTotal(org).toLocaleString()}원
                       </TableCell>
                       <TableCell className="text-right">
-                        {Number(org.bonusBalance || 0).toLocaleString()}원
+                        {Number(org.freeBalance ?? 0).toLocaleString()}원
                       </TableCell>
                       <TableCell className="text-right">
                         {getChargedFreeTotal(org).toLocaleString()}원

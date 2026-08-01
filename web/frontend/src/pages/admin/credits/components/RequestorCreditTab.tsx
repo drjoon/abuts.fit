@@ -26,9 +26,9 @@ type RequestorCreditTabProps = {
   stats: CreditStats | null;
   searchQuery: string;
   setSearchQuery: (value: string) => void;
-  orgSortKey: "paidBalance" | "bonusBalance" | "spentPaid" | "name";
+  orgSortKey: "paidBalance" | "freeBalance" | "spentPaid" | "name";
   setOrgSortKey: (
-    value: "paidBalance" | "bonusBalance" | "spentPaid" | "name",
+    value: "paidBalance" | "freeBalance" | "spentPaid" | "name",
   ) => void;
   loadingOrgs: boolean;
   allRequestorBusinesses: BusinessCredit[];
@@ -150,29 +150,29 @@ export function RequestorCreditTab(props: RequestorCreditTabProps) {
   });
 
   const totalChargedPaid = Number(props.stats?.totalCharged || 0);
-  const totalChargedFreeRequest = Number(
-    props.stats?.totalFreeRequest ?? props.stats?.totalBonusRequest ?? 0,
-  );
-  const totalChargedFreeShipping = Number(
-    props.stats?.totalFreeShipping ?? props.stats?.totalBonusShipping ?? 0,
+  const totalChargedFreeRequest = Number(props.stats?.totalFreeRequest ?? 0);
+  const totalChargedFreeShipping = Number(props.stats?.totalFreeShipping ?? 0);
+  const totalChargedFree = Number(
+    props.stats?.totalChargedFreeAmount ??
+      totalChargedFreeRequest + totalChargedFreeShipping,
   );
   const totalPaidCredit = Number(props.stats?.totalPaidCredit || 0);
   const totalFreeRequestCredit = Number(
-    props.stats?.totalFreeRequestCredit ?? props.stats?.totalBonusRequestCredit ?? 0,
+    props.stats?.totalFreeRequestCredit ?? 0,
   );
   const totalFreeShippingCredit = Number(
-    props.stats?.totalFreeShippingCredit ?? props.stats?.totalBonusShippingCredit ?? 0,
+    props.stats?.totalFreeShippingCredit ?? 0,
   );
   const totalSpentPaid = Number(props.stats?.totalSpentPaidAmount || 0);
   const totalSpentFreeRequest = Number(
-    props.stats?.totalSpentFreeRequestAmount ??
-      props.stats?.totalSpentBonusRequestAmount ??
-      0,
+    props.stats?.totalSpentFreeRequestAmount ?? 0,
   );
   const totalSpentFreeShipping = Number(
-    props.stats?.totalSpentFreeShippingAmount ??
-      props.stats?.totalSpentBonusShippingAmount ??
-      0,
+    props.stats?.totalSpentFreeShippingAmount ?? 0,
+  );
+  const totalSpentFree = Number(
+    props.stats?.totalSpentFreeAmount ??
+      totalSpentFreeRequest + totalSpentFreeShipping,
   );
 
   return (
@@ -198,11 +198,7 @@ export function RequestorCreditTab(props: RequestorCreditTabProps) {
             <div className="text-2xl font-bold">
               {props.loadingStats
                 ? "..."
-                : `${(
-                    totalChargedPaid +
-                    totalChargedFreeRequest +
-                    totalChargedFreeShipping
-                  ).toLocaleString()}원`}
+                : `${(totalChargedPaid + totalChargedFree).toLocaleString()}원`}
             </div>
             <div className="text-xs text-muted-foreground">
               유료 {totalChargedPaid.toLocaleString()}원
@@ -248,7 +244,7 @@ export function RequestorCreditTab(props: RequestorCreditTabProps) {
             <div className="text-2xl font-bold">
               {props.loadingStats
                 ? "..."
-                : `${(props.stats?.totalSpent || 0).toLocaleString()}원`}
+                : `${(totalSpentPaid + totalSpentFree).toLocaleString()}원`}
             </div>
             <div className="text-xs text-muted-foreground">
               유료 {totalSpentPaid.toLocaleString()}원

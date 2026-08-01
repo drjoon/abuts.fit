@@ -190,23 +190,15 @@ const getBusinessTypeBadgeClass = (type?: string) => {
 
 const getCreditBreakdown = (business?: BusinessCredit | null) => {
   const paidCredit = Number(business?.paidCredit ?? business?.paidBalance ?? 0);
-  const freeRequestCredit = Number(
-    business?.freeRequestCredit ?? business?.bonusRequestCredit ?? 0,
-  );
-  const freeShippingCredit = Number(
-    business?.freeShippingCredit ?? business?.bonusShippingCredit ?? 0,
-  );
+  const freeRequestCredit = Number(business?.freeRequestCredit ?? 0);
+  const freeShippingCredit = Number(business?.freeShippingCredit ?? 0);
   const totalBalance = Number(
     business?.balance ?? paidCredit + freeRequestCredit + freeShippingCredit,
   );
 
   const spentPaid = Number(business?.spentPaidAmount ?? 0);
-  const spentFreeRequest = Number(
-    business?.spentFreeRequestAmount ?? business?.spentBonusRequestAmount ?? 0,
-  );
-  const spentFreeShipping = Number(
-    business?.spentFreeShippingAmount ?? business?.spentBonusShippingAmount ?? 0,
-  );
+  const spentFreeRequest = Number(business?.spentFreeRequestAmount ?? 0);
+  const spentFreeShipping = Number(business?.spentFreeShippingAmount ?? 0);
   const totalSpent = Number(
     business?.spentAmount ?? spentPaid + spentFreeRequest + spentFreeShipping,
   );

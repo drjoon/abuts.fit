@@ -26,8 +26,8 @@ export async function computeBusinessCreditBalanceFromLedger({
   if (!anchorObjectId) {
     return {
       paidCredit: 0,
-      bonusRequestCredit: 0,
-      bonusShippingCredit: 0,
+      freeRequestCredit: 0,
+      freeShippingCredit: 0,
       balance: 0,
     };
   }
@@ -56,27 +56,27 @@ export async function computeBusinessCreditBalanceFromLedger({
   ]).session(session || null);
 
   let paid = 0;
-  let bonusRequest = 0;
-  let bonusShipping = 0;
+  let freeRequest = 0;
+  let freeShipping = 0;
 
   for (const row of glRows || []) {
     const code = String(row?._id || "");
     const total = Number(row?.total || 0);
     if (!Number.isFinite(total)) continue;
     if (code === "REQ_PAID_CREDIT") paid += total;
-    else if (code === "REQ_FREE_REQUEST_CREDIT") bonusRequest += total;
-    else if (code === "REQ_FREE_SHIPPING_CREDIT") bonusShipping += total;
+    else if (code === "REQ_FREE_REQUEST_CREDIT") freeRequest += total;
+    else if (code === "REQ_FREE_SHIPPING_CREDIT") freeShipping += total;
   }
 
   const paidCredit = Math.max(0, Math.round(paid));
-  const bonusRequestCredit = Math.max(0, Math.round(bonusRequest));
-  const bonusShippingCredit = Math.max(0, Math.round(bonusShipping));
+  const freeRequestCredit = Math.max(0, Math.round(freeRequest));
+  const freeShippingCredit = Math.max(0, Math.round(freeShipping));
 
   return {
     paidCredit,
-    bonusRequestCredit,
-    bonusShippingCredit,
-    balance: paidCredit + bonusRequestCredit + bonusShippingCredit,
+    freeRequestCredit,
+    freeShippingCredit,
+    balance: paidCredit + freeRequestCredit + freeShippingCredit,
   };
 }
 
@@ -90,8 +90,8 @@ export async function getBusinessCreditBalanceSnapshot({
     return {
       businessAnchorId: null,
       paidCredit: 0,
-      bonusRequestCredit: 0,
-      bonusShippingCredit: 0,
+      freeRequestCredit: 0,
+      freeShippingCredit: 0,
       balance: 0,
       source: "invalid",
     };
@@ -105,21 +105,21 @@ export async function getBusinessCreditBalanceSnapshot({
 
   if (existing) {
     const paidCredit = Math.max(0, Math.round(Number(existing.paidCredit || 0)));
-    const bonusRequestCredit = Math.max(
+    const freeRequestCredit = Math.max(
       0,
-      Math.round(Number(existing.bonusRequestCredit || 0)),
+      Math.round(Number(existing.freeRequestCredit || 0)),
     );
-    const bonusShippingCredit = Math.max(
+    const freeShippingCredit = Math.max(
       0,
-      Math.round(Number(existing.bonusShippingCredit || 0)),
+      Math.round(Number(existing.freeShippingCredit || 0)),
     );
 
     return {
       businessAnchorId: String(anchorObjectId),
       paidCredit,
-      bonusRequestCredit,
-      bonusShippingCredit,
-      balance: paidCredit + bonusRequestCredit + bonusShippingCredit,
+      freeRequestCredit,
+      freeShippingCredit,
+      balance: paidCredit + freeRequestCredit + freeShippingCredit,
       source: "ssot",
     };
   }
@@ -128,8 +128,8 @@ export async function getBusinessCreditBalanceSnapshot({
     return {
       businessAnchorId: String(anchorObjectId),
       paidCredit: 0,
-      bonusRequestCredit: 0,
-      bonusShippingCredit: 0,
+      freeRequestCredit: 0,
+      freeShippingCredit: 0,
       balance: 0,
       source: "missing",
     };
@@ -168,8 +168,8 @@ async function getOrCreateBalanceDoc({ businessAnchorId, session }) {
       $setOnInsert: {
         businessAnchorId: anchorObjectId,
         paidCredit: Number(snapshot.paidCredit || 0),
-        bonusRequestCredit: Number(snapshot.bonusRequestCredit || 0),
-        bonusShippingCredit: Number(snapshot.bonusShippingCredit || 0),
+        freeRequestCredit: Number(snapshot.freeRequestCredit || 0),
+        freeShippingCredit: Number(snapshot.freeShippingCredit || 0),
         version: 0,
       },
     },
@@ -306,8 +306,8 @@ export async function spendRequestCreditAtomic({
   }
 
   const paidCredit = Number(balanceDoc?.paidCredit || 0);
-  const bonusRequestCredit = Number(balanceDoc?.bonusRequestCredit || 0);
-  const availableForMachining = paidCredit + bonusRequestCredit;
+  const freeRequestCredit = Number(balanceDoc?.freeRequestCredit || 0);
+  const availableForMachining = paidCredit + freeRequestCredit;
 
   if (availableForMachining < resolvedAmount) {
     const err = new Error("의뢰자 잔액 부족으로 가공 진입 불가");
@@ -315,7 +315,7 @@ export async function spendRequestCreditAtomic({
     err.payload = {
       reason: "insufficient_credit_for_machining",
       paidCredit,
-      bonusRequestCredit,
+      freeRequestCredit,
       availableForMachining,
       required: resolvedAmount,
       requestId: request?._id ? String(request._id) : null,
@@ -323,19 +323,19 @@ export async function spendRequestCreditAtomic({
     throw err;
   }
 
-  const fromBonusRequest = Math.min(bonusRequestCredit, resolvedAmount);
+  const fromBonusRequest = Math.min(freeRequestCredit, resolvedAmount);
   const fromPaid = resolvedAmount - fromBonusRequest;
 
   const balanceUpdated = await BusinessCreditBalance.updateOne(
     {
       businessAnchorId: anchorObjectId,
       paidCredit: { $gte: fromPaid },
-      bonusRequestCredit: { $gte: fromBonusRequest },
+      freeRequestCredit: { $gte: fromBonusRequest },
     },
     {
       $inc: {
         paidCredit: -fromPaid,
-        bonusRequestCredit: -fromBonusRequest,
+        freeRequestCredit: -fromBonusRequest,
         version: 1,
       },
     },
@@ -354,9 +354,9 @@ export async function spendRequestCreditAtomic({
     err.payload = {
       reason: "insufficient_credit_for_machining",
       paidCredit: Number(latest?.paidCredit || 0),
-      bonusRequestCredit: Number(latest?.bonusRequestCredit || 0),
+      freeRequestCredit: Number(latest?.freeRequestCredit || 0),
       availableForMachining:
-        Number(latest?.paidCredit || 0) + Number(latest?.bonusRequestCredit || 0),
+        Number(latest?.paidCredit || 0) + Number(latest?.freeRequestCredit || 0),
       required: resolvedAmount,
       requestId: request?._id ? String(request._id) : null,
     };
@@ -417,8 +417,8 @@ export async function spendShippingCreditAtomic({
   }
 
   const paidCredit = Number(balanceDoc?.paidCredit || 0);
-  const bonusShippingCredit = Number(balanceDoc?.bonusShippingCredit || 0);
-  const availableForShipping = paidCredit + bonusShippingCredit;
+  const freeShippingCredit = Number(balanceDoc?.freeShippingCredit || 0);
+  const availableForShipping = paidCredit + freeShippingCredit;
 
   if (availableForShipping < amount) {
     const err = new Error("의뢰자 잔액 부족으로 포장.발송 진입 불가");
@@ -426,26 +426,26 @@ export async function spendShippingCreditAtomic({
     err.payload = {
       reason: "insufficient_credit_for_shipping",
       paidCredit,
-      bonusShippingCredit,
+      freeShippingCredit,
       required: amount,
       shippingPackageId: String(packageObjectId),
     };
     throw err;
   }
 
-  const fromBonusShipping = Math.min(bonusShippingCredit, amount);
+  const fromBonusShipping = Math.min(freeShippingCredit, amount);
   const fromPaid = amount - fromBonusShipping;
 
   const updated = await BusinessCreditBalance.updateOne(
     {
       businessAnchorId: anchorObjectId,
       paidCredit: { $gte: fromPaid },
-      bonusShippingCredit: { $gte: fromBonusShipping },
+      freeShippingCredit: { $gte: fromBonusShipping },
     },
     {
       $inc: {
         paidCredit: -fromPaid,
-        bonusShippingCredit: -fromBonusShipping,
+        freeShippingCredit: -fromBonusShipping,
         version: 1,
       },
     },
@@ -464,7 +464,7 @@ export async function spendShippingCreditAtomic({
     err.payload = {
       reason: "insufficient_credit_for_shipping",
       paidCredit: Number(latest?.paidCredit || 0),
-      bonusShippingCredit: Number(latest?.bonusShippingCredit || 0),
+      freeShippingCredit: Number(latest?.freeShippingCredit || 0),
       required: amount,
       shippingPackageId: String(packageObjectId),
     };
@@ -525,14 +525,14 @@ export async function deleteRequestSpendAtomicOnRollback({
     {
       $inc: {
         paidCredit: Number(restorePaid || 0),
-        bonusRequestCredit: Number(restoreBonusRequest || 0),
+        freeRequestCredit: Number(restoreBonusRequest || 0),
         version: 1,
       },
       $setOnInsert: {
         businessAnchorId: anchorObjectId,
         paidCredit: 0,
-        bonusRequestCredit: 0,
-        bonusShippingCredit: 0,
+        freeRequestCredit: 0,
+        freeShippingCredit: 0,
       },
     },
     { session, upsert: true },
@@ -594,14 +594,14 @@ export async function deleteShippingSpendAtomicOnRollback({
     {
       $inc: {
         paidCredit: Number(restorePaid || 0),
-        bonusShippingCredit: Number(restoreBonusShipping || 0),
+        freeShippingCredit: Number(restoreBonusShipping || 0),
         version: 1,
       },
       $setOnInsert: {
         businessAnchorId: anchorObjectId,
         paidCredit: 0,
-        bonusRequestCredit: 0,
-        bonusShippingCredit: 0,
+        freeRequestCredit: 0,
+        freeShippingCredit: 0,
       },
     },
     { session, upsert: true },
@@ -633,14 +633,14 @@ export async function restoreRequestSpendDeductionAtomic({
     {
       $inc: {
         paidCredit: paid,
-        bonusRequestCredit: free,
+        freeRequestCredit: free,
         version: 1,
       },
       $setOnInsert: {
         businessAnchorId: anchorObjectId,
         paidCredit: 0,
-        bonusRequestCredit: 0,
-        bonusShippingCredit: 0,
+        freeRequestCredit: 0,
+        freeShippingCredit: 0,
       },
     },
     { session, upsert: true },
@@ -667,14 +667,14 @@ export async function restoreShippingSpendDeductionAtomic({
     {
       $inc: {
         paidCredit: paid,
-        bonusShippingCredit: free,
+        freeShippingCredit: free,
         version: 1,
       },
       $setOnInsert: {
         businessAnchorId: anchorObjectId,
         paidCredit: 0,
-        bonusRequestCredit: 0,
-        bonusShippingCredit: 0,
+        freeRequestCredit: 0,
+        freeShippingCredit: 0,
       },
     },
     { session, upsert: true },
@@ -695,8 +695,8 @@ export async function upsertBusinessCreditBalanceFromLedger({
     return {
       businessAnchorId: null,
       paidCredit: 0,
-      bonusRequestCredit: 0,
-      bonusShippingCredit: 0,
+      freeRequestCredit: 0,
+      freeShippingCredit: 0,
       balance: 0,
       upserted: false,
     };
@@ -712,8 +712,8 @@ export async function upsertBusinessCreditBalanceFromLedger({
     {
       $set: {
         paidCredit: Number(snapshot.paidCredit || 0),
-        bonusRequestCredit: Number(snapshot.bonusRequestCredit || 0),
-        bonusShippingCredit: Number(snapshot.bonusShippingCredit || 0),
+        freeRequestCredit: Number(snapshot.freeRequestCredit || 0),
+        freeShippingCredit: Number(snapshot.freeShippingCredit || 0),
       },
       $setOnInsert: {
         businessAnchorId: anchorObjectId,

@@ -1116,8 +1116,8 @@ export async function createRequestsFromDraft(req, res) {
           const {
             balance,
             paidCredit,
-            bonusRequestCredit,
-            bonusShippingCredit,
+            freeRequestCredit,
+            freeShippingCredit,
           } = await getBusinessCreditBalanceBreakdown({
             businessAnchorId,
             session,
@@ -1126,8 +1126,8 @@ export async function createRequestsFromDraft(req, res) {
             t: Date.now() - startTime,
             balance,
             paidCredit,
-            bonusRequestCredit,
-            bonusShippingCredit,
+            freeRequestCredit,
+            freeShippingCredit,
             requiredMachiningFee: totalSpendSupply,
           });
 
@@ -1139,8 +1139,8 @@ export async function createRequestsFromDraft(req, res) {
           });
 
           // 의뢰비는 의뢰 크레딧(유료+무료 의뢰), 배송비는 배송 크레딧(유료+무료 배송) 기준으로 체크
-          const availableForMachining = paidCredit + bonusRequestCredit;
-          const availableForShipping = paidCredit + bonusShippingCredit;
+          const availableForMachining = paidCredit + freeRequestCredit;
+          const availableForShipping = paidCredit + freeShippingCredit;
 
           const machiningShortfall =
             totalSpendSupply > availableForMachining

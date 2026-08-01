@@ -3,7 +3,7 @@
 // - web/backend/controllers/manufacturers/manufacturer.controller.js
 // - web/backend/modules/manufacturers/manufacturer.routes.js
 // - web/frontend/src/shared/date/kst.ts
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { apiFetch } from "@/shared/api/apiClient";
 import { toKstYmd } from "@/shared/date/kst";
 import { useAuthStore } from "@/store/useAuthStore";
@@ -59,7 +59,7 @@ type ManufacturerDailySnapshotRow = {
   earnShippingPaidCount?: number;
   earnShippingFreeAmount?: number;
   earnShippingFreeCount?: number;
-  refundAmount: number;
+  refundAmount: number; // legacy 표시 호환(정책상 신규 REFUND 적재 금지, 일반적으로 0)
   payoutAmount: number;
   adjustAmount: number;
   netAmount: number;
@@ -68,6 +68,12 @@ type ManufacturerDailySnapshotRow = {
 type SnapshotValidationResult =
   | { valid: true }
   | { valid: false; reason: string };
+
+type ApiEnvelope<T> = {
+  success?: boolean;
+  message?: string;
+  data?: T;
+};
 
 const PAGE_SIZE = 50;
 
@@ -236,8 +242,7 @@ export const ManufacturerPaymentPage = () => {
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
-
-  if (!user || user.role !== "manufacturer") return null;
+  const isManufacturer = Boolean(user && user.role === "manufacturer");
 
   const resetFilters = () => {
     setPeriod("30d");
@@ -247,59 +252,66 @@ export const ManufacturerPaymentPage = () => {
     setRequestSettlementFilter("all");
   };
 
-  const buildQueryParams = (p: number) => {
-    const params = new URLSearchParams({
-      page: String(p),
-      limit: String(PAGE_SIZE),
-    });
-    if (from) params.set("from", from);
-    if (to) params.set("to", to);
-    const days = periodToDays(period);
-    if (days && !from && !to) {
-      const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
-      params.set("from", toKstYmd(cutoff) || "");
-    }
-    if (q.trim()) params.set("q", q.trim());
-
-    return params.toString();
-  };
-
-  const loadPayments = async (p: number, reset: boolean) => {
-    if (!token) return;
-    setLoading(true);
-    try {
-      const res = await apiFetch<any>({
-        path: `/api/manufacturer/payments?${buildQueryParams(p)}`,
-        method: "GET",
-        token,
+  const buildQueryParams = useCallback(
+    (p: number) => {
+      const params = new URLSearchParams({
+        page: String(p),
+        limit: String(PAGE_SIZE),
       });
-      if (!res.ok || !res.data?.success) {
-        throw new Error(res.data?.message || "조회 실패");
+      if (from) params.set("from", from);
+      if (to) params.set("to", to);
+      const days = periodToDays(period);
+      if (days && !from && !to) {
+        const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+        params.set("from", toKstYmd(cutoff) || "");
       }
-      const fetched: PaymentItem[] = Array.isArray(res.data.data)
-        ? res.data.data
-        : [];
-      setItems((prev) => (reset ? fetched : [...prev, ...fetched]));
-      setHasMore(fetched.length >= PAGE_SIZE);
-      setPage(p);
-      if (reset) {
-        const sum = fetched
-          .filter((x) => x.status === "CONFIRMED")
-          .reduce((acc, x) => acc + Number(x.amount || 0), 0);
-        setTotalAmount(sum);
-      }
-    } catch (err: any) {
-      toast({
-        title: "조회 실패",
-        description: err?.message,
-        variant: "destructive",
-      });
-    } finally {
-      setLoading(false);
-    }
-  };
+      if (q.trim()) params.set("q", q.trim());
 
-  const buildSnapshotParams = () => {
+      return params.toString();
+    },
+    [from, to, period, q],
+  );
+
+  const loadPayments = useCallback(
+    async (p: number, reset: boolean) => {
+      if (!token) return;
+      setLoading(true);
+      try {
+        const res = await apiFetch<ApiEnvelope<PaymentItem[]>>({
+          path: `/api/manufacturer/payments?${buildQueryParams(p)}`,
+          method: "GET",
+          token,
+        });
+        if (!res.ok || !res.data?.success) {
+          throw new Error(res.data?.message || "조회 실패");
+        }
+        const fetched: PaymentItem[] = Array.isArray(res.data.data)
+          ? res.data.data
+          : [];
+        setItems((prev) => (reset ? fetched : [...prev, ...fetched]));
+        setHasMore(fetched.length >= PAGE_SIZE);
+        setPage(p);
+        if (reset) {
+          const sum = fetched
+            .filter((x) => x.status === "CONFIRMED")
+            .reduce((acc, x) => acc + Number(x.amount || 0), 0);
+          setTotalAmount(sum);
+        }
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : "조회 실패";
+        toast({
+          title: "조회 실패",
+          description: message,
+          variant: "destructive",
+        });
+      } finally {
+        setLoading(false);
+      }
+    },
+    [token, buildQueryParams, toast],
+  );
+
+  const buildSnapshotParams = useCallback(() => {
     const params = new URLSearchParams({ limit: "60" });
     const days = periodToDays(period);
     if (days && !from && !to) {
@@ -309,13 +321,13 @@ export const ManufacturerPaymentPage = () => {
     if (from) params.set("fromYmd", from);
     if (to) params.set("toYmd", to);
     return params.toString();
-  };
+  }, [period, from, to]);
 
-  const loadSnapshots = async () => {
+  const loadSnapshots = useCallback(async () => {
     if (!token) return;
     setSnapLoading(true);
     try {
-      const res = await apiFetch<any>({
+      const res = await apiFetch<ApiEnvelope<ManufacturerDailySnapshotRow[]>>({
         path: `/api/manufacturer/credits/daily-summary?${buildSnapshotParams()}`,
         method: "GET",
         token,
@@ -323,9 +335,7 @@ export const ManufacturerPaymentPage = () => {
       if (!res.ok || !res.data?.success) {
         throw new Error(res.data?.message || "조회 실패");
       }
-      const fetched: ManufacturerDailySnapshotRow[] = Array.isArray(
-        res.data.data,
-      )
+      const fetched: ManufacturerDailySnapshotRow[] = Array.isArray(res.data.data)
         ? res.data.data
         : [];
 
@@ -351,44 +361,55 @@ export const ManufacturerPaymentPage = () => {
       }
 
       setSnapItems(fetched);
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "조회 실패";
       toast({
         title: "조회 실패",
-        description: err?.message,
+        description: message,
         variant: "destructive",
       });
     } finally {
       setSnapLoading(false);
     }
-  };
+  }, [token, buildSnapshotParams, toast]);
 
   useEffect(() => {
+    if (!isManufacturer) return;
     if (tab === "payments") {
       setPage(1);
       setHasMore(true);
-      loadPayments(1, true);
+      void loadPayments(1, true);
       return;
     }
     if (tab === "snapshot") {
-      loadSnapshots();
+      void loadSnapshots();
     }
-  }, [period, from, to, q, token, tab]);
+  }, [isManufacturer, tab, period, from, to, q, loadPayments, loadSnapshots]);
 
   useEffect(() => {
+    if (!isManufacturer) return;
     const sentinel = sentinelRef.current;
     const root = scrollRef.current;
-    if (!sentinel || !root || !hasMore || loading) return;
+    if (!sentinel || !root || !hasMore || loading || tab !== "payments") return;
     const io = new IntersectionObserver(
       (entries) => {
         if (entries.some((e) => e.isIntersecting) && hasMore && !loading) {
-          loadPayments(page + 1, false);
+          void loadPayments(page + 1, false);
         }
       },
       { root, rootMargin: "200px", threshold: 0 },
     );
     io.observe(sentinel);
     return () => io.disconnect();
-  }, [hasMore, loading, page]);
+  }, [isManufacturer, hasMore, loading, page, tab, loadPayments]);
+
+  const handleTabChange = (v: string) => {
+    if (v === "snapshot" || v === "payments") {
+      setTab(v);
+    }
+  };
+
+  if (!isManufacturer) return null;
 
   return (
     <DashboardShell
@@ -397,7 +418,7 @@ export const ManufacturerPaymentPage = () => {
       stats={null}
       mainLeft={
         <div className="space-y-4">
-          <Tabs value={tab} onValueChange={(v) => setTab(v as any)}>
+          <Tabs value={tab} onValueChange={handleTabChange}>
             <div className="flex flex-col gap-2 mb-2">
               <div className="flex flex-wrap items-center gap-2">
                 <PeriodFilter value={period} onChange={setPeriod} />
@@ -451,7 +472,7 @@ export const ManufacturerPaymentPage = () => {
                         <div className="min-w-0">
                           <div className="font-medium">롤백 시 환불</div>
                           <div className="text-muted-foreground">
-                            CAM 단계 이후 취소/롤백 시 적립분은 REFUND 처리
+                            가공·포장 롤백 시 기존 소비/적립 커밋 내역은 삭제형 롤백으로 정리
                           </div>
                         </div>
                       </div>
@@ -595,6 +616,8 @@ export const ManufacturerPaymentPage = () => {
                       let typeText = "전체";
                       let requestText = `유료 ₩${paidAmount.toLocaleString()} (${paidCount}) / 무료 ₩${freeAmount.toLocaleString()} (${freeCount})`;
                       let shippingText = `유료 ₩${shippingPaidAmount.toLocaleString()} (${shippingPaidCount}) / 무료 ₩${shippingFreeAmount.toLocaleString()} (${shippingFreeCount})`;
+                      // 정책상 롤백은 REFUND가 아니라 COMMIT 삭제이므로 refundAmount는 보통 0이다.
+                      // 기존 스냅샷 스키마/컬럼 호환을 위해 표시만 유지한다.
                       let refundText =
                         Number(r.refundAmount || 0) !== 0
                           ? `₩${Number(r.refundAmount).toLocaleString()}`

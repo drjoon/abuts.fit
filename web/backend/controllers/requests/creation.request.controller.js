@@ -636,7 +636,7 @@ export async function createRequestsBulk(req, res) {
       });
     }
 
-    const { balance, paidCredit, bonusRequestCredit, bonusShippingCredit } =
+    const { balance, paidCredit, freeRequestCredit, freeShippingCredit } =
       await getBusinessCreditBalanceBreakdown({
         businessAnchorId,
       });
@@ -647,13 +647,13 @@ export async function createRequestsBulk(req, res) {
       boxCount,
       balance,
       paidCredit,
-      bonusRequestCredit,
-      bonusShippingCredit,
+      freeRequestCredit,
+      freeShippingCredit,
     });
 
     // 5. 크레딧 부족 체크
-    const availableForMachining = paidCredit + bonusRequestCredit;
-    const availableForShipping = paidCredit + bonusShippingCredit;
+    const availableForMachining = paidCredit + freeRequestCredit;
+    const availableForShipping = paidCredit + freeShippingCredit;
 
     const machiningShortfall =
       totalMachiningFee > availableForMachining

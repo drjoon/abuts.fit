@@ -11,6 +11,8 @@ import { useToast } from "@/shared/hooks/use-toast";
 // related files:
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
 // - web/frontend/src/pages/manufacturer/dashboard/ManufacturerDashboardPage.tsx
+// - web/frontend/src/pages/requestor/dashboard/RequestorDashboardPage.tsx
+// - web/frontend/src/pages/requestor/new_request/hooks/useNewRequestSubmitV2.ts
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
 // - web/frontend/src/pages/practice/PracticeDropzonePage.tsx
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
@@ -62,7 +64,7 @@ import {
   Boxes,
   Package,
   CheckCircle,
-
+  type LucideIcon,
 } from "lucide-react";
 import { AbutsLogo } from "@/components/branding/AbutsLogo";
 import { onAppEvent } from "@/shared/realtime/socket";
@@ -146,7 +148,52 @@ const sidebarItems = {
   ],
 } as const;
 
-type SidebarItem = { icon: any; label: string; href: string };
+type SidebarItem = { icon: LucideIcon; label: string; href: string };
+
+type UserProfileApiResponse = {
+  data?: {
+    profileImage?: string;
+  };
+  profileImage?: string;
+};
+
+type CreditBalanceApiResponse = {
+  data?: {
+    balance?: number;
+    paidCredit?: number;
+    freeRequestCredit?: number;
+    freeShippingCredit?: number;
+  };
+  balance?: number;
+  paidCredit?: number;
+  freeRequestCredit?: number;
+  freeShippingCredit?: number;
+};
+
+type SpendInsightsApiResponse = {
+  data?: {
+    avgDailySpendSupply?: number;
+    estimatedDaysFor500k?: number;
+  };
+  avgDailySpendSupply?: number;
+  estimatedDaysFor500k?: number;
+};
+
+type WorksheetSummaryResponse = {
+  success?: boolean;
+  data?: {
+    requestCount?: number;
+    camCount?: number;
+    machiningCount?: number;
+    packingCount?: number;
+    shippingCount?: number;
+    shippingBoxes?: number;
+    trackingCount?: number;
+    trackingBoxes?: number;
+    rndCount?: number;
+    unmachinableCount?: number;
+  };
+};
 
 type SidebarSection = {
   title: string;
@@ -245,10 +292,10 @@ export const DashboardLayout = () => {
   const { toast } = useToast();
   const [creditBalance, setCreditBalance] = useState<number | null>(null);
   const [paidCredit, setPaidCredit] = useState<number | null>(null);
-  const [bonusRequestCredit, setBonusRequestCredit] = useState<number | null>(
+  const [freeRequestCredit, setFreeRequestCredit] = useState<number | null>(
     null,
   );
-  const [bonusShippingCredit, setBonusShippingCredit] = useState<number | null>(
+  const [freeShippingCredit, setFreeShippingCredit] = useState<number | null>(
     null,
   );
   const [loadingCreditBalance, setLoadingCreditBalance] = useState(false);
@@ -358,13 +405,13 @@ export const DashboardLayout = () => {
   const refreshSidebarProfile = useCallback(async () => {
     if (!token) return;
     try {
-      const res = await apiFetch<any>({
+      const res = await apiFetch<UserProfileApiResponse>({
         path: "/api/users/profile",
         method: "GET",
         token,
       });
       if (!res.ok) return;
-      const body: any = res.data || {};
+      const body = res.data || {};
       const data = body.data || body;
       setSidebarProfileImage(String(data?.profileImage || "").trim());
     } catch {
@@ -429,21 +476,21 @@ export const DashboardLayout = () => {
     if (isPracticeUser || user.role !== "requestor") {
       setCreditBalance(null);
       setPaidCredit(null);
-      setBonusRequestCredit(null);
-      setBonusShippingCredit(null);
+      setFreeRequestCredit(null);
+      setFreeShippingCredit(null);
       return;
     }
-    if (!(user as any).businessAnchorId) {
+    if (!user.businessAnchorId) {
       setCreditBalance(null);
       setPaidCredit(null);
-      setBonusRequestCredit(null);
-      setBonusShippingCredit(null);
+      setFreeRequestCredit(null);
+      setFreeShippingCredit(null);
       return;
     }
 
     setLoadingCreditBalance(true);
     try {
-      const res = await apiFetch<any>({
+      const res = await apiFetch<CreditBalanceApiResponse>({
         path: "/api/credits/balance",
         method: "GET",
         token,
@@ -451,21 +498,21 @@ export const DashboardLayout = () => {
       if (!res.ok) {
         setCreditBalance(null);
         setPaidCredit(null);
-        setBonusRequestCredit(null);
-        setBonusShippingCredit(null);
+        setFreeRequestCredit(null);
+        setFreeShippingCredit(null);
         return;
       }
-      const body: any = res.data || {};
+      const body = res.data || {};
       const data = body.data || body;
       setCreditBalance(Number(data?.balance ?? 0));
       setPaidCredit(Number(data?.paidCredit ?? 0));
-      setBonusRequestCredit(Number(data?.bonusRequestCredit ?? 0));
-      setBonusShippingCredit(Number(data?.bonusShippingCredit ?? 0));
+      setFreeRequestCredit(Number(data?.freeRequestCredit ?? 0));
+      setFreeShippingCredit(Number(data?.freeShippingCredit ?? 0));
     } catch {
       setCreditBalance(null);
       setPaidCredit(null);
-      setBonusRequestCredit(null);
-      setBonusShippingCredit(null);
+      setFreeRequestCredit(null);
+      setFreeShippingCredit(null);
     } finally {
       setLoadingCreditBalance(false);
     }
@@ -530,15 +577,18 @@ export const DashboardLayout = () => {
     if (!token) return;
     if (!user) return;
     if (isPracticeUser || user.role !== "requestor") return;
-    if (!(user as any).businessAnchorId) return;
+    if (!user.businessAnchorId) return;
 
     const unsubscribe = onAppEvent((evt) => {
       const type = String(evt?.type || "").trim();
-      const payload = evt?.data || {};
+      const payload =
+        evt?.data && typeof evt.data === "object"
+          ? (evt.data as { businessAnchorId?: string })
+          : {};
       if (type !== "credit:balance-updated") return;
 
-      const eventBusinessId = String(payload?.businessAnchorId || "").trim();
-      const myBusinessId = String((user as any)?.businessAnchorId || "").trim();
+      const eventBusinessId = String(payload.businessAnchorId || "").trim();
+      const myBusinessId = String(user?.businessAnchorId || "").trim();
       if (
         !eventBusinessId ||
         !myBusinessId ||
@@ -555,12 +605,12 @@ export const DashboardLayout = () => {
     };
   }, [fetchCreditBalance, isPracticeUser, token, user]);
 
-  const isMockUser = Boolean((user as any)?.mockUserId);
+  const isMockUser = Boolean(user.mockUserId);
 
   useEffect(() => {
     if (!user) return;
     if (isPracticeUser || user.role !== "requestor") return;
-    if ((user as any).approvedAt) return;
+    if (user.approvedAt) return;
     if (isMockUser) return;
     if (location.pathname.startsWith("/dashboard")) {
       navigate("/signup?mode=social_complete", { replace: true });
@@ -571,7 +621,7 @@ export const DashboardLayout = () => {
     if (!token) return;
     if (!user) return;
     if (isPracticeUser || user.role !== "requestor") return;
-    if (!(user as any).businessAnchorId) return;
+    if (!user.businessAnchorId) return;
 
     // 크레딧 안내는 신규 의뢰 흐름에서만 노출한다.
     // (설정/대시보드 등에서 자동 토스트가 뜨며 흐름을 방해하는 문제 방지)
@@ -605,8 +655,12 @@ export const DashboardLayout = () => {
     const run = async () => {
       try {
         const [balanceRes, insightsRes] = await Promise.all([
-          apiFetch<any>({ path: "/api/credits/balance", method: "GET", token }),
-          apiFetch<any>({
+          apiFetch<CreditBalanceApiResponse>({
+            path: "/api/credits/balance",
+            method: "GET",
+            token,
+          }),
+          apiFetch<SpendInsightsApiResponse>({
             path: "/api/credits/insights/spend",
             method: "GET",
             token,
@@ -616,9 +670,8 @@ export const DashboardLayout = () => {
         if (cancelled) return;
         if (!balanceRes.ok || !insightsRes.ok) return;
 
-        const balanceData = (balanceRes.data as any)?.data || balanceRes.data;
-        const insightsData =
-          (insightsRes.data as any)?.data || insightsRes.data;
+        const balanceData = balanceRes.data?.data || balanceRes.data;
+        const insightsData = insightsRes.data?.data || insightsRes.data;
 
         const balance = Number(balanceData?.balance || 0);
         const avgDailySpendSupply = Number(
@@ -758,7 +811,7 @@ export const DashboardLayout = () => {
     queryKey: ["worksheet-assigned-summary", period],
     enabled: Boolean(token) && isManufacturer && isWorksheetRoute,
     queryFn: async () => {
-      const res = await apiFetch<any>({
+      const res = await apiFetch<WorksheetSummaryResponse>({
         path: `/api/requests/assigned/dashboard-summary?period=${period}`,
         method: "GET",
         token,
@@ -1037,9 +1090,7 @@ export const DashboardLayout = () => {
                       seed={user.email || user.id}
                       fallbackInitial={user.name}
                       src={
-                        sidebarProfileImage ||
-                        String((user as any)?.profileImage || "") ||
-                        undefined
+                        sidebarProfileImage || String(user.profileImage || "") || undefined
                       }
                       alt={user.name}
                     />
@@ -1348,8 +1399,8 @@ export const DashboardLayout = () => {
                           setShowCompleted,
                           creditBalance,
                           paidCredit,
-                          bonusRequestCredit,
-                          bonusShippingCredit,
+                          freeRequestCredit,
+                          freeShippingCredit,
                           loadingCreditBalance,
                         }}
                       />

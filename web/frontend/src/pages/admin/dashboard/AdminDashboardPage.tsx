@@ -32,6 +32,7 @@ import {
   RotateCcw,
   Code2,
   UploadCloud,
+  type LucideIcon,
 } from "lucide-react";
 
 type PricingSummary = {
@@ -53,7 +54,58 @@ type DashboardStat = {
   label: string;
   value: string;
   change?: string;
-  icon: any;
+  icon: LucideIcon;
+};
+
+type ApiEnvelope<T> = {
+  success?: boolean;
+  message?: string;
+  data?: T;
+};
+
+type RiskSummaryData = {
+  riskSummary?: {
+    items?: Array<Record<string, unknown>>;
+    delayedCount?: number;
+    warningCount?: number;
+    onTimeRate?: number;
+  };
+};
+
+type HappyCallCompletionsData = {
+  items?: HappyCallCompletionItem[];
+  totalCount?: number;
+};
+
+type HappyCallMemoSaveData = {
+  entries?: Array<{ id?: string; message?: string; savedAt?: string }>;
+};
+
+type AdminDashboardResponseData = {
+  happyCallSummary?: HappyCallSummary;
+  pricingSsotHealth?: PricingSsotHealth;
+  unmachinableSummary?: {
+    potentialCount?: number;
+    judgedCount?: number;
+    confirmedCount?: number;
+    items?: UnmachinableSummaryItem[];
+  };
+  pricingSummary?: PricingSummary;
+  completionSummary?: {
+    total?: number;
+    paid?: number;
+    free?: number;
+  };
+  requestStats?: {
+    total?: number;
+    byStatus?: Record<string, number>;
+  };
+  userStats?: {
+    total?: number;
+    requestorBusinessCount?: number;
+  };
+  systemAlerts?: DashboardData["systemAlerts"];
+  practiceTransferStats?: PracticeTransferStats;
 };
 
 type DashboardData = {
@@ -403,7 +455,7 @@ export const AdminDashboardPage = () => {
       const timer = setTimeout(() => controller.abort(), 8000);
 
       try {
-        const res = await apiFetch<any>({
+        const res = await apiFetch<ApiEnvelope<RiskSummaryData>>({
           path: `/api/requests/dashboard-risk-summary?period=${period}`,
           method: "GET",
           token,
@@ -413,8 +465,8 @@ export const AdminDashboardPage = () => {
           throw new Error("지연 위험 요약 조회에 실패했습니다.");
         }
         return res.data;
-      } catch (e: any) {
-        if (e?.name === "AbortError") {
+      } catch (e: unknown) {
+        if (e instanceof Error && e.name === "AbortError") {
           throw new Error("요청 시간이 초과되었습니다.");
         }
         throw e;
@@ -434,7 +486,7 @@ export const AdminDashboardPage = () => {
       const timer = setTimeout(() => controller.abort(), 8000);
 
       try {
-        const res = await apiFetch<any>({
+        const res = await apiFetch<ApiEnvelope<AdminDashboardResponseData>>({
           path: `/api/admin/dashboard?period=${encodeURIComponent(period)}`,
           method: "GET",
           token,
@@ -444,8 +496,8 @@ export const AdminDashboardPage = () => {
           throw new Error("관리자 대시보드 조회에 실패했습니다.");
         }
         return res.data;
-      } catch (e: any) {
-        if (e?.name === "AbortError") {
+      } catch (e: unknown) {
+        if (e instanceof Error && e.name === "AbortError") {
           throw new Error("요청 시간이 초과되었습니다.");
         }
         throw e;
@@ -480,7 +532,7 @@ export const AdminDashboardPage = () => {
         qs.set("q", trimmedSearch);
       }
 
-      const res = await apiFetch<any>({
+      const res = await apiFetch<ApiEnvelope<HappyCallCompletionsData>>({
         path: `/api/admin/dashboard/happy-call/completions?${qs.toString()}`,
         method: "GET",
         token,
@@ -592,13 +644,15 @@ export const AdminDashboardPage = () => {
     ? (adminDashboardResponse.data?.unmachinableSummary ?? null)
     : null;
 
-  const unmachinableItems = Array.isArray(unmachinableSummary?.items)
+  const unmachinableItems: UnmachinableSummaryItem[] = Array.isArray(
+    unmachinableSummary?.items,
+  )
     ? unmachinableSummary.items
     : [];
 
   const unmachinableRequestIdSet = new Set(
     unmachinableItems
-      .map((item: any) => String(item?.requestId || "").trim())
+      .map((item) => String(item?.requestId || "").trim())
       .filter(Boolean),
   );
 
@@ -611,7 +665,8 @@ export const AdminDashboardPage = () => {
       ? baseSummary.items
       : [];
     const filteredItems = originalItems.filter(
-      (item: any) => !unmachinableRequestIdSet.has(String(item?.id || "").trim()),
+      (item: Record<string, unknown>) =>
+        !unmachinableRequestIdSet.has(String(item?.id || "").trim()),
     );
 
     if (filteredItems.length === originalItems.length) {
@@ -619,7 +674,7 @@ export const AdminDashboardPage = () => {
     }
 
     const delayedCount = filteredItems.filter(
-      (item: any) => item?.riskLevel === "danger",
+      (item: Record<string, unknown>) => item?.riskLevel === "danger",
     ).length;
     const warningCount = filteredItems.length - delayedCount;
 
@@ -650,12 +705,12 @@ export const AdminDashboardPage = () => {
   );
   const unmachinableInProgressRequestCount = new Set(
     unmachinableItems
-      .filter((item: any) =>
+      .filter((item) =>
         inProgressStageList.includes(
           String(item?.manufacturerStage || "").trim() as (typeof inProgressStageList)[number],
         ),
       )
-      .map((item: any) => String(item?.requestId || "").trim())
+      .map((item) => String(item?.requestId || "").trim())
       .filter(Boolean),
   ).size;
   const inProgressRequestCount = Math.max(
@@ -868,7 +923,7 @@ export const AdminDashboardPage = () => {
     }));
 
     try {
-      const res = await apiFetch<any>({
+      const res = await apiFetch<ApiEnvelope<unknown>>({
         path: "/api/admin/dashboard/happy-call/complete",
         method: "POST",
         token,
@@ -897,10 +952,12 @@ export const AdminDashboardPage = () => {
       });
       void refetchAdminDashboard();
       void refetchHappyCallCompletions();
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const message =
+        error instanceof Error ? error.message : "잠시 후 다시 시도해주세요.";
       toast({
         title: "해피콜 완료 처리 실패",
-        description: String(error?.message || "잠시 후 다시 시도해주세요."),
+        description: message,
         variant: "destructive",
       });
     } finally {
@@ -925,7 +982,7 @@ export const AdminDashboardPage = () => {
     }));
 
     try {
-      const res = await apiFetch<any>({
+      const res = await apiFetch<ApiEnvelope<unknown>>({
         path: "/api/admin/dashboard/happy-call/revert-last",
         method: "POST",
         token,
@@ -945,10 +1002,12 @@ export const AdminDashboardPage = () => {
       });
       void refetchAdminDashboard();
       void refetchHappyCallCompletions();
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const message =
+        error instanceof Error ? error.message : "잠시 후 다시 시도해주세요.";
       toast({
         title: "롤백 실패",
-        description: String(error?.message || "잠시 후 다시 시도해주세요."),
+        description: message,
         variant: "destructive",
       });
     } finally {
@@ -2638,7 +2697,7 @@ export const AdminDashboardPage = () => {
               }
 
               try {
-                const res = await apiFetch<any>({
+                const res = await apiFetch<ApiEnvelope<HappyCallMemoSaveData>>({
                   path: "/api/admin/dashboard/happy-call/memo",
                   method: "POST",
                   token,
@@ -2660,7 +2719,7 @@ export const AdminDashboardPage = () => {
                   : [];
 
                 const entries: HappyCallMemoEntry[] = entriesRaw
-                  .map((entry: any, idx: number) => {
+                  .map((entry: { id?: string; message?: string; savedAt?: string }, idx: number) => {
                     const savedAt = String(entry?.savedAt || "").trim();
                     const msg = String(entry?.message || "").trim();
                     const id = String(entry?.id || `${anchorId}-${savedAt}-${idx}`).trim();
@@ -2683,10 +2742,12 @@ export const AdminDashboardPage = () => {
                   title: "메모 추가",
                   description: "해피콜 메모가 저장되었습니다.",
                 });
-              } catch (error: any) {
+              } catch (error: unknown) {
+                const message =
+                  error instanceof Error ? error.message : "잠시 후 다시 시도해주세요.";
                 toast({
                   title: "메모 저장 실패",
-                  description: String(error?.message || "잠시 후 다시 시도해주세요."),
+                  description: message,
                   variant: "destructive",
                 });
               }

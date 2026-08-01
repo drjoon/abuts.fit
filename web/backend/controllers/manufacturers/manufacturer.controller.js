@@ -318,6 +318,10 @@ export async function triggerManufacturerDailySettlementSnapshotRecalc(
     }
 
     const { start, end } = utcRange;
+    // SSOT 정책:
+    // - REQUEST_SPEND_COMMIT: CAM 승인(가공 진입) 시점 소비
+    // - SHIPPING_SPEND_COMMIT: 세척.패킹 승인(포장.발송 진입) 시점 소비
+    // - 롤백은 REFUND 적재가 아니라 COMMIT 물리삭제이므로 refundAmount는 0 고정(legacy 스키마 호환)
     const [summary] = await LedgerLine.aggregate([
       {
         $match: {
@@ -758,6 +762,8 @@ export async function getManufacturerCreditDailySummary(req, res) {
         : {}),
     };
 
+    // 일별 요약도 동일 SSOT 이벤트만 집계한다.
+    // 샘플/무자료 NC 작업은 원천적으로 GL 비적재 정책이므로 이 집계에서 자동 제외된다.
     const rows = await LedgerLine.aggregate([
       { $match: baseMatch },
       {

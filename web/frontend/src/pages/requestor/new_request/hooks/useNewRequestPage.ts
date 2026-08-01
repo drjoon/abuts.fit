@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 // related files:
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
@@ -770,13 +771,16 @@ export const useNewRequestPage = (
         const emailKey = String(user?.email || "guest").trim() || "guest";
         let currentBalance = 0;
         try {
-          const balanceRes = await request<any>({
+          const balanceRes = await request<{
+            data?: { balance?: number };
+            balance?: number;
+          }>({
             path: "/api/credits/balance",
             method: "GET",
             token,
           });
           if (balanceRes.ok) {
-            const balanceBody: any = balanceRes.data || {};
+            const balanceBody = balanceRes.data || {};
             const balanceData = balanceBody?.data || balanceBody;
             currentBalance = Number(balanceData?.balance || 0);
           }
@@ -786,7 +790,7 @@ export const useNewRequestPage = (
 
         try {
           const userId = String(user?.id || emailKey || "guest").trim();
-          const createdAtRaw = String((user as any)?.createdAt || "").trim();
+          const createdAtRaw = String(user?.createdAt || "").trim();
           const createdAtMs = createdAtRaw
             ? new Date(createdAtRaw).getTime()
             : NaN;
@@ -852,7 +856,16 @@ export const useNewRequestPage = (
     }
 
     return true;
-  }, [navigate, setupNextPath, toast, token, user?.email, user?.id]);
+  }, [
+    businessType,
+    navigate,
+    setupNextPath,
+    toast,
+    token,
+    user?.createdAt,
+    user?.email,
+    user?.id,
+  ]);
 
   // Draft에서 caseInfos 동기화 (임플란트 정보 -> Draft)
   // 주의: 이 동기화는 사용자가 명시적으로 임플란트 정보를 선택할 때만 호출되어야 함

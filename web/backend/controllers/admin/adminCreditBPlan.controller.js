@@ -518,8 +518,8 @@ export async function adminManualMatch(req, res) {
             },
             $setOnInsert: {
               businessAnchorId: order.businessAnchorId,
-              bonusRequestCredit: 0,
-              bonusShippingCredit: 0,
+              freeRequestCredit: 0,
+              freeShippingCredit: 0,
             },
           },
           { upsert: true, session },

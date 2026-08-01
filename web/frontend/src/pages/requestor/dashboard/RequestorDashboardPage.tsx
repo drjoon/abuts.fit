@@ -3,6 +3,7 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useInView } from "react-intersection-observer";
 import { useLocation, useOutletContext } from "react-router-dom";
@@ -67,6 +68,7 @@ import { resolveImplantConnectionSpec } from "@/utils/implantConnectionSpec";
 import { getFileBlob, setFileBlob } from "@/shared/files/stlIndexedDb";
 
 // related files:
+// - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/pages/requestor/dashboard/components/RequestorRecentRequestsCard.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx
 // - web/frontend/src/features/requests/components/StlPreviewViewer.tsx
@@ -77,8 +79,8 @@ import { getFileBlob, setFileBlob } from "@/shared/files/stlIndexedDb";
 type DashboardOutletContext = {
   creditBalance: number | null;
   paidCredit: number | null;
-  bonusRequestCredit: number | null;
-  bonusShippingCredit: number | null;
+  freeRequestCredit: number | null;
+  freeShippingCredit: number | null;
   loadingCreditBalance: boolean;
 };
 
@@ -90,8 +92,8 @@ export const RequestorDashboardPage = () => {
   const {
     creditBalance,
     paidCredit,
-    bonusRequestCredit,
-    bonusShippingCredit,
+    freeRequestCredit,
+    freeShippingCredit,
     loadingCreditBalance,
   } = useOutletContext<DashboardOutletContext>();
   const { data: systemSettings } = useSystemSettings();
@@ -151,7 +153,7 @@ export const RequestorDashboardPage = () => {
       "requestor-dashboard-summary-page",
       period,
       String(user?.id || ""),
-      String((user as any)?.businessAnchorId || ""),
+      String(user?.businessAnchorId || ""),
     ],
     [period, user],
   );
@@ -212,7 +214,7 @@ export const RequestorDashboardPage = () => {
   };
 
   const isUnmachinableRequest = (requestLike: any): boolean =>
-    Boolean(requestLike?.rnd?.unmachinableAt);
+    !!requestLike?.rnd?.unmachinableAt;
 
   const getUnmachinableReason = (requestLike: any): string =>
     String(requestLike?.rnd?.unmachinableReason || "").trim();
@@ -255,7 +257,7 @@ export const RequestorDashboardPage = () => {
     // 불완전가공은 stage(manufacturerStage)가 아니라 rnd 상세 상태로 분류한다.
     if (label === "불완전가공") {
       return base.filter((r) => {
-        if (Boolean(r?.rnd?.unmachinableAt)) return true;
+        if (r?.rnd?.unmachinableAt) return true;
         const rawStage = String(r?.manufacturerStage || "")
           .trim()
           .toLowerCase();
@@ -422,7 +424,7 @@ export const RequestorDashboardPage = () => {
     if (
       summaryResponse?.success &&
       paidCredit !== null &&
-      bonusRequestCredit !== null &&
+      freeRequestCredit !== null &&
       systemSettings?.creditSettings
     ) {
       const stats = summaryResponse.data.stats ?? {};
@@ -435,7 +437,7 @@ export const RequestorDashboardPage = () => {
       const totalPendingRequests = inRequest + inCam;
 
       // 의뢰비는 유료 크레딧 + 무료 의뢰비 크레딧 사용 가능
-      const availableForRequest = paidCredit + bonusRequestCredit;
+      const availableForRequest = paidCredit + freeRequestCredit;
       const requiredCredit = totalPendingRequests * pricePerRequest;
 
       if (totalPendingRequests > 0 && availableForRequest < requiredCredit) {
@@ -444,7 +446,7 @@ export const RequestorDashboardPage = () => {
         setInsufficientCredit(false);
       }
     }
-  }, [summaryResponse, paidCredit, bonusRequestCredit, systemSettings]);
+  }, [summaryResponse, paidCredit, freeRequestCredit, systemSettings]);
 
   // 배송비 충전 경고
   // 묶음 배송 건수를 기준으로 필요한 배송비 계산
@@ -453,7 +455,7 @@ export const RequestorDashboardPage = () => {
     if (
       bulkResponse?.success &&
       paidCredit !== null &&
-      bonusShippingCredit !== null &&
+      freeShippingCredit !== null &&
       systemSettings?.creditSettings
     ) {
       const shippingFeePerBox =
@@ -464,7 +466,7 @@ export const RequestorDashboardPage = () => {
       const totalShippingBoxes = bulkShippingCandidates.length;
 
       // 배송비는 유료 크레딧 + 무료 배송비 크레딧으로 결제
-      const availableForShipping = paidCredit + bonusShippingCredit;
+      const availableForShipping = paidCredit + freeShippingCredit;
       const requiredShippingFee = totalShippingBoxes * shippingFeePerBox;
 
       if (
@@ -476,7 +478,7 @@ export const RequestorDashboardPage = () => {
         setInsufficientShippingCredit(false);
       }
     }
-  }, [bulkResponse, bonusShippingCredit, paidCredit, systemSettings]);
+  }, [bulkResponse, freeShippingCredit, paidCredit, systemSettings]);
 
   const refreshDashboard = useCallback(() => {
     void queryClient.invalidateQueries({
@@ -493,9 +495,11 @@ export const RequestorDashboardPage = () => {
   }, [queryClient, refetchBulk, refetchSummary]);
 
   useEffect(() => {
-    const refreshDashboardAt = Number(
-      (location.state as any)?.refreshDashboardAt || 0,
-    );
+    const locationState =
+      location.state && typeof location.state === "object"
+        ? (location.state as { refreshDashboardAt?: unknown })
+        : null;
+    const refreshDashboardAt = Number(locationState?.refreshDashboardAt || 0);
     if (!refreshDashboardAt) return;
     refreshDashboard();
   }, [location.state, refreshDashboard]);
@@ -507,16 +511,29 @@ export const RequestorDashboardPage = () => {
 
     const unsubscribe = onAppEvent((evt) => {
       const type = String(evt?.type || "").trim();
-      const payload = evt?.data || {};
-      const eventRequest = payload?.request;
+      const payload =
+        evt?.data && typeof evt.data === "object"
+          ? (evt.data as {
+              requestorBusinessAnchorId?: unknown;
+              toStage?: unknown;
+              request?: {
+                requestorBusinessAnchorId?: unknown;
+                businessAnchorId?: unknown;
+                requestor?: {
+                  businessAnchorId?: unknown;
+                };
+              };
+            })
+          : {};
+      const eventRequest = payload.request;
       const eventOrgId = String(
-        payload?.requestorBusinessAnchorId ||
+        payload.requestorBusinessAnchorId ||
           eventRequest?.requestorBusinessAnchorId ||
           eventRequest?.businessAnchorId ||
           eventRequest?.requestor?.businessAnchorId ||
           "",
       ).trim();
-      const myOrgId = String((user as any)?.businessAnchorId || "").trim();
+      const myOrgId = String(user?.businessAnchorId || "").trim();
       if (!eventOrgId || !myOrgId || eventOrgId !== myOrgId) return;
 
       if (type === "request:stage-changed") {
@@ -532,7 +549,7 @@ export const RequestorDashboardPage = () => {
         // 배송 관련 공정 변경 시 bulk shipping도 무효화
         if (
           ["세척.패킹", "포장.발송", "추적관리"].includes(
-            String(payload?.toStage || "").trim(),
+            String(payload.toStage || "").trim(),
           )
         ) {
           void queryClient.invalidateQueries({
@@ -762,7 +779,9 @@ export const RequestorDashboardPage = () => {
         if (typeof window !== "undefined") {
           window.dispatchEvent(new Event("abuts:credits:updated"));
         }
-      } catch {}
+      } catch {
+        // ignore
+      }
 
       // 백그라운드에서 최신 데이터 갱신
       refreshDashboard();

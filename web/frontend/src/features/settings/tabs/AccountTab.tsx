@@ -2,6 +2,7 @@
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
@@ -194,7 +195,11 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
     if (!token) return 0;
     setLoadingPaidBalance(true);
     try {
-      const res = await request<any>({
+      const res = await request<{
+        data?: { paidCredit?: number; paidBalance?: number };
+        paidCredit?: number;
+        paidBalance?: number;
+      }>({
         path: "/api/credits/balance",
         method: "GET",
         token,
@@ -205,9 +210,9 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
         return 0;
       }
 
-      const body: any = res.data || {};
+      const body = res.data || {};
       const data = body.data || body;
-      const next = Number(data?.paidBalance || 0);
+      const next = Number(data?.paidCredit ?? data?.paidBalance ?? 0);
       setPaidBalance(Number.isFinite(next) ? next : 0);
       return Number.isFinite(next) ? next : 0;
     } catch {

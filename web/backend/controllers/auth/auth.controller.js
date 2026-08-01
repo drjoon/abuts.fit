@@ -402,8 +402,8 @@ async function getBusinessCreditBalanceBreakdown(businessAnchorId) {
     return {
       balance: 0,
       paidCredit: 0,
-      bonusRequestCredit: 0,
-      bonusShippingCredit: 0,
+      freeRequestCredit: 0,
+      freeShippingCredit: 0,
     };
   }
 
@@ -415,8 +415,8 @@ async function getBusinessCreditBalanceBreakdown(businessAnchorId) {
   return {
     balance: Number(snapshot?.balance || 0),
     paidCredit: Number(snapshot?.paidCredit || 0),
-    bonusRequestCredit: Number(snapshot?.bonusRequestCredit || 0),
-    bonusShippingCredit: Number(snapshot?.bonusShippingCredit || 0),
+    freeRequestCredit: Number(snapshot?.freeRequestCredit || 0),
+    freeShippingCredit: Number(snapshot?.freeShippingCredit || 0),
   };
 }
 
@@ -1831,8 +1831,8 @@ async function withdraw(req, res) {
               $setOnInsert: {
                 businessAnchorId,
                 paidCredit: 0,
-                bonusRequestCredit: 0,
-                bonusShippingCredit: 0,
+                freeRequestCredit: 0,
+                freeShippingCredit: 0,
               },
             },
             { upsert: true },

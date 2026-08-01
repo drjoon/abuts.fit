@@ -9,7 +9,7 @@ export type AdminCreditLedgerType =
   | "SPEND_PAID"
   | "SPEND_FREE_REQUEST"
   | "SPEND_FREE_SHIPPING"
-  | "REFUND"
+  | "REFUND" // legacy 조회 호환 (앱 안정화 후 삭제 예정)
   | "ADJUST";
 
 export type AdminLedgerItem = {
@@ -18,7 +18,6 @@ export type AdminLedgerItem = {
   amount: number;
   spentPaidAmount?: number | null;
   spentFreeAmount?: number | null;
-  spentBonusAmount?: number | null; // legacy 호환 (앱 안정화 후 삭제 예정)
   refType?: string;
   refId?: string | null;
   refRequestId?: string;
@@ -50,19 +49,14 @@ export type CreditStats = {
   totalFree?: number;
   totalFreeRequest?: number;
   totalFreeShipping?: number;
+  totalChargedFreeAmount?: number;
   totalSpentPaidAmount?: number;
+  totalSpentFreeAmount?: number;
   totalSpentFreeRequestAmount?: number;
   totalSpentFreeShippingAmount?: number;
   totalPaidCredit?: number;
   totalFreeRequestCredit?: number;
   totalFreeShippingCredit?: number;
-  totalBonus?: number; // legacy 호환 (앱 안정화 후 삭제 예정)
-  totalBonusRequest?: number; // legacy 호환 (앱 안정화 후 삭제 예정)
-  totalBonusShipping?: number; // legacy 호환 (앱 안정화 후 삭제 예정)
-  totalSpentBonusRequestAmount?: number; // legacy 호환 (앱 안정화 후 삭제 예정)
-  totalSpentBonusShippingAmount?: number; // legacy 호환 (앱 안정화 후 삭제 예정)
-  totalBonusRequestCredit?: number; // legacy 호환 (앱 안정화 후 삭제 예정)
-  totalBonusShippingCredit?: number; // legacy 호환 (앱 안정화 후 삭제 예정)
 };
 
 export type SalesmanCreditRow = {
@@ -151,15 +145,6 @@ export type BusinessCredit = {
   spentFreeAmount?: number;
   spentFreeRequestAmount?: number;
   spentFreeShippingAmount?: number;
-  bonusBalance: number; // legacy 호환 (앱 안정화 후 삭제 예정)
-  bonusRequestCredit?: number; // legacy 호환 (앱 안정화 후 삭제 예정)
-  bonusShippingCredit?: number; // legacy 호환 (앱 안정화 후 삭제 예정)
-  chargedBonusAmount?: number; // legacy 호환 (앱 안정화 후 삭제 예정)
-  chargedBonusRequestAmount?: number; // legacy 호환 (앱 안정화 후 삭제 예정)
-  chargedBonusShippingAmount?: number; // legacy 호환 (앱 안정화 후 삭제 예정)
-  spentBonusAmount?: number; // legacy 호환 (앱 안정화 후 삭제 예정)
-  spentBonusRequestAmount?: number; // legacy 호환 (앱 안정화 후 삭제 예정)
-  spentBonusShippingAmount?: number; // legacy 호환 (앱 안정화 후 삭제 예정)
 };
 
 export type ChargeOrder = {
@@ -206,5 +191,3 @@ export type FreeCreditGrantHistoryRow = {
   hasSpent?: boolean;
 };
 
-// legacy 타입 호환 (앱 안정화 후 삭제 예정)
-export type BonusGrantHistoryRow = FreeCreditGrantHistoryRow;

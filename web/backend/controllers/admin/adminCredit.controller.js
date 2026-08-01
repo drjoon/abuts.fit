@@ -83,8 +83,7 @@ function buildRequestSummary(doc) {
 
 function parseFreeCreditGrantIdFromUniqueKey(uniqueKey) {
   const raw = String(uniqueKey || "").trim().replace(/^gl:/, "");
-  // legacy 호환 (앱 안정화 후 삭제 예정): bonus_grant prefix 병행 파싱
-  const m = raw.match(/^(?:bonus_grant|free_credit_grant):([a-f0-9]{24})$/i);
+  const m = raw.match(/^free_credit_grant:([a-f0-9]{24})$/i);
   return m ? m[1] : "";
 }
 
@@ -404,10 +403,8 @@ export async function adminGetBusinessLedger(req, res) {
     const currentBalanceSnapshot = {
       balance: Number(balanceSnapshot?.balance || 0),
       paidCredit: Number(balanceSnapshot?.paidCredit || 0),
-      freeRequestCredit: Number(balanceSnapshot?.bonusRequestCredit || 0),
-      freeShippingCredit: Number(balanceSnapshot?.bonusShippingCredit || 0),
-      bonusRequestCredit: Number(balanceSnapshot?.bonusRequestCredit || 0), // legacy 호환 (앱 안정화 후 삭제 예정)
-      bonusShippingCredit: Number(balanceSnapshot?.bonusShippingCredit || 0), // legacy 호환 (앱 안정화 후 삭제 예정)
+      freeRequestCredit: Number(balanceSnapshot?.freeRequestCredit || 0),
+      freeShippingCredit: Number(balanceSnapshot?.freeShippingCredit || 0),
       updatedAt: balanceSnapshot?.updatedAt || null,
     };
 
@@ -601,6 +598,7 @@ export async function adminGetBusinessLedger(req, res) {
       ].includes(typeRaw)
     ) {
       if (typeRaw === "REFUND") {
+        // legacy 조회 호환: 정책상 REFUND 신규 적재는 금지되므로 빈 결과만 반환한다.
         return res.json({
           success: true,
           data: {
@@ -836,7 +834,6 @@ export async function adminGetBusinessLedger(req, res) {
         return {
           ...it,
           freeReason,
-          bonusReason: freeReason, // legacy 호환 (앱 안정화 후 삭제 예정)
         };
       }
 
@@ -1119,7 +1116,7 @@ export async function adminGetCreditStats(req, res) {
                     ],
                   },
                 },
-                chargedBonusRequest: {
+                chargedFreeRequest: {
                   $sum: {
                     $cond: [
                       {
@@ -1134,7 +1131,7 @@ export async function adminGetCreditStats(req, res) {
                     ],
                   },
                 },
-                chargedBonusShipping: {
+                chargedFreeShipping: {
                   $sum: {
                     $cond: [
                       {
@@ -1224,11 +1221,11 @@ export async function adminGetCreditStats(req, res) {
               $group: {
                 _id: null,
                 paidCredit: { $sum: { $ifNull: ["$paidCredit", 0] } },
-                bonusRequestCredit: {
-                  $sum: { $ifNull: ["$bonusRequestCredit", 0] },
+                freeRequestCredit: {
+                  $sum: { $ifNull: ["$freeRequestCredit", 0] },
                 },
-                bonusShippingCredit: {
-                  $sum: { $ifNull: ["$bonusShippingCredit", 0] },
+                freeShippingCredit: {
+                  $sum: { $ifNull: ["$freeShippingCredit", 0] },
                 },
               },
             },
@@ -1240,21 +1237,20 @@ export async function adminGetCreditStats(req, res) {
     const balanceSummary = balanceRows?.[0] || {};
 
     const totalCharged = Number(summary.chargedPaid || 0);
-    const totalFreeRequest = Number(summary.chargedBonusRequest || 0);
-    const totalFreeShipping = Number(summary.chargedBonusShipping || 0);
+    const totalFreeRequest = Number(summary.chargedFreeRequest || 0);
+    const totalFreeShipping = Number(summary.chargedFreeShipping || 0);
     const totalFree = totalFreeRequest + totalFreeShipping;
 
     const totalSpentPaidAmount = Number(summary.spentPaid || 0);
     const totalSpentFreeRequestAmount = Number(summary.spentFreeRequest || 0);
     const totalSpentFreeShippingAmount = Number(summary.spentFreeShipping || 0);
-    const totalSpent =
-      totalSpentPaidAmount +
-      totalSpentFreeRequestAmount +
-      totalSpentFreeShippingAmount;
+    const totalSpentFreeAmount =
+      totalSpentFreeRequestAmount + totalSpentFreeShippingAmount;
+    const totalSpent = totalSpentPaidAmount + totalSpentFreeAmount;
 
     const totalPaidCredit = Number(balanceSummary.paidCredit || 0);
-    const totalFreeRequestCredit = Number(balanceSummary.bonusRequestCredit || 0);
-    const totalFreeShippingCredit = Number(balanceSummary.bonusShippingCredit || 0);
+    const totalFreeRequestCredit = Number(balanceSummary.freeRequestCredit || 0);
+    const totalFreeShippingCredit = Number(balanceSummary.freeShippingCredit || 0);
 
     return res.json({
       success: true,
@@ -1271,7 +1267,9 @@ export async function adminGetCreditStats(req, res) {
         totalFree: Math.max(0, Math.round(totalFree)),
         totalFreeRequest: Math.max(0, Math.round(totalFreeRequest)),
         totalFreeShipping: Math.max(0, Math.round(totalFreeShipping)),
+        totalChargedFreeAmount: Math.max(0, Math.round(totalFree)),
         totalSpentPaidAmount: Math.max(0, Math.round(totalSpentPaidAmount)),
+        totalSpentFreeAmount: Math.max(0, Math.round(totalSpentFreeAmount)),
         totalSpentFreeRequestAmount: Math.max(
           0,
           Math.round(totalSpentFreeRequestAmount),
@@ -1286,14 +1284,6 @@ export async function adminGetCreditStats(req, res) {
           0,
           Math.round(totalFreeShippingCredit),
         ),
-        totalBonus: Math.max(0, Math.round(totalFree)), // legacy 호환 (앱 안정화 후 삭제 예정)
-        totalBonusRequest: Math.max(0, Math.round(totalFreeRequest)), // legacy 호환 (앱 안정화 후 삭제 예정)
-        totalBonusShipping: Math.max(0, Math.round(totalFreeShipping)), // legacy 호환 (앱 안정화 후 삭제 예정)
-        totalBonusRequestCredit: Math.max(0, Math.round(totalFreeRequestCredit)), // legacy 호환 (앱 안정화 후 삭제 예정)
-        totalBonusShippingCredit: Math.max(
-          0,
-          Math.round(totalFreeShippingCredit),
-        ), // legacy 호환 (앱 안정화 후 삭제 예정)
         ledgerByType: {},
       },
     });
@@ -2074,8 +2064,8 @@ export async function adminGetBusinessCredits(req, res) {
           .select({
             businessAnchorId: 1,
             paidCredit: 1,
-            bonusRequestCredit: 1,
-            bonusShippingCredit: 1,
+            freeRequestCredit: 1,
+            freeShippingCredit: 1,
           })
           .lean()
       : [];
@@ -2086,11 +2076,11 @@ export async function adminGetBusinessCredits(req, res) {
         const paidCredit = Math.max(0, Math.round(Number(row?.paidCredit || 0)));
         const freeRequestCredit = Math.max(
           0,
-          Math.round(Number(row?.bonusRequestCredit || 0)),
+          Math.round(Number(row?.freeRequestCredit || 0)),
         );
         const freeShippingCredit = Math.max(
           0,
-          Math.round(Number(row?.bonusShippingCredit || 0)),
+          Math.round(Number(row?.freeShippingCredit || 0)),
         );
         return [
           anchorId,
@@ -2098,8 +2088,6 @@ export async function adminGetBusinessCredits(req, res) {
             paidCredit,
             freeRequestCredit,
             freeShippingCredit,
-            bonusRequestCredit: freeRequestCredit, // legacy 호환 (앱 안정화 후 삭제 예정)
-            bonusShippingCredit: freeShippingCredit, // legacy 호환 (앱 안정화 후 삭제 예정)
             balance: paidCredit + freeRequestCredit + freeShippingCredit,
           },
         ];
@@ -2160,7 +2148,7 @@ export async function adminGetBusinessCredits(req, res) {
                   ],
                 },
               },
-              chargedBonusRequest: {
+              chargedFreeRequest: {
                 $sum: {
                   $cond: [
                     {
@@ -2175,7 +2163,7 @@ export async function adminGetBusinessCredits(req, res) {
                   ],
                 },
               },
-              chargedBonusShipping: {
+              chargedFreeShipping: {
                 $sum: {
                   $cond: [
                     {
@@ -2291,8 +2279,8 @@ export async function adminGetBusinessCredits(req, res) {
     const balanceMap = {};
     ledgerData.forEach((item) => {
       const chargedPaid = Number(item?.chargedPaid || 0);
-      const chargedFreeRequest = Number(item?.chargedBonusRequest || 0);
-      const chargedFreeShipping = Number(item?.chargedBonusShipping || 0);
+      const chargedFreeRequest = Number(item?.chargedFreeRequest || 0);
+      const chargedFreeShipping = Number(item?.chargedFreeShipping || 0);
       const spentAmount = Number(item?.spentAmount || 0);
       const spentPaidAmount = Number(item?.spentPaidAmount || 0);
       const spentFreeRequestAmount = Number(item?.spentFreeRequestAmount || 0);
@@ -2316,20 +2304,27 @@ export async function adminGetBusinessCredits(req, res) {
         ? ssot.freeShippingCredit
         : Math.max(0, Math.round(chargedFreeShipping - spentFreeShippingAmount));
 
+      const chargedFreeAmount = Math.max(
+        0,
+        Math.round(chargedFreeRequest + chargedFreeShipping),
+      );
+      const spentFreeAmount = Math.max(
+        0,
+        Math.round(spentFreeRequestAmount + spentFreeShippingAmount),
+      );
+
       balanceMap[anchorId] = {
         balance: paidCredit + freeRequestCredit + freeShippingCredit,
         paidCredit,
         freeRequestCredit,
         freeShippingCredit,
-        bonusRequestCredit: freeRequestCredit, // legacy 호환 (앱 안정화 후 삭제 예정)
-        bonusShippingCredit: freeShippingCredit, // legacy 호환 (앱 안정화 후 삭제 예정)
         spentAmount: Math.max(0, Math.round(spentAmount)),
         chargedPaidAmount: Math.max(0, Math.round(chargedPaid)),
+        chargedFreeAmount,
         chargedFreeRequestAmount: Math.max(0, Math.round(chargedFreeRequest)),
         chargedFreeShippingAmount: Math.max(0, Math.round(chargedFreeShipping)),
-        chargedBonusRequestAmount: Math.max(0, Math.round(chargedFreeRequest)), // legacy 호환 (앱 안정화 후 삭제 예정)
-        chargedBonusShippingAmount: Math.max(0, Math.round(chargedFreeShipping)), // legacy 호환 (앱 안정화 후 삭제 예정)
         spentPaidAmount: Math.max(0, Math.round(spentPaidAmount)),
+        spentFreeAmount,
         spentFreeRequestAmount: Math.max(0, Math.round(spentFreeRequestAmount)),
         spentFreeShippingAmount: Math.max(0, Math.round(spentFreeShippingAmount)),
       };
@@ -2343,15 +2338,13 @@ export async function adminGetBusinessCredits(req, res) {
         paidCredit: Number(ssotBalance?.paidCredit || 0),
         freeRequestCredit: Number(ssotBalance?.freeRequestCredit || 0),
         freeShippingCredit: Number(ssotBalance?.freeShippingCredit || 0),
-        bonusRequestCredit: Number(ssotBalance?.bonusRequestCredit || 0), // legacy 호환 (앱 안정화 후 삭제 예정)
-        bonusShippingCredit: Number(ssotBalance?.bonusShippingCredit || 0), // legacy 호환 (앱 안정화 후 삭제 예정)
         spentAmount: 0,
         chargedPaidAmount: 0,
+        chargedFreeAmount: 0,
         chargedFreeRequestAmount: 0,
         chargedFreeShippingAmount: 0,
-        chargedBonusRequestAmount: 0,
-        chargedBonusShippingAmount: 0,
         spentPaidAmount: 0,
+        spentFreeAmount: 0,
         spentFreeRequestAmount: 0,
         spentFreeShippingAmount: 0,
       };
@@ -2384,23 +2377,17 @@ export async function adminGetBusinessCredits(req, res) {
         businessItem: org.metadata?.businessItem || "",
         businessCategory: org.metadata?.businessType || "",
         startDate: org.metadata?.startDate || "",
-        // 프론트엔드 호환: paidBalance, bonusBalance 필드 제공
-        paidBalance: balanceInfo.paidCredit, // 유료 잔액
+        paidBalance: balanceInfo.paidCredit,
         freeBalance:
-          balanceInfo.freeRequestCredit + balanceInfo.freeShippingCredit, // 무료 잔액 (의뢰용 + 배송비용)
-        bonusBalance:
-          balanceInfo.freeRequestCredit + balanceInfo.freeShippingCredit, // legacy 호환 (앱 안정화 후 삭제 예정)
-        // 상세 정보: freeRequestCredit, freeShippingCredit 등 모든 필드 포함
+          balanceInfo.freeRequestCredit + balanceInfo.freeShippingCredit,
         ...balanceInfo,
       };
     });
 
-    const sortedResult = [...result].sort(
-      (a, b) =>
-        Number(b.paidCredit || 0) - Number(a.paidCredit || 0) ||
-        Number(b.freeRequestCredit || b.bonusRequestCredit || 0) -
-          Number(a.freeRequestCredit || a.bonusRequestCredit || 0) ||
-        String(a.name || "").localeCompare(String(b.name || ""), "ko"),
+    const sortedResult = [...result].sort((a, b) =>
+      Number(b.paidCredit || 0) - Number(a.paidCredit || 0) ||
+      Number(b.freeRequestCredit || 0) - Number(a.freeRequestCredit || 0) ||
+      String(a.name || "").localeCompare(String(b.name || ""), "ko"),
     );
 
     return res.json({
@@ -2627,19 +2614,19 @@ export async function adminGetBusinessCreditDetail(req, res) {
     ]);
 
     let paid = 0;
-    let bonusRequest = 0;
-    let bonusShipping = 0;
+    let freeRequest = 0;
+    let freeShipping = 0;
     let spent = 0;
     const history = [];
 
     for (const row of rows || []) {
       const deltaPaid = Number(row?.deltaPaid || 0);
-      const deltaBonusRequest = Number(row?.deltaBonusRequest || 0);
-      const deltaBonusShipping = Number(row?.deltaBonusShipping || 0);
+      const deltaFreeRequest = Number(row?.deltaBonusRequest || 0);
+      const deltaFreeShipping = Number(row?.deltaBonusShipping || 0);
 
       paid += deltaPaid;
-      bonusRequest += deltaBonusRequest;
-      bonusShipping += deltaBonusShipping;
+      freeRequest += deltaFreeRequest;
+      freeShipping += deltaFreeShipping;
 
       if (
         String(row?.type || "") === "SPEND_PAID" ||
@@ -2660,10 +2647,10 @@ export async function adminGetBusinessCreditDetail(req, res) {
         uniqueKey: String(row?.uniqueKey || ""),
         createdAt: row?.createdAt || row?.occurredAt || new Date(),
         occurredAt: row?.occurredAt || null,
-        balanceAfter: Math.max(0, paid + bonusRequest + bonusShipping),
+        balanceAfter: Math.max(0, paid + freeRequest + freeShipping),
         paidCreditAfter: Math.max(0, paid),
-        bonusRequestCreditAfter: Math.max(0, bonusRequest),
-        bonusShippingCreditAfter: Math.max(0, bonusShipping),
+        freeRequestCreditAfter: Math.max(0, freeRequest),
+        freeShippingCreditAfter: Math.max(0, freeShipping),
       });
     }
 
@@ -2673,8 +2660,8 @@ export async function adminGetBusinessCreditDetail(req, res) {
         business: org,
         balance: Number(balanceSnapshot?.balance || 0),
         paidCredit: Number(balanceSnapshot?.paidCredit || 0),
-        bonusRequestCredit: Number(balanceSnapshot?.bonusRequestCredit || 0),
-        bonusShippingCredit: Number(balanceSnapshot?.bonusShippingCredit || 0),
+        freeRequestCredit: Number(balanceSnapshot?.freeRequestCredit || 0),
+        freeShippingCredit: Number(balanceSnapshot?.freeShippingCredit || 0),
         spentAmount: Math.max(0, spent),
         history: history.reverse(),
       },

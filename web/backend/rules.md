@@ -241,6 +241,8 @@
   - `REQUEST` 차감 삭제: **가공 롤백(CAM 복귀)** 시 대응 커밋 이벤트/라인 **물리 삭제**
   - `SHIPPING` 차감 삭제: **포장.발송 롤백(세척.패킹 복귀)** 시 대응 커밋 이벤트/라인 **물리 삭제**
   - 롤백에서 REFUND 이벤트/라인 추가 금지
+  - 조회 호환성: 레거시 UI 필터 호환을 위해 `type=REFUND` 조회 파라미터는 일시적으로 허용할 수 있으나,
+    응답은 빈 목록으로 고정하며 REFUND 데이터를 신규 생성/노출하지 않습니다.
   - BG 콜백(예: CNC 처리 완료/실패 콜백)은 파일 상태 동기화 전용이며 승인/롤백 트랜지션이 아니므로,
     크레딧/정산 이벤트를 적재하지 않음
   - 불완전가공(RnD unmachinable) 판정은 크레딧 롤백 사유가 아님
@@ -250,6 +252,9 @@
   - 조회/표시 타입은 `CHARGE`/`SPEND` 단일값 금지
     - 충전: `CHARGE_PAID` / `CHARGE_FREE_REQUEST` / `CHARGE_FREE_SHIPPING`
     - 소비: `SPEND_PAID` / `SPEND_FREE_REQUEST` / `SPEND_FREE_SHIPPING`
+  - `GET /api/credits/balance` 응답 키는 `freeRequestCredit`, `freeShippingCredit`, `freeBalance`를 SSOT로 사용합니다.
+  - `BusinessCreditBalance` 스냅샷 저장도 `freeRequestCredit`, `freeShippingCredit`만 사용합니다.
+  - 레거시 `bonus*` alias/fallback은 런타임 경로에서 제거했습니다.
 
 - 샘플 정책(강제):
   - `requestCategory in (rnd_sample, copied_sample)`는 장부 무관 작업으로 간주
@@ -271,6 +276,10 @@
     `BusinessCreditBalance` 스냅샷을 GL 기준으로 재동기화만 수행합니다.
   - 레거시 `CreditLedger` 직접 보정/삽입 로직은 사용 금지합니다.
 
+- 관리자 크레딧 응답 필드 정책:
+  - `adminCredit` 계열 응답에서 무료 크레딧 SSOT 키는 `freeRequestCredit`, `freeShippingCredit`, `freeBalance`입니다.
+  - `bonus*` 계열 alias 응답/분기/정렬은 제거하고 SSOT 키만 사용합니다.
+
 - 보존식(의뢰 단위) SSOT:
   - `의뢰자 순소비(현존 COMMIT 이벤트 기준)` = `REV_MANUFACTURER + REV_DEVOPS + REV_SALESMAN + REV_ADMIN`
   - 합계 비교 기준은 VAT 제외 공급가(`amountExcludingVat`) 우선
@@ -278,6 +287,8 @@
 - 구현 강제사항:
   - 승인/롤백/정산 이벤트는 모두 단일 저널 트랜잭션으로 처리
   - `idempotencyKey` unique 인덱스로 중복기록 차단
+  - 외부 session 트랜잭션 경로는 snapshot 가시성 때문에 idempotencyKey를 committed view(session=null)로 1회 추가 확인합니다.
+    - 목적: 동시성 상황에서 중복 insert(11000)로 트랜잭션이 불필요하게 깨지는 것을 예방
   - 파생 조회(제조사 정산/관리자 대시보드/의뢰자 잔액)는 단일 SSOT 장부 집계값만 사용
 - 우편함/배송 무결성 정책(포장.발송):
   - 우편함 재사용/배정은 **BusinessAnchor 단일 점유**를 반드시 보장합니다.

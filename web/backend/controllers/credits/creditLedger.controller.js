@@ -82,8 +82,7 @@ function safeRegex(query) {
 
 function parseFreeCreditGrantIdFromUniqueKey(uniqueKey) {
   const raw = String(uniqueKey || "").trim().replace(/^gl:/, "");
-  // legacy 호환 (앱 안정화 후 삭제 예정): bonus_grant prefix 병행 파싱
-  const m = raw.match(/^(?:bonus_grant|free_credit_grant):([a-f0-9]{24})$/i);
+  const m = raw.match(/^free_credit_grant:([a-f0-9]{24})$/i);
   return m ? m[1] : "";
 }
 
@@ -290,6 +289,7 @@ export async function listMyCreditLedger(req, res) {
     ].includes(typeRaw)
   ) {
     if (typeRaw === "REFUND") {
+      // legacy 조회 호환: 정책상 REFUND 신규 적재는 금지되므로 빈 결과만 반환한다.
       return res.json({ success: true, data: { items: [], total: 0, page, pageSize } });
     }
     pipeline.push({ $match: { type: typeRaw } });
@@ -473,7 +473,7 @@ export async function listMyCreditLedger(req, res) {
       const businessNumber = String(grant.businessNumber || "").trim();
       const grantType = String(grant.type || "").trim().toUpperCase();
       let reason = "환영 무료 의뢰크레딧";
-      if (grantType === "FREE_SHIPPING_CREDIT" || grantType === "SHIPPING_FREE_CREDIT") {
+      if (grantType === "SHIPPING_FREE_CREDIT") {
         reason = "환영 무료 배송크레딧";
       }
       if (source === "admin" && overrideReason) {
@@ -523,7 +523,6 @@ export async function listMyCreditLedger(req, res) {
       return {
         ...it,
         freeReason,
-        bonusReason: freeReason, // legacy 호환 (앱 안정화 후 삭제 예정)
       };
     }
 

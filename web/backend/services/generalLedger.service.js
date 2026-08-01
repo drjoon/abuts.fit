@@ -157,6 +157,23 @@ export async function postGeneralLedgerJournal({
     };
   }
 
+  // 트랜잭션 스냅샷 가시성 보강:
+  // 외부 session 트랜잭션에서는 "트랜잭션 시작 이후"에 커밋된 저널이 snapshot에 안 보일 수 있다.
+  // 중복 insert(11000)로 트랜잭션이 불필요하게 깨지지 않도록, 최신 committed view를 한 번 더 확인한다.
+  if (session) {
+    const latestCommitted = await getJournalByIdempotencyKey({
+      idempotencyKey,
+      session: null,
+    });
+    if (latestCommitted?.journalId) {
+      return {
+        posted: false,
+        idempotent: true,
+        journalId: latestCommitted.journalId,
+      };
+    }
+  }
+
   const journalDoc = buildJournalDoc({
     journalId,
     idempotencyKey,
@@ -196,7 +213,7 @@ export async function postGeneralLedgerJournal({
     if (Number(error?.code || 0) === 11000) {
       const concurrentExisting = await getJournalByIdempotencyKey({
         idempotencyKey,
-        session: ownSession ? null : txSession,
+        session: null,
       });
       if (concurrentExisting?.journalId) {
         return {

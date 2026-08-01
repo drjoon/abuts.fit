@@ -15,8 +15,8 @@ const businessCreditBalanceSchema = new mongoose.Schema(
       index: true,
     },
     paidCredit: { type: Number, required: true, default: 0 },
-    bonusRequestCredit: { type: Number, required: true, default: 0 },
-    bonusShippingCredit: { type: Number, required: true, default: 0 },
+    freeRequestCredit: { type: Number, required: true, default: 0 },
+    freeShippingCredit: { type: Number, required: true, default: 0 },
     version: { type: Number, required: true, default: 0 },
     lastAppliedLedgerAt: { type: Date, default: null },
     lastAppliedLedgerId: {

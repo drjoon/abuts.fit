@@ -8,10 +8,7 @@ import { apiFetch } from "@/shared/api/apiClient";
 type CreditSettingsApiResponse = {
   success?: boolean;
   data?: {
-    creditSettings?: Partial<CreditSettings> & {
-      defaultWelcomeBonusCredit?: number;
-      defaultFreeShippingCredit?: number;
-    };
+    creditSettings?: Partial<CreditSettings>;
   };
 };
 
@@ -20,8 +17,6 @@ export interface CreditSettings {
   shippingFee: number;
   defaultRequestFreeCredit: number;
   defaultShippingFreeCredit: number;
-  defaultWelcomeBonusCredit?: number; // legacy 호환 (앱 안정화 후 삭제 예정)
-  defaultFreeShippingCredit?: number; // legacy 호환 (앱 안정화 후 삭제 예정)
 }
 
 export const CREDIT_SETTINGS_DEFAULTS: CreditSettings = {
@@ -29,8 +24,6 @@ export const CREDIT_SETTINGS_DEFAULTS: CreditSettings = {
   shippingFee: 3500,
   defaultRequestFreeCredit: 30000,
   defaultShippingFreeCredit: 7000,
-  defaultWelcomeBonusCredit: 30000, // legacy 호환 (앱 안정화 후 삭제 예정)
-  defaultFreeShippingCredit: 7000, // legacy 호환 (앱 안정화 후 삭제 예정)
 };
 
 export interface SystemSettingsData {
@@ -57,24 +50,12 @@ export const useSystemSettings = () => {
         shippingFee: Number(raw.shippingFee ?? CREDIT_SETTINGS_DEFAULTS.shippingFee),
         defaultRequestFreeCredit: Number(
           raw.defaultRequestFreeCredit ??
-            raw.defaultWelcomeBonusCredit ??
             CREDIT_SETTINGS_DEFAULTS.defaultRequestFreeCredit,
         ),
         defaultShippingFreeCredit: Number(
           raw.defaultShippingFreeCredit ??
-            raw.defaultFreeShippingCredit ??
             CREDIT_SETTINGS_DEFAULTS.defaultShippingFreeCredit,
         ),
-        defaultWelcomeBonusCredit: Number(
-          raw.defaultRequestFreeCredit ??
-            raw.defaultWelcomeBonusCredit ??
-            CREDIT_SETTINGS_DEFAULTS.defaultRequestFreeCredit,
-        ), // legacy 호환 (앱 안정화 후 삭제 예정)
-        defaultFreeShippingCredit: Number(
-          raw.defaultShippingFreeCredit ??
-            raw.defaultFreeShippingCredit ??
-            CREDIT_SETTINGS_DEFAULTS.defaultShippingFreeCredit,
-        ), // legacy 호환 (앱 안정화 후 삭제 예정)
       };
       return { creditSettings } as SystemSettingsData;
     },

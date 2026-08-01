@@ -718,8 +718,6 @@ export async function updateMyBusiness(req, res) {
             requestFreeCreditAmount: Number(requestFreeCreditAmount || 0),
             freeShippingCreditGranted: !!freeShippingCreditAmount,
             freeShippingCreditAmount: Number(freeShippingCreditAmount || 0),
-            welcomeBonusGranted: !!requestFreeCreditAmount, // legacy 호환 (앱 안정화 후 삭제 예정)
-            welcomeBonusAmount: Number(requestFreeCreditAmount || 0), // legacy 호환 (앱 안정화 후 삭제 예정)
           },
         });
       } catch (e) {
@@ -820,7 +818,7 @@ export async function updateMyBusiness(req, res) {
       );
     }
 
-    // 성능 최적화: bonus grant 함수들을 병렬 실행
+    // 성능 최적화: free credit grant 함수들을 병렬 실행
     const [granted, freeShippingGranted] = await Promise.all([
       grantRequestFreeCreditIfEligible({
         businessAnchorId: businessAnchor._id,
@@ -845,8 +843,6 @@ export async function updateMyBusiness(req, res) {
         requestFreeCreditAmount: granted || 0,
         freeShippingCreditGranted: Boolean(freeShippingGranted),
         freeShippingCreditAmount: freeShippingGranted || 0,
-        welcomeBonusGranted: Boolean(granted), // legacy 호환 (앱 안정화 후 삭제 예정)
-        welcomeBonusAmount: granted || 0, // legacy 호환 (앱 안정화 후 삭제 예정)
         verification: verificationResult
           ? {
               verified: !!verificationResult.verified,

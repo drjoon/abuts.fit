@@ -27,7 +27,7 @@ async function run() {
         businessAnchorId: anchorId,
       });
       console.log(
-        `[recompute-credit] ${name} (${anchorId}) -> balance:${result.balance} paid:${result.paidCredit} bonus:${result.bonusRequestCredit} freeShip:${result.bonusShippingCredit}`,
+        `[recompute-credit] ${name} (${anchorId}) -> balance:${result.balance} paid:${result.paidCredit} freeRequest:${result.freeRequestCredit} freeShipping:${result.freeShippingCredit}`,
       );
 
       // Emit realtime snapshot event so connected clients can refresh their UI.

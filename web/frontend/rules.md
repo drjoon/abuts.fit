@@ -94,7 +94,12 @@
     - `CHARGE_PAID`, `CHARGE_FREE_REQUEST`, `CHARGE_FREE_SHIPPING`
     - `SPEND_PAID`, `SPEND_FREE_REQUEST`, `SPEND_FREE_SHIPPING`
     - `ADJUST` (`REFUND`는 정책상 신규 적재 금지, 조회 호환용)
+  - UI 필터/기본 메뉴에서는 `REFUND`를 노출하지 않습니다(legacy 파라미터 호환만 유지).
   - 유료/무료 수익은 모두 표시하되, 지급(PAYOUT) 대상은 유료만 구분 표기해야 합니다.
+  - `DashboardLayout`→의뢰자 대시보드 Outlet context 크레딧 키는 `freeRequestCredit`, `freeShippingCredit`을 SSOT로 사용합니다.
+  - 관리자 크레딧 탭의 사업자 정렬 키는 `freeBalance`를 사용합니다.
+  - 관리자 크레딧 집계 카드는 `totalChargedFreeAmount`, `totalSpentFreeAmount` 또는
+    `totalFreeRequest+totalFreeShipping`, `totalSpentFreeRequestAmount+totalSpentFreeShippingAmount`를 SSOT로 사용합니다.
 
 - 단일 SSOT 장부 UI 필드 계약(초안):
   - Journal: `journalId`, `eventType`, `businessAnchorId`, `refType`, `refId`, `stageFrom`, `stageTo`, `occurredAt`

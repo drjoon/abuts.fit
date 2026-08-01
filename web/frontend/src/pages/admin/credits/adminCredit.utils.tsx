@@ -44,9 +44,9 @@ export const creditTypeLabel = (t: AdminCreditLedgerType) => {
   if (t === "CHARGE_FREE_REQUEST") return "무료충전(의뢰)";
   if (t === "CHARGE_FREE_SHIPPING") return "무료충전(배송)";
   if (t === "SPEND_PAID") return "사용(유료)";
-  if (t === "SPEND_FREE_REQUEST") return "사용(의뢰무료)";
-  if (t === "SPEND_FREE_SHIPPING") return "사용(배송무료)";
-  if (t === "REFUND") return "환불";
+  if (t === "SPEND_FREE_REQUEST") return "사용(무료·의뢰)";
+  if (t === "SPEND_FREE_SHIPPING") return "사용(무료·배송)";
+  if (t === "REFUND") return "환불(legacy)";
   return "조정";
 };
 
@@ -56,7 +56,6 @@ export const refTypeLabel = (refType?: string) => {
   if (t === "SHIPPING_FEE") return "배송비 (발송 1회)";
   if (t === "REQUEST") return "의뢰";
   if (t === "FREE_REQUEST_CREDIT") return "환영 무료 의뢰크레딧";
-  if (t === "WELCOME_BONUS") return "환영 무료 의뢰크레딧"; // legacy 호환 (앱 안정화 후 삭제 예정)
   if (t === "FREE_SHIPPING_CREDIT") return "환영 무료 배송크레딧";
   if (t === "SHIPPING_FREE_CREDIT") return "환영 무료 배송크레딧";
   return t;

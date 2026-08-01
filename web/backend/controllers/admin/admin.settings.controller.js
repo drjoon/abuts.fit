@@ -10,43 +10,32 @@ import {
 const CREDIT_SETTINGS_DEFAULTS = (() => {
   const pickDefault = (path) =>
     Number(SystemSettings.schema.path(path)?.options?.default ?? 0) || 0;
-  const defaultRequestFreeCredit = pickDefault(
-    "creditSettings.defaultRequestFreeCredit",
-  );
-  const defaultShippingFreeCredit = pickDefault(
-    "creditSettings.defaultShippingFreeCredit",
-  );
   return {
     minCreditForRequest: pickDefault("creditSettings.minCreditForRequest"),
     shippingFee: pickDefault("creditSettings.shippingFee"),
-    defaultRequestFreeCredit,
-    defaultShippingFreeCredit,
-    defaultWelcomeBonusCredit: defaultRequestFreeCredit, // legacy 호환 (앱 안정화 후 삭제 예정)
-    defaultFreeShippingCredit: defaultShippingFreeCredit, // legacy 호환 (앱 안정화 후 삭제 예정)
+    defaultRequestFreeCredit: pickDefault(
+      "creditSettings.defaultRequestFreeCredit",
+    ),
+    defaultShippingFreeCredit: pickDefault(
+      "creditSettings.defaultShippingFreeCredit",
+    ),
   };
 })();
 
 function normalizeCreditSettings(raw = {}) {
-  const defaultRequestFreeCredit = Number(
-    raw.defaultRequestFreeCredit ??
-      raw.defaultWelcomeBonusCredit ??
-      CREDIT_SETTINGS_DEFAULTS.defaultRequestFreeCredit,
-  );
-  const defaultShippingFreeCredit = Number(
-    raw.defaultShippingFreeCredit ??
-      raw.defaultFreeShippingCredit ??
-      CREDIT_SETTINGS_DEFAULTS.defaultShippingFreeCredit,
-  );
-
   return {
     minCreditForRequest: Number(
       raw.minCreditForRequest ?? CREDIT_SETTINGS_DEFAULTS.minCreditForRequest,
     ),
     shippingFee: Number(raw.shippingFee ?? CREDIT_SETTINGS_DEFAULTS.shippingFee),
-    defaultRequestFreeCredit,
-    defaultShippingFreeCredit,
-    defaultWelcomeBonusCredit: defaultRequestFreeCredit, // legacy 호환 (앱 안정화 후 삭제 예정)
-    defaultFreeShippingCredit: defaultShippingFreeCredit, // legacy 호환 (앱 안정화 후 삭제 예정)
+    defaultRequestFreeCredit: Number(
+      raw.defaultRequestFreeCredit ??
+        CREDIT_SETTINGS_DEFAULTS.defaultRequestFreeCredit,
+    ),
+    defaultShippingFreeCredit: Number(
+      raw.defaultShippingFreeCredit ??
+        CREDIT_SETTINGS_DEFAULTS.defaultShippingFreeCredit,
+    ),
   };
 }
 
@@ -308,12 +297,8 @@ export async function updateCreditSettings(req, res) {
 
     const minCreditForRequest = Number(payload.minCreditForRequest);
     const shippingFee = Number(payload.shippingFee);
-    const defaultRequestFreeCredit = Number(
-      payload.defaultRequestFreeCredit ?? payload.defaultWelcomeBonusCredit,
-    );
-    const defaultShippingFreeCredit = Number(
-      payload.defaultShippingFreeCredit ?? payload.defaultFreeShippingCredit,
-    );
+    const defaultRequestFreeCredit = Number(payload.defaultRequestFreeCredit);
+    const defaultShippingFreeCredit = Number(payload.defaultShippingFreeCredit);
 
     const sanitized = {};
     if (!Number.isNaN(minCreditForRequest) && minCreditForRequest >= 0) {
@@ -324,14 +309,12 @@ export async function updateCreditSettings(req, res) {
     }
     if (!Number.isNaN(defaultRequestFreeCredit) && defaultRequestFreeCredit >= 0) {
       sanitized.defaultRequestFreeCredit = defaultRequestFreeCredit;
-      sanitized.defaultWelcomeBonusCredit = defaultRequestFreeCredit; // legacy 호환 (앱 안정화 후 삭제 예정)
     }
     if (
       !Number.isNaN(defaultShippingFreeCredit) &&
       defaultShippingFreeCredit >= 0
     ) {
       sanitized.defaultShippingFreeCredit = defaultShippingFreeCredit;
-      sanitized.defaultFreeShippingCredit = defaultShippingFreeCredit; // legacy 호환 (앱 안정화 후 삭제 예정)
     }
 
     const doc = await SystemSettings.findOneAndUpdate(

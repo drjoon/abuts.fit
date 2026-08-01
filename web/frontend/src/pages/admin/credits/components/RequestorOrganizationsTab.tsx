@@ -9,9 +9,9 @@ import { TabsContent } from "@/components/ui/tabs";
 import type { BusinessCredit } from "../adminCredit.types";
 
 type RequestorOrganizationsTabProps = {
-  orgSortKey: "paidBalance" | "bonusBalance" | "spentPaid" | "name";
+  orgSortKey: "paidBalance" | "freeBalance" | "spentPaid" | "name";
   setOrgSortKey: (
-    value: "paidBalance" | "bonusBalance" | "spentPaid" | "name",
+    value: "paidBalance" | "freeBalance" | "spentPaid" | "name",
   ) => void;
   loadingOrgs: boolean;
   businesses: BusinessCredit[];
@@ -50,14 +50,14 @@ export function RequestorOrganizationsTab({
                   setOrgSortKey(
                     e.target.value as
                       | "paidBalance"
-                      | "bonusBalance"
+                      | "freeBalance"
                       | "spentPaid"
                       | "name",
                   )
                 }
               >
                 <option value="paidBalance">정렬: 유료잔액순</option>
-                <option value="bonusBalance">정렬: 무료잔액순</option>
+                <option value="freeBalance">정렬: 무료잔액순</option>
                 <option value="spentPaid">정렬: 유료사용순</option>
                 <option value="name">정렬: 이름순</option>
               </select>
@@ -81,17 +81,13 @@ export function RequestorOrganizationsTab({
                     .sort((a, b) => {
                       if (orgSortKey === "paidBalance") {
                         return (
-                          Number(b.paidBalance || 0) -
-                          Number(a.paidBalance || 0)
+                          Number(b.paidCredit ?? b.paidBalance ?? 0) -
+                          Number(a.paidCredit ?? a.paidBalance ?? 0)
                         );
                       }
-                      if (orgSortKey === "bonusBalance") {
-                        const bFreeBalance = Number(
-                          b.freeBalance ?? b.bonusBalance ?? 0,
-                        );
-                        const aFreeBalance = Number(
-                          a.freeBalance ?? a.bonusBalance ?? 0,
-                        );
+                      if (orgSortKey === "freeBalance") {
+                        const bFreeBalance = Number(b.freeBalance ?? 0);
+                        const aFreeBalance = Number(a.freeBalance ?? 0);
                         return bFreeBalance - aFreeBalance;
                       }
                       if (orgSortKey === "spentPaid") {
@@ -108,32 +104,24 @@ export function RequestorOrganizationsTab({
                     .map((business) => {
                       const paidCredit = Number(business.paidCredit || 0);
                       const freeRequestCredit = Number(
-                        business.freeRequestCredit ?? business.bonusRequestCredit ?? 0,
+                        business.freeRequestCredit ?? 0,
                       );
                       const freeShippingCredit = Number(
-                        business.freeShippingCredit ?? business.bonusShippingCredit ?? 0,
+                        business.freeShippingCredit ?? 0,
                       );
                       const chargedPaid = Number(business.chargedPaidAmount || 0);
                       const chargedFreeRequest = Number(
-                        business.chargedFreeRequestAmount ??
-                          business.chargedBonusRequestAmount ??
-                          0,
+                        business.chargedFreeRequestAmount ?? 0,
                       );
                       const chargedFreeShipping = Number(
-                        business.chargedFreeShippingAmount ??
-                          business.chargedBonusShippingAmount ??
-                          0,
+                        business.chargedFreeShippingAmount ?? 0,
                       );
                       const spentPaid = Number(business.spentPaidAmount || 0);
                       const spentFreeRequest = Number(
-                        business.spentFreeRequestAmount ??
-                          business.spentBonusRequestAmount ??
-                          0,
+                        business.spentFreeRequestAmount ?? 0,
                       );
                       const spentFreeShipping = Number(
-                        business.spentFreeShippingAmount ??
-                          business.spentBonusShippingAmount ??
-                          0,
+                        business.spentFreeShippingAmount ?? 0,
                       );
 
                       return (

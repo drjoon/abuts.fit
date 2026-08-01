@@ -250,8 +250,8 @@ async function matchTxWithOrder({ tx, order }) {
               $setOnInsert: {
                 businessAnchorId: order.businessAnchorId,
                 paidCredit: 0,
-                bonusRequestCredit: 0,
-                bonusShippingCredit: 0,
+                freeRequestCredit: 0,
+                freeShippingCredit: 0,
               },
             },
             { upsert: true, session },

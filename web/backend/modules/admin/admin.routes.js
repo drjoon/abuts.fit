@@ -69,13 +69,9 @@ import {
   adminRejectChargeOrder,
 } from "../../controllers/admin/adminCreditBPlan.controller.js";
 import {
-  adminCancelBonusGrant,
-  adminListBonusGrants,
-  adminOverrideWelcomeBonus,
   adminGrantFreeShippingCredit,
   adminListFreeCreditGrants,
   adminOverrideRequestFreeCredit,
-  adminOverrideWelcomeRequestCredit,
   adminCancelFreeCreditGrant,
 } from "../../controllers/admin/adminFreeCreditGrant.controller.js";
 import {
@@ -365,12 +361,6 @@ router.post(
   authorize(["admin"], { subRoles: ["owner", "staff"] }),
   adminOverrideRequestFreeCredit,
 );
-// legacy 경로 호환 (앱 안정화 후 삭제 예정)
-router.post(
-  "/free-credit-grants/welcome-request-credit/override",
-  authorize(["admin"], { subRoles: ["owner", "staff"] }),
-  adminOverrideWelcomeRequestCredit,
-);
 router.post(
   "/free-credit-grants/free-shipping-credit/grant",
   authorize(["admin"], { subRoles: ["owner", "staff"] }),
@@ -380,24 +370,6 @@ router.post(
   "/free-credit-grants/:id/cancel",
   authorize(["admin"], { subRoles: ["owner"] }),
   adminCancelFreeCreditGrant,
-);
-
-// 레거시 경로 호환 (앱 안정화 후 삭제 예정)
-router.get("/bonus-grants", adminListBonusGrants);
-router.post(
-  "/bonus-grants/welcome-bonus/override",
-  authorize(["admin"], { subRoles: ["owner", "staff"] }),
-  adminOverrideWelcomeBonus,
-);
-router.post(
-  "/bonus-grants/free-shipping-credit/grant",
-  authorize(["admin"], { subRoles: ["owner", "staff"] }),
-  adminGrantFreeShippingCredit,
-);
-router.post(
-  "/bonus-grants/:id/cancel",
-  authorize(["admin"], { subRoles: ["owner"] }),
-  adminCancelBonusGrant,
 );
 
 // 세금계산서(드래프트) 관리

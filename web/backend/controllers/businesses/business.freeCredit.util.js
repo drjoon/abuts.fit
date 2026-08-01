@@ -51,8 +51,7 @@ async function upsertFreeCreditLedger({
     meta: {
       memo: String(memo || "").trim(),
       freeCreditGrantId: String(refId || "").trim() || null,
-      bonusGrantId: String(refId || "").trim() || null, // legacy 호환 (앱 안정화 후 삭제 예정)
-      source: "business_auto_free_credit"
+      source: "business_auto_free_credit",
     },
     lines: [
       {
@@ -71,19 +70,19 @@ async function upsertFreeCreditLedger({
   });
 
   if (glResult?.posted) {
-    const bonusField = isShipping ? "bonusShippingCredit" : "bonusRequestCredit";
+    const freeField = isShipping ? "freeShippingCredit" : "freeRequestCredit";
     await BusinessCreditBalance.updateOne(
       { businessAnchorId },
       {
         $inc: {
-          [bonusField]: normalizedAmount,
+          [freeField]: normalizedAmount,
           version: 1,
         },
         $setOnInsert: {
           businessAnchorId,
           paidCredit: 0,
-          bonusRequestCredit: 0,
-          bonusShippingCredit: 0,
+          freeRequestCredit: 0,
+          freeShippingCredit: 0,
         },
       },
       { upsert: true },
@@ -99,15 +98,15 @@ async function upsertFreeCreditLedger({
 
 function resolveGrantTypeAlias(type) {
   const t = String(type || "").trim().toUpperCase();
-  if (t === "REQUEST_FREE_CREDIT" || t === "WELCOME_BONUS") {
+  if (!t || t === "REQUEST_FREE_CREDIT") {
     return {
-      queryTypes: ["REQUEST_FREE_CREDIT", "WELCOME_BONUS"], // legacy 호환 (앱 안정화 후 삭제 예정): WELCOME_BONUS 병행 조회
+      queryTypes: ["REQUEST_FREE_CREDIT"],
       canonicalType: "REQUEST_FREE_CREDIT",
     };
   }
-  if (t === "SHIPPING_FREE_CREDIT" || t === "FREE_SHIPPING_CREDIT") {
+  if (t === "SHIPPING_FREE_CREDIT") {
     return {
-      queryTypes: ["SHIPPING_FREE_CREDIT", "FREE_SHIPPING_CREDIT"], // legacy 호환 (앱 안정화 후 삭제 예정): FREE_SHIPPING_CREDIT 병행 조회
+      queryTypes: ["SHIPPING_FREE_CREDIT"],
       canonicalType: "SHIPPING_FREE_CREDIT",
     };
   }
@@ -254,7 +253,7 @@ export async function grantShippingFreeCreditIfEligible({
   const grant = await ensureFreeCreditGrant({
     businessAnchorId,
     userId,
-    type: "FREE_SHIPPING_CREDIT",
+    type: "SHIPPING_FREE_CREDIT",
     businessNumber: normalizedBusinessNumber,
     amount,
   });
@@ -295,7 +294,4 @@ export async function grantSalesmanReferralBonusIfEligible() {
   return null;
 }
 
-// legacy 함수명 호환 export (앱 안정화 후 삭제 예정)
-export const grantWelcomeBonusIfEligible = grantRequestFreeCreditIfEligible; // legacy 호환 (앱 안정화 후 삭제 예정)
-export const grantFreeShippingCreditIfEligible =
-  grantShippingFreeCreditIfEligible; // legacy 호환 (앱 안정화 후 삭제 예정)
+
