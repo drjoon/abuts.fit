@@ -275,6 +275,8 @@
   - `credit-reconcile/execute`는 누락 이벤트를 직접 생성하지 않으며,
     `BusinessCreditBalance` 스냅샷을 GL 기준으로 재동기화만 수행합니다.
   - 레거시 `CreditLedger` 직접 보정/삽입 로직은 사용 금지합니다.
+  - `web/backend/scripts/*`의 `CreditLedger` 직접 수정/삭제 스크립트는 DEPRECATED 처리하며,
+    운영 점검은 `reconcile-business-credit-spends.mjs`(GL snapshot diff/upsert) 또는 관리자 reconcile API만 사용합니다.
 
 - 관리자 크레딧 응답 필드 정책:
   - `adminCredit` 계열 응답에서 무료 크레딧 SSOT 키는 `freeRequestCredit`, `freeShippingCredit`, `freeBalance`입니다.
