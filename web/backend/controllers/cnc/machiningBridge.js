@@ -1,13 +1,14 @@
 // related files:
 // - web/backend/controllers/requests/common.review.controller.js
 // - web/backend/controllers/cnc/production.js
+// - web/backend/socket.js
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/machining/MachiningQueueBoard.tsx
 // - web/frontend/src/pages/manufacturer/equipment/cnc/hooks/useManUpload.ts
 import Request from "../../models/request.model.js";
 import CncEvent from "../../models/cncEvent.model.js";
 import CncMachine from "../../models/cncMachine.model.js";
 import MachiningRecord from "../../models/machiningRecord.model.js";
-import { getIO } from "../../socket.js";
+import { getIO, emitAppEventToRoles } from "../../socket.js";
 import {
   applyStatusMapping,
   ensureFinishedLotNumberForPacking,
@@ -1157,7 +1158,11 @@ export async function recordMachiningStartForBridge(req, res) {
       const existing = await Request.findOne({ requestId }).select({
         productionSchedule: 1,
         requestId: 1,
+        _id: 1,
+        manufacturerStage: 1,
+        status: 1,
       });
+      const fromStage = String(existing?.manufacturerStage || "").trim() || null;
 
       const update = {
         $set: {
@@ -1179,7 +1184,42 @@ export async function recordMachiningStartForBridge(req, res) {
       if (record?._id && !existing?.productionSchedule?.machiningRecord) {
         update.$set["productionSchedule.machiningRecord"] = record._id;
       }
-      await Request.updateOne({ requestId }, update);
+
+      const stageCarrier = {
+        manufacturerStage: existing?.manufacturerStage,
+        status: existing?.status,
+      };
+      applyStatusMapping(stageCarrier, "가공");
+      update.$set["manufacturerStage"] = stageCarrier.manufacturerStage;
+      update.$set["status"] = stageCarrier.status;
+
+      const updatedRequest = await Request.findOneAndUpdate(
+        { requestId },
+        update,
+        { new: true },
+      );
+
+      try {
+        const toStage =
+          String(updatedRequest?.manufacturerStage || "").trim() || null;
+        if (fromStage !== toStage && toStage) {
+          const normalizedRequest = updatedRequest
+            ? await normalizeRequestForResponse(updatedRequest)
+            : null;
+          emitAppEventToRoles(["manufacturer", "admin"], "request:stage-changed", {
+            source: "bridge-machining-start",
+            requestId: requestId || null,
+            requestMongoId: String(updatedRequest?._id || "").trim() || null,
+            fromStage,
+            toStage,
+            reviewStage: "machining",
+            reviewStatus: "APPROVED",
+            request: normalizedRequest,
+          });
+        }
+      } catch {
+        // ignore
+      }
     }
 
     console.log(
@@ -1718,6 +1758,8 @@ export async function recordMachiningCompleteForBridge(req, res) {
           elapsedSeconds: durationSeconds,
         };
 
+        const fromStage = String(request?.manufacturerStage || "").trim() || null;
+
         // CNC 가공 완료 시 제조 단계는 세척/패킹 단계로 전환한다.
         // status/manufacturerStage enum 은 '세척.패킹' 을 사용한다.
         applyStatusMapping(request, "세척.패킹");
@@ -1765,6 +1807,25 @@ export async function recordMachiningCompleteForBridge(req, res) {
             stage: "세척.패킹",
           }),
         );
+
+        try {
+          const toStage = String(request?.manufacturerStage || "").trim() || null;
+          if (fromStage !== toStage && toStage) {
+            const normalizedRequest = await normalizeRequestForResponse(request);
+            emitAppEventToRoles(["manufacturer", "admin"], "request:stage-changed", {
+              source: "bridge-machining-complete",
+              requestId: requestId || null,
+              requestMongoId: String(request?._id || "").trim() || null,
+              fromStage,
+              toStage,
+              reviewStage: "machining",
+              reviewStatus: "APPROVED",
+              request: normalizedRequest,
+            });
+          }
+        } catch {
+          // ignore
+        }
       } else {
         // requestId가 없어도 완료 기록은 남긴다.
         const now = new Date();
