@@ -699,10 +699,10 @@ async function migrateAnchor(anchor, { cli, shippingFeeDefault, legacyMaps }) {
     let split = summarizeLegacySplit(legacyRows, row.amount);
     let verification = split.reason;
 
-    if (!split.ok && cli.forcePaidFallback) {
+    if (!split.ok && (cli.forcePaidFallback || cli.allowUnverified)) {
       split = {
         ok: true,
-        reason: "paid_fallback",
+        reason: cli.forcePaidFallback ? "paid_fallback" : "paid_fallback_allow_unverified",
         paid: row.amount,
         free: 0,
         amount: row.amount,
@@ -711,7 +711,7 @@ async function migrateAnchor(anchor, { cli, shippingFeeDefault, legacyMaps }) {
       verification = split.reason;
     }
 
-    if (!split.ok && !cli.allowUnverified) {
+    if (!split.ok) {
       unresolvedCount += 1;
       skippedUnverifiedCount += 1;
       if (unresolvedSamples.length < 20) {
@@ -824,9 +824,9 @@ async function run() {
 
   const mode = cli.execute ? "APPLY" : "DRY_RUN";
   console.log(`[migrate-request-spend-to-gl] mode=${mode}`);
-  if (cli.execute && !cli.forcePaidFallback) {
+  if (cli.execute && cli.allowUnverified && !cli.forcePaidFallback) {
     console.log(
-      "[migrate-request-spend-to-gl] execute mode without --force-paid-fallback: unresolved splits are skipped unless --allow-unverified is set.",
+      "[migrate-request-spend-to-gl] execute mode with --allow-unverified: unverified legacy splits use paid fallback (paid=row.amount, free=0).",
     );
   }
 
