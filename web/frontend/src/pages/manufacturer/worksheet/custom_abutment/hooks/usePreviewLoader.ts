@@ -431,7 +431,7 @@ export function usePreviewLoader({
                   previewStageKey === "shipping" ? "packing" : previewStageKey;
                 const stageMeta =
                   targetReq.caseInfos?.stageFiles?.[effectiveStageKey];
-                if (!requestMongoId) return;
+                if (!requestMongoId || !stageMeta?.s3Key) return;
                 const signedUrl = await fetchSignedUrl(
                   `/api/requests/${requestMongoId}/stage-file-url?stage=${encodeURIComponent(
                     effectiveStageKey,

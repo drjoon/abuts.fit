@@ -233,6 +233,13 @@ function runStageFileCleanupInBackground({ requestId, stage, s3Key }) {
     });
 }
 
+function clearStageFileMeta(request, stage) {
+  request.caseInfos = request.caseInfos || {};
+  request.caseInfos.stageFiles = request.caseInfos.stageFiles || {};
+  request.set(`caseInfos.stageFiles.${stage}`, undefined);
+  request.markModified("caseInfos.stageFiles");
+}
+
 /**
  * CAM 단계 승인 후처리를 큐에 등록한다.
  * 기존 직접 실행 방식에서 reviewApprovalQueue 기반 직렬 처리로 전환.
@@ -630,7 +637,7 @@ export async function deleteStageFile(req, res) {
     }
 
     if (preserveStage && !rollbackOnly) {
-      delete request.caseInfos.stageFiles[stage];
+      clearStageFileMeta(request, stage);
       request.caseInfos.reviewByStage[stage] = {
         ...request.caseInfos.reviewByStage[stage],
         status: "PENDING",
@@ -667,7 +674,7 @@ export async function deleteStageFile(req, res) {
       request?.manufacturerStage || "",
     ).trim();
 
-    delete request.caseInfos.stageFiles[stage];
+    clearStageFileMeta(request, stage);
     bumpRollbackCount(request, stage);
     if (stage === "machining") {
       bumpRollbackCount(request, "cam");
