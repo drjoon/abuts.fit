@@ -373,12 +373,13 @@ export default function RequestorPracticePage() {
   }, []);
 
   const fetchTransferPage = useCallback(
-    async (nextPage: number, append: boolean) => {
+    async (nextPage: number, append: boolean, options?: { silent?: boolean }) => {
       if (!token) return;
+      const silent = options?.silent === true;
 
       if (append) setLoadingMore(true);
-      else setLoading(true);
-      if (!append) setError("");
+      else if (!silent) setLoading(true);
+      if (!append && !silent) setError("");
 
       try {
         const res = await apiFetch<unknown>({
@@ -392,7 +393,7 @@ export default function RequestorPracticePage() {
             res.data && typeof res.data === "object"
               ? (res.data as Record<string, unknown>)
               : {};
-          if (!append) {
+          if (!append && !silent) {
             setTransfers([]);
             setError(String(body.message || "치과 전송 내역 조회에 실패했습니다."));
             setHasMore(false);
@@ -429,7 +430,7 @@ export default function RequestorPracticePage() {
 
         emitUnreadBadgeRefresh(parsed.unreadCount);
       } catch {
-        if (!append) {
+        if (!append && !silent) {
           setTransfers([]);
           setError("치과 전송 내역 조회 중 오류가 발생했습니다.");
           setHasMore(false);
@@ -437,17 +438,20 @@ export default function RequestorPracticePage() {
         }
       } finally {
         if (append) setLoadingMore(false);
-        else setLoading(false);
+        else if (!silent) setLoading(false);
       }
     },
     [emitUnreadBadgeRefresh, mapTransferRows, parseTransfersBody, token],
   );
 
-  const loadFirstPage = useCallback(async () => {
-    setHasMore(false);
-    setPage(1);
-    await fetchTransferPage(1, false);
-  }, [fetchTransferPage]);
+  const loadFirstPage = useCallback(
+    async (options?: { silent?: boolean }) => {
+      setHasMore(false);
+      setPage(1);
+      await fetchTransferPage(1, false, options);
+    },
+    [fetchTransferPage],
+  );
 
   useEffect(() => {
     if (!token) {
@@ -565,7 +569,7 @@ export default function RequestorPracticePage() {
           window.clearTimeout(realtimeReloadTimerRef.current);
         }
         realtimeReloadTimerRef.current = window.setTimeout(() => {
-          void loadFirstPage();
+          void loadFirstPage({ silent: true });
         }, 140);
       }
     },

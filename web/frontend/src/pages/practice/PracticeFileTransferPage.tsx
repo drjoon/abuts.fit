@@ -1202,16 +1202,22 @@ export const PracticeFileTransferPage = () => {
     }
   }, [applyPracticeTransferSettings, authToken]);
 
-  const loadRecentRequests = useCallback(async () => {
-    if (!authToken) {
-      setRecentRequests([]);
-      setRecentRequestsError("로그인이 필요합니다.");
-      return;
-    }
+  const loadRecentRequests = useCallback(
+    async (options?: { silent?: boolean }) => {
+      const silent = options?.silent === true;
+      if (!authToken) {
+        if (!silent) {
+          setRecentRequests([]);
+          setRecentRequestsError("로그인이 필요합니다.");
+        }
+        return;
+      }
 
-    setRecentRequestsLoading(true);
-    setRecentRequestsError("");
-    try {
+      if (!silent) {
+        setRecentRequestsLoading(true);
+        setRecentRequestsError("");
+      }
+      try {
       const res = await apiFetch<unknown>({
         path: "/api/practice/transfers/my?page=1&limit=100",
         method: "GET",
@@ -1223,10 +1229,12 @@ export const PracticeFileTransferPage = () => {
           res.data && typeof res.data === "object"
             ? (res.data as { message?: string })
             : {};
-        setRecentRequests([]);
-        setRecentRequestsError(
-          String(body.message || "최근 전송 내역을 불러올 권한이 없습니다."),
-        );
+        if (!silent) {
+          setRecentRequests([]);
+          setRecentRequestsError(
+            String(body.message || "최근 전송 내역을 불러올 권한이 없습니다."),
+          );
+        }
         return;
       }
 
@@ -1296,13 +1304,22 @@ export const PracticeFileTransferPage = () => {
         .sort((a, b) => (b.createdAtTs || 0) - (a.createdAtTs || 0));
 
       setRecentRequests(mapped);
+      if (silent) {
+        setRecentRequestsError("");
+      }
     } catch {
-      setRecentRequests([]);
-      setRecentRequestsError("최근 전송 내역 조회 중 오류가 발생했습니다.");
+      if (!silent) {
+        setRecentRequests([]);
+        setRecentRequestsError("최근 전송 내역 조회 중 오류가 발생했습니다.");
+      }
     } finally {
-      setRecentRequestsLoading(false);
+      if (!silent) {
+        setRecentRequestsLoading(false);
+      }
     }
-  }, [authToken]);
+  },
+  [authToken],
+);
 
   useEffect(() => {
     try {
@@ -2219,7 +2236,9 @@ export const PracticeFileTransferPage = () => {
     enabled: Boolean(authToken),
     eventTypes: ["practice:transfer-created", "practice:transfer-updated"],
     delayMs: 160,
-    onMatch: loadRecentRequests,
+    onMatch: () => {
+      void loadRecentRequests({ silent: true });
+    },
   });
 
   useEffect(() => {

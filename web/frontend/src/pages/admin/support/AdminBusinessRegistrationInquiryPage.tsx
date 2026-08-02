@@ -116,8 +116,9 @@ export const AdminBusinessRegistrationInquiryPage = () => {
     });
   }, [items, searchQuery]);
 
-  const loadInquiries = useCallback(async () => {
-    setLoading(true);
+  const loadInquiries = useCallback(async (options?: { silent?: boolean }) => {
+    const silent = options?.silent === true;
+    if (!silent) setLoading(true);
     try {
       const data = await fetchBusinessRegistrationInquiries({
         status: statusFilter === "all" ? undefined : statusFilter,
@@ -130,13 +131,15 @@ export const AdminBusinessRegistrationInquiryPage = () => {
         return data[0]?._id ?? null;
       });
     } catch (error: unknown) {
-      toast({
-        title: "문의 목록 로딩 실패",
-        description: toErrorMessage(error, "문의 목록을 불러오지 못했습니다."),
-        variant: "destructive",
-      });
+      if (!silent) {
+        toast({
+          title: "문의 목록 로딩 실패",
+          description: toErrorMessage(error, "문의 목록을 불러오지 못했습니다."),
+          variant: "destructive",
+        });
+      }
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [statusFilter, typeFilter, toast]);
 
@@ -163,7 +166,9 @@ export const AdminBusinessRegistrationInquiryPage = () => {
           : {};
       return String(payload.key || "").trim() === "inquiry";
     },
-    onMatch: loadInquiries,
+    onMatch: () => {
+      void loadInquiries({ silent: true });
+    },
   });
 
   useEffect(() => {

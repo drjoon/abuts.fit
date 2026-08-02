@@ -29,7 +29,7 @@ import { resolveLeadDaysWithSameDayCutoff } from "./production.utils.js";
 import { checkCreditLock } from "../../utils/creditLock.util.js";
 import { triggerDashboardSummaryRefreshForAnchorId } from "../../services/requestSnapshotTriggers.service.js";
 import { recomputeBulkShippingSnapshotForBusinessAnchorId } from "../../services/bulkShippingSnapshot.service.js";
-import { emitAppEventToUser } from "../../socket.js";
+import { emitAppEventToRoles, emitAppEventToUser } from "../../socket.js";
 import {
   buildStandardStlFileName,
   getBusinessCreditBalanceBreakdown,
@@ -1503,6 +1503,22 @@ export async function createRequestsFromDraft(req, res) {
       throw e;
     } finally {
       session.endSession();
+    }
+
+    if (!isPracticeRoutingSubmission && createdRequests.length > 0) {
+      emitAppEventToRoles(["manufacturer", "admin"], "worksheet:count-update", {
+        source: "requestor-new-request",
+        action: "created",
+        stage: "request",
+        delta: createdRequests.length,
+        requestCategory: "order",
+        requestIds: createdRequests
+          .map((row) => String(row?.requestId || "").trim())
+          .filter(Boolean),
+        requestMongoIds: createdRequests
+          .map((row) => String(row?._id || "").trim())
+          .filter(Boolean),
+      });
     }
 
     if (isPracticeRoutingSubmission && createdRequests.length > 0) {

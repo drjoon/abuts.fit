@@ -79,6 +79,9 @@
   - packing 승인 자동 반영: `controllers/requests/common.review.controller.js`
 
 - `Request.requestId`는 서버가 생성합니다.
+- 의뢰자 신규의뢰 생성(`POST /api/requests/from-draft`) 성공 시
+  제조사/관리자 실시간 동기화를 위해 `worksheet:count-update` 이벤트를 발행합니다.
+  - payload 기본: `stage=request`, `delta=생성건수`, `action=created`, `source=requestor-new-request`
 - overview 성 집계는 스냅샷 컬렉션을 SSOT로 사용합니다.
 - 브리지 큐 조회 실패 시 DB 스냅샷 fallback을 허용합니다.
 - 가공 이력의 영속 SSOT는 `MachiningRecord` 입니다.

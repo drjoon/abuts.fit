@@ -324,7 +324,14 @@
 
 - 문의(admin/support) 실시간 반영 메모:
   - 관리자 문의 페이지는 `support:inquiry-created`, `support:inquiry-updated`, `comm:badge-update(key=inquiry)` app-event를 수신해 목록을 디바운스 재조회합니다.
+  - 이벤트 재조회는 `silent` 모드(기존 리스트 유지, 전체 로딩 스피너 재진입 금지)로 처리합니다.
   - 구현 파일: `src/pages/admin/support/AdminBusinessRegistrationInquiryPage.tsx`
+
+- practice 실시간 목록 동기화(무플리커):
+  - `PracticeFileTransferPage`, `RequestorPracticePage`는 `practice:transfer-created|updated` 수신 시
+    전체 로딩 상태를 다시 켜지 않고(silent) 기존 목록 유지 + 백그라운드 갱신으로 동기화합니다.
+  - 이벤트 payload로 즉시 patch 가능한(read/download/cancel) 경우는 먼저 부분 patch하고,
+    필요 시 coalesced/silent 재조회로 최종 정합성만 검증합니다.
 
 - practice 채팅/전송 파일 다운로드 정책:
   - S3 원본 URL 직접 오픈 대신 동일 오리진 프록시(`GET /api/files/s3/download`)를 사용합니다.
