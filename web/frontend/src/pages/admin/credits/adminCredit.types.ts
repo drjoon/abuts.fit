@@ -9,7 +9,6 @@ export type AdminCreditLedgerType =
   | "SPEND_PAID"
   | "SPEND_FREE_REQUEST"
   | "SPEND_FREE_SHIPPING"
-  | "REFUND" // legacy 조회 호환 (앱 안정화 후 삭제 예정)
   | "ADJUST";
 
 export type AdminLedgerItem = {

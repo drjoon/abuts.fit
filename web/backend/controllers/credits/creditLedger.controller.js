@@ -285,13 +285,8 @@ export async function listMyCreditLedger(req, res) {
       "SPEND_FREE_REQUEST",
       "SPEND_FREE_SHIPPING",
       "ADJUST",
-      "REFUND",
     ].includes(typeRaw)
   ) {
-    if (typeRaw === "REFUND") {
-      // legacy 조회 호환: 정책상 REFUND 신규 적재는 금지되므로 빈 결과만 반환한다.
-      return res.json({ success: true, data: { items: [], total: 0, page, pageSize } });
-    }
     pipeline.push({ $match: { type: typeRaw } });
   }
 

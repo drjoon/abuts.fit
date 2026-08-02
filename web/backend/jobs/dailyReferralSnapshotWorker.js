@@ -304,8 +304,6 @@ async function runDailySnapshot(ymd) {
         if (type === "EARN" && refType === "REQUEST") {
           cur.earnRequestAmount += amount;
           cur.earnRequestCount += count;
-        } else if (type === "REFUND") {
-          cur.refundAmount += amount;
         } else if (type === "PAYOUT") {
           cur.payoutAmount += amount;
         } else if (type === "ADJUST") {
