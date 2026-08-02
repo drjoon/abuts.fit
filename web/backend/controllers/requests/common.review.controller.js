@@ -6,6 +6,7 @@
 // - web/backend/controllers/cnc/machiningBridge.js
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
+// - web/frontend/src/pages/requestor/dashboard/RequestorDashboardPage.tsx
 import mongoose, { Types } from "mongoose";
 import Request from "../../models/request.model.js";
 import Machine from "../../models/machine.model.js";
@@ -1910,7 +1911,7 @@ export async function updateReviewStatusByStage(req, res) {
       });
     }
 
-    emitWorksheetStageChanged(responseData, {
+    emitWorksheetStageChanged(resultRequest, {
       reviewStage: String(stageOverride || stage || "").trim() || null,
       reviewStatus: String(status || "").trim() || null,
       fromStage:

@@ -76,6 +76,7 @@ import { getFileBlob, setFileBlob } from "@/shared/files/stlIndexedDb";
 // - web/frontend/src/shared/files/stlIndexedDb.ts
 // - web/frontend/src/shared/realtime/useAppEventDebouncedReload.ts
 // - web/backend/controllers/requests/dashboard.controller.js
+// - web/backend/controllers/requests/common.review.controller.js
 
 
 type DashboardOutletContext = {
@@ -124,6 +125,8 @@ export const RequestorDashboardPage = () => {
   const [statsModalOpen, setStatsModalOpen] = useState(false);
   const [statsModalLabel, setStatsModalLabel] = useState<string>("");
   const [hasSummaryHydrated, setHasSummaryHydrated] = useState(false);
+  const [heavySummaryEnabled, setHeavySummaryEnabled] = useState(false);
+  const heavySummaryRefreshTimerRef = useRef<number | null>(null);
 
   const [unmachinableAlertModalOpen, setUnmachinableAlertModalOpen] =
     useState(false);
@@ -451,12 +454,7 @@ export const RequestorDashboardPage = () => {
   const [insufficientShippingCredit, setInsufficientShippingCredit] =
     useState(false);
 
-  const {
-    data: summaryResponse,
-    refetch: refetchSummary,
-    isFetching,
-    isLoading,
-  } = useQuery({
+  const { data: summaryResponse, refetch: refetchSummary } = useQuery({
     queryKey: summaryQueryKey,
     queryFn: async () => {
       const params = new URLSearchParams();
@@ -478,13 +476,14 @@ export const RequestorDashboardPage = () => {
     refetchOnMount: false,
     refetchOnReconnect: true,
     refetchOnWindowFocus: false,
-    enabled: !!token,
+    enabled: !!token && heavySummaryEnabled,
     placeholderData: (previous) => previous,
   });
 
   const {
     data: cardsSummaryResponse,
     refetch: refetchCardsSummary,
+    isLoading: isCardsSummaryLoading,
   } = useQuery({
     queryKey: cardsSummaryQueryKey,
     queryFn: async () => {
@@ -514,7 +513,6 @@ export const RequestorDashboardPage = () => {
   const {
     data: bulkResponse,
     isLoading: isBulkLoading,
-    isFetching: isBulkFetching,
     refetch: refetchBulk,
   } = useQuery({
     queryKey: ["requestor-bulk-shipping"],
@@ -538,6 +536,11 @@ export const RequestorDashboardPage = () => {
     placeholderData: (previous) => previous,
   });
 
+  const shouldLoadUnmachinableOverview =
+    Boolean(token) &&
+    (unmachinableAlertModalOpen ||
+      (statsModalOpen && statsModalLabel === "불완전가공"));
+
   const {
     data: unmachinableOverviewResponse,
     isLoading: loadingUnmachinableOverview,
@@ -554,7 +557,7 @@ export const RequestorDashboardPage = () => {
       }
       return res.data;
     },
-    enabled: Boolean(token),
+    enabled: shouldLoadUnmachinableOverview,
     retry: false,
     placeholderData: (previous) => previous,
   });
@@ -671,12 +674,15 @@ export const RequestorDashboardPage = () => {
         tasks.push(Promise.resolve(refetchCardsSummary()));
       }
       if (plan.heavySummary) {
+        if (!heavySummaryEnabled) {
+          setHeavySummaryEnabled(true);
+        }
         tasks.push(Promise.resolve(refetchSummary()));
       }
       if (plan.bulk) {
         tasks.push(Promise.resolve(refetchBulk()));
       }
-      if (plan.unmachinableOverview) {
+      if (plan.unmachinableOverview && shouldLoadUnmachinableOverview) {
         tasks.push(
           queryClient.refetchQueries({
             queryKey: unmachinableOverviewQueryKey,
@@ -714,10 +720,12 @@ export const RequestorDashboardPage = () => {
       }
     },
     [
+      heavySummaryEnabled,
       queryClient,
       refetchBulk,
       refetchCardsSummary,
       refetchSummary,
+      shouldLoadUnmachinableOverview,
       unmachinableOverviewQueryKey,
       user?.id,
     ],
@@ -758,6 +766,20 @@ export const RequestorDashboardPage = () => {
   );
 
   useEffect(() => {
+    setHeavySummaryEnabled(false);
+    setHasSummaryHydrated(false);
+  }, [period, user?.id, user?.businessAnchorId]);
+
+  useEffect(() => {
+    if (heavySummaryEnabled) return;
+    if (!token || !cardsSummaryResponse?.success) return;
+    const timer = window.setTimeout(() => {
+      setHeavySummaryEnabled(true);
+    }, 300);
+    return () => window.clearTimeout(timer);
+  }, [cardsSummaryResponse?.success, heavySummaryEnabled, token]);
+
+  useEffect(() => {
     const locationState =
       location.state && typeof location.state === "object"
         ? (location.state as { refreshDashboardAt?: unknown })
@@ -780,120 +802,29 @@ export const RequestorDashboardPage = () => {
     return Number.isFinite(n) ? n : 0;
   };
 
-  const patchCardsStatsStageTransition = useCallback(
-    (fromStageRaw: string, toStageRaw: string) => {
-      const toBucket = (stageRaw: string):
-        | "request"
-        | "cam"
-        | "machining"
-        | "packing"
-        | "shipping"
-        | "tracking"
-        | "cancel"
-        | null => {
-        const stage = stageRaw.trim().toLowerCase();
-        if (!stage) return null;
-        if (stage === "request" || stage === "의뢰") return "request";
-        if (stage === "cam") return "cam";
-        if (stage === "machining" || stage === "가공" || stage === "production") {
-          return "machining";
-        }
-        if (
-          stage === "packing" ||
-          stage === "세척.패킹" ||
-          stage === "세척.포장" ||
-          stage === "cleaning"
-        ) {
-          return "packing";
-        }
-        if (
-          stage === "shipping" ||
-          stage === "포장.발송" ||
-          stage === "delivery"
-        ) {
-          return "shipping";
-        }
-        if (stage === "tracking" || stage === "추적관리") return "tracking";
-        if (stage === "cancel" || stage === "취소") return "cancel";
-        return null;
-      };
+  // 상단 요약카드(stats)는 웹소켓 이벤트마다 로컬 +/- 증감 패치를 하지 않고,
+  // 서버 cards-summary 재조회 결과만 단일 SSOT로 사용한다.
 
-      const fromBucket = toBucket(fromStageRaw);
-      const toBucketValue = toBucket(toStageRaw);
-      if (!fromBucket && !toBucketValue) return;
-
-      const applyDelta = (
-        stats: Record<string, unknown>,
-        bucket: ReturnType<typeof toBucket>,
-        delta: number,
-      ) => {
-        const bump = (key: string) => {
-          const next = Math.max(0, toFiniteNumber(stats[key]) + delta);
-          stats[key] = next;
-        };
-
-        if (bucket === "request") bump("totalRequests");
-        if (bucket === "cam") bump("inCam");
-        if (bucket === "machining") bump("inProduction");
-        if (bucket === "packing") bump("inPacking");
-        if (bucket === "shipping") bump("inShipping");
-        if (bucket === "tracking") bump("inTracking");
-        if (bucket === "cancel") bump("canceled");
-      };
-
-      queryClient.setQueryData<any>(cardsSummaryQueryKey, (prev) => {
-        if (!prev?.success || !prev?.data?.stats) return prev;
-        const stats = { ...prev.data.stats } as Record<string, unknown>;
-        if (fromBucket) applyDelta(stats, fromBucket, -1);
-        if (toBucketValue) applyDelta(stats, toBucketValue, 1);
-        return {
-          ...prev,
-          data: {
-            ...prev.data,
-            stats,
-          },
-        };
-      });
+  const scheduleHeavySummaryRefresh = useCallback(
+    (delayMs = 1200) => {
+      if (heavySummaryRefreshTimerRef.current) {
+        window.clearTimeout(heavySummaryRefreshTimerRef.current);
+      }
+      heavySummaryRefreshTimerRef.current = window.setTimeout(() => {
+        void refreshDashboard({ heavySummary: true });
+      }, Math.max(0, Number(delayMs || 0)));
     },
-    [cardsSummaryQueryKey, queryClient],
+    [refreshDashboard],
   );
 
-  const patchCardsStatsUnmachinable = useCallback(
-    (kind: "updated" | "confirmed", unmachinable: boolean) => {
-      queryClient.setQueryData<any>(cardsSummaryQueryKey, (prev) => {
-        if (!prev?.success || !prev?.data?.stats) return prev;
-        const stats = { ...prev.data.stats } as Record<string, unknown>;
-
-        const pending = toFiniteNumber(stats.unmachinablePendingConfirmCount);
-        const confirmed = toFiniteNumber(stats.unmachinableConfirmedCount);
-        const judged = toFiniteNumber(stats.unmachinableJudgedTotalCount);
-
-        if (kind === "updated") {
-          if (unmachinable) {
-            stats.unmachinablePendingConfirmCount = pending + 1;
-            stats.unmachinableJudgedTotalCount = judged + 1;
-          } else {
-            stats.unmachinablePendingConfirmCount = Math.max(0, pending - 1);
-            stats.unmachinableJudgedTotalCount = Math.max(0, judged - 1);
-          }
-        } else {
-          stats.unmachinablePendingConfirmCount = Math.max(0, pending - 1);
-          stats.unmachinableConfirmedCount = confirmed + 1;
-        }
-
-        stats.unmachinableCount = toFiniteNumber(stats.unmachinablePendingConfirmCount);
-
-        return {
-          ...prev,
-          data: {
-            ...prev.data,
-            stats,
-          },
-        };
-      });
-    },
-    [cardsSummaryQueryKey, queryClient],
-  );
+  useEffect(() => {
+    return () => {
+      if (heavySummaryRefreshTimerRef.current) {
+        window.clearTimeout(heavySummaryRefreshTimerRef.current);
+        heavySummaryRefreshTimerRef.current = null;
+      }
+    };
+  }, []);
 
   useAppEventDebouncedReload({
     enabled: Boolean(token) && Boolean(user) && user?.role === "requestor",
@@ -930,14 +861,12 @@ export const RequestorDashboardPage = () => {
           : {};
 
       const toStage = String(payload?.toStage || "").trim();
-      const fromStage = String(payload?.fromStage || "").trim();
       const requestMongoId = normalizeEventId(
         payload.requestMongoId ?? payload.request?._id,
       );
       const requestId = normalizeEventId(payload.requestId ?? payload.request?.requestId);
 
       if (type === "request:stage-changed") {
-        patchCardsStatsStageTransition(fromStage, toStage);
         if (requestMongoId || requestId) {
           queryClient.setQueryData<any>(summaryQueryKey, (prev) => {
             if (!prev?.success || !Array.isArray(prev?.data?.recentRequests)) return prev;
@@ -970,19 +899,18 @@ export const RequestorDashboardPage = () => {
 
         void refreshDashboard({
           cardsSummary: true,
-          heavySummary: true,
           bulk: true,
           unmachinableOverview: true,
           shippingSummary: true,
           pricingStats: true,
           referralTree: true,
         });
+        scheduleHeavySummaryRefresh();
         return;
       }
 
       if (type === "request:rnd-unmachinable-updated") {
         const unmachinable = Boolean(payload?.unmachinable);
-        patchCardsStatsUnmachinable("updated", unmachinable);
 
         if (requestMongoId && payload.request && typeof payload.request === "object") {
           queryClient.setQueryData<any>(unmachinableOverviewQueryKey, (prev) => {
@@ -1016,16 +944,14 @@ export const RequestorDashboardPage = () => {
 
         void refreshDashboard({
           cardsSummary: true,
-          heavySummary: true,
           bulk: true,
           unmachinableOverview: true,
         });
+        scheduleHeavySummaryRefresh();
         return;
       }
 
       if (type === "request:rnd-unmachinable-confirmed") {
-        patchCardsStatsUnmachinable("confirmed", true);
-
         if (requestMongoId && payload.request && typeof payload.request === "object") {
           queryClient.setQueryData<any>(unmachinableOverviewQueryKey, (prev) => {
             if (!prev?.success || !Array.isArray(prev?.data?.items)) return prev;
@@ -1049,12 +975,12 @@ export const RequestorDashboardPage = () => {
 
         void refreshDashboard({
           cardsSummary: true,
-          heavySummary: true,
           bulk: true,
           unmachinableOverview: true,
           pricingStats: true,
           referralTree: true,
         });
+        scheduleHeavySummaryRefresh();
         return;
       }
 
@@ -1063,13 +989,13 @@ export const RequestorDashboardPage = () => {
         // 7개 섹션 전체가 동기화되도록 full refresh plan을 사용한다.
         void refreshDashboard({
           cardsSummary: true,
-          heavySummary: true,
           bulk: true,
           unmachinableOverview: true,
           shippingSummary: true,
           pricingStats: true,
           referralTree: true,
         });
+        scheduleHeavySummaryRefresh();
         return;
       }
 
@@ -1082,10 +1008,12 @@ export const RequestorDashboardPage = () => {
           bulk: true,
           shippingSummary: true,
         });
+        scheduleHeavySummaryRefresh(1500);
         return;
       }
 
-      void refreshDashboard({ cardsSummary: true, heavySummary: true, bulk: true });
+      void refreshDashboard({ cardsSummary: true, bulk: true });
+      scheduleHeavySummaryRefresh();
     },
   });
 
@@ -1174,7 +1102,9 @@ export const RequestorDashboardPage = () => {
     return recentRequests.filter((r) => isUnmachinableRequest(r)).length;
   }, [dashboardStatsSource, recentRequests]);
 
-  const isInitialLoading = isLoading || isBulkLoading || !summaryResponse;
+  const isInitialLoading =
+    (!cardsSummaryResponse && isCardsSummaryLoading) ||
+    (!bulkResponse && isBulkLoading);
 
   const openEditDialogFromRequest = (request: any) => {
     const mongoId = request._id || request.id;
@@ -1770,10 +1700,10 @@ export const RequestorDashboardPage = () => {
   };
 
   useEffect(() => {
-    if (summaryResponse?.success) {
+    if (cardsSummaryResponse?.success || summaryResponse?.success) {
       setHasSummaryHydrated(true);
     }
-  }, [summaryResponse]);
+  }, [cardsSummaryResponse, summaryResponse]);
 
   // 웹소켓 실시간 업데이트 안정성:
   // 크레딧 모달 오픈 중에는 스켈레톤 전환으로 모달이 언마운트되지 않도록 차단한다.
@@ -1783,8 +1713,8 @@ export const RequestorDashboardPage = () => {
 
   const showSkeleton =
     !hasSummaryHydrated &&
-    (isLoading || isFetching) &&
-    !summaryResponse &&
+    isCardsSummaryLoading &&
+    !cardsSummaryResponse &&
     !creditLedgerOpen;
 
   const stats: RequestorDashboardStat[] = (() => {
