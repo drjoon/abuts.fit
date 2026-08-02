@@ -921,19 +921,36 @@ export const useRequestFileHandlers = ({
       }
 
       try {
-        const res = await fetch(
-          `/api/requests/${req._id}/nc-file?nextStage=${targetStage}${
-            rollbackOnly ? "&rollbackOnly=1" : ""
-          }`,
-          {
-            method: "DELETE",
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
+        const endpoint = `/api/requests/${req._id}/nc-file?nextStage=${targetStage}${
+          rollbackOnly ? "&rollbackOnly=1" : ""
+        }`;
+
+        console.log("[ROLLBACK_TRACE][FE][NC] request", {
+          requestMongoId: String(req._id || ""),
+          requestId: String(req.requestId || ""),
+          endpoint,
+          targetStage,
+          rollbackOnly,
+        });
+
+        const res = await fetch(endpoint, {
+          method: "DELETE",
+          headers: {
+            Authorization: `Bearer ${token}`,
           },
-        );
-        if (!res.ok) {
-          throw new Error("delete nc file failed");
+        });
+
+        const body = await res.json().catch(() => null);
+        console.log("[ROLLBACK_TRACE][FE][NC] response", {
+          requestMongoId: String(req._id || ""),
+          requestId: String(req.requestId || ""),
+          status: res.status,
+          ok: res.ok,
+          body,
+        });
+
+        if (!res.ok || (body && body.success === false)) {
+          throw new Error((body && body.message) || "delete nc file failed");
         }
         const stageLabel = targetStage === "request" ? "의뢰" : "CAM";
         toast({
@@ -960,6 +977,11 @@ export const useRequestFileHandlers = ({
           setPreviewFiles({});
         }
       } catch (error) {
+        console.error("[ROLLBACK_TRACE][FE][NC] error", {
+          requestMongoId: String(req._id || ""),
+          requestId: String(req.requestId || ""),
+          error: error instanceof Error ? error.message : String(error || ""),
+        });
         applySingleRequestPatch(req);
         toast({
           title: "삭제 실패",
@@ -1400,21 +1422,37 @@ export const useRequestFileHandlers = ({
       }
 
       try {
-        const res = await fetch(
-          `/api/requests/${
-            params.req._id
-          }/stage-file?stage=${encodeURIComponent(params.stage)}${
-            rollbackOnly ? "&rollbackOnly=1" : ""
-          }${preserveStage ? "&preserveStage=1" : ""}`,
-          {
-            method: "DELETE",
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
+        const endpoint = `/api/requests/${
+          params.req._id
+        }/stage-file?stage=${encodeURIComponent(params.stage)}${
+          rollbackOnly ? "&rollbackOnly=1" : ""
+        }${preserveStage ? "&preserveStage=1" : ""}`;
+
+        console.log("[ROLLBACK_TRACE][FE][STAGE_FILE] request", {
+          requestMongoId: String(params.req._id || ""),
+          requestId: String(params.req.requestId || ""),
+          endpoint,
+          stage: params.stage,
+          rollbackOnly,
+          preserveStage,
+        });
+
+        const res = await fetch(endpoint, {
+          method: "DELETE",
+          headers: {
+            Authorization: `Bearer ${token}`,
           },
-        );
+        });
 
         const body = await res.json().catch(() => ({}));
+        console.log("[ROLLBACK_TRACE][FE][STAGE_FILE] response", {
+          requestMongoId: String(params.req._id || ""),
+          requestId: String(params.req.requestId || ""),
+          status: res.status,
+          ok: res.ok,
+          body,
+        });
+
         if (!res.ok || body?.success === false) {
           throw new Error(body?.message || "delete stage file failed");
         }
@@ -1515,7 +1553,14 @@ export const useRequestFileHandlers = ({
           setPreviewFiles({});
         }
       } catch (error) {
-        console.error(error);
+        console.error("[ROLLBACK_TRACE][FE][STAGE_FILE] error", {
+          requestMongoId: String(params.req?._id || ""),
+          requestId: String(params.req?.requestId || ""),
+          stage: params.stage,
+          rollbackOnly,
+          preserveStage,
+          error: error instanceof Error ? error.message : String(error || ""),
+        });
         applySingleRequestPatch(params.req);
         toast({
           title: rollbackOnly ? "롤백 실패" : "삭제 실패",

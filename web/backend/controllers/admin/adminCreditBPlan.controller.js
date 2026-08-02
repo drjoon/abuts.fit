@@ -1,6 +1,6 @@
 // related files:
 // - web/backend/rules.md
-// - web/backend/models/businessCreditBalance.model.js
+
 // - web/backend/models/ledgerJournal.model.js
 // - web/backend/models/ledgerLine.model.js
 // - web/backend/services/generalLedger.service.js
@@ -10,7 +10,7 @@ import mongoose from "mongoose";
 import ChargeOrder from "../../models/chargeOrder.model.js";
 import BankTransaction from "../../models/bankTransaction.model.js";
 import TaxInvoiceDraft from "../../models/taxInvoiceDraft.model.js";
-import BusinessCreditBalance from "../../models/businessCreditBalance.model.js";
+
 import AdminAuditLog from "../../models/adminAuditLog.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 import ActivityLog from "../../models/activityLog.model.js";
@@ -509,22 +509,6 @@ export async function adminManualMatch(req, res) {
       });
 
       if (glResult?.posted) {
-        await BusinessCreditBalance.updateOne(
-          { businessAnchorId: order.businessAnchorId },
-          {
-            $inc: {
-              paidCredit: chargeAmount,
-              version: 1,
-            },
-            $setOnInsert: {
-              businessAnchorId: order.businessAnchorId,
-              freeRequestCredit: 0,
-              freeShippingCredit: 0,
-            },
-          },
-          { upsert: true, session },
-        );
-
         await emitCreditBalanceUpdatedToBusiness({
           businessAnchorId: order.businessAnchorId,
           balanceDelta: chargeAmount,

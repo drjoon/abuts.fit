@@ -3,12 +3,12 @@
 // - web/backend/models/freeCreditGrant.model.js
 // - web/backend/models/ledgerJournal.model.js
 // - web/backend/models/ledgerLine.model.js
-// - web/backend/models/businessCreditBalance.model.js
+
 // - web/backend/controllers/admin/adminFreeCreditGrant.controller.js
 // - web/backend/services/generalLedger.service.js
 import FreeCreditGrant from "../../models/freeCreditGrant.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
-import BusinessCreditBalance from "../../models/businessCreditBalance.model.js";
+
 import {
   CREDIT_SETTINGS_SCHEMA_DEFAULTS,
   loadCreditSettingsDefaults,
@@ -69,25 +69,7 @@ async function upsertFreeCreditLedger({
     ],
   });
 
-  if (glResult?.posted) {
-    const freeField = isShipping ? "freeShippingCredit" : "freeRequestCredit";
-    await BusinessCreditBalance.updateOne(
-      { businessAnchorId },
-      {
-        $inc: {
-          [freeField]: normalizedAmount,
-          version: 1,
-        },
-        $setOnInsert: {
-          businessAnchorId,
-          paidCredit: 0,
-          freeRequestCredit: 0,
-          freeShippingCredit: 0,
-        },
-      },
-      { upsert: true },
-    );
-  }
+
 
   return {
     ok: true,

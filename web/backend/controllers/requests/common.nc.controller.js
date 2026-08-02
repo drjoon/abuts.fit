@@ -4,8 +4,9 @@
 // - web/backend/server.js
 // - web/backend/modules/requests/request.routes.js
 // - web/backend/controllers/requests/common.review.controller.js
+// - web/backend/controllers/requests/common.review.helpers.js
 // - web/backend/controllers/requests/common.requests.controller.js
-import { Types } from "mongoose";
+import mongoose, { Types } from "mongoose";
 import Request from "../../models/request.model.js";
 import { ApiError } from "../../utils/ApiError.js";
 import { emitAppEventToRoles } from "../../socket.js";
@@ -18,6 +19,7 @@ import {
 } from "./utils.js";
 import s3Utils, { deleteFileFromS3 } from "../../utils/s3.utils.js";
 import { triggerEspritForNc } from "./common.review.esprit.js";
+import { ensureRequestCreditRollbackDeleteOnRollbackToCam } from "./common.review.helpers.js";
 
 async function assertAndClaimManufacturerRequestAccess({ req, request }) {
   if (req?.user?.role !== "manufacturer") return;
@@ -803,7 +805,7 @@ export async function deleteNcFileAndRollbackCam(req, res) {
     }
 
     const request = await Request.findById(id)
-      .select("_id requestId caManufacturer caseInfos.ncFile")
+      .select("_id requestId caManufacturer businessAnchorId manufacturerStage caseInfos.ncFile")
       .lean();
     if (!request) {
       return res
@@ -824,6 +826,17 @@ export async function deleteNcFileAndRollbackCam(req, res) {
 
     const isRollbackToRequest = req.query.nextStage === "request";
     const rollbackStageKey = isRollbackToRequest ? "machining" : "cam";
+
+    console.log("[NC_ROLLBACK] request received", {
+      requestMongoId: String(request._id),
+      requestId: String(request.requestId || ""),
+      actorUserId: req.user?._id ? String(req.user._id) : null,
+      role: String(req.user?.role || ""),
+      currentStage: String(request?.manufacturerStage || "").trim() || null,
+      nextStage: isRollbackToRequest ? "의뢰" : "CAM",
+      rollbackOnly,
+      businessAnchorId: String(request?.businessAnchorId || "").trim() || null,
+    });
     const update = {
       $unset: {
         "caseInfos.ncFile": 1,
@@ -844,7 +857,61 @@ export async function deleteNcFileAndRollbackCam(req, res) {
       };
     }
 
-    await Request.updateOne({ _id: id }, update);
+    const session = await mongoose.startSession();
+    try {
+      await session.withTransaction(async () => {
+        const requestInTx = await Request.findById(id)
+          .select("_id requestId businessAnchorId manufacturerStage requestCategory")
+          .session(session);
+        if (!requestInTx) {
+          const err = new Error("의뢰를 찾을 수 없습니다.");
+          err.statusCode = 404;
+          throw err;
+        }
+
+        const currentStage = String(requestInTx.manufacturerStage || "").trim();
+        const businessAnchorId = String(requestInTx.businessAnchorId || "").trim();
+
+        // SSOT 정책: 가공→CAM(또는 CAM 이전) 롤백 시 REQUEST 소비 COMMIT을 물리 삭제하고 잔액을 복원한다.
+        if (currentStage === "가공") {
+          console.log("[NC_ROLLBACK] credit rollback candidate", {
+            requestMongoId: String(requestInTx._id),
+            requestId: String(requestInTx.requestId || ""),
+            currentStage,
+            businessAnchorId,
+          });
+          if (!businessAnchorId) {
+            const err = new Error("의뢰 사업자 정보가 없어 크레딧 롤백을 수행할 수 없습니다.");
+            err.statusCode = 409;
+            throw err;
+          }
+          await ensureRequestCreditRollbackDeleteOnRollbackToCam({
+            request: requestInTx,
+            businessAnchorId,
+            actorUserId: req.user?._id || null,
+            session,
+          });
+        } else {
+          console.log("[NC_ROLLBACK] credit rollback skipped by stage", {
+            requestMongoId: String(requestInTx._id),
+            requestId: String(requestInTx.requestId || ""),
+            currentStage,
+            businessAnchorId,
+          });
+        }
+
+        await Request.updateOne({ _id: id }, update, { session });
+
+        console.log("[NC_ROLLBACK] request stage updated", {
+          requestMongoId: String(requestInTx._id),
+          requestId: String(requestInTx.requestId || ""),
+          toStage: isRollbackToRequest ? "의뢰" : "CAM",
+          rollbackOnly,
+        });
+      });
+    } finally {
+      await session.endSession().catch(() => null);
+    }
 
     runNcFileCleanupInBackground({
       requestId: request.requestId || request._id,
@@ -862,10 +929,22 @@ export async function deleteNcFileAndRollbackCam(req, res) {
       },
     });
   } catch (error) {
-    res.status(500).json({
+    const status = Number(error?.statusCode || 0) || 500;
+    const message =
+      status >= 400 && status < 500
+        ? String(error?.message || "요청을 처리할 수 없습니다.")
+        : "NC 파일 삭제 중 오류가 발생했습니다.";
+
+    console.error("[deleteNcFileAndRollbackCam] failed", {
+      status,
+      message: error?.message || String(error || ""),
+      stack: error?.stack || null,
+    });
+
+    res.status(status).json({
       success: false,
-      message: "NC 파일 삭제 중 오류가 발생했습니다.",
-      error: error.message,
+      message,
+      error: error?.message,
     });
   }
 }

@@ -140,6 +140,12 @@
 - CreditLedger → GL 이관 보정 원칙:
   - 레거시 `CreditLedger`를 원본으로 이관하되, 정책 위반/무효 행(예: 0원 SPEND, 참조 누락된 상쇄형 SHIPPING SPEND/REFUND 쌍)은 장부 반영 대신 무시 처리
   - 샘플(`rnd_sample|copied_sample`) 및 비의뢰 수동 NC 작업은 장부 무기록 원칙 유지
+- 잔액 조회 SSOT:
+  - `GET /api/credits/balance` 및 잔액 파생 조회는 `LedgerLine` 직접 집계값을 사용
+  - `BusinessCreditBalance`는 레거시 스냅샷으로 취급하며 런타임 잔액 판정/표시에 사용하지 않음
+- 관리자 크레딧 실시간 이벤트는 role 전체 fan-out이 아니라 admin 크레딧 화면 전용 room 구독자에게만 발행
+- 잔액 집계 성능 인덱스(필수): `LedgerLine(ownerRole, ownerId, accountCode, occurredAt)`
+- 동시 차감(overspend) 방지: spend 트랜잭션에서 `CreditBalanceGuard`를 통한 앵커 단위 직렬화 적용
 - 이벤트 기반 캐시 갱신 우선, 조회 시 대규모 재계산 지양
 
 ### 2.4 practice(치과) 전송

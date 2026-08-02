@@ -7,7 +7,7 @@ import ChargeOrder from "../models/chargeOrder.model.js";
 import BankTransaction from "../models/bankTransaction.model.js";
 import TaxInvoiceDraft from "../models/taxInvoiceDraft.model.js";
 import BusinessAnchor from "../models/businessAnchor.model.js";
-import BusinessCreditBalance from "../models/businessCreditBalance.model.js";
+
 import { postGeneralLedgerJournal } from "../services/generalLedger.service.js";
 import { emitCreditBalanceUpdatedToBusiness } from "./creditRealtime.js";
 import { enqueueTaxInvoiceIssue } from "./queueClient.js";
@@ -240,22 +240,6 @@ async function matchTxWithOrder({ tx, order }) {
 
         if (glResult?.posted) {
           matchedChargeDelta = normalizedSupplyAmount;
-          await BusinessCreditBalance.updateOne(
-            { businessAnchorId: order.businessAnchorId },
-            {
-              $inc: {
-                paidCredit: normalizedSupplyAmount,
-                version: 1,
-              },
-              $setOnInsert: {
-                businessAnchorId: order.businessAnchorId,
-                paidCredit: 0,
-                freeRequestCredit: 0,
-                freeShippingCredit: 0,
-              },
-            },
-            { upsert: true, session },
-          );
         }
       }
 

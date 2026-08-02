@@ -3,13 +3,13 @@
 // - web/backend/services/creditBalance.service.js
 // - web/backend/controllers/requests/common.review.helpers.js
 // - web/backend/controllers/credits/credit.controller.js
-// - web/backend/models/businessCreditBalance.model.js
+
 // - web/backend/models/ledgerJournal.model.js
 // - web/backend/models/ledgerLine.model.js
 import User from "../../models/user.model.js";
 import SignupVerification from "../../models/signupVerification.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
-import BusinessCreditBalance from "../../models/businessCreditBalance.model.js";
+
 import {
   generateToken,
   generateRefreshToken,
@@ -1820,24 +1820,7 @@ async function withdraw(req, res) {
           ],
         });
 
-        if (glResult?.posted) {
-          await BusinessCreditBalance.updateOne(
-            { businessAnchorId },
-            {
-              $inc: {
-                paidCredit: -paidBalance,
-                version: 1,
-              },
-              $setOnInsert: {
-                businessAnchorId,
-                paidCredit: 0,
-                freeRequestCredit: 0,
-                freeShippingCredit: 0,
-              },
-            },
-            { upsert: true },
-          );
-        }
+
       }
     }
 

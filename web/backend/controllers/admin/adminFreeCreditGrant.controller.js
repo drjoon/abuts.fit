@@ -2,14 +2,14 @@
 // - web/backend/rules.md
 // - web/backend/modules/admin/admin.routes.js
 // - web/backend/models/freeCreditGrant.model.js
-// - web/backend/models/businessCreditBalance.model.js
+
 // - web/backend/models/ledgerJournal.model.js
 // - web/backend/models/ledgerLine.model.js
 // - web/backend/services/generalLedger.service.js
 import { Types } from "mongoose";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 import FreeCreditGrant from "../../models/freeCreditGrant.model.js";
-import BusinessCreditBalance from "../../models/businessCreditBalance.model.js";
+
 import LedgerLine from "../../models/ledgerLine.model.js";
 import LedgerJournal from "../../models/ledgerJournal.model.js";
 import User from "../../models/user.model.js";
@@ -207,24 +207,7 @@ export async function adminOverrideRequestFreeCredit(req, res) {
       ],
     });
 
-    if (glResult?.posted) {
-      await BusinessCreditBalance.updateOne(
-        { businessAnchorId },
-        {
-          $inc: {
-            freeRequestCredit: normalizedAmount,
-            version: 1,
-          },
-          $setOnInsert: {
-            businessAnchorId,
-            paidCredit: 0,
-            freeRequestCredit: 0,
-            freeShippingCredit: 0,
-          },
-        },
-        { upsert: true },
-      );
-    }
+
 
     if (glResult?.journalId) {
       await FreeCreditGrant.updateOne(
@@ -497,28 +480,7 @@ export async function adminCancelFreeCreditGrant(req, res) {
       ],
     });
 
-    if (glResult?.posted) {
-      const freeField =
-        cancelCreditKind === "FREE_SHIPPING"
-          ? "freeShippingCredit"
-          : "freeRequestCredit";
-      await BusinessCreditBalance.updateOne(
-        { businessAnchorId },
-        {
-          $inc: {
-            [freeField]: -amount,
-            version: 1,
-          },
-          $setOnInsert: {
-            businessAnchorId,
-            paidCredit: 0,
-            freeRequestCredit: 0,
-            freeShippingCredit: 0,
-          },
-        },
-        { upsert: true },
-      );
-    }
+
 
     const canceledAt = new Date();
 
@@ -691,24 +653,7 @@ export async function adminGrantFreeShippingCredit(req, res) {
       ],
     });
 
-    if (glResult?.posted) {
-      await BusinessCreditBalance.updateOne(
-        { businessAnchorId },
-        {
-          $inc: {
-            freeShippingCredit: normalizedAmount,
-            version: 1,
-          },
-          $setOnInsert: {
-            businessAnchorId,
-            paidCredit: 0,
-            freeRequestCredit: 0,
-            freeShippingCredit: 0,
-          },
-        },
-        { upsert: true },
-      );
-    }
+
 
     if (glResult?.journalId) {
       await FreeCreditGrant.updateOne(

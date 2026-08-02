@@ -114,6 +114,10 @@ const ledgerLineSchema = new mongoose.Schema(
 
 ledgerLineSchema.index({ journalId: 1, lineNo: 1 }, { unique: true });
 ledgerLineSchema.index({ ownerRole: 1, ownerId: 1, occurredAt: -1, _id: -1 });
+// 의뢰자 잔액(GL direct balance) 집계 경로 최적화 인덱스
+// - match: ownerRole + ownerId + accountCode
+// - aggregate/group: accountCode
+ledgerLineSchema.index({ ownerRole: 1, ownerId: 1, accountCode: 1, occurredAt: -1 });
 ledgerLineSchema.index({ accountCode: 1, occurredAt: -1, _id: -1 });
 ledgerLineSchema.index({ businessAnchorId: 1, occurredAt: -1, _id: -1 });
 ledgerLineSchema.index({ refType: 1, refId: 1, occurredAt: -1, _id: -1 });

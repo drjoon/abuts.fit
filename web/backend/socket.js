@@ -10,6 +10,8 @@ import Chat from "./models/chat.model.js";
 
 let io;
 
+const APP_ROOM_ADMIN_CREDITS = "app:admin:credits";
+
 export function initializeSocket(server) {
   io = new Server(server, {
     cors: {
@@ -212,6 +214,24 @@ export function initializeSocket(server) {
       } catch (error) {
         console.error("읽음 처리 오류:", error);
       }
+    });
+
+    // 앱 이벤트 전용 room 구독 (현재는 admin credits room만 허용)
+    socket.on("subscribe-app-room", (data) => {
+      const roomKey = String(data?.roomKey || "").trim();
+      if (!roomKey) return;
+
+      if (roomKey === APP_ROOM_ADMIN_CREDITS) {
+        if (String(socket.userRole || "") !== "admin") return;
+        socket.join(roomKey);
+        return;
+      }
+    });
+
+    socket.on("unsubscribe-app-room", (data) => {
+      const roomKey = String(data?.roomKey || "").trim();
+      if (!roomKey) return;
+      socket.leave(roomKey);
     });
 
     // CNC 가공 완료 폴링 시작

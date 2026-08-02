@@ -1,6 +1,6 @@
 // related files:
 // - web/backend/rules.md
-// - web/backend/models/businessCreditBalance.model.js
+
 // - web/backend/services/creditBalance.service.js
 // - web/backend/services/creditRevenuePolicy.service.js
 // - web/backend/modules/requests/request.routes.js
@@ -12,6 +12,7 @@ import ShippingPackage from "../../models/shippingPackage.model.js";
 import Request from "../../models/request.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 import User from "../../models/user.model.js";
+import LedgerLine from "../../models/ledgerLine.model.js";
 import {
   applyStatusMapping,
   computePriceForRequest,
@@ -22,8 +23,6 @@ import {
   spendShippingCreditAtomic,
   deleteRequestSpendAtomicOnRollback,
   deleteShippingSpendAtomicOnRollback,
-  restoreRequestSpendDeductionAtomic,
-  restoreShippingSpendDeductionAtomic,
 } from "../../services/creditBalance.service.js";
 import { postGeneralLedgerJournal } from "../../services/generalLedger.service.js";
 import {
@@ -36,6 +35,30 @@ import { emitCreditBalanceUpdatedToBusiness } from "../../utils/creditRealtime.j
 
 const SHIPPING_FEE_SUPPLY = 3500;
 const VAT_RATE = 0.1;
+
+async function emitOrQueueCreditBalanceUpdate({
+  deferredCreditEvents,
+  businessAnchorId,
+  balanceDelta,
+  reason,
+  refId,
+}) {
+  const eventPayload = {
+    businessAnchorId,
+    balanceDelta: Number(balanceDelta || 0),
+    reason,
+    refId,
+  };
+
+  // 트랜잭션 내부에서는 즉시 emit하지 않고, 커밋 이후 발행을 위해 큐에 적재한다.
+  // 이유: emit 직후 프론트가 balance를 조회하면 커밋 전 스냅샷을 읽는 race가 발생할 수 있음.
+  if (Array.isArray(deferredCreditEvents)) {
+    deferredCreditEvents.push(eventPayload);
+    return;
+  }
+
+  await emitCreditBalanceUpdatedToBusiness(eventPayload);
+}
 
 function withVat(amount) {
   return Math.round(Number(amount || 0) * (1 + VAT_RATE));
@@ -329,6 +352,7 @@ export async function ensureRequestCreditSpendOnMachiningEnter({
   businessAnchorId,
   actorUserId,
   session,
+  deferredCreditEvents,
 }) {
   if (!request || !businessAnchorId) return;
 
@@ -412,13 +436,8 @@ export async function ensureRequestCreditSpendOnMachiningEnter({
 
   if (!glPostResult?.posted) {
     if (glPostResult?.idempotent) {
-      await restoreRequestSpendDeductionAtomic({
-        businessAnchorId,
-        fromPaid: Number(spendResult.fromPaid || 0),
-        fromBonusRequest: Number(spendResult.fromBonusRequest || 0),
-        session,
-      });
-      console.log("[CREDIT_SPEND] compensated duplicate machining spend", {
+      // GL 직집계 모드에서는 선차감 스냅샷이 없으므로 보정 복원은 필요 없다.
+      console.log("[CREDIT_SPEND] duplicate machining spend detected (no compensation needed)", {
         requestId: request?.requestId,
         requestMongoId: String(request?._id || ""),
         uniqueKey: spendResult.uniqueKey,
@@ -428,7 +447,8 @@ export async function ensureRequestCreditSpendOnMachiningEnter({
     throw new Error("REQUEST_SPEND_COMMIT ledger posting failed");
   }
 
-  await emitCreditBalanceUpdatedToBusiness({
+  await emitOrQueueCreditBalanceUpdate({
+    deferredCreditEvents,
     businessAnchorId,
     balanceDelta: -spentAmount,
     reason: "machining_spend",
@@ -442,8 +462,27 @@ export async function ensureRequestCreditRollbackDeleteOnRollbackToCam({
   businessAnchorId,
   actorUserId,
   session,
+  deferredCreditEvents,
 }) {
-  if (!request?._id || !businessAnchorId) return;
+  if (!request?._id || !businessAnchorId) {
+    console.warn("[CREDIT_ROLLBACK][REQUEST] skipped invalid input", {
+      requestMongoId: request?._id ? String(request._id) : null,
+      requestId: request?.requestId || null,
+      businessAnchorId: businessAnchorId ? String(businessAnchorId) : null,
+      actorUserId: actorUserId ? String(actorUserId) : null,
+      hasSession: !!session,
+    });
+    return;
+  }
+
+  console.log("[CREDIT_ROLLBACK][REQUEST] start", {
+    requestMongoId: String(request._id),
+    requestId: request?.requestId || null,
+    manufacturerStage: String(request?.manufacturerStage || "").trim() || null,
+    businessAnchorId: String(businessAnchorId),
+    actorUserId: actorUserId ? String(actorUserId) : null,
+    hasSession: !!session,
+  });
 
   const rollbackResult = await deleteRequestSpendAtomicOnRollback({
     request,
@@ -452,21 +491,83 @@ export async function ensureRequestCreditRollbackDeleteOnRollbackToCam({
   });
 
   if (!rollbackResult?.didRollback) {
-    if (rollbackResult?.reason && rollbackResult.reason !== "no_spend") {
-      const err = new Error(
-        `machining rollback-delete failed: ${String(rollbackResult.reason)}`,
-      );
-      err.statusCode = 409;
-      throw err;
+    const requestCategory = String(request?.requestCategory || "").trim();
+    const isSampleRequest =
+      requestCategory === "rnd_sample" || requestCategory === "copied_sample";
+
+    console.warn("[CREDIT_ROLLBACK][REQUEST] not rolled back", {
+      requestMongoId: String(request._id),
+      requestId: request?.requestId || null,
+      requestCategory: requestCategory || null,
+      businessAnchorId: String(businessAnchorId),
+      reason: rollbackResult?.reason || null,
+      deletedJournalIds: rollbackResult?.deletedJournalIds || [],
+      rollbackAmount: Number(rollbackResult?.rollbackAmount || 0),
+    });
+
+    // 샘플은 정책상 장부 무기록이므로 no_spend를 정상으로 허용한다.
+    if (rollbackResult?.reason === "no_spend" && isSampleRequest) {
+      return;
     }
-    return;
+
+    // 일반 의뢰에서 no_spend가 나왔더라도, 실제 소비 라인이 이미 없다면
+    // (이전 시도에서 저널 삭제 완료된 경우 등) idempotent success로 허용한다.
+    if (rollbackResult?.reason === "no_spend") {
+      const requestorSpendLineExists = await LedgerLine.exists({
+        ownerRole: "requestor",
+        ownerId: businessAnchorId,
+        refType: "REQUEST",
+        refId: request._id,
+        accountCode: { $in: ["REQ_PAID_CREDIT", "REQ_FREE_REQUEST_CREDIT"] },
+        amount: { $lt: 0 },
+      }).session(session || null);
+
+      if (!requestorSpendLineExists) {
+        console.log("[CREDIT_ROLLBACK][REQUEST] no_spend but no requestor spend lines; treat as idempotent", {
+          requestMongoId: String(request._id),
+          requestId: request?.requestId || null,
+          businessAnchorId: String(businessAnchorId),
+        });
+        return;
+      }
+
+      console.warn("[CREDIT_ROLLBACK][REQUEST] no_spend but requestor spend lines still exist", {
+        requestMongoId: String(request._id),
+        requestId: request?.requestId || null,
+        businessAnchorId: String(businessAnchorId),
+      });
+    }
+
+    const err = new Error(
+      `machining rollback-delete failed: ${String(
+        rollbackResult?.reason || "unknown_reason",
+      )}`,
+    );
+    err.statusCode = 409;
+    throw err;
   }
 
-  await emitCreditBalanceUpdatedToBusiness({
+  console.log("[CREDIT_ROLLBACK][REQUEST] success", {
+    requestMongoId: String(request._id),
+    requestId: request?.requestId || null,
+    businessAnchorId: String(businessAnchorId),
+    deletedJournalIds: rollbackResult?.deletedJournalIds || [],
+    rollbackAmount: Number(rollbackResult?.rollbackAmount || 0),
+  });
+
+  await emitOrQueueCreditBalanceUpdate({
+    deferredCreditEvents,
     businessAnchorId,
     balanceDelta: Number(rollbackResult.rollbackAmount || 0),
     reason: "machining_spend_rollback_delete",
     refId: request?._id,
+  });
+
+  console.log("[CREDIT_ROLLBACK][REQUEST] balance event emitted", {
+    requestMongoId: String(request._id),
+    requestId: request?.requestId || null,
+    businessAnchorId: String(businessAnchorId),
+    balanceDelta: Number(rollbackResult.rollbackAmount || 0),
   });
 }
 
@@ -476,6 +577,7 @@ export async function ensureShippingFeeSpendOnPackingApprove({
   businessAnchorId,
   actorUserId,
   session,
+  deferredCreditEvents,
 }) {
   if (!request?._id || !businessAnchorId) return;
 
@@ -663,13 +765,8 @@ export async function ensureShippingFeeSpendOnPackingApprove({
 
   if (!glPostResult?.posted) {
     if (glPostResult?.idempotent) {
-      await restoreShippingSpendDeductionAtomic({
-        businessAnchorId,
-        fromPaid: Number(spendResult.fromPaid || 0),
-        fromBonusShipping: Number(spendResult.fromBonusShipping || 0),
-        session,
-      });
-      console.log("[SHIPPING_FEE] compensated duplicate shipping spend", {
+      // GL 직집계 모드에서는 선차감 스냅샷이 없으므로 보정 복원은 필요 없다.
+      console.log("[SHIPPING_FEE] duplicate shipping spend detected (no compensation needed)", {
         requestId: request?.requestId,
         shippingPackageId: String(pkg._id),
         uniqueKey: spendResult.uniqueKey,
@@ -679,7 +776,8 @@ export async function ensureShippingFeeSpendOnPackingApprove({
     throw new Error("SHIPPING_SPEND_COMMIT ledger posting failed");
   }
 
-  await emitCreditBalanceUpdatedToBusiness({
+  await emitOrQueueCreditBalanceUpdate({
+    deferredCreditEvents,
     businessAnchorId,
     balanceDelta: -Number(spendResult.amount || SHIPPING_FEE_SUPPLY),
     reason: "shipping_fee_spend",
@@ -692,6 +790,7 @@ export async function ensureShippingFeeRollbackDeleteOnShippingRollback({
   request,
   actorUserId,
   session,
+  deferredCreditEvents,
 }) {
   if (!request?._id || !request?.shippingPackageId) return;
 
@@ -743,7 +842,8 @@ export async function ensureShippingFeeRollbackDeleteOnShippingRollback({
     return;
   }
 
-  await emitCreditBalanceUpdatedToBusiness({
+  await emitOrQueueCreditBalanceUpdate({
+    deferredCreditEvents,
     businessAnchorId,
     balanceDelta: Number(rollbackResult.rollbackAmount || 0),
     reason: "shipping_fee_spend_rollback_delete",

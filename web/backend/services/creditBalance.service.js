@@ -1,13 +1,17 @@
 // related files:
 // - web/backend/rules.md
 // - web/backend/models/businessCreditBalance.model.js
+// - web/backend/models/creditBalanceGuard.model.js
 // - web/backend/models/ledgerJournal.model.js
 // - web/backend/models/ledgerLine.model.js
 // - web/backend/controllers/admin/adminFreeCreditGrant.controller.js
 // - web/backend/controllers/requests/common.review.helpers.js
+// - web/backend/controllers/requests/common.review.controller.js
+// - web/backend/controllers/requests/common.nc.controller.js
 // - web/backend/controllers/bg/bg.controller.js
-import { Types } from "mongoose";
+import mongoose, { Types } from "mongoose";
 import BusinessCreditBalance from "../models/businessCreditBalance.model.js";
+import CreditBalanceGuard from "../models/creditBalanceGuard.model.js";
 import LedgerLine from "../models/ledgerLine.model.js";
 import LedgerJournal from "../models/ledgerJournal.model.js";
 import { deleteGeneralLedgerCommitJournal } from "./generalLedger.service.js";
@@ -16,6 +20,22 @@ function normalizeAnchorObjectId(businessAnchorId) {
   const raw = String(businessAnchorId || "").trim();
   if (!raw || !Types.ObjectId.isValid(raw)) return null;
   return new Types.ObjectId(raw);
+}
+
+async function lockCreditBalanceGuardByAnchor({ businessAnchorId, session }) {
+  const anchorObjectId = normalizeAnchorObjectId(businessAnchorId);
+  if (!anchorObjectId) return { locked: false, reason: "invalid_anchor" };
+
+  await CreditBalanceGuard.updateOne(
+    { businessAnchorId: anchorObjectId },
+    {
+      $inc: { version: 1 },
+      $setOnInsert: { businessAnchorId: anchorObjectId },
+    },
+    { upsert: true, session },
+  );
+
+  return { locked: true };
 }
 
 export async function computeBusinessCreditBalanceFromLedger({
@@ -85,6 +105,12 @@ export async function getBusinessCreditBalanceSnapshot({
   session,
   upsertIfMissing = true,
 }) {
+  // NOTE:
+  // - 함수명 호환성을 위해 "Snapshot" 네이밍은 유지한다.
+  // - 실제 반환값 SSOT는 BusinessCreditBalance 스냅샷이 아니라 General Ledger 집계다.
+  // - upsertIfMissing 파라미터는 하위호환용이며 GL 직집계 경로에서는 동작에 영향을 주지 않는다.
+  void upsertIfMissing;
+
   const anchorObjectId = normalizeAnchorObjectId(businessAnchorId);
   if (!anchorObjectId) {
     return {
@@ -97,91 +123,19 @@ export async function getBusinessCreditBalanceSnapshot({
     };
   }
 
-  const existing = await BusinessCreditBalance.findOne({
-    businessAnchorId: anchorObjectId,
-  })
-    .session(session || null)
-    .lean();
-
-  if (existing) {
-    const paidCredit = Math.max(0, Math.round(Number(existing.paidCredit || 0)));
-    const freeRequestCredit = Math.max(
-      0,
-      Math.round(Number(existing.freeRequestCredit || 0)),
-    );
-    const freeShippingCredit = Math.max(
-      0,
-      Math.round(Number(existing.freeShippingCredit || 0)),
-    );
-
-    return {
-      businessAnchorId: String(anchorObjectId),
-      paidCredit,
-      freeRequestCredit,
-      freeShippingCredit,
-      balance: paidCredit + freeRequestCredit + freeShippingCredit,
-      source: "ssot",
-    };
-  }
-
-  if (!upsertIfMissing) {
-    return {
-      businessAnchorId: String(anchorObjectId),
-      paidCredit: 0,
-      freeRequestCredit: 0,
-      freeShippingCredit: 0,
-      balance: 0,
-      source: "missing",
-    };
-  }
-
-  const snapshot = await upsertBusinessCreditBalanceFromLedger({
+  const glBalance = await computeBusinessCreditBalanceFromLedger({
     businessAnchorId: anchorObjectId,
     session,
   });
 
   return {
-    ...snapshot,
-    source: "ledger-backfill",
+    businessAnchorId: String(anchorObjectId),
+    paidCredit: Number(glBalance?.paidCredit || 0),
+    freeRequestCredit: Number(glBalance?.freeRequestCredit || 0),
+    freeShippingCredit: Number(glBalance?.freeShippingCredit || 0),
+    balance: Number(glBalance?.balance || 0),
+    source: "gl",
   };
-}
-
-async function getOrCreateBalanceDoc({ businessAnchorId, session }) {
-  const anchorObjectId = normalizeAnchorObjectId(businessAnchorId);
-  if (!anchorObjectId) return null;
-
-  let doc = await BusinessCreditBalance.findOne({
-    businessAnchorId: anchorObjectId,
-  })
-    .session(session || null)
-    .lean();
-  if (doc) return doc;
-
-  const snapshot = await computeBusinessCreditBalanceFromLedger({
-    businessAnchorId: anchorObjectId,
-    session,
-  });
-
-  await BusinessCreditBalance.updateOne(
-    { businessAnchorId: anchorObjectId },
-    {
-      $setOnInsert: {
-        businessAnchorId: anchorObjectId,
-        paidCredit: Number(snapshot.paidCredit || 0),
-        freeRequestCredit: Number(snapshot.freeRequestCredit || 0),
-        freeShippingCredit: Number(snapshot.freeShippingCredit || 0),
-        version: 0,
-      },
-    },
-    { upsert: true, session },
-  ).catch(() => null);
-
-  doc = await BusinessCreditBalance.findOne({
-    businessAnchorId: anchorObjectId,
-  })
-    .session(session || null)
-    .lean();
-  return doc || null;
 }
 
 async function findCommitJournalBySpendKey({ spendUniqueKey, session }) {
@@ -297,16 +251,24 @@ export async function spendRequestCreditAtomic({
     return { didSpend: false, reason: "free_request", uniqueKey };
   }
 
-  const balanceDoc = await getOrCreateBalanceDoc({
+  // 동시 차감 경합 직렬화:
+  // - 동일 businessAnchorId 기준으로 guard 문서를 갱신해 write-conflict를 유도한다.
+  // - 트랜잭션 재시도 시 최신 GL 스냅샷으로 재평가되어 overspend를 방지한다.
+  await lockCreditBalanceGuardByAnchor({
     businessAnchorId: anchorObjectId,
     session,
   });
-  if (!balanceDoc) {
-    throw new Error("Business credit balance document not found");
-  }
 
-  const paidCredit = Number(balanceDoc?.paidCredit || 0);
-  const freeRequestCredit = Number(balanceDoc?.freeRequestCredit || 0);
+  // SSOT 변경:
+  // - 잔액 검증은 BusinessCreditBalance 스냅샷이 아니라 GL 직접 집계값으로 처리한다.
+  // - 실제 차감은 GL COMMIT 저널 적재로 반영되므로, 여기서는 선차감 update를 수행하지 않는다.
+  const glBalance = await computeBusinessCreditBalanceFromLedger({
+    businessAnchorId: anchorObjectId,
+    session,
+  });
+
+  const paidCredit = Number(glBalance?.paidCredit || 0);
+  const freeRequestCredit = Number(glBalance?.freeRequestCredit || 0);
   const availableForMachining = paidCredit + freeRequestCredit;
 
   if (availableForMachining < resolvedAmount) {
@@ -325,43 +287,6 @@ export async function spendRequestCreditAtomic({
 
   const fromBonusRequest = Math.min(freeRequestCredit, resolvedAmount);
   const fromPaid = resolvedAmount - fromBonusRequest;
-
-  const balanceUpdated = await BusinessCreditBalance.updateOne(
-    {
-      businessAnchorId: anchorObjectId,
-      paidCredit: { $gte: fromPaid },
-      freeRequestCredit: { $gte: fromBonusRequest },
-    },
-    {
-      $inc: {
-        paidCredit: -fromPaid,
-        freeRequestCredit: -fromBonusRequest,
-        version: 1,
-      },
-    },
-    { session },
-  );
-
-  if (Number(balanceUpdated?.modifiedCount || 0) <= 0) {
-    const latest = await BusinessCreditBalance.findOne({
-      businessAnchorId: anchorObjectId,
-    })
-      .session(session || null)
-      .lean();
-
-    const err = new Error("의뢰자 잔액 부족으로 가공 진입 불가");
-    err.statusCode = 402;
-    err.payload = {
-      reason: "insufficient_credit_for_machining",
-      paidCredit: Number(latest?.paidCredit || 0),
-      freeRequestCredit: Number(latest?.freeRequestCredit || 0),
-      availableForMachining:
-        Number(latest?.paidCredit || 0) + Number(latest?.freeRequestCredit || 0),
-      required: resolvedAmount,
-      requestId: request?._id ? String(request._id) : null,
-    };
-    throw err;
-  }
 
   return {
     didSpend: true,
@@ -408,16 +333,24 @@ export async function spendShippingCreditAtomic({
     };
   }
 
-  const balanceDoc = await getOrCreateBalanceDoc({
+  // 동시 차감 경합 직렬화:
+  // - 동일 businessAnchorId 기준으로 guard 문서를 갱신해 write-conflict를 유도한다.
+  // - 트랜잭션 재시도 시 최신 GL 스냅샷으로 재평가되어 overspend를 방지한다.
+  await lockCreditBalanceGuardByAnchor({
     businessAnchorId: anchorObjectId,
     session,
   });
-  if (!balanceDoc) {
-    throw new Error("Business credit balance document not found");
-  }
 
-  const paidCredit = Number(balanceDoc?.paidCredit || 0);
-  const freeShippingCredit = Number(balanceDoc?.freeShippingCredit || 0);
+  // SSOT 변경:
+  // - 잔액 검증은 BusinessCreditBalance 스냅샷 대신 GL 집계값으로 계산한다.
+  // - 차감 반영은 SHIPPING_SPEND_COMMIT 저널 적재 시점에 이루어진다.
+  const glBalance = await computeBusinessCreditBalanceFromLedger({
+    businessAnchorId: anchorObjectId,
+    session,
+  });
+
+  const paidCredit = Number(glBalance?.paidCredit || 0);
+  const freeShippingCredit = Number(glBalance?.freeShippingCredit || 0);
   const availableForShipping = paidCredit + freeShippingCredit;
 
   if (availableForShipping < amount) {
@@ -435,41 +368,6 @@ export async function spendShippingCreditAtomic({
 
   const fromBonusShipping = Math.min(freeShippingCredit, amount);
   const fromPaid = amount - fromBonusShipping;
-
-  const updated = await BusinessCreditBalance.updateOne(
-    {
-      businessAnchorId: anchorObjectId,
-      paidCredit: { $gte: fromPaid },
-      freeShippingCredit: { $gte: fromBonusShipping },
-    },
-    {
-      $inc: {
-        paidCredit: -fromPaid,
-        freeShippingCredit: -fromBonusShipping,
-        version: 1,
-      },
-    },
-    { session },
-  );
-
-  if (Number(updated?.modifiedCount || 0) <= 0) {
-    const latest = await BusinessCreditBalance.findOne({
-      businessAnchorId: anchorObjectId,
-    })
-      .session(session || null)
-      .lean();
-
-    const err = new Error("의뢰자 잔액 부족으로 포장.발송 진입 불가");
-    err.statusCode = 402;
-    err.payload = {
-      reason: "insufficient_credit_for_shipping",
-      paidCredit: Number(latest?.paidCredit || 0),
-      freeShippingCredit: Number(latest?.freeShippingCredit || 0),
-      required: amount,
-      shippingPackageId: String(packageObjectId),
-    };
-    throw err;
-  }
 
   return {
     didSpend: true,
@@ -491,58 +389,195 @@ export async function deleteRequestSpendAtomicOnRollback({
   const anchorObjectId = normalizeAnchorObjectId(businessAnchorId);
   if (!anchorObjectId) return { didRollback: false, reason: "invalid_anchor" };
 
-  const uniqueKey = `request:${String(request._id)}:machining_spend`;
-  const journal = await findCommitJournalBySpendKey({
-    spendUniqueKey: uniqueKey,
-    session,
-  });
+  const ownSession = !session;
+  const txSession = session || (await mongoose.startSession());
 
-  if (!journal?.journalId) {
-    return { didRollback: false, reason: "no_spend" };
-  }
+  try {
+    if (ownSession) txSession.startTransaction();
 
-  const { restorePaid, restoreBonusRequest, rollbackAmount } =
-    await computeSpendRestoreBreakdownByJournalId({
-      journalId: journal.journalId,
-      session,
+    const requestMongoId = String(request._id);
+    const requestId = String(request?.requestId || "").trim();
+    const uniqueKey = `request:${requestMongoId}:machining_spend`;
+    const journalIds = [];
+    const seen = new Set();
+
+    const pushJournalId = (rawId) => {
+      const id = String(rawId || "").trim();
+      if (!id || seen.has(id)) return;
+      seen.add(id);
+      journalIds.push(id);
+    };
+
+    console.log("[CREDIT_ROLLBACK][REQUEST][SERVICE] lookup start", {
+      requestMongoId,
+      requestId: requestId || null,
+      businessAnchorId: String(anchorObjectId),
+      uniqueKey,
+      hasSession: !!session,
     });
 
-  const deleteResult = await deleteGeneralLedgerCommitJournal({
-    journalId: journal.journalId,
-    expectedEventTypes: ["REQUEST_SPEND_COMMIT"],
-    session,
-  });
+    // 1) canonical unique key(idempotency)
+    const byUnique = await findCommitJournalBySpendKey({
+      spendUniqueKey: uniqueKey,
+      session: txSession,
+    });
+    if (byUnique?.journalId) {
+      pushJournalId(byUnique.journalId);
+    }
 
-  if (!deleteResult?.deleted) {
-    return {
-      didRollback: false,
-      reason: deleteResult?.reason || "journal_not_deleted",
-    };
-  }
+    // 2) journal ref 매칭
+    if (!journalIds.length) {
+      const byRef = await LedgerJournal.find({
+        eventType: "REQUEST_SPEND_COMMIT",
+        refType: "REQUEST",
+        refId: request._id,
+      })
+        .select({ journalId: 1 })
+        .session(txSession)
+        .lean();
 
-  await BusinessCreditBalance.updateOne(
-    { businessAnchorId: anchorObjectId },
-    {
-      $inc: {
-        paidCredit: Number(restorePaid || 0),
-        freeRequestCredit: Number(restoreBonusRequest || 0),
-        version: 1,
-      },
-      $setOnInsert: {
+      for (const row of byRef || []) pushJournalId(row?.journalId);
+    }
+
+    // 3) journal meta 매칭 (legacy/이관 데이터 호환)
+    if (!journalIds.length) {
+      const metaOr = [{ "meta.requestMongoId": requestMongoId }];
+      if (requestId) metaOr.push({ "meta.requestId": requestId });
+
+      const byMeta = await LedgerJournal.find({
+        eventType: "REQUEST_SPEND_COMMIT",
+        $or: metaOr,
+      })
+        .select({ journalId: 1 })
+        .session(txSession)
+        .lean();
+
+      for (const row of byMeta || []) pushJournalId(row?.journalId);
+    }
+
+    // 4) line 기준 역탐색 (journal ref/meta 누락 케이스 보완)
+    if (!journalIds.length) {
+      const lineRows = await LedgerLine.find({
         businessAnchorId: anchorObjectId,
-        paidCredit: 0,
-        freeRequestCredit: 0,
-        freeShippingCredit: 0,
-      },
-    },
-    { session, upsert: true },
-  );
+        ownerRole: "requestor",
+        ownerId: anchorObjectId,
+        refType: "REQUEST",
+        refId: request._id,
+        accountCode: { $in: ["REQ_PAID_CREDIT", "REQ_FREE_REQUEST_CREDIT"] },
+        amount: { $lt: 0 },
+      })
+        .select({ journalId: 1 })
+        .session(txSession)
+        .lean();
 
-  return {
-    didRollback: true,
-    rollbackAmount: Math.round(Number(rollbackAmount || 0)),
-    deletedSpendUniqueKeys: [uniqueKey],
-  };
+      for (const row of lineRows || []) pushJournalId(row?.journalId);
+    }
+
+    console.log("[CREDIT_ROLLBACK][REQUEST][SERVICE] lookup result", {
+      requestMongoId,
+      requestId: requestId || null,
+      uniqueKey,
+      matchedJournalIds: journalIds,
+    });
+
+    if (!journalIds.length) {
+      console.warn("[CREDIT_ROLLBACK][REQUEST][SERVICE] no spend journals found", {
+        requestMongoId,
+        requestId: requestId || null,
+        businessAnchorId: String(anchorObjectId),
+        uniqueKey,
+        refType: "REQUEST",
+        refId: requestMongoId,
+      });
+      if (ownSession) await txSession.commitTransaction();
+      return { didRollback: false, reason: "no_spend" };
+    }
+
+    let restorePaidSum = 0;
+    let restoreBonusRequestSum = 0;
+    let rollbackAmountSum = 0;
+
+    for (const journalId of journalIds) {
+      const { restorePaid, restoreBonusRequest, rollbackAmount } =
+        await computeSpendRestoreBreakdownByJournalId({
+          journalId,
+          session: txSession,
+        });
+
+      console.log("[CREDIT_ROLLBACK][REQUEST][SERVICE] delete candidate", {
+        requestMongoId: String(request._id),
+        journalId,
+        restorePaid: Number(restorePaid || 0),
+        restoreBonusRequest: Number(restoreBonusRequest || 0),
+        rollbackAmount: Number(rollbackAmount || 0),
+      });
+
+      const deleteResult = await deleteGeneralLedgerCommitJournal({
+        journalId,
+        expectedEventTypes: ["REQUEST_SPEND_COMMIT"],
+        session: txSession,
+      });
+
+      if (!deleteResult?.deleted) {
+        console.warn("[CREDIT_ROLLBACK][REQUEST][SERVICE] delete failed", {
+          requestMongoId: String(request._id),
+          journalId,
+          reason: deleteResult?.reason || "journal_not_deleted",
+          eventType: deleteResult?.eventType || null,
+        });
+
+        const err = new Error("request_spend_rollback_delete_failed");
+        err.rollbackReason = deleteResult?.reason || "journal_not_deleted";
+        throw err;
+      }
+
+      restorePaidSum += Number(restorePaid || 0);
+      restoreBonusRequestSum += Number(restoreBonusRequest || 0);
+      rollbackAmountSum += Number(rollbackAmount || 0);
+    }
+
+    const reconciledSnapshot = await computeBusinessCreditBalanceFromLedger({
+      businessAnchorId: anchorObjectId,
+      session: txSession,
+    });
+
+    if (ownSession) await txSession.commitTransaction();
+
+    console.log("[CREDIT_ROLLBACK][REQUEST][SERVICE] balance restored", {
+      requestMongoId: String(request._id),
+      requestId: request?.requestId || null,
+      businessAnchorId: String(anchorObjectId),
+      restorePaidSum: Number(restorePaidSum || 0),
+      restoreBonusRequestSum: Number(restoreBonusRequestSum || 0),
+      rollbackAmountSum: Number(rollbackAmountSum || 0),
+      reconciledSnapshot,
+      deletedJournalIds: journalIds,
+    });
+
+    return {
+      didRollback: true,
+      rollbackAmount: Math.round(Number(rollbackAmountSum || 0)),
+      deletedSpendUniqueKeys: [uniqueKey],
+      deletedJournalIds: journalIds,
+    };
+  } catch (error) {
+    if (ownSession) {
+      await txSession.abortTransaction().catch(() => null);
+    }
+
+    if (String(error?.message || "") === "request_spend_rollback_delete_failed") {
+      return {
+        didRollback: false,
+        reason: error?.rollbackReason || "journal_not_deleted",
+      };
+    }
+
+    throw error;
+  } finally {
+    if (ownSession) {
+      await txSession.endSession().catch(() => null);
+    }
+  }
 }
 
 export async function deleteShippingSpendAtomicOnRollback({
@@ -560,93 +595,129 @@ export async function deleteShippingSpendAtomicOnRollback({
     return { didRollback: false, reason: "invalid_input" };
   }
 
-  const uniqueKey = `shippingPackage:${String(packageObjectId)}:shipping_fee`;
-  const journal = await findCommitJournalBySpendKey({
-    spendUniqueKey: uniqueKey,
-    session,
-  });
+  const ownSession = !session;
+  const txSession = session || (await mongoose.startSession());
 
-  if (!journal?.journalId) {
-    return { didRollback: false, reason: "no_spend" };
-  }
+  try {
+    if (ownSession) txSession.startTransaction();
 
-  const { restorePaid, restoreBonusShipping, rollbackAmount } =
-    await computeSpendRestoreBreakdownByJournalId({
-      journalId: journal.journalId,
-      session,
+    const uniqueKey = `shippingPackage:${String(packageObjectId)}:shipping_fee`;
+    const journalIds = [];
+    const seen = new Set();
+
+    const byUnique = await findCommitJournalBySpendKey({
+      spendUniqueKey: uniqueKey,
+      session: txSession,
+    });
+    if (byUnique?.journalId) {
+      const id = String(byUnique.journalId);
+      if (!seen.has(id)) {
+        seen.add(id);
+        journalIds.push(id);
+      }
+    }
+
+    // 호환 보강: 과거 키 포맷 불일치/예외 데이터는 refType+refId 기준으로 보완 탐색한다.
+    if (!journalIds.length) {
+      const byRef = await LedgerJournal.find({
+        eventType: "SHIPPING_SPEND_COMMIT",
+        refType: "SHIPPING_PACKAGE",
+        refId: packageObjectId,
+      })
+        .select({ journalId: 1 })
+        .session(txSession)
+        .lean();
+
+      for (const row of byRef || []) {
+        const id = String(row?.journalId || "").trim();
+        if (!id || seen.has(id)) continue;
+        seen.add(id);
+        journalIds.push(id);
+      }
+    }
+
+    if (!journalIds.length) {
+      if (ownSession) await txSession.commitTransaction();
+      return { didRollback: false, reason: "no_spend" };
+    }
+
+    let restorePaidSum = 0;
+    let restoreBonusShippingSum = 0;
+    let rollbackAmountSum = 0;
+
+    for (const journalId of journalIds) {
+      const { restorePaid, restoreBonusShipping, rollbackAmount } =
+        await computeSpendRestoreBreakdownByJournalId({
+          journalId,
+          session: txSession,
+        });
+
+      const deleteResult = await deleteGeneralLedgerCommitJournal({
+        journalId,
+        expectedEventTypes: ["SHIPPING_SPEND_COMMIT"],
+        session: txSession,
+      });
+
+      if (!deleteResult?.deleted) {
+        const err = new Error("shipping_spend_rollback_delete_failed");
+        err.rollbackReason = deleteResult?.reason || "journal_not_deleted";
+        throw err;
+      }
+
+      restorePaidSum += Number(restorePaid || 0);
+      restoreBonusShippingSum += Number(restoreBonusShipping || 0);
+      rollbackAmountSum += Number(rollbackAmount || 0);
+    }
+
+    const reconciledSnapshot = await computeBusinessCreditBalanceFromLedger({
+      businessAnchorId: anchorObjectId,
+      session: txSession,
     });
 
-  const deleteResult = await deleteGeneralLedgerCommitJournal({
-    journalId: journal.journalId,
-    expectedEventTypes: ["SHIPPING_SPEND_COMMIT"],
-    session,
-  });
+    if (ownSession) await txSession.commitTransaction();
 
-  if (!deleteResult?.deleted) {
     return {
-      didRollback: false,
-      reason: deleteResult?.reason || "journal_not_deleted",
+      didRollback: true,
+      rollbackAmount: Math.round(Number(rollbackAmountSum || 0)),
+      deletedSpendUniqueKeys: [uniqueKey],
+      deletedJournalIds: journalIds,
+      reconciledSnapshot,
     };
+  } catch (error) {
+    if (ownSession) {
+      await txSession.abortTransaction().catch(() => null);
+    }
+
+    if (
+      String(error?.message || "") === "shipping_spend_rollback_delete_failed"
+    ) {
+      return {
+        didRollback: false,
+        reason: error?.rollbackReason || "journal_not_deleted",
+      };
+    }
+
+    throw error;
+  } finally {
+    if (ownSession) {
+      await txSession.endSession().catch(() => null);
+    }
   }
-
-  await BusinessCreditBalance.updateOne(
-    { businessAnchorId: anchorObjectId },
-    {
-      $inc: {
-        paidCredit: Number(restorePaid || 0),
-        freeShippingCredit: Number(restoreBonusShipping || 0),
-        version: 1,
-      },
-      $setOnInsert: {
-        businessAnchorId: anchorObjectId,
-        paidCredit: 0,
-        freeRequestCredit: 0,
-        freeShippingCredit: 0,
-      },
-    },
-    { session, upsert: true },
-  );
-
-  return {
-    didRollback: true,
-    rollbackAmount: Math.round(Number(rollbackAmount || 0)),
-    deletedSpendUniqueKeys: [uniqueKey],
-  };
 }
 
-// 승인 경합으로 잔액만 선차감되고 GL 커밋이 idempotent 처리되는 경우를 보정한다.
+// GL 직집계 모드에서는 선차감 스냅샷이 존재하지 않으므로 보정 로직은 no-op으로 유지한다.
+// (호출부 하위호환을 위해 함수 시그니처/반환 형태만 유지)
 export async function restoreRequestSpendDeductionAtomic({
   businessAnchorId,
   fromPaid,
   fromBonusRequest,
   session,
 }) {
-  const anchorObjectId = normalizeAnchorObjectId(businessAnchorId);
-  if (!anchorObjectId) return { restored: false, reason: "invalid_anchor" };
-
-  const paid = Math.max(0, Number(fromPaid || 0));
-  const free = Math.max(0, Number(fromBonusRequest || 0));
-  if (!paid && !free) return { restored: false, reason: "zero_delta" };
-
-  await BusinessCreditBalance.updateOne(
-    { businessAnchorId: anchorObjectId },
-    {
-      $inc: {
-        paidCredit: paid,
-        freeRequestCredit: free,
-        version: 1,
-      },
-      $setOnInsert: {
-        businessAnchorId: anchorObjectId,
-        paidCredit: 0,
-        freeRequestCredit: 0,
-        freeShippingCredit: 0,
-      },
-    },
-    { session, upsert: true },
-  );
-
-  return { restored: true, paid, free };
+  void businessAnchorId;
+  void fromPaid;
+  void fromBonusRequest;
+  void session;
+  return { restored: false, reason: "gl_ssot_no_snapshot_deduction" };
 }
 
 export async function restoreShippingSpendDeductionAtomic({
@@ -655,32 +726,11 @@ export async function restoreShippingSpendDeductionAtomic({
   fromBonusShipping,
   session,
 }) {
-  const anchorObjectId = normalizeAnchorObjectId(businessAnchorId);
-  if (!anchorObjectId) return { restored: false, reason: "invalid_anchor" };
-
-  const paid = Math.max(0, Number(fromPaid || 0));
-  const free = Math.max(0, Number(fromBonusShipping || 0));
-  if (!paid && !free) return { restored: false, reason: "zero_delta" };
-
-  await BusinessCreditBalance.updateOne(
-    { businessAnchorId: anchorObjectId },
-    {
-      $inc: {
-        paidCredit: paid,
-        freeShippingCredit: free,
-        version: 1,
-      },
-      $setOnInsert: {
-        businessAnchorId: anchorObjectId,
-        paidCredit: 0,
-        freeRequestCredit: 0,
-        freeShippingCredit: 0,
-      },
-    },
-    { session, upsert: true },
-  );
-
-  return { restored: true, paid, free };
+  void businessAnchorId;
+  void fromPaid;
+  void fromBonusShipping;
+  void session;
+  return { restored: false, reason: "gl_ssot_no_snapshot_deduction" };
 }
 
 // LEGACY_REMOVED: REFUND 기반 롤백 함수(refundRequestCreditAtomic/refundShippingCreditAtomic)

@@ -239,6 +239,10 @@
   - `REQUEST_SPEND_COMMIT`: **CAM 승인(가공 진입)** 시 기록
   - `SHIPPING_SPEND_COMMIT`: **세척.패킹 승인(포장.발송 진입)** 시 기록
   - `REQUEST` 차감 삭제: **가공 롤백(CAM 복귀)** 시 대응 커밋 이벤트/라인 **물리 삭제**
+    - 롤백 엔드포인트(`DELETE /api/requests/:id/nc-file`, `DELETE /api/requests/:id/stage-file?stage=machining`)도 동일 정책으로 `ensureRequestCreditRollbackDeleteOnRollbackToCam`를 반드시 호출해야 합니다.
+    - 삭제 대상 커밋 탐색은 idempotencyKey 매칭을 우선하고, 누락 시 `refType/refId`, `journal.meta.requestMongoId|requestId`, `LedgerLine 역탐색`까지 사용해 원본 COMMIT 저널을 식별/삭제합니다.
+    - 샘플(`rnd_sample|copied_sample`)은 `no_spend`를 정상으로 허용합니다.
+    - 일반 의뢰는 기본적으로 `no_spend`를 409로 중단하되, 요청자 소비 라인(`REQ_PAID_CREDIT|REQ_FREE_REQUEST_CREDIT`, refType=REQUEST, refId=request._id, amount<0)이 이미 없으면 idempotent success로 허용합니다.
   - `SHIPPING` 차감 삭제: **포장.발송 롤백(세척.패킹 복귀)** 시 대응 커밋 이벤트/라인 **물리 삭제**
   - 롤백에서 REFUND 이벤트/라인 추가 금지
   - 조회 호환성: `type=REFUND` 레거시 조회 파라미터 지원은 제거했습니다.
@@ -252,8 +256,13 @@
   - 조회/표시 타입은 `CHARGE`/`SPEND` 단일값 금지
     - 충전: `CHARGE_PAID` / `CHARGE_FREE_REQUEST` / `CHARGE_FREE_SHIPPING`
     - 소비: `SPEND_PAID` / `SPEND_FREE_REQUEST` / `SPEND_FREE_SHIPPING`
-  - `GET /api/credits/balance` 응답 키는 `freeRequestCredit`, `freeShippingCredit`, `freeBalance`를 SSOT로 사용합니다.
-  - `BusinessCreditBalance` 스냅샷 저장도 `freeRequestCredit`, `freeShippingCredit`만 사용합니다.
+  - `GET /api/credits/balance`는 `LedgerLine` 직접 집계(GL SSOT)만 사용합니다.
+    - 프로세스 메모리 캐시를 사용하지 않아 승인/롤백 직후 잔액을 즉시 반영해야 합니다.
+  - 관리자 크레딧 실시간 이벤트 최적화:
+    - role fan-out 대신 admin 크레딧 페이지 전용 소켓 room(`app:admin:credits`) 구독자에게만
+      `credit:balance-updated`를 발행합니다.
+  - `BusinessCreditBalance`는 레거시 스냅샷 컬렉션으로 간주하며, 런타임 잔액 판정/표시 경로에서 사용하지 않습니다.
+  - 잔액 집계 성능 인덱스(필수): `LedgerLine(ownerRole, ownerId, accountCode, occurredAt)`
   - 레거시 `bonus*` alias/fallback은 런타임 경로에서 제거했습니다.
 
 - 샘플 정책(강제):
@@ -302,6 +311,9 @@
 - 구현 강제사항:
   - 승인/롤백/정산 이벤트는 모두 단일 저널 트랜잭션으로 처리
   - `idempotencyKey` unique 인덱스로 중복기록 차단
+  - GL 직집계 모드의 동시 차감(overspend) 방지:
+    - `CreditBalanceGuard(businessAnchorId unique)` 문서를 spend 트랜잭션에서 `$inc(version)`하여
+      동일 앵커 동시 차감을 write-conflict로 직렬화
   - 외부 session 트랜잭션 경로는 snapshot 가시성 때문에 idempotencyKey를 committed view(session=null)로 1회 추가 확인합니다.
     - 목적: 동시성 상황에서 중복 insert(11000)로 트랜잭션이 불필요하게 깨지는 것을 예방
   - 파생 조회(제조사 정산/관리자 대시보드/의뢰자 잔액)는 단일 SSOT 장부 집계값만 사용

@@ -1,7 +1,7 @@
 // related files:
 // - web/backend/rules.md
 // - web/backend/modules/admin/admin.routes.js
-// - web/backend/models/businessCreditBalance.model.js
+
 // - web/backend/models/ledgerJournal.model.js
 // - web/backend/models/ledgerLine.model.js
 // - web/backend/controllers/salesman/salesman.controller.js
@@ -13,7 +13,7 @@ import ChargeOrder from "../../models/chargeOrder.model.js";
 import BankTransaction from "../../models/bankTransaction.model.js";
 import DeliveryInfo from "../../models/deliveryInfo.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
-import BusinessCreditBalance from "../../models/businessCreditBalance.model.js";
+
 import ShippingPackage from "../../models/shippingPackage.model.js";
 import { getBusinessCreditBalanceSnapshot } from "../../services/creditBalance.service.js";
 import User from "../../models/user.model.js";
@@ -1345,22 +1345,24 @@ export async function adminGetCreditStats(req, res) {
           ])
         : [],
       requestorAnchorIds.length
-        ? BusinessCreditBalance.aggregate([
+        ? LedgerLine.aggregate([
             {
               $match: {
-                businessAnchorId: { $in: requestorAnchorIds },
+                ownerRole: "requestor",
+                ownerId: { $in: requestorAnchorIds },
+                accountCode: {
+                  $in: [
+                    "REQ_PAID_CREDIT",
+                    "REQ_FREE_REQUEST_CREDIT",
+                    "REQ_FREE_SHIPPING_CREDIT",
+                  ],
+                },
               },
             },
             {
               $group: {
-                _id: null,
-                paidCredit: { $sum: { $ifNull: ["$paidCredit", 0] } },
-                freeRequestCredit: {
-                  $sum: { $ifNull: ["$freeRequestCredit", 0] },
-                },
-                freeShippingCredit: {
-                  $sum: { $ifNull: ["$freeShippingCredit", 0] },
-                },
+                _id: "$accountCode",
+                total: { $sum: { $ifNull: ["$amountExcludingVat", "$amount"] } },
               },
             },
           ])
@@ -1368,7 +1370,9 @@ export async function adminGetCreditStats(req, res) {
     ]);
 
     const summary = glRows?.[0] || {};
-    const balanceSummary = balanceRows?.[0] || {};
+    const balanceSummaryByCode = new Map(
+      (balanceRows || []).map((row) => [String(row?._id || ""), Number(row?.total || 0)]),
+    );
 
     const totalCharged = Number(summary.chargedPaid || 0);
     const totalFreeRequest = Number(summary.chargedFreeRequest || 0);
@@ -1382,9 +1386,18 @@ export async function adminGetCreditStats(req, res) {
       totalSpentFreeRequestAmount + totalSpentFreeShippingAmount;
     const totalSpent = totalSpentPaidAmount + totalSpentFreeAmount;
 
-    const totalPaidCredit = Number(balanceSummary.paidCredit || 0);
-    const totalFreeRequestCredit = Number(balanceSummary.freeRequestCredit || 0);
-    const totalFreeShippingCredit = Number(balanceSummary.freeShippingCredit || 0);
+    const totalPaidCredit = Math.max(
+      0,
+      Math.round(Number(balanceSummaryByCode.get("REQ_PAID_CREDIT") || 0)),
+    );
+    const totalFreeRequestCredit = Math.max(
+      0,
+      Math.round(Number(balanceSummaryByCode.get("REQ_FREE_REQUEST_CREDIT") || 0)),
+    );
+    const totalFreeShippingCredit = Math.max(
+      0,
+      Math.round(Number(balanceSummaryByCode.get("REQ_FREE_SHIPPING_CREDIT") || 0)),
+    );
 
     return res.json({
       success: true,
@@ -2597,42 +2610,7 @@ export async function adminGetBusinessCredits(req, res) {
       .filter(Boolean)
       .map((id) => new Types.ObjectId(String(id)));
 
-    const ssotBalanceRows = orgAnchorIds.length
-      ? await BusinessCreditBalance.find({
-          businessAnchorId: { $in: orgAnchorIds },
-        })
-          .select({
-            businessAnchorId: 1,
-            paidCredit: 1,
-            freeRequestCredit: 1,
-            freeShippingCredit: 1,
-          })
-          .lean()
-      : [];
-
-    const ssotBalanceMap = new Map(
-      (ssotBalanceRows || []).map((row) => {
-        const anchorId = String(row?.businessAnchorId || "").trim();
-        const paidCredit = Math.max(0, Math.round(Number(row?.paidCredit || 0)));
-        const freeRequestCredit = Math.max(
-          0,
-          Math.round(Number(row?.freeRequestCredit || 0)),
-        );
-        const freeShippingCredit = Math.max(
-          0,
-          Math.round(Number(row?.freeShippingCredit || 0)),
-        );
-        return [
-          anchorId,
-          {
-            paidCredit,
-            freeRequestCredit,
-            freeShippingCredit,
-            balance: paidCredit + freeRequestCredit + freeShippingCredit,
-          },
-        ];
-      }),
-    );
+    // 잔액 SSOT는 GL 집계값이다. (BusinessCreditBalance 스냅샷 참조 금지)
 
     const ledgerData = orgAnchorIds.length
       ? await LedgerLine.aggregate([
@@ -2811,6 +2789,29 @@ export async function adminGetBusinessCredits(req, res) {
                   ],
                 },
               },
+              currentPaidCredit: {
+                $sum: {
+                  $cond: [{ $eq: ["$accountCode", "REQ_PAID_CREDIT"] }, "$baseAmount", 0],
+                },
+              },
+              currentFreeRequestCredit: {
+                $sum: {
+                  $cond: [
+                    { $eq: ["$accountCode", "REQ_FREE_REQUEST_CREDIT"] },
+                    "$baseAmount",
+                    0,
+                  ],
+                },
+              },
+              currentFreeShippingCredit: {
+                $sum: {
+                  $cond: [
+                    { $eq: ["$accountCode", "REQ_FREE_SHIPPING_CREDIT"] },
+                    "$baseAmount",
+                    0,
+                  ],
+                },
+              },
             },
           },
         ])
@@ -2827,22 +2828,19 @@ export async function adminGetBusinessCredits(req, res) {
       const spentFreeShippingAmount = Number(item?.spentFreeShippingAmount || 0);
 
       const anchorId = String(item?._id || "").trim();
-      const ssot = ssotBalanceMap.get(anchorId) || null;
 
-      const paidCredit = ssot
-        ? ssot.paidCredit
-        : Math.max(
-            0,
-            Math.round(
-              chargedPaid + Number(item?.adjustPaidAmount || 0) - spentPaidAmount,
-            ),
-          );
-      const freeRequestCredit = ssot
-        ? ssot.freeRequestCredit
-        : Math.max(0, Math.round(chargedFreeRequest - spentFreeRequestAmount));
-      const freeShippingCredit = ssot
-        ? ssot.freeShippingCredit
-        : Math.max(0, Math.round(chargedFreeShipping - spentFreeShippingAmount));
+      const paidCredit = Math.max(
+        0,
+        Math.round(Number(item?.currentPaidCredit || 0)),
+      );
+      const freeRequestCredit = Math.max(
+        0,
+        Math.round(Number(item?.currentFreeRequestCredit || 0)),
+      );
+      const freeShippingCredit = Math.max(
+        0,
+        Math.round(Number(item?.currentFreeShippingCredit || 0)),
+      );
 
       const chargedFreeAmount = Math.max(
         0,

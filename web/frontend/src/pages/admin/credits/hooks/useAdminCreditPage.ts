@@ -5,6 +5,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { request } from "@/shared/api/apiClient";
 import { useToast } from "@/shared/hooks/use-toast";
+import { getSocket, onAppEvent } from "@/shared/realtime/socket";
 import { usePeriodStore, periodToRangeQuery } from "@/store/usePeriodStore";
 import { useAuthStore } from "@/store/useAuthStore";
 import type {
@@ -152,6 +153,7 @@ export function useAdminCreditPage() {
   const orderSentinelRef = useRef<HTMLDivElement | null>(null);
   const txScrollRef = useRef<HTMLDivElement | null>(null);
   const txSentinelRef = useRef<HTMLDivElement | null>(null);
+  const creditRealtimeReloadTimerRef = useRef<number | null>(null);
 
   const ORG_PAGE_SIZE = 9;
   const SALESMAN_PAGE_SIZE = 9;
@@ -840,6 +842,47 @@ export function useAdminCreditPage() {
     loadSalesmen({ reset: true });
     loadSalesmanOverview();
   }, [period, token]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 관리자 실시간 갱신: admin 크레딧 페이지 진입 시 전용 room 구독 + 이벤트 수신 시 집계 자동 갱신.
+  useEffect(() => {
+    if (!token) return;
+
+    const socket = getSocket();
+    const roomKey = "app:admin:credits";
+
+    const joinRoom = () => {
+      socket?.emit("subscribe-app-room", { roomKey });
+    };
+
+    joinRoom();
+    socket?.on("connect", joinRoom);
+
+    const unsubscribe = onAppEvent((evt) => {
+      const type = String(evt?.type || "").trim();
+      if (type !== "credit:balance-updated") return;
+
+      if (creditRealtimeReloadTimerRef.current) {
+        window.clearTimeout(creditRealtimeReloadTimerRef.current);
+      }
+
+      creditRealtimeReloadTimerRef.current = window.setTimeout(() => {
+        loadStats();
+        setOrgSkip(0);
+        setOrgHasMore(true);
+        void loadOrganizations({ reset: true });
+      }, 180);
+    });
+
+    return () => {
+      unsubscribe?.();
+      socket?.off("connect", joinRoom);
+      socket?.emit("unsubscribe-app-room", { roomKey });
+      if (creditRealtimeReloadTimerRef.current) {
+        window.clearTimeout(creditRealtimeReloadTimerRef.current);
+        creditRealtimeReloadTimerRef.current = null;
+      }
+    };
+  }, [token]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 무한스크롤 observer는 상태 플래그(ref/state) 기준으로 제어하며,
   // 로더 함수는 의도적으로 deps에 고정하지 않는다.

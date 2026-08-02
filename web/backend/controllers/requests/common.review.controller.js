@@ -53,6 +53,7 @@ import {
   triggerPricingSnapshotForRequestDoc,
   triggerDashboardSummaryRefreshForAnchorId,
 } from "../../services/requestSnapshotTriggers.service.js";
+import { emitCreditBalanceUpdatedToBusiness } from "../../utils/creditRealtime.js";
 
 // Emit worksheet stage changed event
 
@@ -496,6 +497,20 @@ export async function deleteStageFile(req, res) {
     const s3Key = meta?.s3Key;
 
     if (rollbackOnly) {
+      console.log("[STAGE_FILE_ROLLBACK] request received", {
+        requestMongoId: String(request._id),
+        requestId: String(request.requestId || ""),
+        stage,
+        rollbackOnly,
+        preserveStage,
+        currentStage: String(request?.manufacturerStage || "").trim() || null,
+        businessAnchorId: String(
+          request?.businessAnchorId || request?.requestor?.businessAnchorId || "",
+        ).trim() || null,
+        actorUserId: req.user?._id ? String(req.user._id) : null,
+        role: String(req.user?.role || ""),
+      });
+
       request.caseInfos.reviewByStage[stage] = {
         status: "PENDING",
         updatedAt: new Date(),
@@ -509,6 +524,32 @@ export async function deleteStageFile(req, res) {
       }
       if (stage === "packing") {
         bumpRollbackCount(request, "machining");
+      }
+
+      const businessAnchorIdForRollback = String(
+        request?.businessAnchorId || request?.requestor?.businessAnchorId || "",
+      ).trim();
+
+      if (stage === "machining") {
+        if (!businessAnchorIdForRollback) {
+          const err = new Error(
+            "의뢰 사업자 정보가 없어 가공 롤백 크레딧 복원을 수행할 수 없습니다.",
+          );
+          err.statusCode = 409;
+          throw err;
+        }
+        await ensureRequestCreditRollbackDeleteOnRollbackToCam({
+          request,
+          businessAnchorId: businessAnchorIdForRollback,
+          actorUserId: req.user?._id || null,
+        });
+      }
+
+      if (stage === "shipping") {
+        await ensureShippingFeeRollbackDeleteOnShippingRollback({
+          request,
+          actorUserId: req.user?._id || null,
+        });
       }
 
       const prevStageMap = {
@@ -684,6 +725,32 @@ export async function deleteStageFile(req, res) {
       bumpRollbackCount(request, "machining");
     }
 
+    const businessAnchorIdForRollback = String(
+      request?.businessAnchorId || request?.requestor?.businessAnchorId || "",
+    ).trim();
+
+    if (stage === "machining") {
+      if (!businessAnchorIdForRollback) {
+        const err = new Error(
+          "의뢰 사업자 정보가 없어 가공 롤백 크레딧 복원을 수행할 수 없습니다.",
+        );
+        err.statusCode = 409;
+        throw err;
+      }
+      await ensureRequestCreditRollbackDeleteOnRollbackToCam({
+        request,
+        businessAnchorId: businessAnchorIdForRollback,
+        actorUserId: req.user?._id || null,
+      });
+    }
+
+    if (stage === "shipping") {
+      await ensureShippingFeeRollbackDeleteOnShippingRollback({
+        request,
+        actorUserId: req.user?._id || null,
+      });
+    }
+
     // machining/packing 롤백 시 PRC 파일명 클리어 - 재가공 시 최신 PRC로 재결정되도록 한다.
     // PRC 매핑이 변경된 경우 구버전 PRC가 재사용되는 버그 방지.
     if (stage === "machining" || stage === "packing") {
@@ -743,10 +810,22 @@ export async function deleteStageFile(req, res) {
       },
     });
   } catch (error) {
-    return res.status(500).json({
+    const status = Number(error?.statusCode || 0) || 500;
+    const message =
+      status >= 400 && status < 500
+        ? String(error?.message || "요청을 처리할 수 없습니다.")
+        : "파일 삭제 중 오류가 발생했습니다.";
+
+    console.error("[deleteStageFile] failed", {
+      status,
+      message: error?.message || String(error || ""),
+      stack: error?.stack || null,
+    });
+
+    return res.status(status).json({
       success: false,
-      message: "파일 삭제 중 오류가 발생했습니다.",
-      error: error.message,
+      message,
+      error: error?.message,
     });
   }
 }
@@ -960,6 +1039,7 @@ export async function updateReviewStatusByStage(req, res) {
     const pendingAdditionalEspritTriggerRequests = [];
     let requestStageMachineSelection = null;
     let isDuplicateRequestApprovalNoop = false;
+    const deferredCreditEvents = [];
 
     await session.withTransaction(async () => {
       const request = await Request.findById(id)
@@ -1429,6 +1509,7 @@ export async function updateReviewStatusByStage(req, res) {
             businessAnchorId: resolvedBusinessAnchorId,
             actorUserId: req.user?._id || null,
             session,
+            deferredCreditEvents,
           });
         }
 
@@ -1493,6 +1574,7 @@ export async function updateReviewStatusByStage(req, res) {
               businessAnchorId: resolvedBusinessAnchorId,
               actorUserId: req.user?._id || null,
               session,
+              deferredCreditEvents,
             });
           }
         }
@@ -1520,6 +1602,7 @@ export async function updateReviewStatusByStage(req, res) {
             businessAnchorId: resolvedBusinessAnchorId,
             actorUserId: req.user?._id || null,
             session,
+            deferredCreditEvents,
           });
           bumpRollbackCount(request, "cam");
         }
@@ -1530,6 +1613,7 @@ export async function updateReviewStatusByStage(req, res) {
             request,
             actorUserId: req.user?._id || null,
             session,
+            deferredCreditEvents,
           });
           bumpRollbackCount(request, "shipping");
         }
@@ -1539,6 +1623,21 @@ export async function updateReviewStatusByStage(req, res) {
       await request.save({ session });
       resultRequest = request;
     });
+
+    // 중요: 크레딧 이벤트는 트랜잭션 커밋 이후 발행한다.
+    // CAM 승인/롤백 직후 프론트가 /api/credits/balance를 조회해도 커밋된 값을 읽도록 보장한다.
+    for (const evt of deferredCreditEvents) {
+      try {
+        await emitCreditBalanceUpdatedToBusiness(evt);
+      } catch (emitErr) {
+        console.error("[REVIEW] deferred credit emit failed", {
+          requestId: resultRequest?.requestId || null,
+          requestMongoId: resultRequest?._id ? String(resultRequest._id) : null,
+          event: evt,
+          message: emitErr?.message || String(emitErr || ""),
+        });
+      }
+    }
 
     if (isDuplicateRequestApprovalNoop) {
       let responseData = {

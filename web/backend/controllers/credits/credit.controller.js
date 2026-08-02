@@ -13,25 +13,9 @@ import User from "../../models/user.model.js";
 import Request from "../../models/request.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 
-const __creditBalanceCache = new Map();
-
-function getCreditBalanceCacheValue(key) {
-  const hit = __creditBalanceCache.get(key);
-  if (!hit) return null;
-  if (typeof hit.expiresAt !== "number" || hit.expiresAt <= Date.now()) {
-    __creditBalanceCache.delete(key);
-    return null;
-  }
-  return hit.value;
-}
-
-function setCreditBalanceCacheValue(key, value, ttlMs) {
-  __creditBalanceCache.set(key, {
-    value,
-    expiresAt: Date.now() + ttlMs,
-  });
-  return value;
-}
+// NOTE:
+// - /api/credits/balance 는 GL 집계 SSOT를 즉시 반영해야 하므로
+//   프로세스 메모리 캐시를 사용하지 않는다.
 
 function roundUpUnit(amount, unit) {
   const n = Number(amount);
@@ -138,18 +122,7 @@ export async function getMyCreditBalance(req, res) {
   }
 
   const scope = { businessAnchorId: String(identity.businessAnchorId || "") };
-  const cacheKey = `credit-balance:${scope.businessAnchorId}`;
-  const cached = getCreditBalanceCacheValue(cacheKey);
-  if (cached) {
-    return res.json({
-      success: true,
-      data: cached,
-      cached: true,
-    });
-  }
-
   const balanceData = await getBalanceBreakdown(scope);
-  setCreditBalanceCacheValue(cacheKey, balanceData, 15 * 1000);
 
   return res.json({
     success: true,
