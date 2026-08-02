@@ -3129,6 +3129,8 @@ export async function updateRequestStatus(req, res) {
       }
     }
 
+    const prevManufacturerStage = String(request.manufacturerStage || "").trim();
+
     // 의뢰 상태 변경
     if (manufacturerStage === "취소") {
       const session = await mongoose.startSession();
@@ -3168,6 +3170,42 @@ export async function updateRequestStatus(req, res) {
       newStage: manufacturerStage,
       businessAnchorId: String(request.businessAnchorId || ""),
     });
+
+    // 취소 시 웹소켓 실시간 이벤트 발행 (requestor/manufacturer/admin)
+    if (manufacturerStage === "취소") {
+      const normalizedRequest = await normalizeRequestForResponse(request);
+      const requestMongoId = String(request._id || "").trim();
+      const requestorAnchorId = String(request.businessAnchorId || "").trim();
+
+      emitAppEventToRoles(
+        ["requestor", "manufacturer", "admin"],
+        "request:stage-changed",
+        {
+          source: "requestor-recent-cancel",
+          requestId: request.requestId || null,
+          requestMongoId: requestMongoId || null,
+          fromStage: prevManufacturerStage || null,
+          toStage: "취소",
+          businessAnchorId: requestorAnchorId || null,
+          ownerBusinessAnchorId: requestorAnchorId || null,
+          requestorBusinessAnchorId: requestorAnchorId || null,
+          manufacturerStage: "취소",
+          request: normalizedRequest,
+        },
+      );
+
+      if (prevManufacturerStage && prevManufacturerStage !== "취소") {
+        emitAppEventToRoles(["manufacturer", "admin"], "worksheet:count-update", {
+          source: "requestor-cancel",
+          action: "canceled",
+          stage: prevManufacturerStage,
+          delta: -1,
+          requestId: request.requestId || null,
+          requestMongoId: requestMongoId || null,
+          requestCategory: resolveRequestCategory(request),
+        });
+      }
+    }
 
     // 취소 시 대시보드 스냅샷 무효화 (백그라운드)
     if (manufacturerStage === "취소") {
