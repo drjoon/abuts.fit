@@ -584,8 +584,28 @@ async function migrateAnchor(anchor, { cli, legacyCollectionName }) {
   let migratedCount = 0;
   let existingCount = 0;
   let unresolvedCount = 0;
+  let resolvedIgnoredCount = 0;
   let skippedInvalidSampleCount = 0;
   const unresolvedSamples = [];
+
+  const orphanShippingPairKeySet = new Set();
+  const shippingPairMap = new Map();
+  for (const row of legacyRows || []) {
+    const type = String(row?.type || "").trim().toUpperCase();
+    const refType = String(row?.refType || "").trim();
+    const refId = String(row?.refId || "").trim();
+    const amountAbs = Math.abs(Math.round(Number(row?.amount || 0)));
+    if ((type !== "SPEND" && type !== "REFUND") || refType !== "SHIPPING_PACKAGE") continue;
+    if (!refId || !Types.ObjectId.isValid(refId) || amountAbs <= 0) continue;
+    const key = `${refId}:${amountAbs}`;
+    const prev = shippingPairMap.get(key) || { hasSpend: false, hasRefund: false };
+    if (type === "SPEND") prev.hasSpend = true;
+    if (type === "REFUND") prev.hasRefund = true;
+    shippingPairMap.set(key, prev);
+  }
+  for (const [k, v] of shippingPairMap.entries()) {
+    if (v.hasSpend && v.hasRefund) orphanShippingPairKeySet.add(k);
+  }
 
   for (const row of legacyRows) {
     const legacyId = String(row?._id || "").trim();
@@ -606,10 +626,7 @@ async function migrateAnchor(anchor, { cli, legacyCollectionName }) {
     const occurredAt = row?.createdAt || row?.updatedAt || new Date();
 
     if (amountAbs <= 0) {
-      unresolvedCount += 1;
-      if (unresolvedSamples.length < 20) {
-        unresolvedSamples.push({ legacyId, type, amount: amountSigned, reason: "zero_amount" });
-      }
+      resolvedIgnoredCount += 1;
       continue;
     }
 
@@ -691,6 +708,11 @@ async function migrateAnchor(anchor, { cli, legacyCollectionName }) {
       } else {
         const pkg = context.packageById.get(refId) || null;
         if (!pkg) {
+          const orphanPairKey = `${refId}:${amountAbs}`;
+          if (orphanShippingPairKeySet.has(orphanPairKey)) {
+            resolvedIgnoredCount += 1;
+            continue;
+          }
           unresolvedCount += 1;
           if (unresolvedSamples.length < 20) {
             unresolvedSamples.push({ legacyId, type, refType, refId, amount: amountSigned, reason: "shipping_package_not_found" });
@@ -841,6 +863,7 @@ async function migrateAnchor(anchor, { cli, legacyCollectionName }) {
     existingCount,
     migratedCount,
     unresolvedCount,
+    resolvedIgnoredCount,
     skippedInvalidSampleCount,
     purge,
     unresolvedSamples,
@@ -869,6 +892,7 @@ async function run() {
     let totalExisting = 0;
     let totalMigrated = 0;
     let totalUnresolved = 0;
+    let totalResolvedIgnored = 0;
     let totalSkippedSample = 0;
     let totalPurgedJournals = 0;
 
@@ -878,11 +902,12 @@ async function run() {
       totalExisting += r.existingCount;
       totalMigrated += r.migratedCount;
       totalUnresolved += r.unresolvedCount;
+      totalResolvedIgnored += r.resolvedIgnoredCount;
       totalSkippedSample += r.skippedInvalidSampleCount;
       totalPurgedJournals += Number(r?.purge?.deletedJournals || 0);
 
       console.log(
-        `[anchor] ${r.anchorName} (${r.anchorId}) legacy=${r.legacyCount} existing=${r.existingCount} migrated=${r.migratedCount} unresolved=${r.unresolvedCount} skippedSample=${r.skippedInvalidSampleCount} purgedHistory=${r.purge.deletedJournals}`,
+        `[anchor] ${r.anchorName} (${r.anchorId}) legacy=${r.legacyCount} existing=${r.existingCount} migrated=${r.migratedCount} unresolved=${r.unresolvedCount} resolvedIgnored=${r.resolvedIgnoredCount} skippedSample=${r.skippedInvalidSampleCount} purgedHistory=${r.purge.deletedJournals}`,
       );
 
       if (r.unresolvedSamples.length > 0) {
@@ -899,6 +924,7 @@ async function run() {
     console.log(`- existing: ${totalExisting}`);
     console.log(`- migrated: ${totalMigrated}`);
     console.log(`- unresolved: ${totalUnresolved}`);
+    console.log(`- resolvedIgnored: ${totalResolvedIgnored}`);
     console.log(`- skippedInvalidSample: ${totalSkippedSample}`);
     console.log(`- purgedHistoryJournals: ${totalPurgedJournals}`);
 

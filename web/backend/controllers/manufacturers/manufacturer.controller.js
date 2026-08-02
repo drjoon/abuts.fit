@@ -417,7 +417,21 @@ export async function triggerManufacturerDailySettlementSnapshotRecalc(
           },
           adjustAmount: {
             $sum: {
-              $cond: [{ $eq: ["$eventType", "ADJUST"] }, "$baseAmount", 0],
+              $cond: [
+                {
+                  $and: [
+                    { $eq: ["$eventType", "ADJUST"] },
+                    {
+                      $or: [
+                        { $eq: ["$creditKind", "PAID"] },
+                        { $eq: ["$creditKind", null] },
+                      ],
+                    },
+                  ],
+                },
+                "$baseAmount",
+                0,
+              ],
             },
           },
         },
@@ -915,7 +929,21 @@ export async function getManufacturerCreditDailySummary(req, res) {
           },
           adjustAmount: {
             $sum: {
-              $cond: [{ $eq: ["$eventType", "ADJUST"] }, "$baseAmount", 0],
+              $cond: [
+                {
+                  $and: [
+                    { $eq: ["$eventType", "ADJUST"] },
+                    {
+                      $or: [
+                        { $eq: ["$creditKind", "PAID"] },
+                        { $eq: ["$creditKind", null] },
+                      ],
+                    },
+                  ],
+                },
+                "$baseAmount",
+                0,
+              ],
             },
           },
         },

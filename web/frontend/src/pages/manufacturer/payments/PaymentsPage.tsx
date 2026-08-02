@@ -589,6 +589,9 @@ export const ManufacturerPaymentPage = () => {
                         지급
                       </TableHead>
                       <TableHead className="w-[120px] text-right">
+                        조정
+                      </TableHead>
+                      <TableHead className="w-[120px] text-right">
                         순액
                       </TableHead>
                     </TableRow>
@@ -626,6 +629,10 @@ export const ManufacturerPaymentPage = () => {
                         Number(r.payoutAmount || 0) !== 0
                           ? `₩${Number(r.payoutAmount).toLocaleString()}`
                           : "-";
+                      let adjustText =
+                        Number(r.adjustAmount || 0) !== 0
+                          ? `₩${Number(r.adjustAmount).toLocaleString()}`
+                          : "-";
                       let netText = `₩${Number(r.netAmount || 0).toLocaleString()}`;
 
                       if (requestSettlementFilter === "paid") {
@@ -640,6 +647,7 @@ export const ManufacturerPaymentPage = () => {
                         shippingText = `₩${shippingFreeAmount.toLocaleString()} (${shippingFreeCount})`;
                         refundText = "-";
                         payoutText = "-";
+                        adjustText = "-";
                         netText = "-";
                       }
 
@@ -661,6 +669,9 @@ export const ManufacturerPaymentPage = () => {
                           <TableCell className="text-right text-xs tabular-nums text-rose-700">
                             {payoutText}
                           </TableCell>
+                          <TableCell className="text-right text-xs tabular-nums text-amber-700">
+                            {adjustText}
+                          </TableCell>
                           <TableCell className="text-right text-xs font-semibold tabular-nums text-blue-700">
                             {netText}
                           </TableCell>
@@ -670,7 +681,7 @@ export const ManufacturerPaymentPage = () => {
                     {snapLoading && (
                       <TableRow>
                         <TableCell
-                          colSpan={7}
+                          colSpan={8}
                           className="text-center text-sm text-muted-foreground py-4"
                         >
                           불러오는 중...
@@ -680,7 +691,7 @@ export const ManufacturerPaymentPage = () => {
                     {!snapLoading && snapItems.length === 0 && (
                       <TableRow>
                         <TableCell
-                          colSpan={7}
+                          colSpan={8}
                           className="text-center text-sm text-muted-foreground py-8"
                         >
                           조회 결과가 없습니다.

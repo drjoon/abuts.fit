@@ -213,8 +213,25 @@ async function computeSalesmanOverviewSnapshot({ range, salesmanIds }) {
                 default: "EARN",
               },
             },
+            settlementEligible: {
+              $or: [
+                { $eq: ["$type", "PAYOUT"] },
+                {
+                  $and: [
+                    { $in: ["$type", ["EARN", "ADJUST"]] },
+                    {
+                      $or: [
+                        { $eq: ["$creditKind", "PAID"] },
+                        { $eq: ["$creditKind", null] },
+                      ],
+                    },
+                  ],
+                },
+              ],
+            },
           },
         },
+        { $match: { settlementEligible: true } },
         {
           $group: {
             _id: "$type",
@@ -943,8 +960,25 @@ export async function adminCreateSalesmanPayout(req, res) {
               default: "EARN",
             },
           },
+          settlementEligible: {
+            $or: [
+              { $eq: ["$type", "PAYOUT"] },
+              {
+                $and: [
+                  { $in: ["$type", ["EARN", "ADJUST"]] },
+                  {
+                    $or: [
+                      { $eq: ["$creditKind", "PAID"] },
+                      { $eq: ["$creditKind", null] },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
         },
       },
+      { $match: { settlementEligible: true } },
       {
         $group: {
           _id: "$type",
@@ -1421,8 +1455,25 @@ export async function adminGetSalesmanCredits(req, res) {
               },
             },
             ownerIdStr: { $toString: "$ownerId" },
+            settlementEligible: {
+              $or: [
+                { $eq: ["$type", "PAYOUT"] },
+                {
+                  $and: [
+                    { $in: ["$type", ["EARN", "ADJUST"]] },
+                    {
+                      $or: [
+                        { $eq: ["$creditKind", "PAID"] },
+                        { $eq: ["$creditKind", null] },
+                      ],
+                    },
+                  ],
+                },
+              ],
+            },
           },
         },
+        { $match: { settlementEligible: true } },
         {
           $group: {
             _id: {
@@ -1675,8 +1726,25 @@ export async function adminGetManufacturerSummary(req, res) {
           },
           ownerIdStr: { $toString: "$ownerId" },
           amountBase: { $ifNull: ["$amountExcludingVat", "$amount"] },
+          settlementEligible: {
+            $or: [
+              { $eq: ["$type", "PAYOUT"] },
+              {
+                $and: [
+                  { $in: ["$type", ["EARN", "ADJUST"]] },
+                  {
+                    $or: [
+                      { $eq: ["$creditKind", "PAID"] },
+                      { $eq: ["$creditKind", null] },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
         },
       },
+      { $match: { settlementEligible: true } },
     ];
 
     const [anchorCount, periodLedgerRows, allLedgerRows] = await Promise.all([
@@ -1921,8 +1989,25 @@ export async function adminGetSalesmanLedger(req, res) {
             },
           },
           amountBase: { $ifNull: ["$amountExcludingVat", "$amount"] },
+          settlementEligible: {
+            $or: [
+              { $eq: ["$type", "PAYOUT"] },
+              {
+                $and: [
+                  { $in: ["$type", ["EARN", "ADJUST"]] },
+                  {
+                    $or: [
+                      { $eq: ["$creditKind", "PAID"] },
+                      { $eq: ["$creditKind", null] },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
         },
       },
+      { $match: { settlementEligible: true } },
     ];
 
     if (typeRaw === "EARN" || typeRaw === "ADJUST" || typeRaw === "PAYOUT") {
@@ -2761,8 +2846,25 @@ export async function adminGetAdminCredits(req, res) {
                 default: "EARN",
               },
             },
+            settlementEligible: {
+              $or: [
+                { $eq: ["$type", "PAYOUT"] },
+                {
+                  $and: [
+                    { $in: ["$type", ["EARN", "ADJUST"]] },
+                    {
+                      $or: [
+                        { $eq: ["$creditKind", "PAID"] },
+                        { $eq: ["$creditKind", null] },
+                      ],
+                    },
+                  ],
+                },
+              ],
+            },
           },
         },
+        { $match: { settlementEligible: true } },
         {
           $group: {
             _id: { ownerId: "$ownerIdStr", type: "$type" },
@@ -2972,8 +3074,25 @@ export async function adminGetAdminLedger(req, res) {
             },
           },
           amountBase: { $ifNull: ["$amountExcludingVat", "$amount"] },
+          settlementEligible: {
+            $or: [
+              { $eq: ["$type", "PAYOUT"] },
+              {
+                $and: [
+                  { $in: ["$type", ["EARN", "ADJUST"]] },
+                  {
+                    $or: [
+                      { $eq: ["$creditKind", "PAID"] },
+                      { $eq: ["$creditKind", null] },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
         },
       },
+      { $match: { settlementEligible: true } },
     ];
 
     if (typeRaw === "EARN" || typeRaw === "ADJUST" || typeRaw === "PAYOUT") {
