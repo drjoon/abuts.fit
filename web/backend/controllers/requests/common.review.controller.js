@@ -1816,6 +1816,26 @@ export async function updateReviewStatusByStage(req, res) {
           toStage: "CAM",
           source: "review-status-noop-nc-reuse",
         });
+
+        // 버그: 이 noop-reuse 분기는 DB를 실제로 CAM으로 바꾸지만,
+        // 함수 하단의 스냅샷 재계산 트리거(triggerDashboardSummaryRefreshForAnchorId)에
+        // 도달하기 전에 조기 return하므로, 의뢰자 대시보드 스냅샷이 오래된 값(의뢰)으로
+        // 남아있어 웹소켓 이벤트로는 CAM이 보이다가 heavy summary refetch 시 "의뢰"로
+        // 원복되는 증상이 발생했다. 이 분기에서도 스냅샷 재계산을 반드시 트리거해야 한다.
+        const reuseBusinessAnchorId = String(
+          resultRequest?.businessAnchorId || "",
+        ).trim();
+        if (reuseBusinessAnchorId) {
+          triggerDashboardSummaryRefreshForAnchorId(
+            reuseBusinessAnchorId,
+            "review-status-noop-nc-reuse",
+          ).catch((err) =>
+            console.error(
+              "[REVIEW] triggerDashboardSummaryRefreshForAnchorId failed(noop-nc-reuse)",
+              err,
+            ),
+          );
+        }
       }
 
       return res.status(200).json({
@@ -1911,6 +1931,16 @@ export async function updateReviewStatusByStage(req, res) {
       });
     }
 
+    const currentManufacturerStage =
+      String(responseData?.manufacturerStage || "").trim() || null;
+    const normalizedPrevStage = String(previousManufacturerStage || "").trim();
+    const normalizedCurrentStage = String(currentManufacturerStage || "").trim();
+    const isRequestStageImmediateCamSkip =
+      String(status || "").trim() === "APPROVED" &&
+      String(effectiveStage || "").trim() === "request" &&
+      normalizedPrevStage === "의뢰" &&
+      normalizedCurrentStage === "CAM";
+
     emitWorksheetStageChanged(resultRequest, {
       reviewStage: String(stageOverride || stage || "").trim() || null,
       reviewStatus: String(status || "").trim() || null,
@@ -1918,8 +1948,10 @@ export async function updateReviewStatusByStage(req, res) {
         typeof previousManufacturerStage === "string"
           ? previousManufacturerStage
           : null,
-      toStage: String(responseData?.manufacturerStage || "").trim() || null,
-      source: "review-status",
+      toStage: currentManufacturerStage,
+      source: isRequestStageImmediateCamSkip
+        ? "review-status-cam-skip"
+        : "review-status",
     });
 
     if (pendingEspritTriggerRequest) {

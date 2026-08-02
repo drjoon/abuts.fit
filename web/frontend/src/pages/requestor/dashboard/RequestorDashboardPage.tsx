@@ -67,6 +67,21 @@ import { StlPreviewViewer } from "@/features/requests/components/StlPreviewViewe
 import { resolveImplantConnectionSpec } from "@/utils/implantConnectionSpec";
 import { getFileBlob, setFileBlob } from "@/shared/files/stlIndexedDb";
 
+const isDashDebugEnabled = () => {
+  if (typeof window === "undefined") return false;
+  return Boolean(import.meta.env.DEV && (window as any).__DASH_DEBUG__ === true);
+};
+
+const dashDebug = (label: string, payload?: unknown) => {
+  if (!isDashDebugEnabled()) return;
+  const ts = new Date().toISOString();
+  if (typeof payload === "undefined") {
+    console.log(`[RequestorDashboardDebug][${ts}] ${label}`);
+    return;
+  }
+  console.log(`[RequestorDashboardDebug][${ts}] ${label}`, payload);
+};
+
 // related files:
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/shared/components/CreditLedgerModal.tsx
@@ -77,6 +92,7 @@ import { getFileBlob, setFileBlob } from "@/shared/files/stlIndexedDb";
 // - web/frontend/src/shared/realtime/useAppEventDebouncedReload.ts
 // - web/backend/controllers/requests/dashboard.controller.js
 // - web/backend/controllers/requests/common.review.controller.js
+// - web/backend/services/requestSnapshotTriggers.service.js
 
 
 type DashboardOutletContext = {
@@ -127,6 +143,7 @@ export const RequestorDashboardPage = () => {
   const [hasSummaryHydrated, setHasSummaryHydrated] = useState(false);
   const [heavySummaryEnabled, setHeavySummaryEnabled] = useState(false);
   const heavySummaryRefreshTimerRef = useRef<number | null>(null);
+  const cardsSummaryRevalidateTimerRef = useRef<number | null>(null);
 
   const [unmachinableAlertModalOpen, setUnmachinableAlertModalOpen] =
     useState(false);
@@ -746,18 +763,26 @@ export const RequestorDashboardPage = () => {
           };
 
       if (refreshInFlightRef.current) {
-        queuedPlanRef.current = mergeRefreshPlan(queuedPlanRef.current, normalizedPlan);
+        const mergedQueued = mergeRefreshPlan(queuedPlanRef.current, normalizedPlan);
+        queuedPlanRef.current = mergedQueued;
+        dashDebug("refreshDashboard queued", {
+          incomingPlan: normalizedPlan,
+          queuedPlan: mergedQueued,
+        });
         return;
       }
 
+      dashDebug("refreshDashboard start", { plan: normalizedPlan });
       refreshInFlightRef.current = true;
       try {
         await executeDashboardRefreshPlan(normalizedPlan);
+        dashDebug("refreshDashboard done", { plan: normalizedPlan });
       } finally {
         refreshInFlightRef.current = false;
         const queued = queuedPlanRef.current;
         queuedPlanRef.current = null;
         if (queued) {
+          dashDebug("refreshDashboard drain queued", { queuedPlan: queued });
           await refreshDashboard(queued);
         }
       }
@@ -786,6 +811,7 @@ export const RequestorDashboardPage = () => {
         : null;
     const refreshDashboardAt = Number(locationState?.refreshDashboardAt || 0);
     if (!refreshDashboardAt) return;
+    dashDebug("location refresh trigger", { refreshDashboardAt });
     void refreshDashboard({
       cardsSummary: true,
       heavySummary: true,
@@ -806,13 +832,34 @@ export const RequestorDashboardPage = () => {
   // 서버 cards-summary 재조회 결과만 단일 SSOT로 사용한다.
 
   const scheduleHeavySummaryRefresh = useCallback(
-    (delayMs = 1200) => {
+    (delayMs = 1200, reason = "") => {
       if (heavySummaryRefreshTimerRef.current) {
         window.clearTimeout(heavySummaryRefreshTimerRef.current);
       }
+      const resolvedDelay = Math.max(0, Number(delayMs || 0));
+      dashDebug("scheduleHeavySummaryRefresh", { delayMs: resolvedDelay, reason });
       heavySummaryRefreshTimerRef.current = window.setTimeout(() => {
+        dashDebug("scheduleHeavySummaryRefresh fired", { reason });
         void refreshDashboard({ heavySummary: true });
-      }, Math.max(0, Number(delayMs || 0)));
+      }, resolvedDelay);
+    },
+    [refreshDashboard],
+  );
+
+  const scheduleCardsSummaryRevalidate = useCallback(
+    (delayMs = 1700, reason = "") => {
+      if (cardsSummaryRevalidateTimerRef.current) {
+        window.clearTimeout(cardsSummaryRevalidateTimerRef.current);
+      }
+      const resolvedDelay = Math.max(0, Number(delayMs || 0));
+      dashDebug("scheduleCardsSummaryRevalidate", {
+        delayMs: resolvedDelay,
+        reason,
+      });
+      cardsSummaryRevalidateTimerRef.current = window.setTimeout(() => {
+        dashDebug("scheduleCardsSummaryRevalidate fired", { reason });
+        void refreshDashboard({ cardsSummary: true });
+      }, resolvedDelay);
     },
     [refreshDashboard],
   );
@@ -822,6 +869,10 @@ export const RequestorDashboardPage = () => {
       if (heavySummaryRefreshTimerRef.current) {
         window.clearTimeout(heavySummaryRefreshTimerRef.current);
         heavySummaryRefreshTimerRef.current = null;
+      }
+      if (cardsSummaryRevalidateTimerRef.current) {
+        window.clearTimeout(cardsSummaryRevalidateTimerRef.current);
+        cardsSummaryRevalidateTimerRef.current = null;
       }
     };
   }, []);
@@ -839,12 +890,25 @@ export const RequestorDashboardPage = () => {
     delayMs: 120,
     shouldHandle: (evt) => {
       const myOrgId = normalizeEventId(user?.businessAnchorId);
-      if (!myOrgId) return false;
+      if (!myOrgId) {
+        dashDebug("event:shouldHandle skip(no-my-org)", { type: evt?.type });
+        return false;
+      }
 
       const eventOrgIds = extractEventBusinessAnchorIds(evt);
-      if (eventOrgIds.length === 0) return false;
+      if (eventOrgIds.length === 0) {
+        dashDebug("event:shouldHandle skip(no-event-org)", { type: evt?.type, data: evt?.data });
+        return false;
+      }
 
-      return eventOrgIds.includes(myOrgId);
+      const matched = eventOrgIds.includes(myOrgId);
+      dashDebug("event:shouldHandle", {
+        type: evt?.type,
+        myOrgId,
+        eventOrgIds,
+        matched,
+      });
+      return matched;
     },
     onMatch: (evt) => {
       const type = String(evt?.type || "").trim();
@@ -861,12 +925,48 @@ export const RequestorDashboardPage = () => {
           : {};
 
       const toStage = String(payload?.toStage || "").trim();
+      const fromStage = String(payload?.fromStage || "").trim();
+      const source = String((payload as any)?.source || "").trim();
       const requestMongoId = normalizeEventId(
         payload.requestMongoId ?? payload.request?._id,
       );
       const requestId = normalizeEventId(payload.requestId ?? payload.request?.requestId);
+      dashDebug("event:onMatch", {
+        type,
+        requestMongoId,
+        requestId,
+        fromStage,
+        toStage,
+        source,
+        payload,
+      });
 
       if (type === "request:stage-changed") {
+        const normalizedFrom = fromStage.toLowerCase();
+        const normalizedTo = toStage.toLowerCase();
+        const isRequestToCam =
+          (normalizedFrom === "의뢰" || normalizedFrom === "request") &&
+          (normalizedTo === "cam");
+        const isTrustedRequestToCamSource = [
+          "bg-file-processed",
+          "review-status-noop-nc-reuse",
+          "review-status-cam-skip",
+        ].includes(source);
+        const shouldIgnoreProvisionalRequestToCam =
+          isRequestToCam && !isTrustedRequestToCamSource;
+
+        if (shouldIgnoreProvisionalRequestToCam) {
+          dashDebug("event:stage-changed ignored provisional request->cam", {
+            fromStage,
+            toStage,
+            source,
+            requestMongoId,
+            requestId,
+          });
+          return;
+        }
+
+        let stagePatchMatchedCount = 0;
         if (requestMongoId || requestId) {
           queryClient.setQueryData<any>(summaryQueryKey, (prev) => {
             if (!prev?.success || !Array.isArray(prev?.data?.recentRequests)) return prev;
@@ -877,6 +977,7 @@ export const RequestorDashboardPage = () => {
                 (requestMongoId && rowMongoId === requestMongoId) ||
                 (requestId && rowRequestId === requestId)
               ) {
+                stagePatchMatchedCount += 1;
                 return {
                   ...row,
                   ...(payload.request && typeof payload.request === "object"
@@ -897,6 +998,18 @@ export const RequestorDashboardPage = () => {
           });
         }
 
+        const summaryCache = queryClient.getQueryData<any>(summaryQueryKey);
+        dashDebug("event:stage-changed patched recent", {
+          requestMongoId,
+          requestId,
+          fromStage,
+          toStage,
+          stagePatchMatchedCount,
+          recentRequestsSize: Array.isArray(summaryCache?.data?.recentRequests)
+            ? summaryCache.data.recentRequests.length
+            : null,
+        });
+
         void refreshDashboard({
           cardsSummary: true,
           bulk: true,
@@ -905,7 +1018,8 @@ export const RequestorDashboardPage = () => {
           pricingStats: true,
           referralTree: true,
         });
-        scheduleHeavySummaryRefresh();
+        scheduleHeavySummaryRefresh(1200, "request:stage-changed");
+        scheduleCardsSummaryRevalidate(1700, "request:stage-changed");
         return;
       }
 
@@ -947,7 +1061,7 @@ export const RequestorDashboardPage = () => {
           bulk: true,
           unmachinableOverview: true,
         });
-        scheduleHeavySummaryRefresh();
+        scheduleHeavySummaryRefresh(1200, "request:rnd-unmachinable-updated");
         return;
       }
 
@@ -980,7 +1094,7 @@ export const RequestorDashboardPage = () => {
           pricingStats: true,
           referralTree: true,
         });
-        scheduleHeavySummaryRefresh();
+        scheduleHeavySummaryRefresh(1200, "request:rnd-unmachinable-confirmed");
         return;
       }
 
@@ -995,7 +1109,8 @@ export const RequestorDashboardPage = () => {
           pricingStats: true,
           referralTree: true,
         });
-        scheduleHeavySummaryRefresh();
+        scheduleHeavySummaryRefresh(1200, "credit:balance-updated");
+        scheduleCardsSummaryRevalidate(1700, "credit:balance-updated");
         return;
       }
 
@@ -1013,7 +1128,7 @@ export const RequestorDashboardPage = () => {
       }
 
       void refreshDashboard({ cardsSummary: true, bulk: true });
-      scheduleHeavySummaryRefresh();
+      scheduleHeavySummaryRefresh(1200, `fallback:${type || "unknown"}`);
     },
   });
 
@@ -1702,6 +1817,57 @@ export const RequestorDashboardPage = () => {
   useEffect(() => {
     if (cardsSummaryResponse?.success || summaryResponse?.success) {
       setHasSummaryHydrated(true);
+    }
+  }, [cardsSummaryResponse, summaryResponse]);
+
+  useEffect(() => {
+    if (!cardsSummaryResponse?.success) return;
+    dashDebug("query:cardsSummary updated", {
+      stats: cardsSummaryResponse?.data?.stats || null,
+    });
+  }, [cardsSummaryResponse]);
+
+  useEffect(() => {
+    if (!summaryResponse?.success) return;
+    const recent = Array.isArray(summaryResponse?.data?.recentRequests)
+      ? summaryResponse.data.recentRequests
+      : [];
+    dashDebug("query:summary updated", {
+      stats: summaryResponse?.data?.stats || null,
+      recentCount: recent.length,
+      recentTop: recent.slice(0, 3).map((row: any) => ({
+        id: String(row?._id || row?.id || ""),
+        requestId: String(row?.requestId || ""),
+        stage: String(row?.manufacturerStage || ""),
+      })),
+    });
+  }, [summaryResponse]);
+
+  useEffect(() => {
+    if (!cardsSummaryResponse?.success || !summaryResponse?.success) return;
+    const cardsStats = cardsSummaryResponse?.data?.stats || {};
+    const summaryStats = summaryResponse?.data?.stats || {};
+    const keys = [
+      "totalRequests",
+      "inCam",
+      "inProduction",
+      "inPacking",
+      "inShipping",
+      "inTracking",
+      "canceled",
+      "unmachinableCount",
+    ] as const;
+
+    const mismatchKeys = keys.filter(
+      (key) => Number(cardsStats?.[key] ?? 0) !== Number(summaryStats?.[key] ?? 0),
+    );
+
+    if (mismatchKeys.length > 0) {
+      dashDebug("cards-summary mismatch with summary", {
+        mismatchKeys,
+        cards: Object.fromEntries(mismatchKeys.map((k) => [k, cardsStats?.[k] ?? 0])),
+        summary: Object.fromEntries(mismatchKeys.map((k) => [k, summaryStats?.[k] ?? 0])),
+      });
     }
   }, [cardsSummaryResponse, summaryResponse]);
 

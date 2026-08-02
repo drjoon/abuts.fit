@@ -6,6 +6,8 @@
 // - web/backend/controllers/requests/common.review.controller.js
 // - web/backend/controllers/requests/common.review.helpers.js
 // - web/backend/controllers/requests/common.requests.controller.js
+// - web/backend/services/requestSnapshotTriggers.service.js
+// - web/frontend/src/pages/admin/dashboard/AdminDashboardPage.tsx
 import mongoose, { Types } from "mongoose";
 import Request from "../../models/request.model.js";
 import { ApiError } from "../../utils/ApiError.js";
@@ -20,6 +22,7 @@ import {
 import s3Utils, { deleteFileFromS3 } from "../../utils/s3.utils.js";
 import { triggerEspritForNc } from "./common.review.esprit.js";
 import { ensureRequestCreditRollbackDeleteOnRollbackToCam } from "./common.review.helpers.js";
+import { triggerDashboardSummaryRefreshForAnchorId } from "../../services/requestSnapshotTriggers.service.js";
 
 async function assertAndClaimManufacturerRequestAccess({ req, request }) {
   if (req?.user?.role !== "manufacturer") return;
@@ -918,6 +921,36 @@ export async function deleteNcFileAndRollbackCam(req, res) {
       s3Key,
       bridgePath,
     });
+
+    const fromStage = String(request?.manufacturerStage || "").trim() || null;
+    const toStage = isRollbackToRequest ? "의뢰" : "CAM";
+    const businessAnchorId = String(request?.businessAnchorId || "").trim() || null;
+
+    emitAppEventToRoles(["requestor", "manufacturer", "admin"], "request:stage-changed", {
+      requestId: String(request.requestId || "").trim() || null,
+      requestMongoId: String(request._id || "").trim() || null,
+      requestorBusinessAnchorId: businessAnchorId,
+      businessAnchorId,
+      ownerBusinessAnchorId: businessAnchorId,
+      manufacturerStage: toStage,
+      reviewStage: rollbackStageKey,
+      reviewStatus: "PENDING",
+      fromStage,
+      toStage,
+      source: rollbackOnly ? "nc-rollback-only" : "nc-rollback-with-delete",
+    });
+
+    if (businessAnchorId) {
+      triggerDashboardSummaryRefreshForAnchorId(
+        businessAnchorId,
+        rollbackOnly ? "nc-rollback-only" : "nc-rollback-with-delete",
+      ).catch((err) => {
+        console.error(
+          "[NC_ROLLBACK] triggerDashboardSummaryRefreshForAnchorId failed",
+          err,
+        );
+      });
+    }
 
     return res.status(200).json({
       success: true,

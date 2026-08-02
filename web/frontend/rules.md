@@ -86,6 +86,15 @@
   - 공정 탭(의뢰/CAM/가공/세척.패킹/포장.발송/추적관리)의 검색 폭 정책은 개별 페이지에서 재정의하지 않고
     `src/pages/manufacturer/worksheet/custom_abutment/components/WorksheetStageSearchInput.tsx`에서 공통으로 관리합니다.
 
+- 제조사 워크시트 승인/롤백(화살표) 동작 SSOT:
+  - `PreviewModal`과 `WorksheetCardGrid`의 화살표 액션은 동일 공정 전이 규칙을 사용합니다.
+  - 승인(`→`)은 "다음 공정 준비 데이터 존재 여부" 기준으로 허용하며, 준비가 안 된 경우 백엔드 승인 로직(큐/재처리 분기)이 다음 공정 작업을 수행한 뒤 전이합니다.
+  - 롤백(`←`)은 CAM/가공/세척.패킹/포장.발송/추적관리 모두 `rollbackOnly` 기반 전이를 우선합니다.
+  - 관련 파일:
+    - `src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx`
+    - `src/pages/manufacturer/worksheet/custom_abutment/components/WorksheetCardGrid.tsx`
+    - `src/pages/manufacturer/worksheet/custom_abutment/hooks/useRequestFileHandlers.ts`
+
 - 기본 공용 검색 입력 컴포넌트는 `src/components/ui/input.tsx` (`@/components/ui/input`)입니다.
   - 관리자 크레딧 페이지 검색 UI 배치 기준 파일:
     - `src/pages/admin/credits/AdminCreditPage.tsx`

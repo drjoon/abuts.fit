@@ -3,6 +3,7 @@
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx
 // - web/backend/controllers/requests/common.review.controller.js
 import { useEffect, useRef, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
@@ -354,10 +355,6 @@ export const WorksheetCardGrid = ({
           if (isCamStage) return "cam";
           return "request";
         })();
-        const rollbackCountForStage = Number(
-          caseInfos.rollbackCounts?.[reviewStageKey] || 0,
-        );
-
         const packingShippingRollbackCount =
           reviewStageKey === "packing"
             ? Number(caseInfos.rollbackCounts?.shipping || 0)
@@ -391,29 +388,27 @@ export const WorksheetCardGrid = ({
               ? Number((caseInfos as any)?.connectionDiameter)
               : null;
 
-
-
-        const requestStageRollbackCount = Number(
-          caseInfos.rollbackCounts?.request || 0,
-        );
-        const requestStageCamRollbackCount = Number(
-          caseInfos.rollbackCounts?.machining || 0,
-        );
-
-        // 롤백 이력이 있을 때만 카드에서 바로 승인 가능
-        // (프리뷰 확인 후 승인하여 다음 공정으로 간 뒤 롤백한 경우 = 이미 검토 완료)
-        // 결과 파일만 있는 경우는 반드시 프리뷰 모달에서 확인 후 승인해야 함
-        const canApproveFromRollback =
-          hasEngravingImage &&
-          (rollbackCountForStage > 0 ||
-            (isCamStage && Number(caseInfos.rollbackCounts?.cam || 0) > 0) ||
-            (reviewStageKey === "packing" &&
-              packingShippingRollbackCount > 0) ||
-            (reviewStageKey === "cam" &&
-              Number(caseInfos.rollbackCounts?.machining || 0) > 0) ||
-            (reviewStageKey === "request" &&
-              (requestStageRollbackCount > 0 ||
-                requestStageCamRollbackCount > 0)));
+        const canApprove = (() => {
+          if (
+            reviewStageKey === "machining" ||
+            reviewStageKey === "packing" ||
+            reviewStageKey === "shipping" ||
+            reviewStageKey === "tracking"
+          ) {
+            if (reviewStageKey === "packing") {
+              return hasEngravingImage;
+            }
+            return Boolean(
+              caseInfos.stageFiles?.[reviewStageKey]?.s3Key ||
+                caseInfos.stageFiles?.[reviewStageKey]?.s3Url ||
+                caseInfos.stageFiles?.[reviewStageKey]?.filePath,
+            );
+          }
+          if (reviewStageKey === "cam") {
+            return true;
+          }
+          return true;
+        })();
 
         const isNcGenerating =
           reviewStageKey === "cam" &&
@@ -820,14 +815,14 @@ export const WorksheetCardGrid = ({
                 <button
                   type="button"
                   className={`h-7 w-7 inline-flex items-center justify-center rounded-md border bg-white/90 text-slate-600 shadow-sm transition hover:bg-slate-50 ${
-                    canApproveFromRollback && !isNcGenerating
+                    canApprove && !isNcGenerating
                       ? ""
                       : "opacity-40 cursor-not-allowed"
                   }`}
                   onClick={(e) => {
                     e.preventDefault();
                     e.stopPropagation();
-                    if (!canApproveFromRollback || isNcGenerating) return;
+                    if (!canApprove || isNcGenerating) return;
                     onApprove(request);
                   }}
                   aria-label="승인"
@@ -836,11 +831,15 @@ export const WorksheetCardGrid = ({
                       ? "각인 이미지가 필요합니다"
                       : isNcGenerating
                         ? "NC 재생성 완료를 기다리는 중입니다"
-                        : canApproveFromRollback
-                          ? "승인"
-                          : "롤백 이력이 있을 때만 승인 가능"
+                        : reviewStageKey === "cam" && !hasNcFile
+                          ? "NC가 없어 재생성 명령을 먼저 실행합니다"
+                          : reviewStageKey === "request" && !hasCamFile
+                            ? "다음 공정 준비를 위해 백엔드 작업 명령을 먼저 실행합니다"
+                            : canApprove
+                              ? "승인"
+                              : "다음 공정으로 넘길 파일/데이터가 필요합니다"
                   }
-                  disabled={!canApproveFromRollback || isNcGenerating}
+                  disabled={!canApprove || isNcGenerating}
                 >
                   <ArrowRight className="h-4 w-4" />
                 </button>

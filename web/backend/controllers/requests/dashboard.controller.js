@@ -730,7 +730,34 @@ export async function getMyDashboardCardsSummary(req, res) {
     }
 
     const businessAnchorId = String(freshUser.businessAnchorId || "").trim();
-    const cardsCacheKey = `dashboard-cards-summary:${String(userId || "")}:${businessAnchorId}:${period}`;
+
+    if (!debug && businessAnchorId) {
+      await waitForDashboardSummaryRefreshForAnchorId(businessAnchorId);
+    }
+
+    const cardsInFlightKey = `dashboard-cards-summary-inflight:${String(userId || "")}:${businessAnchorId}:${period}`;
+
+    let summarySnapshot = await getRequestorDashboardSummarySnapshot({
+      businessAnchorId,
+      periodKey: period,
+    });
+
+    // 스냅샷이 없을 때만 1회 재계산해서 채운다.
+    if (!summarySnapshot) {
+      const recomputedSnapshots =
+        await recomputeRequestorDashboardSummarySnapshotsForBusinessAnchorId(
+          businessAnchorId,
+        );
+      summarySnapshot =
+        recomputedSnapshots.find(
+          (row) => String(row?.periodKey || "") === String(period),
+        ) || null;
+    }
+
+    const snapshotComputedAtMs = summarySnapshot?.computedAt
+      ? new Date(summarySnapshot.computedAt).getTime()
+      : 0;
+    const cardsCacheKey = `dashboard-cards-summary:v2:${String(userId || "")}:${businessAnchorId}:${period}:${snapshotComputedAtMs}`;
 
     if (!debug) {
       const cached = getRequestPerfCacheValue(cardsCacheKey);
@@ -743,89 +770,8 @@ export async function getMyDashboardCardsSummary(req, res) {
       }
     }
 
-    const responseData = await withRequestPerfInFlight(cardsCacheKey, async () => {
-      const dateFilter = buildDateFilter(period);
-      const anchorObjectId = new Types.ObjectId(businessAnchorId);
-      const requestFilter = {
-        businessAnchorId: anchorObjectId,
-      };
-
-      const summarySnapshot =
-        !debug && businessAnchorId
-          ? (await getRequestorDashboardSummarySnapshot({
-              businessAnchorId,
-              periodKey: period,
-            })) ||
-            ((
-              await recomputeRequestorDashboardSummarySnapshotsForBusinessAnchorId(
-                businessAnchorId,
-              )
-            ).find((row) => String(row?.periodKey || "") === String(period)) ??
-              null)
-          : null;
-
+    const responseData = await withRequestPerfInFlight(cardsInFlightKey, async () => {
       const snapshotStats = summarySnapshot?.stats || null;
-
-      const [
-        unmachinablePendingConfirmCountRaw,
-        unmachinableJudgedTotalCountRaw,
-        unmachinableConfirmedCountRaw,
-        inProductionNonSampleCountRaw,
-      ] = await Promise.all([
-        Request.countDocuments({
-          ...requestFilter,
-          ...dateFilter,
-          manufacturerStage: { $ne: "취소" },
-          "rnd.unmachinableAt": { $ne: null },
-          "rnd.unmachinableConfirmedAt": null,
-        }),
-        Request.countDocuments({
-          ...requestFilter,
-          ...dateFilter,
-          manufacturerStage: { $ne: "취소" },
-          "rnd.unmachinableAt": { $ne: null },
-        }),
-        Request.countDocuments({
-          ...requestFilter,
-          ...dateFilter,
-          manufacturerStage: { $ne: "취소" },
-          "rnd.unmachinableAt": { $ne: null },
-          "rnd.unmachinableConfirmedAt": { $ne: null },
-        }),
-        Request.countDocuments({
-          ...requestFilter,
-          ...dateFilter,
-          manufacturerStage: { $in: ["machining", "가공"] },
-          $and: [
-            { source: { $ne: "manufacturer_sample" } },
-            { "price.rule": { $ne: "manufacturer_sample" } },
-            { requestCategory: { $nin: ["rnd_sample", "copied_sample"] } },
-          ],
-        }),
-      ]);
-
-      const resolvedUnmachinablePendingConfirmCount = Number(
-        unmachinablePendingConfirmCountRaw ??
-          snapshotStats?.unmachinablePendingConfirmCount ??
-          snapshotStats?.unmachinableCount ??
-          0,
-      );
-
-      const resolvedUnmachinableJudgedTotalCount = Number(
-        unmachinableJudgedTotalCountRaw ??
-          snapshotStats?.unmachinableJudgedTotalCount ??
-          0,
-      );
-
-      const resolvedUnmachinableConfirmedCount = Number(
-        unmachinableConfirmedCountRaw ??
-          snapshotStats?.unmachinableConfirmedCount ??
-          0,
-      );
-
-      const resolvedInProductionCount = Number(
-        inProductionNonSampleCountRaw ?? snapshotStats?.inProduction ?? 0,
-      );
 
       const data = {
         stats: {
@@ -851,18 +797,17 @@ export async function getMyDashboardCardsSummary(req, res) {
             tracking: 0,
             doneOrCanceled: 0,
             doneOrCanceledChange: "+0%",
+            unmachinableCount: 0,
+            unmachinablePendingConfirmCount: 0,
+            unmachinableConfirmedCount: 0,
+            unmachinableJudgedTotalCount: 0,
           }),
-          inProduction: resolvedInProductionCount,
-          unmachinableCount: resolvedUnmachinablePendingConfirmCount,
-          unmachinablePendingConfirmCount:
-            resolvedUnmachinablePendingConfirmCount,
-          unmachinableConfirmedCount: resolvedUnmachinableConfirmedCount,
-          unmachinableJudgedTotalCount: resolvedUnmachinableJudgedTotalCount,
         },
       };
 
       if (!debug) {
-        setRequestPerfCacheValue(cardsCacheKey, data, 15 * 1000);
+        // 스냅샷 computedAt 기반 버전드 캐시이므로 TTL을 늘려도 stale 위험이 낮다.
+        setRequestPerfCacheValue(cardsCacheKey, data, 30 * 1000);
       }
 
       return data;
@@ -903,51 +848,54 @@ export async function getMyDashboardSummary(req, res) {
     }
 
     const businessAnchorId = String(freshUser.businessAnchorId || "").trim();
-    // 대시보드 갱신 대기 제거: 백그라운드 갱신 중에도 기존 캐시/스냅샷을 즉시 반환
-    // if (!debug && businessAnchorId) {
-    //   await waitForDashboardSummaryRefreshForAnchorId(businessAnchorId);
-    // }
 
-    const summaryCacheKey = `dashboard-summary:${String(
-      req.user?._id || "",
-    )}:${String(req.user?.businessAnchorId || "")}:${period}`;
-
-    if (!debug) {
-      const cached = getRequestPerfCacheValue(summaryCacheKey);
-      if (cached) {
-        return res.status(200).json({
-          success: true,
-          data: cached,
-          cached: true,
-        });
-      }
+    if (!debug && businessAnchorId) {
+      await waitForDashboardSummaryRefreshForAnchorId(businessAnchorId);
     }
 
+    const summaryInFlightKey = `dashboard-summary-inflight:${String(
+      userId || "",
+    )}:${businessAnchorId}:${period}`;
+
     const responseData = await withRequestPerfInFlight(
-      summaryCacheKey,
+      summaryInFlightKey,
       async () => {
-        const requestFilter = buildRequestorOrgFilter(req);
-        const businessAnchorId = String(
-          req.user?.businessAnchorId || "",
-        ).trim();
+        const requestFilter = Types.ObjectId.isValid(businessAnchorId)
+          ? { businessAnchorId: new Types.ObjectId(businessAnchorId) }
+          : buildRequestorOrgFilter(req);
 
         const dateFilter = buildDateFilter(period);
 
-        const summarySnapshot =
-          !debug && businessAnchorId
-            ? (await getRequestorDashboardSummarySnapshot({
-                businessAnchorId,
-                periodKey: period,
-              })) ||
-              ((
-                await recomputeRequestorDashboardSummarySnapshotsForBusinessAnchorId(
-                  businessAnchorId,
-                )
-              ).find(
-                (row) => String(row?.periodKey || "") === String(period),
-              ) ??
-                null)
-            : null;
+        let summarySnapshot = await getRequestorDashboardSummarySnapshot({
+          businessAnchorId,
+          periodKey: period,
+        });
+
+        // 스냅샷이 없을 때만 1회 재계산해서 채운다.
+        // (매 요청 재계산 금지: 리프레시 응답 지연 방지)
+        if (!summarySnapshot) {
+          const recomputedSnapshots =
+            await recomputeRequestorDashboardSummarySnapshotsForBusinessAnchorId(
+              businessAnchorId,
+            );
+          summarySnapshot =
+            recomputedSnapshots.find(
+              (row) => String(row?.periodKey || "") === String(period),
+            ) || null;
+        }
+
+        const summarySnapshotComputedAtMs = summarySnapshot?.computedAt
+          ? new Date(summarySnapshot.computedAt).getTime()
+          : 0;
+        const summaryCacheKey = `dashboard-summary:v2:${String(userId || "")}:${businessAnchorId}:${period}:${summarySnapshotComputedAtMs}`;
+
+        if (!debug) {
+          const cachedSummary = getRequestPerfCacheValue(summaryCacheKey);
+          if (cachedSummary) {
+            return cachedSummary;
+          }
+        }
+
         const riskRequestFilter = {
           ...requestFilter,
           manufacturerStage: {
@@ -1365,7 +1313,8 @@ export async function getMyDashboardSummary(req, res) {
         }
 
         if (!debug) {
-          setRequestPerfCacheValue(summaryCacheKey, responseData, 15 * 1000);
+          // 스냅샷 computedAt 기반 버전드 캐시이므로 TTL을 늘려도 stale 위험이 낮다.
+          setRequestPerfCacheValue(summaryCacheKey, responseData, 30 * 1000);
         }
 
         return responseData;

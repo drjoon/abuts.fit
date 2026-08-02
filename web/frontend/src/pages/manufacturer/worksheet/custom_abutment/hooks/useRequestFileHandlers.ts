@@ -608,12 +608,7 @@ export const useRequestFileHandlers = ({
               stage: stageKey,
               status: params.status,
               reason: params.reason || "",
-              forceReprocess:
-                params.status === "APPROVED" &&
-                stageKey === "request" &&
-                params.approvalTriggerSource === "preview-modal"
-                  ? true
-                  : params.forceReprocess === true,
+              forceReprocess: params.forceReprocess === true,
               processBothHexVariants: params.processBothHexVariants === true,
               approvalTriggerSource: params.approvalTriggerSource || "unknown",
             }),
@@ -756,9 +751,7 @@ export const useRequestFileHandlers = ({
           const successDescription =
             params.status === "APPROVED"
               ? stageKey === "request"
-                ? triggerSource === "preview-modal"
-                  ? "프리뷰모달 승인으로 Esprit BG 재실행을 요청했습니다. 처리 완료 후 상태가 자동으로 업데이트됩니다."
-                  : "작업 탭 승인으로 처리했습니다. 기존 작업 이력이 재사용 가능하면 CAM으로 넘기고, 불가하면 BG를 재처리합니다."
+                ? "의뢰 승인으로 처리했습니다. 기존 작업 이력이 재사용 가능하면 CAM으로 넘기고, 불가하면 BG를 재처리합니다."
                 : stageKey === "cam" || stageKey === "machining"
                   ? "작업 명령이 접수되었습니다. 처리 완료 후 상태가 자동으로 업데이트됩니다."
                   : "승인되었습니다."

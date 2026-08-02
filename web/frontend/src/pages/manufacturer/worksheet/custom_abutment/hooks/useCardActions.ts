@@ -3,6 +3,8 @@
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/WorksheetCardGrid.tsx
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx
 // - web/backend/controllers/requests/common.review.controller.js
 import { useCallback } from "react";
 import { type ManufacturerRequest, deriveStageForFilter, getReviewStageKeyByTab } from "@/pages/manufacturer/worksheet/custom_abutment/utils/request";
@@ -11,6 +13,7 @@ interface CardActionHandlers {
   handleDeleteStageFile: (opts: any) => Promise<void>;
   handleDeleteNc: (req: ManufacturerRequest, opts: any) => Promise<void>;
   handleUpdateReviewStatus: (opts: any) => Promise<void>;
+  handleRequestNcRegenerate?: (req: ManufacturerRequest) => Promise<boolean | void>;
 }
 
 export const useCardActions = (
@@ -20,7 +23,12 @@ export const useCardActions = (
   handlers: CardActionHandlers,
   realtimeBaseRef: React.MutableRefObject<Record<string, number>>,
 ) => {
-  const { handleDeleteStageFile, handleDeleteNc, handleUpdateReviewStatus } = handlers;
+  const {
+    handleDeleteStageFile,
+    handleDeleteNc,
+    handleUpdateReviewStatus,
+    handleRequestNcRegenerate,
+  } = handlers;
 
   const handleCardRollback = useCallback(
     async (req: ManufacturerRequest) => {
@@ -100,6 +108,19 @@ export const useCardActions = (
         isCamStage,
         isMachiningStage,
       });
+
+      // CAM 승인 전 NC가 없으면 승인 대신 NC 생성 명령을 먼저 수행한다.
+      // NC 생성 결과는 백그라운드/웹소켓 동기화로 반영된다.
+      if (stageKey === "cam") {
+        const hasNcFile = Boolean(req?.caseInfos?.ncFile?.s3Key);
+        if (!hasNcFile) {
+          if (handleRequestNcRegenerate) {
+            void handleRequestNcRegenerate(req);
+          }
+          return;
+        }
+      }
+
       if (stageKey === "request") {
         realtimeBaseRef.current[String(req.requestId || "").trim()] = Date.now();
       }
@@ -112,7 +133,14 @@ export const useCardActions = (
         approvalTriggerSource: "worksheet-tab",
       });
     },
-    [tabStage, isCamStage, isMachiningStage, handleUpdateReviewStatus, realtimeBaseRef],
+    [
+      tabStage,
+      isCamStage,
+      isMachiningStage,
+      handleRequestNcRegenerate,
+      handleUpdateReviewStatus,
+      realtimeBaseRef,
+    ],
   );
 
   return { handleCardRollback, handleCardApprove };

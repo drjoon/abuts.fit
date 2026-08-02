@@ -3,6 +3,9 @@
 // - web/backend/controllers/requests/common.review.controller.js
 // - web/backend/controllers/requests/common.requests.controller.js
 // - web/frontend/src/features/layout/DashboardLayout.tsx
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/hooks/useCardActions.ts
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/WorksheetCardGrid.tsx
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx
 import {
   useMemo,
   useEffect,
@@ -916,6 +919,45 @@ export const RequestPage = ({
     [handleUploadByStage, tabStage],
   );
 
+  const handleRequestNcRegenerate = useCallback(
+    async (req: ManufacturerRequest) => {
+      if (!token || !req?.requestId) return false;
+      try {
+        const requestId = String(req.requestId || "").trim();
+        if (!requestId) return false;
+        const res = await fetch(
+          `/api/requests/by-request/${encodeURIComponent(requestId)}/nc-file/regenerate-2phase`,
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${token}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({}),
+          },
+        );
+        const body = await res.json().catch(() => null);
+        if (!res.ok || body?.success === false) {
+          throw new Error(body?.message || "NC 재생성 요청에 실패했습니다.");
+        }
+        toast({
+          title: "NC 재생성 요청 완료",
+          description:
+            "NC 생성을 시작했습니다. 완료 후 웹소켓으로 상태가 자동 반영됩니다.",
+        });
+        return true;
+      } catch (e: any) {
+        toast({
+          title: "NC 재생성 요청 실패",
+          description: e?.message || "네트워크 오류",
+          variant: "destructive",
+        });
+        return false;
+      }
+    },
+    [toast, token],
+  );
+
   const { handleCardRollback, handleCardApprove } = useCardActions(
     tabStage,
     isCamStage,
@@ -924,6 +966,7 @@ export const RequestPage = ({
       handleDeleteStageFile,
       handleDeleteNc,
       handleUpdateReviewStatus,
+      handleRequestNcRegenerate,
     },
     realtimeBaseRef,
   );

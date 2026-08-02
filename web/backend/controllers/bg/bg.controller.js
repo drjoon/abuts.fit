@@ -1,9 +1,12 @@
 // related files:
 // - web/backend/rules.md
 // - web/backend/controllers/requests/common.review.helpers.js
+// - web/backend/controllers/requests/common.review.controller.js
+// - web/backend/services/requestSnapshotTriggers.service.js
 // - web/backend/services/creditBalance.service.js
 // - web/backend/app.js
 // - web/backend/server.js
+// - web/frontend/src/pages/requestor/dashboard/RequestorDashboardPage.tsx
 import { Types } from "mongoose";
 import s3Utils from "../../utils/s3.utils.js";
 import { asyncHandler } from "../../utils/asyncHandler.js";
@@ -30,6 +33,7 @@ import {
   resolvePrcFileNames,
   resolveConnectionTargetDiameter,
 } from "../requests/prcMapping.utils.js";
+import { triggerDashboardSummaryRefreshForAnchorId } from "../../services/requestSnapshotTriggers.service.js";
 
 const BG_STORAGE_BASE =
   process.env.BG_STORAGE_PATH ||
@@ -1150,23 +1154,59 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
         .trim()
         .toLowerCase() === "success";
     if (isSuccess && stageChangedSteps.has(step) && normalizedUpdatedRequest) {
-      emitAppEventToRoles(["manufacturer", "admin"], "request:stage-changed", {
-        source: "bg-file-processed",
-        requestId: request?.requestId || null,
-        requestMongoId: String(request?._id || "").trim() || null,
-        fromStage: String(request?.manufacturerStage || "").trim() || null,
-        toStage:
-          String(normalizedUpdatedRequest?.manufacturerStage || "").trim() ||
-          null,
-        reviewStage:
-          step === "2-filled"
-            ? "request"
-            : step === "3-nc"
-              ? "cam"
-              : "machining",
-        reviewStatus: "APPROVED",
-        request: normalizedUpdatedRequest,
-      });
+      const requestorBusinessAnchorId =
+        String(
+          normalizedUpdatedRequest?.businessAnchorId ||
+            normalizedUpdatedRequest?.requestorBusinessAnchorId ||
+            normalizedUpdatedRequest?.requestor?.businessAnchorId ||
+            request?.businessAnchorId ||
+            request?.requestorBusinessAnchorId ||
+            request?.requestor?.businessAnchorId ||
+            "",
+        ).trim() || null;
+
+      emitAppEventToRoles(
+        ["requestor", "manufacturer", "admin"],
+        "request:stage-changed",
+        {
+          source: "bg-file-processed",
+          requestId: request?.requestId || null,
+          requestMongoId: String(request?._id || "").trim() || null,
+          requestorBusinessAnchorId,
+          businessAnchorId: requestorBusinessAnchorId,
+          ownerBusinessAnchorId: requestorBusinessAnchorId,
+          fromStage: String(request?.manufacturerStage || "").trim() || null,
+          toStage:
+            String(normalizedUpdatedRequest?.manufacturerStage || "").trim() ||
+            null,
+          reviewStage:
+            step === "2-filled"
+              ? "request"
+              : step === "3-nc"
+                ? "cam"
+                : "machining",
+          reviewStatus: "APPROVED",
+          request: normalizedUpdatedRequest,
+        },
+      );
+
+      if (requestorBusinessAnchorId) {
+        triggerDashboardSummaryRefreshForAnchorId(
+          requestorBusinessAnchorId,
+          `bg-file-processed:${step}`,
+        ).catch((refreshError) => {
+          console.error(
+            "[BG-Callback] triggerDashboardSummaryRefreshForAnchorId failed",
+            {
+              requestId: request?.requestId || null,
+              requestMongoId: String(request?._id || "").trim() || null,
+              requestorBusinessAnchorId,
+              step,
+              message: refreshError?.message || String(refreshError || ""),
+            },
+          );
+        });
+      }
     }
   } catch {
     // ignore

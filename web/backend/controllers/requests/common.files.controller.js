@@ -17,6 +17,8 @@ import {
 import s3Utils, {
   getSignedUrl as getSignedUrlForS3Key,
 } from "../../utils/s3.utils.js";
+import { emitAppEventToRoles } from "../../socket.js";
+import { triggerDashboardSummaryRefreshForAnchorId } from "../../services/requestSnapshotTriggers.service.js";
 
 export async function getStlFileUrl(req, res) {
   return getCamFileUrl(req, res);
@@ -279,6 +281,9 @@ export async function deleteCamFileAndRollback(req, res) {
 
     // 롤백 전용 모드: 파일/정보 삭제 없이 공정 단계만 변경
     if (rollbackOnly) {
+      const previousManufacturerStage = String(
+        request.manufacturerStage || "",
+      ).trim();
       ensureReviewByStageDefaults(request);
       request.caseInfos.reviewByStage.cam = {
         status: "PENDING",
@@ -290,13 +295,45 @@ export async function deleteCamFileAndRollback(req, res) {
       request.manufacturerStage = "의뢰";
       await request.save();
 
+      const normalized = await normalizeRequestForResponse(request);
+      const businessAnchorId = String(request?.businessAnchorId || "").trim() || null;
+      emitAppEventToRoles(["requestor", "manufacturer", "admin"], "request:stage-changed", {
+        source: "cam-file-rollback-only",
+        requestId: String(request?.requestId || "").trim() || null,
+        requestMongoId: String(request?._id || "").trim() || null,
+        requestorBusinessAnchorId: businessAnchorId,
+        businessAnchorId,
+        ownerBusinessAnchorId: businessAnchorId,
+        fromStage: previousManufacturerStage || null,
+        toStage: "의뢰",
+        reviewStage: "cam",
+        reviewStatus: "PENDING",
+        manufacturerStage: "의뢰",
+        request: normalized,
+      });
+
+      if (businessAnchorId) {
+        triggerDashboardSummaryRefreshForAnchorId(
+          businessAnchorId,
+          "cam-file-rollback-only",
+        ).catch((err) => {
+          console.error(
+            "[CAM_ROLLBACK] triggerDashboardSummaryRefreshForAnchorId failed",
+            err,
+          );
+        });
+      }
+
       return res.status(200).json({
         success: true,
-        data: await normalizeRequestForResponse(request),
+        data: normalized,
       });
     }
 
     // camFile 제거, 상태 롤백
+    const previousManufacturerStage = String(
+      request.manufacturerStage || "",
+    ).trim();
     request.caseInfos = request.caseInfos || {};
     request.caseInfos.camFile = undefined;
     ensureReviewByStageDefaults(request);
@@ -314,9 +351,38 @@ export async function deleteCamFileAndRollback(req, res) {
 
     await request.save();
 
+    const normalized = await normalizeRequestForResponse(request);
+    const businessAnchorId = String(request?.businessAnchorId || "").trim() || null;
+    emitAppEventToRoles(["requestor", "manufacturer", "admin"], "request:stage-changed", {
+      source: "cam-file-rollback-with-delete",
+      requestId: String(request?.requestId || "").trim() || null,
+      requestMongoId: String(request?._id || "").trim() || null,
+      requestorBusinessAnchorId: businessAnchorId,
+      businessAnchorId,
+      ownerBusinessAnchorId: businessAnchorId,
+      fromStage: previousManufacturerStage || null,
+      toStage: "의뢰",
+      reviewStage: "cam",
+      reviewStatus: "PENDING",
+      manufacturerStage: "의뢰",
+      request: normalized,
+    });
+
+    if (businessAnchorId) {
+      triggerDashboardSummaryRefreshForAnchorId(
+        businessAnchorId,
+        "cam-file-rollback-with-delete",
+      ).catch((err) => {
+        console.error(
+          "[CAM_ROLLBACK] triggerDashboardSummaryRefreshForAnchorId failed",
+          err,
+        );
+      });
+    }
+
     return res.status(200).json({
       success: true,
-      data: request,
+      data: normalized,
     });
   } catch (error) {
     res.status(500).json({

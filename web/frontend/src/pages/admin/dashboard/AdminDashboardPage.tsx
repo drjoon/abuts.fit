@@ -5,6 +5,8 @@
 // - web/backend/models/ledgerLine.model.js
 // - web/backend/services/creditBalance.service.js
 // - web/frontend/src/pages/manufacturer/payments/PaymentsPage.tsx
+// - web/frontend/src/shared/realtime/useAppEventDebouncedReload.ts
+// - web/backend/controllers/requests/common.nc.controller.js
 // - web/backend/rules.md
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -18,6 +20,7 @@ import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { DashboardShell } from "@/shared/ui/dashboard/DashboardShell";
 import { useAdminCommBadges } from "@/shared/hooks/useAdminCommBadges";
+import { useAppEventDebouncedReload } from "@/shared/realtime/useAppEventDebouncedReload";
 import {
   Users,
   FileText,
@@ -446,7 +449,7 @@ export const AdminDashboardPage = () => {
     });
   };
 
-  const { data: riskSummaryResponse } = useQuery({
+  const { data: riskSummaryResponse, refetch: refetchRiskSummary } = useQuery({
     queryKey: ["admin-dashboard-risk-summary", period],
     enabled: Boolean(token) && user?.role === "admin",
     staleTime: 60 * 1000,
@@ -543,6 +546,23 @@ export const AdminDashboardPage = () => {
       return res.data;
     },
     retry: false,
+  });
+
+  useAppEventDebouncedReload({
+    enabled: Boolean(token) && user?.role === "admin",
+    eventTypes: [
+      "request:stage-changed",
+      "request:delivery-updated",
+      "request:delivery-updated-batch",
+      "credit:balance-updated",
+      "worksheet:count-update",
+    ],
+    delayMs: 120,
+    deferWhenEditing: false,
+    onMatch: () => {
+      void refetchAdminDashboard();
+      void refetchRiskSummary();
+    },
   });
 
   useEffect(() => {

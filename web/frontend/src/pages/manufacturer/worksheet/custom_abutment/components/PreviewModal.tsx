@@ -3,6 +3,7 @@
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/WorksheetCardGrid.tsx
 // - web/backend/controllers/requests/common.requests.controller.js
 // - web/backend/modules/requests/request.routes.js
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -407,7 +408,7 @@ type PreviewModalProps = {
   ) => Promise<void>;
   onDeleteNc: (
     req: ManufacturerRequest,
-    opts?: { nextStage?: string; navigate?: boolean },
+    opts?: { nextStage?: string; rollbackOnly?: boolean; navigate?: boolean },
   ) => Promise<void>;
   onDeleteStageFile: (params: {
     req: ManufacturerRequest;
@@ -1003,9 +1004,12 @@ export const PreviewModal = ({
       );
     }
     if (isCamStage) {
-      return !!activeReq?.caseInfos?.ncFile?.s3Key || !!previewNcText;
+      // NC가 없어도 승인 버튼으로 재생성 명령을 먼저 수행할 수 있게 허용한다.
+      return true;
     }
-    return !!activeReq?.caseInfos?.camFile?.s3Key || !!previewFiles.cam;
+    // request 단계도 CAM 파일 유무와 무관하게 승인 가능하며,
+    // 백엔드가 필요한 작업(재사용/재처리)을 결정한다.
+    return true;
   })();
 
   const isNcGenerating =
@@ -2129,13 +2133,17 @@ export const PreviewModal = ({
                           rollbackOnly: true,
                           navigate: false,
                         });
-                      } else if (isCamStage) {
+                      } else if (stageKey === "cam") {
                         await onDeleteNc(activeReq, {
                           nextStage: "request",
+                          rollbackOnly: true,
                           navigate: false,
                         });
                       } else {
-                        await onDeleteCam(activeReq, { navigate: false });
+                        await onDeleteCam(activeReq, {
+                          rollbackOnly: true,
+                          navigate: false,
+                        });
                       }
                     };
 
@@ -2245,6 +2253,15 @@ export const PreviewModal = ({
                         }
                       }
 
+                      if (currentReviewStageKey === "cam") {
+                        const hasNcFile =
+                          !!activeReq?.caseInfos?.ncFile?.s3Key || !!previewNcText;
+                        if (!hasNcFile) {
+                          await onRegenerateNc();
+                          return;
+                        }
+                      }
+
                       // 승인 처리: keepPreviewOpen=false → 승인 후 모달이 즉시 닫힌다.
                       // BG 앱 트리거(Esprit 등)는 백엔드 ReviewApprovalQueue에서 직렬로 처리된다.
                       // 다음 의뢰는 자동으로 열리지 않는다(연속 승인으로 인한 충돌 방지).
@@ -2253,8 +2270,9 @@ export const PreviewModal = ({
                         status: "APPROVED",
                         stageOverride: currentReviewStageKey,
                         keepPreviewOpen: false,
-                        // 프리뷰모달에서 의뢰 단계(의뢰→CAM) 승인 시에는 항상 BG(Esprit) 재실행
-                        forceReprocess: currentReviewStageKey === "request",
+                        // 기본 승인에서는 기존 작업 이력을 우선 재사용한다.
+                        // 강제 재실행이 필요한 경우에만 forceReprocess=true를 명시 전달한다.
+                        forceReprocess: false,
                         approvalTriggerSource: "preview-modal",
                       });
 
