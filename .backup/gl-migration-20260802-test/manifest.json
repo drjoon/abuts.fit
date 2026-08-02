@@ -1,0 +1,35 @@
+{
+  "createdAt": "2026-08-02T00:02:45.719Z",
+  "nodeEnv": "test",
+  "dbName": "abuts_fit_test",
+  "collections": {
+    "creditledgers": {
+      "file": "creditledgers.ndjson",
+      "count": 520
+    },
+    "ledgerjournals": {
+      "file": "ledgerjournals.ndjson",
+      "count": 9
+    },
+    "ledgerlines": {
+      "file": "ledgerlines.ndjson",
+      "count": 24
+    },
+    "businesscreditbalances": {
+      "file": "businesscreditbalances.ndjson",
+      "count": 25
+    },
+    "businessanchors": {
+      "file": "businessanchors.ndjson",
+      "count": 25
+    },
+    "requests": {
+      "file": "requests.ndjson",
+      "count": 505
+    },
+    "shippingpackages": {
+      "file": "shippingpackages.ndjson",
+      "count": 78
+    }
+  }
+}
