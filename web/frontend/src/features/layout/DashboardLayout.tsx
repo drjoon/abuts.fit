@@ -486,7 +486,16 @@ export const DashboardLayout = () => {
       return;
     }
 
-    setLoadingCreditBalance(true);
+    const shouldShowLoading =
+      creditBalance === null &&
+      paidCredit === null &&
+      freeRequestCredit === null &&
+      freeShippingCredit === null;
+
+    if (shouldShowLoading) {
+      setLoadingCreditBalance(true);
+    }
+
     try {
       const res = await apiFetch<CreditBalanceApiResponse>({
         path: "/api/credits/balance",
@@ -512,9 +521,19 @@ export const DashboardLayout = () => {
       setFreeRequestCredit(null);
       setFreeShippingCredit(null);
     } finally {
-      setLoadingCreditBalance(false);
+      if (shouldShowLoading) {
+        setLoadingCreditBalance(false);
+      }
     }
-  }, [isPracticeUser, token, user]);
+  }, [
+    creditBalance,
+    freeRequestCredit,
+    freeShippingCredit,
+    isPracticeUser,
+    paidCredit,
+    token,
+    user,
+  ]);
 
   useEffect(() => {
     fetchCreditBalance();

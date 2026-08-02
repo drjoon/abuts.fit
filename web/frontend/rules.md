@@ -280,6 +280,10 @@
     - 강한 일관성이 필요한 경우에도 전체 재조회는 `withLoading=false` 또는 섹션 단위 최소 로더로 제한합니다.
     - payload에 식별자(`requestId`, `businessAnchorId`, `transferId` 등)가 있으면 해당 엔티티만 갱신합니다.
     - 위 원칙은 크레딧/정산/의뢰/배송/practice/채팅 등 모든 app-event에 동일하게 적용합니다.
+    - 추가 강제: 이벤트성 재조회 때문에 페이지의 `isInitialLoading`이 다시 true가 되지 않게 설계합니다.
+      - 초기 진입 1회 로딩만 전역/페이지 스켈레톤을 허용하고, 이후 이벤트 재조회는 기존 데이터 유지 + silent refresh를 사용합니다.
+      - 특히 Layout 레벨의 보조 데이터(예: 크레딧 잔액) 재조회 플래그를 페이지 전체 스켈레톤 조건에 직접 연결하지 않습니다.
+      - 권장 패턴: `loading` 플래그는 `값이 비어있는 첫 fetch`에서만 true, 이후는 background refresh로 처리합니다.
   - 대시보드 리팩터링 표준 패턴(강제) — `HEAVY/LIGHT SUMMARY SPLIT`:
     - 쿼리 분리: `cards summary(경량)`와 `heavy summary(목록/상세)`를 분리합니다.
     - 이벤트 처리 순서(고정): `payload 즉시 patch` → `coalesced 검증 refetch 1회`

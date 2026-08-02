@@ -1167,8 +1167,7 @@ export const RequestorDashboardPage = () => {
     return recentRequests.filter((r) => isUnmachinableRequest(r)).length;
   }, [dashboardStatsSource, recentRequests]);
 
-  const isInitialLoading =
-    isLoading || isBulkLoading || loadingCreditBalance || !summaryResponse;
+  const isInitialLoading = isLoading || isBulkLoading || !summaryResponse;
 
   const openEditDialogFromRequest = (request: any) => {
     const mongoId = request._id || request.id;
