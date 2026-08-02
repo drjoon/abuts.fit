@@ -6,6 +6,9 @@
 // - web/backend/controllers/requests/common.review.controller.js
 import { PackingPageContent } from "./components/PackingPageContent";
 
+// 웹소켓 실시간 업데이트(무플리커/부분갱신)는
+// PackingPageContent -> RequestPage -> useWorksheetRealtimeStatus 경로에서 공통 처리한다.
+
 export const PackingPage = ({
   showQueueBar = true,
 }: {

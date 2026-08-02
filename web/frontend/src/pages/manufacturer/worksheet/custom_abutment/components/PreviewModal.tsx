@@ -35,6 +35,7 @@ import {
   getReviewStageKeyByTab,
 } from "../utils/request";
 import { resolveImplantConnectionSpec } from "@/utils/implantConnectionSpec";
+import { useAppEventDebouncedReload } from "@/shared/realtime/useAppEventDebouncedReload";
 
 // related files (screw lot tracking):
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/packing/components/PackingPageContent.tsx
@@ -143,6 +144,33 @@ const normalizeReasonOptions = (items: unknown): string[] => {
     if (deduped.length >= 100) break;
   }
   return deduped;
+};
+
+const normalizeEventId = (value: unknown): string => {
+  if (value == null) return "";
+  if (typeof value === "string") return value.trim();
+  if (typeof value === "number" || typeof value === "bigint") {
+    return String(value).trim();
+  }
+  if (typeof value === "object") {
+    const obj = value as {
+      _id?: unknown;
+      id?: unknown;
+      $oid?: unknown;
+      requestId?: unknown;
+      toString?: () => string;
+    };
+    const nested = obj.$oid ?? obj._id ?? obj.id ?? obj.requestId;
+    if (nested != null && nested !== value) {
+      const resolved = normalizeEventId(nested);
+      if (resolved) return resolved;
+    }
+    const fromToString =
+      typeof obj.toString === "function" ? String(obj.toString()) : "";
+    const normalized = fromToString.trim();
+    if (normalized && normalized !== "[object Object]") return normalized;
+  }
+  return "";
 };
 
 const normalizeLoopPoints = (pts: number[][]): number[][] => {
@@ -493,11 +521,71 @@ export const PreviewModal = ({
   const req = previewFiles.request as ManufacturerRequest | null;
   const lastStableReqRef = useRef<ManufacturerRequest | null>(null);
 
+  const currentRequestMongoId = normalizeEventId(req?._id || (req as any)?.id);
+  const currentRequestId = normalizeEventId(req?.requestId);
+
   useEffect(() => {
     if (req) {
       lastStableReqRef.current = req;
     }
   }, [req]);
+
+  useAppEventDebouncedReload({
+    enabled: Boolean(open && token && req && onRefreshPreview),
+    eventTypes: [
+      "request:stage-changed",
+      "request:delivery-updated",
+      "request:rnd-unmachinable-updated",
+      "request:rnd-unmachinable-confirmed",
+      "request:stl-metadata-updated",
+      "request:delivery-updated-batch",
+    ],
+    delayMs: 160,
+    shouldHandle: (evt) => {
+      const payload =
+        evt?.data && typeof evt.data === "object"
+          ? (evt.data as {
+              requestId?: unknown;
+              requestMongoId?: unknown;
+              request?: { _id?: unknown; id?: unknown; requestId?: unknown };
+              requests?: Array<{
+                requestId?: unknown;
+                requestMongoId?: unknown;
+                request?: { _id?: unknown; id?: unknown; requestId?: unknown };
+              }>;
+            })
+          : {};
+
+      const matchesOne = (candidate: {
+        requestId?: unknown;
+        requestMongoId?: unknown;
+        request?: { _id?: unknown; id?: unknown; requestId?: unknown };
+      }) => {
+        const candidateMongoId = normalizeEventId(
+          candidate?.requestMongoId ?? candidate?.request?._id ?? candidate?.request?.id,
+        );
+        const candidateRequestId = normalizeEventId(
+          candidate?.requestId ?? candidate?.request?.requestId,
+        );
+        if (currentRequestMongoId && candidateMongoId === currentRequestMongoId) {
+          return true;
+        }
+        if (currentRequestId && candidateRequestId === currentRequestId) {
+          return true;
+        }
+        return false;
+      };
+
+      if (matchesOne(payload)) return true;
+      const rows = Array.isArray(payload.requests) ? payload.requests : [];
+      return rows.some((row) => matchesOne(row));
+    },
+    onMatch: () => {
+      const target = lastStableReqRef.current;
+      if (!target || !onRefreshPreview) return;
+      void onRefreshPreview(target, { forceRefresh: true });
+    },
+  });
 
   useEffect(() => {
     if (!open) {

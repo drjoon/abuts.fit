@@ -30,6 +30,7 @@ import {
   isRndSampleRequest,
 } from "../utils/request";
 import { useWorksheetRealtimeStatus } from "../hooks/useWorksheetRealtimeStatus";
+import { useAppEventDebouncedReload } from "@/shared/realtime/useAppEventDebouncedReload";
 import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
 import { PreviewModal } from "../components/PreviewModal";
 import { usePreviewLoader } from "../hooks/usePreviewLoader";
@@ -511,6 +512,13 @@ export const TrackingInquiryPage = () => {
 
 
 
+  const refreshTrackingRealtime = useCallback(async () => {
+    if (!token) return;
+    pageRef.current = 1;
+    hasMoreRef.current = true;
+    await runTrackingFetch({ silent: true, append: false });
+  }, [runTrackingFetch, token]);
+
   useEffect(() => {
     if (!token) return;
 
@@ -533,6 +541,22 @@ export const TrackingInquiryPage = () => {
       delete (window as any).__trackingFetchNext;
     };
   }, [runTrackingFetch, token]);
+
+  useAppEventDebouncedReload({
+    enabled: Boolean(token),
+    eventTypes: [
+      "request:stage-changed",
+      "request:delivery-updated",
+      "request:delivery-updated-batch",
+      "worksheet:count-update",
+      "request:rnd-unmachinable-updated",
+      "request:rnd-unmachinable-confirmed",
+    ],
+    delayMs: 160,
+    onMatch: () => {
+      void refreshTrackingRealtime();
+    },
+  });
 
   const worksheetSearchLower = String(worksheetSearch || "")
     .trim()

@@ -4,7 +4,7 @@
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
 // - web/backend/controllers/requests/common.review.controller.js
-import { useMemo, useState, useCallback, useEffect } from "react";
+import { useMemo, useState, useCallback, useEffect, useRef } from "react";
 import { Thermometer, Wrench, Play, Pause, X } from "lucide-react";
 import {
   Dialog,
@@ -32,6 +32,7 @@ import type { HealthLevel } from "@/pages/manufacturer/equipment/cnc/components/
 import { useToast } from "@/shared/hooks/use-toast";
 import type { DiameterBucketKey as UiDiameterBucketKey } from "@/shared/ui/dashboard/WorksheetDiameterQueueBar";
 import { useMachiningBoard } from "./hooks/useMachiningBoard";
+import { useAppEventDebouncedReload } from "@/shared/realtime/useAppEventDebouncedReload";
 
 const getMachineStatusChip = (status: string) => {
   const s = (status || "").toUpperCase();
@@ -422,123 +423,132 @@ export const WorksheetCncMachineSection = ({
     "12": [],
   }));
 
+  const mountedRef = useRef(true);
   useEffect(() => {
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  const resetQueueSummary = useCallback(() => {
+    if (!mountedRef.current) return;
+    setDiameterQueueSummary({
+      labels: ["6", "8", "10", "12"],
+      counts: [0, 0, 0, 0],
+      total: 0,
+    });
+    setMachiningQueues({
+      "6": [],
+      "8": [],
+      "10": [],
+      "12": [],
+    });
+  }, []);
+
+  const refreshQueueSummary = useCallback(async () => {
     if (!token) {
-      setDiameterQueueSummary({
-        labels: ["6", "8", "10", "12"],
-        counts: [0, 0, 0, 0],
-        total: 0,
+      resetQueueSummary();
+      return;
+    }
+
+    try {
+      const res = await fetch("/api/cnc-machines/queues", {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
       });
-      setMachiningQueues({
+      const body: any = await res.json().catch(() => ({}));
+      if (!res.ok || body?.success === false) {
+        throw new Error(body?.message || body?.error || "생산 큐 조회 실패");
+      }
+
+      if (!mountedRef.current) return;
+
+      const map =
+        body?.data && typeof body.data === "object" ? (body.data as any) : {};
+
+      const labels: UiDiameterBucketKey[] = ["6", "8", "10", "12"];
+      const counts = [0, 0, 0, 0];
+      const buckets: Record<UiDiameterBucketKey, WorksheetQueueItem[]> = {
         "6": [],
         "8": [],
         "10": [],
         "12": [],
-      });
-      return;
-    }
+      };
 
-    let cancelled = false;
+      const machineList = Array.isArray(machines) ? machines : [];
 
-    const loadQueues = async () => {
-      try {
-        const res = await fetch("/api/cnc-machines/queues", {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
+      for (const m of machineList) {
+        const uid = String(m?.uid || "").trim();
+        if (!uid) continue;
+
+        const raw: any[] = Array.isArray(map?.[uid]) ? map[uid] : [];
+        const filtered = raw.filter((it) => {
+          const s = String(it?.status || "").trim();
+          return s === "가공";
         });
-        const body: any = await res.json().catch(() => ({}));
-        if (!res.ok || body?.success === false) {
-          throw new Error(body?.message || body?.error || "생산 큐 조회 실패");
+
+        for (const item of filtered) {
+          const diameterRaw =
+            item?.diameterGroup != null ? item.diameterGroup : item?.diameter;
+          const bucketIndex = getDiameterBucketIndex(
+            diameterRaw != null ? String(diameterRaw) : null,
+          );
+          if (bucketIndex == null) continue;
+          const key = labels[bucketIndex] as UiDiameterBucketKey;
+
+          const queueItem: WorksheetQueueItem = {
+            id: String(item?.requestId || ""),
+            client: String(item?.clinicName || ""),
+            patient: String(item?.patientName || ""),
+            tooth: String(item?.tooth || ""),
+            connectionDiameter:
+              typeof item?.diameter === "number" &&
+              Number.isFinite(item.diameter)
+                ? item.diameter
+                : null,
+            maxDiameter: null,
+            camDiameter: null,
+            programText: String(item?.requestId || ""),
+            qty:
+              typeof item?.machiningQty === "number" &&
+              Number.isFinite(item.machiningQty)
+                ? item.machiningQty
+                : 1,
+          };
+
+          buckets[key].push(queueItem);
+          counts[bucketIndex]++;
         }
-
-        if (cancelled) return;
-
-        const map =
-          body?.data && typeof body.data === "object" ? (body.data as any) : {};
-
-        const labels: UiDiameterBucketKey[] = ["6", "8", "10", "12"];
-        const counts = [0, 0, 0, 0];
-        const buckets: Record<UiDiameterBucketKey, WorksheetQueueItem[]> = {
-          "6": [],
-          "8": [],
-          "10": [],
-          "12": [],
-        };
-
-        const machineList = Array.isArray(machines) ? machines : [];
-
-        for (const m of machineList) {
-          const uid = String(m?.uid || "").trim();
-          if (!uid) continue;
-
-          const raw: any[] = Array.isArray(map?.[uid]) ? map[uid] : [];
-          const filtered = raw.filter((it) => {
-            const s = String(it?.status || "").trim();
-            return s === "가공";
-          });
-
-          for (const item of filtered) {
-            const diameterRaw =
-              item?.diameterGroup != null ? item.diameterGroup : item?.diameter;
-            const bucketIndex = getDiameterBucketIndex(
-              diameterRaw != null ? String(diameterRaw) : null,
-            );
-            if (bucketIndex == null) continue;
-            const key = labels[bucketIndex] as UiDiameterBucketKey;
-
-            const queueItem: WorksheetQueueItem = {
-              id: String(item?.requestId || ""),
-              client: String(item?.clinicName || ""),
-              patient: String(item?.patientName || ""),
-              tooth: String(item?.tooth || ""),
-              connectionDiameter:
-                typeof item?.diameter === "number" &&
-                Number.isFinite(item.diameter)
-                  ? item.diameter
-                  : null,
-              maxDiameter: null,
-              camDiameter: null,
-              programText: String(item?.requestId || ""),
-              qty:
-                typeof item?.machiningQty === "number" &&
-                Number.isFinite(item.machiningQty)
-                  ? item.machiningQty
-                  : 1,
-            };
-
-            buckets[key].push(queueItem);
-            counts[bucketIndex]++;
-          }
-        }
-
-        if (cancelled) return;
-
-        const total = counts.reduce((sum, c) => sum + c, 0);
-        setDiameterQueueSummary({ labels, counts, total });
-        setMachiningQueues(buckets);
-      } catch {
-        if (cancelled) return;
-        setDiameterQueueSummary({
-          labels: ["6", "8", "10", "12"],
-          counts: [0, 0, 0, 0],
-          total: 0,
-        });
-        setMachiningQueues({
-          "6": [],
-          "8": [],
-          "10": [],
-          "12": [],
-        });
       }
-    };
 
-    void loadQueues();
+      if (!mountedRef.current) return;
 
-    return () => {
-      cancelled = true;
-    };
-  }, [machines, token]);
+      const total = counts.reduce((sum, c) => sum + c, 0);
+      setDiameterQueueSummary({ labels, counts, total });
+      setMachiningQueues(buckets);
+    } catch {
+      resetQueueSummary();
+    }
+  }, [machines, resetQueueSummary, token]);
+
+  useEffect(() => {
+    void refreshQueueSummary();
+  }, [refreshQueueSummary]);
+
+  useAppEventDebouncedReload({
+    enabled: Boolean(token),
+    eventTypes: [
+      "request:stage-changed",
+      "request:delivery-updated",
+      "request:delivery-updated-batch",
+      "worksheet:count-update",
+    ],
+    delayMs: 140,
+    onMatch: () => {
+      void refreshQueueSummary();
+    },
+  });
 
   const handleCardClick = async (machine: Machine) => {
     try {

@@ -310,6 +310,12 @@
     - `src/pages/admin/AdminPaymentsPage.tsx`
     - `src/shared/components/CreditLedgerModal.tsx`
     - `src/features/chat/components/*`
+  - 제조사 워크시트 리팩터링 메모(웹소켓 업데이트 표준 적용):
+    - `TrackingPage`: 이벤트 수신 시 `runTrackingFetch({ silent: true, append: false })`로 무플리커 재동기화합니다.
+    - `WorksheetCncMachineSection`: `request:stage-changed`/배송/카운트 이벤트를 디바운스 수신해 큐 요약만 최소 재조회합니다.
+    - `PreviewModal`: 현재 열려 있는 의뢰(`requestId`/`requestMongoId`)와 payload를 매칭한 경우에만 force refresh를 수행합니다.
+    - `PackingPage`/`ShippingPage` 래퍼에서는 중복 처리하지 않고 `RequestPage -> useWorksheetRealtimeStatus` 공통 경로를 SSOT로 사용합니다.
+    - 공통 원칙: 이벤트 재동기화로 `isInitialLoading`을 다시 true로 올리지 않고, 기존 데이터 유지 + silent refresh를 기본값으로 유지합니다.
 
 - 문의(admin/support) 실시간 반영 메모:
   - 관리자 문의 페이지는 `support:inquiry-created`, `support:inquiry-updated`, `comm:badge-update(key=inquiry)` app-event를 수신해 목록을 디바운스 재조회합니다.

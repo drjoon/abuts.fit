@@ -8,6 +8,8 @@ import { RequestPage } from "../RequestPage";
 import { deriveStageForFilter } from "../utils/request";
 import type { ManufacturerRequest } from "../utils/request";
 
+// 웹소켓 실시간 업데이트(무플리커/부분갱신)는
+// ShippingPage -> RequestPage -> useWorksheetRealtimeStatus 경로에서 공통 처리한다.
 // 포장.발송 공정 전용 페이지 (RequestPage 래퍼)
 export const ShippingPage = () => {
   const filterByShippingStage = (req: ManufacturerRequest) => {

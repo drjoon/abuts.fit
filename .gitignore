@@ -31,3 +31,6 @@ storage
 .tmp
 .venu
 __pycache__
+
+# local research/scratch workspace
+RnD/
