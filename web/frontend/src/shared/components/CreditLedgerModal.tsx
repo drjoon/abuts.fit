@@ -1,9 +1,13 @@
 // related files:
 // - web/frontend/rules.md
-// - web/frontend/src/pages/admin/credits/AdminCreditPage.tsx
-// - web/backend/controllers/admin/adminCredit.controller.js
 // - web/frontend/src/features/layout/DashboardLayout.tsx
+// - web/frontend/src/pages/requestor/dashboard/RequestorDashboardPage.tsx
+// - web/frontend/src/pages/admin/credits/AdminCreditPage.tsx
+// - web/frontend/src/shared/realtime/useAppEventDebouncedReload.ts
+// - web/backend/controllers/admin/adminCredit.controller.js
+// - web/frontend/src/shared/realtime/useAppEventDebouncedReload.ts
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useAppEventDebouncedReload } from "@/shared/realtime/useAppEventDebouncedReload";
 import {
   Dialog,
   DialogContent,
@@ -454,6 +458,34 @@ export const CreditLedgerModal = ({
     return () => io.disconnect();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
+
+  // 모달이 열린 상태에서는 크레딧 실시간 이벤트를 받아 동일 모달 내 데이터만 갱신한다.
+  useAppEventDebouncedReload({
+    enabled: Boolean(open && token),
+    eventTypes: ["credit:balance-updated"],
+    delayMs: 80,
+    deferWhenEditing: false,
+    shouldHandle: (evt) => {
+      const payload =
+        evt?.data && typeof evt.data === "object"
+          ? (evt.data as { businessAnchorId?: string })
+          : {};
+      const eventBusinessAnchorId = String(payload.businessAnchorId || "").trim();
+      const targetBusinessAnchorId = String(
+        businessAnchorId || user?.businessAnchorId || "",
+      ).trim();
+
+      if (!eventBusinessAnchorId || !targetBusinessAnchorId) return false;
+      return eventBusinessAnchorId === targetBusinessAnchorId;
+    },
+    onMatch: () => {
+      setPage(1);
+      pageRef.current = 1;
+      setHasMore(true);
+      hasMoreRef.current = true;
+      void load(1, true);
+    },
+  });
 
   const rows = useMemo(() => (Array.isArray(items) ? items : []), [items]);
 

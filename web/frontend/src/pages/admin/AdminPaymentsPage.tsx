@@ -2,7 +2,10 @@
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+// - web/frontend/src/shared/realtime/useAppEventDebouncedReload.ts
+// - web/backend/utils/creditRealtime.js
+// - web/frontend/src/shared/realtime/useAppEventDebouncedReload.ts
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { request } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { usePeriodStore, periodToRangeQuery } from "@/store/usePeriodStore";
@@ -12,6 +15,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Search } from "lucide-react";
+import { useAppEventDebouncedReload } from "@/shared/realtime/useAppEventDebouncedReload";
 
 const HISTORY_MONTHS = 6;
 
@@ -412,45 +416,47 @@ export default function AdminPaymentsPage() {
     admin: MonthlyHistoryRow[];
   }>({ manufacturer: [], salesman: [], devops: [], admin: [] });
 
-  useEffect(() => {
-    if (!token) return;
-    setIsLoading(true);
+  const loadSettlementSummary = useCallback(
+    async ({ withLoading = true }: { withLoading?: boolean } = {}) => {
+      if (!token) return;
+      if (withLoading) setIsLoading(true);
 
-    const rangeQuery = periodToRangeQuery(period, {
-      customStartDate,
-      customEndDate,
-    }).replace(/^\?/, "&");
+      const rangeQuery = periodToRangeQuery(period, {
+        customStartDate,
+        customEndDate,
+      }).replace(/^\?/, "&");
 
-    Promise.all([
-      request<{
-        success?: boolean;
-        data?: { items?: SalesmanRow[] };
-        message?: string;
-      }>({
-        path: `/api/admin/credits/salesmen?limit=200&skip=0${rangeQuery}`,
-        method: "GET",
-        token,
-      }),
-      request<{
-        success?: boolean;
-        data?: ManufacturerSummary;
-        message?: string;
-      }>({
-        path: `/api/admin/credits/manufacturer/summary?period=${encodeURIComponent(period)}${rangeQuery}`,
-        method: "GET",
-        token,
-      }),
-      request<{
-        success?: boolean;
-        data?: { items?: AdminCreditRow[] };
-        message?: string;
-      }>({
-        path: `/api/admin/credits/admins?limit=200&skip=0${rangeQuery}`,
-        method: "GET",
-        token,
-      }),
-    ])
-      .then(([rowsRes, mfgRes, adminRes]) => {
+      try {
+        const [rowsRes, mfgRes, adminRes] = await Promise.all([
+          request<{
+            success?: boolean;
+            data?: { items?: SalesmanRow[] };
+            message?: string;
+          }>({
+            path: `/api/admin/credits/salesmen?limit=200&skip=0${rangeQuery}`,
+            method: "GET",
+            token,
+          }),
+          request<{
+            success?: boolean;
+            data?: ManufacturerSummary;
+            message?: string;
+          }>({
+            path: `/api/admin/credits/manufacturer/summary?period=${encodeURIComponent(period)}${rangeQuery}`,
+            method: "GET",
+            token,
+          }),
+          request<{
+            success?: boolean;
+            data?: { items?: AdminCreditRow[] };
+            message?: string;
+          }>({
+            path: `/api/admin/credits/admins?limit=200&skip=0${rangeQuery}`,
+            method: "GET",
+            token,
+          }),
+        ]);
+
         if (rowsRes.ok && rowsRes.data?.success) {
           setRows(
             Array.isArray(rowsRes.data.data?.items)
@@ -468,17 +474,39 @@ export default function AdminPaymentsPage() {
               : [],
           );
         }
-      })
-      .catch((error: unknown) => {
+      } catch (error: unknown) {
         toast({
           title: "정산 조회 실패",
           description:
             error instanceof Error ? error.message : "다시 시도해주세요.",
           variant: "destructive",
         });
-      })
-      .finally(() => setIsLoading(false));
-  }, [period, customStartDate, customEndDate, token, toast]);
+      } finally {
+        if (withLoading) setIsLoading(false);
+      }
+    },
+    [customEndDate, customStartDate, period, toast, token],
+  );
+
+  useEffect(() => {
+    void loadSettlementSummary({ withLoading: true });
+  }, [loadSettlementSummary]);
+
+  // CAM 승인/공정 이동/크레딧 변동 시 관리자 정산 화면을 무플리커로 동기화한다.
+  useAppEventDebouncedReload({
+    enabled: Boolean(token) && user?.role === "admin",
+    eventTypes: [
+      "request:stage-changed",
+      "credit:balance-updated",
+      "request:delivery-updated",
+      "request:delivery-updated-batch",
+    ],
+    delayMs: 120,
+    deferWhenEditing: false,
+    onMatch: () => {
+      void loadSettlementSummary({ withLoading: false });
+    },
+  });
 
   useEffect(() => {
     if (!token) return;

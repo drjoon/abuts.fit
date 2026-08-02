@@ -246,9 +246,15 @@
 - 실시간(웹소켓 app-event) 구현 메모:
   - 발행 SSOT: 백엔드는 대상 role 전체 fan-out emit을 사용합니다.
   - 반영 SSOT: 프론트는 "현재 열려 있는 페이지"에서만 이벤트를 반영합니다.
-    - 방법: 라우트/탭 페이지 컴포넌트 마운트 상태에서만 `onAppEvent` 또는 `useAppEventDebouncedReload`를 등록
+    - 방법: 라우트/탭 페이지 컴포넌트 마운트 상태에서만 `useAppEventListener`/`useAppEventDebouncedReload`를 등록
     - 이벤트 payload 조건(예: `businessAnchorId`, `requestId`)이 맞는 경우에만 재조회/상태갱신
     - 비활성 페이지는 즉시 갱신하지 않고, 페이지 재진입 시 서버 재조회로 동기화
+  - UX 안정성(강제): 이벤트 반영 때문에 사용자의 진행 중 작업을 방해하지 않습니다.
+    - 입력 중 폼/타이핑/선택 상태를 깨는 전체 리렌더/강제 새로고침 금지
+    - 모달/다이얼로그는 이벤트 수신 때문에 닫았다 다시 열지 않음
+    - 가능하면 payload 기반 부분 patch를 우선하고, 필요 시 최소 범위 재조회
+    - 디바운스 재조회 시 기본값 `deferWhenEditing=true`를 유지해 입력 포커스 중 반영을 지연
+    - 채팅/알림 배지처럼 즉시성 우선 기능만 `deferWhenEditing=false`를 명시적으로 허용
   - 소켓 공용 레이어: `src/shared/realtime/socket.ts`
     - `onNotification`, `onNewMessage`, CNC 이벤트 리스너 포함 모든 소켓 이벤트 구독은 공통 구독 레이어(`subscribeSocketEvent`)를 통해 지연 초기화/재연결 시에도 유실 없이 동작해야 합니다.
     - 인증 토큰이 변경되면 기존 소켓을 재사용하지 않고 연결을 재초기화해 권한/구독 컨텍스트를 최신화합니다.
@@ -259,6 +265,10 @@
     - 페이지/도메인 훅에서 `onAppEvent` 직접 구독은 신규 코드에서 금지하고, 공통 훅으로 통일합니다.
   - app-event 디바운스 재조회 공통 훅: `src/shared/realtime/useAppEventDebouncedReload.ts`
     - 내부적으로 `useAppEventListener`를 사용하며, 입력 중에는 재조회 콜백 실행을 지연합니다.
+  - 이번 세션 구현 기준(운영 메모):
+    - 의뢰자 `CreditLedgerModal`은 열린 상태에서 `credit:balance-updated` 수신 시 모달 유지 + 목록/스냅샷만 재조회
+    - `RequestorDashboardPage`는 크레딧 모달 오픈 중 스켈레톤 전환으로 인한 모달 언마운트(닫힘 체감)를 방지
+    - 관리자 `AdminPaymentsPage`는 `request:stage-changed`/`credit:balance-updated`/배송 업데이트를 디바운스 수신해 무플리커 동기화
   - 채팅방 목록 실시간 동기화: `src/shared/hooks/useChatRooms.ts`
   - 채팅 메시지 실시간 동기화: `src/shared/hooks/useChatMessages.ts`
   - 채팅 role 라벨/뱃지 표시에서는 `practice`를 fallback("사용자")로 처리하지 말고 명시적으로 `치과`로 매핑합니다.
@@ -266,6 +276,8 @@
     - `src/pages/practice/PracticeFileTransferPage.tsx`
     - `src/pages/requestor/practice/RequestorPracticePage.tsx`
     - `src/pages/admin/credits/hooks/useAdminCreditPage.ts`
+    - `src/pages/admin/AdminPaymentsPage.tsx`
+    - `src/shared/components/CreditLedgerModal.tsx`
     - `src/features/chat/components/*`
 
 - 문의(admin/support) 실시간 반영 메모:

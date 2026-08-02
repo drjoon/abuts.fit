@@ -69,6 +69,7 @@ import { getFileBlob, setFileBlob } from "@/shared/files/stlIndexedDb";
 
 // related files:
 // - web/frontend/src/features/layout/DashboardLayout.tsx
+// - web/frontend/src/shared/components/CreditLedgerModal.tsx
 // - web/frontend/src/pages/requestor/dashboard/components/RequestorRecentRequestsCard.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx
 // - web/frontend/src/features/requests/components/StlPreviewViewer.tsx
@@ -122,6 +123,7 @@ export const RequestorDashboardPage = () => {
 
   const [statsModalOpen, setStatsModalOpen] = useState(false);
   const [statsModalLabel, setStatsModalLabel] = useState<string>("");
+  const [hasSummaryHydrated, setHasSummaryHydrated] = useState(false);
 
   const [unmachinableAlertModalOpen, setUnmachinableAlertModalOpen] =
     useState(false);
@@ -1273,11 +1275,21 @@ export const RequestorDashboardPage = () => {
     }
   };
 
-  if (isInitialLoading) {
+  useEffect(() => {
+    if (summaryResponse?.success) {
+      setHasSummaryHydrated(true);
+    }
+  }, [summaryResponse]);
+
+  if (isInitialLoading && !creditLedgerOpen) {
     return <DashboardShellSkeleton showMain />;
   }
 
-  const showSkeleton = (isLoading || isFetching) && !summaryResponse;
+  const showSkeleton =
+    !hasSummaryHydrated &&
+    (isLoading || isFetching) &&
+    !summaryResponse &&
+    !creditLedgerOpen;
 
   const stats: RequestorDashboardStat[] = (() => {
     if (!summaryResponse?.success) {
