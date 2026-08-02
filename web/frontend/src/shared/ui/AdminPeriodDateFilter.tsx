@@ -3,6 +3,14 @@ import { Input } from "@/components/ui/input";
 import { PeriodFilter, type PeriodFilterValue } from "@/shared/ui/PeriodFilter";
 import { CalendarX2 } from "lucide-react";
 
+const getTodayYmdInKst = () =>
+  new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+
 type AdminPeriodDateFilterProps = {
   period: PeriodFilterValue;
   onPeriodChange: (period: PeriodFilterValue) => void;
@@ -21,16 +29,14 @@ export function AdminPeriodDateFilter({
   onClearCustomRange,
 }: AdminPeriodDateFilterProps) {
   const startDate = customStartDate || "";
-  const endDate = customEndDate || "";
+  const endDate = customEndDate || getTodayYmdInKst();
 
   const applyRange = (next: { startDate?: string; endDate?: string }) => {
     const s = next.startDate ?? startDate;
     const e = next.endDate ?? endDate;
-    if (s && e) {
-      onCustomRangeChange({ startDate: s, endDate: e });
-      return;
-    }
-    onClearCustomRange();
+    // 한쪽 날짜만 먼저 선택해도 입력값은 유지한다.
+    // 실제 기간 적용은 periodToRange에서 start/end 둘 다 유효할 때만 반영된다.
+    onCustomRangeChange({ startDate: s, endDate: e });
   };
 
   return (

@@ -9,11 +9,11 @@
  * 공통 데이터 훅/타입은 features/commission/useCommissionDashboard.ts 참고.
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useAuthStore } from "@/store/useAuthStore";
+import { usePeriodStore } from "@/store/usePeriodStore";
 import { DashboardShell } from "@/shared/ui/dashboard/DashboardShell";
-import { PeriodFilter, type PeriodFilterValue } from "@/shared/ui/PeriodFilter";
-import { isPeriodFilterValue } from "@/shared/ui/periodFilterValues";
+import { PeriodFilter } from "@/shared/ui/PeriodFilter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { SalesmanLedgerModal } from "@/shared/components/SalesmanLedgerModal";
@@ -24,17 +24,9 @@ import {
   type CommissionDashboardData,
 } from "@/features/commission/useCommissionDashboard";
 
-const PERIOD_STORAGE_KEY = "abuts.salesman.payments.period";
-
-const readStoredPeriod = (): PeriodFilterValue => {
-  if (typeof window === "undefined") return "30d";
-  const raw = window.localStorage.getItem(PERIOD_STORAGE_KEY);
-  return isPeriodFilterValue(raw) ? raw : "30d";
-};
-
 export default function SalesmanPaymentsPage() {
   const { user } = useAuthStore();
-  const [period, setPeriod] = useState<PeriodFilterValue>(() => readStoredPeriod());
+  const { period, setPeriod } = usePeriodStore();
   const [ledgerOpen, setLedgerOpen] = useState(false);
 
   const { data, loading } = useCommissionDashboard(period);
@@ -49,11 +41,7 @@ export default function SalesmanPaymentsPage() {
     [data?.organizations],
   );
 
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      window.localStorage.setItem(PERIOD_STORAGE_KEY, period);
-    }
-  }, [period]);
+
 
   if (!user) return null;
 

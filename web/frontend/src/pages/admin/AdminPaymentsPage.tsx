@@ -63,31 +63,6 @@ type MonthlyHistoryRow = {
   freeTotalAmount: number;
 };
 
-type Overview = {
-  salesmenCount?: number;
-  referral?: {
-    paidRevenueAmount?: number;
-    bonusRevenueAmount?: number;
-    orderCount?: number;
-    paidOrderCount?: number;
-  };
-  commission?: {
-    totalAmount?: number;
-    amount?: number;
-  };
-  walletPeriod?: {
-    earnedAmount?: number;
-    paidOutAmount?: number;
-    adjustedAmount?: number;
-    balanceAmount?: number;
-    freeRequestAmount?: number;
-    freeRequestCount?: number;
-    freeShippingAmount?: number;
-    freeShippingCount?: number;
-    freeAmount?: number;
-  };
-};
-
 type ManufacturerSummary = {
   anchorCount?: number;
   periodEarnedAmount?: number;
@@ -98,6 +73,8 @@ type ManufacturerSummary = {
   periodFreeRequestCount?: number;
   periodFreeShippingAmount?: number;
   periodFreeShippingCount?: number;
+  periodPaidRequestAmount?: number;
+  periodPaidRequestCount?: number;
   periodPaidShippingAmount?: number;
   periodPaidShippingCount?: number;
   periodShippingAmount?: number;
@@ -418,9 +395,8 @@ function RoleSummarySection({
 
 export default function AdminPaymentsPage() {
   const { token, user } = useAuthStore();
-  const { period } = usePeriodStore();
+  const { period, customStartDate, customEndDate } = usePeriodStore();
   const { toast } = useToast();
-  const [overview, setOverview] = useState<Overview | null>(null);
   const [rows, setRows] = useState<SalesmanRow[]>([]);
   const [manufacturerSummary, setManufacturerSummary] =
     useState<ManufacturerSummary | null>(null);
@@ -440,18 +416,18 @@ export default function AdminPaymentsPage() {
     if (!token) return;
     setIsLoading(true);
 
+    const rangeQuery = periodToRangeQuery(period, {
+      customStartDate,
+      customEndDate,
+    }).replace(/^\?/, "&");
+
     Promise.all([
-      request<{ success?: boolean; data?: Overview; message?: string }>({
-        path: `/api/admin/credits/salesmen/overview?period=${encodeURIComponent(period)}`,
-        method: "GET",
-        token,
-      }),
       request<{
         success?: boolean;
         data?: { items?: SalesmanRow[] };
         message?: string;
       }>({
-        path: `/api/admin/credits/salesmen?limit=200&skip=0${periodToRangeQuery(period).replace(/^\?/, "&")}`,
+        path: `/api/admin/credits/salesmen?limit=200&skip=0${rangeQuery}`,
         method: "GET",
         token,
       }),
@@ -460,7 +436,7 @@ export default function AdminPaymentsPage() {
         data?: ManufacturerSummary;
         message?: string;
       }>({
-        path: `/api/admin/credits/manufacturer/summary?period=${encodeURIComponent(period)}${periodToRangeQuery(period).replace(/^\?/, "&")}`,
+        path: `/api/admin/credits/manufacturer/summary?period=${encodeURIComponent(period)}${rangeQuery}`,
         method: "GET",
         token,
       }),
@@ -469,15 +445,12 @@ export default function AdminPaymentsPage() {
         data?: { items?: AdminCreditRow[] };
         message?: string;
       }>({
-        path: `/api/admin/credits/admins?limit=200&skip=0${periodToRangeQuery(period).replace(/^\?/, "&")}`,
+        path: `/api/admin/credits/admins?limit=200&skip=0${rangeQuery}`,
         method: "GET",
         token,
       }),
     ])
-      .then(([overviewRes, rowsRes, mfgRes, adminRes]) => {
-        if (overviewRes.ok && overviewRes.data?.success) {
-          setOverview(overviewRes.data.data || null);
-        }
+      .then(([rowsRes, mfgRes, adminRes]) => {
         if (rowsRes.ok && rowsRes.data?.success) {
           setRows(
             Array.isArray(rowsRes.data.data?.items)
@@ -505,7 +478,7 @@ export default function AdminPaymentsPage() {
         });
       })
       .finally(() => setIsLoading(false));
-  }, [period, token, toast]);
+  }, [period, customStartDate, customEndDate, token, toast]);
 
   useEffect(() => {
     if (!token) return;
@@ -817,7 +790,9 @@ export default function AdminPaymentsPage() {
   }, [groupsByType, searchQuery]);
 
   const totals = useMemo(() => {
-    const referralRevenue = Number(overview?.referral?.paidRevenueAmount || 0);
+    const paidRequestRevenue = Number(
+      manufacturerSummary?.periodPaidRequestAmount || 0,
+    );
 
     const manufacturerPaid = Number(manufacturerSummary?.periodBalanceAmount || 0);
     const salesmanPaid = roleFinanceRows.salesman.reduce(
@@ -925,10 +900,9 @@ export default function AdminPaymentsPage() {
       0,
     );
 
-    const paidRequestCountRaw = Number(
-      overview?.referral?.paidOrderCount ?? (overview?.referral?.orderCount || 0),
+    const paidRequestCount = Number(
+      manufacturerSummary?.periodPaidRequestCount || 0,
     );
-    const paidRequestCount = referralRevenue > 0 ? paidRequestCountRaw : 0;
 
     const manufacturerPaidShippingAmount = Number(
       manufacturerSummary?.periodPaidShippingAmount || 0,
@@ -941,13 +915,20 @@ export default function AdminPaymentsPage() {
         manufacturerPaidShippingAmount + manufacturerFreeShipping,
     );
 
+    const uniqueRequestDetailCount = Number(
+      manufacturerSummary?.periodFreeRequestCount || 0,
+    );
+    const uniqueShippingDetailCount = Number(
+      manufacturerSummary?.periodFreeShippingCount || 0,
+    );
+
     return {
       settlementTargetRoleCount: 4,
-      paidRequestRevenue: referralRevenue,
+      paidRequestRevenue,
       paidRequestCount,
       paidShippingRevenue: manufacturerPaidShippingAmount,
       paidShippingCount: manufacturerPaidShippingCount,
-      paidRevenueTotal: referralRevenue + manufacturerPaidShippingAmount,
+      paidRevenueTotal: paidRequestRevenue + manufacturerPaidShippingAmount,
       unpaidBalance: manufacturerPaid + salesmanPaid + devopsPaid + adminPaid,
       manufacturerPaid,
       salesmanPaid,
@@ -983,18 +964,11 @@ export default function AdminPaymentsPage() {
       manufacturerPaidShippingAmount,
       manufacturerPaidShippingCount,
       manufacturerShippingAmount,
-      requestDetailCount:
-        manufacturerRequestDetailCount +
-        salesmanRequestDetailCount +
-        devopsRequestDetailCount +
-        adminRequestDetailCount,
-      shippingDetailCount:
-        manufacturerShippingDetailCount +
-        salesmanShippingDetailCount +
-        devopsShippingDetailCount +
-        adminShippingDetailCount,
+      // 상단 총건수는 role 라인 합산이 아닌, 요청 유니크 기준(GL 제조사 commit)으로 표시
+      requestDetailCount: uniqueRequestDetailCount,
+      shippingDetailCount: uniqueShippingDetailCount,
     };
-  }, [adminFinanceRows, adminRows, groupsByType, manufacturerSummary, overview, roleFinanceRows]);
+  }, [adminFinanceRows, adminRows, groupsByType, manufacturerSummary, roleFinanceRows]);
 
   if (!user || user.role !== "admin") return null;
 
@@ -1189,8 +1163,8 @@ export default function AdminPaymentsPage() {
               <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                 <SummaryCard
                   title="관리자 배분율"
-                  value="20%"
-                  description="유료의뢰비 기준 (rules.md 6.9.1)"
+                  value="20% / 25%"
+                  description="유료의뢰비 기준 (영업자 미연결 시 25%)"
                 />
                 <SummaryCard
                   title="기간 정산 완료"

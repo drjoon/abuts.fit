@@ -1946,10 +1946,26 @@ export async function adminGetManufacturerSummary(req, res) {
           }
         : periodRange;
 
+    const activeManufacturerAnchors = await BusinessAnchor.find({
+      businessType: "manufacturer",
+      status: { $ne: "merged" },
+    })
+      .select({ _id: 1 })
+      .lean();
+
+    const activeManufacturerAnchorIds = Array.from(
+      new Set(
+        (activeManufacturerAnchors || [])
+          .map((a) => String(a?._id || ""))
+          .filter((id) => Types.ObjectId.isValid(id)),
+      ),
+    ).map((id) => new Types.ObjectId(id));
+
     const buildPipeline = ({ withPeriod = false }) => [
       {
         $match: {
           ownerRole: "manufacturer",
+          ownerId: { $in: activeManufacturerAnchorIds },
           accountCode: "REV_MANUFACTURER",
           ...(withPeriod && range
             ? { occurredAt: { $gte: range.start, $lte: range.end } }
@@ -2011,7 +2027,7 @@ export async function adminGetManufacturerSummary(req, res) {
     ];
 
     const [anchorCount, periodLedgerRows, allLedgerRows, periodFreeRows] = await Promise.all([
-      BusinessAnchor.countDocuments({ businessType: "manufacturer" }),
+      Promise.resolve(activeManufacturerAnchorIds.length),
       range
         ? LedgerLine.aggregate([
             ...buildPipeline({ withPeriod: true }),
@@ -2037,6 +2053,7 @@ export async function adminGetManufacturerSummary(req, res) {
             {
               $match: {
                 ownerRole: "manufacturer",
+                ownerId: { $in: activeManufacturerAnchorIds },
                 accountCode: "REV_MANUFACTURER",
                 occurredAt: { $gte: range.start, $lte: range.end },
               },
@@ -2113,6 +2130,34 @@ export async function adminGetManufacturerSummary(req, res) {
                         $and: [
                           { $eq: ["$creditKind", "FREE_SHIPPING"] },
                           { $eq: ["$eventType", "SHIPPING_SPEND_COMMIT"] },
+                        ],
+                      },
+                      1,
+                      0,
+                    ],
+                  },
+                },
+                paidRequestAmount: {
+                  $sum: {
+                    $cond: [
+                      {
+                        $and: [
+                          { $eq: ["$creditKind", "PAID"] },
+                          { $eq: ["$eventType", "REQUEST_SPEND_COMMIT"] },
+                        ],
+                      },
+                      "$baseAmount",
+                      0,
+                    ],
+                  },
+                },
+                paidRequestCount: {
+                  $sum: {
+                    $cond: [
+                      {
+                        $and: [
+                          { $eq: ["$creditKind", "PAID"] },
+                          { $eq: ["$eventType", "REQUEST_SPEND_COMMIT"] },
                         ],
                       },
                       1,
@@ -2202,6 +2247,12 @@ export async function adminGetManufacturerSummary(req, res) {
     const periodFreeShippingCount = normalizeNumber(
       Number(periodFreeRows?.[0]?.freeShippingCount || 0),
     );
+    const periodPaidRequestAmount = normalizeNumber(
+      Number(periodFreeRows?.[0]?.paidRequestAmount || 0),
+    );
+    const periodPaidRequestCount = normalizeNumber(
+      Number(periodFreeRows?.[0]?.paidRequestCount || 0),
+    );
     const periodPaidShippingAmount = normalizeNumber(
       Number(periodFreeRows?.[0]?.paidShippingAmount || 0),
     );
@@ -2227,6 +2278,8 @@ export async function adminGetManufacturerSummary(req, res) {
         periodFreeRequestCount,
         periodFreeShippingAmount,
         periodFreeShippingCount,
+        periodPaidRequestAmount,
+        periodPaidRequestCount,
         periodPaidShippingAmount,
         periodPaidShippingCount,
         periodShippingAmount,

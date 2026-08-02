@@ -7,20 +7,20 @@
  *   - 영업자 소개 유무와 무관하게 개발·운영사 분배율은 동일
  */
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 // related files:
 // - web/frontend/src/pages/salesman/SalesmanDashboardPage.tsx
 // - web/frontend/src/pages/admin/dashboard/AdminDashboardPage.tsx
 import { useQuery } from "@tanstack/react-query";
 import { useAuthStore } from "@/store/useAuthStore";
+import { usePeriodStore } from "@/store/usePeriodStore";
 import { apiFetch } from "@/shared/api/apiClient";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DashboardShell } from "@/shared/ui/dashboard/DashboardShell";
-import { PeriodFilter, type PeriodFilterValue } from "@/shared/ui/PeriodFilter";
-import { isPeriodFilterValue } from "@/shared/ui/periodFilterValues";
+import { PeriodFilter } from "@/shared/ui/PeriodFilter";
 import { PricingPolicyDialog } from "@/shared/ui/PricingPolicyDialog";
 import { CommissionLedgerInline } from "@/shared/components/CommissionLedgerInline";
 import {
@@ -29,27 +29,13 @@ import {
   type CommissionDashboardData,
 } from "@/features/commission/useCommissionDashboard";
 
-const PERIOD_STORAGE_KEY = "abuts.devops.dashboard.period";
-
-const readStoredPeriod = (): PeriodFilterValue => {
-  if (typeof window === "undefined") return "30d";
-  const raw = window.localStorage.getItem(PERIOD_STORAGE_KEY);
-  return isPeriodFilterValue(raw) ? raw : "30d";
-};
-
 export const DevopsDashboardPage = () => {
   const { user, token } = useAuthStore();
 
   const [policyOpen, setPolicyOpen] = useState(false);
-  const [period, setPeriod] = useState<PeriodFilterValue>(() => readStoredPeriod());
+  const { period, setPeriod } = usePeriodStore();
 
   const { data, loading } = useCommissionDashboard(period);
-
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      window.localStorage.setItem(PERIOD_STORAGE_KEY, period);
-    }
-  }, [period]);
 
   const { data: unmachinableOverviewResponse } = useQuery({
     queryKey: ["devops-unmachinable-overview", period],

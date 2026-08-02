@@ -28,19 +28,36 @@ export const usePeriodStore = create<PeriodState>()(
     }),
     {
       name: "abuts.period-filter",
-      partialize: (state) => ({ period: state.period }),
+      partialize: (state) => ({
+        period: state.period,
+        customStartDate: state.customStartDate,
+      }),
     },
   ),
 );
 
 const KST_TIME_ZONE = "Asia/Seoul";
 
-const toCustomRangeIso = (customStartDate: string, customEndDate: string) => {
+const getTodayYmdInKst = () => {
+  const now = new Date();
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: KST_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(now);
+};
+
+const toCustomRangeIso = (
+  customStartDate: string,
+  customEndDate: string,
+  fallbackEndYmd?: string,
+) => {
   const startRaw = String(customStartDate || "").trim();
-  const endRaw = String(customEndDate || "").trim();
+  const endRaw = String(customEndDate || "").trim() || String(fallbackEndYmd || "").trim();
   if (!startRaw || !endRaw) return null;
-  const start = new Date(`${startRaw}T00:00:00`);
-  const end = new Date(`${endRaw}T23:59:59.999`);
+  const start = new Date(`${startRaw}T00:00:00.000+09:00`);
+  const end = new Date(`${endRaw}T23:59:59.999+09:00`);
   if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null;
   if (end.getTime() < start.getTime()) return null;
   return { startDate: start.toISOString(), endDate: end.toISOString() };
@@ -78,7 +95,11 @@ export const periodToRange = (
   const customStartDate =
     options?.customStartDate ?? storeState.customStartDate ?? "";
   const customEndDate = options?.customEndDate ?? storeState.customEndDate ?? "";
-  const customRange = toCustomRangeIso(customStartDate, customEndDate);
+  const customRange = toCustomRangeIso(
+    customStartDate,
+    customEndDate,
+    getTodayYmdInKst(),
+  );
   if (customRange) return customRange;
 
   const now = new Date();
