@@ -26,6 +26,34 @@ type ApiMessageResponse = {
   message?: string;
 };
 
+type CreditLedgerRow = {
+  type?: string;
+  amount?: number;
+  spentPaidAmount?: number;
+  spentFreeAmount?: number;
+};
+
+type BusinessCreditDetailResponse = {
+  success?: boolean;
+  data?: {
+    business?: {
+      _id?: string;
+      name?: string;
+    };
+    balance?: number;
+    paidCredit?: number;
+    freeRequestCredit?: number;
+    freeShippingCredit?: number;
+    spentAmount?: number;
+    history?: CreditLedgerRow[];
+  };
+};
+
+type OrganizationLoadOptions = {
+  reset?: boolean;
+  silent?: boolean;
+};
+
 const getResponseMessage = (
   data: ApiMessageResponse | null | undefined,
   fallback: string,
@@ -48,6 +76,82 @@ const isFreeCreditEligibleBusiness = (business: BusinessCredit | null) => {
     return business.isFreeCreditEligible;
   }
   return String(business.businessType || "").trim() === "requestor";
+};
+
+const normalizePositive = (value: unknown) => {
+  const n = Number(value || 0);
+  if (!Number.isFinite(n)) return 0;
+  return Math.max(0, Math.round(n));
+};
+
+const buildBusinessCreditPatchFromDetail = (
+  detail: BusinessCreditDetailResponse["data"] | undefined,
+) => {
+  const paidCredit = normalizePositive(detail?.paidCredit);
+  const freeRequestCredit = normalizePositive(detail?.freeRequestCredit);
+  const freeShippingCredit = normalizePositive(detail?.freeShippingCredit);
+  const balance = normalizePositive(
+    detail?.balance ?? paidCredit + freeRequestCredit + freeShippingCredit,
+  );
+
+  const history = Array.isArray(detail?.history) ? detail.history : [];
+
+  let chargedPaidAmount = 0;
+  let chargedFreeRequestAmount = 0;
+  let chargedFreeShippingAmount = 0;
+  let spentPaidAmount = 0;
+  let spentFreeRequestAmount = 0;
+  let spentFreeShippingAmount = 0;
+
+  history.forEach((row) => {
+    const type = String(row?.type || "").trim();
+    if (type === "CHARGE_PAID") {
+      chargedPaidAmount += normalizePositive(row?.amount);
+      return;
+    }
+    if (type === "CHARGE_FREE_REQUEST") {
+      chargedFreeRequestAmount += normalizePositive(row?.amount);
+      return;
+    }
+    if (type === "CHARGE_FREE_SHIPPING") {
+      chargedFreeShippingAmount += normalizePositive(row?.amount);
+      return;
+    }
+    if (type === "SPEND_PAID") {
+      spentPaidAmount += normalizePositive(row?.spentPaidAmount);
+      return;
+    }
+    if (type === "SPEND_FREE_REQUEST") {
+      spentFreeRequestAmount += normalizePositive(row?.spentFreeAmount);
+      return;
+    }
+    if (type === "SPEND_FREE_SHIPPING") {
+      spentFreeShippingAmount += normalizePositive(row?.spentFreeAmount);
+    }
+  });
+
+  const chargedFreeAmount = chargedFreeRequestAmount + chargedFreeShippingAmount;
+  const spentFreeAmount = spentFreeRequestAmount + spentFreeShippingAmount;
+
+  return {
+    balance,
+    paidBalance: paidCredit,
+    freeBalance: freeRequestCredit + freeShippingCredit,
+    paidCredit,
+    freeRequestCredit,
+    freeShippingCredit,
+    spentAmount: normalizePositive(
+      detail?.spentAmount ?? spentPaidAmount + spentFreeAmount,
+    ),
+    chargedPaidAmount,
+    chargedFreeAmount,
+    chargedFreeRequestAmount,
+    chargedFreeShippingAmount,
+    spentPaidAmount,
+    spentFreeAmount,
+    spentFreeRequestAmount,
+    spentFreeShippingAmount,
+  } satisfies Partial<BusinessCredit>;
 };
 
 export function useAdminCreditPage() {
@@ -187,9 +291,9 @@ export function useAdminCreditPage() {
     }
   };
 
-  const loadStats = async () => {
+  const loadStats = async ({ silent = false }: { silent?: boolean } = {}) => {
     if (!token) return;
-    setLoadingStats(true);
+    if (!silent) setLoadingStats(true);
     try {
       const res = await request<{ success: boolean; data: CreditStats }>({
         path: "/api/admin/credits/stats",
@@ -198,13 +302,15 @@ export function useAdminCreditPage() {
       });
       if (res.ok && res.data?.data) setStats(res.data.data);
     } catch {
-      toast({
-        title: "통계 조회 실패",
-        description: "크레딧 통계를 불러오는데 실패했습니다.",
-        variant: "destructive",
-      });
+      if (!silent) {
+        toast({
+          title: "통계 조회 실패",
+          description: "크레딧 통계를 불러오는데 실패했습니다.",
+          variant: "destructive",
+        });
+      }
     } finally {
-      setLoadingStats(false);
+      if (!silent) setLoadingStats(false);
     }
   };
 
@@ -271,11 +377,11 @@ export function useAdminCreditPage() {
     }
   };
 
-  const loadOrganizations = async ({ reset = false } = {}) => {
+  const loadOrganizations = async ({ reset = false, silent = false }: OrganizationLoadOptions = {}) => {
     if (!token) return;
     if (loadingOrgsRef.current) return;
     loadingOrgsRef.current = true;
-    setLoadingOrgs(true);
+    if (!silent) setLoadingOrgs(true);
     try {
       const qs = new URLSearchParams({
         limit: String(ORG_PAGE_SIZE),
@@ -310,17 +416,19 @@ export function useAdminCreditPage() {
       setOrgSkip((reset ? 0 : orgSkip) + items.length);
       setOrgHasMore(items.length >= ORG_PAGE_SIZE);
     } catch (error: unknown) {
-      toast({
-        title: "사업자 조회 실패",
-        description: getErrorMessage(
-          error,
-          "사업자별 크레딧을 불러오는데 실패했습니다.",
-        ),
-        variant: "destructive",
-      });
+      if (!silent) {
+        toast({
+          title: "사업자 조회 실패",
+          description: getErrorMessage(
+            error,
+            "사업자별 크레딧을 불러오는데 실패했습니다.",
+          ),
+          variant: "destructive",
+        });
+      }
     } finally {
       loadingOrgsRef.current = false;
-      setLoadingOrgs(false);
+      if (!silent) setLoadingOrgs(false);
     }
   };
 
@@ -843,17 +951,69 @@ export function useAdminCreditPage() {
     loadSalesmanOverview();
   }, [period, token]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const refreshBusinessCreditRow = async (businessAnchorId: string) => {
+    if (!token) return;
+    const anchorId = String(businessAnchorId || "").trim();
+    if (!anchorId) return;
+
+    try {
+      const res = await request<BusinessCreditDetailResponse>({
+        path: `/api/admin/credits/businesses/${encodeURIComponent(anchorId)}`,
+        method: "GET",
+        token,
+      });
+      if (!res.ok || !res.data?.success || !res.data?.data) return;
+
+      const patch = buildBusinessCreditPatchFromDetail(res.data.data);
+
+      setBusinesses((prev) => {
+        let found = false;
+        const next = prev.map((item) => {
+          if (String(item._id || "") !== anchorId) return item;
+          found = true;
+          return { ...item, ...patch };
+        });
+        return found ? next : prev;
+      });
+
+      setAllRequestorBusinesses((prev) => {
+        let found = false;
+        const next = prev.map((item) => {
+          if (String(item._id || "") !== anchorId) return item;
+          found = true;
+          return { ...item, ...patch };
+        });
+        return found ? next : prev;
+      });
+
+      setOrgLedgerBusiness((prev) => {
+        if (!prev) return prev;
+        if (String(prev._id || "") !== anchorId) return prev;
+        return { ...prev, ...patch };
+      });
+    } catch {
+      // 실시간 보정 실패는 드롭 (다음 이벤트/재진입 시 동기화)
+    }
+  };
+
   // 관리자 실시간 갱신: role fan-out 이벤트를 수신하고,
-  // 현재 열린 페이지(이 훅이 마운트된 페이지)에서만 집계를 갱신한다.
+  // 현재 열린 페이지(이 훅이 마운트된 페이지)에서만 필요한 범위만 갱신한다.
   useAppEventDebouncedReload({
     enabled: Boolean(token),
     eventTypes: ["credit:balance-updated"],
     delayMs: 180,
-    onMatch: () => {
-      loadStats();
-      setOrgSkip(0);
-      setOrgHasMore(true);
-      void loadOrganizations({ reset: true });
+    onMatch: (evt) => {
+      void loadStats({ silent: true });
+
+      const payload = (evt?.data || null) as { businessAnchorId?: string } | null;
+      const targetBusinessAnchorId = String(payload?.businessAnchorId || "").trim();
+
+      if (!targetBusinessAnchorId) {
+        void loadOrganizations({ reset: true, silent: true });
+        return;
+      }
+
+      void refreshBusinessCreditRow(targetBusinessAnchorId);
     },
   });
 
