@@ -245,6 +245,8 @@
   - practice 화면과 requestor 수신 화면은 모두 `transferId` 기반 채팅(`/api/chats/practice/transfer-room/:transferId`)만 사용합니다.
   - legacy request 기반 practice 채팅 경로(`/api/chats/practice/request-room/:requestId`)는 사용 금지합니다.
 
+### 웹소켓 업데이트 표준 (무플리커 + 부하완화)
+
 - 웹소켓 실시간 업데이트(app-event) 구현 메모:
   - 발행 SSOT: 백엔드는 대상 role 전체 fan-out emit을 사용합니다.
   - 반영 SSOT: 프론트는 "현재 열려 있는 페이지"에서만 이벤트를 반영합니다.
@@ -278,8 +280,10 @@
     - 강한 일관성이 필요한 경우에도 전체 재조회는 `withLoading=false` 또는 섹션 단위 최소 로더로 제한합니다.
     - payload에 식별자(`requestId`, `businessAnchorId`, `transferId` 등)가 있으면 해당 엔티티만 갱신합니다.
     - 위 원칙은 크레딧/정산/의뢰/배송/practice/채팅 등 모든 app-event에 동일하게 적용합니다.
-  - 대시보드 리팩터링 표준 패턴(강제):
+  - 대시보드 리팩터링 표준 패턴(강제) — `HEAVY/LIGHT SUMMARY SPLIT`:
     - 쿼리 분리: `cards summary(경량)`와 `heavy summary(목록/상세)`를 분리합니다.
+    - 이벤트 처리 순서(고정): `payload 즉시 patch` → `coalesced 검증 refetch 1회`
+    - 이벤트-섹션 매핑 규칙: 이벤트 타입별로 영향 queryKey만 갱신하고 broad refetch를 기본값으로 쓰지 않습니다.
     - 이벤트 즉시 반영: `queryClient.setQueryData`로 카드/리스트를 먼저 patch하고, refetch는 검증 목적의 백그라운드 1회만 실행합니다.
     - 재조회 병합: in-flight refetch가 있으면 다음 plan을 큐에 합쳐(coalescing) 중복 요청을 막습니다.
     - 플랜 기반 갱신: 이벤트 타입별로 `cardsSummary/heavySummary/bulk/unmachinableOverview/shippingSummary/pricing/referral`를 명시적으로 선택합니다.

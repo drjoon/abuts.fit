@@ -261,6 +261,8 @@
     - 소비: `SPEND_PAID` / `SPEND_FREE_REQUEST` / `SPEND_FREE_SHIPPING`
   - `GET /api/credits/balance`는 `LedgerLine` 직접 집계(GL SSOT)만 사용합니다.
     - 프로세스 메모리 캐시를 사용하지 않아 승인/롤백 직후 잔액을 즉시 반영해야 합니다.
+### 웹소켓 업데이트 표준 (무플리커 + 부하완화)
+
   - 웹소켓 실시간 업데이트 발행/수신 SSOT:
     - 송신측은 대상 role 전체에 fan-out emit 합니다.
     - 수신측은 로그인된 role에서 이벤트를 수신하되, 현재 열려 있는 페이지(활성 화면)에서만 즉시 반영합니다.
@@ -270,11 +272,12 @@
       (예: `businessAnchorId`, `requestId`, `requestMongoId`, `transferId`, `roomId`)
     - 수신측이 전체 재조회 없이 대상 엔티티 1건을 갱신할 수 있는 API/키를 함께 보장합니다.
     - fan-out emit 자체는 유지하되, 수신 화면이 payload 조건으로 이벤트를 좁혀 처리할 수 있어야 합니다.
-  - 대시보드 성능 표준 패턴(강제):
+  - 대시보드 성능 표준 패턴(강제) — `HEAVY/LIGHT SUMMARY SPLIT`:
     - 무거운 대시보드는 `heavy summary`와 `cards summary` 경량 API를 분리합니다.
     - 이벤트 직후 화면 반응용 데이터는 경량 API에서 빠르게 반환되도록 스냅샷/최소 집계를 우선 사용합니다.
     - 이벤트 payload에는 최소한 `fromStage`, `toStage`, `requestId|requestMongoId`, `businessAnchorId`(해당 도메인)를 포함해 프론트 즉시 patch를 지원합니다.
     - refetch를 전제로 한 broad emit은 허용하되, 수신측이 이벤트 1회당 전체 대시보드 재계산을 강제당하지 않도록 API를 설계합니다.
+    - 프론트 처리 순서를 지원하도록 payload는 `즉시 patch 가능한 최소 필드`를 우선 포함합니다.
   - 관리자 크레딧(`credit:balance-updated`)은 `requestor`, `admin` role fan-out으로 발행하고,
     각 페이지는 payload(`businessAnchorId` 등) 조건이 맞을 때만 갱신합니다.
   - `emitCreditBalanceUpdatedToBusiness` payload 표준:
