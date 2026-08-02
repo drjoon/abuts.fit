@@ -284,6 +284,20 @@ async function computeSalesmanOverviewSnapshot({ range, salesmanIds }) {
                   ],
                 },
               },
+              freeRequestCount: {
+                $sum: {
+                  $cond: [
+                    {
+                      $and: [
+                        { $eq: ["$creditKind", "FREE_REQUEST"] },
+                        { $eq: ["$eventType", "REQUEST_SPEND_COMMIT"] },
+                      ],
+                    },
+                    1,
+                    0,
+                  ],
+                },
+              },
               freeShippingAmount: {
                 $sum: {
                   $cond: [
@@ -294,6 +308,20 @@ async function computeSalesmanOverviewSnapshot({ range, salesmanIds }) {
                       ],
                     },
                     "$baseAmount",
+                    0,
+                  ],
+                },
+              },
+              freeShippingCount: {
+                $sum: {
+                  $cond: [
+                    {
+                      $and: [
+                        { $eq: ["$creditKind", "FREE_SHIPPING"] },
+                        { $eq: ["$eventType", "SHIPPING_SPEND_COMMIT"] },
+                      ],
+                    },
+                    1,
                     0,
                   ],
                 },
@@ -328,10 +356,15 @@ async function computeSalesmanOverviewSnapshot({ range, salesmanIds }) {
   let paidRevenueAmount = 0;
   let bonusRevenueAmount = 0;
   let orderCount = 0;
+  let paidOrderCount = 0;
   for (const row of revenueByOrgId.values()) {
-    paidRevenueAmount += Number(row.revenueAmount || 0);
-    bonusRevenueAmount += Number(row.bonusAmount || 0);
-    orderCount += Number(row.orderCount || 0);
+    const revenueAmount = Number(row.revenueAmount || 0);
+    const bonusAmount = Number(row.bonusAmount || 0);
+    const thisOrderCount = Number(row.orderCount || 0);
+    paidRevenueAmount += revenueAmount;
+    bonusRevenueAmount += bonusAmount;
+    orderCount += thisOrderCount;
+    if (revenueAmount > 0) paidOrderCount += thisOrderCount;
   }
 
   let directAmount = 0;
@@ -346,7 +379,9 @@ async function computeSalesmanOverviewSnapshot({ range, salesmanIds }) {
   const totalAmount = normalizeNumber(directAmount);
 
   const freeRequestAmount = normalizeNumber(Number(freePeriodRows?.[0]?.freeRequestAmount || 0));
+  const freeRequestCount = normalizeNumber(Number(freePeriodRows?.[0]?.freeRequestCount || 0));
   const freeShippingAmount = normalizeNumber(Number(freePeriodRows?.[0]?.freeShippingAmount || 0));
+  const freeShippingCount = normalizeNumber(Number(freePeriodRows?.[0]?.freeShippingCount || 0));
   const freeAmount = normalizeNumber(freeRequestAmount + freeShippingAmount);
 
   return {
@@ -355,6 +390,7 @@ async function computeSalesmanOverviewSnapshot({ range, salesmanIds }) {
       paidRevenueAmount: normalizeNumber(paidRevenueAmount),
       bonusRevenueAmount: normalizeNumber(bonusRevenueAmount),
       orderCount: normalizeNumber(orderCount),
+      paidOrderCount: normalizeNumber(paidOrderCount),
     },
     commission: {
       totalAmount,
@@ -366,7 +402,9 @@ async function computeSalesmanOverviewSnapshot({ range, salesmanIds }) {
       adjustedAmount: normalizeNumber(adjustedAmount),
       balanceAmount: normalizeNumber(balanceAmount),
       freeRequestAmount,
+      freeRequestCount,
       freeShippingAmount,
+      freeShippingCount,
       freeAmount,
     },
   };
@@ -410,6 +448,7 @@ export async function recalcAdminSalesmanCreditsOverviewSnapshot({
         overview?.referral?.bonusRevenueAmount,
       ),
       orderCount: normalizeNumber(overview?.referral?.orderCount),
+      paidOrderCount: normalizeNumber(overview?.referral?.paidOrderCount),
     },
     commission: {
       totalAmount: normalizeNumber(overview?.commission?.totalAmount),
@@ -423,7 +462,9 @@ export async function recalcAdminSalesmanCreditsOverviewSnapshot({
       adjustedAmount: normalizeNumber(overview?.walletPeriod?.adjustedAmount),
       balanceAmount: normalizeNumber(overview?.walletPeriod?.balanceAmount),
       freeRequestAmount: normalizeNumber(overview?.walletPeriod?.freeRequestAmount),
+      freeRequestCount: normalizeNumber(overview?.walletPeriod?.freeRequestCount),
       freeShippingAmount: normalizeNumber(overview?.walletPeriod?.freeShippingAmount),
+      freeShippingCount: normalizeNumber(overview?.walletPeriod?.freeShippingCount),
       freeAmount: normalizeNumber(overview?.walletPeriod?.freeAmount),
     },
     computedAt: new Date(),
@@ -1610,6 +1651,20 @@ export async function adminGetSalesmanCredits(req, res) {
                 ],
               },
             },
+            freeRequestCount: {
+              $sum: {
+                $cond: [
+                  {
+                    $and: [
+                      { $eq: ["$creditKind", "FREE_REQUEST"] },
+                      { $eq: ["$eventType", "REQUEST_SPEND_COMMIT"] },
+                    ],
+                  },
+                  1,
+                  0,
+                ],
+              },
+            },
             freeShippingAmount: {
               $sum: {
                 $cond: [
@@ -1620,6 +1675,20 @@ export async function adminGetSalesmanCredits(req, res) {
                     ],
                   },
                   "$baseAmount",
+                  0,
+                ],
+              },
+            },
+            freeShippingCount: {
+              $sum: {
+                $cond: [
+                  {
+                    $and: [
+                      { $eq: ["$creditKind", "FREE_SHIPPING"] },
+                      { $eq: ["$eventType", "SHIPPING_SPEND_COMMIT"] },
+                    ],
+                  },
+                  1,
                   0,
                 ],
               },
@@ -1693,10 +1762,14 @@ export async function adminGetSalesmanCredits(req, res) {
       if (!ownerRole || !ownerId) continue;
       const key = `${ownerRole}:${ownerId}`;
       const freeRequestAmount = Math.round(Number(r?.freeRequestAmount || 0));
+      const freeRequestCount = Math.round(Number(r?.freeRequestCount || 0));
       const freeShippingAmount = Math.round(Number(r?.freeShippingAmount || 0));
+      const freeShippingCount = Math.round(Number(r?.freeShippingCount || 0));
       freePeriodByRoleAnchor.set(key, {
         freeRequestAmount,
+        freeRequestCount,
         freeShippingAmount,
+        freeShippingCount,
         freeAmount: freeRequestAmount + freeShippingAmount,
       });
     }
@@ -1748,7 +1821,9 @@ export async function adminGetSalesmanCredits(req, res) {
 
       const freePeriod = freePeriodByRoleAnchor.get(ownerKey) || {
         freeRequestAmount: 0,
+        freeRequestCount: 0,
         freeShippingAmount: 0,
+        freeShippingCount: 0,
         freeAmount: 0,
       };
 
@@ -1804,7 +1879,9 @@ export async function adminGetSalesmanCredits(req, res) {
           adjustedAmountPeriod: Math.round(Number(ledgerPeriod.adjust || 0)),
           balanceAmountPeriod: balancePeriod,
           freeRequestAmountPeriod: Number(freePeriod.freeRequestAmount || 0),
+          freeRequestCountPeriod: Number(freePeriod.freeRequestCount || 0),
           freeShippingAmountPeriod: Number(freePeriod.freeShippingAmount || 0),
+          freeShippingCountPeriod: Number(freePeriod.freeShippingCount || 0),
           freeAmountPeriod: Number(freePeriod.freeAmount || 0),
         },
         performance30d: {
@@ -1848,7 +1925,26 @@ export async function adminGetSalesmanCredits(req, res) {
 export async function adminGetManufacturerSummary(req, res) {
   try {
     const periodKey = String(req.query.period || "30d").trim() || "30d";
-    const range = getPeriodRangeUtcFromPeriodKey(periodKey);
+    const startDateRaw = String(req.query.startDate || "").trim();
+    const endDateRaw = String(req.query.endDate || "").trim();
+
+    const periodRange = getPeriodRangeUtcFromPeriodKey(periodKey);
+    const dateRangeOverride = {};
+    if (startDateRaw) {
+      const start = new Date(startDateRaw);
+      if (!Number.isNaN(start.getTime())) dateRangeOverride.start = start;
+    }
+    if (endDateRaw) {
+      const end = new Date(endDateRaw);
+      if (!Number.isNaN(end.getTime())) dateRangeOverride.end = end;
+    }
+    const range =
+      dateRangeOverride.start || dateRangeOverride.end
+        ? {
+            start: dateRangeOverride.start || new Date(0),
+            end: dateRangeOverride.end || new Date(),
+          }
+        : periodRange;
 
     const buildPipeline = ({ withPeriod = false }) => [
       {
@@ -1982,6 +2078,20 @@ export async function adminGetManufacturerSummary(req, res) {
                     ],
                   },
                 },
+                freeRequestCount: {
+                  $sum: {
+                    $cond: [
+                      {
+                        $and: [
+                          { $eq: ["$creditKind", "FREE_REQUEST"] },
+                          { $eq: ["$eventType", "REQUEST_SPEND_COMMIT"] },
+                        ],
+                      },
+                      1,
+                      0,
+                    ],
+                  },
+                },
                 freeShippingAmount: {
                   $sum: {
                     $cond: [
@@ -1992,6 +2102,48 @@ export async function adminGetManufacturerSummary(req, res) {
                         ],
                       },
                       "$baseAmount",
+                      0,
+                    ],
+                  },
+                },
+                freeShippingCount: {
+                  $sum: {
+                    $cond: [
+                      {
+                        $and: [
+                          { $eq: ["$creditKind", "FREE_SHIPPING"] },
+                          { $eq: ["$eventType", "SHIPPING_SPEND_COMMIT"] },
+                        ],
+                      },
+                      1,
+                      0,
+                    ],
+                  },
+                },
+                paidShippingAmount: {
+                  $sum: {
+                    $cond: [
+                      {
+                        $and: [
+                          { $eq: ["$creditKind", "PAID"] },
+                          { $eq: ["$eventType", "SHIPPING_SPEND_COMMIT"] },
+                        ],
+                      },
+                      "$baseAmount",
+                      0,
+                    ],
+                  },
+                },
+                paidShippingCount: {
+                  $sum: {
+                    $cond: [
+                      {
+                        $and: [
+                          { $eq: ["$creditKind", "PAID"] },
+                          { $eq: ["$eventType", "SHIPPING_SPEND_COMMIT"] },
+                        ],
+                      },
+                      1,
                       0,
                     ],
                   },
@@ -2041,11 +2193,26 @@ export async function adminGetManufacturerSummary(req, res) {
     const periodFreeRequestAmount = normalizeNumber(
       Number(periodFreeRows?.[0]?.freeRequestAmount || 0),
     );
+    const periodFreeRequestCount = normalizeNumber(
+      Number(periodFreeRows?.[0]?.freeRequestCount || 0),
+    );
     const periodFreeShippingAmount = normalizeNumber(
       Number(periodFreeRows?.[0]?.freeShippingAmount || 0),
     );
+    const periodFreeShippingCount = normalizeNumber(
+      Number(periodFreeRows?.[0]?.freeShippingCount || 0),
+    );
+    const periodPaidShippingAmount = normalizeNumber(
+      Number(periodFreeRows?.[0]?.paidShippingAmount || 0),
+    );
+    const periodPaidShippingCount = normalizeNumber(
+      Number(periodFreeRows?.[0]?.paidShippingCount || 0),
+    );
     const periodFreeAmount = normalizeNumber(
       periodFreeRequestAmount + periodFreeShippingAmount,
+    );
+    const periodShippingAmount = normalizeNumber(
+      periodPaidShippingAmount + periodFreeShippingAmount,
     );
 
     return res.json({
@@ -2057,7 +2224,12 @@ export async function adminGetManufacturerSummary(req, res) {
         periodBalanceAmount,
         totalBalanceAmount,
         periodFreeRequestAmount,
+        periodFreeRequestCount,
         periodFreeShippingAmount,
+        periodFreeShippingCount,
+        periodPaidShippingAmount,
+        periodPaidShippingCount,
+        periodShippingAmount,
         periodFreeAmount,
       },
     });
@@ -3169,6 +3341,20 @@ export async function adminGetAdminCredits(req, res) {
                 ],
               },
             },
+            freeRequestCount: {
+              $sum: {
+                $cond: [
+                  {
+                    $and: [
+                      { $eq: ["$creditKind", "FREE_REQUEST"] },
+                      { $eq: ["$eventType", "REQUEST_SPEND_COMMIT"] },
+                    ],
+                  },
+                  1,
+                  0,
+                ],
+              },
+            },
             freeShippingAmount: {
               $sum: {
                 $cond: [
@@ -3179,6 +3365,20 @@ export async function adminGetAdminCredits(req, res) {
                     ],
                   },
                   "$baseAmount",
+                  0,
+                ],
+              },
+            },
+            freeShippingCount: {
+              $sum: {
+                $cond: [
+                  {
+                    $and: [
+                      { $eq: ["$creditKind", "FREE_SHIPPING"] },
+                      { $eq: ["$eventType", "SHIPPING_SPEND_COMMIT"] },
+                    ],
+                  },
+                  1,
                   0,
                 ],
               },
@@ -3226,10 +3426,14 @@ export async function adminGetAdminCredits(req, res) {
       const ownerId = String(row?._id?.ownerId || "");
       if (!ownerId) continue;
       const freeRequestAmount = Number(row?.freeRequestAmount || 0);
+      const freeRequestCount = Number(row?.freeRequestCount || 0);
       const freeShippingAmount = Number(row?.freeShippingAmount || 0);
+      const freeShippingCount = Number(row?.freeShippingCount || 0);
       allFreeMap.set(ownerId, {
         freeRequestAmount,
+        freeRequestCount,
         freeShippingAmount,
+        freeShippingCount,
         freeAmount: freeRequestAmount + freeShippingAmount,
       });
     }
@@ -3239,10 +3443,14 @@ export async function adminGetAdminCredits(req, res) {
       const ownerId = String(row?._id?.ownerId || "");
       if (!ownerId) continue;
       const freeRequestAmount = Number(row?.freeRequestAmount || 0);
+      const freeRequestCount = Number(row?.freeRequestCount || 0);
       const freeShippingAmount = Number(row?.freeShippingAmount || 0);
+      const freeShippingCount = Number(row?.freeShippingCount || 0);
       periodFreeMap.set(ownerId, {
         freeRequestAmount,
+        freeRequestCount,
         freeShippingAmount,
+        freeShippingCount,
         freeAmount: freeRequestAmount + freeShippingAmount,
       });
     }
@@ -3254,12 +3462,16 @@ export async function adminGetAdminCredits(req, res) {
 
       const allFree = allFreeMap.get(ownerId) || {
         freeRequestAmount: 0,
+        freeRequestCount: 0,
         freeShippingAmount: 0,
+        freeShippingCount: 0,
         freeAmount: 0,
       };
       const periodFree = periodFreeMap.get(ownerId) || {
         freeRequestAmount: 0,
+        freeRequestCount: 0,
         freeShippingAmount: 0,
+        freeShippingCount: 0,
         freeAmount: 0,
       };
 
@@ -3268,6 +3480,7 @@ export async function adminGetAdminCredits(req, res) {
 
       return {
         adminUserId: admin._id,
+        businessAnchorId: admin?.businessAnchorId || null,
         name: admin.name,
         email: admin.email,
         active: admin.active,
@@ -3282,10 +3495,14 @@ export async function adminGetAdminCredits(req, res) {
           adjustedAmountPeriod: period.adjust,
           balanceAmountPeriod,
           freeRequestAmount: allFree.freeRequestAmount,
+          freeRequestCount: allFree.freeRequestCount,
           freeShippingAmount: allFree.freeShippingAmount,
+          freeShippingCount: allFree.freeShippingCount,
           freeAmount: allFree.freeAmount,
           freeRequestAmountPeriod: periodFree.freeRequestAmount,
+          freeRequestCountPeriod: periodFree.freeRequestCount,
           freeShippingAmountPeriod: periodFree.freeShippingAmount,
+          freeShippingCountPeriod: periodFree.freeShippingCount,
           freeAmountPeriod: periodFree.freeAmount,
         },
       };

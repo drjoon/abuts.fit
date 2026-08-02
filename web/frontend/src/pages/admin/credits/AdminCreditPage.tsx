@@ -4,8 +4,6 @@
 // - web/frontend/src/pages/admin/credits/components/SalesmanCreditTab.tsx
 // - web/frontend/src/pages/admin/credits/hooks/useAdminCreditPage.ts
 import { useMemo, useState } from "react";
-import { usePeriodStore } from "@/store/usePeriodStore";
-import { PeriodFilter } from "@/shared/ui/PeriodFilter";
 import { useNavigate } from "react-router-dom";
 import { Wrench } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -20,7 +18,7 @@ import { useAdminCreditPage } from "./hooks/useAdminCreditPage";
 
 export default function AdminCreditPage() {
   const state = useAdminCreditPage();
-  const { setPeriod } = usePeriodStore();
+
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState("");
 
@@ -96,7 +94,7 @@ export default function AdminCreditPage() {
                 영업자
               </TabsTrigger>
             </TabsList>
-            <PeriodFilter value={state.period} onChange={setPeriod} />
+
           </div>
 
           {state.creditTab === "salesman" ? (

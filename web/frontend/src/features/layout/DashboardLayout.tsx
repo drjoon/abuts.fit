@@ -3,6 +3,7 @@ import { Outlet, useNavigate, useLocation } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useAuthStore } from "@/store/useAuthStore";
 import { usePeriodStore } from "@/store/usePeriodStore";
+import { AdminPeriodDateFilter } from "@/shared/ui/AdminPeriodDateFilter";
 import { PeriodFilter } from "@/shared/ui/PeriodFilter";
 import { apiFetch } from "@/shared/api/apiClient";
 import { toKstYmd } from "@/shared/date/kst";
@@ -60,7 +61,6 @@ import {
   Sparkles,
   Share2,
   Clock,
-  Wrench,
   Boxes,
   Package,
   CheckCircle,
@@ -110,11 +110,6 @@ const sidebarItems = {
     { icon: Building2, label: "사업자", href: "/dashboard/businesses" },
     { icon: Users, label: "사용자", href: "/dashboard/users" },
     { icon: Wallet, label: "크레딧", href: "/dashboard/credits" },
-    {
-      icon: Wrench,
-      label: "누락 확인/보정",
-      href: "/dashboard/businesses?reconcile=1",
-    },
     { icon: Users2, label: "소개그룹", href: "/dashboard/referral-groups" },
     {
       icon: FileText,
@@ -214,11 +209,6 @@ const adminSidebarSections: SidebarSection[] = [
     title: "재무",
     items: [
       { icon: Wallet, label: "크레딧", href: "/dashboard/credits" },
-      {
-        icon: Wrench,
-        label: "누락 확인/보정",
-        href: "/dashboard/businesses?reconcile=1",
-      },
       { icon: Wallet, label: "정산", href: "/dashboard/payments" },
       { icon: FileText, label: "세금계산서", href: "/dashboard/tax-invoices" },
     ],
@@ -286,7 +276,14 @@ const getRoleBadgeVariant = (role: string) => {
 
 export const DashboardLayout = () => {
   const { user, logout, token, loginWithToken } = useAuthStore();
-  const { period, setPeriod } = usePeriodStore();
+  const {
+    period,
+    setPeriod,
+    customStartDate,
+    customEndDate,
+    setCustomDateRange,
+    clearCustomDateRange,
+  } = usePeriodStore();
   const navigate = useNavigate();
   const location = useLocation();
   const { toast } = useToast();
@@ -1155,7 +1152,14 @@ export const DashboardLayout = () => {
           {user.role === "admin" &&
             !location.pathname.startsWith("/dashboard/settings") && (
               <div className="sticky top-0 z-10 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 px-4 py-2">
-                <PeriodFilter value={period} onChange={setPeriod} />
+                <AdminPeriodDateFilter
+                  period={period}
+                  onPeriodChange={setPeriod}
+                  customStartDate={customStartDate}
+                  customEndDate={customEndDate}
+                  onCustomRangeChange={setCustomDateRange}
+                  onClearCustomRange={clearCustomDateRange}
+                />
               </div>
             )}
           <div

@@ -6,7 +6,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch } from "@/shared/api/apiClient";
 import { toKstYmd } from "@/shared/date/kst";
-import { periodToRange } from "@/store/usePeriodStore";
+import { usePeriodStore, periodToRange } from "@/store/usePeriodStore";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
 import { PeriodFilter, type PeriodFilterValue } from "@/shared/ui/PeriodFilter";
@@ -124,16 +124,10 @@ const statusColor = (s: string) => {
   return "";
 };
 
-const PERIOD_STORAGE_KEY = "abuts.manufacturer.payments.period";
-
-const readStoredPeriod = (): PeriodFilterValue => {
-  if (typeof window === "undefined") return "30d";
-  const raw = window.localStorage.getItem(PERIOD_STORAGE_KEY);
-  return isPeriodFilterValue(raw) ? raw : "30d";
-};
-
 const periodToYmdRange = (period: PeriodFilterValue): { from: string; to: string } | null => {
-  const range = periodToRange(period);
+  // 제조사 정산 페이지는 자체 period/from/to를 사용한다.
+  // 관리자 전역 커스텀 날짜 필터의 간접 영향을 받지 않도록 옵션을 명시적으로 비운다.
+  const range = periodToRange(period, { customStartDate: "", customEndDate: "" });
   if (!range) return null;
   const from = toKstYmd(new Date(range.startDate));
   const to = toKstYmd(new Date(range.endDate));
@@ -281,7 +275,7 @@ export const ManufacturerPaymentPage = () => {
 
   const [tab, setTab] = useState<"snapshot" | "payments">("snapshot");
 
-  const [period, setPeriod] = useState<PeriodFilterValue>(() => readStoredPeriod());
+  const { period, setPeriod } = usePeriodStore();
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [q, setQ] = useState("");
@@ -447,11 +441,7 @@ export const ManufacturerPaymentPage = () => {
     }
   }, [token, buildSnapshotParams, toast]);
 
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      window.localStorage.setItem(PERIOD_STORAGE_KEY, period);
-    }
-  }, [period]);
+
 
   useEffect(() => {
     if (!isManufacturer) return;
