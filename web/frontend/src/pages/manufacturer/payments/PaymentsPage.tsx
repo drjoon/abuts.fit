@@ -491,29 +491,57 @@ export const ManufacturerPaymentPage = () => {
 
   const snapshotTotals = useMemo(() => {
     let paidUnsettledTotal = 0;
+    let paidRequestTotal = 0;
+    let paidRequestCountTotal = 0;
+    let paidShippingTotal = 0;
+    let paidShippingCountTotal = 0;
+
     let freeRequestTotal = 0;
+    let freeRequestCountTotal = 0;
     let freeShippingTotal = 0;
+    let freeShippingCountTotal = 0;
+
     let payoutTotal = 0;
+    let payoutCount = 0;
 
     for (const row of snapItems) {
       paidUnsettledTotal += Number(row.netPaidAmount ?? row.netAmount ?? 0);
+
+      paidRequestTotal += Number(row.earnRequestPaidAmount ?? 0);
+      paidRequestCountTotal += Number(row.earnRequestPaidCount ?? 0);
+      paidShippingTotal += Number(row.earnShippingPaidAmount ?? 0);
+      paidShippingCountTotal += Number(row.earnShippingPaidCount ?? 0);
+
       freeRequestTotal += Number(
         row.netFreeRequestAmount ?? row.earnRequestFreeAmount ?? 0,
       );
+      freeRequestCountTotal += Number(row.earnRequestFreeCount ?? 0);
+
       freeShippingTotal += Number(
         row.netFreeShippingAmount ?? row.earnShippingFreeAmount ?? 0,
       );
-      payoutTotal += Number(row.payoutAmount || 0);
+      freeShippingCountTotal += Number(row.earnShippingFreeCount ?? 0);
+
+      const payoutAmount = Number(row.payoutAmount || 0);
+      payoutTotal += payoutAmount;
+      if (payoutAmount !== 0) payoutCount += 1;
     }
 
     const freeUnsettledTotal = freeRequestTotal + freeShippingTotal;
 
     return {
       paidUnsettledTotal,
+      paidRequestTotal,
+      paidRequestCountTotal,
+      paidShippingTotal,
+      paidShippingCountTotal,
       freeRequestTotal,
+      freeRequestCountTotal,
       freeShippingTotal,
+      freeShippingCountTotal,
       freeUnsettledTotal,
       payoutTotal,
+      payoutCount,
     };
   }, [snapItems]);
 
@@ -641,6 +669,9 @@ export const ManufacturerPaymentPage = () => {
               <div className="text-lg sm:text-xl md:text-2xl font-semibold text-blue-700 tabular-nums">
                 ₩{snapshotTotals.paidUnsettledTotal.toLocaleString()}
               </div>
+              <div className="mt-1 text-xs text-muted-foreground tabular-nums leading-tight">
+                의뢰 ₩{snapshotTotals.paidRequestTotal.toLocaleString()} ({snapshotTotals.paidRequestCountTotal}) / 배송 ₩{snapshotTotals.paidShippingTotal.toLocaleString()} ({snapshotTotals.paidShippingCountTotal})
+              </div>
             </CardContent>
           </Card>
           <Card className="min-h-[116px]">
@@ -654,7 +685,7 @@ export const ManufacturerPaymentPage = () => {
                 ₩{snapshotTotals.freeUnsettledTotal.toLocaleString()}
               </div>
               <div className="mt-1 text-xs text-muted-foreground tabular-nums leading-tight">
-                의뢰 ₩{snapshotTotals.freeRequestTotal.toLocaleString()} / 배송 ₩{snapshotTotals.freeShippingTotal.toLocaleString()}
+                의뢰 ₩{snapshotTotals.freeRequestTotal.toLocaleString()} ({snapshotTotals.freeRequestCountTotal}) / 배송 ₩{snapshotTotals.freeShippingTotal.toLocaleString()} ({snapshotTotals.freeShippingCountTotal})
               </div>
             </CardContent>
           </Card>
@@ -667,6 +698,9 @@ export const ManufacturerPaymentPage = () => {
             <CardContent>
               <div className="text-lg sm:text-xl md:text-2xl font-semibold tabular-nums">
                 ₩{snapshotTotals.payoutTotal.toLocaleString()}
+              </div>
+              <div className="mt-1 text-xs text-muted-foreground tabular-nums leading-tight">
+                지급 ({snapshotTotals.payoutCount})
               </div>
             </CardContent>
           </Card>
