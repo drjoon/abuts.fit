@@ -429,6 +429,77 @@ export async function getSalesmanDashboard(req, res) {
       String(myBusinessAnchorId),
     );
 
+    const myOwnerRole = isDevops ? "devops" : "salesman";
+    const myRevenueAccountCode = isDevops ? "REV_DEVOPS" : "REV_SALESMAN";
+
+    const [freeBreakdownRow] = await LedgerLine.aggregate([
+      {
+        $match: {
+          ownerRole: myOwnerRole,
+          ownerId: myBusinessAnchorObjectId,
+          accountCode: myRevenueAccountCode,
+          occurredAt: { $gte: start, $lt: end },
+        },
+      },
+      {
+        $lookup: {
+          from: LedgerJournal.collection.name,
+          localField: "journalId",
+          foreignField: "journalId",
+          as: "journalDoc",
+        },
+      },
+      {
+        $unwind: {
+          path: "$journalDoc",
+          preserveNullAndEmptyArrays: true,
+        },
+      },
+      {
+        $addFields: {
+          eventType: { $ifNull: ["$journalDoc.eventType", ""] },
+          baseAmount: { $ifNull: ["$amountExcludingVat", "$amount"] },
+        },
+      },
+      {
+        $group: {
+          _id: null,
+          freeRequestAmount: {
+            $sum: {
+              $cond: [
+                {
+                  $and: [
+                    { $eq: ["$creditKind", "FREE_REQUEST"] },
+                    { $eq: ["$eventType", "REQUEST_SPEND_COMMIT"] },
+                  ],
+                },
+                "$baseAmount",
+                0,
+              ],
+            },
+          },
+          freeShippingAmount: {
+            $sum: {
+              $cond: [
+                {
+                  $and: [
+                    { $eq: ["$creditKind", "FREE_SHIPPING"] },
+                    { $eq: ["$eventType", "SHIPPING_SPEND_COMMIT"] },
+                  ],
+                },
+                "$baseAmount",
+                0,
+              ],
+            },
+          },
+        },
+      },
+    ]);
+
+    const freeNetRequestAmount = roundMoney(Number(freeBreakdownRow?.freeRequestAmount || 0));
+    const freeNetShippingAmount = roundMoney(Number(freeBreakdownRow?.freeShippingAmount || 0));
+    const freeNetAmount = roundMoney(freeNetRequestAmount + freeNetShippingAmount);
+
     const referredRequestors = await BusinessAnchor.find({
       referredByAnchorId: myBusinessAnchorObjectId,
       businessType: "requestor",
@@ -506,6 +577,9 @@ export async function getSalesmanDashboard(req, res) {
             totalCommissionAmount: 0,
             payableGrossCommissionAmount: 0,
             paidNetCommissionAmount: roundMoney(totalCommissionAmount),
+            freeNetRequestAmount,
+            freeNetShippingAmount,
+            freeNetAmount,
             referralSalesmanCount,
           },
           referralSalesmen,
@@ -643,6 +717,9 @@ export async function getSalesmanDashboard(req, res) {
           totalCommissionAmount: roundMoney(totalCommissionAmount),
           payableGrossCommissionAmount: roundMoney(totalCommissionAmount),
           paidNetCommissionAmount: 0,
+          freeNetRequestAmount,
+          freeNetShippingAmount,
+          freeNetAmount,
         },
         referralSalesmen,
         organizations,

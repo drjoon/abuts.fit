@@ -122,6 +122,9 @@
 - 수익 계정 SSOT:
   - `REV_MANUFACTURER`, `REV_DEVOPS`, `REV_SALESMAN`, `REV_ADMIN`
   - 유료/무료 모두 수익 라인을 기록하되, 정산 지급은 유료만 대상
+  - 배송비 정책(강제): 배송 크레딧 소비(`SHIPPING_SPEND_COMMIT`)의 수익은 **전액 제조사 귀속**으로 기록
+  - paid/free 혼합 소비는 의뢰자 잔액에서 **무료 우선 차감 후 부족분만 유료 차감**을 적용
+  - 수익 라인(`REV_*`)의 paid/free 표시는 role 순서가 아니라 소비된 paid/free 총량을 role base에 비례 배분(무편향)해 기록
   - 무료 수익은 지급 0원으로 정산완료 상태만 표시 가능
 - 롤백 원칙:
   - 롤백은 REFUND 추가가 아니라 원본 커밋 이벤트 및 대응 라인의 **물리 삭제**
@@ -131,6 +134,12 @@
 - 정산 보존식 SSOT(의뢰 단위):
   - `의뢰자 순소비(현존 COMMIT 이벤트 기준)` = `어벗츠/제조사/개발운영사/영업자 수익합`
   - 합계 비교는 VAT 제외 공급가(`amountExcludingVat`) 우선
+- 정산 지급 가능 잔액 집계 원칙(공통):
+  - `SETTLEMENT_PAYOUT`은 포함
+  - `EARN/ADJUST`는 `creditKind=PAID|null`만 포함 (무료 수익/무료 조정은 지급 대상 제외)
+- CreditLedger → GL 이관 보정 원칙:
+  - 레거시 `CreditLedger`를 원본으로 이관하되, 정책 위반/무효 행(예: 0원 SPEND, 참조 누락된 상쇄형 SHIPPING SPEND/REFUND 쌍)은 장부 반영 대신 무시 처리
+  - 샘플(`rnd_sample|copied_sample`) 및 비의뢰 수동 NC 작업은 장부 무기록 원칙 유지
 - 이벤트 기반 캐시 갱신 우선, 조회 시 대규모 재계산 지양
 
 ### 2.4 practice(치과) 전송

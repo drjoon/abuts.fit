@@ -35,6 +35,9 @@ type SalesmanRow = {
   };
   wallet?: {
     balanceAmountPeriod?: number;
+    freeRequestAmountPeriod?: number;
+    freeShippingAmountPeriod?: number;
+    freeAmountPeriod?: number;
   };
   performance30d?: {
     commissionAmount?: number;
@@ -59,6 +62,9 @@ type Overview = {
     paidOutAmount?: number;
     adjustedAmount?: number;
     balanceAmount?: number;
+    freeRequestAmount?: number;
+    freeShippingAmount?: number;
+    freeAmount?: number;
   };
 };
 
@@ -68,6 +74,9 @@ type ManufacturerSummary = {
   periodPaidOutAmount?: number;
   periodBalanceAmount?: number;
   totalBalanceAmount?: number;
+  periodFreeRequestAmount?: number;
+  periodFreeShippingAmount?: number;
+  periodFreeAmount?: number;
 };
 
 const formatMoney = (value?: number) =>
@@ -85,6 +94,9 @@ type AnchorGroup = {
   revenueAmount: number;
   commissionAmount: number;
   balanceAmount: number;
+  freeRequestAmount: number;
+  freeShippingAmount: number;
+  freeAmount: number;
   introducedCount: number;
 };
 
@@ -102,6 +114,12 @@ type AdminCreditRow = {
     paidOutAmountPeriod?: number;
     adjustedAmountPeriod?: number;
     balanceAmountPeriod?: number;
+    freeRequestAmount?: number;
+    freeShippingAmount?: number;
+    freeAmount?: number;
+    freeRequestAmountPeriod?: number;
+    freeShippingAmountPeriod?: number;
+    freeAmountPeriod?: number;
   };
 };
 
@@ -140,7 +158,7 @@ function SettlementCard({ group }: { group: AnchorGroup }) {
           <span>{formatMoney(group.commissionAmount)}원</span>
         </div>
         <div className="flex items-center justify-between">
-          <span className="text-muted-foreground">정산 잔액</span>
+          <span className="text-muted-foreground">미정산 잔액</span>
           <span className="font-semibold text-blue-600">
             {formatMoney(group.balanceAmount)}원
           </span>
@@ -191,15 +209,50 @@ function SummaryCard({
   description: string;
 }) {
   return (
-    <Card>
+    <Card className="min-h-[116px]">
       <CardHeader className="pb-2">
-        <CardTitle className="text-sm font-medium text-muted-foreground">
+        <CardTitle className="text-sm font-medium text-muted-foreground break-keep">
           {title}
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-1">
-        <div className="text-2xl font-bold">{value}</div>
+        <div className="text-lg sm:text-xl md:text-2xl font-bold tabular-nums">{value}</div>
         <div className="text-xs text-muted-foreground">{description}</div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function SummaryBreakdownCard({
+  title,
+  totalValue,
+  requestValue,
+  shippingValue,
+  description,
+}: {
+  title: string;
+  totalValue: string;
+  requestValue: string;
+  shippingValue: string;
+  description?: string;
+}) {
+  return (
+    <Card className="min-h-[116px]">
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm font-medium text-muted-foreground break-keep">
+          {title}
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-1">
+        <div className="text-lg sm:text-xl md:text-2xl font-bold tabular-nums text-violet-700 leading-tight">
+          {totalValue}
+        </div>
+        <div className="text-xs text-muted-foreground tabular-nums leading-tight">
+          의뢰 {requestValue} / 배송 {shippingValue}
+        </div>
+        {description ? (
+          <div className="text-xs text-muted-foreground">{description}</div>
+        ) : null}
       </CardContent>
     </Card>
   );
@@ -220,11 +273,35 @@ function RoleSummarySection({
     earned?: number;
     balance?: number;
     paidOut?: number;
+    freeRequest?: number;
+    freeShipping?: number;
+    freeTotal?: number;
   };
 }) {
+  const fallbackBalanceTotal = groups.reduce(
+    (sum, g) => sum + Number(g.balanceAmount || 0),
+    0,
+  );
+  const fallbackEarnedTotal = groups.reduce(
+    (sum, g) => sum + Number(g.commissionAmount || 0),
+    0,
+  );
+  const fallbackFreeRequestTotal = groups.reduce(
+    (sum, g) => sum + Number(g.freeRequestAmount || 0),
+    0,
+  );
+  const fallbackFreeShippingTotal = groups.reduce(
+    (sum, g) => sum + Number(g.freeShippingAmount || 0),
+    0,
+  );
+  const fallbackFreeTotal = groups.reduce(
+    (sum, g) => sum + Number(g.freeAmount || 0),
+    0,
+  );
+
   return (
     <div className="space-y-4">
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
         <SummaryCard
           title={`${title} 배분율`}
           value={rate}
@@ -237,13 +314,19 @@ function RoleSummarySection({
         />
         <SummaryCard
           title="기간 발생 수익"
-          value={`${formatMoney(summaryData?.earned)}원`}
+          value={`${formatMoney(summaryData?.earned ?? fallbackEarnedTotal)}원`}
           description="기간 내 EARN 합계"
         />
         <SummaryCard
-          title="미정산 잔액"
-          value={`${formatMoney(summaryData?.balance)}원`}
+          title="유료 미정산액 합계"
+          value={`${formatMoney(summaryData?.balance ?? fallbackBalanceTotal)}원`}
           description="누적 미지급 잔액"
+        />
+        <SummaryBreakdownCard
+          title="무료 미정산액 합계"
+          totalValue={`${formatMoney(summaryData?.freeTotal ?? fallbackFreeTotal)}원`}
+          requestValue={`${formatMoney(summaryData?.freeRequest ?? fallbackFreeRequestTotal)}원`}
+          shippingValue={`${formatMoney(summaryData?.freeShipping ?? fallbackFreeShippingTotal)}원`}
         />
       </div>
       {groups.length > 0 && (
@@ -362,6 +445,13 @@ export default function AdminPaymentsPage() {
         existing.memberCount += 1;
         if (row.active) existing.activeMemberCount += 1;
         existing.balanceAmount += Number(row.wallet?.balanceAmountPeriod || 0);
+        existing.freeRequestAmount += Number(
+          row.wallet?.freeRequestAmountPeriod || 0,
+        );
+        existing.freeShippingAmount += Number(
+          row.wallet?.freeShippingAmountPeriod || 0,
+        );
+        existing.freeAmount += Number(row.wallet?.freeAmountPeriod || 0);
         existing.revenueAmount += Number(
           row.performance30d?.revenueAmount || 0,
         );
@@ -384,6 +474,9 @@ export default function AdminPaymentsPage() {
           revenueAmount: Number(row.performance30d?.revenueAmount || 0),
           commissionAmount: Number(row.performance30d?.commissionAmount || 0),
           balanceAmount: Number(row.wallet?.balanceAmountPeriod || 0),
+          freeRequestAmount: Number(row.wallet?.freeRequestAmountPeriod || 0),
+          freeShippingAmount: Number(row.wallet?.freeShippingAmountPeriod || 0),
+          freeAmount: Number(row.wallet?.freeAmountPeriod || 0),
           introducedCount: Number(row.performance30d?.introducedCount || 0),
         });
       }
@@ -464,7 +557,7 @@ export default function AdminPaymentsPage() {
             description="기간 내 배분 수수료 합계"
           />
           <SummaryCard
-            title="미정산 잔액"
+            title="유료 미정산액 합계"
             value={isLoading ? "-" : `${formatMoney(totals.unpaidBalance)}원`}
             description="누적 미지급액"
           />
@@ -491,6 +584,9 @@ export default function AdminPaymentsPage() {
                 earned: manufacturerSummary?.periodEarnedAmount,
                 balance: manufacturerSummary?.totalBalanceAmount,
                 paidOut: manufacturerSummary?.periodPaidOutAmount,
+                freeRequest: manufacturerSummary?.periodFreeRequestAmount,
+                freeShipping: manufacturerSummary?.periodFreeShippingAmount,
+                freeTotal: manufacturerSummary?.periodFreeAmount,
               }}
             />
           </TabsContent>
@@ -513,7 +609,7 @@ export default function AdminPaymentsPage() {
 
           <TabsContent value="admin">
             <div className="space-y-4">
-              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
                 <SummaryCard
                   title="관리자 계정 수"
                   value={`${adminRows.length}개`}
@@ -542,7 +638,7 @@ export default function AdminPaymentsPage() {
                   description="AdminCreditLedger PAYOUT 합계"
                 />
                 <SummaryCard
-                  title="미정산 잔액"
+                  title="유료 미정산액 합계"
                   value={`${formatMoney(
                     adminRows.reduce(
                       (sum, row) =>
@@ -551,6 +647,30 @@ export default function AdminPaymentsPage() {
                     ),
                   )}원`}
                   description="누적 미지급 잔액"
+                />
+                <SummaryBreakdownCard
+                  title="무료 미정산액 합계"
+                  totalValue={`${formatMoney(
+                    adminRows.reduce(
+                      (sum, row) =>
+                        sum + Number(row.wallet?.freeAmountPeriod || 0),
+                      0,
+                    ),
+                  )}원`}
+                  requestValue={`${formatMoney(
+                    adminRows.reduce(
+                      (sum, row) =>
+                        sum + Number(row.wallet?.freeRequestAmountPeriod || 0),
+                      0,
+                    ),
+                  )}원`}
+                  shippingValue={`${formatMoney(
+                    adminRows.reduce(
+                      (sum, row) =>
+                        sum + Number(row.wallet?.freeShippingAmountPeriod || 0),
+                      0,
+                    ),
+                  )}원`}
                 />
               </div>
 

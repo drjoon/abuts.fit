@@ -41,6 +41,9 @@ export type CommissionDashboardData = {
     totalCommissionAmount?: number;
     payableGrossCommissionAmount?: number;
     paidNetCommissionAmount?: number;
+    freeNetRequestAmount?: number;
+    freeNetShippingAmount?: number;
+    freeNetAmount?: number;
   };
   businesses?: Array<{
     businessAnchorId?: string;

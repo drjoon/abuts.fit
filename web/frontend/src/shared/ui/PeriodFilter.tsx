@@ -3,13 +3,9 @@
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 import { cn } from "@/shared/ui/cn";
+import type { PeriodFilterValue } from "@/shared/ui/periodFilterValues";
 
-export type PeriodFilterValue =
-  | "7d"
-  | "30d"
-  | "lastMonth"
-  | "thisMonth"
-  | "90d";
+export type { PeriodFilterValue } from "@/shared/ui/periodFilterValues";
 
 type Props = {
   value: PeriodFilterValue;

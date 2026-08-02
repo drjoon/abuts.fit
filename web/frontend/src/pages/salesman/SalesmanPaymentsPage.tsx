@@ -9,10 +9,11 @@
  * 공통 데이터 훅/타입은 features/commission/useCommissionDashboard.ts 참고.
  */
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useAuthStore } from "@/store/useAuthStore";
 import { DashboardShell } from "@/shared/ui/dashboard/DashboardShell";
 import { PeriodFilter, type PeriodFilterValue } from "@/shared/ui/PeriodFilter";
+import { isPeriodFilterValue } from "@/shared/ui/periodFilterValues";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { SalesmanLedgerModal } from "@/shared/components/SalesmanLedgerModal";
@@ -23,9 +24,17 @@ import {
   type CommissionDashboardData,
 } from "@/features/commission/useCommissionDashboard";
 
+const PERIOD_STORAGE_KEY = "abuts.salesman.payments.period";
+
+const readStoredPeriod = (): PeriodFilterValue => {
+  if (typeof window === "undefined") return "30d";
+  const raw = window.localStorage.getItem(PERIOD_STORAGE_KEY);
+  return isPeriodFilterValue(raw) ? raw : "30d";
+};
+
 export default function SalesmanPaymentsPage() {
   const { user } = useAuthStore();
-  const [period, setPeriod] = useState<PeriodFilterValue>("30d");
+  const [period, setPeriod] = useState<PeriodFilterValue>(() => readStoredPeriod());
   const [ledgerOpen, setLedgerOpen] = useState(false);
 
   const { data, loading } = useCommissionDashboard(period);
@@ -39,6 +48,12 @@ export default function SalesmanPaymentsPage() {
     () => (Array.isArray(data?.organizations) ? data.organizations : []),
     [data?.organizations],
   );
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(PERIOD_STORAGE_KEY, period);
+    }
+  }, [period]);
 
   if (!user) return null;
 
@@ -59,57 +74,74 @@ export default function SalesmanPaymentsPage() {
             </Button>
           </div>
         }
-        statsGridClassName="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4"
+        statsGridClassName="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5"
         stats={
           <>
             {/* 소개 수수료 (10%) */}
-            <Card>
+            <Card className="min-h-[116px]">
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium">
+                <CardTitle className="text-sm font-medium break-keep">
                   소개 수수료
                 </CardTitle>
               </CardHeader>
-              <CardContent className="text-2xl font-bold">
+              <CardContent className="text-lg sm:text-xl md:text-2xl font-bold tabular-nums">
                 {loading
                   ? "..."
                   : `${formatMoney(overview.directCommissionAmount)}원`}
               </CardContent>
             </Card>
-            <Card>
+            <Card className="min-h-[116px]">
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium">
+                <CardTitle className="text-sm font-medium break-keep">
                   소개 수수료율
                 </CardTitle>
               </CardHeader>
-              <CardContent className="text-2xl font-bold">
+              <CardContent className="text-lg sm:text-xl md:text-2xl font-bold tabular-nums">
                 {Math.round(Number(data?.commissionRate || 0) * 100)}%
               </CardContent>
             </Card>
-            <Card>
+            <Card className="min-h-[116px]">
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium">
-                  기간 정산 예정액
+                <CardTitle className="text-sm font-medium break-keep">
+                  유료 미정산액 합계
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-1">
-                <div className="text-2xl font-bold">
+                <div className="text-lg sm:text-xl md:text-2xl font-bold tabular-nums text-blue-700">
                   {loading
                     ? "..."
                     : `${formatMoney(overview.payableGrossCommissionAmount)}원`}
                 </div>
                 <div className="text-xs text-muted-foreground">
-                  아직 지급되지 않은 누적 정산 금액
+                  아직 지급되지 않은 유료 정산 누적 금액
                 </div>
               </CardContent>
             </Card>
-            <Card>
+            <Card className="min-h-[116px]">
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium">
+                <CardTitle className="text-sm font-medium break-keep">
+                  무료 미정산액 합계
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-1">
+                <div className="text-lg sm:text-xl md:text-2xl font-bold text-violet-700 tabular-nums leading-tight">
+                  {loading ? "..." : `${formatMoney(overview.freeNetAmount)}원`}
+                </div>
+                <div className="text-xs text-muted-foreground tabular-nums leading-tight">
+                  {loading
+                    ? "..."
+                    : `의뢰 ${formatMoney(overview.freeNetRequestAmount)}원 / 배송 ${formatMoney(overview.freeNetShippingAmount)}원`}
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="min-h-[116px]">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium break-keep">
                   기간 지급 완료액
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-1">
-                <div className="text-2xl font-bold">
+                <div className="text-lg sm:text-xl md:text-2xl font-bold tabular-nums">
                   {loading
                     ? "..."
                     : `${formatMoney(overview.paidNetCommissionAmount)}원`}

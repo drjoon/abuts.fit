@@ -976,6 +976,10 @@ export async function getManufacturerCreditDailySummary(req, res) {
       payoutAmount: 0,
       adjustAmount: 0,
       netAmount: 0,
+      netPaidAmount: 0,
+      netFreeRequestAmount: 0,
+      netFreeShippingAmount: 0,
+      netFreeAmount: 0,
       earnRequestPaidAmount: 0,
       earnRequestPaidCount: 0,
       earnRequestFreeAmount: 0,
@@ -987,12 +991,22 @@ export async function getManufacturerCreditDailySummary(req, res) {
     });
 
     const recomputeNetAmount = (targetRow) => {
-      targetRow.netAmount =
+      const paidNet =
         Number(targetRow.earnRequestAmount || 0) +
         Number(targetRow.earnShippingAmount || 0) +
         Number(targetRow.refundAmount || 0) +
         Number(targetRow.payoutAmount || 0) +
         Number(targetRow.adjustAmount || 0);
+      const freeRequestNet = Number(targetRow.earnRequestFreeAmount || 0);
+      const freeShippingNet = Number(targetRow.earnShippingFreeAmount || 0);
+      const freeNet = freeRequestNet + freeShippingNet;
+
+      targetRow.netPaidAmount = paidNet;
+      targetRow.netFreeRequestAmount = freeRequestNet;
+      targetRow.netFreeShippingAmount = freeShippingNet;
+      targetRow.netFreeAmount = freeNet;
+      // 하위호환: 기존 netAmount는 유료 정산 순액으로 유지
+      targetRow.netAmount = paidNet;
       return targetRow;
     };
 

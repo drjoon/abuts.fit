@@ -1,3 +1,8 @@
+// related files:
+// - web/backend/rules.md
+// - web/backend/scripts/db/migrate-legacy-creditledger-to-gl.js
+// - web/backend/scripts/db/migrate-request-spend-to-gl.js
+// - web/backend/services/creditBalance.service.js
 import fs from "fs";
 import path from "path";
 import mongoose from "mongoose";

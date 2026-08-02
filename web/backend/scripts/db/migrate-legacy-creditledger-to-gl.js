@@ -8,6 +8,7 @@
 // - web/backend/models/ledgerLine.model.js
 // - web/backend/services/generalLedger.service.js
 // - web/backend/services/creditBalance.service.js
+// - web/backend/services/creditRevenuePolicy.service.js
 import mongoose, { Types } from "mongoose";
 import { connectDb, disconnectDb } from "./_mongo.js";
 import Request from "../../models/request.model.js";
@@ -18,19 +19,12 @@ import LedgerJournal from "../../models/ledgerJournal.model.js";
 import LedgerLine from "../../models/ledgerLine.model.js";
 import { postGeneralLedgerJournal } from "../../services/generalLedger.service.js";
 import { upsertBusinessCreditBalanceFromLedger } from "../../services/creditBalance.service.js";
-
-const WITH_SALESMAN_DEFAULT_RATES = {
-  manufacturerRate: 0.6,
-  devopsRate: 0.1,
-  salesmanRate: 0.1,
-  adminRate: 0.2,
-};
-const WITHOUT_SALESMAN_RATES = {
-  manufacturerRate: 0.65,
-  devopsRate: 0.1,
-  salesmanRate: 0,
-  adminRate: 0.25,
-};
+import {
+  isShippingSpendRevenueContext,
+  resolveConfiguredRevenueRates,
+  resolveRevenueOwnerBaseAllocation,
+  splitRevenueByCreditKindProRata,
+} from "../../services/creditRevenuePolicy.service.js";
 const VAT_RATE = 0.1;
 
 function withVat(amount) {
@@ -172,28 +166,7 @@ async function resolveAnchors(cli) {
   );
 }
 
-function resolveRevenueBaseAllocation({ spendAmount, hasSalesmanReferrer, configuredRates }) {
-  const effectiveRates = hasSalesmanReferrer ? configuredRates : WITHOUT_SALESMAN_RATES;
 
-  const plannedManufacturerBaseAmount = Math.round(
-    spendAmount * Number(effectiveRates.manufacturerRate || 0),
-  );
-  const plannedDevopsBaseAmount = Math.round(spendAmount * Number(effectiveRates.devopsRate || 0));
-  const plannedSalesmanBaseAmount = hasSalesmanReferrer
-    ? Math.round(spendAmount * Number(effectiveRates.salesmanRate || 0))
-    : 0;
-  const plannedAdminBaseAmount = Math.max(
-    spendAmount - plannedManufacturerBaseAmount - plannedDevopsBaseAmount - plannedSalesmanBaseAmount,
-    0,
-  );
-
-  return {
-    manufacturer: plannedManufacturerBaseAmount,
-    devops: plannedDevopsBaseAmount,
-    salesman: plannedSalesmanBaseAmount,
-    admin: plannedAdminBaseAmount,
-  };
-}
 
 async function resolveRoleOwnerAnchors({ request, businessAnchorId }) {
   const requestorAnchor = await BusinessAnchor.findById(businessAnchorId)
@@ -238,16 +211,7 @@ async function resolveRoleOwnerAnchors({ request, businessAnchorId }) {
     salesmanAnchorId: hasSalesmanReferrer ? referredAnchor?._id || null : null,
     adminAnchorId: adminAnchor?._id || null,
     hasSalesmanReferrer,
-    configuredRates: {
-      manufacturerRate: Number(
-        devopsAnchor?.payoutRates?.manufacturerRate ?? WITH_SALESMAN_DEFAULT_RATES.manufacturerRate,
-      ),
-      devopsRate: Number(devopsAnchor?.payoutRates?.devopsRate ?? WITH_SALESMAN_DEFAULT_RATES.devopsRate),
-      salesmanRate: Number(
-        devopsAnchor?.payoutRates?.salesmanRate ?? WITH_SALESMAN_DEFAULT_RATES.salesmanRate,
-      ),
-      adminRate: Number(devopsAnchor?.payoutRates?.adminRate ?? WITH_SALESMAN_DEFAULT_RATES.adminRate),
-    },
+    configuredRates: resolveConfiguredRevenueRates(devopsAnchor?.payoutRates),
   };
 }
 
@@ -263,19 +227,6 @@ function buildSpendCommitLines({
 }) {
   const lines = [];
 
-  if (paidAmount > 0) {
-    lines.push({
-      accountCode: "REQ_PAID_CREDIT",
-      ownerRole: "requestor",
-      ownerId: owners.requestorAnchorId,
-      amount: -paidAmount,
-      creditKind: "PAID",
-      refType,
-      refId,
-      meta: { spendUniqueKey },
-    });
-  }
-
   if (freeAmount > 0) {
     lines.push({
       accountCode: freeAccountCode,
@@ -289,111 +240,112 @@ function buildSpendCommitLines({
     });
   }
 
-  const planned = resolveRevenueBaseAllocation({
-    spendAmount,
-    hasSalesmanReferrer: owners.hasSalesmanReferrer,
-    configuredRates: owners.configuredRates,
-  });
-  const freeCreditKind =
-    freeAccountCode === "REQ_FREE_SHIPPING_CREDIT" ? "FREE_SHIPPING" : "FREE_REQUEST";
-
-  let assignManufacturer = owners.manufacturerAnchorId ? planned.manufacturer : 0;
-  let assignDevops = owners.devopsAnchorId ? planned.devops : 0;
-  let assignSalesman = owners.salesmanAnchorId ? planned.salesman : 0;
-  let adminBase =
-    planned.admin +
-    (planned.manufacturer - assignManufacturer) +
-    (planned.devops - assignDevops) +
-    (planned.salesman - assignSalesman);
-
-  const allocatedTotal = assignManufacturer + assignDevops + assignSalesman + adminBase;
-  const allocationGap = spendAmount - allocatedTotal;
-  if (allocationGap !== 0) adminBase += allocationGap;
-
-  const pushRevenueLinesByCreditKind = ({ accountCode, ownerRole, ownerId, baseAmount }) => {
-    const base = Math.max(0, Math.round(Number(baseAmount || 0)));
-    if (!ownerId || base <= 0) return;
-
-    if (paidAmount > 0 && freeAmount > 0) {
-      const paidBase = Math.min(base, Math.round((base * paidAmount) / spendAmount));
-      const freeBase = Math.max(0, base - paidBase);
-
-      if (paidBase > 0) {
-        const amountIncludingVat = withVat(paidBase);
-        lines.push({
-          accountCode,
-          ownerRole,
-          ownerId,
-          amount: amountIncludingVat,
-          amountExcludingVat: paidBase,
-          vatAmount: amountIncludingVat - paidBase,
-          amountIncludingVat,
-          creditKind: "PAID",
-          refType,
-          refId,
-          meta: { spendUniqueKey },
-        });
-      }
-
-      if (freeBase > 0) {
-        const amountIncludingVat = withVat(freeBase);
-        lines.push({
-          accountCode,
-          ownerRole,
-          ownerId,
-          amount: amountIncludingVat,
-          amountExcludingVat: freeBase,
-          vatAmount: amountIncludingVat - freeBase,
-          amountIncludingVat,
-          creditKind: freeCreditKind,
-          refType,
-          refId,
-          meta: { spendUniqueKey },
-        });
-      }
-      return;
-    }
-
-    const creditKind = paidAmount > 0 ? "PAID" : freeCreditKind;
-    const amountIncludingVat = withVat(base);
+  if (paidAmount > 0) {
     lines.push({
-      accountCode,
-      ownerRole,
-      ownerId,
-      amount: amountIncludingVat,
-      amountExcludingVat: base,
-      vatAmount: amountIncludingVat - base,
-      amountIncludingVat,
-      creditKind,
+      accountCode: "REQ_PAID_CREDIT",
+      ownerRole: "requestor",
+      ownerId: owners.requestorAnchorId,
+      amount: -paidAmount,
+      creditKind: "PAID",
       refType,
       refId,
       meta: { spendUniqueKey },
     });
+  }
+
+  const freeCreditKind =
+    freeAccountCode === "REQ_FREE_SHIPPING_CREDIT" ? "FREE_SHIPPING" : "FREE_REQUEST";
+  const revenueBaseByOwner = resolveRevenueOwnerBaseAllocation({
+    spendAmount,
+    hasSalesmanReferrer: owners.hasSalesmanReferrer,
+    configuredRates: owners.configuredRates,
+    owners,
+    isShippingSpend: isShippingSpendRevenueContext({ refType, freeAccountCode }),
+  });
+
+  const assignManufacturer = revenueBaseByOwner.manufacturer;
+  const assignDevops = revenueBaseByOwner.devops;
+  const assignSalesman = revenueBaseByOwner.salesman;
+  const adminBase = revenueBaseByOwner.admin;
+
+  const revenueKindSplit = splitRevenueByCreditKindProRata({
+    ownerBaseByRole: {
+      manufacturer: assignManufacturer,
+      devops: assignDevops,
+      salesman: assignSalesman,
+      admin: adminBase,
+    },
+    freeAmount,
+  });
+
+  const pushRevenueLinesBySplit = ({ accountCode, ownerRole, ownerId, paidBase, freeBase }) => {
+    if (!ownerId) return;
+
+    const paid = Math.max(0, Math.round(Number(paidBase || 0)));
+    const free = Math.max(0, Math.round(Number(freeBase || 0)));
+
+    if (free > 0) {
+      const amountIncludingVat = withVat(free);
+      lines.push({
+        accountCode,
+        ownerRole,
+        ownerId,
+        amount: amountIncludingVat,
+        amountExcludingVat: free,
+        vatAmount: amountIncludingVat - free,
+        amountIncludingVat,
+        creditKind: freeCreditKind,
+        refType,
+        refId,
+        meta: { spendUniqueKey },
+      });
+    }
+
+    if (paid > 0) {
+      const amountIncludingVat = withVat(paid);
+      lines.push({
+        accountCode,
+        ownerRole,
+        ownerId,
+        amount: amountIncludingVat,
+        amountExcludingVat: paid,
+        vatAmount: amountIncludingVat - paid,
+        amountIncludingVat,
+        creditKind: "PAID",
+        refType,
+        refId,
+        meta: { spendUniqueKey },
+      });
+    }
   };
 
-  pushRevenueLinesByCreditKind({
+  pushRevenueLinesBySplit({
     accountCode: "REV_MANUFACTURER",
     ownerRole: "manufacturer",
     ownerId: owners.manufacturerAnchorId,
-    baseAmount: assignManufacturer,
+    paidBase: revenueKindSplit.manufacturer.paid,
+    freeBase: revenueKindSplit.manufacturer.free,
   });
-  pushRevenueLinesByCreditKind({
+  pushRevenueLinesBySplit({
     accountCode: "REV_DEVOPS",
     ownerRole: "devops",
     ownerId: owners.devopsAnchorId,
-    baseAmount: assignDevops,
+    paidBase: revenueKindSplit.devops.paid,
+    freeBase: revenueKindSplit.devops.free,
   });
-  pushRevenueLinesByCreditKind({
+  pushRevenueLinesBySplit({
     accountCode: "REV_SALESMAN",
     ownerRole: "salesman",
     ownerId: owners.salesmanAnchorId,
-    baseAmount: assignSalesman,
+    paidBase: revenueKindSplit.salesman.paid,
+    freeBase: revenueKindSplit.salesman.free,
   });
-  pushRevenueLinesByCreditKind({
+  pushRevenueLinesBySplit({
     accountCode: "REV_ADMIN",
     ownerRole: "admin",
     ownerId: owners.adminAnchorId,
-    baseAmount: adminBase,
+    paidBase: revenueKindSplit.admin.paid,
+    freeBase: revenueKindSplit.admin.free,
   });
 
   return lines;

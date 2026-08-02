@@ -3,7 +3,7 @@
 // - web/frontend/src/pages/admin/credits/AdminCreditPage.tsx
 // - web/backend/controllers/admin/adminCredit.controller.js
 // - web/frontend/src/features/layout/DashboardLayout.tsx
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -20,6 +20,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { ArrowDown, ArrowUp, ArrowUpDown } from "lucide-react";
 import {
   Table,
   TableBody,
@@ -34,6 +35,7 @@ import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
 import { generateModelNumber } from "@/utils/modelNumber";
 import { PeriodFilter, type PeriodFilterValue } from "@/shared/ui/PeriodFilter";
+import { periodToRange } from "@/store/usePeriodStore";
 import { cn } from "@/shared/ui/cn";
 import {
   RequestDetailDialog,
@@ -114,6 +116,9 @@ export type CreditLedgerModalProps = {
 };
 
 const PAGE_SIZE = 50;
+
+type SortDirection = "asc" | "desc";
+type LedgerSortKey = "createdAt" | "type" | "amount" | "balanceAfter" | "detail";
 
 const typeLabel = (t: CreditLedgerType) => {
   if (t === "CHARGE_PAID") return "유료충전";
@@ -304,6 +309,10 @@ export const CreditLedgerModal = ({
   const [items, setItems] = useState<CreditLedgerItem[]>([]);
   const [hasMore, setHasMore] = useState(true);
   const [page, setPage] = useState(1);
+  const [sort, setSort] = useState<{ key: LedgerSortKey; direction: SortDirection }>({
+    key: "createdAt",
+    direction: "desc",
+  });
   const [selectedDetail, setSelectedDetail] =
     useState<RequestDetailDialogRequest | null>(null);
   const [currentBalanceSnapshot, setCurrentBalanceSnapshot] =
@@ -330,7 +339,16 @@ export const CreditLedgerModal = ({
 
   const buildPath = (pageNum: number) => {
     const params = new URLSearchParams();
-    if (period) params.set("period", period);
+    const hasManualRange = Boolean(from || to);
+    if (!hasManualRange) {
+      if (period === "thisMonth" || period === "lastMonth") {
+        const range = periodToRange(period);
+        if (range?.startDate) params.set("from", range.startDate);
+        if (range?.endDate) params.set("to", range.endDate);
+      } else if (period) {
+        params.set("period", period);
+      }
+    }
     if (type && type !== "all") params.set("type", type);
     if (q.trim()) params.set("q", q.trim());
     if (from) params.set("from", from);
@@ -439,7 +457,56 @@ export const CreditLedgerModal = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
-  const rows = Array.isArray(items) ? items : [];
+  const rows = useMemo(() => (Array.isArray(items) ? items : []), [items]);
+
+  const toggleSort = (key: LedgerSortKey) => {
+    setSort((prev) =>
+      prev.key === key
+        ? { key, direction: prev.direction === "asc" ? "desc" : "asc" }
+        : { key, direction: key === "createdAt" ? "desc" : "asc" },
+    );
+  };
+
+  const renderSortIcon = (active: boolean, direction: SortDirection) => {
+    if (!active) return <ArrowUpDown className="h-3.5 w-3.5 text-muted-foreground" />;
+    return direction === "asc" ? (
+      <ArrowUp className="h-3.5 w-3.5 text-foreground" />
+    ) : (
+      <ArrowDown className="h-3.5 w-3.5 text-foreground" />
+    );
+  };
+
+  const sortedRows = useMemo(() => {
+    return [...rows].sort((a, b) => {
+      if (sort.key === "createdAt") {
+        const av = new Date(a.createdAt || 0).getTime();
+        const bv = new Date(b.createdAt || 0).getTime();
+        return sort.direction === "asc" ? av - bv : bv - av;
+      }
+      if (sort.key === "type") {
+        const av = typeLabel(a.type);
+        const bv = typeLabel(b.type);
+        return sort.direction === "asc"
+          ? av.localeCompare(bv, "ko")
+          : bv.localeCompare(av, "ko");
+      }
+      if (sort.key === "amount") {
+        const av = Number(a.amount || 0);
+        const bv = Number(b.amount || 0);
+        return sort.direction === "asc" ? av - bv : bv - av;
+      }
+      if (sort.key === "balanceAfter") {
+        const av = Number(a.balanceAfter ?? Number.NEGATIVE_INFINITY);
+        const bv = Number(b.balanceAfter ?? Number.NEGATIVE_INFINITY);
+        return sort.direction === "asc" ? av - bv : bv - av;
+      }
+      const av = `${String(a.refType || "")} ${String(a.refRequestId || a.refId || "")}`;
+      const bv = `${String(b.refType || "")} ${String(b.refRequestId || b.refId || "")}`;
+      return sort.direction === "asc"
+        ? av.localeCompare(bv, "ko")
+        : bv.localeCompare(av, "ko");
+    });
+  }, [rows, sort]);
 
   const canCharge =
     chargeNavPath && (user?.role === "requestor" || user?.role === "admin");
@@ -617,15 +684,60 @@ export const CreditLedgerModal = ({
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="w-[150px]">일시</TableHead>
-                    <TableHead className="w-[80px]">유형</TableHead>
-                    <TableHead className="w-[110px] text-right">금액</TableHead>
-                    <TableHead className="w-[120px] text-right">행 시점 잔액</TableHead>
-                    <TableHead>거래내역</TableHead>
+                    <TableHead className="w-[190px] text-center">
+                      <button
+                        type="button"
+                        className="mx-auto inline-flex items-center gap-1 text-xs sm:text-sm"
+                        onClick={() => toggleSort("createdAt")}
+                      >
+                        일시
+                        {renderSortIcon(sort.key === "createdAt", sort.direction)}
+                      </button>
+                    </TableHead>
+                    <TableHead className="w-[110px] text-center">
+                      <button
+                        type="button"
+                        className="mx-auto inline-flex items-center gap-1 text-xs sm:text-sm"
+                        onClick={() => toggleSort("type")}
+                      >
+                        유형
+                        {renderSortIcon(sort.key === "type", sort.direction)}
+                      </button>
+                    </TableHead>
+                    <TableHead className="min-w-[160px] text-center">
+                      <button
+                        type="button"
+                        className="mx-auto inline-flex items-center gap-1 text-xs sm:text-sm"
+                        onClick={() => toggleSort("amount")}
+                      >
+                        금액
+                        {renderSortIcon(sort.key === "amount", sort.direction)}
+                      </button>
+                    </TableHead>
+                    <TableHead className="w-[150px] text-center">
+                      <button
+                        type="button"
+                        className="mx-auto inline-flex items-center gap-1 text-xs sm:text-sm"
+                        onClick={() => toggleSort("balanceAfter")}
+                      >
+                        행 시점 잔액
+                        {renderSortIcon(sort.key === "balanceAfter", sort.direction)}
+                      </button>
+                    </TableHead>
+                    <TableHead className="min-w-[240px] text-center">
+                      <button
+                        type="button"
+                        className="mx-auto inline-flex items-center gap-1 text-xs sm:text-sm"
+                        onClick={() => toggleSort("detail")}
+                      >
+                        거래내역
+                        {renderSortIcon(sort.key === "detail", sort.direction)}
+                      </button>
+                    </TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {rows.map((r) => {
+                  {sortedRows.map((r) => {
                     const amount = Number(r.amount || 0);
                     const isMinus = amount < 0;
                     const spentPaid = Number(r.spentPaidAmount || 0);
@@ -651,20 +763,20 @@ export const CreditLedgerModal = ({
                     })();
                     return (
                       <TableRow key={r._id}>
-                        <TableCell className="text-xs">
+                        <TableCell className="text-center text-xs whitespace-nowrap">
                           {formatDate(String(r.createdAt || ""))}
                         </TableCell>
-                        <TableCell className="text-xs font-medium">
+                        <TableCell className="text-center text-xs font-medium whitespace-nowrap">
                           {typeLabel(r.type)}
                         </TableCell>
                         <TableCell
                           className={cn(
-                            "font-medium tabular-nums",
+                            "text-center font-medium tabular-nums",
                             isMinus ? "text-rose-600" : "text-blue-700",
                           )}
                         >
                           {showSplit ? (
-                            <div className="flex flex-col leading-4">
+                            <div className="flex flex-col items-center leading-4">
                               {spentPaid > 0 && (
                                 <div className="tabular-nums text-xs">
                                   유료 -{spentPaid.toLocaleString()}원
@@ -680,13 +792,13 @@ export const CreditLedgerModal = ({
                             `${amount.toLocaleString()}원`
                           )}
                         </TableCell>
-                        <TableCell className="text-right text-xs text-muted-foreground tabular-nums">
+                        <TableCell className="text-center text-xs text-muted-foreground tabular-nums whitespace-nowrap">
                           {r.balanceAfter !== undefined
                             ? `${Number(r.balanceAfter).toLocaleString()}원`
                             : "-"}
                         </TableCell>
-                        <TableCell className="text-xs">
-                          <div className="flex flex-col leading-4">
+                        <TableCell className="text-center text-xs">
+                          <div className="flex flex-col items-center leading-4">
                             {renderTransactionDetail({
                               item: r,
                               safeRef,

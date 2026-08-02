@@ -3,6 +3,7 @@
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 import { create } from "zustand";
+import { persist } from "zustand/middleware";
 import type { PeriodFilterValue } from "@/shared/ui/PeriodFilter";
 
 interface PeriodState {
@@ -10,10 +11,18 @@ interface PeriodState {
   setPeriod: (period: PeriodFilterValue) => void;
 }
 
-export const usePeriodStore = create<PeriodState>((set) => ({
-  period: "30d",
-  setPeriod: (period) => set({ period }),
-}));
+export const usePeriodStore = create<PeriodState>()(
+  persist(
+    (set) => ({
+      period: "30d",
+      setPeriod: (period) => set({ period }),
+    }),
+    {
+      name: "abuts.period-filter",
+      partialize: (state) => ({ period: state.period }),
+    },
+  ),
+);
 
 const KST_TIME_ZONE = "Asia/Seoul";
 

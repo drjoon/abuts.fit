@@ -52,6 +52,7 @@
   - `src/pages/admin/support/AdminChatManagement.tsx`
 - 제조사 정산
   - `src/pages/manufacturer/payments/PaymentsPage.tsx`
+  - `src/pages/admin/AdminPaymentsPage.tsx`
 
 ## 1. 구조
 
@@ -170,6 +171,14 @@
     - `src/pages/manufacturer/worksheet/custom_abutment/utils/requestFiltering.ts`
     - `src/pages/manufacturer/worksheet/custom_abutment/machining/utils/label.ts`
     - `src/pages/manufacturer/equipment/cnc/components/CompletedMachiningRecordsModal.tsx`
+
+- 제조사 정산(일별) 표시 정책:
+  - 제조사 결제 페이지의 일별 정산 표는 `의뢰/배송/환불·지급·조정(단일 셀)/유료 순액/무료 순액(의뢰·배송·합계)` 컬럼으로 표시합니다.
+  - `환불·지급·조정` 셀은 `환불 ₩x / 지급 ₩y / 조정 ₩z` 형식으로 항목 라벨과 금액을 함께 표기합니다.
+  - `무료(의뢰+배송)` 필터에서는 `환불·지급·조정/유료 순액`을 `-`로 표시하고 무료 분해값/무료 순액만 노출합니다.
+  - `유료(의뢰+배송)` 필터에서는 무료 순액을 `-`로 표시합니다.
+  - 정산 유료 순액은 지급 대상 기준과 일치해야 하며, 무료 기원 조정은 지급 잔액 계산에 포함하지 않습니다.
+  - 상단 합계 카드는 `DashboardShell.statsGridClassName`을 명시해 카드가 과도하게 좁아지지 않도록 유지합니다.
 
 - 제조사 워크시트 크레딧 승인/롤백 정책:
   - CAM 승인으로 `가공` 진입 시 의뢰 크레딧 소비가 발생합니다.

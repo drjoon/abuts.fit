@@ -2,11 +2,12 @@
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { request } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
 import { PeriodFilter, type PeriodFilterValue } from "@/shared/ui/PeriodFilter";
+import { periodToRange } from "@/store/usePeriodStore";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -18,6 +19,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import type { SalesmanLedgerType } from "./SalesmanLedgerModal";
+import { ArrowDown, ArrowUp, ArrowUpDown } from "lucide-react";
 
 type LedgerItem = {
   _id: string;
@@ -30,6 +32,16 @@ type LedgerItem = {
   balanceAfter?: number;
 };
 
+type CommissionLedgerListResponse = {
+  items?: LedgerItem[];
+};
+
+type ApiEnvelope<T> = {
+  success?: boolean;
+  message?: string;
+  data?: T;
+};
+
 export type CommissionLedgerInlineProps = {
   salesmanId?: string | null;
   mode?: "admin" | "self";
@@ -38,6 +50,9 @@ export type CommissionLedgerInlineProps = {
 };
 
 const PAGE_SIZE = 50;
+
+type SortDirection = "asc" | "desc";
+type LedgerSortKey = "createdAt" | "type" | "amount" | "balanceAfter" | "ref";
 
 const formatDate = (iso: string) => {
   const d = new Date(iso);
@@ -93,6 +108,10 @@ export const CommissionLedgerInline = ({
   const [items, setItems] = useState<LedgerItem[]>([]);
   const [hasMore, setHasMore] = useState(true);
   const [page, setPage] = useState(1);
+  const [sort, setSort] = useState<{ key: LedgerSortKey; direction: SortDirection }>({
+    key: "createdAt",
+    direction: "desc",
+  });
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
@@ -105,20 +124,29 @@ export const CommissionLedgerInline = ({
     setQ("");
   };
 
-  const buildQs = (p: number) => {
+  const buildQs = useCallback((p: number) => {
     const qs = new URLSearchParams({
       page: String(p),
       pageSize: String(PAGE_SIZE),
     });
-    if (period) qs.set("period", period);
+    const hasManualRange = Boolean(from || to);
+    if (!hasManualRange) {
+      if (period === "thisMonth" || period === "lastMonth") {
+        const range = periodToRange(period);
+        if (range?.startDate) qs.set("from", range.startDate);
+        if (range?.endDate) qs.set("to", range.endDate);
+      } else if (period) {
+        qs.set("period", period);
+      }
+    }
     if (type !== "all") qs.set("type", type);
     if (from) qs.set("from", from);
     if (to) qs.set("to", to);
     if (q.trim()) qs.set("q", q.trim());
     return qs.toString();
-  };
+  }, [period, type, from, to, q]);
 
-  const loadPage = async (p: number, reset = false) => {
+  const loadPage = useCallback(async (p: number, reset = false) => {
     if (!token) return;
     setLoading(true);
     try {
@@ -133,8 +161,12 @@ export const CommissionLedgerInline = ({
         effectiveMode === "self"
           ? `/api/salesman/ledger?${buildQs(p)}`
           : `/api/admin/credits/salesmen/${salesmanId}/ledger?${buildQs(p)}`;
-      const res = await request<any>({ path, method: "GET", token });
-      if (!res.ok) throw new Error((res.data as any)?.message || "조회 실패");
+      const res = await request<ApiEnvelope<CommissionLedgerListResponse>>({
+        path,
+        method: "GET",
+        token,
+      });
+      if (!res.ok) throw new Error(res.data?.message || "조회 실패");
       const data = res.data?.data;
       const fetched: LedgerItem[] = Array.isArray(data?.items)
         ? data.items
@@ -142,16 +174,16 @@ export const CommissionLedgerInline = ({
       setItems((prev) => (reset ? fetched : [...prev, ...fetched]));
       setHasMore(fetched.length >= PAGE_SIZE);
       setPage(p);
-    } catch (err: any) {
+    } catch (err: unknown) {
       toast({
         title: "조회 실패",
-        description: err?.message,
+        description: err instanceof Error ? err.message : "조회 실패",
         variant: "destructive",
       });
     } finally {
       setLoading(false);
     }
-  };
+  }, [token, mode, salesmanId, buildQs, toast]);
 
   useEffect(() => {
     const effectiveMode: "admin" | "self" = mode
@@ -163,7 +195,7 @@ export const CommissionLedgerInline = ({
     setItems([]);
     setHasMore(true);
     loadPage(1, true);
-  }, [salesmanId, mode, period, type, from, to, q]);
+  }, [salesmanId, mode, period, type, from, to, q, loadPage]);
 
   useEffect(() => {
     const sentinel = sentinelRef.current;
@@ -179,7 +211,56 @@ export const CommissionLedgerInline = ({
     );
     io.observe(sentinel);
     return () => io.disconnect();
-  }, [hasMore, loading, page, salesmanId]);
+  }, [hasMore, loading, page, salesmanId, loadPage]);
+
+  const toggleSort = (key: LedgerSortKey) => {
+    setSort((prev) =>
+      prev.key === key
+        ? { key, direction: prev.direction === "asc" ? "desc" : "asc" }
+        : { key, direction: key === "createdAt" ? "desc" : "asc" },
+    );
+  };
+
+  const renderSortIcon = (active: boolean, direction: SortDirection) => {
+    if (!active) return <ArrowUpDown className="h-3.5 w-3.5 text-muted-foreground" />;
+    return direction === "asc" ? (
+      <ArrowUp className="h-3.5 w-3.5 text-foreground" />
+    ) : (
+      <ArrowDown className="h-3.5 w-3.5 text-foreground" />
+    );
+  };
+
+  const sortedItems = useMemo(() => {
+    return [...items].sort((a, b) => {
+      if (sort.key === "createdAt") {
+        const av = new Date(a.createdAt || 0).getTime();
+        const bv = new Date(b.createdAt || 0).getTime();
+        return sort.direction === "asc" ? av - bv : bv - av;
+      }
+      if (sort.key === "type") {
+        const av = typeLabel(a.type);
+        const bv = typeLabel(b.type);
+        return sort.direction === "asc"
+          ? av.localeCompare(bv, "ko")
+          : bv.localeCompare(av, "ko");
+      }
+      if (sort.key === "amount") {
+        const av = Number(a.amount || 0);
+        const bv = Number(b.amount || 0);
+        return sort.direction === "asc" ? av - bv : bv - av;
+      }
+      if (sort.key === "balanceAfter") {
+        const av = Number(a.balanceAfter ?? Number.NEGATIVE_INFINITY);
+        const bv = Number(b.balanceAfter ?? Number.NEGATIVE_INFINITY);
+        return sort.direction === "asc" ? av - bv : bv - av;
+      }
+      const av = `${formatShortCode(String(a.uniqueKey || ""))} ${refTypeLabel(a.refType)}`;
+      const bv = `${formatShortCode(String(b.uniqueKey || ""))} ${refTypeLabel(b.refType)}`;
+      return sort.direction === "asc"
+        ? av.localeCompare(bv, "ko")
+        : bv.localeCompare(av, "ko");
+    });
+  }, [items, sort]);
 
   return (
     <div className="flex flex-col gap-3">
@@ -212,7 +293,17 @@ export const CommissionLedgerInline = ({
           <select
             className="h-9 rounded-md border border-input bg-background px-3 text-sm text-foreground shadow-xs focus:outline-none focus:ring-1 focus:ring-ring"
             value={type}
-            onChange={(e) => setType(e.target.value as any)}
+            onChange={(e) => {
+              const next = e.target.value;
+              if (
+                next === "all" ||
+                next === "EARN" ||
+                next === "PAYOUT" ||
+                next === "ADJUST"
+              ) {
+                setType(next);
+              }
+            }}
           >
             <option value="all">전체</option>
             <option value="EARN">적립</option>
@@ -237,38 +328,83 @@ export const CommissionLedgerInline = ({
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead className="w-[150px]">일시</TableHead>
-              <TableHead className="w-[70px]">유형</TableHead>
-              <TableHead className="w-[110px] text-right">금액</TableHead>
-              <TableHead className="w-[110px] text-right">잔액</TableHead>
-              <TableHead>참조</TableHead>
+              <TableHead className="w-[190px] text-center">
+                <button
+                  type="button"
+                  className="mx-auto inline-flex items-center gap-1 text-xs sm:text-sm"
+                  onClick={() => toggleSort("createdAt")}
+                >
+                  일시
+                  {renderSortIcon(sort.key === "createdAt", sort.direction)}
+                </button>
+              </TableHead>
+              <TableHead className="w-[110px] text-center">
+                <button
+                  type="button"
+                  className="mx-auto inline-flex items-center gap-1 text-xs sm:text-sm"
+                  onClick={() => toggleSort("type")}
+                >
+                  유형
+                  {renderSortIcon(sort.key === "type", sort.direction)}
+                </button>
+              </TableHead>
+              <TableHead className="w-[130px] text-center">
+                <button
+                  type="button"
+                  className="mx-auto inline-flex items-center gap-1 text-xs sm:text-sm"
+                  onClick={() => toggleSort("amount")}
+                >
+                  금액
+                  {renderSortIcon(sort.key === "amount", sort.direction)}
+                </button>
+              </TableHead>
+              <TableHead className="w-[130px] text-center">
+                <button
+                  type="button"
+                  className="mx-auto inline-flex items-center gap-1 text-xs sm:text-sm"
+                  onClick={() => toggleSort("balanceAfter")}
+                >
+                  잔액
+                  {renderSortIcon(sort.key === "balanceAfter", sort.direction)}
+                </button>
+              </TableHead>
+              <TableHead className="min-w-[180px] text-center">
+                <button
+                  type="button"
+                  className="mx-auto inline-flex items-center gap-1 text-xs sm:text-sm"
+                  onClick={() => toggleSort("ref")}
+                >
+                  참조
+                  {renderSortIcon(sort.key === "ref", sort.direction)}
+                </button>
+              </TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {items.map((r) => {
+            {sortedItems.map((r) => {
               const amount = Number(r.amount || 0);
               const balanceAfter =
                 r.balanceAfter !== undefined ? Number(r.balanceAfter) : null;
               return (
                 <TableRow key={r._id}>
-                  <TableCell className="text-xs">
+                  <TableCell className="text-center text-xs whitespace-nowrap">
                     {formatDate(String(r.createdAt || ""))}
                   </TableCell>
-                  <TableCell className="text-xs font-medium">
+                  <TableCell className="text-center text-xs font-medium whitespace-nowrap">
                     {typeLabel(r.type)}
                   </TableCell>
                   <TableCell
-                    className={`text-right text-xs font-semibold ${amount < 0 ? "text-rose-600" : "text-blue-700"}`}
+                    className={`text-center text-xs font-semibold tabular-nums whitespace-nowrap ${amount < 0 ? "text-rose-600" : "text-blue-700"}`}
                   >
                     {amount.toLocaleString()}원
                   </TableCell>
-                  <TableCell className="text-right text-xs text-muted-foreground tabular-nums">
+                  <TableCell className="text-center text-xs text-muted-foreground tabular-nums whitespace-nowrap">
                     {balanceAfter !== null
                       ? `${balanceAfter.toLocaleString()}원`
                       : "-"}
                   </TableCell>
-                  <TableCell className="text-xs">
-                    <div className="flex flex-col leading-4">
+                  <TableCell className="text-center text-xs">
+                    <div className="flex flex-col items-center leading-4">
                       <span className="font-mono text-xs font-semibold">
                         {formatShortCode(String(r.uniqueKey || ""))}
                       </span>

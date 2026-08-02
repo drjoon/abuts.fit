@@ -174,72 +174,135 @@ async function computeSalesmanOverviewSnapshot({ range, salesmanIds }) {
     accountCode: it.role === "devops" ? "REV_DEVOPS" : "REV_SALESMAN",
   }));
 
-  const ledgerPeriodRows = matchOr.length
-    ? await LedgerLine.aggregate([
-        {
-          $match: {
-            $or: matchOr,
-            occurredAt: { $gte: range.start, $lte: range.end },
-          },
-        },
-        {
-          $lookup: {
-            from: LedgerJournal.collection.name,
-            localField: "journalId",
-            foreignField: "journalId",
-            as: "journalDoc",
-          },
-        },
-        {
-          $unwind: {
-            path: "$journalDoc",
-            preserveNullAndEmptyArrays: true,
-          },
-        },
-        {
-          $addFields: {
-            type: {
-              $switch: {
-                branches: [
-                  {
-                    case: { $eq: ["$journalDoc.eventType", "SETTLEMENT_PAYOUT"] },
-                    then: "PAYOUT",
-                  },
-                  {
-                    case: { $eq: ["$journalDoc.eventType", "ADJUST"] },
-                    then: "ADJUST",
-                  },
-                ],
-                default: "EARN",
-              },
+  const [ledgerPeriodRows, freePeriodRows] = matchOr.length
+    ? await Promise.all([
+        LedgerLine.aggregate([
+          {
+            $match: {
+              $or: matchOr,
+              occurredAt: { $gte: range.start, $lte: range.end },
             },
-            settlementEligible: {
-              $or: [
-                { $eq: ["$type", "PAYOUT"] },
-                {
-                  $and: [
-                    { $in: ["$type", ["EARN", "ADJUST"]] },
+          },
+          {
+            $lookup: {
+              from: LedgerJournal.collection.name,
+              localField: "journalId",
+              foreignField: "journalId",
+              as: "journalDoc",
+            },
+          },
+          {
+            $unwind: {
+              path: "$journalDoc",
+              preserveNullAndEmptyArrays: true,
+            },
+          },
+          {
+            $addFields: {
+              type: {
+                $switch: {
+                  branches: [
                     {
-                      $or: [
-                        { $eq: ["$creditKind", "PAID"] },
-                        { $eq: ["$creditKind", null] },
-                      ],
+                      case: { $eq: ["$journalDoc.eventType", "SETTLEMENT_PAYOUT"] },
+                      then: "PAYOUT",
+                    },
+                    {
+                      case: { $eq: ["$journalDoc.eventType", "ADJUST"] },
+                      then: "ADJUST",
                     },
                   ],
+                  default: "EARN",
                 },
-              ],
+              },
+              settlementEligible: {
+                $or: [
+                  { $eq: ["$type", "PAYOUT"] },
+                  {
+                    $and: [
+                      { $in: ["$type", ["EARN", "ADJUST"]] },
+                      {
+                        $or: [
+                          { $eq: ["$creditKind", "PAID"] },
+                          { $eq: ["$creditKind", null] },
+                        ],
+                      },
+                    ],
+                  },
+                ],
+              },
             },
           },
-        },
-        { $match: { settlementEligible: true } },
-        {
-          $group: {
-            _id: "$type",
-            total: { $sum: { $ifNull: ["$amountExcludingVat", "$amount"] } },
+          { $match: { settlementEligible: true } },
+          {
+            $group: {
+              _id: "$type",
+              total: { $sum: { $ifNull: ["$amountExcludingVat", "$amount"] } },
+            },
           },
-        },
+        ]),
+        LedgerLine.aggregate([
+          {
+            $match: {
+              $or: matchOr,
+              occurredAt: { $gte: range.start, $lte: range.end },
+            },
+          },
+          {
+            $lookup: {
+              from: LedgerJournal.collection.name,
+              localField: "journalId",
+              foreignField: "journalId",
+              as: "journalDoc",
+            },
+          },
+          {
+            $unwind: {
+              path: "$journalDoc",
+              preserveNullAndEmptyArrays: true,
+            },
+          },
+          {
+            $addFields: {
+              eventType: { $ifNull: ["$journalDoc.eventType", ""] },
+              baseAmount: { $ifNull: ["$amountExcludingVat", "$amount"] },
+            },
+          },
+          {
+            $group: {
+              _id: null,
+              freeRequestAmount: {
+                $sum: {
+                  $cond: [
+                    {
+                      $and: [
+                        { $eq: ["$creditKind", "FREE_REQUEST"] },
+                        { $eq: ["$eventType", "REQUEST_SPEND_COMMIT"] },
+                      ],
+                    },
+                    "$baseAmount",
+                    0,
+                  ],
+                },
+              },
+              freeShippingAmount: {
+                $sum: {
+                  $cond: [
+                    {
+                      $and: [
+                        { $eq: ["$creditKind", "FREE_SHIPPING"] },
+                        { $eq: ["$eventType", "SHIPPING_SPEND_COMMIT"] },
+                      ],
+                    },
+                    "$baseAmount",
+                    0,
+                  ],
+                },
+              },
+            },
+          },
+        ]),
       ])
-    : [];
+    : [[], []];
 
   let earnedAmount = 0;
   let paidOutAmount = 0;
@@ -282,6 +345,10 @@ async function computeSalesmanOverviewSnapshot({ range, salesmanIds }) {
 
   const totalAmount = normalizeNumber(directAmount);
 
+  const freeRequestAmount = normalizeNumber(Number(freePeriodRows?.[0]?.freeRequestAmount || 0));
+  const freeShippingAmount = normalizeNumber(Number(freePeriodRows?.[0]?.freeShippingAmount || 0));
+  const freeAmount = normalizeNumber(freeRequestAmount + freeShippingAmount);
+
   return {
     salesmenCount: salesmanIds.length,
     referral: {
@@ -298,6 +365,9 @@ async function computeSalesmanOverviewSnapshot({ range, salesmanIds }) {
       paidOutAmount: normalizeNumber(paidOutAmount),
       adjustedAmount: normalizeNumber(adjustedAmount),
       balanceAmount: normalizeNumber(balanceAmount),
+      freeRequestAmount,
+      freeShippingAmount,
+      freeAmount,
     },
   };
 }
@@ -352,6 +422,9 @@ export async function recalcAdminSalesmanCreditsOverviewSnapshot({
       paidOutAmount: normalizeNumber(overview?.walletPeriod?.paidOutAmount),
       adjustedAmount: normalizeNumber(overview?.walletPeriod?.adjustedAmount),
       balanceAmount: normalizeNumber(overview?.walletPeriod?.balanceAmount),
+      freeRequestAmount: normalizeNumber(overview?.walletPeriod?.freeRequestAmount),
+      freeShippingAmount: normalizeNumber(overview?.walletPeriod?.freeShippingAmount),
+      freeAmount: normalizeNumber(overview?.walletPeriod?.freeAmount),
     },
     computedAt: new Date(),
   };
@@ -1487,8 +1560,77 @@ export async function adminGetSalesmanCredits(req, res) {
       ]);
     };
 
+    const aggregateFreeByRoleAnchor = async () => {
+      if (!matchOr.length) return [];
+      const baseMatch = {
+        $or: matchOr,
+        ...(Object.keys(periodMatch).length ? { occurredAt: periodMatch } : {}),
+      };
+
+      return LedgerLine.aggregate([
+        { $match: baseMatch },
+        {
+          $lookup: {
+            from: LedgerJournal.collection.name,
+            localField: "journalId",
+            foreignField: "journalId",
+            as: "journalDoc",
+          },
+        },
+        {
+          $unwind: {
+            path: "$journalDoc",
+            preserveNullAndEmptyArrays: true,
+          },
+        },
+        {
+          $addFields: {
+            ownerIdStr: { $toString: "$ownerId" },
+            eventType: { $ifNull: ["$journalDoc.eventType", ""] },
+            baseAmount: { $ifNull: ["$amountExcludingVat", "$amount"] },
+          },
+        },
+        {
+          $group: {
+            _id: {
+              ownerRole: "$ownerRole",
+              ownerId: "$ownerIdStr",
+            },
+            freeRequestAmount: {
+              $sum: {
+                $cond: [
+                  {
+                    $and: [
+                      { $eq: ["$creditKind", "FREE_REQUEST"] },
+                      { $eq: ["$eventType", "REQUEST_SPEND_COMMIT"] },
+                    ],
+                  },
+                  "$baseAmount",
+                  0,
+                ],
+              },
+            },
+            freeShippingAmount: {
+              $sum: {
+                $cond: [
+                  {
+                    $and: [
+                      { $eq: ["$creditKind", "FREE_SHIPPING"] },
+                      { $eq: ["$eventType", "SHIPPING_SPEND_COMMIT"] },
+                    ],
+                  },
+                  "$baseAmount",
+                  0,
+                ],
+              },
+            },
+          },
+        },
+      ]);
+    };
+
     // 병렬 실행: BusinessAnchor 조회 + 전체/기간 GL 집계
-    const [anchors, ledgerRows, ledgerRowsPeriod] = await Promise.all([
+    const [anchors, ledgerRows, ledgerRowsPeriod, freeRowsPeriod] = await Promise.all([
       businessAnchorIds.length
         ? BusinessAnchor.find({ _id: { $in: businessAnchorIds } })
             .select({
@@ -1502,6 +1644,7 @@ export async function adminGetSalesmanCredits(req, res) {
         : Promise.resolve([]),
       aggregateLedgerByRoleAnchor({ withPeriod: false }),
       aggregateLedgerByRoleAnchor({ withPeriod: true }),
+      aggregateFreeByRoleAnchor(),
     ]);
 
     const anchorById = new Map(
@@ -1541,6 +1684,21 @@ export async function adminGetSalesmanCredits(req, res) {
       else if (type === "PAYOUT") prev.payout += total;
       else if (type === "ADJUST") prev.adjust += total;
       ledgerPeriodByRoleAnchor.set(key, prev);
+    }
+
+    const freePeriodByRoleAnchor = new Map();
+    for (const r of freeRowsPeriod || []) {
+      const ownerRole = String(r?._id?.ownerRole || "");
+      const ownerId = String(r?._id?.ownerId || "");
+      if (!ownerRole || !ownerId) continue;
+      const key = `${ownerRole}:${ownerId}`;
+      const freeRequestAmount = Math.round(Number(r?.freeRequestAmount || 0));
+      const freeShippingAmount = Math.round(Number(r?.freeShippingAmount || 0));
+      freePeriodByRoleAnchor.set(key, {
+        freeRequestAmount,
+        freeShippingAmount,
+        freeAmount: freeRequestAmount + freeShippingAmount,
+      });
     }
 
     const range =
@@ -1587,6 +1745,12 @@ export async function adminGetSalesmanCredits(req, res) {
           Number(ledgerPeriod.payout || 0) +
           Number(ledgerPeriod.adjust || 0),
       );
+
+      const freePeriod = freePeriodByRoleAnchor.get(ownerKey) || {
+        freeRequestAmount: 0,
+        freeShippingAmount: 0,
+        freeAmount: 0,
+      };
 
       const directOrgSet = directOrgIdsBySalesmanId.get(sid) || new Set();
 
@@ -1639,6 +1803,9 @@ export async function adminGetSalesmanCredits(req, res) {
           paidOutAmountPeriod: Math.round(Number(ledgerPeriod.payout || 0)),
           adjustedAmountPeriod: Math.round(Number(ledgerPeriod.adjust || 0)),
           balanceAmountPeriod: balancePeriod,
+          freeRequestAmountPeriod: Number(freePeriod.freeRequestAmount || 0),
+          freeShippingAmountPeriod: Number(freePeriod.freeShippingAmount || 0),
+          freeAmountPeriod: Number(freePeriod.freeAmount || 0),
         },
         performance30d: {
           introducedCount: directOrgSet.size,
@@ -1747,7 +1914,7 @@ export async function adminGetManufacturerSummary(req, res) {
       { $match: { settlementEligible: true } },
     ];
 
-    const [anchorCount, periodLedgerRows, allLedgerRows] = await Promise.all([
+    const [anchorCount, periodLedgerRows, allLedgerRows, periodFreeRows] = await Promise.all([
       BusinessAnchor.countDocuments({ businessType: "manufacturer" }),
       range
         ? LedgerLine.aggregate([
@@ -1769,6 +1936,70 @@ export async function adminGetManufacturerSummary(req, res) {
           },
         },
       ]),
+      range
+        ? LedgerLine.aggregate([
+            {
+              $match: {
+                ownerRole: "manufacturer",
+                accountCode: "REV_MANUFACTURER",
+                occurredAt: { $gte: range.start, $lte: range.end },
+              },
+            },
+            {
+              $lookup: {
+                from: LedgerJournal.collection.name,
+                localField: "journalId",
+                foreignField: "journalId",
+                as: "journalDoc",
+              },
+            },
+            {
+              $unwind: {
+                path: "$journalDoc",
+                preserveNullAndEmptyArrays: true,
+              },
+            },
+            {
+              $addFields: {
+                eventType: { $ifNull: ["$journalDoc.eventType", ""] },
+                baseAmount: { $ifNull: ["$amountExcludingVat", "$amount"] },
+              },
+            },
+            {
+              $group: {
+                _id: null,
+                freeRequestAmount: {
+                  $sum: {
+                    $cond: [
+                      {
+                        $and: [
+                          { $eq: ["$creditKind", "FREE_REQUEST"] },
+                          { $eq: ["$eventType", "REQUEST_SPEND_COMMIT"] },
+                        ],
+                      },
+                      "$baseAmount",
+                      0,
+                    ],
+                  },
+                },
+                freeShippingAmount: {
+                  $sum: {
+                    $cond: [
+                      {
+                        $and: [
+                          { $eq: ["$creditKind", "FREE_SHIPPING"] },
+                          { $eq: ["$eventType", "SHIPPING_SPEND_COMMIT"] },
+                        ],
+                      },
+                      "$baseAmount",
+                      0,
+                    ],
+                  },
+                },
+              },
+            },
+          ])
+        : Promise.resolve([]),
     ]);
 
     let periodEarnedAmount = 0;
@@ -1807,6 +2038,16 @@ export async function adminGetManufacturerSummary(req, res) {
       );
     }
 
+    const periodFreeRequestAmount = normalizeNumber(
+      Number(periodFreeRows?.[0]?.freeRequestAmount || 0),
+    );
+    const periodFreeShippingAmount = normalizeNumber(
+      Number(periodFreeRows?.[0]?.freeShippingAmount || 0),
+    );
+    const periodFreeAmount = normalizeNumber(
+      periodFreeRequestAmount + periodFreeShippingAmount,
+    );
+
     return res.json({
       success: true,
       data: {
@@ -1815,6 +2056,9 @@ export async function adminGetManufacturerSummary(req, res) {
         periodPaidOutAmount,
         periodBalanceAmount,
         totalBalanceAmount,
+        periodFreeRequestAmount,
+        periodFreeShippingAmount,
+        periodFreeAmount,
       },
     });
   } catch (error) {
@@ -2874,9 +3118,81 @@ export async function adminGetAdminCredits(req, res) {
       ]);
     };
 
-    const [allRows, periodRows] = await Promise.all([
+    const aggregateAdminFree = async ({ withPeriod = false }) => {
+      if (!adminAnchorIds.length) return [];
+      return LedgerLine.aggregate([
+        {
+          $match: {
+            ownerRole: "admin",
+            ownerId: { $in: adminAnchorIds },
+            accountCode: "REV_ADMIN",
+            ...(withPeriod && Object.keys(periodOccurredAt).length
+              ? { occurredAt: periodOccurredAt }
+              : {}),
+          },
+        },
+        {
+          $lookup: {
+            from: LedgerJournal.collection.name,
+            localField: "journalId",
+            foreignField: "journalId",
+            as: "journalDoc",
+          },
+        },
+        {
+          $unwind: {
+            path: "$journalDoc",
+            preserveNullAndEmptyArrays: true,
+          },
+        },
+        {
+          $addFields: {
+            ownerIdStr: { $toString: "$ownerId" },
+            eventType: { $ifNull: ["$journalDoc.eventType", ""] },
+            baseAmount: { $ifNull: ["$amountExcludingVat", "$amount"] },
+          },
+        },
+        {
+          $group: {
+            _id: { ownerId: "$ownerIdStr" },
+            freeRequestAmount: {
+              $sum: {
+                $cond: [
+                  {
+                    $and: [
+                      { $eq: ["$creditKind", "FREE_REQUEST"] },
+                      { $eq: ["$eventType", "REQUEST_SPEND_COMMIT"] },
+                    ],
+                  },
+                  "$baseAmount",
+                  0,
+                ],
+              },
+            },
+            freeShippingAmount: {
+              $sum: {
+                $cond: [
+                  {
+                    $and: [
+                      { $eq: ["$creditKind", "FREE_SHIPPING"] },
+                      { $eq: ["$eventType", "SHIPPING_SPEND_COMMIT"] },
+                    ],
+                  },
+                  "$baseAmount",
+                  0,
+                ],
+              },
+            },
+          },
+        },
+      ]);
+    };
+
+    const [allRows, periodRows, allFreeRows, periodFreeRows] = await Promise.all([
       aggregateAdminWallet({ withPeriod: false }),
       aggregateAdminWallet({ withPeriod: true }),
+      aggregateAdminFree({ withPeriod: false }),
+      aggregateAdminFree({ withPeriod: true }),
     ]);
 
     const allMap = new Map();
@@ -2905,10 +3221,47 @@ export async function adminGetAdminCredits(req, res) {
       periodMap.set(ownerId, prev);
     }
 
+    const allFreeMap = new Map();
+    for (const row of allFreeRows || []) {
+      const ownerId = String(row?._id?.ownerId || "");
+      if (!ownerId) continue;
+      const freeRequestAmount = Number(row?.freeRequestAmount || 0);
+      const freeShippingAmount = Number(row?.freeShippingAmount || 0);
+      allFreeMap.set(ownerId, {
+        freeRequestAmount,
+        freeShippingAmount,
+        freeAmount: freeRequestAmount + freeShippingAmount,
+      });
+    }
+
+    const periodFreeMap = new Map();
+    for (const row of periodFreeRows || []) {
+      const ownerId = String(row?._id?.ownerId || "");
+      if (!ownerId) continue;
+      const freeRequestAmount = Number(row?.freeRequestAmount || 0);
+      const freeShippingAmount = Number(row?.freeShippingAmount || 0);
+      periodFreeMap.set(ownerId, {
+        freeRequestAmount,
+        freeShippingAmount,
+        freeAmount: freeRequestAmount + freeShippingAmount,
+      });
+    }
+
     const results = admins.map((admin) => {
       const ownerId = String(admin?.businessAnchorId || "");
       const all = allMap.get(ownerId) || { earn: 0, payout: 0, adjust: 0 };
       const period = periodMap.get(ownerId) || { earn: 0, payout: 0, adjust: 0 };
+
+      const allFree = allFreeMap.get(ownerId) || {
+        freeRequestAmount: 0,
+        freeShippingAmount: 0,
+        freeAmount: 0,
+      };
+      const periodFree = periodFreeMap.get(ownerId) || {
+        freeRequestAmount: 0,
+        freeShippingAmount: 0,
+        freeAmount: 0,
+      };
 
       const balanceAmount = all.earn - all.payout + all.adjust;
       const balanceAmountPeriod = period.earn - period.payout + period.adjust;
@@ -2928,6 +3281,12 @@ export async function adminGetAdminCredits(req, res) {
           paidOutAmountPeriod: period.payout,
           adjustedAmountPeriod: period.adjust,
           balanceAmountPeriod,
+          freeRequestAmount: allFree.freeRequestAmount,
+          freeShippingAmount: allFree.freeShippingAmount,
+          freeAmount: allFree.freeAmount,
+          freeRequestAmountPeriod: periodFree.freeRequestAmount,
+          freeShippingAmountPeriod: periodFree.freeShippingAmount,
+          freeAmountPeriod: periodFree.freeAmount,
         },
       };
     });

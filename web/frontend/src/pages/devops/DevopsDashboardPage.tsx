@@ -7,7 +7,7 @@
  *   - 영업자 소개 유무와 무관하게 개발·운영사 분배율은 동일
  */
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 // related files:
 // - web/frontend/src/pages/salesman/SalesmanDashboardPage.tsx
@@ -20,6 +20,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DashboardShell } from "@/shared/ui/dashboard/DashboardShell";
 import { PeriodFilter, type PeriodFilterValue } from "@/shared/ui/PeriodFilter";
+import { isPeriodFilterValue } from "@/shared/ui/periodFilterValues";
 import { PricingPolicyDialog } from "@/shared/ui/PricingPolicyDialog";
 import { CommissionLedgerInline } from "@/shared/components/CommissionLedgerInline";
 import {
@@ -28,13 +29,27 @@ import {
   type CommissionDashboardData,
 } from "@/features/commission/useCommissionDashboard";
 
+const PERIOD_STORAGE_KEY = "abuts.devops.dashboard.period";
+
+const readStoredPeriod = (): PeriodFilterValue => {
+  if (typeof window === "undefined") return "30d";
+  const raw = window.localStorage.getItem(PERIOD_STORAGE_KEY);
+  return isPeriodFilterValue(raw) ? raw : "30d";
+};
+
 export const DevopsDashboardPage = () => {
   const { user, token } = useAuthStore();
 
   const [policyOpen, setPolicyOpen] = useState(false);
-  const [period, setPeriod] = useState<PeriodFilterValue>("30d");
+  const [period, setPeriod] = useState<PeriodFilterValue>(() => readStoredPeriod());
 
   const { data, loading } = useCommissionDashboard(period);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(PERIOD_STORAGE_KEY, period);
+    }
+  }, [period]);
 
   const { data: unmachinableOverviewResponse } = useQuery({
     queryKey: ["devops-unmachinable-overview", period],
@@ -98,7 +113,7 @@ export const DevopsDashboardPage = () => {
             </Button>
           </div>
         }
-        statsGridClassName="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4"
+        statsGridClassName="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5"
         topSection={
           <Card className="app-glass-card app-glass-card--lg">
             <CardHeader className="pb-2">
@@ -147,7 +162,7 @@ export const DevopsDashboardPage = () => {
         stats={
           <>
             {/* 기본 X%: 소개 의뢰자 수수료 */}
-            <Card className="app-glass-card app-glass-card--lg">
+            <Card className="app-glass-card app-glass-card--lg min-h-[116px]">
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm font-medium">
                   기본 {loading ? "..." : `${baseRatePct}%`}
@@ -166,7 +181,7 @@ export const DevopsDashboardPage = () => {
             </Card>
 
             {/* 영업자 미설정 의뢰자 분배 */}
-            <Card className="app-glass-card app-glass-card--lg">
+            <Card className="app-glass-card app-glass-card--lg min-h-[116px]">
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm font-medium">
                   영업자 미설정 의뢰자 분배
@@ -189,27 +204,44 @@ export const DevopsDashboardPage = () => {
               </CardContent>
             </Card>
 
-            {/* 기간 정산 예정액 */}
-            <Card className="app-glass-card app-glass-card--lg">
+            <Card className="app-glass-card app-glass-card--lg min-h-[116px]">
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium">
-                  기간 정산 예정액
+                <CardTitle className="text-sm font-medium break-keep">
+                  유료 미정산액 합계
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-1">
-                <div className="text-lg sm:text-xl md:text-2xl font-bold">
+                <div className="text-lg sm:text-xl md:text-2xl font-bold text-blue-700 tabular-nums">
                   {loading
                     ? "..."
                     : `${formatMoney(overview.payableGrossCommissionAmount)}원`}
                 </div>
                 <div className="text-xs text-muted-foreground">
-                  아직 지급되지 않은 누적 정산 금액
+                  아직 지급되지 않은 유료 정산 누적 금액
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="app-glass-card app-glass-card--lg min-h-[116px]">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium break-keep">
+                  무료 미정산액 합계
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-1">
+                <div className="text-lg sm:text-xl md:text-2xl font-bold text-violet-700 tabular-nums leading-tight">
+                  {loading ? "..." : `${formatMoney(overview.freeNetAmount)}원`}
+                </div>
+                <div className="text-xs text-muted-foreground tabular-nums leading-tight">
+                  {loading
+                    ? "..."
+                    : `의뢰 ${formatMoney(overview.freeNetRequestAmount)}원 / 배송 ${formatMoney(overview.freeNetShippingAmount)}원`}
                 </div>
               </CardContent>
             </Card>
 
             {/* 기간 정산 완료액 */}
-            <Card className="app-glass-card app-glass-card--lg">
+            <Card className="app-glass-card app-glass-card--lg min-h-[116px]">
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm font-medium">
                   기간 정산 완료액

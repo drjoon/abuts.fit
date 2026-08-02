@@ -268,7 +268,13 @@
 - 정산/지급 정책:
   - 유료/무료 모두 `REV_*` 수익 라인은 기록해 확인 가능해야 합니다.
   - 정산 지급(PAYOUT) 대상은 유료 수익만 허용합니다.
+  - 지급 가능 잔액 계산 시 `EARN/ADJUST`는 `creditKind=PAID|null`만 포함하고, 무료(`FREE_REQUEST|FREE_SHIPPING`)는 제외합니다.
+  - 배송비 정산은 제조사 실비 부담 정책을 반영해 `SHIPPING_SPEND_COMMIT` 수익을 전액 `REV_MANUFACTURER`로 귀속합니다.
   - 무료 수익은 지급금액 0으로 정산 완료 상태만 표시할 수 있습니다.
+  - paid/free 혼합 소비는 의뢰자 잔액에서 **무료 우선 차감 후 부족분만 유료 차감**을 사용합니다.
+  - 수익 라인(`REV_*`)의 paid/free 표시는 role 순서가 아니라, 소비된 paid/free 총량을 role별 수익 base에 비례 배분(무편향)해 기록합니다.
+  - 수익 분배 계산 SSOT는 `services/creditRevenuePolicy.service.js`를 사용합니다.
+    - 런타임 적재(`controllers/requests/common.review.helpers.js`)와 이관 스크립트(`scripts/db/migrate-request-spend-to-gl.js`, `scripts/db/migrate-legacy-creditledger-to-gl.js`)는 동일 함수를 공유해 분배 정책 드리프트를 금지합니다.
 
 - 관리자 credit-reconcile API 정책:
   - `credit-reconcile/check`는 General Ledger 기준 누락 의심 건만 점검합니다.
@@ -278,7 +284,12 @@
   - `web/backend/scripts/*`의 `CreditLedger` 직접 수정/삭제 스크립트는 DEPRECATED 처리하며,
     운영 점검은 `reconcile-business-credit-spends.mjs`(GL snapshot diff/upsert),
     `scripts/db/migrate-request-spend-to-gl.js`(의뢰 이력 기반 소비 검증/이관),
+    `scripts/db/migrate-legacy-creditledger-to-gl.js`(legacy 원장 기준 일괄 이관/보정),
     또는 관리자 reconcile API만 사용합니다.
+  - 이관 전 백업은 `scripts/db/backup-credit-migration-snapshot.mjs`로 수행합니다.
+  - legacy 이관에서 `amount=0` 소비행, 참조 누락된 상쇄형 SHIPPING SPEND/REFUND 쌍은 `resolvedIgnored`로 분류해 미적재 처리합니다(오류 unresolved로 취급하지 않음).
+  - 기존 GL 배송 수익 분배 보정은 `scripts/db/rebalance-shipping-revenue-to-manufacturer.js`로 수행합니다.
+  - 기존 GL 혼합 소비(paid/free) 분해를 최신 무편향 분해 정책(의뢰자 무료우선 소비 + 수익라인 비례배분)으로 정렬하는 보정은 `scripts/db/rebalance-mixed-spend-free-first.js`로 수행합니다.
 
 - 관리자 크레딧 응답 필드 정책:
   - `adminCredit` 계열 응답에서 무료 크레딧 SSOT 키는 `freeRequestCredit`, `freeShippingCredit`, `freeBalance`입니다.
