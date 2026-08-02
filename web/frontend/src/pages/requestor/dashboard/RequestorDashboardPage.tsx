@@ -1059,9 +1059,16 @@ export const RequestorDashboardPage = () => {
       }
 
       if (type === "credit:balance-updated") {
+        // CAM 승인/롤백처럼 크레딧 이벤트만 먼저 들어오는 케이스에서도
+        // 7개 섹션 전체가 동기화되도록 full refresh plan을 사용한다.
         void refreshDashboard({
           cardsSummary: true,
+          heavySummary: true,
           bulk: true,
+          unmachinableOverview: true,
+          shippingSummary: true,
+          pricingStats: true,
+          referralTree: true,
         });
         return;
       }
