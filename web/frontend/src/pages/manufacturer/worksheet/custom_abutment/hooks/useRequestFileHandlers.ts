@@ -6,7 +6,7 @@
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/packing/components/PackingPageContent.tsx
 // - web/backend/controllers/requests/common.review.controller.js
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
@@ -148,7 +148,12 @@ export const useRequestFileHandlers = ({
   );
 
   const applyWorksheetSummaryCounterDelta = useCallback(
-    (stageKey: ReviewStageKey, status: "PENDING" | "APPROVED" | "REJECTED") => {
+    (
+      stageKey: ReviewStageKey,
+      status: "PENDING" | "APPROVED" | "REJECTED",
+      delta = 1,
+    ) => {
+      if (!Number.isFinite(delta) || delta === 0) return;
       const nextStage = getNextStageForSummary(stageKey, status);
       if (!nextStage) return;
 
@@ -171,8 +176,8 @@ export const useRequestFileHandlers = ({
           const fromValue = Number(nextData[fromKey] || 0);
           const toValue = Number(nextData[toKey] || 0);
 
-          nextData[fromKey] = Math.max(0, fromValue - 1);
-          nextData[toKey] = Math.max(0, toValue + 1);
+          nextData[fromKey] = Math.max(0, fromValue - delta);
+          nextData[toKey] = Math.max(0, toValue + delta);
 
           return {
             ...prev,
@@ -183,6 +188,60 @@ export const useRequestFileHandlers = ({
     },
     [getNextStageForSummary, getSummaryCountKeyByStage, queryClient],
   );
+
+  const summaryRefetchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+  const summaryRefetchInFlightRef = useRef<Promise<void> | null>(null);
+  const summaryRefetchQueuedRef = useRef(false);
+
+  const runWorksheetSummaryVerifyRefetch = useCallback(() => {
+    if (summaryRefetchInFlightRef.current) {
+      summaryRefetchQueuedRef.current = true;
+      return;
+    }
+
+    const task = (async () => {
+      await queryClient.invalidateQueries({
+        queryKey: ["worksheet-assigned-summary"],
+      });
+      await queryClient.refetchQueries({
+        queryKey: ["worksheet-assigned-summary"],
+        type: "active",
+      });
+    })().finally(() => {
+      summaryRefetchInFlightRef.current = null;
+      if (summaryRefetchQueuedRef.current) {
+        summaryRefetchQueuedRef.current = false;
+        runWorksheetSummaryVerifyRefetch();
+      }
+    });
+
+    summaryRefetchInFlightRef.current = task;
+  }, [queryClient]);
+
+  const scheduleWorksheetSummaryVerifyRefetch = useCallback(
+    (delayMs = 220) => {
+      if (summaryRefetchTimerRef.current) {
+        clearTimeout(summaryRefetchTimerRef.current);
+      }
+      summaryRefetchTimerRef.current = setTimeout(() => {
+        summaryRefetchTimerRef.current = null;
+        runWorksheetSummaryVerifyRefetch();
+      }, Math.max(0, delayMs));
+    },
+    [runWorksheetSummaryVerifyRefetch],
+  );
+
+  useEffect(() => {
+    return () => {
+      if (summaryRefetchTimerRef.current) {
+        clearTimeout(summaryRefetchTimerRef.current);
+      }
+      summaryRefetchTimerRef.current = null;
+      summaryRefetchQueuedRef.current = false;
+    };
+  }, []);
 
   const patchReviewStatusLocally = useCallback(
     (
@@ -529,6 +588,12 @@ export const useRequestFileHandlers = ({
         params.reason,
       );
       const optimisticallyPatched = applySingleRequestPatch(optimisticRequest);
+      const shouldApplyOptimisticSummaryDelta = Boolean(
+        getNextStageForSummary(stageKey, params.status),
+      );
+      if (shouldApplyOptimisticSummaryDelta) {
+        applyWorksheetSummaryCounterDelta(stageKey, params.status, 1);
+      }
 
       try {
         const res = await fetch(
@@ -714,16 +779,8 @@ export const useRequestFileHandlers = ({
           // 필요 시 수동으로 탭 전환하도록 유지
         }
 
-        // 상단 워크시트 카운터를 즉시 반영(낙관적) 후 서버값으로 재동기화
-        applyWorksheetSummaryCounterDelta(stageKey, params.status);
-
-        void queryClient.invalidateQueries({
-          queryKey: ["worksheet-assigned-summary"],
-        });
-        void queryClient.refetchQueries({
-          queryKey: ["worksheet-assigned-summary"],
-          type: "active",
-        });
+        // 검증 재조회는 coalesced/silent 방식으로 1회만 수행한다.
+        scheduleWorksheetSummaryVerifyRefetch();
 
         if (!params.keepPreviewOpen) {
           setPreviewOpen(false);
@@ -735,6 +792,9 @@ export const useRequestFileHandlers = ({
 
         if (optimisticallyPatched) {
           applySingleRequestPatch(params.req);
+        }
+        if (shouldApplyOptimisticSummaryDelta) {
+          applyWorksheetSummaryCounterDelta(stageKey, params.status, -1);
         }
 
         if (
@@ -776,17 +836,17 @@ export const useRequestFileHandlers = ({
       token,
       stage,
       toast,
-      fetchRequests,
       applySingleRequestPatch,
+      fetchRequests,
       isCamStage,
       isMachiningStage,
       patchReviewStatusLocally,
-      setRequests,
-      setSearchParams,
       setPreviewOpen,
+      setRequests,
       setReviewSaving,
-      queryClient,
       applyWorksheetSummaryCounterDelta,
+      getNextStageForSummary,
+      scheduleWorksheetSummaryVerifyRefetch,
     ],
   );
 
@@ -822,6 +882,7 @@ export const useRequestFileHandlers = ({
       if (!optimisticallyPatched) {
         removeSingleRequest(req);
       }
+      applyWorksheetSummaryCounterDelta("cam", "PENDING", 1);
 
       try {
         const res = await fetch(
@@ -844,14 +905,7 @@ export const useRequestFileHandlers = ({
           description: "의뢰 단계로 되돌렸습니다.",
         });
 
-        applyWorksheetSummaryCounterDelta("cam", "PENDING");
-        void queryClient.invalidateQueries({
-          queryKey: ["worksheet-assigned-summary"],
-        });
-        void queryClient.refetchQueries({
-          queryKey: ["worksheet-assigned-summary"],
-          type: "active",
-        });
+        scheduleWorksheetSummaryVerifyRefetch();
 
         if (navigate) {
           setPreviewOpen(false);
@@ -861,6 +915,7 @@ export const useRequestFileHandlers = ({
         }
       } catch (error) {
         applySingleRequestPatch(req);
+        applyWorksheetSummaryCounterDelta("cam", "PENDING", -1);
         toast({
           title: "삭제 실패",
           description: "CAM 수정본 삭제에 실패했습니다.",
@@ -873,7 +928,6 @@ export const useRequestFileHandlers = ({
     [
       token,
       toast,
-      fetchRequests,
       applySingleRequestPatch,
       removeSingleRequest,
       setDeletingCam,
@@ -881,9 +935,8 @@ export const useRequestFileHandlers = ({
       setPreviewFiles,
       setPreviewNcText,
       setPreviewNcName,
-      setSearchParams,
-      queryClient,
       applyWorksheetSummaryCounterDelta,
+      scheduleWorksheetSummaryVerifyRefetch,
     ],
   );
 
@@ -919,6 +972,10 @@ export const useRequestFileHandlers = ({
       if (!optimisticallyPatched) {
         removeSingleRequest(req);
       }
+
+      const rollbackStageKeyForSummary =
+        targetStage === "request" ? "cam" : "machining";
+      applyWorksheetSummaryCounterDelta(rollbackStageKeyForSummary, "PENDING", 1);
 
       try {
         const endpoint = `/api/requests/${req._id}/nc-file?nextStage=${targetStage}${
@@ -958,17 +1015,7 @@ export const useRequestFileHandlers = ({
           description: `${stageLabel} 단계로 되돌렸습니다.`,
         });
 
-        applyWorksheetSummaryCounterDelta(
-          targetStage === "request" ? "cam" : "machining",
-          "PENDING",
-        );
-        void queryClient.invalidateQueries({
-          queryKey: ["worksheet-assigned-summary"],
-        });
-        void queryClient.refetchQueries({
-          queryKey: ["worksheet-assigned-summary"],
-          type: "active",
-        });
+        scheduleWorksheetSummaryVerifyRefetch();
 
         if (navigate) {
           setPreviewOpen(false);
@@ -977,6 +1024,7 @@ export const useRequestFileHandlers = ({
           setPreviewFiles({});
         }
       } catch (error) {
+        applyWorksheetSummaryCounterDelta(rollbackStageKeyForSummary, "PENDING", -1);
         console.error("[ROLLBACK_TRACE][FE][NC] error", {
           requestMongoId: String(req._id || ""),
           requestId: String(req.requestId || ""),
@@ -995,7 +1043,6 @@ export const useRequestFileHandlers = ({
     [
       token,
       toast,
-      fetchRequests,
       applySingleRequestPatch,
       removeSingleRequest,
       setDeletingNc,
@@ -1003,9 +1050,8 @@ export const useRequestFileHandlers = ({
       setPreviewNcText,
       setPreviewNcName,
       setPreviewFiles,
-      setSearchParams,
-      queryClient,
       applyWorksheetSummaryCounterDelta,
+      scheduleWorksheetSummaryVerifyRefetch,
     ],
   );
 
@@ -1266,7 +1312,6 @@ export const useRequestFileHandlers = ({
       uploadFiles,
       toast,
       fetchRequests,
-      applySingleRequestPatch,
       decodeNcText,
       setUploading,
       setUploadProgress,
@@ -1421,6 +1466,12 @@ export const useRequestFileHandlers = ({
         removeSingleRequest(params.req);
       }
 
+      const rollbackStageKeyForSummary = params.stage as ReviewStageKey;
+      const shouldApplyOptimisticSummaryDelta = rollbackOnly;
+      if (shouldApplyOptimisticSummaryDelta) {
+        applyWorksheetSummaryCounterDelta(rollbackStageKeyForSummary, "PENDING", 1);
+      }
+
       try {
         const endpoint = `/api/requests/${
           params.req._id
@@ -1522,13 +1573,7 @@ export const useRequestFileHandlers = ({
           };
         });
 
-        void queryClient.invalidateQueries({
-          queryKey: ["worksheet-assigned-summary"],
-        });
-        void queryClient.refetchQueries({
-          queryKey: ["worksheet-assigned-summary"],
-          type: "active",
-        });
+        scheduleWorksheetSummaryVerifyRefetch();
 
         toast(
           rollbackOnly
@@ -1553,6 +1598,9 @@ export const useRequestFileHandlers = ({
           setPreviewFiles({});
         }
       } catch (error) {
+        if (shouldApplyOptimisticSummaryDelta) {
+          applyWorksheetSummaryCounterDelta(rollbackStageKeyForSummary, "PENDING", -1);
+        }
         console.error("[ROLLBACK_TRACE][FE][STAGE_FILE] error", {
           requestMongoId: String(params.req?._id || ""),
           requestId: String(params.req?.requestId || ""),
@@ -1579,17 +1627,16 @@ export const useRequestFileHandlers = ({
     [
       token,
       toast,
-      fetchRequests,
       applySingleRequestPatch,
       patchDeleteStageFileLocally,
-      patchReviewStatusLocally,
-      queryClient,
       removeSingleRequest,
       setUploading,
       setPreviewOpen,
       setPreviewFiles,
       setPreviewStageUrl,
       setPreviewStageName,
+      applyWorksheetSummaryCounterDelta,
+      scheduleWorksheetSummaryVerifyRefetch,
     ],
   );
 

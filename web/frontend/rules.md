@@ -316,6 +316,11 @@
     - `PreviewModal`: 현재 열려 있는 의뢰(`requestId`/`requestMongoId`)와 payload를 매칭한 경우에만 force refresh를 수행합니다.
     - `PackingPage`/`ShippingPage` 래퍼에서는 중복 처리하지 않고 `RequestPage -> useWorksheetRealtimeStatus` 공통 경로를 SSOT로 사용합니다.
     - 공통 원칙: 이벤트 재동기화로 `isInitialLoading`을 다시 true로 올리지 않고, 기존 데이터 유지 + silent refresh를 기본값으로 유지합니다.
+    - CAM/가공 카드 액션(승인/롤백) 즉시반영 표준:
+      - 카드 클릭 직후 현재 리스트와 `worksheet-assigned-summary` 카운터를 먼저 optimistic patch합니다.
+      - 성공 시 즉시 전체 refetch를 난사하지 않고, `coalesced verify refetch`를 1회 지연 실행합니다.
+      - 실패 시 optimistic patch(리스트/카운터)를 즉시 되돌립니다.
+      - 이 최적화는 프론트 상태/쿼리 계층에서만 처리하며, BG(Rhino/Esprit/Bridge) API 계약/호출 파이프라인은 변경하지 않습니다.
 
 - 문의(admin/support) 실시간 반영 메모:
   - 관리자 문의 페이지는 `support:inquiry-created`, `support:inquiry-updated`, `comm:badge-update(key=inquiry)` app-event를 수신해 목록을 디바운스 재조회합니다.
