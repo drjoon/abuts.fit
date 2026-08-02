@@ -278,6 +278,13 @@
     - 강한 일관성이 필요한 경우에도 전체 재조회는 `withLoading=false` 또는 섹션 단위 최소 로더로 제한합니다.
     - payload에 식별자(`requestId`, `businessAnchorId`, `transferId` 등)가 있으면 해당 엔티티만 갱신합니다.
     - 위 원칙은 크레딧/정산/의뢰/배송/practice/채팅 등 모든 app-event에 동일하게 적용합니다.
+  - 대시보드 리팩터링 표준 패턴(강제):
+    - 쿼리 분리: `cards summary(경량)`와 `heavy summary(목록/상세)`를 분리합니다.
+    - 이벤트 즉시 반영: `queryClient.setQueryData`로 카드/리스트를 먼저 patch하고, refetch는 검증 목적의 백그라운드 1회만 실행합니다.
+    - 재조회 병합: in-flight refetch가 있으면 다음 plan을 큐에 합쳐(coalescing) 중복 요청을 막습니다.
+    - 플랜 기반 갱신: 이벤트 타입별로 `cardsSummary/heavySummary/bulk/unmachinableOverview/shippingSummary/pricing/referral`를 명시적으로 선택합니다.
+    - 기본 구현 위치: 페이지 컴포넌트의 이벤트 핸들러 근처에 `DashboardRefreshPlan` 타입과 merge/executor를 함께 둡니다.
+    - 쿼리 옵션: `placeholderData: previous`를 유지해 refetch 중에도 스켈레톤 전환(플리커)을 방지합니다.
 
   - 이번 세션 구현 기준(운영 메모):
     - 의뢰자 `CreditLedgerModal`은 열린 상태에서 `credit:balance-updated` 수신 시 모달 유지 + 목록/스냅샷만 재조회

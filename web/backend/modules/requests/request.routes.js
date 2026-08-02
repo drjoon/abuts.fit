@@ -90,6 +90,14 @@ router.get(
   requestController.getMyDashboardSummary,
 );
 
+// 내 대시보드 상단 카드 경량 요약 (의뢰자용)
+router.get(
+  "/my/dashboard-cards-summary",
+  authenticate,
+  authorize(["requestor", "admin"], { subRoles: ["owner", "staff"] }),
+  requestController.getMyDashboardCardsSummary,
+);
+
 // 대시보드 캐시 강제 무효화 (의뢰자용)
 router.post(
   "/my/dashboard-summary/force-refresh",

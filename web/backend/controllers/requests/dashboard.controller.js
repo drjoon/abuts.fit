@@ -711,6 +711,178 @@ export async function forceRefreshMyDashboardSummary(req, res) {
   }
 }
 
+export async function getMyDashboardCardsSummary(req, res) {
+  try {
+    const { period = "30d" } = req.query;
+    const userId = req.user?._id?.toString();
+    const debug =
+      process.env.NODE_ENV !== "production" && String(req.query.debug) === "1";
+
+    const freshUser = await User.findById(userId)
+      .select({ businessAnchorId: 1 })
+      .lean();
+
+    if (!freshUser?.businessAnchorId) {
+      return res.status(400).json({
+        success: false,
+        message: "사업자 정보가 없습니다. 사업자 등록을 완료해주세요.",
+      });
+    }
+
+    const businessAnchorId = String(freshUser.businessAnchorId || "").trim();
+    const cardsCacheKey = `dashboard-cards-summary:${String(userId || "")}:${businessAnchorId}:${period}`;
+
+    if (!debug) {
+      const cached = getRequestPerfCacheValue(cardsCacheKey);
+      if (cached) {
+        return res.status(200).json({
+          success: true,
+          data: cached,
+          cached: true,
+        });
+      }
+    }
+
+    const responseData = await withRequestPerfInFlight(cardsCacheKey, async () => {
+      const dateFilter = buildDateFilter(period);
+      const anchorObjectId = new Types.ObjectId(businessAnchorId);
+      const requestFilter = {
+        businessAnchorId: anchorObjectId,
+      };
+
+      const summarySnapshot =
+        !debug && businessAnchorId
+          ? (await getRequestorDashboardSummarySnapshot({
+              businessAnchorId,
+              periodKey: period,
+            })) ||
+            ((
+              await recomputeRequestorDashboardSummarySnapshotsForBusinessAnchorId(
+                businessAnchorId,
+              )
+            ).find((row) => String(row?.periodKey || "") === String(period)) ??
+              null)
+          : null;
+
+      const snapshotStats = summarySnapshot?.stats || null;
+
+      const [
+        unmachinablePendingConfirmCountRaw,
+        unmachinableJudgedTotalCountRaw,
+        unmachinableConfirmedCountRaw,
+        inProductionNonSampleCountRaw,
+      ] = await Promise.all([
+        Request.countDocuments({
+          ...requestFilter,
+          ...dateFilter,
+          manufacturerStage: { $ne: "취소" },
+          "rnd.unmachinableAt": { $ne: null },
+          "rnd.unmachinableConfirmedAt": null,
+        }),
+        Request.countDocuments({
+          ...requestFilter,
+          ...dateFilter,
+          manufacturerStage: { $ne: "취소" },
+          "rnd.unmachinableAt": { $ne: null },
+        }),
+        Request.countDocuments({
+          ...requestFilter,
+          ...dateFilter,
+          manufacturerStage: { $ne: "취소" },
+          "rnd.unmachinableAt": { $ne: null },
+          "rnd.unmachinableConfirmedAt": { $ne: null },
+        }),
+        Request.countDocuments({
+          ...requestFilter,
+          ...dateFilter,
+          manufacturerStage: { $in: ["machining", "가공"] },
+          $and: [
+            { source: { $ne: "manufacturer_sample" } },
+            { "price.rule": { $ne: "manufacturer_sample" } },
+            { requestCategory: { $nin: ["rnd_sample", "copied_sample"] } },
+          ],
+        }),
+      ]);
+
+      const resolvedUnmachinablePendingConfirmCount = Number(
+        unmachinablePendingConfirmCountRaw ??
+          snapshotStats?.unmachinablePendingConfirmCount ??
+          snapshotStats?.unmachinableCount ??
+          0,
+      );
+
+      const resolvedUnmachinableJudgedTotalCount = Number(
+        unmachinableJudgedTotalCountRaw ??
+          snapshotStats?.unmachinableJudgedTotalCount ??
+          0,
+      );
+
+      const resolvedUnmachinableConfirmedCount = Number(
+        unmachinableConfirmedCountRaw ??
+          snapshotStats?.unmachinableConfirmedCount ??
+          0,
+      );
+
+      const resolvedInProductionCount = Number(
+        inProductionNonSampleCountRaw ?? snapshotStats?.inProduction ?? 0,
+      );
+
+      const data = {
+        stats: {
+          ...(snapshotStats || {
+            totalRequests: 0,
+            totalRequestsChange: "+0%",
+            inProgress: 0,
+            inProgressChange: "+0%",
+            inCam: 0,
+            inCamChange: "+0%",
+            inProduction: 0,
+            inProductionChange: "+0%",
+            inPacking: 0,
+            inPackingChange: "+0%",
+            inShipping: 0,
+            inShippingBoxes: 0,
+            inShippingChange: "+0%",
+            inTracking: 0,
+            inTrackingBoxes: 0,
+            inTrackingChange: "+0%",
+            canceled: 0,
+            canceledChange: "+0%",
+            tracking: 0,
+            doneOrCanceled: 0,
+            doneOrCanceledChange: "+0%",
+          }),
+          inProduction: resolvedInProductionCount,
+          unmachinableCount: resolvedUnmachinablePendingConfirmCount,
+          unmachinablePendingConfirmCount:
+            resolvedUnmachinablePendingConfirmCount,
+          unmachinableConfirmedCount: resolvedUnmachinableConfirmedCount,
+          unmachinableJudgedTotalCount: resolvedUnmachinableJudgedTotalCount,
+        },
+      };
+
+      if (!debug) {
+        setRequestPerfCacheValue(cardsCacheKey, data, 15 * 1000);
+      }
+
+      return data;
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: responseData,
+      cached: false,
+    });
+  } catch (error) {
+    console.error("Error in getMyDashboardCardsSummary:", error);
+    return res.status(500).json({
+      success: false,
+      message: "대시보드 카드 요약 조회 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
 export async function getMyDashboardSummary(req, res) {
   try {
     const { period = "30d" } = req.query;

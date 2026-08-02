@@ -63,6 +63,7 @@ export const {
 
 export const {
   getAssignedDashboardSummary,
+  getMyDashboardCardsSummary,
   getMyDashboardSummary,
   getDashboardRiskSummary,
   getMyPricingReferralStats,

@@ -151,6 +151,9 @@
   - payload 조건 매칭 후 **부분 patch(무플리커)**를 우선하고, 전체 재조회는 불가피한 경우에만 최소 범위로 수행
   - 이벤트 반영 때문에 입력중 폼/모달/선택 상태를 깨지 않는다(작업 비간섭)
   - 이벤트별 payload 파싱/매칭 로직을 페이지마다 중복 구현하지 않고 도메인 공통 헬퍼를 사용한다
+  - 대시보드류 페이지는 `heavy summary`(목록/상세)와 `cards summary`(상단 카운트)를 분리하고, 이벤트 반영 시 cards 경량 API를 우선 사용한다.
+  - 이벤트 1회당 재조회는 "즉시 payload patch → 단일 coalesced 백그라운드 검증 refetch" 순서를 기본값으로 한다.
+  - 이벤트별로 queryKey별 갱신 대상을 명시적으로 매핑한다(예: stage 변경=카드+해당 리스트, credit 변경=잔액/카드만).
 - 잔액 집계 성능 인덱스(필수): `LedgerLine(ownerRole, ownerId, accountCode, occurredAt)`
 - 동시 차감(overspend) 방지: spend 트랜잭션에서 `CreditBalanceGuard`를 통한 앵커 단위 직렬화 적용
 - 이벤트 기반 캐시 갱신 우선, 조회 시 대규모 재계산 지양

@@ -161,6 +161,16 @@ export const RequestorDashboardPage = () => {
     [period, user],
   );
 
+  const cardsSummaryQueryKey = useMemo(
+    () => [
+      "requestor-dashboard-cards-summary",
+      period,
+      String(user?.id || ""),
+      String(user?.businessAnchorId || ""),
+    ],
+    [period, user],
+  );
+
   const unmachinableOverviewQueryKey = useMemo(
     () => ["requestor-unmachinable-overview", period],
     [period],
@@ -246,6 +256,101 @@ export const RequestorDashboardPage = () => {
       source === "manufacturer_sample" ||
       priceRule === "manufacturer_sample"
     );
+  };
+
+  const normalizeEventId = (value: unknown): string => {
+    if (value == null) return "";
+    if (typeof value === "string") return value.trim();
+    if (typeof value === "number" || typeof value === "bigint") {
+      return String(value).trim();
+    }
+
+    if (typeof value === "object") {
+      const obj = value as {
+        _id?: unknown;
+        id?: unknown;
+        $oid?: unknown;
+        businessAnchorId?: unknown;
+        requestorBusinessAnchorId?: unknown;
+        toString?: () => string;
+      };
+
+      const nested =
+        obj.$oid ??
+        obj._id ??
+        obj.id ??
+        obj.businessAnchorId ??
+        obj.requestorBusinessAnchorId;
+
+      if (nested != null && nested !== value) {
+        const resolved = normalizeEventId(nested);
+        if (resolved) return resolved;
+      }
+
+      const fromToString =
+        typeof obj.toString === "function" ? String(obj.toString()) : "";
+      const normalized = fromToString.trim();
+      if (normalized && normalized !== "[object Object]") {
+        return normalized;
+      }
+    }
+
+    return "";
+  };
+
+  const extractEventBusinessAnchorIds = (evt: { data?: unknown }) => {
+    const payload =
+      evt?.data && typeof evt.data === "object"
+        ? (evt.data as {
+            requestorBusinessAnchorId?: unknown;
+            businessAnchorId?: unknown;
+            ownerBusinessAnchorId?: unknown;
+            request?: {
+              requestorBusinessAnchorId?: unknown;
+              businessAnchorId?: unknown;
+              requestor?: {
+                businessAnchorId?: unknown;
+                businessAnchor?: unknown;
+                businessAnchorIdStr?: unknown;
+              };
+            };
+            requests?: Array<{
+              requestorBusinessAnchorId?: unknown;
+              businessAnchorId?: unknown;
+              request?: {
+                requestorBusinessAnchorId?: unknown;
+                businessAnchorId?: unknown;
+                requestor?: { businessAnchorId?: unknown; businessAnchor?: unknown };
+              };
+            }>;
+          })
+        : {};
+
+    const ids = new Set<string>();
+    const pushId = (candidate: unknown) => {
+      const normalized = normalizeEventId(candidate);
+      if (normalized) ids.add(normalized);
+    };
+
+    pushId(payload.requestorBusinessAnchorId);
+    pushId(payload.businessAnchorId);
+    pushId(payload.ownerBusinessAnchorId);
+    pushId(payload.request?.requestorBusinessAnchorId);
+    pushId(payload.request?.businessAnchorId);
+    pushId(payload.request?.requestor?.businessAnchorId);
+    pushId(payload.request?.requestor?.businessAnchor);
+    pushId(payload.request?.requestor?.businessAnchorIdStr);
+
+    (Array.isArray(payload.requests) ? payload.requests : []).forEach((row) => {
+      pushId(row?.requestorBusinessAnchorId);
+      pushId(row?.businessAnchorId);
+      pushId(row?.request?.requestorBusinessAnchorId);
+      pushId(row?.request?.businessAnchorId);
+      pushId(row?.request?.requestor?.businessAnchorId);
+      pushId(row?.request?.requestor?.businessAnchor);
+    });
+
+    return Array.from(ids);
   };
 
   const filterDashboardRequest = (r: any) => {
@@ -378,6 +483,35 @@ export const RequestorDashboardPage = () => {
   });
 
   const {
+    data: cardsSummaryResponse,
+    refetch: refetchCardsSummary,
+  } = useQuery({
+    queryKey: cardsSummaryQueryKey,
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      if (period) {
+        params.set("period", period);
+      }
+      const res = await apiFetch<any>({
+        path: `/api/requests/my/dashboard-cards-summary?${params.toString()}`,
+        method: "GET",
+        token,
+      });
+      if (!res.ok) {
+        throw new Error("대시보드 카드 요약 조회에 실패했습니다.");
+      }
+      return res.data;
+    },
+    retry: false,
+    staleTime: 15 * 1000,
+    refetchOnMount: false,
+    refetchOnReconnect: true,
+    refetchOnWindowFocus: false,
+    enabled: !!token,
+    placeholderData: (previous) => previous,
+  });
+
+  const {
     data: bulkResponse,
     isLoading: isBulkLoading,
     isFetching: isBulkFetching,
@@ -425,17 +559,22 @@ export const RequestorDashboardPage = () => {
     placeholderData: (previous) => previous,
   });
 
+  const dashboardStatsSource =
+    cardsSummaryResponse?.success && cardsSummaryResponse?.data?.stats
+      ? cardsSummaryResponse
+      : summaryResponse;
+
   // 의뢰비 충전 경고
   // 의뢰, CAM 단계에 의뢰건이 있으면서 크레딧이 부족한지 확인
   // 의뢰비 결제: 유료 크레딧 + 무료 의뢰비 크레딧 사용 가능 (무료 배송비 크레딧은 사용 불가)
   useEffect(() => {
     if (
-      summaryResponse?.success &&
+      dashboardStatsSource?.success &&
       paidCredit !== null &&
       freeRequestCredit !== null &&
       systemSettings?.creditSettings
     ) {
-      const stats = summaryResponse.data.stats ?? {};
+      const stats = dashboardStatsSource.data.stats ?? {};
       const pricePerRequest =
         systemSettings.creditSettings.minCreditForRequest || 10000;
 
@@ -454,7 +593,12 @@ export const RequestorDashboardPage = () => {
         setInsufficientCredit(false);
       }
     }
-  }, [summaryResponse, paidCredit, freeRequestCredit, systemSettings]);
+  }, [
+    dashboardStatsSource,
+    paidCredit,
+    freeRequestCredit,
+    systemSettings,
+  ]);
 
   // 배송비 충전 경고
   // 묶음 배송 건수를 기준으로 필요한 배송비 계산
@@ -488,41 +632,130 @@ export const RequestorDashboardPage = () => {
     }
   }, [bulkResponse, freeShippingCredit, paidCredit, systemSettings]);
 
-  const refreshDashboard = useCallback(async () => {
-    const tasks: Promise<unknown>[] = [
-      Promise.resolve(refetchSummary()),
-      Promise.resolve(refetchBulk()),
-      queryClient.refetchQueries({
-        queryKey: unmachinableOverviewQueryKey,
-        type: "active",
-      }),
-      queryClient.refetchQueries({
-        queryKey: ["requestor-shipping-packages-summary"],
-        type: "active",
-      }),
-      queryClient.refetchQueries({
-        queryKey: ["requestor-pricing-referral-stats", "v8"],
-        type: "active",
-      }),
-    ];
+  type DashboardRefreshPlan = {
+    cardsSummary?: boolean;
+    heavySummary?: boolean;
+    bulk?: boolean;
+    unmachinableOverview?: boolean;
+    shippingSummary?: boolean;
+    pricingStats?: boolean;
+    referralTree?: boolean;
+  };
 
-    if (user?.id) {
-      tasks.push(
-        queryClient.refetchQueries({
-          queryKey: ["requestor-referral-tree-member-count", user.id],
-          type: "active",
-        }),
-      );
-    }
+  const refreshInFlightRef = useRef(false);
+  const queuedPlanRef = useRef<DashboardRefreshPlan | null>(null);
 
-    await Promise.all(tasks);
-  }, [
-    queryClient,
-    refetchBulk,
-    refetchSummary,
-    unmachinableOverviewQueryKey,
-    user?.id,
-  ]);
+  const mergeRefreshPlan = useCallback(
+    (
+      base: DashboardRefreshPlan | null,
+      patch: DashboardRefreshPlan,
+    ): DashboardRefreshPlan => ({
+      cardsSummary: Boolean(base?.cardsSummary || patch.cardsSummary),
+      heavySummary: Boolean(base?.heavySummary || patch.heavySummary),
+      bulk: Boolean(base?.bulk || patch.bulk),
+      unmachinableOverview: Boolean(
+        base?.unmachinableOverview || patch.unmachinableOverview,
+      ),
+      shippingSummary: Boolean(base?.shippingSummary || patch.shippingSummary),
+      pricingStats: Boolean(base?.pricingStats || patch.pricingStats),
+      referralTree: Boolean(base?.referralTree || patch.referralTree),
+    }),
+    [],
+  );
+
+  const executeDashboardRefreshPlan = useCallback(
+    async (plan: DashboardRefreshPlan) => {
+      const tasks: Promise<unknown>[] = [];
+
+      if (plan.cardsSummary) {
+        tasks.push(Promise.resolve(refetchCardsSummary()));
+      }
+      if (plan.heavySummary) {
+        tasks.push(Promise.resolve(refetchSummary()));
+      }
+      if (plan.bulk) {
+        tasks.push(Promise.resolve(refetchBulk()));
+      }
+      if (plan.unmachinableOverview) {
+        tasks.push(
+          queryClient.refetchQueries({
+            queryKey: unmachinableOverviewQueryKey,
+            type: "active",
+          }),
+        );
+      }
+      if (plan.shippingSummary) {
+        tasks.push(
+          queryClient.refetchQueries({
+            queryKey: ["requestor-shipping-packages-summary"],
+            type: "active",
+          }),
+        );
+      }
+      if (plan.pricingStats) {
+        tasks.push(
+          queryClient.refetchQueries({
+            queryKey: ["requestor-pricing-referral-stats", "v8"],
+            type: "active",
+          }),
+        );
+      }
+      if (plan.referralTree && user?.id) {
+        tasks.push(
+          queryClient.refetchQueries({
+            queryKey: ["requestor-referral-tree-member-count", user.id],
+            type: "active",
+          }),
+        );
+      }
+
+      if (tasks.length > 0) {
+        await Promise.all(tasks);
+      }
+    },
+    [
+      queryClient,
+      refetchBulk,
+      refetchCardsSummary,
+      refetchSummary,
+      unmachinableOverviewQueryKey,
+      user?.id,
+    ],
+  );
+
+  const refreshDashboard = useCallback(
+    async (plan?: DashboardRefreshPlan) => {
+      const normalizedPlan = plan
+        ? mergeRefreshPlan(null, plan)
+        : {
+            cardsSummary: true,
+            heavySummary: true,
+            bulk: true,
+            unmachinableOverview: true,
+            shippingSummary: true,
+            pricingStats: true,
+            referralTree: true,
+          };
+
+      if (refreshInFlightRef.current) {
+        queuedPlanRef.current = mergeRefreshPlan(queuedPlanRef.current, normalizedPlan);
+        return;
+      }
+
+      refreshInFlightRef.current = true;
+      try {
+        await executeDashboardRefreshPlan(normalizedPlan);
+      } finally {
+        refreshInFlightRef.current = false;
+        const queued = queuedPlanRef.current;
+        queuedPlanRef.current = null;
+        if (queued) {
+          await refreshDashboard(queued);
+        }
+      }
+    },
+    [executeDashboardRefreshPlan, mergeRefreshPlan],
+  );
 
   useEffect(() => {
     const locationState =
@@ -531,8 +764,136 @@ export const RequestorDashboardPage = () => {
         : null;
     const refreshDashboardAt = Number(locationState?.refreshDashboardAt || 0);
     if (!refreshDashboardAt) return;
-    void refreshDashboard();
+    void refreshDashboard({
+      cardsSummary: true,
+      heavySummary: true,
+      bulk: true,
+      unmachinableOverview: true,
+      shippingSummary: true,
+      pricingStats: true,
+      referralTree: true,
+    });
   }, [location.state, refreshDashboard]);
+
+  const toFiniteNumber = (value: unknown): number => {
+    const n = Number(value);
+    return Number.isFinite(n) ? n : 0;
+  };
+
+  const patchCardsStatsStageTransition = useCallback(
+    (fromStageRaw: string, toStageRaw: string) => {
+      const toBucket = (stageRaw: string):
+        | "request"
+        | "cam"
+        | "machining"
+        | "packing"
+        | "shipping"
+        | "tracking"
+        | "cancel"
+        | null => {
+        const stage = stageRaw.trim().toLowerCase();
+        if (!stage) return null;
+        if (stage === "request" || stage === "의뢰") return "request";
+        if (stage === "cam") return "cam";
+        if (stage === "machining" || stage === "가공" || stage === "production") {
+          return "machining";
+        }
+        if (
+          stage === "packing" ||
+          stage === "세척.패킹" ||
+          stage === "세척.포장" ||
+          stage === "cleaning"
+        ) {
+          return "packing";
+        }
+        if (
+          stage === "shipping" ||
+          stage === "포장.발송" ||
+          stage === "delivery"
+        ) {
+          return "shipping";
+        }
+        if (stage === "tracking" || stage === "추적관리") return "tracking";
+        if (stage === "cancel" || stage === "취소") return "cancel";
+        return null;
+      };
+
+      const fromBucket = toBucket(fromStageRaw);
+      const toBucketValue = toBucket(toStageRaw);
+      if (!fromBucket && !toBucketValue) return;
+
+      const applyDelta = (
+        stats: Record<string, unknown>,
+        bucket: ReturnType<typeof toBucket>,
+        delta: number,
+      ) => {
+        const bump = (key: string) => {
+          const next = Math.max(0, toFiniteNumber(stats[key]) + delta);
+          stats[key] = next;
+        };
+
+        if (bucket === "request") bump("totalRequests");
+        if (bucket === "cam") bump("inCam");
+        if (bucket === "machining") bump("inProduction");
+        if (bucket === "packing") bump("inPacking");
+        if (bucket === "shipping") bump("inShipping");
+        if (bucket === "tracking") bump("inTracking");
+        if (bucket === "cancel") bump("canceled");
+      };
+
+      queryClient.setQueryData<any>(cardsSummaryQueryKey, (prev) => {
+        if (!prev?.success || !prev?.data?.stats) return prev;
+        const stats = { ...prev.data.stats } as Record<string, unknown>;
+        if (fromBucket) applyDelta(stats, fromBucket, -1);
+        if (toBucketValue) applyDelta(stats, toBucketValue, 1);
+        return {
+          ...prev,
+          data: {
+            ...prev.data,
+            stats,
+          },
+        };
+      });
+    },
+    [cardsSummaryQueryKey, queryClient],
+  );
+
+  const patchCardsStatsUnmachinable = useCallback(
+    (kind: "updated" | "confirmed", unmachinable: boolean) => {
+      queryClient.setQueryData<any>(cardsSummaryQueryKey, (prev) => {
+        if (!prev?.success || !prev?.data?.stats) return prev;
+        const stats = { ...prev.data.stats } as Record<string, unknown>;
+
+        const pending = toFiniteNumber(stats.unmachinablePendingConfirmCount);
+        const confirmed = toFiniteNumber(stats.unmachinableConfirmedCount);
+        const judged = toFiniteNumber(stats.unmachinableJudgedTotalCount);
+
+        if (kind === "updated") {
+          if (unmachinable) {
+            stats.unmachinablePendingConfirmCount = pending + 1;
+            stats.unmachinableJudgedTotalCount = judged + 1;
+          } else {
+            stats.unmachinablePendingConfirmCount = Math.max(0, pending - 1);
+            stats.unmachinableJudgedTotalCount = Math.max(0, judged - 1);
+          }
+        } else {
+          stats.unmachinablePendingConfirmCount = Math.max(0, pending - 1);
+          stats.unmachinableConfirmedCount = confirmed + 1;
+        }
+
+        stats.unmachinableCount = toFiniteNumber(stats.unmachinablePendingConfirmCount);
+
+        return {
+          ...prev,
+          data: {
+            ...prev.data,
+            stats,
+          },
+        };
+      });
+    },
+    [cardsSummaryQueryKey, queryClient],
+  );
 
   useAppEventDebouncedReload({
     enabled: Boolean(token) && Boolean(user) && user?.role === "requestor",
@@ -542,38 +903,190 @@ export const RequestorDashboardPage = () => {
       "request:rnd-unmachinable-confirmed",
       "request:delivery-updated",
       "request:delivery-updated-batch",
+      "credit:balance-updated",
     ],
     delayMs: 120,
     shouldHandle: (evt) => {
+      const myOrgId = normalizeEventId(user?.businessAnchorId);
+      if (!myOrgId) return false;
+
+      const eventOrgIds = extractEventBusinessAnchorIds(evt);
+      if (eventOrgIds.length === 0) return false;
+
+      return eventOrgIds.includes(myOrgId);
+    },
+    onMatch: (evt) => {
+      const type = String(evt?.type || "").trim();
       const payload =
         evt?.data && typeof evt.data === "object"
           ? (evt.data as {
-              requestorBusinessAnchorId?: unknown;
-              businessAnchorId?: unknown;
-              request?: {
-                requestorBusinessAnchorId?: unknown;
-                businessAnchorId?: unknown;
-                requestor?: {
-                  businessAnchorId?: unknown;
-                };
-              };
+              toStage?: unknown;
+              fromStage?: unknown;
+              unmachinable?: unknown;
+              request?: any;
+              requestMongoId?: unknown;
+              requestId?: unknown;
             })
           : {};
-      const eventRequest = payload.request;
-      const eventOrgId = String(
-        payload.requestorBusinessAnchorId ||
-          payload.businessAnchorId ||
-          eventRequest?.requestorBusinessAnchorId ||
-          eventRequest?.businessAnchorId ||
-          eventRequest?.requestor?.businessAnchorId ||
-          "",
-      ).trim();
-      const myOrgId = String(user?.businessAnchorId || "").trim();
-      if (!eventOrgId || !myOrgId) return false;
-      return eventOrgId === myOrgId;
-    },
-    onMatch: () => {
-      void refreshDashboard();
+
+      const toStage = String(payload?.toStage || "").trim();
+      const fromStage = String(payload?.fromStage || "").trim();
+      const requestMongoId = normalizeEventId(
+        payload.requestMongoId ?? payload.request?._id,
+      );
+      const requestId = normalizeEventId(payload.requestId ?? payload.request?.requestId);
+
+      if (type === "request:stage-changed") {
+        patchCardsStatsStageTransition(fromStage, toStage);
+        if (requestMongoId || requestId) {
+          queryClient.setQueryData<any>(summaryQueryKey, (prev) => {
+            if (!prev?.success || !Array.isArray(prev?.data?.recentRequests)) return prev;
+            const recentRequests = prev.data.recentRequests.map((row: any) => {
+              const rowMongoId = normalizeEventId(row?._id || row?.id);
+              const rowRequestId = normalizeEventId(row?.requestId);
+              if (
+                (requestMongoId && rowMongoId === requestMongoId) ||
+                (requestId && rowRequestId === requestId)
+              ) {
+                return {
+                  ...row,
+                  ...(payload.request && typeof payload.request === "object"
+                    ? payload.request
+                    : null),
+                  manufacturerStage: toStage || row.manufacturerStage,
+                };
+              }
+              return row;
+            });
+            return {
+              ...prev,
+              data: {
+                ...prev.data,
+                recentRequests,
+              },
+            };
+          });
+        }
+
+        const isShippingSideStage =
+          toStage === "세척.패킹" ||
+          toStage === "포장.발송" ||
+          toStage === "추적관리" ||
+          toStage === "packing" ||
+          toStage === "shipping" ||
+          toStage === "tracking";
+
+        void refreshDashboard({
+          cardsSummary: true,
+          heavySummary: true,
+          bulk: true,
+          unmachinableOverview: unmachinableAlertModalOpen,
+          shippingSummary: isShippingSideStage,
+          pricingStats: true,
+          referralTree: true,
+        });
+        return;
+      }
+
+      if (type === "request:rnd-unmachinable-updated") {
+        const unmachinable = Boolean(payload?.unmachinable);
+        patchCardsStatsUnmachinable("updated", unmachinable);
+
+        if (requestMongoId && payload.request && typeof payload.request === "object") {
+          queryClient.setQueryData<any>(unmachinableOverviewQueryKey, (prev) => {
+            if (!prev?.success || !Array.isArray(prev?.data?.items)) return prev;
+            const items = [...prev.data.items] as any[];
+            const index = items.findIndex((row) => {
+              const rowId = normalizeEventId(row?._id || row?.id);
+              return rowId === requestMongoId;
+            });
+
+            if (unmachinable) {
+              const nextRow = {
+                ...(index >= 0 ? items[index] : {}),
+                ...payload.request,
+              };
+              if (index >= 0) items[index] = nextRow;
+              else items.unshift(nextRow);
+            } else if (index >= 0) {
+              items.splice(index, 1);
+            }
+
+            return {
+              ...prev,
+              data: {
+                ...prev.data,
+                items,
+              },
+            };
+          });
+        }
+
+        void refreshDashboard({
+          cardsSummary: true,
+          heavySummary: true,
+          bulk: true,
+          unmachinableOverview: true,
+        });
+        return;
+      }
+
+      if (type === "request:rnd-unmachinable-confirmed") {
+        patchCardsStatsUnmachinable("confirmed", true);
+
+        if (requestMongoId && payload.request && typeof payload.request === "object") {
+          queryClient.setQueryData<any>(unmachinableOverviewQueryKey, (prev) => {
+            if (!prev?.success || !Array.isArray(prev?.data?.items)) return prev;
+            const items = prev.data.items.map((row: any) => {
+              const rowId = normalizeEventId(row?._id || row?.id);
+              if (rowId !== requestMongoId) return row;
+              return {
+                ...row,
+                ...payload.request,
+              };
+            });
+            return {
+              ...prev,
+              data: {
+                ...prev.data,
+                items,
+              },
+            };
+          });
+        }
+
+        void refreshDashboard({
+          cardsSummary: true,
+          heavySummary: true,
+          bulk: true,
+          unmachinableOverview: true,
+          pricingStats: true,
+          referralTree: true,
+        });
+        return;
+      }
+
+      if (type === "credit:balance-updated") {
+        void refreshDashboard({
+          cardsSummary: true,
+          bulk: true,
+        });
+        return;
+      }
+
+      if (
+        type === "request:delivery-updated" ||
+        type === "request:delivery-updated-batch"
+      ) {
+        void refreshDashboard({
+          cardsSummary: true,
+          bulk: true,
+          shippingSummary: true,
+        });
+        return;
+      }
+
+      void refreshDashboard({ cardsSummary: true, heavySummary: true, bulk: true });
     },
   });
 
@@ -630,14 +1143,16 @@ export const RequestorDashboardPage = () => {
 
   // 상단 alert 배지는 "미확인(읽지 않음)" 판정 건수를 사용한다.
   const unmachinableAlertCount = useMemo(() => {
-    const fromStats = Number(summaryResponse?.data?.stats?.unmachinableCount);
+    const fromStats = Number(
+      dashboardStatsSource?.data?.stats?.unmachinableCount,
+    );
     if (Number.isFinite(fromStats)) return Math.max(0, fromStats);
     return recentRequests.filter((r) => isUnmachinableRequest(r)).length;
-  }, [recentRequests, summaryResponse]);
+  }, [dashboardStatsSource, recentRequests]);
 
   // 상단 통계카드(불완전가공)는 기록용 누적(확인 포함) 건수를 사용한다.
   const unmachinableRecordedCount = useMemo(() => {
-    const stats = summaryResponse?.data?.stats || {};
+    const stats = dashboardStatsSource?.data?.stats || {};
     const fromJudgedTotal = Number(stats?.unmachinableJudgedTotalCount);
     if (Number.isFinite(fromJudgedTotal)) return Math.max(0, fromJudgedTotal);
 
@@ -658,7 +1173,7 @@ export const RequestorDashboardPage = () => {
     }
 
     return recentRequests.filter((r) => isUnmachinableRequest(r)).length;
-  }, [recentRequests, summaryResponse]);
+  }, [dashboardStatsSource, recentRequests]);
 
   const isInitialLoading =
     isLoading || isBulkLoading || loadingCreditBalance || !summaryResponse;
@@ -1275,7 +1790,7 @@ export const RequestorDashboardPage = () => {
     !creditLedgerOpen;
 
   const stats: RequestorDashboardStat[] = (() => {
-    if (!summaryResponse?.success) {
+    if (!dashboardStatsSource?.success) {
       return [
         { label: "의뢰/취소", value: "0 / 0", icon: FileText },
         { label: "CAM", value: "0", icon: Wrench },
@@ -1287,7 +1802,7 @@ export const RequestorDashboardPage = () => {
       ];
     }
 
-    const s = summaryResponse.data.stats ?? {};
+    const s = dashboardStatsSource.data.stats ?? {};
     const shippingProductCount = Number(s.inShipping ?? 0);
     const shippingBoxCount = Number(s.inShippingBoxes ?? 0);
     const trackingProductCount = Number(s.inTracking ?? 0);
