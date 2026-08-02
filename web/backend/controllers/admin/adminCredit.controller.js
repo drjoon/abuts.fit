@@ -8,6 +8,7 @@
 // - web/backend/services/creditBalance.service.js
 // - web/frontend/src/shared/components/CreditLedgerModal.tsx
 // - web/frontend/src/shared/components/SalesmanLedgerModal.tsx
+// - web/frontend/src/pages/admin/credits/hooks/useAdminCreditPage.ts
 import FreeCreditGrant from "../../models/freeCreditGrant.model.js";
 import ChargeOrder from "../../models/chargeOrder.model.js";
 import BankTransaction from "../../models/bankTransaction.model.js";
@@ -2561,13 +2562,25 @@ export async function adminGetBusinessCredits(req, res) {
   try {
     const limit = Math.min(Number(req.query.limit) || 50, 200);
     const skip = Math.max(Number(req.query.skip) || 0, 0);
+    const businessAnchorId = String(req.query.businessAnchorId || "").trim();
+
+    const matchQuery = {};
+    if (businessAnchorId) {
+      if (!Types.ObjectId.isValid(businessAnchorId)) {
+        return res.status(400).json({
+          success: false,
+          message: "유효하지 않은 businessAnchorId 입니다.",
+        });
+      }
+      matchQuery._id = new Types.ObjectId(businessAnchorId);
+    }
 
     // 전체 개수 조회 (캐싱 가능)
-    const total = await BusinessAnchor.countDocuments({});
+    const total = await BusinessAnchor.countDocuments(matchQuery);
 
     // SSOT: metadata 사용 (extracted 레거시 제거)
     // 페이지네이션 적용하여 필요한 데이터만 조회
-    const orgs = await BusinessAnchor.find({})
+    const orgs = await BusinessAnchor.find(matchQuery)
       .select({
         name: 1,
         primaryContactUserId: 1,

@@ -3,8 +3,27 @@
 // - web/backend/socket.js
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/pages/admin/credits/hooks/useAdminCreditPage.ts
+// - web/frontend/src/shared/realtime/creditBalanceEvent.ts
 import BusinessAnchor from "../models/businessAnchor.model.js";
 import { emitAppEventToRoles } from "../socket.js";
+
+async function resolveBusinessAnchorId({ businessAnchorId, businessId }) {
+  const anchorId = String(businessAnchorId || "").trim();
+  if (anchorId) {
+    // businessAnchorId가 직접 전달된 경우 우선 SSOT로 사용한다.
+    return anchorId;
+  }
+
+  const id = String(businessId || "").trim();
+  if (!id) return "";
+
+  const business = await BusinessAnchor.findById(id)
+    .select({ _id: 1 })
+    .lean()
+    .catch(() => null);
+
+  return String(business?._id || "").trim();
+}
 
 export async function emitCreditBalanceUpdatedToBusiness({
   businessAnchorId,
@@ -13,25 +32,13 @@ export async function emitCreditBalanceUpdatedToBusiness({
   reason,
   refId,
 }) {
-  const anchorId = String(businessAnchorId || "").trim();
-  const id = String(businessId || "").trim();
-  if (!anchorId && !id) return;
-
   const delta = Number(balanceDelta || 0);
   if (!Number.isFinite(delta) || delta === 0) return;
 
-  const business = anchorId
-    ? await BusinessAnchor.findById(anchorId)
-        .select({ _id: 1 })
-        .lean()
-        .catch(() => null)
-    : await BusinessAnchor.findById(id)
-        .select({ _id: 1 })
-        .lean()
-        .catch(() => null);
-  if (!business) return;
-
-  const resolvedBusinessAnchorId = String(business._id || "").trim();
+  const resolvedBusinessAnchorId = await resolveBusinessAnchorId({
+    businessAnchorId,
+    businessId,
+  });
   if (!resolvedBusinessAnchorId) return;
 
   const payload = {
@@ -39,6 +46,7 @@ export async function emitCreditBalanceUpdatedToBusiness({
     balanceDelta: delta,
     reason: String(reason || "").trim() || null,
     refId: refId ? String(refId) : null,
+    emittedAt: new Date().toISOString(),
   };
 
   // 실시간 발행 SSOT: 대상 role 전체 fan-out emit

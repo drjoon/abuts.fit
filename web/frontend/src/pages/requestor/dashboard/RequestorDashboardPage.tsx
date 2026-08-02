@@ -782,13 +782,7 @@ export const RequestorDashboardPage = () => {
         duration: 2000,
       });
 
-      try {
-        if (typeof window !== "undefined") {
-          window.dispatchEvent(new Event("abuts:credits:updated"));
-        }
-      } catch {
-        // ignore
-      }
+
 
       // 백그라운드에서 최신 데이터 갱신
       refreshDashboard();

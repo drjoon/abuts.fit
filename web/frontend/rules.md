@@ -25,6 +25,7 @@
   - `src/shared/realtime/socket.ts`
   - `src/shared/realtime/useAppEventListener.ts`
   - `src/shared/realtime/useAppEventDebouncedReload.ts`
+  - `src/shared/realtime/creditBalanceEvent.ts`
   - `websocket-realtime-update-checklist.md` (웹소켓 실시간 업데이트 자동 점검 체크리스트)
 - 의뢰자 신규의뢰/치과
   - `src/pages/requestor/new_request/NewRequestPage.tsx`
@@ -264,12 +265,26 @@
   - app-event 수신 공통 훅: `src/shared/realtime/useAppEventListener.ts`
     - 기본값으로 `requireVisible=true`(활성 탭에서만 반영), `deferWhenEditing=true`(입력 포커스 중 이벤트 반영 지연)을 적용합니다.
     - 페이지/도메인 훅에서 `onAppEvent` 직접 구독은 신규 코드에서 금지하고, 공통 훅으로 통일합니다.
+  - 이벤트 payload 파싱/매칭 공통화(강제):
+    - 이벤트별 payload 매칭 로직을 페이지마다 중복 작성하지 않고 `src/shared/realtime/*Event.ts` 공통 헬퍼를 사용합니다.
+    - 기존 크레딧 이벤트 헬퍼: `src/shared/realtime/creditBalanceEvent.ts`
+      - `DashboardLayout`, `CreditLedgerModal`, `useAdminCreditPage`에서 공통 헬퍼로 필터링합니다.
+    - 레거시 window 커스텀 이벤트(`abuts:credits:updated`) 기반 동기화는 신규 코드에서 사용하지 않습니다.
   - app-event 디바운스 재조회 공통 훅: `src/shared/realtime/useAppEventDebouncedReload.ts`
     - 내부적으로 `useAppEventListener`를 사용하며, 입력 중에는 재조회 콜백 실행을 지연합니다.
+  - 웹소켓 반영 UX 원칙(모든 페이지 공통, 강제):
+    - 이벤트 수신으로 전체 화면 스켈레톤 전환/목록 초기화(reset)/모달 닫힘이 발생하면 안 됩니다.
+    - `onMatch`에서는 가능한 한 `setState` 부분 patch 또는 무로딩(silent) 재조회를 사용합니다.
+    - 강한 일관성이 필요한 경우에도 전체 재조회는 `withLoading=false` 또는 섹션 단위 최소 로더로 제한합니다.
+    - payload에 식별자(`requestId`, `businessAnchorId`, `transferId` 등)가 있으면 해당 엔티티만 갱신합니다.
+    - 위 원칙은 크레딧/정산/의뢰/배송/practice/채팅 등 모든 app-event에 동일하게 적용합니다.
+
   - 이번 세션 구현 기준(운영 메모):
     - 의뢰자 `CreditLedgerModal`은 열린 상태에서 `credit:balance-updated` 수신 시 모달 유지 + 목록/스냅샷만 재조회
     - `RequestorDashboardPage`는 크레딧 모달 오픈 중 스켈레톤 전환으로 인한 모달 언마운트(닫힘 체감)를 방지
     - 관리자 `AdminPaymentsPage`는 `request:stage-changed`/`credit:balance-updated`/배송 업데이트를 디바운스 수신해 무플리커 동기화
+    - 관리자 `useAdminCreditPage`는 `credit:balance-updated` 수신 시 전체 목록 reset 대신 payload 대상 사업자 1건만 부분 갱신합니다.
+      - 조회 경로: `GET /api/admin/credits/businesses?businessAnchorId=:id&limit=1&skip=0`
   - 채팅방 목록 실시간 동기화: `src/shared/hooks/useChatRooms.ts`
   - 채팅 메시지 실시간 동기화: `src/shared/hooks/useChatMessages.ts`
   - 채팅 role 라벨/뱃지 표시에서는 `practice`를 fallback("사용자")로 처리하지 말고 명시적으로 `치과`로 매핑합니다.

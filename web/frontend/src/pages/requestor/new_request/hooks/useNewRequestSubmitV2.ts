@@ -728,13 +728,7 @@ export const useNewRequestSubmitV2 = ({
         console.warn("[submitFromDraft] Failed to clear local draft:", err);
       }
 
-      try {
-        if (typeof window !== "undefined") {
-          window.dispatchEvent(new Event("abuts:credits:updated"));
-        }
-      } catch {
-        // noop
-      }
+
 
       dismiss();
       toast({ title: "의뢰가 제출되었습니다" });

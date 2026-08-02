@@ -4,10 +4,11 @@
 // - web/frontend/src/pages/requestor/dashboard/RequestorDashboardPage.tsx
 // - web/frontend/src/pages/admin/credits/AdminCreditPage.tsx
 // - web/frontend/src/shared/realtime/useAppEventDebouncedReload.ts
+// - web/frontend/src/shared/realtime/creditBalanceEvent.ts
 // - web/backend/controllers/admin/adminCredit.controller.js
-// - web/frontend/src/shared/realtime/useAppEventDebouncedReload.ts
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useAppEventDebouncedReload } from "@/shared/realtime/useAppEventDebouncedReload";
+import { isCreditEventForBusiness } from "@/shared/realtime/creditBalanceEvent";
 import {
   Dialog,
   DialogContent,
@@ -466,19 +467,8 @@ export const CreditLedgerModal = ({
     eventTypes: ["credit:balance-updated"],
     delayMs: 80,
     deferWhenEditing: false,
-    shouldHandle: (evt) => {
-      const payload =
-        evt?.data && typeof evt.data === "object"
-          ? (evt.data as { businessAnchorId?: string })
-          : {};
-      const eventBusinessAnchorId = String(payload.businessAnchorId || "").trim();
-      const targetBusinessAnchorId = String(
-        businessAnchorId || user?.businessAnchorId || "",
-      ).trim();
-
-      if (!eventBusinessAnchorId || !targetBusinessAnchorId) return false;
-      return eventBusinessAnchorId === targetBusinessAnchorId;
-    },
+    shouldHandle: (evt) =>
+      isCreditEventForBusiness(evt, businessAnchorId || user?.businessAnchorId),
     onMatch: () => {
       setPage(1);
       pageRef.current = 1;

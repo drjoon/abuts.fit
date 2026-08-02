@@ -17,6 +17,9 @@ type UseAppEventDebouncedReloadOptions = {
   deferWhenEditing?: boolean;
 };
 
+// 공통 디바운스 훅은 "무플리커 업데이트"를 전제로 사용한다.
+// - onMatch에서 가능하면 부분 patch를 우선
+// - 불가피한 재조회도 섹션 단위/무로딩(silent)으로 제한
 export function useAppEventDebouncedReload({
   enabled = true,
   eventTypes,

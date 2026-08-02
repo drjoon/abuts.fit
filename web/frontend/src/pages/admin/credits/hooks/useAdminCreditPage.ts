@@ -2,11 +2,13 @@
 // - web/frontend/rules.md
 // - web/frontend/src/pages/admin/credits/AdminCreditPage.tsx
 // - web/frontend/src/shared/realtime/useAppEventDebouncedReload.ts
+// - web/frontend/src/shared/realtime/creditBalanceEvent.ts
 // - web/backend/utils/creditRealtime.js
 import { useEffect, useMemo, useRef, useState } from "react";
 import { request } from "@/shared/api/apiClient";
 import { useToast } from "@/shared/hooks/use-toast";
 import { useAppEventDebouncedReload } from "@/shared/realtime/useAppEventDebouncedReload";
+import { getCreditEventBusinessAnchorId } from "@/shared/realtime/creditBalanceEvent";
 import { usePeriodStore, periodToRangeQuery } from "@/store/usePeriodStore";
 import { useAuthStore } from "@/store/useAuthStore";
 import type {
@@ -26,26 +28,10 @@ type ApiMessageResponse = {
   message?: string;
 };
 
-type CreditLedgerRow = {
-  type?: string;
-  amount?: number;
-  spentPaidAmount?: number;
-  spentFreeAmount?: number;
-};
-
-type BusinessCreditDetailResponse = {
+type BusinessCreditsListResponse = {
   success?: boolean;
   data?: {
-    business?: {
-      _id?: string;
-      name?: string;
-    };
-    balance?: number;
-    paidCredit?: number;
-    freeRequestCredit?: number;
-    freeShippingCredit?: number;
-    spentAmount?: number;
-    history?: CreditLedgerRow[];
+    items?: BusinessCredit[];
   };
 };
 
@@ -76,82 +62,6 @@ const isFreeCreditEligibleBusiness = (business: BusinessCredit | null) => {
     return business.isFreeCreditEligible;
   }
   return String(business.businessType || "").trim() === "requestor";
-};
-
-const normalizePositive = (value: unknown) => {
-  const n = Number(value || 0);
-  if (!Number.isFinite(n)) return 0;
-  return Math.max(0, Math.round(n));
-};
-
-const buildBusinessCreditPatchFromDetail = (
-  detail: BusinessCreditDetailResponse["data"] | undefined,
-) => {
-  const paidCredit = normalizePositive(detail?.paidCredit);
-  const freeRequestCredit = normalizePositive(detail?.freeRequestCredit);
-  const freeShippingCredit = normalizePositive(detail?.freeShippingCredit);
-  const balance = normalizePositive(
-    detail?.balance ?? paidCredit + freeRequestCredit + freeShippingCredit,
-  );
-
-  const history = Array.isArray(detail?.history) ? detail.history : [];
-
-  let chargedPaidAmount = 0;
-  let chargedFreeRequestAmount = 0;
-  let chargedFreeShippingAmount = 0;
-  let spentPaidAmount = 0;
-  let spentFreeRequestAmount = 0;
-  let spentFreeShippingAmount = 0;
-
-  history.forEach((row) => {
-    const type = String(row?.type || "").trim();
-    if (type === "CHARGE_PAID") {
-      chargedPaidAmount += normalizePositive(row?.amount);
-      return;
-    }
-    if (type === "CHARGE_FREE_REQUEST") {
-      chargedFreeRequestAmount += normalizePositive(row?.amount);
-      return;
-    }
-    if (type === "CHARGE_FREE_SHIPPING") {
-      chargedFreeShippingAmount += normalizePositive(row?.amount);
-      return;
-    }
-    if (type === "SPEND_PAID") {
-      spentPaidAmount += normalizePositive(row?.spentPaidAmount);
-      return;
-    }
-    if (type === "SPEND_FREE_REQUEST") {
-      spentFreeRequestAmount += normalizePositive(row?.spentFreeAmount);
-      return;
-    }
-    if (type === "SPEND_FREE_SHIPPING") {
-      spentFreeShippingAmount += normalizePositive(row?.spentFreeAmount);
-    }
-  });
-
-  const chargedFreeAmount = chargedFreeRequestAmount + chargedFreeShippingAmount;
-  const spentFreeAmount = spentFreeRequestAmount + spentFreeShippingAmount;
-
-  return {
-    balance,
-    paidBalance: paidCredit,
-    freeBalance: freeRequestCredit + freeShippingCredit,
-    paidCredit,
-    freeRequestCredit,
-    freeShippingCredit,
-    spentAmount: normalizePositive(
-      detail?.spentAmount ?? spentPaidAmount + spentFreeAmount,
-    ),
-    chargedPaidAmount,
-    chargedFreeAmount,
-    chargedFreeRequestAmount,
-    chargedFreeShippingAmount,
-    spentPaidAmount,
-    spentFreeAmount,
-    spentFreeRequestAmount,
-    spentFreeShippingAmount,
-  } satisfies Partial<BusinessCredit>;
 };
 
 export function useAdminCreditPage() {
@@ -957,14 +867,17 @@ export function useAdminCreditPage() {
     if (!anchorId) return;
 
     try {
-      const res = await request<BusinessCreditDetailResponse>({
-        path: `/api/admin/credits/businesses/${encodeURIComponent(anchorId)}`,
+      const res = await request<BusinessCreditsListResponse>({
+        path: `/api/admin/credits/businesses?businessAnchorId=${encodeURIComponent(anchorId)}&limit=1&skip=0`,
         method: "GET",
         token,
       });
-      if (!res.ok || !res.data?.success || !res.data?.data) return;
+      if (!res.ok || !res.data?.success) return;
 
-      const patch = buildBusinessCreditPatchFromDetail(res.data.data);
+      const patch = Array.isArray(res.data?.data?.items)
+        ? res.data.data.items.find((item) => String(item?._id || "") === anchorId)
+        : null;
+      if (!patch) return;
 
       setBusinesses((prev) => {
         let found = false;
@@ -1005,8 +918,7 @@ export function useAdminCreditPage() {
     onMatch: (evt) => {
       void loadStats({ silent: true });
 
-      const payload = (evt?.data || null) as { businessAnchorId?: string } | null;
-      const targetBusinessAnchorId = String(payload?.businessAnchorId || "").trim();
+      const targetBusinessAnchorId = getCreditEventBusinessAnchorId(evt);
 
       if (!targetBusinessAnchorId) {
         void loadOrganizations({ reset: true, silent: true });

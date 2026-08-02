@@ -265,8 +265,18 @@
     - 송신측은 대상 role 전체에 fan-out emit 합니다.
     - 수신측은 로그인된 role에서 이벤트를 수신하되, 현재 열려 있는 페이지(활성 화면)에서만 즉시 반영합니다.
     - 비활성 페이지 데이터는 페이지 진입 시 재조회(또는 캐시 무효화)로 동기화합니다.
+  - 이벤트 발행 payload 설계 공통 원칙(강제):
+    - 이벤트는 수신측 부분 갱신이 가능하도록 식별자 중심 payload를 포함합니다.
+      (예: `businessAnchorId`, `requestId`, `requestMongoId`, `transferId`, `roomId`)
+    - 수신측이 전체 재조회 없이 대상 엔티티 1건을 갱신할 수 있는 API/키를 함께 보장합니다.
+    - fan-out emit 자체는 유지하되, 수신 화면이 payload 조건으로 이벤트를 좁혀 처리할 수 있어야 합니다.
   - 관리자 크레딧(`credit:balance-updated`)은 `requestor`, `admin` role fan-out으로 발행하고,
     각 페이지는 payload(`businessAnchorId` 등) 조건이 맞을 때만 갱신합니다.
+  - `emitCreditBalanceUpdatedToBusiness` payload 표준:
+    - `businessAnchorId`(필수), `balanceDelta`, `reason`, `refId`, `emittedAt`
+    - `businessAnchorId`가 있으면 DB 재조회 없이 해당 값을 SSOT로 emit합니다.
+  - 관리자 사업자 크레딧 목록 API(`GET /api/admin/credits/businesses`)는
+    `businessAnchorId` query를 지원하며, 이벤트 수신 시 대상 row 1건 부분 갱신 용도로 사용합니다.
   - `BusinessCreditBalance`는 레거시 스냅샷 컬렉션으로 간주하며, 런타임 잔액 판정/표시 경로에서 사용하지 않습니다.
   - 잔액 집계 성능 인덱스(필수): `LedgerLine(ownerRole, ownerId, accountCode, occurredAt)`
   - 레거시 `bonus*` alias/fallback은 런타임 경로에서 제거했습니다.

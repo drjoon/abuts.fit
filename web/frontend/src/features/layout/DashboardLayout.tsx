@@ -18,6 +18,7 @@ import { useToast } from "@/shared/hooks/use-toast";
 // - web/frontend/src/pages/practice/PracticeDropzonePage.tsx
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // - web/frontend/src/shared/realtime/useAppEventDebouncedReload.ts
+// - web/frontend/src/shared/realtime/creditBalanceEvent.ts
 // - web/backend/modules/practiceTransfers/practiceTransfer.routes.js
 import { ToastAction } from "@/components/ui/toast";
 import { Button } from "@/components/ui/button";
@@ -72,6 +73,7 @@ import { useAdminCommBadges } from "@/shared/hooks/useAdminCommBadges";
 import { loadBusinessMeCached } from "@/shared/components/business/settings/business/businessMeCache";
 import { resolveBusinessType } from "@/shared/utils/resolveBusinessType";
 import { useChatRooms } from "@/shared/hooks/useChatRooms";
+import { isCreditEventForBusiness } from "@/shared/realtime/creditBalanceEvent";
 
 const sidebarItems = {
   requestor: [
@@ -558,16 +560,7 @@ export const DashboardLayout = () => {
     };
   }, [fetchRequestorPracticeUnreadCount]);
 
-  useEffect(() => {
-    const onCreditsUpdated = () => {
-      fetchCreditBalance();
-    };
 
-    window.addEventListener("abuts:credits:updated", onCreditsUpdated);
-    return () => {
-      window.removeEventListener("abuts:credits:updated", onCreditsUpdated);
-    };
-  }, [fetchCreditBalance]);
 
   useAppEventDebouncedReload({
     enabled:
@@ -578,16 +571,7 @@ export const DashboardLayout = () => {
       Boolean(user?.businessAnchorId),
     eventTypes: ["credit:balance-updated"],
     delayMs: 80,
-    shouldHandle: (evt) => {
-      const payload =
-        evt?.data && typeof evt.data === "object"
-          ? (evt.data as { businessAnchorId?: string })
-          : {};
-      const eventBusinessId = String(payload.businessAnchorId || "").trim();
-      const myBusinessId = String(user?.businessAnchorId || "").trim();
-      if (!eventBusinessId || !myBusinessId) return false;
-      return eventBusinessId === myBusinessId;
-    },
+    shouldHandle: (evt) => isCreditEventForBusiness(evt, user?.businessAnchorId),
     onMatch: () => {
       void fetchCreditBalance();
     },

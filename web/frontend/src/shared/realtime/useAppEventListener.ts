@@ -18,6 +18,8 @@ type UseAppEventListenerOptions = {
 // 웹소켓 실시간 업데이트 공통 가드:
 // - requireVisible: 활성 탭에서만 반영
 // - deferWhenEditing: 입력 중 반영 지연(작업 비간섭)
+// - 원칙: 페이지는 이벤트 수신 시 전체 리로드/전체 reset 대신
+//   payload 조건 기반 부분 patch 또는 최소 범위 재조회로 반영한다.
 const isDocumentVisible = () => {
   if (typeof document === "undefined") return true;
   if (document.hidden) return false;
