@@ -43,6 +43,9 @@
 - 관리자 크레딧
   - `controllers/admin/adminCredit.controller.js`
   - `modules/admin/admin.routes.js`
+  - `utils/creditRealtime.js`
+- 실시간 소켓 공통
+  - `socket.js`
 
 ## 1. 구조
 
@@ -258,9 +261,12 @@
     - 소비: `SPEND_PAID` / `SPEND_FREE_REQUEST` / `SPEND_FREE_SHIPPING`
   - `GET /api/credits/balance`는 `LedgerLine` 직접 집계(GL SSOT)만 사용합니다.
     - 프로세스 메모리 캐시를 사용하지 않아 승인/롤백 직후 잔액을 즉시 반영해야 합니다.
-  - 관리자 크레딧 실시간 이벤트 최적화:
-    - role fan-out 대신 admin 크레딧 페이지 전용 소켓 room(`app:admin:credits`) 구독자에게만
-      `credit:balance-updated`를 발행합니다.
+  - 실시간 이벤트 발행/수신 SSOT:
+    - 송신측은 대상 role 전체에 fan-out emit 합니다.
+    - 수신측은 로그인된 role에서 이벤트를 수신하되, 현재 열려 있는 페이지(활성 화면)에서만 즉시 반영합니다.
+    - 비활성 페이지 데이터는 페이지 진입 시 재조회(또는 캐시 무효화)로 동기화합니다.
+  - 관리자 크레딧(`credit:balance-updated`)은 `requestor`, `admin` role fan-out으로 발행하고,
+    각 페이지는 payload(`businessAnchorId` 등) 조건이 맞을 때만 갱신합니다.
   - `BusinessCreditBalance`는 레거시 스냅샷 컬렉션으로 간주하며, 런타임 잔액 판정/표시 경로에서 사용하지 않습니다.
   - 잔액 집계 성능 인덱스(필수): `LedgerLine(ownerRole, ownerId, accountCode, occurredAt)`
   - 레거시 `bonus*` alias/fallback은 런타임 경로에서 제거했습니다.

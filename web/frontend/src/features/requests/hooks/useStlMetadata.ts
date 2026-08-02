@@ -2,14 +2,15 @@
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
+// - web/frontend/src/shared/realtime/useAppEventListener.ts
 /**
  * STL 메타데이터 조회 및 재계산 훅
  * 백엔드 DB 캐시를 우선 사용하고, 필요시 재계산 트리거
  */
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { request as api } from "@/shared/api/apiClient";
-import { onAppEvent } from "@/shared/realtime/socket";
+import { useAppEventListener } from "@/shared/realtime/useAppEventListener";
 
 const RECALCULATE_POLL_INTERVAL_MS = 1000;
 const RECALCULATE_POLL_MAX_ATTEMPTS = 20;
@@ -103,6 +104,25 @@ export function useStlMetadata(requestId?: string): UseStlMetadataResult {
   const [cached, setCached] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const reloadMetadata = useCallback(async () => {
+    if (!requestId) return;
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      const fetched = await fetchStlMetadata(requestId);
+      setMetadata(fetched.metadata);
+      setCached(fetched.cached);
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error ? err.message : "Failed to fetch metadata";
+      setError(message);
+    } finally {
+      setLoading(false);
+    }
+  }, [requestId]);
+
   useEffect(() => {
     if (!requestId) {
       setMetadata(null);
@@ -110,51 +130,35 @@ export function useStlMetadata(requestId?: string): UseStlMetadataResult {
       return;
     }
 
-    let cancelled = false;
+    void reloadMetadata();
+  }, [reloadMetadata, requestId]);
 
-    const fetchMetadata = async () => {
-      setLoading(true);
-      setError(null);
-
-      try {
-        const fetched = await fetchStlMetadata(requestId);
-        if (cancelled) return;
-        setMetadata(fetched.metadata);
-        setCached(fetched.cached);
-      } catch (err: unknown) {
-        const message =
-          err instanceof Error ? err.message : "Failed to fetch metadata";
-        if (!cancelled) setError(message);
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    };
-
-    fetchMetadata();
-
-    const unsubscribe = onAppEvent((evt) => {
-      const type = String(evt?.type || "").trim();
-      if (type !== "request:stl-metadata-updated") return;
-
-      const payload = evt?.data || {};
-      const eventRequestId = String(payload?.requestId || "").trim();
-      if (eventRequestId !== requestId) return;
-
-      const eventMetadata = payload?.metadata;
+  useAppEventListener({
+    enabled: Boolean(requestId),
+    eventTypes: ["request:stl-metadata-updated"],
+    shouldHandle: (evt) => {
+      const payload =
+        evt?.data && typeof evt.data === "object"
+          ? (evt.data as Record<string, unknown>)
+          : {};
+      const eventRequestId = String(payload.requestId || "").trim();
+      return Boolean(eventRequestId && eventRequestId === String(requestId || ""));
+    },
+    onMatch: (evt) => {
+      const payload =
+        evt?.data && typeof evt.data === "object"
+          ? (evt.data as Record<string, unknown>)
+          : {};
+      const eventMetadata = payload.metadata;
       if (eventMetadata && typeof eventMetadata === "object") {
         setMetadata(eventMetadata as StlMetadata);
         setCached(true);
         setError(null);
-      } else {
-        void fetchMetadata();
+        return;
       }
-    });
-
-    return () => {
-      cancelled = true;
-      unsubscribe?.();
-    };
-  }, [requestId]);
+      void reloadMetadata();
+    },
+  });
 
   const recalculate = async () => {
     if (!requestId) return;

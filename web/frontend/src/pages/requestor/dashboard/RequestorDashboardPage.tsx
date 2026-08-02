@@ -61,7 +61,7 @@ import {
 } from "@/features/requests/components/RequestDetailDialog";
 import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
 import { getNormalizedStage, getNormalizedStageLabel } from "@/utils/stage";
-import { onAppEvent } from "@/shared/realtime/socket";
+import { useAppEventListener } from "@/shared/realtime/useAppEventListener";
 import { useSystemSettings } from "@/hooks/useSystemSettings";
 import { StlPreviewViewer } from "@/features/requests/components/StlPreviewViewer";
 import { resolveImplantConnectionSpec } from "@/utils/implantConnectionSpec";
@@ -73,6 +73,7 @@ import { getFileBlob, setFileBlob } from "@/shared/files/stlIndexedDb";
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx
 // - web/frontend/src/features/requests/components/StlPreviewViewer.tsx
 // - web/frontend/src/shared/files/stlIndexedDb.ts
+// - web/frontend/src/shared/realtime/useAppEventListener.ts
 // - web/backend/controllers/requests/dashboard.controller.js
 
 
@@ -504,18 +505,18 @@ export const RequestorDashboardPage = () => {
     refreshDashboard();
   }, [location.state, refreshDashboard]);
 
-  useEffect(() => {
-    if (!token) return;
-    if (!user) return;
-    if (user.role !== "requestor") return;
-
-    const unsubscribe = onAppEvent((evt) => {
-      const type = String(evt?.type || "").trim();
+  useAppEventListener({
+    enabled: Boolean(token) && Boolean(user) && user?.role === "requestor",
+    eventTypes: [
+      "request:stage-changed",
+      "request:rnd-unmachinable-updated",
+      "request:rnd-unmachinable-confirmed",
+    ],
+    shouldHandle: (evt) => {
       const payload =
         evt?.data && typeof evt.data === "object"
           ? (evt.data as {
               requestorBusinessAnchorId?: unknown;
-              toStage?: unknown;
               request?: {
                 requestorBusinessAnchorId?: unknown;
                 businessAnchorId?: unknown;
@@ -534,7 +535,15 @@ export const RequestorDashboardPage = () => {
           "",
       ).trim();
       const myOrgId = String(user?.businessAnchorId || "").trim();
-      if (!eventOrgId || !myOrgId || eventOrgId !== myOrgId) return;
+      if (!eventOrgId || !myOrgId) return false;
+      return eventOrgId === myOrgId;
+    },
+    onMatch: (evt) => {
+      const type = String(evt?.type || "").trim();
+      const payload =
+        evt?.data && typeof evt.data === "object"
+          ? (evt.data as { toStage?: unknown })
+          : {};
 
       if (type === "request:stage-changed") {
         // 공정 변경 시 전체 대시보드 summary 무효화 및 재조회
@@ -576,12 +585,8 @@ export const RequestorDashboardPage = () => {
           queryKey: ["requestor-unmachinable-overview"],
         });
       }
-    });
-
-    return () => {
-      unsubscribe?.();
-    };
-  }, [queryClient, summaryQueryKey, token, user]);
+    },
+  });
 
   const bulkData = bulkResponse?.success ? bulkResponse.data : null;
 

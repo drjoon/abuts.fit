@@ -10,7 +10,7 @@ import { useToast } from "@/shared/hooks/use-toast";
 import { useNewRequestImplant } from "@/pages/requestor/new_request/hooks/useNewRequestImplant";
 import { usePresetStorage } from "@/pages/requestor/new_request/hooks/usePresetStorage";
 import { RequestDetailDialog } from "@/features/requests/components/RequestDetailDialog";
-import { onAppEvent } from "@/shared/realtime/socket";
+import { useAppEventListener } from "@/shared/realtime/useAppEventListener";
 import { getNormalizedStageLabel } from "@/utils/stage";
 import { formatImplantDisplay } from "@/utils/implant";
 import { formatDateWithDay, formatDateOnly } from "@/utils/dateFormat";
@@ -32,6 +32,7 @@ import {
 // - web/frontend/src/pages/requestor/dashboard/RequestorDashboardPage.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/WorksheetCardGrid.tsx
+// - web/frontend/src/shared/realtime/useAppEventListener.ts
 
 const EDITABLE_STATUSES = new Set(["의뢰", "CAM"]);
 
@@ -504,38 +505,41 @@ export const RequestorRecentRequestsCard = ({
     void run();
   }, [open, selectedRequestId, token]);
 
-  useEffect(() => {
-    if (!open || !selectedRequestId || !token) return;
-
-    const unsubscribe = onAppEvent((evt) => {
-      const type = String(evt?.type || "").trim();
-      if (type !== "request:hex-rotation-updated") return;
-
-      const payload = evt?.data || {};
-      const eventRequest = payload?.request || {};
+  useAppEventListener({
+    enabled: Boolean(open && selectedRequestId && token),
+    eventTypes: ["request:hex-rotation-updated"],
+    shouldHandle: (evt) => {
+      const payload =
+        evt?.data && typeof evt.data === "object"
+          ? (evt.data as Record<string, unknown>)
+          : {};
+      const eventRequest =
+        payload.request && typeof payload.request === "object"
+          ? (payload.request as Record<string, unknown>)
+          : {};
       const eventOrgId = String(
-        payload?.requestorBusinessAnchorId ||
-          eventRequest?.requestorBusinessAnchorId ||
-          eventRequest?.businessAnchorId ||
+        payload.requestorBusinessAnchorId ||
+          eventRequest.requestorBusinessAnchorId ||
+          eventRequest.businessAnchorId ||
           "",
       ).trim();
       const myOrgId = String(user?.businessAnchorId || "").trim();
-      if (!eventOrgId || !myOrgId || eventOrgId !== myOrgId) return;
+      if (!eventOrgId || !myOrgId || eventOrgId !== myOrgId) return false;
 
       const eventRequestMongoId = String(
-        payload?.requestMongoId || eventRequest?._id || "",
+        payload.requestMongoId || eventRequest._id || "",
       ).trim();
       const eventRequestId = String(
-        payload?.requestId || eventRequest?.requestId || "",
+        payload.requestId || eventRequest.requestId || "",
       ).trim();
       const selectedSummaryRequestId = String(selectedSummary?.requestId || "").trim();
 
-      const isSameRequest =
+      return (
         (eventRequestMongoId && eventRequestMongoId === selectedRequestId) ||
-        (eventRequestId && selectedSummaryRequestId && eventRequestId === selectedSummaryRequestId);
-
-      if (!isSameRequest) return;
-
+        (eventRequestId && selectedSummaryRequestId && eventRequestId === selectedSummaryRequestId)
+      );
+    },
+    onMatch: () => {
       void Promise.resolve(onRefresh());
 
       setLoadingDetail(true);
@@ -552,12 +556,8 @@ export const RequestorRecentRequestsCard = ({
         .finally(() => {
           setLoadingDetail(false);
         });
-    });
-
-    return () => {
-      unsubscribe?.();
-    };
-  }, [open, onRefresh, selectedRequestId, selectedSummary?.requestId, token, user]);
+    },
+  });
 
   useEffect(() => {
     if (!open) {

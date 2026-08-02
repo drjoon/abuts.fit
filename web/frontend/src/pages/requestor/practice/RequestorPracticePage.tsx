@@ -1,7 +1,7 @@
 // related files:
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
-// - web/frontend/src/shared/realtime/socket.ts
+// - web/frontend/src/shared/realtime/useAppEventListener.ts
 // - web/frontend/src/pages/requestor/referralGroups/RequestorReferralPage.tsx
 // - web/frontend/src/pages/practice/PracticeDropzonePage.tsx
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
@@ -28,7 +28,7 @@ import { useToast } from "@/shared/hooks/use-toast";
 import { apiFetch } from "@/shared/api/apiClient";
 import { useChatMessages } from "@/shared/hooks/useChatMessages";
 import { useChatRooms, type ChatRoom } from "@/shared/hooks/useChatRooms";
-import { onAppEvent } from "@/shared/realtime/socket";
+import { useAppEventListener } from "@/shared/realtime/useAppEventListener";
 import { useUploadWithProgressToast } from "@/shared/hooks/useUploadWithProgressToast";
 import { type TempUploadedFile } from "@/shared/hooks/useS3TempUpload";
 import { Building2, Copy, Download, Link2, Search, Send, X } from "lucide-react";
@@ -464,13 +464,11 @@ export default function RequestorPracticePage() {
     void loadPromoNoticeSettings();
   }, [loadPromoNoticeSettings, token]);
 
-  useEffect(() => {
-    if (!token) return;
-
-    const unsubscribe = onAppEvent((evt) => {
+  useAppEventListener({
+    enabled: Boolean(token),
+    eventTypes: ["practice:transfer-created", "practice:transfer-updated"],
+    onMatch: (evt) => {
       const type = String(evt?.type || "").trim();
-      if (type !== "practice:transfer-created" && type !== "practice:transfer-updated") return;
-
       const payload =
         evt?.data && typeof evt.data === "object"
           ? (evt.data as Record<string, unknown>)
@@ -570,16 +568,17 @@ export default function RequestorPracticePage() {
           void loadFirstPage();
         }, 140);
       }
-    });
+    },
+  });
 
+  useEffect(() => {
     return () => {
-      unsubscribe?.();
       if (realtimeReloadTimerRef.current) {
         window.clearTimeout(realtimeReloadTimerRef.current);
         realtimeReloadTimerRef.current = null;
       }
     };
-  }, [emitUnreadBadgeRefresh, loadFirstPage, token]);
+  }, []);
 
   useEffect(() => {
     if (!dialogOpen) return;

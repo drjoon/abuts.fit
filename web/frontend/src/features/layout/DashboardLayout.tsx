@@ -67,7 +67,6 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { AbutsLogo } from "@/components/branding/AbutsLogo";
-import { onAppEvent } from "@/shared/realtime/socket";
 import { useAppEventDebouncedReload } from "@/shared/realtime/useAppEventDebouncedReload";
 import { useAdminCommBadges } from "@/shared/hooks/useAdminCommBadges";
 import { loadBusinessMeCached } from "@/shared/components/business/settings/business/businessMeCache";
@@ -570,37 +569,29 @@ export const DashboardLayout = () => {
     };
   }, [fetchCreditBalance]);
 
-  useEffect(() => {
-    if (!token) return;
-    if (!user) return;
-    if (isPracticeUser || user.role !== "requestor") return;
-    if (!user.businessAnchorId) return;
-
-    const unsubscribe = onAppEvent((evt) => {
-      const type = String(evt?.type || "").trim();
+  useAppEventDebouncedReload({
+    enabled:
+      Boolean(token) &&
+      Boolean(user) &&
+      !isPracticeUser &&
+      user?.role === "requestor" &&
+      Boolean(user?.businessAnchorId),
+    eventTypes: ["credit:balance-updated"],
+    delayMs: 80,
+    shouldHandle: (evt) => {
       const payload =
         evt?.data && typeof evt.data === "object"
           ? (evt.data as { businessAnchorId?: string })
           : {};
-      if (type !== "credit:balance-updated") return;
-
       const eventBusinessId = String(payload.businessAnchorId || "").trim();
       const myBusinessId = String(user?.businessAnchorId || "").trim();
-      if (
-        !eventBusinessId ||
-        !myBusinessId ||
-        eventBusinessId !== myBusinessId
-      ) {
-        return;
-      }
-
+      if (!eventBusinessId || !myBusinessId) return false;
+      return eventBusinessId === myBusinessId;
+    },
+    onMatch: () => {
       void fetchCreditBalance();
-    });
-
-    return () => {
-      unsubscribe?.();
-    };
-  }, [fetchCreditBalance, isPracticeUser, token, user]);
+    },
+  });
 
   const isMockUser = Boolean(user.mockUserId);
 

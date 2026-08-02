@@ -2,14 +2,14 @@
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
-// - web/frontend/src/shared/realtime/socket.ts
+// - web/frontend/src/shared/realtime/useAppEventListener.ts
 // - web/backend/modules/chat/chat.routes.js
 // - web/backend/controllers/chats/chat.controller.js
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { apiFetch } from "@/shared/api/apiClient";
 import { useToast } from "@/shared/hooks/use-toast";
 import { useAuthStore } from "@/store/useAuthStore";
-import { onAppEvent } from "@/shared/realtime/socket";
+import { useAppEventListener } from "@/shared/realtime/useAppEventListener";
 import { ChatMessage } from "./useChatRooms";
 
 interface UseChatMessagesOptions {
@@ -324,13 +324,11 @@ export const useChatMessages = (options: UseChatMessagesOptions = {}) => {
     void fetchMessages(1, { silent: false, toastOnError: true });
   }, [autoFetch, roomId, fetchMessages, fetchMessagesForRoom, userCacheId]);
 
-  useEffect(() => {
-    if (!roomId) return;
-
-    const unsubscribe = onAppEvent((evt) => {
-      const type = String(evt?.type || "").trim();
-      if (type !== "chat:message-created") return;
-
+  useAppEventListener({
+    enabled: Boolean(roomId),
+    eventTypes: ["chat:message-created"],
+    deferWhenEditing: false,
+    onMatch: (evt) => {
       const payload =
         evt?.data && typeof evt.data === "object"
           ? (evt.data as Record<string, unknown>)
@@ -360,12 +358,8 @@ export const useChatMessages = (options: UseChatMessagesOptions = {}) => {
           total: Math.max(0, Number(prev.total || 0) + 1),
         }));
       }
-    });
-
-    return () => {
-      unsubscribe?.();
-    };
-  }, [myIdCandidates, pagination, roomId, userCacheId]);
+    },
+  });
 
   return {
     messages,

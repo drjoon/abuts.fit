@@ -23,6 +23,7 @@
   - `src/shared/types/role.ts`
 - 실시간(웹소켓) 공통
   - `src/shared/realtime/socket.ts`
+  - `src/shared/realtime/useAppEventListener.ts`
   - `src/shared/realtime/useAppEventDebouncedReload.ts`
 - 의뢰자 신규의뢰/치과
   - `src/pages/requestor/new_request/NewRequestPage.tsx`
@@ -44,6 +45,7 @@
   - `src/pages/admin/businesses/AdminBusinessPage.tsx`
 - 관리자 크레딧
   - `src/pages/admin/credits/AdminCreditPage.tsx`
+  - `src/pages/admin/credits/hooks/useAdminCreditPage.ts`
   - `src/pages/admin/credits/components/RequestorCreditTab.tsx`
   - `src/pages/admin/credits/components/RequestorOrganizationsTab.tsx`
   - `src/shared/components/CreditLedgerModal.tsx`
@@ -241,19 +243,29 @@
   - practice 화면과 requestor 수신 화면은 모두 `transferId` 기반 채팅(`/api/chats/practice/transfer-room/:transferId`)만 사용합니다.
   - legacy request 기반 practice 채팅 경로(`/api/chats/practice/request-room/:requestId`)는 사용 금지합니다.
 
-- practice↔requestor 실시간(웹소켓 app-event) 구현 메모:
+- 실시간(웹소켓 app-event) 구현 메모:
+  - 발행 SSOT: 백엔드는 대상 role 전체 fan-out emit을 사용합니다.
+  - 반영 SSOT: 프론트는 "현재 열려 있는 페이지"에서만 이벤트를 반영합니다.
+    - 방법: 라우트/탭 페이지 컴포넌트 마운트 상태에서만 `onAppEvent` 또는 `useAppEventDebouncedReload`를 등록
+    - 이벤트 payload 조건(예: `businessAnchorId`, `requestId`)이 맞는 경우에만 재조회/상태갱신
+    - 비활성 페이지는 즉시 갱신하지 않고, 페이지 재진입 시 서버 재조회로 동기화
   - 소켓 공용 레이어: `src/shared/realtime/socket.ts`
     - `onNotification`, `onNewMessage`, CNC 이벤트 리스너 포함 모든 소켓 이벤트 구독은 공통 구독 레이어(`subscribeSocketEvent`)를 통해 지연 초기화/재연결 시에도 유실 없이 동작해야 합니다.
     - 인증 토큰이 변경되면 기존 소켓을 재사용하지 않고 연결을 재초기화해 권한/구독 컨텍스트를 최신화합니다.
   - 소켓 부트스트랩 훅: `src/shared/hooks/useSocket.ts`
     - 토큰 존재 시 매 렌더 주기에서 안전하게 `initializeSocket`을 호출하고, 토큰이 비면 즉시 `disconnectSocket`으로 정리합니다.
+  - app-event 수신 공통 훅: `src/shared/realtime/useAppEventListener.ts`
+    - 기본값으로 `requireVisible=true`(활성 탭에서만 반영), `deferWhenEditing=true`(입력 포커스 중 이벤트 반영 지연)을 적용합니다.
+    - 페이지/도메인 훅에서 `onAppEvent` 직접 구독은 신규 코드에서 금지하고, 공통 훅으로 통일합니다.
   - app-event 디바운스 재조회 공통 훅: `src/shared/realtime/useAppEventDebouncedReload.ts`
+    - 내부적으로 `useAppEventListener`를 사용하며, 입력 중에는 재조회 콜백 실행을 지연합니다.
   - 채팅방 목록 실시간 동기화: `src/shared/hooks/useChatRooms.ts`
   - 채팅 메시지 실시간 동기화: `src/shared/hooks/useChatMessages.ts`
   - 채팅 role 라벨/뱃지 표시에서는 `practice`를 fallback("사용자")로 처리하지 말고 명시적으로 `치과`로 매핑합니다.
   - 페이지 반영 지점:
     - `src/pages/practice/PracticeFileTransferPage.tsx`
     - `src/pages/requestor/practice/RequestorPracticePage.tsx`
+    - `src/pages/admin/credits/hooks/useAdminCreditPage.ts`
     - `src/features/chat/components/*`
 
 - 문의(admin/support) 실시간 반영 메모:

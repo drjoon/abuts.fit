@@ -2,10 +2,11 @@
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
+// - web/frontend/src/shared/realtime/useAppEventListener.ts
 import { useState, useEffect, useCallback, useRef } from "react";
 import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
-import { onAppEvent } from "@/shared/realtime/socket";
+import { useAppEventListener } from "@/shared/realtime/useAppEventListener";
 
 export type CommBadgeKey = "request" | "chat" | "mail" | "inquiry" | "sms";
 
@@ -62,26 +63,23 @@ export function useAdminCommBadges() {
   }, [fetchInitialCounts, token, user?.role]);
 
   // 소켓 이벤트로 실시간 카운트 업데이트
-  useEffect(() => {
-    if (user?.role !== "admin") return;
-
-    const unsubscribe = onAppEvent((evt) => {
-      if (evt.type === "comm:badge-update") {
-        const { key, delta } = (evt.data || {}) as {
-          key?: CommBadgeKey;
-          delta?: number;
-        };
-        if (key && typeof delta === "number") {
-          setCounts((prev) => ({
-            ...prev,
-            [key]: Math.max(0, (prev[key] ?? 0) + delta),
-          }));
-        }
+  useAppEventListener({
+    enabled: user?.role === "admin",
+    eventTypes: ["comm:badge-update"],
+    deferWhenEditing: false,
+    onMatch: (evt) => {
+      const { key, delta } = (evt.data || {}) as {
+        key?: CommBadgeKey;
+        delta?: number;
+      };
+      if (key && typeof delta === "number") {
+        setCounts((prev) => ({
+          ...prev,
+          [key]: Math.max(0, (prev[key] ?? 0) + delta),
+        }));
       }
-    });
-
-    return unsubscribe;
-  }, [user?.role]);
+    },
+  });
 
   /**
    * 특정 소통 페이지를 방문했을 때 해당 배지를 0으로 초기화.

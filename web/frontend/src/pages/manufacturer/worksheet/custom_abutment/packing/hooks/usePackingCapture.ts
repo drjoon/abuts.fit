@@ -3,6 +3,7 @@
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
+// - web/frontend/src/shared/realtime/useAppEventListener.ts
 // - web/backend/controllers/requests/common.review.controller.js
 import {
   useCallback,
@@ -13,7 +14,7 @@ import {
   type Dispatch,
   type SetStateAction,
 } from "react";
-import { onAppEvent } from "@/shared/realtime/socket";
+import { useAppEventListener } from "@/shared/realtime/useAppEventListener";
 import { type ManufacturerRequest } from "@/pages/manufacturer/worksheet/custom_abutment/utils/request";
 import { useS3TempUpload } from "@/shared/hooks/useS3TempUpload";
 
@@ -237,17 +238,19 @@ export const usePackingCapture = ({
     setIsDraggingOver(false);
   }, []);
 
-  useEffect(() => {
-    if (!token) return;
-    const unsubscribe = onAppEvent((evt) => {
-      if (evt?.type !== "packing:capture-processed") return;
-      const payload = evt?.data || {};
-      const requestId = String(payload?.requestId || "").trim();
-      const requestMongoId = String(payload?.requestMongoId || "").trim();
-      const suffix = String(payload?.recognizedSuffix || "").trim();
-      const eventRequest = payload?.request as ManufacturerRequest | undefined;
-      const movedToStage = String(payload?.movedToStage || "").trim();
-      const capturedBy = String(payload?.capturedBy || "").trim();
+  useAppEventListener({
+    enabled: Boolean(token),
+    eventTypes: ["packing:capture-processed"],
+    onMatch: (evt) => {
+      const payload =
+        evt?.data && typeof evt.data === "object"
+          ? (evt.data as Record<string, unknown>)
+          : {};
+      const requestId = String(payload.requestId || "").trim();
+      const requestMongoId = String(payload.requestMongoId || "").trim();
+      const suffix = String(payload.recognizedSuffix || "").trim();
+      const eventRequest = payload.request as ManufacturerRequest | undefined;
+      const movedToStage = String(payload.movedToStage || "").trim();
       const mergedEventRequest = (() => {
         const currentRequest = requestsRef.current.find((req) => {
           const currentMongoId = String(req._id || "").trim();
@@ -329,7 +332,6 @@ export const usePackingCapture = ({
             await handleOpenPreviewRef.current(matchedRequest);
           }
         }
-        // 인식 결과를 콜백으로 전달 (라벨은 이미 사전 출력됨)
         if (mergedEventRequest && onCaptureResultRef.current) {
           onCaptureResultRef.current({
             requestId: String(mergedEventRequest.requestId || requestId || ""),
@@ -345,11 +347,8 @@ export const usePackingCapture = ({
           ? `${requestId} → 포장.발송으로 이동`
           : "세척.패킹 처리 결과가 반영되었습니다.",
       });
-    });
-    return () => {
-      unsubscribe?.();
-    };
-  }, [setRequests, toast, token]);
+    },
+  });
 
   return {
     isDraggingOver,

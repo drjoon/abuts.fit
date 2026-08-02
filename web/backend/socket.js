@@ -2,6 +2,8 @@
 // - web/backend/rules.md
 // - web/backend/app.js
 // - web/backend/server.js
+// - web/backend/utils/creditRealtime.js
+// - web/frontend/src/pages/admin/credits/hooks/useAdminCreditPage.ts
 import { Server } from "socket.io";
 import jwt from "jsonwebtoken";
 import User from "./models/user.model.js";
@@ -9,8 +11,6 @@ import ChatRoom from "./models/chatRoom.model.js";
 import Chat from "./models/chat.model.js";
 
 let io;
-
-const APP_ROOM_ADMIN_CREDITS = "app:admin:credits";
 
 export function initializeSocket(server) {
   io = new Server(server, {
@@ -54,6 +54,12 @@ export function initializeSocket(server) {
 
     // 사용자별 룸에 조인
     socket.join(`user:${socket.userId}`);
+
+    // role별 룸에 조인 (실시간 이벤트 role fan-out SSOT)
+    const normalizedRole = String(socket.userRole || "").trim();
+    if (normalizedRole) {
+      socket.join(`role:${normalizedRole}`);
+    }
 
     // 채팅방 조인
     socket.on("join-room", async (roomId) => {
@@ -216,23 +222,7 @@ export function initializeSocket(server) {
       }
     });
 
-    // 앱 이벤트 전용 room 구독 (현재는 admin credits room만 허용)
-    socket.on("subscribe-app-room", (data) => {
-      const roomKey = String(data?.roomKey || "").trim();
-      if (!roomKey) return;
 
-      if (roomKey === APP_ROOM_ADMIN_CREDITS) {
-        if (String(socket.userRole || "") !== "admin") return;
-        socket.join(roomKey);
-        return;
-      }
-    });
-
-    socket.on("unsubscribe-app-room", (data) => {
-      const roomKey = String(data?.roomKey || "").trim();
-      if (!roomKey) return;
-      socket.leave(roomKey);
-    });
 
     // CNC 가공 완료 폴링 시작
     socket.on("subscribe-cnc-machining", (data) => {
@@ -286,20 +276,15 @@ export function sendMessageToRoom(roomId, event, data) {
 export function sendNotificationToRoles(roles, notification) {
   if (!io) return;
   const roleSet = new Set(
-    (Array.isArray(roles) ? roles : [roles]).map((r) => String(r || "")),
+    (Array.isArray(roles) ? roles : [roles])
+      .map((r) => String(r || "").trim())
+      .filter(Boolean),
   );
   if (roleSet.size === 0) return;
 
-  for (const socket of io.sockets.sockets.values()) {
-    try {
-      const role = String(socket.userRole || "");
-      if (roleSet.has(role)) {
-        socket.emit("notification", notification);
-      }
-    } catch {
-      // ignore
-    }
-  }
+  roleSet.forEach((role) => {
+    io.to(`role:${role}`).emit("notification", notification);
+  });
 }
 
 export function emitToUser(userId, event, payload) {
@@ -314,21 +299,17 @@ export function emitToRoles(roles, event, payload) {
   if (!io) return;
   const evt = String(event || "").trim();
   if (!evt) return;
+
   const roleSet = new Set(
-    (Array.isArray(roles) ? roles : [roles]).map((r) => String(r || "")),
+    (Array.isArray(roles) ? roles : [roles])
+      .map((r) => String(r || "").trim())
+      .filter(Boolean),
   );
   if (roleSet.size === 0) return;
 
-  for (const socket of io.sockets.sockets.values()) {
-    try {
-      const role = String(socket.userRole || "");
-      if (roleSet.has(role)) {
-        socket.emit(evt, payload);
-      }
-    } catch {
-      // ignore
-    }
-  }
+  roleSet.forEach((role) => {
+    io.to(`role:${role}`).emit(evt, payload);
+  });
 }
 
 export function emitGlobal(event, payload) {

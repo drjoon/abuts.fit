@@ -2,6 +2,7 @@
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
 // - web/frontend/src/shared/realtime/socket.ts
+// - web/frontend/src/shared/realtime/useAppEventListener.ts
 // - web/backend/services/reviewApprovalQueue.service.js
 import { useEffect } from "react";
 import { useAuthStore } from "@/store/useAuthStore";
@@ -11,11 +12,11 @@ import {
   disconnectSocket,
   getSocket,
   onNotification,
-  onAppEvent,
   onCncMachiningAlarm,
   onCncMachiningFailed,
   SocketNotification,
 } from "@/shared/realtime/socket";
+import { useAppEventListener } from "@/shared/realtime/useAppEventListener";
 
 const toText = (value: unknown) =>
   typeof value === "string" ? value.trim() : String(value ?? "").trim();
@@ -40,35 +41,6 @@ export const useSocket = () => {
         if (notification.type === "new-message") return;
       },
     );
-
-    const unsubscribeAppEvent = onAppEvent((evt) => {
-      const type = toText(evt?.type);
-      if (type !== "request:async-action-failed") return;
-
-      const data = evt?.data as {
-        action?: string;
-        stage?: string;
-        message?: string;
-        requestId?: string;
-        machineId?: string;
-      } | null;
-
-      const action = toText(data?.action);
-      const isCamAutoMachining = action === "cam-auto-machining-trigger";
-      const message = toText(data?.message) || "비동기 후처리 작업이 실패했습니다.";
-      const requestId = toText(data?.requestId);
-      const machineId = toText(data?.machineId);
-
-      toast({
-        title: isCamAutoMachining
-          ? `자동 가공 시작 실패${machineId ? ` · ${machineId}` : ""}`
-          : "후처리 작업 실패",
-        description: requestId
-          ? `${message} (의뢰번호: ${requestId})`
-          : message,
-        variant: "destructive",
-      });
-    });
 
     const unsubscribeCncFailed = onCncMachiningFailed((payload) => {
       const reason = toText(payload?.reason) || "CNC 가공 실패";
@@ -98,11 +70,41 @@ export const useSocket = () => {
 
     return () => {
       unsubscribeNotification();
-      unsubscribeAppEvent();
       unsubscribeCncFailed();
       unsubscribeCncAlarm();
     };
   }, [token, toast]);
+
+  useAppEventListener({
+    enabled: Boolean(token),
+    eventTypes: ["request:async-action-failed"],
+    deferWhenEditing: false,
+    onMatch: (evt) => {
+      const data = evt?.data as {
+        action?: string;
+        stage?: string;
+        message?: string;
+        requestId?: string;
+        machineId?: string;
+      } | null;
+
+      const action = toText(data?.action);
+      const isCamAutoMachining = action === "cam-auto-machining-trigger";
+      const message = toText(data?.message) || "비동기 후처리 작업이 실패했습니다.";
+      const requestId = toText(data?.requestId);
+      const machineId = toText(data?.machineId);
+
+      toast({
+        title: isCamAutoMachining
+          ? `자동 가공 시작 실패${machineId ? ` · ${machineId}` : ""}`
+          : "후처리 작업 실패",
+        description: requestId
+          ? `${message} (의뢰번호: ${requestId})`
+          : message,
+        variant: "destructive",
+      });
+    },
+  });
 
   return {
     socket: getSocket(),

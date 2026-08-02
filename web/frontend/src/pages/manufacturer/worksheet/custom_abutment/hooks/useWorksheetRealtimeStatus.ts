@@ -3,6 +3,7 @@
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
+// - web/frontend/src/shared/realtime/useAppEventListener.ts
 // - web/backend/controllers/requests/common.review.controller.js
 import {
   useCallback,
@@ -14,11 +15,11 @@ import {
 
 import { useToast } from "@/shared/hooks/use-toast";
 import {
-  onAppEvent,
   onNotification,
   onCncMachiningCompleted,
   onCncMachiningTick,
 } from "@/shared/realtime/socket";
+import { useAppEventListener } from "@/shared/realtime/useAppEventListener";
 import { deleteCncProgramCache } from "@/shared/files/fileBlobCache";
 import {
   deriveStageForFilter,
@@ -165,6 +166,299 @@ export function useWorksheetRealtimeStatus({
     // (페이지 로딩 중이거나, 무한 스크롤로 아직 불러오지 않은 페이지의 항목일 수 있음)
     return prev;
   }, [matchesCurrentPage]);
+
+  const handleWorksheetAppEvent = useCallback((evt: any) => {
+    const type = String(evt?.type || "").trim();
+    const payload = evt?.data || {};
+    const requestId = String(payload?.requestId || "").trim();
+    const isBatchDeliveryUpdate = type === "request:delivery-updated-batch";
+    if (!requestId && !isBatchDeliveryUpdate) return;
+
+    switch (type) {
+      case "request:cam-processing-started": {
+        const startedAt = new Date().toISOString();
+        realtimeBaseRef.current[requestId] = Date.now();
+        showStartedToast("nc", requestId);
+        setRequests((prev) =>
+          prev.map((r) => {
+            if (String((r as any)?.requestId || "").trim() !== requestId) {
+              return r;
+            }
+            return {
+              ...(r as any),
+              realtimeProgress: {
+                badge: "NC 생성중",
+                elapsedSeconds: 0,
+                startedAt,
+                tone: "blue",
+              },
+            } as any;
+          }),
+        );
+        return;
+      }
+      case "request:filled-processing-started": {
+        const startedAt = new Date().toISOString();
+        realtimeBaseRef.current[requestId] = Date.now();
+        showStartedToast("filled", requestId);
+        setRequests((prev) =>
+          prev.map((r) => {
+            if (String((r as any)?.requestId || "").trim() !== requestId) {
+              return r;
+            }
+            return {
+              ...(r as any),
+              realtimeProgress: {
+                badge: "Filled STL 생성중",
+                elapsedSeconds: 0,
+                startedAt,
+                tone: "blue",
+              },
+            } as any;
+          }),
+        );
+        return;
+      }
+      case "packing:capture-processed": {
+        const eventRequest = payload?.request as
+          | ManufacturerRequest
+          | undefined;
+        if (eventRequest) {
+          setRequests((prev) =>
+            applyRequestPatch(prev, {
+              ...eventRequest,
+              realtimeProgress: null,
+            }),
+          );
+        } else {
+          setRequests((prev) =>
+            prev.map((r) => {
+              if (String((r as any)?.requestId || "").trim() !== requestId) {
+                return r;
+              }
+              return {
+                ...(r as any),
+                realtimeProgress: null,
+              } as any;
+            }),
+          );
+        }
+        return;
+      }
+      case "request:stage-changed": {
+        const eventRequest = payload?.request as
+          | ManufacturerRequest
+          | undefined;
+        if (eventRequest) {
+          setRequests((prev) => applyRequestPatch(prev, eventRequest));
+        }
+        if (fetchRequests) void fetchRequests(true);
+        return;
+      }
+      case "request:stl-metadata-updated": {
+        const eventRequest = payload?.request as
+          | ManufacturerRequest
+          | undefined;
+        if (eventRequest) {
+          setRequests((prev) => applyRequestPatch(prev, eventRequest));
+        }
+
+        if (fetchRequests) void fetchRequests(true);
+
+        const {
+          previewOpen: currentPreviewOpen,
+          previewFiles: currentPreviewFiles,
+          fetchRequestsCore: currentFetchRequestsCore,
+          handleOpenPreview: currentHandleOpenPreview,
+        } = latestRef.current;
+
+        if (
+          !currentPreviewOpen ||
+          !currentFetchRequestsCore ||
+          !currentHandleOpenPreview
+        ) {
+          return;
+        }
+
+        const currentRid = String(
+          currentPreviewFiles?.request?.requestId || "",
+        ).trim();
+        if (currentRid && currentRid !== requestId) return;
+
+        void (async () => {
+          const list = await currentFetchRequestsCore(true);
+          if (!Array.isArray(list) || list.length === 0) return;
+          const updated = list.find(
+            (r: any) => String(r?.requestId || "").trim() === requestId,
+          );
+          if (!updated) return;
+          await currentHandleOpenPreview(updated as any, {
+            forceRefresh: true,
+          });
+        })();
+        return;
+      }
+      case "request:cam-trigger-failed":
+      case "request:async-action-failed": {
+        const stageLabel = toStageLabel(payload?.stage);
+        const actionLabel = toActionLabel(payload?.action);
+        const isNonBlocking = isNonBlockingAsyncFailure(payload);
+        toast({
+          title: isNonBlocking ? "비동기 정리 지연" : "비동기 작업 실패",
+          description: String(
+            isNonBlocking
+              ? `${actionLabel}가 지연되었습니다. 롤백은 완료되었고, 뒤정리는 재시도됩니다.`
+              : payload?.message ||
+                  `${stageLabel} 단계 ${actionLabel} 실패 (${requestId || ""})`,
+          ).trim(),
+          variant: isNonBlocking ? "default" : "destructive",
+        });
+        return;
+      }
+      case "request:delivery-updated": {
+        const eventRequest = payload?.request as
+          | ManufacturerRequest
+          | undefined;
+        if (!eventRequest) return;
+        setRequests((prev) => applyRequestPatch(prev, eventRequest));
+        return;
+      }
+      case "request:delivery-updated-batch": {
+        const eventRequests = Array.isArray(payload?.requests)
+          ? payload.requests
+          : [];
+        if (!eventRequests.length) return;
+        setRequests((prev) => {
+          let next = prev;
+          for (const item of eventRequests) {
+            const eventRequest = item?.request as
+              | ManufacturerRequest
+              | undefined;
+            if (!eventRequest) continue;
+            next = applyRequestPatch(next, eventRequest);
+          }
+          return next;
+        });
+        return;
+      }
+      case "worksheet:count-update": {
+        const stage = String(payload?.stage || "").trim();
+        const source = String(payload?.source || "").trim();
+        const requestCategory = String(payload?.requestCategory || "").trim();
+        const delta = Number(payload?.delta || 0);
+        const action = String(payload?.action || "").trim();
+        if (fetchRequests) {
+          void fetchRequests(true);
+        }
+        if (
+          source === "manufacturer_sample" ||
+          requestCategory === "rnd_sample" ||
+          requestCategory === "copied_sample"
+        ) {
+          if (delta < 0 || action === "deleted") {
+            toast({
+              title: "R&D 샘플 삭제됨",
+              description: `R&D 샘플이 제거되었습니다${stage ? ` (${stage})` : ""}`,
+            });
+          } else {
+            toast({
+              title: "R&D 샘플 복사 완료",
+              description: `R&D 탭에 새 샘플이 저장되었습니다${stage ? ` (${stage})` : ""}`,
+            });
+          }
+        }
+        return;
+      }
+      case "bg:runtime-status": {
+        const clear = payload?.clear === true;
+        const status = String(payload?.status || "")
+          .trim()
+          .toLowerCase();
+        const label = String(payload?.label || "").trim();
+        const tone = String(payload?.tone || "blue").trim();
+        const startedAt = payload?.startedAt || null;
+        const elapsedSeconds = Number.isFinite(
+          Number(payload?.elapsedSeconds),
+        )
+          ? Math.max(0, Math.floor(Number(payload?.elapsedSeconds)))
+          : null;
+
+        const hasStartedAt =
+          typeof startedAt === "string" &&
+          String(startedAt).trim().length > 0;
+        const parsedBase = hasStartedAt
+          ? new Date(startedAt as string).getTime()
+          : Number.NaN;
+        const inferredBase =
+          elapsedSeconds != null
+            ? Date.now() - elapsedSeconds * 1000
+            : Number.NaN;
+        const effectiveBase = Number.isFinite(parsedBase)
+          ? parsedBase
+          : inferredBase;
+        const hasValidBase = Number.isFinite(effectiveBase);
+        const shouldClearRealtime =
+          clear || (status === "completed" && !hasValidBase);
+        if (!hasValidBase || shouldClearRealtime) {
+          delete realtimeBaseRef.current[requestId];
+        }
+
+        setRequests((prev) =>
+          prev.map((r) => {
+            if (String((r as any)?.requestId || "").trim() !== requestId) {
+              return r;
+            }
+            if (shouldClearRealtime) {
+              delete realtimeBaseRef.current[requestId];
+              return {
+                ...(r as any),
+                realtimeProgress: null,
+              } as any;
+            }
+            if (hasValidBase) {
+              realtimeBaseRef.current[requestId] = effectiveBase;
+            }
+            return {
+              ...(r as any),
+              realtimeProgress: {
+                badge: label || null,
+                startedAt,
+                elapsedSeconds,
+                tone: (tone || null) as any,
+              },
+            } as any;
+          }),
+        );
+        return;
+      }
+      default:
+        return;
+    }
+  }, [
+    applyRequestPatch,
+    fetchRequests,
+    setRequests,
+    showStartedToast,
+    toast,
+  ]);
+
+  useAppEventListener({
+    enabled: Boolean(enabled && token),
+    eventTypes: [
+      "request:cam-processing-started",
+      "request:filled-processing-started",
+      "packing:capture-processed",
+      "request:stage-changed",
+      "request:stl-metadata-updated",
+      "request:cam-trigger-failed",
+      "request:async-action-failed",
+      "request:delivery-updated",
+      "request:delivery-updated-batch",
+      "worksheet:count-update",
+      "bg:runtime-status",
+    ],
+    onMatch: handleWorksheetAppEvent,
+  });
 
   useEffect(() => {
     if (!enabled) return;
@@ -313,280 +607,7 @@ export function useWorksheetRealtimeStatus({
       })();
     });
 
-    const unsubAppEvent = onAppEvent((evt: any) => {
-      const type = String(evt?.type || "").trim();
-      const payload = evt?.data || {};
-      const requestId = String(payload?.requestId || "").trim();
-      const isBatchDeliveryUpdate = type === "request:delivery-updated-batch";
-      if (!requestId && !isBatchDeliveryUpdate) return;
 
-      switch (type) {
-        case "request:cam-processing-started": {
-          const startedAt = new Date().toISOString();
-          realtimeBaseRef.current[requestId] = Date.now();
-          showStartedToast("nc", requestId);
-          setRequests((prev) =>
-            prev.map((r) => {
-              if (String((r as any)?.requestId || "").trim() !== requestId) {
-                return r;
-              }
-              return {
-                ...(r as any),
-                realtimeProgress: {
-                  badge: "NC 생성중",
-                  elapsedSeconds: 0,
-                  startedAt,
-                  tone: "blue",
-                },
-              } as any;
-            }),
-          );
-          return;
-        }
-        case "request:filled-processing-started": {
-          const startedAt = new Date().toISOString();
-          realtimeBaseRef.current[requestId] = Date.now();
-          showStartedToast("filled", requestId);
-          setRequests((prev) =>
-            prev.map((r) => {
-              if (String((r as any)?.requestId || "").trim() !== requestId) {
-                return r;
-              }
-              return {
-                ...(r as any),
-                realtimeProgress: {
-                  badge: "Filled STL 생성중",
-                  elapsedSeconds: 0,
-                  startedAt,
-                  tone: "blue",
-                },
-              } as any;
-            }),
-          );
-          return;
-        }
-        case "packing:capture-processed": {
-          const eventRequest = payload?.request as
-            | ManufacturerRequest
-            | undefined;
-          if (eventRequest) {
-            setRequests((prev) =>
-              applyRequestPatch(prev, {
-                ...eventRequest,
-                realtimeProgress: null,
-              }),
-            );
-          } else {
-            setRequests((prev) =>
-              prev.map((r) => {
-                if (String((r as any)?.requestId || "").trim() !== requestId) {
-                  return r;
-                }
-                return {
-                  ...(r as any),
-                  realtimeProgress: null,
-                } as any;
-              }),
-            );
-          }
-          return;
-        }
-        case "request:stage-changed": {
-          // bg-file-processed 소스의 경우 이벤트에 최신 request 포함 → 즉시 패치하여
-          // re-fetch 완료 전에도 캐시 키 변경이 반영되도록 한다.
-          const eventRequest = payload?.request as
-            | ManufacturerRequest
-            | undefined;
-          if (eventRequest) {
-            setRequests((prev) => applyRequestPatch(prev, eventRequest));
-          }
-          // 전체 목록 재조회로 탭 필터링도 갱신
-          if (fetchRequests) void fetchRequests(true);
-          return;
-        }
-        case "request:stl-metadata-updated": {
-          const eventRequest = payload?.request as
-            | ManufacturerRequest
-            | undefined;
-          if (eventRequest) {
-            setRequests((prev) => applyRequestPatch(prev, eventRequest));
-          }
-
-          if (fetchRequests) void fetchRequests(true);
-
-          const {
-            previewOpen: currentPreviewOpen,
-            previewFiles: currentPreviewFiles,
-            fetchRequestsCore: currentFetchRequestsCore,
-            handleOpenPreview: currentHandleOpenPreview,
-          } = latestRef.current;
-
-          if (
-            !currentPreviewOpen ||
-            !currentFetchRequestsCore ||
-            !currentHandleOpenPreview
-          ) {
-            return;
-          }
-
-          const currentRid = String(
-            currentPreviewFiles?.request?.requestId || "",
-          ).trim();
-          if (currentRid && currentRid !== requestId) return;
-
-          void (async () => {
-            const list = await currentFetchRequestsCore(true);
-            if (!Array.isArray(list) || list.length === 0) return;
-            const updated = list.find(
-              (r: any) => String(r?.requestId || "").trim() === requestId,
-            );
-            if (!updated) return;
-            await currentHandleOpenPreview(updated as any, {
-              forceRefresh: true,
-            });
-          })();
-          return;
-        }
-        case "request:cam-trigger-failed":
-        case "request:async-action-failed": {
-          const stageLabel = toStageLabel(payload?.stage);
-          const actionLabel = toActionLabel(payload?.action);
-          const isNonBlocking = isNonBlockingAsyncFailure(payload);
-          toast({
-            title: isNonBlocking ? "비동기 정리 지연" : "비동기 작업 실패",
-            description: String(
-              isNonBlocking
-                ? `${actionLabel}가 지연되었습니다. 롤백은 완료되었고, 뒤정리는 재시도됩니다.`
-                : payload?.message ||
-                    `${stageLabel} 단계 ${actionLabel} 실패 (${requestId || ""})`,
-            ).trim(),
-            variant: isNonBlocking ? "default" : "destructive",
-          });
-          return;
-        }
-        case "request:delivery-updated": {
-          const eventRequest = payload?.request as
-            | ManufacturerRequest
-            | undefined;
-          if (!eventRequest) return;
-          setRequests((prev) => applyRequestPatch(prev, eventRequest));
-          return;
-        }
-        case "request:delivery-updated-batch": {
-          const eventRequests = Array.isArray(payload?.requests)
-            ? payload.requests
-            : [];
-          if (!eventRequests.length) return;
-          setRequests((prev) => {
-            let next = prev;
-            for (const item of eventRequests) {
-              const eventRequest = item?.request as
-                | ManufacturerRequest
-                | undefined;
-              if (!eventRequest) continue;
-              next = applyRequestPatch(next, eventRequest);
-            }
-            return next;
-          });
-          return;
-        }
-        case "worksheet:count-update": {
-          // R&D 샘플 복사/삭제 등으로 인한 워크시트 카운트 변경 시 상단 메뉴 숫자 갱신
-          const stage = String(payload?.stage || "").trim();
-          const source = String(payload?.source || "").trim();
-          const requestCategory = String(payload?.requestCategory || "").trim();
-          const delta = Number(payload?.delta || 0);
-          const action = String(payload?.action || "").trim();
-          // 현재 열린 워크시트 탭의 목록도 즉시 재조회 (R&D 탭 신규 샘플 즉시 반영)
-          if (fetchRequests) {
-            void fetchRequests(true);
-          }
-          // 샘플 복사/삭제 토스트 알림
-          if (
-            source === "manufacturer_sample" ||
-            requestCategory === "rnd_sample" ||
-            requestCategory === "copied_sample"
-          ) {
-            if (delta < 0 || action === "deleted") {
-              toast({
-                title: "R&D 샘플 삭제됨",
-                description: `R&D 샘플이 제거되었습니다${stage ? ` (${stage})` : ""}`,
-              });
-            } else {
-              toast({
-                title: "R&D 샘플 복사 완료",
-                description: `R&D 탭에 새 샘플이 저장되었습니다${stage ? ` (${stage})` : ""}`,
-              });
-            }
-          }
-          return;
-        }
-        case "bg:runtime-status": {
-          const clear = payload?.clear === true;
-          const status = String(payload?.status || "")
-            .trim()
-            .toLowerCase();
-          const label = String(payload?.label || "").trim();
-          const tone = String(payload?.tone || "blue").trim();
-          const startedAt = payload?.startedAt || null;
-          const elapsedSeconds = Number.isFinite(
-            Number(payload?.elapsedSeconds),
-          )
-            ? Math.max(0, Math.floor(Number(payload?.elapsedSeconds)))
-            : null;
-
-          const hasStartedAt =
-            typeof startedAt === "string" &&
-            String(startedAt).trim().length > 0;
-          const parsedBase = hasStartedAt
-            ? new Date(startedAt as string).getTime()
-            : Number.NaN;
-          const inferredBase =
-            elapsedSeconds != null
-              ? Date.now() - elapsedSeconds * 1000
-              : Number.NaN;
-          const effectiveBase = Number.isFinite(parsedBase)
-            ? parsedBase
-            : inferredBase;
-          const hasValidBase = Number.isFinite(effectiveBase);
-          const shouldClearRealtime =
-            clear || (status === "completed" && !hasValidBase);
-          if (!hasValidBase || shouldClearRealtime) {
-            delete realtimeBaseRef.current[requestId];
-          }
-
-          setRequests((prev) =>
-            prev.map((r) => {
-              if (String((r as any)?.requestId || "").trim() !== requestId) {
-                return r;
-              }
-              if (shouldClearRealtime) {
-                delete realtimeBaseRef.current[requestId];
-                return {
-                  ...(r as any),
-                  realtimeProgress: null,
-                } as any;
-              }
-              if (hasValidBase) {
-                realtimeBaseRef.current[requestId] = effectiveBase;
-              }
-              return {
-                ...(r as any),
-                realtimeProgress: {
-                  badge: label || null,
-                  startedAt,
-                  elapsedSeconds,
-                  tone: (tone || null) as any,
-                },
-              } as any;
-            }),
-          );
-          return;
-        }
-        default:
-          return;
-      }
-    });
 
     const unsubTick = onCncMachiningTick((data: any) => {
       const requestId = data?.requestId ? String(data.requestId).trim() : "";
@@ -646,7 +667,6 @@ export function useWorksheetRealtimeStatus({
 
     return () => {
       if (typeof unsubBg === "function") unsubBg();
-      if (typeof unsubAppEvent === "function") unsubAppEvent();
       if (typeof unsubTick === "function") unsubTick();
       if (typeof unsubCompleted === "function") unsubCompleted();
     };

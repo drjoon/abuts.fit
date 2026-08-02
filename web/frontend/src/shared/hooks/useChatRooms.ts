@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { apiFetch } from "@/shared/api/apiClient";
 import { useToast } from "@/shared/hooks/use-toast";
 import { useAuthStore } from "@/store/useAuthStore";
-import { onAppEvent } from "@/shared/realtime/socket";
+import { useAppEventListener } from "@/shared/realtime/useAppEventListener";
 
 export interface ChatRoomParticipant {
   _id: string;
@@ -41,7 +41,8 @@ export interface ChatMessage {
 // related files:
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
-// - web/frontend/src/shared/realtime/socket.ts
+// - web/frontend/src/shared/realtime/useAppEventListener.ts
+// - web/frontend/src/shared/hooks/useChatMessages.ts
 // - web/backend/models/chatRoom.model.js
 // - web/backend/controllers/chats/chat.controller.js
 export interface ChatRoom {
@@ -167,19 +168,21 @@ export const useChatRooms = () => {
     roomsRef.current = rooms;
   }, [rooms]);
 
-  useEffect(() => {
-    if (!token) return;
+  const scheduleFallbackReload = useCallback(() => {
+    if (fallbackReloadTimerRef.current) {
+      window.clearTimeout(fallbackReloadTimerRef.current);
+    }
+    fallbackReloadTimerRef.current = window.setTimeout(() => {
+      void fetchRooms();
+    }, 160);
+  }, [fetchRooms]);
 
-    const scheduleFallbackReload = () => {
-      if (fallbackReloadTimerRef.current) {
-        window.clearTimeout(fallbackReloadTimerRef.current);
-      }
-      fallbackReloadTimerRef.current = window.setTimeout(() => {
-        void fetchRooms();
-      }, 160);
-    };
-
-    const unsubscribe = onAppEvent((evt) => {
+  useAppEventListener({
+    enabled: Boolean(token),
+    eventTypes: ["chat:message-created", "chat:room-read"],
+    // 채팅은 입력 중에도 즉시 unread/lastMessage를 반영해도 폼 상태를 깨지 않으므로 defer를 비활성화한다.
+    deferWhenEditing: false,
+    onMatch: (evt) => {
       const type = String(evt?.type || "").trim();
       const payload =
         evt?.data && typeof evt.data === "object"
@@ -235,16 +238,17 @@ export const useChatRooms = () => {
           ),
         );
       }
-    });
+    },
+  });
 
+  useEffect(() => {
     return () => {
-      unsubscribe?.();
       if (fallbackReloadTimerRef.current) {
         window.clearTimeout(fallbackReloadTimerRef.current);
         fallbackReloadTimerRef.current = null;
       }
     };
-  }, [fetchRooms, myIdCandidates, token]);
+  }, []);
 
   return {
     rooms,
