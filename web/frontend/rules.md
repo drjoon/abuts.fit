@@ -25,6 +25,7 @@
   - `src/shared/realtime/socket.ts`
   - `src/shared/realtime/useAppEventListener.ts`
   - `src/shared/realtime/useAppEventDebouncedReload.ts`
+  - `websocket-realtime-update-checklist.md` (웹소켓 실시간 업데이트 자동 점검 체크리스트)
 - 의뢰자 신규의뢰/치과
   - `src/pages/requestor/new_request/NewRequestPage.tsx`
   - `src/pages/requestor/practice/RequestorPracticePage.tsx`
@@ -243,7 +244,7 @@
   - practice 화면과 requestor 수신 화면은 모두 `transferId` 기반 채팅(`/api/chats/practice/transfer-room/:transferId`)만 사용합니다.
   - legacy request 기반 practice 채팅 경로(`/api/chats/practice/request-room/:requestId`)는 사용 금지합니다.
 
-- 실시간(웹소켓 app-event) 구현 메모:
+- 웹소켓 실시간 업데이트(app-event) 구현 메모:
   - 발행 SSOT: 백엔드는 대상 role 전체 fan-out emit을 사용합니다.
   - 반영 SSOT: 프론트는 "현재 열려 있는 페이지"에서만 이벤트를 반영합니다.
     - 방법: 라우트/탭 페이지 컴포넌트 마운트 상태에서만 `useAppEventListener`/`useAppEventDebouncedReload`를 등록

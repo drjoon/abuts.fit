@@ -1,5 +1,6 @@
 // related files:
 // - web/frontend/rules.md
+// - web/frontend/websocket-realtime-update-checklist.md
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
@@ -882,6 +883,8 @@ export const useMachiningBoard = ({
   useEffect(() => {
     if (!token) return;
 
+    // 웹소켓 실시간 업데이트: 가공 보드 상태는 이벤트 기반으로 부분 반영하고,
+    // 화면 리로드/모달 재마운트 없이 큐/런타임 상태만 갱신한다.
     initializeSocket(token);
 
     const offStarted = onCncMachiningStarted((data: any) => {

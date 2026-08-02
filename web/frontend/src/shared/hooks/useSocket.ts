@@ -1,5 +1,6 @@
 // related files:
 // - web/frontend/rules.md
+// - web/frontend/websocket-realtime-update-checklist.md
 // - web/frontend/src/App.tsx
 // - web/frontend/src/shared/realtime/socket.ts
 // - web/frontend/src/shared/realtime/useAppEventListener.ts

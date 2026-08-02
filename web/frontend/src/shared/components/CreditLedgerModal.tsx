@@ -459,7 +459,8 @@ export const CreditLedgerModal = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
-  // 모달이 열린 상태에서는 크레딧 실시간 이벤트를 받아 동일 모달 내 데이터만 갱신한다.
+  // 웹소켓 실시간 업데이트: 모달이 열린 상태를 유지한 채
+  // 동일 모달 내 데이터(목록/잔액 스냅샷)만 갱신한다.
   useAppEventDebouncedReload({
     enabled: Boolean(open && token),
     eventTypes: ["credit:balance-updated"],

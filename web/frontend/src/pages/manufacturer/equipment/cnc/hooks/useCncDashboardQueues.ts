@@ -1,5 +1,6 @@
 // related files:
 // - web/frontend/rules.md
+// - web/frontend/websocket-realtime-update-checklist.md
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -390,6 +391,7 @@ export function useCncDashboardQueues({
   useEffect(() => {
     if (!token) return;
 
+    // 웹소켓 실시간 업데이트: CNC 이벤트는 즉시성 우선(가공 현황/큐 동기화)
     // 소켓 연결 초기화 (Hook 순서 변경 없이 기존 구독 effect 내부에서 처리)
     initializeSocket(token);
 

@@ -261,7 +261,7 @@
     - 소비: `SPEND_PAID` / `SPEND_FREE_REQUEST` / `SPEND_FREE_SHIPPING`
   - `GET /api/credits/balance`는 `LedgerLine` 직접 집계(GL SSOT)만 사용합니다.
     - 프로세스 메모리 캐시를 사용하지 않아 승인/롤백 직후 잔액을 즉시 반영해야 합니다.
-  - 실시간 이벤트 발행/수신 SSOT:
+  - 웹소켓 실시간 업데이트 발행/수신 SSOT:
     - 송신측은 대상 role 전체에 fan-out emit 합니다.
     - 수신측은 로그인된 role에서 이벤트를 수신하되, 현재 열려 있는 페이지(활성 화면)에서만 즉시 반영합니다.
     - 비활성 페이지 데이터는 페이지 진입 시 재조회(또는 캐시 무효화)로 동기화합니다.

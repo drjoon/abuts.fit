@@ -1,5 +1,6 @@
 // related files:
 // - web/frontend/rules.md
+// - web/frontend/websocket-realtime-update-checklist.md
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
@@ -442,6 +443,7 @@ export function useWorksheetRealtimeStatus({
     toast,
   ]);
 
+  // 웹소켓 실시간 업데이트(app-event): 활성 페이지에서만 이벤트를 반영한다.
   useAppEventListener({
     enabled: Boolean(enabled && token),
     eventTypes: [

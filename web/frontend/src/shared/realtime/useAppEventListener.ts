@@ -1,5 +1,6 @@
 // related files:
 // - web/frontend/rules.md
+// - web/frontend/websocket-realtime-update-checklist.md
 // - web/frontend/src/shared/realtime/socket.ts
 // - web/frontend/src/shared/realtime/useAppEventDebouncedReload.ts
 import { useEffect, useMemo, useRef } from "react";
@@ -14,6 +15,9 @@ type UseAppEventListenerOptions = {
   deferWhenEditing?: boolean;
 };
 
+// 웹소켓 실시간 업데이트 공통 가드:
+// - requireVisible: 활성 탭에서만 반영
+// - deferWhenEditing: 입력 중 반영 지연(작업 비간섭)
 const isDocumentVisible = () => {
   if (typeof document === "undefined") return true;
   if (document.hidden) return false;

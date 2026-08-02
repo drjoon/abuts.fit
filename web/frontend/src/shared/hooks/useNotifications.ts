@@ -1,5 +1,6 @@
 // related files:
 // - web/frontend/rules.md
+// - web/frontend/websocket-realtime-update-checklist.md
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 import { useState, useEffect, useCallback } from "react";
@@ -45,7 +46,7 @@ export const useNotifications = () => {
           data: {
             notifications: Notification[];
             unreadCount: number;
-            pagination: any;
+            pagination: unknown;
           };
         }>({
           path: `/api/notifications?unreadOnly=${unreadOnly}`,
@@ -148,17 +149,25 @@ export const useNotifications = () => {
     [token, notifications]
   );
 
-  // 실시간 알림 수신
+  // 웹소켓 실시간 업데이트: 로그인 상태에서만 알림 수신 + 중복 삽입 방지
   useEffect(() => {
+    if (!token) return;
+
     const unsubscribe = onNotification((notification: SocketNotification) => {
-      if (notification._id) {
-        setNotifications((prev) => [notification as any, ...prev]);
-        setUnreadCount((prev) => prev + 1);
-      }
+      const id = String(notification?._id || "").trim();
+      if (!id) return;
+
+      setNotifications((prev) => {
+        if (prev.some((item) => String(item?._id || "") === id)) {
+          return prev;
+        }
+        return [notification as Notification, ...prev];
+      });
+      setUnreadCount((prev) => prev + 1);
     });
 
     return unsubscribe;
-  }, []);
+  }, [token]);
 
   useEffect(() => {
     void fetchNotifications();

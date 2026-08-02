@@ -1281,6 +1281,8 @@ export const RequestorDashboardPage = () => {
     }
   }, [summaryResponse]);
 
+  // 웹소켓 실시간 업데이트 안정성:
+  // 크레딧 모달 오픈 중에는 스켈레톤 전환으로 모달이 언마운트되지 않도록 차단한다.
   if (isInitialLoading && !creditLedgerOpen) {
     return <DashboardShellSkeleton showMain />;
   }

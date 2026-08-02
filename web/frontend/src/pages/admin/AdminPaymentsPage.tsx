@@ -492,7 +492,8 @@ export default function AdminPaymentsPage() {
     void loadSettlementSummary({ withLoading: true });
   }, [loadSettlementSummary]);
 
-  // CAM 승인/공정 이동/크레딧 변동 시 관리자 정산 화면을 무플리커로 동기화한다.
+  // 웹소켓 실시간 업데이트: CAM 승인/공정 이동/크레딧 변동 시
+  // 관리자 정산 화면을 무플리커로 동기화한다.
   useAppEventDebouncedReload({
     enabled: Boolean(token) && user?.role === "admin",
     eventTypes: [
