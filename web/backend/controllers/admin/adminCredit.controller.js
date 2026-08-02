@@ -2870,12 +2870,11 @@ export async function adminGetBusinessCredits(req, res) {
 
     const result = orgs.map((org) => {
       const anchorId = String(org?._id || "");
-      const ssotBalance = ssotBalanceMap.get(anchorId) || null;
       const balanceInfo = balanceMap[anchorId] || {
-        balance: Number(ssotBalance?.balance || 0),
-        paidCredit: Number(ssotBalance?.paidCredit || 0),
-        freeRequestCredit: Number(ssotBalance?.freeRequestCredit || 0),
-        freeShippingCredit: Number(ssotBalance?.freeShippingCredit || 0),
+        balance: 0,
+        paidCredit: 0,
+        freeRequestCredit: 0,
+        freeShippingCredit: 0,
         spentAmount: 0,
         chargedPaidAmount: 0,
         chargedFreeAmount: 0,
