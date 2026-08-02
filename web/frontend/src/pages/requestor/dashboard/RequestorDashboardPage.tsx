@@ -968,20 +968,12 @@ export const RequestorDashboardPage = () => {
           });
         }
 
-        const isShippingSideStage =
-          toStage === "세척.패킹" ||
-          toStage === "포장.발송" ||
-          toStage === "추적관리" ||
-          toStage === "packing" ||
-          toStage === "shipping" ||
-          toStage === "tracking";
-
         void refreshDashboard({
           cardsSummary: true,
           heavySummary: true,
           bulk: true,
-          unmachinableOverview: unmachinableAlertModalOpen,
-          shippingSummary: isShippingSideStage,
+          unmachinableOverview: true,
+          shippingSummary: true,
           pricingStats: true,
           referralTree: true,
         });

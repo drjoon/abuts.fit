@@ -62,6 +62,10 @@ function emitWorksheetStageChanged(request, payload = {}) {
   const requestMongoId = String(request?._id || "").trim();
   if (!requestId && !requestMongoId) return;
 
+  const requestorBusinessAnchorId = String(
+    request?.businessAnchorId || request?.requestor?.businessAnchorId || "",
+  ).trim();
+
   // 의뢰자, 제조사, 관리자 모두에게 공정 변경 이벤트 전송
   emitAppEventToRoles(
     ["requestor", "manufacturer", "admin"],
@@ -69,6 +73,8 @@ function emitWorksheetStageChanged(request, payload = {}) {
     {
       requestId,
       requestMongoId,
+      requestorBusinessAnchorId: requestorBusinessAnchorId || null,
+      businessAnchorId: requestorBusinessAnchorId || null,
       manufacturerStage:
         String(request?.manufacturerStage || "").trim() || null,
       reviewStage: payload.reviewStage || null,
