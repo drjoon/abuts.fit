@@ -61,7 +61,7 @@ import {
 } from "@/features/requests/components/RequestDetailDialog";
 import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
 import { getNormalizedStage, getNormalizedStageLabel } from "@/utils/stage";
-import { useAppEventListener } from "@/shared/realtime/useAppEventListener";
+import { useAppEventDebouncedReload } from "@/shared/realtime/useAppEventDebouncedReload";
 import { useSystemSettings } from "@/hooks/useSystemSettings";
 import { StlPreviewViewer } from "@/features/requests/components/StlPreviewViewer";
 import { resolveImplantConnectionSpec } from "@/utils/implantConnectionSpec";
@@ -74,7 +74,7 @@ import { getFileBlob, setFileBlob } from "@/shared/files/stlIndexedDb";
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx
 // - web/frontend/src/features/requests/components/StlPreviewViewer.tsx
 // - web/frontend/src/shared/files/stlIndexedDb.ts
-// - web/frontend/src/shared/realtime/useAppEventListener.ts
+// - web/frontend/src/shared/realtime/useAppEventDebouncedReload.ts
 // - web/backend/controllers/requests/dashboard.controller.js
 
 
@@ -374,6 +374,7 @@ export const RequestorDashboardPage = () => {
     refetchOnReconnect: true,
     refetchOnWindowFocus: false,
     enabled: !!token,
+    placeholderData: (previous) => previous,
   });
 
   const {
@@ -400,25 +401,29 @@ export const RequestorDashboardPage = () => {
     refetchOnReconnect: true,
     refetchOnWindowFocus: false,
     enabled: !!token,
+    placeholderData: (previous) => previous,
   });
 
-  const { data: unmachinableOverviewResponse, isLoading: loadingUnmachinableOverview } =
-    useQuery({
-      queryKey: unmachinableOverviewQueryKey,
-      queryFn: async () => {
-        const res = await apiFetch<any>({
-          path: `/api/requests/unmachinable-overview?period=${period}&limit=100`,
-          method: "GET",
-          token,
-        });
-        if (!res.ok) {
-          throw new Error("불완전가공 목록 조회에 실패했습니다.");
-        }
-        return res.data;
-      },
-      enabled: Boolean(token),
-      retry: false,
-    });
+  const {
+    data: unmachinableOverviewResponse,
+    isLoading: loadingUnmachinableOverview,
+  } = useQuery({
+    queryKey: unmachinableOverviewQueryKey,
+    queryFn: async () => {
+      const res = await apiFetch<any>({
+        path: `/api/requests/unmachinable-overview?period=${period}&limit=100`,
+        method: "GET",
+        token,
+      });
+      if (!res.ok) {
+        throw new Error("불완전가공 목록 조회에 실패했습니다.");
+      }
+      return res.data;
+    },
+    enabled: Boolean(token),
+    retry: false,
+    placeholderData: (previous) => previous,
+  });
 
   // 의뢰비 충전 경고
   // 의뢰, CAM 단계에 의뢰건이 있으면서 크레딧이 부족한지 확인
@@ -483,19 +488,41 @@ export const RequestorDashboardPage = () => {
     }
   }, [bulkResponse, freeShippingCredit, paidCredit, systemSettings]);
 
-  const refreshDashboard = useCallback(() => {
-    void queryClient.invalidateQueries({
-      queryKey: ["requestor-dashboard-summary-page"],
-    });
-    void queryClient.invalidateQueries({
-      queryKey: ["requestor-my-requests"],
-    });
-    void queryClient.invalidateQueries({
-      queryKey: ["requestor-unmachinable-overview"],
-    });
-    void refetchSummary();
-    void refetchBulk();
-  }, [queryClient, refetchBulk, refetchSummary]);
+  const refreshDashboard = useCallback(async () => {
+    const tasks: Promise<unknown>[] = [
+      Promise.resolve(refetchSummary()),
+      Promise.resolve(refetchBulk()),
+      queryClient.refetchQueries({
+        queryKey: unmachinableOverviewQueryKey,
+        type: "active",
+      }),
+      queryClient.refetchQueries({
+        queryKey: ["requestor-shipping-packages-summary"],
+        type: "active",
+      }),
+      queryClient.refetchQueries({
+        queryKey: ["requestor-pricing-referral-stats", "v8"],
+        type: "active",
+      }),
+    ];
+
+    if (user?.id) {
+      tasks.push(
+        queryClient.refetchQueries({
+          queryKey: ["requestor-referral-tree-member-count", user.id],
+          type: "active",
+        }),
+      );
+    }
+
+    await Promise.all(tasks);
+  }, [
+    queryClient,
+    refetchBulk,
+    refetchSummary,
+    unmachinableOverviewQueryKey,
+    user?.id,
+  ]);
 
   useEffect(() => {
     const locationState =
@@ -504,21 +531,25 @@ export const RequestorDashboardPage = () => {
         : null;
     const refreshDashboardAt = Number(locationState?.refreshDashboardAt || 0);
     if (!refreshDashboardAt) return;
-    refreshDashboard();
+    void refreshDashboard();
   }, [location.state, refreshDashboard]);
 
-  useAppEventListener({
+  useAppEventDebouncedReload({
     enabled: Boolean(token) && Boolean(user) && user?.role === "requestor",
     eventTypes: [
       "request:stage-changed",
       "request:rnd-unmachinable-updated",
       "request:rnd-unmachinable-confirmed",
+      "request:delivery-updated",
+      "request:delivery-updated-batch",
     ],
+    delayMs: 120,
     shouldHandle: (evt) => {
       const payload =
         evt?.data && typeof evt.data === "object"
           ? (evt.data as {
               requestorBusinessAnchorId?: unknown;
+              businessAnchorId?: unknown;
               request?: {
                 requestorBusinessAnchorId?: unknown;
                 businessAnchorId?: unknown;
@@ -531,6 +562,7 @@ export const RequestorDashboardPage = () => {
       const eventRequest = payload.request;
       const eventOrgId = String(
         payload.requestorBusinessAnchorId ||
+          payload.businessAnchorId ||
           eventRequest?.requestorBusinessAnchorId ||
           eventRequest?.businessAnchorId ||
           eventRequest?.requestor?.businessAnchorId ||
@@ -540,53 +572,8 @@ export const RequestorDashboardPage = () => {
       if (!eventOrgId || !myOrgId) return false;
       return eventOrgId === myOrgId;
     },
-    onMatch: (evt) => {
-      const type = String(evt?.type || "").trim();
-      const payload =
-        evt?.data && typeof evt.data === "object"
-          ? (evt.data as { toStage?: unknown })
-          : {};
-
-      if (type === "request:stage-changed") {
-        // 공정 변경 시 전체 대시보드 summary 무효화 및 재조회
-        // manufacturingSummary, stats, recentRequests 모두 최신 데이터로 업데이트
-        void queryClient.invalidateQueries({
-          queryKey: summaryQueryKey,
-        });
-        void queryClient.invalidateQueries({
-          queryKey: ["requestor-unmachinable-overview"],
-        });
-
-        // 배송 관련 공정 변경 시 bulk shipping도 무효화
-        if (
-          ["세척.패킹", "포장.발송", "추적관리"].includes(
-            String(payload.toStage || "").trim(),
-          )
-        ) {
-          void queryClient.invalidateQueries({
-            queryKey: ["requestor-bulk-shipping"],
-          });
-        }
-        return;
-      }
-
-      if (
-        type === "request:rnd-unmachinable-updated" ||
-        type === "request:rnd-unmachinable-confirmed"
-      ) {
-        void queryClient.invalidateQueries({
-          queryKey: summaryQueryKey,
-        });
-        void queryClient.invalidateQueries({
-          queryKey: ["requestor-my-requests"],
-        });
-        void queryClient.invalidateQueries({
-          queryKey: ["requestor-bulk-shipping"],
-        });
-        void queryClient.invalidateQueries({
-          queryKey: ["requestor-unmachinable-overview"],
-        });
-      }
+    onMatch: () => {
+      void refreshDashboard();
     },
   });
 

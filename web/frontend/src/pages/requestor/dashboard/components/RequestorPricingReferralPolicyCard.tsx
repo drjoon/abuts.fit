@@ -120,7 +120,8 @@ export const RequestorPricingReferralPolicyCard = () => {
   });
 
   const shouldShowSkeleton =
-    isLoading || isFetching || isTreeLoading || isTreeFetching;
+    (!data && (isLoading || isFetching)) ||
+    (!referralTree && (isTreeLoading || isTreeFetching));
 
   if (shouldShowSkeleton) {
     return (
