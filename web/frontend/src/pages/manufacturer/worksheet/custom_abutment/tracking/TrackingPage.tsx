@@ -1,3 +1,5 @@
+// change-log:
+// - 2026-08-03: Tracking 페이지의 공정 라벨/재제작 시작 스테이지 기본값을 '준비'로 변경(표시 레벨). 관련 recall 로직/버튼 초기화 반영.
 // related files:
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
@@ -43,12 +45,12 @@ import { WorksheetStageSearchInput } from "../components/WorksheetStageSearchInp
 
 type InquiryTab = "process" | "shipping" | "udi";
 
-type ProcessStage = "전체" | "의뢰" | "CAM" | "생산" | "발송" | "추적관리";
-type RecallStartStage = "의뢰" | "CAM" | "가공";
+type ProcessStage = "전체" | "준비" | "CAM" | "생산" | "발송" | "추적관리";
+type RecallStartStage = "준비" | "CAM" | "가공";
 
 const getStage = (req: ManufacturerRequest): ProcessStage | "" => {
   const s = String(req.manufacturerStage || "").trim();
-  if (s === "의뢰") return "의뢰";
+  if (s === "의뢰") return "준비";
   if (s === "CAM") return "CAM";
   if (s === "생산") return "생산";
   if (s === "발송") return "발송";
@@ -221,7 +223,7 @@ export const TrackingInquiryPage = () => {
   const [expandedBoxes, setExpandedBoxes] = useState<Set<string>>(new Set());
   const [recallMode, setRecallMode] = useState(false);
   const [recallStartStage, setRecallStartStage] =
-    useState<RecallStartStage>("의뢰");
+    useState<RecallStartStage>("준비");
   const [recallFromDate, setRecallFromDate] = useState("");
   const [recallToDate, setRecallToDate] = useState("");
   const [selectedRecallRequestIds, setSelectedRecallRequestIds] = useState<
@@ -1395,7 +1397,7 @@ export const TrackingInquiryPage = () => {
         setSelectedRecallRequestIds(new Set());
         setRecallFromDate("");
         setRecallToDate("");
-        setRecallStartStage("의뢰");
+        setRecallStartStage("준비");
       } catch (e: any) {
         toast({
           title: "재제작 복사 실패",
@@ -1466,7 +1468,7 @@ export const TrackingInquiryPage = () => {
     setSelectedRecallRequestIds(new Set());
     setRecallFromDate("");
     setRecallToDate("");
-    setRecallStartStage("의뢰");
+    setRecallStartStage("준비");
   }, [tab, recallMode]);
 
   const currentRows =
@@ -1485,7 +1487,7 @@ export const TrackingInquiryPage = () => {
     setSelectedRecallRequestIds(new Set());
     setRecallFromDate("");
     setRecallToDate("");
-    setRecallStartStage("의뢰");
+    setRecallStartStage("준비");
     if (tab !== "shipping") {
       setRecallMode(false);
     }
@@ -1602,7 +1604,7 @@ export const TrackingInquiryPage = () => {
                         setSelectedRecallRequestIds(new Set());
                         setRecallFromDate("");
                         setRecallToDate("");
-                        setRecallStartStage("의뢰");
+                        setRecallStartStage("준비");
                       }
                       return next;
                     });
@@ -1883,7 +1885,7 @@ export const TrackingInquiryPage = () => {
                     <span className="text-sm font-semibold">
                       재제작 시작 공정:
                     </span>
-                    {(["의뢰", "CAM", "가공"] as RecallStartStage[]).map(
+                    {(["준비", "CAM", "가공"] as RecallStartStage[]).map(
                       (stage) => (
                         <Button
                           key={stage}
@@ -1968,7 +1970,7 @@ export const TrackingInquiryPage = () => {
                           setSelectedRecallRequestIds(new Set());
                           setRecallFromDate("");
                           setRecallToDate("");
-                          setRecallStartStage("의뢰");
+                          setRecallStartStage("준비");
                         }}
                         disabled={recallSubmitting}
                       >

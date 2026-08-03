@@ -1,3 +1,5 @@
+// change-log:
+// - 2026-08-03: packing page: 공정 '의뢰' 표시를 '준비'로 정규화한 영향으로 일부 시작/복사 로직의 라벨 표기를 조정했습니다 (표시 레벨).
 import {
   useCallback,
   useEffect,
@@ -410,7 +412,7 @@ export const PackingPageContent = ({
         const lowerStage = rawStage.toLowerCase();
         const startStage =
           rawStage === "의뢰" || lowerStage === "request"
-            ? "의뢰"
+            ? "준비"
             : rawStage === "CAM" || lowerStage === "cam"
               ? "CAM"
               : "가공";

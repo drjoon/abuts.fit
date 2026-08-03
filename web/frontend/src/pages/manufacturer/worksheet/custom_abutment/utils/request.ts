@@ -1,3 +1,6 @@
+// change-log:
+// - 2026-08-03: 공정 표시 변경: 작업 공정 중 `의뢰` 단계의 화면 표기를 `준비`로 변경 (프론트 표시 레벨, DB 값은 미변경)
+// - reason: 공정 명칭 변경(의뢰 -> 준비) 요구에 따른 표시 정규화
 // related files:
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
@@ -161,7 +164,7 @@ export const computeStageLabel = (
   if (savedStage) return savedStage;
   if (opts?.isMachiningStage) return "가공";
   if (opts?.isCamStage) return "CAM";
-  return "의뢰";
+  return "준비";
 };
 
 function parseYmd(ymd: string): { y: number; m: number; d: number } | null {
@@ -265,7 +268,8 @@ export const deriveStageForFilter = (req: ManufacturerRequest) => {
   if (saved) {
     switch (saved) {
       case "request":
-        return "의뢰";
+      case "의뢰":
+        return "준비";
       case "cam":
         return "CAM";
       case "machining":
@@ -288,11 +292,12 @@ export const deriveStageForFilter = (req: ManufacturerRequest) => {
         return saved;
     }
   }
-  return "의뢰";
+  return "준비";
 };
 
 export const stageOrder: Record<string, number> = {
-  의뢰: 0,
+  준비: 0,
+  의뢰: 0, // legacy alias for compatibility
   CAM: 1,
   가공: 2,
   "세척.패킹": 3,
@@ -302,7 +307,8 @@ export const stageOrder: Record<string, number> = {
 
 export const getAcceptByStage = (stage: string) => {
   switch (stage) {
-    case "의뢰":
+    case "준비":
+    case "의뢰": // legacy support
       return ".filled.stl";
     case "CAM":
       return ".nc";

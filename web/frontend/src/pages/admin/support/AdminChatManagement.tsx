@@ -4,7 +4,7 @@
 // - web/frontend/src/pages/admin/dashboard/AdminDashboardPage.tsx
 // - web/backend/controllers/chats/chat.controller.js
 // - web/frontend/src/features/layout/DashboardLayout.tsx
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import {
   Card,
   CardContent,
@@ -122,7 +122,9 @@ export const AdminChatManagement = () => {
     sendMessage,
   } = useChatMessages({ roomId: selectedChatId || undefined, autoFetch: true });
 
-  const fetchRooms = async () => {
+// change-log:
+  // - 2026-08-03: Hook dependency fixes — wrapped fetchRooms in useCallback and adjusted effects to include stable deps.
+  const fetchRooms = useCallback(async () => {
     if (!token) return;
     setRoomsLoading(true);
     setRoomsError(null);
@@ -154,11 +156,11 @@ export const AdminChatManagement = () => {
     } finally {
       setRoomsLoading(false);
     }
-  };
+  }, [token, selectedStatus]);
 
   useEffect(() => {
     void fetchRooms();
-  }, [token, selectedStatus]);
+  }, [fetchRooms]);
 
   const filteredChats = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -196,7 +198,7 @@ export const AdminChatManagement = () => {
       bottomRef.current?.scrollIntoView({ block: "end" });
     });
     return () => window.cancelAnimationFrame(raf);
-  }, [activeChat?._id, messagesLoading, activeMessages?.length]);
+  }, [activeChat, messagesLoading, activeMessages?.length]);
 
   useEffect(() => {
     if (filteredChats.length === 0) {

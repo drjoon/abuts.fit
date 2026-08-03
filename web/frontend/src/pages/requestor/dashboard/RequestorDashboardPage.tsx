@@ -60,7 +60,7 @@ import {
   type RequestDetailDialogRequest,
 } from "@/features/requests/components/RequestDetailDialog";
 import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
-import { getNormalizedStage, getNormalizedStageLabel } from "@/utils/stage";
+import { getNormalizedStage, getNormalizedStageLabelSafe } from "@/utils/stage";
 import { useAppEventDebouncedReload } from "@/shared/realtime/useAppEventDebouncedReload";
 import { useSystemSettings } from "@/hooks/useSystemSettings";
 import { StlPreviewViewer } from "@/features/requests/components/StlPreviewViewer";
@@ -196,9 +196,11 @@ export const RequestorDashboardPage = () => {
     [period],
   );
 
-  const stageGroupByLabel: Record<string, string[] | null> = {
-    // 6단계 공통 공정: 의뢰(취소 포함) → CAM → 가공 → 세척.패킹 → 포장.발송 → 추적관리
-    "의뢰/취소": ["request", "cancel"],
+  // change-log: 2026-08-03 - '의뢰' -> '준비' display normalization for requestor dashboard groups
+  const stageGroupByLabel = useMemo<Record<string, string[] | null>>(() => ({
+    // 6단계 공통 공정: 준비 → CAM → 가공 → 세척.패킹 → 포장.발송 → 추적관리
+    // Note: canceled requests are kept in DB but not shown in the '준비' card per UI policy.
+    "준비": ["request"],
     CAM: ["cam"],
     가공: ["machining"],
     "세척.패킹": ["packing"],
@@ -206,18 +208,19 @@ export const RequestorDashboardPage = () => {
     추적관리: ["tracking"],
     // 상세 공정 코드(불완전가공)는 별도 분기 처리
     불완전가공: null,
-  };
-
-  const stageRawAliasByLabel: Record<string, string[]> = {
-    "의뢰/취소": ["의뢰", "request", "취소", "cancel"],
+  }), []);
+  
+  const stageRawAliasByLabel = useMemo<Record<string, string[]>>(() => ({
+    // display-level label '준비' maps legacy raw values '의뢰' / 'request' for normalization
+    "준비": ["의뢰", "request"],
     CAM: ["cam"],
     가공: ["가공", "생산", "production", "machining"],
     "세척.패킹": ["세척.패킹", "세척.포장", "cleaning", "packing"],
     "포장.발송": ["포장.발송", "발송", "delivery", "shipping"],
     추적관리: ["추적관리", "tracking"],
-  };
+  }), []);
 
-  const getNormalizedStageOrNull = (requestLike: any): string | null => {
+  const getNormalizedStageOrNull = useCallback((requestLike: any): string | null => {
     if (!requestLike?.manufacturerStage) {
       return null;
     }
@@ -231,9 +234,9 @@ export const RequestorDashboardPage = () => {
       if (["delivery", "발송"].includes(raw)) return "shipping";
       return null;
     }
-  };
+  }, []);
 
-  const isCanceledRequest = (requestLike: any): boolean => {
+  const isCanceledRequest = useCallback((requestLike: any): boolean => {
     if (!requestLike) return false;
     const normalizedStage = getNormalizedStageOrNull(requestLike);
     if (normalizedStage === "cancel") {
@@ -244,13 +247,15 @@ export const RequestorDashboardPage = () => {
       return true;
     }
     return false;
-  };
+  }, [getNormalizedStageOrNull]);
 
-  const isUnmachinableRequest = (requestLike: any): boolean =>
-    !!requestLike?.rnd?.unmachinableAt;
+  const isUnmachinableRequest = useCallback((requestLike: any): boolean =>
+    !!requestLike?.rnd?.unmachinableAt,
+  [],);
 
-  const getUnmachinableReason = (requestLike: any): string =>
-    String(requestLike?.rnd?.unmachinableReason || "").trim();
+  const getUnmachinableReason = useCallback((requestLike: any): string =>
+    String(requestLike?.rnd?.unmachinableReason || "").trim(),
+  [],);
 
   const splitUnmachinableReasons = (rawReason: unknown): string[] => {
     const text = String(rawReason || "").trim();
@@ -266,7 +271,7 @@ export const RequestorDashboardPage = () => {
     );
   };
 
-  const isSampleRequest = (requestLike: any): boolean => {
+  const isSampleRequest = useCallback((requestLike: any): boolean => {
     const requestCategory = String(requestLike?.requestCategory || "").trim();
     const source = String(requestLike?.source || "").trim();
     const priceRule = String(requestLike?.price?.rule || "").trim();
@@ -276,7 +281,7 @@ export const RequestorDashboardPage = () => {
       source === "manufacturer_sample" ||
       priceRule === "manufacturer_sample"
     );
-  };
+  }, []);
 
   const normalizeEventId = (value: unknown): string => {
     if (value == null) return "";
@@ -373,12 +378,12 @@ export const RequestorDashboardPage = () => {
     return Array.from(ids);
   };
 
-  const filterDashboardRequest = (r: any) => {
+  const filterDashboardRequest = useCallback((r: any) => {
     if (!r) return false;
     return !isSampleRequest(r);
-  };
+  }, [isSampleRequest]);
 
-  const getModalItems = (all: any[], label: string) => {
+  const getModalItems = useCallback((all: any[], label: string) => {
     const group = stageGroupByLabel[label];
     const base = (all || []).filter(filterDashboardRequest);
 
@@ -398,14 +403,13 @@ export const RequestorDashboardPage = () => {
       const normalized = getNormalizedStageOrNull(r);
       if (normalized && group.includes(normalized)) return true;
 
-      // API별 stage 문자열 편차(가공/생산, 세척.포장, delivery 등) 보정
-      const rawStage = String(r?.manufacturerStage || "")
-        .trim()
-        .toLowerCase();
+      const rawLabel = String(r?.manufacturerStage || "").trim();
+      if (!rawLabel) return false;
       const aliases = stageRawAliasByLabel[label] || [];
-      return aliases.some((alias) => alias.toLowerCase() === rawStage);
+      if (aliases.includes(rawLabel)) return true;
+      return false;
     });
-  };
+  }, [stageGroupByLabel, filterDashboardRequest, stageRawAliasByLabel, getNormalizedStageOrNull]);
 
   const {
     data: infiniteData,
@@ -449,7 +453,7 @@ export const RequestorDashboardPage = () => {
   const modalItems = useMemo(() => {
     const all = infiniteData?.pages.flatMap((page) => page.requests) || [];
     return getModalItems(all, statsModalLabel);
-  }, [infiniteData, statsModalLabel]);
+  }, [infiniteData, statsModalLabel, getModalItems]);
 
   useEffect(() => {
     // 첫 페이지에 해당 stage 항목이 없더라도, 다음 페이지에 있을 수 있어 자동 추가 로드한다.
@@ -1161,8 +1165,8 @@ export const RequestorDashboardPage = () => {
       delayedCount,
       warningCount,
     };
-  }, [summaryResponse]);
-
+  }, [summaryResponse, isCanceledRequest, isUnmachinableRequest]);
+  
   const recentRequests = useMemo(() => {
     if (!summaryResponse?.success) return [];
     const requests = Array.isArray(summaryResponse.data.recentRequests)
@@ -1171,8 +1175,8 @@ export const RequestorDashboardPage = () => {
     return requests.filter(
       (r: any) => !isCanceledRequest(r) && !isUnmachinableRequest(r),
     );
-  }, [summaryResponse]);
-
+  }, [summaryResponse, isCanceledRequest, isUnmachinableRequest]);
+  
   const unmachinableRecentRequests = useMemo(() => {
     if (!summaryResponse?.success) return [];
     const requests = Array.isArray(summaryResponse.data.recentRequests)
@@ -1181,7 +1185,7 @@ export const RequestorDashboardPage = () => {
     return requests.filter(
       (r: any) => !isCanceledRequest(r) && isUnmachinableRequest(r),
     );
-  }, [summaryResponse]);
+  }, [summaryResponse, isCanceledRequest, isUnmachinableRequest]);
 
   // 상단 alert 배지는 "미확인(읽지 않음)" 판정 건수를 사용한다.
   const unmachinableAlertCount = useMemo(() => {
@@ -1190,8 +1194,8 @@ export const RequestorDashboardPage = () => {
     );
     if (Number.isFinite(fromStats)) return Math.max(0, fromStats);
     return recentRequests.filter((r) => isUnmachinableRequest(r)).length;
-  }, [dashboardStatsSource, recentRequests]);
-
+  }, [dashboardStatsSource, recentRequests, isUnmachinableRequest]);
+  
   // 상단 통계카드(불완전가공)는 기록용 누적(확인 포함) 건수를 사용한다.
   const unmachinableRecordedCount = useMemo(() => {
     const stats = dashboardStatsSource?.data?.stats || {};
@@ -1215,7 +1219,7 @@ export const RequestorDashboardPage = () => {
     }
 
     return recentRequests.filter((r) => isUnmachinableRequest(r)).length;
-  }, [dashboardStatsSource, recentRequests]);
+  }, [dashboardStatsSource, recentRequests, isUnmachinableRequest]);
 
   const isInitialLoading =
     (!cardsSummaryResponse && isCardsSummaryLoading) ||
@@ -1375,6 +1379,7 @@ export const RequestorDashboardPage = () => {
     return getModalItems(Array.from(deduped.values()), statsModalLabel);
   }, [
     infiniteData,
+    getModalItems,
     summaryResponse,
     statsModalLabel,
     unmachinableOverviewItems,
@@ -1886,7 +1891,7 @@ export const RequestorDashboardPage = () => {
   const stats: RequestorDashboardStat[] = (() => {
     if (!dashboardStatsSource?.success) {
       return [
-        { label: "의뢰/취소", value: "0 / 0", icon: FileText },
+        { label: "준비", value: "0", icon: FileText },
         { label: "CAM", value: "0", icon: Wrench },
         { label: "가공", value: "0", icon: Factory },
         { label: "세척.패킹", value: "0", icon: Boxes },
@@ -1903,11 +1908,9 @@ export const RequestorDashboardPage = () => {
     const trackingBoxCount = Number(s.inTrackingBoxes ?? 0);
     return [
       {
-        label: "의뢰/취소",
-        value: `${s.totalRequests ?? 0} / ${
-          (s.canceled ?? s.canceledCount ?? 0) as number
-        }`,
-        change: `${s.totalRequestsChange ?? "+0%"}/${s.canceledChange ?? "+0%"}`,
+        label: "준비",
+        value: `${s.totalRequests ?? 0}`,
+        change: `${s.totalRequestsChange ?? "+0%"}`,
         icon: FileText,
       },
       {
@@ -2546,7 +2549,7 @@ export const RequestorDashboardPage = () => {
                       )}
                     </div>
                     <div className="text-xs text-muted-foreground truncate">
-                      상태: {getNormalizedStageLabel(r)} / 의뢰번호: {String(r?.requestId || "")}
+                      상태: {getNormalizedStageLabelSafe(r)} / 의뢰번호: {String(r?.requestId || "")}
                     </div>
 
                     {isUnmachinable && (

@@ -274,7 +274,7 @@ export const PricingPolicyDialog = ({
                     6. 의뢰 취소
                   </h3>
                   <p>
-                    <b>의뢰·CAM 단계</b>에서만 취소 가능하며,{" "}
+                    <b>준비·CAM 단계</b>에서만 취소 가능하며,
                     <b>가공 단계부터는 취소할 수 없습니다.</b>
                   </p>
                 </section>

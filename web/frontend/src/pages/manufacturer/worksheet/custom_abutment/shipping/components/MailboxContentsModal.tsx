@@ -1,3 +1,5 @@
+// change-log:
+// - 2026-08-03: MailboxContentsModal 상태 배지 공정 라벨을 정규화(의뢰 -> 준비)하여 표시 일관성 확보 (display-only)
 // related files:
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
@@ -21,6 +23,7 @@ import { request } from "@/shared/api/apiClient";
 import { useToast } from "@/shared/hooks/use-toast";
 import { generateModelNumber } from "@/utils/modelNumber";
 import { deriveStageForFilter, getDeadlineInfo } from "../../utils/request";
+import { getNormalizedStageLabelSafe } from "@/utils/stage";
 import {
   ArrowLeft,
   ArrowRight,
@@ -118,8 +121,9 @@ export const MailboxContentsModal = ({
   const primaryOrganization =
     requests.find((req) => req.requestor?.business)?.requestor?.business || "-";
 
-  const stageLabel =
-    requests.find((req) => req.manufacturerStage)?.manufacturerStage || "의뢰";
+  // change-log: 2026-08-03 - stage fallback label: 의뢰 -> 준비 (display-only)
+  const firstStageRaw = requests.find((req) => req.manufacturerStage)?.manufacturerStage;
+  const stageLabel = getNormalizedStageLabelSafe({ manufacturerStage: firstStageRaw }) || String(firstStageRaw || "준비");
 
   const primaryRequest = requests[0] || null;
   const requestorBusinessAnchor =

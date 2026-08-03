@@ -90,11 +90,12 @@ export function useWorksheetRealtimeStatus({
     [toast],
   );
 
+  // change-log: 2026-08-03 - realtime stage mapping: 'request'/'의뢰' -> '준비' (display-only)
   const toStageLabel = (raw: unknown) => {
     const stage = String(raw || "")
       .trim()
       .toLowerCase();
-    if (stage === "request") return "의뢰";
+    if (stage === "request" || stage === "의뢰") return "준비";
     if (stage === "cam") return "CAM";
     if (stage === "machining") return "가공";
     if (stage === "packing") return "세척.패킹";

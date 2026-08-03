@@ -1,3 +1,5 @@
+// change-log:
+// - 2026-08-03: 재제작 시작 스테이지 타입 목록에서 '의뢰' 화면 라벨을 '준비'로 교체(표시 레벨).
 // related files:
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
@@ -7,7 +9,7 @@
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 
-export type RemakeQuickStartStage = "의뢰" | "CAM" | "가공" | "세척.패킹";
+export type RemakeQuickStartStage = "준비" | "CAM" | "가공" | "세척.패킹";
 
 type RemakeStartQuickModalProps = {
   open: boolean;
@@ -19,7 +21,7 @@ type RemakeStartQuickModalProps = {
 };
 
 const DEFAULT_STAGES: RemakeQuickStartStage[] = [
-  "의뢰",
+  "준비",
   "CAM",
   "가공",
   "세척.패킹",

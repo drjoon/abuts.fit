@@ -285,8 +285,10 @@ export default function AdminReferralGroupsPage() {
     retry: false,
   });
 
-  const groups = groupList?.groups || [];
-  const overview = groupList?.overview || null;
+  // change-log:
+  // - 2026-08-03: Stabilize derived 'groups' and 'overview' with useMemo to avoid hook dependency instability warnings.
+  const groups = useMemo(() => groupList?.groups || [], [groupList?.groups]);
+  const overview = useMemo(() => groupList?.overview || null, [groupList?.overview]);
   const requestorGroupCount = Number(overview?.requestor?.groupCount || 0);
   const avgPaidRevenuePerGroup = requestorGroupCount
     ? Math.round(

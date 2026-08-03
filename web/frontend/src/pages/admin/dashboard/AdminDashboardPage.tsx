@@ -1,4 +1,6 @@
 
+// change-log:
+// - 2026-08-03: Display-layer normalization — show '준비' when manufacturerStage indicates the first workflow stage (의뢰) in admin dashboard displays. No DB changes.
 // related files:
 // - web/backend/controllers/admin/admin.dashboard.controller.js
 // - web/backend/models/ledgerJournal.model.js
@@ -9,6 +11,7 @@
 // - web/backend/controllers/requests/common.nc.controller.js
 // - web/backend/rules.md
 import { useEffect, useState } from "react";
+import { getNormalizedStageLabelSafe } from "@/utils/stage";
 import { useNavigate } from "react-router-dom";
 import { usePeriodStore } from "@/store/usePeriodStore";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -718,7 +721,8 @@ export const AdminDashboardPage = () => {
     ? (adminDashboardResponse.data?.happyCallSummary ?? null)
     : null;
 
-  const inProgressStageList = ["의뢰", "CAM", "가공", "세척.패킹", "포장.발송"] as const;
+  // change-log: 2026-08-03 - '의뢰' 공정 표시를 '준비'로 표기 (display only)
+  const inProgressStageList = ["준비", "의뢰", "CAM", "가공", "세척.패킹", "포장.발송"] as const;
   const inProgressBaseRequestCount = inProgressStageList.reduce(
     (acc, stage) => acc + Number(adminDashboardResponse?.data?.requestStats?.byStatus?.[stage] || 0),
     0,
@@ -1048,7 +1052,7 @@ export const AdminDashboardPage = () => {
     const byStatus = requestStats.byStatus || {};
     const totalRequests = requestStats.total ?? 0;
 
-    const receive = byStatus["의뢰"] ?? 0;
+    const receive = byStatus["준비"] ?? byStatus["의뢰"] ?? 0;
     const cam = byStatus["CAM"] ?? 0;
     const machining = byStatus["가공"] ?? 0;
     const packing = byStatus["세척.패킹"] ?? 0;
@@ -1663,7 +1667,7 @@ export const AdminDashboardPage = () => {
                             </Badge>
                           </div>
                           <div className="text-[11px] text-muted-foreground truncate">
-                            의뢰번호: {String(item?.requestId || "-")} · 상태: {String(item?.manufacturerStage || "-")}
+                            의뢰번호: {String(item?.requestId || "-")} · 상태: {getNormalizedStageLabelSafe(item) || String(item?.manufacturerStage || "-")}
                           </div>
                           {String(item?.businessName || "").trim() && (
                             <div className="text-[11px] text-muted-foreground truncate">
@@ -1960,7 +1964,7 @@ export const AdminDashboardPage = () => {
                     </Badge>
                   </div>
                   <div className="text-xs text-slate-600">의뢰번호: {String(item?.requestId || "-")}</div>
-                  <div className="text-xs text-slate-600">상태: {String(item?.manufacturerStage || "-")}</div>
+                  <div className="text-xs text-slate-600">상태: {getNormalizedStageLabelSafe(item) || String(item?.manufacturerStage || "-")}</div>
                   <div className="text-xs text-slate-600">
                     케이스: {[clinic, patient, tooth ? `#${tooth}` : ""]
                       .filter(Boolean)
@@ -2067,7 +2071,7 @@ export const AdminDashboardPage = () => {
                         </Badge>
                       </div>
                       <div className="mt-1 text-xs text-muted-foreground truncate">
-                        의뢰번호: {String(item?.id || "-")} · 상태: {String(item?.manufacturerStage || "-")}
+                        의뢰번호: {String(item?.id || "-")} · 상태: {getNormalizedStageLabelSafe(item) || String(item?.manufacturerStage || "-")}
                       </div>
                       {String(item?.message || "").trim() && (
                         <div className="mt-1 text-xs text-slate-600 whitespace-pre-wrap break-words">

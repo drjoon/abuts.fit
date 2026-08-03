@@ -9,6 +9,8 @@ import { apiFetch } from "@/shared/api/apiClient";
 import { toKstYmd } from "@/shared/date/kst";
 import { useToast } from "@/shared/hooks/use-toast";
 
+// change-log:
+// - 2026-08-03: Dashboard 상단 워크시트 공정 탭의 '의뢰' 라벨을 '준비'로 변경(표시 레벨). wsSummary 조회/표시 로직과 연동됨.
 // related files:
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
 // - web/frontend/src/pages/manufacturer/dashboard/ManufacturerDashboardPage.tsx
@@ -1216,7 +1218,7 @@ export const DashboardLayout = () => {
                                   )
                                 }
                               >
-                                <span>의뢰</span>
+                                <span>준비</span>
                                 <span className="tabular-nums opacity-70">
                                   {wsSummary.requestCount ?? 0}
                                 </span>

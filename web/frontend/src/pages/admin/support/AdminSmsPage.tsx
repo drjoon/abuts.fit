@@ -2,7 +2,7 @@
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import type { ChangeEvent } from "react";
 import {
   Card,
@@ -81,7 +81,9 @@ export default function AdminSmsPage() {
   const { toast } = useToast();
   const navigate = useNavigate();
 
-  const loadHistory = async () => {
+  // change-log:
+  // - 2026-08-03: Hook dependency fix — wrap loadHistory/loadTemplates with useCallback and update effect deps.
+  const loadHistory = useCallback(async () => {
     if (!token) return;
     setHistoryLoading(true);
     try {
@@ -104,9 +106,9 @@ export default function AdminSmsPage() {
     } finally {
       setHistoryLoading(false);
     }
-  };
+  }, [token]);
 
-  const loadTemplates = async () => {
+  const loadTemplates = useCallback(async () => {
     if (!token) return;
     setTemplatesLoading(true);
     try {
@@ -122,12 +124,12 @@ export default function AdminSmsPage() {
     } finally {
       setTemplatesLoading(false);
     }
-  };
+  }, [token]);
 
   useEffect(() => {
     void loadHistory();
     void loadTemplates();
-  }, [token]);
+  }, [loadHistory, loadTemplates]);
 
   const sendSms = async () => {
     if (!token) {

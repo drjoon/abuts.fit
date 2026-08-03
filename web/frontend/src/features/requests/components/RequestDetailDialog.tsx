@@ -102,9 +102,7 @@ export const getStatusBadge = (status: string, manufacturerStage?: string) => {
   if (manufacturerStage) {
     switch (manufacturerStage) {
       case "의뢰":
-        return <Badge variant="outline">의뢰</Badge>;
-      case "의뢰접수":
-        return <Badge variant="outline">의뢰접수</Badge>;
+        return <Badge variant="outline">준비</Badge>;
       case "CAM":
         return <Badge variant="default">CAM</Badge>;
       case "생산":
@@ -124,9 +122,7 @@ export const getStatusBadge = (status: string, manufacturerStage?: string) => {
 
   switch (status) {
     case "의뢰":
-      return <Badge variant="outline">의뢰</Badge>;
-    case "의뢰접수":
-      return <Badge variant="outline">의뢰접수</Badge>;
+      return <Badge variant="outline">준비</Badge>;
     case "가공전":
       return <Badge variant="default">CAM</Badge>;
     case "가공후":

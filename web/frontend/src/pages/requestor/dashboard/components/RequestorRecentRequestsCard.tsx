@@ -34,7 +34,7 @@ import {
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/WorksheetCardGrid.tsx
 // - web/frontend/src/shared/realtime/useAppEventListener.ts
 
-const EDITABLE_STATUSES = new Set(["의뢰", "CAM"]);
+const EDITABLE_STATUSES = new Set(["준비", "의뢰", "CAM"]); // '준비' added for display-normalized stage compatibility
 
 const STAGE_BADGE_BASE =
   "text-[10px] h-4 px-1.5 whitespace-nowrap leading-none flex items-center justify-center";
@@ -49,6 +49,7 @@ const STAGE_BADGE_STYLES: Record<
   }
 > = {
   의뢰: { variant: "outline" },
+  준비: { variant: "outline" }, // display alias for '의뢰'
   CAM: { variant: "default" },
   가공: { variant: "default" },
   "세척.패킹": {
@@ -378,7 +379,7 @@ export const RequestorRecentRequestsCard = ({
       if (manufacturerStage && !canEditRequest(manufacturerStage)) {
         toast({
           title: "변경 불가",
-          description: "의뢰 또는 CAM 단계에서만 변경할 수 있습니다.",
+          description: "준비 또는 CAM 단계에서만 변경할 수 있습니다.",
           variant: "destructive",
           duration: 3000,
         });

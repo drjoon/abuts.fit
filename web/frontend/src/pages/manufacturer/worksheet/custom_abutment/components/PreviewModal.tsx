@@ -1,3 +1,5 @@
+// change-log:
+// - 2026-08-03: PreviewModal: 공정 표시 정규화 영향 반영(의뢰 -> 준비 표시). 주로 프리뷰/승인 버튼의 stage label 참조에 영향.
 // related files:
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx

@@ -1,4 +1,7 @@
+// change-log:
+// - 2026-08-03: 중복 의뢰 안내 모달의 상태 표시를 공정 라벨 정규화(의뢰 -> 준비)로 표시. (display-only)
 import React, { useEffect, useMemo, useState, useCallback } from "react";
+import { getNormalizedStageLabelSafe } from "@/utils/stage";
 import { useParams, useNavigate } from "react-router-dom";
 import { useNewRequestPage } from "./hooks/useNewRequestPage";
 import { useToast } from "@/shared/hooks/use-toast";
@@ -466,7 +469,7 @@ export const NewRequestPage = () => {
     [duplicatePrompt],
   );
 
-  const getFileKeyByDraftCaseId = (draftCaseId: string) => {
+  const getFileKeyByDraftCaseId = useCallback((draftCaseId: string) => {
     const found = (files || []).find(
       (f) => String((f as any)?._draftCaseInfoId || "") === String(draftCaseId),
     );
@@ -476,7 +479,7 @@ export const NewRequestPage = () => {
     } catch {
       return `${found.name}:${found.size}`;
     }
-  };
+  }, [files]);
 
   const getNewCaseInfoByCaseId = useCallback(
     (caseId: string) => {
@@ -501,7 +504,7 @@ export const NewRequestPage = () => {
         clinicName: String(info?.clinicName || parsed?.clinicName || ""),
       };
     },
-    [caseInfosMap, files],
+    [caseInfosMap, files, getFileKeyByDraftCaseId],
   );
 
   const resolveExistingRequestId = (dupLike: any) => {
@@ -1074,7 +1077,7 @@ export const NewRequestPage = () => {
                               {existingPatient || "-"} / {existingTooth || "-"}
                             </span>
                             <span className="truncate">
-                              상태: {String(existing?.manufacturerStage || "")}
+                              상태: {getNormalizedStageLabelSafe(existing) || String(existing?.manufacturerStage || "")}
                             </span>
                             {existing?.requestId && (
                               <span className="truncate">

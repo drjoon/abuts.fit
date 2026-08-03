@@ -1,3 +1,5 @@
+// change-log:
+// - 2026-08-03: Credit ledger detail row의 공정 배지 표시를 normalizeStageLabel 기반으로 정규화(의뢰 -> 준비). (display-only)
 // related files:
 // - web/frontend/rules.md
 // - web/frontend/src/features/layout/DashboardLayout.tsx
@@ -6,7 +8,10 @@
 // - web/frontend/src/shared/realtime/useAppEventDebouncedReload.ts
 // - web/frontend/src/shared/realtime/creditBalanceEvent.ts
 // - web/backend/controllers/admin/adminCredit.controller.js
+// change-log:
+// - 2026-08-03: CreditLedgerModal: normalize manufacturer stage display labels (의뢰 -> 준비) in transaction rows. (display-only)
 import { useEffect, useMemo, useRef, useState } from "react";
+import { getNormalizedStageLabelSafe } from "@/utils/stage";
 import { useAppEventDebouncedReload } from "@/shared/realtime/useAppEventDebouncedReload";
 import { isCreditEventForBusiness } from "@/shared/realtime/creditBalanceEvent";
 import {
@@ -213,8 +218,9 @@ const renderTransactionDetail = ({
   const shortCode = safeRef || formatShortCode(String(item.uniqueKey || ""));
 
   if (refType === "REQUEST") {
-    const manufacturerStage =
+    const manufacturerStageRaw =
       item.manufacturerStage || requestSummary?.manufacturerStage || "의뢰";
+    const manufacturerStage = getNormalizedStageLabelSafe({ manufacturerStage: manufacturerStageRaw }) || String(manufacturerStageRaw);
 
     return (
       <>

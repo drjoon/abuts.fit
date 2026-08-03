@@ -1,3 +1,5 @@
+// change-log:
+// - 2026-08-03: 카드/롤백 관련 stage label 정규화: '의뢰' 표시를 '준비'로 변경하여 화면 일관성 확보 (display-only)
 // related files:
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
@@ -205,7 +207,7 @@ export const WorksheetCardGrid = ({
           ? "가공"
           : isCamStage
             ? "CAM"
-            : "의뢰";
+            : "준비";
         const stageLabel = computeStageLabel(request, {
           isCamStage,
           isMachiningStage,
@@ -341,7 +343,7 @@ export const WorksheetCardGrid = ({
         const canRollback =
           tabStage === "rnd" ||
           stageForRollback === "추적관리" ||
-          stageForRollback !== "의뢰" ||
+          stageForRollback !== "준비" ||
           rollbackCountFromRequest > 0 ||
           rollbackCountFromCam > 0 ||
           rollbackCountFromMachining > 0;
@@ -462,7 +464,7 @@ export const WorksheetCardGrid = ({
           const s = String(stageForRollback || "").trim();
           if (s === "세척.포장" || s === "세척.패킹") return "세척·패킹";
           if (s === "발송" || s === "포장.발송") return "포장·발송";
-          return s || "의뢰";
+          return s || "준비";
         })();
 
         const machiningElapsedLabel = (() => {

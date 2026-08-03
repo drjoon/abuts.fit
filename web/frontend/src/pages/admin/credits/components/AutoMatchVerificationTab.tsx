@@ -51,6 +51,8 @@ type ChargeOrder = {
   } | null;
 };
 
+// change-log:
+// - 2026-08-03: Hook dependency fix — wrapped loadOrders in useCallback and adjusted useEffect dependency to avoid missing-deps warning.
 export function AutoMatchVerificationTab() {
   const { token } = useAuthStore();
   const { toast } = useToast();
@@ -67,7 +69,7 @@ export function AutoMatchVerificationTab() {
   const [lockReason, setLockReason] = useState("");
   const [processing, setProcessing] = useState(false);
 
-  const loadOrders = async (statusFilter?: string) => {
+  const loadOrders = useCallback(async (statusFilter?: string) => {
     if (!token) return;
     setLoading(true);
     try {
@@ -89,11 +91,11 @@ export function AutoMatchVerificationTab() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [token]);
 
   useEffect(() => {
-    loadOrders("MATCHED");
-  }, [token]);
+    void loadOrders("MATCHED");
+  }, [loadOrders]);
 
   const handleVerify = async (orderId: string) => {
     if (!token) return;

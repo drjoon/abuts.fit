@@ -1,3 +1,5 @@
+// change-log:
+// - 2026-08-03: 공정 첫단계 표시 변경(의뢰 -> 준비). titlePrefix 기본값을 '진행중인 준비'로 조정.
 // related files:
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
@@ -20,7 +22,7 @@ export const WorksheetQueueSummary = ({
   labels,
   counts,
   className = "",
-  titlePrefix = "진행중인 의뢰 총",
+  titlePrefix = "진행중인 준비", 
 }: WorksheetQueueSummaryProps) => {
   return (
     <div

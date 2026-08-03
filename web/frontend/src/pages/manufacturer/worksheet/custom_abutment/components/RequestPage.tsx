@@ -1,3 +1,6 @@
+// change-log:
+// - 2026-08-03: 제조사 워크시트의 공정 필터 기본값 및 탭 라벨을 '준비'로 표시되도록 수정함. (display-only)
+// - impact: deriveStageForFilter, computeStageLabel, realtime badge 처리 로직에 영향
 // related files:
 // - web/backend/modules/requests/request.routes.js
 // - web/backend/controllers/requests/common.review.controller.js
@@ -160,8 +163,8 @@ export const RequestPage = ({
         const stageFilterForTab = (() => {
           if (tabStage === "request")
             return showCompleted
-              ? ["의뢰", "CAM", "가공", "세척.패킹", "포장.발송", "추적관리"]
-              : ["의뢰"];
+              ? ["준비", "CAM", "가공", "세척.패킹", "포장.발송", "추적관리"]
+              : ["준비"];
           if (isCamStage)
             return showCompleted
               ? ["CAM", "가공", "세척.패킹", "포장.발송", "추적관리"]
@@ -741,7 +744,7 @@ export const RequestPage = ({
           ? "포장.발송"
           : tabStage === "tracking"
             ? "추적관리"
-            : "의뢰";
+            : "준비";
   const currentStageOrder = stageOrder[currentStageForTab] ?? 0;
 
   const matchesCurrentPage = useCallback(
@@ -774,9 +777,9 @@ export const RequestPage = ({
         )
           .trim()
           .toUpperCase();
-        // 의뢰 승인 후 NC 콜백 전까지 manufacturerStage는 "의뢰"를 유지할 수 있으므로,
-        // 사용자 혼선을 줄이기 위해 승인 완료 건은 의뢰 탭에서 잠시 숨긴다.
-        return stage === "의뢰" && requestReviewStatus !== "APPROVED";
+        // 의뢰(준비) 승인 후 NC 콜백 전까지 manufacturerStage는 "준비"를 유지할 수 있으므로,
+        // 사용자 혼선을 줄이기 위해 승인 완료 건은 준비 탭에서 잠시 숨긴다.
+        return stage === "준비" && requestReviewStatus !== "APPROVED";
       }
       if (isCamStage) {
         return stage === "CAM";
@@ -1019,7 +1022,7 @@ export const RequestPage = ({
         // - CAM 탭: CAM으로 생성
         // - 그 외 단계: 가공으로 생성(허용 시작 공정 제한)
         const startStage =
-          tabStage === "request" ? "의뢰" : tabStage === "cam" ? "CAM" : "가공";
+          tabStage === "request" ? "준비" : tabStage === "cam" ? "CAM" : "가공";
 
         const sourceIsRndSample = isRndSampleRequest(req);
 
@@ -1701,10 +1704,10 @@ export const RequestPage = ({
       if (!requestMongoId) return;
 
       const stageLabel = String(req.manufacturerStage || "").trim();
-      if (!["의뢰", "CAM"].includes(stageLabel)) {
+      if (!["준비", "의뢰", "CAM"].includes(stageLabel)) {
         toast({
           title: "변경 불가",
-          description: "아노다이징 여부는 의뢰/CAM 단계에서만 변경할 수 있습니다.",
+          description: "아노다이징 여부는 준비/CAM 단계에서만 변경할 수 있습니다.",
           variant: "destructive",
         });
         return;

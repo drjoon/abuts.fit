@@ -14,6 +14,11 @@
 
 이 문서는 `web/frontend` 폴더에서만 필요한 **구현 메모**만 남깁니다.
 
+- 최근 변경 목록 파일: `web/frontend/modified_prep_stage_changes_2026-08-03.txt` (의뢰->준비 UI 변경 이력, 프론트 표시 레벨)
+
+Notes:
+- Requestor dashboard: 상단 카드 '의뢰/취소' -> '준비'로 변경. 취소 항목은 카드에서 제거(내부 DB는 유지). 상세 정책/모달의 '의뢰' 문구는 '준비'로 변경함.
+
 ## 0. Frontend 중요 진입 파일 지도 (로컬)
 
 - 앱/라우팅

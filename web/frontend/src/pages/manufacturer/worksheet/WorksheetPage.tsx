@@ -1,3 +1,5 @@
+// change-log:
+// - 2026-08-03: 워크시트 기본 탭 '의뢰' 표시를 '준비'로 변경(표시 레이어만). 관련 유틸의 deriveStageForFilter와 연동됨.
 // related files:
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
@@ -57,7 +59,7 @@ export const ManufacturerWorksheetPage = () => {
           return (
             <RequestPage
               showQueueBar={true}
-              filterRequests={(req) => deriveStageForFilter(req) === "의뢰"}
+              filterRequests={(req) => deriveStageForFilter(req) === "준비"}
             />
           );
         case "cam":
@@ -90,7 +92,7 @@ export const ManufacturerWorksheetPage = () => {
           return (
             <RequestPage
               showQueueBar={true}
-              filterRequests={(req) => deriveStageForFilter(req) === "의뢰"}
+              filterRequests={(req) => deriveStageForFilter(req) === "준비"}
             />
           );
       }

@@ -39,6 +39,8 @@ type Props = {
   maxVisibleItems?: number;
 };
 
+// change-log:
+// - 2026-08-03: Display-layer normalization for stage badges ('의뢰' -> '준비') in risk summary card. No DB changes.
 export const RequestorRiskSummaryCard = ({
   riskSummary,
   loading,
@@ -89,7 +91,7 @@ export const RequestorRiskSummaryCard = ({
       case "의뢰":
         return (
           <Badge variant="outline" className={STAGE_BADGE_BASE}>
-            의뢰
+            준비
           </Badge>
         );
       case "CAM":

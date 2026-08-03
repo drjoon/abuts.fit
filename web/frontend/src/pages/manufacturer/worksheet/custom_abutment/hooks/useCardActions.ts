@@ -10,9 +10,9 @@ import { useCallback } from "react";
 import { type ManufacturerRequest, deriveStageForFilter, getReviewStageKeyByTab } from "@/pages/manufacturer/worksheet/custom_abutment/utils/request";
 
 interface CardActionHandlers {
-  handleDeleteStageFile: (opts: any) => Promise<void>;
-  handleDeleteNc: (req: ManufacturerRequest, opts: any) => Promise<void>;
-  handleUpdateReviewStatus: (opts: any) => Promise<void>;
+  handleDeleteStageFile: (opts: Record<string, unknown>) => Promise<void>;
+  handleDeleteNc: (req: ManufacturerRequest, opts: Record<string, unknown>) => Promise<void>;
+  handleUpdateReviewStatus: (opts: Record<string, unknown>) => Promise<void>;
   handleRequestNcRegenerate?: (req: ManufacturerRequest) => Promise<boolean | void>;
 }
 

@@ -1,3 +1,5 @@
+// change-log:
+// - 2026-08-03: MachiningQueueBoard: 작업 공정의 display label 정규화(의뢰 -> 준비) 영향 반영(주로 로컬 저장/복구 키/주석). UI 텍스트 변경은 없었음.
 // related files:
 // - web/frontend/src/pages/manufacturer/equipment/cnc/components/SelfInspectionReportModal.tsx
 // - web/frontend/src/pages/manufacturer/equipment/cnc/components/CompletedMachiningRecordsModal.tsx

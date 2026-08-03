@@ -2,7 +2,7 @@
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import {
   Card,
   CardContent,
@@ -135,6 +135,22 @@ export const AdminSecurity = () => {
     endDate?: string;
   }>({});
 
+  // change-log:
+  // - 2026-08-03: Hook dependency warning fix — fetchLogs를 useCallback으로 고정하고 effect deps를 명시적으로 정리.
+  const fetchLogs = useCallback(async (filters?: typeof logFilters) => {
+    const params = new URLSearchParams({ limit: "10" });
+    if (filters?.severity) params.set("severity", filters.severity);
+    if (filters?.action) params.set("action", filters.action);
+    if (filters?.status) params.set("status", filters.status);
+    if (filters?.startDate) params.set("startDate", filters.startDate);
+    if (filters?.endDate) params.set("endDate", filters.endDate);
+    return apiFetch<any>({
+      path: `/api/admin/security-logs?${params.toString()}`,
+      method: "GET",
+      token,
+    });
+  }, [token]);
+
   useEffect(() => {
     const fetchAll = async () => {
       if (!token) return;
@@ -172,21 +188,7 @@ export const AdminSecurity = () => {
       }
     };
     void fetchAll();
-  }, [token, storageKey, toast]);
-
-  const fetchLogs = async (filters?: typeof logFilters) => {
-    const params = new URLSearchParams({ limit: "10" });
-    if (filters?.severity) params.set("severity", filters.severity);
-    if (filters?.action) params.set("action", filters.action);
-    if (filters?.status) params.set("status", filters.status);
-    if (filters?.startDate) params.set("startDate", filters.startDate);
-    if (filters?.endDate) params.set("endDate", filters.endDate);
-    return apiFetch<any>({
-      path: `/api/admin/security-logs?${params.toString()}`,
-      method: "GET",
-      token,
-    });
-  };
+  }, [token, storageKey, toast, fetchLogs, logFilters]);
 
   const handleFilterChange = async (partial: Partial<typeof logFilters>) => {
     const next = { ...logFilters, ...partial };

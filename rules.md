@@ -94,7 +94,7 @@
 
 - 신규 의뢰 표준: `POST /api/requests/from-draft`
 - 공정 SSOT: `Request.manufacturerStage`
-  - `의뢰 → CAM → 가공 → 세척.패킹 → 포장.발송 → 추적관리`
+  - `준비 → CAM → 가공 → 세척.패킹 → 포장.발송 → 추적관리`
 - 크레딧 이벤트 발생 시점 SSOT:
   - `REQUEST_SPEND_COMMIT`: **CAM 승인(가공 진입)** 시 기록
   - `SHIPPING_SPEND_COMMIT`: **세척.패킹 승인(포장.발송 진입)** 시 기록

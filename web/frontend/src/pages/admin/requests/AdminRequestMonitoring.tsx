@@ -1,3 +1,5 @@
+// change-log:
+// - 2026-08-03: 모니터링 UI에서 공정 '의뢰' 표시를 '준비'로 우선 표기하도록 일부 카운터/버튼 로직을 보완했습니다. (표시 레이어)
 // related files:
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
@@ -30,14 +32,15 @@ import {
   Trash2,
   RotateCcw,
 } from "lucide-react";
-import { getNormalizedStageLabel } from "@/utils/stage";
+import { getNormalizedStageLabelSafe } from "@/utils/stage";
 
 
 const getStatusBadge = (requestLike: any) => {
-  const norm = getNormalizedStageLabel(requestLike);
+  const norm = getNormalizedStageLabelSafe(requestLike);
   switch (norm) {
+    case "준비":
     case "의뢰":
-      return <Badge variant="outline">의뢰</Badge>;
+      return <Badge variant="outline">준비</Badge>;
     case "CAM":
       return <Badge variant="default">CAM</Badge>;
     case "가공":
@@ -93,8 +96,9 @@ const getPriorityBadge = (priority: string) => {
 };
 
 const getStatusIcon = (requestLike: any) => {
-  const norm = getNormalizedStageLabel(requestLike);
+  const norm = getNormalizedStageLabelSafe(requestLike);
   switch (norm) {
+    case "준비":
     case "의뢰":
       return <FileText className="h-4 w-4 text-blue-500" />;
     case "CAM":
@@ -202,13 +206,13 @@ export const AdminRequestMonitoring = () => {
         headers: {
           "Content-Type": "application/json",
         },
-        jsonBody: { manufacturerStage: "의뢰" },
+        jsonBody: { manufacturerStage: "준비" },
       });
 
       if (res.ok) {
         setRequests((prev) =>
           prev.map((r) =>
-            r._id === requestMongoId ? { ...r, manufacturerStage: "의뢰" } : r,
+            r._id === requestMongoId ? { ...r, manufacturerStage: "준비" } : r,
           ),
         );
         toast({
@@ -351,6 +355,7 @@ export const AdminRequestMonitoring = () => {
     }
 
     const byStatus: Record<string, number> = {
+      준비: 0,
       의뢰: 0,
       CAM: 0,
       가공: 0,
@@ -361,7 +366,7 @@ export const AdminRequestMonitoring = () => {
     };
 
     periodFilteredRequests.forEach((request) => {
-      const stage = getNormalizedStageLabel(request);
+      const stage = getNormalizedStageLabelSafe(request);
       if (byStatus[stage] != null) {
         byStatus[stage] += 1;
       }
@@ -376,7 +381,7 @@ export const AdminRequestMonitoring = () => {
   const filteredRequests = periodFilteredRequests.filter((request) => {
     const caseInfos = request.caseInfos || {};
     const requestor = request.requestor || {};
-    const effectiveStatus = getNormalizedStageLabel(request);
+    const effectiveStatus = getNormalizedStageLabelSafe(request);
     const matchesSearch =
       (caseInfos.patientName || "")
         .toLowerCase()
@@ -425,7 +430,7 @@ export const AdminRequestMonitoring = () => {
 
   const totalCount = requestStats.total ?? 0;
   const byStatus = requestStats.byStatus || {};
-  const receiveCount = byStatus["의뢰"] || 0;
+  const receiveCount = (byStatus["준비"] ?? byStatus["의뢰"]) || 0;
   const camCount = byStatus["CAM"] || 0;
   const machiningCount = byStatus["가공"] || 0;
   const packagingCount = byStatus["세척.패킹"] || 0;
@@ -458,11 +463,11 @@ export const AdminRequestMonitoring = () => {
                 전체
               </Button>
               <Button
-                variant={selectedStatus === "의뢰" ? "default" : "outline"}
-                onClick={() => setSelectedStatus("의뢰")}
+                variant={selectedStatus === "준비" ? "default" : "outline"}
+                onClick={() => setSelectedStatus("준비")}
                 size="sm"
               >
-                의뢰
+                준비
               </Button>
               <Button
                 variant={selectedStatus === "CAM" ? "default" : "outline"}
@@ -512,7 +517,7 @@ export const AdminRequestMonitoring = () => {
                   <FileText className="h-4 w-4 text-green-600" />
                 </div>
                 <div>
-                  <p className="text-sm text-muted-foreground">의뢰</p>
+                  <p className="text-sm text-muted-foreground">준비</p>
                   <p className="text-2xl font-bold">
                     {receiveCount.toLocaleString()}
                   </p>
@@ -630,7 +635,7 @@ export const AdminRequestMonitoring = () => {
                         isActionPending ? "opacity-50 pointer-events-none" : ""
                       } ${isFocused ? "ring-2 ring-primary border-primary" : ""}`}
                     >
-                      {getNormalizedStageLabel(request) === "취소" ? (
+                      {getNormalizedStageLabelSafe(request) === "취소" ? (
                         <button
                           onClick={() =>
                             handleRestoreRequest(request.requestId, request._id)

@@ -144,10 +144,10 @@ export const ManufacturerDashboardPage = () => {
   const stageStats = [
     {
       key: "request-cancel",
-      label: "의뢰/취소",
+      label: "준비/취소",
       value: `${assignedSummary.requestCount ?? 0}/${assignedSummary.canceledCount ?? 0}`,
       icon: FileText,
-      hint: "의뢰 단계 / 취소 건수",
+      hint: "준비 단계 / 취소 건수",
     },
     {
       key: "cam",

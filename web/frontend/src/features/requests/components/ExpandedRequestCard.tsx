@@ -1,8 +1,11 @@
+// change-log:
+// - 2026-08-03: Display-layer normalization — show '준비' for the first manufacturer stage instead of '의뢰' in ExpandedRequestCard badges. (display-only)
 // related files:
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 import { useState, useCallback } from "react";
+import { getNormalizedStageLabel } from "@/utils/stage";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -87,7 +90,7 @@ export const ExpandedRequestCard = ({
     if (manufacturerStage) {
       switch (manufacturerStage) {
         case "의뢰":
-          return <Badge variant="outline">의뢰</Badge>;
+          return <Badge variant="outline">준비</Badge>;
         case "CAM":
           return <Badge variant="default">CAM</Badge>;
         case "생산":
@@ -111,8 +114,8 @@ export const ExpandedRequestCard = ({
 
     // Fallback: 기존 status 필드 기준 (레거시 대응)
     switch (status) {
-      case "의뢰접수":
-        return <Badge variant="outline">의뢰</Badge>;
+      case "의뢰":
+        return <Badge variant="outline">준비</Badge>;
       case "가공전":
         return <Badge variant="default">CAM</Badge>;
       case "가공후":

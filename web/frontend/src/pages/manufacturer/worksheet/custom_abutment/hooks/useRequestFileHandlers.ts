@@ -1,3 +1,6 @@
+// change-log:
+// - 2026-08-03: CAM/롤백/승인 로컬 패치에서 의뢰 단계 명칭을 '준비'로 사용하도록 조정 (UI 표시용).
+// - note: 서버 승인/롤백 계약은 변경하지 않음(백엔드 이벤트는 기존 manufacturerStage 값을 사용함).
 // related files:
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
@@ -93,7 +96,7 @@ export const useRequestFileHandlers = ({
 
   const getRolledBackManufacturerStage = useCallback(
     (stageKey: ReviewStageKey) => {
-      if (stageKey === "cam") return "의뢰";
+      if (stageKey === "cam") return "준비";
       if (stageKey === "machining") return "CAM";
       if (stageKey === "packing") return "가공";
       if (stageKey === "shipping") return "세척.패킹";
@@ -449,7 +452,7 @@ export const useRequestFileHandlers = ({
             ...item,
             ...nextRequest,
             realtimeProgress:
-              deriveStageForFilter(nextRequest) === "의뢰"
+              deriveStageForFilter(nextRequest) === "준비"
                 ? nextRequest.realtimeProgress || item.realtimeProgress || null
                 : null,
           };
@@ -869,7 +872,7 @@ export const useRequestFileHandlers = ({
               }
             : req.caseInfos?.reviewByStage,
         },
-        manufacturerStage: "의뢰",
+        manufacturerStage: "준비",
       } as ManufacturerRequest;
       const optimisticallyPatched = applySingleRequestPatch(updatedRequest);
       if (!optimisticallyPatched) {
@@ -959,7 +962,7 @@ export const useRequestFileHandlers = ({
               }
             : req.caseInfos?.reviewByStage,
         },
-        manufacturerStage: targetStage === "request" ? "의뢰" : "CAM",
+        manufacturerStage: targetStage === "request" ? "준비" : "CAM",
       } as ManufacturerRequest;
       const optimisticallyPatched = applySingleRequestPatch(updatedRequest);
       if (!optimisticallyPatched) {
@@ -1002,7 +1005,7 @@ export const useRequestFileHandlers = ({
         if (!res.ok || (body && body.success === false)) {
           throw new Error((body && body.message) || "delete nc file failed");
         }
-        const stageLabel = targetStage === "request" ? "의뢰" : "CAM";
+        const stageLabel = targetStage === "request" ? "준비" : "CAM";
         toast({
           title: "롤백 완료",
           description: `${stageLabel} 단계로 되돌렸습니다.`,

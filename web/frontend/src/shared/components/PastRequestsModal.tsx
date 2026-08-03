@@ -2,7 +2,10 @@
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
+// change-log:
+// - 2026-08-03: PastRequestsModal: display normalize manufacturer stage (의뢰 -> 준비) for table '상태' column. (display-only)
 import { useEffect, useMemo, useRef, useState } from "react";
+import { getNormalizedStageLabelSafe } from "@/utils/stage";
 import {
   Dialog,
   DialogContent,
@@ -246,7 +249,7 @@ export const PastRequestsModal = ({
       const ci = r?.caseInfos || {};
       const hay = [
         r?.requestId,
-        r?.manufacturerStage,
+        getNormalizedStageLabelSafe(r),
         ci?.clinicName,
         ci?.patientName,
         ci?.tooth,
@@ -343,7 +346,7 @@ export const PastRequestsModal = ({
                 {filteredRows.map((r: any) => {
                   const ci = r?.caseInfos || {};
                   const id = String(r?._id || r?.id || "");
-                  const stage = String(r?.manufacturerStage || "-");
+                  const stage = getNormalizedStageLabelSafe(r) || String(r?.manufacturerStage || "-");
                   const caseText =
                     [ci?.clinicName, ci?.patientName, ci?.tooth]
                       .filter(Boolean)

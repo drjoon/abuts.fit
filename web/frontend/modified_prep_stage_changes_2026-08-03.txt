@@ -1,0 +1,47 @@
+modified files for 의뢰->준비 (display-only) change
+
+Date: 2026-08-03
+Summary: UI-level display normalization for manufacturer workflow first stage "의뢰" -> "준비". DB values not changed. Changes were made to multiple frontend components and a small backend admin controller allowance.
+
+Files changed:
+- web/frontend/src/pages/manufacturer/worksheet/custom_abutment/utils/request.ts
+- web/frontend/src/pages/manufacturer/worksheet/WorksheetPage.tsx
+- web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
+- web/frontend/src/pages/manufacturer/worksheet/custom_abutment/hooks/useRequestFileHandlers.ts
+- web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RemakeStartQuickModal.tsx
+- web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/WorksheetCardGrid.tsx
+- web/frontend/src/pages/manufacturer/worksheet/custom_abutment/hooks/useWorksheetRealtimeStatus.ts
+- web/frontend/src/pages/manufacturer/worksheet/custom_abutment/packing/components/PackingPageContent.tsx
+- web/frontend/src/pages/manufacturer/worksheet/custom_abutment/shipping/components/MailboxContentsModal.tsx
+- web/frontend/src/pages/manufacturer/worksheet/custom_abutment/tracking/TrackingPage.tsx
+- web/frontend/src/pages/manufacturer/dashboard/AdminDashboardPage.tsx
+- web/frontend/src/pages/admin/requests/AdminRequestMonitoring.tsx
+- web/frontend/src/shared/ui/dashboard/WorksheetQueueSummary.tsx
+- web/frontend/src/utils/stage.ts
+- web/frontend/src/features/layout/DashboardLayout.tsx
+- web/frontend/src/features/layout/DashboardLayout.tsx (header tabs modified)
+- web/backend/controllers/admin/admin.requests.controller.js
+- web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx
+- web/frontend/src/pages/manufacturer/worksheet/custom_abutment/machining/MachiningQueueBoard.tsx
+- web/frontend/src/pages/requestor/dashboard/RequestorDashboardPage.tsx
+- web/frontend/src/pages/requestor/dashboard/components/RequestorRecentRequestsCard.tsx
+- web/frontend/src/shared/ui/PricingPolicyDialog.tsx
+- web/frontend/src/features/requests/components/RequestDetailDialog.tsx
+- web/frontend/src/pages/admin/dashboard/AdminDashboardPage.tsx
+- web/frontend/src/features/requests/components/ExpandedRequestCard.tsx
+- web/frontend/src/shared/ui/dashboard/RequestorRiskSummaryCard.tsx
+- web/frontend/src/pages/admin/credits/components/AutoMatchVerificationTab.tsx
+- web/frontend/src/pages/admin/support/AdminSmsPage.tsx
+- web/frontend/src/pages/admin/support/AdminChatManagement.tsx
+- web/frontend/src/pages/admin/referralGroups/AdminReferralGroupsPage.tsx
+- web/frontend/src/shared/components/PastRequestsModal.tsx
+- web/frontend/src/utils/stage.ts
+- web/frontend/src/shared/components/CreditLedgerModal.tsx
+- web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
+- web/frontend/src/shared/components/CreditLedgerModal.tsx
+- web/frontend/src/pages/manufacturer/worksheet/custom_abutment/shipping/components/MailboxContentsModal.tsx
+- web/frontend/src/pages/admin/system/AdminSecurity.tsx
+
+Notes:
+- Most changes are display-layer label changes and normalization functions. The backend change is an allowance to accept "준비" in admin status PATCH, intended for compatibility in the staging/local environment only.
+- Follow-up recommended: consider DB migration plan before removing legacy "의뢰" keys from server-side logic.
