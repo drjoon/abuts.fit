@@ -2185,7 +2185,7 @@ export const PreviewModal = ({
                           stageKey === "machining" || stageKey === "cam"
                             ? "준비 단계로 되돌리는 중입니다. 잠시만 기다려주세요."
                             : "이전 공정으로 되돌리는 중입니다. 잠시만 기다려주세요.",
-                        duration: 15000,
+                        duration: 3000,
                         skipDuplicateCheck: true,
                       });
 

@@ -966,7 +966,7 @@ export const useRequestFileHandlers = ({
               title: "준비 롤백 요청 전송됨",
               description:
                 "가공 건을 준비 단계로 되돌리는 중입니다. 잠시만 기다려주세요.",
-              duration: 15000,
+              duration: 3000,
               skipDuplicateCheck: true,
             })
           : null;
@@ -1550,7 +1550,7 @@ export const useRequestFileHandlers = ({
               title: "준비 롤백 요청 전송됨",
               description:
                 "가공 건을 준비 단계로 되돌리는 중입니다. 잠시만 기다려주세요.",
-              duration: 15000,
+              duration: 3000,
               skipDuplicateCheck: true,
             })
           : null;

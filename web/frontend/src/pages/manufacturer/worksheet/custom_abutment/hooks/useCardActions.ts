@@ -58,7 +58,7 @@ export const useCardActions = (
       const pendingToast = toast({
         title,
         description,
-        duration: 15000,
+        duration: 3000,
         skipDuplicateCheck: true,
       });
 
