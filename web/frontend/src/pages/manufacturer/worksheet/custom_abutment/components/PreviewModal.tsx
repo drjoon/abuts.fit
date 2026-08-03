@@ -1,11 +1,10 @@
 // change-log:
 // - 2026-08-03: PreviewModal: 공정 표시 정규화 영향 반영(의뢰 -> 준비 표시). 주로 프리뷰/승인 버튼의 stage label 참조에 영향.
 // related files:
-// - web/frontend/rules.md
-// - web/frontend/src/App.tsx
-// - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
-// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/WorksheetCardGrid.tsx
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/machining/MachiningQueueBoard.tsx
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/hooks/usePreviewLoader.ts
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/hooks/useRequestFileHandlers.ts
 // - web/backend/controllers/requests/common.requests.controller.js
 // - web/backend/modules/requests/request.routes.js
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -395,6 +394,7 @@ type PreviewModalProps = {
   stage: string;
   isCamStage: boolean;
   isMachiningStage: boolean;
+  onOpenCodeEditor?: (req: ManufacturerRequest) => void | Promise<void>;
   onUpdateReviewStatus: (params: {
     req: ManufacturerRequest;
     status: "PENDING" | "APPROVED" | "REJECTED";
@@ -472,6 +472,7 @@ export const PreviewModal = ({
   stage,
   isCamStage,
   isMachiningStage,
+  onOpenCodeEditor,
   onUpdateReviewStatus,
   onDeleteCam,
   onDeleteNc,
@@ -2656,6 +2657,23 @@ export const PreviewModal = ({
                         FL
                       </button>
                     )}
+                    {isCamStage && onOpenCodeEditor && (
+                      <button
+                        type="button"
+                        className="inline-flex items-center justify-center h-8 w-8 rounded-md border border-slate-200 bg-white text-[12px] font-mono font-bold text-slate-700 transition hover:bg-slate-50"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          if (!activeReq) return;
+                          void onOpenCodeEditor(activeReq);
+                        }}
+                        aria-label="코드 에디터"
+                        title="코드 에디터"
+                      >
+                        {"</>"}
+                      </button>
+                    )}
+
                     {canRegenerateFilledStl && (
                       <button
                         type="button"

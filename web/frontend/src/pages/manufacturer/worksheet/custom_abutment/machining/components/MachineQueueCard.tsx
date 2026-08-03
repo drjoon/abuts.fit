@@ -1,7 +1,6 @@
 // related files:
-// - web/frontend/rules.md
-// - web/frontend/src/App.tsx
-// - web/frontend/src/features/layout/DashboardLayout.tsx
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/machining/MachiningQueueBoard.tsx
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
 // - web/backend/controllers/requests/common.review.controller.js
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -792,6 +791,12 @@ export const MachineQueueCard = ({
                 bridgePath,
                 s3Key,
                 requestId: currentSlot?.requestId || "",
+                requestMongoId: (currentSlot as any)?.requestMongoId || "",
+                clinicName: currentSlot?.clinicName || "",
+                patientName: currentSlot?.patientName || "",
+                tooth: (currentSlot as any)?.tooth || "",
+                lotNumber: (currentSlot as any)?.lotNumber || null,
+                caseInfos: (currentSlot as any)?.caseInfos || null,
               };
               onOpenProgramCode?.(prog, machineId);
             }}
@@ -891,6 +896,12 @@ export const MachineQueueCard = ({
                 bridgePath,
                 s3Key,
                 requestId: nextSlot?.requestId || "",
+                requestMongoId: (nextSlot as any)?.requestMongoId || "",
+                clinicName: nextSlot?.clinicName || "",
+                patientName: nextSlot?.patientName || "",
+                tooth: (nextSlot as any)?.tooth || "",
+                lotNumber: (nextSlot as any)?.lotNumber || null,
+                caseInfos: (nextSlot as any)?.caseInfos || null,
               };
 
               onOpenProgramCode?.(prog, machineId);

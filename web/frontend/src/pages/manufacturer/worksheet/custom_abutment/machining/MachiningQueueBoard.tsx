@@ -3,11 +3,13 @@
 // related files:
 // - web/frontend/src/pages/manufacturer/equipment/cnc/components/SelfInspectionReportModal.tsx
 // - web/frontend/src/pages/manufacturer/equipment/cnc/components/CompletedMachiningRecordsModal.tsx
-// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
-// - web/backend/controllers/requests/common.review.controller.js
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/hooks/usePreviewLoader.ts
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/hooks/useRequestFileHandlers.ts
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { AlertTriangle, ArrowLeft, ArrowRight, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -43,6 +45,10 @@ import { CncMaterialModal } from "@/pages/manufacturer/equipment/cnc/components/
 import { useManUpload } from "@/pages/manufacturer/equipment/cnc/hooks/useManUpload";
 import { MachiningRequestLabel } from "./components/MachiningRequestLabel";
 import { buildLabelExtraProps } from "./utils/label";
+import { PreviewModal } from "@/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal";
+import { usePreviewLoader } from "@/pages/manufacturer/worksheet/custom_abutment/hooks/usePreviewLoader";
+import { useRequestFileHandlers } from "@/pages/manufacturer/worksheet/custom_abutment/hooks/useRequestFileHandlers";
+import type { ManufacturerRequest } from "@/pages/manufacturer/worksheet/custom_abutment/utils/request";
 
 type MaterialLikeMachine = {
   currentMaterial?: { diameter?: unknown; diameterGroup?: unknown } | null;
@@ -150,6 +156,34 @@ export const MachiningQueueBoard = ({
   const [siOpen, setSiOpen] = useState(false);
   const [siFetching, setSiFetching] = useState(false);
   const [anodizingOffTriggering, setAnodizingOffTriggering] = useState(false);
+  const [, setSearchParams] = useSearchParams();
+
+  const [camPreviewOpen, setCamPreviewOpen] = useState(false);
+  const [camPreviewLoading, setCamPreviewLoading] = useState(false);
+  const [camPreviewFiles, setCamPreviewFiles] = useState<{
+    original?: File | null;
+    cam?: File | null;
+    title?: string;
+    request?: ManufacturerRequest | null;
+    finishLinePoints?: number[][] | null;
+    finishLineSource?: "caseInfos" | "file" | null;
+  }>({});
+  const [camPreviewNcText, setCamPreviewNcText] = useState("");
+  const [camPreviewNcName, setCamPreviewNcName] = useState("");
+  const [camPreviewStageUrl, setCamPreviewStageUrl] = useState("");
+  const [camPreviewStageName, setCamPreviewStageName] = useState("");
+  const [camPreviewUploading, setCamPreviewUploading] = useState<
+    Record<string, boolean>
+  >({});
+  const [, setCamPreviewDownloading] = useState<Record<string, boolean>>({});
+  const [, setCamPreviewUploadProgress] = useState<Record<string, number>>({});
+  const [, setCamPreviewDeletingCam] = useState<Record<string, boolean>>({});
+  const [, setCamPreviewDeletingNc] = useState<Record<string, boolean>>({});
+  const [camPreviewReviewSaving, setCamPreviewReviewSaving] = useState(false);
+  const [camPreviewMachineId, setCamPreviewMachineId] = useState("");
+  const [camPreviewProgram, setCamPreviewProgram] = useState<Record<string, unknown> | null>(null);
+  const [reopenCamPreviewOnEditorClose, setReopenCamPreviewOnEditorClose] =
+    useState(false);
 
   // 마지막으로 본 의룰건 requestId를 localStorage에 저장/복원
   const SI_LAST_KEY = "abuts:si-last-request-id";
@@ -298,6 +332,217 @@ export const MachiningQueueBoard = ({
     machiningAlerts,
     clearMachiningAlerts,
   } = board;
+
+  const decodeNcText = useCallback((buffer: ArrayBuffer) => {
+    const utf8Decoder = new TextDecoder("utf-8", { fatal: false });
+    const utf8Text = utf8Decoder.decode(buffer);
+    if (!utf8Text.includes("\uFFFD")) return utf8Text;
+    try {
+      const eucKrDecoder = new TextDecoder("euc-kr", { fatal: false });
+      return eucKrDecoder.decode(buffer);
+    } catch {
+      return utf8Text;
+    }
+  }, []);
+
+  const refreshMachiningQueuesForPreview = useCallback(async () => {
+    if (!token) return;
+    const qRes = await fetch("/api/cnc-machines/queues", {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const qBody = await qRes.json().catch(() => ({}));
+    if (!qRes.ok || (qBody as { success?: boolean })?.success === false) return;
+    const map =
+      qBody?.data && typeof qBody.data === "object" ? qBody.data : {};
+    setQueueMap(map);
+
+    const mid = String(camPreviewMachineId || "").trim();
+    if (!mid) return;
+    const rawNext = Array.isArray(map?.[mid]) ? map[mid] : [];
+    await loadProductionQueueForMachine(mid, rawNext);
+  }, [token, setQueueMap, camPreviewMachineId, loadProductionQueueForMachine]);
+
+  const { handleOpenPreview } = usePreviewLoader({
+    token,
+    isCamStage: true,
+    isMachiningStage: false,
+    tabStage: "cam",
+    decodeNcText,
+    setPreviewLoading: setCamPreviewLoading,
+    setPreviewNcText: setCamPreviewNcText,
+    setPreviewNcName: setCamPreviewNcName,
+    setPreviewStageUrl: setCamPreviewStageUrl,
+    setPreviewStageName: setCamPreviewStageName,
+    setPreviewFiles: setCamPreviewFiles,
+    setPreviewOpen: setCamPreviewOpen,
+  });
+
+  const {
+    handleDownloadOriginalStl,
+    handleDownloadCamStl,
+    handleDownloadNcFile,
+    handleDownloadStageFile,
+    handleUpdateReviewStatus,
+    handleDeleteCam,
+    handleDeleteNc,
+    handleUploadCam,
+    handleUploadNc,
+    handleUploadStageFile,
+    handleDeleteStageFile,
+  } = useRequestFileHandlers({
+    token,
+    stage: "cam",
+    isCamStage: true,
+    isMachiningStage: false,
+    fetchRequests: refreshMachiningQueuesForPreview,
+    setDownloading: setCamPreviewDownloading,
+    setUploading: setCamPreviewUploading,
+    setUploadProgress: setCamPreviewUploadProgress,
+    setDeletingCam: setCamPreviewDeletingCam,
+    setDeletingNc: setCamPreviewDeletingNc,
+    setReviewSaving: setCamPreviewReviewSaving,
+    setPreviewOpen: setCamPreviewOpen,
+    setPreviewFiles: setCamPreviewFiles,
+    setPreviewNcText: setCamPreviewNcText,
+    setPreviewNcName: setCamPreviewNcName,
+    setPreviewStageUrl: setCamPreviewStageUrl,
+    setPreviewStageName: setCamPreviewStageName,
+    setPreviewLoading: setCamPreviewLoading,
+    setSearchParams,
+    decodeNcText,
+  });
+
+  const openCamPreviewFromQueue = useCallback(
+    async (
+      prog: {
+        requestId?: unknown;
+        requestMongoId?: unknown;
+        s3Key?: unknown;
+        bridgePath?: unknown;
+        s3Bucket?: unknown;
+        name?: unknown;
+        clinicName?: unknown;
+        patientName?: unknown;
+        tooth?: unknown;
+        lotNumber?: unknown;
+        caseInfos?: unknown;
+      },
+      machineId: string,
+    ) => {
+      const requestId = String(prog?.requestId || "").trim();
+      if (!requestId) {
+        toast({
+          title: "미리보기 불가",
+          description: "의뢰번호를 찾을 수 없습니다.",
+          variant: "destructive",
+        });
+        return;
+      }
+      setCamPreviewMachineId(String(machineId || "").trim());
+      setCamPreviewProgram(prog || null);
+
+      const queueCaseInfos =
+        prog?.caseInfos && typeof prog.caseInfos === "object"
+          ? (prog.caseInfos as Record<string, unknown>)
+          : {};
+      const queueLot =
+        prog?.lotNumber && typeof prog.lotNumber === "object"
+          ? (prog.lotNumber as Record<string, unknown>)
+          : {};
+
+      const previewReq = {
+        _id: String(prog?.requestMongoId || "").trim() || undefined,
+        requestId,
+        clinicName: String(prog?.clinicName || "").trim(),
+        patientName: String(prog?.patientName || "").trim(),
+        tooth: String(prog?.tooth || "").trim(),
+        lotNumber: {
+          ...(queueLot || {}),
+        },
+        caseInfos: {
+          ...(queueCaseInfos || {}),
+          clinicName:
+            String(queueCaseInfos?.clinicName || "").trim() ||
+            String(prog?.clinicName || "").trim(),
+          patientName:
+            String(queueCaseInfos?.patientName || "").trim() ||
+            String(prog?.patientName || "").trim(),
+          tooth:
+            String(queueCaseInfos?.tooth || "").trim() ||
+            String(prog?.tooth || "").trim(),
+          ncFile: {
+            s3Key: String(prog?.s3Key || "").trim(),
+            filePath: String(prog?.bridgePath || "").trim(),
+            s3Bucket: String(prog?.s3Bucket || "").trim(),
+          },
+        },
+      } as unknown as ManufacturerRequest;
+
+      await handleOpenPreview(previewReq);
+    },
+    [handleOpenPreview, toast],
+  );
+
+  const handleOpenCodeEditorFromCamPreview = useCallback(
+    async (req: ManufacturerRequest) => {
+      const machineId = String(camPreviewMachineId || activeMachineId || "").trim();
+      if (!machineId) {
+        toast({
+          title: "코드 에디터 열기 실패",
+          description: "장비를 식별할 수 없습니다.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const nc = (req as any)?.caseInfos?.ncFile || {};
+      const fallback = camPreviewProgram || {};
+      const bridgePath = String(nc?.filePath || fallback?.bridgePath || "").trim();
+      const s3Key = String(nc?.s3Key || fallback?.s3Key || "").trim();
+      const s3Bucket = String(nc?.s3Bucket || fallback?.s3Bucket || "").trim();
+      const requestId = String(req?.requestId || fallback?.requestId || "").trim();
+
+      const prog = {
+        programNo: null,
+        name: String(fallback?.name || requestId || "NC 코드"),
+        source: bridgePath ? "bridge_store" : s3Key ? "s3" : "db",
+        bridgePath,
+        s3Key,
+        s3Bucket,
+        requestId,
+        headType: 1,
+      };
+
+      try {
+        setReopenCamPreviewOnEditorClose(true);
+        setCamPreviewOpen(false);
+        await openProgramDetailForMachining(prog, machineId);
+      } catch (error) {
+        setReopenCamPreviewOnEditorClose(false);
+        setCamPreviewOpen(true);
+        toast({
+          title: "코드 에디터 열기 실패",
+          description: error instanceof Error ? error.message : "잠시 후 다시 시도해주세요.",
+          variant: "destructive",
+        });
+      }
+    },
+    [
+      camPreviewMachineId,
+      activeMachineId,
+      camPreviewProgram,
+      openProgramDetailForMachining,
+      toast,
+    ],
+  );
+
+  const handleCloseProgramEditor = useCallback(() => {
+    closeProgramEditor();
+    if (reopenCamPreviewOnEditorClose) {
+      setReopenCamPreviewOnEditorClose(false);
+      setCamPreviewOpen(true);
+    }
+  }, [closeProgramEditor, reopenCamPreviewOnEditorClose]);
 
   const {
     machineInfoOpen,
@@ -855,7 +1100,7 @@ export const MachiningQueueBoard = ({
               }}
               onOpenReservation={() => openReservationForMachine(m.uid)}
               onOpenProgramCode={(prog, machineId) => {
-                void openProgramDetailForMachining(prog, machineId);
+                void openCamPreviewFromQueue(prog, machineId);
               }}
               onRollbackNowPlaying={(requestId, mid) => {
                 void rollbackRequestInQueue(mid, requestId);
@@ -1246,10 +1491,40 @@ export const MachiningQueueBoard = ({
         }}
       />
 
+      <PreviewModal
+        open={camPreviewOpen}
+        onOpenChange={setCamPreviewOpen}
+        previewLoading={camPreviewLoading}
+        previewFiles={camPreviewFiles}
+        previewNcText={camPreviewNcText}
+        previewNcName={camPreviewNcName}
+        previewStageUrl={camPreviewStageUrl}
+        previewStageName={camPreviewStageName}
+        uploading={camPreviewUploading}
+        reviewSaving={camPreviewReviewSaving}
+        stage="cam"
+        isCamStage={true}
+        isMachiningStage={false}
+        onOpenCodeEditor={handleOpenCodeEditorFromCamPreview}
+        onUpdateReviewStatus={handleUpdateReviewStatus}
+        onDeleteCam={handleDeleteCam}
+        onDeleteNc={handleDeleteNc}
+        onDeleteStageFile={handleDeleteStageFile}
+        onUploadCam={handleUploadCam}
+        onUploadNc={handleUploadNc}
+        onUploadStageFile={handleUploadStageFile}
+        onDownloadOriginalStl={handleDownloadOriginalStl}
+        onDownloadCamStl={handleDownloadCamStl}
+        onDownloadNcFile={handleDownloadNcFile}
+        onDownloadStageFile={handleDownloadStageFile}
+        onRefreshPreview={handleOpenPreview}
+        setSearchParams={setSearchParams}
+      />
+
       {programEditorOpen && programEditorTarget ? (
         <CncProgramEditorPanel
           open={programEditorOpen}
-          onClose={closeProgramEditor}
+          onClose={handleCloseProgramEditor}
           workUid={workUid}
           selectedProgram={programEditorTarget}
           onLoadProgram={loadProgramCodeForMachining}
