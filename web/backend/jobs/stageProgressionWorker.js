@@ -53,32 +53,32 @@ async function progressStages() {
 
     let updatedCount = 0;
 
-    // 1. 의뢰 → CAM: 발송예정일 2영업일 이내 도달
+    // 1. 준비 → 가공: 발송예정일 2영업일 이내 도달
+    // 작업 공정 변경: CAM 중간 단계는 더 이상 사용하지 않으므로 바로 가공으로 전환한다.
     const requestsToCam = await Request.find({
-      manufacturerStage: "의뢰",
+      manufacturerStage: "준비",
       "timeline.estimatedShipYmd": { $exists: true, $lte: twoDaysFromNow },
     });
 
     for (const req of requestsToCam) {
-      applyStatusMapping(req, "CAM");
+      applyStatusMapping(req, "가공");
       await req.save();
       updatedCount++;
       console.log(
-        `  [의뢰→CAM] ${req.requestId} (SHIP: ${req.timeline.estimatedShipYmd})`,
+        `  [준비→가공] ${req.requestId} (SHIP: ${req.timeline.estimatedShipYmd})`,
       );
     }
 
-    // 2. CAM → 가공: CAM 승인 완료된 건
+    // 2. 레거시 보정: 과거 데이터에 남은 "CAM" 값을 가공으로 자동 이관한다.
     const camToProduction = await Request.find({
       manufacturerStage: "CAM",
-      "caseInfos.reviewByStage.cam.status": "APPROVED",
     });
 
     for (const req of camToProduction) {
       applyStatusMapping(req, "가공");
       await req.save();
       updatedCount++;
-      console.log(`  [CAM→가공] ${req.requestId} (CAM 승인 완료)`);
+      console.log(`  [레거시 CAM→가공 보정] ${req.requestId}`);
     }
 
     // 3. 가공 → 세척.패킹: 출고 예정일 1영업일 이내 도달한 가공 완료 건

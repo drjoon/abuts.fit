@@ -409,18 +409,7 @@ export const MachineQueueCard = ({
 
   const effectiveLastCompleted = isCompletedRolledBack ? null : lastCompleted;
 
-  // 디버깅: effectiveLastCompleted 값 확인
-  useEffect(() => {
-    if (effectiveLastCompleted) {
-      console.log("[MachineQueueCard] effectiveLastCompleted:", {
-        machineId,
-        requestId: effectiveLastCompleted.requestId,
-        requestMongoId: (effectiveLastCompleted as any)?.requestMongoId,
-        rollbackCount: (effectiveLastCompleted as any)?.rollbackCount,
-        patientName: (effectiveLastCompleted as any)?.patientName,
-      });
-    }
-  }, [effectiveLastCompleted, machineId]);
+
 
   const lastCompletedSummary = (() =>
     buildLastCompletedSummary(effectiveLastCompleted))();
@@ -701,7 +690,7 @@ export const MachineQueueCard = ({
                         onRollbackCompleted(lastCompletedRequestId, machineId);
                       }}
                       disabled={!lastCompletedRequestId || !onRollbackCompleted}
-                      title="CAM으로 되돌리기"
+                      title="준비로 되돌리기"
                     >
                       <ArrowLeft className="h-3 w-3" />
                     </button>
@@ -832,7 +821,7 @@ export const MachineQueueCard = ({
                         onRollbackNowPlaying?.(headRequestId, machineId);
                       }}
                       disabled={!canRollbackNowPlaying}
-                      title="CAM으로 되돌리기"
+                      title="준비로 되돌리기"
                     >
                       <ArrowLeft className="h-3 w-3" />
                     </button>
@@ -938,7 +927,7 @@ export const MachineQueueCard = ({
                         onRollbackNextUp(rid, machineId);
                       }}
                       disabled={!nextSlot?.requestId || !onRollbackNextUp}
-                      title="CAM으로 되돌리기"
+                      title="준비로 되돌리기"
                     >
                       <ArrowLeft className="h-3 w-3" />
                     </button>

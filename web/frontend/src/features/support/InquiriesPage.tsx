@@ -44,7 +44,7 @@ export const INQUIRY_TYPE_LABEL: Record<string, string> = {
   billing: "청구/결제",
   account: "계정/사업자",
   order_intake: "의뢰 접수",
-  cam_machining: "CAM/가공",
+  cam_machining: "가공",
   equipment: "장비/소프트웨어",
   settlement: "정산",
   referral_commission: "소개/수당",
@@ -103,7 +103,7 @@ const ROLE_PRESETS: Record<string, RolePreset> = {
     contactLabel: "제조 지원",
     typeChips: [
       { value: "order_intake", label: "의뢰 접수" },
-      { value: "cam_machining", label: "CAM/가공" },
+      { value: "cam_machining", label: "가공" },
       { value: "equipment", label: "장비/소프트웨어" },
       { value: "settlement", label: "정산" },
       { value: "other", label: "기타" },

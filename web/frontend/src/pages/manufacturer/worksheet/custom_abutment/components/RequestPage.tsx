@@ -1,6 +1,6 @@
 // change-log:
 // - 2026-08-03: 제조사 워크시트의 공정 필터 기본값 및 탭 라벨을 '준비'로 표시되도록 수정함. (display-only)
-// - 2026-08-03: request(준비) 탭 API 조회에서 `manufacturerStageIn=준비|의뢰` 동시 전송으로 레거시 문서 호환(카운터/목록 불일치) 수정.
+// - 2026-08-03: request(준비) 탭 API 조회를 `manufacturerStageIn=준비` 단일값으로 정리.
 // - impact: deriveStageForFilter, computeStageLabel, realtime badge 처리 로직에 영향
 // related files:
 // - web/backend/modules/requests/request.routes.js
@@ -38,6 +38,7 @@ import {
   getReviewStageKeyByTab,
   isAnySampleRequest,
   isRndSampleRequest,
+  getWorksheetStageFilterForTab,
 } from "@/pages/manufacturer/worksheet/custom_abutment/utils/request";
 import {
   filterRequestsByStage,
@@ -100,11 +101,14 @@ export const RequestPage = ({
     showCompleted: boolean;
   }>();
   const [searchParams, setSearchParams] = useSearchParams();
-  const isCamStage = (searchParams.get("stage") || "request") === "cam";
-  const isMachiningStage =
-    (searchParams.get("stage") || "request") === "machining";
-  const tabStage = String(searchParams.get("stage") || "request").trim();
+  const rawTabStage = String(searchParams.get("stage") || "request").trim();
+  // 작업 공정 변경: CAM 탭 비노출. legacy cam URL은 machining 탭으로 동작시킨다.
+  const tabStage = rawTabStage === "cam" ? "machining" : rawTabStage;
+  const isCamStage = false;
+  const isMachiningStage = tabStage === "machining";
   const [localSearch, setLocalSearch] = useState("");
+
+
 
   const DEFAULT_PAGE_LIMIT = 12;
   const SHIPPING_PAGE_LIMIT = 200;
@@ -161,30 +165,12 @@ export const RequestPage = ({
             : user?.role === "manufacturer"
               ? "/api/requests/all"
               : "/api/requests";
-        const stageFilterForTab = (() => {
-          if (tabStage === "request")
-            return showCompleted
-              ? ["준비", "의뢰", "CAM", "가공", "세척.패킹", "포장.발송", "추적관리"]
-              : ["준비", "의뢰"];
-          if (isCamStage)
-            return showCompleted
-              ? ["CAM", "가공", "세척.패킹", "포장.발송", "추적관리"]
-              : ["CAM"];
-          if (isMachiningStage)
-            return showCompleted
-              ? ["가공", "세척.패킹", "포장.발송", "추적관리"]
-              : ["가공"];
-          if (tabStage === "packing")
-            return showCompleted
-              ? ["세척.패킹", "포장.발송", "추적관리"]
-              : ["세척.패킹"];
-          if (tabStage === "shipping")
-            return showCompleted ? ["포장.발송", "추적관리"] : ["포장.발송"];
-          if (tabStage === "tracking") return ["추적관리"];
-          if (tabStage === "rnd") return [] as string[];
-          if (tabStage === "unmachinable") return [] as string[];
-          return [] as string[];
-        })();
+        const stageFilterForTab = getWorksheetStageFilterForTab(
+          tabStage,
+          showCompleted,
+        );
+
+
 
         if (tabStage === "shipping") {
           if (append) {
@@ -331,7 +317,9 @@ export const RequestPage = ({
         };
 
         const fetchPage = async (targetPage: number) => {
-          const res = await fetch(buildPath(targetPage), {
+          const path = buildPath(targetPage);
+
+          const res = await fetch(path, {
             method: "GET",
             headers: {
               Authorization: `Bearer ${token}`,
@@ -354,6 +342,8 @@ export const RequestPage = ({
             : Array.isArray(raw)
               ? raw
               : [];
+
+
           const total =
             typeof raw?.pagination?.total === "number"
               ? raw.pagination.total
@@ -489,7 +479,7 @@ export const RequestPage = ({
       user?.role,
       toast,
       tabStage,
-      isCamStage,
+      rawTabStage,
       isMachiningStage,
       showCompleted,
       effectivePageLimit,
@@ -737,9 +727,7 @@ export const RequestPage = ({
 
   const currentStageForTab = isMachiningStage
     ? "가공"
-    : isCamStage
-      ? "CAM"
-      : tabStage === "rnd" || tabStage === "unmachinable"
+    : tabStage === "rnd" || tabStage === "unmachinable"
         ? "추적관리"
         : tabStage === "shipping"
           ? "포장.발송"
@@ -778,12 +766,9 @@ export const RequestPage = ({
         )
           .trim()
           .toUpperCase();
-        // 의뢰(준비) 승인 후 NC 콜백 전까지 manufacturerStage는 "준비"를 유지할 수 있으므로,
-        // 사용자 혼선을 줄이기 위해 승인 완료 건은 준비 탭에서 잠시 숨긴다.
+        // request 탭에서는 준비 단계만 노출한다.
+        // 승인 완료 건은 NC 콜백 직전 일시 상태를 제외하기 위해 숨긴다.
         return stage === "준비" && requestReviewStatus !== "APPROVED";
-      }
-      if (isCamStage) {
-        return stage === "CAM";
       }
       if (isMachiningStage) {
         return stage === "가공";
@@ -802,7 +787,6 @@ export const RequestPage = ({
     [
       currentStageOrder,
       filterRequests,
-      isCamStage,
       isMachiningStage,
       showCompleted,
       tabStage,
@@ -920,7 +904,7 @@ export const RequestPage = ({
       if (!req?._id) return;
       void handleUploadByStage(req, [file]);
     },
-    [handleUploadByStage, tabStage],
+    [handleUploadByStage],
   );
 
   const handleRequestNcRegenerate = useCallback(
@@ -1020,10 +1004,8 @@ export const RequestPage = ({
         // 생산용 샘플은 R&D 보관(done) 경로가 아니라 작업 복사본(rnd.doneAt=null)으로 생성한다.
         // 탭 기준으로 시작 공정을 고정한다.
         // - 의뢰 탭: 의뢰로 생성
-        // - CAM 탭: CAM으로 생성
         // - 그 외 단계: 가공으로 생성(허용 시작 공정 제한)
-        const startStage =
-          tabStage === "request" ? "준비" : tabStage === "cam" ? "CAM" : "가공";
+        const startStage = tabStage === "request" ? "의뢰" : "가공";
 
         const sourceIsRndSample = isRndSampleRequest(req);
 
@@ -1705,10 +1687,10 @@ export const RequestPage = ({
       if (!requestMongoId) return;
 
       const stageLabel = String(req.manufacturerStage || "").trim();
-      if (!["준비", "의뢰", "CAM"].includes(stageLabel)) {
+      if (!["준비", "CAM", "가공"].includes(stageLabel)) {
         toast({
           title: "변경 불가",
-          description: "아노다이징 여부는 준비/CAM 단계에서만 변경할 수 있습니다.",
+          description: "아노다이징 여부는 준비/가공 단계에서만 변경할 수 있습니다.",
           variant: "destructive",
         });
         return;
@@ -1868,7 +1850,6 @@ export const RequestPage = ({
   );
 
   const enableCardRollback =
-    tabStage === "cam" ||
     tabStage === "machining" ||
     tabStage === "packing" ||
     tabStage === "shipping" ||
@@ -1876,7 +1857,6 @@ export const RequestPage = ({
     tabStage === "rnd";
 
   const enableCardApprove =
-    tabStage === "cam" ||
     tabStage === "machining" ||
     tabStage === "packing" ||
     tabStage === "shipping" ||
@@ -1927,7 +1907,7 @@ export const RequestPage = ({
         description:
           tabStage === "request"
             ? "Filled STL 재생성할 의뢰가 없습니다."
-            : "CAM 재생성할 의뢰가 없습니다.",
+            : "가공 준비 재생성할 의뢰가 없습니다.",
       });
       return;
     }
@@ -2013,7 +1993,7 @@ export const RequestPage = ({
         title:
           tabStage === "request"
             ? "Filled STL 재생성 요청 완료"
-            : "CAM 재생성 요청 완료",
+            : "가공 준비 재생성 요청 완료",
         description: `성공 ${successCount}건, 실패 ${failCount}건`,
         variant: failCount > 0 ? "destructive" : undefined,
       });
@@ -2054,47 +2034,7 @@ export const RequestPage = ({
     });
   }, [filteredAndSorted, mailboxState.mailboxErrorByAddress, mailboxState]);
 
-  const DEBUG = (() => {
-    try {
-      const sp = new URLSearchParams(window.location.search);
-      if (sp.get("wsdebug") === "1") return true;
-      return (
-        localStorage.getItem("abutsfit:wsdebug") === "1" ||
-        (window as any).__worksheetDebug === true
-      );
-    } catch {
-      return (window as any).__worksheetDebug === true;
-    }
-  })();
 
-  useEffect(() => {
-    if (!DEBUG) return;
-    const stageOf = (r: any) => deriveStageForFilter(r as any);
-    const bucketOf = (r: any) => {
-      const d = Number((r as any)?.caseInfos?.maxDiameter);
-      if (!Number.isFinite(d)) return "unknown";
-      if (d <= 6) return "6";
-      if (d <= 8) return "8";
-      if (d <= 10) return "10";
-      return "12";
-    };
-    const dist = (arr: any[], fn: (x: any) => string) => {
-      const m: Record<string, number> = {};
-      for (const it of arr) {
-        const k = fn(it) || "unknown";
-        m[k] = (m[k] || 0) + 1;
-      }
-      return m;
-    };
-  }, [
-    DEBUG,
-    pageState.requests,
-    filteredBase,
-    filteredAndSorted,
-    showCompleted,
-    worksheetSearch,
-    tabStage,
-  ]);
 
   const handleOpenNextRequest = useCallback(
     async (currentReqId: string) => {
@@ -2254,7 +2194,7 @@ export const RequestPage = ({
         >
           <div className={`pb-12 ${tabStage === "shipping" ? "pt-0" : "pt-2"}`}>
             {tabStage === "machining" ? (
-              // CAM 승인 후 가공 큐 우선순위/자동시작 정책은 백엔드 SSOT로 관리한다.
+              // 가공 큐 우선순위/자동시작 정책은 백엔드 SSOT로 관리한다.
               // - 아노다이징 ON 우선
               // - 아노다이징 OFF는 큐 마지막 + "아노 X 가공" 수동 시작
               <MachiningQueueBoard searchQuery={effectiveWorksheetSearch} />
@@ -2298,7 +2238,7 @@ export const RequestPage = ({
                       }
                       onClick={() => {
                         const actionLabel = isCamStage
-                          ? "전체 CAM 재생성"
+                          ? "전체 가공 준비 재생성"
                           : "전체 Filled STL 재생성";
                         pageState.setConfirmTitle(actionLabel);
                         pageState.setConfirmDescription(
@@ -2312,10 +2252,10 @@ export const RequestPage = ({
                     >
                       {bulkCamRegenerating
                         ? isCamStage
-                          ? "CAM 재생성 요청 중..."
+                          ? "가공 준비 재생성 요청 중..."
                           : "Filled STL 재생성 요청 중..."
                         : isCamStage
-                          ? "전체 CAM 재생성"
+                          ? "전체 가공 준비 재생성"
                           : "전체 Filled STL 재생성"}
                     </Button>
                   </div>
@@ -2363,14 +2303,12 @@ export const RequestPage = ({
                   onDeleteCam={handleDeleteCam}
                   onDeleteNc={handleDeleteNc}
                   onCloneSample={
-                    tabStage === "request" || tabStage === "cam"
+                    tabStage === "request"
                       ? handleCloneSampleForProduction
                       : undefined
                   }
                   onSaveToRnd={
-                    tabStage === "request" || tabStage === "cam"
-                      ? handleSaveToRnd
-                      : undefined
+                    tabStage === "request" ? handleSaveToRnd : undefined
                   }
                   onRollback={
                     enableCardRollback ? handleCardRollbackForTab : undefined

@@ -15,6 +15,7 @@ import BridgeSetting from "../../models/bridgeSetting.model.js";
 import {
   MACHINING_ASSIGN_STAGE_SET,
   MACHINING_QUEUE_STAGE_SET,
+  EXCLUDE_UNMACHINABLE_FILTER,
   normalizeDiameterGroupValue,
   inferMaterialDiameterGroup,
   inferRequestDiameterGroup,
@@ -79,6 +80,7 @@ export async function rebalanceProductionQueuesInternal({
 
   let requests = await Request.find({
     manufacturerStage: { $in: MACHINING_QUEUE_STAGE_SET },
+    ...EXCLUDE_UNMACHINABLE_FILTER,
     ...scope.requestFilter,
   })
     .select(
@@ -306,18 +308,11 @@ export async function getProductionQueues(req, res) {
   try {
     const scope = await resolveManufacturerMachineScope(req);
 
-    console.log("[getProductionQueues] scope", {
-      role: req?.user?.role,
-      userId: req?.user?._id ? String(req.user._id) : null,
-      businessAnchorId: req?.user?.businessAnchorId
-        ? String(req.user.businessAnchorId)
-        : null,
-      requestFilter: scope.requestFilter,
-      machineIds: scope.machineIds,
-    });
+
 
     let requests = await Request.find({
       manufacturerStage: { $in: MACHINING_QUEUE_STAGE_SET },
+      ...EXCLUDE_UNMACHINABLE_FILTER,
       ...scope.requestFilter,
     })
       .select(
@@ -329,27 +324,11 @@ export async function getProductionQueues(req, res) {
           "status startedAt completedAt durationSeconds elapsedSeconds lastTickAt machineId jobId",
       });
 
-    console.log("[getProductionQueues] found requests", {
-      count: requests.length,
-      samples: requests.slice(0, 5).map((r) => ({
-        requestId: r.requestId,
-        stage: r.manufacturerStage,
-        caManufacturer: r.caManufacturer ? String(r.caManufacturer) : null,
-        assignedMachine: r.productionSchedule?.assignedMachine || null,
-      })),
-    });
+
 
     let queues = getAllProductionQueues(requests);
 
-    console.log("[getProductionQueues] queues built", {
-      machineIds: Object.keys(queues),
-      counts: Object.fromEntries(
-        Object.entries(queues).map(([k, v]) => [
-          k,
-          Array.isArray(v) ? v.length : 0,
-        ]),
-      ),
-    });
+
 
     const unassignedCount = Array.isArray(queues.unassigned)
       ? queues.unassigned.length
@@ -358,14 +337,11 @@ export async function getProductionQueues(req, res) {
     if (unassignedCount > 0) {
       const rebalance = await rebalanceProductionQueuesInternal({ req, scope });
 
-      console.log("[getProductionQueues] auto-rebalanced", {
-        unassignedCount,
-        reassignedCount: rebalance.reassignedCount,
-        eligibleMachineIds: rebalance.eligibleMachineIds,
-      });
+
 
       requests = await Request.find({
         manufacturerStage: { $in: MACHINING_QUEUE_STAGE_SET },
+        ...EXCLUDE_UNMACHINABLE_FILTER,
         ...scope.requestFilter,
       })
         .select(
@@ -379,15 +355,7 @@ export async function getProductionQueues(req, res) {
 
       queues = getAllProductionQueues(requests);
 
-      console.log("[getProductionQueues] queues rebuilt after rebalance", {
-        machineIds: Object.keys(queues),
-        counts: Object.fromEntries(
-          Object.entries(queues).map(([k, v]) => [
-            k,
-            Array.isArray(v) ? v.length : 0,
-          ]),
-        ),
-      });
+
     }
 
     for (const machineId in queues) {
@@ -534,6 +502,7 @@ export async function applyProductionQueueBatchForMachine(req, res) {
 
     const list = await Request.find({
       manufacturerStage: { $in: MACHINING_ASSIGN_STAGE_SET },
+      ...EXCLUDE_UNMACHINABLE_FILTER,
       "productionSchedule.assignedMachine": mid,
     }).select("_id requestId productionSchedule manufacturerStage");
 

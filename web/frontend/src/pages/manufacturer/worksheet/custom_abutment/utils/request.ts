@@ -1,6 +1,6 @@
 // change-log:
-// - 2026-08-03: 공정 표시 변경: 작업 공정 중 `의뢰` 단계의 화면 표기를 `준비`로 변경 (프론트 표시 레벨, DB 값은 미변경)
-// - reason: 공정 명칭 변경(의뢰 -> 준비) 요구에 따른 표시 정규화
+// - 2026-08-03: 준비 탭 카드 미표시 버그 수정 - `deriveStageForFilter`의 request 단계 정규화를 `준비` 단일값으로 통일.
+// - 2026-08-03: manufacturerStage request 단계 레거시 값(`의뢰`, `request`) 의존을 제거하고 `준비` 기준으로 정리.
 // related files:
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
@@ -163,7 +163,7 @@ export const computeStageLabel = (
   const savedStage = (req.manufacturerStage || "").trim();
   if (savedStage) return savedStage;
   if (opts?.isMachiningStage) return "가공";
-  if (opts?.isCamStage) return "CAM";
+  if (opts?.isCamStage) return "가공";
   return "준비";
 };
 
@@ -264,45 +264,52 @@ export const getDeadlineInfo = (
 };
 
 export const deriveStageForFilter = (req: ManufacturerRequest) => {
-  const saved = (req.manufacturerStage || "").trim();
-  if (saved) {
-    switch (saved) {
-      case "request":
-      case "의뢰":
-        return "준비";
-      case "cam":
-        return "CAM";
-      case "machining":
-        return "가공";
-      case "세척.패킹":
-      case "세척.포장":
-      case "packing":
-        // 레거시/신 명칭 모두 필터용 라벨은 "세척.패킹"으로 통일
-        return "세척.패킹";
-      case "포장.발송":
-      case "배송대기":
-      case "배송중":
-      case "shipping":
-        return "포장.발송";
-      case "완료":
-      case "배송완료":
-      case "tracking":
-        return "추적관리";
-      default:
-        return saved;
-    }
+  const saved = String(req.manufacturerStage || "").trim();
+  if (!saved) return "준비";
+
+  const lower = saved.toLowerCase();
+
+  // manufacturerStage request 단계 SSOT는 "준비" 단일값으로 사용
+  if (saved === "준비") {
+    return "준비";
   }
-  return "준비";
+
+  // 가공 계열
+  if (saved === "가공") {
+    return "가공";
+  }
+
+  // 세척/패킹 계열
+  if (saved === "세척.패킹" || saved === "세척.포장" || lower === "packing") {
+    // 레거시/신 명칭 모두 필터용 라벨은 "세척.패킹"으로 통일
+    return "세척.패킹";
+  }
+
+  // 포장/발송 계열
+  if (
+    saved === "포장.발송" ||
+    saved === "배송대기" ||
+    saved === "배송중" ||
+    lower === "shipping"
+  ) {
+    return "포장.발송";
+  }
+
+  // 추적 계열
+  if (saved === "완료" || saved === "배송완료" || lower === "tracking") {
+    return "추적관리";
+  }
+
+  return saved;
 };
 
 export const stageOrder: Record<string, number> = {
-  준비: 0,
-  의뢰: 0, // legacy alias for compatibility
-  CAM: 1,
-  가공: 2,
-  "세척.패킹": 3,
-  "포장.발송": 4,
-  추적관리: 5,
+  의뢰: 0,
+  준비: 0, // legacy alias for compatibility
+  가공: 1,
+  "세척.패킹": 2,
+  "포장.발송": 3,
+  추적관리: 4,
 };
 
 export const getAcceptByStage = (stage: string) => {
@@ -310,8 +317,6 @@ export const getAcceptByStage = (stage: string) => {
     case "준비":
     case "의뢰": // legacy support
       return ".filled.stl";
-    case "CAM":
-      return ".nc";
     case "가공":
       return ".png,.jpg,.jpeg,.webp,.bmp";
     case "세척.패킹":
@@ -322,4 +327,77 @@ export const getAcceptByStage = (stage: string) => {
     default:
       return ".stl";
   }
+};
+
+export type WorksheetTabStage =
+  | "request"
+  | "machining"
+  | "packing"
+  | "shipping"
+  | "tracking"
+  | "rnd"
+  | "unmachinable"
+  | "cam";
+
+const WORKSHEET_STAGE_QUERY_ALIASES: Record<
+  "request" | "machining" | "packing" | "shipping" | "tracking",
+  string[]
+> = {
+  request: ["준비"],
+  machining: ["가공"],
+  packing: ["세척.패킹", "세척.포장", "packing", "cleaning"],
+  shipping: [
+    "포장.발송",
+    "발송",
+    "shipping",
+    "delivery",
+    "배송대기",
+    "배송중",
+  ],
+  tracking: ["추적관리", "tracking", "완료", "배송완료"],
+};
+
+const dedupeStrings = (values: string[]) => {
+  const set = new Set<string>();
+  for (const raw of values) {
+    const v = String(raw || "").trim();
+    if (v) set.add(v);
+  }
+  return [...set];
+};
+
+export const getWorksheetStageFilterForTab = (
+  tabStageRaw: WorksheetTabStage | string,
+  showCompleted: boolean,
+): string[] => {
+  const tabStage = String(tabStageRaw || "").trim();
+  const normalizedTab =
+    tabStage === "cam" ? ("machining" as const) : (tabStage as WorksheetTabStage);
+
+  if (normalizedTab === "rnd" || normalizedTab === "unmachinable") {
+    return [];
+  }
+
+  const stageFlow: Array<"request" | "machining" | "packing" | "shipping" | "tracking"> = [
+    "request",
+    "machining",
+    "packing",
+    "shipping",
+    "tracking",
+  ];
+
+  const idx = stageFlow.indexOf(
+    normalizedTab as (typeof stageFlow)[number],
+  );
+  if (idx === -1) return [];
+
+  if (!showCompleted) {
+    return WORKSHEET_STAGE_QUERY_ALIASES[stageFlow[idx]];
+  }
+
+  const merged: string[] = [];
+  for (let i = idx; i < stageFlow.length; i += 1) {
+    merged.push(...WORKSHEET_STAGE_QUERY_ALIASES[stageFlow[i]]);
+  }
+  return dedupeStrings(merged);
 };

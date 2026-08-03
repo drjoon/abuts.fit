@@ -604,7 +604,7 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
         //  5) 최근 업데이트
         let score = 0;
         if (isActiveCamWindow) score += 50;
-        if (stageLabel === "의뢰" || stageLabel === "CAM") score += 15;
+        if (stageLabel === "준비" || stageLabel === "CAM") score += 15;
         if (!hasNcFile) score += 10;
         if (isSampleWorkingCopy) score += 8;
 
@@ -911,20 +911,23 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
         const shouldPromoteToCam = requestReviewStatus === "APPROVED";
 
         if (shouldPromoteToCam) {
-          // 비동기 CAM 플로우: 의뢰 승인 시점에는 CAM으로 stage를 올리지 않고,
-          // Esprit(NC 생성) 완료 콜백 시점에만 CAM 단계로 전환한다.
+          // 작업 공정 변경: CAM은 더 이상 노출/사용하지 않으므로,
+          // 의뢰 승인 후 NC 생성이 완료되는 시점에 바로 가공 단계로 전환한다.
           try {
             const cloned = {
               manufacturerStage: request?.manufacturerStage,
             };
-            applyStatusMapping(cloned, "CAM");
+            applyStatusMapping(cloned, "가공");
             updateData["manufacturerStage"] = cloned.manufacturerStage;
           } catch {
-            updateData["manufacturerStage"] = "CAM";
+            updateData["manufacturerStage"] = "가공";
           }
           updateData["caseInfos.reviewByStage.request.status"] = "APPROVED";
           updateData["caseInfos.reviewByStage.request.reason"] = "";
           updateData["caseInfos.reviewByStage.request.updatedAt"] = now;
+          updateData["caseInfos.reviewByStage.cam.status"] = "APPROVED";
+          updateData["caseInfos.reviewByStage.cam.reason"] = "";
+          updateData["caseInfos.reviewByStage.cam.updatedAt"] = now;
         } else {
           console.log(
             `[BG-Callback] sourceStep=3-nc request=${request?.requestId || "-"} preserve request stage (review status: ${requestReviewStatus || "EMPTY"})`,

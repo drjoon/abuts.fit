@@ -219,7 +219,7 @@ const renderTransactionDetail = ({
 
   if (refType === "REQUEST") {
     const manufacturerStageRaw =
-      item.manufacturerStage || requestSummary?.manufacturerStage || "의뢰";
+      item.manufacturerStage || requestSummary?.manufacturerStage || "준비";
     const manufacturerStage = getNormalizedStageLabelSafe({ manufacturerStage: manufacturerStageRaw }) || String(manufacturerStageRaw);
 
     return (

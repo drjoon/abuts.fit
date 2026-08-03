@@ -1476,7 +1476,7 @@ export const MachiningQueueBoard = ({
               const body: any = await res.json().catch(() => ({}));
               if (!res.ok || body?.success === false) {
                 throw new Error(
-                  body?.message || body?.error || "CAM으로 되돌리기 실패",
+                  body?.message || body?.error || "준비로 되돌리기 실패",
                 );
               }
 
@@ -1498,7 +1498,7 @@ export const MachiningQueueBoard = ({
               await loadProductionQueueForMachine(mid);
             } catch (e: any) {
               toast({
-                title: "CAM으로 되돌리기 실패",
+                title: "준비로 되돌리기 실패",
                 description: e?.message || "잠시 후 다시 시도해주세요.",
                 variant: "destructive",
               });
@@ -1724,7 +1724,7 @@ export const MachiningQueueBoard = ({
                             );
                           }}
                           disabled={!String(item.requestId || "").trim()}
-                          title="CAM으로 되돌리기"
+                          title="준비로 되돌리기"
                         >
                           <ArrowLeft className="h-3 w-3" />
                         </button>

@@ -424,7 +424,7 @@ export function normalizeRequestStage(requestLike) {
   if (["cam", "CAM"].includes(stage)) {
     return "cam";
   }
-  if (["request", "의뢰"].includes(stage)) {
+  if (["준비"].includes(stage)) {
     return "request";
   }
   return "request";
@@ -432,27 +432,27 @@ export function normalizeRequestStage(requestLike) {
 
 export function normalizeRequestStageLabel(requestLike) {
   const s = normalizeRequestStage(requestLike);
-  if (s === "request") return "의뢰";
-  if (s === "cam") return "CAM";
+  if (s === "request") return "준비";
+  if (s === "cam") return "가공";
   if (s === "machining") return "가공";
   if (s === "packing") return "세척.패킹";
   if (s === "shipping") return "포장.발송";
   if (s === "tracking") return "추적관리";
   if (s === "cancel") return "취소";
-  return "의뢰";
+  return "준비";
 }
 
 export const REQUEST_STAGE_GROUPS = {
-  pre: ["의뢰", "CAM"],
+  pre: ["준비", "CAM"],
   post: ["가공", "세척.패킹"],
   waiting: ["포장.발송"],
-  bulkCandidateAll: ["의뢰", "CAM", "가공", "세척.패킹", "포장.발송"],
-  bulkCreateEligible: ["CAM", "가공", "세척.패킹", "포장.발송"],
+  bulkCandidateAll: ["준비", "CAM", "가공", "세척.패킹", "포장.발송"],
+  bulkCreateEligible: ["가공", "세척.패킹", "포장.발송"],
 };
 
 export const REQUEST_STAGE_ORDER = {
   request: 0,
-  의뢰: 0,
+  준비: 0,
   cam: 1,
   CAM: 1,
   machining: 2,
@@ -1225,9 +1225,19 @@ export function applyStatusMapping(request, status) {
   // manufacturerStage 는 생산 공정의 메인 단계를 나타내는 SSOT 라벨로 사용한다.
 
   // 명시적인 메인 단계 라벨은 그대로 manufacturerStage 로 사용
+  // 호환 처리: 레거시 CAM 입력은 가공 단계로 강제 매핑한다.
+  if (s === "CAM" || s.toLowerCase() === "cam") {
+    request.manufacturerStage = "가공";
+    return;
+  }
+
+  if (s === "준비") {
+    request.manufacturerStage = "준비";
+    return;
+  }
+
   const mainStages = [
-    "의뢰",
-    "CAM",
+    "준비",
     "가공",
     "세척.패킹",
     "포장.발송",

@@ -7,8 +7,24 @@
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/machining/MachiningQueueBoard.tsx
 import Request from "../../models/request.model.js";
 
-export const MACHINING_ASSIGN_STAGE_SET = ["CAM", "가공"];
-export const MACHINING_QUEUE_STAGE_SET = ["가공"];
+// 가공 단계는 `가공` 단일값만 허용한다.
+export const MACHINING_STAGE_ALIASES = ["가공"];
+
+export const MACHINING_ASSIGN_STAGE_SET = [...MACHINING_STAGE_ALIASES];
+export const MACHINING_QUEUE_STAGE_SET = [...MACHINING_STAGE_ALIASES];
+
+// 불완전가공(R&D unmachinable) 판정 건은 가공 큐/Now Playing/Next Up 등
+// 일반 작업 큐에 절대 노출되면 안 된다. Request.find 조건에 이 필터를 반드시 함께 사용한다.
+export const EXCLUDE_UNMACHINABLE_FILTER = { "rnd.unmachinableAt": null };
+
+export function normalizeMachiningStageValue(value) {
+  const raw = String(value || "").trim();
+  return raw === "가공" ? "가공" : "";
+}
+
+export function isMachiningQueueStageValue(value) {
+  return normalizeMachiningStageValue(value) === "가공";
+}
 
 export function normalizeDiameterGroupValue(value) {
   const raw = String(value || "").trim();
@@ -112,6 +128,7 @@ export async function buildMachineQueueLoadMap(machineIds, session = null) {
   // session을 전달하여 같은 트랜잭션 내 변경사항(방금 배정한 요청)을 큐 계산에 포함
   const query = Request.find({
     manufacturerStage: { $in: MACHINING_QUEUE_STAGE_SET },
+    ...EXCLUDE_UNMACHINABLE_FILTER,
     "productionSchedule.assignedMachine": { $in: ids },
   }).select(
     "productionSchedule.assignedMachine productionSchedule.machiningQty productionSchedule.machiningRecord",

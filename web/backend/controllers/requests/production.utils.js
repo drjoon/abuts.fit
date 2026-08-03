@@ -18,9 +18,11 @@ import Machine from "../../models/machine.model.js";
 import {
   MACHINING_ASSIGN_STAGE_SET,
   MACHINING_QUEUE_STAGE_SET,
+  EXCLUDE_UNMACHINABLE_FILTER,
   buildMachineQueueLoadMap,
   getMachiningLoadWeight,
   normalizeDiameterGroupValue,
+  isMachiningQueueStageValue,
 } from "../cnc/distribution.utils.js";
 
 /**
@@ -349,8 +351,10 @@ export function getProductionQueueForMachine(machineId, requests) {
       if (schedule.assignedMachine !== machineId) return false;
 
       // 가공 단계만
-      if (!MACHINING_QUEUE_STAGE_SET.includes(req.manufacturerStage))
-        return false;
+      if (!isMachiningQueueStageValue(req.manufacturerStage)) return false;
+
+      // 불완전가공(R&D unmachinable) 판정 건은 작업 큐에 노출되면 안 된다.
+      if (req?.rnd?.unmachinableAt) return false;
 
       return true;
     })
@@ -380,7 +384,10 @@ export function getAllProductionQueues(requests) {
     if (!schedule) continue;
 
     // 가공 단계만
-    if (!MACHINING_QUEUE_STAGE_SET.includes(req.manufacturerStage)) continue;
+    if (!isMachiningQueueStageValue(req.manufacturerStage)) continue;
+
+    // 불완전가공(R&D unmachinable) 판정 건은 작업 큐에 노출되면 안 된다.
+    if (req?.rnd?.unmachinableAt) continue;
 
     const machine = schedule.assignedMachine;
     if (machine && typeof machine === "string") {
@@ -418,8 +425,8 @@ export function recalculateProductionSchedule({
   maxDiameter,
   requestedAt,
 }) {
-  // 의뢰 단계가 아니면 스케줄 변경 불가
-  if (currentStage !== "의뢰") {
+  // 준비 단계가 아니면 스케줄 변경 불가
+  if (currentStage !== "준비") {
     return null;
   }
 
@@ -480,6 +487,7 @@ export async function recalculateQueueOnMaterialChange(
 
   const assignedCounts = await Request.find({
     manufacturerStage: { $in: MACHINING_QUEUE_STAGE_SET },
+    ...EXCLUDE_UNMACHINABLE_FILTER,
     "productionSchedule.assignedMachine": { $in: candidateMachineIds },
   })
     .select("productionSchedule.assignedMachine")
@@ -494,6 +502,7 @@ export async function recalculateQueueOnMaterialChange(
 
   const unassignedRequests = await Request.find({
     manufacturerStage: { $in: MACHINING_QUEUE_STAGE_SET },
+    ...EXCLUDE_UNMACHINABLE_FILTER,
     $or: [
       { "productionSchedule.assignedMachine": { $exists: false } },
       { "productionSchedule.assignedMachine": null },

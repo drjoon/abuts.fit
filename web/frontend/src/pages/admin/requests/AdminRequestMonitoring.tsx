@@ -42,7 +42,6 @@ const getStatusBadge = (requestLike: any) => {
     case "의뢰":
       return <Badge variant="outline">준비</Badge>;
     case "CAM":
-      return <Badge variant="default">CAM</Badge>;
     case "가공":
       return (
         <Badge className="bg-cyan-50 text-cyan-700 border-cyan-200 text-xs">
@@ -101,7 +100,6 @@ const getStatusIcon = (requestLike: any) => {
     case "준비":
     case "의뢰":
       return <FileText className="h-4 w-4 text-blue-500" />;
-    case "CAM":
     case "가공":
     case "세척.패킹":
       return <Clock className="h-4 w-4 text-green-500" />;
@@ -217,7 +215,7 @@ export const AdminRequestMonitoring = () => {
         );
         toast({
           title: "의뢰 복구 완료",
-          description: `의뢰 ${requestId}이(가) 의뢰 상태로 복구되었습니다.`,
+          description: `의뢰 ${requestId}이(가) 준비 상태로 복구되었습니다.`,
         });
         setServerStageStats(null);
       } else {
@@ -430,9 +428,8 @@ export const AdminRequestMonitoring = () => {
 
   const totalCount = requestStats.total ?? 0;
   const byStatus = requestStats.byStatus || {};
-  const receiveCount = (byStatus["준비"] ?? byStatus["의뢰"]) || 0;
-  const camCount = byStatus["CAM"] || 0;
-  const machiningCount = byStatus["가공"] || 0;
+  const receiveCount = byStatus["준비"] || 0;
+  const machiningCount = (byStatus["가공"] || 0) + (byStatus["CAM"] || 0);
   const packagingCount = byStatus["세척.패킹"] || 0;
   const shippingCount = byStatus["포장.발송"] || 0;
   const trackingCount = byStatus["추적관리"] || 0;
@@ -469,13 +466,7 @@ export const AdminRequestMonitoring = () => {
               >
                 준비
               </Button>
-              <Button
-                variant={selectedStatus === "CAM" ? "default" : "outline"}
-                onClick={() => setSelectedStatus("CAM")}
-                size="sm"
-              >
-                CAM
-              </Button>
+
               <Button
                 variant={selectedStatus === "가공" ? "default" : "outline"}
                 onClick={() => setSelectedStatus("가공")}
@@ -509,7 +500,7 @@ export const AdminRequestMonitoring = () => {
         </div>
 
         {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
           <Card>
             <CardContent className="p-4">
               <div className="flex items-center gap-3">
@@ -525,21 +516,7 @@ export const AdminRequestMonitoring = () => {
               </div>
             </CardContent>
           </Card>
-          <Card>
-            <CardContent className="p-4">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-blue-100 rounded-lg">
-                  <Clock className="h-4 w-4 text-blue-600" />
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">CAM</p>
-                  <p className="text-2xl font-bold">
-                    {camCount.toLocaleString()}
-                  </p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+
           <Card>
             <CardContent className="p-4">
               <div className="flex items-center gap-3">

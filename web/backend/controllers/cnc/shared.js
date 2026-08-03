@@ -27,6 +27,7 @@ import {
 import {
   MACHINING_ASSIGN_STAGE_SET,
   MACHINING_QUEUE_STAGE_SET,
+  EXCLUDE_UNMACHINABLE_FILTER,
 } from "./distribution.utils.js";
 
 export const CAM_RETRY_BATCH_LIMIT = Number(
@@ -491,7 +492,8 @@ export async function rollbackRequestToCamByRequestId(requestId) {
         ...machiningReview,
       };
 
-      request.manufacturerStage = "CAM";
+      // 가공 롤백 복귀는 request stage(준비)로 되돌린다.
+      request.manufacturerStage = "준비";
 
       request.productionSchedule = request.productionSchedule || {};
       request.productionSchedule.actualMachiningStart = null;
@@ -537,6 +539,7 @@ export async function getProductionQueuesHandler(req, res) {
   try {
     const requests = await Request.find({
       manufacturerStage: { $in: MACHINING_QUEUE_STAGE_SET },
+      ...EXCLUDE_UNMACHINABLE_FILTER,
     })
       .select(
         "requestId manufacturerStage productionSchedule caseInfos timeline",

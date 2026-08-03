@@ -721,8 +721,8 @@ export const AdminDashboardPage = () => {
     ? (adminDashboardResponse.data?.happyCallSummary ?? null)
     : null;
 
-  // change-log: 2026-08-03 - '의뢰' 공정 표시를 '준비'로 표기 (display only)
-  const inProgressStageList = ["준비", "의뢰", "CAM", "가공", "세척.패킹", "포장.발송"] as const;
+  // change-log: 2026-08-03 - request 단계 SSOT를 '준비' 단일값으로 사용
+  const inProgressStageList = ["준비", "CAM", "가공", "세척.패킹", "포장.발송"] as const;
   const inProgressBaseRequestCount = inProgressStageList.reduce(
     (acc, stage) => acc + Number(adminDashboardResponse?.data?.requestStats?.byStatus?.[stage] || 0),
     0,
@@ -1052,9 +1052,8 @@ export const AdminDashboardPage = () => {
     const byStatus = requestStats.byStatus || {};
     const totalRequests = requestStats.total ?? 0;
 
-    const receive = byStatus["준비"] ?? byStatus["의뢰"] ?? 0;
-    const cam = byStatus["CAM"] ?? 0;
-    const machining = byStatus["가공"] ?? 0;
+    const receive = byStatus["준비"] ?? 0;
+    const machining = (byStatus["가공"] ?? 0) + (byStatus["CAM"] ?? 0);
     const packing = byStatus["세척.패킹"] ?? 0;
     const shipping = byStatus["포장.발송"] ?? 0;
     const shippingBoxes = byStatus["포장.발송박스"] ?? 0;
@@ -1067,8 +1066,8 @@ export const AdminDashboardPage = () => {
     data = {
       stats: [
         {
-          label: "의뢰/CAM",
-          value: `${receive}/${cam}`,
+          label: "준비",
+          value: String(receive),
           change: "+0%",
           icon: Users,
         },

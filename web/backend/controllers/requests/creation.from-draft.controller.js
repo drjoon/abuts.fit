@@ -1277,7 +1277,7 @@ export async function createRequestsFromDraft(req, res) {
                   },
                 }
               : {}),
-            manufacturerStage: "의뢰",
+            manufacturerStage: "준비",
           };
 
           newRequest.originalShipping = {

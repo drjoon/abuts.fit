@@ -287,7 +287,7 @@ export const RequestorBulkShippingBannerCard = ({
 
   const canToggleMode = (status?: string) => {
     if (!status) return false;
-    return ["의뢰"].includes(status);
+    return ["준비"].includes(status);
   };
 
   const patchShippingMode = async (

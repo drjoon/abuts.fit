@@ -1,5 +1,6 @@
 // change-log:
 // - 2026-08-03: PreviewModal: 공정 표시 정규화 영향 반영(의뢰 -> 준비 표시). 주로 프리뷰/승인 버튼의 stage label 참조에 영향.
+// - 2026-08-03: 작업 공정 변경 반영: 화살표 승인/롤백 기준을 준비 ↔ 가공 흐름으로 정렬(중간 단계 건너뛰기).
 // related files:
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/machining/MachiningQueueBoard.tsx
@@ -2132,8 +2133,14 @@ export const PreviewModal = ({
 
                     const performBack = async () => {
                       const stageKey = currentReviewStageKey;
-                      if (
-                        stageKey === "machining" ||
+                      if (stageKey === "machining") {
+                        // 작업 공정 변경: 중간 단계를 건너뛰고 가공 → 준비로 직접 롤백
+                        await onDeleteNc(activeReq, {
+                          nextStage: "request",
+                          rollbackOnly: true,
+                          navigate: false,
+                        });
+                      } else if (
                         stageKey === "packing" ||
                         stageKey === "shipping" ||
                         stageKey === "tracking"
@@ -2208,7 +2215,7 @@ export const PreviewModal = ({
                     if (approving) return;
                     setApproving(true);
                     try {
-                      // 의뢰 단계 승인(의뢰→CAM) 전, rnd.manufacturerHexRotation 누락 시
+                      // 준비 단계 승인(준비→가공) 전, rnd.manufacturerHexRotation 누락 시
                       // 현재 선택된 "헥스 회전" 값(라벨: STL모델대로/헥스30도회전)으로 선저장한다.
                       // request-meta는 rnd.manufacturerHexRotation을 필수로 사용하므로,
                       // 누락 상태에서 승인되면 BG(Esprit) 재실행이 실패할 수 있다.
@@ -2264,7 +2271,13 @@ export const PreviewModal = ({
                         }
                       }
 
-                      if (currentReviewStageKey === "cam") {
+                      // 작업 공정 변경: 준비 승인 화살표는 CAM을 건너뛰어 가공 전이 로직을 사용한다.
+                      const transitionStageKey =
+                        currentReviewStageKey === "request"
+                          ? "cam"
+                          : currentReviewStageKey;
+
+                      if (transitionStageKey === "cam") {
                         const hasNcFile =
                           !!activeReq?.caseInfos?.ncFile?.s3Key || !!previewNcText;
                         if (!hasNcFile) {
@@ -2279,7 +2292,7 @@ export const PreviewModal = ({
                       await onUpdateReviewStatus({
                         req: activeReq,
                         status: "APPROVED",
-                        stageOverride: currentReviewStageKey,
+                        stageOverride: transitionStageKey,
                         keepPreviewOpen: false,
                         // 기본 승인에서는 기존 작업 이력을 우선 재사용한다.
                         // 강제 재실행이 필요한 경우에만 forceReprocess=true를 명시 전달한다.
@@ -2287,8 +2300,8 @@ export const PreviewModal = ({
                         approvalTriggerSource: "preview-modal",
                       });
 
-                      // CAM 단계 승인 시 NC 파일 bridge-store 동기화 (비동기, 실패 무시)
-                      if (isCamStage) {
+                      // CAM(또는 준비→가공 위임) 승인 시 NC 파일 bridge-store 동기화 (비동기, 실패 무시)
+                      if (transitionStageKey === "cam") {
                         const requestId = String(activeReq.requestId).trim();
                         if (token && requestId) {
                           void fetch(

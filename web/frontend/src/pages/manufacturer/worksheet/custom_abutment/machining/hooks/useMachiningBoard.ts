@@ -717,7 +717,8 @@ export const useMachiningBoard = ({
       const mid = String(machineId || "").trim();
       if (!mid) return;
       const raw = rawOverride ?? queueMap?.[mid] ?? [];
-      setPlaylistJobs(buildPlaylistJobsFromQueue(raw));
+      const nextJobs = buildPlaylistJobsFromQueue(raw);
+      setPlaylistJobs(nextJobs);
     },
     [buildPlaylistJobsFromQueue, queueMap],
   );
@@ -1481,7 +1482,7 @@ export const useMachiningBoard = ({
           throw new Error(
             rollbackBody?.message ||
               rollbackBody?.error ||
-              "CAM으로 되돌리기 실패",
+              "준비로 되돌리기 실패",
           );
         }
 
@@ -1524,7 +1525,7 @@ export const useMachiningBoard = ({
         }
 
         toast({
-          title: "CAM으로 되돌리기 실패",
+          title: "준비로 되돌리기 실패",
           description: e?.message || "잠시 후 다시 시도해주세요.",
           variant: "destructive",
         });

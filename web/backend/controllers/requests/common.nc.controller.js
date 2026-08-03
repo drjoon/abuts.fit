@@ -827,8 +827,11 @@ export async function deleteNcFileAndRollbackCam(req, res) {
       request?.caseInfos?.ncFile?.filePath || "",
     ).trim();
 
-    const isRollbackToRequest = req.query.nextStage === "request";
-    const rollbackStageKey = isRollbackToRequest ? "machining" : "cam";
+    // nextStage 미지정/"cam" 요청은 request stage(준비) 롤백으로 처리한다.
+    const nextStageRaw = String(req.query.nextStage || "").trim().toLowerCase();
+    const isRollbackToRequest =
+      nextStageRaw === "request" || nextStageRaw === "" || nextStageRaw === "cam";
+    const rollbackStageKey = "machining";
 
     console.log("[NC_ROLLBACK] request received", {
       requestMongoId: String(request._id),
@@ -836,7 +839,7 @@ export async function deleteNcFileAndRollbackCam(req, res) {
       actorUserId: req.user?._id ? String(req.user._id) : null,
       role: String(req.user?.role || ""),
       currentStage: String(request?.manufacturerStage || "").trim() || null,
-      nextStage: isRollbackToRequest ? "의뢰" : "CAM",
+      nextStage: "준비",
       rollbackOnly,
       businessAnchorId: String(request?.businessAnchorId || "").trim() || null,
     });
@@ -845,7 +848,7 @@ export async function deleteNcFileAndRollbackCam(req, res) {
         "caseInfos.ncFile": 1,
       },
       $set: {
-        manufacturerStage: isRollbackToRequest ? "의뢰" : "CAM",
+        manufacturerStage: "준비",
       },
       $inc: {
         [`caseInfos.rollbackCounts.${rollbackStageKey}`]: 1,
@@ -908,7 +911,7 @@ export async function deleteNcFileAndRollbackCam(req, res) {
         console.log("[NC_ROLLBACK] request stage updated", {
           requestMongoId: String(requestInTx._id),
           requestId: String(requestInTx.requestId || ""),
-          toStage: isRollbackToRequest ? "의뢰" : "CAM",
+          toStage: "준비",
           rollbackOnly,
         });
       });
@@ -923,7 +926,7 @@ export async function deleteNcFileAndRollbackCam(req, res) {
     });
 
     const fromStage = String(request?.manufacturerStage || "").trim() || null;
-    const toStage = isRollbackToRequest ? "의뢰" : "CAM";
+    const toStage = "준비";
     const businessAnchorId = String(request?.businessAnchorId || "").trim() || null;
 
     emitAppEventToRoles(["requestor", "manufacturer", "admin"], "request:stage-changed", {
@@ -954,11 +957,11 @@ export async function deleteNcFileAndRollbackCam(req, res) {
 
     return res.status(200).json({
       success: true,
-      message: "NC 파일이 삭제되고 CAM 단계로 되돌아갑니다.",
+      message: "NC 파일이 삭제되고 준비 단계로 되돌아갑니다.",
       data: {
         _id: String(request._id),
         requestId: String(request.requestId || ""),
-        manufacturerStage: isRollbackToRequest ? "의뢰" : "CAM",
+        manufacturerStage: isRollbackToRequest ? "준비" : "CAM",
       },
     });
   } catch (error) {

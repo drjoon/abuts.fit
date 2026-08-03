@@ -60,7 +60,7 @@ const typeLabelMap: Record<string, string> = {
   billing: "청구/결제",
   account: "계정/사업자",
   order_intake: "의뢰 접수",
-  cam_machining: "CAM/가공",
+  cam_machining: "가공",
   equipment: "장비/소프트웨어",
   settlement: "정산",
   referral_commission: "소개/수당",

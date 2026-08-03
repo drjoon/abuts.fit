@@ -20,9 +20,10 @@ export const normalizeStageValue = (manufacturerStage?: string): string => {
     return "machining";
   }
   if (["cam", "CAM"].includes(stage)) {
-    return "cam";
+    // 작업 공정 변경: CAM 표시는 제거하고 가공 단계로 정규화한다.
+    return "machining";
   }
-  if (["request", "의뢰"].includes(stage)) {
+  if (["준비"].includes(stage)) {
     return "request";
   }
   throw new Error("Invalid stage");
@@ -31,7 +32,7 @@ export const normalizeStageValue = (manufacturerStage?: string): string => {
 export const normalizeStageLabel = (manufacturerStage?: string): string => {
   const s = normalizeStageValue(manufacturerStage);
   if (s === "request") return "준비";
-  if (s === "cam") return "CAM";
+
   if (s === "machining") return "가공";
   if (s === "packing") return "세척.패킹";
   if (s === "shipping") return "포장.발송";
@@ -72,14 +73,14 @@ export const getNormalizedStageLabelSafe = (requestLike: unknown): string => {
 
 const STAGE_ORDER_MAP: Record<string, number> = {
   request: 0,
-  의뢰: 0,
+
   준비: 0,
   cam: 1,
   CAM: 1,
-  machining: 2,
-  가공: 2,
-  packing: 3,
-  "세척.패킹": 3,
+  machining: 1,
+  가공: 1,
+  packing: 2,
+  "세척.패킹": 2,
   shipping: 3,
   "포장.발송": 3,
   tracking: 4,

@@ -797,7 +797,9 @@ export const DashboardLayout = () => {
 
   const worksheetParams = new URLSearchParams(location.search);
   const worksheetType = worksheetParams.get("type") || "cnc";
-  const worksheetStage = worksheetParams.get("stage") || "request";
+  const worksheetStageRaw = worksheetParams.get("stage") || "request";
+  // 작업 공정 변경: CAM 탭은 노출하지 않고 legacy URL(stage=cam)은 가공 탭으로 매핑한다.
+  const worksheetStage = worksheetStageRaw === "cam" ? "machining" : worksheetStageRaw;
 
   // Worksheet summary data for header bar
   const { data: worksheetSummaryResponse, refetch: refetchWorksheetSummary } = useQuery({
@@ -1223,23 +1225,7 @@ export const DashboardLayout = () => {
                                   {wsSummary.requestCount ?? 0}
                                 </span>
                               </Button>
-                              <Button
-                                variant={
-                                  worksheetStage === "cam" ? "default" : "ghost"
-                                }
-                                size="sm"
-                                className="h-7 px-2 text-xs gap-1"
-                                onClick={() =>
-                                  navigate(
-                                    "/dashboard/worksheet?type=cnc&stage=cam",
-                                  )
-                                }
-                              >
-                                <span>CAM</span>
-                                <span className="tabular-nums opacity-70">
-                                  {wsSummary.camCount ?? 0}
-                                </span>
-                              </Button>
+
                               <Button
                                 variant={
                                   worksheetStage === "machining"
@@ -1256,7 +1242,8 @@ export const DashboardLayout = () => {
                               >
                                 <span>가공</span>
                                 <span className="tabular-nums opacity-70">
-                                  {wsSummary.machiningCount ?? 0}
+                                  {(wsSummary.machiningCount ?? 0) +
+                                    (wsSummary.camCount ?? 0)}
                                 </span>
                               </Button>
                               <Button

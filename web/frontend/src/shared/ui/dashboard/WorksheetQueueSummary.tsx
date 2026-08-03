@@ -22,7 +22,7 @@ export const WorksheetQueueSummary = ({
   labels,
   counts,
   className = "",
-  titlePrefix = "진행중인 준비", 
+  titlePrefix = "진행중인 의뢰",
 }: WorksheetQueueSummaryProps) => {
   return (
     <div

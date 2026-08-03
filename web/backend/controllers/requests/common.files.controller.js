@@ -292,7 +292,7 @@ export async function deleteCamFileAndRollback(req, res) {
         reason: "",
       };
       bumpRollbackCount(request, "cam");
-      request.manufacturerStage = "의뢰";
+      request.manufacturerStage = "준비";
       await request.save();
 
       const normalized = await normalizeRequestForResponse(request);
@@ -305,10 +305,10 @@ export async function deleteCamFileAndRollback(req, res) {
         businessAnchorId,
         ownerBusinessAnchorId: businessAnchorId,
         fromStage: previousManufacturerStage || null,
-        toStage: "의뢰",
+        toStage: "준비",
         reviewStage: "cam",
         reviewStatus: "PENDING",
-        manufacturerStage: "의뢰",
+        manufacturerStage: "준비",
         request: normalized,
       });
 
@@ -347,7 +347,7 @@ export async function deleteCamFileAndRollback(req, res) {
     request.lotNumber = request.lotNumber || {};
     request.lotNumber.value = undefined;
     request.lotNumber.material = "";
-    request.manufacturerStage = "의뢰";
+    request.manufacturerStage = "준비";
 
     await request.save();
 
@@ -361,10 +361,10 @@ export async function deleteCamFileAndRollback(req, res) {
       businessAnchorId,
       ownerBusinessAnchorId: businessAnchorId,
       fromStage: previousManufacturerStage || null,
-      toStage: "의뢰",
+      toStage: "준비",
       reviewStage: "cam",
       reviewStatus: "PENDING",
-      manufacturerStage: "의뢰",
+      manufacturerStage: "준비",
       request: normalized,
     });
 

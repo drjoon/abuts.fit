@@ -279,7 +279,7 @@ export const CncPlaylistDrawer: React.FC<CncPlaylistDrawerProps> = ({
                             title={
                               deleteVariant === "cnc"
                                 ? "삭제"
-                                : "CAM으로 되돌리기"
+                                : "준비로 되돌리기"
                             }
                           >
                             {deleteVariant === "cnc" ? (

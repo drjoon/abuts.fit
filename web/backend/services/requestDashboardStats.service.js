@@ -68,7 +68,7 @@ export function buildDashboardNormalizedStageExpr() {
             },
             {
               case: {
-                $in: ["$$stage", ["request", "의뢰"]],
+                $in: ["$$stage", ["준비"]],
               },
               then: "request",
             },

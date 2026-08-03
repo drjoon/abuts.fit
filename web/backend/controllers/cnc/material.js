@@ -241,7 +241,8 @@ export async function updateMachineMaterial(req, res) {
         }
 
         const pending = await Request.find({
-          manufacturerStage: "CAM",
+          manufacturerStage: "가공",
+          "rnd.unmachinableAt": null,
           "caseInfos.reviewByStage.cam.status": "PENDING",
           "productionSchedule.diameter": matDia,
           $or: [

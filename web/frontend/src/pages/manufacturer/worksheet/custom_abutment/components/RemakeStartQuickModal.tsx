@@ -9,7 +9,7 @@
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 
-export type RemakeQuickStartStage = "준비" | "CAM" | "가공" | "세척.패킹";
+export type RemakeQuickStartStage = "준비" | "가공" | "세척.패킹";
 
 type RemakeStartQuickModalProps = {
   open: boolean;
@@ -22,7 +22,6 @@ type RemakeStartQuickModalProps = {
 
 const DEFAULT_STAGES: RemakeQuickStartStage[] = [
   "준비",
-  "CAM",
   "가공",
   "세척.패킹",
 ];

@@ -900,12 +900,11 @@ export async function getMyDashboardSummary(req, res) {
           ...requestFilter,
           manufacturerStage: {
             $in: [
-              "request",
+              "준비",
               "cam",
               "machining",
               "packing",
               "shipping",
-              "의뢰",
               "CAM",
               "가공",
               "세척.패킹",

@@ -304,7 +304,8 @@ async function postSpendCommitGeneralLedger({
 
 export function revertManufacturerStageByReviewStage(request, stage) {
   const prevStageMap = {
-    machining: "CAM",
+    // machining 롤백의 이전 단계는 request stage(의뢰)다.
+    machining: "의뢰",
     packing: "가공",
     shipping: "세척.패킹",
     tracking: "포장.발송",

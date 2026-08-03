@@ -95,12 +95,8 @@ export const RequestorRiskSummaryCard = ({
           </Badge>
         );
       case "CAM":
-        return (
-          <Badge variant="default" className={STAGE_BADGE_BASE}>
-            CAM
-          </Badge>
-        );
       case "가공":
+      case "생산":
         return (
           <Badge variant="default" className={STAGE_BADGE_BASE}>
             가공

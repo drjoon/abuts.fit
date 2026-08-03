@@ -18,9 +18,7 @@ const RequestPage = lazy(() =>
     default: m.RequestPage,
   })),
 );
-const CamPage = lazy(() =>
-  import("./custom_abutment/cam/CamPage").then((m) => ({ default: m.CamPage })),
-);
+
 const MachiningPage = lazy(() =>
   import("./custom_abutment/machining/MachiningPage").then((m) => ({
     default: m.MachiningPage,
@@ -63,7 +61,8 @@ export const ManufacturerWorksheetPage = () => {
             />
           );
         case "cam":
-          return <CamPage />;
+          // 작업 공정 변경: CAM 탭 비노출. legacy cam URL은 가공 페이지로 연결한다.
+          return <MachiningPage />;
         case "machining":
           return <MachiningPage />;
         case "packing":

@@ -104,9 +104,9 @@ export const getStatusBadge = (status: string, manufacturerStage?: string) => {
       case "의뢰":
         return <Badge variant="outline">준비</Badge>;
       case "CAM":
-        return <Badge variant="default">CAM</Badge>;
+      case "가공":
       case "생산":
-        return <Badge variant="default">생산</Badge>;
+        return <Badge variant="default">가공</Badge>;
       case "세척.포장":
       case "세척.패킹":
         return <Badge variant="default">세척.패킹</Badge>;
@@ -124,7 +124,7 @@ export const getStatusBadge = (status: string, manufacturerStage?: string) => {
     case "의뢰":
       return <Badge variant="outline">준비</Badge>;
     case "가공전":
-      return <Badge variant="default">CAM</Badge>;
+      return <Badge variant="default">가공</Badge>;
     case "가공후":
       return <Badge variant="default">생산</Badge>;
     case "배송중":

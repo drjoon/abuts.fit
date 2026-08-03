@@ -18,7 +18,6 @@ import {
   FileText,
   Package,
   Boxes,
-  Wrench,
   AlertTriangle,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -198,11 +197,10 @@ export const RequestorDashboardPage = () => {
 
   // change-log: 2026-08-03 - '의뢰' -> '준비' display normalization for requestor dashboard groups
   const stageGroupByLabel = useMemo<Record<string, string[] | null>>(() => ({
-    // 6단계 공통 공정: 준비 → CAM → 가공 → 세척.패킹 → 포장.발송 → 추적관리
+    // 작업 공정 변경: 준비 → 가공 → 세척.패킹 → 포장.발송 → 추적관리
     // Note: canceled requests are kept in DB but not shown in the '준비' card per UI policy.
     "준비": ["request"],
-    CAM: ["cam"],
-    가공: ["machining"],
+    가공: ["cam", "machining"],
     "세척.패킹": ["packing"],
     "포장.발송": ["shipping"],
     추적관리: ["tracking"],
@@ -213,8 +211,7 @@ export const RequestorDashboardPage = () => {
   const stageRawAliasByLabel = useMemo<Record<string, string[]>>(() => ({
     // display-level label '준비' maps legacy raw values '의뢰' / 'request' for normalization
     "준비": ["의뢰", "request"],
-    CAM: ["cam"],
-    가공: ["가공", "생산", "production", "machining"],
+    가공: ["cam", "CAM", "가공", "생산", "production", "machining"],
     "세척.패킹": ["세척.패킹", "세척.포장", "cleaning", "packing"],
     "포장.발송": ["포장.발송", "발송", "delivery", "shipping"],
     추적관리: ["추적관리", "tracking"],
@@ -589,7 +586,7 @@ export const RequestorDashboardPage = () => {
       : summaryResponse;
 
   // 의뢰비 충전 경고
-  // 의뢰, CAM 단계에 의뢰건이 있으면서 크레딧이 부족한지 확인
+  // 준비, 가공 단계에 의뢰건이 있으면서 크레딧이 부족한지 확인
   // 의뢰비 결제: 유료 크레딧 + 무료 의뢰비 크레딧 사용 가능 (무료 배송비 크레딧은 사용 불가)
   useEffect(() => {
     if (
@@ -602,10 +599,10 @@ export const RequestorDashboardPage = () => {
       const pricePerRequest =
         systemSettings.creditSettings.minCreditForRequest || 10000;
 
-      // 의뢰, CAM 단계에 의뢰건이 있으면 경고
+      // 준비, 가공 단계에 의뢰건이 있으면 경고
       const inRequest = stats.totalRequests || 0;
-      const inCam = stats.inCam || 0;
-      const totalPendingRequests = inRequest + inCam;
+      const inMachining = (stats.inCam || 0) + (stats.inProduction || 0);
+      const totalPendingRequests = inRequest + inMachining;
 
       // 의뢰비는 유료 크레딧 + 무료 의뢰비 크레딧 사용 가능
       const availableForRequest = paidCredit + freeRequestCredit;
@@ -949,8 +946,7 @@ export const RequestorDashboardPage = () => {
         const normalizedFrom = fromStage.toLowerCase();
         const normalizedTo = toStage.toLowerCase();
         const isRequestToCam =
-          (normalizedFrom === "의뢰" || normalizedFrom === "request") &&
-          (normalizedTo === "cam");
+          normalizedFrom === "준비" && normalizedTo === "cam";
         const isTrustedRequestToCamSource = [
           "bg-file-processed",
           "review-status-noop-nc-reuse",
@@ -1103,7 +1099,7 @@ export const RequestorDashboardPage = () => {
       }
 
       if (type === "credit:balance-updated") {
-        // CAM 승인/롤백처럼 크레딧 이벤트만 먼저 들어오는 케이스에서도
+        // 가공 승인/롤백처럼 크레딧 이벤트만 먼저 들어오는 케이스에서도
         // 7개 섹션 전체가 동기화되도록 full refresh plan을 사용한다.
         void refreshDashboard({
           cardsSummary: true,
@@ -1317,7 +1313,7 @@ export const RequestorDashboardPage = () => {
           title: "의뢰 취소 실패",
           description:
             serverMsg ||
-            "의뢰 또는 CAM 단계에서만 취소할 수 있습니다. 가공 단계부터는 취소가 불가능합니다.",
+            "준비 또는 가공 단계에서만 취소할 수 있습니다. 세척.패킹 단계부터는 취소가 불가능합니다.",
           variant: "destructive",
           duration: 3000,
         });
@@ -1892,7 +1888,6 @@ export const RequestorDashboardPage = () => {
     if (!dashboardStatsSource?.success) {
       return [
         { label: "준비", value: "0", icon: FileText },
-        { label: "CAM", value: "0", icon: Wrench },
         { label: "가공", value: "0", icon: Factory },
         { label: "세척.패킹", value: "0", icon: Boxes },
         { label: "포장.발송", value: "0건/0박스", icon: Package },
@@ -1914,14 +1909,8 @@ export const RequestorDashboardPage = () => {
         icon: FileText,
       },
       {
-        label: "CAM",
-        value: String(s.inCam ?? 0),
-        change: s.inCamChange ?? "+0%",
-        icon: Wrench,
-      },
-      {
         label: "가공",
-        value: String(s.inProduction ?? 0),
+        value: String((s.inCam ?? 0) + (s.inProduction ?? 0)),
         change: s.inProductionChange ?? "+0%",
         icon: Factory,
       },

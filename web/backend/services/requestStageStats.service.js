@@ -3,7 +3,7 @@
 // - web/backend/app.js
 // - web/backend/server.js
 const MONITORING_STAGE_KEYS = [
-  "의뢰",
+  "준비",
   "CAM",
   "가공",
   "세척.패킹",
@@ -21,15 +21,15 @@ export function normalizeMonitoringStageLabel(manufacturerStage) {
   if (["packing", "세척.패킹"].includes(stage)) return "세척.패킹";
   if (["machining", "가공"].includes(stage)) return "가공";
   if (["cam", "CAM"].includes(stage)) return "CAM";
-  if (["request", "의뢰"].includes(stage)) return "의뢰";
+  if (["준비"].includes(stage)) return "준비";
 
-  // 운영 데이터 호환: 알 수 없는 상태는 기존과 동일하게 의뢰로 처리
-  return "의뢰";
+  // 알 수 없는 상태는 request 단계 SSOT(준비)로 처리
+  return "준비";
 }
 
 export function createEmptyMonitoringStageCounts() {
   return {
-    의뢰: 0,
+    준비: 0,
     CAM: 0,
     가공: 0,
     "세척.패킹": 0,

@@ -44,6 +44,12 @@ npm run db:implant-preset
 - 레거시 `CreditLedger` 기반 마이그레이션/보정 스크립트는 SSOT General Ledger 전환으로 삭제되었습니다.
 - 현재는 `LedgerJournal` + `LedgerLine` 기준 스크립트만 유지합니다.
 
+- **manufacturerStage request 단계 레거시 정리 (`의뢰`/`request` -> `준비`)**
+
+```bash
+ENV_FILE=local.env node scripts/db/migrate-manufacturer-stage-to-ready.js
+```
+
 - **payoutRates 마이그레이션 (legacy -> 최신 필드)**
 
 ```bash

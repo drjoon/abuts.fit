@@ -1,47 +1,61 @@
-modified files for 의뢰->준비 (display-only) change
+modified files for 의뢰->준비 (manufacturerStage SSOT) change
 
 Date: 2026-08-03
-Summary: UI-level display normalization for manufacturer workflow first stage "의뢰" -> "준비". DB values not changed. Changes were made to multiple frontend components and a small backend admin controller allowance.
+Summary:
+- 기존 display-only 정리를 넘어, manufacturerStage의 request 단계 SSOT를 "준비" 단일값으로 통일함.
+- 레거시 값 "의뢰" / "request" 의존 분기(저장/조회/필터/카운트/fallback)를 제거함.
+- 기존 데이터 정리를 위한 DB 마이그레이션 스크립트를 추가함.
 
-Files changed:
-- web/frontend/src/pages/manufacturer/worksheet/custom_abutment/utils/request.ts
-- web/frontend/src/pages/manufacturer/worksheet/WorksheetPage.tsx
+Frontend files changed:
+- web/frontend/rules.md
 - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
-- web/frontend/src/pages/manufacturer/worksheet/custom_abutment/hooks/useRequestFileHandlers.ts
-- web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RemakeStartQuickModal.tsx
-- web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/WorksheetCardGrid.tsx
 - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/hooks/useWorksheetRealtimeStatus.ts
 - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/packing/components/PackingPageContent.tsx
-- web/frontend/src/pages/manufacturer/worksheet/custom_abutment/shipping/components/MailboxContentsModal.tsx
 - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/tracking/TrackingPage.tsx
-- web/frontend/src/pages/manufacturer/dashboard/AdminDashboardPage.tsx
-- web/frontend/src/pages/admin/requests/AdminRequestMonitoring.tsx
-- web/frontend/src/shared/ui/dashboard/WorksheetQueueSummary.tsx
-- web/frontend/src/utils/stage.ts
-- web/frontend/src/features/layout/DashboardLayout.tsx
-- web/frontend/src/features/layout/DashboardLayout.tsx (header tabs modified)
-- web/backend/controllers/admin/admin.requests.controller.js
-- web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx
-- web/frontend/src/pages/manufacturer/worksheet/custom_abutment/machining/MachiningQueueBoard.tsx
-- web/frontend/src/pages/requestor/dashboard/RequestorDashboardPage.tsx
-- web/frontend/src/pages/requestor/dashboard/components/RequestorRecentRequestsCard.tsx
-- web/frontend/src/shared/ui/PricingPolicyDialog.tsx
-- web/frontend/src/features/requests/components/RequestDetailDialog.tsx
+- web/frontend/src/pages/manufacturer/worksheet/custom_abutment/utils/request.ts
+- web/frontend/src/pages/manufacturer/worksheet/custom_abutment/utils/requestFiltering.ts
 - web/frontend/src/pages/admin/dashboard/AdminDashboardPage.tsx
-- web/frontend/src/features/requests/components/ExpandedRequestCard.tsx
-- web/frontend/src/shared/ui/dashboard/RequestorRiskSummaryCard.tsx
-- web/frontend/src/pages/admin/credits/components/AutoMatchVerificationTab.tsx
-- web/frontend/src/pages/admin/support/AdminSmsPage.tsx
-- web/frontend/src/pages/admin/support/AdminChatManagement.tsx
-- web/frontend/src/pages/admin/referralGroups/AdminReferralGroupsPage.tsx
-- web/frontend/src/shared/components/PastRequestsModal.tsx
+- web/frontend/src/pages/admin/requests/AdminRequestMonitoring.tsx
+- web/frontend/src/pages/requestor/dashboard/RequestorDashboardPage.tsx
+- web/frontend/src/pages/requestor/dashboard/components/RequestorBulkShippingBannerCard.tsx
+- web/frontend/src/pages/requestor/dashboard/components/RequestorRecentRequestsCard.tsx
+- web/frontend/src/shared/components/CreditLedgerModal.tsx
 - web/frontend/src/utils/stage.ts
-- web/frontend/src/shared/components/CreditLedgerModal.tsx
-- web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
-- web/frontend/src/shared/components/CreditLedgerModal.tsx
-- web/frontend/src/pages/manufacturer/worksheet/custom_abutment/shipping/components/MailboxContentsModal.tsx
-- web/frontend/src/pages/admin/system/AdminSecurity.tsx
+
+Backend files changed:
+- web/backend/rules.md
+- web/backend/models/request.model.js
+- web/backend/controllers/admin/admin.requests.controller.js
+- web/backend/controllers/admin/adminCommBadges.controller.js
+- web/backend/controllers/bg/bg.controller.js
+- web/backend/controllers/cnc/shared.js
+- web/backend/controllers/requests/common.files.controller.js
+- web/backend/controllers/requests/common.nc.controller.js
+- web/backend/controllers/requests/common.requests.controller.js
+- web/backend/controllers/requests/common.review.controller.js
+- web/backend/controllers/requests/creation.from-draft.controller.js
+- web/backend/controllers/requests/dashboard.controller.js
+- web/backend/controllers/requests/production.utils.js
+- web/backend/controllers/requests/shippingPriority.utils.js
+- web/backend/controllers/requests/utils.js
+- web/backend/jobs/stageProgressionWorker.js
+- web/backend/services/requestDashboardStats.service.js
+- web/backend/services/requestStageStats.service.js
+
+DB migration/docs files added/updated:
+- web/backend/scripts/db/migrate-manufacturer-stage-to-ready.js
+- web/backend/scripts/db/README.md
+
+Local rules update status:
+- Frontend local rule updated:
+  - request(준비) 탭은 manufacturerStage="준비" 단일값 기준
+  - manufacturerStage 레거시 값("의뢰", "request") 사용/비교 금지 명시
+- Backend local rule updated:
+  - manufacturerStage request 단계 SSOT를 "준비" 단일값으로 명시
+  - 아노다이징 override 허용 단계 문구를 "준비", "CAM"으로 정리
 
 Notes:
-- Most changes are display-layer label changes and normalization functions. The backend change is an allowance to accept "준비" in admin status PATCH, intended for compatibility in the staging/local environment only.
-- Follow-up recommended: consider DB migration plan before removing legacy "의뢰" keys from server-side logic.
+- 기존 데이터에 "의뢰"/"request"가 남아있으면 아래 스크립트로 정리 필요:
+  - ENV_FILE=local.env node scripts/db/migrate-manufacturer-stage-to-ready.js
+- 변경 후 기준:
+  - 저장/전이/조회/카운트에서 request 단계는 "준비"만 사용.

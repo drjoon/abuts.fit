@@ -2034,7 +2034,7 @@ export async function updateRequest(req, res) {
           });
         }
         caseInfosAllowed = false;
-      } else if (stageStatus === "의뢰") {
+      } else if (stageStatus === "준비") {
         // 제한 없음
       } else if (stageStatus === "CAM") {
         // CAM 승인 전: 제한 없음 (caseInfos 허용)
@@ -2264,7 +2264,8 @@ export const updateRndUnmachinableStatus = asyncHandler(async (req, res) => {
 
       if (unmachinable && !wasUnmachinable && isPostCamStage) {
         bumpRollbackCount(requestInTx, "cam");
-        applyStatusMapping(requestInTx, "CAM");
+        // 작업 공정 변경: CAM은 더 이상 사용하지 않으므로 가공 단계로 바로 복귀한다.
+        applyStatusMapping(requestInTx, "가공");
       }
 
       // 정책: 제조사/관리자의 "가공불가" 액션은
@@ -2861,7 +2862,7 @@ export const updateRndHexRotation = asyncHandler(async (req, res) => {
   // 정책: 헥스 회전 설정/재설정은 의뢰 단계에서만 가능.
   // CAM 이상 단계에서는 고정되어 변경할 수 없다.
   const currentManufacturerStage = String(request?.manufacturerStage || "").trim();
-  if (currentManufacturerStage && currentManufacturerStage !== "의뢰") {
+  if (currentManufacturerStage && currentManufacturerStage !== "준비") {
     return res.status(409).json({
       success: false,
       message:
@@ -3116,7 +3117,7 @@ export async function updateRequestStatus(req, res) {
     // 의뢰자 판단으로 취소를 허용한다.
     if (manufacturerStage === "취소") {
       const currentStage = String(request.manufacturerStage || "").trim();
-      const allowedCancelStages = ["의뢰", "CAM"];
+      const allowedCancelStages = ["준비", "CAM"];
       const isUnmachinable = Boolean(request?.rnd?.unmachinableAt);
       const isStageAllowed =
         allowedCancelStages.includes(currentStage) || isUnmachinable;
@@ -3338,7 +3339,7 @@ export async function deleteRequest(req, res) {
       return;
     }
 
-    const deletableStages = isAdmin ? ["의뢰", "CAM", "가공"] : ["의뢰", "CAM"];
+    const deletableStages = isAdmin ? ["준비", "CAM", "가공"] : ["준비", "CAM"];
 
     if (!deletableStages.includes(stageStatus)) {
       return res.status(400).json({
@@ -3407,14 +3408,14 @@ export async function deleteRequest(req, res) {
   }
 }
 
-const CLONE_START_STAGE_VALUES = ["의뢰", "CAM", "가공", "세척.패킹"];
+const CLONE_START_STAGE_VALUES = ["준비", "CAM", "가공", "세척.패킹"];
 
 function parseCloneStartStage(
   value,
-  { allowMachining = true, defaultStage = "의뢰" } = {},
+  { allowMachining = true, defaultStage = "준비" } = {},
 ) {
   const raw = String(value || "").trim();
-  const allowed = allowMachining ? CLONE_START_STAGE_VALUES : ["의뢰", "CAM"];
+  const allowed = allowMachining ? CLONE_START_STAGE_VALUES : ["준비", "CAM"];
   if (!raw) return defaultStage;
   if (!allowed.includes(raw)) {
     throw new ApiError(
@@ -3426,7 +3427,7 @@ function parseCloneStartStage(
 }
 
 function buildReviewByStageForStartStage(startStage, now = new Date()) {
-  const isFromRequest = startStage === "의뢰";
+  const isFromRequest = startStage === "준비";
   const isFromMachining = startStage === "가공";
   const isFromPacking = startStage === "세척.패킹";
 
@@ -3531,7 +3532,7 @@ export async function cloneAsSample(req, res) {
       const isDelivered = !!di.deliveredAt;
       const isTrackingStage = stage === "추적관리";
       const isPackingStage = stage === "세척.패킹" || stage === "세척.포장";
-      const isRequestStage = stage === "의뢰" || stage.toLowerCase() === "request";
+      const isRequestStage = stage === "준비";
       const isCamStage = stage === "CAM" || stage.toLowerCase() === "cam";
 
       if (
@@ -3734,9 +3735,9 @@ export async function cloneAsSample(req, res) {
 }
 
 /**
- * R&D 샘플 의뢰를 '의뢰' 탭 작업용으로 복사
+ * R&D 샘플 의뢰를 '준비' 탭 작업용으로 복사
  * - 원본 R&D 샘플은 유지
- * - 복사본은 source=manufacturer_sample, rnd.doneAt=null, manufacturerStage='의뢰'
+ * - 복사본은 source=manufacturer_sample, rnd.doneAt=null, manufacturerStage='준비'
  * @route POST /api/requests/:id/clone-from-sample-to-request
  */
 export async function cloneFromSampleToRequest(req, res) {
@@ -3874,7 +3875,7 @@ export async function cloneFromSampleToRequest(req, res) {
 
       emitAppEventToRoles(["manufacturer", "admin"], "worksheet:count-update", {
         stage:
-          startStage === "의뢰"
+          startStage === "준비"
             ? "request"
             : startStage === "CAM"
               ? "cam"
@@ -4079,7 +4080,7 @@ export async function cloneRequestsForRecall(req, res) {
           "worksheet:count-update",
           {
             stage:
-              startStage === "의뢰"
+              startStage === "준비"
                 ? "request"
                 : startStage === "CAM"
                   ? "cam"

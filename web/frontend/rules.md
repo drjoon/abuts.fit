@@ -14,7 +14,7 @@
 
 이 문서는 `web/frontend` 폴더에서만 필요한 **구현 메모**만 남깁니다.
 
-- 최근 변경 목록 파일: `web/frontend/modified_prep_stage_changes_2026-08-03.txt` (의뢰->준비 UI 변경 이력, 프론트 표시 레벨)
+- 최근 변경 목록 파일: `web/frontend/modified_prep_stage_changes_2026-08-03.txt` (작업 공정 변경 이력, 프론트 표시 레벨)
 
 Notes:
 - Requestor dashboard: 상단 카드 '의뢰/취소' -> '준비'로 변경. 취소 항목은 카드에서 제거(내부 DB는 유지). 상세 정책/모달의 '의뢰' 문구는 '준비'로 변경함.
@@ -92,21 +92,29 @@ Notes:
     `src/pages/manufacturer/worksheet/custom_abutment/components/WorksheetStageSearchInput.tsx`에서 공통으로 관리합니다.
 
 - 제조사 워크시트 `request`(준비) 탭 필터 SSOT:
-  - 카드 목록 필터는 `deriveStageForFilter` 결과 `준비`를 기준으로 판정합니다 (`의뢰` 직접 비교 금지).
-  - request 탭 API 조회는 레거시 문서 호환을 위해 `manufacturerStageIn=준비|의뢰`를 함께 전달합니다.
+  - 카드 목록 필터는 `deriveStageForFilter` 결과 `준비`를 기준으로 판정합니다.
+  - request 탭 API 조회는 `manufacturerStageIn=준비` 단일값만 전달합니다.
+  - `manufacturerStage` request 단계 레거시 값(`의뢰`, `request`) 사용/비교는 금지합니다.
   - 상단 카운터/카드 목록 불일치 방지를 위해 탭별 API stage 필터와 클라이언트 stage 비교 문자열을 동일하게 유지합니다.
   - 관련 파일:
     - `src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx`
     - `src/pages/manufacturer/worksheet/custom_abutment/utils/request.ts`
     - `src/pages/manufacturer/worksheet/custom_abutment/utils/requestFiltering.ts`
 
-- 제조사 워크시트 승인/롤백(화살표) 동작 SSOT:
+- 작업 공정 변경:
   - `PreviewModal`과 `WorksheetCardGrid`의 화살표 액션은 동일 공정 전이 규칙을 사용합니다.
-  - 승인(`→`)은 "다음 공정 준비 데이터 존재 여부" 기준으로 허용하며, 준비가 안 된 경우 백엔드 승인 로직(큐/재처리 분기)이 다음 공정 작업을 수행한 뒤 전이합니다.
-  - 롤백(`←`)은 CAM/가공/세척.패킹/포장.발송/추적관리 모두 `rollbackOnly` 기반 전이를 우선합니다.
+  - 작업 탭 화살표 기준은 `준비 ↔ 가공` 흐름으로 정렬하며, CAM 단계는 화살표 전이에서 건너뜁니다.
+    - 승인(`→`): 준비에서 가공 전이 로직을 사용합니다(필요 시 NC 재생성 선행).
+    - 롤백(`←`): 가공에서 준비로 직접 롤백합니다.
+  - 헤더/라우팅 탭에서 CAM 탭은 노출하지 않으며, `stage=cam` legacy URL은 `machining`으로 매핑해 처리합니다.
+  - 세척.패킹/포장.발송/추적관리 구간은 기존 `rollbackOnly` 기반 전이를 유지합니다.
   - 관련 파일:
+    - `src/features/layout/DashboardLayout.tsx`
+    - `src/pages/manufacturer/worksheet/WorksheetPage.tsx`
+    - `src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx`
     - `src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx`
     - `src/pages/manufacturer/worksheet/custom_abutment/components/WorksheetCardGrid.tsx`
+    - `src/pages/manufacturer/worksheet/custom_abutment/hooks/useCardActions.ts`
     - `src/pages/manufacturer/worksheet/custom_abutment/hooks/useRequestFileHandlers.ts`
 
 - 기본 공용 검색 입력 컴포넌트는 `src/components/ui/input.tsx` (`@/components/ui/input`)입니다.

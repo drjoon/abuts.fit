@@ -19,10 +19,10 @@ export async function adminGetCommBadges(req, res) {
   try {
     const [requestCount, inquiryCount, mailCount, chatCount] =
       await Promise.all([
-        // 의뢰: 아직 CAM 검토 전인 새 의뢰 (request 단계)
+        // 준비: 아직 가공 검토 전인 새 의뢰 (준비 단계)
         // R&D 샘플은 통계/배지에서 제외
         Request.countDocuments({
-          manufacturerStage: "request",
+          manufacturerStage: "준비",
           source: { $ne: "manufacturer_sample" },
         }),
 

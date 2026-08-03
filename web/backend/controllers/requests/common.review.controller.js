@@ -566,7 +566,8 @@ export async function deleteStageFile(req, res) {
       }
 
       const prevStageMap = {
-        machining: "CAM",
+        // machining 롤백의 이전 단계는 request stage(준비)다.
+        machining: "준비",
         packing: "가공",
         shipping: "세척.패킹",
         tracking: "포장.발송",
@@ -1088,7 +1089,7 @@ export async function updateReviewStatusByStage(req, res) {
         status === "APPROVED" &&
         effectiveStage === "request" &&
         currentRequestReviewStatus === "APPROVED" &&
-        previousManufacturerStage === "의뢰"
+        previousManufacturerStage === "준비"
       ) {
         isDuplicateRequestApprovalNoop = true;
         acceptedMessage =
@@ -1116,7 +1117,7 @@ export async function updateReviewStatusByStage(req, res) {
             request,
             session,
           });
-        const isActuallyRequestStage = previousManufacturerStage === "의뢰";
+        const isActuallyRequestStage = previousManufacturerStage === "준비";
         if (
           isNormalSource &&
           (!isActuallyRequestStage || hasShippingOrCompletionHistory)
@@ -1303,9 +1304,17 @@ export async function updateReviewStatusByStage(req, res) {
           }
 
           if (canSkipCamRegeneration) {
-            applyStatusMapping(request, "CAM");
+            // 작업 공정 변경: 재제작(롤백 이력 있음) 승인은 NC 재생성 없이 기존 NC로 바로 가공 단계로 진입한다.
+            // CAM은 더 이상 노출/사용하지 않으므로 manufacturerStage는 바로 "가공"으로 설정한다.
+            applyStatusMapping(request, "가공");
+            request.caseInfos.reviewByStage.cam = {
+              status: "APPROVED",
+              updatedAt: new Date(),
+              updatedBy: req.user?._id || null,
+              reason: "",
+            };
             acceptedMessage =
-              "롤백 이력이 확인되어 CAM 재생성 없이 CAM 단계로 이동했습니다.";
+              "롤백 이력이 확인되어 NC 재생성 없이 가공 단계로 이동했습니다.";
           } else {
             request.productionSchedule.actualCamStart = new Date();
             pendingEspritTriggerRequest = request.toObject
@@ -1405,7 +1414,7 @@ export async function updateReviewStatusByStage(req, res) {
               requestor: requestorId,
               businessAnchorId: cloneBusinessAnchorId,
               caManufacturer: req.user?._id || request.caManufacturer || null,
-              manufacturerStage: "의뢰",
+              manufacturerStage: "준비",
               source: "manufacturer_sample",
               requestCategory: "copied_sample",
               lotNumber: {
@@ -1692,12 +1701,19 @@ export async function updateReviewStatusByStage(req, res) {
           const requestForReuse = await Request.findById(requestMongoId);
           if (
             requestForReuse &&
-            String(requestForReuse?.manufacturerStage || "").trim() === "의뢰" &&
+            String(requestForReuse?.manufacturerStage || "").trim() === "준비" &&
             String(requestForReuse?.caseInfos?.reviewByStage?.request?.status || "")
               .trim()
               .toUpperCase() === "APPROVED"
           ) {
-            applyStatusMapping(requestForReuse, "CAM");
+            // 작업 공정 변경: CAM은 더 이상 사용하지 않으므로 기존 NC 재사용 시바로 가공 단계로 이동한다.
+            applyStatusMapping(requestForReuse, "가공");
+            requestForReuse.caseInfos.reviewByStage.cam = {
+              status: "APPROVED",
+              updatedAt: new Date(),
+              updatedBy: req.user?._id || null,
+              reason: "",
+            };
             requestForReuse.productionSchedule = requestForReuse.productionSchedule || {};
             if (!requestForReuse.productionSchedule.actualCamComplete) {
               requestForReuse.productionSchedule.actualCamComplete = new Date();
@@ -1706,7 +1722,7 @@ export async function updateReviewStatusByStage(req, res) {
             resultRequest = requestForReuse;
             reusedExistingNc = true;
             acceptedMessage =
-              "기존 NC 작업 이력을 재사용하여 CAM 단계로 이동했습니다. BG 재생성은 실행하지 않았습니다.";
+              "기존 NC 작업 이력을 재사용하여 가공 단계로 이동했습니다. BG 재생성은 실행하지 않았습니다.";
           }
         }
 
@@ -1813,7 +1829,7 @@ export async function updateReviewStatusByStage(req, res) {
           reviewStage: "request",
           reviewStatus: "APPROVED",
           fromStage: "의뢰",
-          toStage: "CAM",
+          toStage: "가공",
           source: "review-status-noop-nc-reuse",
         });
 
@@ -1938,7 +1954,7 @@ export async function updateReviewStatusByStage(req, res) {
     const isRequestStageImmediateCamSkip =
       String(status || "").trim() === "APPROVED" &&
       String(effectiveStage || "").trim() === "request" &&
-      normalizedPrevStage === "의뢰" &&
+      normalizedPrevStage === "준비" &&
       normalizedCurrentStage === "CAM";
 
     emitWorksheetStageChanged(resultRequest, {

@@ -579,7 +579,7 @@ const requestSchema = new mongoose.Schema(
     manufacturerStage: {
       type: String,
       enum: [
-        "의뢰",
+        "준비",
         "CAM",
         "가공",
         "세척.패킹",
@@ -587,7 +587,7 @@ const requestSchema = new mongoose.Schema(
         "추적관리",
         "취소",
       ],
-      default: "의뢰",
+      default: "준비",
     },
     // 레거시: 배송 모드 제거됨 (묶음 배송만 사용)
     // 레거시: 출고일(또는 희망 출고일) (KST 기준)

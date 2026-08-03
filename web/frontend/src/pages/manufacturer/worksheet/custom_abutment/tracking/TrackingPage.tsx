@@ -45,13 +45,13 @@ import { WorksheetStageSearchInput } from "../components/WorksheetStageSearchInp
 
 type InquiryTab = "process" | "shipping" | "udi";
 
-type ProcessStage = "전체" | "준비" | "CAM" | "생산" | "발송" | "추적관리";
-type RecallStartStage = "준비" | "CAM" | "가공";
+type ProcessStage = "전체" | "준비" | "가공" | "생산" | "발송" | "추적관리";
+type RecallStartStage = "준비" | "가공";
 
 const getStage = (req: ManufacturerRequest): ProcessStage | "" => {
   const s = String(req.manufacturerStage || "").trim();
-  if (s === "의뢰") return "준비";
-  if (s === "CAM") return "CAM";
+  if (s === "준비") return "준비";
+  if (s === "CAM" || s.toLowerCase() === "cam") return "가공";
   if (s === "생산") return "생산";
   if (s === "발송") return "발송";
   if (s === "추적관리") return "추적관리";
@@ -1885,7 +1885,7 @@ export const TrackingInquiryPage = () => {
                     <span className="text-sm font-semibold">
                       재제작 시작 공정:
                     </span>
-                    {(["준비", "CAM", "가공"] as RecallStartStage[]).map(
+                    {(["준비", "가공"] as RecallStartStage[]).map(
                       (stage) => (
                         <Button
                           key={stage}

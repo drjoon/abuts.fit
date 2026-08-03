@@ -150,16 +150,11 @@ export const ManufacturerDashboardPage = () => {
       hint: "준비 단계 / 취소 건수",
     },
     {
-      key: "cam",
-      label: "CAM",
-      value: String(assignedSummary.camCount ?? 0),
-      icon: Wrench,
-      hint: "CAM 단계",
-    },
-    {
       key: "machining",
       label: "가공",
-      value: String(assignedSummary.machiningCount ?? 0),
+      value: String(
+        (assignedSummary.machiningCount ?? 0) + (assignedSummary.camCount ?? 0),
+      ),
       icon: Factory,
       hint: "가공 단계",
     },

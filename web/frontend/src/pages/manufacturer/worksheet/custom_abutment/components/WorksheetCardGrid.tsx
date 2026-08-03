@@ -1,5 +1,6 @@
 // change-log:
 // - 2026-08-03: 카드/롤백 관련 stage label 정규화: '의뢰' 표시를 '준비'로 변경하여 화면 일관성 확보 (display-only)
+// - 2026-08-03: 작업 공정 변경 반영: 화살표 승인/롤백 기준을 준비 ↔ 가공 흐름으로 정렬(중간 단계 건너뛰기)
 // related files:
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
@@ -833,10 +834,9 @@ export const WorksheetCardGrid = ({
                       ? "각인 이미지가 필요합니다"
                       : isNcGenerating
                         ? "NC 재생성 완료를 기다리는 중입니다"
-                        : reviewStageKey === "cam" && !hasNcFile
-                          ? "NC가 없어 재생성 명령을 먼저 실행합니다"
-                          : reviewStageKey === "request" && !hasCamFile
-                            ? "다음 공정 준비를 위해 백엔드 작업 명령을 먼저 실행합니다"
+                        : (reviewStageKey === "cam" || reviewStageKey === "request") &&
+                            !hasNcFile
+                          ? "가공 이동을 위해 NC 재생성 명령을 먼저 실행합니다"
                             : canApprove
                               ? "승인"
                               : "다음 공정으로 넘길 파일/데이터가 필요합니다"

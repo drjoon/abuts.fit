@@ -36,10 +36,11 @@ export const useCardActions = (
       const stage = deriveStageForFilter(req);
 
       if (stage === "가공") {
-        return handleDeleteStageFile({
-          req,
-          stage: "machining",
+        // 작업 공정 변경: 중간 단계를 건너뛰고 가공 → 준비로 직접 롤백
+        return handleDeleteNc(req, {
+          nextStage: "request",
           rollbackOnly: true,
+          navigate: false,
         });
       }
       if (stage === "CAM") {
@@ -71,10 +72,10 @@ export const useCardActions = (
         });
       }
       if (tabStage === "machining") {
-        return handleDeleteStageFile({
-          req,
-          stage: "machining",
+        return handleDeleteNc(req, {
+          nextStage: "request",
           rollbackOnly: true,
+          navigate: false,
         });
       }
       if (tabStage === "cam") {
@@ -109,9 +110,14 @@ export const useCardActions = (
         isMachiningStage,
       });
 
-      // CAM 승인 전 NC가 없으면 승인 대신 NC 생성 명령을 먼저 수행한다.
+      // 작업 공정 변경: 준비 승인 화살표는 CAM을 건너뛰어 가공 전이 로직을 사용한다.
+      const transitionStageKey =
+        stageKey === "request" ? "cam" : stageKey;
+
+      // CAM(또는 request에서 가공 전이로 위임된 케이스) 승인 전 NC가 없으면
+      // 승인 대신 NC 생성 명령을 먼저 수행한다.
       // NC 생성 결과는 백그라운드/웹소켓 동기화로 반영된다.
-      if (stageKey === "cam") {
+      if (transitionStageKey === "cam") {
         const hasNcFile = Boolean(req?.caseInfos?.ncFile?.s3Key);
         if (!hasNcFile) {
           if (handleRequestNcRegenerate) {
@@ -127,7 +133,7 @@ export const useCardActions = (
       void handleUpdateReviewStatus({
         req,
         status: "APPROVED",
-        stageOverride: stageKey,
+        stageOverride: transitionStageKey,
         // 작업 탭 승인(request)은 기존 NC 재사용 우선(재생성 강제 안 함)
         forceReprocess: false,
         approvalTriggerSource: "worksheet-tab",

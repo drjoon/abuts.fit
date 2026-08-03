@@ -1,5 +1,5 @@
 // change-log:
-// - 2026-08-03: CAM/롤백/승인 로컬 패치에서 의뢰 단계 명칭을 '준비'로 사용하도록 조정 (UI 표시용).
+// - 2026-08-03: 가공/롤백/승인 로컬 패치에서 의뢰 단계 명칭을 '준비'로 사용하도록 조정 (UI 표시용).
 // - note: 서버 승인/롤백 계약은 변경하지 않음(백엔드 이벤트는 기존 manufacturerStage 값을 사용함).
 // related files:
 // - web/frontend/rules.md
@@ -82,8 +82,8 @@ export const useRequestFileHandlers = ({
 
   const getApprovedManufacturerStage = useCallback(
     (stageKey: ReviewStageKey) => {
-      // request 승인 단계는 비동기 큐(ESPRIT 콜백) 완료 시점에만 CAM으로 전환된다.
-      // 프론트 낙관적 패치로 CAM으로 먼저 올리면 "CAM→의뢰" 튐 현상이 발생하므로 제외한다.
+      // request 승인 단계는 비동기 큐(ESPRIT 콜백) 완료 시점에만 가공으로 전환된다.
+      // 프론트 낙관적 패치로 먼저 올리면 "가공→준비" 튐 현상이 발생하므로 제외한다.
       if (stageKey === "request") return null;
       if (stageKey === "cam") return "가공";
       if (stageKey === "machining") return "세척.패킹";
@@ -738,13 +738,13 @@ export const useRequestFileHandlers = ({
             toast({
               title: isRequestApproveFromTab
                 ? reusedExistingNc
-                  ? "작업 탭 승인: 기존 NC 재사용으로 CAM 이동"
+                  ? "작업 탭 승인: 기존 NC 재사용으로 가공 이동"
                   : "작업 탭 승인: 기존 이력 우선 처리"
                 : "중복 승인 요청",
               description: isRequestApproveFromTab
                 ? reusedExistingNc
-                  ? "기존 NC 작업을 재사용해 BG 재생성 없이 CAM 단계로 이동했습니다."
-                  : "작업 탭 승인에서는 기존 작업 재사용 가능 시 CAM으로 넘기고, 재사용 불가 시 BG 재처리를 진행합니다."
+                  ? "기존 NC 작업을 재사용해 BG 재생성 없이 가공 단계로 이동했습니다."
+                  : "작업 탭 승인에서는 기존 작업 재사용 가능 시 가공으로 넘기고, 재사용 불가 시 BG 재처리를 진행합니다."
                 : responseMessage || "이미 승인 접수된 건입니다.",
               duration: 5000,
             });
@@ -754,7 +754,7 @@ export const useRequestFileHandlers = ({
           const successDescription =
             params.status === "APPROVED"
               ? stageKey === "request"
-                ? "의뢰 승인으로 처리했습니다. 기존 작업 이력이 재사용 가능하면 CAM으로 넘기고, 불가하면 BG를 재처리합니다."
+                ? "의뢰 승인으로 처리했습니다. 기존 작업 이력이 재사용 가능하면 가공으로 넘기고, 불가하면 BG를 재처리합니다."
                 : stageKey === "cam" || stageKey === "machining"
                   ? "작업 명령이 접수되었습니다. 처리 완료 후 상태가 자동으로 업데이트됩니다."
                   : "승인되었습니다."

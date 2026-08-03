@@ -34,7 +34,7 @@ import {
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/WorksheetCardGrid.tsx
 // - web/frontend/src/shared/realtime/useAppEventListener.ts
 
-const EDITABLE_STATUSES = new Set(["준비", "의뢰", "CAM"]); // '준비' added for display-normalized stage compatibility
+const EDITABLE_STATUSES = new Set(["준비", "CAM", "가공"]); // CAM 호환 포함, UI 정책상 준비/가공 단계에서 수정 허용
 
 const STAGE_BADGE_BASE =
   "text-[10px] h-4 px-1.5 whitespace-nowrap leading-none flex items-center justify-center";
@@ -379,7 +379,7 @@ export const RequestorRecentRequestsCard = ({
       if (manufacturerStage && !canEditRequest(manufacturerStage)) {
         toast({
           title: "변경 불가",
-          description: "준비 또는 CAM 단계에서만 변경할 수 있습니다.",
+          description: "준비 또는 가공 단계에서만 변경할 수 있습니다.",
           variant: "destructive",
           duration: 3000,
         });
@@ -568,7 +568,11 @@ export const RequestorRecentRequestsCard = ({
 
   const isCancelableRequest = (r: RecentRequestCardItem | null) => {
     const normalizedStageLabel = resolveStageLabel(r);
-    return normalizedStageLabel === "의뢰" || normalizedStageLabel === "CAM";
+    return (
+      normalizedStageLabel === "준비" ||
+      normalizedStageLabel === "CAM" ||
+      normalizedStageLabel === "가공"
+    );
   };
 
   return (
@@ -658,7 +662,7 @@ export const RequestorRecentRequestsCard = ({
                           </span>
                         </TooltipTrigger>
                         <TooltipContent side="top">
-                          의뢰, CAM 공정에서만 취소할 수 있습니다.
+                          준비, 가공 공정에서만 취소할 수 있습니다.
                         </TooltipContent>
                       </Tooltip>
                     </div>

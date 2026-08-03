@@ -1,6 +1,5 @@
 // change-log:
-// - 2026-08-03: admin status API에서 허용하는 manufacturerStage 목록에 '준비'를 임시로 추가(프론트 표시 연동 용도).
-//   Note: DB 저장/이력 정책은 변경하지 않았으며, 서버는 기존 '의뢰' 값도 계속 허용합니다.
+// - 2026-08-03: manufacturerStage request 단계 SSOT를 '준비' 단일값으로 통일하고 '의뢰' 레거시 허용을 제거.
 // related files:
 // - web/backend/rules.md
 // - web/backend/app.js
@@ -109,7 +108,7 @@ export async function updateRequestStatus(req, res) {
         .json({ success: false, message: "유효하지 않은 의뢰 ID입니다." });
     }
 
-    const validStatuses = ["준비", "의뢰", "CAM", "생산", "발송", "완료", "취소"];
+    const validStatuses = ["준비", "가공", "발송", "완료", "취소"];
     if (!validStatuses.includes(status)) {
       return res
         .status(400)

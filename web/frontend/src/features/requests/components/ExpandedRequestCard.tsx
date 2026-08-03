@@ -92,13 +92,9 @@ export const ExpandedRequestCard = ({
         case "의뢰":
           return <Badge variant="outline">준비</Badge>;
         case "CAM":
-          return <Badge variant="default">CAM</Badge>;
+        case "가공":
         case "생산":
-          return (
-            <Badge className="bg-cyan-50 text-cyan-700 border-cyan-200 text-xs">
-              생산
-            </Badge>
-          );
+          return <Badge variant="default">가공</Badge>;
         case "발송":
           return (
             <Badge className="bg-blue-50 text-blue-700 border-blue-200 text-xs">
@@ -117,7 +113,7 @@ export const ExpandedRequestCard = ({
       case "의뢰":
         return <Badge variant="outline">준비</Badge>;
       case "가공전":
-        return <Badge variant="default">CAM</Badge>;
+        return <Badge variant="default">가공</Badge>;
       case "가공후":
         return (
           <Badge className="bg-cyan-50 text-cyan-700 border-cyan-200 text-xs">

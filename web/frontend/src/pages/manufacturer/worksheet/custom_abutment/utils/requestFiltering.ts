@@ -1,6 +1,6 @@
 // change-log:
 // - 2026-08-03: 준비 탭 필터 SSOT를 `준비`로 통일해 상단 카운트와 카드 목록 불일치(카운트>0, 카드 0건) 문제를 수정.
-// - 2026-08-03: 실시간 CAM 생성중 복원 조건에서 레거시 `의뢰`와 신규 `준비`를 모두 허용.
+// - 2026-08-03: 실시간 CAM 생성중 복원 조건의 request 단계 판정을 `준비` 단일값으로 정리.
 // related files:
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
@@ -104,6 +104,8 @@ export function filterRequestsByStage(
   currentStageOrder: number,
   filterRequests?: (req: ManufacturerRequest) => boolean,
 ): ManufacturerRequest[] {
+  const normalizedTabStage =
+    String(tabStage || "").trim() === "cam" ? "machining" : tabStage;
   const isDoneRndSample = (req: ManufacturerRequest) =>
     isRndSampleRequest(req);
   const isUnmachinable = (req: ManufacturerRequest) =>
@@ -118,7 +120,7 @@ export function filterRequestsByStage(
     }
   };
 
-  if (tabStage === "rnd") {
+  if (normalizedTabStage === "rnd") {
     return requests.filter((req) => {
       if (!passExternalFilter(req)) return false;
       if (isUnmachinable(req)) return false;
@@ -126,7 +128,7 @@ export function filterRequestsByStage(
     });
   }
 
-  if (tabStage === "unmachinable") {
+  if (normalizedTabStage === "unmachinable") {
     return requests.filter((req) => {
       if (!passExternalFilter(req)) return false;
       return isUnmachinable(req);
@@ -134,7 +136,7 @@ export function filterRequestsByStage(
   }
 
   if (showCompleted) {
-    if (tabStage === "tracking") {
+    if (normalizedTabStage === "tracking") {
       return requests.filter((req) => {
         if (!passExternalFilter(req)) return false;
         return deriveStageForFilter(req) === "추적관리";
@@ -146,7 +148,7 @@ export function filterRequestsByStage(
       // R&D 보관 샘플(doneAt!=null)은 일반 공정 탭에서 제외한다.
       if (isDoneRndSample(req)) return false;
       if (isUnmachinable(req)) return false;
-      if (tabStage === "shipping" && isPrePickupShippingVisible(req))
+      if (normalizedTabStage === "shipping" && isPrePickupShippingVisible(req))
         return true;
       return shouldShowRequestInIncludeCompleted(req, currentStageOrder);
     });
@@ -159,14 +161,15 @@ export function filterRequestsByStage(
     if (isUnmachinable(req)) return false;
 
     const stage = deriveStageForFilter(req);
-    if (tabStage === "request") return stage === "준비";
-    if (tabStage === "cam") return stage === "CAM";
-    if (tabStage === "machining") return stage === "가공";
-    if (tabStage === "packing") return stage === "세척.패킹";
-    if (tabStage === "shipping") {
+    if (normalizedTabStage === "request") {
+      return stage === "준비";
+    }
+    if (normalizedTabStage === "machining") return stage === "가공";
+    if (normalizedTabStage === "packing") return stage === "세척.패킹";
+    if (normalizedTabStage === "shipping") {
       return stage === "포장.발송" || isPrePickupShippingVisible(req);
     }
-    if (tabStage === "tracking") return stage === "추적관리";
+    if (normalizedTabStage === "tracking") return stage === "추적관리";
 
     // fallback
     const order = stageOrder[stage] ?? 0;
@@ -242,7 +245,7 @@ export function mergeTransientRealtimeProgress(
           new Date(actualCamStart).getTime() >
             new Date(actualCamComplete).getTime());
 
-      if ((stage === "의뢰" || stage === "준비") && isCamProcessing && !hasNcFile) {
+      if (stage === "준비" && isCamProcessing && !hasNcFile) {
         const startedAt = actualCamStart as string;
         restoredProgress = {
           badge: "CAM 생성중",

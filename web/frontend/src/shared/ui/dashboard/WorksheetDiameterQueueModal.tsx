@@ -32,7 +32,7 @@ export type WorksheetQueueItem = {
 export interface WorksheetDiameterQueueModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  processLabel: string; // e.g. "커스텀어벗 > 가공", "커스텀어벗 > 의뢰, CAM"
+  processLabel: string; // e.g. "커스텀어벗 > 가공", "커스텀어벗 > 준비, 가공"
   queues: Record<DiameterBucketKey, WorksheetQueueItem[]>;
   selectedBucket: DiameterBucketKey | null;
   onSelectBucket: (bucket: DiameterBucketKey) => void;

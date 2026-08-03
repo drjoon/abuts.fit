@@ -725,7 +725,7 @@ export const ManufacturerPaymentPage = () => {
                         </span>
                         <HandCoins className="mt-0.5 h-4 w-4 text-muted-foreground" />
                         <div className="min-w-0">
-                          <div className="font-medium">CAM 승인 적립</div>
+                          <div className="font-medium">가공 승인 적립</div>
                           <div className="text-muted-foreground">
                             유료 의뢰비 기준 제조사 분배율 적용 (기본 60%,
                             영업자 미연결 시 65%) + VAT 10%

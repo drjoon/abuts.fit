@@ -405,17 +405,12 @@ export const PackingPageContent = ({
     async (req: ManufacturerRequest) => {
       if (!req?._id) return;
       try {
-        // 세척.패킹 등 CAM 이후 단계에서는 허용 시작 공정 한계(의뢰/CAM/가공)에 맞춰
+        // 세척.패킹 등 가공 이후 단계에서는 허용 시작 공정 한계(준비/가공)에 맞춰
         // 가공 단계 샘플로 복사한다.
-        // (의뢰/CAM 단계 카드는 해당 단계 그대로 생성)
+        // (준비 단계 카드는 해당 단계 그대로 생성)
         const rawStage = String(req.manufacturerStage || "").trim();
         const lowerStage = rawStage.toLowerCase();
-        const startStage =
-          rawStage === "의뢰" || lowerStage === "request"
-            ? "준비"
-            : rawStage === "CAM" || lowerStage === "cam"
-              ? "CAM"
-              : "가공";
+        const startStage = rawStage === "준비" ? "준비" : "가공";
 
         const res = await fetch(`/api/requests/remake-clone`, {
           method: "POST",
