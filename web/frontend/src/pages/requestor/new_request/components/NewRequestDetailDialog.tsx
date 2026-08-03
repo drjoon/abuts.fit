@@ -188,7 +188,12 @@ export function NewRequestDetailDialog({
     }
   }, [persistedNewSystemRequest]);
 
-
+  useEffect(() => {
+    if (!detailFile) return;
+    if (!detailCaseInfos?.retentionGroove) {
+      setDetailCaseInfos({ retentionGroove: "none" });
+    }
+  }, [detailFile, detailCaseInfos?.retentionGroove, setDetailCaseInfos]);
 
   const showImplantSelect = true;
 

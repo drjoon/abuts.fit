@@ -8,21 +8,16 @@ import { useEffect, useState } from "react";
 import {
   type ClinicFavoriteImplant,
   type ClinicPreset,
-  type RetentionGrooveValue,
 } from "./newRequestTypes";
 
 export type UseNewRequestClinicsParams = {
   clinicStorageKey: string | null;
   implant: ClinicFavoriteImplant;
-  // 현재 편집 중인 의뢰의 retentionGroove 값. 선택된 치과가 있고 값이
-  // 바뀌면 해당 치과의 defaultRetentionGroove 로 자동 저장된다.
-  retentionGroove?: RetentionGrooveValue;
 };
 
 export const useNewRequestClinics = ({
   clinicStorageKey,
   implant,
-  retentionGroove,
 }: UseNewRequestClinicsParams) => {
   const [clinicPresets, setClinicPresets] = useState<ClinicPreset[]>([]);
   const [selectedClinicId, setSelectedClinicId] = useState<string | null>(null);
@@ -45,7 +40,9 @@ export const useNewRequestClinics = ({
       ) {
         setSelectedClinicId(saved.selectedClinicId);
       }
-    } catch {}
+    } catch {
+      // noop
+    }
   }, [clinicStorageKey]);
 
   useEffect(() => {
@@ -59,7 +56,9 @@ export const useNewRequestClinics = ({
 
     try {
       window.localStorage.setItem(clinicStorageKey, JSON.stringify(payload));
-    } catch {}
+    } catch {
+      // noop
+    }
   }, [clinicStorageKey, clinicPresets, selectedClinicId]);
 
   useEffect(() => {
@@ -91,28 +90,7 @@ export const useNewRequestClinics = ({
     });
   }, [selectedClinicId, implant.manufacturer, implant.brand, implant.type]);
 
-  // 선택된 치과의 retentionGroove(유지홈) 디폴트 자동 저장 - favorite 임플란트와 동일 패턴.
-  useEffect(() => {
-    if (!selectedClinicId) return;
-    if (!retentionGroove) return;
 
-    setClinicPresets((prev) => {
-      const idx = prev.findIndex((c) => c.id === selectedClinicId);
-      if (idx === -1) return prev;
-
-      const target = prev[idx];
-      if (target.defaultRetentionGroove === retentionGroove) {
-        return prev;
-      }
-
-      const next = [...prev];
-      next[idx] = {
-        ...target,
-        defaultRetentionGroove: retentionGroove,
-      };
-      return next;
-    });
-  }, [selectedClinicId, retentionGroove]);
 
   const handleSelectClinic = (id: string | null) => {
     setSelectedClinicId(id);
@@ -142,7 +120,6 @@ export const useNewRequestClinics = ({
         id,
         name: trimmed,
         favorite: favoriteImplant,
-        defaultRetentionGroove: retentionGroove,
       };
 
       setSelectedClinicId(id);
