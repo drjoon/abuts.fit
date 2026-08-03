@@ -101,11 +101,13 @@ export function usePreviewLoader({
       req: ManufacturerRequest,
       opts?: {
         forceRefresh?: boolean;
+        openOnlyIfAlreadyOpen?: boolean;
       },
     ) => {
       if (!token) return;
       try {
         const forceRefresh = opts?.forceRefresh === true;
+        const openOnlyIfAlreadyOpen = opts?.openOnlyIfAlreadyOpen === true;
         setPreviewLoading(true);
         setPreviewNcText("");
         setPreviewNcName("");
@@ -460,7 +462,11 @@ export function usePreviewLoader({
           finishLinePoints: finishLineResult.points,
           finishLineSource: finishLineResult.source,
         });
-        setPreviewOpen((prev) => (prev ? prev : true));
+        if (openOnlyIfAlreadyOpen) {
+          setPreviewOpen((prev) => (prev ? true : false));
+        } else {
+          setPreviewOpen((prev) => (prev ? prev : true));
+        }
         toast({
           title: "다운로드 완료",
           description:

@@ -111,9 +111,10 @@ Notes:
     - 롤백(`←`): 가공에서 준비로 직접 롤백합니다.
       - 클릭 즉시 "준비 롤백 요청 전송됨" 진행 토스트를 띄웁니다. (카드 화살표 + PreviewModal + MachiningBoard Next Up/Now Playing 경로 포함)
       - `request:stage-changed` 웹소켓에서 `toStage=준비` 수신 시 진행 토스트를 닫습니다.
-      - PreviewModal의 승인/롤백은 마지막 건이 아니면 모달을 닫지 않고 다음 의뢰 데이터로 교체합니다(무플리커).
-      - 마지막 건이면 모달 닫힘만 수행하고, 같은 의뢰를 닫았다가 다시 여는 동작은 금지합니다.
-      - next 의뢰 선택 시 requestId뿐 아니라 requestMongoId(`_id`)까지 함께 비교해 동일 의뢰 재오픈을 방지합니다.
+      - PreviewModal의 승인/롤백 후에는 자동 next-open을 수행하지 않고 모달을 닫습니다.
+      - 승인/롤백 직후 동일 의뢰를 자동으로 다시 여는 동작은 금지합니다.
+      - 다음 의뢰 열기는 작업자가 `Skip(S)` 등 명시 동작으로만 수행합니다.
+      - 롤백 stage-changed 웹소켓은 현재 탭 필터에 맞는 의뢰가 리스트에 없으면 즉시 prepend patch를 적용해 카드 누락을 방지합니다.
       - rollback 계열 웹소켓 source(`stage-file-rollback-only|stage-file-rollback-with-delete|nc-rollback-only|nc-rollback-with-delete`)는 payload patch 우선으로 반영하고 즉시 목록 재조회는 생략해 중복 refetch를 줄입니다.
       - 롤백 진행 토스트는 토스트 중복 억제 예외(`skipDuplicateCheck`)로 처리해, 연속 클릭 테스트에서도 클릭 직후 안내가 항상 보이도록 합니다.
       - 파일 보존 정책: rollbackOnly 롤백에서는 NC/공정 파일 메타를 삭제하지 않고 공정만 되돌립니다.
@@ -362,6 +363,7 @@ Notes:
     - `TrackingPage`: 이벤트 수신 시 `runTrackingFetch({ silent: true, append: false })`로 무플리커 재동기화합니다.
     - `WorksheetCncMachineSection`: `request:stage-changed`/배송/카운트 이벤트를 디바운스 수신해 큐 요약만 최소 재조회합니다.
     - `PreviewModal`: 현재 열려 있는 의뢰(`requestId`/`requestMongoId`)와 payload를 매칭한 경우에만 force refresh를 수행합니다.
+    - `useAppEventDebouncedReload`: `enabled=false`(예: 모달 닫힘) 전환 시 예약된 debounce 타이머를 즉시 취소해야 하며, 닫힌 모달을 이벤트 지연 콜백으로 재오픈하면 안 됩니다.
     - `PackingPage`/`ShippingPage` 래퍼에서는 중복 처리하지 않고 `RequestPage -> useWorksheetRealtimeStatus` 공통 경로를 SSOT로 사용합니다.
     - 공통 원칙: 이벤트 재동기화로 `isInitialLoading`을 다시 true로 올리지 않고, 기존 데이터 유지 + silent refresh를 기본값으로 유지합니다.
     - CAM/가공 카드 액션(승인/롤백) 즉시반영 표준:

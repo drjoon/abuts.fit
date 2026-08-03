@@ -860,6 +860,53 @@ export const RequestPage = ({
     decodeNcText,
   });
 
+  const blockedPreviewReopenRef = useRef<{
+    requestId: string;
+    requestMongoId: string;
+    untilMs: number;
+  } | null>(null);
+
+  const handlePreviewOpenChange = useCallback(
+    (nextOpen: boolean) => {
+      if (!nextOpen) {
+        const currentReq = pageState.previewFiles?.request as
+          | ManufacturerRequest
+          | undefined;
+        blockedPreviewReopenRef.current = {
+          requestId: String(currentReq?.requestId || "").trim(),
+          requestMongoId: String(currentReq?._id || "").trim(),
+          untilMs: Date.now() + 2000,
+        };
+      }
+      pageState.setPreviewOpen(nextOpen);
+    },
+    [pageState.previewFiles, pageState.setPreviewOpen],
+  );
+
+  const handleOpenPreviewWithSameReopenGuard = useCallback(
+    async (
+      req: ManufacturerRequest,
+      opts?: { forceRefresh?: boolean; openOnlyIfAlreadyOpen?: boolean },
+    ) => {
+      const rid = String(req?.requestId || "").trim();
+      const mid = String(req?._id || "").trim();
+      const blocked = blockedPreviewReopenRef.current;
+      if (
+        blocked &&
+        ((rid && blocked.requestId === rid) ||
+          (mid && blocked.requestMongoId === mid))
+      ) {
+        if (Date.now() <= Number(blocked.untilMs || 0)) {
+          return false;
+        }
+      }
+      blockedPreviewReopenRef.current = null;
+      await handleOpenPreview(req, opts);
+      return true;
+    },
+    [handleOpenPreview],
+  );
+
   const { realtimeBaseRef } = useWorksheetRealtimeStatus({
     enabled: true,
     token,
@@ -868,7 +915,7 @@ export const RequestPage = ({
     fetchRequestsCore,
     previewOpen: pageState.previewOpen,
     previewFiles: pageState.previewFiles,
-    handleOpenPreview,
+    handleOpenPreview: handleOpenPreviewWithSameReopenGuard,
     removeOnMachiningComplete: true,
     matchesCurrentPage,
     pendingStageTransitionToastRef,
@@ -2065,14 +2112,12 @@ export const RequestPage = ({
         return false;
       }
 
-      await handleOpenPreview(nextReq);
-      return true;
+      return handleOpenPreviewWithSameReopenGuard(nextReq);
     },
     [
       filteredAndSorted,
       getFilteredAndSortedRequests,
-      handleOpenPreview,
-      pageState.previewFiles,
+      handleOpenPreviewWithSameReopenGuard,
       pageState.requests,
       refreshRequests,
     ],
@@ -2292,7 +2337,9 @@ export const RequestPage = ({
                       : undefined
                   }
                   onDownload={handleDownloadOriginal}
-                  onOpenPreview={handleOpenPreview}
+                  onOpenPreview={(req) => {
+                    void handleOpenPreviewWithSameReopenGuard(req);
+                  }}
                   onDeleteCam={handleDeleteCam}
                   onDeleteNc={handleDeleteNc}
                   onCloneSample={
@@ -2397,7 +2444,7 @@ export const RequestPage = ({
 
       <PreviewModal
         open={pageState.previewOpen}
-        onOpenChange={pageState.setPreviewOpen}
+        onOpenChange={handlePreviewOpenChange}
         previewLoading={pageState.previewLoading}
         previewFiles={pageState.previewFiles}
         previewNcText={pageState.previewNcText}
@@ -2420,7 +2467,7 @@ export const RequestPage = ({
         onDownloadCamStl={handleDownloadCamStl}
         onDownloadNcFile={handleDownloadNcFile}
         onDownloadStageFile={handleDownloadStageFile}
-        onRefreshPreview={handleOpenPreview}
+        onRefreshPreview={handleOpenPreviewWithSameReopenGuard}
         onMarkUnmachinable={handleMarkUnmachinable}
         onRestoreUnmachinable={handleRestoreUnmachinable}
         onSaveManufacturerHexRotation={handleSaveManufacturerHexRotation}

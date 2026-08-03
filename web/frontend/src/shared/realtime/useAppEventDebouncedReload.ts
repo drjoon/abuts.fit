@@ -3,6 +3,7 @@
 // - web/frontend/src/shared/realtime/useAppEventListener.ts
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
 // - web/frontend/src/pages/admin/support/AdminBusinessRegistrationInquiryPage.tsx
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx
 import { useEffect, useRef } from "react";
 import { AppEventMessage } from "@/shared/realtime/socket";
 import { useAppEventListener } from "@/shared/realtime/useAppEventListener";
@@ -30,6 +31,9 @@ export function useAppEventDebouncedReload({
   deferWhenEditing = true,
 }: UseAppEventDebouncedReloadOptions) {
   const timerRef = useRef<number | null>(null);
+  const enabledRef = useRef(Boolean(enabled));
+
+  enabledRef.current = Boolean(enabled);
 
   useAppEventListener({
     enabled,
@@ -42,10 +46,19 @@ export function useAppEventDebouncedReload({
         window.clearTimeout(timerRef.current);
       }
       timerRef.current = window.setTimeout(() => {
+        if (!enabledRef.current) return;
         void onMatch(evt);
       }, Math.max(0, Number(delayMs || 0)));
     },
   });
+
+  useEffect(() => {
+    if (enabled) return;
+    if (timerRef.current) {
+      window.clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+  }, [enabled]);
 
   useEffect(() => {
     return () => {

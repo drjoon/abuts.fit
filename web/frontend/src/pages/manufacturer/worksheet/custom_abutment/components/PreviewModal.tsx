@@ -439,8 +439,8 @@ type PreviewModalProps = {
   ) => Promise<void>;
   onRefreshPreview?: (
     req: ManufacturerRequest,
-    opts?: { forceRefresh?: boolean },
-  ) => Promise<void>;
+    opts?: { forceRefresh?: boolean; openOnlyIfAlreadyOpen?: boolean },
+  ) => Promise<unknown>;
   onMarkUnmachinable?: (
     req: ManufacturerRequest,
     reason: string,
@@ -529,9 +529,15 @@ export const PreviewModal = ({
   const [anodizingEnabledDraft, setAnodizingEnabledDraft] = useState<boolean>(true);
   const req = previewFiles.request as ManufacturerRequest | null;
   const lastStableReqRef = useRef<ManufacturerRequest | null>(null);
+  const openRef = useRef<boolean>(open);
+  const suppressRealtimePreviewRefreshUntilRef = useRef<number>(0);
 
   const currentRequestMongoId = normalizeEventId(req?._id || (req as any)?.id);
   const currentRequestId = normalizeEventId(req?.requestId);
+
+  useEffect(() => {
+    openRef.current = open;
+  }, [open]);
 
   useEffect(() => {
     if (req) {
@@ -551,6 +557,11 @@ export const PreviewModal = ({
     ],
     delayMs: 160,
     shouldHandle: (evt) => {
+      const evtType = String(evt?.type || "").trim();
+      // 승인/롤백 공정 전이 이벤트는 프리뷰 강제 리프레시를 수행하지 않는다.
+      // (모달 자동 재오픈/불필요 다운로드 방지)
+      if (evtType === "request:stage-changed") return false;
+
       const payload =
         evt?.data && typeof evt.data === "object"
           ? (evt.data as {
@@ -590,9 +601,14 @@ export const PreviewModal = ({
       return rows.some((row) => matchesOne(row));
     },
     onMatch: () => {
+      if (!openRef.current) return;
+      if (Date.now() < suppressRealtimePreviewRefreshUntilRef.current) return;
       const target = lastStableReqRef.current;
       if (!target || !onRefreshPreview) return;
-      void onRefreshPreview(target, { forceRefresh: true });
+      void onRefreshPreview(target, {
+        forceRefresh: true,
+        openOnlyIfAlreadyOpen: true,
+      });
     },
   });
 
@@ -2161,6 +2177,7 @@ export const PreviewModal = ({
 
                     const performBack = async () => {
                       const stageKey = currentReviewStageKey;
+                      suppressRealtimePreviewRefreshUntilRef.current = Date.now() + 7000;
 
                       toast({
                         title: "롤백 요청 전송됨",
@@ -2204,20 +2221,9 @@ export const PreviewModal = ({
                       }
                     };
 
-                    // 롤백 후 다음 의뢰가 있으면 모달을 닫지 않고 데이터만 교체한다(무플리커).
-                    // 다음 의뢰가 없을 때만 모달을 닫는다.
-                    void performBack().then(async () => {
-                      const currentRequestId = String(
-                        activeReq?.requestId || "",
-                      ).trim();
-                      if (!onOpenNextRequest || !currentRequestId) {
-                        onOpenChange(false);
-                        return;
-                      }
-                      const opened = await onOpenNextRequest(currentRequestId);
-                      if (!opened) {
-                        onOpenChange(false);
-                      }
+                    // 롤백 후에는 자동 재오픈 없이 모달만 닫는다.
+                    void performBack().then(() => {
+                      onOpenChange(false);
                     });
                   }}
                   aria-label="이전 공정"
@@ -2266,6 +2272,7 @@ export const PreviewModal = ({
                   const runApprove = async () => {
                     if (approving) return;
                     setApproving(true);
+                    suppressRealtimePreviewRefreshUntilRef.current = Date.now() + 7000;
                     try {
                       // 준비 단계 승인(준비→가공) 전, rnd.manufacturerHexRotation 누락 시
                       // 현재 선택된 "헥스 회전" 값(라벨: STL모델대로/헥스30도회전)으로 선저장한다.
@@ -2381,20 +2388,8 @@ export const PreviewModal = ({
                         }
                       }
 
-                      const currentRequestId = String(
-                        activeReq?.requestId || "",
-                      ).trim();
-                      if (!onOpenNextRequest || !currentRequestId) {
-                        onOpenChange(false);
-                        return;
-                      }
-
-                      // 승인 후 다음 의뢰가 있으면 모달을 유지한 채 데이터만 교체한다(무플리커).
-                      // 다음 의뢰가 없으면 모달을 닫는다.
-                      const opened = await onOpenNextRequest(currentRequestId);
-                      if (!opened) {
-                        onOpenChange(false);
-                      }
+                      // 승인 후에는 자동 재오픈 없이 모달만 닫는다.
+                      onOpenChange(false);
                     } finally {
                       setApproving(false);
                     }

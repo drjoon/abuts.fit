@@ -8,7 +8,7 @@
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/hooks/useRequestFileHandlers.ts
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { AlertTriangle, ArrowLeft, ArrowRight, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -159,6 +159,11 @@ export const MachiningQueueBoard = ({
   const [, setSearchParams] = useSearchParams();
 
   const [camPreviewOpen, setCamPreviewOpen] = useState(false);
+  const blockedCamPreviewReopenRef = useRef<{
+    requestId: string;
+    requestMongoId: string;
+    untilMs: number;
+  } | null>(null);
   const [camPreviewLoading, setCamPreviewLoading] = useState(false);
   const [camPreviewFiles, setCamPreviewFiles] = useState<{
     original?: File | null;
@@ -412,6 +417,21 @@ export const MachiningQueueBoard = ({
     decodeNcText,
   });
 
+  const handleCamPreviewOpenChange = useCallback(
+    (nextOpen: boolean) => {
+      if (!nextOpen) {
+        const currentReq = camPreviewFiles?.request as ManufacturerRequest | undefined;
+        blockedCamPreviewReopenRef.current = {
+          requestId: String(currentReq?.requestId || "").trim(),
+          requestMongoId: String(currentReq?._id || "").trim(),
+          untilMs: Date.now() + 2000,
+        };
+      }
+      setCamPreviewOpen(nextOpen);
+    },
+    [camPreviewFiles],
+  );
+
   const openCamPreviewFromQueue = useCallback(
     async (
       prog: {
@@ -430,6 +450,18 @@ export const MachiningQueueBoard = ({
       machineId: string,
     ) => {
       const requestId = String(prog?.requestId || "").trim();
+      const requestMongoId = String(prog?.requestMongoId || "").trim();
+      const blocked = blockedCamPreviewReopenRef.current;
+      if (
+        blocked &&
+        ((requestId && blocked.requestId === requestId) ||
+          (requestMongoId && blocked.requestMongoId === requestMongoId))
+      ) {
+        if (Date.now() <= Number(blocked.untilMs || 0)) {
+          return;
+        }
+      }
+      blockedCamPreviewReopenRef.current = null;
       if (!requestId) {
         toast({
           title: "미리보기 불가",
@@ -522,8 +554,11 @@ export const MachiningQueueBoard = ({
           return !!(normalizedCurrentMongoId && mid === normalizedCurrentMongoId);
         });
 
-        let nextProg: any =
-          currentIndex >= 0 ? (queue[currentIndex + 1] ?? null) : null;
+        if (currentIndex < 0 || currentIndex >= queue.length - 1) {
+          return false;
+        }
+
+        const nextProg: any = queue[currentIndex + 1] ?? null;
 
         const isSameAsCurrent = (item: any) => {
           const rid = getRequestId(item);
@@ -534,7 +569,7 @@ export const MachiningQueueBoard = ({
         };
 
         if (!nextProg || isSameAsCurrent(nextProg)) {
-          nextProg = queue.find((item) => !isSameAsCurrent(item)) || null;
+          return false;
         }
 
         if (!nextProg) return false;
@@ -1681,7 +1716,7 @@ export const MachiningQueueBoard = ({
 
       <PreviewModal
         open={camPreviewOpen}
-        onOpenChange={setCamPreviewOpen}
+        onOpenChange={handleCamPreviewOpenChange}
         previewLoading={camPreviewLoading}
         previewFiles={camPreviewFiles}
         previewNcText={camPreviewNcText}

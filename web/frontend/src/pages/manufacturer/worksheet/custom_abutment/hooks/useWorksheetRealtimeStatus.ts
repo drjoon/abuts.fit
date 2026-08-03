@@ -39,8 +39,8 @@ type UseWorksheetRealtimeStatusParams = {
   previewFiles?: any;
   handleOpenPreview?: (
     req: ManufacturerRequest,
-    opts?: { forceRefresh?: boolean },
-  ) => Promise<void>;
+    opts?: { forceRefresh?: boolean; openOnlyIfAlreadyOpen?: boolean },
+  ) => Promise<unknown>;
   removeOnMachiningComplete?: boolean;
   matchesCurrentPage?: (req: ManufacturerRequest) => boolean;
   pendingStageTransitionToastRef?: MutableRefObject<
@@ -264,7 +264,36 @@ export function useWorksheetRealtimeStatus({
           | ManufacturerRequest
           | undefined;
         if (eventRequest) {
-          setRequests((prev) => applyRequestPatch(prev, eventRequest));
+          setRequests((prev) => {
+            const patched = applyRequestPatch(prev, eventRequest);
+
+            const sourceForInsert = String(payload?.source || "").trim();
+            const normalizedSourceForInsert = sourceForInsert.toLowerCase();
+            const isRollbackSource =
+              normalizedSourceForInsert === "stage-file-rollback-only" ||
+              normalizedSourceForInsert === "stage-file-rollback-with-delete" ||
+              normalizedSourceForInsert === "nc-rollback-only" ||
+              normalizedSourceForInsert === "nc-rollback-with-delete" ||
+              normalizedSourceForInsert.includes("rollback");
+
+            if (!isRollbackSource || !matchesCurrentPage?.(eventRequest)) {
+              return patched;
+            }
+
+            const requestIdForInsert = String(eventRequest?.requestId || "").trim();
+            const mongoIdForInsert = String(eventRequest?._id || "").trim();
+            const alreadyExists = patched.some((item) => {
+              const itemRequestId = String(item?.requestId || "").trim();
+              const itemMongoId = String(item?._id || "").trim();
+              return (
+                (requestIdForInsert && itemRequestId === requestIdForInsert) ||
+                (mongoIdForInsert && itemMongoId === mongoIdForInsert)
+              );
+            });
+
+            if (alreadyExists) return patched;
+            return [eventRequest, ...patched];
+          });
         }
 
         const pendingToastEntry =
@@ -294,12 +323,7 @@ export function useWorksheetRealtimeStatus({
 
         const source = String(payload?.source || "").trim();
         const shouldSkipImmediateRefetch =
-          Boolean(eventRequest) &&
-          (source === "bg-file-processed" ||
-            source === "stage-file-rollback-only" ||
-            source === "stage-file-rollback-with-delete" ||
-            source === "nc-rollback-only" ||
-            source === "nc-rollback-with-delete");
+          source === "bg-file-processed" && Boolean(eventRequest);
 
         if (!shouldSkipImmediateRefetch && fetchRequests) {
           void fetchRequests(true);
@@ -316,37 +340,8 @@ export function useWorksheetRealtimeStatus({
 
         if (fetchRequests) void fetchRequests(true);
 
-        const {
-          previewOpen: currentPreviewOpen,
-          previewFiles: currentPreviewFiles,
-          fetchRequestsCore: currentFetchRequestsCore,
-          handleOpenPreview: currentHandleOpenPreview,
-        } = latestRef.current;
-
-        if (
-          !currentPreviewOpen ||
-          !currentFetchRequestsCore ||
-          !currentHandleOpenPreview
-        ) {
-          return;
-        }
-
-        const currentRid = String(
-          currentPreviewFiles?.request?.requestId || "",
-        ).trim();
-        if (currentRid && currentRid !== requestId) return;
-
-        void (async () => {
-          const list = await currentFetchRequestsCore(true);
-          if (!Array.isArray(list) || list.length === 0) return;
-          const updated = list.find(
-            (r: any) => String(r?.requestId || "").trim() === requestId,
-          );
-          if (!updated) return;
-          await currentHandleOpenPreview(updated as any, {
-            forceRefresh: true,
-          });
-        })();
+        // 정책: 프리뷰 자동 재오픈 금지.
+        // 웹소켓 이벤트는 리스트/카드만 갱신하고, 프리뷰는 사용자의 수동 오픈으로만 연다.
         return;
       }
       case "request:cam-trigger-failed":
@@ -493,6 +488,7 @@ export function useWorksheetRealtimeStatus({
     toast,
     dismiss,
     pendingStageTransitionToastRef,
+    matchesCurrentPage,
   ]);
 
   // 웹소켓 실시간 업데이트(app-event): 활성 페이지에서만 이벤트를 반영한다.
@@ -653,38 +649,9 @@ export function useWorksheetRealtimeStatus({
           void fetchRequests(true);
         }, 180);
       }
-      const {
-        previewOpen: currentPreviewOpen,
-        previewFiles: currentPreviewFiles,
-        fetchRequestsCore: currentFetchRequestsCore,
-        handleOpenPreview: currentHandleOpenPreview,
-      } = latestRef.current;
-
-      if (
-        !requestId ||
-        !currentFetchRequestsCore ||
-        !currentHandleOpenPreview ||
-        !currentPreviewOpen
-      ) {
-        if (!requestId && fetchRequests) void fetchRequests(true);
-        return;
-      }
-
-      void (async () => {
-        const list = await currentFetchRequestsCore(true);
-        if (!list || !Array.isArray(list) || list.length === 0) return;
-
-        const updated = list.find(
-          (r: any) => String(r?.requestId || "").trim() === requestId,
-        );
-        if (!updated) return;
-
-        const currentRid = String(
-          currentPreviewFiles?.request?.requestId || "",
-        ).trim();
-        if (currentRid && currentRid !== requestId) return;
-        await currentHandleOpenPreview(updated as any);
-      })();
+      // 정책: 프리뷰 자동 재오픈 금지.
+      // BG 알림으로 프리뷰를 다시 열지 않는다. 리스트/카드 동기화만 수행.
+      if (!requestId && fetchRequests) void fetchRequests(true);
     });
 
 
