@@ -140,7 +140,9 @@ function dispatch(action: Action) {
   });
 }
 
-type Toast = Omit<ToasterToast, "id">;
+type Toast = Omit<ToasterToast, "id"> & {
+  skipDuplicateCheck?: boolean;
+};
 
 const getByteLength = (text: string) => {
   try {
@@ -150,13 +152,14 @@ const getByteLength = (text: string) => {
   }
 };
 
-function toast({ ...props }: Toast) {
+function toast({ skipDuplicateCheck = false, ...props }: Toast) {
   const now = Date.now();
   const key = `${props.title ?? ""}|${props.description ?? ""}|${
     props.variant ?? ""
   }`;
 
   if (
+    !skipDuplicateCheck &&
     key === lastToastKey &&
     now - lastToastTimestamp < DUPLICATE_SUPPRESS_INTERVAL
   ) {

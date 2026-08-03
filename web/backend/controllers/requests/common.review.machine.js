@@ -397,6 +397,7 @@ export async function ensureMachineCompatibilityOrThrow({
   request,
   stageKey,
   session = null,
+  reserveAssignment = false,
 }) {
   const targetDiameterRaw = resolveTargetDiameter(request);
   const targetDiameter = Number(targetDiameterRaw);
@@ -421,7 +422,7 @@ export async function ensureMachineCompatibilityOrThrow({
     const selection = await chooseMachineForCamMachining({
       request,
       requireCeil: true,
-      reserveAssignment: false,
+      reserveAssignment,
       session,
     });
     if (!selection?.ok) {

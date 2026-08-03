@@ -105,7 +105,17 @@
 - 가공 승인(준비→가공) 시 장비 배정 SSOT:
   - 승인 트랜잭션에서 `chooseMachineForCamMachining(requireCeil=true)`를 사용해 `caseInfos.maxDiameter` 기준 호환 장비를 선택하고
     `productionSchedule.assignedMachine/queuePosition`에 즉시 반영합니다.
+  - 성능 규칙: `review-status` 승인 경로에서 "호환성 검사"와 "실제 배정"은 동일 선택 결과를 재사용해 장비 선택 쿼리를 1회로 유지합니다(중복 호출 금지).
   - CAM 승인 후처리 큐(`CAM_STAGE_APPROVED`)는 Now Playing 즉시 시작을 하지 않으며, Next Up(대기열) 반영/로트 보정만 담당합니다.
+
+- NC 롤백(가공→준비) 성능 규칙:
+  - `DELETE /api/requests/:id/nc-file` 경로는 트랜잭션 내부 단일 조회 결과를 재사용합니다.
+  - pre-read + tx-read 이중 조회를 금지하고, 롤백 판단(credit rollback)/이벤트 payload/cleanup 메타를 1회 조회 스냅샷에서 파생합니다.
+  - 파일 보존 정책: `rollbackOnly=1`에서는 `caseInfos.ncFile` 및 실제 NC 파일(S3/bridge)을 삭제하지 않고 공정만 롤백합니다.
+
+- Stage-file 롤백 성능 규칙:
+  - `DELETE /api/requests/:id/stage-file?stage=...&rollbackOnly=1` 경로는 최소 필드 select를 사용해 문서 로딩 비용을 줄입니다.
+  - 롤백/삭제 완료 시 elapsed(ms) 로그(`STAGE_FILE_ROLLBACK completed`, `STAGE_FILE_DELETE completed`)를 남겨 회귀를 관찰합니다.
   - Now Playing 시작은 `allowAutoMachining` OFF→ON 전환(장비 설정 저장) 또는 가공 완료/실패 후 auto-next 트리거 시점에서만 수행합니다.
 
 - 제조사 헥스 회전 모드(`manufacturerHexRotation`)는 백엔드에서 fallback 기본값으로 보정하지 않습니다.

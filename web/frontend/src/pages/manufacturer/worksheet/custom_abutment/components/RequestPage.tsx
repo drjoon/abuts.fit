@@ -148,6 +148,16 @@ export const RequestPage = ({
   }, []);
 
   const { toast } = useToast();
+  const pendingStageTransitionToastRef = useRef<
+    Record<
+      string,
+      {
+        toastId: string;
+        expectedStages: string[];
+        createdAt: number;
+      }
+    >
+  >({});
 
   const fetchRequestsCore = useCallback(
     async (
@@ -861,6 +871,7 @@ export const RequestPage = ({
     handleOpenPreview,
     removeOnMachiningComplete: true,
     matchesCurrentPage,
+    pendingStageTransitionToastRef,
   });
 
   const {
@@ -917,6 +928,7 @@ export const RequestPage = ({
       handleUpdateReviewStatus,
     },
     realtimeBaseRef,
+    pendingStageTransitionToastRef,
   );
 
   const handleSaveToRnd = useCallback(
@@ -1997,19 +2009,29 @@ export const RequestPage = ({
 
 
   const handleOpenNextRequest = useCallback(
-    async (currentReqId: string) => {
-      const normalizedCurrentReqId = String(currentReqId || "").trim();
-      if (!normalizedCurrentReqId) return;
+    async (currentRequestId: string): Promise<boolean> => {
+      const normalizedCurrentRequestId = String(currentRequestId || "").trim();
+      if (!normalizedCurrentRequestId) return false;
 
-      const getReqIdentity = (req: ManufacturerRequest | undefined | null) =>
-        String(req?._id || req?.requestId || "").trim();
+      const getRequestId = (req: ManufacturerRequest | undefined | null) =>
+        String(req?.requestId || "").trim();
+      const getMongoId = (req: ManufacturerRequest | undefined | null) =>
+        String(req?._id || "").trim();
+
+      const currentPreviewReq =
+        pageState.previewFiles?.request &&
+        String(pageState.previewFiles.request?.requestId || "").trim() ===
+          normalizedCurrentRequestId
+          ? (pageState.previewFiles.request as ManufacturerRequest)
+          : null;
+      const normalizedCurrentMongoId = getMongoId(currentPreviewReq);
 
       const currentIndex = filteredAndSorted.findIndex(
-        (req) => getReqIdentity(req) === normalizedCurrentReqId,
+        (req) => getRequestId(req) === normalizedCurrentRequestId,
       );
-      const preferredNextId =
+      const preferredNextRequestId =
         currentIndex >= 0
-          ? getReqIdentity(filteredAndSorted[currentIndex + 1]) || null
+          ? getRequestId(filteredAndSorted[currentIndex + 1]) || null
           : null;
 
       const refreshed = await refreshRequests(true);
@@ -2017,31 +2039,42 @@ export const RequestPage = ({
       const latestFilteredAndSorted = getFilteredAndSortedRequests(latestList);
 
       let nextReq: ManufacturerRequest | undefined;
-      if (preferredNextId) {
-        nextReq = latestFilteredAndSorted.find(
-          (req) => getReqIdentity(req) === preferredNextId,
-        );
+      if (preferredNextRequestId) {
+        nextReq = latestFilteredAndSorted.find((req) => {
+          const rid = getRequestId(req);
+          const mid = getMongoId(req);
+          if (!rid) return false;
+          if (rid !== preferredNextRequestId) return false;
+          if (rid === normalizedCurrentRequestId) return false;
+          if (normalizedCurrentMongoId && mid === normalizedCurrentMongoId) return false;
+          return true;
+        });
       }
       if (!nextReq) {
-        nextReq = latestFilteredAndSorted.find(
-          (req) => getReqIdentity(req) !== normalizedCurrentReqId,
-        );
+        nextReq = latestFilteredAndSorted.find((req) => {
+          const rid = getRequestId(req);
+          const mid = getMongoId(req);
+          if (!rid) return false;
+          if (rid === normalizedCurrentRequestId) return false;
+          if (normalizedCurrentMongoId && mid === normalizedCurrentMongoId) return false;
+          return true;
+        });
       }
 
       if (!nextReq) {
-        setPreviewOpen(false);
-        return;
+        return false;
       }
 
       await handleOpenPreview(nextReq);
+      return true;
     },
     [
       filteredAndSorted,
       getFilteredAndSortedRequests,
       handleOpenPreview,
+      pageState.previewFiles,
       pageState.requests,
       refreshRequests,
-      setPreviewOpen,
     ],
   );
 
@@ -2394,8 +2427,6 @@ export const RequestPage = ({
         onSaveAnodizingEnabledOverride={handleSaveAnodizingEnabledOverride}
         onOpenNextRequest={handleOpenNextRequest}
         setSearchParams={setSearchParams}
-        // onOpenNextRequest는 제거됨: 승인 후 다음 의뢰 자동 열기 방지
-        // 승인 시 모달이 닫히고 작업자가 직접 다음 의뢰를 선택한다.
       />
 
       <RemakeStartQuickModal

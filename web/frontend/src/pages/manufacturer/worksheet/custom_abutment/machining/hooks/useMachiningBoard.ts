@@ -81,7 +81,7 @@ export const useMachiningBoard = ({
 }: {
   token: string | null | undefined;
 }) => {
-  const { toast } = useToast();
+  const { toast, dismiss } = useToast();
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -1583,8 +1583,18 @@ export const useMachiningBoard = ({
         }
       }
 
+      const rollbackPendingToast = toast({
+        title: "준비 롤백 요청 전송됨",
+        description: "가공 건을 준비 단계로 되돌리는 중입니다. 잠시만 기다려주세요.",
+        duration: 15000,
+        skipDuplicateCheck: true,
+      });
+
       try {
         let reqId = directMongoId;
+        if (!reqId) {
+          reqId = String(removedSlot?.requestMongoId || "").trim();
+        }
         if (!reqId) {
           const res = await fetch(
             `/api/requests/by-request/${encodeURIComponent(rid)}/summary`,
@@ -1622,6 +1632,10 @@ export const useMachiningBoard = ({
           );
         }
 
+        if (rollbackPendingToast?.id) {
+          dismiss(rollbackPendingToast.id);
+        }
+
         window.dispatchEvent(new Event("cnc-queues-updated"));
         window.dispatchEvent(new Event("request-rollback"));
         void refreshProductionQueues();
@@ -1634,6 +1648,10 @@ export const useMachiningBoard = ({
           type: "active",
         });
       } catch (e: any) {
+        if (rollbackPendingToast?.id) {
+          dismiss(rollbackPendingToast.id);
+        }
+
         if (removedSlot) {
           setQueueMap((prev) => ({
             ...prev,
@@ -1674,6 +1692,7 @@ export const useMachiningBoard = ({
       refreshLastCompletedFromServer,
       refreshProductionQueues,
       toast,
+      dismiss,
       token,
     ],
   );

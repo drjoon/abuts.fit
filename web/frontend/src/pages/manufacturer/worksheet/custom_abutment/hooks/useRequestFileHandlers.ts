@@ -77,14 +77,13 @@ export const useRequestFileHandlers = ({
   decodeNcText,
 }: UseRequestFileHandlersProps) => {
   const queryClient = useQueryClient();
-  const { toast } = useToast();
+  const { toast, dismiss } = useToast();
   const { uploadFiles } = useS3TempUpload({ token });
 
   const getApprovedManufacturerStage = useCallback(
     (stageKey: ReviewStageKey) => {
-      // request 승인 단계는 비동기 큐(ESPRIT 콜백) 완료 시점에만 가공으로 전환된다.
-      // 프론트 낙관적 패치로 먼저 올리면 "가공→준비" 튐 현상이 발생하므로 제외한다.
-      if (stageKey === "request") return null;
+      // 준비 승인 시 카드/카운터를 즉시 가공으로 반영한다.
+      if (stageKey === "request") return "가공";
       if (stageKey === "cam") return "가공";
       if (stageKey === "machining") return "세척.패킹";
       if (stageKey === "packing") return "포장.발송";
@@ -127,8 +126,7 @@ export const useRequestFileHandlers = ({
   const getNextStageForSummary = useCallback(
     (stageKey: ReviewStageKey, status: "PENDING" | "APPROVED" | "REJECTED") => {
       if (status === "APPROVED") {
-        // request 승인 카운터 이동도 NC 생성 콜백 시점에 서버값으로 반영한다.
-        if (stageKey === "request") return null;
+        if (stageKey === "request") return "machining" as ReviewStageKey;
         if (stageKey === "cam") return "machining" as ReviewStageKey;
         if (stageKey === "machining") return "packing" as ReviewStageKey;
         if (stageKey === "packing") return "shipping" as ReviewStageKey;
@@ -585,19 +583,7 @@ export const useRequestFileHandlers = ({
           isMachiningStage,
         });
 
-      const optimisticRequest = patchReviewStatusLocally(
-        params.req,
-        stageKey,
-        params.status,
-        params.reason,
-      );
-      const optimisticallyPatched = applySingleRequestPatch(optimisticRequest);
-      const shouldApplyOptimisticSummaryDelta = Boolean(
-        getNextStageForSummary(stageKey, params.status),
-      );
-      if (shouldApplyOptimisticSummaryDelta) {
-        applyWorksheetSummaryCounterDelta(stageKey, params.status, 1);
-      }
+
 
       try {
         const res = await fetch(
@@ -674,9 +660,16 @@ export const useRequestFileHandlers = ({
 
         if (body?.data) {
           applySingleRequestPatch(body.data);
-        }
-
-        if (!optimisticallyPatched && !setRequests) {
+        } else if (setRequests) {
+          // 서버가 data를 생략한 경우에만 최소 로컬 반영(응답 이후)
+          const fallbackRequest = patchReviewStatusLocally(
+            params.req,
+            stageKey,
+            params.status,
+            params.reason,
+          );
+          applySingleRequestPatch(fallbackRequest);
+        } else {
           await fetchRequests();
         }
 
@@ -813,12 +806,7 @@ export const useRequestFileHandlers = ({
           (error as Error)?.message || "잠시 후 다시 시도해주세요.";
         const errorAny = error as any;
 
-        if (optimisticallyPatched) {
-          applySingleRequestPatch(params.req);
-        }
-        if (shouldApplyOptimisticSummaryDelta) {
-          applyWorksheetSummaryCounterDelta(stageKey, params.status, -1);
-        }
+
 
         if (
           errorAny?.statusCode === 402 &&
@@ -867,8 +855,6 @@ export const useRequestFileHandlers = ({
       setPreviewOpen,
       setRequests,
       setReviewSaving,
-      applyWorksheetSummaryCounterDelta,
-      getNextStageForSummary,
       scheduleWorksheetSummaryVerifyRefetch,
     ],
   );
@@ -973,11 +959,23 @@ export const useRequestFileHandlers = ({
       const targetStage = opts?.nextStage || "cam";
       const rollbackOnly = !!opts?.rollbackOnly;
       const navigate = opts?.navigate !== false;
+
+      const rollbackPendingToast =
+        rollbackOnly && targetStage === "request"
+          ? toast({
+              title: "준비 롤백 요청 전송됨",
+              description:
+                "가공 건을 준비 단계로 되돌리는 중입니다. 잠시만 기다려주세요.",
+              duration: 15000,
+              skipDuplicateCheck: true,
+            })
+          : null;
+
       const updatedRequest = {
         ...req,
         caseInfos: {
           ...req.caseInfos,
-          ncFile: undefined,
+          ...(rollbackOnly ? {} : { ncFile: undefined }),
           reviewByStage: rollbackOnly
             ? {
                 ...req.caseInfos?.reviewByStage,
@@ -1032,13 +1030,58 @@ export const useRequestFileHandlers = ({
         if (!res.ok || (body && body.success === false)) {
           throw new Error((body && body.message) || "delete nc file failed");
         }
+        if (rollbackPendingToast?.id) {
+          dismiss(rollbackPendingToast.id);
+        }
+
         const stageLabel = targetStage === "request" ? "준비" : "CAM";
         toast({
           title: "롤백 완료",
           description: `${stageLabel} 단계로 되돌렸습니다.`,
         });
 
+        setPreviewFiles((prev) => {
+          const prevState =
+            prev && typeof prev === "object"
+              ? (prev as Record<string, unknown>)
+              : null;
+          if (!prevState) return prev;
+
+          const prevReq = (prevState.request || null) as ManufacturerRequest | null;
+          if (!prevReq) return prev;
+
+          const prevMongoId = String(prevReq?._id || "").trim();
+          const targetMongoId = String(req?._id || "").trim();
+          if (!prevMongoId || !targetMongoId || prevMongoId !== targetMongoId) {
+            return prev;
+          }
+
+          const responseData =
+            body?.data && typeof body.data === "object"
+              ? (body.data as ManufacturerRequest)
+              : null;
+          const nextRequest = responseData
+            ? ({
+                ...updatedRequest,
+                ...responseData,
+                caseInfos: {
+                  ...(updatedRequest.caseInfos || {}),
+                  ...(responseData.caseInfos || {}),
+                },
+              } as ManufacturerRequest)
+            : updatedRequest;
+
+          return {
+            ...prevState,
+            request: nextRequest,
+          };
+        });
+
         scheduleWorksheetSummaryVerifyRefetch();
+
+        if (!setRequests) {
+          await fetchRequests();
+        }
 
         if (navigate) {
           setPreviewOpen(false);
@@ -1047,6 +1090,9 @@ export const useRequestFileHandlers = ({
           setPreviewFiles({});
         }
       } catch (error) {
+        if (rollbackPendingToast?.id) {
+          dismiss(rollbackPendingToast.id);
+        }
         applyWorksheetSummaryCounterDelta(rollbackStageKeyForSummary, "PENDING", -1);
         console.error("[ROLLBACK_TRACE][FE][NC] error", {
           requestMongoId: String(req._id || ""),
@@ -1075,6 +1121,9 @@ export const useRequestFileHandlers = ({
       setPreviewFiles,
       applyWorksheetSummaryCounterDelta,
       scheduleWorksheetSummaryVerifyRefetch,
+      dismiss,
+      fetchRequests,
+      setRequests,
     ],
   );
 
@@ -1495,6 +1544,17 @@ export const useRequestFileHandlers = ({
         applyWorksheetSummaryCounterDelta(rollbackStageKeyForSummary, "PENDING", 1);
       }
 
+      const rollbackPendingToast =
+        rollbackOnly && params.stage === "machining"
+          ? toast({
+              title: "준비 롤백 요청 전송됨",
+              description:
+                "가공 건을 준비 단계로 되돌리는 중입니다. 잠시만 기다려주세요.",
+              duration: 15000,
+              skipDuplicateCheck: true,
+            })
+          : null;
+
       try {
         const endpoint = `/api/requests/${
           params.req._id
@@ -1598,6 +1658,10 @@ export const useRequestFileHandlers = ({
 
         scheduleWorksheetSummaryVerifyRefetch();
 
+        if (rollbackPendingToast?.id) {
+          dismiss(rollbackPendingToast.id);
+        }
+
         toast(
           rollbackOnly
             ? {
@@ -1621,6 +1685,9 @@ export const useRequestFileHandlers = ({
           setPreviewFiles({});
         }
       } catch (error) {
+        if (rollbackPendingToast?.id) {
+          dismiss(rollbackPendingToast.id);
+        }
         if (shouldApplyOptimisticSummaryDelta) {
           applyWorksheetSummaryCounterDelta(rollbackStageKeyForSummary, "PENDING", -1);
         }
@@ -1660,6 +1727,7 @@ export const useRequestFileHandlers = ({
       setPreviewStageName,
       applyWorksheetSummaryCounterDelta,
       scheduleWorksheetSummaryVerifyRefetch,
+      dismiss,
     ],
   );
 

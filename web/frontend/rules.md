@@ -105,9 +105,18 @@ Notes:
   - `PreviewModal`과 `WorksheetCardGrid`의 화살표 액션은 동일 공정 전이 규칙을 사용합니다.
   - 작업 탭 화살표 기준은 `준비 ↔ 가공` 흐름으로 정렬하며, CAM 단계는 화살표 전이에서 건너뜁니다.
     - 승인(`→`): 준비에서 가공 전이 로직을 사용합니다.
+      - 클릭 즉시 "가공 이동 요청 전송됨" 진행 토스트를 띄우고, `request:stage-changed` 웹소켓에서 `toStage in [CAM, 가공]` 수신 시 진행 토스트를 닫습니다.
       - Next Up 진입 시에만 `caseInfos.ncFile.s3Key`(NC 메타) 존재 여부를 검사합니다.
       - NC 메타가 없으면 승인 자체는 진행(가공 이동)하고, 백엔드에 CAM(Esprit) 실행 큐를 등록하며 `CAM 실행` 토스트를 표시합니다.
     - 롤백(`←`): 가공에서 준비로 직접 롤백합니다.
+      - 클릭 즉시 "준비 롤백 요청 전송됨" 진행 토스트를 띄웁니다. (카드 화살표 + PreviewModal + MachiningBoard Next Up/Now Playing 경로 포함)
+      - `request:stage-changed` 웹소켓에서 `toStage=준비` 수신 시 진행 토스트를 닫습니다.
+      - PreviewModal의 승인/롤백은 마지막 건이 아니면 모달을 닫지 않고 다음 의뢰 데이터로 교체합니다(무플리커).
+      - 마지막 건이면 모달 닫힘만 수행하고, 같은 의뢰를 닫았다가 다시 여는 동작은 금지합니다.
+      - next 의뢰 선택 시 requestId뿐 아니라 requestMongoId(`_id`)까지 함께 비교해 동일 의뢰 재오픈을 방지합니다.
+      - rollback 계열 웹소켓 source(`stage-file-rollback-only|stage-file-rollback-with-delete|nc-rollback-only|nc-rollback-with-delete`)는 payload patch 우선으로 반영하고 즉시 목록 재조회는 생략해 중복 refetch를 줄입니다.
+      - 롤백 진행 토스트는 토스트 중복 억제 예외(`skipDuplicateCheck`)로 처리해, 연속 클릭 테스트에서도 클릭 직후 안내가 항상 보이도록 합니다.
+      - 파일 보존 정책: rollbackOnly 롤백에서는 NC/공정 파일 메타를 삭제하지 않고 공정만 되돌립니다.
   - 헤더/라우팅 탭에서 CAM 탭은 노출하지 않으며, `stage=cam` legacy URL은 `machining`으로 매핑해 처리합니다.
   - 세척.패킹/포장.발송/추적관리 구간은 기존 `rollbackOnly` 기반 전이를 유지합니다.
   - 관련 파일:

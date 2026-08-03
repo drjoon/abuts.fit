@@ -455,6 +455,7 @@ async function assertAndClaimManufacturerRequestAccess({ req, request }) {
 }
 
 export async function deleteStageFile(req, res) {
+  const startedAtMs = Date.now();
   try {
     const { id } = req.params;
     const stage = String(req.query.stage || "")
@@ -489,7 +490,9 @@ export async function deleteStageFile(req, res) {
         .json({ success: false, message: "삭제 권한이 없습니다." });
     }
 
-    const request = await Request.findById(id);
+    const request = await Request.findById(id).select(
+      "_id requestId caManufacturer businessAnchorId requestor manufacturerStage mailboxAddress assignedMachine productionSchedule lotNumber requestCategory caseInfos",
+    );
     if (!request) {
       return res
         .status(404)
@@ -677,6 +680,14 @@ export async function deleteStageFile(req, res) {
         );
       }
 
+      console.log("[STAGE_FILE_ROLLBACK] completed", {
+        requestMongoId: String(request._id || ""),
+        requestId: String(request.requestId || ""),
+        stage,
+        rollbackOnly,
+        elapsedMs: Date.now() - startedAtMs,
+      });
+
       return res.status(200).json({
         success: true,
         data: {
@@ -817,6 +828,15 @@ export async function deleteStageFile(req, res) {
       s3Key,
     });
 
+    console.log("[STAGE_FILE_DELETE] completed", {
+      requestMongoId: String(request._id || ""),
+      requestId: String(request.requestId || ""),
+      stage,
+      rollbackOnly,
+      preserveStage,
+      elapsedMs: Date.now() - startedAtMs,
+    });
+
     return res.status(200).json({
       success: true,
       data: {
@@ -837,6 +857,7 @@ export async function deleteStageFile(req, res) {
       status,
       message: error?.message || String(error || ""),
       stack: error?.stack || null,
+      elapsedMs: Date.now() - startedAtMs,
     });
 
     return res.status(status).json({
@@ -1619,12 +1640,6 @@ export async function updateReviewStatusByStage(req, res) {
 
 
         if (effectiveStage === "cam" || isMachiningEntryApproval) {
-          await ensureMachineCompatibilityOrThrow({
-            request,
-            stageKey: "cam",
-            session,
-          });
-
           request.productionSchedule = request.productionSchedule || {};
 
           const existingMachineId = String(
@@ -1633,13 +1648,15 @@ export async function updateReviewStatusByStage(req, res) {
               "",
           ).trim();
 
+          const compatibilitySelection = await ensureMachineCompatibilityOrThrow({
+            request,
+            stageKey: "cam",
+            session,
+            reserveAssignment: !existingMachineId,
+          });
+
           if (!existingMachineId) {
-            const selected = await chooseMachineForCamMachining({
-              request,
-              requireCeil: true,
-              reserveAssignment: true,
-              session,
-            });
+            const selected = compatibilitySelection;
 
             request.productionSchedule.assignedMachine = selected.machineId;
             request.productionSchedule.queuePosition = selected.queuePosition;

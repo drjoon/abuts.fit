@@ -39,6 +39,7 @@ import {
 } from "../utils/request";
 import { resolveImplantConnectionSpec } from "@/utils/implantConnectionSpec";
 import { useAppEventDebouncedReload } from "@/shared/realtime/useAppEventDebouncedReload";
+import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
 
 // related files (screw lot tracking):
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/packing/components/PackingPageContent.tsx
@@ -453,7 +454,7 @@ type PreviewModalProps = {
     req: ManufacturerRequest,
     value: boolean,
   ) => Promise<void>;
-  onOpenNextRequest?: (currentReqId: string) => Promise<void>;
+  onOpenNextRequest?: (currentRequestId: string) => Promise<boolean>;
   setSearchParams: (
     nextInit: ((prev: URLSearchParams) => URLSearchParams) | URLSearchParams,
     navigateOpts?: { replace?: boolean },
@@ -521,6 +522,8 @@ export const PreviewModal = ({
   const [hexRotationSaving, setHexRotationSaving] = useState(false);
   const [anodizingSaving, setAnodizingSaving] = useState(false);
   const [approving, setApproving] = useState(false);
+  const [deleteGeneratedConfirmOpen, setDeleteGeneratedConfirmOpen] =
+    useState(false);
   const [manufacturerHexRotationDraft, setManufacturerHexRotationDraft] =
     useState<ManufacturerHexRotationDraftMode>("");
   const [anodizingEnabledDraft, setAnodizingEnabledDraft] = useState<boolean>(true);
@@ -596,6 +599,7 @@ export const PreviewModal = ({
   useEffect(() => {
     if (!open) {
       setApproving(false);
+      setDeleteGeneratedConfirmOpen(false);
     }
   }, [open]);
 
@@ -2157,6 +2161,17 @@ export const PreviewModal = ({
 
                     const performBack = async () => {
                       const stageKey = currentReviewStageKey;
+
+                      toast({
+                        title: "롤백 요청 전송됨",
+                        description:
+                          stageKey === "machining" || stageKey === "cam"
+                            ? "준비 단계로 되돌리는 중입니다. 잠시만 기다려주세요."
+                            : "이전 공정으로 되돌리는 중입니다. 잠시만 기다려주세요.",
+                        duration: 15000,
+                        skipDuplicateCheck: true,
+                      });
+
                       if (stageKey === "machining") {
                         // 작업 공정 변경: 중간 단계를 건너뛰고 가공 → 준비로 직접 롤백
                         await onDeleteNc(activeReq, {
@@ -2189,8 +2204,21 @@ export const PreviewModal = ({
                       }
                     };
 
-                    // 롤백 후 모달 닫기만 한다. 다음 의뢰 자동 열기는 하지 않는다.
-                    void performBack();
+                    // 롤백 후 다음 의뢰가 있으면 모달을 닫지 않고 데이터만 교체한다(무플리커).
+                    // 다음 의뢰가 없을 때만 모달을 닫는다.
+                    void performBack().then(async () => {
+                      const currentRequestId = String(
+                        activeReq?.requestId || "",
+                      ).trim();
+                      if (!onOpenNextRequest || !currentRequestId) {
+                        onOpenChange(false);
+                        return;
+                      }
+                      const opened = await onOpenNextRequest(currentRequestId);
+                      if (!opened) {
+                        onOpenChange(false);
+                      }
+                    });
                   }}
                   aria-label="이전 공정"
                   title="이전 공정"
@@ -2210,11 +2238,11 @@ export const PreviewModal = ({
                 onClick={(e) => {
                   e.preventDefault();
                   e.stopPropagation();
-                  const currentReqId = String(
-                    activeReq?._id || activeReq?.requestId || "",
+                  const currentRequestId = String(
+                    activeReq?.requestId || "",
                   ).trim();
-                  if (!currentReqId || !onOpenNextRequest) return;
-                  void onOpenNextRequest(currentReqId);
+                  if (!currentRequestId || !onOpenNextRequest) return;
+                  void onOpenNextRequest(currentRequestId);
                 }}
                 aria-label="Skip"
                 title="Skip"
@@ -2305,6 +2333,19 @@ export const PreviewModal = ({
                         currentReviewStageKey === "request" &&
                         transitionStageKey === "cam";
 
+                      toast({
+                        title:
+                          currentReviewStageKey === "request"
+                            ? "가공 이동 요청 전송됨"
+                            : "승인 요청 전송됨",
+                        description:
+                          currentReviewStageKey === "request"
+                            ? "의뢰를 가공으로 넘기는 중입니다. 잠시만 기다려주세요."
+                            : "승인 처리 중입니다. 잠시만 기다려주세요.",
+                        duration: 15000,
+                        skipDuplicateCheck: true,
+                      });
+
                       // 승인 처리: keepPreviewOpen=false → 승인 후 모달이 즉시 닫힌다.
                       // BG 앱 트리거(Esprit 등)는 백엔드 ReviewApprovalQueue에서 직렬로 처리된다.
                       // 다음 의뢰는 자동으로 열리지 않는다(연속 승인으로 인한 충돌 방지).
@@ -2340,8 +2381,20 @@ export const PreviewModal = ({
                         }
                       }
 
-                      // 승인 완료 후 모달 닫기 (onOpenNextRequest는 더 이상 호출하지 않음)
-                      onOpenChange(false);
+                      const currentRequestId = String(
+                        activeReq?.requestId || "",
+                      ).trim();
+                      if (!onOpenNextRequest || !currentRequestId) {
+                        onOpenChange(false);
+                        return;
+                      }
+
+                      // 승인 후 다음 의뢰가 있으면 모달을 유지한 채 데이터만 교체한다(무플리커).
+                      // 다음 의뢰가 없으면 모달을 닫는다.
+                      const opened = await onOpenNextRequest(currentRequestId);
+                      if (!opened) {
+                        onOpenChange(false);
+                      }
                     } finally {
                       setApproving(false);
                     }
@@ -2763,7 +2816,8 @@ export const PreviewModal = ({
                           onClick={(e) => {
                             e.preventDefault();
                             e.stopPropagation();
-                            onDeleteGeneratedOutput();
+                            if (!canDeleteGeneratedOutput) return;
+                            setDeleteGeneratedConfirmOpen(true);
                           }}
                           aria-label={
                             isCamStage
@@ -2883,6 +2937,23 @@ export const PreviewModal = ({
             </div>
           )}
         </div>
+
+        <ConfirmDialog
+          open={deleteGeneratedConfirmOpen}
+          title="생성 파일 삭제"
+          description={
+            isCamStage
+              ? "정말 삭제할까요? 생성된 NC 파일이 삭제됩니다."
+              : "정말 삭제할까요? 생성된 filled STL 파일이 삭제됩니다."
+          }
+          confirmLabel="삭제"
+          cancelLabel="취소"
+          onCancel={() => setDeleteGeneratedConfirmOpen(false)}
+          onConfirm={async () => {
+            setDeleteGeneratedConfirmOpen(false);
+            onDeleteGeneratedOutput();
+          }}
+        />
       </DialogContent>
     </Dialog>
   );

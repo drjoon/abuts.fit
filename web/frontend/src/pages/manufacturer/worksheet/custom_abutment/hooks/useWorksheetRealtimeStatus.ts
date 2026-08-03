@@ -4,6 +4,7 @@
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/hooks/useCardActions.ts
 // - web/frontend/src/shared/realtime/useAppEventListener.ts
 // - web/backend/controllers/requests/common.review.controller.js
 import {
@@ -11,6 +12,7 @@ import {
   useEffect,
   useRef,
   type Dispatch,
+  type MutableRefObject,
   type SetStateAction,
 } from "react";
 
@@ -41,6 +43,16 @@ type UseWorksheetRealtimeStatusParams = {
   ) => Promise<void>;
   removeOnMachiningComplete?: boolean;
   matchesCurrentPage?: (req: ManufacturerRequest) => boolean;
+  pendingStageTransitionToastRef?: MutableRefObject<
+    Record<
+      string,
+      {
+        toastId: string;
+        expectedStages: string[];
+        createdAt: number;
+      }
+    >
+  >;
 };
 
 export function useWorksheetRealtimeStatus({
@@ -54,6 +66,7 @@ export function useWorksheetRealtimeStatus({
   handleOpenPreview,
   removeOnMachiningComplete = false,
   matchesCurrentPage,
+  pendingStageTransitionToastRef,
 }: UseWorksheetRealtimeStatusParams) {
   const realtimeBaseRef = useRef<Record<string, number>>({});
   const startedToastShownRef = useRef<Record<string, number>>({});
@@ -69,7 +82,7 @@ export function useWorksheetRealtimeStatus({
     fetchRequestsCore,
     handleOpenPreview,
   };
-  const { toast } = useToast();
+  const { toast, dismiss } = useToast();
 
   const showStartedToast = useCallback(
     (kind: "filled" | "nc", requestId: string) => {
@@ -254,9 +267,39 @@ export function useWorksheetRealtimeStatus({
           setRequests((prev) => applyRequestPatch(prev, eventRequest));
         }
 
+        const pendingToastEntry =
+          pendingStageTransitionToastRef?.current?.[requestId] || null;
+        if (pendingToastEntry) {
+          const normalizeStage = (value: unknown) =>
+            String(value || "")
+              .trim()
+              .toUpperCase();
+          const toStage =
+            String(payload?.toStage || "").trim() ||
+            String((eventRequest as any)?.manufacturerStage || "").trim();
+          const currentStageNorm = normalizeStage(toStage);
+          const expectedStagesNorm = (pendingToastEntry.expectedStages || []).map(
+            normalizeStage,
+          );
+          if (
+            currentStageNorm &&
+            expectedStagesNorm.some((stage) => stage === currentStageNorm)
+          ) {
+            if (pendingToastEntry.toastId) {
+              dismiss(pendingToastEntry.toastId);
+            }
+            delete pendingStageTransitionToastRef.current[requestId];
+          }
+        }
+
         const source = String(payload?.source || "").trim();
         const shouldSkipImmediateRefetch =
-          source === "bg-file-processed" && Boolean(eventRequest);
+          Boolean(eventRequest) &&
+          (source === "bg-file-processed" ||
+            source === "stage-file-rollback-only" ||
+            source === "stage-file-rollback-with-delete" ||
+            source === "nc-rollback-only" ||
+            source === "nc-rollback-with-delete");
 
         if (!shouldSkipImmediateRefetch && fetchRequests) {
           void fetchRequests(true);
@@ -448,6 +491,8 @@ export function useWorksheetRealtimeStatus({
     setRequests,
     showStartedToast,
     toast,
+    dismiss,
+    pendingStageTransitionToastRef,
   ]);
 
   // 웹소켓 실시간 업데이트(app-event): 활성 페이지에서만 이벤트를 반영한다.

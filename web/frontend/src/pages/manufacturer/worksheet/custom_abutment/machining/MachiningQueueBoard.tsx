@@ -483,6 +483,78 @@ export const MachiningQueueBoard = ({
     [handleOpenPreview, toast],
   );
 
+  const handleOpenNextRequestFromCamPreview = useCallback(
+    async (currentRequestId: string): Promise<boolean> => {
+      if (!token) return false;
+      const normalizedCurrentRequestId = String(currentRequestId || "").trim();
+      const machineId = String(camPreviewMachineId || activeMachineId || "").trim();
+      if (!normalizedCurrentRequestId || !machineId) return false;
+
+      const normalizedCurrentMongoId = String(
+        (camPreviewFiles?.request as any)?._id || "",
+      ).trim();
+
+      try {
+        const qRes = await fetch("/api/cnc-machines/queues", {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const qBody = await qRes.json().catch(() => ({}));
+        if (!qRes.ok || (qBody as { success?: boolean })?.success === false) {
+          return false;
+        }
+
+        const map =
+          qBody?.data && typeof qBody.data === "object" ? qBody.data : {};
+        setQueueMap(map);
+
+        const queue = Array.isArray((map as any)?.[machineId])
+          ? ((map as any)[machineId] as Array<any>)
+          : [];
+
+        const getRequestId = (item: any) => String(item?.requestId || "").trim();
+        const getMongoId = (item: any) =>
+          String(item?.requestMongoId || item?._id || "").trim();
+
+        const currentIndex = queue.findIndex((item) => {
+          const rid = getRequestId(item);
+          if (rid && rid === normalizedCurrentRequestId) return true;
+          const mid = getMongoId(item);
+          return !!(normalizedCurrentMongoId && mid === normalizedCurrentMongoId);
+        });
+
+        let nextProg: any =
+          currentIndex >= 0 ? (queue[currentIndex + 1] ?? null) : null;
+
+        const isSameAsCurrent = (item: any) => {
+          const rid = getRequestId(item);
+          const mid = getMongoId(item);
+          if (rid && rid === normalizedCurrentRequestId) return true;
+          if (normalizedCurrentMongoId && mid === normalizedCurrentMongoId) return true;
+          return false;
+        };
+
+        if (!nextProg || isSameAsCurrent(nextProg)) {
+          nextProg = queue.find((item) => !isSameAsCurrent(item)) || null;
+        }
+
+        if (!nextProg) return false;
+
+        await openCamPreviewFromQueue(nextProg, machineId);
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    [
+      token,
+      camPreviewMachineId,
+      activeMachineId,
+      camPreviewFiles,
+      setQueueMap,
+      openCamPreviewFromQueue,
+    ],
+  );
+
   const handleSaveAnodizingEnabledOverrideFromCamPreview = useCallback(
     async (req: ManufacturerRequest, nextValue: boolean) => {
       if (!token) return;
@@ -1637,6 +1709,7 @@ export const MachiningQueueBoard = ({
         onDownloadNcFile={handleDownloadNcFile}
         onDownloadStageFile={handleDownloadStageFile}
         onRefreshPreview={handleOpenPreview}
+        onOpenNextRequest={handleOpenNextRequestFromCamPreview}
         setSearchParams={setSearchParams}
       />
 
