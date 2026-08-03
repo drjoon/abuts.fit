@@ -1742,8 +1742,16 @@ export const PreviewModal = ({
     setAnodizingSaving(true);
     try {
       await onSaveAnodizingEnabledOverride(activeReq, checked);
-    } catch {
+    } catch (error) {
       setAnodizingEnabledDraft(prev);
+      toast({
+        title: "아노다이징 저장 실패",
+        description:
+          error instanceof Error
+            ? error.message
+            : "잠시 후 다시 시도해주세요.",
+        variant: "destructive",
+      });
     } finally {
       setAnodizingSaving(false);
     }

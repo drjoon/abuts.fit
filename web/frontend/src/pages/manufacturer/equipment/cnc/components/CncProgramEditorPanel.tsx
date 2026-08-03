@@ -3,6 +3,7 @@
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 import React from "react";
+import { createPortal } from "react-dom";
 import Editor, { DiffEditor } from "@monaco-editor/react";
 import { RotateCcw, Save, X } from "lucide-react";
 import { useCncWriteGuard } from "@/pages/manufacturer/equipment/cnc/hooks/useCncWriteGuard";
@@ -318,9 +319,8 @@ export const CncProgramEditorPanel: React.FC<CncProgramEditorPanelProps> = ({
     // Auto-save on blur removed - only save on explicit SAVE button click or Ctrl+S
   };
 
-  return (
+  const panelBody = (
     <>
-      {PinModal}
       <div
         className="fixed inset-0 z-[60] bg-black/60 backdrop-blur-[2px] flex items-center justify-center p-4 sm:p-8"
         role="dialog"
@@ -491,6 +491,15 @@ export const CncProgramEditorPanel: React.FC<CncProgramEditorPanelProps> = ({
           },
         ]}
       />
+    </>
+  );
+
+  return (
+    <>
+      {PinModal}
+      {typeof document !== "undefined"
+        ? createPortal(panelBody, document.body)
+        : panelBody}
     </>
   );
 };

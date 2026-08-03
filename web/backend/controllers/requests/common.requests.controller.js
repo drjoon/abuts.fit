@@ -2741,14 +2741,23 @@ export const updateRequestAnodizingOverride = asyncHandler(async (req, res) => {
     }
   }
 
-  // 정책: 제조사 아노다이징 override는 의뢰/CAM 단계에서만 허용한다.
+  // 정책: 제조사 아노다이징 override는 준비/CAM/가공 단계에서 허용한다.
+  // (가공 보드의 CAM 프리뷰 모달에서도 수정 가능해야 함)
   const currentManufacturerStage = String(request?.manufacturerStage || "").trim();
-  const editableStages = new Set(["의뢰", "CAM", "request", "cam"]);
+  const editableStages = new Set([
+    "준비",
+    "의뢰",
+    "CAM",
+    "가공",
+    "request",
+    "cam",
+    "machining",
+  ]);
   if (!editableStages.has(currentManufacturerStage)) {
     return res.status(409).json({
       success: false,
       message:
-        "아노다이징 여부 override는 의뢰/CAM 단계에서만 변경할 수 있습니다.",
+        "아노다이징 여부 override는 준비/CAM/가공 단계에서만 변경할 수 있습니다.",
     });
   }
 

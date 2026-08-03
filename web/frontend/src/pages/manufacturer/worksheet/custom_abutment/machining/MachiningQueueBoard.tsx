@@ -483,6 +483,122 @@ export const MachiningQueueBoard = ({
     [handleOpenPreview, toast],
   );
 
+  const handleSaveAnodizingEnabledOverrideFromCamPreview = useCallback(
+    async (req: ManufacturerRequest, nextValue: boolean) => {
+      if (!token) return;
+
+      let requestMongoId = String(req?._id || "").trim();
+      const requestId = String(req?.requestId || "").trim();
+
+      if (!requestMongoId && requestId) {
+        const summaryRes = await fetch(
+          `/api/requests/by-request/${encodeURIComponent(requestId)}/summary`,
+          {
+            method: "GET",
+            headers: { Authorization: `Bearer ${token}` },
+          },
+        );
+        const summaryBody = await summaryRes.json().catch(() => ({}));
+        requestMongoId = String(summaryBody?.data?._id || "").trim();
+      }
+
+      if (!requestMongoId) {
+        throw new Error("의뢰 식별값이 없어 아노다이징을 저장할 수 없습니다.");
+      }
+
+      const prevValue =
+        typeof (camPreviewFiles?.request as any)?.caseInfos?.anodizingEnabled ===
+        "boolean"
+          ? Boolean((camPreviewFiles.request as any).caseInfos.anodizingEnabled)
+          : null;
+
+      setCamPreviewFiles((prev) => {
+        const currentReq = prev?.request || null;
+        if (!currentReq) return prev;
+        return {
+          ...prev,
+          request: {
+            ...currentReq,
+            _id: requestMongoId,
+            caseInfos: {
+              ...(currentReq.caseInfos || {}),
+              anodizingEnabled: nextValue,
+            },
+          },
+        };
+      });
+
+      try {
+        const res = await fetch(
+          `/api/requests/${encodeURIComponent(requestMongoId)}/anodizing-override`,
+          {
+            method: "PATCH",
+            headers: {
+              Authorization: `Bearer ${token}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ anodizingEnabled: nextValue }),
+          },
+        );
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok || (body as { success?: boolean })?.success === false) {
+          throw new Error(
+            (body as { message?: string })?.message ||
+              "아노다이징 여부 저장에 실패했습니다.",
+          );
+        }
+
+        const savedValue =
+          typeof (body as { data?: { anodizingEnabled?: unknown } })?.data
+            ?.anodizingEnabled === "boolean"
+            ? Boolean(
+                (body as { data?: { anodizingEnabled?: boolean } }).data
+                  ?.anodizingEnabled,
+              )
+            : nextValue;
+
+        setCamPreviewFiles((prev) => {
+          const currentReq = prev?.request || null;
+          if (!currentReq) return prev;
+          return {
+            ...prev,
+            request: {
+              ...currentReq,
+              _id: requestMongoId,
+              caseInfos: {
+                ...(currentReq.caseInfos || {}),
+                anodizingEnabled: savedValue,
+              },
+            },
+          };
+        });
+      } catch (error) {
+        setCamPreviewFiles((prev) => {
+          const currentReq = prev?.request || null;
+          if (!currentReq) return prev;
+          const nextCaseInfos = { ...(currentReq.caseInfos || {}) } as Record<
+            string,
+            unknown
+          >;
+          if (typeof prevValue === "boolean") {
+            nextCaseInfos.anodizingEnabled = prevValue;
+          } else {
+            delete nextCaseInfos.anodizingEnabled;
+          }
+          return {
+            ...prev,
+            request: {
+              ...currentReq,
+              caseInfos: nextCaseInfos as any,
+            },
+          };
+        });
+        throw error;
+      }
+    },
+    [token, camPreviewFiles],
+  );
+
   const handleOpenCodeEditorFromCamPreview = useCallback(
     async (req: ManufacturerRequest) => {
       const machineId = String(camPreviewMachineId || activeMachineId || "").trim();
@@ -1506,6 +1622,9 @@ export const MachiningQueueBoard = ({
         isCamStage={true}
         isMachiningStage={false}
         onOpenCodeEditor={handleOpenCodeEditorFromCamPreview}
+        onSaveAnodizingEnabledOverride={
+          handleSaveAnodizingEnabledOverrideFromCamPreview
+        }
         onUpdateReviewStatus={handleUpdateReviewStatus}
         onDeleteCam={handleDeleteCam}
         onDeleteNc={handleDeleteNc}
