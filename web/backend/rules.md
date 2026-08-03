@@ -93,9 +93,20 @@
   반대 헥스 모드의 내부 복사본(`source=manufacturer_sample`, `price.rule=manufacturer_sample`)을 생성해
   별도 lot/NC를 처리합니다.
   - 구현: `controllers/requests/common.review.controller.js`
-- 가공 Next Up 진입 승인(`review-status`, stage=cam + `nextUpCamRunGuard=true`) 시 NC 메타(`caseInfos.ncFile.s3Key`)가 없으면
+- 가공 Next Up 진입 승인(`review-status`, stage=machining + `nextUpCamRunGuard=true`) 시 NC 메타(`caseInfos.ncFile.s3Key`)가 없으면
   가공 단계 전환은 유지한 채 `REQUEST_STAGE_APPROVED` 큐를 추가 등록해 BG1/Esprit CAM 실행을 트리거합니다.
+  - 레거시 호환: 내부 review 키 `cam` 요청도 동일하게 처리합니다.
   - 구현: `controllers/requests/common.review.controller.js`, `services/reviewApprovalQueue.service.js`
+- BG request-meta(`GET /api/bg/request-meta`)의 lotNumber 전달 SSOT:
+  - 백엔드 `ensureLotNumberForMachining` 로직을 사용해 `lotNumber.value`를 생성/보정합니다.
+  - 생성된 `lotNumber.value`를 기준으로 `caseInfos.lotNumber`/`serialCode`를 계산해 전달합니다.
+  - fallback 필드(`material`, `part`) 추론으로 대체하지 않습니다.
+  - 구현: `controllers/bg/bg.controller.js`, `controllers/requests/utils.js`
+- 가공 승인(준비→가공) 시 장비 배정 SSOT:
+  - 승인 트랜잭션에서 `chooseMachineForCamMachining(requireCeil=true)`를 사용해 `caseInfos.maxDiameter` 기준 호환 장비를 선택하고
+    `productionSchedule.assignedMachine/queuePosition`에 즉시 반영합니다.
+  - CAM 승인 후처리 큐(`CAM_STAGE_APPROVED`)는 Now Playing 즉시 시작을 하지 않으며, Next Up(대기열) 반영/로트 보정만 담당합니다.
+  - Now Playing 시작은 `allowAutoMachining` OFF→ON 전환(장비 설정 저장) 또는 가공 완료/실패 후 auto-next 트리거 시점에서만 수행합니다.
 
 - 제조사 헥스 회전 모드(`manufacturerHexRotation`)는 백엔드에서 fallback 기본값으로 보정하지 않습니다.
   - 허용값: canonical `STL모델대로` / `헥스30도회전` / `헥스X도회전(total)`

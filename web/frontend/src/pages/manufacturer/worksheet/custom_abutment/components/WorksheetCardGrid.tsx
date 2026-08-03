@@ -554,7 +554,10 @@ export const WorksheetCardGrid = ({
           Boolean(onApprove && !isCompletedForCurrentStage);
 
         const hasBottomFloatingBadges = Boolean(
-          shouldShowFullLot || deadlineInfo || (tabStage === "packing" && isPrinted),
+          hasNcFile ||
+            shouldShowFullLot ||
+            deadlineInfo ||
+            (tabStage === "packing" && isPrinted),
         );
         const handleDrop = async (e: React.DragEvent) => {
           e.preventDefault();
@@ -695,14 +698,6 @@ export const WorksheetCardGrid = ({
               </div>
             )}
             <div className="absolute right-2 top-2 z-20 flex items-center gap-1">
-              {hasNcFile && (
-                <Badge
-                  variant="outline"
-                  className="h-7 text-[11px] px-2 py-0.5 font-extrabold leading-[1.1] border border-cyan-200 bg-cyan-50 text-cyan-700 flex items-center"
-                >
-                  NC
-                </Badge>
-              )}
               {shouldShowTopUnmachinableBadge && (
                 <Badge
                   variant="outline"
@@ -888,6 +883,14 @@ export const WorksheetCardGrid = ({
                 {shouldShowFullLot && (
                   <Badge variant="outline" className={`${lotBadgeClass} whitespace-nowrap`}>
                     {lotCodeSource}
+                  </Badge>
+                )}
+                {hasNcFile && (
+                  <Badge
+                    variant="outline"
+                    className="text-[11px] px-2 py-0.5 font-extrabold leading-[1.1] border border-cyan-200 bg-cyan-50 text-cyan-700 whitespace-nowrap"
+                  >
+                    NC
                   </Badge>
                 )}
                 {deadlineInfo && (

@@ -253,7 +253,14 @@ export function useWorksheetRealtimeStatus({
         if (eventRequest) {
           setRequests((prev) => applyRequestPatch(prev, eventRequest));
         }
-        if (fetchRequests) void fetchRequests(true);
+
+        const source = String(payload?.source || "").trim();
+        const shouldSkipImmediateRefetch =
+          source === "bg-file-processed" && Boolean(eventRequest);
+
+        if (!shouldSkipImmediateRefetch && fetchRequests) {
+          void fetchRequests(true);
+        }
         return;
       }
       case "request:stl-metadata-updated": {
@@ -562,9 +569,33 @@ export function useWorksheetRealtimeStatus({
             }
             if (sourceStep === "3-nc") {
               delete realtimeBaseRef.current[requestId];
+
+              const incomingS3Key = String(notification?.data?.s3Key || "").trim();
+              const incomingFileName = String(notification?.data?.fileName || "").trim();
+
+              const prevCaseInfos = ((r as any)?.caseInfos || {}) as Record<string, any>;
+              const prevNcFile = (prevCaseInfos?.ncFile || (r as any)?.ncFile || {}) as Record<string, any>;
+
+              const normalizedFilePath = incomingFileName
+                ? incomingFileName.replace(/^3-nc\//i, "")
+                : String(prevNcFile?.filePath || "").trim();
+
+              const nextNcFile = {
+                ...prevNcFile,
+                ...(incomingS3Key ? { s3Key: incomingS3Key } : {}),
+                ...(normalizedFilePath ? { filePath: normalizedFilePath } : {}),
+              };
+
+              const nextCaseInfos = {
+                ...prevCaseInfos,
+                ncFile: nextNcFile,
+              };
+
               shouldRefreshList = true;
               return {
                 ...(r as any),
+                caseInfos: nextCaseInfos,
+                ncFile: nextNcFile,
                 realtimeProgress: null,
               } as any;
             }
@@ -573,7 +604,9 @@ export function useWorksheetRealtimeStatus({
         );
       }
       if (shouldRefreshList && fetchRequests) {
-        void fetchRequests(true);
+        window.setTimeout(() => {
+          void fetchRequests(true);
+        }, 180);
       }
       const {
         previewOpen: currentPreviewOpen,

@@ -4,6 +4,7 @@
 // - web/backend/controllers/requests/common.requests.controller.js
 // - web/backend/controllers/requests/mailbox.utils.js
 // - web/backend/controllers/cnc/machiningBridge.js
+// - web/backend/services/reviewApprovalQueue.service.js
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/hooks/useRequestFileHandlers.ts
@@ -259,7 +260,8 @@ function clearStageFileMeta(request, stage) {
 /**
  * CAM 단계 승인 후처리를 큐에 등록한다.
  * 기존 직접 실행 방식에서 reviewApprovalQueue 기반 직렬 처리로 전환.
- * 큐 워커가 chooseMachineForCamMachining + triggerNextAutoMachiningAfterComplete를 순서대로 처리한다.
+ * 큐 워커는 장비/로트 보정 후처리만 담당하며, Now Playing 즉시 시작은 수행하지 않는다.
+ * (Now Playing 시작은 allowAutoMachining OFF->ON 전환 또는 가공 완료/실패 후 auto-next 트리거에서만 수행)
  */
 function runCamApprovePostProcessingInBackground({
   requestMongoId,
@@ -1163,6 +1165,12 @@ export async function updateReviewStatusByStage(req, res) {
       };
 
       // 승인 시 다음 공정으로 전환, 미승인(PENDING) 시 현재 단계로 되돌림
+      const isMachiningEntryApproval =
+        status === "APPROVED" &&
+        effectiveStage === "machining" &&
+        previousManufacturerStage === "준비" &&
+        nextUpCamRunGuard === true;
+
       if (status === "APPROVED") {
         const resolvedBusinessAnchorId = (() => {
           const directBusinessAnchorId = request.businessAnchorId;
@@ -1493,10 +1501,10 @@ export async function updateReviewStatusByStage(req, res) {
             acceptedMessage = `${acceptedMessage} (헥스 STL모델대로/헥스30도회전 2건 가공용 복사본이 함께 생성되었습니다.)`;
           }
         } else {
-          // CAM, machining 등 이후 단계는 필요 시 단계별로 비동기 처리 여부를 나눠서 관리한다.
-          // CAM 승인 시에는 제조사 공정을 '가공' 단계로 즉시 전환하되,
+          // 가공 진입 승인(legacy cam 키 또는 machining+nextUp guard) 시에는
+          // 제조사 공정을 '가공' 단계로 즉시 전환하되,
           // 실제 CNC 가공 시작은 Bridge(CNC) 쪽 상태(allowAutoMachining, 자동 트리거 등)에 의해 제어된다.
-          if (effectiveStage === "cam") {
+          if (effectiveStage === "cam" || isMachiningEntryApproval) {
             applyStatusMapping(request, "가공");
           } else if (effectiveStage === "machining") {
             // machining 단계 승인: 이미 가공이 완료된 의뢰(machiningRecord 있음)는 재가공 없이 바로 세척.패킹으로
@@ -1525,10 +1533,10 @@ export async function updateReviewStatusByStage(req, res) {
         }
 
         // 크레딧 타이밍 SSOT:
-        // - 의뢰 크레딧 차감은 CAM 승인(가공 진입) 시점에만 수행
+        // - 의뢰 크레딧 차감은 가공 진입 승인 시점(legacy cam 포함)에만 수행
         if (
           status === "APPROVED" &&
-          effectiveStage === "cam" &&
+          (effectiveStage === "cam" || isMachiningEntryApproval) &&
           resolvedBusinessAnchorId &&
           !isManufacturerSampleRequest(request) &&
           !isPracticeDropzoneRequest
@@ -1610,16 +1618,43 @@ export async function updateReviewStatusByStage(req, res) {
 
 
 
-        if (effectiveStage === "cam") {
+        if (effectiveStage === "cam" || isMachiningEntryApproval) {
           await ensureMachineCompatibilityOrThrow({
             request,
             stageKey: "cam",
             session,
           });
+
           request.productionSchedule = request.productionSchedule || {};
-          request.productionSchedule.assignedMachine = null;
-          request.productionSchedule.queuePosition = null;
-          request.assignedMachine = null;
+
+          const existingMachineId = String(
+            request?.productionSchedule?.assignedMachine ||
+              request?.assignedMachine ||
+              "",
+          ).trim();
+
+          if (!existingMachineId) {
+            const selected = await chooseMachineForCamMachining({
+              request,
+              requireCeil: true,
+              reserveAssignment: true,
+              session,
+            });
+
+            request.productionSchedule.assignedMachine = selected.machineId;
+            request.productionSchedule.queuePosition = selected.queuePosition;
+            request.assignedMachine = selected.machineId;
+            if (selected.diameterGroup) {
+              request.productionSchedule.diameterGroup = selected.diameterGroup;
+            }
+            if (Number.isFinite(selected.diameter) && selected.diameter > 0) {
+              request.productionSchedule.diameter = selected.diameter;
+            }
+          } else {
+            request.productionSchedule.assignedMachine = existingMachineId;
+            request.assignedMachine = existingMachineId;
+          }
+
           acceptedMessage = "가공 단계로 이동했습니다.";
 
           const triggerSource = String(approvalTriggerSource || "").trim();
@@ -1958,7 +1993,13 @@ export async function updateReviewStatusByStage(req, res) {
       productionSchedule: resultRequest?.productionSchedule || null,
     };
 
-    if (status === "APPROVED" && effectiveStage === "cam") {
+    if (
+      status === "APPROVED" &&
+      (effectiveStage === "cam" ||
+        (effectiveStage === "machining" &&
+          previousManufacturerStage === "준비" &&
+          nextUpCamRunGuard === true))
+    ) {
       runCamApprovePostProcessingInBackground({
         requestMongoId: resultRequest?._id || null,
         requestId: resultRequest?.requestId || null,

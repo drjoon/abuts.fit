@@ -1515,6 +1515,20 @@ export const PreviewModal = ({
     void onDeleteCam(activeReq);
   };
 
+  const canDeleteGeneratedOutput =
+    canRegenerateFilledStl && !isStageFileStage && hasRightFile;
+
+  const onDeleteGeneratedOutput = () => {
+    if (!canDeleteGeneratedOutput || isUploading) return;
+
+    if (isCamStage) {
+      void onDeleteNc(activeReq, { nextStage: "cam", navigate: false });
+      return;
+    }
+
+    void onDeleteCam(activeReq, { navigate: false });
+  };
+
   const toggleReasonSelection = (reasonRaw: string) => {
     const reason = String(reasonRaw || "").trim();
     if (!reason) return;
@@ -2702,34 +2716,69 @@ export const PreviewModal = ({
                     )}
 
                     {canRegenerateFilledStl && (
-                      <button
-                        type="button"
-                        className={`inline-flex items-center justify-center h-8 w-8 rounded-md border text-[13px] font-medium transition ${
-                          twoPhasing || regenerating || isUploading || hexRotationSaving
-                            ? "border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed"
-                            : "border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100"
-                        }`}
-                        disabled={
-                          twoPhasing || regenerating || isUploading || hexRotationSaving
-                        }
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          if (isCamStage) {
-                            void onRegenerateNc();
-                            return;
+                      <>
+                        <button
+                          type="button"
+                          className={`inline-flex items-center justify-center h-8 w-8 rounded-md border text-[13px] font-medium transition ${
+                            twoPhasing || regenerating || isUploading || hexRotationSaving
+                              ? "border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed"
+                              : "border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100"
+                          }`}
+                          disabled={
+                            twoPhasing || regenerating || isUploading || hexRotationSaving
                           }
-                          void onRegenerate();
-                        }}
-                        aria-label={
-                          isCamStage ? "NC 재생성" : "filled.stl 재생성"
-                        }
-                        title={isCamStage ? "NC 재생성" : "filled.stl 재생성"}
-                      >
-                        <RefreshCw
-                          className={`h-4 w-4 ${twoPhasing || regenerating ? "animate-spin" : ""}`}
-                        />
-                      </button>
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            if (isCamStage) {
+                              void onRegenerateNc();
+                              return;
+                            }
+                            void onRegenerate();
+                          }}
+                          aria-label={
+                            isCamStage ? "NC 재생성" : "filled.stl 재생성"
+                          }
+                          title={isCamStage ? "NC 재생성" : "filled.stl 재생성"}
+                        >
+                          <RefreshCw
+                            className={`h-4 w-4 ${twoPhasing || regenerating ? "animate-spin" : ""}`}
+                          />
+                        </button>
+
+                        <button
+                          type="button"
+                          className={`inline-flex items-center justify-center h-8 w-8 rounded-md border text-[13px] font-medium transition ${
+                            !canDeleteGeneratedOutput || isUploading || twoPhasing || regenerating || hexRotationSaving
+                              ? "border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed"
+                              : "border-slate-200 bg-white text-slate-700 hover:bg-rose-50 hover:border-rose-200 hover:text-rose-700"
+                          }`}
+                          disabled={
+                            !canDeleteGeneratedOutput ||
+                            isUploading ||
+                            twoPhasing ||
+                            regenerating ||
+                            hexRotationSaving
+                          }
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            onDeleteGeneratedOutput();
+                          }}
+                          aria-label={
+                            isCamStage
+                              ? "생성된 NC 파일 삭제"
+                              : "생성된 filled STL 삭제"
+                          }
+                          title={
+                            isCamStage
+                              ? "생성된 NC 파일 삭제"
+                              : "생성된 filled STL 삭제"
+                          }
+                        >
+                          X
+                        </button>
+                      </>
                     )}
 
                     {isStageFileStage && (

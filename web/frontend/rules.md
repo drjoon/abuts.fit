@@ -121,6 +121,9 @@ Notes:
   - NC 생성 메타(`caseInfos.ncFile.s3Key`)가 있는 의뢰건은 카드/프리뷰 상단에 `NC` 뱃지를 표시합니다.
     - `src/pages/manufacturer/worksheet/custom_abutment/components/WorksheetCardGrid.tsx`
     - `src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx`
+  - 가공 보드 표기 정책:
+    - 실제 RUNNING/PROCESSING(또는 nowPlayingHint) 항목이 없으면 `Now Playing`은 비워두고, 큐 맨 앞 항목을 `Next Up`으로 표시합니다.
+    - `src/pages/manufacturer/worksheet/custom_abutment/machining/components/MachineQueueCard.tsx`
 
 - 기본 공용 검색 입력 컴포넌트는 `src/components/ui/input.tsx` (`@/components/ui/input`)입니다.
   - 관리자 크레딧 페이지 검색 UI 배치 기준 파일:

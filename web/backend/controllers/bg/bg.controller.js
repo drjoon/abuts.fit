@@ -2,6 +2,7 @@
 // - web/backend/rules.md
 // - web/backend/controllers/requests/common.review.helpers.js
 // - web/backend/controllers/requests/common.review.controller.js
+// - web/backend/controllers/requests/utils.js
 // - web/backend/services/requestSnapshotTriggers.service.js
 // - web/backend/services/creditBalance.service.js
 // - web/backend/app.js
@@ -24,6 +25,7 @@ import { getPresignedPutUrl } from "../../utils/s3.utils.js";
 import {
   applyStatusMapping,
   normalizeRequestForResponse,
+  ensureLotNumberForMachining,
 } from "../requests/utils.js";
 
 import { normalizeImplantFields } from "../../utils/implantCanonical.js";
@@ -1456,7 +1458,28 @@ export const getRequestMeta = asyncHandler(async (req, res) => {
       `[BG] getRequestMeta: connectionTargetDiameter가 null입니다. requestId=${request.requestId} brand=${ci.implantManufacturer}/${ci.implantBrand}/${ci.implantFamily}/${ci.implantType} prcFile=${resolvedPrcFiles.connectionPrcFileName}`,
     );
   }
-  const lotValue = request?.lotNumber?.value || "";
+  let lotValue = String(request?.lotNumber?.value || "").trim();
+  if (!lotValue) {
+    const requestDoc = await Request.findOne({ requestId: request.requestId })
+      .select({ lotNumber: 1, caseInfos: 1 })
+      .catch(() => null);
+    if (requestDoc) {
+      const prevLot = String(requestDoc?.lotNumber?.value || "").trim();
+      await ensureLotNumberForMachining(requestDoc);
+      const nextLot = String(requestDoc?.lotNumber?.value || "").trim();
+      if (nextLot && nextLot !== prevLot) {
+        await requestDoc.save();
+      }
+      if (nextLot) {
+        lotValue = nextLot;
+        request.lotNumber =
+          requestDoc?.lotNumber &&
+          typeof requestDoc.lotNumber.toObject === "function"
+            ? requestDoc.lotNumber.toObject()
+            : requestDoc.lotNumber;
+      }
+    }
+  }
   const serialCode = lotValue.length >= 3 ? lotValue.slice(-3) : "";
   return res.status(200).json(
     new ApiResponse(

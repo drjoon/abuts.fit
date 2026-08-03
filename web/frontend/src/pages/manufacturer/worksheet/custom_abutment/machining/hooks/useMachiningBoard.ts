@@ -18,6 +18,7 @@ import {
   onCncMachiningStarted,
   onCncMachineSettingsChanged,
 } from "@/shared/realtime/socket";
+import { useAppEventListener } from "@/shared/realtime/useAppEventListener";
 import { apiFetch } from "@/shared/api/apiClient";
 import { getMockCncMachiningEnabled } from "@/shared/bridge/bridgeSettings";
 import { useCncMachines } from "@/features/manufacturer/cnc/hooks/useCncMachines";
@@ -467,6 +468,103 @@ export const useMachiningBoard = ({
     }
   }, [token, reconcileMachiningTimersFromQueues]);
 
+  const ncQueueVerifyTimerRef = useRef<number | null>(null);
+  const scheduleNcQueueVerifyRefresh = useCallback(() => {
+    if (ncQueueVerifyTimerRef.current != null) {
+      window.clearTimeout(ncQueueVerifyTimerRef.current);
+    }
+    ncQueueVerifyTimerRef.current = window.setTimeout(() => {
+      ncQueueVerifyTimerRef.current = null;
+      void refreshProductionQueues();
+    }, 180);
+  }, [refreshProductionQueues]);
+
+  const patchQueueNcMetaFromRequest = useCallback((requestRaw: any) => {
+    const requestId = String(requestRaw?.requestId || "").trim();
+    const requestMongoId = String(requestRaw?._id || requestRaw?.id || "").trim();
+    if (!requestId && !requestMongoId) return;
+
+    const requestCaseInfos =
+      requestRaw?.caseInfos && typeof requestRaw.caseInfos === "object"
+        ? requestRaw.caseInfos
+        : null;
+    const requestNcFile =
+      requestCaseInfos?.ncFile && typeof requestCaseInfos.ncFile === "object"
+        ? requestCaseInfos.ncFile
+        : requestRaw?.ncFile && typeof requestRaw.ncFile === "object"
+          ? requestRaw.ncFile
+          : null;
+
+    if (!requestCaseInfos && !requestNcFile) return;
+
+    setQueueMap((prev) => {
+      let changed = false;
+      const next: QueueMap = {};
+
+      Object.entries(prev || {}).forEach(([machineId, list]) => {
+        const arr = Array.isArray(list) ? list : [];
+        let machineChanged = false;
+        const patched = arr.map((item: any) => {
+          const itemRequestId = String(item?.requestId || "").trim();
+          const itemMongoId = String(item?.requestMongoId || "").trim();
+          const isTarget =
+            (requestId && itemRequestId === requestId) ||
+            (requestMongoId && itemMongoId === requestMongoId);
+          if (!isTarget) return item;
+
+          machineChanged = true;
+          changed = true;
+
+          const prevCaseInfos =
+            item?.caseInfos && typeof item.caseInfos === "object"
+              ? item.caseInfos
+              : {};
+          const prevNcFile =
+            item?.ncFile && typeof item.ncFile === "object"
+              ? item.ncFile
+              : prevCaseInfos?.ncFile && typeof prevCaseInfos.ncFile === "object"
+                ? prevCaseInfos.ncFile
+                : {};
+
+          const mergedNcFile = requestNcFile
+            ? {
+                ...prevNcFile,
+                ...requestNcFile,
+              }
+            : prevNcFile;
+
+          const mergedCaseInfos = requestCaseInfos
+            ? {
+                ...prevCaseInfos,
+                ...requestCaseInfos,
+                ncFile: mergedNcFile,
+              }
+            : {
+                ...prevCaseInfos,
+                ncFile: mergedNcFile,
+              };
+
+          return {
+            ...item,
+            clinicName:
+              String(requestRaw?.clinicName || "").trim() || item?.clinicName,
+            patientName:
+              String(requestRaw?.patientName || "").trim() || item?.patientName,
+            tooth:
+              String(requestRaw?.tooth || requestCaseInfos?.tooth || "").trim() ||
+              item?.tooth,
+            caseInfos: mergedCaseInfos,
+            ncFile: mergedNcFile,
+          };
+        });
+
+        next[machineId] = machineChanged ? patched : arr;
+      });
+
+      return changed ? next : prev;
+    });
+  }, []);
+
   const reassignProductionQueues = useCallback(async () => {
     if (!token) return;
     try {
@@ -493,7 +591,7 @@ export const useMachiningBoard = ({
         variant: "destructive",
       });
     }
-  }, [refreshProductionQueues, toast, token]);
+  }, [toast, token]);
 
   const [statusRefreshing, setStatusRefreshing] = useState(false);
   const [statusRefreshedAt, setStatusRefreshedAt] = useState<string | null>(
@@ -740,6 +838,44 @@ export const useMachiningBoard = ({
       mounted = false;
     };
   }, [token, refreshProductionQueues]);
+
+  useEffect(() => {
+    return () => {
+      if (ncQueueVerifyTimerRef.current != null) {
+        window.clearTimeout(ncQueueVerifyTimerRef.current);
+        ncQueueVerifyTimerRef.current = null;
+      }
+    };
+  }, []);
+
+  useAppEventListener({
+    enabled: Boolean(token),
+    eventTypes: ["request:stage-changed", "request:stl-metadata-updated"],
+    onMatch: (evt) => {
+      const type = String(evt?.type || "").trim();
+      const payload = (evt?.data ?? {}) as Record<string, unknown>;
+      const source = String(payload["source"] || "").trim();
+      const reviewStage = String(payload["reviewStage"] || "").trim();
+      const eventRequest = payload["request"] || null;
+      if (!eventRequest || typeof eventRequest !== "object") return;
+
+      const hasNc = Boolean(
+        (eventRequest as any)?.caseInfos?.ncFile?.s3Key ||
+          (eventRequest as any)?.ncFile?.s3Key,
+      );
+
+      const isNcReadyEvent =
+        hasNc &&
+        (source === "bg-file-processed" ||
+          reviewStage === "cam" ||
+          type === "request:stl-metadata-updated");
+
+      if (!isNcReadyEvent) return;
+
+      patchQueueNcMetaFromRequest(eventRequest as any);
+      scheduleNcQueueVerifyRefresh();
+    },
+  });
 
   useEffect(() => {
     const handleQueuesUpdated = () => {

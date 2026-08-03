@@ -157,8 +157,10 @@ export const MachineQueueCard = ({
 
     const idx = hintedIdx >= 0 ? hintedIdx : runningIdx >= 0 ? runningIdx : -1;
 
-    const current = idx >= 0 ? (items[idx] ?? null) : (items[0] ?? null);
-    const next = idx >= 0 ? (items[idx + 1] ?? null) : (items[1] ?? null);
+    // 정책: 실제 가공중 힌트/레코드가 없으면 Now Playing을 비워두고,
+    // 큐 맨 앞 항목을 Next Up으로만 표시한다.
+    const current = idx >= 0 ? (items[idx] ?? null) : null;
+    const next = idx >= 0 ? (items[idx + 1] ?? null) : (items[0] ?? null);
     return { currentSlot: current, nextSlot: next };
   }, [machiningQueueAll, nowPlayingHint]);
 
@@ -749,6 +751,10 @@ export const MachineQueueCard = ({
                         effectiveLastCompleted as any,
                       )}
                       caseInfos={(effectiveLastCompleted as any)?.caseInfos}
+                      hasNc={Boolean(
+                        (effectiveLastCompleted as any)?.ncFile?.s3Key ||
+                          (effectiveLastCompleted as any)?.caseInfos?.ncFile?.s3Key,
+                      )}
                       className="text-[15px] leading-tight"
                       {...buildLabelExtraProps(effectiveLastCompleted as any)}
                     />
@@ -854,6 +860,10 @@ export const MachineQueueCard = ({
                       requestId={currentSlot?.requestId}
                       lotShortCode={getLotShortCode(currentSlot)}
                       caseInfos={(currentSlot as any)?.caseInfos}
+                      hasNc={Boolean(
+                        (currentSlot as any)?.ncFile?.s3Key ||
+                          (currentSlot as any)?.caseInfos?.ncFile?.s3Key,
+                      )}
                       className="text-[15px]"
                       {...buildLabelExtraProps(currentSlot)}
                     />
@@ -994,6 +1004,10 @@ export const MachineQueueCard = ({
                       requestId={nextSlot?.requestId}
                       lotShortCode={getLotShortCode(nextSlot)}
                       caseInfos={(nextSlot as any)?.caseInfos}
+                      hasNc={Boolean(
+                        (nextSlot as any)?.ncFile?.s3Key ||
+                          (nextSlot as any)?.caseInfos?.ncFile?.s3Key,
+                      )}
                       className="text-[15px]"
                       {...buildLabelExtraProps(nextSlot)}
                     />

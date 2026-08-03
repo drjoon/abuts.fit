@@ -34,7 +34,6 @@ import mongoose from "mongoose";
 import { emitAppEventToRoles } from "../socket.js";
 import { triggerEspritForNc } from "../controllers/requests/common.review.esprit.js";
 import { chooseMachineForCamMachining } from "../controllers/requests/common.review.machine.js";
-import { triggerNextAutoMachiningAfterComplete } from "../controllers/cnc/machiningBridge.js";
 import { runWithJobLock } from "../utils/distributedJobLock.js";
 
 // 워커 폴링 간격 (ms). 환경변수로 조정 가능.
@@ -593,56 +592,12 @@ async function runCamApproveTask({ requestMongoId, requestId }) {
     }
   }
 
-  // 자동 가공 큐에 추가 시도
-  // 아노다이징 OFF 의뢰건은 작업자가 "아노 X 가공" 버튼을 누를 때만 시작한다.
-  // 따라서 CAM 승인 직후에는 자동 트리거하지 않는다.
-  const isAnodizingOff = request?.caseInfos?.anodizingEnabled === false;
-  if (isAnodizingOff) {
-    console.log(
-      "[ReviewApprovalQueue] CAM task: skip auto machining trigger for anodizing-off",
-      {
-        requestId,
-        machineId: selectedMachineId,
-      },
-    );
-    return;
-  }
-
-  try {
-    await triggerNextAutoMachiningAfterComplete({
-      machineId: selectedMachineId,
-      completedRequestId: "",
-      allowAnodizingOff: false,
-      onlyAnodizingOff: false,
-    });
-    console.log("[ReviewApprovalQueue] CAM task: auto machining triggered", {
-      requestId,
-      machineId: selectedMachineId,
-    });
-  } catch (err) {
-    const message = toBridgeFailureMessage(err);
-
-    // 자동 가공 트리거 실패는 승인 자체를 롤백하진 않되,
-    // 작업자가 즉시 인지할 수 있도록 소켓 이벤트를 발행한다.
-    console.warn(
-      "[ReviewApprovalQueue] CAM task: auto machining trigger failed",
-      {
-        requestId,
-        machineId: selectedMachineId,
-        error: err?.message || String(err),
-        bridgeStatus: err?.meta?.status || null,
-      },
-    );
-
-    emitAppEventToRoles(["manufacturer", "admin"], "request:async-action-failed", {
-      requestId: requestId ? String(requestId) : null,
-      requestMongoId: requestMongoId ? String(requestMongoId) : null,
-      action: "cam-auto-machining-trigger",
-      stage: "machining",
-      machineId: selectedMachineId,
-      message,
-    });
-  }
+  // 정책: CAM 승인 후에는 Next Up(대기열)까지만 반영한다.
+  // Now Playing 시작은 allowAutoMachining OFF->ON 전환(또는 완료/실패 후 auto-next)에서만 진행한다.
+  console.log("[ReviewApprovalQueue] CAM task: queued only (no immediate auto-start)", {
+    requestId,
+    machineId: selectedMachineId,
+  });
 }
 
 /**

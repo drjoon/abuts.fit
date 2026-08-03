@@ -6,6 +6,7 @@ import React from "react";
 
 type Props = {
   caseInfos?: any;
+  hasNc?: boolean | null;
   business?: string | null;
   clinicName?: string | null;
   patientName?: string | null;
@@ -39,6 +40,7 @@ export const MachiningRequestLabel = ({
   isSample,
   isRndArchivedSample,
   isCopiedSample,
+  hasNc,
   hideRequestId,
 }: Props) => {
   const businessName = String(business || "").trim();
@@ -79,6 +81,9 @@ export const MachiningRequestLabel = ({
     return retentionGroove === "deep" ? "있음" : "없음";
   })();
 
+  const showNcBadge =
+    typeof hasNc === "boolean" ? hasNc : Boolean(caseInfos?.ncFile?.s3Key);
+
   const retentionBadgeClass = (() => {
     const base =
       "inline-flex items-center rounded-full px-2 py-0.5 font-semibold ";
@@ -90,10 +95,16 @@ export const MachiningRequestLabel = ({
   })();
 
   const renderInfoBadges = () => {
-    if (!implantParts.length && !retentionGrooveLabel && !isSample) return null;
+    if (!implantParts.length && !retentionGrooveLabel && !isSample && !showNcBadge)
+      return null;
 
     return (
       <div className="flex flex-wrap items-center gap-1 text-[11px] text-slate-500">
+        {showNcBadge ? (
+          <span className="inline-flex items-center rounded-full border border-cyan-200 bg-cyan-50 px-2 py-0.5 font-extrabold text-cyan-700">
+            NC
+          </span>
+        ) : null}
         {isSample ? (
           <span
             className={`inline-flex items-center rounded-full border px-2 py-0.5 font-semibold ${
