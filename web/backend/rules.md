@@ -93,6 +93,9 @@
   반대 헥스 모드의 내부 복사본(`source=manufacturer_sample`, `price.rule=manufacturer_sample`)을 생성해
   별도 lot/NC를 처리합니다.
   - 구현: `controllers/requests/common.review.controller.js`
+- 가공 Next Up 진입 승인(`review-status`, stage=cam + `nextUpCamRunGuard=true`) 시 NC 메타(`caseInfos.ncFile.s3Key`)가 없으면
+  가공 단계 전환은 유지한 채 `REQUEST_STAGE_APPROVED` 큐를 추가 등록해 BG1/Esprit CAM 실행을 트리거합니다.
+  - 구현: `controllers/requests/common.review.controller.js`, `services/reviewApprovalQueue.service.js`
 
 - 제조사 헥스 회전 모드(`manufacturerHexRotation`)는 백엔드에서 fallback 기본값으로 보정하지 않습니다.
   - 허용값: canonical `STL모델대로` / `헥스30도회전` / `헥스X도회전(total)`

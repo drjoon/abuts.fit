@@ -695,6 +695,14 @@ export const WorksheetCardGrid = ({
               </div>
             )}
             <div className="absolute right-2 top-2 z-20 flex items-center gap-1">
+              {hasNcFile && (
+                <Badge
+                  variant="outline"
+                  className="h-7 text-[11px] px-2 py-0.5 font-extrabold leading-[1.1] border border-cyan-200 bg-cyan-50 text-cyan-700 flex items-center"
+                >
+                  NC
+                </Badge>
+              )}
               {shouldShowTopUnmachinableBadge && (
                 <Badge
                   variant="outline"

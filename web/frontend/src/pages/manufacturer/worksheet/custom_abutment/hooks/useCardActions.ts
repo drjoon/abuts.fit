@@ -5,6 +5,7 @@
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/WorksheetCardGrid.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/hooks/useRequestFileHandlers.ts
 // - web/backend/controllers/requests/common.review.controller.js
 import { useCallback } from "react";
 import { type ManufacturerRequest, deriveStageForFilter, getReviewStageKeyByTab } from "@/pages/manufacturer/worksheet/custom_abutment/utils/request";
@@ -13,7 +14,6 @@ interface CardActionHandlers {
   handleDeleteStageFile: (opts: Record<string, unknown>) => Promise<void>;
   handleDeleteNc: (req: ManufacturerRequest, opts: Record<string, unknown>) => Promise<void>;
   handleUpdateReviewStatus: (opts: Record<string, unknown>) => Promise<void>;
-  handleRequestNcRegenerate?: (req: ManufacturerRequest) => Promise<boolean | void>;
 }
 
 export const useCardActions = (
@@ -27,7 +27,6 @@ export const useCardActions = (
     handleDeleteStageFile,
     handleDeleteNc,
     handleUpdateReviewStatus,
-    handleRequestNcRegenerate,
   } = handlers;
 
   const handleCardRollback = useCallback(
@@ -114,18 +113,8 @@ export const useCardActions = (
       const transitionStageKey =
         stageKey === "request" ? "cam" : stageKey;
 
-      // CAM(또는 request에서 가공 전이로 위임된 케이스) 승인 전 NC가 없으면
-      // 승인 대신 NC 생성 명령을 먼저 수행한다.
-      // NC 생성 결과는 백그라운드/웹소켓 동기화로 반영된다.
-      if (transitionStageKey === "cam") {
-        const hasNcFile = Boolean(req?.caseInfos?.ncFile?.s3Key);
-        if (!hasNcFile) {
-          if (handleRequestNcRegenerate) {
-            void handleRequestNcRegenerate(req);
-          }
-          return;
-        }
-      }
+      const isRequestNextUpTransition =
+        stageKey === "request" && transitionStageKey === "cam";
 
       if (stageKey === "request") {
         realtimeBaseRef.current[String(req.requestId || "").trim()] = Date.now();
@@ -137,13 +126,13 @@ export const useCardActions = (
         // 작업 탭 승인(request)은 기존 NC 재사용 우선(재생성 강제 안 함)
         forceReprocess: false,
         approvalTriggerSource: "worksheet-tab",
+        nextUpCamRunGuard: isRequestNextUpTransition,
       });
     },
     [
       tabStage,
       isCamStage,
       isMachiningStage,
-      handleRequestNcRegenerate,
       handleUpdateReviewStatus,
       realtimeBaseRef,
     ],

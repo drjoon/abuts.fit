@@ -6,6 +6,7 @@
 // - web/backend/controllers/cnc/machiningBridge.js
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/hooks/useRequestFileHandlers.ts
 // - web/frontend/src/pages/requestor/dashboard/RequestorDashboardPage.tsx
 import mongoose, { Types } from "mongoose";
 import Request from "../../models/request.model.js";
@@ -995,6 +996,7 @@ export async function updateReviewStatusByStage(req, res) {
       forceReprocess,
       processBothHexVariants,
       approvalTriggerSource,
+      nextUpCamRunGuard,
     } = req.body || {};
 
     if (!Types.ObjectId.isValid(id)) {
@@ -1051,9 +1053,14 @@ export async function updateReviewStatusByStage(req, res) {
     let previousManufacturerStage = null;
     let pendingEspritTriggerRequest = null;
     const pendingAdditionalEspritTriggerRequests = [];
+    let pendingCamStageEspritTriggerRequest = null;
     let requestStageMachineSelection = null;
     let isDuplicateRequestApprovalNoop = false;
     const deferredCreditEvents = [];
+    let camRunTriggered = false;
+    let camRunQueueId = null;
+    let camRunAlreadyQueued = false;
+    let camRunTriggerErrorMessage = null;
 
     await session.withTransaction(async () => {
       const request = await Request.findById(id)
@@ -1614,6 +1621,17 @@ export async function updateReviewStatusByStage(req, res) {
           request.productionSchedule.queuePosition = null;
           request.assignedMachine = null;
           acceptedMessage = "가공 단계로 이동했습니다.";
+
+          const triggerSource = String(approvalTriggerSource || "").trim();
+          const shouldCheckNcOnNextUp =
+            nextUpCamRunGuard === true &&
+            (triggerSource === "preview-modal" || triggerSource === "worksheet-tab");
+          const hasNcMeta = Boolean(request?.caseInfos?.ncFile?.s3Key);
+          if (status === "APPROVED" && shouldCheckNcOnNextUp && !hasNcMeta) {
+            pendingCamStageEspritTriggerRequest = request.toObject
+              ? request.toObject()
+              : JSON.parse(JSON.stringify(request));
+          }
         }
       } else if (status === "PENDING") {
         // 크레딧 타이밍 SSOT:
@@ -2017,10 +2035,44 @@ export async function updateReviewStatusByStage(req, res) {
       });
     }
 
+    if (pendingCamStageEspritTriggerRequest) {
+      try {
+        const camRunEnqueueResult = await enqueueApproval({
+          taskType: "REQUEST_STAGE_APPROVED",
+          request: pendingCamStageEspritTriggerRequest,
+          actorUserId: req?.user?._id ? String(req.user._id) : null,
+          forceReprocess: false,
+        });
+        camRunTriggered = true;
+        camRunQueueId = String(camRunEnqueueResult?.queueId || "").trim() || null;
+        camRunAlreadyQueued = camRunEnqueueResult?.alreadyQueued === true;
+      } catch (error) {
+        camRunTriggerErrorMessage =
+          error?.message || "CAM 실행 큐 등록에 실패했습니다.";
+        emitManufacturingAsyncFailure({
+          requestId: pendingCamStageEspritTriggerRequest?.requestId || null,
+          requestMongoId: pendingCamStageEspritTriggerRequest?._id || null,
+          action: "esprit-trigger-next-up",
+          stage: "cam",
+          message: camRunTriggerErrorMessage,
+        });
+        console.error("[REVIEW] enqueueApproval (next-up cam run) failed", {
+          requestId: pendingCamStageEspritTriggerRequest?.requestId || null,
+          message: camRunTriggerErrorMessage,
+        });
+      }
+    }
+
     return res.status(200).json({
       success: true,
       data: responseData,
       message: acceptedMessage,
+      meta: {
+        camRunTriggered,
+        camRunQueueId,
+        camRunAlreadyQueued,
+        camRunTriggerErrorMessage,
+      },
     });
   } catch (error) {
     if (error?.machineCompatibilityMeta && Types.ObjectId.isValid(id)) {

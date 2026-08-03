@@ -404,6 +404,7 @@ type PreviewModalProps = {
     forceReprocess?: boolean;
     processBothHexVariants?: boolean;
     approvalTriggerSource?: "preview-modal" | "worksheet-tab" | "unknown";
+    nextUpCamRunGuard?: boolean;
   }) => Promise<void>;
   onDeleteCam: (
     req: ManufacturerRequest,
@@ -1770,6 +1771,7 @@ export const PreviewModal = ({
   const fullLotLabel = isRequestStage
     ? ""
     : String(activeReq?.lotNumber?.value || "").trim();
+  const hasNcMetadata = Boolean(activeReq?.caseInfos?.ncFile?.s3Key);
 
   // 유지홈(retentionGroove) 표시
   // none=없음 / shallow=없음 / deep=있음
@@ -1927,6 +1929,14 @@ export const PreviewModal = ({
         <div className="h-full flex flex-col gap-4 overflow-hidden">
           <div className="flex items-center justify-between gap-2 rounded-lg border border-slate-200/80 bg-slate-50/70 px-3 py-2 shrink-0">
             <div className="flex min-w-0 items-center gap-2">
+              {hasNcMetadata && (
+                <Badge
+                  variant="outline"
+                  className="text-[11px] px-2 py-0.5 font-extrabold leading-[1.1] border border-cyan-200 bg-cyan-50 text-cyan-700"
+                >
+                  NC
+                </Badge>
+              )}
               {fullLotLabel ? (
                 <div className="flex flex-wrap items-center gap-1.5">
                   <Badge
@@ -2277,14 +2287,9 @@ export const PreviewModal = ({
                           ? "cam"
                           : currentReviewStageKey;
 
-                      if (transitionStageKey === "cam") {
-                        const hasNcFile =
-                          !!activeReq?.caseInfos?.ncFile?.s3Key || !!previewNcText;
-                        if (!hasNcFile) {
-                          await onRegenerateNc();
-                          return;
-                        }
-                      }
+                      const isRequestNextUpTransition =
+                        currentReviewStageKey === "request" &&
+                        transitionStageKey === "cam";
 
                       // 승인 처리: keepPreviewOpen=false → 승인 후 모달이 즉시 닫힌다.
                       // BG 앱 트리거(Esprit 등)는 백엔드 ReviewApprovalQueue에서 직렬로 처리된다.
@@ -2298,6 +2303,7 @@ export const PreviewModal = ({
                         // 강제 재실행이 필요한 경우에만 forceReprocess=true를 명시 전달한다.
                         forceReprocess: false,
                         approvalTriggerSource: "preview-modal",
+                        nextUpCamRunGuard: isRequestNextUpTransition,
                       });
 
                       // CAM(또는 준비→가공 위임) 승인 시 NC 파일 bridge-store 동기화 (비동기, 실패 무시)

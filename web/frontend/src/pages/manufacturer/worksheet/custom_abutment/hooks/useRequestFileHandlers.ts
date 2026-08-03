@@ -572,6 +572,7 @@ export const useRequestFileHandlers = ({
       forceReprocess?: boolean;
       processBothHexVariants?: boolean;
       approvalTriggerSource?: "preview-modal" | "worksheet-tab" | "unknown";
+      nextUpCamRunGuard?: boolean;
     }) => {
       if (!token) return;
       setReviewSaving(true);
@@ -614,6 +615,7 @@ export const useRequestFileHandlers = ({
               forceReprocess: params.forceReprocess === true,
               processBothHexVariants: params.processBothHexVariants === true,
               approvalTriggerSource: params.approvalTriggerSource || "unknown",
+              nextUpCamRunGuard: params.nextUpCamRunGuard === true,
             }),
           },
         );
@@ -655,6 +657,10 @@ export const useRequestFileHandlers = ({
             lastQueueErrorCode?: string;
             lastQueueErrorStatus?: number | string;
             reusedExistingNc?: boolean;
+            camRunTriggered?: boolean;
+            camRunQueueId?: string | null;
+            camRunAlreadyQueued?: boolean;
+            camRunTriggerErrorMessage?: string | null;
           };
         } | null = null;
         try {
@@ -750,13 +756,28 @@ export const useRequestFileHandlers = ({
             });
           }
         } else {
-          const successTitle = "검토 상태 변경 완료";
+          const camRunTriggered = body?.meta?.camRunTriggered === true;
+          const camRunTriggerErrorMessage = String(
+            body?.meta?.camRunTriggerErrorMessage || "",
+          ).trim();
+          const camRunAlreadyQueued = body?.meta?.camRunAlreadyQueued === true;
+
+          const successTitle =
+            camRunTriggered && params.status === "APPROVED" && stageKey === "cam"
+              ? "CAM 실행"
+              : "검토 상태 변경 완료";
           const successDescription =
             params.status === "APPROVED"
               ? stageKey === "request"
                 ? "의뢰 승인으로 처리했습니다. 기존 작업 이력이 재사용 가능하면 가공으로 넘기고, 불가하면 BG를 재처리합니다."
                 : stageKey === "cam" || stageKey === "machining"
-                  ? "작업 명령이 접수되었습니다. 처리 완료 후 상태가 자동으로 업데이트됩니다."
+                  ? camRunTriggered
+                    ? camRunAlreadyQueued
+                      ? "가공 Next Up으로 이동했고, NC 코드 메타데이터가 없어 기존 CAM 실행 대기열을 재사용합니다."
+                      : "가공 Next Up으로 이동했고, NC 코드 메타데이터가 없어 CAM 실행을 시작했습니다."
+                    : camRunTriggerErrorMessage
+                      ? `가공 Next Up으로 이동했지만 CAM 실행 요청에 실패했습니다: ${camRunTriggerErrorMessage}`
+                      : "작업 명령이 접수되었습니다. 처리 완료 후 상태가 자동으로 업데이트됩니다."
                   : "승인되었습니다."
               : params.status === "REJECTED"
                 ? "반려되었습니다."
@@ -767,6 +788,12 @@ export const useRequestFileHandlers = ({
             title: successTitle,
             description: successDescription,
             duration: 3000, // 성공 토스트는 3초 후 자동 소멸
+            variant:
+              camRunTriggerErrorMessage &&
+              params.status === "APPROVED" &&
+              stageKey === "cam"
+                ? "destructive"
+                : undefined,
           });
         }
 

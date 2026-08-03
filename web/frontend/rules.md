@@ -104,7 +104,9 @@ Notes:
 - 작업 공정 변경:
   - `PreviewModal`과 `WorksheetCardGrid`의 화살표 액션은 동일 공정 전이 규칙을 사용합니다.
   - 작업 탭 화살표 기준은 `준비 ↔ 가공` 흐름으로 정렬하며, CAM 단계는 화살표 전이에서 건너뜁니다.
-    - 승인(`→`): 준비에서 가공 전이 로직을 사용합니다(필요 시 NC 재생성 선행).
+    - 승인(`→`): 준비에서 가공 전이 로직을 사용합니다.
+      - Next Up 진입 시에만 `caseInfos.ncFile.s3Key`(NC 메타) 존재 여부를 검사합니다.
+      - NC 메타가 없으면 승인 자체는 진행(가공 이동)하고, 백엔드에 CAM(Esprit) 실행 큐를 등록하며 `CAM 실행` 토스트를 표시합니다.
     - 롤백(`←`): 가공에서 준비로 직접 롤백합니다.
   - 헤더/라우팅 탭에서 CAM 탭은 노출하지 않으며, `stage=cam` legacy URL은 `machining`으로 매핑해 처리합니다.
   - 세척.패킹/포장.발송/추적관리 구간은 기존 `rollbackOnly` 기반 전이를 유지합니다.
@@ -116,6 +118,9 @@ Notes:
     - `src/pages/manufacturer/worksheet/custom_abutment/components/WorksheetCardGrid.tsx`
     - `src/pages/manufacturer/worksheet/custom_abutment/hooks/useCardActions.ts`
     - `src/pages/manufacturer/worksheet/custom_abutment/hooks/useRequestFileHandlers.ts`
+  - NC 생성 메타(`caseInfos.ncFile.s3Key`)가 있는 의뢰건은 카드/프리뷰 상단에 `NC` 뱃지를 표시합니다.
+    - `src/pages/manufacturer/worksheet/custom_abutment/components/WorksheetCardGrid.tsx`
+    - `src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx`
 
 - 기본 공용 검색 입력 컴포넌트는 `src/components/ui/input.tsx` (`@/components/ui/input`)입니다.
   - 관리자 크레딧 페이지 검색 UI 배치 기준 파일:
