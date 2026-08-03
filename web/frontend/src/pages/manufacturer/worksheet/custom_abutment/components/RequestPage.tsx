@@ -1,5 +1,6 @@
 // change-log:
 // - 2026-08-03: 제조사 워크시트의 공정 필터 기본값 및 탭 라벨을 '준비'로 표시되도록 수정함. (display-only)
+// - 2026-08-03: request(준비) 탭 API 조회에서 `manufacturerStageIn=준비|의뢰` 동시 전송으로 레거시 문서 호환(카운터/목록 불일치) 수정.
 // - impact: deriveStageForFilter, computeStageLabel, realtime badge 처리 로직에 영향
 // related files:
 // - web/backend/modules/requests/request.routes.js
@@ -163,8 +164,8 @@ export const RequestPage = ({
         const stageFilterForTab = (() => {
           if (tabStage === "request")
             return showCompleted
-              ? ["준비", "CAM", "가공", "세척.패킹", "포장.발송", "추적관리"]
-              : ["준비"];
+              ? ["준비", "의뢰", "CAM", "가공", "세척.패킹", "포장.발송", "추적관리"]
+              : ["준비", "의뢰"];
           if (isCamStage)
             return showCompleted
               ? ["CAM", "가공", "세척.패킹", "포장.발송", "추적관리"]

@@ -1,8 +1,12 @@
+// change-log:
+// - 2026-08-03: 준비 탭 필터 SSOT를 `준비`로 통일해 상단 카운트와 카드 목록 불일치(카운트>0, 카드 0건) 문제를 수정.
+// - 2026-08-03: 실시간 CAM 생성중 복원 조건에서 레거시 `의뢰`와 신규 `준비`를 모두 허용.
 // related files:
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/utils/request.ts
 // - web/backend/controllers/requests/common.review.controller.js
 import {
   type ManufacturerRequest,
@@ -155,7 +159,7 @@ export function filterRequestsByStage(
     if (isUnmachinable(req)) return false;
 
     const stage = deriveStageForFilter(req);
-    if (tabStage === "request") return stage === "의뢰";
+    if (tabStage === "request") return stage === "준비";
     if (tabStage === "cam") return stage === "CAM";
     if (tabStage === "machining") return stage === "가공";
     if (tabStage === "packing") return stage === "세척.패킹";
@@ -238,7 +242,7 @@ export function mergeTransientRealtimeProgress(
           new Date(actualCamStart).getTime() >
             new Date(actualCamComplete).getTime());
 
-      if (stage === "의뢰" && isCamProcessing && !hasNcFile) {
+      if ((stage === "의뢰" || stage === "준비") && isCamProcessing && !hasNcFile) {
         const startedAt = actualCamStart as string;
         restoredProgress = {
           badge: "CAM 생성중",

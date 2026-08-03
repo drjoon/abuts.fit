@@ -91,6 +91,15 @@ Notes:
   - 공정 탭(의뢰/CAM/가공/세척.패킹/포장.발송/추적관리)의 검색 폭 정책은 개별 페이지에서 재정의하지 않고
     `src/pages/manufacturer/worksheet/custom_abutment/components/WorksheetStageSearchInput.tsx`에서 공통으로 관리합니다.
 
+- 제조사 워크시트 `request`(준비) 탭 필터 SSOT:
+  - 카드 목록 필터는 `deriveStageForFilter` 결과 `준비`를 기준으로 판정합니다 (`의뢰` 직접 비교 금지).
+  - request 탭 API 조회는 레거시 문서 호환을 위해 `manufacturerStageIn=준비|의뢰`를 함께 전달합니다.
+  - 상단 카운터/카드 목록 불일치 방지를 위해 탭별 API stage 필터와 클라이언트 stage 비교 문자열을 동일하게 유지합니다.
+  - 관련 파일:
+    - `src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx`
+    - `src/pages/manufacturer/worksheet/custom_abutment/utils/request.ts`
+    - `src/pages/manufacturer/worksheet/custom_abutment/utils/requestFiltering.ts`
+
 - 제조사 워크시트 승인/롤백(화살표) 동작 SSOT:
   - `PreviewModal`과 `WorksheetCardGrid`의 화살표 액션은 동일 공정 전이 규칙을 사용합니다.
   - 승인(`→`)은 "다음 공정 준비 데이터 존재 여부" 기준으로 허용하며, 준비가 안 된 경우 백엔드 승인 로직(큐/재처리 분기)이 다음 공정 작업을 수행한 뒤 전이합니다.
