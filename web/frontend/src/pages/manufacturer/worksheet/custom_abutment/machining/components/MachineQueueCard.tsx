@@ -33,6 +33,13 @@ const isMachiningStatus = (slot?: QueueItem) => {
   return s === "가공";
 };
 
+const normalizeBridgePathForMatch = (raw: unknown) =>
+  String(raw || "")
+    .trim()
+    .replace(/^nc\//i, "")
+    .replace(/\.(nc|stl)$/i, "")
+    .toLowerCase();
+
 const getNcPreloadBadge = (slot: QueueItem | null) => {
   const status = String(slot?.ncPreload?.status || "").trim();
   if (!status) return null;
@@ -125,6 +132,7 @@ export const MachineQueueCard = ({
     const hintRid = String(nowPlayingHint?.requestId || "").trim();
     const hintJid = String(nowPlayingHint?.jobId || "").trim();
     const hintPath = String(nowPlayingHint?.bridgePath || "").trim();
+    const normalizedHintPath = normalizeBridgePathForMatch(hintPath);
 
     const hintedIdx =
       hintRid || hintJid || hintPath
@@ -136,7 +144,13 @@ export const MachineQueueCard = ({
             const bp = String(
               j?.ncFile?.filePath || j?.bridgePath || "",
             ).trim();
-            if (hintPath && bp && bp === hintPath) return true;
+            const normalizedBp = normalizeBridgePathForMatch(bp);
+            if (
+              normalizedHintPath &&
+              normalizedBp &&
+              normalizedBp === normalizedHintPath
+            )
+              return true;
             return false;
           })
         : -1;

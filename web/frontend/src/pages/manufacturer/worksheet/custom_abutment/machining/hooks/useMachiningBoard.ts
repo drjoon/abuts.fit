@@ -857,6 +857,94 @@ export const useMachiningBoard = ({
       const source = String(payload["source"] || "").trim();
       const reviewStage = String(payload["reviewStage"] || "").trim();
       const eventRequest = payload["request"] || null;
+
+      // 브리지 가공 시작 콜백을 백엔드가 수신해 발행한 app-event를
+      // 프론트에서 직접 받아 Now Playing으로 즉시 반영한다.
+      if (
+        type === "request:stage-changed" &&
+        source === "bridge-machining-start" &&
+        eventRequest &&
+        typeof eventRequest === "object"
+      ) {
+        const reqAny = eventRequest as any;
+        const machineId = String(
+          reqAny?.productionSchedule?.machiningProgress?.machineId ||
+            reqAny?.productionSchedule?.assignedMachine ||
+            reqAny?.assignedMachine ||
+            "",
+        ).trim();
+        const requestId = String(
+          payload["requestId"] || reqAny?.requestId || "",
+        ).trim();
+        const jobId = String(
+          reqAny?.productionSchedule?.machiningProgress?.jobId || "",
+        ).trim();
+        const startedAt = String(
+          reqAny?.productionSchedule?.machiningProgress?.startedAt ||
+            new Date().toISOString(),
+        );
+
+        if (machineId && requestId) {
+          setNowPlayingHintMap((prev) => ({
+            ...prev,
+            [machineId]: {
+              machineId,
+              jobId: jobId || null,
+              requestId,
+              bridgePath: null,
+              startedAt,
+            },
+          }));
+
+          setQueueMap((prev) => {
+            const list = Array.isArray(prev?.[machineId]) ? prev[machineId] : [];
+            if (!list.length) return prev;
+            const idx = list.findIndex(
+              (item) => String((item as any)?.requestId || "").trim() === requestId,
+            );
+            const targetIdx = idx >= 0 ? idx : 0;
+            if (targetIdx < 0) return prev;
+
+            const nextList = list.map((item, i) => {
+              if (i !== targetIdx) return item;
+              const prevRec =
+                item?.machiningRecord && typeof item.machiningRecord === "object"
+                  ? item.machiningRecord
+                  : null;
+              return {
+                ...(item as any),
+                machiningRecord: {
+                  ...(prevRec || {}),
+                  status: "RUNNING",
+                  startedAt,
+                  completedAt: null,
+                  machineId,
+                  jobId:
+                    jobId ||
+                    String((item as any)?.jobId || (item as any)?.id || "").trim() ||
+                    null,
+                },
+              } as QueueItem;
+            });
+
+            return {
+              ...prev,
+              [machineId]: nextList,
+            };
+          });
+
+          machiningElapsedBaseRef.current[machineId] = Date.now();
+          setMachiningElapsedSecondsMap((prev) => ({
+            ...prev,
+            [machineId]: -1,
+          }));
+
+          window.setTimeout(() => {
+            void refreshProductionQueues();
+          }, 180);
+        }
+      }
+
       if (!eventRequest || typeof eventRequest !== "object") return;
 
       const hasNc = Boolean(
