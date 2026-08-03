@@ -40,6 +40,8 @@ const STARTED_EMIT_TTL_MS = 30 * 1000;
 const startedEmitCache = new Map();
 const MACHINING_TICK_LOG_WINDOW_MS = 60 * 1000;
 const machiningTickLogCache = new Map();
+const AUTO_NEXT_PRIMARY_PENDING_LIMIT = 20;
+const AUTO_NEXT_FALLBACK_PENDING_LIMIT = 100;
 
 function makeStartedEmitKey({ machineId, jobId, requestId, bridgePath }) {
   return [
@@ -702,50 +704,89 @@ export async function triggerNextAutoMachiningAfterComplete({
       .lean()
       .catch(() => null);
 
-    const pending = await Request.find({
-      // 자동 가공 트리거 대상은 "가공" 단계만 허용한다.
-      // CAM 단계 건을 여기서 집어오면 승인/전환 우회로 보일 수 있어 제외한다.
-      manufacturerStage: "가공",
-      "productionSchedule.assignedMachine": mid,
-    })
-      .sort({ "productionSchedule.queuePosition": 1, updatedAt: 1 })
-      .limit(20)
-      .lean();
+    const fetchPendingForAutoNext = async (limit) => {
+      return Request.find({
+        // 자동 가공 트리거 대상은 "가공" 단계만 허용한다.
+        // CAM 단계 건을 여기서 집어오면 승인/전환 우회로 보일 수 있어 제외한다.
+        manufacturerStage: "가공",
+        "productionSchedule.assignedMachine": mid,
+      })
+        .sort({ "productionSchedule.queuePosition": 1, updatedAt: 1 })
+        .limit(limit)
+        .lean();
+    };
 
-    let pick = null;
-    let firstDiameterMismatched = null;
+    const pickFromPending = (rows) => {
+      let pick = null;
+      let firstDiameterMismatched = null;
+      let skippedNoNcMeta = 0;
 
-    for (const r of Array.isArray(pending) ? pending : []) {
-      const rid = String(r?.requestId || "").trim();
-      if (!rid) continue;
-      if (completedRequestId && rid === completedRequestId) continue;
+      for (const r of Array.isArray(rows) ? rows : []) {
+        const rid = String(r?.requestId || "").trim();
+        if (!rid) continue;
+        if (completedRequestId && rid === completedRequestId) continue;
 
-      const isAnodizingOff = r?.caseInfos?.anodizingEnabled === false;
-      if (onlyAnodizingOff && !isAnodizingOff) {
-        continue;
+        const isAnodizingOff = r?.caseInfos?.anodizingEnabled === false;
+        if (onlyAnodizingOff && !isAnodizingOff) {
+          continue;
+        }
+        if (!allowAnodizingOff && isAnodizingOff) {
+          // 기본 자동 연속 가공에서는 아노다이징 OFF 의뢰건을 건너뛴다.
+          // OFF 건은 생산 직원이 "아노 X 가공" 버튼으로 별도 시작한다.
+          continue;
+        }
+
+        const path = String(
+          r?.ncFile?.filePath || r?.caseInfos?.ncFile?.filePath || "",
+        ).trim();
+        const key = String(
+          r?.ncFile?.s3Key || r?.caseInfos?.ncFile?.s3Key || "",
+        ).trim();
+        // NC 존재 판정 보강: filePath 또는 s3Key 중 하나라도 있으면 후보로 인정.
+        if (!path && !key) {
+          skippedNoNcMeta += 1;
+          continue;
+        }
+
+        const compatible = isRequestDiameterCompatibleWithMachine({
+          requestDoc: r,
+          machineMeta: cncRuntimeMeta,
+        });
+        if (compatible) {
+          pick = r;
+          break;
+        }
+        if (!firstDiameterMismatched) {
+          firstDiameterMismatched = r;
+        }
       }
-      if (!allowAnodizingOff && isAnodizingOff) {
-        // 기본 자동 연속 가공에서는 아노다이징 OFF 의뢰건을 건너뛴다.
-        // OFF 건은 생산 직원이 "아노 X 가공" 버튼으로 별도 시작한다.
-        continue;
-      }
 
-      const path = String(
-        r?.ncFile?.filePath || r?.caseInfos?.ncFile?.filePath || "",
-      ).trim();
-      if (!path) continue;
+      return { pick, firstDiameterMismatched, skippedNoNcMeta };
+    };
 
-      const compatible = isRequestDiameterCompatibleWithMachine({
-        requestDoc: r,
-        machineMeta: cncRuntimeMeta,
-      });
-      if (compatible) {
-        pick = r;
-        break;
-      }
-      if (!firstDiameterMismatched) {
-        firstDiameterMismatched = r;
-      }
+    const pendingPrimary = await fetchPendingForAutoNext(
+      AUTO_NEXT_PRIMARY_PENDING_LIMIT,
+    );
+    let pending = pendingPrimary;
+    let {
+      pick,
+      firstDiameterMismatched,
+      skippedNoNcMeta,
+    } = pickFromPending(pendingPrimary);
+
+    if (!pick && pendingPrimary.length >= AUTO_NEXT_PRIMARY_PENDING_LIMIT) {
+      const pendingFallback = await fetchPendingForAutoNext(
+        AUTO_NEXT_FALLBACK_PENDING_LIMIT,
+      );
+      pending = pendingFallback;
+      const fallbackPicked = pickFromPending(pendingFallback);
+      pick = fallbackPicked.pick;
+      firstDiameterMismatched = fallbackPicked.firstDiameterMismatched;
+      skippedNoNcMeta = fallbackPicked.skippedNoNcMeta;
+
+      console.log(
+        `[bridge:auto-next] fallback pending scan used machine=${mid} primaryLimit=${AUTO_NEXT_PRIMARY_PENDING_LIMIT} fallbackLimit=${AUTO_NEXT_FALLBACK_PENDING_LIMIT} pending=${pendingFallback.length} skippedNoNcMeta=${skippedNoNcMeta}`,
+      );
     }
 
     if (!pick && firstDiameterMismatched) {
@@ -862,7 +903,7 @@ export async function triggerNextAutoMachiningAfterComplete({
 
     if (!pick) {
       console.log(
-        `[bridge:auto-next] no diameter-compatible pending jobs found for ${mid}, staying idle.`,
+        `[bridge:auto-next] no diameter-compatible pending jobs found for ${mid}, staying idle. pending=${Array.isArray(pending) ? pending.length : 0} skippedNoNcMeta=${skippedNoNcMeta}`,
       );
       return;
     }
@@ -883,8 +924,11 @@ export async function triggerNextAutoMachiningAfterComplete({
     const rawFileName = String(
       pick?.ncFile?.fileName || pick?.caseInfos?.ncFile?.fileName || "",
     ).trim();
-    const derivedFileName = bridgePath ? bridgePath.split(/[/\\]/).pop() : "";
-    const fileName = rawFileName || derivedFileName;
+    const derivedFileNameFromPath = bridgePath
+      ? bridgePath.split(/[/\\]/).pop()
+      : "";
+    const derivedFileNameFromS3 = s3Key ? s3Key.split("/").pop() : "";
+    const fileName = rawFileName || derivedFileNameFromPath || derivedFileNameFromS3;
 
     console.log(
       `[bridge:auto-next] attempting to trigger ${requestId} on ${mid}`,
@@ -897,9 +941,9 @@ export async function triggerNextAutoMachiningAfterComplete({
       },
     );
 
-    if (!fileName || !bridgePath) {
+    if (!fileName || (!bridgePath && !s3Key)) {
       console.log(
-        `[bridge:auto-next] skip for ${mid}: missing fileName or bridgePath for ${requestId}`,
+        `[bridge:auto-next] skip for ${mid}: missing fileName or nc locator (bridgePath/s3Key) for ${requestId}`,
       );
       return;
     }
