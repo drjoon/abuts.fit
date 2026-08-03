@@ -415,9 +415,36 @@ export const useMachiningBoard = ({
       };
     }
 
-    machiningElapsedBaseRef.current = nextBases;
-    setMachiningElapsedSecondsMap(nextSecondsFromQueues);
-    setNowPlayingHintMap(nextHintsFromQueues);
+    // 레이스 방지: 이 함수를 호출하는 refreshProductionQueues 요청은
+    // 소켓(cnc-machining-started)보다 먼저 보낸 요청이 높은 확률로 느리게 도착해,
+    // 스낵샷에 machiningRecord가 아직 반영되지 않은 오래된(stale) 데이터일 수 있다.
+    // 이 스낵샷에서 running을 못 찾았다고 기존 힌트를 무조건 지우면,
+    // 방금 소켓으로 정상 반영된 Now Playing이 잠시 후 Next Up으로 원복되는 레이스가 발생한다.
+    // 해당 힌트의 requestId가 이 머신의 큐에 여전히 존재하면(=진짜로 끝난 것이 아니면)
+    // 기존 힌트를 그대로 유지한다.
+    machiningElapsedBaseRef.current = {
+      ...machiningElapsedBaseRef.current,
+      ...nextBases,
+    };
+    setMachiningElapsedSecondsMap((prev) => ({ ...prev, ...nextSecondsFromQueues }));
+    setNowPlayingHintMap((prev) => {
+      const merged: Record<string, NowPlayingHint> = { ...prev, ...nextHintsFromQueues };
+      for (const mid of Object.keys(prev)) {
+        if (nextHintsFromQueues[mid]) continue;
+        const hintRid = String(prev[mid]?.requestId || "").trim();
+        const list = Array.isArray(map?.[mid]) ? map[mid] : [];
+        const stillPresent =
+          !!hintRid &&
+          list.some(
+            (it: any) => String(it?.requestId || "").trim() === hintRid,
+          );
+        if (!stillPresent) {
+          delete merged[mid];
+          delete machiningElapsedBaseRef.current[mid];
+        }
+      }
+      return merged;
+    });
   }, []);
 
   const refreshProductionQueues = useCallback(async () => {

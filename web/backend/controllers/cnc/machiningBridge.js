@@ -720,11 +720,25 @@ export async function triggerNextAutoMachiningAfterComplete({
       let pick = null;
       let firstDiameterMismatched = null;
       let skippedNoNcMeta = 0;
+      let skippedAlreadyRunning = 0;
 
       for (const r of Array.isArray(rows) ? rows : []) {
         const rid = String(r?.requestId || "").trim();
         if (!rid) continue;
         if (completedRequestId && rid === completedRequestId) continue;
+
+        // 이미 실제로 가공이 진행 중인 건(Now Playing)은 재시작 대상이 아니다.
+        // (bridge 큐 조회로도 이중 방지되지만, 여기서 먼저 걸러 불필요한
+        // process-file 재요청/레이스를 없앤다.)
+        const progressPhase = String(
+          r?.productionSchedule?.machiningProgress?.phase || "",
+        )
+          .trim()
+          .toUpperCase();
+        if (progressPhase === "STARTED") {
+          skippedAlreadyRunning += 1;
+          continue;
+        }
 
         const isAnodizingOff = r?.caseInfos?.anodizingEnabled === false;
         if (onlyAnodizingOff && !isAnodizingOff) {
@@ -761,7 +775,7 @@ export async function triggerNextAutoMachiningAfterComplete({
         }
       }
 
-      return { pick, firstDiameterMismatched, skippedNoNcMeta };
+      return { pick, firstDiameterMismatched, skippedNoNcMeta, skippedAlreadyRunning };
     };
 
     const pendingPrimary = await fetchPendingForAutoNext(
@@ -772,6 +786,7 @@ export async function triggerNextAutoMachiningAfterComplete({
       pick,
       firstDiameterMismatched,
       skippedNoNcMeta,
+      skippedAlreadyRunning,
     } = pickFromPending(pendingPrimary);
 
     if (!pick && pendingPrimary.length >= AUTO_NEXT_PRIMARY_PENDING_LIMIT) {
@@ -783,9 +798,10 @@ export async function triggerNextAutoMachiningAfterComplete({
       pick = fallbackPicked.pick;
       firstDiameterMismatched = fallbackPicked.firstDiameterMismatched;
       skippedNoNcMeta = fallbackPicked.skippedNoNcMeta;
+      skippedAlreadyRunning = fallbackPicked.skippedAlreadyRunning;
 
       console.log(
-        `[bridge:auto-next] fallback pending scan used machine=${mid} primaryLimit=${AUTO_NEXT_PRIMARY_PENDING_LIMIT} fallbackLimit=${AUTO_NEXT_FALLBACK_PENDING_LIMIT} pending=${pendingFallback.length} skippedNoNcMeta=${skippedNoNcMeta}`,
+        `[bridge:auto-next] fallback pending scan used machine=${mid} primaryLimit=${AUTO_NEXT_PRIMARY_PENDING_LIMIT} fallbackLimit=${AUTO_NEXT_FALLBACK_PENDING_LIMIT} pending=${pendingFallback.length} skippedNoNcMeta=${skippedNoNcMeta} skippedAlreadyRunning=${skippedAlreadyRunning}`,
       );
     }
 
@@ -903,7 +919,7 @@ export async function triggerNextAutoMachiningAfterComplete({
 
     if (!pick) {
       console.log(
-        `[bridge:auto-next] no diameter-compatible pending jobs found for ${mid}, staying idle. pending=${Array.isArray(pending) ? pending.length : 0} skippedNoNcMeta=${skippedNoNcMeta}`,
+        `[bridge:auto-next] no diameter-compatible pending jobs found for ${mid}, staying idle. pending=${Array.isArray(pending) ? pending.length : 0} skippedNoNcMeta=${skippedNoNcMeta} skippedAlreadyRunning=${skippedAlreadyRunning}`,
       );
       return;
     }
