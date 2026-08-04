@@ -462,6 +462,14 @@ export async function updateMyBusiness(req, res) {
         );
       }
 
+      if (hasOwnKey(req.body?.shippingPolicy, "defaultShippingMode")) {
+        const rawMode = String(
+          req.body?.shippingPolicy?.defaultShippingMode || "",
+        ).trim();
+        patch["shippingPolicy.defaultShippingMode"] =
+          rawMode === "express" ? "express" : "normal";
+      }
+
       if (
         hasOwnKey(req.body?.shippingPolicy, "leadTimes") &&
         req.body?.shippingPolicy?.leadTimes

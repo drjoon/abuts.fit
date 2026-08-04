@@ -1,7 +1,7 @@
 // change-log:
 // - 2026-08-04: 중복 의뢰 "취소 후 재의뢰" 선택 시 기존 의뢰/치과 즐겨찾기 정보로 누락 필드를 채우고 카드 검증을 자동 완료.
 // - 2026-08-03: 중복 의뢰 안내 모달의 상태 표시를 공정 라벨 정규화(의뢰 -> 준비)로 표시. (display-only)
-import React, { useEffect, useMemo, useState, useCallback } from "react";
+import React, { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { getNormalizedStageLabelSafe } from "@/utils/stage";
 import { useParams, useNavigate } from "react-router-dom";
 import { useNewRequestPage } from "./hooks/useNewRequestPage";
@@ -414,6 +414,8 @@ export const NewRequestPage = () => {
     [updateCaseInfos],
   );
 
+  const knownFileKeysRef = useRef<Set<string>>(new Set());
+
   const handleCancelAll = async () => {
     const preservedDesignSoftware = String(
       designSoftwareValue || caseInfosMap?.__default__?.designSoftware || "",
@@ -823,8 +825,34 @@ export const NewRequestPage = () => {
     );
   };
 
-  const { weeklyBatchDays, setWeeklyBatchDays } =
-    useBulkShippingPolicy(user?.email);
+  const {
+    weeklyBatchDays,
+    setWeeklyBatchDays,
+    defaultShippingMode,
+    setDefaultShippingMode,
+  } = useBulkShippingPolicy(user?.email);
+
+  // 새로 첨부된 파일에만 우측 기본 배송 방식을 적용한다.
+  useEffect(() => {
+    const nextKnown = new Set<string>();
+    for (const file of files) {
+      const key = toNormalizedFileKey(file);
+      nextKnown.add(key);
+      if (knownFileKeysRef.current.has(key)) continue;
+
+      const existing = caseInfosMap?.[key]?.shippingMode;
+      if (existing === "normal" || existing === "express") continue;
+
+      updateCaseInfos(key, { shippingMode: defaultShippingMode });
+    }
+    knownFileKeysRef.current = nextKnown;
+  }, [
+    files,
+    defaultShippingMode,
+    caseInfosMap,
+    updateCaseInfos,
+    toNormalizedFileKey,
+  ]);
 
   const [focusUnverifiedTick, setFocusUnverifiedTick] = useState(0);
 
@@ -1547,6 +1575,8 @@ export const NewRequestPage = () => {
             <NewRequestShippingSection
               weeklyBatchDays={weeklyBatchDays}
               onWeeklyBatchDaysChange={setWeeklyBatchDays}
+              defaultShippingMode={defaultShippingMode}
+              onDefaultShippingModeChange={setDefaultShippingMode}
               onSubmit={() => {
                 if (!files.length) {
                   toast({

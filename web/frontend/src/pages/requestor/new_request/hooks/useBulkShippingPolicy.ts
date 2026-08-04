@@ -4,6 +4,7 @@
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
 // - web/backend/controllers/requests/creation.from-draft.controller.js
+// - web/backend/models/businessAnchor.model.js
 import { useEffect, useMemo, useState } from "react";
 import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
@@ -11,11 +12,14 @@ import { resolveBusinessType } from "@/shared/utils/resolveBusinessType";
 
 const SHIPPING_POLICY_STORAGE_PREFIX = "abutsfit:shipping-policy:v1:";
 
+type DefaultShippingMode = "normal" | "express";
+
 type ShippingPolicyResult = {
   shippingMode: "countBased" | "weeklyBased";
   summary: string;
   weeklyBatchDays: string[];
   weeklyBatchLabel: string;
+  defaultShippingMode: DefaultShippingMode;
 };
 
 const dayLabels: Record<string, string> = {
@@ -45,6 +49,9 @@ const normalizeWeeklyBatchDays = (raw: string[]) =>
     ),
   );
 
+const normalizeDefaultShippingMode = (raw: unknown): DefaultShippingMode =>
+  raw === "express" ? "express" : "normal";
+
 const getKstDayIndex = () => {
   const now = new Date();
   const kst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
@@ -73,11 +80,13 @@ const formatWeekdayLabel = (days: string[]) => {
 const buildShippingPolicyResult = (
   weeklyBatchDays: string[],
   shippingMode: "countBased" | "weeklyBased" = "countBased",
+  defaultShippingMode: DefaultShippingMode = "normal",
 ): ShippingPolicyResult => ({
   shippingMode,
   summary: "",
   weeklyBatchDays,
   weeklyBatchLabel: formatWeekdayLabel(weeklyBatchDays),
+  defaultShippingMode: normalizeDefaultShippingMode(defaultShippingMode),
 });
 
 const getLocalShippingPolicy = (
@@ -94,9 +103,16 @@ const getLocalShippingPolicy = (
     const weeklyBatchDays = normalizeWeeklyBatchDays(
       Array.isArray(parsed.weeklyBatchDays) ? parsed.weeklyBatchDays : [],
     );
+    const defaultShippingMode = normalizeDefaultShippingMode(
+      parsed.defaultShippingMode,
+    );
     void autoBatchThreshold;
     void maxWaitDays;
-    return buildShippingPolicyResult(weeklyBatchDays, shippingMode);
+    return buildShippingPolicyResult(
+      weeklyBatchDays,
+      shippingMode,
+      defaultShippingMode,
+    );
   } catch {
     return buildShippingPolicyResult([]);
   }
@@ -105,13 +121,23 @@ const getLocalShippingPolicy = (
 const saveLocalShippingPolicy = (
   email: string | null | undefined,
   weeklyBatchDays: string[],
+  defaultShippingMode: DefaultShippingMode = "normal",
 ) => {
   const key = `${SHIPPING_POLICY_STORAGE_PREFIX}${email || "guest"}`;
   try {
     if (typeof window !== "undefined") {
+      let prev: Record<string, unknown> = {};
+      try {
+        const raw = localStorage.getItem(key);
+        prev = raw ? JSON.parse(raw) : {};
+      } catch {
+        prev = {};
+      }
       const data = {
+        ...prev,
         shippingMode: "weeklyBased",
         weeklyBatchDays,
+        defaultShippingMode: normalizeDefaultShippingMode(defaultShippingMode),
         updatedAt: new Date().toISOString(),
       };
       localStorage.setItem(key, JSON.stringify(data));
@@ -153,17 +179,22 @@ export function useBulkShippingPolicy(email?: string | null) {
         const weeklyDays = normalizeWeeklyBatchDays(
           data?.shippingPolicy?.weeklyBatchDays || [],
         );
+        const defaultShippingMode = normalizeDefaultShippingMode(
+          data?.shippingPolicy?.defaultShippingMode,
+        );
         if (cancelled) return;
 
-        // 백엔드 데이터를 로컬 스토리지에 저장하고 상태 업데이트
-        if (weeklyDays.length > 0) {
-          saveLocalShippingPolicy(email, weeklyDays);
-          setPolicy((prev) => ({
+        setPolicy((prev) => {
+          const nextDays =
+            weeklyDays.length > 0 ? weeklyDays : prev.weeklyBatchDays;
+          saveLocalShippingPolicy(email, nextDays, defaultShippingMode);
+          return {
             ...prev,
-            weeklyBatchDays: weeklyDays,
-            weeklyBatchLabel: formatWeekdayLabel(weeklyDays),
-          }));
-        }
+            weeklyBatchDays: nextDays,
+            weeklyBatchLabel: formatWeekdayLabel(nextDays),
+            defaultShippingMode,
+          };
+        });
       } catch {
         // ignore
       }
@@ -177,16 +208,30 @@ export function useBulkShippingPolicy(email?: string | null) {
 
   const setWeeklyBatchDays = (days: string[]) => {
     const weeklyDays = normalizeWeeklyBatchDays(days);
-    saveLocalShippingPolicy(email, weeklyDays);
-    setPolicy((prev) => ({
-      ...prev,
-      weeklyBatchDays: weeklyDays,
-      weeklyBatchLabel: formatWeekdayLabel(weeklyDays),
-    }));
+    setPolicy((prev) => {
+      saveLocalShippingPolicy(email, weeklyDays, prev.defaultShippingMode);
+      return {
+        ...prev,
+        weeklyBatchDays: weeklyDays,
+        weeklyBatchLabel: formatWeekdayLabel(weeklyDays),
+      };
+    });
+  };
+
+  const setDefaultShippingMode = (mode: DefaultShippingMode) => {
+    const nextMode = normalizeDefaultShippingMode(mode);
+    setPolicy((prev) => {
+      saveLocalShippingPolicy(email, prev.weeklyBatchDays, nextMode);
+      return {
+        ...prev,
+        defaultShippingMode: nextMode,
+      };
+    });
   };
 
   return {
     ...policy,
     setWeeklyBatchDays,
+    setDefaultShippingMode,
   };
 }

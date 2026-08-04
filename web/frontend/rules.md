@@ -86,6 +86,7 @@ Notes:
   - 의뢰카드에서 `shippingMode`(`normal`|`express`)를 건별로 선택합니다.
   - 우측 배송 설정은 안내/요일 설정 + 제출만 담당합니다.
   - 신속 추가 의뢰크레딧 금액은 `creditSettings.expressFee`(기본 1,000원)를 사용합니다.
+  - 우측 기본 배송 방식(`normal`|`express`)은 로컬스토리지 + `BusinessAnchor.shippingPolicy.defaultShippingMode`에 저장합니다.
   - 제조사 카드에는 신속 건만 `신속` 뱃지로 표시합니다.
   - 대시보드 묶음/신속 토글: `PATCH /api/requests/my/shipping-mode` (`RequestorBulkShippingBannerCard.tsx`)
   - 우편함: 신속 건 포함 시 오늘 발송 가능으로 처리 (`shippingDay.helpers.ts`)

@@ -66,6 +66,8 @@
       - 가공비: `request:<id>:machining_spend`
       - 신속 추가비: `request:<id>:express_surcharge` (분리 저널)
     - 지연/모드 전환 취소: `cancelExpressSurchargeIfShipDelayed` → `deleteExpressSurchargeAtomic`
+  - 기본 배송 방식: `BusinessAnchor.shippingPolicy.defaultShippingMode` (`normal`|`express`)
+    - PATCH: `business.update.controller.js` / 프론트 `NewRequestShippingSection` + `useBulkShippingPolicy`
   - 스케줄: `production.utils.js` `calculateInitialProductionSchedule({ shippingMode })` (신속: 12시 KST 컷오프)
   - 우선순위: `sortByProductionPriority` 신속 부스트
   - 우편함: 신속 건 포함 시 주간 묶음 요일 제한 무시 (`shipping.controller.js` / frontend `shippingDay.helpers.ts`)

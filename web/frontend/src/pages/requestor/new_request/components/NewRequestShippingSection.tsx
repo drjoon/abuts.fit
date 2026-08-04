@@ -5,6 +5,8 @@
 // - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
 // - web/backend/controllers/requests/creation.from-draft.controller.js
 import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Package, Zap } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 import { apiFetch } from "@/shared/api/apiClient";
@@ -15,11 +17,16 @@ import {
   CREDIT_SETTINGS_DEFAULTS,
   useSystemSettings,
 } from "@/hooks/useSystemSettings";
+import { cn } from "@/shared/ui/cn";
+
+type ShippingMode = "normal" | "express";
 
 type Props = {
   disabled?: boolean;
   weeklyBatchDays: string[];
   onWeeklyBatchDaysChange?: (days: string[]) => void;
+  defaultShippingMode: ShippingMode;
+  onDefaultShippingModeChange: (mode: ShippingMode) => void;
   onSubmit: () => void;
 };
 
@@ -37,6 +44,8 @@ export function NewRequestShippingSection({
   disabled,
   weeklyBatchDays,
   onWeeklyBatchDaysChange,
+  defaultShippingMode,
+  onDefaultShippingModeChange,
   onSubmit,
 }: Props) {
   const isDisabled = !!disabled;
@@ -162,70 +171,180 @@ export function NewRequestShippingSection({
     }
   };
 
+  const persistDefaultShippingMode = async (mode: ShippingMode) => {
+    if (isDisabled || isUpdating) return;
+    if (mode === defaultShippingMode) return;
+
+    onDefaultShippingModeChange(mode);
+    setIsUpdating(true);
+    try {
+      const res = await apiFetch<any>({
+        path: "/api/businesses/me?businessType=requestor",
+        method: "PATCH",
+        token,
+        jsonBody: {
+          shippingPolicy: {
+            defaultShippingMode: mode,
+          },
+        },
+      });
+
+      if (!res.ok) {
+        const nextMessage = res.data?.message || "";
+        const missingBusinessInfo =
+          res.status === 400 &&
+          typeof nextMessage === "string" &&
+          nextMessage.includes("기공소");
+
+        if (missingBusinessInfo) {
+          toast({
+            title: "기공소 정보가 필요합니다",
+            description: "사업자 설정에서 기공소 정보를 모두 입력해주세요.",
+            variant: "destructive",
+            duration: 4000,
+          });
+          navigate("/dashboard/settings?tab=business", { replace: true });
+          return;
+        }
+
+        toast({
+          title: "기본 배송 방식 저장 실패",
+          description: res.data?.message || "다시 시도해주세요.",
+          variant: "destructive",
+          duration: 3000,
+        });
+      }
+    } catch (e: any) {
+      toast({
+        title: "오류",
+        description: e.message || "기본 배송 방식 저장 중 오류가 발생했습니다.",
+        variant: "destructive",
+        duration: 3000,
+      });
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  const modeCardClass = (active: boolean) =>
+    cn(
+      "w-full rounded-lg border bg-white/70 px-4 py-4 space-y-3 text-center transition-all cursor-pointer",
+      active
+        ? "border-primary ring-2 ring-primary/25 bg-primary/5 shadow-[0_0_0_1px_rgba(37,99,235,0.12)]"
+        : "border-slate-200 hover:border-primary/40 hover:bg-slate-50/80",
+      isDisabled && "opacity-50 cursor-not-allowed",
+    );
+
   return (
     <div
       ref={containerRef}
       className="app-glass-card app-glass-card--lg relative flex flex-col justify-center gap-4 border-2 p-4 md:p-6 transition-all border-gray-300"
     >
-      <div className="app-glass-card-content flex flex-col items-center gap-4">
-        <div className="w-full rounded-lg border border-slate-200 bg-white/70 px-4 py-4 space-y-3 text-center">
-          <div className="flex items-center justify-center gap-2 text-base font-medium text-foreground">
-            <Package className="w-5 h-5 text-primary" />
-            묶음 배송
-          </div>
-          <div className="flex flex-wrap items-center justify-center gap-2">
-            <div className="text-sm text-slate-500 font-medium">발송일</div>
-            <div
-              ref={weekdaysRef}
-              className={`flex gap-1 rounded-md px-1 py-1 transition-all ${
-                pulse
-                  ? "bg-red-50 border border-red-300 ring-2 ring-red-200"
-                  : ""
-              }`}
-            >
-              {WEEKDAYS.map((day) => (
-                <button
-                  key={day.key}
-                  type="button"
-                  onClick={() => toggleDay(day.key)}
-                  disabled={isDisabled || isUpdating}
-                  className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
-                    selectedDays.includes(day.key)
-                      ? "bg-primary text-white"
-                      : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                  } ${
-                    isDisabled || isUpdating
-                      ? "opacity-50 cursor-not-allowed"
-                      : "cursor-pointer"
-                  }`}
-                >
-                  {day.label}
-                </button>
-              ))}
+      <div className="app-glass-card-content flex flex-col items-center gap-3">
+        <RadioGroup
+          value={defaultShippingMode}
+          onValueChange={(value) => {
+            if (value === "normal" || value === "express") {
+              void persistDefaultShippingMode(value);
+            }
+          }}
+          disabled={isDisabled || isUpdating}
+          className="w-full flex flex-col gap-4"
+        >
+          <div
+            className={modeCardClass(defaultShippingMode === "normal")}
+            onClick={() => {
+              void persistDefaultShippingMode("normal");
+            }}
+          >
+            <div className="flex items-center justify-center gap-2.5">
+              <RadioGroupItem
+                value="normal"
+                id="default-shipping-normal"
+                className="border-slate-400 text-primary"
+                onClick={(e) => e.stopPropagation()}
+              />
+              <Label
+                htmlFor="default-shipping-normal"
+                className="flex items-center gap-2 text-base font-medium text-foreground cursor-pointer"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <Package className="w-5 h-5 text-primary" />
+                묶음 배송
+              </Label>
+            </div>
+            <div className="flex flex-wrap items-center justify-center gap-2">
+              <div className="text-sm text-slate-500 font-medium">발송일</div>
+              <div
+                ref={weekdaysRef}
+                className={`flex gap-1 rounded-md px-1 py-1 transition-all ${
+                  pulse
+                    ? "bg-red-50 border border-red-300 ring-2 ring-red-200"
+                    : ""
+                }`}
+                onClick={(e) => e.stopPropagation()}
+              >
+                {WEEKDAYS.map((day) => (
+                  <button
+                    key={day.key}
+                    type="button"
+                    onClick={() => toggleDay(day.key)}
+                    disabled={isDisabled || isUpdating}
+                    className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                      selectedDays.includes(day.key)
+                        ? "bg-primary text-white"
+                        : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                    } ${
+                      isDisabled || isUpdating
+                        ? "opacity-50 cursor-not-allowed"
+                        : "cursor-pointer"
+                    }`}
+                  >
+                    {day.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="text-sm text-red-500">묶음 배송일 복수 선택 권장</div>
+            <div className="text-sm text-slate-600 leading-relaxed">
+              선택한 요일 중 가장 먼저 도래한 날 모두 발송합니다.
+              <br />
+              공휴일은 쉬고 다음날 발송합니다.
             </div>
           </div>
-          <div className="text-sm text-red-500">묶음 배송일 복수 선택 권장</div>
-          <div className="text-sm text-slate-600 leading-relaxed">
-            선택한 요일 중 가장 먼저 도래한 날 모두 발송합니다.
-            <br />
-            공휴일은 쉬고 다음날 발송합니다.
-          </div>
-        </div>
 
-        <div className="w-full rounded-lg border border-slate-200 bg-white/70 px-4 py-4 space-y-2 text-center">
-          <div className="flex items-center justify-center gap-2 text-base font-medium text-foreground">
-            <Zap className="w-5 h-5 text-amber-500" />
-            신속 배송
+          <div
+            className={modeCardClass(defaultShippingMode === "express")}
+            onClick={() => {
+              void persistDefaultShippingMode("express");
+            }}
+          >
+            <div className="flex items-center justify-center gap-2.5">
+              <RadioGroupItem
+                value="express"
+                id="default-shipping-express"
+                className="border-slate-400 text-amber-500"
+                onClick={(e) => e.stopPropagation()}
+              />
+              <Label
+                htmlFor="default-shipping-express"
+                className="flex items-center gap-2 text-base font-medium text-foreground cursor-pointer"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <Zap className="w-5 h-5 text-amber-500" />
+                신속 배송
+              </Label>
+            </div>
+            <div className="text-base text-foreground leading-relaxed">
+              오늘 낮 12시 이전 의뢰 시 오늘 오후 발송
+            </div>
+            <div className="text-sm text-slate-600 leading-relaxed">
+              의뢰크레딧 {expressFeeLabel}원이 추가로 소비됩니다.
+              <br />
+              단, 생산이 지연되면 내일 발송되며 추가 의뢰크레딧은 취소됩니다.
+            </div>
           </div>
-          <div className="text-base text-foreground leading-relaxed">
-            오늘 낮 12시 이전 의뢰 시 오늘 오후 발송
-          </div>
-          <div className="text-sm text-slate-600 leading-relaxed">
-            의뢰크레딧 {expressFeeLabel}원이 추가로 소비됩니다.
-            <br />
-            단, 생산이 지연되면 내일 발송되며 추가 의뢰크레딧은 취소됩니다.
-          </div>
-        </div>
+        </RadioGroup>
       </div>
 
       <div className="app-glass-card-content pt-1">

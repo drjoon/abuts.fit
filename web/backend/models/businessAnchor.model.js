@@ -109,6 +109,12 @@ const businessAnchorSchema = new mongoose.Schema(
         default: [],
         enum: ["mon", "tue", "wed", "thu", "fri"],
       },
+      // 신규의뢰 첨부 시 적용할 기본 배송 방식 (묶음/신속)
+      defaultShippingMode: {
+        type: String,
+        enum: ["normal", "express"],
+        default: "normal",
+      },
       leadTimes: {
         d6: {
           minBusinessDays: { type: Number, default: 1, min: 0 },
