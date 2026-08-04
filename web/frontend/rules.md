@@ -122,7 +122,8 @@ Notes:
   - `src/pages/manufacturer/worksheet/custom_abutment/machining/MachiningQueueBoard.tsx`
 - 신속/묶음 뱃지: 가공카드(Complete/Now Playing/Next Up)·재생목록·프리뷰(`PreviewModal`)에 `ShippingModeBadge` 상시 표시
   - `MachiningRequestLabel.tsx`, `CncPlaylistDrawer.tsx`, `PreviewModal.tsx`
-  - 큐 API 응답에 `shippingMode`/`finalShipping`/`originalShipping` 포함
+  - 큐 API(`/api/cnc-machines/queues`)·worksheet 목록에 `shippingMode`/`finalShipping`/`originalShipping` 포함 → 프리뷰는 **추가 fetch 없이** 큐/목록 페이로드만 사용
+  - 재생목록 항목 클릭 → PreviewModal (코드 에디터는 프리뷰 내 버튼)
 
 - 신규 기공소 런칭 이벤트 가격 표시 SSOT:
   - 가입 승인일 기준 `180일` 동안 커스텀 어벗 `개당 10,000원` 고정가를 적용합니다.

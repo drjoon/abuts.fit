@@ -812,6 +812,9 @@ export const MachineQueueCard = ({
                 tooth: (currentSlot as any)?.tooth || "",
                 lotNumber: (currentSlot as any)?.lotNumber || null,
                 caseInfos: (currentSlot as any)?.caseInfos || null,
+                shippingMode: (currentSlot as any)?.shippingMode || null,
+                finalShipping: (currentSlot as any)?.finalShipping || null,
+                originalShipping: (currentSlot as any)?.originalShipping || null,
               };
               onOpenProgramCode?.(prog, machineId);
             }}
@@ -924,6 +927,9 @@ export const MachineQueueCard = ({
                 tooth: (nextSlot as any)?.tooth || "",
                 lotNumber: (nextSlot as any)?.lotNumber || null,
                 caseInfos: (nextSlot as any)?.caseInfos || null,
+                shippingMode: (nextSlot as any)?.shippingMode || null,
+                finalShipping: (nextSlot as any)?.finalShipping || null,
+                originalShipping: (nextSlot as any)?.originalShipping || null,
               };
 
               onOpenProgramCode?.(prog, machineId);

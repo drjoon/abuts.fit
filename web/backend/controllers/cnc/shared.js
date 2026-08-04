@@ -604,6 +604,13 @@ export async function getProductionQueuesHandler(req, res) {
           : null,
         clinicName: req.caseInfos?.clinicName,
         patientName: req.caseInfos?.patientName,
+        shippingMode: req?.shippingMode || null,
+        finalShipping: req?.finalShipping
+          ? { mode: req.finalShipping.mode || null }
+          : null,
+        originalShipping: req?.originalShipping
+          ? { mode: req.originalShipping.mode || null }
+          : null,
       }));
     }
 

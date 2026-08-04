@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-04: 재생목록 클릭 → PreviewModal 오픈. 큐→프리뷰에 shippingMode 전달.
 // - 2026-08-03: MachiningQueueBoard: 작업 공정의 display label 정규화(의뢰 -> 준비) 영향 반영(주로 로컬 저장/복구 키/주석). UI 텍스트 변경은 없었음.
 // related files:
 // - web/frontend/src/pages/manufacturer/equipment/cnc/components/SelfInspectionReportModal.tsx
@@ -488,6 +489,9 @@ export const MachiningQueueBoard = ({
         clinicName: String(prog?.clinicName || "").trim(),
         patientName: String(prog?.patientName || "").trim(),
         tooth: String(prog?.tooth || "").trim(),
+        shippingMode: prog?.shippingMode ?? null,
+        finalShipping: prog?.finalShipping ?? null,
+        originalShipping: prog?.originalShipping ?? null,
         lotNumber: {
           ...(queueLot || {}),
         },
@@ -1552,19 +1556,49 @@ export const MachiningQueueBoard = ({
             (j) => j.id === jobId,
           );
           if (!job) return;
-          // workUid는 openProgramDetailForMachining 내에서 설정됨
+          const queueItem = (
+            Array.isArray(queueMap?.[mid]) ? queueMap[mid] : []
+          ).find(
+            (q) =>
+              String(q?.requestId || "").trim() ===
+              String(job.requestId || job.id || "").trim(),
+          ) as QueueItem | undefined;
+
+          const nc = queueItem?.ncFile ?? null;
+          const bridgePath = String(
+            job.bridgePath || nc?.filePath || "",
+          ).trim();
+          const s3Key = String(job.s3Key || nc?.s3Key || "").trim();
+          const s3Bucket = String(job.s3Bucket || nc?.s3Bucket || "").trim();
+
           const prog: any = {
             programNo: job.programNo ?? null,
             no: job.programNo ?? null,
             name: job.name,
             source: job.source || "db",
-            s3Key: job.s3Key || "",
-            s3Bucket: job.s3Bucket || "",
-            bridgePath: job.bridgePath || "",
-            requestId: job.requestId || "",
+            s3Key,
+            s3Bucket,
+            bridgePath,
+            requestId: job.requestId || job.id || "",
+            requestMongoId:
+              job.requestMongoId ||
+              (queueItem as any)?.requestMongoId ||
+              "",
+            clinicName: queueItem?.clinicName || "",
+            patientName: queueItem?.patientName || "",
+            tooth: (queueItem as any)?.tooth || "",
+            lotNumber: (queueItem as any)?.lotNumber || null,
+            caseInfos: (queueItem as any)?.caseInfos || null,
+            shippingMode:
+              job.shippingMode ||
+              queueItem?.shippingMode ||
+              null,
+            finalShipping: queueItem?.finalShipping || null,
+            originalShipping: queueItem?.originalShipping || null,
             headType: 1,
           };
-          void openProgramDetailForMachining(prog, mid);
+          setPlaylistOpen(false);
+          void openCamPreviewFromQueue(prog, mid);
         }}
         onDelete={(jobId) => {
           void (async () => {

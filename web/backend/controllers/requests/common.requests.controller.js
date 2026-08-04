@@ -577,6 +577,9 @@ export async function getRequestSummaryByRequestId(req, res) {
       requestId: 1,
       caseInfos: 1,
       createdAt: 1,
+      shippingMode: 1,
+      finalShipping: 1,
+      originalShipping: 1,
     });
     if (!request) {
       return res
@@ -598,6 +601,13 @@ export async function getRequestSummaryByRequestId(req, res) {
         createdAt: request.createdAt ?? null,
         tooth,
         maxDiameter,
+        shippingMode: request.shippingMode || null,
+        finalShipping: request.finalShipping
+          ? { mode: request.finalShipping.mode || null }
+          : null,
+        originalShipping: request.originalShipping
+          ? { mode: request.originalShipping.mode || null }
+          : null,
       },
     });
   } catch (e) {
