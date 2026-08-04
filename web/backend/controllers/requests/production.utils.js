@@ -758,6 +758,9 @@ export function calculateRiskSummary(requests) {
         caseInfos: req.caseInfos || null,
         scheduledCamStart: schedule.scheduledCamStart,
         estimatedShipYmd: baseYmd,
+        shippingMode: req.shippingMode || null,
+        finalShipping: req.finalShipping || null,
+        originalShipping: req.originalShipping || null,
       });
       continue;
     }
@@ -781,6 +784,9 @@ export function calculateRiskSummary(requests) {
         caseInfos: req.caseInfos || null,
         scheduledCamStart: schedule.scheduledCamStart,
         estimatedShipYmd: baseYmd,
+        shippingMode: req.shippingMode || null,
+        finalShipping: req.finalShipping || null,
+        originalShipping: req.originalShipping || null,
       });
     }
   }

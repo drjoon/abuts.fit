@@ -218,6 +218,10 @@ export const getDashboardRiskSummaryData = async ({
           dueDate: sp?.deadlineAt || null,
           message,
           caseInfos: r?.caseInfos || {},
+          manufacturerStage: r?.manufacturerStage || null,
+          shippingMode: r?.shippingMode || null,
+          finalShipping: r?.finalShipping || null,
+          originalShipping: r?.originalShipping || null,
           shippingPriority: sp || undefined,
           __request: r,
         };

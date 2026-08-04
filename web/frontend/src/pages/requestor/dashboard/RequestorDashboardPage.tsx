@@ -64,6 +64,7 @@ import { useSystemSettings } from "@/hooks/useSystemSettings";
 import { StlPreviewViewer } from "@/features/requests/components/StlPreviewViewer";
 import { resolveImplantConnectionSpec } from "@/utils/implantConnectionSpec";
 import { getFileBlob, setFileBlob } from "@/shared/files/stlIndexedDb";
+import { ShippingModeBadge } from "@/shared/shipping/ShippingModeBadge";
 
 const isDashDebugEnabled = () => {
   if (typeof window === "undefined") return false;
@@ -84,6 +85,7 @@ const dashDebug = (label: string, payload?: unknown) => {
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/shared/components/CreditLedgerModal.tsx
 // - web/frontend/src/pages/requestor/dashboard/components/RequestorRecentRequestsCard.tsx
+// - web/frontend/src/shared/shipping/ShippingModeBadge.tsx
 // - web/frontend/src/shared/ui/PricingPolicyDialog.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx
 // - web/frontend/src/features/requests/components/StlPreviewViewer.tsx
@@ -2093,6 +2095,7 @@ export const RequestorDashboardPage = () => {
                             <div className="min-w-0 flex-1 space-y-1">
                               <div className="flex items-center gap-2">
                                 <div className="text-sm font-medium truncate">{title}</div>
+                                <ShippingModeBadge source={item} size="sm" />
                                 <Badge
                                   variant="outline"
                                   className="text-[10px] border-yellow-300 text-yellow-700"

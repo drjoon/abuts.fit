@@ -348,6 +348,9 @@ async function buildAdminDashboardPayload(req) {
           "caseInfos.tooth": 1,
           rnd: 1,
           businessAnchorId: 1,
+          shippingMode: 1,
+          finalShipping: 1,
+          originalShipping: 1,
         })
         .sort({
           "rnd.unmachinableConfirmedAt": -1,
@@ -719,6 +722,9 @@ async function buildAdminDashboardPayload(req) {
             title: r.title || "",
             manufacturerStage: r.manufacturerStage,
             createdAt: r.createdAt || null,
+            shippingMode: r.shippingMode || null,
+            finalShipping: r.finalShipping || null,
+            originalShipping: r.originalShipping || null,
             caseInfos: {
               clinicName: ci.clinicName || "",
               patientName: ci.patientName || "",

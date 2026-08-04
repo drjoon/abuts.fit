@@ -87,7 +87,9 @@ Notes:
   - 우측 배송 설정은 안내/요일 설정 + 제출만 담당합니다.
   - 신속 추가 의뢰크레딧 금액은 `creditSettings.expressFee`(기본 1,000원)를 사용합니다.
   - 우측 기본 배송 방식(`normal`|`express`)은 로컬스토리지 + `BusinessAnchor.shippingPolicy.defaultShippingMode`에 저장합니다.
-  - 제조사 카드에는 신속 건만 `신속` 뱃지로 표시합니다.
+  - 의뢰카드 하단(마감시간 옆)에 `shippingMode`에 따라 `신속배송`/`묶음배송` 뱃지를 항상 표시합니다.
+    (`ShippingModeBadge`, `WorksheetCardGrid`, 대시보드 의뢰 리스트)
+  - 워크시트 목록 API(`view=worksheet`) projection에 `shippingMode`/`finalShipping`/`originalShipping`을 포함해야 합니다.
   - 대시보드 묶음/신속 토글: `PATCH /api/requests/my/shipping-mode` (`RequestorBulkShippingBannerCard.tsx`)
   - 우편함: 신속 건 포함 시 오늘 발송 가능으로 처리 (`shippingDay.helpers.ts`)
   - 관련 파일:
@@ -96,6 +98,7 @@ Notes:
     - `src/pages/requestor/new_request/components/NewRequestShippingSection.tsx`
     - `src/pages/requestor/dashboard/components/RequestorBulkShippingBannerCard.tsx`
     - `src/shared/shipping/shippingMode.ts`
+    - `src/shared/shipping/ShippingModeBadge.tsx`
     - `src/shared/ui/PricingPolicyDialog.tsx`
     - `src/pages/manufacturer/worksheet/custom_abutment/components/WorksheetCardGrid.tsx`
     - `src/pages/manufacturer/worksheet/custom_abutment/shipping/components/shippingDay.helpers.ts`

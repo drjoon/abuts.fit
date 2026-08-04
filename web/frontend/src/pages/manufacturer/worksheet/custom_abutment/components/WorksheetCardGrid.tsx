@@ -1,4 +1,6 @@
 // change-log:
+// - 2026-08-04: 신속/묶음배송 뱃지를 하단(마감시간 옆)으로 이동. API shippingMode projection 누락 수정과 맞춤.
+// - 2026-08-04: 모든 의뢰카드에 신속배송/묶음배송 뱃지 상시 표시.
 // - 2026-08-04: 환자 정보에 기공소명 전달 보강(business/requestorBusinessAnchor fallback).
 // - 2026-08-04: 의뢰카드 본문을 RequestInfoSummary로 교체. 환자/임플란트 의미 단위 배치 + 치과명 중복 제거.
 // - 2026-08-03: 카드/롤백 관련 stage label 정규화: '의뢰' 표시를 '준비'로 변경하여 화면 일관성 확보 (display-only)
@@ -11,6 +13,7 @@
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestInfoSummary.tsx
 // - web/frontend/src/shared/shipping/shippingMode.ts
+// - web/frontend/src/shared/shipping/ShippingModeBadge.tsx
 // - web/backend/controllers/requests/common.review.controller.js
 // - web/backend/controllers/requests/shippingPriority.utils.js
 import { useEffect, useRef, useState } from "react";
@@ -37,10 +40,8 @@ import {
   isRndSampleRequest,
 } from "../utils/request";
 import { RequestInfoSummary } from "./RequestInfoSummary";
-import {
-  getBulkExpressShippingLabel,
-  resolveShippingMode,
-} from "@/shared/shipping/shippingMode";
+import { resolveShippingMode } from "@/shared/shipping/shippingMode";
+import { ShippingModeBadge } from "@/shared/shipping/ShippingModeBadge";
 
 // related files (screw lot tracking):
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/packing/components/PackingPageContent.tsx
@@ -527,7 +528,6 @@ export const WorksheetCardGrid = ({
           request.shippingCreditMeta?.insufficient,
         );
         const shippingMode = resolveShippingMode(request as any);
-        const shippingModeLabel = getBulkExpressShippingLabel(shippingMode);
         const deadlineInfo = getDeadlineInfo(
           request.createdAt,
           request.timeline?.estimatedShipYmd,
@@ -566,12 +566,8 @@ export const WorksheetCardGrid = ({
           ) ||
           Boolean(onApprove && !isCompletedForCurrentStage);
 
-        const hasBottomFloatingBadges = Boolean(
-          hasNcFile ||
-            shouldShowFullLot ||
-            deadlineInfo ||
-            (tabStage === "packing" && isPrinted),
-        );
+        // 신속/묶음배송 뱃지를 하단에 항상 표시
+        const hasBottomFloatingBadges = true;
         const handleDrop = async (e: React.DragEvent) => {
           e.preventDefault();
           e.stopPropagation();
@@ -906,6 +902,10 @@ export const WorksheetCardGrid = ({
                     NC
                   </Badge>
                 )}
+                <ShippingModeBadge
+                  mode={shippingMode}
+                  className="text-[11px] px-2 py-0.5 font-semibold leading-[1.1] whitespace-nowrap"
+                />
                 {deadlineInfo && (
                   <>
                     <Badge
@@ -983,20 +983,8 @@ export const WorksheetCardGrid = ({
                   })()}
                   leadingSlot={
                     <>
-                      {(
-                        isNewSystemRequest ||
-                        hasInsufficientShippingCredit ||
-                        shippingMode === "express"
-                      ) && (
+                      {(isNewSystemRequest || hasInsufficientShippingCredit) && (
                         <div className="flex flex-wrap items-center gap-1.5">
-                          {shippingMode === "express" && (
-                            <Badge
-                              variant="outline"
-                              className="border-amber-400 text-amber-700 bg-amber-50"
-                            >
-                              {shippingModeLabel}
-                            </Badge>
-                          )}
                           {isNewSystemRequest && (
                             <Badge
                               variant="outline"

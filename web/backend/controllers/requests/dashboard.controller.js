@@ -28,6 +28,11 @@ import {
   getRequestorDashboardSummarySnapshot,
   recomputeRequestorDashboardSummarySnapshotsForBusinessAnchorId,
 } from "../../services/requestorDashboardSummarySnapshot.service.js";
+import {
+  resolveEffectiveShippingMode,
+  resolveQuotedPriceWithExpressFee,
+} from "./shippingPriority.utils.js";
+import { loadCreditSettingsDefaults } from "../../utils/creditSettingsDefaults.js";
 import { resolveLeadDaysWithSameDayCutoff } from "./production.utils.js";
 import {
   getDashboardRiskSummaryData,
@@ -1085,8 +1090,27 @@ export async function getMyDashboardSummary(req, res) {
           }),
         }));
 
+        let expressFeePerRequest = 1000;
+        try {
+          const creditSettings = await loadCreditSettingsDefaults();
+          expressFeePerRequest = Math.max(
+            0,
+            Number(creditSettings?.expressFee ?? 1000) || 1000,
+          );
+        } catch {
+          expressFeePerRequest = 1000;
+        }
+
         const recentRequestsData = recentRequests.map((r) => {
           const ci = r.caseInfos || {};
+          const shippingMode = resolveEffectiveShippingMode(r);
+          const price = r.price
+            ? resolveQuotedPriceWithExpressFee({
+                price: r.price,
+                shippingMode,
+                expressFee: expressFeePerRequest,
+              })
+            : null;
 
           return {
             _id: r._id,
@@ -1106,10 +1130,13 @@ export async function getMyDashboardSummary(req, res) {
             caseInfos: ci,
             requestor: r.requestor || null,
             deliveryInfoRef: r.deliveryInfoRef || null,
-            price: r.price || null,
+            price,
             source: r.source || null,
             rnd: r.rnd || null,
             createdAt: r.createdAt,
+            shippingMode: r.shippingMode || null,
+            finalShipping: r.finalShipping || null,
+            originalShipping: r.originalShipping || null,
           };
         });
 

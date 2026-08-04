@@ -27,6 +27,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { ShippingModeBadge } from "@/shared/shipping/ShippingModeBadge";
 
 // related files:
 // - web/frontend/src/pages/requestor/dashboard/RequestorDashboardPage.tsx
@@ -672,6 +673,7 @@ export const RequestorRecentRequestsCard = ({
                     <div className="text-sm font-medium truncate text-foreground">
                       {item.title || displayId}
                     </div>
+                    <ShippingModeBadge source={item as any} size="sm" />
                     {renderStageBadge(item)}
                     {isRemakeFixed && (
                       <Badge variant="secondary" className="text-[10px]">

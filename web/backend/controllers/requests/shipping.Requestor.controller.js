@@ -39,6 +39,11 @@ import {
   withBulkShippingInFlight,
 } from "../../services/requestDashboardCache.service.js";
 import { cancelExpressSurchargeIfShipDelayed } from "./common.review.helpers.js";
+import {
+  resolveEffectiveShippingMode,
+  resolveQuotedPriceWithExpressFee,
+} from "./shippingPriority.utils.js";
+import { loadCreditSettingsDefaults } from "../../utils/creditSettingsDefaults.js";
 
 export async function updateMyShippingMode(req, res) {
   try {
@@ -83,6 +88,17 @@ export async function updateMyShippingMode(req, res) {
 
     const { calculateInitialProductionSchedule } =
       await import("./production.utils.js");
+
+    let expressFeePerRequest = 1000;
+    try {
+      const creditSettings = await loadCreditSettingsDefaults();
+      expressFeePerRequest = Math.max(
+        0,
+        Number(creditSettings?.expressFee ?? 1000) || 1000,
+      );
+    } catch {
+      expressFeePerRequest = 1000;
+    }
 
     for (const requestId of uniqueIds) {
       const requestDoc = candidateById.get(requestId);
@@ -180,6 +196,13 @@ export async function updateMyShippingMode(req, res) {
           });
         }
       }
+
+      // 준비 단계 견적 금액에 신속 추가비 반영/제거 (차감 전 표시 SSOT)
+      requestDoc.price = resolveQuotedPriceWithExpressFee({
+        price: requestDoc.price,
+        shippingMode: resolveEffectiveShippingMode(requestDoc),
+        expressFee: expressFeePerRequest,
+      });
 
       await requestDoc.save();
       updatedIds.push(requestId);

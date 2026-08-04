@@ -26,7 +26,7 @@ import {
   deleteExpressSurchargeAtomic,
   deleteShippingSpendAtomicOnRollback,
 } from "../../services/creditBalance.service.js";
-import { resolveEffectiveShippingMode } from "./shippingPriority.utils.js";
+import { resolveEffectiveShippingMode, resolveQuotedPriceWithExpressFee } from "./shippingPriority.utils.js";
 import { postGeneralLedgerJournal } from "../../services/generalLedger.service.js";
 import {
   isShippingSpendRevenueContext,
@@ -429,10 +429,14 @@ export async function cancelExpressSurchargeIfShipDelayed({
   if (!rollbackResult?.didRollback) {
     // 레거시 합산 차감(express가 machining_spend에 포함)은 부분 취소 불가 → 상태만 표시
     if (Number(request?.price?.expressFee || 0) > 0) {
-      request.price = {
-        ...(request.price || {}),
-        expressFeeStatus: "cancelled",
-      };
+      request.price = resolveQuotedPriceWithExpressFee({
+        price: {
+          ...(request.price || {}),
+          expressFeeStatus: "cancelled",
+        },
+        shippingMode: resolveEffectiveShippingMode(request),
+        expressFee: Number(request?.price?.expressFee || 0),
+      });
     }
     return {
       didCancel: false,
@@ -440,10 +444,14 @@ export async function cancelExpressSurchargeIfShipDelayed({
     };
   }
 
-  request.price = {
-    ...(request.price || {}),
-    expressFeeStatus: "cancelled",
-  };
+  request.price = resolveQuotedPriceWithExpressFee({
+    price: {
+      ...(request.price || {}),
+      expressFeeStatus: "cancelled",
+    },
+    shippingMode: resolveEffectiveShippingMode(request),
+    expressFee: Number(request?.price?.expressFee || 0),
+  });
 
   const restored = Number(rollbackResult.rollbackAmount || 0);
   if (restored > 0) {
@@ -511,15 +519,13 @@ export async function ensureRequestCreditSpendOnMachiningEnter({
     }
   }
 
-  const totalAmount =
-    (Number.isFinite(baseAmount) && baseAmount > 0 ? baseAmount : 0) +
-    expressFee;
-
   request.price = {
     ...(request.price || {}),
-    ...(computedPrice && typeof computedPrice === "object" ? computedPrice : {}),
-    amount: Number.isFinite(totalAmount) && totalAmount > 0 ? totalAmount : 0,
-    expressFee: expressFee > 0 ? expressFee : undefined,
+    ...resolveQuotedPriceWithExpressFee({
+      price: computedPrice,
+      shippingMode,
+      expressFee,
+    }),
   };
 
   const spendResult = await spendRequestCreditAtomic({

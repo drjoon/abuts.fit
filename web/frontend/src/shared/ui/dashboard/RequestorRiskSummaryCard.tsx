@@ -8,6 +8,7 @@ import { FunctionalItemCard } from "@/shared/ui/components/FunctionalItemCard";
 import { formatImplantDisplay } from "@/utils/implant";
 import { formatDateOnly } from "@/utils/dateFormat";
 import { getNormalizedStageLabel } from "@/utils/stage";
+import { ShippingModeBadge } from "@/shared/shipping/ShippingModeBadge";
 
 export type RiskSummary = {
   delayedCount?: number;
@@ -194,6 +195,7 @@ export const RequestorRiskSummaryCard = ({
                         {item.title}
                       </div>
                       <div className="flex items-center gap-1 flex-shrink-0">
+                        <ShippingModeBadge source={item as any} size="sm" />
                         {getStatusBadge(item)}
                         {item.riskLevel === "danger" ? (
                           <Badge

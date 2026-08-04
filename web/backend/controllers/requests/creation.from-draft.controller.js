@@ -28,6 +28,7 @@ import {
   REQUEST_STAGE_ORDER,
 } from "./utils.js";
 import { resolveLeadDaysWithSameDayCutoff } from "./production.utils.js";
+import { resolveQuotedPriceWithExpressFee } from "./shippingPriority.utils.js";
 import { checkCreditLock } from "../../utils/creditLock.util.js";
 import { triggerDashboardSummaryRefreshForAnchorId } from "../../services/requestSnapshotTriggers.service.js";
 import { recomputeBulkShippingSnapshotForBusinessAnchorId } from "../../services/bulkShippingSnapshot.service.js";
@@ -1285,6 +1286,14 @@ export async function createRequestsFromDraft(req, res) {
             manufacturerHexRotation: resolvedManufacturerHexRotation,
           });
 
+          const quotedPrice = isPracticeRoutingSubmission
+            ? item.computedPrice
+            : resolveQuotedPriceWithExpressFee({
+                price: item.computedPrice,
+                shippingMode,
+                expressFee: expressFeePerRequest,
+              });
+
           const newRequest = {
             requestId,
             requestor: req.user._id,
@@ -1292,7 +1301,7 @@ export async function createRequestsFromDraft(req, res) {
               req.user?.role === "requestor" && req.user?.businessAnchorId
                 ? req.user.businessAnchorId
                 : null,
-            price: item.computedPrice,
+            price: quotedPrice,
             shippingMode,
             requestedShipDate,
             caseInfos: {

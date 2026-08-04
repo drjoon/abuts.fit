@@ -1,5 +1,6 @@
 
 // change-log:
+// - 2026-08-04: 의뢰 리스트에 신속배송/묶음배송 뱃지 표시.
 // - 2026-08-03: Display-layer normalization — show '준비' when manufacturerStage indicates the first workflow stage (의뢰) in admin dashboard displays. No DB changes.
 // related files:
 // - web/backend/controllers/admin/admin.dashboard.controller.js
@@ -8,6 +9,7 @@
 // - web/backend/services/creditBalance.service.js
 // - web/frontend/src/pages/manufacturer/payments/PaymentsPage.tsx
 // - web/frontend/src/shared/realtime/useAppEventDebouncedReload.ts
+// - web/frontend/src/shared/shipping/ShippingModeBadge.tsx
 // - web/backend/controllers/requests/common.nc.controller.js
 // - web/backend/rules.md
 import { useEffect, useState } from "react";
@@ -24,6 +26,7 @@ import { useAuthStore } from "@/store/useAuthStore";
 import { DashboardShell } from "@/shared/ui/dashboard/DashboardShell";
 import { useAdminCommBadges } from "@/shared/hooks/useAdminCommBadges";
 import { useAppEventDebouncedReload } from "@/shared/realtime/useAppEventDebouncedReload";
+import { ShippingModeBadge } from "@/shared/shipping/ShippingModeBadge";
 import {
   Users,
   FileText,
@@ -283,6 +286,9 @@ type UnmachinableSummaryItem = {
   title?: string;
   manufacturerStage?: string;
   createdAt?: string | null;
+  shippingMode?: string | null;
+  finalShipping?: { mode?: string | null } | null;
+  originalShipping?: { mode?: string | null } | null;
   caseInfos?: Record<string, unknown>;
   rnd?: {
     unmachinablePotentialAt?: string | null;
@@ -1690,16 +1696,19 @@ export const AdminDashboardPage = () => {
                         >
                           <div className="flex items-center justify-between gap-2">
                             <div className="text-xs font-medium truncate">{title}</div>
-                            <Badge
-                              variant={UNMACHINABLE_DETAIL_BADGE_VARIANT(code)}
-                              className={`text-[10px] ${
-                                code === "judged" || code === "potential"
-                                  ? "border-yellow-300 bg-yellow-50 text-yellow-700"
-                                  : ""
-                              }`}
-                            >
-                              {UNMACHINABLE_DETAIL_LABEL[code] || UNMACHINABLE_DETAIL_LABEL.none}
-                            </Badge>
+                            <div className="flex items-center gap-1 flex-shrink-0">
+                              <ShippingModeBadge source={rawItem as any} size="sm" />
+                              <Badge
+                                variant={UNMACHINABLE_DETAIL_BADGE_VARIANT(code)}
+                                className={`text-[10px] ${
+                                  code === "judged" || code === "potential"
+                                    ? "border-yellow-300 bg-yellow-50 text-yellow-700"
+                                    : ""
+                                }`}
+                              >
+                                {UNMACHINABLE_DETAIL_LABEL[code] || UNMACHINABLE_DETAIL_LABEL.none}
+                              </Badge>
+                            </div>
                           </div>
                           <div className="text-[11px] text-muted-foreground truncate">
                             의뢰번호: {String(item?.requestId || "-")} · 상태: {getNormalizedStageLabelSafe(item) || String(item?.manufacturerStage || "-")}
@@ -1987,16 +1996,19 @@ export const AdminDashboardPage = () => {
                     <div className="text-sm font-semibold text-gray-900 truncate">
                       {String(item?.title || item?.requestId || "-")}
                     </div>
-                    <Badge
-                      variant={UNMACHINABLE_DETAIL_BADGE_VARIANT(code)}
-                      className={`text-[10px] ${
-                        code === "judged" || code === "potential"
-                          ? "border-yellow-300 bg-yellow-50 text-yellow-700"
-                          : ""
-                      }`}
-                    >
-                      {UNMACHINABLE_DETAIL_LABEL[code] || UNMACHINABLE_DETAIL_LABEL.none}
-                    </Badge>
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                      <ShippingModeBadge source={item as any} size="sm" />
+                      <Badge
+                        variant={UNMACHINABLE_DETAIL_BADGE_VARIANT(code)}
+                        className={`text-[10px] ${
+                          code === "judged" || code === "potential"
+                            ? "border-yellow-300 bg-yellow-50 text-yellow-700"
+                            : ""
+                        }`}
+                      >
+                        {UNMACHINABLE_DETAIL_LABEL[code] || UNMACHINABLE_DETAIL_LABEL.none}
+                      </Badge>
+                    </div>
                   </div>
                   <div className="text-xs text-slate-600">의뢰번호: {String(item?.requestId || "-")}</div>
                   <div className="text-xs text-slate-600">상태: {getNormalizedStageLabelSafe(item) || String(item?.manufacturerStage || "-")}</div>
@@ -2098,12 +2110,15 @@ export const AdminDashboardPage = () => {
                         <div className="text-sm font-semibold truncate">
                           {String(item?.title || item?.id || "-")}
                         </div>
-                        <Badge
-                          variant={item?.riskLevel === "danger" ? "destructive" : "outline"}
-                          className="text-[10px]"
-                        >
-                          {item?.riskLevel === "danger" ? "지연확정" : "지연가능"}
-                        </Badge>
+                        <div className="flex items-center gap-1 flex-shrink-0">
+                          <ShippingModeBadge source={item as any} size="sm" />
+                          <Badge
+                            variant={item?.riskLevel === "danger" ? "destructive" : "outline"}
+                            className="text-[10px]"
+                          >
+                            {item?.riskLevel === "danger" ? "지연확정" : "지연가능"}
+                          </Badge>
+                        </div>
                       </div>
                       <div className="mt-1 text-xs text-muted-foreground truncate">
                         의뢰번호: {String(item?.id || "-")} · 상태: {getNormalizedStageLabelSafe(item) || String(item?.manufacturerStage || "-")}

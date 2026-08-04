@@ -28,10 +28,12 @@ import {
 } from "./creation.helpers.controller.js";
 import { getRequestorOrgId } from "./utils.js";
 import { calculateInitialProductionSchedule } from "./production.utils.js";
+import { resolveQuotedPriceWithExpressFee } from "./shippingPriority.utils.js";
 import { getManufacturerLeadTimesUtil } from "../businesses/leadTime.controller.js";
 import { emitAppEventToRoles } from "../../socket.js";
 import { triggerDashboardSummaryRefreshForAnchorId } from "../../services/requestSnapshotTriggers.service.js";
 import { recomputeBulkShippingSnapshotForBusinessAnchorId } from "../../services/bulkShippingSnapshot.service.js";
+import { loadCreditSettingsDefaults } from "../../utils/creditSettingsDefaults.js";
 
 /**
  * 새 의뢰 생성
@@ -149,6 +151,23 @@ export async function createRequest(req, res) {
       tooth,
     });
 
+    let expressFeePerRequest = 1000;
+    try {
+      const creditSettings = await loadCreditSettingsDefaults();
+      expressFeePerRequest = Math.max(
+        0,
+        Number(creditSettings?.expressFee ?? 1000) || 1000,
+      );
+    } catch {
+      expressFeePerRequest = 1000;
+    }
+
+    const quotedPrice = resolveQuotedPriceWithExpressFee({
+      price: computedPrice,
+      shippingMode,
+      expressFee: expressFeePerRequest,
+    });
+
     const requestedAt = new Date();
 
     // 의뢰 본문에서 caManufacturer 필드를 받거나, 기본값 사용
@@ -169,7 +188,7 @@ export async function createRequest(req, res) {
         req.user?.role === "manufacturer"
           ? req.user._id
           : caManufacturerFromBody || undefined,
-      price: computedPrice,
+      price: quotedPrice,
     });
 
     // 배송 옵션 저장 (묶음 normal / 신속 express)
@@ -610,11 +629,33 @@ export async function createRequestsBulk(req, res) {
       });
     }
 
-    // 2. 총 의뢰비 계산
-    const totalMachiningFee = priceCalculations.reduce((acc, item) => {
-      const amount = Number(item.price?.amount || 0);
-      return acc + (Number.isFinite(amount) ? amount : 0);
+    // 2. 총 의뢰비 계산 (+ 신속 추가비)
+    let expressFeePerRequest = 1000;
+    try {
+      const creditSettings = await loadCreditSettingsDefaults();
+      expressFeePerRequest = Math.max(
+        0,
+        Number(creditSettings?.expressFee ?? 1000) || 1000,
+      );
+    } catch {
+      expressFeePerRequest = 1000;
+    }
+
+    const expressCount = items.reduce((acc, raw) => {
+      const mode =
+        raw?.shippingMode === "express" ||
+        raw?.caseInfos?.shippingMode === "express"
+          ? "express"
+          : "normal";
+      return acc + (mode === "express" ? 1 : 0);
     }, 0);
+
+    const totalMachiningFee =
+      priceCalculations.reduce((acc, item) => {
+        const amount = Number(item.price?.amount || 0);
+        return acc + (Number.isFinite(amount) ? amount : 0);
+      }, 0) +
+      expressCount * expressFeePerRequest;
 
     // 3. 배송비 계산: 배송 날짜별로 그룹화
     const shippingFeePerBox = 3500;
@@ -894,6 +935,19 @@ export async function createRequestsBulk(req, res) {
 
           const requestedAt = requestedAtBatch;
 
+          // bulk create 경로: body.shippingMode가 있으면 존중, 없으면 묶음
+          const itemShippingMode =
+            rest?.shippingMode === "express" ||
+            rest?.caseInfos?.shippingMode === "express"
+              ? "express"
+              : "normal";
+
+          const quotedPrice = resolveQuotedPriceWithExpressFee({
+            price: computedPrice,
+            shippingMode: itemShippingMode,
+            expressFee: expressFeePerRequest,
+          });
+
           const newRequest = new Request({
             ...rest,
             caseInfos: {
@@ -905,7 +959,7 @@ export async function createRequestsBulk(req, res) {
               req.user?.role === "requestor" && req.user?.businessAnchorId
                 ? req.user.businessAnchorId
                 : null,
-            price: computedPrice,
+            price: quotedPrice,
           });
 
           if (
@@ -920,12 +974,6 @@ export async function createRequestsBulk(req, res) {
             );
           }
 
-          // bulk create 경로: body.shippingMode가 있으면 존중, 없으면 묶음
-          const itemShippingMode =
-            rest?.shippingMode === "express" ||
-            rest?.caseInfos?.shippingMode === "express"
-              ? "express"
-              : "normal";
           newRequest.shippingMode = itemShippingMode;
           newRequest.originalShipping = {
             mode: itemShippingMode,

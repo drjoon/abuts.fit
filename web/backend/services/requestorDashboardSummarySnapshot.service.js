@@ -12,6 +12,11 @@ import {
   toKstYmd,
 } from "../controllers/requests/utils.js";
 import { resolveLeadDaysWithSameDayCutoff } from "../controllers/requests/production.utils.js";
+import {
+  resolveEffectiveShippingMode,
+  resolveQuotedPriceWithExpressFee,
+} from "../controllers/requests/shippingPriority.utils.js";
+import { loadCreditSettingsDefaults } from "../utils/creditSettingsDefaults.js";
 
 const buildEstimatedShipFallbackSeed = ({ createdAt, createdYmd }) => {
   const normalizedCreatedYmd =
@@ -527,8 +532,27 @@ const recomputeSingleRequestorDashboardSummarySnapshot = async ({
     }),
   }));
 
+  let expressFeePerRequest = 1000;
+  try {
+    const creditSettings = await loadCreditSettingsDefaults();
+    expressFeePerRequest = Math.max(
+      0,
+      Number(creditSettings?.expressFee ?? 1000) || 1000,
+    );
+  } catch {
+    expressFeePerRequest = 1000;
+  }
+
   const recentRequestsData = recentRequests.map((r) => {
     const ci = r.caseInfos || {};
+    const shippingMode = resolveEffectiveShippingMode(r);
+    const price = r.price
+      ? resolveQuotedPriceWithExpressFee({
+          price: r.price,
+          shippingMode,
+          expressFee: expressFeePerRequest,
+        })
+      : null;
 
     return {
       _id: r._id,
@@ -546,10 +570,13 @@ const recomputeSingleRequestorDashboardSummarySnapshot = async ({
       caseInfos: ci,
       requestor: r.requestor || null,
       deliveryInfoRef: r.deliveryInfoRef || null,
-      price: r.price || null,
+      price,
       source: r.source || null,
       rnd: r.rnd || null,
       createdAt: r.createdAt,
+      shippingMode: r.shippingMode || null,
+      finalShipping: r.finalShipping || null,
+      originalShipping: r.originalShipping || null,
     };
   });
 
