@@ -591,6 +591,11 @@ export async function deleteStageFile(req, res) {
         request.productionSchedule.actualMachiningComplete = null;
         request.productionSchedule.assignedMachine = null;
         request.productionSchedule.queuePosition = null;
+        // 완료된 machiningRecord/progress가 남으면 재진입 후에도
+        // Complete에 남고 isMachiningCompleted로 큐 부하/배정에서 제외된다.
+        request.productionSchedule.machiningRecord = null;
+        request.productionSchedule.machiningProgress = null;
+        request.productionSchedule.ncPreload = { status: "NONE" };
         request.assignedMachine = null;
         // machining 롤백 시 PRC 파일명 클리어 - 재가공 시 최신 PRC로 재결정되도록 한다.
         request.caseInfos.faceHolePrcFileName = null;
@@ -601,6 +606,10 @@ export async function deleteStageFile(req, res) {
         request.productionSchedule.actualMachiningComplete = null;
         request.productionSchedule.assignedMachine = null;
         request.productionSchedule.queuePosition = null;
+        // packing→가공 롤백 시에도 이전 완료 레코드를 비워 재가공 큐에 정상 노출한다.
+        request.productionSchedule.machiningRecord = null;
+        request.productionSchedule.machiningProgress = null;
+        request.productionSchedule.ncPreload = { status: "NONE" };
         request.assignedMachine = null;
         // packing 롤백 시 PRC 파일명 클리어 - 재가공 시 최신 PRC로 재결정되도록 한다.
         // PRC 매핑이 변경된 경우 구버전 PRC가 재사용되는 버그 방지.

@@ -58,14 +58,31 @@ export async function resolveManufacturerMachineScope(req) {
     manufacturerBusinessAnchorId: req.user.businessAnchorId,
   };
 
-  const ownedMachines = await Machine.find(machineFilter)
+  let ownedMachines = await Machine.find(machineFilter)
     .select({ uid: 1 })
     .lean();
+
+  // legacy: BA 미설정 장비만 있는 환경에서는 소유 장비가 0건이 되어
+  // 아래 machineScope가 큐를 통째로 비워버리는 사고가 난다.
+  // BA 매칭 결과가 없으면 null/미설정 장비를 fallback으로 포함한다.
+  if (!ownedMachines.length) {
+    ownedMachines = await Machine.find({
+      $or: [
+        { manufacturerBusinessAnchorId: null },
+        { manufacturerBusinessAnchorId: { $exists: false } },
+      ],
+    })
+      .select({ uid: 1 })
+      .lean();
+  }
+
   const machineIds = ownedMachines
     .map((m) => String(m?.uid || "").trim())
     .filter(Boolean);
 
-  // 제조사 조직 스코프 + 소유 장비에 배정된/미배정 의뢰만 조회
+  // 제조사 조직 스코프 + (가능하면) 소유 장비에 배정된/미배정 의뢰만 조회.
+  // 소유 장비를 끝내 못 찾으면 machineScope를 생략하고 orgScope만 적용한다.
+  // (이전 {_id:{$exists:false}} fallback은 가공 큐를 0건으로 만드는 버그였다.)
   const orgScope = await buildManufacturerOrgScopeFilter(req);
   const machineScope =
     machineIds.length > 0
@@ -77,7 +94,7 @@ export async function resolveManufacturerMachineScope(req) {
             { "productionSchedule.assignedMachine": { $exists: false } },
           ],
         }
-      : { _id: { $exists: false } };
+      : null;
 
   return {
     requestFilter: {

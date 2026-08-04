@@ -308,12 +308,26 @@ function mergeRowsByKey(existingRows, incomingRows, keyFn) {
 // GET /api/machines - 현재 사용자(제조사/관리자)의 장비 목록
 export async function getMachines(req, res) {
   try {
-    const query = {};
+    let machines = [];
     // 개발 단계에서는 인증 미들웨어를 끈 상태일 수 있으므로 req.user 존재 여부를 체크
     if (req.user && req.user.role === "manufacturer") {
-      query.manufacturerBusinessAnchorId = req.user.businessAnchorId;
+      machines = await Machine.find({
+        manufacturerBusinessAnchorId: req.user.businessAnchorId,
+      }).sort({ createdAt: -1 });
+
+      // legacy: BA 미설정 장비만 있는 경우 목록이 비어 가공 보드가 안 보인다.
+      // BA 매칭 결과가 없으면 null/미설정 장비를 fallback으로 포함한다.
+      if (!machines.length) {
+        machines = await Machine.find({
+          $or: [
+            { manufacturerBusinessAnchorId: null },
+            { manufacturerBusinessAnchorId: { $exists: false } },
+          ],
+        }).sort({ createdAt: -1 });
+      }
+    } else {
+      machines = await Machine.find({}).sort({ createdAt: -1 });
     }
-    const machines = await Machine.find(query).sort({ createdAt: -1 });
     res.json({ success: true, data: machines });
   } catch (error) {
     console.error("getMachines error", error);

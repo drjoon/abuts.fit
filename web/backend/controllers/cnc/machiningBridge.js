@@ -601,6 +601,7 @@ export async function getLastCompletedMachiningMap(req, res) {
           .select(
             [
               "requestId",
+              "manufacturerStage",
               "caseInfos.clinicName",
               "caseInfos.patientName",
               "caseInfos.tooth",
@@ -633,6 +634,102 @@ export async function getLastCompletedMachiningMap(req, res) {
             lotNumber,
             requestMongoId: String(r?._id || "").trim(),
             rollbackCount,
+            manufacturerStage: String(r?.manufacturerStage || "").trim(),
+            caseInfos: r?.caseInfos || null,
+            source: String(r?.source || "").trim(),
+            requestCategory: String(r?.requestCategory || "").trim(),
+          });
+        }
+      }
+    }
+
+    // 롤백 후 재진입(준비/가공)한 의뢰의 과거 COMPLETED 레코드는 Complete 슬롯에 노출하지 않는다.
+    const ACTIVE_REMACHINING_STAGES = new Set(["준비", "가공"]);
+    const skippedRequestIds = new Set();
+    const remachiningMachineIds = [];
+    for (const [mid, rec] of byMachine) {
+      const rid = String(rec?.requestId || "").trim();
+      if (!rid) continue;
+      const info = requestInfoMap.get(rid);
+      if (!info) continue;
+      if (ACTIVE_REMACHINING_STAGES.has(info.manufacturerStage)) {
+        skippedRequestIds.add(rid);
+        remachiningMachineIds.push(mid);
+      }
+    }
+    for (const mid of remachiningMachineIds) {
+      byMachine.delete(mid);
+    }
+
+    // 스킵된 장비가 있으면 해당 의뢰를 제외한 다음 COMPLETED 레코드를 다시 찾는다.
+    if (skippedRequestIds.size > 0) {
+      const skippedIds = Array.from(skippedRequestIds);
+      await Promise.all(
+        machineIds.map(async (mid) => {
+          if (byMachine.has(mid)) return;
+          const nextFilter = includeRequests
+            ? {
+                machineId: mid,
+                status: "COMPLETED",
+                requestId: { $nin: skippedIds },
+              }
+            : {
+                machineId: mid,
+                status: "COMPLETED",
+                requestId: { $in: [null, ""] },
+              };
+          const nextRec = await MachiningRecord.findOne(nextFilter)
+            .sort({ completedAt: -1, updatedAt: -1 })
+            .select(
+              "machineId jobId requestId fileName originalFileName completedAt updatedAt durationSeconds elapsedSeconds",
+            )
+            .lean();
+          if (nextRec) byMachine.set(mid, nextRec);
+        }),
+      );
+
+      // 새로 찾은 레코드의 request 정보도 보강
+      const extraIds = [];
+      for (const [, rec] of byMachine) {
+        const rid = String(rec?.requestId || "").trim();
+        if (rid && !requestInfoMap.has(rid)) extraIds.push(rid);
+      }
+      if (extraIds.length > 0) {
+        const extras = await Request.find({ requestId: { $in: extraIds } })
+          .select(
+            [
+              "requestId",
+              "manufacturerStage",
+              "caseInfos.clinicName",
+              "caseInfos.patientName",
+              "caseInfos.tooth",
+              "caseInfos.rollbackCounts.machining",
+              "caseInfos.implantManufacturer",
+              "caseInfos.implantBrand",
+              "caseInfos.implantFamily",
+              "caseInfos.retentionGroove",
+              "caseInfos.anodizingEnabled",
+              "caseInfos.ncFile.s3Key",
+              "caseInfos.ncFile.fileName",
+              "lotNumber",
+              "source",
+              "requestCategory",
+            ].join(" "),
+          )
+          .lean();
+        for (const r of extras) {
+          const rid = String(r?.requestId || "").trim();
+          if (!rid) continue;
+          requestInfoMap.set(rid, {
+            clinicName: String(r?.caseInfos?.clinicName || "").trim(),
+            patientName: String(r?.caseInfos?.patientName || "").trim(),
+            tooth: String(r?.caseInfos?.tooth || "").trim(),
+            lotNumber: r?.lotNumber?.value ? r.lotNumber : null,
+            requestMongoId: String(r?._id || "").trim(),
+            rollbackCount: Number(
+              r?.caseInfos?.rollbackCounts?.machining ?? 0,
+            ),
+            manufacturerStage: String(r?.manufacturerStage || "").trim(),
             caseInfos: r?.caseInfos || null,
             source: String(r?.source || "").trim(),
             requestCategory: String(r?.requestCategory || "").trim(),

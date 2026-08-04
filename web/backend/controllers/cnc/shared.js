@@ -500,6 +500,10 @@ export async function rollbackRequestToCamByRequestId(requestId) {
       request.productionSchedule.actualMachiningComplete = null;
       request.productionSchedule.assignedMachine = null;
       request.productionSchedule.queuePosition = null;
+      // 완료된 machiningRecord/progress가 남으면 재진입 시 Complete/큐 부하 판정이 꼬인다.
+      request.productionSchedule.machiningRecord = null;
+      request.productionSchedule.machiningProgress = null;
+      request.productionSchedule.ncPreload = { status: "NONE" };
       request.assignedMachine = null;
 
       await request.save({ session });
