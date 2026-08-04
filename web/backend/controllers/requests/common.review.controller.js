@@ -58,6 +58,8 @@ import {
   triggerDashboardSummaryRefreshForAnchorId,
 } from "../../services/requestSnapshotTriggers.service.js";
 import { emitCreditBalanceUpdatedToBusiness } from "../../utils/creditRealtime.js";
+import { placeRequestAtPolicyQueuePosition } from "./production.utils.js";
+import { resolveEffectiveShippingMode } from "./shippingPriority.utils.js";
 
 // Emit worksheet stage changed event
 
@@ -643,7 +645,18 @@ export async function deleteStageFile(req, res) {
             selected.queuePosition,
           );
           request.productionSchedule.assignedMachine = selected.machineId;
-          request.productionSchedule.queuePosition = selected.queuePosition;
+          const policyQueuePosition = await placeRequestAtPolicyQueuePosition({
+            machineId: selected.machineId,
+            requestMongoId: request._id,
+            anodizingEnabled: request?.caseInfos?.anodizingEnabled,
+            shippingMode: resolveEffectiveShippingMode(request),
+            RequestModel: Request,
+          });
+          request.productionSchedule.queuePosition =
+            Number.isFinite(Number(policyQueuePosition)) &&
+            Number(policyQueuePosition) > 0
+              ? Number(policyQueuePosition)
+              : selected.queuePosition;
           if (selected.diameterGroup) {
             request.productionSchedule.diameterGroup = selected.diameterGroup;
           }
@@ -654,7 +667,7 @@ export async function deleteStageFile(req, res) {
           console.log("[ROLLBACK-PACKING] reassigned machine", {
             requestId: request?.requestId,
             machineId: selected.machineId,
-            queuePosition: selected.queuePosition,
+            queuePosition: request.productionSchedule.queuePosition,
             diameter: selected.diameter,
           });
         } catch (error) {
@@ -1685,7 +1698,19 @@ export async function updateReviewStatusByStage(req, res) {
           });
 
           request.productionSchedule.assignedMachine = selected.machineId;
-          request.productionSchedule.queuePosition = selected.queuePosition;
+          const policyQueuePosition = await placeRequestAtPolicyQueuePosition({
+            machineId: selected.machineId,
+            requestMongoId: request._id,
+            anodizingEnabled: request?.caseInfos?.anodizingEnabled,
+            shippingMode: resolveEffectiveShippingMode(request),
+            RequestModel: Request,
+            session,
+          });
+          request.productionSchedule.queuePosition =
+            Number.isFinite(Number(policyQueuePosition)) &&
+            Number(policyQueuePosition) > 0
+              ? Number(policyQueuePosition)
+              : selected.queuePosition;
           request.assignedMachine = selected.machineId;
           if (selected.diameterGroup) {
             request.productionSchedule.diameterGroup = selected.diameterGroup;

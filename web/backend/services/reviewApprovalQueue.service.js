@@ -35,6 +35,11 @@ import { emitAppEventToRoles } from "../socket.js";
 import { triggerEspritForNc } from "../controllers/requests/common.review.esprit.js";
 import { chooseMachineForCamMachining, isActiveAssignableMachineId } from "../controllers/requests/common.review.machine.js";
 import { runWithJobLock } from "../utils/distributedJobLock.js";
+import {
+  placeRequestAtPolicyQueuePosition,
+} from "../controllers/requests/production.utils.js";
+import { resolveEffectiveShippingMode } from "../controllers/requests/shippingPriority.utils.js";
+import { isMachiningInProgress } from "../controllers/cnc/distribution.utils.js";
 
 // 워커 폴링 간격 (ms). 환경변수로 조정 가능.
 const WORKER_POLL_INTERVAL_MS = Number(
@@ -406,78 +411,26 @@ async function executeTask(item) {
 }
 
 /**
- * CAM 승인 시 머신 큐 순서를 아노다이징 정책에 맞게 보정한다.
+ * CAM 승인 시 머신 큐 순서를 정책에 맞게 보정한다.
  *
  * 정책:
  * - 아노다이징 ON(또는 미지정) 건이 항상 앞쪽
+ * - 같은 아노 그룹 안에서는 신속배송이 묶음배송보다 앞
  * - 아노다이징 OFF 건은 항상 마지막 그룹
- * - ON 건이 나중에 승인되어도 OFF 그룹 앞으로 삽입되도록 queuePosition을 재배치
+ * - 나중에 승인된 고순위 건도 저순위 그룹 앞으로 삽입되도록 queuePosition을 재배치
  */
-async function placeRequestAtPolicyQueuePosition({
+async function applyCamApproveQueuePolicy({
   machineId,
   requestMongoId,
-  anodizingEnabled,
+  request,
 }) {
-  const mid = String(machineId || "").trim();
-  if (!mid || !requestMongoId) return null;
-
-  const queueRows = await Request.find({
-    manufacturerStage: "가공",
-    "productionSchedule.assignedMachine": mid,
-    _id: { $ne: requestMongoId },
-  })
-    .select(
-      "_id requestId productionSchedule.queuePosition caseInfos.anodizingEnabled",
-    )
-    .lean();
-
-  const sorted = [...(Array.isArray(queueRows) ? queueRows : [])].sort(
-    (a, b) => {
-      const aPos = Number(a?.productionSchedule?.queuePosition || 0);
-      const bPos = Number(b?.productionSchedule?.queuePosition || 0);
-      if (aPos !== bPos) return aPos - bPos;
-      return String(a?.requestId || "").localeCompare(
-        String(b?.requestId || ""),
-      );
-    },
-  );
-
-  const isOff = anodizingEnabled === false;
-
-  // 아노다이징 OFF는 가장 마지막에 붙인다.
-  if (isOff) {
-    const maxPos = sorted.reduce((acc, item) => {
-      const pos = Number(item?.productionSchedule?.queuePosition || 0);
-      return Number.isFinite(pos) && pos > acc ? pos : acc;
-    }, 0);
-    return Math.max(1, maxPos + 1);
-  }
-
-  // 아노다이징 ON은 기존 ON 그룹 뒤(=첫 OFF 앞)에 삽입한다.
-  const firstOffIndex = sorted.findIndex(
-    (item) => item?.caseInfos?.anodizingEnabled === false,
-  );
-  if (firstOffIndex < 0) {
-    return Math.max(1, sorted.length + 1);
-  }
-
-  const insertPos = firstOffIndex + 1;
-  const offRowsToShift = sorted
-    .filter((item) => {
-      const pos = Number(item?.productionSchedule?.queuePosition || 0);
-      return item?.caseInfos?.anodizingEnabled === false && pos >= insertPos;
-    })
-    .map((item) => item?._id)
-    .filter(Boolean);
-
-  if (offRowsToShift.length > 0) {
-    await Request.updateMany(
-      { _id: { $in: offRowsToShift } },
-      { $inc: { "productionSchedule.queuePosition": 1 } },
-    );
-  }
-
-  return insertPos;
+  return placeRequestAtPolicyQueuePosition({
+    machineId,
+    requestMongoId,
+    anodizingEnabled: request?.caseInfos?.anodizingEnabled,
+    shippingMode: resolveEffectiveShippingMode(request),
+    RequestModel: Request,
+  });
 }
 
 /**
@@ -542,13 +495,11 @@ async function runCamApproveTask({ requestMongoId, requestId }) {
     request.productionSchedule = request.productionSchedule || {};
     request.productionSchedule.assignedMachine = selected.machineId;
 
-    // 아노다이징 정책 반영 queuePosition 계산:
-    // - ON: OFF 그룹 앞에 삽입
-    // - OFF: 항상 마지막
-    const policyQueuePosition = await placeRequestAtPolicyQueuePosition({
+    // 아노/신속 정책 반영 queuePosition 계산
+    const policyQueuePosition = await applyCamApproveQueuePolicy({
       machineId: selected.machineId,
       requestMongoId,
-      anodizingEnabled: request?.caseInfos?.anodizingEnabled,
+      request,
     });
     request.productionSchedule.queuePosition =
       Number.isFinite(Number(policyQueuePosition)) &&
@@ -574,6 +525,26 @@ async function runCamApproveTask({ requestMongoId, requestId }) {
       replacedGhost: Boolean(existingMachineId && !existingIsActive),
       previousMachineId: existingMachineId || null,
     });
+  } else if (!isMachiningInProgress(request)) {
+    // 승인 경로에서 이미 장비가 배정된 경우에도 아노/신속 정책 순서로 재배치한다.
+    const policyQueuePosition = await applyCamApproveQueuePolicy({
+      machineId: selectedMachineId,
+      requestMongoId,
+      request,
+    });
+    if (
+      Number.isFinite(Number(policyQueuePosition)) &&
+      Number(policyQueuePosition) > 0
+    ) {
+      request.productionSchedule = request.productionSchedule || {};
+      request.productionSchedule.queuePosition = Number(policyQueuePosition);
+      await request.save();
+      console.log("[ReviewApprovalQueue] CAM task: reordered by policy", {
+        requestId,
+        machineId: selectedMachineId,
+        queuePosition: request.productionSchedule.queuePosition,
+      });
+    }
   }
 
   if (!selectedMachineId) return;

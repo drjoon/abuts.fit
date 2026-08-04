@@ -23,7 +23,9 @@ import {
   getMachiningLoadWeight,
   normalizeDiameterGroupValue,
   isMachiningQueueStageValue,
+  isMachiningInProgress,
 } from "../cnc/distribution.utils.js";
+import { resolveEffectiveShippingMode } from "./shippingPriority.utils.js";
 
 /**
  * 생산 스케줄 계산 유틸리티 (시각 단위 관리)
@@ -43,7 +45,7 @@ import {
  *
  * 장비별 생산 큐:
  * - 각 장비마다 독립적인 큐 관리
- * - 우선순위: 도착 예정시각 순서만 고려 (FIFO)
+ * - 우선순위: 가공중 → 아노다이징 ON → 신속배송 → queuePosition → 발송예정
  */
 
 const CAM_DURATION_MINUTES = 5; // CAM 시작 → 완료
@@ -422,10 +424,132 @@ export async function calculateInitialProductionSchedule({
 }
 
 /**
+ * 가공 큐 정책 순위 (낮을수록 앞).
+ * 1) 아노다이징 ON + 신속
+ * 2) 아노다이징 ON + 묶음
+ * 3) 아노다이징 OFF + 신속
+ * 4) 아노다이징 OFF + 묶음
+ */
+export function getMachiningQueuePolicyRank(requestLike) {
+  const isOff = requestLike?.caseInfos?.anodizingEnabled === false;
+  const isExpress = resolveEffectiveShippingMode(requestLike) === "express";
+  if (!isOff && isExpress) return 0;
+  if (!isOff && !isExpress) return 1;
+  if (isOff && isExpress) return 2;
+  return 3;
+}
+
+/**
+ * 가공 큐 정렬 SSOT.
+ * 가공중 → 정책 순위(아노/신속) → queuePosition → 발송예정 → requestId
+ */
+export function compareMachiningQueueOrder(a, b) {
+  const aRunning = isMachiningInProgress(a);
+  const bRunning = isMachiningInProgress(b);
+  if (aRunning !== bRunning) return aRunning ? -1 : 1;
+
+  const aRank = getMachiningQueuePolicyRank(a);
+  const bRank = getMachiningQueuePolicyRank(b);
+  if (aRank !== bRank) return aRank - bRank;
+
+  const ap = Number(a?.productionSchedule?.queuePosition ?? 0);
+  const bp = Number(b?.productionSchedule?.queuePosition ?? 0);
+  const apOk = Number.isFinite(ap) && ap > 0;
+  const bpOk = Number.isFinite(bp) && bp > 0;
+  if (apOk && bpOk && ap !== bp) return ap - bp;
+  if (apOk !== bpOk) return apOk ? -1 : 1;
+
+  const aTime = a?.productionSchedule?.scheduledShipPickup
+    ? new Date(a.productionSchedule.scheduledShipPickup).getTime()
+    : 0;
+  const bTime = b?.productionSchedule?.scheduledShipPickup
+    ? new Date(b.productionSchedule.scheduledShipPickup).getTime()
+    : 0;
+  const aTimeOk = Number.isFinite(aTime) ? aTime : 0;
+  const bTimeOk = Number.isFinite(bTime) ? bTime : 0;
+  if (aTimeOk !== bTimeOk) return aTimeOk - bTimeOk;
+
+  return String(a?.requestId || "").localeCompare(String(b?.requestId || ""));
+}
+
+/**
+ * 장비 큐에 정책 순위로 배치할 queuePosition을 계산하고, 해당 장비 대기열을 1..n으로 재번호 매긴다.
+ */
+export async function placeRequestAtPolicyQueuePosition({
+  machineId,
+  requestMongoId,
+  anodizingEnabled,
+  shippingMode,
+  RequestModel,
+  session = null,
+}) {
+  const mid = String(machineId || "").trim();
+  if (!mid || !requestMongoId || !RequestModel) return null;
+
+  let findQuery = RequestModel.find({
+    manufacturerStage: "가공",
+    "productionSchedule.assignedMachine": mid,
+  }).select(
+    "_id requestId productionSchedule.queuePosition productionSchedule.machiningRecord caseInfos.anodizingEnabled shippingMode finalShipping.mode originalShipping.mode",
+  );
+  if (session) findQuery = findQuery.session(session);
+  const queueRows = await findQuery.lean();
+
+  const selfId = String(requestMongoId);
+  const others = (Array.isArray(queueRows) ? queueRows : []).filter(
+    (row) => String(row?._id || "") !== selfId,
+  );
+  const existingSelf = (Array.isArray(queueRows) ? queueRows : []).find(
+    (row) => String(row?._id || "") === selfId,
+  );
+
+  const selfRow = {
+    ...(existingSelf || {}),
+    _id: requestMongoId,
+    caseInfos: {
+      ...(existingSelf?.caseInfos || {}),
+      anodizingEnabled,
+    },
+    shippingMode,
+    finalShipping: {
+      ...(existingSelf?.finalShipping || {}),
+      mode: shippingMode,
+    },
+    originalShipping: {
+      ...(existingSelf?.originalShipping || {}),
+      mode: shippingMode,
+    },
+    productionSchedule: {
+      ...(existingSelf?.productionSchedule || {}),
+      // 재번호 전 임시: 같은 정책 그룹 끝에 붙이도록 큰 값
+      queuePosition: Number.MAX_SAFE_INTEGER,
+    },
+  };
+
+  const ordered = [...others, selfRow].sort(compareMachiningQueueOrder);
+
+  await Promise.all(
+    ordered.map((item, idx) => {
+      let updateQuery = RequestModel.updateOne(
+        { _id: item._id },
+        { $set: { "productionSchedule.queuePosition": idx + 1 } },
+      );
+      if (session) updateQuery = updateQuery.session(session);
+      return updateQuery;
+    }),
+  );
+
+  const selfIndex = ordered.findIndex(
+    (item) => String(item?._id || "") === selfId,
+  );
+  return selfIndex >= 0 ? selfIndex + 1 : Math.max(1, ordered.length);
+}
+
+/**
  * 장비별 생산 큐 조회 및 정렬
  * @param {string} machineId - M3, M4 등
  * @param {Array} requests - Request 문서 배열
- * @returns {Array} 도착 예정시각 순으로 정렬된 배열
+ * @returns {Array} 정책 순위 순으로 정렬된 배열
  */
 export function getProductionQueueForMachine(machineId, requests) {
   return requests
@@ -444,17 +568,7 @@ export function getProductionQueueForMachine(machineId, requests) {
 
       return true;
     })
-    .sort((a, b) => {
-      const ap = Number(a.productionSchedule?.queuePosition ?? 0);
-      const bp = Number(b.productionSchedule?.queuePosition ?? 0);
-      const apOk = Number.isFinite(ap) && ap > 0;
-      const bpOk = Number.isFinite(bp) && bp > 0;
-      if (apOk && bpOk && ap !== bp) return ap - bp;
-      if (apOk !== bpOk) return apOk ? -1 : 1;
-      const aTime = a.productionSchedule?.scheduledShipPickup || new Date(0);
-      const bTime = b.productionSchedule?.scheduledShipPickup || new Date(0);
-      return aTime - bTime;
-    });
+    .sort(compareMachiningQueueOrder);
 }
 
 /**
@@ -484,19 +598,9 @@ export function getAllProductionQueues(requests) {
     }
   }
 
-  // 각 큐를 queuePosition 우선, 없으면 도착 예정시각 순으로 정렬
+  // 각 큐: 가공중 → 아노/신속 정책 → queuePosition → 발송예정
   for (const key in queues) {
-    queues[key].sort((a, b) => {
-      const ap = Number(a.productionSchedule?.queuePosition ?? 0);
-      const bp = Number(b.productionSchedule?.queuePosition ?? 0);
-      const apOk = Number.isFinite(ap) && ap > 0;
-      const bpOk = Number.isFinite(bp) && bp > 0;
-      if (apOk && bpOk && ap !== bp) return ap - bp;
-      if (apOk !== bpOk) return apOk ? -1 : 1;
-      const aTime = a.productionSchedule?.scheduledShipPickup || new Date(0);
-      const bTime = b.productionSchedule?.scheduledShipPickup || new Date(0);
-      return aTime - bTime;
-    });
+    queues[key].sort(compareMachiningQueueOrder);
   }
 
   return queues;

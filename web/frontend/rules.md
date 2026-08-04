@@ -111,6 +111,16 @@ Notes:
     - `src/pages/manufacturer/worksheet/custom_abutment/components/WorksheetCardGrid.tsx`
     - `src/pages/manufacturer/worksheet/custom_abutment/shipping/components/shippingDay.helpers.ts`
 
+### 가공 우선순위
+
+제조 워크시트 재생목록 / Next Up 순서는 백엔드 SSOT를 따른다.
+
+- 상세: `web/backend/rules.md` **가공 우선순위**
+- 정렬: `compareMachiningQueueOrder` — 가공중 → 아노 ON → 신속 → 묶음 → `queuePosition`
+- 프론트는 `/api/cnc-machines/queues` 응답 순서를 그대로 표시한다.
+  - `src/pages/manufacturer/worksheet/custom_abutment/machining/hooks/useMachiningBoard.ts`
+  - `src/pages/manufacturer/worksheet/custom_abutment/machining/MachiningQueueBoard.tsx`
+
 - 신규 기공소 런칭 이벤트 가격 표시 SSOT:
   - 가입 승인일 기준 `180일` 동안 커스텀 어벗 `개당 10,000원` 고정가를 적용합니다.
   - 안내 모달/대시보드 카드 문구는 동일한 `180일` 기준을 사용해야 합니다.

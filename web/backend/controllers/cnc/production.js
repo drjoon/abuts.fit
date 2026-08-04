@@ -24,6 +24,7 @@ import {
   isMachiningCompleted,
   getMachiningLoadWeight,
 } from "./distribution.utils.js";
+import { compareMachiningQueueOrder } from "../requests/production.utils.js";
 
 function isMachineOnlineStatus(status) {
   const s = String(status || "")
@@ -222,34 +223,7 @@ export async function rebalanceProductionQueuesInternal({
 
   const assignmentsByMachine = new Map();
   const ops = [];
-  const sortedRequests = [...requests].sort((a, b) => {
-    const aRunning = isMachiningInProgress(a);
-    const bRunning = isMachiningInProgress(b);
-    if (aRunning !== bRunning) return aRunning ? -1 : 1;
-
-    // 아노다이징 우선순위 정책:
-    // - RUNNING 건 정렬 이후, 대기열에서는 ON(또는 미지정) → OFF 순서로 배치한다.
-    // - OFF는 항상 마지막 그룹으로 모아 "아노 X 가공" 시점에 별도 묶음 처리한다.
-    if (!aRunning && !bRunning) {
-      const aOff = a?.caseInfos?.anodizingEnabled === false;
-      const bOff = b?.caseInfos?.anodizingEnabled === false;
-      if (aOff !== bOff) return aOff ? 1 : -1;
-    }
-
-    const aPos = Number(a?.productionSchedule?.queuePosition ?? 0);
-    const bPos = Number(b?.productionSchedule?.queuePosition ?? 0);
-    const aPosOk = Number.isFinite(aPos) && aPos > 0;
-    const bPosOk = Number.isFinite(bPos) && bPos > 0;
-    if (aPosOk && bPosOk && aPos !== bPos) return aPos - bPos;
-    if (aPosOk !== bPosOk) return aPosOk ? -1 : 1;
-
-    const aTime = a.productionSchedule?.scheduledShipPickup || new Date(0);
-    const bTime = b.productionSchedule?.scheduledShipPickup || new Date(0);
-    const diff = aTime - bTime;
-    if (diff !== 0) return diff;
-
-    return String(a?.requestId || "").localeCompare(String(b?.requestId || ""));
-  });
+  const sortedRequests = [...requests].sort(compareMachiningQueueOrder);
 
   for (const reqItem of sortedRequests) {
     const group = inferRequestDiameterGroup(reqItem);
@@ -364,6 +338,9 @@ export async function getProductionQueues(req, res) {
       "caseInfos.rollbackCounts.machining",
       "caseInfos.ncFile",
       "caseInfos.anodizingEnabled",
+      "shippingMode",
+      "finalShipping.mode",
+      "originalShipping.mode",
       "caseInfos.implantManufacturer",
       "caseInfos.implantBrand",
       "caseInfos.implantFamily",

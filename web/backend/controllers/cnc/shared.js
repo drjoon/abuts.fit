@@ -546,7 +546,7 @@ export async function getProductionQueuesHandler(req, res) {
       ...EXCLUDE_UNMACHINABLE_FILTER,
     })
       .select(
-        "requestId manufacturerStage productionSchedule caseInfos timeline",
+        "requestId manufacturerStage productionSchedule caseInfos timeline shippingMode finalShipping originalShipping",
       )
       .populate({
         path: "productionSchedule.machiningRecord",

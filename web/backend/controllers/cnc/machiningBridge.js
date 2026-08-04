@@ -28,6 +28,7 @@ import {
   ensureMailboxAddressForBusiness,
   isManufacturerSampleRequest,
 } from "../requests/mailbox.utils.js";
+import { compareMachiningQueueOrder } from "../requests/production.utils.js";
 import { appendMachiningJobStats } from "./tooling.js";
 import {
   inferMaterialDiameterGroup,
@@ -856,15 +857,17 @@ export async function triggerNextAutoMachiningAfterComplete({
       .catch(() => null);
 
     const fetchPendingForAutoNext = async (limit) => {
-      return Request.find({
+      const rows = await Request.find({
         // 자동 가공 트리거 대상은 "가공" 단계만 허용한다.
         // CAM 단계 건을 여기서 집어오면 승인/전환 우회로 보일 수 있어 제외한다.
         manufacturerStage: "가공",
         "productionSchedule.assignedMachine": mid,
-      })
-        .sort({ "productionSchedule.queuePosition": 1, updatedAt: 1 })
-        .limit(limit)
-        .lean();
+      }).lean();
+      const sorted = [...(Array.isArray(rows) ? rows : [])].sort(
+        compareMachiningQueueOrder,
+      );
+      const n = Math.max(1, Number(limit) || 1);
+      return sorted.slice(0, n);
     };
 
     const pickFromPending = (rows) => {

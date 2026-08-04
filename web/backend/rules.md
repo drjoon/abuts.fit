@@ -76,9 +76,33 @@
   - 기본 배송 방식: `BusinessAnchor.shippingPolicy.defaultShippingMode` (`normal`|`express`)
     - PATCH: `business.update.controller.js` / 프론트 `NewRequestShippingSection` + `useBulkShippingPolicy`
   - 스케줄: `production.utils.js` `calculateInitialProductionSchedule({ shippingMode })` (신속: 12시 KST 컷오프)
-  - 우선순위: `sortByProductionPriority` 신속 부스트
+  - 우선순위: `sortByProductionPriority` 신속 부스트 (스케줄/ETA용). **장비 가공 큐 순서**는 아래 **가공 우선순위** SSOT.
   - 우편함: 신속 건 포함 시 주간 묶음 요일 제한 무시 (`shipping.controller.js` / frontend `shippingDay.helpers.ts`)
   - 대시보드 토글: `PATCH /my/shipping-mode` → `shipping.Requestor.controller.js` `updateMyShippingMode`
+
+### 가공 우선순위
+
+장비 생산 큐(재생목록 / Next Up / 자동 연속 가공) 정렬 SSOT.
+
+- 비교 함수: `controllers/requests/production.utils.js`의 `compareMachiningQueueOrder`
+- 배정 시 재번호: `placeRequestAtPolicyQueuePosition` (같은 파일)
+- 정책 순위(`getMachiningQueuePolicyRank`, 낮을수록 앞):
+  1. 아노다이징 ON + 신속배송
+  2. 아노다이징 ON + 묶음배송
+  3. 아노다이징 OFF + 신속배송
+  4. 아노다이징 OFF + 묶음배송
+- 전체 정렬 키 순서:
+  1. 가공중(Now Playing)
+  2. 아노다이징 ON
+  3. 신속배송
+  4. 묶음배송
+  5. `queuePosition`
+  6. 발송예정(`scheduledShipPickup`) → `requestId`
+- 적용 경로:
+  - 큐 조회: `getAllProductionQueues` / `getProductionQueues` (`controllers/cnc/production.js`)
+  - 승인·배정: `common.review.controller.js`, `services/reviewApprovalQueue.service.js`
+  - 자동 Next: `controllers/cnc/machiningBridge.js` `fetchPendingForAutoNext`
+  - 재배정: `controllers/cnc/production.js` redistribute
 
 - 인프라 마이그레이션 운영 체크(EB 단일 인스턴스 → LB+NAT, Atlas 비용 유지):
   - 안정화 관찰 기간(며칠) 동안 실사용 트래픽에서 핵심 기능(로그인, 주문/의뢰 등록)을 반복 점검합니다.
