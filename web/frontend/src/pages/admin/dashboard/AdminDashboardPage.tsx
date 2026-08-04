@@ -1386,39 +1386,54 @@ export const AdminDashboardPage = () => {
                         <MessageSquare className="h-3 w-3" />
                         메시지
                       </div>
-                      <div
-                        className={`text-lg font-bold ${
-                          commBadgeCounts.request > 0 ? "text-blue-600" : "text-slate-900"
+                      <button
+                        type="button"
+                        className={`text-lg font-bold focus:outline-none ${
+                          commBadgeCounts.request > 0
+                            ? "text-blue-600 hover:text-blue-700 hover:underline"
+                            : "text-slate-900 hover:underline"
                         }`}
+                        onClick={() => navigate("/dashboard/monitoring?status=준비")}
+                        aria-label="미처리 의뢰 모니터링 페이지로 이동"
                       >
                         {commBadgeCounts.request.toLocaleString()}
-                      </div>
+                      </button>
                     </div>
                     <div className="space-y-0.5">
                       <div className="flex items-center gap-1 text-xs text-muted-foreground">
                         <Mail className="h-3 w-3" />
                         메일
                       </div>
-                      <div
-                        className={`text-lg font-bold ${
-                          commBadgeCounts.mail > 0 ? "text-blue-600" : "text-slate-900"
+                      <button
+                        type="button"
+                        className={`text-lg font-bold focus:outline-none ${
+                          commBadgeCounts.mail > 0
+                            ? "text-blue-600 hover:text-blue-700 hover:underline"
+                            : "text-slate-900 hover:underline"
                         }`}
+                        onClick={() => navigate("/dashboard/mail?unread=1")}
+                        aria-label="미확인 메일 페이지로 이동"
                       >
                         {commBadgeCounts.mail.toLocaleString()}
-                      </div>
+                      </button>
                     </div>
                     <div className="space-y-0.5">
                       <div className="flex items-center gap-1 text-xs text-muted-foreground">
                         <HelpCircle className="h-3 w-3" />
                         문의
                       </div>
-                      <div
-                        className={`text-lg font-bold ${
-                          commBadgeCounts.inquiry > 0 ? "text-blue-600" : "text-slate-900"
+                      <button
+                        type="button"
+                        className={`text-lg font-bold focus:outline-none ${
+                          commBadgeCounts.inquiry > 0
+                            ? "text-blue-600 hover:text-blue-700 hover:underline"
+                            : "text-slate-900 hover:underline"
                         }`}
+                        onClick={() => navigate("/dashboard/inquiries?status=open")}
+                        aria-label="미처리 문의 페이지로 이동"
                       >
                         {commBadgeCounts.inquiry.toLocaleString()}
-                      </div>
+                      </button>
                     </div>
                   </div>
                 </CardContent>

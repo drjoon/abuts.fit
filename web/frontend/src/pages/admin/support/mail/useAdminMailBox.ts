@@ -18,7 +18,7 @@ import { useToast } from "@/shared/hooks/use-toast";
 
 export type MailTab = "inbox" | "sent" | "trash" | "spam" | "compose";
 
-export const useAdminMailBox = () => {
+export const useAdminMailBox = (options?: { initialUnreadOnly?: boolean }) => {
   const { toast } = useToast();
 
   const [tab, setTab] = useState<MailTab>("inbox");
@@ -27,6 +27,9 @@ export const useAdminMailBox = () => {
   );
   const [folder, setFolder] = useState<"inbox" | "sent" | "trash" | "spam">(
     "inbox"
+  );
+  const [unreadOnly, setUnreadOnly] = useState(
+    options?.initialUnreadOnly === true
   );
 
   const [q, setQ] = useState("");
@@ -82,9 +85,12 @@ export const useAdminMailBox = () => {
           ...(reset ? {} : cursorRef.current || {}),
         };
         const res = await fetchMails(params);
-        const filtered = folder
+        let filtered = folder
           ? res.data.filter((m) => m.folder === folder)
           : res.data;
+        if (unreadOnly && folder === "inbox") {
+          filtered = filtered.filter((m) => !m.isRead);
+        }
         setMails((prev) => (reset ? filtered : [...prev, ...filtered]));
         cursorRef.current = res.nextCursor;
         setCursor(res.nextCursor);
@@ -98,7 +104,7 @@ export const useAdminMailBox = () => {
         setListLoading(false);
       }
     },
-    [direction, folder, toast]
+    [direction, folder, unreadOnly, toast]
   );
 
   useEffect(() => {
@@ -107,7 +113,7 @@ export const useAdminMailBox = () => {
     cursorRef.current = null;
     setCursor(null);
     loadList(true);
-  }, [folder, direction, loadList]);
+  }, [folder, direction, unreadOnly, loadList]);
 
   const loadDetail = useCallback(
     async (id: string) => {
@@ -277,6 +283,8 @@ export const useAdminMailBox = () => {
     q,
     setQ,
     folder,
+    unreadOnly,
+    setUnreadOnly,
     mails,
     listLoading,
     selectedId,

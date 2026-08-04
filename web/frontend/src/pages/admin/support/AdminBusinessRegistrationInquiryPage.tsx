@@ -6,6 +6,7 @@
 // - web/frontend/src/shared/realtime/useAppEventDebouncedReload.ts
 // - web/backend/controllers/support/support.controller.js
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   BusinessRegistrationInquiry,
   fetchBusinessRegistrationInquiries,
@@ -80,8 +81,16 @@ const toErrorMessage = (error: unknown, fallback: string) => {
 
 export const AdminBusinessRegistrationInquiryPage = () => {
   const { toast } = useToast();
+  const [searchParams] = useSearchParams();
+  const initialStatusParam = searchParams.get("status");
+  const initialStatusFilter: "all" | "open" | "resolved" =
+    initialStatusParam === "all" ||
+    initialStatusParam === "open" ||
+    initialStatusParam === "resolved"
+      ? initialStatusParam
+      : "open";
   const [statusFilter, setStatusFilter] = useState<"all" | "open" | "resolved">(
-    "open",
+    initialStatusFilter,
   );
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [loading, setLoading] = useState(false);

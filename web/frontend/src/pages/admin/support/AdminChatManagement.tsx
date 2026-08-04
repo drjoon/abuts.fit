@@ -5,6 +5,7 @@
 // - web/backend/controllers/chats/chat.controller.js
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   Card,
   CardContent,
@@ -101,9 +102,12 @@ export const AdminChatManagement = () => {
   const { token, user } = useAuthStore();
   const { period, setPeriod } = usePeriodStore();
   const { toast } = useToast();
+  const [searchParams] = useSearchParams();
+  const initialUnreadOnly = searchParams.get("unread") === "1";
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedStatus, setSelectedStatus] = useState("all");
+  const [unreadOnly, setUnreadOnly] = useState(initialUnreadOnly);
   const [selectedChatId, setSelectedChatId] = useState<string | null>(null);
   const [messageInput, setMessageInput] = useState("");
   const [rooms, setRooms] = useState<ChatRoom[]>([]);
@@ -166,6 +170,9 @@ export const AdminChatManagement = () => {
     const q = searchQuery.trim().toLowerCase();
 
     const matches = rooms.filter((room) => {
+      if (unreadOnly && Number(room.unreadCount || 0) <= 0) {
+        return false;
+      }
       if (!q) return true;
 
       const title =
@@ -185,7 +192,7 @@ export const AdminChatManagement = () => {
       const bTime = new Date(String(b.lastMessageAt || "")).getTime() || 0;
       return bTime - aTime;
     });
-  }, [rooms, searchQuery]);
+  }, [rooms, searchQuery, unreadOnly]);
 
   const activeChat = selectedChatId
     ? rooms.find((chat) => chat._id === selectedChatId) || null
@@ -441,6 +448,13 @@ export const AdminChatManagement = () => {
                   size="sm"
                 >
                   정지
+                </Button>
+                <Button
+                  variant={unreadOnly ? "default" : "outline"}
+                  onClick={() => setUnreadOnly((prev) => !prev)}
+                  size="sm"
+                >
+                  미확인만
                 </Button>
               </div>
               {roomsError && (

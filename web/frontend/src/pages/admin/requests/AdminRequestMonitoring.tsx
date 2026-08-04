@@ -133,8 +133,11 @@ export const AdminRequestMonitoring = () => {
   const focusRequestId = String(
     searchParams.get("focusRequestId") || "",
   ).trim();
+  const initialStatus = String(searchParams.get("status") || "").trim();
   const [searchQuery, setSearchQuery] = useState(initialQuery);
-  const [selectedStatus, setSelectedStatus] = useState("all");
+  const [selectedStatus, setSelectedStatus] = useState(
+    initialStatus || "all",
+  );
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set());
   const [restoringIds, setRestoringIds] = useState<Set<string>>(new Set());

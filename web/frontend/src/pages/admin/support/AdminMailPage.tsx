@@ -2,6 +2,8 @@
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
+import { useMemo } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   Card,
   CardDescription,
@@ -28,6 +30,11 @@ import {
 export const AdminMailPage = () => {
   const { toast } = useToast();
   const { period, setPeriod } = usePeriodStore();
+  const [searchParams] = useSearchParams();
+  const initialUnreadOnly = useMemo(
+    () => searchParams.get("unread") === "1",
+    [searchParams],
+  );
   const {
     tab,
     setTab,
@@ -49,7 +56,9 @@ export const AdminMailPage = () => {
     handleTrash,
     handleRestoreToSent,
     folder,
-  } = useAdminMailBox();
+    unreadOnly,
+    setUnreadOnly,
+  } = useAdminMailBox({ initialUnreadOnly });
 
   const handleEmptyTrash = async () => {
     try {
@@ -123,6 +132,16 @@ export const AdminMailPage = () => {
             <AlertOctagon className="h-4 w-4" />
             스팸함
           </TabsTrigger>
+          {tab === "inbox" && (
+            <Button
+              variant={unreadOnly ? "default" : "outline"}
+              size="sm"
+              className="gap-2 h-8 px-3 text-sm ml-4"
+              onClick={() => setUnreadOnly(!unreadOnly)}
+            >
+              {unreadOnly ? "안읽음만 보는 중" : "안읽음만 보기"}
+            </Button>
+          )}
           {tab === "sent" && (
             <Button
               variant="destructive"
