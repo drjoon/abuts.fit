@@ -182,11 +182,8 @@ export function useLeadTimeForecast({
           ? nextBusinessDayInclusive(requestedYmd)
           : addBusinessDaysFromKstYmd(requestedYmd, 1);
         const formatted = formatKstMonthDayWithWeekday(shipYmd);
-        const leadLabel =
-          shipYmd === requestedYmd ? "당일 발송" : "1영업일 후";
-        const result = `${formatted} • ${leadLabel}`;
-        cache.set(cacheKey, result);
-        return result;
+        cache.set(cacheKey, formatted);
+        return formatted;
       }
 
       if (!leadTimes) return null;
@@ -213,10 +210,8 @@ export function useLeadTimeForecast({
       const baseShipYmd = addBusinessDaysFromKstYmd(requestedYmd, resolvedLeadDays);
       const shipYmd = resolveWeeklyPickupYmd(baseShipYmd);
       const formatted = formatKstMonthDayWithWeekday(shipYmd);
-
-      const result = `${formatted} • ${resolvedLeadDays}영업일 후`;
-      cache.set(cacheKey, result);
-      return result;
+      cache.set(cacheKey, formatted);
+      return formatted;
     };
   }, [
     addBusinessDaysFromKstYmd,
