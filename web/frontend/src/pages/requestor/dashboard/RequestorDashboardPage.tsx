@@ -36,7 +36,6 @@ import {
 } from "@/shared/ui/dashboard/RequestorRiskSummaryCard";
 import { RequestorBulkShippingBannerCard } from "./components/RequestorBulkShippingBannerCard";
 import { RequestorRecentRequestsCard } from "./components/RequestorRecentRequestsCard";
-import { RequestorShippingSummaryCard } from "./components/RequestorShippingSummaryCard";
 import type { RequestorDashboardStat } from "./components/RequestorDashboardStatsCards";
 import { PeriodFilter } from "@/shared/ui/PeriodFilter";
 import {
@@ -1951,7 +1950,7 @@ export const RequestorDashboardPage = () => {
     <div>
       <DashboardShell
         title={`안녕하세요, ${user.name}님!`}
-        statsGridClassName="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-2.5"
+        statsGridClassName="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-2.5"
         subtitle={
           insufficientCredit && insufficientShippingCredit
             ? "의뢰비와 배송비 크레딧 부족. 충전해주세요"
@@ -2044,20 +2043,9 @@ export const RequestorDashboardPage = () => {
         }
         topSection={
           <div className="space-y-6">
-            <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6 items-stretch">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-stretch">
               <RequestorPricingReferralPolicyCard />
-              <RequestorShippingSummaryCard />
-              <RequestorBulkShippingBannerCard
-                bulkData={bulkData}
-                onRefresh={() => {
-                  refetchBulk();
-                }}
-                onOpenBulkModal={() => {}}
-              />
-            </div>
-
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">
-              <div className="lg:row-span-2 h-full">
+              <div className="lg:col-span-2 h-full">
                 <RequestorRecentRequestsCard
                   items={recentRequests}
                   onRefresh={() => {
@@ -2068,92 +2056,100 @@ export const RequestorDashboardPage = () => {
                   onCancel={cancelRequest}
                 />
               </div>
+            </div>
 
-              <div className="space-y-6 h-full">
-                <Card className="app-glass-card app-glass-card--lg">
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-base font-semibold">불완전가공</CardTitle>
-                  </CardHeader>
-                  <CardContent className="pt-2">
-                    {unmachinableRecentRequests.length === 0 ? (
-                      <div className="text-sm text-muted-foreground">표시할 불완전가공 의뢰가 없습니다.</div>
-                    ) : (
-                      <div className="space-y-2 max-h-[260px] overflow-auto pr-1 pb-1">
-                        {unmachinableRecentRequests.map((item: any) => {
-                          const requestMongoId = String(item?._id || item?.id || "").trim();
-                          const requestId = String(item?.requestId || "-").trim() || "-";
-                          const ci = item?.caseInfos || {};
-                          const title =
-                            String(item?.title || "").trim() ||
-                            [ci?.patientName, ci?.tooth].filter(Boolean).join(" ") ||
-                            requestId;
-                          const reason = String(item?.rnd?.unmachinableReason || "").trim();
-                          const confirmed = Boolean(item?.rnd?.unmachinableConfirmedAt);
-                          return (
-                            <button
-                              key={requestMongoId || requestId}
-                              type="button"
-                              className="w-full text-left rounded-md border border-yellow-300 bg-yellow-50/50 px-3 py-2 hover:bg-yellow-100/50"
-                              onClick={() => {
-                                handleOpenUnmachinableDecisionModal(requestMongoId);
-                              }}
-                            >
-                              <div className="min-w-0 flex-1 space-y-1">
-                                <div className="flex items-center gap-2">
-                                  <div className="text-sm font-medium truncate">{title}</div>
-                                  <Badge
-                                    variant="outline"
-                                    className="text-[10px] border-yellow-300 text-yellow-700"
-                                  >
-                                    {confirmed ? "확인됨" : "미확인"}
-                                  </Badge>
-                                </div>
-                                <div className="text-xs text-muted-foreground truncate">
-                                  의뢰번호: {requestId}
-                                </div>
-                                <div className="text-xs text-yellow-800 truncate">
-                                  불완전가공 사유: {reason || "미등록"}
-                                </div>
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-stretch">
+              <Card className="app-glass-card app-glass-card--lg h-full">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-base font-semibold">불완전가공</CardTitle>
+                </CardHeader>
+                <CardContent className="pt-2">
+                  {unmachinableRecentRequests.length === 0 ? (
+                    <div className="text-sm text-muted-foreground">표시할 불완전가공 의뢰가 없습니다.</div>
+                  ) : (
+                    <div className="space-y-2 max-h-[260px] overflow-auto pr-1 pb-1">
+                      {unmachinableRecentRequests.map((item: any) => {
+                        const requestMongoId = String(item?._id || item?.id || "").trim();
+                        const requestId = String(item?.requestId || "-").trim() || "-";
+                        const ci = item?.caseInfos || {};
+                        const title =
+                          String(item?.title || "").trim() ||
+                          [ci?.patientName, ci?.tooth].filter(Boolean).join(" ") ||
+                          requestId;
+                        const reason = String(item?.rnd?.unmachinableReason || "").trim();
+                        const confirmed = Boolean(item?.rnd?.unmachinableConfirmedAt);
+                        return (
+                          <button
+                            key={requestMongoId || requestId}
+                            type="button"
+                            className="w-full text-left rounded-md border border-yellow-300 bg-yellow-50/50 px-3 py-2 hover:bg-yellow-100/50"
+                            onClick={() => {
+                              handleOpenUnmachinableDecisionModal(requestMongoId);
+                            }}
+                          >
+                            <div className="min-w-0 flex-1 space-y-1">
+                              <div className="flex items-center gap-2">
+                                <div className="text-sm font-medium truncate">{title}</div>
+                                <Badge
+                                  variant="outline"
+                                  className="text-[10px] border-yellow-300 text-yellow-700"
+                                >
+                                  {confirmed ? "확인됨" : "미확인"}
+                                </Badge>
                               </div>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
+                              <div className="text-xs text-muted-foreground truncate">
+                                의뢰번호: {requestId}
+                              </div>
+                              <div className="text-xs text-yellow-800 truncate">
+                                불완전가공 사유: {reason || "미등록"}
+                              </div>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
 
-                <RequestorRiskSummaryCard
-                  riskSummary={riskSummary}
-                  disableInnerScroll
-                  maxVisibleItems={1}
-                  onItemClick={(item) => {
-                    setSelectedRiskSummaryItem(item);
-                    setRiskSummaryDetailLoading(true);
-                    apiFetch<any>({
-                      path: `/api/requests/${item.id}`,
-                      method: "GET",
-                      token,
+              <RequestorBulkShippingBannerCard
+                bulkData={bulkData}
+                onRefresh={() => {
+                  refetchBulk();
+                }}
+                onOpenBulkModal={() => {}}
+              />
+
+              <RequestorRiskSummaryCard
+                riskSummary={riskSummary}
+                disableInnerScroll
+                maxVisibleItems={3}
+                onItemClick={(item) => {
+                  setSelectedRiskSummaryItem(item);
+                  setRiskSummaryDetailLoading(true);
+                  apiFetch<any>({
+                    path: `/api/requests/${item.id}`,
+                    method: "GET",
+                    token,
+                  })
+                    .then((res) => {
+                      if (!res.ok) {
+                        throw new Error("의뢰 상세 조회에 실패했습니다.");
+                      }
+                      if (!res.data?.success) {
+                        throw new Error("의뢰 상세 데이터가 없습니다.");
+                      }
+                      setRiskSummaryDetail(res.data.data || null);
                     })
-                      .then((res) => {
-                        if (!res.ok) {
-                          throw new Error("의뢰 상세 조회에 실패했습니다.");
-                        }
-                        if (!res.data?.success) {
-                          throw new Error("의뢰 상세 데이터가 없습니다.");
-                        }
-                        setRiskSummaryDetail(res.data.data || null);
-                      })
-                      .catch((error) => {
-                        console.error("의뢰 상세 조회 실패", error);
-                        setRiskSummaryDetail(null);
-                      })
-                      .finally(() => {
-                        setRiskSummaryDetailLoading(false);
-                      });
-                  }}
-                />
-              </div>
+                    .catch((error) => {
+                      console.error("의뢰 상세 조회 실패", error);
+                      setRiskSummaryDetail(null);
+                    })
+                    .finally(() => {
+                      setRiskSummaryDetailLoading(false);
+                    });
+                }}
+              />
             </div>
           </div>
         }

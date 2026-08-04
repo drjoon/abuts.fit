@@ -3,6 +3,7 @@
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import {
   Card,
   CardContent,
@@ -18,11 +19,50 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { ArrowRightLeft } from "lucide-react";
 import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
 import { formatDateWithDay, formatDateOnly } from "@/utils/dateFormat";
+
+interface ShippingPackageSummaryItem {
+  id: string;
+  shipDateYmd: string;
+  requestCount: number;
+  shippingFeeSupply: number;
+  createdAt?: string;
+}
+
+interface ShippingPackageSummaryRequest {
+  id: string;
+  requestId: string;
+  title: string;
+  caseInfos: any;
+  manufacturerStage: string;
+  createdAt?: string;
+  timeline?: {
+    nextEstimatedShipYmd?: string | null;
+    estimatedShipYmd?: string | null;
+    originalEstimatedShipYmd?: string | null;
+  };
+  _id?: string | null;
+}
+
+interface ShippingPackagesSummaryResponse {
+  success: boolean;
+  data: {
+    today: {
+      shipDateYmd: string;
+      packageCount: number;
+      shippingFeeSupplyTotal: number;
+    };
+    lastNDays: {
+      days: number;
+      packageCount: number;
+      shippingFeeSupplyTotal: number;
+    };
+    items: ShippingPackageSummaryItem[];
+  };
+}
 
 type Props = {
   onOpenBulkModal: () => void;
@@ -99,7 +139,7 @@ export const RequestorBulkShippingBannerCard = ({
   bulkData,
   onRefresh,
 }: Props) => {
-  const { token } = useAuthStore();
+  const { token, user } = useAuthStore();
   const { toast } = useToast();
   const [policy, setPolicy] = useState<ShippingPolicy | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -109,6 +149,57 @@ export const RequestorBulkShippingBannerCard = ({
     useState<ManufacturerLeadTimeData | null>(null);
   const [isLeadTimeLoading, setIsLeadTimeLoading] = useState(false);
   const [isLeadTimeModalOpen, setIsLeadTimeModalOpen] = useState(false);
+  const [todayBoxDialogOpen, setTodayBoxDialogOpen] = useState(false);
+
+  const canAccessShippingSummary = user?.role === "requestor";
+
+  const { data: shippingSummaryData, isLoading: isShippingSummaryLoading } =
+    useQuery({
+      queryKey: ["requestor-shipping-packages-summary"],
+      enabled: Boolean(token && canAccessShippingSummary),
+      queryFn: async () => {
+        const params = new URLSearchParams();
+        params.set("days", "30");
+
+        const res = await apiFetch<ShippingPackagesSummaryResponse>({
+          path: `/api/requests/my/shipping-packages?${params.toString()}`,
+          method: "GET",
+          token,
+        });
+
+        if (!res.ok || !res.data?.success) {
+          throw new Error("발송 패키지 요약 조회에 실패했습니다.");
+        }
+        return res.data.data;
+      },
+      staleTime: 60 * 1000,
+      refetchOnMount: false,
+      refetchOnWindowFocus: false,
+    });
+
+  const shippingMemo = useMemo(() => {
+    if (!shippingSummaryData) {
+      return {
+        todayCount: 0,
+        todayRequests: [] as ShippingPackageSummaryRequest[],
+      };
+    }
+
+    const todayCount = shippingSummaryData.today?.packageCount ?? 0;
+    const items = Array.isArray(shippingSummaryData.items)
+      ? shippingSummaryData.items
+      : [];
+    const todayRequests = items
+      .filter((it) => it.shipDateYmd === shippingSummaryData.today?.shipDateYmd)
+      .flatMap((it) =>
+        Array.isArray((it as any).requests) ? (it as any).requests : [],
+      );
+
+    return {
+      todayCount,
+      todayRequests: todayRequests ?? [],
+    };
+  }, [shippingSummaryData]);
 
   const [originalBulkEtaById, setOriginalBulkEtaById] = useState<
     Record<string, string | null>
@@ -242,16 +333,14 @@ export const RequestorBulkShippingBannerCard = ({
 
     if (bulkCount === 0) {
       return {
-        modeLabel: "배송 대기 없음",
-        countLabel: "현재 대기 중인 제품이 없습니다.",
-        dateLabel: "-",
+        countLabel: "대기 수량: 0개",
+        dateLabel: "다음 발송 예정: -",
       };
     }
 
     const nextText = earliestEta(bulkItems);
 
     return {
-      modeLabel: "묶음 배송",
       countLabel: `대기 수량: ${bulkCount}개`,
       dateLabel: `다음 발송 예정: ${nextText}`,
     };
@@ -585,49 +674,127 @@ export const RequestorBulkShippingBannerCard = ({
 
   return (
     <>
-      <Card className="app-glass-card app-glass-card--lg flex-none">
-        <CardHeader className="pb-2 space-y-2">
-          <div className="flex items-center justify-between gap-4">
-            <CardTitle className="text-base font-semibold text-foreground">
-              묶음 배송 안내
-            </CardTitle>
+      <Card className="app-glass-card app-glass-card--lg h-full">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base font-semibold text-foreground">
+            발송 · 묶음 배송
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="pt-2 pb-4 text-sm text-foreground space-y-3">
+          {isShippingSummaryLoading ? (
+            <div className="text-xs text-slate-600">발송 내역 불러오는 중...</div>
+          ) : (
+            <div className="rounded-lg border border-blue-200/70 bg-blue-50/60 px-3 py-2.5 space-y-1.5">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[11px] font-semibold tracking-wide text-blue-700">
+                  오늘 발송 예정
+                </span>
+                <span className="text-[11px] text-blue-700">
+                  {shippingMemo.todayCount.toLocaleString()}박스
+                </span>
+              </div>
+              <div className="flex items-baseline justify-between gap-2">
+                <span className="text-slate-700">박스 구성</span>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-auto px-2 py-0 text-sm font-semibold text-foreground"
+                  disabled={
+                    shippingMemo.todayCount === 0 ||
+                    shippingMemo.todayRequests.length === 0
+                  }
+                  onClick={() => setTodayBoxDialogOpen(true)}
+                >
+                  {`${shippingMemo.todayRequests.length.toLocaleString()}건`}
+                </Button>
+              </div>
+            </div>
+          )}
+
+          <div className="rounded-lg border border-slate-200 bg-white/70 px-3 py-2.5 space-y-2">
             {(() => {
-              const { modeLabel, countLabel, dateLabel } = getNextSummary();
+              const { countLabel, dateLabel } = getNextSummary();
               return (
-                <div className="flex flex-col items-end text-xs text-slate-600">
-                  <span className="font-semibold text-foreground">
-                    {modeLabel}
-                  </span>
-                  <span className="text-foreground">{countLabel}</span>
-                  <span className="text-[11px] text-slate-600">
-                    {dateLabel}
-                  </span>
+                <div className="grid grid-cols-2 gap-2 text-xs text-slate-600">
+                  <div className="min-w-0">{countLabel}</div>
+                  <div className="min-w-0 text-right">{dateLabel}</div>
                 </div>
               );
             })()}
+            <p className="text-xs leading-relaxed text-slate-600">
+              {getCardMessage()}
+            </p>
+            <div className="flex flex-wrap gap-2 pt-0.5">
+              <Button
+                variant="default"
+                size="sm"
+                className="h-8 px-3 bg-primary text-white font-semibold"
+                onClick={handleOpenModal}
+              >
+                배송 대기 내역
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 px-3 font-semibold"
+                onClick={handleLeadTimeButtonClick}
+                disabled={isLeadTimeLoading}
+              >
+                {isLeadTimeLoading ? "조회 중..." : "리드타임 조회"}
+              </Button>
+            </div>
           </div>
-          <CardDescription className="text-md leading-relaxed text-slate-600">
-            {getCardMessage()}
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-col items-end gap-2 pt-2 text-right">
-          <Button
-            variant="default"
-            className="whitespace-nowrap px-4 py-2 h-11 bg-primary text-white font-semibold shadow-lg"
-            onClick={handleOpenModal}
-          >
-            배송 대기 내역
-          </Button>
-          <Button
-            variant="outline"
-            className="h-10 whitespace-nowrap px-4 font-semibold"
-            onClick={handleLeadTimeButtonClick}
-            disabled={isLeadTimeLoading}
-          >
-            {isLeadTimeLoading ? "조회 중..." : "제조사 리드타임 조회"}
-          </Button>
         </CardContent>
       </Card>
+
+      <Dialog open={todayBoxDialogOpen} onOpenChange={setTodayBoxDialogOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>오늘 발송 박스 내역</DialogTitle>
+          </DialogHeader>
+          {shippingMemo.todayRequests.length === 0 ? (
+            <div className="text-sm text-muted-foreground">
+              표시할 의뢰가 없습니다.
+            </div>
+          ) : (
+            <div className="space-y-2 max-h-[60vh] overflow-auto pr-1">
+              {shippingMemo.todayRequests.map(
+                (req: ShippingPackageSummaryRequest) => {
+                  const ci = req?.caseInfos || {};
+                  const title =
+                    String(req?.title || "").trim() ||
+                    [ci?.patientName, ci?.tooth].filter(Boolean).join(" ") ||
+                    String(req?.requestId || "");
+                  const nextEta =
+                    req?.timeline?.nextEstimatedShipYmd ||
+                    req?.timeline?.estimatedShipYmd ||
+                    req?.timeline?.originalEstimatedShipYmd ||
+                    null;
+                  return (
+                    <div
+                      key={String(req?.id || req?._id || Math.random())}
+                      className="rounded-md border border-gray-200 bg-white px-3 py-2"
+                    >
+                      <div className="text-sm font-semibold text-gray-900 truncate">
+                        {title}
+                      </div>
+                      <div className="text-xs text-muted-foreground truncate">
+                        의뢰번호: {String(req?.requestId || "")}
+                      </div>
+                      {nextEta && (
+                        <div className="text-[11px] text-blue-600 mt-1">
+                          다음 예정일: {formatDateWithDay(nextEta)}
+                        </div>
+                      )}
+                    </div>
+                  );
+                },
+              )}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
         <DialogContent className="max-w-3xl">

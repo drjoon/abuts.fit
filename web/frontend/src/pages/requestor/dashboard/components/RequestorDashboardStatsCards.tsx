@@ -26,7 +26,7 @@ export const RequestorDashboardStatsCards = ({
   if (loading) {
     return (
       <>
-        {Array.from({ length: 4 }).map((_, index) => (
+        {Array.from({ length: 6 }).map((_, index) => (
           <Card
             key={`skeleton-${index}`}
             className="app-glass-card app-glass-card--lg"
