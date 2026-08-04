@@ -5,12 +5,15 @@
 // - web/backend/modules/requests/request.routes.js
 // - web/backend/controllers/requests/common.review.controller.js
 // - web/backend/controllers/requests/common.requests.controller.js
+// - web/backend/controllers/requests/expressPrice.utils.js
 import {
   addKoreanBusinessDays,
   getTodayYmdInKst,
   normalizeKoreanBusinessDay,
 } from "./utils.js";
 import { isKoreanBusinessDay } from "../../utils/krBusinessDays.js";
+
+export { resolveQuotedPriceWithExpressFee } from "./expressPrice.utils.js";
 
 // 마감 시각: 택배 수거 시각 (16:00 KST)
 // 14:00 포장 마감, 15:00 수거 신청, 16:00 실제 수거
