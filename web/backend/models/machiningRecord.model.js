@@ -93,5 +93,7 @@ machiningRecordSchema.index({
   status: 1,
 });
 machiningRecordSchema.index({ machineId: 1, jobId: 1, status: 1 });
+// last-completed: 장비별 최신 COMPLETED 1건 조회
+machiningRecordSchema.index({ machineId: 1, status: 1, completedAt: -1 });
 
 export default mongoose.model("MachiningRecord", machiningRecordSchema);

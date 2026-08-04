@@ -143,19 +143,6 @@ export const EquipmentPage = () => {
     fetchProgramList,
   });
 
-  const [machiningRecordSummaryMap, setMachiningRecordSummaryMap] = useState<
-    Record<
-      string,
-      {
-        status?: string;
-        startedAt?: string | Date;
-        completedAt?: string | Date;
-        durationSeconds?: number;
-        elapsedSeconds?: number;
-      } | null
-    >
-  >({});
-
   const { toast } = useToast();
   const { ensureCncWriteAllowed, PinModal } = useCncWriteGuard();
 
@@ -548,15 +535,21 @@ export const EquipmentPage = () => {
   const handleBackgroundRefresh = useCallback(() => {
     void queues.refreshDbQueuesForAllMachines();
 
+    // status API는 한 번만 호출 (store + core 중복 제거)
+    // core가 machines 상태/알람을 갱신하고, 완료 후 store도 동기화
     const uids = (Array.isArray(machines) ? machines : [])
       .map((m) => String(m?.uid || "").trim())
       .filter(Boolean);
-    if (token && uids.length > 0) {
-      void refreshMachineStatuses({ token, uids });
-    }
 
-    // 기존 로컬 상태 갱신도 유지(상태 텍스트/lastUpdated 등을 위해)
     coreHandleBackgroundRefresh();
+
+    if (token && uids.length > 0) {
+      // core 호출과 동일 엔드포인트이므로 짧은 지연 후 store만 동기화
+      // (서버 2.5s 캐시로 실제 bridge 재호출은 거의 없음)
+      window.setTimeout(() => {
+        void refreshMachineStatuses({ token, uids });
+      }, 50);
+    }
   }, [
     coreHandleBackgroundRefresh,
     machines,
@@ -564,35 +557,6 @@ export const EquipmentPage = () => {
     refreshMachineStatuses,
     token,
   ]);
-
-  useEffect(() => {
-    if (!token) return;
-    let mounted = true;
-    void (async () => {
-      try {
-        const res = await fetch("/api/cnc-machines/queues", {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        const body: any = await res.json().catch(() => ({}));
-        if (!res.ok || body?.success === false) return;
-        const map =
-          body?.data && typeof body.data === "object" ? body.data : {};
-
-        const next: Record<string, any> = {};
-        for (const [mid, items] of Object.entries(map)) {
-          const list: any[] = Array.isArray(items) ? (items as any[]) : [];
-          const head = list[0] || null;
-          next[String(mid)] = head?.machiningRecord || null;
-        }
-        if (mounted) setMachiningRecordSummaryMap(next);
-      } catch {
-        // ignore
-      }
-    })();
-    return () => {
-      mounted = false;
-    };
-  }, [token]);
 
   const handleDeleteConfirm = useCallback(async () => {
     if (!deleteTarget) return;
@@ -625,7 +589,7 @@ export const EquipmentPage = () => {
         programSummary={programSummary}
         machiningElapsedSecondsMap={queues.machiningElapsedSecondsMap}
         lastCompletedMap={queues.lastCompletedMap}
-        machiningRecordSummaryMap={machiningRecordSummaryMap}
+        machiningRecordSummaryMap={queues.machiningRecordSummaryMap}
         reservationJobsMap={queues.reservationJobsMap}
         worksheetQueueCountMap={queues.worksheetQueueCountMap}
         reservationSummaryMap={queues.reservationSummaryMap}

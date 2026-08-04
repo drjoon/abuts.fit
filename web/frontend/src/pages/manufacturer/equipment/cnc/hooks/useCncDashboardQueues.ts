@@ -97,6 +97,18 @@ export function useCncDashboardQueues({
     Record<string, LastCompletedMachining>
   >({});
 
+  const [machiningRecordSummaryMap, setMachiningRecordSummaryMap] = useState<
+    Record<
+      string,
+      {
+        status?: string;
+        startedAt?: string | Date;
+        completedAt?: string | Date;
+        durationSeconds?: number;
+        elapsedSeconds?: number;
+      } | null
+    >
+  >({});
   useEffect(() => {
     let mounted = true;
     if (!token) return;
@@ -278,6 +290,7 @@ export function useCncDashboardQueues({
       const map = body?.data && typeof body.data === "object" ? body.data : {};
 
       const nextWorksheetCountMap: Record<string, number> = {};
+      const nextMachiningRecordSummaryMap: Record<string, any> = {};
 
       for (const m of list) {
         const uid = String(m?.uid || "").trim();
@@ -290,12 +303,24 @@ export function useCncDashboardQueues({
         });
 
         nextWorksheetCountMap[uid] = filtered.length;
+        const head = raw[0] || null;
+        nextMachiningRecordSummaryMap[uid] = head?.machiningRecord || null;
+      }
+
+      // unassigned 등 machines 목록 외 키도 summary에 반영
+      for (const [mid, items] of Object.entries(map)) {
+        const uid = String(mid || "").trim();
+        if (!uid || nextMachiningRecordSummaryMap[uid] !== undefined) continue;
+        const listItems: any[] = Array.isArray(items) ? (items as any[]) : [];
+        nextMachiningRecordSummaryMap[uid] =
+          listItems[0]?.machiningRecord || null;
       }
 
       setWorksheetQueueCountMap((prev) => ({
         ...prev,
         ...nextWorksheetCountMap,
       }));
+      setMachiningRecordSummaryMap(nextMachiningRecordSummaryMap);
     } catch {
       // ignore
     }
@@ -1135,6 +1160,7 @@ export function useCncDashboardQueues({
     loadQueueForMachine,
     machiningElapsedSecondsMap,
     lastCompletedMap,
+    machiningRecordSummaryMap,
     refreshDbQueuesForAllMachines,
     reservationSummaryMap,
     reservationJobsMap,

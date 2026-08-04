@@ -518,11 +518,37 @@ async function fetchMachineAlarmsFromBridge(machineId) {
   });
 }
 
+const LAST_COMPLETED_CACHE_TTL_MS = 3_000;
+const __lastCompletedCache = new Map();
+
+function getLastCompletedCache(key) {
+  const hit = __lastCompletedCache.get(key);
+  if (!hit) return null;
+  if (Number(hit.expiresAt || 0) <= Date.now()) {
+    __lastCompletedCache.delete(key);
+    return null;
+  }
+  return hit.payload;
+}
+
+function setLastCompletedCache(key, payload) {
+  __lastCompletedCache.set(key, {
+    payload,
+    expiresAt: Date.now() + LAST_COMPLETED_CACHE_TTL_MS,
+  });
+  return payload;
+}
+
 export async function getLastCompletedMachiningMap(req, res) {
   try {
     // includeRequests=true: 워크시트에서 의뢰 자동가공 완료 건도 포함
     // includeRequests=false(기본): 장비 페이지에서 수동 업로드 완료만 표시
     const includeRequests = req.query.includeRequests === "true";
+    const cacheKey = `last-completed:${includeRequests ? "1" : "0"}`;
+    const cached = getLastCompletedCache(cacheKey);
+    if (cached) {
+      return res.status(200).json(cached);
+    }
 
     const activeMachines = await CncMachine.find({ status: "active" })
       .select("machineId")
@@ -532,23 +558,33 @@ export async function getLastCompletedMachiningMap(req, res) {
       .filter(Boolean);
 
     if (machineIds.length === 0) {
-      return res.status(200).json({ success: true, data: {} });
+      const empty = { success: true, data: {} };
+      setLastCompletedCache(cacheKey, empty);
+      return res.status(200).json(empty);
     }
 
-    const recs = await MachiningRecord.find({
-      machineId: { $in: machineIds },
-      status: "COMPLETED",
-      ...(includeRequests ? {} : { requestId: { $in: [null, ""] } }),
-    })
-      .sort({ completedAt: -1, updatedAt: -1, createdAt: -1 })
-      .limit(500)
-      .lean();
+    // 장비별 최신 COMPLETED 1건만 조회 (limit-500 스캔 제거)
+    // index: { machineId: 1, status: 1, completedAt: -1 }
+    const latestRecs = await Promise.all(
+      machineIds.map((mid) =>
+        MachiningRecord.findOne({
+          machineId: mid,
+          status: "COMPLETED",
+          ...(includeRequests ? {} : { requestId: { $in: [null, ""] } }),
+        })
+          .sort({ completedAt: -1, updatedAt: -1 })
+          .select(
+            "machineId jobId requestId fileName originalFileName completedAt updatedAt durationSeconds elapsedSeconds",
+          )
+          .lean(),
+      ),
+    );
 
     const byMachine = new Map();
-    for (const r of Array.isArray(recs) ? recs : []) {
+    for (const r of latestRecs) {
+      if (!r) continue;
       const mid = String(r?.machineId || "").trim();
       if (!mid) continue;
-      if (byMachine.has(mid)) continue;
       byMachine.set(mid, r);
     }
 
@@ -563,7 +599,23 @@ export async function getLastCompletedMachiningMap(req, res) {
       if (requestIds.length > 0) {
         const requests = await Request.find({ requestId: { $in: requestIds } })
           .select(
-            "requestId caseInfos lotNumber productionSchedule source requestCategory",
+            [
+              "requestId",
+              "caseInfos.clinicName",
+              "caseInfos.patientName",
+              "caseInfos.tooth",
+              "caseInfos.rollbackCounts.machining",
+              "caseInfos.implantManufacturer",
+              "caseInfos.implantBrand",
+              "caseInfos.implantFamily",
+              "caseInfos.retentionGroove",
+              "caseInfos.anodizingEnabled",
+              "caseInfos.ncFile.s3Key",
+              "caseInfos.ncFile.fileName",
+              "lotNumber",
+              "source",
+              "requestCategory",
+            ].join(" "),
           )
           .lean();
         for (const r of requests) {
@@ -636,7 +688,9 @@ export async function getLastCompletedMachiningMap(req, res) {
       };
     }
 
-    return res.status(200).json({ success: true, data });
+    const payload = { success: true, data };
+    setLastCompletedCache(cacheKey, payload);
+    return res.status(200).json(payload);
   } catch (error) {
     return res.status(500).json({
       success: false,

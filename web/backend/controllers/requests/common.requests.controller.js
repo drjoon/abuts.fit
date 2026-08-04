@@ -1528,7 +1528,7 @@ export async function getAllRequests(req, res) {
         .select(selectedProjection)
         .populate("requestor", requestorPopulateSelect);
 
-      if (!isMonitoringView) {
+      if (!isMonitoringView && worksheetProfile !== "tracking") {
         query = query.populate("rnd.memoUpdatedBy", "name");
       }
 
@@ -1604,55 +1604,57 @@ export async function getAllRequests(req, res) {
         );
 
     if (isWorksheetView) {
-      const requestorAnchorIds = Array.from(
-        new Set(
-          requests
-            .map((item) => {
-              const rawRequestAnchor = item?.businessAnchorId;
-              const requestAnchorId =
-                rawRequestAnchor &&
-                typeof rawRequestAnchor === "object" &&
-                rawRequestAnchor?._id
-                  ? String(rawRequestAnchor._id || "").trim()
-                  : String(rawRequestAnchor || "").trim();
-              if (Types.ObjectId.isValid(requestAnchorId)) return requestAnchorId;
+      // populate된 businessAnchorId를 우선 재사용하고, 미populate ID만 추가 조회
+      const businessMap = new Map();
+      const missingAnchorIds = new Set();
 
-              const rawRequestorAnchor =
-                item?.requestor && typeof item.requestor === "object"
-                  ? item.requestor.businessAnchorId
-                  : null;
-              const requestorAnchorId =
-                rawRequestorAnchor &&
-                typeof rawRequestorAnchor === "object" &&
-                rawRequestorAnchor?._id
-                  ? String(rawRequestorAnchor._id || "").trim()
-                  : String(rawRequestorAnchor || "").trim();
-              return requestorAnchorId;
-            })
-            .filter((id) => Types.ObjectId.isValid(id)),
-        ),
-      );
+      for (const item of requests) {
+        const raw = item?.businessAnchorId;
+        if (raw && typeof raw === "object" && raw._id) {
+          businessMap.set(String(raw._id), raw);
+          continue;
+        }
+        const requestAnchorId = String(raw || "").trim();
+        if (Types.ObjectId.isValid(requestAnchorId)) {
+          missingAnchorIds.add(requestAnchorId);
+          continue;
+        }
 
-      const businesses = requestorAnchorIds.length
-        ? await BusinessAnchor.find({
-            _id: {
-              $in: requestorAnchorIds.map((id) => new Types.ObjectId(id)),
-            },
+        const rawRequestorAnchor =
+          item?.requestor && typeof item.requestor === "object"
+            ? item.requestor.businessAnchorId
+            : null;
+        if (rawRequestorAnchor && typeof rawRequestorAnchor === "object" && rawRequestorAnchor._id) {
+          businessMap.set(String(rawRequestorAnchor._id), rawRequestorAnchor);
+          continue;
+        }
+        const requestorAnchorId = String(rawRequestorAnchor || "").trim();
+        if (Types.ObjectId.isValid(requestorAnchorId)) {
+          missingAnchorIds.add(requestorAnchorId);
+        }
+      }
+
+      if (missingAnchorIds.size > 0) {
+        const businesses = await BusinessAnchor.find({
+          _id: {
+            $in: Array.from(missingAnchorIds).map(
+              (id) => new Types.ObjectId(id),
+            ),
+          },
+        })
+          .select({
+            _id: 1,
+            name: 1,
+            metadata: 1,
+            shippingPolicy: 1,
+            "requestSettings.designSoftware": 1,
+            "requestSettings.anodizingEnabled": 1,
           })
-            .select({
-              _id: 1,
-              name: 1,
-              metadata: 1,
-              shippingPolicy: 1,
-              "requestSettings.designSoftware": 1,
-              "requestSettings.anodizingEnabled": 1,
-            })
-            .lean()
-        : [];
-
-      const businessMap = new Map(
-        businesses.map((row) => [String(row?._id || ""), row]),
-      );
+          .lean();
+        for (const row of businesses) {
+          businessMap.set(String(row?._id || ""), row);
+        }
+      }
 
       for (const item of requests) {
         const raw = item?.businessAnchorId;

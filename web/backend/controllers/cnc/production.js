@@ -12,6 +12,7 @@ import {
 import CncMachine from "../../models/cncMachine.model.js";
 import Machine from "../../models/machine.model.js";
 import BridgeSetting from "../../models/bridgeSetting.model.js";
+import { buildManufacturerOrgScopeFilter } from "../requests/utils.js";
 import {
   MACHINING_ASSIGN_STAGE_SET,
   MACHINING_QUEUE_STAGE_SET,
@@ -64,8 +65,26 @@ export async function resolveManufacturerMachineScope(req) {
     .map((m) => String(m?.uid || "").trim())
     .filter(Boolean);
 
+  // 제조사 조직 스코프 + 소유 장비에 배정된/미배정 의뢰만 조회
+  const orgScope = await buildManufacturerOrgScopeFilter(req);
+  const machineScope =
+    machineIds.length > 0
+      ? {
+          $or: [
+            { "productionSchedule.assignedMachine": { $in: machineIds } },
+            { assignedMachine: { $in: machineIds } },
+            { "productionSchedule.assignedMachine": { $in: [null, ""] } },
+            { "productionSchedule.assignedMachine": { $exists: false } },
+          ],
+        }
+      : { _id: { $exists: false } };
+
   return {
-    requestFilter: {},
+    requestFilter: {
+      $and: [orgScope, machineScope].filter(
+        (f) => f && typeof f === "object" && Object.keys(f).length > 0,
+      ),
+    },
     machineFilter,
     machineIds,
   };
@@ -308,54 +327,56 @@ export async function getProductionQueues(req, res) {
   try {
     const scope = await resolveManufacturerMachineScope(req);
 
+    const queueSelect = [
+      "requestId",
+      "status",
+      "manufacturerStage",
+      "productionSchedule",
+      "caseInfos.clinicName",
+      "caseInfos.patientName",
+      "caseInfos.tooth",
+      "caseInfos.rollbackCounts.machining",
+      "caseInfos.ncFile",
+      "caseInfos.anodizingEnabled",
+      "caseInfos.implantManufacturer",
+      "caseInfos.implantBrand",
+      "caseInfos.implantFamily",
+      "caseInfos.retentionGroove",
+      "lotNumber",
+      "timeline.estimatedShipYmd",
+      "caManufacturer",
+      "source",
+      "requestCategory",
+    ].join(" ");
 
+    const loadQueueRequests = () =>
+      Request.find({
+        manufacturerStage: { $in: MACHINING_QUEUE_STAGE_SET },
+        ...EXCLUDE_UNMACHINABLE_FILTER,
+        ...scope.requestFilter,
+      })
+        .select(queueSelect)
+        .populate({
+          path: "productionSchedule.machiningRecord",
+          select:
+            "status startedAt completedAt durationSeconds elapsedSeconds lastTickAt machineId jobId",
+        })
+        .lean();
 
-    let requests = await Request.find({
-      manufacturerStage: { $in: MACHINING_QUEUE_STAGE_SET },
-      ...EXCLUDE_UNMACHINABLE_FILTER,
-      ...scope.requestFilter,
-    })
-      .select(
-        "requestId status manufacturerStage productionSchedule caseInfos lotNumber timeline caManufacturer source requestCategory",
-      )
-      .populate({
-        path: "productionSchedule.machiningRecord",
-        select:
-          "status startedAt completedAt durationSeconds elapsedSeconds lastTickAt machineId jobId",
-      });
-
-
-
+    let requests = await loadQueueRequests();
     let queues = getAllProductionQueues(requests);
-
-
 
     const unassignedCount = Array.isArray(queues.unassigned)
       ? queues.unassigned.length
       : 0;
 
+    // 미배정 건이 있을 때만 재배정. 실제 변경이 있을 때만 재조회.
     if (unassignedCount > 0) {
       const rebalance = await rebalanceProductionQueuesInternal({ req, scope });
-
-
-
-      requests = await Request.find({
-        manufacturerStage: { $in: MACHINING_QUEUE_STAGE_SET },
-        ...EXCLUDE_UNMACHINABLE_FILTER,
-        ...scope.requestFilter,
-      })
-        .select(
-          "requestId status manufacturerStage productionSchedule caseInfos lotNumber timeline caManufacturer source requestCategory",
-        )
-        .populate({
-          path: "productionSchedule.machiningRecord",
-          select:
-            "status startedAt completedAt durationSeconds elapsedSeconds lastTickAt machineId jobId",
-        });
-
-      queues = getAllProductionQueues(requests);
-
-
+      if (Number(rebalance?.reassignedCount || 0) > 0) {
+        requests = await loadQueueRequests();
+        queues = getAllProductionQueues(requests);
+      }
     }
 
     for (const machineId in queues) {

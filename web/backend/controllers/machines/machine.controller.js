@@ -326,10 +326,23 @@ export async function getMachines(req, res) {
 }
 
 // hi-link 브리지 프록시: 전체 장비 상태 일괄 조회
+const MACHINE_STATUS_ALARM_CACHE_TTL_MS = 2_500;
+let __machineStatusAlarmCache = null;
+
 export async function getAllMachineStatusProxy(req, res) {
   try {
     if (!ensureBridgeConfigured(res)) return;
     const includeAlarms = String(req.query?.includeAlarms || "").trim() === "1";
+
+    if (includeAlarms && __machineStatusAlarmCache) {
+      const hit = __machineStatusAlarmCache;
+      if (Number(hit.expiresAt || 0) > Date.now()) {
+        res.status(200).json(hit.payload);
+        return;
+      }
+      __machineStatusAlarmCache = null;
+    }
+
     const response = await fetch(`${BRIDGE_BASE}/api/cnc/machines/status`, {
       headers: withBridgeHeaders(),
     });
@@ -351,14 +364,20 @@ export async function getAllMachineStatusProxy(req, res) {
     }
 
     const list = Array.isArray(data?.machines) ? data.machines : [];
+    const uids = list
+      .map((m) => String(m?.uid || "").trim())
+      .filter(Boolean);
 
-    const fetchAlarms = async (uid) => {
+    // 장비별 2회(headType) 팬아웃 대신 headType당 1회 배치 조회
+    const alarmsByUid = new Map();
+    if (uids.length > 0) {
       try {
+        const machinesParam = uids
+          .map((uid) => encodeURIComponent(uid))
+          .join(",");
         const bodies = await Promise.all(
           [1, 2].map(async (headType) => {
-            const alarmUrl = `${BRIDGE_BASE}/api/cnc/alarms?machines=${encodeURIComponent(
-              uid,
-            )}&headType=${encodeURIComponent(headType)}`;
+            const alarmUrl = `${BRIDGE_BASE}/api/cnc/alarms?machines=${machinesParam}&headType=${encodeURIComponent(headType)}`;
             const alarmResp = await fetch(alarmUrl, {
               method: "GET",
               headers: withBridgeHeaders(),
@@ -366,53 +385,59 @@ export async function getAllMachineStatusProxy(req, res) {
             return alarmResp.json().catch(() => ({}));
           }),
         );
-        const seenAlarmKeys = new Set();
-        return bodies
-          .flatMap((alarmBody) => {
-            const item = Array.isArray(alarmBody?.results)
-              ? alarmBody.results.find(
-                  (row) =>
-                    String(row?.machineId || "").trim() ===
-                    String(uid || "").trim(),
-                )
-              : null;
-            return Array.isArray(item?.data?.alarms) ? item.data.alarms : [];
-          })
-          .filter((alarm) => {
-            const key = `${alarm?.type ?? ""}:${alarm?.no ?? ""}`;
-            if (seenAlarmKeys.has(key)) return false;
-            seenAlarmKeys.add(key);
-            return true;
-          });
+
+        for (const uid of uids) {
+          const seenAlarmKeys = new Set();
+          const alarms = bodies
+            .flatMap((alarmBody) => {
+              const item = Array.isArray(alarmBody?.results)
+                ? alarmBody.results.find(
+                    (row) =>
+                      String(row?.machineId || "").trim() === String(uid),
+                  )
+                : null;
+              return Array.isArray(item?.data?.alarms) ? item.data.alarms : [];
+            })
+            .filter((alarm) => {
+              const key = `${alarm?.type ?? ""}:${alarm?.no ?? ""}`;
+              if (seenAlarmKeys.has(key)) return false;
+              seenAlarmKeys.add(key);
+              return true;
+            });
+          alarmsByUid.set(uid, alarms);
+        }
       } catch {
-        return [];
+        // 알람 조회 실패 시 빈 알람으로 상태만 반환
       }
-    };
+    }
 
-    const enriched = await Promise.all(
-      list.map(async (m) => {
-        const uid = String(m?.uid || "").trim();
-        if (!uid) return m;
-        const alarms = await fetchAlarms(uid);
-        const hasAlarm = Array.isArray(alarms) && alarms.length > 0;
-        const startBlockedReason = hasAlarm
-          ? `알람으로 자동가공 시작 불가 (${alarms
-              .map((alarm) => `${alarm?.type ?? "?"}-${alarm?.no ?? "?"}`)
-              .join(", ")})`
-          : null;
-        return {
-          ...m,
-          status: hasAlarm ? "ALARM" : m?.status,
-          alarms,
-          startBlockedReason,
-        };
-      }),
-    );
+    const enriched = list.map((m) => {
+      const uid = String(m?.uid || "").trim();
+      if (!uid) return m;
+      const alarms = alarmsByUid.get(uid) || [];
+      const hasAlarm = Array.isArray(alarms) && alarms.length > 0;
+      const startBlockedReason = hasAlarm
+        ? `알람으로 자동가공 시작 불가 (${alarms
+            .map((alarm) => `${alarm?.type ?? "?"}-${alarm?.no ?? "?"}`)
+            .join(", ")})`
+        : null;
+      return {
+        ...m,
+        status: hasAlarm ? "ALARM" : m?.status,
+        alarms,
+        startBlockedReason,
+      };
+    });
 
-    res.status(response.status).json({
+    const payload = {
       ...data,
       machines: enriched,
-    });
+    };
+    __machineStatusAlarmCache = {
+      payload,
+      expiresAt: Date.now() + MACHINE_STATUS_ALARM_CACHE_TTL_MS,
+    };
+    res.status(response.status).json(payload);
   } catch (error) {
     console.error("getAllMachineStatusProxy error", error);
     const offline = await buildOfflineMachineStatusPayload().catch(() => ({
