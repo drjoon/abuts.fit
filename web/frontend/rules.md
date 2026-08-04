@@ -117,9 +117,10 @@ Notes:
     `src/pages/manufacturer/worksheet/custom_abutment/components/RequestInfoSummary.tsx`를 사용합니다.
   - 의미 단위 섹션 고정: **환자** → **임플란트** → **생산**(있을 때만).
   - 레이아웃: 카드는 `layout="stack"`(기본), PreviewModal은 `layout="row"`(가로 3열)로 요약 높이를 줄여 STL 영역을 확보합니다.
-  - 중복 금지:
-    - 의뢰자명(`requestor.business|name`)과 치과명(`clinicName`)이 동일하거나 한쪽이 다른 쪽을 포함하면 한 줄만 표시합니다.
-    - 환자 줄에는 `환자명 / 치아`만 두고 치과명을 다시 붙이지 않습니다.
+  - 중복 금지 / 배치:
+    - 상단 조직 줄: 기공소명(`requestor.business|business.name|requestorBusinessAnchor.name|requestor.name`) · 날짜. 기공소명은 1회만.
+    - 환자 줄: `치과명 / 환자명 / 치아` (치과명·환자명 나란히, 옆 치아번호).
+    - 기공소명과 치과명이 같거나 포함 관계면 환자 줄에서 치과명을 생략합니다.
     - PreviewModal에서 STL 뷰어 오버레이가 보이는 경우(가공 NC 텍스트 단계 제외) 커넥션/최대직경/길이는 요약에서 생략하고 오버레이만 사용합니다.
   - 시각 토큰 통일: 컨테이너 `rounded-lg border-slate-200/80 bg-slate-50/70`, 본문 `text-[13px] text-slate-700`, 섹션 라벨 `text-[10px] text-slate-400`, 구분자는 `•`.
   - 관련 파일:

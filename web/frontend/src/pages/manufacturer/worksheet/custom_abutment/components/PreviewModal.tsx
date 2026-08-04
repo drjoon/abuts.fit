@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-04: 환자 정보에 기공소명 전달 보강(business/requestorBusinessAnchor fallback).
 // - 2026-08-04: PreviewModal 요약 layout=row(가로 3열)로 STL 영역 확보.
 // - 2026-08-04: 프리뷰 상단 의뢰 요약을 RequestInfoSummary로 교체. 환자/임플란트/생산 단위 + STL 오버레이와 치수 중복 제거.
 // - 2026-08-03: PreviewModal: 공정 표시 정규화 영향 반영(의뢰 -> 준비 표시). 주로 프리뷰/승인 버튼의 stage label 참조에 영향.
@@ -2434,7 +2435,11 @@ export const PreviewModal = ({
             className="shrink-0"
             layout="row"
             requestorLabel={
-              overlayRequestor?.business || overlayRequestor?.name
+              overlayRequestor?.business ||
+              (activeReq as any)?.business?.name ||
+              (activeReq as any)?.requestorBusinessAnchor?.name ||
+              overlayFlat?.business?.name ||
+              overlayRequestor?.name
             }
             clinicName={
               overlayCaseInfos?.clinicName || overlayFlat?.clinicName

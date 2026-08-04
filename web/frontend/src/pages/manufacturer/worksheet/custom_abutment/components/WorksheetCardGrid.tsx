@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-04: 환자 정보에 기공소명 전달 보강(business/requestorBusinessAnchor fallback).
 // - 2026-08-04: 의뢰카드 본문을 RequestInfoSummary로 교체. 환자/임플란트 의미 단위 배치 + 치과명 중복 제거.
 // - 2026-08-03: 카드/롤백 관련 stage label 정규화: '의뢰' 표시를 '준비'로 변경하여 화면 일관성 확보 (display-only)
 // - 2026-08-03: 작업 공정 변경 반영: 화살표 승인/롤백 기준을 준비 ↔ 가공 흐름으로 정렬(중간 단계 건너뛰기)
@@ -953,7 +954,10 @@ export const WorksheetCardGrid = ({
               >
                 <RequestInfoSummary
                   requestorLabel={
-                    request.requestor?.business || request.requestor?.name
+                    request.requestor?.business ||
+                    request.business?.name ||
+                    (request as any)?.requestorBusinessAnchor?.name ||
+                    request.requestor?.name
                   }
                   clinicName={caseInfos.clinicName}
                   createdAt={request.createdAt}

@@ -1,14 +1,17 @@
 // change-log:
+// - 2026-08-04: 환자 줄=`치과명 / 환자명 / 치아`, 기공소명은 상단 1회만. 기공소=치과 동일 시 치과명 중복 생략.
 // - 2026-08-04: layout=row 지원. PreviewModal은 가로 3열, 카드는 stack 유지.
 // - 2026-08-04: 의뢰카드/프리뷰 공통 정보 블록. 환자·임플란트·생산 단위로 묶고 중복(치과명 등) 제거.
 // related files:
 // - web/frontend/rules.md
+// - .cursor/rules/worksheet-request-info-ui.mdc
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/WorksheetCardGrid.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
 import { Fragment, type ReactNode } from "react";
 
 export type RequestInfoSummaryProps = {
+  /** 기공소명(의뢰 사업자). 상단 조직 줄에만 사용 */
   requestorLabel?: string | null;
   clinicName?: string | null;
   createdAt?: string | Date | null;
@@ -29,7 +32,19 @@ export type RequestInfoSummaryProps = {
   leadingSlot?: ReactNode;
 };
 
-/** 의뢰자명·치과명이 같거나 포함 관계면 한 번만 노출 */
+/** 기공소명·치과명이 같거나 포함 관계면 true */
+export function isSameOrgLabel(
+  left?: string | null,
+  right?: string | null,
+): boolean {
+  const a = String(left || "").trim().toLowerCase();
+  const b = String(right || "").trim().toLowerCase();
+  if (!a || !b) return false;
+  if (a === b) return true;
+  return a.includes(b) || b.includes(a);
+}
+
+/** @deprecated 조직 줄은 기공소만, 환자 줄은 치과/환자/치아로 분리. 호환용 유지 */
 export function resolveOrgLabels(
   requestorLabel?: string | null,
   clinicName?: string | null,
@@ -39,10 +54,7 @@ export function resolveOrgLabels(
   if (!requestor && !clinic) return [];
   if (!requestor) return [clinic];
   if (!clinic) return [requestor];
-  if (requestor === clinic) return [requestor];
-  const a = requestor.toLowerCase();
-  const b = clinic.toLowerCase();
-  if (a.includes(b) || b.includes(a)) {
+  if (isSameOrgLabel(requestor, clinic)) {
     return [requestor.length >= clinic.length ? requestor : clinic];
   }
   return [requestor, clinic];
@@ -111,10 +123,17 @@ export function RequestInfoSummary({
   className = "",
   leadingSlot,
 }: RequestInfoSummaryProps) {
-  const orgLabels = resolveOrgLabels(requestorLabel, clinicName);
+  const labName = String(requestorLabel || "").trim();
+  const clinic = String(clinicName || "").trim();
   const dateLabel = formatCreatedAt(createdAt);
   const patient = String(patientName || "").trim() || "미지정";
   const toothLabel = String(tooth ?? "").trim() || "-";
+  // 기공소가 이미 상단에 있으면 동일/포함 치과명은 환자 줄에서 생략
+  const clinicOnPatientLine =
+    clinic && !isSameOrgLabel(labName, clinic) ? clinic : "";
+  const patientIdentityLine = [clinicOnPatientLine, patient, toothLabel]
+    .filter(Boolean)
+    .join(" / ");
   const implantLine = joinParts(implantParts || []);
   const retention = String(retentionGrooveLabel || "").trim();
   const productionItems = (productionMetaItems || [])
@@ -135,7 +154,11 @@ export function RequestInfoSummary({
   }
 
   const hasPatient =
-    orgLabels.length > 0 || !!dateLabel || !!patientName || !!tooth;
+    !!labName ||
+    !!dateLabel ||
+    !!clinic ||
+    !!patientName ||
+    !!tooth;
   const hasImplant =
     !!implantLine || geometryItems.length > 0 || !!retention;
   const hasProduction = productionItems.length > 0;
@@ -163,26 +186,21 @@ export function RequestInfoSummary({
         isRow && (hasImplant || hasProduction) ? sectionDividerClass : ""
       }
     >
-      {(orgLabels.length > 0 || dateLabel) && (
+      {(labName || dateLabel) && (
         <MetaRow>
-          {orgLabels.map((label, idx) => (
-            <Fragment key={`${label}-${idx}`}>
-              {idx > 0 && <Dot />}
-              <span className="font-medium text-slate-800">{label}</span>
-            </Fragment>
-          ))}
+          {labName && (
+            <span className="font-medium text-slate-800">{labName}</span>
+          )}
           {dateLabel && (
             <>
-              {orgLabels.length > 0 && <Dot />}
+              {labName ? <Dot /> : null}
               <span className="tabular-nums text-slate-600">{dateLabel}</span>
             </>
           )}
         </MetaRow>
       )}
       <MetaRow>
-        <span>
-          {patient} / {toothLabel}
-        </span>
+        <span>{patientIdentityLine}</span>
       </MetaRow>
     </Section>
   ) : null;
