@@ -5,7 +5,7 @@
 // SSOT: DB SystemSettings.packLabelBranding
 // EBS 환경변수 한글 인코딩 버그로 인해 환경변수 대신 DB에서 관리합니다.
 // 이 파일의 값을 수정한 뒤 `npm run db:seed-branding`을 실행하면 DB에 반영됩니다.
-// rules.md 섹션 16 참고.
+// rules.legacy-full.md 섹션 16 참고.
 export const PACK_LABEL_BRANDING_SEED = {
   productName: "치과용임플란트 상부구조물",
   modelName: "CA6512",

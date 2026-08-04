@@ -26,7 +26,7 @@ const systemSettingsSchema = new mongoose.Schema(
       defaultShippingFreeCredit: { type: Number, default: 7000 },
     },
     // 한진 송하인 정보: EBS 환경변수 한글 인코딩 버그로 인해 DB에서 관리
-    // (환경변수로 읽으면 한글이 "??"로 깨짐 → rules.md 섹션 6.7.0 참고)
+    // (환경변수로 읽으난 한글이 "??"로 까짐 → rules.legacy-full.md 섹션 6.7.0 참고)
     hanjinSenderInfo: {
       zip: { type: String, default: "50965" },
       baseAddr: { type: String, default: "경상남도 김해시 흥동" },
@@ -36,7 +36,7 @@ const systemSettingsSchema = new mongoose.Schema(
       mobile: { type: String, default: "" },
     },
     // 패킹 라벨 브랜딩 정보: EBS 환경변수 한글 인코딩 버그로 인해 DB에서 관리
-    // (rules.md 섹션 16 참고)
+    // (rules.legacy-full.md 섹션 16 참고)
     packLabelBranding: {
       productName: { type: String, default: "치과용임플란트 상부구조물" },
       modelName: { type: String, default: "CA6512" },

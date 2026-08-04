@@ -78,7 +78,7 @@
   - 이벤트 기반 재계산: `services/requestSnapshotTriggers.service.js`
   - 관리자 대시보드 진입: `controllers/admin/admin.dashboard.controller.js`
 
-- 스크류 로트 추적(세척.패킹)은 루트 `rules.md` 섹션 **1.0.3**을 따릅니다.
+- 스커리씁 로트 추적(세척.패킹)은 `rules.legacy-full.md` 섹션 **1.0.3**을 따릅니다.
 - 한진 배송조회 자동동기화 장애 우회 정책:
   - 한진 API가 `403/InvalidApiKeyForGivenResource`를 반환하면 앱 기동/런타임을 중단하지 않고 auto-sync만 blocked mode로 전환합니다.
   - blocked mode 재시도 주기: 평일 1시간 간격, 주말은 중지 후 월요일 08:00(KST)부터 재개합니다.

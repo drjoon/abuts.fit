@@ -94,7 +94,7 @@ export async function printPackingLabelViaBgServer({
   });
 
   // DB(SystemSettings.packLabelBranding)에서 브랜딩 정보 읽기
-  // EBS 환경변수 한글 인코딩 버그로 인해 DB를 SSOT로 사용합니다. (rules.md 섹션 16)
+  // EBS 환경변수 한글 인코뒔 버거 인해 DB를 SSOT로 사용합니다. (rules.legacy-full.md 섹션 16)
   let branding = {};
   try {
     const doc = await SystemSettings.findOneAndUpdate(

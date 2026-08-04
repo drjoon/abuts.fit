@@ -49,7 +49,7 @@ const HANJIN_PATH_FALLBACKS = {
 // 예: EBS 콘솔에 "경상남도 김해시 흥동"을 설정해도 process.env로 읽으면 "???? ??? ??"처럼 깨집니다.
 // → 한글 포함 필드(baseAddr, dtlAddr, name)는 SystemSettings DB에서 읽습니다.
 // → SystemSettings.hanjinSenderInfo에 default 값이 정의되어 있어 seed 없이도 동작합니다.
-// → 참고: rules.md 섹션 6.7.0 "한진 송하인 정보 DB 관리 정책"
+// → 참고: rules.legacy-full.md 섹션 6.7.0 "한진 송하인 정보 DB 관리 정책"
 
 /**
  * SystemSettings.hanjinSenderInfo를 읽어 송하인 정보를 반환합니다.

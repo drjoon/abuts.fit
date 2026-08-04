@@ -238,7 +238,7 @@ const getMonthlyRemakeQuota = async ({ scopeFilter }) => {
  * Draft를 Request로 전환 (다건 지원)
  * - 중복 체크, 크레딧 사전 체크, 트랜잭션 처리 포함
  * - 프론트엔드: useNewRequestSubmitV2.ts
- * - 참고: rules.md 섹션 4.3.2 "신규 의뢰 생성 엔드포인트 (SSOT)"
+ * - 참고: rules.legacy-full.md 섹션 4.3.2 "신규 의뢰 생성 엔드포인트 (SSOT)"
  *
  * @route POST /api/requests/from-draft
  */

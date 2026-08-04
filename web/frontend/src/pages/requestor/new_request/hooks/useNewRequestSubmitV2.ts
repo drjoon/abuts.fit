@@ -10,7 +10,7 @@
  * Draft 기반 워크플로우: POST /api/requests/from-draft 사용
  * - 중복 체크, 크레딧 체크, 에러 처리 포함
  * - 백엔드: creation.from-draft.controller.js의 createRequestsFromDraft
- * - 참고: rules.md 섹션 4.3.2 "신규 의뢰 생성 엔드포인트 (SSOT)"
+ * - 참고: rules.legacy-full.md 섹션 4.3.2 "신규 의뢰 생성 엔드포인트 (SSOT)"
  */
 import { useEffect, useRef, useState } from "react";
 import { useToast } from "@/shared/hooks/use-toast";

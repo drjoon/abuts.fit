@@ -664,7 +664,7 @@ export async function deleteStageFile(req, res) {
         source: "stage-file-rollback-only",
       });
 
-      // 롤백 시 캐시 무효화 (rules.md 섹션 6.1)
+      // 롤백 시 캐시 무효화 (rules.legacy-full.md 섹션 6.1)
       const businessAnchorId = String(
         request?.businessAnchorId || request?.requestor?.businessAnchorId || "",
       ).trim();
@@ -806,7 +806,7 @@ export async function deleteStageFile(req, res) {
       source: "stage-file-rollback-with-delete",
     });
 
-    // 롤백 시 캐시 무효화 (rules.md 섹션 6.1)
+    // 롤백 시 캐시 무효화 (rules.legacy-full.md 섹션 6.1)
     const businessAnchorId = String(
       request?.businessAnchorId || request?.requestor?.businessAnchorId || "",
     ).trim();
@@ -1942,7 +1942,7 @@ export async function updateReviewStatusByStage(req, res) {
       });
     }
 
-    // 공정 변경 시 스냅샷 재계산 트리거 (rules.md 섹션 6.1)
+    // 공정 변경 시 스냅샷 재계산 트리거 (rules.legacy-full.md 섹션 6.1)
     // - 승인(APPROVED): 모든 공정 단계 진행 시
     // - 롤백(PENDING): 모든 공정 되돌림 시
     // - 거부(REJECTED): 현재 미사용이지만 향후 대비

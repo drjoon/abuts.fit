@@ -76,7 +76,7 @@ Notes:
 
 ## 2. 구현 메모
 
-- 스크류 로트 추적 UI(세척.패킹)는 루트 `rules.md` 섹션 **1.0.3**을 따릅니다.
+- 스커리씁 로트 추적 UI(세척.패킹)는 `rules.legacy-full.md` 섹션 **1.0.3**을 따릅니다.
   - 전역 설정 버튼/모달: `src/pages/manufacturer/worksheet/custom_abutment/packing/components/PackingPageContent.tsx`
   - 카드 표시 정책: `src/pages/manufacturer/worksheet/custom_abutment/components/WorksheetCardGrid.tsx`
   - 상세 표시 정책: `src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx`
