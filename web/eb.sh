@@ -97,6 +97,70 @@ get_remote_setenv_hash() {
   '
 }
 
+# Console/API settings override .ebextensions. Force zero-downtime deploy options
+# at the API level so RollingWithAdditionalBatch cannot silently win.
+ensure_immutable_deploy_options() {
+  local env_name="$1"
+  local region profile current_policy
+  region="$(awk -F': ' '/^[[:space:]]+default_region:/{print $2; exit}' "$WEB_DIR/.elasticbeanstalk/config.yml")"
+  profile="$(awk -F': ' '/^[[:space:]]+profile:/{print $2; exit}' "$WEB_DIR/.elasticbeanstalk/config.yml")"
+  region="${region:-ap-south-1}"
+  profile="${profile:-abuts.fit}"
+
+  if ! command -v aws >/dev/null 2>&1; then
+    warn "aws CLI 없음 → DeploymentPolicy API 강제 스킵 (.ebextensions만 의존)"
+    return 0
+  fi
+
+  current_policy="$(
+    aws elasticbeanstalk describe-configuration-settings \
+      --application-name abuts.fit \
+      --environment-name "$env_name" \
+      --region "$region" \
+      --profile "$profile" \
+      --query "ConfigurationSettings[0].OptionSettings[?OptionName=='DeploymentPolicy'].Value | [0]" \
+      --output text 2>/dev/null || true
+  )"
+
+  if [[ "$current_policy" == "Immutable" ]]; then
+    info "DeploymentPolicy 이미 Immutable"
+    return 0
+  fi
+
+  info "DeploymentPolicy=$current_policy → Immutable + stickiness API 적용"
+  aws elasticbeanstalk update-environment \
+    --environment-name "$env_name" \
+    --region "$region" \
+    --profile "$profile" \
+    --option-settings \
+      "Namespace=aws:elasticbeanstalk:command,OptionName=DeploymentPolicy,Value=Immutable" \
+      "Namespace=aws:autoscaling:updatepolicy:rollingupdate,OptionName=RollingUpdateType,Value=Immutable" \
+      "Namespace=aws:autoscaling:asg,OptionName=MaxSize,Value=4" \
+      "Namespace=aws:elasticbeanstalk:environment:process:default,OptionName=StickinessEnabled,Value=true" \
+      "Namespace=aws:elasticbeanstalk:environment:process:default,OptionName=StickinessLBCookieDuration,Value=120" \
+    >/dev/null || error "DeploymentPolicy Immutable 적용 실패"
+
+  info "설정 업데이트 제출됨. Ready 대기 중..."
+  local i
+  for i in $(seq 1 60); do
+    local status
+    status="$(
+      aws elasticbeanstalk describe-environments \
+        --environment-names "$env_name" \
+        --region "$region" \
+        --profile "$profile" \
+        --query 'Environments[0].Status' \
+        --output text 2>/dev/null || true
+    )"
+    if [[ "$status" == "Ready" ]]; then
+      info "환경 Ready — 배포 계속"
+      return 0
+    fi
+    sleep 10
+  done
+  error "환경이 Ready로 돌아오지 않았습니다 (DeploymentPolicy 변경 후)"
+}
+
 EB_ENV_NAME="$(detect_eb_environment_name)"
 if [[ -z "$EB_ENV_NAME" ]]; then
   warn "EBS 환경명을 자동 감지하지 못했습니다. 해시 파일을 모드 단위로 사용합니다."
@@ -123,6 +187,20 @@ trap restore_backend_node_modules EXIT
 
 info "프론트엔드 빌드"
 (cd "$FRONTEND_DIR" && npm install && npm run build)
+
+# Keep prior hashed assets so old tabs / mixed-version requests can still
+# resolve chunks after cutover (new build wins on filename collision).
+ASSETS_CACHE_DIR="$PARENT_DIR/.eb_assets_cache"
+mkdir -p "$ASSETS_CACHE_DIR"
+if [[ -d "$DIST_DIR/assets" ]]; then
+  if compgen -G "$ASSETS_CACHE_DIR/*" > /dev/null; then
+    info "이전 Vite 해시 에셋을 dist에 병합 (캐시 → 신규)"
+    # -n: do not overwrite newly built files
+    cp -n "$ASSETS_CACHE_DIR"/* "$DIST_DIR/assets/" 2>/dev/null || true
+  fi
+  find "$ASSETS_CACHE_DIR" -type f -mtime +14 -delete 2>/dev/null || true
+  cp -f "$DIST_DIR/assets"/* "$ASSETS_CACHE_DIR/" 2>/dev/null || true
+fi
 
 info "이전 dist 포함 zip 정리"
 find "$PARENT_DIR" -maxdepth 1 -name 'deploy-*.zip' -type f -mtime +3 -delete || true
@@ -242,6 +320,10 @@ else
 fi
 
 # 1. 앱 배포 (predeploy 훅에서 npm install 실행됨)
+if [[ -n "$EB_ENV_NAME" ]]; then
+  ensure_immutable_deploy_options "$EB_ENV_NAME"
+fi
+
 info "EB 배포"
 if [[ -d "$BACKEND_NODE_MODULES_DIR" ]]; then
   info "EB CLI 패키징 RecursionError 방지를 위해 backend/node_modules 임시 이동"

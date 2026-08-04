@@ -281,6 +281,12 @@ app.get("/healthz", (req, res) => {
   res.status(200).json({ ok: true, service: "web", ts: new Date().toISOString() });
 });
 
+// Empty body for CloudFront custom error pages (avoid caching HTML-as-JS).
+app.get("/cdn-404", (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  res.status(404).end();
+});
+
 app.get("/", (req, res) => {
   if (hasFrontendIndex) {
     res.setHeader("Cache-Control", "no-cache");
@@ -324,7 +330,9 @@ if (hasFrontendIndex) {
       return next();
     }
     // Static-like paths must 404 — never serve SPA shell as JS/CSS/etc.
+    // no-store prevents CloudFront from caching a deploy-time miss.
     if (req.path.startsWith("/assets/") || /\.[a-zA-Z0-9]+$/.test(req.path)) {
+      res.setHeader("Cache-Control", "no-store");
       return res.status(404).send("Not Found");
     }
     res.setHeader("Cache-Control", "no-cache");

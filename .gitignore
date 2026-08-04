@@ -12,6 +12,9 @@ logs
 !.elasticbeanstalk/*.global.yml
 
 .frontend_node_modules__eb_deploy_backup
+.backend_node_modules__eb_deploy_backup
+.eb_assets_cache/
+.eb_setenv_*.sha
 
 *.zip
 # backend test artifacts
