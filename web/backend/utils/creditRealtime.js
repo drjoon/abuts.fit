@@ -4,6 +4,7 @@
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/pages/admin/credits/hooks/useAdminCreditPage.ts
 // - web/frontend/src/shared/realtime/creditBalanceEvent.ts
+// - web/backend/controllers/requests/common.requests.controller.js
 import BusinessAnchor from "../models/businessAnchor.model.js";
 import { emitAppEventToRoles } from "../socket.js";
 
@@ -31,9 +32,11 @@ export async function emitCreditBalanceUpdatedToBusiness({
   balanceDelta,
   reason,
   refId,
+  forceEmit = false,
 }) {
   const delta = Number(balanceDelta || 0);
-  if (!Number.isFinite(delta) || delta === 0) return;
+  // forceEmit: 취소처럼 delta=0이어도 수신측 silent refetch를 유도할 때 사용
+  if (!forceEmit && (!Number.isFinite(delta) || delta === 0)) return;
 
   const resolvedBusinessAnchorId = await resolveBusinessAnchorId({
     businessAnchorId,
@@ -43,7 +46,7 @@ export async function emitCreditBalanceUpdatedToBusiness({
 
   const payload = {
     businessAnchorId: resolvedBusinessAnchorId,
-    balanceDelta: delta,
+    balanceDelta: Number.isFinite(delta) ? delta : 0,
     reason: String(reason || "").trim() || null,
     refId: refId ? String(refId) : null,
     emittedAt: new Date().toISOString(),

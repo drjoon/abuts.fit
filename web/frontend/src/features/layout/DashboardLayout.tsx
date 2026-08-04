@@ -594,6 +594,7 @@ export const DashboardLayout = () => {
     delayMs: 80,
     shouldHandle: (evt) => isCreditEventForBusiness(evt, user?.businessAnchorId),
     onMatch: () => {
+      // silent refetch: 기존 값 유지 + loading 플래그 없이 /api/credits/balance 재조회
       void fetchCreditBalance();
     },
   });

@@ -4,6 +4,7 @@
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/shared/components/CreditLedgerModal.tsx
 // - web/frontend/src/pages/admin/credits/hooks/useAdminCreditPage.ts
+// - web/backend/utils/creditRealtime.js
 import type { AppEventMessage } from "@/shared/realtime/socket";
 
 export type CreditBalanceUpdatedPayload = {

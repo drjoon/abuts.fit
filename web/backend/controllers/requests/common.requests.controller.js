@@ -485,7 +485,12 @@ function withBridgeHeaders(extra = {}) {
   return { ...base, ...extra };
 }
 
-async function ensureRequestCancelRollbackDelete({ request, actorUserId, session }) {
+async function ensureRequestCancelRollbackDelete({
+  request,
+  actorUserId,
+  session,
+  deferredCreditEvents,
+}) {
   if (!request?._id) return;
 
   const currentStage = String(request?.manufacturerStage || "").trim();
@@ -517,11 +522,13 @@ async function ensureRequestCancelRollbackDelete({ request, actorUserId, session
 
   // SSOT 정책: 취소 시 REFUND를 추가하지 않고, 기존 소비 커밋을 삭제형 롤백으로 정리한다.
   // 단, 이 삭제 정리는 준비 단계 취소 경로에서만 허용한다.
+  // 크레딧 이벤트는 트랜잭션 커밋 이후 발행하도록 deferredCreditEvents에 적재한다.
   await ensureRequestCreditRollbackDeleteOnRollbackToCam({
     request,
     businessAnchorId,
     actorUserId,
     session: session || null,
+    deferredCreditEvents,
   });
 }
 
@@ -3167,6 +3174,7 @@ export async function updateRequestStatus(req, res) {
     }
 
     const prevManufacturerStage = String(request.manufacturerStage || "").trim();
+    const deferredCreditEvents = [];
 
     // 의뢰 상태 변경
     if (manufacturerStage === "취소") {
@@ -3177,12 +3185,42 @@ export async function updateRequestStatus(req, res) {
             request,
             actorUserId: req.user?._id || null,
             session,
+            deferredCreditEvents,
           });
           applyStatusMapping(request, manufacturerStage);
           await request.save({ session });
         });
       } finally {
         session.endSession();
+      }
+
+      // 중요: 크레딧 이벤트는 트랜잭션 커밋 이후 발행한다.
+      // 수신측(DashboardLayout)은 credit:balance-updated 수신 후 /api/credits/balance를 silent refetch한다.
+      const requestorAnchorIdForCredit = String(
+        request.businessAnchorId || request.requestor?.businessAnchorId || "",
+      ).trim();
+      if (requestorAnchorIdForCredit) {
+        const rollbackDelta = deferredCreditEvents.reduce(
+          (sum, evt) => sum + Number(evt?.balanceDelta || 0),
+          0,
+        );
+
+        try {
+          await emitCreditBalanceUpdatedToBusiness({
+            businessAnchorId: requestorAnchorIdForCredit,
+            balanceDelta: Number.isFinite(rollbackDelta) ? rollbackDelta : 0,
+            reason: "request_cancel",
+            refId: request._id,
+            // 준비 단계 취소(차감 없음, delta=0)에서도 헤더 잔액 동기화 refetch를 유도한다.
+            forceEmit: true,
+          });
+        } catch (emitErr) {
+          console.error("[updateManufacturerStage] credit emit failed", {
+            requestId: request.requestId || null,
+            requestMongoId: request._id ? String(request._id) : null,
+            message: emitErr?.message || String(emitErr || ""),
+          });
+        }
       }
     } else {
       applyStatusMapping(request, manufacturerStage);

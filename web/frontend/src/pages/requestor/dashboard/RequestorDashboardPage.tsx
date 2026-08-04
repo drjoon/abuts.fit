@@ -91,11 +91,13 @@ const dashDebug = (label: string, payload?: unknown) => {
 // - web/frontend/src/features/requests/components/StlPreviewViewer.tsx
 // - web/frontend/src/shared/files/stlIndexedDb.ts
 // - web/frontend/src/shared/realtime/useAppEventDebouncedReload.ts
+// - web/frontend/src/shared/realtime/creditBalanceEvent.ts
 // - web/backend/controllers/requests/dashboard.controller.js
 // - web/backend/controllers/requests/common.requests.controller.js
 // - web/backend/controllers/requests/common.review.controller.js
 // - web/backend/controllers/requests/expressPrice.utils.js
 // - web/backend/services/requestSnapshotTriggers.service.js
+// - web/backend/utils/creditRealtime.js
 // - web/frontend/rules.md
 
 
@@ -1287,21 +1289,6 @@ export const RequestorDashboardPage = () => {
       return;
     }
 
-    // 낙관적 UI 업데이트: 취소 요청 전 미리 화면에서 제거
-    queryClient.setQueryData<any>(summaryQueryKey, (prev) => {
-      if (!prev?.success || !prev?.data) return prev;
-      const recentRequests = prev.data.recentRequests || [];
-      return {
-        ...prev,
-        data: {
-          ...prev.data,
-          recentRequests: recentRequests.filter(
-            (r: any) => String(r._id || r.id) !== requestId,
-          ),
-        },
-      };
-    });
-
     try {
       const res = await apiFetch<any>({
         path: `/api/requests/${requestId}/status`,
@@ -1324,7 +1311,6 @@ export const RequestorDashboardPage = () => {
           variant: "destructive",
           duration: 3000,
         });
-        // 실패 시 롤백
         refreshDashboard();
         return;
       }
@@ -1333,11 +1319,8 @@ export const RequestorDashboardPage = () => {
         title: "의뢰가 취소되었습니다",
         duration: 2000,
       });
-
-
-
-      // 백그라운드에서 최신 데이터 갱신
-      refreshDashboard();
+      // 최근의뢰 목록은 request:stage-changed, 헤더 보유크레딧은 credit:balance-updated
+      // 웹소켓 수신 후 silent refetch로 무플리커 반영한다. (optimistic 금지)
     } catch (error) {
       console.error("의뢰 취소 중 오류", error);
       toast({
@@ -1346,7 +1329,6 @@ export const RequestorDashboardPage = () => {
         variant: "destructive",
         duration: 3000,
       });
-      // 에러 시 롤백
       refreshDashboard();
     }
   };
