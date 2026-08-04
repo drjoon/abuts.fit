@@ -73,7 +73,7 @@ export const DEFAULT_FILENAME_RULES: FilenameRule[] = [
       clinic: {
         type: "token_range",
         value: "0-end", // 환자 앞까지 모든 한글 토큰
-        postprocess: "normalize_spaces",
+        postprocess: "strip_leading_digits",
       },
       patient: {
         type: "token_index",
@@ -82,7 +82,10 @@ export const DEFAULT_FILENAME_RULES: FilenameRule[] = [
       },
       tooth: {
         type: "regex",
-        value: "([1-4][1-8])|([1-4][1-8])-([1-4][1-8])", // 단일 또는 브리지
+        // 숫자 lookaround: 날짜(YYYYMMDD) 내부 오인 방지, `_32` 같은 구분자 인접은 허용
+        // 브리지를 단일보다 먼저 매칭
+        value:
+          "(?<!\\d)([1-4][1-8]-[1-4][1-8])(?!\\d)|(?<!\\d)([1-4][1-8])(?!\\d)",
       },
     },
     confidence: 0.7,

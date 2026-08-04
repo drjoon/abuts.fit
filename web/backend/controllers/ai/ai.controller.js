@@ -508,6 +508,94 @@ const buildFallbackFromFilenames = (filenames) =>
     tooth: "",
   }));
 
+const VALID_TOOTH =
+  /^([1-4][1-8])(-[1-4][1-8])?([,\s]+[1-4][1-8](-[1-4][1-8])?)*$/;
+
+/**
+ * AI가 날짜(YYYYMMDD) 부분숫자를 tooth로 반환했는지 검사.
+ * 예: filename=20260804-홍길동-37.stl, tooth=26 → 날짜 내부 오인
+ */
+const isToothFromDateDigits = (filename, tooth) => {
+  const t = String(tooth || "").trim();
+  if (!/^[1-4][1-8]$/.test(t)) return false;
+
+  const name = String(filename || "");
+  const dateMatches = name.matchAll(/\d{8}/g);
+  for (const m of dateMatches) {
+    const dateToken = m[0];
+    const dateStart = m.index ?? -1;
+    if (dateStart < 0) continue;
+    if (!dateToken.includes(t)) continue;
+
+    // 같은 숫자가 날짜 밖에도 독립 토큰으로 있으면 허용
+    const standalone = new RegExp(`(^|[^0-9])${t}([^0-9]|$)`);
+    let hasOutside = false;
+    let searchFrom = 0;
+    while (searchFrom < name.length) {
+      const slice = name.slice(searchFrom);
+      const sm = slice.match(standalone);
+      if (!sm || sm.index === undefined) break;
+      const absIndex = searchFrom + sm.index + (sm[1] ? sm[1].length : 0);
+      const insideThisDate =
+        absIndex >= dateStart && absIndex < dateStart + dateToken.length;
+      if (!insideThisDate) {
+        hasOutside = true;
+        break;
+      }
+      searchFrom = absIndex + t.length;
+    }
+    if (!hasOutside) return true;
+  }
+  return false;
+};
+
+const sanitizeParsedFilenameItem = (item) => {
+  const filename = typeof item?.filename === "string" ? item.filename : "";
+  const toNullIfEmpty = (v) => {
+    if (v === null || v === undefined) return null;
+    const s = String(v).trim();
+    return s.length > 0 ? s : null;
+  };
+
+  let clinicName = toNullIfEmpty(item?.clinicName);
+  let patientName = toNullIfEmpty(item?.patientName);
+  let tooth = toNullIfEmpty(item?.tooth);
+
+  if (tooth) {
+    const normalized = tooth.replace(/\s+/g, "");
+    if (
+      !VALID_TOOTH.test(normalized) ||
+      (/^[1-4][1-8]$/.test(normalized) &&
+        isToothFromDateDigits(filename, normalized))
+    ) {
+      tooth = null;
+    } else {
+      tooth = normalized;
+    }
+  }
+
+  return {
+    filename,
+    clinicName,
+    patientName,
+    tooth,
+  };
+};
+
+const sanitizeParsedFilenames = (items, originalFilenames) => {
+  if (!Array.isArray(items)) {
+    return buildFallbackFromFilenames(originalFilenames);
+  }
+
+  return items.map((item, idx) => {
+    const sanitized = sanitizeParsedFilenameItem(item);
+    if (!sanitized.filename && originalFilenames[idx]) {
+      sanitized.filename = originalFilenames[idx];
+    }
+    return sanitized;
+  });
+};
+
 // 파일명 분석 결과 캐시 (동일 filenames에 대한 중복 호출 방지)
 // key: JSON.stringify(sorted filenames), value: { data, createdAt }
 const parseFilenamesCache = new Map();
@@ -594,35 +682,47 @@ export async function parseFilenames(req, res) {
       });
       console.log("[AI] parseFilenames: model created");
 
-      const example =
-        "예시 파일명: 20251119고운치과_김혜영_32-42_4.stl\n" +
-        "이 예시의 해석:\n" +
-        "- clinicName: 고운치과\n" +
-        "- patientName: 김혜영\n" +
-        "- tooth: '32-42' (FDI 방식 치식 번호들을 사람이 읽기 쉬운 문자열로 표현)";
-
       const prompt =
-        "너는 치과 기공소에서 사용하는 STL 파일명을 해석하는 도우미야.\n" +
-        "입력으로 STL 파일명 목록을 줄 테니, 각 파일명에 대해 다음 정보를 JSON으로만 반환해줘.\n" +
+        "너는 치과 기공소 STL 파일명에서 clinicName/patientName/tooth만 추출하는 파서다.\n" +
+        "추측하지 말고, 파일명에 명확히 있는 정보만 채워라. 불확실하면 해당 필드는 반드시 null.\n" +
         "\n" +
-        "반환 형식(JSON 배열):\n" +
+        "반환 형식(JSON 배열만, 설명 금지):\n" +
         "[\n" +
         "  {\n" +
-        '    "filename": string,               // 원본 파일명 그대로\n' +
-        '    "clinicName": string | null,     // 치과/의원 이름(추정). 없으면 null\n' +
-        '    "patientName": string | null,    // 환자 이름(추정). 없으면 null\n' +
-        '    "tooth": string | null           // 예: "32", "32-42" 등 치식 정보를 나타내는 문자열, 없으면 null\n' +
+        '    "filename": string,            // 원본 파일명 그대로\n' +
+        '    "clinicName": string | null,  // 치과/의원명. 없으면 null\n' +
+        '    "patientName": string | null, // 환자명. 없으면 null\n' +
+        '    "tooth": string | null        // FDI 치식. 예: "37", "32-42", "13,23". 없으면 null\n' +
         "  }\n" +
         "]\n" +
         "\n" +
-        "주의사항:\n" +
-        "- 반드시 JSON만 반환하고, 설명 문장은 JSON 바깥에 쓰지 마.\n" +
-        "- tooth는 치식 정보를 사람이 읽기 쉬운 한 줄 문자열로만 표현해줘. 예: '26', '26-27', '13,23'.\n" +
-        "- clinicName은 파일명에 '치과', 'dental', '치과의원' 등 패턴이 있으면 그 부분을 기준으로 추론해줘. 없으면 null.\n" +
+        "치아번호(tooth) 규칙 (매우 중요):\n" +
+        "- FDI 표기만 허용: 단일 11-18/21-28/31-38/41-48, 브리지/복수(예: 32-42, 13,23).\n" +
+        "- 치아번호는 보통 환자명 뒤, 파일명 끝쪽의 독립 토큰이다.\n" +
+        "- 날짜(YYYYMMDD, YYYY-MM-DD, YYMMDD 등) 안의 숫자를 치아번호로 쓰지 마라.\n" +
+        "  예: 20260804 안의 26/08/04는 날짜다. tooth로 쓰지 말고, 끝의 37을 써라.\n" +
+        "- 시리얼/버전/인덱스처럼 치식이 아닌 숫자(예: _1, _v2, (1))는 무시.\n" +
+        "- 후보가 여러 개면 날짜가 아닌 가장 오른쪽(끝쪽) 치식 토큰을 선택.\n" +
+        "- 확신이 없으면 tooth=null. 틀린 값보다 빈 값이 낫다.\n" +
         "\n" +
-        example +
-        "\n\n" +
-        "이제 아래 filenames 배열을 해석해줘.\n" +
+        "clinicName / patientName 규칙:\n" +
+        "- clinicName: '치과','치과의원','dental','Dental','기공소' 등이 붙은 토큰만.\n" +
+        "  없으면 null. 환자명을 치과명으로 넣지 마라.\n" +
+        "- patientName: 사람 이름으로 보이는 토큰(한글 2~4자 또는 영문 이름).\n" +
+        "  날짜/치아번호/치과명 토큰은 제외. 없으면 null.\n" +
+        "- 없는 필드를 지어내지 마라.\n" +
+        "\n" +
+        "예시:\n" +
+        '1) "20251119고운치과_김혜영_32-42_4.stl"\n' +
+        '   -> clinicName:"고운치과", patientName:"김혜영", tooth:"32-42"\n' +
+        '2) "20260804-홍길동-37.stl"\n' +
+        '   -> clinicName:null, patientName:"홍길동", tooth:"37"  (20260804의 26 사용 금지)\n' +
+        '3) "김철수_26.stl"\n' +
+        '   -> clinicName:null, patientName:"김철수", tooth:"26"\n' +
+        '4) "scan_upper.stl"\n' +
+        "   -> clinicName:null, patientName:null, tooth:null\n" +
+        "\n" +
+        "아래 filenames를 해석해 JSON 배열만 반환해라.\n" +
         JSON.stringify({ filenames });
 
       console.log("[AI] parseFilenames: calling generateContent");
@@ -674,10 +774,12 @@ export async function parseFilenames(req, res) {
 
       console.log("[AI] parseFilenames: success", { items: parsed.length });
 
-      // 성공 결과를 캐시에 저장
-      setCachedResult(filenames, parsed);
+      const sanitized = sanitizeParsedFilenames(parsed, filenames);
 
-      return res.json({ success: true, data: parsed, provider: "gemini" });
+      // 성공 결과를 캐시에 저장
+      setCachedResult(filenames, sanitized);
+
+      return res.json({ success: true, data: sanitized, provider: "gemini" });
     } catch (error) {
       console.error(
         "[AI] parseFilenames: gemini call failed, fallback to basic",

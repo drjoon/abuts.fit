@@ -90,6 +90,27 @@ function extractByRegex(
 }
 
 /**
+ * 치아번호 정규식 추출 — 여러 캡처 그룹/매치 중 가장 오른쪽 유효 값 사용
+ * (날짜 YYYYMMDD 내부 부분일치는 호출 측 regex의 `\b`로 차단)
+ */
+function extractToothByRegex(
+  filename: string,
+  regexStr: string
+): string | undefined {
+  try {
+    const regex = new RegExp(regexStr, "g");
+    let last: string | undefined;
+    for (const match of filename.matchAll(regex)) {
+      const value = match.slice(1).find((g) => typeof g === "string" && g.length > 0);
+      if (value) last = value;
+    }
+    return last;
+  } catch (err) {
+    return undefined;
+  }
+}
+
+/**
  * 후처리 함수
  */
 function postprocess(
@@ -125,7 +146,59 @@ function parseWithRule(
     .map((p) => p.trim())
     .filter((p) => p.length > 0);
 
-  // 치과이름 추출
+  // 1) 치아번호 먼저 (환자/치과 경계로 사용)
+  if (rule.extraction.tooth) {
+    const tooth = rule.extraction.tooth;
+    if (tooth.type === "regex") {
+      const toothValue = extractToothByRegex(filename, tooth.value);
+      if (toothValue) {
+        result.tooth = toothValue;
+      }
+    }
+  }
+
+  const toothIndex = result.tooth
+    ? (() => {
+        // 가장 오른쪽에서 치아 토큰 위치 탐색
+        for (let i = parts.length - 1; i >= 0; i--) {
+          if (parts[i].includes(String(result.tooth))) return i;
+        }
+        return parts.length;
+      })()
+    : parts.length;
+
+  // 2) 환자이름
+  if (rule.extraction.patient) {
+    const patient = rule.extraction.patient;
+    let patientValue: string | undefined;
+
+    if (patient.type === "regex") {
+      patientValue = extractByRegex(filename, patient.value as string);
+    } else if (patient.type === "token_index") {
+      const idx = patient.value as number;
+      // 음수 인덱스: 치아 바로 앞부터 왼쪽으로 한글 토큰 탐색
+      if (idx < 0) {
+        const startFrom =
+          toothIndex > 0 ? toothIndex - 1 : parts.length + idx;
+        patientValue = extractTokenByIndex(parts, startFrom, "backward");
+      } else {
+        patientValue = extractTokenByIndex(parts, idx, "forward");
+      }
+    }
+
+    if (patientValue) {
+      result.patientName = postprocess(patientValue, patient.postprocess);
+    }
+  }
+
+  const patientIndex = result.patientName
+    ? parts.findIndex((p) => {
+        const stripped = p.replace(/^[0-9]+[_\-\s]*/, "");
+        return stripped === result.patientName || p === result.patientName;
+      })
+    : -1;
+
+  // 3) 치과이름 — 환자 토큰 앞까지만 (환자명을 치과명으로 넣지 않음)
   if (rule.extraction.clinic) {
     const clinic = rule.extraction.clinic;
     let clinicValue: string | undefined;
@@ -133,18 +206,17 @@ function parseWithRule(
     if (clinic.type === "regex") {
       clinicValue = extractByRegex(filename, clinic.value as string);
     } else if (clinic.type === "token_range") {
-      // 치아번호 위치를 먼저 찾아야 함
-      const toothMatch = rule.extraction.tooth
-        ? extractByRegex(filename, rule.extraction.tooth.value)
-        : null;
-      const toothIndex = toothMatch
-        ? parts.findIndex((p) => p.includes(toothMatch))
-        : parts.length;
+      const endIndex =
+        patientIndex >= 0
+          ? patientIndex
+          : toothIndex >= 0
+            ? toothIndex
+            : parts.length;
 
       const clinicParts = extractTokenRange(
         parts,
         clinic.value as string,
-        toothIndex
+        endIndex
       );
       clinicValue = clinicParts.join(" ");
     } else if (clinic.type === "token_indices") {
@@ -156,36 +228,10 @@ function parseWithRule(
     }
 
     if (clinicValue) {
-      result.clinicName = postprocess(clinicValue, clinic.postprocess);
-    }
-  }
-
-  // 환자이름 추출
-  if (rule.extraction.patient) {
-    const patient = rule.extraction.patient;
-    let patientValue: string | undefined;
-
-    if (patient.type === "regex") {
-      patientValue = extractByRegex(filename, patient.value as string);
-    } else if (patient.type === "token_index") {
-      const idx = patient.value as number;
-      const direction = idx < 0 ? "backward" : "forward";
-      const actualIdx = idx < 0 ? parts.length + idx : idx;
-      patientValue = extractTokenByIndex(parts, actualIdx, direction);
-    }
-
-    if (patientValue) {
-      result.patientName = postprocess(patientValue, patient.postprocess);
-    }
-  }
-
-  // 치아번호 추출
-  if (rule.extraction.tooth) {
-    const tooth = rule.extraction.tooth;
-    if (tooth.type === "regex") {
-      const toothValue = extractByRegex(filename, tooth.value, 1);
-      if (toothValue) {
-        result.tooth = toothValue;
+      const processed = postprocess(clinicValue, clinic.postprocess);
+      // 환자명과 동일하면 치과 정보 없음으로 간주
+      if (processed && processed !== result.patientName) {
+        result.clinicName = processed;
       }
     }
   }

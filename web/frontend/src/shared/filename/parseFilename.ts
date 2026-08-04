@@ -18,27 +18,35 @@ export interface ParsedFilenameInfo {
 }
 
 /**
- * 치아번호 패턴 (대한민국 표기법)
+ * 치아번호 패턴 (대한민국/FDI 표기법)
  * 단일: 11-18, 21-28, 31-38, 41-48
  * 브리지: 32-42, 11-13 등 (숫자-숫자 형태)
+ *
+ * 숫자 lookaround로 날짜(YYYYMMDD) 내부 부분일치(예: 20260804 → 26)를 막고,
+ * `_32`처럼 underscore 인접 치식은 허용한다. (`\b`는 `_`를 단어로 봐서 실패함)
+ * 파일명 끝쪽 토큰을 우선하므로 전역 매칭 후 마지막 후보를 사용한다.
  */
-const TOOTH_PATTERN = /\b([1-4][1-8])\b/;
-const BRIDGE_PATTERN = /\b([1-4][1-8])-([1-4][1-8])\b/;
+const TOOTH_PATTERN = /(?<!\d)([1-4][1-8])(?!\d)/g;
+const BRIDGE_PATTERN = /(?<!\d)([1-4][1-8])-([1-4][1-8])(?!\d)/g;
 
 /**
- * 파일명에서 치아번호 추출 (브리지 우선)
+ * 파일명에서 치아번호 추출 (브리지 우선, 가장 오른쪽 후보)
  * 브리지(예: 32-42)가 있으면 브리지 반환, 없으면 단일 치아번호 반환
  */
 function extractTooth(filename: string): string | undefined {
-  // 1. 브리지 패턴 먼저 확인 (예: 32-42)
-  const bridgeMatch = filename.match(BRIDGE_PATTERN);
-  if (bridgeMatch) {
-    return `${bridgeMatch[1]}-${bridgeMatch[2]}`;
+  // 1. 브리지 패턴 먼저 확인 (예: 32-42) — 가장 오른쪽
+  let lastBridge: string | undefined;
+  for (const bridgeMatch of filename.matchAll(BRIDGE_PATTERN)) {
+    lastBridge = `${bridgeMatch[1]}-${bridgeMatch[2]}`;
   }
+  if (lastBridge) return lastBridge;
 
-  // 2. 단일 치아번호 확인
-  const match = filename.match(TOOTH_PATTERN);
-  return match ? match[1] : undefined;
+  // 2. 단일 치아번호 — 가장 오른쪽 (환자명 뒤 치식이 일반적)
+  let lastTooth: string | undefined;
+  for (const match of filename.matchAll(TOOTH_PATTERN)) {
+    lastTooth = match[1];
+  }
+  return lastTooth;
 }
 
 /**
@@ -91,7 +99,8 @@ function extractClinicName(
   patientIndex: number
 ): string | undefined {
   // 치과이름은 환자이름 앞의 파트들 중, 한글이 포함되고 순수 숫자가 아닌 파트들을 결합
-  const endIndex = patientIndex > 0 ? patientIndex : toothIndex;
+  // patientIndex == 0 이면 환자 앞에 치과 후보 없음
+  const endIndex = patientIndex >= 0 ? patientIndex : toothIndex;
   if (endIndex <= 0) return undefined;
 
   const clinicParts: string[] = [];
@@ -101,7 +110,9 @@ function extractClinicName(
     if (/^[0-9]+$/.test(token)) continue;
     // 한글이 하나도 없으면 치과이름 후보로 보지 않음
     if (!/[가-힣]/.test(token)) continue;
-    clinicParts.push(token);
+    // 앞에 붙은 날짜 숫자 제거 (예: 20251119고운치과)
+    const stripped = token.replace(/^[0-9]+/, "");
+    if (stripped) clinicParts.push(stripped);
   }
 
   if (clinicParts.length === 0) return undefined;
@@ -129,41 +140,53 @@ export function parseFilename(filename: string): ParsedFilenameInfo {
     return result;
   }
 
-  // 3. 치아번호의 위치 찾기 (브리지 또는 단일)
+  // 3. 치아번호의 위치 찾기 (브리지 또는 단일) — 가장 오른쪽 토큰 우선
   let toothIndex = -1;
 
-  // 먼저 브리지 패턴 찾기 (예: 32-42)
-  const bridgeIndex = parts.findIndex((p: string) => BRIDGE_PATTERN.test(p));
-  if (bridgeIndex >= 0) {
-    toothIndex = bridgeIndex;
-  } else {
-    // 브리지가 없으면 단일 치아번호 찾기
-    toothIndex = parts.findIndex((p: string) => TOOTH_PATTERN.test(p));
+  const isBridgeToken = (p: string) =>
+    /(?<!\d)([1-4][1-8])-([1-4][1-8])(?!\d)/.test(p);
+  const isToothToken = (p: string) => /(?<!\d)([1-4][1-8])(?!\d)/.test(p);
+
+  for (let i = parts.length - 1; i >= 0; i--) {
+    if (isBridgeToken(parts[i])) {
+      toothIndex = i;
+      break;
+    }
+  }
+  if (toothIndex < 0) {
+    for (let i = parts.length - 1; i >= 0; i--) {
+      if (isToothToken(parts[i])) {
+        toothIndex = i;
+        break;
+      }
+    }
   }
 
   if (toothIndex >= 0) {
-    // 치아번호가 있는 경우
-    const patientIndex = toothIndex > 0 ? toothIndex - 1 : -1;
-
     // 환자이름 추출
     const patientName = extractPatientName(parts, toothIndex);
     if (patientName) {
       result.patientName = patientName;
     }
 
-    // 치과이름 추출
-    const clinicName = extractClinicName(parts, toothIndex, patientIndex);
+    // 치과이름: 환자 토큰의 실제 위치 앞까지만 (브리지가 32/42로 쪼개져도 환자명 오인 방지)
+    const actualPatientIndex = patientName
+      ? parts.findIndex((p) => {
+          const stripped = p.replace(/^[0-9]+[_\-\s]*/, "");
+          return stripped === patientName || p === patientName;
+        })
+      : -1;
+
+    const clinicName = extractClinicName(
+      parts,
+      toothIndex,
+      actualPatientIndex
+    );
     if (clinicName) {
       result.clinicName = clinicName;
     }
   } else {
-    // 치아번호가 없는 경우: 첫 번째를 치과이름, 두 번째를 환자이름으로 간주
-    if (parts.length >= 1) {
-      result.clinicName = parts[0];
-    }
-    if (parts.length >= 2) {
-      result.patientName = parts[1];
-    }
+    // 치아번호가 없는 경우: 추측해서 채우지 않음 (빈 값이 잘못된 자동입력보다 낫다)
   }
 
   return result;
