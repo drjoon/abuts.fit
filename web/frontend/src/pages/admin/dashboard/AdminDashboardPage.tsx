@@ -1393,8 +1393,8 @@ export const AdminDashboardPage = () => {
                             ? "text-blue-600 hover:text-blue-700 hover:underline"
                             : "text-slate-900 hover:underline"
                         }`}
-                        onClick={() => navigate("/dashboard/monitoring?status=준비")}
-                        aria-label="미처리 의뢰 모니터링 페이지로 이동"
+                        onClick={() => navigate("/dashboard/sms")}
+                        aria-label="메시지 페이지로 이동"
                       >
                         {commBadgeCounts.request.toLocaleString()}
                       </button>
