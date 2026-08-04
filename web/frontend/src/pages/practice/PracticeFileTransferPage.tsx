@@ -1511,7 +1511,6 @@ export const PracticeFileTransferPage = () => {
       const dayMs = 24 * 60 * 60 * 1000;
       const diffDays = (now.getTime() - createdTs) / dayMs;
 
-      if (period === "7d") return diffDays <= 7;
       if (period === "30d") return diffDays <= 30;
       if (period === "90d") return diffDays <= 90;
 

@@ -120,7 +120,7 @@ export const SalesmanDashboardPage = () => {
         subtitle=""
         headerRight={
           <div className="flex flex-wrap items-center gap-2">
-            <PeriodFilter value={period} onChange={setPeriod} />
+            <PeriodFilter value={period} onChange={setPeriod} useStoreCustomRange={false} />
             <Button
               type="button"
               size="sm"

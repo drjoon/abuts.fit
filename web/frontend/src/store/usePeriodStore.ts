@@ -5,6 +5,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { PeriodFilterValue } from "@/shared/ui/PeriodFilter";
+import { isPeriodFilterValue } from "@/shared/ui/periodFilterValues";
 
 interface PeriodState {
   period: PeriodFilterValue;
@@ -31,7 +32,24 @@ export const usePeriodStore = create<PeriodState>()(
       partialize: (state) => ({
         period: state.period,
         customStartDate: state.customStartDate,
+        customEndDate: state.customEndDate,
       }),
+      merge: (persisted, current) => {
+        const raw = (persisted || {}) as Partial<PeriodState>;
+        return {
+          ...current,
+          ...raw,
+          period: isPeriodFilterValue(raw.period) ? raw.period : current.period,
+          customStartDate:
+            typeof raw.customStartDate === "string"
+              ? raw.customStartDate
+              : current.customStartDate,
+          customEndDate:
+            typeof raw.customEndDate === "string"
+              ? raw.customEndDate
+              : current.customEndDate,
+        };
+      },
     },
   ),
 );
@@ -105,11 +123,13 @@ export const periodToRange = (
   const now = new Date();
   const { year, month, day } = getKstDateParts(now);
 
-  if (period === "7d" || period === "30d" || period === "90d") {
-    const days = period === "7d" ? 7 : period === "30d" ? 30 : 90;
+  if (period === "30d" || period === "90d") {
+    const days = period === "30d" ? 30 : 90;
     const todayStart = makeUtcFromKst(year, month, day, 0, 0, 0, 0);
     const todayEnd = makeUtcFromKst(year, month, day, 23, 59, 59, 999);
-    const start = new Date(todayStart.getTime() - (days - 1) * 24 * 60 * 60 * 1000);
+    const start = new Date(
+      todayStart.getTime() - (days - 1) * 24 * 60 * 60 * 1000,
+    );
     return { startDate: start.toISOString(), endDate: todayEnd.toISOString() };
   }
 

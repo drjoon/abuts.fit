@@ -1,16 +1,14 @@
 export type PeriodFilterValue =
-  | "7d"
   | "30d"
-  | "lastMonth"
+  | "90d"
   | "thisMonth"
-  | "90d";
+  | "lastMonth";
 
 export const PERIOD_FILTER_VALUES: PeriodFilterValue[] = [
-  "7d",
   "30d",
-  "lastMonth",
-  "thisMonth",
   "90d",
+  "thisMonth",
+  "lastMonth",
 ];
 
 export const isPeriodFilterValue = (value: unknown): value is PeriodFilterValue =>

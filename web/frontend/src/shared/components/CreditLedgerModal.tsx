@@ -636,7 +636,7 @@ export const CreditLedgerModal = ({
             <div className="flex flex-col gap-2">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="flex flex-wrap items-center gap-2 py-0.5">
-                  <PeriodFilter value={period} onChange={setPeriod} />
+                  <PeriodFilter value={period} onChange={setPeriod} useStoreCustomRange={false} />
 
                   <div className="w-[140px]">
                     <Select

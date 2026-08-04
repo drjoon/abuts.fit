@@ -200,7 +200,7 @@ export const ManufacturerDashboardPage = () => {
                 진행 중 {inProgressTotal}건
               </Badge>
             )}
-            <PeriodFilter value={period} onChange={setPeriod} />
+            <PeriodFilter value={period} onChange={setPeriod} useStoreCustomRange={false} />
           </div>
         }
         topSection={

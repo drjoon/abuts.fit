@@ -589,11 +589,6 @@ export const TrackingInquiryPage = () => {
       return c;
     };
 
-    if (period === "7d") {
-      const from = new Date(today);
-      from.setDate(from.getDate() - 6);
-      return { fromDate: startOfDay(from), toDate: endOfDay(today) };
-    }
     if (period === "30d") {
       const from = new Date(today);
       from.setDate(from.getDate() - 29);

@@ -293,7 +293,7 @@ export const SalesmanLedgerModal = ({
         <div className="flex flex-col gap-3 min-h-0 flex-1">
           <div className="flex flex-col gap-2">
             <div className="flex flex-wrap items-center gap-2">
-              <PeriodFilter value={period} onChange={setPeriod} />
+              <PeriodFilter value={period} onChange={setPeriod} useStoreCustomRange={false} />
               <div className="w-[130px]">
                 <select
                   className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"

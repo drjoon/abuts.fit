@@ -1963,7 +1963,7 @@ export const RequestorDashboardPage = () => {
         }
         headerRight={
           <div className="flex flex-wrap items-center gap-2 w-full">
-            <PeriodFilter value={period} onChange={setPeriod} />
+            <PeriodFilter value={period} onChange={setPeriod} useStoreCustomRange={false} />
             {canOpenCreditLedger && (
               <TooltipProvider>
                 <Tooltip

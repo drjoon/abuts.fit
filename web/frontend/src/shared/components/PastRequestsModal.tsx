@@ -75,8 +75,7 @@ const pickRangeByPeriod = (period: PeriodFilterValue) => {
   const end = new Date(now);
   const start = new Date(now);
 
-  if (period === "7d") start.setDate(start.getDate() - 7);
-  else if (period === "30d") start.setDate(start.getDate() - 30);
+  if (period === "30d") start.setDate(start.getDate() - 30);
   else if (period === "90d") start.setDate(start.getDate() - 90);
   else if (period === "thisMonth") {
     start.setDate(1);
@@ -275,7 +274,7 @@ export const PastRequestsModal = ({
           <div className="flex flex-col gap-2">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex flex-wrap items-center gap-2 py-0.5">
-                <PeriodFilter value={period} onChange={setPeriod} />
+                <PeriodFilter value={period} onChange={setPeriod} useStoreCustomRange={false} />
 
                 <div className="w-[140px]">
                   <Select

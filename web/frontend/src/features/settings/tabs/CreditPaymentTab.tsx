@@ -244,10 +244,9 @@ export const CreditPaymentTab = ({ userData }: Props) => {
   const filteredOrders = useMemo(() => {
     const now = Date.now();
     const daysMap: Record<
-      Extract<PeriodFilterValue, "7d" | "30d" | "90d">,
+      Extract<PeriodFilterValue, "30d" | "90d">,
       number
     > = {
-      "7d": 7,
       "30d": 30,
       "90d": 90,
     };
@@ -843,7 +842,7 @@ export const CreditPaymentTab = ({ userData }: Props) => {
             <Separator />
             <div className="flex items-center justify-between gap-3">
               <div className="text-base font-semibold">충전 내역</div>
-              <PeriodFilter value={ordersPeriod} onChange={setOrdersPeriod} />
+              <PeriodFilter value={ordersPeriod} onChange={setOrdersPeriod} useStoreCustomRange={false} />
             </div>
             {loadingOrders ? (
               <div className="text-sm text-muted-foreground">

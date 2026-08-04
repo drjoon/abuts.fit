@@ -622,7 +622,6 @@ export default function RequestorPracticePage() {
       const created = new Date(ts);
       const diffDays = (now.getTime() - ts) / (24 * 60 * 60 * 1000);
 
-      if (period === "7d") return diffDays <= 7;
       if (period === "30d") return diffDays <= 30;
       if (period === "90d") return diffDays <= 90;
 

@@ -39,11 +39,10 @@ import {
 } from "@/components/ui/alert-dialog";
 
 const PERIOD_LABEL: Record<string, string> = {
-  "7d": "최근 7일",
-  "30d": "최근 30일",
+  "30d": "30일",
   lastMonth: "지난달",
   thisMonth: "이번달",
-  "90d": "최근 90일",
+  "90d": "90일",
 };
 
 type ApiGroupLeader = {

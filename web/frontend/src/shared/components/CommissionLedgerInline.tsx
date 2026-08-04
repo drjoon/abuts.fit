@@ -267,7 +267,7 @@ export const CommissionLedgerInline = ({
       <div className="flex flex-col gap-2">
         {!externalPeriod && (
           <div className="flex flex-wrap items-center gap-2">
-            <PeriodFilter value={internalPeriod} onChange={setInternalPeriod} />
+            <PeriodFilter value={internalPeriod} onChange={setInternalPeriod} useStoreCustomRange={false} />
           </div>
         )}
         <div className="flex flex-wrap items-center gap-2">
