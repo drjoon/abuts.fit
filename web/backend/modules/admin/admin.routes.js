@@ -123,6 +123,7 @@ import {
   adminSendKakaoOrSms,
   adminListKakaoTemplates,
   adminListSmsTemplates,
+  adminSyncSmsKakaoCodes,
   adminCreateSmsTemplate,
   adminUpdateSmsTemplate,
   adminDeleteSmsTemplate,
@@ -419,6 +420,7 @@ router.get("/sms/history", adminListSms);
 
 // 문자 메시지 템플릿 (로컬 SSOT, 기본 템플릿 시드 포함)
 router.get("/sms/templates", adminListSmsTemplates);
+router.post("/sms/templates/sync-kakao", adminSyncSmsKakaoCodes);
 router.post("/sms/templates", adminCreateSmsTemplate);
 router.put("/sms/templates/:id", adminUpdateSmsTemplate);
 router.delete("/sms/templates/:id", adminDeleteSmsTemplate);

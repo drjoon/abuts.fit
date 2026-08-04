@@ -64,13 +64,252 @@ export const getPopbillBalance = async (CorpNum) => {
   });
 };
 
-export const listKakaoTemplates = async (CorpNum) => {
+export const listKakaoTemplates = async (CorpNum, UserID = null) => {
+  const userId =
+    UserID == null || UserID === ""
+      ? null
+      : String(UserID).replace(/[^\x20-\x7E]/g, "").trim() || null;
+
   return new Promise((resolve, reject) => {
-    kakaoService.listATSTemplate(CorpNum, (error, result) => {
-      if (error) return reject(error);
-      resolve(result);
-    });
+    // 시그니처: (CorpNum, UserID, success, error) — 콜백을 UserID로 넘기면 헤더 크래시
+    kakaoService.listATSTemplate(
+      CorpNum,
+      userId,
+      (result) => resolve(result),
+      (error) => reject(error),
+    );
   });
+};
+
+const normalizeLocalPhone = (raw) => {
+  let digits = String(raw || "").replace(/\D/g, "");
+  if (digits.startsWith("82") && digits.length >= 11) {
+    digits = `0${digits.slice(2)}`;
+  }
+  return digits;
+};
+
+const getPopbillMessageConfig = () => {
+  const corpNum = String(process.env.POPBILL_CORP_NUM || "").replace(/\D/g, "");
+  const sender = String(process.env.POPBILL_SENDER_NUM || "").replace(/\D/g, "");
+  // HTTP 헤더(x-pb-userid)용 — ASCII만 허용
+  const userIdRaw = String(process.env.POPBILL_USER_ID || "").trim();
+  const userId = userIdRaw.replace(/[^\x20-\x7E]/g, "").trim();
+  const linkId = String(process.env.POPBILL_LINK_ID || "").trim();
+  const secret = String(process.env.POPBILL_SECRET_KEY || "").trim();
+
+  if (!linkId || !secret) {
+    throw new Error("POPBILL_LINK_ID/POPBILL_SECRET_KEY 환경변수가 필요합니다.");
+  }
+  if (!corpNum) {
+    throw new Error("POPBILL_CORP_NUM 환경변수가 필요합니다.");
+  }
+  if (!sender) {
+    throw new Error("POPBILL_SENDER_NUM 환경변수가 필요합니다.");
+  }
+
+  return { corpNum, sender, userId: userId || null };
+};
+
+/** 문자 바이트 대략치(한글 2byte) — SMS 90byte 기준 */
+export const approxMessageBytes = (text) => {
+  let n = 0;
+  for (const ch of String(text || "")) {
+    n += ch.charCodeAt(0) > 127 ? 2 : 1;
+  }
+  return n;
+};
+
+/**
+ * 팝빌 문자 즉시 발송 (단문/장문 자동: XMS)
+ * - content + to: 동일 내용 동보
+ * - items: [{ phone, content, name? }] 수신자별 개별 내용
+ * @returns {Promise<{ receiptNum: string, method: "SMS"|"LMS" }>}
+ */
+export const sendPopbillXMS = async ({
+  to,
+  content,
+  subject = "알림",
+  items = null,
+} = {}) => {
+  const { corpNum, sender, userId } = getPopbillMessageConfig();
+
+  let messages;
+  if (Array.isArray(items) && items.length) {
+    messages = items
+      .map((item) => {
+        const phone = normalizeLocalPhone(item?.phone || item?.to || "");
+        const text = String(item?.content ?? content ?? "");
+        if (!phone || phone.length < 10 || !text) return null;
+        return {
+          Receiver: phone,
+          ReceiverName: String(item?.name || "").trim(),
+          Contents: text,
+          Subject: subject,
+        };
+      })
+      .filter(Boolean);
+  } else {
+    const receivers = (Array.isArray(to) ? to : [to])
+      .map(normalizeLocalPhone)
+      .filter((v) => v.length >= 10);
+    const text = String(content || "");
+    messages = receivers.map((rcv) => ({
+      Receiver: rcv,
+      ReceiverName: "",
+      Contents: text,
+      Subject: subject,
+    }));
+  }
+
+  if (!messages.length) {
+    throw new Error("수신번호/내용을 확인하세요.");
+  }
+
+  const sampleText = messages[0].Contents;
+  const method = approxMessageBytes(sampleText) > 90 ? "LMS" : "SMS";
+  const sharedContent =
+    messages.every((m) => m.Contents === sampleText) ? sampleText : "";
+
+  const receiptNum = await new Promise((resolve, reject) => {
+    if (messages.length === 1) {
+      messageService.sendXMS(
+        corpNum,
+        sender,
+        messages[0].Receiver,
+        messages[0].ReceiverName || "",
+        subject,
+        messages[0].Contents,
+        "",
+        false,
+        "",
+        "",
+        userId || "",
+        (result) => resolve(result),
+        (error) => reject(error),
+      );
+      return;
+    }
+
+    messageService.sendXMS_multi(
+      corpNum,
+      sender,
+      subject,
+      sharedContent,
+      messages,
+      "",
+      false,
+      "",
+      "",
+      userId || "",
+      (result) => resolve(result),
+      (error) => reject(error),
+    );
+  });
+
+  return { receiptNum: String(receiptNum || ""), method };
+};
+
+/**
+ * 팝빌 알림톡 즉시 발송 (실패 시 동일 내용 SMS/LMS 대체: altSendType=C)
+ * - items: [{ phone, content, name? }] 수신자별 개별 내용
+ * @returns {Promise<{ receiptNum: string, method: "KAKAO" }>}
+ */
+export const sendPopbillKakaoATS = async ({
+  to,
+  content,
+  templateCode,
+  emphasizeTitle = "",
+  items = null,
+} = {}) => {
+  const { corpNum, sender, userId } = getPopbillMessageConfig();
+  const code = String(templateCode || "").trim();
+  if (!code) {
+    throw new Error("알림톡 템플릿 코드를 확인하세요.");
+  }
+
+  let msgs;
+  let sharedContent = String(content || "");
+  if (Array.isArray(items) && items.length) {
+    msgs = items
+      .map((item) => {
+        const phone = normalizeLocalPhone(item?.phone || item?.to || "");
+        const text = String(item?.content ?? content ?? "");
+        if (!phone || phone.length < 10 || !text) return null;
+        return {
+          rcv: phone,
+          rcvnm: String(item?.name || "").trim(),
+          msg: text,
+          altmsg: text,
+          altsjt: "알림",
+        };
+      })
+      .filter(Boolean);
+    sharedContent = msgs[0]?.msg || "";
+  } else {
+    const receivers = (Array.isArray(to) ? to : [to])
+      .map(normalizeLocalPhone)
+      .filter((v) => v.length >= 10);
+    if (!receivers.length || !sharedContent) {
+      throw new Error("수신번호/내용을 확인하세요.");
+    }
+    msgs = receivers.map((rcv) => ({
+      rcv,
+      rcvnm: "",
+      msg: sharedContent,
+      altmsg: sharedContent,
+      altsjt: "알림",
+    }));
+  }
+
+  if (!msgs.length) {
+    throw new Error("수신번호/내용을 확인하세요.");
+  }
+
+  const allSame = msgs.every((m) => m.msg === sharedContent);
+
+  const receiptNum = await new Promise((resolve, reject) => {
+    if (allSame) {
+      kakaoService.sendATS_same(
+        corpNum,
+        code,
+        sender,
+        sharedContent,
+        "알림",
+        sharedContent,
+        "C",
+        "",
+        msgs.map((m) => ({ rcv: m.rcv, rcvnm: m.rcvnm })),
+        userId || null,
+        null,
+        null,
+        (result) => resolve(result),
+        (error) => reject(error),
+      );
+      return;
+    }
+
+    // 수신자별 개별 내용
+    kakaoService.sendATS_multi(
+      corpNum,
+      code,
+      sender,
+      "C",
+      "",
+      msgs,
+      userId || null,
+      null,
+      null,
+      (result) => resolve(result),
+      (error) => reject(error),
+    );
+  });
+
+  return {
+    receiptNum: String(receiptNum || ""),
+    method: "KAKAO",
+    emphasizeTitle: String(emphasizeTitle || ""),
+  };
 };
 
 function formatDateYYYYMMDD(d) {
