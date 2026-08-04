@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-04: 컨텐츠 영역 검색 바 제거. 헤더 worksheetSearch만 사용(중복 제거).
 // - 2026-08-03: packing page: 공정 '의뢰' 표시를 '준비'로 정규화한 영향으로 일부 시작/복사 로직의 라벨 표기를 조정했습니다 (표시 레벨).
 import {
   useCallback,
@@ -43,12 +44,12 @@ import {
 } from "../utils/packLabelRenderer";
 import { savePackingLabelsAsZip } from "../utils/packLabelZip";
 import { resolveImplantConnectionSpec } from "@/utils/implantConnectionSpec";
-import { WorksheetStageSearchInput } from "../../components/WorksheetStageSearchInput";
 
 // related files:
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx
-// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/WorksheetStageSearchInput.tsx
+// - web/frontend/src/features/layout/DashboardLayout.tsx
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/tracking/TrackingPage.tsx
 // - web/frontend/src/pages/requestor/dashboard/RequestorDashboardPage.tsx
 import { Plus, Settings, Trash2 } from "lucide-react";
 import {
@@ -118,7 +119,6 @@ export const PackingPageContent = ({
   >([]);
   const didInitPackingSelectionRef = useRef(false);
   const [captureHistory, setCaptureHistory] = useState<CaptureResult[]>([]);
-  const [localSearch, setLocalSearch] = useState("");
   const [screwLotSettingsOpen, setScrewLotSettingsOpen] = useState(false);
   const [screwLotItems, setScrewLotItems] = useState<ScrewLotSettingItem[]>([]);
   const [screwLotLoading, setScrewLotLoading] = useState(false);
@@ -135,12 +135,6 @@ export const PackingPageContent = ({
       return utf8Text;
     }
   }, []);
-
-  const effectiveWorksheetSearch = useMemo(
-    () =>
-      `${String(worksheetSearch || "").trim()} ${String(localSearch || "").trim()}`.trim(),
-    [localSearch, worksheetSearch],
-  );
 
   const {
     requests,
@@ -162,7 +156,7 @@ export const PackingPageContent = ({
     token,
     userRole: user?.role,
     showCompleted,
-    worksheetSearch: effectiveWorksheetSearch,
+    worksheetSearch,
     toast,
   });
 
@@ -938,7 +932,7 @@ export const PackingPageContent = ({
             (caseInfos.implantFamily || "") +
             (caseInfos.implantType || "")
           ).toLowerCase();
-          const normalizedSearch = effectiveWorksheetSearch.trim().toLowerCase();
+          const normalizedSearch = worksheetSearch.trim().toLowerCase();
           if (!normalizedSearch) return true;
           return text.includes(normalizedSearch);
         })
@@ -972,7 +966,7 @@ export const PackingPageContent = ({
       setPreviewOpen,
       currentStageOrder,
       showCompleted,
-      effectiveWorksheetSearch,
+      worksheetSearch,
     ],
   );
 
@@ -1328,12 +1322,6 @@ export const PackingPageContent = ({
             counts={diameterQueueForPacking.counts}
           />
         )}
-
-        <WorksheetStageSearchInput
-          className="mt-3"
-          value={localSearch}
-          onChange={setLocalSearch}
-        />
 
         {isLoading && <WorksheetLoading />}
 

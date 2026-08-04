@@ -106,9 +106,11 @@ Notes:
   - 우편함 상세 표시: `src/pages/manufacturer/worksheet/custom_abutment/shipping/components/MailboxContentsModal.tsx`
   - 타입: `src/types/request.ts`
 
-- 제조사 워크시트 상단 검색 인풋 SSOT는 `WorksheetStageSearchInput` 단일 컴포넌트입니다.
-  - 공정 탭(의뢰/CAM/가공/세척.패킹/포장.발송/추적관리)의 검색 폭 정책은 개별 페이지에서 재정의하지 않고
-    `src/pages/manufacturer/worksheet/custom_abutment/components/WorksheetStageSearchInput.tsx`에서 공통으로 관리합니다.
+- 제조사 워크시트 검색 SSOT는 헤더 `worksheetSearch`입니다.
+  - 상태/입력: `src/features/layout/DashboardLayout.tsx` (헤더 우측 검색)
+  - Outlet context로 `worksheetSearch`를 공정 페이지에 전달합니다.
+  - 컨텐츠 영역 중복 검색 바(`WorksheetStageSearchInput`)는 워크시트 공정 페이지에서 사용하지 않습니다.
+  - `WorksheetStageSearchInput`은 모달 등 독립 검색 UI(예: SelfInspectionReportModal)에서만 재사용합니다.
 
 - 제조사 워크시트 `request`(준비) 탭 필터 SSOT:
   - 카드 목록 필터는 `deriveStageForFilter` 결과 `준비`를 기준으로 판정합니다.

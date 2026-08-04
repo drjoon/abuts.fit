@@ -1,7 +1,7 @@
 // related files:
-// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
-// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/packing/components/PackingPageContent.tsx
-// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/tracking/TrackingPage.tsx
+// - web/frontend/src/pages/manufacturer/equipment/cnc/components/SelfInspectionReportModal.tsx
+// - web/frontend/src/features/layout/DashboardLayout.tsx
+// note: 워크시트 공정 페이지 검색은 헤더 worksheetSearch SSOT. 이 컴포넌트는 모달 등 독립 검색 UI용.
 type WorksheetStageSearchInputProps = {
   value: string;
   onChange: (value: string) => void;

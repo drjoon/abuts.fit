@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-04: 컨텐츠 영역 검색 바 제거. 헤더 worksheetSearch만 사용(중복 제거).
 // - 2026-08-03: 제조사 워크시트의 공정 필터 기본값 및 탭 라벨을 '준비'로 표시되도록 수정함. (display-only)
 // - 2026-08-03: request(준비) 탭 API 조회를 `manufacturerStageIn=준비` 단일값으로 정리.
 // - 2026-08-04: 오늘 발송 체크 해제 시 mailbox summary/details 캐시를 강제 갱신하도록 수정
@@ -13,6 +14,8 @@
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/hooks/useMailboxManagement.ts
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/WorksheetCardGrid.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/tracking/TrackingPage.tsx
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/packing/components/PackingPageContent.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestInfoSummary.tsx
 // - web/frontend/rules.md
 import {
@@ -87,7 +90,6 @@ import {
   RemakeStartQuickModal,
   type RemakeQuickStartStage,
 } from "./RemakeStartQuickModal";
-import { WorksheetStageSearchInput } from "./WorksheetStageSearchInput";
 
 const MAILBOX_DETAILS_CACHE_TTL_MS = 60 * 60 * 1000;
 const MAILBOX_DETAILS_STORAGE_PREFIX = "ca:shipping:mailbox-details:";
@@ -111,9 +113,6 @@ export const RequestPage = ({
   const tabStage = rawTabStage === "cam" ? "machining" : rawTabStage;
   const isCamStage = false;
   const isMachiningStage = tabStage === "machining";
-  const [localSearch, setLocalSearch] = useState("");
-
-
 
   const DEFAULT_PAGE_LIMIT = 12;
   const SHIPPING_PAGE_LIMIT = 200;
@@ -1911,17 +1910,13 @@ export const RequestPage = ({
     );
   }, [tabStage, showCompleted]);
 
-  const effectiveWorksheetSearch = useMemo(() => {
-    return `${String(worksheetSearch || "").trim()} ${String(localSearch || "").trim()}`.trim();
-  }, [localSearch, worksheetSearch]);
-
   const { filteredBase, filteredAndSorted, getFilteredAndSortedRequests } =
     useRequestFiltering(
       pageState.requests,
       tabStage,
       showCompleted,
       currentStageOrder,
-      effectiveWorksheetSearch,
+      worksheetSearch,
       filterRequests,
     );
 
@@ -2141,7 +2136,7 @@ export const RequestPage = ({
     setVisibleCount(12);
     setServerTotal(null);
   }, [
-    effectiveWorksheetSearch,
+    worksheetSearch,
     showCompleted,
     tabStage,
     setVisibleCount,
@@ -2231,12 +2226,6 @@ export const RequestPage = ({
           />
         )}
 
-        <WorksheetStageSearchInput
-          className="mt-3"
-          value={localSearch}
-          onChange={setLocalSearch}
-        />
-
         <div
           className={`space-y-4 ${tabStage === "shipping" ? "mt-0" : "mt-6"}`}
         >
@@ -2245,7 +2234,7 @@ export const RequestPage = ({
               // 가공 큐 우선순위/자동시작 정책은 백엔드 SSOT로 관리한다.
               // - 아노다이징 ON 우선
               // - 아노다이징 OFF는 큐 마지막 + "아노 X 가공" 수동 시작
-              <MachiningQueueBoard searchQuery={effectiveWorksheetSearch} />
+              <MachiningQueueBoard searchQuery={worksheetSearch} />
             ) : tabStage === "shipping" ? (
               <div className="w-full">
                 <MailboxGrid

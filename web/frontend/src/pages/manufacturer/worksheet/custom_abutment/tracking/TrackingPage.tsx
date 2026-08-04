@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-04: 컨텐츠 영역 검색 바 제거. 헤더 worksheetSearch만 사용(중복 제거).
 // - 2026-08-04: 집하완료 표시는 deliveryInfo.pickedUpAt(수동=처리시각, 자동=트래킹 이벤트 시각)을 그대로 사용
 // - 2026-08-03: Tracking 페이지의 공정 라벨/재제작 시작 스테이지 기본값을 '준비'로 변경(표시 레벨). 관련 recall 로직/버튼 초기화 반영.
 // related files:
@@ -6,6 +7,7 @@
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/packing/components/PackingPageContent.tsx
 // - web/backend/controllers/requests/common.review.controller.js
 // - web/backend/controllers/requests/shipping.controller.js
 // - web/backend/controllers/requests/shipping.Tracking.helpers.js
@@ -44,7 +46,6 @@ import {
   RemakeStartQuickModal,
   type RemakeQuickStartStage,
 } from "../components/RemakeStartQuickModal";
-import { WorksheetStageSearchInput } from "../components/WorksheetStageSearchInput";
 
 type InquiryTab = "process" | "shipping" | "udi";
 
@@ -214,7 +215,6 @@ export const TrackingInquiryPage = () => {
   }>();
 
   const [tab, setTab] = useState<InquiryTab>("shipping");
-  const [localSearch, setLocalSearch] = useState("");
   const [visibleCount, setVisibleCount] = useState(12);
   const visibleCountRef = useRef(12);
   const totalCountRef = useRef(0);
@@ -566,15 +566,13 @@ export const TrackingInquiryPage = () => {
   const worksheetSearchLower = String(worksheetSearch || "")
     .trim()
     .toLowerCase();
-  const localSearchLower = String(localSearch || "").trim().toLowerCase();
   const searchTerms = useMemo(
     () =>
-      `${worksheetSearchLower} ${localSearchLower}`
-        .trim()
+      worksheetSearchLower
         .split(/\s+/)
         .map((v) => v.trim())
         .filter(Boolean),
-    [localSearchLower, worksheetSearchLower],
+    [worksheetSearchLower],
   );
 
   const { fromDate, toDate } = useMemo(() => {
@@ -1489,7 +1487,7 @@ export const TrackingInquiryPage = () => {
     if (tab !== "shipping") {
       setRecallMode(false);
     }
-  }, [tab, period, worksheetSearch, localSearch, showCompleted]);
+  }, [tab, period, worksheetSearch, showCompleted]);
 
   // 목표 표시 건수(visibleCount)를 채울 때까지 페이지를 추가 로드한다.
   // - 초기 로드: 12건 채울 때까지
@@ -1509,7 +1507,6 @@ export const TrackingInquiryPage = () => {
     tab,
     period,
     worksheetSearch,
-    localSearch,
     showCompleted,
   ]);
 
@@ -1621,12 +1618,6 @@ export const TrackingInquiryPage = () => {
               </Button>
             </div>
           </div>
-
-          <WorksheetStageSearchInput
-            className="mt-3"
-            value={localSearch}
-            onChange={setLocalSearch}
-          />
 
           <TabsContent
             value="process"
