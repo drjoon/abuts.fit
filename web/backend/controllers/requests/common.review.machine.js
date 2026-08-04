@@ -287,13 +287,18 @@ export async function chooseMachineForCamMachining({
 
   const targetDiameterGroup = toDiameterGroup(targetDiameter);
   const ceilCandidates = candidatesWithDia.filter((c) => {
+    // 요청 직경을 현재 장착 소재로 커버 가능한 장비만 ceil 후보.
+    // (예: 6mm 요청 → 8mm M4, 10mm M5 모두 후보. 이후 정렬에서 최소 소재 직경 우선)
     if (c.availableDia < targetDiameter) return false;
-    if (
-      c.allowedDiameterGroups.length > 0 &&
-      targetDiameterGroup &&
-      !c.allowedDiameterGroups.includes(targetDiameterGroup)
-    )
-      return false;
+    if (c.allowedDiameterGroups.length > 0) {
+      const materialGroup = toDiameterGroup(c.availableDia);
+      const allowsTarget =
+        !!targetDiameterGroup &&
+        c.allowedDiameterGroups.includes(targetDiameterGroup);
+      const allowsMaterial =
+        !!materialGroup && c.allowedDiameterGroups.includes(materialGroup);
+      if (!allowsTarget && !allowsMaterial) return false;
+    }
     return true;
   });
   console.log("[CAM-CHOOSE] ceilCandidates", {
@@ -344,15 +349,16 @@ export async function chooseMachineForCamMachining({
       return { ...c, queue };
     })
     .sort((a, b) => {
-      // 1. 큐 길이 우선 (적은 것 우선)
+      // 배정 우선순위 SSOT:
+      // 1) 큐 부하(적은 쪽)
+      // 2) 요청 직경을 커버하는 소재 중 가장 작은 직경 (예: 6mm → 8mm M4 우선, 10mm M5 후순위)
+      // 3) 최근 배정이 오래된 장비
+      // 4) machineId 사전순
       if (a.queue !== b.queue) return a.queue - b.queue;
 
-      // 2. 소재 직경 우선 (작은 것 우선, 낭비 최소화)
       if (a.availableDia !== b.availableDia)
         return a.availableDia - b.availableDia;
 
-      // 3. 최근 배정 시간 우선 (오래된 것 우선, 균등 분산)
-      // null인 경우 가장 우선 선택되도록 -Infinity 사용
       const aAssignedAt = a.lastAssignmentAt
         ? new Date(a.lastAssignmentAt).getTime()
         : -Infinity;
@@ -361,7 +367,6 @@ export async function chooseMachineForCamMachining({
         : -Infinity;
       if (aAssignedAt !== bAssignedAt) return aAssignedAt - bAssignedAt;
 
-      // 4. 장비 ID 사전순 (최후 기준)
       return a.machineId.localeCompare(b.machineId);
     });
 

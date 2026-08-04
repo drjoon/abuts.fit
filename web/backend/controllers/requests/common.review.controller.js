@@ -50,7 +50,6 @@ import {
   ensureMachineCompatibilityOrThrow,
   inferDiameterGroupFromDiameter,
   chooseMachineForCamMachining,
-  isActiveAssignableMachineId,
 } from "./common.review.machine.js";
 import { triggerEspritForNc } from "./common.review.esprit.js";
 import { enqueueApproval } from "../../services/reviewApprovalQueue.service.js";
@@ -1661,38 +1660,24 @@ export async function updateReviewStatusByStage(req, res) {
         if (effectiveStage === "cam" || isMachiningEntryApproval) {
           request.productionSchedule = request.productionSchedule || {};
 
-          const existingMachineId = String(
-            request?.productionSchedule?.assignedMachine ||
-              request?.assignedMachine ||
-              "",
-          ).trim();
-          // 스케줄 단계에서 하드코딩된 ghost 장비(M3 등)는 유효 배정으로 보지 않는다.
-          const existingIsActive = existingMachineId
-            ? await isActiveAssignableMachineId(existingMachineId)
-            : false;
-
-          const compatibilitySelection = await ensureMachineCompatibilityOrThrow({
+          // 준비→가공 진입 배정 SSOT:
+          // chooseMachineForCamMachining 우선순위(큐 부하 → 가능 소재 중 최소 직경 → ...)를
+          // 항상 다시 적용한다. 스케줄 단계의 사전/ghost 배정(M3 등)은 사용하지 않는다.
+          const selected = await ensureMachineCompatibilityOrThrow({
             request,
             stageKey: "cam",
             session,
-            reserveAssignment: !existingIsActive,
+            reserveAssignment: true,
           });
 
-          if (!existingIsActive) {
-            const selected = compatibilitySelection;
-
-            request.productionSchedule.assignedMachine = selected.machineId;
-            request.productionSchedule.queuePosition = selected.queuePosition;
-            request.assignedMachine = selected.machineId;
-            if (selected.diameterGroup) {
-              request.productionSchedule.diameterGroup = selected.diameterGroup;
-            }
-            if (Number.isFinite(selected.diameter) && selected.diameter > 0) {
-              request.productionSchedule.diameter = selected.diameter;
-            }
-          } else {
-            request.productionSchedule.assignedMachine = existingMachineId;
-            request.assignedMachine = existingMachineId;
+          request.productionSchedule.assignedMachine = selected.machineId;
+          request.productionSchedule.queuePosition = selected.queuePosition;
+          request.assignedMachine = selected.machineId;
+          if (selected.diameterGroup) {
+            request.productionSchedule.diameterGroup = selected.diameterGroup;
+          }
+          if (Number.isFinite(selected.diameter) && selected.diameter > 0) {
+            request.productionSchedule.diameter = selected.diameter;
           }
 
           acceptedMessage = "가공 단계로 이동했습니다.";
