@@ -18,7 +18,6 @@ import {
   getDateRangeFromQuery,
   getMongoHealth,
 } from "./admin.shared.controller.js";
-import { getLatestPricingSsotHealthSnapshot } from "../../services/pricingSsotHealth.service.js";
 import {
   buildMonitoringByStatusFromAssignedLikeSummary,
   getAdminPricingStatsSummary,
@@ -288,7 +287,6 @@ export async function getDashboardStats(req, res) {
       assignedLikeSummary,
       pricingSummary,
       unmachinableRows,
-      latestPricingSsotHealth,
       requestorAnchors,
       practiceTransferStatsRaw,
       practiceTransferTopPracticesRaw,
@@ -323,7 +321,6 @@ export async function getDashboardStats(req, res) {
           businessAnchorId: 1,
         })
         .lean(),
-      getLatestPricingSsotHealthSnapshot(),
       BusinessAnchor.find({ businessType: "requestor", status: { $ne: "merged" } })
         .select({
           _id: 1,
@@ -713,33 +710,6 @@ export async function getDashboardStats(req, res) {
           return new Date(bKey).getTime() - new Date(aKey).getTime();
         })
         .slice(0, 10),
-    };
-
-    const ssotCheckedAt = latestPricingSsotHealth?.checkedAt
-      ? new Date(latestPricingSsotHealth.checkedAt)
-      : null;
-    const ssotAgeHours = ssotCheckedAt
-      ? (Date.now() - ssotCheckedAt.getTime()) / (1000 * 60 * 60)
-      : null;
-    const pricingSsotHealth = {
-      success: Boolean(latestPricingSsotHealth?.success),
-      mismatchCount: Number(latestPricingSsotHealth?.mismatchCount || 0),
-      checkedSnapshotCount: Number(
-        latestPricingSsotHealth?.checkedSnapshotCount || 0,
-      ),
-      checkedAt: latestPricingSsotHealth?.checkedAt || null,
-      range: latestPricingSsotHealth?.range || null,
-      topMismatches: Array.isArray(latestPricingSsotHealth?.mismatches)
-        ? latestPricingSsotHealth.mismatches.slice(0, 5).map((row) => ({
-            businessAnchorId: String(row?.businessAnchorId || "").trim(),
-            name: String(row?.name || ""),
-            gap: Number(row?.gap || 0),
-            latestRequestMongoId: String(
-              row?.latestRequestMongoId || "",
-            ).trim(),
-            latestRequestId: String(row?.latestRequestId || "").trim(),
-          }))
-        : [],
     };
 
     const requestorAnchorIds = (Array.isArray(requestorAnchors)
@@ -1150,34 +1120,6 @@ export async function getDashboardStats(req, res) {
       items: happyCallItems.map(({ _priority, ...rest }) => rest),
     };
 
-    // SSOT 점검 상태를 관리자 알림에 반영한다.
-    // - 누락: 점검 자체가 아직 실행되지 않음
-    // - stale: 워커/배치가 정상 수행되지 않았을 가능성
-    // - mismatch: Request SSOT와 스냅샷 불일치 발생
-    if (!latestPricingSsotHealth) {
-      systemAlerts.push({
-        id: "pricing-ssot:missing",
-        type: "warning",
-        message:
-          "가격 SSOT 점검 스냅샷이 없습니다. 점검 스크립트를 실행하세요.",
-        date: new Date().toISOString(),
-      });
-    } else if (pricingSsotHealth.mismatchCount > 0) {
-      systemAlerts.push({
-        id: "pricing-ssot:mismatch",
-        type: "warning",
-        message: `가격 SSOT 불일치 ${pricingSsotHealth.mismatchCount}건 발생`,
-        date: new Date().toISOString(),
-      });
-    } else if (ssotAgeHours !== null && ssotAgeHours > 26) {
-      systemAlerts.push({
-        id: "pricing-ssot:stale",
-        type: "warning",
-        message: "가격 SSOT 점검 결과가 26시간 이상 갱신되지 않았습니다.",
-        date: new Date().toISOString(),
-      });
-    }
-
     // 크레딧 소비 ↔ 수익 귀속 합계 무결성 점검 (의뢰 단위)
     // SSOT: 의뢰자 순소비(netConsumed) == (어벗츠+제조사+개발운영사+영업자) 수익합(exVAT)
     const flowSummary = await buildCreditRevenueFlowMismatchSummary({
@@ -1274,7 +1216,6 @@ export async function getDashboardStats(req, res) {
         pricingSummary: dashboardData.pricing,
         completionSummary,
         systemAlerts,
-        pricingSsotHealth,
         unmachinableSummary,
         happyCallSummary,
         practiceTransferStats: dashboardData.practiceTransfers,

@@ -4,6 +4,7 @@
 // - web/backend/services/reviewApprovalQueue.service.js
 // - web/backend/controllers/requests/shipping.TrackingPoller.js
 // - web/backend/jobs/dummyCncWorker.js
+// - web/backend/jobs/dailyReferralSnapshotWorker.js
 import JobLock from "../models/jobLock.model.js";
 
 const DEFAULT_LEASE_MS = 120000;

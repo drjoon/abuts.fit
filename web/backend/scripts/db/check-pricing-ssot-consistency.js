@@ -3,7 +3,7 @@
 // - web/backend/app.js
 // - web/backend/server.js
 /**
- * 관리자용 SSOT 일치성 점검 스크립트
+ * 관리자용 SSOT 일치성 점검 스크립트 (수동/CI)
  *
  * 목적:
  * - 가격 정책 집계(rolling snapshot)의 selfBusinessOrders30d가
@@ -11,6 +11,7 @@
  *
  * 기본 동작:
  * - 점검 결과를 PricingSsotHealthSnapshot에 upsert(write) 한다.
+ * - 일일 워커/관리자 대시보드 자동 점검은 사용하지 않는다.
  *
  * 사용 예시:
  * - ENV_FILE=local.env node scripts/db/check-pricing-ssot-consistency.js

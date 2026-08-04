@@ -4,6 +4,7 @@
 // - web/backend/services/reviewApprovalQueue.service.js
 // - web/backend/controllers/requests/shipping.TrackingPoller.js
 // - web/backend/jobs/dummyCncWorker.js
+// - web/backend/jobs/dailyReferralSnapshotWorker.js
 import mongoose from "mongoose";
 
 const jobLockSchema = new mongoose.Schema(

@@ -102,7 +102,6 @@ type HappyCallMemoDialogItem = {
 
 type AdminDashboardResponseData = {
   happyCallSummary?: HappyCallSummary;
-  pricingSsotHealth?: PricingSsotHealth;
   unmachinableSummary?: {
     potentialCount?: number;
     judgedCount?: number;
@@ -238,24 +237,6 @@ type HappyCallMemoEntry = {
   id: string;
   message: string;
   savedAt: string;
-};
-
-type PricingSsotHealth = {
-  success?: boolean;
-  mismatchCount?: number;
-  checkedSnapshotCount?: number;
-  checkedAt?: string | null;
-  range?: {
-    startYmd?: string;
-    endYmd?: string;
-  } | null;
-  topMismatches?: Array<{
-    businessAnchorId?: string;
-    name?: string;
-    gap?: number;
-    latestRequestMongoId?: string;
-    latestRequestId?: string;
-  }>;
 };
 
 type PracticeTransferStats = {
@@ -724,21 +705,6 @@ export const AdminDashboardPage = () => {
   };
 
   let data: DashboardData = baseData;
-
-  const pricingSsotHealth: PricingSsotHealth | null =
-    adminDashboardResponse?.success
-      ? (adminDashboardResponse.data?.pricingSsotHealth ?? null)
-      : null;
-
-  const pricingSsotCheckedAtLabel = pricingSsotHealth?.checkedAt
-    ? new Date(pricingSsotHealth.checkedAt).toLocaleString("ko-KR")
-    : "-";
-
-  const pricingSsotMismatchCount = Number(
-    pricingSsotHealth?.mismatchCount || 0,
-  );
-  const pricingSsotOk =
-    Boolean(pricingSsotHealth?.success) && pricingSsotMismatchCount === 0;
 
   const unmachinableSummary = adminDashboardResponse?.success
     ? (adminDashboardResponse.data?.unmachinableSummary ?? null)
@@ -1642,127 +1608,6 @@ export const AdminDashboardPage = () => {
                           </div>
                         ))
                       )}
-                    </CardContent>
-                  </Card>
-
-                  {/* 카드10: 가격 SSOT 점검 */}
-                  <Card className="app-glass-card app-glass-card--lg">
-                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                      <CardTitle className="text-sm font-medium">
-                        가격 SSOT 점검
-                      </CardTitle>
-                      <CheckCircle
-                        className={`h-4 w-4 ${
-                          pricingSsotOk ? "text-green-500" : "text-yellow-500"
-                        }`}
-                      />
-                    </CardHeader>
-                    <CardContent className="space-y-2">
-                      <div className="flex items-end justify-between gap-2">
-                        <div className="text-xs text-muted-foreground">
-                          점검 상태
-                        </div>
-                        <div
-                          className={`text-lg font-bold ${
-                            pricingSsotOk ? "text-green-600" : "text-yellow-600"
-                          }`}
-                        >
-                          {pricingSsotOk ? "정상" : "불일치"}
-                        </div>
-                      </div>
-                      <div className="flex items-end justify-between gap-2">
-                        <div className="text-xs text-muted-foreground">
-                          불일치 건수
-                        </div>
-                        <div className="text-lg font-semibold">
-                          {pricingSsotMismatchCount.toLocaleString()}건
-                        </div>
-                      </div>
-                      <div className="flex items-end justify-between gap-2">
-                        <div className="text-xs text-muted-foreground">
-                          점검 기준 스냅샷 수
-                        </div>
-                        <div className="text-sm font-semibold">
-                          {Number(
-                            pricingSsotHealth?.checkedSnapshotCount || 0,
-                          ).toLocaleString()}
-                          건
-                        </div>
-                      </div>
-                      <div className="text-xs text-muted-foreground">
-                        마지막 점검: {pricingSsotCheckedAtLabel}
-                      </div>
-                      {pricingSsotMismatchCount > 0 &&
-                        (pricingSsotHealth?.topMismatches || []).length > 0 && (
-                          <div className="border-t pt-2">
-                            <div className="text-xs text-muted-foreground mb-1">
-                              상위 불일치
-                            </div>
-                            <div className="space-y-1">
-                              {(pricingSsotHealth?.topMismatches || [])
-                                .slice(0, 3)
-                                .map((m) => {
-                                  const key = String(
-                                    m.businessAnchorId ||
-                                      m.latestRequestMongoId ||
-                                      m.name ||
-                                      "",
-                                  );
-                                  const latestRequestMongoId = String(
-                                    m.latestRequestMongoId || "",
-                                  ).trim();
-                                  const latestRequestId = String(
-                                    m.latestRequestId || "",
-                                  ).trim();
-                                  const businessAnchorId = String(
-                                    m.businessAnchorId || "",
-                                  ).trim();
-
-                                  return (
-                                    <button
-                                      key={key}
-                                      type="button"
-                                      className="w-full flex items-center justify-between text-xs hover:bg-yellow-50 rounded px-1 py-0.5"
-                                      onClick={() => {
-                                        if (latestRequestMongoId) {
-                                          const qs = new URLSearchParams();
-                                          if (latestRequestMongoId) {
-                                            qs.set(
-                                              "focusRequestMongoId",
-                                              latestRequestMongoId,
-                                            );
-                                          }
-                                          if (latestRequestId) {
-                                            qs.set("q", latestRequestId);
-                                          }
-                                          navigate(
-                                            `/dashboard/monitoring?${qs.toString()}`,
-                                          );
-                                          return;
-                                        }
-
-                                        if (businessAnchorId) {
-                                          const qs = new URLSearchParams();
-                                          qs.set("focusAnchorId", businessAnchorId);
-                                          qs.set("q", businessAnchorId);
-                                          navigate(
-                                            `/dashboard/businesses?${qs.toString()}`,
-                                          );
-                                        }
-                                      }}
-                                    >
-                                      <span className="truncate mr-2 text-left">
-                                        {m.name || m.businessAnchorId || "-"}
-                                      </span>
-                                      <span className="font-semibold text-yellow-700 shrink-0">
-                                        gap {Number(m.gap || 0).toLocaleString()}
-                                      </span>
-                                    </button>
-                                  );
-                                })}
-                            </div>
-                          </div>
-                        )}
                     </CardContent>
                   </Card>
                 </div>

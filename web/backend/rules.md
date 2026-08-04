@@ -64,7 +64,19 @@
   - 안정화 이후에는 기존 `abutsfit` 단일 인스턴스 환경을 종료하고, Atlas Network Access는 NAT IP만 남기고 기존 EIP를 제거합니다.
   - 멀티 인스턴스 백엔드에서는 워커 중복 실행 방지를 위해 Mongo 기반 분산락 SSOT를 사용합니다.
     - 공통 락 유틸: `utils/distributedJobLock.js`
-    - 적용 워커: `services/reviewApprovalQueue.service.js`, `controllers/requests/shipping.TrackingPoller.js`, `jobs/dummyCncWorker.js`
+    - 적용 워커: `services/reviewApprovalQueue.service.js`, `controllers/requests/shipping.TrackingPoller.js`, `jobs/dummyCncWorker.js`, `jobs/dailyReferralSnapshotWorker.js`
+
+- 가격/리퍼럴 rolling 스냅샷:
+  - 일일 재계산 워커: `jobs/dailyReferralSnapshotWorker.js`
+    - `server.js`에서 `startDailyReferralSnapshotWorker()`로 기동 (EB web 프로세스 포함)
+    - KST 일자당 1회 실행(당일 완료 마커 없으면 즉시 실행, 자정 1분 창에 의존하지 않음)
+    - 이벤트 기반 스냅샷이 있어도 일일 배치(정산/warmup 포함)는 건너뛰지 않음
+    - 멀티 인스턴스 중복 방지: `worker:daily-referral-snapshot` JobLock
+    - 당일 완료 마커: `worker:daily-referral-snapshot:done:<ymd>` (TTL ~48h)
+  - 가격 SSOT 자동 점검(`runPricingSsotConsistencyCheck`)은 워커/관리자 대시보드 노출에서 제외
+  - 수동/CI 점검은 `scripts/db/check-pricing-ssot-consistency.js` / `npm run db:check-pricing-ssot` 유지
+  - 이벤트 기반 재계산: `services/requestSnapshotTriggers.service.js`
+  - 관리자 대시보드 진입: `controllers/admin/admin.dashboard.controller.js`
 
 - 스크류 로트 추적(세척.패킹)은 루트 `rules.md` 섹션 **1.0.3**을 따릅니다.
 - 한진 배송조회 자동동기화 장애 우회 정책:

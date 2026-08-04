@@ -2,23 +2,32 @@
 // - web/backend/rules.md
 // - web/backend/app.js
 // - web/backend/server.js
+// - web/backend/utils/distributedJobLock.js
+// - web/backend/models/jobLock.model.js
 /**
- * 매일 KST 00:00에 실행되는 리퍼럴 그룹 스냅샷 재계산 워커.
+ * KST 일자당 1회 실행되는 리퍼럴 그룹 스냅샷 재계산 워커.
  *
- * 오늘 자정(KST 00:00) 기준 직전 30일 주문 집계를 재조정하여
+ * 오늘(KST) 기준 직전 30일 주문 집계를 재조정하여
  * 각 그룹 리더의 rolling 30일 리퍼럴 집계를
  * PricingReferralRolling30dAggregate에 반영한다.
  * 이 스냅샷이 당일 의뢰 단가 계산의 기준이 된다.
  *
- * 누락 방지: 매 1분마다 KST 자정 여부를 확인하고,
- * 오늘 ymd로 스냅샷이 없으면(누락) 즉시 재계산한다.
+ * 스케줄:
+ * - server.js에서 기동 (EB web 프로세스 포함)
+ * - KST 날짜가 바뀌면(또는 당일 완료 마커가 없으면) 즉시 1회 실행
+ * - 이벤트 기반 스냅샷이 있어도 일일 배치(정산/warmup 포함)는 건너뛰지 않음
+ * - 멀티 인스턴스는 Mongo JobLock으로 중복 실행 방지
+ *
+ * 가격 SSOT 자동 점검은 수행하지 않는다(수동/CI 스크립트만 유지).
  */
 
 import "../bootstrap/env.js";
+import path from "path";
+import { fileURLToPath } from "url";
 import mongoose, { Types } from "mongoose";
 import User from "../models/user.model.js";
 import BusinessAnchor from "../models/businessAnchor.model.js";
-import PricingReferralRolling30dAggregate from "../models/pricingReferralRolling30dAggregate.model.js";
+import JobLock from "../models/jobLock.model.js";
 import ShippingPackage from "../models/shippingPackage.model.js";
 import PricingReferralDailyOrderBucket from "../models/pricingReferralDailyOrderBucket.model.js";
 import ManufacturerDailySettlementSnapshot from "../models/manufacturerDailySettlementSnapshot.model.js";
@@ -30,13 +39,30 @@ import { recomputeBulkShippingSnapshotForBusinessAnchorId } from "../services/bu
 import { recomputeRequestorDashboardSummarySnapshotsForBusinessAnchorId } from "../services/requestorDashboardSummarySnapshot.service.js";
 import { recomputePricingReferralSnapshotForLeaderAnchorId } from "../services/pricingReferralSnapshot.service.js";
 import { recomputePricingReferralDailyOrderBucketsForBusinessAnchorId } from "../services/pricingReferralOrderBucket.service.js";
-import { runPricingSsotConsistencyCheck } from "../services/pricingSsotHealth.service.js";
+import { runWithJobLock } from "../utils/distributedJobLock.js";
 import {
   getTodayYmdInKst,
   getYesterdayYmdInKst,
-  getTodayMidnightUtcInKst,
 } from "../utils/krBusinessDays.js";
 import { resolveMongoUri } from "../utils/mongoUri.js";
+
+const INTERVAL_MS = 60 * 1000;
+const WORKER_LOCK_NAME =
+  process.env.DAILY_REFERRAL_SNAPSHOT_LOCK_NAME ||
+  "worker:daily-referral-snapshot";
+const WORKER_OWNER_ID = `daily-referral-snapshot-${process.pid}-${Date.now()}`;
+const WORKER_LOCK_LEASE_MS = Number(
+  process.env.DAILY_REFERRAL_SNAPSHOT_LOCK_LEASE_MS || 30 * 60 * 1000,
+);
+const WORKER_LOCK_HEARTBEAT_MS = Number(
+  process.env.DAILY_REFERRAL_SNAPSHOT_LOCK_HEARTBEAT_MS || 60 * 1000,
+);
+const DONE_LOCK_PREFIX = "worker:daily-referral-snapshot:done:";
+const DONE_LOCK_TTL_MS = 48 * 60 * 60 * 1000;
+
+let timerHandle = null;
+let running = false;
+let lastRunYmd = null;
 
 function kstYmdToUtcRange(ymd) {
   const dt = new Date(`${ymd}T00:00:00.000+09:00`);
@@ -46,44 +72,51 @@ function kstYmdToUtcRange(ymd) {
   return { start, end };
 }
 
-/**
- * 현재 KST 시각이 자정(00:00 ~ 00:01) 사이인지 확인한다.
- */
-function isMidnightKst() {
-  const now = new Date();
-  const kstTime = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Seoul",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  }).format(now);
-  const [hour, minute] = kstTime.split(":").map(Number);
-  return hour === 0 && minute === 0;
+function doneLockName(ymd) {
+  return `${DONE_LOCK_PREFIX}${String(ymd || "").trim()}`;
 }
 
-/**
- * 오늘 ymd 기준 스냅샷이 이미 존재하는지 확인한다.
- * 리더가 1명 이상 있고 스냅샷이 하나도 없으면 누락으로 판단.
- */
-async function isTodaySnapshotMissing(ymd) {
-  const count = await PricingReferralRolling30dAggregate.countDocuments({
-    ymd,
-  });
-  return count === 0;
-}
-
-async function runDailySnapshot(ymd) {
+async function ensureMongoConnected() {
+  if (mongoose.connection.readyState === 1) return true;
   const mongoUri = resolveMongoUri();
   if (!mongoUri) {
     console.error("[dailyReferralSnapshot] Mongo URI is not set");
-    return;
+    return false;
   }
+  await mongoose.connect(mongoUri);
+  return true;
+}
 
-  const isConnected = mongoose.connection.readyState === 1;
-  if (!isConnected) {
-    await mongoose.connect(mongoUri);
-  }
+async function isDailyRunCompleted(ymd) {
+  const name = doneLockName(ymd);
+  if (!name.endsWith(String(ymd || "").trim()) || !ymd) return false;
+  const doc = await JobLock.findOne({ name }).select({ _id: 1 }).lean();
+  return Boolean(doc);
+}
 
+async function markDailyRunCompleted(ymd) {
+  const name = doneLockName(ymd);
+  if (!ymd || !name) return;
+  const now = new Date();
+  const expiresAt = new Date(now.getTime() + DONE_LOCK_TTL_MS);
+  await JobLock.findOneAndUpdate(
+    { name },
+    {
+      $set: {
+        ownerId: "completed",
+        heartbeatAt: now,
+        expiresAt,
+      },
+      $setOnInsert: {
+        name,
+        acquiredAt: now,
+      },
+    },
+    { upsert: true },
+  );
+}
+
+async function runDailySnapshot(ymd) {
   console.log(
     `[${new Date().toISOString()}] Daily referral snapshot started for ymd=${ymd}`,
   );
@@ -178,27 +211,8 @@ async function runDailySnapshot(ymd) {
     console.error("[requestorDashboardSnapshotWarmup] failed:", e);
   }
 
-  // 가격/리퍼럴 SSOT 일치성 점검 (관리자 대시보드 노출용 스냅샷 생성)
-  // 주의: 이 점검은 Request 원본 집계와 rolling snapshot의 일치성을 확인한다.
-  // mismatch > 0이면 데이터 누락/집계 경로 이탈 신호이므로 운영 경고 대상으로 본다.
-  try {
-    const ssotResult = await runPricingSsotConsistencyCheck({
-      write: true,
-    });
-    if (!ssotResult.success) {
-      console.warn("[pricingSsotHealth] mismatch detected", {
-        mismatchCount: ssotResult.mismatchCount,
-        range: ssotResult.range,
-      });
-    } else {
-      console.log("[pricingSsotHealth] check passed", {
-        checkedSnapshotCount: ssotResult.checkedSnapshotCount,
-        range: ssotResult.range,
-      });
-    }
-  } catch (e) {
-    console.error("[pricingSsotHealth] failed:", e);
-  }
+  // 가격 SSOT 자동 점검은 운영 모니터에서 제외한다.
+  // (스냅샷 재계산은 유지. 수동/CI 점검은 scripts/db/check-pricing-ssot-consistency.js)
 
   // 제조사 일별 정산 스냅샷 (전일분)
   try {
@@ -552,45 +566,100 @@ async function runDailySnapshot(ymd) {
   }
 }
 
-// 1분마다 KST 자정 여부 확인 후 실행 (중복 실행 방지: ymd 기준)
-const INTERVAL_MS = 60 * 1000;
-let lastRunYmd = null;
+async function tickOnce() {
+  const ymd = getTodayYmdInKst();
+  if (!ymd) return;
 
-async function loop() {
-  try {
-    const ymd = getTodayYmdInKst();
+  if (lastRunYmd === ymd) return;
 
-    if (!ymd) {
-      setTimeout(loop, INTERVAL_MS);
-      return;
-    }
+  const connected = await ensureMongoConnected();
+  if (!connected) return;
 
-    // 자정 타이밍에 실행 (중복 방지)
-    if (isMidnightKst() && lastRunYmd !== ymd) {
-      lastRunYmd = ymd;
-      await runDailySnapshot(ymd);
-    } else if (lastRunYmd !== ymd) {
-      // 자정이 아니더라도 오늘 스냅샷이 누락된 경우 재계산 (워커 장애 복구)
-      const missing = await isTodaySnapshotMissing(ymd);
-      if (missing) {
-        console.log(
-          `[dailyReferralSnapshot] Snapshot missing for ymd=${ymd}, running fallback.`,
-        );
-        lastRunYmd = ymd;
-        await runDailySnapshot(ymd);
-      }
-    }
-  } catch (err) {
-    console.error("[dailyReferralSnapshot] Error:", err);
+  if (await isDailyRunCompleted(ymd)) {
+    lastRunYmd = ymd;
+    return;
   }
-  setTimeout(loop, INTERVAL_MS);
+
+  const lockRun = await runWithJobLock({
+    name: WORKER_LOCK_NAME,
+    ownerId: WORKER_OWNER_ID,
+    leaseMs: WORKER_LOCK_LEASE_MS,
+    heartbeatMs: WORKER_LOCK_HEARTBEAT_MS,
+    task: async () => {
+      if (await isDailyRunCompleted(ymd)) {
+        return { skipped: true, reason: "already_completed" };
+      }
+      await runDailySnapshot(ymd);
+      await markDailyRunCompleted(ymd);
+      return { skipped: false };
+    },
+  });
+
+  if (!lockRun?.acquired) {
+    if (await isDailyRunCompleted(ymd)) {
+      lastRunYmd = ymd;
+    }
+    return;
+  }
+
+  if (lockRun?.result?.skipped) {
+    lastRunYmd = ymd;
+    return;
+  }
+
+  lastRunYmd = ymd;
+  console.log(
+    `[dailyReferralSnapshot] Daily run completed for ymd=${ymd}`,
+  );
 }
 
-if (process.env.DAILY_REFERRAL_SNAPSHOT_WORKER_ENABLED !== "false") {
+async function loop() {
+  if (running) {
+    timerHandle = setTimeout(loop, INTERVAL_MS);
+    return;
+  }
+  running = true;
+  try {
+    await tickOnce();
+  } catch (err) {
+    console.error("[dailyReferralSnapshot] Error:", err);
+  } finally {
+    running = false;
+    timerHandle = setTimeout(loop, INTERVAL_MS);
+    if (typeof timerHandle?.unref === "function") {
+      timerHandle.unref();
+    }
+  }
+}
+
+export function startDailyReferralSnapshotWorker() {
+  if (process.env.DAILY_REFERRAL_SNAPSHOT_WORKER_ENABLED === "false") {
+    console.log("[dailyReferralSnapshot] Worker is disabled");
+    return;
+  }
+  if (timerHandle || running) {
+    return;
+  }
+  console.log("[dailyReferralSnapshot] Worker started");
   loop().catch((err) => {
+    running = false;
+    timerHandle = null;
     console.error("[dailyReferralSnapshot] Init failed:", err);
-    process.exit(1);
   });
-} else {
-  console.log("[dailyReferralSnapshot] Worker is disabled");
+}
+
+export function stopDailyReferralSnapshotWorker() {
+  if (timerHandle) {
+    clearTimeout(timerHandle);
+    timerHandle = null;
+  }
+  running = false;
+}
+
+const isDirectRun =
+  Boolean(process.argv[1]) &&
+  fileURLToPath(import.meta.url) === path.resolve(process.argv[1]);
+
+if (isDirectRun) {
+  startDailyReferralSnapshotWorker();
 }
