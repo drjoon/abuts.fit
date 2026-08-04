@@ -5,8 +5,6 @@
 // - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
 // - web/backend/controllers/requests/creation.from-draft.controller.js
 import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Package, Zap } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 import { apiFetch } from "@/shared/api/apiClient";
@@ -241,37 +239,29 @@ export function NewRequestShippingSection({
       className="app-glass-card app-glass-card--lg relative flex flex-col justify-center gap-4 border-2 p-4 md:p-6 transition-all border-gray-300"
     >
       <div className="app-glass-card-content flex flex-col items-center gap-3">
-        <RadioGroup
-          value={defaultShippingMode}
-          onValueChange={(value) => {
-            if (value === "normal" || value === "express") {
-              void persistDefaultShippingMode(value);
-            }
-          }}
-          disabled={isDisabled || isUpdating}
+        <div
           className="w-full flex flex-col gap-4"
+          role="radiogroup"
+          aria-label="기본 배송 방식"
         >
           <div
+            role="radio"
+            aria-checked={defaultShippingMode === "normal"}
+            tabIndex={isDisabled || isUpdating ? -1 : 0}
             className={modeCardClass(defaultShippingMode === "normal")}
             onClick={() => {
               void persistDefaultShippingMode("normal");
             }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                void persistDefaultShippingMode("normal");
+              }
+            }}
           >
-            <div className="flex items-center justify-center gap-2.5">
-              <RadioGroupItem
-                value="normal"
-                id="default-shipping-normal"
-                className="border-slate-400 text-primary"
-                onClick={(e) => e.stopPropagation()}
-              />
-              <Label
-                htmlFor="default-shipping-normal"
-                className="flex items-center gap-2 text-base font-medium text-foreground cursor-pointer"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <Package className="w-5 h-5 text-primary" />
-                묶음 배송
-              </Label>
+            <div className="flex items-center justify-center gap-2 text-base font-medium text-foreground">
+              <Package className="w-5 h-5 text-primary" />
+              묶음 배송
             </div>
             <div className="flex flex-wrap items-center justify-center gap-2">
               <div className="text-sm text-slate-500 font-medium">발송일</div>
@@ -314,26 +304,23 @@ export function NewRequestShippingSection({
           </div>
 
           <div
+            role="radio"
+            aria-checked={defaultShippingMode === "express"}
+            tabIndex={isDisabled || isUpdating ? -1 : 0}
             className={modeCardClass(defaultShippingMode === "express")}
             onClick={() => {
               void persistDefaultShippingMode("express");
             }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                void persistDefaultShippingMode("express");
+              }
+            }}
           >
-            <div className="flex items-center justify-center gap-2.5">
-              <RadioGroupItem
-                value="express"
-                id="default-shipping-express"
-                className="border-slate-400 text-amber-500"
-                onClick={(e) => e.stopPropagation()}
-              />
-              <Label
-                htmlFor="default-shipping-express"
-                className="flex items-center gap-2 text-base font-medium text-foreground cursor-pointer"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <Zap className="w-5 h-5 text-amber-500" />
-                신속 배송
-              </Label>
+            <div className="flex items-center justify-center gap-2 text-base font-medium text-foreground">
+              <Zap className="w-5 h-5 text-amber-500" />
+              신속 배송
             </div>
             <div className="text-base text-foreground leading-relaxed">
               오늘 낮 12시 이전 의뢰 시 오늘 오후 발송
@@ -344,7 +331,7 @@ export function NewRequestShippingSection({
               단, 생산지연시 내일 발송되고, 추가 의뢰크레딧은 취소됩니다.
             </div>
           </div>
-        </RadioGroup>
+        </div>
       </div>
 
       <div className="app-glass-card-content pt-1">
