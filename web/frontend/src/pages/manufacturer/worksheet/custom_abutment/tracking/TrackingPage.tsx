@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-04: 집하완료 표시는 deliveryInfo.pickedUpAt(수동=처리시각, 자동=트래킹 이벤트 시각)을 그대로 사용
 // - 2026-08-03: Tracking 페이지의 공정 라벨/재제작 시작 스테이지 기본값을 '준비'로 변경(표시 레벨). 관련 recall 로직/버튼 초기화 반영.
 // related files:
 // - web/frontend/rules.md
@@ -6,6 +7,8 @@
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
 // - web/backend/controllers/requests/common.review.controller.js
+// - web/backend/controllers/requests/shipping.controller.js
+// - web/backend/controllers/requests/shipping.Tracking.helpers.js
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useOutletContext, useSearchParams } from "react-router-dom";
 import { useToast } from "@/shared/hooks/use-toast";

@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-04: 수동 집하 pickedUpAt/deliveredAt을 당일 16:00 고정 → 실제 처리 시각(now)으로 기록
 // - 2026-08-04: 오늘 발송 체크 해제 시 originalEstimatedShipYmd로 발송일 복원 + mailbox-summary 캐시 무효화
 // related files:
 // - web/backend/rules.md
@@ -8,6 +9,7 @@
 // - web/backend/controllers/requests/common.review.controller.js
 // - web/backend/controllers/requests/common.requests.controller.js
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/hooks/useMailboxManagement.ts
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/tracking/TrackingPage.tsx
 import Request from "../../models/request.model.js";
 import { Types } from "mongoose";
 import { createHash } from "crypto";
@@ -749,13 +751,13 @@ export async function manualHanjinPickupCompleted(req, res) {
       ? "배송완료"
       : requestedManualStatusText;
 
-    // 수동 집하 시각 SSOT: "당일 16:00 KST"
-    // 사용자 입력 시각을 받지 않고 서버에서 고정 계산해 기록한다.
+    // 수동 집하 시각 SSOT: 실제 처리 시각(now)
+    // - 한진 수동 집하 → pickedUpAt
+    // - 한진 외 배송완료 → deliveredAt(및 shippedAt 보정)
+    // 예정 수거 시각(scheduledShipPickup=16:00)과 혼동하지 않는다.
     const now = new Date();
-    const kstNow = new Date(now.getTime() + 9 * 60 * 60 * 1000);
-    const kstYmd = kstNow.toISOString().slice(0, 10);
-    const manualPickedUpAt = new Date(`${kstYmd}T16:00:00+09:00`);
-    const manualDeliveredAt = manualPickedUpAt;
+    const manualPickedUpAt = now;
+    const manualDeliveredAt = now;
 
     const addressList = Array.isArray(mailboxAddresses)
       ? mailboxAddresses
