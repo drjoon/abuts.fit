@@ -379,11 +379,12 @@ export async function calculateInitialProductionSchedule({
     0,
   );
 
-  // ETA/마감은 리드타임 기준으로 계산한다.
-  // requestor 주간 발송 요일 정책은 포장.발송 운영 액션 필터에서 적용하고,
-  // 의뢰 생성 시 ETA 자체를 추가 지연시키는 용도로는 사용하지 않는다.
-  void weeklyBatchDays;
-  const resolvedShipPickupYmd = batchProcessingYmd;
+  // 묶음 배송: 리드타임(생산 가능일) 이후, requestor 주간 발송 요일에 맞춰 발송일을 정렬한다.
+  // 프론트 신규의뢰 ETA(useLeadTimeForecast)와 동일하게, 가장 가까운 선택 요일로 맞춘다.
+  const resolvedShipPickupYmd = await resolveNextWeeklyBatchYmd({
+    baseYmd: batchProcessingYmd,
+    weeklyBatchDays,
+  });
   const scheduledPickupBase = createKstDateTime(
     resolvedShipPickupYmd,
     PACKING_CUTOFF_HOUR,

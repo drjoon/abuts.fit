@@ -14,7 +14,7 @@ import {
   toKstYmd,
 } from "../../controllers/requests/utils.js";
 
-const TARGET_STAGES = ["의뢰", "CAM", "가공", "세척.패킹"];
+const TARGET_STAGES = ["준비", "의뢰", "CAM", "가공", "세척.패킹"];
 
 function parseArgs() {
   const args = process.argv.slice(2);
@@ -110,6 +110,8 @@ async function run() {
         requestor: 1,
         createdAt: 1,
         caseInfos: 1,
+        shippingMode: 1,
+        finalShipping: 1,
         originalShipping: 1,
         productionSchedule: 1,
         timeline: 1,
@@ -169,8 +171,18 @@ async function run() {
         continue;
       }
 
-      const weeklyBatchDays = weeklyBatchDaysByAnchorId.get(anchorId) || [];
-      if (!weeklyBatchDays.length) {
+      const shippingMode =
+        row?.finalShipping?.mode === "express" ||
+        row?.originalShipping?.mode === "express" ||
+        row?.shippingMode === "express"
+          ? "express"
+          : "normal";
+
+      const weeklyBatchDays =
+        shippingMode === "normal"
+          ? weeklyBatchDaysByAnchorId.get(anchorId) || []
+          : [];
+      if (shippingMode === "normal" && !weeklyBatchDays.length) {
         skippedNoBatchDays += 1;
         continue;
       }
@@ -186,6 +198,7 @@ async function run() {
         maxDiameter,
         requestedAt,
         weeklyBatchDays,
+        shippingMode,
       });
 
       const nextPickupYmdRaw = nextSchedule?.scheduledShipPickup
@@ -232,6 +245,7 @@ async function run() {
         preview.push({
           requestId,
           stage: row?.manufacturerStage || "",
+          shippingMode,
           weeklyBatchDays,
           prevTimelineYmd: prevTimelineYmd || null,
           prevPickupYmd: prevPickupYmd || null,
@@ -243,6 +257,7 @@ async function run() {
         console.log("[change]", {
           requestId,
           stage: row?.manufacturerStage || "",
+          shippingMode,
           prevTimelineYmd: prevTimelineYmd || null,
           prevPickupYmd: prevPickupYmd || null,
           nextYmd: nextPickupYmd,
