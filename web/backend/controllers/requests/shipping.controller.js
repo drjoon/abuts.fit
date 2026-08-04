@@ -1,3 +1,5 @@
+// change-log:
+// - 2026-08-04: 오늘 발송 체크 해제 시 originalEstimatedShipYmd로 발송일 복원 + mailbox-summary 캐시 무효화
 // related files:
 // - web/backend/rules.md
 // - web/backend/app.js
@@ -5,6 +7,7 @@
 // - web/backend/modules/requests/request.routes.js
 // - web/backend/controllers/requests/common.review.controller.js
 // - web/backend/controllers/requests/common.requests.controller.js
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/hooks/useMailboxManagement.ts
 import Request from "../../models/request.model.js";
 import { Types } from "mongoose";
 import { createHash } from "crypto";
@@ -25,6 +28,7 @@ import DeliveryInfo from "../../models/deliveryInfo.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 import { cancelHanjinPickupForReset } from "./shipping.Hanjin.controller.js";
 import { triggerPricingSnapshotForBusinessAnchorId } from "../../services/requestSnapshotTriggers.service.js";
+import { getTodayYmdInKst } from "../../utils/krBusinessDays.js";
 
 function resolveShippingBoxKey(requestDoc) {
   const shippingPackageId = String(requestDoc?.shippingPackageId || "").trim();
@@ -1140,6 +1144,10 @@ export async function mockHanjinPickupCompleted(req, res) {
   return manualHanjinPickupCompleted(req, res);
 }
 
+function clearMailboxSummaryCache() {
+  mailboxSummaryCache.clear();
+}
+
 export async function setMailboxForceTodayShipment(req, res) {
   try {
     const mailbox = String(req.body?.mailboxAddress || "").trim();
@@ -1155,7 +1163,13 @@ export async function setMailboxForceTodayShipment(req, res) {
     const requests = await Request.find({
       mailboxAddress: mailbox,
       manufacturerStage: "포장.발송",
-    }).select({ _id: 1, requestId: 1, businessAnchorId: 1, timeline: 1 });
+    }).select({
+      _id: 1,
+      requestId: 1,
+      businessAnchorId: 1,
+      timeline: 1,
+      productionSchedule: 1,
+    });
 
     if (!requests.length) {
       return res.status(404).json({
@@ -1164,16 +1178,48 @@ export async function setMailboxForceTodayShipment(req, res) {
       });
     }
 
+    const todayYmd = getTodayYmdInKst();
+    const todayPickupAt = todayYmd
+      ? new Date(`${todayYmd}T16:00:00+09:00`)
+      : null;
+
     const affectedBusinessAnchorIdSet = new Set();
     for (const requestDoc of requests) {
       requestDoc.timeline = requestDoc.timeline || {};
+      requestDoc.productionSchedule = requestDoc.productionSchedule || {};
       requestDoc.timeline.forceTodayShipment = forceTodayShipment;
+
+      if (forceTodayShipment) {
+        if (todayYmd) {
+          requestDoc.timeline.nextEstimatedShipYmd = todayYmd;
+          requestDoc.timeline.estimatedShipYmd = todayYmd;
+        }
+        if (todayPickupAt && !Number.isNaN(todayPickupAt.getTime())) {
+          requestDoc.productionSchedule.scheduledShipPickup = todayPickupAt;
+        }
+      } else {
+        const originalYmd = String(
+          requestDoc.timeline.originalEstimatedShipYmd || "",
+        ).trim();
+        if (originalYmd) {
+          requestDoc.timeline.nextEstimatedShipYmd = originalYmd;
+          requestDoc.timeline.estimatedShipYmd = originalYmd;
+          const restoredPickupAt = new Date(`${originalYmd}T16:00:00+09:00`);
+          if (!Number.isNaN(restoredPickupAt.getTime())) {
+            requestDoc.productionSchedule.scheduledShipPickup =
+              restoredPickupAt;
+          }
+        }
+      }
+
       await requestDoc.save();
       const businessAnchorId = String(
         requestDoc?.businessAnchorId || "",
       ).trim();
       if (businessAnchorId) affectedBusinessAnchorIdSet.add(businessAnchorId);
     }
+
+    clearMailboxSummaryCache();
 
     for (const businessAnchorId of affectedBusinessAnchorIdSet) {
       triggerPricingSnapshotForBusinessAnchorId(

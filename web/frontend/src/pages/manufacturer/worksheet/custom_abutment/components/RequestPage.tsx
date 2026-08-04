@@ -1,13 +1,16 @@
 // change-log:
 // - 2026-08-03: 제조사 워크시트의 공정 필터 기본값 및 탭 라벨을 '준비'로 표시되도록 수정함. (display-only)
 // - 2026-08-03: request(준비) 탭 API 조회를 `manufacturerStageIn=준비` 단일값으로 정리.
+// - 2026-08-04: 오늘 발송 체크 해제 시 mailbox summary/details 캐시를 강제 갱신하도록 수정
 // - impact: deriveStageForFilter, computeStageLabel, realtime badge 처리 로직에 영향
 // related files:
 // - web/backend/modules/requests/request.routes.js
 // - web/backend/controllers/requests/common.review.controller.js
 // - web/backend/controllers/requests/common.requests.controller.js
+// - web/backend/controllers/requests/shipping.controller.js
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/hooks/useCardActions.ts
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/hooks/useMailboxManagement.ts
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/WorksheetCardGrid.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestInfoSummary.tsx
@@ -557,7 +560,8 @@ export const RequestPage = ({
   );
 
   const mailboxState = useMailboxManagement(token, async () => {
-    await fetchRequests();
+    clearMailboxDetailsCache();
+    await fetchRequests(true, { forceMailboxRefresh: true });
   });
 
   // related files:
@@ -2249,6 +2253,9 @@ export const RequestPage = ({
                   forceTodayMailboxAddresses={
                     mailboxState.forceTodayMailboxAddresses
                   }
+                  clearedForceTodayMailboxAddresses={
+                    mailboxState.clearedForceTodayMailboxAddresses
+                  }
                   onBoxClick={(address) => {
                     void handleOpenMailboxDetails(address);
                   }}
@@ -2430,12 +2437,16 @@ export const RequestPage = ({
         isRollingBackAll={mailboxState.isRollingBackAll}
         onAddressSaved={mailboxState.handleMailboxAddressSaved}
         forceToday={
-          mailboxState.forceTodayMailboxAddresses.has(
+          mailboxState.clearedForceTodayMailboxAddresses.has(
             mailboxState.mailboxModalAddress,
-          ) ||
-          mailboxState.mailboxModalRequests.some((req) =>
-            Boolean(req?.timeline?.forceTodayShipment),
           )
+            ? false
+            : mailboxState.forceTodayMailboxAddresses.has(
+                mailboxState.mailboxModalAddress,
+              ) ||
+              mailboxState.mailboxModalRequests.some((req) =>
+                Boolean(req?.timeline?.forceTodayShipment),
+              )
         }
         onForceTodayChange={(checked) =>
           void (async () => {

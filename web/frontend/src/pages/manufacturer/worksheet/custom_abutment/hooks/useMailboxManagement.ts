@@ -1,9 +1,11 @@
+// change-log:
+// - 2026-08-04: 오늘 발송 체크 해제 시 낙관적 UI/캐시 무효화로 의뢰자 기본 발송 요일로 복원
 // related files:
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
-// - web/backend/controllers/requests/common.review.controller.js
+// - web/backend/controllers/requests/shipping.controller.js
 import { useState, useCallback } from "react";
 import { type ManufacturerRequest } from "@/pages/manufacturer/worksheet/custom_abutment/utils/request";
 import { useToast } from "@/shared/hooks/use-toast";
@@ -21,6 +23,8 @@ export const useMailboxManagement = (
   const [forceTodayMailboxAddresses, setForceTodayMailboxAddresses] = useState<
     Set<string>
   >(new Set());
+  const [clearedForceTodayMailboxAddresses, setClearedForceTodayMailboxAddresses] =
+    useState<Set<string>>(new Set());
   const [mailboxErrorByAddress, setMailboxErrorByAddress] = useState<
     Record<string, string>
   >({});
@@ -52,13 +56,30 @@ export const useMailboxManagement = (
       const normalized = String(address || "").trim();
       if (!normalized) return;
       setIsForceTodayUpdating(true);
-      const applyLocal = (checked: boolean) =>
+
+      const applyLocal = (checked: boolean) => {
         setForceTodayMailboxAddresses((prev) => {
           const next = new Set(prev);
           if (checked) next.add(normalized);
           else next.delete(normalized);
           return next;
         });
+        setClearedForceTodayMailboxAddresses((prev) => {
+          const next = new Set(prev);
+          if (checked) next.delete(normalized);
+          else next.add(normalized);
+          return next;
+        });
+        setMailboxModalRequests((prev) =>
+          prev.map((req) => ({
+            ...req,
+            timeline: {
+              ...(req as any)?.timeline,
+              forceTodayShipment: checked,
+            },
+          })),
+        );
+      };
 
       applyLocal(enabled);
 
@@ -198,6 +219,7 @@ export const useMailboxManagement = (
     mailboxModalRequests,
     setMailboxModalRequests,
     forceTodayMailboxAddresses,
+    clearedForceTodayMailboxAddresses,
     setMailboxForceToday,
     mailboxErrorByAddress,
     setMailboxErrorByAddress,

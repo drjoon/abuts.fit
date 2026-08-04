@@ -1,10 +1,12 @@
+// change-log:
+// - 2026-08-04: 오늘 발송 체크 해제(clearedForceToday)가 persisted summary를 덮어쓰도록 수정
 // related files:
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
-// - web/backend/controllers/requests/common.review.controller.js
-// - web/backend/controllers/requests/common.requests.controller.js
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/hooks/useMailboxManagement.ts
+// - web/backend/controllers/requests/shipping.controller.js
 // - web/backend/modules/requests/request.routes.js
 import { useMemo, useState, useRef, useEffect, useCallback } from "react";
 import { RefreshCw } from "lucide-react";
@@ -85,6 +87,7 @@ const toManualPickupReasonOptions = (labelsRaw: unknown): ManualPickupReasonOpti
 type MailboxGridProps = {
   mailboxSummaries: MailboxSummaryItem[];
   forceTodayMailboxAddresses?: Set<string>;
+  clearedForceTodayMailboxAddresses?: Set<string>;
   onBoxClick?: (address: string) => void | Promise<void>;
   onMailboxError?: (address: string, message: string) => void;
   onRefresh?: (options?: MailboxRefreshOptions) => void | Promise<void>;
@@ -93,6 +96,7 @@ type MailboxGridProps = {
 export const MailboxGrid = ({
   mailboxSummaries,
   forceTodayMailboxAddresses,
+  clearedForceTodayMailboxAddresses,
   onBoxClick,
   onMailboxError,
   onRefresh,
@@ -296,7 +300,7 @@ export const MailboxGrid = ({
     targetAddresses?: string[];
     modifyOnly?: boolean;
   } = {}) => {
-    const forcedTodaySet = forceTodayMailboxAddresses || new Set<string>();
+    const forcedTodaySet = forceTodayAddressSet;
     const effectiveTargetAddresses = Array.isArray(targetAddresses)
       ? targetAddresses.filter(
           (addr) => !notTodayAddressSet.has(addr) || forcedTodaySet.has(addr),
@@ -1041,8 +1045,16 @@ export const MailboxGrid = ({
       const normalized = String(value || "").trim();
       if (normalized) next.add(normalized);
     }
+    for (const value of clearedForceTodayMailboxAddresses || []) {
+      const normalized = String(value || "").trim();
+      if (normalized) next.delete(normalized);
+    }
     return next;
-  }, [forceTodayMailboxAddresses, persistedForceTodayAddressSet]);
+  }, [
+    clearedForceTodayMailboxAddresses,
+    forceTodayMailboxAddresses,
+    persistedForceTodayAddressSet,
+  ]);
 
   // 오늘 발송 대상: 기본 요일이 오늘이거나, 오늘 발송 강제(forceToday)된 우편함 포함
   const todayShippableAddresses = useMemo(
