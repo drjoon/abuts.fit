@@ -68,9 +68,10 @@ Notes:
   - `src/features/settings/tabs/AdminCreditSettingsTab.tsx` (요금/expressFee 전역 설정 UI)
 - 개발·운영사 설정
   - `src/pages/devops/DevopsSettingsPage.tsx` (요금 탭 → 신속배송 추가비 등)
-- 관리자 대시보드/소통
+  - 관리자 대시보드/소통
   - `src/pages/admin/dashboard/AdminDashboardPage.tsx`
   - `src/pages/admin/support/AdminChatManagement.tsx`
+  - `src/pages/admin/support/AdminSmsPage.tsx` (로컬 SMS 템플릿 CRUD·사업자/사용자 휴대폰 수신자 선택)
 - 제조사 정산
   - `src/pages/manufacturer/payments/PaymentsPage.tsx`
   - `src/pages/admin/AdminPaymentsPage.tsx`

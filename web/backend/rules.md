@@ -128,6 +128,9 @@
   - 수동/CI 점검은 `scripts/db/check-pricing-ssot-consistency.js` / `npm run db:check-pricing-ssot` 유지
   - 이벤트 기반 재계산: `services/requestSnapshotTriggers.service.js`
   - 관리자 대시보드 진입: `controllers/admin/admin.dashboard.controller.js`
+  - 관리자 문자 템플릿 SSOT: `models/adminSmsTemplate.model.js` + `controllers/admin/adminSms.controller.js`
+    - `GET/POST /api/admin/sms/templates`, `PUT/DELETE /api/admin/sms/templates/:id`
+    - 목록 조회 시 팝빌 알림톡 형식 기본 템플릿 6종 시드(#{변수}/강조표기, seedVersion)
 
 - 신규 기공소 런칭 이벤트 가격 SSOT:
   - 가입 승인일 기준 `180일` 동안 커스텀 어벗 `개당 10,000원` 고정가를 우선 적용합니다.

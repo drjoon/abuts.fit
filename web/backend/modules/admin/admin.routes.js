@@ -122,6 +122,10 @@ import {
   adminListSms,
   adminSendKakaoOrSms,
   adminListKakaoTemplates,
+  adminListSmsTemplates,
+  adminCreateSmsTemplate,
+  adminUpdateSmsTemplate,
+  adminDeleteSmsTemplate,
 } from "../../controllers/admin/adminSms.controller.js";
 import {
   adminGetCreditStats,
@@ -412,6 +416,12 @@ router.post(
 // 문자(SMS) 발송/이력
 router.post("/sms/send", adminSendSms);
 router.get("/sms/history", adminListSms);
+
+// 문자 메시지 템플릿 (로컬 SSOT, 기본 템플릿 시드 포함)
+router.get("/sms/templates", adminListSmsTemplates);
+router.post("/sms/templates", adminCreateSmsTemplate);
+router.put("/sms/templates/:id", adminUpdateSmsTemplate);
+router.delete("/sms/templates/:id", adminDeleteSmsTemplate);
 
 // 카카오톡 알림톡 + SMS (팝빌)
 router.post("/messages/send", adminSendKakaoOrSms);
