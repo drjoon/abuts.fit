@@ -341,7 +341,7 @@ export function NewRequestShippingSection({
             <div className="text-sm text-slate-600 leading-relaxed">
               의뢰크레딧 {expressFeeLabel}원이 추가로 소비됩니다.
               <br />
-              단, 생산이 지연되면 내일 발송되며 추가 의뢰크레딧은 취소됩니다.
+              단, 생산지연시 내일 발송되고, 추가 의뢰크레딧은 취소됩니다.
             </div>
           </div>
         </RadioGroup>

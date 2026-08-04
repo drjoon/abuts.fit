@@ -190,9 +190,10 @@ export function useLeadTimeForecast({
       }
 
       if (!leadTimes) return null;
-      if (!Number.isFinite(diameter) || diameter == null) return null;
 
-      const d = Number(diameter);
+      // 직경이 아직 없으면 d8 기준으로라도 ETA를 보여 묶음 전환 시 공란을 막는다.
+      const d =
+        Number.isFinite(diameter) && diameter != null ? Number(diameter) : 8;
       let diameterKey: "d6" | "d8" | "d10" | "d12" = "d8";
       if (d <= 6) diameterKey = "d6";
       else if (d <= 8) diameterKey = "d8";

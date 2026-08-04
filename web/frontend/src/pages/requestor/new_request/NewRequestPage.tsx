@@ -27,13 +27,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 
-import { StlPreviewViewer } from "@/features/requests/components/StlPreviewViewer";
 import type { CaseInfos } from "./hooks/newRequestTypes";
 
 
@@ -880,12 +878,6 @@ export const NewRequestPage = () => {
     webkitGetAsEntry?: () => WebkitFileSystemEntry | null;
   };
 
-
-
-  const [fileReviewOpen, setFileReviewOpen] = useState(false);
-  const [reviewBatch, setReviewBatch] = useState<ClassifiedUploadBatch | null>(null);
-  const [reviewSelection, setReviewSelection] = useState<Record<string, boolean>>({});
-
   const getFileExtLower = (name: string) => {
     const lower = String(name || "").trim().toLowerCase();
     const dot = lower.lastIndexOf(".");
@@ -951,18 +943,8 @@ export const NewRequestPage = () => {
     }
   };
 
-  const applyClassifiedBatch = (
-    batch: ClassifiedUploadBatch,
-    selection?: Record<string, boolean>,
-  ) => {
-    const stlFiles =
-      batch.stlCandidates.length <= 1
-        ? batch.stlCandidates.map((item) => item.file)
-        : batch.stlCandidates
-            .filter((item) => selection?.[item.id])
-            .map((item) => item.file);
-
-
+  const applyClassifiedBatch = (batch: ClassifiedUploadBatch) => {
+    const stlFiles = batch.stlCandidates.map((item) => item.file);
 
     if (stlFiles.length > 0) {
       setFileVerificationStatus((prev) => {
@@ -1021,21 +1003,7 @@ export const NewRequestPage = () => {
   const handleIncomingFiles = (selectedFiles: File[]) => {
     const normalized = dedupeFiles(selectedFiles || []);
     if (!normalized.length) return;
-
-    const batch = classifyIncomingFiles(normalized);
-
-    if (batch.stlCandidates.length >= 2) {
-      const initialSelection: Record<string, boolean> = {};
-      for (const item of batch.stlCandidates) {
-        initialSelection[item.id] = false;
-      }
-      setReviewBatch(batch);
-      setReviewSelection(initialSelection);
-      setFileReviewOpen(true);
-      return;
-    }
-
-    applyClassifiedBatch(batch);
+    applyClassifiedBatch(classifyIncomingFiles(normalized));
   };
 
   const checkDesignSoftwareOnDrop = useCallback(() => {
@@ -1272,107 +1240,6 @@ export const NewRequestPage = () => {
         />
 
 
-
-        <Dialog open={fileReviewOpen} onOpenChange={setFileReviewOpen}>
-          <DialogContent className="new-request-page sm:max-w-[980px]">
-            <DialogHeader>
-              <DialogTitle>업로드할 STL 선택</DialogTitle>
-              <DialogDescription>
-                커스텀 어벗으로 의뢰할 STL만 선택해주세요. (크라운 STL은 선택 해제)
-              </DialogDescription>
-            </DialogHeader>
-
-            <div className="rounded-md border p-3 max-h-[70vh] overflow-y-auto">
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                {(reviewBatch?.stlCandidates || []).map((item) => {
-                  const checked = Boolean(reviewSelection[item.id]);
-                  const sizeMb = (item.file.size / (1024 * 1024)).toFixed(2);
-                  return (
-                    <div
-                      key={item.id}
-                      onClick={() => {
-                        setReviewSelection((prev) => ({
-                          ...prev,
-                          [item.id]: !prev[item.id],
-                        }));
-                      }}
-                      className={`relative rounded-md border p-2 cursor-pointer ${
-                        checked ? "border-blue-300 bg-blue-50/60" : "border-slate-200"
-                      }`}
-                    >
-                      <Checkbox
-                        checked={checked}
-                        onClick={(e) => e.stopPropagation()}
-                        onCheckedChange={(next) => {
-                          setReviewSelection((prev) => ({
-                            ...prev,
-                            [item.id]: Boolean(next),
-                          }));
-                        }}
-                        className="absolute left-2 top-2 z-10 bg-white"
-                      />
-                      <div className="h-48 w-full overflow-hidden rounded border border-slate-200 bg-white">
-                        <StlPreviewViewer
-                          file={item.file}
-                          showOverlay={false}
-                          className="h-full w-full"
-                        />
-                      </div>
-                      <div className="mt-2 min-w-0">
-                        <div
-                          className="text-sm font-semibold leading-snug truncate"
-                          title={item.file.name}
-                        >
-                          {item.file.name}
-                        </div>
-                        <p className="text-xs text-slate-500 mt-1">STL · {sizeMb}MB</p>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            <DialogFooter>
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setFileReviewOpen(false);
-                  setReviewBatch(null);
-                  setReviewSelection({});
-                }}
-              >
-                취소
-              </Button>
-              <Button
-                onClick={() => {
-                  if (!reviewBatch) return;
-
-                  const selectedCount = (reviewBatch.stlCandidates || []).filter(
-                    (item) => Boolean(reviewSelection[item.id]),
-                  ).length;
-
-                  if (selectedCount <= 0) {
-                    toast({
-                      title: "업로드할 STL을 선택해주세요",
-                      description: "커스텀 어벗 STL을 최소 1개 선택해야 합니다.",
-                      variant: "destructive",
-                      duration: 2600,
-                    });
-                    return;
-                  }
-
-                  applyClassifiedBatch(reviewBatch, reviewSelection);
-                  setFileReviewOpen(false);
-                  setReviewBatch(null);
-                  setReviewSelection({});
-                }}
-              >
-                선택한 STL 업로드
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
 
         <Dialog
           open={designSoftwareModalOpen}
