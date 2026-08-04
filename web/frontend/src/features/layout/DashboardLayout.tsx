@@ -10,7 +10,7 @@ import { toKstYmd } from "@/shared/date/kst";
 import { useToast } from "@/shared/hooks/use-toast";
 
 // change-log:
-// - 2026-08-05: 문의 메뉴를 계정 드롭다운에서 사이드바 맨 아래 항목으로 복원(전 role).
+// - 2026-08-05: 문의 메뉴를 계정 드롭다운에서 사이드바 맨 아래 항목으로 복원(requestor/salesman/practice/admin). manufacturer·devops는 제외.
 // - 2026-08-04: 치과(practice) 문의/설정도 사이드메뉴에서 제거하고 하단 계정 드롭다운으로 이동.
 // - 2026-08-04: 의뢰자/영업자/개발운영사/제조사도 문의·설정을 사이드메뉴에서 제거하고 하단 계정 드롭다운으로 이동. 미사용 ManufacturerDashboardPage 참조 정리.
 // - 2026-08-04: 관리자 사이드메뉴에서 보안/설정을 제거하고 하단 계정 드롭다운으로 이동.
@@ -97,7 +97,6 @@ const sidebarItems = {
   devops: [
     { icon: LayoutDashboard, label: "대시보드", href: "/dashboard" },
     { icon: Share2, label: "소개", href: "/dashboard/referral-groups" },
-    { icon: MessageSquare, label: "문의", href: "/dashboard/inquiries" },
   ],
   practice: [
     { icon: LayoutDashboard, label: "기공의뢰", href: "/practice/dashboard" },
@@ -106,7 +105,6 @@ const sidebarItems = {
   manufacturer: [
     { icon: ClipboardList, label: "작업", href: "/dashboard/worksheet" },
     { icon: Wallet, label: "정산", href: "/dashboard/payments" },
-    { icon: MessageSquare, label: "문의", href: "/dashboard/inquiries" },
   ],
   admin: [
     { icon: LayoutDashboard, label: "대시보드", href: "/dashboard" },
