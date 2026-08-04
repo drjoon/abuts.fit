@@ -50,6 +50,12 @@ export async function checkDuplicateCaseInfo(req, res) {
         "caseInfos.clinicName": 1,
         "caseInfos.patientName": 1,
         "caseInfos.tooth": 1,
+        "caseInfos.implantManufacturer": 1,
+        "caseInfos.implantBrand": 1,
+        "caseInfos.implantFamily": 1,
+        "caseInfos.implantType": 1,
+        "caseInfos.retentionGroove": 1,
+        "caseInfos.designSoftware": 1,
       })
       .sort({ createdAt: -1 })
       .lean();
@@ -70,6 +76,7 @@ export async function checkDuplicateCaseInfo(req, res) {
 
     const stage = normalizeRequestStage(existing);
     const stageOrder = REQUEST_STAGE_ORDER[stage] ?? 0;
+    const existingCaseInfos = existing?.caseInfos || {};
 
     return res.status(200).json({
       success: true,
@@ -83,9 +90,17 @@ export async function checkDuplicateCaseInfo(req, res) {
           price: existing.price ? { amount: existing.price.amount } : null,
           createdAt: existing.createdAt || null,
           caseInfos: {
-            clinicName: String(existing?.caseInfos?.clinicName || ""),
-            patientName: String(existing?.caseInfos?.patientName || ""),
-            tooth: String(existing?.caseInfos?.tooth || ""),
+            clinicName: String(existingCaseInfos?.clinicName || ""),
+            patientName: String(existingCaseInfos?.patientName || ""),
+            tooth: String(existingCaseInfos?.tooth || ""),
+            implantManufacturer: String(
+              existingCaseInfos?.implantManufacturer || "",
+            ),
+            implantBrand: String(existingCaseInfos?.implantBrand || ""),
+            implantFamily: String(existingCaseInfos?.implantFamily || ""),
+            implantType: String(existingCaseInfos?.implantType || ""),
+            retentionGroove: String(existingCaseInfos?.retentionGroove || ""),
+            designSoftware: String(existingCaseInfos?.designSoftware || ""),
           },
         },
       },

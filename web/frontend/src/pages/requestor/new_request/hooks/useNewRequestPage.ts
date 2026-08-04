@@ -446,6 +446,13 @@ export const useNewRequestPage = (
             if (data?.exists) {
               const stageOrder = Number(data?.stageOrder || 0);
               const existingRequest = data?.existingRequest;
+              const caseId = String(
+                (file as any)?._draftCaseInfoId || fileKey,
+              ).trim();
+              const alreadyResolved = duplicateResolutions.some(
+                (r) => r.caseId === caseId,
+              );
+              if (alreadyResolved) return;
 
               // 중복 발견 시 모달 표시 (입력 중 체크: 제출 플로우 아님)
               setDuplicatePromptFromSubmit(false);
@@ -453,7 +460,7 @@ export const useNewRequestPage = (
                 mode: "active",
                 duplicates: [
                   {
-                    caseId: (file as any)?._draftCaseInfoId || fileKey,
+                    caseId,
                     fileName: file.name,
                     existingRequest,
                     stageOrder,
@@ -475,6 +482,7 @@ export const useNewRequestPage = (
       toNormalizedFileKey,
       token,
       setDuplicatePrompt,
+      duplicateResolutions,
     ],
   );
 

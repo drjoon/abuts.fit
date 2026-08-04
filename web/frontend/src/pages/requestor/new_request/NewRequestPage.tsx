@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-04: 중복 의뢰 "취소 후 재의뢰" 선택 시 기존 의뢰/치과 즐겨찾기 정보로 누락 필드를 채우고 카드 검증을 자동 완료.
 // - 2026-08-03: 중복 의뢰 안내 모달의 상태 표시를 공정 라벨 정규화(의뢰 -> 준비)로 표시. (display-only)
 import React, { useEffect, useMemo, useState, useCallback } from "react";
 import { getNormalizedStageLabelSafe } from "@/utils/stage";
@@ -33,6 +34,7 @@ import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 
 import { StlPreviewViewer } from "@/features/requests/components/StlPreviewViewer";
+import type { CaseInfos } from "./hooks/newRequestTypes";
 
 
 // related files:
@@ -122,6 +124,7 @@ export const NewRequestPage = () => {
     updateCaseInfos,
     patchDraftImmediately,
     handleAddOrSelectClinic,
+    clinicPresets: requestClinicPresets,
     duplicatePrompt,
     setDuplicatePrompt,
     duplicatePromptFromSubmit,
@@ -537,19 +540,23 @@ export const NewRequestPage = () => {
       });
       return;
     }
-    // skip 선택 시 파일 제거
-    if (choice.strategy === "skip") {
+
+    const matchedDuplicate = (duplicatePrompt?.duplicates || []).find(
+      (d) => String(d?.caseId || "") === String(choice.caseId || ""),
+    );
+
+    const resolveFileIndexForCaseId = (caseId: string) => {
       let fileIndex = -1;
 
       // caseId가 fileKey 형식(name:size)인 경우 직접 파일명 추출
-      if (choice.caseId.includes(":")) {
-        const [fileName] = choice.caseId.split(":");
+      if (caseId.includes(":")) {
+        const [fileName] = caseId.split(":");
         fileIndex = (files || []).findIndex((f) => f.name === fileName);
       }
 
       // fileKey 형식이 아니면 기존 로직 사용
       if (fileIndex === -1) {
-        const info = getNewCaseInfoByCaseId(String(choice.caseId));
+        const info = getNewCaseInfoByCaseId(String(caseId));
         if (info?.fileName) {
           fileIndex = (files || []).findIndex((f) => f.name === info.fileName);
         }
@@ -559,13 +566,118 @@ export const NewRequestPage = () => {
       if (fileIndex === -1) {
         fileIndex = (files || []).findIndex(
           (f) =>
-            String((f as any)?._draftCaseInfoId || "") ===
-            String(choice.caseId),
+            String((f as any)?._draftCaseInfoId || "") === String(caseId),
         );
       }
 
+      return fileIndex;
+    };
+
+    // skip 선택 시 파일 제거
+    if (choice.strategy === "skip") {
+      const fileIndex = resolveFileIndexForCaseId(choice.caseId);
       if (fileIndex >= 0) {
         await handleRemoveFile(fileIndex);
+      }
+    }
+
+    // 재의뢰(replace/remake): 누락된 환자/임플란트 정보를 채우고 카드 검증 완료
+    if (choice.strategy === "replace" || choice.strategy === "remake") {
+      const fileIndex = resolveFileIndexForCaseId(choice.caseId);
+      if (fileIndex >= 0) {
+        const file = files[fileIndex];
+        const fileKey = toNormalizedFileKey(file);
+        const current = caseInfosMap?.[fileKey] || {};
+        const existingCaseInfos =
+          (matchedDuplicate?.existingRequest?.caseInfos as CaseInfos) || {};
+        const clinicName = String(
+          current.clinicName || existingCaseInfos.clinicName || "",
+        ).trim();
+        const favorite = requestClinicPresets.find(
+          (c) => String(c.name || "").trim() === clinicName,
+        )?.favorite;
+
+        const pickText = (...values: unknown[]) => {
+          for (const value of values) {
+            const text = String(value || "").trim();
+            if (text) return text;
+          }
+          return undefined;
+        };
+
+        const updates: Partial<CaseInfos> = {};
+        const clinicNameValue = pickText(
+          current.clinicName,
+          existingCaseInfos.clinicName,
+        );
+        const patientNameValue = pickText(
+          current.patientName,
+          existingCaseInfos.patientName,
+        );
+        const toothValue = pickText(current.tooth, existingCaseInfos.tooth);
+        const manufacturerValue = pickText(
+          existingCaseInfos.implantManufacturer,
+          favorite?.manufacturer,
+          current.implantManufacturer,
+        );
+        const brandValue = pickText(
+          existingCaseInfos.implantBrand,
+          favorite?.brand,
+          current.implantBrand,
+        );
+        const familyValue = pickText(
+          existingCaseInfos.implantFamily,
+          favorite?.family,
+          current.implantFamily,
+          "Regular",
+        );
+        const typeValue = pickText(
+          existingCaseInfos.implantType,
+          favorite?.type,
+          current.implantType,
+          "Hex",
+        );
+        const retentionGrooveValue =
+          (pickText(
+            current.retentionGroove,
+            existingCaseInfos.retentionGroove,
+          ) as CaseInfos["retentionGroove"]) || "none";
+        const designSoftwareNext = pickText(
+          current.designSoftware,
+          existingCaseInfos.designSoftware,
+          designSoftwareValue,
+        );
+
+        if (clinicNameValue) updates.clinicName = clinicNameValue;
+        if (patientNameValue) updates.patientName = patientNameValue;
+        if (toothValue) updates.tooth = toothValue;
+        if (manufacturerValue) updates.implantManufacturer = manufacturerValue;
+        if (brandValue) updates.implantBrand = brandValue;
+        if (familyValue) updates.implantFamily = familyValue;
+        if (typeValue) updates.implantType = typeValue;
+        updates.retentionGroove = retentionGrooveValue;
+        if (designSoftwareNext) updates.designSoftware = designSoftwareNext;
+        if (!current.workType) updates.workType = "abutment";
+
+        updateCaseInfos(fileKey, updates);
+
+        const merged = { ...current, ...updates };
+        const isComplete = Boolean(
+          String(merged.clinicName || "").trim() &&
+            String(merged.patientName || "").trim() &&
+            String(merged.tooth || "").trim() &&
+            String(merged.implantManufacturer || "").trim() &&
+            String(merged.implantBrand || "").trim() &&
+            String(merged.implantFamily || "").trim() &&
+            String(merged.implantType || "").trim(),
+        );
+
+        if (isComplete) {
+          setFileVerificationStatus((prev) => ({
+            ...prev,
+            [fileKey]: true,
+          }));
+        }
       }
     }
 
