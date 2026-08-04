@@ -1195,6 +1195,35 @@ export const registerProcessedFile = asyncHandler(async (req, res) => {
         },
       );
 
+      // Rhino filled STL 수신: 제조사 PreviewModal이 구독하는 메타 이벤트로도 알려
+      // 열린 프리뷰가 silent forceRefresh로 cam/finishLine을 무플리커 갱신하게 한다.
+      if (step === "2-filled") {
+        const caseInfos = normalizedUpdatedRequest?.caseInfos || {};
+        emitAppEventToRoles(
+          ["manufacturer", "admin"],
+          "request:stl-metadata-updated",
+          {
+            source: "bg-file-processed:2-filled",
+            requestId: request?.requestId || null,
+            requestMongoId: String(request?._id || "").trim() || null,
+            metadata: {
+              maxDiameter: caseInfos?.maxDiameter ?? null,
+              connectionDiameter: caseInfos?.connectionDiameter ?? null,
+              totalLength: caseInfos?.totalLength ?? null,
+              updatedAt: caseInfos?.stlMetadataUpdatedAt ?? null,
+              l1: caseInfos?.l1 ?? null,
+              taperAngle: caseInfos?.taperAngle ?? null,
+              tiltAxisVector: caseInfos?.tiltAxisVector ?? null,
+              frontPoint: caseInfos?.frontPoint ?? null,
+              taperGuide: caseInfos?.taperGuide ?? null,
+              hexRotation: caseInfos?.hexRotation ?? null,
+              finishLine: caseInfos?.finishLine ?? null,
+            },
+            request: normalizedUpdatedRequest,
+          },
+        );
+      }
+
       if (requestorBusinessAnchorId) {
         triggerDashboardSummaryRefreshForAnchorId(
           requestorBusinessAnchorId,

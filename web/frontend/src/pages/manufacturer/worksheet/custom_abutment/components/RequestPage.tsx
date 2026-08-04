@@ -886,7 +886,11 @@ export const RequestPage = ({
   const handleOpenPreviewWithSameReopenGuard = useCallback(
     async (
       req: ManufacturerRequest,
-      opts?: { forceRefresh?: boolean; openOnlyIfAlreadyOpen?: boolean },
+      opts?: {
+        forceRefresh?: boolean;
+        openOnlyIfAlreadyOpen?: boolean;
+        silent?: boolean;
+      },
     ) => {
       const rid = String(req?.requestId || "").trim();
       const mid = String(req?._id || "").trim();

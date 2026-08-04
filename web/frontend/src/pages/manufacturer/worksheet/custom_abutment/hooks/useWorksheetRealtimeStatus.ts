@@ -39,7 +39,11 @@ type UseWorksheetRealtimeStatusParams = {
   previewFiles?: any;
   handleOpenPreview?: (
     req: ManufacturerRequest,
-    opts?: { forceRefresh?: boolean; openOnlyIfAlreadyOpen?: boolean },
+    opts?: {
+      forceRefresh?: boolean;
+      openOnlyIfAlreadyOpen?: boolean;
+      silent?: boolean;
+    },
   ) => Promise<unknown>;
   removeOnMachiningComplete?: boolean;
   matchesCurrentPage?: (req: ManufacturerRequest) => boolean;
@@ -180,6 +184,44 @@ export function useWorksheetRealtimeStatus({
     // (페이지 로딩 중이거나, 무한 스크롤로 아직 불러오지 않은 페이지의 항목일 수 있음)
     return prev;
   }, [matchesCurrentPage]);
+
+  // packing:capture-processed 와 동일하게, 열린 프리뷰만 silent 데이터 갱신한다.
+  const refreshOpenPreviewIfMatch = useCallback(
+    (
+      matchRequestId: string,
+      eventRequest?: ManufacturerRequest | null,
+    ) => {
+      const {
+        previewOpen,
+        previewFiles,
+        handleOpenPreview,
+      } = latestRef.current;
+      if (!previewOpen || !handleOpenPreview) return;
+
+      const openReq = previewFiles?.request as ManufacturerRequest | undefined;
+      if (!openReq) return;
+
+      const openRid = String(openReq?.requestId || "").trim();
+      const openMid = String(openReq?._id || "").trim();
+      const eventRid = String(
+        eventRequest?.requestId || matchRequestId || "",
+      ).trim();
+      const eventMid = String(eventRequest?._id || "").trim();
+      const isSameOpenPreview =
+        (openRid && eventRid && openRid === eventRid) ||
+        (openMid && eventMid && openMid === eventMid) ||
+        (openRid && matchRequestId && openRid === matchRequestId);
+
+      if (!isSameOpenPreview) return;
+
+      void handleOpenPreview(eventRequest || openReq, {
+        forceRefresh: true,
+        openOnlyIfAlreadyOpen: true,
+        silent: true,
+      });
+    },
+    [],
+  );
 
   const handleWorksheetAppEvent = useCallback((evt: any) => {
     const type = String(evt?.type || "").trim();
@@ -328,6 +370,10 @@ export function useWorksheetRealtimeStatus({
         if (!shouldSkipImmediateRefetch && fetchRequests) {
           void fetchRequests(true);
         }
+        // Rhino filled STL 등 BG 파일 수신: 열린 프리뷰 silent 갱신 (packing 패턴)
+        if (source === "bg-file-processed" && requestId) {
+          refreshOpenPreviewIfMatch(requestId, eventRequest || null);
+        }
         return;
       }
       case "request:stl-metadata-updated": {
@@ -340,8 +386,18 @@ export function useWorksheetRealtimeStatus({
 
         if (fetchRequests) void fetchRequests(true);
 
-        // 정책: 프리뷰 자동 재오픈 금지.
-        // 웹소켓 이벤트는 리스트/카드만 갱신하고, 프리뷰는 사용자의 수동 오픈으로만 연다.
+        // camFile이 포함된 filled 완료 메타만 열린 프리뷰를 갱신한다.
+        // (register-stl-metadata 단독은 cam 전에 레이스를 만들 수 있어 제외)
+        const metaSource = String(payload?.source || "").trim();
+        const hasCam = Boolean(
+          String((eventRequest as any)?.caseInfos?.camFile?.s3Key || "").trim(),
+        );
+        if (
+          requestId &&
+          (metaSource === "bg-file-processed:2-filled" || hasCam)
+        ) {
+          refreshOpenPreviewIfMatch(requestId, eventRequest || null);
+        }
         return;
       }
       case "request:cam-trigger-failed":
@@ -489,6 +545,7 @@ export function useWorksheetRealtimeStatus({
     dismiss,
     pendingStageTransitionToastRef,
     matchesCurrentPage,
+    refreshOpenPreviewIfMatch,
   ]);
 
   // 웹소켓 실시간 업데이트(app-event): 활성 페이지에서만 이벤트를 반영한다.
@@ -649,8 +706,17 @@ export function useWorksheetRealtimeStatus({
           void fetchRequests(true);
         }, 180);
       }
-      // 정책: 프리뷰 자동 재오픈 금지.
-      // BG 알림으로 프리뷰를 다시 열지 않는다. 리스트/카드 동기화만 수행.
+      // notification 경로 fallback: 2-filled 성공 시 열린 프리뷰 silent 갱신
+      // (app-event와 중복되어도 usePreviewLoader loadGeneration이 최신만 반영)
+      if (
+        sourceStep === "2-filled" &&
+        String(status || "").trim().toLowerCase() === "success" &&
+        requestId
+      ) {
+        window.setTimeout(() => {
+          refreshOpenPreviewIfMatch(requestId, null);
+        }, 120);
+      }
       if (!requestId && fetchRequests) void fetchRequests(true);
     });
 
@@ -726,6 +792,7 @@ export function useWorksheetRealtimeStatus({
     removeOnMachiningComplete,
     showStartedToast,
     toast,
+    refreshOpenPreviewIfMatch,
   ]);
 
   return {

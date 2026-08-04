@@ -4,7 +4,7 @@
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
 // - web/backend/controllers/requests/common.review.controller.js
-import { useCallback } from "react";
+import { useCallback, useRef } from "react";
 import { getFileBlob, setFileBlob } from "@/shared/files/stlIndexedDb";
 import {
   getReviewStageKeyByTab,
@@ -14,6 +14,7 @@ import { toast as toastFn, useToast } from "@/shared/hooks/use-toast";
 
 const inFlightSignedUrlMap = new Map<string, Promise<string>>();
 const inFlightBlobMap = new Map<string, Promise<Blob>>();
+
 
 function getOrCreateInFlight<T>(
   map: Map<string, Promise<T>>,
@@ -95,6 +96,8 @@ export function usePreviewLoader({
   setPreviewOpen,
 }: PreviewLoaderParams) {
   const { toast } = useToast();
+  // 실시간 silent refresh가 연속 발생해도 이전 로드 결과가 최신 결과를 덮어쓰지 않게 한다.
+  const loadGenerationRef = useRef(0);
 
   const handleOpenPreview = useCallback(
     async (
@@ -102,22 +105,29 @@ export function usePreviewLoader({
       opts?: {
         forceRefresh?: boolean;
         openOnlyIfAlreadyOpen?: boolean;
+        /** 열린 프리뷰 실시간 갱신: 토스트/로딩 스피너 없이 데이터만 교체 */
+        silent?: boolean;
       },
     ) => {
       if (!token) return;
+      const forceRefresh = opts?.forceRefresh === true;
+      const openOnlyIfAlreadyOpen = opts?.openOnlyIfAlreadyOpen === true;
+      const silent = opts?.silent === true;
+      const loadGeneration = ++loadGenerationRef.current;
+      const isLoadCurrent = () => loadGeneration === loadGenerationRef.current;
       try {
-        const forceRefresh = opts?.forceRefresh === true;
-        const openOnlyIfAlreadyOpen = opts?.openOnlyIfAlreadyOpen === true;
-        setPreviewLoading(true);
-        setPreviewNcText("");
-        setPreviewNcName("");
-        setPreviewStageUrl("");
-        setPreviewStageName("");
-        toast({
-          title: "다운로드 중...",
-          description: "STL을 불러오고 있습니다.",
-          duration: 3000,
-        });
+        if (!silent) {
+          setPreviewLoading(true);
+          setPreviewNcText("");
+          setPreviewNcName("");
+          setPreviewStageUrl("");
+          setPreviewStageName("");
+          toast({
+            title: "다운로드 중...",
+            description: "STL을 불러오고 있습니다.",
+            duration: 3000,
+          });
+        }
 
         const blobToFile = (blob: Blob, filename: string) =>
           new File([blob], filename, {
@@ -147,9 +157,9 @@ export function usePreviewLoader({
           cacheKey: string | null,
           signedUrlOrResolver: string | (() => Promise<string>),
           filename: string,
-          opts?: { disableCache?: boolean },
+          fetchOpts?: { disableCache?: boolean },
         ) => {
-          const disableCache = !!opts?.disableCache;
+          const disableCache = !!fetchOpts?.disableCache;
 
           if (!disableCache && cacheKey) {
             const cached = await getFileBlob(cacheKey);
@@ -189,10 +199,58 @@ export function usePreviewLoader({
 
         let targetReq = req;
         const summaryRequestId = String(req?.requestId || "").trim();
+        const requestMongoIdForEnrich = String(req?._id || "").trim();
+
+        // forceRefresh: summary API는 camFile을 안 주므로 full request로 보강한다.
+        // (라이노 완료 직후 stale snapshot에 camFile이 없을 수 있음)
+        if (token && forceRefresh && requestMongoIdForEnrich) {
+          try {
+            const fullRes = await fetch(
+              `/api/requests/${encodeURIComponent(requestMongoIdForEnrich)}`,
+              {
+                method: "GET",
+                headers: { Authorization: `Bearer ${token}` },
+                cache: "no-store",
+              },
+            );
+            const fullBody: any = await fullRes.json().catch(() => ({}));
+            const fullReq = fullBody?.data?.request || fullBody?.data || null;
+            if (fullRes.ok && fullBody?.success !== false && fullReq) {
+              targetReq = {
+                ...req,
+                ...fullReq,
+                _id:
+                  String(fullReq?._id || req?._id || "").trim() || req?._id,
+                requestId:
+                  String(fullReq?.requestId || req?.requestId || "").trim() ||
+                  req?.requestId,
+                caseInfos: {
+                  ...(req?.caseInfos || {}),
+                  ...(fullReq?.caseInfos || {}),
+                },
+                requestor: {
+                  ...(req?.requestor || {}),
+                  ...(fullReq?.requestor || {}),
+                },
+                lotNumber: {
+                  ...(req?.lotNumber || {}),
+                  ...(fullReq?.lotNumber || {}),
+                },
+                spec: {
+                  ...((req as any)?.spec || {}),
+                  ...(fullReq?.spec || {}),
+                },
+              } as ManufacturerRequest;
+            }
+          } catch {
+            // full request 보강 실패 시 아래 summary/원본 경로로 진행
+          }
+        }
+
         const shouldEnrichFromSummary =
           tabStage === "tracking" ||
-          !req?.caseInfos?.implantManufacturer ||
-          !req?.requestor?.business;
+          !targetReq?.caseInfos?.implantManufacturer ||
+          !targetReq?.requestor?.business;
 
         if (token && summaryRequestId && shouldEnrichFromSummary) {
           try {
@@ -210,24 +268,24 @@ export function usePreviewLoader({
 
             if (summaryRes.ok && summaryBody?.success !== false && summaryReq) {
               targetReq = {
-                ...req,
+                ...targetReq,
                 ...summaryReq,
-                _id: String(summaryReq?._id || summaryData?._id || req?._id || "").trim() || req?._id,
-                requestId: String(summaryReq?.requestId || summaryData?.requestId || req?.requestId || "").trim() || req?.requestId,
+                _id: String(summaryReq?._id || summaryData?._id || targetReq?._id || "").trim() || targetReq?._id,
+                requestId: String(summaryReq?.requestId || summaryData?.requestId || targetReq?.requestId || "").trim() || targetReq?.requestId,
                 caseInfos: {
-                  ...(req?.caseInfos || {}),
+                  ...(targetReq?.caseInfos || {}),
                   ...(summaryReq?.caseInfos || {}),
                 },
                 requestor: {
-                  ...(req?.requestor || {}),
+                  ...(targetReq?.requestor || {}),
                   ...(summaryReq?.requestor || {}),
                 },
                 lotNumber: {
-                  ...(req?.lotNumber || {}),
+                  ...(targetReq?.lotNumber || {}),
                   ...(summaryReq?.lotNumber || {}),
                 },
                 spec: {
-                  ...((req as any)?.spec || {}),
+                  ...((targetReq as any)?.spec || {}),
                   ...(summaryReq?.spec || {}),
                 },
               } as ManufacturerRequest;
@@ -454,6 +512,8 @@ export function usePreviewLoader({
           stagePromise,
         ]).then(([leftStl, rightStl]) => [leftStl, rightStl]);
 
+        if (!isLoadCurrent()) return;
+
         setPreviewFiles({
           original: leftStlFile,
           cam: rightStlFile,
@@ -467,22 +527,30 @@ export function usePreviewLoader({
         } else {
           setPreviewOpen((prev) => (prev ? prev : true));
         }
-        toast({
-          title: "다운로드 완료",
-          description:
-            cacheHitCount > 0
-              ? `캐시(IndexedDB) ${cacheHitCount}건 + 다운로드 ${cacheMissCount}건`
-              : `다운로드 ${cacheMissCount}건`,
-          duration: 2000,
-        });
+        if (!silent) {
+          toast({
+            title: "다운로드 완료",
+            description:
+              cacheHitCount > 0
+                ? `캐시(IndexedDB) ${cacheHitCount}건 + 다운로드 ${cacheMissCount}건`
+                : `다운로드 ${cacheMissCount}건`,
+            duration: 2000,
+          });
+        }
       } catch (error) {
-        toastFn({
-          title: "미리보기 실패",
-          description: "파일을 불러올 수 없습니다.",
-          variant: "destructive",
-        });
+        if (!isLoadCurrent()) return;
+        if (!silent) {
+          toastFn({
+            title: "미리보기 실패",
+            description: "파일을 불러올 수 없습니다.",
+            variant: "destructive",
+          });
+        }
       } finally {
-        setPreviewLoading(false);
+        if (!isLoadCurrent()) return;
+        if (!silent) {
+          setPreviewLoading(false);
+        }
       }
     },
     [

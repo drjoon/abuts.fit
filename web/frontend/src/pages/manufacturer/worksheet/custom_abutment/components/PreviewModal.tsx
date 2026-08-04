@@ -439,7 +439,11 @@ type PreviewModalProps = {
   ) => Promise<void>;
   onRefreshPreview?: (
     req: ManufacturerRequest,
-    opts?: { forceRefresh?: boolean; openOnlyIfAlreadyOpen?: boolean },
+    opts?: {
+      forceRefresh?: boolean;
+      openOnlyIfAlreadyOpen?: boolean;
+      silent?: boolean;
+    },
   ) => Promise<unknown>;
   onMarkUnmachinable?: (
     req: ManufacturerRequest,
@@ -558,23 +562,43 @@ export const PreviewModal = ({
     delayMs: 160,
     shouldHandle: (evt) => {
       const evtType = String(evt?.type || "").trim();
-      // 승인/롤백 공정 전이 이벤트는 프리뷰 강제 리프레시를 수행하지 않는다.
-      // (모달 자동 재오픈/불필요 다운로드 방지)
-      if (evtType === "request:stage-changed") return false;
-
-      const payload =
+      const rawPayload =
         evt?.data && typeof evt.data === "object"
-          ? (evt.data as {
-              requestId?: unknown;
-              requestMongoId?: unknown;
-              request?: { _id?: unknown; id?: unknown; requestId?: unknown };
-              requests?: Array<{
-                requestId?: unknown;
-                requestMongoId?: unknown;
-                request?: { _id?: unknown; id?: unknown; requestId?: unknown };
-              }>;
-            })
+          ? (evt.data as Record<string, unknown>)
           : {};
+
+      // 승인/롤백 공정 전이는 프리뷰를 건드리지 않는다.
+      // Rhino(2-filled)/ESPRIT BG 파일 수신(source=bg-file-processed)만 열린 프리뷰를 갱신한다.
+      if (evtType === "request:stage-changed") {
+        const source = String(rawPayload.source || "").trim();
+        if (source !== "bg-file-processed") return false;
+      }
+
+      // 메타데이터만 먼저 오는 register-stl-metadata는 camFile 전에 full STL reload 하면
+      // 이후 filled 갱신을 레이스로 덮어쓸 수 있다. cam 준비 전에는 스킵(useStlMetadata가 수치 반영).
+      if (evtType === "request:stl-metadata-updated") {
+        const source = String(rawPayload.source || "").trim();
+        if (source === "register-stl-metadata") {
+          const eventReq = rawPayload.request as
+            | { caseInfos?: { camFile?: { s3Key?: unknown } } }
+            | undefined;
+          const hasCam = Boolean(
+            String(eventReq?.caseInfos?.camFile?.s3Key || "").trim(),
+          );
+          if (!hasCam) return false;
+        }
+      }
+
+      const payload = rawPayload as {
+        requestId?: unknown;
+        requestMongoId?: unknown;
+        request?: { _id?: unknown; id?: unknown; requestId?: unknown };
+        requests?: Array<{
+          requestId?: unknown;
+          requestMongoId?: unknown;
+          request?: { _id?: unknown; id?: unknown; requestId?: unknown };
+        }>;
+      };
 
       const matchesOne = (candidate: {
         requestId?: unknown;
@@ -600,14 +624,38 @@ export const PreviewModal = ({
       const rows = Array.isArray(payload.requests) ? payload.requests : [];
       return rows.some((row) => matchesOne(row));
     },
-    onMatch: () => {
+    onMatch: (evt) => {
       if (!openRef.current) return;
       if (Date.now() < suppressRealtimePreviewRefreshUntilRef.current) return;
-      const target = lastStableReqRef.current;
+      const payload =
+        evt?.data && typeof evt.data === "object"
+          ? (evt.data as {
+              request?: ManufacturerRequest;
+              requests?: Array<{ request?: ManufacturerRequest }>;
+            })
+          : {};
+      const eventRequest =
+        (payload.request as ManufacturerRequest | undefined) ||
+        (Array.isArray(payload.requests)
+          ? payload.requests.find((row) => {
+              const candidate = row?.request;
+              if (!candidate) return false;
+              const mid = normalizeEventId(candidate._id || (candidate as any)?.id);
+              const rid = normalizeEventId(candidate.requestId);
+              if (currentRequestMongoId && mid === currentRequestMongoId) return true;
+              if (currentRequestId && rid === currentRequestId) return true;
+              return false;
+            })?.request
+          : undefined);
+      const target = eventRequest || lastStableReqRef.current;
       if (!target || !onRefreshPreview) return;
+      if (eventRequest) {
+        lastStableReqRef.current = eventRequest;
+      }
       void onRefreshPreview(target, {
         forceRefresh: true,
         openOnlyIfAlreadyOpen: true,
+        silent: true,
       });
     },
   });

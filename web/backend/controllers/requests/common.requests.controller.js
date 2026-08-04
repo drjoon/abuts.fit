@@ -1925,13 +1925,15 @@ export async function getRequestById(req, res) {
       });
     }
 
-    // 접근 권한 확인 (의뢰자, 관리자만 조회 가능)
+    // 접근 권한 확인 (의뢰자, 제조사, 관리자)
+    // 제조사는 워크시트 프리뷰 silent refresh에서 camFile/finishLine 보강에 사용한다.
     const isRequestor = await canAccessRequestAsRequestor(req, request);
     const isAdmin = req.user.role === "admin";
+    const isManufacturer = req.user.role === "manufacturer";
     const camApproved =
       request.caseInfos?.reviewByStage?.cam?.status === "APPROVED";
 
-    if (!isRequestor && !isAdmin) {
+    if (!isRequestor && !isAdmin && !isManufacturer) {
       return res.status(403).json({
         success: false,
         message: "이 의뢰에 접근할 권한이 없습니다.",
