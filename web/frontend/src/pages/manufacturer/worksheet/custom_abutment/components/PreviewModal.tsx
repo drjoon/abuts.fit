@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-04: 프리뷰 헤더에 신속/묶음배송 ShippingModeBadge 상시 표시.
 // - 2026-08-04: 환자 정보에 기공소명 전달 보강(business/requestorBusinessAnchor fallback).
 // - 2026-08-04: PreviewModal 요약 layout=row(가로 3열)로 STL 영역 확보.
 // - 2026-08-04: 프리뷰 상단 의뢰 요약을 RequestInfoSummary로 교체. 환자/임플란트/생산 단위 + STL 오버레이와 치수 중복 제거.
@@ -11,6 +12,7 @@
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/machining/MachiningQueueBoard.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/hooks/usePreviewLoader.ts
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/hooks/useRequestFileHandlers.ts
+// - web/frontend/src/shared/shipping/ShippingModeBadge.tsx
 // - web/backend/controllers/requests/common.requests.controller.js
 // - web/backend/modules/requests/request.routes.js
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -46,6 +48,8 @@ import { resolveImplantConnectionSpec } from "@/utils/implantConnectionSpec";
 import { useAppEventDebouncedReload } from "@/shared/realtime/useAppEventDebouncedReload";
 import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
 import { RequestInfoSummary } from "./RequestInfoSummary";
+import { ShippingModeBadge } from "@/shared/shipping/ShippingModeBadge";
+import { resolveShippingMode } from "@/shared/shipping/shippingMode";
 
 // related files (screw lot tracking):
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/packing/components/PackingPageContent.tsx
@@ -1861,6 +1865,7 @@ export const PreviewModal = ({
     ? ""
     : String(activeReq?.lotNumber?.value || "").trim();
   const hasNcMetadata = Boolean(activeReq?.caseInfos?.ncFile?.s3Key);
+  const previewShippingMode = resolveShippingMode(activeReq as any);
 
   // 유지홈(retentionGroove) 표시
   // none=없음 / shallow=없음 / deep=있음
@@ -1995,6 +2000,12 @@ export const PreviewModal = ({
                   NC
                 </Badge>
               )}
+              {activeReq ? (
+                <ShippingModeBadge
+                  mode={previewShippingMode}
+                  className="text-[11px] px-2 py-0.5 font-semibold leading-[1.1] whitespace-nowrap"
+                />
+              ) : null}
               {fullLotLabel ? (
                 <div className="flex flex-wrap items-center gap-1.5">
                   <Badge
