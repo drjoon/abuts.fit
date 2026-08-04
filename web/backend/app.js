@@ -283,13 +283,39 @@ app.get("/healthz", (req, res) => {
 
 app.get("/", (req, res) => {
   if (hasFrontendIndex) {
+    res.setHeader("Cache-Control", "no-cache");
     return res.sendFile(FRONTEND_INDEX_PATH);
   }
   return res.send("어벗츠.핏 API 서버에 오신 것을 환영합니다.");
 });
 
 if (hasFrontendIndex) {
-  app.use(staticMiddleware(FRONTEND_DIST_PATH));
+  // Hashed Vite chunks: long-cache. Missing files fall through to the
+  // catch-all below, which returns a real 404 (never SPA index.html).
+  // Serving HTML as JS during rolling deploys causes blank screens.
+  app.use(
+    "/assets",
+    staticMiddleware(join(FRONTEND_DIST_PATH, "assets"), {
+      setHeaders(res) {
+        res.setHeader(
+          "Cache-Control",
+          "public, max-age=31536000, immutable",
+        );
+      },
+    }),
+  );
+
+  app.use(
+    staticMiddleware(FRONTEND_DIST_PATH, {
+      index: false,
+      setHeaders(res, filePath) {
+        if (filePath.endsWith("index.html")) {
+          res.setHeader("Cache-Control", "no-cache");
+        }
+      },
+    }),
+  );
+
   app.get("*", (req, res, next) => {
     if (req.path.startsWith("/api/")) {
       return next();
@@ -297,6 +323,11 @@ if (hasFrontendIndex) {
     if (req.path.startsWith("/uploads/")) {
       return next();
     }
+    // Static-like paths must 404 — never serve SPA shell as JS/CSS/etc.
+    if (req.path.startsWith("/assets/") || /\.[a-zA-Z0-9]+$/.test(req.path)) {
+      return res.status(404).send("Not Found");
+    }
+    res.setHeader("Cache-Control", "no-cache");
     res.sendFile(FRONTEND_INDEX_PATH);
   });
 }
