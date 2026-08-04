@@ -1,0 +1,26 @@
+---
+description: 제조사 워크시트 의뢰카드/프리뷰 정보 표시 통일 규칙
+globs: web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/{RequestInfoSummary,WorksheetCardGrid,PreviewModal,RequestPage}.tsx
+alwaysApply: false
+---
+
+# Worksheet Request Info UI
+
+의뢰 본문 정보(환자/임플란트/생산)는 `RequestInfoSummary` SSOT를 사용한다.
+
+## Do
+
+- 섹션 순서: **환자 → 임플란트 → 생산**(있을 때만)
+- 레이아웃: 카드 `stack`, PreviewModal `row`(가로 3열)
+- 의뢰자명·치과명이 같거나 포함 관계면 `resolveOrgLabels`로 한 번만 표시
+- 환자 줄은 `환자명 / 치아`만 (치과명 재표기 금지)
+- PreviewModal + STL 오버레이 표시 시 커넥션/최대직경/길이는 요약에서 생략
+- 컨테이너/타이포는 `RequestInfoSummary` 토큰 유지 (`slate-50/70`, `text-[13px]`, 섹션 라벨 `text-[10px]`)
+
+## Don't
+
+- 카드/프리뷰에 동일 필드를 평문 bullet로 다시 나열하지 말 것
+- 섹션 순서·라벨·구분자를 임의로 바꾸지 말 것
+- 새 의뢰 정보 UI를 만들 때 `RequestInfoSummary`를 우회하지 말 것
+
+상세 SSOT: `web/frontend/rules.md` (제조사 워크시트 의뢰 정보 표시 SSOT)

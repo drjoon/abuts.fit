@@ -10,6 +10,8 @@
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/hooks/useCardActions.ts
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/WorksheetCardGrid.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestInfoSummary.tsx
+// - web/frontend/rules.md
 import {
   useMemo,
   useEffect,

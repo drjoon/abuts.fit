@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-04: 의뢰카드 본문을 RequestInfoSummary로 교체. 환자/임플란트 의미 단위 배치 + 치과명 중복 제거.
 // - 2026-08-03: 카드/롤백 관련 stage label 정규화: '의뢰' 표시를 '준비'로 변경하여 화면 일관성 확보 (display-only)
 // - 2026-08-03: 작업 공정 변경 반영: 화살표 승인/롤백 기준을 준비 ↔ 가공 흐름으로 정렬(중간 단계 건너뛰기)
 // related files:
@@ -7,6 +8,7 @@
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestInfoSummary.tsx
 // - web/backend/controllers/requests/common.review.controller.js
 import { useEffect, useRef, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
@@ -31,10 +33,12 @@ import {
   isAnySampleRequest,
   isRndSampleRequest,
 } from "../utils/request";
+import { RequestInfoSummary } from "./RequestInfoSummary";
 
 // related files (screw lot tracking):
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/packing/components/PackingPageContent.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestInfoSummary.tsx
 // - web/backend/controllers/requests/common.requests.controller.js
 
 type WorksheetCardGridProps = {
@@ -936,106 +940,71 @@ export const WorksheetCardGrid = ({
               }`}
             >
               <div
-                className={`space-y-2 text-[15px] text-slate-700 rounded-xl p-3 transition ${showSideSpecBadges ? "pr-28" : ""}`}
+                className={`transition ${showSideSpecBadges ? "pr-24" : ""}`}
                 onClick={handleOpenCardPreview}
               >
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2">
-                    {isNewSystemRequest && (
-                      <Badge
-                        variant="outline"
-                        className="border-emerald-400 text-emerald-700 bg-emerald-50"
-                      >
-                        신규 임플란트
-                      </Badge>
-                    )}
-                    {hasInsufficientShippingCredit && (
-                      <Badge
-                        variant="outline"
-                        className="border-red-300 bg-red-50 text-red-700"
-                      >
-                        배송비 부족
-                      </Badge>
-                    )}
-
-                  </div>
-                </div>
-
-                {!!machiningElapsedLabel && (
-                  <div className="flex items-center gap-2 text-[12px] text-slate-500">
-                    <span className="font-semibold text-blue-600">
-                      Now Playing
-                    </span>
-                    <span className="tabular-nums font-bold text-blue-600">
-                      {machiningElapsedLabel}
-                    </span>
-                  </div>
-                )}
-                <div className="flex flex-wrap items-center gap-2 text-[13px] text-slate-600">
-                  <span>
-                    {request.requestor?.business || request.requestor?.name}
-                  </span>
-                  {caseInfos.clinicName && (
-                    <>
-                      <span>•</span>
-                      <span>{caseInfos.clinicName}</span>
-                    </>
-                  )}
-                  {request.createdAt && (
-                    <>
-                      <span>•</span>
-                      <span>
-                        {new Date(request.createdAt).toLocaleDateString()}
-                      </span>
-                    </>
-                  )}
-                </div>
-                <div className="flex flex-wrap items-center gap-2 text-[13px] text-slate-600">
-                  <span>
-                    {caseInfos.clinicName || "-"} /{" "}
-                    {caseInfos.patientName || "미지정"} /{" "}
-                    {caseInfos.tooth || "-"}
-                  </span>
-                  {displayConnectionDiameter != null && (
-                    <>
-                      <span>•</span>
-                      <span>
-                        커넥션 직경 {displayConnectionDiameter.toFixed(2)}
-                      </span>
-                    </>
-                  )}
-                </div>
-                {(maxDiameter != null || maxLength != null) && (
-                  <div className="flex flex-wrap items-center gap-2 text-[13px] text-slate-600">
-                    {maxDiameter != null && (
-                      <span>최대 직경 {maxDiameter.toFixed(3)}</span>
-                    )}
-                    {maxDiameter != null && maxLength != null && <span>•</span>}
-                    {maxLength != null && (
-                      <span>최대 길이 {maxLength.toFixed(2)}</span>
-                    )}
-                  </div>
-                )}
-                <div className="flex flex-wrap items-center gap-2 text-[13px] text-slate-600">
-                  {caseInfos.implantManufacturer || "-"} /{" "}
-                  {caseInfos.implantBrand || "-"} /{" "}
-                  {caseInfos.implantFamily || "-"} /{" "}
-                  {caseInfos.implantType || "-"}
-                  {(() => {
-                    // 유지홈(retentionGroove) 표시
-                    // none=없음 / shallow=없음 / deep=있음
+                <RequestInfoSummary
+                  requestorLabel={
+                    request.requestor?.business || request.requestor?.name
+                  }
+                  clinicName={caseInfos.clinicName}
+                  createdAt={request.createdAt}
+                  patientName={caseInfos.patientName}
+                  tooth={caseInfos.tooth}
+                  connectionDiameter={displayConnectionDiameter}
+                  maxDiameter={maxDiameter}
+                  maxLength={maxLength}
+                  implantParts={[
+                    caseInfos.implantManufacturer,
+                    caseInfos.implantBrand,
+                    caseInfos.implantFamily,
+                    caseInfos.implantType,
+                  ]}
+                  retentionGrooveLabel={(() => {
                     const rg = (caseInfos as any)?.retentionGroove as
-                      "none" | "shallow" | "deep" | undefined;
+                      | "none"
+                      | "shallow"
+                      | "deep"
+                      | undefined;
                     if (!rg) return null;
-                    const label = rg === "deep" ? "있음" : "없음";
-                    return (
-                      <>
-                        <span>•</span>
-                        <span>유지홈 {label}</span>
-                      </>
-                    );
+                    return rg === "deep" ? "있음" : "없음";
                   })()}
-                </div>
+                  leadingSlot={
+                    <>
+                      {(isNewSystemRequest || hasInsufficientShippingCredit) && (
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          {isNewSystemRequest && (
+                            <Badge
+                              variant="outline"
+                              className="border-emerald-400 text-emerald-700 bg-emerald-50"
+                            >
+                              신규 임플란트
+                            </Badge>
+                          )}
+                          {hasInsufficientShippingCredit && (
+                            <Badge
+                              variant="outline"
+                              className="border-red-300 bg-red-50 text-red-700"
+                            >
+                              배송비 부족
+                            </Badge>
+                          )}
+                        </div>
+                      )}
+                      {!!machiningElapsedLabel && (
+                        <div className="flex items-center gap-2 text-[12px] text-slate-500">
+                          <span className="font-semibold text-blue-600">
+                            Now Playing
+                          </span>
+                          <span className="tabular-nums font-bold text-blue-600">
+                            {machiningElapsedLabel}
+                          </span>
+                        </div>
+                      )}
+                    </>
+                  }
+                />
+
                 {/* 백그라운드 작업 실패 시 안내 메시지 */}
                 {((isCamStage &&
                   request.caseInfos?.reviewByStage?.cam?.status ===
@@ -1052,8 +1021,6 @@ export const WorksheetCardGrid = ({
                     </div>
                   </div>
                 )}
-
-
               </div>
 
               {tabStage === "rnd" && isSampleRequest && onSaveRndMemo && (

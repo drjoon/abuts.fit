@@ -1,8 +1,12 @@
 // change-log:
+// - 2026-08-04: PreviewModal 요약 layout=row(가로 3열)로 STL 영역 확보.
+// - 2026-08-04: 프리뷰 상단 의뢰 요약을 RequestInfoSummary로 교체. 환자/임플란트/생산 단위 + STL 오버레이와 치수 중복 제거.
 // - 2026-08-03: PreviewModal: 공정 표시 정규화 영향 반영(의뢰 -> 준비 표시). 주로 프리뷰/승인 버튼의 stage label 참조에 영향.
 // - 2026-08-03: 작업 공정 변경 반영: 화살표 승인/롤백 기준을 준비 ↔ 가공 흐름으로 정렬(중간 단계 건너뛰기).
 // related files:
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestInfoSummary.tsx
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/WorksheetCardGrid.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/machining/MachiningQueueBoard.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/hooks/usePreviewLoader.ts
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/hooks/useRequestFileHandlers.ts
@@ -40,10 +44,12 @@ import {
 import { resolveImplantConnectionSpec } from "@/utils/implantConnectionSpec";
 import { useAppEventDebouncedReload } from "@/shared/realtime/useAppEventDebouncedReload";
 import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
+import { RequestInfoSummary } from "./RequestInfoSummary";
 
 // related files (screw lot tracking):
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/packing/components/PackingPageContent.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/WorksheetCardGrid.tsx
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestInfoSummary.tsx
 // - web/backend/controllers/requests/common.requests.controller.js
 // - web/frontend/src/pages/requestor/dashboard/RequestorDashboardPage.tsx
 
@@ -1884,9 +1890,6 @@ export const PreviewModal = ({
   const overlayFlat = (activeReq || {}) as Record<string, any>;
   const overlaySpec = (overlayFlat?.spec || {}) as Record<string, any>;
   const overlayRequestor = (activeReq?.requestor || {}) as Record<string, any>;
-  const overlayCreatedDate = activeReq?.createdAt
-    ? new Date(activeReq.createdAt).toLocaleDateString("ko-KR")
-    : "-";
 
   const packMailboxCode = String(activeReq?.mailboxAddress || "").trim();
   const packMaterial = String(
@@ -1952,34 +1955,6 @@ export const PreviewModal = ({
     toFiniteNumber(overlayCaseInfos?.totalLength) ??
     toFiniteNumber(overlayFlat?.totalLength);
 
-  const overlayImplantLine = [
-    String(
-      overlayCaseInfos?.implantManufacturer ||
-        overlaySpec?.implantCompany ||
-        overlayFlat?.implantManufacturer ||
-        "-",
-    ).trim() || "-",
-    String(
-      overlayCaseInfos?.implantBrand ||
-        overlaySpec?.implantBrand ||
-        overlaySpec?.implantProduct ||
-        overlayFlat?.implantBrand ||
-        "-",
-    ).trim() || "-",
-    String(
-      overlayCaseInfos?.implantFamily ||
-        overlaySpec?.implantFamily ||
-        overlayFlat?.implantFamily ||
-        "-",
-    ).trim() || "-",
-    String(
-      overlayCaseInfos?.implantType ||
-        overlaySpec?.implantType ||
-        overlayFlat?.implantType ||
-        "-",
-    ).trim() || "-",
-  ].join(" / ");
-
   const overlayPackMetaItems = [
     packMailboxCode ? `메일함: ${packMailboxCode}` : "",
     trackedScrewType
@@ -2035,14 +2010,6 @@ export const PreviewModal = ({
                       {generateModelNumber(activeReq?.caseInfos)}
                     </Badge>
                   )}
-                  {retentionGrooveLabel && (
-                    <Badge
-                      variant="outline"
-                      className="text-[11px] px-2 py-0.5 font-semibold leading-[1.1] border border-amber-200 bg-amber-50 text-amber-700"
-                    >
-                      유지홈 {retentionGrooveLabel}
-                    </Badge>
-                  )}
                   {shouldShowUnmachinableBadge && (
                     <Badge
                       variant="outline"
@@ -2065,16 +2032,8 @@ export const PreviewModal = ({
                     </Badge>
                   )}
                 </div>
-              ) : retentionGrooveLabel || isUnmachinable || showLatestContinueBadge ? (
+              ) : isUnmachinable || showLatestContinueBadge ? (
                 <div className="flex flex-wrap items-center gap-1.5">
-                  {retentionGrooveLabel && (
-                    <Badge
-                      variant="outline"
-                      className="text-[11px] px-2 py-0.5 font-semibold leading-[1.1] border border-amber-200 bg-amber-50 text-amber-700"
-                    >
-                      유지홈 {retentionGrooveLabel}
-                    </Badge>
-                  )}
                   {shouldShowUnmachinableBadge && (
                     <Badge
                       variant="outline"
@@ -2471,51 +2430,42 @@ export const PreviewModal = ({
             </div>
           </div>
 
-          <div className="shrink-0 rounded-lg border border-slate-200 bg-white px-4 py-3 space-y-2">
-            <div className="flex flex-wrap items-center gap-2 text-[13px] text-slate-600">
-              <span>{String(overlayRequestor?.business || overlayRequestor?.name || "-").trim() || "-"}</span>
-              <span>•</span>
-              <span>{String(overlayCaseInfos?.clinicName || overlayFlat?.clinicName || "-").trim() || "-"}</span>
-              <span>•</span>
-              <span>{overlayCreatedDate}</span>
-              <span>•</span>
-              <span>
-                {String(overlayCaseInfos?.patientName || overlayFlat?.patientName || "-").trim() || "-"} /{" "}
-                {String(overlayCaseInfos?.tooth || overlayFlat?.tooth || "-").trim() || "-"}
-              </span>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2 text-[13px] text-slate-600">
-              {displayConnectionDiameter != null && (
-                <span>커넥션 직경 {displayConnectionDiameter.toFixed(2)}</span>
-              )}
-              {displayConnectionDiameter != null && (maxDiameter != null || maxLength != null || !!overlayImplantLine) && (
-                <span>•</span>
-              )}
-              {maxDiameter != null && <span>최대 직경 {maxDiameter.toFixed(3)}</span>}
-              {maxDiameter != null && maxLength != null && <span>•</span>}
-              {maxLength != null && <span>최대 길이 {maxLength.toFixed(2)}</span>}
-              {(maxDiameter != null || maxLength != null) && !!overlayImplantLine && <span>•</span>}
-              <span>{overlayImplantLine}</span>
-              {retentionGrooveLabel && (
-                <>
-                  <span>•</span>
-                  <span>유지홈 {retentionGrooveLabel}</span>
-                </>
-              )}
-            </div>
-
-            {overlayPackMetaItems.length > 0 && (
-              <div className="flex flex-wrap items-center gap-1 text-[13px] text-slate-600">
-                {overlayPackMetaItems.map((item, idx) => (
-                  <span key={`${item}-${idx}`}>
-                    {idx > 0 ? " · " : ""}
-                    {item}
-                  </span>
-                ))}
-              </div>
-            )}
-          </div>
+          <RequestInfoSummary
+            className="shrink-0"
+            layout="row"
+            requestorLabel={
+              overlayRequestor?.business || overlayRequestor?.name
+            }
+            clinicName={
+              overlayCaseInfos?.clinicName || overlayFlat?.clinicName
+            }
+            createdAt={activeReq?.createdAt}
+            patientName={
+              overlayCaseInfos?.patientName || overlayFlat?.patientName
+            }
+            tooth={overlayCaseInfos?.tooth || overlayFlat?.tooth}
+            connectionDiameter={displayConnectionDiameter}
+            maxDiameter={maxDiameter}
+            maxLength={maxLength}
+            omitGeometryMetrics={!isNcStage && Boolean(leftViewer)}
+            implantParts={[
+              overlayCaseInfos?.implantManufacturer ||
+                overlaySpec?.implantCompany ||
+                overlayFlat?.implantManufacturer,
+              overlayCaseInfos?.implantBrand ||
+                overlaySpec?.implantBrand ||
+                overlaySpec?.implantProduct ||
+                overlayFlat?.implantBrand,
+              overlayCaseInfos?.implantFamily ||
+                overlaySpec?.implantFamily ||
+                overlayFlat?.implantFamily,
+              overlayCaseInfos?.implantType ||
+                overlaySpec?.implantType ||
+                overlayFlat?.implantType,
+            ]}
+            retentionGrooveLabel={retentionGrooveLabel || null}
+            productionMetaItems={overlayPackMetaItems}
+          />
 
           {unmachinableEditorOpen && (
             <div className="shrink-0 rounded-lg border border-yellow-200 bg-yellow-50/70 p-2 space-y-2 max-h-[34vh] overflow-y-auto">

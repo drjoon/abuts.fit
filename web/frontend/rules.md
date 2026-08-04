@@ -35,8 +35,11 @@ Notes:
 - 의뢰자 신규의뢰/치과
   - `src/pages/requestor/new_request/NewRequestPage.tsx`
   - `src/pages/requestor/practice/RequestorPracticePage.tsx`
-- 제조사 워크시트
+  - 제조사 워크시트
   - `src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx`
+  - `src/pages/manufacturer/worksheet/custom_abutment/components/RequestInfoSummary.tsx`
+  - `src/pages/manufacturer/worksheet/custom_abutment/components/WorksheetCardGrid.tsx`
+  - `src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx`
   - `src/pages/manufacturer/worksheet/custom_abutment/packing/components/PackingPageContent.tsx`
   - `src/pages/manufacturer/worksheet/custom_abutment/components/WorksheetStageSearchInput.tsx`
 - practice
@@ -77,6 +80,22 @@ Notes:
   - 전역 설정 버튼/모달: `src/pages/manufacturer/worksheet/custom_abutment/packing/components/PackingPageContent.tsx`
   - 카드 표시 정책: `src/pages/manufacturer/worksheet/custom_abutment/components/WorksheetCardGrid.tsx`
   - 상세 표시 정책: `src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx`
+
+- 제조사 워크시트 의뢰 정보 표시 SSOT (`RequestInfoSummary`):
+  - 카드/프리뷰 본문의 환자·임플란트·생산 정보는 개별 JSX로 흩뿌리지 말고
+    `src/pages/manufacturer/worksheet/custom_abutment/components/RequestInfoSummary.tsx`를 사용합니다.
+  - 의미 단위 섹션 고정: **환자** → **임플란트** → **생산**(있을 때만).
+  - 레이아웃: 카드는 `layout="stack"`(기본), PreviewModal은 `layout="row"`(가로 3열)로 요약 높이를 줄여 STL 영역을 확보합니다.
+  - 중복 금지:
+    - 의뢰자명(`requestor.business|name`)과 치과명(`clinicName`)이 동일하거나 한쪽이 다른 쪽을 포함하면 한 줄만 표시합니다.
+    - 환자 줄에는 `환자명 / 치아`만 두고 치과명을 다시 붙이지 않습니다.
+    - PreviewModal에서 STL 뷰어 오버레이가 보이는 경우(가공 NC 텍스트 단계 제외) 커넥션/최대직경/길이는 요약에서 생략하고 오버레이만 사용합니다.
+  - 시각 토큰 통일: 컨테이너 `rounded-lg border-slate-200/80 bg-slate-50/70`, 본문 `text-[13px] text-slate-700`, 섹션 라벨 `text-[10px] text-slate-400`, 구분자는 `•`.
+  - 관련 파일:
+    - `src/pages/manufacturer/worksheet/custom_abutment/components/RequestInfoSummary.tsx`
+    - `src/pages/manufacturer/worksheet/custom_abutment/components/WorksheetCardGrid.tsx`
+    - `src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx`
+    - `src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx`
 
 - 수동 집하(포장.발송)에서 한진 외 발송 방식은 `shippingWorkflow.manualDeliveryMethods`를 표시/관리합니다.
   - 추적관리 발송 방식은 `manualDeliveryMethods` 대표 1개만 표시합니다(다중 폴백 금지).
