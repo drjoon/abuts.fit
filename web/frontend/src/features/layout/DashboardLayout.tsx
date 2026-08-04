@@ -10,10 +10,12 @@ import { toKstYmd } from "@/shared/date/kst";
 import { useToast } from "@/shared/hooks/use-toast";
 
 // change-log:
+// - 2026-08-04: 치과(practice) 문의/설정도 사이드메뉴에서 제거하고 하단 계정 드롭다운으로 이동.
+// - 2026-08-04: 의뢰자/영업자/개발운영사/제조사도 문의·설정을 사이드메뉴에서 제거하고 하단 계정 드롭다운으로 이동. 미사용 ManufacturerDashboardPage 참조 정리.
+// - 2026-08-04: 관리자 사이드메뉴에서 보안/설정을 제거하고 하단 계정 드롭다운으로 이동.
 // - 2026-08-03: Dashboard 상단 워크시트 공정 탭의 '의뢰' 라벨을 '준비'로 변경(표시 레벨). wsSummary 조회/표시 로직과 연동됨.
 // related files:
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
-// - web/frontend/src/pages/manufacturer/dashboard/ManufacturerDashboardPage.tsx
 // - web/frontend/src/pages/requestor/dashboard/RequestorDashboardPage.tsx
 // - web/frontend/src/pages/requestor/new_request/hooks/useNewRequestSubmitV2.ts
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
@@ -83,30 +85,22 @@ const sidebarItems = {
     { icon: FileText, label: "신규의뢰", href: "/dashboard/new-request" },
     { icon: Building2, label: "치과", href: "/dashboard/practice-transfers" },
     { icon: Share2, label: "소개", href: "/dashboard/referral-groups" },
-    { icon: MessageSquare, label: "문의", href: "/dashboard/inquiries" },
-    { icon: Settings, label: "설정", href: "/dashboard/settings" },
   ],
   salesman: [
     { icon: LayoutDashboard, label: "대시보드", href: "/dashboard" },
     { icon: Share2, label: "소개", href: "/dashboard/referral-groups" },
     { icon: Wallet, label: "정산", href: "/dashboard/payments" },
-    { icon: MessageSquare, label: "문의", href: "/dashboard/inquiries" },
-    { icon: Settings, label: "설정", href: "/dashboard/settings" },
   ],
   devops: [
     { icon: LayoutDashboard, label: "대시보드", href: "/dashboard" },
     { icon: Share2, label: "소개", href: "/dashboard/referral-groups" },
-    { icon: Settings, label: "설정", href: "/dashboard/settings" },
   ],
   practice: [
     { icon: LayoutDashboard, label: "파일전송", href: "/practice/dashboard" },
-    { icon: MessageSquare, label: "문의", href: "/practice/inquiries" },
-    { icon: Settings, label: "설정", href: "/practice/settings" },
   ],
   manufacturer: [
     { icon: ClipboardList, label: "작업", href: "/dashboard/worksheet" },
     { icon: Wallet, label: "정산", href: "/dashboard/payments" },
-    { icon: Settings, label: "설정", href: "/dashboard/settings" },
   ],
   admin: [
     { icon: LayoutDashboard, label: "대시보드", href: "/dashboard" },
@@ -141,12 +135,35 @@ const sidebarItems = {
       label: "문의",
       href: "/dashboard/inquiries",
     },
-    { icon: Shield, label: "보안", href: "/dashboard/security-settings" },
-    { icon: Settings, label: "설정", href: "/dashboard/settings" },
   ],
 } as const;
 
 type SidebarItem = { icon: LucideIcon; label: string; href: string };
+
+const accountMenuItemsByRole: Record<string, SidebarItem[]> = {
+  admin: [
+    { icon: Shield, label: "보안", href: "/dashboard/security-settings" },
+    { icon: Settings, label: "설정", href: "/dashboard/settings" },
+  ],
+  requestor: [
+    { icon: MessageSquare, label: "문의", href: "/dashboard/inquiries" },
+    { icon: Settings, label: "설정", href: "/dashboard/settings" },
+  ],
+  salesman: [
+    { icon: MessageSquare, label: "문의", href: "/dashboard/inquiries" },
+    { icon: Settings, label: "설정", href: "/dashboard/settings" },
+  ],
+  devops: [
+    { icon: Settings, label: "설정", href: "/dashboard/settings" },
+  ],
+  manufacturer: [
+    { icon: Settings, label: "설정", href: "/dashboard/settings" },
+  ],
+  practice: [
+    { icon: MessageSquare, label: "문의", href: "/practice/inquiries" },
+    { icon: Settings, label: "설정", href: "/practice/settings" },
+  ],
+};
 
 type UserProfileApiResponse = {
   data?: {
@@ -228,13 +245,6 @@ const adminSidebarSections: SidebarSection[] = [
       { icon: Send, label: "메시지", href: "/dashboard/sms" },
       { icon: Mail, label: "메일", href: "/dashboard/mail" },
       { icon: MessageSquare, label: "문의", href: "/dashboard/inquiries" },
-    ],
-  },
-  {
-    title: "관리",
-    items: [
-      { icon: Shield, label: "보안", href: "/dashboard/security-settings" },
-      { icon: Settings, label: "설정", href: "/dashboard/settings" },
     ],
   },
 ];
@@ -751,6 +761,7 @@ export const DashboardLayout = () => {
 
   const displayRole = isPracticeUser ? "practice" : user.role;
   const adminMenuSections = user.role === "admin" ? adminSidebarSections : null;
+  const accountMenuItems = accountMenuItemsByRole[displayRole] || [];
 
   const { getBadgeForHref, clearBadgeForPath } = useAdminCommBadges();
 
@@ -1122,6 +1133,23 @@ export const DashboardLayout = () => {
                   </div>
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
+                {accountMenuItems.length > 0 && (
+                  <>
+                    {accountMenuItems.map((item) => {
+                      const Icon = item.icon;
+                      return (
+                        <DropdownMenuItem
+                          key={item.href}
+                          onClick={() => navigate(item.href)}
+                        >
+                          <Icon className="mr-2 h-4 w-4" />
+                          <span>{item.label}</span>
+                        </DropdownMenuItem>
+                      );
+                    })}
+                    <DropdownMenuSeparator />
+                  </>
+                )}
                 <DropdownMenuItem onClick={handleLogout}>
                   <LogOut className="mr-2 h-4 w-4" />
                   <span>로그아웃</span>

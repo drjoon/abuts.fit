@@ -99,11 +99,6 @@ import ReferralGroupsPage from "@/pages/requestor/referralGroups/ReferralGroupsP
 import AdminReferralGroupsPage from "@/pages/admin/referralGroups/AdminReferralGroupsPage";
 import SalesmanPaymentsPage from "@/pages/salesman/SalesmanPaymentsPage";
 import AdminPaymentsPage from "@/pages/admin/AdminPaymentsPage";
-const ManufacturerDashboardPage = lazy(() =>
-  import("./pages/manufacturer/dashboard/ManufacturerDashboardPage").then(
-    (m) => ({ default: m.ManufacturerDashboardPage }),
-  ),
-);
 const CncDashboardPage = lazy(() =>
   import("./pages/manufacturer/equipment/EquipmentPage").then((m) => ({
     default: m.EquipmentPage,
