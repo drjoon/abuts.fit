@@ -84,6 +84,8 @@ export async function resolveManufacturerMachineScope(req) {
   // 소유 장비를 끝내 못 찾으면 machineScope를 생략하고 orgScope만 적용한다.
   // (이전 {_id:{$exists:false}} fallback은 가공 큐를 0건으로 만드는 버그였다.)
   const orgScope = await buildManufacturerOrgScopeFilter(req);
+  // 소유 장비 배정 + 미배정 + ghost 장비(소유 목록 밖) 배정도 포함한다.
+  // ghost 배정은 getProductionQueues에서 unassigned로 모아 재배정한다.
   const machineScope =
     machineIds.length > 0
       ? {
@@ -92,6 +94,13 @@ export async function resolveManufacturerMachineScope(req) {
             { assignedMachine: { $in: machineIds } },
             { "productionSchedule.assignedMachine": { $in: [null, ""] } },
             { "productionSchedule.assignedMachine": { $exists: false } },
+            {
+              $and: [
+                { "productionSchedule.assignedMachine": { $type: "string" } },
+                { "productionSchedule.assignedMachine": { $ne: "" } },
+                { "productionSchedule.assignedMachine": { $nin: machineIds } },
+              ],
+            },
           ],
         }
       : null;
@@ -382,6 +391,27 @@ export async function getProductionQueues(req, res) {
 
     let requests = await loadQueueRequests();
     let queues = getAllProductionQueues(requests);
+
+    // ghost 장비(소유/활성 목록에 없는 M3 등)에 묶인 건은 미배정으로 모아 재배정한다.
+    const knownMachineIds = new Set(
+      Array.isArray(scope.machineIds)
+        ? scope.machineIds.map((id) => String(id || "").trim()).filter(Boolean)
+        : [],
+    );
+    if (knownMachineIds.size > 0) {
+      for (const mid of Object.keys(queues)) {
+        if (mid === "unassigned") continue;
+        if (knownMachineIds.has(mid)) continue;
+        const orphaned = Array.isArray(queues[mid]) ? queues[mid] : [];
+        if (!orphaned.length) {
+          delete queues[mid];
+          continue;
+        }
+        if (!Array.isArray(queues.unassigned)) queues.unassigned = [];
+        queues.unassigned.push(...orphaned);
+        delete queues[mid];
+      }
+    }
 
     const unassignedCount = Array.isArray(queues.unassigned)
       ? queues.unassigned.length

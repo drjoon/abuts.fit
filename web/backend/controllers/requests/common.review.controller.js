@@ -50,6 +50,7 @@ import {
   ensureMachineCompatibilityOrThrow,
   inferDiameterGroupFromDiameter,
   chooseMachineForCamMachining,
+  isActiveAssignableMachineId,
 } from "./common.review.machine.js";
 import { triggerEspritForNc } from "./common.review.esprit.js";
 import { enqueueApproval } from "../../services/reviewApprovalQueue.service.js";
@@ -1665,15 +1666,19 @@ export async function updateReviewStatusByStage(req, res) {
               request?.assignedMachine ||
               "",
           ).trim();
+          // 스케줄 단계에서 하드코딩된 ghost 장비(M3 등)는 유효 배정으로 보지 않는다.
+          const existingIsActive = existingMachineId
+            ? await isActiveAssignableMachineId(existingMachineId)
+            : false;
 
           const compatibilitySelection = await ensureMachineCompatibilityOrThrow({
             request,
             stageKey: "cam",
             session,
-            reserveAssignment: !existingMachineId,
+            reserveAssignment: !existingIsActive,
           });
 
-          if (!existingMachineId) {
+          if (!existingIsActive) {
             const selected = compatibilitySelection;
 
             request.productionSchedule.assignedMachine = selected.machineId;

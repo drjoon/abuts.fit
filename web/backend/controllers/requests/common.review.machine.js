@@ -69,6 +69,26 @@ export function attachMachineCompatibilityMeta({ request, meta }) {
   }
 }
 
+/**
+ * 활성 CNC + Machine 메타가 있는 실배정 가능 장비인지 확인한다.
+ * 스케줄 하드코딩(M3 등)으로 남은 ghost 배정을 걸러내기 위해 사용한다.
+ */
+export async function isActiveAssignableMachineId(machineId) {
+  const mid = String(machineId || "").trim();
+  if (!mid) return false;
+
+  const cnc = await CncMachine.findOne({ machineId: mid, status: "active" })
+    .select({ machineId: 1 })
+    .lean();
+  if (!cnc) return false;
+
+  const meta = await Machine.findOne({ uid: mid })
+    .select({ allowRequestAssign: 1 })
+    .lean();
+  if (!meta) return false;
+  return meta.allowRequestAssign !== false;
+}
+
 // Infer diameter group from diameter value
 export function inferDiameterGroupFromDiameter(diameter) {
   const group = inferDiameterGroupFromValue(diameter);
@@ -133,8 +153,8 @@ export async function screenCamMachineForRequest({ request }) {
     ok: true,
     diameter,
     diameterGroup,
-    preferredMachine:
-      diameterGroup === "6" ? "M3" : diameterGroup === "8" ? "M4" : null,
+    // 선호 장비는 더 이상 하드코딩하지 않는다. 실배정은 chooseMachineForCamMachining.
+    preferredMachine: null,
     reqGroup: diameterGroup,
   };
 }

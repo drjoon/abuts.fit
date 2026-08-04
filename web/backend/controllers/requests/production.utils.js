@@ -199,20 +199,22 @@ export const resolveNextWeeklyBatchYmd = async ({
 };
 
 /**
- * 직경 그룹 분류 및 장비 할당
+ * 직경 그룹 분류
+ * 실제 장비 배정은 가공 진입 시 chooseMachineForCamMachining이 담당한다.
+ * (과거 M3/M4 하드코딩은 존재하지 않는 장비에 배정해 가공 큐에서 누락시키는 원인이었다.)
  */
 function getDiameterGroupAndMachine(maxDiameter) {
   const d =
     typeof maxDiameter === "number" && !isNaN(maxDiameter) ? maxDiameter : 8;
 
   if (d <= 6) {
-    return { diameter: 6, diameterGroup: "6", preferredMachine: "M3" };
+    return { diameter: 6, diameterGroup: "6", preferredMachine: null };
   } else if (d <= 8) {
-    return { diameter: 8, diameterGroup: "8", preferredMachine: "M4" };
+    return { diameter: 8, diameterGroup: "8", preferredMachine: null };
   } else if (d <= 10) {
-    return { diameter: 10, diameterGroup: "10", preferredMachine: null }; // 소재 교체 필요
+    return { diameter: 10, diameterGroup: "10", preferredMachine: null };
   } else {
-    return { diameter: d, diameterGroup: "12", preferredMachine: null }; // 소재 교체 필요
+    return { diameter: d, diameterGroup: "12", preferredMachine: null };
   }
 }
 
@@ -411,7 +413,8 @@ export async function calculateInitialProductionSchedule({
     scheduledBatchProcessing,
     scheduledPickupRequest,
     scheduledShipPickup,
-    assignedMachine: preferredMachine, // M3, M4, 또는 null
+    // 초기 스케줄에서는 장비를 미리 고정하지 않는다. 가공 진입 시 실장비로 배정한다.
+    assignedMachine: preferredMachine,
     diameter,
     diameterGroup,
     shippingMode: "normal",

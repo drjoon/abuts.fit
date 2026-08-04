@@ -33,7 +33,7 @@ import ReviewApprovalQueue from "../models/reviewApprovalQueue.model.js";
 import mongoose from "mongoose";
 import { emitAppEventToRoles } from "../socket.js";
 import { triggerEspritForNc } from "../controllers/requests/common.review.esprit.js";
-import { chooseMachineForCamMachining } from "../controllers/requests/common.review.machine.js";
+import { chooseMachineForCamMachining, isActiveAssignableMachineId } from "../controllers/requests/common.review.machine.js";
 import { runWithJobLock } from "../utils/distributedJobLock.js";
 
 // 워커 폴링 간격 (ms). 환경변수로 조정 가능.
@@ -526,7 +526,11 @@ async function runCamApproveTask({ requestMongoId, requestId }) {
       "",
   ).trim();
 
-  let selectedMachineId = existingMachineId;
+  const existingIsActive = existingMachineId
+    ? await isActiveAssignableMachineId(existingMachineId)
+    : false;
+
+  let selectedMachineId = existingIsActive ? existingMachineId : "";
 
   if (!selectedMachineId) {
     const selected = await chooseMachineForCamMachining({
@@ -567,6 +571,8 @@ async function runCamApproveTask({ requestMongoId, requestId }) {
       machineId: selected.machineId,
       queuePosition: request.productionSchedule.queuePosition,
       diameterGroup: selected.diameterGroup || null,
+      replacedGhost: Boolean(existingMachineId && !existingIsActive),
+      previousMachineId: existingMachineId || null,
     });
   }
 
