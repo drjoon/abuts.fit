@@ -121,13 +121,22 @@ ensure_immutable_deploy_options() {
       --query "ConfigurationSettings[0].OptionSettings[?OptionName=='DeploymentPolicy'].Value | [0]" \
       --output text 2>/dev/null || true
   )"
+  current_drain="$(
+    aws elasticbeanstalk describe-configuration-settings \
+      --application-name abuts.fit \
+      --environment-name "$env_name" \
+      --region "$region" \
+      --profile "$profile" \
+      --query "ConfigurationSettings[0].OptionSettings[?OptionName=='DeregistrationDelay'].Value | [0]" \
+      --output text 2>/dev/null || true
+  )"
 
-  if [[ "$current_policy" == "Immutable" ]]; then
-    info "DeploymentPolicy 이미 Immutable"
+  if [[ "$current_policy" == "Immutable" && "$current_drain" == "30" ]]; then
+    info "DeploymentPolicy Immutable, DeregistrationDelay=30s 확인"
     return 0
   fi
 
-  info "DeploymentPolicy=$current_policy → Immutable + stickiness API 적용"
+  info "배포 옵션 동기화 (policy=${current_policy:-?}, drain=${current_drain:-?} → Immutable/30s)"
   aws elasticbeanstalk update-environment \
     --environment-name "$env_name" \
     --region "$region" \
@@ -138,6 +147,7 @@ ensure_immutable_deploy_options() {
       "Namespace=aws:autoscaling:asg,OptionName=MaxSize,Value=4" \
       "Namespace=aws:elasticbeanstalk:environment:process:default,OptionName=StickinessEnabled,Value=true" \
       "Namespace=aws:elasticbeanstalk:environment:process:default,OptionName=StickinessLBCookieDuration,Value=120" \
+      "Namespace=aws:elasticbeanstalk:environment:process:default,OptionName=DeregistrationDelay,Value=30" \
     >/dev/null || error "DeploymentPolicy Immutable 적용 실패"
 
   info "설정 업데이트 제출됨. Ready 대기 중..."
