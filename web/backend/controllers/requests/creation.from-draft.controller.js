@@ -28,7 +28,7 @@ import {
   REQUEST_STAGE_ORDER,
 } from "./utils.js";
 import { resolveLeadDaysWithSameDayCutoff } from "./production.utils.js";
-import { resolveQuotedPriceWithExpressFee } from "./shippingPriority.utils.js";
+import { resolveQuotedPriceWithExpressFee } from "./expressPrice.utils.js";
 import { checkCreditLock } from "../../utils/creditLock.util.js";
 import { triggerDashboardSummaryRefreshForAnchorId } from "../../services/requestSnapshotTriggers.service.js";
 import { recomputeBulkShippingSnapshotForBusinessAnchorId } from "../../services/bulkShippingSnapshot.service.js";

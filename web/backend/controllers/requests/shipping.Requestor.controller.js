@@ -39,10 +39,8 @@ import {
   withBulkShippingInFlight,
 } from "../../services/requestDashboardCache.service.js";
 import { cancelExpressSurchargeIfShipDelayed } from "./common.review.helpers.js";
-import {
-  resolveEffectiveShippingMode,
-  resolveQuotedPriceWithExpressFee,
-} from "./shippingPriority.utils.js";
+import { resolveEffectiveShippingMode } from "./shippingPriority.utils.js";
+import { resolveQuotedPriceWithExpressFee } from "./expressPrice.utils.js";
 import { loadCreditSettingsDefaults } from "../../utils/creditSettingsDefaults.js";
 
 export async function updateMyShippingMode(req, res) {

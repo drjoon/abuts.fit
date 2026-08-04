@@ -12,10 +12,8 @@ import {
   toKstYmd,
 } from "../controllers/requests/utils.js";
 import { resolveLeadDaysWithSameDayCutoff } from "../controllers/requests/production.utils.js";
-import {
-  resolveEffectiveShippingMode,
-  resolveQuotedPriceWithExpressFee,
-} from "../controllers/requests/shippingPriority.utils.js";
+import { resolveEffectiveShippingMode } from "../controllers/requests/shippingPriority.utils.js";
+import { resolveQuotedPriceWithExpressFee } from "../controllers/requests/expressPrice.utils.js";
 import { loadCreditSettingsDefaults } from "../utils/creditSettingsDefaults.js";
 
 const buildEstimatedShipFallbackSeed = ({ createdAt, createdYmd }) => {

@@ -26,7 +26,8 @@ import {
   deleteExpressSurchargeAtomic,
   deleteShippingSpendAtomicOnRollback,
 } from "../../services/creditBalance.service.js";
-import { resolveEffectiveShippingMode, resolveQuotedPriceWithExpressFee } from "./shippingPriority.utils.js";
+import { resolveEffectiveShippingMode } from "./shippingPriority.utils.js";
+import { resolveQuotedPriceWithExpressFee } from "./expressPrice.utils.js";
 import { postGeneralLedgerJournal } from "../../services/generalLedger.service.js";
 import {
   isShippingSpendRevenueContext,

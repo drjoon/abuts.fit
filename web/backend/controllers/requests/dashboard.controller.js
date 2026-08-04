@@ -28,10 +28,8 @@ import {
   getRequestorDashboardSummarySnapshot,
   recomputeRequestorDashboardSummarySnapshotsForBusinessAnchorId,
 } from "../../services/requestorDashboardSummarySnapshot.service.js";
-import {
-  resolveEffectiveShippingMode,
-  resolveQuotedPriceWithExpressFee,
-} from "./shippingPriority.utils.js";
+import { resolveEffectiveShippingMode } from "./shippingPriority.utils.js";
+import { resolveQuotedPriceWithExpressFee } from "./expressPrice.utils.js";
 import { loadCreditSettingsDefaults } from "../../utils/creditSettingsDefaults.js";
 import { resolveLeadDaysWithSameDayCutoff } from "./production.utils.js";
 import {

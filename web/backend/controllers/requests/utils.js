@@ -24,6 +24,9 @@ import {
   ymdToMmDd,
 } from "../../utils/krBusinessDays.js";
 import { normalizeImplantFields } from "../../utils/implantCanonical.js";
+import { resolveEffectiveShippingMode } from "./shippingPriority.utils.js";
+import { resolveQuotedPriceWithExpressFee } from "./expressPrice.utils.js";
+import { loadCreditSettingsDefaults } from "../../utils/creditSettingsDefaults.js";
 
 export {
   addKoreanBusinessDays,
@@ -789,6 +792,24 @@ export async function normalizeRequestForResponse(requestDoc) {
     obj.pickupStatusText = deliveryMeta.pickupStatusText;
     obj.pickupCanceled = deliveryMeta.pickupCanceled;
     obj.deliveryMeta = deliveryMeta;
+  }
+
+  if (obj.price) {
+    let expressFeePerRequest = 1000;
+    try {
+      const creditSettings = await loadCreditSettingsDefaults();
+      expressFeePerRequest = Math.max(
+        0,
+        Number(creditSettings?.expressFee ?? 1000) || 1000,
+      );
+    } catch {
+      expressFeePerRequest = 1000;
+    }
+    obj.price = resolveQuotedPriceWithExpressFee({
+      price: obj.price,
+      shippingMode: resolveEffectiveShippingMode(obj),
+      expressFee: expressFeePerRequest,
+    });
   }
 
   return obj;
