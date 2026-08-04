@@ -1443,6 +1443,13 @@ export async function listHappyCallCompletions(req, res) {
             suppressUntil: toIsoOrNull(row?.suppressUntil),
             completedByName,
             completedByEmail,
+            memoEntries: (Array.isArray(row?.memoEntries) ? row.memoEntries : [])
+              .map((entry) => ({
+                id: String(entry?._id || "").trim(),
+                message: String(entry?.message || "").trim(),
+                savedAt: toIsoOrNull(entry?.savedAt),
+              }))
+              .filter((entry) => Boolean(entry.id) && Boolean(entry.message)),
           };
         }),
       },
@@ -1560,6 +1567,23 @@ export async function completeHappyCall(req, res) {
 
     const completionReasonCode = `${HAPPY_CALL_GLOBAL_REASON_CODE}:${completedAt.getTime()}`;
 
+    // 정책: 완료 처리 시 해피콜 대상 메모 드래프트의 기존 메모 엔트리를 완료 기록에도 보관한다.
+    // (되돌리기 시 원본 엔트리로 복원하기 위함)
+    const existingDraft = await AdminHappyCallMemoDraft.findOne({
+      businessAnchorId,
+    })
+      .select({ entries: 1 })
+      .lean();
+
+    const memoEntries = (Array.isArray(existingDraft?.entries)
+      ? existingDraft.entries
+      : []
+    ).map((entry) => ({
+      message: String(entry?.message || "").trim(),
+      savedAt: entry?.savedAt || completedAt,
+      savedBy: entry?.savedBy || null,
+    }));
+
     const created = await AdminHappyCallCompletion.create({
       businessAnchorId,
       reasonCode: completionReasonCode,
@@ -1567,6 +1591,7 @@ export async function completeHappyCall(req, res) {
       completedBy: req.user?._id || null,
       suppressUntil,
       note,
+      memoEntries,
     });
 
     await AdminHappyCallMemoDraft.deleteOne({ businessAnchorId });
@@ -1589,6 +1614,42 @@ export async function completeHappyCall(req, res) {
       error: error.message,
     });
   }
+}
+
+async function restoreHappyCallMemoDraftFromCompletion(target) {
+  const businessAnchorId = String(target?.businessAnchorId || "").trim();
+  if (!businessAnchorId) return;
+
+  // 정책: 완료 시 기록해둔 메모 엔트리를 그대로 되돌려, 되돌리기 후에도
+  // 해피콜 대상 목록에서 기존 메모를 그대로 이어볼 수 있게 한다.
+  const savedEntries = (Array.isArray(target?.memoEntries) ? target.memoEntries : [])
+    .map((entry) => ({
+      message: String(entry?.message || "").trim(),
+      savedAt: entry?.savedAt || target?.completedAt || new Date(),
+      savedBy: entry?.savedBy || null,
+    }))
+    .filter((entry) => Boolean(entry.message));
+
+  // 레거시 완료 기록(memoEntries 미보유) 호환: note 텍스트를 단일 엔트리로 복원
+  const entriesToRestore = savedEntries.length
+    ? savedEntries
+    : String(target?.note || "").trim()
+      ? [
+          {
+            message: String(target.note).trim(),
+            savedAt: target?.completedAt || new Date(),
+            savedBy: target?.completedBy || null,
+          },
+        ]
+      : [];
+
+  if (!entriesToRestore.length) return;
+
+  await AdminHappyCallMemoDraft.findOneAndUpdate(
+    { businessAnchorId },
+    { $set: { entries: entriesToRestore } },
+    { upsert: true, setDefaultsOnInsert: true },
+  );
 }
 
 export async function revertLastHappyCallCompletion(req, res) {
@@ -1618,6 +1679,7 @@ export async function revertLastHappyCallCompletion(req, res) {
         });
       }
 
+      await restoreHappyCallMemoDraftFromCompletion(target);
       await AdminHappyCallCompletion.deleteOne({ _id: target._id });
 
       return res.status(200).json({
@@ -1652,6 +1714,7 @@ export async function revertLastHappyCallCompletion(req, res) {
       });
     }
 
+    await restoreHappyCallMemoDraftFromCompletion(last);
     await AdminHappyCallCompletion.deleteOne({ _id: last._id });
 
     return res.status(200).json({
@@ -1665,6 +1728,66 @@ export async function revertLastHappyCallCompletion(req, res) {
     return res.status(500).json({
       success: false,
       message: "해피콜 완료 되돌리기 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
+export async function addHappyCallCompletionMemo(req, res) {
+  try {
+    const id = String(req.params?.id || "").trim();
+    const message = String(req.body?.message || "").slice(0, 500).trim();
+
+    if (!id) {
+      return res.status(400).json({
+        success: false,
+        message: "id가 필요합니다.",
+      });
+    }
+
+    if (!message) {
+      return res.status(400).json({
+        success: false,
+        message: "메모 내용을 입력해주세요.",
+      });
+    }
+
+    const savedAt = new Date();
+    const savedBy = req.user?._id || null;
+
+    const target = await AdminHappyCallCompletion.findById(id);
+
+    if (!target || !isGlobalHappyCallReasonCode(String(target.reasonCode || ""))) {
+      return res.status(404).json({
+        success: false,
+        message: "해당 해피콜 완료 이력을 찾을 수 없습니다.",
+      });
+    }
+
+    target.memoEntries.push({ message, savedAt, savedBy });
+    // note는 기존 카드 표시 호환을 위해 memoEntries를 이어붙인 텍스트로 함께 갱신한다.
+    target.note = target.memoEntries
+      .map((entry) => `[${new Date(entry.savedAt).toLocaleString("ko-KR")}] ${entry.message}`)
+      .join("\n");
+
+    await target.save();
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        id: String(target._id),
+        note: target.note,
+        memoEntries: target.memoEntries.map((entry) => ({
+          id: String(entry._id || ""),
+          message: entry.message,
+          savedAt: toIsoOrNull(entry.savedAt),
+        })),
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "해피콜 완료 메모 추가 중 오류가 발생했습니다.",
       error: error.message,
     });
   }

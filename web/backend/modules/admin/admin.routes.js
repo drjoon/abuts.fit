@@ -39,6 +39,7 @@ import {
   completeHappyCall,
   revertLastHappyCallCompletion,
   saveHappyCallMemoDraft,
+  addHappyCallCompletionMemo,
 } from "../../controllers/admin/admin.dashboard.controller.js";
 import {
   getSystemLogs,
@@ -188,6 +189,10 @@ router.post("/dashboard/happy-call/complete", completeHappyCall);
 router.post(
   "/dashboard/happy-call/revert-last",
   revertLastHappyCallCompletion,
+);
+router.post(
+  "/dashboard/happy-call/completions/:id/memo",
+  addHappyCallCompletionMemo,
 );
 
 // 소통 메뉴 배지 카운트 (초기 로드용)

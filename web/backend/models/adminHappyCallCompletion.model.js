@@ -4,6 +4,27 @@
 // - web/backend/server.js
 import mongoose from "mongoose";
 
+const adminHappyCallCompletionMemoEntrySchema = new mongoose.Schema(
+  {
+    message: {
+      type: String,
+      required: true,
+      trim: true,
+      maxlength: 500,
+    },
+    savedAt: {
+      type: Date,
+      default: Date.now,
+    },
+    savedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+  },
+  { _id: true },
+);
+
 const adminHappyCallCompletionSchema = new mongoose.Schema(
   {
     businessAnchorId: {
@@ -38,6 +59,10 @@ const adminHappyCallCompletionSchema = new mongoose.Schema(
       default: "",
       trim: true,
       maxlength: 5000,
+    },
+    memoEntries: {
+      type: [adminHappyCallCompletionMemoEntrySchema],
+      default: [],
     },
   },
   {

@@ -87,6 +87,19 @@ type HappyCallMemoSaveData = {
   entries?: Array<{ id?: string; message?: string; savedAt?: string }>;
 };
 
+type HappyCallCompletionMemoSaveData = {
+  note?: string;
+  memoEntries?: Array<{ id?: string; message?: string; savedAt?: string }>;
+};
+
+type HappyCallMemoDialogItem = {
+  mode: "target" | "completion";
+  businessAnchorId: string;
+  completionId?: string;
+  businessName?: string;
+  companyName?: string;
+};
+
 type AdminDashboardResponseData = {
   happyCallSummary?: HappyCallSummary;
   pricingSsotHealth?: PricingSsotHealth;
@@ -201,6 +214,11 @@ type HappyCallCompletionItem = {
   suppressUntil?: string | null;
   completedByName?: string;
   completedByEmail?: string;
+  memoEntries?: Array<{
+    id?: string;
+    message?: string;
+    savedAt?: string;
+  }>;
 };
 
 type HappyCallBusinessDetail = {
@@ -372,6 +390,26 @@ const toHappyCallMemoPayload = (entries: HappyCallMemoEntry[]) => {
     .join("\n");
 };
 
+const toHappyCallMemoEntries = (
+  rows: Array<{ id?: string; message?: string; savedAt?: string }> | undefined,
+  fallbackKey: string,
+) => {
+  const source = Array.isArray(rows) ? rows : [];
+  return source
+    .map((entry, idx: number) => {
+      const message = String(entry?.message || "").trim();
+      const savedAt = String(entry?.savedAt || "").trim();
+      const id = String(entry?.id || `${fallbackKey}-${savedAt}-${idx}`).trim();
+      if (!message || !savedAt) return null;
+      return {
+        id,
+        message,
+        savedAt,
+      } as HappyCallMemoEntry;
+    })
+    .filter(Boolean) as HappyCallMemoEntry[];
+};
+
 export const AdminDashboardPage = () => {
   const { user, token } = useAuthStore();
   const navigate = useNavigate();
@@ -408,7 +446,7 @@ export const AdminDashboardPage = () => {
   });
   const [happyCallMemoDialog, setHappyCallMemoDialog] = useState<{
     open: boolean;
-    item: HappyCallItem | null;
+    item: HappyCallMemoDialogItem | null;
   }>({
     open: false,
     item: null,
@@ -418,6 +456,10 @@ export const AdminDashboardPage = () => {
   const [happyCallNotesByAnchor, setHappyCallNotesByAnchor] = useState<
     Record<string, HappyCallMemoEntry[]>
   >({});
+  const [happyCallCompletionNotesById, setHappyCallCompletionNotesById] = useState<
+    Record<string, HappyCallMemoEntry[]>
+  >({});
+  const [savingHappyCallMemo, setSavingHappyCallMemo] = useState(false);
   const [happyCallDetailItem, setHappyCallDetailItem] = useState<HappyCallBusinessDetail | null>(null);
   const [unmachinableDetailDialog, setUnmachinableDetailDialog] = useState<{
     open: boolean;
@@ -449,6 +491,33 @@ export const AdminDashboardPage = () => {
       addressDetail: String(source.addressDetail || "").trim(),
       zipCode: String(source.zipCode || "").trim(),
       businessNumber: String(source.businessNumber || "").trim(),
+    });
+  };
+
+  const openHappyCallMemoDialogForTarget = (item: HappyCallItem) => {
+    setHappyCallMemoDraft("");
+    setHappyCallMemoDialog({
+      open: true,
+      item: {
+        mode: "target",
+        businessAnchorId: String(item?.businessAnchorId || "").trim(),
+        businessName: String(item?.businessName || "").trim(),
+        companyName: String(item?.companyName || "").trim(),
+      },
+    });
+  };
+
+  const openHappyCallMemoDialogForCompletion = (row: HappyCallCompletionItem) => {
+    setHappyCallMemoDraft("");
+    setHappyCallMemoDialog({
+      open: true,
+      item: {
+        mode: "completion",
+        businessAnchorId: String(row?.businessAnchorId || "").trim(),
+        completionId: String(row?.id || "").trim(),
+        businessName: String(row?.businessName || "").trim(),
+        companyName: String(row?.companyName || "").trim(),
+      },
     });
   };
 
@@ -584,38 +653,41 @@ export const AdminDashboardPage = () => {
     sourceItems.forEach((item) => {
       const anchorId = String(item?.businessAnchorId || "").trim();
       if (!anchorId) return;
-
-      const entries = (Array.isArray(item?.memoEntries) ? item.memoEntries : [])
-        .map((entry, idx: number) => {
-          const message = String(entry?.message || "").trim();
-          const savedAt = String(entry?.savedAt || "").trim();
-          const id = String(entry?.id || `${anchorId}-${savedAt}-${idx}`).trim();
-          if (!message || !savedAt) return null;
-          return {
-            id,
-            message,
-            savedAt,
-          } as HappyCallMemoEntry;
-        })
-        .filter(Boolean) as HappyCallMemoEntry[];
-
-      next[anchorId] = entries;
+      next[anchorId] = toHappyCallMemoEntries(item?.memoEntries, anchorId);
     });
 
     setHappyCallNotesByAnchor(next);
   }, [adminDashboardResponse]);
 
   useEffect(() => {
-    if (!happyCallMemoDialog.open) return;
-    const anchorId = String(happyCallMemoDialog.item?.businessAnchorId || "").trim();
-    if (!anchorId) {
-      setHappyCallSelectedMemoId(null);
-      return;
-    }
-
-    const entries = Array.isArray(happyCallNotesByAnchor[anchorId])
-      ? happyCallNotesByAnchor[anchorId]
+    const rows: HappyCallCompletionItem[] = Array.isArray(happyCallCompletionsResponse?.data?.items)
+      ? happyCallCompletionsResponse.data.items
       : [];
+
+    const next: Record<string, HappyCallMemoEntry[]> = {};
+    rows.forEach((row) => {
+      const completionId = String(row?.id || "").trim();
+      if (!completionId) return;
+      next[completionId] = toHappyCallMemoEntries(row?.memoEntries, completionId);
+    });
+    setHappyCallCompletionNotesById(next);
+  }, [happyCallCompletionsResponse]);
+
+  useEffect(() => {
+    if (!happyCallMemoDialog.open) return;
+
+    const mode = happyCallMemoDialog.item?.mode;
+    const anchorId = String(happyCallMemoDialog.item?.businessAnchorId || "").trim();
+    const completionId = String(happyCallMemoDialog.item?.completionId || "").trim();
+
+    const entries =
+      mode === "completion"
+        ? Array.isArray(happyCallCompletionNotesById[completionId])
+          ? happyCallCompletionNotesById[completionId]
+          : []
+        : Array.isArray(happyCallNotesByAnchor[anchorId])
+          ? happyCallNotesByAnchor[anchorId]
+          : [];
 
     if (!entries.length) {
       setHappyCallSelectedMemoId(null);
@@ -626,7 +698,12 @@ export const AdminDashboardPage = () => {
     if (!hasCurrent) {
       setHappyCallSelectedMemoId(entries[entries.length - 1]?.id || null);
     }
-  }, [happyCallMemoDialog, happyCallNotesByAnchor, happyCallSelectedMemoId]);
+  }, [
+    happyCallMemoDialog,
+    happyCallNotesByAnchor,
+    happyCallCompletionNotesById,
+    happyCallSelectedMemoId,
+  ]);
 
   if (!user || user.role !== "admin") return null;
 
@@ -1039,6 +1116,105 @@ export const AdminDashboardPage = () => {
         ...prev,
         [businessAnchorId]: false,
       }));
+    }
+  };
+
+  const handleSaveHappyCallMemoFromDialog = async () => {
+    const mode = happyCallMemoDialog.item?.mode;
+    const anchorId = String(happyCallMemoDialog.item?.businessAnchorId || "").trim();
+    const completionId = String(happyCallMemoDialog.item?.completionId || "").trim();
+    const message = String(happyCallMemoDraft || "").slice(0, 500).trim();
+
+    if (!token) return;
+
+    if (!message) {
+      toast({
+        title: "메모를 입력해주세요",
+        description: "추가할 메모 내용을 입력한 뒤 저장해주세요.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setSavingHappyCallMemo(true);
+
+    try {
+      if (mode === "completion") {
+        if (!completionId) {
+          throw new Error("완료 내역 식별값이 없습니다.");
+        }
+
+        const res = await apiFetch<ApiEnvelope<HappyCallCompletionMemoSaveData>>({
+          path: `/api/admin/dashboard/happy-call/completions/${completionId}/memo`,
+          method: "POST",
+          token,
+          headers: {
+            "Content-Type": "application/json",
+          },
+          jsonBody: { message },
+        });
+
+        if (!res.ok || res.data?.success === false) {
+          throw new Error(res.data?.message || "해피콜 메모 저장에 실패했습니다.");
+        }
+
+        const entries = toHappyCallMemoEntries(res.data?.data?.memoEntries, completionId);
+        setHappyCallCompletionNotesById((prev) => ({
+          ...prev,
+          [completionId]: entries,
+        }));
+        setHappyCallSelectedMemoId(entries[entries.length - 1]?.id || null);
+        setHappyCallMemoDraft("");
+        void refetchHappyCallCompletions();
+        toast({
+          title: "메모 추가",
+          description: "완료 내역 메모가 저장되었습니다.",
+        });
+        return;
+      }
+
+      if (!anchorId) {
+        throw new Error("의뢰자 식별값이 없습니다.");
+      }
+
+      const res = await apiFetch<ApiEnvelope<HappyCallMemoSaveData>>({
+        path: "/api/admin/dashboard/happy-call/memo",
+        method: "POST",
+        token,
+        headers: {
+          "Content-Type": "application/json",
+        },
+        jsonBody: {
+          businessAnchorId: anchorId,
+          message,
+        },
+      });
+
+      if (!res.ok || res.data?.success === false) {
+        throw new Error(res.data?.message || "해피콜 메모 저장에 실패했습니다.");
+      }
+
+      const entries = toHappyCallMemoEntries(res.data?.data?.entries, anchorId);
+
+      setHappyCallNotesByAnchor((prev) => ({
+        ...prev,
+        [anchorId]: entries,
+      }));
+      setHappyCallSelectedMemoId(entries[entries.length - 1]?.id || null);
+      setHappyCallMemoDraft("");
+      toast({
+        title: "메모 추가",
+        description: "해피콜 메모가 저장되었습니다.",
+      });
+    } catch (error: unknown) {
+      const message2 = error instanceof Error ? error.message : "잠시 후 다시 시도해주세요.";
+      toast({
+        title: "메모 저장 실패",
+        description: message2,
+        variant: "destructive",
+      });
+    } finally {
+      setSavingHappyCallMemo(false);
     }
   };
 
@@ -2333,13 +2509,12 @@ export const AdminDashboardPage = () => {
                               }`}
                               onClick={(e) => {
                                 e.stopPropagation();
-                                setHappyCallMemoDraft("");
                                 setHappyCallSelectedMemoId(
                                   memoEntries.length
                                     ? String(memoEntries[memoEntries.length - 1]?.id || "") || null
                                     : null,
                                 );
-                                setHappyCallMemoDialog({ open: true, item });
+                                openHappyCallMemoDialogForTarget(item);
                               }}
                             >
                               메모{memoExists ? ` (${memoEntries.length})` : ""}
@@ -2438,6 +2613,10 @@ export const AdminDashboardPage = () => {
                       const actorEmail = String(row.completedByEmail || "").trim();
                       const rowAnchorId = String(row.businessAnchorId || "").trim();
                       const reverting = Boolean(revertingHappyCallByAnchor[rowAnchorId]);
+                      const completionId = String(row.id || "").trim();
+                      const memoEntries = Array.isArray(happyCallCompletionNotesById[completionId])
+                        ? happyCallCompletionNotesById[completionId]
+                        : [];
 
                       return (
                         <div
@@ -2462,26 +2641,47 @@ export const AdminDashboardPage = () => {
                                 <div className="text-xs text-gray-500 truncate">{companyName}</div>
                               )}
                             </div>
-                            <button
-                              type="button"
-                              title="롤백"
-                              aria-label="롤백"
-                              className={`inline-flex h-7 items-center rounded-md border px-2.5 text-xs font-semibold transition shrink-0 ${
-                                reverting
-                                  ? "border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed"
-                                  : "border-amber-300 bg-white text-amber-700 hover:bg-amber-50"
-                              }`}
-                              disabled={reverting || !rowAnchorId}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                void handleRevertHappyCallByAnchor(
-                                  rowAnchorId,
-                                  businessName || companyName || "의뢰자",
-                                );
-                              }}
-                            >
-                              {reverting ? "롤백 중..." : <RotateCcw className="h-3.5 w-3.5" />}
-                            </button>
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <button
+                                type="button"
+                                className={`inline-flex h-7 items-center rounded-md border px-2 text-xs font-semibold transition ${
+                                  memoEntries.length
+                                    ? "border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100"
+                                    : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+                                }`}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setHappyCallSelectedMemoId(
+                                    memoEntries.length
+                                      ? String(memoEntries[memoEntries.length - 1]?.id || "") || null
+                                      : null,
+                                  );
+                                  openHappyCallMemoDialogForCompletion(row);
+                                }}
+                              >
+                                메모{memoEntries.length ? ` (${memoEntries.length})` : ""}
+                              </button>
+                              <button
+                                type="button"
+                                title="해피콜 대상으로 되돌리기"
+                                aria-label="해피콜 대상으로 되돌리기"
+                                className={`inline-flex h-7 items-center rounded-md border px-2.5 text-xs font-semibold transition ${
+                                  reverting
+                                    ? "border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed"
+                                    : "border-amber-300 bg-white text-amber-700 hover:bg-amber-50"
+                                }`}
+                                disabled={reverting || !rowAnchorId}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  void handleRevertHappyCallByAnchor(
+                                    rowAnchorId,
+                                    businessName || companyName || "의뢰자",
+                                  );
+                                }}
+                              >
+                                {reverting ? "롤백 중..." : <RotateCcw className="h-3.5 w-3.5" />}
+                              </button>
+                            </div>
                           </div>
                           <div className="mt-1 text-[11px] text-gray-500">
                             완료 시각 {toDateTimeLabel(row.completedAt)} · 숨김 해제 예정 {toDateLabel(row.suppressUntil)}
@@ -2493,6 +2693,7 @@ export const AdminDashboardPage = () => {
                           <div className="mt-1 rounded-md border border-slate-200 bg-slate-50 px-2 py-1.5 text-xs text-slate-700 whitespace-pre-wrap break-words">
                             {String(row.note || "").trim() || "메모 없음"}
                           </div>
+
                         </div>
                       );
                     })}
@@ -2584,6 +2785,7 @@ export const AdminDashboardPage = () => {
       <MultiActionDialog
         open={happyCallMemoDialog.open}
         onClose={() => {
+          if (savingHappyCallMemo) return;
           setHappyCallMemoDialog({ open: false, item: null });
           setHappyCallMemoDraft("");
           setHappyCallSelectedMemoId(null);
@@ -2600,10 +2802,17 @@ export const AdminDashboardPage = () => {
             </div>
 
             {(() => {
+              const mode = happyCallMemoDialog.item?.mode;
               const anchorId = String(happyCallMemoDialog.item?.businessAnchorId || "").trim();
-              const memoEntries = Array.isArray(happyCallNotesByAnchor[anchorId])
-                ? happyCallNotesByAnchor[anchorId]
-                : [];
+              const completionId = String(happyCallMemoDialog.item?.completionId || "").trim();
+              const memoEntries =
+                mode === "completion"
+                  ? Array.isArray(happyCallCompletionNotesById[completionId])
+                    ? happyCallCompletionNotesById[completionId]
+                    : []
+                  : Array.isArray(happyCallNotesByAnchor[anchorId])
+                    ? happyCallNotesByAnchor[anchorId]
+                    : [];
 
               const selectedEntry = memoEntries.find(
                 (entry) => entry.id === happyCallSelectedMemoId,
@@ -2692,88 +2901,18 @@ export const AdminDashboardPage = () => {
             label: "취소",
             variant: "secondary",
             onClick: () => {
+              if (savingHappyCallMemo) return;
               setHappyCallMemoDialog({ open: false, item: null });
               setHappyCallMemoDraft("");
               setHappyCallSelectedMemoId(null);
             },
           },
           {
-            label: "메모 추가",
+            label: savingHappyCallMemo ? "저장 중..." : "메모 추가",
             variant: "primary",
             onClick: async () => {
-              const anchorId = String(happyCallMemoDialog.item?.businessAnchorId || "").trim();
-              const message = String(happyCallMemoDraft || "").slice(0, 500).trim();
-
-              if (!anchorId) {
-                setHappyCallMemoDialog({ open: false, item: null });
-                setHappyCallMemoDraft("");
-                return;
-              }
-
-              if (!message) {
-                toast({
-                  title: "메모를 입력해주세요",
-                  description: "추가할 메모 내용을 입력한 뒤 저장해주세요.",
-                  variant: "destructive",
-                });
-                return;
-              }
-
-              try {
-                const res = await apiFetch<ApiEnvelope<HappyCallMemoSaveData>>({
-                  path: "/api/admin/dashboard/happy-call/memo",
-                  method: "POST",
-                  token,
-                  headers: {
-                    "Content-Type": "application/json",
-                  },
-                  jsonBody: {
-                    businessAnchorId: anchorId,
-                    message,
-                  },
-                });
-
-                if (!res.ok || res.data?.success === false) {
-                  throw new Error(res.data?.message || "해피콜 메모 저장에 실패했습니다.");
-                }
-
-                const entriesRaw = Array.isArray(res.data?.data?.entries)
-                  ? res.data.data.entries
-                  : [];
-
-                const entries: HappyCallMemoEntry[] = entriesRaw
-                  .map((entry: { id?: string; message?: string; savedAt?: string }, idx: number) => {
-                    const savedAt = String(entry?.savedAt || "").trim();
-                    const msg = String(entry?.message || "").trim();
-                    const id = String(entry?.id || `${anchorId}-${savedAt}-${idx}`).trim();
-                    if (!savedAt || !msg) return null;
-                    return {
-                      id,
-                      message: msg,
-                      savedAt,
-                    } as HappyCallMemoEntry;
-                  })
-                  .filter(Boolean) as HappyCallMemoEntry[];
-
-                setHappyCallNotesByAnchor((prev) => ({
-                  ...prev,
-                  [anchorId]: entries,
-                }));
-                setHappyCallSelectedMemoId(entries[entries.length - 1]?.id || null);
-                setHappyCallMemoDraft("");
-                toast({
-                  title: "메모 추가",
-                  description: "해피콜 메모가 저장되었습니다.",
-                });
-              } catch (error: unknown) {
-                const message =
-                  error instanceof Error ? error.message : "잠시 후 다시 시도해주세요.";
-                toast({
-                  title: "메모 저장 실패",
-                  description: message,
-                  variant: "destructive",
-                });
-              }
+              if (savingHappyCallMemo) return;
+              await handleSaveHappyCallMemoFromDialog();
             },
           },
         ]}
