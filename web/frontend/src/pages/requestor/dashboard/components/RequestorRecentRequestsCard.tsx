@@ -28,6 +28,8 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { ShippingModeBadge } from "@/shared/shipping/ShippingModeBadge";
+import { resolveQuotedPriceAmount } from "@/shared/shipping/shippingMode";
+import { useSystemSettings, CREDIT_SETTINGS_DEFAULTS } from "@/hooks/useSystemSettings";
 
 // related files:
 // - web/frontend/src/pages/requestor/dashboard/RequestorDashboardPage.tsx
@@ -37,6 +39,7 @@ import { ShippingModeBadge } from "@/shared/shipping/ShippingModeBadge";
 // - web/frontend/src/shared/realtime/useAppEventListener.ts
 // - web/backend/controllers/requests/common.requests.controller.js
 // - web/frontend/rules.md
+// - web/backend/controllers/requests/expressPrice.utils.js
 
 const EDITABLE_STATUSES = new Set(["준비", "CAM", "가공"]); // CAM 호환 포함, UI 정책상 준비/가공 단계에서 수정 허용
 
@@ -102,6 +105,8 @@ type RecentRequestCardItem = {
   daysUntilDue?: number;
   price?: {
     amount?: number;
+    expressFee?: number | null;
+    expressFeeStatus?: string | null;
     rule?: string;
   };
   caseInfos?: EditableCaseInfos;
@@ -191,6 +196,10 @@ export const RequestorRecentRequestsCard = ({
 }: Props) => {
   const { token, user } = useAuthStore();
   const { toast } = useToast();
+  const { data: systemSettings } = useSystemSettings();
+  const expressFee =
+    systemSettings?.creditSettings?.expressFee ??
+    CREDIT_SETTINGS_DEFAULTS.expressFee;
   const [open, setOpen] = useState(false);
   const [selectedRequestId, setSelectedRequestId] = useState<string>("");
   const [detail, setDetail] = useState<RecentRequestCardItem | null>(null);
@@ -590,7 +599,11 @@ export const RequestorRecentRequestsCard = ({
             const stableKey = item._id || item.id || rawRequestId || "";
             const displayId = rawRequestId || String(item.id || item._id || "");
             const canCancel = isCancelableRequest(item);
-            const priceAmount = item.price?.amount;
+            const priceAmount = resolveQuotedPriceAmount({
+              price: item.price,
+              shippingMode: item,
+              expressFee,
+            });
             const isRemakeFixed = item.price?.rule === "remake_fixed_10000";
             const isRemakeMonthlyFree =
               item.price?.rule === "remake_monthly_free_3";

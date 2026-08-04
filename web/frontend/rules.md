@@ -65,6 +65,9 @@ Notes:
   - `src/pages/admin/credits/components/RequestorCreditTab.tsx`
   - `src/pages/admin/credits/components/RequestorOrganizationsTab.tsx`
   - `src/shared/components/CreditLedgerModal.tsx`
+  - `src/features/settings/tabs/AdminCreditSettingsTab.tsx` (요금/expressFee 전역 설정 UI)
+- 개발·운영사 설정
+  - `src/pages/devops/DevopsSettingsPage.tsx` (요금 탭 → 신속배송 추가비 등)
 - 관리자 대시보드/소통
   - `src/pages/admin/dashboard/AdminDashboardPage.tsx`
   - `src/pages/admin/support/AdminChatManagement.tsx`
@@ -86,6 +89,11 @@ Notes:
   - 의뢰카드에서 `shippingMode`(`normal`|`express`)를 건별로 선택합니다.
   - 우측 배송 설정은 안내/요일 설정 + 제출만 담당합니다.
   - 신속 추가 의뢰크레딧 금액은 `creditSettings.expressFee`(기본 1,000원)를 사용합니다.
+  - 설정 UI SSOT: 관리자 설정(결제) + 개발·운영사 설정(요금) → `AdminCreditSettingsTab`
+    - API: `GET /api/credits/settings`, `PATCH /api/admin/settings/credits` (`admin`|`devops`)
+  - 표시 금액 SSOT: 신속배송이면 가공비+추가비를 합산해 보여줍니다 (`resolveQuotedPriceAmount` in `shippingMode.ts`).
+    - 백엔드가 `price.amount`/`price.expressFee`를 내려주면 이중 합산하지 않습니다.
+    - 카드/상세: `RequestorRecentRequestsCard.tsx`, `RequestDetailDialog.tsx`
   - 우측 기본 배송 방식(`normal`|`express`)은 로컬스토리지 + `BusinessAnchor.shippingPolicy.defaultShippingMode`에 저장합니다.
   - 의뢰카드 하단(마감시간 옆)에 `shippingMode`에 따라 `신속배송`/`묶음배송` 뱃지를 항상 표시합니다.
     (`ShippingModeBadge`, `WorksheetCardGrid`, 대시보드 의뢰 리스트)
@@ -159,11 +167,12 @@ Notes:
 
 - 작업 공정 변경:
   - `PreviewModal`과 `WorksheetCardGrid`의 화살표 액션은 동일 공정 전이 규칙을 사용합니다.
-  - 작업 탭 화살표 기준은 `준비 ↔ 가공` 흐름으로 정렬하며, CAM 단계는 화살표 전이에서 건너뜁니다.
-    - 승인(`→`): 준비에서 가공 전이 로직을 사용합니다.
-      - 클릭 즉시 "가공 이동 요청 전송됨" 진행 토스트를 띄우고, `request:stage-changed` 웹소켓에서 `toStage in [CAM, 가공]` 수신 시 진행 토스트를 닫습니다.
+  - 작업 탭 화살표 기준은 `준비 ↔ 가공` 흐름입니다. CAM 단계는 UI 탭/전이 키로 쓰지 않습니다.
+    - 승인(`→`): `review-status`에 `stage=machining` + `nextUpCamRunGuard=true`를 보냅니다.
+      - 클릭 즉시 "가공 이동 요청 전송됨" 진행 토스트를 띄우고, `request:stage-changed` 웹소켓에서 `toStage=가공` 수신 시 진행 토스트를 닫습니다.
       - Next Up 진입 시에만 `caseInfos.ncFile.s3Key`(NC 메타) 존재 여부를 검사합니다.
-      - NC 메타가 없으면 승인 자체는 진행(가공 이동)하고, 백엔드에 CAM(Esprit) 실행 큐를 등록하며 `CAM 실행` 토스트를 표시합니다.
+      - NC 메타가 없으면 승인 자체는 진행(가공 이동)하고, 백엔드에 BG1/Esprit NC 생성 큐를 등록하며 `CAM 실행` 토스트를 표시합니다.
+      - 레거시 review 키 `cam`으로 준비→가공 진입을 보내지 않습니다.
     - 롤백(`←`): 가공에서 준비로 직접 롤백합니다.
       - 클릭 즉시 "준비 롤백 요청 전송됨" 진행 토스트를 띄웁니다. (카드 화살표 + PreviewModal + MachiningBoard Next Up/Now Playing 경로 포함)
       - `request:stage-changed` 웹소켓에서 `toStage=준비` 수신 시 진행 토스트를 닫습니다.
@@ -216,7 +225,7 @@ Notes:
   - Line: `lineNo`, `accountCode`, `ownerRole`, `ownerId`, `amount`, `amountExcludingVat`, `vatAmount`, `amountIncludingVat`, `creditKind`
   - 수익 계정코드: `REV_MANUFACTURER`, `REV_DEVOPS`, `REV_SALESMAN`, `REV_ADMIN`
   - 워크시트/정산 저장 이벤트: `REQUEST_SPEND_COMMIT`, `SHIPPING_SPEND_COMMIT`, `SETTLEMENT_PAYOUT`
-  - 발생 타이밍: `REQUEST_SPEND_COMMIT`=CAM 승인(가공 진입), `SHIPPING_SPEND_COMMIT`=세척.패킹 승인(포장.발송 진입)
+  - 발생 타이밍: `REQUEST_SPEND_COMMIT`=가공 진입 승인(준비→가공), `SHIPPING_SPEND_COMMIT`=세척.패킹 승인(포장.발송 진입)
   - 롤백은 별도 저널 이벤트를 만들지 않고 대응 COMMIT 이벤트 삭제로 처리하며,
     UI에서는 "환불"이 아니라 "소비 내역 삭제"로 표기합니다.
   - BG 콜백은 승인/롤백 트랜지션이 아니므로 크레딧 차감/삭제 트리거로 사용하지 않습니다.
@@ -243,7 +252,7 @@ Notes:
 
 - `PreviewModal` 상단 아노다이징 체크박스 표시/override 정책:
   - 표시 우선순위는 `caseInfos.anodizingEnabled` → `business.requestSettings.anodizingEnabled` 입니다.
-  - 제조사 override 저장은 의뢰/CAM 단계에서만 허용합니다.
+  - 제조사 override 저장은 준비/가공 단계에서만 허용합니다.
   - 저장 API: `PATCH /api/requests/:id/anodizing-override`
   - 관련 파일: `src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx`, `src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx`
 
@@ -290,8 +299,8 @@ Notes:
   - 상단 합계 카드는 `DashboardShell.statsGridClassName`을 명시해 카드가 과도하게 좁아지지 않도록 유지합니다.
 
 - 제조사 워크시트 크레딧 승인/롤백 정책:
-  - CAM 승인으로 `가공` 진입 시 의뢰 크레딧 소비가 발생합니다.
-  - `가공`에서 CAM 롤백 시 소비된 의뢰 크레딧은 "환불" 행 추가가 아니라, 기존 소비 행 삭제로 복구됩니다.
+  - 가공 진입 승인으로 `가공` 단계 이동 시 의뢰 크레딧 소비가 발생합니다.
+  - `가공`에서 준비로 롤백 시 소비된 의뢰 크레딧은 "환불" 행 추가가 아니라, 기존 소비 행 삭제로 복구됩니다.
   - 세척.패킹 승인으로 `포장.발송` 진입 시 배송 크레딧 소비가 발생합니다.
   - `포장.발송`에서 세척.패킹 롤백 시 소비된 배송 크레딧은 "환불" 행 추가가 아니라, 기존 소비 행 삭제로 복구됩니다.
   - 불완전가공(RnD unmachinable) 판정은 샘플 처리나 크레딧 롤백 사유가 아닙니다.

@@ -2,6 +2,11 @@
 // - web/backend/rules.md
 // - web/backend/app.js
 // - web/backend/server.js
+// - web/backend/modules/admin/admin.routes.js
+// - web/backend/models/systemSettings.model.js
+// - web/backend/utils/creditSettingsDefaults.js
+// - web/frontend/src/features/settings/tabs/AdminCreditSettingsTab.tsx
+// - web/frontend/src/pages/devops/DevopsSettingsPage.tsx
 import SystemSettings from "../../models/systemSettings.model.js";
 import {
   DEFAULT_DELIVERY_ETA_LEAD_DAYS,
@@ -323,13 +328,17 @@ export async function updateCreditSettings(req, res) {
       sanitized.defaultShippingFreeCredit = defaultShippingFreeCredit;
     }
 
+    const existing = await SystemSettings.findOne({ key: "global" }).lean();
+    const merged = normalizeCreditSettings({
+      ...(existing?.creditSettings || {}),
+      ...sanitized,
+    });
+
     const doc = await SystemSettings.findOneAndUpdate(
       { key: "global" },
       {
         $setOnInsert: { key: "global" },
-        ...(Object.keys(sanitized).length > 0
-          ? { $set: { creditSettings: sanitized } }
-          : {}),
+        $set: { creditSettings: merged },
       },
       { new: true, upsert: true, setDefaultsOnInsert: true },
     ).lean();

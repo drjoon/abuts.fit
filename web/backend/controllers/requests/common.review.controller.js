@@ -1084,6 +1084,7 @@ export async function updateReviewStatusByStage(req, res) {
     let resultRequest = null;
     let acceptedMessage = "";
     let previousManufacturerStage = null;
+    let isMachiningEntryApproval = false;
     let pendingEspritTriggerRequest = null;
     const pendingAdditionalEspritTriggerRequests = [];
     let pendingCamStageEspritTriggerRequest = null;
@@ -1188,7 +1189,24 @@ export async function updateReviewStatusByStage(req, res) {
 
       ensureReviewByStageDefaults(request);
 
-      request.caseInfos.reviewByStage[effectiveStage] = {
+      // 준비→가공 진입은 request 승인을 기록하고, machining review는
+      // 세척.패킹 진입 승인까지 PENDING으로 둔다. (레거시 cam 키도 동일)
+      isMachiningEntryApproval =
+        status === "APPROVED" &&
+        effectiveStage === "machining" &&
+        previousManufacturerStage === "준비" &&
+        nextUpCamRunGuard === true;
+      const isLegacyCamMachiningEntry =
+        status === "APPROVED" &&
+        effectiveStage === "cam" &&
+        previousManufacturerStage === "준비";
+
+      const reviewStageToWrite =
+        isMachiningEntryApproval || isLegacyCamMachiningEntry
+          ? "request"
+          : effectiveStage;
+
+      request.caseInfos.reviewByStage[reviewStageToWrite] = {
         status,
         updatedAt: new Date(),
         updatedBy: req.user?._id,
@@ -1196,12 +1214,6 @@ export async function updateReviewStatusByStage(req, res) {
       };
 
       // 승인 시 다음 공정으로 전환, 미승인(PENDING) 시 현재 단계로 되돌림
-      const isMachiningEntryApproval =
-        status === "APPROVED" &&
-        effectiveStage === "machining" &&
-        previousManufacturerStage === "준비" &&
-        nextUpCamRunGuard === true;
-
       if (status === "APPROVED") {
         const resolvedBusinessAnchorId = (() => {
           const directBusinessAnchorId = request.businessAnchorId;
@@ -1532,10 +1544,10 @@ export async function updateReviewStatusByStage(req, res) {
             acceptedMessage = `${acceptedMessage} (헥스 STL모델대로/헥스30도회전 2건 가공용 복사본이 함께 생성되었습니다.)`;
           }
         } else {
-          // 가공 진입 승인(legacy cam 키 또는 machining+nextUp guard) 시에는
+          // 가공 진입 승인(준비→가공: machining+nextUpCamRunGuard, 레거시 cam 키 호환)
           // 제조사 공정을 '가공' 단계로 즉시 전환하되,
           // 실제 CNC 가공 시작은 Bridge(CNC) 쪽 상태(allowAutoMachining, 자동 트리거 등)에 의해 제어된다.
-          if (effectiveStage === "cam" || isMachiningEntryApproval) {
+          if (isMachiningEntryApproval || effectiveStage === "cam") {
             applyStatusMapping(request, "가공");
           } else if (effectiveStage === "machining") {
             // machining 단계 승인: 이미 가공이 완료된 의뢰(machiningRecord 있음)는 재가공 없이 바로 세척.패킹으로
@@ -1564,10 +1576,10 @@ export async function updateReviewStatusByStage(req, res) {
         }
 
         // 크레딧 타이밍 SSOT:
-        // - 의뢰 크레딧 차감은 가공 진입 승인 시점(legacy cam 포함)에만 수행
+        // - 의뢰 크레딧 차감은 가공 진입 승인 시점(준비→가공)에만 수행
         if (
           status === "APPROVED" &&
-          (effectiveStage === "cam" || isMachiningEntryApproval) &&
+          (isMachiningEntryApproval || effectiveStage === "cam") &&
           resolvedBusinessAnchorId &&
           !isManufacturerSampleRequest(request) &&
           !isPracticeDropzoneRequest
@@ -1584,8 +1596,10 @@ export async function updateReviewStatusByStage(req, res) {
         const hasTrackedScrewLot = Boolean(
           normalizePackingScrewLot(request?.screwTracking?.lotNumber),
         );
+        // 스크류 로트는 세척.패킹 진입(가공 완료 승인) 시점. 준비→가공 진입에는 배정하지 않는다.
         const shouldAutoAssignScrewLot =
-          (effectiveStage === "machining" || effectiveStage === "packing") &&
+          ((effectiveStage === "machining" && !isMachiningEntryApproval) ||
+            effectiveStage === "packing") &&
           !hasTrackedScrewLot;
 
         // 스크류 로트 추적 스냅샷 자동 귀속
@@ -1657,7 +1671,7 @@ export async function updateReviewStatusByStage(req, res) {
 
 
 
-        if (effectiveStage === "cam" || isMachiningEntryApproval) {
+        if (isMachiningEntryApproval || effectiveStage === "cam") {
           request.productionSchedule = request.productionSchedule || {};
 
           // 준비→가공 진입 배정 SSOT:
@@ -1665,7 +1679,7 @@ export async function updateReviewStatusByStage(req, res) {
           // 항상 다시 적용한다. 스케줄 단계의 사전/ghost 배정(M3 등)은 사용하지 않는다.
           const selected = await ensureMachineCompatibilityOrThrow({
             request,
-            stageKey: "cam",
+            stageKey: "machining",
             session,
             reserveAssignment: true,
           });
@@ -2020,10 +2034,7 @@ export async function updateReviewStatusByStage(req, res) {
 
     if (
       status === "APPROVED" &&
-      (effectiveStage === "cam" ||
-        (effectiveStage === "machining" &&
-          previousManufacturerStage === "준비" &&
-          nextUpCamRunGuard === true))
+      (isMachiningEntryApproval || effectiveStage === "cam")
     ) {
       runCamApprovePostProcessingInBackground({
         requestMongoId: resultRequest?._id || null,
@@ -2035,11 +2046,12 @@ export async function updateReviewStatusByStage(req, res) {
       String(responseData?.manufacturerStage || "").trim() || null;
     const normalizedPrevStage = String(previousManufacturerStage || "").trim();
     const normalizedCurrentStage = String(currentManufacturerStage || "").trim();
-    const isRequestStageImmediateCamSkip =
+    const isPrepToMachiningEntry =
       String(status || "").trim() === "APPROVED" &&
-      String(effectiveStage || "").trim() === "request" &&
-      normalizedPrevStage === "준비" &&
-      normalizedCurrentStage === "CAM";
+      (isMachiningEntryApproval ||
+        (String(effectiveStage || "").trim() === "cam" &&
+          normalizedPrevStage === "준비")) &&
+      (normalizedCurrentStage === "가공" || normalizedCurrentStage === "CAM");
 
     emitWorksheetStageChanged(resultRequest, {
       reviewStage: String(stageOverride || stage || "").trim() || null,
@@ -2049,8 +2061,8 @@ export async function updateReviewStatusByStage(req, res) {
           ? previousManufacturerStage
           : null,
       toStage: currentManufacturerStage,
-      source: isRequestStageImmediateCamSkip
-        ? "review-status-cam-skip"
+      source: isPrepToMachiningEntry
+        ? "review-status-machining-entry"
         : "review-status",
     });
 

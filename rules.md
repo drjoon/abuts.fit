@@ -207,8 +207,12 @@
 - 묶음 배송 식별은 박스/패키지 기준으로 유지
 - 배송비 과금 시점: 세척.패킹 승인
 - 신속 배송 추가 의뢰크레딧: `creditSettings.expressFee`(기본 1,000원), **가공 진입(CAM 승인) 시 별도 `express_surcharge` 저널로 차감**
+  - 설정 UI: 관리자 설정(결제) + 개발·운영사 설정(요금) — `AdminCreditSettingsTab` / `PATCH /api/admin/settings/credits` (`admin`|`devops`)
   - 생산 지연(약속 발송일 미준수) 또는 신속→묶음 전환 시 신속 추가비만 물리 삭제 취소
   - 의뢰자 대시보드: `PATCH /api/requests/my/shipping-mode` (준비 단계만)
+  - 견적/표시 금액 SSOT: 신속 지정 시점부터 `price.amount`에 추가비를 합산하고 `price.expressFee`에 기록 (`expressPrice.utils.js` `resolveQuotedPriceWithExpressFee`)
+    - 적용 경로: 생성(`from-draft`/`createRequest`), 준비 단계 모드 전환, 대시보드/상세 응답 정규화
+    - 실제 크레딧 차감 시점(CAM)과 표시 금액 반영 시점을 혼동하지 말 것
 - 추적관리 진입 기준: 집하완료(statusCode 11 / picked_up)
 
 ### 2.8 R&D 샘플

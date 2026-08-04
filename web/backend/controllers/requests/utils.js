@@ -24,7 +24,6 @@ import {
   ymdToMmDd,
 } from "../../utils/krBusinessDays.js";
 import { normalizeImplantFields } from "../../utils/implantCanonical.js";
-import { resolveEffectiveShippingMode } from "./shippingPriority.utils.js";
 import { resolveQuotedPriceWithExpressFee } from "./expressPrice.utils.js";
 import { loadCreditSettingsDefaults } from "../../utils/creditSettingsDefaults.js";
 
@@ -805,9 +804,15 @@ export async function normalizeRequestForResponse(requestDoc) {
     } catch {
       expressFeePerRequest = 1000;
     }
+    const shippingMode =
+      obj?.finalShipping?.mode === "express" ||
+      obj?.originalShipping?.mode === "express" ||
+      obj?.shippingMode === "express"
+        ? "express"
+        : "normal";
     obj.price = resolveQuotedPriceWithExpressFee({
       price: obj.price,
-      shippingMode: resolveEffectiveShippingMode(obj),
+      shippingMode,
       expressFee: expressFeePerRequest,
     });
   }

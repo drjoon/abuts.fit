@@ -201,12 +201,13 @@ export const useCardActions = (
         isMachiningStage,
       });
 
-      // 작업 공정 변경: 준비 승인 화살표는 CAM을 건너뛰어 가공 전이 로직을 사용한다.
+      // 준비 승인 화살표 SSOT: stage=machining + nextUpCamRunGuard 로 가공 진입.
+      // (레거시 review 키 cam 사용 금지)
       const transitionStageKey =
-        stageKey === "request" ? "cam" : stageKey;
+        stageKey === "request" ? "machining" : stageKey;
 
       const isRequestNextUpTransition =
-        stageKey === "request" && transitionStageKey === "cam";
+        stageKey === "request" && transitionStageKey === "machining";
 
       if (stageKey === "request") {
         const requestId = String(req.requestId || "").trim();
@@ -216,7 +217,7 @@ export const useCardActions = (
             requestId,
             "가공 이동 요청 전송됨",
             "의뢰를 가공으로 넘기는 중입니다. 잠시만 기다려주세요.",
-            ["CAM", "가공"],
+            ["가공"],
           );
         }
       }

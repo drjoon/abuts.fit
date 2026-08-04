@@ -323,9 +323,17 @@ router.get("/activity-logs", authorize(["admin"]), getActivityLogs);
 router.get("/settings", authorize(["admin"]), getSystemSettings);
 router.put("/settings", authorize(["admin"]), updateSystemSettings);
 
-// 크레딧 설정
-router.get("/settings/credits", authorize(["admin"]), getCreditSettings);
-router.patch("/settings/credits", authorize(["admin"]), updateCreditSettings);
+// 크레딧 설정 (admin + devops)
+router.get(
+  "/settings/credits",
+  authorize(["admin", "devops"]),
+  getCreditSettings,
+);
+router.patch(
+  "/settings/credits",
+  authorize(["admin", "devops"]),
+  updateCreditSettings,
+);
 
 // 보안 설정
 router.get("/security-settings", authorize(["admin"]), getSecuritySettings);

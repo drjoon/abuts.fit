@@ -2338,15 +2338,15 @@ export const PreviewModal = ({
                         }
                       }
 
-                      // 작업 공정 변경: 준비 승인 화살표는 CAM을 건너뛰어 가공 전이 로직을 사용한다.
+                      // 준비 승인 SSOT: stage=machining + nextUpCamRunGuard 로 가공 진입.
                       const transitionStageKey =
                         currentReviewStageKey === "request"
-                          ? "cam"
+                          ? "machining"
                           : currentReviewStageKey;
 
                       const isRequestNextUpTransition =
                         currentReviewStageKey === "request" &&
-                        transitionStageKey === "cam";
+                        transitionStageKey === "machining";
 
                       toast({
                         title:
@@ -2376,8 +2376,8 @@ export const PreviewModal = ({
                         nextUpCamRunGuard: isRequestNextUpTransition,
                       });
 
-                      // CAM(또는 준비→가공 위임) 승인 시 NC 파일 bridge-store 동기화 (비동기, 실패 무시)
-                      if (transitionStageKey === "cam") {
+                      // 준비→가공 진입 승인 시 NC 파일 bridge-store 동기화 (비동기, 실패 무시)
+                      if (isRequestNextUpTransition) {
                         const requestId = String(activeReq.requestId).trim();
                         if (token && requestId) {
                           void fetch(

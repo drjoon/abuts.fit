@@ -27,7 +27,10 @@ import {
   deleteShippingSpendAtomicOnRollback,
 } from "../../services/creditBalance.service.js";
 import { resolveEffectiveShippingMode } from "./shippingPriority.utils.js";
-import { resolveQuotedPriceWithExpressFee } from "./expressPrice.utils.js";
+import {
+  resolveQuotedPriceWithExpressFee,
+  toPlainRequestPrice,
+} from "./expressPrice.utils.js";
 import { postGeneralLedgerJournal } from "../../services/generalLedger.service.js";
 import {
   isShippingSpendRevenueContext,
@@ -432,7 +435,7 @@ export async function cancelExpressSurchargeIfShipDelayed({
     if (Number(request?.price?.expressFee || 0) > 0) {
       request.price = resolveQuotedPriceWithExpressFee({
         price: {
-          ...(request.price || {}),
+          ...toPlainRequestPrice(request.price),
           expressFeeStatus: "cancelled",
         },
         shippingMode: resolveEffectiveShippingMode(request),
@@ -447,7 +450,7 @@ export async function cancelExpressSurchargeIfShipDelayed({
 
   request.price = resolveQuotedPriceWithExpressFee({
     price: {
-      ...(request.price || {}),
+      ...toPlainRequestPrice(request.price),
       expressFeeStatus: "cancelled",
     },
     shippingMode: resolveEffectiveShippingMode(request),
@@ -487,7 +490,7 @@ export async function ensureRequestCreditSpendOnMachiningEnter({
 
   if (isSampleRequest) {
     request.price = {
-      ...(request.price || {}),
+      ...toPlainRequestPrice(request.price),
       amount: 0,
     };
 
@@ -521,7 +524,7 @@ export async function ensureRequestCreditSpendOnMachiningEnter({
   }
 
   request.price = {
-    ...(request.price || {}),
+    ...toPlainRequestPrice(request.price),
     ...resolveQuotedPriceWithExpressFee({
       price: computedPrice,
       shippingMode,
@@ -630,10 +633,11 @@ export async function ensureRequestCreditSpendOnMachiningEnter({
     const baseOnly =
       Number.isFinite(baseAmount) && baseAmount > 0 ? baseAmount : 0;
     if (spentTotal > baseOnly + 1) {
-      request.price = {
-        ...(request.price || {}),
-        expressFeeStatus: "charged",
-      };
+      if (request.price) {
+        request.price.expressFeeStatus = "charged";
+      } else {
+        request.price = { expressFeeStatus: "charged" };
+      }
       console.log(
         "[CREDIT_SPEND] skip express surcharge; legacy combined spend detected",
         {
@@ -658,10 +662,11 @@ export async function ensureRequestCreditSpendOnMachiningEnter({
 
   if (!expressSpendResult?.didSpend) {
     if (expressSpendResult?.reason === "already_spent") {
-      request.price = {
-        ...(request.price || {}),
-        expressFeeStatus: "charged",
-      };
+      if (request.price) {
+        request.price.expressFeeStatus = "charged";
+      } else {
+        request.price = { expressFeeStatus: "charged" };
+      }
       console.log("[CREDIT_SPEND] skip existing express surcharge", {
         requestId: request?.requestId,
         uniqueKey: expressSpendResult.uniqueKey,
@@ -689,19 +694,21 @@ export async function ensureRequestCreditSpendOnMachiningEnter({
 
   if (!expressGl?.posted) {
     if (expressGl?.idempotent) {
-      request.price = {
-        ...(request.price || {}),
-        expressFeeStatus: "charged",
-      };
+      if (request.price) {
+        request.price.expressFeeStatus = "charged";
+      } else {
+        request.price = { expressFeeStatus: "charged" };
+      }
       return;
     }
     throw new Error("REQUEST_SPEND_COMMIT express surcharge ledger posting failed");
   }
 
-  request.price = {
-    ...(request.price || {}),
-    expressFeeStatus: "charged",
-  };
+  if (request.price) {
+    request.price.expressFeeStatus = "charged";
+  } else {
+    request.price = { expressFeeStatus: "charged" };
+  }
 
   await emitOrQueueCreditBalanceUpdate({
     deferredCreditEvents,

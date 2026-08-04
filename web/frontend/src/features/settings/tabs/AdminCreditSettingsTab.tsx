@@ -2,6 +2,11 @@
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
+// - web/frontend/src/pages/admin/settings/SettingsPage.tsx
+// - web/frontend/src/pages/devops/DevopsSettingsPage.tsx
+// - web/backend/controllers/admin/admin.settings.controller.js
+// - web/backend/models/systemSettings.model.js
+// - web/backend/utils/creditSettingsDefaults.js
 import { useCallback, useState, useEffect } from "react";
 import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
@@ -110,7 +115,27 @@ export const AdminCreditSettingsTab = () => {
         throw new Error("설정 저장 실패");
       }
 
-      setOriginalSettings(settings);
+      const saved = res.data?.data?.creditSettings;
+      if (saved) {
+        const normalized: CreditSettings = {
+          minCreditForRequest: Number(
+            saved.minCreditForRequest ?? settings.minCreditForRequest,
+          ),
+          shippingFee: Number(saved.shippingFee ?? settings.shippingFee),
+          expressFee: Number(saved.expressFee ?? settings.expressFee),
+          defaultRequestFreeCredit: Number(
+            saved.defaultRequestFreeCredit ?? settings.defaultRequestFreeCredit,
+          ),
+          defaultShippingFreeCredit: Number(
+            saved.defaultShippingFreeCredit ??
+              settings.defaultShippingFreeCredit,
+          ),
+        };
+        setSettings(normalized);
+        setOriginalSettings(normalized);
+      } else {
+        setOriginalSettings(settings);
+      }
       toast({
         title: "설정이 저장되었습니다",
         duration: 2000,
@@ -138,7 +163,12 @@ export const AdminCreditSettingsTab = () => {
     <div className="space-y-6">
       <Card>
         <CardHeader>
-          <CardTitle>최소 요구 크레딧</CardTitle>
+          <CardTitle>최소 요구 크레딧 / 배송 요금</CardTitle>
+          <CardDescription>
+            전역 설정입니다. 신속 배송 추가비(
+            <code className="text-xs">creditSettings.expressFee</code>)는 의뢰
+            생성·표시·차감에 동일하게 적용됩니다.
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="grid gap-4 md:grid-cols-2">
@@ -176,7 +206,7 @@ export const AdminCreditSettingsTab = () => {
                 disabled={loading}
               />
             </div>
-            <div className="space-y-2">
+            <div className="space-y-2 md:col-span-2">
               <Label htmlFor="expressFee">신속 배송 추가 의뢰크레딧 (원)</Label>
               <Input
                 id="expressFee"
@@ -191,6 +221,10 @@ export const AdminCreditSettingsTab = () => {
                 }
                 disabled={loading}
               />
+              <p className="text-xs text-muted-foreground">
+                신속배송 건당 가공비에 더해지는 추가 의뢰크레딧입니다. 기본값{" "}
+                {CREDIT_SETTINGS_DEFAULTS.expressFee.toLocaleString("ko-KR")}원.
+              </p>
             </div>
           </div>
         </CardContent>
@@ -214,7 +248,10 @@ export const AdminCreditSettingsTab = () => {
                 onChange={(e) =>
                   setSettings({
                     ...settings,
-                    defaultRequestFreeCredit: Math.max(0, Number(e.target.value)),
+                    defaultRequestFreeCredit: Math.max(
+                      0,
+                      Number(e.target.value),
+                    ),
                   })
                 }
                 disabled={loading}
@@ -232,7 +269,10 @@ export const AdminCreditSettingsTab = () => {
                 onChange={(e) =>
                   setSettings({
                     ...settings,
-                    defaultShippingFreeCredit: Math.max(0, Number(e.target.value)),
+                    defaultShippingFreeCredit: Math.max(
+                      0,
+                      Number(e.target.value),
+                    ),
                   })
                 }
                 disabled={loading}

@@ -15,6 +15,11 @@ import {
 import { formatImplantDisplay } from "@/utils/implant";
 import { formatDateWithDay } from "@/utils/dateFormat";
 import { generateModelNumber } from "@/utils/modelNumber";
+import { resolveQuotedPriceAmount } from "@/shared/shipping/shippingMode";
+import {
+  useSystemSettings,
+  CREDIT_SETTINGS_DEFAULTS,
+} from "@/hooks/useSystemSettings";
 
 export type RequestDetailDialogCaseInfos = {
   clinicName?: string;
@@ -57,8 +62,13 @@ export type RequestDetailDialogRequest = {
   daysUntilDue?: number;
   message?: string;
   riskLevel?: string;
+  shippingMode?: string | null;
+  finalShipping?: { mode?: string | null } | null;
+  originalShipping?: { mode?: string | null } | null;
   price?: {
     amount?: number;
+    expressFee?: number | null;
+    expressFeeStatus?: string | null;
     rule?: string;
     currency?: string;
   };
@@ -149,6 +159,10 @@ export const RequestDetailDialog = ({
   extraBadge,
   footer,
 }: RequestDetailDialogProps) => {
+  const { data: systemSettings } = useSystemSettings();
+  const expressFee =
+    systemSettings?.creditSettings?.expressFee ??
+    CREDIT_SETTINGS_DEFAULTS.expressFee;
   const caseInfos = request?.caseInfos || {};
   const implantDisplay = formatImplantDisplay(caseInfos);
   const modelNumberLabel = generateModelNumber(caseInfos);
@@ -163,7 +177,11 @@ export const RequestDetailDialog = ({
     request?.timeline?.estimatedShipYmd ||
     request?.estimatedShipYmd ||
     request?.dueDate;
-  const priceAmount = request?.price?.amount;
+  const priceAmount = resolveQuotedPriceAmount({
+    price: request?.price,
+    shippingMode: request,
+    expressFee,
+  });
   const priceRule = request?.price?.rule;
   const isRemakeFixed = priceRule === "remake_fixed_10000";
   const isRemakeMonthlyFree = priceRule === "remake_monthly_free_3";

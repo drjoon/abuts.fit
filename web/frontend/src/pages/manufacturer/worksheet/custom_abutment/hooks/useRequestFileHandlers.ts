@@ -756,7 +756,9 @@ export const useRequestFileHandlers = ({
           const camRunAlreadyQueued = body?.meta?.camRunAlreadyQueued === true;
 
           const successTitle =
-            camRunTriggered && params.status === "APPROVED" && stageKey === "cam"
+            camRunTriggered &&
+            params.status === "APPROVED" &&
+            (stageKey === "machining" || stageKey === "cam")
               ? "CAM 실행"
               : "검토 상태 변경 완료";
           const successDescription =
@@ -784,7 +786,7 @@ export const useRequestFileHandlers = ({
             variant:
               camRunTriggerErrorMessage &&
               params.status === "APPROVED" &&
-              stageKey === "cam"
+              (stageKey === "machining" || stageKey === "cam")
                 ? "destructive"
                 : undefined,
           });
@@ -987,7 +989,7 @@ export const useRequestFileHandlers = ({
               }
             : req.caseInfos?.reviewByStage,
         },
-        manufacturerStage: targetStage === "request" ? "준비" : "CAM",
+        manufacturerStage: targetStage === "request" ? "준비" : "가공",
       } as ManufacturerRequest;
       const optimisticallyPatched = applySingleRequestPatch(updatedRequest);
       if (!optimisticallyPatched) {
@@ -1034,7 +1036,7 @@ export const useRequestFileHandlers = ({
           dismiss(rollbackPendingToast.id);
         }
 
-        const stageLabel = targetStage === "request" ? "준비" : "CAM";
+        const stageLabel = targetStage === "request" ? "준비" : "가공";
         toast({
           title: "롤백 완료",
           description: `${stageLabel} 단계로 되돌렸습니다.`,

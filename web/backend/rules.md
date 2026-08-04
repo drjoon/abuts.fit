@@ -61,11 +61,18 @@
   - 생성 경로에서 `"normal"` 강제 금지: `draftRequest.controller.js`, `creation.draft.controller.js`, `creation.from-draft.controller.js`, `creation.request.controller.js`
   - 유효 모드 해석: `controllers/requests/shippingPriority.utils.js`의 `resolveEffectiveShippingMode`
   - 신속 추가 의뢰크레딧: `creditSettings.expressFee`(기본 1000)
+    - 설정 API: `GET|PATCH /api/admin/settings/credits` (`authorize(["admin","devops"])`)
+      - 공개 조회: `GET /api/credits/settings`
+      - 저장/정규화: `admin.settings.controller.js` `updateCreditSettings` (기존 값 merge)
+    - 견적/표시: `expressPrice.utils.js` `resolveQuotedPriceWithExpressFee` — 신속 지정 시 `price.amount`에 합산 + `price.expressFee` 기록
+      - 생성: `creation.from-draft.controller.js`, `creation.request.controller.js`
+      - 준비 단계 모드 전환: `shipping.Requestor.controller.js` `updateMyShippingMode`
+      - 응답 정규화: `utils.js` `normalizeRequestForResponse`, 대시보드 recent/snapshot
     - 제출 잔액 체크: `creation.from-draft.controller.js`
     - 실제 차감: `common.review.helpers.js` `ensureRequestCreditSpendOnMachiningEnter`
       - 가공비: `request:<id>:machining_spend`
       - 신속 추가비: `request:<id>:express_surcharge` (분리 저널)
-    - 지연/모드 전환 취소: `cancelExpressSurchargeIfShipDelayed` → `deleteExpressSurchargeAtomic`
+    - 지연/모드 전환 취소: `cancelExpressSurchargeIfShipDelayed` → `deleteExpressSurchargeAtomic` (표시 금액도 추가비 제외로 재동기화)
   - 기본 배송 방식: `BusinessAnchor.shippingPolicy.defaultShippingMode` (`normal`|`express`)
     - PATCH: `business.update.controller.js` / 프론트 `NewRequestShippingSection` + `useBulkShippingPolicy`
   - 스케줄: `production.utils.js` `calculateInitialProductionSchedule({ shippingMode })` (신속: 12시 KST 컷오프)
@@ -129,9 +136,14 @@
   반대 헥스 모드의 내부 복사본(`source=manufacturer_sample`, `price.rule=manufacturer_sample`)을 생성해
   별도 lot/NC를 처리합니다.
   - 구현: `controllers/requests/common.review.controller.js`
-- 가공 Next Up 진입 승인(`review-status`, stage=machining + `nextUpCamRunGuard=true`) 시 NC 메타(`caseInfos.ncFile.s3Key`)가 없으면
-  가공 단계 전환은 유지한 채 `REQUEST_STAGE_APPROVED` 큐를 추가 등록해 BG1/Esprit CAM 실행을 트리거합니다.
-  - 레거시 호환: 내부 review 키 `cam` 요청도 동일하게 처리합니다.
+- 가공 Next Up 진입 승인(`review-status`, stage=machining + `nextUpCamRunGuard=true`) 시
+  `manufacturerStage`를 `가공`으로 즉시 전환하고 장비 배정/크레딧 차감을 수행합니다.
+  - NC 메타(`caseInfos.ncFile.s3Key`)가 없으면 가공 단계 전환은 유지한 채
+    `REQUEST_STAGE_APPROVED` 큐를 추가 등록해 BG1/Esprit NC 생성을 트리거합니다.
+  - 프론트 준비 탭 승인(화살표/프리뷰)은 반드시 `stage=machining` + `nextUpCamRunGuard=true`를 보냅니다.
+    review 키 `cam`으로 준비→가공 진입을 보내지 않습니다(레거시 수신만 호환).
+  - 준비→가공 진입 시 `reviewByStage.request`를 APPROVED로 기록하고,
+    `reviewByStage.machining`은 세척.패킹 진입 승인까지 PENDING을 유지합니다.
   - 구현: `controllers/requests/common.review.controller.js`, `services/reviewApprovalQueue.service.js`
 - BG request-meta(`GET /api/bg/request-meta`)의 lotNumber 전달 SSOT:
   - 백엔드 `ensureLotNumberForMachining` 로직을 사용해 `lotNumber.value`를 생성/보정합니다.
@@ -142,7 +154,8 @@
   - 승인 트랜잭션에서 `chooseMachineForCamMachining(requireCeil=true)`를 사용해 `caseInfos.maxDiameter` 기준 호환 장비를 선택하고
     `productionSchedule.assignedMachine/queuePosition`에 즉시 반영합니다.
   - 성능 규칙: `review-status` 승인 경로에서 "호환성 검사"와 "실제 배정"은 동일 선택 결과를 재사용해 장비 선택 쿼리를 1회로 유지합니다(중복 호출 금지).
-  - CAM 승인 후처리 큐(`CAM_STAGE_APPROVED`)는 Now Playing 즉시 시작을 하지 않으며, Next Up(대기열) 반영/로트 보정만 담당합니다.
+  - 가공 진입 후처리 큐(`CAM_STAGE_APPROVED`)는 Now Playing 즉시 시작을 하지 않으며, Next Up(대기열) 반영/로트 보정만 담당합니다.
+  - `manufacturerStage` 저장값으로 `CAM`을 쓰지 않습니다. 레거시 `CAM` 문서는 가공으로 취급/이관합니다.
 
 - NC 롤백(가공→준비) 성능 규칙:
   - `DELETE /api/requests/:id/nc-file` 경로는 트랜잭션 내부 단일 조회 결과를 재사용합니다.
@@ -158,7 +171,7 @@
   - 허용값: canonical `STL모델대로` / `헥스30도회전` / `헥스X도회전(total)`
 - 제조사 아노다이징 override는 `caseInfos.anodizingEnabled` SSOT로 저장합니다.
   - endpoint: `PATCH /api/requests/:id/anodizing-override`
-  - 변경 가능 단계: `준비`, `CAM` (그 외 단계는 409)
+  - 변경 가능 단계: `준비`, `가공` (레거시 `CAM` 호환, 그 외 단계는 409)
   - 제조사 워크시트 응답의 `item.business.requestSettings.anodizingEnabled`를 함께 제공해
     프론트가 `caseInfos` 미설정 시 사업자 기본값으로 표시할 수 있어야 합니다.
   - 전달 SSOT: `헥스X도회전`의 X는 `totalDeg(=30+minorDeg)`
@@ -310,9 +323,9 @@
   - `meta` (requestId, shippingPackageId, settlementBatchId 등)
 
 - 승인/롤백 이벤트 정책(강제):
-  - `REQUEST_SPEND_COMMIT`: **CAM 승인(가공 진입)** 시 기록
+  - `REQUEST_SPEND_COMMIT`: **가공 진입 승인(준비→가공)** 시 기록
   - `SHIPPING_SPEND_COMMIT`: **세척.패킹 승인(포장.발송 진입)** 시 기록
-  - `REQUEST` 차감 삭제: **가공 롤백(CAM 복귀)** 시 대응 커밋 이벤트/라인 **물리 삭제**
+  - `REQUEST` 차감 삭제: **가공→준비 롤백** 시 대응 커밋 이벤트/라인 **물리 삭제**
     - 롤백 엔드포인트(`DELETE /api/requests/:id/nc-file`, `DELETE /api/requests/:id/stage-file?stage=machining`)도 동일 정책으로 `ensureRequestCreditRollbackDeleteOnRollbackToCam`를 반드시 호출해야 합니다.
     - 삭제 대상 커밋 탐색은 idempotencyKey 매칭을 우선하고, 누락 시 `refType/refId`, `journal.meta.requestMongoId|requestId`, `LedgerLine 역탐색`까지 사용해 원본 COMMIT 저널을 식별/삭제합니다.
     - 샘플(`rnd_sample|copied_sample`)은 `no_spend`를 정상으로 허용합니다.
@@ -324,8 +337,8 @@
   - BG 콜백(예: CNC 처리 완료/실패 콜백)은 파일 상태 동기화 전용이며 승인/롤백 트랜지션이 아니므로,
     크레딧/정산 이벤트를 적재하지 않음
   - 불완전가공(RnD unmachinable) 판정은 크레딧 롤백 사유가 아님
-    - 이미 CAM 승인으로 발생한 `REQUEST_SPEND_COMMIT`은 유지
-    - 불완전가공으로 CAM 복귀가 일어나도 장부 삭제/환불 금지
+    - 이미 가공 진입 승인으로 발생한 `REQUEST_SPEND_COMMIT`은 유지
+    - 불완전가공으로 준비 복귀가 일어나도 장부 삭제/환불 금지
     - 준비 단계 취소만 차감 미발생 상태
   - 조회/표시 타입은 `CHARGE`/`SPEND` 단일값 금지
     - 충전: `CHARGE_PAID` / `CHARGE_FREE_REQUEST` / `CHARGE_FREE_SHIPPING`

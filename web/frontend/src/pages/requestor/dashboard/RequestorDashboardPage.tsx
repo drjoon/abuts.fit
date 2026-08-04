@@ -94,6 +94,7 @@ const dashDebug = (label: string, payload?: unknown) => {
 // - web/backend/controllers/requests/dashboard.controller.js
 // - web/backend/controllers/requests/common.requests.controller.js
 // - web/backend/controllers/requests/common.review.controller.js
+// - web/backend/controllers/requests/expressPrice.utils.js
 // - web/backend/services/requestSnapshotTriggers.service.js
 // - web/frontend/rules.md
 
@@ -950,11 +951,13 @@ export const RequestorDashboardPage = () => {
         const normalizedFrom = fromStage.toLowerCase();
         const normalizedTo = toStage.toLowerCase();
         const isRequestToCam =
-          normalizedFrom === "준비" && normalizedTo === "cam";
+          normalizedFrom === "준비" &&
+          (normalizedTo === "cam" || normalizedTo === "가공");
         const isTrustedRequestToCamSource = [
           "bg-file-processed",
           "review-status-noop-nc-reuse",
-          "review-status-cam-skip",
+          "review-status-cam-skip", // 레거시
+          "review-status-machining-entry",
         ].includes(source);
         const shouldIgnoreProvisionalRequestToCam =
           isRequestToCam && !isTrustedRequestToCamSource;

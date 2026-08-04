@@ -2,6 +2,9 @@
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
+// - web/frontend/src/features/settings/tabs/AdminCreditSettingsTab.tsx
+// - web/backend/controllers/admin/admin.settings.controller.js
+// - web/backend/models/systemSettings.model.js
 import { useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
@@ -14,7 +17,16 @@ import { NotificationsTab } from "@/features/settings/tabs/NotificationsTab";
 import { RequestorSecurity } from "@/pages/requestor/settings/Security";
 import { DevopsPayoutAccountTab } from "./components/DevopsPayoutAccountTab";
 import { BusinessTab } from "@/shared/components/business/settings/BusinessTab";
-import { User, Building2, Landmark, Bell, Shield, Users } from "lucide-react";
+import { AdminCreditSettingsTab } from "@/features/settings/tabs/AdminCreditSettingsTab";
+import {
+  User,
+  Building2,
+  Landmark,
+  Bell,
+  Shield,
+  Users,
+  CreditCard,
+} from "lucide-react";
 import { useAuthStore } from "@/store/useAuthStore";
 
 type TabKey =
@@ -22,6 +34,7 @@ type TabKey =
   | "business"
   | "staff"
   | "payment"
+  | "credits"
   | "notifications"
   | "security";
 
@@ -54,6 +67,12 @@ export const DevopsSettingsPage = () => {
         label: "수익 분배",
         icon: Landmark,
         content: <DevopsPayoutAccountTab />,
+      },
+      {
+        key: "credits",
+        label: "요금",
+        icon: CreditCard,
+        content: <AdminCreditSettingsTab />,
       },
       {
         key: "notifications",
