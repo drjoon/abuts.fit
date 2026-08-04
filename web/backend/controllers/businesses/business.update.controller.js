@@ -701,6 +701,7 @@ export async function updateMyBusiness(req, res) {
           "business-anchor-linked",
         );
 
+        // 환영 무료 크레딧: 의뢰자 BusinessAnchor 신규 생성 시에만 1회 지급
         const requestFreeCreditAmount =
           await grantRequestFreeCreditIfEligible({
             businessAnchorId: created._id,
@@ -826,19 +827,7 @@ export async function updateMyBusiness(req, res) {
       );
     }
 
-    // 성능 최적화: free credit grant 함수들을 병렬 실행
-    const [granted, freeShippingGranted] = await Promise.all([
-      grantRequestFreeCreditIfEligible({
-        businessAnchorId: businessAnchor._id,
-        userId: req.user._id,
-        userRole: req.user.role,
-      }),
-      grantShippingFreeCreditIfEligible({
-        businessAnchorId: businessAnchor._id,
-        userId: req.user._id,
-        userRole: req.user.role,
-      }),
-    ]);
+    // 환영 무료 크레딧은 사업자 신규 생성 시에만 지급한다 (재지급 금지).
 
     // 캐시 무효화: 사업자 정보가 업데이트되었으므로 getMyBusiness 캐시 제거
     invalidateMyBusinessCache(businessAnchor._id);
@@ -847,10 +836,6 @@ export async function updateMyBusiness(req, res) {
       success: true,
       data: {
         updated: true,
-        requestFreeCreditGranted: Boolean(granted),
-        requestFreeCreditAmount: granted || 0,
-        freeShippingCreditGranted: Boolean(freeShippingGranted),
-        freeShippingCreditAmount: freeShippingGranted || 0,
         verification: verificationResult
           ? {
               verified: !!verificationResult.verified,

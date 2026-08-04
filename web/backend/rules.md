@@ -332,6 +332,15 @@
     - 소비: `SPEND_PAID` / `SPEND_FREE_REQUEST` / `SPEND_FREE_SHIPPING`
   - `GET /api/credits/balance`는 `LedgerLine` 직접 집계(GL SSOT)만 사용합니다.
     - 프로세스 메모리 캐시를 사용하지 않아 승인/롤백 직후 잔액을 즉시 반영해야 합니다.
+  - 가입 환영 무료 크레딧(강제, 1회):
+    - 호출 허용: `business.update.controller.js`에서 **BusinessAnchor를 새로 생성한 분기만**
+      (`grantRequestFreeCreditIfEligible` / `grantShippingFreeCreditIfEligible`)
+    - 금지: 기존 사업자 정보 업데이트 분기, 기존 앵커 연결(attach), 로그인/설정 저장 등 기타 경로
+    - 멱등: `FreeCreditGrant`(물리 컬렉션 `bonusgrants`)를 사업자등록번호당 1건으로 유지.
+      legacy type(`WELCOME_BONUS`, `FREE_SHIPPING_CREDIT`)도 기지급으로 간주
+    - GL 기록: `CHARGE_FREE_REQUEST` / `CHARGE_FREE_SHIPPING`, meta.source=`business_auto_free_credit`
+    - 관련 파일: `controllers/businesses/business.freeCredit.util.js`,
+      `models/freeCreditGrant.model.js`
 ### 웹소켓 업데이트 표준 (무플리커 + 부하완화)
 
   - 웹소켓 실시간 업데이트 발행/수신 SSOT:

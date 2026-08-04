@@ -80,15 +80,17 @@ async function upsertFreeCreditLedger({
 
 function resolveGrantTypeAlias(type) {
   const t = String(type || "").trim().toUpperCase();
-  if (!t || t === "REQUEST_FREE_CREDIT") {
+  // 사업자번호당 1회 지급 SSOT. BonusGrant에 남은 legacy type도 이미 지급된
+  // 것으로 간주해 생성 경로 재시도/중복 호출 시 재지급하지 않는다.
+  if (!t || t === "REQUEST_FREE_CREDIT" || t === "WELCOME_BONUS") {
     return {
-      queryTypes: ["REQUEST_FREE_CREDIT"],
+      queryTypes: ["REQUEST_FREE_CREDIT", "WELCOME_BONUS"],
       canonicalType: "REQUEST_FREE_CREDIT",
     };
   }
-  if (t === "SHIPPING_FREE_CREDIT") {
+  if (t === "SHIPPING_FREE_CREDIT" || t === "FREE_SHIPPING_CREDIT") {
     return {
-      queryTypes: ["SHIPPING_FREE_CREDIT"],
+      queryTypes: ["SHIPPING_FREE_CREDIT", "FREE_SHIPPING_CREDIT"],
       canonicalType: "SHIPPING_FREE_CREDIT",
     };
   }
