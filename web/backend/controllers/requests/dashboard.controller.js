@@ -28,7 +28,10 @@ import {
   recomputeRequestorDashboardSummarySnapshotsForBusinessAnchorId,
 } from "../../services/requestorDashboardSummarySnapshot.service.js";
 import { resolveLeadDaysWithSameDayCutoff } from "./production.utils.js";
-import { getDashboardRiskSummaryData } from "../../services/dashboardRiskSummary.service.js";
+import {
+  getDashboardRiskSummaryData,
+  RISK_PRE_SHIP_STAGES,
+} from "../../services/dashboardRiskSummary.service.js";
 import {
   getPricingReferralRolling30dAggregateByBusinessAnchorId,
   recomputePricingReferralSnapshotForLeaderAnchorId,
@@ -234,21 +237,34 @@ export async function getAssignedDashboardSummary(req, res) {
     };
 
     // 제조사 역할일 때: 같은 BusinessAnchor 조직 전체 범위로 필터링
+    const orgScopeFilter =
+      role === "manufacturer" ? await buildManufacturerOrgScopeFilter(req) : {};
     if (role === "manufacturer") {
-      const orgScopeFilter = await buildManufacturerOrgScopeFilter(req);
       Object.assign(baseFilter, orgScopeFilter);
     }
 
-    const rndCountFilter =
-      role === "manufacturer" ? await buildManufacturerOrgScopeFilter(req) : {};
+    const cacheScope =
+      role === "manufacturer"
+        ? String(req.user?.businessAnchorId || req.user?._id || "").trim()
+        : "admin";
+    const cacheKey = `assigned-dashboard-summary:${cacheScope}:${String(period)}`;
+    const cached = getRequestPerfCacheValue(cacheKey);
+    if (cached) {
+      return res.status(200).json({
+        success: true,
+        data: cached,
+      });
+    }
 
-    const summary = await getAssignedLikeDashboardSummary({
-      baseFilter,
-      dateFilter,
-      rndCountFilter,
+    const summary = await withRequestPerfInFlight(cacheKey, async () => {
+      const data = await getAssignedLikeDashboardSummary({
+        baseFilter,
+        dateFilter,
+        rndCountFilter: orgScopeFilter,
+      });
+      setRequestPerfCacheValue(cacheKey, data, 15 * 1000);
+      return data;
     });
-
-
 
     return res.status(200).json({
       success: true,
@@ -1344,10 +1360,13 @@ export async function getDashboardRiskSummary(req, res) {
     const dateFilter = buildDateFilter(period);
 
     const baseFilter = {
-      manufacturerStage: { $ne: "취소" },
+      ...dateFilter,
+      manufacturerStage: { $in: RISK_PRE_SHIP_STAGES },
       "caseInfos.implantBrand": { $exists: true, $ne: "" },
       // R&D 샘플은 리스크 요약에서 제외
       source: { $ne: "manufacturer_sample" },
+      // 가공불가 판정 건은 지연 위험 집계에서 제외
+      "rnd.unmachinableAt": null,
     };
 
     const role = String(req.user?.role || "");
@@ -1358,9 +1377,7 @@ export async function getDashboardRiskSummary(req, res) {
             $and: [baseFilter, await buildManufacturerOrgScopeFilter(req)],
           }
         : role === "admin"
-          ? {
-              $and: [baseFilter],
-            }
+          ? baseFilter
           : {
               $and: [baseFilter, await buildRequestorOrgScopeFilter(req)],
             };
@@ -1369,14 +1386,15 @@ export async function getDashboardRiskSummary(req, res) {
       role === "requestor"
         ? String(req.user?.businessAnchorId || "").trim()
         : role === "manufacturer"
-          ? String(req.user?._id || "").trim()
+          ? String(req.user?.businessAnchorId || req.user?._id || "").trim()
           : "admin";
     const riskData = await getDashboardRiskSummaryData({
-      cacheKey: `dashboard-risk-summary:${role}:${cacheScope}:${String(period)}`,
+      cacheKey: `dashboard-risk-summary:v2:${role}:${cacheScope}:${String(period)}`,
       riskRequestFilter: filter,
       debug,
       role,
       populateRelated: role !== "requestor",
+      includeRequests: false,
     });
 
     return res.status(200).json({

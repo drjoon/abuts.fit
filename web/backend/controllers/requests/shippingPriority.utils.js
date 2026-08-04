@@ -59,7 +59,7 @@ export function resolveEffectiveShippingMode(requestLike) {
 
 export async function computeShippingPriority({ request, now }) {
   const stage = String(request?.manufacturerStage || "").trim();
-  const isPreShip = ["준비", "CAM", "가공"].includes(stage);
+  const isPreShip = ["준비", "CAM", "가공", "cam", "machining"].includes(stage);
 
   const mode = resolveEffectiveShippingMode(request);
 

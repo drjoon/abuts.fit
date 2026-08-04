@@ -976,6 +976,9 @@ requestSchema.index({
 
 requestSchema.index({ requestCategory: 1, manufacturerStage: 1, createdAt: -1 });
 
+// 관리자 모니터링/기간 필터 목록·집계 (createdAt range sort/count)
+requestSchema.index({ createdAt: -1, _id: -1 });
+
 // requestCategory SSOT 보호
 // - source / rnd.doneAt 변경 이벤트가 발생할 때만 requestCategory를 동기화한다.
 // - read 경로에서의 추정/보정은 하지 않는다.

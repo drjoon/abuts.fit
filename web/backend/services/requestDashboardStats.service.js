@@ -90,197 +90,209 @@ export async function getAssignedLikeDashboardSummary({
     ...dateFilter,
   };
 
-  const [statsResult] = await Request.aggregate([
-    { $match: match },
-    {
-      $addFields: {
-        normalizedStage: buildDashboardNormalizedStageExpr(),
-      },
-    },
-    {
-      $group: {
-        _id: null,
-        total: {
-          $sum: { $cond: [{ $ne: ["$manufacturerStage", "취소"] }, 1, 0] },
-        },
-        canceledCount: {
-          $sum: { $cond: [{ $eq: ["$manufacturerStage", "취소"] }, 1, 0] },
-        },
-        trackingCount: {
-          $sum: { $cond: [{ $eq: ["$normalizedStage", "tracking"] }, 1, 0] },
-        },
-        trackingPaidCount: {
-          $sum: {
-            $cond: [
-              {
-                $and: [
-                  { $eq: ["$normalizedStage", "tracking"] },
-                  { $gt: [{ $ifNull: ["$price.paidAmount", 0] }, 0] },
-                ],
-              },
-              1,
-              0,
-            ],
+  const [statsAgg, shippingBoxesAgg, trackingBoxesAgg, rndCountAgg] =
+    await Promise.all([
+      Request.aggregate([
+        { $match: match },
+        {
+          $addFields: {
+            normalizedStage: buildDashboardNormalizedStageExpr(),
           },
         },
-        unmachinableCount: {
-          $sum: {
-            $cond: [
-              {
-                $and: [
-                  { $eq: ["$normalizedStage", "unmachinable"] },
-                  { $ne: ["$manufacturerStage", "취소"] },
-                ],
+        {
+          $group: {
+            _id: null,
+            total: {
+              $sum: { $cond: [{ $ne: ["$manufacturerStage", "취소"] }, 1, 0] },
+            },
+            canceledCount: {
+              $sum: { $cond: [{ $eq: ["$manufacturerStage", "취소"] }, 1, 0] },
+            },
+            trackingCount: {
+              $sum: {
+                $cond: [{ $eq: ["$normalizedStage", "tracking"] }, 1, 0],
               },
-              1,
-              0,
-            ],
-          },
-        },
-        unmachinablePotentialCount: {
-          $sum: {
-            $cond: [
-              {
-                $and: [
-                  buildHasMeaningfulValueExpr("$rnd.unmachinablePotentialAt"),
+            },
+            trackingPaidCount: {
+              $sum: {
+                $cond: [
                   {
-                    $not: [buildHasMeaningfulValueExpr("$rnd.unmachinableAt")],
-                  },
-                ],
-              },
-              1,
-              0,
-            ],
-          },
-        },
-        unmachinablePendingConfirmCount: {
-          $sum: {
-            $cond: [
-              {
-                $and: [
-                  buildHasMeaningfulValueExpr("$rnd.unmachinableAt"),
-                  {
-                    $not: [
-                      buildHasMeaningfulValueExpr(
-                        "$rnd.unmachinableConfirmedAt",
-                      ),
+                    $and: [
+                      { $eq: ["$normalizedStage", "tracking"] },
+                      { $gt: [{ $ifNull: ["$price.paidAmount", 0] }, 0] },
                     ],
                   },
+                  1,
+                  0,
                 ],
               },
-              1,
-              0,
-            ],
-          },
-        },
-        unmachinableConfirmedCount: {
-          $sum: {
-            $cond: [
-              buildHasMeaningfulValueExpr("$rnd.unmachinableConfirmedAt"),
-              1,
-              0,
-            ],
-          },
-        },
-        requestCount: {
-          $sum: { $cond: [{ $eq: ["$normalizedStage", "request"] }, 1, 0] },
-        },
-        camCount: {
-          $sum: { $cond: [{ $eq: ["$normalizedStage", "cam"] }, 1, 0] },
-        },
-        machiningCount: {
-          $sum: {
-            $cond: [{ $eq: ["$normalizedStage", "machining"] }, 1, 0],
-          },
-        },
-        packingCount: {
-          $sum: { $cond: [{ $eq: ["$normalizedStage", "packing"] }, 1, 0] },
-        },
-        shippingCount: {
-          $sum: {
-            $cond: [{ $eq: ["$normalizedStage", "shipping"] }, 1, 0],
-          },
-        },
-      },
-    },
-  ]);
-
-  const [shippingBoxesAgg, trackingBoxesAgg, rndCountAgg] = await Promise.all([
-    Request.aggregate([
-      {
-        $match: {
-          ...match,
-          manufacturerStage: { $in: ["포장.발송", "shipping"] },
-        },
-      },
-      {
-        $project: {
-          mailboxAddress: {
-            $trim: { input: { $ifNull: ["$mailboxAddress", ""] } },
-          },
-          shippingPackageId: {
-            $trim: {
-              input: {
-                $toString: { $ifNull: ["$shippingPackageId", ""] },
+            },
+            unmachinableCount: {
+              $sum: {
+                $cond: [
+                  {
+                    $and: [
+                      { $eq: ["$normalizedStage", "unmachinable"] },
+                      { $ne: ["$manufacturerStage", "취소"] },
+                    ],
+                  },
+                  1,
+                  0,
+                ],
+              },
+            },
+            unmachinablePotentialCount: {
+              $sum: {
+                $cond: [
+                  {
+                    $and: [
+                      buildHasMeaningfulValueExpr(
+                        "$rnd.unmachinablePotentialAt",
+                      ),
+                      {
+                        $not: [
+                          buildHasMeaningfulValueExpr("$rnd.unmachinableAt"),
+                        ],
+                      },
+                    ],
+                  },
+                  1,
+                  0,
+                ],
+              },
+            },
+            unmachinablePendingConfirmCount: {
+              $sum: {
+                $cond: [
+                  {
+                    $and: [
+                      buildHasMeaningfulValueExpr("$rnd.unmachinableAt"),
+                      {
+                        $not: [
+                          buildHasMeaningfulValueExpr(
+                            "$rnd.unmachinableConfirmedAt",
+                          ),
+                        ],
+                      },
+                    ],
+                  },
+                  1,
+                  0,
+                ],
+              },
+            },
+            unmachinableConfirmedCount: {
+              $sum: {
+                $cond: [
+                  buildHasMeaningfulValueExpr("$rnd.unmachinableConfirmedAt"),
+                  1,
+                  0,
+                ],
+              },
+            },
+            requestCount: {
+              $sum: {
+                $cond: [{ $eq: ["$normalizedStage", "request"] }, 1, 0],
+              },
+            },
+            camCount: {
+              $sum: { $cond: [{ $eq: ["$normalizedStage", "cam"] }, 1, 0] },
+            },
+            machiningCount: {
+              $sum: {
+                $cond: [{ $eq: ["$normalizedStage", "machining"] }, 1, 0],
+              },
+            },
+            packingCount: {
+              $sum: {
+                $cond: [{ $eq: ["$normalizedStage", "packing"] }, 1, 0],
+              },
+            },
+            shippingCount: {
+              $sum: {
+                $cond: [{ $eq: ["$normalizedStage", "shipping"] }, 1, 0],
               },
             },
           },
         },
-      },
-      {
-        $project: {
-          boxKey: {
-            $cond: [
-              { $ne: ["$mailboxAddress", ""] },
-              { $concat: ["mailbox:", "$mailboxAddress"] },
-              {
-                $cond: [
-                  { $ne: ["$shippingPackageId", ""] },
-                  { $concat: ["pkg:", "$shippingPackageId"] },
-                  null,
-                ],
-              },
-            ],
+      ]),
+      Request.aggregate([
+        {
+          $match: {
+            ...match,
+            manufacturerStage: { $in: ["포장.발송", "shipping"] },
           },
         },
-      },
-      { $match: { boxKey: { $ne: null } } },
-      { $group: { _id: "$boxKey" } },
-      { $count: "count" },
-    ]),
-    Request.aggregate([
-      {
-        $match: {
-          ...match,
-          manufacturerStage: { $in: ["추적관리", "tracking"] },
-          shippingPackageId: { $ne: null },
+        {
+          $project: {
+            mailboxAddress: {
+              $trim: { input: { $ifNull: ["$mailboxAddress", ""] } },
+            },
+            shippingPackageId: {
+              $trim: {
+                input: {
+                  $toString: { $ifNull: ["$shippingPackageId", ""] },
+                },
+              },
+            },
+          },
         },
-      },
-      { $group: { _id: "$shippingPackageId" } },
-      { $count: "count" },
-    ]),
-    Request.aggregate([
-      {
-        $match: {
-          ...match,
-          ...rndCountFilter,
+        {
+          $project: {
+            boxKey: {
+              $cond: [
+                { $ne: ["$mailboxAddress", ""] },
+                { $concat: ["mailbox:", "$mailboxAddress"] },
+                {
+                  $cond: [
+                    { $ne: ["$shippingPackageId", ""] },
+                    { $concat: ["pkg:", "$shippingPackageId"] },
+                    null,
+                  ],
+                },
+              ],
+            },
+          },
         },
-      },
-      {
-        $addFields: {
-          normalizedStage: buildDashboardNormalizedStageExpr(),
+        { $match: { boxKey: { $ne: null } } },
+        { $group: { _id: "$boxKey" } },
+        { $count: "count" },
+      ]),
+      Request.aggregate([
+        {
+          $match: {
+            ...match,
+            manufacturerStage: { $in: ["추적관리", "tracking"] },
+            shippingPackageId: { $ne: null },
+          },
         },
-      },
-      {
-        $match: {
-          normalizedStage: "rnd",
+        { $group: { _id: "$shippingPackageId" } },
+        { $count: "count" },
+      ]),
+      Request.aggregate([
+        {
+          $match: {
+            ...match,
+            ...rndCountFilter,
+          },
         },
-      },
-      {
-        $count: "count",
-      },
-    ]),
-  ]);
+        {
+          $addFields: {
+            normalizedStage: buildDashboardNormalizedStageExpr(),
+          },
+        },
+        {
+          $match: {
+            normalizedStage: "rnd",
+          },
+        },
+        {
+          $count: "count",
+        },
+      ]),
+    ]);
+
+  const statsResult = statsAgg?.[0];
 
   return {
     total: Number(statsResult?.total ?? 0) || 0,

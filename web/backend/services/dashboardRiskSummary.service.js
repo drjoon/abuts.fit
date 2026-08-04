@@ -2,7 +2,10 @@
 // - web/backend/rules.md
 // - web/backend/app.js
 // - web/backend/server.js
+// - web/backend/controllers/requests/dashboard.controller.js
+// - web/backend/controllers/requests/shippingPriority.utils.js
 import Request from "../models/request.model.js";
+import User from "../models/user.model.js";
 import { computeShippingPriority } from "../controllers/requests/shippingPriority.utils.js";
 import {
   getRequestPerfCacheValue,
@@ -17,12 +20,89 @@ const DEFAULT_RISK_SUMMARY = {
   items: [],
 };
 
+/** shippingPriority.utils 와 동일한 출고 전 공정 (영문 alias 포함) */
+export const RISK_PRE_SHIP_STAGES = [
+  "준비",
+  "CAM",
+  "가공",
+  "cam",
+  "machining",
+];
+
+const RISK_SUMMARY_SELECT = {
+  _id: 1,
+  requestId: 1,
+  title: 1,
+  manufacturerStage: 1,
+  createdAt: 1,
+  caseInfos: 1,
+  timeline: 1,
+  productionSchedule: 1,
+  shippingMode: 1,
+  finalShipping: 1,
+  originalShipping: 1,
+  rnd: 1,
+  unmachinableDetailCode: 1,
+  requestor: 1,
+  caManufacturer: 1,
+  manufacturer: 1,
+  deliveryInfoRef: 1,
+};
+
+const isUnmachinableRequest = (r) => {
+  const unmachinableAt = r?.rnd?.unmachinableAt
+    ? new Date(r.rnd.unmachinableAt)
+    : null;
+  const unmachinableDetailCode = String(
+    r?.rnd?.unmachinableDetailCode || r?.unmachinableDetailCode || "",
+  )
+    .trim()
+    .toLowerCase();
+  return (
+    Boolean(unmachinableAt) ||
+    (Boolean(unmachinableDetailCode) && unmachinableDetailCode !== "none")
+  );
+};
+
+const hydrateRiskItemNames = async (riskItems) => {
+  const needIds = new Set();
+  for (const item of riskItems) {
+    const r = item?.__request;
+    if (!r) continue;
+    if (r.requestor && typeof r.requestor !== "object") {
+      needIds.add(String(r.requestor));
+    }
+    if (r.caManufacturer && typeof r.caManufacturer !== "object") {
+      needIds.add(String(r.caManufacturer));
+    }
+  }
+
+  if (needIds.size === 0) return;
+
+  const users = await User.find({ _id: { $in: Array.from(needIds) } })
+    .select({ name: 1, business: 1 })
+    .lean();
+  const byId = new Map(users.map((u) => [String(u._id), u]));
+
+  for (const item of riskItems) {
+    const r = item?.__request;
+    if (!r) continue;
+    if (r.requestor && typeof r.requestor !== "object") {
+      r.requestor = byId.get(String(r.requestor)) || null;
+    }
+    if (r.caManufacturer && typeof r.caManufacturer !== "object") {
+      r.caManufacturer = byId.get(String(r.caManufacturer)) || null;
+    }
+  }
+};
+
 export const getDashboardRiskSummaryData = async ({
   cacheKey,
   riskRequestFilter,
   debug = false,
   role = "requestor",
   populateRelated = false,
+  includeRequests = false,
 }) => {
   const normalizedCacheKey = String(cacheKey || "").trim();
 
@@ -36,37 +116,20 @@ export const getDashboardRiskSummaryData = async ({
   const built = await withRequestPerfInFlight(
     normalizedCacheKey || `dashboard-risk:${Date.now()}`,
     async () => {
-      let query = Request.find(riskRequestFilter);
+      let query = Request.find(riskRequestFilter).select(RISK_SUMMARY_SELECT);
 
       if (populateRelated) {
-        query = query
-          .populate("requestor", "name business")
-          .populate("caManufacturer", "name business")
-          .populate("deliveryInfoRef");
+        // 전체 populate 대신 위험 상위 항목만 이름 hydrate (아래 hydrateRiskItemNames)
+        query = query.populate("deliveryInfoRef", "pickedUpAt deliveredAt");
       }
 
       const requests = await query.lean();
       const now = new Date();
-      const delayedItems = [];
-      const warningItems = [];
 
+      const candidates = [];
       for (const r of requests) {
         if (!r) continue;
-
-        const unmachinableAt = r?.rnd?.unmachinableAt
-          ? new Date(r.rnd.unmachinableAt)
-          : null;
-        const unmachinableDetailCode = String(
-          r?.rnd?.unmachinableDetailCode || r?.unmachinableDetailCode || "",
-        )
-          .trim()
-          .toLowerCase();
-        const isUnmachinable =
-          Boolean(unmachinableAt) ||
-          (Boolean(unmachinableDetailCode) && unmachinableDetailCode !== "none");
-        // 가공불가(판정/확인 포함)는 진행 상태가 종료된 것으로 간주하여
-        // 지연 위험(지연확정/지연가능) 집계에서 제외한다.
-        if (isUnmachinable) continue;
+        if (isUnmachinableRequest(r)) continue;
 
         const pickedUpAt = r.deliveryInfoRef?.pickedUpAt
           ? new Date(r.deliveryInfoRef.pickedUpAt)
@@ -80,18 +143,24 @@ export const getDashboardRiskSummaryData = async ({
         if (isDone) continue;
 
         const stage = String(r.manufacturerStage || "").trim();
-        const isPreShip = ["의뢰", "CAM", "생산"].includes(stage);
-        if (!isPreShip) continue;
+        if (!RISK_PRE_SHIP_STAGES.includes(stage)) continue;
 
-        const sp = await computeShippingPriority({ request: r, now });
+        candidates.push(r);
+      }
+
+      const priorities = await Promise.all(
+        candidates.map((r) => computeShippingPriority({ request: r, now })),
+      );
+
+      const delayedItems = [];
+      const warningItems = [];
+      for (let i = 0; i < candidates.length; i += 1) {
+        const sp = priorities[i];
         if (!sp) continue;
-
         if (sp.level === "danger") {
-          delayedItems.push({ r, shippingPriority: sp });
-          continue;
-        }
-        if (sp.level === "warning") {
-          warningItems.push({ r, shippingPriority: sp });
+          delayedItems.push({ r: candidates[i], shippingPriority: sp });
+        } else if (sp.level === "warning") {
+          warningItems.push({ r: candidates[i], shippingPriority: sp });
         }
       }
 
@@ -150,6 +219,7 @@ export const getDashboardRiskSummaryData = async ({
           message,
           caseInfos: r?.caseInfos || {},
           shippingPriority: sp || undefined,
+          __request: r,
         };
       };
 
@@ -174,8 +244,32 @@ export const getDashboardRiskSummaryData = async ({
           .map((entry) => toRiskItem(entry, "warning")),
       ];
 
+      if (populateRelated) {
+        await hydrateRiskItemNames(riskItems);
+        for (const item of riskItems) {
+          const r = item.__request;
+          if (!r) continue;
+          const requestorText =
+            r?.requestor?.business || r?.requestor?.name || "";
+          const manufacturerText =
+            r?.manufacturer?.business ||
+            r?.manufacturer?.name ||
+            r?.caManufacturer?.business ||
+            r?.caManufacturer?.name ||
+            "";
+          item.manufacturer =
+            role === "manufacturer"
+              ? requestorText
+              : [requestorText, manufacturerText].filter(Boolean).join(" → ");
+        }
+      }
+
+      for (const item of riskItems) {
+        delete item.__request;
+      }
+
       const responseData = {
-        requests,
+        ...(includeRequests ? { requests } : { requests: [] }),
         riskSummary: {
           delayedCount,
           warningCount,
@@ -185,7 +279,8 @@ export const getDashboardRiskSummaryData = async ({
       };
 
       if (!debug && normalizedCacheKey) {
-        setRequestPerfCacheValue(normalizedCacheKey, responseData, 15 * 1000);
+        // 폴링 엔드포인트: 짧은 TTL로 반복 집계 비용을 줄인다.
+        setRequestPerfCacheValue(normalizedCacheKey, responseData, 30 * 1000);
       }
 
       return responseData;

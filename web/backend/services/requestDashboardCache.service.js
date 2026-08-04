@@ -63,6 +63,11 @@ export const getRequestPerfCacheValue = (key) =>
   getMapCacheValue(__requestPerfCache, key);
 export const setRequestPerfCacheValue = (key, value, ttlMs) =>
   setMapCacheValue(__requestPerfCache, key, value, ttlMs);
+export const deleteRequestPerfCacheValue = (key) => {
+  const normalized = String(key || "").trim();
+  if (!normalized) return false;
+  return __requestPerfCache.delete(normalized);
+};
 export const withRequestPerfInFlight = (key, factory) =>
   withMapInFlight(__requestInFlight, key, factory);
 

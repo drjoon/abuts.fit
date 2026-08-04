@@ -1483,7 +1483,7 @@ export async function getAllRequests(req, res) {
       "deliveryInfoRef",
     ].join(" ");
 
-    // 관리자 의뢰 모니터링 전용 초경량 projection
+    // 관리자 의뢰 모니터링 전용 초경량 projection (카드 UI 사용 필드만)
     const monitoringSelect = [
       "requestId",
       "manufacturerStage",
@@ -1496,18 +1496,6 @@ export async function getAllRequests(req, res) {
       "caseInfos.clinicName",
       "caseInfos.patientName",
       "caseInfos.tooth",
-      "rnd.unmachinablePotentialAt",
-      "rnd.unmachinableAt",
-      "rnd.unmachinableConfirmedAt",
-      "rnd.unmachinableReason",
-      "rnd.requestorContinueAt",
-      "rnd.requestorContinueBy",
-      "rnd.requestorContinueMessage",
-      "rnd.manufacturerHexRotation",
-      "caseInfos.designSoftware",
-      "caseInfos.manufacturerHexRotation",
-      "caseInfos.requestorHexRotation",
-      "caseInfos.finalHexRotation",
       "requestor",
     ].join(" ");
 
@@ -1532,7 +1520,9 @@ export async function getAllRequests(req, res) {
           ? "name business businessAnchorId address addressText zipCode"
           : view === "worksheet" && worksheetProfile === "tracking"
             ? "name business businessAnchorId"
-            : "name business businessAnchorId";
+            : isMonitoringView
+              ? "name business"
+              : "name business businessAnchorId";
 
       query = query
         .select(selectedProjection)
@@ -1564,12 +1554,36 @@ export async function getAllRequests(req, res) {
         .populate("businessAnchorId", "name metadata requestSettings");
     }
 
-    const rawRequests = await query.lean();
-
-
     const now = new Date();
     const isWorksheetView = view === "worksheet";
     const isMonitoringView = view === "monitoring";
+
+    // 전체 의뢰 수 / 모니터링 stage 집계 (요청 시에만)
+    const includeTotal =
+      String(req.query.includeTotal || "").toLowerCase() === "1" ||
+      String(req.query.includeTotal || "").toLowerCase() === "true";
+
+    const totalFilter = filter;
+
+    // find + count/stats 를 병렬로 실행해 순차 round-trip을 제거
+    const [rawRequests, totalFromCount, monitoringGroupedRows] =
+      await Promise.all([
+        query.lean(),
+        includeTotal && !isMonitoringView
+          ? Request.countDocuments(totalFilter)
+          : Promise.resolve(null),
+        isMonitoringView && (includeTotal || page === 1)
+          ? Request.aggregate([
+              { $match: totalFilter },
+              {
+                $group: {
+                  _id: "$manufacturerStage",
+                  count: { $sum: 1 },
+                },
+              },
+            ])
+          : Promise.resolve(null),
+      ]);
 
     // 모니터링 뷰는 초경량 응답: normalize/우선순위 계산 생략
     const requests = isMonitoringView
@@ -1721,36 +1735,21 @@ export async function getAllRequests(req, res) {
       }
     }
 
-    // 전체 의뢰 수 (요청 시에만 계산)
-    const includeTotal =
-      String(req.query.includeTotal || "").toLowerCase() === "1" ||
-      String(req.query.includeTotal || "").toLowerCase() === "true";
-
-    const totalFilter = filter;
-
-    const total = includeTotal
-      ? await Request.countDocuments(totalFilter)
-      : null;
-
+    let total = totalFromCount;
     let monitoringStats = null;
-    if (isMonitoringView) {
-      const groupedRows = await Request.aggregate([
-        { $match: totalFilter },
-        {
-          $group: {
-            _id: "$manufacturerStage",
-            count: { $sum: 1 },
-          },
-        },
-      ]);
-
+    if (isMonitoringView && Array.isArray(monitoringGroupedRows)) {
+      const derivedTotal = monitoringGroupedRows.reduce(
+        (acc, row) => acc + Number(row?.count || 0),
+        0,
+      );
+      if (includeTotal || total == null) {
+        total = derivedTotal;
+      }
       monitoringStats = buildMonitoringStageStatsFromGroupedRows(
-        groupedRows,
+        monitoringGroupedRows,
         total,
       );
     }
-
-
 
     const responseData = {
       requests,

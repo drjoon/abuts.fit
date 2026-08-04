@@ -8,7 +8,6 @@
 // - web/frontend/src/pages/admin/dashboard/AdminDashboardPage.tsx
 import User from "../../models/user.model.js";
 import Request from "../../models/request.model.js";
-import File from "../../models/file.model.js";
 import PracticeTransfer from "../../models/practiceTransfer.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 import LedgerLine from "../../models/ledgerLine.model.js";
@@ -23,6 +22,11 @@ import {
   getAdminPricingStatsSummary,
   getAssignedLikeDashboardSummary,
 } from "../../services/requestDashboardStats.service.js";
+import {
+  getRequestPerfCacheValue,
+  setRequestPerfCacheValue,
+  withRequestPerfInFlight,
+} from "../../services/requestDashboardCache.service.js";
 
 const HAPPY_CALL_REASON_META = {
   first_completion_this_week: {
@@ -244,6 +248,29 @@ async function buildCreditRevenueFlowMismatchSummary({ since }) {
 
 export async function getDashboardStats(req, res) {
   try {
+    const periodKey = String(req.query?.period || "30d").trim() || "30d";
+    const cacheKey = `admin-dashboard:v2:${periodKey}`;
+    const cached = getRequestPerfCacheValue(cacheKey);
+    if (cached) {
+      return res.status(200).json(cached);
+    }
+
+    const payload = await withRequestPerfInFlight(cacheKey, async () => {
+      return buildAdminDashboardPayload(req);
+    });
+
+    setRequestPerfCacheValue(cacheKey, payload, 20 * 1000);
+    return res.status(200).json(payload);
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "대시보드 통계 조회 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
+async function buildAdminDashboardPayload(req) {
     const systemAlerts = [];
     const mongoHealth = await getMongoHealth();
     if (!mongoHealth?.ok) {
@@ -316,10 +343,19 @@ export async function getDashboardStats(req, res) {
           title: 1,
           manufacturerStage: 1,
           createdAt: 1,
-          caseInfos: 1,
+          "caseInfos.clinicName": 1,
+          "caseInfos.patientName": 1,
+          "caseInfos.tooth": 1,
           rnd: 1,
           businessAnchorId: 1,
         })
+        .sort({
+          "rnd.unmachinableConfirmedAt": -1,
+          "rnd.unmachinableAt": -1,
+          "rnd.unmachinablePotentialAt": -1,
+          createdAt: -1,
+        })
+        .limit(10)
         .lean(),
       BusinessAnchor.find({ businessType: "requestor", status: { $ne: "merged" } })
         .select({
@@ -654,8 +690,7 @@ export async function getDashboardStats(req, res) {
       confirmedCount: Number(
         assignedLikeSummary?.unmachinableConfirmedCount || 0,
       ),
-      items: (Array.isArray(unmachinableRows) ? unmachinableRows : [])
-        .map((r) => {
+      items: (Array.isArray(unmachinableRows) ? unmachinableRows : []).map((r) => {
           const hasPotential = Boolean(r?.rnd?.unmachinablePotentialAt);
           const hasJudged = Boolean(r?.rnd?.unmachinableAt);
           const hasConfirmed = Boolean(r?.rnd?.unmachinableConfirmedAt);
@@ -669,6 +704,7 @@ export async function getDashboardStats(req, res) {
 
           const businessAnchorId = String(r?.businessAnchorId || "").trim();
           const anchor = requestorAnchorById.get(businessAnchorId) || {};
+          const ci = r?.caseInfos || {};
 
           return {
             _id: r._id,
@@ -683,9 +719,12 @@ export async function getDashboardStats(req, res) {
             title: r.title || "",
             manufacturerStage: r.manufacturerStage,
             createdAt: r.createdAt || null,
-            caseInfos: r.caseInfos || {},
+            caseInfos: {
+              clinicName: ci.clinicName || "",
+              patientName: ci.patientName || "",
+              tooth: ci.tooth || "",
+            },
             rnd: {
-              ...(r.rnd || {}),
               unmachinablePotentialAt: r?.rnd?.unmachinablePotentialAt || null,
               unmachinableAt: r?.rnd?.unmachinableAt || null,
               unmachinableConfirmedAt: r?.rnd?.unmachinableConfirmedAt || null,
@@ -693,23 +732,7 @@ export async function getDashboardStats(req, res) {
             },
             unmachinableDetailCode: detailCode,
           };
-        })
-        .sort((a, b) => {
-          const aKey =
-            a?.rnd?.unmachinableConfirmedAt ||
-            a?.rnd?.unmachinableAt ||
-            a?.rnd?.unmachinablePotentialAt ||
-            a?.createdAt ||
-            0;
-          const bKey =
-            b?.rnd?.unmachinableConfirmedAt ||
-            b?.rnd?.unmachinableAt ||
-            b?.rnd?.unmachinablePotentialAt ||
-            b?.createdAt ||
-            0;
-          return new Date(bKey).getTime() - new Date(aKey).getTime();
-        })
-        .slice(0, 10),
+        }),
     };
 
     const requestorAnchorIds = (Array.isArray(requestorAnchors)
@@ -719,11 +742,13 @@ export async function getDashboardStats(req, res) {
       .map((a) => a?._id)
       .filter(Boolean);
 
+    // 해피콜 집계 + 크레딧 무결성 점검을 한 번에 병렬 실행
     const [
       requestorRequestStats,
       firstCompletions,
       activeHappyCallCompletions,
       happyCallMemoDrafts,
+      flowSummary,
     ] =
       requestorAnchorIds.length > 0
         ? await Promise.all([
@@ -860,8 +885,13 @@ export async function getDashboardStats(req, res) {
             })
               .select({ businessAnchorId: 1, entries: 1 })
               .lean(),
+            buildCreditRevenueFlowMismatchSummary({
+              since: thirtyDaysAgo,
+            }),
           ])
-        : [[], [], [], []];
+        : [[], [], [], [], await buildCreditRevenueFlowMismatchSummary({
+            since: thirtyDaysAgo,
+          })];
 
     const requestStatsByAnchorId = new Map(
       (Array.isArray(requestorRequestStats) ? requestorRequestStats : []).map(
@@ -1122,10 +1152,7 @@ export async function getDashboardStats(req, res) {
 
     // 크레딧 소비 ↔ 수익 귀속 합계 무결성 점검 (의뢰 단위)
     // SSOT: 의뢰자 순소비(netConsumed) == (어벗츠+제조사+개발운영사+영업자) 수익합(exVAT)
-    const flowSummary = await buildCreditRevenueFlowMismatchSummary({
-      since: thirtyDaysAgo,
-    });
-    if (Number(flowSummary.mismatchCount || 0) > 0) {
+    if (Number(flowSummary?.mismatchCount || 0) > 0) {
       const top = (flowSummary.topMismatches || [])[0] || null;
       const sampleText = top
         ? `예: ${top.requestId || top.requestMongoId} (gap=${Number(top.gap || 0).toLocaleString()}원)`
@@ -1137,17 +1164,6 @@ export async function getDashboardStats(req, res) {
         date: new Date().toISOString(),
       });
     }
-
-    // 최근 요청 및 파일 통계를 병렬로 조회
-    const [recentRequests, totalFiles, totalFileSize] = await Promise.all([
-      Request.find({ source: { $ne: "manufacturer_sample" } })
-        .sort({ createdAt: -1 })
-        .limit(5)
-        .populate("requestor", "name email")
-        .populate("caManufacturer", "name email"),
-      File.countDocuments(),
-      File.aggregate([{ $group: { _id: null, totalSize: { $sum: "$size" } } }]),
-    ]);
 
     const practiceTransferStatsBase =
       Array.isArray(practiceTransferStatsRaw) && practiceTransferStatsRaw[0]
@@ -1165,70 +1181,59 @@ export async function getDashboardStats(req, res) {
           .filter(Boolean)
       : [];
 
-    const dashboardData = {
-      users: {
-        total: totalUsers,
-        active: activeUsers,
-        inactive: totalUsers - activeUsers,
-        requestorBusinessCount,
-        byRole: userStatsByRole,
-      },
-      requests: {
-        total: totalRequests,
-        byStatus: requestStatsByStatus,
-        range: { startDate: start, endDate: end },
-        recent: recentRequests,
-      },
-      pricing: {
-        range: { startDate: start, endDate: end },
-        ...pricingSummary,
-      },
-      files: {
-        total: totalFiles,
-        totalSize: totalFileSize.length > 0 ? totalFileSize[0].totalSize : 0,
-      },
-      practiceTransfers: {
-        totalTransfers: Number(practiceTransferStatsBase?.totalTransfers || 0),
-        totalFiles: Number(practiceTransferStatsBase?.totalFiles || 0),
-        totalPractices: practiceKeys.length,
-        totalLabs: labKeys.length,
-        unreadTransfers: Number(practiceTransferStatsBase?.unreadTransfers || 0),
-        activeTransfers: Number(practiceTransferStatsBase?.activeTransfers || 0),
-        canceledTransfers: Number(practiceTransferStatsBase?.canceledTransfers || 0),
-        topPractices: Array.isArray(practiceTransferTopPracticesRaw)
-          ? practiceTransferTopPracticesRaw
-          : [],
-        topLabs: Array.isArray(practiceTransferTopLabsRaw)
-          ? practiceTransferTopLabsRaw
-          : [],
-        recentTransfers: Array.isArray(practiceTransferRecentRaw)
-          ? practiceTransferRecentRaw
-          : [],
-      },
-    };
-
-    res.status(200).json({
+    return {
       success: true,
       data: {
-        userStats: dashboardData.users,
-        requestStats: dashboardData.requests,
-        recentActivity: dashboardData.files,
-        pricingSummary: dashboardData.pricing,
+        userStats: {
+          total: totalUsers,
+          active: activeUsers,
+          inactive: totalUsers - activeUsers,
+          requestorBusinessCount,
+          byRole: userStatsByRole,
+        },
+        requestStats: {
+          total: totalRequests,
+          byStatus: requestStatsByStatus,
+          range: { startDate: start, endDate: end },
+          recent: [],
+        },
+        // 프론트 미사용 — 호환용 stub (File 전수 집계 제거)
+        recentActivity: { total: 0, totalSize: 0 },
+        pricingSummary: {
+          range: { startDate: start, endDate: end },
+          ...pricingSummary,
+        },
         completionSummary,
         systemAlerts,
         unmachinableSummary,
         happyCallSummary,
-        practiceTransferStats: dashboardData.practiceTransfers,
-        creditFlowHealth: flowSummary,
+        practiceTransferStats: {
+          totalTransfers: Number(practiceTransferStatsBase?.totalTransfers || 0),
+          totalFiles: Number(practiceTransferStatsBase?.totalFiles || 0),
+          totalPractices: practiceKeys.length,
+          totalLabs: labKeys.length,
+          unreadTransfers: Number(practiceTransferStatsBase?.unreadTransfers || 0),
+          activeTransfers: Number(practiceTransferStatsBase?.activeTransfers || 0),
+          canceledTransfers: Number(
+            practiceTransferStatsBase?.canceledTransfers || 0,
+          ),
+          topPractices: Array.isArray(practiceTransferTopPracticesRaw)
+            ? practiceTransferTopPracticesRaw
+            : [],
+          topLabs: Array.isArray(practiceTransferTopLabsRaw)
+            ? practiceTransferTopLabsRaw
+            : [],
+          recentTransfers: Array.isArray(practiceTransferRecentRaw)
+            ? practiceTransferRecentRaw
+            : [],
+        },
+        // 상세 mismatch 목록은 응답에서 제외(알림만 유지). 용량·지연 절감.
+        creditFlowHealth: {
+          mismatchCount: Number(flowSummary?.mismatchCount || 0),
+          checkedCount: Number(flowSummary?.checkedCount || 0),
+        },
       },
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: "대시보드 통계 조회 중 오류가 발생했습니다.",
-      error: error.message,
-    });
-  }
+    };
 }
 
 export async function listHappyCallCompletions(req, res) {

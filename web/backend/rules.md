@@ -318,6 +318,18 @@
     - 이벤트 payload에는 최소한 `fromStage`, `toStage`, `requestId|requestMongoId`, `businessAnchorId`(해당 도메인)를 포함해 프론트 즉시 patch를 지원합니다.
     - refetch를 전제로 한 broad emit은 허용하되, 수신측이 이벤트 1회당 전체 대시보드 재계산을 강제당하지 않도록 API를 설계합니다.
     - 프론트 처리 순서를 지원하도록 payload는 `즉시 patch 가능한 최소 필드`를 우선 포함합니다.
+  - 폴링성 요약 API 성능(강제):
+    - `GET /api/requests/dashboard-risk-summary`: period `dateFilter` + 출고 전 stage(`준비/CAM/가공`)로 쿼리를 좁히고,
+      `services/dashboardRiskSummary.service.js`에서 우선순위 계산을 병렬 처리한다. 전체 populate 금지.
+    - `GET /api/requests/assigned/dashboard-summary`: `requestDashboardCache` 짧은 TTL + in-flight coalesce.
+      집계는 `getAssignedLikeDashboardSummary`에서 병렬 aggregate.
+    - `GET /api/practice/transfers/received-unread-count`: 짧은 TTL 캐시 +
+      인덱스 `PracticeTransfer(targetLabAnchorId, status, requestorReadAt)`.
+    - 인증 `authenticate`: User 조회 30s TTL 캐시(폴링 공통 병목 완화). 계정 비활성 시 즉시 invalidate.
+    - `GET /api/admin/dashboard`: 20s TTL 캐시, File 전수 집계/recent populate 제거, 해피콜 집계와 크레딧 점검을 병렬화,
+      unmachinable items는 DB에서 limit 10. 구현: `controllers/admin/admin.dashboard.controller.js`.
+    - `GET /api/requests?view=monitoring`: find+stage aggregate 병렬, page>1은 includeTotal 없이 목록만,
+      projection은 카드 UI 필드만. 인덱스 `Request(createdAt, _id)`.
   - 관리자 크레딧(`credit:balance-updated`)은 `requestor`, `admin` role fan-out으로 발행하고,
     각 페이지는 payload(`businessAnchorId` 등) 조건이 맞을 때만 갱신합니다.
   - `emitCreditBalanceUpdatedToBusiness` payload 표준:
@@ -413,7 +425,8 @@
     - 한진 외 발송은 운송장번호 없이 허용하며, 워크플로우는 `completed(배송완료)`로 즉시 반영합니다.
     - 레거시 데이터(`carrier="한진 외"` + manualDeliveryMethods 빈값)는
       `resolveShippingWorkflowState`에서 `"방문 전달"`로 정규화 보정합니다.
-    - 수동 집하 시각은 사용자 입력을 받지 않고 서버에서 당일 16:00(KST)로 고정 기록합니다.
+    - 수동 집하 시각(`pickedUpAt`/`deliveredAt`)은 사용자 입력을 받지 않고 서버의 실제 처리 시각(`now`)으로 기록합니다.
+      (예정 수거 시각 `scheduledShipPickup=16:00 KST`와 별개)
     - 레거시 `mock-pickup-complete` 경로는 하위 호환 alias로 동일 로직을 사용합니다.
 - 분리 tracking 병합 보정 스크립트:
   - `web/backend/scripts/db/merge-tracking-number-by-request-ids.mjs`

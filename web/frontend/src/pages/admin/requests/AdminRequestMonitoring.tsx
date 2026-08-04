@@ -259,7 +259,8 @@ export const AdminRequestMonitoring = () => {
             limit: String(LIMIT),
             sortBy: "createdAt",
             sortOrder: "desc",
-            includeTotal: "true",
+            // page 1에서만 total/stats 집계 — 이후 페이지는 목록만
+            includeTotal: page === 1 ? "true" : "false",
             view: "monitoring",
             startDate,
             endDate,

@@ -5,6 +5,12 @@ import File from "../../models/file.model.js";
 import User from "../../models/user.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 import { emitAppEventToUser } from "../../socket.js";
+import {
+  getRequestPerfCacheValue,
+  setRequestPerfCacheValue,
+  deleteRequestPerfCacheValue,
+  withRequestPerfInFlight,
+} from "../../services/requestDashboardCache.service.js";
 
 // related files:
 // - web/frontend/src/pages/practice/hooks/usePracticeTransferStep1.ts
@@ -19,8 +25,21 @@ import { emitAppEventToUser } from "../../socket.js";
 // - web/backend/models/user.model.js
 // - web/backend/models/businessAnchor.model.js
 // - web/backend/socket.js
+// - web/backend/services/requestDashboardCache.service.js
 const PRACTICE_TAGS = ["practice_dropzone", "practice_file_transfer"];
 const PRACTICE_ALLOWED_MODEL_EXTENSIONS = new Set([".stl", ".ply", ".obj"]);
+
+const unreadCountCacheKey = (scope) => {
+  if (!scope || typeof scope !== "object") return "practice-unread:admin";
+  const labId = scope.targetLabAnchorId
+    ? String(scope.targetLabAnchorId)
+    : "all";
+  return `practice-unread:${labId}`;
+};
+
+const invalidateUnreadCountCache = (scope) => {
+  deleteRequestPerfCacheValue(unreadCountCacheKey(scope));
+};
 
 const getLowerExt = (filename) => {
   const raw = String(filename || "").trim().toLowerCase();
@@ -446,6 +465,11 @@ export async function createPracticeTransfer(req, res) {
     });
 
     const targetLabAnchorIdText = String(targetLabAnchorId || "").trim();
+    if (targetLabAnchorIdText) {
+      invalidateUnreadCountCache({
+        targetLabAnchorId: new Types.ObjectId(targetLabAnchorIdText),
+      });
+    }
     const unreadCountForRequestor = targetLabAnchorIdText
       ? await PracticeTransfer.countDocuments({
           targetLabAnchorId: new Types.ObjectId(targetLabAnchorIdText),
@@ -453,6 +477,15 @@ export async function createPracticeTransfer(req, res) {
           requestorReadAt: null,
         })
       : 0;
+    if (targetLabAnchorIdText) {
+      setRequestPerfCacheValue(
+        unreadCountCacheKey({
+          targetLabAnchorId: new Types.ObjectId(targetLabAnchorIdText),
+        }),
+        { unreadCount: unreadCountForRequestor },
+        10 * 1000,
+      );
+    }
 
     const realtimePayload = {
       source: "createPracticeTransfer",
@@ -662,10 +695,23 @@ export async function getReceivedPracticeTransferUnreadCount(req, res) {
       });
     }
 
-    const unreadCount = await PracticeTransfer.countDocuments({
-      ...scope,
-      status: { $ne: "canceled" },
-      requestorReadAt: null,
+    const cacheKey = unreadCountCacheKey(scope);
+    const cached = getRequestPerfCacheValue(cacheKey);
+    if (cached && typeof cached.unreadCount === "number") {
+      return res.status(200).json({
+        success: true,
+        data: { unreadCount: cached.unreadCount },
+      });
+    }
+
+    const unreadCount = await withRequestPerfInFlight(cacheKey, async () => {
+      const count = await PracticeTransfer.countDocuments({
+        ...scope,
+        status: { $ne: "canceled" },
+        requestorReadAt: null,
+      });
+      setRequestPerfCacheValue(cacheKey, { unreadCount: count }, 10 * 1000);
+      return count;
     });
 
     return res.status(200).json({
@@ -714,6 +760,7 @@ export async function markReceivedPracticeTransferRead(req, res) {
       doc.requestorReadAt = new Date();
       doc.requestorReadBy = req.user?._id || null;
       await doc.save();
+      invalidateUnreadCountCache(scope);
     }
 
     const unreadCount = await PracticeTransfer.countDocuments({
@@ -721,6 +768,7 @@ export async function markReceivedPracticeTransferRead(req, res) {
       status: { $ne: "canceled" },
       requestorReadAt: null,
     });
+    setRequestPerfCacheValue(unreadCountCacheKey(scope), { unreadCount }, 10 * 1000);
 
     const realtimePayload = {
       action: "read",
@@ -791,16 +839,22 @@ export async function markReceivedPracticeTransferDownloaded(req, res) {
     }
 
     const now = new Date();
+    let didChangeRead = false;
     if (!doc.requestorReadAt) {
       doc.requestorReadAt = now;
       doc.requestorReadBy = req.user?._id || null;
+      didChangeRead = true;
     }
     if (!doc.requestorDownloadedAt) {
       doc.requestorDownloadedAt = now;
       doc.requestorDownloadedBy = req.user?._id || null;
       await doc.save();
-    } else if (!doc.requestorReadAt) {
+    } else if (didChangeRead) {
       await doc.save();
+    }
+
+    if (didChangeRead) {
+      invalidateUnreadCountCache(scope);
     }
 
     const unreadCount = await PracticeTransfer.countDocuments({
@@ -808,6 +862,7 @@ export async function markReceivedPracticeTransferDownloaded(req, res) {
       status: { $ne: "canceled" },
       requestorReadAt: null,
     });
+    setRequestPerfCacheValue(unreadCountCacheKey(scope), { unreadCount }, 10 * 1000);
 
     const realtimePayload = {
       action: "downloaded",
@@ -962,11 +1017,20 @@ export async function cancelPracticeTransfersBatch(req, res) {
     }
 
     for (const [targetLabAnchorId, affected] of affectedByAnchor.entries()) {
-      const unreadCount = await PracticeTransfer.countDocuments({
+      const scope = {
         targetLabAnchorId: new Types.ObjectId(targetLabAnchorId),
+      };
+      invalidateUnreadCountCache(scope);
+      const unreadCount = await PracticeTransfer.countDocuments({
+        ...scope,
         status: { $ne: "canceled" },
         requestorReadAt: null,
       });
+      setRequestPerfCacheValue(
+        unreadCountCacheKey(scope),
+        { unreadCount },
+        10 * 1000,
+      );
 
       await emitPracticeTransferEventToRequestorUsers({
         targetLabAnchorId,

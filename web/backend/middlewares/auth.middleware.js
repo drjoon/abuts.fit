@@ -7,6 +7,33 @@ import User from "../models/user.model.js";
 import BusinessAnchor from "../models/businessAnchor.model.js";
 import { Types } from "mongoose";
 
+const AUTH_USER_CACHE_TTL_MS = 30 * 1000;
+const __authUserCache = new Map();
+
+const getCachedAuthUser = (userId) => {
+  const hit = __authUserCache.get(String(userId));
+  if (!hit) return null;
+  if (hit.expiresAt <= Date.now()) {
+    __authUserCache.delete(String(userId));
+    return null;
+  }
+  return hit.user;
+};
+
+const setCachedAuthUser = (userId, user) => {
+  __authUserCache.set(String(userId), {
+    user,
+    expiresAt: Date.now() + AUTH_USER_CACHE_TTL_MS,
+  });
+  return user;
+};
+
+/** 계정 상태 변경 직후 즉시 반영이 필요할 때 호출 */
+export const invalidateAuthUserCache = (userId) => {
+  if (!userId) return;
+  __authUserCache.delete(String(userId));
+};
+
 /**
  * 인증 미들웨어
  * 요청 헤더에서 토큰을 추출하고 검증하여 사용자 정보를 req.user에 추가
@@ -71,8 +98,12 @@ export const authenticate = async (req, res, next) => {
       });
     }
 
-    // 사용자 정보 조회
-    const user = await User.findById(userId).select("-password");
+    // 사용자 정보 조회 (폴링 엔드포인트 공통 병목: 짧은 TTL 캐시)
+    let user = getCachedAuthUser(userId);
+    if (!user) {
+      user = await User.findById(userId).select("-password");
+      if (user) setCachedAuthUser(userId, user);
+    }
 
     if (!user) {
       return res.status(404).json({
@@ -83,6 +114,7 @@ export const authenticate = async (req, res, next) => {
 
     // 사용자가 비활성화된 경우
     if (!user.active) {
+      invalidateAuthUserCache(userId);
       res.set("Cache-Control", "no-store");
       res.set("Pragma", "no-cache");
       res.set("Vary", "Authorization");
