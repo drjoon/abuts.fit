@@ -1,5 +1,8 @@
 
 // change-log:
+// - 2026-08-04: 진행 건수를 묶음배송+신속배송 합으로 표시.
+// - 2026-08-04: 진행/완료 카드에서 취소 제거, 진행 중 묶음배송·신속배송 건수 표시.
+// - 2026-08-04: 진행 합계를 준비~포장.발송으로 맞추고, 미처리 통신의 '의뢰'를 '메시지'로 변경.
 // - 2026-08-04: 의뢰 리스트에 신속배송/묶음배송 뱃지 표시.
 // - 2026-08-03: Display-layer normalization — show '준비' when manufacturerStage indicates the first workflow stage (의뢰) in admin dashboard displays. No DB changes.
 // related files:
@@ -41,6 +44,7 @@ import {
   RotateCcw,
   Code2,
   UploadCloud,
+  Send,
   type LucideIcon,
 } from "lucide-react";
 
@@ -120,6 +124,10 @@ type AdminDashboardResponseData = {
   requestStats?: {
     total?: number;
     byStatus?: Record<string, number>;
+    inProgressByShippingMode?: {
+      normal?: number;
+      express?: number;
+    };
   };
   userStats?: {
     total?: number;
@@ -770,26 +778,16 @@ export const AdminDashboardPage = () => {
     ? (adminDashboardResponse.data?.happyCallSummary ?? null)
     : null;
 
-  // change-log: 2026-08-03 - request 단계 SSOT를 '준비' 단일값으로 사용
-  const inProgressStageList = ["준비", "CAM", "가공", "세척.패킹", "포장.발송"] as const;
-  const inProgressBaseRequestCount = inProgressStageList.reduce(
-    (acc, stage) => acc + Number(adminDashboardResponse?.data?.requestStats?.byStatus?.[stage] || 0),
-    0,
+  // change-log: 2026-08-04 - 진행 = 진행 중 묶음배송 + 신속배송 합계 (준비~포장.발송, 추적관리 이후 제외)
+  const inProgressNormalCount = Number(
+    adminDashboardResponse?.data?.requestStats?.inProgressByShippingMode
+      ?.normal || 0,
   );
-  const unmachinableInProgressRequestCount = new Set(
-    unmachinableItems
-      .filter((item) =>
-        inProgressStageList.includes(
-          String(item?.manufacturerStage || "").trim() as (typeof inProgressStageList)[number],
-        ),
-      )
-      .map((item) => String(item?.requestId || "").trim())
-      .filter(Boolean),
-  ).size;
-  const inProgressRequestCount = Math.max(
-    0,
-    inProgressBaseRequestCount - unmachinableInProgressRequestCount,
+  const inProgressExpressCount = Number(
+    adminDashboardResponse?.data?.requestStats?.inProgressByShippingMode
+      ?.express || 0,
   );
+  const inProgressRequestCount = inProgressNormalCount + inProgressExpressCount;
 
   const riskWarningCount = Number(riskSummary?.warningCount || 0);
   const riskDelayedCount = Number(riskSummary?.delayedCount || 0);
@@ -1200,7 +1198,7 @@ export const AdminDashboardPage = () => {
     const byStatus = requestStats.byStatus || {};
     const totalRequests = requestStats.total ?? 0;
 
-    const receive = byStatus["준비"] ?? 0;
+    const receive = byStatus["준비"] ?? byStatus["의뢰"] ?? 0;
     const machining = (byStatus["가공"] ?? 0) + (byStatus["CAM"] ?? 0);
     const packing = byStatus["세척.패킹"] ?? 0;
     const shipping = byStatus["포장.발송"] ?? 0;
@@ -1265,19 +1263,23 @@ export const AdminDashboardPage = () => {
         stats={
           <>
             <div className="grid grid-cols-1 gap-3 lg:grid-cols-4">
-              {/* 카드1: 진행 / 완료 / 취소 */}
+              {/* 카드1: 진행 / 완료 */}
               <Card className="app-glass-card app-glass-card--lg">
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">진행 / 완료 / 취소</CardTitle>
+                  <CardTitle className="text-sm font-medium">진행 / 완료</CardTitle>
                   <FileText className="h-4 w-4 text-muted-foreground" />
                 </CardHeader>
                 <CardContent className="space-y-3">
                   <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
                     <div className="text-xs text-muted-foreground">진행</div>
                     <div className="text-right text-lg font-bold">{inProgressRequestCount.toLocaleString()}</div>
-                    <div className="text-xs text-muted-foreground">취소</div>
-                    <div className="text-right text-lg font-bold text-muted-foreground">
-                      {Number(adminDashboardResponse?.data?.requestStats?.byStatus?.["취소"] || 0).toLocaleString()}
+                    <div className="text-xs text-muted-foreground">묶음배송</div>
+                    <div className="text-right text-base font-semibold text-sky-700">
+                      {inProgressNormalCount.toLocaleString()}건
+                    </div>
+                    <div className="text-xs text-muted-foreground">신속배송</div>
+                    <div className="text-right text-base font-semibold text-amber-700">
+                      {inProgressExpressCount.toLocaleString()}건
                     </div>
                     <div className="text-xs text-muted-foreground">완료(유료)</div>
                     <div className="text-right text-base font-semibold">
@@ -1389,20 +1391,20 @@ export const AdminDashboardPage = () => {
                     </div>
                     <div className="space-y-0.5">
                       <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                        <FileText className="h-3 w-3" />
-                        의뢰
+                        <Send className="h-3 w-3" />
+                        메시지
                       </div>
                       <button
                         type="button"
                         className={`text-lg font-bold focus:outline-none ${
-                          commBadgeCounts.request > 0
+                          commBadgeCounts.sms > 0
                             ? "text-blue-600 hover:text-blue-700 hover:underline"
                             : "text-slate-900 hover:underline"
                         }`}
-                        onClick={() => navigate("/dashboard/monitoring?status=준비")}
-                        aria-label="미처리 의뢰 모니터링 페이지로 이동"
+                        onClick={() => navigate("/dashboard/sms")}
+                        aria-label="메시지 페이지로 이동"
                       >
-                        {commBadgeCounts.request.toLocaleString()}
+                        {commBadgeCounts.sms.toLocaleString()}
                       </button>
                     </div>
                     <div className="space-y-0.5">

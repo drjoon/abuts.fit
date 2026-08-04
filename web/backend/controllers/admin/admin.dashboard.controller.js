@@ -249,7 +249,7 @@ async function buildCreditRevenueFlowMismatchSummary({ since }) {
 export async function getDashboardStats(req, res) {
   try {
     const periodKey = String(req.query?.period || "30d").trim() || "30d";
-    const cacheKey = `admin-dashboard:v2:${periodKey}`;
+    const cacheKey = `admin-dashboard:v3:${periodKey}`;
     const cached = getRequestPerfCacheValue(cacheKey);
     if (cached) {
       return res.status(200).json(cached);
@@ -1200,6 +1200,10 @@ async function buildAdminDashboardPayload(req) {
         requestStats: {
           total: totalRequests,
           byStatus: requestStatsByStatus,
+          inProgressByShippingMode: {
+            normal: Number(assignedLikeSummary?.inProgressNormalCount || 0),
+            express: Number(assignedLikeSummary?.inProgressExpressCount || 0),
+          },
           range: { startDate: start, endDate: end },
           recent: [],
         },

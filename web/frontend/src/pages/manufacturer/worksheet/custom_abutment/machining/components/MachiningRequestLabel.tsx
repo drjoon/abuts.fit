@@ -1,8 +1,11 @@
 // related files:
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/machining/utils/label.ts
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/machining/MachiningQueueBoard.tsx
+// - web/frontend/src/shared/shipping/ShippingModeBadge.tsx
 // import { generateModelNumber } from "@/utils/modelNumber";
 import React from "react";
+import { ShippingModeBadge } from "@/shared/shipping/ShippingModeBadge";
+import type { ShippingModeSource } from "@/shared/shipping/shippingMode";
 
 type Props = {
   caseInfos?: any;
@@ -22,6 +25,7 @@ type Props = {
   isRndArchivedSample?: boolean | null;
   isCopiedSample?: boolean | null;
   hideRequestId?: boolean;
+  shippingSource?: ShippingModeSource;
 };
 
 export const MachiningRequestLabel = ({
@@ -42,6 +46,7 @@ export const MachiningRequestLabel = ({
   isCopiedSample,
   hasNc,
   hideRequestId,
+  shippingSource,
 }: Props) => {
   const businessName = String(business || "").trim();
   const clinic = String(clinicName || "").trim();
@@ -95,7 +100,13 @@ export const MachiningRequestLabel = ({
   })();
 
   const renderInfoBadges = () => {
-    if (!implantParts.length && !retentionGrooveLabel && !isSample && !showNcBadge)
+    if (
+      !implantParts.length &&
+      !retentionGrooveLabel &&
+      !isSample &&
+      !showNcBadge &&
+      !shippingSource
+    )
       return null;
 
     return (
@@ -104,6 +115,9 @@ export const MachiningRequestLabel = ({
           <span className="inline-flex items-center rounded-full border border-cyan-200 bg-cyan-50 px-2 py-0.5 font-extrabold text-cyan-700">
             NC
           </span>
+        ) : null}
+        {shippingSource ? (
+          <ShippingModeBadge source={shippingSource} size="sm" />
         ) : null}
         {isSample ? (
           <span
@@ -155,11 +169,6 @@ export const MachiningRequestLabel = ({
               <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold bg-slate-900 text-white border border-slate-900">
                 {shortLot}
               </span>
-              {/*{generateModelNumber(caseInfos) && (
-                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold bg-slate-50 text-slate-600 border border-slate-200">
-                  {generateModelNumber(caseInfos)}
-                </span>
-              )}*/}
             </div>
           ) : null}
         </div>
@@ -185,11 +194,6 @@ export const MachiningRequestLabel = ({
               <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold bg-slate-900 text-white border border-slate-900">
                 {shortLot}
               </span>
-              {/*{generateModelNumber(caseInfos) && (
-                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold bg-slate-50 text-slate-600 border border-slate-200">
-                  {generateModelNumber(caseInfos)}
-                </span>
-              )}*/}
             </div>
           ) : null}
         </div>

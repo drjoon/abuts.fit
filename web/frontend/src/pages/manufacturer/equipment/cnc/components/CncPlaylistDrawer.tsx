@@ -2,6 +2,8 @@
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
+// - web/frontend/src/shared/shipping/ShippingModeBadge.tsx
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/machining/components/MachiningRequestLabel.tsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   X,
@@ -14,6 +16,7 @@ import {
   Minus,
   Plus,
 } from "lucide-react";
+import { ShippingModeBadge } from "@/shared/shipping/ShippingModeBadge";
 
 export interface PlaylistJobItem {
   id: string;
@@ -28,6 +31,8 @@ export interface PlaylistJobItem {
   rollbackCount?: number;
   // 아노다이징 OFF(아노 X) 여부. 워크시트 가공 정책 뱃지 표시용.
   anodizingEnabled?: boolean;
+  // 배송 방식(신속/묶음). 재생목록 뱃지 표시용.
+  shippingMode?: "normal" | "express" | null;
   programNo?: number | null;
   source?: string;
 }
@@ -232,6 +237,13 @@ export const CncPlaylistDrawer: React.FC<CncPlaylistDrawerProps> = ({
                                   <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-extrabold bg-rose-50 text-rose-700 border border-rose-200">
                                     아노 X
                                   </span>
+                                ) : null}
+                                {job.shippingMode === "express" ||
+                                job.shippingMode === "normal" ? (
+                                  <ShippingModeBadge
+                                    mode={job.shippingMode}
+                                    size="sm"
+                                  />
                                 ) : null}
                                 {lastCode && (
                                   <span

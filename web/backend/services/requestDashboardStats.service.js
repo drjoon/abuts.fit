@@ -2,6 +2,9 @@
 // - web/backend/rules.md
 // - web/backend/app.js
 // - web/backend/server.js
+// change-log:
+// - 2026-08-04: 진행 중 묶음배송/신속배송 건수 집계 추가.
+// - 2026-08-04: admin dashboard byStatus first-stage key SSOT를 '준비'로 통일 (구 '의뢰' 제거).
 import Request from "../models/request.model.js";
 import ShippingPackage from "../models/shippingPackage.model.js";
 
@@ -13,6 +16,38 @@ function buildHasMeaningfulValueExpr(fieldPath) {
     ],
   };
 }
+
+/** finalShipping.mode → originalShipping.mode → shippingMode (express | normal) */
+function buildDashboardEffectiveShippingModeExpr() {
+  return {
+    $let: {
+      vars: {
+        mode: {
+          $ifNull: [
+            "$finalShipping.mode",
+            {
+              $ifNull: [
+                "$originalShipping.mode",
+                { $ifNull: ["$shippingMode", "normal"] },
+              ],
+            },
+          ],
+        },
+      },
+      in: {
+        $cond: [{ $eq: ["$$mode", "express"] }, "express", "normal"],
+      },
+    },
+  };
+}
+
+const IN_PROGRESS_NORMALIZED_STAGES = [
+  "request",
+  "cam",
+  "machining",
+  "packing",
+  "shipping",
+];
 
 export function buildDashboardNormalizedStageExpr() {
   return {
@@ -97,6 +132,7 @@ export async function getAssignedLikeDashboardSummary({
         {
           $addFields: {
             normalizedStage: buildDashboardNormalizedStageExpr(),
+            effectiveShippingMode: buildDashboardEffectiveShippingModeExpr(),
           },
         },
         {
@@ -213,6 +249,45 @@ export async function getAssignedLikeDashboardSummary({
                 $cond: [{ $eq: ["$normalizedStage", "shipping"] }, 1, 0],
               },
             },
+            // 진행(준비~포장.발송) 중 배송모드 건수
+            inProgressNormalCount: {
+              $sum: {
+                $cond: [
+                  {
+                    $and: [
+                      {
+                        $in: [
+                          "$normalizedStage",
+                          IN_PROGRESS_NORMALIZED_STAGES,
+                        ],
+                      },
+                      { $eq: ["$effectiveShippingMode", "normal"] },
+                    ],
+                  },
+                  1,
+                  0,
+                ],
+              },
+            },
+            inProgressExpressCount: {
+              $sum: {
+                $cond: [
+                  {
+                    $and: [
+                      {
+                        $in: [
+                          "$normalizedStage",
+                          IN_PROGRESS_NORMALIZED_STAGES,
+                        ],
+                      },
+                      { $eq: ["$effectiveShippingMode", "express"] },
+                    ],
+                  },
+                  1,
+                  0,
+                ],
+              },
+            },
           },
         },
       ]),
@@ -314,12 +389,17 @@ export async function getAssignedLikeDashboardSummary({
     shippingCount: Number(statsResult?.shippingCount ?? 0) || 0,
     shippingBoxes: Number(shippingBoxesAgg?.[0]?.count ?? 0) || 0,
     rndCount: Number(rndCountAgg?.[0]?.count ?? 0) || 0,
+    inProgressNormalCount:
+      Number(statsResult?.inProgressNormalCount ?? 0) || 0,
+    inProgressExpressCount:
+      Number(statsResult?.inProgressExpressCount ?? 0) || 0,
   };
 }
 
 export function buildMonitoringByStatusFromAssignedLikeSummary(summary = {}) {
+  // request 단계 SSOT 라벨은 '준비' (구 '의뢰' 키는 더 이상 사용하지 않음)
   return {
-    의뢰: Number(summary.requestCount || 0),
+    준비: Number(summary.requestCount || 0),
     CAM: Number(summary.camCount || 0),
     가공: Number(summary.machiningCount || 0),
     "세척.패킹": Number(summary.packingCount || 0),

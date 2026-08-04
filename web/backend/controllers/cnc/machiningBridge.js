@@ -614,6 +614,9 @@ export async function getLastCompletedMachiningMap(req, res) {
               "caseInfos.anodizingEnabled",
               "caseInfos.ncFile.s3Key",
               "caseInfos.ncFile.fileName",
+              "shippingMode",
+              "finalShipping.mode",
+              "originalShipping.mode",
               "lotNumber",
               "source",
               "requestCategory",
@@ -637,6 +640,13 @@ export async function getLastCompletedMachiningMap(req, res) {
             rollbackCount,
             manufacturerStage: String(r?.manufacturerStage || "").trim(),
             caseInfos: r?.caseInfos || null,
+            shippingMode: r?.shippingMode || null,
+            finalShipping: r?.finalShipping
+              ? { mode: r.finalShipping.mode || null }
+              : null,
+            originalShipping: r?.originalShipping
+              ? { mode: r.originalShipping.mode || null }
+              : null,
             source: String(r?.source || "").trim(),
             requestCategory: String(r?.requestCategory || "").trim(),
           });
@@ -712,6 +722,9 @@ export async function getLastCompletedMachiningMap(req, res) {
               "caseInfos.anodizingEnabled",
               "caseInfos.ncFile.s3Key",
               "caseInfos.ncFile.fileName",
+              "shippingMode",
+              "finalShipping.mode",
+              "originalShipping.mode",
               "lotNumber",
               "source",
               "requestCategory",
@@ -732,6 +745,13 @@ export async function getLastCompletedMachiningMap(req, res) {
             ),
             manufacturerStage: String(r?.manufacturerStage || "").trim(),
             caseInfos: r?.caseInfos || null,
+            shippingMode: r?.shippingMode || null,
+            finalShipping: r?.finalShipping
+              ? { mode: r.finalShipping.mode || null }
+              : null,
+            originalShipping: r?.originalShipping
+              ? { mode: r.originalShipping.mode || null }
+              : null,
             source: String(r?.source || "").trim(),
             requestCategory: String(r?.requestCategory || "").trim(),
           });
@@ -779,6 +799,9 @@ export async function getLastCompletedMachiningMap(req, res) {
         rollbackCount: reqInfo?.rollbackCount ?? 0,
         lotNumber: lotNumber || { value: undefined },
         caseInfos,
+        shippingMode: reqInfo?.shippingMode || null,
+        finalShipping: reqInfo?.finalShipping || null,
+        originalShipping: reqInfo?.originalShipping || null,
         source: reqInfo?.source || null,
         requestCategory: reqInfo?.requestCategory || null,
         completedAt,

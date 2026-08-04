@@ -120,6 +120,9 @@ Notes:
 - 프론트는 `/api/cnc-machines/queues` 응답 순서를 그대로 표시한다.
   - `src/pages/manufacturer/worksheet/custom_abutment/machining/hooks/useMachiningBoard.ts`
   - `src/pages/manufacturer/worksheet/custom_abutment/machining/MachiningQueueBoard.tsx`
+- 신속/묶음 뱃지: 가공카드(Complete/Now Playing/Next Up)와 재생목록 모달에 `ShippingModeBadge` 상시 표시
+  - `MachiningRequestLabel.tsx`, `CncPlaylistDrawer.tsx`
+  - 큐 API 응답에 `shippingMode`/`finalShipping`/`originalShipping` 포함
 
 - 신규 기공소 런칭 이벤트 가격 표시 SSOT:
   - 가입 승인일 기준 `180일` 동안 커스텀 어벗 `개당 10,000원` 고정가를 적용합니다.

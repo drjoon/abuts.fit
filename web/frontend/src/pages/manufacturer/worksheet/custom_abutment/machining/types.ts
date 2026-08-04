@@ -16,6 +16,9 @@ export type QueueItem = {
   diameter?: number;
   diameterGroup?: string;
   caseInfos?: Record<string, any> | null;
+  shippingMode?: string | null;
+  finalShipping?: { mode?: string | null } | null;
+  originalShipping?: { mode?: string | null } | null;
   productionSchedule?: Record<string, any> | null;
   paused?: boolean;
   machiningRecord?: {
@@ -64,6 +67,11 @@ export type LastCompletedMachining = {
   requestMongoId?: string | null;
   displayLabel: string | null;
   requestCategory?: "order" | "rnd_sample" | "copied_sample" | string | null;
+  caseInfos?: Record<string, any> | null;
+  shippingMode?: string | null;
+  finalShipping?: { mode?: string | null } | null;
+  originalShipping?: { mode?: string | null } | null;
+  source?: string | null;
   clinicName?: string;
   patientName?: string;
   tooth?: string;

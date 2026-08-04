@@ -103,6 +103,7 @@
   - 승인·배정: `common.review.controller.js`, `services/reviewApprovalQueue.service.js`
   - 자동 Next: `controllers/cnc/machiningBridge.js` `fetchPendingForAutoNext`
   - 재배정: `controllers/cnc/production.js` redistribute
+  - 표시: 큐/lastCompleted API에 `shippingMode` 포함 → 프론트 `ShippingModeBadge`
 
 - 인프라 마이그레이션 운영 체크(EB 단일 인스턴스 → LB+NAT, Atlas 비용 유지):
   - 안정화 관찰 기간(며칠) 동안 실사용 트래픽에서 핵심 기능(로그인, 주문/의뢰 등록)을 반복 점검합니다.

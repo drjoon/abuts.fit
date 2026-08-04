@@ -34,6 +34,7 @@ import type {
   MachineStatus,
 } from "../types";
 import { formatMachiningLabel } from "../utils/label";
+import { resolveShippingMode } from "@/shared/shipping/shippingMode";
 import { useCncDashboardMaterials } from "@/pages/manufacturer/equipment/cnc/hooks/useCncDashboardMaterials";
 
 const isMachiningStatus = (status?: string) => {
@@ -818,6 +819,7 @@ export const useMachiningBoard = ({
         const anodizingEnabled = (
           q as { caseInfos?: { anodizingEnabled?: boolean } }
         )?.caseInfos?.anodizingEnabled;
+        const shippingMode = resolveShippingMode(q);
         return {
           id: rid,
           name: formatMachiningLabel(q),
@@ -831,6 +833,7 @@ export const useMachiningBoard = ({
           source: bridgePath ? "bridge_store" : s3Key ? "s3" : "db",
           rollbackCount,
           anodizingEnabled,
+          shippingMode,
         } satisfies PlaylistJobItem;
       })
       .filter(Boolean) as PlaylistJobItem[];

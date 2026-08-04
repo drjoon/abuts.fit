@@ -459,6 +459,13 @@ export async function getProductionQueues(req, res) {
         patientName: reqItem.caseInfos?.patientName,
         tooth: reqItem.caseInfos?.tooth,
         caseInfos: reqItem.caseInfos || null,
+        shippingMode: reqItem?.shippingMode || null,
+        finalShipping: reqItem?.finalShipping
+          ? { mode: reqItem.finalShipping.mode || null }
+          : null,
+        originalShipping: reqItem?.originalShipping
+          ? { mode: reqItem.originalShipping.mode || null }
+          : null,
         source: reqItem?.source || null,
         requestCategory: reqItem?.requestCategory || null,
       }));

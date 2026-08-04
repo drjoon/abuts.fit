@@ -767,8 +767,14 @@ export const MachineQueueCard = ({
                       caseInfos={(effectiveLastCompleted as any)?.caseInfos}
                       hasNc={Boolean(
                         (effectiveLastCompleted as any)?.ncFile?.s3Key ||
-                          (effectiveLastCompleted as any)?.caseInfos?.ncFile?.s3Key,
+                          (effectiveLastCompleted as any)?.caseInfos?.ncFile
+                            ?.s3Key,
                       )}
+                      shippingSource={
+                        (effectiveLastCompleted as any)?.requestId
+                          ? (effectiveLastCompleted as any)
+                          : undefined
+                      }
                       className="text-[15px] leading-tight"
                       {...buildLabelExtraProps(effectiveLastCompleted as any)}
                     />
@@ -878,6 +884,9 @@ export const MachineQueueCard = ({
                         (currentSlot as any)?.ncFile?.s3Key ||
                           (currentSlot as any)?.caseInfos?.ncFile?.s3Key,
                       )}
+                      shippingSource={
+                        currentSlot?.requestId ? currentSlot : undefined
+                      }
                       className="text-[15px]"
                       {...buildLabelExtraProps(currentSlot)}
                     />
@@ -1022,6 +1031,9 @@ export const MachineQueueCard = ({
                         (nextSlot as any)?.ncFile?.s3Key ||
                           (nextSlot as any)?.caseInfos?.ncFile?.s3Key,
                       )}
+                      shippingSource={
+                        nextSlot?.requestId ? nextSlot : undefined
+                      }
                       className="text-[15px]"
                       {...buildLabelExtraProps(nextSlot)}
                     />

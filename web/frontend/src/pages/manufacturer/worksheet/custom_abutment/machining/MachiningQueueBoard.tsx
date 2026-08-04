@@ -1138,6 +1138,9 @@ export const MachiningQueueBoard = ({
                       requestId={unassignedHead.requestId}
                       lotShortCode={getLotShortCode(unassignedHead)}
                       caseInfos={(unassignedHead as any)?.caseInfos}
+                      shippingSource={
+                        unassignedHead?.requestId ? unassignedHead : undefined
+                      }
                       className="text-[12px]"
                       {...buildLabelExtraProps(unassignedHead)}
                     />
@@ -1893,6 +1896,7 @@ export const MachiningQueueBoard = ({
                         requestId={item.requestId}
                         lotShortCode={getLotShortCode(item)}
                         caseInfos={(item as any)?.caseInfos}
+                        shippingSource={item?.requestId ? item : undefined}
                         className="text-[14px] leading-tight"
                         {...buildLabelExtraProps(item)}
                       />
