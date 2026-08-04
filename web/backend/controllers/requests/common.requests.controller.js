@@ -3170,7 +3170,7 @@ export async function updateRequestStatus(req, res) {
       await request.save();
     }
 
-    // 신속배송(express) 모드 제거됨
+    // 신속배송(express) 표시/우선순위는 finalShipping.mode / shippingMode SSOT 사용
 
     const legacyHexNormalized = normalizeLegacyManufacturerHexRotationOnRequest(
       request,

@@ -52,6 +52,18 @@ const BATCH_PROCESSING_DAYS = 1; // 세척/검사/포장 (50~100개 모아서)
 const PACKING_CUTOFF_HOUR = 14; // 포장 마감 시각 (14:00)
 const PICKUP_REQUEST_HOUR = 15; // 택배 수거 신청 시각 (15:00)
 const DAILY_PICKUP_HOUR = 16; // 택배 수거 시각 (16:00)
+const EXPRESS_CUTOFF_HOUR_KST = 12; // 신속: 낮 12시 이전 당일 발송 목표
+
+function getKstHour(date = new Date()) {
+  const hour = Number(
+    new Intl.DateTimeFormat("en-US", {
+      timeZone: "Asia/Seoul",
+      hour: "numeric",
+      hour12: false,
+    }).format(date instanceof Date ? date : new Date(date)),
+  );
+  return Number.isFinite(hour) ? hour : 0;
+}
 
 /**
  * KST 시각 생성
@@ -221,13 +233,16 @@ function getBulkWaitHours(diameterGroup) {
  * @param {number} params.maxDiameter - 최대 직경 (mm)
  * @param {Date} params.requestedAt - 의뢰 생성 시각
  * @param {Array} params.weeklyBatchDays - 주간 배치일 (e.g. ["mon", "wed"])
+ * @param {"normal"|"express"} [params.shippingMode="normal"]
  * @returns {Object} productionSchedule
  */
 export async function calculateInitialProductionSchedule({
   maxDiameter,
   requestedAt,
   weeklyBatchDays,
+  shippingMode = "normal",
 }) {
+  const mode = shippingMode === "express" ? "express" : "normal";
   const now = requestedAt || new Date();
   const { diameter, diameterGroup, preferredMachine } =
     getDiameterGroupAndMachine(maxDiameter);
@@ -245,6 +260,72 @@ export async function calculateInitialProductionSchedule({
       "[calculateInitialProductionSchedule] failed to fetch manufacturer settings:",
       error,
     );
+  }
+
+  // 신속: 소재 대기/주간 배치 없이 당일(12시 전) 또는 다음 영업일 발송
+  if (mode === "express") {
+    const MIN_LEAD_MINUTES = 30;
+    const scheduledCamStart = new Date(
+      now.getTime() + MIN_LEAD_MINUTES * 60 * 1000,
+    );
+    const scheduledCamComplete = new Date(
+      scheduledCamStart.getTime() + CAM_DURATION_MINUTES * 60 * 1000,
+    );
+    const scheduledMachiningStart = new Date(scheduledCamComplete);
+    const scheduledMachiningComplete = new Date(
+      scheduledMachiningStart.getTime() + MACHINING_DURATION_MINUTES * 60 * 1000,
+    );
+
+    const todayYmd = toKstYmd(now) || getTodayYmdInKst();
+    let shipYmd = todayYmd;
+    const hour = getKstHour(now);
+    const todayIsBiz =
+      todayYmd && (await isKoreanBusinessDay(todayYmd));
+
+    if (hour < EXPRESS_CUTOFF_HOUR_KST && todayIsBiz) {
+      shipYmd = todayYmd;
+    } else {
+      shipYmd = await addKoreanBusinessDays({
+        startYmd: todayYmd,
+        days: 1,
+      });
+    }
+
+    const scheduledBatchProcessing = createKstDateTime(
+      shipYmd,
+      PACKING_CUTOFF_HOUR,
+      0,
+    );
+    const scheduledPickupBase = createKstDateTime(
+      shipYmd,
+      PACKING_CUTOFF_HOUR,
+      0,
+    );
+    const scheduledPickupRequest = getNextPickupTime(
+      scheduledPickupBase,
+      PICKUP_REQUEST_HOUR,
+    );
+    const scheduledShipPickup = getNextPickupTime(
+      scheduledPickupBase,
+      DAILY_PICKUP_HOUR,
+    );
+
+    void weeklyBatchDays;
+    void manufacturerLeadTimes;
+
+    return {
+      scheduledCamStart,
+      scheduledCamComplete,
+      scheduledMachiningStart,
+      scheduledMachiningComplete,
+      scheduledBatchProcessing,
+      scheduledPickupRequest,
+      scheduledShipPickup,
+      assignedMachine: preferredMachine,
+      diameter,
+      diameterGroup,
+      shippingMode: "express",
+    };
   }
 
   const waitHours = getBulkWaitHours(diameterGroup);
@@ -332,6 +413,7 @@ export async function calculateInitialProductionSchedule({
     assignedMachine: preferredMachine, // M3, M4, 또는 null
     diameter,
     diameterGroup,
+    shippingMode: "normal",
   };
 }
 
@@ -420,10 +502,12 @@ export function getAllProductionQueues(requests) {
  * 생산 스케줄 재계산
  * 의뢰 단계에서만 변경 가능
  */
-export function recalculateProductionSchedule({
+export async function recalculateProductionSchedule({
   currentStage,
   maxDiameter,
   requestedAt,
+  weeklyBatchDays,
+  shippingMode = "normal",
 }) {
   // 준비 단계가 아니면 스케줄 변경 불가
   if (currentStage !== "준비") {
@@ -434,6 +518,8 @@ export function recalculateProductionSchedule({
   return calculateInitialProductionSchedule({
     maxDiameter,
     requestedAt,
+    weeklyBatchDays,
+    shippingMode,
   });
 }
 
@@ -582,25 +668,34 @@ export async function recalculateQueueOnMaterialChange(
  * @returns {Array} 우선순위 정렬된 배열
  */
 export function sortByProductionPriority(requests) {
-  const now = new Date();
+  const now = Date.now();
 
   return requests
     .map((req) => {
+      const obj =
+        typeof req?.toObject === "function" ? req.toObject() : { ...req };
       const schedule = req.productionSchedule || {};
 
-      // 우선순위가 이미 계산되어 있으면 사용
       if (typeof schedule.priority === "number") {
-        return { ...req.toObject(), _priority: schedule.priority };
+        return { ...obj, _priority: schedule.priority };
       }
 
-      // 없으면 즉시 계산 (항상 묶음 배송)
-      const priority = calculatePriority({
-        shippingMode: "normal",
-        scheduledCamStart: schedule.scheduledCamStart || now,
-        diameterGroup: schedule.diameterGroup || "6-8",
-      });
+      const mode =
+        req?.finalShipping?.mode === "express" ||
+        req?.originalShipping?.mode === "express" ||
+        req?.shippingMode === "express"
+          ? "express"
+          : "normal";
 
-      return { ...req.toObject(), _priority: priority };
+      const camStartRaw = schedule.scheduledCamStart
+        ? new Date(schedule.scheduledCamStart).getTime()
+        : now;
+      const camStart = Number.isFinite(camStartRaw) ? camStartRaw : now;
+      // 신속 건을 앞에 두고, 같은 모드에서는 CAM 시작이 빠를수록 우선
+      const expressBoost = mode === "express" ? 1e15 : 0;
+      const priority = expressBoost - camStart;
+
+      return { ...obj, _priority: priority };
     })
     .sort((a, b) => b._priority - a._priority);
 }

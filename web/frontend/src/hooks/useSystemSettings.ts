@@ -15,6 +15,7 @@ type CreditSettingsApiResponse = {
 export interface CreditSettings {
   minCreditForRequest: number;
   shippingFee: number;
+  expressFee: number;
   defaultRequestFreeCredit: number;
   defaultShippingFreeCredit: number;
 }
@@ -22,6 +23,7 @@ export interface CreditSettings {
 export const CREDIT_SETTINGS_DEFAULTS: CreditSettings = {
   minCreditForRequest: 10000,
   shippingFee: 3500,
+  expressFee: 1000,
   defaultRequestFreeCredit: 30000,
   defaultShippingFreeCredit: 7000,
 };
@@ -48,6 +50,9 @@ export const useSystemSettings = () => {
           raw.minCreditForRequest ?? CREDIT_SETTINGS_DEFAULTS.minCreditForRequest,
         ),
         shippingFee: Number(raw.shippingFee ?? CREDIT_SETTINGS_DEFAULTS.shippingFee),
+        expressFee: Number(
+          raw.expressFee ?? CREDIT_SETTINGS_DEFAULTS.expressFee,
+        ),
         defaultRequestFreeCredit: Number(
           raw.defaultRequestFreeCredit ??
             CREDIT_SETTINGS_DEFAULTS.defaultRequestFreeCredit,

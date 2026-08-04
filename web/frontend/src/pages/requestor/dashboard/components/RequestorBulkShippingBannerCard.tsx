@@ -303,7 +303,7 @@ export const RequestorBulkShippingBannerCard = ({
     return dates.length > 0 ? dates[0] : null;
   }, [rawExpressItems]);
 
-  // All items are bulk shipping now (express shipping removed)
+  // All items participate in bulk UI; express items are filtered separately
   const bulkItems = items.filter((i) => {
     const mode = i.shippingMode || "normal";
     return mode === "normal";

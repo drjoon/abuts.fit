@@ -3,8 +3,11 @@
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/pages/requestor/dashboard/RequestorDashboardPage.tsx
+// - web/frontend/src/pages/requestor/dashboard/components/RequestorPricingReferralPolicyCard.tsx
 // - web/frontend/src/pages/requestor/dashboard/components/RequestorRecentRequestsCard.tsx
+// - web/frontend/src/pages/requestor/new_request/components/NewRequestShippingSection.tsx
 // - web/backend/controllers/requests/common.requests.controller.js
+// - web/backend/utils/creditSettingsDefaults.js
 import { useEffect, useState } from 'react';
 import {
   Dialog,
@@ -202,6 +205,15 @@ export const PricingPolicyDialog = ({
                       배송비: <b>발송 1회당 3,500원</b> — 한 번에 여러 제품을
                       보내도 1회만 부과
                     </li>
+                    <li>
+                      신속 배송: <b>건당 의뢰크레딧 1,000원 추가</b>
+                      <br />
+                      <span className='text-xs text-muted-foreground'>
+                        오늘 낮 12시(KST) 이전 의뢰 시 오늘 오후 발송을
+                        목표합니다. 생산이 지연되면 다음날 발송하며, 추가
+                        의뢰크레딧은 취소됩니다.
+                      </span>
+                    </li>
                     <li>VAT 별도</li>
                   </ul>
                 </section>
@@ -265,7 +277,7 @@ export const PricingPolicyDialog = ({
                   </h3>
                   <ul className='list-disc pl-4 space-y-0.5'>
                     <li>
-                      가입 승인일로부터 <b>90일간 개당 10,000원</b> 고정 적용
+                      가입 승인일로부터 <b>180일간 개당 10,000원</b> 고정 적용
                     </li>
                     <li>이 기간에는 주문량 할인과 무관하게 우선 적용됩니다.</li>
                     <li>종료 시점은 별도 공지로 안내드립니다.</li>
@@ -299,7 +311,23 @@ export const PricingPolicyDialog = ({
 
                 <section className='space-y-1'>
                   <h3 className='font-semibold text-foreground text-md'>
-                    8. 배송 일정 (시간 안내, KST)
+                    8. 배송 방식
+                  </h3>
+                  <ul className='list-disc pl-4 space-y-0.5'>
+                    <li>
+                      <b>묶음 배송</b>: 설정한 발송 요일 중 가장 먼저 도래하는
+                      날에 함께 발송합니다.
+                    </li>
+                    <li>
+                      <b>신속 배송</b>: 낮 12시 이전 의뢰 건은 당일 오후 발송을
+                      목표하며, 건당 의뢰크레딧 1,000원이 추가됩니다.
+                    </li>
+                  </ul>
+                </section>
+
+                <section className='space-y-1'>
+                  <h3 className='font-semibold text-foreground text-md'>
+                    9. 배송 일정 (시간 안내, KST)
                   </h3>
                   <ul className='list-disc pl-4 space-y-0.5'>
                     <li>

@@ -69,6 +69,8 @@ async function buildNormalizedDraftCaseInfos(
           ci?.requestorHexRotation,
           opts?.defaultRequestorHexRotation,
         ),
+        shippingMode:
+          ci?.shippingMode === "express" ? "express" : "normal",
       };
     }),
   );
@@ -124,6 +126,8 @@ export const createDraft = asyncHandler(async (req, res) => {
             ci?.requestorHexRotation,
             defaultRequestorHexRotation,
           ),
+          shippingMode:
+            ci?.shippingMode === "express" ? "express" : "normal",
         };
       }),
     ),
@@ -387,7 +391,8 @@ export const addFileToDraft = asyncHandler(async (req, res) => {
       requestorHexRotation,
       defaultRequestorHexRotation,
     ),
-    shippingMode: "normal", // 항상 묶음 배송
+    shippingMode:
+      shippingMode === "express" ? "express" : "normal",
     requestedShipDate,
   });
 
@@ -508,7 +513,8 @@ export const addFilesToDraftBulk = asyncHandler(async (req, res) => {
           requestorHexRotation,
           defaultRequestorHexRotation,
         ),
-        shippingMode: "normal", // 항상 묶음 배송
+        shippingMode:
+          shippingMode === "express" ? "express" : "normal",
         requestedShipDate,
       };
     }),

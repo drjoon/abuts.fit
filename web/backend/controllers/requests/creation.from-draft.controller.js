@@ -959,6 +959,10 @@ export async function createRequestsFromDraft(req, res) {
       return acc + (Number.isFinite(n) ? n : 0);
     }, 0);
 
+    const expressCount = preparedCasesForCreate.filter(
+      (item) => (item.shippingMode || "normal") === "express",
+    ).length;
+
     // Pre-fetch read-only data in parallel before transaction to minimize transaction duration
     const requestedAtForPrefetch = new Date();
     const createdYmd = toKstYmd(requestedAtForPrefetch) || getTodayYmdInKst();
@@ -989,6 +993,14 @@ export async function createRequestsFromDraft(req, res) {
         })(),
       ]);
     const shippingFeePerBox = 3500;
+    const expressFeePerRequest = Math.max(
+      0,
+      Number(systemSettings?.creditSettings?.expressFee ?? 1000) || 1000,
+    );
+    const totalExpressFee = isPracticeRoutingSubmission
+      ? 0
+      : expressCount * expressFeePerRequest;
+    const requiredMachiningFee = totalSpendSupply + totalExpressFee;
     const weeklyBatchDays = Array.isArray(
       shippingOrg?.shippingPolicy?.weeklyBatchDays,
     )
@@ -1014,6 +1026,9 @@ export async function createRequestsFromDraft(req, res) {
     console.log("[createRequestsFromDraft] pre-fetch done", {
       t: Date.now() - startTime,
       shippingFeePerBox,
+      expressFeePerRequest,
+      expressCount,
+      totalExpressFee,
       weeklyBatchDays,
       shipDate,
       isPracticeRoutingSubmission,
@@ -1131,7 +1146,10 @@ export async function createRequestsFromDraft(req, res) {
             paidCredit,
             freeRequestCredit,
             freeShippingCredit,
-            requiredMachiningFee: totalSpendSupply,
+            requiredMachiningFee,
+            totalSpendSupply,
+            totalExpressFee,
+            expressCount,
           });
 
           console.log("[createRequestsFromDraft] Shipping fee calculation", {
@@ -1141,13 +1159,13 @@ export async function createRequestsFromDraft(req, res) {
             totalShippingFee,
           });
 
-          // 의뢰비는 의뢰 크레딧(유료+무료 의뢰), 배송비는 배송 크레딧(유료+무료 배송) 기준으로 체크
+          // 의뢰비(+신속 추가)는 의뢰 크레딧, 배송비는 배송 크레딧 기준으로 체크
           const availableForMachining = paidCredit + freeRequestCredit;
           const availableForShipping = paidCredit + freeShippingCredit;
 
           const machiningShortfall =
-            totalSpendSupply > availableForMachining
-              ? totalSpendSupply - availableForMachining
+            requiredMachiningFee > availableForMachining
+              ? requiredMachiningFee - availableForMachining
               : 0;
           const shippingShortfall =
             totalShippingFee > availableForShipping
@@ -1167,7 +1185,11 @@ export async function createRequestsFromDraft(req, res) {
             if (machiningShortfall > 0 && shippingShortfall > 0) {
               message = "의뢰비와 배송비 크레딧이 모두 부족합니다.";
               details.push(
-                `의뢰비 필요: ${totalSpendSupply.toLocaleString()}원 (${requestCount}건 합계, 보유: ${availableForMachining.toLocaleString()}원)`,
+                `의뢰비 필요: ${requiredMachiningFee.toLocaleString()}원 (${requestCount}건 합계${
+                  totalExpressFee > 0
+                    ? `, 신속 ${expressCount}건 +${totalExpressFee.toLocaleString()}원`
+                    : ""
+                }, 보유: ${availableForMachining.toLocaleString()}원)`,
               );
               details.push(
                 `배송비 필요: ${totalShippingFee.toLocaleString()}원 (보유: ${availableForShipping.toLocaleString()}원)`,
@@ -1175,7 +1197,11 @@ export async function createRequestsFromDraft(req, res) {
             } else if (machiningShortfall > 0) {
               message = "의뢰비 크레딧이 부족합니다.";
               details.push(
-                `필요: ${totalSpendSupply.toLocaleString()}원 (${requestCount}건 합계), 보유: ${availableForMachining.toLocaleString()}원`,
+                `필요: ${requiredMachiningFee.toLocaleString()}원 (${requestCount}건 합계${
+                  totalExpressFee > 0
+                    ? `, 신속 ${expressCount}건 +${totalExpressFee.toLocaleString()}원`
+                    : ""
+                }), 보유: ${availableForMachining.toLocaleString()}원`,
               );
             } else {
               message = "배송비 크레딧이 부족합니다.";
@@ -1193,9 +1219,12 @@ export async function createRequestsFromDraft(req, res) {
             err.statusCode = 402;
             err.payload = {
               machiningFee: {
-                required: totalSpendSupply,
+                required: requiredMachiningFee,
                 available: availableForMachining,
                 shortfall: machiningShortfall,
+                baseAmount: totalSpendSupply,
+                expressFee: totalExpressFee,
+                expressCount,
               },
               shippingFee: {
                 required: totalShippingFee,

@@ -1,8 +1,8 @@
 // related files:
 // - web/backend/rules.md
-
 // - web/backend/services/creditBalance.service.js
 // - web/backend/services/creditRevenuePolicy.service.js
+// - web/backend/utils/creditSettingsDefaults.js
 // - web/backend/modules/requests/request.routes.js
 // - web/backend/controllers/requests/common.review.controller.js
 // - web/backend/controllers/requests/common.requests.controller.js
@@ -17,13 +17,16 @@ import {
   applyStatusMapping,
   computePriceForRequest,
   getTodayYmdInKst,
+  addKoreanBusinessDays,
 } from "./utils.js";
 import {
   spendRequestCreditAtomic,
   spendShippingCreditAtomic,
   deleteRequestSpendAtomicOnRollback,
+  deleteExpressSurchargeAtomic,
   deleteShippingSpendAtomicOnRollback,
 } from "../../services/creditBalance.service.js";
+import { resolveEffectiveShippingMode } from "./shippingPriority.utils.js";
 import { postGeneralLedgerJournal } from "../../services/generalLedger.service.js";
 import {
   isShippingSpendRevenueContext,
@@ -319,7 +322,7 @@ export function revertManufacturerStageByReviewStage(request, stage) {
   }
 }
 
-export function updateCurrentEstimatedShipYmdOnPackingEnter(request) {
+export async function updateCurrentEstimatedShipYmdOnPackingEnter(request) {
   if (!request) return;
 
   request.timeline = request.timeline || {};
@@ -333,7 +336,7 @@ export function updateCurrentEstimatedShipYmdOnPackingEnter(request) {
         ? timeline.estimatedShipYmd.trim()
         : getTodayYmdInKst();
 
-  const nextEstimatedShipYmd =
+  let nextEstimatedShipYmd =
     typeof timeline.nextEstimatedShipYmd === "string" &&
     timeline.nextEstimatedShipYmd.trim()
       ? timeline.nextEstimatedShipYmd.trim()
@@ -342,9 +345,121 @@ export function updateCurrentEstimatedShipYmdOnPackingEnter(request) {
         ? timeline.estimatedShipYmd.trim()
         : originalEstimatedShipYmd;
 
+  const todayYmd = getTodayYmdInKst();
+  const mode = resolveEffectiveShippingMode(request);
+
+  // 약속 발송일을 이미 지난 경우: 다음 발송일을 오늘로 미룸
+  if (
+    todayYmd &&
+    originalEstimatedShipYmd &&
+    todayYmd > originalEstimatedShipYmd &&
+    (!nextEstimatedShipYmd || nextEstimatedShipYmd <= originalEstimatedShipYmd)
+  ) {
+    nextEstimatedShipYmd = todayYmd;
+  }
+
+  // 신속: 당일 포장 마감(14:00 KST) 이후면 당일 집하 불가 → 다음 영업일
+  if (
+    mode === "express" &&
+    todayYmd &&
+    originalEstimatedShipYmd === todayYmd &&
+    (!nextEstimatedShipYmd || nextEstimatedShipYmd === todayYmd)
+  ) {
+    const hourKst = Number(
+      new Intl.DateTimeFormat("en-US", {
+        timeZone: "Asia/Seoul",
+        hour: "numeric",
+        hour12: false,
+      }).format(new Date()),
+    );
+    if (Number.isFinite(hourKst) && hourKst >= 14) {
+      nextEstimatedShipYmd = await addKoreanBusinessDays({
+        startYmd: todayYmd,
+        days: 1,
+      });
+    }
+  }
+
   timeline.originalEstimatedShipYmd = originalEstimatedShipYmd;
   timeline.nextEstimatedShipYmd = nextEstimatedShipYmd;
   timeline.estimatedShipYmd = nextEstimatedShipYmd;
+}
+
+/**
+ * 신속 약속 발송일(original)보다 next가 늦어지면 신속 추가 크레딧을 취소한다.
+ */
+export async function cancelExpressSurchargeIfShipDelayed({
+  request,
+  businessAnchorId,
+  session,
+  deferredCreditEvents,
+  forceCancel = false,
+}) {
+  if (!request?._id || !businessAnchorId) return { didCancel: false };
+
+  const mode = resolveEffectiveShippingMode(request);
+  if (mode !== "express" && !forceCancel) {
+    return { didCancel: false, reason: "not_express" };
+  }
+
+  if (String(request?.price?.expressFeeStatus || "") === "cancelled") {
+    return { didCancel: false, reason: "already_cancelled" };
+  }
+
+  const original = String(
+    request?.timeline?.originalEstimatedShipYmd || "",
+  ).trim();
+  const next = String(
+    request?.timeline?.nextEstimatedShipYmd ||
+      request?.timeline?.estimatedShipYmd ||
+      "",
+  ).trim();
+
+  const isDelayed = Boolean(original && next && next > original);
+  if (!forceCancel && !isDelayed) {
+    return { didCancel: false, reason: "not_delayed" };
+  }
+
+  const rollbackResult = await deleteExpressSurchargeAtomic({
+    request,
+    businessAnchorId,
+    session,
+  });
+
+  if (!rollbackResult?.didRollback) {
+    // 레거시 합산 차감(express가 machining_spend에 포함)은 부분 취소 불가 → 상태만 표시
+    if (Number(request?.price?.expressFee || 0) > 0) {
+      request.price = {
+        ...(request.price || {}),
+        expressFeeStatus: "cancelled",
+      };
+    }
+    return {
+      didCancel: false,
+      reason: rollbackResult?.reason || "no_express_surcharge",
+    };
+  }
+
+  request.price = {
+    ...(request.price || {}),
+    expressFeeStatus: "cancelled",
+  };
+
+  const restored = Number(rollbackResult.rollbackAmount || 0);
+  if (restored > 0) {
+    await emitOrQueueCreditBalanceUpdate({
+      deferredCreditEvents,
+      businessAnchorId,
+      balanceDelta: restored,
+      reason: "express_surcharge_cancel",
+      refId: request._id,
+    });
+  }
+
+  return {
+    didCancel: true,
+    rollbackAmount: restored,
+  };
 }
 
 // 타이밍 SSOT: CAM 승인으로 가공 진입할 때만 호출되어야 한다.
@@ -381,11 +496,30 @@ export async function ensureRequestCreditSpendOnMachiningEnter({
     currentRequestId: request?._id,
   });
 
-  const resolvedAmount = Number(computedPrice?.amount || 0);
+  const baseAmount = Number(computedPrice?.amount || 0);
+  const shippingMode = resolveEffectiveShippingMode(request);
+
+  let expressFee = 0;
+  if (shippingMode === "express") {
+    try {
+      const { loadCreditSettingsDefaults } =
+        await import("../../utils/creditSettingsDefaults.js");
+      const creditSettings = await loadCreditSettingsDefaults();
+      expressFee = Math.max(0, Number(creditSettings?.expressFee ?? 1000) || 0);
+    } catch {
+      expressFee = 1000;
+    }
+  }
+
+  const totalAmount =
+    (Number.isFinite(baseAmount) && baseAmount > 0 ? baseAmount : 0) +
+    expressFee;
+
   request.price = {
     ...(request.price || {}),
     ...(computedPrice && typeof computedPrice === "object" ? computedPrice : {}),
-    amount: Number.isFinite(resolvedAmount) && resolvedAmount > 0 ? resolvedAmount : 0,
+    amount: Number.isFinite(totalAmount) && totalAmount > 0 ? totalAmount : 0,
+    expressFee: expressFee > 0 ? expressFee : undefined,
   };
 
   const spendResult = await spendRequestCreditAtomic({
@@ -393,40 +527,151 @@ export async function ensureRequestCreditSpendOnMachiningEnter({
     businessAnchorId,
     actorUserId,
     session,
-    computedPrice,
+    spendKeySuffix: "machining_spend",
+    computedPrice: {
+      ...(computedPrice && typeof computedPrice === "object" ? computedPrice : {}),
+      amount: Number.isFinite(baseAmount) && baseAmount > 0 ? baseAmount : 0,
+    },
   });
 
-  if (!spendResult?.didSpend) {
-    if (spendResult?.reason === "already_spent") {
-      console.log("[CREDIT_SPEND] skip existing machining spend for request", {
+  if (spendResult?.didSpend) {
+    const spentAmount = Number(spendResult.resolvedAmount || 0);
+
+    console.log("[CREDIT_SPEND] machining spend inserted", {
+      requestId: request?.requestId,
+      requestMongoId: String(request?._id || ""),
+      amount: spentAmount,
+      businessAnchorId: String(businessAnchorId),
+    });
+
+    const glPostResult = await postSpendCommitGeneralLedger({
+      eventType: "REQUEST_SPEND_COMMIT",
+      spendUniqueKey: spendResult.uniqueKey,
+      request,
+      businessAnchorId,
+      actorUserId,
+      amount: Number(spendResult.resolvedAmount || 0),
+      fromPaid: Number(spendResult.fromPaid || 0),
+      fromFree: Number(spendResult.fromBonusRequest || 0),
+      freeAccountCode: "REQ_FREE_REQUEST_CREDIT",
+      refType: "REQUEST",
+      refId: request._id,
+      stageFrom: "CAM",
+      stageTo: "가공",
+      session,
+    });
+
+    if (!glPostResult?.posted) {
+      if (glPostResult?.idempotent) {
+        console.log(
+          "[CREDIT_SPEND] duplicate machining spend detected (no compensation needed)",
+          {
+            requestId: request?.requestId,
+            requestMongoId: String(request?._id || ""),
+            uniqueKey: spendResult.uniqueKey,
+          },
+        );
+      } else {
+        throw new Error("REQUEST_SPEND_COMMIT ledger posting failed");
+      }
+    } else {
+      await emitOrQueueCreditBalanceUpdate({
+        deferredCreditEvents,
+        businessAnchorId,
+        balanceDelta: -spentAmount,
+        reason: "machining_spend",
+        refId: request._id,
+      });
+    }
+  } else if (spendResult?.reason === "already_spent") {
+    console.log("[CREDIT_SPEND] skip existing machining spend for request", {
+      requestId: request?.requestId,
+      requestMongoId: String(request?._id || ""),
+      existingUniqueKey: spendResult?.existingUniqueKey || null,
+      currentUniqueKey: spendResult?.uniqueKey || null,
+    });
+  }
+
+  if (expressFee <= 0) return;
+
+  if (String(request?.price?.expressFeeStatus || "") === "charged") return;
+  if (String(request?.price?.expressFeeStatus || "") === "cancelled") return;
+
+  // 레거시 합산 차감(가공비+신속비가 machining_spend 한 건) 재진입 시 이중 차감 방지
+  if (spendResult?.reason === "already_spent") {
+    const spendLines = await LedgerLine.aggregate([
+      {
+        $match: {
+          refType: "REQUEST",
+          refId: request._id,
+          ownerRole: "requestor",
+          accountCode: {
+            $in: ["REQ_PAID_CREDIT", "REQ_FREE_REQUEST_CREDIT"],
+          },
+          amount: { $lt: 0 },
+        },
+      },
+      {
+        $group: {
+          _id: null,
+          spent: { $sum: { $abs: "$amount" } },
+        },
+      },
+    ]).session(session || null);
+
+    const spentTotal = Number(spendLines?.[0]?.spent || 0);
+    const baseOnly =
+      Number.isFinite(baseAmount) && baseAmount > 0 ? baseAmount : 0;
+    if (spentTotal > baseOnly + 1) {
+      request.price = {
+        ...(request.price || {}),
+        expressFeeStatus: "charged",
+      };
+      console.log(
+        "[CREDIT_SPEND] skip express surcharge; legacy combined spend detected",
+        {
+          requestId: request?.requestId,
+          spentTotal,
+          baseOnly,
+          expressFee,
+        },
+      );
+      return;
+    }
+  }
+
+  const expressSpendResult = await spendRequestCreditAtomic({
+    request,
+    businessAnchorId,
+    actorUserId,
+    session,
+    spendKeySuffix: "express_surcharge",
+    computedPrice: { amount: expressFee },
+  });
+
+  if (!expressSpendResult?.didSpend) {
+    if (expressSpendResult?.reason === "already_spent") {
+      request.price = {
+        ...(request.price || {}),
+        expressFeeStatus: "charged",
+      };
+      console.log("[CREDIT_SPEND] skip existing express surcharge", {
         requestId: request?.requestId,
-        requestMongoId: String(request?._id || ""),
-        existingUniqueKey: spendResult?.existingUniqueKey || null,
-        currentUniqueKey: spendResult?.uniqueKey || null,
+        uniqueKey: expressSpendResult.uniqueKey,
       });
     }
     return;
   }
 
-  const spentAmount = Number(spendResult.resolvedAmount || 0);
-  const fromPaid = Number(spendResult.fromPaid || 0);
-
-  console.log("[CREDIT_SPEND] machining spend inserted", {
-    requestId: request?.requestId,
-    requestMongoId: String(request?._id || ""),
-    amount: spentAmount,
-    businessAnchorId: String(businessAnchorId),
-  });
-
-  const glPostResult = await postSpendCommitGeneralLedger({
+  const expressGl = await postSpendCommitGeneralLedger({
     eventType: "REQUEST_SPEND_COMMIT",
-    spendUniqueKey: spendResult.uniqueKey,
+    spendUniqueKey: expressSpendResult.uniqueKey,
     request,
     businessAnchorId,
     actorUserId,
-    amount: Number(spendResult.resolvedAmount || 0),
-    fromPaid: Number(spendResult.fromPaid || 0),
-    fromFree: Number(spendResult.fromBonusRequest || 0),
+    amount: Number(expressSpendResult.resolvedAmount || 0),
+    fromPaid: Number(expressSpendResult.fromPaid || 0),
+    fromFree: Number(expressSpendResult.fromBonusRequest || 0),
     freeAccountCode: "REQ_FREE_REQUEST_CREDIT",
     refType: "REQUEST",
     refId: request._id,
@@ -435,25 +680,34 @@ export async function ensureRequestCreditSpendOnMachiningEnter({
     session,
   });
 
-  if (!glPostResult?.posted) {
-    if (glPostResult?.idempotent) {
-      // GL 직집계 모드에서는 선차감 스냅샷이 없으므로 보정 복원은 필요 없다.
-      console.log("[CREDIT_SPEND] duplicate machining spend detected (no compensation needed)", {
-        requestId: request?.requestId,
-        requestMongoId: String(request?._id || ""),
-        uniqueKey: spendResult.uniqueKey,
-      });
+  if (!expressGl?.posted) {
+    if (expressGl?.idempotent) {
+      request.price = {
+        ...(request.price || {}),
+        expressFeeStatus: "charged",
+      };
       return;
     }
-    throw new Error("REQUEST_SPEND_COMMIT ledger posting failed");
+    throw new Error("REQUEST_SPEND_COMMIT express surcharge ledger posting failed");
   }
+
+  request.price = {
+    ...(request.price || {}),
+    expressFeeStatus: "charged",
+  };
 
   await emitOrQueueCreditBalanceUpdate({
     deferredCreditEvents,
     businessAnchorId,
-    balanceDelta: -spentAmount,
-    reason: "machining_spend",
+    balanceDelta: -Number(expressSpendResult.resolvedAmount || 0),
+    reason: "express_surcharge",
     refId: request._id,
+  });
+
+  console.log("[CREDIT_SPEND] express surcharge inserted", {
+    requestId: request?.requestId,
+    amount: Number(expressSpendResult.resolvedAmount || 0),
+    uniqueKey: expressSpendResult.uniqueKey,
   });
 }
 

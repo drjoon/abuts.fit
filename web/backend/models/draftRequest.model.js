@@ -108,7 +108,12 @@ const draftCaseSchema = new mongoose.Schema(
           type: String,
           default: "STL모델대로",
         },
-        // 배송 요청 정보 (묶음 배송만 사용)
+        // 배송 방식: 묶음(normal) | 신속(express)
+        shippingMode: {
+          type: String,
+          enum: ["normal", "express"],
+          default: "normal",
+        },
         requestedShipDate: Date,
       },
     ],

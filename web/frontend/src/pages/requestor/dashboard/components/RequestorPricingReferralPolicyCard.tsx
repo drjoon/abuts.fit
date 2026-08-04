@@ -2,6 +2,7 @@
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
+// - web/frontend/src/shared/ui/PricingPolicyDialog.tsx
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -173,7 +174,7 @@ export const RequestorPricingReferralPolicyCard = () => {
   const referralDiscountAmount = Number(data.referralDiscountAmount ?? 0);
   const effectiveUnitPrice = Number(data.effectiveUnitPrice ?? baseUnitPrice);
   const isNewUserFixedPrice =
-    String(data.rule || "") === "new_user_90days_fixed_10000";
+    String(data.rule || "") === "new_user_180days_fixed_10000";
 
   const monthlyRemakeFreeLimit = Number(data.monthlyRemakeFreeLimit ?? 3);
   const monthlyRemakeUsed = Number(data.monthlyRemakeUsed ?? 0);
@@ -317,7 +318,7 @@ export const RequestorPricingReferralPolicyCard = () => {
 
             {isNewUserFixedPrice && (
               <p className="text-[11px]  text-right">
-                가입 승인일 기준 90일 이내 고정가(10,000원) 적용 중
+                가입 승인일 기준 180일 이내 고정가(10,000원) 적용 중
               </p>
             )}
 

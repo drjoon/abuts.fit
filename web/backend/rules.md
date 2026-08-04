@@ -56,6 +56,21 @@
 
 ## 2. 구현 메모
 
+- 신속 배송(`express`) 복원 메모:
+  - Draft/Request `shippingMode` 필드를 다시 저장합니다. (`models/draftRequest.model.js`, `models/request.model.js`)
+  - 생성 경로에서 `"normal"` 강제 금지: `draftRequest.controller.js`, `creation.draft.controller.js`, `creation.from-draft.controller.js`, `creation.request.controller.js`
+  - 유효 모드 해석: `controllers/requests/shippingPriority.utils.js`의 `resolveEffectiveShippingMode`
+  - 신속 추가 의뢰크레딧: `creditSettings.expressFee`(기본 1000)
+    - 제출 잔액 체크: `creation.from-draft.controller.js`
+    - 실제 차감: `common.review.helpers.js` `ensureRequestCreditSpendOnMachiningEnter`
+      - 가공비: `request:<id>:machining_spend`
+      - 신속 추가비: `request:<id>:express_surcharge` (분리 저널)
+    - 지연/모드 전환 취소: `cancelExpressSurchargeIfShipDelayed` → `deleteExpressSurchargeAtomic`
+  - 스케줄: `production.utils.js` `calculateInitialProductionSchedule({ shippingMode })` (신속: 12시 KST 컷오프)
+  - 우선순위: `sortByProductionPriority` 신속 부스트
+  - 우편함: 신속 건 포함 시 주간 묶음 요일 제한 무시 (`shipping.controller.js` / frontend `shippingDay.helpers.ts`)
+  - 대시보드 토글: `PATCH /my/shipping-mode` → `shipping.Requestor.controller.js` `updateMyShippingMode`
+
 - 인프라 마이그레이션 운영 체크(EB 단일 인스턴스 → LB+NAT, Atlas 비용 유지):
   - 안정화 관찰 기간(며칠) 동안 실사용 트래픽에서 핵심 기능(로그인, 주문/의뢰 등록)을 반복 점검합니다.
   - CloudWatch 알람/에러 리포팅을 확인하고, 피크 시간대 오토스케일링(최대 2대) 동작을 검증합니다.
@@ -77,6 +92,13 @@
   - 수동/CI 점검은 `scripts/db/check-pricing-ssot-consistency.js` / `npm run db:check-pricing-ssot` 유지
   - 이벤트 기반 재계산: `services/requestSnapshotTriggers.service.js`
   - 관리자 대시보드 진입: `controllers/admin/admin.dashboard.controller.js`
+
+- 신규 기공소 런칭 이벤트 가격 SSOT:
+  - 가입 승인일 기준 `180일` 동안 커스텀 어벗 `개당 10,000원` 고정가를 우선 적용합니다.
+  - 기준일 계산은 `resolveRequestorPricingBaseDate`를 사용하고, 신규 의뢰 견적/의뢰자 대시보드 집계가 동일 규칙명을 공유해야 합니다.
+  - 관련 파일:
+    - `controllers/requests/utils.js`
+    - `controllers/requests/dashboard.controller.js`
 
 - 스커리씁 로트 추적(세척.패킹)은 `rules.legacy-full.md` 섹션 **1.0.3**을 따릅니다.
 - 한진 배송조회 자동동기화 장애 우회 정책:

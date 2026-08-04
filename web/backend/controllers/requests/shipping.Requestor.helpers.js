@@ -459,6 +459,7 @@ export async function buildShippingEstimate(req) {
     maxDiameter,
     requestedAt,
     weeklyBatchDays,
+    shippingMode: mode,
   });
   const pickupYmdRaw = schedule?.scheduledShipPickup
     ? toKstYmd(schedule.scheduledShipPickup)

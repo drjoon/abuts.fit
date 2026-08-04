@@ -589,8 +589,14 @@ const requestSchema = new mongoose.Schema(
       ],
       default: "준비",
     },
-    // 레거시: 배송 모드 제거됨 (묶음 배송만 사용)
-    // 레거시: 출고일(또는 희망 출고일) (KST 기준)
+    // 배송 방식 SSOT(표시/조회 편의): finalShipping.mode 와 동기화
+    shippingMode: {
+      type: String,
+      enum: ["normal", "express"],
+      default: "normal",
+      index: true,
+    },
+    // 출고일(또는 희망 출고일) (KST 기준)
     requestedShipDate: Date,
 
     shippingPackageId: {
@@ -868,6 +874,14 @@ const requestSchema = new mongoose.Schema(
       bonusAmount: {
         type: Number,
         default: null,
+      },
+      expressFee: {
+        type: Number,
+        default: null,
+      },
+      expressFeeStatus: {
+        type: String,
+        enum: ["charged", "cancelled"],
       },
     },
 

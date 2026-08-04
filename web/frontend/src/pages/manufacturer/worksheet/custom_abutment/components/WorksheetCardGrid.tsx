@@ -9,7 +9,9 @@
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestInfoSummary.tsx
+// - web/frontend/src/shared/shipping/shippingMode.ts
 // - web/backend/controllers/requests/common.review.controller.js
+// - web/backend/controllers/requests/shippingPriority.utils.js
 import { useEffect, useRef, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -34,6 +36,10 @@ import {
   isRndSampleRequest,
 } from "../utils/request";
 import { RequestInfoSummary } from "./RequestInfoSummary";
+import {
+  getBulkExpressShippingLabel,
+  resolveShippingMode,
+} from "@/shared/shipping/shippingMode";
 
 // related files (screw lot tracking):
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/packing/components/PackingPageContent.tsx
@@ -519,6 +525,8 @@ export const WorksheetCardGrid = ({
         const hasInsufficientShippingCredit = Boolean(
           request.shippingCreditMeta?.insufficient,
         );
+        const shippingMode = resolveShippingMode(request as any);
+        const shippingModeLabel = getBulkExpressShippingLabel(shippingMode);
         const deadlineInfo = getDeadlineInfo(
           request.createdAt,
           request.timeline?.estimatedShipYmd,
@@ -971,8 +979,20 @@ export const WorksheetCardGrid = ({
                   })()}
                   leadingSlot={
                     <>
-                      {(isNewSystemRequest || hasInsufficientShippingCredit) && (
+                      {(
+                        isNewSystemRequest ||
+                        hasInsufficientShippingCredit ||
+                        shippingMode === "express"
+                      ) && (
                         <div className="flex flex-wrap items-center gap-1.5">
+                          {shippingMode === "express" && (
+                            <Badge
+                              variant="outline"
+                              className="border-amber-400 text-amber-700 bg-amber-50"
+                            >
+                              {shippingModeLabel}
+                            </Badge>
+                          )}
                           {isNewSystemRequest && (
                             <Badge
                               variant="outline"

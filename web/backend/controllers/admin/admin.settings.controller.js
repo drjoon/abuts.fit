@@ -13,6 +13,7 @@ const CREDIT_SETTINGS_DEFAULTS = (() => {
   return {
     minCreditForRequest: pickDefault("creditSettings.minCreditForRequest"),
     shippingFee: pickDefault("creditSettings.shippingFee"),
+    expressFee: pickDefault("creditSettings.expressFee"),
     defaultRequestFreeCredit: pickDefault(
       "creditSettings.defaultRequestFreeCredit",
     ),
@@ -28,6 +29,7 @@ function normalizeCreditSettings(raw = {}) {
       raw.minCreditForRequest ?? CREDIT_SETTINGS_DEFAULTS.minCreditForRequest,
     ),
     shippingFee: Number(raw.shippingFee ?? CREDIT_SETTINGS_DEFAULTS.shippingFee),
+    expressFee: Number(raw.expressFee ?? CREDIT_SETTINGS_DEFAULTS.expressFee),
     defaultRequestFreeCredit: Number(
       raw.defaultRequestFreeCredit ??
         CREDIT_SETTINGS_DEFAULTS.defaultRequestFreeCredit,
@@ -297,6 +299,7 @@ export async function updateCreditSettings(req, res) {
 
     const minCreditForRequest = Number(payload.minCreditForRequest);
     const shippingFee = Number(payload.shippingFee);
+    const expressFee = Number(payload.expressFee);
     const defaultRequestFreeCredit = Number(payload.defaultRequestFreeCredit);
     const defaultShippingFreeCredit = Number(payload.defaultShippingFreeCredit);
 
@@ -306,6 +309,9 @@ export async function updateCreditSettings(req, res) {
     }
     if (!Number.isNaN(shippingFee) && shippingFee >= 0) {
       sanitized.shippingFee = shippingFee;
+    }
+    if (!Number.isNaN(expressFee) && expressFee >= 0) {
+      sanitized.expressFee = expressFee;
     }
     if (!Number.isNaN(defaultRequestFreeCredit) && defaultRequestFreeCredit >= 0) {
       sanitized.defaultRequestFreeCredit = defaultRequestFreeCredit;

@@ -924,8 +924,9 @@ export async function ensureFinishedLotNumberForPacking(requestDoc) {
 // related files:
 // - web/backend/controllers/businesses/business.controller.js
 // - web/backend/controllers/requests/creation.from-draft.controller.js
+// - web/backend/controllers/requests/dashboard.controller.js
 // - web/frontend/src/pages/requestor/settings/SettingsPage.tsx
-// 신규 기공소 90일 고정가 기준일 SSOT: 가입 승인일(verifiedAt) 우선
+// 신규 기공소 180일 고정가 기준일 SSOT: 가입 승인일(verifiedAt) 우선
 export async function resolveRequestorPricingBaseDate({
   requestorId,
   requestorOrgId,
@@ -1107,7 +1108,7 @@ export async function computePriceForRequest({
     }
   }
 
-  // 1) 신규 90일 고정가: 가입일(대표 계정 기준) 90일 내 -> 10,000원 고정
+  // 1) 신규 180일 고정가: 가입일(대표 계정 기준) 180일 내 -> 10,000원 고정
   const baseDate = await resolveRequestorPricingBaseDate({
     requestorId,
     requestorOrgId,
@@ -1116,7 +1117,7 @@ export async function computePriceForRequest({
   if (baseDate) {
     const baseYmd = toKstYmd(baseDate);
     const baseKst = new Date(`${baseYmd}T00:00:00+09:00`);
-    baseKst.setDate(baseKst.getDate() + 90);
+    baseKst.setDate(baseKst.getDate() + 180);
     const newUserCutoff = baseKst;
     if (now < newUserCutoff) {
       return {
@@ -1126,7 +1127,7 @@ export async function computePriceForRequest({
         currency: "KRW",
         rule: isRemake
           ? "remake_general_pricing"
-          : "new_user_90days_fixed_10000",
+          : "new_user_180days_fixed_10000",
         discountMeta: {
           last30DaysOrders: 0,
           referralLast30DaysOrders: 0,

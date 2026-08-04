@@ -224,6 +224,7 @@ export async function spendRequestCreditAtomic({
   actorUserId,
   session,
   computedPrice,
+  spendKeySuffix = "machining_spend",
 }) {
   if (!request?._id) return { didSpend: false };
 
@@ -231,7 +232,8 @@ export async function spendRequestCreditAtomic({
   if (!anchorObjectId) return { didSpend: false };
 
   const requestIdStr = String(request?._id || "").trim();
-  const uniqueKey = `request:${requestIdStr}:machining_spend`;
+  const suffix = String(spendKeySuffix || "machining_spend").trim() || "machining_spend";
+  const uniqueKey = `request:${requestIdStr}:${suffix}`;
 
   const existingJournal = await findCommitJournalBySpendKey({
     spendUniqueKey: uniqueKey,
@@ -397,7 +399,10 @@ export async function deleteRequestSpendAtomicOnRollback({
 
     const requestMongoId = String(request._id);
     const requestId = String(request?.requestId || "").trim();
-    const uniqueKey = `request:${requestMongoId}:machining_spend`;
+    const uniqueKeys = [
+      `request:${requestMongoId}:machining_spend`,
+      `request:${requestMongoId}:express_surcharge`,
+    ];
     const journalIds = [];
     const seen = new Set();
 
@@ -412,20 +417,22 @@ export async function deleteRequestSpendAtomicOnRollback({
       requestMongoId,
       requestId: requestId || null,
       businessAnchorId: String(anchorObjectId),
-      uniqueKey,
+      uniqueKeys,
       hasSession: !!session,
     });
 
-    // 1) canonical unique key(idempotency)
-    const byUnique = await findCommitJournalBySpendKey({
-      spendUniqueKey: uniqueKey,
-      session: txSession,
-    });
-    if (byUnique?.journalId) {
-      pushJournalId(byUnique.journalId);
+    // 1) canonical unique keys(idempotency) — 가공비 + 신속 추가비
+    for (const uniqueKey of uniqueKeys) {
+      const byUnique = await findCommitJournalBySpendKey({
+        spendUniqueKey: uniqueKey,
+        session: txSession,
+      });
+      if (byUnique?.journalId) {
+        pushJournalId(byUnique.journalId);
+      }
     }
 
-    // 2) journal ref 매칭
+    // 2) journal ref 매칭 (레거시 합산 차감 포함)
     if (!journalIds.length) {
       const byRef = await LedgerJournal.find({
         eventType: "REQUEST_SPEND_COMMIT",
@@ -476,7 +483,7 @@ export async function deleteRequestSpendAtomicOnRollback({
     console.log("[CREDIT_ROLLBACK][REQUEST][SERVICE] lookup result", {
       requestMongoId,
       requestId: requestId || null,
-      uniqueKey,
+      uniqueKeys,
       matchedJournalIds: journalIds,
     });
 
@@ -485,7 +492,7 @@ export async function deleteRequestSpendAtomicOnRollback({
         requestMongoId,
         requestId: requestId || null,
         businessAnchorId: String(anchorObjectId),
-        uniqueKey,
+        uniqueKeys,
         refType: "REQUEST",
         refId: requestMongoId,
       });
@@ -557,7 +564,7 @@ export async function deleteRequestSpendAtomicOnRollback({
     return {
       didRollback: true,
       rollbackAmount: Math.round(Number(rollbackAmountSum || 0)),
-      deletedSpendUniqueKeys: [uniqueKey],
+      deletedSpendUniqueKeys: uniqueKeys,
       deletedJournalIds: journalIds,
     };
   } catch (error) {
@@ -566,6 +573,99 @@ export async function deleteRequestSpendAtomicOnRollback({
     }
 
     if (String(error?.message || "") === "request_spend_rollback_delete_failed") {
+      return {
+        didRollback: false,
+        reason: error?.rollbackReason || "journal_not_deleted",
+      };
+    }
+
+    throw error;
+  } finally {
+    if (ownSession) {
+      await txSession.endSession().catch(() => null);
+    }
+  }
+}
+
+/**
+ * 신속 배송 추가 의뢰크레딧만 취소(물리 삭제).
+ * - 생산 지연으로 약속 발송일을 지키지 못했거나
+ * - 준비 단계에서 신속→묶음으로 변경한 경우 사용
+ */
+export async function deleteExpressSurchargeAtomic({
+  request,
+  businessAnchorId,
+  session,
+}) {
+  if (!request?._id) return { didRollback: false, reason: "invalid_request" };
+
+  const anchorObjectId = normalizeAnchorObjectId(businessAnchorId);
+  if (!anchorObjectId) return { didRollback: false, reason: "invalid_anchor" };
+
+  const ownSession = !session;
+  const txSession = session || (await mongoose.startSession());
+
+  try {
+    if (ownSession) txSession.startTransaction();
+
+    const requestMongoId = String(request._id);
+    const uniqueKey = `request:${requestMongoId}:express_surcharge`;
+
+    const byUnique = await findCommitJournalBySpendKey({
+      spendUniqueKey: uniqueKey,
+      session: txSession,
+    });
+
+    if (!byUnique?.journalId) {
+      if (ownSession) await txSession.commitTransaction();
+      return { didRollback: false, reason: "no_express_surcharge" };
+    }
+
+    const journalId = String(byUnique.journalId);
+    const { restorePaid, restoreBonusRequest, rollbackAmount } =
+      await computeSpendRestoreBreakdownByJournalId({
+        journalId,
+        session: txSession,
+      });
+
+    const deleteResult = await deleteGeneralLedgerCommitJournal({
+      journalId,
+      expectedEventTypes: ["REQUEST_SPEND_COMMIT"],
+      session: txSession,
+    });
+
+    if (!deleteResult?.deleted) {
+      const err = new Error("express_surcharge_rollback_delete_failed");
+      err.rollbackReason = deleteResult?.reason || "journal_not_deleted";
+      throw err;
+    }
+
+    if (ownSession) await txSession.commitTransaction();
+
+    console.log("[CREDIT_ROLLBACK][EXPRESS] surcharge cancelled", {
+      requestMongoId,
+      requestId: request?.requestId || null,
+      businessAnchorId: String(anchorObjectId),
+      journalId,
+      rollbackAmount: Number(rollbackAmount || 0),
+      restorePaid: Number(restorePaid || 0),
+      restoreBonusRequest: Number(restoreBonusRequest || 0),
+    });
+
+    return {
+      didRollback: true,
+      rollbackAmount: Math.round(Number(rollbackAmount || 0)),
+      deletedSpendUniqueKeys: [uniqueKey],
+      deletedJournalIds: [journalId],
+    };
+  } catch (error) {
+    if (ownSession) {
+      await txSession.abortTransaction().catch(() => null);
+    }
+
+    if (
+      String(error?.message || "") === "express_surcharge_rollback_delete_failed"
+    ) {
       return {
         didRollback: false,
         reason: error?.rollbackReason || "journal_not_deleted",

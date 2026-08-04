@@ -11,6 +11,10 @@ import { apiFetch } from "@/shared/api/apiClient";
 import { useToast } from "@/shared/hooks/use-toast";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useNavigate } from "react-router-dom";
+import {
+  CREDIT_SETTINGS_DEFAULTS,
+  useSystemSettings,
+} from "@/hooks/useSystemSettings";
 
 type Props = {
   disabled?: boolean;
@@ -39,6 +43,15 @@ export function NewRequestShippingSection({
   const { toast } = useToast();
   const { token } = useAuthStore();
   const navigate = useNavigate();
+  const { data: systemSettings } = useSystemSettings();
+  const expressFee = Math.max(
+    0,
+    Number(
+      systemSettings?.creditSettings?.expressFee ??
+        CREDIT_SETTINGS_DEFAULTS.expressFee,
+    ) || CREDIT_SETTINGS_DEFAULTS.expressFee,
+  );
+  const expressFeeLabel = expressFee.toLocaleString("ko-KR");
   const [selectedDays, setSelectedDays] = useState<WeekDay[]>([]);
   const [isUpdating, setIsUpdating] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -208,7 +221,7 @@ export function NewRequestShippingSection({
             오늘 낮 12시 이전 의뢰 시 오늘 오후 발송
           </div>
           <div className="text-sm text-slate-600 leading-relaxed">
-            의뢰크레딧 2,000원이 추가로 소비됩니다.
+            의뢰크레딧 {expressFeeLabel}원이 추가로 소비됩니다.
             <br />
             단, 생산이 지연되면 내일 발송되며 추가 의뢰크레딧은 취소됩니다.
           </div>

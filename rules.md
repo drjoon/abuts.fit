@@ -136,6 +136,7 @@
   - paid/free 혼합 소비는 의뢰자 잔액에서 **무료 우선 차감 후 부족분만 유료 차감**을 적용
   - 수익 라인(`REV_*`)의 paid/free 표시는 role 순서가 아니라 소비된 paid/free 총량을 role base에 비례 배분(무편향)해 기록
   - 무료 수익은 지급 0원으로 정산완료 상태만 표시 가능
+- 신규 기공소 런칭 이벤트 가격 SSOT: 가입 승인일 기준 `180일` 동안 커스텀 어벗 `개당 10,000원` 고정가를 우선 적용
 - 롤백 원칙:
   - 롤백은 REFUND 추가가 아니라 원본 커밋 이벤트 및 대응 라인의 **물리 삭제**
 - 조회/표시 타입 원칙:
@@ -196,8 +197,13 @@
 
 ### 2.7 배송/우편함
 
+- 배송 방식 SSOT: `Request.shippingMode` + `finalShipping.mode` / `originalShipping.mode`
+  - `normal`(묶음) | `express`(신속)
 - 묶음 배송 식별은 박스/패키지 기준으로 유지
 - 배송비 과금 시점: 세척.패킹 승인
+- 신속 배송 추가 의뢰크레딧: `creditSettings.expressFee`(기본 1,000원), **가공 진입(CAM 승인) 시 별도 `express_surcharge` 저널로 차감**
+  - 생산 지연(약속 발송일 미준수) 또는 신속→묶음 전환 시 신속 추가비만 물리 삭제 취소
+  - 의뢰자 대시보드: `PATCH /api/requests/my/shipping-mode` (준비 단계만)
 - 추적관리 진입 기준: 집하완료(statusCode 11 / picked_up)
 
 ### 2.8 R&D 샘플

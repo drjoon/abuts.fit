@@ -72,6 +72,7 @@ export const {
 } = dashboardController;
 
 export const {
+  updateMyShippingMode,
   getShippingEstimate,
   getMyBulkShipping,
   createMyBulkShipping,

@@ -37,6 +37,9 @@ Notes:
   - `websocket-realtime-update-checklist.md` (웹소켓 실시간 업데이트 자동 점검 체크리스트)
 - 의뢰자 신규의뢰/치과
   - `src/pages/requestor/new_request/NewRequestPage.tsx`
+  - `src/pages/requestor/new_request/components/NewRequestShippingSection.tsx`
+  - `src/pages/requestor/new_request/components/NewRequestAttachmentsPanel.tsx`
+  - `src/shared/shipping/shippingMode.ts`
   - `src/pages/requestor/practice/RequestorPracticePage.tsx`
   - 제조사 워크시트
   - `src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx`
@@ -78,6 +81,30 @@ Notes:
 - 앱 전역 role 타입 SSOT는 `src/shared/types/role.ts`를 사용합니다. (로컬 컴포넌트에서 role union 재정의 금지)
 
 ## 2. 구현 메모
+
+- 신규의뢰 배송 방식(묶음/신속):
+  - 의뢰카드에서 `shippingMode`(`normal`|`express`)를 건별로 선택합니다.
+  - 우측 배송 설정은 안내/요일 설정 + 제출만 담당합니다.
+  - 신속 추가 의뢰크레딧 금액은 `creditSettings.expressFee`(기본 1,000원)를 사용합니다.
+  - 제조사 카드에는 신속 건만 `신속` 뱃지로 표시합니다.
+  - 대시보드 묶음/신속 토글: `PATCH /api/requests/my/shipping-mode` (`RequestorBulkShippingBannerCard.tsx`)
+  - 우편함: 신속 건 포함 시 오늘 발송 가능으로 처리 (`shippingDay.helpers.ts`)
+  - 관련 파일:
+    - `src/pages/requestor/new_request/NewRequestPage.tsx`
+    - `src/pages/requestor/new_request/components/NewRequestAttachmentsPanel.tsx`
+    - `src/pages/requestor/new_request/components/NewRequestShippingSection.tsx`
+    - `src/pages/requestor/dashboard/components/RequestorBulkShippingBannerCard.tsx`
+    - `src/shared/shipping/shippingMode.ts`
+    - `src/shared/ui/PricingPolicyDialog.tsx`
+    - `src/pages/manufacturer/worksheet/custom_abutment/components/WorksheetCardGrid.tsx`
+    - `src/pages/manufacturer/worksheet/custom_abutment/shipping/components/shippingDay.helpers.ts`
+
+- 신규 기공소 런칭 이벤트 가격 표시 SSOT:
+  - 가입 승인일 기준 `180일` 동안 커스텀 어벗 `개당 10,000원` 고정가를 적용합니다.
+  - 안내 모달/대시보드 카드 문구는 동일한 `180일` 기준을 사용해야 합니다.
+  - 관련 파일:
+    - `src/shared/ui/PricingPolicyDialog.tsx`
+    - `src/pages/requestor/dashboard/components/RequestorPricingReferralPolicyCard.tsx`
 
 - 스커리씁 로트 추적 UI(세척.패킹)는 `rules.legacy-full.md` 섹션 **1.0.3**을 따릅니다.
   - 전역 설정 버튼/모달: `src/pages/manufacturer/worksheet/custom_abutment/packing/components/PackingPageContent.tsx`

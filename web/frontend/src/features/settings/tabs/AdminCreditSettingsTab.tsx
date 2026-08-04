@@ -21,6 +21,7 @@ import { Button } from "@/components/ui/button";
 interface CreditSettings {
   minCreditForRequest: number;
   shippingFee: number;
+  expressFee: number;
   defaultRequestFreeCredit: number;
   defaultShippingFreeCredit: number;
 }
@@ -63,6 +64,9 @@ export const AdminCreditSettingsTab = () => {
         ),
         shippingFee: Number(
           data.shippingFee ?? CREDIT_SETTINGS_DEFAULTS.shippingFee,
+        ),
+        expressFee: Number(
+          data.expressFee ?? CREDIT_SETTINGS_DEFAULTS.expressFee,
         ),
         defaultRequestFreeCredit: Number(
           data.defaultRequestFreeCredit ??
@@ -167,6 +171,22 @@ export const AdminCreditSettingsTab = () => {
                   setSettings({
                     ...settings,
                     shippingFee: Math.max(0, Number(e.target.value)),
+                  })
+                }
+                disabled={loading}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="expressFee">신속 배송 추가 의뢰크레딧 (원)</Label>
+              <Input
+                id="expressFee"
+                type="number"
+                min="0"
+                value={settings.expressFee}
+                onChange={(e) =>
+                  setSettings({
+                    ...settings,
+                    expressFee: Math.max(0, Number(e.target.value)),
                   })
                 }
                 disabled={loading}

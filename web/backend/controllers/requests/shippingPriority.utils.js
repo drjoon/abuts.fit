@@ -52,9 +52,16 @@ async function prevKoreanBusinessDayYmd({ fromYmd }) {
   return fromYmd;
 }
 
+export function normalizeShippingMode(value) {
+  return value === "express" ? "express" : "normal";
+}
+
 export function resolveEffectiveShippingMode(requestLike) {
-  // 신속배송(express) 모드 폐지: 항상 'normal' 로 처리
-  return "normal";
+  const mode =
+    requestLike?.finalShipping?.mode ||
+    requestLike?.originalShipping?.mode ||
+    requestLike?.shippingMode;
+  return normalizeShippingMode(mode);
 }
 
 export async function computeShippingPriority({ request, now }) {

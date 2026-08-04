@@ -135,6 +135,12 @@ export async function createRequest(req, res) {
       });
     }
 
+    const shippingMode =
+      bodyRest?.shippingMode === "express" ||
+      caseInfos?.shippingMode === "express"
+        ? "express"
+        : "normal";
+
     const computedPrice = await computePriceForRequest({
       requestorId: req.user._id,
       requestorOrgId: req.user?.businessAnchorId,
@@ -166,14 +172,15 @@ export async function createRequest(req, res) {
       price: computedPrice,
     });
 
-    // 배송 옵션 저장 (항상 묶음 배송)
+    // 배송 옵션 저장 (묶음 normal / 신속 express)
+    newRequest.shippingMode = shippingMode;
     newRequest.originalShipping = {
-      mode: "normal",
+      mode: shippingMode,
       requestedAt,
     };
 
     newRequest.finalShipping = {
-      mode: "normal",
+      mode: shippingMode,
       updatedAt: requestedAt,
     };
 
@@ -183,9 +190,11 @@ export async function createRequest(req, res) {
       resolveLeadDaysWithSameDayCutoff,
     } = await import("./production.utils.js");
     const productionSchedule = await calculateInitialProductionSchedule({
+      shippingMode,
       maxDiameter: normalizedCaseInfos?.maxDiameter,
       requestedAt,
-      weeklyBatchDays: requestorWeeklyBatchDays,
+      weeklyBatchDays:
+        shippingMode === "normal" ? requestorWeeklyBatchDays : [],
     });
     newRequest.productionSchedule = productionSchedule;
 
@@ -911,24 +920,38 @@ export async function createRequestsBulk(req, res) {
             );
           }
 
-          newRequest.originalShipping = { mode: "normal", requestedAt };
+          // bulk create 경로: body.shippingMode가 있으면 존중, 없으면 묶음
+          const itemShippingMode =
+            rest?.shippingMode === "express" ||
+            rest?.caseInfos?.shippingMode === "express"
+              ? "express"
+              : "normal";
+          newRequest.shippingMode = itemShippingMode;
+          newRequest.originalShipping = {
+            mode: itemShippingMode,
+            requestedAt,
+          };
           newRequest.finalShipping = {
-            mode: "normal",
+            mode: itemShippingMode,
             updatedAt: requestedAt,
           };
 
           const tSched0 = Date.now();
           const schedKey = JSON.stringify({
+            shippingMode: itemShippingMode,
             maxDiameter: normalizedCaseInfos?.maxDiameter,
             requestedAt: toKstYmd(requestedAt),
-            weeklyBatchDays: requestorWeeklyBatchDays,
+            weeklyBatchDays:
+              itemShippingMode === "normal" ? requestorWeeklyBatchDays : [],
           });
           let productionSchedule = scheduleCache.get(schedKey);
           if (!productionSchedule) {
             productionSchedule = await calculateInitialProductionSchedule({
+              shippingMode: itemShippingMode,
               maxDiameter: normalizedCaseInfos?.maxDiameter,
               requestedAt,
-              weeklyBatchDays: requestorWeeklyBatchDays,
+              weeklyBatchDays:
+                itemShippingMode === "normal" ? requestorWeeklyBatchDays : [],
             });
             scheduleCache.set(schedKey, productionSchedule);
           }

@@ -239,8 +239,9 @@ function isPrePickupTrackingRequest(requestDoc) {
 function resolveMailboxShippingDayInfo({
   weeklyBatchDays = [],
   forceTodayShipment = false,
+  hasExpress = false,
 }) {
-  if (forceTodayShipment) {
+  if (forceTodayShipment || hasExpress) {
     return { notToday: false, nextDayLabel: null };
   }
 
@@ -324,6 +325,9 @@ export async function getShippingMailboxSummary(req, res) {
           "shippingLabelPrinted.printed": 1,
           "timeline.forceTodayShipment": 1,
           "timeline.estimatedShipYmd": 1,
+          shippingMode: 1,
+          "finalShipping.mode": 1,
+          "originalShipping.mode": 1,
           businessAnchorId: 1,
         })
         .lean(),
@@ -345,6 +349,9 @@ export async function getShippingMailboxSummary(req, res) {
           "shippingLabelPrinted.printed": 1,
           "timeline.forceTodayShipment": 1,
           "timeline.estimatedShipYmd": 1,
+          shippingMode: 1,
+          "finalShipping.mode": 1,
+          "originalShipping.mode": 1,
           deliveryInfoRef: 1,
           businessAnchorId: 1,
         })
@@ -411,6 +418,7 @@ export async function getShippingMailboxSummary(req, res) {
           workflowCodes: new Set(),
           printed: false,
           forceTodayShipment: false,
+          hasExpress: false,
           earliestEstimatedShipYmd: null,
           weeklyBatchDays: [],
           anchorIds: new Set(),
@@ -439,6 +447,16 @@ export async function getShippingMailboxSummary(req, res) {
 
       if (Boolean(requestDoc?.timeline?.forceTodayShipment)) {
         summary.forceTodayShipment = true;
+      }
+
+      const shippingMode =
+        requestDoc?.finalShipping?.mode === "express" ||
+        requestDoc?.originalShipping?.mode === "express" ||
+        requestDoc?.shippingMode === "express"
+          ? "express"
+          : "normal";
+      if (shippingMode === "express") {
+        summary.hasExpress = true;
       }
 
       const ymd = String(requestDoc?.timeline?.estimatedShipYmd || "").trim();
@@ -518,6 +536,7 @@ export async function getShippingMailboxSummary(req, res) {
         shippingDayInfo: resolveMailboxShippingDayInfo({
           weeklyBatchDays: item.weeklyBatchDays,
           forceTodayShipment: item.forceTodayShipment,
+          hasExpress: item.hasExpress,
         }),
       }))
       .sort((a, b) => a.mailboxAddress.localeCompare(b.mailboxAddress));

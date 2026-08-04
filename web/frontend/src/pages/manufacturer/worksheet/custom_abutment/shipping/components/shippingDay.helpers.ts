@@ -4,7 +4,9 @@
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
 // - web/backend/controllers/requests/common.review.controller.js
+// - web/frontend/src/shared/shipping/shippingMode.ts
 import type { ManufacturerRequest } from "../../utils/request";
+import { resolveShippingMode } from "@/shared/shipping/shippingMode";
 
 const DAY_KEYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"] as const;
 const DAY_LABELS: Record<string, string> = {
@@ -107,6 +109,10 @@ export const resolveMailboxShippingDayInfo = (
       (req) => Boolean((req as any)?.timeline?.forceTodayShipment) === true,
     )
   ) {
+    return { notToday: false, nextDayLabel: null };
+  }
+  // 신속 건이 포함된 우편함은 주간 묶음 요일 제한을 적용하지 않는다.
+  if (requests.some((req) => resolveShippingMode(req as any) === "express")) {
     return { notToday: false, nextDayLabel: null };
   }
   // All requests in a mailbox share the same requestor org, so inspect the first

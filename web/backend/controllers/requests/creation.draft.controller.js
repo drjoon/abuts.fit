@@ -90,7 +90,12 @@ export async function cloneRequestToDraft(req, res) {
       requestorHexRotation: normalizeRequestorHexRotation(
         ci.requestorHexRotation,
       ),
-      shippingMode: "normal", // 항상 묶음 배송
+      shippingMode:
+        request.finalShipping?.mode === "express" ||
+        request.originalShipping?.mode === "express" ||
+        request.shippingMode === "express"
+          ? "express"
+          : "normal",
       requestedShipDate: request.requestedShipDate,
     };
 

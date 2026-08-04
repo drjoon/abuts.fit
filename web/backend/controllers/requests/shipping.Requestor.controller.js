@@ -38,6 +38,191 @@ import {
   setBulkShippingCacheValue,
   withBulkShippingInFlight,
 } from "../../services/requestDashboardCache.service.js";
+import { cancelExpressSurchargeIfShipDelayed } from "./common.review.helpers.js";
+
+export async function updateMyShippingMode(req, res) {
+  try {
+    const requestFilter = await buildRequestorOrgScopeFilter(req);
+    const { requestIds, shippingMode } = req.body || {};
+
+    if (!Array.isArray(requestIds) || requestIds.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "선택된 의뢰가 없습니다.",
+      });
+    }
+
+    if (shippingMode !== "normal" && shippingMode !== "express") {
+      return res.status(400).json({
+        success: false,
+        message: "배송 방식은 묶음(normal) 또는 신속(express)만 가능합니다.",
+      });
+    }
+
+    const uniqueIds = Array.from(
+      new Set(
+        requestIds
+          .map((id) => String(id || "").trim())
+          .filter(Boolean),
+      ),
+    );
+
+    const candidates = await Request.find({
+      ...requestFilter,
+      requestId: { $in: uniqueIds },
+    });
+
+    const candidateById = new Map(
+      candidates.map((doc) => [String(doc.requestId || "").trim(), doc]),
+    );
+
+    const updatedIds = [];
+    const rejectedIds = [];
+    let shipDateYmd = null;
+    const affectedAnchorIds = new Set();
+
+    const { calculateInitialProductionSchedule } =
+      await import("./production.utils.js");
+
+    for (const requestId of uniqueIds) {
+      const requestDoc = candidateById.get(requestId);
+      if (!requestDoc) {
+        rejectedIds.push(requestId);
+        continue;
+      }
+
+      const stage = String(requestDoc.manufacturerStage || "").trim();
+      if (stage !== "준비") {
+        rejectedIds.push(requestId);
+        continue;
+      }
+
+      const prevMode =
+        requestDoc?.finalShipping?.mode === "express" ||
+        requestDoc?.shippingMode === "express"
+          ? "express"
+          : "normal";
+
+      let weeklyBatchDaysForSchedule = [];
+      if (shippingMode === "normal") {
+        try {
+          const anchorId = String(requestDoc.businessAnchorId || "").trim();
+          if (anchorId && Types.ObjectId.isValid(anchorId)) {
+            const org = await BusinessAnchor.findById(anchorId)
+              .select({ "shippingPolicy.weeklyBatchDays": 1 })
+              .lean();
+            weeklyBatchDaysForSchedule = Array.isArray(
+              org?.shippingPolicy?.weeklyBatchDays,
+            )
+              ? org.shippingPolicy.weeklyBatchDays
+                  .map((v) => String(v || "").trim())
+                  .filter(Boolean)
+              : [];
+          }
+        } catch {
+          weeklyBatchDaysForSchedule = [];
+        }
+
+        if (!weeklyBatchDaysForSchedule.length) {
+          rejectedIds.push(requestId);
+          continue;
+        }
+      }
+
+      const maxDiameter = requestDoc.caseInfos?.maxDiameter;
+      const requestedAt = new Date();
+      const newSchedule = await calculateInitialProductionSchedule({
+        shippingMode,
+        maxDiameter,
+        requestedAt,
+        weeklyBatchDays:
+          shippingMode === "normal" ? weeklyBatchDaysForSchedule : [],
+      });
+
+      if (!newSchedule) {
+        rejectedIds.push(requestId);
+        continue;
+      }
+
+      requestDoc.finalShipping = {
+        mode: shippingMode,
+        updatedAt: new Date(),
+      };
+      requestDoc.shippingMode = shippingMode;
+      requestDoc.productionSchedule = {
+        ...(requestDoc.productionSchedule || {}),
+        ...newSchedule,
+      };
+      requestDoc.timeline = requestDoc.timeline || {};
+
+      const pickupYmd = newSchedule?.scheduledShipPickup
+        ? toKstYmd(newSchedule.scheduledShipPickup)
+        : null;
+      const nextYmd =
+        pickupYmd ||
+        (await addKoreanBusinessDays({
+          startYmd: toKstYmd(requestDoc.createdAt) || getTodayYmdInKst(),
+          days: 1,
+        }));
+
+      requestDoc.timeline.originalEstimatedShipYmd = nextYmd;
+      requestDoc.timeline.nextEstimatedShipYmd = nextYmd;
+      requestDoc.timeline.estimatedShipYmd = nextYmd;
+
+      // 신속→묶음 전환 시 이미 차감된 신속 추가비가 있으면 취소
+      if (prevMode === "express" && shippingMode === "normal") {
+        const anchorId = String(requestDoc.businessAnchorId || "").trim();
+        if (anchorId) {
+          await cancelExpressSurchargeIfShipDelayed({
+            request: requestDoc,
+            businessAnchorId: anchorId,
+            forceCancel: true,
+          });
+        }
+      }
+
+      await requestDoc.save();
+      updatedIds.push(requestId);
+      shipDateYmd = nextYmd;
+
+      const businessAnchorId = String(requestDoc.businessAnchorId || "").trim();
+      if (businessAnchorId) affectedAnchorIds.add(businessAnchorId);
+    }
+
+    for (const anchorId of affectedAnchorIds) {
+      try {
+        await recomputeBulkShippingSnapshotForBusinessAnchorId(anchorId);
+        triggerPricingSnapshotForBusinessAnchorId(anchorId);
+      } catch (err) {
+        console.warn("[updateMyShippingMode] snapshot refresh failed", {
+          anchorId,
+          message: err?.message || String(err),
+        });
+      }
+    }
+
+    return res.status(200).json({
+      success: true,
+      message:
+        updatedIds.length > 0
+          ? "배송 방식이 변경되었습니다."
+          : "변경 가능한 의뢰가 없습니다.",
+      data: {
+        updatedIds,
+        rejectedIds,
+        shippingMode,
+        shipDateYmd,
+      },
+    });
+  } catch (error) {
+    console.error("Error in updateMyShippingMode:", error);
+    return res.status(error?.statusCode || 500).json({
+      success: false,
+      message: "배송 방식 변경 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
 
 export async function getMyShippingPackagesSummary(req, res) {
   try {
