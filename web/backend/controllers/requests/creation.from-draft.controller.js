@@ -2,7 +2,9 @@
 // - web/backend/modules/requests/request.routes.js
 // - web/backend/controllers/requests/common.requests.controller.js
 // - web/backend/controllers/requests/common.review.controller.js
+// - web/backend/controllers/requests/creation.request.controller.js
 // - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
+// - web/backend/rules.md
 import mongoose, { Types } from "mongoose";
 import crypto from "crypto";
 import Request from "../../models/request.model.js";
@@ -738,7 +740,7 @@ export async function createRequestsFromDraft(req, res) {
               },
             },
             stageOrder,
-            isCancelableStage: stageOrder <= 1,
+            isCancelableStage: stageOrder <= 0,
           });
         }
         console.log("[createRequestsFromDraft] duplicate lookup done", {
@@ -890,11 +892,11 @@ export async function createRequestsFromDraft(req, res) {
 
         if (strategy === "replace") {
           const stageOrder = Number(dup?.stageOrder ?? 0);
-          if (stageOrder > 1) {
+          if (stageOrder > 0) {
             return res.status(400).json({
               success: false,
               message:
-                "CAM 이후 단계의 기존 의뢰는 취소할 수 없습니다. 기존 의뢰를 유지하고 재의뢰로 진행해주세요.",
+                "준비 단계가 아닌 기존 의뢰는 취소할 수 없습니다. 기존 의뢰를 유지하고 재의뢰로 진행해주세요.",
             });
           }
         }
@@ -1065,9 +1067,9 @@ export async function createRequestsFromDraft(req, res) {
 
             const normalizedStage = normalizeRequestStage(existingDoc);
             const currentStageOrder = REQUEST_STAGE_ORDER[normalizedStage] ?? 0;
-            if (currentStageOrder > 1) {
+            if (currentStageOrder > 0) {
               const err = new Error(
-                "CAM 이후 단계의 기존 의뢰는 취소할 수 없습니다. 기존 의뢰를 유지하고 재의뢰로 진행해주세요.",
+                "준비 단계가 아닌 기존 의뢰는 취소할 수 없습니다. 기존 의뢰를 유지하고 재의뢰로 진행해주세요.",
               );
               err.statusCode = 400;
               throw err;
@@ -1078,8 +1080,8 @@ export async function createRequestsFromDraft(req, res) {
               await existingDoc.save({ session });
             }
 
-            // 크레딧은 가공 단계에서 차감되므로 의뢰/CAM 단계에서는 환불할 것이 없음
-            // Replace는 stageOrder < 2 (의뢰, CAM)에서만 허용되므로 환불 처리 불필요
+            // 크레딧은 가공 진입(CAM 승인) 시 차감되므로 준비 단계 취소에서는 환불할 것이 없음
+            // Replace는 stageOrder === 0 (준비)에서만 허용되므로 환불 처리 불필요
           }
 
           for (const [caseId, r] of resolutionsByCaseId.entries()) {

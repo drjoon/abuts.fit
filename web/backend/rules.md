@@ -142,6 +142,13 @@
   - 하위호환 입력: 레거시 `0`/`30`, 기존 minor 저장값(`헥스10도회전`)은 `헥스40도회전`으로 정규화 허용
   - 미지원/빈값은 request-meta 응답 및 저장 로직에서 즉시 오류로 처리합니다.
 - `manufacturerStage` request 단계 SSOT는 `준비` 단일값입니다. (`의뢰`, `request` 저장/비교 금지)
+- 의뢰 취소 정책 SSOT: `PATCH /api/requests/:id/status`로 `manufacturerStage=취소` 시
+  정규화 단계가 `request`(준비)인 경우만 허용. 불완전가공(`rnd.unmachinableAt`)은 예외로 취소 가능.
+  - 레거시 문구/판정(`의뢰 또는 CAM 단계`) 사용 금지.
+  - 중복 replace(`from-draft`/`creation.request`)의 `isCancelableStage`도 `stageOrder<=0`(준비)만 허용.
+  - 관련 파일: `controllers/requests/common.requests.controller.js`,
+    `controllers/requests/creation.from-draft.controller.js`,
+    `controllers/requests/creation.request.controller.js`
 - 의뢰 제출(`POST /api/requests/from-draft`)의 `caseInfos.requestorHexRotation`은
   케이스별 `caseInfos.designSoftware`를 기준으로 계산합니다.
   - 케이스 디자인 소프트웨어가 비어 있으면 요청을 실패(400) 처리합니다.
@@ -295,7 +302,7 @@
   - 불완전가공(RnD unmachinable) 판정은 크레딧 롤백 사유가 아님
     - 이미 CAM 승인으로 발생한 `REQUEST_SPEND_COMMIT`은 유지
     - 불완전가공으로 CAM 복귀가 일어나도 장부 삭제/환불 금지
-    - CAM 이전 취소(의뢰/CAM 단계)만 차감 미발생 상태
+    - 준비 단계 취소만 차감 미발생 상태
   - 조회/표시 타입은 `CHARGE`/`SPEND` 단일값 금지
     - 충전: `CHARGE_PAID` / `CHARGE_FREE_REQUEST` / `CHARGE_FREE_SHIPPING`
     - 소비: `SPEND_PAID` / `SPEND_FREE_REQUEST` / `SPEND_FREE_SHIPPING`

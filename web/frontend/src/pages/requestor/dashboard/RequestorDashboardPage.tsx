@@ -84,13 +84,16 @@ const dashDebug = (label: string, payload?: unknown) => {
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/shared/components/CreditLedgerModal.tsx
 // - web/frontend/src/pages/requestor/dashboard/components/RequestorRecentRequestsCard.tsx
+// - web/frontend/src/shared/ui/PricingPolicyDialog.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx
 // - web/frontend/src/features/requests/components/StlPreviewViewer.tsx
 // - web/frontend/src/shared/files/stlIndexedDb.ts
 // - web/frontend/src/shared/realtime/useAppEventDebouncedReload.ts
 // - web/backend/controllers/requests/dashboard.controller.js
+// - web/backend/controllers/requests/common.requests.controller.js
 // - web/backend/controllers/requests/common.review.controller.js
 // - web/backend/services/requestSnapshotTriggers.service.js
+// - web/frontend/rules.md
 
 
 type DashboardOutletContext = {
@@ -1312,7 +1315,7 @@ export const RequestorDashboardPage = () => {
           title: "의뢰 취소 실패",
           description:
             serverMsg ||
-            "준비 또는 가공 단계에서만 취소할 수 있습니다. 세척.패킹 단계부터는 취소가 불가능합니다.",
+            "준비 단계에서만 취소할 수 있습니다. 가공 단계부터는 취소가 불가능합니다.",
           variant: "destructive",
           duration: 3000,
         });
@@ -2042,8 +2045,8 @@ export const RequestorDashboardPage = () => {
           />
         }
         topSection={
-          <div className="space-y-6">
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-stretch">
+          <div className="space-y-2.5">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-2.5 items-stretch">
               <RequestorPricingReferralPolicyCard />
               <div className="lg:col-span-2 h-full">
                 <RequestorRecentRequestsCard
@@ -2058,7 +2061,7 @@ export const RequestorDashboardPage = () => {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-stretch">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-2.5 items-stretch">
               <Card className="app-glass-card app-glass-card--lg h-full">
                 <CardHeader className="pb-2">
                   <CardTitle className="text-base font-semibold">불완전가공</CardTitle>

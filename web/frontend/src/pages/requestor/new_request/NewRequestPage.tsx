@@ -769,7 +769,7 @@ export const NewRequestPage = () => {
     const isCancelableStage =
       typeof dup?.isCancelableStage === "boolean"
         ? dup.isCancelableStage
-        : stageOrder <= 1;
+        : stageOrder <= 0;
 
     const primaryStrategy: "replace" | "remake" = isCancelableStage
       ? "replace"

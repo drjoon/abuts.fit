@@ -8,6 +8,9 @@
 // - web/backend/models/ledgerLine.model.js
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/shipping/components/MailboxGrid.tsx
+// - web/frontend/src/pages/requestor/dashboard/RequestorDashboardPage.tsx
+// - web/frontend/src/pages/requestor/dashboard/components/RequestorRecentRequestsCard.tsx
+// - web/backend/rules.md
 import mongoose, { Types } from "mongoose";
 import path from "path";
 import { createHash } from "crypto";
@@ -28,6 +31,7 @@ import {
   canAccessRequestAsRequestor,
   normalizeRequestForResponse,
   normalizeWorksheetRequestForResponse,
+  normalizeRequestStage,
   ensureLotNumberForMachining,
   ensureFinishedLotNumberForPacking,
   buildRequestorOrgScopeFilter,
@@ -501,7 +505,7 @@ async function ensureRequestCancelRollbackDelete({ request, actorUserId, session
     currentStageLower === "tracking";
 
   // 중요 정책:
-  // - CAM 이전 취소(의뢰/CAM)만 차감 미발생 영역이다.
+  // - 준비 단계 취소만 차감 미발생 영역이다.
   // - 불완전가공 포함, 가공 이후 단계 취소는 기존 REQUEST_SPEND_COMMIT 차감을 유지한다.
   // 따라서 취소 경로에서의 소비 삭제는 CAM 복귀 롤백 타이밍과 혼동하지 않도록
   // post-CAM 단계에서는 수행하지 않는다.
@@ -512,7 +516,7 @@ async function ensureRequestCancelRollbackDelete({ request, actorUserId, session
   if (!businessAnchorId) return;
 
   // SSOT 정책: 취소 시 REFUND를 추가하지 않고, 기존 소비 커밋을 삭제형 롤백으로 정리한다.
-  // 단, 이 삭제 정리는 CAM 이전 취소 경로에서만 허용한다.
+  // 단, 이 삭제 정리는 준비 단계 취소 경로에서만 허용한다.
   await ensureRequestCreditRollbackDeleteOnRollbackToCam({
     request,
     businessAnchorId,
@@ -3115,20 +3119,21 @@ export async function updateRequestStatus(req, res) {
       });
     }
 
-    // 취소는 기본적으로 의뢰/CAM 단계에서만 가능.
+    // 취소는 기본적으로 준비 단계에서만 가능.
     // 단, 제조사에서 불완전가공 판정을 내린 의뢰(rnd.unmachinableAt 존재)는
     // 의뢰자 판단으로 취소를 허용한다.
     if (manufacturerStage === "취소") {
       const currentStage = String(request.manufacturerStage || "").trim();
-      const allowedCancelStages = ["준비", "CAM"];
+      // manufacturerStage request 단계 SSOT는 `준비` (레거시 `의뢰`/`request`/`CAM` 저장·비교 금지).
+      // 취소 허용 판정은 정규화 결과 `request`(=준비)만 본다.
+      const isPrepStage = normalizeRequestStage(request) === "request";
       const isUnmachinable = Boolean(request?.rnd?.unmachinableAt);
-      const isStageAllowed =
-        allowedCancelStages.includes(currentStage) || isUnmachinable;
+      const isStageAllowed = isPrepStage || isUnmachinable;
 
       console.log("[updateManufacturerStage] Cancel validation", {
         requestId: request.requestId,
         currentStage,
-        allowedCancelStages,
+        isPrepStage,
         isUnmachinable,
         isStageAllowed,
       });
@@ -3137,7 +3142,7 @@ export async function updateRequestStatus(req, res) {
         return res.status(400).json({
           success: false,
           message:
-            "의뢰 또는 CAM 단계에서만 취소할 수 있습니다. 단, 불완전가공 판정 의뢰는 취소 가능합니다.",
+            "준비 단계에서만 취소할 수 있습니다. 단, 불완전가공 판정 의뢰는 취소 가능합니다.",
         });
       }
     }
@@ -3313,7 +3318,7 @@ export async function deleteRequest(req, res) {
       });
     }
 
-    // 단계 검증: 관리자면 가공(machining) 단계 이전까지, 의뢰자면 의뢰/CAM 단계까지만 허용
+    // 단계 검증: 관리자면 가공(machining) 단계 이전까지, 의뢰자면 준비 단계만 허용
     const stageStatus = String(request.manufacturerStage || "");
 
     // R&D 샘플은 제조사 조직 임직원/관리자가 완전 삭제
@@ -3342,14 +3347,18 @@ export async function deleteRequest(req, res) {
       return;
     }
 
-    const deletableStages = isAdmin ? ["준비", "CAM", "가공"] : ["준비", "CAM"];
+    const normalizedStageKey = normalizeRequestStage(request);
+    const isRequestorDeletable = normalizedStageKey === "request";
+    const isAdminDeletable = ["request", "cam", "machining"].includes(
+      normalizedStageKey,
+    );
 
-    if (!deletableStages.includes(stageStatus)) {
+    if ((isAdmin && !isAdminDeletable) || (!isAdmin && !isRequestorDeletable)) {
       return res.status(400).json({
         success: false,
         message: isAdmin
           ? "발송 단계 이후의 의뢰는 삭제할 수 없습니다."
-          : "가공 단계 이후의 의뢰는 직접 삭제할 수 없습니다. 고객센터에 문의해주세요.",
+          : "준비 단계의 의뢰만 직접 삭제할 수 있습니다. 고객센터에 문의해주세요.",
       });
     }
 

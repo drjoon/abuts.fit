@@ -864,9 +864,9 @@ export async function createRequestsBulk(req, res) {
                   "완료된 의뢰는 새 의뢰로 교체할 수 없습니다. 재의뢰로 진행해주세요.",
                 );
               }
-              if (currentStageOrder > 1) {
+              if (currentStageOrder > 0) {
                 throw new Error(
-                  "생산 이후 단계에서는 기존 의뢰를 교체할 수 없습니다.",
+                  "준비 단계가 아닌 기존 의뢰는 취소 후 교체할 수 없습니다.",
                 );
               }
               forceNewOrderPricing = true;

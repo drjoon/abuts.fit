@@ -18,6 +18,9 @@
 
 Notes:
 - Requestor dashboard: 상단 카드 '의뢰/취소' -> '준비'로 변경. 취소 항목은 카드에서 제거(내부 DB는 유지). 상세 정책/모달의 '의뢰' 문구는 '준비'로 변경함.
+- 의뢰 취소 정책 SSOT: **준비 단계에서만** 취소 가능(불완전가공 판정 예외 유지). 레거시 '의뢰/CAM 단계 취소' 문구·판정 금지.
+  - UI: `RequestorRecentRequestsCard` 취소 버튼/툴팁, `RequestorDashboardPage` 실패 토스트, `PricingPolicyDialog` 6절
+  - API: `PATCH /api/requests/:id/status` 취소 검증, 중복 replace(`from-draft`/`creation.request`)의 `isCancelableStage`
 
 ## 0. Frontend 중요 진입 파일 지도 (로컬)
 
@@ -262,7 +265,7 @@ Notes:
   - 불완전가공(RnD unmachinable) 판정은 샘플 처리나 크레딧 롤백 사유가 아닙니다.
     - 불완전가공으로 CAM 복귀가 되더라도, 이미 CAM 승인 시점에 발생한 의뢰 크레딧 차감은 유지됩니다.
     - 즉, UI 문구/배지는 불완전가공 상태 변경과 크레딧 삭제를 연결해 안내하면 안 됩니다.
-  - CAM 이전 취소(의뢰/CAM 단계)만 차감 미발생 상태로 간주합니다.
+  - 준비 단계 취소만 차감 미발생 상태로 간주합니다.
   - 제조사 워크시트 UI는 위 정책을 기준으로 라벨/안내 문구를 구성합니다.
   - 관련 파일:
     - `src/pages/manufacturer/worksheet/WorksheetPage.tsx`

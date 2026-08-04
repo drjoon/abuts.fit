@@ -30,9 +30,12 @@ import {
 
 // related files:
 // - web/frontend/src/pages/requestor/dashboard/RequestorDashboardPage.tsx
+// - web/frontend/src/shared/ui/PricingPolicyDialog.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/WorksheetCardGrid.tsx
 // - web/frontend/src/shared/realtime/useAppEventListener.ts
+// - web/backend/controllers/requests/common.requests.controller.js
+// - web/frontend/rules.md
 
 const EDITABLE_STATUSES = new Set(["준비", "CAM", "가공"]); // CAM 호환 포함, UI 정책상 준비/가공 단계에서 수정 허용
 
@@ -568,11 +571,7 @@ export const RequestorRecentRequestsCard = ({
 
   const isCancelableRequest = (r: RecentRequestCardItem | null) => {
     const normalizedStageLabel = resolveStageLabel(r);
-    return (
-      normalizedStageLabel === "준비" ||
-      normalizedStageLabel === "CAM" ||
-      normalizedStageLabel === "가공"
-    );
+    return normalizedStageLabel === "준비";
   };
 
   return (
@@ -662,7 +661,7 @@ export const RequestorRecentRequestsCard = ({
                           </span>
                         </TooltipTrigger>
                         <TooltipContent side="top">
-                          준비, 가공 공정에서만 취소할 수 있습니다.
+                          준비 단계에서만 취소할 수 있습니다.
                         </TooltipContent>
                       </Tooltip>
                     </div>
