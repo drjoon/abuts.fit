@@ -693,8 +693,8 @@ const formatFileSize = (bytes: number) => {
 const PRACTICE_TRANSFER_TEMP_DRAFT_KEY = "practice_transfer_temp_draft_v1";
 const PRACTICE_TRANSFER_FORM_LOCAL_KEY = "practice_transfer_form_local_v1";
 const PRACTICE_FILE_CACHE_META_KEY = "practice_dropzone_file_cache_meta_v1";
-const PRACTICE_TRANSFER_PROMO_TITLE = "어벗츠 커스텀어벗 서비스를 이용하지 않더라도 이용 가능!";
-const PRACTICE_TRANSFER_PROMO_DESC = "치과-기공소간 구강스캔 파일 전송 및 기공 의뢰 관리 기능을 무료로 사용하세요";
+const PRACTICE_TRANSFER_PROMO_TITLE = "어벗츠 유료서비스를 쓰지 않더라도 이용 가능!";
+const PRACTICE_TRANSFER_PROMO_DESC = "무료로 구강스캔 파일전송, 기공의뢰서 관리하세요.";
 
 const clearPracticeFileTransferCaches = async () => {
   let keys: string[] = [];
@@ -2780,7 +2780,7 @@ export const PracticeFileTransferPage = () => {
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base">
                 <UploadCloud className="h-4 w-4 text-blue-600" />
-                구강 스캔 전송
+                기공의뢰
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">

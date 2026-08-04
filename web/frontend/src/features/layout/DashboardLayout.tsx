@@ -83,7 +83,7 @@ const sidebarItems = {
   requestor: [
     { icon: LayoutDashboard, label: "대시보드", href: "/dashboard" },
     { icon: FileText, label: "신규의뢰", href: "/dashboard/new-request" },
-    { icon: Building2, label: "치과", href: "/dashboard/practice-transfers" },
+    { icon: Building2, label: "기공의뢰서", href: "/dashboard/practice-transfers" },
     { icon: Share2, label: "소개", href: "/dashboard/referral-groups" },
   ],
   salesman: [
@@ -96,7 +96,7 @@ const sidebarItems = {
     { icon: Share2, label: "소개", href: "/dashboard/referral-groups" },
   ],
   practice: [
-    { icon: LayoutDashboard, label: "파일전송", href: "/practice/dashboard" },
+    { icon: LayoutDashboard, label: "기공의뢰", href: "/practice/dashboard" },
   ],
   manufacturer: [
     { icon: ClipboardList, label: "작업", href: "/dashboard/worksheet" },

@@ -98,8 +98,8 @@ type PracticeTransferSettingsPayload = {
 };
 
 const PAGE_SIZE = 10; // 2열 x 5행
-const PRACTICE_TRANSFER_PROMO_TITLE = "어벗츠 커스텀어벗 서비스를 이용하지 않더라도 이용 가능!";
-const PRACTICE_TRANSFER_PROMO_DESC = "치과-기공소간 구강스캔 파일 전송 및 기공 의뢰 관리 기능을 무료로 사용하세요";
+const PRACTICE_TRANSFER_PROMO_TITLE = "어벗츠 유료서비스를 쓰지 않더라도 이용 가능!";
+const PRACTICE_TRANSFER_PROMO_DESC = "무료로 구강스캔 파일전송, 기공의뢰서 관리하세요.";
 
 const formatDateTime = (value: unknown) => {
   const d = new Date(String(value || ""));
@@ -1168,7 +1168,7 @@ export default function RequestorPracticePage() {
           <Card className="xl:col-span-2">
             <CardHeader className="space-y-3">
               <div className="flex items-center gap-3">
-                <CardTitle className="text-xl">치과 전송 내역</CardTitle>
+                <CardTitle className="text-xl">기공의뢰서 내역</CardTitle>
               </div>
               <div className="space-y-3">
                 <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">

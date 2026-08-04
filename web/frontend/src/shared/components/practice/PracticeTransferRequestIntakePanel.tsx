@@ -125,7 +125,7 @@ export const PracticeTransferRequestIntakePanel = ({
   return (
     <div className="rounded-xl border bg-background p-4 flex h-full min-h-0 flex-col gap-3">
       <div className="flex items-center justify-between gap-2">
-        <h3 className="text-base font-semibold">의뢰 접수</h3>
+        <h3 className="text-base font-semibold">의뢰서 작성</h3>
         {onClearAll ? (
           <Button
             type="button"
