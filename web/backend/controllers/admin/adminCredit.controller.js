@@ -24,6 +24,13 @@ import LedgerJournal from "../../models/ledgerJournal.model.js";
 import { postGeneralLedgerJournal } from "../../services/generalLedger.service.js";
 import { Types } from "mongoose";
 import {
+  buildCreditLedgerRequestSummary,
+  CREDIT_LEDGER_REQUEST_SELECT,
+  mergeRequestExpressSurchargeIntoMachiningSpend,
+  parseSpendKindFromUniqueKey,
+} from "../credits/creditLedger.utils.js";
+import { healMissingExpressSurchargesForBusiness } from "../requests/common.review.helpers.js";
+import {
   getLast30DaysRangeUtc,
   getTodayMidnightUtcInKst,
   getTodayYmdInKst,
@@ -69,17 +76,7 @@ function buildPaidRequestEligibleLedgerStages() {
 }
 
 function buildRequestSummary(doc) {
-  if (!doc?._id) return null;
-  return {
-    requestId: String(doc.requestId || ""),
-    manufacturerStage: String(doc.manufacturerStage || ""),
-    patientName: String(doc?.caseInfos?.patientName || ""),
-    tooth: String(doc?.caseInfos?.tooth || ""),
-    clinicName: String(doc?.caseInfos?.clinicName || ""),
-    lotNumber: {
-      value: String(doc?.lotNumber?.value || ""),
-    },
-  };
+  return buildCreditLedgerRequestSummary(doc);
 }
 
 function parseFreeCreditGrantIdFromUniqueKey(uniqueKey) {
@@ -527,6 +524,19 @@ export async function adminGetBusinessLedger(req, res) {
       Math.max(1, Number(req.query.pageSize || 50) || 50),
     );
 
+    try {
+      await healMissingExpressSurchargesForBusiness({
+        businessAnchorId,
+        actorUserId: req.user?._id || null,
+        limit: 30,
+      });
+    } catch (healErr) {
+      console.error("[ADMIN_CREDIT_LEDGER] healMissingExpressSurcharges failed", {
+        businessAnchorId: String(businessAnchorId),
+        message: healErr?.message || String(healErr || ""),
+      });
+    }
+
     const balanceSnapshot = await getBusinessCreditBalanceSnapshot({
       businessAnchorId,
       upsertIfMissing: true,
@@ -748,7 +758,8 @@ export async function adminGetBusinessLedger(req, res) {
 
     pipeline.push({ $sort: { occurredAt: -1, _id: -1 } });
 
-    const allRows = await LedgerLine.aggregate(pipeline);
+    const allRowsRaw = await LedgerLine.aggregate(pipeline);
+    const allRows = mergeRequestExpressSurchargeIntoMachiningSpend(allRowsRaw);
     const total = Array.isArray(allRows) ? allRows.length : 0;
     const startIdx = (page - 1) * pageSize;
     const endIdx = startIdx + pageSize;
@@ -763,6 +774,7 @@ export async function adminGetBusinessLedger(req, res) {
     const items = allRows.slice(startIdx, endIdx).map((r) => {
       const balanceAfter = runningBalance;
       runningBalance -= Number(r?.amount || 0);
+      const uniqueKey = String(r?.uniqueKey || "");
       return {
         _id: String(r?._id || ""),
         type: String(r?.type || "ADJUST"),
@@ -771,7 +783,10 @@ export async function adminGetBusinessLedger(req, res) {
         spentFreeAmount: Number(r?.spentFreeAmount || 0),
         refType: String(r?.refType || ""),
         refId: r?.refId ? String(r.refId) : null,
-        uniqueKey: String(r?.uniqueKey || ""),
+        uniqueKey,
+        spendKind:
+          r?.spendKind || parseSpendKindFromUniqueKey(uniqueKey) || null,
+        includesExpressSurcharge: Boolean(r?.includesExpressSurcharge),
         createdAt: r?.createdAt || r?.occurredAt || new Date(),
         occurredAt: r?.occurredAt || null,
         balanceAfter,
@@ -818,15 +833,7 @@ export async function adminGetBusinessLedger(req, res) {
       const requestDocs = await Request.find({
         _id: { $in: requestRefIds.map((id) => new Types.ObjectId(id)) },
       })
-        .select({
-          _id: 1,
-          requestId: 1,
-          manufacturerStage: 1,
-          lotNumber: 1,
-          "caseInfos.patientName": 1,
-          "caseInfos.tooth": 1,
-          "caseInfos.clinicName": 1,
-        })
+        .select(CREDIT_LEDGER_REQUEST_SELECT)
         .lean();
 
       for (const doc of requestDocs || []) {
@@ -932,6 +939,7 @@ export async function adminGetBusinessLedger(req, res) {
           tooth: requestSummary?.tooth || "",
           clinicName: requestSummary?.clinicName || "",
           manufacturerStage: requestSummary?.manufacturerStage || "",
+          shippingMode: requestSummary?.shippingMode || "normal",
           lotNumber: requestSummary?.lotNumber || null,
         };
       }

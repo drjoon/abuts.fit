@@ -72,6 +72,8 @@
     - 실제 차감: `common.review.helpers.js` `ensureRequestCreditSpendOnMachiningEnter`
       - 가공비: `request:<id>:machining_spend`
       - 신속 추가비: `request:<id>:express_surcharge` (분리 저널)
+      - 누락 보정: `healMissingExpressSurchargesForBusiness` (크레딧 원장 조회 시)
+      - 원장 표시: `creditLedger.utils.js`에서 가공비+신속추가비를 1행으로 합산
     - 지연/모드 전환 취소: `cancelExpressSurchargeIfShipDelayed` → `deleteExpressSurchargeAtomic` (표시 금액도 추가비 제외로 재동기화)
   - 기본 배송 방식: `BusinessAnchor.shippingPolicy.defaultShippingMode` (`normal`|`express`)
     - PATCH: `business.update.controller.js` / 프론트 `NewRequestShippingSection` + `useBulkShippingPolicy`

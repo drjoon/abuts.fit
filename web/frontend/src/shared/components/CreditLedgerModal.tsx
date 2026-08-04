@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-04: 의뢰 차감 행에 신속/묶음배송 뱃지 표시. (display-only)
 // - 2026-08-03: Credit ledger detail row의 공정 배지 표시를 normalizeStageLabel 기반으로 정규화(의뢰 -> 준비). (display-only)
 // related files:
 // - web/frontend/rules.md
@@ -7,6 +8,7 @@
 // - web/frontend/src/pages/admin/credits/AdminCreditPage.tsx
 // - web/frontend/src/shared/realtime/useAppEventDebouncedReload.ts
 // - web/frontend/src/shared/realtime/creditBalanceEvent.ts
+// - web/frontend/src/shared/shipping/ShippingModeBadge.tsx
 // - web/backend/controllers/admin/adminCredit.controller.js
 // change-log:
 // - 2026-08-03: CreditLedgerModal: normalize manufacturer stage display labels (의뢰 -> 준비) in transaction rows. (display-only)
@@ -51,6 +53,8 @@ import {
   RequestDetailDialog,
   type RequestDetailDialogRequest,
 } from "@/features/requests/components/RequestDetailDialog";
+import { ShippingModeBadge } from "@/shared/shipping/ShippingModeBadge";
+import type { ShippingMode } from "@/shared/shipping/shippingMode";
 
 type CreditLedgerType =
   | "CHARGE_PAID"
@@ -71,12 +75,15 @@ type CreditLedgerItem = {
   refId?: string | null;
   refRequestId?: string;
   uniqueKey: string;
+  spendKind?: string | null;
+  includesExpressSurcharge?: boolean;
   createdAt: string;
   balanceAfter?: number;
   patientName?: string;
   tooth?: string;
   clinicName?: string;
   manufacturerStage?: string;
+  shippingMode?: ShippingMode | string | null;
   freeReason?: string;
   trackingNumbers?: string[];
   lotNumber?: {
@@ -88,6 +95,9 @@ type CreditLedgerItem = {
     patientName?: string;
     tooth?: string;
     clinicName?: string;
+    shippingMode?: ShippingMode | string | null;
+    finalShipping?: { mode?: string | null } | null;
+    originalShipping?: { mode?: string | null } | null;
     lotNumber?: {
       value?: string;
     } | null;
@@ -221,18 +231,36 @@ const renderTransactionDetail = ({
     const manufacturerStageRaw =
       item.manufacturerStage || requestSummary?.manufacturerStage || "준비";
     const manufacturerStage = getNormalizedStageLabelSafe({ manufacturerStage: manufacturerStageRaw }) || String(manufacturerStageRaw);
+    const spendKind = String(item.spendKind || "");
+    const isExpressSurchargeOnly = spendKind === "express_surcharge";
 
     return (
       <>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center justify-center gap-2 flex-wrap">
+          <ShippingModeBadge
+            source={
+              requestSummary || {
+                shippingMode: item.shippingMode,
+              }
+            }
+            size="sm"
+          />
           <Badge variant="outline" className="h-5 px-1.5 text-[10px]">
             {manufacturerStage}
           </Badge>
+          {isExpressSurchargeOnly ? (
+            <Badge
+              variant="outline"
+              className="h-5 px-1.5 text-[10px] border-amber-400 text-amber-700 bg-amber-50"
+            >
+              신속추가
+            </Badge>
+          ) : null}
           <span className="font-mono text-xs font-semibold text-slate-900">
             {shortCode}
           </span>
         </div>
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 pt-1 text-[11px] text-slate-700">
+        <div className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1 pt-1 text-[11px] text-slate-700">
           <span>
             {requestSummary?.clinicName || item.clinicName || "-"} /{" "}
             {requestSummary?.patientName || item.patientName || "-"} /{" "}
@@ -545,6 +573,12 @@ export const CreditLedgerModal = ({
     manufacturerStage:
       item.manufacturerStage || item.refRequestSummary?.manufacturerStage || "",
     createdAt: item.createdAt,
+    shippingMode:
+      item.shippingMode ||
+      item.refRequestSummary?.shippingMode ||
+      item.refRequestSummary?.finalShipping?.mode ||
+      item.refRequestSummary?.originalShipping?.mode ||
+      null,
     caseInfos: {
       clinicName:
         item.caseInfos?.clinicName ||

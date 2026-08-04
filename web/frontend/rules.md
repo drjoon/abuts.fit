@@ -222,6 +222,8 @@ Notes:
 - 관리자 크레딧 원장 모달(`src/shared/components/CreditLedgerModal.tsx`) 표시 정책:
   - 모달 상단 잔액 요약은 단일 SSOT 장부 API의 `currentBalanceSnapshot` 값을 사용합니다.
   - 테이블 `balanceAfter`는 현재 총잔액이 아니라 “행 시점 잔액”으로 표기합니다.
+  - 의뢰(REQUEST) 차감 행에는 신속/묶음배송 뱃지를 표시합니다 (`ShippingModeBadge`).
+  - 신속 추가비(`express_surcharge`)는 API에서 가공비(`machining_spend`)와 합산해 1행으로 내려줍니다(표시 금액=가공비+추가비).
   - 레거시 `BONUS` 타입 문구/분기 사용 금지. 이벤트 타입/계정코드(`LedgerJournal.eventType`, `LedgerLine.accountCode`)를 기준으로 표시합니다.
   - 표시 타입은 아래로 고정합니다.
     - `CHARGE_PAID`, `CHARGE_FREE_REQUEST`, `CHARGE_FREE_SHIPPING`

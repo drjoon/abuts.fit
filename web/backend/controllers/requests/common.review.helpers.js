@@ -6,13 +6,14 @@
 // - web/backend/modules/requests/request.routes.js
 // - web/backend/controllers/requests/common.review.controller.js
 // - web/backend/controllers/requests/common.requests.controller.js
-import { Types } from "mongoose";
+import mongoose, { Types } from "mongoose";
 import DeliveryInfo from "../../models/deliveryInfo.model.js";
 import ShippingPackage from "../../models/shippingPackage.model.js";
 import Request from "../../models/request.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 import User from "../../models/user.model.js";
 import LedgerLine from "../../models/ledgerLine.model.js";
+import LedgerJournal from "../../models/ledgerJournal.model.js";
 import {
   applyStatusMapping,
   computePriceForRequest,
@@ -604,11 +605,47 @@ export async function ensureRequestCreditSpendOnMachiningEnter({
 
   if (expressFee <= 0) return;
 
-  if (String(request?.price?.expressFeeStatus || "") === "charged") return;
   if (String(request?.price?.expressFeeStatus || "") === "cancelled") return;
+
+  // charged 표시만으로 스킵하지 않는다. 실제 express_surcharge 저널이 있을 때만 완료로 본다.
+  if (String(request?.price?.expressFeeStatus || "") === "charged") {
+    const expressKey = `gl:request:${String(request?._id || "")}:express_surcharge`;
+    const existingExpress = await LedgerJournal.findOne({
+      idempotencyKey: expressKey,
+      eventType: "REQUEST_SPEND_COMMIT",
+    })
+      .session(session || null)
+      .select({ journalId: 1 })
+      .lean();
+    if (existingExpress?.journalId) return;
+    console.warn(
+      "[CREDIT_SPEND] expressFeeStatus=charged but express_surcharge journal missing; will recharge",
+      {
+        requestId: request?.requestId,
+        requestMongoId: String(request?._id || ""),
+      },
+    );
+  }
 
   // 레거시 합산 차감(가공비+신속비가 machining_spend 한 건) 재진입 시 이중 차감 방지
   if (spendResult?.reason === "already_spent") {
+    const expressKey = `gl:request:${String(request?._id || "")}:express_surcharge`;
+    const existingExpress = await LedgerJournal.findOne({
+      idempotencyKey: expressKey,
+      eventType: "REQUEST_SPEND_COMMIT",
+    })
+      .session(session || null)
+      .select({ journalId: 1 })
+      .lean();
+    if (existingExpress?.journalId) {
+      if (request.price) {
+        request.price.expressFeeStatus = "charged";
+      } else {
+        request.price = { expressFeeStatus: "charged" };
+      }
+      return;
+    }
+
     const spendLines = await LedgerLine.aggregate([
       {
         $match: {
@@ -632,7 +669,8 @@ export async function ensureRequestCreditSpendOnMachiningEnter({
     const spentTotal = Number(spendLines?.[0]?.spent || 0);
     const baseOnly =
       Number.isFinite(baseAmount) && baseAmount > 0 ? baseAmount : 0;
-    if (spentTotal > baseOnly + 1) {
+    // baseOnly가 0/누락이면 오탐하므로, 실제 추가비만큼 더 쓰인 경우만 레거시 합산으로 본다.
+    if (baseOnly > 0 && spentTotal >= baseOnly + expressFee - 1) {
       if (request.price) {
         request.price.expressFeeStatus = "charged";
       } else {
@@ -670,6 +708,12 @@ export async function ensureRequestCreditSpendOnMachiningEnter({
       console.log("[CREDIT_SPEND] skip existing express surcharge", {
         requestId: request?.requestId,
         uniqueKey: expressSpendResult.uniqueKey,
+      });
+    } else {
+      console.warn("[CREDIT_SPEND] express surcharge not spent", {
+        requestId: request?.requestId,
+        reason: expressSpendResult?.reason || null,
+        expressFee,
       });
     }
     return;
@@ -723,6 +767,175 @@ export async function ensureRequestCreditSpendOnMachiningEnter({
     amount: Number(expressSpendResult.resolvedAmount || 0),
     uniqueKey: expressSpendResult.uniqueKey,
   });
+}
+
+/**
+ * 가공 진입 후 신속추가비(express_surcharge)만 누락된 건을 보정한다.
+ * - machining_spend 저널이 있고 express_surcharge 저널이 없으면 강제 차감
+ * - expressFeeStatus=charged 오표시여도 저널이 없으면 보정한다 (cancelled만 제외)
+ */
+export async function healMissingExpressSurchargesForBusiness({
+  businessAnchorId,
+  actorUserId = null,
+  limit = 30,
+}) {
+  const anchorObjectId =
+    businessAnchorId instanceof Types.ObjectId
+      ? businessAnchorId
+      : Types.ObjectId.isValid(String(businessAnchorId || ""))
+        ? new Types.ObjectId(String(businessAnchorId))
+        : null;
+  if (!anchorObjectId) return { healed: 0, checked: 0 };
+
+  const max = Math.min(50, Math.max(1, Number(limit) || 30));
+
+  // status 필드는 오탐이 있어 후보 필터에 쓰지 않는다. 저널 존재로만 판단.
+  const candidates = await Request.find({
+    businessAnchorId: anchorObjectId,
+    $or: [
+      { shippingMode: "express" },
+      { "finalShipping.mode": "express" },
+      { "originalShipping.mode": "express" },
+    ],
+    manufacturerStage: {
+      $nin: ["준비", "의뢰", "취소", "cancelled", "canceled"],
+    },
+    "price.expressFeeStatus": { $ne: "cancelled" },
+  })
+    .sort({ updatedAt: -1 })
+    .limit(max)
+    .exec();
+
+  console.log("[CREDIT_SPEND] heal express surcharge scan", {
+    businessAnchorId: String(anchorObjectId),
+    candidates: (candidates || []).length,
+  });
+
+  let healed = 0;
+  let skippedNoMachining = 0;
+  let skippedHasExpress = 0;
+
+  for (const request of candidates || []) {
+    if (resolveEffectiveShippingMode(request) !== "express") continue;
+
+    const requestMongoId = String(request?._id || "");
+    const machiningKey = `gl:request:${requestMongoId}:machining_spend`;
+    const expressKey = `gl:request:${requestMongoId}:express_surcharge`;
+
+    const [machiningJournal, expressJournal] = await Promise.all([
+      LedgerJournal.findOne({
+        idempotencyKey: machiningKey,
+        eventType: "REQUEST_SPEND_COMMIT",
+      })
+        .select({ journalId: 1 })
+        .lean(),
+      LedgerJournal.findOne({
+        idempotencyKey: expressKey,
+        eventType: "REQUEST_SPEND_COMMIT",
+      })
+        .select({ journalId: 1 })
+        .lean(),
+    ]);
+
+    if (!machiningJournal?.journalId) {
+      skippedNoMachining += 1;
+      continue;
+    }
+    if (expressJournal?.journalId) {
+      skippedHasExpress += 1;
+      if (String(request?.price?.expressFeeStatus || "") !== "charged") {
+        if (request.price) {
+          request.price.expressFeeStatus = "charged";
+        } else {
+          request.price = { expressFeeStatus: "charged" };
+        }
+        try {
+          await request.save();
+        } catch (saveErr) {
+          console.warn("[CREDIT_SPEND] heal mark charged failed", {
+            requestId: request?.requestId,
+            message: saveErr?.message || String(saveErr || ""),
+          });
+        }
+      }
+      continue;
+    }
+
+    // charged 오표시를 지우고 재차감 경로로 진입
+    if (String(request?.price?.expressFeeStatus || "") === "charged") {
+      request.price = {
+        ...toPlainRequestPrice(request.price),
+      };
+      delete request.price.expressFeeStatus;
+    }
+
+    const deferredCreditEvents = [];
+    const session = await mongoose.startSession();
+    try {
+      await session.withTransaction(async () => {
+        await ensureRequestCreditSpendOnMachiningEnter({
+          request,
+          businessAnchorId: anchorObjectId,
+          actorUserId,
+          session,
+          deferredCreditEvents,
+        });
+        await request.save({ session });
+      });
+
+      for (const evt of deferredCreditEvents) {
+        try {
+          await emitCreditBalanceUpdatedToBusiness(evt);
+        } catch (emitErr) {
+          console.error("[CREDIT_SPEND] heal express emit failed", {
+            requestId: request?.requestId,
+            message: emitErr?.message || String(emitErr || ""),
+          });
+        }
+      }
+
+      const chargedNow = await LedgerJournal.findOne({
+        idempotencyKey: expressKey,
+        eventType: "REQUEST_SPEND_COMMIT",
+      })
+        .select({ journalId: 1 })
+        .lean();
+
+      if (chargedNow?.journalId) {
+        healed += 1;
+        console.log("[CREDIT_SPEND] healed missing express surcharge", {
+          requestId: request?.requestId,
+          requestMongoId,
+          patientName: request?.caseInfos?.patientName || null,
+          tooth: request?.caseInfos?.tooth || null,
+        });
+      } else {
+        console.warn("[CREDIT_SPEND] heal attempted but express journal still missing", {
+          requestId: request?.requestId,
+          requestMongoId,
+          expressFeeStatus: request?.price?.expressFeeStatus || null,
+        });
+      }
+    } catch (err) {
+      console.error("[CREDIT_SPEND] heal express surcharge failed", {
+        requestId: request?.requestId,
+        requestMongoId,
+        message: err?.message || String(err || ""),
+      });
+    } finally {
+      await session.endSession().catch(() => null);
+    }
+  }
+
+  console.log("[CREDIT_SPEND] heal express surcharge done", {
+    businessAnchorId: String(anchorObjectId),
+    healed,
+    checked: (candidates || []).length,
+    skippedNoMachining,
+    skippedHasExpress,
+  });
+
+  return { healed, checked: (candidates || []).length };
 }
 
 // 타이밍 SSOT: 가공 단계 롤백(CAM 복귀)에서만 호출되어야 한다.

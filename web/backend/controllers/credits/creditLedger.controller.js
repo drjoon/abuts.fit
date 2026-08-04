@@ -4,6 +4,8 @@
 // - web/backend/models/ledgerJournal.model.js
 // - web/backend/models/ledgerLine.model.js
 // - web/backend/services/creditBalance.service.js
+// - web/backend/controllers/credits/creditLedger.utils.js
+// - web/backend/controllers/requests/common.review.helpers.js
 import mongoose from "mongoose";
 import FreeCreditGrant from "../../models/freeCreditGrant.model.js";
 import DeliveryInfo from "../../models/deliveryInfo.model.js";
@@ -12,36 +14,16 @@ import ShippingPackage from "../../models/shippingPackage.model.js";
 import LedgerLine from "../../models/ledgerLine.model.js";
 import LedgerJournal from "../../models/ledgerJournal.model.js";
 import { getBusinessCreditBalanceSnapshot } from "../../services/creditBalance.service.js";
-
-function normalizeNumber(value) {
-  const num = Number(value);
-  return Number.isFinite(num) ? num : null;
-}
+import { healMissingExpressSurchargesForBusiness } from "../requests/common.review.helpers.js";
+import {
+  buildCreditLedgerRequestSummary,
+  CREDIT_LEDGER_REQUEST_SELECT,
+  mergeRequestExpressSurchargeIntoMachiningSpend,
+  parseSpendKindFromUniqueKey,
+} from "./creditLedger.utils.js";
 
 function buildRequestSummary(doc) {
-  if (!doc?._id) return null;
-  const caseInfos = doc?.caseInfos || {};
-  return {
-    requestId: String(doc.requestId || ""),
-    manufacturerStage: String(doc.manufacturerStage || ""),
-    patientName: String(caseInfos.patientName || ""),
-    tooth: String(caseInfos.tooth || ""),
-    clinicName: String(caseInfos.clinicName || ""),
-    lotNumber: {
-      value: String(doc?.lotNumber?.value || ""),
-    },
-    caseInfos: {
-      clinicName: String(caseInfos.clinicName || ""),
-      patientName: String(caseInfos.patientName || ""),
-      tooth: String(caseInfos.tooth || ""),
-      implantManufacturer: String(caseInfos.implantManufacturer || ""),
-      implantBrand: String(caseInfos.implantBrand || ""),
-      implantFamily: String(caseInfos.implantFamily || ""),
-      implantType: String(caseInfos.implantType || ""),
-      maxDiameter: normalizeNumber(caseInfos.maxDiameter),
-      connectionDiameter: normalizeNumber(caseInfos.connectionDiameter),
-    },
-  };
+  return buildCreditLedgerRequestSummary(doc);
 }
 
 function parsePeriod(period) {
@@ -104,6 +86,20 @@ export async function listMyCreditLedger(req, res) {
 
   const page = Math.max(1, Number(req.query.page || 1) || 1);
   const pageSize = Math.min(200, Math.max(1, Number(req.query.pageSize || 50) || 50));
+
+  // 신속배송 추가비 누락 보정: 가공 진입 후 express_surcharge 미차감 건을 보완한다.
+  try {
+    await healMissingExpressSurchargesForBusiness({
+      businessAnchorId: anchorObjectId,
+      actorUserId: req.user?._id || null,
+      limit: 30,
+    });
+  } catch (healErr) {
+    console.error("[CREDIT_LEDGER] healMissingExpressSurcharges failed", {
+      businessAnchorId: String(anchorObjectId),
+      message: healErr?.message || String(healErr || ""),
+    });
+  }
 
   const balanceSnapshot = await getBusinessCreditBalanceSnapshot({
     businessAnchorId: anchorObjectId,
@@ -309,7 +305,8 @@ export async function listMyCreditLedger(req, res) {
 
   pipeline.push({ $sort: { occurredAt: -1, _id: -1 } });
 
-  const allRows = await LedgerLine.aggregate(pipeline);
+  const allRowsRaw = await LedgerLine.aggregate(pipeline);
+  const allRows = mergeRequestExpressSurchargeIntoMachiningSpend(allRowsRaw);
   const total = Array.isArray(allRows) ? allRows.length : 0;
   const startIdx = (page - 1) * pageSize;
   const endIdx = startIdx + pageSize;
@@ -323,6 +320,7 @@ export async function listMyCreditLedger(req, res) {
   const items = allRows.slice(startIdx, endIdx).map((row) => {
     const balanceAfter = runningBalance;
     runningBalance -= Number(row?.amount || 0);
+    const uniqueKey = String(row?.uniqueKey || "");
     return {
       _id: String(row?._id || ""),
       type: String(row?.type || "ADJUST"),
@@ -331,7 +329,10 @@ export async function listMyCreditLedger(req, res) {
       spentFreeAmount: Number(row?.spentFreeAmount || 0),
       refType: String(row?.refType || ""),
       refId: row?.refId ? String(row.refId) : "",
-      uniqueKey: String(row?.uniqueKey || ""),
+      uniqueKey,
+      spendKind:
+        row?.spendKind || parseSpendKindFromUniqueKey(uniqueKey) || null,
+      includesExpressSurcharge: Boolean(row?.includesExpressSurcharge),
       createdAt: row?.occurredAt || row?.createdAt || new Date(),
       balanceAfter,
     };
@@ -377,21 +378,7 @@ export async function listMyCreditLedger(req, res) {
     const requestDocs = await Request.find({
       _id: { $in: requestRefIds.map((id) => new mongoose.Types.ObjectId(id)) },
     })
-      .select({
-        _id: 1,
-        requestId: 1,
-        manufacturerStage: 1,
-        lotNumber: 1,
-        "caseInfos.patientName": 1,
-        "caseInfos.tooth": 1,
-        "caseInfos.clinicName": 1,
-        "caseInfos.implantManufacturer": 1,
-        "caseInfos.implantBrand": 1,
-        "caseInfos.implantFamily": 1,
-        "caseInfos.implantType": 1,
-        "caseInfos.maxDiameter": 1,
-        "caseInfos.connectionDiameter": 1,
-      })
+      .select(CREDIT_LEDGER_REQUEST_SELECT)
       .lean();
 
     for (const doc of requestDocs || []) {
@@ -497,6 +484,7 @@ export async function listMyCreditLedger(req, res) {
         tooth: requestSummary?.tooth || "",
         clinicName: requestSummary?.clinicName || "",
         manufacturerStage: requestSummary?.manufacturerStage || "",
+        shippingMode: requestSummary?.shippingMode || "normal",
         lotNumber: requestSummary?.lotNumber || null,
         caseInfos: requestSummary?.caseInfos || null,
       };
