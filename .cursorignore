@@ -1,0 +1,27 @@
+# 의존성 패키지 및 빌드 결과물 (가장 중요)
+node_modules/
+.next/
+.nuxt/
+dist/
+build/
+out/
+.cache/
+
+# 환경변수 및 비밀키 (보안 및 토큰 방어)
+.env
+.env.*
+*.pem
+*.key
+
+# 로그 파일 및 시스템 파일
+*.log
+.DS_Store
+.idea/
+.vscode/
+
+# 대형 데이터 파일 (AI가 읽으면 비용 폭탄)
+*.package-lock.json
+*.pnpm-lock.yaml
+*.yarn.lock
+*.mp4
+*.zip
