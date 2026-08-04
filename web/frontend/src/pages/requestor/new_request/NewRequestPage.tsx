@@ -405,6 +405,15 @@ export const NewRequestPage = () => {
     clearAllPresets: clearAllClinicPresets,
   } = usePresetStorage("clinic-names");
 
+  const handleShippingModeChange = useCallback(
+    (fileKeys: string[], mode: "normal" | "express") => {
+      for (const key of fileKeys) {
+        updateCaseInfos(key, { shippingMode: mode });
+      }
+    },
+    [updateCaseInfos],
+  );
+
   const handleCancelAll = async () => {
     const preservedDesignSoftware = String(
       designSoftwareValue || caseInfosMap?.__default__?.designSoftware || "",
@@ -814,7 +823,7 @@ export const NewRequestPage = () => {
     );
   };
 
-  const { weeklyBatchLabel, weeklyBatchDays, setWeeklyBatchDays } =
+  const { weeklyBatchDays, setWeeklyBatchDays } =
     useBulkShippingPolicy(user?.email);
 
   const [focusUnverifiedTick, setFocusUnverifiedTick] = useState(0);
@@ -1118,7 +1127,7 @@ export const NewRequestPage = () => {
     <PageFileDropZone
       onFiles={handleIncomingDroppedFiles}
       activeClassName="ring-2 ring-primary/30"
-      className="bg-gradient-subtle p-4 flex flex-col h-full min-h-0 overflow-hidden"
+      className="new-request-page bg-gradient-subtle p-4 flex flex-col h-full min-h-0 overflow-hidden"
     >
       <div className="max-w-6xl mx-auto w-full space-y-4 flex flex-col flex-1 min-h-0 h-full">
         <MultiActionDialog
@@ -1237,7 +1246,7 @@ export const NewRequestPage = () => {
 
 
         <Dialog open={fileReviewOpen} onOpenChange={setFileReviewOpen}>
-          <DialogContent className="sm:max-w-[980px]">
+          <DialogContent className="new-request-page sm:max-w-[980px]">
             <DialogHeader>
               <DialogTitle>업로드할 STL 선택</DialogTitle>
               <DialogDescription>
@@ -1350,7 +1359,7 @@ export const NewRequestPage = () => {
         >
           <DialogContent
             hideClose
-            className="sm:max-w-md"
+            className="new-request-page sm:max-w-md"
             onInteractOutside={(e) => {
               if (designSoftwareCanEdit) e.preventDefault();
             }}
@@ -1489,6 +1498,7 @@ export const NewRequestPage = () => {
               onCancelAll={handleCancelAll}
               designSoftwareLabel={String(designSoftwareValue || "").trim()}
               onOpenDesignSoftwareModal={handleOpenDesignSoftwareModal}
+              onShippingModeChange={handleShippingModeChange}
               onDuplicateDetected={({ file, duplicate }) => {
                 const fileWithDraftCaseId = file as File & {
                   _draftCaseInfoId?: string;
@@ -1535,16 +1545,8 @@ export const NewRequestPage = () => {
 
           <div className="flex flex-col justify-center min-h-0">
             <NewRequestShippingSection
-              caseInfos={caseInfos}
-              setCaseInfos={setCaseInfos}
-              highlight={highlightStep === "shipping"}
-              sectionHighlightClass={sectionHighlightClass}
-              weeklyBatchLabel={weeklyBatchLabel}
               weeklyBatchDays={weeklyBatchDays}
               onWeeklyBatchDaysChange={setWeeklyBatchDays}
-              onOpenShippingSettings={() =>
-                navigate("/dashboard/settings?tab=shipping")
-              }
               onSubmit={() => {
                 if (!files.length) {
                   toast({
@@ -1575,7 +1577,12 @@ export const NewRequestPage = () => {
                   return;
                 }
                 (async () => {
-                  if (!weeklyBatchDays.length) {
+                  const hasBulkShipping = files.some((file) => {
+                    const key = toNormalizedFileKey(file);
+                    const mode = caseInfosMap?.[key]?.shippingMode;
+                    return mode !== "express";
+                  });
+                  if (hasBulkShipping && !weeklyBatchDays.length) {
                     try {
                       if (typeof window !== "undefined") {
                         window.dispatchEvent(
@@ -1588,7 +1595,7 @@ export const NewRequestPage = () => {
                     toast({
                       title: "설정 필요",
                       description:
-                        "이 화면의 ‘묶음 배송’ 섹션에서 요일을 선택한 후 다시 시도하세요.",
+                        "묶음 배송 의뢰가 있어 발송 요일을 선택한 후 다시 시도하세요.",
                       variant: "destructive",
                       duration: 4500,
                     });

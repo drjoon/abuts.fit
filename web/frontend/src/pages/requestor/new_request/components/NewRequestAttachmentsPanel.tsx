@@ -7,6 +7,8 @@ import type { CaseInfos } from "../hooks/newRequestTypes";
 // - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
 // - web/frontend/src/features/settings/tabs/RequestTab.tsx
 
+type ShippingMode = "normal" | "express";
+
 type Props = {
   files: File[];
   selectedPreviewIndex: number | null;
@@ -15,7 +17,10 @@ type Props = {
   highlightUnverifiedArrows: boolean;
   caseInfosMap?: Record<string, CaseInfos>;
   toNormalizedFileKey: (file: File) => string;
-  getEstimatedShipForDiameter: ((diameter: number | null) => string | null) | null;
+  getEstimatedShipForDiameter: ((
+    diameter: number | null,
+    shippingMode?: "normal" | "express",
+  ) => string | null) | null;
   fileDiameters: Record<string, number>;
   handleRemoveFile: (index: number) => void;
   openDetailModal: (index: number) => void;
@@ -30,7 +35,12 @@ type Props = {
   onFilesSelected: (files: File[]) => void;
   designSoftwareLabel?: string;
   onOpenDesignSoftwareModal?: () => void;
+  onShippingModeChange?: (fileKeys: string[], mode: ShippingMode) => void;
 };
+
+function resolveShippingMode(info?: CaseInfos): ShippingMode {
+  return info?.shippingMode === "express" ? "express" : "normal";
+}
 
 export function NewRequestAttachmentsPanel({
   files,
@@ -54,8 +64,21 @@ export function NewRequestAttachmentsPanel({
   onFilesSelected,
   designSoftwareLabel,
   onOpenDesignSoftwareModal,
+  onShippingModeChange,
 }: Props) {
   const hasAnyAttachment = files.length > 0;
+
+  const applyMode = (fileKeys: string[], mode: ShippingMode) => {
+    if (!onShippingModeChange || fileKeys.length === 0) return;
+    onShippingModeChange(fileKeys, mode);
+  };
+
+  const modeButtonClass = (active: boolean) =>
+    `px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
+      active
+        ? "bg-primary text-white"
+        : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+    }`;
 
   return (
     <>
@@ -120,7 +143,7 @@ export function NewRequestAttachmentsPanel({
             여기를 클릭하거나 STL 파일을 드래그해 추가하세요.
           </p>
           <p className="text-xs md:text-sm text-muted-foreground">
-            파일명에서 AI로 치과/환자/치아번호를 자동 인식합니다.
+            AI가 파일명으로 치과/환자/치아번호를 자동 인식합니다.
           </p>
         </div>
 
@@ -131,6 +154,7 @@ export function NewRequestAttachmentsPanel({
             const isSelected = selectedPreviewIndex === index;
             const isVerified = !!fileVerificationStatus[fileKey];
             const isUnverifiedHighlight = highlightUnverifiedArrows && !isVerified;
+            const shippingMode = resolveShippingMode(caseInfosMap?.[fileKey]);
 
             const baseClasses = isVerified
               ? "border border-gray-200 bg-white text-gray-900"
@@ -151,7 +175,7 @@ export function NewRequestAttachmentsPanel({
             const fileInfo = caseInfosMap?.[fileKey];
             const diameter = computedDiameter ?? fileInfo?.maxDiameter ?? null;
             const estimatedShip = getEstimatedShipForDiameter
-              ? getEstimatedShipForDiameter(diameter)
+              ? getEstimatedShipForDiameter(diameter, shippingMode)
               : null;
             const designSoftware = String(fileInfo?.designSoftware || "").trim();
 
@@ -162,7 +186,7 @@ export function NewRequestAttachmentsPanel({
                 data-file-index={index}
                 className={`relative shrink-0 app-glass-card w-full px-4 py-3.5 rounded-xl cursor-pointer transition-all ${baseClasses} ${stateClasses} ${ringClasses} hover:border-gray-400`}
               >
-                <div className="relative z-10 flex flex-col gap-1.5">
+                <div className="relative z-10 flex flex-col gap-2">
                   <div className="flex items-center justify-between gap-3">
                     <div className="truncate flex-1">{filename}</div>
                     <div className="flex items-center gap-1">
@@ -184,25 +208,48 @@ export function NewRequestAttachmentsPanel({
                     </div>
                   </div>
 
-                  {(estimatedShip || designSoftware) && (
+                  {(estimatedShip || designSoftware || onShippingModeChange) && (
                     <div className="flex items-center justify-between gap-2">
                       {estimatedShip ? (
-                        <div className="flex items-center gap-1.5 text-xs text-slate-500">
-                          <Calendar className="w-3 h-3" />
-                          <span>예상 발송: {estimatedShip}</span>
+                        <div className="flex items-center gap-1.5 text-xs text-slate-500 min-w-0">
+                          <Calendar className="w-3 h-3 shrink-0" />
+                          <span className="truncate">예상 발송: {estimatedShip}</span>
                         </div>
                       ) : (
                         <div />
                       )}
 
-                      {designSoftware && (
-                        <Badge
-                          variant="secondary"
-                          className="text-[10px] font-medium px-1.5 py-0.5"
-                        >
-                          {designSoftware}
-                        </Badge>
-                      )}
+                      <div
+                        className="flex items-center gap-1.5 shrink-0"
+                        onClick={(event) => event.stopPropagation()}
+                      >
+                        {onShippingModeChange ? (
+                          <div className="flex gap-1">
+                            <button
+                              type="button"
+                              className={modeButtonClass(shippingMode === "normal")}
+                              onClick={() => applyMode([fileKey], "normal")}
+                            >
+                              묶음
+                            </button>
+                            <button
+                              type="button"
+                              className={modeButtonClass(shippingMode === "express")}
+                              onClick={() => applyMode([fileKey], "express")}
+                            >
+                              신속
+                            </button>
+                          </div>
+                        ) : null}
+                        {designSoftware ? (
+                          <Badge
+                            variant="secondary"
+                            className="text-[10px] font-medium px-1.5 py-0.5"
+                          >
+                            {designSoftware}
+                          </Badge>
+                        ) : null}
+                      </div>
                     </div>
                   )}
                 </div>

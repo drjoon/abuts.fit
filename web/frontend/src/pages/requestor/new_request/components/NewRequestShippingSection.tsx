@@ -5,8 +5,7 @@
 // - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
 // - web/backend/controllers/requests/creation.from-draft.controller.js
 import { Button } from "@/components/ui/button";
-import { Truck } from "lucide-react";
-import type { CaseInfos } from "../hooks/newRequestTypes";
+import { Package, Zap } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 import { apiFetch } from "@/shared/api/apiClient";
 import { useToast } from "@/shared/hooks/use-toast";
@@ -14,15 +13,9 @@ import { useAuthStore } from "@/store/useAuthStore";
 import { useNavigate } from "react-router-dom";
 
 type Props = {
-  caseInfos?: CaseInfos;
-  setCaseInfos: (updates: Partial<CaseInfos>) => void;
   disabled?: boolean;
-  highlight: boolean;
-  sectionHighlightClass: string;
-  weeklyBatchLabel: string;
   weeklyBatchDays: string[];
   onWeeklyBatchDaysChange?: (days: string[]) => void;
-  onOpenShippingSettings?: () => void;
   onSubmit: () => void;
 };
 
@@ -37,15 +30,9 @@ const WEEKDAYS: { key: WeekDay; label: string }[] = [
 ];
 
 export function NewRequestShippingSection({
-  caseInfos,
-  setCaseInfos,
   disabled,
-  highlight,
-  sectionHighlightClass,
-  weeklyBatchLabel,
   weeklyBatchDays,
   onWeeklyBatchDaysChange,
-  onOpenShippingSettings,
   onSubmit,
 }: Props) {
   const isDisabled = !!disabled;
@@ -58,7 +45,6 @@ export function NewRequestShippingSection({
   const weekdaysRef = useRef<HTMLDivElement | null>(null);
   const [pulse, setPulse] = useState(false);
 
-  // Listen custom event to highlight this section and scroll into view
   useEffect(() => {
     const handler = () => {
       setPulse(true);
@@ -163,27 +149,19 @@ export function NewRequestShippingSection({
     }
   };
 
-  const holidayRolloverNote = "공휴일은 쉬고 다음날 발송합니다";
   return (
     <div
       ref={containerRef}
-      className={`app-glass-card app-glass-card--lg relative flex flex-col justify-center gap-2 border-2 p-4 md:p-6 transition-all border-gray-300`}
+      className="app-glass-card app-glass-card--lg relative flex flex-col justify-center gap-4 border-2 p-4 md:p-6 transition-all border-gray-300"
     >
-      <div className="app-glass-card-content space-y-4">
-        <div className="flex flex-col items-center gap-3">
-          <div className="flex items-center gap-2">
-            <Truck className="w-5 h-5 text-primary" />
-            <div className="flex flex-col items-center">
-              <span className="text-lg font-medium text-foreground">
-                묶음 배송
-              </span>
-            </div>
+      <div className="app-glass-card-content flex flex-col items-center gap-4">
+        <div className="w-full rounded-lg border border-slate-200 bg-white/70 px-4 py-4 space-y-3 text-center">
+          <div className="flex items-center justify-center gap-2 text-base font-medium text-foreground">
+            <Package className="w-5 h-5 text-primary" />
+            묶음 배송
           </div>
-
-          <div className="flex gap-2">
-            <div className="text-sm text-slate-500 font-medium mr-1 flex items-center gap-2">
-              발송일:
-            </div>
+          <div className="flex flex-wrap items-center justify-center gap-2">
+            <div className="text-sm text-slate-500 font-medium">발송일</div>
             <div
               ref={weekdaysRef}
               className={`flex gap-1 rounded-md px-1 py-1 transition-all ${
@@ -198,7 +176,7 @@ export function NewRequestShippingSection({
                   type="button"
                   onClick={() => toggleDay(day.key)}
                   disabled={isDisabled || isUpdating}
-                  className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                  className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
                     selectedDays.includes(day.key)
                       ? "bg-primary text-white"
                       : "bg-slate-100 text-slate-600 hover:bg-slate-200"
@@ -213,18 +191,31 @@ export function NewRequestShippingSection({
               ))}
             </div>
           </div>
-          <div className="text-red-500"> 묶음 배송일 복수 선택 권장</div>
-          <div className="text-center text-sm text-slate-600 leading-relaxed">
+          <div className="text-sm text-red-500">묶음 배송일 복수 선택 권장</div>
+          <div className="text-sm text-slate-600 leading-relaxed">
             선택한 요일 중 가장 먼저 도래한 날 모두 발송합니다.
+            <br />
+            공휴일은 쉬고 다음날 발송합니다.
+          </div>
+        </div>
+
+        <div className="w-full rounded-lg border border-slate-200 bg-white/70 px-4 py-4 space-y-2 text-center">
+          <div className="flex items-center justify-center gap-2 text-base font-medium text-foreground">
+            <Zap className="w-5 h-5 text-amber-500" />
+            신속 배송
+          </div>
+          <div className="text-base text-foreground leading-relaxed">
+            오늘 낮 12시 이전 의뢰 시 오늘 오후 발송
+          </div>
+          <div className="text-sm text-slate-600 leading-relaxed">
+            의뢰크레딧 2,000원이 추가로 소비됩니다.
+            <br />
+            단, 생산이 지연되면 내일 발송되며 추가 의뢰크레딧은 취소됩니다.
           </div>
         </div>
       </div>
 
-      <div className="mt-2 text-center text-sm text-slate-600">
-        {holidayRolloverNote}
-      </div>
-
-      <div className="app-glass-card-content space-y-3 pt-4 border-gray-200">
+      <div className="app-glass-card-content pt-1">
         <div className="flex justify-center">
           <Button
             onClick={onSubmit}

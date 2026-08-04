@@ -200,7 +200,7 @@ export function NewRequestDetailDialog({
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="w-[calc(100vw-1rem)] sm:w-[1180px] lg:w-[980px] max-w-[calc(100vw-1rem)] max-h-[92vh] overflow-y-auto">
+        <DialogContent className="new-request-page w-[calc(100vw-1rem)] sm:w-[1180px] lg:w-[980px] max-w-[calc(100vw-1rem)] max-h-[92vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="text-lg font-semibold">STL 확인 및 정보 입력</DialogTitle>
             <DialogDescription className="sr-only">
@@ -397,7 +397,7 @@ export function NewRequestDetailDialog({
       </Dialog>
 
       <Dialog open={retentionGuideModalOpen} onOpenChange={setRetentionGuideModalOpen}>
-        <DialogContent className="w-[calc(100vw-1rem)] sm:w-[1120px] max-w-[calc(100vw-1rem)] max-h-[90vh] overflow-y-auto p-6">
+        <DialogContent className="new-request-page w-[calc(100vw-1rem)] sm:w-[1120px] max-w-[calc(100vw-1rem)] max-h-[90vh] overflow-y-auto p-6">
           <DialogHeader>
             <DialogTitle className="text-2xl font-bold text-slate-800">유지구/유지홈 안내</DialogTitle>
             <DialogDescription className="text-base leading-relaxed text-slate-700">
@@ -470,7 +470,7 @@ export function NewRequestDetailDialog({
           }
         }}
       >
-        <AlertDialogContent>
+        <AlertDialogContent className="new-request-page">
           <AlertDialogHeader>
             <AlertDialogTitle>신규 임플란트 의뢰로 접수할까요?</AlertDialogTitle>
             <AlertDialogDescription>{newSystemInfoCopy}</AlertDialogDescription>

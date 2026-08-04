@@ -403,7 +403,8 @@ export async function createRequestsFromDraft(req, res) {
         const workType = (ci?.workType || "abutment").trim();
         if (workType !== "abutment") return null;
 
-        const shippingMode = "normal"; // Only bulk shipping supported
+        const shippingMode =
+          ci?.shippingMode === "express" ? "express" : "normal";
         const requestedShipDate = ci?.requestedShipDate || undefined;
 
         const designSoftwareValue = normalizeDesignSoftware(ci?.designSoftware);

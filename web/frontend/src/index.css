@@ -245,3 +245,59 @@ All colors MUST be HSL.
 .hover-scrollbar:focus-within::-webkit-scrollbar-thumb:hover {
   background: hsl(var(--primary) / 0.6);
 }
+
+/* 신규 의뢰 페이지: 가독성 보조 (기본 대비 1.2배) */
+.new-request-page {
+  font-size: 120%;
+}
+
+.new-request-page .text-\[10px\] {
+  font-size: 12px !important;
+}
+
+.new-request-page .text-\[11px\] {
+  font-size: 13.2px !important;
+}
+
+.new-request-page .text-xs {
+  font-size: 0.9rem !important;
+}
+
+.new-request-page .text-sm {
+  font-size: 1.05rem !important;
+}
+
+.new-request-page .text-base {
+  font-size: 1.2rem !important;
+}
+
+.new-request-page .text-lg {
+  font-size: 1.35rem !important;
+}
+
+.new-request-page .text-xl {
+  font-size: 1.5rem !important;
+}
+
+.new-request-page .text-2xl {
+  font-size: 1.8rem !important;
+}
+
+@media (min-width: 768px) {
+  .new-request-page .md\:text-\[11px\] {
+    font-size: 13.2px !important;
+  }
+
+  .new-request-page .md\:text-sm {
+    font-size: 1.05rem !important;
+  }
+
+  .new-request-page .md\:text-base {
+    font-size: 1.2rem !important;
+  }
+
+  .new-request-page .md\:text-lg {
+    font-size: 1.35rem !important;
+  }
+}
+

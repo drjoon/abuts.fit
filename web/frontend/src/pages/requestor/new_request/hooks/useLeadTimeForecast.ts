@@ -145,16 +145,52 @@ export function useLeadTimeForecast({
   );
 
   const calculateEstimatedShipDate = useCallback(() => {
-    if (!leadTimes) return null;
-
     const cache = new Map<string, string>();
 
-    return (diameter: number | null) => {
-      if (!Number.isFinite(diameter) || diameter == null) return null;
+    const getKstHour = (dateInput: Date) => {
+      const parts = new Intl.DateTimeFormat("en-US", {
+        timeZone: "Asia/Seoul",
+        hour: "numeric",
+        hour12: false,
+      }).formatToParts(dateInput);
+      const hour = Number(parts.find((p) => p.type === "hour")?.value);
+      return Number.isFinite(hour) ? hour : dateInput.getHours();
+    };
 
+    const nextBusinessDayInclusive = (startYmd: string) => {
+      const day = getKstWeekday(new Date(`${startYmd}T12:00:00+09:00`));
+      if (day !== 0 && day !== 6) return startYmd;
+      return addBusinessDaysFromKstYmd(startYmd, 1);
+    };
+
+    return (
+      diameter: number | null,
+      shippingMode: "normal" | "express" = "normal",
+    ) => {
       const requestedAt = new Date();
       const requestedYmd = toKstYmd(requestedAt);
       if (!requestedYmd) return null;
+
+      if (shippingMode === "express") {
+        const cacheKey = `express:${requestedYmd}:${getKstHour(requestedAt)}`;
+        if (cache.has(cacheKey)) {
+          return cache.get(cacheKey) || null;
+        }
+
+        const beforeNoon = getKstHour(requestedAt) < 12;
+        const shipYmd = beforeNoon
+          ? nextBusinessDayInclusive(requestedYmd)
+          : addBusinessDaysFromKstYmd(requestedYmd, 1);
+        const formatted = formatKstMonthDayWithWeekday(shipYmd);
+        const leadLabel =
+          shipYmd === requestedYmd ? "당일 발송" : "1영업일 후";
+        const result = `${formatted} • ${leadLabel}`;
+        cache.set(cacheKey, result);
+        return result;
+      }
+
+      if (!leadTimes) return null;
+      if (!Number.isFinite(diameter) || diameter == null) return null;
 
       const d = Number(diameter);
       let diameterKey: "d6" | "d8" | "d10" | "d12" = "d8";
@@ -167,7 +203,7 @@ export function useLeadTimeForecast({
       const leadNumber = Number(rawLead);
       const leadDays = Number.isFinite(leadNumber) ? Math.max(1, leadNumber) : 1;
       const resolvedLeadDays = resolveLeadDaysForPickup(leadDays);
-      const cacheKey = `${requestedYmd}:${diameterKey}:${resolvedLeadDays}`;
+      const cacheKey = `normal:${requestedYmd}:${diameterKey}:${resolvedLeadDays}:${(weeklyBatchDays || []).join(",")}`;
 
       if (cache.has(cacheKey)) {
         return cache.get(cacheKey) || null;
@@ -184,9 +220,11 @@ export function useLeadTimeForecast({
   }, [
     addBusinessDaysFromKstYmd,
     formatKstMonthDayWithWeekday,
+    getKstWeekday,
     leadTimes,
     resolveLeadDaysForPickup,
     resolveWeeklyPickupYmd,
+    weeklyBatchDays,
   ]);
 
   const getEstimatedShipForDiameter = useMemo(

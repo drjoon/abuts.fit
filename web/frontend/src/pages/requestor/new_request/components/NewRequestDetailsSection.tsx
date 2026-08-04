@@ -78,6 +78,10 @@ type Props = {
   onCancelAll: () => void;
   designSoftwareLabel?: string;
   onOpenDesignSoftwareModal?: () => void;
+  onShippingModeChange?: (
+    fileKeys: string[],
+    mode: "normal" | "express",
+  ) => void;
 };
 
 export function NewRequestDetailsSection({
@@ -130,6 +134,7 @@ export function NewRequestDetailsSection({
   onCancelAll,
   designSoftwareLabel,
   onOpenDesignSoftwareModal,
+  onShippingModeChange,
 }: Props) {
   const { token } = useAuthStore();
   const listContainerRef = useRef<HTMLDivElement | null>(null);
@@ -439,6 +444,7 @@ export function NewRequestDetailsSection({
             onKeyboardNavigation={handleKeyboardNavigation}
             listContainerRef={listContainerRef}
             uploadInputRef={uploadInputRef}
+            onShippingModeChange={onShippingModeChange}
           />
         </div>
       </div>
