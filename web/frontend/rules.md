@@ -381,6 +381,8 @@ Notes:
 - practice 파일전송 임시저장(다른 PC 이어쓰기) 정책:
   - 임시저장 SSOT API: `GET/POST/DELETE /api/practice/transfers/draft`
   - 프론트는 로컬스토리지 단독 보관이 아니라 서버 draft를 우선 사용합니다.
+  - 서버 draft 로드 시 파일뿐 아니라 기공소/메모/치아보철 메타도 폼에 복원합니다.
+  - 동일 치과 businessAnchor 구성원의 최신 draft를 공유해 동료/다른 PC에서 이어쓸 수 있습니다.
   - 임시저장 파일은 `File`(temp upload) 참조를 기준으로 유지하며, 전송 성공 시 draft를 삭제합니다.
   - 관련 파일:
     - `src/pages/practice/PracticeFileTransferPage.tsx`
