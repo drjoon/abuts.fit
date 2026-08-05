@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch } from "@/shared/api/apiClient";
 import { useToast } from "@/shared/hooks/use-toast";
 import {
@@ -9,6 +9,8 @@ import {
 // related files:
 // - web/frontend/src/pages/practice/PracticeDropzonePage.tsx
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
+// - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
+// - web/frontend/rules.md (practice 최근 전송 기공소 SSOT)
 export const PRACTICE_ACCEPTED_HINT = "STL, PLY, OBJ 업로드 가능";
 
 export type SearchBusinessResult = {
@@ -113,6 +115,39 @@ const writeRecentLabs = (rows: SearchBusinessResult[]) => {
   } catch {
     // ignore
   }
+};
+
+const normalizeRecentLab = (lab: SearchBusinessResult | null | undefined): SearchBusinessResult | null => {
+  if (!lab || !String(lab.name || "").trim()) return null;
+  const name = String(lab.name || "").trim();
+  return {
+    _id: String(lab._id || `recent:${name}`).trim(),
+    name,
+    representativeName: String(lab.representativeName || "").trim() || undefined,
+    businessNumber: String(lab.businessNumber || "").trim() || undefined,
+    address: String(lab.address || "").trim() || undefined,
+    businessType: "requestor",
+  };
+};
+
+const recentLabDedupeKey = (lab: SearchBusinessResult) => {
+  const id = String(lab._id || "").trim();
+  if (id && !id.startsWith("recent:")) return `id:${id}`;
+  return `name:${lab.name}|bn:${String(lab.businessNumber || "").trim()}`;
+};
+
+const mergeRecentLabLists = (
+  primary: SearchBusinessResult[],
+  secondary: SearchBusinessResult[],
+): SearchBusinessResult[] => {
+  const byKey = new Map<string, SearchBusinessResult>();
+  for (const raw of [...primary, ...secondary]) {
+    const lab = normalizeRecentLab(raw);
+    if (!lab) continue;
+    const key = recentLabDedupeKey(lab);
+    if (!byKey.has(key)) byKey.set(key, lab);
+  }
+  return [...byKey.values()].slice(0, PRACTICE_RECENT_LABS_MAX);
 };
 
 export const getBusinessLabel = (b: {
@@ -364,31 +399,36 @@ export const usePracticeTransferStep1 = (options?: Options) => {
     setFiles([]);
   };
 
-  const rememberLab = (lab: SearchBusinessResult | null) => {
-    if (!lab || !String(lab.name || "").trim()) return;
-
-    const normalizedLab: SearchBusinessResult = {
-      _id: String(lab._id || `recent:${lab.name}`).trim(),
-      name: String(lab.name || "").trim(),
-      representativeName: String(lab.representativeName || "").trim() || undefined,
-      businessNumber: String(lab.businessNumber || "").trim() || undefined,
-      address: String(lab.address || "").trim() || undefined,
-      businessType: "requestor",
-    };
+  const rememberLab = useCallback((lab: SearchBusinessResult | null) => {
+    const normalizedLab = normalizeRecentLab(lab);
+    if (!normalizedLab) return;
 
     setRecentLabs((prev) => {
-      const deduped = prev.filter((row) => {
-        const sameId = row._id && normalizedLab._id && row._id === normalizedLab._id;
-        const sameNameAndBn =
-          row.name === normalizedLab.name &&
-          String(row.businessNumber || "") === String(normalizedLab.businessNumber || "");
-        return !(sameId || sameNameAndBn);
-      });
-      const next = [normalizedLab, ...deduped].slice(0, PRACTICE_RECENT_LABS_MAX);
+      const next = mergeRecentLabLists([normalizedLab], prev);
       writeRecentLabs(next);
       return next;
     });
-  };
+  }, []);
+
+  /** 서버 전송 내역(최신순)을 최근 기공소 SSOT로 merge. localStorage 캐시도 갱신. */
+  const syncRecentLabsFromTransfers = useCallback(
+    (
+      labs: Array<Pick<SearchBusinessResult, "_id" | "name"> & Partial<SearchBusinessResult>>,
+    ) => {
+      const incoming = labs
+        .map((lab) => normalizeRecentLab(lab as SearchBusinessResult))
+        .filter((lab): lab is SearchBusinessResult => Boolean(lab));
+      if (incoming.length === 0) return;
+
+      setRecentLabs((prev) => {
+        const next = mergeRecentLabLists(incoming, prev);
+        writeRecentLabs(next);
+        return next;
+      });
+      setRecentLabsInitialized(true);
+    },
+    [],
+  );
 
   useEffect(() => {
     if (didBootstrapRecentLabs.current) return;
@@ -472,6 +512,7 @@ export const usePracticeTransferStep1 = (options?: Options) => {
     recentLabs,
     recentLabsInitialized,
     rememberLab,
+    syncRecentLabsFromTransfers,
     handleIncomingFiles,
     removeFile,
     clearAllFiles,

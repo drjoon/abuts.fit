@@ -53,6 +53,7 @@ Notes:
 - practice
   - `src/pages/practice/PracticeDropzonePage.tsx`
   - `src/pages/practice/PracticeFileTransferPage.tsx`
+  - `src/pages/practice/hooks/usePracticeTransferStep1.ts` (최근 기공소 local+서버 merge)
   - `src/shared/components/practice/PracticeTransferFilePane.tsx`
   - `src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx`
   - `src/shared/practice/usePracticeToothWorkEditor.ts`
@@ -393,6 +394,12 @@ Notes:
   - 관련 파일:
     - `src/pages/practice/PracticeFileTransferPage.tsx`
     - `src/shared/hooks/useS3TempUpload.ts`
+
+- practice 최근 전송 기공소(기공소 선택 드롭다운) SSOT:
+  - 서버: `GET /api/practice/transfers/my` 응답의 `caseInfos.practiceRouting.targetLabAnchorId/targetLabName`(최신순)이 권위 소스.
+  - 로컬 캐시: `localStorage.practice_recent_labs_v2` (최대 8개). 전송 성공 시 `rememberLab`, 목록 로드 시 `syncRecentLabsFromTransfers`로 merge.
+  - 「새로 작성」은 의뢰 폼/임시저장 캐시만 비우고, 최근 기공소 목록은 유지한다. 가장 최근 기공소를 기본 선택한다.
+  - 구현: `src/pages/practice/hooks/usePracticeTransferStep1.ts`, `PracticeFileTransferPage.tsx`
 
 - practice 전송 취소 API 계약(SSOT):
   - endpoint: `POST /api/practice/transfers/cancel-batch`

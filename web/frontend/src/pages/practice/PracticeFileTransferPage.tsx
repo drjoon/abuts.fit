@@ -92,6 +92,7 @@ import {
   PRACTICE_ACCEPTED_HINT,
   getBusinessLabel,
   usePracticeTransferStep1,
+  type SearchBusinessResult,
 } from "@/pages/practice/hooks/usePracticeTransferStep1";
 import { useChatRooms, type ChatRoom } from "@/shared/hooks/useChatRooms";
 import { useChatMessages } from "@/shared/hooks/useChatMessages";
@@ -143,6 +144,7 @@ type RecentRequestItem = {
   patientKey: string;
   toothNumbers: string[];
   targetLab: string;
+  targetLabAnchorId: string;
   status: string;
   createdAtTs: number;
   transferId: string;
@@ -869,6 +871,7 @@ export const PracticeFileTransferPage = () => {
     removeFile,
     clearAllFiles,
     rememberLab,
+    syncRecentLabsFromTransfers,
   } = usePracticeTransferStep1();
   pendingLocalFilesRef.current = files;
   draftFilesRef.current = draftFiles;
@@ -1676,7 +1679,18 @@ export const PracticeFileTransferPage = () => {
               : {};
 
           const message = String(newSystemRequest.message || r.description || "").trim();
-          const targetLab = extractLabNameFromMessage(message);
+          const practiceRouting =
+            ci.practiceRouting && typeof ci.practiceRouting === "object"
+              ? (ci.practiceRouting as Record<string, unknown>)
+              : {};
+          const targetLabAnchorId = String(
+            practiceRouting.targetLabAnchorId || r.targetLabAnchorId || "",
+          ).trim();
+          const targetLabFromRouting = String(
+            practiceRouting.targetLabName || r.targetLabName || "",
+          ).trim();
+          const targetLab =
+            targetLabFromRouting || extractLabNameFromMessage(message) || "-";
           const toothRaw = String(ci.tooth || "").trim();
           const createdAtRaw = String(r.createdAt || "");
           const strippedTransferMemo = stripPracticeTransferMessageEnvelope(message);
@@ -1701,7 +1715,8 @@ export const PracticeFileTransferPage = () => {
             patientName,
             patientKey: normalizePatientNameKey(patientName),
             toothNumbers: toothRaw ? [toothRaw] : [],
-            targetLab: targetLab || "-",
+            targetLab,
+            targetLabAnchorId,
             status: toStatusLabel(r.manufacturerStage),
             createdAtTs: new Date(createdAtRaw).getTime(),
             transferId: extractTransferIdFromMessage(message),
@@ -1717,6 +1732,26 @@ export const PracticeFileTransferPage = () => {
         .sort((a, b) => (b.createdAtTs || 0) - (a.createdAtTs || 0));
 
       setRecentRequests(mapped);
+
+      const labsFromTransfers: SearchBusinessResult[] = [];
+      const seenLabKeys = new Set<string>();
+      for (const row of mapped) {
+        const labName = String(row.targetLab || "").trim();
+        if (!labName || labName === "-") continue;
+        const labId = String(row.targetLabAnchorId || "").trim();
+        const key = labId || `name:${labName}`;
+        if (seenLabKeys.has(key)) continue;
+        seenLabKeys.add(key);
+        labsFromTransfers.push({
+          _id: labId || `recent:${labName}`,
+          name: labName,
+          businessType: "requestor",
+        });
+      }
+      if (labsFromTransfers.length > 0) {
+        syncRecentLabsFromTransfers(labsFromTransfers);
+      }
+
       if (silent) {
         setRecentRequestsError("");
       }
@@ -1731,7 +1766,7 @@ export const PracticeFileTransferPage = () => {
       }
     }
   },
-  [authToken],
+  [authToken, syncRecentLabsFromTransfers],
 );
 
   useEffect(() => {
@@ -4072,7 +4107,8 @@ export const PracticeFileTransferPage = () => {
 
     setLabOpen(false);
     setLabSearch("");
-    setSelectedLab(null);
+    // 최근 기공소(localStorage + 서버 전송내역)는 유지. 가장 최근 기공소를 기본 선택.
+    setSelectedLab(recentLabsRef.current[0] ?? null);
     setPatientName("");
     setRequestMemo("");
     setOrderDate(todayDate);
@@ -4226,6 +4262,59 @@ export const PracticeFileTransferPage = () => {
     }
   };
 
+  const inviteLinkCard = (
+    <Card className="h-fit">
+      <CardHeader className="pb-3">
+        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+          <CardTitle className="text-lg">기공소 초대 링크</CardTitle>
+          <CardDescription className="text-sm">
+            치과에서 기공의뢰서를 쉽게 보낼 수 있게 링크를 전달하세요!
+          </CardDescription>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <Button
+            type="button"
+            size="sm"
+            onClick={() => void handleCopyPracticeDropzoneLink()}
+            className="h-8 gap-1.5 bg-blue-600 text-white hover:bg-blue-700"
+          >
+            {inviteLinkCopied ? (
+              <>
+                <Copy className="h-4 w-4" />
+                복사됨
+              </>
+            ) : (
+              <>
+                <Link2 className="h-4 w-4" />
+                링크 복사
+              </>
+            )}
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            onClick={() => void handleCopyPracticeInviteMessage()}
+            className="h-8 gap-1.5 bg-blue-600 text-white hover:bg-blue-700"
+          >
+            {inviteMessageCopied ? (
+              <>
+                <Copy className="h-4 w-4" />
+                복사됨
+              </>
+            ) : (
+              <>
+                <Send className="h-4 w-4" />
+                안내문구 복사
+              </>
+            )}
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+
   return (
     <PageFileDropZone
       onFiles={handleIncomingFiles}
@@ -4233,22 +4322,25 @@ export const PracticeFileTransferPage = () => {
       className="h-full min-h-0"
     >
       <div className="h-full min-h-0 p-3 space-y-3">
-        {promoNoticeVisible ? (
-          <Alert className="border-blue-200 bg-blue-50 text-blue-900">
-            <button
-              type="button"
-              onClick={() => void handleDismissPromoNotice()}
-              disabled={promoNoticeSaving}
-              className="absolute right-3 top-3 rounded p-1 text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-60"
-              aria-label="안내 닫기"
-            >
-              <X className="h-4 w-4" />
-            </button>
-            <AlertTitle className="text-[1.3125rem] leading-snug">{PRACTICE_TRANSFER_PROMO_TITLE}</AlertTitle>
-            <AlertDescription className="text-[1.3125rem] leading-snug">{PRACTICE_TRANSFER_PROMO_DESC}</AlertDescription>
-          </Alert>
-        ) : null}
         <div className="grid grid-cols-1 gap-3 xl:grid-cols-10">
+          {promoNoticeVisible ? (
+            <>
+              <Alert className="flex flex-col items-center justify-center border-blue-200 bg-blue-50 text-blue-900 text-center xl:col-span-5">
+                <button
+                  type="button"
+                  onClick={() => void handleDismissPromoNotice()}
+                  disabled={promoNoticeSaving}
+                  className="absolute right-3 top-3 rounded p-1 text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-60"
+                  aria-label="안내 닫기"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+                <AlertTitle className="text-[1.3125rem] leading-snug">{PRACTICE_TRANSFER_PROMO_TITLE}</AlertTitle>
+                <AlertDescription className="text-[1.3125rem] leading-snug">{PRACTICE_TRANSFER_PROMO_DESC}</AlertDescription>
+              </Alert>
+              <div className="xl:col-span-5">{inviteLinkCard}</div>
+            </>
+          ) : null}
           <Card className="xl:col-span-7">
             <CardHeader>
               <div className="flex items-center justify-between gap-2">
@@ -4412,62 +4504,7 @@ export const PracticeFileTransferPage = () => {
           </Card>
 
           <div className="space-y-3 xl:col-span-3">
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">기공소 초대 링크</CardTitle>
-                <CardDescription>
-                  기공소가 어벗츠에 회원가입하면 치과에서 파일 및 의뢰서를 더 쉽게 보낼 수 있습니다.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="rounded-lg border bg-muted/30 p-3 space-y-3">
-                  <div className="rounded-md border bg-background p-2.5">
-                    <p className="text-xs font-mono break-all text-muted-foreground">
-                      {requestorSignupLink}
-                    </p>
-                  </div>
-
-                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                    <Button
-                      type="button"
-                      size="sm"
-                      onClick={() => void handleCopyPracticeDropzoneLink()}
-                      className="h-8 gap-1.5 bg-blue-600 text-white hover:bg-blue-700"
-                    >
-                      {inviteLinkCopied ? (
-                        <>
-                          <Copy className="h-4 w-4" />
-                          복사됨
-                        </>
-                      ) : (
-                        <>
-                          <Link2 className="h-4 w-4" />
-                          링크 복사
-                        </>
-                      )}
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      onClick={() => void handleCopyPracticeInviteMessage()}
-                      className="h-8 gap-1.5 bg-blue-600 text-white hover:bg-blue-700"
-                    >
-                      {inviteMessageCopied ? (
-                        <>
-                          <Copy className="h-4 w-4" />
-                          복사됨
-                        </>
-                      ) : (
-                        <>
-                          <Send className="h-4 w-4" />
-                          안내문구 복사
-                        </>
-                      )}
-                    </Button>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+            {!promoNoticeVisible ? inviteLinkCard : null}
 
             <Card>
               <CardHeader>
