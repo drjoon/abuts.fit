@@ -58,7 +58,7 @@ export const SignupWizardAccountStep = ({
     <form className="space-y-5" onSubmit={handleSubmit}>
       <div className="space-y-2">
         <Label htmlFor="name" className="text-sm font-medium text-white/80">
-          가입자 이름
+          사용자 이름 (직원명)
           {errors?.name && (
             <span className="ml-2 text-xs font-medium text-rose-200">
               {errors.name}
