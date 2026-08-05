@@ -57,6 +57,7 @@ const fileFilter = (req, file, cb) => {
     ".png",
     ".gif",
     ".bmp",
+    ".webp",
     ".svg",
     ".pdf",
     ".doc",
@@ -67,6 +68,7 @@ const fileFilter = (req, file, cb) => {
     ".pptx",
     ".txt",
     ".stl",
+    ".ply",
     ".obj",
     ".fbx",
     ".3ds",
@@ -112,7 +114,7 @@ export const getPresignedGetUrl = async (key, expiresIn = 3600) => {
 
 const getFileType = (filename) => {
   const ext = extname(filename).toLowerCase();
-  const imageTypes = [".jpg", ".jpeg", ".png", ".gif", ".bmp", ".svg"];
+  const imageTypes = [".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".svg"];
   const documentTypes = [
     ".pdf",
     ".doc",
@@ -123,7 +125,7 @@ const getFileType = (filename) => {
     ".pptx",
     ".txt",
   ];
-  const modelTypes = [".stl", ".obj", ".fbx", ".3ds", ".blend"];
+  const modelTypes = [".stl", ".ply", ".obj", ".fbx", ".3ds", ".blend"];
   if (imageTypes.includes(ext)) return "image";
   if (documentTypes.includes(ext)) return "document";
   if (modelTypes.includes(ext)) return "3d_model";

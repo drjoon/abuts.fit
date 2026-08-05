@@ -11,7 +11,7 @@ import {
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
 // - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
 // - web/frontend/rules.md (practice 최근 전송 기공소 SSOT)
-export const PRACTICE_ACCEPTED_HINT = "STL, PLY, OBJ 업로드 가능";
+export const PRACTICE_ACCEPTED_HINT = "3D 모델 및 그림 파일 업로드 가능";
 
 export type SearchBusinessResult = {
   _id: string;
@@ -198,6 +198,17 @@ export const usePracticeTransferStep1 = (options?: Options) => {
     return lower.slice(dot);
   };
 
+  const isPracticeModelExt = (ext: string) =>
+    ext === ".stl" || ext === ".ply" || ext === ".obj";
+
+  const isPracticeImageExt = (ext: string) =>
+    ext === ".png" ||
+    ext === ".jpg" ||
+    ext === ".jpeg" ||
+    ext === ".webp" ||
+    ext === ".bmp" ||
+    ext === ".gif";
+
   const classifyIncomingFiles = (selectedFiles: File[]): ClassifiedUploadBatch => {
     const modelFiles: File[] = [];
     const rejectedFiles: { name: string; reason: string }[] = [];
@@ -214,14 +225,14 @@ export const usePracticeTransferStep1 = (options?: Options) => {
         return;
       }
 
-      if (ext === ".stl" || ext === ".ply" || ext === ".obj") {
+      if (isPracticeModelExt(ext) || isPracticeImageExt(ext)) {
         modelFiles.push(file);
         return;
       }
 
       rejectedFiles.push({
         name: file.name,
-        reason: "STL, PLY, OBJ 파일만 업로드할 수 있어요.",
+        reason: "3D 모델(STL, PLY, OBJ) 및 그림 파일만 업로드할 수 있어요.",
       });
     });
 
@@ -307,7 +318,7 @@ export const usePracticeTransferStep1 = (options?: Options) => {
     if (batch.modelFiles.length === 0 && !options?.suppressEmptyUploadToast) {
       toast({
         title: "업로드할 파일이 없습니다",
-        description: "선택된 파일 중 업로드 가능한 STL, PLY, OBJ가 없었습니다.",
+        description: "선택된 파일 중 업로드 가능한 3D 모델/그림 파일이 없었습니다.",
         variant: "destructive",
         duration: 2800,
       });

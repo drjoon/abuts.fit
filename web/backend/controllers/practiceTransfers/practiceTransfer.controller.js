@@ -28,6 +28,18 @@ import {
 // - web/backend/services/requestDashboardCache.service.js
 const PRACTICE_TAGS = ["practice_dropzone", "practice_file_transfer"];
 const PRACTICE_ALLOWED_MODEL_EXTENSIONS = new Set([".stl", ".ply", ".obj"]);
+const PRACTICE_ALLOWED_IMAGE_EXTENSIONS = new Set([
+  ".png",
+  ".jpg",
+  ".jpeg",
+  ".webp",
+  ".bmp",
+  ".gif",
+]);
+const PRACTICE_ALLOWED_EXTENSIONS = new Set([
+  ...PRACTICE_ALLOWED_MODEL_EXTENSIONS,
+  ...PRACTICE_ALLOWED_IMAGE_EXTENSIONS,
+]);
 
 const unreadCountCacheKey = (scope) => {
   if (!scope || typeof scope !== "object") return "practice-unread:admin";
@@ -48,8 +60,8 @@ const getLowerExt = (filename) => {
   return raw.slice(idx);
 };
 
-const isAllowedPracticeModelFile = (filename) =>
-  PRACTICE_ALLOWED_MODEL_EXTENSIONS.has(getLowerExt(filename));
+const isAllowedPracticeFile = (filename) =>
+  PRACTICE_ALLOWED_EXTENSIONS.has(getLowerExt(filename));
 
 const extractTransferIdFromMessage = (message) => {
   const raw = String(message || "").trim();
@@ -1007,7 +1019,7 @@ export async function createPracticeTransfer(req, res) {
         const originalName = String(file?.originalName || file?.name || "").trim();
         const s3Key = String(file?.s3Key || file?.key || "").trim();
         if (!originalName || !s3Key) return null;
-        if (!isAllowedPracticeModelFile(originalName)) return null;
+        if (!isAllowedPracticeFile(originalName)) return null;
 
         return {
           patientName: String(ci?.patientName || "").trim(),
@@ -1025,7 +1037,7 @@ export async function createPracticeTransfer(req, res) {
     if (files.length === 0) {
       return res.status(400).json({
         success: false,
-        message: "저장할 STL, PLY, OBJ 파일이 없습니다.",
+        message: "저장할 3D 모델 또는 그림 파일이 없습니다.",
       });
     }
 

@@ -70,7 +70,7 @@ export const PracticeTransferFilePane = ({
           <input
             id={fileInputId}
             type="file"
-            accept=".stl,.ply,.obj"
+            accept=".stl,.ply,.obj,.png,.jpg,.jpeg,.webp,.bmp,.gif"
             className="hidden"
             multiple
             onChange={(e) => {

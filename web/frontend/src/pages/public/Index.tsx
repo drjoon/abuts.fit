@@ -87,7 +87,7 @@ const Index = () => {
     {
       step: "01",
       title: "의뢰 등록",
-      body: "STL 파일 업로드 및 의뢰 메타 입력",
+      body: "3D 모델·그림 파일 업로드 및 의뢰 메타 입력",
     },
     { step: "02", title: "제조 진행", body: "제조 스테이지별 승인·피드백" },
     { step: "03", title: "배송 & 추적", body: "가상 우편함·실시간 배송 추적" },
@@ -168,7 +168,7 @@ const Index = () => {
                 id="public-practice-quick-drop-input"
                 type="file"
                 multiple
-                accept=".stl,.ply,.obj"
+                accept=".stl,.ply,.obj,.png,.jpg,.jpeg,.webp,.bmp,.gif"
                 className="hidden"
                 onChange={(e) => {
                   const selected = Array.from(e.currentTarget.files || []);
@@ -204,7 +204,7 @@ const Index = () => {
                 <div className="mx-auto mb-2 w-fit rounded-full bg-blue-100 p-3 text-blue-700">
                   <UploadCloud className="h-5 w-5" />
                 </div>
-                <p className="text-base font-semibold">여기에 STL, PLY, OBJ 파일을 드롭하세요</p>
+                <p className="text-base font-semibold">여기에 3D 모델 및 그림 파일을 드롭하세요</p>
                 <p className="mt-1 text-sm text-slate-600">
                   비회원도 드롭 가능
                 </p>
