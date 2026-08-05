@@ -31,6 +31,7 @@ export interface User {
   onboardingWizardCompleted?: boolean;
   practiceProfile?: {
     clinicName?: string;
+    directorName?: string;
     staffName?: string;
     phone?: string;
     clinicPhone?: string;
@@ -77,6 +78,10 @@ const normalizeApiUser = (u: unknown): User | null => {
         ? {
             clinicName: String(
               (row.practiceProfile as Record<string, unknown>)?.clinicName || "",
+            ),
+            directorName: String(
+              (row.practiceProfile as Record<string, unknown>)?.directorName ||
+                "",
             ),
             staffName: String(
               (row.practiceProfile as Record<string, unknown>)?.staffName || "",
@@ -323,6 +328,10 @@ export const useAuthStore = create<AuthState>((set, get) => {
               ? {
                   clinicName: String(
                     (u.practiceProfile as Record<string, unknown>)?.clinicName || "",
+                  ),
+                  directorName: String(
+                    (u.practiceProfile as Record<string, unknown>)?.directorName ||
+                      "",
                   ),
                   staffName: String(
                     (u.practiceProfile as Record<string, unknown>)?.staffName || "",

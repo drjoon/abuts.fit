@@ -357,7 +357,7 @@ Notes:
   - 가입 API는 `POST /api/auth/register` (`role: "practice"`)이며, 소개코드(선택) → 계정 정보 → 이메일 인증(소셜 제외) 순서로 진행합니다.
   - 로그인 페이지(`/login`)도 공유합니다. 신규 치과는 이메일 로그인, 레거시 치과명 계정은 `POST /api/auth/practice/login`으로 계속 지원합니다.
   - 가입 후 `/dashboard/wizard` 온보딩(프로필 → 휴대전화 → 역할 → 사업자)을 강제합니다.
-  - 사업자등록증 업로드는 practice owner 경로에서 옵션입니다. 업로드 없이 온보딩을 마칠 수 있으며, 이후 설정(`PracticeSettingsPage` 사업자 탭)에서 등록 가능합니다.
+  - practice owner 온보딩 사업자 단계는 사업자등록증 업로드를 받지 않습니다. 대신 치과 필수 정보(`clinicName`, `directorName`, `staffName`, `clinicPhone`, `phone`, `address`, `zipCode`)를 입력받아 `PUT /api/users/profile`의 `practiceProfile`로 저장합니다.
   - 공개 드롭존(`PracticeDropzonePage`)은 전송 흐름을 끊지 않도록 Step 2에 임베디드 로그인/가입/비밀번호 변경 UI를 유지합니다.
   - 드롭존 가입 API는 `POST /api/auth/practice/register`이며, 필수값은 `email`, `clinicName`, `staffName`, `password`, `clinicPhone`(치과 전화), `phone`(담당자 휴대폰), `address`, `zipCode`입니다.
   - 드롭존 가입 전 이메일·담당자 휴대폰 인증이 필요합니다.

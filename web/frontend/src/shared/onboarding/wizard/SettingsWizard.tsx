@@ -320,10 +320,7 @@ export const SettingsWizard = ({
     }
   }, [currentStep, selectedRole, onWizardComplete, STEP_ORDER]);
 
-  const canSkipBusinessRegistration =
-    businessType === "practice" && selectedRole === "owner";
-  const canProceedBusinessStep =
-    validationState.passed || canSkipBusinessRegistration;
+  const canProceedBusinessStep = validationState.passed;
 
   const handlePrev = useCallback(() => {
     if (!currentStep) return;
@@ -380,13 +377,16 @@ export const SettingsWizard = ({
       case "phone":
         return "휴대전화 인증";
       case "role":
-        return "역할 선택";
+        return "등록 방식 선택";
       case "business":
+        if (businessType === "practice" && selectedRole === "owner") {
+          return "치과 정보";
+        }
         return selectedRole === "owner" ? "사업자 등록" : "사업자 가입";
       default:
         return "";
     }
-  }, [currentStep, selectedRole]);
+  }, [businessType, currentStep, selectedRole]);
 
   const cardMaxWidth = useMemo(() => {
     switch (currentStep) {
@@ -498,13 +498,7 @@ export const SettingsWizard = ({
                       }
                       className="w-20 h-11"
                     >
-                      {nextLoading
-                        ? "저장 중..."
-                        : currentStep === "business" &&
-                            canSkipBusinessRegistration &&
-                            !validationState.passed
-                          ? "나중에"
-                          : "다음"}
+                      {nextLoading ? "저장 중..." : "다음"}
                     </Button>
                   )}
                 </div>

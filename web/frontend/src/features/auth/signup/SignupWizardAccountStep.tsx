@@ -2,7 +2,8 @@
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
-import React, { useEffect, useMemo, useRef } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { Eye, EyeOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -11,10 +12,9 @@ interface SignupWizardAccountStepProps {
   formData: {
     name: string;
     password: string;
-    confirmPassword: string;
   };
-  errors?: Partial<Record<"name" | "password" | "confirmPassword", string>>;
-  focusField?: "name" | "password" | "confirmPassword" | null;
+  errors?: Partial<Record<"name" | "password", string>>;
+  focusField?: "name" | "password" | null;
   isLoading: boolean;
   onFormChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onPrevious: () => void;
@@ -32,18 +32,14 @@ export const SignupWizardAccountStep = ({
 }: SignupWizardAccountStepProps) => {
   const nameRef = useRef<HTMLInputElement | null>(null);
   const passwordRef = useRef<HTMLInputElement | null>(null);
-  const confirmRef = useRef<HTMLInputElement | null>(null);
+  const [showPassword, setShowPassword] = useState(false);
 
   const activeErrorField = useMemo(() => focusField || null, [focusField]);
 
   useEffect(() => {
     if (!activeErrorField) return;
     const target =
-      activeErrorField === "name"
-        ? nameRef.current
-        : activeErrorField === "password"
-          ? passwordRef.current
-          : confirmRef.current;
+      activeErrorField === "name" ? nameRef.current : passwordRef.current;
     target?.focus();
   }, [activeErrorField]);
 
@@ -62,7 +58,7 @@ export const SignupWizardAccountStep = ({
     <form className="space-y-5" onSubmit={handleSubmit}>
       <div className="space-y-2">
         <Label htmlFor="name" className="text-sm font-medium text-white/80">
-          이름
+          가입자 이름
           {errors?.name && (
             <span className="ml-2 text-xs font-medium text-rose-200">
               {errors.name}
@@ -92,44 +88,33 @@ export const SignupWizardAccountStep = ({
             </span>
           )}
         </Label>
-        <Input
-          id="password"
-          name="password"
-          type="password"
-          placeholder="10자 이상, 특수문자 포함"
-          value={formData.password}
-          onChange={onFormChange}
-          ref={passwordRef}
-          disabled={isLoading}
-          autoComplete="new-password"
-          className={`h-10 border-white/10 bg-white/5 text-white placeholder:text-white/40 ${errors?.password ? "border-rose-300" : ""}`}
-        />
-      </div>
-
-      <div className="space-y-2">
-        <Label
-          htmlFor="confirmPassword"
-          className="text-sm font-medium text-white/80"
-        >
-          비밀번호 확인
-          {errors?.confirmPassword && (
-            <span className="ml-2 text-xs font-medium text-rose-200">
-              {errors.confirmPassword}
-            </span>
-          )}
-        </Label>
-        <Input
-          id="confirmPassword"
-          name="confirmPassword"
-          type="password"
-          placeholder="비밀번호를 다시 입력해주세요"
-          value={formData.confirmPassword}
-          onChange={onFormChange}
-          ref={confirmRef}
-          disabled={isLoading}
-          autoComplete="new-password"
-          className={`h-10 border-white/10 bg-white/5 text-white placeholder:text-white/40 ${errors?.confirmPassword ? "border-rose-300" : ""}`}
-        />
+        <div className="relative">
+          <Input
+            id="password"
+            name="password"
+            type={showPassword ? "text" : "password"}
+            placeholder="10자 이상, 특수문자 포함"
+            value={formData.password}
+            onChange={onFormChange}
+            ref={passwordRef}
+            disabled={isLoading}
+            autoComplete="new-password"
+            className={`h-10 border-white/10 bg-white/5 pr-10 text-white placeholder:text-white/40 ${errors?.password ? "border-rose-300" : ""}`}
+          />
+          <button
+            type="button"
+            aria-label={showPassword ? "비밀번호 숨기기" : "비밀번호 보기"}
+            onClick={() => setShowPassword((prev) => !prev)}
+            disabled={isLoading}
+            className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-white/60 hover:text-white disabled:opacity-40"
+          >
+            {showPassword ? (
+              <EyeOff className="h-4 w-4" />
+            ) : (
+              <Eye className="h-4 w-4" />
+            )}
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-2 gap-3 pt-4">

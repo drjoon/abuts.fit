@@ -262,7 +262,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
 - practice 역할 범위(정책 고정):
   - practice는 파일 전송 전용 경량 role이며, 크레딧/정산/추천(리퍼럴) 도메인에는 포함하지 않습니다.
   - 일반 회원가입은 `/api/auth/register` (`role: "practice"`)로 의뢰자/영업자와 동일한 이메일·온보딩 경로를 사용합니다.
-  - 사업자등록증 업로드는 practice owner 온보딩에서 옵션이며, 미업로드 상태에서도 `onboardingWizardCompleted` 완료를 허용합니다.
+  - practice owner 온보딩은 사업자등록증 업로드를 받지 않습니다. `practiceProfile` 필수값(`clinicName`, `directorName`, `staffName`, `clinicPhone`, `phone`, `address`, `zipCode`) 저장으로 완료하며, 앵커가 없으면 practice `BusinessAnchor`를 생성합니다.
   - 드롭존 전용 간소 가입(`POST /api/auth/practice/register`)은 실제 `email` + `clinicPhone`(치과 전화) + `phone`(담당자 휴대폰)을 필수로 받으며, 로그인 식별은 이메일을 사용합니다.
   - 드롭존 가입 시 `assertSignupVerifications({ email, phone })`로 이메일·휴대폰 인증 완료를 강제하고, 성공 후 `consumeSignupVerifications`로 소진합니다.
     - 이메일: `POST /api/auth/signup/email-verification/send|verify`, `GET /api/auth/signup/email-verification/status` (일 10회)

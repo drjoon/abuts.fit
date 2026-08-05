@@ -55,10 +55,10 @@ export const SignupPage = () => {
     confirmPassword: "",
   });
   const [accountErrors, setAccountErrors] = useState<
-    Partial<Record<"name" | "password" | "confirmPassword", string>>
+    Partial<Record<"name" | "password", string>>
   >({});
   const [accountFocusField, setAccountFocusField] = useState<
-    "name" | "password" | "confirmPassword" | null
+    "name" | "password" | null
   >(null);
   const [signupRole, setSignupRole] = useState<SignupRole>(
     location.pathname === "/signup/staff" ? "admin" : "requestor",
@@ -478,11 +478,7 @@ export const SignupPage = () => {
   }, [isSocialNewMode]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const field = e.target.name as
-      | "name"
-      | "email"
-      | "password"
-      | "confirmPassword";
+    const field = e.target.name as "name" | "email" | "password";
     if (e.target.name === "email") {
       setEmailVerifiedAt(null);
       setEmailVerificationSent(false);
@@ -490,8 +486,10 @@ export const SignupPage = () => {
       setIsEmailStatusChecking(false);
       localStorage.removeItem("signupEmailVerified");
     }
-    if (field && accountErrors[field]) {
-      setAccountErrors((prev) => ({ ...prev, [field]: undefined }));
+    if (field === "name" || field === "password") {
+      if (accountErrors[field]) {
+        setAccountErrors((prev) => ({ ...prev, [field]: undefined }));
+      }
       if (accountFocusField === field) {
         setAccountFocusField(null);
       }
@@ -573,10 +571,7 @@ export const SignupPage = () => {
   const validateAccountInfo = useCallback(() => {
     const name = String(formData.name || "").trim();
     const password = String(formData.password || "");
-    const confirm = String(formData.confirmPassword || "");
-    const nextErrors: Partial<
-      Record<"name" | "password" | "confirmPassword", string>
-    > = {};
+    const nextErrors: Partial<Record<"name" | "password", string>> = {};
 
     if (!name) {
       nextErrors.name = "이름을 입력해주세요";
@@ -588,29 +583,14 @@ export const SignupPage = () => {
       nextErrors.password = "10자 이상, 특수문자 포함";
     }
 
-    if (!confirm) {
-      nextErrors.confirmPassword = "비밀번호를 다시 입력해주세요";
-    } else if (password !== confirm) {
-      nextErrors.confirmPassword = "비밀번호가 일치하지 않습니다";
-    }
-
-    const orderedFields: Array<"name" | "password" | "confirmPassword"> = [
-      "name",
-      "password",
-      "confirmPassword",
-    ];
+    const orderedFields: Array<"name" | "password"> = ["name", "password"];
     const firstInvalid = orderedFields.find((key) => nextErrors[key]);
 
     setAccountErrors(nextErrors);
     setAccountFocusField(firstInvalid || null);
 
     return !firstInvalid;
-  }, [
-    formData.confirmPassword,
-    formData.name,
-    formData.password,
-    isStrongPassword,
-  ]);
+  }, [formData.name, formData.password, isStrongPassword]);
 
   const handleGoEmailStep = useCallback(() => {
     if (!validateAccountInfo()) return;
@@ -1123,17 +1103,18 @@ export const SignupPage = () => {
                         </div>
                       )}
                       {signupRole === "requestor" && (
-                        <p className="text-sm text-white/70">
-                          직접 디자인한 커스텀어벗을 어벗츠에 가공 주문하는 기공소 혹은 치과
+                        <p className="text-sm text-white/70 text-left">
+                          CNC 커스텀 어벗 주문하는 경우 선택
                         </p>
                       )}
                       {signupRole === "practice" && (
                         <div className="space-y-1 text-center">
                           <p className="text-sm text-white/70">
-                            <span className=" text-white">치과로 가입시 어벗츠 커스텀어벗 가공 주문 불가</span>
+                            기공소에 스캔파일 및 기공의뢰서 전달만 이용할 경우 선택
                           </p>
-                          <p className="text-sm  text-amber-300">
-                            어벗츠 커스텀어벗 제작 서비스를 이용하려면 <span className="font-bold text-white">의뢰자</span>로 가입
+                          <p className="text-sm text-white/50">
+                            (원내에 커스텀 어벗 디자인하는 기공실장님 계시면{" "}
+                            <span className="text-white/70">의뢰자</span>로 가입)
                           </p>
                         </div>
                       )}
@@ -1171,9 +1152,13 @@ export const SignupPage = () => {
                         }}
                         onEmailClick={() => {
                           setSelectedMethod("email");
-                          // /signup/staff는 소개자 코드 불필요, 바로 계정 정보 입력으로
+                          // staff / 치과 / URL 소개코드 있으면 소개자 코드 단계 건너뛰기
                           setWizardStep(
-                            isStaffSignupRoute || referralCode ? 3 : 2,
+                            isStaffSignupRoute ||
+                              referralCode ||
+                              signupRole === "practice"
+                              ? 3
+                              : 2,
                           );
                         }}
                       />
@@ -1274,7 +1259,11 @@ export const SignupPage = () => {
                         onFormChange={handleChange}
                         onPrevious={() =>
                           setWizardStep(
-                            isStaffSignupRoute || referralCode ? 1 : 2,
+                            isStaffSignupRoute ||
+                              referralCode ||
+                              signupRole === "practice"
+                              ? 1
+                              : 2,
                           )
                         }
                         onNext={handleGoEmailStep}
@@ -1309,13 +1298,12 @@ export const SignupPage = () => {
                       onFormChange={handleChange}
                       onPrevious={() => navigate("/login")}
                       onNext={() => {
-                        // staff 경로는 소개 코드 불필요, 바로 가입
-                        if (isStaffSignupRoute) {
-                          void submitSignup();
-                          return;
-                        }
-                        // 소개 코드가 있으면 바로 가입, 없으면 소개 코드 입력 단계로
-                        if (referralCode) {
+                        // staff / 치과 / URL 소개코드 있으면 소개 코드 단계 건너뛰기
+                        if (
+                          isStaffSignupRoute ||
+                          referralCode ||
+                          signupRole === "practice"
+                        ) {
                           void submitSignup();
                           return;
                         }
@@ -1459,12 +1447,6 @@ export const SignupPage = () => {
             <AlertDialogDescription className="text-white/70">
               가입이 완료되었습니다. <br />
               서비스를 사용하려면 계정 정보와 조직 정보를 등록해야 합니다.
-              {signupRole === "practice" ? (
-                <>
-                  <br />
-                  치과는 사업자등록증 업로드를 나중에 할 수 있습니다.
-                </>
-              ) : null}
               <br />
               지금 바로 설정 화면으로 이동할게요.
             </AlertDialogDescription>
