@@ -1,10 +1,9 @@
 // related files:
 // - web/frontend/rules.md
 // - web/frontend/src/shared/types/role.ts
-// - web/frontend/src/features/auth/signup/SignupWizardPracticeAccountStep.tsx
-// - web/frontend/src/pages/practice/PracticeDropzonePage.tsx
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
+// - web/frontend/src/shared/onboarding/SharedOnboardingWizardPage.tsx
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -27,14 +26,6 @@ import { SignupWizardStep1 } from "./signup/SignupWizardStep1";
 import { SignupWizardStep2 } from "./signup/SignupWizardStep2";
 import { SignupSocialWizardStep1 } from "./signup/SignupSocialWizardStep1";
 import { SignupWizardAccountStep } from "./signup/SignupWizardAccountStep";
-import {
-  SignupWizardPracticeAccountStep,
-  type PracticeSignupFormData,
-} from "./signup/SignupWizardPracticeAccountStep";
-import {
-  formatPhoneNumberInput,
-  isValidPhoneNumber,
-} from "@/shared/components/business/settings/business/validations";
 
 export const SignupPage = () => {
   type SignupRole = AppUserRole;
@@ -68,21 +59,6 @@ export const SignupPage = () => {
   >({});
   const [accountFocusField, setAccountFocusField] = useState<
     "name" | "password" | "confirmPassword" | null
-  >(null);
-  const [practiceFormData, setPracticeFormData] = useState<PracticeSignupFormData>({
-    clinicName: "",
-    staffName: "",
-    phone: "",
-    address: "",
-    addressDetail: "",
-    zipCode: "",
-    password: "",
-  });
-  const [practiceErrors, setPracticeErrors] = useState<
-    Partial<Record<keyof PracticeSignupFormData, string>>
-  >({});
-  const [practiceFocusField, setPracticeFocusField] = useState<
-    keyof PracticeSignupFormData | null
   >(null);
   const [signupRole, setSignupRole] = useState<SignupRole>(
     location.pathname === "/signup/staff" ? "admin" : "requestor",
@@ -226,7 +202,7 @@ export const SignupPage = () => {
         case 2:
           return "소개자 코드";
         case 3:
-          return signupRole === "practice" ? "치과 정보" : "계정 정보";
+          return "계정 정보";
         case 4:
           return "이메일 인증";
         default:
@@ -243,7 +219,7 @@ export const SignupPage = () => {
     if (wizardStep === 3) return "계정 정보";
     if (wizardStep === 4) return "이메일 인증";
     return "완료";
-  }, [isSocialNewMode, isWizardMode, signupRole, wizardStep]);
+  }, [isSocialNewMode, isWizardMode, wizardStep]);
 
   useEffect(() => {
     if (typeof referralCode !== "string") {
@@ -429,37 +405,6 @@ export const SignupPage = () => {
               ? parsed.confirmPassword
               : prev.confirmPassword,
         }));
-        setPracticeFormData((prev) => ({
-          ...prev,
-          clinicName:
-            typeof parsed?.practiceClinicName === "string"
-              ? parsed.practiceClinicName
-              : prev.clinicName,
-          staffName:
-            typeof parsed?.practiceStaffName === "string"
-              ? parsed.practiceStaffName
-              : prev.staffName,
-          phone:
-            typeof parsed?.practicePhone === "string"
-              ? formatPhoneNumberInput(parsed.practicePhone)
-              : prev.phone,
-          address:
-            typeof parsed?.practiceAddress === "string"
-              ? parsed.practiceAddress
-              : prev.address,
-          addressDetail:
-            typeof parsed?.practiceAddressDetail === "string"
-              ? parsed.practiceAddressDetail
-              : prev.addressDetail,
-          zipCode:
-            typeof parsed?.practiceZipCode === "string"
-              ? parsed.practiceZipCode
-              : prev.zipCode,
-          password:
-            typeof parsed?.practicePassword === "string"
-              ? parsed.practicePassword
-              : prev.password,
-        }));
       } catch (e) {
         console.error("폼 데이터 복구 실패:", e);
       }
@@ -486,31 +431,8 @@ export const SignupPage = () => {
   // 폼 데이터를 LocalStorage에 저장
   useEffect(() => {
     if (isSocialCompleteMode || isSocialNewMode) return;
-    localStorage.setItem(
-      "signupFormData",
-      JSON.stringify({
-        ...formData,
-        practiceClinicName: practiceFormData.clinicName,
-        practiceStaffName: practiceFormData.staffName,
-        practicePhone: practiceFormData.phone,
-        practiceAddress: practiceFormData.address,
-        practiceAddressDetail: practiceFormData.addressDetail,
-        practiceZipCode: practiceFormData.zipCode,
-        practicePassword: practiceFormData.password,
-      }),
-    );
-  }, [
-    formData,
-    isSocialCompleteMode,
-    isSocialNewMode,
-    practiceFormData.address,
-    practiceFormData.addressDetail,
-    practiceFormData.clinicName,
-    practiceFormData.password,
-    practiceFormData.phone,
-    practiceFormData.staffName,
-    practiceFormData.zipCode,
-  ]);
+    localStorage.setItem("signupFormData", JSON.stringify({ ...formData }));
+  }, [formData, isSocialCompleteMode, isSocialNewMode]);
 
   // social_new 모드: sessionStorage에서 socialToken 디코딩
   useEffect(() => {
@@ -579,39 +501,6 @@ export const SignupPage = () => {
       [e.target.name]: e.target.value,
     });
   };
-
-  const handlePracticeFieldChange = useCallback(
-    (field: keyof PracticeSignupFormData, value: string) => {
-      const nextValue =
-        field === "phone" ? formatPhoneNumberInput(String(value || "")) : value;
-
-      setPracticeFormData((prev) => ({
-        ...prev,
-        [field]: nextValue,
-      }));
-
-      if (practiceErrors[field]) {
-        setPracticeErrors((prev) => ({ ...prev, [field]: undefined }));
-        if (practiceFocusField === field) {
-          setPracticeFocusField(null);
-        }
-      }
-    },
-    [practiceErrors, practiceFocusField],
-  );
-
-  const makePracticeSignupEmail = useCallback((clinicName: string) => {
-    const safeName = String(clinicName || "")
-      .trim()
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/-+/g, "-")
-      .replace(/^-+/, "")
-      .replace(/-+$/, "")
-      .slice(0, 24);
-    const nonce = `${Date.now()}${Math.floor(Math.random() * 9000 + 1000)}`;
-    return `practice.${safeName || "clinic"}-${nonce}@abuts.fit`;
-  }, []);
 
   const isStrongPassword = useCallback((password: string) => {
     const p = String(password || "");
@@ -723,53 +612,6 @@ export const SignupPage = () => {
     isStrongPassword,
   ]);
 
-  const validatePracticeAccountInfo = useCallback(() => {
-    const clinicName = String(practiceFormData.clinicName || "").trim();
-    const staffName = String(practiceFormData.staffName || "").trim();
-    const phone = String(practiceFormData.phone || "").trim();
-    const address = String(practiceFormData.address || "").trim();
-    const zipCode = String(practiceFormData.zipCode || "").trim();
-    const password = String(practiceFormData.password || "");
-
-    const nextErrors: Partial<Record<keyof PracticeSignupFormData, string>> = {};
-
-    if (!clinicName) nextErrors.clinicName = "치과명을 입력해주세요";
-    if (!staffName) nextErrors.staffName = "담당자명을 입력해주세요";
-    if (!phone) nextErrors.phone = "전화번호를 입력해주세요";
-    else if (!isValidPhoneNumber(phone))
-      nextErrors.phone = "전화번호 형식을 확인해주세요";
-    if (!address) nextErrors.address = "주소를 입력해주세요";
-    if (!zipCode) nextErrors.zipCode = "우편번호를 입력해주세요";
-
-    if (!password) nextErrors.password = "비밀번호를 입력해주세요";
-    else if (!isStrongPassword(password)) {
-      nextErrors.password = "10자 이상, 특수문자 포함";
-    }
-
-    const orderedFields: Array<keyof PracticeSignupFormData> = [
-      "clinicName",
-      "staffName",
-      "phone",
-      "address",
-      "zipCode",
-      "password",
-    ];
-    const firstInvalid = orderedFields.find((key) => nextErrors[key]);
-
-    setPracticeErrors(nextErrors);
-    setPracticeFocusField(firstInvalid || null);
-
-    return !firstInvalid;
-  }, [
-    isStrongPassword,
-    practiceFormData.address,
-    practiceFormData.clinicName,
-    practiceFormData.password,
-    practiceFormData.phone,
-    practiceFormData.staffName,
-    practiceFormData.zipCode,
-  ]);
-
   const handleGoEmailStep = useCallback(() => {
     if (!validateAccountInfo()) return;
     setWizardStep(4);
@@ -777,9 +619,7 @@ export const SignupPage = () => {
 
   const submitSignup = useCallback(async () => {
     if (!isSocialCompleteMode && !isSocialNewMode) {
-      if (signupRole === "practice") {
-        if (!validatePracticeAccountInfo()) return;
-      } else if (!validateAccountInfo()) return;
+      if (!validateAccountInfo()) return;
     }
 
     if (isLoading) return;
@@ -787,50 +627,6 @@ export const SignupPage = () => {
     setIsLoading(true);
 
     try {
-      if (!isSocialCompleteMode && !isSocialNewMode && signupRole === "practice") {
-        const generatedEmail = makePracticeSignupEmail(practiceFormData.clinicName);
-        const res = await request<any>({
-          path: "/api/auth/practice/register",
-          method: "POST",
-          jsonBody: {
-            clinicName: String(practiceFormData.clinicName || "").trim(),
-            staffName: String(practiceFormData.staffName || "").trim(),
-            password: String(practiceFormData.password || ""),
-            phone: String(practiceFormData.phone || "").trim(),
-            address: String(practiceFormData.address || "").trim(),
-            addressDetail: String(practiceFormData.addressDetail || "").trim(),
-            zipCode: String(practiceFormData.zipCode || "").trim(),
-            generatedEmail,
-          },
-        });
-
-        const data: any = res.data || {};
-        if (!res.ok || !data?.success) {
-          throw new Error(data?.message || "회원가입에 실패했습니다.");
-        }
-
-        const authToken = data?.data?.token;
-        const authRefreshToken = data?.data?.refreshToken;
-
-        if (authToken) {
-          await loginWithToken(authToken, authRefreshToken);
-          localStorage.removeItem("signupFormData");
-          localStorage.removeItem("signupEmailVerified");
-          const resolvedRole = signupRole || useAuthStore.getState().user?.role;
-          if (markSetupWizardRequired(resolvedRole)) {
-            return;
-          }
-          navigate("/dashboard", { replace: true });
-        } else {
-          toast({
-            title: "회원가입 완료",
-            description: "성공적으로 가입되었습니다. 로그인 페이지로 이동합니다.",
-          });
-          navigate("/login", { replace: true });
-        }
-        return;
-      }
-
       if (isSocialNewMode) {
         if (!socialInfo) {
           toast({
@@ -978,23 +774,14 @@ export const SignupPage = () => {
     isSocialCompleteMode,
     isSocialNewMode,
     loginWithToken,
-    makePracticeSignupEmail,
     markSetupWizardRequired,
     navigate,
-    practiceFormData.address,
-    practiceFormData.addressDetail,
-    practiceFormData.clinicName,
-    practiceFormData.password,
-    practiceFormData.phone,
-    practiceFormData.staffName,
-    practiceFormData.zipCode,
     signupRole,
     socialInfo,
     toast,
     token,
     user,
     validateAccountInfo,
-    validatePracticeAccountInfo,
   ]);
 
   useEffect(() => {
@@ -1009,10 +796,6 @@ export const SignupPage = () => {
       }
       event.preventDefault();
       if (wizardStep === 3) {
-        if (signupRole === "practice") {
-          void submitSignup();
-          return;
-        }
         handleGoEmailStep();
         return;
       }
@@ -1027,7 +810,6 @@ export const SignupPage = () => {
     emailVerifiedAt,
     handleGoEmailStep,
     isWizardMode,
-    signupRole,
     submitSignup,
     wizardStep,
   ]);
@@ -1380,34 +1162,15 @@ export const SignupPage = () => {
                         googleUrl={oauthStartUrl("google")}
                         kakaoUrl={oauthStartUrl("kakao")}
                         onGoogleClick={() => {
-                          if (signupRole === "practice") {
-                            toast({
-                              title: "치과 가입 안내",
-                              description: "치과 가입은 이메일 절차로만 지원합니다.",
-                            });
-                            return;
-                          }
                           setSelectedMethod(null);
                           goSocialSignup("google");
                         }}
                         onKakaoClick={() => {
-                          if (signupRole === "practice") {
-                            toast({
-                              title: "치과 가입 안내",
-                              description: "치과 가입은 이메일 절차로만 지원합니다.",
-                            });
-                            return;
-                          }
                           setSelectedMethod(null);
                           goSocialSignup("kakao");
                         }}
                         onEmailClick={() => {
                           setSelectedMethod("email");
-                          // 치과 가입은 소개자 코드/이메일 인증 없이 치과 정보 입력으로 진행
-                          if (signupRole === "practice") {
-                            setWizardStep(3);
-                            return;
-                          }
                           // /signup/staff는 소개자 코드 불필요, 바로 계정 정보 입력으로
                           setWizardStep(
                             isStaffSignupRoute || referralCode ? 3 : 2,
@@ -1502,18 +1265,7 @@ export const SignupPage = () => {
                     </div>
                   )}
 
-                  {wizardStep === 3 &&
-                    (signupRole === "practice" ? (
-                      <SignupWizardPracticeAccountStep
-                        formData={practiceFormData}
-                        errors={practiceErrors}
-                        focusField={practiceFocusField}
-                        isLoading={isLoading}
-                        onChangeField={handlePracticeFieldChange}
-                        onPrevious={() => setWizardStep(1)}
-                        onSubmit={() => void submitSignup()}
-                      />
-                    ) : (
+                  {wizardStep === 3 && (
                       <SignupWizardAccountStep
                         formData={formData}
                         errors={accountErrors}
@@ -1527,7 +1279,7 @@ export const SignupPage = () => {
                         }
                         onNext={handleGoEmailStep}
                       />
-                    ))}
+                    )}
 
                   {wizardStep === 4 && (
                     <SignupWizardStep2
@@ -1706,7 +1458,13 @@ export const SignupPage = () => {
             <AlertDialogTitle>계정 · 조직 정보를 등록해주세요</AlertDialogTitle>
             <AlertDialogDescription className="text-white/70">
               가입이 완료되었습니다. <br />
-              서비스를 사용하려면 계정 정보와 사업자 정보를 입력해야 합니다.
+              서비스를 사용하려면 계정 정보와 조직 정보를 등록해야 합니다.
+              {signupRole === "practice" ? (
+                <>
+                  <br />
+                  치과는 사업자등록증 업로드를 나중에 할 수 있습니다.
+                </>
+              ) : null}
               <br />
               지금 바로 설정 화면으로 이동할게요.
             </AlertDialogDescription>

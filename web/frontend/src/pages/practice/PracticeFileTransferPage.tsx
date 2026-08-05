@@ -2820,7 +2820,6 @@ export const PracticeFileTransferPage = () => {
                   labSearching,
                   recentLabs,
                   recentLabsInitialized,
-                  autoClinicName,
                   patientName,
                   setPatientName,
                   orderDate,

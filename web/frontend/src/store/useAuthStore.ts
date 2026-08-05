@@ -33,6 +33,7 @@ export interface User {
     clinicName?: string;
     staffName?: string;
     phone?: string;
+    clinicPhone?: string;
     address?: string;
     addressDetail?: string;
     zipCode?: string;
@@ -82,6 +83,9 @@ const normalizeApiUser = (u: unknown): User | null => {
             ),
             phone: String(
               (row.practiceProfile as Record<string, unknown>)?.phone || "",
+            ),
+            clinicPhone: String(
+              (row.practiceProfile as Record<string, unknown>)?.clinicPhone || "",
             ),
             address: String(
               (row.practiceProfile as Record<string, unknown>)?.address || "",
@@ -325,6 +329,10 @@ export const useAuthStore = create<AuthState>((set, get) => {
                   ),
                   phone: String(
                     (u.practiceProfile as Record<string, unknown>)?.phone || "",
+                  ),
+                  clinicPhone: String(
+                    (u.practiceProfile as Record<string, unknown>)?.clinicPhone ||
+                      "",
                   ),
                   address: String(
                     (u.practiceProfile as Record<string, unknown>)?.address || "",

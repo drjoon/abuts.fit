@@ -97,6 +97,12 @@ export const isValidBusinessNumber = (input: string): boolean =>
 export const isValidPhoneNumber = (input: string): boolean =>
   !!normalizePhoneNumber(input);
 
+/** 휴대폰(010/011/016/017/018/019) 번호 검증 */
+export const isValidMobilePhone = (input: string): boolean => {
+  const digits = String(input || "").replace(/\D/g, "");
+  return /^01[016789]\d{7,8}$/.test(digits);
+};
+
 export const normalizeStartDate = (input: string): string => {
   // 부분 입력도 유지하면서 숫자만 최대 8자리까지 허용
   return String(input || "")

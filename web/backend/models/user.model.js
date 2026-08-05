@@ -38,7 +38,8 @@ const userSchema = new mongoose.Schema(
     practiceProfile: {
       clinicName: { type: String, default: "", trim: true },
       staffName: { type: String, default: "", trim: true },
-      phone: { type: String, default: "", trim: true },
+      phone: { type: String, default: "", trim: true }, // 담당자 휴대폰
+      clinicPhone: { type: String, default: "", trim: true }, // 치과 전화번호
       address: { type: String, default: "", trim: true },
       addressDetail: { type: String, default: "", trim: true },
       zipCode: { type: String, default: "", trim: true },

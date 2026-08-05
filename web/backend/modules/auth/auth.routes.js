@@ -12,6 +12,9 @@ import {
   verifySignupEmailCode,
   confirmSignupEmail,
   getSignupEmailVerificationStatus,
+  sendSignupPhoneVerification,
+  verifySignupPhoneCode,
+  getSignupPhoneVerificationStatus,
 } from "../../controllers/auth/signupVerification.controller.js";
 
 // 회원가입
@@ -47,6 +50,9 @@ router.get(
   "/signup/email-verification/status",
   getSignupEmailVerificationStatus,
 );
+router.post("/signup/phone-verification/send", sendSignupPhoneVerification);
+router.post("/signup/phone-verification/verify", verifySignupPhoneCode);
+router.get("/signup/phone-verification/status", getSignupPhoneVerificationStatus);
 
 // 로그아웃 (인증 필요)
 router.post("/logout", authenticate, authController.logout);

@@ -330,11 +330,15 @@ export const DashboardLayout = () => {
     user?.onboardingWizardCompleted || user?.businessVerified,
   );
   const shouldForceOnboarding =
-    !isPracticeUser &&
     user?.role !== undefined &&
-    ["requestor", "salesman", "manufacturer", "admin", "devops"].includes(
-      user?.role,
-    );
+    [
+      "requestor",
+      "practice",
+      "salesman",
+      "manufacturer",
+      "admin",
+      "devops",
+    ].includes(user?.role);
 
   useEffect(() => {
     if (!token) return;

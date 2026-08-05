@@ -33,6 +33,7 @@ import {
   ArrowRight,
   ChevronsUpDown,
   Check,
+  CheckCircle2,
   Eye,
   EyeOff,
   Plus,
@@ -93,6 +94,8 @@ import {
 import { cn } from "@/shared/ui/cn";
 import {
   formatPhoneNumberInput,
+  isValidEmail,
+  isValidMobilePhone,
   isValidPhoneNumber,
 } from "@/shared/components/business/settings/business/validations";
 import { COMPANY_PHONE } from "@/shared/lib/contactInfo";
@@ -112,6 +115,7 @@ import { buildPracticeTransferMemo as buildPracticeTransferMemoShared } from "@/
 const PRACTICE_DRAFT_STORAGE_KEY = "practice_dropzone_draft_v2";
 const PRACTICE_FILE_CACHE_META_KEY = "practice_dropzone_file_cache_meta_v1";
 const PRACTICE_SESSION_META_KEY = "practice_dropzone_session_meta_v1";
+const PRACTICE_SIGNUP_VERIFICATION_KEY = "practice_dropzone_signup_verification_v1";
 const PRACTICE_SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 1개월
 const PRACTICE_FILE_CACHE_MAX_TOTAL_BYTES = 300 * 1024 * 1024; // 300MB
 
@@ -129,9 +133,11 @@ type PracticeDropzoneDraft = {
   prosthesisTypes: string[];
   toothWorks?: ToothWorkSelection[];
   patientName: string;
+  email: string;
   practiceName: string;
   staffName: string;
   phone: string;
+  clinicPhone: string;
   address: string;
   addressDetail: string;
   zipCode: string;
@@ -167,6 +173,72 @@ type PracticeSessionMeta = {
   userId: string;
 };
 
+type PracticeSignupVerificationCache = {
+  email?: { value: string; verifiedAt: string };
+  phone?: { value: string; verifiedAt: string };
+};
+
+const readSignupVerificationCache = (): PracticeSignupVerificationCache => {
+  try {
+    const raw = localStorage.getItem(PRACTICE_SIGNUP_VERIFICATION_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as PracticeSignupVerificationCache;
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+};
+
+const writeSignupVerificationCache = (next: PracticeSignupVerificationCache) => {
+  try {
+    localStorage.setItem(PRACTICE_SIGNUP_VERIFICATION_KEY, JSON.stringify(next));
+  } catch {
+    // ignore
+  }
+};
+
+const clearSignupVerificationCache = () => {
+  try {
+    localStorage.removeItem(PRACTICE_SIGNUP_VERIFICATION_KEY);
+  } catch {
+    // ignore
+  }
+};
+
+const persistEmailVerificationCache = (value: string, verifiedAt = new Date().toISOString()) => {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (!normalized) return;
+  const prev = readSignupVerificationCache();
+  writeSignupVerificationCache({
+    ...prev,
+    email: { value: normalized, verifiedAt },
+  });
+};
+
+const persistPhoneVerificationCache = (value: string, verifiedAt = new Date().toISOString()) => {
+  const digits = String(value || "").replace(/\D/g, "");
+  if (!digits) return;
+  const prev = readSignupVerificationCache();
+  writeSignupVerificationCache({
+    ...prev,
+    phone: { value: digits, verifiedAt },
+  });
+};
+
+const clearEmailVerificationCache = () => {
+  const prev = readSignupVerificationCache();
+  if (!prev.email) return;
+  const { email: _removed, ...rest } = prev;
+  writeSignupVerificationCache(rest);
+};
+
+const clearPhoneVerificationCache = () => {
+  const prev = readSignupVerificationCache();
+  if (!prev.phone) return;
+  const { phone: _removed, ...rest } = prev;
+  writeSignupVerificationCache(rest);
+};
+
 const asApiMessagePayload = (value: unknown): ApiSuccessMessagePayload => {
   if (!value || typeof value !== "object") return {};
   return value as ApiSuccessMessagePayload;
@@ -177,129 +249,6 @@ const asRegisterPayload = (value: unknown): RegisterResponsePayload => {
   return value as RegisterResponsePayload;
 };
 
-
-
-const HANGUL_BASE = 0xac00;
-const HANGUL_END = 0xd7a3;
-const CHOSEONG = [
-  "g",
-  "kk",
-  "n",
-  "d",
-  "tt",
-  "r",
-  "m",
-  "b",
-  "pp",
-  "s",
-  "ss",
-  "",
-  "j",
-  "jj",
-  "ch",
-  "k",
-  "t",
-  "p",
-  "h",
-] as const;
-const JUNGSEONG = [
-  "a",
-  "ae",
-  "ya",
-  "yae",
-  "eo",
-  "e",
-  "yeo",
-  "ye",
-  "o",
-  "wa",
-  "wae",
-  "oe",
-  "yo",
-  "u",
-  "wo",
-  "we",
-  "wi",
-  "yu",
-  "eu",
-  "ui",
-  "i",
-] as const;
-const JONGSEONG = [
-  "",
-  "k",
-  "k",
-  "ks",
-  "n",
-  "nj",
-  "nh",
-  "t",
-  "l",
-  "lk",
-  "lm",
-  "lb",
-  "ls",
-  "lt",
-  "lp",
-  "lh",
-  "m",
-  "p",
-  "ps",
-  "t",
-  "t",
-  "ng",
-  "t",
-  "t",
-  "k",
-  "t",
-  "p",
-  "h",
-] as const;
-
-const romanizeHangulSyllable = (ch: string) => {
-  const code = ch.charCodeAt(0);
-  if (code < HANGUL_BASE || code > HANGUL_END) return "";
-
-  const sIndex = code - HANGUL_BASE;
-  const cho = Math.floor(sIndex / (21 * 28));
-  const jung = Math.floor((sIndex % (21 * 28)) / 28);
-  const jong = sIndex % 28;
-
-  return `${CHOSEONG[cho]}${JUNGSEONG[jung]}${JONGSEONG[jong]}`;
-};
-
-const toAsciiSlug = (value: string) => {
-  const raw = String(value || "").trim().toLowerCase();
-  if (!raw) return "";
-
-  let out = "";
-  for (const ch of raw) {
-    const code = ch.charCodeAt(0);
-    if (code >= HANGUL_BASE && code <= HANGUL_END) {
-      out += romanizeHangulSyllable(ch);
-      continue;
-    }
-    if ((code >= 97 && code <= 122) || (code >= 48 && code <= 57)) {
-      out += ch;
-      continue;
-    }
-    if (ch === " " || ch === "-" || ch === "_") {
-      out += "-";
-      continue;
-    }
-  }
-
-  return out
-    .replace(/-+/g, "-")
-    .replace(/^-+/, "")
-    .replace(/-+$/, "");
-};
-
-const makePracticeSignupEmail = (practiceName: string) => {
-  const safeName = toAsciiSlug(practiceName || "practice").slice(0, 24);
-  const nonce = `${Date.now()}${Math.floor(Math.random() * 9000 + 1000)}`;
-  return `practice.${safeName || "clinic"}-${nonce}@abuts.fit`;
-};
 
 const makeTransferId = () => {
   const t = Date.now().toString(36).toUpperCase();
@@ -540,8 +489,8 @@ export const PracticeDropzonePage = () => {
   const searchParamsKey = searchParams.toString();
   const { toast } = useToast();
   const {
+    login,
     loginWithToken,
-    practiceLogin,
     logout,
     token: authToken,
     user: authUser,
@@ -604,11 +553,13 @@ export const PracticeDropzonePage = () => {
   ]);
 
   const [patientName, setPatientName] = useState("");
+  const [email, setEmail] = useState("");
   const [practiceName, setPracticeName] = useState("");
   const [accessPassword, setAccessPassword] = useState("");
   const [showAccessPassword, setShowAccessPassword] = useState(false);
   const [staffName, setStaffName] = useState("");
   const [phone, setPhone] = useState("");
+  const [clinicPhone, setClinicPhone] = useState("");
   const [address, setAddress] = useState("");
   const [addressDetail, setAddressDetail] = useState("");
   const [zipCode, setZipCode] = useState("");
@@ -618,9 +569,18 @@ export const PracticeDropzonePage = () => {
   const [requestSubmitting, setRequestSubmitting] = useState(false);
   const [requestSubmitted, setRequestSubmitted] = useState(false);
 
+  const [emailVerified, setEmailVerified] = useState(false);
+  const [emailCodeSent, setEmailCodeSent] = useState(false);
+  const [emailCode, setEmailCode] = useState("");
+  const [emailSending, setEmailSending] = useState(false);
+  const [emailVerifying, setEmailVerifying] = useState(false);
+  const [phoneVerified, setPhoneVerified] = useState(false);
+  const [phoneCodeSent, setPhoneCodeSent] = useState(false);
+  const [phoneCode, setPhoneCode] = useState("");
+  const [phoneSending, setPhoneSending] = useState(false);
+  const [phoneVerifying, setPhoneVerifying] = useState(false);
+
   const [authMode, setAuthMode] = useState<PracticeAuthMode>("checking");
-  const [recoverStaffName, setRecoverStaffName] = useState("");
-  const [recoverPhone, setRecoverPhone] = useState("");
   const [recoverNewPassword, setRecoverNewPassword] = useState("");
   const [showRecoverNewPassword, setShowRecoverNewPassword] = useState(false);
   const [authSubmitting, setAuthSubmitting] = useState(false);
@@ -628,7 +588,9 @@ export const PracticeDropzonePage = () => {
   const consumedPrefillLocationKeyRef = useRef<string | null>(null);
   const suppressDraftPersistRef = useRef(false);
 
-  const isPhoneValid = isValidPhoneNumber(phone);
+  const isEmailValid = isValidEmail(email);
+  const isPhoneValid = isValidMobilePhone(phone);
+  const isClinicPhoneValid = isValidPhoneNumber(clinicPhone);
 
   const isStrongPassword = useMemo(() => {
     const p = String(accessPassword || "");
@@ -637,6 +599,14 @@ export const PracticeDropzonePage = () => {
     if (!/[!@#%^&*()_+\-=[\]{};':"\\|,.<>/?]/.test(p)) return false;
     return true;
   }, [accessPassword]);
+
+  const isRecoverPasswordStrong = useMemo(() => {
+    const p = String(recoverNewPassword || "");
+    if (p.length < 10) return false;
+    if (p.includes("$")) return false;
+    if (!/[!@#%^&*()_+\-=[\]{};':"\\|,.<>/?]/.test(p)) return false;
+    return true;
+  }, [recoverNewPassword]);
 
   const normalizedProsthesisTypes = useMemo(
     () => normalizeProsthesisTypes(prosthesisTypes),
@@ -882,18 +852,24 @@ export const PracticeDropzonePage = () => {
 
   const canSubmitSignup = Boolean(
     canSubmitBase &&
+      isEmailValid &&
+      emailVerified &&
       String(practiceName || "").trim() &&
       String(staffName || "").trim() &&
       isPhoneValid &&
+      phoneVerified &&
+      isClinicPhoneValid &&
       String(address || "").trim() &&
       String(zipCode || "").trim() &&
       isStrongPassword,
   );
 
   const canSubmitLogin = Boolean(
-    canSubmitBase &&
-      String(practiceName || "").trim() &&
-      String(accessPassword || "").trim(),
+    canSubmitBase && isEmailValid && String(accessPassword || "").trim(),
+  );
+
+  const canSubmitRecover = Boolean(
+    isEmailValid && isPhoneValid && isRecoverPasswordStrong,
   );
 
   const canPrimaryAction =
@@ -954,9 +930,11 @@ export const PracticeDropzonePage = () => {
             : [{ toothNumber: "", prosthesisType: resolveDefaultProsthesisType(restoredProsthesisTypes), customAbutment: false, bridgeLinkedTeeth: [] }],
         );
         setPatientName(String(parsed.patientName || ""));
+        setEmail(String(parsed.email || "").trim().toLowerCase());
         setPracticeName(String(parsed.practiceName || ""));
         setStaffName(String(parsed.staffName || ""));
         setPhone(formatPhoneNumberInput(String(parsed.phone || "")));
+        setClinicPhone(formatPhoneNumberInput(String(parsed.clinicPhone || "")));
         setAddress(String(parsed.address || ""));
         setAddressDetail(String(parsed.addressDetail || ""));
         setZipCode(String(parsed.zipCode || ""));
@@ -1109,6 +1087,104 @@ export const PracticeDropzonePage = () => {
 
   useEffect(() => {
     if (!draftHydrated) return;
+
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      const restore = async () => {
+        const normalizedEmail = String(email || "").trim().toLowerCase();
+        const phoneDigits = String(phone || "").replace(/\D/g, "");
+        const cache = readSignupVerificationCache();
+
+        if (
+          isEmailValid &&
+          cache.email?.value === normalizedEmail &&
+          cache.email.verifiedAt
+        ) {
+          if (!cancelled) setEmailVerified(true);
+        }
+
+        if (
+          isPhoneValid &&
+          cache.phone?.value === phoneDigits &&
+          cache.phone.verifiedAt
+        ) {
+          if (!cancelled) setPhoneVerified(true);
+        }
+
+        if (isEmailValid) {
+          try {
+            const res = await apiFetch<{
+              success?: boolean;
+              data?: { verified?: boolean; verifiedAt?: string | null };
+            }>({
+              path: `/api/auth/signup/email-verification/status?email=${encodeURIComponent(normalizedEmail)}`,
+              method: "GET",
+            });
+            const payload = (res.data || {}) as {
+              success?: boolean;
+              data?: { verified?: boolean; verifiedAt?: string | null };
+            };
+            if (cancelled) return;
+            if (res.ok && payload.data?.verified) {
+              setEmailVerified(true);
+              persistEmailVerificationCache(
+                normalizedEmail,
+                payload.data.verifiedAt
+                  ? String(payload.data.verifiedAt)
+                  : undefined,
+              );
+            } else if (res.ok && cache.email?.value === normalizedEmail) {
+              setEmailVerified(false);
+              clearEmailVerificationCache();
+            }
+          } catch {
+            // keep local cache fallback
+          }
+        }
+
+        if (isPhoneValid) {
+          try {
+            const res = await apiFetch<{
+              success?: boolean;
+              data?: { verified?: boolean; verifiedAt?: string | null };
+            }>({
+              path: `/api/auth/signup/phone-verification/status?phone=${encodeURIComponent(phoneDigits)}`,
+              method: "GET",
+            });
+            const payload = (res.data || {}) as {
+              success?: boolean;
+              data?: { verified?: boolean; verifiedAt?: string | null };
+            };
+            if (cancelled) return;
+            if (res.ok && payload.data?.verified) {
+              setPhoneVerified(true);
+              persistPhoneVerificationCache(
+                phoneDigits,
+                payload.data.verifiedAt
+                  ? String(payload.data.verifiedAt)
+                  : undefined,
+              );
+            } else if (res.ok && cache.phone?.value === phoneDigits) {
+              setPhoneVerified(false);
+              clearPhoneVerificationCache();
+            }
+          } catch {
+            // keep local cache fallback
+          }
+        }
+      };
+
+      void restore();
+    }, 250);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [draftHydrated, email, phone, isEmailValid, isPhoneValid]);
+
+  useEffect(() => {
+    if (!draftHydrated) return;
     if (suppressDraftPersistRef.current) return;
 
     const payload: PracticeDropzoneDraft = {
@@ -1121,9 +1197,11 @@ export const PracticeDropzonePage = () => {
       prosthesisTypes: normalizedProsthesisTypes,
       toothWorks,
       patientName,
+      email,
       practiceName,
       staffName,
       phone,
+      clinicPhone,
       address,
       addressDetail,
       zipCode,
@@ -1138,7 +1216,9 @@ export const PracticeDropzonePage = () => {
     address,
     addressDetail,
     draftHydrated,
+    email,
     phone,
+    clinicPhone,
     practiceName,
     patientName,
     requestMemo,
@@ -1172,9 +1252,13 @@ export const PracticeDropzonePage = () => {
 
     if (isPracticeLoggedIn) {
       const pp = authUser?.practiceProfile || null;
+      setEmail(String(authUser?.email || email || "").trim().toLowerCase());
       setPracticeName(String(pp?.clinicName || authUser?.companyName || practiceName || ""));
       setStaffName(String(pp?.staffName || authUser?.name || staffName || ""));
       setPhone(formatPhoneNumberInput(String(pp?.phone || phone || "")));
+      setClinicPhone(
+        formatPhoneNumberInput(String(pp?.clinicPhone || clinicPhone || "")),
+      );
       setAddress(String(pp?.address || address || ""));
       setAddressDetail(String(pp?.addressDetail || addressDetail || ""));
       setZipCode(String(pp?.zipCode || zipCode || ""));
@@ -1211,9 +1295,11 @@ export const PracticeDropzonePage = () => {
     authToken,
     authUser,
     logout,
+    email,
     practiceName,
     staffName,
     phone,
+    clinicPhone,
     address,
     addressDetail,
     zipCode,
@@ -1363,7 +1449,7 @@ export const PracticeDropzonePage = () => {
     if (!canSubmitLogin) {
       toast({
         title: "입력 확인",
-        description: "치과명과 비밀번호를 입력해주세요.",
+        description: "이메일과 비밀번호를 입력해주세요.",
         variant: "destructive",
       });
       return;
@@ -1371,8 +1457,8 @@ export const PracticeDropzonePage = () => {
 
     setAuthSubmitting(true);
     try {
-      const result = await practiceLogin(
-        String(practiceName || "").trim(),
+      const result = await login(
+        String(email || "").trim().toLowerCase(),
         String(accessPassword || ""),
       );
       if (!result?.success) {
@@ -1395,14 +1481,29 @@ export const PracticeDropzonePage = () => {
         return;
       }
 
+      if (latestUser.role !== "practice") {
+        logout();
+        toast({
+          title: "치과 계정만 이용 가능합니다",
+          description: "치과(practice) 계정으로 로그인해 주세요.",
+          variant: "destructive",
+        });
+        return;
+      }
+
       writePracticeSessionMeta({
         issuedAt: Date.now(),
         userId: String(latestUser.id),
       });
 
       const pp = latestUser.practiceProfile || null;
+      setEmail(String(latestUser.email || email || "").trim().toLowerCase());
+      setPracticeName(String(pp?.clinicName || latestUser.companyName || practiceName || ""));
       setStaffName(String(pp?.staffName || latestUser.name || staffName || ""));
       setPhone(formatPhoneNumberInput(String(pp?.phone || phone || "")));
+      setClinicPhone(
+        formatPhoneNumberInput(String(pp?.clinicPhone || clinicPhone || "")),
+      );
       setAddress(String(pp?.address || address || ""));
       setAddressDetail(String(pp?.addressDetail || addressDetail || ""));
       setZipCode(String(pp?.zipCode || zipCode || ""));
@@ -1416,21 +1517,17 @@ export const PracticeDropzonePage = () => {
     }
   };
 
-
-
   const handlePracticePasswordChange = async () => {
-    if (!String(practiceName || "").trim() || !String(recoverStaffName || "").trim() || !String(recoverPhone || "").trim() || !String(recoverNewPassword || "").trim()) {
+    if (!canSubmitRecover) {
       toast({
         title: "입력 확인",
-        description: "치과명, 담당직원명, 전화번호, 새 비밀번호를 입력해주세요.",
+        description: "이메일, 담당자 휴대폰, 새 비밀번호를 입력해주세요.",
         variant: "destructive",
       });
       return;
     }
 
-    const p = String(recoverNewPassword || "");
-    const valid = p.length >= 10 && !p.includes("$") && /[!@#%^&*()_+\-=[\]{};':"\\|,.<>/?]/.test(p);
-    if (!valid) {
+    if (!isRecoverPasswordStrong) {
       toast({
         title: "비밀번호 형식 오류",
         description: "10자 이상 + 특수문자 포함, $ 문자는 사용할 수 없습니다.",
@@ -1445,9 +1542,8 @@ export const PracticeDropzonePage = () => {
         path: "/api/auth/practice/password/change",
         method: "POST",
         jsonBody: {
-          clinicName: String(practiceName || "").trim(),
-          staffName: String(recoverStaffName || "").trim(),
-          phone: String(recoverPhone || "").trim(),
+          email: String(email || "").trim().toLowerCase(),
+          phone: String(phone || "").trim(),
           newPassword: String(recoverNewPassword || ""),
         },
       });
@@ -1465,9 +1561,214 @@ export const PracticeDropzonePage = () => {
         description: "새 비밀번호로 로그인해주세요.",
       });
       setAccessPassword("");
+      setRecoverNewPassword("");
       setAuthMode("login");
     } finally {
       setAuthSubmitting(false);
+    }
+  };
+
+  const resetEmailVerification = () => {
+    setEmailVerified(false);
+    setEmailCodeSent(false);
+    setEmailCode("");
+    clearEmailVerificationCache();
+  };
+
+  const resetPhoneVerification = () => {
+    setPhoneVerified(false);
+    setPhoneCodeSent(false);
+    setPhoneCode("");
+    clearPhoneVerificationCache();
+  };
+
+  const handleSendEmailVerification = async () => {
+    const normalized = String(email || "").trim().toLowerCase();
+    if (!isValidEmail(normalized)) {
+      toast({
+        title: "이메일 확인",
+        description: "올바른 이메일 형식으로 입력해주세요.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setEmailSending(true);
+    try {
+      const res = await apiFetch<{ success?: boolean; message?: string }>({
+        path: "/api/auth/signup/email-verification/send",
+        method: "POST",
+        jsonBody: { email: normalized },
+      });
+      const body = (res.data || {}) as { success?: boolean; message?: string };
+      if (!res.ok || !body.success) {
+        toast({
+          title: "인증 메일 발송 실패",
+          description: String(body.message || "잠시 후 다시 시도해주세요."),
+          variant: "destructive",
+        });
+        return;
+      }
+      setEmailCodeSent(true);
+      setEmailCode("");
+      toast({
+        title: "인증 메일 발송",
+        description: "메일함의 4자리 코드를 입력해주세요.",
+      });
+    } catch {
+      toast({
+        title: "인증 메일 발송 실패",
+        description: "네트워크 상태를 확인 후 다시 시도해주세요.",
+        variant: "destructive",
+      });
+    } finally {
+      setEmailSending(false);
+    }
+  };
+
+  const handleVerifyEmailCode = async () => {
+    const normalized = String(email || "").trim().toLowerCase();
+    const code = String(emailCode || "").trim();
+    if (!/^\d{4}$/.test(code)) {
+      toast({
+        title: "인증 코드 확인",
+        description: "4자리 숫자를 입력해주세요.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setEmailVerifying(true);
+    try {
+      const res = await apiFetch<{ success?: boolean; message?: string }>({
+        path: "/api/auth/signup/email-verification/verify",
+        method: "POST",
+        jsonBody: { email: normalized, code },
+      });
+      const body = (res.data || {}) as { success?: boolean; message?: string };
+      if (!res.ok || !body.success) {
+        toast({
+          title: "이메일 인증 실패",
+          description: String(body.message || "인증 코드가 일치하지 않습니다."),
+          variant: "destructive",
+        });
+        return;
+      }
+      setEmailVerified(true);
+      setEmailCode("");
+      persistEmailVerificationCache(normalized);
+      toast({
+        title: "이메일 인증 완료",
+        description: "이메일 인증이 완료되었습니다.",
+      });
+    } catch {
+      toast({
+        title: "이메일 인증 실패",
+        description: "네트워크 상태를 확인 후 다시 시도해주세요.",
+        variant: "destructive",
+      });
+    } finally {
+      setEmailVerifying(false);
+    }
+  };
+
+  const handleSendPhoneVerification = async () => {
+    if (!isPhoneValid) {
+      toast({
+        title: "휴대폰 확인",
+        description: "올바른 휴대폰 번호 형식으로 입력해주세요.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setPhoneSending(true);
+    try {
+      const res = await apiFetch<{
+        success?: boolean;
+        message?: string;
+        data?: { code?: string };
+      }>({
+        path: "/api/auth/signup/phone-verification/send",
+        method: "POST",
+        jsonBody: { phone: String(phone || "").trim() },
+      });
+      const body = (res.data || {}) as {
+        success?: boolean;
+        message?: string;
+        data?: { code?: string };
+      };
+      if (!res.ok || !body.success) {
+        toast({
+          title: "인증번호 발송 실패",
+          description: String(body.message || "잠시 후 다시 시도해주세요."),
+          variant: "destructive",
+        });
+        return;
+      }
+
+      setPhoneVerified(false);
+      setPhoneCodeSent(true);
+      setPhoneCode("");
+      toast({
+        title: "인증번호 발송",
+        description: body.data?.code
+          ? `개발용 코드: ${body.data.code}`
+          : "문자로 받은 4자리 코드를 입력해주세요.",
+      });
+    } catch {
+      toast({
+        title: "인증번호 발송 실패",
+        description: "네트워크 상태를 확인 후 다시 시도해주세요.",
+        variant: "destructive",
+      });
+    } finally {
+      setPhoneSending(false);
+    }
+  };
+
+  const handleVerifyPhoneCode = async () => {
+    const code = String(phoneCode || "").trim();
+    if (!/^\d{4}$/.test(code)) {
+      toast({
+        title: "인증 코드 확인",
+        description: "4자리 숫자를 입력해주세요.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setPhoneVerifying(true);
+    try {
+      const res = await apiFetch<{ success?: boolean; message?: string }>({
+        path: "/api/auth/signup/phone-verification/verify",
+        method: "POST",
+        jsonBody: { phone: String(phone || "").trim(), code },
+      });
+      const body = (res.data || {}) as { success?: boolean; message?: string };
+      if (!res.ok || !body.success) {
+        toast({
+          title: "휴대폰 인증 실패",
+          description: String(body.message || "인증 코드가 일치하지 않습니다."),
+          variant: "destructive",
+        });
+        return;
+      }
+      setPhoneVerified(true);
+      setPhoneCode("");
+      persistPhoneVerificationCache(phone);
+      toast({
+        title: "휴대폰 인증 완료",
+        description: "담당자 휴대폰 인증이 완료되었습니다.",
+      });
+    } catch {
+      toast({
+        title: "휴대폰 인증 실패",
+        description: "네트워크 상태를 확인 후 다시 시도해주세요.",
+        variant: "destructive",
+      });
+    } finally {
+      setPhoneVerifying(false);
     }
   };
 
@@ -1475,7 +1776,10 @@ export const PracticeDropzonePage = () => {
     if (!canSubmitSignup) {
       toast({
         title: "입력 확인",
-        description: "치과정보와 접속 비밀번호를 포함해 필수값을 모두 입력해주세요.",
+        description:
+          emailVerified && phoneVerified
+            ? "이메일, 치과 전화, 담당자 휴대폰, 치과정보와 비밀번호를 포함해 필수값을 모두 입력해주세요."
+            : "이메일·담당자 휴대폰 인증을 완료하고 필수값을 모두 입력해주세요.",
         variant: "destructive",
       });
       return;
@@ -1506,19 +1810,19 @@ export const PracticeDropzonePage = () => {
 
     setSignupSubmitting(true);
     try {
-      const generatedEmail = makePracticeSignupEmail(practiceName);
       const registerRes = await apiFetch<unknown>({
         path: "/api/auth/practice/register",
         method: "POST",
         jsonBody: {
+          email: String(email || "").trim().toLowerCase(),
           clinicName: String(practiceName || "").trim(),
           staffName: String(staffName || "").trim(),
           password: accessPassword,
           phone: String(phone || "").trim(),
+          clinicPhone: String(clinicPhone || "").trim(),
           address: String(address || "").trim(),
           addressDetail: String(addressDetail || "").trim(),
           zipCode: String(zipCode || "").trim(),
-          generatedEmail,
         },
       });
 
@@ -1555,6 +1859,7 @@ export const PracticeDropzonePage = () => {
 
       setSignupCompleted(true);
       setAuthMode("session");
+      clearSignupVerificationCache();
       toast({
         title: "회원가입 완료",
         description: "이어서 현재 작성한 의뢰서를 전송합니다.",
@@ -1705,7 +2010,6 @@ export const PracticeDropzonePage = () => {
                     labSearching,
                     recentLabs,
                     recentLabsInitialized,
-                    autoClinicName,
                     patientName,
                     setPatientName,
                     orderDate,
@@ -1736,270 +2040,489 @@ export const PracticeDropzonePage = () => {
             {step === 1 && (
               <form
                 id="practice-auth-form"
-                className="space-y-4"
+                className="space-y-5"
                 onSubmit={handlePracticeAuthFormSubmit}
               >
-
-                {authMode === "checking" && (
-                  <div className="rounded-lg border bg-slate-50 px-4 py-3 text-sm text-slate-600">
-                    세션 상태를 확인 중입니다...
-                  </div>
-                )}
-
-                {authMode === "session" && (
-                  <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-4 text-sm text-emerald-800">
-                    로그인 세션이 확인되었습니다. 치과정보 입력 없이 바로 의뢰서를 전송할 수 있습니다.
-                  </div>
-                )}
-
-                {authMode === "login" && (
-                  <div className="grid grid-cols-1 gap-3 lg:grid-cols-4">
-                    <div className="space-y-2 space-x-2">
-                      <Label htmlFor="practice-login-name" className="text-sm">치과명</Label>
-                      <Input
-                        id="practice-login-name"
-                        className="h-11 text-base"
-                        value={practiceName}
-                        onChange={(e) => setPracticeName(e.target.value)}
-                        placeholder="예: OO치과의원"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="practice-login-password" className="text-sm">접속 비밀번호</Label>
-                      <div className="relative">
-                        <Input
-                          id="practice-login-password"
-                          type={showAccessPassword ? "text" : "password"}
-                          className="h-11 text-base pr-10"
-                          value={accessPassword}
-                          onChange={(e) => setAccessPassword(e.target.value)}
-                          placeholder="비밀번호"
-                        />
-                        <button
-                          type="button"
-                          className="absolute right-3 top-3 text-slate-500 hover:text-slate-700"
-                          onClick={() => setShowAccessPassword((prev) => !prev)}
-                          aria-label="비밀번호 보기"
-                        >
-                          {showAccessPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                        </button>
+                <div className="overflow-hidden rounded-2xl border border-slate-200/80 bg-gradient-to-br from-white via-white to-sky-50/60 shadow-[0_4px_12px_rgba(15,23,42,0.03)] transition-all hover:shadow-[0_8px_20px_rgba(15,23,42,0.06)]">
+                  <div className="border-b border-slate-100 bg-white/70 px-5 py-4 backdrop-blur-sm">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-600">
+                          Step 2
+                        </p>
+                        <h2 className="mt-1 text-lg font-semibold text-slate-900">
+                          치과 계정
+                        </h2>
+                        <p className="mt-1 text-sm text-slate-500">
+                          파일을 보낸 뒤에도 이어서 확인할 수 있도록 계정을 연결합니다.
+                        </p>
                       </div>
+                      {authMode !== "checking" && authMode !== "session" ? (
+                        <div className="inline-flex rounded-xl border border-slate-200 bg-slate-50/90 p-1 shadow-inner">
+                          {(
+                            [
+                              { key: "login", label: "로그인" },
+                              { key: "signup", label: "회원가입" },
+                              { key: "recover", label: "비밀번호" },
+                            ] as const
+                          ).map((tab) => (
+                            <button
+                              key={tab.key}
+                              type="button"
+                              onClick={() => setAuthMode(tab.key)}
+                              className={cn(
+                                "rounded-lg px-3.5 py-2 text-sm font-medium transition-all",
+                                authMode === tab.key
+                                  ? "bg-white text-slate-900 shadow-sm"
+                                  : "text-slate-500 hover:text-slate-800",
+                              )}
+                            >
+                              {tab.label}
+                            </button>
+                          ))}
+                        </div>
+                      ) : null}
                     </div>
                   </div>
-                )}
 
-                {authMode === "recover" && (
-                  <div className="space-y-3 rounded-lg border p-4">
-                    <div className="grid grid-cols-1 gap-3 lg:grid-cols-4">
-                      <div className="space-y-2">
-                        <Label className="text-sm">치과명</Label>
-                        <Input
-                          className="h-11 text-base"
-                          value={practiceName}
-                          onChange={(e) => setPracticeName(e.target.value)}
-                          placeholder="예: OO치과의원"
-                        />
+                  <div className="space-y-5 px-5 py-5">
+                    {authMode === "checking" && (
+                      <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                        세션 상태를 확인 중입니다...
                       </div>
-                      <div className="space-y-2">
-                        <Label className="text-sm">담당직원명</Label>
-                        <Input
-                          className="h-11 text-base"
-                          value={recoverStaffName}
-                          onChange={(e) => setRecoverStaffName(e.target.value)}
-                          placeholder="예: 김담당"
-                        />
+                    )}
+
+                    {authMode === "session" && (
+                      <div className="rounded-xl border border-emerald-200 bg-emerald-50/90 px-4 py-4 text-sm text-emerald-800">
+                        <p className="font-medium">로그인 세션이 확인되었습니다.</p>
+                        <p className="mt-1 text-emerald-700/90">
+                          추가 입력 없이 바로 의뢰서를 전송할 수 있습니다.
+                          {email ? ` (${email})` : ""}
+                        </p>
                       </div>
-                      <div className="space-y-2">
-                        <Label className="text-sm">전화번호</Label>
-                        <Input
-                          className="h-11 text-base"
-                          value={recoverPhone}
-                          onChange={(e) => setRecoverPhone(formatPhoneNumberInput(e.target.value))}
-                          placeholder="예: 02-123-4567"
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label className="text-sm">새 비밀번호</Label>
-                        <div className="relative">
+                    )}
+
+                    {authMode === "login" && (
+                      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                        <div className="space-y-2">
+                          <Label htmlFor="practice-login-email" className="text-sm font-medium text-slate-700">
+                            이메일 <span className="text-destructive">*</span>
+                          </Label>
                           <Input
-                            type={showRecoverNewPassword ? "text" : "password"}
-                            className="h-11 text-base pr-10"
-                            value={recoverNewPassword}
-                            onChange={(e) => setRecoverNewPassword(e.target.value)}
-                            placeholder="10자 이상 + 특수문자"
+                            id="practice-login-email"
+                            type="email"
+                            autoComplete="email"
+                            className={cn(
+                              "h-11 rounded-xl border-slate-200 bg-white text-base shadow-sm",
+                              email.trim() && !isEmailValid
+                                ? "border-destructive focus-visible:ring-destructive"
+                                : "",
+                            )}
+                            value={email}
+                            onChange={(e) => setEmail(e.target.value.trim())}
+                            placeholder="name@clinic.com"
                           />
-                          <button
-                            type="button"
-                            className="absolute right-3 top-3 text-slate-500 hover:text-slate-700"
-                            onClick={() => setShowRecoverNewPassword((prev) => !prev)}
-                            aria-label="새 비밀번호 보기"
-                          >
-                            {showRecoverNewPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                          </button>
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="practice-login-password" className="text-sm font-medium text-slate-700">
+                            비밀번호 <span className="text-destructive">*</span>
+                          </Label>
+                          <div className="relative">
+                            <Input
+                              id="practice-login-password"
+                              type={showAccessPassword ? "text" : "password"}
+                              autoComplete="current-password"
+                              className="h-11 rounded-xl border-slate-200 bg-white pr-10 text-base shadow-sm"
+                              value={accessPassword}
+                              onChange={(e) => setAccessPassword(e.target.value)}
+                              placeholder="비밀번호"
+                            />
+                            <button
+                              type="button"
+                              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700"
+                              onClick={() => setShowAccessPassword((prev) => !prev)}
+                              aria-label="비밀번호 보기"
+                            >
+                              {showAccessPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                            </button>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                    <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <Button
-                          type="button"
-                          variant="outline"
-                          className="h-8"
-                          onClick={() => {
-                            if (isAuthenticated) {
-                              navigate("/practice/inquiries");
-                              return;
-                            }
-                            setShowGuestChat(true);
-                          }}
-                        >
-                          관리자에게 문의
-                        </Button>
-                        <a
-                          href={`tel:${COMPANY_PHONE.replace(/[^0-9+]/g, "")}`}
-                          className="inline-flex h-8 items-center rounded-md border bg-white px-3 text-sm hover:bg-slate-100"
-                        >
-                          어벗츠에 전화하기 ({COMPANY_PHONE})
-                        </a>
+                    )}
+
+                    {authMode === "recover" && (
+                      <div className="space-y-4">
+                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                          <div className="space-y-2">
+                            <Label className="text-sm font-medium text-slate-700">
+                              이메일 <span className="text-destructive">*</span>
+                            </Label>
+                            <Input
+                              type="email"
+                              className={cn(
+                                "h-11 rounded-xl border-slate-200 bg-white text-base shadow-sm",
+                                email.trim() && !isEmailValid
+                                  ? "border-destructive focus-visible:ring-destructive"
+                                  : "",
+                              )}
+                              value={email}
+                              onChange={(e) => setEmail(e.target.value.trim())}
+                              placeholder="name@clinic.com"
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label className="text-sm font-medium text-slate-700">
+                              담당자 휴대폰 <span className="text-destructive">*</span>
+                            </Label>
+                            <Input
+                              className={cn(
+                                "h-11 rounded-xl border-slate-200 bg-white text-base shadow-sm",
+                                phone.trim() && !isPhoneValid
+                                  ? "border-destructive focus-visible:ring-destructive"
+                                  : "",
+                              )}
+                              value={phone}
+                              onChange={(e) => setPhone(formatPhoneNumberInput(e.target.value))}
+                              placeholder="010-1234-5678"
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label className="text-sm font-medium text-slate-700">
+                              새 비밀번호 <span className="text-destructive">*</span>
+                            </Label>
+                            <div className="relative">
+                              <Input
+                                type={showRecoverNewPassword ? "text" : "password"}
+                                className={cn(
+                                  "h-11 rounded-xl border-slate-200 bg-white pr-10 text-base shadow-sm",
+                                  recoverNewPassword && !isRecoverPasswordStrong
+                                    ? "border-destructive focus-visible:ring-destructive"
+                                    : "",
+                                )}
+                                value={recoverNewPassword}
+                                onChange={(e) => setRecoverNewPassword(e.target.value)}
+                                placeholder="10자 이상 + 특수문자"
+                              />
+                              <button
+                                type="button"
+                                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700"
+                                onClick={() => setShowRecoverNewPassword((prev) => !prev)}
+                                aria-label="새 비밀번호 보기"
+                              >
+                                {showRecoverNewPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex flex-col gap-3 border-t border-slate-100 pt-4 sm:flex-row sm:items-center sm:justify-between">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              className="h-9 rounded-lg border-slate-200 bg-white"
+                              onClick={() => {
+                                if (isAuthenticated) {
+                                  navigate("/practice/inquiries");
+                                  return;
+                                }
+                                setShowGuestChat(true);
+                              }}
+                            >
+                              관리자에게 문의
+                            </Button>
+                            <a
+                              href={`tel:${COMPANY_PHONE.replace(/[^0-9+]/g, "")}`}
+                              className="inline-flex h-9 items-center rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-600 hover:bg-slate-50"
+                            >
+                              어벗츠 전화 ({COMPANY_PHONE})
+                            </a>
+                          </div>
+                          <Button
+                            type="button"
+                            className="h-10 rounded-xl bg-sky-600 px-5 text-white hover:bg-sky-700"
+                            onClick={() => void handlePracticePasswordChange()}
+                            disabled={authSubmitting || !canSubmitRecover}
+                          >
+                            {authSubmitting ? "변경 중..." : "비밀번호 변경"}
+                          </Button>
+                        </div>
                       </div>
+                    )}
 
-                      <div className="flex justify-end lg:min-w-[140px]">
-                        <Button type="button" className="h-10" onClick={() => void handlePracticePasswordChange()} disabled={authSubmitting}>
-                          {authSubmitting ? "변경 중..." : "비밀번호 변경"}
-                        </Button>
+                    {authMode === "signup" && (
+                      <div className="space-y-4">
+                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                          <div className="space-y-2">
+                            <Label htmlFor="practiceEmail" className="flex h-5 items-center text-sm font-medium text-slate-700">
+                              이메일 <span className="ml-0.5 text-destructive">*</span>
+                            </Label>
+                            <div className="relative">
+                              <Input
+                                id="practiceEmail"
+                                type="email"
+                                autoComplete="email"
+                                disabled={emailVerified}
+                                className={cn(
+                                  "box-border h-11 rounded-xl border-slate-200 bg-white py-0 text-base shadow-sm",
+                                  emailVerified ? "pr-[4.75rem]" : "pr-[5.75rem]",
+                                  email.trim() && !isEmailValid
+                                    ? "border-destructive focus-visible:ring-destructive"
+                                    : "",
+                                )}
+                                value={email}
+                                onChange={(e) => {
+                                  setEmail(e.target.value.trim());
+                                  resetEmailVerification();
+                                }}
+                                onKeyDown={(e) => {
+                                  if (e.key !== "Enter") return;
+                                  e.preventDefault();
+                                  if (emailVerified || !isEmailValid || emailSending) return;
+                                  void handleSendEmailVerification();
+                                }}
+                                placeholder="name@clinic.com"
+                              />
+                              {emailVerified ? (
+                                <span className="pointer-events-none absolute right-2.5 top-1/2 inline-flex -translate-y-1/2 items-center gap-1 text-xs font-medium text-emerald-600">
+                                  <CheckCircle2 className="h-3.5 w-3.5" />
+                                  인증 완료
+                                </span>
+                              ) : (
+                                <button
+                                  type="button"
+                                  className="absolute right-1.5 top-1/2 h-8 -translate-y-1/2 rounded-lg bg-sky-600 px-2.5 text-xs font-medium leading-none text-white hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-50"
+                                  disabled={!isEmailValid || emailSending}
+                                  onClick={() => void handleSendEmailVerification()}
+                                >
+                                  {emailSending
+                                    ? "발송 중..."
+                                    : emailCodeSent
+                                      ? "재발송"
+                                      : "인증 발송"}
+                                </button>
+                              )}
+                            </div>
+                            {email.trim() && !isEmailValid ? (
+                              <p className="text-xs text-destructive">
+                                올바른 이메일 형식으로 입력해주세요.
+                              </p>
+                            ) : null}
+                            {emailCodeSent && !emailVerified ? (
+                              <div className="relative">
+                                <Input
+                                  inputMode="numeric"
+                                  maxLength={4}
+                                  className="box-border h-11 rounded-xl border-slate-200 bg-white py-0 pr-[4.75rem] text-center text-lg tracking-[0.35em] shadow-sm"
+                                  value={emailCode}
+                                  onChange={(e) =>
+                                    setEmailCode(e.target.value.replace(/\D/g, "").slice(0, 4))
+                                  }
+                                  onKeyDown={(e) => {
+                                    if (e.key !== "Enter") return;
+                                    e.preventDefault();
+                                    if (emailCode.length !== 4 || emailVerifying) return;
+                                    void handleVerifyEmailCode();
+                                  }}
+                                  placeholder="0000"
+                                  aria-label="이메일 인증번호"
+                                />
+                                <button
+                                  type="button"
+                                  className="absolute right-1.5 top-1/2 h-8 -translate-y-1/2 rounded-lg bg-sky-600 px-3 text-xs font-medium leading-none text-white hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-50"
+                                  disabled={emailCode.length !== 4 || emailVerifying}
+                                  onClick={() => void handleVerifyEmailCode()}
+                                >
+                                  {emailVerifying ? "확인 중..." : "확인"}
+                                </button>
+                              </div>
+                            ) : null}
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="accessPassword" className="flex h-5 items-center text-sm font-medium text-slate-700">
+                              비밀번호 <span className="ml-0.5 text-destructive">*</span>
+                            </Label>
+                            <div className="relative">
+                              <Input
+                                id="accessPassword"
+                                type={showAccessPassword ? "text" : "password"}
+                                autoComplete="new-password"
+                                className={cn(
+                                  "box-border h-11 rounded-xl border-slate-200 bg-white py-0 pr-10 text-base shadow-sm",
+                                  accessPassword && !isStrongPassword
+                                    ? "border-destructive focus-visible:ring-destructive"
+                                    : "",
+                                )}
+                                value={accessPassword}
+                                onChange={(e) => setAccessPassword(e.target.value)}
+                                placeholder="10자 이상 + 특수문자"
+                              />
+                              <button
+                                type="button"
+                                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700"
+                                onClick={() => setShowAccessPassword((prev) => !prev)}
+                                aria-label="비밀번호 보기"
+                              >
+                                {showAccessPassword ? (
+                                  <EyeOff className="h-4 w-4" />
+                                ) : (
+                                  <Eye className="h-4 w-4" />
+                                )}
+                              </button>
+                            </div>
+                            {accessPassword && !isStrongPassword ? (
+                              <p className="text-xs text-destructive">
+                                10자 이상 + 특수문자 포함, `$` 불가
+                              </p>
+                            ) : null}
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="practiceName" className="flex h-5 items-center text-sm font-medium text-slate-700">
+                              치과명 <span className="ml-0.5 text-destructive">*</span>
+                            </Label>
+                            <Input
+                              id="practiceName"
+                              className="box-border h-11 rounded-xl border-slate-200 bg-white py-0 text-base shadow-sm"
+                              value={practiceName}
+                              onChange={(e) => setPracticeName(e.target.value)}
+                              placeholder="예: OO치과의원"
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="clinicPhone" className="flex h-5 items-center text-sm font-medium text-slate-700">
+                              치과 전화번호 <span className="ml-0.5 text-destructive">*</span>
+                            </Label>
+                            <Input
+                              id="clinicPhone"
+                              className={cn(
+                                "box-border h-11 rounded-xl border-slate-200 bg-white py-0 text-base shadow-sm",
+                                clinicPhone.trim() && !isClinicPhoneValid
+                                  ? "border-destructive focus-visible:ring-destructive"
+                                  : "",
+                              )}
+                              value={clinicPhone}
+                              onChange={(e) =>
+                                setClinicPhone(formatPhoneNumberInput(e.target.value))
+                              }
+                              placeholder="예: 02-123-4567"
+                            />
+                            {clinicPhone.trim() && !isClinicPhoneValid ? (
+                              <p className="text-xs text-destructive">
+                                올바른 전화번호 형식으로 입력해주세요.
+                              </p>
+                            ) : null}
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="staffName" className="flex h-5 items-center text-sm font-medium text-slate-700">
+                              담당직원명 <span className="ml-0.5 text-destructive">*</span>
+                            </Label>
+                            <Input
+                              id="staffName"
+                              className="box-border h-11 rounded-xl border-slate-200 bg-white py-0 text-base shadow-sm"
+                              value={staffName}
+                              onChange={(e) => setStaffName(e.target.value)}
+                              placeholder="예: 김담당"
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="phone" className="flex h-5 items-center text-sm font-medium text-slate-700">
+                              담당자 휴대폰 <span className="ml-0.5 text-destructive">*</span>
+                            </Label>
+                            <div className="relative">
+                              <Input
+                                id="phone"
+                                disabled={phoneVerified}
+                                className={cn(
+                                  "box-border h-11 rounded-xl border-slate-200 bg-white py-0 text-base shadow-sm",
+                                  phoneVerified ? "pr-[4.75rem]" : "pr-[5.75rem]",
+                                  phone.trim() && !isPhoneValid
+                                    ? "border-destructive focus-visible:ring-destructive"
+                                    : "",
+                                )}
+                                value={phone}
+                                onChange={(e) => {
+                                  setPhone(formatPhoneNumberInput(e.target.value));
+                                  resetPhoneVerification();
+                                }}
+                                onKeyDown={(e) => {
+                                  if (e.key !== "Enter") return;
+                                  e.preventDefault();
+                                  if (phoneVerified || !isPhoneValid || phoneSending) return;
+                                  void handleSendPhoneVerification();
+                                }}
+                                placeholder="010-1234-5678"
+                              />
+                              {phoneVerified ? (
+                                <span className="pointer-events-none absolute right-2.5 top-1/2 inline-flex -translate-y-1/2 items-center gap-1 text-xs font-medium text-emerald-600">
+                                  <CheckCircle2 className="h-3.5 w-3.5" />
+                                  인증 완료
+                                </span>
+                              ) : (
+                                <button
+                                  type="button"
+                                  className="absolute right-1.5 top-1/2 h-8 -translate-y-1/2 rounded-lg bg-sky-600 px-2.5 text-xs font-medium leading-none text-white hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-50"
+                                  disabled={!isPhoneValid || phoneSending}
+                                  onClick={() => void handleSendPhoneVerification()}
+                                >
+                                  {phoneSending
+                                    ? "발송 중..."
+                                    : phoneCodeSent
+                                      ? "재발송"
+                                      : "인증 발송"}
+                                </button>
+                              )}
+                            </div>
+                            {phone.trim() && !isPhoneValid ? (
+                              <p className="text-xs text-destructive">
+                                휴대폰 번호(010 등) 형식으로 입력해주세요.
+                              </p>
+                            ) : null}
+                            {phoneCodeSent && !phoneVerified ? (
+                              <div className="relative">
+                                <Input
+                                  inputMode="numeric"
+                                  maxLength={4}
+                                  className="box-border h-11 rounded-xl border-slate-200 bg-white py-0 pr-[4.75rem] text-center text-lg tracking-[0.35em] shadow-sm"
+                                  value={phoneCode}
+                                  onChange={(e) =>
+                                    setPhoneCode(e.target.value.replace(/\D/g, "").slice(0, 4))
+                                  }
+                                  onKeyDown={(e) => {
+                                    if (e.key !== "Enter") return;
+                                    e.preventDefault();
+                                    if (phoneCode.length !== 4 || phoneVerifying) return;
+                                    void handleVerifyPhoneCode();
+                                  }}
+                                  placeholder="0000"
+                                  aria-label="휴대폰 인증번호"
+                                />
+                                <button
+                                  type="button"
+                                  className="absolute right-1.5 top-1/2 h-8 -translate-y-1/2 rounded-lg bg-sky-600 px-3 text-xs font-medium leading-none text-white hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-50"
+                                  disabled={phoneCode.length !== 4 || phoneVerifying}
+                                  onClick={() => void handleVerifyPhoneCode()}
+                                >
+                                  {phoneVerifying ? "확인 중..." : "확인"}
+                                </button>
+                              </div>
+                            ) : null}
+                          </div>
+                          <div className="space-y-2 sm:col-span-2">
+                            <BusinessAddressFields
+                              address={address}
+                              addressDetail={addressDetail}
+                              zipCode={zipCode}
+                              onChangeAddress={setAddress}
+                              onChangeAddressDetail={setAddressDetail}
+                              onChangeZipCode={setZipCode}
+                              addressLabel="주소"
+                              rowLayout="address-detail-zip"
+                            />
+                          </div>
+                        </div>
                       </div>
-                    </div>
+                    )}
                   </div>
-                )}
-
-                {authMode === "signup" && (
-                <div className="space-y-3">
-                  <div className="grid grid-cols-1 gap-3 lg:grid-cols-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="practiceName" className="text-sm">치과명</Label>
-                    <Input
-                      id="practiceName"
-                      className="h-11 text-base"
-                      value={practiceName}
-                      onChange={(e) => setPracticeName(e.target.value)}
-                      placeholder="예: OO치과의원"
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="accessPassword" className="text-sm">접속 비밀번호</Label>
-                    <div className="relative">
-                      <Input
-                        id="accessPassword"
-                        type={showAccessPassword ? "text" : "password"}
-                        className={cn(
-                          "h-11 text-base pr-10",
-                          accessPassword && !isStrongPassword
-                            ? "border-destructive focus-visible:ring-destructive"
-                            : "",
-                        )}
-                        value={accessPassword}
-                        onChange={(e) => setAccessPassword(e.target.value)}
-                        placeholder="10자 이상 + 특수문자"
-                      />
-                      <button
-                        type="button"
-                        className="absolute right-3 top-3 text-slate-500 hover:text-slate-700"
-                        onClick={() => setShowAccessPassword((prev) => !prev)}
-                        aria-label="비밀번호 보기"
-                      >
-                        {showAccessPassword ? (
-                          <EyeOff className="h-4 w-4" />
-                        ) : (
-                          <Eye className="h-4 w-4" />
-                        )}
-                      </button>
-                    </div>
-                    {accessPassword && !isStrongPassword ? (
-                      <p className="text-xs text-destructive">
-                        10자 이상 + 특수문자 포함, `$` 불가
-                      </p>
-                    ) : null}
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="staffName" className="text-sm">담당직원명</Label>
-                    <Input
-                      id="staffName"
-                      className="h-11 text-base"
-                      value={staffName}
-                      onChange={(e) => setStaffName(e.target.value)}
-                      placeholder="예: 김담당"
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="phone" className="text-sm">전화번호</Label>
-                    <Input
-                      id="phone"
-                      className={cn(
-                        "h-11 text-base",
-                        phone.trim() && !isPhoneValid
-                          ? "border-destructive focus-visible:ring-destructive"
-                          : "",
-                      )}
-                      value={phone}
-                      onChange={(e) => setPhone(formatPhoneNumberInput(e.target.value))}
-                      placeholder="예: 02-123-4567"
-                    />
-                    {phone.trim() && !isPhoneValid ? (
-                      <p className="text-xs text-destructive">
-                        올바른 전화번호 형식으로 입력해주세요.
-                      </p>
-                    ) : null}
-                  </div>
-
-                    <div className="space-y-2 lg:col-span-4">
-                      <BusinessAddressFields
-                        address={address}
-                        addressDetail={addressDetail}
-                        zipCode={zipCode}
-                        onChangeAddress={setAddress}
-                        onChangeAddressDetail={setAddressDetail}
-                        onChangeZipCode={setZipCode}
-                        addressLabel="주소"
-                        rowLayout="address-detail-zip"
-                      />
-                    </div>
-                  </div>
-
-
                 </div>
-                )}
-
-                {authMode !== "checking" && authMode !== "session" && (
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Button
-                      type="button"
-                      variant={authMode === "login" ? "secondary" : "outline"}
-                      className="h-9 min-w-[120px]"
-                      onClick={() => setAuthMode("login")}
-                    >
-                      로그인
-                    </Button>
-                    <Button
-                      type="button"
-                      variant={authMode === "signup" ? "secondary" : "outline"}
-                      className="h-9 min-w-[120px]"
-                      onClick={() => setAuthMode("signup")}
-                    >
-                      회원가입
-                    </Button>
-                    <Button
-                      type="button"
-                      variant={authMode === "recover" ? "secondary" : "outline"}
-                      className="h-9 min-w-[120px]"
-                      onClick={() => setAuthMode("recover")}
-                    >
-                      비밀번호 변경
-                    </Button>
-                  </div>
-                )}
               </form>
             )}
 
@@ -2203,7 +2726,7 @@ export const PracticeDropzonePage = () => {
               <Button
                 type="submit"
                 form="practice-auth-form"
-                className="h-11 px-6 text-base bg-blue-600 text-white hover:bg-blue-700"
+                className="h-11 rounded-xl bg-sky-600 px-6 text-base text-white shadow-sm hover:bg-sky-700"
                 disabled={
                   !canPrimaryAction ||
                   signupSubmitting ||
@@ -2227,9 +2750,9 @@ export const PracticeDropzonePage = () => {
                         : authMode === "session"
                           ? "의뢰 제출하기"
                           : authMode === "login"
-                            ? "로그인 후 의뢰계속하기"
+                            ? "로그인 후 계속하기"
                             : authMode === "recover"
-                              ? "비밀번호 변경에서 진행"
+                              ? "비밀번호 변경"
                               : signupCompleted
                                 ? "의뢰 제출하기"
                                 : "회원가입 후 계속하기"}

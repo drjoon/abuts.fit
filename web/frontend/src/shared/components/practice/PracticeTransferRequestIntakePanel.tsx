@@ -57,7 +57,6 @@ export type PracticeTransferRequestIntakePanelProps = {
   labSearching: boolean;
   recentLabs: SearchBusinessResult[];
   recentLabsInitialized: boolean;
-  autoClinicName: string;
   patientName: string;
   setPatientName: (value: string) => void;
   orderDate: string;
@@ -93,7 +92,6 @@ export const PracticeTransferRequestIntakePanel = ({
   labSearching,
   recentLabs,
   recentLabsInitialized,
-  autoClinicName,
   patientName,
   setPatientName,
   orderDate,
@@ -123,15 +121,15 @@ export const PracticeTransferRequestIntakePanel = ({
     : normalizedProsthesisTypes[0] || "크라운";
 
   return (
-    <div className="rounded-xl border bg-background p-4 flex h-full min-h-0 flex-col gap-3">
+    <div className="flex h-full min-h-0 flex-col gap-3 overflow-hidden rounded-2xl border border-slate-200/80 bg-gradient-to-br from-white via-white to-sky-50/60 p-4 shadow-[0_4px_12px_rgba(15,23,42,0.03)] transition-all hover:shadow-[0_8px_20px_rgba(15,23,42,0.06)]">
       <div className="flex items-center justify-between gap-2">
-        <h3 className="text-base font-semibold">의뢰서 작성</h3>
+        <h3 className="text-base font-semibold text-slate-900">의뢰서 작성</h3>
         {onClearAll ? (
           <Button
             type="button"
             variant="outline"
             size="sm"
-            className="h-8"
+            className="h-8 rounded-lg border-slate-200 bg-white"
             onClick={onClearAll}
           >
             전체삭제
@@ -139,84 +137,41 @@ export const PracticeTransferRequestIntakePanel = ({
         ) : null}
       </div>
 
-      <div className="space-y-2">
-        <Label className="text-sm">기공소 선택 <span className="text-destructive">*</span></Label>
-        <Popover open={labOpen} onOpenChange={setLabOpen}>
-          <PopoverTrigger asChild>
-            <Button
-              type="button"
-              variant="outline"
-              role="combobox"
-              aria-expanded={labOpen}
-              className="h-11 w-full justify-between text-base"
-            >
-              <span className="truncate">
-                {selectedLab ? getBusinessLabel(selectedLab) : "기공소를 검색해서 선택하세요"}
-              </span>
-              <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent className="w-[420px] p-0" align="start">
-            <Command>
-              <CommandInput
-                placeholder="기공소 검색 (사업자명/대표자명/사업자번호/주소)"
-                value={labSearch}
-                onValueChange={(v) => {
-                  setLabSearch(v);
-                }}
-              />
-              <CommandList>
-                {!recentLabsInitialized ? (
-                  <div className="px-3 py-2 text-sm text-muted-foreground">불러오는 중...</div>
-                ) : null}
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <div className="space-y-2 sm:col-span-2">
+          <Label className="text-sm">기공소 선택 <span className="text-destructive">*</span></Label>
+          <Popover open={labOpen} onOpenChange={setLabOpen}>
+            <PopoverTrigger asChild>
+              <Button
+                type="button"
+                variant="outline"
+                role="combobox"
+                aria-expanded={labOpen}
+                className="h-11 w-full justify-between text-base"
+              >
+                <span className="truncate">
+                  {selectedLab ? getBusinessLabel(selectedLab) : "기공소를 검색해서 선택하세요"}
+                </span>
+                <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-[420px] p-0" align="start">
+              <Command>
+                <CommandInput
+                  placeholder="기공소 검색 (사업자명/대표자명/사업자번호/주소)"
+                  value={labSearch}
+                  onValueChange={(v) => {
+                    setLabSearch(v);
+                  }}
+                />
+                <CommandList>
+                  {!recentLabsInitialized ? (
+                    <div className="px-3 py-2 text-sm text-muted-foreground">불러오는 중...</div>
+                  ) : null}
 
-                {recentLabs.length > 0 ? (
-                  <CommandGroup heading="최근 전송한 기공소">
-                    {recentLabs.map((b) => {
-                      const selected = selectedLab?._id === b._id;
-                      const rep = String(b.representativeName || "").trim();
-                      const bn = String(b.businessNumber || "").trim();
-                      const addr = String(b.address || "").trim();
-                      const meta = [rep ? `대표: ${rep}` : "", bn ? `사업자: ${bn}` : "", addr || ""]
-                        .filter(Boolean)
-                        .join(" · ");
-                      const searchValue = [b.name, rep, bn, addr].filter(Boolean).join(" ");
-
-                      return (
-                        <CommandItem
-                          key={`recent-${b._id}`}
-                          value={searchValue}
-                          onSelect={() => {
-                            setSelectedLab(b);
-                            setLabOpen(false);
-                          }}
-                        >
-                          <Check
-                            className={cn(
-                              "mr-2 h-4 w-4",
-                              selected ? "opacity-100" : "opacity-0",
-                            )}
-                          />
-                          <div className="min-w-0">
-                            <div className="truncate text-base font-medium">{getBusinessLabel(b)}</div>
-                            {meta ? <div className="truncate text-sm text-muted-foreground">{meta}</div> : null}
-                          </div>
-                        </CommandItem>
-                      );
-                    })}
-                  </CommandGroup>
-                ) : (
-                  <div className="px-3 py-2 text-sm text-muted-foreground">최근 전송한 기공소가 없습니다.</div>
-                )}
-
-                <CommandSeparator />
-
-                <CommandGroup heading="기공소 검색">
-                  {labSearching ? (
-                    <div className="px-3 py-2 text-sm text-muted-foreground">검색 중...</div>
-                  ) : labSearch.trim() ? (
-                    labSearchResults.length > 0 ? (
-                      labSearchResults.map((b) => {
+                  {recentLabs.length > 0 ? (
+                    <CommandGroup heading="최근 전송한 기공소">
+                      {recentLabs.map((b) => {
                         const selected = selectedLab?._id === b._id;
                         const rep = String(b.representativeName || "").trim();
                         const bn = String(b.businessNumber || "").trim();
@@ -228,7 +183,7 @@ export const PracticeTransferRequestIntakePanel = ({
 
                         return (
                           <CommandItem
-                            key={b._id}
+                            key={`recent-${b._id}`}
                             value={searchValue}
                             onSelect={() => {
                               setSelectedLab(b);
@@ -243,38 +198,70 @@ export const PracticeTransferRequestIntakePanel = ({
                             />
                             <div className="min-w-0">
                               <div className="truncate text-base font-medium">{getBusinessLabel(b)}</div>
-                              {meta ? (
-                                <div className="truncate text-sm text-muted-foreground">{meta}</div>
-                              ) : null}
+                              {meta ? <div className="truncate text-sm text-muted-foreground">{meta}</div> : null}
                             </div>
                           </CommandItem>
                         );
-                      })
-                    ) : (
-                      <div className="px-3 py-2 text-sm text-muted-foreground">검색 결과가 없습니다.</div>
-                    )
+                      })}
+                    </CommandGroup>
                   ) : (
-                    <div className="px-3 py-2 text-sm text-muted-foreground">
-                      검색어를 입력하면 기공소를 찾을 수 있습니다.
-                    </div>
+                    <div className="px-3 py-2 text-sm text-muted-foreground">최근 전송한 기공소가 없습니다.</div>
                   )}
-                </CommandGroup>
-              </CommandList>
-            </Command>
-          </PopoverContent>
-        </Popover>
-      </div>
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <div className="space-y-2">
-          <Label className="text-sm">치과명 (자동)</Label>
-          <Input
-            value={autoClinicName}
-            disabled
-            readOnly
-            placeholder="로그인한 치과명이 자동으로 표시됩니다"
-            className="h-11 text-base"
-          />
+                  <CommandSeparator />
+
+                  <CommandGroup heading="기공소 검색">
+                    {labSearching ? (
+                      <div className="px-3 py-2 text-sm text-muted-foreground">검색 중...</div>
+                    ) : labSearch.trim() ? (
+                      labSearchResults.length > 0 ? (
+                        labSearchResults.map((b) => {
+                          const selected = selectedLab?._id === b._id;
+                          const rep = String(b.representativeName || "").trim();
+                          const bn = String(b.businessNumber || "").trim();
+                          const addr = String(b.address || "").trim();
+                          const meta = [rep ? `대표: ${rep}` : "", bn ? `사업자: ${bn}` : "", addr || ""]
+                            .filter(Boolean)
+                            .join(" · ");
+                          const searchValue = [b.name, rep, bn, addr].filter(Boolean).join(" ");
+
+                          return (
+                            <CommandItem
+                              key={b._id}
+                              value={searchValue}
+                              onSelect={() => {
+                                setSelectedLab(b);
+                                setLabOpen(false);
+                              }}
+                            >
+                              <Check
+                                className={cn(
+                                  "mr-2 h-4 w-4",
+                                  selected ? "opacity-100" : "opacity-0",
+                                )}
+                              />
+                              <div className="min-w-0">
+                                <div className="truncate text-base font-medium">{getBusinessLabel(b)}</div>
+                                {meta ? (
+                                  <div className="truncate text-sm text-muted-foreground">{meta}</div>
+                                ) : null}
+                              </div>
+                            </CommandItem>
+                          );
+                        })
+                      ) : (
+                        <div className="px-3 py-2 text-sm text-muted-foreground">검색 결과가 없습니다.</div>
+                      )
+                    ) : (
+                      <div className="px-3 py-2 text-sm text-muted-foreground">
+                        검색어를 입력하면 기공소를 찾을 수 있습니다.
+                      </div>
+                    )}
+                  </CommandGroup>
+                </CommandList>
+              </Command>
+            </PopoverContent>
+          </Popover>
         </div>
 
         <div className="space-y-2">
@@ -433,7 +420,7 @@ export const PracticeTransferRequestIntakePanel = ({
                         });
                       }}
                     >
-                      <SelectTrigger className="h-8 w-[44px] px-2 text-sm">
+                      <SelectTrigger className="h-8 w-9 justify-center gap-0 px-1 text-sm [&>svg]:hidden">
                         <SelectValue placeholder="1" />
                       </SelectTrigger>
                       <SelectContent>
@@ -468,7 +455,7 @@ export const PracticeTransferRequestIntakePanel = ({
                         });
                       }}
                     >
-                      <SelectTrigger className="h-8 w-[44px] px-2 text-sm">
+                      <SelectTrigger className="h-8 w-9 justify-center gap-0 px-1 text-sm [&>svg]:hidden">
                         <SelectValue placeholder="1" />
                       </SelectTrigger>
                       <SelectContent>

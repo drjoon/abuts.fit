@@ -620,6 +620,7 @@ const App = () => {
                       <RoleProtectedRoute
                         roles={[
                           "requestor",
+                          "practice",
                           "salesman",
                           "manufacturer",
                           "admin",

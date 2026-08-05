@@ -320,6 +320,11 @@ export const SettingsWizard = ({
     }
   }, [currentStep, selectedRole, onWizardComplete, STEP_ORDER]);
 
+  const canSkipBusinessRegistration =
+    businessType === "practice" && selectedRole === "owner";
+  const canProceedBusinessStep =
+    validationState.passed || canSkipBusinessRegistration;
+
   const handlePrev = useCallback(() => {
     if (!currentStep) return;
     const currentIndex = STEP_ORDER.indexOf(currentStep);
@@ -489,11 +494,17 @@ export const SettingsWizard = ({
                         nextLoading ||
                         stepBusy ||
                         (currentStep === "role" && !selectedRole) ||
-                        (currentStep === "business" && !validationState.passed)
+                        (currentStep === "business" && !canProceedBusinessStep)
                       }
                       className="w-20 h-11"
                     >
-                      {nextLoading ? "저장 중..." : "다음"}
+                      {nextLoading
+                        ? "저장 중..."
+                        : currentStep === "business" &&
+                            canSkipBusinessRegistration &&
+                            !validationState.passed
+                          ? "나중에"
+                          : "다음"}
                     </Button>
                   )}
                 </div>
@@ -507,7 +518,7 @@ export const SettingsWizard = ({
             className="text-slate-500 hover:text-slate-900"
             type="button"
             onClick={() => {
-              if (currentStep === "business" && validationState.passed) {
+              if (currentStep === "business" && canProceedBusinessStep) {
                 onWizardComplete();
               } else {
                 navigate("/");

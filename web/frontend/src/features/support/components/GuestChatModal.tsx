@@ -2,6 +2,7 @@
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
+// - web/frontend/src/pages/practice/PracticeDropzonePage.tsx
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -84,18 +85,22 @@ export const GuestChatModal = ({ open, onOpenChange }: GuestChatModalProps) => {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md border-white/15 bg-[#050915]/95 text-white shadow-[0_35px_80px_rgba(4,8,18,0.65)] backdrop-blur-2xl">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2 text-white">
-            <MessageSquare className="h-5 w-5 text-cyan-300" />
-            문의 남기기
-          </DialogTitle>
-        </DialogHeader>
+      <DialogContent className="overflow-hidden rounded-2xl border border-slate-200/80 bg-gradient-to-br from-white via-white to-sky-50/60 p-0 shadow-[0_4px_12px_rgba(15,23,42,0.03)] transition-all hover:shadow-[0_8px_20px_rgba(15,23,42,0.06)] sm:max-w-md">
+        <div className="border-b border-slate-100 bg-white/70 px-6 py-4">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-slate-900">
+              <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-sky-50 text-sky-600">
+                <MessageSquare className="h-4 w-4" />
+              </span>
+              문의 남기기
+            </DialogTitle>
+          </DialogHeader>
+        </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-4 px-6 py-5">
           <div className="space-y-2">
-            <Label htmlFor="name" className="text-sm font-medium text-white/80">
-              이름 *
+            <Label htmlFor="name" className="text-sm font-medium text-slate-700">
+              이름 <span className="text-destructive">*</span>
             </Label>
             <Input
               id="name"
@@ -103,16 +108,13 @@ export const GuestChatModal = ({ open, onOpenChange }: GuestChatModalProps) => {
               value={name}
               onChange={(e) => setName(e.target.value)}
               required
-              className="h-11 border-white/10 bg-white/5 text-white placeholder:text-white/40"
+              className="h-11 rounded-xl border-slate-200 bg-white text-slate-900 shadow-sm placeholder:text-slate-400"
             />
           </div>
 
           <div className="space-y-2">
-            <Label
-              htmlFor="email"
-              className="text-sm font-medium text-white/80"
-            >
-              이메일 *
+            <Label htmlFor="email" className="text-sm font-medium text-slate-700">
+              이메일 <span className="text-destructive">*</span>
             </Label>
             <Input
               id="email"
@@ -121,16 +123,16 @@ export const GuestChatModal = ({ open, onOpenChange }: GuestChatModalProps) => {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
-              className="h-11 border-white/10 bg-white/5 text-white placeholder:text-white/40"
+              className="h-11 rounded-xl border-slate-200 bg-white text-slate-900 shadow-sm placeholder:text-slate-400"
             />
           </div>
 
           <div className="space-y-2">
             <Label
               htmlFor="message"
-              className="text-sm font-medium text-white/80"
+              className="text-sm font-medium text-slate-700"
             >
-              문의 내용 *
+              문의 내용 <span className="text-destructive">*</span>
             </Label>
             <Textarea
               id="message"
@@ -139,21 +141,21 @@ export const GuestChatModal = ({ open, onOpenChange }: GuestChatModalProps) => {
               onChange={(e) => setMessage(e.target.value)}
               rows={4}
               required
-              className="border-white/10 bg-white/5 text-white placeholder:text-white/40"
+              className="rounded-xl border-slate-200 bg-white text-slate-900 shadow-sm placeholder:text-slate-400"
             />
           </div>
 
-          <div className="rounded-xl border border-white/5 bg-white/5 p-3 text-xs text-white/70">
+          <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs text-slate-500">
             * 문의 남기기 기능은 비회원용입니다. 답변은 입력하신 이메일로
             발송됩니다.
           </div>
 
           <Button
             type="submit"
-            className="w-full h-11 rounded-full bg-gradient-to-r from-emerald-400 via-cyan-400 to-blue-500 text-slate-950 font-semibold shadow-lg shadow-cyan-500/25 hover:from-emerald-300 hover:via-cyan-300 hover:to-blue-400"
+            className="h-11 w-full rounded-xl bg-sky-600 text-white shadow-sm hover:bg-sky-700"
             disabled={loading}
           >
-            <Send className="h-4 w-4 mr-2" />
+            <Send className="mr-2 h-4 w-4" />
             {loading ? "전송 중..." : "문의 남기기"}
           </Button>
         </form>

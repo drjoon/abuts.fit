@@ -353,10 +353,21 @@ Notes:
   - 의뢰자 치과 페이지 상태 배지 기준: `src/pages/requestor/practice/RequestorPracticePage.tsx` (`isRead/requestorReadAt`, `isDownloaded/requestorDownloadedAt`)
 
 - 치과(practice) 가입 절차 SSOT
-  - 일반 회원가입(`src/features/auth/SignupPage.tsx`)에서 `practice` 역할은 `src/pages/practice/PracticeDropzonePage.tsx`와 동일한 최소 항목(`clinicName`, `staffName`, `phone`, `address`, `addressDetail`, `zipCode`, `password`)으로 가입합니다.
-  - API는 일반 `/api/auth/register`가 아니라 `POST /api/auth/practice/register`를 사용합니다.
-  - 치과 역할은 소개코드 단계/이메일 인증 단계를 거치지 않고 치과 정보 입력 후 가입 완료로 진행합니다.
-  - UI는 전용 스텝 컴포넌트(`src/features/auth/signup/SignupWizardPracticeAccountStep.tsx`)에서 2열 입력(치과명/담당자명, 전화번호/접속 비밀번호) + 공통 주소 컴포넌트(`BusinessAddressFields`)를 사용하며, 비밀번호 확인 필드는 두지 않습니다.
+  - 일반 회원가입(`src/features/auth/SignupPage.tsx`)에서 `practice`는 의뢰자(`requestor`)/영업자(`salesman`)와 동일한 가입·로그인·온보딩 경로를 사용합니다.
+  - 가입 API는 `POST /api/auth/register` (`role: "practice"`)이며, 소개코드(선택) → 계정 정보 → 이메일 인증(소셜 제외) 순서로 진행합니다.
+  - 로그인 페이지(`/login`)도 공유합니다. 신규 치과는 이메일 로그인, 레거시 치과명 계정은 `POST /api/auth/practice/login`으로 계속 지원합니다.
+  - 가입 후 `/dashboard/wizard` 온보딩(프로필 → 휴대전화 → 역할 → 사업자)을 강제합니다.
+  - 사업자등록증 업로드는 practice owner 경로에서 옵션입니다. 업로드 없이 온보딩을 마칠 수 있으며, 이후 설정(`PracticeSettingsPage` 사업자 탭)에서 등록 가능합니다.
+  - 공개 드롭존(`PracticeDropzonePage`)은 전송 흐름을 끊지 않도록 Step 2에 임베디드 로그인/가입/비밀번호 변경 UI를 유지합니다.
+  - 드롭존 가입 API는 `POST /api/auth/practice/register`이며, 필수값은 `email`, `clinicName`, `staffName`, `password`, `clinicPhone`(치과 전화), `phone`(담당자 휴대폰), `address`, `zipCode`입니다.
+  - 드롭존 가입 전 이메일·담당자 휴대폰 인증이 필요합니다.
+    - 이메일: `POST /api/auth/signup/email-verification/send` → `POST /api/auth/signup/email-verification/verify` → `GET /api/auth/signup/email-verification/status`
+    - 휴대폰: `POST /api/auth/signup/phone-verification/send` → `POST /api/auth/signup/phone-verification/verify` → `GET /api/auth/signup/phone-verification/status`
+    - 인증 완료 상태는 서버(`SignupVerification`)가 SSOT이며, 드롭존은 로컬스토리지(`practice_dropzone_signup_verification_v1`)에 캐시해 새로고침 후에도 복구합니다.
+  - 드롭존 비회원 문의 모달(`GuestChatModal`)은 드롭존 라이트 테마(흰 카드/슬레이트 텍스트/스카이 CTA)와 동일 스타일을 유지합니다.
+  - 드롭존 로그인은 이메일+비밀번호(`POST /api/auth/login`)를 사용하고, practice role만 허용합니다.
+  - 드롭존 비밀번호 변경은 `POST /api/auth/practice/password/change`에 `email` + `phone` + `newPassword`를 사용합니다.
+  - 레거시 치과명 로그인(`POST /api/auth/practice/login`)은 공통 `/login` 페이지에서 계속 지원합니다.
   - 관리자 사용자/사업자 화면(`src/pages/admin/users/AdminUserManagement.tsx`, `src/pages/admin/businesses/AdminBusinessPage.tsx`)에서는 `practice`를 별도 역할(`치과`)로 표시/필터링해야 합니다.
   - 정책 고정: practice는 전송 전용 role이므로 크레딧/정산/추천(리퍼럴) UI(탭/카드/집계) 범위로 확장하지 않습니다.
   - 강제 분리: practice 화면/훅은 `Request` 도메인 API(`/api/requests/*`)를 호출하지 않고,

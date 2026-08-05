@@ -6,6 +6,7 @@ import crypto from "crypto";
 import SignupVerification from "../../models/signupVerification.model.js";
 import User from "../../models/user.model.js";
 import { sendEmail } from "../../utils/email.util.js";
+import { messageService } from "../../utils/popbill.util.js";
 import { toKstYmd } from "../../utils/krBusinessDays.js";
 import { getFrontendBaseUrl, getBackendBaseUrl } from "../../utils/url.util.js";
 
@@ -13,6 +14,16 @@ const normalizeEmail = (email) =>
   String(email || "")
     .trim()
     .toLowerCase();
+
+const normalizePhoneDigits = (phone) => String(phone || "").replace(/\D/g, "");
+
+const toE164Korea = (digits) => {
+  const raw = normalizePhoneDigits(digits);
+  if (!raw) return "";
+  if (raw.startsWith("82")) return `+${raw}`;
+  if (raw.startsWith("0")) return `+82${raw.slice(1)}`;
+  return `+82${raw}`;
+};
 
 const isProd = () => process.env.NODE_ENV === "production";
 
@@ -61,7 +72,11 @@ const ensureVerificationDoc = async ({ channel, target }) => {
   }
 };
 
-const MAX_DAILY_VERIFICATION_EMAILS = 3;
+const MAX_DAILY_VERIFICATION_BY_CHANNEL = {
+  email: 10,
+  phone: 5,
+};
+
 const canSend = ({ existing, now, channel }) => {
   const todayKey = toKstYmd(new Date(now));
   const prevDailyKey = String(existing?.dailySendDate || "");
@@ -72,12 +87,16 @@ const canSend = ({ existing, now, channel }) => {
       : 0;
 
   const nextDailyCount = prevDailyKey === todayKey ? prevDailyCount : 0;
+  const maxDaily =
+    MAX_DAILY_VERIFICATION_BY_CHANNEL[channel] ??
+    MAX_DAILY_VERIFICATION_BY_CHANNEL.email;
+  const channelLabel = channel === "phone" ? "인증 문자" : "인증 메일";
 
-  if (nextDailyCount >= MAX_DAILY_VERIFICATION_EMAILS) {
+  if (nextDailyCount >= maxDaily) {
     return {
       ok: false,
       status: 429,
-      message: `하루 ${MAX_DAILY_VERIFICATION_EMAILS}회까지만 인증 메일을 받을 수 있습니다.`,
+      message: `하루 ${maxDaily}회까지만 ${channelLabel}을 받을 수 있습니다.`,
     };
   }
 
@@ -350,37 +369,77 @@ export async function verifySignupEmailVerification(req, res) {
   }
 }
 
-export async function consumeSignupVerifications({ email, userId }) {
+export async function consumeSignupVerifications({ email, phone, userId }) {
   const now = new Date();
-  await SignupVerification.updateOne(
-    {
-      purpose: "signup",
-      channel: "email",
-      target: email,
-      verifiedAt: { $ne: null },
-      consumedAt: null,
-    },
-    {
-      $set: {
-        consumedAt: now,
-        consumedByUserId: userId,
+  const emailTarget = normalizeEmail(email);
+  if (emailTarget) {
+    await SignupVerification.updateMany(
+      {
+        purpose: "signup",
+        channel: "email",
+        target: emailTarget,
+        verifiedAt: { $ne: null },
+        consumedAt: null,
       },
-    },
-  );
+      {
+        $set: {
+          consumedAt: now,
+          consumedByUserId: userId,
+        },
+      },
+    );
+  }
+
+  const phoneTarget = normalizePhoneDigits(phone);
+  if (phoneTarget) {
+    await SignupVerification.updateMany(
+      {
+        purpose: "signup",
+        channel: "phone",
+        target: phoneTarget,
+        verifiedAt: { $ne: null },
+        consumedAt: null,
+      },
+      {
+        $set: {
+          consumedAt: now,
+          consumedByUserId: userId,
+        },
+      },
+    );
+  }
 }
 
-export async function assertSignupVerifications({ email }) {
+export async function assertSignupVerifications({ email, phone }) {
   const emailDoc = await SignupVerification.findOne({
     purpose: "signup",
     channel: "email",
-    target: email,
+    target: normalizeEmail(email),
     verifiedAt: { $ne: null },
     consumedAt: null,
   })
     .select({ _id: 1 })
     .lean();
 
-  return Boolean(emailDoc?._id);
+  if (!emailDoc?._id) return false;
+
+  // phone 미전달 시 이메일만 검사 (기존 /api/auth/register 호환)
+  if (phone === undefined) return true;
+
+  const phoneTarget = normalizePhoneDigits(phone);
+  if (!phoneTarget) return false;
+
+  const phoneDoc = await SignupVerification.findOne({
+    purpose: "signup",
+    channel: "phone",
+    target: phoneTarget,
+    verifiedAt: { $ne: null },
+    consumedAt: null,
+  })
+    .select({ _id: 1 })
+    .lean();
+
+  return Boolean(phoneDoc?._id);
 }
 
 export async function verifySignupEmailCode(req, res) {
@@ -524,14 +583,16 @@ export async function getSignupEmailVerificationStatus(req, res) {
       channel: "email",
       target: email,
     })
-      .select({ verifiedAt: 1, sentAt: 1 })
+      .select({ verifiedAt: 1, sentAt: 1, consumedAt: 1 })
       .lean();
+
+    const usable = Boolean(doc?.verifiedAt) && !doc?.consumedAt;
 
     return res.status(200).json({
       success: true,
       data: {
-        verified: Boolean(doc?.verifiedAt),
-        verifiedAt: doc?.verifiedAt || null,
+        verified: usable,
+        verifiedAt: usable ? doc?.verifiedAt || null : null,
         lastSentAt: doc?.sentAt || null,
       },
     });
@@ -540,6 +601,246 @@ export async function getSignupEmailVerificationStatus(req, res) {
     return res.status(500).json({
       success: false,
       message: "이메일 인증 상태 조회 중 오류가 발생했습니다.",
+    });
+  }
+}
+
+export async function getSignupPhoneVerificationStatus(req, res) {
+  try {
+    const phoneDigits = normalizePhoneDigits(
+      req.query?.phone || req.query?.phoneNumber || req.body?.phone || req.body?.phoneNumber,
+    );
+    if (!/^01[016789]\d{7,8}$/.test(phoneDigits)) {
+      return res.status(400).json({
+        success: false,
+        message: "휴대폰 번호 형식을 확인해주세요.",
+      });
+    }
+
+    const doc = await SignupVerification.findOne({
+      purpose: "signup",
+      channel: "phone",
+      target: phoneDigits,
+    })
+      .select({ verifiedAt: 1, sentAt: 1, consumedAt: 1 })
+      .lean();
+
+    const usable = Boolean(doc?.verifiedAt) && !doc?.consumedAt;
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        verified: usable,
+        verifiedAt: usable ? doc?.verifiedAt || null : null,
+        lastSentAt: doc?.sentAt || null,
+      },
+    });
+  } catch (error) {
+    console.error("[getSignupPhoneVerificationStatus] failed", error);
+    return res.status(500).json({
+      success: false,
+      message: "휴대폰 인증 상태 조회 중 오류가 발생했습니다.",
+    });
+  }
+}
+
+export async function sendSignupPhoneVerification(req, res) {
+  try {
+    const phoneDigits = normalizePhoneDigits(req.body?.phone || req.body?.phoneNumber);
+    if (!/^01[016789]\d{7,8}$/.test(phoneDigits)) {
+      return res.status(400).json({
+        success: false,
+        message: "휴대폰 번호 형식을 확인해주세요.",
+      });
+    }
+
+    const e164 = toE164Korea(phoneDigits);
+    const isProd = process.env.NODE_ENV === "production";
+
+    const existing = await ensureVerificationDoc({
+      channel: "phone",
+      target: phoneDigits,
+    });
+    const now = nowMs();
+    const gate = canSend({ existing, now, channel: "phone" });
+    if (!gate.ok) {
+      return res
+        .status(gate.status)
+        .json({
+          success: false,
+          message: String(gate.message || "").replace("인증 메일", "인증 문자"),
+        });
+    }
+
+    const verificationCode = String(crypto.randomInt(1000, 10000));
+    const expiresAt = new Date(now + 5 * 60 * 1000);
+    const sentAt = new Date(now);
+
+    await SignupVerification.updateOne(
+      { purpose: "signup", channel: "phone", target: phoneDigits },
+      {
+        $set: {
+          phoneE164: e164,
+          codeHash: sha256(verificationCode),
+          confirmTokenHash: null,
+          confirmTokenExpiresAt: null,
+          expiresAt,
+          sentAt,
+          dailySendDate: gate.todayKey || toKstYmd(new Date(now)),
+          dailySendCount: (gate.nextDailyCount || 0) + 1,
+          attempts: 0,
+          verifiedAt: null,
+          consumedAt: null,
+          consumedByUserId: null,
+        },
+      },
+    );
+
+    const corpNum = String(process.env.POPBILL_CORP_NUM || "")
+      .replace(/\D/g, "")
+      .trim();
+    const sender = String(process.env.POPBILL_SENDER_NUM || "")
+      .replace(/\D/g, "")
+      .trim();
+    const popbillUserId = String(process.env.POPBILL_USER_ID || "").trim();
+    const popbillLinkId = String(process.env.POPBILL_LINK_ID || "").trim();
+    const popbillSecret = String(process.env.POPBILL_SECRET_KEY || "").trim();
+    const popbillEnabled =
+      popbillLinkId && popbillSecret && corpNum && sender && popbillUserId;
+
+    if (popbillEnabled) {
+      const to = `0${e164.slice(3)}`;
+      const text = `[abuts.fit] 인증번호: ${verificationCode}`;
+      try {
+        await new Promise((resolve, reject) => {
+          messageService.sendSMS(
+            corpNum,
+            sender,
+            to,
+            "",
+            text,
+            "",
+            false,
+            "",
+            "",
+            popbillUserId,
+            (result) => resolve(result),
+            (error) => reject(error),
+          );
+        });
+      } catch (sendError) {
+        console.error("[sms] signup phone verification send failed", {
+          phone: phoneDigits,
+          message: sendError?.message,
+        });
+        return res.status(500).json({
+          success: false,
+          message: "인증 문자 발송에 실패했습니다.",
+        });
+      }
+    } else if (isProd) {
+      return res.status(500).json({
+        success: false,
+        message: "문자 발송 설정이 없습니다.",
+      });
+    } else {
+      console.log("[sms-dev] signup phone verification", {
+        phone: phoneDigits,
+        code: verificationCode,
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "인증번호를 발송했습니다.",
+      data: {
+        expiresAt,
+        ...(!isProd && process.env.SMS_DEV_EXPOSE_CODE !== "false"
+          ? { code: verificationCode }
+          : {}),
+      },
+    });
+  } catch (error) {
+    console.error("[sendSignupPhoneVerification] failed", error);
+    return res.status(500).json({
+      success: false,
+      message: "휴대폰 인증 발송 중 오류가 발생했습니다.",
+    });
+  }
+}
+
+export async function verifySignupPhoneCode(req, res) {
+  try {
+    const phoneDigits = normalizePhoneDigits(req.body?.phone || req.body?.phoneNumber);
+    const code = String(req.body?.code || "").trim();
+
+    if (!phoneDigits || !code) {
+      return res.status(400).json({
+        success: false,
+        message: "휴대폰 번호와 인증 코드를 입력해주세요.",
+      });
+    }
+
+    const doc = await SignupVerification.findOne({
+      purpose: "signup",
+      channel: "phone",
+      target: phoneDigits,
+    }).lean();
+
+    if (!doc) {
+      return res.status(404).json({
+        success: false,
+        message: "인증 요청을 찾을 수 없습니다.",
+      });
+    }
+
+    if (doc.verifiedAt) {
+      return res.status(200).json({
+        success: true,
+        message: "이미 인증되었습니다.",
+      });
+    }
+
+    if (!doc.codeHash) {
+      return res.status(400).json({
+        success: false,
+        message: "인증 코드가 발송되지 않았습니다.",
+      });
+    }
+
+    const now = new Date();
+    if (doc.expiresAt && now > doc.expiresAt) {
+      return res.status(400).json({
+        success: false,
+        message: "인증 코드가 만료되었습니다. 다시 발송해주세요.",
+      });
+    }
+
+    if (sha256(code) !== doc.codeHash) {
+      await SignupVerification.updateOne(
+        { _id: doc._id },
+        { $inc: { attempts: 1 } },
+      );
+      return res.status(400).json({
+        success: false,
+        message: "인증 코드가 일치하지 않습니다.",
+      });
+    }
+
+    await SignupVerification.updateOne(
+      { _id: doc._id },
+      { $set: { verifiedAt: now } },
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: "휴대폰 인증이 완료되었습니다.",
+    });
+  } catch (error) {
+    console.error("[verifySignupPhoneCode] error", error);
+    return res.status(500).json({
+      success: false,
+      message: "인증 처리 중 오류가 발생했습니다.",
     });
   }
 }

@@ -23,16 +23,18 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { User, Bell, Shield, Camera, RefreshCcw } from "lucide-react";
+import { User, Bell, Shield, Camera, RefreshCcw, Building2 } from "lucide-react";
 import { NotificationsTab } from "@/features/settings/tabs/NotificationsTab";
 import { RequestorSecurity as PracticeSecurity } from "@/pages/requestor/settings/Security";
+import { BusinessTab } from "@/shared/components/business/settings/BusinessTab";
 
-type TabKey = "account" | "notifications" | "security";
+type TabKey = "account" | "business" | "notifications" | "security";
 
 type PracticeAccountForm = {
   staffName: string;
   clinicName: string;
   phone: string;
+  clinicPhone: string;
   zipCode: string;
   address: string;
   addressDetail: string;
@@ -63,6 +65,7 @@ export const PracticeSettingsPage = () => {
     staffName: toStringSafe(user?.practiceProfile?.staffName || user?.name),
     clinicName: toStringSafe(user?.practiceProfile?.clinicName || user?.companyName),
     phone: toStringSafe(user?.practiceProfile?.phone),
+    clinicPhone: toStringSafe(user?.practiceProfile?.clinicPhone),
     zipCode: toStringSafe(user?.practiceProfile?.zipCode),
     address: toStringSafe(user?.practiceProfile?.address),
     addressDetail: toStringSafe(user?.practiceProfile?.addressDetail),
@@ -72,7 +75,12 @@ export const PracticeSettingsPage = () => {
 
   const activeTab = (() => {
     const raw = String(searchParams.get("tab") || "account");
-    if (raw === "notifications" || raw === "security" || raw === "account") {
+    if (
+      raw === "notifications" ||
+      raw === "security" ||
+      raw === "account" ||
+      raw === "business"
+    ) {
       return raw as TabKey;
     }
     return "account";
@@ -119,6 +127,7 @@ export const PracticeSettingsPage = () => {
         staffName: toStringSafe(practiceProfile.staffName || data.name),
         clinicName: toStringSafe(practiceProfile.clinicName || data.business),
         phone: toStringSafe(practiceProfile.phone || data.phoneNumber),
+        clinicPhone: toStringSafe(practiceProfile.clinicPhone),
         zipCode: toStringSafe(practiceProfile.zipCode),
         address: toStringSafe(practiceProfile.address),
         addressDetail: toStringSafe(practiceProfile.addressDetail),
@@ -145,10 +154,17 @@ export const PracticeSettingsPage = () => {
       return;
     }
 
-    if (!form.staffName || !form.clinicName || !form.phone || !form.address || !form.zipCode) {
+    if (
+      !form.staffName ||
+      !form.clinicName ||
+      !form.phone ||
+      !form.clinicPhone ||
+      !form.address ||
+      !form.zipCode
+    ) {
       toast({
         title: "필수값을 확인해주세요",
-        description: "치과명, 담당자명, 연락처, 주소, 우편번호는 필수입니다.",
+        description: "치과명, 담당자명, 치과 전화, 담당자 휴대폰, 주소, 우편번호는 필수입니다.",
         variant: "destructive",
       });
       return;
@@ -165,6 +181,7 @@ export const PracticeSettingsPage = () => {
           clinicName: form.clinicName,
           staffName: form.staffName,
           phone: form.phone,
+          clinicPhone: form.clinicPhone,
           address: form.address,
           addressDetail: form.addressDetail,
           zipCode: form.zipCode,
@@ -200,6 +217,7 @@ export const PracticeSettingsPage = () => {
             clinicName: toStringSafe(updatedProfile?.clinicName || form.clinicName),
             staffName: toStringSafe(updatedProfile?.staffName || form.staffName),
             phone: toStringSafe(updatedProfile?.phone || form.phone),
+            clinicPhone: toStringSafe(updatedProfile?.clinicPhone || form.clinicPhone),
             address: toStringSafe(updatedProfile?.address || form.address),
             addressDetail: toStringSafe(updatedProfile?.addressDetail || form.addressDetail),
             zipCode: toStringSafe(updatedProfile?.zipCode || form.zipCode),
@@ -236,7 +254,10 @@ export const PracticeSettingsPage = () => {
           value={activeTab}
           onValueChange={(next) => {
             const nextTab =
-              next === "account" || next === "notifications" || next === "security"
+              next === "account" ||
+              next === "business" ||
+              next === "notifications" ||
+              next === "security"
                 ? next
                 : "account";
             const nextParams = new URLSearchParams(searchParams);
@@ -252,6 +273,13 @@ export const PracticeSettingsPage = () => {
             >
               <User className="h-4 w-4" />
               계정
+            </TabsTrigger>
+            <TabsTrigger
+              value="business"
+              className="flex min-w-[110px] flex-1 basis-0 items-center justify-center gap-2"
+            >
+              <Building2 className="h-4 w-4" />
+              사업자
             </TabsTrigger>
             <TabsTrigger
               value="notifications"
@@ -362,13 +390,25 @@ export const PracticeSettingsPage = () => {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="practice-phone">연락처</Label>
+                    <Label htmlFor="practice-clinic-phone">치과 전화번호</Label>
+                    <Input
+                      id="practice-clinic-phone"
+                      value={form.clinicPhone}
+                      onChange={(e) =>
+                        setForm((prev) => ({ ...prev, clinicPhone: e.target.value }))
+                      }
+                      placeholder="예: 02-123-4567"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="practice-phone">담당자 휴대폰</Label>
                     <Input
                       id="practice-phone"
                       value={form.phone}
                       onChange={(e) =>
                         setForm((prev) => ({ ...prev, phone: e.target.value }))
                       }
+                      placeholder="010-1234-5678"
                     />
                   </div>
                   <div className="space-y-2 md:col-span-2">
@@ -413,6 +453,15 @@ export const PracticeSettingsPage = () => {
                 </div>
               </CardContent>
             </Card>
+          </TabsContent>
+
+          <TabsContent value="business">
+            <BusinessTab
+              userData={{
+                companyName: form.clinicName || user?.companyName || "",
+                role: "practice",
+              }}
+            />
           </TabsContent>
 
           <TabsContent value="notifications">

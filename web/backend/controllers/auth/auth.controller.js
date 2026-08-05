@@ -1106,8 +1106,12 @@ async function practiceLogin(req, res) {
 }
 
 /**
- * practice 간소 가입
+ * practice 간소 가입 (드롭존 전용)
  * @route POST /api/auth/practice/register
+ *
+ * related files:
+ * - web/frontend/src/pages/practice/PracticeDropzonePage.tsx
+ * - web/frontend/rules.md
  */
 async function practiceRegister(req, res) {
   try {
@@ -1115,14 +1119,51 @@ async function practiceRegister(req, res) {
     const staffName = String(req.body?.staffName || "").trim();
     const password = String(req.body?.password || "");
     const phone = String(req.body?.phone || "").trim();
+    const clinicPhone = String(req.body?.clinicPhone || "").trim();
     const address = String(req.body?.address || "").trim();
     const addressDetail = String(req.body?.addressDetail || "").trim();
     const zipCode = String(req.body?.zipCode || "").trim();
+    const normalizedEmail = String(req.body?.email || "")
+      .trim()
+      .toLowerCase();
 
-    if (!clinicName || !password || !staffName || !phone || !address || !zipCode) {
+    if (
+      !clinicName ||
+      !password ||
+      !staffName ||
+      !phone ||
+      !clinicPhone ||
+      !address ||
+      !zipCode ||
+      !normalizedEmail
+    ) {
       return res.status(400).json({
         success: false,
-        message: "치과명, 담당직원명, 비밀번호, 전화번호, 주소, 우편번호는 필수입니다.",
+        message:
+          "이메일, 치과명, 담당직원명, 비밀번호, 치과 전화번호, 담당자 휴대폰, 주소, 우편번호는 필수입니다.",
+      });
+    }
+
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+      return res.status(400).json({
+        success: false,
+        message: "이메일 형식이 올바르지 않습니다.",
+      });
+    }
+
+    const phoneDigits = normalizeDigits(phone);
+    if (!/^01[016789]\d{7,8}$/.test(phoneDigits)) {
+      return res.status(400).json({
+        success: false,
+        message: "담당자 휴대폰 번호 형식이 올바르지 않습니다.",
+      });
+    }
+
+    const clinicPhoneDigits = normalizeDigits(clinicPhone);
+    if (clinicPhoneDigits.length < 8) {
+      return res.status(400).json({
+        success: false,
+        message: "치과 전화번호 형식이 올바르지 않습니다.",
       });
     }
 
@@ -1134,28 +1175,33 @@ async function practiceRegister(req, res) {
       });
     }
 
+    const existingByEmail = await User.findOne({ email: normalizedEmail })
+      .select({ _id: 1 })
+      .lean();
+    if (existingByEmail) {
+      return res.status(400).json({
+        success: false,
+        message: "이미 등록된 이메일입니다.",
+      });
+    }
+
+    const verified = await assertSignupVerifications({
+      email: normalizedEmail,
+      phone: phoneDigits,
+    });
+    if (!verified) {
+      return res.status(400).json({
+        success: false,
+        message: "이메일과 담당자 휴대폰 인증을 완료해주세요.",
+      });
+    }
+
     const { referredByAnchorId } = await resolveReferrerTargets({
       referredByEmail: "",
       referredByReferralCode: "",
       socialToken: "",
       signupRole: "practice",
     });
-
-    let normalizedEmail = "";
-    let existingByEmail = null;
-    for (let i = 0; i < 5; i += 1) {
-      normalizedEmail = createPracticePseudoEmail(clinicName || staffName || "practice");
-      existingByEmail = await User.findOne({ email: normalizedEmail })
-        .select({ _id: 1 })
-        .lean();
-      if (!existingByEmail) break;
-    }
-    if (existingByEmail || !normalizedEmail) {
-      return res.status(500).json({
-        success: false,
-        message: "가입용 계정 생성에 실패했습니다. 잠시 후 다시 시도해주세요.",
-      });
-    }
 
     const referralCode = await ensureUniqueReferralCode(5);
 
@@ -1173,10 +1219,12 @@ async function practiceRegister(req, res) {
       isVerified: true,
       business: clinicName,
       phoneNumber: phone,
+      phoneVerifiedAt: new Date(),
       practiceProfile: {
         clinicName,
         staffName,
         phone,
+        clinicPhone,
         address,
         addressDetail,
         zipCode,
@@ -1190,6 +1238,16 @@ async function practiceRegister(req, res) {
       },
     });
     await user.save();
+
+    try {
+      await consumeSignupVerifications({
+        email: normalizedEmail,
+        phone: phoneDigits,
+        userId: user._id,
+      });
+    } catch (e) {
+      console.error("[practiceRegister] consumeSignupVerifications failed", e);
+    }
 
     const businessAnchor = await BusinessAnchor.create({
       businessNumberNormalized: createPracticeAnchorBusinessNumber(),
@@ -1205,8 +1263,8 @@ async function practiceRegister(req, res) {
         address,
         addressDetail,
         zipCode,
-        phoneNumber: phone,
-        email: "",
+        phoneNumber: clinicPhone || phone,
+        email: normalizedEmail,
         businessItem: "",
         businessType: "",
         startDate: "",
@@ -1264,25 +1322,39 @@ async function practiceRegister(req, res) {
  */
 async function practiceFindPassword(req, res) {
   try {
+    const email = String(req.body?.email || "")
+      .trim()
+      .toLowerCase();
     const clinicName = String(req.body?.clinicName || "").trim();
     const staffName = String(req.body?.staffName || "").trim();
     const phone = normalizeDigits(req.body?.phone || "");
 
-    if (!clinicName || !staffName || !phone) {
+    if (!phone || (!email && (!clinicName || !staffName))) {
       return res.status(400).json({
         success: false,
-        message: "치과명, 담당직원명, 전화번호를 입력해주세요.",
+        message: "이메일과 휴대폰, 또는 치과명·담당직원명·휴대폰을 입력해주세요.",
       });
     }
 
-    const candidates = await User.find({
-      role: "practice",
-      business: clinicName,
-      name: staffName,
-      active: true,
-    })
-      .select({ _id: 1, phoneNumber: 1, business: 1, name: 1, practiceProfile: 1 })
-      .lean();
+    let candidates = [];
+    if (email) {
+      candidates = await User.find({
+        role: "practice",
+        email,
+        active: true,
+      })
+        .select({ _id: 1, phoneNumber: 1, business: 1, name: 1, email: 1, practiceProfile: 1 })
+        .lean();
+    } else {
+      candidates = await User.find({
+        role: "practice",
+        business: clinicName,
+        name: staffName,
+        active: true,
+      })
+        .select({ _id: 1, phoneNumber: 1, business: 1, name: 1, email: 1, practiceProfile: 1 })
+        .lean();
+    }
 
     const matched = (candidates || []).filter((u) => {
       const p1 = normalizeDigits(u?.phoneNumber || "");
@@ -1309,8 +1381,9 @@ async function practiceFindPassword(req, res) {
       success: true,
       message: "계정이 확인되었습니다. 새 비밀번호를 설정해주세요.",
       data: {
-        clinicName,
-        staffName,
+        email: matched[0]?.email || email || "",
+        clinicName: matched[0]?.business || clinicName,
+        staffName: matched[0]?.name || staffName,
       },
     });
   } catch (error) {
@@ -1328,15 +1401,19 @@ async function practiceFindPassword(req, res) {
  */
 async function practiceChangePassword(req, res) {
   try {
+    const email = String(req.body?.email || "")
+      .trim()
+      .toLowerCase();
     const clinicName = String(req.body?.clinicName || "").trim();
     const staffName = String(req.body?.staffName || "").trim();
     const phone = normalizeDigits(req.body?.phone || "");
     const newPassword = String(req.body?.newPassword || "");
 
-    if (!clinicName || !staffName || !phone || !newPassword) {
+    if (!phone || !newPassword || (!email && (!clinicName || !staffName))) {
       return res.status(400).json({
         success: false,
-        message: "치과명, 담당직원명, 전화번호, 새 비밀번호를 입력해주세요.",
+        message:
+          "이메일과 휴대폰·새 비밀번호, 또는 치과명·담당직원명·휴대폰·새 비밀번호를 입력해주세요.",
       });
     }
 
@@ -1348,12 +1425,21 @@ async function practiceChangePassword(req, res) {
       });
     }
 
-    const candidates = await User.find({
-      role: "practice",
-      business: clinicName,
-      name: staffName,
-      active: true,
-    }).select("+password");
+    let candidates = [];
+    if (email) {
+      candidates = await User.find({
+        role: "practice",
+        email,
+        active: true,
+      }).select("+password");
+    } else {
+      candidates = await User.find({
+        role: "practice",
+        business: clinicName,
+        name: staffName,
+        active: true,
+      }).select("+password");
+    }
 
     const matched = (candidates || []).filter((u) => {
       const p1 = normalizeDigits(u?.phoneNumber || "");

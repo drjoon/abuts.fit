@@ -119,11 +119,11 @@ async function sendPhoneVerification(req, res) {
         ? prevDailyCountRaw
         : 0;
     const nextDailyCount = prevDailyKey === todayKey ? prevDailyCount : 0;
-    if (!forceAutoVerify && nextDailyCount >= 3) {
+    if (!forceAutoVerify && nextDailyCount >= 5) {
       return res.status(429).json({
         success: false,
         message:
-          "오늘 인증번호 발송 횟수를 초과했습니다. 내일 다시 시도해주세요.",
+          "하루 5회까지만 인증 문자를 받을 수 있습니다. 내일 다시 시도해주세요.",
       });
     }
     const lastSentAt = user?.phoneVerification?.sentAt
