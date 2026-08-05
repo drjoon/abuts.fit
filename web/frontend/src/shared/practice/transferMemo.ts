@@ -101,6 +101,39 @@ export const normalizeToothWorks = (items: ToothWorkSelection[]) =>
     })
     .filter((row) => /^[1-4][1-8]$/.test(row.toothNumber) && row.prosthesisType);
 
+/** 공동 작성 동기화용: 치아번호 미입력 행도 유지(전송 검증용 normalizeToothWorks와 분리) */
+export const EMPTY_TOOTH_SYNC_TOKEN = "-";
+
+export const normalizeToothWorksForSync = (items: ToothWorkSelection[]) =>
+  items
+    .map((row) => {
+      const rawTooth = String(row?.toothNumber || "").trim();
+      const toothNumber =
+        !rawTooth || rawTooth === EMPTY_TOOTH_SYNC_TOKEN
+          ? ""
+          : rawTooth;
+      // 형태 미선택이어도 치아번호는 동료에게 전달. 직렬화 시 기본 형태로 채운다.
+      const prosthesisType = String(row?.prosthesisType || "").trim() || (toothNumber ? "크라운" : "");
+      const customAbutment = isCustomAbutmentSupportedProsthesisType(prosthesisType)
+        ? Boolean(row?.customAbutment)
+        : false;
+      const adjacent = getAdjacentTeeth(toothNumber);
+      const bridgeLinkedTeeth =
+        isBridgeLikeProsthesisType(prosthesisType) && Array.isArray(row?.bridgeLinkedTeeth)
+          ? row.bridgeLinkedTeeth
+              .map((v) => String(v || "").trim())
+              .filter((v) => adjacent.includes(v))
+          : [];
+
+      return {
+        toothNumber,
+        prosthesisType,
+        customAbutment,
+        bridgeLinkedTeeth,
+      };
+    })
+    .filter((row) => Boolean(row.prosthesisType) || Boolean(row.toothNumber));
+
 export const parseToothWorks = (value: string) =>
   String(value || "")
     .split("|")
@@ -108,12 +141,14 @@ export const parseToothWorks = (value: string) =>
     .filter(Boolean)
     .map((chunk) => {
       const [toothRaw, ...rest] = chunk.split("=");
-      const toothNumber = String(toothRaw || "").trim();
+      const rawTooth = String(toothRaw || "").trim();
+      const toothNumber =
+        !rawTooth || rawTooth === EMPTY_TOOTH_SYNC_TOKEN ? "" : rawTooth;
       const rhs = String(rest.join("=") || "").trim();
       if (!rhs) {
         return {
           toothNumber,
-          prosthesisType: "",
+          prosthesisType: toothNumber ? "크라운" : "",
           customAbutment: false,
           bridgeLinkedTeeth: [] as string[],
         };
@@ -133,12 +168,12 @@ export const parseToothWorks = (value: string) =>
         withoutLinked = withoutLinked.replace("+커스텀어벗", "").trim();
       }
 
-      const prosthesisType = withoutLinked;
+      const prosthesisType = withoutLinked || (toothNumber ? "크라운" : "");
       const bridgeLinkedTeeth = linkedRaw
         ? linkedRaw
             .split("-")
             .map((v) => String(v || "").trim())
-            .filter((v) => v && v !== toothNumber)
+            .filter((v) => v && v !== toothNumber && v !== EMPTY_TOOTH_SYNC_TOKEN)
         : [];
 
       return {
@@ -148,7 +183,7 @@ export const parseToothWorks = (value: string) =>
         bridgeLinkedTeeth,
       };
     })
-    .filter((row) => row.toothNumber && row.prosthesisType);
+    .filter((row) => Boolean(row.prosthesisType) || Boolean(row.toothNumber));
 
 export const serializeToothWorks = (rows: ToothWorkSelection[]) =>
   normalizeToothWorks(rows)
@@ -167,6 +202,29 @@ export const serializeToothWorks = (rows: ToothWorkSelection[]) =>
           ? "+커스텀어벗"
           : "";
       return `${row.toothNumber}=${row.prosthesisType}${custom}${linked}`;
+    })
+    .join(" | ");
+
+/** 공동 작성용: 치아번호 빈 행도 `-` 토큰으로 직렬화해 동료 화면에 행 수를 맞춘다. */
+export const serializeToothWorksForSync = (rows: ToothWorkSelection[]) =>
+  normalizeToothWorksForSync(rows)
+    .map((row) => {
+      const toothToken = row.toothNumber || EMPTY_TOOTH_SYNC_TOKEN;
+      const prosthesisType = row.prosthesisType || "크라운";
+      const orderedLinks = [...row.bridgeLinkedTeeth].sort(
+        (a, b) => toToothMemoSortNumber(a) - toToothMemoSortNumber(b),
+      );
+      const linked =
+        row.toothNumber &&
+        isBridgeLikeProsthesisType(prosthesisType) &&
+        orderedLinks.length > 0
+          ? `(${[row.toothNumber, ...orderedLinks].join("-")})`
+          : "";
+      const custom =
+        isCustomAbutmentSupportedProsthesisType(prosthesisType) && row.customAbutment
+          ? "+커스텀어벗"
+          : "";
+      return `${toothToken}=${prosthesisType}${custom}${linked}`;
     })
     .join(" | ");
 
@@ -320,7 +378,7 @@ export const parsePracticeTransferMemoMeta = (rawMemo: string): ParsedPracticeTr
     arrivalDate,
     arrivalDefaultDays,
     prosthesisTypes: normalizeProsthesisTypes(prosthesisTypes),
-    toothWorks: normalizeToothWorks(toothWorks),
+    toothWorks: normalizeToothWorksForSync(toothWorks),
     patientName,
     memo: memoLines.join("\n").replace(/^\s+|\s+$/g, ""),
   };
@@ -341,7 +399,7 @@ export const buildPracticeTransferMemo = (params: {
     `[도착기본일수: ${normalizeArrivalDefaultDays(params.arrivalDefaultDays)}]`,
     `[환자명: ${String(params.patientName || "").trim()}]`,
     `[보철물형태목록: ${normalizeProsthesisTypes(params.prosthesisTypes).join(", ")}]`,
-    `[치아보철: ${serializeToothWorks(params.toothWorks)}]`,
+    `[치아보철: ${serializeToothWorksForSync(params.toothWorks)}]`,
   ];
   const memo = String(params.memo || "").trim();
   return memo ? `${lines.join("\n")}\n${memo}` : lines.join("\n");

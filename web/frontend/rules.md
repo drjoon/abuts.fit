@@ -399,6 +399,7 @@ Notes:
   - 서버: `GET /api/practice/transfers/my` 응답의 `caseInfos.practiceRouting.targetLabAnchorId/targetLabName`(최신순)이 권위 소스.
   - 로컬 캐시: `localStorage.practice_recent_labs_v2` (최대 8개). 전송 성공 시 `rememberLab`, 목록 로드 시 `syncRecentLabsFromTransfers`로 merge.
   - 「새로 작성」은 의뢰 폼/임시저장 캐시만 비우고, 최근 기공소 목록은 유지한다. 가장 최근 기공소를 기본 선택한다.
+  - 기공소 전송 성공·draft 삭제 후에는 작성자/동료/다른 탭 모두 폼을 비운다. 페이지 remount 시에도 최근 기공소를 자동 선택하지 않는다(드롭다운 후보만 유지).
   - 구현: `src/pages/practice/hooks/usePracticeTransferStep1.ts`, `PracticeFileTransferPage.tsx`
 
 - practice 전송 취소 API 계약(SSOT):

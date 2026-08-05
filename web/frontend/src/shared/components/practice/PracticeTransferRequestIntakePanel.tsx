@@ -599,7 +599,8 @@ export const PracticeTransferRequestIntakePanel = ({
                               ? next[originalIndex].toothNumber.slice(1, 2)
                               : "";
                             const tens = value === "__empty__" ? "" : value;
-                            const toothNumber = `${tens}${ones}`;
+                            // 십의 자리 없으면 치아번호 전체 비움(일의 자리만 남는 깨진 값 방지)
+                            const toothNumber = !tens ? "" : ones ? `${tens}${ones}` : tens;
                             const adj = getAdjacentTeeth(toothNumber);
                             next[originalIndex] = {
                               ...next[originalIndex],
@@ -634,7 +635,8 @@ export const PracticeTransferRequestIntakePanel = ({
                               ? next[originalIndex].toothNumber.slice(0, 1)
                               : "";
                             const ones = value === "__empty__" ? "" : value;
-                            const toothNumber = `${tens}${ones}`;
+                            // 십의 자리 없는 일의 자리만으로는 유효 치아번호가 되지 않게 한다.
+                            const toothNumber = !tens ? "" : ones ? `${tens}${ones}` : tens;
                             const adj = getAdjacentTeeth(toothNumber);
                             next[originalIndex] = {
                               ...next[originalIndex],

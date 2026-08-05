@@ -447,7 +447,8 @@ export const usePracticeTransferStep1 = (options?: Options) => {
 
     const loaded = readRecentLabs();
     setRecentLabs(loaded);
-    setSelectedLab((prev) => prev ?? loaded[0] ?? null);
+    // 최근 기공소는 드롭다운 후보만 채운다. 페이지 진입/전송 후 remount 시 자동 선택하지 않는다.
+    // 「새로 작성」에서만 최근 기공소를 기본 선택한다. (web/frontend/rules.md)
     setRecentLabsInitialized(true);
   }, [setSelectedLab]);
 

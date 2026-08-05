@@ -194,6 +194,7 @@ const toDraftUpsertedRealtimePayload = ({
   practiceUserId,
   editorUserId,
   practiceBusinessAnchorId,
+  forceResync = false,
 }) => ({
   source: String(source || "").trim(),
   action: "draft-upserted",
@@ -210,6 +211,7 @@ const toDraftUpsertedRealtimePayload = ({
   fileCount: Array.isArray(draftPayload?.files) ? draftPayload.files.length : 0,
   updatedAt: draftPayload?.updatedAt || null,
   createdAt: draftPayload?.createdAt || null,
+  forceResync: Boolean(forceResync),
 });
 
 let draftIndexEnsurePromise = null;
@@ -649,6 +651,7 @@ export async function upsertPracticeTransferDraft(req, res) {
     const ownerMeta =
       ownerMap.get(String(doc?.practiceUserId || "").trim()) || req.user;
     const draftPayload = toDraftResponse(doc, ownerMeta);
+    const forceResync = Boolean(req.body?.forceResync);
     await emitPracticeTransferEventToPracticeUsers({
       practiceBusinessAnchorId: req.user?.businessAnchorId,
       type: "practice:transfer-updated",
@@ -658,6 +661,7 @@ export async function upsertPracticeTransferDraft(req, res) {
         practiceUserId: doc?.practiceUserId || req.user?._id,
         editorUserId: req.user?._id,
         practiceBusinessAnchorId: req.user?.businessAnchorId,
+        forceResync,
       }),
       extraUserIds: [req.user?._id],
     });
@@ -665,7 +669,10 @@ export async function upsertPracticeTransferDraft(req, res) {
     return res.status(200).json({
       success: true,
       message: "practice 전송 임시저장을 갱신했습니다.",
-      data: draftPayload,
+      data: {
+        ...draftPayload,
+        forceResync,
+      },
     });
   } catch (error) {
     return res.status(500).json({
