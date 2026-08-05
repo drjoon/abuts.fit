@@ -32,7 +32,8 @@ export const PracticeTransferFilePane = ({
   onPickFiles,
   onRemoveFile,
   onClearAllFiles,
-  listViewportClassName = "max-h-[10rem]",
+  // 파일 행 4rem + gap 0.5rem × 4 = 5개 표시 높이
+  listViewportClassName = "h-[22rem] max-h-[22rem]",
 }: PracticeTransferFilePaneProps) => {
   const cardClassName =
     "overflow-hidden rounded-2xl border border-slate-200/80 bg-gradient-to-br from-white via-white to-sky-50/60 shadow-[0_4px_12px_rgba(15,23,42,0.03)] transition-all hover:shadow-[0_8px_20px_rgba(15,23,42,0.06)]";
@@ -74,7 +75,7 @@ export const PracticeTransferFilePane = ({
         </div>
       </div>
 
-      <div className={`${cardClassName} flex min-h-[22rem] flex-1 flex-col p-4`}>
+      <div className={`${cardClassName} flex flex-col p-4`}>
         <div className="mb-3 flex items-center justify-between gap-2">
           <div className="text-sm text-slate-500">
             총 {files.length}개 파일 · 약 {totalSizeMb}MB <span className="text-destructive">*</span>
@@ -92,7 +93,9 @@ export const PracticeTransferFilePane = ({
         </div>
 
         {files.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-slate-200 bg-white/60 p-5 text-center text-sm text-slate-500">
+          <div
+            className={`${listViewportClassName} flex items-center justify-center rounded-xl border border-dashed border-slate-200 bg-white/60 text-center text-sm text-slate-500`}
+          >
             아직 추가된 파일이 없습니다.
           </div>
         ) : (

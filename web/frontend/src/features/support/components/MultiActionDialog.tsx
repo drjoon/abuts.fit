@@ -74,12 +74,12 @@ export const MultiActionDialog = ({
             <X className="h-5 w-5" />
           </button>
         )}
-        <h2 className="text-xl font-bold mb-4 text-gray-900 flex-none">
+        <h2 className="text-xl font-bold mb-4 pr-10 text-gray-900 flex-none">
           {title}
         </h2>
         {description && (
           <div
-            className={`text-gray-700 ${hasActions ? "mb-6" : "mb-0"} text-sm sm:text-base flex-1 min-h-0 pr-1 custom-scrollbar ${
+            className={`text-gray-700 ${hasActions ? "mb-4" : "mb-0"} text-sm sm:text-base flex-1 min-h-0 custom-scrollbar ${
               descriptionScrollable ? "overflow-y-auto max-h-[65vh]" : "overflow-hidden max-h-none"
             } ${descriptionClassName || ""}`}
           >

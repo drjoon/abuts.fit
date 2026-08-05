@@ -36,14 +36,14 @@ export const ConfirmDialog = ({
 
   return createPortal(
     <div
-      className="fixed inset-0 bg-black/30 flex items-center justify-center z-[200] p-4 backdrop-blur-sm pointer-events-auto"
+      className="fixed inset-0 bg-black/30 flex items-center justify-center z-[10050] p-4 backdrop-blur-sm pointer-events-auto"
       role="dialog"
       aria-modal="true"
       onClick={(e) => e.stopPropagation()}
       onMouseDown={(e) => e.stopPropagation()}
     >
       <div
-        className="bg-white p-6 rounded-2xl shadow-2xl w-full max-w-md transform transition-all z-[201]"
+        className="bg-white p-6 rounded-2xl shadow-2xl w-full max-w-md transform transition-all z-[10051]"
         onClick={(e) => e.stopPropagation()}
         onMouseDown={(e) => e.stopPropagation()}
       >

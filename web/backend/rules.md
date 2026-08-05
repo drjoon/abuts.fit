@@ -254,6 +254,12 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   - 읽음 판정 SSOT: `PracticeTransfer.requestorReadAt`
   - 다운로드완료 판정 SSOT: `PracticeTransfer.requestorDownloadedAt`
   - 가상 의뢰 행 매핑 기준: `controllers/practiceTransfers/practiceTransfer.controller.js#toVirtualRequestRows`
+  - practice 전송 목록/취소/복구 권한 범위 SSOT: 동일 치과 `practiceBusinessAnchorId`(=`req.user.businessAnchorId`) 구성원 공유.
+    구현: `buildPracticeOwnedScope` (`getMyPracticeTransfers` / `cancelPracticeTransfersBatch` / `restorePracticeTransfersBatch`).
+    동일 치과 practice 멤버의 `practiceUserId`도 포함해 앵커 미기입 레거시 문서를 함께 조회한다.
+    앵커 없는 계정은 `practiceUserId` 본인 범위로 폴백한다.
+  - practice 실시간 fan-out: 생성/상태변경 시 동일 치과 practice 구성원에게 `practice:transfer-created|updated`를 전달한다.
+    구현: `emitPracticeTransferEventToPracticeUsers`.
 
 - 관리자 사용자 role 변경/생성 API는 `practice`를 유효 role로 허용해야 합니다.
   - 적용 파일: `controllers/admin/admin.users.controller.js`
@@ -286,11 +292,29 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
     - `controllers/practiceTransfers/practiceTransfer.controller.js`
     - `models/file.model.js`
 
+- practice 전송 설정 SSOT:
+  - 저장 위치: `BusinessAnchor.practiceTransferSettings`
+  - API: `GET/POST /api/practice/transfers/settings`
+  - 필드: `arrivalDefaultDays`, `prosthesisTypes`, `memoSnippets`, `promoNoticeDismissedAt`
+  - `memoSnippets`는 의뢰 메모 문장 즐겨찾기(최대 40개, 공백/중복 제거)이며 프론트는 로컬스토리지에도 미러링합니다.
+  - 관련 파일:
+    - `controllers/practiceTransfers/practiceTransferSettings.controller.js`
+    - `models/businessAnchor.model.js`
+    - `web/frontend/src/pages/practice/PracticeFileTransferPage.tsx`
+    - `web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx`
+
 - practice 취소 API 계약(SSOT):
   - endpoint: `POST /api/practice/transfers/cancel-batch`
   - request body: `transferIds?: string[]`, `transferMongoIds?: string[]` (둘 중 하나 이상 필수)
   - response: `{ success: true, data: { successCount: number, failedIds: string[] } }`
   - `failedIds`에는 무효 식별자/미존재/권한범위 밖/이미 취소된 대상이 포함될 수 있습니다.
+
+- practice 복구(되살리기) API 계약(SSOT):
+  - endpoint: `POST /api/practice/transfers/restore-batch`
+  - request body: `transferIds?: string[]`, `transferMongoIds?: string[]` (둘 중 하나 이상 필수)
+  - response: `{ success: true, data: { successCount: number, failedIds: string[] } }`
+  - 대상은 `status: "canceled"` 문서만 복구하며, 성공 시 `status: "active"`로 되돌리고 `canceledAt`/`canceledBy`를 초기화합니다.
+  - `failedIds`에는 무효 식별자/미존재/권한범위 밖/취소 상태가 아닌 대상이 포함될 수 있습니다.
 
 - 문의 실시간 이벤트 SSOT:
   - 문의 생성 시(admin 대상)

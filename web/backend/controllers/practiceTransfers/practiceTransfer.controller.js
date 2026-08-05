@@ -141,6 +141,59 @@ const buildReceivedScope = (req) => {
   };
 };
 
+/**
+ * practice 전송 목록/취소/복구 권한 범위.
+ * 동일 치과(businessAnchor) 구성원은 동료 전송을 공유한다.
+ * - 문서의 practiceBusinessAnchorId 일치
+ * - 또는 동일 치과 practice 멤버가 업로드한 레거시(앵커 미기입) 문서
+ * 앵커가 없는 계정은 업로더 본인만 포함한다.
+ */
+const buildPracticeOwnedScope = async (req) => {
+  const role = String(req.user?.role || "").trim();
+  if (role === "admin") {
+    return { role, scope: {} };
+  }
+
+  const practiceUserId = req.user?._id || null;
+  const practiceBusinessAnchorId = String(req.user?.businessAnchorId || "").trim();
+  if (
+    practiceBusinessAnchorId &&
+    Types.ObjectId.isValid(practiceBusinessAnchorId)
+  ) {
+    const peerUserIds = await resolvePracticeUserIdsByAnchor(
+      practiceBusinessAnchorId,
+    );
+    const practiceUserObjectIds = Array.from(
+      new Set(
+        [String(practiceUserId || "").trim(), ...peerUserIds].filter(Boolean),
+      ),
+    )
+      .filter((id) => Types.ObjectId.isValid(id))
+      .map((id) => new Types.ObjectId(id));
+
+    return {
+      role,
+      scope: {
+        $or: [
+          {
+            practiceBusinessAnchorId: new Types.ObjectId(
+              practiceBusinessAnchorId,
+            ),
+          },
+          ...(practiceUserObjectIds.length
+            ? [{ practiceUserId: { $in: practiceUserObjectIds } }]
+            : [{ practiceUserId }]),
+        ],
+      },
+    };
+  }
+
+  return {
+    role,
+    scope: { practiceUserId },
+  };
+};
+
 const buildTransferIdFilter = (rawTransferId) => {
   const value = String(rawTransferId || "").trim();
   if (!value) return null;
@@ -193,6 +246,23 @@ const resolveRequestorUserIdsByAnchor = async (anchorId) => {
     .filter(Boolean);
 };
 
+const resolvePracticeUserIdsByAnchor = async (anchorId) => {
+  const raw = String(anchorId || "").trim();
+  if (!raw || !Types.ObjectId.isValid(raw)) return [];
+
+  const users = await User.find({
+    businessAnchorId: new Types.ObjectId(raw),
+    role: "practice",
+    active: true,
+  })
+    .select({ _id: 1 })
+    .lean();
+
+  return users
+    .map((u) => String(u?._id || "").trim())
+    .filter(Boolean);
+};
+
 const emitPracticeTransferEventToRequestorUsers = async ({
   targetLabAnchorId,
   type,
@@ -206,6 +276,32 @@ const emitPracticeTransferEventToRequestorUsers = async ({
     if (!userIds.length) return;
 
     userIds.forEach((userId) => {
+      emitAppEventToUser(userId, eventType, payload);
+    });
+  } catch {
+    // 실시간 이벤트 실패가 본 API 성공/실패를 좌우하지 않도록 무시
+  }
+};
+
+const emitPracticeTransferEventToPracticeUsers = async ({
+  practiceBusinessAnchorId,
+  type,
+  payload,
+  extraUserIds = [],
+}) => {
+  try {
+    const eventType = String(type || "").trim();
+    if (!eventType) return;
+
+    const userIdSet = new Set([
+      ...(await resolvePracticeUserIdsByAnchor(practiceBusinessAnchorId)),
+      ...extraUserIds
+        .map((id) => String(id || "").trim())
+        .filter(Boolean),
+    ]);
+    if (!userIdSet.size) return;
+
+    userIdSet.forEach((userId) => {
       emitAppEventToUser(userId, eventType, payload);
     });
   } catch {
@@ -499,7 +595,12 @@ export async function createPracticeTransfer(req, res) {
       createdAt: transferDoc?.createdAt || new Date(),
     };
 
-    emitAppEventToUser(req.user?._id, "practice:transfer-created", realtimePayload);
+    await emitPracticeTransferEventToPracticeUsers({
+      practiceBusinessAnchorId: req.user?.businessAnchorId,
+      type: "practice:transfer-created",
+      payload: realtimePayload,
+      extraUserIds: [req.user?._id],
+    });
 
     await emitPracticeTransferEventToRequestorUsers({
       targetLabAnchorId,
@@ -536,12 +637,7 @@ export async function getMyPracticeTransfers(req, res) {
     const limit = Math.min(200, Math.max(1, Number(req.query?.limit || 100)));
     const skip = (page - 1) * limit;
 
-    const baseFilter =
-      role === "admin"
-        ? {}
-        : {
-            practiceUserId: req.user?._id,
-          };
+    const { scope: baseFilter } = await buildPracticeOwnedScope(req);
 
     const docs = await PracticeTransfer.find(baseFilter)
       .sort({ createdAt: -1, _id: -1 })
@@ -783,7 +879,13 @@ export async function markReceivedPracticeTransferRead(req, res) {
     };
 
     emitAppEventToUser(req.user?._id, "practice:transfer-updated", realtimePayload);
-    emitAppEventToUser(doc.practiceUserId, "practice:transfer-updated", realtimePayload);
+
+    await emitPracticeTransferEventToPracticeUsers({
+      practiceBusinessAnchorId: doc.practiceBusinessAnchorId,
+      type: "practice:transfer-updated",
+      payload: realtimePayload,
+      extraUserIds: [doc.practiceUserId],
+    });
 
     await emitPracticeTransferEventToRequestorUsers({
       targetLabAnchorId: doc.targetLabAnchorId,
@@ -878,7 +980,13 @@ export async function markReceivedPracticeTransferDownloaded(req, res) {
     };
 
     emitAppEventToUser(req.user?._id, "practice:transfer-updated", realtimePayload);
-    emitAppEventToUser(doc.practiceUserId, "practice:transfer-updated", realtimePayload);
+
+    await emitPracticeTransferEventToPracticeUsers({
+      practiceBusinessAnchorId: doc.practiceBusinessAnchorId,
+      type: "practice:transfer-updated",
+      payload: realtimePayload,
+      extraUserIds: [doc.practiceUserId],
+    });
 
     await emitPracticeTransferEventToRequestorUsers({
       targetLabAnchorId: doc.targetLabAnchorId,
@@ -942,17 +1050,10 @@ export async function cancelPracticeTransfersBatch(req, res) {
       });
     }
 
-    const baseScope =
-      role === "admin"
-        ? {}
-        : {
-            practiceUserId: req.user?._id,
-          };
+    const { scope: baseScope } = await buildPracticeOwnedScope(req);
 
     const docs = await PracticeTransfer.find({
-      ...baseScope,
-      $or: filterOr,
-      status: { $ne: "canceled" },
+      $and: [baseScope, { $or: filterOr }, { status: { $ne: "canceled" } }],
     });
 
     let successCount = 0;
@@ -1010,7 +1111,12 @@ export async function cancelPracticeTransfersBatch(req, res) {
           updatedAt: doc.updatedAt || new Date(),
         };
 
-        emitAppEventToUser(doc.practiceUserId, "practice:transfer-updated", realtimePayload);
+        await emitPracticeTransferEventToPracticeUsers({
+          practiceBusinessAnchorId: doc.practiceBusinessAnchorId,
+          type: "practice:transfer-updated",
+          payload: realtimePayload,
+          extraUserIds: [doc.practiceUserId],
+        });
       } catch {
         failedIds.push(String(doc?.transferId || doc?._id || ""));
       }
@@ -1057,6 +1163,160 @@ export async function cancelPracticeTransfersBatch(req, res) {
     return res.status(500).json({
       success: false,
       message: "practice 전송 취소 중 오류가 발생했습니다.",
+      error: error?.message,
+    });
+  }
+}
+
+export async function restorePracticeTransfersBatch(req, res) {
+  try {
+    const role = String(req.user?.role || "").trim();
+    if (role !== "practice" && role !== "admin") {
+      return res.status(403).json({ success: false, message: "권한이 없습니다." });
+    }
+
+    const transferIds = Array.isArray(req.body?.transferIds)
+      ? req.body.transferIds.map((v) => String(v || "").trim()).filter(Boolean)
+      : [];
+    const transferMongoIds = Array.isArray(req.body?.transferMongoIds)
+      ? req.body.transferMongoIds.map((v) => String(v || "").trim()).filter(Boolean)
+      : [];
+
+    if (transferIds.length === 0 && transferMongoIds.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "transferIds 또는 transferMongoIds가 필요합니다.",
+      });
+    }
+
+    const filterOr = [];
+    if (transferIds.length > 0) {
+      filterOr.push({ transferId: { $in: transferIds } });
+    }
+    const validMongoIds = transferMongoIds.filter((id) => Types.ObjectId.isValid(id));
+    if (validMongoIds.length > 0) {
+      filterOr.push({ _id: { $in: validMongoIds.map((id) => new Types.ObjectId(id)) } });
+    }
+
+    if (filterOr.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "유효한 transferIds 또는 transferMongoIds가 필요합니다.",
+      });
+    }
+
+    const { scope: baseScope } = await buildPracticeOwnedScope(req);
+
+    const docs = await PracticeTransfer.find({
+      $and: [baseScope, { $or: filterOr }, { status: "canceled" }],
+    });
+
+    let successCount = 0;
+    const failedIds = [];
+    const affectedByAnchor = new Map();
+
+    const foundTransferIdSet = new Set(
+      docs.map((doc) => String(doc?.transferId || "").trim()).filter(Boolean),
+    );
+    const foundTransferMongoIdSet = new Set(
+      docs.map((doc) => String(doc?._id || "").trim()).filter(Boolean),
+    );
+    for (const transferId of transferIds) {
+      if (!foundTransferIdSet.has(transferId)) {
+        failedIds.push(transferId);
+      }
+    }
+    for (const transferMongoId of transferMongoIds) {
+      if (!Types.ObjectId.isValid(transferMongoId)) {
+        failedIds.push(transferMongoId);
+        continue;
+      }
+      if (!foundTransferMongoIdSet.has(transferMongoId)) {
+        failedIds.push(transferMongoId);
+      }
+    }
+
+    for (const doc of docs) {
+      try {
+        doc.status = "active";
+        doc.canceledAt = null;
+        doc.canceledBy = null;
+        await doc.save();
+        successCount += 1;
+
+        const targetLabAnchorId = String(doc.targetLabAnchorId || "").trim();
+        const transferId = String(doc.transferId || "").trim();
+        const transferMongoId = String(doc._id || "").trim();
+
+        if (targetLabAnchorId) {
+          const prev = affectedByAnchor.get(targetLabAnchorId) || [];
+          prev.push({ transferId, transferMongoId });
+          affectedByAnchor.set(targetLabAnchorId, prev);
+        }
+
+        const realtimePayload = {
+          action: "restored",
+          transferId,
+          transferMongoId,
+          targetLabAnchorId: targetLabAnchorId || null,
+          practiceUserId: String(doc.practiceUserId || "").trim() || null,
+          unreadCount: null,
+          status: "active",
+          updatedAt: doc.updatedAt || new Date(),
+        };
+
+        await emitPracticeTransferEventToPracticeUsers({
+          practiceBusinessAnchorId: doc.practiceBusinessAnchorId,
+          type: "practice:transfer-updated",
+          payload: realtimePayload,
+          extraUserIds: [doc.practiceUserId],
+        });
+      } catch {
+        failedIds.push(String(doc?.transferId || doc?._id || ""));
+      }
+    }
+
+    for (const [targetLabAnchorId, affected] of affectedByAnchor.entries()) {
+      const scope = {
+        targetLabAnchorId: new Types.ObjectId(targetLabAnchorId),
+      };
+      invalidateUnreadCountCache(scope);
+      const unreadCount = await PracticeTransfer.countDocuments({
+        ...scope,
+        status: { $ne: "canceled" },
+        requestorReadAt: null,
+      });
+      setRequestPerfCacheValue(
+        unreadCountCacheKey(scope),
+        { unreadCount },
+        10 * 1000,
+      );
+
+      await emitPracticeTransferEventToRequestorUsers({
+        targetLabAnchorId,
+        type: "practice:transfer-updated",
+        payload: {
+          action: "restored",
+          targetLabAnchorId,
+          affectedTransfers: affected,
+          unreadCount,
+          status: "active",
+          updatedAt: new Date(),
+        },
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        successCount,
+        failedIds: Array.from(new Set(failedIds.filter(Boolean))),
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "practice 전송 복구 중 오류가 발생했습니다.",
       error: error?.message,
     });
   }

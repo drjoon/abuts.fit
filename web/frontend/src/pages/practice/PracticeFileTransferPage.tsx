@@ -39,6 +39,8 @@ import {
   ClipboardList,
   Search,
   Trash2,
+  RotateCcw,
+  BookmarkPlus,
   ChevronsUpDown,
   Check,
   Download,
@@ -107,6 +109,7 @@ import {
   type PracticeTransferDialogSummaryItem,
 } from "@/shared/components/PracticeTransferDetailChatDialog";
 import { PracticeTransferIntakeSection } from "@/shared/components/practice/PracticeTransferIntakeSection";
+import { normalizeMemoSnippets } from "@/shared/components/practice/PracticeTransferRequestIntakePanel";
 import { restoreToothWorksFromDraft } from "@/shared/practice/toothWorkDraft";
 import { deleteFile as deleteFileFromIndexedDb } from "@/shared/storage/fileIndexedDB";
 import {
@@ -179,6 +182,16 @@ type PracticeTransferDraftPayload = {
   updatedAt?: string | null;
   createdAt?: string | null;
 };
+
+type DraftListSummary = {
+  id: string;
+  targetLabName: string;
+  transferMemo: string;
+  updatedAt: string | null;
+  createdAt: string | null;
+};
+
+const PRACTICE_DRAFT_TRANSFER_ID = "DRAFT-TEMP";
 
 type RecentTransferItem = {
   id: string;
@@ -289,6 +302,7 @@ type ParsedPracticeTransferMemoMeta = {
 type PracticeTransferSettingsPayload = {
   arrivalDefaultDays?: number;
   prosthesisTypes?: string[];
+  memoSnippets?: string[];
   promoNoticeDismissedAt?: string | null;
   updatedAt?: string | null;
 };
@@ -747,6 +761,7 @@ export const PracticeFileTransferPage = () => {
   const [promoNoticeSaving, setPromoNoticeSaving] = useState(false);
   const [tempSaveDirty, setTempSaveDirty] = useState(false);
   const [draftFiles, setDraftFiles] = useState<DraftTransferFileItem[]>([]);
+  const [draftSummary, setDraftSummary] = useState<DraftListSummary | null>(null);
   const [recentRequests, setRecentRequests] = useState<RecentRequestItem[]>([]);
   const [recentRequestsLoading, setRecentRequestsLoading] = useState(false);
   const [recentRequestsError, setRecentRequestsError] = useState("");
@@ -761,6 +776,9 @@ export const PracticeFileTransferPage = () => {
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [deleteTargetTransfer, setDeleteTargetTransfer] = useState<RecentTransferItem | null>(null);
   const [deletingTransfer, setDeletingTransfer] = useState(false);
+  const [restoreConfirmOpen, setRestoreConfirmOpen] = useState(false);
+  const [restoreTargetTransfer, setRestoreTargetTransfer] = useState<RecentTransferItem | null>(null);
+  const [restoringTransfer, setRestoringTransfer] = useState(false);
   const [localFormHydrated, setLocalFormHydrated] = useState(false);
   const chatBottomRef = useRef<HTMLDivElement | null>(null);
   const chatRoomResolveSeqRef = useRef(0);
@@ -805,6 +823,7 @@ export const PracticeFileTransferPage = () => {
     ...PRESET_PROSTHESIS_TYPES,
   ]);
   const [savingProsthesisTypeSettings, setSavingProsthesisTypeSettings] = useState(false);
+  const [memoSnippets, setMemoSnippets] = useState<string[]>([]);
 
   const [toothWorks, setToothWorks] = useState<ToothWorkSelection[]>([]);
   const [patientName, setPatientName] = useState("");
@@ -1012,12 +1031,14 @@ export const PracticeFileTransferPage = () => {
     const nextProsthesisTypes = normalizeProsthesisTypes(
       Array.isArray(payload.prosthesisTypes) ? payload.prosthesisTypes : [...PRESET_PROSTHESIS_TYPES],
     );
+    const nextMemoSnippets = normalizeMemoSnippets(payload.memoSnippets);
     const promoDismissed = String(payload.promoNoticeDismissedAt || "").trim().length > 0;
 
     setArrivalDefaultDays(nextArrivalDefaultDays);
     setArrivalDefaultDaysDraft(nextArrivalDefaultDays);
     setProsthesisTypeCatalog(nextProsthesisTypes);
     setProsthesisTypeCatalogDraft(nextProsthesisTypes);
+    setMemoSnippets(nextMemoSnippets);
     setPromoNoticeVisible(!promoDismissed);
     setToothWorks((prev) =>
       prev.map((row) => ({
@@ -1037,6 +1058,7 @@ export const PracticeFileTransferPage = () => {
 
       const hasArrivalDefaultDays = typeof params.arrivalDefaultDays === "number";
       const hasProsthesisTypes = Array.isArray(params.prosthesisTypes);
+      const hasMemoSnippets = Array.isArray(params.memoSnippets);
       const hasPromoNoticeDismissedAt = Object.prototype.hasOwnProperty.call(
         params,
         "promoNoticeDismissedAt",
@@ -1048,6 +1070,9 @@ export const PracticeFileTransferPage = () => {
       }
       if (hasProsthesisTypes) {
         jsonBody.prosthesisTypes = normalizeProsthesisTypes(params.prosthesisTypes || []);
+      }
+      if (hasMemoSnippets) {
+        jsonBody.memoSnippets = normalizeMemoSnippets(params.memoSnippets || []);
       }
       if (hasPromoNoticeDismissedAt) {
         jsonBody.promoNoticeDismissedAt = params.promoNoticeDismissedAt || null;
@@ -1089,6 +1114,9 @@ export const PracticeFileTransferPage = () => {
                 ? payload?.prosthesisTypes
                 : [...PRESET_PROSTHESIS_TYPES],
             ),
+            memoSnippets: normalizeMemoSnippets(
+              Array.isArray(payload?.memoSnippets) ? payload?.memoSnippets : memoSnippets,
+            ),
             promoNoticeDismissedAt: payload?.promoNoticeDismissedAt || null,
             savedAt: Date.now(),
           }),
@@ -1099,12 +1127,13 @@ export const PracticeFileTransferPage = () => {
 
       return true;
     },
-    [applyPracticeTransferSettings, authToken],
+    [applyPracticeTransferSettings, authToken, memoSnippets],
   );
 
   const loadPracticeTransferDraft = useCallback(async () => {
     if (!authToken) {
       setDraftFiles([]);
+      setDraftSummary(null);
       return;
     }
 
@@ -1127,6 +1156,7 @@ export const PracticeFileTransferPage = () => {
 
       if (!payload) {
         setDraftFiles([]);
+        setDraftSummary(null);
         return;
       }
 
@@ -1144,6 +1174,17 @@ export const PracticeFileTransferPage = () => {
         : [];
 
       setDraftFiles(restoredFiles);
+      if (restoredFiles.length > 0) {
+        setDraftSummary({
+          id: String(payload._id || "").trim() || "draft-local",
+          targetLabName: String(payload.targetLabName || "").trim(),
+          transferMemo: String(payload.transferMemo || "").trim(),
+          updatedAt: payload.updatedAt ? String(payload.updatedAt) : null,
+          createdAt: payload.createdAt ? String(payload.createdAt) : null,
+        });
+      } else {
+        setDraftSummary(null);
+      }
 
       if (import.meta.env.DEV) {
         console.info("[practice-transfer] loadDraft files-only", {
@@ -1179,6 +1220,9 @@ export const PracticeFileTransferPage = () => {
 
       if (localFormUpdatedAtRef.current <= 0) {
         applyPracticeTransferSettings(payload);
+      } else if (payload) {
+        // 폼 로컬값이 있어도 저장된 문장은 서버 설정을 우선 반영
+        setMemoSnippets(normalizeMemoSnippets(payload.memoSnippets));
       }
       try {
         localStorage.setItem(
@@ -1189,6 +1233,9 @@ export const PracticeFileTransferPage = () => {
               Array.isArray(payload?.prosthesisTypes)
                 ? payload?.prosthesisTypes
                 : [...PRESET_PROSTHESIS_TYPES],
+            ),
+            memoSnippets: normalizeMemoSnippets(
+              Array.isArray(payload?.memoSnippets) ? payload?.memoSnippets : [],
             ),
             promoNoticeDismissedAt: payload?.promoNoticeDismissedAt || null,
             savedAt: Date.now(),
@@ -1300,7 +1347,7 @@ export const PracticeFileTransferPage = () => {
             fileSize: Number(fileObj.size || 0),
           };
         })
-        .filter((item) => Boolean(item.id) && String(item.status || "").trim() !== "취소")
+        .filter((item) => Boolean(item.id))
         .sort((a, b) => (b.createdAtTs || 0) - (a.createdAtTs || 0));
 
       setRecentRequests(mapped);
@@ -1324,9 +1371,21 @@ export const PracticeFileTransferPage = () => {
   useEffect(() => {
     try {
       const raw = localStorage.getItem(PRACTICE_TRANSFER_SETTINGS_LOCAL_KEY);
-      if (!raw) return;
-      const parsed = JSON.parse(raw) as PracticeTransferSettingsPayload;
-      applyPracticeTransferSettings(parsed);
+      if (raw) {
+        const parsed = JSON.parse(raw) as PracticeTransferSettingsPayload;
+        applyPracticeTransferSettings(parsed);
+        return;
+      }
+    } catch {
+      // ignore
+    }
+
+    // 레거시 단독 키 마이그레이션
+    try {
+      const legacyRaw = localStorage.getItem("practice_transfer_memo_snippets_v1");
+      if (!legacyRaw) return;
+      const legacy = normalizeMemoSnippets(JSON.parse(legacyRaw));
+      if (legacy.length > 0) setMemoSnippets(legacy);
     } catch {
       // ignore
     }
@@ -1497,7 +1556,7 @@ export const PracticeFileTransferPage = () => {
     void loadPracticeTransferDraft();
   }, [loadPracticeTransferDraft]);
 
-  const filteredRecentRequests = useMemo(() => {
+  const periodAndSearchFilteredRequests = useMemo(() => {
     const query = requestSearchTerm.trim().toLowerCase();
 
     const periodFiltered = recentRequests.filter((request) => {
@@ -1550,6 +1609,22 @@ export const PracticeFileTransferPage = () => {
       return searchableText.includes(query);
     });
   }, [recentRequests, requestSearchTerm, period]);
+
+  const filteredRecentRequests = useMemo(
+    () =>
+      periodAndSearchFilteredRequests.filter(
+        (request) => String(request.status || "").trim() !== "취소",
+      ),
+    [periodAndSearchFilteredRequests],
+  );
+
+  const trashRecentRequests = useMemo(
+    () =>
+      periodAndSearchFilteredRequests.filter(
+        (request) => String(request.status || "").trim() === "취소",
+      ),
+    [periodAndSearchFilteredRequests],
+  );
 
   const groupedTransfers = useMemo(() => {
     const unreadByTransferId = new Map<string, number>();
@@ -1754,6 +1829,140 @@ export const PracticeFileTransferPage = () => {
     return groupedTransfers.filter((transfer) => String(transfer.status || "").trim() === recentStatusFilter);
   }, [groupedTransfers, recentStatusFilter]);
 
+  const draftRecentTransfer = useMemo((): RecentTransferItem | null => {
+    if (draftFiles.length === 0) return null;
+
+    const updatedAtRaw =
+      draftSummary?.updatedAt || draftSummary?.createdAt || new Date().toISOString();
+    const createdAtTs = new Date(updatedAtRaw).getTime();
+    const safeTs = Number.isFinite(createdAtTs) && createdAtTs > 0 ? createdAtTs : Date.now();
+    const targetLab =
+      String(draftSummary?.targetLabName || selectedLab?.name || "-").trim() || "-";
+    const rawMemo = String(draftSummary?.transferMemo || requestMemo || "").trim();
+    const displayMemo = formatTransferMemoForDisplay(rawMemo);
+    const files = draftFiles.map((file) => ({
+      fileName: file.originalName,
+      s3Key: file.s3Key,
+      size: Number(file.size || 0),
+    }));
+    const parsedMemo = parsePracticeTransferMemoMeta(rawMemo);
+
+    return {
+      id: draftSummary?.id || "draft-local",
+      transferId: PRACTICE_DRAFT_TRANSFER_ID,
+      deleteTargetLabel: "임시저장",
+      createdAt: toDateLabel(updatedAtRaw),
+      createdAtTs: safeTs,
+      requestDate: toDayLabel(updatedAtRaw),
+      targetLab,
+      orderDate: String(parsedMemo.orderDate || orderDate || "").trim(),
+      arrivalDate: String(parsedMemo.arrivalDate || arrivalDate || "").trim(),
+      status: "임시저장",
+      fileCount: files.length,
+      patientCount: 1,
+      requestIds: [],
+      transferMongoIds: [],
+      fileNames: files.map((file) => file.fileName).filter(Boolean),
+      files,
+      transferMemo: displayMemo,
+      unreadCount: 0,
+      searchBlob: [
+        "임시저장",
+        PRACTICE_DRAFT_TRANSFER_ID,
+        targetLab,
+        displayMemo,
+        ...files.map((file) => file.fileName),
+      ]
+        .join(" ")
+        .toLowerCase(),
+    };
+  }, [
+    arrivalDate,
+    draftFiles,
+    draftSummary,
+    orderDate,
+    requestMemo,
+    selectedLab,
+  ]);
+
+  const displayGroupedTransfers = filteredGroupedTransfers;
+
+  const draftGroupedTransfers = useMemo(() => {
+    if (!draftRecentTransfer) return [] as RecentTransferItem[];
+    const query = requestSearchTerm.trim().toLowerCase();
+    if (query && !draftRecentTransfer.searchBlob.includes(query)) return [];
+    return [draftRecentTransfer];
+  }, [draftRecentTransfer, requestSearchTerm]);
+
+  const trashGroupedTransfers = useMemo(() => {
+    const byKey = new Map<string, RecentTransferItem>();
+
+    for (const req of trashRecentRequests) {
+      const key =
+        req.transferId && req.transferId !== "-"
+          ? `tid:${req.transferId}`
+          : req.requestMongoId
+            ? `mid:${req.requestMongoId}`
+            : `id:${req.id}`;
+      const existing = byKey.get(key);
+      if (!existing) {
+        byKey.set(key, {
+          id: req.id,
+          transferId: req.transferId || "-",
+          deleteTargetLabel:
+            req.transferId && req.transferId !== "-" ? req.transferId : req.id,
+          createdAt: req.createdAt,
+          createdAtTs: req.createdAtTs,
+          requestDate: req.requestDate,
+          targetLab: req.targetLab,
+          orderDate: req.orderDate,
+          arrivalDate: req.arrivalDate,
+          status: "취소",
+          fileCount: req.fileName ? 1 : 0,
+          patientCount: 1,
+          requestIds: [req.id],
+          transferMongoIds: req.requestMongoId ? [req.requestMongoId] : [],
+          fileNames: req.fileName ? [req.fileName] : [],
+          files:
+            req.fileName && req.fileS3Key
+              ? [{ fileName: req.fileName, s3Key: req.fileS3Key, size: req.fileSize }]
+              : [],
+          transferMemo: req.transferMemo,
+          unreadCount: 0,
+          searchBlob: "",
+        });
+        continue;
+      }
+
+      existing.requestIds = Array.from(new Set([...existing.requestIds, req.id]));
+      if (req.requestMongoId) {
+        existing.transferMongoIds = Array.from(
+          new Set([...existing.transferMongoIds, req.requestMongoId]),
+        );
+      }
+      if (req.fileName && req.fileS3Key) {
+        const already = existing.files.some((file) => file.s3Key === req.fileS3Key);
+        if (!already) {
+          existing.files = [
+            ...existing.files,
+            { fileName: req.fileName, s3Key: req.fileS3Key, size: req.fileSize },
+          ];
+          existing.fileNames = existing.files.map((file) => file.fileName);
+          existing.fileCount = existing.files.length;
+        }
+      }
+      if (req.createdAtTs > existing.createdAtTs) {
+        existing.createdAtTs = req.createdAtTs;
+        existing.createdAt = req.createdAt;
+        existing.requestDate = req.requestDate;
+      }
+    }
+
+    return [...byKey.values()].sort(
+      (a, b) => Number(b.createdAtTs || 0) - Number(a.createdAtTs || 0),
+    );
+  }, [trashRecentRequests]);
+
   const extractDataFromResponse = <T,>(raw: unknown): T | null => {
     if (!raw || typeof raw !== "object") return null;
     const payload = raw as { data?: unknown };
@@ -1779,6 +1988,17 @@ export const PracticeFileTransferPage = () => {
   );
 
   const handleOpenTransferDialog = async (transfer: RecentTransferItem) => {
+    if (
+      transfer.status === "임시저장" ||
+      transfer.transferId === PRACTICE_DRAFT_TRANSFER_ID
+    ) {
+      toast({
+        title: "임시저장된 의뢰",
+        description: "왼쪽 기공의뢰 카드에서 이어서 작성·전송할 수 있습니다.",
+      });
+      return;
+    }
+
     const resolveSeq = ++chatRoomResolveSeqRef.current;
 
     setSelectedTransfer(transfer);
@@ -2038,6 +2258,7 @@ export const PracticeFileTransferPage = () => {
         method: "DELETE",
         token: authToken,
       });
+      setDraftSummary(null);
       return;
     }
 
@@ -2126,6 +2347,44 @@ export const PracticeFileTransferPage = () => {
     }
 
     const target = deleteTargetTransfer;
+    if (!target) {
+      setDeleteConfirmOpen(false);
+      setDeleteTargetTransfer(null);
+      return;
+    }
+
+    if (
+      target.status === "임시저장" ||
+      target.transferId === PRACTICE_DRAFT_TRANSFER_ID
+    ) {
+      setDeletingTransfer(true);
+      try {
+        await apiFetch<unknown>({
+          path: "/api/practice/transfers/draft",
+          method: "DELETE",
+          token: authToken,
+        });
+        setDraftFiles([]);
+        setDraftSummary(null);
+        toast({
+          title: "임시저장 삭제 완료",
+          description: "임시저장된 의뢰를 삭제했습니다.",
+        });
+      } catch (error) {
+        toast({
+          title: "임시저장 삭제 실패",
+          description:
+            error instanceof Error ? error.message : "임시저장 삭제 중 오류가 발생했습니다.",
+          variant: "destructive",
+        });
+      } finally {
+        setDeletingTransfer(false);
+        setDeleteConfirmOpen(false);
+        setDeleteTargetTransfer(null);
+      }
+      return;
+    }
+
     const requestIds = Array.isArray(target?.requestIds)
       ? target!.requestIds.map((id) => String(id || "").trim()).filter(Boolean)
       : [];
@@ -2149,8 +2408,12 @@ export const PracticeFileTransferPage = () => {
     const deletedSet = new Set(requestIds);
     const previousRecentRequests = recentRequests;
 
-    // optimistic UI: 서버 응답 전 목록에서 즉시 제거
-    setRecentRequests((prev) => prev.filter((row) => !deletedSet.has(row.id)));
+    // optimistic UI: 최근 내역에서 제외하고 휴지통(취소)으로 이동
+    setRecentRequests((prev) =>
+      prev.map((row) =>
+        deletedSet.has(row.id) ? { ...row, status: "취소" } : row,
+      ),
+    );
     setDeleteConfirmOpen(false);
     setDeleteTargetTransfer(null);
 
@@ -2188,17 +2451,17 @@ export const PracticeFileTransferPage = () => {
         // 전건 실패 시 optimistic 변경 롤백
         setRecentRequests(previousRecentRequests);
         toast({
-          title: "전송 내역 삭제 실패",
+          title: "휴지통 이동 실패",
           description: "삭제 권한 또는 대상 상태를 확인해주세요.",
           variant: "destructive",
         });
       } else {
         toast({
-          title: "의뢰서 전송 내역 삭제 완료",
+          title: "휴지통으로 이동 완료",
           description:
             failedIds.length > 0
-              ? `${successCount}건 삭제, ${failedIds.length}건은 권한/상태 제한으로 삭제되지 않았습니다.`
-              : `${successCount}건 삭제되었습니다.`,
+              ? `${successCount}건 이동, ${failedIds.length}건은 권한/상태 제한으로 이동되지 않았습니다.`
+              : `${successCount}건을 휴지통으로 옮겼습니다. 아래에서 복구할 수 있습니다.`,
         });
 
         // 부분 실패면 서버 기준으로 재동기화(실패 건을 다시 표시)
@@ -2211,7 +2474,7 @@ export const PracticeFileTransferPage = () => {
       // 통신/서버 오류 시 optimistic 변경 롤백
       setRecentRequests(previousRecentRequests);
       toast({
-        title: "삭제 실패",
+        title: "휴지통 이동 실패",
         description:
           error instanceof Error
             ? error.message
@@ -2220,6 +2483,128 @@ export const PracticeFileTransferPage = () => {
       });
     } finally {
       setDeletingTransfer(false);
+    }
+  };
+
+  const handleAskRestoreTransfer = (transfer: RecentTransferItem) => {
+    setRestoreTargetTransfer(transfer);
+    setRestoreConfirmOpen(true);
+  };
+
+  const handleCancelRestoreTransfer = () => {
+    if (restoringTransfer) return;
+    setRestoreConfirmOpen(false);
+    setRestoreTargetTransfer(null);
+  };
+
+  const handleConfirmRestoreTransfer = async () => {
+    if (restoringTransfer) return;
+    if (!authToken) {
+      toast({
+        title: "로그인이 필요합니다",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const target = restoreTargetTransfer;
+    if (!target) {
+      setRestoreConfirmOpen(false);
+      setRestoreTargetTransfer(null);
+      return;
+    }
+
+    const transferIds =
+      target.transferId && target.transferId !== "-" ? [target.transferId] : [];
+    const transferMongoIds = Array.isArray(target.transferMongoIds)
+      ? target.transferMongoIds.map((id) => String(id || "").trim()).filter(Boolean)
+      : [];
+
+    if (transferIds.length === 0 && transferMongoIds.length === 0) {
+      toast({
+        title: "복구할 전송건이 없습니다",
+        variant: "destructive",
+      });
+      setRestoreConfirmOpen(false);
+      setRestoreTargetTransfer(null);
+      return;
+    }
+
+    setRestoringTransfer(true);
+    const previousRecentRequests = recentRequests;
+    const restoreIdSet = new Set(
+      Array.isArray(target.requestIds)
+        ? target.requestIds.map((id) => String(id || "").trim()).filter(Boolean)
+        : [],
+    );
+
+    // optimistic: 취소 → 발송완료로 되돌림
+    setRecentRequests((prev) =>
+      prev.map((row) =>
+        restoreIdSet.has(row.id) ||
+        (target.transferId &&
+          target.transferId !== "-" &&
+          row.transferId === target.transferId)
+          ? { ...row, status: "발송완료" }
+          : row,
+      ),
+    );
+    setRestoreConfirmOpen(false);
+    setRestoreTargetTransfer(null);
+
+    try {
+      const res = await apiFetch<unknown>({
+        path: "/api/practice/transfers/restore-batch",
+        method: "POST",
+        token: authToken,
+        jsonBody: {
+          transferIds,
+          transferMongoIds,
+        },
+      });
+
+      if (!res.ok) {
+        const body = asApiMessagePayload(res.data);
+        throw new Error(String(body?.message || "휴지통 복구에 실패했습니다."));
+      }
+
+      const body =
+        res.data && typeof res.data === "object"
+          ? (res.data as { data?: { successCount?: number; failedIds?: string[] } })
+          : {};
+      const data = body.data || {};
+      const successCount = Number(data.successCount || 0);
+      const failedIds = (Array.isArray(data.failedIds) ? data.failedIds : [])
+        .map((v) => String(v || "").trim())
+        .filter(Boolean);
+
+      if (successCount <= 0) {
+        setRecentRequests(previousRecentRequests);
+        toast({
+          title: "복구 실패",
+          description: "복구 권한 또는 대상 상태를 확인해주세요.",
+          variant: "destructive",
+        });
+      } else {
+        toast({
+          title: "복구 완료",
+          description:
+            failedIds.length > 0
+              ? `${successCount}건 복구, ${failedIds.length}건은 복구되지 않았습니다.`
+              : `${successCount}건을 최근 전송 내역으로 복구했습니다.`,
+        });
+        void loadRecentRequests({ silent: true });
+      }
+    } catch (error) {
+      setRecentRequests(previousRecentRequests);
+      toast({
+        title: "복구 실패",
+        description:
+          error instanceof Error ? error.message : "휴지통 복구 중 오류가 발생했습니다.",
+        variant: "destructive",
+      });
+    } finally {
+      setRestoringTransfer(false);
     }
   };
 
@@ -2338,6 +2723,21 @@ export const PracticeFileTransferPage = () => {
         : dedupedDraftFiles;
 
       setDraftFiles(nextDraftFiles);
+      if (nextDraftFiles.length > 0) {
+        setDraftSummary({
+          id: String(payload?._id || draftSummary?.id || "").trim() || "draft-local",
+          targetLabName: String(payload?.targetLabName || selectedLab?.name || "").trim(),
+          transferMemo: String(payload?.transferMemo || transferMemo || "").trim(),
+          updatedAt: payload?.updatedAt
+            ? String(payload.updatedAt)
+            : new Date().toISOString(),
+          createdAt: payload?.createdAt
+            ? String(payload.createdAt)
+            : draftSummary?.createdAt || new Date().toISOString(),
+        });
+      } else {
+        setDraftSummary(null);
+      }
       if (files.length > 0) {
         await clearAllFiles();
       }
@@ -2352,7 +2752,7 @@ export const PracticeFileTransferPage = () => {
       }
       toast({
         title: "임시저장 완료",
-        description: "서버에 임시저장했습니다. 다른 PC에서도 이어서 전송할 수 있습니다.",
+        description: "서버에 임시저장했습니다. 아래 임시저장 카드에서 확인할 수 있습니다.",
       });
     } catch (error) {
       toast({
@@ -2513,6 +2913,7 @@ export const PracticeFileTransferPage = () => {
       rememberLab(selectedLab);
       await clearAllFiles();
       setDraftFiles([]);
+      setDraftSummary(null);
       setSelectedLab(null);
       setPatientName("");
       setRequestMemo("");
@@ -2837,7 +3238,36 @@ export const PracticeFileTransferPage = () => {
                   requestMemo,
                   setRequestMemo,
                   memoInputId: "practice-file-transfer-request-memo",
-                  prosthesisTypeSelectWidthClassName: "w-[76px]",
+                  memoSnippets,
+                  onMemoSnippetsChange: async (next) => {
+                    const normalized = normalizeMemoSnippets(next);
+                    setMemoSnippets(normalized);
+                    try {
+                      const existingRaw = localStorage.getItem(PRACTICE_TRANSFER_SETTINGS_LOCAL_KEY);
+                      const existing =
+                        existingRaw && typeof existingRaw === "string"
+                          ? (JSON.parse(existingRaw) as Record<string, unknown>)
+                          : {};
+                      localStorage.setItem(
+                        PRACTICE_TRANSFER_SETTINGS_LOCAL_KEY,
+                        JSON.stringify({
+                          ...existing,
+                          arrivalDefaultDays,
+                          prosthesisTypes: normalizedProsthesisTypes,
+                          memoSnippets: normalized,
+                          savedAt: Date.now(),
+                        }),
+                      );
+                      localStorage.setItem(
+                        "practice_transfer_memo_snippets_v1",
+                        JSON.stringify(normalized),
+                      );
+                    } catch {
+                      // ignore
+                    }
+                    await savePracticeTransferSettingsToServer({ memoSnippets: normalized });
+                  },
+                  prosthesisTypeSelectWidthClassName: "w-[7rem]",
                   showBridgeConnections: true,
                   toothTensOptions: TOOTH_TENS_OPTIONS,
                   toothOnesOptions: TOOTH_ONES_OPTIONS,
@@ -3033,7 +3463,7 @@ export const PracticeFileTransferPage = () => {
                   <div className="rounded-lg border border-dashed px-3 py-8 text-center text-sm text-destructive">
                     {recentRequestsError}
                   </div>
-                ) : filteredGroupedTransfers.length === 0 ? (
+                ) : displayGroupedTransfers.length === 0 ? (
                   <div className="rounded-lg border border-dashed px-3 py-8 text-center text-sm text-muted-foreground">
                     {recentStatusFilter === "all"
                       ? "검색 조건에 맞는 의뢰서 전송 내역이 없습니다."
@@ -3041,18 +3471,24 @@ export const PracticeFileTransferPage = () => {
                   </div>
                 ) : (
                   <div className="max-h-[19rem] space-y-2 overflow-y-auto pr-1">
-                    {filteredGroupedTransfers.map((transfer) => {
+                    {displayGroupedTransfers.map((transfer) => {
                       const targetLabText =
                         String(transfer.targetLab || "-")
                           .replace(/\s*→.*$/g, "")
                           .trim() || "-";
+                      const isDraftTransfer =
+                        transfer.status === "임시저장" ||
+                        transfer.transferId === PRACTICE_DRAFT_TRANSFER_ID;
 
                       return (
                         <div
                           key={`${transfer.id}:${transfer.createdAt}`}
                           role="button"
                           tabIndex={0}
-                          className="w-full cursor-pointer rounded-lg border px-3 py-2 text-left text-sm hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          className={cn(
+                            "w-full cursor-pointer rounded-lg border px-3 py-2 text-left text-sm hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                            isDraftTransfer && "border-amber-200 bg-amber-50/60 hover:bg-amber-50",
+                          )}
                           onClick={() => void handleOpenTransferDialog(transfer)}
                           onKeyDown={(e) => {
                             if (e.key === "Enter" || e.key === " ") {
@@ -3064,11 +3500,21 @@ export const PracticeFileTransferPage = () => {
                           <div className="flex items-center justify-between gap-3">
                             <div className="min-w-0">
                               <p className="truncate font-medium">
-                                {transfer.transferId !== "-" ? transfer.transferId : transfer.id}
+                                {isDraftTransfer
+                                  ? "임시저장"
+                                  : transfer.transferId !== "-"
+                                    ? transfer.transferId
+                                    : transfer.id}
                               </p>
                               <div className="mt-0.5 flex items-center gap-2">
                                 <p className="truncate text-xs text-muted-foreground">{transfer.createdAt}</p>
-                                <Badge variant="outline" className="whitespace-nowrap">
+                                <Badge
+                                  variant="outline"
+                                  className={cn(
+                                    "whitespace-nowrap",
+                                    isDraftTransfer && "border-amber-300 bg-amber-100 text-amber-800",
+                                  )}
+                                >
                                   {transfer.status}
                                 </Badge>
                               </div>
@@ -3105,6 +3551,150 @@ export const PracticeFileTransferPage = () => {
                                 </span>
                               ) : null}
                             </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <BookmarkPlus className="h-4 w-4 text-amber-600" />
+                  임시저장
+                  {draftGroupedTransfers.length > 0 ? (
+                    <Badge variant="secondary" className="ml-1 border-amber-200 bg-amber-100 text-amber-800">
+                      {draftGroupedTransfers.length}
+                    </Badge>
+                  ) : null}
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                {draftGroupedTransfers.length === 0 ? (
+                  <div className="rounded-lg border border-dashed px-3 py-6 text-center text-sm text-muted-foreground">
+                    임시저장된 의뢰가 없습니다.
+                  </div>
+                ) : (
+                  <div className="max-h-[15.25rem] space-y-2 overflow-y-auto pr-1">
+                    {draftGroupedTransfers.map((transfer) => {
+                      const targetLabText =
+                        String(transfer.targetLab || "-")
+                          .replace(/\s*→.*$/g, "")
+                          .trim() || "-";
+
+                      return (
+                        <div
+                          key={`draft:${transfer.id}:${transfer.createdAt}`}
+                          role="button"
+                          tabIndex={0}
+                          className="w-full cursor-pointer rounded-lg border border-amber-200 bg-amber-50/60 px-3 py-2 text-left text-sm hover:bg-amber-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          onClick={() => void handleOpenTransferDialog(transfer)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              void handleOpenTransferDialog(transfer);
+                            }
+                          }}
+                        >
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="min-w-0">
+                              <p className="truncate font-medium">임시저장</p>
+                              <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                                {transfer.createdAt}
+                              </p>
+                              <p className="truncate text-xs text-muted-foreground">
+                                {targetLabText}
+                              </p>
+                              <p className="truncate text-xs text-muted-foreground">
+                                파일 {transfer.fileCount}개
+                                {transfer.orderDate ? ` · 주문 ${transfer.orderDate}` : ""}
+                                {transfer.arrivalDate ? ` · 도착 ${transfer.arrivalDate}` : ""}
+                              </p>
+                            </div>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 shrink-0 text-muted-foreground hover:text-destructive"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                void handleAskDeleteTransfer(transfer);
+                              }}
+                              aria-label="임시저장 삭제"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <Trash2 className="h-4 w-4 text-slate-500" />
+                  휴지통
+                  {trashGroupedTransfers.length > 0 ? (
+                    <Badge variant="secondary" className="ml-1">
+                      {trashGroupedTransfers.length}
+                    </Badge>
+                  ) : null}
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                {trashGroupedTransfers.length === 0 ? (
+                  <div className="rounded-lg border border-dashed px-3 py-6 text-center text-sm text-muted-foreground">
+                    휴지통이 비어 있습니다.
+                  </div>
+                ) : (
+                  <div className="max-h-[15.25rem] space-y-2 overflow-y-auto pr-1">
+                    {trashGroupedTransfers.map((transfer) => {
+                      const targetLabText =
+                        String(transfer.targetLab || "-")
+                          .replace(/\s*→.*$/g, "")
+                          .trim() || "-";
+
+                      return (
+                        <div
+                          key={`trash:${transfer.id}:${transfer.createdAt}`}
+                          className="w-full rounded-lg border border-slate-200 bg-slate-50/70 px-3 py-2 text-left text-sm"
+                        >
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="min-w-0">
+                              <p className="truncate font-medium">
+                                {transfer.transferId !== "-"
+                                  ? transfer.transferId
+                                  : transfer.id}
+                              </p>
+                              <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                                {transfer.createdAt}
+                              </p>
+                              <p className="truncate text-xs text-muted-foreground">
+                                {targetLabText}
+                              </p>
+                              <p className="truncate text-xs text-muted-foreground">
+                                파일 {transfer.fileCount}개
+                              </p>
+                            </div>
+
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 shrink-0 text-slate-500 hover:text-sky-700"
+                              onClick={() => handleAskRestoreTransfer(transfer)}
+                              aria-label="의뢰서 복구"
+                              title="복구"
+                            >
+                              <RotateCcw className="h-4 w-4" />
+                            </Button>
                           </div>
                         </div>
                       );
@@ -3331,23 +3921,63 @@ export const PracticeFileTransferPage = () => {
 
         <ConfirmDialog
           open={deleteConfirmOpen}
-          title="이 의뢰서 전송 내역을 삭제할까요?"
+          title={
+            deleteTargetTransfer?.status === "임시저장" ||
+            deleteTargetTransfer?.transferId === PRACTICE_DRAFT_TRANSFER_ID
+              ? "임시저장을 삭제할까요?"
+              : "이 의뢰서를 휴지통으로 이동할까요?"
+          }
           description={
             <div className="space-y-1">
               <div className="text-sm text-muted-foreground">
-                삭제 대상: {deleteTargetTransfer?.transferId && deleteTargetTransfer.transferId !== "-"
-                  ? deleteTargetTransfer.transferId
+                대상:{" "}
+                {deleteTargetTransfer?.transferId && deleteTargetTransfer.transferId !== "-"
+                  ? deleteTargetTransfer.transferId === PRACTICE_DRAFT_TRANSFER_ID
+                    ? "임시저장"
+                    : deleteTargetTransfer.transferId
                   : deleteTargetTransfer?.id || "-"}
               </div>
               <div className="text-sm text-muted-foreground">
-                첨부된 파일 {deleteTargetTransfer?.fileCount || 0}개를 삭제합니다.
+                {deleteTargetTransfer?.status === "임시저장" ||
+                deleteTargetTransfer?.transferId === PRACTICE_DRAFT_TRANSFER_ID
+                  ? `첨부 파일 ${deleteTargetTransfer?.fileCount || 0}건과 함께 임시저장을 삭제합니다.`
+                  : `첨부 파일 ${deleteTargetTransfer?.fileCount || 0}건과 함께 휴지통으로 이동합니다. 아래에서 다시 복구할 수 있습니다.`}
               </div>
             </div>
           }
-          confirmLabel={deletingTransfer ? "삭제 중..." : "삭제"}
+          confirmLabel={
+            deletingTransfer
+              ? "처리 중..."
+              : deleteTargetTransfer?.status === "임시저장" ||
+                  deleteTargetTransfer?.transferId === PRACTICE_DRAFT_TRANSFER_ID
+                ? "삭제"
+                : "휴지통으로 이동"
+          }
           cancelLabel="취소"
           onConfirm={handleConfirmDeleteTransfer}
           onCancel={handleCancelDeleteTransfer}
+        />
+
+        <ConfirmDialog
+          open={restoreConfirmOpen}
+          title="이 의뢰서를 복구할까요?"
+          description={
+            <div className="space-y-1">
+              <div className="text-sm text-muted-foreground">
+                대상:{" "}
+                {restoreTargetTransfer?.transferId && restoreTargetTransfer.transferId !== "-"
+                  ? restoreTargetTransfer.transferId
+                  : restoreTargetTransfer?.id || "-"}
+              </div>
+              <div className="text-sm text-muted-foreground">
+                최근 전송 내역으로 되돌아가며, 기공소에서도 다시 확인할 수 있습니다.
+              </div>
+            </div>
+          }
+          confirmLabel={restoringTransfer ? "복구 중..." : "복구"}
+          cancelLabel="취소"
+          onConfirm={() => void handleConfirmRestoreTransfer()}
+          onCancel={handleCancelRestoreTransfer}
         />
       </div>
     </PageFileDropZone>

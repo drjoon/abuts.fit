@@ -15,15 +15,17 @@
 // - web/frontend/src/shared/shipping/ShippingModeBadge.tsx
 // - web/backend/controllers/requests/common.nc.controller.js
 // - web/backend/rules.md
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { getNormalizedStageLabelSafe } from "@/utils/stage";
 import { useNavigate } from "react-router-dom";
 import { usePeriodStore } from "@/store/usePeriodStore";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { useQuery } from "@tanstack/react-query";
 import { useToast } from "@/shared/hooks/use-toast";
 import { MultiActionDialog } from "@/features/support/components/MultiActionDialog";
+import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
 import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { DashboardShell } from "@/shared/ui/dashboard/DashboardShell";
@@ -272,6 +274,7 @@ type PracticeTransferStats = {
   }>;
   recentTransfers?: Array<{
     transferId?: string;
+    transferMongoId?: string;
     practiceName?: string;
     labName?: string;
     status?: string;
@@ -467,6 +470,11 @@ export const AdminDashboardPage = () => {
     useState(false);
   const [practiceTransferStatsDialogOpen, setPracticeTransferStatsDialogOpen] =
     useState(false);
+  const [restoreTransferTarget, setRestoreTransferTarget] = useState<{
+    transferId: string;
+    transferMongoId: string;
+  } | null>(null);
+  const [restoringTransfer, setRestoringTransfer] = useState(false);
   const [designSoftwareStatsFilter, setDesignSoftwareStatsFilter] = useState<
     "all" | "3shape" | "exocad" | "other"
   >("all");
@@ -961,6 +969,70 @@ export const AdminDashboardPage = () => {
   const practiceTransferRecentTransfers = Array.isArray(practiceTransferStats?.recentTransfers)
     ? practiceTransferStats.recentTransfers
     : [];
+  const practiceTransferRecentActive = useMemo(
+    () =>
+      practiceTransferRecentTransfers.filter(
+        (row) => String(row?.status || "").trim() !== "canceled",
+      ),
+    [practiceTransferRecentTransfers],
+  );
+  const practiceTransferRecentCanceled = useMemo(
+    () =>
+      practiceTransferRecentTransfers.filter(
+        (row) => String(row?.status || "").trim() === "canceled",
+      ),
+    [practiceTransferRecentTransfers],
+  );
+
+  const handleRestorePracticeTransfer = async () => {
+    if (restoringTransfer || !restoreTransferTarget || !token) return;
+    setRestoringTransfer(true);
+    try {
+      const transferIds = restoreTransferTarget.transferId
+        ? [restoreTransferTarget.transferId]
+        : [];
+      const transferMongoIds = restoreTransferTarget.transferMongoId
+        ? [restoreTransferTarget.transferMongoId]
+        : [];
+      const res = await apiFetch<{
+        success?: boolean;
+        data?: { successCount?: number; failedIds?: string[] };
+        message?: string;
+      }>({
+        path: "/api/practice/transfers/restore-batch",
+        method: "POST",
+        token,
+        jsonBody: { transferIds, transferMongoIds },
+      });
+      if (!res.ok) {
+        throw new Error(
+          String(
+            (res.data as { message?: string } | undefined)?.message ||
+              "취소건 되살리기에 실패했습니다.",
+          ),
+        );
+      }
+      const successCount = Number(res.data?.data?.successCount || 0);
+      if (successCount <= 0) {
+        throw new Error("되살릴 수 있는 취소건을 찾지 못했습니다.");
+      }
+      toast({
+        title: "취소건 되살리기 완료",
+        description: `${restoreTransferTarget.transferId || "전송"}을 활성 상태로 복구했습니다.`,
+      });
+      setRestoreTransferTarget(null);
+      void refetchAdminDashboard();
+    } catch (error) {
+      toast({
+        title: "되살리기 실패",
+        description:
+          error instanceof Error ? error.message : "취소건 되살리기 중 오류가 발생했습니다.",
+        variant: "destructive",
+      });
+    } finally {
+      setRestoringTransfer(false);
+    }
+  };
 
   const handleCompleteHappyCall = async (
     item: HappyCallItem,
@@ -1854,69 +1926,132 @@ export const AdminDashboardPage = () => {
           setPracticeTransferStatsDialogOpen(false);
         }}
         title="치과 의뢰(파일) 전송 통계 상세"
-        panelClassName="!w-[94vw] !max-w-[1200px]"
+        panelClassName="!w-[94vw] !max-w-[1120px] !h-[min(88vh,920px)] !max-h-[88vh]"
+        descriptionScrollable={false}
+        descriptionClassName="!mb-4 !max-h-none !overflow-hidden flex min-h-0 flex-1 flex-col"
         description={
-          <div className="space-y-3 text-sm text-gray-700">
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-              <div className="rounded-md border px-2 py-2">
-                <div className="text-[11px] text-muted-foreground">전송</div>
-                <div className="text-lg font-semibold">{practiceTransferTotal.toLocaleString()}건</div>
-              </div>
-              <div className="rounded-md border px-2 py-2">
-                <div className="text-[11px] text-muted-foreground">파일</div>
-                <div className="text-lg font-semibold">{practiceTransferTotalFiles.toLocaleString()}개</div>
-              </div>
-              <div className="rounded-md border px-2 py-2 border-blue-200 bg-blue-50/60">
-                <div className="text-[11px] text-muted-foreground">치과</div>
-                <div className="text-lg font-semibold text-blue-700">{practiceTransferTotalPractices.toLocaleString()}곳</div>
-              </div>
-              <div className="rounded-md border px-2 py-2 border-emerald-200 bg-emerald-50/60">
-                <div className="text-[11px] text-muted-foreground">기공소</div>
-                <div className="text-lg font-semibold text-emerald-700">{practiceTransferTotalLabs.toLocaleString()}곳</div>
-              </div>
+          <div className="flex h-full min-h-0 flex-col gap-4 text-sm text-slate-700">
+            <div className="grid shrink-0 grid-cols-3 gap-2 sm:grid-cols-6">
+              {[
+                {
+                  label: "전송",
+                  value: `${practiceTransferTotal.toLocaleString()}건`,
+                  className: "border-slate-200 bg-white",
+                  valueClassName: "text-slate-900",
+                },
+                {
+                  label: "파일",
+                  value: `${practiceTransferTotalFiles.toLocaleString()}개`,
+                  className: "border-slate-200 bg-white",
+                  valueClassName: "text-slate-900",
+                },
+                {
+                  label: "치과",
+                  value: `${practiceTransferTotalPractices.toLocaleString()}곳`,
+                  className: "border-blue-200 bg-blue-50/70",
+                  valueClassName: "text-blue-700",
+                },
+                {
+                  label: "기공소",
+                  value: `${practiceTransferTotalLabs.toLocaleString()}곳`,
+                  className: "border-emerald-200 bg-emerald-50/70",
+                  valueClassName: "text-emerald-700",
+                },
+                {
+                  label: "활성",
+                  value: `${practiceTransferActive.toLocaleString()}건`,
+                  className: "border-slate-200 bg-slate-50",
+                  valueClassName: "text-slate-800",
+                },
+                {
+                  label: "취소",
+                  value: `${practiceTransferCanceled.toLocaleString()}건`,
+                  className: "border-rose-200 bg-rose-50/80",
+                  valueClassName: "text-rose-700",
+                },
+              ].map((item) => (
+                <div
+                  key={item.label}
+                  className={`rounded-xl border px-3 py-2.5 ${item.className}`}
+                >
+                  <div className="text-[11px] text-muted-foreground">{item.label}</div>
+                  <div className={`mt-0.5 text-base font-semibold tabular-nums sm:text-lg ${item.valueClassName}`}>
+                    {item.value}
+                  </div>
+                </div>
+              ))}
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-              <div className="rounded-md border p-2.5 space-y-2">
-                <div className="text-xs font-semibold text-slate-700">치과별 전송 상위</div>
-                <div className="max-h-[220px] overflow-auto pr-1 space-y-1">
+            <div className="grid shrink-0 grid-cols-1 gap-3 lg:grid-cols-2">
+              <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-3">
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <div className="text-xs font-semibold text-slate-800">치과별 전송 상위</div>
+                  <div className="text-[11px] text-muted-foreground">
+                    {practiceTransferTopPractices.length}곳
+                  </div>
+                </div>
+                <div className="max-h-[9.5rem] space-y-1.5 overflow-y-auto pr-1">
                   {practiceTransferTopPractices.length > 0 ? (
                     practiceTransferTopPractices.map((row, idx) => {
-                      const name = String(row?.practiceName || "").trim() || "-";
+                      const name =
+                        String(row?.practiceName || "").trim() || "치과명 미확인";
                       return (
-                        <div key={`${String(row?.practiceAnchorId || "")}-${idx}`} className="rounded-md border px-2 py-1.5 bg-white">
-                          <div className="text-xs font-medium truncate">{name}</div>
-                          <div className="text-[11px] text-muted-foreground">
-                            전송 {Number(row?.transferCount || 0).toLocaleString()}건 · 파일 {Number(row?.fileCount || 0).toLocaleString()}개
+                        <div
+                          key={`${String(row?.practiceAnchorId || "")}-${idx}`}
+                          className="flex items-center gap-2 rounded-lg border border-slate-200/80 bg-white px-2.5 py-2"
+                        >
+                          <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[11px] font-semibold text-slate-600">
+                            {idx + 1}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="truncate text-xs font-medium text-slate-900">{name}</div>
+                            <div className="text-[11px] text-muted-foreground">
+                              전송 {Number(row?.transferCount || 0).toLocaleString()}건 · 파일{" "}
+                              {Number(row?.fileCount || 0).toLocaleString()}개
+                            </div>
                           </div>
                         </div>
                       );
                     })
                   ) : (
-                    <div className="text-xs text-muted-foreground py-4 text-center border border-dashed rounded-md">
+                    <div className="rounded-lg border border-dashed px-3 py-6 text-center text-xs text-muted-foreground">
                       데이터가 없습니다.
                     </div>
                   )}
                 </div>
               </div>
 
-              <div className="rounded-md border p-2.5 space-y-2">
-                <div className="text-xs font-semibold text-slate-700">기공소별 수신 상위</div>
-                <div className="max-h-[220px] overflow-auto pr-1 space-y-1">
+              <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-3">
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <div className="text-xs font-semibold text-slate-800">기공소별 수신 상위</div>
+                  <div className="text-[11px] text-muted-foreground">
+                    {practiceTransferTopLabs.length}곳
+                  </div>
+                </div>
+                <div className="max-h-[9.5rem] space-y-1.5 overflow-y-auto pr-1">
                   {practiceTransferTopLabs.length > 0 ? (
                     practiceTransferTopLabs.map((row, idx) => {
-                      const name = String(row?.labName || "").trim() || "-";
+                      const name = String(row?.labName || "").trim() || "기공소명 미확인";
                       return (
-                        <div key={`${String(row?.labAnchorId || "")}-${idx}`} className="rounded-md border px-2 py-1.5 bg-white">
-                          <div className="text-xs font-medium truncate">{name}</div>
-                          <div className="text-[11px] text-muted-foreground">
-                            전송 {Number(row?.transferCount || 0).toLocaleString()}건 · 파일 {Number(row?.fileCount || 0).toLocaleString()}개
+                        <div
+                          key={`${String(row?.labAnchorId || "")}-${idx}`}
+                          className="flex items-center gap-2 rounded-lg border border-slate-200/80 bg-white px-2.5 py-2"
+                        >
+                          <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-emerald-50 text-[11px] font-semibold text-emerald-700">
+                            {idx + 1}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="truncate text-xs font-medium text-slate-900">{name}</div>
+                            <div className="text-[11px] text-muted-foreground">
+                              전송 {Number(row?.transferCount || 0).toLocaleString()}건 · 파일{" "}
+                              {Number(row?.fileCount || 0).toLocaleString()}개
+                            </div>
                           </div>
                         </div>
                       );
                     })
                   ) : (
-                    <div className="text-xs text-muted-foreground py-4 text-center border border-dashed rounded-md">
+                    <div className="rounded-lg border border-dashed px-3 py-6 text-center text-xs text-muted-foreground">
                       데이터가 없습니다.
                     </div>
                   )}
@@ -1924,36 +2059,125 @@ export const AdminDashboardPage = () => {
               </div>
             </div>
 
-            <div className="rounded-md border p-2.5 space-y-2">
-              <div className="text-xs font-semibold text-slate-700">최근 전송 내역</div>
-              <div className="max-h-[240px] overflow-auto pr-1 space-y-1">
-                {practiceTransferRecentTransfers.length > 0 ? (
-                  practiceTransferRecentTransfers.map((row, idx) => {
-                    const transferId = String(row?.transferId || "-").trim() || "-";
-                    const practiceName = String(row?.practiceName || "-").trim() || "-";
-                    const labName = String(row?.labName || "-").trim() || "-";
-                    return (
-                      <div key={`${transferId}-${idx}`} className="rounded-md border px-2.5 py-1.5 bg-white">
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="text-xs font-medium truncate">{transferId}</div>
-                          <Badge variant={String(row?.status || "") === "canceled" ? "secondary" : "outline"} className="text-[10px]">
-                            {String(row?.status || "-")}
-                          </Badge>
+            <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 lg:grid-cols-2">
+              <div className="flex min-h-0 flex-col rounded-xl border border-slate-200 bg-white p-3">
+                <div className="mb-2 flex shrink-0 items-center justify-between gap-2">
+                  <div className="text-xs font-semibold text-slate-800">최근 전송 · 활성</div>
+                  <Badge variant="outline" className="text-[10px]">
+                    {practiceTransferRecentActive.length}건
+                  </Badge>
+                </div>
+                <div className="min-h-0 flex-1 space-y-1.5 overflow-y-auto pr-1">
+                  {practiceTransferRecentActive.length > 0 ? (
+                    practiceTransferRecentActive.map((row, idx) => {
+                      const transferId = String(row?.transferId || "-").trim() || "-";
+                      const practiceName =
+                        String(row?.practiceName || "").trim() || "치과명 미확인";
+                      const labName = String(row?.labName || "").trim() || "기공소명 미확인";
+                      return (
+                        <div
+                          key={`active-${transferId}-${idx}`}
+                          className="rounded-lg border border-slate-200 bg-slate-50/40 px-3 py-2"
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <div className="truncate font-mono text-xs font-semibold text-slate-900">
+                                {transferId}
+                              </div>
+                              <div className="mt-1 truncate text-[11px] text-slate-600">
+                                {practiceName}
+                                <span className="mx-1 text-slate-300">→</span>
+                                {labName}
+                              </div>
+                              <div className="mt-0.5 text-[11px] text-muted-foreground">
+                                파일 {Number(row?.fileCount || 0).toLocaleString()}개 ·{" "}
+                                {toDateTimeLabel(String(row?.createdAt || ""))}
+                              </div>
+                            </div>
+                            <Badge variant="outline" className="shrink-0 text-[10px]">
+                              활성
+                            </Badge>
+                          </div>
                         </div>
-                        <div className="text-[11px] text-muted-foreground truncate">
-                          치과: {practiceName} · 기공소: {labName}
+                      );
+                    })
+                  ) : (
+                    <div className="flex h-full min-h-[8rem] items-center justify-center rounded-lg border border-dashed text-xs text-muted-foreground">
+                      활성 전송 내역이 없습니다.
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex min-h-0 flex-col rounded-xl border border-rose-200 bg-rose-50/30 p-3">
+                <div className="mb-2 flex shrink-0 items-center justify-between gap-2">
+                  <div className="text-xs font-semibold text-rose-800">취소건</div>
+                  <Badge className="border-rose-200 bg-rose-100 text-[10px] text-rose-800 hover:bg-rose-100">
+                    {practiceTransferRecentCanceled.length}건
+                  </Badge>
+                </div>
+                <div className="min-h-0 flex-1 space-y-1.5 overflow-y-auto pr-1">
+                  {practiceTransferRecentCanceled.length > 0 ? (
+                    practiceTransferRecentCanceled.map((row, idx) => {
+                      const transferId = String(row?.transferId || "-").trim() || "-";
+                      const transferMongoId = String(row?.transferMongoId || "").trim();
+                      const practiceName =
+                        String(row?.practiceName || "").trim() || "치과명 미확인";
+                      const labName = String(row?.labName || "").trim() || "기공소명 미확인";
+                      return (
+                        <div
+                          key={`canceled-${transferId}-${idx}`}
+                          className="rounded-lg border border-rose-100 bg-white px-3 py-2"
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <div className="truncate font-mono text-xs font-semibold text-slate-900">
+                                {transferId}
+                              </div>
+                              <div className="mt-1 truncate text-[11px] text-slate-600">
+                                {practiceName}
+                                <span className="mx-1 text-slate-300">→</span>
+                                {labName}
+                              </div>
+                              <div className="mt-0.5 text-[11px] text-muted-foreground">
+                                파일 {Number(row?.fileCount || 0).toLocaleString()}개 ·{" "}
+                                {toDateTimeLabel(String(row?.createdAt || ""))}
+                              </div>
+                            </div>
+                            <div className="flex shrink-0 flex-col items-end gap-1.5">
+                              <Badge
+                                variant="secondary"
+                                className="bg-rose-100 text-[10px] text-rose-800"
+                              >
+                                취소
+                              </Badge>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                className="h-7 border-rose-200 px-2 text-[11px] text-rose-700 hover:bg-rose-50"
+                                onClick={() =>
+                                  setRestoreTransferTarget({
+                                    transferId: transferId === "-" ? "" : transferId,
+                                    transferMongoId,
+                                  })
+                                }
+                                disabled={!transferId || transferId === "-"}
+                              >
+                                <RotateCcw className="mr-1 h-3 w-3" />
+                                되살리기
+                              </Button>
+                            </div>
+                          </div>
                         </div>
-                        <div className="text-[11px] text-muted-foreground">
-                          파일 {Number(row?.fileCount || 0).toLocaleString()}개 · {toDateTimeLabel(String(row?.createdAt || ""))}
-                        </div>
-                      </div>
-                    );
-                  })
-                ) : (
-                  <div className="text-xs text-muted-foreground py-4 text-center border border-dashed rounded-md">
-                    데이터가 없습니다.
-                  </div>
-                )}
+                      );
+                    })
+                  ) : (
+                    <div className="flex h-full min-h-[8rem] items-center justify-center rounded-lg border border-dashed border-rose-200 bg-white/70 text-xs text-muted-foreground">
+                      취소건이 없습니다.
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           </div>
@@ -1967,6 +2191,28 @@ export const AdminDashboardPage = () => {
             },
           },
         ]}
+      />
+
+      <ConfirmDialog
+        open={Boolean(restoreTransferTarget)}
+        title="이 취소건을 되살릴까요?"
+        description={
+          <div className="space-y-1">
+            <div className="text-sm text-muted-foreground">
+              대상: {restoreTransferTarget?.transferId || restoreTransferTarget?.transferMongoId || "-"}
+            </div>
+            <div className="text-sm text-muted-foreground">
+              활성 상태로 복구되어 치과·기공소 전송 내역에 다시 표시됩니다.
+            </div>
+          </div>
+        }
+        confirmLabel={restoringTransfer ? "되살리는 중..." : "되살리기"}
+        cancelLabel="닫기"
+        onConfirm={() => void handleRestorePracticeTransfer()}
+        onCancel={() => {
+          if (restoringTransfer) return;
+          setRestoreTransferTarget(null);
+        }}
       />
 
       <MultiActionDialog

@@ -349,6 +349,7 @@ Notes:
     - `src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx`
 
 - practice 전송 상태 표준(치과/의뢰자 공통): `발송완료 | 취소 | 수신완료 | 다운로드완료`
+  - 치과 전송 내역(`GET /api/practice/transfers/my`)은 동일 치과 businessAnchor 구성원 전송을 공유한다.
   - practice 페이지 상태 정규화 기준: `src/pages/practice/PracticeFileTransferPage.tsx`의 `toStatusLabel`
   - 의뢰자 치과 페이지 상태 배지 기준: `src/pages/requestor/practice/RequestorPracticePage.tsx` (`isRead/requestorReadAt`, `isDownloaded/requestorDownloadedAt`)
 
@@ -390,6 +391,12 @@ Notes:
   - request body: `transferIds?: string[]`, `transferMongoIds?: string[]` (둘 중 하나 이상 필수)
   - response: `data.successCount`, `data.failedIds`
   - UI는 `failedIds`가 존재할 수 있음을 전제로 부분 성공 토스트/재동기화를 처리해야 합니다.
+
+- practice 전송 복구(되살리기) API 계약(SSOT):
+  - endpoint: `POST /api/practice/transfers/restore-batch`
+  - request body: `transferIds?: string[]`, `transferMongoIds?: string[]` (둘 중 하나 이상 필수)
+  - response: `data.successCount`, `data.failedIds`
+  - 치과 휴지통 복구와 관리자 취소건 되살리기에서 동일 API를 사용합니다.
 
 - practice 채팅 라우팅 SSOT:
   - practice 화면과 requestor 수신 화면은 모두 `transferId` 기반 채팅(`/api/chats/practice/transfer-room/:transferId`)만 사용합니다.

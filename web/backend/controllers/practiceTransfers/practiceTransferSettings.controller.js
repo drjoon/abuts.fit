@@ -13,6 +13,7 @@ const DEFAULT_PROSTHESIS_TYPES = [
   "커스텀어벗+크라운",
   "커스텀어벗+브리지",
 ];
+const MAX_MEMO_SNIPPETS = 40;
 
 const normalizeProsthesisTypes = (items) => {
   const list = Array.isArray(items) ? items : [];
@@ -27,6 +28,20 @@ const normalizeProsthesisTypes = (items) => {
 
   const out = Array.from(dedup.values());
   return out.length ? out : [...DEFAULT_PROSTHESIS_TYPES];
+};
+
+const normalizeMemoSnippets = (items) => {
+  const list = Array.isArray(items) ? items : [];
+  const dedup = new Map();
+
+  for (const item of list) {
+    const trimmed = String(item || "").trim();
+    if (!trimmed) continue;
+    const key = trimmed.toLowerCase();
+    if (!dedup.has(key)) dedup.set(key, trimmed);
+  }
+
+  return Array.from(dedup.values()).slice(0, MAX_MEMO_SNIPPETS);
 };
 
 const normalizeArrivalDefaultDays = (value) => {
@@ -49,6 +64,7 @@ const toSettingsResponse = (anchor) => {
   return {
     arrivalDefaultDays: normalizeArrivalDefaultDays(settings?.arrivalDefaultDays),
     prosthesisTypes: normalizeProsthesisTypes(settings?.prosthesisTypes),
+    memoSnippets: normalizeMemoSnippets(settings?.memoSnippets),
     promoNoticeDismissedAt,
     updatedAt: settings?.updatedAt || null,
   };
@@ -111,6 +127,7 @@ export async function upsertPracticeTransferSettings(req, res) {
     const body = req.body && typeof req.body === "object" ? req.body : {};
     const hasArrivalDefaultDays = Object.prototype.hasOwnProperty.call(body, "arrivalDefaultDays");
     const hasProsthesisTypes = Object.prototype.hasOwnProperty.call(body, "prosthesisTypes");
+    const hasMemoSnippets = Object.prototype.hasOwnProperty.call(body, "memoSnippets");
     const hasPromoNoticeDismissedAt = Object.prototype.hasOwnProperty.call(body, "promoNoticeDismissedAt");
 
     const setPatch = {
@@ -122,6 +139,9 @@ export async function upsertPracticeTransferSettings(req, res) {
     }
     if (hasProsthesisTypes) {
       setPatch["practiceTransferSettings.prosthesisTypes"] = normalizeProsthesisTypes(body.prosthesisTypes);
+    }
+    if (hasMemoSnippets) {
+      setPatch["practiceTransferSettings.memoSnippets"] = normalizeMemoSnippets(body.memoSnippets);
     }
     if (hasPromoNoticeDismissedAt) {
       const raw = body.promoNoticeDismissedAt;

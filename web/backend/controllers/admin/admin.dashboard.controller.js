@@ -618,6 +618,7 @@ async function buildAdminDashboardPayload(req) {
         {
           $project: {
             _id: 0,
+            transferMongoId: { $toString: "$_id" },
             transferId: 1,
             status: 1,
             createdAt: 1,

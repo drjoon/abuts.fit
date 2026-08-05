@@ -107,6 +107,7 @@ const practiceTransferSchema = new mongoose.Schema(
 );
 
 practiceTransferSchema.index({ practiceUserId: 1, createdAt: -1 });
+practiceTransferSchema.index({ practiceBusinessAnchorId: 1, createdAt: -1 });
 practiceTransferSchema.index({ transferId: 1, practiceUserId: 1 }, { unique: true });
 // received-unread-count 폴링: targetLab + unread + status
 practiceTransferSchema.index({

@@ -190,6 +190,10 @@ const businessAnchorSchema = new mongoose.Schema(
         type: [String],
         default: ["크라운", "브리지", "커스텀어벗+크라운", "커스텀어벗+브리지"],
       },
+      memoSnippets: {
+        type: [String],
+        default: [],
+      },
       promoNoticeDismissedAt: {
         type: Date,
         default: null,

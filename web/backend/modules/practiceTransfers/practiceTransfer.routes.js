@@ -15,6 +15,7 @@ import {
   getReceivedPracticeTransferUnreadCount,
   markReceivedPracticeTransferRead,
   markReceivedPracticeTransferDownloaded,
+  restorePracticeTransfersBatch,
   upsertPracticeTransferDraft,
 } from "../../controllers/practiceTransfers/practiceTransfer.controller.js";
 import {
@@ -110,6 +111,13 @@ router.post(
   authenticate,
   authorize(["practice", "admin"], { subRoles: ["owner", "staff"] }),
   cancelPracticeTransfersBatch,
+);
+
+router.post(
+  "/restore-batch",
+  authenticate,
+  authorize(["practice", "admin"], { subRoles: ["owner", "staff"] }),
+  restorePracticeTransfersBatch,
 );
 
 export default router;
