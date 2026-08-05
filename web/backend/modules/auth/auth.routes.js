@@ -16,6 +16,11 @@ import {
   verifySignupPhoneCode,
   getSignupPhoneVerificationStatus,
 } from "../../controllers/auth/signupVerification.controller.js";
+import {
+  upsertSignupDraft,
+  getSignupDraft,
+  deleteSignupDraft,
+} from "../../controllers/auth/signupDraft.controller.js";
 
 // 회원가입
 router.post("/register", authController.register);
@@ -53,6 +58,10 @@ router.get(
 router.post("/signup/phone-verification/send", sendSignupPhoneVerification);
 router.post("/signup/phone-verification/verify", verifySignupPhoneCode);
 router.get("/signup/phone-verification/status", getSignupPhoneVerificationStatus);
+
+router.put("/signup/draft", upsertSignupDraft);
+router.get("/signup/draft", getSignupDraft);
+router.delete("/signup/draft", deleteSignupDraft);
 
 // 로그아웃 (인증 필요)
 router.post("/logout", authenticate, authController.logout);

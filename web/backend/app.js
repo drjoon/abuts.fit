@@ -20,6 +20,7 @@ import BankTransaction from "./models/bankTransaction.model.js";
 import Counter from "./models/counter.model.js";
 import AdminAuditLog from "./models/adminAuditLog.model.js";
 import SignupVerification from "./models/signupVerification.model.js";
+import SignupDraft from "./models/signupDraft.model.js";
 import TaxInvoiceDraft from "./models/taxInvoiceDraft.model.js";
 import ShippingPackage from "./models/shippingPackage.model.js";
 import { requestFloodBlocker } from "./middlewares/requestFloodBlocker.js";
@@ -89,6 +90,7 @@ const dbReady = connect(mongoUri)
         ["Counter", Counter],
         ["AdminAuditLog", AdminAuditLog],
         ["SignupVerification", SignupVerification],
+        ["SignupDraft", SignupDraft],
       ];
 
       for (const [name, model] of targets) {

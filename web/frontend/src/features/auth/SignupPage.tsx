@@ -28,6 +28,77 @@ import { SignupSocialWizardStep1 } from "./signup/SignupSocialWizardStep1";
 import { SignupWizardAccountStep } from "./signup/SignupWizardAccountStep";
 import { clearOnboardingLocalStorage } from "@/shared/onboarding/clearOnboardingLocalStorage";
 
+const SIGNUP_PROGRESS_KEY = "signupWizardProgress";
+
+type SignupWizardStep = 1 | 2 | 3 | 4;
+
+type SignupProgressDraft = {
+  wizardStep: SignupWizardStep;
+  signupRole: string;
+  enteredReferralCode?: string;
+  selectedMethod: "email" | null;
+  emailVerificationSent: boolean;
+  lastEmailVerificationSentAt: string | null;
+  path: string;
+};
+
+const readSignupProgress = (path: string): SignupProgressDraft | null => {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(SIGNUP_PROGRESS_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object") return null;
+    if (String(parsed.path || "") !== path) return null;
+    const step = Number(parsed.wizardStep);
+    if (![1, 2, 3, 4].includes(step)) return null;
+    return {
+      wizardStep: step as SignupWizardStep,
+      signupRole: String(parsed.signupRole || ""),
+      enteredReferralCode:
+        typeof parsed.enteredReferralCode === "string" &&
+        parsed.enteredReferralCode.trim()
+          ? parsed.enteredReferralCode.trim()
+          : undefined,
+      selectedMethod: parsed.selectedMethod === "email" ? "email" : null,
+      emailVerificationSent: Boolean(parsed.emailVerificationSent),
+      lastEmailVerificationSentAt:
+        typeof parsed.lastEmailVerificationSentAt === "string"
+          ? parsed.lastEmailVerificationSentAt
+          : null,
+      path: String(parsed.path || ""),
+    };
+  } catch {
+    return null;
+  }
+};
+
+const writeSignupProgress = (draft: SignupProgressDraft) => {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(SIGNUP_PROGRESS_KEY, JSON.stringify(draft));
+  } catch {
+    // ignore
+  }
+};
+
+const clearSignupProgress = (sessionId?: string) => {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.removeItem(SIGNUP_PROGRESS_KEY);
+  } catch {
+    // ignore
+  }
+  const id = String(sessionId || "").trim();
+  if (!id) return;
+  void request({
+    path: "/api/auth/signup/draft",
+    method: "DELETE",
+    jsonBody: { sessionId: id },
+  }).catch(() => {});
+};
+
+
 export const SignupPage = () => {
   type SignupRole = AppUserRole;
   const navigate = useNavigate();
@@ -66,32 +137,55 @@ export const SignupPage = () => {
   const [accountFocusField, setAccountFocusField] = useState<
     "name" | "password" | null
   >(null);
-  const [signupRole, setSignupRole] = useState<SignupRole>(
-    location.pathname === "/signup/staff" ? "admin" : "requestor",
-  );
-  const prevPathRef = useRef(location.pathname);
-  const [wizardStep, setWizardStep] = useState<1 | 2 | 3 | 4>(() => {
-    // 소셜 로그인 후 돌아온 경우(mode=social_new)는 기본 정보 입력부터 시작
+  const restoredProgress = useMemo(() => {
     const mode = (searchParams.get("mode") || "").trim();
-    const isSocialNewMode = mode === "social_new";
+    if (mode === "social_new" || mode === "social_complete") return null;
+    return readSignupProgress(location.pathname);
+  }, [location.pathname, searchParams]);
 
-    if (isSocialNewMode) {
-      return 1; // 소셜 모드: 기본 정보 입력부터 시작
+  const [signupRole, setSignupRole] = useState<SignupRole>(() => {
+    const role = restoredProgress?.signupRole;
+    if (
+      role === "requestor" ||
+      role === "practice" ||
+      role === "salesman" ||
+      role === "manufacturer" ||
+      role === "admin" ||
+      role === "devops"
+    ) {
+      return role;
     }
-    return 1;
+    return location.pathname === "/signup/staff" ? "admin" : "requestor";
   });
-  const [manualReferralInput, setManualReferralInput] = useState("");
+  const prevPathRef = useRef(location.pathname);
+  const [wizardStep, setWizardStep] = useState<SignupWizardStep>(() => {
+    const mode = (searchParams.get("mode") || "").trim();
+    if (mode === "social_new" || mode === "social_complete") return 1;
+    return restoredProgress?.wizardStep || 1;
+  });
+  const [manualReferralInput, setManualReferralInput] = useState(
+    () => restoredProgress?.enteredReferralCode || "",
+  );
   const [enteredReferralCode, setEnteredReferralCode] = useState<
     string | undefined
-  >(undefined);
+  >(() => restoredProgress?.enteredReferralCode);
   const [isValidatingReferral, setIsValidatingReferral] = useState(false);
-  const [selectedMethod, setSelectedMethod] = useState<"email" | null>(null);
+  const [selectedMethod, setSelectedMethod] = useState<"email" | null>(
+    () => restoredProgress?.selectedMethod || null,
+  );
   const [emailVerifiedAt, setEmailVerifiedAt] = useState<Date | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [emailVerificationSent, setEmailVerificationSent] = useState(false);
+  const [emailVerificationSent, setEmailVerificationSent] = useState(
+    () => Boolean(restoredProgress?.emailVerificationSent),
+  );
   const [isEmailStatusChecking, setIsEmailStatusChecking] = useState(false);
   const [lastEmailVerificationSentAt, setLastEmailVerificationSentAt] =
-    useState<Date | null>(null);
+    useState<Date | null>(() => {
+      const raw = restoredProgress?.lastEmailVerificationSentAt;
+      if (!raw) return null;
+      const date = new Date(raw);
+      return Number.isNaN(date.getTime()) ? null : date;
+    });
   const [showSetupConfirm, setShowSetupConfirm] = useState(false);
   const { toast } = useToast();
   const [signupSessionId] = useState(() => {
@@ -440,6 +534,153 @@ export const SignupPage = () => {
     localStorage.setItem("signupFormData", JSON.stringify({ ...formData }));
   }, [formData, isSocialCompleteMode, isSocialNewMode]);
 
+  // 가입 중간 단계(역할/스텝/소개코드/메일발송) 저장 — 로컬 + 서버
+  useEffect(() => {
+    if (isSocialCompleteMode || isSocialNewMode) return;
+    const draft = {
+      wizardStep,
+      signupRole,
+      enteredReferralCode,
+      selectedMethod,
+      emailVerificationSent,
+      lastEmailVerificationSentAt: lastEmailVerificationSentAt
+        ? lastEmailVerificationSentAt.toISOString()
+        : null,
+      path: location.pathname,
+    };
+    writeSignupProgress(draft);
+
+    const timer = window.setTimeout(() => {
+      void request({
+        path: "/api/auth/signup/draft",
+        method: "PUT",
+        jsonBody: {
+          sessionId: signupSessionId,
+          ...draft,
+          name: formData.name,
+          email: formData.email,
+          password: formData.password,
+        },
+      }).catch(() => {});
+    }, 450);
+
+    return () => window.clearTimeout(timer);
+  }, [
+    emailVerificationSent,
+    enteredReferralCode,
+    formData.email,
+    formData.name,
+    formData.password,
+    isSocialCompleteMode,
+    isSocialNewMode,
+    lastEmailVerificationSentAt,
+    location.pathname,
+    selectedMethod,
+    signupRole,
+    signupSessionId,
+    wizardStep,
+  ]);
+
+  // 서버 draft 복구 (로컬보다 서버가 앞서면/로컬 비면 서버 우선)
+  useEffect(() => {
+    if (isSocialCompleteMode || isSocialNewMode) return;
+    let cancelled = false;
+
+    const hydrate = async () => {
+      try {
+        const res = await request<{
+          success?: boolean;
+          data?: {
+            wizardStep?: number;
+            signupRole?: string;
+            enteredReferralCode?: string;
+            selectedMethod?: "email" | null;
+            emailVerificationSent?: boolean;
+            lastEmailVerificationSentAt?: string | null;
+            name?: string;
+            email?: string;
+            password?: string;
+            path?: string;
+          } | null;
+        }>({
+          path: `/api/auth/signup/draft?sessionId=${encodeURIComponent(signupSessionId)}`,
+          method: "GET",
+        });
+        if (cancelled || !res.ok) return;
+        const data = (res.data as any)?.data;
+        if (!data || typeof data !== "object") return;
+        if (data.path && String(data.path) !== location.pathname) return;
+
+        const local = readSignupProgress(location.pathname);
+        const serverStep = Number(data.wizardStep);
+        const localStep = Number(local?.wizardStep || 0);
+        const shouldPreferServerStep =
+          [1, 2, 3, 4].includes(serverStep) && serverStep >= localStep;
+
+        if (shouldPreferServerStep) {
+          setWizardStep(serverStep as SignupWizardStep);
+
+          const role = String(data.signupRole || "");
+          if (
+            role === "requestor" ||
+            role === "practice" ||
+            role === "salesman" ||
+            role === "manufacturer" ||
+            role === "admin" ||
+            role === "devops"
+          ) {
+            setSignupRole(role);
+          }
+
+          if (
+            typeof data.enteredReferralCode === "string" &&
+            data.enteredReferralCode.trim()
+          ) {
+            setEnteredReferralCode(data.enteredReferralCode.trim());
+            setManualReferralInput(data.enteredReferralCode.trim());
+          }
+
+          setSelectedMethod(data.selectedMethod === "email" ? "email" : null);
+          setEmailVerificationSent(Boolean(data.emailVerificationSent));
+          if (data.lastEmailVerificationSentAt) {
+            const sentAt = new Date(data.lastEmailVerificationSentAt);
+            if (!Number.isNaN(sentAt.getTime())) {
+              setLastEmailVerificationSentAt(sentAt);
+            }
+          }
+        }
+
+        setFormData((prev) => ({
+          ...prev,
+          name:
+            prev.name ||
+            (typeof data.name === "string" ? data.name : "") ||
+            prev.name,
+          email:
+            prev.email ||
+            (typeof data.email === "string" ? data.email : "") ||
+            prev.email,
+          password:
+            prev.password ||
+            (typeof data.password === "string" ? data.password : "") ||
+            prev.password,
+        }));
+      } catch {
+        // ignore network errors — local draft remains
+      }
+    };
+
+    void hydrate();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    isSocialCompleteMode,
+    isSocialNewMode,
+    location.pathname,
+    signupSessionId,
+  ]);
+
   // social_new 모드: sessionStorage에서 socialToken 디코딩
   useEffect(() => {
     if (!isSocialNewMode) return;
@@ -652,6 +893,7 @@ export const SignupPage = () => {
         sessionStorage.removeItem("socialToken");
         localStorage.removeItem("signupFormData");
         localStorage.removeItem("signupEmailVerified");
+        clearSignupProgress(signupSessionId);
 
         if (authToken) {
           await loginWithToken(authToken, authRefreshToken);
@@ -696,6 +938,7 @@ export const SignupPage = () => {
         await loginWithToken(token);
         localStorage.removeItem("signupFormData");
         localStorage.removeItem("signupEmailVerified");
+        clearSignupProgress(signupSessionId);
         const resolvedRole = useAuthStore.getState().user?.role;
         if (markSetupWizardRequired(resolvedRole)) {
           return;
@@ -730,6 +973,7 @@ export const SignupPage = () => {
         await loginWithToken(authToken, authRefreshToken);
         localStorage.removeItem("signupFormData");
         localStorage.removeItem("signupEmailVerified");
+        clearSignupProgress(signupSessionId);
         const resolvedRole = signupRole || useAuthStore.getState().user?.role;
         if (markSetupWizardRequired(resolvedRole)) {
           return;
