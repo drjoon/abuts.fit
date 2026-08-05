@@ -141,70 +141,6 @@ const buildReceivedScope = (req) => {
   };
 };
 
-/**
- * practice 전송 목록/취소/복구 권한 범위.
- * 동일 치과(businessAnchor) 구성원은 동료 전송을 공유한다.
- * - 문서의 practiceBusinessAnchorId 일치
- * - 또는 동일 치과 practice 멤버가 업로드한 레거시(앵커 미기입) 문서
- * 앵커가 없는 계정은 업로더 본인만 포함한다.
- */
-const buildPracticeOwnedScope = async (req) => {
-  const role = String(req.user?.role || "").trim();
-  if (role === "admin") {
-    return { role, scope: {} };
-  }
-
-  const practiceUserId = req.user?._id || null;
-  const practiceBusinessAnchorId = String(req.user?.businessAnchorId || "").trim();
-  if (
-    practiceBusinessAnchorId &&
-    Types.ObjectId.isValid(practiceBusinessAnchorId)
-  ) {
-    const peerUserIds = await resolvePracticeUserIdsByAnchor(
-      practiceBusinessAnchorId,
-    );
-    const practiceUserObjectIds = Array.from(
-      new Set(
-        [String(practiceUserId || "").trim(), ...peerUserIds].filter(Boolean),
-      ),
-    )
-      .filter((id) => Types.ObjectId.isValid(id))
-      .map((id) => new Types.ObjectId(id));
-
-    return {
-      role,
-      scope: {
-        $or: [
-          {
-            practiceBusinessAnchorId: new Types.ObjectId(
-              practiceBusinessAnchorId,
-            ),
-          },
-          ...(practiceUserObjectIds.length
-            ? [{ practiceUserId: { $in: practiceUserObjectIds } }]
-            : [{ practiceUserId }]),
-        ],
-      },
-    };
-  }
-
-  return {
-    role,
-    scope: { practiceUserId },
-  };
-};
-
-const buildTransferIdFilter = (rawTransferId) => {
-  const value = String(rawTransferId || "").trim();
-  if (!value) return null;
-  if (Types.ObjectId.isValid(value)) {
-    return {
-      $or: [{ transferId: value }, { _id: new Types.ObjectId(value) }],
-    };
-  }
-  return { transferId: value };
-};
-
 const toDraftResponse = (doc) => {
   if (!doc) return null;
   const files = Array.isArray(doc.files) ? doc.files : [];
@@ -263,6 +199,76 @@ const resolvePracticeUserIdsByAnchor = async (anchorId) => {
     .filter(Boolean);
 };
 
+/**
+ * practice 전송 목록/취소/복구/임시저장 권한 범위.
+ * 동일 치과(businessAnchor) 구성원은 동료 전송·임시저장을 공유한다.
+ * - 문서의 practiceBusinessAnchorId 일치
+ * - 또는 동일 치과 practice 멤버가 업로드한 레거시(앵커 미기입) 문서
+ * 앵커가 없는 계정은 업로더 본인만 포함한다.
+ */
+const buildPracticeOwnedScope = async (req) => {
+  const role = String(req.user?.role || "").trim();
+  if (role === "admin") {
+    return {
+      role,
+      scope: {},
+      practiceUserObjectIds: req.user?._id ? [req.user._id] : [],
+    };
+  }
+
+  const practiceUserId = req.user?._id || null;
+  const practiceBusinessAnchorId = String(req.user?.businessAnchorId || "").trim();
+  if (
+    practiceBusinessAnchorId &&
+    Types.ObjectId.isValid(practiceBusinessAnchorId)
+  ) {
+    const peerUserIds = await resolvePracticeUserIdsByAnchor(
+      practiceBusinessAnchorId,
+    );
+    const practiceUserObjectIds = Array.from(
+      new Set(
+        [String(practiceUserId || "").trim(), ...peerUserIds].filter(Boolean),
+      ),
+    )
+      .filter((id) => Types.ObjectId.isValid(id))
+      .map((id) => new Types.ObjectId(id));
+
+    return {
+      role,
+      scope: {
+        $or: [
+          {
+            practiceBusinessAnchorId: new Types.ObjectId(
+              practiceBusinessAnchorId,
+            ),
+          },
+          ...(practiceUserObjectIds.length
+            ? [{ practiceUserId: { $in: practiceUserObjectIds } }]
+            : [{ practiceUserId }]),
+        ],
+      },
+      practiceUserObjectIds,
+    };
+  }
+
+  return {
+    role,
+    scope: { practiceUserId },
+    practiceUserObjectIds: practiceUserId ? [practiceUserId] : [],
+  };
+};
+
+const buildTransferIdFilter = (rawTransferId) => {
+  const value = String(rawTransferId || "").trim();
+  if (!value) return null;
+  if (Types.ObjectId.isValid(value)) {
+    return {
+      $or: [{ transferId: value }, { _id: new Types.ObjectId(value) }],
+    };
+  }
+  return { transferId: value };
+};
+
 const emitPracticeTransferEventToRequestorUsers = async ({
   targetLabAnchorId,
   type,
@@ -316,9 +322,10 @@ export async function getMyPracticeTransferDraft(req, res) {
       return res.status(403).json({ success: false, message: "권한이 없습니다." });
     }
 
-    const doc = await PracticeTransferDraft.findOne({
-      practiceUserId: req.user?._id,
-    }).lean();
+    const { scope } = await buildPracticeOwnedScope(req);
+    const doc = await PracticeTransferDraft.findOne(scope)
+      .sort({ updatedAt: -1, _id: -1 })
+      .lean();
 
     return res.status(200).json({
       success: true,
@@ -370,9 +377,21 @@ export async function upsertPracticeTransferDraft(req, res) {
       });
     }
 
+    const { practiceUserObjectIds } = await buildPracticeOwnedScope(req);
+    const ownerIds = (practiceUserObjectIds || [])
+      .map((id) => String(id || "").trim())
+      .filter((id) => Types.ObjectId.isValid(id))
+      .map((id) => new Types.ObjectId(id));
+    if (req.user?._id && Types.ObjectId.isValid(String(req.user._id))) {
+      const selfId = String(req.user._id);
+      if (!ownerIds.some((id) => String(id) === selfId)) {
+        ownerIds.push(new Types.ObjectId(selfId));
+      }
+    }
+
     const ownedFiles = await File.find({
       _id: { $in: uniqueFileIds.map((id) => new Types.ObjectId(id)) },
-      uploadedBy: req.user?._id,
+      ...(ownerIds.length ? { uploadedBy: { $in: ownerIds } } : { uploadedBy: req.user?._id }),
     })
       .select({
         _id: 1,
@@ -450,9 +469,16 @@ export async function clearMyPracticeTransferDraft(req, res) {
       return res.status(403).json({ success: false, message: "권한이 없습니다." });
     }
 
-    await PracticeTransferDraft.deleteOne({
-      practiceUserId: req.user?._id,
-    });
+    const { scope } = await buildPracticeOwnedScope(req);
+    // 동일 치과에서 보이는 최신 임시저장(본인/동료)을 삭제해 이어쓰기를 정리한다.
+    const latest = await PracticeTransferDraft.findOne(scope)
+      .sort({ updatedAt: -1, _id: -1 })
+      .select({ _id: 1 })
+      .lean();
+
+    if (latest?._id) {
+      await PracticeTransferDraft.deleteOne({ _id: latest._id });
+    }
 
     return res.status(200).json({
       success: true,

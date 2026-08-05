@@ -1186,10 +1186,81 @@ export const PracticeFileTransferPage = () => {
         setDraftSummary(null);
       }
 
+      const serverUpdatedAt = payload.updatedAt
+        ? new Date(String(payload.updatedAt)).getTime()
+        : 0;
+      const localUpdatedAt = Number(localFormUpdatedAtRef.current || 0);
+      const shouldRestoreForm =
+        restoredFiles.length > 0 &&
+        (!Number.isFinite(localUpdatedAt) ||
+          localUpdatedAt <= 0 ||
+          (Number.isFinite(serverUpdatedAt) && serverUpdatedAt >= localUpdatedAt));
+
+      if (shouldRestoreForm) {
+        suppressLocalFormPersistRef.current = true;
+
+        const labId = String(payload.targetLabAnchorId || "").trim();
+        const labName = String(payload.targetLabName || "").trim();
+        if (labId && labName) {
+          setSelectedLab({
+            _id: labId,
+            name: labName,
+            businessNumber: "",
+            representativeName: "",
+            address: "",
+            businessType: "requestor",
+          });
+        }
+
+        const parsed = parsePracticeTransferMemoMeta(String(payload.transferMemo || ""));
+        if (parsed.orderDate) setOrderDate(parsed.orderDate);
+        if (parsed.arrivalDate) {
+          skipNextArrivalAutoSyncRef.current = true;
+          setArrivalDate(parsed.arrivalDate);
+        }
+        if (Number.isFinite(Number(parsed.arrivalDefaultDays))) {
+          const days = normalizeArrivalDefaultDays(Number(parsed.arrivalDefaultDays));
+          setArrivalDefaultDays(days);
+          setArrivalDefaultDaysDraft(days);
+        }
+        if (parsed.prosthesisTypes.length > 0) {
+          const types = normalizeProsthesisTypes(parsed.prosthesisTypes);
+          setProsthesisTypeCatalog(types);
+          setProsthesisTypeCatalogDraft(types);
+        }
+        setRequestMemo(String(parsed.memo || ""));
+
+        if (parsed.toothWorks.length > 0) {
+          const restoredRows = restoreToothWorksFromDraft(parsed.toothWorks, {
+            prosthesisTypes:
+              parsed.prosthesisTypes.length > 0
+                ? normalizeProsthesisTypes(parsed.prosthesisTypes)
+                : [...PRESET_PROSTHESIS_TYPES],
+            isCustomAbutmentSupportedProsthesisType,
+            isBridgeLikeProsthesisType,
+            getAdjacentTeeth,
+            fallbackProsthesisType: "크라운",
+          });
+          if (restoredRows.length > 0) {
+            setToothWorks(restoredRows);
+          }
+        }
+
+        if (Number.isFinite(serverUpdatedAt) && serverUpdatedAt > 0) {
+          localFormUpdatedAtRef.current = serverUpdatedAt;
+        }
+
+        queueMicrotask(() => {
+          suppressLocalFormPersistRef.current = false;
+        });
+      }
+
       if (import.meta.env.DEV) {
-        console.info("[practice-transfer] loadDraft files-only", {
+        console.info("[practice-transfer] loadDraft", {
           restoredFilesCount: restoredFiles.length,
+          shouldRestoreForm,
           localFormUpdatedAt: localFormUpdatedAtRef.current,
+          serverUpdatedAt,
         });
       }
 
@@ -1197,7 +1268,7 @@ export const PracticeFileTransferPage = () => {
     } catch {
       // ignore (초안 불러오기 실패는 사용자 흐름 중단 금지)
     }
-  }, [authToken]);
+  }, [authToken, setRequestMemo, setSelectedLab]);
 
   const loadPracticeTransferSettingsFromServer = useCallback(async () => {
     if (!authToken) return;
@@ -1553,8 +1624,9 @@ export const PracticeFileTransferPage = () => {
   ]);
 
   useEffect(() => {
+    if (!localFormHydrated) return;
     void loadPracticeTransferDraft();
-  }, [loadPracticeTransferDraft]);
+  }, [localFormHydrated, loadPracticeTransferDraft]);
 
   const periodAndSearchFilteredRequests = useMemo(() => {
     const query = requestSearchTerm.trim().toLowerCase();
@@ -3032,6 +3104,40 @@ export const PracticeFileTransferPage = () => {
     });
   };
 
+  const handleStartNewTransfer = async () => {
+    try {
+      localStorage.removeItem(PRACTICE_TRANSFER_FORM_LOCAL_KEY);
+    } catch {
+      // ignore
+    }
+
+    setLabOpen(false);
+    setLabSearch("");
+    setSelectedLab(null);
+    setPatientName("");
+    setRequestMemo("");
+    setOrderDate(todayDate);
+    setArrivalDate(addDaysToDateInput(todayDate, arrivalDefaultDays));
+    setToothWorks([
+      {
+        toothNumber: "",
+        prosthesisType: resolveDefaultProsthesisType(normalizedProsthesisTypes),
+        customAbutment: false,
+        bridgeLinkedTeeth: [],
+      },
+    ]);
+
+    // 로컬 첨부 + 임시저장 파일까지 모두 제거
+    await handleClearAllTransferFiles();
+    setDraftSummary(null);
+    setTempSaveDirty(false);
+
+    toast({
+      title: "새로 작성",
+      description: "첨부 파일을 포함해 새 기공의뢰서 작성 화면으로 초기화했습니다.",
+    });
+  };
+
   const handleSaveArrivalSettings = async () => {
     if (savingArrivalSettings) return;
     setSavingArrivalSettings(true);
@@ -3179,10 +3285,22 @@ export const PracticeFileTransferPage = () => {
         <div className="grid grid-cols-1 gap-3 xl:grid-cols-10">
           <Card className="xl:col-span-7">
             <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-base">
-                <UploadCloud className="h-4 w-4 text-blue-600" />
-                기공의뢰
-              </CardTitle>
+              <div className="flex items-center justify-between gap-2">
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <UploadCloud className="h-4 w-4 text-blue-600" />
+                  기공의뢰
+                </CardTitle>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-8"
+                  onClick={() => void handleStartNewTransfer()}
+                >
+                  <Plus className="mr-1 h-3.5 w-3.5" />
+                  새로 작성
+                </Button>
+              </div>
             </CardHeader>
             <CardContent className="space-y-4">
               <PracticeTransferIntakeSection
@@ -3485,10 +3603,7 @@ export const PracticeFileTransferPage = () => {
                           key={`${transfer.id}:${transfer.createdAt}`}
                           role="button"
                           tabIndex={0}
-                          className={cn(
-                            "w-full cursor-pointer rounded-lg border px-3 py-2 text-left text-sm hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                            isDraftTransfer && "border-amber-200 bg-amber-50/60 hover:bg-amber-50",
-                          )}
+                          className="w-full cursor-pointer rounded-lg border px-3 py-2 text-left text-sm hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                           onClick={() => void handleOpenTransferDialog(transfer)}
                           onKeyDown={(e) => {
                             if (e.key === "Enter" || e.key === " ") {
@@ -3508,13 +3623,7 @@ export const PracticeFileTransferPage = () => {
                               </p>
                               <div className="mt-0.5 flex items-center gap-2">
                                 <p className="truncate text-xs text-muted-foreground">{transfer.createdAt}</p>
-                                <Badge
-                                  variant="outline"
-                                  className={cn(
-                                    "whitespace-nowrap",
-                                    isDraftTransfer && "border-amber-300 bg-amber-100 text-amber-800",
-                                  )}
-                                >
+                                <Badge variant="outline" className="whitespace-nowrap">
                                   {transfer.status}
                                 </Badge>
                               </div>
@@ -3563,10 +3672,10 @@ export const PracticeFileTransferPage = () => {
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2 text-base">
-                  <BookmarkPlus className="h-4 w-4 text-amber-600" />
+                  <BookmarkPlus className="h-4 w-4 text-slate-500" />
                   임시저장
                   {draftGroupedTransfers.length > 0 ? (
-                    <Badge variant="secondary" className="ml-1 border-amber-200 bg-amber-100 text-amber-800">
+                    <Badge variant="secondary" className="ml-1">
                       {draftGroupedTransfers.length}
                     </Badge>
                   ) : null}
@@ -3590,7 +3699,7 @@ export const PracticeFileTransferPage = () => {
                           key={`draft:${transfer.id}:${transfer.createdAt}`}
                           role="button"
                           tabIndex={0}
-                          className="w-full cursor-pointer rounded-lg border border-amber-200 bg-amber-50/60 px-3 py-2 text-left text-sm hover:bg-amber-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          className="w-full cursor-pointer rounded-lg border border-slate-200 bg-slate-50/70 px-3 py-2 text-left text-sm hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                           onClick={() => void handleOpenTransferDialog(transfer)}
                           onKeyDown={(e) => {
                             if (e.key === "Enter" || e.key === " ") {
