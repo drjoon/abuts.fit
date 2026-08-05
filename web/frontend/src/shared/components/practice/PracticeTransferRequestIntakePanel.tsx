@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from "react";
+import { useEffect, useMemo, useRef, useState, type Dispatch, type KeyboardEvent, type SetStateAction } from "react";
 import {
   Check,
   ChevronsUpDown,
@@ -171,6 +171,11 @@ export const PracticeTransferRequestIntakePanel = ({
   const [snippetSaving, setSnippetSaving] = useState(false);
   const memoInputRefs = useRef<Array<HTMLInputElement | null>>([]);
   const pendingFocusLineRef = useRef<number | null>(null);
+  // 한글 IME: compositionend 직후 keydown에서 isComposing이 이미 false인 경우가 있어 ref로 한 틱 더 막습니다.
+  const memoComposingRef = useRef(false);
+  // 조합 중 Enter → 조합 확정 후 줄바꿈 (글자가 다음 줄로 가는 것 방지)
+  const pendingMemoNewlineIndexRef = useRef<number | null>(null);
+  const suppressMemoEnterRef = useRef(false);
 
   useEffect(() => {
     if (isMemoSnippetsControlled) return;
@@ -194,17 +199,34 @@ export const PracticeTransferRequestIntakePanel = ({
     const focusIndex = pendingFocusLineRef.current;
     if (focusIndex === null) return;
     pendingFocusLineRef.current = null;
-    const input = memoInputRefs.current[focusIndex];
-    if (input) {
-      input.focus();
-      const len = input.value.length;
-      input.setSelectionRange(len, len);
-    }
+    // 포커스를 바로 옮기면 조합 중이던 글자가 새 input에 들어가므로 IME 커밋 이후로 미룹니다.
+    const timer = window.setTimeout(() => {
+      const input = memoInputRefs.current[focusIndex];
+      if (input) {
+        input.focus();
+        const len = input.value.length;
+        input.setSelectionRange(len, len);
+      }
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [memoLines]);
 
   const syncMemoLines = (nextLines: string[]) => {
     setRequestMemo(nextLines.join("\n"));
   };
+
+  const insertMemoNewlineAfter = (index: number, currentValue: string) => {
+    const prev = String(requestMemo || "");
+    const nextLines = prev.length ? prev.split("\n") : [""];
+    while (nextLines.length <= index) nextLines.push("");
+    nextLines[index] = currentValue;
+    nextLines.splice(index + 1, 0, "");
+    pendingFocusLineRef.current = index + 1;
+    syncMemoLines(nextLines);
+  };
+
+  const isNativeImeComposing = (e: KeyboardEvent<HTMLInputElement>) =>
+    e.nativeEvent.isComposing || e.keyCode === 229;
 
   const handleDeleteMemoLine = (index: number) => {
     if (memoLines.length <= 1) {
@@ -865,16 +887,41 @@ export const PracticeTransferRequestIntakePanel = ({
                     syncMemoLines(nextLines);
                     if (snippetHint) setSnippetHint("");
                   }}
+                  onCompositionStart={() => {
+                    memoComposingRef.current = true;
+                  }}
+                  onCompositionEnd={(e) => {
+                    const shouldInsertNewline = pendingMemoNewlineIndexRef.current === index;
+                    pendingMemoNewlineIndexRef.current = null;
+                    // compositionend 다음으로 오는 Enter keydown이 중복 줄바꿈하지 않도록 한 틱 유지
+                    if (shouldInsertNewline) {
+                      suppressMemoEnterRef.current = true;
+                      insertMemoNewlineAfter(index, e.currentTarget.value);
+                    }
+                    window.setTimeout(() => {
+                      memoComposingRef.current = false;
+                      suppressMemoEnterRef.current = false;
+                    }, 0);
+                  }}
                   onKeyDown={(e) => {
                     if (e.key === "Enter") {
                       e.preventDefault();
-                      const nextLines = [...memoLines];
-                      nextLines.splice(index + 1, 0, "");
-                      pendingFocusLineRef.current = index + 1;
-                      syncMemoLines(nextLines);
+                      if (suppressMemoEnterRef.current) return;
+                      // 조합 중 Enter: 확정 후 compositionend에서 줄바꿈 (글자 유실/다음줄 이동 방지)
+                      if (isNativeImeComposing(e)) {
+                        pendingMemoNewlineIndexRef.current = index;
+                        return;
+                      }
+                      insertMemoNewlineAfter(index, e.currentTarget.value);
                       return;
                     }
-                    if (e.key === "Backspace" && !line && memoLines.length > 1) {
+                    if (
+                      e.key === "Backspace" &&
+                      !isNativeImeComposing(e) &&
+                      !memoComposingRef.current &&
+                      !line &&
+                      memoLines.length > 1
+                    ) {
                       e.preventDefault();
                       handleDeleteMemoLine(index);
                     }
