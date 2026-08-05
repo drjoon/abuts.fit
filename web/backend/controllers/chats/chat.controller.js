@@ -273,6 +273,103 @@ const resolvePracticeLabAnchorIdByName = async (name) => {
   return String(requestorAnchor?._id || "").trim();
 };
 
+const resolvePracticeUserIdsByAnchor = async (anchorId) => {
+  const raw = String(anchorId || "").trim();
+  if (!raw || !Types.ObjectId.isValid(raw)) return [];
+
+  const users = await User.find({
+    businessAnchorId: new Types.ObjectId(raw),
+    role: "practice",
+    active: true,
+  })
+    .select({ _id: 1 })
+    .lean();
+
+  return users
+    .map((u) => String(u?._id || "").trim())
+    .filter(Boolean);
+};
+
+/**
+ * 동일 치과(practice businessAnchor) 구성원이면 전송 작성자가 아니어도 채팅 참여 가능.
+ * - transfer.practiceBusinessAnchorId 일치
+ * - 또는 레거시(앵커 미기입) 전송의 practiceUserId가 동일 치과 멤버
+ */
+const canJoinPracticeTransferAsPracticePeer = async ({
+  currentUserId,
+  currentUserRole,
+  currentUserBusinessAnchorId,
+  transferDoc,
+}) => {
+  if (String(currentUserRole || "").trim() !== "practice") return false;
+
+  const userId = String(currentUserId || "").trim();
+  const practiceUserId = String(transferDoc?.practiceUserId || "").trim();
+  if (!userId) return false;
+  if (userId === practiceUserId) return true;
+
+  const userAnchorId = String(currentUserBusinessAnchorId || "").trim();
+  if (!userAnchorId || !Types.ObjectId.isValid(userAnchorId)) return false;
+
+  const transferAnchorId = String(transferDoc?.practiceBusinessAnchorId || "").trim();
+  if (transferAnchorId && transferAnchorId === userAnchorId) return true;
+
+  if (!practiceUserId) return false;
+  const peerIds = await resolvePracticeUserIdsByAnchor(userAnchorId);
+  return peerIds.includes(practiceUserId);
+};
+
+const ensureChatRoomParticipant = async (roomId, userId) => {
+  const rid = String(roomId || "").trim();
+  const uid = String(userId || "").trim();
+  if (!rid || !Types.ObjectId.isValid(rid) || !uid || !Types.ObjectId.isValid(uid)) {
+    return;
+  }
+  await ChatRoom.updateOne(
+    { _id: new Types.ObjectId(rid) },
+    { $addToSet: { participants: new Types.ObjectId(uid) } },
+  );
+};
+
+/**
+ * practice 전송 채팅방: 참여자이거나 동일 치과 practice 동료면 접근 허용.
+ * 동료 최초 접근 시 participants에 추가한다.
+ */
+const resolvePracticeTransferRoomAccess = async (req, room) => {
+  const userId = String(req.user?._id || "").trim();
+  const participants = Array.isArray(room?.participants) ? room.participants : [];
+  const isParticipant = participants.some((p) => String(p || "").trim() === userId);
+  if (isParticipant) return { ok: true, added: false };
+
+  const isPracticeTransferRoom = Boolean(room?.relatedPracticeTransferId);
+  if (String(req.user?.role || "").trim() === "admin" && !isPracticeTransferRoom) {
+    return { ok: true, added: false };
+  }
+  if (!isPracticeTransferRoom || !room?.relatedPracticeTransferId) {
+    return { ok: false, added: false };
+  }
+
+  const transferDoc = await PracticeTransfer.findById(room.relatedPracticeTransferId)
+    .select({ practiceUserId: 1, practiceBusinessAnchorId: 1 })
+    .lean();
+  if (!transferDoc) return { ok: false, added: false };
+
+  const allowed = await canJoinPracticeTransferAsPracticePeer({
+    currentUserId: userId,
+    currentUserRole: req.user?.role,
+    currentUserBusinessAnchorId: req.user?.businessAnchorId,
+    transferDoc,
+  });
+  if (!allowed) return { ok: false, added: false };
+
+  await ensureChatRoomParticipant(room._id, userId);
+  invalidateChatPerfForUsers([
+    userId,
+    ...participants.map((p) => String(p || "").trim()).filter(Boolean),
+  ]);
+  return { ok: true, added: true };
+};
+
 /**
  * 내 채팅방 목록 조회
  * @route GET /api/chats/rooms
@@ -806,6 +903,7 @@ export async function getOrCreatePracticeTransferChatRoom(req, res) {
         _id: 1,
         transferId: 1,
         practiceUserId: 1,
+        practiceBusinessAnchorId: 1,
         targetLabAnchorId: 1,
         targetLabName: 1,
         status: 1,
@@ -822,13 +920,15 @@ export async function getOrCreatePracticeTransferChatRoom(req, res) {
 
     const practiceUserId = String(transferDoc?.practiceUserId || "").trim();
     const targetLabAnchorId = String(transferDoc?.targetLabAnchorId || "").trim();
+    const currentUserRole = String(req.user?.role || "").trim();
+    const currentUserBusinessAnchorId = String(req.user?.businessAnchorId || "").trim();
 
     // Fast path: 이미 연결된 room이 있으면 상대 user 해석 로직을 건너뛰고 즉시 반환
     const existingRoomMeta = await ChatRoom.findOne({
       relatedPracticeTransferId: transferDoc._id,
       isArchived: false,
     })
-      .select({ _id: 1, participants: 1 })
+      .select({ _id: 1, participants: 1, relatedPracticeTransferId: 1 })
       .lean();
 
     if (existingRoomMeta?._id) {
@@ -836,7 +936,11 @@ export async function getOrCreatePracticeTransferChatRoom(req, res) {
         ? existingRoomMeta.participants.map((id) => String(id || "").trim()).filter(Boolean)
         : [];
 
-      const canAccessExisting = participantIds.includes(currentUserId);
+      let canAccessExisting = participantIds.includes(currentUserId);
+      if (!canAccessExisting) {
+        const peerAccess = await resolvePracticeTransferRoomAccess(req, existingRoomMeta);
+        canAccessExisting = Boolean(peerAccess?.ok);
+      }
 
       if (!canAccessExisting) {
         return res.status(403).json({
@@ -937,9 +1041,17 @@ export async function getOrCreatePracticeTransferChatRoom(req, res) {
       });
     }
 
+    const isPracticePeer = await canJoinPracticeTransferAsPracticePeer({
+      currentUserId,
+      currentUserRole,
+      currentUserBusinessAnchorId,
+      transferDoc,
+    });
+
     const canAccess =
       currentUserId === practiceUserId ||
-      currentUserId === counterpartUserId;
+      currentUserId === counterpartUserId ||
+      isPracticePeer;
 
     if (!canAccess) {
       return res.status(403).json({
@@ -948,9 +1060,12 @@ export async function getOrCreatePracticeTransferChatRoom(req, res) {
       });
     }
 
-    const participantObjectIds = [practiceUserId, counterpartUserId].map(
-      (id) => new Types.ObjectId(id),
-    );
+    const participantIdSet = new Set([practiceUserId, counterpartUserId]);
+    if (isPracticePeer) participantIdSet.add(currentUserId);
+
+    const participantObjectIds = [...participantIdSet]
+      .filter((id) => Types.ObjectId.isValid(id))
+      .map((id) => new Types.ObjectId(id));
 
     let roomMeta = await ChatRoom.findOne({
       relatedPracticeTransferId: transferDoc._id,
@@ -968,7 +1083,10 @@ export async function getOrCreatePracticeTransferChatRoom(req, res) {
         status: "active",
       });
       roomMeta = { _id: created._id };
-      invalidateChatPerfForUsers([practiceUserId, counterpartUserId]);
+      invalidateChatPerfForUsers([...participantIdSet]);
+    } else if (isPracticePeer) {
+      await ensureChatRoomParticipant(roomMeta._id, currentUserId);
+      invalidateChatPerfForUsers([...participantIdSet]);
     }
 
     const room = await ChatRoom.findById(roomMeta._id)
@@ -1129,14 +1247,8 @@ export async function getChatMessages(req, res) {
       });
     }
 
-    const isParticipant = room.participants.some(
-      (p) => p.toString() === userId.toString(),
-    );
-
-    const isPracticeTransferRoom = !!room.relatedPracticeTransferId;
-    const canAdminOverride = req.user.role === "admin" && !isPracticeTransferRoom;
-
-    if (!isParticipant && !canAdminOverride) {
+    const access = await resolvePracticeTransferRoomAccess(req, room);
+    if (!access.ok) {
       return res.status(403).json({
         success: false,
         message: "이 채팅방에 접근할 권한이 없습니다.",
@@ -1284,18 +1396,20 @@ export async function sendChatMessage(req, res) {
       });
     }
 
-    const isParticipant = room.participants.some(
-      (p) => p.toString() === userId.toString(),
-    );
-
-    const isPracticeTransferRoom = !!room.relatedPracticeTransferId;
-    const canAdminOverride = userRole === "admin" && !isPracticeTransferRoom;
-
-    if (!isParticipant && !canAdminOverride) {
+    const access = await resolvePracticeTransferRoomAccess(req, room);
+    if (!access.ok) {
       return res.status(403).json({
         success: false,
         message: "이 채팅방에 메시지를 보낼 권한이 없습니다.",
       });
+    }
+
+    if (access.added) {
+      // $addToSet 반영 후 emit 대상에 현재 사용자 포함
+      const refreshed = await ChatRoom.findById(roomId).select({ participants: 1 }).lean();
+      if (Array.isArray(refreshed?.participants)) {
+        room.participants = refreshed.participants;
+      }
     }
 
     // 채팅방 상태 확인

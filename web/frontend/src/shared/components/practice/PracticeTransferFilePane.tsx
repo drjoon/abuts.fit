@@ -162,19 +162,28 @@ export const PracticeTransferFilePane = ({
         )}
 
         {onSyncUpload ? (
-          <div className="mt-3 space-y-1.5 border-t border-slate-100 pt-3">
-            <Button
-              type="button"
-              variant="outline"
-              className="w-full bg-white hover:bg-slate-100"
-              onClick={onSyncUpload}
-              disabled={syncUploadDisabled || syncUploadBusy}
-            >
-              {syncUploadBusy ? syncUploadBusyLabel : syncUploadLabel}
-            </Button>
-            {syncUploadHint ? (
-              <p className="text-[11px] leading-snug text-muted-foreground">{syncUploadHint}</p>
-            ) : null}
+          <div className="mt-3 border-t border-slate-100 pt-3">
+            <TooltipProvider delayDuration={0}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="block w-full">
+                    <Button
+                      type="button"
+                      className="w-full bg-blue-600 text-white hover:bg-blue-700 disabled:bg-blue-600/50"
+                      onClick={onSyncUpload}
+                      disabled={syncUploadDisabled || syncUploadBusy}
+                    >
+                      {syncUploadBusy ? syncUploadBusyLabel : syncUploadLabel}
+                    </Button>
+                  </span>
+                </TooltipTrigger>
+                {syncUploadHint ? (
+                  <TooltipContent side="top" className="max-w-xs text-xs leading-relaxed">
+                    {syncUploadHint}
+                  </TooltipContent>
+                ) : null}
+              </Tooltip>
+            </TooltipProvider>
           </div>
         ) : null}
       </div>

@@ -259,7 +259,8 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
     동일 치과 practice 멤버의 `practiceUserId`도 포함해 앵커 미기입 레거시 문서를 함께 조회한다.
     앵커 없는 계정은 `practiceUserId` 본인 범위로 폴백한다.
     draft 작성 폼 GET(`GET /draft`)·기본 DELETE는 본인 `practiceUserId`만 대상으로 한다.
-  - practice 실시간 fan-out: 생성/상태변경/임시저장(upsert·clear) 시 동일 치과 practice 구성원에게 `practice:transfer-created|updated`를 전달한다.
+  - practice 파일전송 생성(`POST /api/practice/transfers`) 성공 시 관련 임시저장(`draftId` 또는 작성자 활성 draft)을 **완전 삭제**(휴지통 아님)하고 `draft-cleared`를 fan-out한다. 전송 건은 최근 전송 내역에만 남는다.
+  - `draft-upserted` 이벤트는 `transferMemo`·`files` 스냅샷을 포함해 수신측이 추가 GET 없이 폼을 반영할 수 있다.
     임시저장은 `practice:transfer-updated` + `action: draft-upserted|draft-cleared`.
     구현: `emitPracticeTransferEventToPracticeUsers`.
 
@@ -349,6 +350,8 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
 - practice 채팅/전송 정책:
   - practice 채팅방 연결은 `GET /api/chats/practice/transfer-room/:transferId`만 사용합니다.
   - legacy request-room 경로(`/api/chats/practice/request-room/:requestId`)는 제거 대상이며 신규 코드에서 사용 금지합니다.
+  - 채팅 권한 SSOT: 전송 작성자·대상 기공소뿐 아니라 **동일 치과(`practiceBusinessAnchorId`) practice 구성원**도
+    transfer-room 조회와 메시지 조회/발송에 참여할 수 있습니다. 동료가 처음 열면 해당 채팅방 `participants`에 추가합니다.
 - practice 채팅/전송 첨부 다운로드 정책:
   - 다운로드 SSOT 엔드포인트: `GET /api/files/s3/download?key=...&fileName=...`
   - S3 파일은 signed-url 리다이렉트가 아니라 서버 프록시 스트리밍(`pipe`)으로 응답합니다.

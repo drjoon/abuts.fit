@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { ImeSafeInput } from "@/shared/components/practice/ImeSafeInput";
 import { Label } from "@/components/ui/label";
 import {
   Popover,
@@ -115,6 +116,7 @@ export type PracticeTransferRequestIntakePanelProps = {
   memoInputId: string;
   memoSnippets?: string[];
   onMemoSnippetsChange?: (next: string[]) => void | Promise<void>;
+  onImeComposingChange?: (composing: boolean) => void;
   prosthesisTypeSelectWidthClassName?: string;
   showBridgeConnections?: boolean;
   toothTensOptions: readonly string[];
@@ -152,6 +154,7 @@ export const PracticeTransferRequestIntakePanel = ({
   memoInputId,
   memoSnippets: memoSnippetsProp,
   onMemoSnippetsChange,
+  onImeComposingChange,
   prosthesisTypeSelectWidthClassName = "w-[7rem]",
   showBridgeConnections = false,
   toothTensOptions,
@@ -173,9 +176,14 @@ export const PracticeTransferRequestIntakePanel = ({
   const pendingFocusLineRef = useRef<number | null>(null);
   // 한글 IME: compositionend 직후 keydown에서 isComposing이 이미 false인 경우가 있어 ref로 한 틱 더 막습니다.
   const memoComposingRef = useRef(false);
+  const patientComposingRef = useRef(false);
   // 조합 중 Enter → 조합 확정 후 줄바꿈 (글자가 다음 줄로 가는 것 방지)
   const pendingMemoNewlineIndexRef = useRef<number | null>(null);
   const suppressMemoEnterRef = useRef(false);
+
+  const reportImeComposing = () => {
+    onImeComposingChange?.(patientComposingRef.current || memoComposingRef.current);
+  };
 
   useEffect(() => {
     if (isMemoSnippetsControlled) return;
@@ -449,9 +457,13 @@ export const PracticeTransferRequestIntakePanel = ({
 
         <div className="space-y-2">
           <Label className="text-sm">환자명 <span className="text-destructive">*</span></Label>
-          <Input
+          <ImeSafeInput
             value={patientName}
-            onChange={(e) => setPatientName(e.target.value)}
+            onChange={setPatientName}
+            onComposingChange={(composing) => {
+              patientComposingRef.current = composing;
+              reportImeComposing();
+            }}
             placeholder="예: 홍길동"
             className="h-11 text-base"
           />
@@ -709,11 +721,12 @@ export const PracticeTransferRequestIntakePanel = ({
                       </Select>
 
                       {isBridgeLike ? (
-                        <div className="flex items-center justify-center gap-2 text-xs">
+                        <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground">
+                          <span className="whitespace-nowrap">연결할 치아</span>
                           {adjacentTeeth.map((adjTooth) => (
                             <label
                               key={`adj-${originalIndex}-${adjTooth}`}
-                              className="inline-flex items-center gap-1"
+                              className="inline-flex items-center gap-1 text-foreground"
                             >
                               <input
                                 type="checkbox"
@@ -876,19 +889,20 @@ export const PracticeTransferRequestIntakePanel = ({
             const canSave = Boolean(String(line || "").trim());
             return (
               <div key={`memo-line-${index}`} className="flex items-center gap-1">
-                <Input
+                <ImeSafeInput
                   ref={(el) => {
                     memoInputRefs.current[index] = el;
                   }}
                   value={line}
-                  onChange={(e) => {
+                  onChange={(nextValue) => {
                     const nextLines = [...memoLines];
-                    nextLines[index] = e.target.value;
+                    nextLines[index] = nextValue;
                     syncMemoLines(nextLines);
                     if (snippetHint) setSnippetHint("");
                   }}
-                  onCompositionStart={() => {
-                    memoComposingRef.current = true;
+                  onComposingChange={(composing) => {
+                    memoComposingRef.current = composing;
+                    reportImeComposing();
                   }}
                   onCompositionEnd={(e) => {
                     const shouldInsertNewline = pendingMemoNewlineIndexRef.current === index;
@@ -901,6 +915,7 @@ export const PracticeTransferRequestIntakePanel = ({
                     window.setTimeout(() => {
                       memoComposingRef.current = false;
                       suppressMemoEnterRef.current = false;
+                      reportImeComposing();
                     }, 0);
                   }}
                   onKeyDown={(e) => {

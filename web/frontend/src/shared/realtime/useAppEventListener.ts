@@ -32,7 +32,19 @@ const isEditingActiveElement = () => {
   if (!el) return false;
   if (el instanceof HTMLInputElement) {
     const type = String(el.type || "").toLowerCase();
-    return type !== "button" && type !== "submit" && type !== "reset";
+    // checkbox/radio/file 등은 공동 작성 동기화 지연 원인이 되므로 입력 중으로 보지 않는다.
+    if (
+      type === "button" ||
+      type === "submit" ||
+      type === "reset" ||
+      type === "checkbox" ||
+      type === "radio" ||
+      type === "file" ||
+      type === "hidden"
+    ) {
+      return false;
+    }
+    return true;
   }
   if (el instanceof HTMLTextAreaElement) return true;
   if (el instanceof HTMLSelectElement) return true;

@@ -175,6 +175,31 @@ const toDraftResponse = (doc, ownerMeta = null) => {
   };
 };
 
+/** draft-upserted 실시간 이벤트에 폼 스냅샷을 실어 수신측 GET RTT를 제거한다. */
+const toDraftUpsertedRealtimePayload = ({
+  source,
+  draftPayload,
+  practiceUserId,
+  editorUserId,
+  practiceBusinessAnchorId,
+}) => ({
+  source: String(source || "").trim(),
+  action: "draft-upserted",
+  draftId: draftPayload?._id || null,
+  practiceUserId: String(practiceUserId || "").trim(),
+  editorUserId: String(editorUserId || "").trim() || null,
+  practiceUserLabel: draftPayload?.practiceUserLabel || "",
+  practiceBusinessAnchorId:
+    String(practiceBusinessAnchorId || "").trim() || null,
+  targetLabAnchorId: draftPayload?.targetLabAnchorId || null,
+  targetLabName: draftPayload?.targetLabName || "",
+  transferMemo: String(draftPayload?.transferMemo || ""),
+  files: Array.isArray(draftPayload?.files) ? draftPayload.files : [],
+  fileCount: Array.isArray(draftPayload?.files) ? draftPayload.files.length : 0,
+  updatedAt: draftPayload?.updatedAt || null,
+  createdAt: draftPayload?.createdAt || null,
+});
+
 let draftIndexEnsurePromise = null;
 const ensurePracticeTransferDraftIndexes = async () => {
   if (draftIndexEnsurePromise) return draftIndexEnsurePromise;
@@ -615,19 +640,13 @@ export async function upsertPracticeTransferDraft(req, res) {
     await emitPracticeTransferEventToPracticeUsers({
       practiceBusinessAnchorId: req.user?.businessAnchorId,
       type: "practice:transfer-updated",
-      payload: {
+      payload: toDraftUpsertedRealtimePayload({
         source: "upsertPracticeTransferDraft",
-        action: "draft-upserted",
-        draftId: draftPayload?._id || null,
-        practiceUserId: String(doc?.practiceUserId || req.user?._id || ""),
-        editorUserId: String(req.user?._id || ""),
-        practiceUserLabel: draftPayload?.practiceUserLabel || "",
-        practiceBusinessAnchorId: String(req.user?.businessAnchorId || "").trim() || null,
-        targetLabAnchorId: draftPayload?.targetLabAnchorId || null,
-        targetLabName: draftPayload?.targetLabName || "",
-        fileCount: Array.isArray(draftPayload?.files) ? draftPayload.files.length : 0,
-        updatedAt: draftPayload?.updatedAt || null,
-      },
+        draftPayload,
+        practiceUserId: doc?.practiceUserId || req.user?._id,
+        editorUserId: req.user?._id,
+        practiceBusinessAnchorId: req.user?.businessAnchorId,
+      }),
       extraUserIds: [req.user?._id],
     });
 
@@ -770,19 +789,13 @@ export async function restorePracticeTransferDraft(req, res) {
     await emitPracticeTransferEventToPracticeUsers({
       practiceBusinessAnchorId: req.user?.businessAnchorId,
       type: "practice:transfer-updated",
-      payload: {
+      payload: toDraftUpsertedRealtimePayload({
         source: "restorePracticeTransferDraft",
-        action: "draft-upserted",
-        draftId: draftPayload?._id || null,
-        practiceUserId: String(restored?.practiceUserId || req.user?._id || ""),
-        practiceUserLabel: draftPayload?.practiceUserLabel || "",
-        practiceBusinessAnchorId:
-          String(req.user?.businessAnchorId || "").trim() || null,
-        targetLabAnchorId: draftPayload?.targetLabAnchorId || null,
-        targetLabName: draftPayload?.targetLabName || "",
-        fileCount: Array.isArray(draftPayload?.files) ? draftPayload.files.length : 0,
-        updatedAt: draftPayload?.updatedAt || null,
-      },
+        draftPayload,
+        practiceUserId: restored?.practiceUserId || req.user?._id,
+        editorUserId: req.user?._id,
+        practiceBusinessAnchorId: req.user?.businessAnchorId,
+      }),
       extraUserIds: [req.user?._id],
     });
 
@@ -893,6 +906,32 @@ export async function createPracticeTransfer(req, res) {
       files,
     });
 
+    // 전송 성공 시 해당 임시저장은 완전 삭제(휴지통 아님). 최근 전송 내역만 남긴다.
+    const rawDraftId = String(req.body?.draftId || "").trim();
+    let clearedDraftId = null;
+    try {
+      let clearedDoc = null;
+      if (rawDraftId && Types.ObjectId.isValid(rawDraftId)) {
+        const { scope } = await buildPracticeOwnedScope(req);
+        clearedDoc = await PracticeTransferDraft.findOneAndDelete({
+          _id: new Types.ObjectId(rawDraftId),
+          ...scope,
+        })
+          .select({ _id: 1, practiceUserId: 1 })
+          .lean();
+      } else if (req.user?._id) {
+        clearedDoc = await PracticeTransferDraft.findOneAndDelete({
+          practiceUserId: req.user._id,
+          deletedAt: null,
+        })
+          .select({ _id: 1, practiceUserId: 1 })
+          .lean();
+      }
+      clearedDraftId = clearedDoc?._id ? String(clearedDoc._id) : null;
+    } catch {
+      // 전송 자체는 성공 유지. draft 정리는 프론트에서 재시도할 수 있음.
+    }
+
     const targetLabAnchorIdText = String(targetLabAnchorId || "").trim();
     if (targetLabAnchorIdText) {
       invalidateUnreadCountCache({
@@ -922,6 +961,7 @@ export async function createPracticeTransfer(req, res) {
       transferMongoId: String(transferDoc?._id || ""),
       targetLabAnchorId: targetLabAnchorIdText || null,
       practiceUserId: String(req.user?._id || ""),
+      clearedDraftId,
       status: "active",
       count: files.length,
       unreadCount: unreadCountForRequestor,
@@ -934,6 +974,22 @@ export async function createPracticeTransfer(req, res) {
       payload: realtimePayload,
       extraUserIds: [req.user?._id],
     });
+
+    if (clearedDraftId) {
+      await emitPracticeTransferEventToPracticeUsers({
+        practiceBusinessAnchorId: req.user?.businessAnchorId,
+        type: "practice:transfer-updated",
+        payload: {
+          source: "createPracticeTransfer",
+          action: "draft-cleared",
+          draftId: clearedDraftId,
+          practiceUserId: String(req.user?._id || ""),
+          practiceBusinessAnchorId:
+            String(req.user?.businessAnchorId || "").trim() || null,
+        },
+        extraUserIds: [req.user?._id],
+      });
+    }
 
     await emitPracticeTransferEventToRequestorUsers({
       targetLabAnchorId,
@@ -948,6 +1004,7 @@ export async function createPracticeTransfer(req, res) {
         _id: String(transferDoc?._id || ""),
         transferId,
         count: files.length,
+        clearedDraftId,
       },
     });
   } catch (error) {
