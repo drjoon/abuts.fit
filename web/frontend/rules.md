@@ -362,7 +362,7 @@ Notes:
   - 온보딩을 중도에 그만두고 `/signup`으로 다시 들어오면 `clearOnboardingLocalStorage`로 위저드 localStorage를 지우고 1/4부터 다시 시작합니다.
   - practice owner 온보딩 사업자 단계는 사업자등록증 업로드를 받지 않습니다. 대신 치과 필수 정보(`clinicName`, `directorName`, `staffName`, `clinicPhone`, `phone`, `address`, `zipCode`)를 입력받아 `PUT /api/users/profile`의 `practiceProfile`로 저장합니다.
   - 공개 드롭존(`PracticeDropzonePage`)은 전송 흐름을 끊지 않도록 Step 2에 임베디드 로그인/가입/비밀번호 변경 UI를 유지합니다.
-  - 드롭존 가입 API는 `POST /api/auth/practice/register`이며, 필수값은 `email`, `clinicName`, `staffName`, `password`, `clinicPhone`(치과 전화), `phone`(담당자 휴대폰), `address`, `zipCode`입니다.
+  - 드롭존 가입 API는 `POST /api/auth/practice/register`이며, 필수값은 `email`, `clinicName`, `directorName`, `staffName`, `password`, `clinicPhone`(치과 전화), `phone`(담당자 휴대폰), `address`, `zipCode`입니다.
   - 드롭존 가입 전 이메일·담당자 휴대폰 인증이 필요합니다.
     - 이메일: `POST /api/auth/signup/email-verification/send` → `POST /api/auth/signup/email-verification/verify` → `GET /api/auth/signup/email-verification/status`
     - 휴대폰: `POST /api/auth/signup/phone-verification/send` → `POST /api/auth/signup/phone-verification/verify` → `GET /api/auth/signup/phone-verification/status`

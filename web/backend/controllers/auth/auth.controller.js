@@ -1116,6 +1116,7 @@ async function practiceLogin(req, res) {
 async function practiceRegister(req, res) {
   try {
     const clinicName = String(req.body?.clinicName || "").trim();
+    const directorName = String(req.body?.directorName || "").trim();
     const staffName = String(req.body?.staffName || "").trim();
     const password = String(req.body?.password || "");
     const phone = String(req.body?.phone || "").trim();
@@ -1129,6 +1130,7 @@ async function practiceRegister(req, res) {
 
     if (
       !clinicName ||
+      !directorName ||
       !password ||
       !staffName ||
       !phone ||
@@ -1140,7 +1142,7 @@ async function practiceRegister(req, res) {
       return res.status(400).json({
         success: false,
         message:
-          "이메일, 치과명, 담당직원명, 비밀번호, 치과 전화번호, 담당자 휴대폰, 주소, 우편번호는 필수입니다.",
+          "이메일, 치과명, 대표원장님 성함, 담당직원명, 비밀번호, 치과 전화번호, 담당자 휴대폰, 주소, 우편번호는 필수입니다.",
       });
     }
 
@@ -1222,6 +1224,7 @@ async function practiceRegister(req, res) {
       phoneVerifiedAt: new Date(),
       practiceProfile: {
         clinicName,
+        directorName,
         staffName,
         phone,
         clinicPhone,
@@ -1259,7 +1262,7 @@ async function practiceRegister(req, res) {
       defaultReferralAnchorId: referredByAnchorId || null,
       metadata: {
         companyName: clinicName,
-        representativeName: staffName,
+        representativeName: directorName,
         address,
         addressDetail,
         zipCode,

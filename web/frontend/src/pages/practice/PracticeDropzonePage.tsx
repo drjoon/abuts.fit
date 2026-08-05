@@ -135,6 +135,7 @@ type PracticeDropzoneDraft = {
   patientName: string;
   email: string;
   practiceName: string;
+  directorName: string;
   staffName: string;
   phone: string;
   clinicPhone: string;
@@ -557,6 +558,7 @@ export const PracticeDropzonePage = () => {
   const [practiceName, setPracticeName] = useState("");
   const [accessPassword, setAccessPassword] = useState("");
   const [showAccessPassword, setShowAccessPassword] = useState(false);
+  const [directorName, setDirectorName] = useState("");
   const [staffName, setStaffName] = useState("");
   const [phone, setPhone] = useState("");
   const [clinicPhone, setClinicPhone] = useState("");
@@ -855,6 +857,7 @@ export const PracticeDropzonePage = () => {
       isEmailValid &&
       emailVerified &&
       String(practiceName || "").trim() &&
+      String(directorName || "").trim() &&
       String(staffName || "").trim() &&
       isPhoneValid &&
       phoneVerified &&
@@ -932,6 +935,7 @@ export const PracticeDropzonePage = () => {
         setPatientName(String(parsed.patientName || ""));
         setEmail(String(parsed.email || "").trim().toLowerCase());
         setPracticeName(String(parsed.practiceName || ""));
+        setDirectorName(String(parsed.directorName || ""));
         setStaffName(String(parsed.staffName || ""));
         setPhone(formatPhoneNumberInput(String(parsed.phone || "")));
         setClinicPhone(formatPhoneNumberInput(String(parsed.clinicPhone || "")));
@@ -1199,6 +1203,7 @@ export const PracticeDropzonePage = () => {
       patientName,
       email,
       practiceName,
+      directorName,
       staffName,
       phone,
       clinicPhone,
@@ -1220,6 +1225,7 @@ export const PracticeDropzonePage = () => {
     phone,
     clinicPhone,
     practiceName,
+    directorName,
     patientName,
     requestMemo,
     orderDate,
@@ -1254,6 +1260,7 @@ export const PracticeDropzonePage = () => {
       const pp = authUser?.practiceProfile || null;
       setEmail(String(authUser?.email || email || "").trim().toLowerCase());
       setPracticeName(String(pp?.clinicName || authUser?.companyName || practiceName || ""));
+      setDirectorName(String(pp?.directorName || directorName || ""));
       setStaffName(String(pp?.staffName || authUser?.name || staffName || ""));
       setPhone(formatPhoneNumberInput(String(pp?.phone || phone || "")));
       setClinicPhone(
@@ -1297,6 +1304,7 @@ export const PracticeDropzonePage = () => {
     logout,
     email,
     practiceName,
+    directorName,
     staffName,
     phone,
     clinicPhone,
@@ -1499,6 +1507,7 @@ export const PracticeDropzonePage = () => {
       const pp = latestUser.practiceProfile || null;
       setEmail(String(latestUser.email || email || "").trim().toLowerCase());
       setPracticeName(String(pp?.clinicName || latestUser.companyName || practiceName || ""));
+      setDirectorName(String(pp?.directorName || directorName || ""));
       setStaffName(String(pp?.staffName || latestUser.name || staffName || ""));
       setPhone(formatPhoneNumberInput(String(pp?.phone || phone || "")));
       setClinicPhone(
@@ -1816,6 +1825,7 @@ export const PracticeDropzonePage = () => {
         jsonBody: {
           email: String(email || "").trim().toLowerCase(),
           clinicName: String(practiceName || "").trim(),
+          directorName: String(directorName || "").trim(),
           staffName: String(staffName || "").trim(),
           password: accessPassword,
           phone: String(phone || "").trim(),
@@ -2388,6 +2398,18 @@ export const PracticeDropzonePage = () => {
                             />
                           </div>
                           <div className="space-y-2">
+                            <Label htmlFor="directorName" className="flex h-5 items-center text-sm font-medium text-slate-700">
+                              대표원장님 성함 <span className="ml-0.5 text-destructive">*</span>
+                            </Label>
+                            <Input
+                              id="directorName"
+                              className="box-border h-11 rounded-xl border-slate-200 bg-white py-0 text-base shadow-sm"
+                              value={directorName}
+                              onChange={(e) => setDirectorName(e.target.value)}
+                              placeholder="예: 김원장"
+                            />
+                          </div>
+                          <div className="space-y-2">
                             <Label htmlFor="clinicPhone" className="flex h-5 items-center text-sm font-medium text-slate-700">
                               치과 전화번호 <span className="ml-0.5 text-destructive">*</span>
                             </Label>
@@ -2514,7 +2536,7 @@ export const PracticeDropzonePage = () => {
                               onChangeAddress={setAddress}
                               onChangeAddressDetail={setAddressDetail}
                               onChangeZipCode={setZipCode}
-                              addressLabel="주소"
+                              addressLabel="치과 주소 *"
                               rowLayout="address-detail-zip"
                             />
                           </div>

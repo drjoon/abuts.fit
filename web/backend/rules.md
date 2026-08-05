@@ -264,7 +264,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   - 일반 회원가입은 `/api/auth/register` (`role: "practice"`)로 의뢰자/영업자와 동일한 이메일·온보딩 경로를 사용합니다.
   - 회원가입 중간 상태 임시저장 SSOT: `models/signupDraft.model.js`, `PUT/GET/DELETE /api/auth/signup/draft` (`sessionId` 기준, 7일 TTL). 가입 완료 시 삭제합니다.
   - practice owner 온보딩은 사업자등록증 업로드를 받지 않습니다. `practiceProfile` 필수값(`clinicName`, `directorName`, `staffName`, `clinicPhone`, `phone`, `address`, `zipCode`) 저장으로 완료하며, 앵커가 없으면 practice `BusinessAnchor`를 생성합니다.
-  - 드롭존 전용 간소 가입(`POST /api/auth/practice/register`)은 실제 `email` + `clinicPhone`(치과 전화) + `phone`(담당자 휴대폰)을 필수로 받으며, 로그인 식별은 이메일을 사용합니다.
+  - 드롭존 전용 간소 가입(`POST /api/auth/practice/register`)은 실제 `email` + `clinicName` + `directorName` + `staffName` + `clinicPhone`(치과 전화) + `phone`(담당자 휴대폰) + `address` + `zipCode`를 필수로 받으며, 로그인 식별은 이메일을 사용합니다. `directorName`은 `practiceProfile`과 앵커 `metadata.representativeName`에 저장합니다.
   - 드롭존 가입 시 `assertSignupVerifications({ email, phone })`로 이메일·휴대폰 인증 완료를 강제하고, 성공 후 `consumeSignupVerifications`로 소진합니다.
     - 이메일: `POST /api/auth/signup/email-verification/send|verify`, `GET /api/auth/signup/email-verification/status` (일 10회)
     - 휴대폰: `POST /api/auth/signup/phone-verification/send|verify`, `GET /api/auth/signup/phone-verification/status` (일 5회, 개발모드에서도 자동완료하지 않으며 비프로덕션에서는 응답/로그로 코드를 노출할 수 있음)

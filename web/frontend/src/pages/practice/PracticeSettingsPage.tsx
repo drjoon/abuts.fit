@@ -33,6 +33,7 @@ type TabKey = "account" | "business" | "notifications" | "security";
 type PracticeAccountForm = {
   staffName: string;
   clinicName: string;
+  directorName: string;
   phone: string;
   clinicPhone: string;
   zipCode: string;
@@ -64,6 +65,7 @@ export const PracticeSettingsPage = () => {
   const [form, setForm] = useState<PracticeAccountForm>({
     staffName: toStringSafe(user?.practiceProfile?.staffName || user?.name),
     clinicName: toStringSafe(user?.practiceProfile?.clinicName || user?.companyName),
+    directorName: toStringSafe(user?.practiceProfile?.directorName),
     phone: toStringSafe(user?.practiceProfile?.phone),
     clinicPhone: toStringSafe(user?.practiceProfile?.clinicPhone),
     zipCode: toStringSafe(user?.practiceProfile?.zipCode),
@@ -126,6 +128,7 @@ export const PracticeSettingsPage = () => {
         ...prev,
         staffName: toStringSafe(practiceProfile.staffName || data.name),
         clinicName: toStringSafe(practiceProfile.clinicName || data.business),
+        directorName: toStringSafe(practiceProfile.directorName),
         phone: toStringSafe(practiceProfile.phone || data.phoneNumber),
         clinicPhone: toStringSafe(practiceProfile.clinicPhone),
         zipCode: toStringSafe(practiceProfile.zipCode),
@@ -157,6 +160,7 @@ export const PracticeSettingsPage = () => {
     if (
       !form.staffName ||
       !form.clinicName ||
+      !form.directorName ||
       !form.phone ||
       !form.clinicPhone ||
       !form.address ||
@@ -164,7 +168,8 @@ export const PracticeSettingsPage = () => {
     ) {
       toast({
         title: "필수값을 확인해주세요",
-        description: "치과명, 담당자명, 치과 전화, 담당자 휴대폰, 주소, 우편번호는 필수입니다.",
+        description:
+          "치과명, 대표원장님 성함, 담당직원명, 치과 전화, 담당자 휴대폰, 주소, 우편번호는 필수입니다.",
         variant: "destructive",
       });
       return;
@@ -179,6 +184,7 @@ export const PracticeSettingsPage = () => {
         profileImage: form.profileImage,
         practiceProfile: {
           clinicName: form.clinicName,
+          directorName: form.directorName,
           staffName: form.staffName,
           phone: form.phone,
           clinicPhone: form.clinicPhone,
@@ -215,6 +221,7 @@ export const PracticeSettingsPage = () => {
           profileImage: toStringSafe(updated.profileImage || form.profileImage),
           practiceProfile: {
             clinicName: toStringSafe(updatedProfile?.clinicName || form.clinicName),
+            directorName: toStringSafe(updatedProfile?.directorName || form.directorName),
             staffName: toStringSafe(updatedProfile?.staffName || form.staffName),
             phone: toStringSafe(updatedProfile?.phone || form.phone),
             clinicPhone: toStringSafe(updatedProfile?.clinicPhone || form.clinicPhone),
@@ -366,20 +373,6 @@ export const PracticeSettingsPage = () => {
 
                 <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                   <div className="space-y-2">
-                    <Label htmlFor="practice-staff">담당 직원명</Label>
-                    <Input
-                      id="practice-staff"
-                      value={form.staffName}
-                      onChange={(e) =>
-                        setForm((prev) => ({ ...prev, staffName: e.target.value }))
-                      }
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="practice-email">이메일</Label>
-                    <Input id="practice-email" value={form.email} disabled />
-                  </div>
-                  <div className="space-y-2">
                     <Label htmlFor="practice-clinic">치과명</Label>
                     <Input
                       id="practice-clinic"
@@ -387,6 +380,17 @@ export const PracticeSettingsPage = () => {
                       onChange={(e) =>
                         setForm((prev) => ({ ...prev, clinicName: e.target.value }))
                       }
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="practice-director">대표원장님 성함</Label>
+                    <Input
+                      id="practice-director"
+                      value={form.directorName}
+                      onChange={(e) =>
+                        setForm((prev) => ({ ...prev, directorName: e.target.value }))
+                      }
+                      placeholder="예: 김원장"
                     />
                   </div>
                   <div className="space-y-2">
@@ -401,6 +405,16 @@ export const PracticeSettingsPage = () => {
                     />
                   </div>
                   <div className="space-y-2">
+                    <Label htmlFor="practice-staff">담당직원명</Label>
+                    <Input
+                      id="practice-staff"
+                      value={form.staffName}
+                      onChange={(e) =>
+                        setForm((prev) => ({ ...prev, staffName: e.target.value }))
+                      }
+                    />
+                  </div>
+                  <div className="space-y-2">
                     <Label htmlFor="practice-phone">담당자 휴대폰</Label>
                     <Input
                       id="practice-phone"
@@ -411,8 +425,12 @@ export const PracticeSettingsPage = () => {
                       placeholder="010-1234-5678"
                     />
                   </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="practice-email">이메일</Label>
+                    <Input id="practice-email" value={form.email} disabled />
+                  </div>
                   <div className="space-y-2 md:col-span-2">
-                    <Label htmlFor="practice-address">주소</Label>
+                    <Label htmlFor="practice-address">치과 주소</Label>
                     <Input
                       id="practice-address"
                       value={form.address}
