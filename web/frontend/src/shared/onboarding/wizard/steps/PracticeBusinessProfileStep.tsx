@@ -21,6 +21,8 @@ import {
 import { request } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
+import { CheckCircle2 } from "lucide-react";
+import { cn } from "@/shared/ui/cn";
 
 type PracticeForm = {
   clinicName: string;
@@ -224,7 +226,7 @@ export const PracticeBusinessProfileStep = ({
       toast({
         title: "필수값을 확인해주세요",
         description:
-          "치과명, 원장님 성함, 담당직원명, 치과 전화, 담당자 휴대폰, 주소, 우편번호는 필수입니다.",
+          "치과명, 대표원장님 성함, 담당직원명, 치과 전화, 담당자 휴대폰, 주소, 우편번호는 필수입니다.",
         variant: "destructive",
       });
       return false;
@@ -356,7 +358,7 @@ export const PracticeBusinessProfileStep = ({
 
         <div className="space-y-2">
           <Label htmlFor="practice-director-name">
-            원장님 성함 <span className="text-destructive">*</span>
+            대표원장님 성함 <span className="text-destructive">*</span>
             {errors.directorName ? (
               <span className="ml-2 text-xs text-destructive">
                 {errors.directorName}
@@ -417,15 +419,23 @@ export const PracticeBusinessProfileStep = ({
               <span className="ml-2 text-xs text-destructive">{errors.phone}</span>
             ) : null}
           </Label>
-          <Input
-            id="practice-staff-phone"
-            value={form.phone}
-            onChange={(e) =>
-              setField("phone", formatPhoneNumberInput(e.target.value))
-            }
-            placeholder="예: 010-1234-5678"
-            className={errors.phone ? "border-destructive" : ""}
-          />
+          <div className="relative">
+            <Input
+              id="practice-staff-phone"
+              value={form.phone}
+              disabled
+              readOnly
+              placeholder="예: 010-1234-5678"
+              className={cn(
+                "pr-20 bg-slate-50 text-slate-600",
+                errors.phone ? "border-destructive" : "",
+              )}
+            />
+            <span className="pointer-events-none absolute right-2.5 top-1/2 inline-flex -translate-y-1/2 items-center gap-1 text-xs font-medium text-emerald-600">
+              <CheckCircle2 className="h-3.5 w-3.5" />
+              인증됨
+            </span>
+          </div>
         </div>
       </div>
 
@@ -436,9 +446,7 @@ export const PracticeBusinessProfileStep = ({
         onChangeAddress={(next) => setField("address", next)}
         onChangeAddressDetail={(next) => setField("addressDetail", next)}
         onChangeZipCode={(next) => setField("zipCode", next)}
-        addressLabel={
-          errors.address ? "주소 * (필수)" : "주소 *"
-        }
+        addressLabel={errors.address ? "치과 주소 * (필수)" : "치과 주소 *"}
         addressError={Boolean(errors.address)}
         zipCodeError={Boolean(errors.zipCode)}
         openMode="popup"

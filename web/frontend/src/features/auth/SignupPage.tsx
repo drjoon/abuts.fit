@@ -26,12 +26,18 @@ import { SignupWizardStep1 } from "./signup/SignupWizardStep1";
 import { SignupWizardStep2 } from "./signup/SignupWizardStep2";
 import { SignupSocialWizardStep1 } from "./signup/SignupSocialWizardStep1";
 import { SignupWizardAccountStep } from "./signup/SignupWizardAccountStep";
+import { clearOnboardingLocalStorage } from "@/shared/onboarding/clearOnboardingLocalStorage";
 
 export const SignupPage = () => {
   type SignupRole = AppUserRole;
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams] = useSearchParams();
+
+  // 온보딩을 중도에 그만두고 signup으로 다시 오면 위저드 진행 상태를 초기화
+  useEffect(() => {
+    clearOnboardingLocalStorage();
+  }, []);
 
   const referralCode = useMemo(() => {
     const ref = searchParams.get("ref");

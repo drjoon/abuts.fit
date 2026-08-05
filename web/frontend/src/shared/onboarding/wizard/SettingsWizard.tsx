@@ -14,6 +14,7 @@ import { ProfileStep } from "./steps/ProfileStep";
 import { PhoneStep } from "./steps/PhoneStep";
 import { RoleStep } from "./steps/RoleStep";
 import { BusinessStep } from "./steps/BusinessStep";
+import { clearOnboardingLocalStorage } from "../clearOnboardingLocalStorage";
 
 interface SettingsWizardProps {
   mode: "account" | "business";
@@ -50,6 +51,12 @@ export const SettingsWizard = ({
   const businessType = useMemo(() => {
     return resolveBusinessType(user?.role, "requestor");
   }, [user?.role]);
+  // auth store 역할도 함께 반영 (prop user 지연 대비)
+  const authRole = useAuthStore((s) => s.user?.role);
+  const effectiveBusinessType = useMemo(() => {
+    if (authRole === "practice" || businessType === "practice") return "practice";
+    return businessType;
+  }, [authRole, businessType]);
   const STEP_ORDER = useMemo(() => FULL_STEP_ORDER, []);
   const storageIdentity = useMemo(() => {
     const resolvedUser = user as {
@@ -66,23 +73,23 @@ export const SettingsWizard = ({
     );
   }, [token, user]);
   const roleStorageKey = useMemo(() => {
-    return `onboarding:wizard-role:${businessType}:${mode}:${storageIdentity}`;
-  }, [businessType, mode, storageIdentity]);
+    return `onboarding:wizard-role:${effectiveBusinessType}:${mode}:${storageIdentity}`;
+  }, [effectiveBusinessType, mode, storageIdentity]);
   const legacyRoleStorageKey = useMemo(() => {
-    return `onboarding:wizard-role:${businessType}:${storageIdentity}`;
-  }, [businessType, storageIdentity]);
+    return `onboarding:wizard-role:${effectiveBusinessType}:${storageIdentity}`;
+  }, [effectiveBusinessType, storageIdentity]);
   const fallbackRoleStorageKey = useMemo(() => {
-    return `onboarding:wizard-role:${businessType}:${mode}`;
-  }, [businessType, mode]);
+    return `onboarding:wizard-role:${effectiveBusinessType}:${mode}`;
+  }, [effectiveBusinessType, mode]);
   const stepStorageKey = useMemo(() => {
-    return `onboarding:wizard-step:${businessType}:${mode}:${storageIdentity}`;
-  }, [businessType, mode, storageIdentity]);
+    return `onboarding:wizard-step:${effectiveBusinessType}:${mode}:${storageIdentity}`;
+  }, [effectiveBusinessType, mode, storageIdentity]);
   const legacyStepStorageKey = useMemo(() => {
-    return `onboarding:wizard-step:${businessType}:${storageIdentity}`;
-  }, [businessType, storageIdentity]);
+    return `onboarding:wizard-step:${effectiveBusinessType}:${storageIdentity}`;
+  }, [effectiveBusinessType, storageIdentity]);
   const fallbackStepStorageKey = useMemo(() => {
-    return `onboarding:wizard-step:${businessType}:${mode}`;
-  }, [businessType, mode]);
+    return `onboarding:wizard-step:${effectiveBusinessType}:${mode}`;
+  }, [effectiveBusinessType, mode]);
   const dbVersion = user?.dbVersion;
   const readStoredStep = useCallback(() => {
     if (typeof window === "undefined") return null;
@@ -100,31 +107,15 @@ export const SettingsWizard = ({
       console.warn(
         "[wizard-readStoredStep] DB version mismatch, clearing localStorage",
       );
-      // 이전 진행 상태 정리
-      try {
-        window.localStorage.removeItem(stepStorageKey);
-        window.localStorage.removeItem(legacyStepStorageKey);
-        window.localStorage.removeItem(fallbackStepStorageKey);
-        window.localStorage.removeItem(roleStorageKey);
-        window.localStorage.removeItem(legacyRoleStorageKey);
-        window.localStorage.removeItem(fallbackRoleStorageKey);
-        // 모든 onboarding 관련 키 삭제
-        Object.keys(window.localStorage).forEach((key) => {
-          if (key.includes("onboarding") || key.includes("wizard")) {
-            window.localStorage.removeItem(key);
-          }
-        });
-      } catch {
-        // ignore
-      }
+      clearOnboardingLocalStorage();
       return null;
     }
 
-    // fallbackStepStorageKey를 우선 사용 (storageIdentity 무관)
+    // fallback보다 identity 키를 우선해 다른 세션/유저 진행 상태를 물려받지 않음
     const raw =
-      window.localStorage.getItem(fallbackStepStorageKey) ||
       window.localStorage.getItem(stepStorageKey) ||
       window.localStorage.getItem(legacyStepStorageKey) ||
+      window.localStorage.getItem(fallbackStepStorageKey) ||
       "";
 
     console.log("[wizard-readStoredStep] reading from localStorage:", {
@@ -290,6 +281,14 @@ export const SettingsWizard = ({
     window.localStorage.setItem(fallbackRoleStorageKey, selectedRole);
   }, [fallbackRoleStorageKey, roleStorageKey, selectedRole]);
 
+  // 사업자 단계인데 등록 방식이 없으면 역할 선택으로 되돌림
+  // (stale localStorage로 business에 바로 진입해 등록증 UI가 뜨는 것 방지)
+  useEffect(() => {
+    if (currentStep !== "business") return;
+    if (selectedRole) return;
+    setCurrentStep("role");
+  }, [currentStep, selectedRole]);
+
   const handleNext = useCallback(async () => {
     if (!currentStep) return;
     if (
@@ -379,14 +378,14 @@ export const SettingsWizard = ({
       case "role":
         return "등록 방식 선택";
       case "business":
-        if (businessType === "practice" && selectedRole === "owner") {
+        if (effectiveBusinessType === "practice" && selectedRole === "owner") {
           return "치과 정보";
         }
         return selectedRole === "owner" ? "사업자 등록" : "사업자 가입";
       default:
         return "";
     }
-  }, [businessType, currentStep, selectedRole]);
+  }, [currentStep, effectiveBusinessType, selectedRole]);
 
   const cardMaxWidth = useMemo(() => {
     switch (currentStep) {
@@ -453,7 +452,7 @@ export const SettingsWizard = ({
             {currentStep === "business" && (
               <BusinessStep
                 role={selectedRole}
-                businessType={businessType}
+                businessType={effectiveBusinessType}
                 defaultCompleted={stepCompleted.business}
                 onComplete={() => handleStepComplete("business")}
                 registerGoNextAction={registerGoNextAction}

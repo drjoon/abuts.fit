@@ -3,3 +3,4 @@
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 export { SharedOnboardingWizardPage } from "./SharedOnboardingWizardPage";
+export { clearOnboardingLocalStorage } from "./clearOnboardingLocalStorage";

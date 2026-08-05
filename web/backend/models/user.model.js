@@ -37,7 +37,7 @@ const userSchema = new mongoose.Schema(
 
     practiceProfile: {
       clinicName: { type: String, default: "", trim: true },
-      directorName: { type: String, default: "", trim: true }, // 원장님 성함
+      directorName: { type: String, default: "", trim: true }, // 대표원장님 성함
       staffName: { type: String, default: "", trim: true },
       phone: { type: String, default: "", trim: true }, // 담당자 휴대폰
       clinicPhone: { type: String, default: "", trim: true }, // 치과 전화번호

@@ -586,7 +586,7 @@ async function updateProfile(req, res) {
         return res.status(400).json({
           success: false,
           message:
-            "치과명, 원장님 성함, 담당직원명, 치과 전화, 담당자 휴대폰, 주소, 우편번호는 필수입니다.",
+            "치과명, 대표원장님 성함, 담당직원명, 치과 전화, 담당자 휴대폰, 주소, 우편번호는 필수입니다.",
         });
       }
 

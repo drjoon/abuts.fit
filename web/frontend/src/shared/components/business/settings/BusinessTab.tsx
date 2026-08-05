@@ -81,7 +81,8 @@ export const BusinessTab = ({
   const [searchParams] = useSearchParams();
   const nextPath = (searchParams.get("next") || "").trim();
   const reason = (searchParams.get("reason") || "").trim();
-  const allowLocalDraft = !String(searchParams.get("wizard") || "").trim();
+  const allowLocalDraft =
+    !isOnboarding && !String(searchParams.get("wizard") || "").trim();
 
   const authUserId = user?.id ? String(user.id) : null;
   const businessType = useMemo(() => {
@@ -195,6 +196,13 @@ export const BusinessTab = ({
     if (setupMode !== null) return;
 
     if (selectedRole === "owner") {
+      // 치과 온보딩 owner는 BusinessStep에서 치과 정보 폼으로 분기되므로
+      // 여기까지 오면 일반 role만 해당. practice는 등록증 경로를 쓰지 않음.
+      if (businessType === "practice") {
+        setSetupMode("search");
+        setSetupModeLocked(true);
+        return;
+      }
       setSetupMode("license");
       setSetupModeLocked(true);
       return;
@@ -211,6 +219,7 @@ export const BusinessTab = ({
   }, [
     allowLocalDraft,
     authUserId,
+    businessType,
     membershipMgmt.membership,
     setupMode,
     selectedRole,

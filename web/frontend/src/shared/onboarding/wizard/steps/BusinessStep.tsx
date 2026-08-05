@@ -30,8 +30,13 @@ export const BusinessStep = ({
   registerValidationState,
 }: BusinessStepProps) => {
   const { user } = useAuthStore();
-  const isPracticeOwner =
-    businessType === "practice" && role === "owner";
+  // auth user.role을 SSOT로 사용해, businessType prop 지연/오판 시에도 치과 폼을 보장
+  const resolvedBusinessType =
+    user?.role === "practice" || businessType === "practice"
+      ? "practice"
+      : businessType;
+  const isPractice = resolvedBusinessType === "practice";
+  const isPracticeOwner = isPractice && role === "owner";
 
   const userData = useMemo(
     () => ({
@@ -40,6 +45,14 @@ export const BusinessStep = ({
     }),
     [user],
   );
+
+  if (isPractice && !role) {
+    return (
+      <p className="text-sm text-slate-500">
+        등록 방식을 먼저 선택해주세요.
+      </p>
+    );
+  }
 
   if (isPracticeOwner) {
     return (
@@ -55,7 +68,7 @@ export const BusinessStep = ({
     <div className="space-y-4">
       <BusinessTab
         userData={userData}
-        businessTypeOverride={businessType}
+        businessTypeOverride={resolvedBusinessType}
         selectedRole={role}
         registerValidationState={registerValidationState}
         isOnboarding={true}
