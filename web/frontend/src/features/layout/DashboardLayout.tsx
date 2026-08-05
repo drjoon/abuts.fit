@@ -10,6 +10,7 @@ import { toKstYmd } from "@/shared/date/kst";
 import { useToast } from "@/shared/hooks/use-toast";
 
 // change-log:
+// - 2026-08-05: 설정 메뉴를 계정 드롭다운에서 사이드바 맨 아래 항목으로 복원(모든 role 공통). 관리자 보안은 계정 드롭다운에 유지.
 // - 2026-08-05: 문의 메뉴를 계정 드롭다운에서 사이드바 맨 아래 항목으로 복원(requestor/salesman/practice/admin). manufacturer·devops는 제외.
 // - 2026-08-04: 치과(practice) 문의/설정도 사이드메뉴에서 제거하고 하단 계정 드롭다운으로 이동.
 // - 2026-08-04: 의뢰자/영업자/개발운영사/제조사도 문의·설정을 사이드메뉴에서 제거하고 하단 계정 드롭다운으로 이동. 미사용 ManufacturerDashboardPage 참조 정리.
@@ -87,24 +88,29 @@ const sidebarItems = {
     { icon: Building2, label: "기공의뢰서", href: "/dashboard/practice-transfers" },
     { icon: Share2, label: "소개", href: "/dashboard/referral-groups" },
     { icon: MessageSquare, label: "문의", href: "/dashboard/inquiries" },
+    { icon: Settings, label: "설정", href: "/dashboard/settings" },
   ],
   salesman: [
     { icon: LayoutDashboard, label: "대시보드", href: "/dashboard" },
     { icon: Share2, label: "소개", href: "/dashboard/referral-groups" },
     { icon: Wallet, label: "정산", href: "/dashboard/payments" },
     { icon: MessageSquare, label: "문의", href: "/dashboard/inquiries" },
+    { icon: Settings, label: "설정", href: "/dashboard/settings" },
   ],
   devops: [
     { icon: LayoutDashboard, label: "대시보드", href: "/dashboard" },
     { icon: Share2, label: "소개", href: "/dashboard/referral-groups" },
+    { icon: Settings, label: "설정", href: "/dashboard/settings" },
   ],
   practice: [
     { icon: LayoutDashboard, label: "기공의뢰", href: "/practice/dashboard" },
     { icon: MessageSquare, label: "문의", href: "/practice/inquiries" },
+    { icon: Settings, label: "설정", href: "/practice/settings" },
   ],
   manufacturer: [
     { icon: ClipboardList, label: "작업", href: "/dashboard/worksheet" },
     { icon: Wallet, label: "정산", href: "/dashboard/payments" },
+    { icon: Settings, label: "설정", href: "/dashboard/settings" },
   ],
   admin: [
     { icon: LayoutDashboard, label: "대시보드", href: "/dashboard" },
@@ -139,6 +145,7 @@ const sidebarItems = {
       label: "문의",
       href: "/dashboard/inquiries",
     },
+    { icon: Settings, label: "설정", href: "/dashboard/settings" },
   ],
 } as const;
 
@@ -147,22 +154,6 @@ type SidebarItem = { icon: LucideIcon; label: string; href: string };
 const accountMenuItemsByRole: Record<string, SidebarItem[]> = {
   admin: [
     { icon: Shield, label: "보안", href: "/dashboard/security-settings" },
-    { icon: Settings, label: "설정", href: "/dashboard/settings" },
-  ],
-  requestor: [
-    { icon: Settings, label: "설정", href: "/dashboard/settings" },
-  ],
-  salesman: [
-    { icon: Settings, label: "설정", href: "/dashboard/settings" },
-  ],
-  devops: [
-    { icon: Settings, label: "설정", href: "/dashboard/settings" },
-  ],
-  manufacturer: [
-    { icon: Settings, label: "설정", href: "/dashboard/settings" },
-  ],
-  practice: [
-    { icon: Settings, label: "설정", href: "/practice/settings" },
   ],
 };
 
@@ -246,6 +237,7 @@ const adminSidebarSections: SidebarSection[] = [
       { icon: Send, label: "메시지", href: "/dashboard/sms" },
       { icon: Mail, label: "메일", href: "/dashboard/mail" },
       { icon: MessageSquare, label: "문의", href: "/dashboard/inquiries" },
+      { icon: Settings, label: "설정", href: "/dashboard/settings" },
     ],
   },
 ];

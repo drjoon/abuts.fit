@@ -461,14 +461,20 @@ export async function searchBusinesses(req, res) {
     // Business는 멤버십/조직 UI 컨테이너일 뿐이므로 검색 대상이 아님
     // $or 중복 spread 방지: typeFilter와 이름 $or를 $and로 결합
     const regex = new RegExp(q, "i");
-    const nameClauses = {
+    const idClause = Types.ObjectId.isValid(q)
+      ? { _id: new Types.ObjectId(q) }
+      : null;
+
+    const nameOrIdClauses = {
       $or: [
+        ...(idClause ? [idClause] : []),
         { name: regex },
         { "metadata.companyName": regex },
         { "metadata.representativeName": regex },
       ],
     };
-    const andClauses = [nameClauses];
+
+    const andClauses = [nameOrIdClauses];
     if (Object.keys(typeFilter).length > 0) andClauses.push(typeFilter);
     if (adminExcludeFilter) andClauses.push(adminExcludeFilter);
     const searchQuery =
@@ -497,14 +503,19 @@ export async function searchBusinesses(req, res) {
       (owners || []).map((u) => [String(u?._id || ""), String(u?.role || "") === "practice"]),
     );
 
+    const searchingPractice = String(businessType || "") === "practice";
     const data = (anchors || [])
       .filter((a) => {
-        const bn = String(a?.businessNumberNormalized || "").trim().toLowerCase();
-        if (bn.startsWith("practice-")) return false;
+        const bn = String(a?.businessNumberNormalized || "")
+          .trim()
+          .toLowerCase();
+
+        // practice anchor는 businessType=practice로 명시해 검색할 때는 노출한다.
+        if (!searchingPractice && bn.startsWith("practice-")) return false;
 
         const ownerId = String(a?.primaryContactUserId || "");
         const isPracticeOwner = ownerPracticeMap.get(ownerId) === true;
-        if (isPracticeOwner) return false;
+        if (!searchingPractice && isPracticeOwner) return false;
 
         return true;
       })

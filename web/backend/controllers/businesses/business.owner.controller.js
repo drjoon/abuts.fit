@@ -94,18 +94,28 @@ export async function getRepresentatives(req, res) {
       .lean();
 
     const representatives = [];
+    const seen = new Set();
     if (full?.primaryContactUserId?._id || full?.primaryContactUserId) {
-      representatives.push({
-        _id: String(full.primaryContactUserId._id || full.primaryContactUserId),
-        name: String(full.primaryContactUserId.name || ""),
-        email: String(full.primaryContactUserId.email || ""),
-      });
+      const id = String(
+        full.primaryContactUserId._id || full.primaryContactUserId,
+      );
+      if (id) {
+        seen.add(id);
+        representatives.push({
+          _id: id,
+          name: String(full.primaryContactUserId.name || ""),
+          email: String(full.primaryContactUserId.email || ""),
+        });
+      }
     }
     if (Array.isArray(full?.owners)) {
       full.owners.forEach((c) => {
         if (!c) return;
+        const id = String(c._id || c);
+        if (!id || seen.has(id)) return;
+        seen.add(id);
         representatives.push({
-          _id: String(c._id || c),
+          _id: id,
           name: String(c.name || ""),
           email: String(c.email || ""),
         });
@@ -339,7 +349,9 @@ export async function getMyStaffMembers(req, res) {
       ? anchor.owners.map((c) => String((c && c._id) || c || ""))
       : [];
     const representatives = [];
+    const seenRepIds = new Set();
     if (ownerId) {
+      seenRepIds.add(ownerId);
       representatives.push({
         _id: ownerId,
         name: String(
@@ -355,7 +367,8 @@ export async function getMyStaffMembers(req, res) {
     if (Array.isArray(anchor.owners)) {
       anchor.owners.forEach((c) => {
         const id = String((c && c._id) || c || "");
-        if (!id) return;
+        if (!id || seenRepIds.has(id)) return;
+        seenRepIds.add(id);
         representatives.push({
           _id: id,
           name: String((c && c.name) || ""),

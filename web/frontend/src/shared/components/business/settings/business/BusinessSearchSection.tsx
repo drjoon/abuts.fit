@@ -84,7 +84,7 @@ export const BusinessSearchSection = ({
           <PopoverContent className="w-[420px] p-0">
             <Command>
               <CommandInput
-                placeholder="사업자명/대표자명/사업자번호/주소 검색..."
+                placeholder="사업자명/대표자명/anchor ID/주소 검색..."
                 value={businessSearch}
                 onValueChange={(v) => {
                   setBusinessSearch(v);
@@ -99,14 +99,16 @@ export const BusinessSearchSection = ({
                     const rep = String(b.representativeName || "").trim();
                     const bn = String(b.businessNumber || "").trim();
                     const addr = String(b.address || "").trim();
+                    const anchorId = String(b._id || "").trim();
                     const meta = [
                       rep ? `대표: ${rep}` : "",
                       bn ? `사업자: ${bn}` : "",
+                      anchorId ? `anchor: ${anchorId}` : "",
                       addr ? addr : "",
                     ]
                       .filter(Boolean)
                       .join(" · ");
-                    const searchValue = [b.name, rep, bn, addr]
+                    const searchValue = [b.name, rep, bn, anchorId, addr]
                       .filter(Boolean)
                       .join(" ");
                     return (

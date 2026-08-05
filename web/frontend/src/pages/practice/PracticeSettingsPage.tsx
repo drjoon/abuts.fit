@@ -23,12 +23,21 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { User, Bell, Shield, Camera, RefreshCcw, Building2 } from "lucide-react";
+import {
+  User,
+  Bell,
+  Shield,
+  Camera,
+  RefreshCcw,
+  Building2,
+  Users,
+} from "lucide-react";
 import { NotificationsTab } from "@/features/settings/tabs/NotificationsTab";
 import { RequestorSecurity as PracticeSecurity } from "@/pages/requestor/settings/Security";
 import { BusinessTab } from "@/shared/components/business/settings/BusinessTab";
+import { StaffTab } from "@/features/settings/tabs/StaffTab";
 
-type TabKey = "account" | "business" | "notifications" | "security";
+type TabKey = "account" | "business" | "staff" | "notifications" | "security";
 
 type PracticeAccountForm = {
   staffName: string;
@@ -80,6 +89,7 @@ export const PracticeSettingsPage = () => {
     if (
       raw === "notifications" ||
       raw === "security" ||
+      raw === "staff" ||
       raw === "account" ||
       raw === "business"
     ) {
@@ -263,6 +273,7 @@ export const PracticeSettingsPage = () => {
             const nextTab =
               next === "account" ||
               next === "business" ||
+              next === "staff" ||
               next === "notifications" ||
               next === "security"
                 ? next
@@ -287,6 +298,13 @@ export const PracticeSettingsPage = () => {
             >
               <Building2 className="h-4 w-4" />
               사업자
+            </TabsTrigger>
+            <TabsTrigger
+              value="staff"
+              className="flex min-w-[110px] flex-1 basis-0 items-center justify-center gap-2"
+            >
+              <Users className="h-4 w-4" />
+              임직원
             </TabsTrigger>
             <TabsTrigger
               value="notifications"
@@ -482,9 +500,22 @@ export const PracticeSettingsPage = () => {
             />
           </TabsContent>
 
+          <TabsContent value="staff">
+            <StaffTab
+              userData={{
+                companyName: form.clinicName || user?.companyName || "",
+                role: "practice",
+                email: user?.email || "",
+                name: form.staffName || user?.name || "",
+              }}
+              businessTypeOverride="practice"
+            />
+          </TabsContent>
+
           <TabsContent value="notifications">
             <NotificationsTab />
           </TabsContent>
+
 
           <TabsContent value="security">
             <PracticeSecurity />

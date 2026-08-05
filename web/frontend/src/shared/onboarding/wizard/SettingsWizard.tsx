@@ -39,6 +39,32 @@ const createStepCompletionState = (): Record<WizardStepId, boolean> => ({
   business: false,
 });
 
+const readStoredWizardRole = (
+  keys: {
+    roleStorageKey: string;
+    legacyRoleStorageKey: string;
+    fallbackRoleStorageKey: string;
+  },
+  dbVersion?: string,
+): "owner" | "member" | null => {
+  if (typeof window === "undefined") return null;
+
+  const localDbVersion = window.localStorage.getItem("dbVersion");
+  // readStoredStep과 동일: dbVersion이 아직 없으면(초기 로딩) 저장값을 유지
+  if (dbVersion && dbVersion !== localDbVersion) {
+    return null;
+  }
+
+  const storedRole =
+    window.localStorage.getItem(keys.roleStorageKey) ||
+    window.localStorage.getItem(keys.legacyRoleStorageKey) ||
+    window.localStorage.getItem(keys.fallbackRoleStorageKey);
+
+  return storedRole === "owner" || storedRole === "member"
+    ? storedRole
+    : null;
+};
+
 export const SettingsWizard = ({
   mode,
   user,
@@ -175,23 +201,33 @@ export const SettingsWizard = ({
     });
     return initial;
   });
+  const readStoredRole = useCallback(
+    () =>
+      readStoredWizardRole(
+        {
+          roleStorageKey,
+          legacyRoleStorageKey,
+          fallbackRoleStorageKey,
+        },
+        dbVersion,
+      ),
+    [
+      dbVersion,
+      fallbackRoleStorageKey,
+      legacyRoleStorageKey,
+      roleStorageKey,
+    ],
+  );
   const [selectedRole, setSelectedRole] = useState<"owner" | "member" | null>(
-    () => {
-      if (typeof window === "undefined") return null;
-
-      // DB 버전이 다르면 저장된 역할을 무시
-      if (dbVersion !== window.localStorage.getItem("dbVersion")) {
-        return null;
-      }
-
-      const storedRole =
-        window.localStorage.getItem(roleStorageKey) ||
-        window.localStorage.getItem(legacyRoleStorageKey) ||
-        window.localStorage.getItem(fallbackRoleStorageKey);
-      return storedRole === "owner" || storedRole === "member"
-        ? storedRole
-        : null;
-    },
+    () =>
+      readStoredWizardRole(
+        {
+          roleStorageKey,
+          legacyRoleStorageKey,
+          fallbackRoleStorageKey,
+        },
+        dbVersion,
+      ),
   );
   const [stepCompleted, setStepCompleted] = useState<
     Record<WizardStepId, boolean>
@@ -281,13 +317,27 @@ export const SettingsWizard = ({
     window.localStorage.setItem(fallbackRoleStorageKey, selectedRole);
   }, [fallbackRoleStorageKey, roleStorageKey, selectedRole]);
 
+  // storageIdentity/user 지연 로딩 후에도 역할 복원
+  useEffect(() => {
+    if (selectedRole) return;
+    const storedRole = readStoredRole();
+    if (storedRole) {
+      setSelectedRole(storedRole);
+    }
+  }, [readStoredRole, selectedRole]);
+
   // 사업자 단계인데 등록 방식이 없으면 역할 선택으로 되돌림
   // (stale localStorage로 business에 바로 진입해 등록증 UI가 뜨는 것 방지)
   useEffect(() => {
     if (currentStep !== "business") return;
     if (selectedRole) return;
+    const storedRole = readStoredRole();
+    if (storedRole) {
+      setSelectedRole(storedRole);
+      return;
+    }
     setCurrentStep("role");
-  }, [currentStep, selectedRole]);
+  }, [currentStep, readStoredRole, selectedRole]);
 
   const handleNext = useCallback(async () => {
     if (!currentStep) return;
