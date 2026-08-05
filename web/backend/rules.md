@@ -84,7 +84,11 @@
 
 ### 가공 우선순위
 
-장비 생산 큐(재생목록 / Next Up / 자동 연속 가공) 정렬 SSOT.
+장비 생산 큐(재생목록 / Next Up / 자동 연속 가공) 정렬·배정 SSOT.
+UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 「우선순위」 버튼.
+데이터 SSOT: `controllers/requests/machiningPriorityRules.js`
+
+#### A. 장비 큐 정렬
 
 - 비교 함수: `controllers/requests/production.utils.js`의 `compareMachiningQueueOrder`
 - 배정 시 재번호: `placeRequestAtPolicyQueuePosition` (같은 파일)
@@ -95,17 +99,34 @@
   4. 아노다이징 OFF + 묶음배송
 - 전체 정렬 키 순서:
   1. 가공중(Now Playing)
-  2. 아노다이징 ON
-  3. 신속배송
-  4. 묶음배송
-  5. `queuePosition`
-  6. 발송예정(`scheduledShipPickup`) → `requestId`
-- 적용 경로:
-  - 큐 조회: `getAllProductionQueues` / `getProductionQueues` (`controllers/cnc/production.js`)
-  - 승인·배정: `common.review.controller.js`, `services/reviewApprovalQueue.service.js`
-  - 자동 Next: `controllers/cnc/machiningBridge.js` `fetchPendingForAutoNext`
-  - 재배정: `controllers/cnc/production.js` redistribute
-  - 표시: 큐/lastCompleted/summary API에 `shippingMode` 포함 → 프론트 `ShippingModeBadge` (프리뷰 추가 round-trip 금지)
+  2. 정책 순위(아노/신속)
+  3. `queuePosition`
+  4. 발송예정(`scheduledShipPickup`) → `requestId`
+
+#### B. 준비→가공 장비 배정
+
+- `chooseMachineForCamMachining` (`common.review.machine.js`)
+- 후보: 활성 CNC + `allowRequestAssign` + 현재 소재 직경 있음 + 소재 직경 ≥ 요청 `maxDiameter`
+- 정렬: ① 큐 부하(적은 쪽) ② 커버 가능한 최소 소재 직경 ③ 오래된 `lastAssignmentAt` ④ `machineId`
+
+#### C. 신속배송 14:00 완료 — 빠른 가공 재배치
+
+- 구현: `controllers/requests/expressDeadlineRebalance.utils.js` `rebalanceExpressJobsForFourteenOClockDeadline`
+- 트리거: `CAM_STAGE_APPROVED` 후처리(`reviewApprovalQueue.service.js`), 수동 「재배정」
+- 조건: 당일 발송 신속건의 예상 가공 완료가 14:00(KST)을 넘기고, 다른 장비가 여유 있으며 소재로 커버 가능하면 이동
+- 소재 직경 변경 시 Esprit force 재생성 (`REQUEST_STAGE_APPROVED` + `forceReprocess`)
+- 메타/뱃지: `productionSchedule.fastMachiningRebalance` → 프론트 「빠른 가공 재배치」
+- Alert: `SystemSettings.lastExpressDeadlineRebalance` + socket `machining:express-rebalance`
+  - API: `GET /api/cnc-machines/queues/express-rebalance-alert`, queues `meta.expressRebalanceAlert`
+- 가공시간 예측: `machiningDurationEstimate.utils.js` — 최근 완료건 `(duration/totalLength)` 최댓값(보수적)
+
+#### D. 적용 경로
+
+- 큐 조회: `getAllProductionQueues` / `getProductionQueues` (`controllers/cnc/production.js`)
+- 승인·배정: `common.review.controller.js`, `services/reviewApprovalQueue.service.js`
+- 자동 Next: `controllers/cnc/machiningBridge.js` `fetchPendingForAutoNext`
+- 재배정: `controllers/cnc/production.js` redistribute + express rebalance
+- 표시: 큐/lastCompleted/summary API에 `shippingMode` 포함 → 프론트 `ShippingModeBadge` (프리뷰 추가 round-trip 금지)
 
 - 인프라 마이그레이션 운영 체크(EB 단일 인스턴스 → LB+NAT, Atlas 비용 유지):
   - 안정화 관찰 기간(며칠) 동안 실사용 트래픽에서 핵심 기능(로그인, 주문/의뢰 등록)을 반복 점검합니다.

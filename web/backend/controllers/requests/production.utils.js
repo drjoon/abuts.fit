@@ -46,6 +46,8 @@ import { resolveEffectiveShippingMode } from "./shippingPriority.utils.js";
  * 장비별 생산 큐:
  * - 각 장비마다 독립적인 큐 관리
  * - 우선순위: 가공중 → 아노다이징 ON → 신속배송 → queuePosition → 발송예정
+ * - 당일 신속배송 14:00 완료가 어려우면 여유 장비로 빠른 가공 재배치
+ *   (expressDeadlineRebalance.utils.js / machiningPriorityRules.js)
  */
 
 const CAM_DURATION_MINUTES = 5; // CAM 시작 → 완료

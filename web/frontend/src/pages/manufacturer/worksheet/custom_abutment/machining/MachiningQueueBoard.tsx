@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-05: 신속배송 14:00 빠른 가공 재배치 Alert/우선순위 룰 모달·뱃지.
 // - 2026-08-04: 재생목록 클릭 → PreviewModal 오픈. 큐→프리뷰에 shippingMode 전달.
 // - 2026-08-03: MachiningQueueBoard: 작업 공정의 display label 정규화(의뢰 -> 준비) 영향 반영(주로 로컬 저장/복구 키/주석). UI 텍스트 변경은 없었음.
 // related files:
@@ -7,11 +8,15 @@
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/hooks/usePreviewLoader.ts
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/hooks/useRequestFileHandlers.ts
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/machining/components/ExpressRebalanceAlertModal.tsx
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/machining/components/MachiningPriorityRulesModal.tsx
+// - web/backend/controllers/requests/expressDeadlineRebalance.utils.js
+// - web/backend/controllers/requests/machiningPriorityRules.js
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { AlertTriangle, ArrowLeft, ArrowRight, X } from "lucide-react";
+import { AlertTriangle, ArrowLeft, ArrowRight, ListOrdered, X, Zap } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
@@ -45,6 +50,8 @@ import { useMachiningBoard } from "./hooks/useMachiningBoard";
 import { CncMaterialModal } from "@/pages/manufacturer/equipment/cnc/components/CncMaterialModal";
 import { useManUpload } from "@/pages/manufacturer/equipment/cnc/hooks/useManUpload";
 import { MachiningRequestLabel } from "./components/MachiningRequestLabel";
+import { ExpressRebalanceAlertModal } from "./components/ExpressRebalanceAlertModal";
+import { MachiningPriorityRulesModal } from "./components/MachiningPriorityRulesModal";
 import { buildLabelExtraProps } from "./utils/label";
 import { PreviewModal } from "@/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal";
 import { usePreviewLoader } from "@/pages/manufacturer/worksheet/custom_abutment/hooks/usePreviewLoader";
@@ -337,7 +344,13 @@ export const MachiningQueueBoard = ({
     approveMachiningFromRollback,
     machiningAlerts,
     clearMachiningAlerts,
+    expressRebalanceAlert,
+    clearExpressRebalanceAlert,
   } = board;
+
+  const [expressRebalanceModalOpen, setExpressRebalanceModalOpen] =
+    useState(false);
+  const [priorityRulesModalOpen, setPriorityRulesModalOpen] = useState(false);
 
   const decodeNcText = useCallback((buffer: ArrayBuffer) => {
     const utf8Decoder = new TextDecoder("utf-8", { fatal: false });
@@ -1184,6 +1197,42 @@ export const MachiningQueueBoard = ({
             </div>
           ) : null}
 
+          {expressRebalanceAlert &&
+          Array.isArray(expressRebalanceAlert.moved) &&
+          expressRebalanceAlert.moved.length > 0 ? (
+            <div className="flex items-center gap-1 rounded-xl border border-violet-200 bg-violet-50 px-2.5 py-1 text-[11px] font-extrabold text-violet-800">
+              <button
+                type="button"
+                className="inline-flex items-center gap-1 hover:underline"
+                onClick={() => setExpressRebalanceModalOpen(true)}
+                title={String(expressRebalanceAlert.summary || "빠른 가공 재배치")}
+              >
+                <Zap className="h-3.5 w-3.5" />
+                <span>
+                  빠른 재배치 {expressRebalanceAlert.moved.length}건
+                </span>
+              </button>
+              <button
+                type="button"
+                className="inline-flex h-4 w-4 items-center justify-center rounded text-violet-700 hover:bg-violet-100"
+                onClick={() => clearExpressRebalanceAlert()}
+                title="재배치 Alert 지우기"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </div>
+          ) : null}
+
+          <button
+            type="button"
+            className="inline-flex items-center gap-1 rounded-xl border border-slate-200 bg-white px-3 py-1 text-[12px] font-extrabold text-slate-700 shadow-sm hover:bg-slate-50"
+            onClick={() => setPriorityRulesModalOpen(true)}
+            title="가공 우선순위 룰 보기"
+          >
+            <ListOrdered className="h-3.5 w-3.5" />
+            우선순위
+          </button>
+
           <button
             type="button"
             disabled={anodizingOffTriggering}
@@ -1962,6 +2011,18 @@ export const MachiningQueueBoard = ({
         cancelLabel="취소"
         onConfirm={handleDeleteConfirm}
         onCancel={() => setDeleteConfirmOpen(false)}
+      />
+
+      <ExpressRebalanceAlertModal
+        open={expressRebalanceModalOpen}
+        onOpenChange={setExpressRebalanceModalOpen}
+        alert={expressRebalanceAlert as any}
+      />
+
+      <MachiningPriorityRulesModal
+        open={priorityRulesModalOpen}
+        onOpenChange={setPriorityRulesModalOpen}
+        token={token}
       />
 
       {PinModal}

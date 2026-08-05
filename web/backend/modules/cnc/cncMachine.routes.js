@@ -313,6 +313,20 @@ router.post(
   cncMachineController.reassignProductionQueues,
 );
 
+// 신속배송 14:00 빠른 가공 재배치 Alert
+router.get(
+  "/queues/express-rebalance-alert",
+  authorizeRoles("manufacturer", "admin"),
+  cncMachineController.getExpressDeadlineRebalanceAlert,
+);
+
+// 가공 우선순위 룰 (SSOT)
+router.get(
+  "/machining-priority-rules",
+  authorizeRoles("manufacturer", "admin"),
+  cncMachineController.getMachiningPriorityRulesHandler,
+);
+
 // 생산 큐 배치 변경 (순서/수량/삭제)
 router.post(
   "/:machineId/production-queue/batch",

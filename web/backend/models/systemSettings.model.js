@@ -114,6 +114,12 @@ const systemSettingsSchema = new mongoose.Schema(
         { type: "E", lotNumber: "" },
       ],
     },
+    // 신속배송 14:00 빠른 가공 재배치 최근 Alert 스냅샷
+    // related: controllers/requests/expressDeadlineRebalance.utils.js
+    lastExpressDeadlineRebalance: {
+      type: mongoose.Schema.Types.Mixed,
+      default: null,
+    },
   },
   {
     timestamps: true,

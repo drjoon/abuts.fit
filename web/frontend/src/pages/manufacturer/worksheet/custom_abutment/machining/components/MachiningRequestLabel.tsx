@@ -26,6 +26,7 @@ type Props = {
   isCopiedSample?: boolean | null;
   hideRequestId?: boolean;
   shippingSource?: ShippingModeSource;
+  showFastMachiningRebalance?: boolean | null;
 };
 
 export const MachiningRequestLabel = ({
@@ -47,6 +48,7 @@ export const MachiningRequestLabel = ({
   hasNc,
   hideRequestId,
   shippingSource,
+  showFastMachiningRebalance,
 }: Props) => {
   const businessName = String(business || "").trim();
   const clinic = String(clinicName || "").trim();
@@ -105,7 +107,8 @@ export const MachiningRequestLabel = ({
       !retentionGrooveLabel &&
       !isSample &&
       !showNcBadge &&
-      !shippingSource
+      !shippingSource &&
+      !showFastMachiningRebalance
     )
       return null;
 
@@ -118,6 +121,11 @@ export const MachiningRequestLabel = ({
         ) : null}
         {shippingSource ? (
           <ShippingModeBadge source={shippingSource} size="sm" />
+        ) : null}
+        {showFastMachiningRebalance ? (
+          <span className="inline-flex items-center rounded-full border border-violet-200 bg-violet-50 px-2 py-0.5 font-extrabold text-violet-700">
+            빠른 가공 재배치
+          </span>
         ) : null}
         {isSample ? (
           <span

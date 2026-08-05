@@ -3,7 +3,11 @@
 // - web/backend/app.js
 // - web/backend/server.js
 // - web/backend/controllers/cnc/machiningBridge.js
+// - web/backend/controllers/requests/expressDeadlineRebalance.utils.js
+// - web/backend/controllers/requests/machiningPriorityRules.js
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/machining/MachiningQueueBoard.tsx
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/machining/components/ExpressRebalanceAlertModal.tsx
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/machining/components/MachiningPriorityRulesModal.tsx
 import {
   Request,
   getAllProductionQueues,
@@ -25,6 +29,11 @@ import {
   getMachiningLoadWeight,
 } from "./distribution.utils.js";
 import { compareMachiningQueueOrder } from "../requests/production.utils.js";
+import {
+  getLastExpressDeadlineRebalanceAlert,
+  rebalanceExpressJobsForFourteenOClockDeadline,
+} from "../requests/expressDeadlineRebalance.utils.js";
+import { getMachiningPriorityRules } from "../requests/machiningPriorityRules.js";
 
 function isMachineOnlineStatus(status) {
   const s = String(status || "")
@@ -338,6 +347,8 @@ export async function getProductionQueues(req, res) {
       "caseInfos.rollbackCounts.machining",
       "caseInfos.ncFile",
       "caseInfos.anodizingEnabled",
+      "caseInfos.totalLength",
+      "caseInfos.maxDiameter",
       "shippingMode",
       "finalShipping.mode",
       "originalShipping.mode",
@@ -468,12 +479,24 @@ export async function getProductionQueues(req, res) {
           : null,
         source: reqItem?.source || null,
         requestCategory: reqItem?.requestCategory || null,
+        fastMachiningRebalance:
+          reqItem?.productionSchedule?.fastMachiningRebalance || null,
+        totalLength:
+          Number.isFinite(Number(reqItem?.caseInfos?.totalLength)) &&
+          Number(reqItem.caseInfos.totalLength) > 0
+            ? Number(reqItem.caseInfos.totalLength)
+            : null,
       }));
     }
+
+    const expressRebalanceAlert = await getLastExpressDeadlineRebalanceAlert();
 
     return res.status(200).json({
       success: true,
       data: queues,
+      meta: {
+        expressRebalanceAlert: expressRebalanceAlert || null,
+      },
     });
   } catch (error) {
     console.error("Error in getProductionQueues:", error);
@@ -505,15 +528,69 @@ export async function reassignProductionQueues(req, res) {
     const scope = await resolveManufacturerMachineScope(req);
     const result = await rebalanceProductionQueuesInternal({ req, scope });
 
+    let expressRebalance = null;
+    try {
+      expressRebalance = await rebalanceExpressJobsForFourteenOClockDeadline({
+        machineIds: scope.machineIds,
+        actorUserId: req?.user?._id ? String(req.user._id) : null,
+      });
+    } catch (err) {
+      console.warn("[reassignProductionQueues] express rebalance failed", {
+        message: err?.message || String(err || ""),
+      });
+    }
+
     return res.status(200).json({
       success: true,
-      data: { reassignedCount: result.reassignedCount },
+      data: {
+        reassignedCount: result.reassignedCount,
+        expressRebalance:
+          expressRebalance && Array.isArray(expressRebalance.moved)
+            ? {
+                movedCount: expressRebalance.moved.length,
+                summary: expressRebalance.summary || null,
+              }
+            : null,
+      },
     });
   } catch (error) {
     console.error("Error in reassignProductionQueues:", error);
     return res.status(500).json({
       success: false,
       message: "생산 큐 재배정 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
+export async function getExpressDeadlineRebalanceAlert(req, res) {
+  try {
+    const alert = await getLastExpressDeadlineRebalanceAlert();
+    return res.status(200).json({
+      success: true,
+      data: alert || null,
+    });
+  } catch (error) {
+    console.error("Error in getExpressDeadlineRebalanceAlert:", error);
+    return res.status(500).json({
+      success: false,
+      message: "빠른 가공 재배치 Alert 조회 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
+export async function getMachiningPriorityRulesHandler(req, res) {
+  try {
+    return res.status(200).json({
+      success: true,
+      data: getMachiningPriorityRules(),
+    });
+  } catch (error) {
+    console.error("Error in getMachiningPriorityRulesHandler:", error);
+    return res.status(500).json({
+      success: false,
+      message: "가공 우선순위 룰 조회 중 오류가 발생했습니다.",
       error: error.message,
     });
   }

@@ -825,6 +825,16 @@ const requestSchema = new mongoose.Schema(
       diameter: Number, // 실제 직경 (mm)
       diameterGroup: String, // "6" | "8" | "10" | "12"
 
+      // 신속배송 14:00 완료를 위한 여유 장비 재배치 메타 (빠른 가공 재배치 뱃지)
+      fastMachiningRebalance: {
+        at: Date,
+        fromMachineId: String,
+        toMachineId: String,
+        fromDiameter: Number,
+        toDiameter: Number,
+        reason: String,
+      },
+
       ncPreload: {
         status: {
           type: String,

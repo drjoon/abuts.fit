@@ -47,6 +47,7 @@ type LabelExtra = {
   isSample?: boolean | null;
   isRndArchivedSample?: boolean | null;
   isCopiedSample?: boolean | null;
+  showFastMachiningRebalance?: boolean | null;
 };
 
 const toNumber = (value: unknown) => {
@@ -70,6 +71,9 @@ export const buildLabelExtraProps = (slot?: QueueItem | null): LabelExtra => {
     source === "manufacturer_sample" ||
     priceRule === "manufacturer_sample";
 
+  const rebalance =
+    (slot as any)?.fastMachiningRebalance || schedule?.fastMachiningRebalance;
+
   return {
     camDiameter:
       toNumber((slot as any)?.diameter) ??
@@ -83,5 +87,6 @@ export const buildLabelExtraProps = (slot?: QueueItem | null): LabelExtra => {
     isSample,
     isRndArchivedSample,
     isCopiedSample,
+    showFastMachiningRebalance: Boolean(rebalance),
   };
 };

@@ -5,6 +5,7 @@
 // - web/backend/modules/requests/request.routes.js
 // - web/backend/controllers/requests/common.review.controller.js
 // - web/backend/controllers/requests/common.requests.controller.js
+// - web/backend/controllers/requests/expressDeadlineRebalance.utils.js
 import CncMachine from "../../models/cncMachine.model.js";
 import Machine from "../../models/machine.model.js";
 import BridgeSetting from "../../models/bridgeSetting.model.js";
@@ -354,6 +355,7 @@ export async function chooseMachineForCamMachining({
       // 2) 요청 직경을 커버하는 소재 중 가장 작은 직경 (예: 6mm → 8mm M4 우선, 10mm M5 후순위)
       // 3) 최근 배정이 오래된 장비
       // 4) machineId 사전순
+      // 이후 당일 신속 14:00 마감이 위험하면 expressDeadlineRebalance가 여유 장비로 옮길 수 있다.
       if (a.queue !== b.queue) return a.queue - b.queue;
 
       if (a.availableDia !== b.availableDia)

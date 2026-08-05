@@ -152,12 +152,32 @@ export async function enqueueApproval({
   }).lean();
 
   if (existing) {
-    console.log("[ReviewApprovalQueue] already queued, skip duplicate", {
-      requestId,
-      taskType,
-      existingId: String(existing._id),
-      existingStatus: existing.status,
-    });
+    if (forceReprocess === true) {
+      await ReviewApprovalQueue.updateOne(
+        { _id: existing._id },
+        {
+          $set: {
+            "payload.forceReprocess": true,
+            actorUserId: actorUserId || existing.actorUserId || null,
+          },
+        },
+      );
+      console.log(
+        "[ReviewApprovalQueue] already queued — marked forceReprocess",
+        {
+          requestId,
+          taskType,
+          existingId: String(existing._id),
+        },
+      );
+    } else {
+      console.log("[ReviewApprovalQueue] already queued, skip duplicate", {
+        requestId,
+        taskType,
+        existingId: String(existing._id),
+        existingStatus: existing.status,
+      });
+    }
     return { alreadyQueued: true, queueId: String(existing._id) };
   }
 
@@ -575,6 +595,27 @@ async function runCamApproveTask({ requestMongoId, requestId }) {
     requestId,
     machineId: selectedMachineId,
   });
+
+  // 당일 신속배송 14:00 완료를 위한 여유 장비 재배치 (빠른 가공 재배치)
+  try {
+    const { rebalanceExpressJobsForFourteenOClockDeadline } = await import(
+      "../controllers/requests/expressDeadlineRebalance.utils.js"
+    );
+    const rebalanceResult = await rebalanceExpressJobsForFourteenOClockDeadline({
+      actorUserId: null,
+    });
+    if (Array.isArray(rebalanceResult?.moved) && rebalanceResult.moved.length) {
+      console.log("[ReviewApprovalQueue] CAM task: express deadline rebalance", {
+        requestId,
+        movedCount: rebalanceResult.moved.length,
+      });
+    }
+  } catch (rebalanceErr) {
+    console.warn("[ReviewApprovalQueue] express deadline rebalance failed", {
+      requestId,
+      message: rebalanceErr?.message || String(rebalanceErr || ""),
+    });
+  }
 }
 
 /**

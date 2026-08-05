@@ -41,6 +41,8 @@ import {
   applyProductionQueueBatchForMachine,
   getProductionQueues,
   reassignProductionQueues,
+  getExpressDeadlineRebalanceAlert,
+  getMachiningPriorityRulesHandler,
 } from "../../controllers/cnc/production.js";
 import {
   cancelScheduledMaterialChange,
@@ -99,6 +101,8 @@ export {
   getProductionQueues,
   applyProductionQueueBatchForMachine,
   reassignProductionQueues,
+  getExpressDeadlineRebalanceAlert,
+  getMachiningPriorityRulesHandler,
   updateMachineMaterial,
   updateMaterialRemaining,
   scheduleMaterialChange,

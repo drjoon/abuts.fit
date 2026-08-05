@@ -73,7 +73,18 @@ type MachiningAlertItem = {
   count: number;
 };
 
+export type ExpressRebalanceAlertState = {
+  id?: string;
+  summary?: string;
+  createdAt?: string;
+  deadlineAtLabel?: string;
+  moved?: Array<Record<string, unknown>>;
+  estimate?: Record<string, unknown> | null;
+  machines?: Array<Record<string, unknown>>;
+};
+
 const MACHINING_ALERT_STORAGE_KEY = "abuts:machining-alert-map";
+const EXPRESS_REBALANCE_ALERT_STORAGE_KEY = "abuts:express-rebalance-alert";
 const GHOST_HINT_CLEAR_GRACE_SECONDS = 8;
 const GHOST_HINT_SWEEP_INTERVAL_MS = 2000;
 
@@ -143,6 +154,8 @@ export const useMachiningBoard = ({
   const [machiningAlertMap, setMachiningAlertMap] = useState<
     Record<string, MachiningAlertItem>
   >({});
+  const [expressRebalanceAlert, setExpressRebalanceAlert] =
+    useState<ExpressRebalanceAlertState | null>(null);
 
   useEffect(() => {
     try {
@@ -158,6 +171,18 @@ export const useMachiningBoard = ({
 
   useEffect(() => {
     try {
+      const raw = localStorage.getItem(EXPRESS_REBALANCE_ALERT_STORAGE_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== "object") return;
+      setExpressRebalanceAlert(parsed as ExpressRebalanceAlertState);
+    } catch {
+      // noop
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
       localStorage.setItem(
         MACHINING_ALERT_STORAGE_KEY,
         JSON.stringify(machiningAlertMap),
@@ -166,6 +191,21 @@ export const useMachiningBoard = ({
       // noop
     }
   }, [machiningAlertMap]);
+
+  useEffect(() => {
+    try {
+      if (!expressRebalanceAlert) {
+        localStorage.removeItem(EXPRESS_REBALANCE_ALERT_STORAGE_KEY);
+        return;
+      }
+      localStorage.setItem(
+        EXPRESS_REBALANCE_ALERT_STORAGE_KEY,
+        JSON.stringify(expressRebalanceAlert),
+      );
+    } catch {
+      // noop
+    }
+  }, [expressRebalanceAlert]);
 
   const upsertMachiningAlert = useCallback(
     (payload: {
@@ -229,6 +269,10 @@ export const useMachiningBoard = ({
       delete next[mid];
       return next;
     });
+  }, []);
+
+  const clearExpressRebalanceAlert = useCallback(() => {
+    setExpressRebalanceAlert(null);
   }, []);
 
   const updateMachineAuto = useCallback(
@@ -462,6 +506,15 @@ export const useMachiningBoard = ({
       const body: any = await res.json().catch(() => ({}));
       if (!res.ok || body?.success === false) return;
       const map = body?.data && typeof body.data === "object" ? body.data : {};
+      const rebalanceAlert = body?.meta?.expressRebalanceAlert;
+      if (
+        rebalanceAlert &&
+        typeof rebalanceAlert === "object" &&
+        Array.isArray(rebalanceAlert?.moved) &&
+        rebalanceAlert.moved.length > 0
+      ) {
+        setExpressRebalanceAlert(rebalanceAlert as ExpressRebalanceAlertState);
+      }
 
       const normalized: QueueMap = {};
       Object.entries(map || {}).forEach(([mid, list]) => {
@@ -880,10 +933,23 @@ export const useMachiningBoard = ({
 
   useAppEventListener({
     enabled: Boolean(token),
-    eventTypes: ["request:stage-changed", "request:stl-metadata-updated"],
+    eventTypes: [
+      "request:stage-changed",
+      "request:stl-metadata-updated",
+      "machining:express-rebalance",
+    ],
     onMatch: (evt) => {
       const type = String(evt?.type || "").trim();
       const payload = (evt?.data ?? {}) as Record<string, unknown>;
+
+      if (type === "machining:express-rebalance") {
+        if (payload && typeof payload === "object") {
+          setExpressRebalanceAlert(payload as ExpressRebalanceAlertState);
+          void refreshProductionQueues();
+        }
+        return;
+      }
+
       const source = String(payload["source"] || "").trim();
       const reviewStage = String(payload["reviewStage"] || "").trim();
       const eventRequest = payload["request"] || null;
@@ -1946,6 +2012,8 @@ export const useMachiningBoard = ({
     approveMachiningFromRollback,
     machiningAlerts,
     clearMachiningAlerts,
+    expressRebalanceAlert,
+    clearExpressRebalanceAlert,
     token,
   };
 };

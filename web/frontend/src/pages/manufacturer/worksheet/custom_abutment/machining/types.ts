@@ -49,6 +49,15 @@ export type QueueItem = {
   } | null;
   source?: string | null;
   requestCategory?: "order" | "rnd_sample" | "copied_sample" | string | null;
+  totalLength?: number | null;
+  fastMachiningRebalance?: {
+    at?: string | Date;
+    fromMachineId?: string;
+    toMachineId?: string;
+    fromDiameter?: number | null;
+    toDiameter?: number | null;
+    reason?: string;
+  } | null;
 };
 
 export type QueueMap = Record<string, QueueItem[]>;

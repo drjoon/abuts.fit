@@ -121,6 +121,11 @@ Notes:
 - 프론트는 `/api/cnc-machines/queues` 응답 순서를 그대로 표시한다.
   - `src/pages/manufacturer/worksheet/custom_abutment/machining/hooks/useMachiningBoard.ts`
   - `src/pages/manufacturer/worksheet/custom_abutment/machining/MachiningQueueBoard.tsx`
+- 「우선순위」 버튼 → `MachiningPriorityRulesModal` (`GET /api/cnc-machines/machining-priority-rules`)
+- 신속배송 14:00 빠른 가공 재배치:
+  - socket `machining:express-rebalance` / queues `meta.expressRebalanceAlert`
+  - Alert 칩 클릭 → `ExpressRebalanceAlertModal` (장비별 배정·예상 가공시간·예상 완료·예측 기준)
+  - 재배치 건 뱃지: `fastMachiningRebalance` → `MachiningRequestLabel` 「빠른 가공 재배치」
 - 신속/묶음 뱃지: 가공카드(Complete/Now Playing/Next Up)·재생목록·프리뷰(`PreviewModal`)에 `ShippingModeBadge` 상시 표시
   - `MachiningRequestLabel.tsx`, `CncPlaylistDrawer.tsx`, `PreviewModal.tsx`
   - 큐 API(`/api/cnc-machines/queues`)·worksheet 목록에 `shippingMode`/`finalShipping`/`originalShipping` 포함 → 프리뷰는 **추가 fetch 없이** 큐/목록 페이로드만 사용
