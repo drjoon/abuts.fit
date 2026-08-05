@@ -32,7 +32,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 
 import {
   UploadCloud,
@@ -114,6 +114,13 @@ import { normalizeMemoSnippets } from "@/shared/components/practice/PracticeTran
 import { restoreToothWorksFromDraft } from "@/shared/practice/toothWorkDraft";
 import { deleteFile as deleteFileFromIndexedDb } from "@/shared/storage/fileIndexedDB";
 import {
+  PRACTICE_TRANSFER_FORM_LOCAL_KEY,
+  PRACTICE_TRANSFER_TEMP_DRAFT_KEY,
+  type PracticeTransferFormLocalDraft as PracticeTransferLocalFormDraft,
+  adoptDropzoneDraftIntoTransferFormIfNeeded,
+  clearPracticeSharedFormLocalStorage,
+} from "@/shared/practice/practiceTransferFormLocal";
+import {
   Dialog,
   DialogContent,
   DialogFooter,
@@ -129,11 +136,11 @@ import {
 } from "@/components/ui/select";
 import {
       buildPracticeTransferMemo as buildPracticeTransferMemoShared,
-  extractTransferMemoFromMessage as extractTransferMemoFromMessageShared,
-  formatTransferMemoForDisplay as formatTransferMemoForDisplayShared,
-  normalizeToothWorksForSync,
-  parsePracticeTransferMemoMeta as parsePracticeTransferMemoMetaShared,
-  stripPracticeTransferMessageEnvelope,
+      extractTransferMemoFromMessage as extractTransferMemoFromMessageShared,
+      formatTransferMemoForDisplay as formatTransferMemoForDisplayShared,
+      normalizeToothWorksForSync,
+      parsePracticeTransferMemoMeta as parsePracticeTransferMemoMetaShared,
+      stripPracticeTransferMessageEnvelope,
 } from "@/shared/practice/transferMemo";
 
 type RecentRequestItem = {
@@ -406,27 +413,6 @@ type PracticeTransferSettingsPayload = {
   memoSnippets?: string[];
   promoNoticeDismissedAt?: string | null;
   updatedAt?: string | null;
-};
-
-type PracticeTransferLocalFormDraft = {
-  orderDate?: string;
-  arrivalDate?: string;
-  arrivalDefaultDays?: number;
-  prosthesisTypes?: string[];
-  requestMemo?: string;
-  patientName?: string;
-  selectedLab?: {
-    _id?: string;
-    name?: string;
-    businessNumber?: string;
-    representativeName?: string;
-    address?: string;
-    businessType?: string;
-  } | null;
-  toothWorks?: ToothWorkSelection[];
-  /** 전송/삭제된 draft가 localStorage로 다시 복원되지 않도록 추적 */
-  activeDraftId?: string | null;
-  updatedAt?: number;
 };
 
 const toKstDateInputValue = (date = new Date()) => {
@@ -764,21 +750,9 @@ const formatFileSize = (bytes: number) => {
   return `${(n / (1024 * 1024)).toFixed(2)}MB`;
 };
 
-const PRACTICE_TRANSFER_TEMP_DRAFT_KEY = "practice_transfer_temp_draft_v1";
-const PRACTICE_TRANSFER_FORM_LOCAL_KEY = "practice_transfer_form_local_v1";
 const PRACTICE_FILE_CACHE_META_KEY = "practice_dropzone_file_cache_meta_v1";
 const PRACTICE_TRANSFER_PROMO_TITLE = "어벗츠 유료서비스를 쓰지 않더라도 이용 가능!";
 const PRACTICE_TRANSFER_PROMO_DESC = "무료로 구강스캔 파일전송, 기공의뢰서 관리하세요.";
-
-/** 작성자·동료 공통: 의뢰 접수 폼 localStorage 캐시 제거 */
-const clearPracticeTransferFormLocalStorage = () => {
-  try {
-    localStorage.removeItem(PRACTICE_TRANSFER_TEMP_DRAFT_KEY);
-    localStorage.removeItem(PRACTICE_TRANSFER_FORM_LOCAL_KEY);
-  } catch {
-    // ignore
-  }
-};
 
 const clearPracticeFileTransferCaches = async () => {
   let keys: string[] = [];
@@ -808,7 +782,7 @@ const clearPracticeFileTransferCaches = async () => {
   } catch {
     // ignore
   }
-  clearPracticeTransferFormLocalStorage();
+  clearPracticeSharedFormLocalStorage();
 };
 
 const toDraftFileKey = (file: { originalName: string; size: number; s3Key: string }) =>
@@ -816,6 +790,7 @@ const toDraftFileKey = (file: { originalName: string; size: number; s3Key: strin
 
 export const PracticeFileTransferPage = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { period, setPeriod } = usePeriodStore();
   const { toast } = useToast();
   const authToken = useAuthStore((s) => s.token);
@@ -1418,12 +1393,14 @@ export const PracticeFileTransferPage = () => {
 
       // 같은 updatedAt echo(방금 HTTP로 이미 반영)는 폼을 다시 덮지 않는다.
       // forceResync는 파일 재동기화로 전체 폼을 맞춤.
+      // 드롭존→대시보드 handoff 등 로컬 폼이 더 최신이면 서버 스냅샷으로 덮지 않는다.
       const shouldRestoreForm =
         restoredFiles.length > 0 &&
         (forceResync ||
           (Number.isFinite(serverUpdatedAt) &&
             serverUpdatedAt > 0 &&
-            serverUpdatedAt > lastAppliedServerUpdatedAtRef.current));
+            serverUpdatedAt > lastAppliedServerUpdatedAtRef.current &&
+            serverUpdatedAt > localFormUpdatedAtRef.current));
 
       if (shouldRestoreForm) {
         suppressLocalFormPersistRef.current = true;
@@ -1890,10 +1867,24 @@ export const PracticeFileTransferPage = () => {
   }, [loadRecentRequests]);
 
   useEffect(() => {
+    const state = location.state as { practiceTransferSubmittedToast?: boolean } | null;
+    if (!state?.practiceTransferSubmittedToast) return;
+
+    toast({
+      title: "의뢰 제출 완료",
+      description:
+        "기공소로 의뢰가 접수되었습니다. 작성 폼은 비워 두었으니, 다음 의뢰는 대시보드에서 작성·전송하세요.",
+      duration: 10000,
+      className:
+        "border-2 border-emerald-500 bg-emerald-50 text-emerald-950 shadow-xl sm:min-w-[360px]",
+    });
+    navigate(location.pathname, { replace: true, state: null });
+  }, [location.pathname, location.state, navigate, toast]);
+
+  useEffect(() => {
     try {
-      const raw = localStorage.getItem(PRACTICE_TRANSFER_FORM_LOCAL_KEY);
-      if (!raw) return;
-      const parsed = JSON.parse(raw) as PracticeTransferLocalFormDraft;
+      const parsed = adoptDropzoneDraftIntoTransferFormIfNeeded();
+      if (!parsed) return;
       const localUpdatedAt = Number(parsed.updatedAt || 0);
       if (Number.isFinite(localUpdatedAt) && localUpdatedAt > 0) {
         localFormUpdatedAtRef.current = localUpdatedAt;
@@ -2313,7 +2304,7 @@ export const PracticeFileTransferPage = () => {
       );
       localStorage.removeItem(PRACTICE_TRANSFER_TEMP_DRAFT_KEY);
     } catch {
-      clearPracticeTransferFormLocalStorage();
+      clearPracticeSharedFormLocalStorage();
     }
 
     await clearAllFiles();
@@ -4342,7 +4333,7 @@ export const PracticeFileTransferPage = () => {
   };
 
   const handleStartNewTransfer = async () => {
-    clearPracticeTransferFormLocalStorage();
+    clearPracticeSharedFormLocalStorage();
 
     formAutosaveSeqRef.current += 1;
     if (formAutosaveTimerRef.current) {

@@ -4,6 +4,7 @@ import { useToast } from "@/shared/hooks/use-toast";
 import {
   saveFile as saveFileToIndexedDb,
   deleteFile as deleteFileFromIndexedDb,
+  getFile as getFileFromIndexedDb,
 } from "@/shared/storage/fileIndexedDB";
 
 // related files:
@@ -176,6 +177,44 @@ export const usePracticeTransferStep1 = (options?: Options) => {
   const [recentLabs, setRecentLabs] = useState<SearchBusinessResult[]>([]);
   const [recentLabsInitialized, setRecentLabsInitialized] = useState(false);
   const didBootstrapRecentLabs = useRef(false);
+  const didRestoreCachedFiles = useRef(false);
+
+  useEffect(() => {
+    if (didRestoreCachedFiles.current) return;
+    didRestoreCachedFiles.current = true;
+    let cancelled = false;
+
+    const restoreCachedFiles = async () => {
+      const meta = readPracticeFileCacheMeta(fileCacheMetaKey);
+      if (meta.length === 0) return;
+
+      const restored = await Promise.all(
+        meta.map(async (row) => {
+          const file = await getFileFromIndexedDb(row.key).catch(() => null);
+          return file instanceof File ? file : null;
+        }),
+      );
+      if (cancelled) return;
+
+      const valid = restored.filter((file): file is File => file instanceof File);
+      if (valid.length === 0) return;
+
+      setFiles((prev) => (prev.length > 0 ? prev : valid));
+
+      if (valid.length !== meta.length) {
+        const validKeys = new Set(valid.map((file) => toPracticeFileKey(file)));
+        writePracticeFileCacheMeta(
+          fileCacheMetaKey,
+          meta.filter((row) => validKeys.has(row.key)),
+        );
+      }
+    };
+
+    void restoreCachedFiles();
+    return () => {
+      cancelled = true;
+    };
+  }, [fileCacheMetaKey]);
 
   const totalSizeMb = useMemo(() => {
     const bytes = files.reduce((sum, file) => sum + file.size, 0);

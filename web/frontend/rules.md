@@ -370,6 +370,8 @@ Notes:
   - 온보딩을 중도에 그만두고 `/signup`으로 다시 들어오면 `clearOnboardingLocalStorage`로 위저드 localStorage를 지우고 1/4부터 다시 시작합니다.
   - practice owner 온보딩 사업자 단계는 사업자등록증 업로드를 받지 않습니다. 대신 치과 필수 정보(`clinicName`, `directorName`, `staffName`, `clinicPhone`, `phone`, `address`, `zipCode`)를 입력받아 `PUT /api/users/profile`의 `practiceProfile`로 저장합니다.
   - 공개 드롭존(`PracticeDropzonePage`)은 전송 흐름을 끊지 않도록 Step 2에 임베디드 로그인/가입/비밀번호 변경 UI를 유지합니다.
+  - 드롭존 의뢰 폼(기공소·환자·치아·메모·날짜)은 대시보드와 동일 localStorage 키(`practice_transfer_form_local_v1`)에 함께 저장한다. 첨부 파일 캐시(`practice_dropzone_file_cache_meta_v1` + IndexedDB)도 공유한다.
+  - 드롭존 「로그인 후 계속하기」·회원가입·세션 「의뢰 제출하기」는 드롭존에서 바로 제출한 뒤 `/practice/dashboard`로 이동한다. 제출 후 공유 폼 캐시는 비우고, 제출 완료 토스트를 약 10초간 눈에 띄게 표시한다.
   - 드롭존 가입 API는 `POST /api/auth/practice/register`이며, 필수값은 `email`, `clinicName`, `directorName`, `staffName`, `password`, `clinicPhone`(치과 전화), `phone`(담당자 휴대폰), `address`, `zipCode`입니다.
   - 드롭존 가입 전 이메일·담당자 휴대폰 인증이 필요합니다.
     - 이메일: `POST /api/auth/signup/email-verification/send` → `POST /api/auth/signup/email-verification/verify` → `GET /api/auth/signup/email-verification/status`
@@ -426,10 +428,11 @@ Notes:
   - 동일 치과 practice 구성원은 동료가 보낸 전송 채팅에도 참여할 수 있습니다(백엔드 participants 자동 추가).
   - draft 공동 작성 동기화: `draft-upserted` 이벤트 스냅샷을 즉시 반영(`delayMs=0`, `deferWhenEditing=false`). 동일 계정 다중 탭도 fingerprint/서버 updatedAt LWW로 맞춤(editor echo skip 금지).
   - 한글 IME: 환자명/메모는 `ImeSafeInput`으로 조합 중 로컬 draft 유지. 조합 중 autosave·원격 폼 반영은 미루고, 조합 종료 후 처리.
-  - 기공소 전송 성공 후 작성자·동료 모두 의뢰 접수 폼 localStorage(`practice_transfer_form_local_v1`)와 화면 입력을 초기화한다.
+  - 기공소 전송 성공 후 작성자·동료 모두 의뢰 접수 폼 localStorage(`practice_transfer_form_local_v1`, `practice_dropzone_draft_v2`)와 화면 입력을 초기화한다.
     - 작성자: 전송 API 성공 시 `resetIntakeFormAfterTransfer`
     - 동료/다른 탭: `transfer-created`(clearedDraftId) · `draft-cleared`(활성 케이스) 수신 시 동일 초기화
     - 재진입 보호: local form에 `activeDraftId`를 저장하고, 서버 draft 목록에 없으면 복원값을 버린다.
+    - 공유 유틸: `src/shared/practice/practiceTransferFormLocal.ts`
 
 ### 웹소켓 업데이트 표준 (무플리커 + 부하완화)
 

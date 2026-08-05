@@ -112,7 +112,13 @@ import {
 import { PracticeTransferIntakeSection } from "@/shared/components/practice/PracticeTransferIntakeSection";
 import { restoreToothWorksFromDraft } from "@/shared/practice/toothWorkDraft";
 import { buildPracticeTransferMemo as buildPracticeTransferMemoShared } from "@/shared/practice/transferMemo";
-const PRACTICE_DRAFT_STORAGE_KEY = "practice_dropzone_draft_v2";
+import {
+  PRACTICE_DROPZONE_DRAFT_KEY,
+  clearPracticeSharedFormLocalStorage,
+  readPreferredIntakeFormForDropzone,
+  syncIntakeFieldsToTransferFormLocal,
+} from "@/shared/practice/practiceTransferFormLocal";
+const PRACTICE_DRAFT_STORAGE_KEY = PRACTICE_DROPZONE_DRAFT_KEY;
 const PRACTICE_FILE_CACHE_META_KEY = "practice_dropzone_file_cache_meta_v1";
 const PRACTICE_SESSION_META_KEY = "practice_dropzone_session_meta_v1";
 const PRACTICE_SIGNUP_VERIFICATION_KEY = "practice_dropzone_signup_verification_v1";
@@ -477,11 +483,7 @@ const clearPracticeDropzoneCaches = async () => {
 
   writePracticeFileCacheMeta([]);
 
-  try {
-    localStorage.removeItem(PRACTICE_DRAFT_STORAGE_KEY);
-  } catch {
-    // ignore
-  }
+  clearPracticeSharedFormLocalStorage();
 };
 
 export const PracticeDropzonePage = () => {
@@ -808,11 +810,7 @@ export const PracticeDropzonePage = () => {
   };
 
   const handleClearRequestIntakeCache = () => {
-    try {
-      localStorage.removeItem(PRACTICE_DRAFT_STORAGE_KEY);
-    } catch {
-      // ignore
-    }
+    clearPracticeSharedFormLocalStorage();
 
     setLabOpen(false);
     setLabSearch("");
@@ -893,34 +891,54 @@ export const PracticeDropzonePage = () => {
     const restoreDraft = async () => {
       try {
         const raw = localStorage.getItem(PRACTICE_DRAFT_STORAGE_KEY);
-        if (!raw) {
+        const parsed = raw
+          ? (JSON.parse(raw) as Partial<PracticeDropzoneDraft>)
+          : null;
+        const intake = readPreferredIntakeFormForDropzone(parsed);
+
+        if (!parsed && !intake) {
           setDraftHydrated(true);
           return;
         }
-        const parsed = JSON.parse(raw) as Partial<PracticeDropzoneDraft>;
 
         if (cancelled) return;
-        setStep(parsed.step === 1 ? 1 : 0);
-        setSelectedLab(parsed.selectedLab || null);
-        setRequestMemo(String(parsed.requestMemo || ""));
+        setStep(parsed?.step === 1 ? 1 : 0);
+        setSelectedLab(
+          (intake?.selectedLab as SearchBusinessResult | null | undefined) ||
+            parsed?.selectedLab ||
+            null,
+        );
+        setRequestMemo(String(intake?.requestMemo ?? parsed?.requestMemo ?? ""));
         const restoredOrderDate = todayDate;
-        const restoredArrivalDefaultDaysRaw = Number(parsed.arrivalDefaultDays);
+        const restoredArrivalDefaultDaysRaw = Number(
+          intake?.arrivalDefaultDays ?? parsed?.arrivalDefaultDays,
+        );
         const restoredArrivalDefaultDays = Number.isFinite(restoredArrivalDefaultDaysRaw)
           ? Math.max(0, Math.floor(restoredArrivalDefaultDaysRaw))
           : DEFAULT_ARRIVAL_OFFSET_DAYS;
         setOrderDate(restoredOrderDate);
         setArrivalDefaultDays(restoredArrivalDefaultDays);
         setArrivalDate(
-          String(parsed.arrivalDate || "").trim() ||
+          String(intake?.arrivalDate || parsed?.arrivalDate || "").trim() ||
             addDaysToDateInput(restoredOrderDate, restoredArrivalDefaultDays),
         );
         const restoredProsthesisTypes = normalizeProsthesisTypes(
-          Array.isArray(parsed.prosthesisTypes) ? parsed.prosthesisTypes : [...PRESET_PROSTHESIS_TYPES],
+          Array.isArray(intake?.prosthesisTypes)
+            ? intake.prosthesisTypes
+            : Array.isArray(parsed?.prosthesisTypes)
+              ? parsed.prosthesisTypes
+              : [...PRESET_PROSTHESIS_TYPES],
         );
         setProsthesisTypes(restoredProsthesisTypes);
+        const toothWorksSource =
+          Array.isArray(intake?.toothWorks) && intake.toothWorks.length > 0
+            ? intake.toothWorks
+            : Array.isArray(parsed?.toothWorks) && parsed.toothWorks.length > 0
+              ? parsed.toothWorks
+              : [];
         const restoredToothWorks =
-          Array.isArray(parsed.toothWorks) && parsed.toothWorks.length > 0
-            ? restoreToothWorksFromDraft(parsed.toothWorks, {
+          toothWorksSource.length > 0
+            ? restoreToothWorksFromDraft(toothWorksSource, {
                 prosthesisTypes: restoredProsthesisTypes,
                 isCustomAbutmentSupportedProsthesisType,
                 isBridgeLikeProsthesisType,
@@ -933,18 +951,18 @@ export const PracticeDropzonePage = () => {
             ? restoredToothWorks
             : [{ toothNumber: "", prosthesisType: resolveDefaultProsthesisType(restoredProsthesisTypes), customAbutment: false, bridgeLinkedTeeth: [] }],
         );
-        setPatientName(String(parsed.patientName || ""));
-        setEmail(String(parsed.email || "").trim().toLowerCase());
-        setPracticeName(String(parsed.practiceName || ""));
-        setDirectorName(String(parsed.directorName || ""));
-        setStaffName(String(parsed.staffName || ""));
-        setPhone(formatPhoneNumberInput(String(parsed.phone || "")));
-        setClinicPhone(formatPhoneNumberInput(String(parsed.clinicPhone || "")));
-        setAddress(String(parsed.address || ""));
-        setAddressDetail(String(parsed.addressDetail || ""));
-        setZipCode(String(parsed.zipCode || ""));
+        setPatientName(String(intake?.patientName ?? parsed?.patientName ?? ""));
+        setEmail(String(parsed?.email || "").trim().toLowerCase());
+        setPracticeName(String(parsed?.practiceName || ""));
+        setDirectorName(String(parsed?.directorName || ""));
+        setStaffName(String(parsed?.staffName || ""));
+        setPhone(formatPhoneNumberInput(String(parsed?.phone || "")));
+        setClinicPhone(formatPhoneNumberInput(String(parsed?.clinicPhone || "")));
+        setAddress(String(parsed?.address || ""));
+        setAddressDetail(String(parsed?.addressDetail || ""));
+        setZipCode(String(parsed?.zipCode || ""));
 
-        const fileKeys = Array.isArray(parsed.fileKeys)
+        const fileKeys = Array.isArray(parsed?.fileKeys)
           ? parsed.fileKeys.map((k) => String(k || "")).filter(Boolean)
           : [];
 
@@ -1218,6 +1236,27 @@ export const PracticeDropzonePage = () => {
     } catch {
       // ignore
     }
+
+    // 대시보드와 동일 키로 의뢰 폼을 이어 쓴다(가입/세션 필드는 드롭존 전용 키에만).
+    syncIntakeFieldsToTransferFormLocal({
+      orderDate,
+      arrivalDate,
+      arrivalDefaultDays,
+      prosthesisTypes: normalizedProsthesisTypes,
+      requestMemo,
+      patientName,
+      selectedLab: selectedLab
+        ? {
+            _id: String(selectedLab._id || "").trim(),
+            name: String(selectedLab.name || "").trim(),
+            businessNumber: String(selectedLab.businessNumber || "").trim(),
+            representativeName: String(selectedLab.representativeName || "").trim(),
+            address: String(selectedLab.address || "").trim(),
+            businessType: String(selectedLab.businessType || "requestor").trim(),
+          }
+        : null,
+      toothWorks,
+    });
   }, [
     address,
     addressDetail,
@@ -1434,12 +1473,11 @@ export const PracticeDropzonePage = () => {
         },
       ]);
 
-      toast({
-        title: "의뢰 제출 완료",
-        description: "가입 직후 의뢰가 정상 접수되었습니다. 대시보드로 이동합니다.",
+      // 토스트는 대시보드에서 빈 폼과 함께 보여 제출 완료를 확실히 인지시킨다.
+      navigate("/practice/dashboard", {
+        replace: true,
+        state: { practiceTransferSubmittedToast: true },
       });
-
-      navigate("/practice/dashboard", { replace: true });
       return true;
     } catch (err) {
       toast({
@@ -1522,6 +1560,7 @@ export const PracticeDropzonePage = () => {
       setSignupCompleted(true);
       setAuthMode("session");
 
+      // 드롭존 작성분 = 대시보드 공유 폼이므로 바로 제출 후 대시보드로 이동한다.
       await submitPracticeRequest(latestToken);
     } finally {
       setAuthSubmitting(false);
