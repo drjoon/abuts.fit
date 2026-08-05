@@ -127,7 +127,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
-  buildPracticeTransferMemo as buildPracticeTransferMemoShared,
+      buildPracticeTransferMemo as buildPracticeTransferMemoShared,
   extractTransferMemoFromMessage as extractTransferMemoFromMessageShared,
   formatTransferMemoForDisplay as formatTransferMemoForDisplayShared,
   parsePracticeTransferMemoMeta as parsePracticeTransferMemoMetaShared,
@@ -171,6 +171,8 @@ type DraftTransferFileItem = {
 
 type PracticeTransferDraftPayload = {
   _id: string;
+  practiceUserId?: string | null;
+  practiceUserLabel?: string | null;
   targetLabAnchorId: string | null;
   targetLabName: string;
   transferMemo: string;
@@ -185,13 +187,57 @@ type PracticeTransferDraftPayload = {
 
 type DraftListSummary = {
   id: string;
+  practiceUserId: string;
+  practiceUserLabel: string;
+  isMine: boolean;
+  targetLabAnchorId: string | null;
   targetLabName: string;
   transferMemo: string;
+  patientName: string;
+  fileCount: number;
+  files: DraftTransferFileItem[];
   updatedAt: string | null;
   createdAt: string | null;
 };
 
 const PRACTICE_DRAFT_TRANSFER_ID = "DRAFT-TEMP";
+
+const toDraftListSummary = (
+  payload: PracticeTransferDraftPayload,
+  myUserId: string,
+): DraftListSummary | null => {
+  const files = Array.isArray(payload.files)
+    ? payload.files
+        .map((row) => ({
+          fileId: String(row?.fileId || "").trim(),
+          originalName: String(row?.originalName || "").trim(),
+          mimetype: String(row?.mimetype || "application/octet-stream").trim(),
+          size: Number(row?.size || 0),
+          s3Key: String(row?.s3Key || "").trim(),
+          location: String(row?.location || "").trim(),
+        }))
+        .filter((row) => row.fileId && row.originalName && row.s3Key)
+    : [];
+  if (files.length === 0) return null;
+
+  const practiceUserId = String(payload.practiceUserId || "").trim();
+  const parsed = parsePracticeTransferMemoMetaShared(String(payload.transferMemo || ""));
+
+  return {
+    id: String(payload._id || "").trim() || "draft-local",
+    practiceUserId,
+    practiceUserLabel: String(payload.practiceUserLabel || "").trim() || "담당자",
+    isMine: Boolean(myUserId) && practiceUserId === myUserId,
+    targetLabAnchorId: String(payload.targetLabAnchorId || "").trim() || null,
+    targetLabName: String(payload.targetLabName || "").trim(),
+    transferMemo: String(payload.transferMemo || "").trim(),
+    patientName: String(parsed.patientName || "").trim(),
+    fileCount: files.length,
+    files,
+    updatedAt: payload.updatedAt ? String(payload.updatedAt) : null,
+    createdAt: payload.createdAt ? String(payload.createdAt) : null,
+  };
+};
 
 type RecentTransferItem = {
   id: string;
@@ -213,6 +259,10 @@ type RecentTransferItem = {
   transferMemo: string;
   unreadCount: number;
   searchBlob: string;
+  practiceUserId?: string;
+  practiceUserLabel?: string;
+  isMineDraft?: boolean;
+  draftPatientName?: string;
 };
 
 const extractLabNameFromMessage = (message: string) => {
@@ -296,8 +346,38 @@ type ParsedPracticeTransferMemoMeta = {
   arrivalDefaultDays: number;
   prosthesisTypes: string[];
   toothWorks: ToothWorkSelection[];
+  patientName: string;
   memo: string;
 };
+
+type PracticeTransferFormFingerprintInput = {
+  targetLabAnchorId?: string | null;
+  targetLabName?: string | null;
+  patientName?: string | null;
+  orderDate?: string | null;
+  arrivalDate?: string | null;
+  arrivalDefaultDays?: number | null;
+  requestMemo?: string | null;
+  prosthesisTypes?: string[] | null;
+  toothWorks?: ToothWorkSelection[] | null;
+};
+
+const buildPracticeTransferFormFingerprint = (
+  input: PracticeTransferFormFingerprintInput,
+) =>
+  JSON.stringify({
+    targetLabAnchorId: String(input.targetLabAnchorId || "").trim(),
+    targetLabName: String(input.targetLabName || "").trim(),
+    patientName: String(input.patientName || "").trim(),
+    orderDate: String(input.orderDate || "").trim(),
+    arrivalDate: String(input.arrivalDate || "").trim(),
+    arrivalDefaultDays: normalizeArrivalDefaultDays(Number(input.arrivalDefaultDays || 0)),
+    requestMemo: String(input.requestMemo || "").trim(),
+    prosthesisTypes: normalizeProsthesisTypes(
+      Array.isArray(input.prosthesisTypes) ? input.prosthesisTypes : [],
+    ),
+    toothWorks: normalizeToothWorks(Array.isArray(input.toothWorks) ? input.toothWorks : []),
+  });
 
 type PracticeTransferSettingsPayload = {
   arrivalDefaultDays?: number;
@@ -532,80 +612,27 @@ const parsePracticeTransferMemoMeta = (rawMemo: string): ParsedPracticeTransferM
     arrivalDefaultDays: DEFAULT_ARRIVAL_OFFSET_DAYS,
     prosthesisTypes: [...PRESET_PROSTHESIS_TYPES],
     toothWorks: [],
+    patientName: "",
     memo: source,
   };
   if (!source) return defaults;
 
-  const lines = source.split(/\r?\n/);
-  const memoLines: string[] = [];
-  let orderDate = defaults.orderDate;
-  let arrivalDate = defaults.arrivalDate;
-  let arrivalDefaultDays = defaults.arrivalDefaultDays;
-  let prosthesisTypes = defaults.prosthesisTypes;
-  let toothWorks: ToothWorkSelection[] = [];
-
-  for (const line of lines) {
-    const trimmed = String(line || "").trim();
-    if (!trimmed) {
-      memoLines.push("");
-      continue;
-    }
-
-    const orderMatch = trimmed.match(/^\[\s*주문일\s*:\s*([0-9]{4}-[0-9]{2}-[0-9]{2})\s*\]$/);
-    if (orderMatch) {
-      orderDate = orderMatch[1];
-      continue;
-    }
-
-    const arrivalMatch = trimmed.match(/^\[\s*도착일\s*:\s*([0-9]{4}-[0-9]{2}-[0-9]{2})\s*\]$/);
-    if (arrivalMatch) {
-      arrivalDate = arrivalMatch[1];
-      continue;
-    }
-
-    const defaultDaysMatch = trimmed.match(/^\[\s*도착기본일수\s*:\s*(\d{1,3})\s*\]$/);
-    if (defaultDaysMatch) {
-      arrivalDefaultDays = normalizeArrivalDefaultDays(Number(defaultDaysMatch[1] || 0));
-      continue;
-    }
-
-    const prosthesisCatalogMatch = trimmed.match(/^\[\s*보철물형태목록\s*:\s*(.+)\]$/);
-    if (prosthesisCatalogMatch) {
-      prosthesisTypes = normalizeProsthesisTypes(
-        String(prosthesisCatalogMatch[1] || "")
-          .split(",")
-          .map((item) => item.trim()),
-      );
-      continue;
-    }
-
-    const legacyProsthesisMatch = trimmed.match(/^\[\s*보철물형태\s*:\s*(.+)\]$/);
-    if (legacyProsthesisMatch) {
-      prosthesisTypes = normalizeProsthesisTypes(
-        String(legacyProsthesisMatch[1] || "")
-          .split(",")
-          .map((item) => item.trim()),
-      );
-      continue;
-    }
-
-    const toothWorksMatch = trimmed.match(/^\[\s*치아보철\s*:\s*(.+)\]$/);
-    if (toothWorksMatch) {
-      toothWorks = parseToothWorks(toothWorksMatch[1]);
-      continue;
-    }
-
-    memoLines.push(line);
-  }
-
-  const memo = memoLines.join("\n").replace(/^\s+|\s+$/g, "");
+  const parsed = parsePracticeTransferMemoMetaShared(source);
   return {
-    orderDate,
-    arrivalDate: arrivalDate || addDaysToDateInput(orderDate, arrivalDefaultDays),
-    arrivalDefaultDays,
-    prosthesisTypes: normalizeProsthesisTypes(prosthesisTypes),
-    toothWorks: normalizeToothWorks(toothWorks),
-    memo,
+    orderDate: parsed.orderDate || defaults.orderDate,
+    arrivalDate:
+      parsed.arrivalDate ||
+      addDaysToDateInput(parsed.orderDate || defaults.orderDate, parsed.arrivalDefaultDays),
+    arrivalDefaultDays: Number.isFinite(Number(parsed.arrivalDefaultDays))
+      ? normalizeArrivalDefaultDays(Number(parsed.arrivalDefaultDays))
+      : defaults.arrivalDefaultDays,
+    prosthesisTypes:
+      parsed.prosthesisTypes.length > 0
+        ? normalizeProsthesisTypes(parsed.prosthesisTypes)
+        : defaults.prosthesisTypes,
+    toothWorks: normalizeToothWorks(parsed.toothWorks),
+    patientName: String(parsed.patientName || "").trim(),
+    memo: String(parsed.memo || ""),
   };
 };
 
@@ -616,6 +643,7 @@ const buildPracticeTransferMemo = (params: {
   arrivalDefaultDays: number;
   prosthesisTypes: string[];
   toothWorks: ToothWorkSelection[];
+  patientName?: string;
 }) => buildPracticeTransferMemoShared(params);
 
 const normalizePatientNameKey = (value: string) => {
@@ -760,8 +788,14 @@ export const PracticeFileTransferPage = () => {
   const [promoNoticeVisible, setPromoNoticeVisible] = useState(true);
   const [promoNoticeSaving, setPromoNoticeSaving] = useState(false);
   const [tempSaveDirty, setTempSaveDirty] = useState(false);
+  const [lastSavedFormFingerprint, setLastSavedFormFingerprint] = useState<string | null>(null);
+  const [formSyncStatus, setFormSyncStatus] = useState<
+    "idle" | "pending" | "saving" | "saved" | "error"
+  >("idle");
   const [draftFiles, setDraftFiles] = useState<DraftTransferFileItem[]>([]);
   const [draftSummary, setDraftSummary] = useState<DraftListSummary | null>(null);
+  const [practiceDraftList, setPracticeDraftList] = useState<DraftListSummary[]>([]);
+  const [activeDraftId, setActiveDraftId] = useState<string | null>(null);
   const [recentRequests, setRecentRequests] = useState<RecentRequestItem[]>([]);
   const [recentRequestsLoading, setRecentRequestsLoading] = useState(false);
   const [recentRequestsError, setRecentRequestsError] = useState("");
@@ -786,6 +820,17 @@ export const PracticeFileTransferPage = () => {
   const localFormUpdatedAtRef = useRef(0);
   const skipNextArrivalAutoSyncRef = useRef(false);
   const suppressLocalFormPersistRef = useRef(false);
+  const skipFormAutosaveRef = useRef(false);
+  const pendingLocalFormEditRef = useRef(false);
+  const lastSavedFormFingerprintRef = useRef<string | null>(null);
+  const currentFormFingerprintRef = useRef("");
+  const lastAppliedServerUpdatedAtRef = useRef(0);
+  const formAutosaveSeqRef = useRef(0);
+  const formAutosaveTimerRef = useRef<number | null>(null);
+  const pendingLocalFilesRef = useRef<File[]>([]);
+  const draftFilesRef = useRef<DraftTransferFileItem[]>([]);
+  const activeDraftIdRef = useRef<string | null>(null);
+  const FORM_AUTOSAVE_DEBOUNCE_MS = 450;
   const {
     files,
     selectedLab,
@@ -805,6 +850,9 @@ export const PracticeFileTransferPage = () => {
     clearAllFiles,
     rememberLab,
   } = usePracticeTransferStep1();
+  pendingLocalFilesRef.current = files;
+  draftFilesRef.current = draftFiles;
+  activeDraftIdRef.current = activeDraftId;
   const todayDate = useMemo(() => toKstDateInputValue(new Date()), []);
   const [orderDate, setOrderDate] = useState(todayDate);
   const [arrivalDefaultDays, setArrivalDefaultDays] = useState(DEFAULT_ARRIVAL_OFFSET_DAYS);
@@ -834,6 +882,31 @@ export const PracticeFileTransferPage = () => {
   );
   const normalizedToothWorks = useMemo(() => normalizeToothWorks(toothWorks), [toothWorks]);
   const normalizedPatientName = useMemo(() => String(patientName || "").trim(), [patientName]);
+  const currentFormFingerprint = useMemo(
+    () =>
+      buildPracticeTransferFormFingerprint({
+        targetLabAnchorId: selectedLab?._id,
+        targetLabName: selectedLab?.name,
+        patientName: normalizedPatientName,
+        orderDate,
+        arrivalDate,
+        arrivalDefaultDays,
+        requestMemo,
+        prosthesisTypes: normalizedProsthesisTypes,
+        toothWorks: normalizedToothWorks,
+      }),
+    [
+      selectedLab?._id,
+      selectedLab?.name,
+      normalizedPatientName,
+      orderDate,
+      arrivalDate,
+      arrivalDefaultDays,
+      requestMemo,
+      normalizedProsthesisTypes,
+      normalizedToothWorks,
+    ],
+  );
   const autoClinicName = useMemo(() => {
     const profileClinic = String(authUser?.practiceProfile?.clinicName || "").trim();
     if (profileClinic) return profileClinic;
@@ -1130,16 +1203,55 @@ export const PracticeFileTransferPage = () => {
     [applyPracticeTransferSettings, authToken, memoSnippets],
   );
 
-  const loadPracticeTransferDraft = useCallback(async () => {
+  const myUserId = String(authUser?.id || (authUser as { _id?: string } | null)?._id || "").trim();
+
+  const loadPracticeTransferDraftList = useCallback(async () => {
     if (!authToken) {
-      setDraftFiles([]);
-      setDraftSummary(null);
+      setPracticeDraftList([]);
       return;
     }
 
     try {
       const res = await apiFetch<unknown>({
-        path: "/api/practice/transfers/draft",
+        path: "/api/practice/transfers/drafts",
+        method: "GET",
+        token: authToken,
+      });
+      if (!res.ok) return;
+
+      const body =
+        res.data && typeof res.data === "object"
+          ? (res.data as { data?: unknown })
+          : {};
+      const rows = Array.isArray(body.data) ? body.data : [];
+      const next = rows
+        .map((row) =>
+          row && typeof row === "object"
+            ? toDraftListSummary(row as PracticeTransferDraftPayload, myUserId)
+            : null,
+        )
+        .filter((row): row is DraftListSummary => Boolean(row));
+      setPracticeDraftList(next);
+    } catch {
+      // ignore
+    }
+  }, [authToken, myUserId]);
+
+  const loadPracticeTransferDraft = useCallback(async (options?: { draftId?: string | null }) => {
+    if (!authToken) {
+      setDraftFiles([]);
+      setDraftSummary(null);
+      setActiveDraftId(null);
+      return;
+    }
+
+    const requestedDraftId = String(options?.draftId || activeDraftIdRef.current || "").trim();
+
+    try {
+      const res = await apiFetch<unknown>({
+        path: requestedDraftId
+          ? `/api/practice/transfers/draft?draftId=${encodeURIComponent(requestedDraftId)}`
+          : "/api/practice/transfers/draft",
         method: "GET",
         token: authToken,
       });
@@ -1157,47 +1269,90 @@ export const PracticeFileTransferPage = () => {
       if (!payload) {
         setDraftFiles([]);
         setDraftSummary(null);
+        if (!requestedDraftId) setActiveDraftId(null);
+        lastSavedFormFingerprintRef.current = null;
+        setLastSavedFormFingerprint(null);
+        lastAppliedServerUpdatedAtRef.current = 0;
+        pendingLocalFormEditRef.current = false;
+        setFormSyncStatus("idle");
         return;
       }
 
-      const restoredFiles = Array.isArray(payload.files)
-        ? payload.files
-            .map((row) => ({
-              fileId: String(row?.fileId || "").trim(),
-              originalName: String(row?.originalName || "").trim(),
-              mimetype: String(row?.mimetype || "application/octet-stream").trim(),
-              size: Number(row?.size || 0),
-              s3Key: String(row?.s3Key || "").trim(),
-              location: String(row?.location || "").trim(),
-            }))
-            .filter((row) => row.fileId && row.originalName && row.s3Key)
-        : [];
+      const ownedPayload: PracticeTransferDraftPayload = {
+        ...payload,
+        practiceUserId: String(payload.practiceUserId || myUserId).trim() || myUserId,
+      };
+      const summary = toDraftListSummary(ownedPayload, myUserId);
+      const restoredFiles = summary?.files || [];
 
       setDraftFiles(restoredFiles);
-      if (restoredFiles.length > 0) {
-        setDraftSummary({
-          id: String(payload._id || "").trim() || "draft-local",
-          targetLabName: String(payload.targetLabName || "").trim(),
-          transferMemo: String(payload.transferMemo || "").trim(),
-          updatedAt: payload.updatedAt ? String(payload.updatedAt) : null,
-          createdAt: payload.createdAt ? String(payload.createdAt) : null,
-        });
-      } else {
+      if (!summary) {
         setDraftSummary(null);
+        if (!requestedDraftId) setActiveDraftId(null);
+        lastSavedFormFingerprintRef.current = null;
+        setLastSavedFormFingerprint(null);
+        lastAppliedServerUpdatedAtRef.current = 0;
+        pendingLocalFormEditRef.current = false;
+        setFormSyncStatus("idle");
+        if (pendingLocalFilesRef.current.length === 0) {
+          setTempSaveDirty(false);
+        }
+        return;
       }
+
+      setDraftSummary(summary);
+      setActiveDraftId(summary.id);
 
       const serverUpdatedAt = payload.updatedAt
         ? new Date(String(payload.updatedAt)).getTime()
         : 0;
+      const parsed = parsePracticeTransferMemoMeta(String(payload.transferMemo || ""));
+      const serverFingerprint = buildPracticeTransferFormFingerprint({
+        targetLabAnchorId: payload.targetLabAnchorId,
+        targetLabName: payload.targetLabName,
+        patientName: parsed.patientName,
+        orderDate: parsed.orderDate,
+        arrivalDate: parsed.arrivalDate,
+        arrivalDefaultDays: parsed.arrivalDefaultDays,
+        requestMemo: parsed.memo,
+        prosthesisTypes: parsed.prosthesisTypes,
+        toothWorks: parsed.toothWorks,
+      });
+      const currentFingerprint = currentFormFingerprintRef.current;
       const localUpdatedAt = Number(localFormUpdatedAtRef.current || 0);
+      const hasPendingLocalNewer =
+        pendingLocalFormEditRef.current &&
+        Number.isFinite(localUpdatedAt) &&
+        localUpdatedAt > serverUpdatedAt;
+
+      // 동일 내용 echo는 타임스탬프만 맞추고, 입력 중인 로컬이 더 최신이면 폼은 유지한다.
+      if (restoredFiles.length > 0 && serverFingerprint === currentFingerprint) {
+        lastSavedFormFingerprintRef.current = serverFingerprint;
+        setLastSavedFormFingerprint(serverFingerprint);
+        pendingLocalFormEditRef.current = false;
+        if (Number.isFinite(serverUpdatedAt) && serverUpdatedAt > 0) {
+          lastAppliedServerUpdatedAtRef.current = Math.max(
+            lastAppliedServerUpdatedAtRef.current,
+            serverUpdatedAt,
+          );
+          localFormUpdatedAtRef.current = Math.max(localFormUpdatedAtRef.current, serverUpdatedAt);
+        }
+        if (pendingLocalFilesRef.current.length === 0) {
+          setTempSaveDirty(false);
+        }
+        return;
+      }
+
       const shouldRestoreForm =
         restoredFiles.length > 0 &&
-        (!Number.isFinite(localUpdatedAt) ||
-          localUpdatedAt <= 0 ||
-          (Number.isFinite(serverUpdatedAt) && serverUpdatedAt >= localUpdatedAt));
+        Number.isFinite(serverUpdatedAt) &&
+        serverUpdatedAt > 0 &&
+        serverUpdatedAt >= lastAppliedServerUpdatedAtRef.current &&
+        !hasPendingLocalNewer;
 
       if (shouldRestoreForm) {
         suppressLocalFormPersistRef.current = true;
+        skipFormAutosaveRef.current = true;
 
         const labId = String(payload.targetLabAnchorId || "").trim();
         const labName = String(payload.targetLabName || "").trim();
@@ -1210,9 +1365,10 @@ export const PracticeFileTransferPage = () => {
             address: "",
             businessType: "requestor",
           });
+        } else if (!labId) {
+          setSelectedLab(null);
         }
 
-        const parsed = parsePracticeTransferMemoMeta(String(payload.transferMemo || ""));
         if (parsed.orderDate) setOrderDate(parsed.orderDate);
         if (parsed.arrivalDate) {
           skipNextArrivalAutoSyncRef.current = true;
@@ -1228,6 +1384,7 @@ export const PracticeFileTransferPage = () => {
           setProsthesisTypeCatalog(types);
           setProsthesisTypeCatalogDraft(types);
         }
+        setPatientName(String(parsed.patientName || ""));
         setRequestMemo(String(parsed.memo || ""));
 
         if (parsed.toothWorks.length > 0) {
@@ -1244,31 +1401,92 @@ export const PracticeFileTransferPage = () => {
           if (restoredRows.length > 0) {
             setToothWorks(restoredRows);
           }
+        } else {
+          setToothWorks([]);
         }
 
-        if (Number.isFinite(serverUpdatedAt) && serverUpdatedAt > 0) {
-          localFormUpdatedAtRef.current = serverUpdatedAt;
-        }
+        lastSavedFormFingerprintRef.current = serverFingerprint;
+        setLastSavedFormFingerprint(serverFingerprint);
+        currentFormFingerprintRef.current = serverFingerprint;
+        pendingLocalFormEditRef.current = false;
+        lastAppliedServerUpdatedAtRef.current = serverUpdatedAt;
+        localFormUpdatedAtRef.current = serverUpdatedAt;
+        setFormSyncStatus("saved");
 
         queueMicrotask(() => {
           suppressLocalFormPersistRef.current = false;
+          skipFormAutosaveRef.current = false;
         });
+      } else if (restoredFiles.length > 0) {
+        // 서버 스냅샷은 알되, 로컬 입력이 더 최신이면 유지하고 autosave로 다시 밀어 올린다.
+        lastSavedFormFingerprintRef.current = serverFingerprint;
+        setLastSavedFormFingerprint(serverFingerprint);
+        if (currentFingerprint !== serverFingerprint) {
+          pendingLocalFormEditRef.current = true;
+          setFormSyncStatus("pending");
+        }
       }
 
       if (import.meta.env.DEV) {
         console.info("[practice-transfer] loadDraft", {
           restoredFilesCount: restoredFiles.length,
           shouldRestoreForm,
+          hasPendingLocalNewer,
           localFormUpdatedAt: localFormUpdatedAtRef.current,
           serverUpdatedAt,
         });
       }
 
-      setTempSaveDirty(false);
+      if (pendingLocalFilesRef.current.length === 0) {
+        setTempSaveDirty(false);
+      }
     } catch {
       // ignore (초안 불러오기 실패는 사용자 흐름 중단 금지)
     }
-  }, [authToken, setRequestMemo, setSelectedLab]);
+  }, [authToken, myUserId, setRequestMemo, setSelectedLab]);
+
+  const buildOwnDraftSummary = useCallback(
+    (
+      payload: PracticeTransferDraftPayload | null | undefined,
+      fallbackFiles: DraftTransferFileItem[],
+      transferMemo: string,
+    ): DraftListSummary | null => {
+      const merged: PracticeTransferDraftPayload = {
+        _id: String(payload?._id || draftSummary?.id || "").trim() || "draft-local",
+        practiceUserId: String(payload?.practiceUserId || myUserId).trim() || myUserId,
+        practiceUserLabel:
+          String(payload?.practiceUserLabel || draftSummary?.practiceUserLabel || "").trim() ||
+          "나",
+        targetLabAnchorId:
+          payload?.targetLabAnchorId ??
+          (String(selectedLab?._id || "").trim() || null),
+        targetLabName: String(
+          payload?.targetLabName || selectedLab?.name || draftSummary?.targetLabName || "",
+        ).trim(),
+        transferMemo: String(payload?.transferMemo || transferMemo || "").trim(),
+        files:
+          Array.isArray(payload?.files) && payload.files.length > 0
+            ? payload.files
+            : fallbackFiles,
+        updatedAt: payload?.updatedAt
+          ? String(payload.updatedAt)
+          : new Date().toISOString(),
+        createdAt: payload?.createdAt
+          ? String(payload.createdAt)
+          : draftSummary?.createdAt || new Date().toISOString(),
+      };
+      return toDraftListSummary(merged, myUserId);
+    },
+    [
+      draftSummary?.createdAt,
+      draftSummary?.id,
+      draftSummary?.practiceUserLabel,
+      draftSummary?.targetLabName,
+      myUserId,
+      selectedLab?._id,
+      selectedLab?.name,
+    ],
+  );
 
   const loadPracticeTransferSettingsFromServer = useCallback(async () => {
     if (!authToken) return;
@@ -1592,6 +1810,13 @@ export const PracticeFileTransferPage = () => {
     try {
       localStorage.setItem(PRACTICE_TRANSFER_FORM_LOCAL_KEY, JSON.stringify(payload));
       localFormUpdatedAtRef.current = updatedAt;
+      currentFormFingerprintRef.current = currentFormFingerprint;
+      if (
+        lastSavedFormFingerprintRef.current !== null &&
+        currentFormFingerprint !== lastSavedFormFingerprintRef.current
+      ) {
+        pendingLocalFormEditRef.current = true;
+      }
       if (import.meta.env.DEV) {
         console.info("[practice-transfer] save local form", {
           updatedAt,
@@ -1614,6 +1839,7 @@ export const PracticeFileTransferPage = () => {
   }, [
     arrivalDate,
     arrivalDefaultDays,
+    currentFormFingerprint,
     localFormHydrated,
     normalizedProsthesisTypes,
     orderDate,
@@ -1623,10 +1849,187 @@ export const PracticeFileTransferPage = () => {
     toothWorks,
   ]);
 
+  const persistFormDraftAutosave = useCallback(
+    async (seq: number) => {
+      if (seq !== formAutosaveSeqRef.current) return;
+      if (!authToken) return;
+      if (tempSaving || requestSubmitting) return;
+
+      const filesForSave = draftFilesRef.current;
+      if (filesForSave.length === 0) return;
+
+      const fingerprintAtSend = currentFormFingerprintRef.current;
+      const savedFingerprint = lastSavedFormFingerprintRef.current;
+      if (savedFingerprint !== null && fingerprintAtSend === savedFingerprint) {
+        pendingLocalFormEditRef.current = false;
+        setFormSyncStatus("saved");
+        return;
+      }
+
+      setFormSyncStatus("saving");
+      try {
+        const transferMemo = buildPracticeTransferMemo({
+          memo: requestMemo,
+          orderDate,
+          arrivalDate,
+          arrivalDefaultDays,
+          prosthesisTypes: normalizedProsthesisTypes,
+          toothWorks: normalizedToothWorks,
+          patientName: normalizedPatientName,
+        });
+
+        const res = await apiFetch<unknown>({
+          path: "/api/practice/transfers/draft",
+          method: "POST",
+          token: authToken,
+          jsonBody: {
+            draftId: activeDraftIdRef.current || undefined,
+            targetLabAnchorId: String(selectedLab?._id || "").trim() || null,
+            targetLabName: String(selectedLab?.name || "").trim(),
+            orderDate,
+            arrivalDate,
+            arrivalDefaultDays,
+            transferMemo,
+            files: filesForSave.map((row) => ({
+              fileId: row.fileId,
+            })),
+          },
+        });
+
+        if (seq !== formAutosaveSeqRef.current) return;
+
+        if (!res.ok) {
+          const body = asApiMessagePayload(res.data);
+          throw new Error(String(body?.message || "임시저장 동기화에 실패했습니다."));
+        }
+
+        const body =
+          res.data && typeof res.data === "object"
+            ? (res.data as { data?: unknown })
+            : {};
+        const payload =
+          body.data && typeof body.data === "object"
+            ? (body.data as PracticeTransferDraftPayload)
+            : null;
+
+        const nextDraftFiles = Array.isArray(payload?.files)
+          ? payload.files
+              .map((row) => ({
+                fileId: String(row?.fileId || "").trim(),
+                originalName: String(row?.originalName || "").trim(),
+                mimetype: String(row?.mimetype || "application/octet-stream").trim(),
+                size: Number(row?.size || 0),
+                s3Key: String(row?.s3Key || "").trim(),
+                location: String(row?.location || "").trim(),
+              }))
+              .filter((row) => row.fileId && row.originalName && row.s3Key)
+          : filesForSave;
+
+        setDraftFiles(nextDraftFiles);
+        if (nextDraftFiles.length > 0) {
+          const nextSummary = buildOwnDraftSummary(payload, nextDraftFiles, transferMemo);
+          setDraftSummary(nextSummary);
+          if (nextSummary?.id) setActiveDraftId(nextSummary.id);
+          void loadPracticeTransferDraftList();
+        }
+
+        const serverUpdatedAt = payload?.updatedAt
+          ? new Date(String(payload.updatedAt)).getTime()
+          : Date.now();
+        if (Number.isFinite(serverUpdatedAt) && serverUpdatedAt > 0) {
+          lastAppliedServerUpdatedAtRef.current = Math.max(
+            lastAppliedServerUpdatedAtRef.current,
+            serverUpdatedAt,
+          );
+          localFormUpdatedAtRef.current = Math.max(
+            localFormUpdatedAtRef.current,
+            serverUpdatedAt,
+          );
+        }
+
+        if (currentFormFingerprintRef.current === fingerprintAtSend) {
+          lastSavedFormFingerprintRef.current = fingerprintAtSend;
+          setLastSavedFormFingerprint(fingerprintAtSend);
+          pendingLocalFormEditRef.current = false;
+          setFormSyncStatus("saved");
+        } else {
+          pendingLocalFormEditRef.current = true;
+          setFormSyncStatus("pending");
+        }
+      } catch {
+        if (seq !== formAutosaveSeqRef.current) return;
+        setFormSyncStatus("error");
+      }
+    },
+    [
+      arrivalDate,
+      arrivalDefaultDays,
+      authToken,
+      draftSummary?.createdAt,
+      draftSummary?.id,
+      loadPracticeTransferDraftList,
+      buildOwnDraftSummary,
+      normalizedPatientName,
+      normalizedProsthesisTypes,
+      normalizedToothWorks,
+      orderDate,
+      requestMemo,
+      requestSubmitting,
+      selectedLab?._id,
+      selectedLab?.name,
+      tempSaving,
+    ],
+  );
+
+  useEffect(() => {
+    if (!localFormHydrated) return;
+    if (skipFormAutosaveRef.current) return;
+    if (!authToken) return;
+    if (draftFiles.length === 0) return;
+    if (tempSaving || requestSubmitting) return;
+    if (lastSavedFormFingerprint === null) return;
+    if (currentFormFingerprint === lastSavedFormFingerprint) {
+      pendingLocalFormEditRef.current = false;
+      setFormSyncStatus((prev) =>
+        prev === "pending" || prev === "error" || prev === "saving" ? "saved" : prev,
+      );
+      return;
+    }
+
+    pendingLocalFormEditRef.current = true;
+    setFormSyncStatus((prev) => (prev === "saving" ? prev : "pending"));
+
+    if (formAutosaveTimerRef.current) {
+      window.clearTimeout(formAutosaveTimerRef.current);
+    }
+    const seq = ++formAutosaveSeqRef.current;
+    formAutosaveTimerRef.current = window.setTimeout(() => {
+      void persistFormDraftAutosave(seq);
+    }, FORM_AUTOSAVE_DEBOUNCE_MS);
+
+    return () => {
+      if (formAutosaveTimerRef.current) {
+        window.clearTimeout(formAutosaveTimerRef.current);
+        formAutosaveTimerRef.current = null;
+      }
+    };
+  }, [
+    FORM_AUTOSAVE_DEBOUNCE_MS,
+    authToken,
+    currentFormFingerprint,
+    draftFiles.length,
+    lastSavedFormFingerprint,
+    localFormHydrated,
+    persistFormDraftAutosave,
+    requestSubmitting,
+    tempSaving,
+  ]);
+
   useEffect(() => {
     if (!localFormHydrated) return;
     void loadPracticeTransferDraft();
-  }, [localFormHydrated, loadPracticeTransferDraft]);
+    void loadPracticeTransferDraftList();
+  }, [localFormHydrated, loadPracticeTransferDraft, loadPracticeTransferDraftList]);
 
   const periodAndSearchFilteredRequests = useMemo(() => {
     const query = requestSearchTerm.trim().toLowerCase();
@@ -1901,70 +2304,64 @@ export const PracticeFileTransferPage = () => {
     return groupedTransfers.filter((transfer) => String(transfer.status || "").trim() === recentStatusFilter);
   }, [groupedTransfers, recentStatusFilter]);
 
-  const draftRecentTransfer = useMemo((): RecentTransferItem | null => {
-    if (draftFiles.length === 0) return null;
+  const draftGroupedTransfers = useMemo(() => {
+    const query = requestSearchTerm.trim().toLowerCase();
 
-    const updatedAtRaw =
-      draftSummary?.updatedAt || draftSummary?.createdAt || new Date().toISOString();
-    const createdAtTs = new Date(updatedAtRaw).getTime();
-    const safeTs = Number.isFinite(createdAtTs) && createdAtTs > 0 ? createdAtTs : Date.now();
-    const targetLab =
-      String(draftSummary?.targetLabName || selectedLab?.name || "-").trim() || "-";
-    const rawMemo = String(draftSummary?.transferMemo || requestMemo || "").trim();
-    const displayMemo = formatTransferMemoForDisplay(rawMemo);
-    const files = draftFiles.map((file) => ({
-      fileName: file.originalName,
-      s3Key: file.s3Key,
-      size: Number(file.size || 0),
-    }));
-    const parsedMemo = parsePracticeTransferMemoMeta(rawMemo);
+    return practiceDraftList
+      .map((draft): RecentTransferItem => {
+        const updatedAtRaw = draft.updatedAt || draft.createdAt || new Date().toISOString();
+        const createdAtTs = new Date(updatedAtRaw).getTime();
+        const safeTs = Number.isFinite(createdAtTs) && createdAtTs > 0 ? createdAtTs : Date.now();
+        const targetLab = String(draft.targetLabName || "-").trim() || "-";
+        const parsedMemo = parsePracticeTransferMemoMeta(String(draft.transferMemo || ""));
+        const displayMemo = formatTransferMemoForDisplay(String(draft.transferMemo || ""));
+        const files = draft.files.map((file) => ({
+          fileName: file.originalName,
+          s3Key: file.s3Key,
+          size: Number(file.size || 0),
+        }));
+        const ownerLabel = draft.isMine ? "나" : draft.practiceUserLabel || "동료";
 
-    return {
-      id: draftSummary?.id || "draft-local",
-      transferId: PRACTICE_DRAFT_TRANSFER_ID,
-      deleteTargetLabel: "임시저장",
-      createdAt: toDateLabel(updatedAtRaw),
-      createdAtTs: safeTs,
-      requestDate: toDayLabel(updatedAtRaw),
-      targetLab,
-      orderDate: String(parsedMemo.orderDate || orderDate || "").trim(),
-      arrivalDate: String(parsedMemo.arrivalDate || arrivalDate || "").trim(),
-      status: "임시저장",
-      fileCount: files.length,
-      patientCount: 1,
-      requestIds: [],
-      transferMongoIds: [],
-      fileNames: files.map((file) => file.fileName).filter(Boolean),
-      files,
-      transferMemo: displayMemo,
-      unreadCount: 0,
-      searchBlob: [
-        "임시저장",
-        PRACTICE_DRAFT_TRANSFER_ID,
-        targetLab,
-        displayMemo,
-        ...files.map((file) => file.fileName),
-      ]
-        .join(" ")
-        .toLowerCase(),
-    };
-  }, [
-    arrivalDate,
-    draftFiles,
-    draftSummary,
-    orderDate,
-    requestMemo,
-    selectedLab,
-  ]);
+        return {
+          id: draft.id,
+          transferId: PRACTICE_DRAFT_TRANSFER_ID,
+          deleteTargetLabel: draft.isMine ? "내 임시저장" : `${ownerLabel} 임시저장`,
+          createdAt: toDateLabel(updatedAtRaw),
+          createdAtTs: safeTs,
+          requestDate: toDayLabel(updatedAtRaw),
+          targetLab,
+          orderDate: String(parsedMemo.orderDate || "").trim(),
+          arrivalDate: String(parsedMemo.arrivalDate || "").trim(),
+          status: "임시저장",
+          fileCount: files.length,
+          patientCount: 1,
+          requestIds: [],
+          transferMongoIds: [],
+          fileNames: files.map((file) => file.fileName).filter(Boolean),
+          files,
+          transferMemo: displayMemo,
+          unreadCount: 0,
+          practiceUserId: draft.practiceUserId,
+          practiceUserLabel: ownerLabel,
+          isMineDraft: draft.isMine,
+          draftPatientName: draft.patientName,
+          searchBlob: [
+            "임시저장",
+            PRACTICE_DRAFT_TRANSFER_ID,
+            ownerLabel,
+            draft.patientName,
+            targetLab,
+            displayMemo,
+            ...files.map((file) => file.fileName),
+          ]
+            .join(" ")
+            .toLowerCase(),
+        };
+      })
+      .filter((transfer) => !query || transfer.searchBlob.includes(query));
+  }, [practiceDraftList, requestSearchTerm]);
 
   const displayGroupedTransfers = filteredGroupedTransfers;
-
-  const draftGroupedTransfers = useMemo(() => {
-    if (!draftRecentTransfer) return [] as RecentTransferItem[];
-    const query = requestSearchTerm.trim().toLowerCase();
-    if (query && !draftRecentTransfer.searchBlob.includes(query)) return [];
-    return [draftRecentTransfer];
-  }, [draftRecentTransfer, requestSearchTerm]);
 
   const trashGroupedTransfers = useMemo(() => {
     const byKey = new Map<string, RecentTransferItem>();
@@ -2059,15 +2456,123 @@ export const PracticeFileTransferPage = () => {
     [selectedTransfer?.transferMemo],
   );
 
+  const applyDraftSummaryToForm = useCallback(
+    (draft: DraftListSummary) => {
+      suppressLocalFormPersistRef.current = true;
+      skipFormAutosaveRef.current = true;
+
+      const parsed = parsePracticeTransferMemoMeta(String(draft.transferMemo || ""));
+      const labId = String(draft.targetLabAnchorId || "").trim();
+      const labName = String(draft.targetLabName || "").trim();
+      if (labName) {
+        setSelectedLab({
+          _id: labId || `draft-lab:${labName}`,
+          name: labName,
+          businessNumber: "",
+          representativeName: "",
+          address: "",
+          businessType: "requestor",
+        });
+      }
+
+      if (parsed.orderDate) setOrderDate(parsed.orderDate);
+      if (parsed.arrivalDate) {
+        skipNextArrivalAutoSyncRef.current = true;
+        setArrivalDate(parsed.arrivalDate);
+      }
+      if (Number.isFinite(Number(parsed.arrivalDefaultDays))) {
+        const days = normalizeArrivalDefaultDays(Number(parsed.arrivalDefaultDays));
+        setArrivalDefaultDays(days);
+        setArrivalDefaultDaysDraft(days);
+      }
+      if (parsed.prosthesisTypes.length > 0) {
+        const types = normalizeProsthesisTypes(parsed.prosthesisTypes);
+        setProsthesisTypeCatalog(types);
+        setProsthesisTypeCatalogDraft(types);
+      }
+      setPatientName(String(parsed.patientName || draft.patientName || ""));
+      setRequestMemo(String(parsed.memo || ""));
+
+      if (parsed.toothWorks.length > 0) {
+        const restoredRows = restoreToothWorksFromDraft(parsed.toothWorks, {
+          prosthesisTypes:
+            parsed.prosthesisTypes.length > 0
+              ? normalizeProsthesisTypes(parsed.prosthesisTypes)
+              : [...PRESET_PROSTHESIS_TYPES],
+          isCustomAbutmentSupportedProsthesisType,
+          isBridgeLikeProsthesisType,
+          getAdjacentTeeth,
+          fallbackProsthesisType: "크라운",
+        });
+        setToothWorks(restoredRows.length > 0 ? restoredRows : []);
+      } else {
+        setToothWorks([]);
+      }
+
+      setDraftFiles(draft.files);
+      setDraftSummary(draft);
+      setActiveDraftId(draft.id);
+
+      const fingerprint = buildPracticeTransferFormFingerprint({
+        targetLabAnchorId: labId,
+        targetLabName: labName,
+        patientName: parsed.patientName || draft.patientName,
+        orderDate: parsed.orderDate,
+        arrivalDate: parsed.arrivalDate,
+        arrivalDefaultDays: parsed.arrivalDefaultDays,
+        requestMemo: parsed.memo,
+        prosthesisTypes: parsed.prosthesisTypes,
+        toothWorks: parsed.toothWorks,
+      });
+      currentFormFingerprintRef.current = fingerprint;
+      lastSavedFormFingerprintRef.current = fingerprint;
+      setLastSavedFormFingerprint(fingerprint);
+      pendingLocalFormEditRef.current = false;
+      const ts = draft.updatedAt ? new Date(draft.updatedAt).getTime() : Date.now();
+      if (Number.isFinite(ts) && ts > 0) {
+        lastAppliedServerUpdatedAtRef.current = ts;
+        localFormUpdatedAtRef.current = ts;
+      }
+      setFormSyncStatus("saved");
+      setTempSaveDirty(false);
+
+      queueMicrotask(() => {
+        suppressLocalFormPersistRef.current = false;
+        skipFormAutosaveRef.current = false;
+      });
+    },
+    [setRequestMemo, setSelectedLab],
+  );
+
+  const handleAdoptDraftTransfer = useCallback(
+    (transfer: RecentTransferItem) => {
+      const draft = practiceDraftList.find((row) => row.id === transfer.id);
+      if (!draft) {
+        toast({
+          title: "임시저장을 찾지 못했습니다",
+          description: "목록을 새로고침한 뒤 다시 시도해주세요.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      applyDraftSummaryToForm(draft);
+      toast({
+        title: draft.isMine ? "임시저장 불러옴" : "같은 케이스로 이어쓰기",
+        description: draft.isMine
+          ? "작성 폼에 반영했습니다. 같은 계정·동료가 이 건을 불러오면 함께 동기화됩니다."
+          : `${draft.practiceUserLabel || "동료"}의 임시저장에 참여했습니다. 입력 내용이 같은 케이스에 실시간 동기화됩니다.`,
+      });
+    },
+    [applyDraftSummaryToForm, practiceDraftList, toast],
+  );
+
   const handleOpenTransferDialog = async (transfer: RecentTransferItem) => {
     if (
       transfer.status === "임시저장" ||
       transfer.transferId === PRACTICE_DRAFT_TRANSFER_ID
     ) {
-      toast({
-        title: "임시저장된 의뢰",
-        description: "왼쪽 기공의뢰 카드에서 이어서 작성·전송할 수 있습니다.",
-      });
+      handleAdoptDraftTransfer(transfer);
       return;
     }
 
@@ -2325,26 +2830,46 @@ export const PracticeFileTransferPage = () => {
     if (!authToken) return;
 
     if (nextDraftFiles.length === 0) {
+      const draftId = String(activeDraftIdRef.current || "").trim();
       await apiFetch<unknown>({
-        path: "/api/practice/transfers/draft",
+        path: draftId
+          ? `/api/practice/transfers/draft?draftId=${encodeURIComponent(draftId)}`
+          : "/api/practice/transfers/draft",
         method: "DELETE",
         token: authToken,
       });
       setDraftSummary(null);
+      lastSavedFormFingerprintRef.current = null;
+      setLastSavedFormFingerprint(null);
+      lastAppliedServerUpdatedAtRef.current = 0;
+      pendingLocalFormEditRef.current = false;
+      setFormSyncStatus("idle");
+      setActiveDraftId(null);
       return;
     }
+
+    const transferMemo = buildPracticeTransferMemo({
+      memo: requestMemo,
+      orderDate,
+      arrivalDate,
+      arrivalDefaultDays,
+      prosthesisTypes: normalizedProsthesisTypes,
+      toothWorks: normalizedToothWorks,
+      patientName: normalizedPatientName,
+    });
 
     await apiFetch<unknown>({
       path: "/api/practice/transfers/draft",
       method: "POST",
       token: authToken,
       jsonBody: {
+        draftId: activeDraftIdRef.current || undefined,
         targetLabAnchorId: String(selectedLab?._id || "").trim() || null,
         targetLabName: String(selectedLab?.name || "").trim(),
         orderDate,
         arrivalDate,
         arrivalDefaultDays,
-        transferMemo: String(requestMemo || "").trim(),
+        transferMemo,
         files: nextDraftFiles.map((row) => ({ fileId: row.fileId })),
       },
     });
@@ -2431,13 +2956,25 @@ export const PracticeFileTransferPage = () => {
     ) {
       setDeletingTransfer(true);
       try {
+        const draftId = String(target.id || "").trim();
+        const activeId = String(activeDraftIdRef.current || "").trim();
         await apiFetch<unknown>({
-          path: "/api/practice/transfers/draft",
+          path: draftId
+            ? `/api/practice/transfers/draft?draftId=${encodeURIComponent(draftId)}`
+            : "/api/practice/transfers/draft",
           method: "DELETE",
           token: authToken,
         });
-        setDraftFiles([]);
-        setDraftSummary(null);
+        if (!activeId || target.id === activeId) {
+          setDraftFiles([]);
+          setDraftSummary(null);
+          setActiveDraftId(null);
+          lastSavedFormFingerprintRef.current = null;
+          setLastSavedFormFingerprint(null);
+          pendingLocalFormEditRef.current = false;
+          setFormSyncStatus("idle");
+        }
+        await loadPracticeTransferDraftList();
         toast({
           title: "임시저장 삭제 완료",
           description: "임시저장된 의뢰를 삭제했습니다.",
@@ -2700,16 +3237,35 @@ export const PracticeFileTransferPage = () => {
       const action = String(payload.action || "").trim().toLowerCase();
       const isDraftEvent =
         action === "draft-upserted" || action === "draft-cleared";
+      const eventDraftId = String(payload.draftId || "").trim();
+      const activeId = String(activeDraftIdRef.current || "").trim();
+      const isActiveCaseEvent = Boolean(activeId) && eventDraftId === activeId;
 
       if (isDraftEvent) {
-        void loadPracticeTransferDraft();
+        void loadPracticeTransferDraftList();
+        if (action === "draft-cleared" && isActiveCaseEvent) {
+          setDraftFiles([]);
+          setDraftSummary(null);
+          setActiveDraftId(null);
+          lastSavedFormFingerprintRef.current = null;
+          setLastSavedFormFingerprint(null);
+          pendingLocalFormEditRef.current = false;
+          setFormSyncStatus("idle");
+          return;
+        }
+        // 같은 케이스(불러온 draftId)만 작성 폼에 반영
+        if (isActiveCaseEvent) {
+          void loadPracticeTransferDraft({ draftId: activeId });
+        }
         return;
       }
 
       void loadRecentRequests({ silent: true });
-      // 전송 생성/정리 직후 동료 화면의 임시저장 카드도 맞춰 둔다.
       if (String(evt?.type || "").trim() === "practice:transfer-created") {
-        void loadPracticeTransferDraft();
+        void loadPracticeTransferDraftList();
+        if (isActiveCaseEvent) {
+          void loadPracticeTransferDraft({ draftId: activeId });
+        }
       }
     },
   });
@@ -2765,13 +3321,22 @@ export const PracticeFileTransferPage = () => {
         arrivalDefaultDays,
         prosthesisTypes: normalizedProsthesisTypes,
         toothWorks: normalizedToothWorks,
+        patientName: normalizedPatientName,
       });
+
+      // 파일 업로드 저장 중에는 폼 autosave가 끼어들지 않게 한다.
+      formAutosaveSeqRef.current += 1;
+      if (formAutosaveTimerRef.current) {
+        window.clearTimeout(formAutosaveTimerRef.current);
+        formAutosaveTimerRef.current = null;
+      }
 
       const res = await apiFetch<unknown>({
         path: "/api/practice/transfers/draft",
         method: "POST",
         token: authToken,
         jsonBody: {
+          draftId: activeDraftIdRef.current || undefined,
           targetLabAnchorId: String(selectedLab?._id || "").trim() || null,
           targetLabName: String(selectedLab?.name || "").trim(),
           orderDate,
@@ -2813,24 +3378,43 @@ export const PracticeFileTransferPage = () => {
 
       setDraftFiles(nextDraftFiles);
       if (nextDraftFiles.length > 0) {
-        setDraftSummary({
-          id: String(payload?._id || draftSummary?.id || "").trim() || "draft-local",
-          targetLabName: String(payload?.targetLabName || selectedLab?.name || "").trim(),
-          transferMemo: String(payload?.transferMemo || transferMemo || "").trim(),
-          updatedAt: payload?.updatedAt
-            ? String(payload.updatedAt)
-            : new Date().toISOString(),
-          createdAt: payload?.createdAt
-            ? String(payload.createdAt)
-            : draftSummary?.createdAt || new Date().toISOString(),
-        });
+        const nextSummary = buildOwnDraftSummary(payload, nextDraftFiles, transferMemo);
+        setDraftSummary(nextSummary);
+        if (nextSummary?.id) setActiveDraftId(nextSummary.id);
       } else {
         setDraftSummary(null);
+        setActiveDraftId(null);
       }
       if (files.length > 0) {
         await clearAllFiles();
       }
       setTempSaveDirty(false);
+      void loadPracticeTransferDraftList();
+
+      const savedFingerprint = buildPracticeTransferFormFingerprint({
+        targetLabAnchorId: selectedLab?._id,
+        targetLabName: selectedLab?.name,
+        patientName: normalizedPatientName,
+        orderDate,
+        arrivalDate,
+        arrivalDefaultDays,
+        requestMemo,
+        prosthesisTypes: normalizedProsthesisTypes,
+        toothWorks: normalizedToothWorks,
+      });
+      lastSavedFormFingerprintRef.current = savedFingerprint;
+      setLastSavedFormFingerprint(savedFingerprint);
+      currentFormFingerprintRef.current = savedFingerprint;
+      pendingLocalFormEditRef.current = false;
+      const serverUpdatedAt = payload?.updatedAt
+        ? new Date(String(payload.updatedAt)).getTime()
+        : Date.now();
+      if (Number.isFinite(serverUpdatedAt) && serverUpdatedAt > 0) {
+        lastAppliedServerUpdatedAtRef.current = serverUpdatedAt;
+        localFormUpdatedAtRef.current = serverUpdatedAt;
+      }
+      setFormSyncStatus("saved");
+
       try {
         localStorage.setItem(
           PRACTICE_TRANSFER_TEMP_DRAFT_KEY,
@@ -2938,6 +3522,7 @@ export const PracticeFileTransferPage = () => {
         arrivalDefaultDays,
         prosthesisTypes: normalizedProsthesisTypes,
         toothWorks: normalizedToothWorks,
+        patientName: normalizedPatientName,
       });
       const caseInfosPayload = transferFiles.map((tempFile) => {
         const originalName = String(tempFile.originalName || "").trim();
@@ -2998,6 +3583,12 @@ export const PracticeFileTransferPage = () => {
       }
 
       suppressLocalFormPersistRef.current = true;
+      skipFormAutosaveRef.current = true;
+      formAutosaveSeqRef.current += 1;
+      if (formAutosaveTimerRef.current) {
+        window.clearTimeout(formAutosaveTimerRef.current);
+        formAutosaveTimerRef.current = null;
+      }
 
       rememberLab(selectedLab);
       await clearAllFiles();
@@ -3008,10 +3599,20 @@ export const PracticeFileTransferPage = () => {
       setRequestMemo("");
       setToothWorks([]);
       setTempSaveDirty(true);
+      lastSavedFormFingerprintRef.current = null;
+      setLastSavedFormFingerprint(null);
+      lastAppliedServerUpdatedAtRef.current = 0;
+      pendingLocalFormEditRef.current = false;
+      setFormSyncStatus("idle");
+
+      const draftIdToClear = String(activeDraftIdRef.current || draftSummary?.id || "").trim();
+      setActiveDraftId(null);
 
       try {
         await apiFetch<unknown>({
-          path: "/api/practice/transfers/draft",
+          path: draftIdToClear
+            ? `/api/practice/transfers/draft?draftId=${encodeURIComponent(draftIdToClear)}`
+            : "/api/practice/transfers/draft",
           method: "DELETE",
           token: authToken,
         });
@@ -3043,7 +3644,20 @@ export const PracticeFileTransferPage = () => {
     !requestSubmitting &&
     !tempSaving &&
     tempSaveDirty &&
-    combinedDisplayFiles.length > 0;
+    files.length > 0;
+
+  const formSyncStatusLabel =
+    formSyncStatus === "pending"
+      ? "같은 케이스 동기화 대기…"
+      : formSyncStatus === "saving"
+        ? "같은 케이스에 동기화 중…"
+        : formSyncStatus === "saved" && draftFiles.length > 0
+          ? activeDraftId
+            ? "이 케이스 동기화됨"
+            : "임시저장 동기화됨"
+          : formSyncStatus === "error"
+            ? "동기화 실패 · 다시 입력하면 재시도"
+            : "";
 
   const missingRequiredFields = useMemo(() => {
     const missing: string[] = [];
@@ -3128,6 +3742,18 @@ export const PracticeFileTransferPage = () => {
       // ignore
     }
 
+    formAutosaveSeqRef.current += 1;
+    if (formAutosaveTimerRef.current) {
+      window.clearTimeout(formAutosaveTimerRef.current);
+      formAutosaveTimerRef.current = null;
+    }
+    skipFormAutosaveRef.current = true;
+    lastSavedFormFingerprintRef.current = null;
+    setLastSavedFormFingerprint(null);
+    lastAppliedServerUpdatedAtRef.current = 0;
+    pendingLocalFormEditRef.current = false;
+    setFormSyncStatus("idle");
+
     setLabOpen(false);
     setLabSearch("");
     setSelectedLab(null);
@@ -3144,14 +3770,20 @@ export const PracticeFileTransferPage = () => {
       },
     ]);
 
-    // 로컬 첨부 + 임시저장 파일까지 모두 제거
-    await handleClearAllTransferFiles();
+    // 로컬만 초기화. 불러온 동료 케이스를 서버에서 지우지 않는다.
+    await clearAllFiles();
+    setDraftFiles([]);
     setDraftSummary(null);
+    setActiveDraftId(null);
     setTempSaveDirty(false);
+    void loadPracticeTransferDraftList();
+    queueMicrotask(() => {
+      skipFormAutosaveRef.current = false;
+    });
 
     toast({
       title: "새로 작성",
-      description: "첨부 파일을 포함해 새 기공의뢰서 작성 화면으로 초기화했습니다.",
+      description: "새 기공의뢰서 작성 화면으로 초기화했습니다. 기존 임시저장은 목록에 그대로 둡니다.",
     });
   };
 
@@ -3328,7 +3960,7 @@ export const PracticeFileTransferPage = () => {
                     key: file.key,
                     name: file.name,
                     size: file.size,
-                    metaSuffix: file.kind === "draft" ? "임시저장됨" : undefined,
+                    metaSuffix: file.kind === "draft" ? "동기화됨" : "업로드 대기",
                   })),
                   totalSizeMb: combinedFilesSizeMb,
                   onPickFiles: handleIncomingFiles,
@@ -3343,6 +3975,15 @@ export const PracticeFileTransferPage = () => {
                   },
                   onClearAllFiles: () => {
                     void handleClearAllTransferFiles();
+                  },
+                  syncUploadLabel: "파일 올려 동기화 시작",
+                  syncUploadBusyLabel: "파일 업로드 중...",
+                  syncUploadDisabled: !canTempSave,
+                  syncUploadBusy: tempSaving,
+                  syncUploadHint:
+                    "첨부 파일을 서버에 올리면 이 케이스가 동기화됩니다. 이후 환자명·메모 등은 자동 저장됩니다.",
+                  onSyncUpload: () => {
+                    void handleTempSaveDraft();
                   },
                 }}
                 requestIntakeProps={{
@@ -3410,28 +4051,19 @@ export const PracticeFileTransferPage = () => {
                 }}
               />
 
-              <div className="flex items-center justify-between gap-2">
-                <TooltipProvider>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <span>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          className="bg-white hover:bg-slate-400"
-                          onClick={handleTempSaveDraft}
-                          disabled={!canTempSave}
-                        >
-                          {tempSaving ? "임시저장 중..." : "업로드 후 임시저장"}
-                        </Button>
-                      </span>
-                    </TooltipTrigger>
-                    <TooltipContent side="top" className="max-w-xs text-xs">
-                      파일/의뢰 메모를 서버에 임시 저장해 다른 PC에서도 이어서 전송할 때 사용합니다.
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
-
+              <div className="flex items-center justify-end gap-2">
+                {formSyncStatusLabel ? (
+                  <p
+                    className={cn(
+                      "mr-auto truncate text-[11px]",
+                      formSyncStatus === "error"
+                        ? "text-destructive"
+                        : "text-muted-foreground",
+                    )}
+                  >
+                    {formSyncStatusLabel}
+                  </p>
+                ) : null}
                 <Button
                   type="button"
                   className="bg-blue-600 text-white hover:bg-blue-700"
@@ -3710,24 +4342,42 @@ export const PracticeFileTransferPage = () => {
                         String(transfer.targetLab || "-")
                           .replace(/\s*→.*$/g, "")
                           .trim() || "-";
+                      const ownerLabel = transfer.isMineDraft
+                        ? "나"
+                        : transfer.practiceUserLabel || "동료";
+                      const patientLabel =
+                        String(transfer.draftPatientName || "").trim() || "환자명 미입력";
 
                       return (
                         <div
                           key={`draft:${transfer.id}:${transfer.createdAt}`}
                           role="button"
                           tabIndex={0}
-                          className="w-full cursor-pointer rounded-lg border border-slate-200 bg-slate-50/70 px-3 py-2 text-left text-sm hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                          onClick={() => void handleOpenTransferDialog(transfer)}
+                          className={cn(
+                            "w-full cursor-pointer rounded-lg border px-3 py-2 text-left text-sm hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                            transfer.id === activeDraftId
+                              ? "border-blue-400 bg-blue-50 ring-1 ring-blue-200"
+                              : transfer.isMineDraft
+                                ? "border-blue-200 bg-blue-50/50"
+                                : "border-slate-200 bg-slate-50/70",
+                          )}
+                          onClick={() => handleAdoptDraftTransfer(transfer)}
                           onKeyDown={(e) => {
                             if (e.key === "Enter" || e.key === " ") {
                               e.preventDefault();
-                              void handleOpenTransferDialog(transfer);
+                              handleAdoptDraftTransfer(transfer);
                             }
                           }}
                         >
                           <div className="flex items-center justify-between gap-3">
                             <div className="min-w-0">
-                              <p className="truncate font-medium">임시저장</p>
+                              <p className="truncate font-medium">
+                                {patientLabel}
+                                <span className="ml-1.5 text-xs font-normal text-muted-foreground">
+                                  · {ownerLabel}
+                                  {transfer.id === activeDraftId ? " · 작성 중" : ""}
+                                </span>
+                              </p>
                               <p className="mt-0.5 truncate text-xs text-muted-foreground">
                                 {transfer.createdAt}
                               </p>

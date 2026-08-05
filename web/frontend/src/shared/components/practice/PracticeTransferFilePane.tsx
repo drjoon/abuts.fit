@@ -22,6 +22,12 @@ export type PracticeTransferFilePaneProps = {
   onRemoveFile: (key: string) => void;
   onClearAllFiles: () => void;
   listViewportClassName?: string;
+  syncUploadLabel?: string;
+  syncUploadBusyLabel?: string;
+  syncUploadDisabled?: boolean;
+  syncUploadBusy?: boolean;
+  syncUploadHint?: string;
+  onSyncUpload?: () => void;
 };
 
 export const PracticeTransferFilePane = ({
@@ -34,6 +40,12 @@ export const PracticeTransferFilePane = ({
   onClearAllFiles,
   // 파일 행 4rem + gap 0.5rem × 4 = 5개 표시 높이
   listViewportClassName = "h-[22rem] max-h-[22rem]",
+  syncUploadLabel = "파일 올려 동기화 시작",
+  syncUploadBusyLabel = "업로드 중...",
+  syncUploadDisabled = true,
+  syncUploadBusy = false,
+  syncUploadHint,
+  onSyncUpload,
 }: PracticeTransferFilePaneProps) => {
   const cardClassName =
     "overflow-hidden rounded-2xl border border-slate-200/80 bg-gradient-to-br from-white via-white to-sky-50/60 shadow-[0_4px_12px_rgba(15,23,42,0.03)] transition-all hover:shadow-[0_8px_20px_rgba(15,23,42,0.06)]";
@@ -127,6 +139,23 @@ export const PracticeTransferFilePane = ({
             </div>
           </div>
         )}
+
+        {onSyncUpload ? (
+          <div className="mt-3 space-y-1.5 border-t border-slate-100 pt-3">
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full bg-white hover:bg-slate-100"
+              onClick={onSyncUpload}
+              disabled={syncUploadDisabled || syncUploadBusy}
+            >
+              {syncUploadBusy ? syncUploadBusyLabel : syncUploadLabel}
+            </Button>
+            {syncUploadHint ? (
+              <p className="text-[11px] leading-snug text-muted-foreground">{syncUploadHint}</p>
+            ) : null}
+          </div>
+        ) : null}
       </div>
     </div>
   );

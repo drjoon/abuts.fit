@@ -11,6 +11,7 @@ export type ParsedPracticeTransferMemoMeta = {
   arrivalDefaultDays: number;
   prosthesisTypes: string[];
   toothWorks: ToothWorkSelection[];
+  patientName: string;
   memo: string;
 };
 
@@ -254,6 +255,7 @@ export const parsePracticeTransferMemoMeta = (rawMemo: string): ParsedPracticeTr
   let arrivalDefaultDays = DEFAULT_PRACTICE_ARRIVAL_OFFSET_DAYS;
   let prosthesisTypes: string[] = [];
   let toothWorks: ToothWorkSelection[] = [];
+  let patientName = "";
 
   for (const line of lines) {
     const trimmed = String(line || "").trim();
@@ -277,6 +279,12 @@ export const parsePracticeTransferMemoMeta = (rawMemo: string): ParsedPracticeTr
     const defaultDaysMatch = trimmed.match(/^\[\s*도착기본일수\s*:\s*(\d{1,3})\s*\]$/);
     if (defaultDaysMatch) {
       arrivalDefaultDays = normalizeArrivalDefaultDays(Number(defaultDaysMatch[1]));
+      continue;
+    }
+
+    const patientNameMatch = trimmed.match(/^\[\s*환자명\s*:\s*(.*)\]$/);
+    if (patientNameMatch) {
+      patientName = String(patientNameMatch[1] || "").trim();
       continue;
     }
 
@@ -313,6 +321,7 @@ export const parsePracticeTransferMemoMeta = (rawMemo: string): ParsedPracticeTr
     arrivalDefaultDays,
     prosthesisTypes: normalizeProsthesisTypes(prosthesisTypes),
     toothWorks: normalizeToothWorks(toothWorks),
+    patientName,
     memo: memoLines.join("\n").replace(/^\s+|\s+$/g, ""),
   };
 };
@@ -324,11 +333,13 @@ export const buildPracticeTransferMemo = (params: {
   arrivalDefaultDays: number;
   prosthesisTypes: string[];
   toothWorks: ToothWorkSelection[];
+  patientName?: string;
 }) => {
   const lines = [
     `[주문일: ${String(params.orderDate || "").trim()}]`,
     `[도착일: ${String(params.arrivalDate || "").trim()}]`,
     `[도착기본일수: ${normalizeArrivalDefaultDays(params.arrivalDefaultDays)}]`,
+    `[환자명: ${String(params.patientName || "").trim()}]`,
     `[보철물형태목록: ${normalizeProsthesisTypes(params.prosthesisTypes).join(", ")}]`,
     `[치아보철: ${serializeToothWorks(params.toothWorks)}]`,
   ];
@@ -343,9 +354,8 @@ export const formatPracticeTransferMemoDetail = (
   const source = String(rawMemo || "").trim();
   if (!source) return "";
 
-  const hasKnownMeta = /\[\s*(주문일|도착일|도착기본일수|보철물형태목록|보철물형태|치아보철)\s*:/i.test(
-    source,
-  );
+  const hasKnownMeta =
+    /\[\s*(주문일|도착일|도착기본일수|환자명|보철물형태목록|보철물형태|치아보철)\s*:/i.test(source);
   if (!hasKnownMeta) return formatTransferMemoForDisplay(source);
 
   const parsed = parsePracticeTransferMemoMeta(source);
@@ -359,6 +369,10 @@ export const formatPracticeTransferMemoDetail = (
     if (dateSummaryParts.length > 0) {
       summarySections.push(dateSummaryParts.join(" · "));
     }
+  }
+
+  if (parsed.patientName) {
+    summarySections.push(`환자명 ${parsed.patientName}`);
   }
 
   const toothSummary = formatToothWorksForDisplay(parsed.toothWorks, { multiline: true });

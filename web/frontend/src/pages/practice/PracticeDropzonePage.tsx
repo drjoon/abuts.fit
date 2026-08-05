@@ -402,6 +402,7 @@ const buildPracticeTransferMemo = (params: {
   arrivalDefaultDays: number;
   prosthesisTypes: string[];
   toothWorks: ToothWorkSelection[];
+  patientName?: string;
 }) => buildPracticeTransferMemoShared(params);
 
 const toPracticeFileKey = (file: File) => `${file.name}:${file.size}:${file.lastModified}`;
@@ -1354,6 +1355,7 @@ export const PracticeDropzonePage = () => {
         arrivalDefaultDays,
         prosthesisTypes: normalizedProsthesisTypes,
         toothWorks,
+        patientName: normalizedPatientName,
       });
 
       const caseInfosPayload = files.map((file, index) => {

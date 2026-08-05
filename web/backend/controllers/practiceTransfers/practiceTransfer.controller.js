@@ -141,12 +141,21 @@ const buildReceivedScope = (req) => {
   };
 };
 
-const toDraftResponse = (doc) => {
+const toDraftResponse = (doc, ownerMeta = null) => {
   if (!doc) return null;
   const files = Array.isArray(doc.files) ? doc.files : [];
+  const practiceUserId = String(doc.practiceUserId || "").trim() || null;
+  const staffName = String(
+    ownerMeta?.practiceProfile?.staffName ||
+      ownerMeta?.name ||
+      ownerMeta?.email ||
+      "",
+  ).trim();
 
   return {
     _id: String(doc._id || ""),
+    practiceUserId,
+    practiceUserLabel: staffName || practiceUserId || "",
     targetLabAnchorId: String(doc.targetLabAnchorId || "").trim() || null,
     targetLabName: String(doc.targetLabName || "").trim(),
     transferMemo: String(doc.transferMemo || "").trim(),
@@ -163,6 +172,30 @@ const toDraftResponse = (doc) => {
     updatedAt: doc.updatedAt || null,
     createdAt: doc.createdAt || null,
   };
+};
+
+const loadDraftOwnerMetaByIds = async (userIds) => {
+  const ids = [
+    ...new Set(
+      (Array.isArray(userIds) ? userIds : [])
+        .map((id) => String(id || "").trim())
+        .filter((id) => Types.ObjectId.isValid(id)),
+    ),
+  ];
+  if (ids.length === 0) return new Map();
+
+  const users = await User.find({
+    _id: { $in: ids.map((id) => new Types.ObjectId(id)) },
+  })
+    .select({
+      _id: 1,
+      name: 1,
+      email: 1,
+      "practiceProfile.staffName": 1,
+    })
+    .lean();
+
+  return new Map(users.map((u) => [String(u?._id || "").trim(), u]));
 };
 
 const resolveRequestorUserIdsByAnchor = async (anchorId) => {
@@ -322,19 +355,73 @@ export async function getMyPracticeTransferDraft(req, res) {
       return res.status(403).json({ success: false, message: "권한이 없습니다." });
     }
 
-    const { scope } = await buildPracticeOwnedScope(req);
-    const doc = await PracticeTransferDraft.findOne(scope)
-      .sort({ updatedAt: -1, _id: -1 })
-      .lean();
+    const rawDraftId = String(req.query?.draftId || "").trim();
+    let doc = null;
+    let ownerMeta = req.user;
+
+    if (rawDraftId && Types.ObjectId.isValid(rawDraftId)) {
+      // 같은 케이스(불러온 임시저장) 조회: 동일 치과 범위 draft
+      const { scope } = await buildPracticeOwnedScope(req);
+      doc = await PracticeTransferDraft.findOne({
+        _id: new Types.ObjectId(rawDraftId),
+        ...scope,
+      }).lean();
+      if (doc?.practiceUserId) {
+        const ownerMap = await loadDraftOwnerMetaByIds([doc.practiceUserId]);
+        ownerMeta =
+          ownerMap.get(String(doc.practiceUserId || "").trim()) || req.user;
+      }
+    } else {
+      // 기본: 본인이 만든 draft
+      doc = await PracticeTransferDraft.findOne({
+        practiceUserId: req.user?._id,
+      }).lean();
+    }
 
     return res.status(200).json({
       success: true,
-      data: toDraftResponse(doc),
+      data: toDraftResponse(doc, ownerMeta),
     });
   } catch (error) {
     return res.status(500).json({
       success: false,
       message: "practice 전송 임시저장 조회 중 오류가 발생했습니다.",
+      error: error?.message,
+    });
+  }
+}
+
+export async function listPracticeTransferDrafts(req, res) {
+  try {
+    const role = String(req.user?.role || "").trim();
+    if (role !== "practice" && role !== "admin") {
+      return res.status(403).json({ success: false, message: "권한이 없습니다." });
+    }
+
+    const { scope } = await buildPracticeOwnedScope(req);
+    const docs = await PracticeTransferDraft.find(scope)
+      .sort({ updatedAt: -1, _id: -1 })
+      .lean();
+
+    const ownerMap = await loadDraftOwnerMetaByIds(
+      docs.map((doc) => doc?.practiceUserId),
+    );
+
+    return res.status(200).json({
+      success: true,
+      data: docs
+        .map((doc) =>
+          toDraftResponse(
+            doc,
+            ownerMap.get(String(doc?.practiceUserId || "").trim()) || null,
+          ),
+        )
+        .filter(Boolean),
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "practice 전송 임시저장 목록 조회 중 오류가 발생했습니다.",
       error: error?.message,
     });
   }
@@ -429,26 +516,65 @@ export async function upsertPracticeTransferDraft(req, res) {
       });
     }
 
-    const doc = await PracticeTransferDraft.findOneAndUpdate(
-      { practiceUserId: req.user?._id },
-      {
-        $set: {
-          practiceUserId: req.user?._id,
-          practiceBusinessAnchorId: req.user?.businessAnchorId || null,
-          targetLabAnchorId,
-          targetLabName,
-          transferMemo,
-          files: normalizedDraftFiles,
-        },
-      },
-      {
-        upsert: true,
-        new: true,
-        setDefaultsOnInsert: true,
-      },
-    ).lean();
+    const rawDraftId = String(req.body?.draftId || "").trim();
+    let doc = null;
 
-    const draftPayload = toDraftResponse(doc);
+    if (rawDraftId && Types.ObjectId.isValid(rawDraftId)) {
+      // 불러온 임시저장(같은 케이스)에 join: 소유자는 유지하고 내용만 갱신
+      const { scope } = await buildPracticeOwnedScope(req);
+      const existing = await PracticeTransferDraft.findOne({
+        _id: new Types.ObjectId(rawDraftId),
+        ...scope,
+      })
+        .select({ _id: 1, practiceUserId: 1 })
+        .lean();
+
+      if (!existing?._id) {
+        return res.status(404).json({
+          success: false,
+          message: "이어서 작성할 임시저장을 찾지 못했습니다.",
+        });
+      }
+
+      doc = await PracticeTransferDraft.findOneAndUpdate(
+        { _id: existing._id },
+        {
+          $set: {
+            practiceBusinessAnchorId: req.user?.businessAnchorId || null,
+            targetLabAnchorId,
+            targetLabName,
+            transferMemo,
+            files: normalizedDraftFiles,
+          },
+        },
+        { new: true },
+      ).lean();
+    } else {
+      // 새 케이스 / 본인 draft upsert
+      doc = await PracticeTransferDraft.findOneAndUpdate(
+        { practiceUserId: req.user?._id },
+        {
+          $set: {
+            practiceUserId: req.user?._id,
+            practiceBusinessAnchorId: req.user?.businessAnchorId || null,
+            targetLabAnchorId,
+            targetLabName,
+            transferMemo,
+            files: normalizedDraftFiles,
+          },
+        },
+        {
+          upsert: true,
+          new: true,
+          setDefaultsOnInsert: true,
+        },
+      ).lean();
+    }
+
+    const ownerMap = await loadDraftOwnerMetaByIds([doc?.practiceUserId]);
+    const ownerMeta =
+      ownerMap.get(String(doc?.practiceUserId || "").trim()) || req.user;
+    const draftPayload = toDraftResponse(doc, ownerMeta);
     await emitPracticeTransferEventToPracticeUsers({
       practiceBusinessAnchorId: req.user?.businessAnchorId,
       type: "practice:transfer-updated",
@@ -456,7 +582,9 @@ export async function upsertPracticeTransferDraft(req, res) {
         source: "upsertPracticeTransferDraft",
         action: "draft-upserted",
         draftId: draftPayload?._id || null,
-        practiceUserId: String(req.user?._id || ""),
+        practiceUserId: String(doc?.practiceUserId || req.user?._id || ""),
+        editorUserId: String(req.user?._id || ""),
+        practiceUserLabel: draftPayload?.practiceUserLabel || "",
         practiceBusinessAnchorId: String(req.user?.businessAnchorId || "").trim() || null,
         targetLabAnchorId: draftPayload?.targetLabAnchorId || null,
         targetLabName: draftPayload?.targetLabName || "",
@@ -487,18 +615,30 @@ export async function clearMyPracticeTransferDraft(req, res) {
       return res.status(403).json({ success: false, message: "권한이 없습니다." });
     }
 
-    const { scope } = await buildPracticeOwnedScope(req);
-    // 동일 치과에서 보이는 최신 임시저장(본인/동료)을 삭제해 이어쓰기를 정리한다.
-    const latest = await PracticeTransferDraft.findOne(scope)
-      .sort({ updatedAt: -1, _id: -1 })
-      .select({ _id: 1 })
-      .lean();
+    // 기본: 본인 draft만 삭제. draftId가 오면 동일 치과 범위의 해당 draft만 삭제(동료 이어쓰기 정리).
+    const rawDraftId = String(req.body?.draftId || req.query?.draftId || "").trim();
+    let clearedDoc = null;
 
-    const clearedDraftId = latest?._id ? String(latest._id) : null;
-    if (latest?._id) {
-      await PracticeTransferDraft.deleteOne({ _id: latest._id });
+    if (rawDraftId && Types.ObjectId.isValid(rawDraftId)) {
+      const { scope } = await buildPracticeOwnedScope(req);
+      clearedDoc = await PracticeTransferDraft.findOne({
+        _id: new Types.ObjectId(rawDraftId),
+        ...scope,
+      })
+        .select({ _id: 1, practiceUserId: 1 })
+        .lean();
+      if (clearedDoc?._id) {
+        await PracticeTransferDraft.deleteOne({ _id: clearedDoc._id });
+      }
+    } else {
+      clearedDoc = await PracticeTransferDraft.findOneAndDelete({
+        practiceUserId: req.user?._id,
+      })
+        .select({ _id: 1, practiceUserId: 1 })
+        .lean();
     }
 
+    const clearedDraftId = clearedDoc?._id ? String(clearedDoc._id) : null;
     if (clearedDraftId) {
       await emitPracticeTransferEventToPracticeUsers({
         practiceBusinessAnchorId: req.user?.businessAnchorId,
@@ -507,7 +647,9 @@ export async function clearMyPracticeTransferDraft(req, res) {
           source: "clearMyPracticeTransferDraft",
           action: "draft-cleared",
           draftId: clearedDraftId,
-          practiceUserId: String(req.user?._id || ""),
+          practiceUserId: String(
+            clearedDoc?.practiceUserId || req.user?._id || "",
+          ),
           practiceBusinessAnchorId:
             String(req.user?.businessAnchorId || "").trim() || null,
         },

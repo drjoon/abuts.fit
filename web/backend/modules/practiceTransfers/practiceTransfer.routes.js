@@ -10,6 +10,7 @@ import {
   clearMyPracticeTransferDraft,
   createPracticeTransfer,
   getMyPracticeTransferDraft,
+  listPracticeTransferDrafts,
   getMyPracticeTransfers,
   getReceivedPracticeTransfers,
   getReceivedPracticeTransferUnreadCount,
@@ -62,6 +63,13 @@ router.get(
   authenticate,
   authorize(["practice", "admin"], { subRoles: ["owner", "staff"] }),
   getMyPracticeTransferDraft,
+);
+
+router.get(
+  "/drafts",
+  authenticate,
+  authorize(["practice", "admin"], { subRoles: ["owner", "staff"] }),
+  listPracticeTransferDrafts,
 );
 
 router.post(

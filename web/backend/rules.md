@@ -255,9 +255,10 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   - 다운로드완료 판정 SSOT: `PracticeTransfer.requestorDownloadedAt`
   - 가상 의뢰 행 매핑 기준: `controllers/practiceTransfers/practiceTransfer.controller.js#toVirtualRequestRows`
   - practice 전송 목록/취소/복구 권한 범위 SSOT: 동일 치과 `practiceBusinessAnchorId`(=`req.user.businessAnchorId`) 구성원 공유.
-    구현: `buildPracticeOwnedScope` (`getMyPracticeTransfers` / `cancelPracticeTransfersBatch` / `restorePracticeTransfersBatch` / draft GET·DELETE).
+    구현: `buildPracticeOwnedScope` (`getMyPracticeTransfers` / `cancelPracticeTransfersBatch` / `restorePracticeTransfersBatch` / draft list·DELETE by id).
     동일 치과 practice 멤버의 `practiceUserId`도 포함해 앵커 미기입 레거시 문서를 함께 조회한다.
     앵커 없는 계정은 `practiceUserId` 본인 범위로 폴백한다.
+    draft 작성 폼 GET(`GET /draft`)·기본 DELETE는 본인 `practiceUserId`만 대상으로 한다.
   - practice 실시간 fan-out: 생성/상태변경/임시저장(upsert·clear) 시 동일 치과 practice 구성원에게 `practice:transfer-created|updated`를 전달한다.
     임시저장은 `practice:transfer-updated` + `action: draft-upserted|draft-cleared`.
     구현: `emitPracticeTransferEventToPracticeUsers`.
@@ -277,6 +278,10 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
     - 휴대폰: `POST /api/auth/signup/phone-verification/send|verify`, `GET /api/auth/signup/phone-verification/status` (일 5회, 개발모드에서도 자동완료하지 않으며 비프로덕션에서는 응답/로그로 코드를 노출할 수 있음)
     - status API는 `verifiedAt`이 있고 `consumedAt`이 없을 때만 `verified: true`를 반환합니다.
   - 치과명 로그인(`POST /api/auth/practice/login`)과 이메일 없는 레거시 비밀번호 변경(clinic+staff+phone)은 하위 호환용으로 유지합니다.
+  - 같은 사업자 계정 전환(모든 role):
+    - `GET /api/auth/colleagues` — 현재 사용자의 `businessAnchorId`와 동일한 활성·승인 계정 목록(본인 제외)
+    - `POST /api/auth/switch-account` `{ userId, password }` — 동일 `businessAnchorId` + 대상 계정 비밀번호 확인 후 JWT 재발급
+    - 구현: `controllers/auth/auth.controller.js` (`listColleagues`, `switchAccount`), `modules/auth/auth.routes.js`
   - 따라서 `adminCredit`, `admin.dashboard`, `admin.referral`의 requestor 중심 집계를 practice로 임의 확장하지 않습니다.
   - 강제 분리: practice는 `Request` 도메인 API(`/api/requests/*`)를 사용하지 않고,
     `PracticeTransfer` 도메인 API(`/api/practice/transfers/*`)만 사용합니다.
@@ -285,11 +290,19 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
 
 - practice 파일전송 임시저장(다른 PC 이어쓰기) SSOT:
   - 저장 모델: `models/practiceTransferDraft.model.js`
-  - API: `GET/POST/DELETE /api/practice/transfers/draft`
+  - API:
+    - `GET/POST/DELETE /api/practice/transfers/draft` → 작성 중인 draft
+      - GET 기본: 본인 `practiceUserId` draft
+      - GET `?draftId=`: 동일 치과 범위의 해당 draft (불러온 같은 케이스)
+      - POST 기본: 본인 draft upsert
+      - POST `draftId`: 불러온 draft에 join해 **같은 문서를 갱신**(소유자 유지, 동료 공동 작성)
+      - DELETE 기본: 본인 draft / `draftId`면 동일 치과 범위 해당 draft
+    - `GET /api/practice/transfers/drafts` → 동일 치과 practice 구성원 draft 목록(사이드바)
+  - draft는 `practiceUserId` 당 1건(unique) 소유. 다른 의뢰는 각자 draft, **같은 케이스는 불러오기(join)로 공유**.
   - draft `files`는 `File` 컬렉션의 temp 업로드 파일 소유권(`uploadedBy`) 검증 후 저장합니다.
     동일 치과 practice 구성원이 업로드한 파일도 이어쓰기 저장을 허용합니다.
-  - GET/DELETE는 동일 치과 `practiceBusinessAnchorId` 범위의 최신 draft를 대상으로 합니다(동료 이어쓰기).
   - POST/DELETE 성공 시 동일 치과 practice 구성원에게 `practice:transfer-updated`(draft-upserted|draft-cleared)를 fan-out한다.
+    payload의 `draftId`가 활성 케이스와 같으면 작성 폼에 반영하고, 다르면 목록만 갱신한다.
   - practice 전송 생성 성공 후 draft 정리는 프론트에서 `DELETE /draft` 호출로 수행합니다.
   - 관련 파일:
     - `modules/practiceTransfers/practiceTransfer.routes.js`
