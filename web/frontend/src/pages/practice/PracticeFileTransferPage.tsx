@@ -3770,12 +3770,30 @@ export const PracticeFileTransferPage = () => {
       },
     ]);
 
-    // 로컬만 초기화. 불러온 동료 케이스를 서버에서 지우지 않는다.
+    const draftIdToClear = String(activeDraftIdRef.current || draftSummary?.id || "").trim();
+    const isOwnActiveDraft =
+      Boolean(draftIdToClear) &&
+      (draftSummary?.isMine === true ||
+        String(draftSummary?.practiceUserId || "").trim() === myUserId);
+
     await clearAllFiles();
     setDraftFiles([]);
     setDraftSummary(null);
     setActiveDraftId(null);
     setTempSaveDirty(false);
+
+    if (isOwnActiveDraft && draftIdToClear && authToken) {
+      try {
+        await apiFetch<unknown>({
+          path: `/api/practice/transfers/draft?draftId=${encodeURIComponent(draftIdToClear)}`,
+          method: "DELETE",
+          token: authToken,
+        });
+      } catch {
+        // 화면 초기화는 유지. 목록 갱신으로 잔여 여부를 맞춤.
+      }
+    }
+
     void loadPracticeTransferDraftList();
     queueMicrotask(() => {
       skipFormAutosaveRef.current = false;
@@ -3783,7 +3801,9 @@ export const PracticeFileTransferPage = () => {
 
     toast({
       title: "새로 작성",
-      description: "새 기공의뢰서 작성 화면으로 초기화했습니다. 기존 임시저장은 목록에 그대로 둡니다.",
+      description: isOwnActiveDraft
+        ? "작성 화면을 비우고, 내 임시저장도 삭제했습니다."
+        : "작성 화면을 비웠습니다. 불러왔던 동료 임시저장은 목록에 그대로 둡니다.",
     });
   };
 
