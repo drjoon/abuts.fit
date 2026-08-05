@@ -448,10 +448,28 @@ export async function upsertPracticeTransferDraft(req, res) {
       },
     ).lean();
 
+    const draftPayload = toDraftResponse(doc);
+    await emitPracticeTransferEventToPracticeUsers({
+      practiceBusinessAnchorId: req.user?.businessAnchorId,
+      type: "practice:transfer-updated",
+      payload: {
+        source: "upsertPracticeTransferDraft",
+        action: "draft-upserted",
+        draftId: draftPayload?._id || null,
+        practiceUserId: String(req.user?._id || ""),
+        practiceBusinessAnchorId: String(req.user?.businessAnchorId || "").trim() || null,
+        targetLabAnchorId: draftPayload?.targetLabAnchorId || null,
+        targetLabName: draftPayload?.targetLabName || "",
+        fileCount: Array.isArray(draftPayload?.files) ? draftPayload.files.length : 0,
+        updatedAt: draftPayload?.updatedAt || null,
+      },
+      extraUserIds: [req.user?._id],
+    });
+
     return res.status(200).json({
       success: true,
       message: "practice 전송 임시저장을 갱신했습니다.",
-      data: toDraftResponse(doc),
+      data: draftPayload,
     });
   } catch (error) {
     return res.status(500).json({
@@ -476,8 +494,25 @@ export async function clearMyPracticeTransferDraft(req, res) {
       .select({ _id: 1 })
       .lean();
 
+    const clearedDraftId = latest?._id ? String(latest._id) : null;
     if (latest?._id) {
       await PracticeTransferDraft.deleteOne({ _id: latest._id });
+    }
+
+    if (clearedDraftId) {
+      await emitPracticeTransferEventToPracticeUsers({
+        practiceBusinessAnchorId: req.user?.businessAnchorId,
+        type: "practice:transfer-updated",
+        payload: {
+          source: "clearMyPracticeTransferDraft",
+          action: "draft-cleared",
+          draftId: clearedDraftId,
+          practiceUserId: String(req.user?._id || ""),
+          practiceBusinessAnchorId:
+            String(req.user?.businessAnchorId || "").trim() || null,
+        },
+        extraUserIds: [req.user?._id],
+      });
     }
 
     return res.status(200).json({

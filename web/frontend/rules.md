@@ -490,6 +490,8 @@ Notes:
 - practice 실시간 목록 동기화(무플리커):
   - `PracticeFileTransferPage`, `RequestorPracticePage`는 `practice:transfer-created|updated` 수신 시
     전체 로딩 상태를 다시 켜지 않고(silent) 기존 목록 유지 + 백그라운드 갱신으로 동기화합니다.
+  - `PracticeFileTransferPage`는 `action: draft-upserted|draft-cleared` 수신 시 임시저장(GET /draft)을 silent 재조회하고,
+    그 외 transfer 이벤트는 최근 전송 목록을 silent 재조회한다.
   - 이벤트 payload로 즉시 patch 가능한(read/download/cancel) 경우는 먼저 부분 patch하고,
     필요 시 coalesced/silent 재조회로 최종 정합성만 검증합니다.
 

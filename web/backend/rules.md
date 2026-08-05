@@ -258,7 +258,8 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
     구현: `buildPracticeOwnedScope` (`getMyPracticeTransfers` / `cancelPracticeTransfersBatch` / `restorePracticeTransfersBatch` / draft GET·DELETE).
     동일 치과 practice 멤버의 `practiceUserId`도 포함해 앵커 미기입 레거시 문서를 함께 조회한다.
     앵커 없는 계정은 `practiceUserId` 본인 범위로 폴백한다.
-  - practice 실시간 fan-out: 생성/상태변경 시 동일 치과 practice 구성원에게 `practice:transfer-created|updated`를 전달한다.
+  - practice 실시간 fan-out: 생성/상태변경/임시저장(upsert·clear) 시 동일 치과 practice 구성원에게 `practice:transfer-created|updated`를 전달한다.
+    임시저장은 `practice:transfer-updated` + `action: draft-upserted|draft-cleared`.
     구현: `emitPracticeTransferEventToPracticeUsers`.
 
 - 관리자 사용자 role 변경/생성 API는 `practice`를 유효 role로 허용해야 합니다.
@@ -288,6 +289,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   - draft `files`는 `File` 컬렉션의 temp 업로드 파일 소유권(`uploadedBy`) 검증 후 저장합니다.
     동일 치과 practice 구성원이 업로드한 파일도 이어쓰기 저장을 허용합니다.
   - GET/DELETE는 동일 치과 `practiceBusinessAnchorId` 범위의 최신 draft를 대상으로 합니다(동료 이어쓰기).
+  - POST/DELETE 성공 시 동일 치과 practice 구성원에게 `practice:transfer-updated`(draft-upserted|draft-cleared)를 fan-out한다.
   - practice 전송 생성 성공 후 draft 정리는 프론트에서 `DELETE /draft` 호출로 수행합니다.
   - 관련 파일:
     - `modules/practiceTransfers/practiceTransfer.routes.js`

@@ -2692,8 +2692,25 @@ export const PracticeFileTransferPage = () => {
     enabled: Boolean(authToken),
     eventTypes: ["practice:transfer-created", "practice:transfer-updated"],
     delayMs: 160,
-    onMatch: () => {
+    onMatch: (evt) => {
+      const payload =
+        evt?.data && typeof evt.data === "object"
+          ? (evt.data as Record<string, unknown>)
+          : {};
+      const action = String(payload.action || "").trim().toLowerCase();
+      const isDraftEvent =
+        action === "draft-upserted" || action === "draft-cleared";
+
+      if (isDraftEvent) {
+        void loadPracticeTransferDraft();
+        return;
+      }
+
       void loadRecentRequests({ silent: true });
+      // 전송 생성/정리 직후 동료 화면의 임시저장 카드도 맞춰 둔다.
+      if (String(evt?.type || "").trim() === "practice:transfer-created") {
+        void loadPracticeTransferDraft();
+      }
     },
   });
 
