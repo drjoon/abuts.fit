@@ -169,9 +169,29 @@ const toDraftResponse = (doc, ownerMeta = null) => {
         location: String(row?.location || "").trim(),
       }))
       .filter((row) => row.fileId && row.originalName && row.s3Key),
+    deletedAt: doc.deletedAt || null,
     updatedAt: doc.updatedAt || null,
     createdAt: doc.createdAt || null,
   };
+};
+
+let draftIndexEnsurePromise = null;
+const ensurePracticeTransferDraftIndexes = async () => {
+  if (draftIndexEnsurePromise) return draftIndexEnsurePromise;
+  draftIndexEnsurePromise = (async () => {
+    try {
+      // 레거시 전체 unique(practiceUserId_1)가 있으면 soft-delete와 충돌하므로 제거
+      await PracticeTransferDraft.collection.dropIndex("practiceUserId_1");
+    } catch {
+      // ignore (없거나 이름 다름)
+    }
+    try {
+      await PracticeTransferDraft.syncIndexes();
+    } catch (error) {
+      console.warn("[practice-transfer-draft] syncIndexes failed:", error?.message || error);
+    }
+  })();
+  return draftIndexEnsurePromise;
 };
 
 const loadDraftOwnerMetaByIds = async (userIds) => {
@@ -355,15 +375,18 @@ export async function getMyPracticeTransferDraft(req, res) {
       return res.status(403).json({ success: false, message: "권한이 없습니다." });
     }
 
+    await ensurePracticeTransferDraftIndexes();
+
     const rawDraftId = String(req.query?.draftId || "").trim();
     let doc = null;
     let ownerMeta = req.user;
 
     if (rawDraftId && Types.ObjectId.isValid(rawDraftId)) {
-      // 같은 케이스(불러온 임시저장) 조회: 동일 치과 범위 draft
+      // 같은 케이스(불러온 임시저장) 조회: 동일 치과 범위 draft (휴지통 제외)
       const { scope } = await buildPracticeOwnedScope(req);
       doc = await PracticeTransferDraft.findOne({
         _id: new Types.ObjectId(rawDraftId),
+        deletedAt: null,
         ...scope,
       }).lean();
       if (doc?.practiceUserId) {
@@ -372,9 +395,10 @@ export async function getMyPracticeTransferDraft(req, res) {
           ownerMap.get(String(doc.practiceUserId || "").trim()) || req.user;
       }
     } else {
-      // 기본: 본인이 만든 draft
+      // 기본: 본인이 만든 활성 draft
       doc = await PracticeTransferDraft.findOne({
         practiceUserId: req.user?._id,
+        deletedAt: null,
       }).lean();
     }
 
@@ -398,8 +422,17 @@ export async function listPracticeTransferDrafts(req, res) {
       return res.status(403).json({ success: false, message: "권한이 없습니다." });
     }
 
+    await ensurePracticeTransferDraftIndexes();
+
+    const trashed =
+      String(req.query?.trashed || "").trim() === "1" ||
+      String(req.query?.trashed || "").trim().toLowerCase() === "true";
+
     const { scope } = await buildPracticeOwnedScope(req);
-    const docs = await PracticeTransferDraft.find(scope)
+    const docs = await PracticeTransferDraft.find({
+      ...scope,
+      ...(trashed ? { deletedAt: { $ne: null } } : { deletedAt: null }),
+    })
       .sort({ updatedAt: -1, _id: -1 })
       .lean();
 
@@ -519,11 +552,14 @@ export async function upsertPracticeTransferDraft(req, res) {
     const rawDraftId = String(req.body?.draftId || "").trim();
     let doc = null;
 
+    await ensurePracticeTransferDraftIndexes();
+
     if (rawDraftId && Types.ObjectId.isValid(rawDraftId)) {
       // 불러온 임시저장(같은 케이스)에 join: 소유자는 유지하고 내용만 갱신
       const { scope } = await buildPracticeOwnedScope(req);
       const existing = await PracticeTransferDraft.findOne({
         _id: new Types.ObjectId(rawDraftId),
+        deletedAt: null,
         ...scope,
       })
         .select({ _id: 1, practiceUserId: 1 })
@@ -537,7 +573,7 @@ export async function upsertPracticeTransferDraft(req, res) {
       }
 
       doc = await PracticeTransferDraft.findOneAndUpdate(
-        { _id: existing._id },
+        { _id: existing._id, deletedAt: null },
         {
           $set: {
             practiceBusinessAnchorId: req.user?.businessAnchorId || null,
@@ -550,9 +586,9 @@ export async function upsertPracticeTransferDraft(req, res) {
         { new: true },
       ).lean();
     } else {
-      // 새 케이스 / 본인 draft upsert
+      // 새 케이스 / 본인 활성 draft upsert (휴지통 건과 분리)
       doc = await PracticeTransferDraft.findOneAndUpdate(
-        { practiceUserId: req.user?._id },
+        { practiceUserId: req.user?._id, deletedAt: null },
         {
           $set: {
             practiceUserId: req.user?._id,
@@ -561,6 +597,7 @@ export async function upsertPracticeTransferDraft(req, res) {
             targetLabName,
             transferMemo,
             files: normalizedDraftFiles,
+            deletedAt: null,
           },
         },
         {
@@ -615,26 +652,33 @@ export async function clearMyPracticeTransferDraft(req, res) {
       return res.status(403).json({ success: false, message: "권한이 없습니다." });
     }
 
-    // 기본: 본인 draft만 삭제. draftId가 오면 동일 치과 범위의 해당 draft만 삭제(동료 이어쓰기 정리).
+    await ensurePracticeTransferDraftIndexes();
+
+    // 소프트 삭제(휴지통). draftId가 오면 동일 치과 범위의 해당 draft.
     const rawDraftId = String(req.body?.draftId || req.query?.draftId || "").trim();
+    const now = new Date();
     let clearedDoc = null;
 
     if (rawDraftId && Types.ObjectId.isValid(rawDraftId)) {
       const { scope } = await buildPracticeOwnedScope(req);
-      clearedDoc = await PracticeTransferDraft.findOne({
-        _id: new Types.ObjectId(rawDraftId),
-        ...scope,
-      })
-        .select({ _id: 1, practiceUserId: 1 })
+      clearedDoc = await PracticeTransferDraft.findOneAndUpdate(
+        {
+          _id: new Types.ObjectId(rawDraftId),
+          deletedAt: null,
+          ...scope,
+        },
+        { $set: { deletedAt: now } },
+        { new: true },
+      )
+        .select({ _id: 1, practiceUserId: 1, deletedAt: 1 })
         .lean();
-      if (clearedDoc?._id) {
-        await PracticeTransferDraft.deleteOne({ _id: clearedDoc._id });
-      }
     } else {
-      clearedDoc = await PracticeTransferDraft.findOneAndDelete({
-        practiceUserId: req.user?._id,
-      })
-        .select({ _id: 1, practiceUserId: 1 })
+      clearedDoc = await PracticeTransferDraft.findOneAndUpdate(
+        { practiceUserId: req.user?._id, deletedAt: null },
+        { $set: { deletedAt: now } },
+        { new: true },
+      )
+        .select({ _id: 1, practiceUserId: 1, deletedAt: 1 })
         .lean();
     }
 
@@ -659,12 +703,98 @@ export async function clearMyPracticeTransferDraft(req, res) {
 
     return res.status(200).json({
       success: true,
-      message: "practice 전송 임시저장을 삭제했습니다.",
+      message: "practice 전송 임시저장을 휴지통으로 옮겼습니다.",
+      data: clearedDoc ? toDraftResponse(clearedDoc, req.user) : null,
     });
   } catch (error) {
     return res.status(500).json({
       success: false,
       message: "practice 전송 임시저장 삭제 중 오류가 발생했습니다.",
+      error: error?.message,
+    });
+  }
+}
+
+export async function restorePracticeTransferDraft(req, res) {
+  try {
+    const role = String(req.user?.role || "").trim();
+    if (role !== "practice" && role !== "admin") {
+      return res.status(403).json({ success: false, message: "권한이 없습니다." });
+    }
+
+    await ensurePracticeTransferDraftIndexes();
+
+    const rawDraftId = String(req.body?.draftId || req.query?.draftId || "").trim();
+    if (!rawDraftId || !Types.ObjectId.isValid(rawDraftId)) {
+      return res.status(400).json({ success: false, message: "draftId가 필요합니다." });
+    }
+
+    const { scope } = await buildPracticeOwnedScope(req);
+    const trashed = await PracticeTransferDraft.findOne({
+      _id: new Types.ObjectId(rawDraftId),
+      deletedAt: { $ne: null },
+      ...scope,
+    }).lean();
+
+    if (!trashed?._id) {
+      return res.status(404).json({
+        success: false,
+        message: "휴지통에서 임시저장을 찾지 못했습니다.",
+      });
+    }
+
+    const ownerId = trashed.practiceUserId;
+    // 동일 소유자의 활성 draft가 있으면 그 건을 휴지통으로 보내고 복구(사용자당 활성 1건)
+    if (ownerId) {
+      await PracticeTransferDraft.updateMany(
+        {
+          practiceUserId: ownerId,
+          deletedAt: null,
+          _id: { $ne: trashed._id },
+        },
+        { $set: { deletedAt: new Date() } },
+      );
+    }
+
+    const restored = await PracticeTransferDraft.findOneAndUpdate(
+      { _id: trashed._id },
+      { $set: { deletedAt: null } },
+      { new: true },
+    ).lean();
+
+    const ownerMap = await loadDraftOwnerMetaByIds([restored?.practiceUserId]);
+    const ownerMeta =
+      ownerMap.get(String(restored?.practiceUserId || "").trim()) || req.user;
+    const draftPayload = toDraftResponse(restored, ownerMeta);
+
+    await emitPracticeTransferEventToPracticeUsers({
+      practiceBusinessAnchorId: req.user?.businessAnchorId,
+      type: "practice:transfer-updated",
+      payload: {
+        source: "restorePracticeTransferDraft",
+        action: "draft-upserted",
+        draftId: draftPayload?._id || null,
+        practiceUserId: String(restored?.practiceUserId || req.user?._id || ""),
+        practiceUserLabel: draftPayload?.practiceUserLabel || "",
+        practiceBusinessAnchorId:
+          String(req.user?.businessAnchorId || "").trim() || null,
+        targetLabAnchorId: draftPayload?.targetLabAnchorId || null,
+        targetLabName: draftPayload?.targetLabName || "",
+        fileCount: Array.isArray(draftPayload?.files) ? draftPayload.files.length : 0,
+        updatedAt: draftPayload?.updatedAt || null,
+      },
+      extraUserIds: [req.user?._id],
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "임시저장을 복구했습니다.",
+      data: draftPayload,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "practice 전송 임시저장 복구 중 오류가 발생했습니다.",
       error: error?.message,
     });
   }

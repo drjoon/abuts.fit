@@ -1,5 +1,11 @@
 import { UploadCloud, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 // related files:
 // - web/frontend/src/pages/practice/PracticeDropzonePage.tsx
@@ -112,31 +118,46 @@ export const PracticeTransferFilePane = ({
           </div>
         ) : (
           <div className={`${listViewportClassName} overflow-y-auto pr-1`}>
-            <div className="grid grid-cols-1 gap-2 auto-rows-[4rem]">
-              {files.map((file) => (
-                <div
-                  key={file.key}
-                  className="flex h-[4rem] items-center justify-between rounded-xl border border-slate-200/80 bg-white/80 px-2.5 py-2 shadow-sm"
-                >
-                  <div className="min-w-0">
-                    <p className="truncate text-base font-medium text-slate-900">{file.name}</p>
-                    <p className="text-sm text-slate-500">
-                      {(file.size / (1024 * 1024)).toFixed(2)}MB
-                      {file.metaSuffix ? ` · ${file.metaSuffix}` : ""}
-                    </p>
-                  </div>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="h-9 w-9 text-slate-500 hover:text-destructive"
-                    onClick={() => onRemoveFile(file.key)}
+            <TooltipProvider delayDuration={0}>
+              <div className="grid grid-cols-1 gap-2 auto-rows-[4rem]">
+                {files.map((file) => (
+                  <div
+                    key={file.key}
+                    className="flex h-[4rem] items-center justify-between rounded-xl border border-slate-200/80 bg-white/80 px-2.5 py-2 shadow-sm"
                   >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </div>
-              ))}
-            </div>
+                    <div className="min-w-0">
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <p className="truncate text-base font-medium text-slate-900">
+                            {file.name}
+                          </p>
+                        </TooltipTrigger>
+                        <TooltipContent
+                          side="top"
+                          align="start"
+                          className="max-w-sm break-all"
+                        >
+                          {file.name}
+                        </TooltipContent>
+                      </Tooltip>
+                      <p className="text-sm text-slate-500">
+                        {(file.size / (1024 * 1024)).toFixed(2)}MB
+                        {file.metaSuffix ? ` · ${file.metaSuffix}` : ""}
+                      </p>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-9 w-9 text-slate-500 hover:text-destructive"
+                      onClick={() => onRemoveFile(file.key)}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            </TooltipProvider>
           </div>
         )}
 

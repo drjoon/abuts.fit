@@ -292,18 +292,22 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   - 저장 모델: `models/practiceTransferDraft.model.js`
   - API:
     - `GET/POST/DELETE /api/practice/transfers/draft` → 작성 중인 draft
-      - GET 기본: 본인 `practiceUserId` draft
-      - GET `?draftId=`: 동일 치과 범위의 해당 draft (불러온 같은 케이스)
-      - POST 기본: 본인 draft upsert
-      - POST `draftId`: 불러온 draft에 join해 **같은 문서를 갱신**(소유자 유지, 동료 공동 작성)
-      - DELETE 기본: 본인 draft / `draftId`면 동일 치과 범위 해당 draft
-    - `GET /api/practice/transfers/drafts` → 동일 치과 practice 구성원 draft 목록(사이드바)
-  - draft는 `practiceUserId` 당 1건(unique) 소유. 다른 의뢰는 각자 draft, **같은 케이스는 불러오기(join)로 공유**.
+      - GET 기본: 본인 활성(`deletedAt: null`) draft
+      - GET `?draftId=`: 동일 치과 범위의 활성 draft (불러온 같은 케이스)
+      - POST 기본: 본인 활성 draft upsert
+      - POST `draftId`: 불러온 draft에 join해 **같은 문서를 갱신**(소유자 유지)
+      - DELETE: **소프트 삭제**(휴지통). `deletedAt` 설정. `draftId`면 해당 건
+    - `POST /api/practice/transfers/draft/restore` `{ draftId }` → 휴지통에서 복구
+      - 동일 소유자의 다른 활성 draft가 있으면 그 건을 휴지통으로 보낸 뒤 복구(활성 1건 유지)
+    - `GET /api/practice/transfers/drafts` → 활성 목록
+    - `GET /api/practice/transfers/drafts?trashed=1` → 휴지통 목록
+  - 활성 draft는 `practiceUserId` 당 1건(partial unique: `deletedAt: null`). 다른 의뢰는 각자 draft, **같은 케이스는 불러오기(join)로 공유**.
+  - 「새로 작성」은 화면만 비우고 서버 임시저장은 유지. 서버/휴지통 이동은 임시저장 카드 삭제로만 수행.
   - draft `files`는 `File` 컬렉션의 temp 업로드 파일 소유권(`uploadedBy`) 검증 후 저장합니다.
     동일 치과 practice 구성원이 업로드한 파일도 이어쓰기 저장을 허용합니다.
-  - POST/DELETE 성공 시 동일 치과 practice 구성원에게 `practice:transfer-updated`(draft-upserted|draft-cleared)를 fan-out한다.
+  - POST/DELETE/restore 성공 시 동일 치과 practice 구성원에게 `practice:transfer-updated`(draft-upserted|draft-cleared)를 fan-out한다.
     payload의 `draftId`가 활성 케이스와 같으면 작성 폼에 반영하고, 다르면 목록만 갱신한다.
-  - practice 전송 생성 성공 후 draft 정리는 프론트에서 `DELETE /draft` 호출로 수행합니다.
+  - practice 전송 생성 성공 후 draft 정리는 프론트에서 `DELETE /draft`(소프트 삭제) 호출로 수행합니다.
   - 관련 파일:
     - `modules/practiceTransfers/practiceTransfer.routes.js`
     - `controllers/practiceTransfers/practiceTransfer.controller.js`

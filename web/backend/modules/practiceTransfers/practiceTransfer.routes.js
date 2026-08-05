@@ -11,6 +11,7 @@ import {
   createPracticeTransfer,
   getMyPracticeTransferDraft,
   listPracticeTransferDrafts,
+  restorePracticeTransferDraft,
   getMyPracticeTransfers,
   getReceivedPracticeTransfers,
   getReceivedPracticeTransferUnreadCount,
@@ -84,6 +85,13 @@ router.delete(
   authenticate,
   authorize(["practice", "admin"], { subRoles: ["owner", "staff"] }),
   clearMyPracticeTransferDraft,
+);
+
+router.post(
+  "/draft/restore",
+  authenticate,
+  authorize(["practice", "admin"], { subRoles: ["owner", "staff"] }),
+  restorePracticeTransferDraft,
 );
 
 router.get(

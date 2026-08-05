@@ -795,6 +795,7 @@ export const PracticeFileTransferPage = () => {
   const [draftFiles, setDraftFiles] = useState<DraftTransferFileItem[]>([]);
   const [draftSummary, setDraftSummary] = useState<DraftListSummary | null>(null);
   const [practiceDraftList, setPracticeDraftList] = useState<DraftListSummary[]>([]);
+  const [trashedDraftList, setTrashedDraftList] = useState<DraftListSummary[]>([]);
   const [activeDraftId, setActiveDraftId] = useState<string | null>(null);
   const [recentRequests, setRecentRequests] = useState<RecentRequestItem[]>([]);
   const [recentRequestsLoading, setRecentRequestsLoading] = useState(false);
@@ -1208,30 +1209,42 @@ export const PracticeFileTransferPage = () => {
   const loadPracticeTransferDraftList = useCallback(async () => {
     if (!authToken) {
       setPracticeDraftList([]);
+      setTrashedDraftList([]);
       return;
     }
 
     try {
-      const res = await apiFetch<unknown>({
-        path: "/api/practice/transfers/drafts",
-        method: "GET",
-        token: authToken,
-      });
-      if (!res.ok) return;
+      const [activeRes, trashRes] = await Promise.all([
+        apiFetch<unknown>({
+          path: "/api/practice/transfers/drafts",
+          method: "GET",
+          token: authToken,
+        }),
+        apiFetch<unknown>({
+          path: "/api/practice/transfers/drafts?trashed=1",
+          method: "GET",
+          token: authToken,
+        }),
+      ]);
 
-      const body =
-        res.data && typeof res.data === "object"
-          ? (res.data as { data?: unknown })
-          : {};
-      const rows = Array.isArray(body.data) ? body.data : [];
-      const next = rows
-        .map((row) =>
-          row && typeof row === "object"
-            ? toDraftListSummary(row as PracticeTransferDraftPayload, myUserId)
-            : null,
-        )
-        .filter((row): row is DraftListSummary => Boolean(row));
-      setPracticeDraftList(next);
+      const parseList = (res: { ok: boolean; data?: unknown }) => {
+        if (!res.ok) return [] as DraftListSummary[];
+        const body =
+          res.data && typeof res.data === "object"
+            ? (res.data as { data?: unknown })
+            : {};
+        const rows = Array.isArray(body.data) ? body.data : [];
+        return rows
+          .map((row) =>
+            row && typeof row === "object"
+              ? toDraftListSummary(row as PracticeTransferDraftPayload, myUserId)
+              : null,
+          )
+          .filter((row): row is DraftListSummary => Boolean(row));
+      };
+
+      setPracticeDraftList(parseList(activeRes));
+      setTrashedDraftList(parseList(trashRes));
     } catch {
       // ignore
     }
@@ -2427,10 +2440,51 @@ export const PracticeFileTransferPage = () => {
       }
     }
 
-    return [...byKey.values()].sort(
+    const canceled = [...byKey.values()];
+
+    const draftTrash = trashedDraftList.map((draft): RecentTransferItem => {
+      const updatedAtRaw = draft.updatedAt || draft.createdAt || new Date().toISOString();
+      const createdAtTs = new Date(updatedAtRaw).getTime();
+      const safeTs = Number.isFinite(createdAtTs) && createdAtTs > 0 ? createdAtTs : Date.now();
+      const ownerLabel = draft.isMine ? "나" : draft.practiceUserLabel || "동료";
+      const patientLabel = draft.patientName || "환자명 미입력";
+      const files = draft.files.map((file) => ({
+        fileName: file.originalName,
+        s3Key: file.s3Key,
+        size: Number(file.size || 0),
+      }));
+
+      return {
+        id: draft.id,
+        transferId: PRACTICE_DRAFT_TRANSFER_ID,
+        deleteTargetLabel: `임시저장 · ${patientLabel}`,
+        createdAt: toDateLabel(updatedAtRaw),
+        createdAtTs: safeTs,
+        requestDate: toDayLabel(updatedAtRaw),
+        targetLab: draft.targetLabName || "-",
+        orderDate: "",
+        arrivalDate: "",
+        status: "임시저장",
+        fileCount: files.length,
+        patientCount: 1,
+        requestIds: [],
+        transferMongoIds: [],
+        fileNames: files.map((f) => f.fileName),
+        files,
+        transferMemo: draft.transferMemo,
+        unreadCount: 0,
+        practiceUserId: draft.practiceUserId,
+        practiceUserLabel: ownerLabel,
+        isMineDraft: draft.isMine,
+        draftPatientName: draft.patientName,
+        searchBlob: "",
+      };
+    });
+
+    return [...draftTrash, ...canceled].sort(
       (a, b) => Number(b.createdAtTs || 0) - Number(a.createdAtTs || 0),
     );
-  }, [trashRecentRequests]);
+  }, [trashRecentRequests, trashedDraftList]);
 
   const extractDataFromResponse = <T,>(raw: unknown): T | null => {
     if (!raw || typeof raw !== "object") return null;
@@ -2976,12 +3030,12 @@ export const PracticeFileTransferPage = () => {
         }
         await loadPracticeTransferDraftList();
         toast({
-          title: "임시저장 삭제 완료",
-          description: "임시저장된 의뢰를 삭제했습니다.",
+          title: "휴지통으로 이동",
+          description: "임시저장을 휴지통으로 옮겼습니다. 아래에서 복구할 수 있습니다.",
         });
       } catch (error) {
         toast({
-          title: "임시저장 삭제 실패",
+          title: "휴지통 이동 실패",
           description:
             error instanceof Error ? error.message : "임시저장 삭제 중 오류가 발생했습니다.",
           variant: "destructive",
@@ -3120,6 +3174,43 @@ export const PracticeFileTransferPage = () => {
     if (!target) {
       setRestoreConfirmOpen(false);
       setRestoreTargetTransfer(null);
+      return;
+    }
+
+    if (
+      target.status === "임시저장" ||
+      target.transferId === PRACTICE_DRAFT_TRANSFER_ID
+    ) {
+      setRestoringTransfer(true);
+      try {
+        const draftId = String(target.id || "").trim();
+        const res = await apiFetch<unknown>({
+          path: "/api/practice/transfers/draft/restore",
+          method: "POST",
+          token: authToken,
+          jsonBody: { draftId },
+        });
+        if (!res.ok) {
+          const body = asApiMessagePayload(res.data);
+          throw new Error(String(body?.message || "임시저장 복구에 실패했습니다."));
+        }
+        await loadPracticeTransferDraftList();
+        toast({
+          title: "임시저장 복구 완료",
+          description: "임시저장 목록으로 되돌렸습니다. 카드를 눌러 이어서 작성할 수 있습니다.",
+        });
+      } catch (error) {
+        toast({
+          title: "복구 실패",
+          description:
+            error instanceof Error ? error.message : "임시저장 복구 중 오류가 발생했습니다.",
+          variant: "destructive",
+        });
+      } finally {
+        setRestoringTransfer(false);
+        setRestoreConfirmOpen(false);
+        setRestoreTargetTransfer(null);
+      }
       return;
     }
 
@@ -3770,30 +3861,12 @@ export const PracticeFileTransferPage = () => {
       },
     ]);
 
-    const draftIdToClear = String(activeDraftIdRef.current || draftSummary?.id || "").trim();
-    const isOwnActiveDraft =
-      Boolean(draftIdToClear) &&
-      (draftSummary?.isMine === true ||
-        String(draftSummary?.practiceUserId || "").trim() === myUserId);
-
+    // 화면만 비움. 서버 임시저장은 목록에 유지(삭제는 임시저장 카드에서).
     await clearAllFiles();
     setDraftFiles([]);
     setDraftSummary(null);
     setActiveDraftId(null);
     setTempSaveDirty(false);
-
-    if (isOwnActiveDraft && draftIdToClear && authToken) {
-      try {
-        await apiFetch<unknown>({
-          path: `/api/practice/transfers/draft?draftId=${encodeURIComponent(draftIdToClear)}`,
-          method: "DELETE",
-          token: authToken,
-        });
-      } catch {
-        // 화면 초기화는 유지. 목록 갱신으로 잔여 여부를 맞춤.
-      }
-    }
-
     void loadPracticeTransferDraftList();
     queueMicrotask(() => {
       skipFormAutosaveRef.current = false;
@@ -3801,9 +3874,8 @@ export const PracticeFileTransferPage = () => {
 
     toast({
       title: "새로 작성",
-      description: isOwnActiveDraft
-        ? "작성 화면을 비우고, 내 임시저장도 삭제했습니다."
-        : "작성 화면을 비웠습니다. 불러왔던 동료 임시저장은 목록에 그대로 둡니다.",
+      description:
+        "작성 화면을 비웠습니다. 임시저장은 오른쪽 목록에 남아 다시 불러올 수 있습니다.",
     });
   };
 
@@ -3959,16 +4031,27 @@ export const PracticeFileTransferPage = () => {
                   <UploadCloud className="h-4 w-4 text-blue-600" />
                   기공의뢰
                 </CardTitle>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="h-8"
-                  onClick={() => void handleStartNewTransfer()}
-                >
-                  <Plus className="mr-1 h-3.5 w-3.5" />
-                  새로 작성
-                </Button>
+                <TooltipProvider delayDuration={0}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-8"
+                        onClick={() => void handleStartNewTransfer()}
+                      >
+                        <Plus className="mr-1 h-3.5 w-3.5" />
+                        새로 작성
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom" className="max-w-xs text-xs leading-relaxed">
+                      작성 화면(입력·첨부)만 비웁니다. 서버 임시저장은 오른쪽 목록에 그대로
+                      남아 다시 불러올 수 있습니다. 서버에서 지우려면 임시저장 카드의 삭제
+                      버튼으로 휴지통에 보내세요.
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
               </div>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -4410,19 +4493,30 @@ export const PracticeFileTransferPage = () => {
                                 {transfer.arrivalDate ? ` · 도착 ${transfer.arrivalDate}` : ""}
                               </p>
                             </div>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8 shrink-0 text-muted-foreground hover:text-destructive"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                void handleAskDeleteTransfer(transfer);
-                              }}
-                              aria-label="임시저장 삭제"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
+                            <TooltipProvider delayDuration={0}>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-8 w-8 shrink-0 text-muted-foreground hover:text-destructive"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      void handleAskDeleteTransfer(transfer);
+                                    }}
+                                    aria-label="임시저장을 휴지통으로"
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent side="left" className="max-w-xs text-xs leading-relaxed">
+                                  이 임시저장을 휴지통으로 보냅니다. 활성 목록·동기화에서
+                                  제외되며, 아래 휴지통에서 복구할 수 있습니다. (「새로 작성」과
+                                  달리 서버에서도 활성 임시저장이 제거됩니다.)
+                                </TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
                           </div>
                         </div>
                       );
@@ -4456,6 +4550,16 @@ export const PracticeFileTransferPage = () => {
                         String(transfer.targetLab || "-")
                           .replace(/\s*→.*$/g, "")
                           .trim() || "-";
+                      const isDraftTrash =
+                        transfer.status === "임시저장" ||
+                        transfer.transferId === PRACTICE_DRAFT_TRANSFER_ID;
+                      const titleLabel = isDraftTrash
+                        ? transfer.draftPatientName ||
+                          transfer.deleteTargetLabel ||
+                          "임시저장"
+                        : transfer.transferId !== "-"
+                          ? transfer.transferId
+                          : transfer.id;
 
                       return (
                         <div
@@ -4465,9 +4569,15 @@ export const PracticeFileTransferPage = () => {
                           <div className="flex items-center justify-between gap-3">
                             <div className="min-w-0">
                               <p className="truncate font-medium">
-                                {transfer.transferId !== "-"
-                                  ? transfer.transferId
-                                  : transfer.id}
+                                {titleLabel}
+                                {isDraftTrash ? (
+                                  <span className="ml-1.5 text-xs font-normal text-muted-foreground">
+                                    · 임시저장
+                                    {transfer.practiceUserLabel
+                                      ? ` · ${transfer.practiceUserLabel}`
+                                      : ""}
+                                  </span>
+                                ) : null}
                               </p>
                               <p className="mt-0.5 truncate text-xs text-muted-foreground">
                                 {transfer.createdAt}
@@ -4480,17 +4590,27 @@ export const PracticeFileTransferPage = () => {
                               </p>
                             </div>
 
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8 shrink-0 text-slate-500 hover:text-sky-700"
-                              onClick={() => handleAskRestoreTransfer(transfer)}
-                              aria-label="의뢰서 복구"
-                              title="복구"
-                            >
-                              <RotateCcw className="h-4 w-4" />
-                            </Button>
+                            <TooltipProvider delayDuration={0}>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-8 w-8 shrink-0 text-slate-500 hover:text-sky-700"
+                                    onClick={() => handleAskRestoreTransfer(transfer)}
+                                    aria-label={isDraftTrash ? "임시저장 복구" : "의뢰서 복구"}
+                                  >
+                                    <RotateCcw className="h-4 w-4" />
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent side="left" className="max-w-xs text-xs leading-relaxed">
+                                  {isDraftTrash
+                                    ? "임시저장 목록으로 되돌립니다. 복구 후 카드를 눌러 이어서 작성할 수 있습니다."
+                                    : "최근 전송 내역으로 되돌립니다. 기공소에서도 다시 확인할 수 있습니다."}
+                                </TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
                           </div>
                         </div>
                       );
@@ -4720,7 +4840,7 @@ export const PracticeFileTransferPage = () => {
           title={
             deleteTargetTransfer?.status === "임시저장" ||
             deleteTargetTransfer?.transferId === PRACTICE_DRAFT_TRANSFER_ID
-              ? "임시저장을 삭제할까요?"
+              ? "임시저장을 휴지통으로 옮길까요?"
               : "이 의뢰서를 휴지통으로 이동할까요?"
           }
           description={
@@ -4729,14 +4849,14 @@ export const PracticeFileTransferPage = () => {
                 대상:{" "}
                 {deleteTargetTransfer?.transferId && deleteTargetTransfer.transferId !== "-"
                   ? deleteTargetTransfer.transferId === PRACTICE_DRAFT_TRANSFER_ID
-                    ? "임시저장"
+                    ? deleteTargetTransfer.deleteTargetLabel || "임시저장"
                     : deleteTargetTransfer.transferId
                   : deleteTargetTransfer?.id || "-"}
               </div>
               <div className="text-sm text-muted-foreground">
                 {deleteTargetTransfer?.status === "임시저장" ||
                 deleteTargetTransfer?.transferId === PRACTICE_DRAFT_TRANSFER_ID
-                  ? `첨부 파일 ${deleteTargetTransfer?.fileCount || 0}건과 함께 임시저장을 삭제합니다.`
+                  ? `첨부 파일 ${deleteTargetTransfer?.fileCount || 0}건과 함께 휴지통으로 이동합니다. 아래에서 다시 복구할 수 있습니다.`
                   : `첨부 파일 ${deleteTargetTransfer?.fileCount || 0}건과 함께 휴지통으로 이동합니다. 아래에서 다시 복구할 수 있습니다.`}
               </div>
             </div>
@@ -4744,10 +4864,7 @@ export const PracticeFileTransferPage = () => {
           confirmLabel={
             deletingTransfer
               ? "처리 중..."
-              : deleteTargetTransfer?.status === "임시저장" ||
-                  deleteTargetTransfer?.transferId === PRACTICE_DRAFT_TRANSFER_ID
-                ? "삭제"
-                : "휴지통으로 이동"
+              : "휴지통으로 이동"
           }
           cancelLabel="취소"
           onConfirm={handleConfirmDeleteTransfer}
@@ -4756,17 +4873,27 @@ export const PracticeFileTransferPage = () => {
 
         <ConfirmDialog
           open={restoreConfirmOpen}
-          title="이 의뢰서를 복구할까요?"
+          title={
+            restoreTargetTransfer?.status === "임시저장" ||
+            restoreTargetTransfer?.transferId === PRACTICE_DRAFT_TRANSFER_ID
+              ? "임시저장을 복구할까요?"
+              : "이 의뢰서를 복구할까요?"
+          }
           description={
             <div className="space-y-1">
               <div className="text-sm text-muted-foreground">
                 대상:{" "}
-                {restoreTargetTransfer?.transferId && restoreTargetTransfer.transferId !== "-"
-                  ? restoreTargetTransfer.transferId
-                  : restoreTargetTransfer?.id || "-"}
+                {restoreTargetTransfer?.transferId === PRACTICE_DRAFT_TRANSFER_ID
+                  ? restoreTargetTransfer.deleteTargetLabel || "임시저장"
+                  : restoreTargetTransfer?.transferId && restoreTargetTransfer.transferId !== "-"
+                    ? restoreTargetTransfer.transferId
+                    : restoreTargetTransfer?.id || "-"}
               </div>
               <div className="text-sm text-muted-foreground">
-                최근 전송 내역으로 되돌아가며, 기공소에서도 다시 확인할 수 있습니다.
+                {restoreTargetTransfer?.status === "임시저장" ||
+                restoreTargetTransfer?.transferId === PRACTICE_DRAFT_TRANSFER_ID
+                  ? "임시저장 목록으로 되돌아가며, 카드를 눌러 이어서 작성할 수 있습니다."
+                  : "최근 전송 내역으로 되돌아가며, 기공소에서도 다시 확인할 수 있습니다."}
               </div>
             </div>
           }
