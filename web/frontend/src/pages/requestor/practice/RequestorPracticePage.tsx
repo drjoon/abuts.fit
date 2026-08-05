@@ -488,6 +488,7 @@ export default function RequestorPracticePage() {
         action === "cancelled" ||
         action === "deleted" ||
         action === "removed" ||
+        action === "purged" ||
         statusLower === "canceled" ||
         statusLower === "cancelled" ||
         statusLower === "deleted" ||

@@ -813,6 +813,141 @@ export async function restorePracticeTransferDraft(req, res) {
   }
 }
 
+export async function emptyPracticeTransferTrash(req, res) {
+  try {
+    const role = String(req.user?.role || "").trim();
+    if (role !== "practice" && role !== "admin") {
+      return res.status(403).json({ success: false, message: "권한이 없습니다." });
+    }
+
+    await ensurePracticeTransferDraftIndexes();
+
+    const { scope: baseScope } = await buildPracticeOwnedScope(req);
+
+    const [trashedDrafts, canceledTransfers] = await Promise.all([
+      PracticeTransferDraft.find({
+        ...baseScope,
+        deletedAt: { $ne: null },
+      })
+        .select({ _id: 1, practiceUserId: 1 })
+        .lean(),
+      PracticeTransfer.find({
+        $and: [baseScope, { status: "canceled" }],
+      })
+        .select({
+          _id: 1,
+          transferId: 1,
+          practiceUserId: 1,
+          practiceBusinessAnchorId: 1,
+          targetLabAnchorId: 1,
+        })
+        .lean(),
+    ]);
+
+    const draftIds = trashedDrafts
+      .map((doc) => String(doc?._id || "").trim())
+      .filter(Boolean);
+    const transferMongoIds = canceledTransfers
+      .map((doc) => String(doc?._id || "").trim())
+      .filter(Boolean);
+
+    if (draftIds.length > 0) {
+      await PracticeTransferDraft.deleteMany({
+        _id: {
+          $in: draftIds
+            .filter((id) => Types.ObjectId.isValid(id))
+            .map((id) => new Types.ObjectId(id)),
+        },
+      });
+    }
+
+    if (transferMongoIds.length > 0) {
+      await PracticeTransfer.deleteMany({
+        _id: {
+          $in: transferMongoIds
+            .filter((id) => Types.ObjectId.isValid(id))
+            .map((id) => new Types.ObjectId(id)),
+        },
+      });
+    }
+
+    const affectedByAnchor = new Map();
+    for (const doc of canceledTransfers) {
+      const targetLabAnchorId = String(doc?.targetLabAnchorId || "").trim();
+      const transferId = String(doc?.transferId || "").trim();
+      const transferMongoId = String(doc?._id || "").trim();
+      if (!targetLabAnchorId) continue;
+      const prev = affectedByAnchor.get(targetLabAnchorId) || [];
+      prev.push({ transferId, transferMongoId });
+      affectedByAnchor.set(targetLabAnchorId, prev);
+    }
+
+    for (const [targetLabAnchorId, affected] of affectedByAnchor.entries()) {
+      const scope = {
+        targetLabAnchorId: new Types.ObjectId(targetLabAnchorId),
+      };
+      invalidateUnreadCountCache(scope);
+      const unreadCount = await PracticeTransfer.countDocuments({
+        ...scope,
+        status: { $ne: "canceled" },
+        requestorReadAt: null,
+      });
+      setRequestPerfCacheValue(
+        unreadCountCacheKey(scope),
+        { unreadCount },
+        10 * 1000,
+      );
+
+      await emitPracticeTransferEventToRequestorUsers({
+        targetLabAnchorId,
+        type: "practice:transfer-updated",
+        payload: {
+          action: "purged",
+          targetLabAnchorId,
+          affectedTransfers: affected,
+          unreadCount,
+          status: "deleted",
+          updatedAt: new Date(),
+        },
+      });
+    }
+
+    await emitPracticeTransferEventToPracticeUsers({
+      practiceBusinessAnchorId: req.user?.businessAnchorId,
+      type: "practice:transfer-updated",
+      payload: {
+        source: "emptyPracticeTransferTrash",
+        action: "trash-emptied",
+        draftIds,
+        transferMongoIds,
+        draftDeletedCount: draftIds.length,
+        transferDeletedCount: transferMongoIds.length,
+        practiceBusinessAnchorId:
+          String(req.user?.businessAnchorId || "").trim() || null,
+        updatedAt: new Date(),
+      },
+      extraUserIds: [req.user?._id],
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "휴지통을 비웠습니다.",
+      data: {
+        draftDeletedCount: draftIds.length,
+        transferDeletedCount: transferMongoIds.length,
+        draftIds,
+        transferMongoIds,
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "휴지통 비우기 중 오류가 발생했습니다.",
+      error: error?.message,
+    });
+  }
+}
+
 export async function createPracticeTransfer(req, res) {
   try {
     const role = String(req.user?.role || "").trim();

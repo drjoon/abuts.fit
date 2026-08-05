@@ -300,6 +300,10 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
       - DELETE: **소프트 삭제**(휴지통). `deletedAt` 설정. `draftId`면 해당 건
     - `POST /api/practice/transfers/draft/restore` `{ draftId }` → 휴지통에서 복구
       - 동일 소유자의 다른 활성 draft가 있으면 그 건을 휴지통으로 보낸 뒤 복구(활성 1건 유지)
+    - `POST /api/practice/transfers/trash/empty` → 휴지통 비우기(영구 삭제)
+      - 동일 치과 범위의 소프트 삭제 draft(`deletedAt != null`)와 `status: "canceled"` 전송을 완전 삭제
+      - 응답: `{ draftDeletedCount, transferDeletedCount, draftIds, transferMongoIds }`
+      - 성공 시 `practice:transfer-updated` `action: trash-emptied`(치과) / `purged`(기공소) fan-out
     - `GET /api/practice/transfers/drafts` → 활성 목록
     - `GET /api/practice/transfers/drafts?trashed=1` → 휴지통 목록
   - 활성 draft는 `practiceUserId` 당 1건(partial unique: `deletedAt: null`). 다른 의뢰는 각자 draft, **같은 케이스는 불러오기(join)로 공유**.
@@ -308,7 +312,8 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
     동일 치과 practice 구성원이 업로드한 파일도 이어쓰기 저장을 허용합니다.
   - POST/DELETE/restore 성공 시 동일 치과 practice 구성원에게 `practice:transfer-updated`(draft-upserted|draft-cleared)를 fan-out한다.
     payload의 `draftId`가 활성 케이스와 같으면 작성 폼에 반영하고, 다르면 목록만 갱신한다.
-  - practice 전송 생성 성공 후 draft 정리는 프론트에서 `DELETE /draft`(소프트 삭제) 호출로 수행합니다.
+  - practice 전송 생성 성공 시 서버가 draft를 완전 삭제하고 `draft-cleared`/`transfer-created`를 fan-out한다.
+    프론트는 작성자 전송 성공·동료 이벤트 수신 시 의뢰 폼 localStorage를 함께 초기화한다.
   - 관련 파일:
     - `modules/practiceTransfers/practiceTransfer.routes.js`
     - `controllers/practiceTransfers/practiceTransfer.controller.js`

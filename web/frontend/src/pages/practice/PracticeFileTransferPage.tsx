@@ -403,6 +403,8 @@ type PracticeTransferLocalFormDraft = {
     businessType?: string;
   } | null;
   toothWorks?: ToothWorkSelection[];
+  /** 전송/삭제된 draft가 localStorage로 다시 복원되지 않도록 추적 */
+  activeDraftId?: string | null;
   updatedAt?: number;
 };
 
@@ -738,6 +740,16 @@ const PRACTICE_FILE_CACHE_META_KEY = "practice_dropzone_file_cache_meta_v1";
 const PRACTICE_TRANSFER_PROMO_TITLE = "어벗츠 유료서비스를 쓰지 않더라도 이용 가능!";
 const PRACTICE_TRANSFER_PROMO_DESC = "무료로 구강스캔 파일전송, 기공의뢰서 관리하세요.";
 
+/** 작성자·동료 공통: 의뢰 접수 폼 localStorage 캐시 제거 */
+const clearPracticeTransferFormLocalStorage = () => {
+  try {
+    localStorage.removeItem(PRACTICE_TRANSFER_TEMP_DRAFT_KEY);
+    localStorage.removeItem(PRACTICE_TRANSFER_FORM_LOCAL_KEY);
+  } catch {
+    // ignore
+  }
+};
+
 const clearPracticeFileTransferCaches = async () => {
   let keys: string[] = [];
   try {
@@ -763,11 +775,10 @@ const clearPracticeFileTransferCaches = async () => {
 
   try {
     localStorage.removeItem(PRACTICE_FILE_CACHE_META_KEY);
-    localStorage.removeItem(PRACTICE_TRANSFER_TEMP_DRAFT_KEY);
-    localStorage.removeItem(PRACTICE_TRANSFER_FORM_LOCAL_KEY);
   } catch {
     // ignore
   }
+  clearPracticeTransferFormLocalStorage();
 };
 
 const toDraftFileKey = (file: { originalName: string; size: number; s3Key: string }) =>
@@ -814,6 +825,8 @@ export const PracticeFileTransferPage = () => {
   const [restoreConfirmOpen, setRestoreConfirmOpen] = useState(false);
   const [restoreTargetTransfer, setRestoreTargetTransfer] = useState<RecentTransferItem | null>(null);
   const [restoringTransfer, setRestoringTransfer] = useState(false);
+  const [emptyTrashConfirmOpen, setEmptyTrashConfirmOpen] = useState(false);
+  const [emptyingTrash, setEmptyingTrash] = useState(false);
   const [localFormHydrated, setLocalFormHydrated] = useState(false);
   const chatBottomRef = useRef<HTMLDivElement | null>(null);
   const chatRoomResolveSeqRef = useRef(0);
@@ -829,9 +842,11 @@ export const PracticeFileTransferPage = () => {
   const formAutosaveSeqRef = useRef(0);
   const formAutosaveTimerRef = useRef<number | null>(null);
   const draftListSeqRef = useRef(0);
+  const draftListLoadedRef = useRef(false);
   const pendingLocalFilesRef = useRef<File[]>([]);
   const draftFilesRef = useRef<DraftTransferFileItem[]>([]);
   const activeDraftIdRef = useRef<string | null>(null);
+  const resetIntakeFormAfterTransferRef = useRef<() => Promise<void>>(async () => {});
   const FORM_AUTOSAVE_DEBOUNCE_MS = 450;
   const FORM_AUTOSAVE_IME_RETRY_MS = 120;
   const imeComposingRef = useRef(false);
@@ -1237,6 +1252,9 @@ export const PracticeFileTransferPage = () => {
 
       if (seq !== draftListSeqRef.current) return;
 
+      // 목록 조회가 모두 실패하면 stale-form 검증을 돌리지 않는다(오삭제 방지)
+      if (!activeRes.ok && !trashRes.ok) return;
+
       const parseList = (res: { ok: boolean; data?: unknown }) => {
         if (!res.ok) return [] as DraftListSummary[];
         const body =
@@ -1255,6 +1273,9 @@ export const PracticeFileTransferPage = () => {
 
       setPracticeDraftList(parseList(activeRes));
       setTrashedDraftList(parseList(trashRes));
+      if (activeRes.ok) {
+        draftListLoadedRef.current = true;
+      }
     } catch {
       // ignore
     }
@@ -1768,6 +1789,7 @@ export const PracticeFileTransferPage = () => {
       );
       const restoredMemo = String(parsed.requestMemo || "");
       const restoredPatientName = String(parsed.patientName || "");
+      const restoredActiveDraftId = String(parsed.activeDraftId || "").trim();
 
       if (import.meta.env.DEV) {
         console.info("[practice-transfer] restore local form", {
@@ -1777,6 +1799,7 @@ export const PracticeFileTransferPage = () => {
           restoredArrivalDefaultDays,
           restoredProsthesisTypes,
           restoredToothWorksCount: Array.isArray(parsed.toothWorks) ? parsed.toothWorks.length : 0,
+          restoredActiveDraftId: restoredActiveDraftId || null,
         });
       }
 
@@ -1791,6 +1814,9 @@ export const PracticeFileTransferPage = () => {
       setProsthesisTypeCatalogDraft(restoredProsthesisTypes);
       setRequestMemo(restoredMemo);
       setPatientName(restoredPatientName);
+      if (restoredActiveDraftId) {
+        setActiveDraftId(restoredActiveDraftId);
+      }
 
       const lab = parsed.selectedLab;
       if (lab && typeof lab === "object") {
@@ -1860,6 +1886,7 @@ export const PracticeFileTransferPage = () => {
           }
         : null,
       toothWorks,
+      activeDraftId: String(activeDraftId || "").trim() || null,
       updatedAt,
     };
 
@@ -1893,6 +1920,7 @@ export const PracticeFileTransferPage = () => {
       // ignore
     }
   }, [
+    activeDraftId,
     arrivalDate,
     arrivalDefaultDays,
     currentFormFingerprint,
@@ -2096,6 +2124,62 @@ export const PracticeFileTransferPage = () => {
     void loadPracticeTransferDraft();
     void loadPracticeTransferDraftList();
   }, [localFormHydrated, loadPracticeTransferDraft, loadPracticeTransferDraftList]);
+
+  /** 기공소 전송 성공 후 작성자·동료 모두 폼/로컬캐시를 비운다 */
+  const resetIntakeFormAfterTransfer = useCallback(async () => {
+    suppressLocalFormPersistRef.current = true;
+    skipFormAutosaveRef.current = true;
+    formAutosaveSeqRef.current += 1;
+    if (formAutosaveTimerRef.current) {
+      window.clearTimeout(formAutosaveTimerRef.current);
+      formAutosaveTimerRef.current = null;
+    }
+
+    clearPracticeTransferFormLocalStorage();
+
+    setLabOpen(false);
+    setLabSearch("");
+    setSelectedLab(null);
+    setPatientName("");
+    setRequestMemo("");
+    setOrderDate(todayDate);
+    setArrivalDate(addDaysToDateInput(todayDate, arrivalDefaultDays));
+    setToothWorks([]);
+    setDraftFiles([]);
+    setDraftSummary(null);
+    setActiveDraftId(null);
+    setTempSaveDirty(true);
+    lastSavedFormFingerprintRef.current = null;
+    setLastSavedFormFingerprint(null);
+    lastAppliedServerUpdatedAtRef.current = 0;
+    pendingLocalFormEditRef.current = false;
+    setFormSyncStatus("idle");
+    localFormUpdatedAtRef.current = 0;
+
+    await clearAllFiles();
+    await clearPracticeFileTransferCaches();
+  }, [
+    arrivalDefaultDays,
+    clearAllFiles,
+    setLabOpen,
+    setLabSearch,
+    setRequestMemo,
+    setSelectedLab,
+    todayDate,
+  ]);
+  resetIntakeFormAfterTransferRef.current = resetIntakeFormAfterTransfer;
+
+  // 전송으로 draft가 사라진 뒤(작성자 새로고침·동료 재진입) localStorage 폼이 되살아나지 않게 한다
+  useEffect(() => {
+    if (!localFormHydrated || !draftListLoadedRef.current) return;
+    const activeId = String(activeDraftId || "").trim();
+    if (!activeId) return;
+    const stillExists =
+      practiceDraftList.some((row) => row.id === activeId) ||
+      trashedDraftList.some((row) => row.id === activeId);
+    if (stillExists) return;
+    void resetIntakeFormAfterTransferRef.current();
+  }, [activeDraftId, localFormHydrated, practiceDraftList, trashedDraftList]);
 
   const periodAndSearchFilteredRequests = useMemo(() => {
     const query = requestSearchTerm.trim().toLowerCase();
@@ -3377,6 +3461,86 @@ export const PracticeFileTransferPage = () => {
     }
   };
 
+  const handleAskEmptyTrash = () => {
+    if (emptyingTrash) return;
+    if (trashGroupedTransfers.length === 0) return;
+    setEmptyTrashConfirmOpen(true);
+  };
+
+  const handleCancelEmptyTrash = () => {
+    if (emptyingTrash) return;
+    setEmptyTrashConfirmOpen(false);
+  };
+
+  const handleConfirmEmptyTrash = async () => {
+    if (emptyingTrash) return;
+    if (!authToken) {
+      toast({
+        title: "로그인이 필요합니다",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setEmptyingTrash(true);
+    try {
+      const res = await apiFetch<unknown>({
+        path: "/api/practice/transfers/trash/empty",
+        method: "POST",
+        token: authToken,
+      });
+      if (!res.ok) {
+        const body = asApiMessagePayload(res.data);
+        throw new Error(String(body?.message || "휴지통 비우기에 실패했습니다."));
+      }
+
+      const body =
+        res.data && typeof res.data === "object"
+          ? (res.data as {
+              data?: { draftDeletedCount?: number; transferDeletedCount?: number };
+            })
+          : {};
+      const draftDeletedCount = Number(body.data?.draftDeletedCount || 0);
+      const transferDeletedCount = Number(body.data?.transferDeletedCount || 0);
+      const totalDeleted = draftDeletedCount + transferDeletedCount;
+
+      setTrashedDraftList([]);
+      setRecentRequests((prev) =>
+        prev.filter((row) => String(row.status || "").trim() !== "취소"),
+      );
+      setEmptyTrashConfirmOpen(false);
+
+      if (
+        selectedTransfer &&
+        (selectedTransfer.status === "취소" ||
+          selectedTransfer.status === "임시저장" ||
+          selectedTransfer.transferId === PRACTICE_DRAFT_TRANSFER_ID)
+      ) {
+        handleCloseTransferDialog();
+      }
+
+      toast({
+        title: "휴지통을 비웠습니다",
+        description:
+          totalDeleted > 0
+            ? `임시저장 ${draftDeletedCount}건, 취소 전송 ${transferDeletedCount}건을 영구 삭제했습니다.`
+            : "삭제할 항목이 없었습니다.",
+      });
+
+      void loadPracticeTransferDraftList();
+      void loadRecentRequests({ silent: true });
+    } catch (error) {
+      toast({
+        title: "휴지통 비우기 실패",
+        description:
+          error instanceof Error ? error.message : "휴지통 비우기 중 오류가 발생했습니다.",
+        variant: "destructive",
+      });
+    } finally {
+      setEmptyingTrash(false);
+    }
+  };
+
   useEffect(() => {
     if (!transferDialogOpen || !activeChatRoom?._id) return;
     const raf = window.requestAnimationFrame(() => {
@@ -3403,6 +3567,16 @@ export const PracticeFileTransferPage = () => {
       const activeId = String(activeDraftIdRef.current || "").trim();
       const isActiveCaseEvent = Boolean(activeId) && eventDraftId === activeId;
 
+      if (action === "trash-emptied") {
+        setTrashedDraftList([]);
+        setRecentRequests((prev) =>
+          prev.filter((row) => String(row.status || "").trim() !== "취소"),
+        );
+        void loadPracticeTransferDraftList();
+        void loadRecentRequests({ silent: true });
+        return;
+      }
+
       if (isDraftEvent) {
         void loadPracticeTransferDraftList();
         if (action === "draft-cleared") {
@@ -3411,13 +3585,8 @@ export const PracticeFileTransferPage = () => {
             setTrashedDraftList((prev) => prev.filter((row) => row.id !== eventDraftId));
           }
           if (isActiveCaseEvent) {
-            setDraftFiles([]);
-            setDraftSummary(null);
-            setActiveDraftId(null);
-            lastSavedFormFingerprintRef.current = null;
-            setLastSavedFormFingerprint(null);
-            pendingLocalFormEditRef.current = false;
-            setFormSyncStatus("idle");
+            // 작성자·동료 모두: 전송/삭제로 케이스가 끝나면 폼·localStorage 초기화
+            void resetIntakeFormAfterTransferRef.current();
           }
           return;
         }
@@ -3459,13 +3628,8 @@ export const PracticeFileTransferPage = () => {
           setPracticeDraftList((prev) => prev.filter((row) => row.id !== clearedDraftId));
           setTrashedDraftList((prev) => prev.filter((row) => row.id !== clearedDraftId));
           if (String(activeDraftIdRef.current || "").trim() === clearedDraftId) {
-            setDraftFiles([]);
-            setDraftSummary(null);
-            setActiveDraftId(null);
-            lastSavedFormFingerprintRef.current = null;
-            setLastSavedFormFingerprint(null);
-            pendingLocalFormEditRef.current = false;
-            setFormSyncStatus("idle");
+            // 동료/다른 탭: 전송된 케이스의 작성 폼·localStorage를 함께 비운다
+            void resetIntakeFormAfterTransferRef.current();
           }
         }
         void loadPracticeTransferDraftList();
@@ -3802,25 +3966,11 @@ export const PracticeFileTransferPage = () => {
         setTrashedDraftList((prev) => prev.filter((row) => row.id !== draftIdToClear));
       }
       rememberLab(selectedLab);
-      await clearAllFiles();
-      setDraftFiles([]);
-      setDraftSummary(null);
-      setSelectedLab(null);
-      setPatientName("");
-      setRequestMemo("");
-      setToothWorks([]);
-      setTempSaveDirty(true);
-      lastSavedFormFingerprintRef.current = null;
-      setLastSavedFormFingerprint(null);
-      lastAppliedServerUpdatedAtRef.current = 0;
-      pendingLocalFormEditRef.current = false;
-      setFormSyncStatus("idle");
-      setActiveDraftId(null);
 
       // 전송 시 draft는 서버에서 완전 삭제됨. 휴지통(soft DELETE)으로 보내지 않는다.
       draftListSeqRef.current += 1;
+      await resetIntakeFormAfterTransfer();
       await loadPracticeTransferDraftList();
-      await clearPracticeFileTransferCaches();
 
       toast({
         title: "기공소 전송 완료",
@@ -3905,42 +4055,8 @@ export const PracticeFileTransferPage = () => {
     ]);
   };
 
-  const handleClearRequestIntakeCache = () => {
-    try {
-      localStorage.removeItem(PRACTICE_TRANSFER_FORM_LOCAL_KEY);
-    } catch {
-      // ignore
-    }
-
-    setLabOpen(false);
-    setLabSearch("");
-    setSelectedLab(null);
-    setPatientName("");
-    setRequestMemo("");
-    setOrderDate(todayDate);
-    setArrivalDate(addDaysToDateInput(todayDate, arrivalDefaultDays));
-    setToothWorks([
-      {
-        toothNumber: "",
-        prosthesisType: resolveDefaultProsthesisType(normalizedProsthesisTypes),
-        customAbutment: false,
-        bridgeLinkedTeeth: [],
-      },
-    ]);
-    setTempSaveDirty(true);
-
-    toast({
-      title: "의뢰 접수 캐시 삭제",
-      description: "의뢰 접수 카드의 임시 입력값을 초기화했습니다.",
-    });
-  };
-
   const handleStartNewTransfer = async () => {
-    try {
-      localStorage.removeItem(PRACTICE_TRANSFER_FORM_LOCAL_KEY);
-    } catch {
-      // ignore
-    }
+    clearPracticeTransferFormLocalStorage();
 
     formAutosaveSeqRef.current += 1;
     if (formAutosaveTimerRef.current) {
@@ -4267,7 +4383,6 @@ export const PracticeFileTransferPage = () => {
                   showBridgeConnections: true,
                   toothTensOptions: TOOTH_TENS_OPTIONS,
                   toothOnesOptions: TOOTH_ONES_OPTIONS,
-                  onClearAll: handleClearRequestIntakeCache,
                 }}
               />
 
@@ -4507,7 +4622,15 @@ export const PracticeFileTransferPage = () => {
                               </p>
                             </div>
 
-                            <div className="relative shrink-0">
+                            <div className="flex shrink-0 items-center gap-1.5">
+                              {transfer.unreadCount > 0 ? (
+                                <span
+                                  className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-red-600 px-1.5 text-[10px] font-semibold leading-none text-white"
+                                  aria-label={`읽지 않은 채팅 ${transfer.unreadCount}건`}
+                                >
+                                  {transfer.unreadCount > 99 ? "99+" : transfer.unreadCount}
+                                </span>
+                              ) : null}
                               <Button
                                 type="button"
                                 variant="ghost"
@@ -4521,11 +4644,6 @@ export const PracticeFileTransferPage = () => {
                               >
                                 <Trash2 className="h-4 w-4" />
                               </Button>
-                              {transfer.unreadCount > 0 ? (
-                                <span className="absolute -right-1 -top-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-semibold leading-none text-white">
-                                  {transfer.unreadCount > 99 ? "99+" : transfer.unreadCount}
-                                </span>
-                              ) : null}
                             </div>
                           </div>
                         </div>
@@ -4642,7 +4760,7 @@ export const PracticeFileTransferPage = () => {
             </Card>
 
             <Card>
-              <CardHeader>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 gap-2">
                 <CardTitle className="flex items-center gap-2 text-base">
                   <Trash2 className="h-4 w-4 text-slate-500" />
                   휴지통
@@ -4652,6 +4770,19 @@ export const PracticeFileTransferPage = () => {
                     </Badge>
                   ) : null}
                 </CardTitle>
+                {trashGroupedTransfers.length > 0 ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-8 shrink-0 border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700"
+                    disabled={emptyingTrash}
+                    onClick={handleAskEmptyTrash}
+                  >
+                    <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+                    {emptyingTrash ? "비우는 중..." : "휴지통 비우기"}
+                  </Button>
+                ) : null}
               </CardHeader>
               <CardContent className="space-y-2">
                 {trashGroupedTransfers.length === 0 ? (
@@ -5028,6 +5159,28 @@ export const PracticeFileTransferPage = () => {
           cancelLabel="취소"
           onConfirm={() => void handleConfirmRestoreTransfer()}
           onCancel={handleCancelRestoreTransfer}
+        />
+
+        <ConfirmDialog
+          open={emptyTrashConfirmOpen}
+          title="휴지통을 비울까요?"
+          description={
+            <div className="space-y-1">
+              <div className="text-sm text-muted-foreground">
+                휴지통의 임시저장·취소된 전송을 모두 영구 삭제합니다.
+                {trashGroupedTransfers.length > 0
+                  ? ` (현재 목록 ${trashGroupedTransfers.length}건)`
+                  : ""}
+              </div>
+              <div className="text-sm text-muted-foreground">
+                이 작업은 되돌릴 수 없습니다.
+              </div>
+            </div>
+          }
+          confirmLabel={emptyingTrash ? "비우는 중..." : "영구 삭제"}
+          cancelLabel="취소"
+          onConfirm={() => void handleConfirmEmptyTrash()}
+          onCancel={handleCancelEmptyTrash}
         />
       </div>
     </PageFileDropZone>

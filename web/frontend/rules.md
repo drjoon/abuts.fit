@@ -406,12 +406,22 @@ Notes:
   - response: `data.successCount`, `data.failedIds`
   - 치과 휴지통 복구와 관리자 취소건 되살리기에서 동일 API를 사용합니다.
 
+- practice 휴지통 비우기 API 계약(SSOT):
+  - endpoint: `POST /api/practice/transfers/trash/empty`
+  - 동일 치과 범위의 임시저장 휴지통(`deletedAt != null`)과 취소 전송(`status: "canceled"`)을 영구 삭제합니다.
+  - response: `data.draftDeletedCount`, `data.transferDeletedCount`
+  - UI는 확인 다이얼로그 후 호출하고, `trash-emptied` 실시간 이벤트로 동료 화면을 동기화합니다.
+
 - practice 채팅 라우팅 SSOT:
   - practice 화면과 requestor 수신 화면은 모두 `transferId` 기반 채팅(`/api/chats/practice/transfer-room/:transferId`)만 사용합니다.
   - legacy request 기반 practice 채팅 경로(`/api/chats/practice/request-room/:requestId`)는 사용 금지합니다.
   - 동일 치과 practice 구성원은 동료가 보낸 전송 채팅에도 참여할 수 있습니다(백엔드 participants 자동 추가).
   - draft 공동 작성 동기화: `draft-upserted` 이벤트 스냅샷을 즉시 반영(`delayMs=0`, `deferWhenEditing=false`). 동일 계정 다중 탭도 fingerprint/서버 updatedAt LWW로 맞춤(editor echo skip 금지).
   - 한글 IME: 환자명/메모는 `ImeSafeInput`으로 조합 중 로컬 draft 유지. 조합 중 autosave·원격 폼 반영은 미루고, 조합 종료 후 처리.
+  - 기공소 전송 성공 후 작성자·동료 모두 의뢰 접수 폼 localStorage(`practice_transfer_form_local_v1`)와 화면 입력을 초기화한다.
+    - 작성자: 전송 API 성공 시 `resetIntakeFormAfterTransfer`
+    - 동료/다른 탭: `transfer-created`(clearedDraftId) · `draft-cleared`(활성 케이스) 수신 시 동일 초기화
+    - 재진입 보호: local form에 `activeDraftId`를 저장하고, 서버 draft 목록에 없으면 복원값을 버린다.
 
 ### 웹소켓 업데이트 표준 (무플리커 + 부하완화)
 

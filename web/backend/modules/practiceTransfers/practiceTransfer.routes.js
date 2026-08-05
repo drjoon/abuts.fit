@@ -9,6 +9,7 @@ import {
   cancelPracticeTransfersBatch,
   clearMyPracticeTransferDraft,
   createPracticeTransfer,
+  emptyPracticeTransferTrash,
   getMyPracticeTransferDraft,
   listPracticeTransferDrafts,
   restorePracticeTransferDraft,
@@ -92,6 +93,13 @@ router.post(
   authenticate,
   authorize(["practice", "admin"], { subRoles: ["owner", "staff"] }),
   restorePracticeTransferDraft,
+);
+
+router.post(
+  "/trash/empty",
+  authenticate,
+  authorize(["practice", "admin"], { subRoles: ["owner", "staff"] }),
+  emptyPracticeTransferTrash,
 );
 
 router.get(
