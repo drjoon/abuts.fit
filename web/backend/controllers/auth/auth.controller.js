@@ -1,9 +1,11 @@
 // related files:
 // - web/backend/rules.md
+// - web/backend/modules/auth/auth.routes.js
+// - web/frontend/src/features/layout/AccountSwitcher.tsx
+// - web/frontend/src/store/useAuthStore.ts
 // - web/backend/services/creditBalance.service.js
 // - web/backend/controllers/requests/common.review.helpers.js
 // - web/backend/controllers/credits/credit.controller.js
-
 // - web/backend/models/ledgerJournal.model.js
 // - web/backend/models/ledgerLine.model.js
 import User from "../../models/user.model.js";
@@ -1943,6 +1945,228 @@ async function withdraw(req, res) {
   }
 }
 
+/**
+ * 같은 사업자(businessAnchorId) 소속 동료 계정 목록
+ * @route GET /api/auth/colleagues
+ *
+ * related files:
+ * - web/backend/modules/auth/auth.routes.js
+ * - web/frontend/src/features/layout/AccountSwitcher.tsx
+ */
+async function listColleagues(req, res) {
+  try {
+    const myAnchorId = req.user?.businessAnchorId
+      ? String(req.user.businessAnchorId)
+      : "";
+    if (!myAnchorId || !Types.ObjectId.isValid(myAnchorId)) {
+      return res.status(200).json({
+        success: true,
+        data: { colleagues: [] },
+      });
+    }
+
+    const rows = await User.find({
+      businessAnchorId: new Types.ObjectId(myAnchorId),
+      _id: { $ne: req.user._id },
+      active: true,
+      approvedAt: { $ne: null },
+    })
+      .select({
+        name: 1,
+        email: 1,
+        role: 1,
+        subRole: 1,
+        profileImage: 1,
+        business: 1,
+      })
+      .sort({ subRole: 1, name: 1 })
+      .lean();
+
+    const colleagues = (Array.isArray(rows) ? rows : []).map((row) => ({
+      id: String(row._id),
+      name: String(row.name || ""),
+      email: String(row.email || ""),
+      role: String(row.role || ""),
+      subRole: row.subRole ? String(row.subRole) : null,
+      profileImage:
+        typeof row.profileImage === "string" ? row.profileImage : null,
+      companyName: String(row.business || ""),
+    }));
+
+    // owner를 staff보다 앞에 두기 (subRole 알파벳 정렬로는 owner가 뒤로 감)
+    colleagues.sort((a, b) => {
+      const rank = (sub) => (sub === "owner" ? 0 : sub === "staff" ? 1 : 2);
+      const d = rank(a.subRole) - rank(b.subRole);
+      if (d !== 0) return d;
+      return String(a.name).localeCompare(String(b.name), "ko");
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: { colleagues },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "동료 계정 목록을 불러오지 못했습니다.",
+      error: error.message,
+    });
+  }
+}
+
+/**
+ * 같은 사업자 소속 다른 계정으로 전환 (대상 계정 비밀번호 확인)
+ * @route POST /api/auth/switch-account
+ *
+ * related files:
+ * - web/backend/modules/auth/auth.routes.js
+ * - web/frontend/src/store/useAuthStore.ts
+ * - web/frontend/src/features/layout/AccountSwitcher.tsx
+ */
+async function switchAccount(req, res) {
+  try {
+    const clientIp =
+      req.headers["x-forwarded-for"]?.split(",")[0]?.trim() || req.ip || "";
+    const targetUserId = String(req.body?.userId || "").trim();
+    const password = String(req.body?.password || "");
+
+    if (!targetUserId || !Types.ObjectId.isValid(targetUserId)) {
+      return res.status(400).json({
+        success: false,
+        message: "전환할 계정을 선택해주세요.",
+      });
+    }
+    if (!password) {
+      return res.status(400).json({
+        success: false,
+        message: "비밀번호를 입력해주세요.",
+      });
+    }
+
+    const myAnchorId = req.user?.businessAnchorId
+      ? String(req.user.businessAnchorId)
+      : "";
+    if (!myAnchorId || !Types.ObjectId.isValid(myAnchorId)) {
+      return res.status(403).json({
+        success: false,
+        message: "사업자에 소속된 계정만 전환할 수 있습니다.",
+      });
+    }
+
+    if (String(req.user._id) === targetUserId) {
+      return res.status(400).json({
+        success: false,
+        message: "현재 로그인 중인 계정입니다.",
+      });
+    }
+
+    const target = await User.findById(targetUserId).select("+password");
+    if (!target) {
+      await logSecurityEvent({
+        userId: req.user._id,
+        action: "ACCOUNT_SWITCH_FAILED_NOT_FOUND",
+        severity: "medium",
+        status: "failed",
+        details: { targetUserId },
+        ipAddress: clientIp,
+      });
+      return res.status(404).json({
+        success: false,
+        message: "전환할 계정을 찾을 수 없습니다.",
+      });
+    }
+
+    const targetAnchorId = target.businessAnchorId
+      ? String(target.businessAnchorId)
+      : "";
+    if (targetAnchorId !== myAnchorId) {
+      await logSecurityEvent({
+        userId: req.user._id,
+        action: "ACCOUNT_SWITCH_FAILED_DIFFERENT_BUSINESS",
+        severity: "high",
+        status: "blocked",
+        details: { targetUserId, myAnchorId, targetAnchorId },
+        ipAddress: clientIp,
+      });
+      return res.status(403).json({
+        success: false,
+        message: "같은 사업자 소속 계정만 전환할 수 있습니다.",
+      });
+    }
+
+    if (!target.password) {
+      return res.status(400).json({
+        success: false,
+        message: "비밀번호가 설정되지 않은 계정입니다.",
+      });
+    }
+
+    const isPasswordValid = await target.comparePassword(password);
+    if (!isPasswordValid) {
+      await logSecurityEvent({
+        userId: req.user._id,
+        action: "ACCOUNT_SWITCH_FAILED_BAD_PASSWORD",
+        severity: "medium",
+        status: "failed",
+        details: { targetUserId, targetEmail: target.email },
+        ipAddress: clientIp,
+      });
+      return res.status(401).json({
+        success: false,
+        message: "비밀번호가 올바르지 않습니다.",
+      });
+    }
+
+    if (!target.active || !target.approvedAt) {
+      await logSecurityEvent({
+        userId: req.user._id,
+        action: "ACCOUNT_SWITCH_FAILED_INACTIVE",
+        severity: "low",
+        status: "blocked",
+        details: { targetUserId },
+        ipAddress: clientIp,
+      });
+      return res.status(401).json({
+        success: false,
+        message: "승인 대기 중이거나 비활성화된 계정입니다.",
+      });
+    }
+
+    await sendLoginSuccessResponse({
+      user: target,
+      res,
+      successMessage: "계정 전환 성공",
+    });
+
+    await logSecurityEvent({
+      userId: target._id,
+      action: "ACCOUNT_SWITCH_SUCCESS",
+      severity: "info",
+      status: "success",
+      details: {
+        fromUserId: String(req.user._id),
+        toUserId: String(target._id),
+        businessAnchorId: myAnchorId,
+      },
+      ipAddress: clientIp,
+    });
+  } catch (error) {
+    await logSecurityEvent({
+      userId: req.user?._id,
+      action: "ACCOUNT_SWITCH_FAILED_ERROR",
+      severity: "high",
+      status: "failed",
+      details: { error: error.message, targetUserId: req.body?.userId },
+      ipAddress: req.ip || "",
+    });
+    return res.status(500).json({
+      success: false,
+      message: "계정 전환 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
 export default {
   register,
   validateReferral,
@@ -1953,6 +2177,8 @@ export default {
   practiceChangePassword,
   refreshToken,
   getCurrentUser,
+  listColleagues,
+  switchAccount,
   changePassword,
   forgotPassword,
   resetPassword,

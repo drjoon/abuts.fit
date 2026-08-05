@@ -341,9 +341,17 @@ const App = () => {
 
   useEffect(() => {
     if (!token) return;
+    let cancelled = false;
     loginWithToken(token).then((ok) => {
-      if (!ok) logout();
+      if (cancelled) return;
+      // 계정 전환 직후 토큰이 바뀌었거나 요청이 중단된 경우 세션을 지우지 않음
+      if (!ok && useAuthStore.getState().token === token) {
+        logout();
+      }
     });
+    return () => {
+      cancelled = true;
+    };
   }, [loginWithToken, logout, token]);
 
   return (

@@ -10,6 +10,7 @@ import { toKstYmd } from "@/shared/date/kst";
 import { useToast } from "@/shared/hooks/use-toast";
 
 // change-log:
+// - 2026-08-05: 사이드바 계정 팝업에서 같은 사업자 동료 계정으로 비밀번호 확인 후 전환(모든 role).
 // - 2026-08-05: 설정 메뉴를 계정 드롭다운에서 사이드바 맨 아래 항목으로 복원(모든 role 공통). 관리자 보안은 계정 드롭다운에 유지.
 // - 2026-08-05: 문의 메뉴를 계정 드롭다운에서 사이드바 맨 아래 항목으로 복원(requestor/salesman/practice/admin). manufacturer·devops는 제외.
 // - 2026-08-04: 치과(practice) 문의/설정도 사이드메뉴에서 제거하고 하단 계정 드롭다운으로 이동.
@@ -17,6 +18,10 @@ import { useToast } from "@/shared/hooks/use-toast";
 // - 2026-08-04: 관리자 사이드메뉴에서 보안/설정을 제거하고 하단 계정 드롭다운으로 이동.
 // - 2026-08-03: Dashboard 상단 워크시트 공정 탭의 '의뢰' 라벨을 '준비'로 변경(표시 레벨). wsSummary 조회/표시 로직과 연동됨.
 // related files:
+// - web/frontend/src/features/layout/AccountSwitcher.tsx
+// - web/frontend/src/store/useAuthStore.ts
+// - web/backend/controllers/auth/auth.controller.js
+// - web/backend/modules/auth/auth.routes.js
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
 // - web/frontend/src/pages/requestor/dashboard/RequestorDashboardPage.tsx
 // - web/frontend/src/pages/requestor/new_request/hooks/useNewRequestSubmitV2.ts
@@ -80,6 +85,11 @@ import { loadBusinessMeCached } from "@/shared/components/business/settings/busi
 import { resolveBusinessType } from "@/shared/utils/resolveBusinessType";
 import { useChatRooms } from "@/shared/hooks/useChatRooms";
 import { isCreditEventForBusiness } from "@/shared/realtime/creditBalanceEvent";
+import {
+  AccountSwitcherMenuSection,
+  AccountSwitchPasswordDialog,
+  type ColleagueAccount,
+} from "@/features/layout/AccountSwitcher";
 
 const sidebarItems = {
   requestor: [
@@ -312,6 +322,9 @@ export const DashboardLayout = () => {
   const [pendingBusinessName, setPendingBusinessName] = useState<string | null>(
     null,
   );
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+  const [switchColleague, setSwitchColleague] =
+    useState<ColleagueAccount | null>(null);
   const [requestorPracticeUnreadCount, setRequestorPracticeUnreadCount] =
     useState(0);
   const { rooms: chatRooms } = useChatRooms();
@@ -359,7 +372,7 @@ export const DashboardLayout = () => {
       setBootstrappingAuth(true);
       loginWithToken(token)
         .then((ok) => {
-          if (!ok) {
+          if (!ok && useAuthStore.getState().token === token) {
             logout();
             navigate("/login", { replace: true });
           }
@@ -374,7 +387,7 @@ export const DashboardLayout = () => {
     setBootstrappedOnce(true);
     if (user.role === "admin") return;
     loginWithToken(token).then((ok) => {
-      if (!ok) {
+      if (!ok && useAuthStore.getState().token === token) {
         logout();
         navigate("/login", { replace: true });
       }
@@ -1077,7 +1090,7 @@ export const DashboardLayout = () => {
           </nav>
 
           <div className="p-3 lg:p-4 space-y-2">
-            <DropdownMenu>
+            <DropdownMenu open={accountMenuOpen} onOpenChange={setAccountMenuOpen}>
               <DropdownMenuTrigger asChild>
                 <Button
                   variant="ghost"
@@ -1112,7 +1125,7 @@ export const DashboardLayout = () => {
                   )}
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent className="w-56" align="end" forceMount>
+              <DropdownMenuContent className="w-64" align="end" forceMount>
                 <DropdownMenuLabel className="font-normal">
                   <div className="flex flex-col space-y-1">
                     <p className="text-sm font-medium leading-none">
@@ -1144,15 +1157,35 @@ export const DashboardLayout = () => {
                         </DropdownMenuItem>
                       );
                     })}
-                    <DropdownMenuSeparator />
                   </>
                 )}
+                {user.businessAnchorId ? (
+                  <>
+                    {accountMenuItems.length > 0 ? (
+                      <DropdownMenuSeparator />
+                    ) : null}
+                    <AccountSwitcherMenuSection
+                      menuOpen={accountMenuOpen}
+                      getInitials={getInitials}
+                      onSelectColleague={(colleague) => {
+                        setAccountMenuOpen(false);
+                        setSwitchColleague(colleague);
+                      }}
+                    />
+                  </>
+                ) : null}
+                <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={handleLogout}>
                   <LogOut className="mr-2 h-4 w-4" />
                   <span>로그아웃</span>
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
+            <AccountSwitchPasswordDialog
+              colleague={switchColleague}
+              getInitials={getInitials}
+              onClose={() => setSwitchColleague(null)}
+            />
           </div>
         </aside>
 

@@ -27,6 +27,8 @@ Notes:
 - 앱/라우팅
   - `src/App.tsx`
   - `src/features/layout/DashboardLayout.tsx`
+  - `src/features/layout/AccountSwitcher.tsx` (사이드바 계정 팝업 · 같은 사업자 계정 전환)
+  - `src/store/useAuthStore.ts` (`switchAccount`)
 - 공용 타입(역할 SSOT)
   - `src/shared/types/role.ts`
 - 실시간(웹소켓) 공통
@@ -357,6 +359,10 @@ Notes:
   - 일반 회원가입(`src/features/auth/SignupPage.tsx`)에서 `practice`는 의뢰자(`requestor`)/영업자(`salesman`)와 동일한 가입·로그인·온보딩 경로를 사용합니다.
   - 가입 API는 `POST /api/auth/register` (`role: "practice"`)이며, 소개코드(선택) → 계정 정보 → 이메일 인증(소셜 제외) 순서로 진행합니다.
   - 로그인 페이지(`/login`)도 공유하며 이메일+비밀번호(`POST /api/auth/login`)만 사용합니다.
+  - 사이드바 하단 계정 팝업에서 같은 사업자(`businessAnchorId`) 동료 계정으로 전환할 수 있습니다(모든 role).
+    - 목록: `GET /api/auth/colleagues`
+    - 전환: `POST /api/auth/switch-account` (대상 계정 비밀번호)
+    - UI: `src/features/layout/AccountSwitcher.tsx` + `DashboardLayout` 계정 드롭다운
   - 레거시 치과명 로그인(`POST /api/auth/practice/login`)은 공통 `/login`에서는 받지 않으며, 하위 호환 API로만 유지합니다.
   - 가입 후 `/dashboard/wizard` 온보딩(프로필 → 휴대전화 → 역할 → 사업자)을 강제합니다.
   - 회원가입(`/signup`) 중간 단계(역할·스텝·소개코드·메일발송·폼)는 `localStorage`(signupWizardProgress/signupFormData)와 서버 `PUT/GET/DELETE /api/auth/signup/draft`(sessionId, 7일 TTL)에 저장되어 새로고침 후에도 이어서 진행합니다. 가입 완료 시 삭제합니다.

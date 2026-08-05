@@ -2,6 +2,9 @@
 // - web/backend/rules.md
 // - web/backend/app.js
 // - web/backend/server.js
+// - web/backend/controllers/auth/auth.controller.js
+// - web/frontend/src/features/layout/AccountSwitcher.tsx
+// - web/frontend/src/store/useAuthStore.ts
 import { Router } from "express";
 const router = Router();
 import authController from "../../controllers/auth/auth.controller.js";
@@ -38,6 +41,10 @@ router.post("/refresh-token", authController.refreshToken);
 
 // 현재 사용자 정보 조회 (인증 필요)
 router.get("/me", authenticate, authController.getCurrentUser);
+
+// 같은 사업자 동료 계정 목록 / 계정 전환 (모든 role)
+router.get("/colleagues", authenticate, authController.listColleagues);
+router.post("/switch-account", authenticate, authController.switchAccount);
 
 // 비밀번호 변경 (인증 필요)
 router.put("/change-password", authenticate, authController.changePassword);

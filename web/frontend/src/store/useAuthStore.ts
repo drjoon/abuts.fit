@@ -3,6 +3,9 @@
 // - web/frontend/src/shared/types/role.ts
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
+// - web/frontend/src/features/layout/AccountSwitcher.tsx
+// - web/backend/controllers/auth/auth.controller.js
+// - web/backend/modules/auth/auth.routes.js
 import { create } from "zustand";
 import { request } from "@/shared/api/apiClient";
 import type { AppUserRole } from "@/shared/types/role";
@@ -131,6 +134,10 @@ interface AuthState {
     clinicName: string,
     password: string,
   ) => Promise<{ success: boolean; message?: string }>;
+  switchAccount: (
+    userId: string,
+    password: string,
+  ) => Promise<{ success: boolean; message?: string; user?: User | null }>;
   loginWithToken: (
     token: string,
     refreshToken?: string | null,
@@ -287,6 +294,77 @@ export const useAuthStore = create<AuthState>((set, get) => {
         return {
           success: false,
           message: "로그인 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
+        };
+      }
+    },
+    // related files:
+    // - web/frontend/src/features/layout/AccountSwitcher.tsx
+    // - web/backend/controllers/auth/auth.controller.js
+    // - web/backend/modules/auth/auth.routes.js
+    switchAccount: async (userId: string, password: string) => {
+      try {
+        const currentToken = get().token;
+        const res = await fetch("/api/auth/switch-account", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(currentToken
+              ? { Authorization: `Bearer ${currentToken}` }
+              : {}),
+          },
+          body: JSON.stringify({ userId, password }),
+        });
+
+        const json = (await res.json().catch(() => null)) as
+          | { success?: boolean; message?: string; data?: unknown }
+          | null;
+        if (!res.ok || !json?.success) {
+          const message = String(
+            json?.message || "계정 전환에 실패했습니다. 다시 시도해주세요.",
+          );
+          return { success: false, message };
+        }
+
+        const data =
+          json?.data && typeof json.data === "object"
+            ? (json.data as Record<string, unknown>)
+            : {};
+        const token = String(data.token || "");
+        const refreshToken = data.refreshToken ? String(data.refreshToken) : null;
+        const normalizedUser = normalizeApiUser(data.user);
+        if (!token || !normalizedUser) {
+          return {
+            success: false,
+            message: "계정 전환 처리에 필요한 정보가 누락되었습니다.",
+          };
+        }
+
+        try {
+          localStorage.setItem(AUTH_TOKEN_KEY, token);
+          if (refreshToken)
+            localStorage.setItem(AUTH_REFRESH_TOKEN_KEY, refreshToken);
+          localStorage.setItem(AUTH_USER_KEY, JSON.stringify(normalizedUser));
+        } catch {
+          return {
+            success: false,
+            message:
+              "로그인 정보를 저장하지 못했습니다. 브라우저 설정을 확인해주세요.",
+          };
+        }
+
+        set({
+          user: normalizedUser,
+          isAuthenticated: true,
+          token,
+          refreshToken,
+        });
+
+        return { success: true, user: normalizedUser };
+      } catch {
+        return {
+          success: false,
+          message:
+            "계정 전환 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
         };
       }
     },
