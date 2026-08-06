@@ -4780,9 +4780,21 @@ export const PracticeFileTransferPage = () => {
           <Card className="xl:col-span-7">
             <CardHeader className="pb-3">
               <div className="flex items-center justify-between gap-2">
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <UploadCloud className="h-4 w-4 text-blue-600" />
-                  기공의뢰
+                <CardTitle className="flex min-w-0 items-center gap-2 text-base">
+                  <UploadCloud className="h-4 w-4 shrink-0 text-blue-600" />
+                  <span className="shrink-0">기공의뢰</span>
+                  {formSyncStatusLabel ? (
+                    <span
+                      className={cn(
+                        "truncate text-[11px] font-normal",
+                        formSyncStatus === "error"
+                          ? "text-destructive"
+                          : "text-muted-foreground",
+                      )}
+                    >
+                      {formSyncStatusLabel}
+                    </span>
+                  ) : null}
                 </CardTitle>
                 <div className="flex items-center gap-2">
                   <TooltipProvider delayDuration={0}>
@@ -4982,18 +4994,6 @@ export const PracticeFileTransferPage = () => {
               />
 
               <div className="flex items-center justify-end gap-2">
-                {formSyncStatusLabel ? (
-                  <p
-                    className={cn(
-                      "mr-auto truncate text-[11px]",
-                      formSyncStatus === "error"
-                        ? "text-destructive"
-                        : "text-muted-foreground",
-                    )}
-                  >
-                    {formSyncStatusLabel}
-                  </p>
-                ) : null}
                 <TooltipProvider delayDuration={0}>
                   <Tooltip>
                     <TooltipTrigger asChild>

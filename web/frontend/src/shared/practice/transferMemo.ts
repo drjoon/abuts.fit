@@ -103,7 +103,17 @@ export const customSpecsKey = (
 export const formatCustomSpecsSummary = (
   row: Partial<ToothWorkSelection> | null | undefined,
 ) => {
-  const implantLabel = [
+  const implantLabel = formatImplantSummary(row);
+  const abutmentLabel = formatAbutmentSummary(row);
+  return [implantLabel, abutmentLabel ? `어벗 ${abutmentLabel}` : ""]
+    .filter(Boolean)
+    .join(" · ");
+};
+
+export const formatImplantSummary = (
+  row: Partial<ToothWorkSelection> | null | undefined,
+) =>
+  [
     row?.implantManufacturer,
     row?.implantBrand,
     row?.implantFamily,
@@ -112,17 +122,32 @@ export const formatCustomSpecsSummary = (
     .map((v) => String(v || "").trim())
     .filter(Boolean)
     .join(" / ");
-  const abutmentParts = [
+
+/** 카드용 짧은 표시: 제조사만 */
+export const formatImplantCompact = (
+  row: Partial<ToothWorkSelection> | null | undefined,
+) => String(row?.implantManufacturer || "").trim();
+
+export const formatAbutmentSummary = (
+  row: Partial<ToothWorkSelection> | null | undefined,
+) =>
+  [
     String(row?.abutmentManufacturer || "").trim(),
     String(row?.abutmentDiameter || "").trim(),
     String(row?.abutmentHeight || "").trim(),
-  ].filter(Boolean);
-  const abutmentLabel = abutmentParts.length
-    ? `어벗 ${abutmentParts.join(" / ")}`
-    : "";
-  return [implantLabel, abutmentLabel].filter(Boolean).join(" · ");
-};
+  ]
+    .filter(Boolean)
+    .join(" / ");
 
+/** 카드용 짧은 표시: 직경×높이 */
+export const formatAbutmentCompact = (
+  row: Partial<ToothWorkSelection> | null | undefined,
+) => {
+  const diameter = String(row?.abutmentDiameter || "").trim();
+  const height = String(row?.abutmentHeight || "").trim();
+  if (diameter && height) return `${diameter}×${height}`;
+  return diameter || height || "";
+};
 const serializeImplantSuffix = (row: ToothWorkSelection) => {
   const manufacturer = String(row.implantManufacturer || "").trim();
   const brand = String(row.implantBrand || "").trim();

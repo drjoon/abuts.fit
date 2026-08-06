@@ -6,10 +6,21 @@ import { useMemo } from "react";
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
 
 export type { ToothWorkSelection } from "@/shared/practice/transferMemo";
-import type { ToothWorkSelection } from "@/shared/practice/transferMemo";
+import {
+  emptyToothWorkCustomSpecs,
+  pickToothWorkCustomSpecs,
+  toToothMemoSortNumber,
+  type ToothWorkSelection,
+} from "@/shared/practice/transferMemo";
+
+export const STANDALONE_PROSTHESIS_TYPES = ["크라운", "인레이"] as const;
+export const LINKED_PROSTHESIS_TYPES = ["브리지", "Pontic"] as const;
 
 export const isBridgeLikeProsthesisType = (prosthesisType: string) =>
   prosthesisType === "브리지" || prosthesisType === "Pontic";
+
+export const isStandaloneProsthesisType = (prosthesisType: string) =>
+  prosthesisType === "크라운" || prosthesisType === "인레이";
 
 export const isCustomAbutmentSupportedProsthesisType = (prosthesisType: string) =>
   prosthesisType === "크라운" || prosthesisType === "브리지";
@@ -34,11 +45,160 @@ export const getAdjacentTeeth = (toothNumber: string) => {
   return Array.from(new Set(out));
 };
 
-const toToothSortNumber = (toothNumber: string) => {
-  const raw = String(toothNumber || "").trim();
-  if (!/^[1-4][1-8]$/.test(raw)) return Number.POSITIVE_INFINITY;
-  return Number(raw);
+/** 치열 순(18→11→21→28 / 48→41→31→38) 기준 — 현재 치아의 좌·우 인접치 */
+export const splitAdjacentTeethLeftRight = (toothNumber: string) => {
+  const current = String(toothNumber || "").trim();
+  const adjacent = getAdjacentTeeth(current);
+  if (!/^[1-4][1-8]$/.test(current)) {
+    return { left: null as string | null, right: null as string | null };
+  }
+  const currentSort = toToothMemoSortNumber(current);
+  let left: string | null = null;
+  let right: string | null = null;
+  for (const adj of adjacent) {
+    const sort = toToothMemoSortNumber(adj);
+    if (sort < currentSort) {
+      if (left == null || sort > toToothMemoSortNumber(left)) left = adj;
+    } else if (sort > currentSort) {
+      if (right == null || sort < toToothMemoSortNumber(right)) right = adj;
+    }
+  }
+  return { left, right };
 };
+
+/** @deprecated 좌·우 배치로 대체 — splitAdjacentTeethLeftRight 사용 */
+export const splitAdjacentTeethAboveBelow = (toothNumber: string) => {
+  const { left, right } = splitAdjacentTeethLeftRight(toothNumber);
+  return {
+    above: left ? [left] : ([] as string[]),
+    below: right ? [right] : ([] as string[]),
+  };
+};
+
+export const getProsthesisTypesForLinkState = (isLinked: boolean, catalog: string[]) => {
+  const allowed = new Set<string>(
+    isLinked ? LINKED_PROSTHESIS_TYPES : STANDALONE_PROSTHESIS_TYPES,
+  );
+  return catalog.filter((type) => {
+    if (allowed.has(type)) return true;
+    if (isLinked && /^pontic$/i.test(type)) return true;
+    return false;
+  });
+};
+
+export const resolveProsthesisTypeForLinkState = (
+  currentType: string,
+  isLinked: boolean,
+  catalog: string[],
+) => {
+  const options = getProsthesisTypesForLinkState(isLinked, catalog);
+  const current = String(currentType || "").trim();
+  if (current && options.some((type) => type === current)) return current;
+  if (isLinked) {
+    return options.find((type) => type === "브리지") || options[0] || "브리지";
+  }
+  return options.find((type) => type === "크라운") || options[0] || "크라운";
+};
+
+export const applyProsthesisTypeToRow = (
+  row: ToothWorkSelection,
+  prosthesisType: string,
+): ToothWorkSelection => {
+  const customAbutment = isCustomAbutmentSupportedProsthesisType(prosthesisType)
+    ? Boolean(row.customAbutment)
+    : false;
+  return {
+    ...row,
+    prosthesisType,
+    customAbutment,
+    ...(customAbutment
+      ? pickToothWorkCustomSpecs(row, true)
+      : emptyToothWorkCustomSpecs()),
+  };
+};
+
+/** 인접 치아 체크 토글: 양방향 연결 + 연결 여부에 맞게 형태(브리지/Pontic vs 크라운/인레이) 동기화 */
+export const toggleAdjacentBridgeLink = (
+  rows: ToothWorkSelection[],
+  originalIndex: number,
+  adjTooth: string,
+  checked: boolean,
+  catalog: string[],
+): ToothWorkSelection[] => {
+  const next = [...rows];
+  const current = next[originalIndex];
+  if (!current) return rows;
+
+  const currentTooth = String(current.toothNumber || "").trim();
+  const currentLinks = Array.isArray(current.bridgeLinkedTeeth)
+    ? current.bridgeLinkedTeeth
+    : [];
+  const newLinks = checked
+    ? Array.from(new Set([...currentLinks, adjTooth]))
+    : currentLinks.filter((v) => v !== adjTooth);
+  const currentIsLinked = newLinks.length > 0;
+  const currentType = resolveProsthesisTypeForLinkState(
+    current.prosthesisType,
+    currentIsLinked,
+    catalog,
+  );
+
+  next[originalIndex] = {
+    ...applyProsthesisTypeToRow(current, currentType),
+    bridgeLinkedTeeth: currentIsLinked ? newLinks : [],
+  };
+
+  const pairedIdx = next.findIndex(
+    (row, idx) => idx !== originalIndex && String(row.toothNumber || "").trim() === adjTooth,
+  );
+
+  if (checked) {
+    if (pairedIdx >= 0) {
+      const paired = next[pairedIdx];
+      const pairedLinks = Array.isArray(paired.bridgeLinkedTeeth)
+        ? paired.bridgeLinkedTeeth
+        : [];
+      const nextPairedLinks = currentTooth
+        ? Array.from(new Set([...pairedLinks, currentTooth]))
+        : pairedLinks;
+      const pairedType = resolveProsthesisTypeForLinkState(
+        paired.prosthesisType,
+        nextPairedLinks.length > 0,
+        catalog,
+      );
+      next[pairedIdx] = {
+        ...applyProsthesisTypeToRow(paired, pairedType),
+        bridgeLinkedTeeth: nextPairedLinks,
+      };
+    } else {
+      next.push({
+        toothNumber: adjTooth,
+        prosthesisType: resolveProsthesisTypeForLinkState("", true, catalog),
+        customAbutment: false,
+        bridgeLinkedTeeth: currentTooth ? [currentTooth] : [],
+        ...emptyToothWorkCustomSpecs(),
+      });
+    }
+  } else if (pairedIdx >= 0 && currentTooth) {
+    const paired = next[pairedIdx];
+    const pairedLinks = (
+      Array.isArray(paired.bridgeLinkedTeeth) ? paired.bridgeLinkedTeeth : []
+    ).filter((v) => v !== currentTooth);
+    const pairedType = resolveProsthesisTypeForLinkState(
+      paired.prosthesisType,
+      pairedLinks.length > 0,
+      catalog,
+    );
+    next[pairedIdx] = {
+      ...applyProsthesisTypeToRow(paired, pairedType),
+      bridgeLinkedTeeth: pairedLinks,
+    };
+  }
+
+  return next;
+};
+
+const toToothSortNumber = (toothNumber: string) => toToothMemoSortNumber(toothNumber);
 
 export const useOrderedToothWorkRows = (toothWorks: ToothWorkSelection[]) => {
   return useMemo(() => {

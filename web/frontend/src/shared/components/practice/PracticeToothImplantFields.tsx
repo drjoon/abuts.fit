@@ -33,6 +33,8 @@ type Props = {
   connections: ImplantConnection[];
   favorites: PracticeImplantFavorite[];
   onFavoritesChange?: (next: PracticeImplantFavorite[]) => void | Promise<void>;
+  /** 프리셋 목록을 입력 필드 위에 배치 */
+  presetsFirst?: boolean;
 };
 
 const pickFirst = (arr: string[]) => arr[0] || "";
@@ -69,6 +71,7 @@ export const PracticeToothImplantFields = ({
   connections,
   favorites,
   onFavoritesChange,
+  presetsFirst = false,
 }: Props) => {
   const [editingFavoriteId, setEditingFavoriteId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState<ToothImplantValues>(emptyToothWorkImplant());
@@ -297,6 +300,172 @@ export const PracticeToothImplantFields = ({
     });
   };
 
+  const renderPresets = (placement: "top" | "bottom") => {
+    if (!onFavoritesChange) return null;
+    return (
+      <div
+        className={
+          placement === "top"
+            ? "space-y-2 pb-1"
+            : "space-y-2 border-t border-sky-100 pt-3"
+        }
+      >
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-sm font-medium text-slate-600">프리셋</p>
+          {favorites.length === 0 ? (
+            <span className="text-xs text-slate-400">선택 후 저장</span>
+          ) : (
+            <span className="text-xs text-slate-400">클릭하면 적용</span>
+          )}
+        </div>
+        {favorites.length === 0 ? (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-10 w-full border-dashed text-sm"
+            disabled={!canSaveFavorite || favoritesBusy}
+            onClick={() =>
+              void persistFavorites([
+                ...favorites,
+                {
+                  id: `imp-${Date.now().toString(36)}`,
+                  manufacturer: value.implantManufacturer,
+                  brand: value.implantBrand,
+                  family: value.implantFamily,
+                  type: value.implantType,
+                },
+              ])
+            }
+          >
+            <Plus className="mr-1 h-4 w-4" />
+            현재 선택을 프리셋에 추가
+          </Button>
+        ) : (
+          <div className="max-h-40 space-y-1.5 overflow-y-auto pr-0.5">
+            {favorites.map((fav) => {
+              const isEditing = editingFavoriteId === fav.id;
+              const isActive = favoriteKey(fav) === currentFavoriteKey;
+              if (isEditing) {
+                return (
+                  <div
+                    key={`edit-${fav.id}`}
+                    className="grid grid-cols-2 gap-1.5 rounded-lg border border-sky-200 bg-white p-2 sm:grid-cols-4"
+                  >
+                    {(
+                      [
+                        ["implantManufacturer", "제조사"],
+                        ["implantBrand", "브랜드"],
+                        ["implantFamily", "패밀리"],
+                        ["implantType", "타입"],
+                      ] as const
+                    ).map(([key, placeholder]) => (
+                      <Input
+                        key={key}
+                        value={editDraft[key]}
+                        placeholder={placeholder}
+                        className="h-9 text-sm"
+                        onChange={(e) =>
+                          setEditDraft((prev) => ({ ...prev, [key]: e.target.value }))
+                        }
+                      />
+                    ))}
+                    <div className="col-span-2 flex justify-end gap-1 sm:col-span-4">
+                      <Button
+                        type="button"
+                        size="sm"
+                        className="h-8 px-3 text-sm"
+                        disabled={favoritesBusy}
+                        onClick={() => {
+                          void persistFavorites(
+                            favorites.map((row) =>
+                              row.id === fav.id
+                                ? {
+                                    ...row,
+                                    manufacturer: editDraft.implantManufacturer.trim(),
+                                    brand: editDraft.implantBrand.trim(),
+                                    family: editDraft.implantFamily.trim(),
+                                    type: editDraft.implantType.trim(),
+                                  }
+                                : row,
+                            ),
+                          ).then(() => setEditingFavoriteId(null));
+                        }}
+                      >
+                        <Check className="mr-1 h-3.5 w-3.5" />
+                        저장
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 px-3 text-sm"
+                        onClick={() => setEditingFavoriteId(null)}
+                      >
+                        취소
+                      </Button>
+                    </div>
+                  </div>
+                );
+              }
+
+              return (
+                <div
+                  key={fav.id}
+                  className={
+                    isActive
+                      ? "flex items-center gap-1 rounded-lg border border-sky-400 bg-sky-100 px-2 py-1.5"
+                      : "flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1.5"
+                  }
+                >
+                  <button
+                    type="button"
+                    className="min-w-0 flex-1 truncate rounded px-1.5 py-1 text-left text-sm font-medium text-slate-800 hover:text-sky-700"
+                    title={favoriteLabel(fav)}
+                    onClick={() => applyFavorite(fav)}
+                  >
+                    {favoriteLabel(fav)}
+                  </button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 shrink-0 text-slate-400"
+                    onClick={() => {
+                      setEditingFavoriteId(fav.id);
+                      setEditDraft({
+                        implantManufacturer: fav.manufacturer,
+                        implantBrand: fav.brand,
+                        implantFamily: fav.family,
+                        implantType: fav.type,
+                      });
+                    }}
+                    aria-label="프리셋 수정"
+                  >
+                    <Pencil className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 shrink-0 text-slate-400 hover:text-destructive"
+                    disabled={favoritesBusy}
+                    onClick={() =>
+                      void persistFavorites(favorites.filter((row) => row.id !== fav.id))
+                    }
+                    aria-label="프리셋 삭제"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   return (
     <div className="space-y-3 rounded-xl border border-sky-200/80 bg-sky-50/50 p-3 sm:p-4">
       <div className="flex items-center justify-between gap-2">
@@ -323,7 +492,7 @@ export const PracticeToothImplantFields = ({
               }
             >
               <BookmarkPlus className="mr-1 h-4 w-4" />
-              즐겨찾기
+              프리셋 저장
             </Button>
           ) : null}
           <Button
@@ -338,6 +507,8 @@ export const PracticeToothImplantFields = ({
           </Button>
         </div>
       </div>
+
+      {presetsFirst ? renderPresets("top") : null}
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div className="space-y-1.5">
@@ -457,162 +628,7 @@ export const PracticeToothImplantFields = ({
         </div>
       </div>
 
-      {onFavoritesChange ? (
-        <div className="space-y-2 border-t border-sky-100 pt-3">
-          <div className="flex items-center justify-between gap-2">
-            <p className="text-sm font-medium text-slate-600">즐겨찾기</p>
-            {favorites.length === 0 ? (
-              <span className="text-xs text-slate-400">선택 후 저장</span>
-            ) : (
-              <span className="text-xs text-slate-400">클릭하면 적용</span>
-            )}
-          </div>
-          {favorites.length === 0 ? (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="h-10 w-full border-dashed text-sm"
-              disabled={!canSaveFavorite || favoritesBusy}
-              onClick={() =>
-                void persistFavorites([
-                  ...favorites,
-                  {
-                    id: `imp-${Date.now().toString(36)}`,
-                    manufacturer: value.implantManufacturer,
-                    brand: value.implantBrand,
-                    family: value.implantFamily,
-                    type: value.implantType,
-                  },
-                ])
-              }
-            >
-              <Plus className="mr-1 h-4 w-4" />
-              현재 선택을 즐겨찾기에 추가
-            </Button>
-          ) : (
-            <div className="max-h-40 space-y-1.5 overflow-y-auto pr-0.5">
-              {favorites.map((fav) => {
-                const isEditing = editingFavoriteId === fav.id;
-                const isActive = favoriteKey(fav) === currentFavoriteKey;
-                if (isEditing) {
-                  return (
-                    <div
-                      key={`edit-${fav.id}`}
-                      className="grid grid-cols-2 gap-1.5 rounded-lg border border-sky-200 bg-white p-2 sm:grid-cols-4"
-                    >
-                      {(
-                        [
-                          ["implantManufacturer", "제조사"],
-                          ["implantBrand", "브랜드"],
-                          ["implantFamily", "패밀리"],
-                          ["implantType", "타입"],
-                        ] as const
-                      ).map(([key, placeholder]) => (
-                        <Input
-                          key={key}
-                          value={editDraft[key]}
-                          placeholder={placeholder}
-                          className="h-9 text-sm"
-                          onChange={(e) =>
-                            setEditDraft((prev) => ({ ...prev, [key]: e.target.value }))
-                          }
-                        />
-                      ))}
-                      <div className="col-span-2 flex justify-end gap-1 sm:col-span-4">
-                        <Button
-                          type="button"
-                          size="sm"
-                          className="h-8 px-3 text-sm"
-                          disabled={favoritesBusy}
-                          onClick={() => {
-                            void persistFavorites(
-                              favorites.map((row) =>
-                                row.id === fav.id
-                                  ? {
-                                      ...row,
-                                      manufacturer: editDraft.implantManufacturer.trim(),
-                                      brand: editDraft.implantBrand.trim(),
-                                      family: editDraft.implantFamily.trim(),
-                                      type: editDraft.implantType.trim(),
-                                    }
-                                  : row,
-                              ),
-                            ).then(() => setEditingFavoriteId(null));
-                          }}
-                        >
-                          <Check className="mr-1 h-3.5 w-3.5" />
-                          저장
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          className="h-8 px-3 text-sm"
-                          onClick={() => setEditingFavoriteId(null)}
-                        >
-                          취소
-                        </Button>
-                      </div>
-                    </div>
-                  );
-                }
-
-                return (
-                  <div
-                    key={fav.id}
-                    className={
-                      isActive
-                        ? "flex items-center gap-1 rounded-lg border border-sky-400 bg-sky-100 px-2 py-1.5"
-                        : "flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1.5"
-                    }
-                  >
-                    <button
-                      type="button"
-                      className="min-w-0 flex-1 truncate rounded px-1.5 py-1 text-left text-sm font-medium text-slate-800 hover:text-sky-700"
-                      title={favoriteLabel(fav)}
-                      onClick={() => applyFavorite(fav)}
-                    >
-                      {favoriteLabel(fav)}
-                    </button>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 shrink-0 text-slate-400"
-                      onClick={() => {
-                        setEditingFavoriteId(fav.id);
-                        setEditDraft({
-                          implantManufacturer: fav.manufacturer,
-                          implantBrand: fav.brand,
-                          implantFamily: fav.family,
-                          implantType: fav.type,
-                        });
-                      }}
-                      aria-label="즐겨찾기 수정"
-                    >
-                      <Pencil className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 shrink-0 text-slate-400 hover:text-destructive"
-                      disabled={favoritesBusy}
-                      onClick={() =>
-                        void persistFavorites(favorites.filter((row) => row.id !== fav.id))
-                      }
-                      aria-label="즐겨찾기 삭제"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      ) : null}
+      {!presetsFirst ? renderPresets("bottom") : null}
     </div>
   );
 };
