@@ -241,10 +241,24 @@ const toDraftListSummary = (
         }))
         .filter((row) => row.fileId && row.originalName && row.s3Key)
     : [];
-  if (files.length === 0) return null;
 
   const practiceUserId = String(payload.practiceUserId || "").trim();
   const parsed = parsePracticeTransferMemoMetaShared(String(payload.transferMemo || ""));
+  // 파일 없이도 의뢰서 일부(환자명·메모·기공소·치아)만 있으면 임시저장 목록에 올린다.
+  // 날짜 메타만 있는 transferMemo는 내용으로 치지 않는다(백엔드 hasMeaningfulMemo와 동일).
+  const hasFormContent =
+    Boolean(String(parsed.patientName || "").trim()) ||
+    Boolean(String(parsed.memo || "").trim()) ||
+    Boolean(String(payload.targetLabName || "").trim()) ||
+    Boolean(String(payload.targetLabAnchorId || "").trim()) ||
+    (Array.isArray(parsed.toothWorks) &&
+      parsed.toothWorks.some(
+        (row) =>
+          String(row.toothNumber || "").trim() ||
+          Boolean(row.customAbutment) ||
+          String(row.implantManufacturer || "").trim(),
+      ));
+  if (files.length === 0 && !hasFormContent) return null;
 
   return {
     id: String(payload._id || "").trim() || "draft-local",
@@ -1335,7 +1349,7 @@ export const PracticeFileTransferPage = () => {
 
       const forceResync = Boolean(options?.forceResync || payload.forceResync);
 
-      // 파일 올려 동기화 중에는 HTTP 응답이 SSOT. forceResync echo는 업로드 종료 후 적용.
+      // 동기화 시작 중에는 HTTP 응답이 SSOT. forceResync echo는 업로드 종료 후 적용.
       if (fileSyncInFlightRef.current) {
         if (forceResync) {
           pendingDraftApplyRef.current = { ...payload, forceResync: true };
@@ -2174,7 +2188,14 @@ export const PracticeFileTransferPage = () => {
         {
           const nextSummary = buildOwnDraftSummary(payload, nextDraftFiles, transferMemo);
           setDraftSummary(nextSummary);
-          if (nextSummary?.id) setActiveDraftId(nextSummary.id);
+          if (nextSummary?.id) {
+            setActiveDraftId(nextSummary.id);
+            activeDraftSeenInListRef.current = nextSummary.id;
+            setPracticeDraftList((prev) => {
+              const without = prev.filter((row) => row.id !== nextSummary.id);
+              return [nextSummary, ...without];
+            });
+          }
           void loadPracticeTransferDraftList();
         }
 
@@ -4097,9 +4118,9 @@ export const PracticeFileTransferPage = () => {
         // ignore
       }
       toast({
-        title: "파일 동기화됨",
+        title: "동기화됨",
         description:
-          "파일과 작성 내용을 이 케이스에 다시 맞췄습니다. 동료·다른 PC에도 바로 반영됩니다.",
+          "작성 내용을 이 케이스에 맞췄습니다. 임시저장에 표시되며 동료·다른 PC에도 바로 반영됩니다.",
       });
     } catch (error) {
       toast({
@@ -4682,13 +4703,13 @@ export const PracticeFileTransferPage = () => {
                             onClick={() => void handleTempSaveDraft()}
                             disabled={!canTempSave || tempSaving}
                           >
-                            {tempSaving ? "업로드 중..." : "파일 올려 동기화 시작"}
+                            {tempSaving ? "동기화 중..." : "동기화 시작"}
                           </Button>
                         </span>
                       </TooltipTrigger>
                       <TooltipContent side="bottom" className="max-w-xs text-xs leading-relaxed">
-                        첨부파일 또는 의뢰서 중 하나라도 있으면 동기화할 수 있습니다. 파일·기공소·치아·메모를
-                        동료/다른 PC와 맞춥니다.
+                        첨부파일이나 의뢰서 내용(기공소·환자명·치아·메모 등) 중 하나라도 있으면 시작할 수
+                        있습니다. 동기화되면 임시저장에 표시되고, 동료·다른 PC와 맞춰집니다.
                       </TooltipContent>
                     </Tooltip>
                   </TooltipProvider>
