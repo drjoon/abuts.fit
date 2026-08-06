@@ -1,7 +1,10 @@
+// change-log:
+// - 2026-08-06: process TZ=Asia/Seoul 강제(전역 KST 정책).
 // related files:
 // - bg/pc2/pack-server/rules.md
 // - web/backend/controllers/requests/packingPrint.controller.js
 // - web/backend/utils/packPrint.utils.js
+process.env.TZ = "Asia/Seoul";
 const http = require("http");
 const os = require("os");
 const path = require("path");

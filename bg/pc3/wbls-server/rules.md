@@ -14,6 +14,7 @@
 - wbls-server는 운송장/라벨 출력의 최종 프린트 게이트웨이입니다.
 - label 모드에서는 프론트 Canvas PNG 렌더링 후 백엔드 프록시를 통해 wbls-server가 출력합니다.
 - 한진 인증/주문/상태 SSOT는 백엔드이며, wbls는 출력 수행에 집중합니다.
+- 프로세스 TZ: 엔트리 `app.js`에서 `process.env.TZ = "Asia/Seoul"` (루트 §1.4).
 
 ## 2) 연결 진입 파일
 

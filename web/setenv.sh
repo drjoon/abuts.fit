@@ -118,6 +118,15 @@ except subprocess.CalledProcessError as e:
     current_keys = set()
 
 new_keys = set([p.split('=', 1)[0] for p in pairs])
+# 프로세스 TZ SSOT: env 파일에 없어도 EBS에 강제
+if "TZ=Asia/Seoul" not in pairs and not any(p.startswith("TZ=") for p in pairs):
+    pairs.append("TZ=Asia/Seoul")
+    new_keys.add("TZ")
+elif not any(p == "TZ=Asia/Seoul" for p in pairs):
+    pairs = [p for p in pairs if not p.startswith("TZ=")]
+    pairs.append("TZ=Asia/Seoul")
+    new_keys.add("TZ")
+
 stale_keys = sorted(list(current_keys - new_keys))
 
 def chunk_and_apply(items, label="setenv"):

@@ -1,1 +1,1 @@
-web: bash -lc 'cd backend && exec node server.js'
+web: bash -lc 'cd backend && exec env TZ=Asia/Seoul node server.js'

@@ -1,0 +1,35 @@
+---
+description: Process and business timezones must be KST (Asia/Seoul) everywhere
+alwaysApply: true
+---
+
+# KST Timezone (강제)
+
+## Policy
+
+- Business dates, cutoffs, ship days, badges, ledgers, and filters use **KST (`Asia/Seoul`)**.
+- Node process TZ must be **`TZ=Asia/Seoul`** on EBS (host UTC), local Mac, CI, and bg Node apps.
+- Do not assume server local TZ equals KST. Prefer explicit KST (`Intl` / `+09:00` / civil YMD) for weekday and day math.
+
+## Where it is set
+
+- `web/backend/bootstrap/env.js` — forces `process.env.TZ`
+- `web/Procfile`, `web/.ebextensions/06_timezone.config`, `web/eb.sh`
+- `web/backend/{local,test,prod}.env` — `TZ=Asia/Seoul`
+- bg Node entries: pack/lot/wbls/rhino-stl-metadata
+- Windows PC apps (bridge/esprit): keep OS timezone Korea Standard Time
+
+## Do / Don't
+
+```js
+// ❌ BAD — server-local weekday (UTC EBS → off-by-one vs KST midnight)
+new Date(`${ymd}T00:00:00+09:00`).getDay();
+
+// ✅ GOOD — civil calendar weekday
+const [y, m, d] = ymd.split("-").map(Number);
+new Date(Date.UTC(y, m - 1, d, 12)).getUTCDay();
+```
+
+- Frontend: use `timeZone: "Asia/Seoul"` or `src/shared/date/kst.ts`.
+- After ship-schedule bugs from TZ drift, recompute with `scripts/db/fix-today-estimated-ship-ymd.js`.
+- Root SSOT: `rules.md` §1.4. Local notes in each app `rules.md`.

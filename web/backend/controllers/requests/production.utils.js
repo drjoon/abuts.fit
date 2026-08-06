@@ -1,3 +1,7 @@
+// change-log:
+// - 2026-08-06: 스케줄 기준일을 toKstYmd(requestedAt)로 고정. 재계산 시 오늘 기준 밀림 방지.
+// - 2026-08-06: resolveNextWeeklyBatchYmd 요일 판정을 서버 로컬 getDay() 대신
+//   YMD 달력일 기준(UTC noon)으로 바꿔 UTC 서버에서 목→금으로 하루 밀리던 버그 수정.
 // related files:
 // - web/backend/rules.md
 // - web/backend/app.js
@@ -158,10 +162,18 @@ function getNextPickupTime(fromDateTime, hour) {
 
 const WEEKDAY_KEYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
 
+// YMD(KST 달력일)의 요일. 서버 로컬 TZ에 의존하는 Date#getDay()를 쓰지 않는다.
+// UTC 서버에서 KST 자정(+09:00)은 전날 UTC라 getDay()가 하루 밀려,
+// 목·금 묶음이 목→금으로 잘못 밀리는 원인이 되었다.
 const getWeekdayKey = (ymd) => {
-  const date = new Date(`${ymd}T00:00:00+09:00`);
-  if (Number.isNaN(date.getTime())) return null;
-  return WEEKDAY_KEYS[date.getDay()] || null;
+  const parts = String(ymd || "")
+    .split("-")
+    .map((n) => Number(n));
+  if (parts.length !== 3 || parts.some((n) => !Number.isFinite(n) || n <= 0)) {
+    return null;
+  }
+  const [y, m, d] = parts;
+  return WEEKDAY_KEYS[new Date(Date.UTC(y, m - 1, d, 12)).getUTCDay()] || null;
 };
 
 export const resolveNextWeeklyBatchYmd = async ({
@@ -182,21 +194,16 @@ export const resolveNextWeeklyBatchYmd = async ({
   );
   if (allowed.size === 0) return baseYmd;
 
-  let cursor = new Date(`${baseYmd}T00:00:00+09:00`);
-  if (Number.isNaN(cursor.getTime())) return baseYmd;
+  let candidateYmd = String(baseYmd || "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(candidateYmd)) return baseYmd;
 
   for (let i = 0; i < 20; i += 1) {
-    const candidateYmd = toKstYmd(cursor);
-    const weekdayKey = candidateYmd ? getWeekdayKey(candidateYmd) : null;
-    if (candidateYmd && weekdayKey && allowed.has(weekdayKey)) {
+    const weekdayKey = getWeekdayKey(candidateYmd);
+    if (weekdayKey && allowed.has(weekdayKey)) {
       const ok = await isKoreanBusinessDay(candidateYmd);
       if (ok) return candidateYmd;
     }
-    // KST 기준 다음날
-    const nextYmd = toKstYmd(cursor);
-    const nextKst = new Date(`${nextYmd}T00:00:00+09:00`);
-    nextKst.setDate(nextKst.getDate() + 1);
-    cursor = nextKst;
+    candidateYmd = addKstCalendarDays({ startYmd: candidateYmd, days: 1 });
   }
 
   return baseYmd;
@@ -374,7 +381,10 @@ export async function calculateInitialProductionSchedule({
   });
 
   const machiningCompleteYmd = toKstYmd(scheduledMachiningComplete);
-  const baseBatchStartYmd = getTodayYmdInKst(now) || machiningCompleteYmd;
+  // 의뢰 시각(now=requestedAt) 기준일. getTodayYmdInKst()만 쓰면 재계산 스크립트가
+  // "오늘"로 밀려 출고일이 하루 더해진다.
+  const baseBatchStartYmd =
+    toKstYmd(now) || getTodayYmdInKst(now) || machiningCompleteYmd;
   const batchProcessingYmd = await addKoreanBusinessDays({
     startYmd: baseBatchStartYmd,
     days: resolvedLeadDays,

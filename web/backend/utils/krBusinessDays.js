@@ -1,3 +1,5 @@
+// change-log:
+// - 2026-08-06: getTodayYmdInKst(date?)가 인자 날짜를 반영. 재계산 시 "오늘"로 밀리던 버그 수정.
 // related files:
 // - web/backend/rules.md
 // - web/backend/app.js
@@ -255,8 +257,17 @@ export async function nextKoreanBusinessDay({ fromYmd }) {
   }
 }
 
-export function getTodayYmdInKst() {
-  return formatYmdInTimeZone(new Date(), KST_TZ);
+export function getTodayYmdInKst(date = new Date()) {
+  const d =
+    date instanceof Date
+      ? date
+      : date != null && String(date).trim()
+        ? new Date(date)
+        : new Date();
+  if (Number.isNaN(d.getTime())) {
+    return formatYmdInTimeZone(new Date(), KST_TZ);
+  }
+  return formatYmdInTimeZone(d, KST_TZ);
 }
 
 export function ymdToMmDd(ymd) {

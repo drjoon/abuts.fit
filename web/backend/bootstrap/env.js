@@ -1,10 +1,17 @@
+// change-log:
+// - 2026-08-06: process TZ를 Asia/Seoul로 강제(EBS UTC vs 로컬 KST 불일치 방지).
 // related files:
 // - web/backend/rules.md
 // - web/backend/app.js
 // - web/backend/server.js
+// - web/Procfile
+// - rules.md
 import { existsSync, readFileSync } from "fs";
 import { dirname, isAbsolute, resolve } from "path";
 import { fileURLToPath } from "url";
+
+// 프로세스 TZ SSOT: EBS(UTC)·로컬·스크립트 모두 KST. Date#getDay/setHours 등 로컬 TZ API 전제.
+process.env.TZ = "Asia/Seoul";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -87,11 +94,15 @@ export function ensureEnvLoaded() {
     }
   }
 
+  // env 파일에 TZ가 있어도 KST로 재고정 (EBS/로컬/스크립트 불변)
+  process.env.TZ = "Asia/Seoul";
+
   if (toBool(process.env.DEBUG_DOTENV)) {
     console.log("[dotenv] loaded", {
       envFile: String(process.env.ENV_FILE || "").trim() || null,
       resolvedEnvPath: globalThis.__abuts_env_path || null,
       cwd: process.cwd(),
+      tz: process.env.TZ,
       hasMongoUriTest: !!process.env.MONGODB_URI_TEST,
       hasMongoUri: !!process.env.MONGODB_URI,
       mongoUriTest: redactUrlCredentials(process.env.MONGODB_URI_TEST),

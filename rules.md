@@ -83,6 +83,14 @@
 
 - 모든 날짜/집계/표시는 KST(Asia/Seoul) 기준
 - 월 경계/기간 필터도 KST 기준
+- **프로세스 TZ SSOT (강제):** Node/백그라운드 앱의 `process.env.TZ`는 항상 `Asia/Seoul`
+  - EBS 호스트 OS는 UTC여도 앱 프로세스는 KST로 통일 (로컬 개발 Mac KST와 동일)
+  - 적용 위치: `web/backend/bootstrap/env.js`, `web/Procfile`, `web/.ebextensions/06_timezone.config`,
+    `web/eb.sh`(setenv), `local.env`/`test.env`/`prod.env`, bg Node 엔트리
+  - `Date#getDay()` / `setHours()` 등 **로컬 TZ에 의존하는 API**를 YMD/요일 판정에 쓸 때는
+    프로세스 TZ만 믿지 말고, 가능하면 `Asia/Seoul` 명시(`Intl` / `+09:00` / UTC noon 달력일)로 방어
+  - 출고일·묶음요일·마감 뱃지·영업일 계산은 이 정책의 직접 영향 받음
+    (`production.utils.js` `resolveNextWeeklyBatchYmd` 등)
 
 ### 1.5 구조
 
@@ -247,9 +255,11 @@
 ### 4.2 Backend
 
 - 루트에는 전역 진입점만 유지합니다.
+  - `web/backend/bootstrap/env.js` (프로세스 `TZ=Asia/Seoul` 강제)
   - `web/backend/app.js`
   - `web/backend/server.js`
   - `web/backend/utils/distributedJobLock.js` (멀티 인스턴스 워커 락 SSOT)
+  - `web/Procfile`, `web/.ebextensions/06_timezone.config`, `web/eb.sh` (EBS TZ)
 - 백엔드 상세 진입 파일 지도는 `web/backend/rules.md`를 참조합니다.
 
 ### 4.3 Background

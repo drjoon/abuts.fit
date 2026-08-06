@@ -1,3 +1,5 @@
+// change-log:
+// - 2026-08-06: process TZ=Asia/Seoul 강제(전역 KST 정책).
 // related files:
 // - bg/pc2/lot-server/rules.md
 // - web/backend/controllers/ai/lotCapture.controller.js
@@ -10,6 +12,7 @@ import { createWriteStream } from "fs";
 import { fileURLToPath } from "url";
 import os from "os";
 
+process.env.TZ = "Asia/Seoul";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 

@@ -8,6 +8,10 @@
 
 이 문서는 `bg/pc1/esprit-addin` 폴더의 로컬 메모만 남깁니다.
 
+## 0. 시간
+
+- 루트 `rules.md` §1.4: 비즈니스 시각은 KST. Windows 제조 PC OS TZ를 `Asia/Seoul`로 유지.
+
 ## 1. 구현 메모
 
 - Esprit는 `2-filled`를 입력으로 받아 `3-nc`를 생성합니다.

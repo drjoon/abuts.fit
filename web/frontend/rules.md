@@ -24,6 +24,12 @@ Notes:
 
 ## 0. Frontend 중요 진입 파일 지도 (로컬)
 
+- 시간/기간 (KST)
+  - 루트 `rules.md` §1.4: 표시·필터·집계는 `Asia/Seoul`. 브라우저 로컬 TZ에 의존하는
+    `Date#getDay()`/`toLocaleDateString()` 단독 사용 금지 → `timeZone: "Asia/Seoul"` 또는
+    `src/shared/date/kst.ts` / `src/utils/dateFormat.ts` / `src/store/usePeriodStore.ts`
+  - 출고 남은시간 뱃지: `src/pages/manufacturer/worksheet/custom_abutment/utils/request.ts` `getDeadlineInfo`
+    (문구: `출고 N일 N시간`, 기준시각: `estimatedShipYmd` 16:00 KST)
 - 앱/라우팅
   - `src/App.tsx`
   - `src/features/layout/DashboardLayout.tsx`

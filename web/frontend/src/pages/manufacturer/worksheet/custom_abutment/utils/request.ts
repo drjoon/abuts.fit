@@ -109,6 +109,7 @@ export const isCopiedSampleRequest = (req?: ManufacturerRequest | null) => {
 };
 
 // change-log (getDeadlineInfo):
+// - 2026-08-06: 남은시간 뱃지 문구 "마감 …" → "출고 …".
 // - 2026-08-06: createdAt 필수 조건 제거. 큐 아이템처럼 estimatedShipYmd만 있어도 마감 뱃지 계산.
 export interface DeadlineInfo {
   remainingMs: number;
@@ -223,10 +224,10 @@ export const getDeadlineInfo = (
     }
 
     if (days > 0) {
-      return `마감 ${days}일 ${restHours}시간`;
+      return `출고 ${days}일 ${restHours}시간`;
     }
 
-    return `마감 ${restHours}시간`;
+    return `출고 ${restHours}시간`;
   };
 
   const getColorClasses = (

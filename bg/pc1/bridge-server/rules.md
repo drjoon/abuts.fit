@@ -8,6 +8,11 @@
 
 이 문서는 `bg/pc1/bridge-server` 폴더의 로컬 메모만 남깁니다.
 
+## 0. 시간
+
+- 루트 `rules.md` §1.4: 비즈니스 시각은 KST. Windows 제조 PC도 OS TZ를 `Asia/Seoul`(한국 표준시)로 유지.
+- .NET `DateTime.Now` / 로그 시각이 UTC로 찍히면 OS 시간대 설정을 먼저 확인한다.
+
 ## 1. 구현 메모
 
 - 브리지는 Hi-Link DLL 호출을 단일 워커 스레드에서 직렬화합니다.

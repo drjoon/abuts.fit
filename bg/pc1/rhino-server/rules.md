@@ -8,6 +8,12 @@
 
 이 문서는 `bg/pc1/rhino-server` 폴더의 로컬 실행 메모와 트러블슈팅만 기록합니다.
 
+## 0. 시간
+
+- 루트 `rules.md` §1.4: 비즈니스 시각은 KST.
+- Node 보조 스크립트(`stl-metadata/index.js` 등)는 `process.env.TZ = "Asia/Seoul"`을 엔트리에서 강제한다.
+- Windows 호스트 OS TZ도 `Asia/Seoul` 유지.
+
 ## 1. 구현 메모
 
 - Rhino 서버는 `1-stl`을 입력으로 받아 `2-filled`를 생성합니다.

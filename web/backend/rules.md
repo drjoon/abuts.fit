@@ -16,6 +16,10 @@
 
 ## 0. Backend 중요 진입 파일 지도 (로컬)
 
+- 프로세스 TZ (KST 강제)
+  - `bootstrap/env.js` — `process.env.TZ = "Asia/Seoul"` (엔트리/스크립트 공통)
+  - `../Procfile`, `../.ebextensions/06_timezone.config`, `../eb.sh`
+  - `local.env` / `test.env` / `prod.env` 의 `TZ=Asia/Seoul`
 - 서버 엔트리
   - `app.js`
   - `server.js`
@@ -78,6 +82,12 @@
   - 기본 배송 방식: `BusinessAnchor.shippingPolicy.defaultShippingMode` (`normal`|`express`)
     - PATCH: `business.update.controller.js` / 프론트 `NewRequestShippingSection` + `useBulkShippingPolicy`
   - 스케줄: `production.utils.js` `calculateInitialProductionSchedule({ shippingMode })` (신속: 12시 KST 컷오프)
+  - 묶음 발송 요일 정렬: `resolveNextWeeklyBatchYmd` — YMD 달력일 요일은 서버 로컬 `getDay()` 금지
+    (UTC noon 기준). 프로세스 TZ는 `Asia/Seoul`이어도 방어적으로 유지.
+  - 출고일 재계산 스크립트: `scripts/db/fix-today-estimated-ship-ymd.js`
+    (`ABUTS_DB_FORCE=true ENV_FILE=local.env|prod.env`, dry-run 후 `--apply`)
+  - `getTodayYmdInKst(date?)`는 인자 날짜의 KST YMD를 반환(미지정 시 지금). 스케줄 재계산 시
+    `toKstYmd(requestedAt)` / `getTodayYmdInKst(requestedAt)`를 써야 "오늘"로 밀리지 않음.
   - 우선순위: `sortByProductionPriority` 신속 부스트 (스케줄/ETA용). **장비 가공 큐 순서**는 아래 **가공 우선순위** SSOT.
   - 우편함: 신속 건 포함 시 주간 묶음 요일 제한 무시 (`shipping.controller.js` / frontend `shippingDay.helpers.ts`)
   - 대시보드 토글: `PATCH /my/shipping-mode` → `shipping.Requestor.controller.js` `updateMyShippingMode`

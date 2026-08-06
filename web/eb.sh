@@ -279,6 +279,9 @@ else
   ENV_ARGS+=("NODE_ENV=test")
 fi
 
+# 프로세스 TZ SSOT: EBS 호스트가 UTC여도 Node Date 로컬 API는 KST로 동작
+ENV_ARGS+=("TZ=Asia/Seoul")
+
 # 환경변수 변경 체크용 해시 계산
 CORE_ENV_HASH=""
 if command -v shasum >/dev/null 2>&1; then

@@ -1,7 +1,10 @@
+// change-log:
+// - 2026-08-06: process TZ=Asia/Seoul 강제(전역 KST 정책).
 // related files:
 // - bg/pc3/wbls-server/rules.md
 // - web/backend/controllers/requests/shipping.Hanjin.controller.js
 // - web/backend/controllers/requests/shipping.Hanjin.helpers.js
+process.env.TZ = "Asia/Seoul";
 const http = require("http");
 const fs = require("fs");
 const os = require("os");

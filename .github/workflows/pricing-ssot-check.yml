@@ -39,6 +39,7 @@ jobs:
 
       - name: Run pricing SSOT strict check
         env:
+          TZ: Asia/Seoul
           MONGODB_URI: ${{ secrets.MONGODB_URI }}
           MONGO_URI: ${{ secrets.MONGO_URI }}
           MONGODB_URI_TEST: ${{ secrets.MONGODB_URI_TEST }}

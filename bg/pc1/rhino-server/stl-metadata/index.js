@@ -15,6 +15,8 @@ import * as THREE from "three";
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
 import { mergeVertices } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 
+process.env.TZ = "Asia/Seoul";
+
 // CLI 인자 파싱
 const args = process.argv.slice(2);
 if (args.length < 1) {
