@@ -106,14 +106,6 @@ const DIAMETER_LABELS: Record<DiameterKey, string> = {
   d12: "직경 12mm",
 };
 
-const WEEKDAY_LABELS: Record<string, string> = {
-  mon: "월",
-  tue: "화",
-  wed: "수",
-  thu: "목",
-  fri: "금",
-};
-
 const SHIP_OUT_INFO_MESSAGE =
   "제조사에서 출발하는 출고일이 리드타임 기준으로 계산되며, 자정(0시)까지 접수 시 바로 다음날 오후 4시 출고됩니다.";
 
@@ -557,12 +549,6 @@ export const RequestorBulkShippingBannerCard = ({
     return next;
   };
 
-  const formatWeeklyBatchDays = (days: string[]) =>
-    days
-      .map((d) => WEEKDAY_LABELS[d] || d)
-      .filter(Boolean)
-      .join(", ");
-
   const handleFetchLeadTimes = async () => {
     if (isLeadTimeLoading) return;
     setIsLeadTimeLoading(true);
@@ -597,52 +583,86 @@ export const RequestorBulkShippingBannerCard = ({
   return (
     <>
       <Card className="app-glass-card app-glass-card--lg h-full">
-        <CardHeader className="pb-2">
-          <CardTitle className="text-base font-semibold text-foreground">
-            묶음출고 신속출고
-          </CardTitle>
+        <CardHeader className="pb-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <CardTitle className="text-base font-semibold text-foreground">
+              출고
+            </CardTitle>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <Badge
+                variant="outline"
+                className="gap-1 border-sky-300 bg-sky-50 text-sky-700 font-medium"
+              >
+                <Package className="h-3 w-3" />
+                묶음출고
+              </Badge>
+              <Badge
+                variant="outline"
+                className="gap-1 border-amber-300 bg-amber-50 text-amber-700 font-medium"
+              >
+                <Zap className="h-3 w-3" />
+                신속출고
+              </Badge>
+            </div>
+          </div>
         </CardHeader>
-        <CardContent className="pt-2 pb-4 text-sm text-foreground space-y-3">
+        <CardContent className="pt-0 pb-4 text-sm text-foreground space-y-3">
           {isShippingSummaryLoading ? (
-            <div className="text-xs text-slate-600">출고 내역 불러오는 중...</div>
+            <div className="rounded-xl border border-slate-200 bg-slate-50/70 px-4 py-6 text-center text-xs text-slate-500">
+              출고 내역 불러오는 중...
+            </div>
           ) : (
-            <div className="rounded-lg border border-blue-200/70 bg-blue-50/60 px-3 py-2.5 space-y-1.5">
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-[11px] font-semibold tracking-wide text-blue-700">
-                  오늘 출고 예정
-                </span>
-                <span className="text-[11px] text-blue-700">
-                  {shippingMemo.todayCount.toLocaleString()}박스
-                </span>
-              </div>
-              <div className="flex items-baseline justify-between gap-2">
-                <span className="text-slate-700">박스 구성</span>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="h-auto px-2 py-0 text-sm font-semibold text-foreground"
-                  disabled={
-                    shippingMemo.todayCount === 0 ||
-                    shippingMemo.todayRequests.length === 0
-                  }
-                  onClick={() => setTodayBoxDialogOpen(true)}
-                >
-                  {`${shippingMemo.todayRequests.length.toLocaleString()}건`}
-                </Button>
+            <div className="rounded-xl border border-blue-200/80 bg-gradient-to-br from-blue-50 to-sky-50/80 px-4 py-3.5">
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-blue-700">
+                    오늘 출고 예정
+                  </p>
+                  <p className="mt-1 text-2xl font-bold leading-none text-blue-900">
+                    {shippingMemo.todayCount.toLocaleString()}
+                    <span className="ml-1 text-sm font-semibold text-blue-700">
+                      박스
+                    </span>
+                  </p>
+                </div>
+                <div className="h-10 w-px bg-blue-200/80" />
+                <div className="min-w-0 text-right">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+                    박스 구성
+                  </p>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="mt-0.5 h-auto px-0 py-0 text-2xl font-bold leading-none text-slate-900 hover:bg-transparent hover:text-blue-700"
+                    disabled={
+                      shippingMemo.todayCount === 0 ||
+                      shippingMemo.todayRequests.length === 0
+                    }
+                    onClick={() => setTodayBoxDialogOpen(true)}
+                  >
+                    {shippingMemo.todayRequests.length.toLocaleString()}
+                    <span className="ml-1 text-sm font-semibold text-slate-600">
+                      건
+                    </span>
+                  </Button>
+                </div>
               </div>
             </div>
           )}
 
-          <div className="rounded-lg border border-slate-200 bg-white/70 px-3 py-2.5 space-y-2">
-            <p className="text-xs leading-relaxed text-slate-600">
-              {cardMessage}
-            </p>
-            <div className="flex flex-wrap gap-2 pt-0.5">
+          <div className="rounded-xl border border-slate-200 bg-slate-50/60 px-4 py-3.5 space-y-3">
+            <div className="flex items-start gap-2.5">
+              <Clock className="mt-0.5 h-4 w-4 shrink-0 text-slate-500" />
+              <p className="text-xs leading-relaxed text-slate-600">
+                {SHIP_OUT_INFO_MESSAGE}
+              </p>
+            </div>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               <Button
                 variant="default"
                 size="sm"
-                className="h-8 px-3 bg-primary text-white font-semibold"
+                className="h-9 w-full font-semibold"
                 onClick={handleOpenModal}
               >
                 출고 대기 내역
@@ -650,7 +670,7 @@ export const RequestorBulkShippingBannerCard = ({
               <Button
                 variant="outline"
                 size="sm"
-                className="h-8 px-3 font-semibold"
+                className="h-9 w-full font-semibold bg-white/80"
                 onClick={handleLeadTimeButtonClick}
                 disabled={isLeadTimeLoading}
               >
@@ -664,11 +684,20 @@ export const RequestorBulkShippingBannerCard = ({
       <Dialog open={todayBoxDialogOpen} onOpenChange={setTodayBoxDialogOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>오늘 출고 박스 내역</DialogTitle>
+            <DialogTitle className="flex items-center gap-2">
+              <Box className="h-5 w-5 text-blue-600" />
+              오늘 출고 박스 내역
+            </DialogTitle>
           </DialogHeader>
           {shippingMemo.todayRequests.length === 0 ? (
-            <div className="text-sm text-muted-foreground">
-              표시할 의뢰가 없습니다.
+            <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50/80 px-6 py-10 text-center">
+              <Box className="mx-auto mb-3 h-10 w-10 text-slate-300" />
+              <p className="text-sm font-medium text-slate-700">
+                오늘 출고 예정인 박스가 없습니다
+              </p>
+              <p className="mt-1 text-xs text-slate-500">
+                오늘 출고될 의뢰가 모이면 여기에 표시됩니다
+              </p>
             </div>
           ) : (
             <div className="space-y-2 max-h-[60vh] overflow-auto pr-1">
@@ -711,16 +740,15 @@ export const RequestorBulkShippingBannerCard = ({
 
       <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
         <DialogContent className="max-w-3xl">
-          <DialogHeader>
-            <div className="flex flex-col gap-2">
-              <DialogTitle className="text-2xl font-bold">
-                출고 대기 현황
-              </DialogTitle>
-              <CardDescription className="text-xs text-muted-foreground">
-                제조사에서 출발하는 출고일이 리드타임 기준으로 계산되며, KST
-                자정(0시)까지 접수분은 1영업일 리드타임에서 당일 집하가
-                반영됩니다.
-              </CardDescription>
+          <DialogHeader className="space-y-3">
+            <DialogTitle className="flex items-center gap-2 text-xl font-bold">
+              <Package className="h-5 w-5 text-primary" />
+              출고 대기 현황
+            </DialogTitle>
+            <div className="rounded-lg border border-slate-200 bg-slate-50/80 px-3 py-2.5">
+              <p className="text-xs leading-relaxed text-slate-600">
+                {SHIP_OUT_INFO_MESSAGE}
+              </p>
             </div>
           </DialogHeader>
           {!isEtaReady ? (
@@ -750,32 +778,40 @@ export const RequestorBulkShippingBannerCard = ({
           ) : (
             <div className="space-y-4">
               {bulkItems.length === 0 ? (
-                <div className="text-sm text-slate-600 text-center py-8">
-                  출고 대기 중인 제품이 없습니다.
+                <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50/80 px-6 py-12 text-center">
+                  <Package className="mx-auto mb-3 h-10 w-10 text-slate-300" />
+                  <p className="text-sm font-medium text-slate-700">
+                    출고 대기 중인 제품이 없습니다
+                  </p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    의뢰 후 제조사 출고일이 여기에 표시됩니다
+                  </p>
                 </div>
               ) : (
                 bulkGroups.map((group) => (
                   <div
                     key={group.etaKey}
-                    className="app-surface app-surface--panel"
+                    className="rounded-xl border border-slate-200 bg-white/80 p-3 shadow-sm"
                   >
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="text-xs text-slate-700">
-                        <span className="font-medium">출고 예정일:</span>{" "}
-                        <span className="text-foreground font-medium">
+                    <div className="flex items-center justify-between gap-2 border-b border-slate-100 pb-2">
+                      <div className="text-sm text-slate-700">
+                        <span className="font-semibold text-foreground">
+                          출고 예정일
+                        </span>
+                        <span className="ml-2 font-medium text-blue-700">
                           {group.etaKey === "-" ? "-" : formatEta(group.etaKey)}
                         </span>
-                        <span className="ml-2 text-slate-600">
-                          ({group.items.length}개)
-                        </span>
                       </div>
+                      <Badge variant="secondary" className="text-[11px]">
+                        {group.items.length}개
+                      </Badge>
                     </div>
 
-                    <div className="mt-2 grid grid-cols-2 gap-2">
+                    <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
                       {group.items.map((item) => (
                         <div
                           key={item.id}
-                          className="app-surface app-surface--item p-2"
+                          className="rounded-lg border border-slate-100 bg-slate-50/70 p-2.5"
                         >
                           <p className="text-sm font-medium text-foreground truncate">
                             {item.title || item.id}
@@ -800,16 +836,14 @@ export const RequestorBulkShippingBannerCard = ({
 
       <Dialog open={isLeadTimeModalOpen} onOpenChange={setIsLeadTimeModalOpen}>
         <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <div>
-              <DialogTitle className="text-2xl font-bold">
-                제조사 출고 리드타임
-              </DialogTitle>
-              <CardDescription className="text-xs text-muted-foreground">
-                직경별 예상 리드타임과 정기 출고 요일을 확인하세요. (KST
-                자정(0시)까지 접수분은 1영업일 리드타임에서 당일 집하 반영)
-              </CardDescription>
-            </div>
+          <DialogHeader className="space-y-3">
+            <DialogTitle className="flex items-center gap-2 text-xl font-bold">
+              <Clock className="h-5 w-5 text-primary" />
+              제조사 출고 리드타임
+            </DialogTitle>
+            <CardDescription className="rounded-lg border border-slate-200 bg-slate-50/80 px-3 py-2.5 text-xs leading-relaxed text-slate-600">
+              직경별 예상 리드타임을 확인하세요. {SHIP_OUT_INFO_MESSAGE}
+            </CardDescription>
           </DialogHeader>
           <div className="space-y-4">
             {leadTimeData ? (
