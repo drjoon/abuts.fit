@@ -325,7 +325,7 @@ namespace DentalAddin
                 }
 
                 // Front Face 끝점 정책:
-                // - Face.RightX = FrontPointX + 1.0mm 로 고정 적용한다.
+                // - Face.RightX = FrontPointX + 2.5mm 로 고정 적용한다.
                 // - 단, Splitline_2를 침범하지 않도록 상한 클램프한다.
                 // - 이후 Rough 대비 안전가드(0.3mm)를 추가 적용해 공구 파손 위험을 방지한다.
                 ApplyFrontFaceFixedDepth(techLatheMoldParallelPlanes, "FrontFaceMill");
@@ -1480,11 +1480,10 @@ namespace DentalAddin
 
                 const double faceToRoughMm = 2.2;
                 const double roughToTurnMm = 2.2;
-                const double frontFaceOffsetMm = 0.5;
                 const double middleRoughOverCutMm = 2.2;
 
-                // Rough 경계(현재 정책)
-                double frontRoughEnd = Math.Min(xMax, splitline1 + frontFaceOffsetMm + faceToRoughMm);
+                // Rough 경계(현재 정책): Front Face 끝(FrontPointX+2.5) + faceToRough
+                double frontRoughEnd = Math.Min(xMax, splitline1 + FrontFaceEndOffsetFromFrontMm + faceToRoughMm);
                 double middleRoughStart = Math.Max(xMin, splitline1 - middleRoughOverCutMm);
                 double middleRoughEnd = Math.Min(xMax, splitline2 + middleRoughOverCutMm);
 
