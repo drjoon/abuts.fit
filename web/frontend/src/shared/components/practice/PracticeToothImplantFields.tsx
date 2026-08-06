@@ -35,6 +35,12 @@ type Props = {
   onFavoritesChange?: (next: PracticeImplantFavorite[]) => void | Promise<void>;
   /** 프리셋 목록을 입력 필드 위에 배치 */
   presetsFirst?: boolean;
+  /** full=필드+프리셋, fields=필드만, presets=프리셋만 */
+  mode?: "full" | "fields" | "presets";
+  /** 프리셋 추가·수정·삭제 허용 (기본 true) */
+  allowPresetEdit?: boolean;
+  /** 섹션 제목 (기본: 임플란트) */
+  heading?: string;
 };
 
 const pickFirst = (arr: string[]) => arr[0] || "";
@@ -72,10 +78,16 @@ export const PracticeToothImplantFields = ({
   favorites,
   onFavoritesChange,
   presetsFirst = false,
+  mode = "full",
+  allowPresetEdit = true,
+  heading = "임플란트",
 }: Props) => {
   const [editingFavoriteId, setEditingFavoriteId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState<ToothImplantValues>(emptyToothWorkImplant());
   const [favoritesBusy, setFavoritesBusy] = useState(false);
+  const showFields = mode === "full" || mode === "fields";
+  const showPresets = mode === "full" || mode === "presets";
+  const canManagePresets = allowPresetEdit && Boolean(onFavoritesChange);
 
   const connectionOptions = useMemo(
     () =>
@@ -272,7 +284,7 @@ export const PracticeToothImplantFields = ({
     type: value.implantType,
   });
   const canSaveFavorite =
-    Boolean(onFavoritesChange) &&
+    canManagePresets &&
     Boolean(
       value.implantManufacturer ||
         value.implantBrand ||
@@ -301,50 +313,68 @@ export const PracticeToothImplantFields = ({
   };
 
   const renderPresets = (placement: "top" | "bottom") => {
-    if (!onFavoritesChange) return null;
+    if (!showPresets) return null;
     return (
       <div
         className={
           placement === "top"
             ? "space-y-2 pb-1"
-            : "space-y-2 border-t border-sky-100 pt-3"
+            : mode === "presets"
+              ? "space-y-2"
+              : "space-y-2 border-t border-sky-100 pt-3"
         }
       >
-        <div className="flex items-center justify-between gap-2">
-          <p className="text-sm font-medium text-slate-600">프리셋</p>
-          {favorites.length === 0 ? (
-            <span className="text-xs text-slate-400">선택 후 저장</span>
-          ) : (
-            <span className="text-xs text-slate-400">클릭하면 적용</span>
-          )}
-        </div>
+        {mode !== "presets" ? (
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-sm font-medium text-slate-600">프리셋</p>
+            {favorites.length === 0 ? (
+              <span className="text-xs text-slate-400">
+                {canManagePresets ? "선택 후 저장" : "없음"}
+              </span>
+            ) : (
+              <span className="text-xs text-slate-400">클릭하면 적용</span>
+            )}
+          </div>
+        ) : null}
         {favorites.length === 0 ? (
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="h-10 w-full border-dashed text-sm"
-            disabled={!canSaveFavorite || favoritesBusy}
-            onClick={() =>
-              void persistFavorites([
-                ...favorites,
-                {
-                  id: `imp-${Date.now().toString(36)}`,
-                  manufacturer: value.implantManufacturer,
-                  brand: value.implantBrand,
-                  family: value.implantFamily,
-                  type: value.implantType,
-                },
-              ])
+          canManagePresets ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-10 w-full border-dashed text-sm"
+              disabled={!canSaveFavorite || favoritesBusy}
+              onClick={() =>
+                void persistFavorites([
+                  ...favorites,
+                  {
+                    id: `imp-${Date.now().toString(36)}`,
+                    manufacturer: value.implantManufacturer,
+                    brand: value.implantBrand,
+                    family: value.implantFamily,
+                    type: value.implantType,
+                  },
+                ])
+              }
+            >
+              <Plus className="mr-1 h-4 w-4" />
+              현재 선택을 프리셋에 추가
+            </Button>
+          ) : (
+            <p className="rounded-lg border border-dashed border-slate-200 bg-white/70 px-3 py-4 text-center text-sm text-slate-400">
+              저장된 프리셋이 없습니다
+            </p>
+          )
+        ) : (
+          <div
+            className={
+              mode === "presets"
+                ? "max-h-64 space-y-1.5 overflow-y-auto pr-0.5"
+                : "max-h-40 space-y-1.5 overflow-y-auto pr-0.5"
             }
           >
-            <Plus className="mr-1 h-4 w-4" />
-            현재 선택을 프리셋에 추가
-          </Button>
-        ) : (
-          <div className="max-h-40 space-y-1.5 overflow-y-auto pr-0.5">
             {favorites.map((fav) => {
-              const isEditing = editingFavoriteId === fav.id;
+              const isEditing = canManagePresets && editingFavoriteId === fav.id;
               const isActive = favoriteKey(fav) === currentFavoriteKey;
               if (isEditing) {
                 return (
@@ -426,37 +456,41 @@ export const PracticeToothImplantFields = ({
                   >
                     {favoriteLabel(fav)}
                   </button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8 shrink-0 text-slate-400"
-                    onClick={() => {
-                      setEditingFavoriteId(fav.id);
-                      setEditDraft({
-                        implantManufacturer: fav.manufacturer,
-                        implantBrand: fav.brand,
-                        implantFamily: fav.family,
-                        implantType: fav.type,
-                      });
-                    }}
-                    aria-label="프리셋 수정"
-                  >
-                    <Pencil className="h-4 w-4" />
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8 shrink-0 text-slate-400 hover:text-destructive"
-                    disabled={favoritesBusy}
-                    onClick={() =>
-                      void persistFavorites(favorites.filter((row) => row.id !== fav.id))
-                    }
-                    aria-label="프리셋 삭제"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
+                  {canManagePresets ? (
+                    <>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 shrink-0 text-slate-400"
+                        onClick={() => {
+                          setEditingFavoriteId(fav.id);
+                          setEditDraft({
+                            implantManufacturer: fav.manufacturer,
+                            implantBrand: fav.brand,
+                            implantFamily: fav.family,
+                            implantType: fav.type,
+                          });
+                        }}
+                        aria-label="프리셋 수정"
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 shrink-0 text-slate-400 hover:text-destructive"
+                        disabled={favoritesBusy}
+                        onClick={() =>
+                          void persistFavorites(favorites.filter((row) => row.id !== fav.id))
+                        }
+                        aria-label="프리셋 삭제"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </>
+                  ) : null}
                 </div>
               );
             })}
@@ -469,166 +503,174 @@ export const PracticeToothImplantFields = ({
   return (
     <div className="space-y-3 rounded-xl border border-sky-200/80 bg-sky-50/50 p-3 sm:p-4">
       <div className="flex items-center justify-between gap-2">
-        <p className="text-sm font-semibold text-slate-800">임플란트</p>
-        <div className="flex items-center gap-1">
-          {canSaveFavorite ? (
+        <p className="text-sm font-semibold text-slate-800">{heading}</p>
+        {showFields ? (
+          <div className="flex items-center gap-1">
+            {canSaveFavorite ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-8 px-2 text-sm text-sky-700"
+                disabled={favoritesBusy}
+                onClick={() =>
+                  void persistFavorites([
+                    ...favorites,
+                    {
+                      id: `imp-${Date.now().toString(36)}`,
+                      manufacturer: value.implantManufacturer,
+                      brand: value.implantBrand,
+                      family: value.implantFamily,
+                      type: value.implantType,
+                    },
+                  ])
+                }
+              >
+                <BookmarkPlus className="mr-1 h-4 w-4" />
+                프리셋 저장
+              </Button>
+            ) : null}
             <Button
               type="button"
               variant="ghost"
               size="sm"
-              className="h-8 px-2 text-sm text-sky-700"
-              disabled={favoritesBusy}
-              onClick={() =>
-                void persistFavorites([
-                  ...favorites,
-                  {
-                    id: `imp-${Date.now().toString(36)}`,
-                    manufacturer: value.implantManufacturer,
-                    brand: value.implantBrand,
-                    family: value.implantFamily,
-                    type: value.implantType,
-                  },
-                ])
-              }
+              className="h-8 px-2 text-sm text-slate-500"
+              onClick={() => onChange(emptyToothWorkImplant())}
             >
-              <BookmarkPlus className="mr-1 h-4 w-4" />
-              프리셋 저장
+              <X className="mr-1 h-4 w-4" />
+              비우기
             </Button>
-          ) : null}
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="h-8 px-2 text-sm text-slate-500"
-            onClick={() => onChange(emptyToothWorkImplant())}
-          >
-            <X className="mr-1 h-4 w-4" />
-            비우기
-          </Button>
-        </div>
+          </div>
+        ) : (
+          <span className="text-xs text-slate-400">
+            {favorites.length === 0 ? "없음" : "클릭하면 적용"}
+          </span>
+        )}
       </div>
 
-      {presetsFirst ? renderPresets("top") : null}
+      {showPresets && (presetsFirst || mode === "presets") ? renderPresets("top") : null}
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <div className="space-y-1.5">
-          <Label className="text-sm text-slate-600">제조사</Label>
-          <Select
-            value={value.implantManufacturer || undefined}
-            onValueChange={(nextManufacturer) => {
-              const nextBrand = pickFirst(getBrands(nextManufacturer));
-              const nextFamily = pickPreferredFamily(getFamilies(nextManufacturer, nextBrand));
-              const nextType = pickFirst(getTypes(nextManufacturer, nextBrand, nextFamily));
-              onChange({
-                implantManufacturer: nextManufacturer,
-                implantBrand: nextBrand,
-                implantFamily: nextFamily,
-                implantType: nextType,
-              });
-            }}
-          >
-            <SelectTrigger className={selectTriggerClass}>
-              <SelectValue placeholder="제조사 선택" />
-            </SelectTrigger>
-            <SelectContent>
-              {manufacturerOptions.map((m) => (
-                <SelectItem key={`mfr-${m}`} value={m} className="text-sm">
-                  {manufacturerLabelMap.get(m) || m}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+      {showFields ? (
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div className="space-y-1.5">
+            <Label className="text-sm text-slate-600">제조사</Label>
+            <Select
+              value={value.implantManufacturer || undefined}
+              onValueChange={(nextManufacturer) => {
+                const nextBrand = pickFirst(getBrands(nextManufacturer));
+                const nextFamily = pickPreferredFamily(getFamilies(nextManufacturer, nextBrand));
+                const nextType = pickFirst(getTypes(nextManufacturer, nextBrand, nextFamily));
+                onChange({
+                  implantManufacturer: nextManufacturer,
+                  implantBrand: nextBrand,
+                  implantFamily: nextFamily,
+                  implantType: nextType,
+                });
+              }}
+            >
+              <SelectTrigger className={selectTriggerClass}>
+                <SelectValue placeholder="제조사 선택" />
+              </SelectTrigger>
+              <SelectContent>
+                {manufacturerOptions.map((m) => (
+                  <SelectItem key={`mfr-${m}`} value={m} className="text-sm">
+                    {manufacturerLabelMap.get(m) || m}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label className="text-sm text-slate-600">브랜드</Label>
+            <Select
+              value={value.implantBrand || undefined}
+              onValueChange={(nextBrand) => {
+                const nextFamily = pickPreferredFamily(
+                  getFamilies(value.implantManufacturer, nextBrand),
+                );
+                const nextType = pickFirst(
+                  getTypes(value.implantManufacturer, nextBrand, nextFamily),
+                );
+                onChange({
+                  ...value,
+                  implantBrand: nextBrand,
+                  implantFamily: nextFamily,
+                  implantType: nextType,
+                });
+              }}
+              disabled={!value.implantManufacturer}
+            >
+              <SelectTrigger className={selectTriggerClass} disabled={!value.implantManufacturer}>
+                <SelectValue placeholder="브랜드 선택" />
+              </SelectTrigger>
+              <SelectContent>
+                {brandOptions.map((b) => (
+                  <SelectItem key={`brand-${b}`} value={b} className="text-sm">
+                    {brandLabelMap.get(b) || b}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label className="text-sm text-slate-600">패밀리</Label>
+            <Select
+              value={value.implantFamily || undefined}
+              onValueChange={(nextFamily) => {
+                const nextType = pickFirst(
+                  getTypes(value.implantManufacturer, value.implantBrand, nextFamily),
+                );
+                onChange({
+                  ...value,
+                  implantFamily: nextFamily,
+                  implantType: nextType,
+                });
+              }}
+              disabled={!value.implantBrand}
+            >
+              <SelectTrigger className={selectTriggerClass} disabled={!value.implantBrand}>
+                <SelectValue placeholder="패밀리 선택" />
+              </SelectTrigger>
+              <SelectContent>
+                {familyOptions.map((f) => (
+                  <SelectItem key={`family-${f}`} value={f} className="text-sm">
+                    {familyLabelMap.get(f) || f}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label className="text-sm text-slate-600">타입</Label>
+            <Select
+              value={value.implantType || undefined}
+              onValueChange={(nextType) => {
+                onChange({
+                  ...value,
+                  implantType: nextType,
+                });
+              }}
+              disabled={!value.implantFamily}
+            >
+              <SelectTrigger className={selectTriggerClass} disabled={!value.implantFamily}>
+                <SelectValue placeholder="타입 선택" />
+              </SelectTrigger>
+              <SelectContent>
+                {typeOptions.map((t) => (
+                  <SelectItem key={`type-${t}`} value={t} className="text-sm">
+                    {typeLabelMap.get(t) || t}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         </div>
+      ) : null}
 
-        <div className="space-y-1.5">
-          <Label className="text-sm text-slate-600">브랜드</Label>
-          <Select
-            value={value.implantBrand || undefined}
-            onValueChange={(nextBrand) => {
-              const nextFamily = pickPreferredFamily(
-                getFamilies(value.implantManufacturer, nextBrand),
-              );
-              const nextType = pickFirst(
-                getTypes(value.implantManufacturer, nextBrand, nextFamily),
-              );
-              onChange({
-                ...value,
-                implantBrand: nextBrand,
-                implantFamily: nextFamily,
-                implantType: nextType,
-              });
-            }}
-            disabled={!value.implantManufacturer}
-          >
-            <SelectTrigger className={selectTriggerClass} disabled={!value.implantManufacturer}>
-              <SelectValue placeholder="브랜드 선택" />
-            </SelectTrigger>
-            <SelectContent>
-              {brandOptions.map((b) => (
-                <SelectItem key={`brand-${b}`} value={b} className="text-sm">
-                  {brandLabelMap.get(b) || b}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
-        <div className="space-y-1.5">
-          <Label className="text-sm text-slate-600">패밀리</Label>
-          <Select
-            value={value.implantFamily || undefined}
-            onValueChange={(nextFamily) => {
-              const nextType = pickFirst(
-                getTypes(value.implantManufacturer, value.implantBrand, nextFamily),
-              );
-              onChange({
-                ...value,
-                implantFamily: nextFamily,
-                implantType: nextType,
-              });
-            }}
-            disabled={!value.implantBrand}
-          >
-            <SelectTrigger className={selectTriggerClass} disabled={!value.implantBrand}>
-              <SelectValue placeholder="패밀리 선택" />
-            </SelectTrigger>
-            <SelectContent>
-              {familyOptions.map((f) => (
-                <SelectItem key={`family-${f}`} value={f} className="text-sm">
-                  {familyLabelMap.get(f) || f}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
-        <div className="space-y-1.5">
-          <Label className="text-sm text-slate-600">타입</Label>
-          <Select
-            value={value.implantType || undefined}
-            onValueChange={(nextType) => {
-              onChange({
-                ...value,
-                implantType: nextType,
-              });
-            }}
-            disabled={!value.implantFamily}
-          >
-            <SelectTrigger className={selectTriggerClass} disabled={!value.implantFamily}>
-              <SelectValue placeholder="타입 선택" />
-            </SelectTrigger>
-            <SelectContent>
-              {typeOptions.map((t) => (
-                <SelectItem key={`type-${t}`} value={t} className="text-sm">
-                  {typeLabelMap.get(t) || t}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
-
-      {!presetsFirst ? renderPresets("bottom") : null}
+      {showPresets && !presetsFirst && mode !== "presets" ? renderPresets("bottom") : null}
     </div>
   );
 };

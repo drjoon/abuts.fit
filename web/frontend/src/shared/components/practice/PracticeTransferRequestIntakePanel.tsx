@@ -90,7 +90,7 @@ const MAX_MEMO_SUGGESTIONS = 8;
 const MEMO_SUGGEST_MIN_CHARS = 1;
 const TOOTH_CHART_VISIBLE = 6;
 /** 카드 높이: 커스텀 임플란트/스캔바디 2줄까지 표시한 기준 */
-const TOOTH_CARD_HEIGHT_CLASS = "h-[8.75rem]";
+const TOOTH_CARD_HEIGHT_CLASS = "h-[9.75rem]";
 /** 치식: 위(18→11→21→28) / 아래(48→41→31→38). 행마다 6칸 + <> 스크롤 */
 const TOOTH_CHART_ROWS: ReadonlyArray<{ key: string; label: string; teeth: readonly string[] }> = [
   {
@@ -116,20 +116,15 @@ const initialToothChartOffsets = (): Record<string, number> => ({
   lower: 0,
 });
 
-/** 선택된 치아가 보이도록 해당 번대 스크롤 오프셋 계산 */
-const offsetToRevealSelected = (
-  teeth: readonly string[],
-  selected: ReadonlySet<string>,
+/** R=우측(10/40), M=전치부, L=좌측(20/30) — 상·하악 공통 스크롤 오프셋 */
+const toothChartOffsetForRegion = (
+  region: "R" | "M" | "L",
+  teethLength: number,
 ) => {
-  const indices = teeth
-    .map((tooth, index) => (selected.has(tooth) ? index : -1))
-    .filter((index) => index >= 0);
-  const maxOffset = Math.max(0, teeth.length - TOOTH_CHART_VISIBLE);
-  if (indices.length === 0) return null;
-  const min = Math.min(...indices);
-  const max = Math.max(...indices);
-  const ideal = Math.round((min + max) / 2 - (TOOTH_CHART_VISIBLE - 1) / 2);
-  return Math.min(maxOffset, Math.max(0, ideal));
+  const maxOffset = Math.max(0, teethLength - TOOTH_CHART_VISIBLE);
+  if (region === "R") return 0;
+  if (region === "L") return maxOffset;
+  return Math.min(maxOffset, Math.max(0, Math.round(maxOffset / 2)));
 };
 
 export const normalizeMemoSnippets = (items: unknown): string[] => {
@@ -272,40 +267,13 @@ export const PracticeTransferRequestIntakePanel = ({
   const [lastUsedCustomSpecs, setLastUsedCustomSpecs] = useState(() => emptyToothWorkCustomSpecs());
   /** null = closed; number = 해당 치아 커스텀어벗 설정 */
   const [customSpecsModalTarget, setCustomSpecsModalTarget] = useState<number | null>(null);
+  const [customSpecsPresetEditOpen, setCustomSpecsPresetEditOpen] = useState(false);
+  /** 이번 모달에서 임플란트/스캔바디를 각각 클릭 선택했는지 */
+  const customSpecsPickSessionRef = useRef({ implant: false, scanbody: false });
+  const customSpecsPresetEditOpenRef = useRef(false);
   const [toothChartOffsets, setToothChartOffsets] = useState<Record<string, number>>(
     initialToothChartOffsets,
   );
-
-  // 선택된 치아(예: 12·11·21)가 창 밖이면 해당 번대를 그쪽으로 스크롤
-  useEffect(() => {
-    const selected = new Set(
-      toothWorks
-        .map((row) => String(row.toothNumber || "").trim())
-        .filter((tooth) => /^[1-4][1-8]$/.test(tooth)),
-    );
-    if (selected.size === 0) return;
-
-    setToothChartOffsets((prev) => {
-      let changed = false;
-      const next = { ...prev };
-      for (const decade of TOOTH_CHART_ROWS) {
-        const selectedInDecade = decade.teeth.filter((tooth) => selected.has(tooth));
-        if (selectedInDecade.length === 0) continue;
-
-        const cur = next[decade.key] ?? 0;
-        const visible = new Set(
-          decade.teeth.slice(cur, cur + TOOTH_CHART_VISIBLE),
-        );
-        if (selectedInDecade.every((tooth) => visible.has(tooth))) continue;
-
-        const ideal = offsetToRevealSelected(decade.teeth, selected);
-        if (ideal == null || ideal === cur) continue;
-        next[decade.key] = ideal;
-        changed = true;
-      }
-      return changed ? next : prev;
-    });
-  }, [toothWorks]);
 
   // 연결 여부 ↔ 형태(크라운/인레이 vs 브리지/Pontic) 불일치 보정 (드래프트·구버전 데이터)
   const toothWorkLinkTypeMismatch = useMemo(() => {
@@ -380,27 +348,46 @@ export const PracticeTransferRequestIntakePanel = ({
 
   const emptySpecsKey = customSpecsKey(emptyToothWorkCustomSpecs());
 
-  const resolveSeedCustomSpecs = (
-    prev: ToothWorkSelection[],
-    excludeIndex?: number,
-  ) => {
-    if (customSpecsKey(lastUsedCustomSpecs) !== emptySpecsKey) {
-      return pickToothWorkCustomSpecs(lastUsedCustomSpecs, true);
-    }
-    const donor = prev.find(
-      (row, index) =>
-        index !== excludeIndex &&
-        row.customAbutment &&
-        isCustomAbutmentSupportedProsthesisType(row.prosthesisType) &&
-        customSpecsKey(row) !== emptySpecsKey,
-    );
-    if (donor) return pickToothWorkCustomSpecs(donor, true);
-    return emptyToothWorkCustomSpecs();
+  const openCustomSpecsModal = (index: number) => {
+    customSpecsPickSessionRef.current = { implant: false, scanbody: false };
+    customSpecsPresetEditOpenRef.current = false;
+    setCustomSpecsPresetEditOpen(false);
+    setCustomSpecsModalTarget(index);
+  };
+
+  const closeCustomSpecsModal = () => {
+    customSpecsPickSessionRef.current = { implant: false, scanbody: false };
+    customSpecsPresetEditOpenRef.current = false;
+    setCustomSpecsPresetEditOpen(false);
+    setCustomSpecsModalTarget(null);
+  };
+
+  const tryCloseCustomSpecsModalAfterPicks = () => {
+    if (customSpecsPresetEditOpenRef.current) return;
+    const { implant, scanbody } = customSpecsPickSessionRef.current;
+    if (!implant || !scanbody) return;
+    closeCustomSpecsModal();
+  };
+
+  const setCustomSpecsPresetEditOpenSafe = (open: boolean) => {
+    customSpecsPresetEditOpenRef.current = open;
+    setCustomSpecsPresetEditOpen(open);
+    if (!open) tryCloseCustomSpecsModalAfterPicks();
+  };
+
+  const registerCustomSpecsPick = (kind: "implant" | "scanbody" | "both") => {
+    const prev = customSpecsPickSessionRef.current;
+    customSpecsPickSessionRef.current = {
+      implant: prev.implant || kind === "implant" || kind === "both",
+      scanbody: prev.scanbody || kind === "scanbody" || kind === "both",
+    };
+    tryCloseCustomSpecsModalAfterPicks();
   };
 
   const applyCustomSpecsToTooth = (
     index: number,
     specs: ReturnType<typeof emptyToothWorkCustomSpecs>,
+    pickKind: "implant" | "scanbody" | "both" = "both",
   ) => {
     setToothWorks((prev) => {
       const next = [...prev];
@@ -415,30 +402,42 @@ export const PracticeTransferRequestIntakePanel = ({
     if (customSpecsKey(specs) !== emptySpecsKey) {
       setLastUsedCustomSpecs(pickToothWorkCustomSpecs(specs, true));
     }
+    registerCustomSpecsPick(pickKind);
   };
 
   const patchCustomSpecsOnTooth = (
     index: number,
     patch: Partial<ReturnType<typeof emptyToothWorkCustomSpecs>>,
   ) => {
+    const row = toothWorks[index];
+    if (!row) return;
+    const merged = {
+      ...pickToothWorkCustomSpecs(row, true),
+      ...patch,
+    };
+    const implantTouched = (
+      ["implantManufacturer", "implantBrand", "implantFamily", "implantType"] as const
+    ).some((key) => key in patch);
+    const scanbodyTouched = (
+      ["abutmentManufacturer", "abutmentDiameter", "abutmentHeight"] as const
+    ).some((key) => key in patch);
     setToothWorks((prev) => {
       const next = [...prev];
-      const row = next[index];
-      if (!row) return prev;
-      const merged = {
-        ...pickToothWorkCustomSpecs(row, true),
-        ...patch,
-      };
+      const current = next[index];
+      if (!current) return prev;
       next[index] = {
-        ...row,
+        ...current,
         customAbutment: true,
         ...merged,
       };
-      if (customSpecsKey(merged) !== emptySpecsKey) {
-        setLastUsedCustomSpecs(pickToothWorkCustomSpecs(merged, true));
-      }
       return next;
     });
+    if (customSpecsKey(merged) !== emptySpecsKey) {
+      setLastUsedCustomSpecs(pickToothWorkCustomSpecs(merged, true));
+    }
+    if (implantTouched && scanbodyTouched) registerCustomSpecsPick("both");
+    else if (implantTouched) registerCustomSpecsPick("implant");
+    else if (scanbodyTouched) registerCustomSpecsPick("scanbody");
   };
 
   useEffect(() => {
@@ -725,61 +724,159 @@ export const PracticeTransferRequestIntakePanel = ({
       </div>
 
       <div className="space-y-2">
-        <div className="flex items-center gap-1">
-          <Label className="text-sm">
-            보철물 <span className="text-destructive">*</span>
-          </Label>
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="h-7 w-7"
-                  onClick={() => {
-                    setProsthesisTypeCatalogDraft(normalizedProsthesisTypes);
-                    setProsthesisTypeSettingsDialogOpen(true);
-                  }}
-                >
-                  <Settings className="h-3.5 w-3.5" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side="top" className="text-xs">
-                보철물 목록 설정
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="h-7 w-7"
-                  onClick={() => {
-                    setToothWorks([
-                      {
-                        toothNumber: "",
-                        prosthesisType: defaultProsthesisType,
-                        customAbutment: false,
-                        bridgeLinkedTeeth: [],
-                        ...emptyToothWorkCustomSpecs(),
-                      },
-                    ]);
+        <div className="relative flex min-h-8 items-center">
+          <div className="flex items-center gap-1">
+            <Label className="text-sm">
+              보철물 <span className="text-destructive">*</span>
+            </Label>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7"
+                    onClick={() => {
+                      setProsthesisTypeCatalogDraft(normalizedProsthesisTypes);
+                      setProsthesisTypeSettingsDialogOpen(true);
+                    }}
+                  >
+                    <Settings className="h-3.5 w-3.5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="text-xs">
+                  보철물 목록 설정
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7"
+                    onClick={() => {
+                      setToothWorks([
+                        {
+                          toothNumber: "",
+                          prosthesisType: defaultProsthesisType,
+                          customAbutment: false,
+                          bridgeLinkedTeeth: [],
+                          ...emptyToothWorkCustomSpecs(),
+                        },
+                      ]);
                     setLastUsedCustomSpecs(emptyToothWorkCustomSpecs());
-                    setCustomSpecsModalTarget(null);
+                    closeCustomSpecsModal();
                   }}
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side="top" className="text-xs">
-                치아 전체 삭제
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="text-xs">
+                  치아 전체 삭제
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          </div>
+
+          <div className="absolute left-1/2 flex -translate-x-1/2 items-center gap-1">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              title="오른쪽 · 10/40번대"
+              className="h-8 w-10 px-0 text-sm font-semibold tabular-nums"
+              onClick={() => {
+                setToothChartOffsets(() => {
+                  const next: Record<string, number> = {};
+                  for (const decade of TOOTH_CHART_ROWS) {
+                    next[decade.key] = toothChartOffsetForRegion("R", decade.teeth.length);
+                  }
+                  return next;
+                });
+              }}
+            >
+              R
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              title="한 칸 왼쪽"
+              className="h-8 w-8 text-slate-500"
+              onClick={() => {
+                setToothChartOffsets((prev) => {
+                  const next = { ...prev };
+                  for (const decade of TOOTH_CHART_ROWS) {
+                    const cur = next[decade.key] ?? 0;
+                    next[decade.key] = Math.max(0, cur - 1);
+                  }
+                  return next;
+                });
+              }}
+            >
+              <ChevronLeft className="h-5 w-5" strokeWidth={2.25} />
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              title="전치부"
+              className="h-8 w-10 px-0 text-sm font-semibold tabular-nums"
+              onClick={() => {
+                setToothChartOffsets(() => {
+                  const next: Record<string, number> = {};
+                  for (const decade of TOOTH_CHART_ROWS) {
+                    next[decade.key] = toothChartOffsetForRegion("M", decade.teeth.length);
+                  }
+                  return next;
+                });
+              }}
+            >
+              M
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              title="한 칸 오른쪽"
+              className="h-8 w-8 text-slate-500"
+              onClick={() => {
+                setToothChartOffsets((prev) => {
+                  const next = { ...prev };
+                  for (const decade of TOOTH_CHART_ROWS) {
+                    const maxOffset = Math.max(0, decade.teeth.length - TOOTH_CHART_VISIBLE);
+                    const cur = next[decade.key] ?? 0;
+                    next[decade.key] = Math.min(maxOffset, cur + 1);
+                  }
+                  return next;
+                });
+              }}
+            >
+              <ChevronRight className="h-5 w-5" strokeWidth={2.25} />
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              title="왼쪽 · 20/30번대"
+              className="h-8 w-10 px-0 text-sm font-semibold tabular-nums"
+              onClick={() => {
+                setToothChartOffsets(() => {
+                  const next: Record<string, number> = {};
+                  for (const decade of TOOTH_CHART_ROWS) {
+                    next[decade.key] = toothChartOffsetForRegion("L", decade.teeth.length);
+                  }
+                  return next;
+                });
+              }}
+            >
+              L
+            </Button>
+          </div>
         </div>
 
         <div className="space-y-2">
@@ -950,7 +1047,7 @@ export const PracticeTransferRequestIntakePanel = ({
                           )}
                           onClick={() => activateTooth(toothNumber)}
                         >
-                          <span className="flex h-9 items-center text-lg font-semibold tabular-nums tracking-tight text-slate-400/90">
+                          <span className="flex h-10 items-center text-xl font-semibold tabular-nums tracking-tight text-slate-400/90">
                             {toothNumber}
                           </span>
                         </button>
@@ -1119,7 +1216,7 @@ export const PracticeTransferRequestIntakePanel = ({
                               type="button"
                               variant="ghost"
                               size="icon"
-                              className="absolute right-0 top-0 z-10 h-5 w-5 text-slate-400 hover:bg-rose-50 hover:text-rose-500"
+                              className="absolute right-0 top-0 z-10 h-6 w-6 text-slate-400 hover:bg-rose-50 hover:text-rose-500"
                               onClick={() => {
                                 setCustomSpecsModalTarget((prev) => {
                                   if (prev === null) return prev;
@@ -1141,7 +1238,7 @@ export const PracticeTransferRequestIntakePanel = ({
                                 });
                               }}
                             >
-                              <Trash2 className="h-3 w-3" />
+                              <Trash2 className="h-3.5 w-3.5" />
                             </Button>
 
                             {/* 1) 치아번호 */}
@@ -1149,7 +1246,7 @@ export const PracticeTransferRequestIntakePanel = ({
                               value={row.toothNumber}
                               tensOptions={toothTensOptions}
                               onesOptions={toothOnesOptions}
-                              className="h-9 w-10 shrink-0 border-0 bg-transparent text-lg font-bold tracking-tight text-slate-800 shadow-none hover:bg-sky-100/60"
+                              className="h-10 w-11 shrink-0 border-0 bg-transparent text-xl font-bold tracking-tight text-slate-800 shadow-none hover:bg-sky-100/60"
                               onChange={(nextTooth) => {
                                 setToothWorks((prev) => {
                                   const next = [...prev];
@@ -1270,7 +1367,7 @@ export const PracticeTransferRequestIntakePanel = ({
                                 });
                               }}
                             >
-                              <SelectTrigger className="h-5 w-[3.75rem] justify-center gap-0 rounded-md border-sky-200/80 bg-white/80 px-0.5 text-[9px] text-slate-600 shadow-none [&>span]:w-full [&>span]:text-center [&>svg]:hidden">
+                              <SelectTrigger className="h-6 w-[4.25rem] justify-center gap-0 rounded-md border-sky-200/80 bg-white/80 px-0.5 text-[11px] text-slate-600 shadow-none [&>span]:w-full [&>span]:text-center [&>svg]:hidden">
                                 <SelectValue placeholder="형태" />
                               </SelectTrigger>
                               <SelectContent>
@@ -1286,29 +1383,25 @@ export const PracticeTransferRequestIntakePanel = ({
 
                             {/* 3) 커스텀어벗 · 임플란트 · 스캔바디 */}
                             {canSelectCustomAbutment ? (
-                              <div className="mt-2 flex w-full flex-col items-center gap-0 leading-none">
-                                <label className="inline-flex h-4 items-center gap-0.5 text-[9px] leading-none text-slate-500">
+                              <div className="mt-2 flex w-full flex-col items-center gap-0.5 leading-none">
+                                <label className="inline-flex h-5 items-center gap-1 text-[11px] leading-none text-slate-500">
                                   <input
                                     type="checkbox"
-                                    className="h-2.5 w-2.5 accent-sky-600"
+                                    className="h-3 w-3 accent-sky-600"
                                     checked={Boolean(row.customAbutment)}
                                     onChange={(e) => {
                                       const checked = Boolean(e.target.checked);
                                       if (checked) {
-                                        const seed = resolveSeedCustomSpecs(toothWorks, originalIndex);
                                         setToothWorks((prev) => {
                                           const next = [...prev];
                                           next[originalIndex] = {
                                             ...next[originalIndex],
                                             customAbutment: true,
-                                            ...seed,
+                                            ...emptyToothWorkCustomSpecs(),
                                           };
                                           return next;
                                         });
-                                        if (customSpecsKey(seed) !== emptySpecsKey) {
-                                          setLastUsedCustomSpecs(seed);
-                                        }
-                                        setCustomSpecsModalTarget(originalIndex);
+                                        openCustomSpecsModal(originalIndex);
                                       } else {
                                         setToothWorks((prev) => {
                                           const next = [...prev];
@@ -1319,9 +1412,9 @@ export const PracticeTransferRequestIntakePanel = ({
                                           };
                                           return next;
                                         });
-                                        setCustomSpecsModalTarget((prev) =>
-                                          prev === originalIndex ? null : prev,
-                                        );
+                                        if (customSpecsModalTarget === originalIndex) {
+                                          closeCustomSpecsModal();
+                                        }
                                       }
                                     }}
                                   />
@@ -1330,13 +1423,13 @@ export const PracticeTransferRequestIntakePanel = ({
 
                                 {showCustomDetails ? (
                                   <TooltipProvider delayDuration={0}>
-                                    <div className="flex w-full flex-col items-stretch px-0.5">
+                                    <div className="flex w-full flex-col items-stretch gap-0.5 px-0.5">
                                       <Tooltip>
                                         <TooltipTrigger asChild>
                                           <button
                                             type="button"
-                                            className="h-3.5 w-full truncate px-0.5 text-center text-[8px] leading-none text-sky-700 hover:bg-sky-100/70 hover:underline"
-                                            onClick={() => setCustomSpecsModalTarget(originalIndex)}
+                                            className="h-4 w-full truncate px-0.5 text-center text-[10px] leading-none text-sky-700 hover:bg-sky-100/70 hover:underline"
+                                            onClick={() => openCustomSpecsModal(originalIndex)}
                                           >
                                             {implantCompact || "임플란트"}
                                           </button>
@@ -1349,8 +1442,8 @@ export const PracticeTransferRequestIntakePanel = ({
                                         <TooltipTrigger asChild>
                                           <button
                                             type="button"
-                                            className="h-3.5 w-full truncate px-0.5 text-center text-[8px] leading-none text-teal-700 hover:bg-teal-50 hover:underline"
-                                            onClick={() => setCustomSpecsModalTarget(originalIndex)}
+                                            className="h-4 w-full truncate px-0.5 text-center text-[10px] leading-none text-teal-700 hover:bg-teal-50 hover:underline"
+                                            onClick={() => openCustomSpecsModal(originalIndex)}
                                           >
                                             {abutmentCompact || "스캔바디"}
                                           </button>
@@ -1580,7 +1673,7 @@ export const PracticeTransferRequestIntakePanel = ({
       <Dialog
         open={customSpecsModalTarget !== null}
         onOpenChange={(open) => {
-          if (!open) setCustomSpecsModalTarget(null);
+          if (!open) closeCustomSpecsModal();
         }}
       >
         <DialogContent className="max-h-[92vh] gap-4 overflow-y-auto sm:max-w-3xl">
@@ -1594,7 +1687,7 @@ export const PracticeTransferRequestIntakePanel = ({
               }`}
             </DialogTitle>
             <DialogDescription className="text-sm">
-              임플란트·스캔바디 프리셋을 선택하거나 직접 입력하세요. 자주 쓰는 조합은 프리셋으로 저장할 수 있습니다.
+              임플란트와 스캔바디 프리셋을 각각 한 번씩 선택하면 저장되고 닫힙니다.
             </DialogDescription>
           </DialogHeader>
 
@@ -1620,34 +1713,92 @@ export const PracticeTransferRequestIntakePanel = ({
                   </button>
                 </div>
               ) : null}
-              <PracticeToothImplantFields
-                value={pickToothWorkCustomSpecs(toothWorks[customSpecsModalTarget], true)}
-                onChange={(nextImplant) => {
-                  patchCustomSpecsOnTooth(customSpecsModalTarget, nextImplant);
-                }}
-                connections={implantConnections}
-                favorites={implantFavorites}
-                onFavoritesChange={onImplantFavoritesChange}
-                presetsFirst
-              />
-              <PracticeToothAbutmentFields
-                heading="스캔바디"
-                value={pickToothWorkCustomSpecs(toothWorks[customSpecsModalTarget], true)}
-                onChange={(nextAbutment) => {
-                  patchCustomSpecsOnTooth(customSpecsModalTarget, nextAbutment);
-                }}
-                favorites={abutmentFavorites}
-                onFavoritesChange={onAbutmentFavoritesChange}
-                presetsFirst
-              />
+
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <PracticeToothImplantFields
+                  mode="presets"
+                  allowPresetEdit={false}
+                  heading="임플란트 프리셋"
+                  value={pickToothWorkCustomSpecs(toothWorks[customSpecsModalTarget], true)}
+                  onChange={(nextImplant) => {
+                    patchCustomSpecsOnTooth(customSpecsModalTarget, nextImplant);
+                  }}
+                  connections={implantConnections}
+                  favorites={implantFavorites}
+                />
+                <PracticeToothAbutmentFields
+                  mode="presets"
+                  allowPresetEdit={false}
+                  heading="스캔바디 프리셋"
+                  value={pickToothWorkCustomSpecs(toothWorks[customSpecsModalTarget], true)}
+                  onChange={(nextAbutment) => {
+                    patchCustomSpecsOnTooth(customSpecsModalTarget, nextAbutment);
+                  }}
+                  favorites={abutmentFavorites}
+                />
+              </div>
+
+              <div className="flex justify-center">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-10 min-w-[10rem] text-sm"
+                  onClick={() => setCustomSpecsPresetEditOpenSafe(true)}
+                >
+                  <Settings className="mr-1.5 h-4 w-4" />
+                  프리셋 편집
+                </Button>
+              </div>
+
+              <Dialog
+                open={customSpecsPresetEditOpen}
+                onOpenChange={setCustomSpecsPresetEditOpenSafe}
+              >
+                <DialogContent className="max-h-[92vh] gap-4 overflow-y-auto sm:max-w-3xl">
+                  <DialogHeader className="space-y-1.5 text-left">
+                    <DialogTitle className="text-lg">프리셋 편집</DialogTitle>
+                    <DialogDescription className="text-sm">
+                      임플란트·스캔바디를 직접 선택하고, 자주 쓰는 조합을 프리셋으로 저장·수정·삭제할 수
+                      있습니다.
+                    </DialogDescription>
+                  </DialogHeader>
+
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <PracticeToothImplantFields
+                      presetsFirst
+                      value={pickToothWorkCustomSpecs(toothWorks[customSpecsModalTarget], true)}
+                      onChange={(nextImplant) => {
+                        patchCustomSpecsOnTooth(customSpecsModalTarget, nextImplant);
+                      }}
+                      connections={implantConnections}
+                      favorites={implantFavorites}
+                      onFavoritesChange={onImplantFavoritesChange}
+                    />
+                    <PracticeToothAbutmentFields
+                      presetsFirst
+                      heading="스캔바디"
+                      value={pickToothWorkCustomSpecs(toothWorks[customSpecsModalTarget], true)}
+                      onChange={(nextAbutment) => {
+                        patchCustomSpecsOnTooth(customSpecsModalTarget, nextAbutment);
+                      }}
+                      favorites={abutmentFavorites}
+                      onFavoritesChange={onAbutmentFavoritesChange}
+                    />
+                  </div>
+
+                  <DialogFooter>
+                    <Button
+                      type="button"
+                      className="h-10 min-w-[6rem] text-sm"
+                      onClick={() => setCustomSpecsPresetEditOpenSafe(false)}
+                    >
+                      완료
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
             </div>
           ) : null}
-
-          <DialogFooter>
-            <Button type="button" className="h-10 min-w-[6rem] text-sm" onClick={() => setCustomSpecsModalTarget(null)}>
-              완료
-            </Button>
-          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
