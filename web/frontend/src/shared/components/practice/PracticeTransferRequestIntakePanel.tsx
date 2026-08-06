@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState, type Dispatch, type KeyboardEvent
 import {
   Check,
   ChevronsUpDown,
-  ChevronDown,
   Plus,
   Settings,
   Trash2,
@@ -27,6 +26,14 @@ import {
   CommandSeparator,
 } from "@/components/ui/command";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
@@ -42,11 +49,6 @@ import {
 import { cn } from "@/shared/ui/cn";
 import { PracticeOrderArrivalDateRangeField } from "@/shared/components/practice/PracticeOrderArrivalDateRangeField";
 import { getBusinessLabel, type SearchBusinessResult } from "@/pages/practice/hooks/usePracticeTransferStep1";
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible";
 import { PracticeToothImplantFields } from "@/shared/components/practice/PracticeToothImplantFields";
 import { PracticeToothAbutmentFields } from "@/shared/components/practice/PracticeToothAbutmentFields";
 import type { ImplantConnection } from "@/shared/practice/useImplantConnectionCatalog";
@@ -199,15 +201,15 @@ export const PracticeTransferRequestIntakePanel = ({
   abutmentFavorites = [],
   onAbutmentFavoritesChange,
 }: PracticeTransferRequestIntakePanelProps) => {
-  const [snippetsOpen, setSnippetsOpen] = useState(false);
   const orderedToothWorkRows = useOrderedToothWorkRows(toothWorks);
   const defaultProsthesisType = normalizedProsthesisTypes.includes("크라운")
     ? "크라운"
     : normalizedProsthesisTypes[0] || "크라운";
   const [sharedCustomSpecs, setSharedCustomSpecs] = useState(() => emptyToothWorkCustomSpecs());
   const [overrideIndexes, setOverrideIndexes] = useState<Set<number>>(() => new Set());
-  const [expandedOverrideIndexes, setExpandedOverrideIndexes] = useState<Set<number>>(
-    () => new Set(),
+  /** null = closed; 'shared' = 공통 설정; number = 치아 개별 설정 */
+  const [customSpecsModalTarget, setCustomSpecsModalTarget] = useState<"shared" | number | null>(
+    null,
   );
   const sharedSpecsSeededRef = useRef(false);
   const overrideIndexesRef = useRef(overrideIndexes);
@@ -461,9 +463,8 @@ export const PracticeTransferRequestIntakePanel = ({
 
   return (
     <div className="flex min-h-0 flex-col gap-3 rounded-2xl border border-slate-200/80 bg-gradient-to-br from-white via-white to-sky-50/60 p-4 shadow-[0_4px_12px_rgba(15,23,42,0.03)] transition-all hover:shadow-[0_8px_20px_rgba(15,23,42,0.06)]">
-      <div className="flex items-center justify-between gap-2">
-        <h3 className="text-base font-semibold text-slate-900">의뢰서 작성</h3>
-        {onClearAll ? (
+      {onClearAll ? (
+        <div className="flex justify-end">
           <Button
             type="button"
             variant="outline"
@@ -473,10 +474,10 @@ export const PracticeTransferRequestIntakePanel = ({
           >
             전체삭제
           </Button>
-        ) : null}
-      </div>
+        </div>
+      ) : null}
 
-      <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,0.7fr)_minmax(0,0.95fr)]">
+      <div className="grid grid-cols-1 items-end gap-3 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,0.7fr)_minmax(0,0.95fr)]">
         <div className="space-y-2">
           <Label className="text-sm">기공소 선택 <span className="text-destructive">*</span></Label>
           <Popover open={labOpen} onOpenChange={setLabOpen}>
@@ -633,105 +634,97 @@ export const PracticeTransferRequestIntakePanel = ({
       </div>
 
       <div className="space-y-2">
-        <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-1">
           <Label className="text-sm">
             보철물 <span className="text-destructive">*</span>
           </Label>
-          <div className="flex items-center gap-1">
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="h-7 w-7"
-                    onClick={() => {
-                      setProsthesisTypeCatalogDraft(normalizedProsthesisTypes);
-                      setProsthesisTypeSettingsDialogOpen(true);
-                    }}
-                  >
-                    <Settings className="h-3.5 w-3.5" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent side="top" className="text-xs">
-                  보철물 목록 설정
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="h-7 w-7"
-                    onClick={() => {
-                      setToothWorks([
-                        {
-                          toothNumber: "",
-                          prosthesisType: defaultProsthesisType,
-                          customAbutment: false,
-                          bridgeLinkedTeeth: [],
-                          ...emptyToothWorkCustomSpecs(),
-                        },
-                      ]);
-                      setSharedCustomSpecs(emptyToothWorkCustomSpecs());
-                      setOverrideIndexes(new Set());
-                      setExpandedOverrideIndexes(new Set());
-                      sharedSpecsSeededRef.current = false;
-                    }}
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent side="top" className="text-xs">
-                  치아 전체 삭제
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-          </div>
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7"
+                  onClick={() => {
+                    setProsthesisTypeCatalogDraft(normalizedProsthesisTypes);
+                    setProsthesisTypeSettingsDialogOpen(true);
+                  }}
+                >
+                  <Settings className="h-3.5 w-3.5" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="top" className="text-xs">
+                보철물 목록 설정
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7"
+                  onClick={() => {
+                    setToothWorks([
+                      {
+                        toothNumber: "",
+                        prosthesisType: defaultProsthesisType,
+                        customAbutment: false,
+                        bridgeLinkedTeeth: [],
+                        ...emptyToothWorkCustomSpecs(),
+                      },
+                    ]);
+                    setSharedCustomSpecs(emptyToothWorkCustomSpecs());
+                    setOverrideIndexes(new Set());
+                    setCustomSpecsModalTarget(null);
+                    sharedSpecsSeededRef.current = false;
+                  }}
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="top" className="text-xs">
+                치아 전체 삭제
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
         </div>
 
         <div className="space-y-1.5">
           {hasCustomAbutmentTeeth ? (
-            <div className="space-y-2 rounded-md border border-sky-200 bg-sky-50/50 px-2.5 py-2">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div>
-                  <p className="text-xs font-semibold text-slate-700">커스텀어벗 공통 설정</p>
-                  <p className="text-[11px] text-slate-500">
-                    이 환자 커스텀어벗 치아에 함께 적용됩니다. 치아마다 다르면 각 행에서 「이 치아만
-                    다르게」를 사용하세요.
-                  </p>
-                </div>
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-sky-200 bg-sky-50/50 px-3 py-2.5">
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold text-slate-800">커스텀어벗 공통 설정</p>
+                <p className="mt-0.5 truncate text-sm text-slate-600">
+                  {formatCustomSpecsSummary(sharedCustomSpecs) || "임플란트·스캔바디 정보를 입력하세요"}
+                </p>
+              </div>
+              <div className="flex shrink-0 items-center gap-1.5">
                 <Button
                   type="button"
                   variant="outline"
                   size="sm"
-                  className="h-7 text-[11px]"
+                  className="h-9 px-3 text-sm"
+                  onClick={() => setCustomSpecsModalTarget("shared")}
+                >
+                  설정
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-9 px-3 text-sm"
                   onClick={() => {
                     applySharedSpecsToTeeth(sharedCustomSpecs, { includeOverrides: true });
                     setOverrideIndexes(new Set());
-                    setExpandedOverrideIndexes(new Set());
                   }}
                 >
-                  모든 커스텀어벗 치아에 적용
+                  전체 적용
                 </Button>
               </div>
-              <PracticeToothImplantFields
-                value={sharedCustomSpecs}
-                onChange={(nextImplant) => updateSharedCustomSpecs(nextImplant)}
-                connections={implantConnections}
-                favorites={implantFavorites}
-                onFavoritesChange={onImplantFavoritesChange}
-              />
-              <PracticeToothAbutmentFields
-                value={sharedCustomSpecs}
-                onChange={(nextAbutment) => updateSharedCustomSpecs(nextAbutment)}
-                favorites={abutmentFavorites}
-                onFavoritesChange={onAbutmentFavoritesChange}
-              />
             </div>
           ) : null}
 
@@ -1016,6 +1009,8 @@ export const PracticeTransferRequestIntakePanel = ({
                                 copy.delete(originalIndex);
                                 return copy;
                               });
+                              // 체크 시 공통 설정 모달로 임플란트·스캔바디 입력
+                              setCustomSpecsModalTarget("shared");
                             } else {
                               setToothWorks((prev) => {
                                 const next = [...prev];
@@ -1031,11 +1026,9 @@ export const PracticeTransferRequestIntakePanel = ({
                                 copy.delete(originalIndex);
                                 return copy;
                               });
-                              setExpandedOverrideIndexes((prevExpanded) => {
-                                const copy = new Set(prevExpanded);
-                                copy.delete(originalIndex);
-                                return copy;
-                              });
+                              setCustomSpecsModalTarget((prev) =>
+                                prev === originalIndex ? null : prev,
+                              );
                             }
                           }}
                         />
@@ -1057,13 +1050,10 @@ export const PracticeTransferRequestIntakePanel = ({
                           }
                           return remapped;
                         });
-                        setExpandedOverrideIndexes((prevExpanded) => {
-                          const remapped = new Set<number>();
-                          for (const idx of prevExpanded) {
-                            if (idx === originalIndex) continue;
-                            remapped.add(idx > originalIndex ? idx - 1 : idx);
-                          }
-                          return remapped;
+                        setCustomSpecsModalTarget((prev) => {
+                          if (prev === null || prev === "shared") return prev;
+                          if (prev === originalIndex) return null;
+                          return prev > originalIndex ? prev - 1 : prev;
                         });
                         setToothWorks((prev) => {
                           const next = prev.filter((_, i) => i !== originalIndex);
@@ -1085,104 +1075,48 @@ export const PracticeTransferRequestIntakePanel = ({
                   </div>
 
                   {canSelectCustomAbutment && row.customAbutment ? (
-                    <div className="space-y-1">
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        <span
-                          className={cn(
-                            "rounded px-1.5 py-0.5 text-[10px] font-medium",
-                            overrideIndexes.has(originalIndex)
-                              ? "bg-amber-100 text-amber-800"
-                              : "bg-sky-100 text-sky-800",
-                          )}
-                        >
-                          {overrideIndexes.has(originalIndex) ? "개별" : "공통"}
-                        </span>
-                        <span className="min-w-0 flex-1 truncate text-[11px] text-slate-600">
-                          {formatCustomSpecsSummary(row) || "규격 미선택"}
-                        </span>
+                    <div className="flex flex-wrap items-center gap-2 pt-0.5">
+                      <span
+                        className={cn(
+                          "rounded px-2 py-0.5 text-xs font-medium",
+                          overrideIndexes.has(originalIndex)
+                            ? "bg-amber-100 text-amber-800"
+                            : "bg-sky-100 text-sky-800",
+                        )}
+                      >
+                        {overrideIndexes.has(originalIndex) ? "개별" : "공통"}
+                      </span>
+                      <span className="min-w-0 flex-1 truncate text-sm text-slate-600">
+                        {formatCustomSpecsSummary(row) || "규격 미선택"}
+                      </span>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-8 px-2.5 text-xs"
+                        onClick={() => setCustomSpecsModalTarget(originalIndex)}
+                      >
+                        이 치아만 다르게
+                      </Button>
+                      {overrideIndexes.has(originalIndex) ? (
                         <Button
                           type="button"
                           variant="ghost"
                           size="sm"
-                          className="h-6 px-1.5 text-[11px]"
-                          onClick={() =>
-                            setExpandedOverrideIndexes((prev) => {
+                          className="h-8 px-2.5 text-xs text-sky-700"
+                          onClick={() => {
+                            applySharedSpecsToTeeth(sharedCustomSpecs, {
+                              onlyIndex: originalIndex,
+                            });
+                            setOverrideIndexes((prev) => {
                               const next = new Set(prev);
-                              if (next.has(originalIndex)) next.delete(originalIndex);
-                              else next.add(originalIndex);
+                              next.delete(originalIndex);
                               return next;
-                            })
-                          }
+                            });
+                          }}
                         >
-                          {expandedOverrideIndexes.has(originalIndex)
-                            ? "접기"
-                            : "이 치아만 다르게"}
+                          공통으로
                         </Button>
-                        {overrideIndexes.has(originalIndex) ? (
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            className="h-6 px-1.5 text-[11px] text-sky-700"
-                            onClick={() => {
-                              applySharedSpecsToTeeth(sharedCustomSpecs, {
-                                onlyIndex: originalIndex,
-                              });
-                              setOverrideIndexes((prev) => {
-                                const next = new Set(prev);
-                                next.delete(originalIndex);
-                                return next;
-                              });
-                              setExpandedOverrideIndexes((prev) => {
-                                const next = new Set(prev);
-                                next.delete(originalIndex);
-                                return next;
-                              });
-                            }}
-                          >
-                            공통으로
-                          </Button>
-                        ) : null}
-                      </div>
-
-                      {expandedOverrideIndexes.has(originalIndex) ? (
-                        <div className="space-y-1.5">
-                          <PracticeToothImplantFields
-                            value={pickToothWorkCustomSpecs(row, true)}
-                            onChange={(nextImplant) => {
-                              setToothWorks((prev) => {
-                                const next = [...prev];
-                                next[originalIndex] = {
-                                  ...next[originalIndex],
-                                  customAbutment: true,
-                                  ...nextImplant,
-                                };
-                                return next;
-                              });
-                              setOverrideIndexes((prev) => new Set(prev).add(originalIndex));
-                            }}
-                            connections={implantConnections}
-                            favorites={implantFavorites}
-                            onFavoritesChange={onImplantFavoritesChange}
-                          />
-                          <PracticeToothAbutmentFields
-                            value={pickToothWorkCustomSpecs(row, true)}
-                            onChange={(nextAbutment) => {
-                              setToothWorks((prev) => {
-                                const next = [...prev];
-                                next[originalIndex] = {
-                                  ...next[originalIndex],
-                                  customAbutment: true,
-                                  ...nextAbutment,
-                                };
-                                return next;
-                              });
-                              setOverrideIndexes((prev) => new Set(prev).add(originalIndex));
-                            }}
-                            favorites={abutmentFavorites}
-                            onFavoritesChange={onAbutmentFavoritesChange}
-                          />
-                        </div>
                       ) : null}
                     </div>
                   ) : null}
@@ -1217,132 +1151,119 @@ export const PracticeTransferRequestIntakePanel = ({
         </div>
       </div>
 
-      <div className="mt-2 flex min-h-0 flex-1 flex-col space-y-1.5">
+      <div className="mt-2 flex min-h-0 flex-1 flex-col space-y-2">
         <Label className="text-sm">메모</Label>
-        <div
-          id={memoInputId}
-          className="min-h-[5rem] flex-1 space-y-1 overflow-y-auto rounded-md border border-slate-200 bg-white/80 p-1.5"
-        >
-          {memoLines.map((line, index) => {
-            const canSave = Boolean(String(line || "").trim());
-            return (
-              <div key={`memo-line-${index}`} className="flex items-center gap-1">
-                <ImeSafeInput
-                  ref={(el) => {
-                    memoInputRefs.current[index] = el;
-                  }}
-                  value={line}
-                  onChange={(nextValue) => {
-                    const nextLines = [...memoLines];
-                    nextLines[index] = nextValue;
-                    syncMemoLines(nextLines);
-                    if (snippetHint) setSnippetHint("");
-                  }}
-                  onComposingChange={(composing) => {
-                    memoComposingRef.current = composing;
-                    reportImeComposing();
-                  }}
-                  onCompositionEnd={(e) => {
-                    const shouldInsertNewline = pendingMemoNewlineIndexRef.current === index;
-                    pendingMemoNewlineIndexRef.current = null;
-                    // compositionend 다음으로 오는 Enter keydown이 중복 줄바꿈하지 않도록 한 틱 유지
-                    if (shouldInsertNewline) {
-                      suppressMemoEnterRef.current = true;
-                      insertMemoNewlineAfter(index, e.currentTarget.value);
-                    }
-                    window.setTimeout(() => {
-                      memoComposingRef.current = false;
-                      suppressMemoEnterRef.current = false;
+        <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
+          <div
+            id={memoInputId}
+            className="flex min-h-[9rem] flex-col gap-1.5 rounded-lg border border-slate-200 bg-white p-2.5"
+          >
+            {memoLines.map((line, index) => {
+              const canSave = Boolean(String(line || "").trim());
+              return (
+                <div key={`memo-line-${index}`} className="flex items-center gap-1.5">
+                  <ImeSafeInput
+                    ref={(el) => {
+                      memoInputRefs.current[index] = el;
+                    }}
+                    value={line}
+                    onChange={(nextValue) => {
+                      const nextLines = [...memoLines];
+                      nextLines[index] = nextValue;
+                      syncMemoLines(nextLines);
+                      if (snippetHint) setSnippetHint("");
+                    }}
+                    onComposingChange={(composing) => {
+                      memoComposingRef.current = composing;
                       reportImeComposing();
-                    }, 0);
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      if (suppressMemoEnterRef.current) return;
-                      // 조합 중 Enter: 확정 후 compositionend에서 줄바꿈 (글자 유실/다음줄 이동 방지)
-                      if (isNativeImeComposing(e)) {
-                        pendingMemoNewlineIndexRef.current = index;
+                    }}
+                    onCompositionEnd={(e) => {
+                      const shouldInsertNewline = pendingMemoNewlineIndexRef.current === index;
+                      pendingMemoNewlineIndexRef.current = null;
+                      if (shouldInsertNewline) {
+                        suppressMemoEnterRef.current = true;
+                        insertMemoNewlineAfter(index, e.currentTarget.value);
+                      }
+                      window.setTimeout(() => {
+                        memoComposingRef.current = false;
+                        suppressMemoEnterRef.current = false;
+                        reportImeComposing();
+                      }, 0);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        if (suppressMemoEnterRef.current) return;
+                        if (isNativeImeComposing(e)) {
+                          pendingMemoNewlineIndexRef.current = index;
+                          return;
+                        }
+                        insertMemoNewlineAfter(index, e.currentTarget.value);
                         return;
                       }
-                      insertMemoNewlineAfter(index, e.currentTarget.value);
-                      return;
-                    }
-                    if (
-                      e.key === "Backspace" &&
-                      !isNativeImeComposing(e) &&
-                      !memoComposingRef.current &&
-                      !line &&
-                      memoLines.length > 1
-                    ) {
-                      e.preventDefault();
-                      handleDeleteMemoLine(index);
-                    }
-                  }}
-                  placeholder={index === 0 ? "요청사항 입력" : "추가 문장"}
-                  className="h-8 text-sm"
-                />
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8 shrink-0 text-sky-600 hover:bg-sky-50 hover:text-sky-700"
-                  disabled={!canSave || snippetSaving}
-                  onClick={() => void handleSaveSentence(line)}
-                  aria-label="문장 저장"
-                  title="문장 저장"
-                >
-                  <BookmarkPlus className="h-4 w-4" />
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8 shrink-0 text-slate-400 hover:text-destructive"
-                  onClick={() => handleDeleteMemoLine(index)}
-                  aria-label="문장 삭제"
-                  title="문장 삭제"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
-              </div>
-            );
-          })}
-        </div>
-        {snippetHint ? <p className="text-xs text-slate-500">{snippetHint}</p> : null}
+                      if (
+                        e.key === "Backspace" &&
+                        !isNativeImeComposing(e) &&
+                        !memoComposingRef.current &&
+                        !line &&
+                        memoLines.length > 1
+                      ) {
+                        e.preventDefault();
+                        handleDeleteMemoLine(index);
+                      }
+                    }}
+                    placeholder={index === 0 ? "요청사항 입력" : "추가 문장"}
+                    className="h-10 flex-1 text-sm"
+                  />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-10 w-10 shrink-0 text-sky-600 hover:bg-sky-50 hover:text-sky-700"
+                    disabled={!canSave || snippetSaving}
+                    onClick={() => void handleSaveSentence(line)}
+                    aria-label="문장 저장"
+                    title="문장 저장"
+                  >
+                    <BookmarkPlus className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-10 w-10 shrink-0 text-slate-400 hover:text-destructive"
+                    onClick={() => handleDeleteMemoLine(index)}
+                    aria-label="문장 삭제"
+                    title="문장 삭제"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+              );
+            })}
+            {snippetHint ? <p className="px-0.5 text-xs text-slate-500">{snippetHint}</p> : null}
+          </div>
 
-        <Collapsible open={snippetsOpen} onOpenChange={setSnippetsOpen}>
-          <CollapsibleTrigger asChild>
-            <button
-              type="button"
-              className="flex w-full items-center justify-between rounded-md px-0.5 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50"
-            >
-              <span>
-                저장된 문장
-                {memoSnippets.length > 0 ? ` (${memoSnippets.length})` : ""}
-              </span>
-              <ChevronDown
-                className={cn(
-                  "h-3.5 w-3.5 text-slate-400 transition-transform",
-                  snippetsOpen ? "rotate-180" : "",
-                )}
-              />
-            </button>
-          </CollapsibleTrigger>
-          <CollapsibleContent className="space-y-1.5 pt-1">
+          <div className="flex min-h-[9rem] flex-col rounded-lg border border-slate-200 bg-slate-50/80 p-2.5">
+            <p className="mb-2 text-sm font-medium text-slate-700">
+              저장된 문장
+              {memoSnippets.length > 0 ? (
+                <span className="ml-1 font-normal text-slate-500">({memoSnippets.length})</span>
+              ) : null}
+            </p>
             {memoSnippets.length === 0 ? (
-              <p className="rounded-md border border-dashed border-slate-200 px-2 py-2 text-xs text-slate-400">
+              <p className="flex flex-1 items-center justify-center rounded-md border border-dashed border-slate-200 bg-white px-3 py-4 text-sm text-slate-400">
                 문장 옆 저장 아이콘으로 추가
               </p>
             ) : (
-              <div className="max-h-[7.5rem] space-y-1 overflow-y-auto pr-1">
+              <div className="max-h-[11.5rem] flex-1 space-y-1.5 overflow-y-auto pr-0.5">
                 {memoSnippets.map((snippet, index) => {
                   const isEditing = editingSnippetIndex === index;
                   if (isEditing) {
                     return (
                       <div
                         key={`snippet-edit-${index}`}
-                        className="flex items-center gap-1 rounded-md border border-sky-200 bg-sky-50/50 px-1.5 py-1"
+                        className="flex items-center gap-1.5 rounded-lg border border-sky-200 bg-white px-2 py-1.5"
                       >
                         <Input
                           autoFocus
@@ -1358,12 +1279,12 @@ export const PracticeTransferRequestIntakePanel = ({
                               setEditingSnippetDraft("");
                             }
                           }}
-                          className="h-7 text-xs"
+                          className="h-9 text-sm"
                         />
                         <Button
                           type="button"
                           size="sm"
-                          className="h-7 shrink-0 px-2 text-xs"
+                          className="h-9 shrink-0 px-3 text-sm"
                           disabled={snippetSaving}
                           onClick={() => void handleConfirmEditSnippet()}
                         >
@@ -1376,11 +1297,11 @@ export const PracticeTransferRequestIntakePanel = ({
                   return (
                     <div
                       key={`snippet-${index}:${snippet}`}
-                      className="flex items-center gap-1 rounded-md border border-slate-200 bg-white/80 px-1.5 py-1"
+                      className="flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1.5"
                     >
                       <button
                         type="button"
-                        className="min-w-0 flex-1 truncate rounded px-1 py-0.5 text-left text-xs text-slate-700 hover:bg-sky-50"
+                        className="min-w-0 flex-1 truncate rounded px-1.5 py-1 text-left text-sm text-slate-800 hover:bg-sky-50 hover:text-sky-800"
                         title={snippet}
                         onClick={() => handleInsertMemoSnippet(snippet)}
                       >
@@ -1390,33 +1311,126 @@ export const PracticeTransferRequestIntakePanel = ({
                         type="button"
                         variant="ghost"
                         size="icon"
-                        className="h-6 w-6 shrink-0 text-slate-500 hover:text-sky-700"
+                        className="h-8 w-8 shrink-0 text-slate-500 hover:text-sky-700"
                         onClick={() => handleStartEditSnippet(index)}
                         aria-label="저장된 문장 수정"
                         title="수정"
                       >
-                        <Pencil className="h-3.5 w-3.5" />
+                        <Pencil className="h-4 w-4" />
                       </Button>
                       <Button
                         type="button"
                         variant="ghost"
                         size="icon"
-                        className="h-6 w-6 shrink-0 text-slate-400 hover:text-destructive"
+                        className="h-8 w-8 shrink-0 text-slate-400 hover:text-destructive"
                         disabled={snippetSaving}
                         onClick={() => void handleDeleteMemoSnippet(index)}
                         aria-label="저장된 문장 삭제"
                         title="삭제"
                       >
-                        <Trash2 className="h-3.5 w-3.5" />
+                        <Trash2 className="h-4 w-4" />
                       </Button>
                     </div>
                   );
                 })}
               </div>
             )}
-          </CollapsibleContent>
-        </Collapsible>
+          </div>
+        </div>
       </div>
+
+      <Dialog
+        open={customSpecsModalTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) setCustomSpecsModalTarget(null);
+        }}
+      >
+        <DialogContent className="max-h-[92vh] gap-4 overflow-y-auto sm:max-w-3xl">
+          <DialogHeader className="space-y-1.5 text-left">
+            <DialogTitle className="text-lg">
+              {customSpecsModalTarget === "shared"
+                ? "커스텀어벗 공통 설정"
+                : `커스텀어벗 개별 설정${
+                    typeof customSpecsModalTarget === "number" &&
+                    toothWorks[customSpecsModalTarget]?.toothNumber
+                      ? ` (#${toothWorks[customSpecsModalTarget].toothNumber})`
+                      : ""
+                  }`}
+            </DialogTitle>
+            <DialogDescription className="text-sm">
+              임플란트와 스캔바디 정보를 입력하세요.
+              {customSpecsModalTarget === "shared"
+                ? " 공통 값은 커스텀어벗 치아에 함께 적용됩니다."
+                : " 이 치아에만 적용됩니다."}
+            </DialogDescription>
+          </DialogHeader>
+
+          {customSpecsModalTarget !== null ? (
+            <div className="space-y-4">
+              <PracticeToothImplantFields
+                value={
+                  customSpecsModalTarget === "shared"
+                    ? sharedCustomSpecs
+                    : pickToothWorkCustomSpecs(toothWorks[customSpecsModalTarget], true)
+                }
+                onChange={(nextImplant) => {
+                  if (customSpecsModalTarget === "shared") {
+                    updateSharedCustomSpecs(nextImplant);
+                    return;
+                  }
+                  const index = customSpecsModalTarget;
+                  setToothWorks((prev) => {
+                    const next = [...prev];
+                    next[index] = {
+                      ...next[index],
+                      customAbutment: true,
+                      ...nextImplant,
+                    };
+                    return next;
+                  });
+                  setOverrideIndexes((prev) => new Set(prev).add(index));
+                }}
+                connections={implantConnections}
+                favorites={implantFavorites}
+                onFavoritesChange={onImplantFavoritesChange}
+              />
+              <PracticeToothAbutmentFields
+                heading="스캔바디"
+                value={
+                  customSpecsModalTarget === "shared"
+                    ? sharedCustomSpecs
+                    : pickToothWorkCustomSpecs(toothWorks[customSpecsModalTarget], true)
+                }
+                onChange={(nextAbutment) => {
+                  if (customSpecsModalTarget === "shared") {
+                    updateSharedCustomSpecs(nextAbutment);
+                    return;
+                  }
+                  const index = customSpecsModalTarget;
+                  setToothWorks((prev) => {
+                    const next = [...prev];
+                    next[index] = {
+                      ...next[index],
+                      customAbutment: true,
+                      ...nextAbutment,
+                    };
+                    return next;
+                  });
+                  setOverrideIndexes((prev) => new Set(prev).add(index));
+                }}
+                favorites={abutmentFavorites}
+                onFavoritesChange={onAbutmentFavoritesChange}
+              />
+            </div>
+          ) : null}
+
+          <DialogFooter>
+            <Button type="button" className="h-10 min-w-[6rem] text-sm" onClick={() => setCustomSpecsModalTarget(null)}>
+              완료
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

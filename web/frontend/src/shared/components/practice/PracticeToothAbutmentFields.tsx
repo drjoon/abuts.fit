@@ -6,6 +6,7 @@ import { useState } from "react";
 import { BookmarkPlus, Check, Pencil, Plus, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   emptyToothWorkAbutment,
   type PracticeAbutmentFavorite,
@@ -22,6 +23,8 @@ type Props = {
   onChange: (next: ToothAbutmentValues) => void;
   favorites: PracticeAbutmentFavorite[];
   onFavoritesChange?: (next: PracticeAbutmentFavorite[]) => void | Promise<void>;
+  /** 섹션 제목 (기본: 커스텀어벗 규격) */
+  heading?: string;
 };
 
 const favoriteKey = (row: {
@@ -45,6 +48,7 @@ export const PracticeToothAbutmentFields = ({
   onChange,
   favorites,
   onFavoritesChange,
+  heading = "커스텀어벗 규격",
 }: Props) => {
   const [editingFavoriteId, setEditingFavoriteId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState<ToothAbutmentValues>(emptyToothWorkAbutment());
@@ -73,16 +77,16 @@ export const PracticeToothAbutmentFields = ({
   };
 
   return (
-    <div className="space-y-1.5 rounded-md border border-violet-100 bg-violet-50/40 px-2 py-1.5">
+    <div className="space-y-3 rounded-xl border border-violet-200/80 bg-violet-50/40 p-3 sm:p-4">
       <div className="flex items-center justify-between gap-2">
-        <p className="text-[11px] font-medium text-slate-600">커스텀어벗 규격</p>
+        <p className="text-sm font-semibold text-slate-800">{heading}</p>
         <div className="flex items-center gap-1">
           {canSaveFavorite ? (
             <Button
               type="button"
               variant="ghost"
               size="sm"
-              className="h-6 px-1.5 text-[11px] text-violet-700"
+              className="h-8 px-2 text-sm text-violet-700"
               disabled={favoritesBusy}
               onClick={() =>
                 void persistFavorites([
@@ -96,7 +100,7 @@ export const PracticeToothAbutmentFields = ({
                 ])
               }
             >
-              <BookmarkPlus className="mr-0.5 h-3 w-3" />
+              <BookmarkPlus className="mr-1 h-4 w-4" />
               즐겨찾기
             </Button>
           ) : null}
@@ -104,59 +108,93 @@ export const PracticeToothAbutmentFields = ({
             type="button"
             variant="ghost"
             size="sm"
-            className="h-6 px-1.5 text-[11px] text-slate-500"
+            className="h-8 px-2 text-sm text-slate-500"
             onClick={() => onChange(emptyToothWorkAbutment())}
           >
-            <X className="mr-0.5 h-3 w-3" />
+            <X className="mr-1 h-4 w-4" />
             비우기
           </Button>
         </div>
       </div>
 
-      <div className="grid grid-cols-3 gap-1.5">
-        <Input
-          value={value.abutmentManufacturer}
-          placeholder="제조사"
-          className="h-8 px-2 text-xs"
-          onChange={(e) =>
-            onChange({ ...value, abutmentManufacturer: e.target.value })
-          }
-        />
-        <Input
-          value={value.abutmentDiameter}
-          placeholder="직경"
-          className="h-8 px-2 text-xs"
-          onChange={(e) =>
-            onChange({ ...value, abutmentDiameter: e.target.value })
-          }
-        />
-        <Input
-          value={value.abutmentHeight}
-          placeholder="높이"
-          className="h-8 px-2 text-xs"
-          onChange={(e) =>
-            onChange({ ...value, abutmentHeight: e.target.value })
-          }
-        />
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <div className="space-y-1.5 sm:col-span-1">
+          <Label className="text-sm text-slate-600">제조사</Label>
+          <Input
+            value={value.abutmentManufacturer}
+            placeholder="예: 지오메디"
+            className="h-11 px-3 text-sm"
+            onChange={(e) =>
+              onChange({ ...value, abutmentManufacturer: e.target.value })
+            }
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label className="text-sm text-slate-600">직경</Label>
+          <Input
+            value={value.abutmentDiameter}
+            placeholder="예: 4.5"
+            className="h-11 px-3 text-sm"
+            onChange={(e) =>
+              onChange({ ...value, abutmentDiameter: e.target.value })
+            }
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label className="text-sm text-slate-600">높이</Label>
+          <Input
+            value={value.abutmentHeight}
+            placeholder="예: 5"
+            className="h-11 px-3 text-sm"
+            onChange={(e) =>
+              onChange({ ...value, abutmentHeight: e.target.value })
+            }
+          />
+        </div>
       </div>
 
       {onFavoritesChange ? (
-        <div className="space-y-1">
+        <div className="space-y-2 border-t border-violet-100 pt-3">
           <div className="flex items-center justify-between gap-2">
-            <p className="text-[11px] text-slate-500">즐겨찾기</p>
+            <p className="text-sm font-medium text-slate-600">즐겨찾기</p>
             {favorites.length === 0 ? (
-              <span className="text-[10px] text-slate-400">선택 후 저장</span>
-            ) : null}
+              <span className="text-xs text-slate-400">선택 후 저장</span>
+            ) : (
+              <span className="text-xs text-slate-400">클릭하면 적용</span>
+            )}
           </div>
-          {favorites.length === 0 ? null : (
-            <div className="max-h-24 space-y-1 overflow-y-auto pr-0.5">
+          {favorites.length === 0 ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-10 w-full border-dashed text-sm"
+              disabled={!canSaveFavorite || favoritesBusy}
+              onClick={() =>
+                void persistFavorites([
+                  ...favorites,
+                  {
+                    id: `abt-${Date.now().toString(36)}`,
+                    manufacturer: value.abutmentManufacturer,
+                    diameter: value.abutmentDiameter,
+                    height: value.abutmentHeight,
+                  },
+                ])
+              }
+            >
+              <Plus className="mr-1 h-4 w-4" />
+              현재 입력을 즐겨찾기에 추가
+            </Button>
+          ) : (
+            <div className="max-h-36 space-y-1.5 overflow-y-auto pr-0.5">
               {favorites.map((fav) => {
                 const isEditing = editingFavoriteId === fav.id;
+                const isActive = favoriteKey(fav) === currentFavoriteKey;
                 if (isEditing) {
                   return (
                     <div
                       key={`edit-${fav.id}`}
-                      className="grid grid-cols-3 gap-1 rounded border border-violet-200 bg-white p-1"
+                      className="grid grid-cols-3 gap-1.5 rounded-lg border border-violet-200 bg-white p-2"
                     >
                       {(
                         [
@@ -169,7 +207,7 @@ export const PracticeToothAbutmentFields = ({
                           key={key}
                           value={editDraft[key]}
                           placeholder={placeholder}
-                          className="h-7 text-[11px]"
+                          className="h-9 text-sm"
                           onChange={(e) =>
                             setEditDraft((prev) => ({ ...prev, [key]: e.target.value }))
                           }
@@ -179,7 +217,7 @@ export const PracticeToothAbutmentFields = ({
                         <Button
                           type="button"
                           size="sm"
-                          className="h-6 px-2 text-[11px]"
+                          className="h-8 px-3 text-sm"
                           disabled={favoritesBusy}
                           onClick={() => {
                             void persistFavorites(
@@ -196,14 +234,14 @@ export const PracticeToothAbutmentFields = ({
                             ).then(() => setEditingFavoriteId(null));
                           }}
                         >
-                          <Check className="mr-0.5 h-3 w-3" />
+                          <Check className="mr-1 h-3.5 w-3.5" />
                           저장
                         </Button>
                         <Button
                           type="button"
                           variant="ghost"
                           size="sm"
-                          className="h-6 px-2 text-[11px]"
+                          className="h-8 px-3 text-sm"
                           onClick={() => setEditingFavoriteId(null)}
                         >
                           취소
@@ -216,11 +254,15 @@ export const PracticeToothAbutmentFields = ({
                 return (
                   <div
                     key={fav.id}
-                    className="flex items-center gap-1 rounded border border-slate-200 bg-white/90 px-1.5 py-0.5"
+                    className={
+                      isActive
+                        ? "flex items-center gap-1 rounded-lg border border-violet-400 bg-violet-100 px-2 py-1.5"
+                        : "flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1.5"
+                    }
                   >
                     <button
                       type="button"
-                      className="min-w-0 flex-1 truncate text-left text-[11px] text-slate-700 hover:text-violet-700"
+                      className="min-w-0 flex-1 truncate rounded px-1.5 py-1 text-left text-sm font-medium text-slate-800 hover:text-violet-700"
                       title={favoriteLabel(fav)}
                       onClick={() =>
                         onChange({
@@ -236,7 +278,7 @@ export const PracticeToothAbutmentFields = ({
                       type="button"
                       variant="ghost"
                       size="icon"
-                      className="h-6 w-6 text-slate-400"
+                      className="h-8 w-8 shrink-0 text-slate-400"
                       onClick={() => {
                         setEditingFavoriteId(fav.id);
                         setEditDraft({
@@ -247,49 +289,26 @@ export const PracticeToothAbutmentFields = ({
                       }}
                       aria-label="즐겨찾기 수정"
                     >
-                      <Pencil className="h-3 w-3" />
+                      <Pencil className="h-4 w-4" />
                     </Button>
                     <Button
                       type="button"
                       variant="ghost"
                       size="icon"
-                      className="h-6 w-6 text-slate-400 hover:text-destructive"
+                      className="h-8 w-8 shrink-0 text-slate-400 hover:text-destructive"
                       disabled={favoritesBusy}
                       onClick={() =>
                         void persistFavorites(favorites.filter((row) => row.id !== fav.id))
                       }
                       aria-label="즐겨찾기 삭제"
                     >
-                      <Trash2 className="h-3 w-3" />
+                      <Trash2 className="h-4 w-4" />
                     </Button>
                   </div>
                 );
               })}
             </div>
           )}
-          {favorites.length === 0 ? (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="h-7 w-full border-dashed text-[11px]"
-              disabled={!canSaveFavorite || favoritesBusy}
-              onClick={() =>
-                void persistFavorites([
-                  ...favorites,
-                  {
-                    id: `abt-${Date.now().toString(36)}`,
-                    manufacturer: value.abutmentManufacturer,
-                    diameter: value.abutmentDiameter,
-                    height: value.abutmentHeight,
-                  },
-                ])
-              }
-            >
-              <Plus className="mr-1 h-3 w-3" />
-              현재 선택을 즐겨찾기에 추가
-            </Button>
-          ) : null}
         </div>
       ) : null}
     </div>

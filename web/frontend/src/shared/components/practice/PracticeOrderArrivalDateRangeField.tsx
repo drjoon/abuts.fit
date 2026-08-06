@@ -118,9 +118,7 @@ export function PracticeOrderArrivalDateRangeField({
 
   return (
     <div className={cn("space-y-2", className)}>
-      <div className="flex h-7 items-center gap-1">
-        <Label className="text-sm leading-none">주문일–도착일</Label>
-      </div>
+      <Label className="text-sm">주문일–도착일</Label>
       <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger asChild>
           <Button
