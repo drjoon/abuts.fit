@@ -1,8 +1,11 @@
+// change-log:
+// - 2026-08-06: 큐 슬롯→프리뷰에 rnd(헥스 회전) 전달.
 // related files:
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/machining/MachiningQueueBoard.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
 // - web/backend/controllers/requests/common.review.controller.js
+// - web/backend/controllers/cnc/production.js
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, ArrowRight } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -812,6 +815,7 @@ export const MachineQueueCard = ({
                 tooth: (currentSlot as any)?.tooth || "",
                 lotNumber: (currentSlot as any)?.lotNumber || null,
                 caseInfos: (currentSlot as any)?.caseInfos || null,
+                rnd: (currentSlot as any)?.rnd || null,
                 shippingMode: (currentSlot as any)?.shippingMode || null,
                 finalShipping: (currentSlot as any)?.finalShipping || null,
                 originalShipping: (currentSlot as any)?.originalShipping || null,
@@ -931,6 +935,7 @@ export const MachineQueueCard = ({
                 tooth: (nextSlot as any)?.tooth || "",
                 lotNumber: (nextSlot as any)?.lotNumber || null,
                 caseInfos: (nextSlot as any)?.caseInfos || null,
+                rnd: (nextSlot as any)?.rnd || null,
                 shippingMode: (nextSlot as any)?.shippingMode || null,
                 finalShipping: (nextSlot as any)?.finalShipping || null,
                 originalShipping: (nextSlot as any)?.originalShipping || null,

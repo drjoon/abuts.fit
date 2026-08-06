@@ -8,6 +8,9 @@
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/machining/MachiningQueueBoard.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/machining/components/ExpressRebalanceAlertModal.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/machining/components/MachiningPriorityRulesModal.tsx
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx
+// change-log:
+// - 2026-08-06: 가공 큐 select에 designSoftware·헥스 회전(rnd/caseInfos) 포함. 프리뷰 누락 수정.
 import {
   Request,
   getAllProductionQueues,
