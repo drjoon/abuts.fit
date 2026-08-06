@@ -173,7 +173,7 @@ export default function RequestorPracticePage() {
   const [statusFilter, setStatusFilter] = useState<"all" | "발송완료" | "수신완료" | "다운로드완료">("all");
   const [practiceLinkCopied, setPracticeLinkCopied] = useState(false);
   const [practiceMessageCopied, setPracticeMessageCopied] = useState(false);
-  const [promoNoticeVisible, setPromoNoticeVisible] = useState(true);
+  const [promoNoticeVisible, setPromoNoticeVisible] = useState(false);
   const [promoNoticeSaving, setPromoNoticeSaving] = useState(false);
 
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -1183,26 +1183,79 @@ export default function RequestorPracticePage() {
 
 
 
+  const inviteLinkCard = (
+    <Card className="h-fit">
+      <CardHeader className="pb-2">
+        <CardTitle className="text-xl">치과 초대</CardTitle>
+        <CardDescription className="text-sm">치과에 기공의뢰서 링크를 전달하세요</CardDescription>
+      </CardHeader>
+      <CardContent className="pt-0">
+        <div className="grid grid-cols-1 gap-2">
+          <Button
+            type="button"
+            size="sm"
+            onClick={() => void handleCopyPracticeDropzoneLink()}
+            className="h-8 gap-1.5 bg-blue-600 text-white hover:bg-blue-700"
+          >
+            {practiceLinkCopied ? (
+              <>
+                <Copy className="h-4 w-4" />
+                복사됨
+              </>
+            ) : (
+              <>
+                <Link2 className="h-4 w-4" />
+                링크 복사
+              </>
+            )}
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            onClick={() => void handleCopyPracticeMessage()}
+            className="h-8 gap-1.5 bg-blue-600 text-white hover:bg-blue-700"
+          >
+            {practiceMessageCopied ? (
+              <>
+                <Copy className="h-4 w-4" />
+                복사됨
+              </>
+            ) : (
+              <>
+                <Send className="h-4 w-4" />
+                안내 복사
+              </>
+            )}
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+
   return (
     <div className="flex flex-col h-full min-h-0">
-      <div className="flex-1 min-h-0 overflow-y-auto p-4 sm:p-6 space-y-4">
-        {promoNoticeVisible ? (
-          <Alert className="border-blue-200 bg-blue-50 text-blue-900">
-            <button
-              type="button"
-              onClick={() => void handleDismissPromoNotice()}
-              disabled={promoNoticeSaving}
-              className="absolute right-3 top-3 rounded p-1 text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-60"
-              aria-label="안내 닫기"
-            >
-              <X className="h-4 w-4" />
-            </button>
-            <AlertTitle className="text-[1.3125rem] leading-snug">{PRACTICE_TRANSFER_PROMO_TITLE}</AlertTitle>
-            <AlertDescription className="text-[1.3125rem] leading-snug">{PRACTICE_TRANSFER_PROMO_DESC}</AlertDescription>
-          </Alert>
-        ) : null}
-        <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
-          <Card className="xl:col-span-2">
+      <div className="flex-1 min-h-0 overflow-y-auto p-3 space-y-3">
+        <div className="grid grid-cols-1 gap-3 xl:grid-cols-12">
+          {promoNoticeVisible ? (
+            <>
+              <Alert className="flex flex-col items-center justify-center border-blue-200 bg-blue-50 text-blue-900 text-center xl:col-span-6">
+                <button
+                  type="button"
+                  onClick={() => void handleDismissPromoNotice()}
+                  disabled={promoNoticeSaving}
+                  className="absolute right-3 top-3 rounded p-1 text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-60"
+                  aria-label="안내 닫기"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+                <AlertTitle className="text-[1.3125rem] leading-snug">{PRACTICE_TRANSFER_PROMO_TITLE}</AlertTitle>
+                <AlertDescription className="text-[1.3125rem] leading-snug">{PRACTICE_TRANSFER_PROMO_DESC}</AlertDescription>
+              </Alert>
+              <div className="xl:col-span-6">{inviteLinkCard}</div>
+            </>
+          ) : null}
+
+          <Card className={promoNoticeVisible ? "xl:col-span-12" : "xl:col-span-10"}>
             <CardHeader className="space-y-3">
               <div className="flex items-center gap-3">
                 <CardTitle className="text-xl">기공의뢰서 내역</CardTitle>
@@ -1218,7 +1271,12 @@ export default function RequestorPracticePage() {
                       placeholder="전송ID, 치과명, 파일명, 환자명 검색"
                     />
                   </div>
-                  <PeriodFilter value={period} onChange={setPeriod} className="shrink-0" />
+                  <PeriodFilter
+                    value={period}
+                    onChange={setPeriod}
+                    presets={["thisMonth", "lastMonth"]}
+                    className="shrink-0"
+                  />
                 </div>
 
                 <div className="flex flex-wrap gap-2">
@@ -1239,7 +1297,7 @@ export default function RequestorPracticePage() {
                           : "hover:bg-muted/40",
                       )}
                     >
-                      발송완료 {statusCounts.sent}건
+                      발송 {statusCounts.sent}건
                     </Badge>
                   </button>
 
@@ -1258,7 +1316,7 @@ export default function RequestorPracticePage() {
                           : "hover:bg-muted/40",
                       )}
                     >
-                      수신완료 {statusCounts.read}건
+                      수신 {statusCounts.read}건
                     </Badge>
                   </button>
 
@@ -1279,7 +1337,7 @@ export default function RequestorPracticePage() {
                           : "hover:bg-muted/40",
                       )}
                     >
-                      다운로드완료 {statusCounts.downloaded}건
+                      다운로드 {statusCounts.downloaded}건
                     </Badge>
                   </button>
                 </div>
@@ -1380,63 +1438,9 @@ export default function RequestorPracticePage() {
             </CardContent>
           </Card>
 
-          <Card className="h-fit border-slate-200">
-            <CardHeader>
-              <CardTitle className="text-base">치과 초대 링크</CardTitle>
-              <CardDescription>
-                치과에 이 링크를 보내면 파일 전송 화면이 바로 열리고, 우리 기공소가 자동 선택됩니다.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="rounded-lg border bg-muted/30 p-3 space-y-3">
-                <div className="rounded-md border bg-background p-2.5">
-                  <p className="text-xs font-mono break-all text-muted-foreground">
-                    {practiceDropzoneLink}
-                  </p>
-                </div>
-                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => void handleCopyPracticeDropzoneLink()}
-                    className="h-8 gap-1.5"
-                  >
-                    {practiceLinkCopied ? (
-                      <>
-                        <Copy className="h-4 w-4" />
-                        복사됨
-                      </>
-                    ) : (
-                      <>
-                        <Link2 className="h-4 w-4" />
-                        링크 복사
-                      </>
-                    )}
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => void handleCopyPracticeMessage()}
-                    className="h-8 gap-1.5"
-                  >
-                    {practiceMessageCopied ? (
-                      <>
-                        <Copy className="h-4 w-4" />
-                        복사됨
-                      </>
-                    ) : (
-                      <>
-                        <Send className="h-4 w-4" />
-                        안내문구 복사
-                      </>
-                    )}
-                  </Button>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+          {!promoNoticeVisible ? (
+            <div className="space-y-3 xl:col-span-2">{inviteLinkCard}</div>
+          ) : null}
         </div>
       </div>
 
