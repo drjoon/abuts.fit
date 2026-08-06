@@ -25,9 +25,11 @@ import { postGeneralLedgerJournal } from "../../services/generalLedger.service.j
 import { Types } from "mongoose";
 import {
   buildCreditLedgerRequestSummary,
+  buildFreeCreditGrantReason,
   CREDIT_LEDGER_REQUEST_SELECT,
   mergeRequestExpressSurchargeIntoMachiningSpend,
   parseSpendKindFromUniqueKey,
+  resolveFreeCreditGrantIdFromLedgerItem,
 } from "../credits/creditLedger.utils.js";
 import { healMissingExpressSurchargesForBusiness } from "../requests/common.review.helpers.js";
 import {
@@ -79,10 +81,29 @@ function buildRequestSummary(doc) {
   return buildCreditLedgerRequestSummary(doc);
 }
 
-function parseFreeCreditGrantIdFromUniqueKey(uniqueKey) {
-  const raw = String(uniqueKey || "").trim().replace(/^gl:/, "");
-  const m = raw.match(/^free_credit_grant:([a-f0-9]{24})$/i);
-  return m ? m[1] : "";
+/** idempotencyKey가 이미 gl:면 이중 접두를 만들지 않는다. */
+function buildLedgerUniqueKeyExpr() {
+  return {
+    $let: {
+      vars: {
+        rawKey: {
+          $ifNull: [
+            "$journalDoc.meta.spendUniqueKey",
+            { $ifNull: ["$journalDoc.idempotencyKey", "$journalId"] },
+          ],
+        },
+      },
+      in: {
+        $cond: [
+          {
+            $eq: [{ $substrBytes: ["$$rawKey", 0, 3] }, "gl:"],
+          },
+          "$$rawKey",
+          { $concat: ["gl:", "$$rawKey"] },
+        ],
+      },
+    },
+  };
 }
 
 function parseYmd(ymd) {
@@ -604,17 +625,7 @@ export async function adminGetBusinessLedger(req, res) {
         $addFields: {
           eventType: { $ifNull: ["$journalDoc.eventType", ""] },
           amountBase: { $ifNull: ["$amountExcludingVat", "$amount"] },
-          mergedUniqueKey: {
-            $concat: [
-              "gl:",
-              {
-                $ifNull: [
-                  "$journalDoc.meta.spendUniqueKey",
-                  { $ifNull: ["$journalDoc.idempotencyKey", "$journalId"] },
-                ],
-              },
-            ],
-          },
+          mergedUniqueKey: buildLedgerUniqueKeyExpr(),
         },
       },
       {
@@ -822,7 +833,7 @@ export async function adminGetBusinessLedger(req, res) {
     const freeCreditGrantIds = Array.from(
       new Set(
         (items || [])
-          .map((it) => parseFreeCreditGrantIdFromUniqueKey(it?.uniqueKey))
+          .map((it) => resolveFreeCreditGrantIdFromLedgerItem(it))
           .filter((id) => Types.ObjectId.isValid(id)),
       ),
     );
@@ -904,22 +915,10 @@ export async function adminGetBusinessLedger(req, res) {
 
       for (const grant of grants || []) {
         if (!grant?._id) continue;
-        const source = String(grant.source || "").trim();
-        const grantType = String(grant.type || "").trim().toUpperCase();
-        const overrideReason = String(grant.overrideReason || "").trim();
-
-        let reason = "환영 무료 의뢰크레딧";
-        if (grantType === "FREE_SHIPPING_CREDIT" || grantType === "SHIPPING_FREE_CREDIT") {
-          reason = "환영 무료 배송크레딧";
-        }
-        if (source === "migrated") {
-          reason = "시드/마이그레이션 지급";
-        }
-        if (source === "admin") {
-          reason = overrideReason || "관리자 지급";
-        }
-
-        freeReasonByGrantId.set(String(grant._id), reason);
+        freeReasonByGrantId.set(
+          String(grant._id),
+          buildFreeCreditGrantReason(grant),
+        );
       }
     }
 
@@ -954,7 +953,7 @@ export async function adminGetBusinessLedger(req, res) {
         };
       }
 
-      const grantId = parseFreeCreditGrantIdFromUniqueKey(it?.uniqueKey);
+      const grantId = resolveFreeCreditGrantIdFromLedgerItem(it);
       if (grantId) {
         const freeReason = freeReasonByGrantId.get(grantId) || "";
         return {
@@ -3025,17 +3024,7 @@ export async function adminGetBusinessCreditDetail(req, res) {
         $addFields: {
           eventType: { $ifNull: ["$journalDoc.eventType", ""] },
           baseAmount: { $ifNull: ["$amountExcludingVat", "$amount"] },
-          mergedUniqueKey: {
-            $concat: [
-              "gl:",
-              {
-                $ifNull: [
-                  "$journalDoc.meta.spendUniqueKey",
-                  { $ifNull: ["$journalDoc.idempotencyKey", "$journalId"] },
-                ],
-              },
-            ],
-          },
+          mergedUniqueKey: buildLedgerUniqueKeyExpr(),
         },
       },
       {

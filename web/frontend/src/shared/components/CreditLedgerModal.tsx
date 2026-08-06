@@ -173,6 +173,8 @@ const REF_TYPE_LABELS: Record<string, string> = {
   SHIPPING_PACKAGE: "택배비",
   REQUEST: "의뢰",
   FREE_REQUEST_CREDIT: "환영 무료 의뢰크레딧",
+  REQUEST_FREE_CREDIT: "환영 무료 의뢰크레딧",
+  WELCOME_BONUS: "환영 무료 의뢰크레딧",
   FREE_SHIPPING_CREDIT: "환영 무료 배송크레딧",
   SHIPPING_FREE_CREDIT: "환영 무료 배송크레딧",
   SEED_REQUESTOR_CHARGE: "시드 초기 충전",

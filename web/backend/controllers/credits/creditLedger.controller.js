@@ -17,9 +17,11 @@ import { getBusinessCreditBalanceSnapshot } from "../../services/creditBalance.s
 import { healMissingExpressSurchargesForBusiness } from "../requests/common.review.helpers.js";
 import {
   buildCreditLedgerRequestSummary,
+  buildFreeCreditGrantReason,
   CREDIT_LEDGER_REQUEST_SELECT,
   mergeRequestExpressSurchargeIntoMachiningSpend,
   parseSpendKindFromUniqueKey,
+  resolveFreeCreditGrantIdFromLedgerItem,
 } from "./creditLedger.utils.js";
 
 function buildRequestSummary(doc) {
@@ -62,10 +64,29 @@ function safeRegex(query) {
   return new RegExp(escaped, "i");
 }
 
-function parseFreeCreditGrantIdFromUniqueKey(uniqueKey) {
-  const raw = String(uniqueKey || "").trim().replace(/^gl:/, "");
-  const m = raw.match(/^free_credit_grant:([a-f0-9]{24})$/i);
-  return m ? m[1] : "";
+/** idempotencyKey가 이미 gl:면 이중 접두를 만들지 않는다. */
+function buildLedgerUniqueKeyExpr() {
+  return {
+    $let: {
+      vars: {
+        rawKey: {
+          $ifNull: [
+            "$journalDoc.meta.spendUniqueKey",
+            { $ifNull: ["$journalDoc.idempotencyKey", "$journalId"] },
+          ],
+        },
+      },
+      in: {
+        $cond: [
+          {
+            $eq: [{ $substrBytes: ["$$rawKey", 0, 3] }, "gl:"],
+          },
+          "$$rawKey",
+          { $concat: ["gl:", "$$rawKey"] },
+        ],
+      },
+    },
+  };
 }
 
 export async function listMyCreditLedger(req, res) {
@@ -164,17 +185,7 @@ export async function listMyCreditLedger(req, res) {
       $addFields: {
         eventType: { $ifNull: ["$journalDoc.eventType", ""] },
         amountBase: { $ifNull: ["$amountExcludingVat", "$amount"] },
-        uniqueKey: {
-          $concat: [
-            "gl:",
-            {
-              $ifNull: [
-                "$journalDoc.meta.spendUniqueKey",
-                { $ifNull: ["$journalDoc.idempotencyKey", "$journalId"] },
-              ],
-            },
-          ],
-        },
+        uniqueKey: buildLedgerUniqueKeyExpr(),
         requestIdMeta: { $ifNull: ["$journalDoc.meta.requestId", ""] },
       },
     },
@@ -367,7 +378,7 @@ export async function listMyCreditLedger(req, res) {
   const freeCreditGrantIds = Array.from(
     new Set(
       items
-        .map((it) => parseFreeCreditGrantIdFromUniqueKey(it?.uniqueKey))
+        .map((it) => resolveFreeCreditGrantIdFromLedgerItem(it))
         .filter((id) => mongoose.Types.ObjectId.isValid(id)),
     ),
   );
@@ -445,28 +456,15 @@ export async function listMyCreditLedger(req, res) {
         $in: freeCreditGrantIds.map((id) => new mongoose.Types.ObjectId(id)),
       },
     })
-      .select({ _id: 1, type: 1, source: 1, overrideReason: 1, businessNumber: 1 })
+      .select({ _id: 1, type: 1, source: 1, overrideReason: 1 })
       .lean();
 
     for (const grant of grants || []) {
       if (!grant?._id) continue;
-      const source = String(grant.source || "");
-      const overrideReason = String(grant.overrideReason || "").trim();
-      const businessNumber = String(grant.businessNumber || "").trim();
-      const grantType = String(grant.type || "").trim().toUpperCase();
-      let reason = "환영 무료 의뢰크레딧";
-      if (grantType === "SHIPPING_FREE_CREDIT") {
-        reason = "환영 무료 배송크레딧";
-      }
-      if (source === "admin" && overrideReason) {
-        reason = `관리자 지급 · ${overrideReason}`;
-      } else if (source === "migrated") {
-        reason = `시드/마이그레이션 ${reason}`;
-      }
-      if (businessNumber) {
-        reason = `${reason} · 사업자번호 ${businessNumber}`;
-      }
-      freeReasonByGrantId.set(String(grant._id), reason);
+      freeReasonByGrantId.set(
+        String(grant._id),
+        buildFreeCreditGrantReason(grant),
+      );
     }
   }
 
@@ -500,7 +498,7 @@ export async function listMyCreditLedger(req, res) {
       };
     }
 
-    const grantId = parseFreeCreditGrantIdFromUniqueKey(it?.uniqueKey);
+    const grantId = resolveFreeCreditGrantIdFromLedgerItem(it);
     if (grantId) {
       const freeReason = freeReasonByGrantId.get(grantId) || "";
       return {

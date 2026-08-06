@@ -6,14 +6,70 @@
 
 /**
  * uniqueKey 예: gl:request:<mongoId>:machining_spend | express_surcharge
+ * idempotencyKey가 이미 `gl:` 접두를 가진 경우 `gl:gl:...`로 올 수 있어 전부 제거한다.
  */
 export function parseSpendKindFromUniqueKey(uniqueKey) {
   const raw = String(uniqueKey || "")
     .trim()
-    .replace(/^gl:/, "");
+    .replace(/^(gl:)+/i, "");
   if (raw.endsWith(":express_surcharge")) return "express_surcharge";
   if (raw.endsWith(":machining_spend")) return "machining_spend";
   return "";
+}
+
+const FREE_CREDIT_CHARGE_REF_TYPES = new Set([
+  "FREE_REQUEST_CREDIT",
+  "FREE_SHIPPING_CREDIT",
+  "SHIPPING_FREE_CREDIT",
+  "WELCOME_BONUS",
+  "REQUEST_FREE_CREDIT",
+]);
+
+export function isFreeCreditChargeRefType(refType) {
+  return FREE_CREDIT_CHARGE_REF_TYPES.has(String(refType || "").trim().toUpperCase());
+}
+
+/**
+ * free credit grant uniqueKey 예:
+ * - gl:free_credit_grant:<ObjectId>
+ * - gl:gl:free_credit_grant:<ObjectId> (idempotencyKey에 gl:가 이미 있을 때)
+ */
+export function parseFreeCreditGrantIdFromUniqueKey(uniqueKey) {
+  const raw = String(uniqueKey || "")
+    .trim()
+    .replace(/^(gl:)+/i, "");
+  const m = raw.match(/^free_credit_grant:([a-f0-9]{24})$/i);
+  return m ? m[1] : "";
+}
+
+export function resolveFreeCreditGrantIdFromLedgerItem(item) {
+  const fromKey = parseFreeCreditGrantIdFromUniqueKey(item?.uniqueKey);
+  if (fromKey) return fromKey;
+  if (!isFreeCreditChargeRefType(item?.refType)) return "";
+  const refId = String(item?.refId || "").trim();
+  return /^[a-f0-9]{24}$/i.test(refId) ? refId : "";
+}
+
+export function buildFreeCreditGrantReason(grant) {
+  const source = String(grant?.source || "").trim();
+  const overrideReason = String(grant?.overrideReason || "").trim();
+  const grantType = String(grant?.type || "").trim().toUpperCase();
+
+  let reason = "환영 무료 의뢰크레딧";
+  if (
+    grantType === "SHIPPING_FREE_CREDIT" ||
+    grantType === "FREE_SHIPPING_CREDIT"
+  ) {
+    reason = "환영 무료 배송크레딧";
+  }
+
+  if (source === "admin") {
+    return overrideReason ? `관리자 지급 · ${overrideReason}` : "관리자 지급";
+  }
+  if (source === "migrated") {
+    return `시드/마이그레이션 ${reason}`;
+  }
+  return reason;
 }
 
 /**
