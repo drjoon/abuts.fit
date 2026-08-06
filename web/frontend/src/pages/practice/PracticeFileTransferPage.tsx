@@ -152,6 +152,7 @@ import {
       type ToothWorkSelection as SharedToothWorkSelection,
 } from "@/shared/practice/transferMemo";
 import { useImplantConnectionCatalog } from "@/shared/practice/useImplantConnectionCatalog";
+import { kstYmdDiffDays } from "@/shared/date/kst";
 import {
   Collapsible,
   CollapsibleContent,
@@ -939,10 +940,6 @@ export const PracticeFileTransferPage = () => {
     addDaysToDateInput(todayDate, DEFAULT_ARRIVAL_OFFSET_DAYS),
   );
 
-  const [arrivalSettingsDialogOpen, setArrivalSettingsDialogOpen] = useState(false);
-  const [arrivalDefaultDaysDraft, setArrivalDefaultDaysDraft] = useState(DEFAULT_ARRIVAL_OFFSET_DAYS);
-  const [savingArrivalSettings, setSavingArrivalSettings] = useState(false);
-
   const [prosthesisTypeSettingsDialogOpen, setProsthesisTypeSettingsDialogOpen] = useState(false);
   const [prosthesisTypeInput, setProsthesisTypeInput] = useState("");
   const [prosthesisTypeCatalog, setProsthesisTypeCatalog] = useState<string[]>([...PRESET_PROSTHESIS_TYPES]);
@@ -955,7 +952,7 @@ export const PracticeFileTransferPage = () => {
   const [abutmentFavorites, setAbutmentFavorites] = useState<PracticeAbutmentFavorite[]>([]);
   const [recentTransfersOpen, setRecentTransfersOpen] = useState(true);
   const [draftsOpen, setDraftsOpen] = useState(true);
-  const [inviteOpen, setInviteOpen] = useState(false);
+  const [trashOpen, setTrashOpen] = useState(true);
   const { connections: implantConnections } = useImplantConnectionCatalog(authToken);
 
   const [toothWorks, setToothWorks] = useState<ToothWorkSelection[]>([]);
@@ -1203,7 +1200,6 @@ export const PracticeFileTransferPage = () => {
     const promoDismissed = String(payload.promoNoticeDismissedAt || "").trim().length > 0;
 
     setArrivalDefaultDays(nextArrivalDefaultDays);
-    setArrivalDefaultDaysDraft(nextArrivalDefaultDays);
     setProsthesisTypeCatalog(nextProsthesisTypes);
     setProsthesisTypeCatalogDraft(nextProsthesisTypes);
     setMemoSnippets(nextMemoSnippets);
@@ -1522,12 +1518,19 @@ export const PracticeFileTransferPage = () => {
           setSelectedLab(null);
         }
 
-        setOrderDate(parsed.orderDate);
-        setArrivalDate(parsed.arrivalDate);
+        skipNextArrivalAutoSyncRef.current = true;
+        setOrderDate(todayDate);
+        {
+          const restoredArrival = String(parsed.arrivalDate || "").trim();
+          setArrivalDate(
+            restoredArrival && restoredArrival >= todayDate
+              ? restoredArrival
+              : addDaysToDateInput(todayDate, normalizeArrivalDefaultDays(Number(parsed.arrivalDefaultDays ?? arrivalDefaultDays))),
+          );
+        }
         if (Number.isFinite(Number(parsed.arrivalDefaultDays))) {
           const days = normalizeArrivalDefaultDays(Number(parsed.arrivalDefaultDays));
           setArrivalDefaultDays(days);
-          setArrivalDefaultDaysDraft(days);
         }
         {
           const types = ensurePresetProsthesisTypes(parsed.prosthesisTypes);
@@ -2001,10 +2004,13 @@ export const PracticeFileTransferPage = () => {
       if (restoredArrivalDate) {
         skipNextArrivalAutoSyncRef.current = true;
       }
-      setOrderDate(restoredOrderDate);
-      if (restoredArrivalDate) setArrivalDate(restoredArrivalDate);
+      setOrderDate(todayDate);
+      if (restoredArrivalDate && restoredArrivalDate >= todayDate) {
+        setArrivalDate(restoredArrivalDate);
+      } else {
+        setArrivalDate(addDaysToDateInput(todayDate, restoredArrivalDefaultDays));
+      }
       setArrivalDefaultDays(restoredArrivalDefaultDays);
-      setArrivalDefaultDaysDraft(restoredArrivalDefaultDays);
       setProsthesisTypeCatalog(restoredProsthesisTypes);
       setProsthesisTypeCatalogDraft(restoredProsthesisTypes);
       setRequestMemo(restoredMemo);
@@ -3000,12 +3006,22 @@ export const PracticeFileTransferPage = () => {
       setLabOpen(false);
       setLabSearch("");
 
-      setOrderDate(parsed.orderDate);
-      setArrivalDate(parsed.arrivalDate);
+      skipNextArrivalAutoSyncRef.current = true;
+      setOrderDate(todayDate);
+      {
+        const restoredArrival = String(parsed.arrivalDate || "").trim();
+        setArrivalDate(
+          restoredArrival && restoredArrival >= todayDate
+            ? restoredArrival
+            : addDaysToDateInput(
+                todayDate,
+                normalizeArrivalDefaultDays(Number(parsed.arrivalDefaultDays ?? arrivalDefaultDays)),
+              ),
+        );
+      }
       if (Number.isFinite(Number(parsed.arrivalDefaultDays))) {
         const days = normalizeArrivalDefaultDays(Number(parsed.arrivalDefaultDays));
         setArrivalDefaultDays(days);
-        setArrivalDefaultDaysDraft(days);
       }
       const prosthesisTypesForRestore = ensurePresetProsthesisTypes(parsed.prosthesisTypes);
       setProsthesisTypeCatalog(prosthesisTypesForRestore);
@@ -4425,6 +4441,18 @@ export const PracticeFileTransferPage = () => {
     setArrivalDate(addDaysToDateInput(orderDate, arrivalDefaultDays));
   }, [orderDate, arrivalDefaultDays]);
 
+  // 주문일은 항상 오늘(KST)로 고정
+  useEffect(() => {
+    if (orderDate === todayDate) return;
+    skipNextArrivalAutoSyncRef.current = true;
+    setOrderDate(todayDate);
+    setArrivalDate((prev) => {
+      const current = String(prev || "").trim();
+      if (current && current >= todayDate) return current;
+      return addDaysToDateInput(todayDate, arrivalDefaultDays);
+    });
+  }, [arrivalDefaultDays, orderDate, todayDate]);
+
   useEffect(() => {
     if (!localFormHydrated) return;
     if (toothWorks.length > 0) return;
@@ -4525,29 +4553,52 @@ export const PracticeFileTransferPage = () => {
     });
   };
 
-  const handleSaveArrivalSettings = async () => {
-    if (savingArrivalSettings) return;
-    setSavingArrivalSettings(true);
-    try {
-      const nextDays = normalizeArrivalDefaultDays(arrivalDefaultDaysDraft);
-      const ok = await savePracticeTransferSettingsToServer({
-        arrivalDefaultDays: nextDays,
-        prosthesisTypes: normalizedProsthesisTypes,
+  const persistArrivalDefaultDaysFromRange = useCallback(
+    (nextOrder: string, nextArrival: string) => {
+      const diff = kstYmdDiffDays(nextOrder, nextArrival);
+      if (diff == null) return;
+      const nextDays = normalizeArrivalDefaultDays(diff);
+      if (nextDays === arrivalDefaultDays) return;
+
+      // orderDate effect가 도착일을 덮어쓰지 않도록 한 틱 스킵
+      skipNextArrivalAutoSyncRef.current = true;
+      setArrivalDefaultDays(nextDays);
+
+      try {
+        const existingRaw = localStorage.getItem(PRACTICE_TRANSFER_SETTINGS_LOCAL_KEY);
+        const existing =
+          existingRaw && typeof existingRaw === "string"
+            ? (JSON.parse(existingRaw) as Record<string, unknown>)
+            : {};
+        localStorage.setItem(
+          PRACTICE_TRANSFER_SETTINGS_LOCAL_KEY,
+          JSON.stringify({
+            ...existing,
+            arrivalDefaultDays: nextDays,
+            prosthesisTypes: normalizedProsthesisTypes,
+            memoSnippets,
+            implantFavorites,
+            abutmentFavorites,
+            savedAt: Date.now(),
+          }),
+        );
+      } catch {
+        // ignore
+      }
+
+      void savePracticeTransferSettingsToServer({ arrivalDefaultDays: nextDays }).catch(() => {
+        // 날짜 적용은 유지하고, 서버 저장 실패는 다음 저장 기회에 재시도
       });
-      if (!ok) throw new Error("설정 저장에 실패했습니다.");
-      setArrivalDate(addDaysToDateInput(orderDate, nextDays));
-      setArrivalSettingsDialogOpen(false);
-      toast({ title: "도착 기본일 설정 저장", description: `기본값을 +${nextDays}일로 저장했습니다.` });
-    } catch (error) {
-      toast({
-        title: "설정 저장 실패",
-        description: error instanceof Error ? error.message : "잠시 후 다시 시도해주세요.",
-        variant: "destructive",
-      });
-    } finally {
-      setSavingArrivalSettings(false);
-    }
-  };
+    },
+    [
+      abutmentFavorites,
+      arrivalDefaultDays,
+      implantFavorites,
+      memoSnippets,
+      normalizedProsthesisTypes,
+      savePracticeTransferSettingsToServer,
+    ],
+  );
 
   const handleSaveProsthesisTypeSettings = async () => {
     if (savingProsthesisTypeSettings) return;
@@ -4653,66 +4704,50 @@ export const PracticeFileTransferPage = () => {
 
   const inviteLinkCard = (
     <Card className="h-fit">
-      <Collapsible open={inviteOpen} onOpenChange={setInviteOpen}>
-        <CardHeader className="pb-2">
-          <CollapsibleTrigger asChild>
-            <button type="button" className="flex w-full items-start justify-between gap-2 text-left">
-              <div>
-                <CardTitle className="text-base">기공소 초대</CardTitle>
-                <CardDescription className="text-xs">가입 링크를 전달하세요</CardDescription>
-              </div>
-              <ChevronDown
-                className={cn(
-                  "mt-1 h-4 w-4 shrink-0 text-muted-foreground transition-transform",
-                  inviteOpen ? "rotate-180" : "",
-                )}
-              />
-            </button>
-          </CollapsibleTrigger>
-        </CardHeader>
-        <CollapsibleContent>
-          <CardContent className="pt-0">
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-              <Button
-                type="button"
-                size="sm"
-                onClick={() => void handleCopyPracticeDropzoneLink()}
-                className="h-8 gap-1.5 bg-blue-600 text-white hover:bg-blue-700"
-              >
-                {inviteLinkCopied ? (
-                  <>
-                    <Copy className="h-4 w-4" />
-                    복사됨
-                  </>
-                ) : (
-                  <>
-                    <Link2 className="h-4 w-4" />
-                    링크 복사
-                  </>
-                )}
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                onClick={() => void handleCopyPracticeInviteMessage()}
-                className="h-8 gap-1.5 bg-blue-600 text-white hover:bg-blue-700"
-              >
-                {inviteMessageCopied ? (
-                  <>
-                    <Copy className="h-4 w-4" />
-                    복사됨
-                  </>
-                ) : (
-                  <>
-                    <Send className="h-4 w-4" />
-                    안내 복사
-                  </>
-                )}
-              </Button>
-            </div>
-          </CardContent>
-        </CollapsibleContent>
-      </Collapsible>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-base">기공소 초대</CardTitle>
+        <CardDescription className="text-xs">치과에 가입 링크를 전달하세요</CardDescription>
+      </CardHeader>
+      <CardContent className="pt-0">
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <Button
+            type="button"
+            size="sm"
+            onClick={() => void handleCopyPracticeDropzoneLink()}
+            className="h-8 gap-1.5 bg-blue-600 text-white hover:bg-blue-700"
+          >
+            {inviteLinkCopied ? (
+              <>
+                <Copy className="h-4 w-4" />
+                복사됨
+              </>
+            ) : (
+              <>
+                <Link2 className="h-4 w-4" />
+                링크 복사
+              </>
+            )}
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            onClick={() => void handleCopyPracticeInviteMessage()}
+            className="h-8 gap-1.5 bg-blue-600 text-white hover:bg-blue-700"
+          >
+            {inviteMessageCopied ? (
+              <>
+                <Copy className="h-4 w-4" />
+                복사됨
+              </>
+            ) : (
+              <>
+                <Send className="h-4 w-4" />
+                안내 복사
+              </>
+            )}
+          </Button>
+        </div>
+      </CardContent>
     </Card>
   );
 
@@ -4824,9 +4859,17 @@ export const PracticeFileTransferPage = () => {
                   setOrderDate,
                   arrivalDate,
                   setArrivalDate,
+                  onOrderArrivalDatesChange: ({ arrivalDate: nextArrival }) => {
+                    skipNextArrivalAutoSyncRef.current = true;
+                    setOrderDate(todayDate);
+                    const arrival =
+                      String(nextArrival || "").trim() >= todayDate
+                        ? String(nextArrival || "").trim()
+                        : addDaysToDateInput(todayDate, arrivalDefaultDays);
+                    setArrivalDate(arrival);
+                    persistArrivalDefaultDaysFromRange(todayDate, arrival);
+                  },
                   arrivalDefaultDays,
-                  setArrivalDefaultDaysDraft,
-                  setArrivalSettingsDialogOpen,
                   normalizedProsthesisTypes,
                   setProsthesisTypeCatalogDraft,
                   setProsthesisTypeSettingsDialogOpen,
@@ -4951,14 +4994,51 @@ export const PracticeFileTransferPage = () => {
                     {formSyncStatusLabel}
                   </p>
                 ) : null}
-                <Button
-                  type="button"
-                  className="bg-blue-600 text-white hover:bg-blue-700"
-                  onClick={() => void handleSubmitPracticeRequest()}
-                  disabled={requestSubmitting || !hasRequiredSubmitFields}
-                >
-                  {requestSubmitting ? "기공소로 전송 중..." : "기공소로 전송"}
-                </Button>
+                <TooltipProvider delayDuration={0}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span className="inline-flex">
+                        <Button
+                          type="button"
+                          className="bg-blue-600 text-white hover:bg-blue-700 disabled:pointer-events-none"
+                          onClick={() => void handleSubmitPracticeRequest()}
+                          disabled={requestSubmitting || !hasRequiredSubmitFields}
+                        >
+                          {requestSubmitting ? "기공소로 전송 중..." : "기공소로 전송"}
+                        </Button>
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent side="top" align="end" className="max-w-xs text-xs leading-relaxed">
+                      {requestSubmitting ? (
+                        <p>기공소로 전송 중입니다.</p>
+                      ) : hasRequiredSubmitFields ? (
+                        <p>첨부 파일 · 기공소 · 환자명 · 보철물 입력이 완료되어 전송할 수 있습니다.</p>
+                      ) : (
+                        <div className="space-y-1">
+                          <p>다음을 모두 입력하면 전송할 수 있습니다.</p>
+                          <ul className="list-disc space-y-0.5 pl-3.5">
+                            {(
+                              [
+                                { key: "첨부 파일", ok: combinedDisplayFiles.length > 0 },
+                                { key: "기공소", ok: Boolean(String(selectedLab?._id || "").trim()) },
+                                { key: "환자명", ok: Boolean(normalizedPatientName) },
+                                { key: "보철물", ok: normalizedToothWorks.length > 0 },
+                              ] as const
+                            ).map((item) => (
+                              <li
+                                key={item.key}
+                                className={item.ok ? "text-sky-200" : "text-amber-200"}
+                              >
+                                {item.key}
+                                {item.ok ? " (완료)" : " (미입력)"}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
               </div>
             </CardContent>
           </Card>
@@ -4983,7 +5063,11 @@ export const PracticeFileTransferPage = () => {
                 <CollapsibleContent>
                 <div className="space-y-2 text-sm text-muted-foreground">
                   <div className="flex items-center justify-start">
-                    <PeriodFilter value={period} onChange={setPeriod} />
+                    <PeriodFilter
+                      value={period}
+                      onChange={setPeriod}
+                      presets={["thisMonth", "lastMonth"]}
+                    />
                   </div>
 
                   <div className="flex flex-wrap gap-2">
@@ -5004,7 +5088,7 @@ export const PracticeFileTransferPage = () => {
                             : "hover:bg-muted/40",
                         )}
                       >
-                        발송완료 {statusCounts.sent}건
+                        발송 {statusCounts.sent}건
                       </Badge>
                     </button>
                     <button
@@ -5024,7 +5108,7 @@ export const PracticeFileTransferPage = () => {
                             : "hover:bg-muted/40",
                         )}
                       >
-                        수신완료 {statusCounts.read}건
+                        수신 {statusCounts.read}건
                       </Badge>
                     </button>
                     <button
@@ -5044,7 +5128,7 @@ export const PracticeFileTransferPage = () => {
                             : "hover:bg-muted/40",
                         )}
                       >
-                        다운로드완료 {statusCounts.downloaded}건
+                        다운로드 {statusCounts.downloaded}건
                       </Badge>
                     </button>
                   </div>
@@ -5281,37 +5365,48 @@ export const PracticeFileTransferPage = () => {
             </Card>
 
             <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 gap-2">
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <Trash2 className="h-4 w-4 text-slate-500" />
-                  휴지통
+              <Collapsible open={trashOpen} onOpenChange={setTrashOpen}>
+              <CardHeader className="pb-2">
+                <div className="flex items-center justify-between gap-2">
+                  <CollapsibleTrigger asChild>
+                    <button type="button" className="flex min-w-0 flex-1 items-center justify-between gap-2 text-left">
+                      <CardTitle className="flex items-center gap-2 text-base">
+                        <Trash2 className="h-4 w-4 text-slate-500" />
+                        휴지통
+                        {trashGroupedTransfers.length > 0 ? (
+                          <Badge variant="secondary" className="ml-1">
+                            {trashGroupedTransfers.length}
+                          </Badge>
+                        ) : null}
+                      </CardTitle>
+                      <ChevronDown
+                        className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${trashOpen ? "rotate-180" : ""}`}
+                      />
+                    </button>
+                  </CollapsibleTrigger>
                   {trashGroupedTransfers.length > 0 ? (
-                    <Badge variant="secondary" className="ml-1">
-                      {trashGroupedTransfers.length}
-                    </Badge>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-8 shrink-0 border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700"
+                      disabled={emptyingTrash}
+                      onClick={handleAskEmptyTrash}
+                    >
+                      <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+                      {emptyingTrash ? "비우는 중..." : "휴지통 비우기"}
+                    </Button>
                   ) : null}
-                </CardTitle>
-                {trashGroupedTransfers.length > 0 ? (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="h-8 shrink-0 border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700"
-                    disabled={emptyingTrash}
-                    onClick={handleAskEmptyTrash}
-                  >
-                    <Trash2 className="mr-1.5 h-3.5 w-3.5" />
-                    {emptyingTrash ? "비우는 중..." : "휴지통 비우기"}
-                  </Button>
-                ) : null}
+                </div>
               </CardHeader>
+              <CollapsibleContent>
               <CardContent className="space-y-2">
                 {trashGroupedTransfers.length === 0 ? (
                   <div className="rounded-lg border border-dashed px-3 py-6 text-center text-sm text-muted-foreground">
                     휴지통이 비어 있습니다.
                   </div>
                 ) : (
-                  <div className="max-h-[15.25rem] space-y-2 overflow-y-auto pr-1">
+                  <div className="max-h-[18.25rem] space-y-2 overflow-y-auto pr-1">
                     {trashGroupedTransfers.map((transfer) => {
                       const targetLabText =
                         String(transfer.targetLab || "-")
@@ -5397,6 +5492,8 @@ export const PracticeFileTransferPage = () => {
                   </div>
                 )}
               </CardContent>
+              </CollapsibleContent>
+              </Collapsible>
             </Card>
           </div>
         </div>
@@ -5483,51 +5580,6 @@ export const PracticeFileTransferPage = () => {
             (!String(chatDraft || "").trim() && chatAttachedFiles.length === 0)
           }
         />
-
-        <Dialog
-          open={arrivalSettingsDialogOpen}
-          onOpenChange={(open) => {
-            setArrivalSettingsDialogOpen(open);
-            if (open) {
-              setArrivalDefaultDaysDraft(arrivalDefaultDays);
-            }
-          }}
-        >
-          <DialogContent className="sm:max-w-md">
-            <DialogHeader>
-              <DialogTitle>소요일 설정</DialogTitle>
-            </DialogHeader>
-            <div className="space-y-2">
-              <Input
-                id="practice-arrival-default-days-dialog"
-                type="number"
-                min={0}
-                max={365}
-                value={arrivalDefaultDaysDraft}
-                onChange={(e) => setArrivalDefaultDaysDraft(normalizeArrivalDefaultDays(Number(e.target.value || 0)))}
-              />
-              <p className="text-xs text-muted-foreground">
-                주문일 기준으로 도착일이 자동 계산됩니다.
-              </p>
-            </div>
-            <DialogFooter>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setArrivalSettingsDialogOpen(false)}
-              >
-                취소
-              </Button>
-              <Button
-                type="button"
-                onClick={() => void handleSaveArrivalSettings()}
-                disabled={savingArrivalSettings}
-              >
-                {savingArrivalSettings ? "저장 중..." : "저장"}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
 
         <Dialog
           open={prosthesisTypeSettingsDialogOpen}

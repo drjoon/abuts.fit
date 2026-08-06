@@ -19,6 +19,10 @@ export type PracticeTransferFileDisplayItem = {
   metaSuffix?: string;
 };
 
+/** 파일 행 높이 3.25rem × 4 + gap 1.5 × 3 ≈ 14.125rem */
+export const PRACTICE_FILE_LIST_VIEWPORT_CLASS =
+  "h-[14.125rem] max-h-[14.125rem] min-h-[14.125rem]";
+
 export type PracticeTransferFilePaneProps = {
   acceptedHint: string;
   fileInputId: string;
@@ -45,7 +49,7 @@ export const PracticeTransferFilePane = ({
   onPickFiles,
   onRemoveFile,
   onClearAllFiles,
-  listViewportClassName = "h-[16rem] max-h-[16rem]",
+  listViewportClassName = PRACTICE_FILE_LIST_VIEWPORT_CLASS,
   syncUploadLabel = "업로드",
   syncUploadBusyLabel = "업로드 중...",
   syncUploadDisabled = false,
@@ -57,9 +61,9 @@ export const PracticeTransferFilePane = ({
     "overflow-hidden rounded-xl border border-slate-200/80 bg-white shadow-sm";
 
   return (
-    <div className="flex min-h-0 h-full flex-col gap-2">
+    <div className="grid min-h-0 shrink-0 grid-cols-1 gap-2 sm:grid-cols-2 sm:items-stretch">
       <div
-        className={`${cardClassName} border-dashed bg-slate-50/50 p-3 text-center flex flex-1 flex-col items-center justify-center`}
+        className={`${cardClassName} flex min-h-[12rem] flex-col items-center justify-center border-dashed bg-slate-50/50 p-3 text-center sm:min-h-0`}
       >
         <div className="mx-auto mb-1.5 w-fit rounded-full bg-sky-50 p-2 text-sky-600">
           <UploadCloud className="h-5 w-5" />

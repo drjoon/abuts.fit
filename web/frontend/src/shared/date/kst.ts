@@ -23,6 +23,14 @@ export function ymdToKstDate(ymd?: string | null): Date | null {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
+/** KST 달력일 기준 일수 차이 (to - from). 잘못된 YMD면 null. */
+export function kstYmdDiffDays(fromYmd?: string | null, toYmd?: string | null): number | null {
+  const from = ymdToKstDate(String(fromYmd || "").trim());
+  const to = ymdToKstDate(String(toYmd || "").trim());
+  if (!from || !to) return null;
+  return Math.round((to.getTime() - from.getTime()) / 86_400_000);
+}
+
 export function formatKstYmdToKo(ymd?: string | null): string {
   const d = ymdToKstDate(ymd);
   if (!d) return "-";

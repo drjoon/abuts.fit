@@ -26,8 +26,8 @@ export const PracticeTransferIntakeSection = ({
 }: PracticeTransferIntakeSectionProps) => {
   return (
     <PracticeTransferMiddleGrid className={middleGridClassName}>
-      <PracticeTransferFilePane {...filePaneProps} />
       <PracticeTransferRequestIntakePanel {...requestIntakeProps} />
+      <PracticeTransferFilePane {...filePaneProps} />
     </PracticeTransferMiddleGrid>
   );
 };

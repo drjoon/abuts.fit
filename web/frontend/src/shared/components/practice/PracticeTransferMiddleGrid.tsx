@@ -6,9 +6,10 @@ type PracticeTransferMiddleGridProps = {
   className?: string;
 };
 
+/** 위: 의뢰서 / 아래: 파일(드롭존·목록) — 세로 스택 */
 export function PracticeTransferMiddleGrid({ children, className }: PracticeTransferMiddleGridProps) {
   return (
-    <div className={cn("grid min-h-0 flex-1 grid-cols-1 items-stretch gap-3 lg:grid-cols-[0.9fr_1.1fr]", className)}>
+    <div className={cn("flex min-h-0 flex-1 flex-col gap-3", className)}>
       {children}
     </div>
   );

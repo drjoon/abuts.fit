@@ -118,6 +118,7 @@ import {
   type ToothWorkSelection as SharedToothWorkSelection,
 } from "@/shared/practice/transferMemo";
 import { useImplantConnectionCatalog } from "@/shared/practice/useImplantConnectionCatalog";
+import { kstYmdDiffDays } from "@/shared/date/kst";
 import {
   PRACTICE_DROPZONE_DRAFT_KEY,
   clearPracticeSharedFormLocalStorage,
@@ -559,8 +560,6 @@ export const PracticeDropzonePage = () => {
   );
   const [prosthesisTypes, setProsthesisTypes] = useState<string[]>([...PRESET_PROSTHESIS_TYPES]);
   const [prosthesisTypeInput, setProsthesisTypeInput] = useState("");
-  const [arrivalSettingsDialogOpen, setArrivalSettingsDialogOpen] = useState(false);
-  const [arrivalDefaultDaysDraft, setArrivalDefaultDaysDraft] = useState(DEFAULT_ARRIVAL_OFFSET_DAYS);
   const [prosthesisTypeSettingsDialogOpen, setProsthesisTypeSettingsDialogOpen] = useState(false);
   const [prosthesisTypeCatalogDraft, setProsthesisTypeCatalogDraft] = useState<string[]>([
     ...PRESET_PROSTHESIS_TYPES,
@@ -855,12 +854,16 @@ export const PracticeDropzonePage = () => {
     });
   };
 
-  const handleSaveArrivalSettings = () => {
-    const nextDays = normalizeArrivalDefaultDays(arrivalDefaultDaysDraft);
-    setArrivalDefaultDays(nextDays);
-    setArrivalDate(addDaysToDateInput(orderDate, nextDays));
-    setArrivalSettingsDialogOpen(false);
-  };
+  // 주문일은 항상 오늘(KST)로 고정
+  useEffect(() => {
+    if (orderDate === todayDate) return;
+    setOrderDate(todayDate);
+    setArrivalDate((prev) => {
+      const current = String(prev || "").trim();
+      if (current && current >= todayDate) return current;
+      return addDaysToDateInput(todayDate, arrivalDefaultDays);
+    });
+  }, [arrivalDefaultDays, orderDate, todayDate]);
 
   const handleSaveProsthesisTypeSettings = () => {
     const nextTypes = normalizeProsthesisTypes(prosthesisTypeCatalogDraft);
@@ -939,10 +942,14 @@ export const PracticeDropzonePage = () => {
           : DEFAULT_ARRIVAL_OFFSET_DAYS;
         setOrderDate(restoredOrderDate);
         setArrivalDefaultDays(restoredArrivalDefaultDays);
-        setArrivalDate(
-          String(intake?.arrivalDate || parsed?.arrivalDate || "").trim() ||
-            addDaysToDateInput(restoredOrderDate, restoredArrivalDefaultDays),
-        );
+        {
+          const restoredArrival = String(intake?.arrivalDate || parsed?.arrivalDate || "").trim();
+          setArrivalDate(
+            restoredArrival && restoredArrival >= todayDate
+              ? restoredArrival
+              : addDaysToDateInput(restoredOrderDate, restoredArrivalDefaultDays),
+          );
+        }
         const restoredProsthesisTypes = normalizeProsthesisTypes(
           Array.isArray(intake?.prosthesisTypes)
             ? intake.prosthesisTypes
@@ -2059,7 +2066,6 @@ export const PracticeDropzonePage = () => {
                       size: file.size,
                     })),
                     totalSizeMb,
-                    listViewportClassName: "max-h-[17.5rem]",
                     onPickFiles: handleIncomingFiles,
                     onRemoveFile: (key) => {
                       const idx = files.findIndex(
@@ -2089,9 +2095,20 @@ export const PracticeDropzonePage = () => {
                     setOrderDate,
                     arrivalDate,
                     setArrivalDate,
+                    onOrderArrivalDatesChange: ({ arrivalDate: nextArrival }) => {
+                      setOrderDate(todayDate);
+                      const arrival =
+                        String(nextArrival || "").trim() >= todayDate
+                          ? String(nextArrival || "").trim()
+                          : addDaysToDateInput(todayDate, arrivalDefaultDays);
+                      setArrivalDate(arrival);
+                      const diff = kstYmdDiffDays(todayDate, arrival);
+                      if (diff == null) return;
+                      const nextDays = normalizeArrivalDefaultDays(diff);
+                      if (nextDays === arrivalDefaultDays) return;
+                      setArrivalDefaultDays(nextDays);
+                    },
                     arrivalDefaultDays,
-                    setArrivalDefaultDaysDraft,
-                    setArrivalSettingsDialogOpen,
                     normalizedProsthesisTypes,
                     setProsthesisTypeCatalogDraft,
                     setProsthesisTypeSettingsDialogOpen,
@@ -2611,49 +2628,6 @@ export const PracticeDropzonePage = () => {
                 </div>
               </form>
             )}
-
-            <Dialog
-              open={arrivalSettingsDialogOpen}
-              onOpenChange={(open) => {
-                setArrivalSettingsDialogOpen(open);
-                if (open) {
-                  setArrivalDefaultDaysDraft(arrivalDefaultDays);
-                }
-              }}
-            >
-              <DialogContent className="sm:max-w-md">
-                <DialogHeader>
-                  <DialogTitle>소요일 설정</DialogTitle>
-                </DialogHeader>
-                <div className="space-y-2">
-                  <Input
-                    id="practice-arrival-default-days-dialog"
-                    type="number"
-                    min={0}
-                    max={365}
-                    value={arrivalDefaultDaysDraft}
-                    onChange={(e) =>
-                      setArrivalDefaultDaysDraft(normalizeArrivalDefaultDays(Number(e.target.value || 0)))
-                    }
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    주문일 기준으로 도착일이 자동 계산됩니다.
-                  </p>
-                </div>
-                <DialogFooter>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => setArrivalSettingsDialogOpen(false)}
-                  >
-                    취소
-                  </Button>
-                  <Button type="button" onClick={handleSaveArrivalSettings}>
-                    저장
-                  </Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
 
             <Dialog
               open={prosthesisTypeSettingsDialogOpen}
