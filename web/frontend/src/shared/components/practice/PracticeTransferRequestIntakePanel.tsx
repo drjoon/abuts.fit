@@ -111,20 +111,24 @@ const TOOTH_CHART_ROWS: ReadonlyArray<{ key: string; label: string; teeth: reado
   },
 ];
 
-const initialToothChartOffsets = (): Record<string, number> => ({
-  upper: 0,
-  lower: 0,
-});
-
 /** R=우측(10/40), M=전치부, L=좌측(20/30) — 상·하악 공통 스크롤 오프셋 */
 const toothChartOffsetForRegion = (
   region: "R" | "M" | "L",
   teethLength: number,
+  visibleCount: number = TOOTH_CHART_VISIBLE,
 ) => {
-  const maxOffset = Math.max(0, teethLength - TOOTH_CHART_VISIBLE);
+  const maxOffset = Math.max(0, teethLength - visibleCount);
   if (region === "R") return 0;
   if (region === "L") return maxOffset;
   return Math.min(maxOffset, Math.max(0, Math.round(maxOffset / 2)));
+};
+
+const initialToothChartOffsets = (): Record<string, number> => {
+  const next: Record<string, number> = {};
+  for (const decade of TOOTH_CHART_ROWS) {
+    next[decade.key] = toothChartOffsetForRegion("M", decade.teeth.length);
+  }
+  return next;
 };
 
 export const normalizeMemoSnippets = (items: unknown): string[] => {
@@ -218,6 +222,8 @@ export type PracticeTransferRequestIntakePanelProps = {
   onImplantFavoritesChange?: (next: PracticeImplantFavorite[]) => void | Promise<void>;
   abutmentFavorites?: PracticeAbutmentFavorite[];
   onAbutmentFavoritesChange?: (next: PracticeAbutmentFavorite[]) => void | Promise<void>;
+  /** 값이 바뀌면 치식 차트를 M(전치부) 위치로 되돌린다 (새로 작성 등) */
+  toothChartResetNonce?: number;
 };
 
 export const PracticeTransferRequestIntakePanel = ({
@@ -260,6 +266,7 @@ export const PracticeTransferRequestIntakePanel = ({
   onImplantFavoritesChange,
   abutmentFavorites = [],
   onAbutmentFavoritesChange,
+  toothChartResetNonce = 0,
 }: PracticeTransferRequestIntakePanelProps) => {
   const defaultProsthesisType = normalizedProsthesisTypes.includes("크라운")
     ? "크라운"
@@ -274,6 +281,15 @@ export const PracticeTransferRequestIntakePanel = ({
   const [toothChartOffsets, setToothChartOffsets] = useState<Record<string, number>>(
     initialToothChartOffsets,
   );
+  const [toothChartEnlargeOpen, setToothChartEnlargeOpen] = useState(false);
+  const toothChartVisibleCount = toothChartEnlargeOpen ? 16 : TOOTH_CHART_VISIBLE;
+  const toothChartResetNonceRef = useRef(toothChartResetNonce);
+
+  useEffect(() => {
+    if (toothChartResetNonceRef.current === toothChartResetNonce) return;
+    toothChartResetNonceRef.current = toothChartResetNonce;
+    setToothChartOffsets(initialToothChartOffsets());
+  }, [toothChartResetNonce]);
 
   const requestedToothCount = useMemo(() => {
     const teeth = new Set<string>();
@@ -733,6 +749,7 @@ export const PracticeTransferRequestIntakePanel = ({
       </div>
 
       <div className="mt-4 space-y-2">
+        {!toothChartEnlargeOpen ? (
         <div className="relative flex min-h-8 items-center">
           <div className="flex items-center gap-1">
             <Label className="text-sm">
@@ -794,104 +811,134 @@ export const PracticeTransferRequestIntakePanel = ({
           </div>
 
           <div className="absolute left-1/2 flex -translate-x-1/2 items-center gap-1">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              title="오른쪽 · 10/40번대"
-              className="h-8 w-10 px-0 text-sm font-semibold tabular-nums"
-              onClick={() => {
-                setToothChartOffsets(() => {
-                  const next: Record<string, number> = {};
-                  for (const decade of TOOTH_CHART_ROWS) {
-                    next[decade.key] = toothChartOffsetForRegion("R", decade.teeth.length);
-                  }
-                  return next;
-                });
-              }}
-            >
-              R
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              title="한 칸 왼쪽"
-              className="h-8 w-8 text-slate-500"
-              onClick={() => {
-                setToothChartOffsets((prev) => {
-                  const next = { ...prev };
-                  for (const decade of TOOTH_CHART_ROWS) {
-                    const cur = next[decade.key] ?? 0;
-                    next[decade.key] = Math.max(0, cur - 1);
-                  }
-                  return next;
-                });
-              }}
-            >
-              <ChevronLeft className="h-5 w-5" strokeWidth={2.25} />
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              title="전치부"
-              className="h-8 w-10 px-0 text-sm font-semibold tabular-nums"
-              onClick={() => {
-                setToothChartOffsets(() => {
-                  const next: Record<string, number> = {};
-                  for (const decade of TOOTH_CHART_ROWS) {
-                    next[decade.key] = toothChartOffsetForRegion("M", decade.teeth.length);
-                  }
-                  return next;
-                });
-              }}
-            >
-              M
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              title="한 칸 오른쪽"
-              className="h-8 w-8 text-slate-500"
-              onClick={() => {
-                setToothChartOffsets((prev) => {
-                  const next = { ...prev };
-                  for (const decade of TOOTH_CHART_ROWS) {
-                    const maxOffset = Math.max(0, decade.teeth.length - TOOTH_CHART_VISIBLE);
-                    const cur = next[decade.key] ?? 0;
-                    next[decade.key] = Math.min(maxOffset, cur + 1);
-                  }
-                  return next;
-                });
-              }}
-            >
-              <ChevronRight className="h-5 w-5" strokeWidth={2.25} />
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              title="왼쪽 · 20/30번대"
-              className="h-8 w-10 px-0 text-sm font-semibold tabular-nums"
-              onClick={() => {
-                setToothChartOffsets(() => {
-                  const next: Record<string, number> = {};
-                  for (const decade of TOOTH_CHART_ROWS) {
-                    next[decade.key] = toothChartOffsetForRegion("L", decade.teeth.length);
-                  }
-                  return next;
-                });
-              }}
-            >
-              L
-            </Button>
-          </div>
-        </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                title="오른쪽 · 10/40번대"
+                className="h-8 w-10 px-0 text-sm font-semibold tabular-nums"
+                onClick={() => {
+                  setToothChartOffsets(() => {
+                    const next: Record<string, number> = {};
+                    for (const decade of TOOTH_CHART_ROWS) {
+                      next[decade.key] = toothChartOffsetForRegion(
+                        "R",
+                        decade.teeth.length,
+                        toothChartVisibleCount,
+                      );
+                    }
+                    return next;
+                  });
+                }}
+              >
+                R
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                title="한 칸 왼쪽"
+                className="h-8 w-8 text-slate-500"
+                onClick={() => {
+                  setToothChartOffsets((prev) => {
+                    const next = { ...prev };
+                    for (const decade of TOOTH_CHART_ROWS) {
+                      const cur = next[decade.key] ?? 0;
+                      next[decade.key] = Math.max(0, cur - 1);
+                    }
+                    return next;
+                  });
+                }}
+              >
+                <ChevronLeft className="h-5 w-5" strokeWidth={2.25} />
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                title="전치부"
+                className="h-8 w-10 px-0 text-sm font-semibold tabular-nums"
+                onClick={() => {
+                  setToothChartOffsets(() => {
+                    const next: Record<string, number> = {};
+                    for (const decade of TOOTH_CHART_ROWS) {
+                      next[decade.key] = toothChartOffsetForRegion(
+                        "M",
+                        decade.teeth.length,
+                        toothChartVisibleCount,
+                      );
+                    }
+                    return next;
+                  });
+                }}
+              >
+                M
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                title="한 칸 오른쪽"
+                className="h-8 w-8 text-slate-500"
+                onClick={() => {
+                  setToothChartOffsets((prev) => {
+                    const next = { ...prev };
+                    for (const decade of TOOTH_CHART_ROWS) {
+                      const maxOffset = Math.max(
+                        0,
+                        decade.teeth.length - toothChartVisibleCount,
+                      );
+                      const cur = next[decade.key] ?? 0;
+                      next[decade.key] = Math.min(maxOffset, cur + 1);
+                    }
+                    return next;
+                  });
+                }}
+              >
+                <ChevronRight className="h-5 w-5" strokeWidth={2.25} />
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                title="왼쪽 · 20/30번대"
+                className="h-8 w-10 px-0 text-sm font-semibold tabular-nums"
+                onClick={() => {
+                  setToothChartOffsets(() => {
+                    const next: Record<string, number> = {};
+                    for (const decade of TOOTH_CHART_ROWS) {
+                      next[decade.key] = toothChartOffsetForRegion(
+                        "L",
+                        decade.teeth.length,
+                        toothChartVisibleCount,
+                      );
+                    }
+                    return next;
+                  });
+                }}
+              >
+                L
+              </Button>
+            </div>
 
-        <div className="space-y-2">
-          {(() => {
+            <div className="absolute right-0">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-8 px-2.5 text-xs"
+                onClick={() => {
+                  setToothChartOffsets(initialToothChartOffsets());
+                  setToothChartEnlargeOpen(true);
+                }}
+              >
+                크게 보기
+              </Button>
+            </div>
+        </div>
+        ) : null}
+
+        {(() => {
             const byTooth = new Map<string, { row: ToothWorkSelection; originalIndex: number }>();
             toothWorks.forEach((row, originalIndex) => {
               const tooth = String(row.toothNumber || "").trim();
@@ -1004,24 +1051,26 @@ export const PracticeTransferRequestIntakePanel = ({
               });
             };
 
-            return TOOTH_CHART_ROWS.map((decade) => {
-              const maxOffset = Math.max(0, decade.teeth.length - TOOTH_CHART_VISIBLE);
+            const chartRows = TOOTH_CHART_ROWS.map((decade) => {
+              const maxOffset = Math.max(0, decade.teeth.length - toothChartVisibleCount);
               const offset = Math.min(maxOffset, toothChartOffsets[decade.key] ?? 0);
-              const visible = decade.teeth.slice(offset, offset + TOOTH_CHART_VISIBLE);
+              const visible = decade.teeth.slice(offset, offset + toothChartVisibleCount);
 
               return (
                 <div key={`decade-${decade.key}`} className="flex items-stretch gap-0.5">
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="h-12 w-12 shrink-0 self-center rounded-xl text-slate-500 hover:bg-sky-50 hover:text-sky-700 disabled:opacity-30"
-                    disabled={offset <= 0}
-                    onClick={() => shiftDecade(decade.key, -1, maxOffset)}
-                    aria-label={`${decade.label} 이전`}
-                  >
-                    <ChevronLeft className="h-8 w-8" strokeWidth={2.25} />
-                  </Button>
+                  {maxOffset > 0 ? (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-12 w-12 shrink-0 self-center rounded-xl text-slate-500 hover:bg-sky-50 hover:text-sky-700 disabled:opacity-30"
+                      disabled={offset <= 0}
+                      onClick={() => shiftDecade(decade.key, -1, maxOffset)}
+                      aria-label={`${decade.label} 이전`}
+                    >
+                      <ChevronLeft className="h-8 w-8" strokeWidth={2.25} />
+                    </Button>
+                  ) : null}
 
                   <div className="flex min-w-0 flex-1 items-stretch">
                     {visible.map((toothNumber, visibleIndex) => {
@@ -1476,22 +1525,50 @@ export const PracticeTransferRequestIntakePanel = ({
                     })}
                   </div>
 
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="h-12 w-12 shrink-0 self-center rounded-xl text-slate-500 hover:bg-sky-50 hover:text-sky-700 disabled:opacity-30"
-                    disabled={offset >= maxOffset}
-                    onClick={() => shiftDecade(decade.key, 1, maxOffset)}
-                    aria-label={`${decade.label} 다음`}
-                  >
-                    <ChevronRight className="h-8 w-8" strokeWidth={2.25} />
-                  </Button>
+                  {maxOffset > 0 ? (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-12 w-12 shrink-0 self-center rounded-xl text-slate-500 hover:bg-sky-50 hover:text-sky-700 disabled:opacity-30"
+                      disabled={offset >= maxOffset}
+                      onClick={() => shiftDecade(decade.key, 1, maxOffset)}
+                      aria-label={`${decade.label} 다음`}
+                    >
+                      <ChevronRight className="h-8 w-8" strokeWidth={2.25} />
+                    </Button>
+                  ) : null}
                 </div>
               );
             });
+
+            const chartBody = <div className="space-y-2">{chartRows}</div>;
+
+            return (
+              <>
+                {!toothChartEnlargeOpen ? chartBody : null}
+                <Dialog
+                  open={toothChartEnlargeOpen}
+                  onOpenChange={setToothChartEnlargeOpen}
+                >
+                  <DialogContent className="w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] gap-3 p-4 sm:p-5">
+                    <DialogHeader className="pr-8 text-left">
+                      <DialogTitle className="text-base">
+                        보철물{" "}
+                        <span className="font-normal text-muted-foreground">
+                          ({requestedToothCount}개)
+                        </span>
+                      </DialogTitle>
+                      <DialogDescription className="sr-only">
+                        보철물 치식 차트를 가로로 크게 봅니다.
+                      </DialogDescription>
+                    </DialogHeader>
+                    {toothChartEnlargeOpen ? chartBody : null}
+                  </DialogContent>
+                </Dialog>
+              </>
+            );
           })()}
-        </div>
         </div>
 
       <div className="mt-5 flex min-h-0 flex-1 flex-col space-y-2">
@@ -1623,7 +1700,7 @@ export const PracticeTransferRequestIntakePanel = ({
                     }}
                     placeholder={
                       index === 0
-                        ? "요청사항 입력 (입력 시 문장 제안)"
+                        ? "메모 입력 (위/아래 화살표 누르면 입력 문장 제안)"
                         : "추가 문장"
                     }
                     className="h-10 w-full text-sm"

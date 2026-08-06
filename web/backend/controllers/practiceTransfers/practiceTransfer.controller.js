@@ -223,11 +223,13 @@ let draftIndexEnsurePromise = null;
 const ensurePracticeTransferDraftIndexes = async () => {
   if (draftIndexEnsurePromise) return draftIndexEnsurePromise;
   draftIndexEnsurePromise = (async () => {
-    try {
-      // 레거시 전체 unique(practiceUserId_1)가 있으면 soft-delete와 충돌하므로 제거
-      await PracticeTransferDraft.collection.dropIndex("practiceUserId_1");
-    } catch {
-      // ignore (없거나 이름 다름)
+    // 레거시 unique(사용자당 활성 1건) 제거 — 다중 활성 draft 허용
+    for (const name of ["practiceUserId_1", "practiceUserId_active_unique"]) {
+      try {
+        await PracticeTransferDraft.collection.dropIndex(name);
+      } catch {
+        // ignore (없거나 이름 다름)
+      }
     }
     try {
       await PracticeTransferDraft.syncIndexes();
@@ -439,11 +441,13 @@ export async function getMyPracticeTransferDraft(req, res) {
           ownerMap.get(String(doc.practiceUserId || "").trim()) || req.user;
       }
     } else {
-      // 기본: 본인이 만든 활성 draft
+      // 기본: 본인이 만든 활성 draft 중 가장 최근 건
       doc = await PracticeTransferDraft.findOne({
         practiceUserId: req.user?._id,
         deletedAt: null,
-      }).lean();
+      })
+        .sort({ updatedAt: -1 })
+        .lean();
     }
 
     return res.status(200).json({
@@ -631,47 +635,36 @@ export async function upsertPracticeTransferDraft(req, res) {
         .select({ _id: 1, practiceUserId: 1 })
         .lean();
 
-      if (!existing?._id) {
-        return res.status(404).json({
-          success: false,
-          message: "이어서 작성할 임시저장을 찾지 못했습니다.",
-        });
+      if (existing?._id) {
+        doc = await PracticeTransferDraft.findOneAndUpdate(
+          { _id: existing._id, deletedAt: null },
+          {
+            $set: {
+              practiceBusinessAnchorId: req.user?.businessAnchorId || null,
+              targetLabAnchorId,
+              targetLabName,
+              transferMemo,
+              files: normalizedDraftFiles,
+            },
+          },
+          { new: true },
+        ).lean();
       }
+      // 휴지통/삭제된 draftId(또는 권한 밖)면 아래에서 새 draft 생성
+    }
 
-      doc = await PracticeTransferDraft.findOneAndUpdate(
-        { _id: existing._id, deletedAt: null },
-        {
-          $set: {
-            practiceBusinessAnchorId: req.user?.businessAnchorId || null,
-            targetLabAnchorId,
-            targetLabName,
-            transferMemo,
-            files: normalizedDraftFiles,
-          },
-        },
-        { new: true },
-      ).lean();
-    } else {
-      // 새 케이스 / 본인 활성 draft upsert (휴지통 건과 분리)
-      doc = await PracticeTransferDraft.findOneAndUpdate(
-        { practiceUserId: req.user?._id, deletedAt: null },
-        {
-          $set: {
-            practiceUserId: req.user?._id,
-            practiceBusinessAnchorId: req.user?.businessAnchorId || null,
-            targetLabAnchorId,
-            targetLabName,
-            transferMemo,
-            files: normalizedDraftFiles,
-            deletedAt: null,
-          },
-        },
-        {
-          upsert: true,
-          new: true,
-          setDefaultsOnInsert: true,
-        },
-      ).lean();
+    if (!doc) {
+      // 새 케이스 · stale draftId 폴백: 항상 새 draft 생성
+      const created = await PracticeTransferDraft.create({
+        practiceUserId: req.user?._id,
+        practiceBusinessAnchorId: req.user?.businessAnchorId || null,
+        targetLabAnchorId,
+        targetLabName,
+        transferMemo,
+        files: normalizedDraftFiles,
+        deletedAt: null,
+      });
+      doc = await PracticeTransferDraft.findById(created._id).lean();
     }
 
     const ownerMap = await loadDraftOwnerMetaByIds([doc?.practiceUserId]);
@@ -738,10 +731,11 @@ export async function clearMyPracticeTransferDraft(req, res) {
         .select({ _id: 1, practiceUserId: 1, deletedAt: 1 })
         .lean();
     } else {
+      // draftId 없으면 본인 최신 활성 1건만 휴지통으로 (다중 활성)
       clearedDoc = await PracticeTransferDraft.findOneAndUpdate(
         { practiceUserId: req.user?._id, deletedAt: null },
         { $set: { deletedAt: now } },
-        { new: true },
+        { new: true, sort: { updatedAt: -1 } },
       )
         .select({ _id: 1, practiceUserId: 1, deletedAt: 1 })
         .lean();
@@ -808,19 +802,7 @@ export async function restorePracticeTransferDraft(req, res) {
       });
     }
 
-    const ownerId = trashed.practiceUserId;
-    // 동일 소유자의 활성 draft가 있으면 그 건을 휴지통으로 보내고 복구(사용자당 활성 1건)
-    if (ownerId) {
-      await PracticeTransferDraft.updateMany(
-        {
-          practiceUserId: ownerId,
-          deletedAt: null,
-          _id: { $ne: trashed._id },
-        },
-        { $set: { deletedAt: new Date() } },
-      );
-    }
-
+    // 다중 활성 draft 허용: 복구 시 다른 활성 건을 휴지통으로 보내지 않는다.
     const restored = await PracticeTransferDraft.findOneAndUpdate(
       { _id: trashed._id },
       { $set: { deletedAt: null } },
@@ -1093,14 +1075,8 @@ export async function createPracticeTransfer(req, res) {
         })
           .select({ _id: 1, practiceUserId: 1 })
           .lean();
-      } else if (req.user?._id) {
-        clearedDoc = await PracticeTransferDraft.findOneAndDelete({
-          practiceUserId: req.user._id,
-          deletedAt: null,
-        })
-          .select({ _id: 1, practiceUserId: 1 })
-          .lean();
       }
+      // draftId 없이 임의 활성 draft를 지우지 않는다(다중 활성 허용).
       clearedDraftId = clearedDoc?._id ? String(clearedDoc._id) : null;
     } catch {
       // 전송 자체는 성공 유지. draft 정리는 프론트에서 재시도할 수 있음.

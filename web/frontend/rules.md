@@ -409,7 +409,8 @@ Notes:
 - practice 최근 전송 기공소(기공소 선택 드롭다운) SSOT:
   - 서버: `GET /api/practice/transfers/my` 응답의 `caseInfos.practiceRouting.targetLabAnchorId/targetLabName`(최신순)이 권위 소스.
   - 로컬 캐시: `localStorage.practice_recent_labs_v2` (최대 8개). 전송 성공 시 `rememberLab`, 목록 로드 시 `syncRecentLabsFromTransfers`로 merge.
-  - 「새로 작성」은 의뢰 폼/임시저장 캐시만 비우고, 최근 기공소 목록은 유지한다. 가장 최근 기공소를 기본 선택한다.
+  - 「새로 작성」은 의뢰 폼/임시저장 캐시만 비우고, 최근 기공소 목록은 드롭다운 후보로만 유지한다. 기공소 선택은 비워 다시 고르게 한다. 보철물 차트는 M(전치부) 위치로 되돌린다.
+  - 「임시 저장」은 작성 중인 의뢰서를 목록에 스냅샷 저장한 뒤 폼을 해당 draft에서 분리한다. 이후 입력이 바뀌면 `draftId` 없이 새 임시저장이 생성된다.
   - 기공소 전송 성공·draft 삭제 후에는 작성자/동료/다른 탭 모두 폼을 비운다. 페이지 remount 시에도 최근 기공소를 자동 선택하지 않는다(드롭다운 후보만 유지).
   - 구현: `src/pages/practice/hooks/usePracticeTransferStep1.ts`, `PracticeFileTransferPage.tsx`
 

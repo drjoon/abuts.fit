@@ -856,6 +856,7 @@ export const PracticeFileTransferPage = () => {
   const [practiceDraftList, setPracticeDraftList] = useState<DraftListSummary[]>([]);
   const [trashedDraftList, setTrashedDraftList] = useState<DraftListSummary[]>([]);
   const [activeDraftId, setActiveDraftId] = useState<string | null>(null);
+  const [toothChartResetNonce, setToothChartResetNonce] = useState(0);
   const [recentRequests, setRecentRequests] = useState<RecentRequestItem[]>([]);
   const [recentRequestsLoading, setRecentRequestsLoading] = useState(false);
   const [recentRequestsError, setRecentRequestsError] = useState("");
@@ -1655,7 +1656,9 @@ export const PracticeFileTransferPage = () => {
       if (!payload) {
         setDraftFiles([]);
         setDraftSummary(null);
-        if (!requestedDraftId) setActiveDraftId(null);
+        // 요청한 draftId가 없거나(삭제/휴지통) 본인 최신도 없으면 stale id를 비운다.
+        setActiveDraftId(null);
+        activeDraftSeenInListRef.current = null;
         lastSavedFormFingerprintRef.current = null;
         setLastSavedFormFingerprint(null);
         lastAppliedServerUpdatedAtRef.current = 0;
@@ -2481,8 +2484,9 @@ export const PracticeFileTransferPage = () => {
   ]);
   resetIntakeFormAfterTransferRef.current = resetIntakeFormAfterTransfer;
 
-  // 전송/삭제로 draft가 목록에서 사라진 뒤에만 폼을 비운다.
+  // 전송/삭제로 draft가 활성 목록에서 사라진 뒤에만 폼을 비운다.
   // 파일 동기화 직후 activeDraftId만 먼저 바뀐 순간(목록 fetch 전)은 초기화하지 않는다.
+  // 휴지통에만 있는 id·로컬 stale id는 작성 폼에서 분리한다(전체 초기화는 하지 않음).
   useEffect(() => {
     if (!localFormHydrated || !draftListLoadedRef.current) return;
     const activeId = String(activeDraftId || "").trim();
@@ -2490,17 +2494,21 @@ export const PracticeFileTransferPage = () => {
       activeDraftSeenInListRef.current = null;
       return;
     }
-    const stillExists =
-      practiceDraftList.some((row) => row.id === activeId) ||
-      trashedDraftList.some((row) => row.id === activeId);
-    if (stillExists) {
+    const stillActive = practiceDraftList.some((row) => row.id === activeId);
+    if (stillActive) {
       activeDraftSeenInListRef.current = activeId;
       return;
     }
-    if (activeDraftSeenInListRef.current !== activeId) return;
+    if (activeDraftSeenInListRef.current === activeId) {
+      activeDraftSeenInListRef.current = null;
+      void resetIntakeFormAfterTransferRef.current();
+      return;
+    }
+    // 목록에 없던 stale draftId(삭제·휴지통·유실) — 폼 내용은 유지하고 id만 비운다.
+    setActiveDraftId(null);
+    setDraftSummary(null);
     activeDraftSeenInListRef.current = null;
-    void resetIntakeFormAfterTransferRef.current();
-  }, [activeDraftId, localFormHydrated, practiceDraftList, trashedDraftList]);
+  }, [activeDraftId, localFormHydrated, practiceDraftList]);
 
   const periodAndSearchFilteredRequests = useMemo(() => {
     const query = requestSearchTerm.trim().toLowerCase();
@@ -4543,9 +4551,8 @@ export const PracticeFileTransferPage = () => {
 
     setLabOpen(false);
     setLabSearch("");
-    // 최근 기공소(localStorage + 서버 전송내역)는 유지. 가장 최근 기공소를 기본 선택.
-    const nextLab = recentLabsRef.current[0] ?? null;
-    setSelectedLab(nextLab);
+    // 최근 기공소(localStorage + 서버 전송내역)는 드롭다운 후보로만 유지. 선택은 비워 다시 고르게 한다.
+    setSelectedLab(null);
     setPatientName("");
     setRequestMemo("");
     const nextOrderDate = todayDate;
@@ -4570,12 +4577,12 @@ export const PracticeFileTransferPage = () => {
     setActiveDraftId(null);
     activeDraftSeenInListRef.current = null;
     setTempSaveDirty(false);
+    setToothChartResetNonce((n) => n + 1);
 
-    // 기본 기공소만 선택된 상태로는 자동 임시저장하지 않도록 baseline을 맞춘다.
-    // 이후 의뢰서 항목을 바꾸거나 파일을 업로드하면 그때 동기화된다.
+    // 빈 폼 baseline — 이후 의뢰서 항목을 바꾸거나 파일을 업로드하면 그때 동기화된다.
     const baselineFingerprint = buildPracticeTransferFormFingerprint({
-      targetLabAnchorId: nextLab?._id,
-      targetLabName: nextLab?.name,
+      targetLabAnchorId: undefined,
+      targetLabName: undefined,
       patientName: "",
       orderDate: nextOrderDate,
       arrivalDate: nextArrivalDate,
@@ -4598,6 +4605,183 @@ export const PracticeFileTransferPage = () => {
       description:
         "작성 화면을 비웠습니다. 임시저장은 오른쪽 목록에 남아 다시 불러올 수 있습니다.",
     });
+  };
+
+  /** 작성 중 의뢰서를 지금 임시저장하고, 이후 수정분은 새 임시저장으로 이어간다. */
+  const handleManualTempSaveSnapshot = async () => {
+    if (tempSaving || fileSyncInFlightRef.current || requestSubmitting) return;
+    if (!authToken) {
+      toast({
+        title: "로그인이 필요합니다",
+        description: "다시 로그인 후 시도해주세요.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const hasFormContent =
+      Boolean(normalizedPatientName) ||
+      Boolean(String(requestMemo || "").trim()) ||
+      Boolean(String(selectedLab?._id || selectedLab?.name || "").trim()) ||
+      toothWorks.some(
+        (row) =>
+          String(row.toothNumber || "").trim() ||
+          Boolean(row.customAbutment) ||
+          String(row.implantManufacturer || "").trim(),
+      );
+    if (files.length === 0 && draftFilesRef.current.length === 0 && !hasFormContent) {
+      toast({
+        title: "저장할 내용이 없습니다",
+        description: "기공소·환자명·보철물·메모 또는 파일을 입력한 뒤 다시 시도해주세요.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setTempSaving(true);
+    fileSyncInFlightRef.current = true;
+    suppressLocalFormPersistRef.current = true;
+    skipFormAutosaveRef.current = true;
+    formAutosaveSeqRef.current += 1;
+    if (formAutosaveTimerRef.current) {
+      window.clearTimeout(formAutosaveTimerRef.current);
+      formAutosaveTimerRef.current = null;
+    }
+
+    try {
+      let nextDraftFiles = [...draftFilesRef.current];
+      if (files.length > 0) {
+        const uploadedTempFiles: TempUploadedFile[] = await uploadFilesWithToast(files);
+        nextDraftFiles = [
+          ...nextDraftFiles,
+          ...uploadedTempFiles.map((f) => ({
+            fileId: String(f._id || "").trim(),
+            originalName: String(f.originalName || "").trim(),
+            mimetype: String(f.mimetype || f.fileType || "application/octet-stream").trim(),
+            size: Number(f.size || 0),
+            s3Key: String(f.key || "").trim(),
+            location: String(f.location || "").trim(),
+          })),
+        ].filter((row) => row.fileId && row.originalName && row.s3Key);
+        nextDraftFiles = Array.from(
+          new Map(nextDraftFiles.map((row) => [toDraftFileKey(row), row])).values(),
+        );
+      }
+
+      const transferMemo = buildPracticeTransferMemo({
+        memo: requestMemo,
+        orderDate,
+        arrivalDate,
+        arrivalDefaultDays,
+        prosthesisTypes: normalizedProsthesisTypes,
+        toothWorks: syncToothWorks,
+        patientName: normalizedPatientName,
+      });
+
+      const res = await apiFetch<unknown>({
+        path: "/api/practice/transfers/draft",
+        method: "POST",
+        token: authToken,
+        jsonBody: {
+          draftId: activeDraftIdRef.current || undefined,
+          targetLabAnchorId: toApiLabAnchorId(selectedLab?._id),
+          targetLabName: String(selectedLab?.name || "").trim(),
+          orderDate,
+          arrivalDate,
+          arrivalDefaultDays,
+          transferMemo,
+          files: nextDraftFiles.map((row) => ({
+            fileId: row.fileId,
+          })),
+          forceResync: true,
+        },
+      });
+
+      if (!res.ok) {
+        const body = asApiMessagePayload(res.data);
+        throw new Error(String(body?.message || "임시저장에 실패했습니다."));
+      }
+
+      const body =
+        res.data && typeof res.data === "object"
+          ? (res.data as { data?: unknown })
+          : {};
+      const payload =
+        body.data && typeof body.data === "object"
+          ? (body.data as PracticeTransferDraftPayload)
+          : null;
+
+      const savedDraftFiles = Array.isArray(payload?.files)
+        ? payload.files
+            .map((row) => ({
+              fileId: String(row?.fileId || "").trim(),
+              originalName: String(row?.originalName || "").trim(),
+              mimetype: String(row?.mimetype || "application/octet-stream").trim(),
+              size: Number(row?.size || 0),
+              s3Key: String(row?.s3Key || "").trim(),
+              location: String(row?.location || "").trim(),
+            }))
+            .filter((row) => row.fileId && row.originalName && row.s3Key)
+        : nextDraftFiles;
+
+      const nextSummary = buildOwnDraftSummary(payload, savedDraftFiles, transferMemo);
+      if (nextSummary) {
+        setPracticeDraftList((prev) => {
+          const without = prev.filter((row) => row.id !== nextSummary.id);
+          return [nextSummary, ...without];
+        });
+      }
+      void loadPracticeTransferDraftList();
+
+      // 스냅샷은 목록에 남기고, 이후 수정은 새 임시저장으로 이어가도록 작성 폼을 분리한다.
+      setDraftFiles(savedDraftFiles);
+      setDraftSummary(null);
+      setActiveDraftId(null);
+      activeDraftSeenInListRef.current = null;
+      setTempSaveDirty(false);
+      await clearAllFiles();
+
+      const fingerprint = currentFormFingerprintRef.current;
+      lastSavedFormFingerprintRef.current = fingerprint;
+      setLastSavedFormFingerprint(fingerprint);
+      pendingLocalFormEditRef.current = false;
+      setFormSyncStatus("saved");
+
+      const serverUpdatedAt = payload?.updatedAt
+        ? new Date(String(payload.updatedAt)).getTime()
+        : Date.now();
+      if (Number.isFinite(serverUpdatedAt) && serverUpdatedAt > 0) {
+        lastAppliedServerUpdatedAtRef.current = Math.max(
+          lastAppliedServerUpdatedAtRef.current,
+          serverUpdatedAt,
+        );
+        localFormUpdatedAtRef.current = Math.max(
+          localFormUpdatedAtRef.current,
+          serverUpdatedAt,
+        );
+      }
+
+      toast({
+        title: "임시 저장 완료",
+        description:
+          "오른쪽 목록에 저장했습니다. 내용을 바꾸면 새 임시저장 의뢰서가 만들어집니다.",
+      });
+    } catch (error) {
+      toast({
+        title: "임시 저장 실패",
+        description:
+          error instanceof Error ? error.message : "임시저장 중 오류가 발생했습니다.",
+        variant: "destructive",
+      });
+      setFormSyncStatus("error");
+    } finally {
+      setTempSaving(false);
+      fileSyncInFlightRef.current = false;
+      suppressLocalFormPersistRef.current = false;
+      queueMicrotask(() => {
+        skipFormAutosaveRef.current = false;
+      });
+    }
   };
 
   const persistArrivalDefaultDaysFromRange = useCallback(
@@ -4852,9 +5036,38 @@ export const PracticeFileTransferPage = () => {
                           variant="outline"
                           size="sm"
                           className="h-8"
+                          disabled={
+                            tempSaving ||
+                            requestSubmitting ||
+                            (!hasMeaningfulFormInputForAutosave &&
+                              draftFiles.length === 0 &&
+                              files.length === 0) ||
+                            (!activeDraftId &&
+                              files.length === 0 &&
+                              lastSavedFormFingerprint !== null &&
+                              currentFormFingerprint === lastSavedFormFingerprint)
+                          }
+                          onClick={() => void handleManualTempSaveSnapshot()}
+                        >
+                          임시 저장
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent side="bottom" className="max-w-xs text-xs leading-relaxed">
+                        작성 중인 의뢰서를 목록에 저장합니다. 이후 내용을 바꾸면 새 임시저장이
+                        만들어집니다.
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                  <TooltipProvider delayDuration={0}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="h-8"
                           onClick={() => void handleStartNewTransfer()}
                         >
-                          <Plus className="mr-1 h-3.5 w-3.5" />
                           새로 작성
                         </Button>
                       </TooltipTrigger>
@@ -4937,6 +5150,7 @@ export const PracticeFileTransferPage = () => {
                   requestMemo,
                   setRequestMemo,
                   memoInputId: "practice-file-transfer-request-memo",
+                  toothChartResetNonce,
                   memoSnippets,
                   onMemoSnippetsChange: async (next) => {
                     const normalized = normalizeMemoSnippets(next);

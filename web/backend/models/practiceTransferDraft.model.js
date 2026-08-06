@@ -27,7 +27,6 @@ const practiceTransferDraftSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       required: true,
-      index: true,
     },
     practiceBusinessAnchorId: {
       type: mongoose.Schema.Types.ObjectId,
@@ -53,15 +52,8 @@ const practiceTransferDraftSchema = new mongoose.Schema(
   { timestamps: true },
 );
 
-// 활성 draft만 사용자당 1건. 휴지통(soft-delete) 건은 같은 practiceUserId 허용.
-practiceTransferDraftSchema.index(
-  { practiceUserId: 1 },
-  {
-    unique: true,
-    partialFilterExpression: { deletedAt: null },
-    name: "practiceUserId_active_unique",
-  },
-);
+// 사용자당 다중 활성 draft 허용(임시 저장 스냅샷 후 이어서 작성 시 새 건 생성).
+practiceTransferDraftSchema.index({ practiceUserId: 1, deletedAt: 1, updatedAt: -1 });
 practiceTransferDraftSchema.index({ practiceUserId: 1, updatedAt: -1 });
 practiceTransferDraftSchema.index({ deletedAt: 1, updatedAt: -1 });
 

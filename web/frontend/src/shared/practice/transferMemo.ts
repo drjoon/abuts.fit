@@ -123,10 +123,17 @@ export const formatImplantSummary = (
     .filter(Boolean)
     .join(" / ");
 
-/** 카드용 짧은 표시: 제조사만 */
+/** 카드용 짧은 표시: 제조사 앞 3글자 / 패밀리 첫 글자 */
 export const formatImplantCompact = (
   row: Partial<ToothWorkSelection> | null | undefined,
-) => String(row?.implantManufacturer || "").trim();
+) => {
+  const manufacturer = String(row?.implantManufacturer || "").trim();
+  const family = String(row?.implantFamily || "").trim();
+  const manufacturerShort = [...manufacturer].slice(0, 3).join("");
+  const familyShort = [...family].slice(0, 1).join("");
+  if (manufacturerShort && familyShort) return `${manufacturerShort} / ${familyShort}`;
+  return manufacturerShort || familyShort || "";
+};
 
 export const formatAbutmentSummary = (
   row: Partial<ToothWorkSelection> | null | undefined,

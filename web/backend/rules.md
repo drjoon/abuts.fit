@@ -311,21 +311,23 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   - 저장 모델: `models/practiceTransferDraft.model.js`
   - API:
     - `GET/POST/DELETE /api/practice/transfers/draft` → 작성 중인 draft
-      - GET 기본: 본인 활성(`deletedAt: null`) draft
+      - GET 기본: 본인 활성(`deletedAt: null`) draft 중 **최신 1건**
       - GET `?draftId=`: 동일 치과 범위의 활성 draft (불러온 같은 케이스)
-      - POST 기본: 본인 활성 draft upsert
-      - POST `draftId`: 불러온 draft에 join해 **같은 문서를 갱신**(소유자 유지)
+      - POST 기본(`draftId` 없음): **새 draft 생성**(사용자당 다중 활성)
+      - POST `draftId`: 불러온 draft에 join해 **같은 문서를 갱신**(소유자 유지). 없거나 휴지통이면 **새 draft 생성**(stale id 폴백)
       - DELETE: **소프트 삭제**(휴지통). `deletedAt` 설정. `draftId`면 해당 건
     - `POST /api/practice/transfers/draft/restore` `{ draftId }` → 휴지통에서 복구
-      - 동일 소유자의 다른 활성 draft가 있으면 그 건을 휴지통으로 보낸 뒤 복구(활성 1건 유지)
+      - 다른 활성 draft는 유지(다중 활성)
     - `POST /api/practice/transfers/trash/empty` → 휴지통 비우기(영구 삭제)
       - 동일 치과 범위의 소프트 삭제 draft(`deletedAt != null`)와 `status: "canceled"` 전송을 완전 삭제
       - 응답: `{ draftDeletedCount, transferDeletedCount, draftIds, transferMongoIds }`
       - 성공 시 `practice:transfer-updated` `action: trash-emptied`(치과) / `purged`(기공소) fan-out
     - `GET /api/practice/transfers/drafts` → 활성 목록
     - `GET /api/practice/transfers/drafts?trashed=1` → 휴지통 목록
-  - 활성 draft는 `practiceUserId` 당 1건(partial unique: `deletedAt: null`). 다른 의뢰는 각자 draft, **같은 케이스는 불러오기(join)로 공유**.
+  - 활성 draft는 사용자당 **여러 건** 허용. `POST`에 `draftId`가 없으면 **항상 새 draft 생성**, 있으면 해당 건 갱신(join).
+  - 「임시 저장」은 현재 작성본을 목록에 스냅샷하고 폼을 그 draft에서 분리한다. 이후 내용이 바뀌면 새 임시저장이 생성된다.
   - 「새로 작성」은 화면만 비우고 서버 임시저장은 유지. 서버/휴지통 이동은 임시저장 카드 삭제로만 수행.
+  - 복구 시 다른 활성 draft를 휴지통으로 보내지 않는다.
   - draft `files`는 `File` 컬렉션의 temp 업로드 파일 소유권(`uploadedBy`) 검증 후 저장합니다.
     동일 치과 practice 구성원이 업로드한 파일도 이어쓰기 저장을 허용합니다.
   - POST/DELETE/restore 성공 시 동일 치과 practice 구성원에게 `practice:transfer-updated`(draft-upserted|draft-cleared)를 fan-out한다.
