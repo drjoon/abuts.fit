@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-06: 준비 단계 헥스 회전 기본값을 designSoftware 정책으로 우선(미저장 finalHexRotation STL 오적용 수정).
 // - 2026-08-06: 헥스 회전 draft를 rnd/finalHexRotation/requestorHexRotation에서도 복원(가공 단계 누락 수정).
 // - 2026-08-06: 프리뷰 상단 요약에 출고예정·마감 남은시간 표시(RequestInfoSummary 인라인).
 // - 2026-08-04: 프리뷰 헤더에 신속/묶음배송 ShippingModeBadge 상시 표시.
@@ -788,39 +789,61 @@ export const PreviewModal = ({
     }
 
     // 헥스 회전 SSOT 우선순위:
-    // rnd.manufacturerHexRotation > caseInfos.manufacturerHexRotation >
-    // caseInfos.finalHexRotation > requestorHexRotation > designSoftware 추론
-    const manufacturerHexMode =
+    // 1) 제조사 저장값(rnd/caseInfos.manufacturerHexRotation)
+    // 2) 준비·CAM 단계(미저장): designSoftware 정책(ExoCAD=헥스30도, 3Shape=STL) > requestorHexRotation
+    //    - 생성 시 finalHexRotation은 제조사 미저장이면 STL로 고정되므로 준비 단계 기본값으로 쓰지 않는다.
+    // 3) 가공 이후(미저장 스냅샷): finalHexRotation > requestorHexRotation > designSoftware
+    const savedManufacturerHexMode =
       normalizeManufacturerHexRotationMode(
         (req as any)?.rnd?.manufacturerHexRotation,
       ) ||
       normalizeManufacturerHexRotationMode(
         (req as any)?.caseInfos?.manufacturerHexRotation,
-      ) ||
-      normalizeManufacturerHexRotationMode(
-        (req as any)?.caseInfos?.finalHexRotation,
-      ) ||
-      normalizeManufacturerHexRotationMode(
-        (req as any)?.caseInfos?.requestorHexRotation,
       );
 
-    if (manufacturerHexMode) {
-      setManufacturerHexRotationDraft(manufacturerHexMode);
-      return;
-    }
+    const reviewStageKey = getReviewStageKeyByTab({
+      stage,
+      isCamStage,
+      isMachiningStage,
+    });
+    const isPrepStage =
+      reviewStageKey === "request" || reviewStageKey === "cam";
 
-    const requestorHexCanonical = resolveRequestorHexRotationByDesignSoftware(
-      (req as any)?.caseInfos?.designSoftware,
-    );
-    if (requestorHexCanonical) {
-      setManufacturerHexRotationDraft(
-        toManufacturerHexRotationLabel(requestorHexCanonical),
+    let nextHexRotationDraft: ManufacturerHexRotationDraftMode = "";
+
+    if (savedManufacturerHexMode) {
+      nextHexRotationDraft = savedManufacturerHexMode;
+    } else if (isPrepStage) {
+      const byDesignSoftware = resolveRequestorHexRotationByDesignSoftware(
+        (req as any)?.caseInfos?.designSoftware,
       );
-      return;
+      if (byDesignSoftware) {
+        nextHexRotationDraft = toManufacturerHexRotationLabel(byDesignSoftware);
+      } else {
+        nextHexRotationDraft =
+          normalizeManufacturerHexRotationMode(
+            (req as any)?.caseInfos?.requestorHexRotation,
+          ) || "";
+      }
+    } else {
+      nextHexRotationDraft =
+        normalizeManufacturerHexRotationMode(
+          (req as any)?.caseInfos?.finalHexRotation,
+        ) ||
+        normalizeManufacturerHexRotationMode(
+          (req as any)?.caseInfos?.requestorHexRotation,
+        ) ||
+        (() => {
+          const byDesignSoftware = resolveRequestorHexRotationByDesignSoftware(
+            (req as any)?.caseInfos?.designSoftware,
+          );
+          return byDesignSoftware
+            ? toManufacturerHexRotationLabel(byDesignSoftware)
+            : "";
+        })();
     }
 
-    // 의뢰건에 designSoftware/헥스값이 없으면 헥스 회전 기본값을 비워 둔다.
-    setManufacturerHexRotationDraft("");
+    setManufacturerHexRotationDraft(nextHexRotationDraft);
 
     if (tokens.length) {
       setReasonLibraryWithSync((prev) => {
@@ -831,7 +854,7 @@ export const PreviewModal = ({
         return next;
       });
     }
-  }, [req, setReasonLibraryWithSync]);
+  }, [req, setReasonLibraryWithSync, stage, isCamStage, isMachiningStage]);
 
   useEffect(() => {
     if (!open || !guidedFinishLineMode) return;
