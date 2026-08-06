@@ -5,11 +5,15 @@
 // - web/backend/controllers/cnc/machiningBridge.js
 // - web/backend/controllers/cnc/production.js
 // - web/backend/controllers/requests/common.review.helpers.js
+// - web/backend/models/businessAnchor.model.js
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/machining/MachiningQueueBoard.tsx
+// change-log:
+// - 2026-08-07: 생산 큐/완료맵용 의뢰자명(BusinessAnchor) 배치 조회 헬퍼 추가.
 import mongoose from "mongoose";
 import CncMachine from "../../models/cncMachine.model.js";
 import Machine from "../../models/machine.model.js";
 import Request from "../../models/request.model.js";
+import BusinessAnchor from "../../models/businessAnchor.model.js";
 import { ensureRequestCreditRollbackDeleteOnRollbackToCam } from "../requests/common.review.helpers.js";
 import {
   getPresignedGetUrl,
@@ -517,6 +521,36 @@ export async function rollbackRequestToCamByRequestId(requestId) {
   } finally {
     session.endSession();
   }
+}
+
+export function resolveBusinessDisplayName(anchor) {
+  const name = String(anchor?.name || "").trim();
+  const company = String(anchor?.metadata?.companyName || "").trim();
+  return name || company || "";
+}
+
+export async function buildBusinessNameByAnchorIdMap(anchorIds) {
+  const ids = Array.from(
+    new Set(
+      (Array.isArray(anchorIds) ? anchorIds : [])
+        .map((id) => String(id || "").trim())
+        .filter(Boolean),
+    ),
+  );
+  const map = new Map();
+  if (!ids.length) return map;
+
+  const anchors = await BusinessAnchor.find({ _id: { $in: ids } })
+    .select("name metadata.companyName")
+    .lean();
+
+  for (const anchor of Array.isArray(anchors) ? anchors : []) {
+    const id = String(anchor?._id || "").trim();
+    if (!id) continue;
+    const display = resolveBusinessDisplayName(anchor);
+    if (display) map.set(id, display);
+  }
+  return map;
 }
 
 export async function getMachinesHandler(req, res) {

@@ -1192,6 +1192,7 @@ export const MachiningQueueBoard = ({
                 <div className="min-w-0 flex-1 text-[12px] font-extrabold text-slate-800 truncate">
                   {unassignedHead ? (
                     <MachiningRequestLabel
+                      business={unassignedHead.businessName}
                       clinicName={unassignedHead.clinicName}
                       patientName={unassignedHead.patientName}
                       tooth={(unassignedHead as any)?.tooth}
@@ -2016,6 +2017,7 @@ export const MachiningQueueBoard = ({
                     </div>
                     <div className="mt-1 text-[14px] font-extrabold text-slate-900 leading-tight">
                       <MachiningRequestLabel
+                        business={item.businessName}
                         clinicName={item.clinicName}
                         patientName={item.patientName}
                         tooth={(item as any)?.tooth}

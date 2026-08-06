@@ -46,6 +46,7 @@ export type QueueItem = {
   clinicName?: string;
   patientName?: string;
   tooth?: string;
+  businessName?: string;
   lotNumber?: {
     material?: string;
     value?: string;
@@ -87,6 +88,7 @@ export type LastCompletedMachining = {
   clinicName?: string;
   patientName?: string;
   tooth?: string;
+  businessName?: string;
   rollbackCount?: number;
   estimatedShipYmd?: string | null;
   lotNumber?: {

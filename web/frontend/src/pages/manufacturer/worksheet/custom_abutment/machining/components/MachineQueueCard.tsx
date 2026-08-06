@@ -1,7 +1,9 @@
 // change-log:
+// - 2026-08-07: Complete/Now Playing/Next Up에 의뢰자명(businessName) 표시.
 // - 2026-08-06: 큐 슬롯→프리뷰에 rnd(헥스 회전) 전달.
 // related files:
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/machining/MachiningQueueBoard.tsx
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/machining/components/MachiningRequestLabel.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
 // - web/backend/controllers/requests/common.review.controller.js
@@ -760,6 +762,7 @@ export const MachineQueueCard = ({
                 <div className="mt-0.5 text-[15px] font-extrabold text-slate-900 leading-tight">
                   {effectiveLastCompleted ? (
                     <MachiningRequestLabel
+                      business={(effectiveLastCompleted as any)?.businessName}
                       clinicName={(effectiveLastCompleted as any)?.clinicName}
                       patientName={(effectiveLastCompleted as any)?.patientName}
                       tooth={(effectiveLastCompleted as any)?.tooth}
@@ -885,6 +888,7 @@ export const MachineQueueCard = ({
                 <div className="mt-0.5 truncate text-[15px] font-extrabold text-slate-900">
                   {currentSlot ? (
                     <MachiningRequestLabel
+                      business={currentSlot?.businessName}
                       clinicName={currentSlot?.clinicName}
                       patientName={currentSlot?.patientName}
                       tooth={(currentSlot as any)?.tooth}
@@ -1040,6 +1044,7 @@ export const MachineQueueCard = ({
                 <div className="mt-0.5 truncate text-[15px] font-extrabold text-slate-900">
                   {nextSlot ? (
                     <MachiningRequestLabel
+                      business={nextSlot?.businessName}
                       clinicName={nextSlot?.clinicName}
                       patientName={nextSlot?.patientName}
                       tooth={(nextSlot as any)?.tooth}

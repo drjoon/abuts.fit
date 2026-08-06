@@ -3,6 +3,7 @@
 // - web/backend/app.js
 // - web/backend/server.js
 // - web/backend/controllers/cnc/machiningBridge.js
+// - web/backend/controllers/cnc/shared.js
 // - web/backend/controllers/requests/expressDeadlineRebalance.utils.js
 // - web/backend/controllers/requests/machiningPriorityRules.js
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/machining/MachiningQueueBoard.tsx
@@ -10,11 +11,13 @@
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/machining/components/MachiningPriorityRulesModal.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx
 // change-log:
+// - 2026-08-07: 생산 큐 응답에 의뢰자명(businessName) 포함.
 // - 2026-08-06: 가공 큐 select에 designSoftware·헥스 회전(rnd/caseInfos) 포함. 프리뷰 누락 수정.
 import {
   Request,
   getAllProductionQueues,
   rollbackRequestToCamByRequestId,
+  buildBusinessNameByAnchorIdMap,
 } from "./shared.js";
 import CncMachine from "../../models/cncMachine.model.js";
 import Machine from "../../models/machine.model.js";
@@ -340,12 +343,14 @@ export async function getProductionQueues(req, res) {
     const scope = await resolveManufacturerMachineScope(req);
 
     // change-log:
+    // - 2026-08-07: businessAnchorId 포함 → 의뢰자명(businessName) 매핑.
     // - 2026-08-06: 큐→프리뷰에 designSoftware/헥스 회전 필드 포함(가공 단계 누락 수정).
     const queueSelect = [
       "requestId",
       "status",
       "manufacturerStage",
       "productionSchedule",
+      "businessAnchorId",
       "caseInfos.clinicName",
       "caseInfos.patientName",
       "caseInfos.tooth",
@@ -424,6 +429,10 @@ export async function getProductionQueues(req, res) {
       }
     }
 
+    const businessNameByAnchorId = await buildBusinessNameByAnchorIdMap(
+      (Array.isArray(requests) ? requests : []).map((r) => r?.businessAnchorId),
+    );
+
     for (const machineId in queues) {
       queues[machineId] = queues[machineId].map((reqItem, index) => ({
         requestMongoId: reqItem?._id ? String(reqItem._id) : null,
@@ -476,6 +485,10 @@ export async function getProductionQueues(req, res) {
               jobId: reqItem.productionSchedule.machiningRecord.jobId,
             }
           : null,
+        businessName:
+          businessNameByAnchorId.get(
+            String(reqItem?.businessAnchorId || "").trim(),
+          ) || "",
         clinicName: reqItem.caseInfos?.clinicName,
         patientName: reqItem.caseInfos?.patientName,
         tooth: reqItem.caseInfos?.tooth,

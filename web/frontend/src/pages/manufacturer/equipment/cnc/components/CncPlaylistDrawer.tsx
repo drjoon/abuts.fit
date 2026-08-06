@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-07: 재생목록 행에 의뢰자명(businessName) 표시. 구조화 필드 우선.
 // - 2026-08-06: NC 첨부 시 NC 뱃지·최대직경 표시.
 // related files:
 // - web/frontend/rules.md
@@ -40,6 +41,13 @@ export interface PlaylistJobItem {
   maxDiameter?: number | null;
   programNo?: number | null;
   source?: string;
+  businessName?: string;
+  clinicName?: string;
+  patientName?: string;
+  tooth?: string;
+  lotPart?: string;
+  lotShortCode?: string;
+  ridSuffix?: string;
 }
 
 interface CncPlaylistDrawerProps {
@@ -145,15 +153,40 @@ export const CncPlaylistDrawer: React.FC<CncPlaylistDrawerProps> = ({
                   .trim()
                   .split(/\s+/)
                   .filter(Boolean);
-                const clinic = parts[0] || "";
-                const patient = parts[1] || "";
-                const tooth = parts[2] || "";
-                const lastCode =
-                  parts.length > 0 ? parts[parts.length - 1] : "";
-                const badge = parts.length > 1 ? parts[parts.length - 2] : "";
-                const middle = parts
-                  .slice(3, Math.max(3, parts.length - 2))
-                  .join(" ");
+                const structured =
+                  Boolean(job.businessName) ||
+                  Boolean(job.clinicName) ||
+                  Boolean(job.patientName) ||
+                  Boolean(job.tooth);
+                const clinic =
+                  String(job.clinicName || "").trim() ||
+                  (!structured ? parts[0] || "" : "");
+                const patient =
+                  String(job.patientName || "").trim() ||
+                  (!structured ? parts[1] || "" : "");
+                const tooth =
+                  String(job.tooth || "").trim() ||
+                  (!structured ? parts[2] || "" : "");
+                const lastCode = structured
+                  ? String(job.ridSuffix || "").trim()
+                  : parts.length > 0
+                    ? parts[parts.length - 1]
+                    : "";
+                const badge = structured
+                  ? String(job.lotShortCode || "").trim()
+                  : parts.length > 1
+                    ? parts[parts.length - 2]
+                    : "";
+                const middle = structured
+                  ? String(job.lotPart || "").trim()
+                  : parts.slice(3, Math.max(3, parts.length - 2)).join(" ");
+                const labelParts = [
+                  String(job.businessName || "").trim(),
+                  clinic,
+                  patient,
+                  tooth,
+                  middle,
+                ].filter(Boolean);
                 const rollbackCount = Number(job.rollbackCount || 0);
                 const canApproveFromRollback =
                   !readOnly && rollbackCount > 0 && !!job.requestMongoId;
@@ -214,40 +247,21 @@ export const CncPlaylistDrawer: React.FC<CncPlaylistDrawerProps> = ({
                                 </span>
                               ) : null}
                               <div className="flex flex-wrap items-center gap-1 min-w-0 text-[13px]">
-                                {clinic && (
-                                  <span className="truncate" title={clinic}>
-                                    {clinic}
-                                  </span>
-                                )}
-                                {patient && (
-                                  <>
-                                    <span className="text-slate-400">/</span>
-                                    <span className="truncate" title={patient}>
-                                      {patient}
+                                {labelParts.map((part, partIdx) => (
+                                  <React.Fragment key={`${partIdx}-${part}`}>
+                                    {partIdx > 0 ? (
+                                      <span className="text-slate-400">/</span>
+                                    ) : null}
+                                    <span className="truncate" title={part}>
+                                      {part}
                                     </span>
-                                  </>
-                                )}
-                                {tooth && (
-                                  <>
-                                    <span className="text-slate-400">/</span>
-                                    <span className="truncate" title={tooth}>
-                                      {tooth}
-                                    </span>
-                                  </>
-                                )}
-                                {middle && (
-                                  <>
-                                    <span className="text-slate-400">/</span>
-                                    <span className="truncate" title={middle}>
-                                      {middle}
-                                    </span>
-                                  </>
-                                )}
-                                {badge && (
+                                  </React.Fragment>
+                                ))}
+                                {badge ? (
                                   <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-slate-100 text-slate-700 border border-slate-300">
                                     {badge}
                                   </span>
-                                )}
+                                ) : null}
                                 {job.anodizingEnabled === false ? (
                                   <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-extrabold bg-rose-50 text-rose-700 border border-rose-200">
                                     아노 X

@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-07: 모바일 라벨에도 의뢰자명(business) 표시.
 // - 2026-08-06: 마감까지 남은 시간 뱃지(getDeadlineInfo) 표시. estimatedShipYmd 기반.
 // related files:
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/machining/utils/label.ts
@@ -76,7 +77,7 @@ export const MachiningRequestLabel = ({
     t,
     hideRequestId ? null : rid,
   ].filter(Boolean);
-  const mobileParts = [clinic, patient, t].filter(Boolean);
+  const mobileParts = [businessName, clinic, patient, t].filter(Boolean);
 
   const implantParts = [
     implantManufacturer ?? caseInfos?.implantManufacturer,

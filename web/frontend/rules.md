@@ -231,7 +231,9 @@ Notes:
   - 가공 보드 표기 정책:
     - 실제 RUNNING/PROCESSING(또는 nowPlayingHint) 항목이 없으면 `Now Playing`은 비워두고, 큐 맨 앞 항목을 `Next Up`으로 표시합니다.
     - `src/pages/manufacturer/worksheet/custom_abutment/machining/components/MachineQueueCard.tsx`
-
+    - Complete/Now Playing/Next Up·예약(재생)목록 라벨에 의뢰자명(`businessName`)을 치과명 앞에 표시합니다.
+      - API: 큐 `GET /api/cnc-machines/queues`, last-completed `GET /api/cnc-machines/machining/last-completed?includeRequests=true`
+      - 표시: `MachiningRequestLabel`(`business`) · `CncPlaylistDrawer` · `formatMachiningLabel`
 - 기본 공용 검색 입력 컴포넌트는 `src/components/ui/input.tsx` (`@/components/ui/input`)입니다.
   - 관리자 크레딧 페이지 검색 UI 배치 기준 파일:
     - `src/pages/admin/credits/AdminCreditPage.tsx`

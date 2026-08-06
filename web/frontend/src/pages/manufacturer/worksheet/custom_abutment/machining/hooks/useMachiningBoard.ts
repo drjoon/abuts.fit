@@ -4,7 +4,10 @@
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
+// - web/frontend/src/pages/manufacturer/equipment/cnc/components/CncPlaylistDrawer.tsx
 // - web/backend/controllers/requests/common.review.controller.js
+// change-log:
+// - 2026-08-07: 예약목록 PlaylistJobItem에 의뢰자명·치과/환자 구조화 필드 전달.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
@@ -627,6 +630,14 @@ export const useMachiningBoard = ({
 
           return {
             ...item,
+            businessName:
+              String(
+                requestRaw?.businessName ||
+                  requestRaw?.business?.name ||
+                  requestRaw?.requestorBusinessAnchor?.name ||
+                  requestRaw?.requestor?.business ||
+                  "",
+              ).trim() || item?.businessName,
             clinicName:
               String(requestRaw?.clinicName || "").trim() || item?.clinicName,
             patientName:
@@ -887,6 +898,16 @@ export const useMachiningBoard = ({
           Number.isFinite(maxDiameterRaw) && maxDiameterRaw > 0
             ? maxDiameterRaw
             : null;
+        const lotPartRaw = String(q?.lotNumber?.value || "").trim();
+        const lotShortCode = lotPartRaw
+          .replace(/^CA(P)?/i, "")
+          .slice(-3)
+          .toUpperCase();
+        const lotPart = lotPartRaw
+          .replace(/^CA/i, "")
+          .replace(/-/g, " ")
+          .trim();
+        const ridSuffix = rid.includes("-") ? rid.split("-").pop() || rid : rid;
         return {
           id: rid,
           name: formatMachiningLabel(q),
@@ -903,6 +924,13 @@ export const useMachiningBoard = ({
           shippingMode,
           hasNc,
           maxDiameter,
+          businessName: String(q?.businessName || "").trim() || undefined,
+          clinicName: String(q?.clinicName || "").trim() || undefined,
+          patientName: String(q?.patientName || "").trim() || undefined,
+          tooth: String((q as any)?.tooth || "").trim() || undefined,
+          lotPart: lotPart || undefined,
+          lotShortCode: lotShortCode || undefined,
+          ridSuffix: ridSuffix || undefined,
         } satisfies PlaylistJobItem;
       })
       .filter(Boolean) as PlaylistJobItem[];

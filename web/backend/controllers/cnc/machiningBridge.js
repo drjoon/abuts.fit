@@ -1,9 +1,12 @@
 // related files:
 // - web/backend/controllers/requests/common.review.controller.js
 // - web/backend/controllers/cnc/production.js
+// - web/backend/controllers/cnc/shared.js
 // - web/backend/socket.js
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/machining/MachiningQueueBoard.tsx
 // - web/frontend/src/pages/manufacturer/equipment/cnc/hooks/useManUpload.ts
+// change-log:
+// - 2026-08-07: last-completed 맵에 의뢰자명(businessName) 포함.
 import Request from "../../models/request.model.js";
 import CncEvent from "../../models/cncEvent.model.js";
 import CncMachine from "../../models/cncMachine.model.js";
@@ -23,6 +26,7 @@ import {
   fetchBridgeQueueFromBridge,
   saveBridgeQueueSnapshot,
   invalidateBridgeFlagsCache,
+  buildBusinessNameByAnchorIdMap,
 } from "./shared.js";
 import {
   ensureMailboxAddressForBusiness,
@@ -603,6 +607,7 @@ export async function getLastCompletedMachiningMap(req, res) {
             [
               "requestId",
               "manufacturerStage",
+              "businessAnchorId",
               "caseInfos.clinicName",
               "caseInfos.patientName",
               "caseInfos.tooth",
@@ -624,6 +629,11 @@ export async function getLastCompletedMachiningMap(req, res) {
             ].join(" "),
           )
           .lean();
+        const businessNameByAnchorId = await buildBusinessNameByAnchorIdMap(
+          (Array.isArray(requests) ? requests : []).map(
+            (r) => r?.businessAnchorId,
+          ),
+        );
         for (const r of requests) {
           const rid = String(r?.requestId || "").trim();
           if (!rid) continue;
@@ -633,6 +643,10 @@ export async function getLastCompletedMachiningMap(req, res) {
           const tooth = String(r?.caseInfos?.tooth || "").trim();
           const lotNumber = r?.lotNumber?.value ? r.lotNumber : null;
           requestInfoMap.set(rid, {
+            businessName:
+              businessNameByAnchorId.get(
+                String(r?.businessAnchorId || "").trim(),
+              ) || "",
             clinicName: String(r?.caseInfos?.clinicName || "").trim(),
             patientName: String(r?.caseInfos?.patientName || "").trim(),
             tooth,
@@ -715,6 +729,7 @@ export async function getLastCompletedMachiningMap(req, res) {
             [
               "requestId",
               "manufacturerStage",
+              "businessAnchorId",
               "caseInfos.clinicName",
               "caseInfos.patientName",
               "caseInfos.tooth",
@@ -736,10 +751,17 @@ export async function getLastCompletedMachiningMap(req, res) {
             ].join(" "),
           )
           .lean();
+        const businessNameByAnchorId = await buildBusinessNameByAnchorIdMap(
+          (Array.isArray(extras) ? extras : []).map((r) => r?.businessAnchorId),
+        );
         for (const r of extras) {
           const rid = String(r?.requestId || "").trim();
           if (!rid) continue;
           requestInfoMap.set(rid, {
+            businessName:
+              businessNameByAnchorId.get(
+                String(r?.businessAnchorId || "").trim(),
+              ) || "",
             clinicName: String(r?.caseInfos?.clinicName || "").trim(),
             patientName: String(r?.caseInfos?.patientName || "").trim(),
             tooth: String(r?.caseInfos?.tooth || "").trim(),
@@ -778,6 +800,7 @@ export async function getLastCompletedMachiningMap(req, res) {
         ).trim() || null;
       const recRequestId = String(rec?.requestId || "").trim() || null;
       const reqInfo = recRequestId ? requestInfoMap.get(recRequestId) : null;
+      const businessName = reqInfo ? reqInfo.businessName : "";
       const clinicName = reqInfo ? reqInfo.clinicName : "";
       const patientName = reqInfo ? reqInfo.patientName : "";
       const tooth = reqInfo ? reqInfo.tooth : "";
@@ -801,6 +824,7 @@ export async function getLastCompletedMachiningMap(req, res) {
         requestId: recRequestId,
         requestMongoId: reqInfo?.requestMongoId || null,
         displayLabel: displayLabel || null,
+        businessName,
         clinicName,
         patientName,
         tooth,

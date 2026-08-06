@@ -1,6 +1,8 @@
 // related files:
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/machining/components/MachiningRequestLabel.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/machining/MachiningQueueBoard.tsx
+// change-log:
+// - 2026-08-07: formatMachiningLabel에 의뢰자명(businessName) 포함.
 import type { QueueItem } from "../types";
 
 const normalizeLotPart = (raw: string) =>
@@ -27,12 +29,13 @@ export const formatMachiningLabel = (q: QueueItem | null | undefined) => {
   ).trim();
   const lotPart = normalizeLotPart(lotPartRaw);
 
+  const business = String((q as any)?.businessName || "").trim();
   const clinic = String(q.clinicName || "").trim();
   const patient = String(q.patientName || "").trim();
   const tooth = String((q as any)?.tooth || "").trim();
   const ridSuffix = resolveRequestSuffix(q.requestId);
 
-  const parts = [clinic, patient, tooth, lotPart, ridSuffix]
+  const parts = [business, clinic, patient, tooth, lotPart, ridSuffix]
     .map((s) => String(s || "").trim())
     .filter(Boolean);
 

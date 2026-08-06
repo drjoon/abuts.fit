@@ -145,7 +145,8 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
 - 자동 Next: `controllers/cnc/machiningBridge.js` `fetchPendingForAutoNext`
 - 재배정: `controllers/cnc/production.js` redistribute + express rebalance
 - 표시: 큐/lastCompleted/summary API에 `shippingMode` 포함 → 프론트 `ShippingModeBadge` (프리뷰 추가 round-trip 금지)
-
+- 표시: 큐/lastCompleted에 `businessName`(BusinessAnchor.name) 포함 → 프론트 가공 카드·예약목록 의뢰자명
+  - 배치 조회: `controllers/cnc/shared.js` `buildBusinessNameByAnchorIdMap`
 - 인프라 마이그레이션 운영 체크(EB 단일 인스턴스 → LB+NAT, Atlas 비용 유지):
   - 안정화 관찰 기간(며칠) 동안 실사용 트래픽에서 핵심 기능(로그인, 주문/의뢰 등록)을 반복 점검합니다.
   - CloudWatch 알람/에러 리포팅을 확인하고, 피크 시간대 오토스케일링(최대 2대) 동작을 검증합니다.
