@@ -740,13 +740,22 @@ export const RequestorRecentRequestsCard = ({
                       if (!eta) return null;
                       return (
                         <span className="text-blue-600 font-medium">
-                          발송 예정: {formatDateWithDay(eta)}
+                          출고 예정: {formatDateWithDay(eta)}
                         </span>
                       );
                     })()}
+                    {typeof item.daysUntilDue === "number" &&
+                      item.daysUntilDue >= 0 && (
+                        <Badge
+                          variant="outline"
+                          className="text-[10px] h-4 px-1.5 text-blue-700 border-blue-200 bg-blue-50"
+                        >
+                          출고 {item.daysUntilDue}일전
+                        </Badge>
+                      )}
                     {item.deliveryInfoRef?.deliveredAt && (
                       <span className="text-green-600 font-medium">
-                        완료: {formatDateOnly(item.deliveryInfoRef.deliveredAt)}
+                        배송완료: {formatDateOnly(item.deliveryInfoRef.deliveredAt)}
                       </span>
                     )}
                   </div>

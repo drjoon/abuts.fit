@@ -1,3 +1,5 @@
+// change-log:
+// - 2026-08-06: 표시 라벨 신속배송/묶음배송 → 신속출고/묶음출고 (제조사 출발일 의미).
 // related files:
 // - web/frontend/src/shared/shipping/ShippingModeBadge.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/WorksheetCardGrid.tsx
@@ -59,7 +61,7 @@ export function resolveQuotedPriceAmount(params: {
 }
 
 export function getBulkExpressShippingLabel(mode: ShippingMode): string {
-  return mode === "express" ? "신속배송" : "묶음배송";
+  return mode === "express" ? "신속출고" : "묶음출고";
 }
 
 export function getShippingModeBadgeClassName(mode: ShippingMode): string {

@@ -1,3 +1,5 @@
+// change-log:
+// - 2026-08-06: 배송/발송 표기를 출고로 통일 (제조사 출발일).
 // related files:
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
@@ -104,7 +106,7 @@ export function NewRequestShippingSection({
     if (newDays.length === 0) {
       toast({
         title: "최소 1개 선택 필요",
-        description: "최소 1개의 배송일을 선택해야 합니다.",
+        description: "최소 1개의 출고일을 선택해야 합니다.",
         variant: "destructive",
         duration: 3000,
       });
@@ -128,8 +130,8 @@ export function NewRequestShippingSection({
         setSelectedDays(newDays);
         onWeeklyBatchDaysChange?.(newDays);
         toast({
-          title: "배송일 설정 완료",
-          description: "배송일이 업데이트되었습니다.",
+          title: "출고일 설정 완료",
+          description: "출고일이 업데이트되었습니다.",
           duration: 2000,
         });
       } else {
@@ -160,7 +162,7 @@ export function NewRequestShippingSection({
     } catch (e: any) {
       toast({
         title: "오류",
-        description: e.message || "배송일 업데이트 중 오류가 발생했습니다.",
+        description: e.message || "출고일 업데이트 중 오류가 발생했습니다.",
         variant: "destructive",
         duration: 3000,
       });
@@ -206,7 +208,7 @@ export function NewRequestShippingSection({
         }
 
         toast({
-          title: "기본 배송 방식 저장 실패",
+          title: "기본 출고 방식 저장 실패",
           description: res.data?.message || "다시 시도해주세요.",
           variant: "destructive",
           duration: 3000,
@@ -215,7 +217,7 @@ export function NewRequestShippingSection({
     } catch (e: any) {
       toast({
         title: "오류",
-        description: e.message || "기본 배송 방식 저장 중 오류가 발생했습니다.",
+        description: e.message || "기본 출고 방식 저장 중 오류가 발생했습니다.",
         variant: "destructive",
         duration: 3000,
       });
@@ -242,7 +244,7 @@ export function NewRequestShippingSection({
         <div
           className="w-full flex flex-col gap-4"
           role="radiogroup"
-          aria-label="기본 배송 방식"
+          aria-label="기본 출고 방식"
         >
           <div
             role="radio"
@@ -261,10 +263,10 @@ export function NewRequestShippingSection({
           >
             <div className="flex items-center justify-center gap-2 text-base font-medium text-foreground">
               <Package className="w-5 h-5 text-primary" />
-              묶음 배송
+              묶음 출고
             </div>
             <div className="flex flex-wrap items-center justify-center gap-2">
-              <div className="text-sm text-slate-500 font-medium">발송일</div>
+              <div className="text-sm text-slate-500 font-medium">출고일</div>
               <div
                 ref={weekdaysRef}
                 className={`flex gap-1 rounded-md px-1 py-1 transition-all ${
@@ -295,11 +297,11 @@ export function NewRequestShippingSection({
                 ))}
               </div>
             </div>
-            <div className="text-sm text-red-500">묶음 배송일 복수 선택 권장</div>
+            <div className="text-sm text-red-500">적어도 2-3개 요일 선택 권장</div>
             <div className="text-sm text-slate-600 leading-relaxed">
-              선택한 요일 중 가장 먼저 도래한 날 모두 발송합니다.
+              디자인하시는대로 바로 바로 의뢰해주세요.
               <br />
-              공휴일은 쉬고 다음날 발송합니다.
+              지정된 요일에 일괄 출고해드립니다.
             </div>
           </div>
 
@@ -320,15 +322,15 @@ export function NewRequestShippingSection({
           >
             <div className="flex items-center justify-center gap-2 text-base font-medium text-foreground">
               <Zap className="w-5 h-5 text-amber-500" />
-              신속 배송
+              신속 출고
             </div>
             <div className="text-base text-foreground leading-relaxed">
-              오늘 낮 12시 이전 의뢰 시 오늘 오후 발송
+              오늘 낮 12시 이전 의뢰 시 오늘 오후 출고
             </div>
             <div className="text-sm text-slate-600 leading-relaxed">
               의뢰크레딧 {expressFeeLabel}원이 추가로 소비됩니다.
               <br />
-              단, 생산지연시 내일 발송되고, 추가 의뢰크레딧은 취소됩니다.
+              단, 생산지연시 내일 출고되고, 추가 의뢰크레딧은 취소됩니다.
             </div>
           </div>
         </div>

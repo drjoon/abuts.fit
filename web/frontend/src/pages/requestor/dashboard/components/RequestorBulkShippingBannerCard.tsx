@@ -1,9 +1,14 @@
+// change-log:
+// - 2026-08-06: 출고 카드/모달 문구·레이아웃 정리.
+// - 2026-08-06: 카드 제목/설명 정리. 대기수량·다음출고 예정 제거.
+// - 2026-08-06: 배송/발송 표기를 출고로 통일 (제조사 출발일).
 // related files:
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { Box, Clock, Package, Zap } from "lucide-react";
 import {
   Card,
   CardContent,
@@ -11,6 +16,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -74,14 +80,6 @@ type Props = {
   onRefresh?: () => void;
 };
 
-interface ShippingPolicy {
-  shippingMode: "countBased" | "weeklyBased";
-  autoBatchThreshold?: number;
-  weeklyBatchDays?: string[];
-}
-
-const STORAGE_KEY_PREFIX = "abutsfit:shipping-policy:v1:";
-
 type DiameterKey = "d6" | "d8" | "d10" | "d12";
 
 type LeadTimeEntry = {
@@ -116,6 +114,9 @@ const WEEKDAY_LABELS: Record<string, string> = {
   fri: "금",
 };
 
+const SHIP_OUT_INFO_MESSAGE =
+  "제조사에서 출발하는 출고일이 리드타임 기준으로 계산되며, 자정(0시)까지 접수 시 바로 다음날 오후 4시 출고됩니다.";
+
 type ShippingItemApi = {
   id: string;
   mongoId?: string;
@@ -141,7 +142,6 @@ export const RequestorBulkShippingBannerCard = ({
 }: Props) => {
   const { token, user } = useAuthStore();
   const { toast } = useToast();
-  const [policy, setPolicy] = useState<ShippingPolicy | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isEtaReady, setIsEtaReady] = useState(false);
   const etaWaitStartRef = useRef<number | null>(null);
@@ -168,7 +168,7 @@ export const RequestorBulkShippingBannerCard = ({
         });
 
         if (!res.ok || !res.data?.success) {
-          throw new Error("발송 패키지 요약 조회에 실패했습니다.");
+          throw new Error("출고 패키지 요약 조회에 실패했습니다.");
         }
         return res.data.data;
       },
@@ -207,20 +207,6 @@ export const RequestorBulkShippingBannerCard = ({
 
   // 샘플 데이터 (실제로는 API에서 가져올 데이터)
   const [items, setItems] = useState<ShippingItemApi[]>([]);
-
-  useEffect(() => {
-    try {
-      const email = localStorage.getItem("userEmail") || "guest";
-      const storageKey = `${STORAGE_KEY_PREFIX}${email}`;
-      const raw = localStorage.getItem(storageKey);
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        setPolicy(parsed);
-      }
-    } catch {
-      // ignore
-    }
-  }, []);
 
   useEffect(() => {
     const next: ShippingItemApi[] = [
@@ -292,75 +278,11 @@ export const RequestorBulkShippingBannerCard = ({
     (i) => (i.shippingMode || "normal") === "express",
   );
 
-  const earliestExpressEta = useMemo(() => {
-    if (rawExpressItems.length === 0) return null;
-    const dates = rawExpressItems
-      .map((i) => i.estimatedShipYmd)
-      .filter(Boolean)
-      .map((d) => String(d))
-      .filter((v) => v.length >= 10)
-      .sort();
-    return dates.length > 0 ? dates[0] : null;
-  }, [rawExpressItems]);
-
   // All items participate in bulk UI; express items are filtered separately
   const bulkItems = items.filter((i) => {
     const mode = i.shippingMode || "normal";
     return mode === "normal";
   });
-
-  const expressItems = items.filter((i) => {
-    const mode = i.shippingMode || "normal";
-    return mode === "express";
-  });
-
-  const earliestEta = (list: ShippingItemApi[]) => {
-    const dates = list
-      .map((i) => i.estimatedShipYmd)
-      .filter(Boolean)
-      .map((d) => String(d))
-      .filter((v) => v.length >= 10);
-    if (!dates.length) return "확인 중";
-    const ts = dates.sort()[0];
-    const mm = Number(ts.slice(5, 7));
-    const dd = Number(ts.slice(8, 10));
-    if (!Number.isFinite(mm) || !Number.isFinite(dd)) return "확인 중";
-    return `${mm}/${dd}`;
-  };
-
-  const getNextSummary = () => {
-    const bulkCount = bulkItems.length;
-
-    if (bulkCount === 0) {
-      return {
-        countLabel: "대기 수량: 0개",
-        dateLabel: "다음 발송 예정: -",
-      };
-    }
-
-    const nextText = earliestEta(bulkItems);
-
-    return {
-      countLabel: `대기 수량: ${bulkCount}개`,
-      dateLabel: `다음 발송 예정: ${nextText}`,
-    };
-  };
-
-  const getCardMessage = () => {
-    if (!policy) {
-      return "제조사 리드타임 기준으로 발송일이 계산되며, KST 자정(0시)까지 접수 시 당일 집하가 반영됩니다.";
-    }
-
-    const days = (policy.weeklyBatchDays || [])
-      .map((d) => WEEKDAY_LABELS[d])
-      .join(", ");
-
-    if (days) {
-      return `${days}요일에 묶음 발송되며, 제조사 리드타임과 KST 자정(0시) 컷오프 기준으로 발송일이 계산됩니다.`;
-    }
-
-    return "제조사 리드타임과 KST 자정(0시) 컷오프 기준으로 발송일이 계산됩니다.";
-  };
 
   const handleOpenModal = () => {
     setIsModalOpen(true);
@@ -420,7 +342,7 @@ export const RequestorBulkShippingBannerCard = ({
     if (!res.ok) {
       const serverMsg = res.data?.message;
       toast({
-        title: "배송 방식 변경 실패",
+        title: "출고 방식 변경 실패",
         description: serverMsg || "다시 시도해주세요.",
         variant: "destructive",
         duration: 3000,
@@ -494,7 +416,7 @@ export const RequestorBulkShippingBannerCard = ({
     if (!canToggleMode(item.stageLabel)) {
       toast({
         title: "변경 불가",
-        description: "의뢰 단계에서만 배송 방식을 변경할 수 있습니다.",
+        description: "의뢰 단계에서만 출고 방식을 변경할 수 있습니다.",
         duration: 3000,
         variant: "destructive",
       });
@@ -552,7 +474,7 @@ export const RequestorBulkShippingBannerCard = ({
     if (hasNonEligible) {
       toast({
         title: "변경 불가",
-        description: "의뢰 단계에서만 배송 방식을 변경할 수 있습니다.",
+        description: "의뢰 단계에서만 출고 방식을 변경할 수 있습니다.",
         duration: 3000,
         variant: "destructive",
       });
@@ -677,17 +599,17 @@ export const RequestorBulkShippingBannerCard = ({
       <Card className="app-glass-card app-glass-card--lg h-full">
         <CardHeader className="pb-2">
           <CardTitle className="text-base font-semibold text-foreground">
-            발송 · 묶음 배송
+            묶음출고 신속출고
           </CardTitle>
         </CardHeader>
         <CardContent className="pt-2 pb-4 text-sm text-foreground space-y-3">
           {isShippingSummaryLoading ? (
-            <div className="text-xs text-slate-600">발송 내역 불러오는 중...</div>
+            <div className="text-xs text-slate-600">출고 내역 불러오는 중...</div>
           ) : (
             <div className="rounded-lg border border-blue-200/70 bg-blue-50/60 px-3 py-2.5 space-y-1.5">
               <div className="flex items-center justify-between gap-2">
                 <span className="text-[11px] font-semibold tracking-wide text-blue-700">
-                  오늘 발송 예정
+                  오늘 출고 예정
                 </span>
                 <span className="text-[11px] text-blue-700">
                   {shippingMemo.todayCount.toLocaleString()}박스
@@ -713,17 +635,8 @@ export const RequestorBulkShippingBannerCard = ({
           )}
 
           <div className="rounded-lg border border-slate-200 bg-white/70 px-3 py-2.5 space-y-2">
-            {(() => {
-              const { countLabel, dateLabel } = getNextSummary();
-              return (
-                <div className="grid grid-cols-2 gap-2 text-xs text-slate-600">
-                  <div className="min-w-0">{countLabel}</div>
-                  <div className="min-w-0 text-right">{dateLabel}</div>
-                </div>
-              );
-            })()}
             <p className="text-xs leading-relaxed text-slate-600">
-              {getCardMessage()}
+              {cardMessage}
             </p>
             <div className="flex flex-wrap gap-2 pt-0.5">
               <Button
@@ -732,7 +645,7 @@ export const RequestorBulkShippingBannerCard = ({
                 className="h-8 px-3 bg-primary text-white font-semibold"
                 onClick={handleOpenModal}
               >
-                배송 대기 내역
+                출고 대기 내역
               </Button>
               <Button
                 variant="outline"
@@ -751,7 +664,7 @@ export const RequestorBulkShippingBannerCard = ({
       <Dialog open={todayBoxDialogOpen} onOpenChange={setTodayBoxDialogOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>오늘 발송 박스 내역</DialogTitle>
+            <DialogTitle>오늘 출고 박스 내역</DialogTitle>
           </DialogHeader>
           {shippingMemo.todayRequests.length === 0 ? (
             <div className="text-sm text-muted-foreground">
@@ -784,7 +697,7 @@ export const RequestorBulkShippingBannerCard = ({
                       </div>
                       {nextEta && (
                         <div className="text-[11px] text-blue-600 mt-1">
-                          다음 예정일: {formatDateWithDay(nextEta)}
+                          다음 출고일: {formatDateWithDay(nextEta)}
                         </div>
                       )}
                     </div>
@@ -801,11 +714,12 @@ export const RequestorBulkShippingBannerCard = ({
           <DialogHeader>
             <div className="flex flex-col gap-2">
               <DialogTitle className="text-2xl font-bold">
-                배송 대기 현황
+                출고 대기 현황
               </DialogTitle>
               <CardDescription className="text-xs text-muted-foreground">
-                제조사 리드타임 기준으로 계산되며, KST 자정(0시)까지 접수분은
-                1영업일 리드타임에서 당일 집하가 반영됩니다.
+                제조사에서 출발하는 출고일이 리드타임 기준으로 계산되며, KST
+                자정(0시)까지 접수분은 1영업일 리드타임에서 당일 집하가
+                반영됩니다.
               </CardDescription>
             </div>
           </DialogHeader>
@@ -837,7 +751,7 @@ export const RequestorBulkShippingBannerCard = ({
             <div className="space-y-4">
               {bulkItems.length === 0 ? (
                 <div className="text-sm text-slate-600 text-center py-8">
-                  배송 대기 중인 제품이 없습니다.
+                  출고 대기 중인 제품이 없습니다.
                 </div>
               ) : (
                 bulkGroups.map((group) => (
@@ -847,7 +761,7 @@ export const RequestorBulkShippingBannerCard = ({
                   >
                     <div className="flex items-center justify-between gap-2">
                       <div className="text-xs text-slate-700">
-                        <span className="font-medium">발송 예정일:</span>{" "}
+                        <span className="font-medium">출고 예정일:</span>{" "}
                         <span className="text-foreground font-medium">
                           {group.etaKey === "-" ? "-" : formatEta(group.etaKey)}
                         </span>
@@ -889,10 +803,10 @@ export const RequestorBulkShippingBannerCard = ({
           <DialogHeader>
             <div>
               <DialogTitle className="text-2xl font-bold">
-                제조사 배송 리드타임
+                제조사 출고 리드타임
               </DialogTitle>
               <CardDescription className="text-xs text-muted-foreground">
-                직경별 예상 리드타임과 정기 발송 요일을 확인하세요. (KST
+                직경별 예상 리드타임과 정기 출고 요일을 확인하세요. (KST
                 자정(0시)까지 접수분은 1영업일 리드타임에서 당일 집하 반영)
               </CardDescription>
             </div>

@@ -1,8 +1,10 @@
+// change-log:
+// - 2026-08-06: 묶음 ETA를 백엔드와 같이 (N-1) 적용. 접수 당일=1일차(자정 컷오프).
 // related files:
 // - web/frontend/rules.md
-// - web/frontend/src/App.tsx
-// - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
+// - web/frontend/src/shared/ui/PricingPolicyDialog.tsx
+// - web/backend/controllers/requests/production.utils.js
 // - web/backend/controllers/requests/creation.from-draft.controller.js
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { apiFetch } from "@/shared/api/apiClient";
@@ -86,9 +88,10 @@ export function useLeadTimeForecast({
     [getKstWeekday],
   );
 
+  // 백엔드 resolveLeadDaysWithSameDayCutoff와 동일: 접수 당일=1일차 → (N-1)
   const resolveLeadDaysForPickup = useCallback((leadDays: number) => {
-    if (!Number.isFinite(leadDays) || leadDays <= 0) return 1;
-    return Math.max(1, leadDays);
+    if (!Number.isFinite(leadDays) || leadDays <= 0) return 0;
+    return Math.max(0, Math.floor(Number(leadDays)) - 1);
   }, []);
 
   const formatKstMonthDayWithWeekday = useCallback((ymd: string) => {

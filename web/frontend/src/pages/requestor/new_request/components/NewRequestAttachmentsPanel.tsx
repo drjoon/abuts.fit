@@ -3,6 +3,8 @@ import { Button } from "@/components/ui/button";
 import { Check, Calendar, X } from "lucide-react";
 import type { CaseInfos } from "../hooks/newRequestTypes";
 
+// change-log:
+// - 2026-08-06: 예상 발송 → 예상 출고 (제조사 출발일).
 // related files:
 // - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
 // - web/frontend/src/features/settings/tabs/RequestTab.tsx
@@ -213,7 +215,7 @@ export function NewRequestAttachmentsPanel({
                       {estimatedShip ? (
                         <div className="flex items-center gap-1.5 text-xs text-slate-500 min-w-0">
                           <Calendar className="w-3 h-3 shrink-0" />
-                          <span className="truncate">예상 발송: {estimatedShip}</span>
+                          <span className="truncate">예상 출고: {estimatedShip}</span>
                         </div>
                       ) : (
                         <div />

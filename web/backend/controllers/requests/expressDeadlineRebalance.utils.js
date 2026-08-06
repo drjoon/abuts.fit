@@ -67,6 +67,18 @@ export function isTodayExpressShipRequest(reqItem, todayYmd = getTodayYmdInKst()
   return Boolean(shipYmd) && shipYmd === todayYmd;
 }
 
+/** 신속배송 + 출고일이 지정된 건 (14:00 마감 계산 대상) */
+export function isExpressShipRequestWithYmd(reqItem) {
+  if (resolveEffectiveShippingMode(reqItem) !== "express") return false;
+  return Boolean(resolveShipYmd(reqItem));
+}
+
+export function resolveExpressMachiningDeadlineForRequest(reqItem) {
+  const shipYmd = resolveShipYmd(reqItem);
+  if (!shipYmd) return null;
+  return createKstDateTime(shipYmd, EXPRESS_MACHINING_DEADLINE_HOUR_KST, 0);
+}
+
 function resolveMaxDiameter(reqItem) {
   const maxD = Number(reqItem?.caseInfos?.maxDiameter);
   if (Number.isFinite(maxD) && maxD > 0) return maxD;
@@ -210,8 +222,9 @@ function buildEtaSnapshot({
   secondsPerMm,
   nowMs,
   todayYmd,
-  deadlineMs,
+  deadlineMs: _deadlineMs,
 }) {
+  void _deadlineMs;
   const machines = [];
   for (const [machineId, rows] of queuesByMachine.entries()) {
     const ordered = [...rows].sort(compareMachiningQueueOrder);
@@ -229,14 +242,33 @@ function buildEtaSnapshot({
         : false;
     }
 
-    const todayExpress = sim.items.filter((it) => it.isTodayExpress);
-    const lastExpressCompleteMs = todayExpress.length
+    const expressItems = sim.items.filter((it) => {
+      const row = ordered.find(
+        (r) => String(r?._id || "") === it.requestMongoId,
+      );
+      return row ? isExpressShipRequestWithYmd(row) : false;
+    });
+    const lastExpressCompleteMs = expressItems.length
       ? Math.max(
-          ...todayExpress.map((it) => new Date(it.estimatedCompleteAt).getTime()),
+          ...expressItems.map((it) => new Date(it.estimatedCompleteAt).getTime()),
         )
       : null;
-    const missesDeadline =
-      lastExpressCompleteMs != null && lastExpressCompleteMs > deadlineMs;
+
+    let missesDeadline = false;
+    for (const item of expressItems) {
+      const row = ordered.find(
+        (r) => String(r?._id || "") === item.requestMongoId,
+      );
+      if (!row) continue;
+      const dl = resolveExpressMachiningDeadlineForRequest(row);
+      if (!dl) continue;
+      const completeMs = new Date(item.estimatedCompleteAt).getTime();
+      if (completeMs > dl.getTime()) {
+        missesDeadline = true;
+        break;
+      }
+    }
+
     const meta = machineMetaMap.get(machineId) || {};
 
     machines.push({
@@ -246,7 +278,7 @@ function buildEtaSnapshot({
       items: sim.items,
       estimatedQueueCompleteAt: sim.estimatedQueueCompleteAt,
       estimatedQueueCompleteAtLabel: sim.estimatedQueueCompleteAtLabel,
-      todayExpressCount: todayExpress.length,
+      todayExpressCount: expressItems.length,
       todayExpressCompleteAt: lastExpressCompleteMs
         ? new Date(lastExpressCompleteMs).toISOString()
         : null,
@@ -260,6 +292,221 @@ function buildEtaSnapshot({
 
   machines.sort((a, b) => String(a.machineId).localeCompare(String(b.machineId)));
   return machines;
+}
+
+async function persistExpressRebalanceMove({
+  candidate,
+  fromMachineId,
+  toMachineId,
+  toDia,
+  fromDia,
+  nowMs,
+  actorUserId,
+  workingQueues,
+  moved,
+  secondsPerMm,
+}) {
+  const toGroup = inferDiameterGroupFromValue(toDia);
+  const diameterChanged =
+    Number.isFinite(fromDia) && Math.abs(fromDia - toDia) > 1e-6;
+
+  workingQueues.set(
+    fromMachineId,
+    (workingQueues.get(fromMachineId) || []).filter(
+      (r) => String(r?._id) !== String(candidate._id),
+    ),
+  );
+  const updatedRow = {
+    ...candidate,
+    productionSchedule: {
+      ...(candidate.productionSchedule || {}),
+      assignedMachine: toMachineId,
+      diameter: toDia,
+      diameterGroup: toGroup,
+      fastMachiningRebalance: {
+        at: new Date(nowMs),
+        fromMachineId,
+        toMachineId,
+        fromDiameter: Number.isFinite(fromDia) ? fromDia : null,
+        toDiameter: toDia,
+        reason: "express_deadline_14",
+      },
+    },
+    assignedMachine: toMachineId,
+  };
+  workingQueues.set(toMachineId, [
+    ...(workingQueues.get(toMachineId) || []),
+    updatedRow,
+  ]);
+
+  const rebalanceMeta = {
+    at: new Date(nowMs),
+    fromMachineId,
+    toMachineId,
+    fromDiameter: Number.isFinite(fromDia) ? fromDia : null,
+    toDiameter: toDia,
+    reason: "express_deadline_14",
+  };
+
+  await Request.updateOne(
+    { _id: candidate._id },
+    {
+      $set: {
+        "productionSchedule.assignedMachine": toMachineId,
+        "productionSchedule.diameter": toDia,
+        "productionSchedule.diameterGroup": toGroup,
+        "productionSchedule.fastMachiningRebalance": rebalanceMeta,
+        "productionSchedule.ncPreload": { status: "NONE" },
+        assignedMachine: toMachineId,
+      },
+    },
+  );
+
+  await placeRequestAtPolicyQueuePosition({
+    machineId: toMachineId,
+    requestMongoId: candidate._id,
+    anodizingEnabled: candidate?.caseInfos?.anodizingEnabled,
+    shippingMode: resolveEffectiveShippingMode(candidate),
+    RequestModel: Request,
+  });
+
+  const remaining = workingQueues.get(fromMachineId) || [];
+  const ordered = [...remaining].sort(compareMachiningQueueOrder);
+  await Promise.all(
+    ordered.map((item, idx) =>
+      Request.updateOne(
+        { _id: item._id },
+        { $set: { "productionSchedule.queuePosition": idx + 1 } },
+      ),
+    ),
+  );
+
+  if (diameterChanged) {
+    const fresh = await Request.findById(candidate._id).lean();
+    if (fresh) {
+      await enqueueApproval({
+        taskType: "REQUEST_STAGE_APPROVED",
+        request: fresh,
+        actorUserId,
+        forceReprocess: true,
+      });
+    }
+  }
+
+  moved.push({
+    requestId: String(candidate.requestId || ""),
+    requestMongoId: String(candidate._id || ""),
+    fromMachineId,
+    toMachineId,
+    fromDiameter: Number.isFinite(fromDia) ? fromDia : null,
+    toDiameter: toDia,
+    diameterChanged,
+    espritRetriggered: diameterChanged,
+    estimateSeconds: estimateMachiningSecondsForLength(
+      resolveTotalLength(candidate),
+      secondsPerMm,
+    ),
+  });
+}
+
+/**
+ * 대형 소재 장비(M5 등)에 놓인 신속건을, 출고일 14:00 내 완료 가능한 최소 소재 장비로 합친다.
+ */
+async function consolidateExpressJobsToSmallestCoveringMachine({
+  workingQueues,
+  machineMetaMap,
+  secondsPerMm,
+  nowMs,
+  todayYmd,
+  deadlineMs,
+  actorUserId,
+  moved,
+}) {
+  const machineIdsAsc = [...machineMetaMap.keys()].sort((a, b) => {
+    const da = Number(machineMetaMap.get(a)?.materialDiameter) || 999;
+    const db = Number(machineMetaMap.get(b)?.materialDiameter) || 999;
+    if (da !== db) return da - db;
+    return String(a).localeCompare(String(b));
+  });
+
+  for (const targetId of machineIdsAsc) {
+    const targetMeta = machineMetaMap.get(targetId);
+    const toDia = Number(targetMeta?.materialDiameter);
+    if (!Number.isFinite(toDia) || toDia <= 0) continue;
+
+    for (const sourceId of machineIdsAsc) {
+      const fromDia = Number(machineMetaMap.get(sourceId)?.materialDiameter);
+      if (sourceId === targetId || !Number.isFinite(fromDia) || fromDia <= toDia) {
+        continue;
+      }
+
+      let safety = 0;
+      while (safety++ < 20) {
+        const sourceRows = workingQueues.get(sourceId) || [];
+        const candidates = sourceRows
+          .filter((row) => !isMachiningInProgress(row))
+          .filter((row) => isExpressShipRequestWithYmd(row))
+          .filter((row) => {
+            const dl = resolveExpressMachiningDeadlineForRequest(row);
+            return dl && nowMs < dl.getTime();
+          })
+          .filter((row) => {
+            const maxD = resolveMaxDiameter(row);
+            return machineCanCoverRequest(toDia, maxD);
+          })
+          .sort(compareMachiningQueueOrder);
+
+        if (!candidates.length) break;
+
+        const candidate = candidates[0];
+        const maxDiameter = resolveMaxDiameter(candidate);
+
+        const simQueues = cloneQueueMaps(workingQueues);
+        simQueues.set(
+          sourceId,
+          (simQueues.get(sourceId) || []).filter(
+            (r) => String(r?._id) !== String(candidate._id),
+          ),
+        );
+        const movedRow = {
+          ...candidate,
+          productionSchedule: {
+            ...(candidate.productionSchedule || {}),
+            assignedMachine: targetId,
+            diameter: toDia,
+            diameterGroup: inferDiameterGroupFromValue(toDia),
+          },
+          assignedMachine: targetId,
+        };
+        simQueues.set(targetId, [...(simQueues.get(targetId) || []), movedRow]);
+
+        const afterSnap = buildEtaSnapshot({
+          queuesByMachine: simQueues,
+          machineMetaMap,
+          secondsPerMm,
+          nowMs,
+          todayYmd,
+          deadlineMs,
+        });
+        const afterSource = afterSnap.find((m) => m.machineId === sourceId);
+        const afterTarget = afterSnap.find((m) => m.machineId === targetId);
+        if (afterTarget?.missesDeadline || afterSource?.missesDeadline) break;
+
+        await persistExpressRebalanceMove({
+          candidate,
+          fromMachineId: sourceId,
+          toMachineId: targetId,
+          toDia,
+          fromDia,
+          nowMs,
+          actorUserId,
+          workingQueues,
+          moved,
+          secondsPerMm,
+        });
+      }
+    }
+  }
 }
 
 async function persistAndEmitAlert(alert) {
@@ -305,18 +552,13 @@ export async function rebalanceExpressJobsForFourteenOClockDeadline({
   actorUserId = null,
 } = {}) {
   const todayYmd = toKstYmd(now) || getTodayYmdInKst();
-  const deadline = createKstDateTime(todayYmd, EXPRESS_MACHINING_DEADLINE_HOUR_KST, 0);
   const nowMs = now instanceof Date ? now.getTime() : Date.now();
+  const deadline = createKstDateTime(
+    todayYmd,
+    EXPRESS_MACHINING_DEADLINE_HOUR_KST,
+    0,
+  );
   const deadlineMs = deadline.getTime();
-
-  if (nowMs >= deadlineMs) {
-    return {
-      moved: [],
-      skipped: true,
-      reason: "past_deadline",
-      deadlineAt: deadline.toISOString(),
-    };
-  }
 
   const estimateMeta = await resolveConservativeMachiningSecondsPerMm();
   const secondsPerMm = estimateMeta.secondsPerMm;
@@ -398,8 +640,23 @@ export async function rebalanceExpressJobsForFourteenOClockDeadline({
     queuesByMachine.get(mid).push(reqItem);
   }
 
+  const workingQueues = cloneQueueMaps(queuesByMachine);
+  const moved = [];
+
+  // 1) 대형 소재 장비에 잘못 배정된 신속건을 최소 소재 장비로 먼저 합친다.
+  await consolidateExpressJobsToSmallestCoveringMachine({
+    workingQueues,
+    machineMetaMap,
+    secondsPerMm,
+    nowMs,
+    todayYmd,
+    deadlineMs,
+    actorUserId,
+    moved,
+  });
+
   const initialSnapshot = buildEtaSnapshot({
-    queuesByMachine,
+    queuesByMachine: workingQueues,
     machineMetaMap,
     secondsPerMm,
     nowMs,
@@ -410,6 +667,30 @@ export async function rebalanceExpressJobsForFourteenOClockDeadline({
   const busyMachines = initialSnapshot.filter((m) => m.missesDeadline);
   const spareMachines = initialSnapshot.filter((m) => !m.missesDeadline);
   if (!busyMachines.length || !spareMachines.length) {
+    if (moved.length) {
+      const finalMachines = buildEtaSnapshot({
+        queuesByMachine: workingQueues,
+        machineMetaMap,
+        secondsPerMm,
+        nowMs,
+        todayYmd,
+        deadlineMs,
+      });
+      const summary = `신속배송 ${moved.length}건을 최소 소재 장비로 재배치했습니다.`;
+      const alert = {
+        id: `express-rebalance-${nowMs}`,
+        type: "express_deadline_rebalance",
+        createdAt: new Date(nowMs).toISOString(),
+        summary,
+        deadlineAt: deadline.toISOString(),
+        deadlineAtLabel: formatKstDateTime(deadline),
+        moved,
+        estimate: estimateMeta,
+        machines: finalMachines,
+      };
+      await persistAndEmitAlert(alert);
+      return alert;
+    }
     return {
       moved: [],
       skipped: true,
@@ -420,11 +701,7 @@ export async function rebalanceExpressJobsForFourteenOClockDeadline({
     };
   }
 
-  // 작업용 mutable 큐
-  const workingQueues = cloneQueueMaps(queuesByMachine);
-  const moved = [];
-
-  // 바쁜 장비에서 마감 미달 신속건을 뒤에서부터 여유 장비로 이동
+  // 2) 출고일 14:00을 넘기는 장비가 있으면 여유 장비로 분산
   for (const busy of busyMachines) {
     const sourceId = busy.machineId;
     let safety = 0;
@@ -442,7 +719,11 @@ export async function rebalanceExpressJobsForFourteenOClockDeadline({
 
       const candidates = [...sourceRows]
         .filter((row) => !isMachiningInProgress(row))
-        .filter((row) => isTodayExpressShipRequest(row, todayYmd))
+        .filter((row) => isExpressShipRequestWithYmd(row))
+        .filter((row) => {
+          const dl = resolveExpressMachiningDeadlineForRequest(row);
+          return dl && nowMs < dl.getTime();
+        })
         .sort(compareMachiningQueueOrder)
         .reverse();
 
@@ -507,13 +788,16 @@ export async function rebalanceExpressJobsForFourteenOClockDeadline({
             !afterSource?.missesDeadline;
           if (!sourceImproved) continue;
 
-          const targetSlackMs = deadlineMs - (
-            afterTarget?.todayExpressCompleteAt
+          const candidateDeadlineMs =
+            resolveExpressMachiningDeadlineForRequest(candidate)?.getTime() ??
+            deadlineMs;
+          const targetSlackMs =
+            candidateDeadlineMs -
+            (afterTarget?.todayExpressCompleteAt
               ? new Date(afterTarget.todayExpressCompleteAt).getTime()
               : afterTarget?.estimatedQueueCompleteAt
                 ? new Date(afterTarget.estimatedQueueCompleteAt).getTime()
-                : nowMs
-          );
+                : nowMs);
 
           targetOptions.push({
             targetId,
@@ -526,120 +810,29 @@ export async function rebalanceExpressJobsForFourteenOClockDeadline({
 
         if (!targetOptions.length) continue;
         targetOptions.sort((a, b) => {
-          // 1) 업사이즈(또는 동일) 중 여유가 큰 장비
+          // 1) 더 작은 소재 직경 장비 우선 (M4 before M5)
+          if (a.toDia !== b.toDia) return a.toDia - b.toDia;
+          // 2) 여유가 큰 장비
           if (b.targetSlackMs !== a.targetSlackMs) return b.targetSlackMs - a.targetSlackMs;
-          if (b.diameterDelta !== a.diameterDelta) return b.diameterDelta - a.diameterDelta;
           return String(a.targetId).localeCompare(String(b.targetId));
         });
 
         const chosen = targetOptions[0];
         const toDia = chosen.toDia;
-        const toGroup = inferDiameterGroupFromValue(toDia);
         const fromMachineId = sourceId;
         const toMachineId = chosen.targetId;
-        const diameterChanged =
-          !Number.isFinite(fromDia) || Math.abs(fromDia - toDia) > 1e-6;
 
-        // 큐 반영
-        workingQueues.set(
-          fromMachineId,
-          (workingQueues.get(fromMachineId) || []).filter(
-            (r) => String(r?._id) !== String(candidate._id),
-          ),
-        );
-        const updatedRow = {
-          ...candidate,
-          productionSchedule: {
-            ...(candidate.productionSchedule || {}),
-            assignedMachine: toMachineId,
-            diameter: toDia,
-            diameterGroup: toGroup,
-            fastMachiningRebalance: {
-              at: new Date(nowMs),
-              fromMachineId,
-              toMachineId,
-              fromDiameter: Number.isFinite(fromDia) ? fromDia : null,
-              toDiameter: toDia,
-              reason: "express_deadline_14",
-            },
-          },
-          assignedMachine: toMachineId,
-        };
-        workingQueues.set(toMachineId, [
-          ...(workingQueues.get(toMachineId) || []),
-          updatedRow,
-        ]);
-
-        // DB 업데이트
-        const rebalanceMeta = {
-          at: new Date(nowMs),
+        await persistExpressRebalanceMove({
+          candidate,
           fromMachineId,
           toMachineId,
-          fromDiameter: Number.isFinite(fromDia) ? fromDia : null,
-          toDiameter: toDia,
-          reason: "express_deadline_14",
-        };
-
-        await Request.updateOne(
-          { _id: candidate._id },
-          {
-            $set: {
-              "productionSchedule.assignedMachine": toMachineId,
-              "productionSchedule.diameter": toDia,
-              "productionSchedule.diameterGroup": toGroup,
-              "productionSchedule.fastMachiningRebalance": rebalanceMeta,
-              "productionSchedule.ncPreload": { status: "NONE" },
-              assignedMachine: toMachineId,
-            },
-          },
-        );
-
-        await placeRequestAtPolicyQueuePosition({
-          machineId: toMachineId,
-          requestMongoId: candidate._id,
-          anodizingEnabled: candidate?.caseInfos?.anodizingEnabled,
-          shippingMode: resolveEffectiveShippingMode(candidate),
-          RequestModel: Request,
-        });
-        // from 장비는 이동된 건이 빠졌으므로 남은 대기열만 1..n 재번호
-        {
-          const remaining = workingQueues.get(fromMachineId) || [];
-          const ordered = [...remaining].sort(compareMachiningQueueOrder);
-          await Promise.all(
-            ordered.map((item, idx) =>
-              Request.updateOne(
-                { _id: item._id },
-                { $set: { "productionSchedule.queuePosition": idx + 1 } },
-              ),
-            ),
-          );
-        }
-
-        if (diameterChanged) {
-          const fresh = await Request.findById(candidate._id).lean();
-          if (fresh) {
-            await enqueueApproval({
-              taskType: "REQUEST_STAGE_APPROVED",
-              request: fresh,
-              actorUserId,
-              forceReprocess: true,
-            });
-          }
-        }
-
-        moved.push({
-          requestId: String(candidate.requestId || ""),
-          requestMongoId: String(candidate._id || ""),
-          fromMachineId,
-          toMachineId,
-          fromDiameter: Number.isFinite(fromDia) ? fromDia : null,
-          toDiameter: toDia,
-          diameterChanged,
-          espritRetriggered: diameterChanged,
-          estimateSeconds: estimateMachiningSecondsForLength(
-            resolveTotalLength(candidate),
-            secondsPerMm,
-          ),
+          toDia,
+          fromDia,
+          nowMs,
+          actorUserId,
+          workingQueues,
+          moved,
+          secondsPerMm,
         });
         didMove = true;
         break;

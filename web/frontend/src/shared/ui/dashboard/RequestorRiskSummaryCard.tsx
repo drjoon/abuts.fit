@@ -1,6 +1,8 @@
 // related files:
 // - web/frontend/src/pages/requestor/dashboard/RequestorDashboardPage.tsx
 // - web/frontend/src/pages/requestor/dashboard/components/RequestorRecentRequestsCard.tsx
+// change-log:
+// - 2026-08-06: 정시 발송 비율 → 정시 출고 비율.
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -161,7 +163,7 @@ export const RequestorRiskSummaryCard = ({
         <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
           <span>지연 가능 의뢰: {summary.warningCount ?? 0}건</span>
           <span>지연 확정 의뢰: {summary.delayedCount ?? 0}건</span>
-          <span>정시 발송 비율: {summary.onTimeRate ?? 0}%</span>
+          <span>정시 출고 비율: {summary.onTimeRate ?? 0}%</span>
         </div>
         <div
           className={`space-y-2 pr-1 scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-transparent ${

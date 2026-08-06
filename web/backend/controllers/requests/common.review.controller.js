@@ -1688,7 +1688,7 @@ export async function updateReviewStatusByStage(req, res) {
           request.productionSchedule = request.productionSchedule || {};
 
           // 준비→가공 진입 배정 SSOT:
-          // chooseMachineForCamMachining 우선순위(큐 부하 → 가능 소재 중 최소 직경 → ...)를
+          // chooseMachineForCamMachining 우선순위(가능 소재 중 최소 직경 → 큐 부하 → ...)를
           // 항상 다시 적용한다. 스케줄 단계의 사전/ghost 배정(M3 등)은 사용하지 않는다.
           const selected = await ensureMachineCompatibilityOrThrow({
             request,

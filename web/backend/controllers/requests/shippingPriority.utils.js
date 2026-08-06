@@ -1,5 +1,8 @@
+// change-log:
+// - 2026-08-06: 우선순위 라벨 "마감 …" → "출고 …일전/시간전".
 // related files:
 // - web/backend/rules.md
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/utils/request.ts
 // - web/backend/app.js
 // - web/backend/server.js
 // - web/backend/modules/requests/request.routes.js
@@ -15,7 +18,7 @@ import { isKoreanBusinessDay } from "../../utils/krBusinessDays.js";
 
 export { resolveQuotedPriceWithExpressFee } from "./expressPrice.utils.js";
 
-// 마감 시각: 택배 수거 시각 (16:00 KST)
+// 출고(집하) 기준 시각: 택배 수거 시각 (16:00 KST)
 // 14:00 포장 마감, 15:00 수거 신청, 16:00 실제 수거
 const WAYBILL_INPUT_CUTOFF_HOUR_KST = 16;
 
@@ -154,10 +157,15 @@ export async function computeShippingPriority({ request, now }) {
 
   const label = (() => {
     if (typeof minutesLeft !== "number") return "";
-    if (minutesLeft < 0) return "마감 초과";
-    if (minutesLeft < 60) return `마감 ${minutesLeft}분`;
+    if (minutesLeft < 0) return "출고일 지남";
+    if (minutesLeft < 60) return `출고 ${minutesLeft}분전`;
     const h = Math.ceil(minutesLeft / 60);
-    return `마감 ${h}시간`;
+    if (h < 24) return `출고 ${h}시간전`;
+    const days = Math.floor(h / 24);
+    const restHours = h % 24;
+    return restHours > 0
+      ? `출고 ${days}일전 ${restHours}시간`
+      : `출고 ${days}일전`;
   })();
 
   return {

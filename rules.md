@@ -89,8 +89,11 @@
     `web/eb.sh`(setenv), `local.env`/`test.env`/`prod.env`, bg Node 엔트리
   - `Date#getDay()` / `setHours()` 등 **로컬 TZ에 의존하는 API**를 YMD/요일 판정에 쓸 때는
     프로세스 TZ만 믿지 말고, 가능하면 `Asia/Seoul` 명시(`Intl` / `+09:00` / UTC noon 달력일)로 방어
-  - 출고일·묶음요일·마감 뱃지·영업일 계산은 이 정책의 직접 영향 받음
-    (`production.utils.js` `resolveNextWeeklyBatchYmd` 등)
+  - 출고일·묶음요일·출고 뱃지·영업일 계산은 이 정책에 직접 영향 받음
+    (`production.utils.js` `resolveNextWeeklyBatchYmd` / `resolveLeadDaysWithSameDayCutoff` 등)
+  - 묶음 리드타임 SSOT: `minBusinessDays=N`이면 접수 당일을 1일차로 포함 → 추가 영업일 `(N-1)`
+    (PricingPolicyDialog: 자정까지 1영업일=당일 집하). 이후 주간 발송 요일로 정렬.
+
 
 ### 1.5 구조
 

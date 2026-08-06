@@ -1,8 +1,12 @@
 import { type ReactNode } from "react";
 
+// change-log:
+// - 2026-08-06: 남은기간 표시를 "N일 남음" → "출고 N일전"으로 통일.
+// - 2026-08-06: 발송 예정일 → 출고 예정일 (제조사 출발일).
 // related files:
 // - web/frontend/src/pages/requestor/dashboard/RequestorDashboardPage.tsx
 // - web/frontend/src/pages/requestor/dashboard/components/RequestorRecentRequestsCard.tsx
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/utils/request.ts
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -251,7 +255,7 @@ export const RequestDetailDialog = ({
             )}
             {estimatedShipYmd && (
               <div className="grid grid-cols-[90px_1fr] gap-3 items-center text-blue-700 font-medium">
-                <span>발송 예정일</span>
+                <span>출고 예정일</span>
                 <span>{formatDateWithDay(estimatedShipYmd)}</span>
               </div>
             )}
@@ -283,9 +287,9 @@ export const RequestDetailDialog = ({
             )}
             {typeof request?.daysUntilDue === "number" && (
               <div className="grid grid-cols-[90px_1fr] gap-3 items-center text-slate-600">
-                <span>남은 기간</span>
+                <span>출고까지</span>
                 <span className="font-medium">
-                  {request.daysUntilDue}일 남음
+                  출고 {request.daysUntilDue}일전
                 </span>
               </div>
             )}

@@ -72,6 +72,13 @@ export function inferCurrentMaterialDiameter(machine) {
 }
 
 export function inferRequestDiameterGroup(reqItem) {
+  // 배정된 장비 소재(diameterGroup)보다 실제 maxDiameter SSOT를 우선한다.
+  // (M5 배정 후 diameterGroup=10으로 고정되면 redistribute가 M5 전용 풀로 잘못 묶는 회귀 방지)
+  const maxD = Number(reqItem?.caseInfos?.maxDiameter);
+  if (Number.isFinite(maxD) && maxD > 0) {
+    return inferDiameterGroupFromValue(maxD);
+  }
+
   const groupRaw = String(
     reqItem?.productionSchedule?.diameterGroup || "",
   ).trim();

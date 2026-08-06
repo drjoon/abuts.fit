@@ -351,15 +351,16 @@ export async function chooseMachineForCamMachining({
     })
     .sort((a, b) => {
       // 배정 우선순위 SSOT:
-      // 1) 큐 부하(적은 쪽)
-      // 2) 요청 직경을 커버하는 소재 중 가장 작은 직경 (예: 6mm → 8mm M4 우선, 10mm M5 후순위)
+      // 1) 요청 직경을 커버하는 소재 중 가장 작은 직경 (예: 6mm → 8mm M4 우선, 10mm M5 후순위)
+      // 2) 큐 부하(적은 쪽)
       // 3) 최근 배정이 오래된 장비
       // 4) machineId 사전순
-      // 이후 당일 신속 14:00 마감이 위험하면 expressDeadlineRebalance가 여유 장비로 옮길 수 있다.
-      if (a.queue !== b.queue) return a.queue - b.queue;
-
+      // 당일/출고일 신속 14:00 마감이 위험하고 한 장비로는 못 맞출 때만
+      // expressDeadlineRebalance가 여유(대형) 장비로 옮길 수 있다.
       if (a.availableDia !== b.availableDia)
         return a.availableDia - b.availableDia;
+
+      if (a.queue !== b.queue) return a.queue - b.queue;
 
       const aAssignedAt = a.lastAssignmentAt
         ? new Date(a.lastAssignmentAt).getTime()

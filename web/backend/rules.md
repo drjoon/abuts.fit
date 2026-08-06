@@ -81,9 +81,14 @@
     - 지연/모드 전환 취소: `cancelExpressSurchargeIfShipDelayed` → `deleteExpressSurchargeAtomic` (표시 금액도 추가비 제외로 재동기화)
   - 기본 배송 방식: `BusinessAnchor.shippingPolicy.defaultShippingMode` (`normal`|`express`)
     - PATCH: `business.update.controller.js` / 프론트 `NewRequestShippingSection` + `useBulkShippingPolicy`
-  - 스케줄: `production.utils.js` `calculateInitialProductionSchedule({ shippingMode })` (신속: 12시 KST 컷오프)
+  - 스케줄: `production.utils.js` `calculateInitialProductionSchedule({ shippingMode })`
+    - 신속: **KST 12시 이전** 당일 영업일이면 당일 16:00 출고, 이후(또는 휴일)면 +1영업일
+    - 묶음: `resolveLeadDaysWithSameDayCutoff` — 접수 당일=1일차 → `(N-1)` 영업일 후
+      주간 발송 요일 정렬 (`resolveNextWeeklyBatchYmd`)
   - 묶음 발송 요일 정렬: `resolveNextWeeklyBatchYmd` — YMD 달력일 요일은 서버 로컬 `getDay()` 금지
-    (UTC noon 기준). 프로세스 TZ는 `Asia/Seoul`이어도 방어적으로 유지.
+    (UTC noon 기준). UTC 서버에서 `T00:00:00+09:00`.getDay()를 쓰면 금→토로 읽고
+    `fri+mon` 묶음이 화요일로 튀는 회귀가 난다.
+  - 출고 우선순위 라벨: `shippingPriority.utils.js` (`출고 N일전` / `출고 N시간전`)
   - 출고일 재계산 스크립트: `scripts/db/fix-today-estimated-ship-ymd.js`
     (`ABUTS_DB_FORCE=true ENV_FILE=local.env|prod.env`, dry-run 후 `--apply`)
   - `getTodayYmdInKst(date?)`는 인자 날짜의 KST YMD를 반환(미지정 시 지금). 스케줄 재계산 시
@@ -117,13 +122,16 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
 
 - `chooseMachineForCamMachining` (`common.review.machine.js`)
 - 후보: 활성 CNC + `allowRequestAssign` + 현재 소재 직경 있음 + 소재 직경 ≥ 요청 `maxDiameter`
-- 정렬: ① 큐 부하(적은 쪽) ② 커버 가능한 최소 소재 직경 ③ 오래된 `lastAssignmentAt` ④ `machineId`
+- 정렬: ① 커버 가능한 최소 소재 직경 ② 큐 부하(적은 쪽) ③ 오래된 `lastAssignmentAt` ④ `machineId`
+- 당일/출고일 신속 14:00 마감이 위험하고 한 장비로는 못 맞출 때만 `expressDeadlineRebalance`가 여유(대형) 장비로 옮길 수 있다.
 
 #### C. 신속배송 14:00 완료 — 빠른 가공 재배치
 
 - 구현: `controllers/requests/expressDeadlineRebalance.utils.js` `rebalanceExpressJobsForFourteenOClockDeadline`
 - 트리거: `CAM_STAGE_APPROVED` 후처리(`reviewApprovalQueue.service.js`), 수동 「재배정」
-- 조건: 당일 발송 신속건의 예상 가공 완료가 14:00(KST)을 넘기고, 다른 장비가 여유 있으며 소재로 커버 가능하면 이동
+- 1단계(consolidate): 출고일 14:00(KST) 내 완료 가능하면 대형 소재 장비(M5 등)의 신속건을 **최소 커버 소재 장비**(M4 등)로 합친다 (`machineCanCoverRequest`).
+- 2단계(spread): 한 장비 큐가 **출고일 14:00** 마감을 넘기면, 다른 여유 장비로 분산(소재 직경 작은 장비 우선).
+- 조건: `estimatedShipYmd` 각 건의 출고일 14:00 — 당일만이 아님.
 - 소재 직경 변경 시 Esprit force 재생성 (`REQUEST_STAGE_APPROVED` + `forceReprocess`)
 - 메타/뱃지: `productionSchedule.fastMachiningRebalance` → 프론트 「빠른 가공 재배치」
 - Alert: `SystemSettings.lastExpressDeadlineRebalance` + socket `machining:express-rebalance`

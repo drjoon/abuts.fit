@@ -1,9 +1,13 @@
 // change-log:
+// - 2026-08-06: 묶음 리드타임 (N-1) 복원. 접수 당일을 1일차로 포함(자정 컷오프/
+//   PricingPolicyDialog SSOT). lead=1이면 당일 기준일 → 주간 발송 요일 정렬.
 // - 2026-08-06: 스케줄 기준일을 toKstYmd(requestedAt)로 고정. 재계산 시 오늘 기준 밀림 방지.
 // - 2026-08-06: resolveNextWeeklyBatchYmd 요일 판정을 서버 로컬 getDay() 대신
 //   YMD 달력일 기준(UTC noon)으로 바꿔 UTC 서버에서 목→금으로 하루 밀리던 버그 수정.
 // related files:
 // - web/backend/rules.md
+// - web/frontend/src/pages/requestor/new_request/hooks/useLeadTimeForecast.ts
+// - web/frontend/src/shared/ui/PricingPolicyDialog.tsx
 // - web/backend/app.js
 // - web/backend/server.js
 // - web/backend/modules/requests/request.routes.js
@@ -120,11 +124,13 @@ export function resolveLeadDaysWithSameDayCutoff({ leadDays, requestedAt }) {
   const rawDays = Number.isFinite(leadDays) ? Number(leadDays) : 1;
   const baseDays = Math.max(1, Math.floor(rawDays));
 
-  // ETA 리드타임은 "오늘 자정 전 접수 = 최소 1일" 정책을 따른다.
-  // 생성 시각 cutoff로 (N-1) 보정하지 않고, 설정값(N일)을 그대로 사용하되
-  // 잘못된 설정값(0 이하)이 들어와도 최소 1일을 강제한다.
+  // PricingPolicyDialog / BulkShippingBanner SSOT:
+  // KST 자정(0시)까지 접수분은 접수 당일을 리드타임 1일차로 포함한다.
+  // 예) minBusinessDays=1 → 추가 영업일 0(당일 기준) → 주간 발송 요일로 정렬.
+  // requestedAt은 컷오프 시각 분기용으로 남겨 두되, 자정 정책에서는 당일 전체가
+  // "자정 전"이므로 (N-1)만 적용한다.
   void requestedAt;
-  return baseDays;
+  return Math.max(0, baseDays - 1);
 }
 
 export function addKstCalendarDays({ startYmd, days }) {

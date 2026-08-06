@@ -157,7 +157,7 @@ export const RequestorEditRequestDialog = ({
               <span>{formatDateWithDay(editingRequest?.createdAt)}</span>
             </div>
             <div className="flex justify-between">
-              <span className="font-medium">발송 예정일:</span>
+              <span className="font-medium">출고 예정일:</span>
               <span>{formatDateWithDay(editingRequest?.estimatedShipYmd)}</span>
             </div>
           </div>

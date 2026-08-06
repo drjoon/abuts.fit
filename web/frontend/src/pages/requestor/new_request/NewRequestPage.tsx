@@ -1492,7 +1492,7 @@ export const NewRequestPage = () => {
                     toast({
                       title: "설정 필요",
                       description:
-                        "묶음 배송 의뢰가 있어 발송 요일을 선택한 후 다시 시도하세요.",
+                        "묶음 출고 의뢰가 있어 출고 요일을 선택한 후 다시 시도하세요.",
                       variant: "destructive",
                       duration: 4500,
                     });
