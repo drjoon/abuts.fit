@@ -1,3 +1,5 @@
+// change-log:
+// - 2026-08-06: NC 첨부 시 NC 뱃지·최대직경 표시.
 // related files:
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
@@ -33,6 +35,9 @@ export interface PlaylistJobItem {
   anodizingEnabled?: boolean;
   // 배송 방식(신속/묶음). 재생목록 뱃지 표시용.
   shippingMode?: "normal" | "express" | null;
+  // NC 첨부 여부·최대직경. 워크시트 카드와 동일한 뱃지/치수 표시용.
+  hasNc?: boolean;
+  maxDiameter?: number | null;
   programNo?: number | null;
   source?: string;
 }
@@ -152,6 +157,16 @@ export const CncPlaylistDrawer: React.FC<CncPlaylistDrawerProps> = ({
                 const rollbackCount = Number(job.rollbackCount || 0);
                 const canApproveFromRollback =
                   !readOnly && rollbackCount > 0 && !!job.requestMongoId;
+                const hasNc =
+                  job.hasNc === true ||
+                  Boolean(String(job.s3Key || "").trim()) ||
+                  Boolean(String(job.bridgePath || "").trim());
+                const maxDiameter =
+                  typeof job.maxDiameter === "number" &&
+                  Number.isFinite(job.maxDiameter) &&
+                  job.maxDiameter > 0
+                    ? job.maxDiameter
+                    : null;
                 return (
                   <div
                     key={job.id}
@@ -238,6 +253,11 @@ export const CncPlaylistDrawer: React.FC<CncPlaylistDrawerProps> = ({
                                     아노 X
                                   </span>
                                 ) : null}
+                                {hasNc ? (
+                                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-extrabold border border-cyan-200 bg-cyan-50 text-cyan-700">
+                                    NC
+                                  </span>
+                                ) : null}
                                 {job.shippingMode === "express" ||
                                 job.shippingMode === "normal" ? (
                                   <ShippingModeBadge
@@ -259,6 +279,14 @@ export const CncPlaylistDrawer: React.FC<CncPlaylistDrawerProps> = ({
                               <span className="inline-flex items-center rounded-full bg-slate-50 px-2 py-0.5 text-[10px] font-extrabold text-slate-700 border border-slate-200">
                                 {job.paused ? "일시정지" : "대기"}
                               </span>
+                              {hasNc && maxDiameter != null ? (
+                                <span
+                                  className="inline-flex items-center rounded-full bg-white px-2 py-0.5 text-[10px] font-semibold text-slate-600 border border-slate-200"
+                                  title={`최대직경 ${maxDiameter.toFixed(3)}`}
+                                >
+                                  최대 Ø{maxDiameter.toFixed(3)}
+                                </span>
+                              ) : null}
                             </div>
                           </div>
                         </button>

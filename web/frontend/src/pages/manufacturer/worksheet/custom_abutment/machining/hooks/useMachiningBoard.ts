@@ -873,6 +873,20 @@ export const useMachiningBoard = ({
           q as { caseInfos?: { anodizingEnabled?: boolean } }
         )?.caseInfos?.anodizingEnabled;
         const shippingMode = resolveShippingMode(q);
+        const hasNc = Boolean(
+          s3Key ||
+            bridgePath ||
+            (q as { caseInfos?: { ncFile?: { s3Key?: string } } })?.caseInfos
+              ?.ncFile?.s3Key,
+        );
+        const maxDiameterRaw = Number(
+          (q as { caseInfos?: { maxDiameter?: number } })?.caseInfos
+            ?.maxDiameter,
+        );
+        const maxDiameter =
+          Number.isFinite(maxDiameterRaw) && maxDiameterRaw > 0
+            ? maxDiameterRaw
+            : null;
         return {
           id: rid,
           name: formatMachiningLabel(q),
@@ -887,6 +901,8 @@ export const useMachiningBoard = ({
           rollbackCount,
           anodizingEnabled,
           shippingMode,
+          hasNc,
+          maxDiameter,
         } satisfies PlaylistJobItem;
       })
       .filter(Boolean) as PlaylistJobItem[];
