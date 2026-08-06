@@ -1388,7 +1388,7 @@ export const PracticeFileTransferPage = () => {
 
       const forceResync = Boolean(options?.forceResync || payload.forceResync);
 
-      // 동기화 시작 중에는 HTTP 응답이 SSOT. forceResync echo는 업로드 종료 후 적용.
+      // 파일 업로드 중에는 HTTP 응답이 SSOT. forceResync echo는 업로드 종료 후 적용.
       if (fileSyncInFlightRef.current) {
         if (forceResync) {
           pendingDraftApplyRef.current = { ...payload, forceResync: true };
@@ -2292,17 +2292,43 @@ export const PracticeFileTransferPage = () => {
     ],
   );
 
+  const hasMeaningfulFormInputForAutosave = useMemo(() => {
+    if (normalizedPatientName) return true;
+    if (String(requestMemo || "").trim()) return true;
+    if (String(selectedLab?._id || selectedLab?.name || "").trim()) return true;
+    if (
+      toothWorks.some(
+        (row) =>
+          String(row.toothNumber || "").trim() ||
+          Boolean(row.customAbutment) ||
+          String(row.implantManufacturer || "").trim(),
+      )
+    ) {
+      return true;
+    }
+    return false;
+  }, [normalizedPatientName, requestMemo, selectedLab?._id, selectedLab?.name, toothWorks]);
+
   useEffect(() => {
     if (!localFormHydrated) return;
     if (skipFormAutosaveRef.current) return;
     if (!authToken) return;
     if (tempSaving || requestSubmitting) return;
-    if (lastSavedFormFingerprint === null) return;
-    if (currentFormFingerprint === lastSavedFormFingerprint) {
+
+    const fingerprintUnchanged =
+      lastSavedFormFingerprint !== null &&
+      currentFormFingerprint === lastSavedFormFingerprint;
+
+    if (fingerprintUnchanged) {
       pendingLocalFormEditRef.current = false;
       setFormSyncStatus((prev) =>
         prev === "pending" || prev === "error" || prev === "saving" ? "saved" : prev,
       );
+      return;
+    }
+
+    // 첫 임시저장(baseline 없음): 의미 있는 의뢰 입력이 있을 때만 서버에 올린다.
+    if (lastSavedFormFingerprint === null && !hasMeaningfulFormInputForAutosave) {
       return;
     }
 
@@ -2338,6 +2364,7 @@ export const PracticeFileTransferPage = () => {
     authToken,
     currentFormFingerprint,
     draftFiles.length,
+    hasMeaningfulFormInputForAutosave,
     lastSavedFormFingerprint,
     localFormHydrated,
     persistFormDraftAutosave,
@@ -4006,19 +4033,8 @@ export const PracticeFileTransferPage = () => {
       return;
     }
 
-    if (files.length === 0 && draftFilesRef.current.length === 0) {
-      const hasFormContent =
-        Boolean(normalizedPatientName) ||
-        Boolean(String(requestMemo || "").trim()) ||
-        Boolean(String(selectedLab?._id || selectedLab?.name || "").trim()) ||
-        toothWorks.some(
-          (row) =>
-            String(row.toothNumber || "").trim() ||
-            Boolean(row.customAbutment) ||
-            String(row.implantManufacturer || "").trim(),
-        );
-      if (!hasFormContent) return;
-    }
+    // 업로드 버튼: 대기 중인 로컬 파일이 있을 때만 동작
+    if (files.length === 0) return;
 
     setTempSaving(true);
     fileSyncInFlightRef.current = true;
@@ -4031,9 +4047,7 @@ export const PracticeFileTransferPage = () => {
     }
 
     try {
-      const uploadedTempFiles: TempUploadedFile[] = files.length
-        ? await uploadFilesWithToast(files)
-        : [];
+      const uploadedTempFiles: TempUploadedFile[] = await uploadFilesWithToast(files);
 
       // 업로드 중 원격/autosave로 draftFiles가 바뀌었을 수 있으므로 ref 기준으로 병합한다.
       const mergedDraftFiles = [
@@ -4123,10 +4137,8 @@ export const PracticeFileTransferPage = () => {
           });
         }
       }
-      if (files.length > 0) {
-        // 로컬 대기 파일만 비운다. draftFiles·기공소·환자명 등 작성 중인 폼은 유지한다.
-        await clearAllFiles();
-      }
+      // 로컬 대기 파일만 비운다. draftFiles·기공소·환자명 등 작성 중인 폼은 유지한다.
+      await clearAllFiles();
       setTempSaveDirty(false);
       void loadPracticeTransferDraftList();
 
@@ -4163,14 +4175,14 @@ export const PracticeFileTransferPage = () => {
         // ignore
       }
       toast({
-        title: "동기화됨",
+        title: "업로드됨",
         description:
-          "작성 내용을 이 케이스에 맞췄습니다. 임시저장에 표시되며 동료·다른 PC에도 바로 반영됩니다.",
+          "파일이 임시저장에 반영되었습니다. 의뢰서 입력은 자동으로 동기화되며 동료·다른 PC에도 맞춰집니다.",
       });
     } catch (error) {
       toast({
-        title: "임시저장 실패",
-        description: error instanceof Error ? error.message : "임시저장 중 오류가 발생했습니다.",
+        title: "업로드 실패",
+        description: error instanceof Error ? error.message : "파일 업로드 중 오류가 발생했습니다.",
         variant: "destructive",
       });
     } finally {
@@ -4377,27 +4389,8 @@ export const PracticeFileTransferPage = () => {
     }
   };
 
-  const hasMeaningfulFormInput = useMemo(() => {
-    if (normalizedPatientName) return true;
-    if (String(requestMemo || "").trim()) return true;
-    if (String(selectedLab?._id || selectedLab?.name || "").trim()) return true;
-    if (
-      toothWorks.some(
-        (row) =>
-          String(row.toothNumber || "").trim() ||
-          Boolean(row.customAbutment) ||
-          String(row.implantManufacturer || "").trim(),
-      )
-    ) {
-      return true;
-    }
-    return false;
-  }, [normalizedPatientName, requestMemo, selectedLab?._id, selectedLab?.name, toothWorks]);
-
-  const canTempSave =
-    !requestSubmitting &&
-    !tempSaving &&
-    (files.length > 0 || draftFiles.length > 0 || hasMeaningfulFormInput);
+  const canUploadPendingFiles =
+    !requestSubmitting && !tempSaving && files.length > 0;
 
   const formSyncStatusLabel =
     formSyncStatus === "pending"
@@ -4469,8 +4462,6 @@ export const PracticeFileTransferPage = () => {
       formAutosaveTimerRef.current = null;
     }
     skipFormAutosaveRef.current = true;
-    lastSavedFormFingerprintRef.current = null;
-    setLastSavedFormFingerprint(null);
     lastAppliedServerUpdatedAtRef.current = 0;
     pendingLocalFormEditRef.current = false;
     setFormSyncStatus("idle");
@@ -4478,12 +4469,15 @@ export const PracticeFileTransferPage = () => {
     setLabOpen(false);
     setLabSearch("");
     // 최근 기공소(localStorage + 서버 전송내역)는 유지. 가장 최근 기공소를 기본 선택.
-    setSelectedLab(recentLabsRef.current[0] ?? null);
+    const nextLab = recentLabsRef.current[0] ?? null;
+    setSelectedLab(nextLab);
     setPatientName("");
     setRequestMemo("");
-    setOrderDate(todayDate);
-    setArrivalDate(addDaysToDateInput(todayDate, arrivalDefaultDays));
-    setToothWorks([
+    const nextOrderDate = todayDate;
+    const nextArrivalDate = addDaysToDateInput(todayDate, arrivalDefaultDays);
+    setOrderDate(nextOrderDate);
+    setArrivalDate(nextArrivalDate);
+    const nextToothWorks: ToothWorkSelection[] = [
       {
         toothNumber: "",
         prosthesisType: resolveDefaultProsthesisType(normalizedProsthesisTypes),
@@ -4491,7 +4485,8 @@ export const PracticeFileTransferPage = () => {
         bridgeLinkedTeeth: [],
         ...emptyToothWorkCustomSpecs(),
       },
-    ]);
+    ];
+    setToothWorks(nextToothWorks);
 
     // 화면만 비움. 서버 임시저장은 목록에 유지(삭제는 임시저장 카드에서).
     await clearAllFiles();
@@ -4500,6 +4495,24 @@ export const PracticeFileTransferPage = () => {
     setActiveDraftId(null);
     activeDraftSeenInListRef.current = null;
     setTempSaveDirty(false);
+
+    // 기본 기공소만 선택된 상태로는 자동 임시저장하지 않도록 baseline을 맞춘다.
+    // 이후 의뢰서 항목을 바꾸거나 파일을 업로드하면 그때 동기화된다.
+    const baselineFingerprint = buildPracticeTransferFormFingerprint({
+      targetLabAnchorId: nextLab?._id,
+      targetLabName: nextLab?.name,
+      patientName: "",
+      orderDate: nextOrderDate,
+      arrivalDate: nextArrivalDate,
+      arrivalDefaultDays,
+      requestMemo: "",
+      prosthesisTypes: normalizedProsthesisTypes,
+      toothWorks: normalizeToothWorksForSync(nextToothWorks),
+    });
+    lastSavedFormFingerprintRef.current = baselineFingerprint;
+    setLastSavedFormFingerprint(baselineFingerprint);
+    currentFormFingerprintRef.current = baselineFingerprint;
+
     void loadPracticeTransferDraftList();
     queueMicrotask(() => {
       skipFormAutosaveRef.current = false;
@@ -4740,27 +4753,6 @@ export const PracticeFileTransferPage = () => {
                   <TooltipProvider delayDuration={0}>
                     <Tooltip>
                       <TooltipTrigger asChild>
-                        <span>
-                          <Button
-                            type="button"
-                            size="sm"
-                            className="h-8 bg-blue-600 text-white hover:bg-blue-700 disabled:bg-blue-600/50"
-                            onClick={() => void handleTempSaveDraft()}
-                            disabled={!canTempSave || tempSaving}
-                          >
-                            {tempSaving ? "동기화 중..." : "동기화 시작"}
-                          </Button>
-                        </span>
-                      </TooltipTrigger>
-                      <TooltipContent side="bottom" className="max-w-xs text-xs leading-relaxed">
-                        첨부파일이나 의뢰서 내용(기공소·환자명·치아·메모 등) 중 하나라도 있으면 시작할 수
-                        있습니다. 동기화되면 임시저장에 표시되고, 동료·다른 PC와 맞춰집니다.
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                  <TooltipProvider delayDuration={0}>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
                         <Button
                           type="button"
                           variant="outline"
@@ -4804,6 +4796,15 @@ export const PracticeFileTransferPage = () => {
                   },
                   onClearAllFiles: () => {
                     void handleClearAllTransferFiles();
+                  },
+                  syncUploadLabel: "업로드",
+                  syncUploadBusyLabel: "업로드 중...",
+                  syncUploadDisabled: !canUploadPendingFiles,
+                  syncUploadBusy: tempSaving,
+                  syncUploadHint:
+                    "대기 중인 파일을 서버에 올려 임시저장합니다. 의뢰서 입력(기공소·환자명·치아·메모 등)은 입력하는 즉시 자동으로 동기화됩니다.",
+                  onSyncUpload: () => {
+                    void handleTempSaveDraft();
                   },
                 }}
                 requestIntakeProps={{
@@ -5170,7 +5171,7 @@ export const PracticeFileTransferPage = () => {
                   <button type="button" className="flex w-full items-center justify-between gap-2 text-left">
                     <CardTitle className="flex items-center gap-2 text-base">
                       <BookmarkPlus className="h-4 w-4 text-slate-500" />
-                      임시저장
+                      작성중인 의뢰서 임시저장
                       {draftGroupedTransfers.length > 0 ? (
                         <Badge variant="secondary" className="ml-1">
                           {draftGroupedTransfers.length}
@@ -5187,7 +5188,7 @@ export const PracticeFileTransferPage = () => {
               <CardContent className="space-y-2">
                 {draftGroupedTransfers.length === 0 ? (
                   <div className="rounded-lg border border-dashed px-3 py-6 text-center text-sm text-muted-foreground">
-                    임시저장 없음
+                    작성중인 의뢰서 없음
                   </div>
                 ) : (
                   <div className="max-h-[15.25rem] space-y-2 overflow-y-auto pr-1">

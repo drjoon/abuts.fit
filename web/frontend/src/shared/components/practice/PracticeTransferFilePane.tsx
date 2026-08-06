@@ -28,7 +28,7 @@ export type PracticeTransferFilePaneProps = {
   onRemoveFile: (key: string) => void;
   onClearAllFiles: () => void;
   listViewportClassName?: string;
-  /** @deprecated 동기화 버튼은 대시보드 헤더로 이동. 하위 호환용으로만 유지 */
+  /** 대기 중인 로컬 파일을 서버 임시저장으로 업로드 */
   syncUploadLabel?: string;
   syncUploadBusyLabel?: string;
   syncUploadDisabled?: boolean;
@@ -46,6 +46,12 @@ export const PracticeTransferFilePane = ({
   onRemoveFile,
   onClearAllFiles,
   listViewportClassName = "h-[16rem] max-h-[16rem]",
+  syncUploadLabel = "업로드",
+  syncUploadBusyLabel = "업로드 중...",
+  syncUploadDisabled = false,
+  syncUploadBusy = false,
+  syncUploadHint,
+  onSyncUpload,
 }: PracticeTransferFilePaneProps) => {
   const cardClassName =
     "overflow-hidden rounded-xl border border-slate-200/80 bg-white shadow-sm";
@@ -93,16 +99,42 @@ export const PracticeTransferFilePane = ({
           <div className="text-xs text-slate-500">
             {files.length}개 · {totalSizeMb}MB
           </div>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="h-7 rounded-lg border-slate-200 bg-white text-xs"
-            onClick={onClearAllFiles}
-            disabled={files.length === 0}
-          >
-            전체삭제
-          </Button>
+          <div className="flex items-center gap-1.5">
+            {onSyncUpload ? (
+              <TooltipProvider delayDuration={0}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span>
+                      <Button
+                        type="button"
+                        size="sm"
+                        className="h-7 rounded-lg bg-blue-600 px-2.5 text-xs text-white hover:bg-blue-700 disabled:bg-blue-600/50"
+                        onClick={onSyncUpload}
+                        disabled={syncUploadDisabled || syncUploadBusy}
+                      >
+                        {syncUploadBusy ? syncUploadBusyLabel : syncUploadLabel}
+                      </Button>
+                    </span>
+                  </TooltipTrigger>
+                  {syncUploadHint ? (
+                    <TooltipContent side="bottom" className="max-w-xs text-xs leading-relaxed">
+                      {syncUploadHint}
+                    </TooltipContent>
+                  ) : null}
+                </Tooltip>
+              </TooltipProvider>
+            ) : null}
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-7 rounded-lg border-slate-200 bg-white text-xs"
+              onClick={onClearAllFiles}
+              disabled={files.length === 0}
+            >
+              전체삭제
+            </Button>
+          </div>
         </div>
 
         {files.length === 0 ? (
