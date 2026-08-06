@@ -16,6 +16,8 @@ import {
   MessageReply,
   type ReplyToMessage,
 } from "@/features/chat/components/MessageReply";
+import { PracticeToothWorkChartReadOnly } from "@/shared/components/practice/PracticeToothWorkChartReadOnly";
+import type { ToothWorkSelection } from "@/shared/practice/transferMemo";
 
 export type PracticeTransferDialogSummaryItem = {
   label: string;
@@ -36,6 +38,9 @@ type PracticeTransferDetailChatDialogProps = {
   conversationTitle: string;
   summaryItems: PracticeTransferDialogSummaryItem[];
   memo: string;
+  /** 보철물 치식 차트(읽기 전용). 있으면 의뢰 메모 위에 표시 */
+  toothWorks?: ToothWorkSelection[];
+  toothWorksKey?: string;
   filesLabel: string;
   files: PracticeTransferDialogFileItem[];
   onDownloadAllFiles: () => void | Promise<void>;
@@ -77,6 +82,8 @@ export function PracticeTransferDetailChatDialog({
   conversationTitle,
   summaryItems,
   memo,
+  toothWorks,
+  toothWorksKey,
   filesLabel,
   files,
   onDownloadAllFiles,
@@ -105,6 +112,8 @@ export function PracticeTransferDetailChatDialog({
   inputDisabled,
   sendDisabled,
 }: PracticeTransferDetailChatDialogProps) {
+  const hasToothWorks = Array.isArray(toothWorks) && toothWorks.length > 0;
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="w-[95vw] max-w-6xl h-[86vh] p-0 overflow-hidden flex flex-col">
@@ -126,6 +135,13 @@ export function PracticeTransferDetailChatDialog({
                   </div>
                 ))}
               </div>
+
+              {hasToothWorks ? (
+                <PracticeToothWorkChartReadOnly
+                  key={toothWorksKey || "tooth-works"}
+                  toothWorks={toothWorks}
+                />
+              ) : null}
 
               <div>
                 <p className="text-muted-foreground">의뢰 메모</p>

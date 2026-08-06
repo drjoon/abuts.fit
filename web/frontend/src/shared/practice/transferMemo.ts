@@ -834,7 +834,11 @@ export const buildPracticeTransferMemo = (params: {
 
 export const formatPracticeTransferMemoDetail = (
   rawMemo: string,
-  options?: { includeDateSummary?: boolean },
+  options?: {
+    includeDateSummary?: boolean;
+    includeToothWorks?: boolean;
+    includePatientName?: boolean;
+  },
 ) => {
   const source = String(rawMemo || "").trim();
   if (!source) return "";
@@ -846,6 +850,8 @@ export const formatPracticeTransferMemoDetail = (
   const parsed = parsePracticeTransferMemoMeta(source);
   const summarySections: string[] = [];
   const includeDateSummary = options?.includeDateSummary !== false;
+  const includeToothWorks = options?.includeToothWorks !== false;
+  const includePatientName = options?.includePatientName !== false;
 
   if (includeDateSummary) {
     const dateSummaryParts: string[] = [];
@@ -856,15 +862,17 @@ export const formatPracticeTransferMemoDetail = (
     }
   }
 
-  if (parsed.patientName) {
+  if (includePatientName && parsed.patientName) {
     summarySections.push(`환자명 ${parsed.patientName}`);
   }
 
-  const toothSummary = formatToothWorksForDisplay(parsed.toothWorks, { multiline: true });
-  if (toothSummary) {
-    summarySections.push(`치아보철\n${toothSummary}`);
-  } else if (parsed.prosthesisTypes.length > 0) {
-    summarySections.push(`보철물 형태\n${parsed.prosthesisTypes.join(", ")}`);
+  if (includeToothWorks) {
+    const toothSummary = formatToothWorksForDisplay(parsed.toothWorks, { multiline: true });
+    if (toothSummary) {
+      summarySections.push(`치아보철\n${toothSummary}`);
+    } else if (parsed.prosthesisTypes.length > 0) {
+      summarySections.push(`보철물 형태\n${parsed.prosthesisTypes.join(", ")}`);
+    }
   }
 
   const freeMemo = String(parsed.memo || "").trim();

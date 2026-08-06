@@ -107,7 +107,12 @@ const toVirtualRequestRows = (transferDoc) => {
           ? "수신완료"
           : "발송완료";
 
-  return files.map((item, idx) => ({
+  // 첨부 파일 없는 전송도 최근 의뢰 목록에 보이도록 placeholder row 1건 생성
+  const memoPatientMatch = transferMemo.match(/\[\s*환자명\s*:\s*([^\]]+)\]/);
+  const memoPatientName = String(memoPatientMatch?.[1] || "").trim();
+  const sourceRows = files.length > 0 ? files : [null];
+
+  return sourceRows.map((item, idx) => ({
     _id: `${String(transferDoc._id)}:${idx + 1}`,
     requestId: `${transferId}-${idx + 1}`,
     manufacturerStage,
@@ -115,7 +120,7 @@ const toVirtualRequestRows = (transferDoc) => {
     practiceTransferId: String(transferDoc?._id || ""),
     caseInfos: {
       clinicName: "",
-      patientName: String(item?.patientName || "").trim(),
+      patientName: String(item?.patientName || memoPatientName || "").trim(),
       tooth: String(item?.tooth || "").trim(),
       file: {
         originalName: String(item?.file?.originalName || "").trim(),
@@ -1062,13 +1067,6 @@ export async function createPracticeTransfer(req, res) {
         };
       })
       .filter(Boolean);
-
-    if (files.length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: "저장할 3D 모델 또는 그림 파일이 없습니다.",
-      });
-    }
 
     const transferDoc = await PracticeTransfer.create({
       transferId,

@@ -39,7 +39,6 @@ import {
   type PracticeTransferDialogSummaryItem,
 } from "@/shared/components/PracticeTransferDetailChatDialog";
 import {
-  formatPracticeTransferMemoDetail,
   formatToothWorksForDisplay,
   parsePracticeTransferMemoMeta as parsePracticeTransferMemoMetaShared,
   parseToothWorks,
@@ -713,9 +712,29 @@ export default function RequestorPracticePage() {
 
   const selectedTransferDisplayMemo = useMemo(
     () =>
-      formatPracticeTransferMemoDetail(String(selectedTransfer?.rawTransferMemo || ""), {
-        includeDateSummary: false,
-      }),
+      String(
+        parsePracticeTransferMemoMetaShared(String(selectedTransfer?.rawTransferMemo || "")).memo ||
+          "",
+      ).trim(),
+    [selectedTransfer?.rawTransferMemo],
+  );
+
+  const selectedTransferPatientName = useMemo(() => {
+    const fromMemo = String(
+      parsePracticeTransferMemoMetaShared(String(selectedTransfer?.rawTransferMemo || ""))
+        .patientName || "",
+    ).trim();
+    if (fromMemo) return fromMemo;
+    const fromFiles = (selectedTransfer?.files || [])
+      .map((file) => String(file.patientName || "").trim())
+      .find(Boolean);
+    return fromFiles || "";
+  }, [selectedTransfer?.files, selectedTransfer?.rawTransferMemo]);
+
+  const selectedTransferToothWorks = useMemo(
+    () =>
+      parsePracticeTransferMemoMetaShared(String(selectedTransfer?.rawTransferMemo || ""))
+        .toothWorks,
     [selectedTransfer?.rawTransferMemo],
   );
 
@@ -1440,16 +1459,16 @@ export default function RequestorPracticePage() {
         conversationTitle="치과와의 소통"
         summaryItems={[
           { label: "전송ID", value: selectedTransfer?.transferId || "-" },
-          {
-            label: "전송시각",
-            value: selectedTransfer ? formatDateTime(selectedTransfer.createdAt) : "-",
-          },
+          { label: "전송시각", value: selectedTransfer ? formatDateTime(selectedTransfer.createdAt) : "-" },
           { label: "치과", value: selectedTransfer?.practice.businessName || "-" },
           { label: "담당자", value: selectedTransfer?.practice.userName || "-" },
+          { label: "환자명", value: selectedTransferPatientName || "-" },
           { label: "주문일", value: selectedTransfer?.orderDate || "-" },
           { label: "도착일", value: selectedTransfer?.arrivalDate || "-" },
         ] satisfies PracticeTransferDialogSummaryItem[]}
         memo={selectedTransferDisplayMemo}
+        toothWorks={selectedTransferToothWorks}
+        toothWorksKey={selectedTransfer?.transferId || "requestor-transfer"}
         filesLabel="전송 파일"
         files={
           (selectedTransfer?.files || []).map((file) => ({

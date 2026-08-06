@@ -175,6 +175,8 @@ type RecentRequestItem = {
   orderDate: string;
   arrivalDate: string;
   transferMemo: string;
+  /** 메타 태그 포함 원본 메모 — 보철물 차트 파싱용 */
+  rawTransferMemo: string;
   fileName: string;
   fileS3Key: string;
   fileSize: number;
@@ -297,6 +299,8 @@ type RecentTransferItem = {
   fileNames: string[];
   files: TransferFileItem[];
   transferMemo: string;
+  /** 메타 태그 포함 원본 메모 — 보철물 차트 파싱용 */
+  rawTransferMemo?: string;
   unreadCount: number;
   searchBlob: string;
   practiceUserId?: string;
@@ -1872,6 +1876,7 @@ export const PracticeFileTransferPage = () => {
             orderDate,
             arrivalDate,
             transferMemo,
+            rawTransferMemo: strippedTransferMemo,
             fileName: String(fileObj.originalName || fileObj.name || "").trim(),
             fileS3Key: String(fileObj.s3Key || "").trim(),
             fileSize: Number(fileObj.size || 0),
@@ -2615,6 +2620,7 @@ export const PracticeFileTransferPage = () => {
           });
         }
         const unreadCount = Number(unreadByTransferId.get(req.transferId) || 0);
+        const hasFile = Boolean(req.fileName && req.fileS3Key);
         byKey.set(key, {
           id: req.id,
           transferId: req.transferId || "-",
@@ -2626,15 +2632,16 @@ export const PracticeFileTransferPage = () => {
           orderDate: req.orderDate,
           arrivalDate: req.arrivalDate,
           status: req.status,
-          fileCount: 1,
+          fileCount: hasFile ? 1 : 0,
           patientCount: Math.max(1, initialPatients.size),
           requestIds: [req.id],
           transferMongoIds: req.requestMongoId ? [req.requestMongoId] : [],
-          fileNames: req.fileName ? [req.fileName] : [],
-          files: req.fileName && req.fileS3Key
+          fileNames: hasFile ? [req.fileName] : [],
+          files: hasFile
             ? [{ fileName: req.fileName, s3Key: req.fileS3Key, size: Number(req.fileSize || 0) }]
             : [],
           transferMemo: req.transferMemo,
+          rawTransferMemo: req.rawTransferMemo,
           unreadCount,
           searchBlob: [
             req.id,
@@ -2661,7 +2668,16 @@ export const PracticeFileTransferPage = () => {
         continue;
       }
 
-      existing.fileCount += 1;
+      if (req.fileName && req.fileS3Key) {
+        existing._files.set(req.fileS3Key, {
+          fileName: req.fileName,
+          s3Key: req.fileS3Key,
+          size: Number(req.fileSize || 0),
+        });
+      }
+      existing.files = Array.from(existing._files.values());
+      existing.fileNames = existing.files.map((f) => f.fileName).filter(Boolean);
+      existing.fileCount = existing.files.length;
       if (patientKey) {
         existing._patients.add(patientKey);
       }
@@ -2673,18 +2689,12 @@ export const PracticeFileTransferPage = () => {
         existing._transferMongoIds.add(req.requestMongoId);
       }
       existing.transferMongoIds = Array.from(existing._transferMongoIds);
-      if (req.fileName && req.fileS3Key) {
-        existing._files.set(req.fileS3Key, {
-          fileName: req.fileName,
-          s3Key: req.fileS3Key,
-          size: Number(req.fileSize || 0),
-        });
-      }
-      existing.files = Array.from(existing._files.values());
-      existing.fileNames = existing.files.map((f) => f.fileName).filter(Boolean);
 
       if (!existing.transferMemo && req.transferMemo) {
         existing.transferMemo = req.transferMemo;
+      }
+      if (!existing.rawTransferMemo && req.rawTransferMemo) {
+        existing.rawTransferMemo = req.rawTransferMemo;
       }
       if (!existing.orderDate && req.orderDate) {
         existing.orderDate = req.orderDate;
@@ -2806,6 +2816,7 @@ export const PracticeFileTransferPage = () => {
           fileNames: files.map((file) => file.fileName).filter(Boolean),
           files,
           transferMemo: displayMemo,
+          rawTransferMemo: String(draft.transferMemo || "").trim(),
           unreadCount: 0,
           practiceUserId: draft.practiceUserId,
           practiceUserLabel: ownerLabel,
@@ -2863,6 +2874,7 @@ export const PracticeFileTransferPage = () => {
               ? [{ fileName: req.fileName, s3Key: req.fileS3Key, size: req.fileSize }]
               : [],
           transferMemo: req.transferMemo,
+          rawTransferMemo: req.rawTransferMemo,
           unreadCount: 0,
           searchBlob: "",
         });
@@ -2885,6 +2897,9 @@ export const PracticeFileTransferPage = () => {
           existing.fileNames = existing.files.map((file) => file.fileName);
           existing.fileCount = existing.files.length;
         }
+      }
+      if (!existing.rawTransferMemo && req.rawTransferMemo) {
+        existing.rawTransferMemo = req.rawTransferMemo;
       }
       if (req.createdAtTs > existing.createdAtTs) {
         existing.createdAtTs = req.createdAtTs;
@@ -2926,6 +2941,7 @@ export const PracticeFileTransferPage = () => {
         fileNames: files.map((f) => f.fileName),
         files,
         transferMemo: draft.transferMemo,
+        rawTransferMemo: String(draft.transferMemo || "").trim(),
         unreadCount: 0,
         practiceUserId: draft.practiceUserId,
         practiceUserLabel: ownerLabel,
@@ -2959,9 +2975,30 @@ export const PracticeFileTransferPage = () => {
     return new Set(ids);
   }, [authUser]);
 
-  const selectedTransferDisplayMemo = useMemo(
-    () => formatTransferMemoForDisplay(String(selectedTransfer?.transferMemo || "")),
-    [selectedTransfer?.transferMemo],
+  const selectedTransferRawMemo = useMemo(
+    () =>
+      String(selectedTransfer?.rawTransferMemo || selectedTransfer?.transferMemo || "").trim(),
+    [selectedTransfer?.rawTransferMemo, selectedTransfer?.transferMemo],
+  );
+
+  // 상세 의 메모: 메타 태그 원본에서 자유 입력 메모만 (환자명·보철물 요약 제외)
+  const selectedTransferDisplayMemo = useMemo(() => {
+    const raw = String(selectedTransfer?.rawTransferMemo || "").trim();
+    if (!raw) return "";
+    return String(parsePracticeTransferMemoMetaShared(raw).memo || "").trim();
+  }, [selectedTransfer?.rawTransferMemo]);
+
+  const selectedTransferPatientName = useMemo(() => {
+    const fromMemo = String(
+      parsePracticeTransferMemoMetaShared(selectedTransferRawMemo).patientName || "",
+    ).trim();
+    if (fromMemo) return fromMemo;
+    return String(selectedTransfer?.draftPatientName || "").trim();
+  }, [selectedTransfer?.draftPatientName, selectedTransferRawMemo]);
+
+  const selectedTransferToothWorks = useMemo(
+    () => parsePracticeTransferMemoMetaShared(selectedTransferRawMemo).toothWorks,
+    [selectedTransferRawMemo],
   );
 
   const applyDraftSummaryToForm = useCallback(
@@ -4291,10 +4328,6 @@ export const PracticeFileTransferPage = () => {
         .filter((row) => row.originalName && row.s3Key);
 
       const transferFiles = [...draftFiles, ...localTempFiles];
-      if (transferFiles.length === 0) {
-        throw new Error("전송할 파일이 없습니다.");
-      }
-
       const clinicName = autoClinicName;
       const transferId = makeTransferId();
       const transferMemo = buildPracticeTransferMemo({
@@ -4306,43 +4339,58 @@ export const PracticeFileTransferPage = () => {
         toothWorks: syncToothWorks,
         patientName: normalizedPatientName,
       });
-      const caseInfosPayload = transferFiles.map((tempFile) => {
-        const originalName = String(tempFile.originalName || "").trim();
-        const parsed = parseFilenameWithRules(originalName);
-        const tooth = String(parsed.tooth || "").trim();
+      const practiceRouting = {
+        targetLabAnchorId: toApiLabAnchorId(selectedLab?._id),
+        targetLabName: String(selectedLab?.name || "").trim(),
+      };
+      const newSystemRequestBase = {
+        requested: true,
+        manufacturer: "",
+        brand: "",
+        family: "",
+        message: `[기공소: ${String(selectedLab?.name || "")}] ${transferMemo}\n[전송ID: ${transferId}]`,
+        free: true,
+        tag: "practice_file_transfer",
+      };
+      const caseInfosPayload =
+        transferFiles.length > 0
+          ? transferFiles.map((tempFile) => {
+              const originalName = String(tempFile.originalName || "").trim();
+              const parsed = parseFilenameWithRules(originalName);
+              const tooth = String(parsed.tooth || "").trim();
 
-        return {
-          clinicName,
-          patientName: normalizedPatientName,
-          tooth,
-          workType: "abutment",
-          designSoftware: "3Shape",
-          file: {
-            originalName,
-            size: Number(tempFile.size || 0),
-            mimetype: String(tempFile.mimetype || "application/octet-stream").trim(),
-            s3Key: String(tempFile.s3Key || "").trim(),
-          },
-          newSystemRequest: {
-            requested: true,
-            manufacturer: "",
-            brand: "",
-            family: "",
-            message: `[기공소: ${String(selectedLab?.name || "")}] ${transferMemo}\n[전송ID: ${transferId}]`,
-            free: true,
-            tag: "practice_file_transfer",
-          },
-          // related files:
-          // - web/backend/models/practiceTransfer.model.js
-          // - web/backend/controllers/practiceTransfers/practiceTransfer.controller.js
-          // - web/backend/modules/practiceTransfers/practiceTransfer.routes.js
-          // practice 제출은 PracticeTransfer SSOT로 저장 (Request 컬렉션 경유 금지)
-          practiceRouting: {
-            targetLabAnchorId: toApiLabAnchorId(selectedLab?._id),
-            targetLabName: String(selectedLab?.name || "").trim(),
-          },
-        };
-      });
+              return {
+                clinicName,
+                patientName: normalizedPatientName,
+                tooth,
+                workType: "abutment",
+                designSoftware: "3Shape",
+                file: {
+                  originalName,
+                  size: Number(tempFile.size || 0),
+                  mimetype: String(tempFile.mimetype || "application/octet-stream").trim(),
+                  s3Key: String(tempFile.s3Key || "").trim(),
+                },
+                newSystemRequest: newSystemRequestBase,
+                // related files:
+                // - web/backend/models/practiceTransfer.model.js
+                // - web/backend/controllers/practiceTransfers/practiceTransfer.controller.js
+                // - web/backend/modules/practiceTransfers/practiceTransfer.routes.js
+                // practice 제출은 PracticeTransfer SSOT로 저장 (Request 컬렉션 경유 금지)
+                practiceRouting,
+              };
+            })
+          : [
+              {
+                clinicName,
+                patientName: normalizedPatientName,
+                tooth: "",
+                workType: "abutment",
+                designSoftware: "3Shape",
+                newSystemRequest: newSystemRequestBase,
+                practiceRouting,
+              },
+            ];
 
       const submitRes = await apiFetch<unknown>({
         path: "/api/practice/transfers",
@@ -4423,12 +4471,11 @@ export const PracticeFileTransferPage = () => {
 
   const missingRequiredFields = useMemo(() => {
     const missing: string[] = [];
-    if (combinedDisplayFiles.length === 0) missing.push("첨부 파일");
     if (!String(selectedLab?._id || "").trim()) missing.push("기공소");
     if (!normalizedPatientName) missing.push("환자명");
     if (normalizedToothWorks.length === 0) missing.push("보철물");
     return missing;
-  }, [combinedDisplayFiles.length, selectedLab?._id, normalizedPatientName, normalizedToothWorks.length]);
+  }, [selectedLab?._id, normalizedPatientName, normalizedToothWorks.length]);
 
   const hasRequiredSubmitFields = missingRequiredFields.length === 0;
 
@@ -5012,14 +5059,13 @@ export const PracticeFileTransferPage = () => {
                       {requestSubmitting ? (
                         <p>기공소로 전송 중입니다.</p>
                       ) : hasRequiredSubmitFields ? (
-                        <p>첨부 파일 · 기공소 · 환자명 · 보철물 입력이 완료되어 전송할 수 있습니다.</p>
+                        <p>기공소 · 환자명 · 보철물 입력이 완료되어 전송할 수 있습니다.</p>
                       ) : (
                         <div className="space-y-1">
                           <p>다음을 모두 입력하면 전송할 수 있습니다.</p>
                           <ul className="list-disc space-y-0.5 pl-3.5">
                             {(
                               [
-                                { key: "첨부 파일", ok: combinedDisplayFiles.length > 0 },
                                 { key: "기공소", ok: Boolean(String(selectedLab?._id || "").trim()) },
                                 { key: "환자명", ok: Boolean(normalizedPatientName) },
                                 { key: "보철물", ok: normalizedToothWorks.length > 0 },
@@ -5519,11 +5565,18 @@ export const PracticeFileTransferPage = () => {
             },
             { label: "전송시각", value: selectedTransfer?.createdAt || "-" },
             { label: "기공소", value: selectedTransfer?.targetLab || "-" },
+            { label: "환자명", value: selectedTransferPatientName || "-" },
             { label: "주문일", value: selectedTransfer?.orderDate || "-" },
             { label: "도착일", value: selectedTransfer?.arrivalDate || "-" },
             { label: "파일 수", value: `${selectedTransfer?.fileCount || 0}개` },
           ] satisfies PracticeTransferDialogSummaryItem[]}
           memo={selectedTransferDisplayMemo}
+          toothWorks={selectedTransferToothWorks}
+          toothWorksKey={
+            selectedTransfer?.transferId && selectedTransfer.transferId !== "-"
+              ? selectedTransfer.transferId
+              : selectedTransfer?.id || "practice-transfer"
+          }
           filesLabel="파일"
           files={
             (selectedTransfer?.files || []).map((file, idx) => ({

@@ -25,7 +25,7 @@
  * - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
  */
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import {
   UploadCloud,
@@ -114,7 +114,11 @@ import { restoreToothWorksFromDraft } from "@/shared/practice/toothWorkDraft";
 import {
   buildPracticeTransferMemo as buildPracticeTransferMemoShared,
   emptyToothWorkCustomSpecs,
+  normalizeAbutmentFavorites,
+  normalizeImplantFavorites,
   pickToothWorkCustomSpecs,
+  type PracticeAbutmentFavorite,
+  type PracticeImplantFavorite,
   type ToothWorkSelection as SharedToothWorkSelection,
 } from "@/shared/practice/transferMemo";
 import { useImplantConnectionCatalog } from "@/shared/practice/useImplantConnectionCatalog";
@@ -129,10 +133,53 @@ const PRACTICE_DRAFT_STORAGE_KEY = PRACTICE_DROPZONE_DRAFT_KEY;
 const PRACTICE_FILE_CACHE_META_KEY = "practice_dropzone_file_cache_meta_v1";
 const PRACTICE_SESSION_META_KEY = "practice_dropzone_session_meta_v1";
 const PRACTICE_SIGNUP_VERIFICATION_KEY = "practice_dropzone_signup_verification_v1";
+/** FileTransferPage와 동일 SSOT — 비로그인 프리셋도 여기 저장 후 가입/로그인 시 서버 반영 */
+const PRACTICE_TRANSFER_SETTINGS_LOCAL_KEY = "practice_transfer_settings_v1";
 const PRACTICE_SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 1개월
 const PRACTICE_FILE_CACHE_MAX_TOTAL_BYTES = 300 * 1024 * 1024; // 300MB
 
 const WIZARD_STEPS = ["파일드롭 & 의뢰정보", "치과정보"] as const;
+
+const readLocalFavoriteSettings = () => {
+  try {
+    const raw = localStorage.getItem(PRACTICE_TRANSFER_SETTINGS_LOCAL_KEY);
+    if (!raw) return { implantFavorites: [] as PracticeImplantFavorite[], abutmentFavorites: [] as PracticeAbutmentFavorite[] };
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    return {
+      implantFavorites: normalizeImplantFavorites(parsed.implantFavorites),
+      abutmentFavorites: normalizeAbutmentFavorites(parsed.abutmentFavorites),
+    };
+  } catch {
+    return {
+      implantFavorites: [] as PracticeImplantFavorite[],
+      abutmentFavorites: [] as PracticeAbutmentFavorite[],
+    };
+  }
+};
+
+const writeLocalFavoriteSettings = (params: {
+  implantFavorites: PracticeImplantFavorite[];
+  abutmentFavorites: PracticeAbutmentFavorite[];
+}) => {
+  try {
+    const existingRaw = localStorage.getItem(PRACTICE_TRANSFER_SETTINGS_LOCAL_KEY);
+    const existing =
+      existingRaw && typeof existingRaw === "string"
+        ? (JSON.parse(existingRaw) as Record<string, unknown>)
+        : {};
+    localStorage.setItem(
+      PRACTICE_TRANSFER_SETTINGS_LOCAL_KEY,
+      JSON.stringify({
+        ...existing,
+        implantFavorites: normalizeImplantFavorites(params.implantFavorites),
+        abutmentFavorites: normalizeAbutmentFavorites(params.abutmentFavorites),
+        savedAt: Date.now(),
+      }),
+    );
+  } catch {
+    // ignore
+  }
+};
 
 
 
@@ -573,6 +620,12 @@ export const PracticeDropzonePage = () => {
       ...emptyToothWorkCustomSpecs(),
     },
   ]);
+  const [implantFavorites, setImplantFavorites] = useState<PracticeImplantFavorite[]>(
+    () => readLocalFavoriteSettings().implantFavorites,
+  );
+  const [abutmentFavorites, setAbutmentFavorites] = useState<PracticeAbutmentFavorite[]>(
+    () => readLocalFavoriteSettings().abutmentFavorites,
+  );
 
   const [patientName, setPatientName] = useState("");
   const [email, setEmail] = useState("");
@@ -640,12 +693,11 @@ export const PracticeDropzonePage = () => {
 
   const missingRequiredFields = useMemo(() => {
     const missing: string[] = [];
-    if (files.length === 0) missing.push("첨부 파일");
     if (!selectedLab?._id) missing.push("기공소");
     if (!normalizedPatientName) missing.push("환자명");
     if (normalizedToothWorks.length === 0) missing.push("보철물");
     return missing;
-  }, [files.length, selectedLab?._id, normalizedPatientName, normalizedToothWorks.length]);
+  }, [selectedLab?._id, normalizedPatientName, normalizedToothWorks.length]);
 
   const missingStep1Fields = useMemo(() => {
     const missing = [...missingRequiredFields];
@@ -1413,7 +1465,7 @@ export const PracticeDropzonePage = () => {
 
     setRequestSubmitting(true);
     try {
-      const uploadedTempFiles = await uploadFilesWithToast(files);
+      const uploadedTempFiles = files.length > 0 ? await uploadFilesWithToast(files) : [];
       const transferId = makeTransferId();
       const transferMemo = buildPracticeTransferMemo({
         memo: requestMemo,
@@ -1425,43 +1477,59 @@ export const PracticeDropzonePage = () => {
         patientName: normalizedPatientName,
       });
 
-      const caseInfosPayload = files.map((file, index) => {
-        const tempFile = uploadedTempFiles[index];
-        const parsed = parseFilenameWithRules(file.name);
-        const tooth = String(parsed.tooth || "").trim();
+      const practiceRouting = {
+        targetLabAnchorId: String(selectedLab?._id || "").trim() || null,
+        targetLabName: String(selectedLab?.name || "").trim(),
+      };
+      const newSystemRequestBase = {
+        requested: true,
+        manufacturer: "",
+        brand: "",
+        family: "",
+        message: `[기공소: ${String(selectedLab?.name || "")}] ${transferMemo}\n[전송ID: ${transferId}]`,
+        free: true,
+        tag: "practice_dropzone",
+      };
 
-        return {
-          clinicName: autoClinicName,
-          patientName: normalizedPatientName,
-          tooth,
-          workType: "abutment",
-          designSoftware: "3Shape",
-          file: {
-            originalName: tempFile.originalName,
-            size: tempFile.size,
-            mimetype: tempFile.mimetype,
-            s3Key: tempFile.key,
-          },
-          newSystemRequest: {
-            requested: true,
-            manufacturer: "",
-            brand: "",
-            family: "",
-            message: `[기공소: ${String(selectedLab?.name || "")}] ${transferMemo}\n[전송ID: ${transferId}]`,
-            free: true,
-            tag: "practice_dropzone",
-          },
-          // related files:
-          // - web/backend/models/practiceTransfer.model.js
-          // - web/backend/controllers/practiceTransfers/practiceTransfer.controller.js
-          // - web/backend/modules/practiceTransfers/practiceTransfer.routes.js
-          // practice 제출은 PracticeTransfer SSOT로 저장 (Request 컬렉션 경유 금지)
-          practiceRouting: {
-            targetLabAnchorId: String(selectedLab?._id || "").trim() || null,
-            targetLabName: String(selectedLab?.name || "").trim(),
-          },
-        };
-      });
+      const caseInfosPayload =
+        files.length > 0
+          ? files.map((file, index) => {
+              const tempFile = uploadedTempFiles[index];
+              const parsed = parseFilenameWithRules(file.name);
+              const tooth = String(parsed.tooth || "").trim();
+
+              return {
+                clinicName: autoClinicName,
+                patientName: normalizedPatientName,
+                tooth,
+                workType: "abutment",
+                designSoftware: "3Shape",
+                file: {
+                  originalName: tempFile.originalName,
+                  size: tempFile.size,
+                  mimetype: tempFile.mimetype,
+                  s3Key: tempFile.key,
+                },
+                newSystemRequest: newSystemRequestBase,
+                // related files:
+                // - web/backend/models/practiceTransfer.model.js
+                // - web/backend/controllers/practiceTransfers/practiceTransfer.controller.js
+                // - web/backend/modules/practiceTransfers/practiceTransfer.routes.js
+                // practice 제출은 PracticeTransfer SSOT로 저장 (Request 컬렉션 경유 금지)
+                practiceRouting,
+              };
+            })
+          : [
+              {
+                clinicName: autoClinicName,
+                patientName: normalizedPatientName,
+                tooth: "",
+                workType: "abutment",
+                designSoftware: "3Shape",
+                newSystemRequest: newSystemRequestBase,
+                practiceRouting,
+              },
+            ];
 
       const submitRes = await apiFetch<unknown>({
         path: "/api/practice/transfers",
@@ -1521,6 +1589,55 @@ export const PracticeDropzonePage = () => {
       setRequestSubmitting(false);
     }
   };
+
+  const syncLocalFavoritesToServer = useCallback(async (token: string) => {
+    const local = readLocalFavoriteSettings();
+    const localImplant = local.implantFavorites;
+    const localAbutment = local.abutmentFavorites;
+    if (localImplant.length === 0 && localAbutment.length === 0) return;
+
+    try {
+      const getRes = await apiFetch<{
+        data?: {
+          implantFavorites?: unknown;
+          abutmentFavorites?: unknown;
+        };
+      }>({
+        path: "/api/practice/transfers/settings",
+        method: "GET",
+        token,
+      });
+      const serverImplant = normalizeImplantFavorites(
+        getRes.ok ? getRes.data?.data?.implantFavorites : [],
+      );
+      const serverAbutment = normalizeAbutmentFavorites(
+        getRes.ok ? getRes.data?.data?.abutmentFavorites : [],
+      );
+
+      const mergedImplant = normalizeImplantFavorites([...serverImplant, ...localImplant]);
+      const mergedAbutment = normalizeAbutmentFavorites([...serverAbutment, ...localAbutment]);
+
+      const postRes = await apiFetch<unknown>({
+        path: "/api/practice/transfers/settings",
+        method: "POST",
+        token,
+        jsonBody: {
+          implantFavorites: mergedImplant,
+          abutmentFavorites: mergedAbutment,
+        },
+      });
+      if (!postRes.ok) return;
+
+      setImplantFavorites(mergedImplant);
+      setAbutmentFavorites(mergedAbutment);
+      writeLocalFavoriteSettings({
+        implantFavorites: mergedImplant,
+        abutmentFavorites: mergedAbutment,
+      });
+    } catch {
+      // 동기화 실패해도 의뢰 전송은 계속 진행
+    }
+  }, []);
 
   const handlePracticeLoginAndContinue = async () => {
     if (!canSubmitLogin) {
@@ -1589,7 +1706,8 @@ export const PracticeDropzonePage = () => {
       setSignupCompleted(true);
       setAuthMode("session");
 
-      // 드롭존 작성분 = 대시보드 공유 폼이므로 바로 제출 후 대시보드로 이동한다.
+      // 드롭존에서 저장한 프리셋을 서버 설정으로 반영한 뒤 의뢰를 전송한다.
+      await syncLocalFavoritesToServer(latestToken);
       await submitPracticeRequest(latestToken);
     } finally {
       setAuthSubmitting(false);
@@ -1883,6 +2001,7 @@ export const PracticeDropzonePage = () => {
         });
         return;
       }
+      await syncLocalFavoritesToServer(token);
       await submitPracticeRequest(token);
       return;
     }
@@ -1945,6 +2064,7 @@ export const PracticeDropzonePage = () => {
         description: "이어서 현재 작성한 의뢰서를 전송합니다.",
       });
 
+      await syncLocalFavoritesToServer(token);
       await submitPracticeRequest(token);
     } catch {
       toast({
@@ -1971,6 +2091,7 @@ export const PracticeDropzonePage = () => {
         setAuthMode("login");
         return;
       }
+      await syncLocalFavoritesToServer(token);
       await submitPracticeRequest(token);
       return;
     }
@@ -2123,6 +2244,24 @@ export const PracticeDropzonePage = () => {
                     toothOnesOptions: TOOTH_ONES_OPTIONS,
                     onClearAll: handleClearRequestIntakeCache,
                     implantConnections,
+                    implantFavorites,
+                    onImplantFavoritesChange: (next) => {
+                      const normalized = normalizeImplantFavorites(next);
+                      setImplantFavorites(normalized);
+                      writeLocalFavoriteSettings({
+                        implantFavorites: normalized,
+                        abutmentFavorites,
+                      });
+                    },
+                    abutmentFavorites,
+                    onAbutmentFavoritesChange: (next) => {
+                      const normalized = normalizeAbutmentFavorites(next);
+                      setAbutmentFavorites(normalized);
+                      writeLocalFavoriteSettings({
+                        implantFavorites,
+                        abutmentFavorites: normalized,
+                      });
+                    },
                   }}
                 />
               </div>

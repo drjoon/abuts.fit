@@ -275,6 +275,15 @@ export const PracticeTransferRequestIntakePanel = ({
     initialToothChartOffsets,
   );
 
+  const requestedToothCount = useMemo(() => {
+    const teeth = new Set<string>();
+    for (const row of toothWorks) {
+      const tooth = String(row.toothNumber || "").trim();
+      if (/^[1-4][1-8]$/.test(tooth)) teeth.add(tooth);
+    }
+    return teeth.size;
+  }, [toothWorks]);
+
   // 연결 여부 ↔ 형태(크라운/인레이 vs 브리지/Pontic) 불일치 보정 (드래프트·구버전 데이터)
   const toothWorkLinkTypeMismatch = useMemo(() => {
     return toothWorks.some((row) => {
@@ -723,11 +732,13 @@ export const PracticeTransferRequestIntakePanel = ({
         />
       </div>
 
-      <div className="space-y-2">
+      <div className="mt-4 space-y-2">
         <div className="relative flex min-h-8 items-center">
           <div className="flex items-center gap-1">
             <Label className="text-sm">
-              보철물 <span className="text-destructive">*</span>
+              보철물{" "}
+              <span className="font-normal text-muted-foreground">({requestedToothCount}개)</span>{" "}
+              <span className="text-destructive">*</span>
             </Label>
             <TooltipProvider>
               <Tooltip>
@@ -1199,7 +1210,7 @@ export const PracticeTransferRequestIntakePanel = ({
 
                           <div
                             className={cn(
-                              "relative flex flex-col items-center justify-start border px-1 pb-1 pt-1.5 shadow-sm",
+                              "relative flex w-full min-w-0 flex-col items-center justify-start overflow-hidden border px-1 pb-1 pt-1.5 shadow-sm",
                               TOOTH_CARD_HEIGHT_CLASS,
                               isLinked
                                 ? "border-sky-500 bg-gradient-to-b from-sky-100 via-sky-50/95 to-white ring-1 ring-sky-300/40"
@@ -1260,7 +1271,7 @@ export const PracticeTransferRequestIntakePanel = ({
                             />
 
                             {/* 2) 치아형태 */}
-                            <div className="mt-1.5 shrink-0">
+                            <div className="mt-1.5 w-full min-w-0 shrink-0 px-0.5">
                             <Select
                               value={
                                 !row.prosthesisType
@@ -1367,7 +1378,7 @@ export const PracticeTransferRequestIntakePanel = ({
                                 });
                               }}
                             >
-                              <SelectTrigger className="h-6 w-[4.25rem] justify-center gap-0 rounded-md border-sky-200/80 bg-white/80 px-0.5 text-[11px] text-slate-600 shadow-none [&>span]:w-full [&>span]:text-center [&>svg]:hidden">
+                              <SelectTrigger className="h-6 w-full min-w-0 max-w-full justify-center gap-0 rounded-md border-sky-200/80 bg-white/80 px-0.5 text-[11px] text-slate-600 shadow-none [&>span]:w-full [&>span]:truncate [&>span]:text-center [&>svg]:hidden">
                                 <SelectValue placeholder="형태" />
                               </SelectTrigger>
                               <SelectContent>
@@ -1483,7 +1494,7 @@ export const PracticeTransferRequestIntakePanel = ({
         </div>
         </div>
 
-      <div className="mt-2 flex min-h-0 flex-1 flex-col space-y-2">
+      <div className="mt-5 flex min-h-0 flex-1 flex-col space-y-2">
         <Label className="text-sm">메모</Label>
         <div
           id={memoInputId}
