@@ -89,25 +89,30 @@ export const PracticeToothImplantFields = ({
     [connections],
   );
 
-  const manufacturerOptions = useMemo(
-    () => [...new Set(connectionOptions.map((c) => c.manufacturer))],
-    [connectionOptions],
-  );
+  const manufacturerOptions = useMemo(() => {
+    const options = [...new Set(connectionOptions.map((c) => c.manufacturer))];
+    const current = String(value.implantManufacturer || "").trim();
+    // 즐겨찾기/캐시 값이 카탈로그에 없어도 Select가 비지 않도록 현재값을 옵션에 포함
+    if (current && !options.includes(current)) options.unshift(current);
+    return options;
+  }, [connectionOptions, value.implantManufacturer]);
 
-  const brandOptions = useMemo(
-    () => [
+  const brandOptions = useMemo(() => {
+    const options = [
       ...new Set(
         connectionOptions
           .filter((c) => c.manufacturer === value.implantManufacturer)
           .map((c) => String(c.brand || "").trim())
           .filter(Boolean),
       ),
-    ],
-    [connectionOptions, value.implantManufacturer],
-  );
+    ];
+    const current = String(value.implantBrand || "").trim();
+    if (current && !options.includes(current)) options.unshift(current);
+    return options;
+  }, [connectionOptions, value.implantManufacturer, value.implantBrand]);
 
-  const familyOptions = useMemo(
-    () => [
+  const familyOptions = useMemo(() => {
+    const options = [
       ...new Set(
         connectionOptions
           .filter(
@@ -118,12 +123,19 @@ export const PracticeToothImplantFields = ({
           .map((c) => String(c.family || "").trim())
           .filter(Boolean),
       ),
-    ],
-    [connectionOptions, value.implantManufacturer, value.implantBrand],
-  );
+    ];
+    const current = String(value.implantFamily || "").trim();
+    if (current && !options.includes(current)) options.unshift(current);
+    return options;
+  }, [
+    connectionOptions,
+    value.implantManufacturer,
+    value.implantBrand,
+    value.implantFamily,
+  ]);
 
-  const typeOptions = useMemo(
-    () => [
+  const typeOptions = useMemo(() => {
+    const options = [
       ...new Set(
         connectionOptions
           .filter(
@@ -135,14 +147,17 @@ export const PracticeToothImplantFields = ({
           .map((c) => String(c.type || "").trim())
           .filter(Boolean),
       ),
-    ],
-    [
-      connectionOptions,
-      value.implantManufacturer,
-      value.implantBrand,
-      value.implantFamily,
-    ],
-  );
+    ];
+    const current = String(value.implantType || "").trim();
+    if (current && !options.includes(current)) options.unshift(current);
+    return options;
+  }, [
+    connectionOptions,
+    value.implantManufacturer,
+    value.implantBrand,
+    value.implantFamily,
+    value.implantType,
+  ]);
 
   const manufacturerLabelMap = useMemo(
     () =>

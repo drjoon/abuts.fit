@@ -141,11 +141,13 @@ import {
       formatPracticeTransferMemoDetail as formatPracticeTransferMemoDetailShared,
       formatTransferMemoForDisplay as formatTransferMemoForDisplayShared,
       normalizeToothWorksForSync,
-      emptyToothWorkImplant,
-      pickToothWorkImplant,
+      emptyToothWorkCustomSpecs,
+      pickToothWorkCustomSpecs,
       normalizeImplantFavorites,
+      normalizeAbutmentFavorites,
       parsePracticeTransferMemoMeta as parsePracticeTransferMemoMetaShared,
       stripPracticeTransferMessageEnvelope,
+      type PracticeAbutmentFavorite,
       type PracticeImplantFavorite,
       type ToothWorkSelection as SharedToothWorkSelection,
 } from "@/shared/practice/transferMemo";
@@ -397,6 +399,7 @@ type PracticeTransferSettingsPayload = {
   prosthesisTypes?: string[];
   memoSnippets?: string[];
   implantFavorites?: PracticeImplantFavorite[];
+  abutmentFavorites?: PracticeAbutmentFavorite[];
   promoNoticeDismissedAt?: string | null;
   updatedAt?: string | null;
 };
@@ -533,7 +536,7 @@ const normalizeToothWorks = (items: ToothWorkSelection[]) =>
         prosthesisType,
         customAbutment,
         bridgeLinkedTeeth,
-        ...pickToothWorkImplant(row, customAbutment),
+        ...pickToothWorkCustomSpecs(row, customAbutment),
       };
     })
     .filter((row) => /^[1-4][1-8]$/.test(row.toothNumber) && row.prosthesisType);
@@ -557,9 +560,17 @@ const serializeToothWorks = (rows: ToothWorkSelection[]) =>
         row.implantType,
       ].map((v) => String(v || "").trim());
       const hasImplant = implantParts.some(Boolean);
+      const abutmentParts = [
+        row.abutmentManufacturer,
+        row.abutmentDiameter,
+        row.abutmentHeight,
+      ].map((v) => String(v || "").trim());
+      const hasAbutment = abutmentParts.some(Boolean);
       const custom =
         isCustomAbutmentSupportedProsthesisType(row.prosthesisType) && row.customAbutment
-          ? `+커스텀어벗${hasImplant ? `{${implantParts.join("/")}}` : ""}`
+          ? `+커스텀어벗${hasImplant ? `{${implantParts.join("/")}}` : ""}${
+              hasAbutment ? `[${abutmentParts.join("/")}]` : ""
+            }`
           : "";
       return `${row.toothNumber}=${row.prosthesisType}${custom}${linked}`;
     })
@@ -581,13 +592,23 @@ const parseToothWorks = (value: string) =>
           prosthesisType: "",
           customAbutment: false,
           bridgeLinkedTeeth: [] as string[],
-          ...emptyToothWorkImplant(),
+          ...emptyToothWorkCustomSpecs(),
         };
       }
 
       const linkedMatch = rhs.match(/\(([^)]+)\)\s*$/);
       const linkedRaw = linkedMatch ? linkedMatch[1] : "";
       let withoutLinked = linkedMatch ? rhs.replace(/\(([^)]+)\)\s*$/, "").trim() : rhs;
+      const abutMatch = withoutLinked.match(/\[([^\]]*)\]\s*$/);
+      const abutRaw = abutMatch ? abutMatch[1] : "";
+      if (abutMatch) withoutLinked = withoutLinked.replace(/\[[^\]]*\]\s*$/, "").trim();
+      const abutParts = String(abutRaw || "").split("/");
+      const abutment = {
+        abutmentManufacturer: String(abutParts[0] || "").trim(),
+        abutmentDiameter: String(abutParts[1] || "").trim(),
+        abutmentHeight: abutParts.slice(2).join("/").trim(),
+      };
+
       const implantMatch = withoutLinked.match(/\{([^}]*)\}\s*$/);
       const implantRaw = implantMatch ? implantMatch[1] : "";
       if (implantMatch) withoutLinked = withoutLinked.replace(/\{[^}]*\}\s*$/, "").trim();
@@ -612,7 +633,10 @@ const parseToothWorks = (value: string) =>
         implant.implantManufacturer ||
         implant.implantBrand ||
         implant.implantFamily ||
-        implant.implantType
+        implant.implantType ||
+        abutment.abutmentManufacturer ||
+        abutment.abutmentDiameter ||
+        abutment.abutmentHeight
       ) {
         customAbutment = true;
       }
@@ -629,7 +653,7 @@ const parseToothWorks = (value: string) =>
         prosthesisType,
         customAbutment,
         bridgeLinkedTeeth,
-        ...pickToothWorkImplant(implant, customAbutment),
+        ...pickToothWorkCustomSpecs({ ...implant, ...abutment }, customAbutment),
       };
     })
     .filter((row) => Boolean(row.prosthesisType) || Boolean(row.toothNumber));
@@ -928,6 +952,7 @@ export const PracticeFileTransferPage = () => {
   const [savingProsthesisTypeSettings, setSavingProsthesisTypeSettings] = useState(false);
   const [memoSnippets, setMemoSnippets] = useState<string[]>([]);
   const [implantFavorites, setImplantFavorites] = useState<PracticeImplantFavorite[]>([]);
+  const [abutmentFavorites, setAbutmentFavorites] = useState<PracticeAbutmentFavorite[]>([]);
   const [recentTransfersOpen, setRecentTransfersOpen] = useState(true);
   const [draftsOpen, setDraftsOpen] = useState(true);
   const [inviteOpen, setInviteOpen] = useState(false);
@@ -1174,6 +1199,7 @@ export const PracticeFileTransferPage = () => {
     );
     const nextMemoSnippets = normalizeMemoSnippets(payload.memoSnippets);
     const nextImplantFavorites = normalizeImplantFavorites(payload.implantFavorites);
+    const nextAbutmentFavorites = normalizeAbutmentFavorites(payload.abutmentFavorites);
     const promoDismissed = String(payload.promoNoticeDismissedAt || "").trim().length > 0;
 
     setArrivalDefaultDays(nextArrivalDefaultDays);
@@ -1182,6 +1208,7 @@ export const PracticeFileTransferPage = () => {
     setProsthesisTypeCatalogDraft(nextProsthesisTypes);
     setMemoSnippets(nextMemoSnippets);
     setImplantFavorites(nextImplantFavorites);
+    setAbutmentFavorites(nextAbutmentFavorites);
     setPromoNoticeVisible(!promoDismissed);
     setToothWorks((prev) =>
       prev.map((row) => {
@@ -1193,7 +1220,7 @@ export const PracticeFileTransferPage = () => {
             : resolveDefaultProsthesisType(nextProsthesisTypes),
           customAbutment,
           bridgeLinkedTeeth: Array.isArray(row.bridgeLinkedTeeth) ? row.bridgeLinkedTeeth : [],
-          ...pickToothWorkImplant(row, customAbutment),
+          ...pickToothWorkCustomSpecs(row, customAbutment),
         };
       }),
     );
@@ -1207,6 +1234,7 @@ export const PracticeFileTransferPage = () => {
       const hasProsthesisTypes = Array.isArray(params.prosthesisTypes);
       const hasMemoSnippets = Array.isArray(params.memoSnippets);
       const hasImplantFavorites = Array.isArray(params.implantFavorites);
+      const hasAbutmentFavorites = Array.isArray(params.abutmentFavorites);
       const hasPromoNoticeDismissedAt = Object.prototype.hasOwnProperty.call(
         params,
         "promoNoticeDismissedAt",
@@ -1224,6 +1252,9 @@ export const PracticeFileTransferPage = () => {
       }
       if (hasImplantFavorites) {
         jsonBody.implantFavorites = normalizeImplantFavorites(params.implantFavorites || []);
+      }
+      if (hasAbutmentFavorites) {
+        jsonBody.abutmentFavorites = normalizeAbutmentFavorites(params.abutmentFavorites || []);
       }
       if (hasPromoNoticeDismissedAt) {
         jsonBody.promoNoticeDismissedAt = params.promoNoticeDismissedAt || null;
@@ -1268,6 +1299,14 @@ export const PracticeFileTransferPage = () => {
             memoSnippets: normalizeMemoSnippets(
               Array.isArray(payload?.memoSnippets) ? payload?.memoSnippets : memoSnippets,
             ),
+            implantFavorites: normalizeImplantFavorites(
+              Array.isArray(payload?.implantFavorites) ? payload?.implantFavorites : implantFavorites,
+            ),
+            abutmentFavorites: normalizeAbutmentFavorites(
+              Array.isArray(payload?.abutmentFavorites)
+                ? payload?.abutmentFavorites
+                : abutmentFavorites,
+            ),
             promoNoticeDismissedAt: payload?.promoNoticeDismissedAt || null,
             savedAt: Date.now(),
           }),
@@ -1278,7 +1317,7 @@ export const PracticeFileTransferPage = () => {
 
       return true;
     },
-    [applyPracticeTransferSettings, authToken, memoSnippets],
+    [applyPracticeTransferSettings, authToken, memoSnippets, implantFavorites, abutmentFavorites],
   );
 
   const myUserId = String(authUser?.id || (authUser as { _id?: string } | null)?._id || "").trim();
@@ -1706,6 +1745,12 @@ export const PracticeFileTransferPage = () => {
             ),
             memoSnippets: normalizeMemoSnippets(
               Array.isArray(payload?.memoSnippets) ? payload?.memoSnippets : [],
+            ),
+            implantFavorites: normalizeImplantFavorites(
+              Array.isArray(payload?.implantFavorites) ? payload?.implantFavorites : [],
+            ),
+            abutmentFavorites: normalizeAbutmentFavorites(
+              Array.isArray(payload?.abutmentFavorites) ? payload?.abutmentFavorites : [],
             ),
             promoNoticeDismissedAt: payload?.promoNoticeDismissedAt || null,
             savedAt: Date.now(),
@@ -4397,7 +4442,7 @@ export const PracticeFileTransferPage = () => {
         prosthesisType: resolveDefaultProsthesisType(normalizedProsthesisTypes),
         customAbutment: false,
         bridgeLinkedTeeth: [],
-        ...emptyToothWorkImplant(),
+        ...emptyToothWorkCustomSpecs(),
       },
     ]);
   }, [localFormHydrated, normalizedProsthesisTypes, toothWorks.length]);
@@ -4410,7 +4455,7 @@ export const PracticeFileTransferPage = () => {
         prosthesisType: resolveDefaultProsthesisType(normalizedProsthesisTypes),
         customAbutment: false,
         bridgeLinkedTeeth: [],
-        ...emptyToothWorkImplant(),
+        ...emptyToothWorkCustomSpecs(),
       },
     ]);
   };
@@ -4444,7 +4489,7 @@ export const PracticeFileTransferPage = () => {
         prosthesisType: resolveDefaultProsthesisType(normalizedProsthesisTypes),
         customAbutment: false,
         bridgeLinkedTeeth: [],
-        ...emptyToothWorkImplant(),
+        ...emptyToothWorkCustomSpecs(),
       },
     ]);
 
@@ -4512,7 +4557,7 @@ export const PracticeFileTransferPage = () => {
               : resolveDefaultProsthesisType(nextTypes),
             customAbutment,
             bridgeLinkedTeeth: Array.isArray(row.bridgeLinkedTeeth) ? row.bridgeLinkedTeeth : [],
-            ...pickToothWorkImplant(row, customAbutment),
+            ...pickToothWorkCustomSpecs(row, customAbutment),
           };
         }),
       );
@@ -4807,6 +4852,7 @@ export const PracticeFileTransferPage = () => {
                           prosthesisTypes: normalizedProsthesisTypes,
                           memoSnippets: normalized,
                           implantFavorites,
+                          abutmentFavorites,
                           savedAt: Date.now(),
                         }),
                       );
@@ -4838,6 +4884,7 @@ export const PracticeFileTransferPage = () => {
                           prosthesisTypes: normalizedProsthesisTypes,
                           memoSnippets,
                           implantFavorites: normalized,
+                          abutmentFavorites,
                           savedAt: Date.now(),
                         }),
                       );
@@ -4845,6 +4892,33 @@ export const PracticeFileTransferPage = () => {
                       // ignore
                     }
                     await savePracticeTransferSettingsToServer({ implantFavorites: normalized });
+                  },
+                  abutmentFavorites,
+                  onAbutmentFavoritesChange: async (next) => {
+                    const normalized = normalizeAbutmentFavorites(next);
+                    setAbutmentFavorites(normalized);
+                    try {
+                      const existingRaw = localStorage.getItem(PRACTICE_TRANSFER_SETTINGS_LOCAL_KEY);
+                      const existing =
+                        existingRaw && typeof existingRaw === "string"
+                          ? (JSON.parse(existingRaw) as Record<string, unknown>)
+                          : {};
+                      localStorage.setItem(
+                        PRACTICE_TRANSFER_SETTINGS_LOCAL_KEY,
+                        JSON.stringify({
+                          ...existing,
+                          arrivalDefaultDays,
+                          prosthesisTypes: normalizedProsthesisTypes,
+                          memoSnippets,
+                          implantFavorites,
+                          abutmentFavorites: normalized,
+                          savedAt: Date.now(),
+                        }),
+                      );
+                    } catch {
+                      // ignore
+                    }
+                    await savePracticeTransferSettingsToServer({ abutmentFavorites: normalized });
                   },
                   onImeComposingChange: (composing) => {
                     imeComposingRef.current = composing;

@@ -206,6 +206,17 @@ const businessAnchorSchema = new mongoose.Schema(
         ],
         default: [],
       },
+      abutmentFavorites: {
+        type: [
+          {
+            id: { type: String, default: "" },
+            manufacturer: { type: String, default: "" },
+            diameter: { type: String, default: "" },
+            height: { type: String, default: "" },
+          },
+        ],
+        default: [],
+      },
       promoNoticeDismissedAt: {
         type: Date,
         default: null,

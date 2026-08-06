@@ -4,8 +4,7 @@
 // - web/frontend/src/shared/practice/transferMemo.ts
 
 import {
-  emptyToothWorkImplant,
-  pickToothWorkImplant,
+  pickToothWorkCustomSpecs,
   type ToothWorkSelection,
 } from "@/shared/practice/transferMemo";
 
@@ -51,17 +50,18 @@ export const restoreToothWorksFromDraft = (
       prosthesisType,
       customAbutment,
       bridgeLinkedTeeth,
-      ...(customAbutment
-        ? pickToothWorkImplant(
-            {
-              implantManufacturer: String(row.implantManufacturer || "").trim(),
-              implantBrand: String(row.implantBrand || "").trim(),
-              implantFamily: String(row.implantFamily || "").trim(),
-              implantType: String(row.implantType || "").trim(),
-            },
-            true,
-          )
-        : emptyToothWorkImplant()),
+      ...pickToothWorkCustomSpecs(
+        {
+          implantManufacturer: String(row.implantManufacturer || "").trim(),
+          implantBrand: String(row.implantBrand || "").trim(),
+          implantFamily: String(row.implantFamily || "").trim(),
+          implantType: String(row.implantType || "").trim(),
+          abutmentManufacturer: String(row.abutmentManufacturer || "").trim(),
+          abutmentDiameter: String(row.abutmentDiameter || "").trim(),
+          abutmentHeight: String(row.abutmentHeight || "").trim(),
+        },
+        customAbutment,
+      ),
     };
   });
 };

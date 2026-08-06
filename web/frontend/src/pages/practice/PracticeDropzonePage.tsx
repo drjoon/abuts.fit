@@ -113,8 +113,8 @@ import { PracticeTransferIntakeSection } from "@/shared/components/practice/Prac
 import { restoreToothWorksFromDraft } from "@/shared/practice/toothWorkDraft";
 import {
   buildPracticeTransferMemo as buildPracticeTransferMemoShared,
-  emptyToothWorkImplant,
-  pickToothWorkImplant,
+  emptyToothWorkCustomSpecs,
+  pickToothWorkCustomSpecs,
   type ToothWorkSelection as SharedToothWorkSelection,
 } from "@/shared/practice/transferMemo";
 import { useImplantConnectionCatalog } from "@/shared/practice/useImplantConnectionCatalog";
@@ -383,7 +383,7 @@ const normalizeToothWorks = (items: ToothWorkSelection[]) =>
         prosthesisType,
         customAbutment,
         bridgeLinkedTeeth,
-        ...pickToothWorkImplant(row, customAbutment),
+        ...pickToothWorkCustomSpecs(row, customAbutment),
       };
     })
     .filter((row) => /^[1-4][1-8]$/.test(row.toothNumber) && row.prosthesisType);
@@ -402,9 +402,17 @@ const serializeToothWorks = (rows: ToothWorkSelection[]) =>
         row.implantType,
       ].map((v) => String(v || "").trim());
       const hasImplant = implantParts.some(Boolean);
+      const abutmentParts = [
+        row.abutmentManufacturer,
+        row.abutmentDiameter,
+        row.abutmentHeight,
+      ].map((v) => String(v || "").trim());
+      const hasAbutment = abutmentParts.some(Boolean);
       const custom =
         isCustomAbutmentSupportedProsthesisType(row.prosthesisType) && row.customAbutment
-          ? `+커스텀어벗${hasImplant ? `{${implantParts.join("/")}}` : ""}`
+          ? `+커스텀어벗${hasImplant ? `{${implantParts.join("/")}}` : ""}${
+              hasAbutment ? `[${abutmentParts.join("/")}]` : ""
+            }`
           : "";
       return `${row.toothNumber}=${row.prosthesisType}${custom}${linked}`;
     })
@@ -563,7 +571,7 @@ export const PracticeDropzonePage = () => {
       prosthesisType: "크라운",
       customAbutment: false,
       bridgeLinkedTeeth: [],
-      ...emptyToothWorkImplant(),
+      ...emptyToothWorkCustomSpecs(),
     },
   ]);
 
@@ -816,7 +824,7 @@ export const PracticeDropzonePage = () => {
         prosthesisType: resolveDefaultProsthesisType(normalizedProsthesisTypes),
         customAbutment: false,
         bridgeLinkedTeeth: [],
-        ...emptyToothWorkImplant(),
+        ...emptyToothWorkCustomSpecs(),
       },
     ]);
   };
@@ -837,7 +845,7 @@ export const PracticeDropzonePage = () => {
         prosthesisType: resolveDefaultProsthesisType(normalizedProsthesisTypes),
         customAbutment: false,
         bridgeLinkedTeeth: [],
-        ...emptyToothWorkImplant(),
+        ...emptyToothWorkCustomSpecs(),
       },
     ]);
 
@@ -962,7 +970,7 @@ export const PracticeDropzonePage = () => {
         setToothWorks(
           restoredToothWorks.length > 0
             ? restoredToothWorks
-            : [{ toothNumber: "", prosthesisType: resolveDefaultProsthesisType(restoredProsthesisTypes), customAbutment: false, bridgeLinkedTeeth: [], ...emptyToothWorkImplant() }],
+            : [{ toothNumber: "", prosthesisType: resolveDefaultProsthesisType(restoredProsthesisTypes), customAbutment: false, bridgeLinkedTeeth: [], ...emptyToothWorkCustomSpecs() }],
         );
         setPatientName(String(intake?.patientName ?? parsed?.patientName ?? ""));
         setEmail(String(parsed?.email || "").trim().toLowerCase());
@@ -1483,7 +1491,7 @@ export const PracticeDropzonePage = () => {
           prosthesisType: resolveDefaultProsthesisType(normalizedProsthesisTypes),
           customAbutment: false,
           bridgeLinkedTeeth: [],
-          ...emptyToothWorkImplant(),
+          ...emptyToothWorkCustomSpecs(),
         },
       ]);
 

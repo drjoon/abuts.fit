@@ -8,6 +8,10 @@ export type ToothWorkSelection = {
   implantBrand?: string;
   implantFamily?: string;
   implantType?: string;
+  /** 커스텀어벗 규격 (제조사/직경/높이) */
+  abutmentManufacturer?: string;
+  abutmentDiameter?: string;
+  abutmentHeight?: string;
 };
 
 export type PracticeImplantFavorite = {
@@ -18,11 +22,29 @@ export type PracticeImplantFavorite = {
   type: string;
 };
 
+export type PracticeAbutmentFavorite = {
+  id: string;
+  manufacturer: string;
+  diameter: string;
+  height: string;
+};
+
 export const emptyToothWorkImplant = () => ({
   implantManufacturer: "",
   implantBrand: "",
   implantFamily: "",
   implantType: "",
+});
+
+export const emptyToothWorkAbutment = () => ({
+  abutmentManufacturer: "",
+  abutmentDiameter: "",
+  abutmentHeight: "",
+});
+
+export const emptyToothWorkCustomSpecs = () => ({
+  ...emptyToothWorkImplant(),
+  ...emptyToothWorkAbutment(),
 });
 
 export const pickToothWorkImplant = (
@@ -38,6 +60,69 @@ export const pickToothWorkImplant = (
   };
 };
 
+export const pickToothWorkAbutment = (
+  row: Partial<ToothWorkSelection> | null | undefined,
+  customAbutment: boolean,
+) => {
+  if (!customAbutment) return emptyToothWorkAbutment();
+  return {
+    abutmentManufacturer: String(row?.abutmentManufacturer || "").trim(),
+    abutmentDiameter: String(row?.abutmentDiameter || "").trim(),
+    abutmentHeight: String(row?.abutmentHeight || "").trim(),
+  };
+};
+
+export const pickToothWorkCustomSpecs = (
+  row: Partial<ToothWorkSelection> | null | undefined,
+  customAbutment: boolean,
+) => {
+  if (!customAbutment) return emptyToothWorkCustomSpecs();
+  return {
+    ...pickToothWorkImplant(row, true),
+    ...pickToothWorkAbutment(row, true),
+  };
+};
+
+export const customSpecsKey = (
+  row: Partial<ToothWorkSelection> | null | undefined,
+) => {
+  const specs = pickToothWorkCustomSpecs(row, true);
+  return [
+    specs.implantManufacturer,
+    specs.implantBrand,
+    specs.implantFamily,
+    specs.implantType,
+    specs.abutmentManufacturer,
+    specs.abutmentDiameter,
+    specs.abutmentHeight,
+  ]
+    .map((v) => String(v || "").trim().toLowerCase())
+    .join("|");
+};
+
+export const formatCustomSpecsSummary = (
+  row: Partial<ToothWorkSelection> | null | undefined,
+) => {
+  const implantLabel = [
+    row?.implantManufacturer,
+    row?.implantBrand,
+    row?.implantFamily,
+    row?.implantType,
+  ]
+    .map((v) => String(v || "").trim())
+    .filter(Boolean)
+    .join(" / ");
+  const abutmentParts = [
+    String(row?.abutmentManufacturer || "").trim(),
+    String(row?.abutmentDiameter || "").trim(),
+    String(row?.abutmentHeight || "").trim(),
+  ].filter(Boolean);
+  const abutmentLabel = abutmentParts.length
+    ? `어벗 ${abutmentParts.join(" / ")}`
+    : "";
+  return [implantLabel, abutmentLabel].filter(Boolean).join(" · ");
+};
+
 const serializeImplantSuffix = (row: ToothWorkSelection) => {
   const manufacturer = String(row.implantManufacturer || "").trim();
   const brand = String(row.implantBrand || "").trim();
@@ -47,23 +132,55 @@ const serializeImplantSuffix = (row: ToothWorkSelection) => {
   return `{${manufacturer}/${brand}/${family}/${type}}`;
 };
 
-const parseImplantSuffix = (value: string) => {
-  const source = String(value || "").trim();
-  const match = source.match(/\{([^}]*)\}\s*$/);
-  if (!match) {
-    return { without: source, ...emptyToothWorkImplant() };
+const serializeAbutmentSuffix = (row: ToothWorkSelection) => {
+  const manufacturer = String(row.abutmentManufacturer || "").trim();
+  const diameter = String(row.abutmentDiameter || "").trim();
+  const height = String(row.abutmentHeight || "").trim();
+  if (!manufacturer && !diameter && !height) return "";
+  return `[${manufacturer}/${diameter}/${height}]`;
+};
+
+const serializeCustomSpecsSuffix = (row: ToothWorkSelection) =>
+  `${serializeImplantSuffix(row)}${serializeAbutmentSuffix(row)}`;
+
+const parseCustomSpecsSuffix = (value: string) => {
+  let source = String(value || "").trim();
+  let abutmentManufacturer = "";
+  let abutmentDiameter = "";
+  let abutmentHeight = "";
+  let implantManufacturer = "";
+  let implantBrand = "";
+  let implantFamily = "";
+  let implantType = "";
+
+  const abutMatch = source.match(/\[([^\]]*)\]\s*$/);
+  if (abutMatch) {
+    const parts = String(abutMatch[1] || "").split("/");
+    abutmentManufacturer = String(parts[0] || "").trim();
+    abutmentDiameter = String(parts[1] || "").trim();
+    abutmentHeight = parts.slice(2).join("/").trim();
+    source = source.replace(/\[[^\]]*\]\s*$/, "").trim();
   }
-  const parts = String(match[1] || "").split("/");
-  const manufacturer = String(parts[0] || "").trim();
-  const brand = String(parts[1] || "").trim();
-  const family = String(parts[2] || "").trim();
-  const type = parts.slice(3).join("/").trim();
+
+  const implantMatch = source.match(/\{([^}]*)\}\s*$/);
+  if (implantMatch) {
+    const parts = String(implantMatch[1] || "").split("/");
+    implantManufacturer = String(parts[0] || "").trim();
+    implantBrand = String(parts[1] || "").trim();
+    implantFamily = String(parts[2] || "").trim();
+    implantType = parts.slice(3).join("/").trim();
+    source = source.replace(/\{[^}]*\}\s*$/, "").trim();
+  }
+
   return {
-    without: source.replace(/\{[^}]*\}\s*$/, "").trim(),
-    implantManufacturer: manufacturer,
-    implantBrand: brand,
-    implantFamily: family,
-    implantType: type,
+    without: source,
+    implantManufacturer,
+    implantBrand,
+    implantFamily,
+    implantType,
+    abutmentManufacturer,
+    abutmentDiameter,
+    abutmentHeight,
   };
 };
 
@@ -83,6 +200,26 @@ export const normalizeImplantFavorites = (items: unknown): PracticeImplantFavori
     seen.add(key);
     const id = String(row.id || "").trim() || `imp-${out.length + 1}-${key.slice(0, 24)}`;
     out.push({ id, manufacturer, brand, family, type });
+    if (out.length >= 40) break;
+  }
+  return out;
+};
+
+export const normalizeAbutmentFavorites = (items: unknown): PracticeAbutmentFavorite[] => {
+  if (!Array.isArray(items)) return [];
+  const out: PracticeAbutmentFavorite[] = [];
+  const seen = new Set<string>();
+  for (const raw of items) {
+    const row = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+    const manufacturer = String(row.manufacturer || "").trim();
+    const diameter = String(row.diameter || "").trim();
+    const height = String(row.height || "").trim();
+    if (!manufacturer && !diameter && !height) continue;
+    const key = `${manufacturer}|${diameter}|${height}`.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const id = String(row.id || "").trim() || `abt-${out.length + 1}-${key.slice(0, 24)}`;
+    out.push({ id, manufacturer, diameter, height });
     if (out.length >= 40) break;
   }
   return out;
@@ -180,7 +317,7 @@ export const normalizeToothWorks = (items: ToothWorkSelection[]) =>
         prosthesisType,
         customAbutment,
         bridgeLinkedTeeth,
-        ...pickToothWorkImplant(row, customAbutment),
+        ...pickToothWorkCustomSpecs(row, customAbutment),
       };
     })
     .filter((row) => /^[1-4][1-8]$/.test(row.toothNumber) && row.prosthesisType);
@@ -214,7 +351,7 @@ export const normalizeToothWorksForSync = (items: ToothWorkSelection[]) =>
         prosthesisType,
         customAbutment,
         bridgeLinkedTeeth,
-        ...pickToothWorkImplant(row, customAbutment),
+        ...pickToothWorkCustomSpecs(row, customAbutment),
       };
     })
     .filter((row) => Boolean(row.prosthesisType) || Boolean(row.toothNumber));
@@ -236,15 +373,15 @@ export const parseToothWorks = (value: string) =>
           prosthesisType: toothNumber ? "크라운" : "",
           customAbutment: false,
           bridgeLinkedTeeth: [] as string[],
-          ...emptyToothWorkImplant(),
+          ...emptyToothWorkCustomSpecs(),
         };
       }
 
       const linkedMatch = rhs.match(/\(([^)]+)\)\s*$/);
       const linkedRaw = linkedMatch ? linkedMatch[1] : "";
       let withoutLinked = linkedMatch ? rhs.replace(/\(([^)]+)\)\s*$/, "").trim() : rhs;
-      const implantParsed = parseImplantSuffix(withoutLinked);
-      withoutLinked = implantParsed.without;
+      const specsParsed = parseCustomSpecsSuffix(withoutLinked);
+      withoutLinked = specsParsed.without;
 
       let customAbutment = false;
       if (withoutLinked.startsWith("커스텀어벗+")) {
@@ -256,10 +393,13 @@ export const parseToothWorks = (value: string) =>
         withoutLinked = withoutLinked.replace("+커스텀어벗", "").trim();
       }
       if (
-        implantParsed.implantManufacturer ||
-        implantParsed.implantBrand ||
-        implantParsed.implantFamily ||
-        implantParsed.implantType
+        specsParsed.implantManufacturer ||
+        specsParsed.implantBrand ||
+        specsParsed.implantFamily ||
+        specsParsed.implantType ||
+        specsParsed.abutmentManufacturer ||
+        specsParsed.abutmentDiameter ||
+        specsParsed.abutmentHeight
       ) {
         customAbutment = true;
       }
@@ -277,7 +417,7 @@ export const parseToothWorks = (value: string) =>
         prosthesisType,
         customAbutment,
         bridgeLinkedTeeth,
-        ...pickToothWorkImplant(implantParsed, customAbutment),
+        ...pickToothWorkCustomSpecs(specsParsed, customAbutment),
       };
     })
     .filter((row) => Boolean(row.prosthesisType) || Boolean(row.toothNumber));
@@ -296,7 +436,7 @@ export const serializeToothWorks = (rows: ToothWorkSelection[]) =>
           : "";
       const custom =
         isCustomAbutmentSupportedProsthesisType(row.prosthesisType) && row.customAbutment
-          ? `+커스텀어벗${serializeImplantSuffix(row)}`
+          ? `+커스텀어벗${serializeCustomSpecsSuffix(row)}`
           : "";
       return `${row.toothNumber}=${row.prosthesisType}${custom}${linked}`;
     })
@@ -319,7 +459,7 @@ export const serializeToothWorksForSync = (rows: ToothWorkSelection[]) =>
           : "";
       const custom =
         isCustomAbutmentSupportedProsthesisType(prosthesisType) && row.customAbutment
-          ? `+커스텀어벗${serializeImplantSuffix(row)}`
+          ? `+커스텀어벗${serializeCustomSpecsSuffix(row)}`
           : "";
       return `${toothToken}=${prosthesisType}${custom}${linked}`;
     })
@@ -499,16 +639,8 @@ export const formatToothWorksForDisplay = (
     const details = [row.prosthesisType];
     if (row.customAbutment) {
       details.push("커스텀어벗");
-      const implantLabel = [
-        row.implantManufacturer,
-        row.implantBrand,
-        row.implantFamily,
-        row.implantType,
-      ]
-        .map((v) => String(v || "").trim())
-        .filter(Boolean)
-        .join(" / ");
-      if (implantLabel) details.push(implantLabel);
+      const specsSummary = formatCustomSpecsSummary(row);
+      if (specsSummary) details.push(specsSummary);
     }
     if (isBridgeLikeProsthesisType(row.prosthesisType) && row.bridgeLinkedTeeth.length > 0) {
       const orderedLinks = [...row.bridgeLinkedTeeth].sort(

@@ -48,10 +48,14 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { PracticeToothImplantFields } from "@/shared/components/practice/PracticeToothImplantFields";
+import { PracticeToothAbutmentFields } from "@/shared/components/practice/PracticeToothAbutmentFields";
 import type { ImplantConnection } from "@/shared/practice/useImplantConnectionCatalog";
 import {
-  emptyToothWorkImplant,
-  pickToothWorkImplant,
+  customSpecsKey,
+  emptyToothWorkCustomSpecs,
+  formatCustomSpecsSummary,
+  pickToothWorkCustomSpecs,
+  type PracticeAbutmentFavorite,
   type PracticeImplantFavorite,
 } from "@/shared/practice/transferMemo";
 import {
@@ -67,6 +71,7 @@ import {
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
 // - web/frontend/src/shared/practice/usePracticeToothWorkEditor.ts
 // - web/frontend/src/shared/components/practice/PracticeToothImplantFields.tsx
+// - web/frontend/src/shared/components/practice/PracticeToothAbutmentFields.tsx
 
 const PRACTICE_MEMO_SNIPPETS_LOCAL_KEY = "practice_transfer_memo_snippets_v1";
 const MAX_MEMO_SNIPPETS = 40;
@@ -139,6 +144,8 @@ export type PracticeTransferRequestIntakePanelProps = {
   implantConnections?: ImplantConnection[];
   implantFavorites?: PracticeImplantFavorite[];
   onImplantFavoritesChange?: (next: PracticeImplantFavorite[]) => void | Promise<void>;
+  abutmentFavorites?: PracticeAbutmentFavorite[];
+  onAbutmentFavoritesChange?: (next: PracticeAbutmentFavorite[]) => void | Promise<void>;
 };
 
 export const PracticeTransferRequestIntakePanel = ({
@@ -180,13 +187,22 @@ export const PracticeTransferRequestIntakePanel = ({
   implantConnections = [],
   implantFavorites = [],
   onImplantFavoritesChange,
+  abutmentFavorites = [],
+  onAbutmentFavoritesChange,
 }: PracticeTransferRequestIntakePanelProps) => {
   const [snippetsOpen, setSnippetsOpen] = useState(false);
   const orderedToothWorkRows = useOrderedToothWorkRows(toothWorks);
   const defaultProsthesisType = normalizedProsthesisTypes.includes("크라운")
     ? "크라운"
     : normalizedProsthesisTypes[0] || "크라운";
-
+  const [sharedCustomSpecs, setSharedCustomSpecs] = useState(() => emptyToothWorkCustomSpecs());
+  const [overrideIndexes, setOverrideIndexes] = useState<Set<number>>(() => new Set());
+  const [expandedOverrideIndexes, setExpandedOverrideIndexes] = useState<Set<number>>(
+    () => new Set(),
+  );
+  const sharedSpecsSeededRef = useRef(false);
+  const overrideIndexesRef = useRef(overrideIndexes);
+  overrideIndexesRef.current = overrideIndexes;
   const isMemoSnippetsControlled = typeof onMemoSnippetsChange === "function";
   const [localMemoSnippets, setLocalMemoSnippets] = useState<string[]>(() => loadLocalMemoSnippets());
   const [editingSnippetIndex, setEditingSnippetIndex] = useState<number | null>(null);
@@ -204,6 +220,108 @@ export const PracticeTransferRequestIntakePanel = ({
 
   const reportImeComposing = () => {
     onImeComposingChange?.(patientComposingRef.current || memoComposingRef.current);
+  };
+
+  const emptySpecsKey = customSpecsKey(emptyToothWorkCustomSpecs());
+
+  const customAbutmentIndexes = useMemo(
+    () =>
+      toothWorks
+        .map((row, index) => ({ row, index }))
+        .filter(
+          ({ row }) =>
+            Boolean(row.customAbutment) &&
+            isCustomAbutmentSupportedProsthesisType(row.prosthesisType),
+        )
+        .map(({ index }) => index),
+    [toothWorks],
+  );
+
+  const hasCustomAbutmentTeeth = customAbutmentIndexes.length > 0;
+
+  // 드래프트/동기화로 치아 규격이 들어오면 공통 설정을 한 번 시드하고, 다른 치아는 개별로 표시
+  useEffect(() => {
+    if (!hasCustomAbutmentTeeth) {
+      sharedSpecsSeededRef.current = false;
+      return;
+    }
+    if (sharedSpecsSeededRef.current) return;
+
+    const donorIndex =
+      customAbutmentIndexes.find(
+        (index) => customSpecsKey(toothWorks[index]) !== emptySpecsKey,
+      ) ?? customAbutmentIndexes[0];
+    const donorSpecs = pickToothWorkCustomSpecs(toothWorks[donorIndex], true);
+    setSharedCustomSpecs(donorSpecs);
+
+    const donorKey = customSpecsKey(donorSpecs);
+    const nextOverrides = new Set<number>();
+    for (const index of customAbutmentIndexes) {
+      if (index === donorIndex) continue;
+      if (customSpecsKey(toothWorks[index]) !== donorKey) nextOverrides.add(index);
+    }
+    setOverrideIndexes(nextOverrides);
+    sharedSpecsSeededRef.current = true;
+  }, [customAbutmentIndexes, emptySpecsKey, hasCustomAbutmentTeeth, toothWorks]);
+
+  const applySharedSpecsToTeeth = (
+    specs: ReturnType<typeof emptyToothWorkCustomSpecs>,
+    options?: { includeOverrides?: boolean; onlyIndex?: number },
+  ) => {
+    const includeOverrides = Boolean(options?.includeOverrides);
+    const onlyIndex = options?.onlyIndex;
+    setToothWorks((prev) =>
+      prev.map((row, index) => {
+        if (typeof onlyIndex === "number" && index !== onlyIndex) return row;
+        if (
+          !row.customAbutment ||
+          !isCustomAbutmentSupportedProsthesisType(row.prosthesisType)
+        ) {
+          return row;
+        }
+        if (
+          !includeOverrides &&
+          typeof onlyIndex !== "number" &&
+          overrideIndexesRef.current.has(index)
+        ) {
+          return row;
+        }
+        return {
+          ...row,
+          customAbutment: true,
+          ...specs,
+        };
+      }),
+    );
+  };
+
+  const updateSharedCustomSpecs = (
+    patch: Partial<ReturnType<typeof emptyToothWorkCustomSpecs>>,
+  ) => {
+    const next = {
+      ...sharedCustomSpecs,
+      ...patch,
+    };
+    setSharedCustomSpecs(next);
+    applySharedSpecsToTeeth(next);
+  };
+
+  const resolveSeedCustomSpecs = (
+    prev: ToothWorkSelection[],
+    excludeIndex?: number,
+  ) => {
+    if (customSpecsKey(sharedCustomSpecs) !== emptySpecsKey) {
+      return pickToothWorkCustomSpecs(sharedCustomSpecs, true);
+    }
+    const donor = prev.find(
+      (row, index) =>
+        index !== excludeIndex &&
+        row.customAbutment &&
+        isCustomAbutmentSupportedProsthesisType(row.prosthesisType) &&
+        customSpecsKey(row) !== emptySpecsKey,
+    );
+    if (donor) return pickToothWorkCustomSpecs(donor, true);
+    return emptyToothWorkCustomSpecs();
   };
 
   useEffect(() => {
@@ -559,17 +677,21 @@ export const PracticeTransferRequestIntakePanel = ({
                     variant="ghost"
                     size="icon"
                     className="h-7 w-7"
-                    onClick={() =>
+                    onClick={() => {
                       setToothWorks([
                         {
                           toothNumber: "",
                           prosthesisType: defaultProsthesisType,
                           customAbutment: false,
                           bridgeLinkedTeeth: [],
-                          ...emptyToothWorkImplant(),
+                          ...emptyToothWorkCustomSpecs(),
                         },
-                      ])
-                    }
+                      ]);
+                      setSharedCustomSpecs(emptyToothWorkCustomSpecs());
+                      setOverrideIndexes(new Set());
+                      setExpandedOverrideIndexes(new Set());
+                      sharedSpecsSeededRef.current = false;
+                    }}
                   >
                     <Trash2 className="h-3.5 w-3.5" />
                   </Button>
@@ -583,6 +705,46 @@ export const PracticeTransferRequestIntakePanel = ({
         </div>
 
         <div className="space-y-1.5">
+          {hasCustomAbutmentTeeth ? (
+            <div className="space-y-2 rounded-md border border-sky-200 bg-sky-50/50 px-2.5 py-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <p className="text-xs font-semibold text-slate-700">커스텀어벗 공통 설정</p>
+                  <p className="text-[11px] text-slate-500">
+                    이 환자 커스텀어벗 치아에 함께 적용됩니다. 치아마다 다르면 각 행에서 「이 치아만
+                    다르게」를 사용하세요.
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-7 text-[11px]"
+                  onClick={() => {
+                    applySharedSpecsToTeeth(sharedCustomSpecs, { includeOverrides: true });
+                    setOverrideIndexes(new Set());
+                    setExpandedOverrideIndexes(new Set());
+                  }}
+                >
+                  모든 커스텀어벗 치아에 적용
+                </Button>
+              </div>
+              <PracticeToothImplantFields
+                value={sharedCustomSpecs}
+                onChange={(nextImplant) => updateSharedCustomSpecs(nextImplant)}
+                connections={implantConnections}
+                favorites={implantFavorites}
+                onFavoritesChange={onImplantFavoritesChange}
+              />
+              <PracticeToothAbutmentFields
+                value={sharedCustomSpecs}
+                onChange={(nextAbutment) => updateSharedCustomSpecs(nextAbutment)}
+                favorites={abutmentFavorites}
+                onFavoritesChange={onAbutmentFavoritesChange}
+              />
+            </div>
+          ) : null}
+
           {orderedToothWorkRows.map(({ row, originalIndex, linkPrev, linkNext }) => {
             const adjacentTeeth = getAdjacentTeeth(row.toothNumber);
             const linkedTeeth = Array.isArray(row.bridgeLinkedTeeth)
@@ -708,8 +870,8 @@ export const PracticeTransferRequestIntakePanel = ({
                                 : [],
                               ...(isCustomAbutmentSupportedProsthesisType(prosthesisType) &&
                               next[originalIndex].customAbutment
-                                ? pickToothWorkImplant(next[originalIndex], true)
-                                : emptyToothWorkImplant()),
+                                ? pickToothWorkCustomSpecs(next[originalIndex], true)
+                                : emptyToothWorkCustomSpecs()),
                             };
 
                             const bridgeLikeToNonBridgeLike =
@@ -801,8 +963,8 @@ export const PracticeTransferRequestIntakePanel = ({
                                             : pairedLinks,
                                           ...(isCustomAbutmentSupportedProsthesisType(pairedType) &&
                                           paired.customAbutment
-                                            ? pickToothWorkImplant(paired, true)
-                                            : emptyToothWorkImplant()),
+                                            ? pickToothWorkCustomSpecs(paired, true)
+                                            : emptyToothWorkCustomSpecs()),
                                         };
                                       } else {
                                         next.push({
@@ -812,7 +974,7 @@ export const PracticeTransferRequestIntakePanel = ({
                                             : "브리지",
                                           customAbutment: false,
                                           bridgeLinkedTeeth: currentTooth ? [currentTooth] : [],
-                                          ...emptyToothWorkImplant(),
+                                          ...emptyToothWorkCustomSpecs(),
                                         });
                                       }
                                     } else if (pairedIdx >= 0 && currentTooth) {
@@ -845,17 +1007,46 @@ export const PracticeTransferRequestIntakePanel = ({
                           checked={Boolean(row.customAbutment)}
                           onChange={(e) => {
                             const checked = Boolean(e.target.checked);
-                            setToothWorks((prev) => {
-                              const next = [...prev];
-                              next[originalIndex] = {
-                                ...next[originalIndex],
-                                customAbutment: checked,
-                                ...(checked
-                                  ? pickToothWorkImplant(next[originalIndex], true)
-                                  : emptyToothWorkImplant()),
-                              };
-                              return next;
-                            });
+                            if (checked) {
+                              const seed = resolveSeedCustomSpecs(toothWorks, originalIndex);
+                              setToothWorks((prev) => {
+                                const next = [...prev];
+                                next[originalIndex] = {
+                                  ...next[originalIndex],
+                                  customAbutment: true,
+                                  ...seed,
+                                };
+                                return next;
+                              });
+                              if (customSpecsKey(sharedCustomSpecs) === emptySpecsKey) {
+                                setSharedCustomSpecs(seed);
+                              }
+                              setOverrideIndexes((prevOverrides) => {
+                                const copy = new Set(prevOverrides);
+                                copy.delete(originalIndex);
+                                return copy;
+                              });
+                            } else {
+                              setToothWorks((prev) => {
+                                const next = [...prev];
+                                next[originalIndex] = {
+                                  ...next[originalIndex],
+                                  customAbutment: false,
+                                  ...emptyToothWorkCustomSpecs(),
+                                };
+                                return next;
+                              });
+                              setOverrideIndexes((prevOverrides) => {
+                                const copy = new Set(prevOverrides);
+                                copy.delete(originalIndex);
+                                return copy;
+                              });
+                              setExpandedOverrideIndexes((prevExpanded) => {
+                                const copy = new Set(prevExpanded);
+                                copy.delete(originalIndex);
+                                return copy;
+                              });
+                            }
                           }}
                         />
                         <span>커스텀어벗</span>
@@ -867,7 +1058,23 @@ export const PracticeTransferRequestIntakePanel = ({
                       variant="ghost"
                       size="icon"
                       className="h-8 w-8"
-                      onClick={() =>
+                      onClick={() => {
+                        setOverrideIndexes((prevOverrides) => {
+                          const remapped = new Set<number>();
+                          for (const idx of prevOverrides) {
+                            if (idx === originalIndex) continue;
+                            remapped.add(idx > originalIndex ? idx - 1 : idx);
+                          }
+                          return remapped;
+                        });
+                        setExpandedOverrideIndexes((prevExpanded) => {
+                          const remapped = new Set<number>();
+                          for (const idx of prevExpanded) {
+                            if (idx === originalIndex) continue;
+                            remapped.add(idx > originalIndex ? idx - 1 : idx);
+                          }
+                          return remapped;
+                        });
                         setToothWorks((prev) => {
                           const next = prev.filter((_, i) => i !== originalIndex);
                           if (next.length > 0) return next;
@@ -877,34 +1084,117 @@ export const PracticeTransferRequestIntakePanel = ({
                               prosthesisType: defaultProsthesisType,
                               customAbutment: false,
                               bridgeLinkedTeeth: [],
-                              ...emptyToothWorkImplant(),
+                              ...emptyToothWorkCustomSpecs(),
                             },
                           ];
-                        })
-                      }
+                        });
+                      }}
                     >
                       <Trash2 className="h-4 w-4" />
                     </Button>
                   </div>
 
                   {canSelectCustomAbutment && row.customAbutment ? (
-                    <PracticeToothImplantFields
-                      value={pickToothWorkImplant(row, true)}
-                      onChange={(nextImplant) => {
-                        setToothWorks((prev) => {
-                          const next = [...prev];
-                          next[originalIndex] = {
-                            ...next[originalIndex],
-                            customAbutment: true,
-                            ...nextImplant,
-                          };
-                          return next;
-                        });
-                      }}
-                      connections={implantConnections}
-                      favorites={implantFavorites}
-                      onFavoritesChange={onImplantFavoritesChange}
-                    />
+                    <div className="space-y-1">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span
+                          className={cn(
+                            "rounded px-1.5 py-0.5 text-[10px] font-medium",
+                            overrideIndexes.has(originalIndex)
+                              ? "bg-amber-100 text-amber-800"
+                              : "bg-sky-100 text-sky-800",
+                          )}
+                        >
+                          {overrideIndexes.has(originalIndex) ? "개별" : "공통"}
+                        </span>
+                        <span className="min-w-0 flex-1 truncate text-[11px] text-slate-600">
+                          {formatCustomSpecsSummary(row) || "규격 미선택"}
+                        </span>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 px-1.5 text-[11px]"
+                          onClick={() =>
+                            setExpandedOverrideIndexes((prev) => {
+                              const next = new Set(prev);
+                              if (next.has(originalIndex)) next.delete(originalIndex);
+                              else next.add(originalIndex);
+                              return next;
+                            })
+                          }
+                        >
+                          {expandedOverrideIndexes.has(originalIndex)
+                            ? "접기"
+                            : "이 치아만 다르게"}
+                        </Button>
+                        {overrideIndexes.has(originalIndex) ? (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="h-6 px-1.5 text-[11px] text-sky-700"
+                            onClick={() => {
+                              applySharedSpecsToTeeth(sharedCustomSpecs, {
+                                onlyIndex: originalIndex,
+                              });
+                              setOverrideIndexes((prev) => {
+                                const next = new Set(prev);
+                                next.delete(originalIndex);
+                                return next;
+                              });
+                              setExpandedOverrideIndexes((prev) => {
+                                const next = new Set(prev);
+                                next.delete(originalIndex);
+                                return next;
+                              });
+                            }}
+                          >
+                            공통으로
+                          </Button>
+                        ) : null}
+                      </div>
+
+                      {expandedOverrideIndexes.has(originalIndex) ? (
+                        <div className="space-y-1.5">
+                          <PracticeToothImplantFields
+                            value={pickToothWorkCustomSpecs(row, true)}
+                            onChange={(nextImplant) => {
+                              setToothWorks((prev) => {
+                                const next = [...prev];
+                                next[originalIndex] = {
+                                  ...next[originalIndex],
+                                  customAbutment: true,
+                                  ...nextImplant,
+                                };
+                                return next;
+                              });
+                              setOverrideIndexes((prev) => new Set(prev).add(originalIndex));
+                            }}
+                            connections={implantConnections}
+                            favorites={implantFavorites}
+                            onFavoritesChange={onImplantFavoritesChange}
+                          />
+                          <PracticeToothAbutmentFields
+                            value={pickToothWorkCustomSpecs(row, true)}
+                            onChange={(nextAbutment) => {
+                              setToothWorks((prev) => {
+                                const next = [...prev];
+                                next[originalIndex] = {
+                                  ...next[originalIndex],
+                                  customAbutment: true,
+                                  ...nextAbutment,
+                                };
+                                return next;
+                              });
+                              setOverrideIndexes((prev) => new Set(prev).add(originalIndex));
+                            }}
+                            favorites={abutmentFavorites}
+                            onFavoritesChange={onAbutmentFavoritesChange}
+                          />
+                        </div>
+                      ) : null}
+                    </div>
                   ) : null}
                 </div>
               </div>
@@ -925,7 +1215,7 @@ export const PracticeTransferRequestIntakePanel = ({
                     prosthesisType: defaultProsthesisType,
                     customAbutment: false,
                     bridgeLinkedTeeth: [],
-                    ...emptyToothWorkImplant(),
+                    ...emptyToothWorkCustomSpecs(),
                   },
                 ])
               }
