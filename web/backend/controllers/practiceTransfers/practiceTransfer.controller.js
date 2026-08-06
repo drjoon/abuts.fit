@@ -9,6 +9,7 @@ import {
   getRequestPerfCacheValue,
   setRequestPerfCacheValue,
   deleteRequestPerfCacheValue,
+  invalidateAdminDashboardCaches,
   withRequestPerfInFlight,
 } from "../../services/requestDashboardCache.service.js";
 
@@ -957,6 +958,8 @@ export async function emptyPracticeTransferTrash(req, res) {
       extraUserIds: [req.user?._id],
     });
 
+    invalidateAdminDashboardCaches();
+
     return res.status(200).json({
       success: true,
       message: "휴지통을 비웠습니다.",
@@ -1692,6 +1695,8 @@ export async function cancelPracticeTransfersBatch(req, res) {
       });
     }
 
+    invalidateAdminDashboardCaches();
+
     return res.status(200).json({
       success: true,
       data: {
@@ -1845,6 +1850,8 @@ export async function restorePracticeTransfersBatch(req, res) {
         },
       });
     }
+
+    invalidateAdminDashboardCaches();
 
     return res.status(200).json({
       success: true,

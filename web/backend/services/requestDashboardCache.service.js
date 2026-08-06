@@ -68,6 +68,31 @@ export const deleteRequestPerfCacheValue = (key) => {
   if (!normalized) return false;
   return __requestPerfCache.delete(normalized);
 };
+
+export const invalidateRequestPerfCacheByPrefix = (prefix) => {
+  const normalized = String(prefix || "").trim();
+  if (!normalized) return 0;
+
+  let removed = 0;
+  for (const key of __requestPerfCache.keys()) {
+    if (String(key || "").startsWith(normalized)) {
+      __requestPerfCache.delete(key);
+      removed += 1;
+    }
+  }
+  for (const key of __requestInFlight.keys()) {
+    if (String(key || "").startsWith(normalized)) {
+      __requestInFlight.delete(key);
+      removed += 1;
+    }
+  }
+  return removed;
+};
+
+/** admin dashboard GET(`/api/admin/dashboard`) period cache */
+export const invalidateAdminDashboardCaches = () =>
+  invalidateRequestPerfCacheByPrefix("admin-dashboard:");
+
 export const withRequestPerfInFlight = (key, factory) =>
   withMapInFlight(__requestInFlight, key, factory);
 

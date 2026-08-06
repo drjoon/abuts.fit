@@ -22,7 +22,7 @@ import { usePeriodStore } from "@/store/usePeriodStore";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/shared/hooks/use-toast";
 import { MultiActionDialog } from "@/features/support/components/MultiActionDialog";
 import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
@@ -44,6 +44,7 @@ import {
   HelpCircle,
   PhoneCall,
   RotateCcw,
+  Trash2,
   Code2,
   UploadCloud,
   Send,
@@ -412,6 +413,7 @@ export const AdminDashboardPage = () => {
   const { user, token } = useAuthStore();
   const navigate = useNavigate();
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const { period, setPeriod } = usePeriodStore();
   const { counts: commBadgeCounts } = useAdminCommBadges();
   const [happyCallDialogOpen, setHappyCallDialogOpen] = useState(false);
@@ -475,6 +477,11 @@ export const AdminDashboardPage = () => {
     transferMongoId: string;
   } | null>(null);
   const [restoringTransfer, setRestoringTransfer] = useState(false);
+  const [deleteTransferTarget, setDeleteTransferTarget] = useState<{
+    transferId: string;
+    transferMongoId: string;
+  } | null>(null);
+  const [deletingTransfer, setDeletingTransfer] = useState(false);
   const [designSoftwareStatsFilter, setDesignSoftwareStatsFilter] = useState<
     "all" | "3shape" | "exocad" | "other"
   >("all");
@@ -984,6 +991,85 @@ export const AdminDashboardPage = () => {
     [practiceTransferRecentTransfers],
   );
 
+  const patchPracticeTransferStatusInCache = (args: {
+    transferId: string;
+    transferMongoId: string;
+    nextStatus: "canceled" | "active";
+  }) => {
+    const transferId = String(args.transferId || "").trim();
+    const transferMongoId = String(args.transferMongoId || "").trim();
+    if (!transferId && !transferMongoId) return;
+
+    queryClient.setQueryData(
+      ["admin-dashboard-page", period],
+      (prev: ApiEnvelope<AdminDashboardResponseData> | undefined) => {
+        if (!prev?.data?.practiceTransferStats) return prev;
+        const stats = prev.data.practiceTransferStats;
+        const recent = Array.isArray(stats.recentTransfers)
+          ? stats.recentTransfers
+          : [];
+        let matched = false;
+        const nextRecent = recent.map((row) => {
+          const rowTransferId = String(row?.transferId || "").trim();
+          const rowMongoId = String(row?.transferMongoId || "").trim();
+          const isMatch =
+            (transferId && rowTransferId === transferId) ||
+            (transferMongoId && rowMongoId === transferMongoId);
+          if (!isMatch) return row;
+          matched = true;
+          const prevStatus = String(row?.status || "").trim();
+          if (args.nextStatus === "canceled" && prevStatus === "canceled") {
+            return row;
+          }
+          if (args.nextStatus === "active" && prevStatus !== "canceled") {
+            return row;
+          }
+          return {
+            ...row,
+            status: args.nextStatus === "canceled" ? "canceled" : "active",
+          };
+        });
+        if (!matched) return prev;
+
+        const activeDelta = args.nextStatus === "canceled" ? -1 : 1;
+        const canceledDelta = args.nextStatus === "canceled" ? 1 : -1;
+        return {
+          ...prev,
+          data: {
+            ...prev.data,
+            practiceTransferStats: {
+              ...stats,
+              activeTransfers: Math.max(
+                0,
+                Number(stats.activeTransfers || 0) + activeDelta,
+              ),
+              canceledTransfers: Math.max(
+                0,
+                Number(stats.canceledTransfers || 0) + canceledDelta,
+              ),
+              recentTransfers: nextRecent,
+            },
+          },
+        };
+      },
+    );
+  };
+
+  const refetchAdminDashboardFresh = async () => {
+    if (!token || user?.role !== "admin") return;
+    try {
+      const res = await apiFetch<ApiEnvelope<AdminDashboardResponseData>>({
+        path: `/api/admin/dashboard?period=${encodeURIComponent(period)}&fresh=1`,
+        method: "GET",
+        token,
+      });
+      if (!res.ok || !res.data?.success) return;
+      queryClient.setQueryData(["admin-dashboard-page", period], res.data);
+    } catch {
+      void refetchAdminDashboard();
+    }
+  };
+
   const handleRestorePracticeTransfer = async () => {
     if (restoringTransfer || !restoreTransferTarget || !token) return;
     setRestoringTransfer(true);
@@ -1020,8 +1106,13 @@ export const AdminDashboardPage = () => {
         title: "취소건 되살리기 완료",
         description: `${restoreTransferTarget.transferId || "전송"}을 활성 상태로 복구했습니다.`,
       });
+      patchPracticeTransferStatusInCache({
+        transferId: restoreTransferTarget.transferId,
+        transferMongoId: restoreTransferTarget.transferMongoId,
+        nextStatus: "active",
+      });
       setRestoreTransferTarget(null);
-      void refetchAdminDashboard();
+      void refetchAdminDashboardFresh();
     } catch (error) {
       toast({
         title: "되살리기 실패",
@@ -1031,6 +1122,61 @@ export const AdminDashboardPage = () => {
       });
     } finally {
       setRestoringTransfer(false);
+    }
+  };
+
+  const handleDeletePracticeTransfer = async () => {
+    if (deletingTransfer || !deleteTransferTarget || !token) return;
+    setDeletingTransfer(true);
+    try {
+      const transferIds = deleteTransferTarget.transferId
+        ? [deleteTransferTarget.transferId]
+        : [];
+      const transferMongoIds = deleteTransferTarget.transferMongoId
+        ? [deleteTransferTarget.transferMongoId]
+        : [];
+      const res = await apiFetch<{
+        success?: boolean;
+        data?: { successCount?: number; failedIds?: string[] };
+        message?: string;
+      }>({
+        path: "/api/practice/transfers/cancel-batch",
+        method: "POST",
+        token,
+        jsonBody: { transferIds, transferMongoIds },
+      });
+      if (!res.ok) {
+        throw new Error(
+          String(
+            (res.data as { message?: string } | undefined)?.message ||
+              "전송건 삭제에 실패했습니다.",
+          ),
+        );
+      }
+      const successCount = Number(res.data?.data?.successCount || 0);
+      if (successCount <= 0) {
+        throw new Error("삭제할 수 있는 활성 전송건을 찾지 못했습니다.");
+      }
+      toast({
+        title: "전송건 삭제 완료",
+        description: `${deleteTransferTarget.transferId || "전송"}을 취소건으로 이동했습니다.`,
+      });
+      patchPracticeTransferStatusInCache({
+        transferId: deleteTransferTarget.transferId,
+        transferMongoId: deleteTransferTarget.transferMongoId,
+        nextStatus: "canceled",
+      });
+      setDeleteTransferTarget(null);
+      void refetchAdminDashboardFresh();
+    } catch (error) {
+      toast({
+        title: "삭제 실패",
+        description:
+          error instanceof Error ? error.message : "전송건 삭제 중 오류가 발생했습니다.",
+        variant: "destructive",
+      });
+    } finally {
+      setDeletingTransfer(false);
     }
   };
 
@@ -2071,6 +2217,7 @@ export const AdminDashboardPage = () => {
                   {practiceTransferRecentActive.length > 0 ? (
                     practiceTransferRecentActive.map((row, idx) => {
                       const transferId = String(row?.transferId || "-").trim() || "-";
+                      const transferMongoId = String(row?.transferMongoId || "").trim();
                       const practiceName =
                         String(row?.practiceName || "").trim() || "치과명 미확인";
                       const labName = String(row?.labName || "").trim() || "기공소명 미확인";
@@ -2094,9 +2241,29 @@ export const AdminDashboardPage = () => {
                                 {toDateTimeLabel(String(row?.createdAt || ""))}
                               </div>
                             </div>
-                            <Badge variant="outline" className="shrink-0 text-[10px]">
-                              활성
-                            </Badge>
+                            <div className="flex shrink-0 flex-col items-end gap-1.5">
+                              <Badge variant="outline" className="text-[10px]">
+                                활성
+                              </Badge>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                className="h-7 border-rose-200 px-2 text-[11px] text-rose-700 hover:bg-rose-50"
+                                onClick={() =>
+                                  setDeleteTransferTarget({
+                                    transferId: transferId === "-" ? "" : transferId,
+                                    transferMongoId,
+                                  })
+                                }
+                                disabled={
+                                  (!transferId || transferId === "-") && !transferMongoId
+                                }
+                              >
+                                <Trash2 className="mr-1 h-3 w-3" />
+                                삭제
+                              </Button>
+                            </div>
                           </div>
                         </div>
                       );
@@ -2212,6 +2379,28 @@ export const AdminDashboardPage = () => {
         onCancel={() => {
           if (restoringTransfer) return;
           setRestoreTransferTarget(null);
+        }}
+      />
+
+      <ConfirmDialog
+        open={Boolean(deleteTransferTarget)}
+        title="이 전송건을 삭제할까요?"
+        description={
+          <div className="space-y-1">
+            <div className="text-sm text-muted-foreground">
+              대상: {deleteTransferTarget?.transferId || deleteTransferTarget?.transferMongoId || "-"}
+            </div>
+            <div className="text-sm text-muted-foreground">
+              취소건으로 이동됩니다. 필요하면 취소건에서 되살릴 수 있습니다.
+            </div>
+          </div>
+        }
+        confirmLabel={deletingTransfer ? "삭제 중..." : "삭제"}
+        cancelLabel="닫기"
+        onConfirm={() => void handleDeletePracticeTransfer()}
+        onCancel={() => {
+          if (deletingTransfer) return;
+          setDeleteTransferTarget(null);
         }}
       />
 
