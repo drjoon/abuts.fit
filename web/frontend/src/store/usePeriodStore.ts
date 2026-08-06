@@ -1,3 +1,5 @@
+// change-log:
+// - 2026-08-07: thisMonth 종료일을 월말이 아니라 오늘(KST)로 클램프
 // related files:
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
@@ -134,15 +136,13 @@ export const periodToRange = (
   }
 
   const thisMonthStart = makeUtcFromKst(year, month, 1, 0, 0, 0, 0);
-  const nextMonthStart =
-    month === 12
-      ? makeUtcFromKst(year + 1, 1, 1, 0, 0, 0, 0)
-      : makeUtcFromKst(year, month + 1, 1, 0, 0, 0, 0);
+  const todayEnd = makeUtcFromKst(year, month, day, 23, 59, 59, 999);
 
   if (period === "thisMonth") {
+    // 미도래 일자(월말까지 빈 행)를 만들지 않도록 오늘은 포함·미래는 제외
     return {
       startDate: thisMonthStart.toISOString(),
-      endDate: new Date(nextMonthStart.getTime() - 1).toISOString(),
+      endDate: todayEnd.toISOString(),
     };
   }
 
