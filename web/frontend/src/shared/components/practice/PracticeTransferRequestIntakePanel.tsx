@@ -3,6 +3,7 @@ import {
   Check,
   ChevronsUpDown,
   ChevronDown,
+  Plus,
   Settings,
   Trash2,
   BookmarkPlus,
@@ -48,7 +49,6 @@ import {
 } from "@/components/ui/collapsible";
 import { PracticeToothImplantFields } from "@/shared/components/practice/PracticeToothImplantFields";
 import { PracticeToothAbutmentFields } from "@/shared/components/practice/PracticeToothAbutmentFields";
-import { PracticeToothArchChart } from "@/shared/components/practice/PracticeToothArchChart";
 import type { ImplantConnection } from "@/shared/practice/useImplantConnectionCatalog";
 import {
   customSpecsKey,
@@ -71,7 +71,6 @@ import {
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
 // - web/frontend/src/shared/practice/usePracticeToothWorkEditor.ts
 // - web/frontend/src/shared/components/practice/PracticeOrderArrivalDateRangeField.tsx
-// - web/frontend/src/shared/components/practice/PracticeToothArchChart.tsx
 // - web/frontend/src/shared/components/practice/PracticeToothImplantFields.tsx
 // - web/frontend/src/shared/components/practice/PracticeToothAbutmentFields.tsx
 
@@ -191,8 +190,8 @@ export const PracticeTransferRequestIntakePanel = ({
   onImeComposingChange,
   prosthesisTypeSelectWidthClassName = "w-[7rem]",
   showBridgeConnections = false,
-  toothTensOptions: _toothTensOptions,
-  toothOnesOptions: _toothOnesOptions,
+  toothTensOptions,
+  toothOnesOptions,
   onClearAll,
   implantConnections = [],
   implantFavorites = [],
@@ -233,90 +232,6 @@ export const PracticeTransferRequestIntakePanel = ({
   };
 
   const emptySpecsKey = customSpecsKey(emptyToothWorkCustomSpecs());
-
-  const selectedToothNumbers = useMemo(() => {
-    const set = new Set<string>();
-    for (const row of toothWorks) {
-      const tooth = String(row.toothNumber || "").trim();
-      if (/^[1-4][1-8]$/.test(tooth)) set.add(tooth);
-    }
-    return set;
-  }, [toothWorks]);
-
-  const archToothVisuals = useMemo(() => {
-    const map = new Map<
-      string,
-      { prosthesisType?: string; bridgeLinkedTeeth?: readonly string[] }
-    >();
-    for (const row of toothWorks) {
-      const tooth = String(row.toothNumber || "").trim();
-      if (!/^[1-4][1-8]$/.test(tooth)) continue;
-      map.set(tooth, {
-        prosthesisType: row.prosthesisType,
-        bridgeLinkedTeeth: Array.isArray(row.bridgeLinkedTeeth) ? row.bridgeLinkedTeeth : [],
-      });
-    }
-    return map;
-  }, [toothWorks]);
-
-  const handleToggleArchTooth = (toothNumber: string) => {
-    const tooth = String(toothNumber || "").trim();
-    if (!/^[1-4][1-8]$/.test(tooth)) return;
-
-    const existingIdx = toothWorks.findIndex(
-      (row) => String(row.toothNumber || "").trim() === tooth,
-    );
-
-    if (existingIdx >= 0) {
-      setOverrideIndexes((prevOverrides) =>
-        remapIndexSetAfterRemove(prevOverrides, existingIdx),
-      );
-      setExpandedOverrideIndexes((prevExpanded) =>
-        remapIndexSetAfterRemove(prevExpanded, existingIdx),
-      );
-      setToothWorks((prev) => {
-        const next = prev.filter((_, i) => i !== existingIdx);
-        if (next.length > 0) return next;
-        return [
-          {
-            toothNumber: "",
-            prosthesisType: defaultProsthesisType,
-            customAbutment: false,
-            bridgeLinkedTeeth: [],
-            ...emptyToothWorkCustomSpecs(),
-          },
-        ];
-      });
-      return;
-    }
-
-    setToothWorks((prev) => {
-      const emptyIdx = prev.findIndex((row) => !String(row.toothNumber || "").trim());
-      if (emptyIdx >= 0) {
-        const next = [...prev];
-        const adj = getAdjacentTeeth(tooth);
-        next[emptyIdx] = {
-          ...next[emptyIdx],
-          toothNumber: tooth,
-          bridgeLinkedTeeth: Array.isArray(next[emptyIdx].bridgeLinkedTeeth)
-            ? next[emptyIdx].bridgeLinkedTeeth.filter((v) => adj.includes(v))
-            : [],
-        };
-        return next;
-      }
-
-      return [
-        ...prev,
-        {
-          toothNumber: tooth,
-          prosthesisType: defaultProsthesisType,
-          customAbutment: false,
-          bridgeLinkedTeeth: [],
-          ...emptyToothWorkCustomSpecs(),
-        },
-      ];
-    });
-  };
 
   const customAbutmentIndexes = useMemo(
     () =>
@@ -779,462 +694,7 @@ export const PracticeTransferRequestIntakePanel = ({
           </div>
         </div>
 
-        <div className="space-y-2">
-          <div className="grid grid-cols-1 gap-2 lg:grid-cols-[minmax(0,1.4fr)_minmax(16rem,1fr)]">
-            <div className="min-w-0">
-              <PracticeToothArchChart
-                selectedTeeth={selectedToothNumbers}
-                onToggleTooth={handleToggleArchTooth}
-                toothVisuals={archToothVisuals}
-              />
-            </div>
-
-            <div className="flex min-h-0 flex-col space-y-1.5">
-              <div className="flex items-center justify-between gap-2 px-0.5">
-                <p className="text-[11px] font-medium text-slate-500">선택 요약</p>
-                <span className="text-[11px] tabular-nums text-slate-400">
-                  {selectedToothNumbers.size}개 치아
-                </span>
-              </div>
-
-              <div className="max-h-[22rem] space-y-1.5 overflow-y-auto rounded-lg border border-slate-200 bg-white/90 p-1.5">
-                {orderedToothWorkRows
-                  .filter(({ row }) => /^[1-4][1-8]$/.test(String(row.toothNumber || "").trim()))
-                  .map(({ row, originalIndex, linkPrev, linkNext }) => {
-                    const adjacentTeeth = getAdjacentTeeth(row.toothNumber);
-                    const linkedTeeth = Array.isArray(row.bridgeLinkedTeeth)
-                      ? row.bridgeLinkedTeeth.filter((t) => adjacentTeeth.includes(t))
-                      : [];
-                    const isBridgeLike = isBridgeLikeProsthesisType(row.prosthesisType);
-                    const canSelectCustomAbutment = isCustomAbutmentSupportedProsthesisType(
-                      row.prosthesisType,
-                    );
-                    const toothLabel = String(row.toothNumber || "").trim();
-
-                    return (
-                      <div
-                        key={`${originalIndex}:${row.toothNumber}:${row.prosthesisType}`}
-                        className={showBridgeConnections ? "relative pl-4" : ""}
-                      >
-                        {showBridgeConnections && linkPrev ? (
-                          <span className="absolute left-[7px] -top-2 h-2 w-[2px] bg-blue-500" />
-                        ) : null}
-                        {showBridgeConnections && linkNext ? (
-                          <span className="absolute left-[7px] -bottom-2 h-2 w-[2px] bg-blue-500" />
-                        ) : null}
-                        {showBridgeConnections && (linkPrev || linkNext) ? (
-                          <span className="absolute left-[7px] top-0 bottom-0 w-[2px] bg-blue-400" />
-                        ) : null}
-                        {showBridgeConnections ? (
-                          <span
-                            className={cn(
-                              "absolute left-[3px] top-1/2 h-3 w-3 -translate-y-1/2 rounded-full border",
-                              linkPrev || linkNext
-                                ? "border-blue-600 bg-blue-500"
-                                : "border-slate-300 bg-slate-300",
-                            )}
-                          />
-                        ) : null}
-
-                        <div className="space-y-1 rounded-md border px-2 py-1.5">
-                          <div className="flex items-start gap-1.5 flex-wrap">
-                            <div
-                              className="inline-flex h-8 min-w-[2.5rem] items-center justify-center rounded-md border border-sky-300 bg-sky-50 px-2 text-sm font-semibold tabular-nums text-sky-800"
-                              title={`치아 ${toothLabel}`}
-                            >
-                              {toothLabel}
-                            </div>
-
-                            <div className="flex flex-col items-center gap-1">
-                              <Select
-                                value={row.prosthesisType || "__empty__"}
-                                onValueChange={(value) => {
-                                  setToothWorks((prev) => {
-                                    const next = [...prev];
-                                    const prosthesisType = value === "__empty__" ? "" : value;
-                                    const prevType = String(next[originalIndex]?.prosthesisType || "");
-                                    const currentTooth = String(
-                                      next[originalIndex]?.toothNumber || "",
-                                    ).trim();
-
-                                    next[originalIndex] = {
-                                      ...next[originalIndex],
-                                      prosthesisType,
-                                      customAbutment: isCustomAbutmentSupportedProsthesisType(
-                                        prosthesisType,
-                                      )
-                                        ? Boolean(next[originalIndex].customAbutment)
-                                        : false,
-                                      bridgeLinkedTeeth: isBridgeLikeProsthesisType(prosthesisType)
-                                        ? Array.isArray(next[originalIndex].bridgeLinkedTeeth)
-                                          ? next[originalIndex].bridgeLinkedTeeth
-                                          : []
-                                        : [],
-                                      ...(isCustomAbutmentSupportedProsthesisType(prosthesisType) &&
-                                      next[originalIndex].customAbutment
-                                        ? pickToothWorkCustomSpecs(next[originalIndex], true)
-                                        : emptyToothWorkCustomSpecs()),
-                                    };
-
-                                    const bridgeLikeToNonBridgeLike =
-                                      isBridgeLikeProsthesisType(prevType) &&
-                                      !isBridgeLikeProsthesisType(prosthesisType) &&
-                                      /^[1-4][1-8]$/.test(currentTooth);
-
-                                    if (bridgeLikeToNonBridgeLike) {
-                                      for (let i = 0; i < next.length; i += 1) {
-                                        if (i === originalIndex) continue;
-                                        const links = Array.isArray(next[i].bridgeLinkedTeeth)
-                                          ? next[i].bridgeLinkedTeeth
-                                          : [];
-                                        if (!links.includes(currentTooth)) continue;
-                                        next[i] = {
-                                          ...next[i],
-                                          bridgeLinkedTeeth: links.filter((v) => v !== currentTooth),
-                                        };
-                                      }
-                                    }
-
-                                    return next;
-                                  });
-                                }}
-                              >
-                                <SelectTrigger
-                                  className={cn(
-                                    "h-8 px-2 text-sm",
-                                    prosthesisTypeSelectWidthClassName,
-                                  )}
-                                >
-                                  <SelectValue placeholder="형태" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  <SelectItem value="__empty__">형태 선택</SelectItem>
-                                  {normalizedProsthesisTypes.map((type) => (
-                                    <SelectItem key={`ptype-${type}`} value={type}>
-                                      {type}
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-
-                              {isBridgeLike ? (
-                                <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground">
-                                  <span className="whitespace-nowrap">연결할 치아</span>
-                                  {adjacentTeeth.map((adjTooth) => (
-                                    <label
-                                      key={`adj-${originalIndex}-${adjTooth}`}
-                                      className="inline-flex items-center gap-1 text-foreground"
-                                    >
-                                      <input
-                                        type="checkbox"
-                                        className="h-4 w-4"
-                                        checked={linkedTeeth.includes(adjTooth)}
-                                        onChange={(e) => {
-                                          const checked = Boolean(e.target.checked);
-                                          setToothWorks((prev) => {
-                                            const next = [...prev];
-                                            const currentTooth = String(
-                                              next[originalIndex]?.toothNumber || "",
-                                            ).trim();
-                                            const currentLinks = Array.isArray(
-                                              next[originalIndex].bridgeLinkedTeeth,
-                                            )
-                                              ? next[originalIndex].bridgeLinkedTeeth
-                                              : [];
-
-                                            next[originalIndex] = {
-                                              ...next[originalIndex],
-                                              bridgeLinkedTeeth: checked
-                                                ? Array.from(new Set([...currentLinks, adjTooth]))
-                                                : currentLinks.filter((v) => v !== adjTooth),
-                                            };
-
-                                            const pairedIdx = next.findIndex(
-                                              (pairedRow, rowIdx) =>
-                                                rowIdx !== originalIndex &&
-                                                pairedRow.toothNumber === adjTooth,
-                                            );
-
-                                            if (checked) {
-                                              if (pairedIdx >= 0) {
-                                                const paired = next[pairedIdx];
-                                                const pairedLinks = Array.isArray(
-                                                  paired.bridgeLinkedTeeth,
-                                                )
-                                                  ? paired.bridgeLinkedTeeth
-                                                  : [];
-                                                const pairedType = isBridgeLikeProsthesisType(
-                                                  row.prosthesisType,
-                                                )
-                                                  ? row.prosthesisType
-                                                  : "브리지";
-                                                next[pairedIdx] = {
-                                                  ...paired,
-                                                  prosthesisType: pairedType,
-                                                  customAbutment:
-                                                    isCustomAbutmentSupportedProsthesisType(
-                                                      pairedType,
-                                                    )
-                                                      ? Boolean(paired.customAbutment)
-                                                      : false,
-                                                  bridgeLinkedTeeth: currentTooth
-                                                    ? Array.from(
-                                                        new Set([...pairedLinks, currentTooth]),
-                                                      )
-                                                    : pairedLinks,
-                                                  ...(isCustomAbutmentSupportedProsthesisType(
-                                                    pairedType,
-                                                  ) && paired.customAbutment
-                                                    ? pickToothWorkCustomSpecs(paired, true)
-                                                    : emptyToothWorkCustomSpecs()),
-                                                };
-                                              } else {
-                                                next.push({
-                                                  toothNumber: adjTooth,
-                                                  prosthesisType: isBridgeLikeProsthesisType(
-                                                    row.prosthesisType,
-                                                  )
-                                                    ? row.prosthesisType
-                                                    : "브리지",
-                                                  customAbutment: false,
-                                                  bridgeLinkedTeeth: currentTooth
-                                                    ? [currentTooth]
-                                                    : [],
-                                                  ...emptyToothWorkCustomSpecs(),
-                                                });
-                                              }
-                                            } else if (pairedIdx >= 0 && currentTooth) {
-                                              const paired = next[pairedIdx];
-                                              const pairedLinks = Array.isArray(
-                                                paired.bridgeLinkedTeeth,
-                                              )
-                                                ? paired.bridgeLinkedTeeth
-                                                : [];
-                                              next[pairedIdx] = {
-                                                ...paired,
-                                                bridgeLinkedTeeth: pairedLinks.filter(
-                                                  (v) => v !== currentTooth,
-                                                ),
-                                              };
-                                            }
-
-                                            return next;
-                                          });
-                                        }}
-                                      />
-                                      <span>{adjTooth}</span>
-                                    </label>
-                                  ))}
-                                </div>
-                              ) : null}
-                            </div>
-
-                            {canSelectCustomAbutment ? (
-                              <label className="inline-flex h-8 items-center gap-1 text-xs whitespace-nowrap">
-                                <input
-                                  type="checkbox"
-                                  className="h-3.5 w-3.5"
-                                  checked={Boolean(row.customAbutment)}
-                                  onChange={(e) => {
-                                    const checked = Boolean(e.target.checked);
-                                    if (checked) {
-                                      const seed = resolveSeedCustomSpecs(
-                                        toothWorks,
-                                        originalIndex,
-                                      );
-                                      setToothWorks((prev) => {
-                                        const next = [...prev];
-                                        next[originalIndex] = {
-                                          ...next[originalIndex],
-                                          customAbutment: true,
-                                          ...seed,
-                                        };
-                                        return next;
-                                      });
-                                      if (customSpecsKey(sharedCustomSpecs) === emptySpecsKey) {
-                                        setSharedCustomSpecs(seed);
-                                      }
-                                      setOverrideIndexes((prevOverrides) => {
-                                        const copy = new Set(prevOverrides);
-                                        copy.delete(originalIndex);
-                                        return copy;
-                                      });
-                                    } else {
-                                      setToothWorks((prev) => {
-                                        const next = [...prev];
-                                        next[originalIndex] = {
-                                          ...next[originalIndex],
-                                          customAbutment: false,
-                                          ...emptyToothWorkCustomSpecs(),
-                                        };
-                                        return next;
-                                      });
-                                      setOverrideIndexes((prevOverrides) => {
-                                        const copy = new Set(prevOverrides);
-                                        copy.delete(originalIndex);
-                                        return copy;
-                                      });
-                                      setExpandedOverrideIndexes((prevExpanded) => {
-                                        const copy = new Set(prevExpanded);
-                                        copy.delete(originalIndex);
-                                        return copy;
-                                      });
-                                    }
-                                  }}
-                                />
-                                <span>커스텀어벗</span>
-                              </label>
-                            ) : null}
-
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8"
-                              onClick={() => {
-                                setOverrideIndexes((prevOverrides) =>
-                                  remapIndexSetAfterRemove(prevOverrides, originalIndex),
-                                );
-                                setExpandedOverrideIndexes((prevExpanded) =>
-                                  remapIndexSetAfterRemove(prevExpanded, originalIndex),
-                                );
-                                setToothWorks((prev) => {
-                                  const next = prev.filter((_, i) => i !== originalIndex);
-                                  if (next.length > 0) return next;
-                                  return [
-                                    {
-                                      toothNumber: "",
-                                      prosthesisType: defaultProsthesisType,
-                                      customAbutment: false,
-                                      bridgeLinkedTeeth: [],
-                                      ...emptyToothWorkCustomSpecs(),
-                                    },
-                                  ];
-                                });
-                              }}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </div>
-
-                          {canSelectCustomAbutment && row.customAbutment ? (
-                            <div className="space-y-1">
-                              <div className="flex flex-wrap items-center gap-1.5">
-                                <span
-                                  className={cn(
-                                    "rounded px-1.5 py-0.5 text-[10px] font-medium",
-                                    overrideIndexes.has(originalIndex)
-                                      ? "bg-amber-100 text-amber-800"
-                                      : "bg-sky-100 text-sky-800",
-                                  )}
-                                >
-                                  {overrideIndexes.has(originalIndex) ? "개별" : "공통"}
-                                </span>
-                                <span className="min-w-0 flex-1 truncate text-[11px] text-slate-600">
-                                  {formatCustomSpecsSummary(row) || "규격 미선택"}
-                                </span>
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="sm"
-                                  className="h-6 px-1.5 text-[11px]"
-                                  onClick={() =>
-                                    setExpandedOverrideIndexes((prev) => {
-                                      const next = new Set(prev);
-                                      if (next.has(originalIndex)) next.delete(originalIndex);
-                                      else next.add(originalIndex);
-                                      return next;
-                                    })
-                                  }
-                                >
-                                  {expandedOverrideIndexes.has(originalIndex)
-                                    ? "접기"
-                                    : "이 치아만 다르게"}
-                                </Button>
-                                {overrideIndexes.has(originalIndex) ? (
-                                  <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="sm"
-                                    className="h-6 px-1.5 text-[11px] text-sky-700"
-                                    onClick={() => {
-                                      applySharedSpecsToTeeth(sharedCustomSpecs, {
-                                        onlyIndex: originalIndex,
-                                      });
-                                      setOverrideIndexes((prev) => {
-                                        const next = new Set(prev);
-                                        next.delete(originalIndex);
-                                        return next;
-                                      });
-                                      setExpandedOverrideIndexes((prev) => {
-                                        const next = new Set(prev);
-                                        next.delete(originalIndex);
-                                        return next;
-                                      });
-                                    }}
-                                  >
-                                    공통으로
-                                  </Button>
-                                ) : null}
-                              </div>
-
-                              {expandedOverrideIndexes.has(originalIndex) ? (
-                                <div className="space-y-1.5">
-                                  <PracticeToothImplantFields
-                                    value={pickToothWorkCustomSpecs(row, true)}
-                                    onChange={(nextImplant) => {
-                                      setToothWorks((prev) => {
-                                        const next = [...prev];
-                                        next[originalIndex] = {
-                                          ...next[originalIndex],
-                                          customAbutment: true,
-                                          ...nextImplant,
-                                        };
-                                        return next;
-                                      });
-                                      setOverrideIndexes((prev) => new Set(prev).add(originalIndex));
-                                    }}
-                                    connections={implantConnections}
-                                    favorites={implantFavorites}
-                                    onFavoritesChange={onImplantFavoritesChange}
-                                  />
-                                  <PracticeToothAbutmentFields
-                                    value={pickToothWorkCustomSpecs(row, true)}
-                                    onChange={(nextAbutment) => {
-                                      setToothWorks((prev) => {
-                                        const next = [...prev];
-                                        next[originalIndex] = {
-                                          ...next[originalIndex],
-                                          customAbutment: true,
-                                          ...nextAbutment,
-                                        };
-                                        return next;
-                                      });
-                                      setOverrideIndexes((prev) => new Set(prev).add(originalIndex));
-                                    }}
-                                    favorites={abutmentFavorites}
-                                    onFavoritesChange={onAbutmentFavoritesChange}
-                                  />
-                                </div>
-                              ) : null}
-                            </div>
-                          ) : null}
-                        </div>
-                      </div>
-                    );
-                  })}
-
-                {selectedToothNumbers.size === 0 ? (
-                  <p className="rounded-md border border-dashed border-slate-200 bg-slate-50/50 px-3 py-6 text-center text-xs text-slate-500">
-                    아치 차트에서 치아를 선택하면
-                    <br />
-                    여기서 보철 형태를 지정하세요.
-                  </p>
-                ) : null}
-              </div>
-            </div>
-          </div>
-
+        <div className="space-y-1.5">
           {hasCustomAbutmentTeeth ? (
             <div className="space-y-2 rounded-md border border-sky-200 bg-sky-50/50 px-2.5 py-2">
               <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1274,6 +734,486 @@ export const PracticeTransferRequestIntakePanel = ({
               />
             </div>
           ) : null}
+
+          {orderedToothWorkRows.map(({ row, originalIndex, linkPrev, linkNext }) => {
+            const adjacentTeeth = getAdjacentTeeth(row.toothNumber);
+            const linkedTeeth = Array.isArray(row.bridgeLinkedTeeth)
+              ? row.bridgeLinkedTeeth.filter((t) => adjacentTeeth.includes(t))
+              : [];
+            const isBridgeLike = isBridgeLikeProsthesisType(row.prosthesisType);
+            const canSelectCustomAbutment = isCustomAbutmentSupportedProsthesisType(row.prosthesisType);
+
+            return (
+              <div key={`${originalIndex}:${row.toothNumber}:${row.prosthesisType}`} className={showBridgeConnections ? "relative pl-4" : ""}>
+                {showBridgeConnections && linkPrev ? <span className="absolute left-[7px] -top-2 h-2 w-[2px] bg-blue-500" /> : null}
+                {showBridgeConnections && linkNext ? <span className="absolute left-[7px] -bottom-2 h-2 w-[2px] bg-blue-500" /> : null}
+                {showBridgeConnections && (linkPrev || linkNext) ? (
+                  <span className="absolute left-[7px] top-0 bottom-0 w-[2px] bg-blue-400" />
+                ) : null}
+                {showBridgeConnections ? (
+                  <span
+                    className={cn(
+                      "absolute left-[3px] top-1/2 h-3 w-3 -translate-y-1/2 rounded-full border",
+                      linkPrev || linkNext
+                        ? "border-blue-600 bg-blue-500"
+                        : "border-slate-300 bg-slate-300",
+                    )}
+                  />
+                ) : null}
+
+                <div className="space-y-1 rounded-md border px-2 py-1.5">
+                  <div className="flex items-start gap-1.5 flex-wrap">
+                    <div className="grid grid-cols-2 gap-1 pt-0">
+                      <Select
+                        value={/^[1-4]/.test(row.toothNumber) ? row.toothNumber.slice(0, 1) : "__empty__"}
+                        onValueChange={(value) => {
+                          setToothWorks((prev) => {
+                            const next = [...prev];
+                            const ones = /^[1-8]$/.test(next[originalIndex]?.toothNumber?.slice(1, 2) || "")
+                              ? next[originalIndex].toothNumber.slice(1, 2)
+                              : "";
+                            const tens = value === "__empty__" ? "" : value;
+                            // 십의 자리 없으면 치아번호 전체 비움(일의 자리만 남는 깨진 값 방지)
+                            const toothNumber = !tens ? "" : ones ? `${tens}${ones}` : tens;
+                            const adj = getAdjacentTeeth(toothNumber);
+                            next[originalIndex] = {
+                              ...next[originalIndex],
+                              toothNumber,
+                              bridgeLinkedTeeth: Array.isArray(next[originalIndex].bridgeLinkedTeeth)
+                                ? next[originalIndex].bridgeLinkedTeeth.filter((v) => adj.includes(v))
+                                : [],
+                            };
+                            return next;
+                          });
+                        }}
+                      >
+                        <SelectTrigger className="h-8 w-9 justify-center gap-0 px-1 text-sm [&>svg]:hidden">
+                          <SelectValue placeholder="1" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__empty__">-</SelectItem>
+                          {toothTensOptions.map((digit) => (
+                            <SelectItem key={`tooth-tens-${digit}`} value={digit}>
+                              {digit}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+
+                      <Select
+                        value={/^[1-8]$/.test(row.toothNumber.slice(1, 2)) ? row.toothNumber.slice(1, 2) : "__empty__"}
+                        onValueChange={(value) => {
+                          setToothWorks((prev) => {
+                            const next = [...prev];
+                            const tens = /^[1-4]$/.test(next[originalIndex]?.toothNumber?.slice(0, 1) || "")
+                              ? next[originalIndex].toothNumber.slice(0, 1)
+                              : "";
+                            const ones = value === "__empty__" ? "" : value;
+                            // 십의 자리 없는 일의 자리만으로는 유효 치아번호가 되지 않게 한다.
+                            const toothNumber = !tens ? "" : ones ? `${tens}${ones}` : tens;
+                            const adj = getAdjacentTeeth(toothNumber);
+                            next[originalIndex] = {
+                              ...next[originalIndex],
+                              toothNumber,
+                              bridgeLinkedTeeth: Array.isArray(next[originalIndex].bridgeLinkedTeeth)
+                                ? next[originalIndex].bridgeLinkedTeeth.filter((v) => adj.includes(v))
+                                : [],
+                            };
+                            return next;
+                          });
+                        }}
+                      >
+                        <SelectTrigger className="h-8 w-9 justify-center gap-0 px-1 text-sm [&>svg]:hidden">
+                          <SelectValue placeholder="1" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__empty__">-</SelectItem>
+                          {toothOnesOptions.map((digit) => (
+                            <SelectItem key={`tooth-ones-${digit}`} value={digit}>
+                              {digit}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="flex flex-col items-center gap-1">
+                      <Select
+                        value={row.prosthesisType || "__empty__"}
+                        onValueChange={(value) => {
+                          setToothWorks((prev) => {
+                            const next = [...prev];
+                            const prosthesisType = value === "__empty__" ? "" : value;
+                            const prevType = String(next[originalIndex]?.prosthesisType || "");
+                            const currentTooth = String(next[originalIndex]?.toothNumber || "").trim();
+
+                            next[originalIndex] = {
+                              ...next[originalIndex],
+                              prosthesisType,
+                              customAbutment: isCustomAbutmentSupportedProsthesisType(prosthesisType)
+                                ? Boolean(next[originalIndex].customAbutment)
+                                : false,
+                              bridgeLinkedTeeth: isBridgeLikeProsthesisType(prosthesisType)
+                                ? Array.isArray(next[originalIndex].bridgeLinkedTeeth)
+                                  ? next[originalIndex].bridgeLinkedTeeth
+                                  : []
+                                : [],
+                              ...(isCustomAbutmentSupportedProsthesisType(prosthesisType) &&
+                              next[originalIndex].customAbutment
+                                ? pickToothWorkCustomSpecs(next[originalIndex], true)
+                                : emptyToothWorkCustomSpecs()),
+                            };
+
+                            const bridgeLikeToNonBridgeLike =
+                              isBridgeLikeProsthesisType(prevType) &&
+                              !isBridgeLikeProsthesisType(prosthesisType) &&
+                              /^[1-4][1-8]$/.test(currentTooth);
+
+                            if (bridgeLikeToNonBridgeLike) {
+                              for (let i = 0; i < next.length; i += 1) {
+                                if (i === originalIndex) continue;
+                                const links = Array.isArray(next[i].bridgeLinkedTeeth)
+                                  ? next[i].bridgeLinkedTeeth
+                                  : [];
+                                if (!links.includes(currentTooth)) continue;
+                                next[i] = {
+                                  ...next[i],
+                                  bridgeLinkedTeeth: links.filter((v) => v !== currentTooth),
+                                };
+                              }
+                            }
+
+                            return next;
+                          });
+                        }}
+                      >
+                        <SelectTrigger className={cn("h-8 px-2 text-sm", prosthesisTypeSelectWidthClassName)}>
+                          <SelectValue placeholder="형태" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__empty__">형태 선택</SelectItem>
+                          {normalizedProsthesisTypes.map((type) => (
+                            <SelectItem key={`ptype-${type}`} value={type}>
+                              {type}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+
+                      {isBridgeLike ? (
+                        <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground">
+                          <span className="whitespace-nowrap">연결할 치아</span>
+                          {adjacentTeeth.map((adjTooth) => (
+                            <label
+                              key={`adj-${originalIndex}-${adjTooth}`}
+                              className="inline-flex items-center gap-1 text-foreground"
+                            >
+                              <input
+                                type="checkbox"
+                                className="h-4 w-4"
+                                checked={linkedTeeth.includes(adjTooth)}
+                                onChange={(e) => {
+                                  const checked = Boolean(e.target.checked);
+                                  setToothWorks((prev) => {
+                                    const next = [...prev];
+                                    const currentTooth = String(next[originalIndex]?.toothNumber || "").trim();
+                                    const currentLinks = Array.isArray(next[originalIndex].bridgeLinkedTeeth)
+                                      ? next[originalIndex].bridgeLinkedTeeth
+                                      : [];
+
+                                    next[originalIndex] = {
+                                      ...next[originalIndex],
+                                      bridgeLinkedTeeth: checked
+                                        ? Array.from(new Set([...currentLinks, adjTooth]))
+                                        : currentLinks.filter((v) => v !== adjTooth),
+                                    };
+
+                                    const pairedIdx = next.findIndex(
+                                      (pairedRow, rowIdx) =>
+                                        rowIdx !== originalIndex && pairedRow.toothNumber === adjTooth,
+                                    );
+
+                                    if (checked) {
+                                      if (pairedIdx >= 0) {
+                                        const paired = next[pairedIdx];
+                                        const pairedLinks = Array.isArray(paired.bridgeLinkedTeeth)
+                                          ? paired.bridgeLinkedTeeth
+                                          : [];
+                                        const pairedType = isBridgeLikeProsthesisType(row.prosthesisType)
+                                          ? row.prosthesisType
+                                          : "브리지";
+                                        next[pairedIdx] = {
+                                          ...paired,
+                                          prosthesisType: pairedType,
+                                          customAbutment: isCustomAbutmentSupportedProsthesisType(pairedType)
+                                            ? Boolean(paired.customAbutment)
+                                            : false,
+                                          bridgeLinkedTeeth: currentTooth
+                                            ? Array.from(new Set([...pairedLinks, currentTooth]))
+                                            : pairedLinks,
+                                          ...(isCustomAbutmentSupportedProsthesisType(pairedType) &&
+                                          paired.customAbutment
+                                            ? pickToothWorkCustomSpecs(paired, true)
+                                            : emptyToothWorkCustomSpecs()),
+                                        };
+                                      } else {
+                                        next.push({
+                                          toothNumber: adjTooth,
+                                          prosthesisType: isBridgeLikeProsthesisType(row.prosthesisType)
+                                            ? row.prosthesisType
+                                            : "브리지",
+                                          customAbutment: false,
+                                          bridgeLinkedTeeth: currentTooth ? [currentTooth] : [],
+                                          ...emptyToothWorkCustomSpecs(),
+                                        });
+                                      }
+                                    } else if (pairedIdx >= 0 && currentTooth) {
+                                      const paired = next[pairedIdx];
+                                      const pairedLinks = Array.isArray(paired.bridgeLinkedTeeth)
+                                        ? paired.bridgeLinkedTeeth
+                                        : [];
+                                      next[pairedIdx] = {
+                                        ...paired,
+                                        bridgeLinkedTeeth: pairedLinks.filter((v) => v !== currentTooth),
+                                      };
+                                    }
+
+                                    return next;
+                                  });
+                                }}
+                              />
+                              <span>{adjTooth}</span>
+                            </label>
+                          ))}
+                        </div>
+                      ) : null}
+                    </div>
+
+                    {canSelectCustomAbutment ? (
+                      <label className="inline-flex h-8 items-center gap-1 text-xs whitespace-nowrap">
+                        <input
+                          type="checkbox"
+                          className="h-3.5 w-3.5"
+                          checked={Boolean(row.customAbutment)}
+                          onChange={(e) => {
+                            const checked = Boolean(e.target.checked);
+                            if (checked) {
+                              const seed = resolveSeedCustomSpecs(toothWorks, originalIndex);
+                              setToothWorks((prev) => {
+                                const next = [...prev];
+                                next[originalIndex] = {
+                                  ...next[originalIndex],
+                                  customAbutment: true,
+                                  ...seed,
+                                };
+                                return next;
+                              });
+                              if (customSpecsKey(sharedCustomSpecs) === emptySpecsKey) {
+                                setSharedCustomSpecs(seed);
+                              }
+                              setOverrideIndexes((prevOverrides) => {
+                                const copy = new Set(prevOverrides);
+                                copy.delete(originalIndex);
+                                return copy;
+                              });
+                            } else {
+                              setToothWorks((prev) => {
+                                const next = [...prev];
+                                next[originalIndex] = {
+                                  ...next[originalIndex],
+                                  customAbutment: false,
+                                  ...emptyToothWorkCustomSpecs(),
+                                };
+                                return next;
+                              });
+                              setOverrideIndexes((prevOverrides) => {
+                                const copy = new Set(prevOverrides);
+                                copy.delete(originalIndex);
+                                return copy;
+                              });
+                              setExpandedOverrideIndexes((prevExpanded) => {
+                                const copy = new Set(prevExpanded);
+                                copy.delete(originalIndex);
+                                return copy;
+                              });
+                            }
+                          }}
+                        />
+                        <span>커스텀어벗</span>
+                      </label>
+                    ) : null}
+
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8"
+                      onClick={() => {
+                        setOverrideIndexes((prevOverrides) => {
+                          const remapped = new Set<number>();
+                          for (const idx of prevOverrides) {
+                            if (idx === originalIndex) continue;
+                            remapped.add(idx > originalIndex ? idx - 1 : idx);
+                          }
+                          return remapped;
+                        });
+                        setExpandedOverrideIndexes((prevExpanded) => {
+                          const remapped = new Set<number>();
+                          for (const idx of prevExpanded) {
+                            if (idx === originalIndex) continue;
+                            remapped.add(idx > originalIndex ? idx - 1 : idx);
+                          }
+                          return remapped;
+                        });
+                        setToothWorks((prev) => {
+                          const next = prev.filter((_, i) => i !== originalIndex);
+                          if (next.length > 0) return next;
+                          return [
+                            {
+                              toothNumber: "",
+                              prosthesisType: defaultProsthesisType,
+                              customAbutment: false,
+                              bridgeLinkedTeeth: [],
+                              ...emptyToothWorkCustomSpecs(),
+                            },
+                          ];
+                        });
+                      }}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+
+                  {canSelectCustomAbutment && row.customAbutment ? (
+                    <div className="space-y-1">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span
+                          className={cn(
+                            "rounded px-1.5 py-0.5 text-[10px] font-medium",
+                            overrideIndexes.has(originalIndex)
+                              ? "bg-amber-100 text-amber-800"
+                              : "bg-sky-100 text-sky-800",
+                          )}
+                        >
+                          {overrideIndexes.has(originalIndex) ? "개별" : "공통"}
+                        </span>
+                        <span className="min-w-0 flex-1 truncate text-[11px] text-slate-600">
+                          {formatCustomSpecsSummary(row) || "규격 미선택"}
+                        </span>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 px-1.5 text-[11px]"
+                          onClick={() =>
+                            setExpandedOverrideIndexes((prev) => {
+                              const next = new Set(prev);
+                              if (next.has(originalIndex)) next.delete(originalIndex);
+                              else next.add(originalIndex);
+                              return next;
+                            })
+                          }
+                        >
+                          {expandedOverrideIndexes.has(originalIndex)
+                            ? "접기"
+                            : "이 치아만 다르게"}
+                        </Button>
+                        {overrideIndexes.has(originalIndex) ? (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="h-6 px-1.5 text-[11px] text-sky-700"
+                            onClick={() => {
+                              applySharedSpecsToTeeth(sharedCustomSpecs, {
+                                onlyIndex: originalIndex,
+                              });
+                              setOverrideIndexes((prev) => {
+                                const next = new Set(prev);
+                                next.delete(originalIndex);
+                                return next;
+                              });
+                              setExpandedOverrideIndexes((prev) => {
+                                const next = new Set(prev);
+                                next.delete(originalIndex);
+                                return next;
+                              });
+                            }}
+                          >
+                            공통으로
+                          </Button>
+                        ) : null}
+                      </div>
+
+                      {expandedOverrideIndexes.has(originalIndex) ? (
+                        <div className="space-y-1.5">
+                          <PracticeToothImplantFields
+                            value={pickToothWorkCustomSpecs(row, true)}
+                            onChange={(nextImplant) => {
+                              setToothWorks((prev) => {
+                                const next = [...prev];
+                                next[originalIndex] = {
+                                  ...next[originalIndex],
+                                  customAbutment: true,
+                                  ...nextImplant,
+                                };
+                                return next;
+                              });
+                              setOverrideIndexes((prev) => new Set(prev).add(originalIndex));
+                            }}
+                            connections={implantConnections}
+                            favorites={implantFavorites}
+                            onFavoritesChange={onImplantFavoritesChange}
+                          />
+                          <PracticeToothAbutmentFields
+                            value={pickToothWorkCustomSpecs(row, true)}
+                            onChange={(nextAbutment) => {
+                              setToothWorks((prev) => {
+                                const next = [...prev];
+                                next[originalIndex] = {
+                                  ...next[originalIndex],
+                                  customAbutment: true,
+                                  ...nextAbutment,
+                                };
+                                return next;
+                              });
+                              setOverrideIndexes((prev) => new Set(prev).add(originalIndex));
+                            }}
+                            favorites={abutmentFavorites}
+                            onFavoritesChange={onAbutmentFavoritesChange}
+                          />
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            );
+          })}
+
+          <div className="flex justify-center">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-8"
+              onClick={() =>
+                setToothWorks((prev) => [
+                  ...prev,
+                  {
+                    toothNumber: "",
+                    prosthesisType: defaultProsthesisType,
+                    customAbutment: false,
+                    bridgeLinkedTeeth: [],
+                    ...emptyToothWorkCustomSpecs(),
+                  },
+                ])
+              }
+            >
+              <Plus className="mr-1 h-3.5 w-3.5" />
+              치아 추가
+            </Button>
+          </div>
         </div>
       </div>
 

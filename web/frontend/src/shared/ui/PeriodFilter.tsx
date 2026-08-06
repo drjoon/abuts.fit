@@ -31,11 +31,13 @@ type Props = {
   onClearCustomRange?: () => void;
   /** false면 전역 스토어 커스텀 날짜를 쓰지 않음 (로컬 period 전용) */
   useStoreCustomRange?: boolean;
+  /** 표시할 프리셋. 미지정 시 30일/90일/이번달/지난달 전부 */
+  presets?: PeriodFilterValue[];
   label?: string;
   className?: string;
 };
 
-const PRESET_PERIODS: PeriodFilterValue[] = [
+const DEFAULT_PRESET_PERIODS: PeriodFilterValue[] = [
   "30d",
   "90d",
   "thisMonth",
@@ -69,6 +71,7 @@ export const PeriodFilter = ({
   onCustomRangeChange,
   onClearCustomRange,
   useStoreCustomRange = true,
+  presets = DEFAULT_PRESET_PERIODS,
   label = "",
   className,
 }: Props) => {
@@ -236,7 +239,7 @@ export const PeriodFilter = ({
         </div>
       )}
 
-      {PRESET_PERIODS.map((k) => (
+      {presets.map((k) => (
         <button
           key={k}
           type="button"
