@@ -5,12 +5,8 @@ import { useMemo } from "react";
 // - web/frontend/src/pages/practice/PracticeDropzonePage.tsx
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
 
-export type ToothWorkSelection = {
-  toothNumber: string;
-  prosthesisType: string;
-  customAbutment: boolean;
-  bridgeLinkedTeeth: string[];
-};
+export type { ToothWorkSelection } from "@/shared/practice/transferMemo";
+import type { ToothWorkSelection } from "@/shared/practice/transferMemo";
 
 export const isBridgeLikeProsthesisType = (prosthesisType: string) =>
   prosthesisType === "브리지" || prosthesisType === "Pontic";

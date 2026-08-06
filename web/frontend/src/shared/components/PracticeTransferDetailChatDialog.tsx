@@ -2,6 +2,8 @@
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // - web/frontend/src/shared/hooks/useChatRooms.ts
+// - web/frontend/src/features/chat/components/ChatMessageBubble.tsx
+// - web/frontend/src/features/chat/components/MessageReply.tsx
 import type { RefObject } from "react";
 import { Paperclip, Send, X, MessageSquare } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -9,6 +11,11 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
 import { type ChatMessage } from "@/shared/hooks/useChatRooms";
+import { ChatMessageBubble } from "@/features/chat/components/ChatMessageBubble";
+import {
+  MessageReply,
+  type ReplyToMessage,
+} from "@/features/chat/components/MessageReply";
 
 export type PracticeTransferDialogSummaryItem = {
   label: string;
@@ -37,6 +44,7 @@ type PracticeTransferDetailChatDialogProps = {
   chatError: string;
   chatMessages: ChatMessage[];
   isMyMessage: (senderId: string) => boolean;
+  currentUserId?: string | null;
   formatChatTime: (createdAt: string) => string;
   formatFileSize: (size: number) => string;
   onDownloadChatAttachment: (file: {
@@ -53,6 +61,10 @@ type PracticeTransferDetailChatDialogProps = {
   chatDraft: string;
   onChangeChatDraft: (value: string) => void;
   onSendChatMessage: () => void | Promise<void>;
+  replyTo?: ReplyToMessage | null;
+  onReplyToMessage?: (message: ChatMessage) => void;
+  onCancelReply?: () => void;
+  onToggleReaction?: (messageId: string, emoji: string) => void | Promise<void>;
   composerPlaceholder: string;
   inputDisabled: boolean;
   sendDisabled: boolean;
@@ -73,6 +85,7 @@ export function PracticeTransferDetailChatDialog({
   chatError,
   chatMessages,
   isMyMessage,
+  currentUserId,
   formatChatTime,
   formatFileSize,
   onDownloadChatAttachment,
@@ -84,6 +97,10 @@ export function PracticeTransferDetailChatDialog({
   chatDraft,
   onChangeChatDraft,
   onSendChatMessage,
+  replyTo,
+  onReplyToMessage,
+  onCancelReply,
+  onToggleReaction,
   composerPlaceholder,
   inputDisabled,
   sendDisabled,
@@ -176,54 +193,25 @@ export function PracticeTransferDetailChatDialog({
 
                   {chatMessages.map((message) => {
                     const senderId = String(message.sender?._id || "").trim();
-                    const isMine = isMyMessage(senderId);
-                    const senderName = String(message.sender?.name || "알 수 없음").trim();
                     return (
-                      <div
+                      <ChatMessageBubble
                         key={message._id}
-                        className={`flex ${isMine ? "justify-end" : "justify-start"}`}
-                      >
-                        <div
-                          className={`max-w-[80%] rounded-lg px-3 py-2 text-sm ${isMine ? "bg-primary text-primary-foreground" : "bg-muted"}`}
-                        >
-                          <p className="opacity-80 mb-1 font-medium">{senderName}</p>
-                          <p className="opacity-70 mb-1">{formatChatTime(message.createdAt)}</p>
-                          <p className="whitespace-pre-wrap break-words">{message.content}</p>
-                          {Array.isArray(message.attachments) && message.attachments.length > 0 ? (
-                            <div className="mt-2 space-y-1">
-                              {message.attachments.map((file, idx) => {
-                                const fileName = String(file?.fileName || "첨부파일").trim();
-                                const fileSize = formatFileSize(Number(file?.fileSize || 0));
-                                const s3Key = String(file?.s3Key || "").trim();
-                                return s3Key ? (
-                                  <button
-                                    key={`${message._id}:file:${idx}`}
-                                    type="button"
-                                    onClick={() =>
-                                      void onDownloadChatAttachment({
-                                        fileName,
-                                        fileSize: Number(file?.fileSize || 0),
-                                        s3Key,
-                                        s3Url: String(file?.s3Url || "").trim(),
-                                      })
-                                    }
-                                    className="block w-full rounded border border-current/20 px-2 py-1 text-xs text-left underline-offset-2 hover:underline"
-                                  >
-                                    {fileName} · {fileSize}
-                                  </button>
-                                ) : (
-                                  <div
-                                    key={`${message._id}:file:${idx}`}
-                                    className="rounded border border-current/20 px-2 py-1 text-xs"
-                                  >
-                                    {fileName} · {fileSize}
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          ) : null}
-                        </div>
-                      </div>
+                        message={message}
+                        isMine={isMyMessage(senderId)}
+                        currentUserId={currentUserId}
+                        formatTime={formatChatTime}
+                        formatFileSize={formatFileSize}
+                        onReply={onReplyToMessage}
+                        onToggleReaction={onToggleReaction}
+                        onOpenAttachment={(file) =>
+                          void onDownloadChatAttachment({
+                            fileName: file.fileName,
+                            fileSize: Number(file.fileSize || 0),
+                            s3Key: String(file.s3Key || ""),
+                            s3Url: String(file.s3Url || ""),
+                          })
+                        }
+                      />
                     );
                   })}
                   <div ref={chatBottomRef} />
@@ -231,6 +219,10 @@ export function PracticeTransferDetailChatDialog({
               </ScrollArea>
 
               <div className="shrink-0 border-t bg-background px-3 pt-3 pb-4 sm:px-4 sm:pt-4 sm:pb-6 space-y-2">
+                {replyTo ? (
+                  <MessageReply replyTo={replyTo} onCancelReply={onCancelReply} />
+                ) : null}
+
                 {chatAttachedFiles.length > 0 ? (
                   <div className="flex flex-wrap gap-2 max-h-20 overflow-y-auto pr-1">
                     {chatAttachedFiles.map((file, idx) => (

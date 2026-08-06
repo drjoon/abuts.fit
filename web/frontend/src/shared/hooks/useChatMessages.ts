@@ -242,12 +242,14 @@ export const useChatMessages = (options: UseChatMessagesOptions = {}) => {
         fileSize: number;
         s3Key: string;
         s3Url: string;
-      }>
+      }>,
+      options?: { replyTo?: string | null },
     ) => {
       const normalizedContent = String(content || "").trim();
       const normalizedAttachments = Array.isArray(attachments)
         ? attachments.filter((row) => String(row?.fileName || "").trim())
         : [];
+      const replyToId = String(options?.replyTo || "").trim() || null;
 
       if (!token || !roomId) return null;
       if (!normalizedContent && normalizedAttachments.length === 0) return null;
@@ -264,6 +266,7 @@ export const useChatMessages = (options: UseChatMessagesOptions = {}) => {
           jsonBody: {
             content: normalizedContent,
             attachments: normalizedAttachments,
+            ...(replyToId ? { replyTo: replyToId } : {}),
           },
         });
 
@@ -284,6 +287,53 @@ export const useChatMessages = (options: UseChatMessagesOptions = {}) => {
         toast({
           title: "전송 실패",
           description: e instanceof Error ? e.message : "메시지 전송 중 오류가 발생했습니다.",
+          variant: "destructive",
+        });
+        return null;
+      }
+    },
+    [pagination, roomId, toast, token, userCacheId],
+  );
+
+  const toggleReaction = useCallback(
+    async (messageId: string, emoji: string) => {
+      const mid = String(messageId || "").trim();
+      const normalizedEmoji = String(emoji || "").trim();
+      if (!token || !roomId || !mid || !normalizedEmoji) return null;
+
+      try {
+        const res = await apiFetch<{
+          success: boolean;
+          data: { messageId: string; roomId: string; reactions: ChatMessage["reactions"] };
+          message?: string;
+        }>({
+          path: `/api/chats/rooms/${roomId}/messages/${mid}/reactions`,
+          method: "POST",
+          token,
+          jsonBody: { emoji: normalizedEmoji },
+        });
+
+        if (!res.ok || !res.data?.success) {
+          throw new Error(res.data?.message || "리액션 처리에 실패했습니다.");
+        }
+
+        const nextReactions = Array.isArray(res.data.data?.reactions)
+          ? res.data.data.reactions
+          : [];
+
+        setMessages((prev) => {
+          const next = prev.map((m) =>
+            String(m._id) === mid ? { ...m, reactions: nextReactions } : m,
+          );
+          writeCachedMessages(String(roomId || "").trim(), userCacheId, next, pagination);
+          return next;
+        });
+
+        return nextReactions;
+      } catch (e: unknown) {
+        toast({
+          title: "리액션 실패",
+          description: e instanceof Error ? e.message : "리액션 처리 중 오류가 발생했습니다.",
           variant: "destructive",
         });
         return null;
@@ -326,15 +376,37 @@ export const useChatMessages = (options: UseChatMessagesOptions = {}) => {
 
   useAppEventListener({
     enabled: Boolean(roomId),
-    eventTypes: ["chat:message-created"],
+    eventTypes: ["chat:message-created", "chat:reaction-updated"],
     deferWhenEditing: false,
     onMatch: (evt) => {
+      const type = String(evt?.type || "").trim();
       const payload =
         evt?.data && typeof evt.data === "object"
           ? (evt.data as Record<string, unknown>)
           : {};
       const eventRoomId = String(payload.roomId || "").trim();
       if (!eventRoomId || eventRoomId !== String(roomId || "").trim()) return;
+
+      if (type === "chat:reaction-updated") {
+        const messageId = String(payload.messageId || "").trim();
+        if (!messageId) return;
+        const nextReactions = Array.isArray(payload.reactions)
+          ? (payload.reactions as NonNullable<ChatMessage["reactions"]>)
+          : [];
+
+        setMessages((prev) => {
+          let changed = false;
+          const next = prev.map((m) => {
+            if (String(m._id) !== messageId) return m;
+            changed = true;
+            return { ...m, reactions: nextReactions };
+          });
+          if (!changed) return prev;
+          writeCachedMessages(String(roomId || "").trim(), userCacheId, next, pagination);
+          return next;
+        });
+        return;
+      }
 
       const messageRaw =
         payload.message && typeof payload.message === "object"
@@ -369,6 +441,7 @@ export const useChatMessages = (options: UseChatMessagesOptions = {}) => {
     fetchMessages,
     prefetchMessages,
     sendMessage,
+    toggleReaction,
     setMessages,
   };
 };

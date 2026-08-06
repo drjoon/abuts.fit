@@ -301,3 +301,19 @@ All colors MUST be HSL.
   }
 }
 
+/* Chat: jump-to-reply highlight */
+@keyframes chat-msg-flash {
+  0% {
+    box-shadow: 0 0 0 0 hsl(var(--primary) / 0.55);
+    background-color: hsl(var(--primary) / 0.14);
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+    background-color: transparent;
+  }
+}
+
+.chat-msg-flash {
+  animation: chat-msg-flash 1.6s ease-out;
+}
+

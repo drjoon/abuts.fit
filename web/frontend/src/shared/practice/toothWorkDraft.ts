@@ -1,13 +1,15 @@
 // related files:
 // - web/frontend/src/pages/practice/PracticeDropzonePage.tsx
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
+// - web/frontend/src/shared/practice/transferMemo.ts
 
-export type DraftToothWorkSelection = {
-  toothNumber: string;
-  prosthesisType: string;
-  customAbutment: boolean;
-  bridgeLinkedTeeth: string[];
-};
+import {
+  emptyToothWorkImplant,
+  pickToothWorkImplant,
+  type ToothWorkSelection,
+} from "@/shared/practice/transferMemo";
+
+export type DraftToothWorkSelection = ToothWorkSelection;
 
 export const restoreToothWorksFromDraft = (
   source: unknown,
@@ -49,6 +51,17 @@ export const restoreToothWorksFromDraft = (
       prosthesisType,
       customAbutment,
       bridgeLinkedTeeth,
+      ...(customAbutment
+        ? pickToothWorkImplant(
+            {
+              implantManufacturer: String(row.implantManufacturer || "").trim(),
+              implantBrand: String(row.implantBrand || "").trim(),
+              implantFamily: String(row.implantFamily || "").trim(),
+              implantType: String(row.implantType || "").trim(),
+            },
+            true,
+          )
+        : emptyToothWorkImplant()),
     };
   });
 };

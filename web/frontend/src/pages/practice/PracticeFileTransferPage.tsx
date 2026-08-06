@@ -50,6 +50,7 @@ import {
   Plus,
   Settings,
   X,
+  ChevronDown,
 } from "lucide-react";
 import {
   Card,
@@ -137,11 +138,23 @@ import {
 import {
       buildPracticeTransferMemo as buildPracticeTransferMemoShared,
       extractTransferMemoFromMessage as extractTransferMemoFromMessageShared,
+      formatPracticeTransferMemoDetail as formatPracticeTransferMemoDetailShared,
       formatTransferMemoForDisplay as formatTransferMemoForDisplayShared,
       normalizeToothWorksForSync,
+      emptyToothWorkImplant,
+      pickToothWorkImplant,
+      normalizeImplantFavorites,
       parsePracticeTransferMemoMeta as parsePracticeTransferMemoMetaShared,
       stripPracticeTransferMessageEnvelope,
+      type PracticeImplantFavorite,
+      type ToothWorkSelection as SharedToothWorkSelection,
 } from "@/shared/practice/transferMemo";
+import { useImplantConnectionCatalog } from "@/shared/practice/useImplantConnectionCatalog";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 
 type RecentRequestItem = {
   id: string; // 전송 내 파일 row 식별자(표시/그룹/optimistic 삭제용)
@@ -287,45 +300,8 @@ const extractTransferIdFromMessage = (message: string) => {
   return String(matched?.[1] || "").trim();
 };
 
-const formatToothWorksForDisplay = (rows: ToothWorkSelection[], options?: { multiline?: boolean }) => {
-  const normalizedRows = normalizeToothWorks(rows)
-    .slice()
-    .sort((a, b) => toToothMemoSortNumber(a.toothNumber) - toToothMemoSortNumber(b.toothNumber));
-  if (!normalizedRows.length) return "";
-
-  const formattedRows = normalizedRows.map((row) => {
-    const details = [row.prosthesisType];
-    if (row.customAbutment) details.push("커스텀어벗");
-    if (isBridgeLikeProsthesisType(row.prosthesisType) && row.bridgeLinkedTeeth.length > 0) {
-      const orderedLinks = [...row.bridgeLinkedTeeth].sort(
-        (a, b) => toToothMemoSortNumber(a) - toToothMemoSortNumber(b),
-      );
-      details.push(`연결 ${[row.toothNumber, ...orderedLinks].join("-")}`);
-    }
-    return `${row.toothNumber}번: ${details.join(" · ")}`;
-  });
-
-  return options?.multiline ? formattedRows.join("\n") : formattedRows.join(" / ");
-};
-
-const parseLegacyToothWorksSummary = (value: string): ToothWorkSelection[] => {
-  const serialized = String(value || "")
-    .split(/\s*[,|]\s*/)
-    .map((chunk) => String(chunk || "").trim())
-    .filter(Boolean)
-    .map((chunk) => {
-      const match = chunk.match(/^([1-4][1-8])\s*[:=]\s*(.+)$/);
-      if (!match) return "";
-      return `${match[1]}=${String(match[2] || "").trim()}`;
-    })
-    .filter(Boolean)
-    .join(" | ");
-
-  if (!serialized) return [];
-  return parseToothWorks(serialized);
-};
-
 const formatTransferMemoForDisplay = (rawMemo: string) =>
+  formatPracticeTransferMemoDetailShared(rawMemo, { includeDateSummary: false }) ||
   formatTransferMemoForDisplayShared(rawMemo);
 
 const extractTransferMemoFromMessage = (message: string) =>
@@ -343,12 +319,7 @@ const PRACTICE_TRANSFER_SETTINGS_LOCAL_KEY = "practice_transfer_settings_v1";
 const TOOTH_TENS_OPTIONS = ["1", "2", "3", "4"] as const;
 const TOOTH_ONES_OPTIONS = ["1", "2", "3", "4", "5", "6", "7", "8"] as const;
 
-type ToothWorkSelection = {
-  toothNumber: string;
-  prosthesisType: string;
-  customAbutment: boolean;
-  bridgeLinkedTeeth: string[];
-};
+type ToothWorkSelection = SharedToothWorkSelection;
 
 type ParsedPracticeTransferMemoMeta = {
   orderDate: string;
@@ -411,6 +382,7 @@ type PracticeTransferSettingsPayload = {
   arrivalDefaultDays?: number;
   prosthesisTypes?: string[];
   memoSnippets?: string[];
+  implantFavorites?: PracticeImplantFavorite[];
   promoNoticeDismissedAt?: string | null;
   updatedAt?: string | null;
 };
@@ -547,6 +519,7 @@ const normalizeToothWorks = (items: ToothWorkSelection[]) =>
         prosthesisType,
         customAbutment,
         bridgeLinkedTeeth,
+        ...pickToothWorkImplant(row, customAbutment),
       };
     })
     .filter((row) => /^[1-4][1-8]$/.test(row.toothNumber) && row.prosthesisType);
@@ -563,9 +536,16 @@ const serializeToothWorks = (rows: ToothWorkSelection[]) =>
         isBridgeLikeProsthesisType(row.prosthesisType) && orderedLinks.length > 0
           ? `(${[row.toothNumber, ...orderedLinks].join("-")})`
           : "";
+      const implantParts = [
+        row.implantManufacturer,
+        row.implantBrand,
+        row.implantFamily,
+        row.implantType,
+      ].map((v) => String(v || "").trim());
+      const hasImplant = implantParts.some(Boolean);
       const custom =
         isCustomAbutmentSupportedProsthesisType(row.prosthesisType) && row.customAbutment
-          ? "+커스텀어벗"
+          ? `+커스텀어벗${hasImplant ? `{${implantParts.join("/")}}` : ""}`
           : "";
       return `${row.toothNumber}=${row.prosthesisType}${custom}${linked}`;
     })
@@ -587,12 +567,23 @@ const parseToothWorks = (value: string) =>
           prosthesisType: "",
           customAbutment: false,
           bridgeLinkedTeeth: [] as string[],
+          ...emptyToothWorkImplant(),
         };
       }
 
       const linkedMatch = rhs.match(/\(([^)]+)\)\s*$/);
       const linkedRaw = linkedMatch ? linkedMatch[1] : "";
       let withoutLinked = linkedMatch ? rhs.replace(/\(([^)]+)\)\s*$/, "").trim() : rhs;
+      const implantMatch = withoutLinked.match(/\{([^}]*)\}\s*$/);
+      const implantRaw = implantMatch ? implantMatch[1] : "";
+      if (implantMatch) withoutLinked = withoutLinked.replace(/\{[^}]*\}\s*$/, "").trim();
+      const implantParts = String(implantRaw || "").split("/");
+      const implant = {
+        implantManufacturer: String(implantParts[0] || "").trim(),
+        implantBrand: String(implantParts[1] || "").trim(),
+        implantFamily: String(implantParts[2] || "").trim(),
+        implantType: implantParts.slice(3).join("/").trim(),
+      };
 
       let customAbutment = false;
       if (withoutLinked.startsWith("커스텀어벗+")) {
@@ -602,6 +593,14 @@ const parseToothWorks = (value: string) =>
       if (withoutLinked.includes("+커스텀어벗")) {
         customAbutment = true;
         withoutLinked = withoutLinked.replace("+커스텀어벗", "").trim();
+      }
+      if (
+        implant.implantManufacturer ||
+        implant.implantBrand ||
+        implant.implantFamily ||
+        implant.implantType
+      ) {
+        customAbutment = true;
       }
       const prosthesisType = withoutLinked;
       const bridgeLinkedTeeth = linkedRaw
@@ -616,9 +615,10 @@ const parseToothWorks = (value: string) =>
         prosthesisType,
         customAbutment,
         bridgeLinkedTeeth,
+        ...pickToothWorkImplant(implant, customAbutment),
       };
     })
-    .filter((row) => row.prosthesisType);
+    .filter((row) => Boolean(row.prosthesisType) || Boolean(row.toothNumber));
 
 const parsePracticeTransferMemoMeta = (rawMemo: string): ParsedPracticeTransferMemoMeta => {
   const source = String(rawMemo || "").trim();
@@ -822,6 +822,11 @@ export const PracticeFileTransferPage = () => {
   const [chatLoading, setChatLoading] = useState(false);
   const [chatError, setChatError] = useState("");
   const [chatDraft, setChatDraft] = useState("");
+  const [chatReplyTo, setChatReplyTo] = useState<{
+    _id: string;
+    sender: { name: string; role: string };
+    content: string;
+  } | null>(null);
   const [chatAttachedFiles, setChatAttachedFiles] = useState<File[]>([]);
   const [chatSending, setChatSending] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
@@ -908,6 +913,11 @@ export const PracticeFileTransferPage = () => {
   ]);
   const [savingProsthesisTypeSettings, setSavingProsthesisTypeSettings] = useState(false);
   const [memoSnippets, setMemoSnippets] = useState<string[]>([]);
+  const [implantFavorites, setImplantFavorites] = useState<PracticeImplantFavorite[]>([]);
+  const [recentTransfersOpen, setRecentTransfersOpen] = useState(true);
+  const [draftsOpen, setDraftsOpen] = useState(true);
+  const [inviteOpen, setInviteOpen] = useState(false);
+  const { connections: implantConnections } = useImplantConnectionCatalog(authToken);
 
   const [toothWorks, setToothWorks] = useState<ToothWorkSelection[]>([]);
   const [patientName, setPatientName] = useState("");
@@ -1107,6 +1117,7 @@ export const PracticeFileTransferPage = () => {
     loading: chatMessagesLoading,
     error: chatMessagesError,
     sendMessage,
+    toggleReaction,
     prefetchMessages,
     setMessages: setChatMessages,
   } = useChatMessages({ roomId: activeChatRoom?._id, autoFetch: transferDialogOpen });
@@ -1148,6 +1159,7 @@ export const PracticeFileTransferPage = () => {
       Array.isArray(payload.prosthesisTypes) ? payload.prosthesisTypes : [...PRESET_PROSTHESIS_TYPES],
     );
     const nextMemoSnippets = normalizeMemoSnippets(payload.memoSnippets);
+    const nextImplantFavorites = normalizeImplantFavorites(payload.implantFavorites);
     const promoDismissed = String(payload.promoNoticeDismissedAt || "").trim().length > 0;
 
     setArrivalDefaultDays(nextArrivalDefaultDays);
@@ -1155,16 +1167,21 @@ export const PracticeFileTransferPage = () => {
     setProsthesisTypeCatalog(nextProsthesisTypes);
     setProsthesisTypeCatalogDraft(nextProsthesisTypes);
     setMemoSnippets(nextMemoSnippets);
+    setImplantFavorites(nextImplantFavorites);
     setPromoNoticeVisible(!promoDismissed);
     setToothWorks((prev) =>
-      prev.map((row) => ({
-        toothNumber: row.toothNumber,
-        prosthesisType: nextProsthesisTypes.some((type) => type === row.prosthesisType)
-          ? row.prosthesisType
-          : resolveDefaultProsthesisType(nextProsthesisTypes),
-        customAbutment: Boolean(row.customAbutment),
-        bridgeLinkedTeeth: Array.isArray(row.bridgeLinkedTeeth) ? row.bridgeLinkedTeeth : [],
-      })),
+      prev.map((row) => {
+        const customAbutment = Boolean(row.customAbutment);
+        return {
+          toothNumber: row.toothNumber,
+          prosthesisType: nextProsthesisTypes.some((type) => type === row.prosthesisType)
+            ? row.prosthesisType
+            : resolveDefaultProsthesisType(nextProsthesisTypes),
+          customAbutment,
+          bridgeLinkedTeeth: Array.isArray(row.bridgeLinkedTeeth) ? row.bridgeLinkedTeeth : [],
+          ...pickToothWorkImplant(row, customAbutment),
+        };
+      }),
     );
   }, []);
 
@@ -1175,6 +1192,7 @@ export const PracticeFileTransferPage = () => {
       const hasArrivalDefaultDays = typeof params.arrivalDefaultDays === "number";
       const hasProsthesisTypes = Array.isArray(params.prosthesisTypes);
       const hasMemoSnippets = Array.isArray(params.memoSnippets);
+      const hasImplantFavorites = Array.isArray(params.implantFavorites);
       const hasPromoNoticeDismissedAt = Object.prototype.hasOwnProperty.call(
         params,
         "promoNoticeDismissedAt",
@@ -1189,6 +1207,9 @@ export const PracticeFileTransferPage = () => {
       }
       if (hasMemoSnippets) {
         jsonBody.memoSnippets = normalizeMemoSnippets(params.memoSnippets || []);
+      }
+      if (hasImplantFavorites) {
+        jsonBody.implantFavorites = normalizeImplantFavorites(params.implantFavorites || []);
       }
       if (hasPromoNoticeDismissedAt) {
         jsonBody.promoNoticeDismissedAt = params.promoNoticeDismissedAt || null;
@@ -2055,7 +2076,28 @@ export const PracticeFileTransferPage = () => {
       if (tempSaving || requestSubmitting || fileSyncInFlightRef.current) return;
 
       const filesForSave = draftFilesRef.current;
-      if (filesForSave.length === 0) return;
+      // 파일 없이도 의뢰서 내용만으로 임시저장/동기화 가능
+      const transferMemo = buildPracticeTransferMemo({
+        memo: requestMemo,
+        orderDate,
+        arrivalDate,
+        arrivalDefaultDays,
+        prosthesisTypes: normalizedProsthesisTypes,
+        toothWorks: syncToothWorks,
+        patientName: normalizedPatientName,
+      });
+      const hasFormContent =
+        Boolean(normalizedPatientName) ||
+        Boolean(String(requestMemo || "").trim()) ||
+        Boolean(String(selectedLab?.name || "").trim()) ||
+        Boolean(toApiLabAnchorId(selectedLab?._id)) ||
+        syncToothWorks.some(
+          (row) =>
+            String(row.toothNumber || "").trim() ||
+            Boolean(row.customAbutment) ||
+            String(row.implantManufacturer || "").trim(),
+        );
+      if (filesForSave.length === 0 && !hasFormContent) return;
 
       const fingerprintAtSend = currentFormFingerprintRef.current;
       const savedFingerprint = lastSavedFormFingerprintRef.current;
@@ -2081,16 +2123,6 @@ export const PracticeFileTransferPage = () => {
         }
 
         const latestFilesForSave = draftFilesRef.current;
-        const transferMemo = buildPracticeTransferMemo({
-          memo: requestMemo,
-          orderDate,
-          arrivalDate,
-          arrivalDefaultDays,
-          prosthesisTypes: normalizedProsthesisTypes,
-          toothWorks: syncToothWorks,
-          patientName: normalizedPatientName,
-        });
-
         const res = await apiFetch<unknown>({
           path: "/api/practice/transfers/draft",
           method: "POST",
@@ -2139,7 +2171,7 @@ export const PracticeFileTransferPage = () => {
           : filesForSave;
 
         setDraftFiles(nextDraftFiles);
-        if (nextDraftFiles.length > 0) {
+        {
           const nextSummary = buildOwnDraftSummary(payload, nextDraftFiles, transferMemo);
           setDraftSummary(nextSummary);
           if (nextSummary?.id) setActiveDraftId(nextSummary.id);
@@ -2198,7 +2230,6 @@ export const PracticeFileTransferPage = () => {
     if (!localFormHydrated) return;
     if (skipFormAutosaveRef.current) return;
     if (!authToken) return;
-    if (draftFiles.length === 0) return;
     if (tempSaving || requestSubmitting) return;
     if (lastSavedFormFingerprint === null) return;
     if (currentFormFingerprint === lastSavedFormFingerprint) {
@@ -3101,6 +3132,7 @@ export const PracticeFileTransferPage = () => {
     setActiveChatRoom(null);
     setChatMessages([]);
     setChatDraft("");
+    setChatReplyTo(null);
     setChatAttachedFiles([]);
     setChatError("");
   };
@@ -3137,9 +3169,12 @@ export const PracticeFileTransferPage = () => {
           .filter((row) => row.fileName && row.s3Key);
       }
 
-      const sent = await sendMessage(content, attachments);
+      const sent = await sendMessage(content, attachments, {
+        replyTo: chatReplyTo?._id || null,
+      });
       if (sent) {
         setChatDraft("");
+        setChatReplyTo(null);
         setChatAttachedFiles([]);
       }
     } finally {
@@ -3905,7 +3940,19 @@ export const PracticeFileTransferPage = () => {
       return;
     }
 
-    if (files.length === 0 && draftFilesRef.current.length === 0) return;
+    if (files.length === 0 && draftFilesRef.current.length === 0) {
+      const hasFormContent =
+        Boolean(normalizedPatientName) ||
+        Boolean(String(requestMemo || "").trim()) ||
+        Boolean(String(selectedLab?._id || selectedLab?.name || "").trim()) ||
+        toothWorks.some(
+          (row) =>
+            String(row.toothNumber || "").trim() ||
+            Boolean(row.customAbutment) ||
+            String(row.implantManufacturer || "").trim(),
+        );
+      if (!hasFormContent) return;
+    }
 
     setTempSaving(true);
     fileSyncInFlightRef.current = true;
@@ -3997,7 +4044,7 @@ export const PracticeFileTransferPage = () => {
         : dedupedDraftFiles;
 
       setDraftFiles(nextDraftFiles);
-      if (nextDraftFiles.length > 0) {
+      {
         const nextSummary = buildOwnDraftSummary(payload, nextDraftFiles, transferMemo);
         setDraftSummary(nextSummary);
         if (nextSummary?.id) {
@@ -4009,9 +4056,6 @@ export const PracticeFileTransferPage = () => {
             return [nextSummary, ...without];
           });
         }
-      } else {
-        setDraftSummary(null);
-        setActiveDraftId(null);
       }
       if (files.length > 0) {
         // 로컬 대기 파일만 비운다. draftFiles·기공소·환자명 등 작성 중인 폼은 유지한다.
@@ -4267,23 +4311,39 @@ export const PracticeFileTransferPage = () => {
     }
   };
 
+  const hasMeaningfulFormInput = useMemo(() => {
+    if (normalizedPatientName) return true;
+    if (String(requestMemo || "").trim()) return true;
+    if (String(selectedLab?._id || selectedLab?.name || "").trim()) return true;
+    if (
+      toothWorks.some(
+        (row) =>
+          String(row.toothNumber || "").trim() ||
+          Boolean(row.customAbutment) ||
+          String(row.implantManufacturer || "").trim(),
+      )
+    ) {
+      return true;
+    }
+    return false;
+  }, [normalizedPatientName, requestMemo, selectedLab?._id, selectedLab?.name, toothWorks]);
+
   const canTempSave =
     !requestSubmitting &&
     !tempSaving &&
-    tempSaveDirty &&
-    files.length > 0;
+    (files.length > 0 || draftFiles.length > 0 || hasMeaningfulFormInput);
 
   const formSyncStatusLabel =
     formSyncStatus === "pending"
-      ? "같은 케이스 동기화 대기…"
+      ? "동기화 대기…"
       : formSyncStatus === "saving"
-        ? "같은 케이스에 동기화 중…"
-        : formSyncStatus === "saved" && draftFiles.length > 0
+        ? "동기화 중…"
+        : formSyncStatus === "saved" && (draftFiles.length > 0 || Boolean(activeDraftId))
           ? activeDraftId
-            ? "이 케이스 동기화됨"
-            : "임시저장 동기화됨"
+            ? "동기화됨"
+            : "임시저장됨"
           : formSyncStatus === "error"
-            ? "동기화 실패 · 다시 입력하면 재시도"
+            ? "동기화 실패 · 다시 시도"
             : "";
 
   const missingRequiredFields = useMemo(() => {
@@ -4291,7 +4351,7 @@ export const PracticeFileTransferPage = () => {
     if (combinedDisplayFiles.length === 0) missing.push("첨부 파일");
     if (!String(selectedLab?._id || "").trim()) missing.push("기공소");
     if (!normalizedPatientName) missing.push("환자명");
-    if (normalizedToothWorks.length === 0) missing.push("보철물 형태");
+    if (normalizedToothWorks.length === 0) missing.push("보철물");
     return missing;
   }, [combinedDisplayFiles.length, selectedLab?._id, normalizedPatientName, normalizedToothWorks.length]);
 
@@ -4316,6 +4376,7 @@ export const PracticeFileTransferPage = () => {
         prosthesisType: resolveDefaultProsthesisType(normalizedProsthesisTypes),
         customAbutment: false,
         bridgeLinkedTeeth: [],
+        ...emptyToothWorkImplant(),
       },
     ]);
   }, [localFormHydrated, normalizedProsthesisTypes, toothWorks.length]);
@@ -4328,6 +4389,7 @@ export const PracticeFileTransferPage = () => {
         prosthesisType: resolveDefaultProsthesisType(normalizedProsthesisTypes),
         customAbutment: false,
         bridgeLinkedTeeth: [],
+        ...emptyToothWorkImplant(),
       },
     ]);
   };
@@ -4361,6 +4423,7 @@ export const PracticeFileTransferPage = () => {
         prosthesisType: resolveDefaultProsthesisType(normalizedProsthesisTypes),
         customAbutment: false,
         bridgeLinkedTeeth: [],
+        ...emptyToothWorkImplant(),
       },
     ]);
 
@@ -4419,17 +4482,21 @@ export const PracticeFileTransferPage = () => {
       if (!ok) throw new Error("설정 저장에 실패했습니다.");
 
       setToothWorks((prev) =>
-        prev.map((row) => ({
-          toothNumber: row.toothNumber,
-          prosthesisType: nextTypes.some((type) => type === row.prosthesisType)
-            ? row.prosthesisType
-            : resolveDefaultProsthesisType(nextTypes),
-          customAbutment: Boolean(row.customAbutment),
-          bridgeLinkedTeeth: Array.isArray(row.bridgeLinkedTeeth) ? row.bridgeLinkedTeeth : [],
-        })),
+        prev.map((row) => {
+          const customAbutment = Boolean(row.customAbutment);
+          return {
+            toothNumber: row.toothNumber,
+            prosthesisType: nextTypes.some((type) => type === row.prosthesisType)
+              ? row.prosthesisType
+              : resolveDefaultProsthesisType(nextTypes),
+            customAbutment,
+            bridgeLinkedTeeth: Array.isArray(row.bridgeLinkedTeeth) ? row.bridgeLinkedTeeth : [],
+            ...pickToothWorkImplant(row, customAbutment),
+          };
+        }),
       );
       setProsthesisTypeSettingsDialogOpen(false);
-      toast({ title: "보철물 형태 설정 저장", description: "형태 목록을 저장했습니다." });
+      toast({ title: "보철물 설정 저장", description: "목록을 저장했습니다." });
     } catch (error) {
       toast({
         title: "설정 저장 실패",
@@ -4507,54 +4574,66 @@ export const PracticeFileTransferPage = () => {
 
   const inviteLinkCard = (
     <Card className="h-fit">
-      <CardHeader className="pb-3">
-        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-          <CardTitle className="text-lg">기공소 초대 링크</CardTitle>
-          <CardDescription className="text-sm">
-            치과에서 기공의뢰서를 쉽게 보낼 수 있게 링크를 전달하세요!
-          </CardDescription>
-        </div>
-      </CardHeader>
-      <CardContent>
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-          <Button
-            type="button"
-            size="sm"
-            onClick={() => void handleCopyPracticeDropzoneLink()}
-            className="h-8 gap-1.5 bg-blue-600 text-white hover:bg-blue-700"
-          >
-            {inviteLinkCopied ? (
-              <>
-                <Copy className="h-4 w-4" />
-                복사됨
-              </>
-            ) : (
-              <>
-                <Link2 className="h-4 w-4" />
-                링크 복사
-              </>
-            )}
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            onClick={() => void handleCopyPracticeInviteMessage()}
-            className="h-8 gap-1.5 bg-blue-600 text-white hover:bg-blue-700"
-          >
-            {inviteMessageCopied ? (
-              <>
-                <Copy className="h-4 w-4" />
-                복사됨
-              </>
-            ) : (
-              <>
-                <Send className="h-4 w-4" />
-                안내문구 복사
-              </>
-            )}
-          </Button>
-        </div>
-      </CardContent>
+      <Collapsible open={inviteOpen} onOpenChange={setInviteOpen}>
+        <CardHeader className="pb-2">
+          <CollapsibleTrigger asChild>
+            <button type="button" className="flex w-full items-start justify-between gap-2 text-left">
+              <div>
+                <CardTitle className="text-base">기공소 초대</CardTitle>
+                <CardDescription className="text-xs">가입 링크를 전달하세요</CardDescription>
+              </div>
+              <ChevronDown
+                className={cn(
+                  "mt-1 h-4 w-4 shrink-0 text-muted-foreground transition-transform",
+                  inviteOpen ? "rotate-180" : "",
+                )}
+              />
+            </button>
+          </CollapsibleTrigger>
+        </CardHeader>
+        <CollapsibleContent>
+          <CardContent className="pt-0">
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => void handleCopyPracticeDropzoneLink()}
+                className="h-8 gap-1.5 bg-blue-600 text-white hover:bg-blue-700"
+              >
+                {inviteLinkCopied ? (
+                  <>
+                    <Copy className="h-4 w-4" />
+                    복사됨
+                  </>
+                ) : (
+                  <>
+                    <Link2 className="h-4 w-4" />
+                    링크 복사
+                  </>
+                )}
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => void handleCopyPracticeInviteMessage()}
+                className="h-8 gap-1.5 bg-blue-600 text-white hover:bg-blue-700"
+              >
+                {inviteMessageCopied ? (
+                  <>
+                    <Copy className="h-4 w-4" />
+                    복사됨
+                  </>
+                ) : (
+                  <>
+                    <Send className="h-4 w-4" />
+                    안내 복사
+                  </>
+                )}
+              </Button>
+            </div>
+          </CardContent>
+        </CollapsibleContent>
+      </Collapsible>
     </Card>
   );
 
@@ -4585,36 +4664,57 @@ export const PracticeFileTransferPage = () => {
             </>
           ) : null}
           <Card className="xl:col-span-7">
-            <CardHeader>
+            <CardHeader className="pb-3">
               <div className="flex items-center justify-between gap-2">
                 <CardTitle className="flex items-center gap-2 text-base">
                   <UploadCloud className="h-4 w-4 text-blue-600" />
                   기공의뢰
                 </CardTitle>
-                <TooltipProvider delayDuration={0}>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="h-8"
-                        onClick={() => void handleStartNewTransfer()}
-                      >
-                        <Plus className="mr-1 h-3.5 w-3.5" />
-                        새로 작성
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent side="bottom" className="max-w-xs text-xs leading-relaxed">
-                      작성 화면(입력·첨부)만 비웁니다. 서버 임시저장은 오른쪽 목록에 그대로
-                      남아 다시 불러올 수 있습니다. 서버에서 지우려면 임시저장 카드의 삭제
-                      버튼으로 휴지통에 보내세요.
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
+                <div className="flex items-center gap-2">
+                  <TooltipProvider delayDuration={0}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <span>
+                          <Button
+                            type="button"
+                            size="sm"
+                            className="h-8 bg-blue-600 text-white hover:bg-blue-700 disabled:bg-blue-600/50"
+                            onClick={() => void handleTempSaveDraft()}
+                            disabled={!canTempSave || tempSaving}
+                          >
+                            {tempSaving ? "업로드 중..." : "파일 올려 동기화 시작"}
+                          </Button>
+                        </span>
+                      </TooltipTrigger>
+                      <TooltipContent side="bottom" className="max-w-xs text-xs leading-relaxed">
+                        첨부파일 또는 의뢰서 중 하나라도 있으면 동기화할 수 있습니다. 파일·기공소·치아·메모를
+                        동료/다른 PC와 맞춥니다.
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                  <TooltipProvider delayDuration={0}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="h-8"
+                          onClick={() => void handleStartNewTransfer()}
+                        >
+                          <Plus className="mr-1 h-3.5 w-3.5" />
+                          새로 작성
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent side="bottom" className="max-w-xs text-xs leading-relaxed">
+                        작성 화면만 비웁니다. 임시저장은 오른쪽 목록에 남습니다.
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </div>
               </div>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="space-y-3">
               <PracticeTransferIntakeSection
                 filePaneProps={{
                   acceptedHint: PRACTICE_ACCEPTED_HINT,
@@ -4623,7 +4723,7 @@ export const PracticeFileTransferPage = () => {
                     key: file.key,
                     name: file.name,
                     size: file.size,
-                    metaSuffix: file.kind === "draft" ? "동기화됨" : "업로드 대기",
+                    metaSuffix: file.kind === "draft" ? "동기화됨" : "대기",
                   })),
                   totalSizeMb: combinedFilesSizeMb,
                   onPickFiles: handleIncomingFiles,
@@ -4638,15 +4738,6 @@ export const PracticeFileTransferPage = () => {
                   },
                   onClearAllFiles: () => {
                     void handleClearAllTransferFiles();
-                  },
-                  syncUploadLabel: "파일 올려 동기화 시작",
-                  syncUploadBusyLabel: "파일 업로드 중...",
-                  syncUploadDisabled: !canTempSave,
-                  syncUploadBusy: tempSaving,
-                  syncUploadHint:
-                    "파일을 올리면 이 케이스 전체를 다시 동기화합니다. 기공소·치아·메모와 동료/다른 PC 화면도 함께 맞춥니다.",
-                  onSyncUpload: () => {
-                    void handleTempSaveDraft();
                   },
                 }}
                 requestIntakeProps={{
@@ -4694,6 +4785,7 @@ export const PracticeFileTransferPage = () => {
                           arrivalDefaultDays,
                           prosthesisTypes: normalizedProsthesisTypes,
                           memoSnippets: normalized,
+                          implantFavorites,
                           savedAt: Date.now(),
                         }),
                       );
@@ -4705,6 +4797,33 @@ export const PracticeFileTransferPage = () => {
                       // ignore
                     }
                     await savePracticeTransferSettingsToServer({ memoSnippets: normalized });
+                  },
+                  implantConnections,
+                  implantFavorites,
+                  onImplantFavoritesChange: async (next) => {
+                    const normalized = normalizeImplantFavorites(next);
+                    setImplantFavorites(normalized);
+                    try {
+                      const existingRaw = localStorage.getItem(PRACTICE_TRANSFER_SETTINGS_LOCAL_KEY);
+                      const existing =
+                        existingRaw && typeof existingRaw === "string"
+                          ? (JSON.parse(existingRaw) as Record<string, unknown>)
+                          : {};
+                      localStorage.setItem(
+                        PRACTICE_TRANSFER_SETTINGS_LOCAL_KEY,
+                        JSON.stringify({
+                          ...existing,
+                          arrivalDefaultDays,
+                          prosthesisTypes: normalizedProsthesisTypes,
+                          memoSnippets,
+                          implantFavorites: normalized,
+                          savedAt: Date.now(),
+                        }),
+                      );
+                    } catch {
+                      // ignore
+                    }
+                    await savePracticeTransferSettingsToServer({ implantFavorites: normalized });
                   },
                   onImeComposingChange: (composing) => {
                     imeComposingRef.current = composing;
@@ -4752,11 +4871,20 @@ export const PracticeFileTransferPage = () => {
             {!promoNoticeVisible ? inviteLinkCard : null}
 
             <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <ClipboardList className="h-4 w-4 text-blue-600" />
-                  최근 전송 내역
-                </CardTitle>
+              <Collapsible open={recentTransfersOpen} onOpenChange={setRecentTransfersOpen}>
+              <CardHeader className="pb-2">
+                <CollapsibleTrigger asChild>
+                  <button type="button" className="mb-2 flex w-full items-center justify-between gap-2 text-left">
+                    <CardTitle className="flex items-center gap-2 text-base">
+                      <ClipboardList className="h-4 w-4 text-blue-600" />
+                      최근 전송
+                    </CardTitle>
+                    <ChevronDown
+                      className={`h-4 w-4 text-muted-foreground transition-transform ${recentTransfersOpen ? "rotate-180" : ""}`}
+                    />
+                  </button>
+                </CollapsibleTrigger>
+                <CollapsibleContent>
                 <div className="space-y-2 text-sm text-muted-foreground">
                   <div className="flex items-center justify-start">
                     <PeriodFilter value={period} onChange={setPeriod} />
@@ -4831,11 +4959,13 @@ export const PracticeFileTransferPage = () => {
                       value={requestSearchTerm}
                       onChange={(e) => setRequestSearchTerm(e.target.value)}
                       className="pl-9"
-                      placeholder="전송ID, 치과명, 파일명, 환자명 검색"
+                      placeholder="전송ID, 환자명 검색"
                     />
                   </div>
                 </div>
+                </CollapsibleContent>
               </CardHeader>
+              <CollapsibleContent>
               <CardContent className="space-y-2">
                 {recentRequestsLoading ? (
                   <div className="rounded-lg border border-dashed px-3 py-8 text-center text-sm text-muted-foreground">
@@ -4934,24 +5064,35 @@ export const PracticeFileTransferPage = () => {
                   </div>
                 )}
               </CardContent>
+              </CollapsibleContent>
+              </Collapsible>
             </Card>
 
             <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <BookmarkPlus className="h-4 w-4 text-slate-500" />
-                  임시저장
-                  {draftGroupedTransfers.length > 0 ? (
-                    <Badge variant="secondary" className="ml-1">
-                      {draftGroupedTransfers.length}
-                    </Badge>
-                  ) : null}
-                </CardTitle>
+              <Collapsible open={draftsOpen} onOpenChange={setDraftsOpen}>
+              <CardHeader className="pb-2">
+                <CollapsibleTrigger asChild>
+                  <button type="button" className="flex w-full items-center justify-between gap-2 text-left">
+                    <CardTitle className="flex items-center gap-2 text-base">
+                      <BookmarkPlus className="h-4 w-4 text-slate-500" />
+                      임시저장
+                      {draftGroupedTransfers.length > 0 ? (
+                        <Badge variant="secondary" className="ml-1">
+                          {draftGroupedTransfers.length}
+                        </Badge>
+                      ) : null}
+                    </CardTitle>
+                    <ChevronDown
+                      className={`h-4 w-4 text-muted-foreground transition-transform ${draftsOpen ? "rotate-180" : ""}`}
+                    />
+                  </button>
+                </CollapsibleTrigger>
               </CardHeader>
+              <CollapsibleContent>
               <CardContent className="space-y-2">
                 {draftGroupedTransfers.length === 0 ? (
                   <div className="rounded-lg border border-dashed px-3 py-6 text-center text-sm text-muted-foreground">
-                    임시저장된 의뢰가 없습니다.
+                    임시저장 없음
                   </div>
                 ) : (
                   <div className="max-h-[15.25rem] space-y-2 overflow-y-auto pr-1">
@@ -5039,6 +5180,8 @@ export const PracticeFileTransferPage = () => {
                   </div>
                 )}
               </CardContent>
+              </CollapsibleContent>
+              </Collapsible>
             </Card>
 
             <Card>
@@ -5209,6 +5352,7 @@ export const PracticeFileTransferPage = () => {
           chatError={String(chatError || chatMessagesError || "")}
           chatMessages={chatMessages}
           isMyMessage={(senderId) => myIdCandidates.has(senderId)}
+          currentUserId={String(authUser?.id || (authUser as { _id?: string } | null)?._id || "").trim()}
           formatChatTime={formatChatTs}
           formatFileSize={formatFileSize}
           onDownloadChatAttachment={handleDownloadChatAttachment}
@@ -5220,6 +5364,19 @@ export const PracticeFileTransferPage = () => {
           chatDraft={chatDraft}
           onChangeChatDraft={setChatDraft}
           onSendChatMessage={() => void handleSendChatMessage()}
+          replyTo={chatReplyTo}
+          onReplyToMessage={(message) => {
+            setChatReplyTo({
+              _id: String(message._id),
+              sender: {
+                name: String(message.sender?.name || "").trim() || "알 수 없음",
+                role: String(message.sender?.role || "").trim(),
+              },
+              content: String(message.content || "").trim() || "(내용 없음)",
+            });
+          }}
+          onCancelReply={() => setChatReplyTo(null)}
+          onToggleReaction={(messageId, emoji) => void toggleReaction(messageId, emoji)}
           composerPlaceholder="문의 내용을 입력하세요"
           inputDisabled={chatLoading || chatMessagesLoading || chatSending || !activeChatRoom?._id}
           sendDisabled={
@@ -5287,7 +5444,7 @@ export const PracticeFileTransferPage = () => {
         >
           <DialogContent className="sm:max-w-lg">
             <DialogHeader>
-              <DialogTitle>보철물 형태 항목 설정</DialogTitle>
+              <DialogTitle>보철물 항목 설정</DialogTitle>
             </DialogHeader>
             <div className="space-y-2">
               {prosthesisTypeCatalogDraft.map((item, index) => (

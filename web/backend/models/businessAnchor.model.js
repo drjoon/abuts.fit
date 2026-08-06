@@ -194,6 +194,18 @@ const businessAnchorSchema = new mongoose.Schema(
         type: [String],
         default: [],
       },
+      implantFavorites: {
+        type: [
+          {
+            id: { type: String, default: "" },
+            manufacturer: { type: String, default: "" },
+            brand: { type: String, default: "" },
+            family: { type: String, default: "" },
+            type: { type: String, default: "" },
+          },
+        ],
+        default: [],
+      },
       promoNoticeDismissedAt: {
         type: Date,
         default: null,

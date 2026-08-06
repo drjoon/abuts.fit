@@ -18,7 +18,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Search, Send } from "lucide-react";
+import { Search } from "lucide-react";
 import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { usePeriodStore } from "@/store/usePeriodStore";
@@ -35,6 +35,7 @@ import {
   ChatComposer,
   type RequestPickItem,
 } from "@/features/chat/components/ChatComposer";
+import { ChatMessageBubble } from "@/features/chat/components/ChatMessageBubble";
 
 const getStatusBadge = (status: string) => {
   switch (status) {
@@ -110,6 +111,11 @@ export const AdminChatManagement = () => {
   const [unreadOnly, setUnreadOnly] = useState(initialUnreadOnly);
   const [selectedChatId, setSelectedChatId] = useState<string | null>(null);
   const [messageInput, setMessageInput] = useState("");
+  const [replyTo, setReplyTo] = useState<{
+    _id: string;
+    sender: { name: string; role: string };
+    content: string;
+  } | null>(null);
   const [rooms, setRooms] = useState<ChatRoom[]>([]);
   const [requestPicks, setRequestPicks] = useState<RequestPickItem[]>([]);
   const [roomsLoading, setRoomsLoading] = useState(false);
@@ -124,6 +130,7 @@ export const AdminChatManagement = () => {
     loading: messagesLoading,
     error: messagesError,
     sendMessage,
+    toggleReaction,
   } = useChatMessages({ roomId: selectedChatId || undefined, autoFetch: true });
 
 // change-log:
@@ -325,8 +332,11 @@ export const AdminChatManagement = () => {
 
     setIsSending(true);
     try {
-      await sendMessage(content, attachments);
+      await sendMessage(content, attachments, {
+        replyTo: replyTo?._id || null,
+      });
       setMessageInput("");
+      setReplyTo(null);
       setPendingFiles([]);
     } finally {
       setIsSending(false);
@@ -495,7 +505,10 @@ export const AdminChatManagement = () => {
                         <button
                           key={chat._id}
                           type="button"
-                          onClick={() => setSelectedChatId(chat._id)}
+                          onClick={() => {
+                            setSelectedChatId(chat._id);
+                            setReplyTo(null);
+                          }}
                           className={cn(
                             "w-full h-16 text-left rounded-lg border px-3 py-2 transition-colors",
                             isSelected
@@ -619,55 +632,31 @@ export const AdminChatManagement = () => {
                       activeMessages.map((msg) => {
                         const isMine = msg.sender?.role === "admin";
                         return (
-                          <div
-                            key={msg._id}
-                            className={cn(
-                              "flex mb-3",
-                              isMine ? "justify-end" : "justify-start",
-                            )}
-                          >
-                            <div
-                              className={cn(
-                                "max-w-[75%] rounded-lg px-3 py-2 text-sm shadow-sm",
-                                isMine
-                                  ? "bg-primary text-primary-foreground"
-                                  : "bg-muted",
-                              )}
-                            >
-                              <div className="flex items-center justify-between gap-2 mb-1">
-                                <span className="font-semibold text-xs">
-                                  {msg.sender?.name || ""}
-                                </span>
-                                <span className="text-[10px] opacity-80">
-                                  {formatTime(msg.createdAt)}
-                                </span>
-                              </div>
-                              <p className="whitespace-pre-wrap leading-snug">
-                                {msg.content}
-                              </p>
-                              {Array.isArray(msg.attachments) &&
-                                msg.attachments.length > 0 && (
-                                  <div className="mt-2 space-y-1">
-                                    {msg.attachments.map(
-                                      (a: any, idx: number) => (
-                                        <button
-                                          key={`${msg._id}-att-${idx}`}
-                                          type="button"
-                                          onClick={() => void openAttachment(a)}
-                                          className={cn(
-                                            "block text-xs underline",
-                                            isMine
-                                              ? "text-primary-foreground/90"
-                                              : "text-foreground",
-                                          )}
-                                        >
-                                          {a.fileName}
-                                        </button>
-                                      ),
-                                    )}
-                                  </div>
-                                )}
-                            </div>
+                          <div key={msg._id} className="mb-3">
+                            <ChatMessageBubble
+                              message={msg}
+                              isMine={isMine}
+                              currentUserId={String(user?.id || "").trim()}
+                              formatTime={formatTime}
+                              onReply={(message) => {
+                                setReplyTo({
+                                  _id: String(message._id),
+                                  sender: {
+                                    name:
+                                      String(message.sender?.name || "").trim() ||
+                                      "알 수 없음",
+                                    role: String(message.sender?.role || "").trim(),
+                                  },
+                                  content:
+                                    String(message.content || "").trim() ||
+                                    "(내용 없음)",
+                                });
+                              }}
+                              onToggleReaction={(messageId, emoji) =>
+                                void toggleReaction(messageId, emoji)
+                              }
+                              onOpenAttachment={(file) => void openAttachment(file)}
+                            />
                           </div>
                         );
                       })}
@@ -694,6 +683,8 @@ export const AdminChatManagement = () => {
                 onRemovePendingFile={removePendingFile}
                 requestPicks={requestPicks}
                 onInsertRequestId={insertRequestId}
+                replyTo={replyTo}
+                onCancelReply={() => setReplyTo(null)}
               />
             </CardContent>
           </Card>

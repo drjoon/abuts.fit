@@ -12,6 +12,23 @@ export interface ChatRoomParticipant {
   organization?: string;
 }
 
+export interface ChatMessageReaction {
+  emoji: string;
+  userId: string;
+  createdAt?: string;
+}
+
+export interface ChatMessageReplyTo {
+  _id: string;
+  content: string;
+  isDeleted?: boolean;
+  sender?: {
+    _id?: string;
+    name: string;
+    role: string;
+  } | null;
+}
+
 export interface ChatMessage {
   _id: string;
   roomId: string;
@@ -30,6 +47,8 @@ export interface ChatMessage {
     s3Url: string;
     uploadedAt: string;
   }>;
+  replyTo?: ChatMessageReplyTo | string | null;
+  reactions?: ChatMessageReaction[];
   readBy?: Array<{
     userId: string;
     readAt: string;

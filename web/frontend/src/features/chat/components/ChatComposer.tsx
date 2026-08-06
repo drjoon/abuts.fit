@@ -12,6 +12,10 @@ import {
 } from "@/components/ui/popover";
 import { Hash, Paperclip, Send, X } from "lucide-react";
 import type { TempUploadedFile } from "@/shared/hooks/useS3TempUpload";
+import {
+  MessageReply,
+  type ReplyToMessage,
+} from "@/features/chat/components/MessageReply";
 
 export type RequestPickItem = {
   requestId: string;
@@ -34,6 +38,9 @@ type Props = {
 
   requestPicks?: RequestPickItem[];
   onInsertRequestId?: (requestId: string) => void;
+
+  replyTo?: ReplyToMessage | null;
+  onCancelReply?: () => void;
 };
 
 export const ChatComposer = (props: Props) => {
@@ -49,6 +56,8 @@ export const ChatComposer = (props: Props) => {
     onRemovePendingFile,
     requestPicks,
     onInsertRequestId,
+    replyTo,
+    onCancelReply,
   } = props;
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -66,6 +75,10 @@ export const ChatComposer = (props: Props) => {
 
   return (
     <div className="border-t px-3 pt-3 pb-4 sm:px-4 sm:pt-4 sm:pb-6 space-y-2">
+      {replyTo ? (
+        <MessageReply replyTo={replyTo} onCancelReply={onCancelReply} />
+      ) : null}
+
       {hasFiles && (
         <div className="flex flex-wrap gap-2">
           {pendingFiles!.map((f) => (

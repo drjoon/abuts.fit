@@ -44,6 +44,26 @@ const chatSchema = new mongoose.Schema(
       ref: "Chat",
       default: null,
     },
+    // 카톡형 간단 리액션 (하트, 엄지척 등). emoji당 사용자 1회.
+    reactions: [
+      {
+        emoji: {
+          type: String,
+          required: true,
+          trim: true,
+          maxlength: 16,
+        },
+        userId: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "User",
+          required: true,
+        },
+        createdAt: {
+          type: Date,
+          default: Date.now,
+        },
+      },
+    ],
     readBy: [
       {
         userId: {

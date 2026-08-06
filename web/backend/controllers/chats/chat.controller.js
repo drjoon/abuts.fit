@@ -121,6 +121,55 @@ const emitChatRoomRead = ({ participantIds, roomId, readerUserId, readAt }) => {
   });
 };
 
+/** 카톡형 간단 리액션 허용 목록 */
+export const ALLOWED_CHAT_REACTION_EMOJIS = ["❤️", "👍", "👌", "😄", "😮", "😢"];
+
+const CHAT_MESSAGE_LIST_SELECT = {
+  _id: 1,
+  roomId: 1,
+  sender: 1,
+  content: 1,
+  attachments: 1,
+  replyTo: 1,
+  reactions: 1,
+  createdAt: 1,
+  updatedAt: 1,
+};
+
+const populateChatMessageRelations = (query) =>
+  query
+    .populate("sender", "name role")
+    .populate({
+      path: "replyTo",
+      select: "_id content sender isDeleted",
+      populate: { path: "sender", select: "name role" },
+    });
+
+const emitChatReactionUpdated = ({
+  participantIds,
+  roomId,
+  messageId,
+  reactions,
+  actorUserId,
+}) => {
+  const ids = (Array.isArray(participantIds) ? participantIds : [])
+    .map((id) => String(id || "").trim())
+    .filter(Boolean);
+  if (!ids.length) return;
+
+  const payload = {
+    roomId: String(roomId || "").trim(),
+    messageId: String(messageId || "").trim(),
+    reactions: Array.isArray(reactions) ? reactions : [],
+    actorUserId: String(actorUserId || "").trim() || null,
+    timestamp: new Date().toISOString(),
+  };
+
+  ids.forEach((participantId) => {
+    emitAppEventToUser(participantId, "chat:reaction-updated", payload);
+  });
+};
+
 const extractLabNameFromPracticeMessage = (message) => {
   const raw = String(message || "").trim();
   const matched = raw.match(/\[\s*기공소\s*:\s*([^\]]+)\]/i);
@@ -1260,21 +1309,13 @@ export async function getChatMessages(req, res) {
 
     const loaded = cachedMessages
       ? cachedMessages
-      : await Chat.find({ roomId, isDeleted: false })
-          .select({
-            _id: 1,
-            roomId: 1,
-            sender: 1,
-            content: 1,
-            attachments: 1,
-            createdAt: 1,
-            updatedAt: 1,
-          })
-          .populate("sender", "name role")
-          .sort({ createdAt: -1, _id: -1 })
-          .skip(skip)
-          .limit(limit + 1)
-          .lean();
+      : await populateChatMessageRelations(
+          Chat.find({ roomId, isDeleted: false })
+            .select(CHAT_MESSAGE_LIST_SELECT)
+            .sort({ createdAt: -1, _id: -1 })
+            .skip(skip)
+            .limit(limit + 1),
+        ).lean();
 
     const hasMore = loaded.length > limit;
     const messages = hasMore ? loaded.slice(0, limit) : loaded;
@@ -1352,7 +1393,7 @@ export async function getChatMessages(req, res) {
 export async function sendChatMessage(req, res) {
   try {
     const { roomId } = req.params;
-    const { content, attachments } = req.body;
+    const { content, attachments, replyTo } = req.body;
     const userId = req.user._id;
     const userRole = req.user.role;
 
@@ -1384,6 +1425,31 @@ export async function sendChatMessage(req, res) {
         success: false,
         message: "유효하지 않은 채팅방 ID입니다.",
       });
+    }
+
+    const rawReplyTo = String(replyTo || "").trim();
+    let replyToId = null;
+    if (rawReplyTo) {
+      if (!Types.ObjectId.isValid(rawReplyTo)) {
+        return res.status(400).json({
+          success: false,
+          message: "유효하지 않은 답글 대상 메시지 ID입니다.",
+        });
+      }
+      const replyTarget = await Chat.findOne({
+        _id: new Types.ObjectId(rawReplyTo),
+        roomId,
+        isDeleted: false,
+      })
+        .select({ _id: 1 })
+        .lean();
+      if (!replyTarget) {
+        return res.status(404).json({
+          success: false,
+          message: "답글 대상 메시지를 찾을 수 없습니다.",
+        });
+      }
+      replyToId = replyTarget._id;
     }
 
     // 채팅방 존재 및 참여자 확인
@@ -1426,6 +1492,8 @@ export async function sendChatMessage(req, res) {
       sender: userId,
       content: normalizedContent || "[파일 첨부]",
       attachments: normalizedAttachments,
+      replyTo: replyToId,
+      reactions: [],
       readBy: [{ userId, readAt: new Date() }],
     });
 
@@ -1437,18 +1505,9 @@ export async function sendChatMessage(req, res) {
       { $set: { lastMessageAt: now } },
     );
 
-    const populatedMessage = await Chat.findById(newMessage._id)
-      .select({
-        _id: 1,
-        roomId: 1,
-        sender: 1,
-        content: 1,
-        attachments: 1,
-        createdAt: 1,
-        updatedAt: 1,
-      })
-      .populate("sender", "name role")
-      .lean();
+    const populatedMessage = await populateChatMessageRelations(
+      Chat.findById(newMessage._id).select(CHAT_MESSAGE_LIST_SELECT),
+    ).lean();
 
     const participantIds = Array.isArray(room.participants)
       ? room.participants.map((id) => String(id || "").trim()).filter(Boolean)
@@ -1474,6 +1533,121 @@ export async function sendChatMessage(req, res) {
     res.status(500).json({
       success: false,
       message: "메시지 전송 중 오류가 발생했습니다.",
+      error: error.message,
+    });
+  }
+}
+
+/**
+ * 메시지 리액션 토글 (카톡형)
+ * @route POST /api/chats/rooms/:roomId/messages/:messageId/reactions
+ */
+export async function toggleChatMessageReaction(req, res) {
+  try {
+    const { roomId, messageId } = req.params;
+    const userId = req.user._id;
+    const emoji = String(req.body?.emoji || "").trim();
+
+    if (!Types.ObjectId.isValid(roomId) || !Types.ObjectId.isValid(messageId)) {
+      return res.status(400).json({
+        success: false,
+        message: "유효하지 않은 채팅방/메시지 ID입니다.",
+      });
+    }
+
+    if (!ALLOWED_CHAT_REACTION_EMOJIS.includes(emoji)) {
+      return res.status(400).json({
+        success: false,
+        message: "허용되지 않은 리액션입니다.",
+      });
+    }
+
+    const room = await ChatRoom.findById(roomId)
+      .select({ participants: 1, relatedPracticeTransferId: 1 })
+      .lean();
+    if (!room) {
+      return res.status(404).json({
+        success: false,
+        message: "채팅방을 찾을 수 없습니다.",
+      });
+    }
+
+    const access = await resolvePracticeTransferRoomAccess(req, room);
+    if (!access.ok) {
+      return res.status(403).json({
+        success: false,
+        message: "이 채팅방에 접근할 권한이 없습니다.",
+      });
+    }
+
+    const message = await Chat.findOne({
+      _id: new Types.ObjectId(messageId),
+      roomId: new Types.ObjectId(roomId),
+      isDeleted: false,
+    });
+    if (!message) {
+      return res.status(404).json({
+        success: false,
+        message: "메시지를 찾을 수 없습니다.",
+      });
+    }
+
+    const uid = String(userId);
+    const existingIdx = (Array.isArray(message.reactions) ? message.reactions : []).findIndex(
+      (row) => String(row?.emoji || "") === emoji && String(row?.userId || "") === uid,
+    );
+
+    if (existingIdx >= 0) {
+      message.reactions.splice(existingIdx, 1);
+    } else {
+      message.reactions.push({
+        emoji,
+        userId,
+        createdAt: new Date(),
+      });
+    }
+
+    await message.save();
+
+    const reactions = (Array.isArray(message.reactions) ? message.reactions : []).map((row) => ({
+      emoji: String(row?.emoji || ""),
+      userId: String(row?.userId || ""),
+      createdAt: row?.createdAt ? new Date(row.createdAt).toISOString() : new Date().toISOString(),
+    }));
+
+    let participantIds = Array.isArray(room.participants)
+      ? room.participants.map((id) => String(id || "").trim()).filter(Boolean)
+      : [];
+    if (access.added) {
+      const refreshed = await ChatRoom.findById(roomId).select({ participants: 1 }).lean();
+      participantIds = Array.isArray(refreshed?.participants)
+        ? refreshed.participants.map((id) => String(id || "").trim()).filter(Boolean)
+        : participantIds;
+    }
+
+    invalidateChatPerfForUsers(participantIds);
+    invalidateChatPerfCacheByPrefix(`room-messages:${String(roomId)}:`);
+
+    emitChatReactionUpdated({
+      participantIds,
+      roomId,
+      messageId,
+      reactions,
+      actorUserId: userId,
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        messageId: String(message._id),
+        roomId: String(roomId),
+        reactions,
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "리액션 처리 중 오류가 발생했습니다.",
       error: error.message,
     });
   }
@@ -1671,6 +1845,7 @@ export default {
   createOrGetChatRoom,
   getChatMessages,
   sendChatMessage,
+  toggleChatMessageReaction,
   updateChatRoomStatus,
   getAllChatRooms,
   searchUsers,

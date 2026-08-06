@@ -14,6 +14,7 @@ const DEFAULT_PROSTHESIS_TYPES = [
   "커스텀어벗+브리지",
 ];
 const MAX_MEMO_SNIPPETS = 40;
+const MAX_IMPLANT_FAVORITES = 40;
 
 const normalizeProsthesisTypes = (items) => {
   const list = Array.isArray(items) ? items : [];
@@ -44,6 +45,29 @@ const normalizeMemoSnippets = (items) => {
   return Array.from(dedup.values()).slice(0, MAX_MEMO_SNIPPETS);
 };
 
+const normalizeImplantFavorites = (items) => {
+  const list = Array.isArray(items) ? items : [];
+  const out = [];
+  const seen = new Set();
+
+  for (const raw of list) {
+    const row = raw && typeof raw === "object" ? raw : {};
+    const manufacturer = String(row.manufacturer || "").trim();
+    const brand = String(row.brand || "").trim();
+    const family = String(row.family || "").trim();
+    const type = String(row.type || "").trim();
+    if (!manufacturer && !brand && !family && !type) continue;
+    const key = `${manufacturer}|${brand}|${family}|${type}`.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const id = String(row.id || "").trim() || `imp-${out.length + 1}`;
+    out.push({ id, manufacturer, brand, family, type });
+    if (out.length >= MAX_IMPLANT_FAVORITES) break;
+  }
+
+  return out;
+};
+
 const normalizeArrivalDefaultDays = (value) => {
   const raw = Number(value);
   if (!Number.isFinite(raw)) return DEFAULT_ARRIVAL_DEFAULT_DAYS;
@@ -65,6 +89,7 @@ const toSettingsResponse = (anchor) => {
     arrivalDefaultDays: normalizeArrivalDefaultDays(settings?.arrivalDefaultDays),
     prosthesisTypes: normalizeProsthesisTypes(settings?.prosthesisTypes),
     memoSnippets: normalizeMemoSnippets(settings?.memoSnippets),
+    implantFavorites: normalizeImplantFavorites(settings?.implantFavorites),
     promoNoticeDismissedAt,
     updatedAt: settings?.updatedAt || null,
   };
@@ -128,6 +153,7 @@ export async function upsertPracticeTransferSettings(req, res) {
     const hasArrivalDefaultDays = Object.prototype.hasOwnProperty.call(body, "arrivalDefaultDays");
     const hasProsthesisTypes = Object.prototype.hasOwnProperty.call(body, "prosthesisTypes");
     const hasMemoSnippets = Object.prototype.hasOwnProperty.call(body, "memoSnippets");
+    const hasImplantFavorites = Object.prototype.hasOwnProperty.call(body, "implantFavorites");
     const hasPromoNoticeDismissedAt = Object.prototype.hasOwnProperty.call(body, "promoNoticeDismissedAt");
 
     const setPatch = {
@@ -142,6 +168,9 @@ export async function upsertPracticeTransferSettings(req, res) {
     }
     if (hasMemoSnippets) {
       setPatch["practiceTransferSettings.memoSnippets"] = normalizeMemoSnippets(body.memoSnippets);
+    }
+    if (hasImplantFavorites) {
+      setPatch["practiceTransferSettings.implantFavorites"] = normalizeImplantFavorites(body.implantFavorites);
     }
     if (hasPromoNoticeDismissedAt) {
       const raw = body.promoNoticeDismissedAt;

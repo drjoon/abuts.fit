@@ -514,78 +514,100 @@ export async function upsertPracticeTransferDraft(req, res) {
       : null;
 
     const incomingFiles = Array.isArray(req.body?.files) ? req.body.files : [];
+    // transferMemo는 날짜 메타만으로도 비어있지 않을 수 있어, 실질 내용 여부를 본다.
+    const memoText = String(transferMemo || "");
+    const hasMeaningfulMemo =
+      /\[\s*환자명\s*:\s*[^\]]+\s*\]/.test(memoText) ||
+      /\[\s*치아보철\s*:\s*[^\]]+\s*\]/.test(memoText) ||
+      Boolean(
+        memoText
+          .split(/\r?\n/)
+          .map((line) => String(line || "").trim())
+          .filter((line) => line && !/^\[/.test(line))
+          .join("")
+          .trim(),
+      );
+    const hasFormContent =
+      hasMeaningfulMemo ||
+      Boolean(targetLabName) ||
+      Boolean(targetLabAnchorId);
+
+    let normalizedDraftFiles = [];
+
     if (incomingFiles.length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: "임시저장할 파일이 없습니다.",
-      });
-    }
-
-    const uniqueFileIds = [
-      ...new Set(
-        incomingFiles
-          .map((row) => String(row?.fileId || row?._id || "").trim())
-          .filter((id) => Types.ObjectId.isValid(id)),
-      ),
-    ];
-
-    if (uniqueFileIds.length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: "유효한 임시 파일 ID가 없습니다.",
-      });
-    }
-
-    const { practiceUserObjectIds } = await buildPracticeOwnedScope(req);
-    const ownerIds = (practiceUserObjectIds || [])
-      .map((id) => String(id || "").trim())
-      .filter((id) => Types.ObjectId.isValid(id))
-      .map((id) => new Types.ObjectId(id));
-    if (req.user?._id && Types.ObjectId.isValid(String(req.user._id))) {
-      const selfId = String(req.user._id);
-      if (!ownerIds.some((id) => String(id) === selfId)) {
-        ownerIds.push(new Types.ObjectId(selfId));
+      if (!hasFormContent) {
+        return res.status(400).json({
+          success: false,
+          message: "임시저장할 파일 또는 의뢰서 내용이 없습니다.",
+        });
       }
-    }
+    } else {
+      const uniqueFileIds = [
+        ...new Set(
+          incomingFiles
+            .map((row) => String(row?.fileId || row?._id || "").trim())
+            .filter((id) => Types.ObjectId.isValid(id)),
+        ),
+      ];
 
-    const ownedFiles = await File.find({
-      _id: { $in: uniqueFileIds.map((id) => new Types.ObjectId(id)) },
-      ...(ownerIds.length ? { uploadedBy: { $in: ownerIds } } : { uploadedBy: req.user?._id }),
-    })
-      .select({
-        _id: 1,
-        originalName: 1,
-        mimetype: 1,
-        size: 1,
-        key: 1,
-        location: 1,
+      if (uniqueFileIds.length === 0) {
+        return res.status(400).json({
+          success: false,
+          message: "유효한 임시 파일 ID가 없습니다.",
+        });
+      }
+
+      const { practiceUserObjectIds } = await buildPracticeOwnedScope(req);
+      const ownerIds = (practiceUserObjectIds || [])
+        .map((id) => String(id || "").trim())
+        .filter((id) => Types.ObjectId.isValid(id))
+        .map((id) => new Types.ObjectId(id));
+      if (req.user?._id && Types.ObjectId.isValid(String(req.user._id))) {
+        const selfId = String(req.user._id);
+        if (!ownerIds.some((id) => String(id) === selfId)) {
+          ownerIds.push(new Types.ObjectId(selfId));
+        }
+      }
+
+      const ownedFiles = await File.find({
+        _id: { $in: uniqueFileIds.map((id) => new Types.ObjectId(id)) },
+        ...(ownerIds.length ? { uploadedBy: { $in: ownerIds } } : { uploadedBy: req.user?._id }),
       })
-      .lean();
+        .select({
+          _id: 1,
+          originalName: 1,
+          mimetype: 1,
+          size: 1,
+          key: 1,
+          location: 1,
+        })
+        .lean();
 
-    const ownedById = new Map(
-      ownedFiles.map((row) => [String(row?._id || "").trim(), row]),
-    );
+      const ownedById = new Map(
+        ownedFiles.map((row) => [String(row?._id || "").trim(), row]),
+      );
 
-    const normalizedDraftFiles = uniqueFileIds
-      .map((id) => {
-        const row = ownedById.get(id);
-        if (!row) return null;
-        return {
-          fileId: row._id,
-          originalName: String(row.originalName || "").trim(),
-          mimetype: String(row.mimetype || "application/octet-stream").trim(),
-          size: Number(row.size || 0),
-          s3Key: String(row.key || "").trim(),
-          location: String(row.location || "").trim(),
-        };
-      })
-      .filter((row) => Boolean(row?.originalName) && Boolean(row?.s3Key));
+      normalizedDraftFiles = uniqueFileIds
+        .map((id) => {
+          const row = ownedById.get(id);
+          if (!row) return null;
+          return {
+            fileId: row._id,
+            originalName: String(row.originalName || "").trim(),
+            mimetype: String(row.mimetype || "application/octet-stream").trim(),
+            size: Number(row.size || 0),
+            s3Key: String(row.key || "").trim(),
+            location: String(row.location || "").trim(),
+          };
+        })
+        .filter((row) => Boolean(row?.originalName) && Boolean(row?.s3Key));
 
-    if (normalizedDraftFiles.length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: "사용 가능한 임시 파일을 찾지 못했습니다.",
-      });
+      if (normalizedDraftFiles.length === 0) {
+        return res.status(400).json({
+          success: false,
+          message: "사용 가능한 임시 파일을 찾지 못했습니다.",
+        });
+      }
     }
 
     const rawDraftId = String(req.body?.draftId || "").trim();

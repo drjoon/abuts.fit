@@ -28,6 +28,7 @@ export type PracticeTransferFilePaneProps = {
   onRemoveFile: (key: string) => void;
   onClearAllFiles: () => void;
   listViewportClassName?: string;
+  /** @deprecated 동기화 버튼은 대시보드 헤더로 이동. 하위 호환용으로만 유지 */
   syncUploadLabel?: string;
   syncUploadBusyLabel?: string;
   syncUploadDisabled?: boolean;
@@ -44,29 +45,22 @@ export const PracticeTransferFilePane = ({
   onPickFiles,
   onRemoveFile,
   onClearAllFiles,
-  // 파일 행 4rem + gap 0.5rem × 4 = 5개 표시 높이
-  listViewportClassName = "h-[22rem] max-h-[22rem]",
-  syncUploadLabel = "파일 올려 동기화 시작",
-  syncUploadBusyLabel = "업로드 중...",
-  syncUploadDisabled = true,
-  syncUploadBusy = false,
-  syncUploadHint,
-  onSyncUpload,
+  listViewportClassName = "h-[16rem] max-h-[16rem]",
 }: PracticeTransferFilePaneProps) => {
   const cardClassName =
-    "overflow-hidden rounded-2xl border border-slate-200/80 bg-gradient-to-br from-white via-white to-sky-50/60 shadow-[0_4px_12px_rgba(15,23,42,0.03)] transition-all hover:shadow-[0_8px_20px_rgba(15,23,42,0.06)]";
+    "overflow-hidden rounded-xl border border-slate-200/80 bg-white shadow-sm";
 
   return (
-    <div className="flex min-h-0 h-full flex-col gap-3">
+    <div className="flex min-h-0 h-full flex-col gap-2">
       <div
-        className={`${cardClassName} border-dashed p-4 text-center flex flex-1 flex-col items-center justify-center`}
+        className={`${cardClassName} border-dashed bg-slate-50/50 p-3 text-center flex flex-1 flex-col items-center justify-center`}
       >
-        <div className="mx-auto mb-2 w-fit rounded-full bg-sky-50 p-3 text-sky-600">
-          <UploadCloud className="h-6 w-6" />
+        <div className="mx-auto mb-1.5 w-fit rounded-full bg-sky-50 p-2 text-sky-600">
+          <UploadCloud className="h-5 w-5" />
         </div>
-        <p className="text-lg font-semibold text-slate-900">파일을 드래그 & 드롭하세요</p>
-        <p className="mt-1 text-sm text-slate-500">{acceptedHint}</p>
-        <div className="mt-3">
+        <p className="text-sm font-semibold text-slate-900">파일 드래그 & 드롭</p>
+        <p className="mt-0.5 text-xs text-slate-500">{acceptedHint}</p>
+        <div className="mt-2">
           <input
             id={fileInputId}
             type="file"
@@ -82,7 +76,8 @@ export const PracticeTransferFilePane = ({
           <Button
             type="button"
             variant="outline"
-            className="rounded-xl border-slate-200 bg-white px-6 text-base shadow-sm"
+            size="sm"
+            className="rounded-lg border-slate-200 bg-white"
             onClick={() => {
               const input = document.getElementById(fileInputId) as HTMLInputElement | null;
               input?.click();
@@ -93,16 +88,16 @@ export const PracticeTransferFilePane = ({
         </div>
       </div>
 
-      <div className={`${cardClassName} flex flex-col p-4`}>
-        <div className="mb-3 flex items-center justify-between gap-2">
-          <div className="text-sm text-slate-500">
-            총 {files.length}개 파일 · 약 {totalSizeMb}MB <span className="text-destructive">*</span>
+      <div className={`${cardClassName} flex flex-col p-3`}>
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <div className="text-xs text-slate-500">
+            {files.length}개 · {totalSizeMb}MB
           </div>
           <Button
             type="button"
             variant="outline"
             size="sm"
-            className="h-8 rounded-lg border-slate-200 bg-white"
+            className="h-7 rounded-lg border-slate-200 bg-white text-xs"
             onClick={onClearAllFiles}
             disabled={files.length === 0}
           >
@@ -112,23 +107,23 @@ export const PracticeTransferFilePane = ({
 
         {files.length === 0 ? (
           <div
-            className={`${listViewportClassName} flex items-center justify-center rounded-xl border border-dashed border-slate-200 bg-white/60 text-center text-sm text-slate-500`}
+            className={`${listViewportClassName} flex items-center justify-center rounded-lg border border-dashed border-slate-200 bg-slate-50/40 text-center text-xs text-slate-500`}
           >
-            아직 추가된 파일이 없습니다.
+            첨부된 파일 없음
           </div>
         ) : (
           <div className={`${listViewportClassName} overflow-y-auto pr-1`}>
             <TooltipProvider delayDuration={0}>
-              <div className="grid grid-cols-1 gap-2 auto-rows-[4rem]">
+              <div className="grid grid-cols-1 gap-1.5 auto-rows-[3.25rem]">
                 {files.map((file) => (
                   <div
                     key={file.key}
-                    className="flex h-[4rem] items-center justify-between rounded-xl border border-slate-200/80 bg-white/80 px-2.5 py-2 shadow-sm"
+                    className="flex h-[3.25rem] items-center justify-between rounded-lg border border-slate-200/80 bg-white px-2 py-1.5"
                   >
                     <div className="min-w-0">
                       <Tooltip>
                         <TooltipTrigger asChild>
-                          <p className="truncate text-base font-medium text-slate-900">
+                          <p className="truncate text-sm font-medium text-slate-900">
                             {file.name}
                           </p>
                         </TooltipTrigger>
@@ -140,7 +135,7 @@ export const PracticeTransferFilePane = ({
                           {file.name}
                         </TooltipContent>
                       </Tooltip>
-                      <p className="text-sm text-slate-500">
+                      <p className="text-xs text-slate-500">
                         {(file.size / (1024 * 1024)).toFixed(2)}MB
                         {file.metaSuffix ? ` · ${file.metaSuffix}` : ""}
                       </p>
@@ -149,7 +144,7 @@ export const PracticeTransferFilePane = ({
                       type="button"
                       variant="ghost"
                       size="icon"
-                      className="h-9 w-9 text-slate-500 hover:text-destructive"
+                      className="h-8 w-8 text-slate-500 hover:text-destructive"
                       onClick={() => onRemoveFile(file.key)}
                     >
                       <Trash2 className="h-4 w-4" />
@@ -160,32 +155,6 @@ export const PracticeTransferFilePane = ({
             </TooltipProvider>
           </div>
         )}
-
-        {onSyncUpload ? (
-          <div className="mt-3 border-t border-slate-100 pt-3">
-            <TooltipProvider delayDuration={0}>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <span className="block w-full">
-                    <Button
-                      type="button"
-                      className="w-full bg-blue-600 text-white hover:bg-blue-700 disabled:bg-blue-600/50"
-                      onClick={onSyncUpload}
-                      disabled={syncUploadDisabled || syncUploadBusy}
-                    >
-                      {syncUploadBusy ? syncUploadBusyLabel : syncUploadLabel}
-                    </Button>
-                  </span>
-                </TooltipTrigger>
-                {syncUploadHint ? (
-                  <TooltipContent side="top" className="max-w-xs text-xs leading-relaxed">
-                    {syncUploadHint}
-                  </TooltipContent>
-                ) : null}
-              </Tooltip>
-            </TooltipProvider>
-          </div>
-        ) : null}
       </div>
     </div>
   );

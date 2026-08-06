@@ -140,7 +140,11 @@ export function initializeSocket(server) {
 
         const populatedMessage = await Chat.findById(newMessage._id)
           .populate("sender", "name email role")
-          .populate("replyTo")
+          .populate({
+            path: "replyTo",
+            select: "_id content sender isDeleted",
+            populate: { path: "sender", select: "name role" },
+          })
           .lean();
 
         // 채팅방의 모든 참여자에게 전송

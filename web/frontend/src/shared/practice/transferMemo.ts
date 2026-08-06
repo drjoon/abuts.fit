@@ -3,6 +3,89 @@ export type ToothWorkSelection = {
   prosthesisType: string;
   customAbutment: boolean;
   bridgeLinkedTeeth: string[];
+  /** 커스텀어벗일 때만 의미 있음. 동기화/임시저장 memo에 포함 */
+  implantManufacturer?: string;
+  implantBrand?: string;
+  implantFamily?: string;
+  implantType?: string;
+};
+
+export type PracticeImplantFavorite = {
+  id: string;
+  manufacturer: string;
+  brand: string;
+  family: string;
+  type: string;
+};
+
+export const emptyToothWorkImplant = () => ({
+  implantManufacturer: "",
+  implantBrand: "",
+  implantFamily: "",
+  implantType: "",
+});
+
+export const pickToothWorkImplant = (
+  row: Partial<ToothWorkSelection> | null | undefined,
+  customAbutment: boolean,
+) => {
+  if (!customAbutment) return emptyToothWorkImplant();
+  return {
+    implantManufacturer: String(row?.implantManufacturer || "").trim(),
+    implantBrand: String(row?.implantBrand || "").trim(),
+    implantFamily: String(row?.implantFamily || "").trim(),
+    implantType: String(row?.implantType || "").trim(),
+  };
+};
+
+const serializeImplantSuffix = (row: ToothWorkSelection) => {
+  const manufacturer = String(row.implantManufacturer || "").trim();
+  const brand = String(row.implantBrand || "").trim();
+  const family = String(row.implantFamily || "").trim();
+  const type = String(row.implantType || "").trim();
+  if (!manufacturer && !brand && !family && !type) return "";
+  return `{${manufacturer}/${brand}/${family}/${type}}`;
+};
+
+const parseImplantSuffix = (value: string) => {
+  const source = String(value || "").trim();
+  const match = source.match(/\{([^}]*)\}\s*$/);
+  if (!match) {
+    return { without: source, ...emptyToothWorkImplant() };
+  }
+  const parts = String(match[1] || "").split("/");
+  const manufacturer = String(parts[0] || "").trim();
+  const brand = String(parts[1] || "").trim();
+  const family = String(parts[2] || "").trim();
+  const type = parts.slice(3).join("/").trim();
+  return {
+    without: source.replace(/\{[^}]*\}\s*$/, "").trim(),
+    implantManufacturer: manufacturer,
+    implantBrand: brand,
+    implantFamily: family,
+    implantType: type,
+  };
+};
+
+export const normalizeImplantFavorites = (items: unknown): PracticeImplantFavorite[] => {
+  if (!Array.isArray(items)) return [];
+  const out: PracticeImplantFavorite[] = [];
+  const seen = new Set<string>();
+  for (const raw of items) {
+    const row = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+    const manufacturer = String(row.manufacturer || "").trim();
+    const brand = String(row.brand || "").trim();
+    const family = String(row.family || "").trim();
+    const type = String(row.type || "").trim();
+    if (!manufacturer && !brand && !family && !type) continue;
+    const key = `${manufacturer}|${brand}|${family}|${type}`.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const id = String(row.id || "").trim() || `imp-${out.length + 1}-${key.slice(0, 24)}`;
+    out.push({ id, manufacturer, brand, family, type });
+    if (out.length >= 40) break;
+  }
+  return out;
 };
 
 export type ParsedPracticeTransferMemoMeta = {
@@ -97,6 +180,7 @@ export const normalizeToothWorks = (items: ToothWorkSelection[]) =>
         prosthesisType,
         customAbutment,
         bridgeLinkedTeeth,
+        ...pickToothWorkImplant(row, customAbutment),
       };
     })
     .filter((row) => /^[1-4][1-8]$/.test(row.toothNumber) && row.prosthesisType);
@@ -130,6 +214,7 @@ export const normalizeToothWorksForSync = (items: ToothWorkSelection[]) =>
         prosthesisType,
         customAbutment,
         bridgeLinkedTeeth,
+        ...pickToothWorkImplant(row, customAbutment),
       };
     })
     .filter((row) => Boolean(row.prosthesisType) || Boolean(row.toothNumber));
@@ -151,12 +236,15 @@ export const parseToothWorks = (value: string) =>
           prosthesisType: toothNumber ? "크라운" : "",
           customAbutment: false,
           bridgeLinkedTeeth: [] as string[],
+          ...emptyToothWorkImplant(),
         };
       }
 
       const linkedMatch = rhs.match(/\(([^)]+)\)\s*$/);
       const linkedRaw = linkedMatch ? linkedMatch[1] : "";
       let withoutLinked = linkedMatch ? rhs.replace(/\(([^)]+)\)\s*$/, "").trim() : rhs;
+      const implantParsed = parseImplantSuffix(withoutLinked);
+      withoutLinked = implantParsed.without;
 
       let customAbutment = false;
       if (withoutLinked.startsWith("커스텀어벗+")) {
@@ -166,6 +254,14 @@ export const parseToothWorks = (value: string) =>
       if (withoutLinked.includes("+커스텀어벗")) {
         customAbutment = true;
         withoutLinked = withoutLinked.replace("+커스텀어벗", "").trim();
+      }
+      if (
+        implantParsed.implantManufacturer ||
+        implantParsed.implantBrand ||
+        implantParsed.implantFamily ||
+        implantParsed.implantType
+      ) {
+        customAbutment = true;
       }
 
       const prosthesisType = withoutLinked || (toothNumber ? "크라운" : "");
@@ -181,6 +277,7 @@ export const parseToothWorks = (value: string) =>
         prosthesisType,
         customAbutment,
         bridgeLinkedTeeth,
+        ...pickToothWorkImplant(implantParsed, customAbutment),
       };
     })
     .filter((row) => Boolean(row.prosthesisType) || Boolean(row.toothNumber));
@@ -199,7 +296,7 @@ export const serializeToothWorks = (rows: ToothWorkSelection[]) =>
           : "";
       const custom =
         isCustomAbutmentSupportedProsthesisType(row.prosthesisType) && row.customAbutment
-          ? "+커스텀어벗"
+          ? `+커스텀어벗${serializeImplantSuffix(row)}`
           : "";
       return `${row.toothNumber}=${row.prosthesisType}${custom}${linked}`;
     })
@@ -222,24 +319,197 @@ export const serializeToothWorksForSync = (rows: ToothWorkSelection[]) =>
           : "";
       const custom =
         isCustomAbutmentSupportedProsthesisType(prosthesisType) && row.customAbutment
-          ? "+커스텀어벗"
+          ? `+커스텀어벗${serializeImplantSuffix(row)}`
           : "";
       return `${toothToken}=${prosthesisType}${custom}${linked}`;
     })
     .join(" | ");
 
+/**
+ * 브리지 연결 성분에서 양끝 지대치(브리지) 사이 안쪽 Pontic은 표시에서 생략하고,
+ * 바깥쪽 Pontic은 유지한 채 연결을 연장한다.
+ *
+ * 예) 43(브리지)-42(P)-41(P)-31(P)-32(P)-33(브리지)
+ *  → 43 연결 43-33 / 33 연결 33-43 (안쪽 Pontic 생략)
+ *
+ * 예) 44(P)-43(브리지)-…-33(브리지)
+ *  → 44 유지, 43 연결에 44와 33 포함
+ */
+export const collapseInnerBridgePonticsForDisplay = (
+  rows: ToothWorkSelection[],
+): ToothWorkSelection[] => {
+  const normalized = normalizeToothWorks(rows);
+  if (normalized.length === 0) return [];
+
+  const byTooth = new Map<string, ToothWorkSelection>();
+  for (const row of normalized) {
+    if (!byTooth.has(row.toothNumber)) byTooth.set(row.toothNumber, row);
+  }
+
+  const bridgeLikeTeeth = normalized.filter((row) =>
+    isBridgeLikeProsthesisType(row.prosthesisType),
+  );
+  if (bridgeLikeTeeth.length === 0) return normalized;
+
+  const adjacency = new Map<string, Set<string>>();
+  const ensure = (tooth: string) => {
+    if (!adjacency.has(tooth)) adjacency.set(tooth, new Set());
+    return adjacency.get(tooth)!;
+  };
+
+  for (const row of bridgeLikeTeeth) {
+    ensure(row.toothNumber);
+    for (const linked of row.bridgeLinkedTeeth) {
+      if (!byTooth.has(linked)) continue;
+      if (!isBridgeLikeProsthesisType(byTooth.get(linked)!.prosthesisType)) continue;
+      ensure(row.toothNumber).add(linked);
+      ensure(linked).add(row.toothNumber);
+    }
+  }
+
+  const visited = new Set<string>();
+  const omitPontics = new Set<string>();
+  const collapsedLinks = new Map<string, string[]>();
+
+  const walkComponent = (seed: string) => {
+    const stack = [seed];
+    const component: string[] = [];
+    visited.add(seed);
+
+    while (stack.length > 0) {
+      const cur = stack.pop() as string;
+      component.push(cur);
+      for (const next of adjacency.get(cur) || []) {
+        if (visited.has(next)) continue;
+        visited.add(next);
+        stack.push(next);
+      }
+    }
+
+    // 경로 정렬: degree≤1 끝점에서 BFS 경로 우선, 실패 시 악궁 정렬
+    const degree = (tooth: string) => (adjacency.get(tooth)?.size || 0);
+    const endpoints = component.filter((t) => degree(t) <= 1);
+    const start =
+      endpoints.sort(
+        (a, b) => toToothMemoSortNumber(a) - toToothMemoSortNumber(b),
+      )[0] ||
+      component.slice().sort((a, b) => toToothMemoSortNumber(a) - toToothMemoSortNumber(b))[0];
+
+    const ordered: string[] = [];
+    const pathVisited = new Set<string>();
+    let cursor: string | null = start;
+    let prev: string | null = null;
+    while (cursor && !pathVisited.has(cursor)) {
+      ordered.push(cursor);
+      pathVisited.add(cursor);
+      const neighbors = [...(adjacency.get(cursor) || [])].filter((n) => n !== prev);
+      const nextInComponent = neighbors.find((n) => component.includes(n) && !pathVisited.has(n));
+      prev = cursor;
+      cursor = nextInComponent || null;
+    }
+    // 분기/누락분: 악궁 순으로 남은 치아 추가
+    for (const tooth of component
+      .slice()
+      .sort((a, b) => toToothMemoSortNumber(a) - toToothMemoSortNumber(b))) {
+      if (!pathVisited.has(tooth)) ordered.push(tooth);
+    }
+
+    const abutmentIndexes = ordered
+      .map((tooth, idx) => ({ tooth, idx, type: byTooth.get(tooth)?.prosthesisType || "" }))
+      .filter((row) => row.type === "브리지")
+      .map((row) => row.idx);
+
+    if (abutmentIndexes.length >= 2) {
+      const left = Math.min(...abutmentIndexes);
+      const right = Math.max(...abutmentIndexes);
+      for (let i = left + 1; i < right; i += 1) {
+        const tooth = ordered[i];
+        if (byTooth.get(tooth)?.prosthesisType === "Pontic") {
+          omitPontics.add(tooth);
+        }
+      }
+    }
+
+    const kept = ordered.filter((tooth) => !omitPontics.has(tooth));
+    const keptSet = new Set(kept);
+
+    // 생략 Pontic을 통과해 다음 유지 치아로 연결 연장
+    const resolveNextKept = (from: string, via: string): string | null => {
+      let prevTooth = from;
+      let cur: string | null = via;
+      const seen = new Set<string>([from]);
+      while (cur && !seen.has(cur)) {
+        seen.add(cur);
+        if (keptSet.has(cur)) return cur;
+        const nexts = [...(adjacency.get(cur) || [])].filter((n) => n !== prevTooth);
+        prevTooth = cur;
+        cur = nexts[0] || null;
+      }
+      return null;
+    };
+
+    for (const tooth of kept) {
+      const rawNeighbors = [...(adjacency.get(tooth) || [])];
+      const nextNeighbors = new Set<string>();
+      for (const neighbor of rawNeighbors) {
+        if (keptSet.has(neighbor)) {
+          nextNeighbors.add(neighbor);
+          continue;
+        }
+        if (omitPontics.has(neighbor)) {
+          const resolved = resolveNextKept(tooth, neighbor);
+          if (resolved) nextNeighbors.add(resolved);
+        }
+      }
+      collapsedLinks.set(
+        tooth,
+        [...nextNeighbors].sort(
+          (a, b) => toToothMemoSortNumber(a) - toToothMemoSortNumber(b),
+        ),
+      );
+    }
+  };
+
+  for (const row of bridgeLikeTeeth) {
+    if (visited.has(row.toothNumber)) continue;
+    walkComponent(row.toothNumber);
+  }
+
+  return normalized
+    .filter((row) => !omitPontics.has(row.toothNumber))
+    .map((row) => {
+      if (!collapsedLinks.has(row.toothNumber)) return row;
+      return {
+        ...row,
+        bridgeLinkedTeeth: collapsedLinks.get(row.toothNumber) || [],
+      };
+    });
+};
+
 export const formatToothWorksForDisplay = (
   rows: ToothWorkSelection[],
   options?: { multiline?: boolean },
 ) => {
-  const normalizedRows = normalizeToothWorks(rows)
+  const normalizedRows = collapseInnerBridgePonticsForDisplay(rows)
     .slice()
     .sort((a, b) => toToothMemoSortNumber(a.toothNumber) - toToothMemoSortNumber(b.toothNumber));
   if (!normalizedRows.length) return "";
 
   const formattedRows = normalizedRows.map((row) => {
     const details = [row.prosthesisType];
-    if (row.customAbutment) details.push("커스텀어벗");
+    if (row.customAbutment) {
+      details.push("커스텀어벗");
+      const implantLabel = [
+        row.implantManufacturer,
+        row.implantBrand,
+        row.implantFamily,
+        row.implantType,
+      ]
+        .map((v) => String(v || "").trim())
+        .filter(Boolean)
+        .join(" / ");
+      if (implantLabel) details.push(implantLabel);
+    }
     if (isBridgeLikeProsthesisType(row.prosthesisType) && row.bridgeLinkedTeeth.length > 0) {
       const orderedLinks = [...row.bridgeLinkedTeeth].sort(
         (a, b) => toToothMemoSortNumber(a) - toToothMemoSortNumber(b),

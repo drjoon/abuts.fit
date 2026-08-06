@@ -182,6 +182,11 @@ export default function RequestorPracticePage() {
   const [activeChatRoom, setActiveChatRoom] = useState<ChatRoom | null>(null);
   const [chatError, setChatError] = useState("");
   const [chatDraft, setChatDraft] = useState("");
+  const [chatReplyTo, setChatReplyTo] = useState<{
+    _id: string;
+    sender: { name: string; role: string };
+    content: string;
+  } | null>(null);
   const [chatAttachedFiles, setChatAttachedFiles] = useState<File[]>([]);
   const [chatSending, setChatSending] = useState(false);
   const [transferCardsMaxHeightPx, setTransferCardsMaxHeightPx] = useState<number | null>(null);
@@ -195,6 +200,7 @@ export default function RequestorPracticePage() {
     messages,
     loading: chatLoading,
     sendMessage,
+    toggleReaction,
     prefetchMessages,
     setMessages: setChatMessages,
   } = useChatMessages({
@@ -1089,15 +1095,26 @@ export default function RequestorPracticePage() {
           .filter((row) => row.fileName && row.s3Key);
       }
 
-      const sent = await sendMessage(text, attachments);
+      const sent = await sendMessage(text, attachments, {
+        replyTo: chatReplyTo?._id || null,
+      });
       if (sent) {
         setChatDraft("");
+        setChatReplyTo(null);
         setChatAttachedFiles([]);
       }
     } finally {
       setChatSending(false);
     }
-  }, [activeChatRoom?._id, chatAttachedFiles, chatDraft, chatSending, sendMessage, uploadFilesWithToast]);
+  }, [
+    activeChatRoom?._id,
+    chatAttachedFiles,
+    chatDraft,
+    chatReplyTo?._id,
+    chatSending,
+    sendMessage,
+    uploadFilesWithToast,
+  ]);
 
   const labId = String(user?.businessAnchorId || "").trim();
   const practiceLinkQuery = new URLSearchParams();
@@ -1414,6 +1431,7 @@ export default function RequestorPracticePage() {
             setActiveChatRoom(null);
             setChatMessages([]);
             setChatDraft("");
+            setChatReplyTo(null);
             setChatAttachedFiles([]);
             setChatError("");
           }
@@ -1457,6 +1475,7 @@ export default function RequestorPracticePage() {
         chatError={String(chatError || "")}
         chatMessages={messages}
         isMyMessage={(senderId) => senderId === String(user?.id || "")}
+        currentUserId={String(user?.id || "").trim()}
         formatChatTime={formatDateTime}
         formatFileSize={formatBytes}
         onDownloadChatAttachment={handleDownloadChatAttachment}
@@ -1468,6 +1487,19 @@ export default function RequestorPracticePage() {
         chatDraft={chatDraft}
         onChangeChatDraft={setChatDraft}
         onSendChatMessage={() => void handleSendChat()}
+        replyTo={chatReplyTo}
+        onReplyToMessage={(message) => {
+          setChatReplyTo({
+            _id: String(message._id),
+            sender: {
+              name: String(message.sender?.name || "").trim() || "알 수 없음",
+              role: String(message.sender?.role || "").trim(),
+            },
+            content: String(message.content || "").trim() || "(내용 없음)",
+          });
+        }}
+        onCancelReply={() => setChatReplyTo(null)}
+        onToggleReaction={(messageId, emoji) => void toggleReaction(messageId, emoji)}
         composerPlaceholder="치과에 전달할 내용을 입력하세요"
         inputDisabled={chatLoading || chatSending || !activeChatRoom?._id}
         sendDisabled={

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type Dispatch, type KeyboardEvent
 import {
   Check,
   ChevronsUpDown,
+  ChevronDown,
   Plus,
   Settings,
   Trash2,
@@ -42,6 +43,18 @@ import { cn } from "@/shared/ui/cn";
 import { PracticeDateInputField } from "@/shared/components/practice/PracticeDateInputField";
 import { getBusinessLabel, type SearchBusinessResult } from "@/pages/practice/hooks/usePracticeTransferStep1";
 import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
+import { PracticeToothImplantFields } from "@/shared/components/practice/PracticeToothImplantFields";
+import type { ImplantConnection } from "@/shared/practice/useImplantConnectionCatalog";
+import {
+  emptyToothWorkImplant,
+  pickToothWorkImplant,
+  type PracticeImplantFavorite,
+} from "@/shared/practice/transferMemo";
+import {
   getAdjacentTeeth,
   isBridgeLikeProsthesisType,
   isCustomAbutmentSupportedProsthesisType,
@@ -53,6 +66,7 @@ import {
 // - web/frontend/src/pages/practice/PracticeDropzonePage.tsx
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
 // - web/frontend/src/shared/practice/usePracticeToothWorkEditor.ts
+// - web/frontend/src/shared/components/practice/PracticeToothImplantFields.tsx
 
 const PRACTICE_MEMO_SNIPPETS_LOCAL_KEY = "practice_transfer_memo_snippets_v1";
 const MAX_MEMO_SNIPPETS = 40;
@@ -122,6 +136,9 @@ export type PracticeTransferRequestIntakePanelProps = {
   toothTensOptions: readonly string[];
   toothOnesOptions: readonly string[];
   onClearAll?: () => void;
+  implantConnections?: ImplantConnection[];
+  implantFavorites?: PracticeImplantFavorite[];
+  onImplantFavoritesChange?: (next: PracticeImplantFavorite[]) => void | Promise<void>;
 };
 
 export const PracticeTransferRequestIntakePanel = ({
@@ -160,7 +177,11 @@ export const PracticeTransferRequestIntakePanel = ({
   toothTensOptions,
   toothOnesOptions,
   onClearAll,
+  implantConnections = [],
+  implantFavorites = [],
+  onImplantFavoritesChange,
 }: PracticeTransferRequestIntakePanelProps) => {
+  const [snippetsOpen, setSnippetsOpen] = useState(false);
   const orderedToothWorkRows = useOrderedToothWorkRows(toothWorks);
   const defaultProsthesisType = normalizedProsthesisTypes.includes("크라운")
     ? "크라운"
@@ -506,7 +527,7 @@ export const PracticeTransferRequestIntakePanel = ({
       <div className="space-y-2">
         <div className="flex items-center justify-between gap-2">
           <Label className="text-sm">
-            보철물 형태 <span className="text-destructive">*</span>
+            보철물 <span className="text-destructive">*</span>
           </Label>
           <div className="flex items-center gap-1">
             <TooltipProvider>
@@ -526,7 +547,7 @@ export const PracticeTransferRequestIntakePanel = ({
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent side="top" className="text-xs">
-                  보철물 형태 목록 설정
+                  보철물 목록 설정
                 </TooltipContent>
               </Tooltip>
             </TooltipProvider>
@@ -545,6 +566,7 @@ export const PracticeTransferRequestIntakePanel = ({
                           prosthesisType: defaultProsthesisType,
                           customAbutment: false,
                           bridgeLinkedTeeth: [],
+                          ...emptyToothWorkImplant(),
                         },
                       ])
                     }
@@ -553,7 +575,7 @@ export const PracticeTransferRequestIntakePanel = ({
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent side="top" className="text-xs">
-                  설정된 치아 전체 삭제
+                  치아 전체 삭제
                 </TooltipContent>
               </Tooltip>
             </TooltipProvider>
@@ -684,6 +706,10 @@ export const PracticeTransferRequestIntakePanel = ({
                                   ? next[originalIndex].bridgeLinkedTeeth
                                   : []
                                 : [],
+                              ...(isCustomAbutmentSupportedProsthesisType(prosthesisType) &&
+                              next[originalIndex].customAbutment
+                                ? pickToothWorkImplant(next[originalIndex], true)
+                                : emptyToothWorkImplant()),
                             };
 
                             const bridgeLikeToNonBridgeLike =
@@ -773,6 +799,10 @@ export const PracticeTransferRequestIntakePanel = ({
                                           bridgeLinkedTeeth: currentTooth
                                             ? Array.from(new Set([...pairedLinks, currentTooth]))
                                             : pairedLinks,
+                                          ...(isCustomAbutmentSupportedProsthesisType(pairedType) &&
+                                          paired.customAbutment
+                                            ? pickToothWorkImplant(paired, true)
+                                            : emptyToothWorkImplant()),
                                         };
                                       } else {
                                         next.push({
@@ -782,6 +812,7 @@ export const PracticeTransferRequestIntakePanel = ({
                                             : "브리지",
                                           customAbutment: false,
                                           bridgeLinkedTeeth: currentTooth ? [currentTooth] : [],
+                                          ...emptyToothWorkImplant(),
                                         });
                                       }
                                     } else if (pairedIdx >= 0 && currentTooth) {
@@ -819,6 +850,9 @@ export const PracticeTransferRequestIntakePanel = ({
                               next[originalIndex] = {
                                 ...next[originalIndex],
                                 customAbutment: checked,
+                                ...(checked
+                                  ? pickToothWorkImplant(next[originalIndex], true)
+                                  : emptyToothWorkImplant()),
                               };
                               return next;
                             });
@@ -843,6 +877,7 @@ export const PracticeTransferRequestIntakePanel = ({
                               prosthesisType: defaultProsthesisType,
                               customAbutment: false,
                               bridgeLinkedTeeth: [],
+                              ...emptyToothWorkImplant(),
                             },
                           ];
                         })
@@ -851,6 +886,26 @@ export const PracticeTransferRequestIntakePanel = ({
                       <Trash2 className="h-4 w-4" />
                     </Button>
                   </div>
+
+                  {canSelectCustomAbutment && row.customAbutment ? (
+                    <PracticeToothImplantFields
+                      value={pickToothWorkImplant(row, true)}
+                      onChange={(nextImplant) => {
+                        setToothWorks((prev) => {
+                          const next = [...prev];
+                          next[originalIndex] = {
+                            ...next[originalIndex],
+                            customAbutment: true,
+                            ...nextImplant,
+                          };
+                          return next;
+                        });
+                      }}
+                      connections={implantConnections}
+                      favorites={implantFavorites}
+                      onFavoritesChange={onImplantFavoritesChange}
+                    />
+                  ) : null}
                 </div>
               </div>
             );
@@ -870,6 +925,7 @@ export const PracticeTransferRequestIntakePanel = ({
                     prosthesisType: defaultProsthesisType,
                     customAbutment: false,
                     bridgeLinkedTeeth: [],
+                    ...emptyToothWorkImplant(),
                   },
                 ])
               }
@@ -881,11 +937,11 @@ export const PracticeTransferRequestIntakePanel = ({
         </div>
       </div>
 
-      <div className="mt-3 flex min-h-0 flex-1 flex-col space-y-2">
-        <Label className="text-sm">의뢰 메모</Label>
+      <div className="mt-2 flex min-h-0 flex-1 flex-col space-y-1.5">
+        <Label className="text-sm">메모</Label>
         <div
           id={memoInputId}
-          className="min-h-[6.5rem] flex-1 space-y-1 overflow-y-auto rounded-md border border-slate-200 bg-white/80 p-1.5"
+          className="min-h-[5rem] flex-1 space-y-1 overflow-y-auto rounded-md border border-slate-200 bg-white/80 p-1.5"
         >
           {memoLines.map((line, index) => {
             const canSave = Boolean(String(line || "").trim());
@@ -943,7 +999,7 @@ export const PracticeTransferRequestIntakePanel = ({
                       handleDeleteMemoLine(index);
                     }
                   }}
-                  placeholder={index === 0 ? "요청사항을 줄 단위로 입력하세요" : "추가 문장 입력"}
+                  placeholder={index === 0 ? "요청사항 입력" : "추가 문장"}
                   className="h-8 text-sm"
                 />
                 <Button
@@ -975,93 +1031,111 @@ export const PracticeTransferRequestIntakePanel = ({
         </div>
         {snippetHint ? <p className="text-xs text-slate-500">{snippetHint}</p> : null}
 
-        <div className="space-y-1.5">
-          <div className="text-xs font-medium text-slate-600">저장된 문장</div>
-          {memoSnippets.length === 0 ? (
-            <p className="rounded-md border border-dashed border-slate-200 px-2 py-2 text-xs text-slate-400">
-              문장 오른쪽 [저장] 아이콘을 누르면 여기에 쌓입니다. 클릭해서 다시 넣을 수 있습니다.
-            </p>
-          ) : (
-            <div className="max-h-[7.5rem] space-y-1 overflow-y-auto pr-1">
-              {memoSnippets.map((snippet, index) => {
-                const isEditing = editingSnippetIndex === index;
-                if (isEditing) {
+        <Collapsible open={snippetsOpen} onOpenChange={setSnippetsOpen}>
+          <CollapsibleTrigger asChild>
+            <button
+              type="button"
+              className="flex w-full items-center justify-between rounded-md px-0.5 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50"
+            >
+              <span>
+                저장된 문장
+                {memoSnippets.length > 0 ? ` (${memoSnippets.length})` : ""}
+              </span>
+              <ChevronDown
+                className={cn(
+                  "h-3.5 w-3.5 text-slate-400 transition-transform",
+                  snippetsOpen ? "rotate-180" : "",
+                )}
+              />
+            </button>
+          </CollapsibleTrigger>
+          <CollapsibleContent className="space-y-1.5 pt-1">
+            {memoSnippets.length === 0 ? (
+              <p className="rounded-md border border-dashed border-slate-200 px-2 py-2 text-xs text-slate-400">
+                문장 옆 저장 아이콘으로 추가
+              </p>
+            ) : (
+              <div className="max-h-[7.5rem] space-y-1 overflow-y-auto pr-1">
+                {memoSnippets.map((snippet, index) => {
+                  const isEditing = editingSnippetIndex === index;
+                  if (isEditing) {
+                    return (
+                      <div
+                        key={`snippet-edit-${index}`}
+                        className="flex items-center gap-1 rounded-md border border-sky-200 bg-sky-50/50 px-1.5 py-1"
+                      >
+                        <Input
+                          autoFocus
+                          value={editingSnippetDraft}
+                          onChange={(e) => setEditingSnippetDraft(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              e.preventDefault();
+                              void handleConfirmEditSnippet();
+                            }
+                            if (e.key === "Escape") {
+                              setEditingSnippetIndex(null);
+                              setEditingSnippetDraft("");
+                            }
+                          }}
+                          className="h-7 text-xs"
+                        />
+                        <Button
+                          type="button"
+                          size="sm"
+                          className="h-7 shrink-0 px-2 text-xs"
+                          disabled={snippetSaving}
+                          onClick={() => void handleConfirmEditSnippet()}
+                        >
+                          확인
+                        </Button>
+                      </div>
+                    );
+                  }
+
                   return (
                     <div
-                      key={`snippet-edit-${index}`}
-                      className="flex items-center gap-1 rounded-md border border-sky-200 bg-sky-50/50 px-1.5 py-1"
+                      key={`snippet-${index}:${snippet}`}
+                      className="flex items-center gap-1 rounded-md border border-slate-200 bg-white/80 px-1.5 py-1"
                     >
-                      <Input
-                        autoFocus
-                        value={editingSnippetDraft}
-                        onChange={(e) => setEditingSnippetDraft(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") {
-                            e.preventDefault();
-                            void handleConfirmEditSnippet();
-                          }
-                          if (e.key === "Escape") {
-                            setEditingSnippetIndex(null);
-                            setEditingSnippetDraft("");
-                          }
-                        }}
-                        className="h-7 text-xs"
-                      />
+                      <button
+                        type="button"
+                        className="min-w-0 flex-1 truncate rounded px-1 py-0.5 text-left text-xs text-slate-700 hover:bg-sky-50"
+                        title={snippet}
+                        onClick={() => handleInsertMemoSnippet(snippet)}
+                      >
+                        {snippet}
+                      </button>
                       <Button
                         type="button"
-                        size="sm"
-                        className="h-7 shrink-0 px-2 text-xs"
-                        disabled={snippetSaving}
-                        onClick={() => void handleConfirmEditSnippet()}
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6 shrink-0 text-slate-500 hover:text-sky-700"
+                        onClick={() => handleStartEditSnippet(index)}
+                        aria-label="저장된 문장 수정"
+                        title="수정"
                       >
-                        확인
+                        <Pencil className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6 shrink-0 text-slate-400 hover:text-destructive"
+                        disabled={snippetSaving}
+                        onClick={() => void handleDeleteMemoSnippet(index)}
+                        aria-label="저장된 문장 삭제"
+                        title="삭제"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
                       </Button>
                     </div>
                   );
-                }
-
-                return (
-                  <div
-                    key={`snippet-${index}:${snippet}`}
-                    className="flex items-center gap-1 rounded-md border border-slate-200 bg-white/80 px-1.5 py-1"
-                  >
-                    <button
-                      type="button"
-                      className="min-w-0 flex-1 truncate rounded px-1 py-0.5 text-left text-xs text-slate-700 hover:bg-sky-50"
-                      title={snippet}
-                      onClick={() => handleInsertMemoSnippet(snippet)}
-                    >
-                      {snippet}
-                    </button>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="h-6 w-6 shrink-0 text-slate-500 hover:text-sky-700"
-                      onClick={() => handleStartEditSnippet(index)}
-                      aria-label="저장된 문장 수정"
-                      title="수정"
-                    >
-                      <Pencil className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="h-6 w-6 shrink-0 text-slate-400 hover:text-destructive"
-                      disabled={snippetSaving}
-                      onClick={() => void handleDeleteMemoSnippet(index)}
-                      aria-label="저장된 문장 삭제"
-                      title="삭제"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
+                })}
+              </div>
+            )}
+          </CollapsibleContent>
+        </Collapsible>
       </div>
     </div>
   );

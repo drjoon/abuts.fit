@@ -20,6 +20,7 @@ import {
   ChatComposer,
   type RequestPickItem,
 } from "@/features/chat/components/ChatComposer";
+import { ChatMessageBubble } from "@/features/chat/components/ChatMessageBubble";
 
 type ViewMode = "chats";
 
@@ -34,6 +35,11 @@ export const NewChatWidget = () => {
   const [error, setError] = useState<string | null>(null);
   const [supportRoomDisabled, setSupportRoomDisabled] = useState(false);
   const [draft, setDraft] = useState("");
+  const [replyTo, setReplyTo] = useState<{
+    _id: string;
+    sender: { name: string; role: string };
+    content: string;
+  } | null>(null);
   const [isSending, setIsSending] = useState(false);
   const [pendingFiles, setPendingFiles] = useState<TempUploadedFile[]>([]);
   const [requestPicks, setRequestPicks] = useState<RequestPickItem[]>([]);
@@ -125,6 +131,7 @@ export const NewChatWidget = () => {
     loading: messagesLoading,
     error: messagesError,
     sendMessage,
+    toggleReaction,
   } = useChatMessages({ roomId, autoFetch: true });
 
   useEffect(() => {
@@ -255,9 +262,12 @@ export const NewChatWidget = () => {
 
     setIsSending(true);
     try {
-      const sent = await sendMessage(content, attachments);
+      const sent = await sendMessage(content, attachments, {
+        replyTo: replyTo?._id || null,
+      });
       if (sent) {
         setDraft("");
+        setReplyTo(null);
         setPendingFiles([]);
         setRoom((prev) => (prev ? { ...prev, unreadCount: 0 } : prev));
       }
@@ -404,50 +414,34 @@ export const NewChatWidget = () => {
                         {messages.map((m) => {
                           const senderId = String(m.sender?._id || "").trim();
                           const isMine = myIdCandidates.has(senderId);
-                          const ts = formatChatTs((m as any)?.createdAt);
                           return (
-                            <div
+                            <ChatMessageBubble
                               key={m._id}
-                              className={`flex ${
-                                isMine ? "justify-end" : "justify-start"
-                              }`}
-                            >
-                              <div
-                                className={`max-w-[80%] rounded-lg px-3 py-2 text-xs sm:text-sm ${
-                                  isMine
-                                    ? "bg-primary text-primary-foreground"
-                                    : "bg-muted"
-                                }`}
-                              >
-                                {ts && (
-                                  <div className="mb-1 text-[10px] opacity-70">
-                                    {ts}
-                                  </div>
-                                )}
-                                <div className="whitespace-pre-wrap leading-snug">
-                                  {m.content}
-                                </div>
-                                {Array.isArray(m.attachments) &&
-                                  m.attachments.length > 0 && (
-                                    <div className="mt-2 space-y-1">
-                                      {m.attachments.map((a, idx) => (
-                                        <button
-                                          key={`${m._id}-att-${idx}`}
-                                          type="button"
-                                          onClick={() => void openAttachment(a)}
-                                          className={`block text-xs underline ${
-                                            isMine
-                                              ? "text-primary-foreground/90"
-                                              : "text-foreground"
-                                          }`}
-                                        >
-                                          {a.fileName}
-                                        </button>
-                                      ))}
-                                    </div>
-                                  )}
-                              </div>
-                            </div>
+                              message={m}
+                              isMine={isMine}
+                              currentUserId={String(user?.id || "").trim()}
+                              formatTime={formatChatTs}
+                              showSenderName={false}
+                              compact
+                              onReply={(message) => {
+                                setReplyTo({
+                                  _id: String(message._id),
+                                  sender: {
+                                    name:
+                                      String(message.sender?.name || "").trim() ||
+                                      "알 수 없음",
+                                    role: String(message.sender?.role || "").trim(),
+                                  },
+                                  content:
+                                    String(message.content || "").trim() ||
+                                    "(내용 없음)",
+                                });
+                              }}
+                              onToggleReaction={(messageId, emoji) =>
+                                void toggleReaction(messageId, emoji)
+                              }
+                              onOpenAttachment={(file) => void openAttachment(file)}
+                            />
                           );
                         })}
 
@@ -477,6 +471,8 @@ export const NewChatWidget = () => {
                     onInsertRequestId={
                       user.role === "requestor" ? insertRequestId : undefined
                     }
+                    replyTo={replyTo}
+                    onCancelReply={() => setReplyTo(null)}
                   />
                 </div>
               )}

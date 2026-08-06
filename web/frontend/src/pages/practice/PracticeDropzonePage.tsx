@@ -111,7 +111,13 @@ import {
 } from "@/pages/practice/hooks/usePracticeTransferStep1";
 import { PracticeTransferIntakeSection } from "@/shared/components/practice/PracticeTransferIntakeSection";
 import { restoreToothWorksFromDraft } from "@/shared/practice/toothWorkDraft";
-import { buildPracticeTransferMemo as buildPracticeTransferMemoShared } from "@/shared/practice/transferMemo";
+import {
+  buildPracticeTransferMemo as buildPracticeTransferMemoShared,
+  emptyToothWorkImplant,
+  pickToothWorkImplant,
+  type ToothWorkSelection as SharedToothWorkSelection,
+} from "@/shared/practice/transferMemo";
+import { useImplantConnectionCatalog } from "@/shared/practice/useImplantConnectionCatalog";
 import {
   PRACTICE_DROPZONE_DRAFT_KEY,
   clearPracticeSharedFormLocalStorage,
@@ -268,12 +274,7 @@ const PRESET_PROSTHESIS_TYPES = ["크라운", "브리지", "Pontic", "인레이"
 const TOOTH_TENS_OPTIONS = ["1", "2", "3", "4"] as const;
 const TOOTH_ONES_OPTIONS = ["1", "2", "3", "4", "5", "6", "7", "8"] as const;
 
-type ToothWorkSelection = {
-  toothNumber: string;
-  prosthesisType: string;
-  customAbutment: boolean;
-  bridgeLinkedTeeth: string[];
-};
+type ToothWorkSelection = SharedToothWorkSelection;
 
 const toKstDateInputValue = (date = new Date()) => {
   const fmt = new Intl.DateTimeFormat("en-CA", {
@@ -382,6 +383,7 @@ const normalizeToothWorks = (items: ToothWorkSelection[]) =>
         prosthesisType,
         customAbutment,
         bridgeLinkedTeeth,
+        ...pickToothWorkImplant(row, customAbutment),
       };
     })
     .filter((row) => /^[1-4][1-8]$/.test(row.toothNumber) && row.prosthesisType);
@@ -393,9 +395,16 @@ const serializeToothWorks = (rows: ToothWorkSelection[]) =>
         isBridgeLikeProsthesisType(row.prosthesisType) && row.bridgeLinkedTeeth.length > 0
           ? `(${[row.toothNumber, ...row.bridgeLinkedTeeth].join("-")})`
           : "";
+      const implantParts = [
+        row.implantManufacturer,
+        row.implantBrand,
+        row.implantFamily,
+        row.implantType,
+      ].map((v) => String(v || "").trim());
+      const hasImplant = implantParts.some(Boolean);
       const custom =
         isCustomAbutmentSupportedProsthesisType(row.prosthesisType) && row.customAbutment
-          ? "+커스텀어벗"
+          ? `+커스텀어벗${hasImplant ? `{${implantParts.join("/")}}` : ""}`
           : "";
       return `${row.toothNumber}=${row.prosthesisType}${custom}${linked}`;
     })
@@ -507,6 +516,7 @@ export const PracticeDropzonePage = () => {
   const fileCacheMetaKey = PRACTICE_FILE_CACHE_META_KEY;
   const fileCacheMaxTotalBytes = PRACTICE_FILE_CACHE_MAX_TOTAL_BYTES;
   const { uploadFilesWithToast } = useUploadWithProgressToast({ token: authToken });
+  const { connections: implantConnections } = useImplantConnectionCatalog(authToken);
 
   const {
     files,
@@ -553,6 +563,7 @@ export const PracticeDropzonePage = () => {
       prosthesisType: "크라운",
       customAbutment: false,
       bridgeLinkedTeeth: [],
+      ...emptyToothWorkImplant(),
     },
   ]);
 
@@ -625,7 +636,7 @@ export const PracticeDropzonePage = () => {
     if (files.length === 0) missing.push("첨부 파일");
     if (!selectedLab?._id) missing.push("기공소");
     if (!normalizedPatientName) missing.push("환자명");
-    if (normalizedToothWorks.length === 0) missing.push("보철물 형태");
+    if (normalizedToothWorks.length === 0) missing.push("보철물");
     return missing;
   }, [files.length, selectedLab?._id, normalizedPatientName, normalizedToothWorks.length]);
 
@@ -805,6 +816,7 @@ export const PracticeDropzonePage = () => {
         prosthesisType: resolveDefaultProsthesisType(normalizedProsthesisTypes),
         customAbutment: false,
         bridgeLinkedTeeth: [],
+        ...emptyToothWorkImplant(),
       },
     ]);
   };
@@ -825,6 +837,7 @@ export const PracticeDropzonePage = () => {
         prosthesisType: resolveDefaultProsthesisType(normalizedProsthesisTypes),
         customAbutment: false,
         bridgeLinkedTeeth: [],
+        ...emptyToothWorkImplant(),
       },
     ]);
 
@@ -949,7 +962,7 @@ export const PracticeDropzonePage = () => {
         setToothWorks(
           restoredToothWorks.length > 0
             ? restoredToothWorks
-            : [{ toothNumber: "", prosthesisType: resolveDefaultProsthesisType(restoredProsthesisTypes), customAbutment: false, bridgeLinkedTeeth: [] }],
+            : [{ toothNumber: "", prosthesisType: resolveDefaultProsthesisType(restoredProsthesisTypes), customAbutment: false, bridgeLinkedTeeth: [], ...emptyToothWorkImplant() }],
         );
         setPatientName(String(intake?.patientName ?? parsed?.patientName ?? ""));
         setEmail(String(parsed?.email || "").trim().toLowerCase());
@@ -1470,6 +1483,7 @@ export const PracticeDropzonePage = () => {
           prosthesisType: resolveDefaultProsthesisType(normalizedProsthesisTypes),
           customAbutment: false,
           bridgeLinkedTeeth: [],
+          ...emptyToothWorkImplant(),
         },
       ]);
 
@@ -2083,6 +2097,7 @@ export const PracticeDropzonePage = () => {
                     toothTensOptions: TOOTH_TENS_OPTIONS,
                     toothOnesOptions: TOOTH_ONES_OPTIONS,
                     onClearAll: handleClearRequestIntakeCache,
+                    implantConnections,
                   }}
                 />
               </div>
@@ -2643,7 +2658,7 @@ export const PracticeDropzonePage = () => {
             >
               <DialogContent className="sm:max-w-lg">
                 <DialogHeader>
-                  <DialogTitle>보철물 형태 항목 설정</DialogTitle>
+                  <DialogTitle>보철물 항목 설정</DialogTitle>
                 </DialogHeader>
                 <div className="space-y-2">
                   {prosthesisTypeCatalogDraft.map((item, index) => (

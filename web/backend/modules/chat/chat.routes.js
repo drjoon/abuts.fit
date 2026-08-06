@@ -52,6 +52,12 @@ router.get("/rooms/:roomId/messages", chatController.getChatMessages);
 // 채팅방에 메시지 전송
 router.post("/rooms/:roomId/messages", chatController.sendChatMessage);
 
+// 메시지 리액션 토글 (카톡형)
+router.post(
+  "/rooms/:roomId/messages/:messageId/reactions",
+  chatController.toggleChatMessageReaction,
+);
+
 // 채팅방 상태 변경 (Admin 전용)
 router.patch(
   "/rooms/:roomId/status",
