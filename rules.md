@@ -156,6 +156,11 @@
 - 정산 보존식 SSOT(의뢰 단위):
   - `의뢰자 순소비(현존 COMMIT 이벤트 기준)` = `어벗츠/제조사/개발운영사/영업자 수익합`
   - 합계 비교는 VAT 제외 공급가(`amountExcludingVat`) 우선
+- 제조사/역할 정산 건수 SSOT(강제):
+  - 일별·기간 정산의 의뢰/배송 **건수**는 `LedgerLine` 개수가 아니라 `(eventType, creditKind, refId)` 유니크다.
+  - 동일 의뢰의 `machining_spend` + `express_surcharge`(각각 `REQUEST_SPEND_COMMIT`)는 금액은 합산하되 건수는 의뢰 1건으로 센다.
+  - paid/free 혼합으로 `REV_*` 라인이 쪼개져도 같은 `creditKind`·`refId`는 1건이다.
+  - 구현: `controllers/manufacturers/manufacturer.controller.js` (`buildManufacturerEarnCollapseAndGroupStages`)
 - 정산 지급 가능 잔액 집계 원칙(공통):
   - `SETTLEMENT_PAYOUT`은 포함
   - `EARN/ADJUST`는 `creditKind=PAID|null`만 포함 (무료 수익/무료 조정은 지급 대상 제외)

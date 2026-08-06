@@ -328,6 +328,9 @@ Notes:
 
 - 제조사 정산(일별) 표시 정책:
   - 제조사 결제 페이지의 일별 정산 표는 `의뢰/배송/환불·지급·조정(단일 셀)/유료 순액/무료 순액(의뢰·배송·합계)` 컬럼으로 표시합니다.
+  - 의뢰/배송 **건수**는 백엔드가 반환하는 의뢰·패키지 유니크 건수를 그대로 표시한다.
+    (`machining_spend`와 `express_surcharge`를 프론트에서 각각 세지 않는다.)
+  - 일별 목록은 KST **오늘 이후(미도래 일자)를 표시하지 않는다**. `이번달` 프리셋 종료일도 오늘이다.
   - `환불·지급·조정` 셀은 `환불 ₩x / 지급 ₩y / 조정 ₩z` 형식으로 항목 라벨과 금액을 함께 표기합니다.
   - `무료(의뢰+배송)` 필터에서는 `환불·지급·조정/유료 순액`을 `-`로 표시하고 무료 분해값/무료 순액만 노출합니다.
   - `유료(의뢰+배송)` 필터에서는 무료 순액을 `-`로 표시합니다.
@@ -546,6 +549,7 @@ Notes:
     - `src/pages/requestor/practice/RequestorPracticePage.tsx`
 - 제조사 정산(`src/pages/manufacturer/payments/PaymentsPage.tsx`) 표시 정책:
   - 백엔드 `GET /api/manufacturer/credits/daily-summary`는 `LedgerLine` 집계 결과를 반환하며, 프론트는 해당 응답을 SSOT로 사용합니다.
+  - 건수 필드(`earnRequest*Count`, `earnShipping*Count`)는 의뢰/패키지 `refId` 유니크이며, 라인·저널 수가 아니다.
   - paid/free 분해값 표시는 fallback 없이 `earnRequestPaid*`, `earnRequestFree*`, `earnShippingPaid*`, `earnShippingFree*`를 SSOT로 사용합니다.
   - 분해 필드 누락/합계 불일치 시 행을 화면에서 제외하고 오류 토스트/배너로 예외를 노출합니다.
   - 운영자 확인은 관리자 대시보드의 `systemAlerts` 경고를 통해 추적합니다.

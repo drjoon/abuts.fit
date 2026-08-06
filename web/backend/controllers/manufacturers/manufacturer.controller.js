@@ -1,3 +1,7 @@
+// change-log:
+// - 2026-08-07: 일별 정산 건수를 저널/라인 수가 아닌 의뢰·패키지 refId 유니크로 집계
+//   (machining_spend+express_surcharge, paid/free 분해 라인으로 건수 부풀림 방지)
+// - 2026-08-07: 일별 빈 행은 KST 오늘 이후(미도래 일자)를 채우지 않음
 // related files:
 // - web/backend/rules.md
 // - web/backend/modules/manufacturer/manufacturer.routes.js
@@ -24,6 +28,124 @@ function kstYmdToUtcRange(ymd) {
   const start = new Date(dt.getTime() - 9 * 60 * 60 * 1000);
   const end = new Date(start.getTime() + 24 * 60 * 60 * 1000 - 1);
   return { start, end };
+}
+
+/**
+ * 제조사 REV 라인 → 일별(또는 단일 기간) 금액/건수 집계 스테이지.
+ * 금액: 라인 합산(신속추가비 저널 포함).
+ * 건수: (eventType, creditKind, refId) 유니크 — 의뢰/패키지 1건당 1회.
+ *   machining_spend + express_surcharge, paid/free 분해 라인을 별도 건으로 세지 않는다.
+ */
+function buildManufacturerEarnCollapseAndGroupStages({ groupByYmd }) {
+  const amountCond = (eventType, creditKind) => ({
+    $sum: {
+      $cond: [
+        {
+          $and: [
+            { $eq: ["$_id.eventType", eventType] },
+            { $eq: ["$_id.creditKind", creditKind] },
+          ],
+        },
+        "$amount",
+        0,
+      ],
+    },
+  });
+
+  const countCond = (eventType, creditKind) => ({
+    $sum: {
+      $cond: [
+        {
+          $and: [
+            { $eq: ["$_id.eventType", eventType] },
+            { $eq: ["$_id.creditKind", creditKind] },
+          ],
+        },
+        1,
+        0,
+      ],
+    },
+  });
+
+  return [
+    {
+      $addFields: {
+        ...(groupByYmd
+          ? {
+              ymd: {
+                $dateToString: {
+                  format: "%Y-%m-%d",
+                  date: "$occurredAt",
+                  timezone: "Asia/Seoul",
+                },
+              },
+            }
+          : {}),
+        baseAmount: { $ifNull: ["$amountExcludingVat", "$amount"] },
+        eventType: { $ifNull: ["$journalDoc.eventType", ""] },
+        // refId 누락 이관 데이터는 journalId로라도 유니크 키를 유지
+        settleRefKey: { $ifNull: ["$refId", "$journalId"] },
+      },
+    },
+    {
+      $group: {
+        _id: {
+          ...(groupByYmd ? { ymd: "$ymd" } : {}),
+          eventType: "$eventType",
+          creditKind: "$creditKind",
+          refId: "$settleRefKey",
+        },
+        amount: { $sum: "$baseAmount" },
+      },
+    },
+    {
+      $group: {
+        _id: groupByYmd ? "$_id.ymd" : null,
+        earnRequestPaidAmount: amountCond("REQUEST_SPEND_COMMIT", "PAID"),
+        earnRequestPaidCount: countCond("REQUEST_SPEND_COMMIT", "PAID"),
+        earnRequestFreeAmount: amountCond("REQUEST_SPEND_COMMIT", "FREE_REQUEST"),
+        earnRequestFreeCount: countCond("REQUEST_SPEND_COMMIT", "FREE_REQUEST"),
+        earnShippingPaidAmount: amountCond("SHIPPING_SPEND_COMMIT", "PAID"),
+        earnShippingPaidCount: countCond("SHIPPING_SPEND_COMMIT", "PAID"),
+        earnShippingFreeAmount: amountCond(
+          "SHIPPING_SPEND_COMMIT",
+          "FREE_SHIPPING",
+        ),
+        earnShippingFreeCount: countCond(
+          "SHIPPING_SPEND_COMMIT",
+          "FREE_SHIPPING",
+        ),
+        payoutAmount: {
+          $sum: {
+            $cond: [
+              { $eq: ["$_id.eventType", "SETTLEMENT_PAYOUT"] },
+              "$amount",
+              0,
+            ],
+          },
+        },
+        adjustAmount: {
+          $sum: {
+            $cond: [
+              {
+                $and: [
+                  { $eq: ["$_id.eventType", "ADJUST"] },
+                  {
+                    $or: [
+                      { $eq: ["$_id.creditKind", "PAID"] },
+                      { $eq: ["$_id.creditKind", null] },
+                    ],
+                  },
+                ],
+              },
+              "$amount",
+              0,
+            ],
+          },
+        },
+      },
+    },
+  ];
 }
 
 
@@ -345,97 +467,7 @@ export async function triggerManufacturerDailySettlementSnapshotRecalc(
           preserveNullAndEmptyArrays: true,
         },
       },
-      {
-        $addFields: {
-          baseAmount: { $ifNull: ["$amountExcludingVat", "$amount"] },
-          eventType: { $ifNull: ["$journalDoc.eventType", ""] },
-        },
-      },
-      {
-        $group: {
-          _id: null,
-          earnRequestPaidAmount: {
-            $sum: {
-              $cond: [
-                {
-                  $and: [
-                    { $eq: ["$eventType", "REQUEST_SPEND_COMMIT"] },
-                    { $eq: ["$creditKind", "PAID"] },
-                  ],
-                },
-                "$baseAmount",
-                0,
-              ],
-            },
-          },
-          earnRequestPaidCount: {
-            $sum: {
-              $cond: [
-                {
-                  $and: [
-                    { $eq: ["$eventType", "REQUEST_SPEND_COMMIT"] },
-                    { $eq: ["$creditKind", "PAID"] },
-                  ],
-                },
-                1,
-                0,
-              ],
-            },
-          },
-          earnShippingPaidAmount: {
-            $sum: {
-              $cond: [
-                {
-                  $and: [
-                    { $eq: ["$eventType", "SHIPPING_SPEND_COMMIT"] },
-                    { $eq: ["$creditKind", "PAID"] },
-                  ],
-                },
-                "$baseAmount",
-                0,
-              ],
-            },
-          },
-          earnShippingPaidCount: {
-            $sum: {
-              $cond: [
-                {
-                  $and: [
-                    { $eq: ["$eventType", "SHIPPING_SPEND_COMMIT"] },
-                    { $eq: ["$creditKind", "PAID"] },
-                  ],
-                },
-                1,
-                0,
-              ],
-            },
-          },
-          payoutAmount: {
-            $sum: {
-              $cond: [{ $eq: ["$eventType", "SETTLEMENT_PAYOUT"] }, "$baseAmount", 0],
-            },
-          },
-          adjustAmount: {
-            $sum: {
-              $cond: [
-                {
-                  $and: [
-                    { $eq: ["$eventType", "ADJUST"] },
-                    {
-                      $or: [
-                        { $eq: ["$creditKind", "PAID"] },
-                        { $eq: ["$creditKind", null] },
-                      ],
-                    },
-                  ],
-                },
-                "$baseAmount",
-                0,
-              ],
-            },
-          },
-        },
-      },
+      ...buildManufacturerEarnCollapseAndGroupStages({ groupByYmd: false }),
       {
         $project: {
           _id: 0,
@@ -794,160 +826,7 @@ export async function getManufacturerCreditDailySummary(req, res) {
           preserveNullAndEmptyArrays: true,
         },
       },
-      {
-        $addFields: {
-          ymd: {
-            $dateToString: {
-              format: "%Y-%m-%d",
-              date: "$occurredAt",
-              timezone: "Asia/Seoul",
-            },
-          },
-          baseAmount: { $ifNull: ["$amountExcludingVat", "$amount"] },
-          eventType: { $ifNull: ["$journalDoc.eventType", ""] },
-        },
-      },
-      {
-        $group: {
-          _id: "$ymd",
-          earnRequestPaidAmount: {
-            $sum: {
-              $cond: [
-                {
-                  $and: [
-                    { $eq: ["$eventType", "REQUEST_SPEND_COMMIT"] },
-                    { $eq: ["$creditKind", "PAID"] },
-                  ],
-                },
-                "$baseAmount",
-                0,
-              ],
-            },
-          },
-          earnRequestPaidCount: {
-            $sum: {
-              $cond: [
-                {
-                  $and: [
-                    { $eq: ["$eventType", "REQUEST_SPEND_COMMIT"] },
-                    { $eq: ["$creditKind", "PAID"] },
-                  ],
-                },
-                1,
-                0,
-              ],
-            },
-          },
-          earnRequestFreeAmount: {
-            $sum: {
-              $cond: [
-                {
-                  $and: [
-                    { $eq: ["$eventType", "REQUEST_SPEND_COMMIT"] },
-                    { $eq: ["$creditKind", "FREE_REQUEST"] },
-                  ],
-                },
-                "$baseAmount",
-                0,
-              ],
-            },
-          },
-          earnRequestFreeCount: {
-            $sum: {
-              $cond: [
-                {
-                  $and: [
-                    { $eq: ["$eventType", "REQUEST_SPEND_COMMIT"] },
-                    { $eq: ["$creditKind", "FREE_REQUEST"] },
-                  ],
-                },
-                1,
-                0,
-              ],
-            },
-          },
-          earnShippingPaidAmount: {
-            $sum: {
-              $cond: [
-                {
-                  $and: [
-                    { $eq: ["$eventType", "SHIPPING_SPEND_COMMIT"] },
-                    { $eq: ["$creditKind", "PAID"] },
-                  ],
-                },
-                "$baseAmount",
-                0,
-              ],
-            },
-          },
-          earnShippingPaidCount: {
-            $sum: {
-              $cond: [
-                {
-                  $and: [
-                    { $eq: ["$eventType", "SHIPPING_SPEND_COMMIT"] },
-                    { $eq: ["$creditKind", "PAID"] },
-                  ],
-                },
-                1,
-                0,
-              ],
-            },
-          },
-          earnShippingFreeAmount: {
-            $sum: {
-              $cond: [
-                {
-                  $and: [
-                    { $eq: ["$eventType", "SHIPPING_SPEND_COMMIT"] },
-                    { $eq: ["$creditKind", "FREE_SHIPPING"] },
-                  ],
-                },
-                "$baseAmount",
-                0,
-              ],
-            },
-          },
-          earnShippingFreeCount: {
-            $sum: {
-              $cond: [
-                {
-                  $and: [
-                    { $eq: ["$eventType", "SHIPPING_SPEND_COMMIT"] },
-                    { $eq: ["$creditKind", "FREE_SHIPPING"] },
-                  ],
-                },
-                1,
-                0,
-              ],
-            },
-          },
-          payoutAmount: {
-            $sum: {
-              $cond: [{ $eq: ["$eventType", "SETTLEMENT_PAYOUT"] }, "$baseAmount", 0],
-            },
-          },
-          adjustAmount: {
-            $sum: {
-              $cond: [
-                {
-                  $and: [
-                    { $eq: ["$eventType", "ADJUST"] },
-                    {
-                      $or: [
-                        { $eq: ["$creditKind", "PAID"] },
-                        { $eq: ["$creditKind", null] },
-                      ],
-                    },
-                  ],
-                },
-                "$baseAmount",
-                0,
-              ],
-            },
-          },
-        },
-      },
+      ...buildManufacturerEarnCollapseAndGroupStages({ groupByYmd: true }),
       {
         $project: {
           _id: 0,
@@ -1039,8 +918,12 @@ export async function getManufacturerCreditDailySummary(req, res) {
     const formatKstYmd = (d) =>
       d.toLocaleDateString("en-CA", { timeZone: "Asia/Seoul" });
 
+    const todayYmd = getTodayYmdInKst();
+    const requestedEndYmd =
+      typeof toYmd === "string" && toYmd.trim() ? toYmd.trim() : todayYmd;
+    // 미도래 일자 빈 행 금지: toYmd가 미래여도 KST 오늘까지만 채운다.
     const endYmd =
-      typeof toYmd === "string" && toYmd.trim() ? toYmd.trim() : getTodayYmdInKst();
+      todayYmd && requestedEndYmd > todayYmd ? todayYmd : requestedEndYmd;
     const endDate = parseKstYmd(endYmd) || new Date();
 
     const startDateByFrom =
@@ -1057,6 +940,7 @@ export async function getManufacturerCreditDailySummary(req, res) {
     const mergedRows = [];
     for (let t = toMs; t >= fromMs; t -= 24 * 60 * 60 * 1000) {
       const ymd = formatKstYmd(new Date(t));
+      if (todayYmd && ymd > todayYmd) continue;
       const existing = rowMap.get(ymd);
       mergedRows.push(
         existing ? { ...makeEmptyRow(ymd), ...existing, ymd } : makeEmptyRow(ymd),
