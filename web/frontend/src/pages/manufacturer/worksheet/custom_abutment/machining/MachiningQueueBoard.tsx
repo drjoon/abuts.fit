@@ -496,6 +496,17 @@ export const MachiningQueueBoard = ({
           ? (prog.lotNumber as Record<string, unknown>)
           : {};
 
+      const queueRnd =
+        prog?.rnd && typeof prog.rnd === "object"
+          ? (prog.rnd as Record<string, unknown>)
+          : {};
+      const queueHex = String(
+        queueRnd?.manufacturerHexRotation ||
+          queueCaseInfos?.manufacturerHexRotation ||
+          queueCaseInfos?.finalHexRotation ||
+          "",
+      ).trim();
+
       const previewReq = {
         _id: String(prog?.requestMongoId || "").trim() || undefined,
         requestId,
@@ -505,9 +516,28 @@ export const MachiningQueueBoard = ({
         shippingMode: prog?.shippingMode ?? null,
         finalShipping: prog?.finalShipping ?? null,
         originalShipping: prog?.originalShipping ?? null,
+        estimatedShipYmd: (() => {
+          const ymd = String(
+            prog?.estimatedShipYmd ||
+              (prog as any)?.timeline?.estimatedShipYmd ||
+              "",
+          ).trim();
+          return ymd || null;
+        })(),
+        timeline: (() => {
+          const ymd = String(
+            prog?.estimatedShipYmd ||
+              (prog as any)?.timeline?.estimatedShipYmd ||
+              "",
+          ).trim();
+          return ymd ? { estimatedShipYmd: ymd } : undefined;
+        })(),
         lotNumber: {
           ...(queueLot || {}),
         },
+        rnd: queueHex
+          ? { manufacturerHexRotation: queueHex }
+          : undefined,
         caseInfos: {
           ...(queueCaseInfos || {}),
           clinicName:
@@ -519,6 +549,17 @@ export const MachiningQueueBoard = ({
           tooth:
             String(queueCaseInfos?.tooth || "").trim() ||
             String(prog?.tooth || "").trim(),
+          designSoftware:
+            String(queueCaseInfos?.designSoftware || "").trim() || undefined,
+          manufacturerHexRotation:
+            String(queueCaseInfos?.manufacturerHexRotation || "").trim() ||
+            queueHex ||
+            undefined,
+          finalHexRotation:
+            String(queueCaseInfos?.finalHexRotation || "").trim() || undefined,
+          requestorHexRotation:
+            String(queueCaseInfos?.requestorHexRotation || "").trim() ||
+            undefined,
           ncFile: {
             s3Key: String(prog?.s3Key || "").trim(),
             filePath: String(prog?.bridgePath || "").trim(),

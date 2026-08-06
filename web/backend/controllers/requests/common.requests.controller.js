@@ -587,6 +587,7 @@ export async function getRequestSummaryByRequestId(req, res) {
       shippingMode: 1,
       finalShipping: 1,
       originalShipping: 1,
+      "timeline.estimatedShipYmd": 1,
     });
     if (!request) {
       return res
@@ -599,6 +600,9 @@ export async function getRequestSummaryByRequestId(req, res) {
       typeof request?.caseInfos?.maxDiameter === "number"
         ? request.caseInfos.maxDiameter
         : null;
+    const estimatedShipYmd = String(
+      request?.timeline?.estimatedShipYmd || "",
+    ).trim();
 
     return res.json({
       success: true,
@@ -615,6 +619,10 @@ export async function getRequestSummaryByRequestId(req, res) {
         originalShipping: request.originalShipping
           ? { mode: request.originalShipping.mode || null }
           : null,
+        estimatedShipYmd: estimatedShipYmd || null,
+        timeline: estimatedShipYmd
+          ? { estimatedShipYmd }
+          : undefined,
       },
     });
   } catch (e) {

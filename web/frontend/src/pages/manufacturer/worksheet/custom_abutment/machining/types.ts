@@ -16,6 +16,9 @@ export type QueueItem = {
   diameter?: number;
   diameterGroup?: string;
   caseInfos?: Record<string, any> | null;
+  rnd?: {
+    manufacturerHexRotation?: string | null;
+  } | null;
   shippingMode?: string | null;
   finalShipping?: { mode?: string | null } | null;
   originalShipping?: { mode?: string | null } | null;
@@ -85,6 +88,7 @@ export type LastCompletedMachining = {
   patientName?: string;
   tooth?: string;
   rollbackCount?: number;
+  estimatedShipYmd?: string | null;
   lotNumber?: {
     value?: string;
   } | null;

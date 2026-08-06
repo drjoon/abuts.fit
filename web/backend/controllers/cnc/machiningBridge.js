@@ -620,6 +620,7 @@ export async function getLastCompletedMachiningMap(req, res) {
               "lotNumber",
               "source",
               "requestCategory",
+              "timeline.estimatedShipYmd",
             ].join(" "),
           )
           .lean();
@@ -649,6 +650,9 @@ export async function getLastCompletedMachiningMap(req, res) {
               : null,
             source: String(r?.source || "").trim(),
             requestCategory: String(r?.requestCategory || "").trim(),
+            estimatedShipYmd: r?.timeline?.estimatedShipYmd
+              ? String(r.timeline.estimatedShipYmd).trim()
+              : null,
           });
         }
       }
@@ -728,6 +732,7 @@ export async function getLastCompletedMachiningMap(req, res) {
               "lotNumber",
               "source",
               "requestCategory",
+              "timeline.estimatedShipYmd",
             ].join(" "),
           )
           .lean();
@@ -754,6 +759,9 @@ export async function getLastCompletedMachiningMap(req, res) {
               : null,
             source: String(r?.source || "").trim(),
             requestCategory: String(r?.requestCategory || "").trim(),
+            estimatedShipYmd: r?.timeline?.estimatedShipYmd
+              ? String(r.timeline.estimatedShipYmd).trim()
+              : null,
           });
         }
       }
@@ -804,6 +812,7 @@ export async function getLastCompletedMachiningMap(req, res) {
         originalShipping: reqInfo?.originalShipping || null,
         source: reqInfo?.source || null,
         requestCategory: reqInfo?.requestCategory || null,
+        estimatedShipYmd: reqInfo?.estimatedShipYmd || null,
         completedAt,
         durationSeconds,
       };

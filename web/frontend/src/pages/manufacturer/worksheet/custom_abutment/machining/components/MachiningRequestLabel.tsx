@@ -1,11 +1,15 @@
+// change-log:
+// - 2026-08-06: 마감까지 남은 시간 뱃지(getDeadlineInfo) 표시. estimatedShipYmd 기반.
 // related files:
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/machining/utils/label.ts
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/machining/MachiningQueueBoard.tsx
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/utils/request.ts
 // - web/frontend/src/shared/shipping/ShippingModeBadge.tsx
 // import { generateModelNumber } from "@/utils/modelNumber";
 import React from "react";
 import { ShippingModeBadge } from "@/shared/shipping/ShippingModeBadge";
 import type { ShippingModeSource } from "@/shared/shipping/shippingMode";
+import { getDeadlineInfo } from "../../utils/request";
 
 type Props = {
   caseInfos?: any;
@@ -27,6 +31,7 @@ type Props = {
   hideRequestId?: boolean;
   shippingSource?: ShippingModeSource;
   showFastMachiningRebalance?: boolean | null;
+  estimatedShipYmd?: string | null;
 };
 
 export const MachiningRequestLabel = ({
@@ -49,6 +54,7 @@ export const MachiningRequestLabel = ({
   hideRequestId,
   shippingSource,
   showFastMachiningRebalance,
+  estimatedShipYmd,
 }: Props) => {
   const businessName = String(business || "").trim();
   const clinic = String(clinicName || "").trim();
@@ -58,6 +64,10 @@ export const MachiningRequestLabel = ({
   const shortLot = String(lotShortCode || "")
     .trim()
     .toUpperCase();
+  const shipYmd = String(
+    estimatedShipYmd || caseInfos?.timeline?.estimatedShipYmd || "",
+  ).trim();
+  const deadlineInfo = getDeadlineInfo(null, shipYmd || null);
 
   const desktopParts = [
     businessName,
@@ -108,12 +118,20 @@ export const MachiningRequestLabel = ({
       !isSample &&
       !showNcBadge &&
       !shippingSource &&
-      !showFastMachiningRebalance
+      !showFastMachiningRebalance &&
+      !deadlineInfo
     )
       return null;
 
     return (
       <div className="flex flex-wrap items-center gap-1 text-[11px] text-slate-500">
+        {deadlineInfo ? (
+          <span
+            className={`inline-flex items-center rounded-full border px-2 py-0.5 font-semibold whitespace-nowrap ${deadlineInfo.badgeClass}`}
+          >
+            {deadlineInfo.displayText}
+          </span>
+        ) : null}
         {showNcBadge ? (
           <span className="inline-flex items-center rounded-full border border-cyan-200 bg-cyan-50 px-2 py-0.5 font-extrabold text-cyan-700">
             NC

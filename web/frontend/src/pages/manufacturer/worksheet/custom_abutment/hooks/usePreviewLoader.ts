@@ -1,9 +1,14 @@
+// change-log:
+// - 2026-08-06: 가공 큐 스냅샷에 designSoftware/헥스 회전 누락 시 full request로 보강.
+// - 2026-08-06: 출고예정일(estimatedShipYmd)이 없을 때도 summary enrichment 트리거.
 // related files:
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/machining/MachiningQueueBoard.tsx
 // - web/backend/controllers/requests/common.review.controller.js
+// - web/backend/controllers/cnc/production.js
 import { useCallback, useRef } from "react";
 import { getFileBlob, setFileBlob } from "@/shared/files/stlIndexedDb";
 import {
@@ -201,9 +206,28 @@ export function usePreviewLoader({
         const summaryRequestId = String(req?.requestId || "").trim();
         const requestMongoIdForEnrich = String(req?._id || "").trim();
 
-        // forceRefresh: summary API는 camFile을 안 주므로 full request로 보강한다.
-        // (라이노 완료 직후 stale snapshot에 camFile이 없을 수 있음)
-        if (token && forceRefresh && requestMongoIdForEnrich) {
+        const hasDesignSoftware = Boolean(
+          String(targetReq?.caseInfos?.designSoftware || "").trim(),
+        );
+        const hasHexRotation = Boolean(
+          String(
+            (targetReq as any)?.rnd?.manufacturerHexRotation ||
+              targetReq?.caseInfos?.manufacturerHexRotation ||
+              targetReq?.caseInfos?.finalHexRotation ||
+              targetReq?.caseInfos?.requestorHexRotation ||
+              "",
+          ).trim(),
+        );
+
+        // forceRefresh / 가공 큐 스냅샷: designSoftware·헥스 회전이 빠질 수 있어 full request로 보강.
+        // (summary API는 해당 필드를 내려주지 않음)
+        const shouldEnrichFromFullRequest =
+          forceRefresh ||
+          ((isCamStage || isMachiningStage) &&
+            requestMongoIdForEnrich &&
+            (!hasDesignSoftware || !hasHexRotation));
+
+        if (token && shouldEnrichFromFullRequest && requestMongoIdForEnrich) {
           try {
             const fullRes = await fetch(
               `/api/requests/${encodeURIComponent(requestMongoIdForEnrich)}`,
@@ -228,6 +252,10 @@ export function usePreviewLoader({
                   ...(req?.caseInfos || {}),
                   ...(fullReq?.caseInfos || {}),
                 },
+                rnd: {
+                  ...((req as any)?.rnd || {}),
+                  ...(fullReq?.rnd || {}),
+                },
                 requestor: {
                   ...(req?.requestor || {}),
                   ...(fullReq?.requestor || {}),
@@ -250,7 +278,12 @@ export function usePreviewLoader({
         const shouldEnrichFromSummary =
           tabStage === "tracking" ||
           !targetReq?.caseInfos?.implantManufacturer ||
-          !targetReq?.requestor?.business;
+          !targetReq?.requestor?.business ||
+          !String(
+            targetReq?.timeline?.estimatedShipYmd ||
+              (targetReq as any)?.estimatedShipYmd ||
+              "",
+          ).trim();
 
         if (token && summaryRequestId && shouldEnrichFromSummary) {
           try {
@@ -267,6 +300,12 @@ export function usePreviewLoader({
             const summaryReq = summaryData?.request || summaryData;
 
             if (summaryRes.ok && summaryBody?.success !== false && summaryReq) {
+              const summaryShipYmd = String(
+                summaryReq?.timeline?.estimatedShipYmd ||
+                  summaryReq?.estimatedShipYmd ||
+                  summaryData?.estimatedShipYmd ||
+                  "",
+              ).trim();
               targetReq = {
                 ...targetReq,
                 ...summaryReq,
@@ -288,6 +327,21 @@ export function usePreviewLoader({
                   ...((targetReq as any)?.spec || {}),
                   ...(summaryReq?.spec || {}),
                 },
+                timeline: {
+                  ...((targetReq as any)?.timeline || {}),
+                  ...(summaryReq?.timeline || {}),
+                  ...(summaryShipYmd
+                    ? { estimatedShipYmd: summaryShipYmd }
+                    : {}),
+                },
+                estimatedShipYmd:
+                  summaryShipYmd ||
+                  String(
+                    (targetReq as any)?.estimatedShipYmd ||
+                      targetReq?.timeline?.estimatedShipYmd ||
+                      "",
+                  ).trim() ||
+                  null,
               } as ManufacturerRequest;
 
               const hasImplantData = Boolean(

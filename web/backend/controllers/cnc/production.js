@@ -336,6 +336,8 @@ export async function getProductionQueues(req, res) {
   try {
     const scope = await resolveManufacturerMachineScope(req);
 
+    // change-log:
+    // - 2026-08-06: 큐→프리뷰에 designSoftware/헥스 회전 필드 포함(가공 단계 누락 수정).
     const queueSelect = [
       "requestId",
       "status",
@@ -347,6 +349,10 @@ export async function getProductionQueues(req, res) {
       "caseInfos.rollbackCounts.machining",
       "caseInfos.ncFile",
       "caseInfos.anodizingEnabled",
+      "caseInfos.designSoftware",
+      "caseInfos.manufacturerHexRotation",
+      "caseInfos.finalHexRotation",
+      "caseInfos.requestorHexRotation",
       "caseInfos.totalLength",
       "caseInfos.maxDiameter",
       "shippingMode",
@@ -356,6 +362,7 @@ export async function getProductionQueues(req, res) {
       "caseInfos.implantBrand",
       "caseInfos.implantFamily",
       "caseInfos.retentionGroove",
+      "rnd.manufacturerHexRotation",
       "lotNumber",
       "timeline.estimatedShipYmd",
       "caManufacturer",
@@ -470,6 +477,9 @@ export async function getProductionQueues(req, res) {
         patientName: reqItem.caseInfos?.patientName,
         tooth: reqItem.caseInfos?.tooth,
         caseInfos: reqItem.caseInfos || null,
+        rnd: reqItem?.rnd?.manufacturerHexRotation
+          ? { manufacturerHexRotation: reqItem.rnd.manufacturerHexRotation }
+          : null,
         shippingMode: reqItem?.shippingMode || null,
         finalShipping: reqItem?.finalShipping
           ? { mode: reqItem.finalShipping.mode || null }

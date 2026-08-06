@@ -815,6 +815,10 @@ export const MachineQueueCard = ({
                 shippingMode: (currentSlot as any)?.shippingMode || null,
                 finalShipping: (currentSlot as any)?.finalShipping || null,
                 originalShipping: (currentSlot as any)?.originalShipping || null,
+                estimatedShipYmd:
+                  (currentSlot as any)?.estimatedShipYmd ||
+                  (currentSlot as any)?.timeline?.estimatedShipYmd ||
+                  null,
               };
               onOpenProgramCode?.(prog, machineId);
             }}
@@ -930,6 +934,10 @@ export const MachineQueueCard = ({
                 shippingMode: (nextSlot as any)?.shippingMode || null,
                 finalShipping: (nextSlot as any)?.finalShipping || null,
                 originalShipping: (nextSlot as any)?.originalShipping || null,
+                estimatedShipYmd:
+                  (nextSlot as any)?.estimatedShipYmd ||
+                  (nextSlot as any)?.timeline?.estimatedShipYmd ||
+                  null,
               };
 
               onOpenProgramCode?.(prog, machineId);

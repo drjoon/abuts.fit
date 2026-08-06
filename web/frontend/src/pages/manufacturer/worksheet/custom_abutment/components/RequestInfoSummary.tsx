@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-06: row 요약에 출고예정·마감 남은시간 인라인 표시(세로 높이 증가 없이 환자 첫 줄에 배치).
 // - 2026-08-04: 환자 줄=`치과명 / 환자명 / 치아`, 기공소명은 상단 1회만. 기공소=치과 동일 시 치과명 중복 생략.
 // - 2026-08-04: layout=row 지원. PreviewModal은 가로 3열, 카드는 stack 유지.
 // - 2026-08-04: 의뢰카드/프리뷰 공통 정보 블록. 환자·임플란트·생산 단위로 묶고 중복(치과명 등) 제거.
@@ -8,7 +9,9 @@
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/WorksheetCardGrid.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
+// - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/utils/request.ts
 import { Fragment, type ReactNode } from "react";
+import type { DeadlineInfo } from "../utils/request";
 
 export type RequestInfoSummaryProps = {
   /** 기공소명(의뢰 사업자). 상단 조직 줄에만 사용 */
@@ -30,6 +33,10 @@ export type RequestInfoSummaryProps = {
   className?: string;
   /** 카드 본문 앞에 붙일 보조 배지/상태 행 */
   leadingSlot?: ReactNode;
+  /** 출고예정일 YYYY-MM-DD. 환자 첫 줄에 인라인 표시 */
+  estimatedShipYmd?: string | null;
+  /** 마감까지 남은시간. 환자 첫 줄에 인라인 뱃지 */
+  deadlineInfo?: Pick<DeadlineInfo, "displayText" | "badgeClass"> | null;
 };
 
 /** 기공소명·치과명이 같거나 포함 관계면 true */
@@ -65,6 +72,17 @@ function formatCreatedAt(value?: string | Date | null): string {
   const date = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(date.getTime())) return "";
   return date.toLocaleDateString("ko-KR");
+}
+
+/** YYYY-MM-DD → 출고 M.D */
+function formatShipYmdLabel(ymd?: string | null): string {
+  const raw = String(ymd || "").trim();
+  const m = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return "";
+  const month = Number(m[2]);
+  const day = Number(m[3]);
+  if (!month || !day) return "";
+  return `출고 ${month}.${day}`;
 }
 
 function Dot() {
@@ -122,10 +140,15 @@ export function RequestInfoSummary({
   layout = "stack",
   className = "",
   leadingSlot,
+  estimatedShipYmd,
+  deadlineInfo,
 }: RequestInfoSummaryProps) {
   const labName = String(requestorLabel || "").trim();
   const clinic = String(clinicName || "").trim();
   const dateLabel = formatCreatedAt(createdAt);
+  const shipLabel = formatShipYmdLabel(estimatedShipYmd);
+  const deadlineText = String(deadlineInfo?.displayText || "").trim();
+  const deadlineBadgeClass = String(deadlineInfo?.badgeClass || "").trim();
   const patient = String(patientName || "").trim() || "미지정";
   const toothLabel = String(tooth ?? "").trim() || "-";
   // 기공소가 이미 상단에 있으면 동일/포함 치과명은 환자 줄에서 생략
@@ -153,12 +176,14 @@ export function RequestInfoSummary({
     }
   }
 
+  const hasScheduleMeta = Boolean(shipLabel || deadlineText);
   const hasPatient =
     !!labName ||
     !!dateLabel ||
     !!clinic ||
     !!patientName ||
-    !!tooth;
+    !!tooth ||
+    hasScheduleMeta;
   const hasImplant =
     !!implantLine || geometryItems.length > 0 || !!retention;
   const hasProduction = productionItems.length > 0;
@@ -186,7 +211,7 @@ export function RequestInfoSummary({
         isRow && (hasImplant || hasProduction) ? sectionDividerClass : ""
       }
     >
-      {(labName || dateLabel) && (
+      {(labName || dateLabel || hasScheduleMeta) && (
         <MetaRow>
           {labName && (
             <span className="font-medium text-slate-800">{labName}</span>
@@ -196,6 +221,24 @@ export function RequestInfoSummary({
               {labName ? <Dot /> : null}
               <span className="tabular-nums text-slate-600">{dateLabel}</span>
             </>
+          )}
+          {shipLabel && (
+            <>
+              {labName || dateLabel ? <Dot /> : null}
+              <span className="tabular-nums text-slate-600 whitespace-nowrap">
+                {shipLabel}
+              </span>
+            </>
+          )}
+          {deadlineText && (
+            <span
+              className={`inline-flex items-center rounded-full border px-1.5 py-0 text-[10px] font-semibold leading-[1.4] whitespace-nowrap ${
+                deadlineBadgeClass ||
+                "bg-slate-50 text-slate-700 border-slate-200"
+              }`}
+            >
+              {deadlineText}
+            </span>
           )}
         </MetaRow>
       )}

@@ -1,4 +1,6 @@
 // change-log:
+// - 2026-08-06: 헥스 회전 draft를 rnd/finalHexRotation/requestorHexRotation에서도 복원(가공 단계 누락 수정).
+// - 2026-08-06: 프리뷰 상단 요약에 출고예정·마감 남은시간 표시(RequestInfoSummary 인라인).
 // - 2026-08-04: 프리뷰 헤더에 신속/묶음배송 ShippingModeBadge 상시 표시.
 // - 2026-08-04: 환자 정보에 기공소명 전달 보강(business/requestorBusinessAnchor fallback).
 // - 2026-08-04: PreviewModal 요약 layout=row(가로 3열)로 STL 영역 확보.
@@ -42,6 +44,7 @@ import { deleteCncProgramCache } from "@/shared/files/fileBlobCache";
 import {
   type ManufacturerRequest,
   type ReviewStageKey,
+  getDeadlineInfo,
   getReviewStageKeyByTab,
 } from "../utils/request";
 import { resolveImplantConnectionSpec } from "@/utils/implantConnectionSpec";
@@ -784,18 +787,31 @@ export const PreviewModal = ({
       setAnodizingEnabledDraft(true);
     }
 
-    const requestorHexCanonical = resolveRequestorHexRotationByDesignSoftware(
-      (req as any)?.caseInfos?.designSoftware,
-    );
-    const manufacturerHexMode = normalizeManufacturerHexRotationMode(
-      (req as any)?.caseInfos?.manufacturerHexRotation,
-    );
+    // 헥스 회전 SSOT 우선순위:
+    // rnd.manufacturerHexRotation > caseInfos.manufacturerHexRotation >
+    // caseInfos.finalHexRotation > requestorHexRotation > designSoftware 추론
+    const manufacturerHexMode =
+      normalizeManufacturerHexRotationMode(
+        (req as any)?.rnd?.manufacturerHexRotation,
+      ) ||
+      normalizeManufacturerHexRotationMode(
+        (req as any)?.caseInfos?.manufacturerHexRotation,
+      ) ||
+      normalizeManufacturerHexRotationMode(
+        (req as any)?.caseInfos?.finalHexRotation,
+      ) ||
+      normalizeManufacturerHexRotationMode(
+        (req as any)?.caseInfos?.requestorHexRotation,
+      );
 
     if (manufacturerHexMode) {
       setManufacturerHexRotationDraft(manufacturerHexMode);
       return;
     }
 
+    const requestorHexCanonical = resolveRequestorHexRotationByDesignSoftware(
+      (req as any)?.caseInfos?.designSoftware,
+    );
     if (requestorHexCanonical) {
       setManufacturerHexRotationDraft(
         toManufacturerHexRotationLabel(requestorHexCanonical),
@@ -803,7 +819,7 @@ export const PreviewModal = ({
       return;
     }
 
-    // 의뢰건에 designSoftware가 없으면 헥스 회전 기본값을 비워 둔다.
+    // 의뢰건에 designSoftware/헥스값이 없으면 헥스 회전 기본값을 비워 둔다.
     setManufacturerHexRotationDraft("");
 
     if (tokens.length) {
@@ -1972,6 +1988,16 @@ export const PreviewModal = ({
     packMaterial ? `재질: ${packMaterial}` : "",
   ].filter(Boolean);
 
+  const estimatedShipYmd = String(
+    activeReq?.timeline?.estimatedShipYmd ||
+      (activeReq as any)?.estimatedShipYmd ||
+      "",
+  ).trim();
+  const deadlineInfo = getDeadlineInfo(
+    activeReq?.createdAt,
+    estimatedShipYmd || null,
+  );
+
 
 
   return (
@@ -2481,6 +2507,8 @@ export const PreviewModal = ({
             ]}
             retentionGrooveLabel={retentionGrooveLabel || null}
             productionMetaItems={overlayPackMetaItems}
+            estimatedShipYmd={estimatedShipYmd || null}
+            deadlineInfo={deadlineInfo}
           />
 
           {unmachinableEditorOpen && (

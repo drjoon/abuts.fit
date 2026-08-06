@@ -108,6 +108,8 @@ export const isCopiedSampleRequest = (req?: ManufacturerRequest | null) => {
   return resolveRequestCategory(req) === REQUEST_CATEGORY.COPIED_SAMPLE;
 };
 
+// change-log (getDeadlineInfo):
+// - 2026-08-06: createdAt 필수 조건 제거. 큐 아이템처럼 estimatedShipYmd만 있어도 마감 뱃지 계산.
 export interface DeadlineInfo {
   remainingMs: number;
   remainingBusinessDays: number;
@@ -187,10 +189,12 @@ function countHoursRemaining(now: Date, shipDateDeadline: Date): number {
 }
 
 export const getDeadlineInfo = (
-  createdAt?: string | Date,
-  estimatedShipYmd?: string,
+  createdAt?: string | Date | null,
+  estimatedShipYmd?: string | null,
 ): DeadlineInfo | null => {
-  if (!createdAt || !estimatedShipYmd) {
+  // createdAt은 호출 호환용으로 유지. 마감 계산은 estimatedShipYmd(당일 16:00 KST)만 사용.
+  void createdAt;
+  if (!estimatedShipYmd) {
     return null;
   }
 
