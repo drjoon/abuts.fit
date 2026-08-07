@@ -2,6 +2,8 @@
 // - bg/pc1/bridge-server/rules.md
 // - web/backend/controllers/cnc/machiningBridge.js
 // - web/backend/controllers/cnc/production.js
+// change-log:
+// - 2026-08-07: 정상 완료 후 로컬 큐가 비면 백엔드 auto-trigger를 재요청한다.
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -564,6 +566,9 @@ public DateTime UiSnapshotUpdatedAt;
 public DateTime HadAlarmSinceIdleUtc;
 // 알람 클리어 체크 쓰로틀링: 마지막 체크 시각 (매 tick 호출 방지, 5초 간격)
 public DateTime LastAlarmClearCheckUtc;
+// 정상 완료 후 로컬 큐가 비었을 때 백엔드 auto-trigger 1회 요청 필요 여부
+// (의뢰건은 DB 스냅샷에 안 남으므로, complete 콜백의 auto-next가 누락되면 브리지가 재요청한다)
+public bool NeedsPostCompleteAutoTrigger;
 // 가공 완료 시각: 다음 건 시작 전 settle 대기 기준 (척 오픈 M코드 처리, HOME 복귀 대기)
 public DateTime LastCompletedAtUtc;
 // 중복 process 요청 방지용 마지막 완료 식별자
@@ -875,6 +880,7 @@ if (TryGetMachineAlarms(machineId, out var alarmList, out var alarmErr))
 							state.LastCompletedRequestId = NormalizeRequestId(completedJob?.requestId, completedJob?.fileName, completedJob?.originalFileName);
 							state.LastCompletedFileKey = BuildJobIdentityKey(completedJob?.fileName, completedJob?.originalFileName, completedJob?.bridgePath);
 							state.LastCompletedRequestAtUtc = completedAt;
+							state.NeedsPostCompleteAutoTrigger = true;
 							state.CurrentJob = null;
 						}
 						Console.WriteLine("[CncMachining] job completed by material alarm machine={0} jobId={1} completedAt={2:o}",
@@ -964,6 +970,7 @@ state.LastCompletedAtUtc = completedAt;
 state.LastCompletedRequestId = NormalizeRequestId(completedJob?.requestId, completedJob?.fileName, completedJob?.originalFileName);
 state.LastCompletedFileKey = BuildJobIdentityKey(completedJob?.fileName, completedJob?.originalFileName, completedJob?.bridgePath);
 state.LastCompletedRequestAtUtc = completedAt;
+state.NeedsPostCompleteAutoTrigger = true;
 }
 Console.WriteLine("[CncMachining] job completed machine={0} jobId={1} completedAt={2:o} minSettleSec={3} maxSettleSec={4}",
     machineId, completedJob?.id, completedAt, Config.CncPostCompleteMinSettleSeconds, Config.CncPostCompleteMaxSettleSeconds);
@@ -1225,10 +1232,16 @@ Console.WriteLine("[CncMachining] idle force sync failed machine={0} err={1}", m
 var nextJob = CncJobQueue.Peek(machineId);
 if (nextJob == null)
 {
-// 알람 후 idle 복구 감지: 큐가 비어있고 이전에 알람이 발생했으면 알람 클리어 여부 체크
-// 알람이 클리어됐으면 백엔드에 다음 의뢰건 auto-trigger 요청 (5초 간격 쓰로틀링)
+// 로컬 큐가 비었을 때 백엔드에 다음 의뢰건 auto-trigger 요청.
+// - 알람 클리어 후 복구
+// - 정상 완료 후 complete 콜백의 auto-next가 누락/스킵된 경우 재요청
+// (의뢰건은 bridgeQueueSnapshot에 안 남으므로 SyncQueueFromBackend만으로는 다음 건이 안 온다)
 var hadAlarm = state.HadAlarmSinceIdleUtc != DateTime.MinValue;
-if (hadAlarm && !Config.MockCncMachining)
+var needsPostComplete = false;
+lock (StateLock) { needsPostComplete = state.NeedsPostCompleteAutoTrigger; }
+// mock 모드에서도 완료 후 다음 의뢰 재요청은 필요. 알람 복구 경로만 REAL에서 동작.
+var shouldRequest = needsPostComplete || (hadAlarm && !Config.MockCncMachining);
+if (shouldRequest)
 {
 var checkAgo = state.LastAlarmClearCheckUtc == DateTime.MinValue
     ? TimeSpan.MaxValue
@@ -1239,10 +1252,24 @@ lock (StateLock) { state.LastAlarmClearCheckUtc = DateTime.UtcNow; }
 var flagsCheck = await GetMachineFlagsFromBackend(machineId);
 if (flagsCheck != null && flagsCheck.AllowAutoMachining)
 {
-if (TryGetMachineAlarms(machineId, out var idleAlarms, out _) && (idleAlarms == null || idleAlarms.Count == 0))
+var alarmsOk = true;
+if (hadAlarm)
 {
-lock (StateLock) { state.HadAlarmSinceIdleUtc = DateTime.MinValue; state.LastAlarmClearCheckUtc = DateTime.MinValue; }
-Console.WriteLine("[CncMachining] alarm cleared, requesting backend auto-trigger machine={0}", machineId);
+alarmsOk = TryGetMachineAlarms(machineId, out var idleAlarms, out _)
+    && (idleAlarms == null || idleAlarms.Count == 0);
+}
+if (alarmsOk)
+{
+lock (StateLock)
+{
+state.HadAlarmSinceIdleUtc = DateTime.MinValue;
+state.LastAlarmClearCheckUtc = DateTime.MinValue;
+state.NeedsPostCompleteAutoTrigger = false;
+}
+Console.WriteLine(
+    "[CncMachining] requesting backend auto-trigger machine={0} reason={1}",
+    machineId,
+    hadAlarm ? "alarm-cleared" : "post-complete-empty-queue");
 _ = Task.Run(() => RequestBackendAutoTrigger(machineId));
 }
 }
