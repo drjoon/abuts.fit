@@ -25,7 +25,7 @@ const ENABLE_HINT =
   "비활성화를 활성화하려면 설정-사업자에서 설정 변경.";
 
 /**
- * 기공의뢰서 치과(발신) / 기공소(수신) 전환.
+ * 기공의뢰서 발신(치과) / 수신(기공소) 전환.
  * 가능한 유형만 활성화하고, 불가한 쪽은 disabled.
  */
 export const PracticeTransferRoleTabs = ({
@@ -66,7 +66,7 @@ export const PracticeTransferRoleTabs = ({
                   if (canSend) onChange("send");
                 }}
               >
-                치과
+                발신(치과)
               </Button>
             </span>
           </TooltipTrigger>
@@ -97,7 +97,7 @@ export const PracticeTransferRoleTabs = ({
                   if (canReceive) onChange("receive");
                 }}
               >
-                기공소
+                수신(기공소)
               </Button>
             </span>
           </TooltipTrigger>
