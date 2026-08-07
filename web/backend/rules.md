@@ -585,7 +585,10 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
 
 - 보존식(의뢰 단위) SSOT:
   - `의뢰자 순소비(현존 COMMIT 이벤트 기준)` = `REV_MANUFACTURER + REV_DEVOPS + REV_SALESMAN + REV_ADMIN`
-  - 합계 비교 기준은 VAT 제외 공급가(`amountExcludingVat`) 우선
+  - 의뢰자 순소비는 `REQ_PAID_CREDIT|REQ_FREE_REQUEST_CREDIT` 라인의 **부호 있는 합의 음수**다.
+    - 소비(COMMIT)=음수, 환불/ADJUST 복구=양수. 음수만 절대화하면 환불을 누락한다.
+  - 수익 합도 동일하게 부호 있는 합(환불 시 `REV_*` 음수 라인 포함)
+  - 합계 비교 기준은 VAT 제외 공급가(`amountExcludingVat`) 우선 (`null`이면 `amount`)
 
 - 구현 강제사항:
   - 승인/롤백/정산 이벤트는 모두 단일 저널 트랜잭션으로 처리

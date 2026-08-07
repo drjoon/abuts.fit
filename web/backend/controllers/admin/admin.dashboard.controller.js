@@ -133,6 +133,11 @@ const getCurrentKstWeekRangeUtc = () => {
   };
 };
 
+/**
+ * 의뢰 단위 크레딧 순소비 ↔ 수익 귀속 합계 점검.
+ * 순소비는 부호 있는 합(`-(REQ_* amount)`)을 쓴다.
+ * (소비=음수, 환불/ADJUST 복구=양수. 음수만 절대화하면 환불을 누락해 false positive 발생)
+ */
 async function buildCreditRevenueFlowMismatchSummary({ since }) {
   const [consumedRows, revenueRows] = await Promise.all([
     LedgerLine.aggregate([
@@ -150,10 +155,9 @@ async function buildCreditRevenueFlowMismatchSummary({ since }) {
           _id: "$refId",
           netConsumed: {
             $sum: {
-              $cond: [
-                { $lt: ["$amount", 0] },
-                { $multiply: ["$amount", -1] },
-                0,
+              $multiply: [
+                { $ifNull: ["$amountExcludingVat", "$amount"] },
+                -1,
               ],
             },
           },
