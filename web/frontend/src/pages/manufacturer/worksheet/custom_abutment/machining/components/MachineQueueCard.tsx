@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-07: Complete/Now Playing/Next Up에서 의뢰ID(requestId) 표시 제거.
 // - 2026-08-07: Complete/Now Playing/Next Up에 의뢰자명(businessName) 표시.
 // - 2026-08-06: 큐 슬롯→프리뷰에 rnd(헥스 회전) 전달.
 // related files:
@@ -767,6 +768,7 @@ export const MachineQueueCard = ({
                       patientName={(effectiveLastCompleted as any)?.patientName}
                       tooth={(effectiveLastCompleted as any)?.tooth}
                       requestId={(effectiveLastCompleted as any)?.requestId}
+                      hideRequestId
                       lotShortCode={getLotShortCode(
                         effectiveLastCompleted as any,
                       )}
@@ -893,6 +895,7 @@ export const MachineQueueCard = ({
                       patientName={currentSlot?.patientName}
                       tooth={(currentSlot as any)?.tooth}
                       requestId={currentSlot?.requestId}
+                      hideRequestId
                       lotShortCode={getLotShortCode(currentSlot)}
                       caseInfos={(currentSlot as any)?.caseInfos}
                       hasNc={Boolean(
@@ -1049,6 +1052,7 @@ export const MachineQueueCard = ({
                       patientName={nextSlot?.patientName}
                       tooth={(nextSlot as any)?.tooth}
                       requestId={nextSlot?.requestId}
+                      hideRequestId
                       lotShortCode={getLotShortCode(nextSlot)}
                       caseInfos={(nextSlot as any)?.caseInfos}
                       hasNc={Boolean(
