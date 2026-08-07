@@ -18,7 +18,6 @@ import {
   applyStatusMapping,
   computePriceForRequest,
   getTodayYmdInKst,
-  addKoreanBusinessDays,
 } from "./utils.js";
 import {
   spendRequestCreditAtomic,
@@ -32,6 +31,10 @@ import {
   resolveQuotedPriceWithExpressFee,
   toPlainRequestPrice,
 } from "./expressPrice.utils.js";
+import { resolvePackingEnterShipYmds } from "./packingEnterShipYmd.utils.js";
+import {
+  evaluateShipOnTimeOutcome,
+} from "./shippingOnTime.utils.js";
 import { postGeneralLedgerJournal } from "../../services/generalLedger.service.js";
 import {
   isShippingSpendRevenueContext,
@@ -343,71 +346,28 @@ export function revertManufacturerStageByReviewStage(request, stage) {
   }
 }
 
+/**
+ * 포장.발송 진입 시 출고일(timeline) 보정.
+ * @see packingEnterShipYmd.utils.js
+ */
 export async function updateCurrentEstimatedShipYmdOnPackingEnter(request) {
   if (!request) return;
 
   request.timeline = request.timeline || {};
-  const timeline = request.timeline;
-  const originalEstimatedShipYmd =
-    typeof timeline.originalEstimatedShipYmd === "string" &&
-    timeline.originalEstimatedShipYmd.trim()
-      ? timeline.originalEstimatedShipYmd.trim()
-      : typeof timeline.estimatedShipYmd === "string" &&
-          timeline.estimatedShipYmd.trim()
-        ? timeline.estimatedShipYmd.trim()
-        : getTodayYmdInKst();
-
-  let nextEstimatedShipYmd =
-    typeof timeline.nextEstimatedShipYmd === "string" &&
-    timeline.nextEstimatedShipYmd.trim()
-      ? timeline.nextEstimatedShipYmd.trim()
-      : typeof timeline.estimatedShipYmd === "string" &&
-          timeline.estimatedShipYmd.trim()
-        ? timeline.estimatedShipYmd.trim()
-        : originalEstimatedShipYmd;
-
-  const todayYmd = getTodayYmdInKst();
-  const mode = resolveEffectiveShippingMode(request);
-
-  // 약속 발송일을 이미 지난 경우: 다음 발송일을 오늘로 미룸
-  if (
-    todayYmd &&
-    originalEstimatedShipYmd &&
-    todayYmd > originalEstimatedShipYmd &&
-    (!nextEstimatedShipYmd || nextEstimatedShipYmd <= originalEstimatedShipYmd)
-  ) {
-    nextEstimatedShipYmd = todayYmd;
-  }
-
-  // 신속: 당일 포장 마감(14:00 KST) 이후면 당일 집하 불가 → 다음 영업일
-  if (
-    mode === "express" &&
-    todayYmd &&
-    originalEstimatedShipYmd === todayYmd &&
-    (!nextEstimatedShipYmd || nextEstimatedShipYmd === todayYmd)
-  ) {
-    const hourKst = Number(
-      new Intl.DateTimeFormat("en-US", {
-        timeZone: "Asia/Seoul",
-        hour: "numeric",
-        hour12: false,
-      }).format(new Date()),
-    );
-    if (Number.isFinite(hourKst) && hourKst >= 14) {
-      nextEstimatedShipYmd = await addKoreanBusinessDays({
-        startYmd: todayYmd,
-        days: 1,
-      });
-    }
-  }
-
-  timeline.originalEstimatedShipYmd = originalEstimatedShipYmd;
-  timeline.nextEstimatedShipYmd = nextEstimatedShipYmd;
-  timeline.estimatedShipYmd = nextEstimatedShipYmd;
+  const resolved = resolvePackingEnterShipYmds({
+    timeline: request.timeline,
+    todayYmd: getTodayYmdInKst(),
+  });
+  request.timeline.originalEstimatedShipYmd =
+    resolved.originalEstimatedShipYmd;
+  request.timeline.nextEstimatedShipYmd = resolved.nextEstimatedShipYmd;
+  request.timeline.estimatedShipYmd = resolved.estimatedShipYmd;
 }
 
 /**
- * 신속 약속 발송일(original)보다 next가 늦어지면 신속 추가 크레딧을 취소한다.
+ * 신속 출고 실패(약속일 자정까지 당일 집하 없음) 또는 강제 취소 시 신속 추가 크레딧을 취소한다.
+ * - forceCancel: 의뢰자가 신속→묶음 전환 등
+ * - 그 외: shipOutcome.late 또는 평가 결과 late
  */
 export async function cancelExpressSurchargeIfShipDelayed({
   request,
@@ -415,6 +375,8 @@ export async function cancelExpressSurchargeIfShipDelayed({
   session,
   deferredCreditEvents,
   forceCancel = false,
+  deliveryInfo = null,
+  todayYmd = null,
 }) {
   if (!request?._id || !businessAnchorId) return { didCancel: false };
 
@@ -427,16 +389,25 @@ export async function cancelExpressSurchargeIfShipDelayed({
     return { didCancel: false, reason: "already_cancelled" };
   }
 
-  const original = String(
-    request?.timeline?.originalEstimatedShipYmd || "",
-  ).trim();
-  const next = String(
-    request?.timeline?.nextEstimatedShipYmd ||
-      request?.timeline?.estimatedShipYmd ||
-      "",
-  ).trim();
+  let isDelayed = false;
+  if (!forceCancel) {
+    const storedStatus = String(
+      request?.timeline?.shipOutcome?.status || "",
+    ).trim();
+    if (storedStatus === "late") {
+      isDelayed = true;
+    } else if (storedStatus === "on_time") {
+      isDelayed = false;
+    } else {
+      const outcome = evaluateShipOnTimeOutcome({
+        request,
+        deliveryInfo,
+        todayYmd: todayYmd || undefined,
+      });
+      isDelayed = outcome.status === "late";
+    }
+  }
 
-  const isDelayed = Boolean(original && next && next > original);
   if (!forceCancel && !isDelayed) {
     return { didCancel: false, reason: "not_delayed" };
   }
@@ -487,7 +458,8 @@ export async function cancelExpressSurchargeIfShipDelayed({
 
   return {
     didCancel: true,
-    rollbackAmount: restored,
+    reason: forceCancel ? "force_cancel" : "ship_late",
+    restoredAmount: restored,
   };
 }
 

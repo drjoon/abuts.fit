@@ -903,6 +903,16 @@ const requestSchema = new mongoose.Schema(
         type: Boolean,
         default: false,
       },
+      // 약속 출고일 자정 이후 정시/실패 평가 결과
+      shipOutcome: {
+        status: {
+          type: String,
+          enum: ["pending", "on_time", "late"],
+        },
+        evaluatedAt: Date,
+        pickedUpYmd: String,
+        promisedYmd: String,
+      },
       actualCompletion: Date,
     },
 

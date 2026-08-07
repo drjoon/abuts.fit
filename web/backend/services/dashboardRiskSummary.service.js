@@ -4,9 +4,19 @@
 // - web/backend/server.js
 // - web/backend/controllers/requests/dashboard.controller.js
 // - web/backend/controllers/requests/shippingPriority.utils.js
+// - web/backend/controllers/requests/shippingOnTime.utils.js
+// change-log:
+// - 2026-08-07: 묶음/신속 정시 출고 성공률을 지연 위험 요약에 포함.
+// - 2026-08-07: 출고 마감 안내 문구 15:00 → 16:00.
 import Request from "../models/request.model.js";
 import User from "../models/user.model.js";
+import DeliveryInfo from "../models/deliveryInfo.model.js";
 import { computeShippingPriority } from "../controllers/requests/shippingPriority.utils.js";
+import {
+  evaluateShipOnTimeOutcome,
+  summarizeShippingOnTimeRates,
+} from "../controllers/requests/shippingOnTime.utils.js";
+import { getTodayYmdInKst } from "../utils/krBusinessDays.js";
 import {
   getRequestPerfCacheValue,
   setRequestPerfCacheValue,
@@ -17,6 +27,12 @@ const DEFAULT_RISK_SUMMARY = {
   delayedCount: 0,
   warningCount: 0,
   onTimeRate: 100,
+  expressOnTimeRate: 100,
+  expressOnTimeCount: 0,
+  expressEvaluatedCount: 0,
+  normalOnTimeRate: 100,
+  normalOnTimeCount: 0,
+  normalEvaluatedCount: 0,
   items: [],
 };
 
@@ -47,6 +63,18 @@ const RISK_SUMMARY_SELECT = {
   caManufacturer: 1,
   manufacturer: 1,
   deliveryInfoRef: 1,
+};
+
+const ON_TIME_STATS_SELECT = {
+  _id: 1,
+  requestId: 1,
+  shippingMode: 1,
+  finalShipping: 1,
+  originalShipping: 1,
+  timeline: 1,
+  productionSchedule: 1,
+  deliveryInfoRef: 1,
+  manufacturerStage: 1,
 };
 
 const isUnmachinableRequest = (r) => {
@@ -96,9 +124,63 @@ const hydrateRiskItemNames = async (riskItems) => {
   }
 };
 
+async function computeOnTimeRateSummary(onTimeRequestFilter) {
+  if (!onTimeRequestFilter || typeof onTimeRequestFilter !== "object") {
+    return summarizeShippingOnTimeRates([]);
+  }
+
+  const todayYmd = getTodayYmdInKst();
+  const rows = await Request.find(onTimeRequestFilter)
+    .select(ON_TIME_STATS_SELECT)
+    .lean();
+
+  const deliveryIds = rows.map((r) => r.deliveryInfoRef).filter(Boolean);
+  const deliveryDocs = deliveryIds.length
+    ? await DeliveryInfo.find({ _id: { $in: deliveryIds } })
+        .select({ pickedUpAt: 1, shippedAt: 1 })
+        .lean()
+    : [];
+  const deliveryById = new Map(
+    deliveryDocs.map((d) => [String(d._id), d]),
+  );
+
+  const evaluated = [];
+  for (const r of rows) {
+    if (!r || isUnmachinableRequest(r)) continue;
+    if (String(r.manufacturerStage || "").trim() === "취소") continue;
+
+    const stored = String(r?.timeline?.shipOutcome?.status || "").trim();
+    if (stored === "on_time" || stored === "late") {
+      const mode =
+        r?.finalShipping?.mode === "express" ||
+        r?.originalShipping?.mode === "express" ||
+        r?.shippingMode === "express"
+          ? "express"
+          : "normal";
+      evaluated.push({ mode, status: stored });
+      continue;
+    }
+
+    const deliveryInfo = r.deliveryInfoRef
+      ? deliveryById.get(String(r.deliveryInfoRef)) || null
+      : null;
+    const outcome = evaluateShipOnTimeOutcome({
+      request: r,
+      deliveryInfo,
+      todayYmd,
+    });
+    if (outcome.status === "on_time" || outcome.status === "late") {
+      evaluated.push({ mode: outcome.mode, status: outcome.status });
+    }
+  }
+
+  return summarizeShippingOnTimeRates(evaluated);
+}
+
 export const getDashboardRiskSummaryData = async ({
   cacheKey,
   riskRequestFilter,
+  onTimeRequestFilter = null,
   debug = false,
   role = "requestor",
   populateRelated = false,
@@ -123,7 +205,10 @@ export const getDashboardRiskSummaryData = async ({
         query = query.populate("deliveryInfoRef", "pickedUpAt deliveredAt");
       }
 
-      const requests = await query.lean();
+      const [requests, onTimeRates] = await Promise.all([
+        query.lean(),
+        computeOnTimeRateSummary(onTimeRequestFilter),
+      ]);
       const now = new Date();
 
       const candidates = [];
@@ -164,19 +249,8 @@ export const getDashboardRiskSummaryData = async ({
         }
       }
 
-      const totalWithDeadline = delayedItems.length + warningItems.length;
       const delayedCount = delayedItems.length;
       const warningCount = warningItems.length;
-      const onTimeBase = Math.max(1, totalWithDeadline + 1);
-      const onTimeRate = Math.max(
-        0,
-        Math.min(
-          100,
-          Math.round(
-            ((onTimeBase - delayedCount - warningCount) / onTimeBase) * 100,
-          ),
-        ),
-      );
 
       const toRiskItem = (entry, level) => {
         const r = entry?.r || entry;
@@ -205,10 +279,10 @@ export const getDashboardRiskSummaryData = async ({
 
         const message =
           level === "danger"
-            ? `출고 마감(15:00) 기준 처리 지연 위험이 매우 큽니다. ${
+            ? `출고 마감(16:00) 기준 처리 지연 위험이 매우 큽니다. ${
                 sp?.label || ""
               }`.trim()
-            : `출고 마감(15:00)이 임박했습니다. ${sp?.label || ""}`.trim();
+            : `출고 마감(16:00)이 임박했습니다. ${sp?.label || ""}`.trim();
 
         return {
           id: r?.requestId,
@@ -277,7 +351,13 @@ export const getDashboardRiskSummaryData = async ({
         riskSummary: {
           delayedCount,
           warningCount,
-          onTimeRate,
+          onTimeRate: onTimeRates.onTimeRate,
+          expressOnTimeRate: onTimeRates.expressOnTimeRate,
+          expressOnTimeCount: onTimeRates.expressOnTimeCount,
+          expressEvaluatedCount: onTimeRates.expressEvaluatedCount,
+          normalOnTimeRate: onTimeRates.normalOnTimeRate,
+          normalOnTimeCount: onTimeRates.normalOnTimeCount,
+          normalEvaluatedCount: onTimeRates.normalEvaluatedCount,
           items: riskItems,
         },
       };

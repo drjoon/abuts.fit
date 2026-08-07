@@ -2,6 +2,7 @@
 // - web/frontend/src/pages/requestor/dashboard/RequestorDashboardPage.tsx
 // - web/frontend/src/pages/requestor/dashboard/components/RequestorRecentRequestsCard.tsx
 // change-log:
+// - 2026-08-07: 묶음/신속 정시 출고 성공률 표시.
 // - 2026-08-06: 정시 발송 비율 → 정시 출고 비율.
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -16,6 +17,12 @@ export type RiskSummary = {
   delayedCount?: number;
   warningCount?: number;
   onTimeRate?: number;
+  expressOnTimeRate?: number;
+  expressOnTimeCount?: number;
+  expressEvaluatedCount?: number;
+  normalOnTimeRate?: number;
+  normalOnTimeCount?: number;
+  normalEvaluatedCount?: number;
   items?: {
     id: string;
     title: string;
@@ -163,7 +170,18 @@ export const RequestorRiskSummaryCard = ({
         <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
           <span>지연 가능 의뢰: {summary.warningCount ?? 0}건</span>
           <span>지연 확정 의뢰: {summary.delayedCount ?? 0}건</span>
-          <span>정시 출고 비율: {summary.onTimeRate ?? 0}%</span>
+          <span>
+            묶음 정시: {summary.normalOnTimeRate ?? summary.onTimeRate ?? 0}%
+            {typeof summary.normalEvaluatedCount === "number"
+              ? ` (${summary.normalEvaluatedCount}건)`
+              : ""}
+          </span>
+          <span>
+            신속 정시: {summary.expressOnTimeRate ?? summary.onTimeRate ?? 0}%
+            {typeof summary.expressEvaluatedCount === "number"
+              ? ` (${summary.expressEvaluatedCount}건)`
+              : ""}
+          </span>
         </div>
         <div
           className={`space-y-2 pr-1 scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-transparent ${

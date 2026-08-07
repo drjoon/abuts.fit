@@ -918,6 +918,7 @@ export async function getMyDashboardSummary(req, res) {
 
         const riskRequestFilter = {
           ...requestFilter,
+          ...dateFilter,
           manufacturerStage: {
             $in: [
               "준비",
@@ -936,6 +937,14 @@ export async function getMyDashboardSummary(req, res) {
             { "timeline.originalEstimatedShipYmd": { $exists: true, $ne: "" } },
             { "timeline.estimatedShipYmd": { $exists: true, $ne: "" } },
           ],
+        };
+
+        const onTimeRequestFilter = {
+          ...requestFilter,
+          ...dateFilter,
+          manufacturerStage: { $ne: "취소" },
+          source: { $ne: "manufacturer_sample" },
+          "rnd.unmachinableAt": null,
         };
 
         const [
@@ -975,8 +984,9 @@ export async function getMyDashboardSummary(req, res) {
             .limit(10)
             .lean(),
           getDashboardRiskSummaryData({
-            cacheKey: `dashboard-risk-summary:requestor:${businessAnchorId}:${String(period)}`,
+            cacheKey: `dashboard-risk-summary:requestor:v3:${businessAnchorId}:${String(period)}`,
             riskRequestFilter,
+            onTimeRequestFilter,
             debug,
             role: "requestor",
             populateRelated: false,
@@ -1030,6 +1040,12 @@ export async function getMyDashboardSummary(req, res) {
           delayedCount: 0,
           warningCount: 0,
           onTimeRate: 100,
+          expressOnTimeRate: 100,
+          expressOnTimeCount: 0,
+          expressEvaluatedCount: 0,
+          normalOnTimeRate: 100,
+          normalOnTimeCount: 0,
+          normalEvaluatedCount: 0,
           items: [],
         };
 
@@ -1395,18 +1411,27 @@ export async function getDashboardRiskSummary(req, res) {
       "rnd.unmachinableAt": null,
     };
 
+    const onTimeBaseFilter = {
+      ...dateFilter,
+      manufacturerStage: { $ne: "취소" },
+      "caseInfos.implantBrand": { $exists: true, $ne: "" },
+      source: { $ne: "manufacturer_sample" },
+      "rnd.unmachinableAt": null,
+    };
+
     const role = String(req.user?.role || "");
 
-    const filter =
+    const scopeFilter =
       role === "manufacturer"
-        ? {
-            $and: [baseFilter, await buildManufacturerOrgScopeFilter(req)],
-          }
+        ? await buildManufacturerOrgScopeFilter(req)
         : role === "admin"
-          ? baseFilter
-          : {
-              $and: [baseFilter, await buildRequestorOrgScopeFilter(req)],
-            };
+          ? null
+          : await buildRequestorOrgScopeFilter(req);
+
+    const filter = scopeFilter ? { $and: [baseFilter, scopeFilter] } : baseFilter;
+    const onTimeRequestFilter = scopeFilter
+      ? { $and: [onTimeBaseFilter, scopeFilter] }
+      : onTimeBaseFilter;
 
     const cacheScope =
       role === "requestor"
@@ -1415,8 +1440,9 @@ export async function getDashboardRiskSummary(req, res) {
           ? String(req.user?.businessAnchorId || req.user?._id || "").trim()
           : "admin";
     const riskData = await getDashboardRiskSummaryData({
-      cacheKey: `dashboard-risk-summary:v2:${role}:${cacheScope}:${String(period)}`,
+      cacheKey: `dashboard-risk-summary:v3:${role}:${cacheScope}:${String(period)}`,
       riskRequestFilter: filter,
+      onTimeRequestFilter,
       debug,
       role,
       populateRelated: role !== "requestor",
@@ -1430,6 +1456,12 @@ export async function getDashboardRiskSummary(req, res) {
           delayedCount: 0,
           warningCount: 0,
           onTimeRate: 100,
+          expressOnTimeRate: 100,
+          expressOnTimeCount: 0,
+          expressEvaluatedCount: 0,
+          normalOnTimeRate: 100,
+          normalOnTimeCount: 0,
+          normalEvaluatedCount: 0,
           items: [],
         },
       },

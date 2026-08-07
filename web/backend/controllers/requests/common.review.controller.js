@@ -43,7 +43,6 @@ import {
   ensureDeliveryInfoShippedAtNow,
   hasRequestShippingOrCompletionHistory,
   updateCurrentEstimatedShipYmdOnPackingEnter,
-  cancelExpressSurchargeIfShipDelayed,
 } from "./common.review.helpers.js";
 import {
   screenCamMachineForRequest,
@@ -1644,15 +1643,9 @@ export async function updateReviewStatusByStage(req, res) {
 
         if (effectiveStage === "packing") {
           await ensureFinishedLotNumberForPacking(request);
+          // 출고일은 의뢰 시점 약속 고정. 포장.발송 진입으로 날짜를 바꾸거나
+          // 신속 추가비를 여기서 취소하지 않는다(자정 이후 shippingOnTimeEvalWorker).
           await updateCurrentEstimatedShipYmdOnPackingEnter(request);
-          if (resolvedBusinessAnchorId) {
-            await cancelExpressSurchargeIfShipDelayed({
-              request,
-              businessAnchorId: resolvedBusinessAnchorId,
-              session,
-              deferredCreditEvents,
-            });
-          }
           // 포장.발송 진입 승인마다 기존값을 신뢰하지 않고
           // 동일 업체의 "다른 활성 점유"를 재조회해 우편함을 재결정한다.
           request.mailboxAddress = null;

@@ -91,7 +91,8 @@ import {
   type RemakeQuickStartStage,
 } from "./RemakeStartQuickModal";
 
-const MAILBOX_DETAILS_CACHE_TTL_MS = 60 * 60 * 1000;
+const MAILBOX_DETAILS_CACHE_TTL_MS = 30 * 1000;
+// change-log: 2026-08-07 - 우편함 상세 캐시 TTL 1h→30s, 캐시 hit여도 항상 재조회로 출고일 동기화.
 const MAILBOX_DETAILS_STORAGE_PREFIX = "ca:shipping:mailbox-details:";
 
 export const RequestPage = ({
@@ -645,18 +646,13 @@ export const RequestPage = ({
           ? requestsFromCurrentPage
           : [];
 
-      // auto-close effect 레이스 방지를 위해, 네트워크가 필요하면 로딩 상태를 먼저 올린다.
+      // 클릭 즉시 모달 오픈 (체감 속도). 캐시가 있어도 네트워크로 timeline/출고일을 재동기화한다.
       mailboxState.setIsMailboxDetailsLoading(!hasUsableFreshCache);
 
-      // 클릭 즉시 모달 오픈 (체감 속도 개선)
       await mailboxState.handleRegisterShipment(
         mailboxAddress,
         initialRequests,
       );
-
-      if (hasUsableFreshCache) {
-        return;
-      }
 
       try {
         let inFlight = mailboxDetailsInFlightRef.current[normalizedAddress];
@@ -725,14 +721,17 @@ export const RequestPage = ({
         const detailRequests = await inFlight;
         mailboxState.setMailboxModalRequests(detailRequests);
       } catch (error) {
-        toast({
-          title: "우편함 상세 조회 실패",
-          description:
-            error instanceof Error && error.message
-              ? error.message
-              : "우편함 상세 조회 중 오류가 발생했습니다.",
-          variant: "destructive",
-        });
+        // 캐시로 이미 열어둔 경우 네트워크 실패는 토스트만 (빈 모달로 만들지 않음)
+        if (!hasUsableFreshCache && initialRequests.length === 0) {
+          toast({
+            title: "우편함 상세 조회 실패",
+            description:
+              error instanceof Error && error.message
+                ? error.message
+                : "우편함 상세 조회 중 오류가 발생했습니다.",
+            variant: "destructive",
+          });
+        }
       } finally {
         mailboxState.setIsMailboxDetailsLoading(false);
       }

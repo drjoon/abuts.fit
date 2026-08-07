@@ -85,6 +85,14 @@
     - 신속: **KST 12시 이전** 당일 영업일이면 당일 16:00 출고, 이후(또는 휴일)면 +1영업일
     - 묶음: `resolveLeadDaysWithSameDayCutoff` — 접수 당일=1일차 → `(N-1)` 영업일 후
       주간 발송 요일 정렬 (`resolveNextWeeklyBatchYmd`)
+  - 출고일 고정: 의뢰 시점 `originalEstimatedShipYmd`(=estimated)는 포장.발송 진입으로 바꾸지 않음
+    (`packingEnterShipYmd.utils.js`). 14:00 이후 진입해도 16:00 집하(또는 당일 수동 집하)면 정시.
+  - 자정 이후 정시 평가: `jobs/shippingOnTimeEvalWorker.js` + `shippingOnTime.utils.js`
+    - 약속일 KST 자정까지 당일 집하 없으면 `shipOutcome=late`
+    - 신속 late → `cancelExpressSurchargeIfShipDelayed`로 추가비 취소
+  - 정시 성공률(묶음/신속): 지연 위험 요약에 표시 (`dashboardRiskSummary.service.js`)
+  - 포장.발송 진입(`packingEnterShipYmd.utils.js` / `updateCurrentEstimatedShipYmdOnPackingEnter`):
+    빈 timeline 필드만 보정. 날짜를 오늘/다음 영업일로 밀지 않음.
   - 묶음 발송 요일 정렬: `resolveNextWeeklyBatchYmd` — YMD 달력일 요일은 서버 로컬 `getDay()` 금지
     (UTC noon 기준). UTC 서버에서 `T00:00:00+09:00`.getDay()를 쓰면 금→토로 읽고
     `fri+mon` 묶음이 화요일로 튀는 회귀가 난다.

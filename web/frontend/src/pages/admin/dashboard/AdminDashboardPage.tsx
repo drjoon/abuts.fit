@@ -85,6 +85,12 @@ type RiskSummaryData = {
     delayedCount?: number;
     warningCount?: number;
     onTimeRate?: number;
+    expressOnTimeRate?: number;
+    expressOnTimeCount?: number;
+    expressEvaluatedCount?: number;
+    normalOnTimeRate?: number;
+    normalOnTimeCount?: number;
+    normalEvaluatedCount?: number;
   };
 };
 
@@ -807,6 +813,18 @@ export const AdminDashboardPage = () => {
   const riskWarningCount = Number(riskSummary?.warningCount || 0);
   const riskDelayedCount = Number(riskSummary?.delayedCount || 0);
   const riskOnTimeRate = Number(riskSummary?.onTimeRate || 0);
+  const riskExpressOnTimeRate = Number(
+    riskSummary?.expressOnTimeRate ?? riskOnTimeRate,
+  );
+  const riskNormalOnTimeRate = Number(
+    riskSummary?.normalOnTimeRate ?? riskOnTimeRate,
+  );
+  const riskExpressEvaluatedCount = Number(
+    riskSummary?.expressEvaluatedCount || 0,
+  );
+  const riskNormalEvaluatedCount = Number(
+    riskSummary?.normalEvaluatedCount || 0,
+  );
   const riskSummaryItems = Array.isArray(riskSummary?.items)
     ? riskSummary.items
     : [];
@@ -1684,7 +1702,18 @@ export const AdminDashboardPage = () => {
                         <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
                           <span>지연 가능 의뢰: {riskWarningCount.toLocaleString()}건</span>
                           <span>지연 확정 의뢰: {riskDelayedCount.toLocaleString()}건</span>
-                          <span>정시 발송 비율: {riskOnTimeRate.toLocaleString()}%</span>
+                          <span>
+                            묶음 정시: {riskNormalOnTimeRate.toLocaleString()}%
+                            {riskNormalEvaluatedCount > 0
+                              ? ` (${riskNormalEvaluatedCount.toLocaleString()}건)`
+                              : ""}
+                          </span>
+                          <span>
+                            신속 정시: {riskExpressOnTimeRate.toLocaleString()}%
+                            {riskExpressEvaluatedCount > 0
+                              ? ` (${riskExpressEvaluatedCount.toLocaleString()}건)`
+                              : ""}
+                          </span>
                         </div>
                         <div className="mt-1 text-[11px] text-muted-foreground">
                           클릭하면 지연 위험 상세 내역을 확인할 수 있습니다.

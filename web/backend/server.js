@@ -4,6 +4,7 @@
 // - web/backend/controllers/requests/shipping.TrackingPoller.js
 // - web/backend/controllers/cnc/machiningBridge.js
 // - web/backend/jobs/dailyReferralSnapshotWorker.js
+// - web/backend/jobs/shippingOnTimeEvalWorker.js
 // - web/backend/jobs/dummyCncWorker.js
 import { createServer } from "http";
 import "./bootstrap/env.js";
@@ -15,6 +16,7 @@ import {
 } from "./utils/cacheWarming.js";
 import { startDummyCncScheduler } from "./jobs/dummyCncWorker.js";
 import { startDailyReferralSnapshotWorker } from "./jobs/dailyReferralSnapshotWorker.js";
+import { startShippingOnTimeEvalWorker } from "./jobs/shippingOnTimeEvalWorker.js";
 import { startReviewApprovalWorker } from "./services/reviewApprovalQueue.service.js";
 import { startHanjinTrackingAutoSyncWorker } from "./controllers/requests/shipping.TrackingPoller.js";
 import { seedCoreShared } from "./scripts/db/_core.shared.js";
@@ -77,6 +79,7 @@ dbReady
 
     startDummyCncScheduler();
     startDailyReferralSnapshotWorker();
+    startShippingOnTimeEvalWorker();
 
     // 의뢰/CAM 단계 승인 직렬 큐 워커 시작
     // 작업자 연속 승인 시 BG 앱(rhino, esprit, bridge, lot, pack, wbls) 과부하 방지
