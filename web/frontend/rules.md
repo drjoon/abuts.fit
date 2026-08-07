@@ -83,7 +83,7 @@ Notes:
 - 관리자 사용자/사업자
   - `src/pages/admin/users/AdminUserManagement.tsx`
   - `src/pages/admin/businesses/AdminBusinessPage.tsx`
-  - 관리자 UI에서 별도 `치과`(practice) role 필터/생성은 제거. 레거시 practice는 의뢰자로 표시하고, 의뢰자 `requestorCapabilities`(치과(무료)/기공소) 뱃지로 구분.
+  - 관리자 UI에서 별도 `치과`(practice) role 필터/생성은 제거. 레거시 practice는 의뢰자로 표시하고, 의뢰자 `requestorCapabilities`(발신(치과)/수신(기공소·기공실)) 뱃지로 구분.
 - 관리자 크레딧
   - `src/pages/admin/credits/AdminCreditPage.tsx`
   - `src/pages/admin/credits/hooks/useAdminCreditPage.ts`
@@ -385,17 +385,19 @@ Notes:
   - 로그인: 공통 `/login` · 이메일+비밀번호(`POST /api/auth/login`).
   - 온보딩(`/dashboard/wizard`): 프로필 → 휴대전화 → 역할 → 사업자. 중도 이탈 후 `/signup` 재진입 시 `clearOnboardingLocalStorage`로 1/4부터.
   - 사업자 단계(`BusinessTab` + `RequestorCapabilitiesPicker`):
-    - 라벨: practice=`원내 기공실 없는 치과`, lab=`기공소 혹은 원내 기공실` (`REQUESTOR_CAPABILITY_OPTIONS`)
+    - 라벨: practice=`의뢰 발신자 (치과)`, lab=`의뢰 수신자 (기공소과 기공실)` (`REQUESTOR_CAPABILITY_LABEL` / `REQUESTOR_CAPABILITY_OPTIONS`)
     - `lab` 선택 시 사업자등록증 미검증이면 저장 차단·안내
     - `practice`-only로 등록증 건너뛰면 `practiceProfilePhase` → `PracticeBusinessProfileStep`(기공의뢰서용 치과 필수정보)
   - 온보딩 완료 랜딩(`SharedOnboardingWizardPage.resolvePostOnboardingPath`):
-    - requestor + 미검증 → `/dashboard/practice-transfers`
+    - requestor + 유료 미가용(`!lab` 또는 미검증) → `/dashboard/practice-transfers`
     - 그 외 → `/dashboard`
   - 유료 게이트:
-    - 라우트: `BusinessPaidAccessGate`로 대시보드 홈·신규의뢰 감싸기 (`businessVerified`)
-    - 사이드바: `isPaidRequestorPath`(`/dashboard`, `/dashboard/new-request*`) — 미검증 시 비활성+힌트
+    - `canUsePaidServices({ businessVerified, caps })` = `lab && verified`
+    - 라우트: `BusinessPaidAccessGate`로 대시보드 홈·신규의뢰 감싸기
+    - 사이드바: `isPaidRequestorPath`(`/dashboard`, `/dashboard/new-request*`) — 유료 미가용 시 비활성+힌트
     - 설정 탭: `PAID_REQUESTOR_SETTINGS_TABS`(`request`, `payment`) 동일
     - 소개(`/dashboard/referral-groups`): 유료 게이트 아님(모든 requestor 접근)
+    - 유형 변경 후: `notifyRequestorAccessUpdated`로 사이드바·게이트 재조회
   - 기공의뢰서 UI: `PracticeTransferRoleTabs`(발신/수신). practice→발신, lab→수신. `RequestorPracticePage`.
   - 접근 훅: `useRequestorBusinessAccess` (앵커 caps + verified 해석).
   - 계정 전환(모든 role): `GET /api/auth/colleagues`, `POST /api/auth/switch-account` — UI `AccountSwitcher`.

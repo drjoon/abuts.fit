@@ -192,36 +192,36 @@
 - 동시 차감(overspend) 방지: spend 트랜잭션에서 `CreditBalanceGuard`를 통한 앵커 단위 직렬화 적용
 - 이벤트 기반 캐시 갱신 우선, 조회 시 대규모 재계산 지양
 
-### 2.4 의뢰자 유형(치과/기공소) · 가입/온보딩 · 기공의뢰서 전송
+### 2.4 의뢰자 유형(발신/수신) · 가입/온보딩 · 기공의뢰서 전송
 
-- 가입 role SSOT: **requestor** | **salesman**만. `practice` role은 **제거**(신규 생성·공개 가입·드롭존 가입·관리자 생성 모두 금지). 기존 `practice` 계정은 `requestor`+`requestorCapabilities.practice`(무료 치과)로 마이그레이션. 관리자 UI의 별도 치과 role 필터도 제거.
-- **네이밍 SSOT**: 치과 유형 식별자는 `practice`다. 예전 `clinic`과 동일 의미 — 코드/스키마에서 `clinic`이 발견되면 `practice`로 바꾼다.
+- 가입 role SSOT: **requestor** | **salesman**만. `practice` role은 **제거**(신규 생성·공개 가입·드롭존 가입·관리자 생성 모두 금지). 기존 `practice` 계정은 `requestor`+`requestorCapabilities.practice`(의뢰 발신자·무료)로 마이그레이션. 관리자 UI의 별도 치과 role 필터도 제거.
+- **네이밍 SSOT**: 발신(치과) 유형 식별자는 `practice`다. 예전 `clinic`과 동일 의미 — 코드/스키마에서 `clinic`이 발견되면 `practice`로 바꾼다.
   - `requestorCapabilities.practice` (레거시 키 `clinic`은 normalize·백필에서만 호환)
   - `clinicName`/`clinicPhone` 등 **연락처 필드**는 별도(점진 개명). filename-rule·묶음배송·Clinic CRUD 엔티티의 `clinic`은 해당 도메인 유지.
 - 드롭존(치과 전용 공개 전송):
   - 가입·로그인도 `requestor`로 통일
-  - `requestorCapabilities`는 **practice만** 체크(`{ practice: true, lab: false }`) — 기공소(lab) 선택 UI/저장 없음
-  - 사업자 앵커는 만들지 않고 `User.requestorCapabilities` + `practiceProfile`로 치과 무료 경로 완료
+  - `requestorCapabilities`는 **practice만** 체크(`{ practice: true, lab: false }`) — 수신(lab) 선택 UI/저장 없음
+  - 사업자 앵커는 만들지 않고 `User.requestorCapabilities` + `practiceProfile`로 발신(무료) 경로 완료
 - 유형 SSOT(체크박스 OR, 최소 1개): `requestorCapabilities = { practice: boolean, lab: boolean }`
   - Org SSOT: `BusinessAnchor.requestorCapabilities`
-  - 사업자 미등록(치과 무료 경로) 시 `User.requestorCapabilities`에 임시 보존 → 사업자 생성 시 앵커로 승격
+  - 사업자 미등록(발신 무료 경로) 시 `User.requestorCapabilities`에 임시 보존 → 사업자 생성 시 앵커로 승격
   - 해석 우선순위: 앵커 → 유저 → 레거시 폴백(미기입 requestor·구 practice role 데이터 → practice / verified requestor → lab). 폴백은 마이그레이션 전까지만.
-- UI 라벨 SSOT(상품명이 아닌 사업자 유형):
-  - `practice`: **원내 기공실 없는 치과** — 무료 서비스, 사업자등록증 선택
-  - `lab`: **기공소 혹은 원내 기공실** — 유료 서비스, 사업자등록증 필수
+- UI 라벨 SSOT(`REQUESTOR_CAPABILITY_LABEL` / `REQUESTOR_CAPABILITY_OPTIONS`):
+  - `practice`: **의뢰 발신자 (치과)** — 무료 서비스, 사업자등록증 선택
+  - `lab`: **의뢰 수신자 (기공소과 기공실)** — 유료 서비스, 사업자등록증 필수
 - 가입·온보딩 흐름:
   1. `/signup` 또는 드롭존 임베디드 가입 → 계정(이메일·비번) → 로그인
   2. `/dashboard/wizard` 온보딩: 프로필 → 휴대전화 → 역할(owner/staff) → 사업자
   3. 사업자 단계에서 `RequestorCapabilitiesPicker`로 practice/lab 선택(드롭존 가입자는 practice 고정)
   4. `lab` 포함 시 사업자등록증 등록·검증 필수. `practice`-only는 등록증을 건너뛰고 `practiceProfile`(치과명·원장·담당·전화·주소·우편) 필수로 완료 가능
-  5. 온보딩 완료 후: 미검증 requestor → `/dashboard/practice-transfers`(기공의뢰서). 검증됨 → `/dashboard`
+  5. 온보딩 완료 후: 유료 미가용 requestor → `/dashboard/practice-transfers`(기공의뢰서). 유료 가용 → `/dashboard`
 - 접근성 게이트(특정 상품명이 아니라 **유료/무료** 기준):
-  - **유료**: `BusinessAnchor.status === "verified"` 필수 — 대시보드 홈·신규의뢰·설정 탭 `request`/`payment`
-  - **무료**: `practice === true`이면 사업자등록증 없이 이용(기공의뢰서 발신 등)
+  - **유료**: `lab === true` AND `BusinessAnchor.status === "verified"` — 대시보드 홈·신규의뢰·설정 탭 `request`/`payment`
+  - **무료**: `practice === true`이면 사업자등록증 없이 이용(기공의뢰서 발신 등). practice-only(+검증 여부와 무관)는 유료 페이지 접근 불가
   - `lab === true`이면 온보드/설정 전환 시 사업자등록증 등록·검증 필수
 - 기공의뢰서(PracticeTransfer) 권한:
-  - **발신**: `requestor` + `practice`
-  - **수신**: `requestor` + `lab`
+  - **발신**: `requestor` + `practice` (의뢰 발신자)
+  - **수신**: `requestor` + `lab` (의뢰 수신자)
   - 제출은 Request 생성 경유 금지. 저장 SSOT: `PracticeTransfer`
 - SSOT API:
   - 생성: `POST /api/practice/transfers`
@@ -229,8 +229,8 @@
   - 조회(수신): `GET /api/practice/transfers/received`
   - 취소: `POST /api/practice/transfers/cancel-batch`
 - 제조사 워크시트 조회에서 practice 전송 태그 의뢰 제외
-- 크레딧/정산은 유료(검증된 기공소) 경로에만 해당. 치과(practice-only) 무료 경로는 포함하지 않음
-- 소개(리퍼럴) 페이지·링크: 치과(practice) 포함 모든 requestor가 접근 가능(사업자 미등록·subRole 미기입 포함). 소개 귀속(`referredByAnchorId`)·그룹 할인 적용은 추천인 사업자 앵커 등록 이후. 사업자등록증 업로드 후 `lab` 체크·검증되면 유료 소개 혜택 경로로 이어짐
+- 크레딧/정산은 유료(검증된 수신자·lab) 경로에만 해당. 발신-only(practice-only) 무료 경로는 포함하지 않음
+- 소개(리퍼럴) 페이지·링크: 발신(practice) 포함 모든 requestor가 접근 가능(사업자 미등록·subRole 미기입 포함). 소개 귀속(`referredByAnchorId`)·그룹 할인 적용은 추천인 사업자 앵커 등록 이후. 사업자등록증 업로드 후 `lab` 체크·검증되면 유료 소개 혜택 경로로 이어짐
 - 공통 헬퍼/권한: `web/backend/utils/requestorCapabilities.js`, `web/frontend/src/shared/business/requestorCapabilities.ts`, `practiceTransferAuth.middleware.js`
 - 레거시 혼입 경로(예: `/api/requests/practice/*`)는 제거 대상으로 관리
 - 백필: `web/backend/scripts/db/backfill-requestor-capabilities.js` (`--apply`)

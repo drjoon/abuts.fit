@@ -256,7 +256,7 @@ export async function updateMyBusiness(req, res) {
         }
       : null;
 
-    // 의뢰자 유형(치과/기공소 체크박스) 단독 저장 — 사업자 미생성(치과 무료) 경로 포함
+    // 의뢰자 유형(발신/수신 체크박스) 단독 저장 — 사업자 미생성(발신 무료) 경로 포함
     if (
       requestorCapabilitiesProvided &&
       businessType === "requestor" &&
@@ -265,7 +265,7 @@ export async function updateMyBusiness(req, res) {
       if (!hasAnyRequestorCapability(nextRequestorCapabilities)) {
         return res.status(400).json({
           success: false,
-          message: "치과 또는 기공소 중 하나 이상 선택해주세요.",
+          message: "의뢰 발신자(치과) 또는 의뢰 수신자(기공소과 기공실) 중 하나 이상 선택해주세요.",
         });
       }
 
@@ -278,7 +278,7 @@ export async function updateMyBusiness(req, res) {
           success: false,
           reason: "business_license_required",
           message:
-            "기공소를 선택하려면 사업자등록증을 등록·검증해야 합니다.",
+            "의뢰 수신자(기공소과 기공실)을 선택하려면 사업자등록증을 등록·검증해야 합니다.",
         });
       }
 
@@ -512,7 +512,7 @@ export async function updateMyBusiness(req, res) {
       if (!hasAnyRequestorCapability(nextRequestorCapabilities)) {
         return res.status(400).json({
           success: false,
-          message: "치과 또는 기공소 중 하나 이상 선택해주세요.",
+          message: "의뢰 발신자(치과) 또는 의뢰 수신자(기공소과 기공실) 중 하나 이상 선택해주세요.",
         });
       }
       const willBeVerified =
@@ -530,7 +530,7 @@ export async function updateMyBusiness(req, res) {
           success: false,
           reason: "business_license_required",
           message:
-            "기공소를 선택하려면 사업자등록증을 등록·검증해야 합니다.",
+            "의뢰 수신자(기공소과 기공실)을 선택하려면 사업자등록증을 등록·검증해야 합니다.",
         });
       }
       patch.requestorCapabilities = nextRequestorCapabilities;

@@ -226,7 +226,7 @@ export const authorize = (roles = [], options = {}) => {
         const hasRequiredSubRole = subRoles.includes(effectiveSubRole);
 
         // owner+staff 동시 허용 라우트에서만: requestor + subRole 비어있음 통과
-        // - 사업자 미등록(치과 무료 경로): 본인 계정 소유자로 간주
+        // - 사업자 미등록(발신 무료 경로): 본인 계정 소유자로 간주
         // - 사업자 등록됨 + subRole 미기입: 레거시 호환
         // (owner 전용 라우트에는 적용하지 않음)
         const allowsOwnerOrStaff =

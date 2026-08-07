@@ -327,12 +327,12 @@ const getRequestorCapabilityBadges = (
     <>
       {caps.practice ? (
         <Badge className="bg-violet-100 text-violet-700 border-violet-200">
-          치과(무료)
+          발신(치과)
         </Badge>
       ) : null}
       {caps.lab ? (
         <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200">
-          기공소
+          수신(기공소·기공실)
         </Badge>
       ) : null}
     </>

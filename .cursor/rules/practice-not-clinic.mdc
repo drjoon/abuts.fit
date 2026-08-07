@@ -5,7 +5,13 @@ alwaysApply: true
 
 # Naming: clinic → practice
 
-치과(무료 경로) 유형·권한 식별자의 SSOT는 **`practice`** 다. 예전 `clinic`과 동일 의미.
+의뢰 발신자(치과·무료 경로) 유형·권한 식별자의 SSOT는 **`practice`** 다. 예전 `clinic`과 동일 의미.
+
+## UI 라벨 SSOT
+
+- `practice` → **의뢰 발신자 (치과)**
+- `lab` → **의뢰 수신자 (기공소과 기공실)**
+- 상수: `REQUESTOR_CAPABILITY_LABEL` / `REQUESTOR_CAPABILITY_OPTIONS`
 
 ## Do
 

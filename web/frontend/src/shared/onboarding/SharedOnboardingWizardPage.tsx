@@ -7,13 +7,21 @@ import { Navigate, useNavigate, useSearchParams } from "react-router-dom";
 import { useAuthStore } from "@/store/useAuthStore";
 import { apiFetch } from "@/shared/api/apiClient";
 import { SettingsWizard } from "./wizard/SettingsWizard";
+import { canUsePaidServices } from "@/shared/business/requestorCapabilities";
 
 const resolvePostOnboardingPath = (user: {
   role?: string | null;
   businessVerified?: boolean;
+  requestorCapabilities?: { practice?: boolean; lab?: boolean } | null;
 } | null) => {
-  // 유료 미검증(치과 무료) 경로는 대시보드 대신 기공의뢰서로
-  if (user?.role === "requestor" && !user?.businessVerified) {
+  // 유료 미가용(practice-only·미검증)은 대시보드 대신 기공의뢰서로
+  if (
+    user?.role === "requestor" &&
+    !canUsePaidServices({
+      businessVerified: Boolean(user?.businessVerified),
+      caps: user?.requestorCapabilities,
+    })
+  ) {
     return "/dashboard/practice-transfers";
   }
   return "/dashboard";

@@ -39,6 +39,7 @@ import {
   type PracticeTransferDialogSummaryItem,
 } from "@/shared/components/PracticeTransferDetailChatDialog";
 import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
+import { REQUESTOR_CAPABILITY_LABEL } from "@/shared/business/requestorCapabilities";
 import {
   PracticeTransferRoleTabs,
   type PracticeTransferRoleMode,
@@ -211,8 +212,9 @@ export default function RequestorPracticePage() {
           <CardHeader>
             <CardTitle className="text-lg">사업자 유형 선택 필요</CardTitle>
             <CardDescription>
-              무료/유료 서비스 이용을 위해 설정 &gt; 사업자에서 원내 기공실
-              없는 치과 또는 기공소 혹은 원내 기공실을 선택해주세요.
+              무료/유료 서비스 이용을 위해 설정 &gt; 사업자에서{" "}
+              {REQUESTOR_CAPABILITY_LABEL.practice} 또는{" "}
+              {REQUESTOR_CAPABILITY_LABEL.lab}을 선택해주세요.
             </CardDescription>
           </CardHeader>
           <CardContent>

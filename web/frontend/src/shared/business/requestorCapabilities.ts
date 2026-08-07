@@ -27,14 +27,26 @@ export const hasAnyRequestorCapability = (
   return c.practice || c.lab;
 };
 
-/** 기공소(lab) 선택 시 사업자등록증(검증) 필수 */
+/** 수신자(lab) 선택 시 사업자등록증(검증) 필수 */
 export const requiresBusinessLicense = (
   caps?: RequestorCapabilitiesInput | null,
 ) => Boolean(normalizeRequestorCapabilities(caps).lab);
 
-/** 유료 서비스 — 사업자 검증 여부 */
-export const canUsePaidServices = (businessVerified?: boolean) =>
-  Boolean(businessVerified);
+/** 유료 서비스 — lab 선택 + 사업자 검증 */
+export const canUsePaidServices = (args?: {
+  businessVerified?: boolean;
+  caps?: RequestorCapabilitiesInput | null;
+}) =>
+  Boolean(args?.businessVerified) &&
+  Boolean(normalizeRequestorCapabilities(args?.caps).lab);
+
+/** 사업자 me 갱신 후 사이드바·유료게이트 재조회 */
+export const REQUESTOR_ACCESS_UPDATED_EVENT = "abuts:requestor-access-updated";
+
+export const notifyRequestorAccessUpdated = () => {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new CustomEvent(REQUESTOR_ACCESS_UPDATED_EVENT));
+};
 
 /** 의뢰자 사이드바·라우트 중 유료(사업자 검증) 필요 경로 */
 export const isPaidRequestorPath = (href: string) => {
@@ -47,10 +59,15 @@ export const isPaidRequestorPath = (href: string) => {
 
 export const PAID_REQUESTOR_SETTINGS_TABS = new Set(["request", "payment"]);
 
-export const PAID_ACCESS_DISABLED_HINT =
-  "유료 서비스입니다. 사업자등록증을 등록·검증한 뒤 이용할 수 있습니다. 설정 > 사업자에서 등록하세요.";
+export const REQUESTOR_CAPABILITY_LABEL = {
+  practice: "의뢰 발신자 (치과)",
+  lab: "의뢰 수신자 (기공소과 기공실)",
+} as const;
 
-/** 무료 서비스 — 치과(practice) 선택 */
+export const PAID_ACCESS_DISABLED_HINT =
+  `유료 서비스입니다. ${REQUESTOR_CAPABILITY_LABEL.lab}을 선택하고 사업자등록증을 검증한 뒤 이용할 수 있습니다. 설정 > 사업자에서 설정하세요.`;
+
+/** 무료 서비스 — 의뢰 발신자(practice) 선택 */
 export const canUseFreeServices = (
   caps?: RequestorCapabilitiesInput | null,
 ) => Boolean(normalizeRequestorCapabilities(caps).practice);
@@ -89,12 +106,14 @@ export const resolveRequestorCapabilities = (args?: {
 export const REQUESTOR_CAPABILITY_OPTIONS = [
   {
     key: "practice" as const,
-    label: "원내 기공실 없는 치과",
-    description: "무료 서비스를 이용합니다. 사업자등록증은 선택 사항입니다.",
+    label: REQUESTOR_CAPABILITY_LABEL.practice,
+    description:
+      "기공의뢰서를 발신합니다. 무료 서비스이며 사업자등록증은 선택 사항입니다.",
   },
   {
     key: "lab" as const,
-    label: "기공소 혹은 원내 기공실",
-    description: "유료 서비스를 이용합니다. 사업자등록증 등록이 필요합니다.",
+    label: REQUESTOR_CAPABILITY_LABEL.lab,
+    description:
+      "기공의뢰서를 수신합니다. 유료 서비스이며 사업자등록증 등록이 필요합니다.",
   },
 ];

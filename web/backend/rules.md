@@ -308,8 +308,9 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   - 가입 role SSOT: `requestor` | `salesman`만. `practice` role **제거**(신규 생성 금지).
   - 필드: `BusinessAnchor.requestorCapabilities` / `User.requestorCapabilities` = `{ practice, lab }` (체크박스 OR, 최소 1개). 레거시 키 `clinic`→`practice`.
   - 헬퍼 SSOT: `utils/requestorCapabilities.js`
-    - `normalize` / `hasAny` / `requiresBusinessLicense`(lab) / `canUsePaidServices`(verified) / `canUseFreeServices`(practice)
-    - `canSendPracticeTransfer`(practice) / `canReceivePracticeTransfer`(lab)
+    - `normalize` / `hasAny` / `requiresBusinessLicense`(lab) / `canUsePaidServices`(lab+verified) / `canUseFreeServices`(practice)
+    - `canSendPracticeTransfer`(practice·발신) / `canReceivePracticeTransfer`(lab·수신)
+    - UI 라벨: practice=`의뢰 발신자 (치과)`, lab=`의뢰 수신자 (기공소과 기공실)` (프론트 `REQUESTOR_CAPABILITY_LABEL`과 동기)
     - `resolveRequestorCapabilities`: 앵커 → 유저 → 마이그레이션 전 폴백(구 practice role·미기입 requestor→practice, verified requestor→lab)
   - 사업자 저장(`business.update.controller.js`):
     - body `requestorCapabilities` 수신 시 normalize·최소 1개 검증
@@ -319,7 +320,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
     - 발신: `authorizePracticeTransferSend` — admin | (`requestor` + practice)
     - 수신: `authorizePracticeTransferReceive` — admin | (`requestor` + lab)
   - 공개 가입: `POST /api/auth/register` — `requestor`/`salesman`. signup draft: `models/signupDraft.model.js`, `PUT/GET/DELETE /api/auth/signup/draft`(7일 TTL).
-  - 치과 무료 경로 프로필: `PUT /api/users/profile`의 `practiceProfile`(clinicName, directorName, staffName, clinicPhone, phone, address, zipCode).
+  - 발신(무료) 경로 프로필: `PUT /api/users/profile`의 `practiceProfile`(clinicName, directorName, staffName, clinicPhone, phone, address, zipCode).
   - 백필: `scripts/db/backfill-requestor-capabilities.js` (`--apply`) + practice→requestor+practice 마이그레이션.
   - 크레딧/정산 집계는 유료(verified lab) 경로만. practice-only 무료 경로 확장 금지.
   - 소개 접근은 requestor 전체 허용; 귀속·그룹 할인은 추천인 앵커 등록 이후.

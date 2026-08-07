@@ -4,6 +4,7 @@
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import {
+  REQUESTOR_CAPABILITY_LABEL,
   REQUESTOR_CAPABILITY_OPTIONS,
   type RequestorCapabilities,
   normalizeRequestorCapabilities,
@@ -15,7 +16,7 @@ type Props = {
   onChange: (next: RequestorCapabilities) => void;
   disabled?: boolean;
   className?: string;
-  /** 기공소 선택 시 미검증이면 안내 */
+  /** 수신자(lab) 선택 시 미검증이면 안내 */
   labRequiresLicenseHint?: boolean;
 };
 
@@ -42,8 +43,8 @@ export const RequestorCapabilitiesPicker = ({
       <div>
         <p className="text-sm font-medium text-slate-900">사업자 유형</p>
         <p className="mt-1 text-xs text-slate-500">
-          해당하는 항목을 모두 선택하세요. 유료 서비스는 사업자등록증 검증 후
-          이용할 수 있습니다.
+          해당하는 항목을 모두 선택하세요. 유료 서비스(의뢰 수신)는
+          사업자등록증 검증 후 이용할 수 있습니다.
         </p>
       </div>
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
@@ -86,14 +87,14 @@ export const RequestorCapabilitiesPicker = ({
       </div>
       {labRequiresLicenseHint && caps.lab && (
         <p className="text-xs text-amber-700">
-          기공소 혹은 원내 기공실을 선택한 경우 사업자등록증을 등록·검증해야
-          합니다.
+          {REQUESTOR_CAPABILITY_LABEL.lab}을 선택한 경우 사업자등록증을
+          등록·검증해야 합니다.
         </p>
       )}
       {!caps.practice && !caps.lab && (
         <p className="text-xs text-destructive">
-          원내 기공실 없는 치과 또는 기공소 혹은 원내 기공실 중 하나 이상
-          선택해주세요.
+          {REQUESTOR_CAPABILITY_LABEL.practice} 또는{" "}
+          {REQUESTOR_CAPABILITY_LABEL.lab} 중 하나 이상 선택해주세요.
         </p>
       )}
     </div>

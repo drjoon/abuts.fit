@@ -436,7 +436,7 @@ export async function changeUserRole(req, res) {
       "salesman",
       "devops",
     ];
-    // 레거시: admin UI/클라이언트가 practice role을 보내면 requestor+practice(무료 치과)로 승격
+    // 레거시: admin UI/클라이언트가 practice role을 보내면 requestor+practice(발신·무료)로 승격
     const normalizedRole = role === "practice" ? "requestor" : role;
     if (!validRoles.includes(normalizedRole)) {
       return res

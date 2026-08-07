@@ -47,7 +47,7 @@ const userSchema = new mongoose.Schema(
       createdAt: { type: Date, default: null },
       updatedAt: { type: Date, default: null },
     },
-    // 사업자 미등록(치과 무료 경로) 시에도 유형을 보존. 사업자 생성 후 BusinessAnchor가 SSOT.
+    // 사업자 미등록(발신 무료 경로) 시에도 유형을 보존. 사업자 생성 후 BusinessAnchor가 SSOT.
     requestorCapabilities: {
       // SSOT: practice (레거시 clinic 키는 normalize/백필로 승격)
       practice: { type: Boolean, default: false },

@@ -9,6 +9,7 @@ import {
   invalidateBusinessMeCache,
 } from "@/shared/components/business/settings/business/businessMeCache";
 import {
+  REQUESTOR_ACCESS_UPDATED_EVENT,
   canReceivePracticeTransfer,
   canSendPracticeTransfer,
   canUseFreeServices,
@@ -61,6 +62,7 @@ export const useRequestorBusinessAccess = () => {
       setCapabilities(
         resolveRequestorCapabilities({
           anchorCaps: data?.requestorCapabilities,
+          userCaps: user?.requestorCapabilities,
           userRole: user?.role,
           businessVerified: verified,
         }),
@@ -69,6 +71,7 @@ export const useRequestorBusinessAccess = () => {
       setBusinessVerified(false);
       setCapabilities(
         resolveRequestorCapabilities({
+          userCaps: user?.requestorCapabilities,
           userRole: user?.role,
           businessVerified: false,
         }),
@@ -76,10 +79,26 @@ export const useRequestorBusinessAccess = () => {
     } finally {
       setLoading(false);
     }
-  }, [businessType, token, user?.businessVerified, user?.role]);
+  }, [
+    businessType,
+    token,
+    user?.businessVerified,
+    user?.requestorCapabilities,
+    user?.role,
+  ]);
 
   useEffect(() => {
     void refresh();
+  }, [refresh]);
+
+  useEffect(() => {
+    const onUpdated = () => {
+      void refresh();
+    };
+    window.addEventListener(REQUESTOR_ACCESS_UPDATED_EVENT, onUpdated);
+    return () => {
+      window.removeEventListener(REQUESTOR_ACCESS_UPDATED_EVENT, onUpdated);
+    };
   }, [refresh]);
 
   const caps = normalizeRequestorCapabilities(capabilities);
@@ -97,7 +116,7 @@ export const useRequestorBusinessAccess = () => {
     capabilities: caps,
     hasCapability: hasAnyRequestorCapability(caps),
     requiresLicense: requiresBusinessLicense(caps),
-    canUsePaid: canUsePaidServices(businessVerified),
+    canUsePaid: canUsePaidServices({ businessVerified, caps }),
     canUseFree: canUseFreeServices(caps),
     canSendTransfer: canSendPracticeTransfer(caps) || user?.role === "practice",
     canReceiveTransfer: canReceivePracticeTransfer(caps),

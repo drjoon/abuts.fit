@@ -55,8 +55,10 @@ import {
 } from "@/shared/components/business/settings/business/businessMeCache";
 import { RequestorCapabilitiesPicker } from "@/shared/components/business/RequestorCapabilitiesPicker";
 import {
+  REQUESTOR_CAPABILITY_LABEL,
   hasAnyRequestorCapability,
   normalizeRequestorCapabilities,
+  notifyRequestorAccessUpdated,
   requiresBusinessLicense,
   resolveRequestorCapabilities,
   type RequestorCapabilities,
@@ -89,7 +91,7 @@ export const BusinessTab = ({
   onRequirePracticeProfile,
 }: BusinessTabProps) => {
   const { toast } = useToast();
-  const { token, user, loginWithToken } = useAuthStore();
+  const { token, user, setUser, loginWithToken } = useAuthStore();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const nextPath = (searchParams.get("next") || "").trim();
@@ -251,7 +253,7 @@ export const BusinessTab = ({
     }
   }, [membershipMgmt.membership, setupMode]);
 
-  // 의뢰자 유형(치과/기공소) 로드
+  // 의뢰자 유형(발신/수신) 로드
   useEffect(() => {
     if (!isRequestorBusiness || !token) {
       setCapabilitiesLoaded(true);
@@ -298,8 +300,7 @@ export const BusinessTab = ({
       if (!hasAnyRequestorCapability(normalized)) {
         toast({
           title: "유형을 선택해주세요",
-          description:
-            "원내 기공실 없는 치과 또는 기공소 혹은 원내 기공실 중 하나 이상 선택해주세요.",
+          description: `${REQUESTOR_CAPABILITY_LABEL.practice} 또는 ${REQUESTOR_CAPABILITY_LABEL.lab} 중 하나 이상 선택해주세요.`,
           variant: "destructive",
         });
         return false;
@@ -310,8 +311,7 @@ export const BusinessTab = ({
       ) {
         toast({
           title: "사업자등록증이 필요합니다",
-          description:
-            "기공소 혹은 원내 기공실을 선택하려면 사업자등록증을 등록·검증해야 합니다.",
+          description: `${REQUESTOR_CAPABILITY_LABEL.lab}을 선택하려면 사업자등록증을 등록·검증해야 합니다.`,
           variant: "destructive",
         });
         return false;
@@ -339,6 +339,10 @@ export const BusinessTab = ({
         }
         setRequestorCapabilities(normalized);
         invalidateBusinessMeCache({ token, businessType });
+        if (user) {
+          setUser({ ...user, requestorCapabilities: normalized });
+        }
+        notifyRequestorAccessUpdated();
         return true;
       } catch {
         toast({
@@ -356,8 +360,10 @@ export const BusinessTab = ({
       businessDataMgmt.validationSucceeded,
       businessType,
       isRequestorBusiness,
+      setUser,
       toast,
       token,
+      user,
     ],
   );
 

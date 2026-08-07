@@ -1226,7 +1226,7 @@ async function practiceRegister(req, res) {
 
     const referralCode = await ensureUniqueReferralCode(5);
 
-    // 의뢰인 통합: role=requestor + practice. 사업자 앵커는 만들지 않음(무료 치과 경로).
+    // 의뢰인 통합: role=requestor + practice. 사업자 앵커는 만들지 않음(발신 무료 경로).
     const user = new User({
       name: staffName || clinicName,
       email: normalizedEmail,

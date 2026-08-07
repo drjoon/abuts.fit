@@ -30,7 +30,7 @@ const businessAnchorSchema = new mongoose.Schema(
       default: "requestor",
       index: true,
     },
-    // 의뢰자 사업자 유형 (체크박스 OR): 치과=무료 경로, 기공소=유료 전제
+    // 의뢰자 사업자 유형 (체크박스 OR): practice=발신(치과·무료), lab=수신(기공소·기공실·유료)
     // related files:
     // - web/backend/controllers/businesses/business.controller.js
     // - web/frontend/src/shared/business/requestorCapabilities.ts
