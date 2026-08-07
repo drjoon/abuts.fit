@@ -133,7 +133,7 @@ export const BusinessLicenseUpload = forwardRef<
                   <TooltipTrigger asChild>
                     <button
                       type="button"
-                      className="mt-3 inline-flex items-center gap-1.5 text-xs text-slate-500 underline-offset-2 hover:text-slate-700 hover:underline"
+                      className="mt-3 inline-flex items-center gap-1.5 text-xs font-medium text-primary underline-offset-2 hover:text-primary/80 hover:underline"
                     >
                       <Info className="h-3.5 w-3.5 shrink-0" />
                       업로드하지 않아도 다음으로 진행할 수 있습니다
@@ -143,8 +143,8 @@ export const BusinessLicenseUpload = forwardRef<
                     side="bottom"
                     className="max-w-xs text-left leading-relaxed"
                   >
-                    사업자등록증을 등록하지 않으면 유료 서비스 이용이 제한되며,
-                    무료 서비스만 사용할 수 있습니다.
+                    사업자등록증을 업로드하지 않으면 유료 서비스 이용이
+                    제한됩니다.
                   </TooltipContent>
                 </Tooltip>
               </TooltipProvider>

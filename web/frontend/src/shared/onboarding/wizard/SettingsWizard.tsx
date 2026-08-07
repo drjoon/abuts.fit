@@ -465,7 +465,7 @@ export const SettingsWizard = ({
       case "role":
         return "max-w-2xl";
       case "business":
-        return "max-w-2xl";
+        return "max-w-3xl";
       default:
         return "max-w-xl";
     }

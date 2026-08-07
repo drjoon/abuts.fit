@@ -114,6 +114,6 @@ export const REQUESTOR_CAPABILITY_OPTIONS = [
     key: "lab" as const,
     label: REQUESTOR_CAPABILITY_LABEL.lab,
     description:
-      "기공의뢰서 수신은 무료이지만, 그 외 유료 서비스 사용을 위해서는 사업자등록증 등록이 필요합니다.",
+      "기공의뢰서 수신은 무료이지만,\n사업자등록증 등록시 유료 서비스 사용 가능합니다.",
   },
 ];

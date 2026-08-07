@@ -218,7 +218,7 @@ type WorksheetSummaryResponse = {
 };
 
 type SidebarSection = {
-  title: string;
+  title?: string;
   items: SidebarItem[];
 };
 
@@ -252,8 +252,10 @@ const adminSidebarSections: SidebarSection[] = [
       { icon: Send, label: "메시지", href: "/dashboard/sms" },
       { icon: Mail, label: "메일", href: "/dashboard/mail" },
       { icon: MessageSquare, label: "문의", href: "/dashboard/inquiries" },
-      { icon: Settings, label: "설정", href: "/dashboard/settings" },
     ],
+  },
+  {
+    items: [{ icon: Settings, label: "설정", href: "/dashboard/settings" }],
   },
 ];
 
@@ -976,8 +978,11 @@ export const DashboardLayout = () => {
             {adminMenuSections ? (
               <div className="space-y-4 lg:space-y-5">
                 {adminMenuSections.map((section) => (
-                  <div key={section.title} className="space-y-2">
-                    {!isCollapsed && (
+                  <div
+                    key={section.title ?? section.items[0]?.href}
+                    className="space-y-2"
+                  >
+                    {!isCollapsed && section.title && (
                       <div className="px-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground/80">
                         {section.title}
                       </div>
