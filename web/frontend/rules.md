@@ -46,6 +46,18 @@ Notes:
   - `src/shared/realtime/useAppEventDebouncedReload.ts`
   - `src/shared/realtime/creditBalanceEvent.ts`
   - `websocket-realtime-update-checklist.md` (웹소켓 실시간 업데이트 자동 점검 체크리스트)
+- 의뢰자 가입·유형·게이트
+  - `src/features/auth/SignupPage.tsx` (공개 가입: requestor|salesman)
+  - `src/shared/business/requestorCapabilities.ts`
+  - `src/shared/business/useRequestorBusinessAccess.ts`
+  - `src/shared/business/BusinessPaidAccessGate.tsx`
+  - `src/shared/business/PracticeTransferRoleTabs.tsx`
+  - `src/shared/components/business/RequestorCapabilitiesPicker.tsx`
+  - `src/shared/components/business/settings/BusinessTab.tsx`
+  - `src/shared/onboarding/SharedOnboardingWizardPage.tsx`
+  - `src/shared/onboarding/wizard/SettingsWizard.tsx`
+  - `src/shared/onboarding/wizard/steps/BusinessStep.tsx`
+  - `src/shared/onboarding/wizard/steps/PracticeBusinessProfileStep.tsx`
 - 의뢰자 신규의뢰/치과
   - `src/pages/requestor/new_request/NewRequestPage.tsx`
   - `src/pages/requestor/new_request/components/NewRequestShippingSection.tsx`
@@ -365,47 +377,45 @@ Notes:
     - `src/pages/manufacturer/worksheet/custom_abutment/components/WorksheetCardGrid.tsx`
     - `src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx`
 
-- 의뢰자 유형 통합(2026-08): `User.role=requestor` + `requestorCapabilities.{clinic,lab}` 체크박스(OR).
-  - UI: 온보드 4/4·설정>사업자 `RequestorCapabilitiesPicker`
-  - 유료 게이트: `BusinessPaidAccessGate` (`businessVerified`)
-  - 헬퍼: `src/shared/business/requestorCapabilities.ts`, `useRequestorBusinessAccess.ts`
-  - 기공의뢰서: clinic=발신, lab=수신 (`RequestorPracticePage` 탭). 레거시 `practice` role은 마이그레이션 전까지 호환.
+- 의뢰자 가입·유형·유료게이트 SSOT (2026-08, 루트 §2.4 상세)
+  - 가입 role: `requestor` | `salesman`만. `practice` role **제거**(공개 가입·드롭존·관리자 신규 생성 금지). 기존 practice는 `requestor`+`clinic` 마이그레이션.
+  - 공개 가입(`/signup`, `SignupPage`): 역할 선택 `requestor` | `salesman`만. 복원 draft에 `practice`가 있으면 requestor로 전환.
+  - 가입 API: `POST /api/auth/register`. 중간 상태: `localStorage`(signupWizardProgress/signupFormData) + `PUT/GET/DELETE /api/auth/signup/draft`(7일 TTL). 가입 완료 시 삭제.
+  - 로그인: 공통 `/login` · 이메일+비밀번호(`POST /api/auth/login`).
+  - 온보딩(`/dashboard/wizard`): 프로필 → 휴대전화 → 역할 → 사업자. 중도 이탈 후 `/signup` 재진입 시 `clearOnboardingLocalStorage`로 1/4부터.
+  - 사업자 단계(`BusinessTab` + `RequestorCapabilitiesPicker`):
+    - 라벨: clinic=`원내 기공실 없는 치과`, lab=`기공소 혹은 원내 기공실` (`REQUESTOR_CAPABILITY_OPTIONS`)
+    - `lab` 선택 시 사업자등록증 미검증이면 저장 차단·안내
+    - `clinic`-only로 등록증 건너뛰면 `clinicProfilePhase` → `PracticeBusinessProfileStep`(기공의뢰서용 치과 필수정보)
+  - 온보딩 완료 랜딩(`SharedOnboardingWizardPage.resolvePostOnboardingPath`):
+    - requestor + 미검증 → `/dashboard/practice-transfers`
+    - 그 외 → `/dashboard`
+  - 유료 게이트:
+    - 라우트: `BusinessPaidAccessGate`로 대시보드 홈·신규의뢰 감싸기 (`businessVerified`)
+    - 사이드바: `isPaidRequestorPath`(`/dashboard`, `/dashboard/new-request*`) — 미검증 시 비활성+힌트
+    - 설정 탭: `PAID_REQUESTOR_SETTINGS_TABS`(`request`, `payment`) 동일
+    - 소개(`/dashboard/referral-groups`): 유료 게이트 아님(모든 requestor 접근)
+  - 기공의뢰서 UI: `PracticeTransferRoleTabs`(발신/수신). clinic→발신, lab→수신. `RequestorPracticePage`.
+  - 접근 훅: `useRequestorBusinessAccess` (앵커 caps + verified 해석).
+  - 계정 전환(모든 role): `GET /api/auth/colleagues`, `POST /api/auth/switch-account` — UI `AccountSwitcher`.
 
 - practice 전송 상태 표준(치과/의뢰자 공통): `발송완료 | 취소 | 수신완료 | 다운로드완료`
   - 치과 전송 내역(`GET /api/practice/transfers/my`)은 동일 치과 businessAnchor 구성원 전송을 공유한다.
   - practice 페이지 상태 정규화 기준: `src/pages/practice/PracticeFileTransferPage.tsx`의 `toStatusLabel`
   - 의뢰자 치과 페이지 상태 배지 기준: `src/pages/requestor/practice/RequestorPracticePage.tsx` (`isRead/requestorReadAt`, `isDownloaded/requestorDownloadedAt`)
 
-- 치과(practice) 가입 절차 SSOT
-  - 일반 회원가입(`src/features/auth/SignupPage.tsx`)에서 `practice`는 의뢰자(`requestor`)/영업자(`salesman`)와 동일한 가입·로그인·온보딩 경로를 사용합니다.
-  - 가입 API는 `POST /api/auth/register` (`role: "practice"`)이며, 소개코드(선택) → 계정 정보 → 이메일 인증(소셜 제외) 순서로 진행합니다.
-  - 로그인 페이지(`/login`)도 공유하며 이메일+비밀번호(`POST /api/auth/login`)만 사용합니다.
-  - 사이드바 하단 계정 팝업에서 같은 사업자(`businessAnchorId`) 동료 계정으로 전환할 수 있습니다(모든 role).
-    - 목록: `GET /api/auth/colleagues`
-    - 전환: `POST /api/auth/switch-account` (대상 계정 비밀번호)
-    - UI: `src/features/layout/AccountSwitcher.tsx` + `DashboardLayout` 계정 드롭다운
-  - 레거시 치과명 로그인(`POST /api/auth/practice/login`)은 공통 `/login`에서는 받지 않으며, 하위 호환 API로만 유지합니다.
-  - 가입 후 `/dashboard/wizard` 온보딩(프로필 → 휴대전화 → 역할 → 사업자)을 강제합니다.
-  - 회원가입(`/signup`) 중간 단계(역할·스텝·소개코드·메일발송·폼)는 `localStorage`(signupWizardProgress/signupFormData)와 서버 `PUT/GET/DELETE /api/auth/signup/draft`(sessionId, 7일 TTL)에 저장되어 새로고침 후에도 이어서 진행합니다. 가입 완료 시 삭제합니다.
-  - 온보딩을 중도에 그만두고 `/signup`으로 다시 들어오면 `clearOnboardingLocalStorage`로 위저드 localStorage를 지우고 1/4부터 다시 시작합니다.
-  - practice owner 온보딩 사업자 단계는 사업자등록증 업로드를 받지 않습니다. 대신 치과 필수 정보(`clinicName`, `directorName`, `staffName`, `clinicPhone`, `phone`, `address`, `zipCode`)를 입력받아 `PUT /api/users/profile`의 `practiceProfile`로 저장합니다.
-  - 공개 드롭존(`PracticeDropzonePage`)은 전송 흐름을 끊지 않도록 Step 2에 임베디드 로그인/가입/비밀번호 변경 UI를 유지합니다.
-  - 드롭존 의뢰 폼(기공소·환자·치아·메모·날짜)은 대시보드와 동일 localStorage 키(`practice_transfer_form_local_v1`)에 함께 저장한다. 첨부 파일 캐시(`practice_dropzone_file_cache_meta_v1` + IndexedDB)도 공유한다.
-  - 드롭존 「로그인 후 계속하기」·회원가입·세션 「의뢰 제출하기」는 드롭존에서 바로 제출한 뒤 `/practice/dashboard`로 이동한다. 제출 후 공유 폼 캐시는 비우고, 제출 완료 토스트를 약 10초간 눈에 띄게 표시한다.
-  - 드롭존 가입 API는 `POST /api/auth/practice/register`이며, 필수값은 `email`, `clinicName`, `directorName`, `staffName`, `password`, `clinicPhone`(치과 전화), `phone`(담당자 휴대폰), `address`, `zipCode`입니다.
-  - 드롭존 가입 전 이메일·담당자 휴대폰 인증이 필요합니다.
-    - 이메일: `POST /api/auth/signup/email-verification/send` → `POST /api/auth/signup/email-verification/verify` → `GET /api/auth/signup/email-verification/status`
-    - 휴대폰: `POST /api/auth/signup/phone-verification/send` → `POST /api/auth/signup/phone-verification/verify` → `GET /api/auth/signup/phone-verification/status`
-    - 인증 완료 상태는 서버(`SignupVerification`)가 SSOT이며, 드롭존은 로컬스토리지(`practice_dropzone_signup_verification_v1`)에 캐시해 새로고침 후에도 복구합니다.
-  - 드롭존 비회원 문의 모달(`GuestChatModal`)은 드롭존 라이트 테마(흰 카드/슬레이트 텍스트/스카이 CTA)와 동일 스타일을 유지합니다.
-  - 드롭존 로그인은 이메일+비밀번호(`POST /api/auth/login`)를 사용하고, practice role만 허용합니다.
-  - 드롭존 비밀번호 변경은 `POST /api/auth/practice/password/change`에 `email` + `phone` + `newPassword`를 사용합니다.
-  - 레거시 치과명 로그인(`POST /api/auth/practice/login`) API는 하위 호환용으로 유지하되, 공통 `/login` UI에서는 노출하지 않습니다.
-  - 관리자 사용자/사업자 화면(`src/pages/admin/users/AdminUserManagement.tsx`, `src/pages/admin/businesses/AdminBusinessPage.tsx`)에서는 `practice`를 별도 역할(`치과`)로 표시/필터링해야 합니다.
-  - 정책 고정: practice는 전송 전용 role이므로 크레딧/정산/추천(리퍼럴) UI(탭/카드/집계) 범위로 확장하지 않습니다.
-  - 강제 분리: practice 화면/훅은 `Request` 도메인 API(`/api/requests/*`)를 호출하지 않고,
-    `PracticeTransfer` 도메인 API(`/api/practice/transfers/*`)만 사용합니다.
-  - 레거시 혼입 경로(예: `/api/requests/practice/*`, practice의 Request draft 연동)는 발견 즉시 제거/치환합니다.
+- 드롭존 가입(치과 전용, requestor+clinic)
+  - 공개 드롭존(`PracticeDropzonePage`)은 기공의뢰서 **발신(치과)** 전용. lab 선택 UI 없음.
+  - Step 2 임베디드 로그인/가입/비밀번호 변경. 라벨은 「의뢰인 계정」.
+  - 가입: `POST /api/auth/practice/register` → `role=requestor` + `requestorCapabilities={clinic:true,lab:false}` + `practiceProfile`(사업자 앵커 미생성).
+    필수: `email`, `clinicName`, `directorName`, `staffName`, `password`, `clinicPhone`, `phone`, `address`, `zipCode`.
+  - 가입 전 이메일·담당자 휴대폰 인증 필수(공통 signup verification API). 로컬 캐시: `practice_dropzone_signup_verification_v1`.
+  - 로그인: `POST /api/auth/login` — `requestor` + clinic 발신 가능 계정만 허용.
+  - 비밀번호 변경: `POST /api/auth/practice/password/change`(`email`+`phone`+`newPassword`, requestor).
+  - 드롭존 의뢰 폼은 대시보드와 동일 localStorage(`practice_transfer_form_local_v1`). 첨부 캐시(`practice_dropzone_file_cache_meta_v1` + IndexedDB) 공유.
+  - 제출 후 `/dashboard/practice-transfers`로 이동. 폼 캐시 비움·완료 토스트 ~10초.
+  - 비회원 문의(`GuestChatModal`): 드롭존 라이트 테마 유지.
+  - 레거시 `practice` role·`/practice/dashboard`·치과명 로그인 UI는 제거 대상(마이그레이션 후 삭제).
 
 - practice 파일전송 임시저장(다른 PC 이어쓰기) 정책:
   - 임시저장 SSOT API: `GET/POST/DELETE /api/practice/transfers/draft`

@@ -1,15 +1,17 @@
 /**
- * 치과병의원(practice)용 기공의뢰서 작성 페이지 (위저드).
+ * 기공의뢰서 드롭존 — 치과 발신 전용 UI.
+ * 계정은 의뢰인(requestor + clinic)으로 통합. 레거시 practice role도 로그인 허용.
  *
  * 입력 순서:
  * 1) 의뢰서 작성 (기공소·환자·보철물·메모 + 파일첨부)
- * 2) 치과정보
+ * 2) 의뢰인 계정 (로그인/회원가입)
  *
  * related files:
  * - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
  * - web/frontend/src/shared/components/business/settings/business/BusinessAddressFields.tsx
  * - web/frontend/src/features/auth/LoginPage.tsx
  * - web/frontend/src/store/useAuthStore.ts
+ * - web/frontend/src/shared/business/requestorCapabilities.ts
  * - web/frontend/src/shared/filename/parseFilenameWithRules.ts
  * - web/backend/controllers/auth/auth.controller.js
  * - web/backend/controllers/practiceTransfers/practiceTransfer.controller.js
@@ -54,7 +56,7 @@ import { GuestChatModal } from "@/features/support/components/GuestChatModal";
 import { BusinessAddressFields } from "@/shared/components/business/settings/business/BusinessAddressFields";
 import { useToast } from "@/shared/hooks/use-toast";
 import { apiFetch } from "@/shared/api/apiClient";
-import { useAuthStore } from "@/store/useAuthStore";
+import { useAuthStore, type User } from "@/store/useAuthStore";
 import { parseFilenameWithRules } from "@/shared/filename/parseFilenameWithRules";
 import { useUploadWithProgressToast } from "@/shared/hooks/useUploadWithProgressToast";
 import { type TempUploadedFile } from "@/shared/hooks/useS3TempUpload";
@@ -92,6 +94,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/shared/ui/cn";
+import {
+  canSendPracticeTransfer,
+  resolveRequestorCapabilities,
+} from "@/shared/business/requestorCapabilities";
 import {
   formatPhoneNumberInput,
   isValidEmail,
@@ -138,7 +144,7 @@ const PRACTICE_TRANSFER_SETTINGS_LOCAL_KEY = "practice_transfer_settings_v1";
 const PRACTICE_SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 1개월
 const PRACTICE_FILE_CACHE_MAX_TOTAL_BYTES = 300 * 1024 * 1024; // 300MB
 
-const WIZARD_STEPS = ["의뢰서 작성", "치과정보"] as const;
+const WIZARD_STEPS = ["의뢰서 작성", "의뢰인 계정"] as const;
 
 const readLocalFavoriteSettings = () => {
   try {
@@ -232,6 +238,20 @@ type PracticeAuthMode = "checking" | "session" | "login" | "signup" | "recover";
 type PracticeSessionMeta = {
   issuedAt: number;
   userId: string;
+};
+
+/** 드롭존 발신 계정: 레거시 practice 또는 의뢰인(clinic) */
+const canUseDropzoneSenderAccount = (user: User | null | undefined) => {
+  if (!user?.id) return false;
+  if (user.role === "practice") return true;
+  if (user.role !== "requestor") return false;
+  return canSendPracticeTransfer(
+    resolveRequestorCapabilities({
+      userCaps: user.requestorCapabilities,
+      userRole: user.role,
+      businessVerified: user.businessVerified,
+    }),
+  );
 };
 
 type PracticeSignupVerificationCache = {
@@ -1371,12 +1391,12 @@ export const PracticeDropzonePage = () => {
     const hadExpiredSession =
       Boolean(sessionMeta?.issuedAt) && !hasValidSessionMeta;
 
-    const isPracticeLoggedIn =
+    const isDropzoneSenderLoggedIn =
       Boolean(authToken) &&
-      authUser?.role === "practice" &&
+      canUseDropzoneSenderAccount(authUser) &&
       Boolean(authUser?.id);
 
-    if (isPracticeLoggedIn) {
+    if (isDropzoneSenderLoggedIn) {
       const pp = authUser?.practiceProfile || null;
       setEmail(String(authUser?.email || email || "").trim().toLowerCase());
       setPracticeName(String(pp?.clinicName || authUser?.companyName || practiceName || ""));
@@ -1571,10 +1591,16 @@ export const PracticeDropzonePage = () => {
       ]);
 
       // 토스트는 대시보드에서 빈 폼과 함께 보여 제출 완료를 확실히 인지시킨다.
-      navigate("/practice/dashboard", {
-        replace: true,
-        state: { practiceTransferSubmittedToast: true },
-      });
+      const latestRole = useAuthStore.getState().user?.role;
+      navigate(
+        latestRole === "requestor"
+          ? "/dashboard/practice-transfers"
+          : "/practice/dashboard",
+        {
+          replace: true,
+          state: { practiceTransferSubmittedToast: true },
+        },
+      );
       return true;
     } catch (err) {
       toast({
@@ -1675,11 +1701,12 @@ export const PracticeDropzonePage = () => {
         return;
       }
 
-      if (latestUser.role !== "practice") {
+      if (!canUseDropzoneSenderAccount(latestUser)) {
         logout();
         toast({
-          title: "치과 계정만 이용 가능합니다",
-          description: "치과(practice) 계정으로 로그인해 주세요.",
+          title: "의뢰인(치과 발신) 계정만 이용 가능합니다",
+          description:
+            "원내 기공실 없는 치과 유형의 의뢰인 계정으로 로그인해 주세요.",
           variant: "destructive",
         });
         return;
@@ -1975,7 +2002,7 @@ export const PracticeDropzonePage = () => {
         title: "입력 확인",
         description:
           emailVerified && phoneVerified
-            ? "이메일, 치과 전화, 담당자 휴대폰, 치과정보와 비밀번호를 포함해 필수값을 모두 입력해주세요."
+            ? "이메일, 치과 전화, 담당자 휴대폰, 의뢰인 정보와 비밀번호를 포함해 필수값을 모두 입력해주세요."
             : "이메일·담당자 휴대폰 인증을 완료하고 필수값을 모두 입력해주세요.",
         variant: "destructive",
       });
@@ -2281,7 +2308,7 @@ export const PracticeDropzonePage = () => {
                           Step 2
                         </p>
                         <h2 className="mt-1 text-lg font-semibold text-slate-900">
-                          치과 계정
+                          의뢰인 계정
                         </h2>
                         <p className="mt-1 text-sm text-slate-500">
                           의뢰서를 제출한 뒤에도 이어서 확인할 수 있도록 계정을 연결합니다.

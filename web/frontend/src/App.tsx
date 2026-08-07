@@ -286,11 +286,18 @@ const SignupEntryRoute = () => {
 
 const PracticeDashboardRoute = () => {
   const { user } = useAuthStore();
+  const location = useLocation();
 
   if (!user) return <Navigate to="/dashboard" replace />;
   // Soft-deprecate: 통합 의뢰자(clinic)는 대시보드 기공의뢰서로 유도
   if (user.role === "requestor") {
-    return <Navigate to="/dashboard/practice-transfers" replace />;
+    return (
+      <Navigate
+        to="/dashboard/practice-transfers"
+        replace
+        state={location.state}
+      />
+    );
   }
   if (user.role === "practice") {
     return <PracticeFileTransferPage />;

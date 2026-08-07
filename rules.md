@@ -109,7 +109,9 @@
 - 사업자 SSOT: `BusinessAnchor`
 - 사용자-사업자 연결 키: `User.businessAnchorId`
 - `subRole`만 사용 (`owner|staff|null`), 레거시 role 필드 금지
-- 사업자 타입 허용: `requestor | manufacturer | admin | salesman | devops | practice`
+- 사업자 타입 허용: `requestor | manufacturer | admin | salesman | devops`
+  - `practice` role은 제거. 기존 계정은 `requestor`+`clinic` 마이그레이션 대상(신규 생성 금지).
+
 
 ### 2.2 의뢰 생성/공정
 
@@ -190,17 +192,32 @@
 - 동시 차감(overspend) 방지: spend 트랜잭션에서 `CreditBalanceGuard`를 통한 앵커 단위 직렬화 적용
 - 이벤트 기반 캐시 갱신 우선, 조회 시 대규모 재계산 지양
 
-### 2.4 의뢰자 유형(치과/기공소) · 기공의뢰서 전송
+### 2.4 의뢰자 유형(치과/기공소) · 가입/온보딩 · 기공의뢰서 전송
 
-- 신규 가입 `User.role`은 **requestor**로 통일한다. 레거시 `practice` role은 마이그레이션 전까지 호환 유지.
-- Org SSOT: `BusinessAnchor.requestorCapabilities = { clinic: boolean, lab: boolean }` (체크박스 OR, 최소 1개).
-  - 사업자 미등록(치과 무료 경로) 시에는 `User.requestorCapabilities`에 임시 보존 후, 사업자 생성 시 앵커로 승격.
+- 가입 role SSOT: **requestor** | **salesman**만. `practice` role은 **제거**(신규 생성·공개 가입·드롭존 가입·관리자 생성 모두 금지). 기존 `practice` 계정은 `requestor`+`clinic`으로 마이그레이션 대상.
+- 드롭존(치과 전용 공개 전송):
+  - 가입·로그인도 `requestor`로 통일
+  - `requestorCapabilities`는 **clinic만** 체크(`{ clinic: true, lab: false }`) — 기공소(lab) 선택 UI/저장 없음
+  - 사업자 앵커는 만들지 않고 `User.requestorCapabilities` + `practiceProfile`로 치과 무료 경로 완료
+- 유형 SSOT(체크박스 OR, 최소 1개): `requestorCapabilities = { clinic: boolean, lab: boolean }`
+  - Org SSOT: `BusinessAnchor.requestorCapabilities`
+  - 사업자 미등록(치과 무료 경로) 시 `User.requestorCapabilities`에 임시 보존 → 사업자 생성 시 앵커로 승격
+  - 해석 우선순위: 앵커 → 유저 → 레거시 폴백(미기입 requestor·구 practice 데이터 → clinic / verified requestor → lab). 폴백은 마이그레이션 전까지만.
+- UI 라벨 SSOT(상품명이 아닌 사업자 유형):
+  - `clinic`: **원내 기공실 없는 치과** — 무료 서비스, 사업자등록증 선택
+  - `lab`: **기공소 혹은 원내 기공실** — 유료 서비스, 사업자등록증 필수
+- 가입·온보딩 흐름:
+  1. `/signup` 또는 드롭존 임베디드 가입 → 계정(이메일·비번) → 로그인
+  2. `/dashboard/wizard` 온보딩: 프로필 → 휴대전화 → 역할(owner/staff) → 사업자
+  3. 사업자 단계에서 `RequestorCapabilitiesPicker`로 clinic/lab 선택(드롭존 가입자는 clinic 고정)
+  4. `lab` 포함 시 사업자등록증 등록·검증 필수. `clinic`-only는 등록증을 건너뛰고 `practiceProfile`(치과명·원장·담당·전화·주소·우편) 필수로 완료 가능
+  5. 온보딩 완료 후: 미검증 requestor → `/dashboard/practice-transfers`(기공의뢰서). 검증됨 → `/dashboard`
 - 접근성 게이트(특정 상품명이 아니라 **유료/무료** 기준):
-  - **유료 서비스**: `BusinessAnchor.status === "verified"`(사업자등록증 검증) 필수
-  - **무료 서비스**: `clinic === true`이면 사업자등록증 없이 이용 가능
-  - `lab === true`이면 사업자등록증 등록·검증 필수(온보드/설정 전환 시)
+  - **유료**: `BusinessAnchor.status === "verified"` 필수 — 대시보드 홈·신규의뢰·설정 탭 `request`/`payment`
+  - **무료**: `clinic === true`이면 사업자등록증 없이 이용(기공의뢰서 발신 등)
+  - `lab === true`이면 온보드/설정 전환 시 사업자등록증 등록·검증 필수
 - 기공의뢰서(PracticeTransfer) 권한:
-  - **발신**: legacy `practice` **또는** (`requestor` + `clinic`)
+  - **발신**: `requestor` + `clinic`
   - **수신**: `requestor` + `lab`
   - 제출은 Request 생성 경유 금지. 저장 SSOT: `PracticeTransfer`
 - SSOT API:
@@ -211,6 +228,7 @@
 - 제조사 워크시트 조회에서 practice 전송 태그 의뢰 제외
 - 크레딧/정산은 유료(검증된 기공소) 경로에만 해당. 치과(clinic-only) 무료 경로는 포함하지 않음
 - 소개(리퍼럴) 페이지·링크: 치과(clinic) 포함 모든 requestor가 접근 가능(사업자 미등록·subRole 미기입 포함). 소개 귀속(`referredByAnchorId`)·그룹 할인 적용은 추천인 사업자 앵커 등록 이후. 사업자등록증 업로드 후 `lab` 체크·검증되면 유료 소개 혜택 경로로 이어짐
+- 공통 헬퍼/권한: `web/backend/utils/requestorCapabilities.js`, `web/frontend/src/shared/business/requestorCapabilities.ts`, `practiceTransferAuth.middleware.js`
 - 레거시 혼입 경로(예: `/api/requests/practice/*`)는 제거 대상으로 관리
 - 백필: `web/backend/scripts/db/backfill-requestor-capabilities.js` (`--apply`)
 
@@ -269,6 +287,7 @@
   - `web/frontend/src/App.tsx`
   - `web/frontend/src/features/layout/DashboardLayout.tsx`
   - `web/frontend/src/shared/types/role.ts`
+  - `web/frontend/src/shared/business/requestorCapabilities.ts` (의뢰자 유형·유료게이트)
 - 프론트 상세 진입 파일 지도는 `web/frontend/rules.md`를 참조합니다.
 
 ### 4.2 Backend
@@ -278,6 +297,7 @@
   - `web/backend/app.js`
   - `web/backend/server.js`
   - `web/backend/utils/distributedJobLock.js` (멀티 인스턴스 워커 락 SSOT)
+  - `web/backend/utils/requestorCapabilities.js` (의뢰자 유형·기공의뢰서 권한)
   - `web/Procfile`, `web/.ebextensions/06_timezone.config`, `web/eb.sh` (EBS TZ)
 - 백엔드 상세 진입 파일 지도는 `web/backend/rules.md`를 참조합니다.
 

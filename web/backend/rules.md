@@ -37,11 +37,16 @@
 - 채팅
   - `modules/chat/chat.routes.js`
   - `controllers/chats/chat.controller.js`
-- practice 전송
+- practice 전송 / 의뢰자 유형
   - `modules/practiceTransfers/practiceTransfer.routes.js`
   - `controllers/practiceTransfers/practiceTransfer.controller.js`
   - `controllers/practiceTransfers/practiceTransferSettings.controller.js`
-  - `models/businessAnchor.model.js`
+  - `middlewares/practiceTransferAuth.middleware.js`
+  - `utils/requestorCapabilities.js`
+  - `models/businessAnchor.model.js` (`requestorCapabilities`)
+  - `models/user.model.js` (`requestorCapabilities`)
+  - `controllers/businesses/business.update.controller.js`
+  - `scripts/db/backfill-requestor-capabilities.js`
 - 관리자 사용자 권한
   - `controllers/admin/admin.users.controller.js`
 - 관리자 크레딧
@@ -294,30 +299,47 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
     임시저장은 `practice:transfer-updated` + `action: draft-upserted|draft-cleared`.
     구현: `emitPracticeTransferEventToPracticeUsers`.
 
-- 관리자 사용자 role 변경/생성 API는 `practice`를 유효 role로 허용해야 합니다.
+- 관리자 사용자 role 변경/생성 API는 `practice`를 **신규로 허용하지 않는다**(제거).
   - 적용 파일: `controllers/admin/admin.users.controller.js`
   - `validRoles` 기준은 루트 규칙(사업자 타입 허용값)과 동기화합니다.
+  - 기존 `practice` 계정은 `requestor`+`clinic` 마이그레이션 대상입니다.
 
-- practice 역할 범위(정책 고정):
-  - practice는 파일 전송 전용 경량 role이며, 크레딧/정산/추천(리퍼럴) 도메인에는 포함하지 않습니다.
-  - 일반 회원가입은 `/api/auth/register` (`role: "practice"`)로 의뢰자/영업자와 동일한 이메일·온보딩 경로를 사용합니다.
-  - 회원가입 중간 상태 임시저장 SSOT: `models/signupDraft.model.js`, `PUT/GET/DELETE /api/auth/signup/draft` (`sessionId` 기준, 7일 TTL). 가입 완료 시 삭제합니다.
-  - practice owner 온보딩은 사업자등록증 업로드를 받지 않습니다. `practiceProfile` 필수값(`clinicName`, `directorName`, `staffName`, `clinicPhone`, `phone`, `address`, `zipCode`) 저장으로 완료하며, 앵커가 없으면 practice `BusinessAnchor`를 생성합니다.
-  - 드롭존 전용 간소 가입(`POST /api/auth/practice/register`)은 실제 `email` + `clinicName` + `directorName` + `staffName` + `clinicPhone`(치과 전화) + `phone`(담당자 휴대폰) + `address` + `zipCode`를 필수로 받으며, 로그인 식별은 이메일을 사용합니다. `directorName`은 `practiceProfile`과 앵커 `metadata.representativeName`에 저장합니다.
-  - 드롭존 가입 시 `assertSignupVerifications({ email, phone })`로 이메일·휴대폰 인증 완료를 강제하고, 성공 후 `consumeSignupVerifications`로 소진합니다.
-    - 이메일: `POST /api/auth/signup/email-verification/send|verify`, `GET /api/auth/signup/email-verification/status` (일 10회)
-    - 휴대폰: `POST /api/auth/signup/phone-verification/send|verify`, `GET /api/auth/signup/phone-verification/status` (일 5회, 개발모드에서도 자동완료하지 않으며 비프로덕션에서는 응답/로그로 코드를 노출할 수 있음)
-    - status API는 `verifiedAt`이 있고 `consumedAt`이 없을 때만 `verified: true`를 반환합니다.
-  - 치과명 로그인(`POST /api/auth/practice/login`)과 이메일 없는 레거시 비밀번호 변경(clinic+staff+phone)은 하위 호환용으로 유지합니다.
+- 의뢰자 유형(requestorCapabilities) · 가입/온보딩 SSOT (2026-08, 루트 §2.4 상세)
+  - 가입 role SSOT: `requestor` | `salesman`만. `practice` role **제거**(신규 생성 금지).
+  - 필드: `BusinessAnchor.requestorCapabilities` / `User.requestorCapabilities` = `{ clinic, lab }` (체크박스 OR, 최소 1개).
+  - 헬퍼 SSOT: `utils/requestorCapabilities.js`
+    - `normalize` / `hasAny` / `requiresBusinessLicense`(lab) / `canUsePaidServices`(verified) / `canUseFreeServices`(clinic)
+    - `canSendPracticeTransfer`(clinic) / `canReceivePracticeTransfer`(lab)
+    - `resolveRequestorCapabilities`: 앵커 → 유저 → 마이그레이션 전 폴백(구 practice·미기입 requestor→clinic, verified requestor→lab)
+  - 사업자 저장(`business.update.controller.js`):
+    - body `requestorCapabilities` 수신 시 normalize·최소 1개 검증
+    - `lab`이면 미검증 상태에서 저장 거부(이미 verified이거나 이번 요청에서 검증 플로우 타는 경우만 허용)
+    - 사업자 미등록(clinic-only)은 `User.requestorCapabilities`에 임시 보존, 앵커 생성 시 승격
+  - 기공의뢰서 권한 미들웨어(`practiceTransferAuth.middleware.js`):
+    - 발신: `authorizePracticeTransferSend` — admin | (`requestor` + clinic)
+    - 수신: `authorizePracticeTransferReceive` — admin | (`requestor` + lab)
+  - 공개 가입: `POST /api/auth/register` — `requestor`/`salesman`. signup draft: `models/signupDraft.model.js`, `PUT/GET/DELETE /api/auth/signup/draft`(7일 TTL).
+  - 치과 무료 경로 프로필: `PUT /api/users/profile`의 `practiceProfile`(clinicName, directorName, staffName, clinicPhone, phone, address, zipCode).
+  - 백필: `scripts/db/backfill-requestor-capabilities.js` (`--apply`) + practice→requestor+clinic 마이그레이션.
+  - 크레딧/정산 집계는 유료(verified lab) 경로만. clinic-only 무료 경로 확장 금지.
+  - 소개 접근은 requestor 전체 허용; 귀속·그룹 할인은 추천인 앵커 등록 이후.
+
+- 드롭존 가입(치과 전용, requestor+clinic):
+  - `POST /api/auth/practice/register`는 **practice role을 만들지 않는다**.
+    `role=requestor` + `requestorCapabilities={clinic:true,lab:false}` + `practiceProfile`만 저장하고 **사업자 앵커는 생성하지 않는다**.
+  - 필수: `email` + `clinicName` + `directorName` + `staffName` + `clinicPhone` + `phone` + `address` + `zipCode`. 로그인 식별은 이메일.
+  - `assertSignupVerifications({ email, phone })` 강제 후 `consumeSignupVerifications` 소진.
+    - 이메일: `POST /api/auth/signup/email-verification/send|verify`, `GET .../status` (일 10회)
+    - 휴대폰: `POST /api/auth/signup/phone-verification/send|verify`, `GET .../status` (일 5회; 개발모드 자동완료 금지)
+    - status API는 `verifiedAt` 있고 `consumedAt` 없을 때만 `verified: true`
+  - 비밀번호 찾기/변경(`POST /api/auth/practice/password/find|change`) 대상은 `requestor`(clinic).
+  - 치과명 로그인(`POST /api/auth/practice/login`)·practice 전용 경로는 **제거 대상**.
   - 같은 사업자 계정 전환(모든 role):
-    - `GET /api/auth/colleagues` — 현재 사용자의 `businessAnchorId`와 동일한 활성·승인 계정 목록(본인 제외)
-    - `POST /api/auth/switch-account` `{ userId, password }` — 동일 `businessAnchorId` + 대상 계정 비밀번호 확인 후 JWT 재발급
-    - 구현: `controllers/auth/auth.controller.js` (`listColleagues`, `switchAccount`), `modules/auth/auth.routes.js`
-  - 따라서 `adminCredit`, `admin.dashboard`, `admin.referral`의 requestor 중심 집계를 practice로 임의 확장하지 않습니다.
-  - 강제 분리: practice는 `Request` 도메인 API(`/api/requests/*`)를 사용하지 않고,
-    `PracticeTransfer` 도메인 API(`/api/practice/transfers/*`)만 사용합니다.
-  - 레거시 혼입 경로(`/api/requests/practice/*`, practice의 Request draft 접근)는 제거 대상으로 유지합니다.
-  - 위 범위를 바꾸려면 사전 정책 컨펌을 받고 별도 변경으로 진행합니다.
+    - `GET /api/auth/colleagues` — 동일 `businessAnchorId` 활성·승인 계정(본인 제외)
+    - `POST /api/auth/switch-account` `{ userId, password }` — JWT 재발급
+    - 구현: `controllers/auth/auth.controller.js`, `modules/auth/auth.routes.js`
+  - 기공의뢰서 저장 SSOT는 `PracticeTransfer`(`/api/practice/transfers/*`). Request 도메인 혼입 금지.
+  - 레거시 혼입 경로(`/api/requests/practice/*`, 구 practice draft)는 제거 대상으로 유지합니다.
 
 - practice 파일전송 임시저장(다른 PC 이어쓰기) SSOT:
   - 저장 모델: `models/practiceTransferDraft.model.js`

@@ -363,10 +363,6 @@ const createPracticePseudoEmail = (seed = "practice") => {
   return `practice.${base || "clinic"}-${suffix}@abuts.fit`;
 };
 
-const createPracticeAnchorBusinessNumber = () => {
-  return `practice-${Date.now()}-${crypto.randomInt(1000, 9999)}`;
-};
-
 const normalizeDigits = (value) => String(value || "").replace(/\D/g, "");
 
 const sendLoginSuccessResponse = async ({
@@ -1108,12 +1104,13 @@ async function practiceLogin(req, res) {
 }
 
 /**
- * practice 간소 가입 (드롭존 전용)
+ * 드롭존 간소 가입 — 의뢰인(requestor) + clinic 무료 경로
  * @route POST /api/auth/practice/register
  *
  * related files:
  * - web/frontend/src/pages/practice/PracticeDropzonePage.tsx
  * - web/frontend/rules.md
+ * - web/backend/utils/requestorCapabilities.js
  */
 async function practiceRegister(req, res) {
   try {
@@ -1204,19 +1201,21 @@ async function practiceRegister(req, res) {
       referredByEmail: "",
       referredByReferralCode: "",
       socialToken: "",
-      signupRole: "practice",
+      signupRole: "requestor",
     });
 
     const referralCode = await ensureUniqueReferralCode(5);
 
+    // 의뢰인 통합: role=requestor + clinic. 사업자 앵커는 만들지 않음(무료 치과 경로).
     const user = new User({
       name: staffName || clinicName,
       email: normalizedEmail,
       password,
-      role: "practice",
+      role: "requestor",
       subRole: "owner",
       referralCode,
       referredByAnchorId: referredByAnchorId || null,
+      requestorCapabilities: { clinic: true, lab: false },
       onboardingWizardCompleted: false,
       approvedAt: new Date(),
       active: true,
@@ -1254,45 +1253,6 @@ async function practiceRegister(req, res) {
       console.error("[practiceRegister] consumeSignupVerifications failed", e);
     }
 
-    const businessAnchor = await BusinessAnchor.create({
-      businessNumberNormalized: createPracticeAnchorBusinessNumber(),
-      businessType: "practice",
-      name: clinicName,
-      status: "active",
-      primaryContactUserId: user._id,
-      referredByAnchorId: referredByAnchorId || null,
-      defaultReferralAnchorId: referredByAnchorId || null,
-      metadata: {
-        companyName: clinicName,
-        representativeName: directorName,
-        address,
-        addressDetail,
-        zipCode,
-        phoneNumber: clinicPhone || phone,
-        email: normalizedEmail,
-        businessItem: "",
-        businessType: "",
-        startDate: "",
-        businessNumber: "",
-      },
-      verification: {
-        verified: false,
-        verifiedAt: null,
-        verifiedBy: null,
-      },
-      shippingPolicy: {
-        weeklyBatchDays: ["mon", "wed", "fri"],
-        updatedAt: new Date(),
-      },
-      owners: [user._id],
-      members: [],
-    });
-
-    user.businessAnchorId = businessAnchor._id;
-    user.business = clinicName;
-    user.subRole = "owner";
-    await user.save();
-
     const freshUser = await User.findById(user._id).select("-password");
     const userWithoutPassword = {
       ...(freshUser ? freshUser.toObject() : user.toObject()),
@@ -1315,14 +1275,14 @@ async function practiceRegister(req, res) {
     console.error("[practiceRegister] failed", error);
     return res.status(500).json({
       success: false,
-      message: "practice 가입 중 오류가 발생했습니다.",
+      message: "의뢰인 가입 중 오류가 발생했습니다.",
       error: error.message,
     });
   }
 }
 
 /**
- * practice 비밀번호 찾기(본인확인)
+ * 드롭존 비밀번호 찾기(본인확인) — 레거시 practice + 의뢰인(requestor)
  * @route POST /api/auth/practice/password/find
  */
 async function practiceFindPassword(req, res) {
@@ -1341,10 +1301,11 @@ async function practiceFindPassword(req, res) {
       });
     }
 
+    const dropzoneRoles = { $in: ["practice", "requestor"] };
     let candidates = [];
     if (email) {
       candidates = await User.find({
-        role: "practice",
+        role: dropzoneRoles,
         email,
         active: true,
       })
@@ -1352,7 +1313,7 @@ async function practiceFindPassword(req, res) {
         .lean();
     } else {
       candidates = await User.find({
-        role: "practice",
+        role: dropzoneRoles,
         business: clinicName,
         name: staffName,
         active: true,
@@ -1401,7 +1362,7 @@ async function practiceFindPassword(req, res) {
 }
 
 /**
- * practice 비밀번호 변경(본인확인 기반)
+ * 드롭존 비밀번호 변경(본인확인 기반) — 레거시 practice + 의뢰인(requestor)
  * @route POST /api/auth/practice/password/change
  */
 async function practiceChangePassword(req, res) {
@@ -1430,16 +1391,17 @@ async function practiceChangePassword(req, res) {
       });
     }
 
+    const dropzoneRoles = { $in: ["practice", "requestor"] };
     let candidates = [];
     if (email) {
       candidates = await User.find({
-        role: "practice",
+        role: dropzoneRoles,
         email,
         active: true,
       }).select("+password");
     } else {
       candidates = await User.find({
-        role: "practice",
+        role: dropzoneRoles,
         business: clinicName,
         name: staffName,
         active: true,

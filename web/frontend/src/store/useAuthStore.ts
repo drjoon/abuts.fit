@@ -9,6 +9,10 @@
 import { create } from "zustand";
 import { request } from "@/shared/api/apiClient";
 import type { AppUserRole } from "@/shared/types/role";
+import {
+  normalizeRequestorCapabilities,
+  type RequestorCapabilities,
+} from "@/shared/business/requestorCapabilities";
 
 const AUTH_TOKEN_KEY = "abuts_auth_token";
 const AUTH_REFRESH_TOKEN_KEY = "abuts_auth_refresh_token";
@@ -32,6 +36,7 @@ export interface User {
   businessAnchorId?: string | null;
   businessVerified?: boolean;
   onboardingWizardCompleted?: boolean;
+  requestorCapabilities?: RequestorCapabilities | null;
   practiceProfile?: {
     clinicName?: string;
     directorName?: string;
@@ -60,6 +65,10 @@ const normalizeApiUser = (u: unknown): User | null => {
     row.salesmanPayoutAccount && typeof row.salesmanPayoutAccount === "object"
       ? (row.salesmanPayoutAccount as Record<string, unknown>)
       : {};
+  const rawCaps =
+    row.requestorCapabilities && typeof row.requestorCapabilities === "object"
+      ? (row.requestorCapabilities as Partial<RequestorCapabilities>)
+      : null;
   return {
     id,
     name: String(row.name || ""),
@@ -76,6 +85,9 @@ const normalizeApiUser = (u: unknown): User | null => {
     businessAnchorId: row.businessAnchorId ? String(row.businessAnchorId) : null,
     businessVerified: Boolean(row.businessVerified),
     onboardingWizardCompleted: Boolean(row.onboardingWizardCompleted),
+    requestorCapabilities: rawCaps
+      ? normalizeRequestorCapabilities(rawCaps)
+      : null,
     practiceProfile:
       row.practiceProfile && typeof row.practiceProfile === "object"
         ? {
@@ -382,60 +394,8 @@ export const useAuthStore = create<AuthState>((set, get) => {
 
         const u = json.data as Record<string, unknown>;
         if (!u || typeof u !== "object" || Array.isArray(u)) return false;
-        if (!u._id && !u.id) return false;
-        const normalizedUser: User = {
-          id: String(u._id || u.id || ""),
-          name: String(u.name || ""),
-          email: String(u.email || ""),
-          role: u.role as UserRole,
-          subRole: u.subRole ? String(u.subRole) : null,
-          profileImage:
-            typeof u.profileImage === "string" ? u.profileImage : undefined,
-          companyName: String(u.business || u.companyName || ""),
-          referralCode: String(u.referralCode || ""),
-          approvedAt: u.approvedAt ? String(u.approvedAt) : null,
-          businessAnchorId: u.businessAnchorId
-            ? String(u.businessAnchorId)
-            : null,
-          businessVerified: Boolean(u.businessVerified),
-          onboardingWizardCompleted: Boolean(u.onboardingWizardCompleted),
-          practiceProfile:
-            u.practiceProfile &&
-            typeof u.practiceProfile === "object" &&
-            !Array.isArray(u.practiceProfile)
-              ? {
-                  clinicName: String(
-                    (u.practiceProfile as Record<string, unknown>)?.clinicName || "",
-                  ),
-                  directorName: String(
-                    (u.practiceProfile as Record<string, unknown>)?.directorName ||
-                      "",
-                  ),
-                  staffName: String(
-                    (u.practiceProfile as Record<string, unknown>)?.staffName || "",
-                  ),
-                  phone: String(
-                    (u.practiceProfile as Record<string, unknown>)?.phone || "",
-                  ),
-                  clinicPhone: String(
-                    (u.practiceProfile as Record<string, unknown>)?.clinicPhone ||
-                      "",
-                  ),
-                  address: String(
-                    (u.practiceProfile as Record<string, unknown>)?.address || "",
-                  ),
-                  addressDetail: String(
-                    (u.practiceProfile as Record<string, unknown>)?.addressDetail || "",
-                  ),
-                  zipCode: String(
-                    (u.practiceProfile as Record<string, unknown>)?.zipCode || "",
-                  ),
-                  updatedAt: (u.practiceProfile as Record<string, unknown>)?.updatedAt
-                    ? String((u.practiceProfile as Record<string, unknown>).updatedAt)
-                    : null,
-                }
-              : null,
-        };
+        const normalizedUser = normalizeApiUser(u);
+        if (!normalizedUser) return false;
 
         try {
           localStorage.setItem(AUTH_TOKEN_KEY, token);
