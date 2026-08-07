@@ -2,6 +2,9 @@
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
+import { spawnSync } from "node:child_process";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { Page, expect } from "@playwright/test";
 
 export const ACCOUNTS = {
@@ -44,18 +47,272 @@ export const ACCOUNTS = {
 
 export type AccountKey = keyof typeof ACCOUNTS;
 
+export type E2EAccount = {
+  email: string;
+  password: string;
+  role: string;
+  name: string;
+  phone: string;
+};
+
+/** env 오버라이드(비밀번호는 코드에 넣지 않음) */
+export const resolveAccount = (key: AccountKey): E2EAccount => {
+  const base = ACCOUNTS[key];
+  if (key === "requestor") {
+    return {
+      ...base,
+      email: process.env.E2E_REQUESTOR_EMAIL || base.email,
+      password: process.env.E2E_REQUESTOR_PASSWORD || base.password,
+    };
+  }
+  if (key === "admin") {
+    return {
+      ...base,
+      email: process.env.E2E_ADMIN_EMAIL || base.email,
+      password: process.env.E2E_ADMIN_PASSWORD || base.password,
+    };
+  }
+  return { ...base };
+};
+
+/** 로컬 DB에 데모 계정이 없을 때 쓰는 실계정(비밀번호 없이 JWT 민트) */
+export const LOCAL_E2E_EMAILS = {
+  requestor: process.env.E2E_REQUESTOR_EMAIL || "dr.joon@gmail.com",
+  admin: process.env.E2E_ADMIN_EMAIL || "dr.joo.n@gmail.com",
+} as const;
+
+
+const backendRoot = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "../../backend",
+);
+
+type MintedSession = {
+  ok: boolean;
+  message?: string;
+  token?: string;
+  refreshToken?: string;
+  user?: Record<string, unknown>;
+};
+
+/** 비밀번호 없이 이메일로 JWT 세션 발급(로컬 E2E용) */
+export function mintSessionByEmail(email: string): MintedSession {
+  const script = `
+import "./bootstrap/env.js";
+import { connectDb, disconnectDb } from "./scripts/db/_mongo.js";
+import User from "./models/user.model.js";
+import { generateToken, generateRefreshToken } from "./utils/jwt.util.js";
+
+const email = ${JSON.stringify(email)};
+await connectDb();
+const user = await User.findOne({ email }).select("-password").lean();
+if (!user) {
+  console.log(JSON.stringify({ ok: false, message: "user not found: " + email }));
+  await disconnectDb();
+  process.exit(0);
+}
+await User.updateOne(
+  { _id: user._id },
+  {
+    $set: {
+      onboardingWizardCompleted: true,
+      approvedAt: user.approvedAt || new Date(),
+    },
+  },
+);
+const fresh = await User.findById(user._id).select("-password").lean();
+const token = generateToken({ userId: fresh._id, role: fresh.role });
+const refreshToken = generateRefreshToken(fresh._id);
+console.log(JSON.stringify({
+  ok: true,
+  token,
+  refreshToken,
+  user: fresh,
+}));
+await disconnectDb();
+`;
+
+  const result = spawnSync(
+    "node",
+    ["--input-type=module"],
+    {
+      cwd: backendRoot,
+      env: { ...process.env, ENV_FILE: "local.env" },
+      input: script,
+      encoding: "utf8",
+      timeout: 60_000,
+    },
+  );
+
+  if (result.status !== 0) {
+    return {
+      ok: false,
+      message: String(result.stderr || result.stdout || "mint failed"),
+    };
+  }
+
+  const lines = String(result.stdout || "")
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean);
+  const jsonLine = [...lines].reverse().find((l) => l.startsWith("{"));
+  if (!jsonLine) {
+    return { ok: false, message: "no mint json output" };
+  }
+  try {
+    return JSON.parse(jsonLine) as MintedSession;
+  } catch {
+    return { ok: false, message: "invalid mint json" };
+  }
+}
+
+async function applySessionToPage(
+  page: Page,
+  session: { token: string; refreshToken?: string; user: Record<string, unknown> },
+) {
+  await page.goto("/login");
+  await page.waitForLoadState("domcontentloaded");
+  await page.evaluate((payload) => {
+    localStorage.setItem("abuts_auth_token", payload.token);
+    if (payload.refreshToken) {
+      localStorage.setItem("abuts_auth_refresh_token", payload.refreshToken);
+    }
+    const user = {
+      ...payload.user,
+      id: String(payload.user._id || payload.user.id || ""),
+      onboardingWizardCompleted: true,
+      businessVerified: Boolean(payload.user.businessVerified),
+    };
+    localStorage.setItem("abuts_auth_user", JSON.stringify(user));
+  }, session);
+}
+
 /**
- * Fast API-based login: calls /api/auth/login directly, stores token/user in
- * localStorage, then marks onboardingWizardCompleted and navigates to /dashboard.
- * Much faster than UI login and avoids the two-step email → password form.
+ * Fast login for local E2E.
+ * 실계정 비밀번호가 있으면 UI 로그인(스토어 normalize 경로)을 우선한다.
  */
 export async function loginAndSkipWizard(
   page: Page,
-  account: (typeof ACCOUNTS)[AccountKey],
+  account: E2EAccount | (typeof ACCOUNTS)[AccountKey],
+  options?: { mintEmail?: string; preferDevQuickLogin?: boolean },
 ) {
-  // Navigate to app first so we have a valid origin for fetch + localStorage
   await page.goto("/login");
   await page.waitForLoadState("domcontentloaded");
+
+  const hasPasswordOverride =
+    Boolean(process.env.E2E_REQUESTOR_PASSWORD) &&
+    account.role === "requestor";
+  const preferDevQuickLogin =
+    options?.preferDevQuickLogin ?? !hasPasswordOverride;
+
+  // 실계정: 이메일→비밀번호 UI 로그인 (useAuthStore.login + normalizeApiUser)
+  if (hasPasswordOverride || options?.preferDevQuickLogin === false) {
+    await page.fill("#email", account.email);
+    await page.click('button[type="submit"]');
+    await page.waitForSelector("#password", { timeout: 10_000 });
+    await page.fill("#password", account.password);
+    await page.click('button[type="submit"]');
+    await page.waitForURL(/\/(dashboard|wizard)/, { timeout: 20_000 });
+
+    if (page.url().includes("wizard")) {
+      const token = await page.evaluate(() =>
+        localStorage.getItem("abuts_auth_token"),
+      );
+      if (token) {
+        await page.evaluate(async (t) => {
+          await fetch("/api/users/profile", {
+            method: "PUT",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${t}`,
+            },
+            body: JSON.stringify({ onboardingWizardCompleted: true }),
+          });
+          try {
+            const raw = localStorage.getItem("abuts_auth_user");
+            if (raw) {
+              const u = JSON.parse(raw);
+              u.onboardingWizardCompleted = true;
+              localStorage.setItem("abuts_auth_user", JSON.stringify(u));
+            }
+          } catch {}
+        }, token);
+        await page.goto("/dashboard");
+      }
+    }
+
+    await page.waitForURL(/\/dashboard/, { timeout: 20_000 });
+    // 세션 안정화: auth/me 재검증 후 로그인으로 튕기지 않았는지 확인
+    await page.waitForTimeout(1200);
+    expect(
+      page.url(),
+      `UI login session unstable for ${account.email}`,
+    ).toMatch(/\/dashboard/);
+    return;
+  }
+
+  if (preferDevQuickLogin) {
+    const quick = page.getByRole("button", { name: /DEV QUICK LOGIN/i });
+    if (await quick.isVisible().catch(() => false)) {
+      await quick.click();
+      await page.waitForTimeout(300);
+      const roleHints =
+        account.role === "admin"
+          ? [/관리자/, /admin/i]
+          : account.role === "requestor"
+            ? [/의뢰/, /requestor/i, /치과/, /발신/]
+            : [new RegExp(account.role, "i")];
+      let clicked = false;
+      for (const hint of roleHints) {
+        const btn = page.getByRole("button", { name: hint }).first();
+        if (await btn.isVisible().catch(() => false)) {
+          await btn.click();
+          clicked = true;
+          break;
+        }
+      }
+      if (!clicked) {
+        const byEmail = page
+          .locator(`button:has-text("${account.email}")`)
+          .first();
+        if (await byEmail.isVisible().catch(() => false)) {
+          await byEmail.click();
+          clicked = true;
+        }
+      }
+      if (clicked) {
+        await page.waitForURL(/\/dashboard/, { timeout: 20_000 });
+        if (page.url().includes("wizard")) {
+          const token = await page.evaluate(() =>
+            localStorage.getItem("abuts_auth_token"),
+          );
+          if (token) {
+            await page.evaluate(async (t) => {
+              await fetch("/api/users/profile", {
+                method: "PUT",
+                headers: {
+                  "Content-Type": "application/json",
+                  Authorization: `Bearer ${t}`,
+                },
+                body: JSON.stringify({ onboardingWizardCompleted: true }),
+              });
+              try {
+                const raw = localStorage.getItem("abuts_auth_user");
+                if (raw) {
+                  const u = JSON.parse(raw);
+                  u.onboardingWizardCompleted = true;
+                  localStorage.setItem("abuts_auth_user", JSON.stringify(u));
+                }
+              } catch {}
+            }, token);
+            await page.goto("/dashboard");
+            await page.waitForURL(/\/dashboard/, { timeout: 20_000 });
+          }
+        }
+        return;
+      }
+    }
+  }
 
   const result = await page.evaluate(
     async ({ email, password }) => {
@@ -69,14 +326,21 @@ export async function loginAndSkipWizard(
         if (!json?.success)
           return { ok: false, message: json?.message ?? "login failed" };
         const { token, refreshToken, user } = json.data ?? {};
-        if (!token) return { ok: false, message: "no token" };
+        if (!token || !user) return { ok: false, message: "no token/user" };
+
+        // 스토어와 동일하게 id 정규화
+        const normalized = {
+          ...user,
+          id: String(user._id || user.id || ""),
+          onboardingWizardCompleted: true,
+          businessVerified: Boolean(user.businessVerified),
+        };
 
         localStorage.setItem("abuts_auth_token", token);
         if (refreshToken)
           localStorage.setItem("abuts_auth_refresh_token", refreshToken);
-        if (user) localStorage.setItem("abuts_auth_user", JSON.stringify(user));
+        localStorage.setItem("abuts_auth_user", JSON.stringify(normalized));
 
-        // Mark wizard complete in DB
         await fetch("/api/users/profile", {
           method: "PUT",
           headers: {
@@ -86,17 +350,6 @@ export async function loginAndSkipWizard(
           body: JSON.stringify({ onboardingWizardCompleted: true }),
         });
 
-        // Patch stored user so React state reads wizard as completed on next load
-        try {
-          const stored = localStorage.getItem("abuts_auth_user");
-          if (stored) {
-            const u = JSON.parse(stored);
-            u.onboardingWizardCompleted = true;
-            u.businessVerified = u.businessVerified ?? false;
-            localStorage.setItem("abuts_auth_user", JSON.stringify(u));
-          }
-        } catch {}
-
         return { ok: true, token };
       } catch (e: any) {
         return { ok: false, message: String(e?.message ?? e) };
@@ -105,13 +358,41 @@ export async function loginAndSkipWizard(
     { email: account.email, password: account.password },
   );
 
-  expect(
-    result.ok,
-    `Login failed for ${account.email}: ${(result as any).message}`,
-  ).toBe(true);
+  if (!result.ok) {
+    if (hasPasswordOverride || options?.preferDevQuickLogin === false) {
+      expect(
+        result.ok,
+        `Login failed for ${account.email}: ${(result as any).message}`,
+      ).toBe(true);
+    }
+
+    const mintEmail =
+      options?.mintEmail ||
+      (account.role === "admin"
+        ? LOCAL_E2E_EMAILS.admin
+        : account.role === "requestor"
+          ? LOCAL_E2E_EMAILS.requestor
+          : "");
+    expect(
+      Boolean(mintEmail),
+      `Login failed for ${account.email}: ${(result as any).message}`,
+    ).toBe(true);
+    const minted = mintSessionByEmail(String(mintEmail));
+    expect(
+      minted.ok && minted.token && minted.user,
+      `Mint login failed for ${mintEmail}: ${minted.message}`,
+    ).toBeTruthy();
+    await applySessionToPage(page, {
+      token: String(minted.token),
+      refreshToken: minted.refreshToken,
+      user: minted.user as Record<string, unknown>,
+    });
+  }
 
   await page.goto("/dashboard");
-  await page.waitForURL("/dashboard", { timeout: 20_000 });
+  await page.waitForURL(/\/dashboard/, { timeout: 20_000 });
+  await page.waitForTimeout(1200);
+  expect(page.url()).toMatch(/\/dashboard/);
 }
 
 /**
