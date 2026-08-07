@@ -40,6 +40,7 @@ import {
   splitRevenueByCreditKindProRata,
 } from "../../services/creditRevenuePolicy.service.js";
 import { emitCreditBalanceUpdatedToBusiness } from "../../utils/creditRealtime.js";
+import { ensureMailboxAddressForBusiness } from "./mailbox.utils.js";
 
 const SHIPPING_FEE_SUPPLY = 3500;
 const VAT_RATE = 0.1;
@@ -324,6 +325,21 @@ export function revertManufacturerStageByReviewStage(request, stage) {
 
   if (stage === "tracking") {
     request.manufacturerStage = "포장.발송";
+  }
+
+  // 포장.발송 → 세척.패킹 롤백 시 우편함/패킹 승인 상태를 비운다.
+  // - mailbox를 남기면 타 업체 재승인 시 동일 박스 혼입·ShippingPackage 유니크 충돌이 난다.
+  // - packing review를 APPROVED로 두면 단계는 세척.패킹인데 승인만 남은 불일치 상태가 된다.
+  if (String(stage || "").trim() === "shipping") {
+    request.mailboxAddress = null;
+    request.caseInfos = request.caseInfos || {};
+    request.caseInfos.reviewByStage = request.caseInfos.reviewByStage || {};
+    request.caseInfos.reviewByStage.packing = {
+      status: "PENDING",
+      updatedAt: new Date(),
+      updatedBy: null,
+      reason: "",
+    };
   }
 }
 
@@ -1130,54 +1146,118 @@ export async function ensureShippingFeeSpendOnPackingApprove({
     }
   }
 
-  while (!pkg?._id && retryCount < maxRetries) {
-    try {
-      pkg = await ShippingPackage.findOneAndUpdate(
-        { businessAnchorId, shipDateYmd, mailboxAddress },
-        {
-          $setOnInsert: {
-            businessAnchorId,
-            shipDateYmd,
-            mailboxAddress,
-            shippingFeeSupply: SHIPPING_FEE_SUPPLY,
-            shippingFeeVat: 0,
-            createdBy: actorUserId || null,
-          },
-          $addToSet: {
-            requestIds: request._id,
-          },
-        },
-        {
-          new: true,
-          upsert: true,
-          setDefaultsOnInsert: true,
+  // 트랜잭션 안에서는 upsert 11000이 트랜잭션 전체를 abort 시킨다.
+  // 레거시 unique(businessId+shipDate+mailbox)는 businessId가 비어 있으면
+  // 서로 다른 businessAnchor도 같은 우편함/일자에서 충돌한다.
+  // → find 후 insert로 바꾸고, 타 업체 박스가 같은 우편함을 쓰면 새 우편함으로 재할당한다.
+  if (!pkg?._id) {
+    const currentMailbox = String(request?.mailboxAddress || mailboxAddress || "").trim();
+    let resolvedMailbox = currentMailbox;
+
+    const foreignPackage = await ShippingPackage.findOne(
+      {
+        shipDateYmd,
+        mailboxAddress: resolvedMailbox,
+        businessAnchorId: { $ne: businessAnchorId },
+      },
+      { _id: 1, businessAnchorId: 1, mailboxAddress: 1 },
+      { session },
+    ).lean();
+
+    if (foreignPackage?._id) {
+      console.warn("[SHIPPING_FEE] mailbox already used by another business today; reallocating", {
+        requestId: request?.requestId || null,
+        mailboxAddress: resolvedMailbox,
+        foreignBusinessAnchorId: String(foreignPackage.businessAnchorId || ""),
+      });
+      try {
+        const nextMailboxAddress = await ensureMailboxAddressForBusiness({
+          requestMongoId: request._id,
+          requestorOrgId: businessAnchorId,
+          currentMailboxAddress: null,
           session,
-        },
+        });
+        if (nextMailboxAddress && nextMailboxAddress !== resolvedMailbox) {
+          resolvedMailbox = String(nextMailboxAddress).trim();
+          request.mailboxAddress = resolvedMailbox;
+        }
+      } catch (reallocErr) {
+        console.error("[SHIPPING_FEE] mailbox reallocation failed", reallocErr);
+      }
+    }
+
+    pkg = await ShippingPackage.findOne(
+      { businessAnchorId, shipDateYmd, mailboxAddress: resolvedMailbox },
+      null,
+      { session },
+    );
+
+    if (pkg?._id) {
+      await ShippingPackage.updateOne(
+        { _id: pkg._id },
+        { $addToSet: { requestIds: request._id } },
+        { session },
       );
-      break;
-    } catch (err) {
-      if (err.code === 11000 && retryCount < maxRetries - 1) {
-        console.log(
-          `[SHIPPING_FEE] Duplicate package detected, retrying... (attempt ${retryCount + 1})`,
-        );
-        retryCount++;
-        await new Promise((resolve) => setTimeout(resolve, 50 * retryCount));
-        pkg = await ShippingPackage.findOne(
-          { businessAnchorId, shipDateYmd, mailboxAddress },
-          null,
-          { session },
-        );
-        if (pkg) {
-          await ShippingPackage.updateOne(
-            { _id: pkg._id },
-            { $addToSet: { requestIds: request._id } },
+      pkg = await ShippingPackage.findById(pkg._id, null, { session });
+    } else {
+      while (!pkg?._id && retryCount < maxRetries) {
+        try {
+          const created = await ShippingPackage.create(
+            [
+              {
+                businessAnchorId,
+                shipDateYmd,
+                mailboxAddress: resolvedMailbox,
+                shippingFeeSupply: SHIPPING_FEE_SUPPLY,
+                shippingFeeVat: 0,
+                createdBy: actorUserId || null,
+                requestIds: [request._id],
+              },
+            ],
             { session },
           );
-          pkg = await ShippingPackage.findById(pkg._id, null, { session });
+          pkg = created?.[0] || null;
           break;
+        } catch (err) {
+          if (err.code === 11000 && retryCount < maxRetries - 1) {
+            // 트랜잭션이 abort됐을 수 있으므로 호출부 withTransaction 재시도에 맡긴다.
+            console.log(
+              `[SHIPPING_FEE] Duplicate package detected, retrying... (attempt ${retryCount + 1})`,
+            );
+            retryCount++;
+            pkg = await ShippingPackage.findOne(
+              { businessAnchorId, shipDateYmd, mailboxAddress: resolvedMailbox },
+              null,
+              { session },
+            );
+            if (pkg?._id) {
+              await ShippingPackage.updateOne(
+                { _id: pkg._id },
+                { $addToSet: { requestIds: request._id } },
+                { session },
+              );
+              pkg = await ShippingPackage.findById(pkg._id, null, { session });
+              break;
+            }
+            // 같은 우편함에서 레거시 인덱스 충돌이면 새 우편함으로 한 번 더 시도
+            try {
+              const nextMailboxAddress = await ensureMailboxAddressForBusiness({
+                requestMongoId: request._id,
+                requestorOrgId: businessAnchorId,
+                currentMailboxAddress: null,
+                session,
+              });
+              if (nextMailboxAddress && nextMailboxAddress !== resolvedMailbox) {
+                resolvedMailbox = String(nextMailboxAddress).trim();
+                request.mailboxAddress = resolvedMailbox;
+              }
+            } catch {
+              // ignore and throw original below if still failing
+            }
+            continue;
+          }
+          throw err;
         }
-      } else {
-        throw err;
       }
     }
   }

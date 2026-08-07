@@ -588,6 +588,18 @@ export async function deleteStageFile(req, res) {
       if (prevStage) {
         applyStatusMapping(request, prevStage);
       }
+      // 포장.발송 롤백: 우편함/패킹 승인 잔존으로 타 업체 박스 혼입·재승인 실패를 막는다.
+      if (stage === "shipping") {
+        request.mailboxAddress = null;
+        request.caseInfos = request.caseInfos || {};
+        request.caseInfos.reviewByStage = request.caseInfos.reviewByStage || {};
+        request.caseInfos.reviewByStage.packing = {
+          status: "PENDING",
+          updatedAt: new Date(),
+          updatedBy: req.user?._id || null,
+          reason: "",
+        };
+      }
       request.productionSchedule = request.productionSchedule || {};
       if (stage === "machining") {
         request.productionSchedule.actualMachiningStart = null;

@@ -10,8 +10,17 @@
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/RequestPage.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/utils/request.ts
-import { Fragment, type ReactNode } from "react";
+import { type ReactNode } from "react";
 import type { DeadlineInfo } from "../utils/request";
+
+/** lovable-tagger가 Fragment에 data-lov-id를 붙여 경고가 나므로 DOM 노드로 감싼다. */
+function InlineGroup({
+  children,
+}: {
+  children: ReactNode;
+}) {
+  return <span className="contents">{children}</span>;
+}
 
 export type RequestInfoSummaryProps = {
   /** 기공소명(의뢰 사업자). 상단 조직 줄에만 사용 */
@@ -217,18 +226,18 @@ export function RequestInfoSummary({
             <span className="font-medium text-slate-800">{labName}</span>
           )}
           {dateLabel && (
-            <>
+            <InlineGroup>
               {labName ? <Dot /> : null}
               <span className="tabular-nums text-slate-600">{dateLabel}</span>
-            </>
+            </InlineGroup>
           )}
           {shipLabel && (
-            <>
+            <InlineGroup>
               {labName || dateLabel ? <Dot /> : null}
               <span className="tabular-nums text-slate-600 whitespace-nowrap">
                 {shipLabel}
               </span>
-            </>
+            </InlineGroup>
           )}
           {deadlineText && (
             <span
@@ -262,10 +271,10 @@ export function RequestInfoSummary({
         <MetaRow>
           <span className="font-medium text-slate-800">{implantLine}</span>
           {retention && (
-            <>
+            <InlineGroup>
               <Dot />
               <span className="text-slate-600">유지홈 {retention}</span>
-            </>
+            </InlineGroup>
           )}
         </MetaRow>
       )}
@@ -277,10 +286,10 @@ export function RequestInfoSummary({
       {geometryItems.length > 0 && (
         <MetaRow>
           {geometryItems.map((item, idx) => (
-            <Fragment key={item}>
+            <InlineGroup key={item}>
               {idx > 0 && <Dot />}
               <span className="tabular-nums text-slate-600">{item}</span>
-            </Fragment>
+            </InlineGroup>
           ))}
         </MetaRow>
       )}
@@ -296,10 +305,10 @@ export function RequestInfoSummary({
     >
       <MetaRow>
         {productionItems.map((item, idx) => (
-          <Fragment key={`${item}-${idx}`}>
+          <InlineGroup key={`${item}-${idx}`}>
             {idx > 0 && <Dot />}
             <span className="text-slate-600">{item}</span>
-          </Fragment>
+          </InlineGroup>
         ))}
       </MetaRow>
     </Section>

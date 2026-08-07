@@ -247,7 +247,9 @@ export async function allocateVirtualMailboxAddress(
     }),
   )
     .select(
-      "_id mailboxAddress businessAnchorId requestor deliveryInfoRef shippingWorkflow.code shippingWorkflow.trackingStatusCode",
+      // manufacturerStage 필수: isMailboxOccupancyCandidate가 stage로 점유 여부를 판정한다.
+      // select 누락 시 점유가 전부 제외되어 서로 다른 업체가 A1A1 등 동일 우편함에 섞인다.
+      "_id mailboxAddress businessAnchorId requestor manufacturerStage deliveryInfoRef shippingWorkflow.code shippingWorkflow.trackingStatusCode",
     )
     .populate("requestor", "businessAnchorId")
     .populate(
@@ -346,7 +348,9 @@ export async function ensureMailboxAddressForBusiness({
     }),
   )
     .select(
-      "_id mailboxAddress businessAnchorId requestor deliveryInfoRef shippingWorkflow.code shippingWorkflow.trackingStatusCode",
+      // manufacturerStage 필수: isMailboxOccupancyCandidate가 stage로 점유 여부를 판정한다.
+      // select 누락 시 점유가 전부 제외되어 서로 다른 업체가 A1A1 등 동일 우편함에 섞인다.
+      "_id mailboxAddress businessAnchorId requestor manufacturerStage deliveryInfoRef shippingWorkflow.code shippingWorkflow.trackingStatusCode",
     )
     .populate("requestor", "businessAnchorId")
     .populate(
