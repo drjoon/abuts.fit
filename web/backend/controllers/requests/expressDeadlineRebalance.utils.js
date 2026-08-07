@@ -19,6 +19,7 @@ import {
   inferDiameterGroupFromValue,
   isMachiningCompleted,
   isMachiningInProgress,
+  machineMaterialCoversMaxDiameter,
 } from "../cnc/distribution.utils.js";
 import {
   compareMachiningQueueOrder,
@@ -199,13 +200,7 @@ export function simulateMachineQueueEtas({
 }
 
 function machineCanCoverRequest(materialDia, maxDiameter) {
-  return (
-    Number.isFinite(materialDia) &&
-    materialDia > 0 &&
-    Number.isFinite(maxDiameter) &&
-    maxDiameter > 0 &&
-    materialDia + 1e-9 >= maxDiameter
-  );
+  return machineMaterialCoversMaxDiameter(materialDia, maxDiameter);
 }
 
 function cloneQueueMaps(queuesByMachine) {

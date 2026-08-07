@@ -7,6 +7,7 @@
 // - web/frontend/src/pages/manufacturer/equipment/cnc/hooks/useManUpload.ts
 // change-log:
 // - 2026-08-07: last-completed 맵에 의뢰자명(businessName) 포함.
+// - 2026-08-07: auto-next 직경 호환을 소재≥maxDiameter 커버 규칙으로 통일 (D6→D8/D10 허용).
 import Request from "../../models/request.model.js";
 import CncEvent from "../../models/cncEvent.model.js";
 import CncMachine from "../../models/cncMachine.model.js";
@@ -35,8 +36,9 @@ import {
 import { compareMachiningQueueOrder } from "../requests/production.utils.js";
 import { appendMachiningJobStats } from "./tooling.js";
 import {
-  inferMaterialDiameterGroup,
+  inferCurrentMaterialDiameter,
   inferRequestDiameterGroup,
+  isRequestDiameterCompatibleWithMachineMaterial,
   normalizeDiameterGroupValue,
 } from "./distribution.utils.js";
 
@@ -112,33 +114,13 @@ function isMachineOnlineStatus(status) {
   return ["OK", "ONLINE", "RUNNING", "IDLE", "STOP"].includes(s);
 }
 
-function resolveMachineRuntimeDiameterGroupSet(machineMeta) {
-  const currentGroup = normalizeDiameterGroupValue(
-    inferMaterialDiameterGroup(machineMeta),
-  );
-  if (currentGroup) {
-    return new Set([currentGroup]);
-  }
-
-  const set = new Set(
-    (Array.isArray(machineMeta?.maxModelDiameterGroups)
-      ? machineMeta.maxModelDiameterGroups
-      : []
-    )
-      .map((g) => normalizeDiameterGroupValue(g))
-      .filter(Boolean),
-  );
-  return set;
-}
-
 function isRequestDiameterCompatibleWithMachine({ requestDoc, machineMeta }) {
-  const reqGroup = normalizeDiameterGroupValue(
-    inferRequestDiameterGroup(requestDoc),
-  );
-  if (!reqGroup) return true;
-  const machineGroupSet = resolveMachineRuntimeDiameterGroupSet(machineMeta);
-  if (machineGroupSet.size === 0) return true;
-  return machineGroupSet.has(reqGroup);
+  // 정책: 소재 직경 ≥ 요청 maxDiameter (D6 의뢰 → D8/D10 장비 가공 가능)
+  // 그룹 exact-match 금지 — chooseMachineForCamMachining / express rebalance 와 동일 SSOT
+  return isRequestDiameterCompatibleWithMachineMaterial({
+    requestDoc,
+    machineMeta,
+  });
 }
 
 export async function getCompletedMachiningRecords(req, res) {
@@ -1058,8 +1040,15 @@ export async function triggerNextAutoMachiningAfterComplete({
               if (!isMachineOnlineStatus(meta?.lastStatus)) return null;
               const cncMeta = allCncMap.get(uid);
               if (!cncMeta) return null;
-              const groups = resolveMachineRuntimeDiameterGroupSet(cncMeta);
-              if (groups.size > 0 && !groups.has(reqGroup)) return null;
+              // 재배정 후보도 동일 커버 규칙(소재 ≥ maxDiameter)
+              if (
+                !isRequestDiameterCompatibleWithMachineMaterial({
+                  requestDoc: firstDiameterMismatched,
+                  machineMeta: cncMeta,
+                })
+              ) {
+                return null;
+              }
               return uid;
             })
             .filter(Boolean);
@@ -1128,8 +1117,9 @@ export async function triggerNextAutoMachiningAfterComplete({
     }
 
     if (!pick) {
+      const materialDia = inferCurrentMaterialDiameter(cncRuntimeMeta);
       console.log(
-        `[bridge:auto-next] no diameter-compatible pending jobs found for ${mid}, staying idle. pending=${Array.isArray(pending) ? pending.length : 0} skippedNoNcMeta=${skippedNoNcMeta} skippedAlreadyRunning=${skippedAlreadyRunning}`,
+        `[bridge:auto-next] no diameter-compatible pending jobs found for ${mid}, staying idle. pending=${Array.isArray(pending) ? pending.length : 0} skippedNoNcMeta=${skippedNoNcMeta} skippedAlreadyRunning=${skippedAlreadyRunning} materialDia=${Number.isFinite(materialDia) ? materialDia : "null"} firstMismatchedMaxD=${firstDiameterMismatched ? Number(firstDiameterMismatched?.caseInfos?.maxDiameter) || "null" : "null"} firstMismatchedReqGroup=${firstDiameterMismatched ? normalizeDiameterGroupValue(inferRequestDiameterGroup(firstDiameterMismatched)) || "null" : "null"}`,
       );
       return;
     }

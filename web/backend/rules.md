@@ -143,6 +143,8 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
 - 큐 조회: `getAllProductionQueues` / `getProductionQueues` (`controllers/cnc/production.js`)
 - 승인·배정: `common.review.controller.js`, `services/reviewApprovalQueue.service.js`
 - 자동 Next: `controllers/cnc/machiningBridge.js` `fetchPendingForAutoNext`
+  - 호환 SSOT: 장착 소재 직경 ≥ `caseInfos.maxDiameter` (D6 의뢰 → D8/D10 장비 허용; 그룹 exact-match 금지)
+  - 공유 헬퍼: `distribution.utils.js` `isRequestDiameterCompatibleWithMachineMaterial`
 - 재배정: `controllers/cnc/production.js` redistribute + express rebalance
 - 표시: 큐/lastCompleted/summary API에 `shippingMode` 포함 → 프론트 `ShippingModeBadge` (프리뷰 추가 round-trip 금지)
 - 표시: 큐/lastCompleted에 `businessName`(BusinessAnchor.name) 포함 → 프론트 가공 카드·예약목록 의뢰자명

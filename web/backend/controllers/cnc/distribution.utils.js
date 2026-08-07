@@ -5,6 +5,8 @@
 // - web/backend/controllers/cnc/machiningBridge.js
 // - web/backend/controllers/cnc/production.js
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/machining/MachiningQueueBoard.tsx
+// change-log:
+// - 2026-08-07: 소재≥maxDiameter 커버 헬퍼 추가 (auto-next/재배정 SSOT).
 import Request from "../../models/request.model.js";
 
 // 가공 단계는 `가공` 단일값만 허용한다.
@@ -85,6 +87,82 @@ export function inferRequestDiameterGroup(reqItem) {
   if (groupRaw) return normalizeDiameterGroupValue(groupRaw);
   const diameter = Number(reqItem?.productionSchedule?.diameter);
   return inferDiameterGroupFromValue(diameter);
+}
+
+/**
+ * 소재 직경이 요청 maxDiameter를 커버하는지 판정.
+ * 정책(rules.md §B): 소재 직경 ≥ 요청 maxDiameter
+ * 예) D6 의뢰 → D8/D10 장착 장비에서 가공 가능 (CAM은 해당 장착 직경 NC 필요)
+ */
+export function machineMaterialCoversMaxDiameter(materialDia, maxDiameter) {
+  return (
+    Number.isFinite(materialDia) &&
+    materialDia > 0 &&
+    Number.isFinite(maxDiameter) &&
+    maxDiameter > 0 &&
+    materialDia + 1e-9 >= maxDiameter
+  );
+}
+
+/**
+ * 자동가공/재배정용 런타임 호환 판정.
+ * - SSOT: caseInfos.maxDiameter vs 현재 장착 소재 직경
+ * - maxModelDiameterGroups가 있으면 요청 그룹 또는 장착 소재 그룹 중 하나라도 허용해야 함
+ *   (chooseMachineForCamMachining ceil 후보와 동일)
+ */
+export function isRequestDiameterCompatibleWithMachineMaterial({
+  requestDoc,
+  machineMeta,
+}) {
+  const maxD = Number(requestDoc?.caseInfos?.maxDiameter);
+  const materialDia = inferCurrentMaterialDiameter(machineMeta);
+  const reqGroup = normalizeDiameterGroupValue(
+    inferRequestDiameterGroup(requestDoc),
+  );
+  const materialGroup = normalizeDiameterGroupValue(
+    inferMaterialDiameterGroup(machineMeta),
+  );
+
+  const allowedGroups = (
+    Array.isArray(machineMeta?.maxModelDiameterGroups)
+      ? machineMeta.maxModelDiameterGroups
+      : []
+  )
+    .map((g) => normalizeDiameterGroupValue(g))
+    .filter(Boolean);
+
+  if (allowedGroups.length > 0) {
+    const allowsTarget = Boolean(reqGroup && allowedGroups.includes(reqGroup));
+    const allowsMaterial = Boolean(
+      materialGroup && allowedGroups.includes(materialGroup),
+    );
+    if (!allowsTarget && !allowsMaterial) return false;
+  }
+
+  // maxDiameter SSOT가 있으면 장착 소재 ≥ maxDiameter
+  if (Number.isFinite(maxD) && maxD > 0) {
+    if (!Number.isFinite(materialDia) || materialDia <= 0) {
+      // 소재 미설정이면 그룹 허용만으로 통과시키지 않고, 그룹 셋이 비어있을 때만 허용
+      return allowedGroups.length === 0;
+    }
+    return machineMaterialCoversMaxDiameter(materialDia, maxD);
+  }
+
+  // maxDiameter 없으면 요청 그룹을 장착 소재(또는 그룹 수치)로 커버 가능한지 본다.
+  if (!reqGroup) return true;
+  if (Number.isFinite(materialDia) && materialDia > 0) {
+    const reqDiaApprox = Number(reqGroup);
+    if (Number.isFinite(reqDiaApprox) && reqDiaApprox > 0) {
+      return machineMaterialCoversMaxDiameter(materialDia, reqDiaApprox);
+    }
+  }
+  if (!materialGroup) return allowedGroups.length === 0;
+  const materialNum = Number(materialGroup);
+  const reqNum = Number(reqGroup);
+  if (Number.isFinite(materialNum) && Number.isFinite(reqNum)) {
+    return materialNum + 1e-9 >= reqNum;
+  }
+  return materialGroup === reqGroup;
 }
 
 export function isMachiningInProgress(reqItem) {
