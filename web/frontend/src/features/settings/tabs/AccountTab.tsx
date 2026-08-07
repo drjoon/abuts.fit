@@ -52,6 +52,8 @@ import {
   CommandList,
 } from "@/components/ui/command";
 import { SettingsCardSkeleton } from "@/features/components/SettingsSkeletons";
+import { useAvatarCarousel } from "@/shared/hooks/useAvatarCarousel";
+import { avatarSeedFromUrl } from "@/shared/lib/avatarOptions";
 
 interface AccountTabProps {
   userData: {
@@ -74,8 +76,6 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
   const lastSavedKeyRef = useRef<string>("");
   const handleSaveRef = useRef<(() => Promise<void>) | null>(null);
   const passwordInputRef = useRef<HTMLInputElement | null>(null);
-
-  const [avatarNonce, setAvatarNonce] = useState(0);
 
   const [authMethods, setAuthMethods] = useState({
     email: false,
@@ -293,22 +293,14 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
     }
   };
 
-  const avatarOptions = useMemo(() => {
-    const seedBase = (accountData.email || accountData.name || "user")
-      .trim()
-      .slice(0, 30);
-    const seeds = [
-      `${seedBase}-${avatarNonce}-1`,
-      `${seedBase}-${avatarNonce}-2`,
-      `${seedBase}-${avatarNonce}-3`,
-      `${seedBase}-${avatarNonce}-4`,
-    ];
-    // return objects with both url and seed so we can render with AvatarImage (has fallback handling)
-    return seeds.map((seed) => ({
-      seed,
-      url: `https://robohash.org/${encodeURIComponent(seed)}?set=set4&bgset=bg1`,
-    }));
-  }, [accountData.email, accountData.name, avatarNonce]);
+  const avatarSeedBase = (accountData.email || accountData.name || "user")
+    .trim()
+    .slice(0, 50);
+  const {
+    avatarOptions,
+    refreshAvatars,
+    isPrefetchReady,
+  } = useAvatarCarousel(avatarSeedBase);
 
   const [accountLoading, setAccountLoading] = useState(Boolean(token));
 
@@ -790,7 +782,7 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
                       >
                         <Avatar className="h-10 w-10">
                           <AvatarImage
-                            seed={opt.seed}
+                            seed={opt.seed || avatarSeedFromUrl(opt.url)}
                             fallbackInitial={accountData.name}
                             src={opt.url}
                             alt={accountData.name}
@@ -804,9 +796,12 @@ export const AccountTab = ({ userData }: AccountTabProps) => {
                       type="button"
                       className={cn(
                         "rounded-full border bg-white/80 p-0.5 transition-colors",
-                        "border-border hover:border-muted-foreground/40",
+                        isPrefetchReady
+                          ? "border-border hover:border-muted-foreground/40"
+                          : "border-dashed border-border opacity-70",
                       )}
-                      onClick={() => setAvatarNonce((v) => v + 1)}
+                      onClick={refreshAvatars}
+                      aria-label="새 이미지 그룹 불러오기"
                     >
                       <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white/80">
                         <RefreshCcw className="h-4 w-4 text-muted-foreground" />

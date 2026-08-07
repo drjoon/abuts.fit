@@ -5,7 +5,7 @@
 // - web/frontend/src/pages/practice/PracticeDropzonePage.tsx
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
 // - web/backend/modules/practiceTransfers/practiceTransfer.routes.js
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
@@ -36,6 +36,8 @@ import { NotificationsTab } from "@/features/settings/tabs/NotificationsTab";
 import { RequestorSecurity as PracticeSecurity } from "@/pages/requestor/settings/Security";
 import { BusinessTab } from "@/shared/components/business/settings/BusinessTab";
 import { StaffTab } from "@/features/settings/tabs/StaffTab";
+import { useAvatarCarousel } from "@/shared/hooks/useAvatarCarousel";
+import { avatarSeedFromUrl } from "@/shared/lib/avatarOptions";
 
 type TabKey = "account" | "business" | "staff" | "notifications" | "security";
 
@@ -69,7 +71,6 @@ export const PracticeSettingsPage = () => {
 
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [avatarNonce, setAvatarNonce] = useState(0);
 
   const [form, setForm] = useState<PracticeAccountForm>({
     staffName: toStringSafe(user?.practiceProfile?.staffName || user?.name),
@@ -98,20 +99,10 @@ export const PracticeSettingsPage = () => {
     return "account";
   })();
 
-  const avatarOptions = useMemo(() => {
-    const seedBase = (form.email || form.staffName || "practice").slice(0, 30);
-    const seeds = [
-      `${seedBase}-${avatarNonce}-1`,
-      `${seedBase}-${avatarNonce}-2`,
-      `${seedBase}-${avatarNonce}-3`,
-      `${seedBase}-${avatarNonce}-4`,
-    ];
-
-    return seeds.map((seed) => ({
-      seed,
-      url: `https://robohash.org/${encodeURIComponent(seed)}?set=set4&bgset=bg1`,
-    }));
-  }, [avatarNonce, form.email, form.staffName]);
+  const avatarSeedBase = (form.email || form.staffName || "practice")
+    .trim()
+    .slice(0, 50);
+  const { avatarOptions, refreshAvatars } = useAvatarCarousel(avatarSeedBase);
 
   const loadProfile = async () => {
     if (!token) return;
@@ -352,7 +343,7 @@ export const PracticeSettingsPage = () => {
 
                     {avatarOptions.map((opt) => (
                       <button
-                        key={opt.seed}
+                        key={opt.url}
                         type="button"
                         className={`rounded-full border p-0.5 transition-colors ${
                           form.profileImage === opt.url
@@ -369,7 +360,7 @@ export const PracticeSettingsPage = () => {
                         <Avatar className="h-11 w-11">
                           <AvatarImage
                             src={opt.url}
-                            seed={opt.seed}
+                            seed={opt.seed || avatarSeedFromUrl(opt.url)}
                             fallbackInitial={form.staffName || "P"}
                             alt="avatar"
                           />
@@ -382,7 +373,8 @@ export const PracticeSettingsPage = () => {
                       type="button"
                       variant="outline"
                       size="icon"
-                      onClick={() => setAvatarNonce((prev) => prev + 1)}
+                      onClick={refreshAvatars}
+                      aria-label="새 이미지 그룹 불러오기"
                     >
                       <RefreshCcw className="h-4 w-4" />
                     </Button>

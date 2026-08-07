@@ -20,6 +20,7 @@ import { useToast } from "@/shared/hooks/use-toast";
 import { request } from "@/shared/api/apiClient";
 import { cn } from "@/shared/ui/cn";
 import { useAvatarCarousel } from "@/shared/hooks/useAvatarCarousel";
+import { avatarSeedFromUrl } from "@/shared/lib/avatarOptions";
 
 interface ProfileStepProps {
   defaultCompleted?: boolean;
@@ -232,42 +233,29 @@ export const ProfileStep = ({
       </div>
 
       <div className="grid grid-cols-4 gap-3 justify-items-center">
-        {carouselAvatars.map((url) => {
-          // try to recover the seed used by robohash from the url so AvatarImage fallback matches
-          let seedFromUrl: string | undefined;
-          try {
-            const parsed = new URL(url);
-            const path = parsed.pathname || "";
-            const last = path.split("/").pop() || "";
-            seedFromUrl = decodeURIComponent(last);
-          } catch (e) {
-            seedFromUrl = undefined;
-          }
-
-          return (
-            <button
-              key={url}
-              type="button"
-              className={cn(
-                "rounded-full border p-0.5 transition",
-                profileImage === url
-                  ? "border-slate-900"
-                  : "border-slate-200 hover:border-slate-300",
-              )}
-              onClick={() => setProfileImage(url)}
-            >
-              <Avatar className="h-12 w-12">
-                <AvatarImage
-                  seed={seedFromUrl}
-                  fallbackInitial={name}
-                  src={url}
-                  alt={name}
-                />
-                <AvatarFallback />
-              </Avatar>
-            </button>
-          );
-        })}
+        {carouselAvatars.map((url) => (
+          <button
+            key={url}
+            type="button"
+            className={cn(
+              "rounded-full border p-0.5 transition",
+              profileImage === url
+                ? "border-slate-900"
+                : "border-slate-200 hover:border-slate-300",
+            )}
+            onClick={() => setProfileImage(url)}
+          >
+            <Avatar className="h-12 w-12">
+              <AvatarImage
+                seed={avatarSeedFromUrl(url)}
+                fallbackInitial={name}
+                src={url}
+                alt={name}
+              />
+              <AvatarFallback />
+            </Avatar>
+          </button>
+        ))}
       </div>
 
       <div className="flex justify-center">
