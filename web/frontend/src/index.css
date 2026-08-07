@@ -127,7 +127,7 @@ All colors MUST be HSL.
   }
 
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground text-base;
     background-image:
       radial-gradient(
         circle at top right,
@@ -244,6 +244,63 @@ All colors MUST be HSL.
 .hover-scrollbar:hover::-webkit-scrollbar-thumb:hover,
 .hover-scrollbar:focus-within::-webkit-scrollbar-thumb:hover {
   background: hsl(var(--primary) / 0.6);
+}
+
+/* 작은 임의(px) 폰트 가독성: Tailwind text-xs/sm 스케일 상향과 맞춤 */
+.text-\[9px\] {
+  font-size: 11px !important;
+}
+
+.text-\[10px\] {
+  font-size: 12px !important;
+}
+
+.text-\[11px\] {
+  font-size: 13px !important;
+}
+
+.text-\[12px\] {
+  font-size: 14px !important;
+}
+
+.text-\[13px\] {
+  font-size: 15px !important;
+}
+
+.text-\[14px\] {
+  font-size: 16px !important;
+}
+
+.text-\[15px\] {
+  font-size: 17px !important;
+}
+
+@media (min-width: 640px) {
+  .sm\:text-\[10px\] {
+    font-size: 12px !important;
+  }
+
+  .sm\:text-\[11px\] {
+    font-size: 13px !important;
+  }
+
+  .sm\:text-\[12px\] {
+    font-size: 14px !important;
+  }
+}
+
+@media (min-width: 768px) {
+  .md\:text-\[10px\] {
+    font-size: 12px !important;
+  }
+
+  .md\:text-\[11px\] {
+    font-size: 13px !important;
+  }
+
+  .md\:text-\[12px\] {
+    font-size: 14px !important;
+  }
 }
 
 /* 신규 의뢰 페이지: 가독성 보조 (기본 대비 1.2배) */

@@ -472,13 +472,7 @@ export const SettingsWizard = ({
   }, [currentStep]);
 
   return (
-    <div
-      className={cn(
-        "min-h-screen bg-gradient-to-b from-[#edf2ff] via-white to-[#f8fafc]",
-        // 온보딩 전체 가독성: 하위 text-xs/sm/base를 한 단계씩 키움
-        "[&_.text-xs]:!text-sm [&_.text-sm]:!text-base [&_.text-base]:!text-lg",
-      )}
-    >
+    <div className="min-h-screen bg-gradient-to-b from-[#edf2ff] via-white to-[#f8fafc]">
       <div className="mx-auto flex min-h-screen w-full flex-col items-center justify-center px-4 py-12">
         <div className="mb-6 text-center">
           <div className="inline-flex items-center gap-2 rounded-full border border-white/70 bg-white/70 px-4 py-1.5 text-sm font-semibold uppercase tracking-[0.2em] text-slate-500 shadow-sm">

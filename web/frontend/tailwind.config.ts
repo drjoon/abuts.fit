@@ -22,6 +22,14 @@ export default {
 			}
 		},
 		extend: {
+			fontSize: {
+				// 가독성: 기본 스케일보다 한 단계 크게 (온보딩과 동일)
+				xs: ["0.875rem", { lineHeight: "1.25rem" }], // 14px (was 12)
+				sm: ["1rem", { lineHeight: "1.5rem" }], // 16px (was 14)
+				base: ["1.125rem", { lineHeight: "1.75rem" }], // 18px (was 16)
+				lg: ["1.25rem", { lineHeight: "1.75rem" }], // 20px (was 18)
+				xl: ["1.5rem", { lineHeight: "2rem" }], // 24px (was 20)
+			},
 			colors: {
 				border: 'hsl(var(--border))',
 				input: 'hsl(var(--input))',
