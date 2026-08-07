@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-07: 수동 집하 모달 UX — 세그먼트 모드/요약 푸터/사유관리 축약
 // - 2026-08-04: 오늘 발송 체크 해제(clearedForceToday)가 persisted summary를 덮어쓰도록 수정
 // related files:
 // - web/frontend/rules.md
@@ -9,7 +10,7 @@
 // - web/backend/controllers/requests/shipping.controller.js
 // - web/backend/modules/requests/request.routes.js
 import { useMemo, useState, useRef, useEffect, useCallback } from "react";
-import { RefreshCw } from "lucide-react";
+import { Plus, RefreshCw, Trash2, X } from "lucide-react";
 import { useToast } from "@/shared/hooks/use-toast";
 import { request } from "@/shared/api/apiClient";
 import {
@@ -61,6 +62,34 @@ type ManualPickupMode = "none" | "hanjin" | "alternate";
 type ManualPickupReasonOption = {
   id: string;
   label: string;
+};
+
+const MANUAL_PICKUP_MODE_OPTIONS: Array<{
+  value: ManualPickupMode;
+  shortLabel: string;
+  hint: string;
+}> = [
+  { value: "none", shortLabel: "제외", hint: "이번 반영에서 제외" },
+  { value: "hanjin", shortLabel: "한진", hint: "운송장번호 → 집하완료" },
+  { value: "alternate", shortLabel: "한진외", hint: "사유 → 배송완료" },
+];
+
+const MANUAL_PICKUP_CARD_STYLE: Record<
+  ManualPickupMode,
+  { card: string; badge: string }
+> = {
+  none: {
+    card: "border-slate-200 bg-slate-50/80",
+    badge: "bg-slate-200 text-slate-600",
+  },
+  hanjin: {
+    card: "border-blue-200 bg-blue-50/40",
+    badge: "bg-blue-100 text-blue-700",
+  },
+  alternate: {
+    card: "border-amber-200 bg-amber-50/40",
+    badge: "bg-amber-100 text-amber-800",
+  },
 };
 
 const DEFAULT_MANUAL_PICKUP_REASON_LABELS = ["방문 전달"];
@@ -1010,6 +1039,67 @@ export const MailboxGrid = ({
     return Array.from(mailboxSummaryMap.keys());
   }, [mailboxSummaryMap]);
 
+  const manualPickupSummary = useMemo(() => {
+    let none = 0;
+    let hanjin = 0;
+    let alternate = 0;
+    for (const addr of occupiedAddresses) {
+      const mode = manualPickupModeByAddress?.[addr] || "hanjin";
+      if (mode === "none") none += 1;
+      else if (mode === "alternate") alternate += 1;
+      else hanjin += 1;
+    }
+    return {
+      none,
+      hanjin,
+      alternate,
+      applyCount: hanjin + alternate,
+    };
+  }, [manualPickupModeByAddress, occupiedAddresses]);
+
+  const setAllManualPickupModes = useCallback((mode: ManualPickupMode) => {
+    setManualPickupModeByAddress((prev) => {
+      const next: Record<string, ManualPickupMode> = { ...prev };
+      for (const addr of occupiedAddresses) {
+        next[addr] = mode;
+      }
+      return next;
+    });
+  }, [occupiedAddresses]);
+
+  const addManualPickupReasonOption = useCallback(() => {
+    const nextLabel = String(manualPickupReasonOptionDraft || "")
+      .slice(0, 120)
+      .trim();
+    if (!nextLabel) return;
+    const exists = manualPickupReasonOptions.some(
+      (item) => String(item.label || "").trim() === nextLabel,
+    );
+    if (exists) {
+      toast({
+        title: "이미 존재하는 사유",
+        description: "같은 이름의 수동집하 사유가 이미 있습니다.",
+      });
+      return;
+    }
+
+    const created: ManualPickupReasonOption = {
+      id: `manual-pickup-reason-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      label: nextLabel,
+    };
+    const nextOptions = [...manualPickupReasonOptions, created];
+    setManualPickupReasonOptions(nextOptions);
+    setManualPickupReasonOptionDraft("");
+    cancelManualPickupReasonAutosave();
+    void saveManualPickupReasonOptions(nextOptions);
+  }, [
+    cancelManualPickupReasonAutosave,
+    manualPickupReasonOptionDraft,
+    manualPickupReasonOptions,
+    saveManualPickupReasonOptions,
+    toast,
+  ]);
+
   const mailboxShippingDayMap = useMemo(() => {
     const map = new Map<string, MailboxShippingDayInfo>();
     for (const [address, summary] of mailboxSummaryMap.entries()) {
@@ -1937,183 +2027,190 @@ export const MailboxGrid = ({
       )}
 
       {manualPickupDialogOpen && (
-        <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 pt-16">
-            <div className="bg-white rounded-2xl shadow-2xl w-[560px] max-w-[94vw] overflow-hidden">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
-              <div>
+        <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 pt-12 sm:pt-16">
+          <div className="bg-white rounded-2xl shadow-2xl w-[640px] max-w-[94vw] max-h-[calc(100vh-4rem)] overflow-hidden flex flex-col">
+            <div className="flex items-start justify-between gap-4 px-5 sm:px-6 py-4 border-b border-slate-100 shrink-0">
+              <div className="min-w-0">
                 <div className="font-semibold text-base text-slate-800">
                   수동 집하 반영
                 </div>
                 <div className="text-xs text-slate-400 mt-0.5">
-                  실제 택배사 접수 후 운송장 정보를 입력하면 추적관리로
-                  반영됩니다.
+                  택배 접수 후 운송장·사유를 입력하면 추적관리에 반영됩니다.
                 </div>
               </div>
               <button
-                className="text-slate-400 hover:text-slate-600 text-lg leading-none"
+                type="button"
+                aria-label="닫기"
+                className="shrink-0 rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
                 onClick={() => setManualPickupDialogOpen(false)}
               >
-                ✕
+                <X className="h-4 w-4" />
               </button>
             </div>
 
-            <div className="px-6 py-4 space-y-4">
-              <div className="text-xs text-slate-500">
-                우편함별로 반영 방식을 선택하세요. <br />
-                - 반영 안 함: 이번 수동 집하에서 제외 (예: 자동집하 예정) <br />
-                - 한진 집하완료: 운송장번호 입력 후 집하완료 처리 <br />
-                - 한진 외 배송완료: 사유 입력 후 배송완료 처리
+            <div className="px-5 sm:px-6 py-4 space-y-3 overflow-y-auto flex-1 min-h-0">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-[11px] text-slate-500 leading-relaxed">
+                  <span className="font-medium text-slate-600">제외</span> 반영 안 함
+                  <span className="mx-1.5 text-slate-300">·</span>
+                  <span className="font-medium text-blue-600">한진</span> 운송장 → 집하완료
+                  <span className="mx-1.5 text-slate-300">·</span>
+                  <span className="font-medium text-amber-700">한진외</span> 사유 → 배송완료
+                </p>
+                <div className="flex items-center gap-1 text-[11px] text-slate-500">
+                  <span className="mr-0.5">일괄</span>
+                  {MANUAL_PICKUP_MODE_OPTIONS.map((opt) => (
+                    <button
+                      key={`bulk-${opt.value}`}
+                      type="button"
+                      className="rounded-md border border-slate-200 bg-white px-2 py-1 font-medium text-slate-600 hover:bg-slate-50"
+                      onClick={() => setAllManualPickupModes(opt.value)}
+                    >
+                      {opt.shortLabel}
+                    </button>
+                  ))}
+                </div>
               </div>
 
-              <div className="max-h-[250px] overflow-y-auto pr-1">
-                <div className="grid grid-cols-2 gap-3">
+              <div className="max-h-[280px] overflow-y-auto pr-0.5 -mr-0.5">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                   {occupiedAddresses.map((addr) => {
                     const count = Number(
                       mailboxSummaryMap.get(addr)?.requestCount || 0,
                     );
                     const mode = manualPickupModeByAddress?.[addr] || "hanjin";
+                    const cardStyle = MANUAL_PICKUP_CARD_STYLE[mode];
                     return (
                       <div
                         key={addr}
-                        className="rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-2"
+                        className={`rounded-xl border p-3 space-y-2.5 transition-colors ${cardStyle.card}`}
                       >
-                      <div className="flex items-center justify-between gap-3">
-                        <div className="text-sm font-semibold text-slate-700">
-                          {addr} ({count}건)
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className="text-sm font-semibold font-mono text-slate-800 truncate">
+                              {addr}
+                            </span>
+                            <span
+                              className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${cardStyle.badge}`}
+                            >
+                              {count}건
+                            </span>
+                          </div>
                         </div>
-                        <div className="relative">
-                          <select
-                            value={mode}
+
+                        <div
+                          className="grid grid-cols-3 gap-1 rounded-lg bg-white/80 p-0.5 border border-slate-200/80"
+                          role="group"
+                          aria-label={`${addr} 반영 방식`}
+                        >
+                          {MANUAL_PICKUP_MODE_OPTIONS.map((opt) => {
+                            const selected = mode === opt.value;
+                            return (
+                              <button
+                                key={opt.value}
+                                type="button"
+                                title={opt.hint}
+                                onClick={() => {
+                                  setManualPickupModeByAddress((prev) => ({
+                                    ...prev,
+                                    [addr]: opt.value,
+                                  }));
+                                }}
+                                className={`h-8 rounded-md text-xs font-medium transition-colors ${
+                                  selected
+                                    ? opt.value === "hanjin"
+                                      ? "bg-blue-500 text-white shadow-sm"
+                                      : opt.value === "alternate"
+                                        ? "bg-amber-500 text-white shadow-sm"
+                                        : "bg-slate-500 text-white shadow-sm"
+                                    : "text-slate-500 hover:bg-slate-100 hover:text-slate-700"
+                                }`}
+                              >
+                                {opt.shortLabel}
+                              </button>
+                            );
+                          })}
+                        </div>
+
+                        {mode === "hanjin" && (
+                          <input
+                            value={manualPickupTrackingByAddress?.[addr] || ""}
                             onChange={(e) => {
-                              const value = String(e.target.value || "hanjin") as ManualPickupMode;
-                              setManualPickupModeByAddress((prev) => ({
+                              const value = e.target.value;
+                              setManualPickupTrackingByAddress((prev) => ({
                                 ...prev,
                                 [addr]: value,
                               }));
                             }}
-                            className="h-9 min-w-[132px] appearance-none rounded-lg border border-slate-300 bg-white pl-2.5 pr-8 text-xs"
-                          >
-                            <option value="none">반영 안 함</option>
-                            <option value="hanjin">한진 집하완료</option>
-                            <option value="alternate">한진 외 배송완료</option>
-                          </select>
-                          <span className="pointer-events-none absolute inset-y-0 right-2.5 flex items-center text-slate-400 text-[10px]">
-                            ▾
-                          </span>
-                        </div>
+                            placeholder="운송장번호 입력"
+                            className="w-full h-9 rounded-lg border border-blue-200 bg-white px-3 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+                          />
+                        )}
+
+                        {mode === "alternate" && (
+                          <div className="relative">
+                            <select
+                              value={
+                                manualPickupAlternateReasonIdByAddress?.[addr] ||
+                                manualPickupReasonOptions[0]?.id ||
+                                ""
+                              }
+                              onChange={(e) => {
+                                const value = String(e.target.value || "");
+                                setManualPickupAlternateReasonIdByAddress(
+                                  (prev) => ({
+                                    ...prev,
+                                    [addr]: value,
+                                  }),
+                                );
+                              }}
+                              className="w-full h-9 appearance-none rounded-lg border border-amber-200 bg-white pl-3 pr-8 text-sm text-slate-700 outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-100"
+                            >
+                              {manualPickupReasonOptions.map((reason) => (
+                                <option key={reason.id} value={reason.id}>
+                                  {reason.label}
+                                </option>
+                              ))}
+                            </select>
+                            <span className="pointer-events-none absolute inset-y-0 right-2.5 flex items-center text-amber-400 text-[10px]">
+                              ▾
+                            </span>
+                          </div>
+                        )}
+
+                        {mode === "none" && (
+                          <div className="h-9 flex items-center px-1 text-xs text-slate-400">
+                            이번 수동 집하에서 제외됩니다
+                          </div>
+                        )}
                       </div>
-
-                      {mode === "hanjin" && (
-                        <input
-                          value={manualPickupTrackingByAddress?.[addr] || ""}
-                          onChange={(e) => {
-                            const value = e.target.value;
-                            setManualPickupTrackingByAddress((prev) => ({
-                              ...prev,
-                              [addr]: value,
-                            }));
-                          }}
-                          placeholder="운송장번호 입력"
-                          className="w-full h-10 rounded-lg border border-slate-300 px-3 text-sm bg-white"
-                        />
-                      )}
-
-                      {mode === "alternate" && (
-                        <div className="relative">
-                          <select
-                            value={
-                              manualPickupAlternateReasonIdByAddress?.[addr] ||
-                              manualPickupReasonOptions[0]?.id ||
-                              ""
-                            }
-                            onChange={(e) => {
-                              const value = String(e.target.value || "");
-                              setManualPickupAlternateReasonIdByAddress((prev) => ({
-                                ...prev,
-                                [addr]: value,
-                              }));
-                            }}
-                            className="w-full h-10 appearance-none rounded-xl border border-blue-200 bg-gradient-to-b from-white to-blue-50 pl-3 pr-9 text-sm text-slate-700 shadow-sm outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
-                          >
-                            {manualPickupReasonOptions.map((reason) => (
-                              <option key={reason.id} value={reason.id}>
-                                {reason.label}
-                              </option>
-                            ))}
-                          </select>
-                          <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-blue-400 text-xs">
-                            ▾
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
+                    );
+                  })}
                 </div>
               </div>
 
-              <div className="rounded-lg border border-slate-200 bg-white">
+              <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50/50">
                 <button
                   type="button"
-                  className="w-full flex items-center justify-between px-3 py-2.5 text-left"
+                  className="w-full flex items-center justify-between px-3 py-2 text-left"
                   onClick={() =>
                     setManualPickupReasonManagerOpen((prev) => !prev)
                   }
                 >
-                  <div className="text-xs font-semibold text-slate-600">
-                    한진 외 발송 사유 관리
+                  <div className="text-xs font-medium text-slate-500">
+                    한진외 사유 목록
+                    <span className="ml-1.5 font-normal text-slate-400">
+                      {manualPickupReasonOptions.length}개 · 작업자 공유
+                    </span>
                   </div>
                   <span className="text-slate-400 text-xs">
-                    {manualPickupReasonManagerOpen ? "▴" : "▾"}
+                    {manualPickupReasonManagerOpen ? "접기" : "편집"}
                   </span>
                 </button>
 
                 {manualPickupReasonManagerOpen && (
                   <div className="px-3 pb-3 space-y-2 border-t border-slate-100">
-                    <div className="flex items-center justify-between gap-2 pt-2">
-                      <div className="text-[11px] text-slate-500">
-                        사유를 추가/수정/삭제하면 서버에 저장되어 모든 작업자에게 즉시 공유됩니다.
-                      </div>
-                      <button
-                        type="button"
-                        disabled={isSavingManualPickupReasons}
-                        className="px-2.5 py-1.5 rounded-md text-xs text-blue-600 hover:bg-blue-50 border border-blue-200 disabled:opacity-50"
-                        onClick={() => {
-                          const nextLabel = String(
-                            manualPickupReasonOptionDraft || "",
-                          )
-                            .slice(0, 120)
-                            .trim();
-                          if (!nextLabel) return;
-                          const exists = manualPickupReasonOptions.some(
-                            (item) =>
-                              String(item.label || "").trim() === nextLabel,
-                          );
-                          if (exists) {
-                            toast({
-                              title: "이미 존재하는 사유",
-                              description:
-                                "같은 이름의 수동집하 사유가 이미 있습니다.",
-                            });
-                            return;
-                          }
-
-                          const created: ManualPickupReasonOption = {
-                            id: `manual-pickup-reason-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-                            label: nextLabel,
-                          };
-                          const nextOptions = [...manualPickupReasonOptions, created];
-                          setManualPickupReasonOptions(nextOptions);
-                          setManualPickupReasonOptionDraft("");
-                          cancelManualPickupReasonAutosave();
-                          void saveManualPickupReasonOptions(nextOptions);
-                        }}
-                      >
-                        {isSavingManualPickupReasons ? "저장 중..." : "+ 사유 추가"}
-                      </button>
-                    </div>
-
-                    <div className="grid grid-cols-[1fr_auto] gap-2">
+                    <div className="flex gap-2 pt-2">
                       <input
                         value={manualPickupReasonOptionDraft}
                         onChange={(e) =>
@@ -2121,41 +2218,59 @@ export const MailboxGrid = ({
                             String(e.target.value || "").slice(0, 120),
                           )
                         }
-                        placeholder="새 사유 입력 (예: 동봉 전달, 퀵서비스)"
-                        className="h-9 rounded-lg border border-slate-300 px-3 text-sm"
+                        onKeyDown={(e) => {
+                          if (e.key !== "Enter") return;
+                          e.preventDefault();
+                          addManualPickupReasonOption();
+                        }}
+                        placeholder="새 사유 (예: 퀵서비스)"
+                        className="flex-1 h-9 rounded-lg border border-slate-300 bg-white px-3 text-sm"
                       />
+                      <button
+                        type="button"
+                        disabled={
+                          isSavingManualPickupReasons ||
+                          !String(manualPickupReasonOptionDraft || "").trim()
+                        }
+                        className="inline-flex h-9 items-center gap-1 shrink-0 rounded-lg border border-blue-200 bg-white px-2.5 text-xs font-medium text-blue-600 hover:bg-blue-50 disabled:opacity-50"
+                        onClick={addManualPickupReasonOption}
+                      >
+                        <Plus className="h-3.5 w-3.5" />
+                        {isSavingManualPickupReasons ? "저장 중" : "추가"}
+                      </button>
                     </div>
 
-                    <div className="max-h-[140px] overflow-auto space-y-2 pr-1">
+                    <div className="max-h-[120px] overflow-auto space-y-1.5 pr-0.5">
                       {manualPickupReasonOptions.map((reason) => (
                         <div
                           key={reason.id}
-                          className="grid grid-cols-[1fr_auto] items-center gap-2"
+                          className="flex items-center gap-1.5"
                         >
                           <input
                             value={reason.label}
                             onChange={(e) => {
-                              const nextLabel = String(e.target.value || "").slice(
-                                0,
-                                120,
-                              );
+                              const nextLabel = String(
+                                e.target.value || "",
+                              ).slice(0, 120);
                               setManualPickupReasonOptions((prev) => {
                                 const nextOptions = prev.map((item) =>
                                   item.id === reason.id
                                     ? { ...item, label: nextLabel }
                                     : item,
                                 );
-                                manualPickupReasonOptionsRef.current = nextOptions;
+                                manualPickupReasonOptionsRef.current =
+                                  nextOptions;
                                 return nextOptions;
                               });
                               scheduleManualPickupReasonAutosave();
                             }}
-                            className="h-9 rounded-lg border border-slate-300 px-3 text-sm bg-white"
+                            className="flex-1 h-8 rounded-md border border-slate-200 bg-white px-2.5 text-sm"
                           />
                           <button
                             type="button"
+                            aria-label={`${reason.label} 삭제`}
                             disabled={isSavingManualPickupReasons}
-                            className="px-2.5 py-1.5 rounded-md text-xs text-rose-600 hover:bg-rose-50 border border-rose-200 disabled:opacity-50"
+                            className="inline-flex h-8 w-8 items-center justify-center rounded-md text-rose-500 hover:bg-rose-50 disabled:opacity-50"
                             onClick={() => {
                               if (manualPickupReasonOptions.length <= 1) {
                                 toast({
@@ -2166,26 +2281,32 @@ export const MailboxGrid = ({
                                 return;
                               }
 
-                              const nextOptions = manualPickupReasonOptions.filter(
-                                (item) => item.id !== reason.id,
-                              );
+                              const nextOptions =
+                                manualPickupReasonOptions.filter(
+                                  (item) => item.id !== reason.id,
+                                );
                               const fallbackReasonId = nextOptions[0]?.id || "";
                               setManualPickupReasonOptions(nextOptions);
-                              setManualPickupAlternateReasonIdByAddress((prev) => {
-                                const next: Record<string, string> = {};
-                                for (const [address, selectedReasonId] of Object.entries(prev)) {
-                                  next[address] =
-                                    selectedReasonId === reason.id
-                                      ? fallbackReasonId
-                                      : selectedReasonId;
-                                }
-                                return next;
-                              });
+                              setManualPickupAlternateReasonIdByAddress(
+                                (prev) => {
+                                  const next: Record<string, string> = {};
+                                  for (const [
+                                    address,
+                                    selectedReasonId,
+                                  ] of Object.entries(prev)) {
+                                    next[address] =
+                                      selectedReasonId === reason.id
+                                        ? fallbackReasonId
+                                        : selectedReasonId;
+                                  }
+                                  return next;
+                                },
+                              );
                               cancelManualPickupReasonAutosave();
                               void saveManualPickupReasonOptions(nextOptions);
                             }}
                           >
-                            삭제
+                            <Trash2 className="h-3.5 w-3.5" />
                           </button>
                         </div>
                       ))}
@@ -2195,22 +2316,54 @@ export const MailboxGrid = ({
               </div>
             </div>
 
-            <div className="flex gap-2 justify-end items-center px-6 py-4 border-t border-slate-100">
-              <button
-                className="px-4 py-2 rounded-lg text-sm text-slate-600 hover:bg-slate-100 border border-slate-200"
-                onClick={() => setManualPickupDialogOpen(false)}
-              >
-                취소
-              </button>
-              <button
-                className="px-5 py-2 rounded-lg text-sm text-white bg-blue-500 hover:bg-blue-600 disabled:opacity-50 font-medium"
-                disabled={isRequestingPickup}
-                onClick={() => {
-                  void handleManualPickupComplete();
-                }}
-              >
-                {isRequestingPickup ? "반영 중..." : "수동 집하 반영"}
-              </button>
+            <div className="flex gap-2 justify-between items-center px-5 sm:px-6 py-4 border-t border-slate-100 shrink-0">
+              <div className="text-[11px] text-slate-400 leading-snug">
+                {manualPickupSummary.applyCount > 0 ? (
+                  <>
+                    반영 {manualPickupSummary.applyCount}개
+                    {manualPickupSummary.hanjin > 0 && (
+                      <span className="ml-1.5 text-blue-500">
+                        한진 {manualPickupSummary.hanjin}
+                      </span>
+                    )}
+                    {manualPickupSummary.alternate > 0 && (
+                      <span className="ml-1.5 text-amber-600">
+                        한진외 {manualPickupSummary.alternate}
+                      </span>
+                    )}
+                    {manualPickupSummary.none > 0 && (
+                      <span className="ml-1.5">
+                        제외 {manualPickupSummary.none}
+                      </span>
+                    )}
+                  </>
+                ) : (
+                  <span>반영할 우편함을 선택하세요</span>
+                )}
+              </div>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  className="px-4 py-2 rounded-lg text-sm text-slate-600 hover:bg-slate-100 border border-slate-200"
+                  onClick={() => setManualPickupDialogOpen(false)}
+                >
+                  취소
+                </button>
+                <button
+                  type="button"
+                  className="px-5 py-2 rounded-lg text-sm text-white bg-blue-500 hover:bg-blue-600 disabled:opacity-50 font-medium"
+                  disabled={
+                    isRequestingPickup || manualPickupSummary.applyCount === 0
+                  }
+                  onClick={() => {
+                    void handleManualPickupComplete();
+                  }}
+                >
+                  {isRequestingPickup
+                    ? "반영 중..."
+                    : `반영 (${manualPickupSummary.applyCount})`}
+                </button>
+              </div>
             </div>
           </div>
         </div>
