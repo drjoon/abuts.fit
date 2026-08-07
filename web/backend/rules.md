@@ -307,7 +307,8 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
 - 의뢰자 유형(requestorCapabilities) · 가입/온보딩 SSOT (2026-08, 루트 §2.4 상세)
   - 가입 role SSOT: `requestor` | `salesman`만. `practice` role **제거**(신규 생성 금지).
   - 필드: `BusinessAnchor.requestorCapabilities` / `User.requestorCapabilities` = `{ practice, lab }` (체크박스 OR, 최소 1개). 레거시 키 `clinic`→`practice`.
-  - 헬퍼 SSOT: `utils/requestorCapabilities.js`
+  - Org SSOT: `BusinessAnchor` (`businessType: requestor`). practice/lab은 캡이며 무앵커 발신 전용 조직 경로 없음.
+  - 헬퍼 SSOT: `utils/requestorCapabilities.js`, `controllers/businesses/requestorOrgAnchor.util.js` (`ensureRequestorOrgAnchor`)
     - `normalize` / `hasAny` / `requiresBusinessLicense`(lab) / `canUsePaidServices`(lab+verified) / `canUseFreeServices`(practice)
     - `canSendPracticeTransfer`(practice·발신) / `canReceivePracticeTransfer`(lab·수신)
     - UI 라벨: practice=`의뢰 발신자 (치과)`, lab=`의뢰 수신자 (기공소과 기공실)` (프론트 `REQUESTOR_CAPABILITY_LABEL`과 동기)
@@ -315,19 +316,19 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   - 사업자 저장(`business.update.controller.js`):
     - body `requestorCapabilities` 수신 시 normalize·최소 1개 검증
     - `lab`이면 미검증 상태에서 저장 거부(이미 verified이거나 이번 요청에서 검증 플로우 타는 경우만 허용)
-    - 사업자 미등록(practice-only)은 `User.requestorCapabilities`에 임시 보존, 앵커 생성 시 승격
+    - 무BN synthetic(`practice-*`) 앵커에 실BN·license를 올리면 **동일 앵커**에서 `businessNumberNormalized` 교체·검증. 신규 앵커 생성 금지
   - 기공의뢰서 권한 미들웨어(`practiceTransferAuth.middleware.js`):
     - 발신: `authorizePracticeTransferSend` — admin | (`requestor` + practice)
     - 수신: `authorizePracticeTransferReceive` — admin | (`requestor` + lab)
   - 공개 가입: `POST /api/auth/register` — `requestor`/`salesman`. signup draft: `models/signupDraft.model.js`, `PUT/GET/DELETE /api/auth/signup/draft`(7일 TTL).
-  - 발신(무료) 경로 프로필: `PUT /api/users/profile`의 `practiceProfile`(clinicName, directorName, staffName, clinicPhone, phone, address, zipCode).
+  - 발신 경로 프로필: `PUT /api/users/profile`의 `practiceProfile`(clinicName, directorName, staffName, clinicPhone, phone, address, zipCode) → `ensureRequestorOrgAnchor`.
   - 백필: `scripts/db/backfill-requestor-capabilities.js` (`--apply`) + practice→requestor+practice 마이그레이션.
-  - 크레딧/정산 집계는 유료(verified lab) 경로만. practice-only 무료 경로 확장 금지.
-  - 소개 접근은 requestor 전체 허용; 귀속·그룹 할인은 추천인 앵커 등록 이후.
+  - 크레딧/정산 집계는 유료(verified lab) 경로만. synthetic 무BN 앵커에는 환영 크레딧 미지급; 실BN 검증 승격 시 1회.
+  - 소개 접근은 requestor 전체 허용; 귀속·그룹 할인은 추천인 앵커 기준.
 
 - 드롭존 가입(치과 전용, requestor+practice):
   - `POST /api/auth/practice/register`는 **practice role을 만들지 않는다**.
-    `role=requestor` + `requestorCapabilities={practice:true,lab:false}` + `practiceProfile`만 저장하고 **사업자 앵커는 생성하지 않는다**.
+    `role=requestor` + `requestorCapabilities={practice:true,lab:false}` + `practiceProfile` 저장 후 **`ensureRequestorOrgAnchor`로 Org 앵커 생성**(첫 가입자=`owner`, synthetic BN 가능).
   - 필수: `email` + `clinicName` + `directorName` + `staffName` + `clinicPhone` + `phone` + `address` + `zipCode`. 로그인 식별은 이메일.
   - `assertSignupVerifications({ email, phone })` 강제 후 `consumeSignupVerifications` 소진.
     - 이메일: `POST /api/auth/signup/email-verification/send|verify`, `GET .../status` (일 10회)

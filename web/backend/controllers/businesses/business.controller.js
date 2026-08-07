@@ -26,6 +26,10 @@ import { resolveRequestorPricingBaseDate } from "../requests/utils.js";
 import {
   resolveRequestorCapabilities,
 } from "../../utils/requestorCapabilities.js";
+import {
+  ensureRequestorOrgAnchor,
+  isSyntheticPracticeBusinessNumber,
+} from "./requestorOrgAnchor.util.js";
 export { updateMyBusiness };
 
 export async function checkBusinessNumberDuplicate(req, res) {
@@ -256,9 +260,20 @@ export async function getMyBusiness(req, res) {
     }
 
     const freshUser = await User.findById(req.user._id)
-      .select({ businessAnchorId: 1, business: 1 })
+      .select({
+        businessAnchorId: 1,
+        business: 1,
+        role: 1,
+        subRole: 1,
+        email: 1,
+        requestorCapabilities: 1,
+        practiceProfile: 1,
+        referredByAnchorId: 1,
+        approvedAt: 1,
+        createdAt: 1,
+      })
       .lean();
-    const businessAnchorId =
+    let businessAnchorId =
       freshUser?.businessAnchorId || req.user.businessAnchorId;
 
     let anchor = null;
@@ -267,6 +282,40 @@ export async function getMyBusiness(req, res) {
         _id: businessAnchorId,
         businessType,
       }).lean();
+
+      // 레거시 businessType=practice 앵커 → requestor로 승격 후 사용
+      if (
+        !anchor &&
+        (businessType === "requestor" || businessType === "practice")
+      ) {
+        const legacy = await BusinessAnchor.findById(businessAnchorId).lean();
+        if (legacy && String(legacy.businessType || "") === "practice") {
+          await BusinessAnchor.updateOne(
+            { _id: legacy._id },
+            { $set: { businessType: "requestor" } },
+          );
+          anchor = { ...legacy, businessType: "requestor" };
+        }
+      }
+    }
+
+    // 발신 프로필 완료 + 무앵커 → Org 앵커 치유 (대표자)
+    if (
+      !anchor &&
+      (businessType === "requestor" || businessType === "practice")
+    ) {
+      try {
+        const ensured = await ensureRequestorOrgAnchor({
+          user: { ...req.user, ...freshUser },
+        });
+        if (ensured?._id) {
+          businessAnchorId = ensured._id;
+          anchor = await BusinessAnchor.findById(ensured._id).lean();
+          invalidateMyBusinessCache(req.user._id);
+        }
+      } catch (e) {
+        console.error("[BusinessAnchor] getMyBusiness ensure failed", e);
+      }
     }
 
     console.info("[BusinessAnchor] getMyBusiness", {
@@ -277,13 +326,14 @@ export async function getMyBusiness(req, res) {
     });
 
     if (!anchor) {
-      const freshCapsUser = await User.findById(req.user._id)
-        .select({ requestorCapabilities: 1, role: 1 })
-        .lean();
       const requestorCapabilities = resolveRequestorCapabilities({
-        userCaps: freshCapsUser?.requestorCapabilities,
-        userRole: freshCapsUser?.role || req.user.role,
+        userCaps: freshUser?.requestorCapabilities,
+        userRole: freshUser?.role || req.user.role,
         businessVerified: false,
+      });
+      const pricingBaseDate = await resolveRequestorPricingBaseDate({
+        requestorId: req.user._id,
+        requestorOrgId: null,
       });
       return res.json({
         success: true,
@@ -294,7 +344,7 @@ export async function getMyBusiness(req, res) {
           businessVerified: false,
           metadata: {},
           payoutAccount: {},
-          pricingBaseDate: null,
+          pricingBaseDate: pricingBaseDate || null,
           requestorCapabilities,
         },
       });
@@ -334,6 +384,10 @@ export async function getMyBusiness(req, res) {
           business: "",
         },
       });
+      const pricingBaseDate = await resolveRequestorPricingBaseDate({
+        requestorId: req.user._id,
+        requestorOrgId: null,
+      });
       return res.json({
         success: true,
         data: {
@@ -343,7 +397,7 @@ export async function getMyBusiness(req, res) {
           businessVerified: false,
           metadata: {},
           payoutAccount: {},
-          pricingBaseDate: null,
+          pricingBaseDate: pricingBaseDate || null,
           requestorCapabilities: resolveRequestorCapabilities({
             userCaps: req.user?.requestorCapabilities,
             userRole: req.user?.role,
@@ -374,7 +428,8 @@ export async function getMyBusiness(req, res) {
     const businessNumber = String(
       anchor?.businessNumberNormalized || "",
     ).trim();
-    const hasBusinessNumber = !!businessNumber;
+    const hasBusinessNumber =
+      !!businessNumber && !isSyntheticPracticeBusinessNumber(businessNumber);
     const businessVerified = anchor.status === "verified";
 
     // SSOT: metadata만 반환 (extracted 레거시 제거, 2026-03-31)
@@ -474,7 +529,31 @@ export async function searchBusinesses(req, res) {
       return res.json({ success: true, data: [] });
     }
     // businessType이 없을 때 non-admin(비로그인 포함)은 admin anchor를 검색 결과에서 제외
-    const typeFilter = buildBusinessTypeQuery(businessType);
+    // requestor 검색은 레거시 businessType=practice 앵커도 포함
+    const typeFilter =
+      businessType === "requestor"
+        ? {
+            $or: [
+              { businessType: "requestor" },
+              { businessType: "practice" },
+              {
+                $and: [
+                  {
+                    $or: [
+                      { businessType: { $exists: false } },
+                      { businessType: "" },
+                    ],
+                  },
+                  {
+                    "metadata.businessType": {
+                      $in: ["requestor", "practice"],
+                    },
+                  },
+                ],
+              },
+            ],
+          }
+        : buildBusinessTypeQuery(businessType);
     const adminExcludeFilter =
       !businessType && userRole !== "admin"
         ? { businessType: { $ne: "admin" } }
@@ -532,18 +611,27 @@ export async function searchBusinesses(req, res) {
     );
 
     const searchingPractice = String(businessType || "") === "practice";
+    const searchingRequestor = String(businessType || "") === "requestor";
     const data = (anchors || [])
       .filter((a) => {
         const bn = String(a?.businessNumberNormalized || "")
           .trim()
           .toLowerCase();
 
-        // practice anchor는 businessType=practice로 명시해 검색할 때는 노출한다.
-        if (!searchingPractice && bn.startsWith("practice-")) return false;
+        // 무BN(synthetic practice-*) requestor 앵커는 의뢰자/레거시 practice 검색에만 노출
+        if (
+          isSyntheticPracticeBusinessNumber(bn) &&
+          !searchingPractice &&
+          !searchingRequestor
+        ) {
+          return false;
+        }
 
         const ownerId = String(a?.primaryContactUserId || "");
         const isPracticeOwner = ownerPracticeMap.get(ownerId) === true;
-        if (!searchingPractice && isPracticeOwner) return false;
+        if (!searchingPractice && !searchingRequestor && isPracticeOwner) {
+          return false;
+        }
 
         return true;
       })
@@ -551,7 +639,11 @@ export async function searchBusinesses(req, res) {
         _id: a._id,
         name: a.name,
         representativeName: a?.metadata?.representativeName || "",
-        businessNumber: a?.businessNumberNormalized || "",
+        businessNumber: isSyntheticPracticeBusinessNumber(
+          a?.businessNumberNormalized,
+        )
+          ? ""
+          : a?.businessNumberNormalized || "",
         address: a?.metadata?.address || "",
         businessType: a?.businessType || a?.metadata?.businessType || "",
       }));
@@ -617,7 +709,13 @@ export async function getBusinessPublicById(req, res) {
     }
 
     const anchorType = String(anchor.businessType || "").trim();
-    if (requestedBusinessType && anchorType !== requestedBusinessType) {
+    if (
+      requestedBusinessType &&
+      anchorType !== requestedBusinessType &&
+      !(
+        requestedBusinessType === "requestor" && anchorType === "practice"
+      )
+    ) {
       return res.status(404).json({
         success: false,
         message: "사업자를 찾을 수 없습니다.",
@@ -632,7 +730,18 @@ export async function getBusinessPublicById(req, res) {
     }
 
     const bn = String(anchor.businessNumberNormalized || "").trim().toLowerCase();
-    if (bn.startsWith("practice-")) {
+    const searchingRequestor =
+      String(requestedBusinessType || "") === "requestor" ||
+      userRole === "requestor";
+    const searchingPractice =
+      String(requestedBusinessType || "") === "practice" ||
+      userRole === "practice";
+    if (
+      isSyntheticPracticeBusinessNumber(bn) &&
+      !searchingPractice &&
+      !searchingRequestor &&
+      userRole !== "admin"
+    ) {
       return res.status(404).json({
         success: false,
         message: "사업자를 찾을 수 없습니다.",
@@ -640,7 +749,13 @@ export async function getBusinessPublicById(req, res) {
     }
 
     const ownerId = String(anchor.primaryContactUserId || "").trim();
-    if (ownerId && Types.ObjectId.isValid(ownerId)) {
+    if (
+      ownerId &&
+      Types.ObjectId.isValid(ownerId) &&
+      !searchingPractice &&
+      !searchingRequestor &&
+      userRole !== "admin"
+    ) {
       const owner = await User.findById(ownerId).select({ role: 1 }).lean();
       if (String(owner?.role || "").trim() === "practice") {
         return res.status(404).json({
@@ -656,7 +771,11 @@ export async function getBusinessPublicById(req, res) {
         _id: anchor._id,
         name: String(anchor.name || "").trim(),
         representativeName: String(anchor?.metadata?.representativeName || "").trim(),
-        businessNumber: String(anchor.businessNumberNormalized || "").trim(),
+        businessNumber: isSyntheticPracticeBusinessNumber(
+          anchor.businessNumberNormalized,
+        )
+          ? ""
+          : String(anchor.businessNumberNormalized || "").trim(),
         address: String(anchor?.metadata?.address || "").trim(),
         businessType: anchorType,
       },

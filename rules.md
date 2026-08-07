@@ -173,9 +173,9 @@
   - `GET /api/credits/balance` 및 잔액 파생 조회는 `LedgerLine` 직접 집계값을 사용
   - `BusinessCreditBalance`는 레거시 스냅샷으로 취급하며 런타임 잔액 판정/표시에 사용하지 않음
 - 가입 환영 무료 크레딧(강제):
-  - 의뢰자 `BusinessAnchor` **신규 생성 시**에만 `defaultRequestFreeCredit` / `defaultShippingFreeCredit`를 1회 지급
-  - 구현: `business.update.controller.js` 생성 분기 → `business.freeCredit.util.js`
-  - 사업자 정보 수정(`updateMyBusiness` 업데이트 분기)·재로그인·설정 저장 경로에서는 지급 호출 금지
+  - 의뢰자 `BusinessAnchor` **신규 생성(실 사업자등록번호)** 또는 **synthetic(`practice-*`)→실BN 검증 승격** 시에 `defaultRequestFreeCredit` / `defaultShippingFreeCredit`를 사업자번호당 1회 지급
+  - 구현: `business.update.controller.js` 생성 분기·synthetic 승격 분기 → `business.freeCredit.util.js`
+  - 무BN synthetic 앵커 생성만으로는 지급하지 않음. 일반 사업자 정보 수정·재로그인·설정 저장 경로에서는 지급 호출 금지
   - 사업자등록번호당 `FreeCreditGrant`(`REQUEST_FREE_CREDIT`/`SHIPPING_FREE_CREDIT`, legacy `WELCOME_BONUS`/`FREE_SHIPPING_CREDIT` 포함)로 중복 지급 차단
 - 실시간 이벤트 발행 SSOT: 송신측은 대상 role 전체에 fan-out emit 한다.
 - 수신측 SSOT: 로그인한 role 클라이언트는 이벤트를 수신하되, 현재 열려 있는 페이지(활성 화면)만 즉시 갱신한다.
@@ -201,10 +201,10 @@
 - 드롭존(치과 전용 공개 전송):
   - 가입·로그인도 `requestor`로 통일
   - `requestorCapabilities`는 **practice만** 체크(`{ practice: true, lab: false }`) — 수신(lab) 선택 UI/저장 없음
-  - 사업자 앵커는 만들지 않고 `User.requestorCapabilities` + `practiceProfile`로 발신(무료) 경로 완료
+  - 가입·`practiceProfile` 완료 시 **BusinessAnchor를 생성**한다(첫 가입자=`owner`). 사업자등록번호가 없으면 synthetic `practice-*` BN. 이후 설정에서 lab을 추가·검증하면 **동일 앵커**에 실BN·license를 올린다.
 - 유형 SSOT(체크박스 OR, 최소 1개): `requestorCapabilities = { practice: boolean, lab: boolean }`
-  - Org SSOT: `BusinessAnchor.requestorCapabilities`
-  - 사업자 미등록(발신 무료 경로) 시 `User.requestorCapabilities`에 임시 보존 → 사업자 생성 시 앵커로 승격
+  - Org SSOT: `BusinessAnchor` (`businessType: "requestor"`). practice/lab은 같은 조직의 캡일 뿐이며 “무앵커 발신 전용 조직” 경로는 없다.
+  - 캡 SSOT: `BusinessAnchor.requestorCapabilities` (User 필드는 미링크·온보딩 중 미러)
   - 해석 우선순위: 앵커 → 유저 → 레거시 폴백(미기입 requestor·구 practice role 데이터 → practice / verified requestor → lab). 폴백은 마이그레이션 전까지만.
 - UI 라벨 SSOT(`REQUESTOR_CAPABILITY_LABEL` / `REQUESTOR_CAPABILITY_OPTIONS`):
   - `practice`: **의뢰 발신자 (치과)** — 무료 서비스, 사업자등록증 선택
@@ -213,11 +213,11 @@
   1. `/signup` 또는 드롭존 임베디드 가입 → 계정(이메일·비번) → 로그인
   2. `/dashboard/wizard` 온보딩: 프로필 → 휴대전화 → 역할(owner/staff) → 사업자
   3. 사업자 단계에서 `RequestorCapabilitiesPicker`로 practice/lab 선택(드롭존 가입자는 practice 고정)
-  4. `lab` 포함 시 사업자등록증 등록·검증 필수. `practice`-only는 등록증을 건너뛰고 `practiceProfile`(치과명·원장·담당·전화·주소·우편) 필수로 완료 가능
+  4. `lab` 포함 시 사업자등록증 등록·검증 필수. practice만 선택한 경우 등록증을 건너뛰고 `practiceProfile`(치과명·원장·담당·전화·주소·우편) 필수로 완료 가능 → 이때 Org 앵커 생성
   5. 온보딩 완료 후: 유료 미가용 requestor → `/dashboard/practice-transfers`(기공의뢰서). 유료 가용 → `/dashboard`
 - 접근성 게이트(특정 상품명이 아니라 **유료/무료** 기준):
   - **유료**: `lab === true` AND `BusinessAnchor.status === "verified"` — 대시보드 홈·신규의뢰·설정 탭 `request`/`payment`
-  - **무료**: `practice === true`이면 사업자등록증 없이 이용(기공의뢰서 발신 등). practice-only(+검증 여부와 무관)는 유료 페이지 접근 불가
+  - **무료**: `practice === true`이면 사업자등록증 없이 이용(기공의뢰서 발신 등). `lab` 미체크 또는 미검증이면 유료 페이지 접근 불가
   - `lab === true`이면 온보드/설정 전환 시 사업자등록증 등록·검증 필수
 - 기공의뢰서(PracticeTransfer) 권한:
   - **발신**: `requestor` + `practice` (의뢰 발신자)
@@ -229,9 +229,9 @@
   - 조회(수신): `GET /api/practice/transfers/received`
   - 취소: `POST /api/practice/transfers/cancel-batch`
 - 제조사 워크시트 조회에서 practice 전송 태그 의뢰 제외
-- 크레딧/정산은 유료(검증된 수신자·lab) 경로에만 해당. 발신-only(practice-only) 무료 경로는 포함하지 않음
-- 소개(리퍼럴) 페이지·링크: 발신(practice) 포함 모든 requestor가 접근 가능(사업자 미등록·subRole 미기입 포함). 소개 귀속(`referredByAnchorId`)·그룹 할인 적용은 추천인 사업자 앵커 등록 이후. 사업자등록증 업로드 후 `lab` 체크·검증되면 유료 소개 혜택 경로로 이어짐
-- 공통 헬퍼/권한: `web/backend/utils/requestorCapabilities.js`, `web/frontend/src/shared/business/requestorCapabilities.ts`, `practiceTransferAuth.middleware.js`
+- 크레딧/정산은 유료(검증된 수신자·lab) 경로에만 해당. 실 사업자등록번호가 없는 synthetic 앵커에는 환영 크레딧을 지급하지 않으며, synthetic→실BN 검증 승격 시 1회 지급
+- 소개(리퍼럴) 페이지·링크: 발신(practice) 포함 모든 requestor가 접근 가능. 소개 귀속(`referredByAnchorId`)·그룹 할인 적용은 추천인 사업자 앵커 기준. lab 체크·검증되면 유료 소개 혜택 경로로 이어짐
+- 공통 헬퍼/권한: `web/backend/utils/requestorCapabilities.js`, `web/frontend/src/shared/business/requestorCapabilities.ts`, `practiceTransferAuth.middleware.js`, `web/backend/controllers/businesses/requestorOrgAnchor.util.js`
 - 레거시 혼입 경로(예: `/api/requests/practice/*`)는 제거 대상으로 관리
 - 백필: `web/backend/scripts/db/backfill-requestor-capabilities.js` (`--apply`)
 

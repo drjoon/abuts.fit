@@ -5,10 +5,10 @@
 import User from "../../models/user.model.js";
 import ActivityLog from "../../models/activityLog.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
-import crypto from "crypto";
 import { messageService } from "../../utils/popbill.util.js";
 import { Types } from "mongoose";
 import { toKstYmd } from "../../utils/krBusinessDays.js";
+import { ensureRequestorOrgAnchor } from "../businesses/requestorOrgAnchor.util.js";
 
 /**
  * 사용자 프로필 조회
@@ -613,71 +613,21 @@ async function updateProfile(req, res) {
           updateData.phoneNumber = phone;
         }
 
-        // 의뢰자(practice 무료) 경로는 User.practiceProfile만 저장. practice 앵커는 만들지 않음.
-        if (isRequestorPracticeProfile) {
-          const existingCaps =
-            req.user?.requestorCapabilities &&
-            typeof req.user.requestorCapabilities === "object"
-              ? req.user.requestorCapabilities
-              : {};
-          if (!existingCaps.practice && !existingCaps.lab) {
-            updateData.requestorCapabilities = {
-              practice: true,
-              lab: Boolean(existingCaps.lab),
-            };
-          }
-        } else if (!req.user?.businessAnchorId) {
-          const businessAnchor = await BusinessAnchor.create({
-            businessNumberNormalized: `practice-${Date.now()}-${crypto.randomInt(1000, 9999)}`,
-            businessType: "practice",
-            name: clinicName,
-            status: "active",
-            primaryContactUserId: req.user._id,
-            metadata: {
-              companyName: clinicName,
-              representativeName: directorName,
-              address,
-              addressDetail,
-              zipCode,
-              phoneNumber: clinicPhone || phone,
-              email: String(req.user.email || ""),
-              businessItem: "",
-              businessType: "",
-              startDate: "",
-              businessNumber: "",
-            },
-            verification: {
-              verified: false,
-              verifiedAt: null,
-              verifiedBy: null,
-            },
-            shippingPolicy: {
-              weeklyBatchDays: ["mon", "wed", "fri"],
-              updatedAt: new Date(),
-            },
-            owners: [req.user._id],
-            members: [],
-          });
-          updateData.businessAnchorId = businessAnchor._id;
-          updateData.subRole = "owner";
-        } else if (Types.ObjectId.isValid(String(req.user.businessAnchorId))) {
-          await BusinessAnchor.updateOne(
-            {
-              _id: new Types.ObjectId(String(req.user.businessAnchorId)),
-              primaryContactUserId: req.user._id,
-            },
-            {
-              $set: {
-                name: clinicName,
-                "metadata.companyName": clinicName,
-                "metadata.representativeName": directorName,
-                "metadata.address": address,
-                "metadata.addressDetail": addressDetail,
-                "metadata.zipCode": zipCode,
-                "metadata.phoneNumber": clinicPhone || phone,
-              },
-            },
-          );
+        // 의뢰자 Org SSOT: practiceProfile 완료 시 BusinessAnchor 보장 (practice/lab 캡).
+        const existingCaps =
+          req.user?.requestorCapabilities &&
+          typeof req.user.requestorCapabilities === "object"
+            ? req.user.requestorCapabilities
+            : {};
+        if (
+          (isRequestorPracticeProfile || isPracticeRole) &&
+          !existingCaps.practice &&
+          !existingCaps.lab
+        ) {
+          updateData.requestorCapabilities = {
+            practice: true,
+            lab: Boolean(existingCaps.lab),
+          };
         }
       }
     }
@@ -695,10 +645,17 @@ async function updateProfile(req, res) {
       });
     }
 
+    let responseUser = updatedUser;
+    if (Object.prototype.hasOwnProperty.call(updateData, "practiceProfile")) {
+      await ensureRequestorOrgAnchor({ user: updatedUser.toObject() });
+      const refreshed = await User.findById(updatedUser._id).select("-password");
+      if (refreshed) responseUser = refreshed;
+    }
+
     res.status(200).json({
       success: true,
       message: "프로필이 성공적으로 수정되었습니다.",
-      data: updatedUser,
+      data: responseUser,
     });
   } catch (error) {
     res.status(500).json({

@@ -35,6 +35,7 @@ import {
   requiresBusinessLicense,
   resolveRequestorCapabilities,
 } from "../../utils/requestorCapabilities.js";
+import { isSyntheticPracticeBusinessNumber } from "./requestorOrgAnchor.util.js";
 
 // BusinessAnchor를 직접 생성/업데이트하는 헬퍼 함수
 export async function ensureBusinessAnchor({
@@ -256,7 +257,7 @@ export async function updateMyBusiness(req, res) {
         }
       : null;
 
-    // 의뢰자 유형(발신/수신 체크박스) 단독 저장 — 사업자 미생성(발신 무료) 경로 포함
+    // 의뢰자 유형(발신/수신 체크박스) — 앵커 SSOT(캡). 단독 저장 시 User(+Anchor) 동기화.
     if (
       requestorCapabilitiesProvided &&
       businessType === "requestor" &&
@@ -333,6 +334,9 @@ export async function updateMyBusiness(req, res) {
       Boolean(businessNumber) &&
       currentBusinessNumber !== businessNumber;
     const isVerifiedBusiness = businessAnchor?.status === "verified";
+    const wasSyntheticBusinessNumber = isSyntheticPracticeBusinessNumber(
+      businessAnchor?.businessNumberNormalized,
+    );
 
     if (phoneNumberRaw && !phoneNumber) {
       return res.status(400).json({
@@ -564,6 +568,18 @@ export async function updateMyBusiness(req, res) {
         unsetPatch["metadata.businessNumber"] = 1;
       } else {
         metadataPatch.businessNumber = businessNumber;
+        // synthetic practice-* → 실BN 승격 시 unique 키도 동일 앵커에서 교체
+        const nextNormalized = businessNumber.replace(/\D/g, "").trim();
+        const currentNormalized = String(
+          businessAnchor?.businessNumberNormalized || "",
+        ).trim();
+        if (
+          nextNormalized &&
+          (isSyntheticPracticeBusinessNumber(currentNormalized) ||
+            currentNormalized !== nextNormalized)
+        ) {
+          patch.businessNumberNormalized = nextNormalized;
+        }
       }
     }
 
@@ -968,7 +984,32 @@ export async function updateMyBusiness(req, res) {
       }
     }
 
-    // 환영 무료 크레딧은 사업자 신규 생성 시에만 지급한다 (재지급 금지).
+    // 환영 무료 크레딧: 신규 생성 또는 synthetic→실BN 검증 승격 시에만 (사업자번호당 1회).
+    let requestFreeCreditGranted = false;
+    let requestFreeCreditAmount = 0;
+    let freeShippingCreditGranted = false;
+    let freeShippingCreditAmount = 0;
+    if (
+      wasSyntheticBusinessNumber &&
+      verificationResult?.verified &&
+      businessNumber &&
+      businessAnchor?._id
+    ) {
+      requestFreeCreditAmount =
+        (await grantRequestFreeCreditIfEligible({
+          businessAnchorId: businessAnchor._id,
+          userId: req.user._id,
+          userRole: req.user.role,
+        })) || 0;
+      freeShippingCreditAmount =
+        (await grantShippingFreeCreditIfEligible({
+          businessAnchorId: businessAnchor._id,
+          userId: req.user._id,
+          userRole: req.user.role,
+        })) || 0;
+      requestFreeCreditGranted = !!requestFreeCreditAmount;
+      freeShippingCreditGranted = !!freeShippingCreditAmount;
+    }
 
     // 캐시 무효화: 사업자 정보가 업데이트되었으므로 getMyBusiness 캐시 제거
     invalidateMyBusinessCache(req.user._id);
@@ -977,6 +1018,10 @@ export async function updateMyBusiness(req, res) {
       success: true,
       data: {
         updated: true,
+        requestFreeCreditGranted,
+        requestFreeCreditAmount: Number(requestFreeCreditAmount || 0),
+        freeShippingCreditGranted,
+        freeShippingCreditAmount: Number(freeShippingCreditAmount || 0),
         verification: verificationResult
           ? {
               verified: !!verificationResult.verified,

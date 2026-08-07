@@ -11,6 +11,7 @@
 import User from "../../models/user.model.js";
 import SignupVerification from "../../models/signupVerification.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
+import { ensureRequestorOrgAnchor } from "../businesses/requestorOrgAnchor.util.js";
 
 import {
   generateToken,
@@ -1226,7 +1227,7 @@ async function practiceRegister(req, res) {
 
     const referralCode = await ensureUniqueReferralCode(5);
 
-    // 의뢰인 통합: role=requestor + practice. 사업자 앵커는 만들지 않음(발신 무료 경로).
+    // 의뢰인 통합: role=requestor + practice. 프로필 완료 시 Org 앵커 생성(대표자).
     const user = new User({
       name: staffName || clinicName,
       email: normalizedEmail,
@@ -1271,6 +1272,12 @@ async function practiceRegister(req, res) {
       });
     } catch (e) {
       console.error("[practiceRegister] consumeSignupVerifications failed", e);
+    }
+
+    try {
+      await ensureRequestorOrgAnchor({ user: user.toObject() });
+    } catch (e) {
+      console.error("[practiceRegister] ensureRequestorOrgAnchor failed", e);
     }
 
     const freshUser = await User.findById(user._id).select("-password");
