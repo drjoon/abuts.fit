@@ -50,8 +50,8 @@ export const SettingsScaffold = ({
           >
             <TabsList
               className={cn(
-                "flex w-full flex-nowrap gap-1.5 overflow-x-auto",
-                "py-1",
+                "flex h-auto w-full flex-wrap gap-1.5",
+                "px-1.5 py-1.5",
               )}
             >
               {tabs.map((t) => {
@@ -60,7 +60,7 @@ export const SettingsScaffold = ({
                     value={t.key}
                     disabled={Boolean(t.disabled)}
                     className={cn(
-                      "flex min-w-[110px] flex-1 basis-0 items-center justify-center gap-2",
+                      "flex min-w-[96px] flex-1 basis-0 items-center justify-center gap-2 px-3 py-2.5",
                       highlightTabKey === t.key &&
                         "ring-2 ring-primary/60 shadow-[0_10px_40px_rgba(14,92,228,0.18)]",
                       t.disabled && "pointer-events-none opacity-50",
@@ -78,7 +78,7 @@ export const SettingsScaffold = ({
                 return (
                   <Tooltip key={t.key}>
                     <TooltipTrigger asChild>
-                      <span className="inline-flex min-w-[110px] flex-1 basis-0 cursor-not-allowed">
+                      <span className="inline-flex min-w-[96px] flex-1 basis-0 cursor-not-allowed">
                         {trigger}
                       </span>
                     </TooltipTrigger>

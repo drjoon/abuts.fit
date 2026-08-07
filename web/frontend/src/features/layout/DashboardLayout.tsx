@@ -999,7 +999,7 @@ export const DashboardLayout = () => {
                           <li key={item.href}>
                             <Button
                               variant="ghost"
-                              className={`w-full h-9 lg:h-10 text-sm lg:text-base transition-all ${
+                              className={`w-full h-10 lg:h-11 text-sm lg:text-base transition-all ${
                                 isCollapsed
                                   ? "justify-center px-2"
                                   : "justify-start px-3 lg:px-4"
@@ -1061,7 +1061,7 @@ export const DashboardLayout = () => {
                     <Button
                       variant="ghost"
                       disabled={paidLocked}
-                      className={`w-full h-9 lg:h-10 text-sm lg:text-base transition-all ${
+                      className={`w-full h-10 lg:h-11 text-sm lg:text-base transition-all ${
                         isCollapsed
                           ? "justify-center px-2"
                           : "justify-start px-3 lg:px-4"

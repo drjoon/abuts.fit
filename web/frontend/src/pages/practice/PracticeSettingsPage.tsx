@@ -275,38 +275,38 @@ export const PracticeSettingsPage = () => {
           }}
           className="space-y-4"
         >
-          <TabsList className="flex w-full flex-nowrap gap-1.5 overflow-x-auto py-1">
+          <TabsList className="flex h-auto w-full flex-wrap gap-1.5 px-1.5 py-1.5">
             <TabsTrigger
               value="account"
-              className="flex min-w-[110px] flex-1 basis-0 items-center justify-center gap-2"
+              className="flex min-w-[96px] flex-1 basis-0 items-center justify-center gap-2 px-3 py-2.5"
             >
               <User className="h-4 w-4" />
               계정
             </TabsTrigger>
             <TabsTrigger
               value="business"
-              className="flex min-w-[110px] flex-1 basis-0 items-center justify-center gap-2"
+              className="flex min-w-[96px] flex-1 basis-0 items-center justify-center gap-2 px-3 py-2.5"
             >
               <Building2 className="h-4 w-4" />
               사업자
             </TabsTrigger>
             <TabsTrigger
               value="staff"
-              className="flex min-w-[110px] flex-1 basis-0 items-center justify-center gap-2"
+              className="flex min-w-[96px] flex-1 basis-0 items-center justify-center gap-2 px-3 py-2.5"
             >
               <Users className="h-4 w-4" />
               임직원
             </TabsTrigger>
             <TabsTrigger
               value="notifications"
-              className="flex min-w-[110px] flex-1 basis-0 items-center justify-center gap-2"
+              className="flex min-w-[96px] flex-1 basis-0 items-center justify-center gap-2 px-3 py-2.5"
             >
               <Bell className="h-4 w-4" />
               알림
             </TabsTrigger>
             <TabsTrigger
               value="security"
-              className="flex min-w-[110px] flex-1 basis-0 items-center justify-center gap-2"
+              className="flex min-w-[96px] flex-1 basis-0 items-center justify-center gap-2 px-3 py-2.5"
             >
               <Shield className="h-4 w-4" />
               보안
