@@ -11,6 +11,7 @@
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/machining/components/MachiningPriorityRulesModal.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx
 // change-log:
+// - 2026-08-07: 재배정을 소재≥maxDiameter 커버 + 최소 소재 우선으로 통일 (D6 exact-group skip 수정).
 // - 2026-08-07: 생산 큐 응답에 의뢰자명(businessName) 포함.
 // - 2026-08-06: 가공 큐 select에 designSoftware·헥스 회전(rnd/caseInfos) 포함. 프리뷰 누락 수정.
 import {
@@ -28,11 +29,13 @@ import {
   MACHINING_QUEUE_STAGE_SET,
   EXCLUDE_UNMACHINABLE_FILTER,
   normalizeDiameterGroupValue,
-  inferMaterialDiameterGroup,
+  inferCurrentMaterialDiameter,
+  inferDiameterGroupFromValue,
   inferRequestDiameterGroup,
   isMachiningInProgress,
   isMachiningCompleted,
   getMachiningLoadWeight,
+  rankCoveringMachinesForRequest,
 } from "./distribution.utils.js";
 import { compareMachiningQueueOrder } from "../requests/production.utils.js";
 import {
@@ -210,26 +213,15 @@ export async function rebalanceProductionQueuesInternal({
       .filter(Boolean),
   );
 
-  const machinesByGroup = new Map();
-  for (const m of cncMachines) {
-    const uid = String(m?.machineId || "").trim();
-    if (!uid || !eligibleMachineSet.has(uid)) continue;
-    const materialGroup = inferMaterialDiameterGroup(m);
-    const groups = materialGroup
-      ? [materialGroup]
-      : Array.isArray(m?.maxModelDiameterGroups)
-        ? m.maxModelDiameterGroups
-            .map((g) => normalizeDiameterGroupValue(g))
-            .filter(Boolean)
-        : [];
-    for (const g of groups) {
-      const key = normalizeDiameterGroupValue(g);
-      if (!key) continue;
-      if (targetGroupSet.size > 0 && !targetGroupSet.has(key)) continue;
-      if (!machinesByGroup.has(key)) machinesByGroup.set(key, []);
-      machinesByGroup.get(key).push(uid);
-    }
-  }
+  // machineId → CncMachine doc (소재/허용그룹) — exact diameterGroup 매칭 금지
+  const cncMachineById = new Map(
+    cncMachines
+      .map((m) => {
+        const uid = String(m?.machineId || "").trim();
+        return uid && eligibleMachineSet.has(uid) ? [uid, m] : null;
+      })
+      .filter(Boolean),
+  );
 
   const queueCounts = new Map();
   for (const uid of eligibleMachineSet) {
@@ -241,15 +233,17 @@ export async function rebalanceProductionQueuesInternal({
   const sortedRequests = [...requests].sort(compareMachiningQueueOrder);
 
   for (const reqItem of sortedRequests) {
-    const group = inferRequestDiameterGroup(reqItem);
-    const rawCandidates = machinesByGroup.get(group) || [];
-    const candidates = Array.from(
-      new Set(
-        rawCandidates
-          .map((uid) => String(uid || "").trim())
-          .filter((uid) => uid && queueCounts.has(uid)),
-      ),
-    ).sort((a, b) => String(a).localeCompare(String(b)));
+    const covering = rankCoveringMachinesForRequest({
+      requestDoc: reqItem,
+      machines: [...cncMachineById.entries()].map(([machineId, machineMeta]) => ({
+        machineId,
+        machineMeta,
+        queue: queueCounts.get(machineId) || 0,
+      })),
+    });
+    const candidates = covering
+      .map((c) => c.machineId)
+      .filter((uid) => queueCounts.has(uid));
     if (!candidates.length) continue;
 
     const lockedMachineId = String(
@@ -278,29 +272,8 @@ export async function rebalanceProductionQueuesInternal({
       continue;
     }
 
-    let selected = null;
-    let minCount = Infinity;
-    const tied = [];
-
-    for (const uid of candidates) {
-      const count = queueCounts.get(uid) || 0;
-      if (count < minCount) {
-        minCount = count;
-        tied.length = 0;
-        tied.push(uid);
-      } else if (count === minCount) {
-        tied.push(uid);
-      }
-    }
-
-    if (tied.length === 1) {
-      selected = tied[0];
-    } else if (tied.length > 1) {
-      // queueCounts가 동일한 경우 알파벳 순으로 선택 (안정적인 분배)
-      tied.sort((a, b) => a.localeCompare(b));
-      selected = tied[0];
-    }
-
+    // 커버 가능 최소 소재 → 큐 부하 → machineId (rankCoveringMachinesForRequest)
+    const selected = candidates[0];
     if (!selected) continue;
     const load = getMachiningLoadWeight(reqItem);
     queueCounts.set(selected, (queueCounts.get(selected) || 0) + load);
@@ -312,17 +285,26 @@ export async function rebalanceProductionQueuesInternal({
   }
 
   for (const [uid, list] of assignmentsByMachine.entries()) {
+    const materialDia = inferCurrentMaterialDiameter(cncMachineById.get(uid));
+    const diameterGroup = Number.isFinite(materialDia)
+      ? inferDiameterGroupFromValue(materialDia)
+      : "";
     list.forEach((reqItem, idx) => {
+      const $set = {
+        "productionSchedule.assignedMachine": uid,
+        "productionSchedule.queuePosition": idx + 1,
+        assignedMachine: uid,
+      };
+      if (Number.isFinite(materialDia) && materialDia > 0) {
+        $set["productionSchedule.diameter"] = materialDia;
+      }
+      if (diameterGroup) {
+        $set["productionSchedule.diameterGroup"] = diameterGroup;
+      }
       ops.push({
         updateOne: {
           filter: { _id: reqItem._id },
-          update: {
-            $set: {
-              "productionSchedule.assignedMachine": uid,
-              "productionSchedule.queuePosition": idx + 1,
-              assignedMachine: uid,
-            },
-          },
+          update: { $set },
         },
       });
     });

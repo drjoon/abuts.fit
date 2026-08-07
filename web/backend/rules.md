@@ -131,6 +131,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
 - `chooseMachineForCamMachining` (`common.review.machine.js`)
 - 후보: 활성 CNC + `allowRequestAssign` + 현재 소재 직경 있음 + 소재 직경 ≥ 요청 `maxDiameter`
 - 정렬: ① 커버 가능한 최소 소재 직경 ② 큐 부하(적은 쪽) ③ 오래된 `lastAssignmentAt` ④ `machineId`
+- 8mm 이하 의뢰는 8mm 장비에 먼저 쌓고, 큐가 비어 있는 10mm 장비로 보내지 않는다.
 - 당일/출고일 신속 14:00 마감이 위험하고 한 장비로는 못 맞출 때만 `expressDeadlineRebalance`가 여유(대형) 장비로 옮길 수 있다.
 
 #### C. 신속배송 14:00 완료 — 빠른 가공 재배치
@@ -153,7 +154,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
 - 자동 Next: `controllers/cnc/machiningBridge.js` `fetchPendingForAutoNext`
   - 호환 SSOT: 장착 소재 직경 ≥ `caseInfos.maxDiameter` (D6 의뢰 → D8/D10 장비 허용; 그룹 exact-match 금지)
   - 공유 헬퍼: `distribution.utils.js` `isRequestDiameterCompatibleWithMachineMaterial`
-- 재배정: `controllers/cnc/production.js` redistribute + express rebalance
+- 재배정: `controllers/cnc/production.js` redistribute — 소재≥maxDiameter 커버 + 최소 소재 우선 (`rankCoveringMachinesForRequest`; diameterGroup exact-match 금지) + express rebalance
 - 표시: 큐/lastCompleted/summary API에 `shippingMode` 포함 → 프론트 `ShippingModeBadge` (프리뷰 추가 round-trip 금지)
 - 표시: 큐/lastCompleted에 `businessName`(BusinessAnchor.name) 포함 → 프론트 가공 카드·예약목록 의뢰자명
   - 배치 조회: `controllers/cnc/shared.js` `buildBusinessNameByAnchorIdMap`

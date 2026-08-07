@@ -6,6 +6,7 @@
 // - web/backend/controllers/cnc/production.js
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/machining/MachiningQueueBoard.tsx
 // change-log:
+// - 2026-08-07: 재배정용 커버 장비 랭킹 헬퍼 추가 (최소 소재 우선, exact-group 금지).
 // - 2026-08-07: 소재≥maxDiameter 커버 헬퍼 추가 (auto-next/재배정 SSOT).
 import Request from "../../models/request.model.js";
 
@@ -163,6 +164,45 @@ export function isRequestDiameterCompatibleWithMachineMaterial({
     return materialNum + 1e-9 >= reqNum;
   }
   return materialGroup === reqGroup;
+}
+
+/**
+ * 커버 가능 장비를 정책 순으로 정렬한다.
+ * 1) 커버 가능한 최소 소재 직경 (8mm 이하 → M4(8) 우선, M5(10) 후순위)
+ * 2) 큐 부하(적은 쪽)
+ * 3) machineId
+ *
+ * 14:00 마감 분산은 expressDeadlineRebalance가 별도로 한다.
+ */
+export function rankCoveringMachinesForRequest({
+  requestDoc,
+  machines = [],
+}) {
+  return (Array.isArray(machines) ? machines : [])
+    .filter((m) =>
+      isRequestDiameterCompatibleWithMachineMaterial({
+        requestDoc,
+        machineMeta: m?.machineMeta || m,
+      }),
+    )
+    .map((m) => {
+      const machineMeta = m?.machineMeta || m;
+      const materialDia = inferCurrentMaterialDiameter(machineMeta);
+      return {
+        machineId: String(m?.machineId || machineMeta?.machineId || "").trim(),
+        machineMeta,
+        materialDia,
+        queue: Number(m?.queue) || 0,
+      };
+    })
+    .filter((m) => m.machineId)
+    .sort((a, b) => {
+      const da = Number.isFinite(a.materialDia) ? a.materialDia : Infinity;
+      const db = Number.isFinite(b.materialDia) ? b.materialDia : Infinity;
+      if (da !== db) return da - db;
+      if (a.queue !== b.queue) return a.queue - b.queue;
+      return a.machineId.localeCompare(b.machineId);
+    });
 }
 
 export function isMachiningInProgress(reqItem) {
