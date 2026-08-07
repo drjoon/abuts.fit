@@ -43,8 +43,8 @@ export const RequestorCapabilitiesPicker = ({
       <div>
         <p className="text-sm font-medium text-slate-900">사업자 유형</p>
         <p className="mt-1 text-xs text-slate-500">
-          해당하는 항목을 모두 선택하세요. 유료 서비스(의뢰 수신)는
-          사업자등록증 검증 후 이용할 수 있습니다.
+          해당하는 항목을 모두 선택하세요. 기공의뢰서 수신 외 유료
+          서비스는 사업자등록증 검증 후 이용할 수 있습니다.
         </p>
       </div>
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">

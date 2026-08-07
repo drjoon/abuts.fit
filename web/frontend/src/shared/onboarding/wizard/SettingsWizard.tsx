@@ -472,13 +472,19 @@ export const SettingsWizard = ({
   }, [currentStep]);
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-[#edf2ff] via-white to-[#f8fafc]">
+    <div
+      className={cn(
+        "min-h-screen bg-gradient-to-b from-[#edf2ff] via-white to-[#f8fafc]",
+        // 온보딩 전체 가독성: 하위 text-xs/sm/base를 한 단계씩 키움
+        "[&_.text-xs]:!text-sm [&_.text-sm]:!text-base [&_.text-base]:!text-lg",
+      )}
+    >
       <div className="mx-auto flex min-h-screen w-full flex-col items-center justify-center px-4 py-12">
         <div className="mb-6 text-center">
-          <div className="inline-flex items-center gap-2 rounded-full border border-white/70 bg-white/70 px-4 py-1 text-xs font-semibold uppercase tracking-[0.3em] text-slate-500 shadow-sm">
+          <div className="inline-flex items-center gap-2 rounded-full border border-white/70 bg-white/70 px-4 py-1.5 text-sm font-semibold uppercase tracking-[0.2em] text-slate-500 shadow-sm">
             {STEP_ORDER.indexOf(currentStep) + 1}/{STEP_ORDER.length}
           </div>
-          <p className="mt-3 text-xs text-slate-500">
+          <p className="mt-3 text-sm text-slate-500">
             기본 설정이 완료되면 플랫폼을 사용하실 수 있습니다.
           </p>
         </div>
@@ -490,7 +496,7 @@ export const SettingsWizard = ({
           )}
         >
           <CardHeader className="space-y-1 border-slate-100/80 pb-0">
-            <CardTitle className="text-2xl font-semibold text-slate-900">
+            <CardTitle className="text-3xl font-semibold text-slate-900">
               {stepTitle}
             </CardTitle>
           </CardHeader>
