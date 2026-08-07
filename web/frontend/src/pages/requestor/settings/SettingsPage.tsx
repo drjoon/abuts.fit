@@ -26,8 +26,10 @@ import { Shield } from "lucide-react";
 import { useToast } from "@/shared/hooks/use-toast";
 import { resolveBusinessType } from "@/shared/utils/resolveBusinessType";
 import { formatKstDateTimeToKo, toKstYmd } from "@/shared/date/kst";
-import { BusinessPaidAccessGate } from "@/shared/business/BusinessPaidAccessGate";
-import type { ReactNode } from "react";
+import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
+import {
+  PAID_ACCESS_DISABLED_HINT,
+} from "@/shared/business/requestorCapabilities";
 
 // related files:
 // - web/backend/controllers/businesses/business.controller.js
@@ -47,6 +49,7 @@ export const RequestorSettingsPage = () => {
   const { user, token } = useAuthStore();
   const [searchParams, setSearchParams] = useSearchParams();
   const { toast } = useToast();
+  const { loading: accessLoading, canUsePaid } = useRequestorBusinessAccess();
 
   const [membership, setMembership] = useState<
     "owner" | "member" | "pending" | "none" | "unknown"
@@ -128,9 +131,10 @@ export const RequestorSettingsPage = () => {
   }, [pricingElapsedDays]);
 
   const tabs: SettingsTabDef[] = useMemo(() => {
-    const paidGate = (node: ReactNode) => (
-      <BusinessPaidAccessGate>{node}</BusinessPaidAccessGate>
-    );
+    const paidDisabled = !canUsePaid;
+    const paidTabProps = paidDisabled
+      ? { disabled: true, disabledHint: PAID_ACCESS_DISABLED_HINT }
+      : {};
 
     const base: SettingsTabDef[] = [
       {
@@ -192,7 +196,8 @@ export const RequestorSettingsPage = () => {
         key: "request",
         label: "의뢰",
         icon: FileText,
-        content: paidGate(<RequestTab />),
+        content: <RequestTab />,
+        ...paidTabProps,
       },
     ];
 
@@ -201,7 +206,8 @@ export const RequestorSettingsPage = () => {
         key: "payment",
         label: "결제",
         icon: CreditCard,
-        content: paidGate(<PaymentTab userData={user} />),
+        content: <PaymentTab userData={user} />,
+        ...paidTabProps,
       },
       {
         key: "notifications",
@@ -218,16 +224,25 @@ export const RequestorSettingsPage = () => {
     );
 
     return base;
-  }, [launchEventRemainingDays, pricingBaseDate, pricingElapsedDays, user]);
+  }, [
+    canUsePaid,
+    launchEventRemainingDays,
+    pricingBaseDate,
+    pricingElapsedDays,
+    user,
+  ]);
 
   const tabFromUrl =
     (searchParams.get("tab") as TabKey | null) || (tabs[0]?.key as TabKey);
-  const allowed = new Set(tabs.map((t) => t.key));
+  const allowed = new Set(
+    tabs.filter((t) => !t.disabled).map((t) => t.key),
+  );
   const activeTab = allowed.has(tabFromUrl)
     ? tabFromUrl
-    : (tabs[0]?.key as TabKey);
+    : (tabs.find((t) => !t.disabled)?.key as TabKey) ||
+      (tabs[0]?.key as TabKey);
 
-  if (loadingMembership) {
+  if (loadingMembership || accessLoading) {
     return <SettingsTabsSkeleton />;
   }
 

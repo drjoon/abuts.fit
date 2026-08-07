@@ -31,7 +31,7 @@
  * - web/frontend/src/shared/practice/toothWorkDraft.ts
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 
 import {
@@ -831,7 +831,11 @@ const clearPracticeFileTransferCaches = async () => {
 const toDraftFileKey = (file: { originalName: string; size: number; s3Key: string }) =>
   `${String(file.originalName || "").trim()}:${Number(file.size || 0)}:${String(file.s3Key || "").trim()}`;
 
-export const PracticeFileTransferPage = () => {
+export const PracticeFileTransferPage = ({
+  roleSwitcher,
+}: {
+  roleSwitcher?: ReactNode;
+} = {}) => {
   const navigate = useNavigate();
   const location = useLocation();
   const { period, setPeriod } = usePeriodStore();
@@ -5011,22 +5015,25 @@ export const PracticeFileTransferPage = () => {
           <Card className="xl:col-span-7">
             <CardHeader className="pb-3">
               <div className="flex items-center justify-between gap-2">
-                <CardTitle className="flex min-w-0 items-center gap-2 text-base">
-                  <UploadCloud className="h-4 w-4 shrink-0 text-blue-600" />
-                  <span className="shrink-0">기공의뢰</span>
-                  {formSyncStatusLabel ? (
-                    <span
-                      className={cn(
-                        "truncate text-[11px] font-normal",
-                        formSyncStatus === "error"
-                          ? "text-destructive"
-                          : "text-muted-foreground",
-                      )}
-                    >
-                      {formSyncStatusLabel}
-                    </span>
-                  ) : null}
-                </CardTitle>
+                <div className="flex min-w-0 items-center gap-3">
+                  {roleSwitcher}
+                  <CardTitle className="flex min-w-0 items-center gap-2 text-base">
+                    <UploadCloud className="h-4 w-4 shrink-0 text-blue-600" />
+                    <span className="shrink-0">기공의뢰</span>
+                    {formSyncStatusLabel ? (
+                      <span
+                        className={cn(
+                          "truncate text-[11px] font-normal",
+                          formSyncStatus === "error"
+                            ? "text-destructive"
+                            : "text-muted-foreground",
+                        )}
+                      >
+                        {formSyncStatusLabel}
+                      </span>
+                    ) : null}
+                  </CardTitle>
+                </div>
                 <div className="flex items-center gap-2">
                   <TooltipProvider delayDuration={0}>
                     <Tooltip>

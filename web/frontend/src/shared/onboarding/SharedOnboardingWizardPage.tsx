@@ -8,6 +8,17 @@ import { useAuthStore } from "@/store/useAuthStore";
 import { apiFetch } from "@/shared/api/apiClient";
 import { SettingsWizard } from "./wizard/SettingsWizard";
 
+const resolvePostOnboardingPath = (user: {
+  role?: string | null;
+  businessVerified?: boolean;
+} | null) => {
+  // 유료 미검증(치과 무료) 경로는 대시보드 대신 기공의뢰서로
+  if (user?.role === "requestor" && !user?.businessVerified) {
+    return "/dashboard/practice-transfers";
+  }
+  return "/dashboard";
+};
+
 export const SharedOnboardingWizardPage = () => {
   const { user, token, setUser, loginWithToken } = useAuthStore();
   const navigate = useNavigate();
@@ -16,7 +27,7 @@ export const SharedOnboardingWizardPage = () => {
   useEffect(() => {
     if (!user) return;
     if (!user.role) {
-      navigate("/dashboard", { replace: true });
+      navigate(resolvePostOnboardingPath(user), { replace: true });
     }
   }, [navigate, user]);
 
@@ -54,7 +65,8 @@ export const SharedOnboardingWizardPage = () => {
 
   const handleComplete = () => {
     void markWizardCompleted().finally(() => {
-      navigate("/dashboard", { replace: true });
+      const latest = useAuthStore.getState().user;
+      navigate(resolvePostOnboardingPath(latest), { replace: true });
     });
   };
 
@@ -63,7 +75,7 @@ export const SharedOnboardingWizardPage = () => {
   }
 
   if (user?.onboardingWizardCompleted) {
-    return <Navigate to="/dashboard" replace />;
+    return <Navigate to={resolvePostOnboardingPath(user)} replace />;
   }
 
   return (

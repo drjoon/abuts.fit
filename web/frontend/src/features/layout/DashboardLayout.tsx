@@ -31,6 +31,11 @@ import { useToast } from "@/shared/hooks/use-toast";
 // - web/frontend/src/shared/realtime/useAppEventDebouncedReload.ts
 // - web/frontend/src/shared/realtime/creditBalanceEvent.ts
 // - web/backend/modules/practiceTransfers/practiceTransfer.routes.js
+import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
+import {
+  isPaidRequestorPath,
+  PAID_ACCESS_DISABLED_HINT,
+} from "@/shared/business/requestorCapabilities";
 import { ToastAction } from "@/components/ui/toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -328,6 +333,7 @@ export const DashboardLayout = () => {
   const [requestorPracticeUnreadCount, setRequestorPracticeUnreadCount] =
     useState(0);
   const { rooms: chatRooms } = useChatRooms();
+  const { canUsePaid: requestorCanUsePaid } = useRequestorBusinessAccess();
 
   const isWizardRoute = location.pathname.startsWith("/dashboard/wizard");
   const isPracticeUser = Boolean(user?.role === "practice");
@@ -1041,47 +1047,79 @@ export const DashboardLayout = () => {
                     ? location.pathname === item.href
                     : location.pathname === item.href ||
                       location.pathname.startsWith(`${item.href}/`);
+                  const paidLocked =
+                    user.role === "requestor" &&
+                    !requestorCanUsePaid &&
+                    isPaidRequestorPath(item.href);
+
+                  const button = (
+                    <Button
+                      variant="ghost"
+                      disabled={paidLocked}
+                      className={`w-full h-9 lg:h-10 text-sm lg:text-base transition-all ${
+                        isCollapsed
+                          ? "justify-center px-2"
+                          : "justify-start px-3 lg:px-4"
+                      } ${
+                        paidLocked
+                          ? "cursor-not-allowed opacity-50"
+                          : isActive
+                            ? "bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground"
+                            : "text-muted-foreground hover:text-foreground hover:bg-muted/60"
+                      }`}
+                      onClick={() => {
+                        if (paidLocked) return;
+                        navigate(item.href);
+                        setIsOpen(false);
+                      }}
+                      aria-current={isActive ? "page" : undefined}
+                    >
+                      <item.icon
+                        className={`h-4 w-4 flex-shrink-0 ${
+                          isCollapsed ? "" : "mr-2 lg:mr-3"
+                        }`}
+                      />
+                      {!isCollapsed && (
+                        <span className="truncate flex-1">{item.label}</span>
+                      )}
+                      {!isCollapsed &&
+                        (() => {
+                          const badgeCount = getSidebarBadgeCount(item.href);
+                          return badgeCount > 0 ? (
+                            <Badge
+                              variant="destructive"
+                              className="ml-auto h-5 min-w-[1.25rem] flex items-center justify-center px-1 text-[10px] font-semibold leading-none flex-shrink-0"
+                            >
+                              {badgeCount > 99 ? "99+" : badgeCount}
+                            </Badge>
+                          ) : null;
+                        })()}
+                    </Button>
+                  );
 
                   return (
                     <li key={item.href}>
-                      <Button
-                        variant="ghost"
-                        className={`w-full h-9 lg:h-10 text-sm lg:text-base transition-all ${
-                          isCollapsed
-                            ? "justify-center px-2"
-                            : "justify-start px-3 lg:px-4"
-                        } ${
-                          isActive
-                            ? "bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground"
-                            : "text-muted-foreground hover:text-foreground hover:bg-muted/60"
-                        }`}
-                        onClick={() => {
-                          navigate(item.href);
-                          setIsOpen(false);
-                        }}
-                        aria-current={isActive ? "page" : undefined}
-                      >
-                        <item.icon
-                          className={`h-4 w-4 flex-shrink-0 ${
-                            isCollapsed ? "" : "mr-2 lg:mr-3"
-                          }`}
-                        />
-                        {!isCollapsed && (
-                          <span className="truncate flex-1">{item.label}</span>
-                        )}
-                        {!isCollapsed &&
-                          (() => {
-                            const badgeCount = getSidebarBadgeCount(item.href);
-                            return badgeCount > 0 ? (
-                              <Badge
-                                variant="destructive"
-                                className="ml-auto h-5 min-w-[1.25rem] flex items-center justify-center px-1 text-[10px] font-semibold leading-none flex-shrink-0"
-                              >
-                                {badgeCount > 99 ? "99+" : badgeCount}
-                              </Badge>
-                            ) : null;
-                          })()}
-                      </Button>
+                      {paidLocked ? (
+                        <TooltipProvider delayDuration={200}>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <span className="block w-full cursor-not-allowed">
+                                <span className="pointer-events-none block">
+                                  {button}
+                                </span>
+                              </span>
+                            </TooltipTrigger>
+                            <TooltipContent
+                              side="right"
+                              className="max-w-xs text-center"
+                            >
+                              <p>{PAID_ACCESS_DISABLED_HINT}</p>
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                      ) : (
+                        button
+                      )}
                     </li>
                   );
                 })}

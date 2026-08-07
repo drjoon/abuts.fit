@@ -39,8 +39,19 @@ import {
   type PracticeTransferDialogSummaryItem,
 } from "@/shared/components/PracticeTransferDetailChatDialog";
 import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
+import {
+  PracticeTransferRoleTabs,
+  type PracticeTransferRoleMode,
+} from "@/shared/business/PracticeTransferRoleTabs";
 import { PracticeFileTransferPage } from "@/pages/practice/PracticeFileTransferPage";
 import { useNavigate } from "react-router-dom";
+import {
+  formatToothWorksForDisplay,
+  parsePracticeTransferMemoMeta as parsePracticeTransferMemoMetaShared,
+  parseToothWorks,
+  serializeToothWorks,
+} from "@/shared/practice/transferMemo";
+import type { ReactNode } from "react";
 
 type ReceivedPracticeFile = {
   id: string;
@@ -160,13 +171,32 @@ export default function RequestorPracticePage() {
     canSendTransfer,
     canReceiveTransfer,
   } = useRequestorBusinessAccess();
-  const [mode, setMode] = useState<"send" | "receive">("receive");
+  const [mode, setMode] = useState<PracticeTransferRoleMode>("receive");
+  const [modeReady, setModeReady] = useState(false);
 
   useEffect(() => {
-    if (canSendTransfer && !canReceiveTransfer) setMode("send");
-    else if (!canSendTransfer && canReceiveTransfer) setMode("receive");
-    else if (canSendTransfer && canReceiveTransfer) setMode("receive");
-  }, [canReceiveTransfer, canSendTransfer]);
+    if (loading) return;
+
+    if (!modeReady) {
+      if (canSendTransfer && !canReceiveTransfer) setMode("send");
+      else if (canReceiveTransfer) setMode("receive");
+      else if (canSendTransfer) setMode("send");
+      setModeReady(true);
+      return;
+    }
+
+    if (mode === "send" && !canSendTransfer && canReceiveTransfer) {
+      setMode("receive");
+    } else if (mode === "receive" && !canReceiveTransfer && canSendTransfer) {
+      setMode("send");
+    }
+  }, [
+    canReceiveTransfer,
+    canSendTransfer,
+    loading,
+    mode,
+    modeReady,
+  ]);
 
   if (loading) {
     return (
@@ -181,8 +211,8 @@ export default function RequestorPracticePage() {
           <CardHeader>
             <CardTitle className="text-lg">사업자 유형 선택 필요</CardTitle>
             <CardDescription>
-              무료/유료 서비스 이용을 위해 설정 &gt; 사업자에서 치과 또는
-              기공소를 선택해주세요.
+              무료/유료 서비스 이용을 위해 설정 &gt; 사업자에서 원내 기공실
+              없는 치과 또는 기공소 혹은 원내 기공실을 선택해주세요.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -198,40 +228,27 @@ export default function RequestorPracticePage() {
     );
   }
 
-  const showTabs = canSendTransfer && canReceiveTransfer;
-
-  return (
-    <div className="space-y-4">
-      {showTabs && (
-        <div className="flex gap-2 px-4 pt-4 sm:px-6">
-          <Button
-            type="button"
-            size="sm"
-            variant={mode === "receive" ? "default" : "outline"}
-            onClick={() => setMode("receive")}
-          >
-            수신 (기공소)
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant={mode === "send" ? "default" : "outline"}
-            onClick={() => setMode("send")}
-          >
-            발신 (치과)
-          </Button>
-        </div>
-      )}
-      {mode === "send" && canSendTransfer ? (
-        <PracticeFileTransferPage />
-      ) : (
-        <RequestorPracticeReceivePage />
-      )}
-    </div>
+  const roleSwitcher = (
+    <PracticeTransferRoleTabs
+      mode={mode}
+      onChange={setMode}
+      canSend={canSendTransfer}
+      canReceive={canReceiveTransfer}
+    />
   );
+
+  if (mode === "send" && canSendTransfer) {
+    return <PracticeFileTransferPage roleSwitcher={roleSwitcher} />;
+  }
+
+  return <RequestorPracticeReceivePage roleSwitcher={roleSwitcher} />;
 }
 
-function RequestorPracticeReceivePage() {
+function RequestorPracticeReceivePage({
+  roleSwitcher,
+}: {
+  roleSwitcher?: ReactNode;
+}) {
   const token = useAuthStore((s) => s.token);
   const user = useAuthStore((s) => s.user);
   const { period, setPeriod } = usePeriodStore();
@@ -1333,7 +1350,8 @@ function RequestorPracticeReceivePage() {
 
           <Card className={promoNoticeVisible ? "xl:col-span-12" : "xl:col-span-10"}>
             <CardHeader className="space-y-3">
-              <div className="flex items-center gap-3">
+              <div className="flex flex-wrap items-center gap-3">
+                {roleSwitcher}
                 <CardTitle className="text-xl">기공의뢰서 내역</CardTitle>
               </div>
               <div className="space-y-3">

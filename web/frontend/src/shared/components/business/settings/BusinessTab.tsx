@@ -75,6 +75,8 @@ interface BusinessTabProps {
   }) => void;
   registerGoNextAction?: (action: (() => Promise<boolean>) | null) => void;
   isOnboarding?: boolean;
+  /** clinic-only로 사업자등록증을 건너뛸 때 필수 치과정보 단계로 진입 */
+  onRequireClinicProfile?: () => void;
 }
 
 export const BusinessTab = ({
@@ -84,6 +86,7 @@ export const BusinessTab = ({
   registerValidationState,
   registerGoNextAction,
   isOnboarding = false,
+  onRequireClinicProfile,
 }: BusinessTabProps) => {
   const { toast } = useToast();
   const { token, user, loginWithToken } = useAuthStore();
@@ -295,7 +298,8 @@ export const BusinessTab = ({
       if (!hasAnyRequestorCapability(normalized)) {
         toast({
           title: "유형을 선택해주세요",
-          description: "치과 또는 기공소 중 하나 이상 선택해주세요.",
+          description:
+            "원내 기공실 없는 치과 또는 기공소 혹은 원내 기공실 중 하나 이상 선택해주세요.",
           variant: "destructive",
         });
         return false;
@@ -307,7 +311,7 @@ export const BusinessTab = ({
         toast({
           title: "사업자등록증이 필요합니다",
           description:
-            "기공소를 선택하려면 사업자등록증을 등록·검증해야 합니다.",
+            "기공소 혹은 원내 기공실을 선택하려면 사업자등록증을 등록·검증해야 합니다.",
           variant: "destructive",
         });
         return false;
@@ -423,16 +427,42 @@ export const BusinessTab = ({
       return;
     }
     registerGoNextAction(async () => {
-      return persistRequestorCapabilities(caps);
+      const ok = await persistRequestorCapabilities(caps);
+      if (!ok) return false;
+
+      const verified =
+        businessDataMgmt.validationSucceeded || businessDataMgmt.isVerified;
+      // 치과만 선택하고 사업자등록증을 건너뛰면 필수 치과정보 페이지로 이동
+      if (licenseOptional && !verified && onRequireClinicProfile) {
+        const pp = user?.practiceProfile;
+        const profileReady = Boolean(
+          String(pp?.clinicName || "").trim() &&
+            String(pp?.directorName || "").trim() &&
+            String(pp?.staffName || "").trim() &&
+            String(pp?.phone || "").trim() &&
+            String(pp?.clinicPhone || "").trim() &&
+            String(pp?.address || "").trim() &&
+            String(pp?.zipCode || "").trim(),
+        );
+        if (profileReady) return true;
+        onRequireClinicProfile();
+        return false;
+      }
+      return true;
     });
     return () => registerGoNextAction(null);
   }, [
+    businessDataMgmt.isVerified,
+    businessDataMgmt.validationSucceeded,
     caps,
     isOnboarding,
     isRequestorBusiness,
+    licenseOptional,
+    onRequireClinicProfile,
     persistRequestorCapabilities,
     registerGoNextAction,
     selectedRole,
+    user?.practiceProfile,
   ]);
 
   const updateSetupMode = useCallback(
@@ -444,6 +474,32 @@ export const BusinessTab = ({
     },
     [allowLocalDraft, authUserId],
   );
+
+  // 설정 화면: 사업자 미등록 + 기공소 선택 시에만 등록증 업로드 경로를 연다.
+  // (신규/기존 가입 선택 버튼은 온보딩 RoleStep에서 이미 처리)
+  useEffect(() => {
+    if (isOnboarding) return;
+    if (membershipMgmt.membership !== "none") return;
+
+    if (requiresBusinessLicense(caps)) {
+      if (setupMode !== "license" && setupMode !== "manual") {
+        updateSetupMode("license");
+        setSetupModeLocked(true);
+      }
+      return;
+    }
+
+    if (setupMode === "license" || setupMode === "manual" || setupMode === "search") {
+      updateSetupMode(null);
+      setSetupModeLocked(false);
+    }
+  }, [
+    caps,
+    isOnboarding,
+    membershipMgmt.membership,
+    setupMode,
+    updateSetupMode,
+  ]);
 
   const handleSave = async () => {
     const savingToast = toast({
@@ -804,7 +860,9 @@ export const BusinessTab = ({
             />
           )}
 
-        {membershipMgmt.membership === "none" &&
+        {/* 온보딩에서만 표시. 설정 화면은 RoleStep에서 이미 등록/가입을 선택했으므로 숨김. */}
+        {isOnboarding &&
+          membershipMgmt.membership === "none" &&
           !setupMode &&
           showSelectionChoices &&
           !setupModeLocked && (

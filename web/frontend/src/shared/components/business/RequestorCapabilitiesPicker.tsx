@@ -46,7 +46,7 @@ export const RequestorCapabilitiesPicker = ({
           이용할 수 있습니다.
         </p>
       </div>
-      <div className="space-y-2">
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
         {REQUESTOR_CAPABILITY_OPTIONS.map((opt) => {
           const checked = caps[opt.key];
           const id = `requestor-cap-${opt.key}`;
@@ -55,7 +55,7 @@ export const RequestorCapabilitiesPicker = ({
               key={opt.key}
               htmlFor={id}
               className={cn(
-                "flex cursor-pointer items-start gap-3 rounded-lg border px-3 py-3 transition-colors",
+                "flex h-full cursor-pointer items-start gap-3 rounded-lg border px-3 py-3 transition-colors",
                 checked
                   ? "border-primary/40 bg-primary/5"
                   : "border-slate-200 bg-white hover:bg-slate-50",
@@ -86,12 +86,14 @@ export const RequestorCapabilitiesPicker = ({
       </div>
       {labRequiresLicenseHint && caps.lab && (
         <p className="text-xs text-amber-700">
-          기공소를 선택한 경우 사업자등록증을 등록·검증해야 합니다.
+          기공소 혹은 원내 기공실을 선택한 경우 사업자등록증을 등록·검증해야
+          합니다.
         </p>
       )}
       {!caps.clinic && !caps.lab && (
         <p className="text-xs text-destructive">
-          치과 또는 기공소 중 하나 이상 선택해주세요.
+          원내 기공실 없는 치과 또는 기공소 혹은 원내 기공실 중 하나 이상
+          선택해주세요.
         </p>
       )}
     </div>

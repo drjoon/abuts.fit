@@ -240,6 +240,15 @@ export const SettingsWizard = ({
     validating: boolean;
   }>({ passed: false, validating: false });
   const validateActionRef = useRef<(() => void) | null>(null);
+  /** requestor clinic-only: 사업자등록증 건너뛴 뒤 필수 치과정보 단계 */
+  const [clinicProfilePhase, setClinicProfilePhase] = useState(false);
+
+  const handleClinicProfilePhaseChange = useCallback((active: boolean) => {
+    setClinicProfilePhase(active);
+    if (active) {
+      setValidationState({ passed: false, validating: false });
+    }
+  }, []);
 
   const handleLogout = useCallback(() => {
     console.log("[wizard-logout] click", {
@@ -373,18 +382,25 @@ export const SettingsWizard = ({
 
   const handlePrev = useCallback(() => {
     if (!currentStep) return;
+    if (currentStep === "business" && clinicProfilePhase) {
+      setClinicProfilePhase(false);
+      setValidationState({ passed: false, validating: false });
+      return;
+    }
     const currentIndex = STEP_ORDER.indexOf(currentStep);
     if (currentIndex <= 0) return;
     const prevStep = STEP_ORDER[currentIndex - 1];
     setCurrentStep(prevStep);
     // 사업자 단계 떠날 때 검증 상태 리셋
     if (currentStep === "business") {
+      setClinicProfilePhase(false);
       setValidationState({ passed: false, validating: false });
     }
-  }, [currentStep, STEP_ORDER]);
+  }, [clinicProfilePhase, currentStep, STEP_ORDER]);
 
   // 역할 변경 시 검증 상태 리셋
   useEffect(() => {
+    setClinicProfilePhase(false);
     setValidationState({ passed: false, validating: false });
   }, [selectedRole]);
 
@@ -428,14 +444,17 @@ export const SettingsWizard = ({
       case "role":
         return "등록 방식 선택";
       case "business":
-        if (effectiveBusinessType === "practice" && selectedRole === "owner") {
+        if (
+          clinicProfilePhase ||
+          (effectiveBusinessType === "practice" && selectedRole === "owner")
+        ) {
           return "치과 정보";
         }
         return selectedRole === "owner" ? "사업자 등록" : "사업자 가입";
       default:
         return "";
     }
-  }, [currentStep, effectiveBusinessType, selectedRole]);
+  }, [clinicProfilePhase, currentStep, effectiveBusinessType, selectedRole]);
 
   const cardMaxWidth = useMemo(() => {
     switch (currentStep) {
@@ -505,6 +524,8 @@ export const SettingsWizard = ({
                 businessType={effectiveBusinessType}
                 defaultCompleted={stepCompleted.business}
                 onComplete={() => handleStepComplete("business")}
+                clinicProfilePhase={clinicProfilePhase}
+                onClinicProfilePhaseChange={handleClinicProfilePhaseChange}
                 registerGoNextAction={registerGoNextAction}
                 registerBusyState={registerStepBusyState}
                 registerValidationState={registerValidationState}

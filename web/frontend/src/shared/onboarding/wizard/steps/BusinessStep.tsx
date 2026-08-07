@@ -3,7 +3,7 @@
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/shared/onboarding/wizard/steps/PracticeBusinessProfileStep.tsx
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { useAuthStore } from "@/store/useAuthStore";
 import { BusinessTab } from "@/shared/components/business/settings/BusinessTab";
 import { PracticeBusinessProfileStep } from "./PracticeBusinessProfileStep";
@@ -13,6 +13,9 @@ interface BusinessStepProps {
   businessType: string;
   defaultCompleted?: boolean;
   onComplete?: () => void;
+  /** 사업자등록증을 건너뛴 치과(clinic-only) 필수정보 단계 */
+  clinicProfilePhase?: boolean;
+  onClinicProfilePhaseChange?: (active: boolean) => void;
   registerGoNextAction?: (action: (() => Promise<boolean>) | null) => void;
   registerBusyState?: (busy: boolean) => void;
   registerValidationState?: (state: {
@@ -25,6 +28,8 @@ interface BusinessStepProps {
 export const BusinessStep = ({
   role,
   businessType,
+  clinicProfilePhase = false,
+  onClinicProfilePhaseChange,
   registerGoNextAction,
   registerBusyState,
   registerValidationState,
@@ -37,6 +42,8 @@ export const BusinessStep = ({
       : businessType;
   const isPractice = resolvedBusinessType === "practice";
   const isPracticeOwner = isPractice && role === "owner";
+  const isRequestorOwner =
+    resolvedBusinessType === "requestor" && role === "owner";
 
   const userData = useMemo(
     () => ({
@@ -45,6 +52,16 @@ export const BusinessStep = ({
     }),
     [user],
   );
+
+  useEffect(() => {
+    if (isRequestorOwner) return;
+    if (!clinicProfilePhase) return;
+    onClinicProfilePhaseChange?.(false);
+  }, [
+    clinicProfilePhase,
+    isRequestorOwner,
+    onClinicProfilePhaseChange,
+  ]);
 
   if (isPractice && !role) {
     return (
@@ -64,6 +81,16 @@ export const BusinessStep = ({
     );
   }
 
+  if (isRequestorOwner && clinicProfilePhase) {
+    return (
+      <PracticeBusinessProfileStep
+        registerGoNextAction={registerGoNextAction}
+        registerBusyState={registerBusyState}
+        registerValidationState={registerValidationState}
+      />
+    );
+  }
+
   return (
     <div className="space-y-4">
       <BusinessTab
@@ -73,6 +100,7 @@ export const BusinessStep = ({
         registerValidationState={registerValidationState}
         registerGoNextAction={registerGoNextAction}
         isOnboarding={true}
+        onRequireClinicProfile={() => onClinicProfilePhaseChange?.(true)}
       />
     </div>
   );

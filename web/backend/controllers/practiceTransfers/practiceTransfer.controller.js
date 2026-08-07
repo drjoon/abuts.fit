@@ -12,6 +12,10 @@ import {
   invalidateAdminDashboardCaches,
   withRequestPerfInFlight,
 } from "../../services/requestDashboardCache.service.js";
+import {
+  canReceivePracticeTransfer,
+  resolveRequestorCapabilities,
+} from "../../utils/requestorCapabilities.js";
 
 // related files:
 // - web/frontend/src/pages/practice/hooks/usePracticeTransferStep1.ts
@@ -1324,6 +1328,31 @@ export async function getReceivedPracticeTransferUnreadCount(req, res) {
     const role = String(req.user?.role || "").trim();
     if (role !== "requestor" && role !== "admin") {
       return res.status(403).json({ success: false, message: "권한이 없습니다." });
+    }
+
+    // 배지 폴링: lab 미선택(치과-only)은 403 대신 0
+    if (role === "requestor") {
+      let anchorCaps = null;
+      let businessVerified = false;
+      if (req.user?.businessAnchorId) {
+        const anchor = await BusinessAnchor.findById(req.user.businessAnchorId)
+          .select({ requestorCapabilities: 1, status: 1 })
+          .lean();
+        anchorCaps = anchor?.requestorCapabilities || null;
+        businessVerified = anchor?.status === "verified";
+      }
+      const caps = resolveRequestorCapabilities({
+        anchorCaps,
+        userCaps: req.user?.requestorCapabilities,
+        userRole: role,
+        businessVerified,
+      });
+      if (!canReceivePracticeTransfer(caps)) {
+        return res.status(200).json({
+          success: true,
+          data: { unreadCount: 0 },
+        });
+      }
     }
 
     const { scope } = buildReceivedScope(req);

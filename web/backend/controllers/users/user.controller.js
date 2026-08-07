@@ -554,115 +554,131 @@ async function updateProfile(req, res) {
       }
     }
 
-    if (
-      Object.prototype.hasOwnProperty.call(updateData, "practiceProfile") &&
-      String(req.user?.role || "") === "practice"
-    ) {
-      const pp =
-        updateData.practiceProfile &&
-        typeof updateData.practiceProfile === "object"
-          ? updateData.practiceProfile
-          : {};
-      const clinicName = String(
-        pp.clinicName || updateData.business || "",
-      ).trim();
-      const directorName = String(pp.directorName || "").trim();
-      const staffName = String(pp.staffName || updateData.name || "").trim();
-      const phone = String(pp.phone || updateData.phoneNumber || "").trim();
-      const clinicPhone = String(pp.clinicPhone || "").trim();
-      const address = String(pp.address || "").trim();
-      const addressDetail = String(pp.addressDetail || "").trim();
-      const zipCode = String(pp.zipCode || "").trim();
+    if (Object.prototype.hasOwnProperty.call(updateData, "practiceProfile")) {
+      const userRole = String(req.user?.role || "");
+      const isPracticeRole = userRole === "practice";
+      const isRequestorClinicProfile = userRole === "requestor";
 
-      if (
-        !clinicName ||
-        !directorName ||
-        !staffName ||
-        !phone ||
-        !clinicPhone ||
-        !address ||
-        !zipCode
-      ) {
-        return res.status(400).json({
-          success: false,
-          message:
-            "치과명, 대표원장님 성함, 담당직원명, 치과 전화, 담당자 휴대폰, 주소, 우편번호는 필수입니다.",
-        });
-      }
+      if (isPracticeRole || isRequestorClinicProfile) {
+        const pp =
+          updateData.practiceProfile &&
+          typeof updateData.practiceProfile === "object"
+            ? updateData.practiceProfile
+            : {};
+        const clinicName = String(
+          pp.clinicName || updateData.business || "",
+        ).trim();
+        const directorName = String(pp.directorName || "").trim();
+        const staffName = String(pp.staffName || updateData.name || "").trim();
+        const phone = String(pp.phone || updateData.phoneNumber || "").trim();
+        const clinicPhone = String(pp.clinicPhone || "").trim();
+        const address = String(pp.address || "").trim();
+        const addressDetail = String(pp.addressDetail || "").trim();
+        const zipCode = String(pp.zipCode || "").trim();
 
-      const existingCreatedAt = req.user?.practiceProfile?.createdAt;
-      updateData.practiceProfile = {
-        clinicName,
-        directorName,
-        staffName,
-        phone,
-        clinicPhone,
-        address,
-        addressDetail,
-        zipCode,
-        createdAt: existingCreatedAt || new Date(),
-        updatedAt: new Date(),
-      };
-      updateData.business = clinicName;
-      if (!String(updateData.name || "").trim()) {
-        updateData.name = staffName;
-      }
-      if (!String(updateData.phoneNumber || "").trim()) {
-        updateData.phoneNumber = phone;
-      }
+        if (
+          !clinicName ||
+          !directorName ||
+          !staffName ||
+          !phone ||
+          !clinicPhone ||
+          !address ||
+          !zipCode
+        ) {
+          return res.status(400).json({
+            success: false,
+            message:
+              "치과명, 대표원장님 성함, 담당직원명, 치과 전화, 담당자 휴대폰, 주소, 우편번호는 필수입니다.",
+          });
+        }
 
-      if (!req.user?.businessAnchorId) {
-        const businessAnchor = await BusinessAnchor.create({
-          businessNumberNormalized: `practice-${Date.now()}-${crypto.randomInt(1000, 9999)}`,
-          businessType: "practice",
-          name: clinicName,
-          status: "active",
-          primaryContactUserId: req.user._id,
-          metadata: {
-            companyName: clinicName,
-            representativeName: directorName,
-            address,
-            addressDetail,
-            zipCode,
-            phoneNumber: clinicPhone || phone,
-            email: String(req.user.email || ""),
-            businessItem: "",
-            businessType: "",
-            startDate: "",
-            businessNumber: "",
-          },
-          verification: {
-            verified: false,
-            verifiedAt: null,
-            verifiedBy: null,
-          },
-          shippingPolicy: {
-            weeklyBatchDays: ["mon", "wed", "fri"],
-            updatedAt: new Date(),
-          },
-          owners: [req.user._id],
-          members: [],
-        });
-        updateData.businessAnchorId = businessAnchor._id;
-        updateData.subRole = "owner";
-      } else if (Types.ObjectId.isValid(String(req.user.businessAnchorId))) {
-        await BusinessAnchor.updateOne(
-          {
-            _id: new Types.ObjectId(String(req.user.businessAnchorId)),
+        const existingCreatedAt = req.user?.practiceProfile?.createdAt;
+        updateData.practiceProfile = {
+          clinicName,
+          directorName,
+          staffName,
+          phone,
+          clinicPhone,
+          address,
+          addressDetail,
+          zipCode,
+          createdAt: existingCreatedAt || new Date(),
+          updatedAt: new Date(),
+        };
+        updateData.business = clinicName;
+        if (!String(updateData.name || "").trim()) {
+          updateData.name = staffName;
+        }
+        if (!String(updateData.phoneNumber || "").trim()) {
+          updateData.phoneNumber = phone;
+        }
+
+        // 의뢰자(clinic 무료) 경로는 User.practiceProfile만 저장. practice 앵커는 만들지 않음.
+        if (isRequestorClinicProfile) {
+          const existingCaps =
+            req.user?.requestorCapabilities &&
+            typeof req.user.requestorCapabilities === "object"
+              ? req.user.requestorCapabilities
+              : {};
+          if (!existingCaps.clinic && !existingCaps.lab) {
+            updateData.requestorCapabilities = {
+              clinic: true,
+              lab: Boolean(existingCaps.lab),
+            };
+          }
+        } else if (!req.user?.businessAnchorId) {
+          const businessAnchor = await BusinessAnchor.create({
+            businessNumberNormalized: `practice-${Date.now()}-${crypto.randomInt(1000, 9999)}`,
+            businessType: "practice",
+            name: clinicName,
+            status: "active",
             primaryContactUserId: req.user._id,
-          },
-          {
-            $set: {
-              name: clinicName,
-              "metadata.companyName": clinicName,
-              "metadata.representativeName": directorName,
-              "metadata.address": address,
-              "metadata.addressDetail": addressDetail,
-              "metadata.zipCode": zipCode,
-              "metadata.phoneNumber": clinicPhone || phone,
+            metadata: {
+              companyName: clinicName,
+              representativeName: directorName,
+              address,
+              addressDetail,
+              zipCode,
+              phoneNumber: clinicPhone || phone,
+              email: String(req.user.email || ""),
+              businessItem: "",
+              businessType: "",
+              startDate: "",
+              businessNumber: "",
             },
-          },
-        );
+            verification: {
+              verified: false,
+              verifiedAt: null,
+              verifiedBy: null,
+            },
+            shippingPolicy: {
+              weeklyBatchDays: ["mon", "wed", "fri"],
+              updatedAt: new Date(),
+            },
+            owners: [req.user._id],
+            members: [],
+          });
+          updateData.businessAnchorId = businessAnchor._id;
+          updateData.subRole = "owner";
+        } else if (Types.ObjectId.isValid(String(req.user.businessAnchorId))) {
+          await BusinessAnchor.updateOne(
+            {
+              _id: new Types.ObjectId(String(req.user.businessAnchorId)),
+              primaryContactUserId: req.user._id,
+            },
+            {
+              $set: {
+                name: clinicName,
+                "metadata.companyName": clinicName,
+                "metadata.representativeName": directorName,
+                "metadata.address": address,
+                "metadata.addressDetail": addressDetail,
+                "metadata.zipCode": zipCode,
+                "metadata.phoneNumber": clinicPhone || phone,
+              },
+            },
+          );
+        }
       }
     }
 

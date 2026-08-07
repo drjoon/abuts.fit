@@ -87,7 +87,9 @@ export const RequestorPricingReferralPolicyCard = () => {
       }
       return res.data.data;
     },
-    enabled: Boolean(token && user && user.role === "requestor"),
+    enabled: Boolean(
+      token && user && user.role === "requestor" && user.businessAnchorId,
+    ),
     retry: false,
     staleTime: 5 * 60 * 1000,
     refetchOnMount: false,

@@ -209,7 +209,8 @@
   - 조회(수신): `GET /api/practice/transfers/received`
   - 취소: `POST /api/practice/transfers/cancel-batch`
 - 제조사 워크시트 조회에서 practice 전송 태그 의뢰 제외
-- 크레딧/정산/리퍼럴은 유료(검증된 기공소) 경로에만 해당. 치과(clinic-only) 무료 경로는 포함하지 않음
+- 크레딧/정산은 유료(검증된 기공소) 경로에만 해당. 치과(clinic-only) 무료 경로는 포함하지 않음
+- 소개(리퍼럴) 페이지·링크: 치과(clinic) 포함 모든 requestor가 접근 가능(사업자 미등록·subRole 미기입 포함). 소개 귀속(`referredByAnchorId`)·그룹 할인 적용은 추천인 사업자 앵커 등록 이후. 사업자등록증 업로드 후 `lab` 체크·검증되면 유료 소개 혜택 경로로 이어짐
 - 레거시 혼입 경로(예: `/api/requests/practice/*`)는 제거 대상으로 관리
 - 백필: `web/backend/scripts/db/backfill-requestor-capabilities.js` (`--apply`)
 
