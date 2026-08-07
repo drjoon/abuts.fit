@@ -31,6 +31,9 @@
     "db:check-pricing-ssot:ci": "cross-env TZ=Asia/Seoul node scripts/db/check-pricing-ssot-consistency.js --strict --no-write",
     "db:delete-legacy-practice-requestor": "cross-env TZ=Asia/Seoul ENV_FILE=local.env node scripts/db/delete-legacy-practice-requestor.js",
     "db:fix-today-estimated-ship-ymd": "cross-env TZ=Asia/Seoul ENV_FILE=local.env node scripts/db/fix-today-estimated-ship-ymd.js",
+    "db:backup-requests-once": "cross-env TZ=Asia/Seoul ENV_FILE=local.env node scripts/db/run-request-backup-once.js",
+    "db:backup-critical-full": "cross-env TZ=Asia/Seoul ENV_FILE=local.env node scripts/db/run-request-backup-once.js --full",
+    "db:backup-critical-incremental": "cross-env TZ=Asia/Seoul ENV_FILE=local.env node scripts/db/run-request-backup-once.js --incremental",
     "worker:monthly-referral-snapshot": "cross-env TZ=Asia/Seoul ENV_FILE=local.env node jobs/dailyReferralSnapshotWorker.js", 
     "worker:daily-admin-salesman-credits-overview-snapshot": "cross-env TZ=Asia/Seoul ENV_FILE=local.env node jobs/dailyAdminSalesmanCreditsOverviewSnapshotWorker.js"
   },

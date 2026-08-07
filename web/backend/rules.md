@@ -531,6 +531,41 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
     - 인증 `authenticate`: User 조회 30s TTL 캐시(폴링 공통 병목 완화). 계정 비활성 시 즉시 invalidate.
     - `GET /api/admin/dashboard`: 20s TTL 캐시, File 전수 집계/recent populate 제거, 해피콜 집계와 크레딧 점검을 병렬화,
       unmachinable items는 DB에서 limit 10. 구현: `controllers/admin/admin.dashboard.controller.js`.
+      해피콜 온보딩 사유는 하한+상한 구간을 적용한다
+      (`new_signup_no_first_request_14d`: 가입 14~30일, `no_completion_30d_from_join`: 가입 30~60일).
+      판정 SSOT: `controllers/admin/happyCallReasons.js`.
+    - Jest DB 안전(강제): `tests/setup.js`는 **로컬 Mongo만** 연결/wipe 한다.
+      `MONGODB_URI_TEST`가 Atlas(`mongodb+srv` / `mongodb.net`)이면 연결 전에 실패하고 `deleteMany`를 실행하지 않는다.
+      가드 SSOT: `tests/mongoSafety.js`. 공유 `abuts_fit_test`에 export 후 jest 실행 금지.
+    - requests 유실 원인(2026-08-07): Jest `tests/setup.js`의 `afterEach/afterAll clearCollections()`가
+      `mongoose.connection.collections`에 등록된 모델에 `deleteMany({})`를 수행함.
+      `export MONGODB_URI_TEST=<Atlas abuts_fit_test>` 후
+      `distribution.coverRank.test.js`(→ `distribution.utils.js`가 `Request` import) 실행으로
+      **requests만** 전량 삭제됨(ledger/machining/delivery/shippingpackages 등은 잔존).
+      재발 방지: `tests/mongoSafety.js` 로컬 URI 가드.
+    - requests 응급 복구(스냅샷): `scripts/db/restore-requests-from-snapshots.js`
+      (`ENV_FILE=local.env ABUTS_DB_FORCE=true`, dry-run 기본 / `--yes` 적용).
+      `requestordashboardsummarysnapshots.recentRequests` + anchor→requestor 매핑.
+      완전 복구는 Atlas PITR이 우선.
+    - 스냅샷 복구 후 상태 교정: `scripts/db/heal-requests-from-satellites.js`
+      (잔존 machiningrecords/deliveryinfos/shippingpackages로 stage·링크 필드 보정).
+    - requests 정기 백업(강제 권장): `jobs/hourlyRequestBackupWorker.js`
+      + `services/requestBackup.service.js`.
+      1시간 증분: watermark(`maxId`/`maxUpdatedAt`) 이후 신규·수정 문서만 저장.
+      주 1회 전체: 마지막 full 기준 7일 경과 시 자동 full (`REQUEST_BACKUP_WEEKLY_FULL_MS`).
+      증분이고 requests stage 분포 + 핵심 컬렉션(count/max _id) 지문이 동일하면 생략.
+      백업 대상: requests/businessanchors/users/ledger*/machiningrecords/deliveryinfos/
+      shippingpackages/draftrequests/files/happyCall/systemsettings/connections 등
+      (`CRITICAL_BACKUP_COLLECTIONS`, `REQUEST_BACKUP_COLLECTIONS`로 덮어쓰기 가능).
+      파일은 삭제하지 않음(S3 `db-backups/critical/{full|incremental}/...`
+      또는 로컬 `backups/critical-hourly/{full|incremental}/`).
+      복구: 최신 full 적용 후 이후 incremental을 `_id` upsert 순으로 적용.
+      수동: `npm run db:backup-requests-once` / `--full` / `--incremental`.
+      비활성: `REQUEST_BACKUP_DISABLED=true`.
+    - Atlas PITR(완전 원복): Atlas UI → Database → cluster → Backup →
+      Point in Time Restore → Date&Time(wipe 직전 KST) →
+      Restore database(s)/collection(s) → `abuts_fit_test.requests`
+      (Create as new 권장 후 검증, 필요 시 Overwrite). Continuous Cloud Backup 켜져 있어야 함.
     - `GET /api/requests?view=monitoring`: find+stage aggregate 병렬, page>1은 includeTotal 없이 목록만,
       projection은 카드 UI 필드만. 인덱스 `Request(createdAt, _id)`.
   - 관리자 크레딧(`credit:balance-updated`)은 `requestor`, `admin` role fan-out으로 발행하고,

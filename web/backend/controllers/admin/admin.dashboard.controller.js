@@ -27,6 +27,7 @@ import {
   setRequestPerfCacheValue,
   withRequestPerfInFlight,
 } from "../../services/requestDashboardCache.service.js";
+import { collectHappyCallReasonCodes } from "./happyCallReasons.js";
 
 const HAPPY_CALL_REASON_META = {
   first_completion_this_week: {
@@ -1038,59 +1039,25 @@ async function buildAdminDashboardPayload(req) {
         continue;
       }
 
-      const reasons = [];
-
-      if (
-        firstCompletedAt &&
-        firstCompletedAt >= weekStartUtc &&
-        firstCompletedAt < weekEndUtc
-      ) {
-        reasons.push({ code: "first_completion_this_week" });
-      }
-
-      if (
-        firstCompletedAt &&
-        firstCompletedAt <= sevenDaysAgo &&
-        firstCompletedAt >= twentyOneDaysAgo
-      ) {
-        reasons.push({ code: "first_completion_after_signup" });
-      }
-
-      // 운영 정책 보정:
-      // 가입 1개월 경과 + 완료 0건이라도 최근 주문 활동이 활발하면
-      // 해당 사유로는 해피콜 대상에서 제외한다.
-      if (
-        anchorCreatedAt &&
-        anchorCreatedAt <= thirtyDaysAgo &&
-        completedCount === 0 &&
-        recent30Total === 0
-      ) {
-        reasons.push({ code: "no_completion_30d_from_join" });
-      }
-
-      if (lastCompletedAt && lastCompletedAt <= sixtyDaysAgo) {
-        reasons.push({ code: "dormant_60d_since_last_completion" });
-      }
-
-      if (recent30Total >= 3 && recent30Canceled / recent30Total >= 0.5) {
-        reasons.push({ code: "high_cancel_rate_30d" });
-      }
-
-      if (recent14UnmachinableJudged > 0) {
-        reasons.push({ code: "recent_unmachinable_14d" });
-      }
-
-      if (completedCount > 0 && recent30Total >= 2 && recent30Completed === 0) {
-        reasons.push({ code: "active_but_no_completion_30d" });
-      }
-
-      if (anchorCreatedAt && anchorCreatedAt <= fourteenDaysAgo && totalRequestsByAnchor === 0) {
-        reasons.push({ code: "new_signup_no_first_request_14d" });
-      }
-
-      if (isCustomDesignSoftware) {
-        reasons.push({ code: "custom_design_software" });
-      }
+      const reasons = collectHappyCallReasonCodes({
+        anchorCreatedAt,
+        firstCompletedAt,
+        lastCompletedAt,
+        completedCount,
+        totalRequestsByAnchor,
+        recent30Total,
+        recent30Canceled,
+        recent30Completed,
+        recent14UnmachinableJudged,
+        isCustomDesignSoftware,
+        weekStartUtc,
+        weekEndUtc,
+        sevenDaysAgo,
+        fourteenDaysAgo,
+        twentyOneDaysAgo,
+        thirtyDaysAgo,
+        sixtyDaysAgo,
+      }).map((code) => ({ code }));
 
       if (!reasons.length) {
         continue;
