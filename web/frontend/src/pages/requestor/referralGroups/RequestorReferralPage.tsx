@@ -4,11 +4,17 @@
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 import { useState } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PricingPolicyDialog } from "@/shared/ui/PricingPolicyDialog";
-import { Copy, Check } from "lucide-react";
+import { Check, Copy, Link2 } from "lucide-react";
 import { useToast } from "@/shared/hooks/use-toast";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useReferralData } from "./hooks/useReferralData";
@@ -34,11 +40,13 @@ function MetricCard({
   subtitle?: string;
 }) {
   return (
-    <div className="rounded-2xl border border-gray-200 bg-white/80 shadow-sm p-4">
-      <div className="text-xs text-muted-foreground">{title}</div>
-      <div className="mt-1 text-xl font-semibold">{value}</div>
+    <div className="rounded-xl bg-slate-50 px-4 py-3.5">
+      <div className="text-xs text-slate-500">{title}</div>
+      <div className="mt-1.5 text-2xl font-semibold tracking-tight text-slate-900">
+        {value}
+      </div>
       {subtitle ? (
-        <div className="mt-1 text-xs text-muted-foreground">{subtitle}</div>
+        <div className="mt-1 text-xs text-slate-500">{subtitle}</div>
       ) : null}
     </div>
   );
@@ -48,8 +56,8 @@ export const RequestorReferralPage = () => {
   const { toast } = useToast();
   const { user } = useAuthStore();
   const [policyOpen, setPolicyOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState<"link" | "dashboard">("link");
   const [copied, setCopied] = useState(false);
+  const [codeCopied, setCodeCopied] = useState(false);
 
   const {
     isReferralEligible,
@@ -61,12 +69,10 @@ export const RequestorReferralPage = () => {
     loadingTree,
     treeMemberCount,
   } = useReferralData({
-    fetchStats: activeTab === "dashboard",
+    fetchStats: true,
     fetchDirectMembers: false,
-    fetchTree: activeTab === "dashboard",
+    fetchTree: true,
   });
-
-  const [codeCopied, setCodeCopied] = useState(false);
 
   const handleCopyLink = async () => {
     if (!referralLink) return;
@@ -108,8 +114,6 @@ export const RequestorReferralPage = () => {
     }
   };
 
-
-
   const requestorOrders = Number(
     requestorStats?.myLast30DaysOrders ??
       requestorStats?.myLastMonthOrders ??
@@ -125,257 +129,160 @@ export const RequestorReferralPage = () => {
 
   return (
     <div className="flex flex-col h-full min-h-0">
-      {/* 탭 네비게이션 */}
-      <div className="border-b border-gray-200 bg-white">
-        <div className="flex gap-8 px-4 sm:px-6">
-          <button
-            onClick={() => setActiveTab("link")}
-            className={`py-4 px-1 font-medium text-sm border-b-2 transition-colors ${
-              activeTab === "link"
-                ? "border-blue-600 text-blue-600"
-                : "border-transparent text-gray-600 hover:text-gray-900"
-            }`}
-          >
-            소개 링크
-          </button>
-
-          <button
-            onClick={() => setActiveTab("dashboard")}
-            className={`py-4 px-1 font-medium text-sm border-b-2 transition-colors ${
-              activeTab === "dashboard"
-                ? "border-blue-600 text-blue-600"
-                : "border-transparent text-gray-600 hover:text-gray-900"
-            }`}
-          >
-            소개 대시보드
-          </button>
-        </div>
-      </div>
-
-      {/* 탭 콘텐츠 */}
-      <div className="flex-1 min-h-0 overflow-y-auto">
-        {/* 소개 링크 탭 */}
-        {activeTab === "link" && (
-          <div className="flex items-start justify-center min-h-full p-6 bg-transparent">
-            <Card className="w-full  border-slate-200">
-              <CardHeader className="space-y-2 px-8 pt-8 pb-4">
-                <CardTitle className="text-2xl">내 사업자 소개 링크</CardTitle>
-                <p className="text-sm text-slate-600">
-                  이 링크를 공유하고 새로운 사업자를 소개하세요.
-                </p>
+      <div className="flex-1 min-h-0 overflow-y-auto p-3 space-y-3">
+        {!isReferralEligible ? (
+          <Card>
+            <CardContent className="pt-6">
+              <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">
+                의뢰자 계정에서 확인할 수 있습니다.
+              </div>
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="grid grid-cols-1 gap-3 xl:grid-cols-12 xl:items-stretch">
+            <Card className="flex h-full flex-col xl:col-span-5">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-xl">내 사업자 소개 링크</CardTitle>
+                <CardDescription>
+                  이 링크를 공유하고 새로운 사업자를 소개하세요
+                </CardDescription>
               </CardHeader>
+              <CardContent className="flex flex-1 flex-col gap-4 pt-0">
+                <button
+                  type="button"
+                  onClick={() => void handleCopyCode()}
+                  className="w-full rounded-xl bg-slate-50 px-4 py-5 text-left transition-colors hover:bg-slate-100"
+                >
+                  <div className="text-xs font-medium text-slate-500">
+                    소개 코드
+                  </div>
+                  <div className="mt-1 font-mono text-3xl font-semibold tracking-wider text-slate-900">
+                    {referralCode || "—"}
+                  </div>
+                </button>
 
-              <CardContent className="space-y-2 px-8 pb-8">
-                {!isReferralEligible ? (
-                  <div className="rounded-lg bg-blue-50 border border-blue-100 p-4 text-sm text-blue-700">
-                    의뢰자 계정에서 확인할 수 있습니다.
+                <div className="mt-auto grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={() => void handleCopyCode()}
+                    className="h-9 gap-1.5 bg-blue-600 text-white hover:bg-blue-700"
+                  >
+                    {codeCopied ? (
+                      <>
+                        <Check className="h-4 w-4" />
+                        복사됨
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="h-4 w-4" />
+                        코드 복사
+                      </>
+                    )}
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={() => void handleCopyLink()}
+                    className="h-9 gap-1.5 bg-blue-600 text-white hover:bg-blue-700"
+                  >
+                    {copied ? (
+                      <>
+                        <Check className="h-4 w-4" />
+                        복사됨
+                      </>
+                    ) : (
+                      <>
+                        <Link2 className="h-4 w-4" />
+                        링크 복사
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="flex h-full flex-col xl:col-span-7">
+              <CardHeader className="pb-3">
+                <div className="flex items-center justify-between gap-3">
+                  <CardTitle className="text-xl">의뢰자 그룹 통계</CardTitle>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-8 text-xs"
+                    onClick={() => setPolicyOpen(true)}
+                  >
+                    정책 보기
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent className="flex flex-1 flex-col pt-0">
+                {loadingRequestor || loadingTree ? (
+                  <div className="grid flex-1 gap-3 sm:grid-cols-2">
+                    <Skeleton className="h-full min-h-[88px]" />
+                    <Skeleton className="h-full min-h-[88px]" />
+                    <Skeleton className="h-full min-h-[88px]" />
+                    <Skeleton className="h-full min-h-[88px]" />
                   </div>
                 ) : (
-                  <>
-                    {/* 소개 코드 */}
-                    <div className="space-y-2 pb-4">
-                      <label className="text-xs font-semibold text-slate-700 uppercase tracking-wide">
-                        소개 코드
-                      </label>
-                      <div
-                        className="rounded-xl border border-slate-200 bg-slate-50 flex items-center justify-between gap-4 px-4 py-5 cursor-pointer hover:bg-slate-100 transition-colors"
-                        onClick={() => void handleCopyCode()}
-                      >
-                        <p className="text-4xl  font-mono text-slate-700 break-all leading-relaxed">
-                          {referralCode || "—"}
-                        </p>
-                        <Button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            void handleCopyCode();
-                          }}
-                          variant="default"
-                          size="sm"
-                          className="px-4 text-xs h-8 gap-1.5 shrink-0"
-                        >
-                          {codeCopied ? (
-                            <>
-                              <Check className="w-4 h-4" />
-                              복사됨
-                            </>
-                          ) : (
-                            <>
-                              <Copy className="w-4 h-4" />
-                              코드 복사
-                            </>
-                          )}
-                        </Button>
-                      </div>
+                  <div className="grid flex-1 gap-3 sm:grid-cols-2">
+                    <MetricCard
+                      title="그룹 사업자 수"
+                      value={`${requestorMembers.toLocaleString()}개소`}
+                      subtitle="본인 포함 그룹 전체"
+                    />
+                    <MetricCard
+                      title="사업자 그룹 합산 (최근 30일)"
+                      value={`${requestorGroupOrders.toLocaleString()}건`}
+                      subtitle={
+                        requestorGroupOrders > 0
+                          ? `내 사업자: ${requestorOrders.toLocaleString()}건`
+                          : undefined
+                      }
+                    />
+                    <MetricCard
+                      title="적용 단가"
+                      value={`${fmtMoney(requestorUnitPrice)}원`}
+                      subtitle="부가세·배송비 별도"
+                    />
+                    <div className="rounded-xl bg-blue-50 px-4 py-3.5 text-xs leading-relaxed text-blue-900">
+                      <p>
+                        신규 가입 이벤트 기간에는 90일간 10,000원으로
+                        고정됩니다.
+                      </p>
+                      <p className="mt-1.5">
+                        소개한 사업자와 주문량을 합산해 할인받을 수 있습니다.
+                      </p>
                     </div>
-
-                    {/* 소개 링크 */}
-                    <div className="space-y-2">
-                      <label className="text-xs font-semibold text-slate-700 uppercase tracking-wide">
-                        소개 링크
-                      </label>
-                      <div className="rounded-lg bg-slate-50 border border-slate-200 p-4 flex items-center justify-between gap-4">
-                        <p className="text-sm font-mono text-slate-700 break-all leading-relaxed">
-                          {referralLink}
-                        </p>
-                        <Button
-                          onClick={handleCopyLink}
-                          variant="default"
-                          size="sm"
-                          className="px-4 text-xs h-8 gap-1.5 shrink-0"
-                        >
-                          {copied ? (
-                            <>
-                              <Check className="w-4 h-4" />
-                              복사됨
-                            </>
-                          ) : (
-                            <>
-                              <Copy className="w-4 h-4" />
-                              링크 복사
-                            </>
-                          )}
-                        </Button>
-                      </div>
-                    </div>
-
-                    {/* 정책 안내 */}
-                    <div className="space-y-3 pt-4">
-                      <div className="text-xs font-semibold text-slate-700 uppercase tracking-wide">
-                        소개 정책
-                      </div>
-                    </div>
-
-                    {/* 정책 안내 */}
-                    <div className="rounded-lg bg-slate-50 border border-slate-200 p-4 flex justify-between">
-                      <div className="text-xs text-slate-600 space-y-1">
-                        <p>
-                          - 최근 30일 사업자 주문량 기준으로 단가가 적용됩니다.
-                        </p>
-                        <p>
-                          - 주문량 집계는 사용자 개인이 아니라 사업자 기준으로
-                          매일 자정(00:00) 업데이트됩니다.
-                        </p>
-                        <p>- 소개한 사업자와 함께 그룹 할인이 적용됩니다.</p>
-                      </div>
-                      <Button
-                        type="button"
-                        variant="default"
-                        size="sm"
-                        className="mt-3 text-xs h-8"
-                        onClick={() => setPolicyOpen(true)}
-                      >
-                        전체 정책 보기
-                      </Button>
-                    </div>
-                  </>
+                  </div>
                 )}
               </CardContent>
             </Card>
-          </div>
-        )}
 
-
-
-        {/* 소개 대시보드 탭 */}
-        {activeTab === "dashboard" && (
-          <div className="p-3 space-y-3">
-            {!isReferralEligible ? (
-              <Card className="border-gray-200">
-                <CardContent className="pt-6">
-                  <div className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">
-                    의뢰자 계정에서 확인할 수 있습니다.
-                  </div>
-                </CardContent>
-              </Card>
-            ) : (
-              <>
-                {/* 통계 카드 */}
-                <Card className="border-gray-200">
-                  <CardHeader>
-                    <CardTitle className="text-base">
-                      의뢰자 그룹 통계
-                    </CardTitle>
+            <div className="xl:col-span-12">
+              {loadingTree ? (
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-xl">소개 네트워크</CardTitle>
                   </CardHeader>
                   <CardContent>
-                    {loadingRequestor || loadingTree ? (
-                      <div className="grid gap-2 md:grid-cols-4">
-                        <Skeleton className="h-20" />
-                        <Skeleton className="h-20" />
-                        <Skeleton className="h-20" />
-                        <Skeleton className="h-20" />
-                      </div>
-                    ) : (
-                      <div className="grid gap-2 md:grid-cols-5">
-                        <MetricCard
-                          title="그룹 사업자 수"
-                          value={`${requestorMembers.toLocaleString()}개소`}
-                          subtitle="본인 포함 그룹 전체"
-                        />
-                        <MetricCard
-                          title="사업자 그룹 합산 (최근 30일)"
-                          value={`${requestorGroupOrders.toLocaleString()}건`}
-                          subtitle={
-                            requestorGroupOrders > 0
-                              ? `내 사업자: ${requestorOrders.toLocaleString()}건`
-                              : undefined
-                          }
-                        />
-                        <MetricCard
-                          title="적용 단가"
-                          value={`${fmtMoney(requestorUnitPrice)}원`}
-                          subtitle="부가세·배송비 별도"
-                        />
-
-                        <div className="rounded-2xl border border-gray-200 bg-white/80 shadow-sm p-4 md:col-span-2 flex flex-col justify-between gap-2">
-                          <div>
-                            <div className="text-xs text-muted-foreground">
-                              - 신규 가입 이벤트 기간 중에는 90일간 10,000원으로
-                              고정됩니다.
-                              <br />- 소개한 사업자들과 주문량을 합산하여
-                              할인받을 수 있습니다.
-                            </div>
-                          </div>
-                          <div className="flex justify-end">
-                            <Button
-                              type="button"
-                              variant="default"
-                              size="sm"
-                              className="text-xs h-8"
-                              onClick={() => setPolicyOpen(true)}
-                            >
-                              정책 보기
-                            </Button>
-                          </div>
-                        </div>
-                      </div>
-                    )}
+                    <Skeleton className="h-[320px]" />
                   </CardContent>
                 </Card>
-
-                {/* 소개 네트워크 차트 */}
-                {loadingTree ? (
-                  <Card className="border-gray-200">
-                    <CardHeader>
-                      <CardTitle className="text-base">소개 네트워크</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <Skeleton className="h-[320px]" />
-                    </CardContent>
-                  </Card>
-                ) : (
-                  <ReferralNetworkChart
-                    data={treeData}
-                    maxDepth={1}
-                    title="소개 네트워크"
-                    mode="radial-tree"
-                    currentBusinessAnchorId={user?.businessAnchorId || null}
-                    visibleRoles={["requestor"]}
-                    legendRoles={[]}
-                    chartHeight={420}
-                  />
-                )}
-              </>
-            )}
+              ) : (
+                <ReferralNetworkChart
+                  data={treeData}
+                  maxDepth={1}
+                  title="소개 네트워크"
+                  mode="radial-tree"
+                  currentBusinessAnchorId={user?.businessAnchorId || null}
+                  visibleRoles={["requestor"]}
+                  legendRoles={[]}
+                  chartHeight={420}
+                />
+              )}
+            </div>
           </div>
         )}
       </div>
