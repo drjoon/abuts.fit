@@ -68,7 +68,7 @@ export const PracticeTransferFilePane = ({
         <div className="mx-auto mb-1.5 w-fit rounded-full bg-sky-50 p-2 text-sky-600">
           <UploadCloud className="h-5 w-5" />
         </div>
-        <p className="text-sm font-semibold text-slate-900">파일 드래그 & 드롭</p>
+        <p className="text-sm font-semibold text-slate-900">파일 첨부</p>
         <p className="mt-0.5 text-xs text-slate-500">{acceptedHint}</p>
         <div className="mt-2">
           <input

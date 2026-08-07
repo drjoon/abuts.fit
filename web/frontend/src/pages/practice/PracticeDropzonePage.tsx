@@ -1,8 +1,8 @@
 /**
- * 치과병의원(practice)용 공개 드롭존 페이지 (위저드).
+ * 치과병의원(practice)용 기공의뢰서 작성 페이지 (위저드).
  *
  * 입력 순서:
- * 1) 파일드롭 & 의뢰정보 (드롭존/파일목록/기공소정보&메모 3열)
+ * 1) 의뢰서 작성 (기공소·환자·보철물·메모 + 파일첨부)
  * 2) 치과정보
  *
  * related files:
@@ -138,7 +138,7 @@ const PRACTICE_TRANSFER_SETTINGS_LOCAL_KEY = "practice_transfer_settings_v1";
 const PRACTICE_SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 1개월
 const PRACTICE_FILE_CACHE_MAX_TOTAL_BYTES = 300 * 1024 * 1024; // 300MB
 
-const WIZARD_STEPS = ["파일드롭 & 의뢰정보", "치과정보"] as const;
+const WIZARD_STEPS = ["의뢰서 작성", "치과정보"] as const;
 
 const readLocalFavoriteSettings = () => {
   try {
@@ -2123,7 +2123,7 @@ export const PracticeDropzonePage = () => {
             <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
               <div className="flex min-h-[52px] items-center">
                 <CardTitle className="text-2xl md:text-3xl font-bold tracking-tight">
-                  구강스캔 파일 전송
+                  편리한 기공의뢰서
                 </CardTitle>
               </div>
 
@@ -2284,7 +2284,7 @@ export const PracticeDropzonePage = () => {
                           치과 계정
                         </h2>
                         <p className="mt-1 text-sm text-slate-500">
-                          파일을 보낸 뒤에도 이어서 확인할 수 있도록 계정을 연결합니다.
+                          의뢰서를 제출한 뒤에도 이어서 확인할 수 있도록 계정을 연결합니다.
                         </p>
                       </div>
                       {authMode !== "checking" && authMode !== "session" ? (
