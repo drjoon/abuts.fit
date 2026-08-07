@@ -302,38 +302,38 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
 - 관리자 사용자 role 변경/생성 API는 `practice`를 **신규로 허용하지 않는다**(제거).
   - 적용 파일: `controllers/admin/admin.users.controller.js`
   - `validRoles` 기준은 루트 규칙(사업자 타입 허용값)과 동기화합니다.
-  - 기존 `practice` 계정은 `requestor`+`clinic` 마이그레이션 대상입니다.
+  - 기존 `practice` 계정은 `requestor`+`practice` 마이그레이션 대상입니다.
 
 - 의뢰자 유형(requestorCapabilities) · 가입/온보딩 SSOT (2026-08, 루트 §2.4 상세)
   - 가입 role SSOT: `requestor` | `salesman`만. `practice` role **제거**(신규 생성 금지).
-  - 필드: `BusinessAnchor.requestorCapabilities` / `User.requestorCapabilities` = `{ clinic, lab }` (체크박스 OR, 최소 1개).
+  - 필드: `BusinessAnchor.requestorCapabilities` / `User.requestorCapabilities` = `{ practice, lab }` (체크박스 OR, 최소 1개). 레거시 키 `clinic`→`practice`.
   - 헬퍼 SSOT: `utils/requestorCapabilities.js`
-    - `normalize` / `hasAny` / `requiresBusinessLicense`(lab) / `canUsePaidServices`(verified) / `canUseFreeServices`(clinic)
-    - `canSendPracticeTransfer`(clinic) / `canReceivePracticeTransfer`(lab)
-    - `resolveRequestorCapabilities`: 앵커 → 유저 → 마이그레이션 전 폴백(구 practice·미기입 requestor→clinic, verified requestor→lab)
+    - `normalize` / `hasAny` / `requiresBusinessLicense`(lab) / `canUsePaidServices`(verified) / `canUseFreeServices`(practice)
+    - `canSendPracticeTransfer`(practice) / `canReceivePracticeTransfer`(lab)
+    - `resolveRequestorCapabilities`: 앵커 → 유저 → 마이그레이션 전 폴백(구 practice role·미기입 requestor→practice, verified requestor→lab)
   - 사업자 저장(`business.update.controller.js`):
     - body `requestorCapabilities` 수신 시 normalize·최소 1개 검증
     - `lab`이면 미검증 상태에서 저장 거부(이미 verified이거나 이번 요청에서 검증 플로우 타는 경우만 허용)
-    - 사업자 미등록(clinic-only)은 `User.requestorCapabilities`에 임시 보존, 앵커 생성 시 승격
+    - 사업자 미등록(practice-only)은 `User.requestorCapabilities`에 임시 보존, 앵커 생성 시 승격
   - 기공의뢰서 권한 미들웨어(`practiceTransferAuth.middleware.js`):
-    - 발신: `authorizePracticeTransferSend` — admin | (`requestor` + clinic)
+    - 발신: `authorizePracticeTransferSend` — admin | (`requestor` + practice)
     - 수신: `authorizePracticeTransferReceive` — admin | (`requestor` + lab)
   - 공개 가입: `POST /api/auth/register` — `requestor`/`salesman`. signup draft: `models/signupDraft.model.js`, `PUT/GET/DELETE /api/auth/signup/draft`(7일 TTL).
   - 치과 무료 경로 프로필: `PUT /api/users/profile`의 `practiceProfile`(clinicName, directorName, staffName, clinicPhone, phone, address, zipCode).
-  - 백필: `scripts/db/backfill-requestor-capabilities.js` (`--apply`) + practice→requestor+clinic 마이그레이션.
-  - 크레딧/정산 집계는 유료(verified lab) 경로만. clinic-only 무료 경로 확장 금지.
+  - 백필: `scripts/db/backfill-requestor-capabilities.js` (`--apply`) + practice→requestor+practice 마이그레이션.
+  - 크레딧/정산 집계는 유료(verified lab) 경로만. practice-only 무료 경로 확장 금지.
   - 소개 접근은 requestor 전체 허용; 귀속·그룹 할인은 추천인 앵커 등록 이후.
 
-- 드롭존 가입(치과 전용, requestor+clinic):
+- 드롭존 가입(치과 전용, requestor+practice):
   - `POST /api/auth/practice/register`는 **practice role을 만들지 않는다**.
-    `role=requestor` + `requestorCapabilities={clinic:true,lab:false}` + `practiceProfile`만 저장하고 **사업자 앵커는 생성하지 않는다**.
+    `role=requestor` + `requestorCapabilities={practice:true,lab:false}` + `practiceProfile`만 저장하고 **사업자 앵커는 생성하지 않는다**.
   - 필수: `email` + `clinicName` + `directorName` + `staffName` + `clinicPhone` + `phone` + `address` + `zipCode`. 로그인 식별은 이메일.
   - `assertSignupVerifications({ email, phone })` 강제 후 `consumeSignupVerifications` 소진.
     - 이메일: `POST /api/auth/signup/email-verification/send|verify`, `GET .../status` (일 10회)
     - 휴대폰: `POST /api/auth/signup/phone-verification/send|verify`, `GET .../status` (일 5회; 개발모드 자동완료 금지)
     - status API는 `verifiedAt` 있고 `consumedAt` 없을 때만 `verified: true`
-  - 비밀번호 찾기/변경(`POST /api/auth/practice/password/find|change`) 대상은 `requestor`(clinic).
-  - 치과명 로그인(`POST /api/auth/practice/login`)·practice 전용 경로는 **제거 대상**.
+  - 비밀번호 찾기/변경(`POST /api/auth/practice/password/find|change`) 대상은 `requestor`(practice).
+  - 치과명 로그인(`POST /api/auth/practice/login`)은 마이그레이션 호환용: `practice` 또는 `requestor`+`clinic`(business/`practiceProfile.clinicName` 매칭). 장기적으로 제거 대상.
   - 같은 사업자 계정 전환(모든 role):
     - `GET /api/auth/colleagues` — 동일 `businessAnchorId` 활성·승인 계정(본인 제외)
     - `POST /api/auth/switch-account` `{ userId, password }` — JWT 재발급

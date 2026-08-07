@@ -144,7 +144,6 @@ export async function createUser(req, res) {
 
     const validRoles = [
       "requestor",
-      "practice",
       "manufacturer",
       "admin",
       "salesman",
@@ -432,13 +431,14 @@ export async function changeUserRole(req, res) {
     }
     const validRoles = [
       "requestor",
-      "practice",
       "manufacturer",
       "admin",
       "salesman",
       "devops",
     ];
-    if (!validRoles.includes(role)) {
+    // 레거시: admin UI/클라이언트가 practice role을 보내면 requestor+practice(무료 치과)로 승격
+    const normalizedRole = role === "practice" ? "requestor" : role;
+    if (!validRoles.includes(normalizedRole)) {
       return res
         .status(400)
         .json({ success: false, message: "유효하지 않은 역할입니다." });
@@ -450,7 +450,7 @@ export async function changeUserRole(req, res) {
         .json({ success: false, message: "사용자를 찾을 수 없습니다." });
     }
     const isSelf = user._id.equals(req.user._id);
-    if (isSelf && role !== user.role) {
+    if (isSelf && normalizedRole !== user.role) {
       return res.status(400).json({
         success: false,
         message: "자기 자신의 역할을 변경할 수 없습니다.",
@@ -464,7 +464,11 @@ export async function changeUserRole(req, res) {
         });
       }
     }
-    user.role = role;
+    const previousRole = user.role;
+    user.role = normalizedRole;
+    if (role === "practice" || previousRole === "practice") {
+      user.requestorCapabilities = { practice: true, lab: false };
+    }
     if (subRole !== undefined) {
       user.subRole = subRole;
     }
@@ -472,7 +476,11 @@ export async function changeUserRole(req, res) {
     res.status(200).json({
       success: true,
       message: "사용자 역할이 성공적으로 변경되었습니다.",
-      data: { userId: user._id, role: user.role },
+      data: {
+        userId: user._id,
+        role: user.role,
+        requestorCapabilities: user.requestorCapabilities || null,
+      },
     });
   } catch (error) {
     res.status(500).json({

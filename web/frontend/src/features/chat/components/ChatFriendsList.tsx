@@ -19,9 +19,8 @@ interface ChatFriendsListProps {
 const getRoleBadgeColor = (role: string) => {
   switch (role) {
     case "requestor":
-      return "bg-blue-100 text-blue-800 border-blue-200";
     case "practice":
-      return "bg-indigo-100 text-indigo-800 border-indigo-200";
+      return "bg-blue-100 text-blue-800 border-blue-200";
     case "manufacturer":
       return "bg-green-100 text-green-800 border-green-200";
     case "admin":
@@ -34,9 +33,8 @@ const getRoleBadgeColor = (role: string) => {
 const getRoleLabel = (role: string) => {
   switch (role) {
     case "requestor":
-      return "기공소";
     case "practice":
-      return "치과";
+      return "의뢰자";
     case "manufacturer":
       return "제작사";
     case "admin":

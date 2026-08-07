@@ -557,9 +557,9 @@ async function updateProfile(req, res) {
     if (Object.prototype.hasOwnProperty.call(updateData, "practiceProfile")) {
       const userRole = String(req.user?.role || "");
       const isPracticeRole = userRole === "practice";
-      const isRequestorClinicProfile = userRole === "requestor";
+      const isRequestorPracticeProfile = userRole === "requestor";
 
-      if (isPracticeRole || isRequestorClinicProfile) {
+      if (isPracticeRole || isRequestorPracticeProfile) {
         const pp =
           updateData.practiceProfile &&
           typeof updateData.practiceProfile === "object"
@@ -613,16 +613,16 @@ async function updateProfile(req, res) {
           updateData.phoneNumber = phone;
         }
 
-        // 의뢰자(clinic 무료) 경로는 User.practiceProfile만 저장. practice 앵커는 만들지 않음.
-        if (isRequestorClinicProfile) {
+        // 의뢰자(practice 무료) 경로는 User.practiceProfile만 저장. practice 앵커는 만들지 않음.
+        if (isRequestorPracticeProfile) {
           const existingCaps =
             req.user?.requestorCapabilities &&
             typeof req.user.requestorCapabilities === "object"
               ? req.user.requestorCapabilities
               : {};
-          if (!existingCaps.clinic && !existingCaps.lab) {
+          if (!existingCaps.practice && !existingCaps.lab) {
             updateData.requestorCapabilities = {
-              clinic: true,
+              practice: true,
               lab: Boolean(existingCaps.lab),
             };
           }

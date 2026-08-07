@@ -3,27 +3,33 @@
 // - web/frontend/src/shared/components/business/settings/business/businessMeCache.ts
 
 export type RequestorCapabilities = {
-  clinic: boolean;
+  practice: boolean;
   lab: boolean;
 };
 
+/** 입력용 — 레거시 `clinic` 키는 normalize에서 `practice`로 승격 */
+export type RequestorCapabilitiesInput = Partial<RequestorCapabilities> & {
+  clinic?: boolean;
+};
+
 export const normalizeRequestorCapabilities = (
-  raw?: Partial<RequestorCapabilities> | null,
+  raw?: RequestorCapabilitiesInput | null,
 ): RequestorCapabilities => ({
-  clinic: Boolean(raw?.clinic),
+  // SSOT: practice. 레거시 clinic 키 호환(마이그레이션 전 DB/클라)
+  practice: Boolean(raw?.practice ?? raw?.clinic),
   lab: Boolean(raw?.lab),
 });
 
 export const hasAnyRequestorCapability = (
-  caps?: Partial<RequestorCapabilities> | null,
+  caps?: RequestorCapabilitiesInput | null,
 ) => {
   const c = normalizeRequestorCapabilities(caps);
-  return c.clinic || c.lab;
+  return c.practice || c.lab;
 };
 
 /** 기공소(lab) 선택 시 사업자등록증(검증) 필수 */
 export const requiresBusinessLicense = (
-  caps?: Partial<RequestorCapabilities> | null,
+  caps?: RequestorCapabilitiesInput | null,
 ) => Boolean(normalizeRequestorCapabilities(caps).lab);
 
 /** 유료 서비스 — 사업자 검증 여부 */
@@ -44,44 +50,45 @@ export const PAID_REQUESTOR_SETTINGS_TABS = new Set(["request", "payment"]);
 export const PAID_ACCESS_DISABLED_HINT =
   "유료 서비스입니다. 사업자등록증을 등록·검증한 뒤 이용할 수 있습니다. 설정 > 사업자에서 등록하세요.";
 
-/** 무료 서비스 — 치과 선택 */
+/** 무료 서비스 — 치과(practice) 선택 */
 export const canUseFreeServices = (
-  caps?: Partial<RequestorCapabilities> | null,
-) => Boolean(normalizeRequestorCapabilities(caps).clinic);
+  caps?: RequestorCapabilitiesInput | null,
+) => Boolean(normalizeRequestorCapabilities(caps).practice);
 
 export const canSendPracticeTransfer = (
-  caps?: Partial<RequestorCapabilities> | null,
-) => Boolean(normalizeRequestorCapabilities(caps).clinic);
+  caps?: RequestorCapabilitiesInput | null,
+) => Boolean(normalizeRequestorCapabilities(caps).practice);
 
 export const canReceivePracticeTransfer = (
-  caps?: Partial<RequestorCapabilities> | null,
+  caps?: RequestorCapabilitiesInput | null,
 ) => Boolean(normalizeRequestorCapabilities(caps).lab);
 
 export const resolveRequestorCapabilities = (args?: {
-  anchorCaps?: Partial<RequestorCapabilities> | null;
-  userCaps?: Partial<RequestorCapabilities> | null;
+  anchorCaps?: RequestorCapabilitiesInput | null;
+  userCaps?: RequestorCapabilitiesInput | null;
   userRole?: string | null;
   businessVerified?: boolean;
 }): RequestorCapabilities => {
   const fromAnchor = normalizeRequestorCapabilities(args?.anchorCaps);
-  if (fromAnchor.clinic || fromAnchor.lab) return fromAnchor;
+  if (fromAnchor.practice || fromAnchor.lab) return fromAnchor;
 
   const fromUser = normalizeRequestorCapabilities(args?.userCaps);
-  if (fromUser.clinic || fromUser.lab) return fromUser;
+  if (fromUser.practice || fromUser.lab) return fromUser;
 
-  if (args?.userRole === "practice") return { clinic: true, lab: false };
+  // 레거시 role=practice 유저 폴백(마이그레이션 전)
+  if (args?.userRole === "practice") return { practice: true, lab: false };
   if (args?.userRole === "requestor" && args?.businessVerified) {
-    return { clinic: false, lab: true };
+    return { practice: false, lab: true };
   }
   if (args?.userRole === "requestor") {
-    return { clinic: true, lab: false };
+    return { practice: true, lab: false };
   }
-  return { clinic: false, lab: false };
+  return { practice: false, lab: false };
 };
 
 export const REQUESTOR_CAPABILITY_OPTIONS = [
   {
-    key: "clinic" as const,
+    key: "practice" as const,
     label: "원내 기공실 없는 치과",
     description: "무료 서비스를 이용합니다. 사업자등록증은 선택 사항입니다.",
   },

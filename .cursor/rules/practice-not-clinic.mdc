@@ -1,0 +1,26 @@
+---
+description: 치과 유형 식별자는 clinic이 아니라 practice로 통일
+alwaysApply: true
+---
+
+# Naming: clinic → practice
+
+치과(무료 경로) 유형·권한 식별자의 SSOT는 **`practice`** 다. 예전 `clinic`과 동일 의미.
+
+## Do
+
+- `requestorCapabilities.practice` (not `.clinic`)
+- 코드/주석/문서에서 유형 플래그·phase 이름을 `practice`로 쓴다
+  - 예: `practiceProfilePhase`, `onRequirePracticeProfile`, `practice-only`
+- 레거시 DB/클라의 `clinic` 키는 `normalizeRequestorCapabilities`에서만 읽고, 저장·백필 시 `practice`로 승격한다
+- `clinic`이 발견되면(유형 의미일 때) 같은 작업에서 `practice`로 바꾼다
+
+## Don't rename (다른 도메인)
+
+- `practiceProfile.clinicName` / `clinicPhone` — 연락처 필드(점진 개명만)
+- filename-rule `extraction.clinic`
+- 묶음배송 스냅샷/리스트의 `item.clinic`
+- Clinic CRUD 모듈(`clinic.model` 등)
+- 이메일 placeholder `name@clinic.com`
+
+루트 SSOT: `rules.md` §2.4.

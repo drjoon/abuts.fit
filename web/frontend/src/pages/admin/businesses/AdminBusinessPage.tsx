@@ -145,7 +145,8 @@ const normalizeBusinessType = (rawType?: string) => {
 
   if (!normalized) return "";
   if (normalized === "requester") return "requestor";
-  if (normalized.startsWith("practice")) return "practice";
+  // 레거시 치과(practice) → 의뢰자로 통합
+  if (normalized.startsWith("practice")) return "requestor";
   if (normalized.startsWith("requestor")) return "requestor";
   if (normalized.startsWith("manufacturer")) return "manufacturer";
   if (normalized.startsWith("salesman")) return "salesman";
@@ -158,8 +159,6 @@ const getBusinessTypeLabel = (type?: string) => {
   switch (normalizeBusinessType(type)) {
     case "requestor":
       return "의뢰자";
-    case "practice":
-      return "치과";
     case "salesman":
       return "영업자";
     case "manufacturer":
@@ -175,8 +174,6 @@ const getBusinessTypeBadgeClass = (type?: string) => {
   switch (normalizeBusinessType(type)) {
     case "requestor":
       return "bg-blue-100 text-blue-700 border-blue-200";
-    case "practice":
-      return "bg-indigo-100 text-indigo-700 border-indigo-200";
     case "salesman":
       return "bg-emerald-100 text-emerald-700 border-emerald-200";
     case "manufacturer":
@@ -468,7 +465,8 @@ export default function AdminBusinessPage() {
     return businesses.filter((business) => {
       const matchesType =
         typeFilter === "all" ||
-        normalizeBusinessType(business.businessType) === typeFilter;
+        normalizeBusinessType(business.businessType) ===
+          normalizeBusinessType(typeFilter);
       if (!matchesType) return false;
       if (!q) return true;
       const hay = [
@@ -492,21 +490,6 @@ export default function AdminBusinessPage() {
   ).length;
   const missingAnchorCount = totalBusinesses - anchoredCount;
 
-  const requestorCount = businesses.filter(
-    (business) => normalizeBusinessType(business.businessType) === "requestor",
-  ).length;
-  const practiceCount = businesses.filter(
-    (business) => normalizeBusinessType(business.businessType) === "practice",
-  ).length;
-  const salesmanCount = businesses.filter(
-    (business) => normalizeBusinessType(business.businessType) === "salesman",
-  ).length;
-  const manufacturerCount = businesses.filter(
-    (business) => normalizeBusinessType(business.businessType) === "manufacturer",
-  ).length;
-  const devopsCount = businesses.filter(
-    (business) => normalizeBusinessType(business.businessType) === "devops",
-  ).length;
   const detailCredit = getCreditBreakdown(detailDialog.business);
 
   return (
@@ -612,7 +595,6 @@ export default function AdminBusinessPage() {
               {[
                 ["all", "전체"],
                 ["requestor", "의뢰자"],
-                ["practice", "치과"],
                 ["salesman", "영업자"],
                 ["manufacturer", "제조사"],
                 ["devops", "개발운영사"],

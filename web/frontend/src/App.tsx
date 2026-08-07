@@ -289,7 +289,7 @@ const PracticeDashboardRoute = () => {
   const location = useLocation();
 
   if (!user) return <Navigate to="/dashboard" replace />;
-  // Soft-deprecate: 통합 의뢰자(clinic)는 대시보드 기공의뢰서로 유도
+  // Soft-deprecate: 통합 의뢰자(practice)는 대시보드 기공의뢰서로 유도
   if (user.role === "requestor") {
     return (
       <Navigate

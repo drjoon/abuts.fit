@@ -25,7 +25,7 @@ export const useRequestorBusinessAccess = () => {
   const [loading, setLoading] = useState(true);
   const [businessVerified, setBusinessVerified] = useState(false);
   const [capabilities, setCapabilities] = useState<RequestorCapabilities>({
-    clinic: false,
+    practice: false,
     lab: false,
   });
   const [membership, setMembership] = useState<string>("none");

@@ -1016,9 +1016,29 @@ async function practiceLogin(req, res) {
       });
     }
 
+    // 레거시 practice + 통합 의뢰자(practice). 치과명: business 또는 practiceProfile.clinicName
     const candidates = await User.find({
-      role: "practice",
-      business: normalizedClinicName,
+      $and: [
+        {
+          $or: [
+            { role: "practice" },
+            {
+              role: "requestor",
+              $or: [
+                { "requestorCapabilities.practice": true },
+                // 마이그레이션 전 레거시 키
+                { "requestorCapabilities.clinic": true },
+              ],
+            },
+          ],
+        },
+        {
+          $or: [
+            { business: normalizedClinicName },
+            { "practiceProfile.clinicName": normalizedClinicName },
+          ],
+        },
+      ],
     }).select("+password");
 
     if (!Array.isArray(candidates) || candidates.length === 0) {
@@ -1104,7 +1124,7 @@ async function practiceLogin(req, res) {
 }
 
 /**
- * 드롭존 간소 가입 — 의뢰인(requestor) + clinic 무료 경로
+ * 드롭존 간소 가입 — 의뢰인(requestor) + practice 무료 경로
  * @route POST /api/auth/practice/register
  *
  * related files:
@@ -1206,7 +1226,7 @@ async function practiceRegister(req, res) {
 
     const referralCode = await ensureUniqueReferralCode(5);
 
-    // 의뢰인 통합: role=requestor + clinic. 사업자 앵커는 만들지 않음(무료 치과 경로).
+    // 의뢰인 통합: role=requestor + practice. 사업자 앵커는 만들지 않음(무료 치과 경로).
     const user = new User({
       name: staffName || clinicName,
       email: normalizedEmail,
@@ -1215,7 +1235,7 @@ async function practiceRegister(req, res) {
       subRole: "owner",
       referralCode,
       referredByAnchorId: referredByAnchorId || null,
-      requestorCapabilities: { clinic: true, lab: false },
+      requestorCapabilities: { practice: true, lab: false },
       onboardingWizardCompleted: false,
       approvedAt: new Date(),
       active: true,

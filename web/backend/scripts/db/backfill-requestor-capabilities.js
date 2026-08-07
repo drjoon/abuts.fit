@@ -4,7 +4,7 @@
 // - web/backend/utils/requestorCapabilities.js
 // - rules.md
 /**
- * 레거시 practice → requestor+clinic, 기존 requestor → lab 백필.
+ * 레거시 practice role → requestor+practice, clinic 키 → practice 키, 기존 requestor caps 백필.
  *
  * Usage:
  *   node scripts/db/backfill-requestor-capabilities.js
@@ -16,8 +16,15 @@ import "../../bootstrap/env.js";
 import { connectDb, disconnectDb } from "./_mongo.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
 import User from "../../models/user.model.js";
+import { normalizeRequestorCapabilities } from "../../utils/requestorCapabilities.js";
 
 const APPLY = process.argv.includes("--apply");
+
+const toCanonicalCaps = (raw, fallback) => {
+  const n = normalizeRequestorCapabilities(raw);
+  if (n.practice || n.lab) return n;
+  return fallback;
+};
 
 async function main() {
   await connectDb();
@@ -33,6 +40,7 @@ async function main() {
       $or: [
         { requestorCapabilities: { $exists: false } },
         {
+          "requestorCapabilities.practice": { $ne: true },
           "requestorCapabilities.clinic": { $ne: true },
           "requestorCapabilities.lab": { $ne: true },
         },
@@ -41,15 +49,29 @@ async function main() {
       .select({ _id: 1, name: 1, status: 1, requestorCapabilities: 1 })
       .lean();
 
+    const legacyClinicKeyAnchors = await BusinessAnchor.find({
+      "requestorCapabilities.clinic": { $exists: true },
+    })
+      .select({ _id: 1, requestorCapabilities: 1 })
+      .lean();
+
     const practiceUsers = await User.find({ role: "practice" })
       .select({ _id: 1, email: 1, businessAnchorId: 1 })
+      .lean();
+
+    const legacyClinicKeyUsers = await User.find({
+      "requestorCapabilities.clinic": { $exists: true },
+    })
+      .select({ _id: 1, requestorCapabilities: 1 })
       .lean();
 
     console.log("[backfill-requestor-capabilities] plan", {
       apply: APPLY,
       practiceAnchors: practiceAnchors.length,
       requestorAnchorsMissingCaps: requestorAnchorsMissing.length,
+      legacyClinicKeyAnchors: legacyClinicKeyAnchors.length,
       practiceUsers: practiceUsers.length,
+      legacyClinicKeyUsers: legacyClinicKeyUsers.length,
     });
 
     if (!APPLY) {
@@ -61,13 +83,18 @@ async function main() {
 
     let practiceAnchorUpdated = 0;
     for (const a of practiceAnchors) {
+      const caps = toCanonicalCaps(a.requestorCapabilities, {
+        practice: true,
+        lab: false,
+      });
       const res = await BusinessAnchor.updateOne(
         { _id: a._id },
         {
           $set: {
             businessType: "requestor",
-            requestorCapabilities: { clinic: true, lab: false },
+            requestorCapabilities: caps,
           },
+          $unset: { "requestorCapabilities.clinic": "" },
         },
       );
       if (res.modifiedCount) practiceAnchorUpdated += 1;
@@ -75,18 +102,36 @@ async function main() {
 
     let requestorAnchorUpdated = 0;
     for (const a of requestorAnchorsMissing) {
-      const hasClinic = Boolean(a.requestorCapabilities?.clinic);
-      const hasLab = Boolean(a.requestorCapabilities?.lab);
-      if (hasClinic || hasLab) continue;
+      const n = normalizeRequestorCapabilities(a.requestorCapabilities);
+      if (n.practice || n.lab) continue;
       const caps =
         a.status === "verified"
-          ? { clinic: false, lab: true }
-          : { clinic: true, lab: false };
+          ? { practice: false, lab: true }
+          : { practice: true, lab: false };
       const res = await BusinessAnchor.updateOne(
         { _id: a._id },
-        { $set: { requestorCapabilities: caps } },
+        {
+          $set: { requestorCapabilities: caps },
+          $unset: { "requestorCapabilities.clinic": "" },
+        },
       );
       if (res.modifiedCount) requestorAnchorUpdated += 1;
+    }
+
+    let clinicKeyAnchorMigrated = 0;
+    for (const a of legacyClinicKeyAnchors) {
+      const caps = toCanonicalCaps(a.requestorCapabilities, {
+        practice: true,
+        lab: false,
+      });
+      const res = await BusinessAnchor.updateOne(
+        { _id: a._id },
+        {
+          $set: { requestorCapabilities: caps },
+          $unset: { "requestorCapabilities.clinic": "" },
+        },
+      );
+      if (res.modifiedCount) clinicKeyAnchorMigrated += 1;
     }
 
     let practiceUserUpdated = 0;
@@ -96,8 +141,9 @@ async function main() {
         {
           $set: {
             role: "requestor",
-            requestorCapabilities: { clinic: true, lab: false },
+            requestorCapabilities: { practice: true, lab: false },
           },
+          $unset: { "requestorCapabilities.clinic": "" },
         },
       );
       if (res.modifiedCount) practiceUserUpdated += 1;
@@ -109,39 +155,55 @@ async function main() {
       .lean();
     let userCapsSynced = 0;
     for (const u of requestorUsers) {
-      const has =
-        Boolean(u.requestorCapabilities?.clinic) ||
-        Boolean(u.requestorCapabilities?.lab);
-      if (has) continue;
-      let caps = { clinic: true, lab: false };
+      const has = normalizeRequestorCapabilities(u.requestorCapabilities);
+      if (has.practice || has.lab) continue;
+      let caps = { practice: true, lab: false };
       if (u.businessAnchorId) {
         const anchor = await BusinessAnchor.findById(u.businessAnchorId)
           .select({ requestorCapabilities: 1, status: 1 })
           .lean();
-        if (
-          anchor?.requestorCapabilities?.clinic ||
-          anchor?.requestorCapabilities?.lab
-        ) {
-          caps = {
-            clinic: Boolean(anchor.requestorCapabilities.clinic),
-            lab: Boolean(anchor.requestorCapabilities.lab),
-          };
+        const fromAnchor = normalizeRequestorCapabilities(
+          anchor?.requestorCapabilities,
+        );
+        if (fromAnchor.practice || fromAnchor.lab) {
+          caps = fromAnchor;
         } else if (anchor?.status === "verified") {
-          caps = { clinic: false, lab: true };
+          caps = { practice: false, lab: true };
         }
       }
       const res = await User.updateOne(
         { _id: u._id },
-        { $set: { requestorCapabilities: caps } },
+        {
+          $set: { requestorCapabilities: caps },
+          $unset: { "requestorCapabilities.clinic": "" },
+        },
       );
       if (res.modifiedCount) userCapsSynced += 1;
+    }
+
+    let clinicKeyUserMigrated = 0;
+    for (const u of legacyClinicKeyUsers) {
+      const caps = toCanonicalCaps(u.requestorCapabilities, {
+        practice: true,
+        lab: false,
+      });
+      const res = await User.updateOne(
+        { _id: u._id },
+        {
+          $set: { requestorCapabilities: caps },
+          $unset: { "requestorCapabilities.clinic": "" },
+        },
+      );
+      if (res.modifiedCount) clinicKeyUserMigrated += 1;
     }
 
     console.log("[backfill-requestor-capabilities] done", {
       practiceAnchorUpdated,
       requestorAnchorUpdated,
+      clinicKeyAnchorMigrated,
       practiceUserUpdated,
       userCapsSynced,
+      clinicKeyUserMigrated,
     });
   } finally {
     await disconnectDb();

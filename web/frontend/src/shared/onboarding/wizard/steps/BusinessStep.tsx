@@ -13,9 +13,9 @@ interface BusinessStepProps {
   businessType: string;
   defaultCompleted?: boolean;
   onComplete?: () => void;
-  /** 사업자등록증을 건너뛴 치과(clinic-only) 필수정보 단계 */
-  clinicProfilePhase?: boolean;
-  onClinicProfilePhaseChange?: (active: boolean) => void;
+  /** 사업자등록증을 건너뛴 치과(practice-only) 필수정보 단계 */
+  practiceProfilePhase?: boolean;
+  onPracticeProfilePhaseChange?: (active: boolean) => void;
   registerGoNextAction?: (action: (() => Promise<boolean>) | null) => void;
   registerBusyState?: (busy: boolean) => void;
   registerValidationState?: (state: {
@@ -28,8 +28,8 @@ interface BusinessStepProps {
 export const BusinessStep = ({
   role,
   businessType,
-  clinicProfilePhase = false,
-  onClinicProfilePhaseChange,
+  practiceProfilePhase = false,
+  onPracticeProfilePhaseChange,
   registerGoNextAction,
   registerBusyState,
   registerValidationState,
@@ -55,12 +55,12 @@ export const BusinessStep = ({
 
   useEffect(() => {
     if (isRequestorOwner) return;
-    if (!clinicProfilePhase) return;
-    onClinicProfilePhaseChange?.(false);
+    if (!practiceProfilePhase) return;
+    onPracticeProfilePhaseChange?.(false);
   }, [
-    clinicProfilePhase,
+    practiceProfilePhase,
     isRequestorOwner,
-    onClinicProfilePhaseChange,
+    onPracticeProfilePhaseChange,
   ]);
 
   if (isPractice && !role) {
@@ -81,7 +81,7 @@ export const BusinessStep = ({
     );
   }
 
-  if (isRequestorOwner && clinicProfilePhase) {
+  if (isRequestorOwner && practiceProfilePhase) {
     return (
       <PracticeBusinessProfileStep
         registerGoNextAction={registerGoNextAction}
@@ -100,7 +100,7 @@ export const BusinessStep = ({
         registerValidationState={registerValidationState}
         registerGoNextAction={registerGoNextAction}
         isOnboarding={true}
-        onRequireClinicProfile={() => onClinicProfilePhaseChange?.(true)}
+        onRequirePracticeProfile={() => onPracticeProfilePhaseChange?.(true)}
       />
     </div>
   );

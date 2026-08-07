@@ -16,6 +16,9 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
+  normalizeRequestorCapabilities,
+} from "@/shared/business/requestorCapabilities";
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -71,7 +74,8 @@ const normalizeRole = (rawRole?: string) => {
 
   if (!normalized) return "";
   if (normalized === "requester") return "requestor";
-  if (normalized.startsWith("practice")) return "practice";
+  // 레거시 치과(practice) → 의뢰자로 통합
+  if (normalized.startsWith("practice")) return "requestor";
   if (normalized.startsWith("requestor")) return "requestor";
   if (normalized.startsWith("manufacturer")) return "manufacturer";
   if (normalized.startsWith("salesman")) return "salesman";
@@ -84,8 +88,6 @@ const getRoleLabel = (role: string) => {
   switch (normalizeRole(role)) {
     case "requestor":
       return "의뢰자";
-    case "practice":
-      return "치과";
     case "manufacturer":
       return "제조사";
     case "admin":
@@ -103,8 +105,6 @@ const getRoleBadgeVariant = (role: string) => {
   switch (normalizeRole(role)) {
     case "requestor":
       return "default";
-    case "practice":
-      return "secondary";
     case "salesman":
       return "secondary";
     case "devops":
@@ -144,6 +144,10 @@ type ApiUser = {
   totalRequests?: number;
   replacesUserId?: string | null;
   replacedByUserId?: string | null;
+  requestorCapabilities?: {
+    practice?: boolean;
+    lab?: boolean;
+  } | null;
   businessInfo?: {
     name?: string;
     businessLicense?: {
@@ -199,6 +203,10 @@ type UiUserRow = {
   totalRequests?: number | null;
   replacesUserId?: string | null;
   replacedByUserId?: string | null;
+  requestorCapabilities?: {
+    practice: boolean;
+    lab: boolean;
+  } | null;
   businessInfo?: ApiUser["businessInfo"] | null;
   unresolvedBusiness?: boolean;
 };
@@ -232,6 +240,17 @@ const toUiUser = (u: ApiUser): UiUserRow => {
       : "active";
   const email = String(u.email || "");
   const originalEmail = String(u.originalEmail || "");
+  const caps = u.requestorCapabilities;
+  const normalizedCaps = caps
+    ? normalizeRequestorCapabilities(
+        caps as { practice?: boolean; clinic?: boolean; lab?: boolean },
+      )
+    : null;
+  const hasCaps =
+    normalizedCaps != null &&
+    (normalizedCaps.practice ||
+      normalizedCaps.lab ||
+      caps != null);
   return {
     id: String(u._id || ""),
     name: String(u.name || ""),
@@ -249,6 +268,7 @@ const toUiUser = (u: ApiUser): UiUserRow => {
         : null,
     replacesUserId: u.replacesUserId || null,
     replacedByUserId: u.replacedByUserId || null,
+    requestorCapabilities: hasCaps && normalizedCaps ? normalizedCaps : null,
     businessInfo: u.businessInfo || null,
     unresolvedBusiness: Boolean(u.unresolvedBusiness),
   };
@@ -295,6 +315,28 @@ const getSubRoleBadge = (user: Pick<UiUserRow, "subRole">) => {
   }
 
   return null;
+};
+
+const getRequestorCapabilityBadges = (
+  user: Pick<UiUserRow, "role" | "requestorCapabilities">,
+) => {
+  if (normalizeRole(user.role) !== "requestor") return null;
+  const caps = user.requestorCapabilities;
+  if (!caps) return null;
+  return (
+    <>
+      {caps.practice ? (
+        <Badge className="bg-violet-100 text-violet-700 border-violet-200">
+          치과(무료)
+        </Badge>
+      ) : null}
+      {caps.lab ? (
+        <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200">
+          기공소
+        </Badge>
+      ) : null}
+    </>
+  );
 };
 
 export const AdminUserManagement = () => {
@@ -601,7 +643,8 @@ export const AdminUserManagement = () => {
 
       const matchesSearch = !q || hay.includes(q);
       const matchesRole =
-        selectedRole === "all" || normalizeRole(user.role) === selectedRole;
+        selectedRole === "all" ||
+        normalizeRole(user.role) === normalizeRole(selectedRole);
       const matchesStatus =
         selectedStatus === "all" || user.status === selectedStatus;
 
@@ -698,9 +741,6 @@ export const AdminUserManagement = () => {
   const totalRequestor = sourceUsers.filter(
     (u) => normalizeRole(u.role) === "requestor",
   ).length;
-  const totalPractice = sourceUsers.filter(
-    (u) => normalizeRole(u.role) === "practice",
-  ).length;
   const totalSalesman = sourceUsers.filter(
     (u) => normalizeRole(u.role) === "salesman",
   ).length;
@@ -720,7 +760,7 @@ export const AdminUserManagement = () => {
     <div className="flex flex-col h-full min-h-0 bg-gradient-subtle p-6">
       <div className="max-w-7xl w-full mx-auto space-y-6 flex-1 min-h-0 overflow-y-auto">
         {/* Stats Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-8 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-7 gap-4">
           <Card>
             <CardContent className="p-4">
               <div className="flex items-center gap-3">
@@ -746,21 +786,6 @@ export const AdminUserManagement = () => {
                   <p className="text-sm text-muted-foreground">의뢰자</p>
                   <p className="text-2xl font-bold">
                     {totalRequestor.toLocaleString()}
-                  </p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-4">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-violet-100 rounded-lg">
-                  <Building2 className="h-4 w-4 text-violet-700" />
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">치과</p>
-                  <p className="text-2xl font-bold">
-                    {totalPractice.toLocaleString()}
                   </p>
                 </div>
               </div>
@@ -907,13 +932,6 @@ export const AdminUserManagement = () => {
               의뢰자
             </Button>
             <Button
-              variant={selectedRole === "practice" ? "default" : "outline"}
-              onClick={() => setSelectedRole("practice")}
-              size="sm"
-            >
-              치과
-            </Button>
-            <Button
               variant={selectedRole === "salesman" ? "default" : "outline"}
               onClick={() => setSelectedRole("salesman")}
               size="sm"
@@ -1007,6 +1025,7 @@ export const AdminUserManagement = () => {
                           <Badge variant={getRoleBadgeVariant(user.role)}>
                             {getRoleLabel(user.role)}
                           </Badge>
+                          {getRequestorCapabilityBadges(user)}
                           {getSubRoleBadge(user)}
                           {getStatusBadge(user.status)}
                           {user.unresolvedBusiness && (
@@ -1428,7 +1447,7 @@ export const AdminUserManagement = () => {
                       )}
 
                       <Select
-                        value={selectedUser.role}
+                        value={normalizeRole(selectedUser.role) || selectedUser.role}
                         onValueChange={async (v) => {
                           if (!selectedUser) return;
                           const ok = await changeUserRole(selectedUser.id, v);
@@ -1446,7 +1465,6 @@ export const AdminUserManagement = () => {
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="requestor">의뢰자</SelectItem>
-                          <SelectItem value="practice">치과</SelectItem>
                           <SelectItem value="salesman">영업자</SelectItem>
                           <SelectItem value="devops">개발운영사</SelectItem>
                           <SelectItem value="manufacturer">제조사</SelectItem>

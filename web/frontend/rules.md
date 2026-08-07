@@ -83,6 +83,7 @@ Notes:
 - 관리자 사용자/사업자
   - `src/pages/admin/users/AdminUserManagement.tsx`
   - `src/pages/admin/businesses/AdminBusinessPage.tsx`
+  - 관리자 UI에서 별도 `치과`(practice) role 필터/생성은 제거. 레거시 practice는 의뢰자로 표시하고, 의뢰자 `requestorCapabilities`(치과(무료)/기공소) 뱃지로 구분.
 - 관리자 크레딧
   - `src/pages/admin/credits/AdminCreditPage.tsx`
   - `src/pages/admin/credits/hooks/useAdminCreditPage.ts`
@@ -378,15 +379,15 @@ Notes:
     - `src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx`
 
 - 의뢰자 가입·유형·유료게이트 SSOT (2026-08, 루트 §2.4 상세)
-  - 가입 role: `requestor` | `salesman`만. `practice` role **제거**(공개 가입·드롭존·관리자 신규 생성 금지). 기존 practice는 `requestor`+`clinic` 마이그레이션.
+  - 가입 role: `requestor` | `salesman`만. `practice` role **제거**(공개 가입·드롭존·관리자 신규 생성 금지). 기존 practice는 `requestor`+`practice` 마이그레이션.
   - 공개 가입(`/signup`, `SignupPage`): 역할 선택 `requestor` | `salesman`만. 복원 draft에 `practice`가 있으면 requestor로 전환.
   - 가입 API: `POST /api/auth/register`. 중간 상태: `localStorage`(signupWizardProgress/signupFormData) + `PUT/GET/DELETE /api/auth/signup/draft`(7일 TTL). 가입 완료 시 삭제.
   - 로그인: 공통 `/login` · 이메일+비밀번호(`POST /api/auth/login`).
   - 온보딩(`/dashboard/wizard`): 프로필 → 휴대전화 → 역할 → 사업자. 중도 이탈 후 `/signup` 재진입 시 `clearOnboardingLocalStorage`로 1/4부터.
   - 사업자 단계(`BusinessTab` + `RequestorCapabilitiesPicker`):
-    - 라벨: clinic=`원내 기공실 없는 치과`, lab=`기공소 혹은 원내 기공실` (`REQUESTOR_CAPABILITY_OPTIONS`)
+    - 라벨: practice=`원내 기공실 없는 치과`, lab=`기공소 혹은 원내 기공실` (`REQUESTOR_CAPABILITY_OPTIONS`)
     - `lab` 선택 시 사업자등록증 미검증이면 저장 차단·안내
-    - `clinic`-only로 등록증 건너뛰면 `clinicProfilePhase` → `PracticeBusinessProfileStep`(기공의뢰서용 치과 필수정보)
+    - `practice`-only로 등록증 건너뛰면 `practiceProfilePhase` → `PracticeBusinessProfileStep`(기공의뢰서용 치과 필수정보)
   - 온보딩 완료 랜딩(`SharedOnboardingWizardPage.resolvePostOnboardingPath`):
     - requestor + 미검증 → `/dashboard/practice-transfers`
     - 그 외 → `/dashboard`
@@ -395,7 +396,7 @@ Notes:
     - 사이드바: `isPaidRequestorPath`(`/dashboard`, `/dashboard/new-request*`) — 미검증 시 비활성+힌트
     - 설정 탭: `PAID_REQUESTOR_SETTINGS_TABS`(`request`, `payment`) 동일
     - 소개(`/dashboard/referral-groups`): 유료 게이트 아님(모든 requestor 접근)
-  - 기공의뢰서 UI: `PracticeTransferRoleTabs`(발신/수신). clinic→발신, lab→수신. `RequestorPracticePage`.
+  - 기공의뢰서 UI: `PracticeTransferRoleTabs`(발신/수신). practice→발신, lab→수신. `RequestorPracticePage`.
   - 접근 훅: `useRequestorBusinessAccess` (앵커 caps + verified 해석).
   - 계정 전환(모든 role): `GET /api/auth/colleagues`, `POST /api/auth/switch-account` — UI `AccountSwitcher`.
 
@@ -404,13 +405,13 @@ Notes:
   - practice 페이지 상태 정규화 기준: `src/pages/practice/PracticeFileTransferPage.tsx`의 `toStatusLabel`
   - 의뢰자 치과 페이지 상태 배지 기준: `src/pages/requestor/practice/RequestorPracticePage.tsx` (`isRead/requestorReadAt`, `isDownloaded/requestorDownloadedAt`)
 
-- 드롭존 가입(치과 전용, requestor+clinic)
+- 드롭존 가입(치과 전용, requestor+practice)
   - 공개 드롭존(`PracticeDropzonePage`)은 기공의뢰서 **발신(치과)** 전용. lab 선택 UI 없음.
   - Step 2 임베디드 로그인/가입/비밀번호 변경. 라벨은 「의뢰인 계정」.
-  - 가입: `POST /api/auth/practice/register` → `role=requestor` + `requestorCapabilities={clinic:true,lab:false}` + `practiceProfile`(사업자 앵커 미생성).
+  - 가입: `POST /api/auth/practice/register` → `role=requestor` + `requestorCapabilities={practice:true,lab:false}` + `practiceProfile`(사업자 앵커 미생성).
     필수: `email`, `clinicName`, `directorName`, `staffName`, `password`, `clinicPhone`, `phone`, `address`, `zipCode`.
   - 가입 전 이메일·담당자 휴대폰 인증 필수(공통 signup verification API). 로컬 캐시: `practice_dropzone_signup_verification_v1`.
-  - 로그인: `POST /api/auth/login` — `requestor` + clinic 발신 가능 계정만 허용.
+  - 로그인: `POST /api/auth/login` — `requestor` + practice 발신 가능 계정만 허용.
   - 비밀번호 변경: `POST /api/auth/practice/password/change`(`email`+`phone`+`newPassword`, requestor).
   - 드롭존 의뢰 폼은 대시보드와 동일 localStorage(`practice_transfer_form_local_v1`). 첨부 캐시(`practice_dropzone_file_cache_meta_v1` + IndexedDB) 공유.
   - 제출 후 `/dashboard/practice-transfers`로 이동. 폼 캐시 비움·완료 토스트 ~10초.
@@ -522,7 +523,7 @@ Notes:
       - 조회 경로: `GET /api/admin/credits/businesses?businessAnchorId=:id&limit=1&skip=0`
   - 채팅방 목록 실시간 동기화: `src/shared/hooks/useChatRooms.ts`
   - 채팅 메시지 실시간 동기화: `src/shared/hooks/useChatMessages.ts`
-  - 채팅 role 라벨/뱃지 표시에서는 `practice`를 fallback("사용자")로 처리하지 말고 명시적으로 `치과`로 매핑합니다.
+  - 채팅 role 라벨/뱃지 표시에서는 레거시 `practice` role을 `의뢰자`로 매핑합니다(치과는 requestorCapabilities.practice).
   - 페이지 반영 지점:
     - `src/pages/practice/PracticeFileTransferPage.tsx`
     - `src/pages/requestor/practice/RequestorPracticePage.tsx`

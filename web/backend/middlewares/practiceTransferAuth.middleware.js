@@ -11,7 +11,7 @@ import {
 } from "../utils/requestorCapabilities.js";
 
 const loadResolvedCapabilities = async (user) => {
-  if (!user) return { clinic: false, lab: false };
+  if (!user) return { practice: false, lab: false };
 
   let anchorCaps = null;
   let businessVerified = false;
@@ -36,7 +36,7 @@ const loadResolvedCapabilities = async (user) => {
 };
 
 /**
- * 기공의뢰서 발신: legacy practice role 또는 requestor+clinic
+ * 기공의뢰서 발신: legacy practice role 또는 requestor+practice
  */
 export const authorizePracticeTransferSend = (options = {}) => {
   return async (req, res, next) => {

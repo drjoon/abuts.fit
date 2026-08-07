@@ -90,7 +90,7 @@ export const RequestorCapabilitiesPicker = ({
           합니다.
         </p>
       )}
-      {!caps.clinic && !caps.lab && (
+      {!caps.practice && !caps.lab && (
         <p className="text-xs text-destructive">
           원내 기공실 없는 치과 또는 기공소 혹은 원내 기공실 중 하나 이상
           선택해주세요.

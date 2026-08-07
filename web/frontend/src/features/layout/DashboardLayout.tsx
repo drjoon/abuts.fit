@@ -268,7 +268,7 @@ const getRoleLabel = (role: string) => {
     case "manufacturer":
       return "제조사";
     case "practice":
-      return "치과병의원";
+      return "의뢰자";
     case "admin":
       return "어벗츠.핏";
     default:

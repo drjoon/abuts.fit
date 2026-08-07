@@ -32,7 +32,7 @@ interface HandleSaveParams {
     originalName?: string;
   };
   requestorCapabilities?: {
-    clinic?: boolean;
+    practice?: boolean;
     lab?: boolean;
   };
   mockHeaders?: Record<string, string>;

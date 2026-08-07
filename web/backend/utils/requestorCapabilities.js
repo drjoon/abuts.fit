@@ -6,20 +6,21 @@
 
 /**
  * 의뢰자 유형(치과/기공소) — 체크박스 OR.
- * - clinic: 무료 서비스 경로 (사업자등록증 선택)
+ * - practice: 무료 서비스 경로 (사업자등록증 선택). 레거시 키명 clinic → practice 통일.
  * - lab: 유료 서비스 전제 (사업자등록증 필수)
  * 특정 상품명이 아니라 유료/무료 접근성 기준으로 게이트한다.
  */
 
 export const normalizeRequestorCapabilities = (raw) => {
-  const clinic = Boolean(raw?.clinic);
+  // SSOT: practice. 레거시 clinic 키 호환(마이그레이션 전 DB/클라)
+  const practice = Boolean(raw?.practice ?? raw?.clinic);
   const lab = Boolean(raw?.lab);
-  return { clinic, lab };
+  return { practice, lab };
 };
 
 export const hasAnyRequestorCapability = (caps) => {
   const c = normalizeRequestorCapabilities(caps);
-  return c.clinic || c.lab;
+  return c.practice || c.lab;
 };
 
 /** 기공소(lab) 선택 시 사업자등록증(검증) 필수 */
@@ -32,14 +33,14 @@ export const canUsePaidServices = ({ businessVerified } = {}) => {
   return Boolean(businessVerified);
 };
 
-/** 무료 서비스 이용 — 치과 선택(또는 레거시 practice) */
+/** 무료 서비스 이용 — 치과(practice) 선택 */
 export const canUseFreeServices = (caps) => {
-  return Boolean(normalizeRequestorCapabilities(caps).clinic);
+  return Boolean(normalizeRequestorCapabilities(caps).practice);
 };
 
 /** 기공의뢰서 발신(치과 측) */
 export const canSendPracticeTransfer = (caps) => {
-  return Boolean(normalizeRequestorCapabilities(caps).clinic);
+  return Boolean(normalizeRequestorCapabilities(caps).practice);
 };
 
 /** 기공의뢰서 수신(기공소 측) */
@@ -49,7 +50,7 @@ export const canReceivePracticeTransfer = (caps) => {
 
 /**
  * 앵커 우선, 없으면 유저 값. 둘 다 없으면 레거시 추론.
- * legacy: practice role → clinic, requestor with verified → lab
+ * legacy: role=practice → practice cap, requestor with verified → lab
  */
 export const resolveRequestorCapabilities = ({
   anchorCaps,
@@ -58,17 +59,17 @@ export const resolveRequestorCapabilities = ({
   businessVerified,
 } = {}) => {
   const fromAnchor = normalizeRequestorCapabilities(anchorCaps);
-  if (fromAnchor.clinic || fromAnchor.lab) return fromAnchor;
+  if (fromAnchor.practice || fromAnchor.lab) return fromAnchor;
 
   const fromUser = normalizeRequestorCapabilities(userCaps);
-  if (fromUser.clinic || fromUser.lab) return fromUser;
+  if (fromUser.practice || fromUser.lab) return fromUser;
 
-  if (userRole === "practice") return { clinic: true, lab: false };
+  if (userRole === "practice") return { practice: true, lab: false };
   if (userRole === "requestor" && businessVerified) {
-    return { clinic: false, lab: true };
+    return { practice: false, lab: true };
   }
   if (userRole === "requestor") {
-    return { clinic: true, lab: false };
+    return { practice: true, lab: false };
   }
-  return { clinic: false, lab: false };
+  return { practice: false, lab: false };
 };

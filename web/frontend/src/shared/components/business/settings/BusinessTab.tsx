@@ -75,8 +75,8 @@ interface BusinessTabProps {
   }) => void;
   registerGoNextAction?: (action: (() => Promise<boolean>) | null) => void;
   isOnboarding?: boolean;
-  /** clinic-only로 사업자등록증을 건너뛸 때 필수 치과정보 단계로 진입 */
-  onRequireClinicProfile?: () => void;
+  /** practice-only로 사업자등록증을 건너뛸 때 필수 치과정보 단계로 진입 */
+  onRequirePracticeProfile?: () => void;
 }
 
 export const BusinessTab = ({
@@ -86,7 +86,7 @@ export const BusinessTab = ({
   registerValidationState,
   registerGoNextAction,
   isOnboarding = false,
-  onRequireClinicProfile,
+  onRequirePracticeProfile,
 }: BusinessTabProps) => {
   const { toast } = useToast();
   const { token, user, loginWithToken } = useAuthStore();
@@ -140,14 +140,14 @@ export const BusinessTab = ({
   const [focusFirstMissingSignal, setFocusFirstMissingSignal] = useState(0);
   const [focusFieldKey, setFocusFieldKey] = useState<FieldKey | null>(null);
   const [requestorCapabilities, setRequestorCapabilities] =
-    useState<RequestorCapabilities>({ clinic: false, lab: false });
+    useState<RequestorCapabilities>({ practice: false, lab: false });
   const [capabilitiesLoaded, setCapabilitiesLoaded] = useState(false);
   const [capabilitiesSaving, setCapabilitiesSaving] = useState(false);
 
   const licenseUploadRef = useRef<BusinessLicenseUploadHandle | null>(null);
   const isRequestorBusiness = businessType === "requestor";
   const caps = normalizeRequestorCapabilities(requestorCapabilities);
-  const licenseOptional = isRequestorBusiness && caps.clinic && !caps.lab;
+  const licenseOptional = isRequestorBusiness && caps.practice && !caps.lab;
 
   const markOnboardingWizardCompleted = useCallback(async () => {
     if (!token || !user) return false;
@@ -411,7 +411,7 @@ export const BusinessTab = ({
     businessDataMgmt.isVerified,
     capabilitiesLoaded,
     capabilitiesSaving,
-    requestorCapabilities.clinic,
+    requestorCapabilities.practice,
     requestorCapabilities.lab,
     isOnboarding,
     isRequestorBusiness,
@@ -433,7 +433,7 @@ export const BusinessTab = ({
       const verified =
         businessDataMgmt.validationSucceeded || businessDataMgmt.isVerified;
       // 치과만 선택하고 사업자등록증을 건너뛰면 필수 치과정보 페이지로 이동
-      if (licenseOptional && !verified && onRequireClinicProfile) {
+      if (licenseOptional && !verified && onRequirePracticeProfile) {
         const pp = user?.practiceProfile;
         const profileReady = Boolean(
           String(pp?.clinicName || "").trim() &&
@@ -445,7 +445,7 @@ export const BusinessTab = ({
             String(pp?.zipCode || "").trim(),
         );
         if (profileReady) return true;
-        onRequireClinicProfile();
+        onRequirePracticeProfile();
         return false;
       }
       return true;
@@ -458,7 +458,7 @@ export const BusinessTab = ({
     isOnboarding,
     isRequestorBusiness,
     licenseOptional,
-    onRequireClinicProfile,
+    onRequirePracticeProfile,
     persistRequestorCapabilities,
     registerGoNextAction,
     selectedRole,

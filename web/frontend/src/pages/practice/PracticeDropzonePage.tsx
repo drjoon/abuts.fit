@@ -1,6 +1,6 @@
 /**
  * 기공의뢰서 드롭존 — 치과 발신 전용 UI.
- * 계정은 의뢰인(requestor + clinic)으로 통합. 레거시 practice role도 로그인 허용.
+ * 계정은 의뢰인(requestor + practice)으로 통합. 레거시 practice role도 로그인 허용.
  *
  * 입력 순서:
  * 1) 의뢰서 작성 (기공소·환자·보철물·메모 + 파일첨부)
@@ -240,7 +240,7 @@ type PracticeSessionMeta = {
   userId: string;
 };
 
-/** 드롭존 발신 계정: 레거시 practice 또는 의뢰인(clinic) */
+/** 드롭존 발신 계정: 레거시 practice role 또는 의뢰인(practice cap) */
 const canUseDropzoneSenderAccount = (user: User | null | undefined) => {
   if (!user?.id) return false;
   if (user.role === "practice") return true;

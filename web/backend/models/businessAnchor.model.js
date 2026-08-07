@@ -35,7 +35,8 @@ const businessAnchorSchema = new mongoose.Schema(
     // - web/backend/controllers/businesses/business.controller.js
     // - web/frontend/src/shared/business/requestorCapabilities.ts
     requestorCapabilities: {
-      clinic: { type: Boolean, default: false },
+      // SSOT: practice (레거시 clinic 키는 normalize/백필로 승격)
+      practice: { type: Boolean, default: false },
       lab: { type: Boolean, default: false },
     },
     name: {
