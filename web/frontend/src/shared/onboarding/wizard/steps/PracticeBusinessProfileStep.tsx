@@ -335,7 +335,9 @@ export const PracticeBusinessProfileStep = ({
 
   return (
     <div className="space-y-5">
-      <p className="text-sm text-slate-500">기본 정보를 입력해주세요.</p>
+      <p className="text-sm text-slate-500">
+        기공의뢰서 이용을 위해 주소·전화번호·담당자명 등 기본 정보를 입력해주세요.
+      </p>
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         <div className="space-y-2">
