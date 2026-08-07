@@ -4,10 +4,14 @@
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 import { forwardRef, useImperativeHandle, useRef } from "react";
 import { Button } from "@/components/ui/button";
-import { Upload, X, ShieldCheck, RotateCcw } from "lucide-react";
-import { Label } from "@/components/ui/label";
+import { Upload, X, ShieldCheck, RotateCcw, Info } from "lucide-react";
 import type { LicenseStatus, MembershipStatus } from "./types";
-import { useToast } from "@/shared/hooks/use-toast";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 interface BusinessLicenseUploadProps {
   membership: MembershipStatus;
@@ -18,6 +22,8 @@ interface BusinessLicenseUploadProps {
   licenseDeleteLoading: boolean;
   onFileUpload: (file: File) => void;
   onDeleteLicense: () => void;
+  /** 온보딩 등에서 업로드를 건너뛸 수 있을 때 안내/툴팁 표시 */
+  isOptional?: boolean;
 }
 
 export type BusinessLicenseUploadHandle = {
@@ -32,22 +38,22 @@ export const BusinessLicenseUpload = forwardRef<
     {
       membership,
       licenseStatus,
-      isVerified,
-      validationSucceeded,
       licenseFileName,
       licenseDeleteLoading,
       onFileUpload,
       onDeleteLicense,
+      isOptional = false,
     },
     ref,
   ) => {
-    const { toast } = useToast();
     const licenseInputRef = useRef<HTMLInputElement | null>(null);
     const uploadButtonRef = useRef<HTMLButtonElement | null>(null);
     const canEdit = membership === "owner" || membership === "none";
-    const hasExistingLicense = Boolean(licenseFileName);
-    // 항상 업로드 가능 (검증 후에도 재업로드 가능)
-    const canUploadNew = canEdit;
+    const showOptionalHint =
+      isOptional &&
+      licenseStatus !== "ready" &&
+      licenseStatus !== "uploading" &&
+      licenseStatus !== "processing";
 
     useImperativeHandle(
       ref,
@@ -120,6 +126,28 @@ export const BusinessLicenseUpload = forwardRef<
             <p className="mt-2 text-xs text-slate-400">
               JPG, PNG 파일만 가능 (최대 10MB)
             </p>
+            {showOptionalHint && (
+              <TooltipProvider delayDuration={200}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      className="mt-3 inline-flex items-center gap-1.5 text-xs text-slate-500 underline-offset-2 hover:text-slate-700 hover:underline"
+                    >
+                      <Info className="h-3.5 w-3.5 shrink-0" />
+                      업로드하지 않아도 다음으로 진행할 수 있습니다
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent
+                    side="bottom"
+                    className="max-w-xs text-left leading-relaxed"
+                  >
+                    사업자등록증을 등록하지 않으면 유료 서비스 이용이 제한되며,
+                    무료 서비스만 사용할 수 있습니다.
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            )}
           </div>
           {licenseFileName &&
             licenseStatus !== "uploading" &&

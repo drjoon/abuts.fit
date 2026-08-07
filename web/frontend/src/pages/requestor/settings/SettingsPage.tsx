@@ -26,6 +26,8 @@ import { Shield } from "lucide-react";
 import { useToast } from "@/shared/hooks/use-toast";
 import { resolveBusinessType } from "@/shared/utils/resolveBusinessType";
 import { formatKstDateTimeToKo, toKstYmd } from "@/shared/date/kst";
+import { BusinessPaidAccessGate } from "@/shared/business/BusinessPaidAccessGate";
+import type { ReactNode } from "react";
 
 // related files:
 // - web/backend/controllers/businesses/business.controller.js
@@ -126,6 +128,10 @@ export const RequestorSettingsPage = () => {
   }, [pricingElapsedDays]);
 
   const tabs: SettingsTabDef[] = useMemo(() => {
+    const paidGate = (node: ReactNode) => (
+      <BusinessPaidAccessGate>{node}</BusinessPaidAccessGate>
+    );
+
     const base: SettingsTabDef[] = [
       {
         key: "account",
@@ -186,7 +192,7 @@ export const RequestorSettingsPage = () => {
         key: "request",
         label: "의뢰",
         icon: FileText,
-        content: <RequestTab />,
+        content: paidGate(<RequestTab />),
       },
     ];
 
@@ -195,7 +201,7 @@ export const RequestorSettingsPage = () => {
         key: "payment",
         label: "결제",
         icon: CreditCard,
-        content: <PaymentTab userData={user} />,
+        content: paidGate(<PaymentTab userData={user} />),
       },
       {
         key: "notifications",

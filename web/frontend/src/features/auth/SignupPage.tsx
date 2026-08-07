@@ -145,6 +145,10 @@ export const SignupPage = () => {
 
   const [signupRole, setSignupRole] = useState<SignupRole>(() => {
     const role = restoredProgress?.signupRole;
+    // 공개 가입 UI에서 치과(practice) 옵션 제거 — 복원값도 의뢰자로 전환
+    if (role === "practice" && location.pathname !== "/signup/staff") {
+      return "requestor";
+    }
     if (
       role === "requestor" ||
       role === "practice" ||
@@ -273,12 +277,14 @@ export const SignupPage = () => {
     if (
       role === "salesman" ||
       role === "requestor" ||
-      role === "practice" ||
       role === "devops" ||
       role === "manufacturer" ||
       role === "admin"
     ) {
       setSignupRole(role as SignupRole);
+    } else if (role === "practice") {
+      // 공개 가입에서 치과 옵션 제거
+      setSignupRole("requestor");
     }
   }, [isSocialNewMode, searchParams]);
 
@@ -384,25 +390,19 @@ export const SignupPage = () => {
     if (isStaffSignupRoute) {
       return ["manufacturer", "devops", "admin"];
     }
-    // /signup 경로는 의뢰자/치과/영업자만 허용
+    // /signup 경로는 의뢰자/영업자만 허용 (치과는 별도 경로)
     if (typeof effectiveReferralCode !== "string")
-      return ["requestor", "practice", "salesman"];
+      return ["requestor", "salesman"];
     const roles = referrerInfo?.allowedSignupRoles || [];
     return roles.filter(
       (role): role is SignupRole =>
         role === "requestor" ||
-        role === "practice" ||
         role === "salesman" ||
         role === "manufacturer" ||
         role === "admin" ||
         role === "devops",
     );
   }, [effectiveReferralCode, referrerInfo, isStaffSignupRoute]);
-
-  const isPracticeDisabled = useMemo(() => {
-    if (typeof effectiveReferralCode !== "string") return false;
-    return !allowedSignupRoles.includes("practice");
-  }, [allowedSignupRoles, effectiveReferralCode]);
 
   const isSalesmanDisabled = useMemo(() => {
     if (typeof effectiveReferralCode !== "string") return false;
@@ -1304,7 +1304,7 @@ export const SignupPage = () => {
                           </button>
                         </div>
                       ) : (
-                        <div className="grid grid-cols-3 gap-2">
+                        <div className="grid grid-cols-2 gap-2">
                           <button
                             type="button"
                             onClick={() => setSignupRole("requestor")}
@@ -1315,23 +1315,6 @@ export const SignupPage = () => {
                             }`}
                           >
                             의뢰자
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              if (isPracticeDisabled) return;
-                              setSignupRole("practice");
-                            }}
-                            disabled={isPracticeDisabled}
-                            className={`h-10 rounded-md border text-sm font-medium transition-colors ${
-                              signupRole === "practice"
-                                ? "border-white/10 bg-white/15 text-white"
-                                : isPracticeDisabled
-                                  ? "cursor-not-allowed border-white/10 bg-white/5 text-white/35"
-                                  : "border-white/10 bg-white/5 text-white/70 hover:bg-white/10"
-                            }`}
-                          >
-                            치과
                           </button>
                           <button
                             type="button"
@@ -1354,19 +1337,8 @@ export const SignupPage = () => {
                       )}
                       {signupRole === "requestor" && (
                         <p className="text-sm text-white/70 text-left">
-                          CNC 커스텀 어벗 주문하는 경우 선택
+                          치과 또는 기공소
                         </p>
-                      )}
-                      {signupRole === "practice" && (
-                        <div className="space-y-1 text-center">
-                          <p className="text-sm text-white/70">
-                            기공소에 스캔파일 및 기공의뢰서 전달만 이용할 경우 선택
-                          </p>
-                          <p className="text-sm text-white/50">
-                            (원내에 커스텀 어벗 디자인하는 기공실장님 계시면{" "}
-                            <span className="text-white/70">의뢰자</span>로 가입)
-                          </p>
-                        </div>
                       )}
                       {signupRole === "salesman" && (
                         <p className="text-sm text-white/70 text-right">

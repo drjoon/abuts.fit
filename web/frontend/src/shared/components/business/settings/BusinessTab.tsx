@@ -53,6 +53,14 @@ import {
   invalidateBusinessMeCache,
   loadBusinessMeCached,
 } from "@/shared/components/business/settings/business/businessMeCache";
+import { RequestorCapabilitiesPicker } from "@/shared/components/business/RequestorCapabilitiesPicker";
+import {
+  hasAnyRequestorCapability,
+  normalizeRequestorCapabilities,
+  requiresBusinessLicense,
+  resolveRequestorCapabilities,
+  type RequestorCapabilities,
+} from "@/shared/business/requestorCapabilities";
 
 interface BusinessTabProps {
   userData?: {
@@ -65,6 +73,7 @@ interface BusinessTabProps {
     passed: boolean;
     validating: boolean;
   }) => void;
+  registerGoNextAction?: (action: (() => Promise<boolean>) | null) => void;
   isOnboarding?: boolean;
 }
 
@@ -73,6 +82,7 @@ export const BusinessTab = ({
   businessTypeOverride,
   selectedRole,
   registerValidationState,
+  registerGoNextAction,
   isOnboarding = false,
 }: BusinessTabProps) => {
   const { toast } = useToast();
@@ -126,8 +136,15 @@ export const BusinessTab = ({
     useState(0);
   const [focusFirstMissingSignal, setFocusFirstMissingSignal] = useState(0);
   const [focusFieldKey, setFocusFieldKey] = useState<FieldKey | null>(null);
+  const [requestorCapabilities, setRequestorCapabilities] =
+    useState<RequestorCapabilities>({ clinic: false, lab: false });
+  const [capabilitiesLoaded, setCapabilitiesLoaded] = useState(false);
+  const [capabilitiesSaving, setCapabilitiesSaving] = useState(false);
 
   const licenseUploadRef = useRef<BusinessLicenseUploadHandle | null>(null);
+  const isRequestorBusiness = businessType === "requestor";
+  const caps = normalizeRequestorCapabilities(requestorCapabilities);
+  const licenseOptional = isRequestorBusiness && caps.clinic && !caps.lab;
 
   const markOnboardingWizardCompleted = useCallback(async () => {
     if (!token || !user) return false;
@@ -231,17 +248,155 @@ export const BusinessTab = ({
     }
   }, [membershipMgmt.membership, setupMode]);
 
+  // 의뢰자 유형(치과/기공소) 로드
+  useEffect(() => {
+    if (!isRequestorBusiness || !token) {
+      setCapabilitiesLoaded(true);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const data = await loadBusinessMeCached({
+          token,
+          businessType,
+          force: true,
+        });
+        if (cancelled) return;
+        setRequestorCapabilities(
+          resolveRequestorCapabilities({
+            anchorCaps: data?.requestorCapabilities,
+            userRole: user?.role,
+            businessVerified: Boolean(data?.businessVerified),
+          }),
+        );
+      } catch {
+        if (!cancelled) {
+          setRequestorCapabilities(
+            resolveRequestorCapabilities({
+              userRole: user?.role,
+              businessVerified: false,
+            }),
+          );
+        }
+      } finally {
+        if (!cancelled) setCapabilitiesLoaded(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [businessType, isRequestorBusiness, token, user?.role]);
+
+  const persistRequestorCapabilities = useCallback(
+    async (next: RequestorCapabilities) => {
+      if (!token || !isRequestorBusiness) return false;
+      const normalized = normalizeRequestorCapabilities(next);
+      if (!hasAnyRequestorCapability(normalized)) {
+        toast({
+          title: "유형을 선택해주세요",
+          description: "치과 또는 기공소 중 하나 이상 선택해주세요.",
+          variant: "destructive",
+        });
+        return false;
+      }
+      if (
+        requiresBusinessLicense(normalized) &&
+        !(businessDataMgmt.validationSucceeded || businessDataMgmt.isVerified)
+      ) {
+        toast({
+          title: "사업자등록증이 필요합니다",
+          description:
+            "기공소를 선택하려면 사업자등록증을 등록·검증해야 합니다.",
+          variant: "destructive",
+        });
+        return false;
+      }
+
+      setCapabilitiesSaving(true);
+      try {
+        const res = await request<any>({
+          path: `/api/businesses/me?businessType=${encodeURIComponent("requestor")}`,
+          method: "PUT",
+          token,
+          jsonBody: {
+            requestorCapabilities: normalized,
+          },
+        });
+        if (!res.ok) {
+          const body: any = res.data || {};
+          toast({
+            title: "저장 실패",
+            description:
+              body?.message || "사업자 유형을 저장하지 못했습니다.",
+            variant: "destructive",
+          });
+          return false;
+        }
+        setRequestorCapabilities(normalized);
+        invalidateBusinessMeCache({ token, businessType });
+        return true;
+      } catch {
+        toast({
+          title: "저장 실패",
+          description: "사업자 유형을 저장하지 못했습니다.",
+          variant: "destructive",
+        });
+        return false;
+      } finally {
+        setCapabilitiesSaving(false);
+      }
+    },
+    [
+      businessDataMgmt.isVerified,
+      businessDataMgmt.validationSucceeded,
+      businessType,
+      isRequestorBusiness,
+      toast,
+      token,
+    ],
+  );
+
+  const handleCapabilitiesChange = useCallback(
+    (next: RequestorCapabilities) => {
+      const normalized = normalizeRequestorCapabilities(next);
+      const prev = caps;
+      setRequestorCapabilities(normalized);
+      // 설정 화면에서는 즉시 저장 시도 (기공소+미검증은 거부되어 토스트)
+      if (!isOnboarding && membershipMgmt.membership === "owner") {
+        void persistRequestorCapabilities(normalized).then((ok) => {
+          if (!ok) setRequestorCapabilities(prev);
+        });
+      }
+    },
+    [
+      caps,
+      isOnboarding,
+      membershipMgmt.membership,
+      persistRequestorCapabilities,
+    ],
+  );
+
   // 온보딩 검증 상태 업데이트
   useEffect(() => {
     if (!registerValidationState) return;
     if (selectedRole === "owner") {
+      const verified =
+        businessDataMgmt.validationSucceeded || businessDataMgmt.isVerified;
+      if (isOnboarding && isRequestorBusiness) {
+        const hasCap = hasAnyRequestorCapability(caps);
+        const labOk = !requiresBusinessLicense(caps) || verified;
+        registerValidationState({
+          passed: hasCap && labOk,
+          validating: !capabilitiesLoaded || capabilitiesSaving,
+        });
+        return;
+      }
       registerValidationState({
-        passed:
-          businessDataMgmt.validationSucceeded || businessDataMgmt.isVerified,
+        passed: isOnboarding ? true : verified,
         validating: false,
       });
     } else if (selectedRole === "member" && isOnboarding) {
-      // 직원 온보딩: 승인(member) 상태여야만 다음 단계 진행 가능
       registerValidationState({
         passed: membershipMgmt.membership === "member",
         validating: false,
@@ -250,10 +405,34 @@ export const BusinessTab = ({
   }, [
     businessDataMgmt.validationSucceeded,
     businessDataMgmt.isVerified,
-    membershipMgmt.membership,
-    selectedRole,
+    capabilitiesLoaded,
+    capabilitiesSaving,
+    requestorCapabilities.clinic,
+    requestorCapabilities.lab,
     isOnboarding,
+    isRequestorBusiness,
+    membershipMgmt.membership,
     registerValidationState,
+    selectedRole,
+  ]);
+
+  useEffect(() => {
+    if (!registerGoNextAction) return;
+    if (!isOnboarding || selectedRole !== "owner" || !isRequestorBusiness) {
+      registerGoNextAction(null);
+      return;
+    }
+    registerGoNextAction(async () => {
+      return persistRequestorCapabilities(caps);
+    });
+    return () => registerGoNextAction(null);
+  }, [
+    caps,
+    isOnboarding,
+    isRequestorBusiness,
+    persistRequestorCapabilities,
+    registerGoNextAction,
+    selectedRole,
   ]);
 
   const updateSetupMode = useCallback(
@@ -287,6 +466,7 @@ export const BusinessTab = ({
           s3Key: businessDataMgmt.licenseS3Key,
           originalName: businessDataMgmt.licenseFileName,
         },
+        requestorCapabilities: isRequestorBusiness ? caps : undefined,
         mockHeaders: {},
         toast,
         silent: false,
@@ -602,6 +782,28 @@ export const BusinessTab = ({
       activeClassName="ring-2 ring-primary/30"
     >
       <div className="space-y-6">
+        {isRequestorBusiness &&
+          (selectedRole === "owner" ||
+            membershipMgmt.membership === "owner" ||
+            membershipMgmt.membership === "none") && (
+            <RequestorCapabilitiesPicker
+              value={caps}
+              onChange={handleCapabilitiesChange}
+              disabled={
+                capabilitiesSaving ||
+                (membershipMgmt.membership !== "owner" &&
+                  membershipMgmt.membership !== "none" &&
+                  selectedRole !== "owner")
+              }
+              labRequiresLicenseHint={
+                !(
+                  businessDataMgmt.validationSucceeded ||
+                  businessDataMgmt.isVerified
+                )
+              }
+            />
+          )}
+
         {membershipMgmt.membership === "none" &&
           !setupMode &&
           showSelectionChoices &&
@@ -671,6 +873,7 @@ export const BusinessTab = ({
                     licenseDeleteLoading={licenseDeleteLoading}
                     onFileUpload={handleFileUpload}
                     onDeleteLicense={handleDeleteLicense}
+                    isOptional={licenseOptional && isOnboarding}
                   />
                 )}
 

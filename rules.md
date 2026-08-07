@@ -190,19 +190,28 @@
 - 동시 차감(overspend) 방지: spend 트랜잭션에서 `CreditBalanceGuard`를 통한 앵커 단위 직렬화 적용
 - 이벤트 기반 캐시 갱신 우선, 조회 시 대규모 재계산 지양
 
-### 2.4 practice(치과) 전송
+### 2.4 의뢰자 유형(치과/기공소) · 기공의뢰서 전송
 
-- practice는 **의뢰 파일 전송 전용 경량 role**로 취급
-- practice 제출은 Request 생성 경유 금지
+- 신규 가입 `User.role`은 **requestor**로 통일한다. 레거시 `practice` role은 마이그레이션 전까지 호환 유지.
+- Org SSOT: `BusinessAnchor.requestorCapabilities = { clinic: boolean, lab: boolean }` (체크박스 OR, 최소 1개).
+  - 사업자 미등록(치과 무료 경로) 시에는 `User.requestorCapabilities`에 임시 보존 후, 사업자 생성 시 앵커로 승격.
+- 접근성 게이트(특정 상품명이 아니라 **유료/무료** 기준):
+  - **유료 서비스**: `BusinessAnchor.status === "verified"`(사업자등록증 검증) 필수
+  - **무료 서비스**: `clinic === true`이면 사업자등록증 없이 이용 가능
+  - `lab === true`이면 사업자등록증 등록·검증 필수(온보드/설정 전환 시)
+- 기공의뢰서(PracticeTransfer) 권한:
+  - **발신**: legacy `practice` **또는** (`requestor` + `clinic`)
+  - **수신**: `requestor` + `lab`
+  - 제출은 Request 생성 경유 금지. 저장 SSOT: `PracticeTransfer`
 - SSOT API:
   - 생성: `POST /api/practice/transfers`
-  - 조회: `GET /api/practice/transfers/my`
+  - 조회(발신): `GET /api/practice/transfers/my`
+  - 조회(수신): `GET /api/practice/transfers/received`
   - 취소: `POST /api/practice/transfers/cancel-batch`
-- 저장 SSOT: `PracticeTransfer`
-- 제조사 워크시트 조회에서 practice 태그 의뢰 제외
-- 정책 고정: practice는 크레딧/정산/추천(리퍼럴) 기능/집계/보상 범위에 포함하지 않음
-- 강제 분리: practice 클라이언트/서버는 `Request` 도메인 API(`/api/requests/*`)를 사용하지 않는다.
-  - 레거시 혼입 경로(예: `/api/requests/practice/*`, practice의 Request draft 접근)는 제거 대상으로 관리한다.
+- 제조사 워크시트 조회에서 practice 전송 태그 의뢰 제외
+- 크레딧/정산/리퍼럴은 유료(검증된 기공소) 경로에만 해당. 치과(clinic-only) 무료 경로는 포함하지 않음
+- 레거시 혼입 경로(예: `/api/requests/practice/*`)는 제거 대상으로 관리
+- 백필: `web/backend/scripts/db/backfill-requestor-capabilities.js` (`--apply`)
 
 ### 2.5 채팅
 

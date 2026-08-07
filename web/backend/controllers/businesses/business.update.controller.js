@@ -29,6 +29,12 @@ import {
 } from "./business.freeCredit.util.js";
 import { emitReferralMembershipChanged } from "../../services/requestSnapshotTriggers.service.js";
 import { invalidateMyBusinessCache } from "./business.controller.js";
+import {
+  normalizeRequestorCapabilities,
+  hasAnyRequestorCapability,
+  requiresBusinessLicense,
+  resolveRequestorCapabilities,
+} from "../../utils/requestorCapabilities.js";
 
 // BusinessAnchor를 직접 생성/업데이트하는 헬퍼 함수
 export async function ensureBusinessAnchor({
@@ -148,9 +154,22 @@ export async function updateMyBusiness(req, res) {
     const zipCodeProvided = hasOwnKey(req.body, "zipCode");
     const startDateProvided = hasOwnKey(req.body, "startDate");
     const shippingPolicyProvided = hasOwnKey(req.body, "shippingPolicy");
+    const requestorCapabilitiesProvided = hasOwnKey(
+      req.body,
+      "requestorCapabilities",
+    );
+    const nextRequestorCapabilities = requestorCapabilitiesProvided
+      ? normalizeRequestorCapabilities(req.body?.requestorCapabilities)
+      : null;
 
     const freshUser = await User.findById(req.user._id)
-      .select({ businessAnchorId: 1, business: 1, referredByAnchorId: 1 })
+      .select({
+        businessAnchorId: 1,
+        business: 1,
+        referredByAnchorId: 1,
+        requestorCapabilities: 1,
+        role: 1,
+      })
       .lean();
     const effectiveBusinessAnchorId =
       freshUser?.businessAnchorId || req.user.businessAnchorId || null;
@@ -203,7 +222,8 @@ export async function updateMyBusiness(req, res) {
         addressDetailProvided ||
         zipCodeProvided ||
         startDateProvided ||
-        hasOwnKey(req.body, "businessLicense");
+        hasOwnKey(req.body, "businessLicense") ||
+        requestorCapabilitiesProvided;
       if (!canEdit && (nonShippingProvided || !shippingPolicyProvided)) {
         return res.status(403).json({
           success: false,
@@ -235,6 +255,69 @@ export async function updateMyBusiness(req, res) {
           uploadedAt: new Date(),
         }
       : null;
+
+    // 의뢰자 유형(치과/기공소 체크박스) 단독 저장 — 사업자 미생성(치과 무료) 경로 포함
+    if (
+      requestorCapabilitiesProvided &&
+      businessType === "requestor" &&
+      nextRequestorCapabilities
+    ) {
+      if (!hasAnyRequestorCapability(nextRequestorCapabilities)) {
+        return res.status(400).json({
+          success: false,
+          message: "치과 또는 기공소 중 하나 이상 선택해주세요.",
+        });
+      }
+
+      const isVerifiedBusiness = businessAnchor?.status === "verified";
+      if (
+        requiresBusinessLicense(nextRequestorCapabilities) &&
+        !isVerifiedBusiness
+      ) {
+        return res.status(400).json({
+          success: false,
+          reason: "business_license_required",
+          message:
+            "기공소를 선택하려면 사업자등록증을 등록·검증해야 합니다.",
+        });
+      }
+
+      // 다른 사업자 필드 없이 유형만 바꾼 경우: User(+Anchor)에 저장 후 반환
+      const onlyCapabilitiesUpdate =
+        !nextNameProvided &&
+        !representativeNameProvided &&
+        !businessItemProvided &&
+        !phoneNumberProvided &&
+        !businessNumberProvided &&
+        !businessTypeFieldProvided &&
+        !emailProvided &&
+        !addressProvided &&
+        !addressDetailProvided &&
+        !zipCodeProvided &&
+        !startDateProvided &&
+        !shippingPolicyProvided &&
+        !hasOwnKey(req.body, "businessLicense");
+
+      if (onlyCapabilitiesUpdate) {
+        await User.findByIdAndUpdate(req.user._id, {
+          $set: { requestorCapabilities: nextRequestorCapabilities },
+        });
+        if (businessAnchor?._id) {
+          await BusinessAnchor.findByIdAndUpdate(businessAnchor._id, {
+            $set: { requestorCapabilities: nextRequestorCapabilities },
+          });
+        }
+        invalidateMyBusinessCache(req.user._id);
+        return res.json({
+          success: true,
+          data: {
+            updated: true,
+            requestorCapabilities: nextRequestorCapabilities,
+            businessAnchorId: businessAnchor?._id || null,
+          },
+        });
+      }
+    }
 
     const phoneNumber = phoneNumberRaw
       ? normalizePhoneNumber(phoneNumberRaw)
@@ -419,6 +502,39 @@ export async function updateMyBusiness(req, res) {
       (businessLicense.s3Key || businessLicense.originalName)
     ) {
       patch.businessLicense = businessLicense;
+    }
+
+    if (
+      requestorCapabilitiesProvided &&
+      nextRequestorCapabilities &&
+      businessType === "requestor"
+    ) {
+      if (!hasAnyRequestorCapability(nextRequestorCapabilities)) {
+        return res.status(400).json({
+          success: false,
+          message: "치과 또는 기공소 중 하나 이상 선택해주세요.",
+        });
+      }
+      const willBeVerified =
+        businessAnchor?.status === "verified" ||
+        Boolean(businessLicense?.s3Key || businessLicense?.fileId);
+      // lab 필수 검증은 저장 시점: 이미 verified이거나 이번 요청에서 검증 플로우를 타는 경우 허용
+      // (아래 verification 후 status 갱신). 미검증+lab만 단독이면 앞서 onlyCapabilities에서 거부.
+      if (
+        requiresBusinessLicense(nextRequestorCapabilities) &&
+        businessAnchor?.status !== "verified" &&
+        !businessNumberProvided &&
+        !businessLicense
+      ) {
+        return res.status(400).json({
+          success: false,
+          reason: "business_license_required",
+          message:
+            "기공소를 선택하려면 사업자등록증을 등록·검증해야 합니다.",
+        });
+      }
+      patch.requestorCapabilities = nextRequestorCapabilities;
+      void willBeVerified;
     }
 
     const metadataPatch = {};
@@ -627,6 +743,16 @@ export async function updateMyBusiness(req, res) {
         const businessNumberNormalized = businessNumber
           .replace(/\D/g, "")
           .trim();
+        const createdCaps =
+          nextRequestorCapabilities &&
+          hasAnyRequestorCapability(nextRequestorCapabilities)
+            ? nextRequestorCapabilities
+            : resolveRequestorCapabilities({
+                userCaps: freshUser?.requestorCapabilities,
+                userRole: req.user.role,
+                businessVerified: Boolean(verificationResult?.verified),
+              });
+
         const created = await BusinessAnchor.create({
           businessType,
           businessNumberNormalized,
@@ -635,6 +761,7 @@ export async function updateMyBusiness(req, res) {
           owners: [],
           members: [req.user._id],
           status: verificationResult?.verified ? "verified" : "active",
+          requestorCapabilities: createdCaps,
           ...(businessLicense &&
           (businessLicense.s3Key || businessLicense.originalName)
             ? { businessLicense }
@@ -666,6 +793,7 @@ export async function updateMyBusiness(req, res) {
               businessAnchorId: created._id,
               business: created.name,
               subRole: "owner",
+              requestorCapabilities: createdCaps,
             },
           },
           { new: true },
@@ -816,21 +944,34 @@ export async function updateMyBusiness(req, res) {
     const newBusinessName =
       nextName || String(businessAnchor?.name || "").trim();
 
+    const userSyncPatch = {};
     if (newBusinessName && currentBusinessName !== newBusinessName) {
-      await User.updateMany(
-        { businessAnchorId: businessAnchor._id },
-        {
+      userSyncPatch.business = newBusinessName;
+    }
+    if (patch.requestorCapabilities) {
+      userSyncPatch.requestorCapabilities = patch.requestorCapabilities;
+    }
+
+    if (Object.keys(userSyncPatch).length > 0) {
+      if (userSyncPatch.business) {
+        await User.updateMany(
+          { businessAnchorId: businessAnchor._id },
+          { $set: { business: userSyncPatch.business } },
+        );
+      }
+      if (userSyncPatch.requestorCapabilities) {
+        await User.findByIdAndUpdate(req.user._id, {
           $set: {
-            business: newBusinessName,
+            requestorCapabilities: userSyncPatch.requestorCapabilities,
           },
-        },
-      );
+        });
+      }
     }
 
     // 환영 무료 크레딧은 사업자 신규 생성 시에만 지급한다 (재지급 금지).
 
     // 캐시 무효화: 사업자 정보가 업데이트되었으므로 getMyBusiness 캐시 제거
-    invalidateMyBusinessCache(businessAnchor._id);
+    invalidateMyBusinessCache(req.user._id);
 
     return res.json({
       success: true,

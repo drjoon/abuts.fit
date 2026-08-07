@@ -38,12 +38,9 @@ import {
   type PracticeTransferDialogFileItem,
   type PracticeTransferDialogSummaryItem,
 } from "@/shared/components/PracticeTransferDetailChatDialog";
-import {
-  formatToothWorksForDisplay,
-  parsePracticeTransferMemoMeta as parsePracticeTransferMemoMetaShared,
-  parseToothWorks,
-  serializeToothWorks,
-} from "@/shared/practice/transferMemo";
+import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
+import { PracticeFileTransferPage } from "@/pages/practice/PracticeFileTransferPage";
+import { useNavigate } from "react-router-dom";
 
 type ReceivedPracticeFile = {
   id: string;
@@ -97,8 +94,9 @@ type PracticeTransferSettingsPayload = {
 };
 
 const PAGE_SIZE = 10; // 2열 x 5행
-const PRACTICE_TRANSFER_PROMO_TITLE = "어벗츠 유료서비스를 쓰지 않더라도 이용 가능!";
-const PRACTICE_TRANSFER_PROMO_DESC = "무료로 구강스캔 파일전송, 기공의뢰서 관리하세요.";
+const PRACTICE_TRANSFER_PROMO_TITLE = "무료 서비스로도 이용 가능!";
+const PRACTICE_TRANSFER_PROMO_DESC =
+  "사업자등록증 없이도 무료 서비스로 기공의뢰서를 주고할 수 있습니다.";
 
 const formatDateTime = (value: unknown) => {
   const d = new Date(String(value || ""));
@@ -156,6 +154,84 @@ const getTransferDisplayStatus = (transfer: {
 };
 
 export default function RequestorPracticePage() {
+  const navigate = useNavigate();
+  const {
+    loading,
+    canSendTransfer,
+    canReceiveTransfer,
+  } = useRequestorBusinessAccess();
+  const [mode, setMode] = useState<"send" | "receive">("receive");
+
+  useEffect(() => {
+    if (canSendTransfer && !canReceiveTransfer) setMode("send");
+    else if (!canSendTransfer && canReceiveTransfer) setMode("receive");
+    else if (canSendTransfer && canReceiveTransfer) setMode("receive");
+  }, [canReceiveTransfer, canSendTransfer]);
+
+  if (loading) {
+    return (
+      <div className="p-6 text-sm text-slate-500">불러오는 중...</div>
+    );
+  }
+
+  if (!canSendTransfer && !canReceiveTransfer) {
+    return (
+      <div className="flex min-h-[50vh] items-center justify-center p-6">
+        <Card className="w-full max-w-md">
+          <CardHeader>
+            <CardTitle className="text-lg">사업자 유형 선택 필요</CardTitle>
+            <CardDescription>
+              무료/유료 서비스 이용을 위해 설정 &gt; 사업자에서 치과 또는
+              기공소를 선택해주세요.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button
+              className="w-full"
+              onClick={() => navigate("/dashboard/settings?tab=business")}
+            >
+              사업자 설정으로 이동
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  const showTabs = canSendTransfer && canReceiveTransfer;
+
+  return (
+    <div className="space-y-4">
+      {showTabs && (
+        <div className="flex gap-2 px-4 pt-4 sm:px-6">
+          <Button
+            type="button"
+            size="sm"
+            variant={mode === "receive" ? "default" : "outline"}
+            onClick={() => setMode("receive")}
+          >
+            수신 (기공소)
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant={mode === "send" ? "default" : "outline"}
+            onClick={() => setMode("send")}
+          >
+            발신 (치과)
+          </Button>
+        </div>
+      )}
+      {mode === "send" && canSendTransfer ? (
+        <PracticeFileTransferPage />
+      ) : (
+        <RequestorPracticeReceivePage />
+      )}
+    </div>
+  );
+}
+
+function RequestorPracticeReceivePage() {
   const token = useAuthStore((s) => s.token);
   const user = useAuthStore((s) => s.user);
   const { period, setPeriod } = usePeriodStore();

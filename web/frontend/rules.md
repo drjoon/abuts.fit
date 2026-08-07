@@ -365,6 +365,12 @@ Notes:
     - `src/pages/manufacturer/worksheet/custom_abutment/components/WorksheetCardGrid.tsx`
     - `src/pages/manufacturer/worksheet/custom_abutment/components/PreviewModal.tsx`
 
+- 의뢰자 유형 통합(2026-08): `User.role=requestor` + `requestorCapabilities.{clinic,lab}` 체크박스(OR).
+  - UI: 온보드 4/4·설정>사업자 `RequestorCapabilitiesPicker`
+  - 유료 게이트: `BusinessPaidAccessGate` (`businessVerified`)
+  - 헬퍼: `src/shared/business/requestorCapabilities.ts`, `useRequestorBusinessAccess.ts`
+  - 기공의뢰서: clinic=발신, lab=수신 (`RequestorPracticePage` 탭). 레거시 `practice` role은 마이그레이션 전까지 호환.
+
 - practice 전송 상태 표준(치과/의뢰자 공통): `발송완료 | 취소 | 수신완료 | 다운로드완료`
   - 치과 전송 내역(`GET /api/practice/transfers/my`)은 동일 치과 businessAnchor 구성원 전송을 공유한다.
   - practice 페이지 상태 정규화 기준: `src/pages/practice/PracticeFileTransferPage.tsx`의 `toStatusLabel`

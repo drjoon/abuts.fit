@@ -23,6 +23,9 @@ import {
 import { findBusinessByAnchors } from "./business.find.util.js";
 import { updateMyBusiness } from "./business.update.controller.js";
 import { resolveRequestorPricingBaseDate } from "../requests/utils.js";
+import {
+  resolveRequestorCapabilities,
+} from "../../utils/requestorCapabilities.js";
 export { updateMyBusiness };
 
 export async function checkBusinessNumberDuplicate(req, res) {
@@ -274,6 +277,14 @@ export async function getMyBusiness(req, res) {
     });
 
     if (!anchor) {
+      const freshCapsUser = await User.findById(req.user._id)
+        .select({ requestorCapabilities: 1, role: 1 })
+        .lean();
+      const requestorCapabilities = resolveRequestorCapabilities({
+        userCaps: freshCapsUser?.requestorCapabilities,
+        userRole: freshCapsUser?.role || req.user.role,
+        businessVerified: false,
+      });
       return res.json({
         success: true,
         data: {
@@ -284,6 +295,7 @@ export async function getMyBusiness(req, res) {
           metadata: {},
           payoutAccount: {},
           pricingBaseDate: null,
+          requestorCapabilities,
         },
       });
     }
@@ -332,6 +344,11 @@ export async function getMyBusiness(req, res) {
           metadata: {},
           payoutAccount: {},
           pricingBaseDate: null,
+          requestorCapabilities: resolveRequestorCapabilities({
+            userCaps: req.user?.requestorCapabilities,
+            userRole: req.user?.role,
+            businessVerified: false,
+          }),
         },
       });
     }
@@ -373,6 +390,16 @@ export async function getMyBusiness(req, res) {
       requestorOrgId: anchor._id,
     });
 
+    const capsUser = await User.findById(req.user._id)
+      .select({ requestorCapabilities: 1, role: 1 })
+      .lean();
+    const requestorCapabilities = resolveRequestorCapabilities({
+      anchorCaps: anchor.requestorCapabilities,
+      userCaps: capsUser?.requestorCapabilities,
+      userRole: capsUser?.role || req.user.role,
+      businessVerified,
+    });
+
     const responseData = {
       success: true,
       data: {
@@ -386,6 +413,7 @@ export async function getMyBusiness(req, res) {
         payoutAccount: anchor?.payoutAccount || {},
         shippingPolicy: anchor?.shippingPolicy || null,
         pricingBaseDate: pricingBaseDate || null,
+        requestorCapabilities,
         requestSettings: {
           anodizingEnabled:
             typeof anchor?.requestSettings?.anodizingEnabled === "boolean"

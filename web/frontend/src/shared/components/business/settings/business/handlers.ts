@@ -31,6 +31,10 @@ interface HandleSaveParams {
     s3Key?: string;
     originalName?: string;
   };
+  requestorCapabilities?: {
+    clinic?: boolean;
+    lab?: boolean;
+  };
   mockHeaders?: Record<string, string>;
   toast: (options: any) => void;
   silent?: boolean;
@@ -69,6 +73,7 @@ export const handleSave = async (
     membership,
     businessType,
     businessLicense,
+    requestorCapabilities,
     mockHeaders,
     toast,
     silent,
@@ -247,6 +252,9 @@ export const handleSave = async (
               originalName: String(businessLicense?.originalName || "").trim(),
             },
           }
+        : {}),
+      ...(requestorCapabilities
+        ? { requestorCapabilities }
         : {}),
     };
 

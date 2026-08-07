@@ -1,0 +1,105 @@
+// related files:
+// - web/frontend/src/shared/business/requestorCapabilities.ts
+// - web/frontend/src/shared/components/business/settings/business/businessMeCache.ts
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useAuthStore } from "@/store/useAuthStore";
+import { resolveBusinessType } from "@/shared/utils/resolveBusinessType";
+import {
+  loadBusinessMeCached,
+  invalidateBusinessMeCache,
+} from "@/shared/components/business/settings/business/businessMeCache";
+import {
+  canReceivePracticeTransfer,
+  canSendPracticeTransfer,
+  canUseFreeServices,
+  canUsePaidServices,
+  hasAnyRequestorCapability,
+  normalizeRequestorCapabilities,
+  requiresBusinessLicense,
+  resolveRequestorCapabilities,
+  type RequestorCapabilities,
+} from "@/shared/business/requestorCapabilities";
+
+export const useRequestorBusinessAccess = () => {
+  const { token, user } = useAuthStore();
+  const [loading, setLoading] = useState(true);
+  const [businessVerified, setBusinessVerified] = useState(false);
+  const [capabilities, setCapabilities] = useState<RequestorCapabilities>({
+    clinic: false,
+    lab: false,
+  });
+  const [membership, setMembership] = useState<string>("none");
+
+  const businessType = useMemo(
+    () => resolveBusinessType(user?.role, "requestor"),
+    [user?.role],
+  );
+
+  const refresh = useCallback(async () => {
+    if (!token || user?.role !== "requestor") {
+      setLoading(false);
+      setBusinessVerified(Boolean(user?.businessVerified));
+      setCapabilities(
+        resolveRequestorCapabilities({
+          userRole: user?.role,
+          businessVerified: Boolean(user?.businessVerified),
+        }),
+      );
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const data = await loadBusinessMeCached({
+        token,
+        businessType: businessType || "requestor",
+        force: true,
+      });
+      const verified = Boolean(data?.businessVerified);
+      setBusinessVerified(verified);
+      setMembership(String(data?.membership || "none"));
+      setCapabilities(
+        resolveRequestorCapabilities({
+          anchorCaps: data?.requestorCapabilities,
+          userRole: user?.role,
+          businessVerified: verified,
+        }),
+      );
+    } catch {
+      setBusinessVerified(false);
+      setCapabilities(
+        resolveRequestorCapabilities({
+          userRole: user?.role,
+          businessVerified: false,
+        }),
+      );
+    } finally {
+      setLoading(false);
+    }
+  }, [businessType, token, user?.businessVerified, user?.role]);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  const caps = normalizeRequestorCapabilities(capabilities);
+
+  return {
+    loading,
+    refresh,
+    invalidate: () =>
+      invalidateBusinessMeCache({
+        token: token || undefined,
+        businessType: businessType || "requestor",
+      }),
+    membership,
+    businessVerified,
+    capabilities: caps,
+    hasCapability: hasAnyRequestorCapability(caps),
+    requiresLicense: requiresBusinessLicense(caps),
+    canUsePaid: canUsePaidServices(businessVerified),
+    canUseFree: canUseFreeServices(caps),
+    canSendTransfer: canSendPracticeTransfer(caps) || user?.role === "practice",
+    canReceiveTransfer: canReceivePracticeTransfer(caps),
+  };
+};

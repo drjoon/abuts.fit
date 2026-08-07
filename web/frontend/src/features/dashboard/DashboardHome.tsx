@@ -5,6 +5,7 @@ import { SalesmanDashboardPage } from "@/pages/salesman/SalesmanDashboardPage";
 import { DevopsDashboardPage } from "@/pages/devops/DevopsDashboardPage";
 import { PracticeFileTransferPage } from "@/pages/practice/PracticeFileTransferPage";
 import { Navigate } from "react-router-dom";
+import { BusinessPaidAccessGate } from "@/shared/business/BusinessPaidAccessGate";
 
 // related files:
 // - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
@@ -20,7 +21,11 @@ export const DashboardHome = () => {
   }
 
   if (user.role === "requestor") {
-    return <RequestorDashboardPage />;
+    return (
+      <BusinessPaidAccessGate>
+        <RequestorDashboardPage />
+      </BusinessPaidAccessGate>
+    );
   }
 
   if (user.role === "manufacturer") {

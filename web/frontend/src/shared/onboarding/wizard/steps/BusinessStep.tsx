@@ -71,6 +71,7 @@ export const BusinessStep = ({
         businessTypeOverride={resolvedBusinessType}
         selectedRole={role}
         registerValidationState={registerValidationState}
+        registerGoNextAction={registerGoNextAction}
         isOnboarding={true}
       />
     </div>

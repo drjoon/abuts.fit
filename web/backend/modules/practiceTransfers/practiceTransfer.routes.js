@@ -6,6 +6,10 @@
 import express from "express";
 import { authenticate, authorize } from "../../middlewares/auth.middleware.js";
 import {
+  authorizePracticeTransferReceive,
+  authorizePracticeTransferSend,
+} from "../../middlewares/practiceTransferAuth.middleware.js";
+import {
   cancelPracticeTransfersBatch,
   clearMyPracticeTransferDraft,
   createPracticeTransfer,
@@ -28,23 +32,16 @@ import {
 
 const router = express.Router();
 
-// related files:
-// - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
-// - web/backend/models/practiceTransfer.model.js
-// practice(치과) 전송 전용 라우트 (Request 컬렉션과 분리)
-router.post(
-  "/",
-  authenticate,
-  authorize(["practice", "admin"], { subRoles: ["owner", "staff"] }),
-  createPracticeTransfer,
-);
+const sendAuth = authorizePracticeTransferSend({
+  subRoles: ["owner", "staff"],
+});
+const receiveAuth = authorizePracticeTransferReceive();
 
-router.get(
-  "/my",
-  authenticate,
-  authorize(["practice", "admin"], { subRoles: ["owner", "staff"] }),
-  getMyPracticeTransfers,
-);
+// practice 전송 전용 라우트 (Request 컬렉션과 분리)
+// 발신: legacy practice 또는 requestor+clinic
+router.post("/", authenticate, sendAuth, createPracticeTransfer);
+
+router.get("/my", authenticate, sendAuth, getMyPracticeTransfers);
 
 router.get(
   "/settings",
@@ -60,87 +57,57 @@ router.post(
   upsertPracticeTransferSettings,
 );
 
-router.get(
-  "/draft",
-  authenticate,
-  authorize(["practice", "admin"], { subRoles: ["owner", "staff"] }),
-  getMyPracticeTransferDraft,
-);
+router.get("/draft", authenticate, sendAuth, getMyPracticeTransferDraft);
 
-router.get(
-  "/drafts",
-  authenticate,
-  authorize(["practice", "admin"], { subRoles: ["owner", "staff"] }),
-  listPracticeTransferDrafts,
-);
+router.get("/drafts", authenticate, sendAuth, listPracticeTransferDrafts);
 
-router.post(
-  "/draft",
-  authenticate,
-  authorize(["practice", "admin"], { subRoles: ["owner", "staff"] }),
-  upsertPracticeTransferDraft,
-);
+router.post("/draft", authenticate, sendAuth, upsertPracticeTransferDraft);
 
-router.delete(
-  "/draft",
-  authenticate,
-  authorize(["practice", "admin"], { subRoles: ["owner", "staff"] }),
-  clearMyPracticeTransferDraft,
-);
+router.delete("/draft", authenticate, sendAuth, clearMyPracticeTransferDraft);
 
 router.post(
   "/draft/restore",
   authenticate,
-  authorize(["practice", "admin"], { subRoles: ["owner", "staff"] }),
+  sendAuth,
   restorePracticeTransferDraft,
 );
 
-router.post(
-  "/trash/empty",
-  authenticate,
-  authorize(["practice", "admin"], { subRoles: ["owner", "staff"] }),
-  emptyPracticeTransferTrash,
-);
+router.post("/trash/empty", authenticate, sendAuth, emptyPracticeTransferTrash);
 
-router.get(
-  "/received",
-  authenticate,
-  authorize(["requestor", "admin"]),
-  getReceivedPracticeTransfers,
-);
+router.get("/received", authenticate, receiveAuth, getReceivedPracticeTransfers);
 
 router.get(
   "/received-unread-count",
   authenticate,
-  authorize(["requestor", "admin"]),
+  receiveAuth,
   getReceivedPracticeTransferUnreadCount,
 );
 
 router.post(
   "/:transferId/mark-read",
   authenticate,
-  authorize(["requestor", "admin"]),
+  receiveAuth,
   markReceivedPracticeTransferRead,
 );
 
 router.post(
   "/:transferId/mark-downloaded",
   authenticate,
-  authorize(["requestor", "admin"]),
+  receiveAuth,
   markReceivedPracticeTransferDownloaded,
 );
 
 router.post(
   "/cancel-batch",
   authenticate,
-  authorize(["practice", "admin"], { subRoles: ["owner", "staff"] }),
+  sendAuth,
   cancelPracticeTransfersBatch,
 );
 
 router.post(
   "/restore-batch",
   authenticate,
-  authorize(["practice", "admin"], { subRoles: ["owner", "staff"] }),
+  sendAuth,
   restorePracticeTransfersBatch,
 );
 

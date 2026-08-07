@@ -31,6 +31,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { BusinessPaidAccessGate } from "@/shared/business/BusinessPaidAccessGate";
 
 import type { CaseInfos } from "./hooks/newRequestTypes";
 
@@ -50,7 +51,13 @@ import type { CaseInfos } from "./hooks/newRequestTypes";
  * - 파일별 메타데이터는 Draft.files에서 관리
  * - 환자명/치아번호 옵션은 caseInfos에서 파생
  */
-export const NewRequestPage = () => {
+export const NewRequestPage = () => (
+  <BusinessPaidAccessGate>
+    <NewRequestPageContent />
+  </BusinessPaidAccessGate>
+);
+
+const NewRequestPageContent = () => {
   const { id: existingRequestId } = useParams<{ id?: string }>();
   const navigate = useNavigate();
 
