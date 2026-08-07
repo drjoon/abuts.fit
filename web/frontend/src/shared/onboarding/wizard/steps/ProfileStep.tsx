@@ -232,7 +232,7 @@ export const ProfileStep = ({
         </p>
       </div>
 
-      <div className="grid grid-cols-4 gap-3 justify-items-center">
+      <div className="grid grid-cols-4 gap-4 justify-items-center px-2">
         {carouselAvatars.map((url) => (
           <button
             key={url}

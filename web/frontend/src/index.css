@@ -172,7 +172,7 @@ All colors MUST be HSL.
   }
 
   .app-surface--panel {
-    @apply rounded-2xl p-3;
+    @apply rounded-2xl px-5 py-3;
   }
 
   .app-surface--item {

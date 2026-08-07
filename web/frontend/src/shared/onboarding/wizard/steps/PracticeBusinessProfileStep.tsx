@@ -334,13 +334,13 @@ export const PracticeBusinessProfileStep = ({
   }
 
   return (
-    <div className="space-y-5">
-      <p className="text-sm text-slate-500">
+    <div className="space-y-6">
+      <p className="text-sm leading-relaxed text-slate-500">
         기공의뢰서 이용을 위해 주소·전화번호·담당자명 등 기본 정보를 입력해주세요.
       </p>
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-        <div className="space-y-2">
+      <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
+        <div className="space-y-2.5">
           <Label htmlFor="practice-clinic-name">
             치과명 <span className="text-destructive">*</span>
             {errors.clinicName ? (
@@ -358,7 +358,7 @@ export const PracticeBusinessProfileStep = ({
           />
         </div>
 
-        <div className="space-y-2">
+        <div className="space-y-2.5">
           <Label htmlFor="practice-director-name">
             대표원장님 성함 <span className="text-destructive">*</span>
             {errors.directorName ? (
@@ -376,7 +376,7 @@ export const PracticeBusinessProfileStep = ({
           />
         </div>
 
-        <div className="space-y-2">
+        <div className="space-y-2.5">
           <Label htmlFor="practice-clinic-phone">
             치과 전화번호 <span className="text-destructive">*</span>
             {errors.clinicPhone ? (
@@ -396,7 +396,7 @@ export const PracticeBusinessProfileStep = ({
           />
         </div>
 
-        <div className="space-y-2">
+        <div className="space-y-2.5">
           <Label htmlFor="practice-staff-name">
             담당직원명 <span className="text-destructive">*</span>
             {errors.staffName ? (
@@ -414,7 +414,7 @@ export const PracticeBusinessProfileStep = ({
           />
         </div>
 
-        <div className="space-y-2">
+        <div className="space-y-2.5">
           <Label htmlFor="practice-staff-phone">
             담당자 휴대폰 <span className="text-destructive">*</span>
             {errors.phone ? (

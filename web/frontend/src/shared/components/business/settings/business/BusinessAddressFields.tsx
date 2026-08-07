@@ -207,7 +207,7 @@ export const BusinessAddressFields = ({
   }, [addressPromptActive, onAddressSelected, onChangeAddress, onChangeZipCode]);
 
   return (
-    <div className={cn("space-y-2", className)}>
+    <div className={cn("space-y-3", className)}>
       <Label htmlFor="address">{addressLabel}</Label>
 
       {addressPromptActive && (
@@ -233,7 +233,7 @@ export const BusinessAddressFields = ({
       )}
 
       {rowLayout === "address-detail-zip" ? (
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-5">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-5">
           <Input
             id="address"
             ref={addressInputRef}
@@ -280,7 +280,7 @@ export const BusinessAddressFields = ({
         </div>
       ) : (
         <>
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
             <Input
               id="address"
               ref={addressInputRef}

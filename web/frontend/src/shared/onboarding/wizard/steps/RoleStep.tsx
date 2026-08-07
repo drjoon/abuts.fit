@@ -41,14 +41,14 @@ export const RoleStep = ({
 
   return (
     <div className="space-y-4" onKeyDown={handleKeyDown}>
-      <p className="text-sm text-slate-500">
+      <p className="text-sm leading-relaxed text-slate-500">
         등록 방식을 고르면 필요한 단계만 보여드릴게요.
       </p>
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Button
           type="button"
           variant={selectedRole === "owner" ? "default" : "outline"}
-          className="h-24 flex-col items-start justify-center gap-1 whitespace-normal text-left"
+          className="h-24 flex-col items-start justify-center gap-1 whitespace-normal px-6 text-left"
           onClick={() => handleSelect("owner")}
         >
           <span className="text-base font-semibold leading-snug">
@@ -58,7 +58,7 @@ export const RoleStep = ({
         <Button
           type="button"
           variant={selectedRole === "member" ? "default" : "outline"}
-          className="h-24 flex-col items-start justify-center gap-1 whitespace-normal text-left"
+          className="h-24 flex-col items-start justify-center gap-1 whitespace-normal px-6 text-left"
           onClick={() => handleSelect("member")}
         >
           <span className="text-base font-semibold leading-snug">

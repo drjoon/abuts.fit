@@ -462,8 +462,8 @@ export const PhoneStep = ({
       )}
 
       {completed && (
-        <div className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-600">
-          <Check className="h-4 w-4" /> 휴대전화 인증 완료
+        <div className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm text-emerald-600">
+          <Check className="h-4 w-4 shrink-0" /> 휴대전화 인증 완료
         </div>
       )}
     </form>

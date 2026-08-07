@@ -88,6 +88,7 @@ export const BusinessLicenseUpload = forwardRef<
               type="button"
               variant={licenseStatus === "missing" ? "default" : "outline"}
               size="sm"
+              className="px-5"
               disabled={
                 licenseStatus === "uploading" ||
                 licenseStatus === "processing" ||

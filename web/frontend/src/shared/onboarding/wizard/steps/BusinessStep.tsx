@@ -92,7 +92,7 @@ export const BusinessStep = ({
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       <BusinessTab
         userData={userData}
         businessTypeOverride={resolvedBusinessType}

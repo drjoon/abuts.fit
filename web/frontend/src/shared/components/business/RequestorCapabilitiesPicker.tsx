@@ -39,15 +39,15 @@ export const RequestorCapabilitiesPicker = ({
   };
 
   return (
-    <div className={cn("space-y-3", className)}>
+    <div className={cn("space-y-4", className)}>
       <div>
         <p className="text-sm font-medium text-slate-900">사업자 유형</p>
-        <p className="mt-1 text-xs text-slate-500">
+        <p className="mt-1.5 text-xs leading-relaxed text-slate-500">
           해당하는 항목을 모두 선택하세요. 기공의뢰서 수신 외 유료
           서비스는 사업자등록증 검증 후 이용할 수 있습니다.
         </p>
       </div>
-      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         {REQUESTOR_CAPABILITY_OPTIONS.map((opt) => {
           const checked = caps[opt.key];
           const id = `requestor-cap-${opt.key}`;
@@ -56,7 +56,7 @@ export const RequestorCapabilitiesPicker = ({
               key={opt.key}
               htmlFor={id}
               className={cn(
-                "flex h-full cursor-pointer items-start gap-3 rounded-lg border px-3 py-3 transition-colors",
+                "flex h-full cursor-pointer items-start gap-3 rounded-xl border px-5 py-3 transition-colors",
                 checked
                   ? "border-primary/40 bg-primary/5"
                   : "border-slate-200 bg-white hover:bg-slate-50",
@@ -70,14 +70,14 @@ export const RequestorCapabilitiesPicker = ({
                 onCheckedChange={(v) => toggle(opt.key, v === true)}
                 className="mt-0.5"
               />
-              <div className="min-w-0 flex-1">
+              <div className="min-w-0 flex-1 space-y-1.5">
                 <Label
                   htmlFor={id}
                   className="cursor-pointer text-sm font-medium text-slate-900"
                 >
                   {opt.label}
                 </Label>
-                <p className="mt-0.5 text-xs leading-relaxed text-slate-500">
+                <p className="text-xs leading-relaxed text-slate-500">
                   {opt.description}
                 </p>
               </div>

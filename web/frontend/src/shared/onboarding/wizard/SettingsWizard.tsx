@@ -463,7 +463,7 @@ export const SettingsWizard = ({
       case "phone":
         return "max-w-md";
       case "role":
-        return "max-w-md";
+        return "max-w-2xl";
       case "business":
         return "max-w-2xl";
       default:
@@ -489,12 +489,12 @@ export const SettingsWizard = ({
             cardMaxWidth,
           )}
         >
-          <CardHeader className="space-y-1 border-slate-100/80 pb-0">
-            <CardTitle className="text-3xl font-semibold text-slate-900">
+          <CardHeader className="space-y-1 border-slate-100/80 px-12 pt-6 pb-0">
+            <CardTitle className="text-3xl font-semibold leading-tight text-slate-900">
               {stepTitle}
             </CardTitle>
           </CardHeader>
-          <CardContent className="pt-6">
+          <CardContent className="px-12 pb-6 pt-6">
             {currentStep === "profile" && (
               <ProfileStep
                 defaultCompleted={stepCompleted.profile}
@@ -544,7 +544,7 @@ export const SettingsWizard = ({
                     disabled={
                       nextLoading || stepBusy || validationState.validating
                     }
-                    className="w-20 h-11"
+                    className="h-11 w-20"
                   >
                     이전
                   </Button>
@@ -566,7 +566,7 @@ export const SettingsWizard = ({
                         (currentStep === "role" && !selectedRole) ||
                         (currentStep === "business" && !canProceedBusinessStep)
                       }
-                      className="w-20 h-11"
+                      className="h-11 w-20"
                     >
                       {nextLoading ? "저장 중..." : "다음"}
                     </Button>
