@@ -3,6 +3,7 @@
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 import type { MachineForm } from "@/pages/manufacturer/equipment/cnc/types";
+import { BodyPortal } from "@/shared/ui/BodyPortal";
 
 interface CncMachineManagerModalProps {
   open: boolean;
@@ -28,8 +29,9 @@ export const CncMachineManagerModal = ({
   if (!open) return null;
 
   return (
+    <BodyPortal>
     <div
-      className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4 backdrop-blur-sm"
+      className="fixed inset-0 bg-black/40 flex items-center justify-center z-[100] p-4 backdrop-blur-sm"
       onClick={onRequestClose}
     >
       <div
@@ -98,5 +100,6 @@ export const CncMachineManagerModal = ({
         </div>
       </div>
     </div>
+    </BodyPortal>
   );
 };

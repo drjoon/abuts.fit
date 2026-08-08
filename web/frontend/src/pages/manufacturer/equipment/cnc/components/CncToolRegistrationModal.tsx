@@ -144,7 +144,7 @@ export const CncToolRegistrationModal = ({
   };
 
   return (
-    <div className="space-y-4 text-sm text-gray-700">
+    <div className="space-y-4 text-sm text-slate-700">
       {/* 탭 헤더 */}
       <div className="flex gap-1 border-b border-slate-200">
         {[
@@ -156,10 +156,10 @@ export const CncToolRegistrationModal = ({
             key={t.key}
             type="button"
             onClick={() => setTab(t.key as Tab)}
-            className={`px-3 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
+            className={`-mb-px px-3 py-2 text-sm font-medium transition-colors ${
               tab === t.key
-                ? "border-blue-600 text-blue-700"
-                : "border-transparent text-slate-500 hover:text-slate-700"
+                ? "border-b-2 border-slate-900 text-slate-900"
+                : "border-b-2 border-transparent text-slate-500 hover:text-slate-700"
             }`}
           >
             {t.label}
@@ -248,42 +248,43 @@ const DirectRegistrationTab = ({
   onCancel: () => void;
 }) => (
   <>
-    <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-xs text-blue-800">
-      슬롯 번호와 공구 이름만 입력하면 됩니다. 사용량/시간은 자동으로 누적되어
-      충분한 데이터가 모이면 교체 시기를 알려드립니다.
-    </div>
+    <p className="text-xs leading-relaxed text-slate-500">
+      슬롯 번호와 공구 이름만 입력하면 됩니다. 사용량은 자동 누적되며, 데이터가
+      쌓이면 교체 시기를 알려드립니다.
+    </p>
     <div className="grid grid-cols-2 gap-3">
-      <div className="space-y-1">
-        <div className="text-xs font-semibold text-slate-500">
+      <div className="space-y-1.5">
+        <label className="text-xs font-semibold text-slate-500">
           슬롯 번호 <span className="text-red-500">*</span>
-        </div>
+        </label>
         <input
           type="number"
           min={1}
           value={toolNum}
           onChange={(e) => onChangeToolNum(e.target.value)}
-          className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:ring-blue-500"
-          placeholder="1"
+          className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-300"
+          placeholder="예: 17"
         />
       </div>
-      <div className="space-y-1">
-        <div className="text-xs font-semibold text-slate-500">
-          공구 이름 (선택)
-        </div>
+      <div className="space-y-1.5">
+        <label className="text-xs font-semibold text-slate-500">
+          공구 이름
+          <span className="ml-1 font-normal text-slate-400">(선택)</span>
+        </label>
         <input
           type="text"
           value={toolName}
           onChange={(e) => onChangeToolName(e.target.value)}
-          className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:ring-blue-500"
-          placeholder="예: 드릴 1.2mm"
+          className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-300"
+          placeholder="예: 1.2 BM"
         />
       </div>
     </div>
-    <div className="flex justify-end gap-2 pt-2">
+    <div className="flex justify-end gap-2 pt-1">
       <button
         type="button"
         onClick={onCancel}
-        className="rounded-lg bg-slate-200 px-4 py-2 text-sm font-medium text-slate-800 hover:bg-slate-300"
+        className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
       >
         취소
       </button>
@@ -291,9 +292,9 @@ const DirectRegistrationTab = ({
         type="button"
         disabled={submitting}
         onClick={onSubmit}
-        className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60"
+        className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-60"
       >
-        공구 등록
+        {submitting ? "등록 중…" : "공구 등록"}
       </button>
     </div>
   </>
@@ -326,23 +327,23 @@ const ApplyTab = ({
   onCancel: () => void;
 }) => (
   <>
-    <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-xs text-blue-800">
-      저장된 템플릿을 선택해 한 장비 또는 여러 장비에 한 번에 적용합니다. 기존
-      슬롯의 사용 통계와 교체 이력은 유지됩니다 (Merge 적용).
-    </div>
+    <p className="text-xs leading-relaxed text-slate-500">
+      저장된 템플릿을 한 대 또는 여러 장비에 적용합니다. 기존 슬롯의 사용 통계와
+      교체 이력은 유지됩니다.
+    </p>
 
     {templates.length === 0 ? (
-      <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-center text-xs text-slate-500">
-        저장된 템플릿이 없습니다. "템플릿 관리" 탭에서 먼저 생성하세요.
+      <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-8 text-center text-xs text-slate-500">
+        저장된 템플릿이 없습니다. 템플릿 관리에서 먼저 만들어 주세요.
       </div>
     ) : (
       <>
-        <div className="space-y-1">
-          <div className="text-xs font-semibold text-slate-500">템플릿</div>
+        <div className="space-y-1.5">
+          <label className="text-xs font-semibold text-slate-500">템플릿</label>
           <select
             value={selectedTemplateId}
             onChange={(e) => onSelectTemplate(e.target.value)}
-            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:ring-blue-500"
+            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:border-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-300"
           >
             <option value="">선택하세요</option>
             {templates.map((t) => (
@@ -354,15 +355,15 @@ const ApplyTab = ({
         </div>
 
         {selectedTemplate ? (
-          <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
-            <div className="mb-1 text-[11px] font-semibold text-slate-500">
+          <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5">
+            <div className="mb-1.5 text-[11px] font-semibold text-slate-500">
               포함 슬롯
             </div>
             <div className="flex flex-wrap gap-1.5">
               {selectedTemplate.slots.map((s) => (
                 <span
                   key={s.toolNum}
-                  className="rounded-md bg-slate-100 px-2 py-0.5 text-[11px] text-slate-700"
+                  className="rounded-md bg-white px-2 py-0.5 text-[11px] text-slate-700 ring-1 ring-slate-200"
                 >
                   #{s.toolNum}
                   {s.toolName ? ` ${s.toolName}` : ""}
@@ -372,13 +373,13 @@ const ApplyTab = ({
           </div>
         ) : null}
 
-        <div className="space-y-1">
+        <div className="space-y-1.5">
           <div className="text-xs font-semibold text-slate-500">
-            적용 대상 장비 (다중 선택 가능)
+            적용 대상 장비
           </div>
-          <div className="grid grid-cols-3 gap-2 max-h-44 overflow-y-auto rounded-lg border border-slate-200 bg-white p-2">
+          <div className="grid max-h-44 grid-cols-2 gap-2 overflow-y-auto rounded-xl border border-slate-200 bg-white p-2 sm:grid-cols-3">
             {machines.length === 0 ? (
-              <div className="col-span-3 text-center text-xs text-slate-400">
+              <div className="col-span-full py-4 text-center text-xs text-slate-400">
                 장비 없음
               </div>
             ) : (
@@ -387,15 +388,15 @@ const ApplyTab = ({
                 return (
                   <label
                     key={m.machineId}
-                    className={`flex items-center gap-2 rounded-md px-2 py-1.5 text-xs cursor-pointer border ${
+                    className={`flex cursor-pointer items-center gap-2 rounded-lg border px-2 py-1.5 text-xs ${
                       checked
-                        ? "border-blue-300 bg-blue-50 text-blue-800"
+                        ? "border-slate-900 bg-slate-900 text-white"
                         : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
                     }`}
                   >
                     <input
                       type="checkbox"
-                      className="h-3.5 w-3.5"
+                      className="sr-only"
                       checked={checked}
                       onChange={() => onToggleMachine(m.machineId)}
                     />
@@ -408,18 +409,18 @@ const ApplyTab = ({
         </div>
 
         {applyResult ? (
-          <div className="rounded-md bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
+          <div className="rounded-lg bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
             {applyResult}
           </div>
         ) : null}
       </>
     )}
 
-    <div className="flex justify-end gap-2 pt-2">
+    <div className="flex justify-end gap-2 pt-1">
       <button
         type="button"
         onClick={onCancel}
-        className="rounded-lg bg-slate-200 px-4 py-2 text-sm font-medium text-slate-800 hover:bg-slate-300"
+        className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
       >
         닫기
       </button>
@@ -427,9 +428,9 @@ const ApplyTab = ({
         type="button"
         onClick={onApply}
         disabled={applying || !selectedTemplateId}
-        className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60"
+        className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-60"
       >
-        {applying ? "적용 중..." : "선택 장비에 적용"}
+        {applying ? "적용 중…" : "적용"}
       </button>
     </div>
   </>
@@ -539,7 +540,7 @@ const ManageTab = ({
           <button
             type="button"
             onClick={startCreate}
-            className="rounded-md border border-blue-200 bg-blue-50 px-2 py-1 text-[11px] font-semibold text-blue-700 hover:bg-blue-100"
+            className="rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-50"
           >
             + 새 템플릿
           </button>
@@ -549,19 +550,29 @@ const ManageTab = ({
             저장된 템플릿이 없습니다.
           </div>
         ) : (
-          <div className="space-y-1 max-h-32 overflow-y-auto">
+          <div className="max-h-32 space-y-1 overflow-y-auto">
             {templates.map((t) => (
               <div
                 key={t._id}
-                className={`flex items-center justify-between rounded-md px-2 py-1.5 text-xs border ${
+                className={`flex items-center justify-between rounded-md border px-2 py-1.5 text-xs ${
                   editingId === t._id
-                    ? "border-blue-300 bg-blue-50"
+                    ? "border-slate-900 bg-slate-900 text-white"
                     : "border-slate-200 bg-white"
                 }`}
               >
                 <div>
-                  <span className="font-semibold text-slate-800">{t.name}</span>
-                  <span className="ml-2 text-slate-500">
+                  <span
+                    className={`font-semibold ${
+                      editingId === t._id ? "text-white" : "text-slate-800"
+                    }`}
+                  >
+                    {t.name}
+                  </span>
+                  <span
+                    className={`ml-2 ${
+                      editingId === t._id ? "text-slate-300" : "text-slate-500"
+                    }`}
+                  >
                     {t.slots.length}슬롯
                   </span>
                 </div>
@@ -569,7 +580,11 @@ const ManageTab = ({
                   <button
                     type="button"
                     onClick={() => startEdit(t)}
-                    className="rounded px-2 py-0.5 text-[11px] text-slate-700 hover:bg-slate-100"
+                    className={`rounded px-2 py-0.5 text-[11px] ${
+                      editingId === t._id
+                        ? "text-white hover:bg-white/10"
+                        : "text-slate-700 hover:bg-slate-100"
+                    }`}
                   >
                     편집
                   </button>
@@ -581,7 +596,11 @@ const ManageTab = ({
                         if (editingId === t._id) reset();
                       }
                     }}
-                    className="rounded px-2 py-0.5 text-[11px] text-red-600 hover:bg-red-50"
+                    className={`rounded px-2 py-0.5 text-[11px] ${
+                      editingId === t._id
+                        ? "text-red-300 hover:bg-white/10"
+                        : "text-red-600 hover:bg-red-50"
+                    }`}
                   >
                     삭제
                   </button>
@@ -673,7 +692,7 @@ const ManageTab = ({
             <button
               type="button"
               onClick={reset}
-              className="rounded-md bg-slate-200 px-3 py-1.5 text-xs font-medium text-slate-800 hover:bg-slate-300"
+              className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
             >
               취소
             </button>
@@ -681,7 +700,7 @@ const ManageTab = ({
               type="button"
               onClick={save}
               disabled={!name.trim()}
-              className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-60"
+              className="rounded-md bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-800 disabled:opacity-60"
             >
               저장
             </button>

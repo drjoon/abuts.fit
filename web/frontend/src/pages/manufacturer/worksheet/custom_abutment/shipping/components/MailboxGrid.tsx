@@ -29,6 +29,7 @@ import { MailboxStickyHeader } from "./MailboxStickyHeader";
 import { useMailboxPrintSettings } from "./useMailboxPrintSettings";
 import { ToastAction } from "@/components/ui/toast";
 import { type MailboxShippingDayInfo } from "./shippingDay.helpers";
+import { BodyPortal } from "@/shared/ui/BodyPortal";
 
 const MAILBOX_SHELF_NAMES = ["A", "B", "C", "D", "E", "F", "G", "H", "I"];
 
@@ -1784,7 +1785,8 @@ export const MailboxGrid = ({
     <div className="w-full flex flex-col h-full relative">
       {/* 운송장 출력 우편함 선택 다이얼로그 */}
       {reprintDialogOpen && (
-        <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 pt-16">
+        <BodyPortal>
+        <div className="fixed inset-0 z-[100] flex items-start justify-center bg-black/50 pt-16">
           <div className="bg-white rounded-2xl shadow-2xl w-[560px] max-h-[75vh] flex flex-col overflow-hidden">
             {/* 헤더 */}
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
@@ -2024,10 +2026,12 @@ export const MailboxGrid = ({
             </div>
           </div>
         </div>
+        </BodyPortal>
       )}
 
       {manualPickupDialogOpen && (
-        <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 pt-12 sm:pt-16">
+        <BodyPortal>
+        <div className="fixed inset-0 z-[100] flex items-start justify-center bg-black/50 pt-12 sm:pt-16">
           <div className="bg-white rounded-2xl shadow-2xl w-[640px] max-w-[94vw] max-h-[calc(100vh-4rem)] overflow-hidden flex flex-col">
             <div className="flex items-start justify-between gap-4 px-5 sm:px-6 py-4 border-b border-slate-100 shrink-0">
               <div className="min-w-0">
@@ -2367,6 +2371,7 @@ export const MailboxGrid = ({
             </div>
           </div>
         </div>
+        </BodyPortal>
       )}
 
       <MailboxStickyHeader>

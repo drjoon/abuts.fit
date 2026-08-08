@@ -6,6 +6,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { Machine } from "@/pages/manufacturer/equipment/cnc/types";
 import { useToast } from "@/shared/hooks/use-toast";
+import { BodyPortal } from "@/shared/ui/BodyPortal";
 import { useManUpload } from "../hooks/useManUpload";
 
 type CncReservationMode = "immediate" | "reserved";
@@ -140,8 +141,9 @@ export const CncReservationModal = ({
   if (!open) return null;
 
   return (
+    <BodyPortal>
     <div
-      className="fixed inset-0 bg-black/40 flex items-start justify-center z-50 p-4 pt-16 backdrop-blur-sm"
+      className="fixed inset-0 bg-black/40 flex items-start justify-center z-[100] p-4 pt-16 backdrop-blur-sm"
       onClick={handleRequestCloseSafe}
     >
       <div
@@ -259,5 +261,6 @@ export const CncReservationModal = ({
         </div>
       </div>
     </div>
+    </BodyPortal>
   );
 };

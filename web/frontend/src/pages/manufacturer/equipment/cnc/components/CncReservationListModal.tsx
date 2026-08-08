@@ -8,6 +8,7 @@ import { X } from "lucide-react";
 import type { Machine } from "@/pages/manufacturer/equipment/cnc/types";
 import type { CncJobItem } from "@/pages/manufacturer/equipment/cnc/components/CncReservationModal";
 import { CncFileCard } from "@/pages/manufacturer/equipment/cnc/components/CncFileCard";
+import { BodyPortal } from "@/shared/ui/BodyPortal";
 
 interface CncReservationListModalProps {
   open: boolean;
@@ -35,8 +36,9 @@ export const CncReservationListModal: React.FC<
   if (!open) return null;
 
   return (
+    <BodyPortal>
     <div
-      className="fixed inset-0 bg-black/40 flex items-start justify-center z-50 p-4 pt-16 backdrop-blur-sm"
+      className="fixed inset-0 bg-black/40 flex items-start justify-center z-[100] p-4 pt-16 backdrop-blur-sm"
       onClick={onClose}
     >
       <div
@@ -157,5 +159,6 @@ export const CncReservationListModal: React.FC<
         </div>
       </div>
     </div>
+    </BodyPortal>
   );
 };

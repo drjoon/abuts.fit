@@ -15,7 +15,7 @@
  *  5. 슬롯별 health level 산출 (useCount / configCount 기반 + replacementStatus)
  *  6. 가공 통계(machiningStats) 표시 헬퍼
  */
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 
 // 공구 타입 레이블 맵
 export const TOOL_TYPE_LABELS: Record<string, string> = {
@@ -85,12 +85,18 @@ export const useCncToolSlots = ({
   );
   const [loading, setLoading] = useState(false);
 
+  // 모달 body에 JSX를 state로 넣으면 콜백이 오래된 workUid를 붙잡을 수 있다.
+  // 등록/교체 시에는 항상 최신 장비를 쓰도록 ref로 읽는다.
+  const workUidRef = useRef(workUid);
+  workUidRef.current = workUid;
+
   /** 슬롯 + 통계 데이터를 백엔드에서 불러온다 */
   const loadToolSlots = useCallback(async () => {
-    if (!workUid) return;
+    const uid = workUidRef.current;
+    if (!uid) return;
     setLoading(true);
     try {
-      const res = await callRaw(workUid, "GetToolSlots");
+      const res = await callRaw(uid, "GetToolSlots");
       const slots: ToolSlot[] = Array.isArray(res?.data?.toolSlots)
         ? res.data.toolSlots
         : [];
@@ -106,7 +112,7 @@ export const useCncToolSlots = ({
     } finally {
       setLoading(false);
     }
-  }, [workUid, callRaw, setError]);
+  }, [callRaw, setError]);
 
   /**
    * BeginToolRemoval — 공구 해제 요청.
@@ -116,11 +122,15 @@ export const useCncToolSlots = ({
    */
   const beginToolRemoval = useCallback(
     async (toolNum: number) => {
-      if (!workUid) return false;
+      const uid = workUidRef.current;
+      if (!uid) {
+        setError("장비가 선택되지 않았습니다.");
+        return false;
+      }
       const ok = await ensureCncWriteAllowed();
       if (!ok) return false;
       try {
-        const res = await callRaw(workUid, "BeginToolRemoval", { toolNum });
+        const res = await callRaw(uid, "BeginToolRemoval", { toolNum });
         const nextSlots: ToolSlot[] = Array.isArray(res?.data?.toolSlots)
           ? res.data.toolSlots
           : [];
@@ -132,7 +142,7 @@ export const useCncToolSlots = ({
         return false;
       }
     },
-    [workUid, callRaw, ensureCncWriteAllowed, setError],
+    [callRaw, ensureCncWriteAllowed, setError],
   );
 
   /**
@@ -157,11 +167,15 @@ export const useCncToolSlots = ({
       toolType?: string;
       toolNote?: string;
     }) => {
-      if (!workUid) return null;
+      const uid = workUidRef.current;
+      if (!uid) {
+        setError("장비가 선택되지 않았습니다.");
+        return null;
+      }
       const ok = await ensureCncWriteAllowed();
       if (!ok) return null;
       try {
-        const res = await callRaw(workUid, "CompleteToolReplacement", payload);
+        const res = await callRaw(uid, "CompleteToolReplacement", payload);
         const nextSlots: ToolSlot[] = Array.isArray(res?.data?.toolSlots)
           ? res.data.toolSlots
           : [];
@@ -178,7 +192,7 @@ export const useCncToolSlots = ({
         return null;
       }
     },
-    [workUid, callRaw, ensureCncWriteAllowed, setError],
+    [callRaw, ensureCncWriteAllowed, setError],
   );
 
   /**
@@ -195,7 +209,11 @@ export const useCncToolSlots = ({
    */
   const addToolSlot = useCallback(
     async (payload: { toolNum: number; toolName?: string }) => {
-      if (!workUid) return false;
+      const uid = workUidRef.current;
+      if (!uid) {
+        setError("장비가 선택되지 않았습니다. 공구 상태를 다시 열어주세요.");
+        return false;
+      }
       const ok = await ensureCncWriteAllowed();
       if (!ok) return false;
       try {
@@ -204,7 +222,7 @@ export const useCncToolSlots = ({
           throw new Error("toolNum은 1 이상의 정수여야 합니다.");
         }
         // 1) 공구 수명 행 시드 (mergeRowsByKey가 toolNum 기준 upsert)
-        await callRaw(workUid, "UpdateToolLife", [
+        await callRaw(uid, "UpdateToolLife", [
           {
             toolNum,
             useCount: 0,
@@ -214,7 +232,7 @@ export const useCncToolSlots = ({
           },
         ]);
         // 2) 슬롯 메타 등록 (toolName만)
-        await callRaw(workUid, "UpdateToolSlotMeta", {
+        await callRaw(uid, "UpdateToolSlotMeta", {
           toolNum,
           toolName: payload.toolName ?? "",
         });
@@ -226,7 +244,7 @@ export const useCncToolSlots = ({
         return false;
       }
     },
-    [workUid, callRaw, ensureCncWriteAllowed, setError, loadToolSlots],
+    [callRaw, ensureCncWriteAllowed, setError, loadToolSlots],
   );
 
   /**
@@ -239,11 +257,15 @@ export const useCncToolSlots = ({
       toolType?: string;
       toolNote?: string;
     }) => {
-      if (!workUid) return false;
+      const uid = workUidRef.current;
+      if (!uid) {
+        setError("장비가 선택되지 않았습니다.");
+        return false;
+      }
       const ok = await ensureCncWriteAllowed();
       if (!ok) return false;
       try {
-        const res = await callRaw(workUid, "UpdateToolSlotMeta", payload);
+        const res = await callRaw(uid, "UpdateToolSlotMeta", payload);
         const nextSlots: ToolSlot[] = Array.isArray(res?.data?.toolSlots)
           ? res.data.toolSlots
           : [];
@@ -254,7 +276,7 @@ export const useCncToolSlots = ({
         return false;
       }
     },
-    [workUid, callRaw, ensureCncWriteAllowed, setError],
+    [callRaw, ensureCncWriteAllowed, setError],
   );
 
   /** toolNum에 해당하는 슬롯 반환 (없으면 null) */

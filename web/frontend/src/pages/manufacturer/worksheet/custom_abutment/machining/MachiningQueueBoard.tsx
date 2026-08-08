@@ -17,6 +17,7 @@
 import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/shared/hooks/use-toast";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import { useSearchParams } from "react-router-dom";
 import { AlertTriangle, ArrowLeft, ArrowRight, ListOrdered, X, Zap } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -919,11 +920,17 @@ export const MachiningQueueBoard = ({
     });
   }, [panelError, toast]);
 
+  const openToolDetailWithSlotsRef = useRef(openToolDetailWithSlots);
+  openToolDetailWithSlotsRef.current = openToolDetailWithSlots;
+
   const openToolStatusForMachine = useCallback(
     async (machine: any) => {
       const uid = String(machine?.uid || "").trim();
       if (!uid) return;
-      setToolWorkUid(uid);
+      // 공구 등록 모달이 stale workUid("")를 붙잡지 않도록 장비 선택을 즉시 반영한다.
+      flushSync(() => {
+        setToolWorkUid(uid);
+      });
       try {
         const res = await callRaw(uid, "GetToolLifeInfo");
         const data: any = res?.data ?? res;
@@ -949,7 +956,7 @@ export const MachiningQueueBoard = ({
           ...prev,
           [uid]: buildToolSummaryTooltip(toolingSummary),
         }));
-        openToolDetailWithSlots(toolLife, level as any, {
+        openToolDetailWithSlotsRef.current(toolLife, level as any, {
           toolingSummary,
           replacementHistory,
           observations,
@@ -958,7 +965,7 @@ export const MachiningQueueBoard = ({
         setPanelError(e?.message || "공구 상태 조회 중 오류가 발생했습니다.");
       }
     },
-    [callRaw, openToolDetailWithSlots],
+    [callRaw],
   );
 
   const handleDeleteConfirm = useCallback(async () => {

@@ -4,6 +4,8 @@
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 import type { ReactNode } from "react";
 
+import { BodyPortal } from "@/shared/ui/BodyPortal";
+
 interface CncTempDetailModalProps {
   open: boolean;
   body: ReactNode;
@@ -18,8 +20,9 @@ export const CncTempDetailModal = ({
   if (!open) return null;
 
   return (
+    <BodyPortal>
     <div
-      className="fixed inset-0 bg-black/40 flex items-start justify-center z-50 p-4 pt-16 backdrop-blur-sm"
+      className="fixed inset-0 bg-black/40 flex items-start justify-center z-[100] p-4 pt-16 backdrop-blur-sm"
       onClick={onRequestClose}
     >
       <div
@@ -46,5 +49,6 @@ export const CncTempDetailModal = ({
         </div>
       </div>
     </div>
+    </BodyPortal>
   );
 };

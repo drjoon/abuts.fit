@@ -20,6 +20,7 @@ import {
   Plus,
 } from "lucide-react";
 import { ShippingModeBadge } from "@/shared/shipping/ShippingModeBadge";
+import { BodyPortal } from "@/shared/ui/BodyPortal";
 
 export interface PlaylistJobItem {
   id: string;
@@ -106,8 +107,9 @@ export const CncPlaylistDrawer: React.FC<CncPlaylistDrawerProps> = ({
   if (!open) return null;
 
   return (
+    <BodyPortal>
     <div
-      className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center"
+      className="fixed inset-0 z-[100] bg-black/40 backdrop-blur-sm flex items-center justify-center"
       onClick={onClose}
     >
       <div
@@ -379,5 +381,6 @@ export const CncPlaylistDrawer: React.FC<CncPlaylistDrawerProps> = ({
         </div>
       </div>
     </div>
+    </BodyPortal>
   );
 };

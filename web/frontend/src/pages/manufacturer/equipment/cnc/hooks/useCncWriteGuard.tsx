@@ -4,6 +4,7 @@
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 import { useState, useRef } from "react";
 import { useAuthStore } from "@/store/useAuthStore";
+import { BodyPortal } from "@/shared/ui/BodyPortal";
 
 // manufacturer 전용 CNC 쓰기 보호 가드
 // - 하루 1회 4자리 PIN 확인
@@ -50,6 +51,7 @@ export const useCncWriteGuard = () => {
   };
 
   const PinModal = pinModalOpen ? (
+    <BodyPortal>
     <div
       className="fixed inset-0 bg-black/30 flex items-center justify-center z-[9999] p-4 backdrop-blur-sm"
       onClick={() => {
@@ -169,6 +171,7 @@ export const useCncWriteGuard = () => {
         </div>
       </div>
     </div>
+    </BodyPortal>
   ) : null;
 
   return { ensureCncWriteAllowed, PinModal };

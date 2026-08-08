@@ -17,6 +17,7 @@ import { generateModelNumber } from "@/utils/modelNumber";
 import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
 import { WorksheetQueueSummary } from "@/shared/ui/dashboard/WorksheetQueueSummary";
 import { WorksheetLoading } from "@/shared/ui/WorksheetLoading";
+import { BodyPortal } from "@/shared/ui/BodyPortal";
 import {
   type ManufacturerRequest,
   deriveStageForFilter,
@@ -1686,7 +1687,8 @@ export const PackingPageContent = ({
         />
 
         {(isDraggingOver || ocrProcessing) && (
-          <div className="pointer-events-none fixed inset-0 z-40 flex items-center justify-center bg-slate-900/20">
+          <BodyPortal>
+          <div className="pointer-events-none fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/20">
             <div className="rounded-xl bg-white/90 px-4 py-3 text-sm font-semibold text-slate-800 shadow flex items-center gap-2">
               {ocrProcessing && (
                 <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-blue-500" />
@@ -1694,6 +1696,7 @@ export const PackingPageContent = ({
               <span>{overlayText}</span>
             </div>
           </div>
+          </BodyPortal>
         )}
       </div>
     </div>

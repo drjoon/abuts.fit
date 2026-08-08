@@ -5,6 +5,7 @@
 import React from "react";
 import Editor from "@monaco-editor/react";
 import { useAuthStore } from "@/store/useAuthStore";
+import { BodyPortal } from "@/shared/ui/BodyPortal";
 
 interface CncSimpleProgramEditorModalProps {
   open: boolean;
@@ -168,8 +169,9 @@ export const CncSimpleProgramEditorModal: React.FC<
   if (!visible) return null;
 
   return (
+    <BodyPortal>
     <div
-      className="fixed inset-0 z-[70] bg-black/40 backdrop-blur-sm flex items-center justify-center p-4"
+      className="fixed inset-0 z-[100] bg-black/40 backdrop-blur-sm flex items-center justify-center p-4"
       onClick={onClose}
     >
       <div
@@ -254,5 +256,6 @@ export const CncSimpleProgramEditorModal: React.FC<
         </div>
       </div>
     </div>
+    </BodyPortal>
   );
 };

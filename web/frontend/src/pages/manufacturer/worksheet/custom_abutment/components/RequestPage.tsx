@@ -86,6 +86,7 @@ import { usePackingSelection } from "@/pages/manufacturer/worksheet/custom_abutm
 import { useMailboxSync } from "@/pages/manufacturer/worksheet/custom_abutment/hooks/useMailboxSync";
 import { useDiameterQueue } from "@/pages/manufacturer/worksheet/custom_abutment/hooks/useDiameterQueue";
 import { WorksheetLoading } from "@/shared/ui/WorksheetLoading";
+import { BodyPortal } from "@/shared/ui/BodyPortal";
 import {
   RemakeStartQuickModal,
   type RemakeQuickStartStage,
@@ -2202,7 +2203,8 @@ export const RequestPage = ({
         }}
       >
         {isCamStage && isDraggingOver && (
-          <div className="fixed inset-0 z-50 bg-blue-500/20 backdrop-blur-sm flex items-center justify-center pointer-events-none">
+          <BodyPortal>
+          <div className="fixed inset-0 z-[100] bg-blue-500/20 backdrop-blur-sm flex items-center justify-center pointer-events-none">
             <div className="bg-white rounded-2xl shadow-2xl p-8 border-4 border-solid border-blue-500 text-center">
               <div className="text-2xl font-bold text-blue-700 mb-2">
                 NC 파일을 드롭하세요
@@ -2212,6 +2214,7 @@ export const RequestPage = ({
               </div>
             </div>
           </div>
+          </BodyPortal>
         )}
         {showQueueBar && (
           <WorksheetQueueSummary

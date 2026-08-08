@@ -4,6 +4,8 @@
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 import React from "react";
 
+import { BodyPortal } from "@/shared/ui/BodyPortal";
+
 interface CncMachineInfoModalProps {
   open: boolean;
   loading: boolean;
@@ -54,8 +56,9 @@ export const CncMachineInfoModal: React.FC<CncMachineInfoModalProps> = ({
   };
 
   return (
+    <BodyPortal>
     <div
-      className="fixed inset-0 bg-black/40 flex items-start justify-center z-50 p-4 pt-16 backdrop-blur-sm"
+      className="fixed inset-0 bg-black/40 flex items-start justify-center z-[100] p-4 pt-16 backdrop-blur-sm"
       onClick={onRequestClose}
     >
       <div
@@ -164,5 +167,6 @@ export const CncMachineInfoModal: React.FC<CncMachineInfoModalProps> = ({
         </div>
       </div>
     </div>
+    </BodyPortal>
   );
 };

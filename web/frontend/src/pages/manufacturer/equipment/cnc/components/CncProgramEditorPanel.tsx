@@ -322,7 +322,7 @@ export const CncProgramEditorPanel: React.FC<CncProgramEditorPanelProps> = ({
   const panelBody = (
     <>
       <div
-        className="fixed inset-0 z-[60] bg-black/60 backdrop-blur-[2px] flex items-center justify-center p-4 sm:p-8"
+        className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-[2px] flex items-center justify-center p-4 sm:p-8"
         role="dialog"
         aria-modal="true"
         onMouseDown={(e) => {

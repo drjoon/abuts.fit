@@ -7,6 +7,10 @@ import { useRef, useState } from "react";
 import type { HealthLevel } from "@/pages/manufacturer/equipment/cnc/components/MachineCard";
 import { CncToolRegistrationModal } from "@/pages/manufacturer/equipment/cnc/components/CncToolRegistrationModal";
 import {
+  CncToolStatusPanel,
+  type ToolLifeRow,
+} from "@/pages/manufacturer/equipment/cnc/components/CncToolStatusPanel";
+import {
   formatSeconds,
   type MachiningStatEntry,
   type ToolSlot,
@@ -71,6 +75,15 @@ export const useCncToolPanels = ({
   );
   const scheduleToolLifeSaveRef = useRef<(() => void) | null>(null);
 
+  // 모달 body JSX가 state에 고정되면 workUid/onAddTool이 stale 될 수 있다.
+  const workUidRef = useRef(workUid);
+  workUidRef.current = workUid;
+  const onAddToolRef = useRef(onAddTool);
+  onAddToolRef.current = onAddTool;
+  const callRawRef = useRef(callRaw);
+  callRawRef.current = callRaw;
+  const openAddToolDialogRef = useRef<() => void>(() => {});
+
   const [toolLifeOriginal, setToolLifeOriginal] = useState<any[] | null>(null);
   const [toolLifeRows, setToolLifeRows] = useState<any[] | null>(null);
   const [toolLifeDirty, setToolLifeDirty] = useState(false);
@@ -92,7 +105,7 @@ export const useCncToolPanels = ({
 
   const buildSummaryTooltip = (summary?: any) => {
     const dueTools = Array.isArray(summary?.dueTools) ? summary.dueTools : [];
-    if (dueTools.length === 0) return "공구 수명, 교체 확인";
+    if (dueTools.length === 0) return "교체 임박 공구 없음";
     const head = dueTools
       .slice(0, 3)
       .map((item: any) => `#${item.toolNum}`)
@@ -1198,7 +1211,7 @@ export const useCncToolPanels = ({
     const effectiveMeta = toolingMeta || toolingMetaSnapshot || null;
     const toolingSummary = effectiveMeta?.toolingSummary || null;
 
-    const rows = Array.isArray(toolLife)
+    const rows: ToolLifeRow[] = Array.isArray(toolLife)
       ? toolLife.map((t: any, idx: number) => ({
           toolNum: t.toolNum ?? idx + 1,
           useCount: Number(t.useCount ?? 0) || 0,
@@ -1206,7 +1219,7 @@ export const useCncToolPanels = ({
           warningCount: Number(t.warningCount ?? 0) || 0,
           use: t.use ?? true,
         }))
-      : (toolLifeRows ?? []);
+      : ((toolLifeRows as ToolLifeRow[] | null) ?? []);
 
     // summaryMap 갱신 (openCompleteReplacement에서 참조)
     summaryMapForSlot = new Map<string, any>(
@@ -1215,258 +1228,31 @@ export const useCncToolPanels = ({
       ),
     );
 
-    const slotMap = new Map<number, ToolSlot>(
-      toolSlots.map((s) => [s.toolNum, s]),
-    );
-
-    const buildSlotTable = () => (
-      <div className="space-y-3 text-sm text-gray-700">
-        {/* 공구 추가 버튼 (onAddTool 콜백이 제공된 경우에만 노출) */}
-        {onAddTool ? (
-          <div className="flex justify-end">
-            <button
-              type="button"
-              onClick={openAddToolDialog}
-              className="inline-flex items-center gap-1 rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-100"
-            >
-              <span className="text-base leading-none">+</span> 공구 추가
-            </button>
-          </div>
-        ) : null}
-
-        {/* 요약 배너 */}
-        {toolingSummary ? (
-          <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-xs font-extrabold text-slate-700">
-                예측 요약
-              </span>
-              <span className="rounded-full bg-white px-2 py-1 text-[11px] font-semibold text-slate-600 border border-slate-200">
-                경고 {Number(toolingSummary?.warningCount || 0)}개
-              </span>
-              <span className="rounded-full bg-white px-2 py-1 text-[11px] font-semibold text-slate-600 border border-slate-200">
-                교체 필요 {Number(toolingSummary?.alarmCount || 0)}개
-              </span>
-            </div>
-            <div className="mt-2 text-xs text-slate-600">
-              {buildSummaryTooltip(toolingSummary)}
-            </div>
-          </div>
-        ) : null}
-
-        {/* 교체 대기 중인 슬롯 알림 */}
-        {toolSlots.some((s) => s.replacementStatus !== "mounted") ? (
-          <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-xs text-amber-800 space-y-1">
-            <div className="font-semibold">교체 진행 중인 공구</div>
-            {toolSlots
-              .filter((s) => s.replacementStatus !== "mounted")
-              .map((s) => (
-                <div key={s.toolNum} className="flex items-center gap-2">
-                  <span
-                    className={`inline-block w-2 h-2 rounded-full ${s.replacementStatus === "removing" ? "bg-amber-400" : "bg-red-500"}`}
-                  />
-                  <span>
-                    #{s.toolNum}
-                    {s.toolName ? ` · ${s.toolName}` : ""}
-                    {" — "}
-                    {s.replacementStatus === "removing"
-                      ? "해제 요청됨"
-                      : "교체 대기"}
-                  </span>
-                </div>
-              ))}
-          </div>
-        ) : null}
-
-        {/* 공구 테이블 */}
-        {rows.length > 0 ? (
-          <div className="max-h-[55vh] overflow-auto rounded-xl border border-gray-100 bg-white shadow-sm">
-            <table className="w-full text-[11px] sm:text-xs table-fixed">
-              <thead className="bg-gray-50 text-gray-500">
-                <tr>
-                  <th className="px-2 py-2.5 text-center w-14">툴#</th>
-                  <th className="px-2 py-2.5 text-left">공구</th>
-                  <th className="px-2 py-2.5 text-center w-14">옵셋</th>
-                  <th className="px-2 py-2.5 text-center w-16">사용</th>
-                  <th className="px-2 py-2.5 text-center w-16">설정</th>
-                  <th className="px-2 py-2.5 text-center w-16">잔여</th>
-                  <th className="px-2 py-2.5 text-center w-20">교체</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {rows.map((t: any, idx: number) => {
-                  const use = t.useCount ?? 0;
-                  const cfg = t.configCount ?? 0;
-                  const toolMeta = summaryMapForSlot?.get(
-                    String(t.toolNum ?? idx + 1),
-                  );
-                  const slot = slotMap.get(t.toolNum ?? idx + 1) ?? null;
-                  const isRemoving = slot?.replacementStatus === "removing";
-                  const isRemoved = slot?.replacementStatus === "removed";
-
-                  const ratio =
-                    Number(toolMeta?.predictedReplacementUseCount || 0) > 0
-                      ? use /
-                        Number(toolMeta?.predictedReplacementUseCount || 0)
-                      : cfg > 0
-                        ? use / cfg
-                        : 0;
-
-                  let rowLevel: HealthLevel = "unknown";
-                  if (toolMeta?.status === "alarm") rowLevel = "alarm";
-                  else if (toolMeta?.status === "warn") rowLevel = "warn";
-                  else if (toolMeta?.status === "ok") rowLevel = "ok";
-                  else if (cfg > 0) {
-                    if (ratio >= 1) rowLevel = "alarm";
-                    else if (ratio >= 0.95) rowLevel = "warn";
-                    else rowLevel = "ok";
-                  }
-
-                  const levelBg =
-                    isRemoving || isRemoved
-                      ? "bg-amber-50"
-                      : rowLevel === "alarm"
-                        ? "bg-red-50"
-                        : rowLevel === "warn"
-                          ? "bg-amber-50"
-                          : rowLevel === "ok"
-                            ? "bg-emerald-50"
-                            : "bg-gray-50";
-
-                  const remainPercent =
-                    cfg > 0 ? Math.max(0, 1 - ratio) * 100 : 0;
-
-                  return (
-                    <tr key={idx} className={`hover:bg-gray-50/70 ${levelBg}`}>
-                      <td className="px-2 py-2.5 text-center text-gray-800 font-semibold">
-                        <div>{t.toolNum ?? idx + 1}</div>
-                        {(toolMeta?.status === "warn" ||
-                          toolMeta?.status === "alarm") &&
-                        !isRemoving &&
-                        !isRemoved ? (
-                          <div className="mt-0.5 text-[9px] font-semibold text-slate-500">
-                            {toolMeta?.status === "alarm"
-                              ? "교체필요"
-                              : "교체임박"}
-                          </div>
-                        ) : null}
-                        {isRemoving ? (
-                          <div className="mt-0.5 text-[9px] font-semibold text-amber-600">
-                            해제중
-                          </div>
-                        ) : null}
-                        {isRemoved ? (
-                          <div className="mt-0.5 text-[9px] font-semibold text-red-600">
-                            교체대기
-                          </div>
-                        ) : null}
-                      </td>
-                      <td className="px-2 py-2.5 text-left">
-                        <div className="text-slate-800 font-medium truncate max-w-[90px]">
-                          {slot?.toolName || (
-                            <span className="text-slate-400">-</span>
-                          )}
-                        </div>
-                        <div className="text-[10px] text-slate-400" />
-                      </td>
-                      <td className="px-2 py-2.5 text-center">
-                        <button
-                          type="button"
-                          onClick={() =>
-                            openToolOffsetEditor(t.toolNum ?? idx + 1)
-                          }
-                          className="inline-flex items-center justify-center px-2 py-1 rounded-md border border-blue-200 bg-blue-50 text-[11px] text-blue-700 hover:bg-blue-100"
-                        >
-                          수정
-                        </button>
-                      </td>
-                      <td className="px-2 py-2.5 text-center font-mono text-gray-500 text-[11px]">
-                        {use}
-                      </td>
-                      <td className="px-2 py-2.5 text-center font-mono text-gray-600">
-                        <input
-                          type="number"
-                          defaultValue={cfg}
-                          step={1000}
-                          onChange={(e) => {
-                            const v = Number(e.target.value);
-                            const next = [...rows];
-                            next[idx] = {
-                              ...next[idx],
-                              configCount: Number.isFinite(v) ? v : 0,
-                            };
-                            setToolLifeRows(next);
-                            setToolLifeDirty(true);
-                            setModalBody(buildSlotTable());
-                          }}
-                          onBlur={() => {
-                            scheduleToolLifeSaveRef.current?.();
-                          }}
-                          className="w-full bg-white border border-gray-200 rounded-md px-1 py-0.5 text-[11px] text-center focus:ring-blue-500 focus:border-blue-500"
-                        />
-                      </td>
-                      <td className="px-2 py-1.5 text-center font-mono text-gray-800 text-[11px]">
-                        {cfg > 0 ? `${remainPercent.toFixed(0)}%` : "-"}
-                      </td>
-                      <td className="px-2 py-2 text-center">
-                        {/* 교체 진행 중이면 "교체 완료" 버튼, 아니면 "해제 요청" 버튼 */}
-                        {isRemoving || isRemoved ? (
-                          <button
-                            type="button"
-                            onClick={() => openCompleteReplacement(t, slot)}
-                            className="inline-flex items-center justify-center rounded-md border border-emerald-300 bg-emerald-50 px-2 py-1 text-[11px] font-semibold text-emerald-700 hover:bg-emerald-100"
-                          >
-                            완료
-                          </button>
-                        ) : onBeginToolRemoval ? (
-                          <button
-                            type="button"
-                            onClick={() => openRemovalConfirm(t, slot)}
-                            className="inline-flex items-center justify-center rounded-md border border-orange-200 bg-orange-50 px-2 py-1 text-[11px] font-semibold text-orange-700 hover:bg-orange-100"
-                          >
-                            해제
-                          </button>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => openRemovalConfirm(t, slot)}
-                            className="inline-flex items-center justify-center rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-50"
-                          >
-                            교체
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          // 빈 상태: 공구 등록 안내 + CTA 버튼
-          <div className="rounded-xl border border-slate-200 bg-slate-50 px-6 py-10 text-center space-y-3">
-            <div className="text-3xl">🔧</div>
-            <div className="text-base font-semibold text-slate-800">
-              등록된 공구가 없습니다
-            </div>
-            <div className="text-xs text-slate-500 leading-relaxed">
-              슬롯 번호와 공구 정보를 입력해 등록하면
-              <br />
-              교체 워크플로우와 가공 통계를 사용할 수 있습니다.
-            </div>
-            {onAddTool ? (
-              <button
-                type="button"
-                onClick={openAddToolDialog}
-                className="inline-flex items-center gap-1 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
-              >
-                <span className="text-base leading-none">+</span> 공구 등록
-                시작하기
-              </button>
-            ) : null}
-          </div>
-        )}
-      </div>
+    const renderPanel = (panelRows: ToolLifeRow[]) => (
+      <CncToolStatusPanel
+        rows={panelRows}
+        toolSlots={toolSlots}
+        toolingSummary={toolingSummary}
+        canAddTool={Boolean(onAddToolRef.current)}
+        canBeginRemoval={Boolean(onBeginToolRemoval)}
+        onAddTool={() => openAddToolDialogRef.current()}
+        onOpenOffset={(toolNum) => openToolOffsetEditor(toolNum)}
+        onConfigChange={(index, configCount) => {
+          const next = panelRows.map((row, i) =>
+            i === index ? { ...row, configCount } : row,
+          );
+          setToolLifeRows(next);
+          setToolLifeDirty(true);
+          setModalBody(renderPanel(next));
+        }}
+        onConfigBlur={() => {
+          scheduleToolLifeSaveRef.current?.();
+        }}
+        onRequestRemoval={(row, slot) => openRemovalConfirm(row, slot)}
+        onCompleteReplacement={(row, slot) =>
+          openCompleteReplacement(row, slot)
+        }
+      />
     );
 
     setToolingMetaSnapshot(effectiveMeta || null);
@@ -1479,8 +1265,8 @@ export const useCncToolPanels = ({
     setLastToolHealthLevel(level);
     setToolTooltip(buildSummaryTooltip(toolingSummary));
     setModalTitle("공구 상태");
-    setModalBody(buildSlotTable());
-    setToolStatusBodySnapshot(buildSlotTable());
+    setModalBody(renderPanel(rows));
+    setToolStatusBodySnapshot(renderPanel(rows));
     setModalOpen(true);
   };
 
@@ -1515,86 +1301,88 @@ export const useCncToolPanels = ({
     );
 
     const body = (
-      <div className="space-y-4 text-sm text-gray-700">
-        <div className="text-xs text-slate-500 space-y-1">
-          <div>
-            슬롯별 누적 가공 건수 및 시간. 현재 장착 이후 통계는 교체 완료 시
+      <div className="space-y-4 text-sm text-slate-700">
+        <div className="space-y-1 text-xs leading-relaxed text-slate-500">
+          <p>
+            슬롯별 누적 가공 건수와 시간입니다. 현재 장착 이후 값은 교체 완료 시
             리셋됩니다.
-          </div>
-          <div>
-            ※ 공구별 통계는 의뢰 1건의 전체 소요시간을 장착된 각 공구에 동일
-            합산하는 방식입니다. 따라서 공구별 합계는 전체(툴#0)보다 클 수 있습니다.
-          </div>
+          </p>
+          <p>
+            공구별 시간은 의뢰 1건의 전체 소요시간을 장착 공구에 동일 합산하므로,
+            합계가 전체(툴#0)보다 클 수 있습니다.
+          </p>
         </div>
 
         {displayStats.length === 0 ? (
-          <div className="text-base text-gray-400 text-center py-8">
+          <div className="rounded-xl border border-dashed border-slate-300 py-10 text-center text-sm text-slate-400">
             가공 통계 데이터가 없습니다.
           </div>
         ) : (
-          <div className="rounded-xl border border-gray-100 bg-white shadow-sm overflow-auto max-h-[60vh]">
-            <table className="w-full min-w-[860px] text-xs">
-              <thead className="bg-gray-50 text-gray-500">
-                <tr>
-                  <th className="px-3 py-2.5 text-center w-12">툴#</th>
-                  <th className="px-2 py-2.5 text-left">공구명</th>
-                  <th className="px-2 py-2.5 text-center">누계건수</th>
-                  <th className="px-2 py-2.5 text-center">누계시간</th>
-                  <th className="px-2 py-2.5 text-center">현재건수</th>
-                  <th className="px-2 py-2.5 text-center">현재시간</th>
-                  <th className="px-2 py-2.5 text-center">마지막</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {displayStats.map((stat) => {
-                  const slot = toolSlots.find(
-                    (s) => s.toolNum === stat.toolNum,
-                  );
-                  return (
-                    <tr key={stat.toolNum} className="hover:bg-gray-50">
-                      <td className="px-3 py-2.5 text-center font-semibold text-gray-800 whitespace-nowrap">
-                        {stat.toolNum === 0 ? "전체" : stat.toolNum}
-                      </td>
-                      <td className="px-2 py-2.5 text-left text-slate-700 whitespace-nowrap">
-                        {slot?.toolName || "-"}
-                      </td>
-                      <td className="px-2 py-2.5 text-center font-mono text-slate-800 whitespace-nowrap">
-                        {stat.totalJobCount.toLocaleString()}건
-                      </td>
-                      <td className="px-2 py-2.5 text-center font-mono text-slate-700 whitespace-nowrap">
-                        {formatSeconds(stat.totalMachiningSeconds)}
-                      </td>
-                      <td className="px-2 py-2.5 text-center font-mono text-blue-700 whitespace-nowrap">
-                        {stat.currentJobCount.toLocaleString()}건
-                      </td>
-                      <td className="px-2 py-2.5 text-center font-mono text-blue-600 whitespace-nowrap">
-                        {formatSeconds(stat.currentMachiningSeconds)}
-                      </td>
-                      <td className="px-2 py-2.5 text-center text-slate-400 text-[10px] whitespace-nowrap">
-                        {stat.lastJobAt
-                          ? String(stat.lastJobAt).slice(0, 10)
-                          : "-"}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+          <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+            <div className="max-h-[60vh] overflow-auto">
+              <table className="w-full min-w-[860px] text-xs">
+                <thead className="sticky top-0 z-10 border-b border-slate-200 bg-slate-50 text-[11px] font-semibold text-slate-500">
+                  <tr>
+                    <th className="w-12 px-3 py-2.5 text-center">툴#</th>
+                    <th className="px-2 py-2.5 text-left">공구명</th>
+                    <th className="px-2 py-2.5 text-center">누계건수</th>
+                    <th className="px-2 py-2.5 text-center">누계시간</th>
+                    <th className="px-2 py-2.5 text-center">현재건수</th>
+                    <th className="px-2 py-2.5 text-center">현재시간</th>
+                    <th className="px-2 py-2.5 text-center">마지막</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {displayStats.map((stat) => {
+                    const slot = toolSlots.find(
+                      (s) => s.toolNum === stat.toolNum,
+                    );
+                    return (
+                      <tr key={stat.toolNum} className="hover:bg-slate-50/80">
+                        <td className="whitespace-nowrap px-3 py-2.5 text-center font-semibold text-slate-800">
+                          {stat.toolNum === 0 ? "전체" : stat.toolNum}
+                        </td>
+                        <td className="whitespace-nowrap px-2 py-2.5 text-left text-slate-700">
+                          {slot?.toolName || "—"}
+                        </td>
+                        <td className="whitespace-nowrap px-2 py-2.5 text-center font-mono text-slate-800">
+                          {stat.totalJobCount.toLocaleString()}건
+                        </td>
+                        <td className="whitespace-nowrap px-2 py-2.5 text-center font-mono text-slate-700">
+                          {formatSeconds(stat.totalMachiningSeconds)}
+                        </td>
+                        <td className="whitespace-nowrap px-2 py-2.5 text-center font-mono text-slate-800">
+                          {stat.currentJobCount.toLocaleString()}건
+                        </td>
+                        <td className="whitespace-nowrap px-2 py-2.5 text-center font-mono text-slate-700">
+                          {formatSeconds(stat.currentMachiningSeconds)}
+                        </td>
+                        <td className="whitespace-nowrap px-2 py-2.5 text-center text-[10px] text-slate-400">
+                          {stat.lastJobAt
+                            ? String(stat.lastJobAt).slice(0, 10)
+                            : "—"}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
 
-        <div className="flex justify-end gap-2 pt-2">
+        <div className="flex justify-end gap-2 pt-1">
           <button
             type="button"
             onClick={() => openToolDetailWithSlots(null, lastToolHealthLevel)}
-            className="rounded-lg bg-slate-200 px-4 py-2 text-sm font-medium text-slate-800 hover:bg-slate-300"
+            className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
           >
             돌아가기
           </button>
           <button
             type="button"
             onClick={() => setModalOpen(false)}
-            className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+            className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800"
           >
             닫기
           </button>
@@ -1621,12 +1409,17 @@ export const useCncToolPanels = ({
    * onAddTool은 toolNum + toolName만 전달한다 (toolType/toolNote/configCount 제거).
    */
   const openAddToolDialog = () => {
-    if (!onAddTool) return;
+    if (!onAddToolRef.current) return;
 
     const closeAndReturn = async () => {
       // 등록/적용 후 공구 상태 화면을 다시 그리기 위해 현재 데이터를 재조회한다.
+      const uid = workUidRef.current;
+      if (!uid) {
+        openToolDetailWithSlots(null, lastToolHealthLevel);
+        return;
+      }
       try {
-        const res = await callRaw(workUid, "GetToolLifeInfo");
+        const res = await callRawRef.current(uid, "GetToolLifeInfo");
         const data: any = res?.data ?? res;
         const toolLife =
           data?.machineToolLife?.toolLife ??
@@ -1650,10 +1443,12 @@ export const useCncToolPanels = ({
     setModalTitle("공구 등록");
     setModalBody(
       <CncToolRegistrationModal
-        currentMachineId={workUid}
+        currentMachineId={workUidRef.current}
         onCancel={() => openToolDetailWithSlots(null, lastToolHealthLevel)}
         onAddTool={async ({ toolNum, toolName }) => {
-          return onAddTool({ toolNum, toolName });
+          const add = onAddToolRef.current;
+          if (!add) return false;
+          return add({ toolNum, toolName });
         }}
         onAfterApply={() => {
           void closeAndReturn();
@@ -1663,6 +1458,7 @@ export const useCncToolPanels = ({
     );
     setModalOpen(true);
   };
+  openAddToolDialogRef.current = openAddToolDialog;
 
   scheduleToolLifeSaveRef.current = () => {
     if (toolLifeSaveTimeoutRef.current) {
