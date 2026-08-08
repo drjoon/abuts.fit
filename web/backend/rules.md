@@ -328,9 +328,10 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
 
 - 드롭존 가입(치과 전용, requestor+practice):
   - `POST /api/auth/practice/register`는 **practice role을 만들지 않는다**.
-    `role=requestor` + `requestorCapabilities={practice:true,lab:false}` + 휴대폰 인증만 저장.
-    완전한 `practiceProfile`/Org 앵커는 온보딩(`PUT /api/users/profile` → `ensureRequestorOrgAnchor`)에서 생성.
-  - 필수: `email` + `password` + `phone`. 로그인 식별은 이메일. `name`은 이메일 local-part 임시값.
+    `role=requestor` + `requestorCapabilities={practice:true,lab:false}` + 휴대폰 인증·치과명·담당자명을 저장.
+    완전한 주소/Org 앵커는 온보딩(`PUT /api/users/profile` → `ensureRequestorOrgAnchor`)에서 생성.
+  - 필수: `email` + `password` + `phone` + `clinicName` + `staffName`. 로그인 식별은 이메일.
+    `name`/`practiceProfile.staffName`=담당자명, `practiceProfile.clinicName`=치과명.
   - `assertSignupVerifications({ email, phone })` 강제 후 `consumeSignupVerifications` 소진.
     - 이메일: `POST /api/auth/signup/email-verification/send|verify`, `GET .../status` (일 10회)
     - 휴대폰: `POST /api/auth/signup/phone-verification/send|verify`, `GET .../status` (일 5회; 개발모드 자동완료 금지)

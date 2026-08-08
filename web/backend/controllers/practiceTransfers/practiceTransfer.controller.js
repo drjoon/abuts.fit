@@ -1256,7 +1256,10 @@ export async function getReceivedPracticeTransfers(req, res) {
         .skip(skip)
         .limit(limit)
         .populate("practiceBusinessAnchorId", "name")
-        .populate("practiceUserId", "name")
+        .populate(
+          "practiceUserId",
+          "name practiceProfile.clinicName practiceProfile.staffName",
+        )
         .lean(),
       PracticeTransfer.countDocuments(scope),
       PracticeTransfer.countDocuments({
@@ -1276,6 +1279,11 @@ export async function getReceivedPracticeTransfers(req, res) {
         doc?.practiceUserId && typeof doc.practiceUserId === "object"
           ? doc.practiceUserId
           : null;
+      const practiceProfile =
+        practiceUser?.practiceProfile &&
+        typeof practiceUser.practiceProfile === "object"
+          ? practiceUser.practiceProfile
+          : null;
       const files = Array.isArray(doc?.files) ? doc.files : [];
 
       return {
@@ -1291,8 +1299,12 @@ export async function getReceivedPracticeTransfers(req, res) {
         isDownloaded: Boolean(doc?.requestorDownloadedAt),
         requestorDownloadedAt: doc?.requestorDownloadedAt || null,
         practice: {
-          businessName: String(practiceBusiness?.name || "").trim(),
-          userName: String(practiceUser?.name || "").trim(),
+          businessName: String(
+            practiceBusiness?.name || practiceProfile?.clinicName || "",
+          ).trim(),
+          userName: String(
+            practiceProfile?.staffName || practiceUser?.name || "",
+          ).trim(),
         },
         fileCount: files.length,
         files: files.map((item, idx) => ({

@@ -197,6 +197,8 @@ type PracticeDropzoneDraft = {
   prosthesisTypes: string[];
   toothWorks?: ToothWorkSelection[];
   patientName: string;
+  clinicName?: string;
+  staffName?: string;
   email: string;
   phone: string;
   fileKeys: string[];
@@ -639,6 +641,8 @@ export const PracticeDropzonePage = () => {
   );
 
   const [patientName, setPatientName] = useState("");
+  const [clinicName, setClinicName] = useState("");
+  const [staffName, setStaffName] = useState("");
   const [email, setEmail] = useState("");
   const [accessPassword, setAccessPassword] = useState("");
   const [showAccessPassword, setShowAccessPassword] = useState(false);
@@ -933,8 +937,13 @@ export const PracticeDropzonePage = () => {
 
   const canSubmitBase = missingStep1Fields.length === 0;
 
+  const trimmedClinicName = String(clinicName || "").trim();
+  const trimmedStaffName = String(staffName || "").trim();
+
   const canSubmitSignup = Boolean(
     canSubmitBase &&
+      trimmedClinicName &&
+      trimmedStaffName &&
       isEmailValid &&
       emailVerified &&
       isPhoneValid &&
@@ -1032,6 +1041,8 @@ export const PracticeDropzonePage = () => {
             : [{ toothNumber: "", prosthesisType: resolveDefaultProsthesisType(restoredProsthesisTypes), customAbutment: false, bridgeLinkedTeeth: [], ...emptyToothWorkCustomSpecs() }],
         );
         setPatientName(String(intake?.patientName ?? parsed?.patientName ?? ""));
+        setClinicName(String(parsed?.clinicName || "").trim());
+        setStaffName(String(parsed?.staffName || "").trim());
         setEmail(String(parsed?.email || "").trim().toLowerCase());
         setPhone(formatPhoneNumberInput(String(parsed?.phone || "")));
 
@@ -1299,6 +1310,8 @@ export const PracticeDropzonePage = () => {
       prosthesisTypes: normalizedProsthesisTypes,
       toothWorks,
       patientName,
+      clinicName,
+      staffName,
       email,
       phone,
       fileKeys: files.map((file) => toPracticeFileKey(file)),
@@ -1331,6 +1344,8 @@ export const PracticeDropzonePage = () => {
     });
   }, [
     draftHydrated,
+    clinicName,
+    staffName,
     email,
     phone,
     patientName,
@@ -1363,6 +1378,10 @@ export const PracticeDropzonePage = () => {
 
     if (isDropzoneSenderLoggedIn) {
       const pp = authUser?.practiceProfile || null;
+      const nextClinicName = String(pp?.clinicName || "").trim();
+      const nextStaffName = String(pp?.staffName || "").trim();
+      if (nextClinicName) setClinicName(nextClinicName);
+      if (nextStaffName) setStaffName(nextStaffName);
       setEmail(String(authUser?.email || email || "").trim().toLowerCase());
       setPhone(formatPhoneNumberInput(String(pp?.phone || phone || "")));
       writePracticeSessionMeta({
@@ -1992,8 +2011,8 @@ export const PracticeDropzonePage = () => {
         title: "입력 확인",
         description:
           emailVerified && phoneVerified
-            ? "이메일, 담당자 휴대폰, 비밀번호를 포함해 필수값을 모두 입력해주세요."
-            : "이메일·담당자 휴대폰 인증을 완료하고 필수값을 모두 입력해주세요.",
+            ? "치과명, 담당자명, 이메일, 담당자 휴대폰, 비밀번호를 포함해 필수값을 모두 입력해주세요."
+            : "이메일·담당자 휴대폰 인증을 완료하고 치과명·담당자명 등 필수값을 모두 입력해주세요.",
         variant: "destructive",
       });
       return;
@@ -2032,6 +2051,8 @@ export const PracticeDropzonePage = () => {
           email: String(email || "").trim().toLowerCase(),
           password: accessPassword,
           phone: String(phone || "").trim(),
+          clinicName: trimmedClinicName,
+          staffName: trimmedStaffName,
         },
       });
 
@@ -2522,6 +2543,36 @@ export const PracticeDropzonePage = () => {
 
                     {authMode === "signup" && (
                       <div className="space-y-4">
+                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                          <div className="space-y-2">
+                            <Label htmlFor="clinicName" className="flex h-5 items-center text-sm font-medium text-slate-700">
+                              치과명 <span className="ml-0.5 text-destructive">*</span>
+                            </Label>
+                            <Input
+                              id="clinicName"
+                              type="text"
+                              autoComplete="organization"
+                              className="box-border h-11 rounded-xl border-slate-200 bg-white py-0 text-base shadow-sm"
+                              value={clinicName}
+                              onChange={(e) => setClinicName(e.target.value)}
+                              placeholder="예: 향기로운치과"
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="staffName" className="flex h-5 items-center text-sm font-medium text-slate-700">
+                              담당자명 <span className="ml-0.5 text-destructive">*</span>
+                            </Label>
+                            <Input
+                              id="staffName"
+                              type="text"
+                              autoComplete="name"
+                              className="box-border h-11 rounded-xl border-slate-200 bg-white py-0 text-base shadow-sm"
+                              value={staffName}
+                              onChange={(e) => setStaffName(e.target.value)}
+                              placeholder="예: 홍길동"
+                            />
+                          </div>
+                        </div>
                         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
                           <div className="space-y-2">
                             <Label htmlFor="practiceEmail" className="flex h-5 items-center text-sm font-medium text-slate-700">
@@ -2731,7 +2782,7 @@ export const PracticeDropzonePage = () => {
                           </div>
                         </div>
                         <p className="text-xs leading-relaxed text-slate-500">
-                          치과명·주소 등 상세 정보는 첫 의뢰 전송 후 계정 등록
+                          주소·사업자번호 등 상세 정보는 첫 의뢰 전송 후 계정 등록
                           단계에서 이어서 입력합니다.
                         </p>
                       </div>

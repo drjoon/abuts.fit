@@ -70,8 +70,9 @@ const toDisplayPhone = (value: string) => {
 
 /**
  * 담당직원명 초기값.
- * practice_dropzone 가입은 계정 name을 메일 local-part로 임시 저장하므로,
+ * 레거시 practice_dropzone 가입은 계정 name을 메일 local-part로 임시 저장했으므로,
  * practiceProfile.staffName이 없으면 빈 값으로 두고 실제 이름을 입력받는다.
+ * (현재 드롭존 가입은 staffName을 필수로 저장한다.)
  */
 const resolveStaffNamePrefill = ({
   profileStaffName,

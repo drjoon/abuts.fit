@@ -1125,7 +1125,8 @@ async function practiceLogin(req, res) {
 
 /**
  * 드롭존 최소 가입 — 의뢰인(requestor) + practice 무료 경로
- * 이메일·비밀번호·담당자 휴대폰(+인증)만. practiceProfile/Org 앵커는 온보딩에서 완성.
+ * 필수: 치과명·담당자명·이메일·비밀번호·담당자 휴대폰(+인증).
+ * 주소/Org 앵커는 온보딩에서 완성.
  * @route POST /api/auth/practice/register
  *
  * related files:
@@ -1137,14 +1138,16 @@ async function practiceRegister(req, res) {
   try {
     const password = String(req.body?.password || "");
     const phone = String(req.body?.phone || "").trim();
+    const clinicName = String(req.body?.clinicName || "").trim();
+    const staffName = String(req.body?.staffName || "").trim();
     const normalizedEmail = String(req.body?.email || "")
       .trim()
       .toLowerCase();
 
-    if (!password || !phone || !normalizedEmail) {
+    if (!password || !phone || !normalizedEmail || !clinicName || !staffName) {
       return res.status(400).json({
         success: false,
-        message: "이메일, 비밀번호, 담당자 휴대폰은 필수입니다.",
+        message: "치과명, 담당자명, 이메일, 비밀번호, 담당자 휴대폰은 필수입니다.",
       });
     }
 
@@ -1200,12 +1203,10 @@ async function practiceRegister(req, res) {
     });
 
     const referralCode = await ensureUniqueReferralCode(5);
-    const provisionalName =
-      normalizedEmail.split("@")[0]?.trim() || "의뢰인";
 
-    // 최소 가입: role=requestor + practice. practiceProfile/앵커는 온보딩에서 완성.
+    // 최소 가입: role=requestor + practice. 주소/Org 앵커는 온보딩에서 완성.
     const user = new User({
-      name: provisionalName,
+      name: staffName,
       email: normalizedEmail,
       password,
       role: "requestor",
@@ -1221,6 +1222,8 @@ async function practiceRegister(req, res) {
       phoneNumber: phone,
       phoneVerifiedAt: new Date(),
       practiceProfile: {
+        clinicName,
+        staffName,
         phone,
         createdAt: new Date(),
         updatedAt: new Date(),
