@@ -1445,7 +1445,7 @@ const NewRequestPageContent = () => {
             />
           </div>
 
-          <div className="flex flex-col justify-center min-h-0">
+          <div className="flex flex-col min-h-0 h-full">
             <NewRequestShippingSection
               weeklyBatchDays={weeklyBatchDays}
               onWeeklyBatchDaysChange={setWeeklyBatchDays}

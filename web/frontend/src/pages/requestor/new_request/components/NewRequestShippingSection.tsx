@@ -238,7 +238,7 @@ export function NewRequestShippingSection({
   return (
     <div
       ref={containerRef}
-      className="app-glass-card app-glass-card--lg relative flex flex-col justify-center gap-4 border-2 p-4 md:p-6 transition-all border-gray-300"
+      className="app-glass-card app-glass-card--lg relative flex flex-col justify-center gap-4 border-2 p-4 md:p-6 transition-all border-gray-300 h-full max-h-[500px]"
     >
       <div className="app-glass-card-content flex flex-col items-center gap-3">
         <div
