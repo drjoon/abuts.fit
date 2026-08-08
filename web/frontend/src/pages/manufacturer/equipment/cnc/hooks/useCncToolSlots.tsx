@@ -279,6 +279,94 @@ export const useCncToolSlots = ({
     [callRaw, ensureCncWriteAllowed, setError],
   );
 
+  /**
+   * deleteToolSlot — 등록 공구 1개 삭제 (슬롯 + 수명 행).
+   * @returns 갱신된 슬롯 목록 또는 null
+   */
+  const deleteToolSlot = useCallback(
+    async (
+      toolNum: number,
+    ): Promise<{
+      toolSlots: ToolSlot[];
+      toolLife: any[];
+      toolingSummary?: any;
+    } | null> => {
+      const uid = workUidRef.current;
+      if (!uid) {
+        setError("장비가 선택되지 않았습니다.");
+        return null;
+      }
+      const ok = await ensureCncWriteAllowed();
+      if (!ok) return null;
+      try {
+        const tn = Number(toolNum);
+        if (!Number.isFinite(tn) || tn < 1) {
+          throw new Error("toolNum은 1 이상의 정수여야 합니다.");
+        }
+        const res = await callRaw(uid, "DeleteToolSlot", { toolNum: tn });
+        const nextSlots: ToolSlot[] = Array.isArray(res?.data?.toolSlots)
+          ? res.data.toolSlots
+          : [];
+        const toolLife =
+          res?.data?.machineToolLife?.toolLife ??
+          res?.data?.machineToolLife?.toolLifeInfo ??
+          [];
+        setToolSlots(nextSlots);
+        if (Array.isArray(res?.data?.machiningStats)) {
+          setMachiningStats(res.data.machiningStats);
+        }
+        return {
+          toolSlots: nextSlots,
+          toolLife: Array.isArray(toolLife) ? toolLife : [],
+          toolingSummary: res?.data?.machineToolLife?.toolingSummary,
+        };
+      } catch (e: any) {
+        setError(e?.message ?? "공구 삭제 중 오류가 발생했습니다.");
+        return null;
+      }
+    },
+    [callRaw, ensureCncWriteAllowed, setError],
+  );
+
+  /**
+   * clearToolSlots — 등록 공구 전체 삭제.
+   */
+  const clearToolSlots = useCallback(async (): Promise<{
+    toolSlots: ToolSlot[];
+    toolLife: any[];
+    toolingSummary?: any;
+  } | null> => {
+    const uid = workUidRef.current;
+    if (!uid) {
+      setError("장비가 선택되지 않았습니다.");
+      return null;
+    }
+    const ok = await ensureCncWriteAllowed();
+    if (!ok) return null;
+    try {
+      const res = await callRaw(uid, "ClearToolSlots", {});
+      const nextSlots: ToolSlot[] = Array.isArray(res?.data?.toolSlots)
+        ? res.data.toolSlots
+        : [];
+      const toolLife =
+        res?.data?.machineToolLife?.toolLife ??
+        res?.data?.machineToolLife?.toolLifeInfo ??
+        [];
+      setToolSlots(nextSlots);
+      if (Array.isArray(res?.data?.machiningStats)) {
+        setMachiningStats(res.data.machiningStats);
+      }
+      return {
+        toolSlots: nextSlots,
+        toolLife: Array.isArray(toolLife) ? toolLife : [],
+        toolingSummary: res?.data?.machineToolLife?.toolingSummary,
+      };
+    } catch (e: any) {
+      setError(e?.message ?? "공구 전체 삭제 중 오류가 발생했습니다.");
+      return null;
+    }
+  }, [callRaw, ensureCncWriteAllowed, setError]);
+
   /** toolNum에 해당하는 슬롯 반환 (없으면 null) */
   const getSlot = useCallback(
     (toolNum: number): ToolSlot | null =>
@@ -317,6 +405,8 @@ export const useCncToolSlots = ({
     completeToolReplacement,
     updateToolSlotMeta,
     addToolSlot,
+    deleteToolSlot,
+    clearToolSlots,
     getSlot,
     getStats,
     getReplacementBadge,

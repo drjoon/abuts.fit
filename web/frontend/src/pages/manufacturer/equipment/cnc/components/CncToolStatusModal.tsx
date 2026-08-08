@@ -23,13 +23,22 @@ interface CncToolStatusModalProps {
 function modalSizeClass(title: string): string {
   if (title === "사용 통계") return "max-w-5xl";
   if (title === "공구 상태") return "max-w-4xl";
-  if (title === "공구 등록") return "max-w-lg";
+  if (
+    title === "공구 추가" ||
+    title === "템플릿으로 저장" ||
+    title === "템플릿 불러오기"
+  ) {
+    return "max-w-lg";
+  }
   return "max-w-xl";
 }
 
 function subtitleFor(title: string): string | null {
   if (title === "공구 상태") return "슬롯별 수명 · 옵셋 · 교체";
-  if (title === "공구 등록") return "슬롯 등록 또는 템플릿 적용";
+  if (title === "공구 추가") return "이 장비에 슬롯 등록";
+  if (title === "템플릿으로 저장") return "현재 장비 구성을 저장";
+  if (title === "템플릿 불러오기")
+    return "공구가 없을 때만 적용 · 적용 후 차이만 수정";
   if (title === "사용 통계") return "사용 시간 · 교체 주기";
   return null;
 }

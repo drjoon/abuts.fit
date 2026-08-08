@@ -864,6 +864,8 @@ export const MachiningQueueBoard = ({
     completeToolReplacement,
     updateToolSlotMeta,
     addToolSlot,
+    deleteToolSlot,
+    clearToolSlots,
   } = useCncToolSlots({
     workUid: toolWorkUid,
     callRaw,
@@ -909,6 +911,9 @@ export const MachiningQueueBoard = ({
     onCompleteToolReplacement: completeToolReplacement,
     onUpdateToolSlotMeta: updateToolSlotMeta,
     onAddTool: addToolSlot,
+    onReloadToolSlots: loadToolSlots,
+    onDeleteTool: deleteToolSlot,
+    onClearAllTools: clearToolSlots,
   });
 
   useEffect(() => {

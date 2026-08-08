@@ -41,6 +41,20 @@ interface UseCncToolPanelsParams {
     toolNum: number;
     toolName?: string;
   }) => Promise<boolean>;
+  /** 템플릿 적용/등록 후 슬롯 목록 다시 로드 */
+  onReloadToolSlots?: () => Promise<void>;
+  /** 공구 1개 삭제 */
+  onDeleteTool?: (toolNum: number) => Promise<{
+    toolSlots: ToolSlot[];
+    toolLife: any[];
+    toolingSummary?: any;
+  } | null>;
+  /** 공구 전체 삭제 */
+  onClearAllTools?: () => Promise<{
+    toolSlots: ToolSlot[];
+    toolLife: any[];
+    toolingSummary?: any;
+  } | null>;
 }
 
 interface ToolingMetaSnapshot {
@@ -62,6 +76,9 @@ export const useCncToolPanels = ({
   onCompleteToolReplacement,
   onUpdateToolSlotMeta,
   onAddTool,
+  onReloadToolSlots,
+  onDeleteTool,
+  onClearAllTools,
 }: UseCncToolPanelsParams) => {
   const [modalOpen, setModalOpen] = useState(false);
   const [modalTitle, setModalTitle] = useState("");
@@ -80,9 +97,17 @@ export const useCncToolPanels = ({
   workUidRef.current = workUid;
   const onAddToolRef = useRef(onAddTool);
   onAddToolRef.current = onAddTool;
+  const onReloadToolSlotsRef = useRef(onReloadToolSlots);
+  onReloadToolSlotsRef.current = onReloadToolSlots;
+  const onDeleteToolRef = useRef(onDeleteTool);
+  onDeleteToolRef.current = onDeleteTool;
+  const onClearAllToolsRef = useRef(onClearAllTools);
+  onClearAllToolsRef.current = onClearAllTools;
   const callRawRef = useRef(callRaw);
   callRawRef.current = callRaw;
   const openAddToolDialogRef = useRef<() => void>(() => {});
+  const openSaveTemplateDialogRef = useRef<() => void>(() => {});
+  const openLoadTemplateDialogRef = useRef<() => void>(() => {});
   const toolSlotsRef = useRef(toolSlots);
   toolSlotsRef.current = toolSlots;
   const toolLifeRowsRef = useRef<ToolLifeRow[] | null>(null);
@@ -1291,7 +1316,7 @@ export const useCncToolPanels = ({
     const toolingSummary = effectiveMeta?.toolingSummary || null;
     const slotsForPanel = slotsOverride ?? toolSlotsRef.current;
 
-    const rows: ToolLifeRow[] = Array.isArray(toolLife)
+    const baseRows: ToolLifeRow[] = Array.isArray(toolLife)
       ? toolLife.map((t: any, idx: number) => ({
           toolNum: t.toolNum ?? idx + 1,
           useCount: Number(t.useCount ?? 0) || 0,
@@ -1300,6 +1325,24 @@ export const useCncToolPanels = ({
           use: t.use ?? true,
         }))
       : (toolLifeRowsRef.current ?? []);
+
+    // 템플릿 적용으로 슬롯만 생긴 경우에도 목록에 보이도록 합친다.
+    const rowMap = new Map(baseRows.map((r) => [r.toolNum, r]));
+    for (const slot of slotsForPanel) {
+      const tn = Number(slot?.toolNum);
+      if (!Number.isFinite(tn) || tn < 1) continue;
+      if (rowMap.has(tn)) continue;
+      rowMap.set(tn, {
+        toolNum: tn,
+        useCount: 0,
+        configCount: 0,
+        warningCount: 0,
+        use: true,
+      });
+    }
+    const rows = Array.from(rowMap.values()).sort(
+      (a, b) => a.toolNum - b.toolNum,
+    );
     toolLifeRowsRef.current = rows;
 
     // summaryMap 갱신 (openCompleteReplacement에서 참조)
@@ -1317,6 +1360,50 @@ export const useCncToolPanels = ({
         canAddTool={Boolean(onAddToolRef.current)}
         canBeginRemoval={Boolean(onBeginToolRemoval)}
         onAddTool={() => openAddToolDialogRef.current()}
+        onSaveAsTemplate={() => openSaveTemplateDialogRef.current()}
+        onLoadTemplate={() => openLoadTemplateDialogRef.current()}
+        onDeleteTool={
+          onDeleteToolRef.current
+            ? async (toolNum) => {
+                const del = onDeleteToolRef.current;
+                if (!del) return false;
+                const result = await del(toolNum);
+                if (!result) return false;
+                toolSlotsRef.current = result.toolSlots;
+                const nextLevel = resolveSummaryLevel(result.toolingSummary);
+                openToolDetailWithSlotsRef.current(
+                  result.toolLife,
+                  nextLevel,
+                  {
+                    toolingSummary: result.toolingSummary,
+                  },
+                  result.toolSlots,
+                );
+                return true;
+              }
+            : undefined
+        }
+        onClearAllTools={
+          onClearAllToolsRef.current
+            ? async () => {
+                const clear = onClearAllToolsRef.current;
+                if (!clear) return false;
+                const result = await clear();
+                if (!result) return false;
+                toolSlotsRef.current = result.toolSlots;
+                const nextLevel = resolveSummaryLevel(result.toolingSummary);
+                openToolDetailWithSlotsRef.current(
+                  result.toolLife,
+                  nextLevel,
+                  {
+                    toolingSummary: result.toolingSummary,
+                  },
+                  result.toolSlots,
+                );
+                return true;
+              }
+            : undefined
+        }
         onOpenOffset={(toolNum) => openToolOffsetEditor(toolNum)}
         onConfigChange={(index, configCount) => {
           const next = panelRows.map((row, i) =>
@@ -1636,31 +1723,48 @@ export const useCncToolPanels = ({
   };
 
   /**
-   * 공구 등록 모달 — 단순화 + 템플릿 기반.
+   * 공구 상태 화면으로 복귀.
+   * 템플릿 적용 등으로 슬롯이 바뀌었을 수 있어 GetToolSlots로 먼저 맞춘다.
+   */
+  const returnToToolStatus = async () => {
+    const uid = workUidRef.current;
+    if (uid) {
+      try {
+        const res = await callRawRef.current(uid, "GetToolSlots");
+        const slots: ToolSlot[] = Array.isArray(res?.data?.toolSlots)
+          ? res.data.toolSlots
+          : [];
+        toolSlotsRef.current = slots;
+      } catch {
+        // 슬롯 조회 실패 시에도 상태 화면은 연다
+      }
+      if (onReloadToolSlotsRef.current) {
+        try {
+          await onReloadToolSlotsRef.current();
+        } catch {
+          // ignore
+        }
+      }
+    }
+    await reloadToolStatusPanel();
+  };
+
+  /**
+   * 공구 추가 / 템플릿 저장 / 템플릿 불러오기.
    *
+   * 흐름: 장비에서 세팅 → 템플릿으로 저장 → 다른 장비에서 불러오기 → 차이만 수정.
    * 슬롯 메타는 toolNum(필수) + toolName(선택)만 사용한다.
-   * 사용량/시간은 백엔드가 자동 누적해 충분한 데이터가 모이면 교체 시기를 예측한다.
-   *
-   * 모달은 3개 탭을 가진다:
-   *  1) 직접 등록 — 현재 장비에 슬롯 1개 추가
-   *  2) 템플릿 적용 — 저장된 템플릿을 1개 이상 장비에 Merge upsert
-   *  3) 템플릿 관리 — 템플릿 생성/편집/삭제
-   *
-   * onAddTool은 toolNum + toolName만 전달한다 (toolType/toolNote/configCount 제거).
    */
   const openAddToolDialog = () => {
     if (!onAddToolRef.current) return;
 
-    const closeAndReturn = async () => {
-      await reloadToolStatusPanel();
-    };
-
-    setModalTitle("공구 등록");
+    setModalTitle("공구 추가");
     setModalBody(
       <CncToolRegistrationModal
+        mode="add"
         currentMachineId={workUidRef.current}
         onCancel={() => {
-          void reloadToolStatusPanel();
+          void returnToToolStatus();
         }}
         onAddTool={async ({ toolNum, toolName }) => {
           const add = onAddToolRef.current;
@@ -1668,7 +1772,7 @@ export const useCncToolPanels = ({
           return add({ toolNum, toolName });
         }}
         onAfterApply={() => {
-          void closeAndReturn();
+          void returnToToolStatus();
         }}
         setError={setError}
       />,
@@ -1676,6 +1780,65 @@ export const useCncToolPanels = ({
     setModalOpen(true);
   };
   openAddToolDialogRef.current = openAddToolDialog;
+
+  const openSaveTemplateDialog = () => {
+    const slots = (toolSlotsRef.current || []).map((s) => ({
+      toolNum: Number(s.toolNum),
+      toolName: String(s.toolName || ""),
+    }));
+
+    setModalTitle("템플릿으로 저장");
+    setModalBody(
+      <CncToolRegistrationModal
+        mode="save"
+        currentMachineId={workUidRef.current}
+        currentSlots={slots}
+        onCancel={() => {
+          void returnToToolStatus();
+        }}
+        onAddTool={async () => false}
+        onAfterApply={() => {
+          void returnToToolStatus();
+        }}
+        setError={setError}
+      />,
+    );
+    setModalOpen(true);
+  };
+  openSaveTemplateDialogRef.current = openSaveTemplateDialog;
+
+  const openLoadTemplateDialog = () => {
+    const slots = (toolSlotsRef.current || []).map((s) => ({
+      toolNum: Number(s.toolNum),
+      toolName: String(s.toolName || ""),
+    }));
+    const lifeCount = Array.isArray(toolLifeRowsRef.current)
+      ? toolLifeRowsRef.current.length
+      : 0;
+    if (slots.length > 0 || lifeCount > 0) {
+      setError("이미 등록된 공구가 있습니다. 모두 삭제한 뒤 불러오세요.");
+      return;
+    }
+
+    setModalTitle("템플릿 불러오기");
+    setModalBody(
+      <CncToolRegistrationModal
+        mode="load"
+        currentMachineId={workUidRef.current}
+        currentSlots={slots}
+        onCancel={() => {
+          void returnToToolStatus();
+        }}
+        onAddTool={async () => false}
+        onAfterApply={() => {
+          void returnToToolStatus();
+        }}
+        setError={setError}
+      />,
+    );
+    setModalOpen(true);
+  };
+  openLoadTemplateDialogRef.current = openLoadTemplateDialog;
 
   scheduleToolLifeSaveRef.current = () => {
     if (toolLifeSaveTimeoutRef.current) {

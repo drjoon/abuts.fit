@@ -33,6 +33,8 @@ import {
   normalizeMachiningStats,
   applyBeginToolRemoval,
   applyCompleteToolReplacement,
+  applyDeleteToolSlot,
+  applyClearToolSlots,
   appendMachiningJobStats,
   resetCurrentMachiningStats,
 } from "../../controllers/cnc/tooling.js";
@@ -103,6 +105,10 @@ const UI_SNAPSHOT_WRITE_TYPES = new Set([
   "CompleteToolReplacement",
   // UpdateToolSlotMeta: 공구 이름/타입/메모만 수정 (교체 흐름 없이)
   "UpdateToolSlotMeta",
+  // DeleteToolSlot: 등록 공구 1개 삭제
+  "DeleteToolSlot",
+  // ClearToolSlots: 등록 공구 전체 삭제
+  "ClearToolSlots",
   // RecordMachiningJobStats: 가공 완료 시 통계 기록 (bridge-server에서 호출)
   "RecordMachiningJobStats",
 ]);
@@ -1330,6 +1336,114 @@ export async function callRawProxy(req, res) {
           data: {
             toolSlots: normalizeToolSlots(nextState?.tooling?.toolSlots),
           },
+        });
+      }
+
+      // ── DeleteToolSlot: 등록 공구 1개 삭제 ────────────────────────────────
+      if (normalizedDataType === "DeleteToolSlot") {
+        const toolNum = Number(req.body?.payload?.toolNum);
+        if (!Number.isFinite(toolNum) || toolNum < 1) {
+          return res.status(400).json({
+            success: false,
+            message: "toolNum은 1 이상의 정수여야 합니다.",
+          });
+        }
+        const current = await getCncToolingState(uid);
+        const currentRows = normalizeToolLifeRows(
+          current?.uiSnapshot?.toolLifeRows,
+        );
+        const { nextSlots, nextRows, nextStats } = applyDeleteToolSlot({
+          existingSlots: current?.tooling?.toolSlots,
+          currentRows,
+          existingStats: current?.tooling?.machiningStats,
+          toolNum,
+        });
+        const nextState = await persistCncToolingState(uid, {
+          uiSnapshotPatch: { toolLifeRows: nextRows },
+          toolingPatch: {
+            observations: current?.tooling?.observations,
+            replacementHistory: current?.tooling?.replacementHistory,
+            toolSlots: nextSlots,
+            machiningStats: nextStats,
+          },
+        });
+        const toolingSummary = buildToolingSummary({
+          toolLifeRows: nextRows,
+          tooling: nextState.tooling,
+        });
+        return res.status(200).json({
+          success: true,
+          data: {
+            machineToolLife: {
+              toolLife: nextRows,
+              toolLifeInfo: nextRows,
+              toolingSummary,
+              replacementHistory: Array.isArray(
+                nextState?.tooling?.replacementHistory,
+              )
+                ? nextState.tooling.replacementHistory
+                : [],
+              observations: Array.isArray(nextState?.tooling?.observations)
+                ? nextState.tooling.observations
+                : [],
+            },
+            toolSlots: normalizeToolSlots(nextState?.tooling?.toolSlots),
+            machiningStats: normalizeMachiningStats(
+              nextState?.tooling?.machiningStats,
+            ),
+          },
+          uiSnapshot: nextState.uiSnapshot,
+          tooling: nextState.tooling,
+        });
+      }
+
+      // ── ClearToolSlots: 등록 공구 전체 삭제 ───────────────────────────────
+      if (normalizedDataType === "ClearToolSlots") {
+        const current = await getCncToolingState(uid);
+        const currentRows = normalizeToolLifeRows(
+          current?.uiSnapshot?.toolLifeRows,
+        );
+        const { nextSlots, nextRows, nextStats } = applyClearToolSlots({
+          existingSlots: current?.tooling?.toolSlots,
+          currentRows,
+          existingStats: current?.tooling?.machiningStats,
+        });
+        const nextState = await persistCncToolingState(uid, {
+          uiSnapshotPatch: { toolLifeRows: nextRows },
+          toolingPatch: {
+            observations: current?.tooling?.observations,
+            replacementHistory: current?.tooling?.replacementHistory,
+            toolSlots: nextSlots,
+            machiningStats: nextStats,
+          },
+        });
+        const toolingSummary = buildToolingSummary({
+          toolLifeRows: nextRows,
+          tooling: nextState.tooling,
+        });
+        return res.status(200).json({
+          success: true,
+          data: {
+            machineToolLife: {
+              toolLife: nextRows,
+              toolLifeInfo: nextRows,
+              toolingSummary,
+              replacementHistory: Array.isArray(
+                nextState?.tooling?.replacementHistory,
+              )
+                ? nextState.tooling.replacementHistory
+                : [],
+              observations: Array.isArray(nextState?.tooling?.observations)
+                ? nextState.tooling.observations
+                : [],
+            },
+            toolSlots: normalizeToolSlots(nextState?.tooling?.toolSlots),
+            machiningStats: normalizeMachiningStats(
+              nextState?.tooling?.machiningStats,
+            ),
+          },
+          uiSnapshot: nextState.uiSnapshot,
+          tooling: nextState.tooling,
         });
       }
 

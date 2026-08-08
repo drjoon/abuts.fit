@@ -421,6 +421,46 @@ export function applyBeginToolRemoval({ existingSlots, toolNum, user }) {
 }
 
 /**
+ * DeleteToolSlot: 등록된 공구 슬롯 1개를 제거한다.
+ * toolSlots / toolLifeRows / machiningStats(해당 toolNum)에서 삭제.
+ * 교체 이력·관측값은 유지한다.
+ */
+export function applyDeleteToolSlot({
+  existingSlots,
+  currentRows,
+  existingStats,
+  toolNum,
+}) {
+  const tn = Math.max(1, toNumber(toolNum, 0));
+  const nextSlots = normalizeToolSlots(existingSlots).filter(
+    (s) => s.toolNum !== tn,
+  );
+  const nextRows = normalizeToolLifeRows(currentRows).filter(
+    (r) => r.toolNum !== tn,
+  );
+  const nextStats = normalizeMachiningStats(existingStats).filter(
+    (s) => s.toolNum !== tn,
+  );
+  return { nextSlots, nextRows, nextStats };
+}
+
+/**
+ * ClearToolSlots: 장비의 등록 공구를 모두 제거한다.
+ * toolSlots / toolLifeRows / 슬롯별 machiningStats를 비운다.
+ * toolNum=0(장비 단위) 통계와 교체 이력은 유지한다.
+ */
+export function applyClearToolSlots({
+  existingSlots: _existingSlots,
+  currentRows: _currentRows,
+  existingStats,
+}) {
+  const nextStats = normalizeMachiningStats(existingStats).filter(
+    (s) => s.toolNum === 0,
+  );
+  return { nextSlots: [], nextRows: [], nextStats };
+}
+
+/**
  * CompleteToolReplacement: 교체 완료 처리.
  * 슬롯 상태를 removing/removed → mounted로 전환하고
  * 공구 메타데이터(이름/타입/메모)를 업데이트한다.

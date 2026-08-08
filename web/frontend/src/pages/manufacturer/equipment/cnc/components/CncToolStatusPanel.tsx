@@ -2,10 +2,13 @@
 // - web/frontend/src/pages/manufacturer/equipment/cnc/components/CncToolStatusModal.tsx
 // - web/frontend/src/pages/manufacturer/equipment/cnc/hooks/useCncToolPanels.tsx
 // - web/frontend/src/pages/manufacturer/equipment/cnc/hooks/useCncToolSlots.tsx
+import { useState } from "react";
+
 import type { HealthLevel } from "@/pages/manufacturer/equipment/cnc/components/MachineCard";
 import type {
   ToolSlot,
 } from "@/pages/manufacturer/equipment/cnc/hooks/useCncToolSlots";
+import { ConfirmDialog } from "@/features/support/components/ConfirmDialog";
 
 export type ToolLifeRow = {
   toolNum: number;
@@ -33,6 +36,14 @@ interface CncToolStatusPanelProps {
   canAddTool: boolean;
   canBeginRemoval: boolean;
   onAddTool: () => void;
+  /** 현재 장비 슬롯을 템플릿으로 저장 */
+  onSaveAsTemplate?: () => void;
+  /** 템플릿을 이 장비에 불러오기 (공구 0개일 때만) */
+  onLoadTemplate?: () => void;
+  /** 공구 1개 삭제 */
+  onDeleteTool?: (toolNum: number) => Promise<boolean>;
+  /** 공구 전체 삭제 */
+  onClearAllTools?: () => Promise<boolean>;
   onOpenOffset: (toolNum: number) => void;
   onConfigChange: (index: number, configCount: number) => void;
   onConfigBlur: () => void;
@@ -100,6 +111,10 @@ export function CncToolStatusPanel({
   canAddTool,
   canBeginRemoval,
   onAddTool,
+  onSaveAsTemplate,
+  onLoadTemplate,
+  onDeleteTool,
+  onClearAllTools,
   onOpenOffset,
   onConfigChange,
   onConfigBlur,
@@ -115,6 +130,39 @@ export function CncToolStatusPanel({
   const pendingSlots = toolSlots.filter((s) => s.replacementStatus !== "mounted");
   const warnCount = Number(toolingSummary?.warningCount || 0);
   const alarmCount = Number(toolingSummary?.alarmCount || 0);
+  const hasTools = rows.length > 0 || toolSlots.length > 0;
+  const canSaveTemplate = Boolean(onSaveAsTemplate) && hasTools;
+  const canLoadTemplate = Boolean(onLoadTemplate) && !hasTools;
+  const canClearAll = Boolean(onClearAllTools) && hasTools;
+  const canDeleteOne = Boolean(onDeleteTool);
+
+  const [confirmClearOpen, setConfirmClearOpen] = useState(false);
+  const [pendingDeleteToolNum, setPendingDeleteToolNum] = useState<number | null>(
+    null,
+  );
+  const [deleting, setDeleting] = useState(false);
+
+  const handleConfirmClear = async () => {
+    if (!onClearAllTools || deleting) return;
+    setDeleting(true);
+    try {
+      await onClearAllTools();
+    } finally {
+      setDeleting(false);
+      setConfirmClearOpen(false);
+    }
+  };
+
+  const handleConfirmDeleteOne = async () => {
+    if (pendingDeleteToolNum == null || !onDeleteTool || deleting) return;
+    setDeleting(true);
+    try {
+      await onDeleteTool(pendingDeleteToolNum);
+    } finally {
+      setDeleting(false);
+      setPendingDeleteToolNum(null);
+    }
+  };
 
   return (
     <div className="space-y-4 text-sm text-slate-700">
@@ -130,16 +178,45 @@ export function CncToolStatusPanel({
             교체 필요 {alarmCount}
           </span>
         </div>
-        {canAddTool ? (
-          <button
-            type="button"
-            onClick={onAddTool}
-            className="inline-flex items-center gap-1 rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-800"
-          >
-            <span className="text-sm leading-none">+</span>
-            공구 추가
-          </button>
-        ) : null}
+        <div className="flex flex-wrap items-center gap-2">
+          {canLoadTemplate ? (
+            <button
+              type="button"
+              onClick={onLoadTemplate}
+              className="inline-flex items-center rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+            >
+              템플릿 불러오기
+            </button>
+          ) : null}
+          {canSaveTemplate ? (
+            <button
+              type="button"
+              onClick={onSaveAsTemplate}
+              className="inline-flex items-center rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+            >
+              템플릿으로 저장
+            </button>
+          ) : null}
+          {canClearAll ? (
+            <button
+              type="button"
+              onClick={() => setConfirmClearOpen(true)}
+              className="inline-flex items-center rounded-lg border border-red-200 bg-white px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-50"
+            >
+              공구 전체 삭제
+            </button>
+          ) : null}
+          {canAddTool ? (
+            <button
+              type="button"
+              onClick={onAddTool}
+              className="inline-flex items-center gap-1 rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-800"
+            >
+              <span className="text-sm leading-none">+</span>
+              공구 추가
+            </button>
+          ) : null}
+        </div>
       </div>
 
       <div className="rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5">
@@ -184,20 +261,31 @@ export function CncToolStatusPanel({
             등록된 공구가 없습니다
           </div>
           <p className="mt-2 text-xs leading-relaxed text-slate-500">
-            슬롯 번호와 공구 이름만 입력하면
+            먼저 이 장비에 공구를 등록하거나,
             <br />
-            사용량 추적과 교체 알림을 사용할 수 있습니다.
+            다른 장비에서 저장한 템플릿을 불러오세요.
           </p>
-          {canAddTool ? (
-            <button
-              type="button"
-              onClick={onAddTool}
-              className="mt-5 inline-flex items-center gap-1 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
-            >
-              <span className="text-base leading-none">+</span>
-              공구 등록
-            </button>
-          ) : null}
+          <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
+            {canLoadTemplate ? (
+              <button
+                type="button"
+                onClick={onLoadTemplate}
+                className="inline-flex items-center rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                템플릿 불러오기
+              </button>
+            ) : null}
+            {canAddTool ? (
+              <button
+                type="button"
+                onClick={onAddTool}
+                className="inline-flex items-center gap-1 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
+              >
+                <span className="text-base leading-none">+</span>
+                공구 등록
+              </button>
+            ) : null}
+          </div>
         </div>
       ) : (
         <>
@@ -225,6 +313,11 @@ export function CncToolStatusPanel({
                     <th className="whitespace-nowrap px-2 py-2.5 text-center">
                       교체
                     </th>
+                    {canDeleteOne ? (
+                      <th className="whitespace-nowrap px-2 py-2.5 text-center">
+                        삭제
+                      </th>
+                    ) : null}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -368,6 +461,17 @@ export function CncToolStatusPanel({
                             </button>
                           )}
                         </td>
+                        {canDeleteOne ? (
+                          <td className="px-2 py-3 text-center align-middle">
+                            <button
+                              type="button"
+                              onClick={() => setPendingDeleteToolNum(toolNum)}
+                              className="rounded-md border border-red-200 bg-white px-2 py-1 text-[11px] font-semibold text-red-700 hover:bg-red-50"
+                            >
+                              삭제
+                            </button>
+                          </td>
+                        ) : null}
                       </tr>
                     );
                   })}
@@ -392,6 +496,55 @@ export function CncToolStatusPanel({
           </div>
         </>
       )}
+
+      <ConfirmDialog
+        open={confirmClearOpen}
+        title="공구를 모두 삭제할까요?"
+        description={
+          <>
+            이 장비에 등록된 공구{" "}
+            <span className="font-semibold">{rows.length}개</span>를 모두
+            삭제합니다. 사용 통계·교체 이력은 남고, 슬롯 등록만 지워집니다.
+            삭제 후 템플릿을 다시 불러올 수 있습니다.
+          </>
+        }
+        confirmLabel={deleting ? "삭제 중…" : "전체 삭제"}
+        cancelLabel="취소"
+        onConfirm={() => {
+          void handleConfirmClear();
+        }}
+        onCancel={() => {
+          if (deleting) return;
+          setConfirmClearOpen(false);
+        }}
+      />
+
+      <ConfirmDialog
+        open={pendingDeleteToolNum != null}
+        title="이 공구를 삭제할까요?"
+        description={
+          pendingDeleteToolNum != null ? (
+            <>
+              슬롯{" "}
+              <span className="font-semibold">#{pendingDeleteToolNum}</span>
+              {slotMap.get(pendingDeleteToolNum)?.toolName
+                ? ` (${slotMap.get(pendingDeleteToolNum)?.toolName})`
+                : ""}
+              을 삭제합니다. 사용 통계·교체 이력은 남고, 이 슬롯 등록만
+              지워집니다.
+            </>
+          ) : null
+        }
+        confirmLabel={deleting ? "삭제 중…" : "삭제"}
+        cancelLabel="취소"
+        onConfirm={() => {
+          void handleConfirmDeleteOne();
+        }}
+        onCancel={() => {
+          if (deleting) return;
+          setPendingDeleteToolNum(null);
+        }}
+      />
     </div>
   );
 }
