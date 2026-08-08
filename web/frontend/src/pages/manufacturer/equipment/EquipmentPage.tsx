@@ -225,11 +225,17 @@ export const EquipmentPage = () => {
   // CncMachineGrid의 MachineCard에서 "공구" 아이콘 클릭 시 호출되므로,
   // 기존 openToolDetail 시그니처를 유지하면서 슬롯 데이터를 함께 표시한다.
   const openToolDetailUnified = useCallback(
-    (toolLife: any[], level: HealthLevel, toolingMeta?: any) => {
-      // 슬롯 콜백이 제공되어 있으므로 슬롯 강화 UI 사용
-      openToolDetailWithSlots(toolLife, level, toolingMeta);
+    async (toolLife: any[], level: HealthLevel, toolingMeta?: any) => {
+      // 슬롯 로드를 기다린 뒤 넘겨, 템플릿 적용 직후 빈 패널이 뜨지 않게 한다.
+      let slots = toolSlots;
+      try {
+        slots = await loadToolSlots();
+      } catch {
+        // keep current toolSlots
+      }
+      openToolDetailWithSlots(toolLife, level, toolingMeta, slots);
     },
-    [openToolDetailWithSlots],
+    [openToolDetailWithSlots, loadToolSlots, toolSlots],
   );
 
   const { tempModalOpen, tempModalBody, setTempModalOpen, openTempDetail } =

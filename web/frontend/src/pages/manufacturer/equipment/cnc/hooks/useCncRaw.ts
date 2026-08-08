@@ -29,12 +29,13 @@ export const useCncRaw = () => {
       const key = `${uid || ""}:${dataType}`;
       // 자동/배경 조회 계열 dataType 목록 (백엔드 callRawProxy/브리지 READ 타입과 동일하게 유지)
       // 모달에서 사용자가 직접 여는 조회(툴/프로그램 코드 편집 등)는 여기에 넣지 않는다.
+      // GetToolLifeInfo는 공구 모달 등 사용자 직접 조회에 쓰이므로 쿨다운에서 제외.
+      // (쿨다운 시 {} 를 반환하면 템플릿 적용 직후 빈 화면/먹통으로 보인다.)
       const READ_TYPES = [
         "GetOPStatus",
         "GetProgListInfo",
         "GetActivateProgInfo",
         "GetMotorTemperature",
-        "GetToolLifeInfo",
         "GetProgDataInfo",
         "GetMachineList",
       ];

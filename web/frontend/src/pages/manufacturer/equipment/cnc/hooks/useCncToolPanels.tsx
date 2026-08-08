@@ -41,8 +41,8 @@ interface UseCncToolPanelsParams {
     toolNum: number;
     toolName?: string;
   }) => Promise<boolean>;
-  /** 템플릿 적용/등록 후 슬롯 목록 다시 로드 */
-  onReloadToolSlots?: () => Promise<void>;
+  /** 템플릿 적용/등록 후 슬롯 목록 다시 로드 (로드된 슬롯 반환 가능) */
+  onReloadToolSlots?: () => Promise<ToolSlot[] | void>;
   /** 공구 1개 삭제 */
   onDeleteTool?: (toolNum: number) => Promise<{
     toolSlots: ToolSlot[];
@@ -1727,6 +1727,7 @@ export const useCncToolPanels = ({
    */
   const returnToToolStatus = async () => {
     const uid = workUidRef.current;
+    let slotsOverride: ToolSlot[] | undefined;
     if (uid) {
       try {
         const res = await callRawRef.current(uid, "GetToolSlots");
@@ -1734,18 +1735,63 @@ export const useCncToolPanels = ({
           ? res.data.toolSlots
           : [];
         toolSlotsRef.current = slots;
+        slotsOverride = slots;
       } catch {
         // 슬롯 조회 실패 시에도 상태 화면은 연다
       }
       if (onReloadToolSlotsRef.current) {
         try {
-          await onReloadToolSlotsRef.current();
+          const reloaded = await onReloadToolSlotsRef.current();
+          if (Array.isArray(reloaded)) {
+            toolSlotsRef.current = reloaded;
+            slotsOverride = reloaded;
+          }
         } catch {
           // ignore
         }
       }
     }
-    await reloadToolStatusPanel();
+    const fallbackLevel = lastToolHealthLevelRef.current;
+    if (!uid) {
+      openToolDetailWithSlotsRef.current(
+        toolLifeRowsRef.current,
+        fallbackLevel,
+        undefined,
+        slotsOverride ?? toolSlotsRef.current,
+      );
+      return;
+    }
+    try {
+      const res = await callRawRef.current(uid, "GetToolLifeInfo");
+      const data: any = res?.data ?? res;
+      const toolLife =
+        data?.machineToolLife?.toolLife ??
+        data?.machineToolLife?.toolLifeInfo ??
+        toolLifeRowsRef.current ??
+        [];
+      const meta = {
+        toolingSummary: data?.machineToolLife?.toolingSummary,
+        replacementHistory: data?.machineToolLife?.replacementHistory,
+        observations: data?.machineToolLife?.observations,
+      };
+      const nextLevel = resolveSummaryLevel(meta.toolingSummary);
+      setToolHealth(nextLevel);
+      setLastToolHealthLevel(nextLevel);
+      setToolTooltip(buildSummaryTooltip(meta.toolingSummary));
+      openToolDetailWithSlotsRef.current(
+        toolLife,
+        nextLevel,
+        meta,
+        slotsOverride ?? toolSlotsRef.current,
+      );
+    } catch {
+      openToolDetailWithSlotsRef.current(
+        toolLifeRowsRef.current,
+        fallbackLevel,
+        undefined,
+        slotsOverride ?? toolSlotsRef.current,
+      );
+    }
   };
 
   /**
@@ -1807,14 +1853,13 @@ export const useCncToolPanels = ({
   openSaveTemplateDialogRef.current = openSaveTemplateDialog;
 
   const openLoadTemplateDialog = () => {
+    // 등록 기준은 슬롯(toolSlots)만. toolLife 잔여 행만으로 막으면
+    // 빈 화면인데도 "이미 등록됨" 오류가 나는 모순이 생긴다.
     const slots = (toolSlotsRef.current || []).map((s) => ({
       toolNum: Number(s.toolNum),
       toolName: String(s.toolName || ""),
     }));
-    const lifeCount = Array.isArray(toolLifeRowsRef.current)
-      ? toolLifeRowsRef.current.length
-      : 0;
-    if (slots.length > 0 || lifeCount > 0) {
+    if (slots.length > 0) {
       setError("이미 등록된 공구가 있습니다. 모두 삭제한 뒤 불러오세요.");
       return;
     }

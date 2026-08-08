@@ -90,10 +90,10 @@ export const useCncToolSlots = ({
   const workUidRef = useRef(workUid);
   workUidRef.current = workUid;
 
-  /** 슬롯 + 통계 데이터를 백엔드에서 불러온다 */
-  const loadToolSlots = useCallback(async () => {
+  /** 슬롯 + 통계 데이터를 백엔드에서 불러온다. 로드된 슬롯 배열을 반환한다. */
+  const loadToolSlots = useCallback(async (): Promise<ToolSlot[]> => {
     const uid = workUidRef.current;
-    if (!uid) return;
+    if (!uid) return [];
     setLoading(true);
     try {
       const res = await callRaw(uid, "GetToolSlots");
@@ -107,8 +107,10 @@ export const useCncToolSlots = ({
         : [];
       setToolSlots(slots);
       setMachiningStats(stats);
+      return slots;
     } catch (e: any) {
       setError(e?.message ?? "공구 슬롯 조회 중 오류가 발생했습니다.");
+      return [];
     } finally {
       setLoading(false);
     }

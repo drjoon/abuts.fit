@@ -3,6 +3,7 @@
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 import React from "react";
+import { flushSync } from "react-dom";
 import { Plus } from "lucide-react";
 
 import type { Machine } from "./types";
@@ -396,6 +397,12 @@ export const CncDashboardPageView = (props: any) => {
                   void openTempDetail(machine.uid);
                 }}
                 onToolClick={async (machine) => {
+                  // 슬롯 조회가 클릭한 장비를 보도록 workUid를 즉시 맞춘다.
+                  if (setWorkUid) {
+                    flushSync(() => {
+                      setWorkUid(machine.uid);
+                    });
+                  }
                   try {
                     const res = await callRaw(machine.uid, "GetToolLifeInfo");
                     const data: any = res?.data ?? res;
@@ -447,7 +454,7 @@ export const CncDashboardPageView = (props: any) => {
                           : "공구 정보가 없습니다.",
                     );
 
-                    openToolDetail(toolLife, level, {
+                    await openToolDetail(toolLife, level, {
                       toolingSummary,
                       replacementHistory,
                       observations,

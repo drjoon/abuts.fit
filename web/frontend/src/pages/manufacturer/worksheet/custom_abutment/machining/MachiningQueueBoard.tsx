@@ -923,6 +923,7 @@ export const MachiningQueueBoard = ({
       description: panelError,
       variant: "destructive",
     });
+    setPanelError(null);
   }, [panelError, toast]);
 
   const openToolDetailWithSlotsRef = useRef(openToolDetailWithSlots);
@@ -936,6 +937,14 @@ export const MachiningQueueBoard = ({
       flushSync(() => {
         setToolWorkUid(uid);
       });
+      // 슬롯을 먼저 맞춘 뒤 패널을 연다.
+      // (템플릿 적용 후 리프레시 시 빈 화면 + "이미 등록됨" 모순/먹통 방지)
+      let slots: Awaited<ReturnType<typeof loadToolSlots>> = [];
+      try {
+        slots = await loadToolSlots();
+      } catch {
+        slots = [];
+      }
       try {
         const res = await callRaw(uid, "GetToolLifeInfo");
         const data: any = res?.data ?? res;
@@ -961,16 +970,21 @@ export const MachiningQueueBoard = ({
           ...prev,
           [uid]: buildToolSummaryTooltip(toolingSummary),
         }));
-        openToolDetailWithSlotsRef.current(toolLife, level as any, {
-          toolingSummary,
-          replacementHistory,
-          observations,
-        });
+        openToolDetailWithSlotsRef.current(
+          toolLife,
+          level as any,
+          {
+            toolingSummary,
+            replacementHistory,
+            observations,
+          },
+          slots,
+        );
       } catch (e: any) {
         setPanelError(e?.message || "공구 상태 조회 중 오류가 발생했습니다.");
       }
     },
-    [callRaw],
+    [callRaw, loadToolSlots],
   );
 
   const handleDeleteConfirm = useCallback(async () => {
