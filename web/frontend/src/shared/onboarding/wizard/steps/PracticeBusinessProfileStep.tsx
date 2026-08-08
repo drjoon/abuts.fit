@@ -68,6 +68,43 @@ const toDisplayPhone = (value: string) => {
   return formatPhoneNumberInput(domestic);
 };
 
+/**
+ * 담당직원명 초기값.
+ * practice_dropzone 가입은 계정 name을 메일 local-part로 임시 저장하므로,
+ * practiceProfile.staffName이 없으면 빈 값으로 두고 실제 이름을 입력받는다.
+ */
+const resolveStaffNamePrefill = ({
+  profileStaffName,
+  accountName,
+  email,
+  signupChannel,
+}: {
+  profileStaffName?: string | null;
+  accountName?: string | null;
+  email?: string | null;
+  signupChannel?: string | null;
+}) => {
+  const fromProfile = String(profileStaffName || "").trim();
+  if (fromProfile) return fromProfile;
+
+  if (String(signupChannel || "").trim() === "practice_dropzone") {
+    return "";
+  }
+
+  const fromAccount = String(accountName || "").trim();
+  if (!fromAccount) return "";
+
+  const emailLocal = String(email || "")
+    .split("@")[0]
+    ?.trim()
+    .toLowerCase();
+  if (emailLocal && fromAccount.toLowerCase() === emailLocal) {
+    return "";
+  }
+
+  return fromAccount;
+};
+
 const isFormComplete = (form: PracticeForm) => {
   const clinicName = form.clinicName.trim();
   const directorName = form.directorName.trim();
@@ -111,7 +148,12 @@ export const PracticeBusinessProfileStep = ({
       try {
         const profile = user?.practiceProfile;
         let phoneFromProfile = String(profile?.phone || "").trim();
-        let staffName = String(profile?.staffName || user?.name || "").trim();
+        let staffName = resolveStaffNamePrefill({
+          profileStaffName: profile?.staffName,
+          accountName: user?.name,
+          email: user?.email,
+          signupChannel: user?.signupChannel,
+        });
         let directorName = String(profile?.directorName || "").trim();
         let clinicName = String(
           profile?.clinicName || user?.companyName || "",
@@ -126,7 +168,9 @@ export const PracticeBusinessProfileStep = ({
             data?: {
               phoneNumber?: string;
               name?: string;
+              email?: string;
               business?: string;
+              signupChannel?: string;
               practiceProfile?: Record<string, unknown>;
             };
           }>({
@@ -142,7 +186,14 @@ export const PracticeBusinessProfileStep = ({
                 : {};
             phoneFromProfile =
               String(pp.phone || data.phoneNumber || phoneFromProfile).trim();
-            staffName = String(pp.staffName || data.name || staffName).trim();
+            staffName = resolveStaffNamePrefill({
+              profileStaffName: pp.staffName
+                ? String(pp.staffName)
+                : profile?.staffName,
+              accountName: data.name || user?.name,
+              email: data.email || user?.email,
+              signupChannel: data.signupChannel || user?.signupChannel,
+            });
             directorName = String(pp.directorName || directorName).trim();
             clinicName = String(
               pp.clinicName || data.business || clinicName,
