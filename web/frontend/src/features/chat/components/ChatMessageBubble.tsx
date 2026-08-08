@@ -154,25 +154,25 @@ export function ChatMessageBubble({
     <div
       id={chatMessageDomId(String(message._id || ""))}
       className={cn(
-        "group flex scroll-mt-4 rounded-lg transition-[box-shadow,background-color]",
+        "group flex w-full min-w-0 scroll-mt-4 rounded-lg transition-[box-shadow,background-color]",
         isMine ? "justify-end" : "justify-start",
       )}
     >
       <div
         className={cn(
-          "relative max-w-[80%] flex flex-col gap-1",
+          "relative w-fit max-w-[min(80%,100%)] min-w-0 flex flex-col gap-1",
           isMine ? "items-end" : "items-start",
         )}
       >
         <div
           className={cn(
-            "rounded-lg px-3 py-2 shadow-sm",
+            "min-w-0 max-w-full rounded-lg px-3.5 py-2.5 shadow-sm",
             compact ? "text-xs sm:text-sm" : "text-sm",
             isMine ? "bg-primary text-primary-foreground" : "bg-muted",
           )}
         >
           {showSenderName ? (
-            <p className="opacity-80 mb-1 font-medium">{senderName}</p>
+            <p className="opacity-80 mb-1 font-medium break-words">{senderName}</p>
           ) : null}
           <p className={cn("opacity-70 mb-1", compact ? "text-[10px]" : "")}>
             {formatTime(message.createdAt)}
@@ -184,7 +184,7 @@ export function ChatMessageBubble({
               onClick={handleJumpToReply}
               disabled={!canJumpToReply}
               className={cn(
-                "mb-2 block w-full rounded border-l-2 px-2 py-1 text-left transition-opacity",
+                "mb-2 block w-full min-w-0 rounded border-l-2 px-2 py-1 text-left transition-opacity",
                 isMine
                   ? "border-primary-foreground/50 bg-primary-foreground/10"
                   : "border-blue-500 bg-background/60",
@@ -199,7 +199,9 @@ export function ChatMessageBubble({
             </button>
           ) : null}
 
-          <p className="whitespace-pre-wrap break-words leading-snug">{message.content}</p>
+          <p className="min-w-0 whitespace-pre-wrap break-words [overflow-wrap:anywhere] leading-snug">
+            {message.content}
+          </p>
 
           {Array.isArray(message.attachments) && message.attachments.length > 0 ? (
             <div className="mt-2 space-y-1">

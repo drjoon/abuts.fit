@@ -188,7 +188,7 @@ export function PracticeTransferDetailChatDialog({
               </div>
 
               <ScrollArea className="min-h-0 flex-1 px-3 py-3">
-                <div className="space-y-2">
+                <div className="w-full min-w-0 max-w-full space-y-2">
                   {chatLoading ? (
                     <div className="text-center text-sm text-muted-foreground py-4">
                       채팅을 불러오는 중입니다...
