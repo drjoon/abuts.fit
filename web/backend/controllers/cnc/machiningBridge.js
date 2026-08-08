@@ -6,6 +6,7 @@
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/machining/MachiningQueueBoard.tsx
 // - web/frontend/src/pages/manufacturer/equipment/cnc/hooks/useManUpload.ts
 // change-log:
+// - 2026-08-08: 가공 완료 시 NC(T0707→#7) 툴번호로 사용량·수명 카운트.
 // - 2026-08-07: last-completed 맵에 의뢰자명(businessName) 포함.
 // - 2026-08-07: auto-next 직경 호환을 소재≥maxDiameter 커버 규칙으로 통일 (D6→D8/D10 허용).
 import Request from "../../models/request.model.js";
@@ -34,7 +35,14 @@ import {
   isManufacturerSampleRequest,
 } from "../requests/mailbox.utils.js";
 import { compareMachiningQueueOrder } from "../requests/production.utils.js";
-import { appendMachiningJobStats } from "./tooling.js";
+import {
+  appendMachiningJobStats,
+  appendToolLifeObservations,
+  extractToolNumsFromNcText,
+  incrementToolLifeUseCounts,
+  normalizeToolSlots,
+} from "./tooling.js";
+import s3Utils from "../../utils/s3.utils.js";
 import {
   inferCurrentMaterialDiameter,
   inferRequestDiameterGroup,
@@ -2193,12 +2201,13 @@ export async function recordMachiningCompleteForBridge(req, res) {
     });
 
     // ──────────────────────────────────────────────────────────────────────────
-    // 가공 통계(machiningStats) 누적
+    // 가공 통계(machiningStats) + 공구 수명(useCount) 누적
     //
     // 정책:
-    // - 가공 1건 완료 시 toolNum=0(장비 단위) 통계에 자동 누적한다.
-    // - 슬롯 단위(toolNum > 0) 통계는 추후 NC 프로그램 사용 공구 식별이
-    //   가능해지면 RecordMachiningJobStats로 별도 호출하여 누적한다.
+    // - 가공 1건 완료 시 toolNum=0(장비 단위) 통계에 항상 누적한다.
+    // - 슬롯 단위는 NC에 등장한 툴번호만 카운트한다.
+    //   예: T0707 → 앞 2자리 07 → tool #7 (동일 공구 중복 호출은 1회)
+    // - NC를 읽지 못하거나 툴이 없으면 장착중(mounted) 슬롯으로 폴백한다.
     // - 실패해도 가공 완료 응답 흐름에는 영향을 주지 않도록 try/catch로 감싼다.
     // ──────────────────────────────────────────────────────────────────────────
     try {
@@ -2220,22 +2229,8 @@ export async function recordMachiningCompleteForBridge(req, res) {
         ? new Date(completedRecord.completedAt)
         : now;
 
-      // 장비(toolNum=0) + 공구별(toolNum>0) 통계 누적
-      // 정책:
-      // - 1건 완료 시 장비 전체(toolNum=0)는 항상 +1 / +duration
-      // - 공구별은 "장착중(mounted)" 슬롯 각각에 대해 동일 duration을 더한다.
-      //   (의뢰 1건의 전체 소요시간을, 장착된 각 공구의 누계에 합산)
       const cncMachine = await CncMachine.findOne({ machineId: mid });
       if (cncMachine) {
-        let nextStats = cncMachine.tooling?.machiningStats;
-
-        ({ nextStats } = appendMachiningJobStats({
-          existingStats: nextStats,
-          toolNum: 0,
-          jobDurationSeconds: recordedDuration,
-          completedAt,
-        }));
-
         const mountedToolNums = [
           ...new Set(
             (Array.isArray(cncMachine.tooling?.toolSlots)
@@ -2251,7 +2246,53 @@ export async function recordMachiningCompleteForBridge(req, res) {
           ),
         ];
 
-        for (const toolNum of mountedToolNums) {
+        // NC 텍스트에서 사용 공구 추출 (S3 ncFile)
+        let ncToolNums = [];
+        const ncS3Key = String(
+          request?.caseInfos?.ncFile?.s3Key || "",
+        ).trim();
+        if (ncS3Key) {
+          try {
+            const buf = await s3Utils.getObjectBufferFromS3(ncS3Key);
+            const ncText =
+              buf && typeof buf.toString === "function"
+                ? buf.toString("utf8")
+                : String(buf || "");
+            ncToolNums = extractToolNumsFromNcText(ncText);
+          } catch (ncErr) {
+            console.warn(
+              "[bridge:machining:complete] NC tool parse skipped",
+              ncErr?.message || ncErr,
+            );
+          }
+        }
+
+        const registeredNums = new Set(
+          normalizeToolSlots(cncMachine.tooling?.toolSlots).map(
+            (slot) => slot.toolNum,
+          ),
+        );
+        let usedToolNums = [];
+        if (ncToolNums.length > 0) {
+          // 등록된 슬롯과 교집합 우선. 없으면 NC 전체(미등록 슬롯 통계용).
+          usedToolNums =
+            registeredNums.size > 0
+              ? ncToolNums.filter((n) => registeredNums.has(n))
+              : ncToolNums;
+        }
+        if (usedToolNums.length === 0) {
+          usedToolNums = mountedToolNums;
+        }
+
+        let nextStats = cncMachine.tooling?.machiningStats;
+        ({ nextStats } = appendMachiningJobStats({
+          existingStats: nextStats,
+          toolNum: 0,
+          jobDurationSeconds: recordedDuration,
+          completedAt,
+        }));
+
+        for (const toolNum of usedToolNums) {
           ({ nextStats } = appendMachiningJobStats({
             existingStats: nextStats,
             toolNum,
@@ -2260,9 +2301,42 @@ export async function recordMachiningCompleteForBridge(req, res) {
           }));
         }
 
+        const prevLifeRows = Array.isArray(cncMachine.uiSnapshot?.toolLifeRows)
+          ? cncMachine.uiSnapshot.toolLifeRows
+          : [];
+        const { nextRows } = incrementToolLifeUseCounts({
+          existingRows: prevLifeRows,
+          toolNums: usedToolNums,
+          delta: 1,
+        });
+        const nextObservations = appendToolLifeObservations({
+          previousRows: prevLifeRows,
+          nextRows,
+          existingObservations: cncMachine.tooling?.observations,
+          observedAt: completedAt,
+          source: "MachiningComplete",
+        });
+
+        const prevUi =
+          cncMachine.uiSnapshot &&
+          typeof cncMachine.uiSnapshot.toObject === "function"
+            ? cncMachine.uiSnapshot.toObject()
+            : cncMachine.uiSnapshot || {};
+        const prevTooling =
+          cncMachine.tooling && typeof cncMachine.tooling.toObject === "function"
+            ? cncMachine.tooling.toObject()
+            : cncMachine.tooling || {};
+
+        cncMachine.uiSnapshot = {
+          ...prevUi,
+          toolLifeRows: nextRows,
+          updatedAt: completedAt,
+        };
         cncMachine.tooling = {
-          ...(cncMachine.tooling?.toObject?.() || cncMachine.tooling || {}),
+          ...prevTooling,
+          toolSlots: normalizeToolSlots(prevTooling.toolSlots),
           machiningStats: nextStats,
+          observations: nextObservations,
         };
         await cncMachine.save();
       }

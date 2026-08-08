@@ -777,3 +777,86 @@ export function resetCurrentMachiningStats(existingStats, toolNum) {
   };
   return { nextStats };
 }
+
+/**
+ * NC 텍스트에서 사용된 툴번호를 추출한다.
+ *
+ * 규칙 (Esprit NC T코드):
+ * - `T0707` → 앞 2자리 `07` → toolNum 7
+ * - `T4848` → 앞 2자리 `48` → toolNum 48
+ * - 동일 공구가 여러 번 나와도 1회로 취급(고유 집합)
+ *
+ * @param {string} ncText
+ * @returns {number[]}
+ */
+export function extractToolNumsFromNcText(ncText) {
+  const text = typeof ncText === "string" ? ncText : "";
+  if (!text) return [];
+
+  const found = new Set();
+  // 워드 경계 + T + 2~6자리 (T0707, T48, T 0909 등)
+  const re = /\bT\s*(\d{2,6})\b/gi;
+  let match;
+  while ((match = re.exec(text)) !== null) {
+    const digits = String(match[1] || "").trim();
+    if (!digits) continue;
+    // 앞 2자리가 슬롯 번호 (T0707 → 07 → 7)
+    const toolNum = Number.parseInt(digits.slice(0, 2), 10);
+    if (Number.isFinite(toolNum) && toolNum > 0) {
+      found.add(toolNum);
+    }
+  }
+  return Array.from(found).sort((a, b) => a - b);
+}
+
+/**
+ * 가공 1건 완료 시 toolLifeRows.useCount를 +1 한다.
+ * 해당 toolNum 행이 없으면 configCount=0으로 시드한다.
+ *
+ * @param {Object} params
+ * @param {any[]} params.existingRows
+ * @param {number[]} params.toolNums
+ * @param {number} [params.delta=1]
+ * @returns {{ nextRows: any[] }}
+ */
+export function incrementToolLifeUseCounts({
+  existingRows,
+  toolNums,
+  delta = 1,
+}) {
+  const rows = normalizeToolLifeRows(existingRows);
+  const add = Math.max(0, Math.floor(toNumber(delta, 1)));
+  if (add <= 0) return { nextRows: rows };
+
+  const nums = [
+    ...new Set(
+      (Array.isArray(toolNums) ? toolNums : [])
+        .map((n) => Math.max(1, Math.floor(toNumber(n, 0))))
+        .filter((n) => Number.isFinite(n) && n > 0),
+    ),
+  ];
+  if (nums.length === 0) return { nextRows: rows };
+
+  const byNum = new Map(rows.map((row) => [row.toolNum, { ...row }]));
+  for (const toolNum of nums) {
+    const prev = byNum.get(toolNum);
+    if (prev) {
+      byNum.set(toolNum, {
+        ...prev,
+        useCount: Math.max(0, prev.useCount) + add,
+      });
+    } else {
+      byNum.set(toolNum, {
+        toolNum,
+        useCount: add,
+        configCount: 0,
+        warningCount: 0,
+        use: true,
+      });
+    }
+  }
+
+  return {
+    nextRows: Array.from(byNum.values()).sort((a, b) => a.toolNum - b.toolNum),
+  };
+}

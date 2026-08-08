@@ -1489,13 +1489,11 @@ export const useCncToolPanels = ({
     )
       ? toolingMetaSnapshot.replacementHistory
       : [];
-    const recentHistory = [...replacementHistory]
-      .sort(
-        (a: any, b: any) =>
-          new Date(b?.createdAt || 0).getTime() -
-          new Date(a?.createdAt || 0).getTime(),
-      )
-      .slice(0, 8);
+    const recentHistory = [...replacementHistory].sort(
+      (a: any, b: any) =>
+        new Date(b?.createdAt || 0).getTime() -
+        new Date(a?.createdAt || 0).getTime(),
+    );
 
     const formatDate = (value: unknown) =>
       value ? String(value).slice(0, 10) : "—";
@@ -1509,8 +1507,8 @@ export const useCncToolPanels = ({
           </p>
           <p>
             교체 주기는 과거 교체 이력의 평균 사용 횟수이며, 이력이 없으면 설정
-            값을 사용합니다. 공구별 시간은 의뢰 1건의 전체 소요시간을 장착
-            공구에 동일 합산하므로 합계가 전체보다 클 수 있습니다.
+            값을 사용합니다. 공구별 횟수·시간은 NC에 등장한 툴번호(예: T0707 →
+            #7) 기준으로 합산합니다.
           </p>
         </div>
 
@@ -1652,7 +1650,8 @@ export const useCncToolPanels = ({
               최근 교체 이력
             </div>
             <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
-              <ul className="divide-y divide-slate-100">
+              {/* 약 6행 높이까지 보이고, 이후는 내부 스크롤 */}
+              <ul className="max-h-[13.5rem] divide-y divide-slate-100 overflow-y-auto">
                 {recentHistory.map((item: any, idx: number) => (
                   <li
                     key={`${String(item?.toolNum || 0)}-${String(item?.createdAt || idx)}`}
