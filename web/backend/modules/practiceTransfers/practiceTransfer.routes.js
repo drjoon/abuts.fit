@@ -76,7 +76,7 @@ router.post("/trash/empty", authenticate, sendAuth, emptyPracticeTransferTrash);
 
 router.get("/received", authenticate, receiveAuth, getReceivedPracticeTransfers);
 
-// 배지 폴링용: lab 미선택(치과-only)도 403 대신 unreadCount=0
+// 배지 초기/보정용(수신 소켓으로 갱신). lab 미선택도 403 대신 unreadCount=0
 router.get(
   "/received-unread-count",
   authenticate,

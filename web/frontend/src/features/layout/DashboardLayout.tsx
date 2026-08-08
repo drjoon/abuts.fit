@@ -9,7 +9,7 @@ import { apiFetch } from "@/shared/api/apiClient";
 import { toKstYmd } from "@/shared/date/kst";
 import { useToast } from "@/shared/hooks/use-toast";
 
-// change-log:
+// - 2026-08-08: 기공의뢰서 미확인 배지를 30s 폴링 → 소켓(practice:transfer-*)+가시성 보정으로 전환.
 // - 2026-08-05: 사이드바 계정 팝업에서 같은 사업자 동료 계정으로 비밀번호 확인 후 전환(모든 role).
 // - 2026-08-05: 설정 메뉴를 계정 드롭다운에서 사이드바 맨 아래 항목으로 복원(모든 role 공통). 관리자 보안은 계정 드롭다운에 유지.
 // - 2026-08-05: 문의 메뉴를 계정 드롭다운에서 사이드바 맨 아래 항목으로 복원(requestor/salesman/practice/admin). manufacturer·devops는 제외.
@@ -29,8 +29,10 @@ import { useToast } from "@/shared/hooks/use-toast";
 // - web/frontend/src/pages/practice/PracticeDropzonePage.tsx
 // - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
 // - web/frontend/src/shared/realtime/useAppEventDebouncedReload.ts
+// - web/frontend/src/shared/realtime/useAppEventListener.ts
 // - web/frontend/src/shared/realtime/creditBalanceEvent.ts
 // - web/backend/modules/practiceTransfers/practiceTransfer.routes.js
+// - web/backend/controllers/practiceTransfers/practiceTransfer.controller.js
 import { useRequestorBusinessAccess } from "@/shared/business/useRequestorBusinessAccess";
 import {
   isPaidRequestorPath,
@@ -85,6 +87,7 @@ import {
 } from "lucide-react";
 import { AbutsLogo } from "@/components/branding/AbutsLogo";
 import { useAppEventDebouncedReload } from "@/shared/realtime/useAppEventDebouncedReload";
+import { useAppEventListener } from "@/shared/realtime/useAppEventListener";
 import { useAdminCommBadges } from "@/shared/hooks/useAdminCommBadges";
 import { loadBusinessMeCached } from "@/shared/components/business/settings/business/businessMeCache";
 import { resolveBusinessType } from "@/shared/utils/resolveBusinessType";
@@ -462,12 +465,14 @@ export const DashboardLayout = () => {
     };
   }, [refreshSidebarProfile]);
 
+  const canFetchRequestorPracticeUnread =
+    Boolean(token) &&
+    Boolean(user) &&
+    !isPracticeUser &&
+    user?.role === "requestor";
+
   const fetchRequestorPracticeUnreadCount = useCallback(async () => {
-    if (!token || !user) {
-      setRequestorPracticeUnreadCount(0);
-      return;
-    }
-    if (isPracticeUser || user.role !== "requestor") {
+    if (!canFetchRequestorPracticeUnread || !token) {
       setRequestorPracticeUnreadCount(0);
       return;
     }
@@ -496,7 +501,7 @@ export const DashboardLayout = () => {
     } catch {
       setRequestorPracticeUnreadCount(0);
     }
-  }, [isPracticeUser, token, user]);
+  }, [canFetchRequestorPracticeUnread, token]);
 
   const fetchCreditBalance = useCallback(async () => {
     if (!token) return;
@@ -573,18 +578,39 @@ export const DashboardLayout = () => {
     void fetchRequestorPracticeUnreadCount();
   }, [fetchRequestorPracticeUnreadCount]);
 
-  useEffect(() => {
-    if (!token || !user || isPracticeUser || user.role !== "requestor") return;
+  useAppEventListener({
+    enabled: canFetchRequestorPracticeUnread,
+    eventTypes: ["practice:transfer-created", "practice:transfer-updated"],
+    deferWhenEditing: false,
+    onMatch: (evt) => {
+      const payload =
+        evt?.data && typeof evt.data === "object"
+          ? (evt.data as Record<string, unknown>)
+          : {};
+      const unreadCount = Number(payload.unreadCount);
+      if (Number.isFinite(unreadCount) && unreadCount >= 0) {
+        setRequestorPracticeUnreadCount(unreadCount);
+        return;
+      }
+      // unreadCount 없는 이벤트(일부 cancel fan-out 등)는 1회 보정 조회
+      void fetchRequestorPracticeUnreadCount();
+    },
+  });
 
-    const tick = () => {
+  useEffect(() => {
+    if (!canFetchRequestorPracticeUnread) return;
+
+    const onVisibility = () => {
+      if (typeof document === "undefined") return;
+      if (document.visibilityState !== "visible") return;
       void fetchRequestorPracticeUnreadCount();
     };
 
-    const timer = window.setInterval(tick, 30000);
+    document.addEventListener("visibilitychange", onVisibility);
     return () => {
-      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [fetchRequestorPracticeUnreadCount, isPracticeUser, token, user]);
+  }, [canFetchRequestorPracticeUnread, fetchRequestorPracticeUnreadCount]);
 
   useEffect(() => {
     const onUnreadUpdated = (evt: Event) => {

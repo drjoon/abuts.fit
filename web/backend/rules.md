@@ -554,6 +554,9 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
       집계는 `getAssignedLikeDashboardSummary`에서 병렬 aggregate.
     - `GET /api/practice/transfers/received-unread-count`: 짧은 TTL 캐시 +
       인덱스 `PracticeTransfer(targetLabAnchorId, status, requestorReadAt)`.
+      BusinessAnchor 선행 조회 금지(캐시 히트 경로 경량). 프론트는 소켓
+      `practice:transfer-created|updated`의 `unreadCount`로 배지 갱신하고,
+      마운트/탭 가시성 시에만 이 API로 보정한다.
     - 인증 `authenticate`: User 조회 30s TTL 캐시(폴링 공통 병목 완화). 계정 비활성 시 즉시 invalidate.
     - `GET /api/admin/dashboard`: 20s TTL 캐시, File 전수 집계/recent populate 제거, 해피콜 집계와 크레딧 점검을 병렬화,
       unmachinable items는 DB에서 limit 10. 구현: `controllers/admin/admin.dashboard.controller.js`.
