@@ -247,7 +247,6 @@ export default function AdminReferralGroupsPage() {
   const { toast } = useToast();
   const { period } = usePeriodStore();
   const queryClient = useQueryClient();
-  const isDev = import.meta.env.DEV;
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState<
     "all" | "requestor" | "salesman" | "devops" | "referrer"
@@ -273,9 +272,9 @@ export default function AdminReferralGroupsPage() {
   const { data: groupList, isLoading: isGroupListLoading } = useQuery({
     queryKey: ["admin-referral-groups", period],
     enabled: Boolean(token),
+    staleTime: 60_000,
     queryFn: async () => {
       const qs = new URLSearchParams();
-      if (isDev) qs.set("refresh", "1");
       const rangeQ = periodToRangeQuery(period);
       if (rangeQ) {
         const rp = new URLSearchParams(rangeQ.replace(/^\?/, ""));
@@ -434,6 +433,7 @@ export default function AdminReferralGroupsPage() {
   const { data: treeData, isLoading: isTreeLoading } = useQuery({
     queryKey: ["admin-referral-group-tree", effectiveLeaderId],
     enabled: Boolean(token && effectiveLeaderId && selectedGroupRow),
+    staleTime: 60_000,
     queryFn: async () => {
       const res = await apiFetch<ApiGroupTreeResponse>({
         path: `/api/admin/referral-groups/${effectiveLeaderId}/tree`,
@@ -572,7 +572,7 @@ export default function AdminReferralGroupsPage() {
   };
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-slate-50/80 px-8 py-6 sm:px-10">
+    <div className="flex h-full min-h-0 flex-col bg-slate-50/80 px-1 py-2 sm:px-2 sm:py-3">
       <div className="mx-auto flex w-full max-w-7xl flex-1 min-h-0 flex-col gap-5 overflow-hidden">
         <div className="grid shrink-0 grid-cols-1 gap-3 md:grid-cols-2">
           <div className="rounded-2xl border border-slate-200/80 bg-white px-4 py-3.5 shadow-sm sm:px-5">
@@ -859,7 +859,7 @@ export default function AdminReferralGroupsPage() {
                     setSelectedLeaderId(e.target.value || null);
                     setSelectedNode(null);
                   }}
-                  className="h-9 flex-1 rounded-lg border border-slate-200 bg-white px-3 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-slate-400"
+                  className="h-9 flex-1 rounded-lg border border-slate-200 bg-white px-3 text-sm shadow-sm outline-none transition-colors focus-visible:ring-1 focus-visible:ring-slate-400"
                 >
                   <option value="">리더를 선택하세요</option>
                   {filteredGroups.map((g) => {

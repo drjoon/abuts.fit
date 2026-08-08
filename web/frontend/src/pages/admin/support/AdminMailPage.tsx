@@ -113,7 +113,7 @@ export const AdminMailPage = () => {
   };
 
   return (
-    <div className="p-4 space-y-4">
+    <div className="p-2 sm:p-3 space-y-4">
       <Tabs value={tab} onValueChange={(v) => setTab(v as any)}>
         <TabsList className="flex flex-wrap items-center gap-2 w-full">
           <TabsTrigger value="inbox" className="gap-2">

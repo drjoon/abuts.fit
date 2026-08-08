@@ -409,7 +409,7 @@ export const AdminChatManagement = () => {
   };
 
   return (
-    <div className="flex flex-col h-full min-h-0 bg-gradient-subtle p-6">
+    <div className="flex flex-col h-full min-h-0 bg-gradient-subtle p-2 sm:p-3">
       <div className="max-w-7xl w-full mx-auto space-y-6 flex flex-col flex-1 min-h-0">
         {/* Header */}
 

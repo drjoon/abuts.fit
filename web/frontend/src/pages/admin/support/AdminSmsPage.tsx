@@ -1038,7 +1038,7 @@ export default function AdminSmsPage() {
     (selectedRecipients.length > 0 || !!manualTo.trim());
 
   return (
-    <div className="p-4 space-y-4">
+    <div className="p-2 sm:p-3 space-y-4">
       <Tabs value={tab} onValueChange={(v) => setTab(v as "send" | "history")}>
         <TabsList>
           <TabsTrigger value="send" className="gap-2">

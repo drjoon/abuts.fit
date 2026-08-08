@@ -6,7 +6,7 @@ import { PopbillQueuePanel } from "@/features/admin/popbill/PopbillQueuePanel";
 
 export const AdminPopbillQueue = () => {
   return (
-    <div className="p-4">
+    <div className="p-2 sm:p-3">
       <PopbillQueuePanel />
     </div>
   );

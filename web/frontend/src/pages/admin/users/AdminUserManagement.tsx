@@ -864,7 +864,7 @@ export const AdminUserManagement = () => {
   ] as const;
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-slate-50/80 px-8 py-6 sm:px-10">
+    <div className="flex h-full min-h-0 flex-col bg-slate-50/80 px-1 py-2 sm:px-2 sm:py-3">
       <div className="mx-auto flex w-full max-w-7xl flex-1 min-h-0 flex-col gap-5 overflow-y-auto">
         <div className="grid grid-cols-2 gap-3 pr-1 md:grid-cols-4 xl:grid-cols-7">
           {statsCards.map((card) => {

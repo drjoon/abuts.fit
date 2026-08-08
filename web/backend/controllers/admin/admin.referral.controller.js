@@ -98,18 +98,25 @@ function pickRepresentativeUser(users) {
 export async function getReferralGroups(req, res) {
   try {
     const refresh = String(req.query.refresh || "") === "1";
+    const recompute = String(req.query.recompute || "") === "1";
     const { startDate, endDate } = req.query;
     const startDateRaw = String(startDate || "").trim();
     const endDateRaw = String(endDate || "").trim();
 
     // 캐시 키 생성
-    const cacheKey = `referral-groups:v2:${startDate || ""}:${endDate || ""}`;
+    const cacheKey = `referral-groups:v3:${startDate || ""}:${endDate || ""}`;
     if (!refresh) {
       const cached = getAdminReferralCache(cacheKey);
       if (cached) {
         return res.status(200).json(cached);
       }
     }
+
+    const payload = await withAdminReferralInFlight(cacheKey, async () => {
+      if (!refresh) {
+        const cached = getAdminReferralCache(cacheKey);
+        if (cached) return cached;
+      }
 
     // BusinessAnchor 기반 리더 조회 (SSOT)
     const rawLeaderAnchors = await BusinessAnchor.find({
@@ -123,6 +130,7 @@ export async function getReferralGroups(req, res) {
         metadata: 1,
         primaryContactUserId: 1,
         referredByAnchorId: 1,
+        payoutRates: 1,
         createdAt: 1,
         updatedAt: 1,
       })
@@ -162,44 +170,32 @@ export async function getReferralGroups(req, res) {
         createdAt: anchor.createdAt,
         updatedAt: anchor.updatedAt,
         referredByAnchorId: anchor.referredByAnchorId,
+        payoutRates: anchor.payoutRates,
       };
     });
 
     if (!leaders.length) {
-      return res.status(200).json({ success: true, data: { groups: [] } });
+      return { success: true, data: { groups: [] } };
     }
 
     const ymd = getTodayYmdInKst();
 
-    // 병렬 처리: devops payout rates + rolling aggregates
-    const devopsLeaderAnchorIds = leaders
-      .filter(
-        (l) =>
-          String(l?.role || "") === "devops" &&
-          l?.businessAnchorId &&
-          Types.ObjectId.isValid(String(l.businessAnchorId)),
-      )
-      .map((l) => new Types.ObjectId(String(l.businessAnchorId)));
-
-    const [devopsAnchors, rollingAggregates] = await Promise.all([
-      devopsLeaderAnchorIds.length > 0
-        ? BusinessAnchor.find({ _id: { $in: devopsLeaderAnchorIds } })
-            .select({ payoutRates: 1 })
-            .lean()
-        : Promise.resolve([]),
-      PricingReferralRolling30dAggregate.find({ ymd })
-        .select({
-          businessAnchorId: 1,
-          groupMemberCount: 1,
-          groupTotalOrders30d: 1,
-          selfBusinessOrders30d: 1,
-          computedAt: 1,
-        })
-        .lean(),
-    ]);
+    const rollingAggregates = await PricingReferralRolling30dAggregate.find({
+      ymd,
+    })
+      .select({
+        businessAnchorId: 1,
+        groupMemberCount: 1,
+        groupTotalOrders30d: 1,
+        selfBusinessOrders30d: 1,
+        computedAt: 1,
+      })
+      .lean();
 
     const devopsPayoutRatesByAnchorId = new Map(
-      devopsAnchors.map((anchor) => [String(anchor._id), anchor.payoutRates]),
+      leaders
+        .filter((l) => String(l?.role || "") === "devops")
+        .map((l) => [String(l.businessAnchorId), l.payoutRates]),
     );
 
     const rollingAggregateAnchorIds = new Set(
@@ -214,15 +210,23 @@ export async function getReferralGroups(req, res) {
           Types.ObjectId.isValid(id) && !rollingAggregateAnchorIds.has(id),
       );
 
-    if (missingLeaderAnchorIds.length && refresh) {
-      // refresh=1일 때만 재계산 (성능 최적화)
-      const recomputeResults = await Promise.allSettled(
-        missingLeaderAnchorIds.map((leaderBusinessAnchorId) =>
-          recomputePricingReferralSnapshotForLeaderAnchorId(
-            leaderBusinessAnchorId,
+    // 목록 조회 경로에서는 기본 재계산하지 않음(일배치 SSOT). 명시적 recompute=1만 허용.
+    if (missingLeaderAnchorIds.length && recompute) {
+      const RECOMPUTE_CONCURRENCY = 4;
+      for (
+        let i = 0;
+        i < missingLeaderAnchorIds.length;
+        i += RECOMPUTE_CONCURRENCY
+      ) {
+        const chunk = missingLeaderAnchorIds.slice(i, i + RECOMPUTE_CONCURRENCY);
+        await Promise.allSettled(
+          chunk.map((leaderBusinessAnchorId) =>
+            recomputePricingReferralSnapshotForLeaderAnchorId(
+              leaderBusinessAnchorId,
+            ),
           ),
-        ),
-      );
+        );
+      }
 
       // 재조회 - 필요한 ID만
       const freshAggregates = await PricingReferralRolling30dAggregate.find({
@@ -270,6 +274,7 @@ export async function getReferralGroups(req, res) {
       revenueByBusinessAnchorId,
       bonusByBusinessAnchorId,
       requestorBusinessStatsByBusinessAnchorId,
+      directChildren,
     } = await buildReferralLeaderAggregation({
       leaders,
       periodStart,
@@ -280,23 +285,51 @@ export async function getReferralGroups(req, res) {
         .filter((row) => String(row?.businessAnchorId || ""))
         .map((row) => [String(row?.businessAnchorId || ""), row]),
     );
-    const requestorCircleBusinessAnchorIdsByLeaderBusinessAnchorId = new Map(
-      await Promise.all(
-        leaders
-          .filter((leader) => String(leader?.role || "") === "requestor")
-          .map(async (leader) => {
-            const leaderBusinessAnchorId = String(
-              leader?.businessAnchorId || "",
-            ).trim();
-            const circleIds = leaderBusinessAnchorId
-              ? await getDirectReferralCircleAnchorIds(leaderBusinessAnchorId, {
-                  allowedBusinessTypes: ["requestor"],
-                })
-              : [];
-            return [leaderBusinessAnchorId, circleIds];
-          }),
-      ),
+
+    // requestor circle은 이미 조회한 leaders/children로 메모리 계산 (N+1 제거)
+    const leaderByAnchorId = new Map(
+      leaders.map((leader) => [
+        String(leader?.businessAnchorId || ""),
+        leader,
+      ]),
     );
+    const requestorChildIdsByLeader = new Map();
+    for (const child of directChildren || []) {
+      if (String(child?.businessType || "") !== "requestor") continue;
+      const parentId = String(child?.referredByAnchorId || "").trim();
+      const childId = String(child?._id || "").trim();
+      if (!parentId || !childId) continue;
+      const list = requestorChildIdsByLeader.get(parentId) || [];
+      list.push(childId);
+      requestorChildIdsByLeader.set(parentId, list);
+    }
+    const requestorCircleBusinessAnchorIdsByLeaderBusinessAnchorId = new Map();
+    for (const leader of leaders) {
+      if (String(leader?.role || "") !== "requestor") continue;
+      const leaderBusinessAnchorId = String(
+        leader?.businessAnchorId || "",
+      ).trim();
+      if (!leaderBusinessAnchorId) continue;
+      // snapshot이 있으면 circle length fallback이 필요 없음
+      if (rollingAggregateByBusinessAnchorId.has(leaderBusinessAnchorId)) {
+        continue;
+      }
+      const ids = new Set([leaderBusinessAnchorId]);
+      const parentId = String(leader?.referredByAnchorId || "").trim();
+      const parent = parentId ? leaderByAnchorId.get(parentId) : null;
+      if (parent && String(parent?.role || "") === "requestor") {
+        ids.add(parentId);
+      }
+      for (const childId of requestorChildIdsByLeader.get(
+        leaderBusinessAnchorId,
+      ) || []) {
+        ids.add(childId);
+      }
+      requestorCircleBusinessAnchorIdsByLeaderBusinessAnchorId.set(
+        leaderBusinessAnchorId,
+        Array.from(ids),
+      );
+    }
 
     const groups = leaders.map((leader) => {
       const leaderBusinessAnchorId = String(leader?.businessAnchorId || "");
@@ -532,14 +565,11 @@ export async function getReferralGroups(req, res) {
       },
     };
 
-    if (!refresh) {
-      // 5분 TTL 캐시
-      setAdminReferralCache(
-        cacheKey,
-        payload,
-        300000, // 5분
-      );
-    }
+    // 5분 TTL 캐시 (refresh여도 결과 저장해 이후 요청 가속)
+    setAdminReferralCache(cacheKey, payload, 300000);
+    return payload;
+    });
+
     return res.status(200).json(payload);
   } catch (error) {
     return res.status(500).json({

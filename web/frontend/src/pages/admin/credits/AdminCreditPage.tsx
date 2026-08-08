@@ -79,7 +79,7 @@ export default function AdminCreditPage() {
   }, [state.salesmen, normalizedSearch]);
 
   return (
-    <div className="space-y-6 p-6 overflow-hidden">
+    <div className="space-y-6 p-2 sm:p-3 overflow-hidden">
       <Tabs
         value={state.creditTab}
         onValueChange={(v) => state.setCreditTab(v as "requestor" | "salesman")}
