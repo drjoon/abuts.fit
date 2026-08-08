@@ -1,5 +1,6 @@
 // change-log:
 // - 2026-08-06: 배송/발송 표기를 출고로 통일 (제조사 출발일). 배송비(수수료) 표기는 유지.
+// - 2026-08-08: 정책 안내 모달 섹션 카드·가격 하이라이트·리드타임 그리드로 스타일 개선.
 // related files:
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
@@ -10,7 +11,7 @@
 // - web/frontend/src/pages/requestor/new_request/components/NewRequestShippingSection.tsx
 // - web/backend/controllers/requests/common.requests.controller.js
 // - web/backend/utils/creditSettingsDefaults.js
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -36,6 +37,66 @@ const DEFAULT_LEAD_TIMES: Record<DiameterKey, LeadTimeRange> = {
   d10: { minBusinessDays: 4, maxBusinessDays: 7 },
   d12: { minBusinessDays: 4, maxBusinessDays: 7 }
 };
+
+function PolicySection({
+  title,
+  children,
+  className = ''
+}: {
+  title: string;
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <section className={`rounded-xl bg-slate-50 px-4 py-3.5 ${className}`}>
+      <h3 className='text-sm font-semibold tracking-tight text-slate-900'>
+        {title}
+      </h3>
+      <div className='mt-2.5 space-y-2 text-sm leading-relaxed text-slate-600'>
+        {children}
+      </div>
+    </section>
+  );
+}
+
+function PriceRow({
+  label,
+  value,
+  hint
+}: {
+  label: string;
+  value: string;
+  hint?: string;
+}) {
+  return (
+    <div className='flex items-start justify-between gap-3'>
+      <div className='min-w-0'>
+        <div className='text-sm text-slate-600'>{label}</div>
+        {hint ? (
+          <div className='mt-0.5 text-xs leading-relaxed text-slate-500'>
+            {hint}
+          </div>
+        ) : null}
+      </div>
+      <div className='shrink-0 text-base font-semibold tabular-nums text-slate-900'>
+        {value}
+      </div>
+    </div>
+  );
+}
+
+function BulletList({ items }: { items: ReactNode[] }) {
+  return (
+    <ul className='space-y-1.5'>
+      {items.map((item, i) => (
+        <li key={i} className='flex gap-2'>
+          <span className='mt-2 h-1 w-1 shrink-0 rounded-full bg-slate-400' />
+          <span className='min-w-0'>{item}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
 
 export const PricingPolicyDialog = ({
   open,
@@ -86,271 +147,325 @@ export const PricingPolicyDialog = ({
     void load();
   }, [open, token]);
 
-  const renderLeadTimeLine = (label: string, key: DiameterKey) => {
-    const min = leadTimes[key]?.minBusinessDays;
-    const max = leadTimes[key]?.maxBusinessDays;
-    const minText = Number.isFinite(min) ? min : '-';
-    const maxText = Number.isFinite(max) ? max : '-';
-    const hasSameDayNote = Number(minText) === 1;
-    return (
-      <p>
-        {label}: <b>기준 +{minText}영업일</b> (최대 +{maxText}영업일)
-        {hasSameDayNote ? ' · 자정(0시)까지 접수 시 당일 집하 가능' : ''}
-      </p>
-    );
-  };
+  const diameterRows: { label: string; key: DiameterKey }[] = [
+    { label: '6mm', key: 'd6' },
+    { label: '8mm', key: 'd8' },
+    { label: '10mm', key: 'd10' },
+    { label: '12mm', key: 'd12' }
+  ];
+
+  const title =
+    variant === 'devops'
+      ? '개발운영사 분배 기준'
+      : variant === 'salesman'
+        ? '영업자 수수료 정책'
+        : '가격 · 소개 정책 안내';
+
+  const subtitle =
+    variant === 'devops'
+      ? '유료의뢰비 정산 비율과 화면 안내를 확인하세요.'
+      : variant === 'salesman'
+        ? '소개 수수료 지급 기준과 정산 주기를 확인하세요.'
+        : '단가 · 할인 · 출고 기준을 한눈에 확인하세요.';
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className='max-w-lg max-h-[80vh] overflow-y-auto'>
-        <DialogHeader>
-          <DialogTitle>
-            {variant === 'devops'
-              ? '개발운영사 분배 기준'
-              : variant === 'salesman'
-                ? '영업자 수수료 정책'
-                : '가격 & 소개 정책 안내'}
+      <DialogContent className='max-h-[85vh] max-w-2xl gap-0 overflow-hidden p-0 sm:rounded-2xl'>
+        <DialogHeader className='border-b border-slate-100 px-6 pb-4 pt-6'>
+          <DialogTitle className='text-xl font-semibold tracking-tight text-slate-900'>
+            {title}
           </DialogTitle>
-          <DialogDescription asChild>
-            {variant === 'salesman' ? (
-              <div className='space-y-4 pt-2 text-sm text-muted-foreground'>
-                <section className='space-y-1'>
-                  <h3 className='font-semibold text-foreground text-md'>
-                    1. 소개 수수료 (10%)
-                  </h3>
-                  <p>
-                    소개한 의뢰자의 유료의뢰비에서 <b>10%</b>가 수수료로
-                    지급됩니다.
-                  </p>
-                  <ul className='list-disc pl-4 space-y-0.5'>
-                    <li>소개 관계 기준: 의뢰자 가입 시 입력한 영업자 코드</li>
-                    <li>집계 범위: 1단계 소개만 포함</li>
-                    <li>유료 매출 기준: 의뢰 결제 완료 시점</li>
-                  </ul>
-                </section>
-
-                <section className='space-y-1'>
-                  <h3 className='font-semibold text-foreground text-md'>
-                    2. 집계 및 지급
-                  </h3>
-                  <ul className='list-disc pl-4 space-y-0.5'>
-                    <li>매일 자정(KST 00:00) 사업자 기준으로 업데이트</li>
-                    <li>지급 계좌는 설정 &gt; 결제에서 관리</li>
-                    <li>정산 원장은 보유 크레딧 모달에서 확인 가능</li>
-                  </ul>
-                </section>
-              </div>
-            ) : variant === 'devops' ? (
-              <div className='space-y-4 pt-2 text-sm text-muted-foreground'>
-                <section className='space-y-1'>
-                  <h3 className='font-semibold text-foreground text-md'>
-                    1. 분배 구조
-                  </h3>
-                  <p>
-                    개발·운영사는 유료의뢰비 기준 <b>10%</b>가 정산됩니다.
-                  </p>
-                  <p>
-                    영업자 소개 유무와 무관하게 개발·운영사 비율은 동일합니다.
-                  </p>
-                </section>
-
-                <section className='space-y-1'>
-                  <h3 className='font-semibold text-foreground text-md'>
-                    2. 네트워크 반영
-                  </h3>
-                  <p>
-                    영업자 소개 없이 가입한 의뢰 건은 제조사 65% / 관리자 25% /
-                    개발·운영사 10% 규칙이 적용됩니다.
-                  </p>
-                </section>
-
-                <section className='space-y-1'>
-                  <h3 className='font-semibold text-foreground text-md'>
-                    3. 화면 안내
-                  </h3>
-                  <ul className='list-disc pl-4 space-y-0.5'>
-                    <li>정산 예정액: 미지급 누적 금액</li>
-                    <li>지급 완료액: 지급 완료 누적 금액</li>
-                    <li>사업자 요약: 기간별 사업자 매출·주문·정산 요약</li>
-                    <li>정산 원장: 적립·정산·조정 내역</li>
-                  </ul>
-                </section>
-
-                <section className='space-y-1'>
-                  <h3 className='font-semibold text-foreground text-md'>
-                    4. 지급 계좌
-                  </h3>
-                  <p>
-                    지급 계좌 정보는 <b>설정 &gt; 수익 분배</b>에서 관리합니다.
-                  </p>
-                </section>
-              </div>
-            ) : (
-              <div className='space-y-4 pt-2 text-sm text-muted-foreground'>
-                <section className='space-y-1'>
-                  <h3 className='font-semibold text-foreground text-md'>
-                    1. 기본 가격
-                  </h3>
-                  <ul className='list-disc pl-4 space-y-0.5'>
-                    <li>
-                      커스텀 어벗: <b>1개당 15,000원</b>
-                    </li>
-                    <li>
-                      리메이크 무료: <b>사업자(기공소) 기준 월 3건까지 0원</b>
-                      <br />
-                      <span className='text-xs text-muted-foreground'>
-                        (동일 치과·환자·치식, 최근 90일 조건 충족 건에 한함 /
-                        3건 초과 시 건당 10,000원 적용)
-                      </span>
-                    </li>
-                    <li>
-                      배송비: <b>출고 1회당 3,500원</b> — 한 번에 여러 제품을
-                      보내도 1회만 부과
-                    </li>
-                    <li>
-                      신속 출고: <b>건당 의뢰크레딧 1,000원 추가</b>
-                      <br />
-                      <span className='text-xs text-muted-foreground'>
-                        오늘 낮 12시(KST) 이전 의뢰 시 오늘 오후 출고를
-                        목표합니다. 생산이 지연되면 다음날 출고하며, 추가
-                        의뢰크레딧은 취소됩니다.
-                      </span>
-                    </li>
-                    <li>VAT 별도</li>
-                  </ul>
-                </section>
-
-                <section className='space-y-1'>
-                  <h3 className='font-semibold text-foreground text-md'>
-                    2. 가입 축하 무료 크레딧
-                  </h3>
-                  <p>
-                    신규 가입 기공소에 <b>30,000원</b>이 1회 지급됩니다.
-                  </p>
-                  <ul className='list-disc pl-4 space-y-0.5'>
-                    <li>커스텀 어벗 의뢰 결제에만 사용 가능</li>
-                    <li>배송비에는 사용할 수 없습니다.</li>
-                  </ul>
-                </section>
-
-                <section className='space-y-1'>
-                  <h3 className='font-semibold text-foreground text-md'>
-                    3. 주문량 할인
-                  </h3>
-                  <p>
-                    <b>최근 30일 완료 주문 수</b>에 따라 자동 할인됩니다. (매일
-                    자정 KST 기준 갱신)
-                  </p>
-                  <ul className='list-disc pl-4 space-y-0.5'>
-                    <li>주문 1건당 100원 할인</li>
-                    <li>최대 5,000원 할인 (50건 이상 시 개당 10,000원 고정)</li>
-                  </ul>
-                </section>
-
-                <section className='space-y-1'>
-                  <h3 className='font-semibold text-foreground text-md'>
-                    4. 소개 그룹 합산
-                  </h3>
-                  <p>
-                    할인 단가는{' '}
-                    <b>나를 소개한 기공소 + 나 + 내가 소개한 기공소</b>의 최근
-                    30일 주문량을 합산해 계산합니다.
-                  </p>
-                  <ul className='list-disc pl-4 space-y-0.5'>
-                    <li>
-                      각 사업자의 할인 단가는 자신이 속한 모든 그룹 구성원의
-                      주문량을 합산해 개별 계산합니다.
-                    </li>
-                    <li>
-                      예: A가 B·C를 소개하고, B가 D를 소개한 경우
-                      <ul className='list-disc pl-4 mt-0.5 space-y-0.5'>
-                        <li>A: A+B+C 합산 (자녀: B·C)</li>
-                        <li>B: A+B+D 합산 (부모: A, 자녀: D)</li>
-                        <li>C: A+C 합산 (부모: A, 자녀 없음)</li>
-                        <li>D: B+D 합산 (부모: B, 자녀 없음)</li>
-                      </ul>
-                    </li>
-                  </ul>
-                </section>
-
-                <section className='space-y-1'>
-                  <h3 className='font-semibold text-foreground text-md'>
-                    5. 런칭 이벤트 (신규 기공소)
-                  </h3>
-                  <ul className='list-disc pl-4 space-y-0.5'>
-                    <li>
-                      가입 승인일로부터 <b>180일간 개당 10,000원</b> 고정 적용
-                    </li>
-                    <li>이 기간에는 주문량 할인과 무관하게 우선 적용됩니다.</li>
-                    <li>종료 시점은 별도 공지로 안내드립니다.</li>
-                  </ul>
-                </section>
-
-                <section className='space-y-1'>
-                  <h3 className='font-semibold text-foreground text-md'>
-                    6. 의뢰 취소
-                  </h3>
-                  <p>
-                    <b>준비 단계</b>에서만 취소 가능하며,{' '}
-                    <b>가공 단계부터는 취소할 수 없습니다.</b>
-                  </p>
-                </section>
-
-                <section className='space-y-2'>
-                  <h3 className='font-semibold text-foreground text-md'>
-                    7. 출고 리드타임 (최대 직경 기준)
-                  </h3>
-                  <p>
-                    KST 기준 <b>자정(0시)까지</b> 접수 건은 1영업일 리드타임의
-                    경우 당일 집하로 계산되고,{' '}
-                    <b>자정 이후 접수 건부터는 익영업일</b> 기준으로 계산됩니다.
-                  </p>
-                  {renderLeadTimeLine('6mm', 'd6')}
-                  {renderLeadTimeLine('8mm', 'd8')}
-                  {renderLeadTimeLine('10mm', 'd10')}
-                  {renderLeadTimeLine('12mm', 'd12')}
-                </section>
-
-                <section className='space-y-1'>
-                  <h3 className='font-semibold text-foreground text-md'>
-                    8. 출고 방식
-                  </h3>
-                  <ul className='list-disc pl-4 space-y-0.5'>
-                    <li>
-                      <b>묶음 출고</b>: 설정한 출고 요일 중 가장 먼저 도래하는
-                      날에 제조사에서 함께 출고합니다.
-                    </li>
-                    <li>
-                      <b>신속 출고</b>: KST 낮 12시 이전 의뢰 건은{' '}
-                      <b>당일 16:00</b> 출고를 목표하고, 12시 이후(또는 휴일)
-                      의뢰 건은 <b>다음 영업일 16:00</b>으로 잡습니다. 건당
-                      의뢰크레딧 1,000원이 추가됩니다. 약속 출고일에 집하되지
-                      않으면(16시 이후 당일 수동 집하는 정시) 자정 이후 신속
-                      출고 실패로 처리하고 추가 크레딧은 취소됩니다.
-                    </li>
-                  </ul>
-                </section>
-
-                <section className='space-y-1'>
-                  <h3 className='font-semibold text-foreground text-md'>
-                    9. 출고 일정 (시간 안내, KST)
-                  </h3>
-                  <ul className='list-disc pl-4 space-y-0.5'>
-                    <li>
-                      <b>0시</b>: 당일 의뢰 접수 마감
-                    </li>
-                    <li>
-                      <b>15:00</b>: 포장 마감 후 택배 수거 신청
-                    </li>
-                    <li>
-                      <b>16:00</b>: 택배 집하 (제조사 출발)
-                    </li>
-                  </ul>
-                </section>
-              </div>
-            )}
+          <DialogDescription className='text-sm text-slate-500'>
+            {subtitle}
           </DialogDescription>
         </DialogHeader>
+
+        <div className='max-h-[calc(85vh-5.5rem)] overflow-y-auto px-6 py-5'>
+          {variant === 'salesman' ? (
+            <div className='space-y-3'>
+              <PolicySection title='소개 수수료 (10%)'>
+                <p>
+                  소개한 의뢰자의 유료의뢰비에서{' '}
+                  <span className='font-semibold text-slate-900'>10%</span>가
+                  수수료로 지급됩니다.
+                </p>
+                <BulletList
+                  items={[
+                    '소개 관계 기준: 의뢰자 가입 시 입력한 영업자 코드',
+                    '집계 범위: 1단계 소개만 포함',
+                    '유료 매출 기준: 의뢰 결제 완료 시점'
+                  ]}
+                />
+              </PolicySection>
+
+              <PolicySection title='집계 및 지급'>
+                <BulletList
+                  items={[
+                    '매일 자정(KST 00:00) 사업자 기준으로 업데이트',
+                    <>
+                      지급 계좌는 <b className='text-slate-800'>설정 &gt; 결제</b>
+                      에서 관리
+                    </>,
+                    '정산 원장은 보유 크레딧 모달에서 확인 가능'
+                  ]}
+                />
+              </PolicySection>
+            </div>
+          ) : variant === 'devops' ? (
+            <div className='space-y-3'>
+              <PolicySection title='분배 구조'>
+                <p>
+                  개발·운영사는 유료의뢰비 기준{' '}
+                  <span className='font-semibold text-slate-900'>10%</span>가
+                  정산됩니다.
+                </p>
+                <p>영업자 소개 유무와 무관하게 개발·운영사 비율은 동일합니다.</p>
+              </PolicySection>
+
+              <PolicySection title='네트워크 반영'>
+                <p>
+                  영업자 소개 없이 가입한 의뢰 건은 제조사 65% / 관리자 25% /
+                  개발·운영사 10% 규칙이 적용됩니다.
+                </p>
+              </PolicySection>
+
+              <PolicySection title='화면 안내'>
+                <BulletList
+                  items={[
+                    '정산 예정액: 미지급 누적 금액',
+                    '지급 완료액: 지급 완료 누적 금액',
+                    '사업자 요약: 기간별 사업자 매출·주문·정산 요약',
+                    '정산 원장: 적립·정산·조정 내역'
+                  ]}
+                />
+              </PolicySection>
+
+              <PolicySection title='지급 계좌'>
+                <p>
+                  지급 계좌 정보는{' '}
+                  <b className='text-slate-800'>설정 &gt; 수익 분배</b>에서
+                  관리합니다.
+                </p>
+              </PolicySection>
+            </div>
+          ) : (
+            <div className='space-y-3'>
+              <section className='rounded-xl border border-slate-200 bg-white px-4 py-4'>
+                <h3 className='text-sm font-semibold tracking-tight text-slate-900'>
+                  기본 가격
+                </h3>
+                <div className='mt-3 space-y-3'>
+                  <PriceRow label='커스텀 어벗' value='15,000원' hint='1개당' />
+                  <div className='h-px bg-slate-100' />
+                  <PriceRow
+                    label='배송비'
+                    value='3,500원'
+                    hint='출고 1회당 · 한 번에 여러 제품이어도 1회'
+                  />
+                  <div className='h-px bg-slate-100' />
+                  <PriceRow
+                    label='신속 출고'
+                    value='+1,000원'
+                    hint='건당 의뢰크레딧 · 낮 12시(KST) 이전 의뢰 시 당일 오후 출고 목표'
+                  />
+                </div>
+                <p className='mt-3 text-xs text-slate-500'>VAT 별도</p>
+                <div className='mt-3 rounded-lg bg-slate-50 px-3 py-2.5 text-xs leading-relaxed text-slate-600'>
+                  <span className='font-medium text-slate-800'>
+                    리메이크 무료
+                  </span>
+                  : 사업자(기공소) 기준 월 3건까지 0원
+                  <br />
+                  동일 치과·환자·치식, 최근 90일 조건 충족 건에 한함 / 3건 초과 시
+                  건당 10,000원
+                </div>
+                <p className='mt-2 text-xs leading-relaxed text-slate-500'>
+                  신속 출고는 생산이 지연되면 다음날 출고하며, 추가 의뢰크레딧은
+                  취소됩니다.
+                </p>
+              </section>
+
+              <div className='grid gap-3 sm:grid-cols-2'>
+                <PolicySection title='가입 축하 무료 크레딧'>
+                  <p className='text-2xl font-semibold tracking-tight text-slate-900'>
+                    30,000원
+                  </p>
+                  <p className='text-xs text-slate-500'>신규 가입 기공소 1회 지급</p>
+                  <BulletList
+                    items={[
+                      '커스텀 어벗 의뢰 결제에만 사용 가능',
+                      '배송비에는 사용할 수 없습니다.'
+                    ]}
+                  />
+                </PolicySection>
+
+                <PolicySection title='주문량 할인'>
+                  <p>
+                    <span className='font-semibold text-slate-900'>
+                      최근 30일 완료 주문 수
+                    </span>
+                    에 따라 자동 할인 (매일 자정 KST 갱신)
+                  </p>
+                  <BulletList
+                    items={[
+                      '주문 1건당 100원 할인',
+                      '최대 5,000원 할인 (50건 이상 시 개당 10,000원 고정)'
+                    ]}
+                  />
+                </PolicySection>
+              </div>
+
+              <PolicySection title='소개 그룹 합산'>
+                <p>
+                  할인 단가는{' '}
+                  <span className='font-semibold text-slate-900'>
+                    나를 소개한 기공소 + 나 + 내가 소개한 기공소
+                  </span>
+                  의 최근 30일 주문량을 합산해 계산합니다.
+                </p>
+                <p className='text-xs text-slate-500'>
+                  각 사업자의 할인 단가는 자신이 속한 모든 그룹 구성원의 주문량을
+                  합산해 개별 계산합니다.
+                </p>
+                <div className='rounded-lg border border-slate-200/80 bg-white px-3 py-2.5 text-xs leading-relaxed text-slate-600'>
+                  <p className='font-medium text-slate-800'>
+                    예: A가 B·C를 소개하고, B가 D를 소개한 경우
+                  </p>
+                  <ul className='mt-1.5 grid gap-1 sm:grid-cols-2'>
+                    <li>A: A+B+C 합산 (자녀: B·C)</li>
+                    <li>B: A+B+D 합산 (부모: A, 자녀: D)</li>
+                    <li>C: A+C 합산 (부모: A)</li>
+                    <li>D: B+D 합산 (부모: B)</li>
+                  </ul>
+                </div>
+              </PolicySection>
+
+              <div className='grid gap-3 sm:grid-cols-2'>
+                <PolicySection title='런칭 이벤트 (신규 기공소)'>
+                  <BulletList
+                    items={[
+                      <>
+                        가입 승인일로부터{' '}
+                        <span className='font-semibold text-slate-900'>
+                          180일간 개당 10,000원
+                        </span>{' '}
+                        고정
+                      </>,
+                      '이 기간에는 주문량 할인과 무관하게 우선 적용',
+                      '종료 시점은 별도 공지로 안내'
+                    ]}
+                  />
+                </PolicySection>
+
+                <PolicySection title='의뢰 취소'>
+                  <p>
+                    <span className='font-semibold text-slate-900'>
+                      준비 단계
+                    </span>
+                    에서만 취소 가능하며, 가공 단계부터는 취소할 수 없습니다.
+                  </p>
+                </PolicySection>
+              </div>
+
+              <PolicySection title='출고 리드타임 (최대 직경 기준)'>
+                <p className='text-xs text-slate-500'>
+                  KST 기준{' '}
+                  <span className='font-medium text-slate-700'>자정(0시)까지</span>{' '}
+                  접수 건은 1영업일 리드타임의 경우 당일 집하로 계산되고,{' '}
+                  <span className='font-medium text-slate-700'>
+                    자정 이후 접수 건부터는 익영업일
+                  </span>{' '}
+                  기준으로 계산됩니다.
+                </p>
+                <div className='grid grid-cols-2 gap-2 sm:grid-cols-4'>
+                  {diameterRows.map(({ label, key }) => {
+                    const min = leadTimes[key]?.minBusinessDays;
+                    const max = leadTimes[key]?.maxBusinessDays;
+                    const minText = Number.isFinite(min) ? min : '-';
+                    const maxText = Number.isFinite(max) ? max : '-';
+                    const hasSameDayNote = Number(minText) === 1;
+                    return (
+                      <div
+                        key={key}
+                        className='rounded-lg border border-slate-200/80 bg-white px-3 py-2.5'
+                      >
+                        <div className='text-xs font-medium text-slate-500'>
+                          {label}
+                        </div>
+                        <div className='mt-1 text-sm font-semibold tabular-nums text-slate-900'>
+                          +{minText}영업일
+                        </div>
+                        <div className='mt-0.5 text-[11px] text-slate-500'>
+                          최대 +{maxText}영업일
+                        </div>
+                        {hasSameDayNote ? (
+                          <div className='mt-1.5 text-[11px] leading-snug text-blue-700'>
+                            자정까지 접수 시 당일 집하 가능
+                          </div>
+                        ) : null}
+                      </div>
+                    );
+                  })}
+                </div>
+              </PolicySection>
+
+              <PolicySection title='출고 방식'>
+                <div className='space-y-2.5'>
+                  <div className='rounded-lg border border-slate-200/80 bg-white px-3 py-2.5'>
+                    <div className='text-sm font-semibold text-slate-900'>
+                      묶음 출고
+                    </div>
+                    <p className='mt-1 text-xs leading-relaxed text-slate-600'>
+                      설정한 출고 요일 중 가장 먼저 도래하는 날에 제조사에서 함께
+                      출고합니다.
+                    </p>
+                  </div>
+                  <div className='rounded-lg border border-slate-200/80 bg-white px-3 py-2.5'>
+                    <div className='text-sm font-semibold text-slate-900'>
+                      신속 출고
+                    </div>
+                    <p className='mt-1 text-xs leading-relaxed text-slate-600'>
+                      KST 낮 12시 이전 의뢰 건은{' '}
+                      <span className='font-medium text-slate-800'>
+                        당일 16:00
+                      </span>{' '}
+                      출고를 목표하고, 12시 이후(또는 휴일) 의뢰 건은{' '}
+                      <span className='font-medium text-slate-800'>
+                        다음 영업일 16:00
+                      </span>
+                      으로 잡습니다. 건당 의뢰크레딧 1,000원이 추가됩니다. 약속
+                      출고일에 집하되지 않으면(16시 이후 당일 수동 집하는 정시)
+                      자정 이후 신속 출고 실패로 처리하고 추가 크레딧은
+                      취소됩니다.
+                    </p>
+                  </div>
+                </div>
+              </PolicySection>
+
+              <PolicySection title='출고 일정 (KST)'>
+                <div className='grid gap-2 sm:grid-cols-3'>
+                  {[
+                    { time: '0시', desc: '당일 의뢰 접수 마감' },
+                    { time: '15:00', desc: '포장 마감 후 택배 수거 신청' },
+                    { time: '16:00', desc: '택배 집하 (제조사 출발)' }
+                  ].map((row) => (
+                    <div
+                      key={row.time}
+                      className='rounded-lg border border-slate-200/80 bg-white px-3 py-2.5 text-center sm:text-left'
+                    >
+                      <div className='text-base font-semibold tabular-nums text-slate-900'>
+                        {row.time}
+                      </div>
+                      <div className='mt-0.5 text-xs leading-relaxed text-slate-500'>
+                        {row.desc}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </PolicySection>
+            </div>
+          )}
+        </div>
       </DialogContent>
     </Dialog>
   );
