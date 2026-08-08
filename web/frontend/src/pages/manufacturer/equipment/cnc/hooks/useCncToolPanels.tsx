@@ -28,7 +28,7 @@ interface UseCncToolPanelsParams {
   /** useCncToolSlots 훅에서 제공하는 가공 통계 (옵션) */
   machiningStats?: MachiningStatEntry[];
   /** 공구 해제 요청 함수 (useCncToolSlots.beginToolRemoval) */
-  onBeginToolRemoval?: (toolNum: number) => Promise<boolean>;
+  onBeginToolRemoval?: (toolNum: number) => Promise<ToolSlot[] | null>;
   /** 교체 완료 확인 함수 (useCncToolSlots.completeToolReplacement) */
   onCompleteToolReplacement?: (payload: any) => Promise<any>;
   /** 슬롯 메타 수정 함수 (useCncToolSlots.updateToolSlotMeta) */
@@ -83,6 +83,18 @@ export const useCncToolPanels = ({
   const callRawRef = useRef(callRaw);
   callRawRef.current = callRaw;
   const openAddToolDialogRef = useRef<() => void>(() => {});
+  const toolSlotsRef = useRef(toolSlots);
+  toolSlotsRef.current = toolSlots;
+  const toolLifeRowsRef = useRef<ToolLifeRow[] | null>(null);
+  const lastToolHealthLevelRef = useRef<HealthLevel>("unknown");
+  const openToolDetailWithSlotsRef = useRef<
+    (
+      toolLife: any[] | null,
+      level: HealthLevel,
+      toolingMeta?: ToolingMetaSnapshot,
+      slotsOverride?: ToolSlot[],
+    ) => void
+  >(() => {});
 
   const [toolLifeOriginal, setToolLifeOriginal] = useState<any[] | null>(null);
   const [toolLifeRows, setToolLifeRows] = useState<any[] | null>(null);
@@ -90,6 +102,7 @@ export const useCncToolPanels = ({
   const [toolLifeSaveConfirmOpen, setToolLifeSaveConfirmOpen] = useState(false);
   const [lastToolHealthLevel, setLastToolHealthLevel] =
     useState<HealthLevel>("unknown");
+  lastToolHealthLevelRef.current = lastToolHealthLevel;
   const [toolStatusBodySnapshot, setToolStatusBodySnapshot] =
     useState<JSX.Element | null>(null);
   const [toolingMetaSnapshot, setToolingMetaSnapshot] =
@@ -112,6 +125,55 @@ export const useCncToolPanels = ({
       .join(", ");
     const suffix = dueTools.length > 3 ? ` 외 ${dueTools.length - 3}개` : "";
     return `교체 임박 ${head}${suffix}`;
+  };
+
+  /**
+   * 공구 상태 패널로 복귀.
+   * 모달 body에 고정된 stale 클로저 대신 서버/ref 기준으로 다시 연다.
+   */
+  const reloadToolStatusPanel = async () => {
+    const uid = workUidRef.current;
+    const fallbackLevel = lastToolHealthLevelRef.current;
+    if (!uid) {
+      openToolDetailWithSlotsRef.current(
+        toolLifeRowsRef.current,
+        fallbackLevel,
+        undefined,
+        toolSlotsRef.current,
+      );
+      return;
+    }
+    try {
+      const res = await callRawRef.current(uid, "GetToolLifeInfo");
+      const data: any = res?.data ?? res;
+      const toolLife =
+        data?.machineToolLife?.toolLife ??
+        data?.machineToolLife?.toolLifeInfo ??
+        toolLifeRowsRef.current ??
+        [];
+      const meta = {
+        toolingSummary: data?.machineToolLife?.toolingSummary,
+        replacementHistory: data?.machineToolLife?.replacementHistory,
+        observations: data?.machineToolLife?.observations,
+      };
+      const nextLevel = resolveSummaryLevel(meta.toolingSummary);
+      setToolHealth(nextLevel);
+      setLastToolHealthLevel(nextLevel);
+      setToolTooltip(buildSummaryTooltip(meta.toolingSummary));
+      openToolDetailWithSlotsRef.current(
+        toolLife,
+        nextLevel,
+        meta,
+        toolSlotsRef.current,
+      );
+    } catch {
+      openToolDetailWithSlotsRef.current(
+        toolLifeRowsRef.current,
+        fallbackLevel,
+        undefined,
+        toolSlotsRef.current,
+      );
+    }
   };
 
   const openToolOffsetEditor = (initialToolNum?: number) => {
@@ -949,7 +1011,9 @@ export const useCncToolPanels = ({
         <div className="flex justify-end gap-2 pt-2">
           <button
             type="button"
-            onClick={() => openToolDetailWithSlots(null, lastToolHealthLevel)}
+            onClick={() => {
+              void reloadToolStatusPanel();
+            }}
             className="rounded-lg bg-slate-200 px-4 py-2 text-sm font-medium text-slate-800 hover:bg-slate-300"
           >
             취소
@@ -969,8 +1033,9 @@ export const useCncToolPanels = ({
               onClick={() => {
                 void (async () => {
                   if (!onBeginToolRemoval) return;
-                  const ok = await onBeginToolRemoval(toolNum);
-                  if (ok) {
+                  const nextSlots = await onBeginToolRemoval(toolNum);
+                  if (nextSlots) {
+                    toolSlotsRef.current = nextSlots;
                     // 해제 요청 성공 → Step2 안내 화면으로 전환
                     openRemovalPending(targetRow, toolNum);
                   }
@@ -1013,7 +1078,9 @@ export const useCncToolPanels = ({
         <div className="flex justify-end gap-2 pt-2">
           <button
             type="button"
-            onClick={() => openToolDetailWithSlots(null, lastToolHealthLevel)}
+            onClick={() => {
+              void reloadToolStatusPanel();
+            }}
             className="rounded-lg bg-slate-200 px-4 py-2 text-sm font-medium text-slate-800 hover:bg-slate-300"
           >
             나중에
@@ -1176,10 +1243,21 @@ export const useCncToolPanels = ({
                   const nextLevel = resolveSummaryLevel(
                     nextMeta.toolingSummary,
                   );
+                  const nextSlots = Array.isArray(data?.toolSlots)
+                    ? (data.toolSlots as ToolSlot[])
+                    : undefined;
+                  if (nextSlots) {
+                    toolSlotsRef.current = nextSlots;
+                  }
                   setToolHealth(nextLevel);
                   setLastToolHealthLevel(nextLevel);
                   setToolTooltip(buildSummaryTooltip(nextMeta.toolingSummary));
-                  openToolDetailWithSlots(nextRows, nextLevel, nextMeta);
+                  openToolDetailWithSlots(
+                    nextRows,
+                    nextLevel,
+                    nextMeta,
+                    nextSlots,
+                  );
                 }
               })();
             }}
@@ -1207,9 +1285,11 @@ export const useCncToolPanels = ({
     toolLife: any[] | null,
     level: HealthLevel,
     toolingMeta?: ToolingMetaSnapshot,
+    slotsOverride?: ToolSlot[],
   ) => {
     const effectiveMeta = toolingMeta || toolingMetaSnapshot || null;
     const toolingSummary = effectiveMeta?.toolingSummary || null;
+    const slotsForPanel = slotsOverride ?? toolSlotsRef.current;
 
     const rows: ToolLifeRow[] = Array.isArray(toolLife)
       ? toolLife.map((t: any, idx: number) => ({
@@ -1219,7 +1299,8 @@ export const useCncToolPanels = ({
           warningCount: Number(t.warningCount ?? 0) || 0,
           use: t.use ?? true,
         }))
-      : ((toolLifeRows as ToolLifeRow[] | null) ?? []);
+      : (toolLifeRowsRef.current ?? []);
+    toolLifeRowsRef.current = rows;
 
     // summaryMap 갱신 (openCompleteReplacement에서 참조)
     summaryMapForSlot = new Map<string, any>(
@@ -1231,7 +1312,7 @@ export const useCncToolPanels = ({
     const renderPanel = (panelRows: ToolLifeRow[]) => (
       <CncToolStatusPanel
         rows={panelRows}
-        toolSlots={toolSlots}
+        toolSlots={slotsForPanel}
         toolingSummary={toolingSummary}
         canAddTool={Boolean(onAddToolRef.current)}
         canBeginRemoval={Boolean(onBeginToolRemoval)}
@@ -1241,6 +1322,7 @@ export const useCncToolPanels = ({
           const next = panelRows.map((row, i) =>
             i === index ? { ...row, configCount } : row,
           );
+          toolLifeRowsRef.current = next;
           setToolLifeRows(next);
           setToolLifeDirty(true);
           setModalBody(renderPanel(next));
@@ -1269,6 +1351,7 @@ export const useCncToolPanels = ({
     setToolStatusBodySnapshot(renderPanel(rows));
     setModalOpen(true);
   };
+  openToolDetailWithSlotsRef.current = openToolDetailWithSlots;
 
   /**
    * 가공 통계 모달 (machiningStats 탭)
@@ -1374,7 +1457,9 @@ export const useCncToolPanels = ({
         <div className="flex justify-end gap-2 pt-1">
           <button
             type="button"
-            onClick={() => openToolDetailWithSlots(null, lastToolHealthLevel)}
+            onClick={() => {
+              void reloadToolStatusPanel();
+            }}
             className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
           >
             돌아가기
@@ -1412,39 +1497,16 @@ export const useCncToolPanels = ({
     if (!onAddToolRef.current) return;
 
     const closeAndReturn = async () => {
-      // 등록/적용 후 공구 상태 화면을 다시 그리기 위해 현재 데이터를 재조회한다.
-      const uid = workUidRef.current;
-      if (!uid) {
-        openToolDetailWithSlots(null, lastToolHealthLevel);
-        return;
-      }
-      try {
-        const res = await callRawRef.current(uid, "GetToolLifeInfo");
-        const data: any = res?.data ?? res;
-        const toolLife =
-          data?.machineToolLife?.toolLife ??
-          data?.machineToolLife?.toolLifeInfo ??
-          [];
-        const meta = {
-          toolingSummary: data?.machineToolLife?.toolingSummary,
-          replacementHistory: data?.machineToolLife?.replacementHistory,
-          observations: data?.machineToolLife?.observations,
-        };
-        const nextLevel = resolveSummaryLevel(meta.toolingSummary);
-        setToolHealth(nextLevel);
-        setLastToolHealthLevel(nextLevel);
-        setToolTooltip(buildSummaryTooltip(meta.toolingSummary));
-        openToolDetailWithSlots(toolLife, nextLevel, meta);
-      } catch {
-        openToolDetailWithSlots(null, lastToolHealthLevel);
-      }
+      await reloadToolStatusPanel();
     };
 
     setModalTitle("공구 등록");
     setModalBody(
       <CncToolRegistrationModal
         currentMachineId={workUidRef.current}
-        onCancel={() => openToolDetailWithSlots(null, lastToolHealthLevel)}
+        onCancel={() => {
+          void reloadToolStatusPanel();
+        }}
         onAddTool={async ({ toolNum, toolName }) => {
           const add = onAddToolRef.current;
           if (!add) return false;

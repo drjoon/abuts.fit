@@ -22,7 +22,7 @@ interface CncToolStatusModalProps {
 
 function modalSizeClass(title: string): string {
   if (title === "가공 통계") return "max-w-5xl";
-  if (title === "공구 상태") return "max-w-2xl";
+  if (title === "공구 상태") return "max-w-4xl";
   if (title === "공구 등록") return "max-w-lg";
   return "max-w-xl";
 }

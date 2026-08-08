@@ -121,14 +121,14 @@ export const useCncToolSlots = ({
    * CompleteToolReplacement로 교체 완료를 확인한다.
    */
   const beginToolRemoval = useCallback(
-    async (toolNum: number) => {
+    async (toolNum: number): Promise<ToolSlot[] | null> => {
       const uid = workUidRef.current;
       if (!uid) {
         setError("장비가 선택되지 않았습니다.");
-        return false;
+        return null;
       }
       const ok = await ensureCncWriteAllowed();
-      if (!ok) return false;
+      if (!ok) return null;
       try {
         const res = await callRaw(uid, "BeginToolRemoval", { toolNum });
         const nextSlots: ToolSlot[] = Array.isArray(res?.data?.toolSlots)
@@ -136,10 +136,10 @@ export const useCncToolSlots = ({
           : [];
         // 서버에서 내려준 슬롯으로 전체 갱신
         setToolSlots(nextSlots);
-        return true;
+        return nextSlots;
       } catch (e: any) {
         setError(e?.message ?? "공구 해제 요청 중 오류가 발생했습니다.");
-        return false;
+        return null;
       }
     },
     [callRaw, ensureCncWriteAllowed, setError],

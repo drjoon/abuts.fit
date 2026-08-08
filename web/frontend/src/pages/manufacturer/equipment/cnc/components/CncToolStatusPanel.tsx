@@ -202,17 +202,29 @@ export function CncToolStatusPanel({
       ) : (
         <>
           <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
-            <div className="max-h-[52vh] overflow-auto">
-              <table className="w-full min-w-[640px] table-fixed text-xs">
+            <div className="max-h-[52vh] overflow-y-auto overflow-x-hidden">
+              <table className="w-full text-xs">
                 <thead className="sticky top-0 z-10 border-b border-slate-200 bg-slate-50 text-[11px] font-semibold text-slate-500">
                   <tr>
-                    <th className="w-28 px-3 py-2.5 text-left">슬롯</th>
+                    <th className="whitespace-nowrap px-3 py-2.5 text-left">
+                      슬롯
+                    </th>
                     <th className="px-3 py-2.5 text-left">공구</th>
-                    <th className="w-[4.5rem] px-2 py-2.5 text-center">옵셋</th>
-                    <th className="w-14 px-2 py-2.5 text-center">사용</th>
-                    <th className="w-[4.75rem] px-2 py-2.5 text-center">설정</th>
-                    <th className="w-20 px-2 py-2.5 text-center">잔여</th>
-                    <th className="w-[4.75rem] px-2 py-2.5 text-center">교체</th>
+                    <th className="whitespace-nowrap px-2 py-2.5 text-center">
+                      옵셋
+                    </th>
+                    <th className="whitespace-nowrap px-2 py-2.5 text-center">
+                      사용
+                    </th>
+                    <th className="whitespace-nowrap px-2 py-2.5 text-center">
+                      설정
+                    </th>
+                    <th className="whitespace-nowrap px-2 py-2.5 text-center">
+                      잔여
+                    </th>
+                    <th className="whitespace-nowrap px-2 py-2.5 text-center">
+                      교체
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -292,7 +304,7 @@ export function CncToolStatusPanel({
                         <td className="px-2 py-3 text-center align-middle font-mono text-[11px] text-slate-600">
                           {use}
                         </td>
-                        <td className="px-2 py-3 text-center align-middle">
+                        <td className="whitespace-nowrap px-2 py-3 text-center align-middle">
                           <input
                             type="number"
                             defaultValue={cfg}
@@ -305,7 +317,7 @@ export function CncToolStatusPanel({
                               );
                             }}
                             onBlur={onConfigBlur}
-                            className="w-full rounded-md border border-slate-200 bg-white px-1.5 py-1 text-center font-mono text-[11px] text-slate-700 focus:border-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-300"
+                            className="mx-auto w-16 rounded-md border border-slate-200 bg-white px-1.5 py-1 text-center font-mono text-[11px] text-slate-700 focus:border-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-300"
                           />
                         </td>
                         <td className="px-2 py-3 align-middle">
