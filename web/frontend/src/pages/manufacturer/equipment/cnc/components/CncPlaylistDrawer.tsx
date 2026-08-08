@@ -1,26 +1,22 @@
 // change-log:
+// - 2026-08-08: CncModalShell 적용. 예약 관리 톤·compact 라벨로 정리.
 // - 2026-08-07: 재생목록 행에 의뢰자명(businessName) 표시. 구조화 필드 우선.
 // - 2026-08-06: NC 첨부 시 NC 뱃지·최대직경 표시.
 // related files:
-// - web/frontend/rules.md
-// - web/frontend/src/App.tsx
-// - web/frontend/src/features/layout/DashboardLayout.tsx
-// - web/frontend/src/shared/shipping/ShippingModeBadge.tsx
+// - web/frontend/src/features/manufacturer/cnc/components/CncModalShell.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/machining/components/MachiningRequestLabel.tsx
+// - web/frontend/src/shared/shipping/ShippingModeBadge.tsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
-  X,
   GripVertical,
   ArrowLeft,
   ArrowRight,
   Trash,
   ArrowUp,
   ArrowDown,
-  Minus,
-  Plus,
 } from "lucide-react";
 import { ShippingModeBadge } from "@/shared/shipping/ShippingModeBadge";
-import { BodyPortal } from "@/shared/ui/BodyPortal";
+import { CncModalShell } from "@/features/manufacturer/cnc/components/CncModalShell";
 
 export interface PlaylistJobItem {
   id: string;
@@ -67,6 +63,9 @@ interface CncPlaylistDrawerProps {
   onChangeQty: (jobId: string, qty: number) => void;
 }
 
+const chipSm =
+  "inline-flex items-center rounded-md border px-1.5 py-0.5 text-[10px] font-semibold";
+
 export const CncPlaylistDrawer: React.FC<CncPlaylistDrawerProps> = ({
   open,
   title,
@@ -80,7 +79,7 @@ export const CncPlaylistDrawer: React.FC<CncPlaylistDrawerProps> = ({
   onDelete,
   onApproveFromRollback,
   onReorder,
-  onChangeQty,
+  onChangeQty: _onChangeQty,
 }) => {
   const [localJobs, setLocalJobs] = useState<PlaylistJobItem[]>(jobs);
   const dragIdRef = useRef<string | null>(null);
@@ -104,283 +103,227 @@ export const CncPlaylistDrawer: React.FC<CncPlaylistDrawerProps> = ({
     onReorder(next.map((j) => j.id));
   };
 
-  if (!open) return null;
-
   return (
-    <BodyPortal>
-    <div
-      className="fixed inset-0 z-[100] bg-black/40 backdrop-blur-sm flex items-center justify-center"
-      onClick={onClose}
+    <CncModalShell
+      open={open}
+      title="예약 관리"
+      subtitle={`${title} · 대기 큐 · 순서 · 되돌리기`}
+      size="lg"
+      onClose={onClose}
+      titleId="cnc-playlist-title"
+      headerActions={headerExtras}
+      bodyClassName="min-h-0 flex-1 overflow-y-auto px-4 py-3 sm:px-5"
+      footer={
+        <>
+          <span className="text-xs text-slate-500">
+            {readOnly ? "읽기 전용" : "드래그로 순서 변경"}
+          </span>
+          <span className="text-xs font-medium text-slate-600">
+            총 {order.length}개
+          </span>
+        </>
+      }
     >
-      <div
-        className="w-full max-w-3xl bg-white rounded-3xl shadow-[0_30px_70px_rgba(15,23,42,0.38)] border border-slate-100 overflow-hidden"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="relative px-5 py-4 border-b border-slate-100 flex items-center justify-between gap-3">
-          <div className="absolute inset-0 bg-gradient-to-br from-sky-50/70 via-white/40 to-violet-50/70" />
-          <div className="relative min-w-0">
-            <div className="text-[11px] font-semibold text-slate-500">
-              재생목록
-            </div>
-            <div className="text-lg font-extrabold text-slate-900 truncate">
-              {title}
-            </div>
+      {readOnly ? (
+        <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-2.5 text-xs text-amber-900">
+          {readOnlyMessage ||
+            "브리지 서버가 오프라인이라 예약목록을 DB에서 조회했습니다. 현재는 읽기 전용입니다."}
+        </div>
+      ) : null}
+
+      {localJobs.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-slate-300 bg-white px-6 py-12 text-center">
+          <div className="text-sm font-semibold text-slate-800">
+            대기 중인 프로그램이 없습니다
           </div>
-          {headerExtras ? <div className="relative">{headerExtras}</div> : null}
-          <button
-            type="button"
-            onClick={onClose}
-            className="relative inline-flex h-10 w-10 items-center justify-center rounded-full bg-white/80 border border-slate-200 text-slate-500 hover:text-slate-900 hover:bg-white shadow-sm"
-          >
-            <X className="h-5 w-5" />
-          </button>
         </div>
+      ) : (
+        <div className="space-y-1.5">
+          {localJobs.map((job, idx) => {
+            const parts = String(job.name || "")
+              .trim()
+              .split(/\s+/)
+              .filter(Boolean);
+            const structured =
+              Boolean(job.businessName) ||
+              Boolean(job.clinicName) ||
+              Boolean(job.patientName) ||
+              Boolean(job.tooth);
+            const clinic =
+              String(job.clinicName || "").trim() ||
+              (!structured ? parts[0] || "" : "");
+            const patient =
+              String(job.patientName || "").trim() ||
+              (!structured ? parts[1] || "" : "");
+            const tooth =
+              String(job.tooth || "").trim() ||
+              (!structured ? parts[2] || "" : "");
+            const badge = structured
+              ? String(job.lotShortCode || "").trim()
+              : parts.length > 1
+                ? parts[parts.length - 2]
+                : "";
+            const labelParts = [
+              String(job.businessName || "").trim(),
+              clinic,
+              patient,
+              tooth,
+            ].filter(Boolean);
+            const rollbackCount = Number(job.rollbackCount || 0);
+            const canApproveFromRollback =
+              !readOnly && rollbackCount > 0 && !!job.requestMongoId;
+            const hasNc =
+              job.hasNc === true ||
+              Boolean(String(job.s3Key || "").trim()) ||
+              Boolean(String(job.bridgePath || "").trim());
 
-        <div className="max-h-[70vh] overflow-y-auto px-4 py-4">
-          {readOnly && (
-            <div className="mb-3 app-surface app-surface--panel border-2 border-amber-500 bg-white px-4 py-3 text-xs text-amber-800">
-              {readOnlyMessage ||
-                "브리지 서버가 오프라인이라 예약목록을 DB에서 조회했습니다. 현재는 읽기 전용입니다."}
-            </div>
-          )}
-          {localJobs.length === 0 ? (
-            <div className="py-10 text-center text-sm text-slate-500">
-              대기 중인 프로그램이 없습니다.
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {localJobs.map((job, idx) => {
-                const qty = 1;
-                const parts = String(job.name || "")
-                  .trim()
-                  .split(/\s+/)
-                  .filter(Boolean);
-                const structured =
-                  Boolean(job.businessName) ||
-                  Boolean(job.clinicName) ||
-                  Boolean(job.patientName) ||
-                  Boolean(job.tooth);
-                const clinic =
-                  String(job.clinicName || "").trim() ||
-                  (!structured ? parts[0] || "" : "");
-                const patient =
-                  String(job.patientName || "").trim() ||
-                  (!structured ? parts[1] || "" : "");
-                const tooth =
-                  String(job.tooth || "").trim() ||
-                  (!structured ? parts[2] || "" : "");
-                const lastCode = structured
-                  ? String(job.ridSuffix || "").trim()
-                  : parts.length > 0
-                    ? parts[parts.length - 1]
-                    : "";
-                const badge = structured
-                  ? String(job.lotShortCode || "").trim()
-                  : parts.length > 1
-                    ? parts[parts.length - 2]
-                    : "";
-                const middle = structured
-                  ? String(job.lotPart || "").trim()
-                  : parts.slice(3, Math.max(3, parts.length - 2)).join(" ");
-                const labelParts = [
-                  String(job.businessName || "").trim(),
-                  clinic,
-                  patient,
-                  tooth,
-                  middle,
-                ].filter(Boolean);
-                const rollbackCount = Number(job.rollbackCount || 0);
-                const canApproveFromRollback =
-                  !readOnly && rollbackCount > 0 && !!job.requestMongoId;
-                const hasNc =
-                  job.hasNc === true ||
-                  Boolean(String(job.s3Key || "").trim()) ||
-                  Boolean(String(job.bridgePath || "").trim());
-                const maxDiameter =
-                  typeof job.maxDiameter === "number" &&
-                  Number.isFinite(job.maxDiameter) &&
-                  job.maxDiameter > 0
-                    ? job.maxDiameter
-                    : null;
-                return (
-                  <div
-                    key={job.id}
-                    className="app-surface app-surface--panel flex items-start gap-3 px-3 py-3"
-                    draggable={!readOnly}
-                    onDragStart={() => {
-                      if (readOnly) return;
-                      dragIdRef.current = job.id;
-                    }}
-                    onDragOver={(e) => {
-                      if (readOnly) return;
-                      e.preventDefault();
-                    }}
-                    onDrop={(e) => {
-                      if (readOnly) return;
-                      e.preventDefault();
-                      const dragId = dragIdRef.current;
-                      dragIdRef.current = null;
-                      if (!dragId || dragId === job.id) return;
-                      const from = localJobs.findIndex((j) => j.id === dragId);
-                      const to = localJobs.findIndex((j) => j.id === job.id);
-                      move(from, to);
-                    }}
-                  >
-                    <div className="flex items-center gap-2 text-slate-400">
-                      <div className="w-7 text-center text-[11px] font-extrabold text-slate-400">
-                        {idx + 1}
-                      </div>
-                      <GripVertical className="h-4 w-4" />
-                    </div>
+            return (
+              <div
+                key={job.id}
+                className="flex items-start gap-2 rounded-xl border border-slate-200 bg-white px-2.5 py-2"
+                draggable={!readOnly}
+                onDragStart={() => {
+                  if (readOnly) return;
+                  dragIdRef.current = job.id;
+                }}
+                onDragOver={(e) => {
+                  if (readOnly) return;
+                  e.preventDefault();
+                }}
+                onDrop={(e) => {
+                  if (readOnly) return;
+                  e.preventDefault();
+                  const dragId = dragIdRef.current;
+                  dragIdRef.current = null;
+                  if (!dragId || dragId === job.id) return;
+                  const from = localJobs.findIndex((j) => j.id === dragId);
+                  const to = localJobs.findIndex((j) => j.id === job.id);
+                  move(from, to);
+                }}
+              >
+                <div className="flex shrink-0 items-center gap-1 pt-0.5 text-slate-400">
+                  <span className="w-5 text-center text-[11px] font-semibold text-slate-400">
+                    {idx + 1}
+                  </span>
+                  <GripVertical className="h-4 w-4" />
+                </div>
 
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-start justify-between gap-2">
-                        <button
-                          type="button"
-                          className="flex-1 min-w-0 text-left"
-                          onClick={() => onOpenCode(job.id)}
-                          title={job.name}
-                        >
-                          <div className="flex flex-col gap-1">
-                            <div className="flex items-center gap-2 text-sm font-extrabold text-slate-900 min-w-0">
-                              {idx === 0 ? (
-                                <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-extrabold text-slate-700 border border-slate-300">
-                                  Next
-                                </span>
-                              ) : null}
-                              <div className="flex flex-wrap items-center gap-1 min-w-0 text-[13px]">
-                                {labelParts.map((part, partIdx) => (
-                                  <React.Fragment key={`${partIdx}-${part}`}>
-                                    {partIdx > 0 ? (
-                                      <span className="text-slate-400">/</span>
-                                    ) : null}
-                                    <span className="truncate" title={part}>
-                                      {part}
-                                    </span>
-                                  </React.Fragment>
-                                ))}
-                                {badge ? (
-                                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-slate-100 text-slate-700 border border-slate-300">
-                                    {badge}
-                                  </span>
-                                ) : null}
-                                {job.anodizingEnabled === false ? (
-                                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-extrabold bg-rose-50 text-rose-700 border border-rose-200">
-                                    아노 X
-                                  </span>
-                                ) : null}
-                                {hasNc ? (
-                                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-extrabold border border-cyan-200 bg-cyan-50 text-cyan-700">
-                                    NC
-                                  </span>
-                                ) : null}
-                                {job.shippingMode === "express" ||
-                                job.shippingMode === "normal" ? (
-                                  <ShippingModeBadge
-                                    mode={job.shippingMode}
-                                    size="sm"
-                                  />
-                                ) : null}
-                                {lastCode && (
-                                  <span
-                                    className="ml-1 text-[11px] text-slate-400"
-                                    title={lastCode}
-                                  >
-                                    {lastCode}
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-                            <div className="inline-flex items-center gap-2 text-[11px] text-slate-500">
-                              <span className="inline-flex items-center rounded-full bg-slate-50 px-2 py-0.5 text-[10px] font-extrabold text-slate-700 border border-slate-200">
-                                {job.paused ? "일시정지" : "대기"}
-                              </span>
-                              {hasNc && maxDiameter != null ? (
-                                <span
-                                  className="inline-flex items-center rounded-full bg-white px-2 py-0.5 text-[10px] font-semibold text-slate-600 border border-slate-200"
-                                  title={`최대직경 ${maxDiameter.toFixed(3)}`}
-                                >
-                                  최대 Ø{maxDiameter.toFixed(3)}
-                                </span>
-                              ) : null}
-                            </div>
-                          </div>
-                        </button>
-
-                        <div className="flex items-center gap-1 shrink-0 pt-0.5">
-                          {canApproveFromRollback ? (
-                            <button
-                              type="button"
-                              className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-100"
-                              onClick={() => {
-                                if (!job.requestMongoId) return;
-                                onApproveFromRollback?.(job.requestMongoId);
-                              }}
-                              title="재가공 없이 승인"
-                            >
-                              <ArrowRight className="h-4 w-4" />
-                            </button>
-                          ) : null}
-                          <button
-                            type="button"
-                            className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-100"
-                            onClick={() => {
-                              if (readOnly) return;
-                              setLocalJobs((prev) =>
-                                prev.filter((j) => j.id !== job.id),
-                              );
-                              onDelete(job.id);
-                            }}
-                            disabled={!!readOnly}
-                            title={
-                              deleteVariant === "cnc"
-                                ? "삭제"
-                                : "준비로 되돌리기"
-                            }
-                          >
-                            {deleteVariant === "cnc" ? (
-                              <Trash className="h-4 w-4" />
-                            ) : (
-                              <ArrowLeft className="h-4 w-4" />
-                            )}
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-1 shrink-0">
-                      <button
-                        type="button"
-                        className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-100"
-                        onClick={() => move(idx, idx - 1)}
-                        disabled={idx === 0 || !!readOnly}
-                        title="위로"
+                <button
+                  type="button"
+                  className="min-w-0 flex-1 text-left"
+                  onClick={() => onOpenCode(job.id)}
+                  title={job.name}
+                >
+                  <div className="flex flex-wrap items-center gap-1.5 text-[13px] font-semibold text-slate-800">
+                    {idx === 0 ? (
+                      <span
+                        className={`${chipSm} border-slate-300 bg-slate-100 text-slate-700`}
                       >
-                        <ArrowUp className="h-4 w-4" />
-                      </button>
-                      <button
-                        type="button"
-                        className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-100"
-                        onClick={() => move(idx, idx + 1)}
-                        disabled={idx === localJobs.length - 1 || !!readOnly}
-                        title="아래로"
+                        Next
+                      </span>
+                    ) : null}
+                    {labelParts.map((part, partIdx) => (
+                      <React.Fragment key={`${partIdx}-${part}`}>
+                        {partIdx > 0 ? (
+                          <span className="text-slate-400">/</span>
+                        ) : null}
+                        <span className="truncate" title={part}>
+                          {part}
+                        </span>
+                      </React.Fragment>
+                    ))}
+                    {badge ? (
+                      <span className="inline-flex items-center rounded-md bg-slate-900 px-1.5 py-0.5 text-[10px] font-bold text-white">
+                        {badge}
+                      </span>
+                    ) : null}
+                    {job.anodizingEnabled === false ? (
+                      <span
+                        className={`${chipSm} border-rose-200 bg-rose-50 text-rose-700`}
                       >
-                        <ArrowDown className="h-4 w-4" />
-                      </button>
-                    </div>
+                        아노 X
+                      </span>
+                    ) : null}
+                    {hasNc ? (
+                      <span
+                        className={`${chipSm} border-cyan-200 bg-cyan-50 text-cyan-700`}
+                      >
+                        NC
+                      </span>
+                    ) : null}
+                    {job.shippingMode === "express" ||
+                    job.shippingMode === "normal" ? (
+                      <ShippingModeBadge mode={job.shippingMode} size="sm" />
+                    ) : null}
+                    {job.paused ? (
+                      <span
+                        className={`${chipSm} border-amber-200 bg-amber-50 text-amber-800`}
+                      >
+                        일시정지
+                      </span>
+                    ) : null}
                   </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
+                </button>
 
-        <div className="px-5 py-4 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500 bg-slate-50/60">
-          <div>{readOnly ? "읽기 전용" : "드래그로 순서 변경 가능"}</div>
-          <div>총 {order.length}개</div>
+                <div className="flex shrink-0 items-center gap-1">
+                  {canApproveFromRollback ? (
+                    <button
+                      type="button"
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                      onClick={() => {
+                        if (!job.requestMongoId) return;
+                        onApproveFromRollback?.(job.requestMongoId);
+                      }}
+                      title="재가공 없이 승인"
+                    >
+                      <ArrowRight className="h-3.5 w-3.5" />
+                    </button>
+                  ) : null}
+                  <button
+                    type="button"
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+                    onClick={() => {
+                      if (readOnly) return;
+                      setLocalJobs((prev) =>
+                        prev.filter((j) => j.id !== job.id),
+                      );
+                      onDelete(job.id);
+                    }}
+                    disabled={!!readOnly}
+                    title={
+                      deleteVariant === "cnc" ? "삭제" : "준비로 되돌리기"
+                    }
+                  >
+                    {deleteVariant === "cnc" ? (
+                      <Trash className="h-3.5 w-3.5" />
+                    ) : (
+                      <ArrowLeft className="h-3.5 w-3.5" />
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+                    onClick={() => move(idx, idx - 1)}
+                    disabled={idx === 0 || !!readOnly}
+                    title="위로"
+                  >
+                    <ArrowUp className="h-3.5 w-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+                    onClick={() => move(idx, idx + 1)}
+                    disabled={idx === localJobs.length - 1 || !!readOnly}
+                    title="아래로"
+                  >
+                    <ArrowDown className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              </div>
+            );
+          })}
         </div>
-      </div>
-    </div>
-    </BodyPortal>
+      )}
+    </CncModalShell>
   );
 };

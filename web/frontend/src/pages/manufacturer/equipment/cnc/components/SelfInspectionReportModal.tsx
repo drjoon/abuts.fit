@@ -1032,19 +1032,22 @@ export function SelfInspectionReportModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="w-[96vw] max-w-6xl overflow-hidden p-0 gap-0">
-        <DialogHeader className="px-5 pt-4 pb-3 border-b border-slate-200">
-          <DialogTitle className="text-base font-extrabold">
+      <DialogContent className="flex h-[min(92vh,900px)] w-[96vw] max-w-6xl flex-col overflow-hidden rounded-2xl border border-slate-200/80 p-0 gap-0 shadow-[0_24px_64px_rgba(15,23,42,0.28)]">
+        <DialogHeader className="shrink-0 border-b border-slate-100 px-4 py-2.5 sm:px-5">
+          <DialogTitle className="text-base font-bold tracking-tight text-slate-900 sm:text-lg">
             자주검사성적서
           </DialogTitle>
+          <p className="mt-0.5 text-[11px] font-normal text-slate-500">
+            측정 · 판정 · 인쇄
+          </p>
         </DialogHeader>
 
-        <div className="flex overflow-hidden">
+        <div className="flex min-h-0 flex-1 overflow-hidden">
           {/* ── Left: STL Preview ── */}
-          <div className="w-[40%] shrink-0 border-r border-slate-200 flex flex-col bg-slate-50 overflow-hidden">
-            <div className="h-[calc(65vh)] flex items-center justify-center">
+          <div className="flex w-[38%] shrink-0 flex-col overflow-hidden border-r border-slate-200 bg-slate-50">
+            <div className="relative min-h-0 flex-1">
               {stlLoading || metaLoading ? (
-                <div className="flex h-full items-center justify-center text-sm text-slate-500">
+                <div className="flex h-full items-center justify-center text-xs text-slate-500">
                   STL 로딩 중…
                 </div>
               ) : stlFile ? (
@@ -1054,10 +1057,10 @@ export function SelfInspectionReportModal({
                   showOverlay={true}
                   metadata={metadata}
                   finishLinePoints={finishLinePoints}
-                  className="h-full w-full"
+                  className="absolute inset-0 h-full w-full"
                 />
               ) : (
-                <div className="flex h-full items-center justify-center text-sm text-slate-400">
+                <div className="flex h-full items-center justify-center text-xs text-slate-400">
                   STL 파일 없음
                 </div>
               )}
@@ -1065,187 +1068,196 @@ export function SelfInspectionReportModal({
           </div>
 
           {/* ── Right: Inspection Form ── */}
-          <div className="flex-1 overflow-y-auto px-5 py-4 max-h-[calc(90vh-57px)]">
-            <div ref={reportRef} className="bg-white">
-              <h2 className="text-[42px] font-extrabold text-center border border-slate-800 py-2 mb-0 leading-tight">
-                자주검사 성적서
-              </h2>
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+            <div className="min-h-0 flex-1 overflow-y-auto px-3 py-2 sm:px-4">
+              <div ref={reportRef} className="bg-white">
+                <h2 className="mb-0 border border-slate-800 py-1 text-center text-xl font-bold leading-tight sm:text-2xl">
+                  자주검사 성적서
+                </h2>
 
-              {/* Header info table */}
-              <table className="w-full text-[13px] border-collapse border border-slate-800 mb-0">
-                <tbody>
-                  {infoRowPairs.map((pair, i) => (
-                    <tr key={`info-pair-${i}`} className="align-middle">
-                      <th className="w-[110px] border border-slate-800 px-2 py-1 text-right font-bold bg-slate-100">
-                        {pair[0]?.label}
-                      </th>
-                      <td className="border border-slate-800 px-2 py-1 bg-[#eea13a] font-semibold">
-                        {pair[0]?.value}
-                      </td>
-                      <th className="w-[110px] border border-slate-800 px-2 py-1 text-right font-bold bg-slate-100">
-                        {pair[1]?.label}
-                      </th>
-                      <td className="border border-slate-800 px-2 py-1 bg-[#eea13a] font-semibold">
-                        {pair[1]?.value}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-
-              {/* Inspection table */}
-              <table className="w-full text-xs border-collapse border border-slate-800 mb-3">
-                <thead>
-                  <tr className="bg-slate-100 text-center align-middle">
-                    <th className="border border-slate-800 px-2 py-1.5 align-middle">
-                      항목
-                    </th>
-                    <th className="border border-slate-800 px-2 py-1.5 align-middle">
-                      기준값
-                    </th>
-                    <th className="border border-slate-800 px-2 py-1.5 align-middle">
-                      합격기준
-                    </th>
-                    <th className="border border-slate-800 px-2 py-1.5 align-middle">
-                      측정장비(번호)
-                    </th>
-                    <th className="border border-slate-800 px-2 py-1.5 bg-[#eef05a] align-middle">
-                      측정값
-                    </th>
-                    <th className="border border-slate-800 px-2 py-1.5 bg-[#eef05a] align-middle">
-                      판단
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.map((row, idx) => {
-                    const criterionAuto =
-                      row.label === "커넥션직경" || row.label === "헥스치수";
-                    return (
-                      <tr key={row.label} className="align-middle">
-                        <td className="border border-slate-800 px-2 py-1 text-center font-semibold align-middle">
-                          {row.label}
+                {/* Header info table */}
+                <table className="mb-0 w-full border-collapse border border-slate-800 text-[11px]">
+                  <tbody>
+                    {infoRowPairs.map((pair, i) => (
+                      <tr key={`info-pair-${i}`} className="align-middle">
+                        <th className="w-[88px] border border-slate-800 bg-slate-100 px-1.5 py-0.5 text-right font-semibold">
+                          {pair[0]?.label}
+                        </th>
+                        <td className="border border-slate-800 bg-[#eea13a] px-1.5 py-0.5 font-semibold">
+                          {pair[0]?.value}
                         </td>
-                        <td className="border border-slate-800 px-2 py-1 text-center bg-[#eea13a] align-middle font-semibold">
-                          {row.referenceValue}
-                        </td>
-                        <td
-                          className={`border border-slate-800 px-2 py-1 text-center align-middle font-semibold ${
-                            criterionAuto ? "bg-[#eea13a]" : "bg-white"
-                          }`}
-                        >
-                          {row.criterion}
-                        </td>
-                        <td className="border border-slate-800 px-1 py-0.5 text-center align-middle">
-                          {isExportingPng ? (
-                            <span className="text-slate-900 font-semibold">
-                              {row.instrument}
-                            </span>
-                          ) : (
-                            <select
-                              className="w-full text-center bg-transparent outline-none text-slate-900 font-semibold cursor-pointer disabled:cursor-not-allowed"
-                              value={row.instrument}
-                              onChange={(e) =>
-                                updateRow(idx, "instrument", e.target.value)
-                              }
-                              disabled={confirmed}
-                            >
-                              {instrumentOptions.map((opt) => (
-                                <option key={`${row.label}-${opt}`} value={opt}>
-                                  {opt}
-                                </option>
-                              ))}
-                            </select>
-                          )}
-                        </td>
-                        <td className="border border-slate-800 px-1 py-0.5 bg-[#eef05a] align-middle">
-                          {isExportingPng ? (
-                            <span className="text-slate-900 font-semibold">
-                              {row.measuredValue || ""}
-                            </span>
-                          ) : (
-                            <input
-                              type="text"
-                              className="w-full text-center bg-transparent outline-none text-slate-900 font-semibold placeholder:text-slate-300 disabled:text-slate-500 disabled:cursor-not-allowed"
-                              value={row.measuredValue}
-                              onChange={(e) =>
-                                updateRow(idx, "measuredValue", e.target.value)
-                              }
-                              placeholder=""
-                              disabled={confirmed}
-                            />
-                          )}
-                        </td>
-                        <td className="border border-slate-800 px-1 py-0.5 bg-[#eef05a] align-middle">
-                          {isExportingPng ? (
-                            <span className="text-slate-900 font-semibold">
-                              {row.judgment || "적합 또는 부적합"}
-                            </span>
-                          ) : (
-                            <select
-                              className="w-full text-center bg-transparent outline-none text-slate-900 font-semibold cursor-pointer disabled:cursor-not-allowed"
-                              value={row.judgment}
-                              onChange={(e) =>
-                                updateRow(
-                                  idx,
-                                  "judgment",
-                                  e.target.value as InspectionRow["judgment"],
-                                )
-                              }
-                              disabled={confirmed}
-                            >
-                              <option value="">-</option>
-                              <option value="적합">적합</option>
-                              <option value="부적합">부적합</option>
-                            </select>
-                          )}
+                        <th className="w-[88px] border border-slate-800 bg-slate-100 px-1.5 py-0.5 text-right font-semibold">
+                          {pair[1]?.label}
+                        </th>
+                        <td className="border border-slate-800 bg-[#eea13a] px-1.5 py-0.5 font-semibold">
+                          {pair[1]?.value}
                         </td>
                       </tr>
-                    );
-                  })}
-                  <tr className="font-extrabold text-[13px]">
-                    <td
-                      colSpan={4}
-                      className="border border-slate-800 px-2 py-1.5 text-center align-middle bg-slate-100"
-                    >
-                      판정
-                    </td>
-                    <td
-                      colSpan={2}
-                      className={`border border-slate-800 px-2 py-1.5 text-center font-extrabold align-middle ${
-                        overallJudgment === "합격"
-                          ? "text-emerald-700 bg-emerald-100"
-                          : overallJudgment === "불합격"
-                            ? "text-red-700 bg-red-100"
-                            : "text-slate-700 bg-[#eef05a]"
-                      }`}
-                    >
-                      {overallJudgment || "합격 또는 불합격"}
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
+                    ))}
+                  </tbody>
+                </table>
+
+                {/* Inspection table */}
+                <table className="mb-0 w-full border-collapse border border-slate-800 text-[11px]">
+                  <thead>
+                    <tr className="bg-slate-100 text-center align-middle">
+                      <th className="border border-slate-800 px-1 py-1 align-middle">
+                        항목
+                      </th>
+                      <th className="border border-slate-800 px-1 py-1 align-middle">
+                        기준값
+                      </th>
+                      <th className="border border-slate-800 px-1 py-1 align-middle">
+                        합격기준
+                      </th>
+                      <th className="border border-slate-800 px-1 py-1 align-middle">
+                        측정장비(번호)
+                      </th>
+                      <th className="border border-slate-800 bg-[#eef05a] px-1 py-1 align-middle">
+                        측정값
+                      </th>
+                      <th className="border border-slate-800 bg-[#eef05a] px-1 py-1 align-middle">
+                        판단
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rows.map((row, idx) => {
+                      const criterionAuto =
+                        row.label === "커넥션직경" || row.label === "헥스치수";
+                      return (
+                        <tr key={row.label} className="align-middle">
+                          <td className="border border-slate-800 px-1 py-0.5 text-center font-semibold align-middle">
+                            {row.label}
+                          </td>
+                          <td className="border border-slate-800 bg-[#eea13a] px-1 py-0.5 text-center align-middle font-semibold">
+                            {row.referenceValue}
+                          </td>
+                          <td
+                            className={`border border-slate-800 px-1 py-0.5 text-center align-middle font-semibold ${
+                              criterionAuto ? "bg-[#eea13a]" : "bg-white"
+                            }`}
+                          >
+                            {row.criterion}
+                          </td>
+                          <td className="border border-slate-800 px-0.5 py-0 align-middle text-center">
+                            {isExportingPng ? (
+                              <span className="font-semibold text-slate-900">
+                                {row.instrument}
+                              </span>
+                            ) : (
+                              <select
+                                className="w-full cursor-pointer bg-transparent text-center text-[11px] font-semibold text-slate-900 outline-none disabled:cursor-not-allowed"
+                                value={row.instrument}
+                                onChange={(e) =>
+                                  updateRow(idx, "instrument", e.target.value)
+                                }
+                                disabled={confirmed}
+                              >
+                                {instrumentOptions.map((opt) => (
+                                  <option
+                                    key={`${row.label}-${opt}`}
+                                    value={opt}
+                                  >
+                                    {opt}
+                                  </option>
+                                ))}
+                              </select>
+                            )}
+                          </td>
+                          <td className="border border-slate-800 bg-[#eef05a] px-0.5 py-0 align-middle">
+                            {isExportingPng ? (
+                              <span className="font-semibold text-slate-900">
+                                {row.measuredValue || ""}
+                              </span>
+                            ) : (
+                              <input
+                                type="text"
+                                className="w-full bg-transparent text-center text-[11px] font-semibold text-slate-900 outline-none placeholder:text-slate-300 disabled:cursor-not-allowed disabled:text-slate-500"
+                                value={row.measuredValue}
+                                onChange={(e) =>
+                                  updateRow(
+                                    idx,
+                                    "measuredValue",
+                                    e.target.value,
+                                  )
+                                }
+                                placeholder=""
+                                disabled={confirmed}
+                              />
+                            )}
+                          </td>
+                          <td className="border border-slate-800 bg-[#eef05a] px-0.5 py-0 align-middle">
+                            {isExportingPng ? (
+                              <span className="font-semibold text-slate-900">
+                                {row.judgment || "적합 또는 부적합"}
+                              </span>
+                            ) : (
+                              <select
+                                className="w-full cursor-pointer bg-transparent text-center text-[11px] font-semibold text-slate-900 outline-none disabled:cursor-not-allowed"
+                                value={row.judgment}
+                                onChange={(e) =>
+                                  updateRow(
+                                    idx,
+                                    "judgment",
+                                    e.target.value as InspectionRow["judgment"],
+                                  )
+                                }
+                                disabled={confirmed}
+                              >
+                                <option value="">-</option>
+                                <option value="적합">적합</option>
+                                <option value="부적합">부적합</option>
+                              </select>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    <tr className="text-xs font-bold">
+                      <td
+                        colSpan={4}
+                        className="border border-slate-800 bg-slate-100 px-1.5 py-1 text-center align-middle"
+                      >
+                        판정
+                      </td>
+                      <td
+                        colSpan={2}
+                        className={`border border-slate-800 px-1.5 py-1 text-center align-middle font-bold ${
+                          overallJudgment === "합격"
+                            ? "bg-emerald-100 text-emerald-700"
+                            : overallJudgment === "불합격"
+                              ? "bg-red-100 text-red-700"
+                              : "bg-[#eef05a] text-slate-700"
+                        }`}
+                      >
+                        {overallJudgment || "합격 또는 불합격"}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
             </div>
 
-            {/* 측정장비 옵션 관리 */}
-            <div className="mb-4">
-              <div className="flex items-center gap-2 w-full">
+            {/* Sticky footer actions */}
+            <div className="shrink-0 space-y-1.5 border-t border-slate-100 bg-white px-3 py-2 sm:px-4">
+              <div className="flex flex-wrap items-center gap-1.5">
                 <button
                   type="button"
                   onClick={() => setShowInstrumentManager((prev) => !prev)}
-                  className="px-3 h-8 rounded text-xs font-bold border border-slate-300 bg-white hover:bg-slate-50"
+                  className="h-7 rounded-lg border border-slate-200 bg-white px-2.5 text-[11px] font-semibold text-slate-700 hover:bg-slate-50"
                 >
                   측정장비 관리 {showInstrumentManager ? "▲" : "▼"}
                 </button>
                 <button
                   type="button"
                   onClick={() => void handleExportPng()}
-                  className="px-3 py-2 rounded-lg font-bold text-xs bg-white border border-slate-300 text-slate-700 hover:bg-slate-50"
+                  className="h-7 rounded-lg border border-slate-200 bg-white px-2.5 text-[11px] font-semibold text-slate-700 hover:bg-slate-50"
                 >
                   PNG 저장
                 </button>
 
-                <div className="ml-auto mr-2 w-full max-w-[160px]">
+                <div className="ml-auto w-full max-w-[150px]">
                   <WorksheetStageSearchInput
                     value={lotSearchQuery}
                     onChange={handleLotSearchChange}
@@ -1253,7 +1265,7 @@ export function SelfInspectionReportModal({
                     className="max-w-none"
                   />
                   {lotSearchNoResult && (
-                    <p className="mt-1 text-[11px] text-red-600">
+                    <p className="mt-0.5 text-[10px] text-red-600">
                       일치하는 로트번호 제품이 없습니다.
                     </p>
                   )}
@@ -1261,15 +1273,15 @@ export function SelfInspectionReportModal({
               </div>
 
               {showInstrumentManager && (
-                <div className="border border-slate-300 rounded-lg p-3 mt-2">
-                  <div className="flex items-center gap-2 mb-2">
+                <div className="rounded-lg border border-slate-200 p-2">
+                  <div className="mb-1.5 flex items-center gap-1.5">
                     <input
                       type="text"
                       value={instrumentDraft}
                       onChange={(e) => setInstrumentDraft(e.target.value)}
                       placeholder="예: 비전(AD-T-21)"
                       disabled={confirmed || savingInstruments}
-                      className="flex-1 h-8 px-2 text-xs border border-slate-300 rounded outline-none disabled:bg-slate-100"
+                      className="h-7 flex-1 rounded border border-slate-200 px-2 text-[11px] outline-none disabled:bg-slate-100"
                     />
                     <button
                       type="button"
@@ -1279,19 +1291,19 @@ export function SelfInspectionReportModal({
                         savingInstruments ||
                         !instrumentDraft.trim()
                       }
-                      className="px-3 h-8 rounded text-xs font-bold border border-slate-300 bg-white hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                      className="h-7 rounded-lg border border-slate-200 bg-white px-2.5 text-[11px] font-semibold hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
                     >
                       추가
                     </button>
                   </div>
-                  <div className="flex flex-wrap gap-2">
+                  <div className="flex flex-wrap gap-1">
                     {instrumentOptions.map((opt) => (
                       <button
                         key={`chip-${opt}`}
                         type="button"
                         onClick={() => void handleRemoveInstrument(opt)}
                         disabled={confirmed || savingInstruments}
-                        className="px-2 py-1 text-[11px] rounded border border-slate-300 bg-slate-50 text-slate-700 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                        className="rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px] text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
                         title="클릭하면 삭제"
                       >
                         {opt} ×
@@ -1300,119 +1312,119 @@ export function SelfInspectionReportModal({
                   </div>
                 </div>
               )}
-            </div>
 
-            {/* Footer */}
-            <div className="flex items-start gap-3">
-              <div className="w-120 shrink-0 border border-slate-300 rounded-lg overflow-hidden text-[13px]">
-                <div className="flex items-center gap-3 px-3 py-1.5 border-b border-slate-200">
-                  <span className="w-20 shrink-0 font-semibold text-slate-500">
-                    검사일/시간
-                  </span>
-                  <span className="text-slate-800 text-xs">
-                    {inspectionDateStr}
-                  </span>
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="min-w-0 flex-1 overflow-hidden rounded-lg border border-slate-200 text-[11px]">
+                  <div className="flex items-center gap-2 border-b border-slate-100 px-2 py-1">
+                    <span className="w-16 shrink-0 font-semibold text-slate-500">
+                      검사일/시간
+                    </span>
+                    <span className="truncate text-slate-800">
+                      {inspectionDateStr}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2 px-2 py-1">
+                    <span className="w-16 shrink-0 font-semibold text-slate-500">
+                      검사자
+                    </span>
+                    <span className="truncate text-slate-800">
+                      {inspector || "-"}
+                    </span>
+                  </div>
                 </div>
-                <div className="flex items-center gap-3 px-3 py-1.5">
-                  <span className="w-20 shrink-0 font-semibold text-slate-500">
-                    검사자
-                  </span>
-                  <span className="text-slate-800">{inspector || "-"}</span>
-                </div>
-              </div>
 
-              <div className="flex-1 flex flex-col items-end gap-2">
-                {!confirmed && (
-                  <p className="text-[11px] text-red-600 text-right">
-                    확정 후 수정할 수 없습니다
-                  </p>
-                )}
-                {confirmed && (
-                  <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1 text-center w-full">
-                    성적서가 확정되었습니다. 더 이상 수정할 수 없습니다.
-                  </p>
-                )}
-
-                {overallJudgment === "불합격" && !confirmed && (
-                  <p className="text-[11px] text-red-600">
-                    판정이 불합격이면 확정할 수 없습니다.
-                  </p>
-                )}
-
-                <div className="flex items-center gap-2 flex-wrap justify-end">
-                  <button
-                    type="button"
-                    disabled={!onPrev}
-                    onClick={onPrev}
-                    className="px-3 py-2 rounded-lg font-extrabold text-sm bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 active:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed"
-                    title="이전"
-                  >
-                    ←
-                  </button>
-                  {queueInfo && (
-                    <p className="text-[11px] font-semibold text-slate-500">
-                      {queueInfo.current} / {queueInfo.total}
+                <div className="flex shrink-0 flex-col items-end gap-1">
+                  {!confirmed && (
+                    <p className="text-[10px] text-red-600">
+                      확정 후 수정할 수 없습니다
                     </p>
                   )}
-                  <button
-                    type="button"
-                    disabled={!onNext}
-                    onClick={onNext}
-                    className="px-3 py-2 rounded-lg font-extrabold text-sm bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 active:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed"
-                    title="다음"
-                  >
-                    →
-                  </button>
+                  {confirmed && (
+                    <p className="rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] text-amber-700">
+                      성적서가 확정되었습니다.
+                    </p>
+                  )}
+                  {overallJudgment === "불합격" && !confirmed && (
+                    <p className="text-[10px] text-red-600">
+                      판정이 불합격이면 확정할 수 없습니다.
+                    </p>
+                  )}
 
-                  {overallJudgment === "합격" && (
+                  <div className="flex items-center gap-1.5">
                     <button
                       type="button"
-                      disabled={confirmed || saving || !requestId}
-                      onClick={async () => {
-                        if (!requestId) return;
-                        if (overallJudgment !== "합격") return;
-                        setSaving(true);
-                        try {
-                          const res = await fetch(
-                            `/api/requests/by-request/${encodeURIComponent(requestId)}/self-inspection`,
-                            {
-                              method: "POST",
-                              headers: {
-                                "Content-Type": "application/json",
-                                Authorization: `Bearer ${token}`,
-                              },
-                              body: JSON.stringify({
-                                rows,
-                                overallJudgment,
-                                confirmedBy: inspector,
-                              }),
-                            },
-                          );
-                          if (res.ok) {
-                            setConfirmed(true);
-                            return;
-                          }
-                          const body = await res.json().catch(() => ({}));
-                          if (body?.message) {
-                            window.alert(String(body.message));
-                          }
-                        } catch {
-                          // ignore
-                        } finally {
-                          setSaving(false);
-                        }
-                      }}
-                      className={`px-6 py-2 rounded-lg font-bold text-sm transition ${
-                        confirmed
-                          ? "bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200"
-                          : saving
-                            ? "bg-slate-300 text-slate-500 cursor-not-allowed"
-                            : "bg-slate-800 text-white hover:bg-slate-700 active:bg-slate-900"
-                      }`}
+                      disabled={!onPrev}
+                      onClick={onPrev}
+                      className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 bg-white text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                      title="이전"
                     >
-                      {confirmed ? "✓ 확정됨" : saving ? "저장 중…" : "확정"}
+                      ←
                     </button>
-                  )}
+                    {queueInfo && (
+                      <p className="min-w-[3.5rem] text-center text-[11px] font-semibold text-slate-500">
+                        {queueInfo.current} / {queueInfo.total}
+                      </p>
+                    )}
+                    <button
+                      type="button"
+                      disabled={!onNext}
+                      onClick={onNext}
+                      className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 bg-white text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                      title="다음"
+                    >
+                      →
+                    </button>
+
+                    {overallJudgment === "합격" && (
+                      <button
+                        type="button"
+                        disabled={confirmed || saving || !requestId}
+                        onClick={async () => {
+                          if (!requestId) return;
+                          if (overallJudgment !== "합격") return;
+                          setSaving(true);
+                          try {
+                            const res = await fetch(
+                              `/api/requests/by-request/${encodeURIComponent(requestId)}/self-inspection`,
+                              {
+                                method: "POST",
+                                headers: {
+                                  "Content-Type": "application/json",
+                                  Authorization: `Bearer ${token}`,
+                                },
+                                body: JSON.stringify({
+                                  rows,
+                                  overallJudgment,
+                                  confirmedBy: inspector,
+                                }),
+                              },
+                            );
+                            if (res.ok) {
+                              setConfirmed(true);
+                              return;
+                            }
+                            const body = await res.json().catch(() => ({}));
+                            if (body?.message) {
+                              window.alert(String(body.message));
+                            }
+                          } catch {
+                            // ignore
+                          } finally {
+                            setSaving(false);
+                          }
+                        }}
+                        className={`h-7 rounded-lg px-4 text-xs font-semibold transition ${
+                          confirmed
+                            ? "cursor-not-allowed border border-slate-200 bg-slate-100 text-slate-400"
+                            : saving
+                              ? "cursor-not-allowed bg-slate-300 text-slate-500"
+                              : "bg-slate-900 text-white hover:bg-slate-800"
+                        }`}
+                      >
+                        {confirmed ? "✓ 확정됨" : saving ? "저장 중…" : "확정"}
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>

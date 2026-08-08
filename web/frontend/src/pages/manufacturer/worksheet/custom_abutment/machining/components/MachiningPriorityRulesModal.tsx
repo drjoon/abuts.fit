@@ -67,41 +67,45 @@ export function MachiningPriorityRulesModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[85vh] max-w-2xl overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>{rules?.title || "가공 우선순위 룰"}</DialogTitle>
-          <DialogDescription>
+      <DialogContent className="max-h-[85vh] max-w-2xl overflow-y-auto rounded-2xl border border-slate-200/80 p-0 gap-0 shadow-[0_24px_64px_rgba(15,23,42,0.28)]">
+        <DialogHeader className="border-b border-slate-100 px-5 py-4 sm:px-6">
+          <DialogTitle className="text-lg font-bold tracking-tight text-slate-900">
+            {rules?.title || "가공 우선순위 룰"}
+          </DialogTitle>
+          <DialogDescription className="mt-0.5 text-xs text-slate-500">
             {rules?.version
               ? `버전 ${rules.version}`
-              : "장비 배정·큐 정렬·신속 재배치 기준"}
+              : "장비 배정 · 큐 정렬 · 신속 재배치 기준"}
           </DialogDescription>
         </DialogHeader>
 
-        {loading ? (
-          <div className="py-8 text-center text-sm text-slate-500">로딩…</div>
-        ) : error ? (
-          <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-            {error}
-          </div>
-        ) : (
-          <div className="space-y-4">
-            {(rules?.sections || []).map((section) => (
-              <div
-                key={section.id || section.title}
-                className="rounded-xl border border-slate-200 bg-white px-3 py-3"
-              >
-                <div className="text-sm font-extrabold text-slate-800">
-                  {section.title}
+        <div className="px-5 py-4 sm:px-6">
+          {loading ? (
+            <div className="py-8 text-center text-sm text-slate-500">로딩…</div>
+          ) : error ? (
+            <div className="rounded-xl border border-red-200 bg-red-50 px-3.5 py-2.5 text-sm text-red-700">
+              {error}
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {(rules?.sections || []).map((section) => (
+                <div
+                  key={section.id || section.title}
+                  className="rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-3"
+                >
+                  <div className="text-sm font-semibold text-slate-800">
+                    {section.title}
+                  </div>
+                  <ol className="mt-2 list-decimal space-y-1.5 pl-5 text-[13px] text-slate-700">
+                    {(section.items || []).map((item) => (
+                      <li key={item}>{item}</li>
+                    ))}
+                  </ol>
                 </div>
-                <ol className="mt-2 list-decimal space-y-1.5 pl-5 text-[13px] text-slate-700">
-                  {(section.items || []).map((item) => (
-                    <li key={item}>{item}</li>
-                  ))}
-                </ol>
-              </div>
-            ))}
-          </div>
-        )}
+              ))}
+            </div>
+          )}
+        </div>
       </DialogContent>
     </Dialog>
   );

@@ -278,22 +278,25 @@ export const CompletedMachiningRecordsModal = ({
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="w-[95vw] max-w-3xl max-h-[78vh] overflow-hidden">
-          <DialogHeader>
-            <DialogTitle className="text-lg font-extrabold">
+        <DialogContent className="w-[95vw] max-w-3xl max-h-[78vh] overflow-hidden rounded-2xl border border-slate-200/80 p-0 gap-0 shadow-[0_24px_64px_rgba(15,23,42,0.28)]">
+          <DialogHeader className="border-b border-slate-100 px-5 py-4 sm:px-6">
+            <DialogTitle className="text-lg font-bold tracking-tight text-slate-900">
               {effectiveTitle}
             </DialogTitle>
+            <p className="mt-0.5 text-xs font-normal text-slate-500">
+              완료 기록 · 자주검사 · 되돌리기
+            </p>
           </DialogHeader>
 
-          <div className="mt-1 flex flex-col gap-2 overflow-auto pr-1 max-h-[62vh]">
+          <div className="mt-0 flex max-h-[62vh] flex-col gap-1.5 overflow-auto px-5 py-4 sm:px-6">
             {!!error && (
-              <div className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">
+              <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">
                 {error}
               </div>
             )}
 
             {items.length === 0 && !loading && (
-              <div className="rounded-xl border border-slate-200 bg-slate-50 p-6 text-center text-slate-500">
+              <div className="rounded-xl border border-dashed border-slate-300 bg-white px-6 py-10 text-center text-sm text-slate-500">
                 표시할 완료 기록이 없습니다.
               </div>
             )}
@@ -308,7 +311,7 @@ export const CompletedMachiningRecordsModal = ({
                   key={items[index].id}
                   role="button"
                   tabIndex={0}
-                  className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm hover:bg-slate-50 transition-colors cursor-pointer"
+                  className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 transition-colors hover:bg-slate-50 cursor-pointer"
                   onClick={() => {
                     const it = items[index];
                     if (!it.requestId) return;
@@ -330,14 +333,15 @@ export const CompletedMachiningRecordsModal = ({
                 >
                   <div className="flex items-center justify-between gap-3">
                     <div className="min-w-0 flex-1">
-                      <div className="text-[11px] font-semibold text-slate-500">
+                      <div className="text-[11px] font-medium text-slate-500">
                         종료 {row.hhmm}
-                        <span className="ml-4">소요 {row.mmss}</span>
+                        <span className="ml-3">소요 {row.mmss}</span>
                       </div>
                       <div
-                        className={`mt-0.5 text-[15px] font-extrabold text-slate-900 ${isRolledBack ? "line-through text-slate-400" : ""}`}
+                        className={`mt-0.5 ${isRolledBack ? "line-through opacity-50" : ""}`}
                       >
                         <MachiningRequestLabel
+                          density="compact"
                           clinicName={row.clinic}
                           patientName={row.patient}
                           tooth={row.tooth}
@@ -348,21 +352,24 @@ export const CompletedMachiningRecordsModal = ({
                             const category = String(
                               (items[index] as any)?.requestCategory || "",
                             ).trim();
-                            return category === "rnd_sample" || category === "copied_sample";
+                            return (
+                              category === "rnd_sample" ||
+                              category === "copied_sample"
+                            );
                           })()}
                           isRndArchivedSample={
-                            String((items[index] as any)?.requestCategory || "").trim() ===
-                            "rnd_sample"
+                            String(
+                              (items[index] as any)?.requestCategory || "",
+                            ).trim() === "rnd_sample"
                           }
                           hideRequestId
-                          className="text-[15px]"
                         />
                       </div>
                     </div>
                     {row.rid && onRollbackRequest ? (
                       <button
                         type="button"
-                        className="inline-flex h-8 w-10 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-600 hover:bg-slate-50"
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
                         onClick={(e) => {
                           e.stopPropagation();
                           setRolledBackIds((prev) => {
@@ -372,8 +379,9 @@ export const CompletedMachiningRecordsModal = ({
                           });
                           onRollbackRequest(row.rid, machineId);
                         }}
+                        title="준비로 되돌리기"
                       >
-                        <ArrowLeft className="h-4 w-4" />
+                        <ArrowLeft className="h-3.5 w-3.5" />
                       </button>
                     ) : null}
                   </div>

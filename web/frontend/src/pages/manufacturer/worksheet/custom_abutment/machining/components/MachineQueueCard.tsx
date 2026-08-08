@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-08: 공구상태 모달 톤에 맞춰 카드 밀도·CTA·compact 라벨 정리.
 // - 2026-08-07: Complete/Now Playing/Next Up에서 의뢰ID(requestId) 표시 제거.
 // - 2026-08-07: Complete/Now Playing/Next Up에 의뢰자명(businessName) 표시.
 // - 2026-08-06: 큐 슬롯→프리뷰에 rnd(헥스 회전) 전달.
@@ -55,7 +56,7 @@ const getNcPreloadBadge = (slot: QueueItem | null) => {
     return (
       <Badge
         variant="outline"
-        className="shrink-0 bg-amber-50 text-[10px] font-extrabold text-amber-700 border-amber-200 px-2 py-0.5"
+        className="shrink-0 rounded-md border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700"
       >
         업로드중
       </Badge>
@@ -65,7 +66,7 @@ const getNcPreloadBadge = (slot: QueueItem | null) => {
     return (
       <Badge
         variant="outline"
-        className="shrink-0 bg-emerald-50 text-[10px] font-extrabold text-emerald-700 border-emerald-200 px-2 py-0.5"
+        className="shrink-0 rounded-md border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700"
       >
         준비됨
       </Badge>
@@ -75,7 +76,7 @@ const getNcPreloadBadge = (slot: QueueItem | null) => {
     return (
       <Badge
         variant="outline"
-        className="shrink-0 bg-rose-50 text-[10px] font-extrabold text-rose-700 border-rose-200 px-2 py-0.5"
+        className="shrink-0 rounded-md border-rose-200 bg-rose-50 px-1.5 py-0.5 text-[10px] font-semibold text-rose-700"
       >
         실패
       </Badge>
@@ -84,7 +85,7 @@ const getNcPreloadBadge = (slot: QueueItem | null) => {
   return (
     <Badge
       variant="outline"
-      className="shrink-0 bg-slate-50 text-[10px] font-extrabold text-slate-700 border-slate-200 px-2 py-0.5"
+      className="shrink-0 rounded-md border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px] font-semibold text-slate-700"
     >
       {s}
     </Badge>
@@ -449,10 +450,36 @@ export const MachineQueueCard = ({
     setCompletedRolledBack(false);
   }, [lastCompletedRequestId]);
 
+  const assignOn = machine?.allowRequestAssign !== false;
+  const nextUpCanApprove = (() => {
+    const rc = Number((nextSlot as any)?.rollbackCount || 0);
+    const mc =
+      String(nextSlot?.machiningRecord?.status || "").toUpperCase() ===
+      "COMPLETED";
+    const id = String((nextSlot as any)?.requestMongoId || "").trim();
+    return (rc > 0 || mc) && !!id;
+  })();
+  const completedCanApprove =
+    Number((effectiveLastCompleted as any)?.rollbackCount || 0) > 0 &&
+    !!String((effectiveLastCompleted as any)?.requestMongoId || "").trim() &&
+    !!onApproveFromRollback;
+
+  const slotActionBtn = (enabled: boolean) =>
+    `inline-flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 transition-opacity hover:bg-slate-50 ${
+      enabled
+        ? "opacity-40 group-hover:opacity-100"
+        : "opacity-20 cursor-not-allowed"
+    }`;
+
+  const chipSm =
+    "inline-flex items-center rounded-md border px-1.5 py-0.5 text-[10px] font-semibold";
+
   return (
     <div
-      className={`app-glass-card app-glass-card--xl flex flex-col cursor-pointer min-h-[240px] sm:min-h-[260px] ${
-        isActive ? "border-blue-500 ring-2 ring-blue-200" : "border-slate-200"
+      className={`app-glass-card app-glass-card--xl flex flex-col cursor-pointer min-h-[220px] ${
+        isActive
+          ? "border-slate-400 ring-2 ring-slate-200"
+          : "border-slate-200/80"
       }`}
       onClick={() => {
         onSelect?.();
@@ -464,11 +491,11 @@ export const MachineQueueCard = ({
           title="OFF로 전환하면 현재 가공 중인 건은 그대로 진행되며, 완료 후 다음 자동 시작은 실행되지 않습니다."
         >
           <div className="flex min-w-0 flex-1 items-center gap-2">
-            <div className="min-w-0 truncate text-[15px] font-extrabold text-slate-900">
+            <div className="min-w-0 truncate text-base font-bold tracking-tight text-slate-900">
               {headerTitle}
             </div>
             <span
-              className={`h-3 w-3 shrink-0 rounded-full ${statusColor} ${
+              className={`h-2.5 w-2.5 shrink-0 rounded-full ${statusColor} ${
                 statusRefreshing ? "animate-pulse" : ""
               }`}
               title={`장비 상태: ${statusLabel}${
@@ -478,79 +505,80 @@ export const MachineQueueCard = ({
             />
           </div>
 
-          <div className="text-[11px] font-extrabold text-slate-700">
-            의뢰배정
-          </div>
-          <button
-            type="button"
-            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-              machine?.allowRequestAssign !== false
-                ? "bg-emerald-500"
-                : "bg-gray-300"
-            }`}
-            onClick={(e) => {
-              e.stopPropagation();
-              const next = machine?.allowRequestAssign === false;
-              onToggleRequestAssign?.(next);
-            }}
-          >
-            <span
-              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                machine?.allowRequestAssign !== false
-                  ? "translate-x-5"
-                  : "translate-x-1"
+          <div className="flex items-center gap-1.5">
+            <span className="text-[11px] font-semibold text-slate-500">
+              배정
+            </span>
+            <button
+              type="button"
+              className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+                assignOn ? "bg-emerald-500" : "bg-slate-300"
               }`}
-            />
-          </button>
-          <div className="text-[11px] font-extrabold text-slate-700">
-            자동가공
-          </div>
-          <button
-            type="button"
-            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-              autoEnabled ? "bg-emerald-500" : "bg-gray-300"
-            }`}
-            onClick={(e) => {
-              e.stopPropagation();
-              onToggleAuto(!autoEnabled);
-            }}
-          >
-            <span
-              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                autoEnabled ? "translate-x-5" : "translate-x-1"
-              }`}
-            />
-          </button>
-        </div>
-
-        <div className="flex justify-end">
-          <div className="mr-2 flex items-center gap-2">
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".nc,.txt"
-              className="hidden"
-              multiple
-              onChange={(e) => {
-                const files = e.target.files;
-                if (!files || files.length === 0) return;
-                onUploadFiles?.(files);
-                if (fileInputRef.current) {
-                  fileInputRef.current.value = "";
-                }
-              }}
-            />
-            <MaterialDiameterChip
-              label={materialDiameterLabel || "-"}
-              variant="circle"
-              tone={materialNeedsReplacement ? "danger" : "default"}
-              title={materialNeedsReplacement ? (materialAlertTooltip || "소재 교체 필요") : "소재 설정"}
               onClick={(e) => {
                 e.stopPropagation();
-                onOpenMaterial?.();
+                onToggleRequestAssign?.(!assignOn);
               }}
-            />
+              title="의뢰배정"
+            >
+              <span
+                className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
+                  assignOn ? "translate-x-4" : "translate-x-0.5"
+                }`}
+              />
+            </button>
+            <span className="text-[11px] font-semibold text-slate-500">
+              자동
+            </span>
+            <button
+              type="button"
+              className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+                autoEnabled ? "bg-emerald-500" : "bg-slate-300"
+              }`}
+              onClick={(e) => {
+                e.stopPropagation();
+                onToggleAuto(!autoEnabled);
+              }}
+              title="자동가공"
+            >
+              <span
+                className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
+                  autoEnabled ? "translate-x-4" : "translate-x-0.5"
+                }`}
+              />
+            </button>
           </div>
+        </div>
+
+        <div className="flex items-center justify-end gap-2">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".nc,.txt"
+            className="hidden"
+            multiple
+            onChange={(e) => {
+              const files = e.target.files;
+              if (!files || files.length === 0) return;
+              onUploadFiles?.(files);
+              if (fileInputRef.current) {
+                fileInputRef.current.value = "";
+              }
+            }}
+          />
+          <MaterialDiameterChip
+            label={materialDiameterLabel || "-"}
+            variant="circle"
+            tone={materialNeedsReplacement ? "danger" : "default"}
+            title={
+              materialNeedsReplacement
+                ? materialAlertTooltip || "소재 교체 필요"
+                : "소재 설정"
+            }
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpenMaterial?.();
+            }}
+          />
           <CncMachineActionButtons
             loading={queueAdminLoading}
             tempLevel={tempHealth}
@@ -592,17 +620,17 @@ export const MachineQueueCard = ({
 
       {queueAdminOpen && (
         <div
-          className="app-glass-card-content rounded-2xl border border-slate-200 bg-white/70 px-3 py-3 mt-4"
+          className="app-glass-card-content mt-3 rounded-xl border border-slate-200 bg-slate-50/80 px-3 py-2.5"
           onClick={(e) => e.stopPropagation()}
         >
           <div className="flex items-center justify-between gap-2">
-            <div className="text-[12px] font-extrabold text-slate-800">
-              수동 업로드 큐 관리
+            <div className="text-xs font-semibold text-slate-800">
+              수동 업로드 큐
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5">
               <button
                 type="button"
-                className="rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-extrabold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
                 disabled={queueAdminLoading}
                 onClick={() => void loadQueueAdmin()}
               >
@@ -610,7 +638,7 @@ export const MachineQueueCard = ({
               </button>
               <button
                 type="button"
-                className="rounded-full border border-rose-200 bg-rose-50 px-3 py-1 text-[11px] font-extrabold text-rose-700 hover:bg-rose-100 disabled:opacity-50"
+                className="rounded-lg border border-red-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-red-700 hover:bg-red-50 disabled:opacity-50"
                 disabled={queueAdminLoading}
                 onClick={() => setClearConfirmOpen(true)}
               >
@@ -619,13 +647,14 @@ export const MachineQueueCard = ({
             </div>
           </div>
 
-          <div className="mt-2 max-h-[160px] overflow-auto rounded-xl border border-slate-100 bg-white">
+          <div className="mt-2 max-h-[160px] overflow-auto rounded-xl border border-slate-200 bg-white">
             {queueAdminJobs.length === 0 ? (
-              <div className="px-3 py-3 text-[12px] text-slate-500">비어있음</div>
+              <div className="px-3 py-3 text-xs text-slate-500">비어있음</div>
             ) : (
               <div className="divide-y divide-slate-100">
                 {queueAdminJobs.map((j) => {
-                  const title = j.originalFileName || j.fileName || j.id || "(unknown)";
+                  const title =
+                    j.originalFileName || j.fileName || j.id || "(unknown)";
                   return (
                     <div
                       key={j.id}
@@ -633,7 +662,7 @@ export const MachineQueueCard = ({
                       title={title}
                     >
                       <div className="min-w-0">
-                        <div className="truncate text-[12px] font-bold text-slate-800">
+                        <div className="truncate text-xs font-semibold text-slate-800">
                           {title}
                         </div>
                         <div className="mt-0.5 text-[11px] text-slate-500">
@@ -644,7 +673,7 @@ export const MachineQueueCard = ({
                       </div>
                       <button
                         type="button"
-                        className="shrink-0 rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-extrabold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                        className="shrink-0 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
                         disabled={queueAdminLoading}
                         onClick={() => void deleteQueueJobAdmin(j.id)}
                       >
@@ -672,136 +701,112 @@ export const MachineQueueCard = ({
         }}
       />
 
-      <div className="app-glass-card-content mt-4 flex flex-col gap-2 text-sm">
-        <div className="grid grid-cols-1 gap-2">
+      <div className="app-glass-card-content mt-3 flex flex-col gap-1.5 text-sm">
+        <div className="grid grid-cols-1 gap-1.5">
+          {/* Complete */}
           <div
             role="button"
             tabIndex={0}
-            className="group rounded-2xl px-4 py-3 border shadow-sm bg-white/65 border-slate-200 hover:bg-white/85 transition-colors cursor-pointer min-h-[96px]"
+            className="group rounded-xl border border-slate-200 bg-white px-3 py-2.5 transition-colors hover:bg-slate-50 cursor-pointer"
             onClick={(e) => {
               e.stopPropagation();
               onOpenCompleted?.(machineId, machineName);
             }}
           >
-            <div className="flex items-center justify-between gap-2">
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center justify-between gap-2 text-[11px] font-semibold text-slate-500">
-                  <div className="min-w-0">
-                    {MACHINING_SECTION_LABELS.complete}
-                    <span className="ml-4 mr-4">
-                      종료 {lastCompletedSummary?.completedAtLabel || "-"}
-                    </span>
-                    <span>
-                      소요 {lastCompletedSummary?.durationLabel || "-"}
-                    </span>
-                  </div>
-
-                  <div className="flex items-center gap-1 shrink-0">
-                    <button
-                      type="button"
-                      className={`inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-300 bg-white text-slate-600 hover:bg-slate-50 ${
-                        lastCompletedRequestId && onRollbackCompleted
-                          ? ""
-                          : "opacity-30 cursor-not-allowed"
-                      }`}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (!lastCompletedRequestId) return;
-                        if (!onRollbackCompleted) return;
-                        setCompletedRolledBack(true);
-                        onRollbackCompleted(lastCompletedRequestId, machineId);
-                      }}
-                      disabled={!lastCompletedRequestId || !onRollbackCompleted}
-                      title="준비로 되돌리기"
-                    >
-                      <ArrowLeft className="h-3 w-3" />
-                    </button>
-
-                    <button
-                      type="button"
-                      className={`inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-300 bg-white text-slate-600 hover:bg-slate-50 ${
-                        Number(
-                          (effectiveLastCompleted as any)?.rollbackCount || 0,
-                        ) > 0 &&
-                        String(
-                          (effectiveLastCompleted as any)?.requestMongoId || "",
-                        ).trim() &&
-                        onApproveFromRollback
-                          ? ""
-                          : "opacity-30 cursor-not-allowed"
-                      }`}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        const rollbackCount = Number(
-                          (effectiveLastCompleted as any)?.rollbackCount || 0,
-                        );
-                        const id = String(
-                          (effectiveLastCompleted as any)?.requestMongoId || "",
-                        ).trim();
-                        if (rollbackCount <= 0) return;
-                        if (!id) return;
-                        onApproveFromRollback?.(id);
-                      }}
-                      disabled={
-                        !(
-                          Number(
-                            (effectiveLastCompleted as any)?.rollbackCount || 0,
-                          ) > 0 &&
-                          String(
-                            (effectiveLastCompleted as any)?.requestMongoId ||
-                              "",
-                          ).trim() &&
-                          onApproveFromRollback
-                        )
-                      }
-                      title="재가공 없이 세척.패킹으로 승인"
-                    >
-                      <ArrowRight className="h-3 w-3" />
-                    </button>
-                  </div>
-                </div>
-                <div className="mt-0.5 text-[15px] font-extrabold text-slate-900 leading-tight">
-                  {effectiveLastCompleted ? (
-                    <MachiningRequestLabel
-                      business={(effectiveLastCompleted as any)?.businessName}
-                      clinicName={(effectiveLastCompleted as any)?.clinicName}
-                      patientName={(effectiveLastCompleted as any)?.patientName}
-                      tooth={(effectiveLastCompleted as any)?.tooth}
-                      requestId={(effectiveLastCompleted as any)?.requestId}
-                      hideRequestId
-                      lotShortCode={getLotShortCode(
-                        effectiveLastCompleted as any,
-                      )}
-                      caseInfos={(effectiveLastCompleted as any)?.caseInfos}
-                      hasNc={Boolean(
-                        (effectiveLastCompleted as any)?.ncFile?.s3Key ||
-                          (effectiveLastCompleted as any)?.caseInfos?.ncFile
-                            ?.s3Key,
-                      )}
-                      shippingSource={
-                        (effectiveLastCompleted as any)?.requestId
-                          ? (effectiveLastCompleted as any)
-                          : undefined
-                      }
-                      className="text-[15px] leading-tight"
-                      {...buildLabelExtraProps(effectiveLastCompleted as any)}
-                    />
-                  ) : (
-                    "없음"
-                  )}
-                </div>
+            <div className="flex items-center justify-between gap-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+              <div className="min-w-0 flex flex-wrap items-center gap-x-3 gap-y-0.5 normal-case tracking-normal">
+                <span className="uppercase tracking-wide text-slate-400">
+                  {MACHINING_SECTION_LABELS.complete}
+                </span>
+                <span className="font-medium text-slate-500">
+                  종료 {lastCompletedSummary?.completedAtLabel || "-"}
+                </span>
+                <span className="font-medium text-slate-500">
+                  소요 {lastCompletedSummary?.durationLabel || "-"}
+                </span>
               </div>
+              <div className="flex items-center gap-1 shrink-0">
+                <button
+                  type="button"
+                  className={slotActionBtn(
+                    !!(lastCompletedRequestId && onRollbackCompleted),
+                  )}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (!lastCompletedRequestId) return;
+                    if (!onRollbackCompleted) return;
+                    setCompletedRolledBack(true);
+                    onRollbackCompleted(lastCompletedRequestId, machineId);
+                  }}
+                  disabled={!lastCompletedRequestId || !onRollbackCompleted}
+                  title="준비로 되돌리기"
+                >
+                  <ArrowLeft className="h-3 w-3" />
+                </button>
+                <button
+                  type="button"
+                  className={slotActionBtn(completedCanApprove)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const id = String(
+                      (effectiveLastCompleted as any)?.requestMongoId || "",
+                    ).trim();
+                    if (
+                      Number(
+                        (effectiveLastCompleted as any)?.rollbackCount || 0,
+                      ) <= 0
+                    )
+                      return;
+                    if (!id) return;
+                    onApproveFromRollback?.(id);
+                  }}
+                  disabled={!completedCanApprove}
+                  title="재가공 없이 세척.패킹으로 승인"
+                >
+                  <ArrowRight className="h-3 w-3" />
+                </button>
+              </div>
+            </div>
+            <div className="mt-1 min-w-0">
+              {effectiveLastCompleted ? (
+                <MachiningRequestLabel
+                  density="compact"
+                  business={(effectiveLastCompleted as any)?.businessName}
+                  clinicName={(effectiveLastCompleted as any)?.clinicName}
+                  patientName={(effectiveLastCompleted as any)?.patientName}
+                  tooth={(effectiveLastCompleted as any)?.tooth}
+                  requestId={(effectiveLastCompleted as any)?.requestId}
+                  hideRequestId
+                  lotShortCode={getLotShortCode(effectiveLastCompleted as any)}
+                  caseInfos={(effectiveLastCompleted as any)?.caseInfos}
+                  hasNc={Boolean(
+                    (effectiveLastCompleted as any)?.ncFile?.s3Key ||
+                      (effectiveLastCompleted as any)?.caseInfos?.ncFile?.s3Key,
+                  )}
+                  shippingSource={
+                    (effectiveLastCompleted as any)?.requestId
+                      ? (effectiveLastCompleted as any)
+                      : undefined
+                  }
+                  {...buildLabelExtraProps(effectiveLastCompleted as any)}
+                />
+              ) : (
+                <span className="text-[13px] text-slate-400">없음</span>
+              )}
             </div>
           </div>
 
+          {/* Now Playing */}
           <div
             role="button"
             tabIndex={0}
-            className={`group rounded-2xl px-4 py-3 border shadow-sm transition-all min-h-[96px] ${
+            className={`group rounded-xl border transition-colors ${
               !currentSlot
-                ? "bg-white/55 border-slate-200 text-slate-400 cursor-not-allowed"
-                : "bg-white/85 border-slate-200 hover:bg-white cursor-pointer"
-            }`}
+                ? "border-slate-200 bg-white text-slate-400 cursor-not-allowed"
+                : isNowPlayingMachining
+                  ? "border-emerald-200 bg-emerald-50/60 hover:bg-emerald-50 cursor-pointer"
+                  : "border-slate-200 bg-slate-50 hover:bg-white cursor-pointer"
+            } px-3 py-2.5`}
             onClick={(e) => {
               if (!currentSlot) return;
               const nc = currentSlot?.ncFile ?? null;
@@ -832,97 +837,91 @@ export const MachineQueueCard = ({
               onOpenProgramCode?.(prog, machineId);
             }}
           >
-            <div className="flex items-center justify-between gap-3">
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center justify-between gap-2 text-[11px] font-semibold text-slate-500">
-                  <div className="min-w-0 flex items-center gap-2">
-                    <span>{MACHINING_SECTION_LABELS.nowPlaying}</span>
-                    {nowPlayingAnodizingOff ? (
-                      <span className="inline-flex items-center rounded-full border border-rose-200 bg-rose-50 px-2 py-0.3 text-[10px] font-extrabold text-rose-700">
-                        아노 X
-                      </span>
-                    ) : null}
-                    {elapsedLabel ? (
-                      <span className="ml-2 text-blue-600 font-extrabold">
-                        {elapsedLabel}
-                      </span>
-                    ) : null}
-                  </div>
-
-                  <div className="flex items-center gap-1 shrink-0">
-                    <button
-                      type="button"
-                      className={`inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-300 bg-white text-slate-600 hover:bg-slate-50 ${
-                        canRollbackNowPlaying
-                          ? ""
-                          : "opacity-30 cursor-not-allowed"
-                      }`}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (!canRollbackNowPlaying) return;
-                        onRollbackNowPlaying?.(headRequestId, machineId);
-                      }}
-                      disabled={!canRollbackNowPlaying}
-                      title="준비로 되돌리기"
-                    >
-                      <ArrowLeft className="h-3 w-3" />
-                    </button>
-
-                    <button
-                      type="button"
-                      className={`inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-300 bg-white text-slate-600 hover:bg-slate-50 ${
-                        canApproveNowPlaying
-                          ? ""
-                          : "opacity-30 cursor-not-allowed"
-                      }`}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (!canApproveNowPlaying) return;
-                        onApproveFromRollback?.(headRequestMongoId);
-                      }}
-                      disabled={!canApproveNowPlaying}
-                      title="재가공 없이 세척.패킹으로 승인"
-                    >
-                      <ArrowRight className="h-3 w-3" />
-                    </button>
-                  </div>
-                </div>
-                <div className="mt-0.5 truncate text-[15px] font-extrabold text-slate-900">
-                  {currentSlot ? (
-                    <MachiningRequestLabel
-                      business={currentSlot?.businessName}
-                      clinicName={currentSlot?.clinicName}
-                      patientName={currentSlot?.patientName}
-                      tooth={(currentSlot as any)?.tooth}
-                      requestId={currentSlot?.requestId}
-                      hideRequestId
-                      lotShortCode={getLotShortCode(currentSlot)}
-                      caseInfos={(currentSlot as any)?.caseInfos}
-                      hasNc={Boolean(
-                        (currentSlot as any)?.ncFile?.s3Key ||
-                          (currentSlot as any)?.caseInfos?.ncFile?.s3Key,
-                      )}
-                      shippingSource={
-                        currentSlot?.requestId ? currentSlot : undefined
-                      }
-                      className="text-[15px]"
-                      {...buildLabelExtraProps(currentSlot)}
-                    />
-                  ) : (
-                    nowPlayingLabel
-                  )}
-                </div>
+            <div className="flex items-center justify-between gap-2 text-[11px] font-semibold text-slate-500">
+              <div className="min-w-0 flex flex-wrap items-center gap-1.5">
+                <span className="uppercase tracking-wide text-slate-400">
+                  {MACHINING_SECTION_LABELS.nowPlaying}
+                </span>
+                {nowPlayingAnodizingOff ? (
+                  <span
+                    className={`${chipSm} border-rose-200 bg-rose-50 text-rose-700`}
+                  >
+                    아노 X
+                  </span>
+                ) : null}
+                {headPreloadBadge}
+                {elapsedLabel ? (
+                  <span className="font-bold text-slate-800">
+                    {elapsedLabel}
+                  </span>
+                ) : null}
               </div>
+              <div className="flex items-center gap-1 shrink-0">
+                <button
+                  type="button"
+                  className={slotActionBtn(canRollbackNowPlaying)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (!canRollbackNowPlaying) return;
+                    onRollbackNowPlaying?.(headRequestId, machineId);
+                  }}
+                  disabled={!canRollbackNowPlaying}
+                  title="준비로 되돌리기"
+                >
+                  <ArrowLeft className="h-3 w-3" />
+                </button>
+                <button
+                  type="button"
+                  className={slotActionBtn(canApproveNowPlaying)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (!canApproveNowPlaying) return;
+                    onApproveFromRollback?.(headRequestMongoId);
+                  }}
+                  disabled={!canApproveNowPlaying}
+                  title="재가공 없이 세척.패킹으로 승인"
+                >
+                  <ArrowRight className="h-3 w-3" />
+                </button>
+              </div>
+            </div>
+            <div className="mt-1 min-w-0">
+              {currentSlot ? (
+                <MachiningRequestLabel
+                  density="compact"
+                  business={currentSlot?.businessName}
+                  clinicName={currentSlot?.clinicName}
+                  patientName={currentSlot?.patientName}
+                  tooth={(currentSlot as any)?.tooth}
+                  requestId={currentSlot?.requestId}
+                  hideRequestId
+                  lotShortCode={getLotShortCode(currentSlot)}
+                  caseInfos={(currentSlot as any)?.caseInfos}
+                  hasNc={Boolean(
+                    (currentSlot as any)?.ncFile?.s3Key ||
+                      (currentSlot as any)?.caseInfos?.ncFile?.s3Key,
+                  )}
+                  shippingSource={
+                    currentSlot?.requestId ? currentSlot : undefined
+                  }
+                  {...buildLabelExtraProps(currentSlot)}
+                />
+              ) : (
+                <span className="text-[13px] text-slate-400">
+                  {nowPlayingLabel}
+                </span>
+              )}
             </div>
           </div>
 
+          {/* Next Up */}
           <div
             role="button"
             tabIndex={0}
-            className={`group rounded-2xl px-4 py-3 border shadow-sm transition-all min-h-[96px] ${
+            className={`group rounded-xl border border-slate-200 px-3 py-2.5 transition-colors ${
               !nextSlot
-                ? "bg-white/55 border-slate-200 text-slate-400 cursor-not-allowed"
-                : "bg-white/85 border-slate-200 hover:bg-white cursor-pointer"
+                ? "bg-white text-slate-400 cursor-not-allowed"
+                : "bg-white hover:bg-slate-50 cursor-pointer"
             }`}
             onClick={(e) => {
               if (!nextSlot) return;
@@ -951,141 +950,99 @@ export const MachineQueueCard = ({
                   (nextSlot as any)?.timeline?.estimatedShipYmd ||
                   null,
               };
-
               onOpenProgramCode?.(prog, machineId);
             }}
           >
-            <div className="flex items-center justify-between gap-3">
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center justify-between gap-2 text-[11px] font-semibold text-slate-500">
-                  <div className="min-w-0 flex items-center gap-2">
-                    <span>{MACHINING_SECTION_LABELS.nextUp}</span>
-                    <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2 py-0.3 text-[10px] font-extrabold text-slate-700">
-                      대기 {totalMachiningCount}건
-                    </span>
-                    {nextUpAnodizingOff ? (
-                      <span className="inline-flex items-center rounded-full border border-rose-200 bg-rose-50 px-2 py-0.3 text-[10px] font-extrabold text-rose-700">
-                        아노 X
-                      </span>
-                    ) : null}
-                  </div>
-
-                  <div className="flex items-center gap-1 shrink-0">
-                    <button
-                      type="button"
-                      className={`inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-300 bg-white text-slate-600 hover:bg-slate-50 ${
-                        nextSlot?.requestId && onRollbackNextUp
-                          ? ""
-                          : "opacity-30 cursor-not-allowed"
-                      }`}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (!onRollbackNextUp) return;
-                        const rid = String(nextSlot?.requestId || "").trim();
-                        if (!rid) return;
-                        onRollbackNextUp(rid, machineId);
-                      }}
-                      disabled={!nextSlot?.requestId || !onRollbackNextUp}
-                      title="준비로 되돌리기"
-                    >
-                      <ArrowLeft className="h-3 w-3" />
-                    </button>
-
-                    <button
-                      type="button"
-                      className={`inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-300 bg-white text-slate-600 hover:bg-slate-50 ${
-                        (() => {
-                          const rc = Number(
-                            (nextSlot as any)?.rollbackCount || 0,
-                          );
-                          const mc =
-                            String(
-                              nextSlot?.machiningRecord?.status || "",
-                            ).toUpperCase() === "COMPLETED";
-                          const id = String(
-                            (nextSlot as any)?.requestMongoId || "",
-                          ).trim();
-                          return (rc > 0 || mc) && id;
-                        })()
-                          ? ""
-                          : "opacity-30 cursor-not-allowed"
-                      }`}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        const rc = Number(
-                          (nextSlot as any)?.rollbackCount || 0,
-                        );
-                        const mc =
-                          String(
-                            nextSlot?.machiningRecord?.status || "",
-                          ).toUpperCase() === "COMPLETED";
-                        const id = String(
-                          (nextSlot as any)?.requestMongoId || "",
-                        ).trim();
-                        if (!(rc > 0 || mc) || !id) return;
-                        onApproveFromRollback?.(id);
-                      }}
-                      disabled={(() => {
-                        const rc = Number(
-                          (nextSlot as any)?.rollbackCount || 0,
-                        );
-                        const mc =
-                          String(
-                            nextSlot?.machiningRecord?.status || "",
-                          ).toUpperCase() === "COMPLETED";
-                        const id = String(
-                          (nextSlot as any)?.requestMongoId || "",
-                        ).trim();
-                        return !((rc > 0 || mc) && id);
-                      })()}
-                      title="재가공 없이 세척.패킹으로 승인"
-                    >
-                      <ArrowRight className="h-3 w-3" />
-                    </button>
-                  </div>
-                </div>
-                <div className="mt-0.5 truncate text-[15px] font-extrabold text-slate-900">
-                  {nextSlot ? (
-                    <MachiningRequestLabel
-                      business={nextSlot?.businessName}
-                      clinicName={nextSlot?.clinicName}
-                      patientName={nextSlot?.patientName}
-                      tooth={(nextSlot as any)?.tooth}
-                      requestId={nextSlot?.requestId}
-                      hideRequestId
-                      lotShortCode={getLotShortCode(nextSlot)}
-                      caseInfos={(nextSlot as any)?.caseInfos}
-                      hasNc={Boolean(
-                        (nextSlot as any)?.ncFile?.s3Key ||
-                          (nextSlot as any)?.caseInfos?.ncFile?.s3Key,
-                      )}
-                      shippingSource={
-                        nextSlot?.requestId ? nextSlot : undefined
-                      }
-                      className="text-[15px]"
-                      {...buildLabelExtraProps(nextSlot)}
-                    />
-                  ) : (
-                    nextUpLabel
-                  )}
-                </div>
+            <div className="flex items-center justify-between gap-2 text-[11px] font-semibold text-slate-500">
+              <div className="min-w-0 flex flex-wrap items-center gap-1.5">
+                <span className="uppercase tracking-wide text-slate-400">
+                  {MACHINING_SECTION_LABELS.nextUp}
+                </span>
+                <span
+                  className={`${chipSm} border-slate-200 bg-slate-50 text-slate-600`}
+                >
+                  대기 {totalMachiningCount}건
+                </span>
+                {nextUpAnodizingOff ? (
+                  <span
+                    className={`${chipSm} border-rose-200 bg-rose-50 text-rose-700`}
+                  >
+                    아노 X
+                  </span>
+                ) : null}
               </div>
+              <div className="flex items-center gap-1 shrink-0">
+                <button
+                  type="button"
+                  className={slotActionBtn(
+                    !!(nextSlot?.requestId && onRollbackNextUp),
+                  )}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (!onRollbackNextUp) return;
+                    const rid = String(nextSlot?.requestId || "").trim();
+                    if (!rid) return;
+                    onRollbackNextUp(rid, machineId);
+                  }}
+                  disabled={!nextSlot?.requestId || !onRollbackNextUp}
+                  title="준비로 되돌리기"
+                >
+                  <ArrowLeft className="h-3 w-3" />
+                </button>
+                <button
+                  type="button"
+                  className={slotActionBtn(nextUpCanApprove)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const id = String(
+                      (nextSlot as any)?.requestMongoId || "",
+                    ).trim();
+                    if (!nextUpCanApprove || !id) return;
+                    onApproveFromRollback?.(id);
+                  }}
+                  disabled={!nextUpCanApprove}
+                  title="재가공 없이 세척.패킹으로 승인"
+                >
+                  <ArrowRight className="h-3 w-3" />
+                </button>
+              </div>
+            </div>
+            <div className="mt-1 min-w-0">
+              {nextSlot ? (
+                <MachiningRequestLabel
+                  density="compact"
+                  business={nextSlot?.businessName}
+                  clinicName={nextSlot?.clinicName}
+                  patientName={nextSlot?.patientName}
+                  tooth={(nextSlot as any)?.tooth}
+                  requestId={nextSlot?.requestId}
+                  hideRequestId
+                  lotShortCode={getLotShortCode(nextSlot)}
+                  caseInfos={(nextSlot as any)?.caseInfos}
+                  hasNc={Boolean(
+                    (nextSlot as any)?.ncFile?.s3Key ||
+                      (nextSlot as any)?.caseInfos?.ncFile?.s3Key,
+                  )}
+                  shippingSource={nextSlot?.requestId ? nextSlot : undefined}
+                  {...buildLabelExtraProps(nextSlot)}
+                />
+              ) : (
+                <span className="text-[13px] text-slate-400">{nextUpLabel}</span>
+              )}
             </div>
           </div>
         </div>
 
-        <div className="mt-1">
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              onOpenReservation();
-            }}
-            className="w-full rounded-2xl bg-gradient-to-r from-blue-600 to-sky-500 px-4 py-2 text-xs font-extrabold text-white hover:from-blue-700 hover:to-sky-600 disabled:opacity-50 shadow-sm"
-          >
-            예약 관리
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onOpenReservation();
+          }}
+          className="mt-1 w-full rounded-lg bg-slate-900 px-4 py-2 text-xs font-semibold text-white hover:bg-slate-800 disabled:opacity-50"
+        >
+          예약 관리
+        </button>
       </div>
     </div>
   );

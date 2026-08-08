@@ -1,4 +1,5 @@
 // change-log:
+// - 2026-08-08: density=compact|full — 카드/재생목록은 필수 뱃지만, 상세 모달은 전체.
 // - 2026-08-07: 모바일 라벨에도 의뢰자명(business) 표시.
 // - 2026-08-06: 마감까지 남은 시간 뱃지(getDeadlineInfo) 표시. estimatedShipYmd 기반.
 // related files:
@@ -6,7 +7,6 @@
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/machining/MachiningQueueBoard.tsx
 // - web/frontend/src/pages/manufacturer/worksheet/custom_abutment/utils/request.ts
 // - web/frontend/src/shared/shipping/ShippingModeBadge.tsx
-// import { generateModelNumber } from "@/utils/modelNumber";
 import React from "react";
 import { ShippingModeBadge } from "@/shared/shipping/ShippingModeBadge";
 import type { ShippingModeSource } from "@/shared/shipping/shippingMode";
@@ -33,6 +33,8 @@ type Props = {
   shippingSource?: ShippingModeSource;
   showFastMachiningRebalance?: boolean | null;
   estimatedShipYmd?: string | null;
+  /** compact: 카드/재생목록 — 필수 뱃지만. full: 상세 모달 — 기존 전체 */
+  density?: "compact" | "full";
 };
 
 export const MachiningRequestLabel = ({
@@ -56,7 +58,9 @@ export const MachiningRequestLabel = ({
   shippingSource,
   showFastMachiningRebalance,
   estimatedShipYmd,
+  density = "full",
 }: Props) => {
+  const compact = density === "compact";
   const businessName = String(business || "").trim();
   const clinic = String(clinicName || "").trim();
   const patient = String(patientName || "").trim() || "미지정";
@@ -69,6 +73,9 @@ export const MachiningRequestLabel = ({
     estimatedShipYmd || caseInfos?.timeline?.estimatedShipYmd || "",
   ).trim();
   const deadlineInfo = getDeadlineInfo(null, shipYmd || null);
+  // compact: 출고 48시간 이내(또는 지남)만 표시 — 여유 건은 노이즈
+  const urgentDeadline =
+    deadlineInfo != null && deadlineInfo.remainingMs <= 48 * 60 * 60 * 1000;
 
   const desktopParts = [
     businessName,
@@ -99,56 +106,77 @@ export const MachiningRequestLabel = ({
     return retentionGroove === "deep" ? "있음" : "없음";
   })();
 
-  const showNcBadge =
-    typeof hasNc === "boolean" ? hasNc : Boolean(caseInfos?.ncFile?.s3Key);
+  const showNcBadge = (() => {
+    const has =
+      typeof hasNc === "boolean" ? hasNc : Boolean(caseInfos?.ncFile?.s3Key);
+    // compact: NC 없을 때만 경고성으로 표시하지 않음 — 있으면 짧게, 없으면 생략
+    // 계획: NC(없을 때만 또는 짧게) → has일 때 짧게 표시 유지하되 compact에서는 NC만
+    return has;
+  })();
+
+  const chipBase =
+    "inline-flex items-center rounded-md border px-1.5 py-0.5 text-[10px] font-semibold whitespace-nowrap";
 
   const retentionBadgeClass = (() => {
-    const base =
-      "inline-flex items-center rounded-full px-2 py-0.5 font-semibold ";
+    const base = `${chipBase} `;
     if (retentionGroove === "none" || retentionGroove === "shallow")
-      return base + "border border-amber-100 bg-amber-50 text-amber-600";
+      return base + "border-amber-100 bg-amber-50 text-amber-600";
     if (retentionGroove === "deep")
-      return base + "border border-amber-400 bg-amber-100 text-amber-900";
-    return base + "border border-amber-100 bg-amber-50 text-amber-600";
+      return base + "border-amber-400 bg-amber-100 text-amber-900";
+    return base + "border-amber-100 bg-amber-50 text-amber-600";
   })();
 
   const renderInfoBadges = () => {
+    const showDeadline = compact
+      ? Boolean(deadlineInfo && urgentDeadline)
+      : Boolean(deadlineInfo);
+    const showNc = compact ? showNcBadge : showNcBadge;
+    const showShipping = Boolean(shippingSource);
+    const showRebalance = !compact && Boolean(showFastMachiningRebalance);
+    const showSample = Boolean(isSample);
+    const showImplant = !compact && implantParts.length > 0;
+    const showRetention = !compact && Boolean(retentionGrooveLabel);
+
     if (
-      !implantParts.length &&
-      !retentionGrooveLabel &&
-      !isSample &&
-      !showNcBadge &&
-      !shippingSource &&
-      !showFastMachiningRebalance &&
-      !deadlineInfo
+      !showDeadline &&
+      !showNc &&
+      !showShipping &&
+      !showRebalance &&
+      !showSample &&
+      !showImplant &&
+      !showRetention
     )
       return null;
 
     return (
       <div className="flex flex-wrap items-center gap-1 text-[11px] text-slate-500">
-        {deadlineInfo ? (
+        {showDeadline && deadlineInfo ? (
           <span
-            className={`inline-flex items-center rounded-full border px-2 py-0.5 font-semibold whitespace-nowrap ${deadlineInfo.badgeClass}`}
+            className={`${chipBase} ${deadlineInfo.badgeClass}`}
           >
             {deadlineInfo.displayText}
           </span>
         ) : null}
-        {showNcBadge ? (
-          <span className="inline-flex items-center rounded-full border border-cyan-200 bg-cyan-50 px-2 py-0.5 font-extrabold text-cyan-700">
+        {showNc ? (
+          <span
+            className={`${chipBase} border-cyan-200 bg-cyan-50 text-cyan-700`}
+          >
             NC
           </span>
         ) : null}
-        {shippingSource ? (
+        {showShipping && shippingSource ? (
           <ShippingModeBadge source={shippingSource} size="sm" />
         ) : null}
-        {showFastMachiningRebalance ? (
-          <span className="inline-flex items-center rounded-full border border-violet-200 bg-violet-50 px-2 py-0.5 font-extrabold text-violet-700">
+        {showRebalance ? (
+          <span
+            className={`${chipBase} border-violet-200 bg-violet-50 text-violet-700`}
+          >
             빠른 가공 재배치
           </span>
         ) : null}
-        {isSample ? (
+        {showSample ? (
           <span
-            className={`inline-flex items-center rounded-full border px-2 py-0.5 font-semibold ${
+            className={`${chipBase} ${
               isRndArchivedSample
                 ? "border-purple-200 bg-purple-50 text-purple-700"
                 : "border-blue-200 bg-blue-50 text-blue-700"
@@ -161,12 +189,14 @@ export const MachiningRequestLabel = ({
                 : "샘플"}
           </span>
         ) : null}
-        {implantParts.length ? (
-          <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 font-semibold text-slate-600">
+        {showImplant ? (
+          <span
+            className={`${chipBase} border-slate-200 bg-slate-50 text-slate-600`}
+          >
             {implantParts.join(" / ")}
           </span>
         ) : null}
-        {retentionGrooveLabel ? (
+        {showRetention ? (
           <span className={retentionBadgeClass}>
             유지홈 {retentionGrooveLabel}
           </span>
@@ -175,10 +205,20 @@ export const MachiningRequestLabel = ({
     );
   };
 
+  const lotChipClass = compact
+    ? "inline-flex items-center px-1.5 py-0.5 rounded-md text-[10px] font-bold bg-slate-900 text-white"
+    : "inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold bg-slate-900 text-white border border-slate-900";
+
+  const textClass = compact
+    ? "text-[13px] font-semibold text-slate-800"
+    : "text-sm text-slate-700";
+
   return (
     <div className={className || ""}>
-      <div className="hidden md:flex min-w-0 flex-wrap items-center justify-between gap-3 text-sm text-slate-700">
-        <div className="flex min-w-0 flex-wrap items-center gap-2">
+      <div
+        className={`hidden md:flex min-w-0 flex-wrap items-center justify-between gap-2 ${textClass}`}
+      >
+        <div className="flex min-w-0 flex-wrap items-center gap-1.5">
           {desktopParts.length ? (
             desktopParts.map((part, idx) => (
               <span key={`${idx}-${part}`} className="flex items-center gap-1">
@@ -192,18 +232,16 @@ export const MachiningRequestLabel = ({
             <span className="truncate">-</span>
           )}
           {shortLot ? (
-            <div className="flex items-center gap-1.5">
-              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold bg-slate-900 text-white border border-slate-900">
-                {shortLot}
-              </span>
-            </div>
+            <span className={lotChipClass}>{shortLot}</span>
           ) : null}
         </div>
         {renderInfoBadges()}
       </div>
 
-      <div className="flex min-w-0 flex-wrap items-start gap-2 text-sm text-slate-700 md:hidden">
-        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+      <div
+        className={`flex min-w-0 flex-wrap items-start gap-1.5 md:hidden ${textClass}`}
+      >
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
           {mobileParts.length ? (
             mobileParts.map((part, idx) => (
               <span key={`${idx}-${part}`} className="flex items-center gap-1">
@@ -217,11 +255,7 @@ export const MachiningRequestLabel = ({
             <span className="truncate">-</span>
           )}
           {shortLot ? (
-            <div className="flex items-center gap-1.5">
-              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold bg-slate-900 text-white border border-slate-900">
-                {shortLot}
-              </span>
-            </div>
+            <span className={lotChipClass}>{shortLot}</span>
           ) : null}
         </div>
         {(() => {

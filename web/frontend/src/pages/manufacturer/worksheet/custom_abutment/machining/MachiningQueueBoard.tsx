@@ -1165,15 +1165,15 @@ export const MachiningQueueBoard = ({
       onMouseDownCapture={handleBoardClickCapture}
       onTouchStartCapture={handleBoardClickCapture}
     >
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2 min-w-0">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-2">
           {isMockFromBackend != null ? (
             <Badge
               variant="outline"
-              className={`shrink-0 text-[11px] font-extrabold px-2.5 py-1 border ${
+              className={`shrink-0 border px-2 py-0.5 text-[11px] font-semibold ${
                 isMockFromBackend === true
-                  ? "bg-violet-50 text-violet-700 border-violet-200"
-                  : "bg-slate-50 text-slate-700 border-slate-200"
+                  ? "border-violet-200 bg-violet-50 text-violet-700"
+                  : "border-slate-200 bg-slate-50 text-slate-700"
               }`}
               title={
                 isMockFromBackend === true ? "더미(모의) 가공" : "실제 가공"
@@ -1183,7 +1183,7 @@ export const MachiningQueueBoard = ({
             </Badge>
           ) : null}
 
-          <div className="rounded-2xl bg-slate-50 px-3 py-2 text-xs text-slate-600 border border-slate-200 truncate">
+          <div className="truncate rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs text-slate-600">
             {statusRefreshing
               ? "장비 상태 조회중…"
               : statusRefreshError
@@ -1195,40 +1195,35 @@ export const MachiningQueueBoard = ({
                   : ""}
           </div>
         </div>
-        <div
-          className="flex flex-wrap items-center justify-end gap-3"
-          title="OFF로 전환하면 현재 가공 중인 건은 그대로 진행되며, 완료 후 다음 자동 시작은 실행되지 않습니다."
-        >
+        <div className="flex flex-wrap items-center justify-end gap-2">
           {hasUnassigned ? (
             <button
               type="button"
-              className="min-w-0 max-w-[560px] rounded-xl border  px-3 py-1.5 text-left shadow-sm border-slate-300 bg-white text-slate-600 hover:bg-slate-50"
+              className="min-w-0 max-w-[560px] rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-left text-slate-600 hover:bg-slate-50"
               onClick={() => {
                 setUnassignedModalOpen(true);
               }}
               title={`미배정 ${unassignedQueue.length}건`}
             >
-              <div className="flex items-center gap-2 min-w-0">
-                <Badge
-                  variant="outline"
-                  className="shrink-0 text-[11px] border-slate-300 bg-white text-slate-600 hover:bg-slate-50"
-                >
-                  미배정 {unassignedQueue.length}건
-                </Badge>
-                <div className="min-w-0 flex-1 text-[12px] font-extrabold text-slate-800 truncate">
+              <div className="flex min-w-0 items-center gap-2">
+                <span className="shrink-0 rounded-md border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-semibold text-slate-600">
+                  미배정 {unassignedQueue.length}
+                </span>
+                <div className="min-w-0 flex-1 truncate text-xs text-slate-800">
                   {unassignedHead ? (
                     <MachiningRequestLabel
+                      density="compact"
                       business={unassignedHead.businessName}
                       clinicName={unassignedHead.clinicName}
                       patientName={unassignedHead.patientName}
                       tooth={(unassignedHead as any)?.tooth}
                       requestId={unassignedHead.requestId}
+                      hideRequestId
                       lotShortCode={getLotShortCode(unassignedHead)}
                       caseInfos={(unassignedHead as any)?.caseInfos}
                       shippingSource={
                         unassignedHead?.requestId ? unassignedHead : undefined
                       }
-                      className="text-[12px]"
                       {...buildLabelExtraProps(unassignedHead)}
                     />
                   ) : (
@@ -1236,8 +1231,8 @@ export const MachiningQueueBoard = ({
                   )}
                 </div>
                 {unassignedRest.length > 0 ? (
-                  <span className="shrink-0 text-[11px] font-bold text-slate-500">
-                    외 {unassignedRest.length}건
+                  <span className="shrink-0 text-[11px] font-medium text-slate-500">
+                    외 {unassignedRest.length}
                   </span>
                 ) : null}
               </div>
@@ -1245,7 +1240,7 @@ export const MachiningQueueBoard = ({
           ) : null}
           {machiningAlerts.length > 0 ? (
             <div
-              className="flex items-center gap-1 rounded-xl border border-red-200 bg-red-50 px-2.5 py-1 text-[11px] font-extrabold text-red-700"
+              className="flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-2 py-1 text-[11px] font-semibold text-red-700"
               title={machiningAlerts
                 .slice(0, 3)
                 .map(
@@ -1270,17 +1265,17 @@ export const MachiningQueueBoard = ({
           {expressRebalanceAlert &&
           Array.isArray(expressRebalanceAlert.moved) &&
           expressRebalanceAlert.moved.length > 0 ? (
-            <div className="flex items-center gap-1 rounded-xl border border-violet-200 bg-violet-50 px-2.5 py-1 text-[11px] font-extrabold text-violet-800">
+            <div className="flex items-center gap-1 rounded-lg border border-violet-200 bg-violet-50 px-2 py-1 text-[11px] font-semibold text-violet-800">
               <button
                 type="button"
                 className="inline-flex items-center gap-1 hover:underline"
                 onClick={() => setExpressRebalanceModalOpen(true)}
-                title={String(expressRebalanceAlert.summary || "빠른 가공 재배치")}
+                title={String(
+                  expressRebalanceAlert.summary || "빠른 가공 재배치",
+                )}
               >
                 <Zap className="h-3.5 w-3.5" />
-                <span>
-                  빠른 재배치 {expressRebalanceAlert.moved.length}건
-                </span>
+                <span>빠른 재배치 {expressRebalanceAlert.moved.length}</span>
               </button>
               <button
                 type="button"
@@ -1295,7 +1290,7 @@ export const MachiningQueueBoard = ({
 
           <button
             type="button"
-            className="inline-flex items-center gap-1 rounded-xl border border-slate-200 bg-white px-3 py-1 text-[12px] font-extrabold text-slate-700 shadow-sm hover:bg-slate-50"
+            className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
             onClick={() => setPriorityRulesModalOpen(true)}
             title="가공 우선순위 룰 보기"
           >
@@ -1306,7 +1301,7 @@ export const MachiningQueueBoard = ({
           <button
             type="button"
             disabled={anodizingOffTriggering}
-            className="rounded-xl border border-slate-200 bg-white px-3 py-1 text-[12px] font-extrabold text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-50"
+            className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
             onClick={() => {
               void triggerAnodizingOffMachining();
             }}
@@ -1317,43 +1312,43 @@ export const MachiningQueueBoard = ({
           <button
             type="button"
             disabled={siFetching}
-            className="rounded-xl border border-slate-200 bg-white px-3 py-1 text-[12px] font-extrabold text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-50"
+            className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
             onClick={() => void openSelfInspectionQueue()}
           >
             {siFetching ? "로딩…" : "자주검사"}
           </button>
           <button
             type="button"
-            className="rounded-xl border border-slate-200 bg-white px-3 py-1 text-[12px] font-extrabold text-slate-700 shadow-sm hover:bg-slate-50"
+            className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
             onClick={() => {
               void reassignProductionQueues();
             }}
           >
             재배정
           </button>
-          <div className="flex flex-col items-end leading-tight">
-            <div className="text-[12px] font-extrabold text-slate-700">
-              전체 자동 가공 시작
-            </div>
-            <div className="text-[10px] font-semibold text-slate-500">
-              현재 가공은 그대로 유지
-            </div>
-          </div>
-          <button
-            type="button"
-            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-              globalAutoEnabled ? "bg-emerald-500" : "bg-gray-300"
-            }`}
-            onClick={() => {
-              void setGlobalAutoEnabled(!globalAutoEnabled);
-            }}
+          <div
+            className="flex items-center gap-2"
+            title="OFF로 전환하면 현재 가공 중인 건은 그대로 진행되며, 완료 후 다음 자동 시작은 실행되지 않습니다."
           >
-            <span
-              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                globalAutoEnabled ? "translate-x-5" : "translate-x-1"
+            <span className="text-xs font-semibold text-slate-700">
+              전체 자동
+            </span>
+            <button
+              type="button"
+              className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+                globalAutoEnabled ? "bg-emerald-500" : "bg-slate-300"
               }`}
-            />
-          </button>
+              onClick={() => {
+                void setGlobalAutoEnabled(!globalAutoEnabled);
+              }}
+            >
+              <span
+                className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
+                  globalAutoEnabled ? "translate-x-4" : "translate-x-0.5"
+                }`}
+              />
+            </button>
+          </div>
         </div>
       </div>
 
@@ -1935,28 +1930,24 @@ export const MachiningQueueBoard = ({
       )}
 
       <Dialog open={unassignedModalOpen} onOpenChange={setUnassignedModalOpen}>
-        <DialogContent className="w-[95vw] sm:max-w-2xl max-h-[80vh] overflow-y-auto p-4 sm:p-6">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-slate-900">
+        <DialogContent className="w-[95vw] max-h-[80vh] overflow-y-auto rounded-2xl border border-slate-200/80 p-0 gap-0 shadow-[0_24px_64px_rgba(15,23,42,0.28)] sm:max-w-2xl">
+          <DialogHeader className="border-b border-slate-100 px-5 py-4 sm:px-6">
+            <DialogTitle className="flex items-center gap-2 text-lg font-bold tracking-tight text-slate-900">
               <span>미배정</span>
-              <Badge
-                variant="outline"
-                className="border-slate-300 bg-white text-slate-600 hover:bg-slate-50"
-              >
+              <span className="rounded-md border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-semibold text-slate-600">
                 {unassignedQueue.length}건
-              </Badge>
+              </span>
             </DialogTitle>
-            <DialogDescription className="text-sm text-slate-500">
-              세척.패킹 롤백 시 온라인이면서 조건이 맞는 장비가 없어서 배정되지
-              않은 의뢰건입니다.
+            <DialogDescription className="mt-0.5 text-xs text-slate-500">
+              조건에 맞는 장비가 없어 배정되지 않은 의뢰건입니다.
             </DialogDescription>
           </DialogHeader>
 
-          <div className="grid grid-cols-1 gap-3">
+          <div className="grid grid-cols-1 gap-2 px-5 py-4 sm:px-6">
             {unassignedQueue.map((item, index) => (
               <div
                 key={`${String(item.requestMongoId || item.requestId || index)}`}
-                className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3"
+                className="rounded-xl border border-slate-200 bg-white px-3 py-2.5"
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0 flex-1">
@@ -2041,17 +2032,18 @@ export const MachiningQueueBoard = ({
                         </button>
                       </div>
                     </div>
-                    <div className="mt-1 text-[14px] font-extrabold text-slate-900 leading-tight">
+                    <div className="mt-1 min-w-0">
                       <MachiningRequestLabel
+                        density="compact"
                         business={item.businessName}
                         clinicName={item.clinicName}
                         patientName={item.patientName}
                         tooth={(item as any)?.tooth}
                         requestId={item.requestId}
+                        hideRequestId
                         lotShortCode={getLotShortCode(item)}
                         caseInfos={(item as any)?.caseInfos}
                         shippingSource={item?.requestId ? item : undefined}
-                        className="text-[14px] leading-tight"
                         {...buildLabelExtraProps(item)}
                       />
                     </div>
