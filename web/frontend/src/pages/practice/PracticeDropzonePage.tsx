@@ -668,6 +668,9 @@ export const PracticeDropzonePage = () => {
   const [showGuestChat, setShowGuestChat] = useState(false);
   const consumedPrefillLocationKeyRef = useRef<string | null>(null);
   const suppressDraftPersistRef = useRef(false);
+  /** 초안 복원 시에만 서버/캐시 인증상태를 되살린다. 사용자가 번호를 수정하면 false. */
+  const allowEmailVerificationRestoreRef = useRef(true);
+  const allowPhoneVerificationRestoreRef = useRef(true);
 
   const isEmailValid = isValidEmail(email);
   const isPhoneValid = isValidMobilePhone(phone);
@@ -1187,8 +1190,11 @@ export const PracticeDropzonePage = () => {
         const normalizedEmail = String(email || "").trim().toLowerCase();
         const phoneDigits = String(phone || "").replace(/\D/g, "");
         const cache = readSignupVerificationCache();
+        const allowEmailRestore = allowEmailVerificationRestoreRef.current;
+        const allowPhoneRestore = allowPhoneVerificationRestoreRef.current;
 
         if (
+          allowEmailRestore &&
           isEmailValid &&
           cache.email?.value === normalizedEmail &&
           cache.email.verifiedAt
@@ -1197,6 +1203,7 @@ export const PracticeDropzonePage = () => {
         }
 
         if (
+          allowPhoneRestore &&
           isPhoneValid &&
           cache.phone?.value === phoneDigits &&
           cache.phone.verifiedAt
@@ -1204,7 +1211,7 @@ export const PracticeDropzonePage = () => {
           if (!cancelled) setPhoneVerified(true);
         }
 
-        if (isEmailValid) {
+        if (allowEmailRestore && isEmailValid) {
           try {
             const res = await apiFetch<{
               success?: boolean;
@@ -1217,25 +1224,26 @@ export const PracticeDropzonePage = () => {
               success?: boolean;
               data?: { verified?: boolean; verifiedAt?: string | null };
             };
-            if (cancelled) return;
-            if (res.ok && payload.data?.verified) {
-              setEmailVerified(true);
-              persistEmailVerificationCache(
-                normalizedEmail,
-                payload.data.verifiedAt
-                  ? String(payload.data.verifiedAt)
-                  : undefined,
-              );
-            } else if (res.ok && cache.email?.value === normalizedEmail) {
-              setEmailVerified(false);
-              clearEmailVerificationCache();
+            if (!cancelled && allowEmailVerificationRestoreRef.current) {
+              if (res.ok && payload.data?.verified) {
+                setEmailVerified(true);
+                persistEmailVerificationCache(
+                  normalizedEmail,
+                  payload.data.verifiedAt
+                    ? String(payload.data.verifiedAt)
+                    : undefined,
+                );
+              } else if (res.ok && cache.email?.value === normalizedEmail) {
+                setEmailVerified(false);
+                clearEmailVerificationCache();
+              }
             }
           } catch {
             // keep local cache fallback
           }
         }
 
-        if (isPhoneValid) {
+        if (allowPhoneRestore && isPhoneValid) {
           try {
             const res = await apiFetch<{
               success?: boolean;
@@ -1248,18 +1256,19 @@ export const PracticeDropzonePage = () => {
               success?: boolean;
               data?: { verified?: boolean; verifiedAt?: string | null };
             };
-            if (cancelled) return;
-            if (res.ok && payload.data?.verified) {
-              setPhoneVerified(true);
-              persistPhoneVerificationCache(
-                phoneDigits,
-                payload.data.verifiedAt
-                  ? String(payload.data.verifiedAt)
-                  : undefined,
-              );
-            } else if (res.ok && cache.phone?.value === phoneDigits) {
-              setPhoneVerified(false);
-              clearPhoneVerificationCache();
+            if (!cancelled && allowPhoneVerificationRestoreRef.current) {
+              if (res.ok && payload.data?.verified) {
+                setPhoneVerified(true);
+                persistPhoneVerificationCache(
+                  phoneDigits,
+                  payload.data.verifiedAt
+                    ? String(payload.data.verifiedAt)
+                    : undefined,
+                );
+              } else if (res.ok && cache.phone?.value === phoneDigits) {
+                setPhoneVerified(false);
+                clearPhoneVerificationCache();
+              }
             }
           } catch {
             // keep local cache fallback
@@ -1772,6 +1781,7 @@ export const PracticeDropzonePage = () => {
   };
 
   const resetEmailVerification = () => {
+    allowEmailVerificationRestoreRef.current = false;
     setEmailVerified(false);
     setEmailCodeSent(false);
     setEmailCode("");
@@ -1779,6 +1789,7 @@ export const PracticeDropzonePage = () => {
   };
 
   const resetPhoneVerification = () => {
+    allowPhoneVerificationRestoreRef.current = false;
     setPhoneVerified(false);
     setPhoneCodeSent(false);
     setPhoneCode("");
@@ -2511,7 +2522,7 @@ export const PracticeDropzonePage = () => {
 
                     {authMode === "signup" && (
                       <div className="space-y-4">
-                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
                           <div className="space-y-2">
                             <Label htmlFor="practiceEmail" className="flex h-5 items-center text-sm font-medium text-slate-700">
                               이메일 <span className="ml-0.5 text-destructive">*</span>
@@ -2635,7 +2646,7 @@ export const PracticeDropzonePage = () => {
                               </p>
                             ) : null}
                           </div>
-                          <div className="space-y-2 sm:col-span-2">
+                          <div className="space-y-2">
                             <Label htmlFor="phone" className="flex h-5 items-center text-sm font-medium text-slate-700">
                               담당자 휴대폰 <span className="ml-0.5 text-destructive">*</span>
                             </Label>
