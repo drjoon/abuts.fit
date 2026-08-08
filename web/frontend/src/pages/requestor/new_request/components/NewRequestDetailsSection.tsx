@@ -82,6 +82,7 @@ type Props = {
     fileKeys: string[],
     mode: "normal" | "express",
   ) => void;
+  defaultShippingMode?: "normal" | "express";
 };
 
 export function NewRequestDetailsSection({
@@ -135,6 +136,7 @@ export function NewRequestDetailsSection({
   designSoftwareLabel,
   onOpenDesignSoftwareModal,
   onShippingModeChange,
+  defaultShippingMode = "normal",
 }: Props) {
   const { token } = useAuthStore();
   const listContainerRef = useRef<HTMLDivElement | null>(null);
@@ -159,7 +161,7 @@ export function NewRequestDetailsSection({
     [normalizeKeyPart],
   );
 
-  const { fileDiameters, getEstimatedShipForDiameter, handleDiameterComputed } =
+  const { fileDiameters, getEstimatedShipForDiameter, handleDiameterComputed, leadTimes } =
     useLeadTimeForecast({
       token,
       weeklyBatchDays,
@@ -429,6 +431,8 @@ export function NewRequestDetailsSection({
             highlightUnverifiedArrows={highlightUnverifiedArrows}
             caseInfosMap={caseInfosMap}
             toNormalizedFileKey={toNormalizedFileKey}
+            weeklyBatchDays={weeklyBatchDays}
+            leadTimes={leadTimes}
             getEstimatedShipForDiameter={getEstimatedShipForDiameter}
             fileDiameters={fileDiameters}
             handleRemoveFile={handleRemoveFile}
@@ -445,6 +449,7 @@ export function NewRequestDetailsSection({
             listContainerRef={listContainerRef}
             uploadInputRef={uploadInputRef}
             onShippingModeChange={onShippingModeChange}
+            defaultShippingMode={defaultShippingMode}
           />
         </div>
       </div>

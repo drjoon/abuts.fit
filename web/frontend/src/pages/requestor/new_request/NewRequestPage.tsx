@@ -837,6 +837,35 @@ const NewRequestPageContent = () => {
     setDefaultShippingMode,
   } = useBulkShippingPolicy(user?.email);
 
+  const handleWeeklyBatchDaysChange = useCallback(
+    (days: string[]) => {
+      setWeeklyBatchDays(days);
+      for (const file of files) {
+        updateCaseInfos(toNormalizedFileKey(file), { shippingMode: "normal" });
+      }
+      if (import.meta.env.DEV) {
+        console.debug("[ship-eta] weeklyBatchDays -> all files normal", days);
+      }
+    },
+    [files, setWeeklyBatchDays, toNormalizedFileKey, updateCaseInfos],
+  );
+
+  const handleDefaultShippingModeChange = useCallback(
+    (mode: "normal" | "express") => {
+      setDefaultShippingMode(mode);
+      for (const file of files) {
+        updateCaseInfos(toNormalizedFileKey(file), { shippingMode: mode });
+      }
+      if (import.meta.env.DEV) {
+        console.debug("[ship-eta] defaultShippingMode -> all files", {
+          mode,
+          fileCount: files.length,
+        });
+      }
+    },
+    [files, setDefaultShippingMode, toNormalizedFileKey, updateCaseInfos],
+  );
+
   // 새로 첨부된 파일에만 우측 기본 배송 방식을 적용한다.
   useEffect(() => {
     const nextKnown = new Set<string>();
@@ -962,8 +991,16 @@ const NewRequestPageContent = () => {
         return next;
       });
 
-      // 업로드 시점의 기본 소프트웨어를 "신규 파일"에만 주입한다.
-      // 기존 카드 값은 절대 덮어쓰지 않는다.
+      // 업로드 시점의 기본 출고 방식·소프트웨어를 "신규 파일"에만 즉시 주입한다.
+      // (useEffect 대기 시 첫 렌더 ETA가 express/빈 weeklyBatchDays로 월요일로 고정되는 문제 방지)
+      for (const file of stlFiles) {
+        const fileKey = toNormalizedFileKey(file);
+        const existingMode = caseInfosMap?.[fileKey]?.shippingMode;
+        if (existingMode !== "normal" && existingMode !== "express") {
+          updateCaseInfos(fileKey, { shippingMode: defaultShippingMode });
+        }
+      }
+
       const currentSoftware = String(
         designSoftwareValue || caseInfosMap?.__default__?.designSoftware || "",
       ).trim();
@@ -1401,6 +1438,7 @@ const NewRequestPageContent = () => {
               designSoftwareLabel={String(designSoftwareValue || "").trim()}
               onOpenDesignSoftwareModal={handleOpenDesignSoftwareModal}
               onShippingModeChange={handleShippingModeChange}
+              defaultShippingMode={defaultShippingMode}
               onDuplicateDetected={({ file, duplicate }) => {
                 const fileWithDraftCaseId = file as File & {
                   _draftCaseInfoId?: string;
@@ -1448,9 +1486,9 @@ const NewRequestPageContent = () => {
           <div className="flex flex-col min-h-0 h-full">
             <NewRequestShippingSection
               weeklyBatchDays={weeklyBatchDays}
-              onWeeklyBatchDaysChange={setWeeklyBatchDays}
+              onWeeklyBatchDaysChange={handleWeeklyBatchDaysChange}
               defaultShippingMode={defaultShippingMode}
-              onDefaultShippingModeChange={setDefaultShippingMode}
+              onDefaultShippingModeChange={handleDefaultShippingModeChange}
               onSubmit={() => {
                 if (!files.length) {
                   toast({

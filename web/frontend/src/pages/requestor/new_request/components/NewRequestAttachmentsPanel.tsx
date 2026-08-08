@@ -2,6 +2,10 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Check, Calendar, X } from "lucide-react";
 import type { CaseInfos } from "../hooks/newRequestTypes";
+import {
+  computeEstimatedShipLabel,
+  type LeadTimesMap,
+} from "@/shared/shipping/estimateShipDate";
 
 // change-log:
 // - 2026-08-06: 예상 발송 → 예상 출고 (제조사 출발일).
@@ -19,6 +23,8 @@ type Props = {
   highlightUnverifiedArrows: boolean;
   caseInfosMap?: Record<string, CaseInfos>;
   toNormalizedFileKey: (file: File) => string;
+  weeklyBatchDays?: string[];
+  leadTimes?: LeadTimesMap | null;
   getEstimatedShipForDiameter: ((
     diameter: number | null,
     shippingMode?: "normal" | "express",
@@ -38,10 +44,16 @@ type Props = {
   designSoftwareLabel?: string;
   onOpenDesignSoftwareModal?: () => void;
   onShippingModeChange?: (fileKeys: string[], mode: ShippingMode) => void;
+  defaultShippingMode?: ShippingMode;
 };
 
-function resolveShippingMode(info?: CaseInfos): ShippingMode {
-  return info?.shippingMode === "express" ? "express" : "normal";
+function resolveShippingMode(
+  info?: CaseInfos,
+  defaultMode: ShippingMode = "normal",
+): ShippingMode {
+  if (info?.shippingMode === "express") return "express";
+  if (info?.shippingMode === "normal") return "normal";
+  return defaultMode;
 }
 
 export function NewRequestAttachmentsPanel({
@@ -51,6 +63,8 @@ export function NewRequestAttachmentsPanel({
   highlightUnverifiedArrows,
   caseInfosMap,
   toNormalizedFileKey,
+  weeklyBatchDays = [],
+  leadTimes = null,
   getEstimatedShipForDiameter,
   fileDiameters,
   handleRemoveFile,
@@ -67,6 +81,7 @@ export function NewRequestAttachmentsPanel({
   designSoftwareLabel,
   onOpenDesignSoftwareModal,
   onShippingModeChange,
+  defaultShippingMode = "normal",
 }: Props) {
   const hasAnyAttachment = files.length > 0;
 
@@ -156,7 +171,10 @@ export function NewRequestAttachmentsPanel({
             const isSelected = selectedPreviewIndex === index;
             const isVerified = !!fileVerificationStatus[fileKey];
             const isUnverifiedHighlight = highlightUnverifiedArrows && !isVerified;
-            const shippingMode = resolveShippingMode(caseInfosMap?.[fileKey]);
+            const shippingMode = resolveShippingMode(
+              caseInfosMap?.[fileKey],
+              defaultShippingMode,
+            );
 
             const baseClasses = isVerified
               ? "border border-gray-200 bg-white text-gray-900"
@@ -176,9 +194,16 @@ export function NewRequestAttachmentsPanel({
             const computedDiameter = fileDiameters[fileKey];
             const fileInfo = caseInfosMap?.[fileKey];
             const diameter = computedDiameter ?? fileInfo?.maxDiameter ?? null;
-            const estimatedShip = getEstimatedShipForDiameter
-              ? getEstimatedShipForDiameter(diameter, shippingMode)
-              : null;
+            const estimatedShip =
+              computeEstimatedShipLabel({
+                weeklyBatchDays,
+                leadTimes,
+                diameter,
+                shippingMode,
+              }) ??
+              (getEstimatedShipForDiameter
+                ? getEstimatedShipForDiameter(diameter, shippingMode)
+                : null);
             const designSoftware = String(fileInfo?.designSoftware || "").trim();
 
             return (

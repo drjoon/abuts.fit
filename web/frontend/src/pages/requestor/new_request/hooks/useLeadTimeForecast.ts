@@ -1,22 +1,19 @@
 // change-log:
 // - 2026-08-06: 묶음 ETA를 백엔드와 같이 (N-1) 적용. 접수 당일=1일차(자정 컷오프).
+// - 2026-08-08: memo/stale closure 제거 — computeEstimatedShipLabel render 시점 호출.
 // related files:
 // - web/frontend/rules.md
-// - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
-// - web/frontend/src/shared/ui/PricingPolicyDialog.tsx
-// - web/backend/controllers/requests/production.utils.js
-// - web/backend/controllers/requests/creation.from-draft.controller.js
-import { useCallback, useEffect, useMemo, useState } from "react";
+// - web/frontend/src/shared/shipping/estimateShipDate.ts
+// - web/frontend/src/pages/requestor/new_request/components/NewRequestAttachmentsPanel.tsx
+import { useCallback, useEffect, useState } from "react";
 import { apiFetch } from "@/shared/api/apiClient";
-import { toKstYmd } from "@/shared/date/kst";
 import type { CaseInfos } from "./newRequestTypes";
-import { WEEKDAY_TO_KST_INDEX } from "../components/newRequestDetailsUtils";
-
-type LeadTimeEntry = {
-  minBusinessDays?: number | string;
-};
-
-type LeadTimesMap = Partial<Record<"d6" | "d8" | "d10" | "d12", LeadTimeEntry>>;
+import {
+  computeEstimatedShipLabel,
+  logEstimatedShipDebug,
+  type LeadTimesMap,
+} from "@/shared/shipping/estimateShipDate";
+import { serializeWeeklyBatchDays } from "@/shared/shipping/weeklyBatchSchedule";
 
 type ManufacturerLeadTimesResponse = {
   data?: {
@@ -42,6 +39,8 @@ export function useLeadTimeForecast({
   const [leadTimes, setLeadTimes] = useState<LeadTimesMap | null>(null);
   const [fileDiameters, setFileDiameters] = useState<Record<string, number>>({});
 
+  const weeklyBatchDaysKey = serializeWeeklyBatchDays(weeklyBatchDays);
+
   useEffect(() => {
     const loadLeadTimes = async () => {
       if (!token) return;
@@ -62,173 +61,35 @@ export function useLeadTimeForecast({
     void loadLeadTimes();
   }, [token]);
 
-  const getKstWeekday = useCallback((dateInput: Date) => {
-    const kst = new Date(dateInput.getTime() + 9 * 60 * 60 * 1000);
-    return kst.getUTCDay();
-  }, []);
+  useEffect(() => {
+    logEstimatedShipDebug("policy-changed", {
+      weeklyBatchDays,
+      leadTimes,
+      shippingMode: "normal",
+    });
+  }, [weeklyBatchDaysKey, leadTimes, weeklyBatchDays]);
 
-  const addBusinessDaysFromKstYmd = useCallback(
-    (startYmd: string, days: number) => {
-      if (!Number.isFinite(days) || days <= 0) return startYmd;
-
-      const result = new Date(`${startYmd}T12:00:00+09:00`);
-      if (Number.isNaN(result.getTime())) return startYmd;
-
-      let added = 0;
-      while (added < days) {
-        result.setUTCDate(result.getUTCDate() + 1);
-        const day = getKstWeekday(result);
-        if (day !== 0 && day !== 6) {
-          added += 1;
-        }
-      }
-
-      return toKstYmd(result) || startYmd;
-    },
-    [getKstWeekday],
-  );
-
-  // 백엔드 resolveLeadDaysWithSameDayCutoff와 동일: 접수 당일=1일차 → (N-1)
-  const resolveLeadDaysForPickup = useCallback((leadDays: number) => {
-    if (!Number.isFinite(leadDays) || leadDays <= 0) return 0;
-    return Math.max(0, Math.floor(Number(leadDays)) - 1);
-  }, []);
-
-  const formatKstMonthDayWithWeekday = useCallback((ymd: string) => {
-    const date = new Date(`${ymd}T00:00:00+09:00`);
-    if (Number.isNaN(date.getTime())) return ymd;
-    return new Intl.DateTimeFormat("ko-KR", {
-      timeZone: "Asia/Seoul",
-      month: "numeric",
-      day: "numeric",
-      weekday: "short",
-    }).format(date);
-  }, []);
-
-  const resolveWeeklyPickupYmd = useCallback(
-    (baseYmd: string) => {
-      const enabledDays = Array.from(
-        new Set(
-          (weeklyBatchDays || [])
-            .map((d) => String(d || "").trim().toLowerCase())
-            .filter((d) => Object.prototype.hasOwnProperty.call(WEEKDAY_TO_KST_INDEX, d)),
-        ),
-      );
-
-      if (!enabledDays.length) {
-        return baseYmd;
-      }
-
-      const enabledIndexes = enabledDays
-        .map((d) => WEEKDAY_TO_KST_INDEX[d])
-        .filter((v): v is number => Number.isFinite(v));
-
-      if (!enabledIndexes.length) {
-        return baseYmd;
-      }
-
-      const baseDate = new Date(`${baseYmd}T12:00:00+09:00`);
-      if (Number.isNaN(baseDate.getTime())) {
-        return baseYmd;
-      }
-
-      for (let offset = 0; offset < 14; offset += 1) {
-        const candidate = new Date(baseDate);
-        candidate.setUTCDate(candidate.getUTCDate() + offset);
-        const candidateDay = getKstWeekday(candidate);
-        if (!enabledIndexes.includes(candidateDay)) continue;
-
-        const candidateYmd = toKstYmd(candidate) || baseYmd;
-        return candidateYmd;
-      }
-
-      return baseYmd;
-    },
-    [getKstWeekday, weeklyBatchDays],
-  );
-
-  const calculateEstimatedShipDate = useCallback(() => {
-    const cache = new Map<string, string>();
-
-    const getKstHour = (dateInput: Date) => {
-      const parts = new Intl.DateTimeFormat("en-US", {
-        timeZone: "Asia/Seoul",
-        hour: "numeric",
-        hour12: false,
-      }).formatToParts(dateInput);
-      const hour = Number(parts.find((p) => p.type === "hour")?.value);
-      return Number.isFinite(hour) ? hour : dateInput.getHours();
-    };
-
-    const nextBusinessDayInclusive = (startYmd: string) => {
-      const day = getKstWeekday(new Date(`${startYmd}T12:00:00+09:00`));
-      if (day !== 0 && day !== 6) return startYmd;
-      return addBusinessDaysFromKstYmd(startYmd, 1);
-    };
-
-    return (
+  const getEstimatedShipForDiameter = useCallback(
+    (
       diameter: number | null,
       shippingMode: "normal" | "express" = "normal",
     ) => {
-      const requestedAt = new Date();
-      const requestedYmd = toKstYmd(requestedAt);
-      if (!requestedYmd) return null;
-
-      if (shippingMode === "express") {
-        const cacheKey = `express:${requestedYmd}:${getKstHour(requestedAt)}`;
-        if (cache.has(cacheKey)) {
-          return cache.get(cacheKey) || null;
-        }
-
-        const beforeNoon = getKstHour(requestedAt) < 12;
-        const shipYmd = beforeNoon
-          ? nextBusinessDayInclusive(requestedYmd)
-          : addBusinessDaysFromKstYmd(requestedYmd, 1);
-        const formatted = formatKstMonthDayWithWeekday(shipYmd);
-        cache.set(cacheKey, formatted);
-        return formatted;
-      }
-
-      if (!leadTimes) return null;
-
-      // 직경이 아직 없으면 d8 기준으로라도 ETA를 보여 묶음 전환 시 공란을 막는다.
-      const d =
-        Number.isFinite(diameter) && diameter != null ? Number(diameter) : 8;
-      let diameterKey: "d6" | "d8" | "d10" | "d12" = "d8";
-      if (d <= 6) diameterKey = "d6";
-      else if (d <= 8) diameterKey = "d8";
-      else if (d <= 10) diameterKey = "d10";
-      else diameterKey = "d12";
-
-      const rawLead = leadTimes?.[diameterKey]?.minBusinessDays;
-      const leadNumber = Number(rawLead);
-      const leadDays = Number.isFinite(leadNumber) ? Math.max(1, leadNumber) : 1;
-      const resolvedLeadDays = resolveLeadDaysForPickup(leadDays);
-      const cacheKey = `normal:${requestedYmd}:${diameterKey}:${resolvedLeadDays}:${(weeklyBatchDays || []).join(",")}`;
-
-      if (cache.has(cacheKey)) {
-        return cache.get(cacheKey) || null;
-      }
-
-      const baseShipYmd = addBusinessDaysFromKstYmd(requestedYmd, resolvedLeadDays);
-      const shipYmd = resolveWeeklyPickupYmd(baseShipYmd);
-      const formatted = formatKstMonthDayWithWeekday(shipYmd);
-      cache.set(cacheKey, formatted);
-      return formatted;
-    };
-  }, [
-    addBusinessDaysFromKstYmd,
-    formatKstMonthDayWithWeekday,
-    getKstWeekday,
-    leadTimes,
-    resolveLeadDaysForPickup,
-    resolveWeeklyPickupYmd,
-    weeklyBatchDays,
-  ]);
-
-  const getEstimatedShipForDiameter = useMemo(
-    () => calculateEstimatedShipDate(),
-    [calculateEstimatedShipDate],
+      const label = computeEstimatedShipLabel({
+        weeklyBatchDays,
+        leadTimes,
+        diameter,
+        shippingMode,
+      });
+      logEstimatedShipDebug("file-eta", {
+        weeklyBatchDays,
+        leadTimes,
+        diameter,
+        shippingMode,
+        label,
+      });
+      return label;
+    },
+    [leadTimes, weeklyBatchDays, weeklyBatchDaysKey],
   );
 
   const handleDiameterComputed = useCallback(
@@ -266,5 +127,7 @@ export function useLeadTimeForecast({
     fileDiameters,
     getEstimatedShipForDiameter,
     handleDiameterComputed,
+    leadTimes,
+    weeklyBatchDaysKey,
   };
 }

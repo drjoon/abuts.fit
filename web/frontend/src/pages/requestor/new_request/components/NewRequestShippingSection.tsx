@@ -1,14 +1,16 @@
 // change-log:
 // - 2026-08-06: 배송/발송 표기를 출고로 통일 (제조사 출발일).
+// - 2026-08-08: weeklyBatchDays prop SSOT — selectedDays 이중 상태 제거, optimistic 반영.
 // related files:
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
+// - web/frontend/src/shared/shipping/weeklyBatchSchedule.ts
 // - web/backend/controllers/requests/creation.from-draft.controller.js
 import { Button } from "@/components/ui/button";
 import { Package, Zap } from "lucide-react";
-import { useState, useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch } from "@/shared/api/apiClient";
 import { useToast } from "@/shared/hooks/use-toast";
 import { useAuthStore } from "@/store/useAuthStore";
@@ -18,6 +20,11 @@ import {
   useSystemSettings,
 } from "@/hooks/useSystemSettings";
 import { cn } from "@/shared/ui/cn";
+import { resolveBusinessType } from "@/shared/utils/resolveBusinessType";
+import {
+  normalizeWeeklyBatchDays,
+  type WeeklyBatchDayKey,
+} from "@/shared/shipping/weeklyBatchSchedule";
 
 type ShippingMode = "normal" | "express";
 
@@ -30,7 +37,7 @@ type Props = {
   onSubmit: () => void;
 };
 
-type WeekDay = "mon" | "tue" | "wed" | "thu" | "fri";
+type WeekDay = WeeklyBatchDayKey;
 
 const WEEKDAYS: { key: WeekDay; label: string }[] = [
   { key: "mon", label: "월" },
@@ -50,8 +57,12 @@ export function NewRequestShippingSection({
 }: Props) {
   const isDisabled = !!disabled;
   const { toast } = useToast();
-  const { token } = useAuthStore();
+  const { token, user } = useAuthStore();
   const navigate = useNavigate();
+  const businessType = useMemo(
+    () => resolveBusinessType(user?.role, "requestor"),
+    [user?.role],
+  );
   const { data: systemSettings } = useSystemSettings();
   const expressFee = Math.max(
     0,
@@ -61,11 +72,14 @@ export function NewRequestShippingSection({
     ) || CREDIT_SETTINGS_DEFAULTS.expressFee,
   );
   const expressFeeLabel = expressFee.toLocaleString("ko-KR");
-  const [selectedDays, setSelectedDays] = useState<WeekDay[]>([]);
   const [isUpdating, setIsUpdating] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const weekdaysRef = useRef<HTMLDivElement | null>(null);
   const [pulse, setPulse] = useState(false);
+  const selectedDays = useMemo(
+    () => normalizeWeeklyBatchDays(weeklyBatchDays),
+    [weeklyBatchDays],
+  );
 
   useEffect(() => {
     const handler = () => {
@@ -87,21 +101,13 @@ export function NewRequestShippingSection({
       );
   }, []);
 
-  useEffect(() => {
-    const nextDays = Array.isArray(weeklyBatchDays)
-      ? weeklyBatchDays.filter((day): day is WeekDay =>
-          WEEKDAYS.some((item) => item.key === day),
-        )
-      : [];
-    setSelectedDays(nextDays);
-  }, [weeklyBatchDays]);
-
   const toggleDay = async (day: WeekDay) => {
     if (isDisabled || isUpdating) return;
 
-    const newDays = selectedDays.includes(day)
-      ? selectedDays.filter((d) => d !== day)
-      : [...selectedDays, day];
+    const previousDays = selectedDays;
+    const newDays = previousDays.includes(day)
+      ? previousDays.filter((d) => d !== day)
+      : [...previousDays, day];
 
     if (newDays.length === 0) {
       toast({
@@ -113,10 +119,16 @@ export function NewRequestShippingSection({
       return;
     }
 
+    onWeeklyBatchDaysChange?.(newDays);
+    if (import.meta.env.DEV) {
+      console.debug("[ship-eta] toggleDay optimistic", { previousDays, newDays });
+    }
     setIsUpdating(true);
     try {
       const res = await apiFetch<any>({
-        path: "/api/businesses/me?businessType=requestor",
+        path: `/api/businesses/me?businessType=${encodeURIComponent(
+          businessType,
+        )}`,
         method: "PATCH",
         token,
         jsonBody: {
@@ -127,14 +139,13 @@ export function NewRequestShippingSection({
       });
 
       if (res.ok) {
-        setSelectedDays(newDays);
-        onWeeklyBatchDaysChange?.(newDays);
         toast({
           title: "출고일 설정 완료",
           description: "출고일이 업데이트되었습니다.",
           duration: 2000,
         });
       } else {
+        onWeeklyBatchDaysChange?.(previousDays);
         const nextMessage = res.data?.message || "";
         const missingBusinessInfo =
           res.status === 400 &&
@@ -160,6 +171,7 @@ export function NewRequestShippingSection({
         });
       }
     } catch (e: any) {
+      onWeeklyBatchDaysChange?.(previousDays);
       toast({
         title: "오류",
         description: e.message || "출고일 업데이트 중 오류가 발생했습니다.",
@@ -179,7 +191,9 @@ export function NewRequestShippingSection({
     setIsUpdating(true);
     try {
       const res = await apiFetch<any>({
-        path: "/api/businesses/me?businessType=requestor",
+        path: `/api/businesses/me?businessType=${encodeURIComponent(
+          businessType,
+        )}`,
         method: "PATCH",
         token,
         jsonBody: {

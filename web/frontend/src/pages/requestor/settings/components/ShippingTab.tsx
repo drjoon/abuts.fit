@@ -160,6 +160,15 @@ export const ShippingTab = ({ userData }: ShippingTabProps) => {
             description: res.data?.message || "잠시 후 다시 시도해주세요.",
             variant: "destructive",
           });
+        } else {
+          try {
+            localStorage.setItem(
+              storageKey,
+              JSON.stringify({ weeklyBatchDays: normalized }),
+            );
+          } catch {
+            // ignore
+          }
         }
       } catch (err) {
         lastSavedRef.current = "";

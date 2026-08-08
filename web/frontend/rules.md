@@ -31,6 +31,7 @@ Notes:
   - 출고 남은시간 뱃지: `src/pages/manufacturer/worksheet/custom_abutment/utils/request.ts` `getDeadlineInfo`
     (문구: `출고 N일전` / `출고 N시간전`, 기준시각: `estimatedShipYmd` 16:00 KST)
   - 신규의뢰 ETA: `src/pages/requestor/new_request/hooks/useLeadTimeForecast.ts`
+    (묶음: `src/shared/shipping/weeklyBatchSchedule.ts` — 백엔드 `resolveNextWeeklyBatchYmd`와 동일 civil YMD 요일)
     (묶음: 백엔드와 동일하게 접수 당일=1일차 `(N-1)` 후 주간 발송 요일 정렬)
     (신속: KST 12시 이전=당일, 이후=+1영업일 — 백엔드 `EXPRESS_CUTOFF_HOUR_KST=12`와 동일)
 - 앱/라우팅

@@ -1,14 +1,18 @@
+// change-log:
+// - 2026-08-08: 서버 fetch가 로컬 출고일 변경을 덮어쓰지 않도록 in-flight 가드.
 // related files:
 // - web/frontend/rules.md
 // - web/frontend/src/App.tsx
 // - web/frontend/src/features/layout/DashboardLayout.tsx
 // - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
+// - web/frontend/src/shared/shipping/weeklyBatchSchedule.ts
 // - web/backend/controllers/requests/creation.from-draft.controller.js
 // - web/backend/models/businessAnchor.model.js
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore } from "@/store/useAuthStore";
 import { resolveBusinessType } from "@/shared/utils/resolveBusinessType";
+import { normalizeWeeklyBatchDays } from "@/shared/shipping/weeklyBatchSchedule";
 
 const SHIPPING_POLICY_STORAGE_PREFIX = "abutsfit:shipping-policy:v1:";
 
@@ -39,15 +43,6 @@ const dayOrderIndex: Record<string, number> = {
   fri: 5,
   sat: 6,
 };
-
-const normalizeWeeklyBatchDays = (raw: string[]) =>
-  Array.from(
-    new Set(
-      raw
-        .map((day) => String(day).trim())
-        .filter((day) => Object.keys(dayLabels).includes(day)),
-    ),
-  );
 
 const normalizeDefaultShippingMode = (raw: unknown): DefaultShippingMode =>
   raw === "express" ? "express" : "normal";
@@ -155,13 +150,22 @@ export function useBulkShippingPolicy(email?: string | null) {
   const [policy, setPolicy] = useState<ShippingPolicyResult>(() =>
     getLocalShippingPolicy(email),
   );
+  const [isPolicyLoaded, setIsPolicyLoaded] = useState(() => {
+    const local = getLocalShippingPolicy(email);
+    return local.weeklyBatchDays.length > 0;
+  });
+  const localUpdatedAtRef = useRef(0);
   const businessType = useMemo(() => {
     return resolveBusinessType(user?.role, "requestor");
   }, [user?.role]);
 
   useEffect(() => {
-    if (!token) return;
+    if (!token) {
+      setIsPolicyLoaded(true);
+      return;
+    }
     let cancelled = false;
+    const fetchStartedAt = Date.now();
 
     const run = async () => {
       try {
@@ -183,6 +187,20 @@ export function useBulkShippingPolicy(email?: string | null) {
           data?.shippingPolicy?.defaultShippingMode,
         );
         if (cancelled) return;
+        if (localUpdatedAtRef.current > fetchStartedAt) {
+          if (import.meta.env.DEV) {
+            console.debug("[ship-eta] skip stale fetch", {
+              weeklyDays,
+              localUpdatedAt: localUpdatedAtRef.current,
+              fetchStartedAt,
+            });
+          }
+          return;
+        }
+
+        if (import.meta.env.DEV) {
+          console.debug("[ship-eta] apply fetch", { weeklyDays, defaultShippingMode });
+        }
 
         setPolicy((prev) => {
           const nextDays =
@@ -197,6 +215,8 @@ export function useBulkShippingPolicy(email?: string | null) {
         });
       } catch {
         // ignore
+      } finally {
+        if (!cancelled) setIsPolicyLoaded(true);
       }
     };
 
@@ -208,6 +228,10 @@ export function useBulkShippingPolicy(email?: string | null) {
 
   const setWeeklyBatchDays = (days: string[]) => {
     const weeklyDays = normalizeWeeklyBatchDays(days);
+    localUpdatedAtRef.current = Date.now();
+    if (import.meta.env.DEV) {
+      console.debug("[ship-eta] setWeeklyBatchDays", weeklyDays);
+    }
     setPolicy((prev) => {
       saveLocalShippingPolicy(email, weeklyDays, prev.defaultShippingMode);
       return {
@@ -220,6 +244,7 @@ export function useBulkShippingPolicy(email?: string | null) {
 
   const setDefaultShippingMode = (mode: DefaultShippingMode) => {
     const nextMode = normalizeDefaultShippingMode(mode);
+    localUpdatedAtRef.current = Date.now();
     setPolicy((prev) => {
       saveLocalShippingPolicy(email, prev.weeklyBatchDays, nextMode);
       return {
@@ -231,6 +256,7 @@ export function useBulkShippingPolicy(email?: string | null) {
 
   return {
     ...policy,
+    isPolicyLoaded,
     setWeeklyBatchDays,
     setDefaultShippingMode,
   };

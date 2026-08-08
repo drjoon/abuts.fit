@@ -1,0 +1,148 @@
+// change-log:
+// - 2026-08-08: 신규의뢰 예상 출고일 계산 SSOT (프론트 ETA + 디버그).
+// related files:
+// - web/frontend/src/pages/requestor/new_request/hooks/useLeadTimeForecast.ts
+// - web/frontend/src/shared/shipping/weeklyBatchSchedule.ts
+// - web/backend/controllers/requests/production.utils.js
+import { toKstYmd } from "@/shared/date/kst";
+import {
+  normalizeWeeklyBatchDays,
+  resolveNextWeeklyBatchYmd,
+} from "@/shared/shipping/weeklyBatchSchedule";
+
+export type LeadTimesMap = Partial<
+  Record<
+    "d6" | "d8" | "d10" | "d12",
+    { minBusinessDays?: number | string }
+  >
+>;
+
+export type EstimateShipParams = {
+  weeklyBatchDays?: unknown;
+  leadTimes?: LeadTimesMap | null;
+  diameter?: number | null;
+  shippingMode?: "normal" | "express";
+  requestedAt?: Date;
+};
+
+const EXPRESS_CUTOFF_HOUR_KST = 12;
+
+function getKstWeekdayFromYmd(ymd: string): number | null {
+  const parts = ymd.split("-").map(Number);
+  if (parts.length !== 3 || parts.some((n) => !Number.isFinite(n) || n <= 0)) {
+    return null;
+  }
+  const [y, m, d] = parts;
+  return new Date(Date.UTC(y, m - 1, d, 12)).getUTCDay();
+}
+
+function addBusinessDaysFromKstYmd(startYmd: string, days: number): string {
+  if (!Number.isFinite(days) || days <= 0) return startYmd;
+
+  const result = new Date(`${startYmd}T12:00:00+09:00`);
+  if (Number.isNaN(result.getTime())) return startYmd;
+
+  let added = 0;
+  while (added < days) {
+    result.setUTCDate(result.getUTCDate() + 1);
+    const day = getKstWeekdayFromYmd(toKstYmd(result) || startYmd);
+    if (day != null && day !== 0 && day !== 6) {
+      added += 1;
+    }
+  }
+
+  return toKstYmd(result) || startYmd;
+}
+
+function resolveLeadDaysForPickup(leadDays: number): number {
+  if (!Number.isFinite(leadDays) || leadDays <= 0) return 0;
+  return Math.max(0, Math.floor(Number(leadDays)) - 1);
+}
+
+function formatKstMonthDayWithWeekday(ymd: string): string {
+  const date = new Date(`${ymd}T00:00:00+09:00`);
+  if (Number.isNaN(date.getTime())) return ymd;
+  return new Intl.DateTimeFormat("ko-KR", {
+    timeZone: "Asia/Seoul",
+    month: "numeric",
+    day: "numeric",
+    weekday: "short",
+  }).format(date);
+}
+
+function getKstHour(dateInput: Date): number {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Seoul",
+    hour: "numeric",
+    hour12: false,
+  }).formatToParts(dateInput);
+  const hour = Number(parts.find((p) => p.type === "hour")?.value);
+  return Number.isFinite(hour) ? hour : dateInput.getHours();
+}
+
+function nextBusinessDayInclusive(startYmd: string): string {
+  const day = getKstWeekdayFromYmd(startYmd);
+  if (day != null && day !== 0 && day !== 6) return startYmd;
+  return addBusinessDaysFromKstYmd(startYmd, 1);
+}
+
+function resolveDiameterKey(diameter: number | null | undefined) {
+  const d = Number.isFinite(diameter) && diameter != null ? Number(diameter) : 8;
+  if (d <= 6) return "d6" as const;
+  if (d <= 8) return "d8" as const;
+  if (d <= 10) return "d10" as const;
+  return "d12" as const;
+}
+
+export function computeEstimatedShipYmd({
+  weeklyBatchDays,
+  leadTimes,
+  diameter = null,
+  shippingMode = "normal",
+  requestedAt = new Date(),
+}: EstimateShipParams): string | null {
+  const requestedYmd = toKstYmd(requestedAt);
+  if (!requestedYmd) return null;
+
+  if (shippingMode === "express") {
+    const beforeNoon = getKstHour(requestedAt) < EXPRESS_CUTOFF_HOUR_KST;
+    return beforeNoon
+      ? nextBusinessDayInclusive(requestedYmd)
+      : addBusinessDaysFromKstYmd(requestedYmd, 1);
+  }
+
+  if (!leadTimes) return null;
+
+  const diameterKey = resolveDiameterKey(diameter);
+  const rawLead = leadTimes?.[diameterKey]?.minBusinessDays;
+  const leadNumber = Number(rawLead);
+  const leadDays = Number.isFinite(leadNumber) ? Math.max(1, leadNumber) : 1;
+  const resolvedLeadDays = resolveLeadDaysForPickup(leadDays);
+  const baseShipYmd = addBusinessDaysFromKstYmd(requestedYmd, resolvedLeadDays);
+  const batchDays = normalizeWeeklyBatchDays(weeklyBatchDays);
+  // 묶음 출고일 미로드/미설정 시 baseYmd(월요일 등)만 노출하지 않는다.
+  if (batchDays.length === 0) return null;
+  return resolveNextWeeklyBatchYmd(baseShipYmd, batchDays);
+}
+
+export function computeEstimatedShipLabel(params: EstimateShipParams): string | null {
+  const ymd = computeEstimatedShipYmd(params);
+  return ymd ? formatKstMonthDayWithWeekday(ymd) : null;
+}
+
+export function logEstimatedShipDebug(
+  tag: string,
+  params: EstimateShipParams & { label?: string | null },
+) {
+  if (!import.meta.env.DEV) return;
+  const batchDays = normalizeWeeklyBatchDays(params.weeklyBatchDays);
+  const ymd = computeEstimatedShipYmd(params);
+  console.debug("[ship-eta]", tag, {
+    shippingMode: params.shippingMode ?? "normal",
+    weeklyBatchDays: batchDays,
+    diameter: params.diameter ?? null,
+    leadTimesLoaded: Boolean(params.leadTimes),
+    ymd,
+    label: params.label ?? (ymd ? formatKstMonthDayWithWeekday(ymd) : null),
+  });
+}
