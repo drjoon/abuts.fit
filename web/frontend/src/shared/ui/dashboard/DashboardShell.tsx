@@ -35,7 +35,7 @@ export const DashboardShell = ({
     "grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 xl:grid-cols-6 gap-2.5";
 
   return (
-    <div className="space-y-3 p-1 sm:p-2">
+    <div className="space-y-3 p-0">
       {/* <div>
         <h1 className="text-3xl font-bold">{title}</h1>
         <p className="text-muted-foreground">{subtitle}</p>

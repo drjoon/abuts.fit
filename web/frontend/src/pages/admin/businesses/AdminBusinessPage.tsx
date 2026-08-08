@@ -486,9 +486,9 @@ export default function AdminBusinessPage() {
   const detailCredit = getCreditBreakdown(detailDialog.business);
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-slate-50/80 px-1 py-2 sm:px-2 sm:py-3">
-      <div className="mx-auto flex w-full max-w-7xl flex-1 min-h-0 flex-col gap-5 overflow-hidden">
-        <div className="shrink-0 pl-1">
+    <div className="flex h-full min-h-0 flex-col px-3 pt-3 pb-2 sm:px-4 sm:pt-4">
+      <div className="mx-auto flex w-full max-w-7xl flex-1 min-h-0 flex-col gap-4 overflow-hidden">
+        <div className="shrink-0 pl-0">
           <h1 className="text-lg font-bold tracking-tight text-slate-900">
             사업자
           </h1>
@@ -497,7 +497,7 @@ export default function AdminBusinessPage() {
           </p>
         </div>
 
-        <div className="grid shrink-0 grid-cols-2 gap-3 pr-1 xl:grid-cols-4">
+        <div className="grid shrink-0 grid-cols-2 gap-2.5 p-0.5 xl:grid-cols-4">
           {[
             {
               label: "총 사업자",

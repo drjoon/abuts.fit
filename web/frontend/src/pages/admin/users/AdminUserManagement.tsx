@@ -230,6 +230,30 @@ const getDisplayUserName = (user: Pick<UiUserRow, "name" | "businessInfo">) => {
   return representativeName || accountName || "-";
 };
 
+const getDisplayEmail = (
+  user: Pick<UiUserRow, "email" | "originalEmail">,
+) => {
+  const original = String(user.originalEmail || "").trim();
+  if (original) return original;
+  const email = String(user.email || "").trim();
+  if (!email) return "";
+  // 삭제 마스킹된 이메일은 목록에서 숨김
+  if (/^deleted\+/i.test(email)) return "";
+  return email;
+};
+
+const getDisplayCompany = (
+  user: Pick<UiUserRow, "companyName" | "businessInfo" | "name">,
+) => {
+  const company = String(
+    user.businessInfo?.name || user.companyName || "",
+  ).trim();
+  if (!company || company === "-") return "";
+  const displayName = getDisplayUserName(user);
+  if (company === displayName) return "";
+  return company;
+};
+
 const toUiUser = (u: ApiUser): UiUserRow => {
   const active = Boolean(u.active);
   const approved = Boolean(u.approvedAt);
@@ -864,9 +888,9 @@ export const AdminUserManagement = () => {
   ] as const;
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-slate-50/80 px-1 py-2 sm:px-2 sm:py-3">
-      <div className="mx-auto flex w-full max-w-7xl flex-1 min-h-0 flex-col gap-5 overflow-y-auto">
-        <div className="grid grid-cols-2 gap-3 pr-1 md:grid-cols-4 xl:grid-cols-7">
+    <div className="flex h-full min-h-0 flex-col px-4 pt-3 pb-2 sm:px-5 sm:pt-4">
+      <div className="mx-auto flex w-full max-w-7xl flex-1 min-h-0 flex-col gap-4 overflow-y-auto">
+        <div className="grid grid-cols-2 gap-2.5 p-0.5 md:grid-cols-4 xl:grid-cols-7">
           {statsCards.map((card) => {
             const Icon = card.icon;
             return (
@@ -919,7 +943,7 @@ export const AdminUserManagement = () => {
                       {getDisplayUserName(user)}
                     </div>
                     <div className="truncate text-[11px] text-slate-500">
-                      {user.companyName || "사업장 미등록"}
+                      {getDisplayCompany(user) || "사업장 미등록"}
                     </div>
                   </div>
                   <Button
@@ -936,8 +960,8 @@ export const AdminUserManagement = () => {
           </div>
         )}
 
-        <div className="flex flex-wrap items-center gap-3 pl-1">
-          <div className="relative min-w-[220px] flex-1">
+        <div className="flex flex-wrap items-center gap-3 pl-1.5 pr-0.5 sm:pl-2">
+          <div className="relative min-w-[200px] flex-1">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
             <Input
               placeholder="사용자 검색..."
@@ -996,7 +1020,7 @@ export const AdminUserManagement = () => {
             </p>
           </div>
 
-          <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6">
+          <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-5">
             {loadingUsers && (
               <div className="pb-3 text-sm text-slate-500">불러오는 중...</div>
             )}
@@ -1012,161 +1036,174 @@ export const AdminUserManagement = () => {
               </div>
             ) : (
               <div className="grid grid-cols-1 gap-2.5 md:grid-cols-2 xl:grid-cols-3">
-                {filteredUsers.map((user) => (
-                  <div
-                    key={user.id}
-                    className={`rounded-xl border bg-white px-3.5 py-3 transition-colors hover:bg-slate-50/70 ${
-                      user.unresolvedBusiness
-                        ? "border-amber-200 bg-amber-50/40"
-                        : "border-slate-200/80"
-                    }`}
-                  >
-                    <div className="flex items-start gap-2.5">
-                      <Avatar className="h-9 w-9 shrink-0">
-                        <AvatarFallback className="bg-slate-100 text-sm font-semibold text-slate-600">
-                          {String(getDisplayUserName(user) || "?")[0]}
-                        </AvatarFallback>
-                      </Avatar>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="min-w-0">
-                            <h3 className="truncate text-sm font-semibold text-slate-900">
-                              {getDisplayUserName(user)}
-                            </h3>
-                            <div className="mt-1 flex flex-wrap items-center gap-1">
-                              <Badge
-                                variant={getRoleBadgeVariant(user.role)}
-                                className="h-5 px-1.5 text-[10px]"
-                              >
-                                {getRoleLabel(user.role)}
-                              </Badge>
-                              {getRequestorCapabilityBadges(user)}
+                {filteredUsers.map((user) => {
+                  const displayEmail = getDisplayEmail(user);
+                  const displayCompany = getDisplayCompany(user);
+                  const displayName = getDisplayUserName(user);
+                  const requestCount =
+                    typeof user.totalRequests === "number"
+                      ? user.totalRequests
+                      : null;
+
+                  return (
+                    <div
+                      key={user.id}
+                      className={`rounded-xl border bg-white px-3 py-2.5 shadow-sm transition-colors hover:border-slate-300 ${
+                        user.unresolvedBusiness
+                          ? "border-amber-200 bg-amber-50/30"
+                          : "border-slate-200/80"
+                      }`}
+                    >
+                      <div className="flex items-start gap-2.5">
+                        <Avatar className="h-9 w-9 shrink-0">
+                          <AvatarFallback className="bg-slate-100 text-sm font-semibold text-slate-600">
+                            {String(displayName || "?")[0]}
+                          </AvatarFallback>
+                        </Avatar>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                              <h3 className="min-w-0 truncate text-sm font-semibold text-slate-900">
+                                {displayName}
+                              </h3>
                               {getSubRoleBadge(user)}
-                              {getStatusBadge(user.status)}
-                              {user.unresolvedBusiness ? (
-                                <span className="rounded-md border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">
-                                  사업자 확인
+                              {displayCompany ? (
+                                <span className="min-w-0 truncate text-sm font-medium text-slate-500">
+                                  · {displayCompany}
                                 </span>
                               ) : null}
+                              {getStatusBadge(user.status)}
                             </div>
-                          </div>
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <button
-                                type="button"
-                                className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-700"
-                              >
-                                <MoreHorizontal className="h-4 w-4" />
-                              </button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuItem
-                                onClick={() =>
-                                  handleUserAction(
-                                    "상세보기",
-                                    user.id,
-                                    getDisplayUserName(user),
-                                  )
-                                }
-                              >
-                                <Eye className="mr-2 h-4 w-4" />
-                                상세보기
-                              </DropdownMenuItem>
-                              {getRequestorSalesmanSwapRole(user.role) && (
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <button
+                                  type="button"
+                                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                                >
+                                  <MoreHorizontal className="h-4 w-4" />
+                                </button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
                                 <DropdownMenuItem
+                                  onClick={() =>
+                                    handleUserAction(
+                                      "상세보기",
+                                      user.id,
+                                      displayName,
+                                    )
+                                  }
+                                >
+                                  <Eye className="mr-2 h-4 w-4" />
+                                  상세보기
+                                </DropdownMenuItem>
+                                {user.status === "pending" ? (
+                                  <>
+                                    <DropdownMenuItem
+                                      onClick={() =>
+                                        handleUserAction(
+                                          "승인",
+                                          user.id,
+                                          displayName,
+                                        )
+                                      }
+                                    >
+                                      <UserCheck className="mr-2 h-4 w-4" />
+                                      승인
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem
+                                      onClick={() =>
+                                        handleUserAction(
+                                          "거절",
+                                          user.id,
+                                          displayName,
+                                        )
+                                      }
+                                    >
+                                      <UserX className="mr-2 h-4 w-4" />
+                                      거절
+                                    </DropdownMenuItem>
+                                  </>
+                                ) : (
+                                  <DropdownMenuItem
+                                    onClick={() =>
+                                      handleUserAction(
+                                        user.status === "active"
+                                          ? "일시정지"
+                                          : "활성화",
+                                        user.id,
+                                        displayName,
+                                      )
+                                    }
+                                  >
+                                    {user.status === "active" ? (
+                                      <UserX className="mr-2 h-4 w-4" />
+                                    ) : (
+                                      <UserCheck className="mr-2 h-4 w-4" />
+                                    )}
+                                    {user.status === "active"
+                                      ? "비활성화"
+                                      : "활성화"}
+                                  </DropdownMenuItem>
+                                )}
+                                {getRequestorSalesmanSwapRole(user.role) && (
+                                  <DropdownMenuItem
+                                    onClick={() => {
+                                      void swapRequestorSalesmanRole(user);
+                                    }}
+                                  >
+                                    <UserCheck className="mr-2 h-4 w-4" />
+                                    {getRoleLabel(
+                                      getRequestorSalesmanSwapRole(user.role) ||
+                                        "",
+                                    )}
+                                    로 변경
+                                  </DropdownMenuItem>
+                                )}
+                                <DropdownMenuItem
+                                  className="text-destructive focus:text-destructive"
                                   onClick={() => {
-                                    void swapRequestorSalesmanRole(user);
+                                    setDeleteTarget(user);
+                                    setDeleteType("user-only");
                                   }}
                                 >
-                                  <UserCheck className="mr-2 h-4 w-4" />
-                                  {getRoleLabel(
-                                    getRequestorSalesmanSwapRole(user.role) ||
-                                      "",
-                                  )}
-                                  로 변경
+                                  <Trash2 className="mr-2 h-4 w-4" />
+                                  사용자만 삭제
                                 </DropdownMenuItem>
-                              )}
-                              <DropdownMenuItem
-                                className="text-destructive focus:text-destructive"
-                                onClick={() => {
-                                  setDeleteTarget(user);
-                                  setDeleteType("user-only");
-                                }}
-                              >
-                                <Trash2 className="mr-2 h-4 w-4" />
-                                사용자만 삭제
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        </div>
-                        <p className="mt-1.5 truncate text-[11px] text-slate-500">
-                          {user.email}
-                        </p>
-                        <p className="truncate text-[11px] text-slate-400">
-                          {user.businessInfo?.name || user.companyName || "-"}
-                        </p>
-                      </div>
-                    </div>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </div>
 
-                    <div className="mt-2.5 flex items-center justify-between gap-2 border-t border-slate-100 pt-2.5">
-                      <div className="text-[11px] text-slate-400">
-                        의뢰 {user.totalRequests ?? "-"}
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        {user.status === "pending" ? (
-                          <>
-                            <Button
-                              size="sm"
-                              className="h-7 px-2.5 text-xs"
-                              onClick={() =>
-                                handleUserAction(
-                                  "승인",
-                                  user.id,
-                                  getDisplayUserName(user),
-                                )
-                              }
+                          <div className="mt-1.5 flex flex-wrap items-center gap-1">
+                            <Badge
+                              variant={getRoleBadgeVariant(user.role)}
+                              className="h-5 px-1.5 text-[10px]"
                             >
-                              승인
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="h-7 border-slate-200 px-2.5 text-xs"
-                              onClick={() =>
-                                handleUserAction(
-                                  "거절",
-                                  user.id,
-                                  getDisplayUserName(user),
-                                )
-                              }
-                            >
-                              거절
-                            </Button>
-                          </>
-                        ) : (
-                          <Button
-                            size="sm"
-                            variant={
-                              user.status === "active" ? "outline" : "default"
-                            }
-                            className="h-7 border-slate-200 px-2.5 text-xs"
-                            onClick={() =>
-                              handleUserAction(
-                                user.status === "active"
-                                  ? "일시정지"
-                                  : "활성화",
-                                user.id,
-                                getDisplayUserName(user),
-                              )
-                            }
-                          >
-                            {user.status === "active" ? "비활성화" : "활성화"}
-                          </Button>
-                        )}
+                              {getRoleLabel(user.role)}
+                            </Badge>
+                            {getRequestorCapabilityBadges(user)}
+                            {user.unresolvedBusiness ? (
+                              <span className="rounded-md border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">
+                                사업자 확인
+                              </span>
+                            ) : null}
+                            <span className="text-[11px] tabular-nums text-slate-400">
+                              · 의뢰{" "}
+                              {requestCount == null
+                                ? "-"
+                                : requestCount.toLocaleString()}
+                            </span>
+                          </div>
+
+                          {displayEmail ? (
+                            <p className="mt-1 truncate text-[11px] text-slate-400">
+                              {displayEmail}
+                            </p>
+                          ) : null}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
             <div ref={loadMoreRef} className="h-8" />

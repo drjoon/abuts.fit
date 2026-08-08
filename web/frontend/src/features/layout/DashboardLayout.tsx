@@ -1495,8 +1495,8 @@ export const DashboardLayout = () => {
                 </div>
               ) : null}
               <div className="flex-1 min-h-0 overflow-auto">
-                <div className="flex flex-1 min-h-0 flex-col items-stretch p-1.5 sm:p-2 lg:p-2.5">
-                  <main className="flex min-h-0 flex-1 flex-col rounded-2xl bg-white/80 p-2 shadow-lg backdrop-blur-xl sm:p-3">
+                <div className="flex flex-1 min-h-0 flex-col items-stretch p-1 sm:p-1.5">
+                  <main className="flex min-h-0 flex-1 flex-col rounded-2xl bg-white/80 p-1.5 shadow-lg backdrop-blur-xl sm:p-2">
                     <div className="flex-1 min-h-0 overflow-auto">
                       <Outlet
                         context={{

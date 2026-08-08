@@ -8,6 +8,13 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -30,6 +37,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { Search } from "lucide-react";
 
 const PERIOD_LABEL: Record<string, string> = {
   "30d": "30일",
@@ -572,9 +580,9 @@ export default function AdminReferralGroupsPage() {
   };
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-slate-50/80 px-1 py-2 sm:px-2 sm:py-3">
-      <div className="mx-auto flex w-full max-w-7xl flex-1 min-h-0 flex-col gap-5 overflow-hidden">
-        <div className="grid shrink-0 grid-cols-1 gap-3 md:grid-cols-2">
+    <div className="flex h-full min-h-0 flex-col px-3 pt-3 pb-2 sm:px-4 sm:pt-4">
+      <div className="mx-auto flex w-full max-w-7xl flex-1 min-h-0 flex-col gap-4 overflow-hidden">
+        <div className="grid shrink-0 grid-cols-1 gap-2.5 p-0.5 md:grid-cols-2">
           <div className="rounded-2xl border border-slate-200/80 bg-white px-4 py-3.5 shadow-sm sm:px-5">
             <div className="mb-3 flex items-center justify-between gap-2">
               <h2 className="text-sm font-bold tracking-tight text-slate-900">
@@ -849,40 +857,43 @@ export default function AdminReferralGroupsPage() {
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm">
           <div className="shrink-0 space-y-3 border-b border-slate-100 px-5 py-3.5 sm:px-6">
             <div className="flex flex-wrap items-center gap-3">
-              <div className="flex min-w-[240px] flex-1 items-center gap-2">
+              <div className="flex min-w-[240px] flex-1 basis-[280px] items-center gap-2">
                 <span className="shrink-0 text-xs font-semibold text-slate-500">
                   리더
                 </span>
-                <select
-                  value={effectiveLeaderId || ""}
-                  onChange={(e) => {
-                    setSelectedLeaderId(e.target.value || null);
+                <Select
+                  value={effectiveLeaderId || undefined}
+                  onValueChange={(value) => {
+                    setSelectedLeaderId(value || null);
                     setSelectedNode(null);
                   }}
-                  className="h-9 flex-1 rounded-lg border border-slate-200 bg-white px-3 text-sm shadow-sm outline-none transition-colors focus-visible:ring-1 focus-visible:ring-slate-400"
                 >
-                  <option value="">리더를 선택하세요</option>
-                  {filteredGroups.map((g) => {
-                    const leader = g.leader || ({} as Partial<ApiGroupLeader>);
-                    const displayName =
-                      leader.business ||
-                      leader.name ||
-                      leader.email ||
-                      leader._id;
-                    return (
-                      <option
-                        key={String(leader._id)}
-                        value={String(leader._id)}
-                      >
-                        {displayName} ({leader.role}) -{" "}
-                        {Number(g.memberCount || 0)}명
-                      </option>
-                    );
-                  })}
-                </select>
+                  <SelectTrigger className="h-9 w-full min-w-0 rounded-lg border-slate-200 bg-white text-sm shadow-sm focus:ring-slate-400 focus:ring-offset-0">
+                    <SelectValue placeholder="리더 선택" />
+                  </SelectTrigger>
+                  <SelectContent className="max-h-72">
+                    {filteredGroups.map((g) => {
+                      const leader = g.leader || ({} as Partial<ApiGroupLeader>);
+                      const displayName =
+                        leader.business ||
+                        leader.name ||
+                        leader.email ||
+                        leader._id;
+                      return (
+                        <SelectItem
+                          key={String(leader._id)}
+                          value={String(leader._id)}
+                        >
+                          {displayName} ({leader.role}) ·{" "}
+                          {Number(g.memberCount || 0)}명
+                        </SelectItem>
+                      );
+                    })}
+                  </SelectContent>
+                </Select>
               </div>
 
-              <div className="inline-flex flex-wrap gap-1 rounded-lg border border-slate-200 bg-white p-1 shadow-sm">
+              <div className="inline-flex shrink-0 flex-wrap gap-1 rounded-lg border border-slate-200 bg-white p-1 shadow-sm">
                 {(
                   [
                     ["all", "전체"],
@@ -909,12 +920,15 @@ export default function AdminReferralGroupsPage() {
                 })}
               </div>
 
-              <Input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="검색..."
-                className="h-9 w-[180px] rounded-lg border-slate-200 bg-white text-sm shadow-sm"
-              />
+              <div className="relative min-w-[240px] flex-1 basis-[280px]">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                <Input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="리더·사업자·이메일 검색..."
+                  className="h-9 w-full rounded-lg border-slate-200 bg-white pl-9 text-sm shadow-sm"
+                />
+              </div>
             </div>
 
             {effectiveLeaderId && treeData?.tree ? (
