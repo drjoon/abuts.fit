@@ -311,7 +311,7 @@ UI 확인: `GET /api/cnc-machines/machining-priority-rules` + 가공 페이지 �
   - 헬퍼 SSOT: `utils/requestorCapabilities.js`, `controllers/businesses/requestorOrgAnchor.util.js` (`ensureRequestorOrgAnchor`)
     - `normalize` / `hasAny` / `requiresBusinessLicense`(lab) / `canUsePaidServices`(lab+verified) / `canUseFreeServices`(practice)
     - `canSendPracticeTransfer`(practice·발신) / `canReceivePracticeTransfer`(lab·수신)
-    - UI 라벨: practice=`의뢰 발신자 (치과)`, lab=`의뢰 수신자 (기공소과 기공실)` (프론트 `REQUESTOR_CAPABILITY_LABEL`과 동기)
+    - UI 라벨: practice=`의뢰 발신자 (치과)`, lab=`의뢰 수신자 (기공소와 기공실)` (프론트 `REQUESTOR_CAPABILITY_LABEL`과 동기)
     - `resolveRequestorCapabilities`: 앵커 → 유저 → 마이그레이션 전 폴백(구 practice role·미기입 requestor→practice, verified requestor→lab)
   - 사업자 저장(`business.update.controller.js`):
     - body `requestorCapabilities` 수신 시 normalize·최소 1개 검증

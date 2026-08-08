@@ -208,7 +208,7 @@
   - 해석 우선순위: 앵커 → 유저 → 레거시 폴백(미기입 requestor·구 practice role 데이터 → practice / verified requestor → lab). 폴백은 마이그레이션 전까지만.
 - UI 라벨 SSOT(`REQUESTOR_CAPABILITY_LABEL` / `REQUESTOR_CAPABILITY_OPTIONS`):
   - `practice`: **의뢰 발신자 (치과)** — 무료 서비스, 사업자등록증 선택
-  - `lab`: **의뢰 수신자 (기공소과 기공실)** — 유료 서비스, 사업자등록증 필수
+  - `lab`: **의뢰 수신자 (기공소와 기공실)** — 유료 서비스, 사업자등록증 필수
 - 가입·온보딩 흐름:
   1. `/signup` 또는 드롭존 임베디드 가입 → 계정(이메일·비번) → 로그인
   2. `/dashboard/wizard` 온보딩: 프로필 → 휴대전화 → 역할(owner/staff) → 사업자

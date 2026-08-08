@@ -10,7 +10,7 @@ alwaysApply: true
 ## UI 라벨 SSOT
 
 - `practice` → **의뢰 발신자 (치과)**
-- `lab` → **의뢰 수신자 (기공소과 기공실)**
+- `lab` → **의뢰 수신자 (기공소와 기공실)**
 - 상수: `REQUESTOR_CAPABILITY_LABEL` / `REQUESTOR_CAPABILITY_OPTIONS`
 
 ## Do

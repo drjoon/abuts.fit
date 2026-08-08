@@ -14,7 +14,7 @@ import {
 } from "./helpers";
 
 const SENDER_LABEL = "의뢰 발신자 (치과)";
-const RECEIVER_LABEL = "의뢰 수신자 (기공소과 기공실)";
+const RECEIVER_LABEL = "의뢰 수신자 (기공소와 기공실)";
 const OLD_SENDER = "원내 기공실 없는 치과";
 const OLD_RECEIVER = "기공소 혹은 원내 기공실";
 

@@ -1337,7 +1337,7 @@ export const SignupPage = () => {
                       )}
                       {signupRole === "requestor" && (
                         <p className="text-sm text-white/70 text-left">
-                          의뢰 발신자(치과) 또는 의뢰 수신자(기공소과 기공실)
+                          의뢰 발신자(치과) 또는 의뢰 수신자(기공소와 기공실)
                         </p>
                       )}
                       {signupRole === "salesman" && (

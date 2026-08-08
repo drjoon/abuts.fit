@@ -385,7 +385,7 @@ Notes:
   - 로그인: 공통 `/login` · 이메일+비밀번호(`POST /api/auth/login`).
   - 온보딩(`/dashboard/wizard`): 프로필 → 휴대전화 → 역할 → 사업자. 중도 이탈 후 `/signup` 재진입 시 `clearOnboardingLocalStorage`로 1/4부터.
   - 사업자 단계(`BusinessTab` + `RequestorCapabilitiesPicker`):
-    - 라벨: practice=`의뢰 발신자 (치과)`, lab=`의뢰 수신자 (기공소과 기공실)` (`REQUESTOR_CAPABILITY_LABEL` / `REQUESTOR_CAPABILITY_OPTIONS`)
+    - 라벨: practice=`의뢰 발신자 (치과)`, lab=`의뢰 수신자 (기공소와 기공실)` (`REQUESTOR_CAPABILITY_LABEL` / `REQUESTOR_CAPABILITY_OPTIONS`)
     - `lab` 선택 시 사업자등록증 미검증이면 저장 차단·안내
     - `practice`-only로 등록증 건너뛰면 `practiceProfilePhase` → `PracticeBusinessProfileStep`(기공의뢰서용 치과 필수정보)
   - 온보딩 완료 랜딩(`SharedOnboardingWizardPage.resolvePostOnboardingPath`):

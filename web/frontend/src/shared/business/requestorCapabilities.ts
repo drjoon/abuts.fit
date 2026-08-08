@@ -61,7 +61,7 @@ export const PAID_REQUESTOR_SETTINGS_TABS = new Set(["request", "payment"]);
 
 export const REQUESTOR_CAPABILITY_LABEL = {
   practice: "의뢰 발신자 (치과)",
-  lab: "의뢰 수신자 (기공소과 기공실)",
+  lab: "의뢰 수신자 (기공소와 기공실)",
 } as const;
 
 export const PAID_ACCESS_DISABLED_HINT =
