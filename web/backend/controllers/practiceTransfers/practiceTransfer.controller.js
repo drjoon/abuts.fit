@@ -290,9 +290,10 @@ const resolvePracticeUserIdsByAnchor = async (anchorId) => {
   const raw = String(anchorId || "").trim();
   if (!raw || !Types.ObjectId.isValid(raw)) return [];
 
+  // 레거시 practice + 신규 requestor(practice 발신) 동료를 함께 포함한다.
   const users = await User.find({
     businessAnchorId: new Types.ObjectId(raw),
-    role: "practice",
+    role: { $in: ["practice", "requestor"] },
     active: true,
   })
     .select({ _id: 1 })
@@ -301,6 +302,12 @@ const resolvePracticeUserIdsByAnchor = async (anchorId) => {
   return users
     .map((u) => String(u?._id || "").trim())
     .filter(Boolean);
+};
+
+/** 발신 API 역할 allowlist. 세부 capability는 authorizePracticeTransferSend가 검증한다. */
+const isPracticeTransferSenderRole = (role) => {
+  const r = String(role || "").trim();
+  return r === "practice" || r === "requestor" || r === "admin";
 };
 
 /**
@@ -422,7 +429,7 @@ const emitPracticeTransferEventToPracticeUsers = async ({
 export async function getMyPracticeTransferDraft(req, res) {
   try {
     const role = String(req.user?.role || "").trim();
-    if (role !== "practice" && role !== "admin") {
+    if (!isPracticeTransferSenderRole(role)) {
       return res.status(403).json({ success: false, message: "권한이 없습니다." });
     }
 
@@ -471,7 +478,7 @@ export async function getMyPracticeTransferDraft(req, res) {
 export async function listPracticeTransferDrafts(req, res) {
   try {
     const role = String(req.user?.role || "").trim();
-    if (role !== "practice" && role !== "admin") {
+    if (!isPracticeTransferSenderRole(role)) {
       return res.status(403).json({ success: false, message: "권한이 없습니다." });
     }
 
@@ -516,7 +523,7 @@ export async function listPracticeTransferDrafts(req, res) {
 export async function upsertPracticeTransferDraft(req, res) {
   try {
     const role = String(req.user?.role || "").trim();
-    if (role !== "practice" && role !== "admin") {
+    if (!isPracticeTransferSenderRole(role)) {
       return res.status(403).json({ success: false, message: "권한이 없습니다." });
     }
 
@@ -711,7 +718,7 @@ export async function upsertPracticeTransferDraft(req, res) {
 export async function clearMyPracticeTransferDraft(req, res) {
   try {
     const role = String(req.user?.role || "").trim();
-    if (role !== "practice" && role !== "admin") {
+    if (!isPracticeTransferSenderRole(role)) {
       return res.status(403).json({ success: false, message: "권한이 없습니다." });
     }
 
@@ -782,7 +789,7 @@ export async function clearMyPracticeTransferDraft(req, res) {
 export async function restorePracticeTransferDraft(req, res) {
   try {
     const role = String(req.user?.role || "").trim();
-    if (role !== "practice" && role !== "admin") {
+    if (!isPracticeTransferSenderRole(role)) {
       return res.status(403).json({ success: false, message: "권한이 없습니다." });
     }
 
@@ -849,7 +856,7 @@ export async function restorePracticeTransferDraft(req, res) {
 export async function emptyPracticeTransferTrash(req, res) {
   try {
     const role = String(req.user?.role || "").trim();
-    if (role !== "practice" && role !== "admin") {
+    if (!isPracticeTransferSenderRole(role)) {
       return res.status(403).json({ success: false, message: "권한이 없습니다." });
     }
 
@@ -986,7 +993,7 @@ export async function emptyPracticeTransferTrash(req, res) {
 export async function createPracticeTransfer(req, res) {
   try {
     const role = String(req.user?.role || "").trim();
-    if (role !== "practice" && role !== "admin") {
+    if (!isPracticeTransferSenderRole(role)) {
       return res.status(403).json({ success: false, message: "권한이 없습니다." });
     }
 
@@ -1176,7 +1183,7 @@ export async function createPracticeTransfer(req, res) {
 export async function getMyPracticeTransfers(req, res) {
   try {
     const role = String(req.user?.role || "").trim();
-    if (role !== "practice" && role !== "admin") {
+    if (!isPracticeTransferSenderRole(role)) {
       return res.status(403).json({ success: false, message: "권한이 없습니다." });
     }
 
@@ -1587,7 +1594,7 @@ export async function markReceivedPracticeTransferDownloaded(req, res) {
 export async function cancelPracticeTransfersBatch(req, res) {
   try {
     const role = String(req.user?.role || "").trim();
-    if (role !== "practice" && role !== "admin") {
+    if (!isPracticeTransferSenderRole(role)) {
       return res.status(403).json({ success: false, message: "권한이 없습니다." });
     }
 
@@ -1745,7 +1752,7 @@ export async function cancelPracticeTransfersBatch(req, res) {
 export async function restorePracticeTransfersBatch(req, res) {
   try {
     const role = String(req.user?.role || "").trim();
-    if (role !== "practice" && role !== "admin") {
+    if (!isPracticeTransferSenderRole(role)) {
       return res.status(403).json({ success: false, message: "권한이 없습니다." });
     }
 

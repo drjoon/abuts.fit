@@ -65,7 +65,7 @@ export const REQUESTOR_CAPABILITY_LABEL = {
 } as const;
 
 export const PAID_ACCESS_DISABLED_HINT =
-  `유료 서비스입니다. ${REQUESTOR_CAPABILITY_LABEL.lab}을 선택하고 사업자등록증을 검증한 뒤 이용할 수 있습니다. 설정 > 사업자에서 설정하세요.`;
+  `설정 > 사업자에서 ${REQUESTOR_CAPABILITY_LABEL.lab}을 선택하고, 사업자등록증을 검증한 뒤 이용할 수 있습니다.`;
 
 /** 무료 서비스 — 의뢰 발신자(practice) 선택 */
 export const canUseFreeServices = (

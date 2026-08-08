@@ -4941,7 +4941,7 @@ export const PracticeFileTransferPage = ({
     <Card className="h-fit">
       <CardHeader className="pb-2">
         <CardTitle className="text-base">기공소 초대</CardTitle>
-        <CardDescription className="text-xs">기공소에 전달</CardDescription>
+        <CardDescription className="text-xs">기공소에 기공의뢰서 링크를 전달하세요</CardDescription>
       </CardHeader>
       <CardContent className="pt-0">
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">

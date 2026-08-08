@@ -38,7 +38,7 @@ const sendAuth = authorizePracticeTransferSend({
 const receiveAuth = authorizePracticeTransferReceive();
 
 // practice 전송 전용 라우트 (Request 컬렉션과 분리)
-// 발신: legacy practice 또는 requestor+clinic
+// 발신: legacy practice 또는 requestor+practice
 router.post("/", authenticate, sendAuth, createPracticeTransfer);
 
 router.get("/my", authenticate, sendAuth, getMyPracticeTransfers);

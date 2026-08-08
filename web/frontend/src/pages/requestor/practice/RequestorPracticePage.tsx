@@ -1350,7 +1350,7 @@ function RequestorPracticeReceivePage({
             </>
           ) : null}
 
-          <Card className={promoNoticeVisible ? "xl:col-span-12" : "xl:col-span-10"}>
+          <Card className={promoNoticeVisible ? "xl:col-span-12" : "xl:col-span-9"}>
             <CardHeader className="space-y-3">
               <div className="flex flex-wrap items-center gap-3">
                 {roleSwitcher}
@@ -1535,7 +1535,7 @@ function RequestorPracticeReceivePage({
           </Card>
 
           {!promoNoticeVisible ? (
-            <div className="space-y-3 xl:col-span-2">{inviteLinkCard}</div>
+            <div className="space-y-3 xl:col-span-3">{inviteLinkCard}</div>
           ) : null}
         </div>
       </div>
