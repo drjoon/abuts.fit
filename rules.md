@@ -201,7 +201,10 @@
 - 드롭존(치과 전용 공개 전송):
   - 가입·로그인도 `requestor`로 통일
   - `requestorCapabilities`는 **practice만** 체크(`{ practice: true, lab: false }`) — 수신(lab) 선택 UI/저장 없음
-  - 가입·`practiceProfile` 완료 시 **BusinessAnchor를 생성**한다(첫 가입자=`owner`). 사업자등록번호가 없으면 synthetic `practice-*` BN. 이후 설정에서 lab을 추가·검증하면 **동일 앵커**에 실BN·license를 올린다.
+  - 최소 가입: 이메일(+인증) + 비밀번호 + 담당자 휴대폰(+인증). `practiceProfile`/Org 앵커는 만들지 않음
+  - 가입 직후 **첫 PracticeTransfer**까지 드롭존에서 전송 가능(성공 후 대시보드로 보내지 않음)
+  - 게이트: **성공한 첫 전송 이후** 추가 의뢰 작성·대시보드 진입 시 온보딩 유도(`onboardingWizardCompleted` 미완료). 로그인 세션(~30일)과 무관
+  - 온보딩에서 `practiceProfile` 완료 시 **BusinessAnchor를 생성**한다(첫 가입자=`owner`). 사업자등록번호가 없으면 synthetic `practice-*` BN. 이후 설정에서 lab을 추가·검증하면 **동일 앵커**에 실BN·license를 올린다.
 - 유형 SSOT(체크박스 OR, 최소 1개): `requestorCapabilities = { practice: boolean, lab: boolean }`
   - Org SSOT: `BusinessAnchor` (`businessType: "requestor"`). practice/lab은 같은 조직의 캡일 뿐이며 “무앵커 발신 전용 조직” 경로는 없다.
   - 캡 SSOT: `BusinessAnchor.requestorCapabilities` (User 필드는 미링크·온보딩 중 미러)
@@ -210,8 +213,8 @@
   - `practice`: **의뢰 발신자 (치과)** — 무료 서비스, 사업자등록증 선택
   - `lab`: **의뢰 수신자 (기공소와 기공실)** — 유료 서비스, 사업자등록증 필수
 - 가입·온보딩 흐름:
-  1. `/signup` 또는 드롭존 임베디드 가입 → 계정(이메일·비번) → 로그인
-  2. `/dashboard/wizard` 온보딩: 프로필 → 휴대전화 → 역할(owner/staff) → 사업자
+  1. `/signup` → 계정(이메일·비번) → 로그인. 드롭존 → 계정(이메일·비번·담당자 휴대폰 인증) → **첫 기공의뢰 전송**
+  2. `/dashboard/wizard` 온보딩: 프로필 → 휴대전화(드롭존에서 이미 인증되면 스킵) → 역할(owner/staff) → 사업자
   3. 사업자 단계에서 `RequestorCapabilitiesPicker`로 practice/lab 선택(드롭존 가입자는 practice 고정)
   4. `lab` 포함 시 사업자등록증 등록·검증 필수. practice만 선택한 경우 등록증을 건너뛰고 `practiceProfile`(치과명·원장·담당·전화·주소·우편) 필수로 완료 가능 → 이때 Org 앵커 생성
   5. 온보딩 완료 후: 유료 미가용 requestor → `/dashboard/practice-transfers`(기공의뢰서). 유료 가용 → `/dashboard`

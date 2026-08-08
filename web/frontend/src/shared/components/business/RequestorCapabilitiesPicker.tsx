@@ -18,6 +18,8 @@ type Props = {
   className?: string;
   /** 수신자(lab) 선택 시 미검증이면 안내 */
   labRequiresLicenseHint?: boolean;
+  /** 드롭존 최소 가입자 등: practice 고정, lab 선택 불가 */
+  forcePracticeOnly?: boolean;
 };
 
 export const RequestorCapabilitiesPicker = ({
@@ -26,10 +28,14 @@ export const RequestorCapabilitiesPicker = ({
   disabled = false,
   className,
   labRequiresLicenseHint = false,
+  forcePracticeOnly = false,
 }: Props) => {
-  const caps = normalizeRequestorCapabilities(value);
+  const caps = forcePracticeOnly
+    ? { practice: true, lab: false }
+    : normalizeRequestorCapabilities(value);
 
   const toggle = (key: keyof RequestorCapabilities, checked: boolean) => {
+    if (forcePracticeOnly) return;
     onChange(
       normalizeRequestorCapabilities({
         ...caps,
@@ -41,12 +47,16 @@ export const RequestorCapabilitiesPicker = ({
   return (
     <div className={cn("space-y-4", className)}>
       <p className="text-xs leading-relaxed text-slate-500">
-        해당하는 항목을 모두 선택하세요.
+        {forcePracticeOnly
+          ? "드롭존으로 가입한 계정은 의뢰 발신자(치과)로 고정됩니다. 수신(lab)은 나중에 설정에서 추가할 수 있습니다."
+          : "해당하는 항목을 모두 선택하세요."}
       </p>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         {REQUESTOR_CAPABILITY_OPTIONS.map((opt) => {
           const checked = caps[opt.key];
           const id = `requestor-cap-${opt.key}`;
+          const optionLocked =
+            forcePracticeOnly && (opt.key === "practice" || opt.key === "lab");
           return (
             <label
               key={opt.key}
@@ -56,13 +66,13 @@ export const RequestorCapabilitiesPicker = ({
                 checked
                   ? "border-primary/40 bg-primary/5"
                   : "border-slate-200 bg-white hover:bg-slate-50",
-                disabled && "cursor-not-allowed opacity-60",
+                (disabled || optionLocked) && "cursor-not-allowed opacity-60",
               )}
             >
               <Checkbox
                 id={id}
                 checked={checked}
-                disabled={disabled}
+                disabled={disabled || optionLocked}
                 onCheckedChange={(v) => toggle(opt.key, v === true)}
                 className="mt-0.5"
               />

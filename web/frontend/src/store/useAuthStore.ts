@@ -36,6 +36,7 @@ export interface User {
   businessAnchorId?: string | null;
   businessVerified?: boolean;
   onboardingWizardCompleted?: boolean;
+  signupChannel?: string | null;
   requestorCapabilities?: RequestorCapabilities | null;
   practiceProfile?: {
     clinicName?: string;
@@ -85,6 +86,7 @@ const normalizeApiUser = (u: unknown): User | null => {
     businessAnchorId: row.businessAnchorId ? String(row.businessAnchorId) : null,
     businessVerified: Boolean(row.businessVerified),
     onboardingWizardCompleted: Boolean(row.onboardingWizardCompleted),
+    signupChannel: row.signupChannel ? String(row.signupChannel) : null,
     requestorCapabilities: rawCaps
       ? normalizeRequestorCapabilities(rawCaps)
       : null,

@@ -410,13 +410,14 @@ Notes:
 - 드롭존 가입(치과 전용, requestor+practice)
   - 공개 드롭존(`PracticeDropzonePage`)은 기공의뢰서 **발신(치과)** 전용. lab 선택 UI 없음.
   - Step 2 임베디드 로그인/가입/비밀번호 변경. 라벨은 「의뢰인 계정」.
-  - 가입: `POST /api/auth/practice/register` → `role=requestor` + `requestorCapabilities={practice:true,lab:false}` + `practiceProfile`(사업자 앵커 미생성).
-    필수: `email`, `clinicName`, `directorName`, `staffName`, `password`, `clinicPhone`, `phone`, `address`, `zipCode`.
+  - 최소 가입: `POST /api/auth/practice/register` → `role=requestor` + `requestorCapabilities={practice:true,lab:false}`.
+    필수: `email`, `password`, `phone`. `practiceProfile`/Org 앵커는 온보딩에서 완성.
   - 가입 전 이메일·담당자 휴대폰 인증 필수(공통 signup verification API). 로컬 캐시: `practice_dropzone_signup_verification_v1`.
+  - 가입 직후 같은 페이지에서 **첫 PracticeTransfer** 전송. 성공 시 대시보드로 이동하지 않고 드롭존 성공 UI 유지.
+  - 게이트: 전송 이력 ≥ 1건이고 `onboardingWizardCompleted` 미완료면 추가 의뢰 시 `/dashboard/wizard?mode=account`로 유도(로그인 세션과 무관, 첫 전송 성공이 기준).
   - 로그인: `POST /api/auth/login` — `requestor` + practice 발신 가능 계정만 허용.
   - 비밀번호 변경: `POST /api/auth/practice/password/change`(`email`+`phone`+`newPassword`, requestor).
   - 드롭존 의뢰 폼은 대시보드와 동일 localStorage(`practice_transfer_form_local_v1`). 첨부 캐시(`practice_dropzone_file_cache_meta_v1` + IndexedDB) 공유.
-  - 제출 후 `/dashboard/practice-transfers`로 이동. 폼 캐시 비움·완료 토스트 ~10초.
   - 비회원 문의(`GuestChatModal`): 드롭존 라이트 테마 유지.
   - 레거시 `practice` role·`/practice/dashboard`·치과명 로그인 UI는 제거 대상(마이그레이션 후 삭제).
 

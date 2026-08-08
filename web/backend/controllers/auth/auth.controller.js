@@ -11,7 +11,6 @@
 import User from "../../models/user.model.js";
 import SignupVerification from "../../models/signupVerification.model.js";
 import BusinessAnchor from "../../models/businessAnchor.model.js";
-import { ensureRequestorOrgAnchor } from "../businesses/requestorOrgAnchor.util.js";
 
 import {
   generateToken,
@@ -1125,7 +1124,8 @@ async function practiceLogin(req, res) {
 }
 
 /**
- * 드롭존 간소 가입 — 의뢰인(requestor) + practice 무료 경로
+ * 드롭존 최소 가입 — 의뢰인(requestor) + practice 무료 경로
+ * 이메일·비밀번호·담당자 휴대폰(+인증)만. practiceProfile/Org 앵커는 온보딩에서 완성.
  * @route POST /api/auth/practice/register
  *
  * related files:
@@ -1135,34 +1135,16 @@ async function practiceLogin(req, res) {
  */
 async function practiceRegister(req, res) {
   try {
-    const clinicName = String(req.body?.clinicName || "").trim();
-    const directorName = String(req.body?.directorName || "").trim();
-    const staffName = String(req.body?.staffName || "").trim();
     const password = String(req.body?.password || "");
     const phone = String(req.body?.phone || "").trim();
-    const clinicPhone = String(req.body?.clinicPhone || "").trim();
-    const address = String(req.body?.address || "").trim();
-    const addressDetail = String(req.body?.addressDetail || "").trim();
-    const zipCode = String(req.body?.zipCode || "").trim();
     const normalizedEmail = String(req.body?.email || "")
       .trim()
       .toLowerCase();
 
-    if (
-      !clinicName ||
-      !directorName ||
-      !password ||
-      !staffName ||
-      !phone ||
-      !clinicPhone ||
-      !address ||
-      !zipCode ||
-      !normalizedEmail
-    ) {
+    if (!password || !phone || !normalizedEmail) {
       return res.status(400).json({
         success: false,
-        message:
-          "이메일, 치과명, 대표원장님 성함, 담당직원명, 비밀번호, 치과 전화번호, 담당자 휴대폰, 주소, 우편번호는 필수입니다.",
+        message: "이메일, 비밀번호, 담당자 휴대폰은 필수입니다.",
       });
     }
 
@@ -1178,14 +1160,6 @@ async function practiceRegister(req, res) {
       return res.status(400).json({
         success: false,
         message: "담당자 휴대폰 번호 형식이 올바르지 않습니다.",
-      });
-    }
-
-    const clinicPhoneDigits = normalizeDigits(clinicPhone);
-    if (clinicPhoneDigits.length < 8) {
-      return res.status(400).json({
-        success: false,
-        message: "치과 전화번호 형식이 올바르지 않습니다.",
       });
     }
 
@@ -1226,10 +1200,12 @@ async function practiceRegister(req, res) {
     });
 
     const referralCode = await ensureUniqueReferralCode(5);
+    const provisionalName =
+      normalizedEmail.split("@")[0]?.trim() || "의뢰인";
 
-    // 의뢰인 통합: role=requestor + practice. 프로필 완료 시 Org 앵커 생성(대표자).
+    // 최소 가입: role=requestor + practice. practiceProfile/앵커는 온보딩에서 완성.
     const user = new User({
-      name: staffName || clinicName,
+      name: provisionalName,
       email: normalizedEmail,
       password,
       role: "requestor",
@@ -1237,29 +1213,17 @@ async function practiceRegister(req, res) {
       referralCode,
       referredByAnchorId: referredByAnchorId || null,
       requestorCapabilities: { practice: true, lab: false },
+      signupChannel: "practice_dropzone",
       onboardingWizardCompleted: false,
       approvedAt: new Date(),
       active: true,
       isVerified: true,
-      business: clinicName,
       phoneNumber: phone,
       phoneVerifiedAt: new Date(),
       practiceProfile: {
-        clinicName,
-        directorName,
-        staffName,
         phone,
-        clinicPhone,
-        address,
-        addressDetail,
-        zipCode,
         createdAt: new Date(),
         updatedAt: new Date(),
-      },
-      address: {
-        street: address,
-        zipCode,
-        country: "KR",
       },
     });
     await user.save();
@@ -1272,12 +1236,6 @@ async function practiceRegister(req, res) {
       });
     } catch (e) {
       console.error("[practiceRegister] consumeSignupVerifications failed", e);
-    }
-
-    try {
-      await ensureRequestorOrgAnchor({ user: user.toObject() });
-    } catch (e) {
-      console.error("[practiceRegister] ensureRequestorOrgAnchor failed", e);
     }
 
     const freshUser = await User.findById(user._id).select("-password");

@@ -857,6 +857,10 @@ export const BusinessTab = ({
                   membershipMgmt.membership !== "none" &&
                   selectedRole !== "owner")
               }
+              forcePracticeOnly={
+                isOnboarding &&
+                String(user?.signupChannel || "").trim() === "practice_dropzone"
+              }
               labRequiresLicenseHint={
                 !(
                   businessDataMgmt.validationSucceeded ||

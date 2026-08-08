@@ -116,6 +116,11 @@ const userSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    /** 드롭존 최소 가입 등 채널 구분 (`practice_dropzone`) */
+    signupChannel: {
+      type: String,
+      default: null,
+    },
     verificationToken: String,
     verificationExpires: Date,
     resetPasswordToken: String,

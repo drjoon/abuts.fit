@@ -8,7 +8,6 @@
  *
  * related files:
  * - web/frontend/src/pages/requestor/new_request/NewRequestPage.tsx
- * - web/frontend/src/shared/components/business/settings/business/BusinessAddressFields.tsx
  * - web/frontend/src/features/auth/LoginPage.tsx
  * - web/frontend/src/store/useAuthStore.ts
  * - web/frontend/src/shared/business/requestorCapabilities.ts
@@ -25,6 +24,7 @@
  * - web/frontend/src/shared/components/practice/PracticeTransferRequestIntakePanel.tsx
  * - web/frontend/src/pages/practice/PracticeFileTransferPage.tsx
  * - web/frontend/src/pages/requestor/practice/RequestorPracticePage.tsx
+ * - web/frontend/src/shared/onboarding/wizard/SettingsWizard.tsx
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -53,7 +53,6 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { PageFileDropZone } from "@/features/requests/components/PageFileDropZone";
 import { GuestChatModal } from "@/features/support/components/GuestChatModal";
-import { BusinessAddressFields } from "@/shared/components/business/settings/business/BusinessAddressFields";
 import { useToast } from "@/shared/hooks/use-toast";
 import { apiFetch } from "@/shared/api/apiClient";
 import { useAuthStore, type User } from "@/store/useAuthStore";
@@ -102,7 +101,6 @@ import {
   formatPhoneNumberInput,
   isValidEmail,
   isValidMobilePhone,
-  isValidPhoneNumber,
 } from "@/shared/components/business/settings/business/validations";
 import { COMPANY_PHONE } from "@/shared/lib/contactInfo";
 import {
@@ -200,14 +198,7 @@ type PracticeDropzoneDraft = {
   toothWorks?: ToothWorkSelection[];
   patientName: string;
   email: string;
-  practiceName: string;
-  directorName: string;
-  staffName: string;
   phone: string;
-  clinicPhone: string;
-  address: string;
-  addressDetail: string;
-  zipCode: string;
   fileKeys: string[];
 };
 
@@ -649,21 +640,15 @@ export const PracticeDropzonePage = () => {
 
   const [patientName, setPatientName] = useState("");
   const [email, setEmail] = useState("");
-  const [practiceName, setPracticeName] = useState("");
   const [accessPassword, setAccessPassword] = useState("");
   const [showAccessPassword, setShowAccessPassword] = useState(false);
-  const [directorName, setDirectorName] = useState("");
-  const [staffName, setStaffName] = useState("");
   const [phone, setPhone] = useState("");
-  const [clinicPhone, setClinicPhone] = useState("");
-  const [address, setAddress] = useState("");
-  const [addressDetail, setAddressDetail] = useState("");
-  const [zipCode, setZipCode] = useState("");
 
   const [signupSubmitting, setSignupSubmitting] = useState(false);
   const [signupCompleted, setSignupCompleted] = useState(false);
   const [requestSubmitting, setRequestSubmitting] = useState(false);
   const [requestSubmitted, setRequestSubmitted] = useState(false);
+  const [onboardingGateChecking, setOnboardingGateChecking] = useState(false);
 
   const [emailVerified, setEmailVerified] = useState(false);
   const [emailCodeSent, setEmailCodeSent] = useState(false);
@@ -686,7 +671,6 @@ export const PracticeDropzonePage = () => {
 
   const isEmailValid = isValidEmail(email);
   const isPhoneValid = isValidMobilePhone(phone);
-  const isClinicPhoneValid = isValidPhoneNumber(clinicPhone);
 
   const isStrongPassword = useMemo(() => {
     const p = String(accessPassword || "");
@@ -731,12 +715,11 @@ export const PracticeDropzonePage = () => {
     const accountClinic = String(
       (authUser as { business?: string } | null)?.business ||
         authUser?.companyName ||
-        authUser?.name ||
         "",
     ).trim();
     if (accountClinic) return accountClinic;
-    return String(practiceName || "").trim();
-  }, [authUser, practiceName]);
+    return "(미등록)";
+  }, [authUser]);
 
   const orderedToothWorkRows = useMemo(() => {
     if (toothWorks.length === 0) return [] as Array<{
@@ -951,14 +934,8 @@ export const PracticeDropzonePage = () => {
     canSubmitBase &&
       isEmailValid &&
       emailVerified &&
-      String(practiceName || "").trim() &&
-      String(directorName || "").trim() &&
-      String(staffName || "").trim() &&
       isPhoneValid &&
       phoneVerified &&
-      isClinicPhoneValid &&
-      String(address || "").trim() &&
-      String(zipCode || "").trim() &&
       isStrongPassword,
   );
 
@@ -1053,14 +1030,7 @@ export const PracticeDropzonePage = () => {
         );
         setPatientName(String(intake?.patientName ?? parsed?.patientName ?? ""));
         setEmail(String(parsed?.email || "").trim().toLowerCase());
-        setPracticeName(String(parsed?.practiceName || ""));
-        setDirectorName(String(parsed?.directorName || ""));
-        setStaffName(String(parsed?.staffName || ""));
         setPhone(formatPhoneNumberInput(String(parsed?.phone || "")));
-        setClinicPhone(formatPhoneNumberInput(String(parsed?.clinicPhone || "")));
-        setAddress(String(parsed?.address || ""));
-        setAddressDetail(String(parsed?.addressDetail || ""));
-        setZipCode(String(parsed?.zipCode || ""));
 
         const fileKeys = Array.isArray(parsed?.fileKeys)
           ? parsed.fileKeys.map((k) => String(k || "")).filter(Boolean)
@@ -1321,14 +1291,7 @@ export const PracticeDropzonePage = () => {
       toothWorks,
       patientName,
       email,
-      practiceName,
-      directorName,
-      staffName,
       phone,
-      clinicPhone,
-      address,
-      addressDetail,
-      zipCode,
       fileKeys: files.map((file) => toPracticeFileKey(file)),
     };
     try {
@@ -1358,14 +1321,9 @@ export const PracticeDropzonePage = () => {
       toothWorks,
     });
   }, [
-    address,
-    addressDetail,
     draftHydrated,
     email,
     phone,
-    clinicPhone,
-    practiceName,
-    directorName,
     patientName,
     requestMemo,
     orderDate,
@@ -1374,9 +1332,7 @@ export const PracticeDropzonePage = () => {
     normalizedProsthesisTypes,
     toothWorks,
     selectedLab,
-    staffName,
     step,
-    zipCode,
     files,
   ]);
 
@@ -1399,16 +1355,7 @@ export const PracticeDropzonePage = () => {
     if (isDropzoneSenderLoggedIn) {
       const pp = authUser?.practiceProfile || null;
       setEmail(String(authUser?.email || email || "").trim().toLowerCase());
-      setPracticeName(String(pp?.clinicName || authUser?.companyName || practiceName || ""));
-      setDirectorName(String(pp?.directorName || directorName || ""));
-      setStaffName(String(pp?.staffName || authUser?.name || staffName || ""));
       setPhone(formatPhoneNumberInput(String(pp?.phone || phone || "")));
-      setClinicPhone(
-        formatPhoneNumberInput(String(pp?.clinicPhone || clinicPhone || "")),
-      );
-      setAddress(String(pp?.address || address || ""));
-      setAddressDetail(String(pp?.addressDetail || addressDetail || ""));
-      setZipCode(String(pp?.zipCode || zipCode || ""));
       writePracticeSessionMeta({
         issuedAt: now,
         userId: String(authUser?.id || ""),
@@ -1437,21 +1384,7 @@ export const PracticeDropzonePage = () => {
     }
 
     setAuthMode((prev) => (prev === "checking" ? "signup" : prev));
-  }, [
-    draftHydrated,
-    authToken,
-    authUser,
-    logout,
-    email,
-    practiceName,
-    directorName,
-    staffName,
-    phone,
-    clinicPhone,
-    address,
-    addressDetail,
-    zipCode,
-  ]);
+  }, [draftHydrated, authToken, authUser, logout, email, phone]);
 
   const extractDataFromResponse = <T,>(raw: unknown): T | null => {
     if (!raw || typeof raw !== "object") return null;
@@ -1460,9 +1393,60 @@ export const PracticeDropzonePage = () => {
     return payload.data as T;
   };
 
+  const userNeedsOnboarding = (user: User | null | undefined) => {
+    if (!user?.id) return false;
+    return !(user.onboardingWizardCompleted || user.businessVerified);
+  };
 
+  /** 첫 PracticeTransfer 성공 이후 + 온보딩 미완료면 추가 의뢰를 막고 위저드로 보낸다. */
+  const redirectToOnboardingIfSecondRequest = async (token: string) => {
+    const latestUser = useAuthStore.getState().user;
+    if (!userNeedsOnboarding(latestUser)) return false;
 
-  const submitPracticeRequest = async (token: string) => {
+    setOnboardingGateChecking(true);
+    try {
+      const res = await apiFetch<unknown>({
+        path: "/api/practice/transfers/my?page=1&limit=1",
+        method: "GET",
+        token,
+      });
+      if (!res.ok) return false;
+      const body = res.data as {
+        data?: {
+          requests?: unknown[];
+          pagination?: { count?: number; total?: number };
+        };
+      } | null;
+      const requests = Array.isArray(body?.data?.requests)
+        ? body.data.requests
+        : [];
+      const total = Number(
+        body?.data?.pagination?.total ??
+          body?.data?.pagination?.count ??
+          requests.length,
+      );
+      if (!Number.isFinite(total) || total < 1 || requests.length < 1) {
+        return false;
+      }
+
+      toast({
+        title: "계정 정보를 이어서 등록해주세요",
+        description:
+          "첫 기공의뢰는 완료되었습니다. 다음 의뢰부터는 치과 정보를 등록한 뒤 이용할 수 있습니다.",
+      });
+      navigate("/dashboard/wizard?mode=account", { replace: true });
+      return true;
+    } catch {
+      return false;
+    } finally {
+      setOnboardingGateChecking(false);
+    }
+  };
+
+  const submitPracticeRequest = async (
+    token: string,
+    options?: { skipSecondRequestGate?: boolean },
+  ) => {
     if (missingStep1Fields.length > 0) {
       toast({
         title: "필수 입력 항목을 확인해주세요",
@@ -1481,7 +1465,10 @@ export const PracticeDropzonePage = () => {
       return false;
     }
 
-
+    if (!options?.skipSecondRequestGate) {
+      const gated = await redirectToOnboardingIfSecondRequest(token);
+      if (gated) return false;
+    }
 
     setRequestSubmitting(true);
     try {
@@ -1589,18 +1576,16 @@ export const PracticeDropzonePage = () => {
           ...emptyToothWorkCustomSpecs(),
         },
       ]);
+      setStep(1);
 
-      // 토스트는 대시보드에서 빈 폼과 함께 보여 제출 완료를 확실히 인지시킨다.
-      const latestRole = useAuthStore.getState().user?.role;
-      navigate(
-        latestRole === "requestor"
-          ? "/dashboard/practice-transfers"
-          : "/practice/dashboard",
-        {
-          replace: true,
-          state: { practiceTransferSubmittedToast: true },
-        },
-      );
+      const needsOnboarding = userNeedsOnboarding(useAuthStore.getState().user);
+      toast({
+        title: "기공의뢰서를 전송했습니다",
+        description: needsOnboarding
+          ? "다음 의뢰부터는 계정(치과) 정보를 등록한 뒤 이용할 수 있습니다."
+          : "전송이 완료되었습니다.",
+        duration: 8000,
+      });
       return true;
     } catch (err) {
       toast({
@@ -1719,23 +1704,17 @@ export const PracticeDropzonePage = () => {
 
       const pp = latestUser.practiceProfile || null;
       setEmail(String(latestUser.email || email || "").trim().toLowerCase());
-      setPracticeName(String(pp?.clinicName || latestUser.companyName || practiceName || ""));
-      setDirectorName(String(pp?.directorName || directorName || ""));
-      setStaffName(String(pp?.staffName || latestUser.name || staffName || ""));
       setPhone(formatPhoneNumberInput(String(pp?.phone || phone || "")));
-      setClinicPhone(
-        formatPhoneNumberInput(String(pp?.clinicPhone || clinicPhone || "")),
-      );
-      setAddress(String(pp?.address || address || ""));
-      setAddressDetail(String(pp?.addressDetail || addressDetail || ""));
-      setZipCode(String(pp?.zipCode || zipCode || ""));
 
       setSignupCompleted(true);
       setAuthMode("session");
 
+      const gated = await redirectToOnboardingIfSecondRequest(latestToken);
+      if (gated) return;
+
       // 드롭존에서 저장한 프리셋을 서버 설정으로 반영한 뒤 의뢰를 전송한다.
       await syncLocalFavoritesToServer(latestToken);
-      await submitPracticeRequest(latestToken);
+      await submitPracticeRequest(latestToken, { skipSecondRequestGate: true });
     } finally {
       setAuthSubmitting(false);
     }
@@ -2002,7 +1981,7 @@ export const PracticeDropzonePage = () => {
         title: "입력 확인",
         description:
           emailVerified && phoneVerified
-            ? "이메일, 치과 전화, 담당자 휴대폰, 의뢰인 정보와 비밀번호를 포함해 필수값을 모두 입력해주세요."
+            ? "이메일, 담당자 휴대폰, 비밀번호를 포함해 필수값을 모두 입력해주세요."
             : "이메일·담당자 휴대폰 인증을 완료하고 필수값을 모두 입력해주세요.",
         variant: "destructive",
       });
@@ -2040,15 +2019,8 @@ export const PracticeDropzonePage = () => {
         method: "POST",
         jsonBody: {
           email: String(email || "").trim().toLowerCase(),
-          clinicName: String(practiceName || "").trim(),
-          directorName: String(directorName || "").trim(),
-          staffName: String(staffName || "").trim(),
           password: accessPassword,
           phone: String(phone || "").trim(),
-          clinicPhone: String(clinicPhone || "").trim(),
-          address: String(address || "").trim(),
-          addressDetail: String(addressDetail || "").trim(),
-          zipCode: String(zipCode || "").trim(),
         },
       });
 
@@ -2092,7 +2064,8 @@ export const PracticeDropzonePage = () => {
       });
 
       await syncLocalFavoritesToServer(token);
-      await submitPracticeRequest(token);
+      // 가입 직후는 전송 이력이 없으므로 첫 의뢰 게이트를 건너뛴다.
+      await submitPracticeRequest(token, { skipSecondRequestGate: true });
     } catch {
       toast({
         title: "회원가입 실패",
@@ -2350,12 +2323,42 @@ export const PracticeDropzonePage = () => {
                     )}
 
                     {authMode === "session" && (
-                      <div className="rounded-xl border border-emerald-200 bg-emerald-50/90 px-4 py-4 text-sm text-emerald-800">
-                        <p className="font-medium">로그인 세션이 확인되었습니다.</p>
-                        <p className="mt-1 text-emerald-700/90">
-                          추가 입력 없이 바로 의뢰서를 전송할 수 있습니다.
-                          {email ? ` (${email})` : ""}
-                        </p>
+                      <div
+                        className={cn(
+                          "rounded-xl border px-4 py-4 text-sm",
+                          requestSubmitted
+                            ? "border-emerald-200 bg-emerald-50/90 text-emerald-800"
+                            : "border-emerald-200 bg-emerald-50/90 text-emerald-800",
+                        )}
+                      >
+                        {requestSubmitted ? (
+                          <>
+                            <p className="font-medium">기공의뢰서를 전송했습니다.</p>
+                            <p className="mt-1 text-emerald-700/90">
+                              다음 의뢰부터는 치과 정보를 등록한 뒤 이용할 수 있습니다.
+                              {email ? ` (${email})` : ""}
+                            </p>
+                            {userNeedsOnboarding(authUser) ? (
+                              <Button
+                                type="button"
+                                className="mt-3 h-9 rounded-lg bg-sky-600 px-4 text-white hover:bg-sky-700"
+                                onClick={() =>
+                                  navigate("/dashboard/wizard?mode=account")
+                                }
+                              >
+                                계정 정보 이어서 등록
+                              </Button>
+                            ) : null}
+                          </>
+                        ) : (
+                          <>
+                            <p className="font-medium">로그인 세션이 확인되었습니다.</p>
+                            <p className="mt-1 text-emerald-700/90">
+                              추가 입력 없이 바로 의뢰서를 전송할 수 있습니다.
+                              {email ? ` (${email})` : ""}
+                            </p>
+                          </>
+                        )}
                       </div>
                     )}
 
@@ -2632,67 +2635,7 @@ export const PracticeDropzonePage = () => {
                               </p>
                             ) : null}
                           </div>
-                          <div className="space-y-2">
-                            <Label htmlFor="practiceName" className="flex h-5 items-center text-sm font-medium text-slate-700">
-                              치과명 <span className="ml-0.5 text-destructive">*</span>
-                            </Label>
-                            <Input
-                              id="practiceName"
-                              className="box-border h-11 rounded-xl border-slate-200 bg-white py-0 text-base shadow-sm"
-                              value={practiceName}
-                              onChange={(e) => setPracticeName(e.target.value)}
-                              placeholder="예: OO치과의원"
-                            />
-                          </div>
-                          <div className="space-y-2">
-                            <Label htmlFor="directorName" className="flex h-5 items-center text-sm font-medium text-slate-700">
-                              대표원장님 성함 <span className="ml-0.5 text-destructive">*</span>
-                            </Label>
-                            <Input
-                              id="directorName"
-                              className="box-border h-11 rounded-xl border-slate-200 bg-white py-0 text-base shadow-sm"
-                              value={directorName}
-                              onChange={(e) => setDirectorName(e.target.value)}
-                              placeholder="예: 김원장"
-                            />
-                          </div>
-                          <div className="space-y-2">
-                            <Label htmlFor="clinicPhone" className="flex h-5 items-center text-sm font-medium text-slate-700">
-                              치과 전화번호 <span className="ml-0.5 text-destructive">*</span>
-                            </Label>
-                            <Input
-                              id="clinicPhone"
-                              className={cn(
-                                "box-border h-11 rounded-xl border-slate-200 bg-white py-0 text-base shadow-sm",
-                                clinicPhone.trim() && !isClinicPhoneValid
-                                  ? "border-destructive focus-visible:ring-destructive"
-                                  : "",
-                              )}
-                              value={clinicPhone}
-                              onChange={(e) =>
-                                setClinicPhone(formatPhoneNumberInput(e.target.value))
-                              }
-                              placeholder="예: 02-123-4567"
-                            />
-                            {clinicPhone.trim() && !isClinicPhoneValid ? (
-                              <p className="text-xs text-destructive">
-                                올바른 전화번호 형식으로 입력해주세요.
-                              </p>
-                            ) : null}
-                          </div>
-                          <div className="space-y-2">
-                            <Label htmlFor="staffName" className="flex h-5 items-center text-sm font-medium text-slate-700">
-                              담당직원명 <span className="ml-0.5 text-destructive">*</span>
-                            </Label>
-                            <Input
-                              id="staffName"
-                              className="box-border h-11 rounded-xl border-slate-200 bg-white py-0 text-base shadow-sm"
-                              value={staffName}
-                              onChange={(e) => setStaffName(e.target.value)}
-                              placeholder="예: 김담당"
-                            />
-                          </div>
-                          <div className="space-y-2">
+                          <div className="space-y-2 sm:col-span-2">
                             <Label htmlFor="phone" className="flex h-5 items-center text-sm font-medium text-slate-700">
                               담당자 휴대폰 <span className="ml-0.5 text-destructive">*</span>
                             </Label>
@@ -2775,19 +2718,11 @@ export const PracticeDropzonePage = () => {
                               </div>
                             ) : null}
                           </div>
-                          <div className="space-y-2 sm:col-span-2">
-                            <BusinessAddressFields
-                              address={address}
-                              addressDetail={addressDetail}
-                              zipCode={zipCode}
-                              onChangeAddress={setAddress}
-                              onChangeAddressDetail={setAddressDetail}
-                              onChangeZipCode={setZipCode}
-                              addressLabel="치과 주소 *"
-                              rowLayout="address-detail-zip"
-                            />
-                          </div>
                         </div>
+                        <p className="text-xs leading-relaxed text-slate-500">
+                          치과명·주소 등 상세 정보는 첫 의뢰 전송 후 계정 등록
+                          단계에서 이어서 입력합니다.
+                        </p>
                       </div>
                     )}
                   </div>
@@ -2959,29 +2894,32 @@ export const PracticeDropzonePage = () => {
                   requestSubmitting ||
                   requestSubmitted ||
                   authSubmitting ||
+                  onboardingGateChecking ||
                   authMode === "recover" ||
                   authMode === "checking"
                 }
               >
                 {requestSubmitted
                   ? "의뢰 제출 완료"
-                  : authSubmitting
-                    ? authMode === "login"
-                      ? "로그인 처리 중..."
-                      : "처리 중..."
-                    : signupSubmitting
-                      ? "회원가입 처리 중..."
-                      : requestSubmitting
-                        ? "의뢰 제출 중..."
-                        : authMode === "session"
-                          ? "의뢰 제출하기"
-                          : authMode === "login"
-                            ? "로그인 후 계속하기"
-                            : authMode === "recover"
-                              ? "비밀번호 변경"
-                              : signupCompleted
-                                ? "의뢰 제출하기"
-                                : "회원가입 후 계속하기"}
+                  : onboardingGateChecking
+                    ? "확인 중..."
+                    : authSubmitting
+                      ? authMode === "login"
+                        ? "로그인 처리 중..."
+                        : "처리 중..."
+                      : signupSubmitting
+                        ? "회원가입 처리 중..."
+                        : requestSubmitting
+                          ? "의뢰 제출 중..."
+                          : authMode === "session"
+                            ? "의뢰 제출하기"
+                            : authMode === "login"
+                              ? "로그인 후 계속하기"
+                              : authMode === "recover"
+                                ? "비밀번호 변경"
+                                : signupCompleted
+                                  ? "의뢰 제출하기"
+                                  : "회원가입 후 계속하기"}
                 <ArrowRight className="ml-2 h-4 w-4" />
               </Button>
             )}
