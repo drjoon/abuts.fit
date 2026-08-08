@@ -9,7 +9,8 @@ import { apiFetch } from "@/shared/api/apiClient";
 import { toKstYmd } from "@/shared/date/kst";
 import { useToast } from "@/shared/hooks/use-toast";
 
-// - 2026-08-08: 기공의뢰서 미확인 배지를 30s 폴링 → 소켓(practice:transfer-*)+가시성 보정으로 전환.
+// - 2026-08-08: 미확인 배지 초기 API는 토큰당 1회만. 가시성 refetch 제거(소켓만 갱신).
+// - 2026-08-08: 기공의뢰서 미확인 배지를 30s 폴링 → 소켓(practice:transfer-*)로 전환.
 // - 2026-08-05: 사이드바 계정 팝업에서 같은 사업자 동료 계정으로 비밀번호 확인 후 전환(모든 role).
 // - 2026-08-05: 설정 메뉴를 계정 드롭다운에서 사이드바 맨 아래 항목으로 복원(모든 role 공통). 관리자 보안은 계정 드롭다운에 유지.
 // - 2026-08-05: 문의 메뉴를 계정 드롭다운에서 사이드바 맨 아래 항목으로 복원(requestor/salesman/practice/admin). manufacturer·devops는 제외.
@@ -98,6 +99,9 @@ import {
   AccountSwitchPasswordDialog,
   type ColleagueAccount,
 } from "@/features/layout/AccountSwitcher";
+
+/** DashboardLayout StrictMode remount에도 토큰당 unread 시드 API 1회만 */
+const practiceUnreadSeededTokens = new Set<string>();
 
 const sidebarItems = {
   requestor: [
@@ -574,9 +578,13 @@ export const DashboardLayout = () => {
     fetchCreditBalance();
   }, [fetchCreditBalance]);
 
+  // StrictMode remount에도 토큰당 초기 조회 1회만 (세션 시드용). 이후는 소켓·커스텀 이벤트.
   useEffect(() => {
+    if (!canFetchRequestorPracticeUnread || !token) return;
+    if (practiceUnreadSeededTokens.has(token)) return;
+    practiceUnreadSeededTokens.add(token);
     void fetchRequestorPracticeUnreadCount();
-  }, [fetchRequestorPracticeUnreadCount]);
+  }, [canFetchRequestorPracticeUnread, fetchRequestorPracticeUnreadCount, token]);
 
   useAppEventListener({
     enabled: canFetchRequestorPracticeUnread,
@@ -598,29 +606,13 @@ export const DashboardLayout = () => {
   });
 
   useEffect(() => {
-    if (!canFetchRequestorPracticeUnread) return;
-
-    const onVisibility = () => {
-      if (typeof document === "undefined") return;
-      if (document.visibilityState !== "visible") return;
-      void fetchRequestorPracticeUnreadCount();
-    };
-
-    document.addEventListener("visibilitychange", onVisibility);
-    return () => {
-      document.removeEventListener("visibilitychange", onVisibility);
-    };
-  }, [canFetchRequestorPracticeUnread, fetchRequestorPracticeUnreadCount]);
-
-  useEffect(() => {
     const onUnreadUpdated = (evt: Event) => {
       const custom = evt as CustomEvent<{ unreadCount?: unknown }>;
       const maybeCount = Number(custom.detail?.unreadCount);
       if (Number.isFinite(maybeCount) && maybeCount >= 0) {
         setRequestorPracticeUnreadCount(maybeCount);
-        return;
       }
-      void fetchRequestorPracticeUnreadCount();
+      // count 없으면 무시 — 시드/소켓이 SSOT. 불필요 API 재호출 방지.
     };
 
     window.addEventListener(
@@ -633,7 +625,7 @@ export const DashboardLayout = () => {
         onUnreadUpdated,
       );
     };
-  }, [fetchRequestorPracticeUnreadCount]);
+  }, []);
 
 
 
